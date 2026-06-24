@@ -52,14 +52,18 @@ function addSharedFlags(cmd: Command): Command {
 export function registerCommands(program: Command): void {
   for (const spec of ALL_COMMANDS) {
     const cmd = program.command(spec.name).description(spec.summary);
+    // Optional positional target dir, e.g. `aih init .` or `aih profile ./repo`.
+    cmd.argument("[root]", "target repository/workstation root (defaults to --root or cwd)");
     if (!spec.readOnly) addSharedFlags(cmd);
     else cmd.option("--json", "emit machine-readable JSON").option("--root <dir>", "target root");
     for (const o of spec.options ?? []) {
       if (o.default !== undefined) cmd.option(o.flags, o.description, o.default);
       else cmd.option(o.flags, o.description);
     }
-    cmd.action(async (_options: Record<string, unknown>, command: Command) => {
-      process.exitCode = await runCapability(spec, command);
-    });
+    cmd.action(
+      async (_rootArg: string | undefined, _options: Record<string, unknown>, command: Command) => {
+        process.exitCode = await runCapability(spec, command);
+      },
+    );
   }
 }

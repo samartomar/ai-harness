@@ -45,6 +45,10 @@ export async function runCapability(
   const write = deps.write ?? ((t: string) => process.stdout.write(t));
   const run = deps.run ?? defaultRunner;
   const opts = command.optsWithGlobals() as Record<string, unknown>;
+  // Optional positional target dir (e.g. `aih init .`) overrides --root.
+  const positionalRoot = Array.isArray(command.processedArgs)
+    ? (command.processedArgs[0] as string | undefined)
+    : undefined;
 
   let json = false;
   try {
@@ -53,7 +57,7 @@ export async function runCapability(
       verify: opts.verify as boolean | undefined,
       json: opts.json as boolean | undefined,
       contextDir: opts.contextDir as string | undefined,
-      root: opts.root as string | undefined,
+      root: positionalRoot ?? (opts.root as string | undefined),
       caPattern: opts.caPattern as string | undefined,
     });
     json = settings.json;

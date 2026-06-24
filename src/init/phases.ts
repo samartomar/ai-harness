@@ -1,0 +1,54 @@
+import { command as guardrails } from "../guardrails/index.js";
+import type { CommandSpec } from "../internals/plan.js";
+import { command as mcp } from "../mcp/index.js";
+import { command as profile } from "../profile/index.js";
+import { command as sandbox } from "../sandbox/index.js";
+import { command as scaffold } from "../scaffold/index.js";
+import { command as secrets } from "../secrets/index.js";
+
+/**
+ * One repo-scoped capability folded into `aih init`, paired with the human-facing
+ * headline printed before its actions. `init` does not re-implement any of these —
+ * it calls each `command.plan(ctx)` and concatenates the result, so the bootstrap
+ * stays in lock-step with the leaf capabilities.
+ */
+export interface InitPhase {
+  /** The leaf capability whose `plan(ctx)` supplies this phase's actions. */
+  readonly command: CommandSpec;
+  /** Short doc header emitted immediately before the phase's actions. */
+  readonly headline: string;
+}
+
+/**
+ * The fixed bootstrap order: profile → scaffold → secrets → guardrails → mcp →
+ * sandbox. Profiling and scaffolding lay down the context dir and adapters first;
+ * secrets + guardrails fence the repo before MCP wiring and the sandbox land on
+ * top. Each headline names its capability so a composed dry-run reads as labelled
+ * sections.
+ */
+export const INIT_PHASES: readonly InitPhase[] = [
+  {
+    command: profile,
+    headline: "profile — detect the stack and synthesize CLAUDE.md + cursor rules",
+  },
+  {
+    command: scaffold,
+    headline: "scaffold — lay down the canonical context dir, INDEX/SKILL docs and IDE adapters",
+  },
+  {
+    command: secrets,
+    headline: "secrets — deny agent reads of plaintext secrets and document vault injection",
+  },
+  {
+    command: guardrails,
+    headline: "guardrails — gitleaks + pre-commit gate and the CI license-compliance workflow",
+  },
+  {
+    command: mcp,
+    headline: "mcp — configure enterprise MCP servers in .mcp.json",
+  },
+  {
+    command: sandbox,
+    headline: "sandbox — generate the devcontainer and managed sandbox policy",
+  },
+] as const;

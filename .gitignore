@@ -6,6 +6,7 @@ coverage/
 # aih runtime artifacts
 *.aih.bak
 .aih-scratch/
+.aih-workflow/
 
 # logs / os
 *.log

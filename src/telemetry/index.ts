@@ -1,5 +1,74 @@
-import { pendingPlan } from "../commands/stub.js";
-import type { CommandSpec } from "../internals/plan.js";
+import { join } from "node:path";
+import {
+  type CommandSpec,
+  doc,
+  type PlanContext,
+  plan,
+  probe,
+  writeText,
+} from "../internals/plan.js";
+import type { Check } from "../internals/verify.js";
+import { telemetryDoc } from "./docs.js";
+import { buildProfileWrite } from "./env.js";
+import { collectorYaml, fetchAnalyticsScript } from "./templates.js";
+
+const DEFAULT_ENDPOINT = "http://127.0.0.1:4317";
+
+/**
+ * `aih telemetry` — local-only observability wiring for Claude Code.
+ *
+ * Injects the OpenTelemetry env (gRPC OTLP → `--endpoint`) into the shell
+ * profile, emits a redacting Bindplane/OTel collector config and an Analytics
+ * Admin API fetcher script, and documents the cron schedule, event types, and
+ * backend setup. Nothing here calls a remote system: every cloud/scheduling
+ * step is a `doc`, the fetcher only runs when the operator invokes it, and the
+ * single probe is a read-only collector-presence check.
+ */
+function telemetryPlan(ctx: PlanContext) {
+  const endpoint = String(ctx.options.endpoint ?? DEFAULT_ENDPOINT);
+
+  const collectorPath = join(ctx.contextDir, "telemetry", "collector.yaml");
+  const fetcherPath = join(ctx.contextDir, "telemetry", "fetch-analytics.mjs");
+
+  const profileWrite = buildProfileWrite(ctx, endpoint);
+  const collectorWrite = writeText(
+    collectorPath,
+    collectorYaml(endpoint),
+    "Redacting OpenTelemetry/Bindplane collector config (otlp in, scrubbed otlphttp out)",
+  );
+  const fetcherWrite = writeText(
+    fetcherPath,
+    fetchAnalyticsScript(),
+    "Claude Code Analytics Admin API fetcher (prints curl; only queries on --run)",
+    { mode: 0o755 },
+  );
+
+  return plan(
+    "telemetry",
+    profileWrite,
+    collectorWrite,
+    fetcherWrite,
+    doc(
+      "Telemetry setup: cron schedule, event types, and Bindplane/Langfuse/Elasticsearch backends",
+      telemetryDoc(collectorPath, fetcherPath),
+    ),
+    probe("OpenTelemetry collector present (otelcol)", async (c): Promise<Check> => {
+      const res = await c.run(["otelcol", "--version"]);
+      if (res.spawnError) {
+        return {
+          name: "otel-collector",
+          verdict: "skip",
+          detail: "otelcol not found on PATH — install it to run the collector",
+        };
+      }
+      return {
+        name: "otel-collector",
+        verdict: res.code === 0 ? "pass" : "fail",
+        detail: res.code === 0 ? res.stdout.trim() || "otelcol available" : `exit ${res.code}`,
+      };
+    }),
+  );
+}
 
 export const command: CommandSpec = {
   name: "telemetry",
@@ -8,11 +77,8 @@ export const command: CommandSpec = {
     {
       flags: "--endpoint <url>",
       description: "OTLP exporter endpoint",
-      default: "http://127.0.0.1:4317",
+      default: DEFAULT_ENDPOINT,
     },
   ],
-  plan: pendingPlan(
-    "telemetry",
-    "Inject OTEL_* env into the shell profile, emit a Bindplane collector.yaml and a Claude Code Analytics fetcher script + cron line; never calls the API or installs cron.",
-  ),
+  plan: telemetryPlan,
 };
