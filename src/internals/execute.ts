@@ -1,7 +1,7 @@
 import { resolve } from "node:path";
 import { FsTransaction, readIfExists } from "./fsxn.js";
 import { deepMerge, parseJsoncText } from "./merge.js";
-import type { Plan, PlanContext, WriteAction } from "./plan.js";
+import type { ExecAction, Plan, PlanContext, WriteAction } from "./plan.js";
 import { ensureTrailingNewline, jsonFile } from "./render.js";
 import { VerificationReport } from "./verify.js";
 
@@ -19,6 +19,7 @@ export interface PlanResult {
   writes: WriteSummary[];
   docs: { describe: string; path?: string }[];
   probes: { describe: string }[];
+  execs: { describe: string; argv: string[]; ran: boolean; code?: number | null; ok?: boolean }[];
   backups: string[];
   report?: VerificationReport;
 }
@@ -53,6 +54,7 @@ export async function executePlan(plan: Plan, ctx: PlanContext): Promise<PlanRes
   const writes: WriteSummary[] = [];
   const docs: PlanResult["docs"] = [];
   const probes: PlanResult["probes"] = [];
+  const execActions: ExecAction[] = [];
 
   for (const action of plan.actions) {
     if (action.kind === "write") {
@@ -76,6 +78,8 @@ export async function executePlan(plan: Plan, ctx: PlanContext): Promise<PlanRes
         txn.stage(resolvePath(ctx, action.path), ensureTrailingNewline(action.text));
       }
       docs.push({ describe: action.describe, path: action.path });
+    } else if (action.kind === "exec") {
+      execActions.push(action);
     } else {
       probes.push({ describe: action.describe });
     }
@@ -84,6 +88,23 @@ export async function executePlan(plan: Plan, ctx: PlanContext): Promise<PlanRes
   let backups: string[] = [];
   if (ctx.apply) {
     backups = txn.commit().backups;
+  }
+
+  // Local mutating commands run only on apply, after files are in place.
+  const execs: PlanResult["execs"] = [];
+  for (const a of execActions) {
+    if (ctx.apply) {
+      const res = await ctx.run(a.argv);
+      execs.push({
+        describe: a.describe,
+        argv: a.argv,
+        ran: true,
+        code: res.code,
+        ok: res.code === 0 || Boolean(a.allowFailure),
+      });
+    } else {
+      execs.push({ describe: a.describe, argv: a.argv, ran: false });
+    }
   }
 
   let report: VerificationReport | undefined;
@@ -96,7 +117,16 @@ export async function executePlan(plan: Plan, ctx: PlanContext): Promise<PlanRes
     }
   }
 
-  return { capability: plan.capability, applied: ctx.apply, writes, docs, probes, backups, report };
+  return {
+    capability: plan.capability,
+    applied: ctx.apply,
+    writes,
+    docs,
+    probes,
+    execs,
+    backups,
+    report,
+  };
 }
 
 /** Human-readable summary of a plan result (used when --json is off). */
@@ -110,6 +140,10 @@ export function summarizeResult(result: PlanResult): string {
   }
   for (const d of result.docs) {
     out.push(`  [doc]${d.path ? ` ${d.path}` : ""} — ${d.describe}`);
+  }
+  for (const e of result.execs) {
+    const status = e.ran ? ` (exit ${e.code})` : " (run with --apply)";
+    out.push(`  [exec] ${e.argv.join(" ")} — ${e.describe}${status}`);
   }
   for (const p of result.probes) {
     out.push(`  [probe] ${p.describe}${result.report ? "" : " (run with --verify)"}`);

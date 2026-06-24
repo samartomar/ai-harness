@@ -63,4 +63,16 @@ describe("WindowsAdapter", () => {
       "samar:(R)",
     ]);
   });
+
+  it("builds a directory junction argv", () => {
+    const a = adapter(() => undefined);
+    expect(a.symlinkDirArgv("C:/link", "C:/target")).toEqual([
+      "cmd",
+      "/c",
+      "mklink",
+      "/J",
+      "C:/link",
+      "C:/target",
+    ]);
+  });
 });

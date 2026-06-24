@@ -41,7 +41,21 @@ export interface ProbeAction {
   run: (ctx: PlanContext) => Promise<Check> | Check;
 }
 
-export type Action = WriteAction | DocAction | ProbeAction;
+/**
+ * A LOCAL mutating command run after writes under `--apply` (e.g. icacls/chmod
+ * to lock down a PEM, `mklink /J` for a VDI junction, `update-ca-certificates`).
+ * It must never contact or mutate a remote system — that is what keeps the
+ * "no faked provisioning" guarantee intact.
+ */
+export interface ExecAction {
+  kind: "exec";
+  describe: string;
+  argv: string[];
+  /** Continue the plan even if the command exits non-zero. */
+  allowFailure?: boolean;
+}
+
+export type Action = WriteAction | DocAction | ProbeAction | ExecAction;
 
 export interface Plan {
   capability: string;
@@ -109,6 +123,14 @@ export function doc(describe: string, text: string, path?: string): DocAction {
 
 export function probe(describe: string, run: ProbeAction["run"]): ProbeAction {
   return { kind: "probe", describe, run };
+}
+
+export function exec(
+  describe: string,
+  argv: string[],
+  opts: { allowFailure?: boolean } = {},
+): ExecAction {
+  return { kind: "exec", describe, argv, allowFailure: opts.allowFailure };
 }
 
 export function plan(capability: string, ...actions: Action[]): Plan {

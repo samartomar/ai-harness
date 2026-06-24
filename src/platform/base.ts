@@ -40,6 +40,8 @@ export interface HostAdapter {
   trustStoreCerts(pattern: string): Promise<CertEntry[]>;
   /** The argv that would restrict `path` to the current user (icacls/chmod). Not executed here. */
   lockDownFileArgv(path: string): string[];
+  /** The argv that creates a directory symlink/junction at `linkPath` → `targetPath`. */
+  symlinkDirArgv(linkPath: string, targetPath: string): string[];
   cpuPhysicalCores(): Promise<number>;
   totalRamGb(): Promise<number>;
   gpu(): Promise<GpuInfo>;

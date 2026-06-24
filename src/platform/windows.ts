@@ -47,6 +47,11 @@ export class WindowsAdapter implements HostAdapter {
     return ["icacls", path, "/inheritance:r", "/grant:r", `${user}:(R)`];
   }
 
+  symlinkDirArgv(linkPath: string, targetPath: string): string[] {
+    // Directory junction — works without administrator/Developer-Mode rights.
+    return ["cmd", "/c", "mklink", "/J", linkPath, targetPath];
+  }
+
   async cpuPhysicalCores(): Promise<number> {
     const res = await this.run(
       pwsh("(Get-CimInstance Win32_Processor | Measure-Object -Property NumberOfCores -Sum).Sum"),

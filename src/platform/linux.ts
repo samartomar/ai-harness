@@ -62,6 +62,10 @@ export class LinuxAdapter implements HostAdapter {
     return ["chmod", "600", path];
   }
 
+  symlinkDirArgv(linkPath: string, targetPath: string): string[] {
+    return ["ln", "-sfn", targetPath, linkPath];
+  }
+
   async cpuPhysicalCores(): Promise<number> {
     try {
       const info = readFileSync("/proc/cpuinfo", "utf8");

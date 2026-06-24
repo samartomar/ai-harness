@@ -1,0 +1,5 @@
+# Normalize to LF in the repo so Biome formatting and golden-file tests stay
+# stable regardless of the contributor's OS / git autocrlf setting.
+* text=auto eol=lf
+*.png binary
+*.ico binary

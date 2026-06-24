@@ -43,6 +43,10 @@ export class DarwinAdapter implements HostAdapter {
     return ["chmod", "600", path];
   }
 
+  symlinkDirArgv(linkPath: string, targetPath: string): string[] {
+    return ["ln", "-sfn", targetPath, linkPath];
+  }
+
   async cpuPhysicalCores(): Promise<number> {
     const res = await this.run(["sysctl", "-n", "hw.physicalcpu"]);
     const n = parseFirstInt(res.stdout);
