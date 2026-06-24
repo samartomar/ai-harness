@@ -60,7 +60,16 @@ describe("bootstrap-ai — canon files", () => {
     expect(w.has(".ai-context/adapters/_shared-canonical-block.md")).toBe(true);
     expect(w.has(".ai-context/rules/agent-behavior-core.md")).toBe(true);
     expect(w.has(".ai-context/adapters/claude.md")).toBe(true);
+    expect(w.has(".ai-context/adapters/other-tools.md")).toBe(true);
     expect(w.has(".ai-context/REGENERATION.md")).toBe(true);
+  });
+
+  it("the other-tools doc explains wiring an unsupported tool (incl. Kiro)", async () => {
+    const w = writesByPath((await command.plan(makeCtx())).actions);
+    const doc = w.get(".ai-context/adapters/other-tools.md")?.contents ?? "";
+    expect(doc).toContain("Kiro");
+    expect(doc).toContain(".kiro/steering/");
+    expect(doc).toContain("RULE_ROUTER.md");
   });
 
   it("the behavior core carries the four-part working discipline + invariants", async () => {
@@ -111,6 +120,16 @@ describe("bootstrap-ai — CLI-aware bootloaders", () => {
     expect(mdc.startsWith("---\n")).toBe(true);
     expect(mdc).toContain("alwaysApply: true");
     expect(mdc).toContain("<!-- BEGIN ai-canonical:shared");
+  });
+
+  it("--cli kiro writes a Kiro steering file (inclusion: always + router live-ref)", async () => {
+    const w = writesByPath((await command.plan(makeCtx({ cli: "kiro" }))).actions);
+    const steering = w.get(".kiro/steering/00-canon.md")?.contents ?? "";
+    expect(steering.startsWith("---\n")).toBe(true);
+    expect(steering).toContain("inclusion: always");
+    expect(steering).toContain("#[[file:.ai-context/RULE_ROUTER.md]]");
+    expect(steering).toContain("<!-- BEGIN ai-canonical:shared");
+    expect(w.has("CLAUDE.md")).toBe(false);
   });
 
   it("--all-tools dedupes AGENTS.md to a single write", async () => {

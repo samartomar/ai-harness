@@ -10,6 +10,7 @@ import {
   resolveTargetClis,
   resolveTargets,
 } from "../../src/internals/cli-detect.js";
+import { SUPPORTED_CLIS } from "../../src/internals/clis.js";
 import type { PlanContext } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
@@ -81,6 +82,13 @@ describe("detectOne", () => {
     expect(p.present).toBe(true);
     expect(p.detail).toBe("agy");
   });
+
+  it("detects Kiro via its ~/.kiro config dir", async () => {
+    configDir(".kiro");
+    const p = await detectOne(makeCtx(), "kiro");
+    expect(p.present).toBe(true);
+    expect(p.detail).toBe("~/.kiro");
+  });
 });
 
 describe("detectClis / presentClis", () => {
@@ -88,7 +96,7 @@ describe("detectClis / presentClis", () => {
     configDir(".claude");
     configDir(".cursor");
     const all = await detectClis(makeCtx({}, ["codex"]));
-    expect(all).toHaveLength(10);
+    expect(all).toHaveLength(SUPPORTED_CLIS.length);
     expect(presentClis(all)).toEqual(expect.arrayContaining(["claude", "cursor", "codex"]));
     expect(presentClis(all)).not.toContain("zed");
   });
@@ -109,7 +117,7 @@ describe("resolveTargetClis", () => {
 
   it("--all-tools wins over --detect", async () => {
     const clis = await resolveTargetClis(makeCtx({ detect: true, allTools: true }, []));
-    expect(clis).toHaveLength(10);
+    expect(clis).toHaveLength(SUPPORTED_CLIS.length);
   });
 
   it("an explicit --cli list wins over --detect", async () => {

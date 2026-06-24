@@ -51,7 +51,7 @@ function addSharedFlags(cmd: Command): Command {
     .option("--apply", "execute the plan (default: dry-run; nothing is written)")
     .option("--verify", "run verification probes after applying")
     .option("--json", "emit machine-readable JSON")
-    .option("--context-dir <dir>", "canonical context directory name", ".ai-context")
+    .option("--context-dir <dir>", "canonical context directory name (any name works)", "ai-coding")
     .option("--root <dir>", "target repository/workstation root")
     .option("--cli <list>", "target AI CLIs (comma-separated): claude,codex,cursor,antigravity,…")
     .option("--all-tools", "target every supported AI CLI")

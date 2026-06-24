@@ -31,6 +31,7 @@ const SIGNALS: Record<Cli, DetectSignal> = {
   opencode: { configDirs: [".config/opencode", ".opencode"], binaries: ["opencode"] },
   zed: { configDirs: [".config/zed", ".zed"], binaries: ["zed"] },
   kimi: { configDirs: [".kimi", ".config/kimi"], binaries: ["kimi"] },
+  kiro: { configDirs: [".kiro"], binaries: ["kiro"] },
 };
 
 export interface CliPresence {
@@ -113,6 +114,7 @@ export function detectFallbackNotice(): string {
   return [
     "No AI CLIs were detected on this machine (no known config dir or binary on PATH),",
     "so the target defaulted to `claude`. To target specific tools, pass `--cli <list>`",
-    "(e.g. `--cli claude,codex`) or `--all-tools`; or install a CLI and re-run with `--detect`.",
+    "(e.g. `--cli kiro,codex`) or `--all-tools`; or install a CLI and re-run with `--detect`.",
+    "Supported: claude, codex, cursor, antigravity, gemini, copilot, windsurf, opencode, zed, kimi, kiro.",
   ].join("\n");
 }

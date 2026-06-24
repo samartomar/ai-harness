@@ -287,6 +287,13 @@ const CLI_META: Record<Cli, CliMeta> = {
     loads: "Kimi reads the `AGENTS.md` standard; load the router from there.",
     baseline: "Kimi config",
   },
+  kiro: {
+    label: "Kiro",
+    entry: "`.kiro/steering/*.md` (workspace) + root `AGENTS.md`",
+    loads:
+      "Kiro always-loads `.kiro/steering/*.md` files whose front-matter is `inclusion: always`, and natively reads the root `AGENTS.md` standard. It can live-reference files via `#[[file:...]]`.",
+    baseline: "`~/.kiro/steering/` (global steering, applies to every workspace)",
+  },
 };
 
 /** A tool-specific wiring note under `<dir>/adapters/<cli>.md`. */
@@ -351,6 +358,35 @@ export function regenerationDoc(dir: string, bootloaders: string[]): string {
   );
 }
 
+/**
+ * A standing doc on wiring a tool aih doesn't natively target — so an unsupported
+ * tool (or a brand-new one) is never a dead end. Lists each tool's rules-file
+ * mechanism; the rule is always the same: a thin pointer to `RULE_ROUTER.md`.
+ */
+export function otherToolsDoc(dir: string): string {
+  return lines(
+    "# Wiring another AI tool to this canon",
+    "",
+    "`aih bootstrap-ai --cli <tool>` writes a native bootloader for: claude, codex,",
+    "cursor, antigravity, gemini, copilot, windsurf, opencode, zed, kimi, kiro.",
+    "",
+    "For a tool aih does not target yet, point its project rules/config file at",
+    `\`${dir}/RULE_ROUTER.md\` and paste the block from`,
+    `\`${dir}/adapters/_shared-canonical-block.md\`. Each tool's mechanism:`,
+    "",
+    `- **Kiro** — \`.kiro/steering/<name>.md\` with front-matter \`inclusion: always\`; live-reference the router with \`#[[file:${dir}/RULE_ROUTER.md]]\`. Also reads root \`AGENTS.md\`.`,
+    "- **Cursor** — `.cursor/rules/<name>.mdc` with `alwaysApply: true`.",
+    "- **Windsurf** — `.windsurfrules` at the repo root.",
+    "- **GitHub Copilot** — `.github/copilot-instructions.md`.",
+    "- **AGENTS.md-aware** (Codex, OpenCode, Zed, Kimi, Antigravity, Kiro) — root `AGENTS.md`.",
+    "- **Gemini CLI / Antigravity** — `GEMINI.md` (repo root or `~/.gemini/`).",
+    "- **Anything else** — most agent IDEs read a project rules file; put a one-paragraph pointer to `RULE_ROUTER.md` in it.",
+    "",
+    "Keep it a thin pointer — the canon stays the single source. Re-run",
+    "`aih bootstrap-ai --cli <tool>` once aih adds native support for it.",
+  );
+}
+
 // ---- bootloaders ----------------------------------------------------------
 
 /** The root bootloader file(s) each CLI reads, in canonical path form. */
@@ -365,6 +401,7 @@ const CLI_BOOTLOADERS: Record<Cli, string[]> = {
   cursor: [posix.join(".cursor", "rules", "00-canon.mdc")],
   windsurf: [".windsurfrules"],
   copilot: [posix.join(".github", "copilot-instructions.md")],
+  kiro: [posix.join(".kiro", "steering", "00-canon.md")],
 };
 
 /** The deduped set of bootloader files to write for a CLI selection (sorted-stable). */
@@ -380,6 +417,21 @@ export function bootloaderPaths(clis: readonly Cli[]): string[] {
 export function bootloaderPreamble(path: string, dir: string, repoName: string): string {
   const norm = path.replace(/\\/g, "/");
   const seeRegen = `The shared block below is generated from \`${dir}/\` (see \`${dir}/REGENERATION.md\`).`;
+  if (norm.startsWith(".kiro/steering/")) {
+    // Kiro steering file: YAML front-matter `inclusion: always` keeps it loaded in
+    // every interaction; `#[[file:...]]` live-references the router.
+    return lines(
+      frontmatter({ inclusion: "always" }),
+      "",
+      `# ${repoName} — Kiro steering (canon)`,
+      "",
+      "This file is not the full rulebook. It is Kiro's always-on entry point;",
+      `canonical guidance lives in \`${dir}/\` (start at \`RULE_ROUTER.md\`). ${seeRegen}`,
+      "",
+      `Live router reference: #[[file:${dir}/RULE_ROUTER.md]]`,
+      `Full tool notes: \`${dir}/adapters/kiro.md\`.`,
+    );
+  }
   if (norm === "CLAUDE.md") {
     return lines(
       `# ${repoName} — Claude bootloader`,

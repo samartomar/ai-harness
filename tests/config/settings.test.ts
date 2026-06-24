@@ -3,10 +3,10 @@ import { loadSettings } from "../../src/config/settings.js";
 import { SettingsError } from "../../src/errors.js";
 
 describe("loadSettings", () => {
-  it("defaults to dry-run with .ai-context and the Zscaler CA pattern", () => {
+  it("defaults to dry-run with ai-coding and the Zscaler CA pattern", () => {
     const s = loadSettings({});
     expect(s.apply).toBe(false);
-    expect(s.contextDir).toBe(".ai-context");
+    expect(s.contextDir).toBe("ai-coding");
     expect(s.caPattern).toBe("Zscaler");
   });
 

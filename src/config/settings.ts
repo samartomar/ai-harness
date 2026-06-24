@@ -35,9 +35,7 @@ export function loadSettings(env: NodeJS.ProcessEnv, overrides: Partial<Settings
     const apply = overrides.apply ?? envBool(env.AIH_APPLY, false);
     const verify = overrides.verify ?? envBool(env.AIH_VERIFY, false);
     const json = overrides.json ?? envBool(env.AIH_JSON, false);
-    const contextDir = ContextDir.parse(
-      overrides.contextDir ?? env.AIH_CONTEXT_DIR ?? ".ai-context",
-    );
+    const contextDir = ContextDir.parse(overrides.contextDir ?? env.AIH_CONTEXT_DIR ?? "ai-coding");
     const root = overrides.root ?? env.AIH_ROOT ?? process.cwd();
     const caPattern = (overrides.caPattern ?? env.AIH_CA_PATTERN ?? "Zscaler").trim();
     if (caPattern.length === 0) {

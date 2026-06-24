@@ -21,6 +21,7 @@ import {
   agentBehaviorCoreDoc,
   bootloaderPaths,
   bootloaderPreamble,
+  otherToolsDoc,
   regenerationDoc,
   ruleRouterDoc,
   SHARED_MARKER,
@@ -140,6 +141,11 @@ async function bootstrapAiPlan(ctx: PlanContext): Promise<Plan> {
   }
 
   actions.push(
+    writeText(
+      posix.join(dir, "adapters", "other-tools.md"),
+      otherToolsDoc(dir),
+      "how to wire any AI tool aih doesn't natively target (Kiro, etc.)",
+    ),
     writeText(
       posix.join(dir, "REGENERATION.md"),
       regenerationDoc(dir, bootloaders),

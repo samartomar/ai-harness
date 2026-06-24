@@ -15,6 +15,7 @@ export const SUPPORTED_CLIS = [
   "opencode",
   "zed",
   "kimi",
+  "kiro",
 ] as const;
 
 export type Cli = (typeof SUPPORTED_CLIS)[number];

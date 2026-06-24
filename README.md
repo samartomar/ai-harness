@@ -45,7 +45,7 @@ node dist/cli.js --help
 | `aih profile` | Recursively detect the repo's stack and synthesize Cursor stack rules (`.cursor/rules/*.mdc`). Root bootloaders are owned by `bootstrap-ai`. |
 | `aih ecc` | Install [affaan-m/ECC](https://github.com/affaan-m/ECC) (skills, instincts, memory, security, research-first) for the selected CLIs, scoped to the detected stack: Claude plugin path, `ecc-install` for codex/cursor/zed/opencode, `consult` advisor otherwise. |
 | `aih superpowers` | Install [obra/Superpowers](https://github.com/obra/Superpowers) (brainstorm → plan → TDD → subagent-review skills) for the selected CLIs. |
-| `aih scaffold` | Create the canonical context dir (`--context-dir`, default `.ai-context`) — INDEX/SKILL skeleton + a secret deny-list + a pre-commit hook. (Bootloaders are `bootstrap-ai`'s job.) |
+| `aih scaffold` | Create the canonical context dir (`--context-dir`, default `ai-coding`) — INDEX/SKILL skeleton + a secret deny-list + a pre-commit hook. (Bootloaders are `bootstrap-ai`'s job.) |
 | `aih guardrails` | Generate `.gitleaks.toml`, `.pre-commit-config.yaml`, and a CI license gate that blocks AGPL/strong-copyleft. |
 | `aih secrets` | Scan for plaintext `.env*`/`secrets/` and write agent deny rules + vault-injection guidance. |
 | `aih mcp` | Generate `.mcp.json` (local/project/remote scopes) and document the SSO MCP gateway. |
@@ -66,20 +66,37 @@ Settings also read from `AIH_*` env vars (`AIH_APPLY`, `AIH_CONTEXT_DIR`, …).
 `aih ecc`, `aih superpowers`, and `aih bootstrap-ai` only touch the agent CLIs you actually use.
 Pass `--cli` with a comma-separated list, `--all-tools` for every supported CLI, or `--detect` to
 auto-target the CLIs found on this machine; the default is `claude`. Supported:
-`claude, codex, cursor, antigravity, gemini, copilot, windsurf, opencode, zed, kimi`.
+`claude, codex, cursor, antigravity, gemini, copilot, windsurf, opencode, zed, kimi, kiro`.
 
 ```bash
 aih ecc --cli claude,codex          # ECC for Claude (plugin) + Codex (ecc-install)
 aih superpowers --cli antigravity   # agy plugin install … (runs under --apply)
+aih bootstrap-ai --cli kiro         # writes .kiro/steering/00-canon.md (inclusion: always)
 aih bootstrap-ai --detect           # target only the CLIs installed here
 aih init . --all-tools              # bootstrap a repo for every CLI at once
 ```
 
+Each CLI gets its native entry: Claude → `CLAUDE.md`, Codex/OpenCode/Zed/Kimi/Antigravity →
+`AGENTS.md`, Gemini → `GEMINI.md`, Cursor → `.cursor/rules/*.mdc`, Windsurf → `.windsurfrules`,
+Copilot → `.github/copilot-instructions.md`, **Kiro → `.kiro/steering/00-canon.md`** (`inclusion:
+always`, with a `#[[file:…/RULE_ROUTER.md]]` live-reference). For a tool aih doesn't target yet,
+`<context-dir>/adapters/other-tools.md` documents how to point it at `RULE_ROUTER.md`.
+
 **Detection** (`--detect`) looks for each tool's config dir (`~/.claude`, `~/.codex`, `~/.gemini`,
-`~/.cursor`, …) or its binary on PATH (via the Runner seam — no real process in tests). Precedence:
-`--all-tools` > `--cli` > `--detect` > default `claude`. `aih doctor` reports which CLIs it detects,
-and `aih bootstrap-ai --verify` adds a per-CLI **"installed"** confirm step (pass = found, skip =
-not here yet, bootloader still written) alongside the drift gate.
+`~/.cursor`, `~/.kiro`, …) or its binary on PATH (via the Runner seam — no real process in tests).
+Precedence: `--all-tools` > `--cli` > `--detect` > default `claude`. When `--detect` finds nothing it
+defaults to `claude` and says so. `aih doctor` reports which CLIs it detects, and
+`aih bootstrap-ai --verify` adds a per-CLI **"installed"** confirm step (pass = found, skip = not here
+yet, bootloader still written) alongside the drift gate.
+
+**Canon directory name.** Every generated file and reference adopts `--context-dir <name>` — use any
+name you like; the default is the visible `ai-coding/`:
+
+```bash
+aih init                          # → ai-coding/   (default, visible)
+aih init --context-dir my-canon   # → my-canon/    (any name; everything adapts)
+aih init --context-dir .ai-context  # → hidden, the old default
+```
 
 Shell-runnable installs (`ecc-install`, `agy`/`copilot plugin install`) execute under `--apply`;
 in-tool slash-command installs (Claude/Codex/Kimi plugins) are emitted as exact commands to run
