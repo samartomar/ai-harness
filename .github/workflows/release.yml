@@ -1,0 +1,38 @@
+# Cut a GitHub Release when a v* tag is pushed. Verifies the gates (typecheck,
+# lint, test, build) first so a broken tag never ships, then creates the Release
+# with auto-generated notes. Does NOT publish to npm — that is a separate,
+# deliberate decision (see CHANGELOG / package distribution).
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # create the GitHub Release for the tag
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - name: Verify (typecheck · lint · test · build)
+        run: |
+          npx tsc --noEmit
+          npx biome ci src tests
+          npx vitest run
+          npx tsup
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes
