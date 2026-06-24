@@ -1,12 +1,10 @@
-import { upsertManagedBlock } from "../internals/envfile.js";
-import { readIfExists } from "../internals/fsxn.js";
 import {
   type CommandSpec,
   doc,
+  envBlock,
   type PlanContext,
   plan,
   probe,
-  writeText,
 } from "../internals/plan.js";
 import { sizeForHost } from "./sizing.js";
 import { HARDWARE_SCOPE, inferenceEnv, profileDoc } from "./templates.js";
@@ -42,13 +40,6 @@ async function buildPlan(ctx: PlanContext) {
   const sizing = sizeForHost(profile, modelGb);
 
   const profilePath = ctx.host.shellProfilePaths()[0] ?? "";
-  const existing = readIfExists(profilePath) ?? "";
-  const block = upsertManagedBlock(
-    existing,
-    HARDWARE_SCOPE,
-    inferenceEnv(sizing),
-    ctx.host.envShell(),
-  );
 
   const summary = profileDoc(
     {
@@ -64,9 +55,11 @@ async function buildPlan(ctx: PlanContext) {
 
   return plan(
     "hardware",
-    writeText(
+    envBlock(
       profilePath,
-      block,
+      HARDWARE_SCOPE,
+      ctx.host.envShell(),
+      inferenceEnv(sizing),
       `Write tuned OLLAMA_* env block (parallel=${sizing.parallelRequests}, quant=${sizing.quantization}) to the shell profile`,
     ),
     doc(

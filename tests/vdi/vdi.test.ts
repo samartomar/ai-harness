@@ -1,6 +1,6 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { executePlan } from "../../src/internals/execute.js";
 import type {
@@ -10,7 +10,6 @@ import type {
   Plan,
   PlanContext,
   ProbeAction,
-  WriteAction,
 } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
 import type { Platform, VdiInfo } from "../../src/platform/base.js";
@@ -61,6 +60,29 @@ function ctx(
 
 function byKind<K extends Action["kind"]>(plan: Plan, kind: K): Extract<Action, { kind: K }>[] {
   return plan.actions.filter((a): a is Extract<Action, { kind: K }> => a.kind === kind);
+}
+
+function findEnvBlock(
+  plan: Plan,
+  scope = "vdi",
+): Extract<Action, { kind: "envblock" }> | undefined {
+  return plan.actions.find(
+    (a): a is Extract<Action, { kind: "envblock" }> => a.kind === "envblock" && a.scope === scope,
+  );
+}
+
+/**
+ * The redirect env block is an `envblock` action; the executor renders + folds it
+ * into the shell profile. Apply the plan against the (temp) profile and return
+ * its contents so marker/format/idempotency assertions inspect real output. Pass
+ * a ctx whose env home points into the temp dir (e.g. HOME: dir / USERPROFILE: dir).
+ */
+async function renderProfile(c: PlanContext): Promise<string> {
+  const profile = c.host.shellProfilePaths()[0] as string;
+  mkdirSync(dirname(profile), { recursive: true });
+  const applyCtx: PlanContext = { ...c, apply: true };
+  await executePlan(await command.plan(applyCtx), applyCtx);
+  return readFileSync(profile, "utf8");
 }
 
 /** Assert the plan carries exactly one probe and return it (narrowed, never undefined). */
@@ -146,9 +168,11 @@ describe("VDI host (posix)", () => {
   const env = { USER: "alice", HOME: "/home/alice" };
 
   it("redirects every cache/DB env var into the scratch root", async () => {
-    const p = await command.plan(ctx({ platform: "linux", vdi: VDI_ON, env }));
-    const write = (byKind(p, "write") as WriteAction[])[0];
-    const body = write?.contents ?? "";
+    // HOME points into the temp dir so the executor can render the profile there;
+    // the scratch root is /tmp-based (independent of HOME), so the values match.
+    const body = await renderProfile(
+      ctx({ platform: "linux", vdi: VDI_ON, env: { USER: "alice", HOME: dir } }),
+    );
     const scratch = posixScratch("alice");
 
     expect(body).toContain(`OLLAMA_MODELS=${under(scratch, "ollama", "models")}`);
@@ -159,20 +183,23 @@ describe("VDI host (posix)", () => {
     expect(body).toContain(`PIP_CACHE_DIR=${under(scratch, "pip")}`);
   });
 
-  it("wraps the redirects in an aih-managed (vdi) block", async () => {
+  it("wraps the redirects in an aih-managed (vdi) block on the shell profile", async () => {
     const p = await command.plan(ctx({ platform: "linux", vdi: VDI_ON, env }));
-    const write = (byKind(p, "write") as WriteAction[])[0];
-    expect(write?.contents).toContain("# >>> aih managed (vdi) >>>");
-    expect(write?.contents).toContain("# <<< aih managed (vdi) <<<");
-    // Targets the shell profile (an absolute path from the adapter), not a
-    // repo-relative path.
+    // The redirect block is an envblock (scope "vdi") targeting the shell profile.
+    const eb = findEnvBlock(p);
     const profile = makeHostAdapter({
       platform: "linux",
       run: fakeRunner(() => undefined),
       env,
     }).shellProfilePaths()[0];
-    expect(write?.path).toBe(profile);
-    expect(write?.path).toContain(".bashrc");
+    expect(eb?.path).toBe(profile);
+    expect(eb?.path).toContain(".bashrc");
+    // The executor renders the managed-block markers.
+    const body = await renderProfile(
+      ctx({ platform: "linux", vdi: VDI_ON, env: { USER: "alice", HOME: dir } }),
+    );
+    expect(body).toContain("# >>> aih managed (vdi) >>>");
+    expect(body).toContain("# <<< aih managed (vdi) <<<");
   });
 
   it("emits an mkdir exec for the scratch root (allowFailure)", async () => {
@@ -223,18 +250,17 @@ describe("VDI host (windows)", () => {
   }
 
   it("uses cmd mkdir and a PowerShell-formatted env block", async () => {
-    const p = await command.plan(ctx({ platform: "windows", vdi: VDI_ON, env }));
-    const write = (byKind(p, "write") as WriteAction[])[0];
     const scratch = winScratch();
+    // Render the profile into a temp USERPROFILE; TEMP (scratch source) is unchanged.
+    const body = await renderProfile(
+      ctx({ platform: "windows", vdi: VDI_ON, env: { ...env, USERPROFILE: dir } }),
+    );
 
     // PowerShell exports are double-quoted; paths are normalized to forward slashes.
-    expect(write?.contents).toContain(
-      `$env:OLLAMA_MODELS = "${under(scratch, "ollama", "models")}"`,
-    );
-    expect(write?.contents).toContain(
-      `$env:CRG_GLOBAL_DB_PATH = "${under(scratch, "crg", "global.db")}"`,
-    );
+    expect(body).toContain(`$env:OLLAMA_MODELS = "${under(scratch, "ollama", "models")}"`);
+    expect(body).toContain(`$env:CRG_GLOBAL_DB_PATH = "${under(scratch, "crg", "global.db")}"`);
 
+    const p = await command.plan(ctx({ platform: "windows", vdi: VDI_ON, env }));
     const mkdir = (byKind(p, "exec") as ExecAction[]).find(
       (e) => e.describe === "create local scratch root",
     );
@@ -267,8 +293,15 @@ describe("custom --scratch override", () => {
       ctx({ platform: "linux", vdi: VDI_ON, env, options: { scratch } }),
     );
 
-    const write = (byKind(p, "write") as WriteAction[])[0];
-    expect(write?.contents).toContain(`OLLAMA_MODELS=${under(scratch, "ollama", "models")}`);
+    const body = await renderProfile(
+      ctx({
+        platform: "linux",
+        vdi: VDI_ON,
+        env: { USER: "alice", HOME: dir },
+        options: { scratch },
+      }),
+    );
+    expect(body).toContain(`OLLAMA_MODELS=${under(scratch, "ollama", "models")}`);
 
     const execs = byKind(p, "exec") as ExecAction[];
     expect(execs.find((e) => e.describe === "create local scratch root")?.argv).toEqual([
@@ -296,14 +329,14 @@ describe("custom --scratch override", () => {
 });
 
 describe("boundary: no remote mutation, no cloud writes", () => {
-  it("emits only write/exec/probe on a VDI host — never an unexpected doc", async () => {
+  it("emits only envblock/exec/probe on a VDI host — never an unexpected doc", async () => {
     const p = await command.plan(
       ctx({ platform: "linux", vdi: VDI_ON, env: { USER: "alice", HOME: "/home/alice" } }),
     );
     // The VDI path is pure local mutation; cloud setup (none here) would be a doc.
     expect(byKind(p, "doc")).toHaveLength(0);
     for (const a of p.actions) {
-      expect(["write", "exec", "probe"]).toContain(a.kind);
+      expect(["envblock", "exec", "probe"]).toContain(a.kind);
     }
   });
 
@@ -316,35 +349,28 @@ describe("boundary: no remote mutation, no cloud writes", () => {
 });
 
 describe("idempotency", () => {
-  it("re-running over its own output yields a byte-identical managed block", async () => {
-    const env = { USER: "alice", HOME: "/home/alice" };
-    const profile = join(dir, "profile.sh");
+  it("re-applying over its own output yields a byte-identical profile, preserving user lines", async () => {
+    const c = ctx({ platform: "linux", vdi: VDI_ON, env: { USER: "alice", HOME: dir } });
+    const profile = c.host.shellProfilePaths()[0] as string; // <dir>/.bashrc
+    mkdirSync(dirname(profile), { recursive: true });
+    writeFileSync(profile, "export USER_KEEP=1\n");
+    const applyCtx: PlanContext = { ...c, apply: true };
 
-    const first = await command.plan(ctx({ platform: "linux", vdi: VDI_ON, env }));
-    const firstBody = (byKind(first, "write") as WriteAction[])[0]?.contents ?? "";
+    await executePlan(await command.plan(applyCtx), applyCtx);
+    const first = readFileSync(profile, "utf8");
+    await executePlan(await command.plan(applyCtx), applyCtx);
+    const second = readFileSync(profile, "utf8");
 
-    // Seed a profile that already contains the generated block plus a user line,
-    // then confirm a second computation reproduces the same block and keeps the
-    // user line intact.
-    writeFileSync(profile, `export USER_KEEP=1\n\n${firstBody}`);
-
-    // Re-derive the block against the seeded file by pointing the env block
-    // helper at the same vars (the plan always regenerates from REDIRECTS).
-    const second = await command.plan(ctx({ platform: "linux", vdi: VDI_ON, env }));
-    const secondBody = (byKind(second, "write") as WriteAction[])[0]?.contents ?? "";
-
-    expect(secondBody).toBe(firstBody);
-    expect(secondBody).toContain(
-      `OLLAMA_MODELS=${under(posixScratch("alice"), "ollama", "models")}`,
-    );
+    expect(second).toBe(first); // byte-identical re-apply
+    expect(second).toContain("export USER_KEEP=1");
+    expect(second).toContain(`OLLAMA_MODELS=${under(posixScratch("alice"), "ollama", "models")}`);
+    expect(second.match(/# >>> aih managed \(vdi\) >>>/g)).toHaveLength(1);
   });
 
   it("replaces a pre-existing managed block on disk in place, preserving user lines", async () => {
-    // Point HOME at the temp dir so shellProfilePaths()[0] (~/.bashrc) is the
-    // file the plan actually reads via readIfExists — this exercises the real
-    // upsertManagedBlock replace path, not just deterministic generation.
-    const env = { USER: "alice", HOME: dir };
-    const bashrc = join(dir, ".bashrc");
+    const c = ctx({ platform: "linux", vdi: VDI_ON, env: { USER: "alice", HOME: dir } });
+    const bashrc = c.host.shellProfilePaths()[0] as string; // <dir>/.bashrc
+    mkdirSync(dirname(bashrc), { recursive: true });
 
     // Seed a STALE managed block (wrong scratch root) wrapped by user lines.
     const stale = [
@@ -360,29 +386,21 @@ describe("idempotency", () => {
     ].join("\n");
     writeFileSync(bashrc, stale);
 
-    const p = await command.plan(ctx({ platform: "linux", vdi: VDI_ON, env }));
-    const write = (byKind(p, "write") as WriteAction[])[0];
-    const body = write?.contents ?? "";
+    const applyCtx: PlanContext = { ...c, apply: true };
+    await executePlan(await command.plan(applyCtx), applyCtx);
+    const body = readFileSync(bashrc, "utf8");
 
-    // The plan targets ~/.bashrc and its computed contents replace the stale
-    // block with the fresh scratch root while keeping both user lines.
-    expect(write?.path).toBe(bashrc);
+    // The stale block is replaced with the fresh scratch root; user lines kept.
     expect(body).toContain("export USER_BEFORE=1");
     expect(body).toContain("export USER_AFTER=1");
     expect(body).not.toContain("/old/stale/ollama/models");
     expect(body).toContain(`OLLAMA_MODELS=${under(posixScratch("alice"), "ollama", "models")}`);
-    // Exactly one managed block survives (no duplication on re-run).
     const opens = body.match(/# >>> aih managed \(vdi\) >>>/g) ?? [];
     expect(opens).toHaveLength(1);
 
-    // And it is a genuine fixed point: applying the computed contents back to
-    // disk and re-planning yields byte-identical output.
-    writeFileSync(bashrc, body);
-    const again = await command.plan(ctx({ platform: "linux", vdi: VDI_ON, env }));
-    const againBody = (byKind(again, "write") as WriteAction[])[0]?.contents ?? "";
-    expect(againBody).toBe(body);
-    // Sanity: the post-write file on disk is exactly what the re-plan reproduces.
-    expect(readFileSync(bashrc, "utf8")).toBe(againBody);
+    // Fixed point: applying again yields a byte-identical file.
+    await executePlan(await command.plan(applyCtx), applyCtx);
+    expect(readFileSync(bashrc, "utf8")).toBe(body);
   });
 });
 
@@ -402,13 +420,13 @@ describe("contextDir independence", () => {
     const weird = { ...base, contextDir: "some/other/context-root" };
 
     const p = await command.plan(weird);
-    for (const w of byKind(p, "write") as WriteAction[]) {
-      expect(w.path).toBe(profile);
-      expect(w.path).not.toContain("context-root");
-    }
-    // Scratch paths in the block are not derived from contextDir either.
-    const body = (byKind(p, "write") as WriteAction[])[0]?.contents ?? "";
-    expect(body).not.toContain("context-root");
-    expect(body).toContain(`OLLAMA_MODELS=${under(posixScratch("alice"), "ollama", "models")}`);
+    // The redirect block targets the shell profile, never under the context dir.
+    const eb = findEnvBlock(p);
+    expect(eb?.path).toBe(profile);
+    expect(eb?.path).not.toContain("context-root");
+    // Scratch paths in the vars are not derived from contextDir either.
+    const values = (eb?.vars ?? []).map((v) => v.value).join(" ");
+    expect(values).not.toContain("context-root");
+    expect(values).toContain(under(posixScratch("alice"), "ollama", "models"));
   });
 });

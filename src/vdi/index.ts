@@ -1,14 +1,12 @@
 import { join } from "node:path";
-import { upsertManagedBlock } from "../internals/envfile.js";
-import { readIfExists } from "../internals/fsxn.js";
 import {
   type CommandSpec,
   doc,
+  envBlock,
   exec,
   type PlanContext,
   plan,
   probe,
-  writeText,
 } from "../internals/plan.js";
 import { redirectEnv } from "./redirects.js";
 
@@ -60,8 +58,6 @@ function vdiPlan(ctx: PlanContext) {
 
   const shell = ctx.host.envShell();
   const profilePath = ctx.host.shellProfilePaths()[0] ?? "";
-  const existing = readIfExists(profilePath) ?? "";
-  const profileContents = upsertManagedBlock(existing, SCOPE, redirectEnv(scratch), shell);
 
   const mkdirArgv =
     ctx.host.platform === "windows" ? ["cmd", "/c", "mkdir", scratch] : ["mkdir", "-p", scratch];
@@ -71,9 +67,11 @@ function vdiPlan(ctx: PlanContext) {
 
   return plan(
     SCOPE,
-    writeText(
+    envBlock(
       profilePath,
-      profileContents,
+      SCOPE,
+      shell,
+      redirectEnv(scratch),
       `redirect caches/SQLite onto local scratch (${vdi.reason})`,
     ),
     exec("create local scratch root", mkdirArgv, { allowFailure: true }),

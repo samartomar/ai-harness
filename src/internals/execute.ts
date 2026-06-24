@@ -1,7 +1,8 @@
 import { resolve } from "node:path";
+import { upsertManagedBlock } from "./envfile.js";
 import { FsTransaction, readIfExists } from "./fsxn.js";
 import { deepMerge, parseJsoncText } from "./merge.js";
-import type { ExecAction, Plan, PlanContext, WriteAction } from "./plan.js";
+import type { EnvBlockAction, ExecAction, Plan, PlanContext, WriteAction } from "./plan.js";
 import { ensureTrailingNewline, jsonFile } from "./render.js";
 import { VerificationReport } from "./verify.js";
 
@@ -55,6 +56,7 @@ export async function executePlan(plan: Plan, ctx: PlanContext): Promise<PlanRes
   const docs: PlanResult["docs"] = [];
   const probes: PlanResult["probes"] = [];
   const execActions: ExecAction[] = [];
+  const envBlockActions: EnvBlockAction[] = [];
 
   for (const action of plan.actions) {
     if (action.kind === "write") {
@@ -80,9 +82,36 @@ export async function executePlan(plan: Plan, ctx: PlanContext): Promise<PlanRes
       docs.push({ describe: action.describe, path: action.path });
     } else if (action.kind === "exec") {
       execActions.push(action);
+    } else if (action.kind === "envblock") {
+      envBlockActions.push(action);
     } else {
       probes.push({ describe: action.describe });
     }
+  }
+
+  // Fold env-block actions per file so multiple scopes COMPOSE (rather than the
+  // last write clobbering earlier ones): start from on-disk content and upsert
+  // each scope's managed block in order.
+  const envByPath = new Map<string, { display: string; blocks: EnvBlockAction[] }>();
+  for (const b of envBlockActions) {
+    const abs = resolvePath(ctx, b.path);
+    const group = envByPath.get(abs) ?? { display: b.path, blocks: [] };
+    group.blocks.push(b);
+    envByPath.set(abs, group);
+  }
+  for (const [absPath, { display, blocks }] of envByPath) {
+    const existed = readIfExists(absPath) !== undefined;
+    let content = readIfExists(absPath) ?? "";
+    for (const b of blocks) {
+      content = upsertManagedBlock(content, b.scope, b.vars, b.shell);
+    }
+    if (ctx.apply) txn.stage(absPath, content);
+    writes.push({
+      path: display,
+      describe: `managed env block(s): ${blocks.map((b) => b.scope).join(", ")}`,
+      merged: true,
+      effect: existed ? "merge" : "create",
+    });
   }
 
   let backups: string[] = [];

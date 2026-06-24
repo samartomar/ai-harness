@@ -1,10 +1,10 @@
 import { isAbsolute, join } from "node:path";
 import type { EnvVar } from "../internals/envfile.js";
-import { upsertManagedBlock } from "../internals/envfile.js";
 import { readIfExists } from "../internals/fsxn.js";
 import {
   type CommandSpec,
   doc,
+  envBlock,
   exec,
   type Plan,
   type PlanContext,
@@ -50,9 +50,7 @@ async function planCerts(ctx: PlanContext): Promise<Plan> {
   const bundle = certs.map((c) => c.pem).join("");
 
   const profile = ctx.host.shellProfilePaths()[0] ?? join(home, ".profile");
-  const existingProfile = readIfExists(profile) ?? "";
   const envVars = trustEnvVars(pemPath, outDir);
-  const profileBody = upsertManagedBlock(existingProfile, "certs", envVars, shell);
 
   return plan(
     "certs",
@@ -61,9 +59,11 @@ async function planCerts(ctx: PlanContext): Promise<Plan> {
     exec("lock down the PEM to the current user", ctx.host.lockDownFileArgv(pemPath)),
 
     // 2. Propagate trust to every runtime via shell-profile env exports.
-    writeText(
+    envBlock(
       profile,
-      profileBody,
+      "certs",
+      shell,
+      envVars,
       "export NODE_EXTRA_CA_CERTS / PIP_CERT / SSL_CERT_FILE / SSL_CERT_DIR / REQUESTS_CA_BUNDLE / CARGO_HTTP_CAINFO",
     ),
 

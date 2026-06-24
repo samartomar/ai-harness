@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { executePlan } from "../../src/internals/execute.js";
 import {
   doc,
+  envBlock,
   exec,
   type PlanContext,
   plan,
@@ -94,5 +95,60 @@ describe("executePlan", () => {
     const applied = await executePlan(p, ctx({ apply: true, run }));
     expect(applied.execs[0]).toMatchObject({ ran: true, code: 0, ok: true });
     expect(calls).toEqual([["echo", "hi"]]);
+  });
+});
+
+describe("executePlan — envblock folding", () => {
+  const profile = "profile.ps1";
+
+  it("renders a single managed block with markers (dry-run writes nothing)", async () => {
+    const p = plan(
+      "t",
+      envBlock(profile, "certs", "posix", [{ key: "A", value: "1" }], "certs env"),
+    );
+    const dry = await executePlan(p, ctx({ apply: false }));
+    expect(dry.writes[0]).toMatchObject({ path: profile, effect: "create", merged: true });
+    expect(existsSync(join(dir, profile))).toBe(false);
+
+    await executePlan(p, ctx({ apply: true }));
+    const out = readFileSync(join(dir, profile), "utf8");
+    expect(out).toContain("# >>> aih managed (certs) >>>");
+    expect(out).toContain("export A=1");
+    expect(out).toContain("# <<< aih managed (certs) <<<");
+  });
+
+  it("COMPOSES multiple scopes into one file instead of clobbering (the bootstrap bug)", async () => {
+    const p = plan(
+      "t",
+      envBlock(profile, "hardware", "posix", [{ key: "OLLAMA_NUM_PARALLEL", value: "8" }], "hw"),
+      envBlock(
+        profile,
+        "telemetry",
+        "posix",
+        [{ key: "OTEL_EXPORTER_OTLP_ENDPOINT", value: "x" }],
+        "otel",
+      ),
+    );
+    await executePlan(p, ctx({ apply: true }));
+    const out = readFileSync(join(dir, profile), "utf8");
+    // Both blocks survive — the second no longer overwrites the first.
+    expect(out).toContain("aih managed (hardware)");
+    expect(out).toContain("OLLAMA_NUM_PARALLEL=8");
+    expect(out).toContain("aih managed (telemetry)");
+    expect(out).toContain("OTEL_EXPORTER_OTLP_ENDPOINT=x");
+  });
+
+  it("is idempotent and preserves user lines outside the managed block", async () => {
+    writeFileSync(join(dir, profile), "export USER_VAR=keep\n");
+    const p = plan(
+      "t",
+      envBlock(profile, "vdi", "posix", [{ key: "PIP_CACHE_DIR", value: "/s" }], "vdi"),
+    );
+    await executePlan(p, ctx({ apply: true }));
+    const first = readFileSync(join(dir, profile), "utf8");
+    await executePlan(p, ctx({ apply: true }));
+    const second = readFileSync(join(dir, profile), "utf8");
+    expect(second).toBe(first); // byte-identical re-apply
+    expect(second).toContain("export USER_VAR=keep");
   });
 });

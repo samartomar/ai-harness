@@ -1,9 +1,10 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { cargoConfig, command, pipConfig } from "../../src/certs/index.js";
 import { upsertIniKey } from "../../src/certs/ini.js";
+import { executePlan } from "../../src/internals/execute.js";
 import type { Action, PlanContext } from "../../src/internals/plan.js";
 import { fakeRunner, type RunResult } from "../../src/internals/proc.js";
 import type { CertEntry, HostAdapter, Platform } from "../../src/platform/base.js";
@@ -84,6 +85,25 @@ function findDoc(actions: Action[], needle: string) {
   );
 }
 
+function findEnvBlock(actions: Action[], scope: string) {
+  return actions.find(
+    (a): a is Extract<Action, { kind: "envblock" }> => a.kind === "envblock" && a.scope === scope,
+  );
+}
+
+/**
+ * The trust env block is an `envblock` action; the executor renders + folds it
+ * into the shell profile. Apply the plan against the (temp) profile path and
+ * return its contents so format/marker assertions inspect the real output.
+ */
+async function renderProfile(ctx: PlanContext): Promise<string> {
+  const profile = ctx.host.shellProfilePaths()[0] as string;
+  mkdirSync(dirname(profile), { recursive: true });
+  const applyCtx: PlanContext = { ...ctx, apply: true };
+  await executePlan(await command.plan(applyCtx), applyCtx);
+  return readFileSync(profile, "utf8");
+}
+
 let tmp = "";
 const dirs: string[] = [];
 function freshTmp(): string {
@@ -151,13 +171,12 @@ describe("certs plan — happy path", () => {
 
   it("exports the full trust env block into the shell profile", async () => {
     const root = freshTmp();
-    const home = join(root, "home");
-    const p = await command.plan(makeCtx({ root, env: { HOME: home } }));
+    const ctx = makeCtx({ root, env: { HOME: join(root, "home") } });
 
-    const profile = findWrite(p.actions, "/.bashrc");
-    expect(profile).toBeDefined();
-    const body = profile?.contents ?? "";
-    expect(body).toContain("# >>> aih managed (certs) >>>");
+    // The trust env is an envblock (scope "certs") carrying all six vars.
+    const eb = findEnvBlock((await command.plan(ctx)).actions, "certs");
+    expect(eb).toBeDefined();
+    const keys = eb?.vars.map((v) => v.key) ?? [];
     for (const key of [
       "NODE_EXTRA_CA_CERTS",
       "PIP_CERT",
@@ -166,11 +185,13 @@ describe("certs plan — happy path", () => {
       "CARGO_HTTP_CAINFO",
       "SSL_CERT_DIR",
     ]) {
-      expect(body).toContain(`export ${key}=`);
+      expect(keys).toContain(key);
     }
-    // Five vars point at the PEM; SSL_CERT_DIR points at the out dir.
+    // The executor renders it into the profile with posix `export` + markers.
+    const body = await renderProfile(ctx);
+    expect(body).toContain("# >>> aih managed (certs) >>>");
     expect(body).toContain("export NODE_EXTRA_CA_CERTS=");
-    expect(body).toMatch(/SSL_CERT_DIR=.*enterprise-ca/);
+    expect(body).toMatch(/export SSL_CERT_DIR=.*enterprise-ca/);
   });
 
   it("re-running the profile upsert is idempotent (twice == once)", async () => {
@@ -289,17 +310,14 @@ describe("certs plan — windows trust propagation", () => {
   it("exports the trust block to the PowerShell profile in $env: form", async () => {
     const root = freshTmp();
     const home = join(root, "home");
-    const p = await command.plan(
-      makeCtx({
-        root,
-        platform: "windows",
-        env: { USERPROFILE: home, APPDATA: join(root, "AppData"), USERNAME: "samar" },
-      }),
-    );
+    const ctx = makeCtx({
+      root,
+      platform: "windows",
+      env: { USERPROFILE: home, APPDATA: join(root, "AppData"), USERNAME: "samar" },
+    });
 
-    const profile = findWrite(p.actions, "/Microsoft.PowerShell_profile.ps1");
-    expect(profile).toBeDefined();
-    const body = profile?.contents ?? "";
+    // Rendered by the executor into the PowerShell profile in $env: form.
+    const body = await renderProfile(ctx);
     expect(body).toContain("# >>> aih managed (certs) >>>");
     // PowerShell syntax, not POSIX `export`.
     expect(body).toContain('$env:NODE_EXTRA_CA_CERTS = "');

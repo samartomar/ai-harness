@@ -1,16 +1,10 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { command } from "../../src/hardware/index.js";
 import { executePlan } from "../../src/internals/execute.js";
-import type {
-  Action,
-  DocAction,
-  Plan,
-  PlanContext,
-  WriteAction,
-} from "../../src/internals/plan.js";
+import type { Action, DocAction, Plan, PlanContext } from "../../src/internals/plan.js";
 import { fakeRunner, type RunResult } from "../../src/internals/proc.js";
 import type { Platform } from "../../src/platform/base.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
@@ -87,6 +81,28 @@ function byKind<K extends Action["kind"]>(plan: Plan, kind: K): Extract<Action, 
   return plan.actions.filter((a): a is Extract<Action, { kind: K }> => a.kind === kind);
 }
 
+/** Env whose Windows/posix profile path lands inside a throwaway temp dir. */
+function winTmpEnv(): NodeJS.ProcessEnv {
+  return { USERNAME: "samar", USERPROFILE: makeTmp() };
+}
+function linuxTmpEnv(): NodeJS.ProcessEnv {
+  return { HOME: makeTmp() };
+}
+
+/**
+ * The profile env block is emitted as an `envblock` action; the executor renders
+ * + folds it into the file. Apply the plan against a temp profile and return the
+ * rendered profile contents so format/marker/idempotency assertions can inspect
+ * the real output. `ctx` must be built with a temp-home env (winTmpEnv/linuxTmpEnv).
+ */
+async function renderProfile(ctx: PlanContext): Promise<string> {
+  const profile = ctx.host.shellProfilePaths()[0] as string;
+  mkdirSync(dirname(profile), { recursive: true });
+  const applyCtx: PlanContext = { ...ctx, apply: true };
+  await executePlan(await command.plan(applyCtx), applyCtx);
+  return readFileSync(profile, "utf8");
+}
+
 describe("hardware command surface", () => {
   it("keeps the stub's name, summary, and options", () => {
     expect(command.name).toBe("hardware");
@@ -98,9 +114,10 @@ describe("hardware command surface", () => {
 });
 
 describe("plan shape", () => {
-  it("emits exactly one write, one doc, and one probe", async () => {
+  it("emits exactly one envblock, one doc, and one probe", async () => {
     const p = await command.plan(makeCtx());
-    expect(byKind(p, "write")).toHaveLength(1);
+    expect(byKind(p, "envblock")).toHaveLength(1);
+    expect(byKind(p, "write")).toHaveLength(0);
     expect(byKind(p, "doc")).toHaveLength(1);
     expect(byKind(p, "probe")).toHaveLength(1);
     expect(byKind(p, "exec")).toHaveLength(0);
@@ -109,20 +126,21 @@ describe("plan shape", () => {
   it("targets the shell profile (absolute adapter path), not a repo-relative file", async () => {
     const env = { USERNAME: "samar", USERPROFILE: "C:\\Users\\samar" };
     const p = await command.plan(makeCtx({ env }));
-    const write = byKind(p, "write")[0];
+    const eb = byKind(p, "envblock")[0];
     const profile = makeHostAdapter({
       platform: "windows",
       run: fakeRunner(() => undefined),
       env,
     }).shellProfilePaths()[0];
-    expect(write?.path).toBe(profile);
-    expect(write?.path).toMatch(/Microsoft\.PowerShell_profile\.ps1$/);
+    expect(eb?.path).toBe(profile);
+    expect(eb?.scope).toBe("hardware");
+    expect(eb?.path).toMatch(/Microsoft\.PowerShell_profile\.ps1$/);
   });
 });
 
-describe("generated OLLAMA_* env block", () => {
+describe("generated OLLAMA_* env block (rendered by the executor)", () => {
   it("emits the four blueprint static vars verbatim (PowerShell format)", async () => {
-    const body = byKind(await command.plan(makeCtx()), "write")[0]?.contents ?? "";
+    const body = await renderProfile(makeCtx({ env: winTmpEnv() }));
     expect(body).toContain('$env:OLLAMA_FLASH_ATTENTION = "1"');
     expect(body).toContain('$env:OLLAMA_KV_CACHE_TYPE = "q8_0"');
     expect(body).toContain('$env:OLLAMA_CONTEXT_LENGTH = "8192"');
@@ -130,38 +148,44 @@ describe("generated OLLAMA_* env block", () => {
   });
 
   it("wraps the block in the aih-managed (hardware) markers", async () => {
-    const body = byKind(await command.plan(makeCtx()), "write")[0]?.contents ?? "";
+    const body = await renderProfile(makeCtx({ env: winTmpEnv() }));
     expect(body).toContain("# >>> aih managed (hardware) >>>");
     expect(body).toContain("# <<< aih managed (hardware) <<<");
   });
 
   it("writes the computed parallel-request count into OLLAMA_NUM_PARALLEL", async () => {
     // 32GB -> 25GB server; 5GB model -> floor(25/6)=4 parallel.
-    const body = byKind(await command.plan(makeCtx()), "write")[0]?.contents ?? "";
+    const body = await renderProfile(makeCtx({ env: winTmpEnv() }));
     expect(body).toContain('$env:OLLAMA_NUM_PARALLEL = "4"');
   });
 
   it("recomputes parallelism for a larger --model-size-gb", async () => {
     // 12GB model on a 25GB server -> floor(25 / 14.4)=1.
-    const body =
-      byKind(await command.plan(makeCtx({ options: { modelSizeGb: "12" } })), "write")[0]
-        ?.contents ?? "";
+    const body = await renderProfile(makeCtx({ env: winTmpEnv(), options: { modelSizeGb: "12" } }));
     expect(body).toContain('$env:OLLAMA_NUM_PARALLEL = "1"');
   });
 
-  it("renders a posix export block on a linux host", async () => {
-    // The linux adapter reads CPU/RAM from /proc + os, not the runner, so the
-    // computed parallel count is host-dependent; assert the deterministic static
-    // exports and the posix shell formatting instead.
-    const body =
-      byKind(
-        await command.plan(makeCtx({ platform: "linux", env: { HOME: "/home/samar" } })),
-        "write",
-      )[0]?.contents ?? "";
+  it("exposes the static vars and shell on the envblock action, rendering posix on linux", async () => {
+    // The envblock action carries the vars + shell; the executor renders them.
+    const eb = byKind(
+      await command.plan(makeCtx({ platform: "linux", env: linuxTmpEnv() })),
+      "envblock",
+    )[0];
+    expect(eb?.scope).toBe("hardware");
+    expect(eb?.shell).toBe("posix");
+    const keys = eb?.vars.map((v) => v.key) ?? [];
+    expect(keys).toEqual(
+      expect.arrayContaining([
+        "OLLAMA_FLASH_ATTENTION",
+        "OLLAMA_KV_CACHE_TYPE",
+        "OLLAMA_CONTEXT_LENGTH",
+        "OLLAMA_KEEP_ALIVE",
+        "OLLAMA_NUM_PARALLEL",
+      ]),
+    );
+    // The linux adapter reads CPU/RAM from /proc + os, so render and assert posix format.
+    const body = await renderProfile(makeCtx({ platform: "linux", env: linuxTmpEnv() }));
     expect(body).toContain("export OLLAMA_FLASH_ATTENTION=1");
-    expect(body).toContain("export OLLAMA_KV_CACHE_TYPE=q8_0");
-    expect(body).toContain("export OLLAMA_CONTEXT_LENGTH=8192");
-    expect(body).toContain("export OLLAMA_KEEP_ALIVE=-1");
     expect(body).toMatch(/export OLLAMA_NUM_PARALLEL=\d+/);
   });
 });
@@ -186,13 +210,11 @@ describe("profile doc", () => {
 
 describe("no-GPU host", () => {
   it("recommends Q3_K_S and still produces a valid env block", async () => {
-    const p = await command.plan(
-      makeCtx({ facts: { cores: 4, ramGb: 16, vramGb: -1 }, contextDir: ".ai-context" }),
-    );
-    const doc = (byKind(p, "doc") as DocAction[])[0];
+    const ctx = makeCtx({ facts: { cores: 4, ramGb: 16, vramGb: -1 }, env: winTmpEnv() });
+    const doc = (byKind(await command.plan(ctx), "doc") as DocAction[])[0];
     expect(doc?.text).toContain("Recommended quantization     : Q3_K_S");
     // 16GB -> 12GB server; 5GB model -> floor(12/6)=2.
-    const body = byKind(p, "write")[0]?.contents ?? "";
+    const body = await renderProfile(ctx);
     expect(body).toContain('$env:OLLAMA_NUM_PARALLEL = "2"');
   });
 });
@@ -210,49 +232,37 @@ describe("verify probe (read-only)", () => {
 });
 
 describe("idempotency", () => {
-  it("re-running over its own output yields a byte-identical managed block", async () => {
-    // Point USERPROFILE at a temp dir so the adapter's profile path is writable;
-    // seed it with a user line + the generated block, then re-derive.
-    const home = makeTmp();
-    const env = { USERNAME: "samar", USERPROFILE: home };
-    const profile = makeHostAdapter({
-      platform: "windows",
-      run: fakeRunner(() => undefined),
-      env,
-    }).shellProfilePaths()[0] as string;
+  it("re-applying over its own output yields a byte-identical profile, preserving user lines", async () => {
+    const ctx = makeCtx({ platform: "windows", env: winTmpEnv() });
+    const profile = ctx.host.shellProfilePaths()[0] as string;
     mkdirSync(dirname(profile), { recursive: true });
+    // Seed a user line, then apply the plan twice through the executor.
+    writeFileSync(profile, '$env:USER_KEEP = "1"\n');
+    const applyCtx: PlanContext = { ...ctx, apply: true };
 
-    // First run against an empty profile yields just the managed block.
-    const firstBody =
-      byKind(await command.plan(makeCtx({ platform: "windows", env })), "write")[0]?.contents ?? "";
+    await executePlan(await command.plan(applyCtx), applyCtx);
+    const first = readFileSync(profile, "utf8");
+    await executePlan(await command.plan(applyCtx), applyCtx);
+    const second = readFileSync(profile, "utf8");
 
-    // Seed a profile with a user line + the block, then re-derive: the upsert
-    // must reproduce the same file in place (block unchanged, user line kept).
-    const seeded = `$env:USER_KEEP = "1"\n\n${firstBody}`;
-    writeFileSync(profile, seeded);
-
-    const secondBody =
-      byKind(await command.plan(makeCtx({ platform: "windows", env })), "write")[0]?.contents ?? "";
-    expect(secondBody).toBe(seeded);
-    // The seeded user line is preserved alongside the single regenerated block.
-    expect(secondBody).toContain('$env:USER_KEEP = "1"');
-    expect(secondBody.match(/# >>> aih managed \(hardware\) >>>/g)).toHaveLength(1);
-    // And the regenerated block is byte-identical to the first computation.
-    expect(secondBody).toContain(firstBody.trimEnd());
+    expect(second).toBe(first); // byte-identical re-apply
+    expect(second).toContain('$env:USER_KEEP = "1"'); // user line preserved
+    expect(second.match(/# >>> aih managed \(hardware\) >>>/g)).toHaveLength(1);
   });
 });
 
 describe("BOUNDARY: local-only, no remote mutation", () => {
-  it("emits only write/doc/probe — never an exec or a remote target", async () => {
+  it("emits only envblock/doc/probe — never an exec or a remote target", async () => {
     const p = await command.plan(makeCtx());
     for (const a of p.actions) {
-      expect(["write", "doc", "probe"]).toContain(a.kind);
+      expect(["envblock", "doc", "probe"]).toContain(a.kind);
     }
-    // The single write targets a local profile path, not a URL.
-    const write = byKind(p, "write")[0] as WriteAction;
-    expect(write.path.startsWith("http")).toBe(false);
-    // The env block contains no host/URL — only local tuning values.
-    expect(write.contents ?? "").not.toMatch(/https?:\/\//);
+    // The env block targets a local profile path, not a URL.
+    const eb = byKind(p, "envblock")[0];
+    expect(eb?.path.startsWith("http")).toBe(false);
+    // Its vars contain no host/URL — only local tuning values.
+    const values = (eb?.vars ?? []).map((v) => v.value).join(" ");
+    expect(values).not.toMatch(/https?:\/\//);
   });
 
   it("writes nothing to disk in dry-run, and the doc is the only file it would emit besides the profile", async () => {

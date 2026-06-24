@@ -1,7 +1,8 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { executePlan } from "../../src/internals/execute.js";
 import type { Action, PlanContext, ProbeAction, WriteAction } from "../../src/internals/plan.js";
 import { fakeRunner, type Runner } from "../../src/internals/proc.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
@@ -52,10 +53,26 @@ function makeCtx(over: CtxOverrides = {}): PlanContext {
 const isWrite = (a: Action): a is WriteAction => a.kind === "write";
 const writeEndingWith = (actions: Action[], suffix: string): WriteAction | undefined =>
   actions.filter(isWrite).find((a) => a.path.replace(/\\/g, "/").endsWith(suffix));
-const profileWrite = (actions: Action[]): WriteAction | undefined =>
-  actions.filter(isWrite).find((a) => /bashrc|_profile\.ps1/.test(a.path.replace(/\\/g, "/")));
+const profileEnvBlock = (actions: Action[]): Extract<Action, { kind: "envblock" }> | undefined =>
+  actions.find(
+    (a): a is Extract<Action, { kind: "envblock" }> =>
+      a.kind === "envblock" && a.scope === "telemetry",
+  );
 const firstProbe = (actions: Action[]): ProbeAction | undefined =>
   actions.find((a): a is ProbeAction => a.kind === "probe");
+
+/**
+ * The OTel env block is an `envblock`; the executor renders + folds it into the
+ * shell profile. Apply the plan against the (temp) profile and return its
+ * contents so marker/format/idempotency assertions inspect real output.
+ */
+async function renderProfile(ctx: PlanContext): Promise<string> {
+  const profile = ctx.host.shellProfilePaths()[0] as string;
+  mkdirSync(dirname(profile), { recursive: true });
+  const applyCtx: PlanContext = { ...ctx, apply: true };
+  await executePlan(await command.plan(applyCtx), applyCtx);
+  return readFileSync(profile, "utf8");
+}
 
 describe("telemetry command surface", () => {
   it("keeps the foundation command name and exposes the --endpoint option", () => {
@@ -66,10 +83,10 @@ describe("telemetry command surface", () => {
 
 describe("telemetry plan — OTel env block", () => {
   it("writes the managed OTel block into the shell profile with all five vars + endpoint", async () => {
-    const p = await command.plan(makeCtx());
-    const w = profileWrite(p.actions);
-    expect(w).toBeDefined();
-    const body = w?.contents ?? "";
+    const eb = profileEnvBlock((await command.plan(makeCtx())).actions);
+    expect(eb).toBeDefined();
+    expect(eb?.vars).toHaveLength(5);
+    const body = await renderProfile(makeCtx());
 
     expect(body).toContain("# >>> aih managed (telemetry) >>>");
     expect(body).toContain("OTEL_EXPORTER_OTLP_ENDPOINT");
@@ -94,49 +111,39 @@ describe("telemetry plan — OTel env block", () => {
 
   it("honors a custom --endpoint flag in the env export", async () => {
     const endpoint = "https://otel.corp.example:4317";
-    const p = await command.plan(makeCtx({ options: { endpoint } }));
-    const body = profileWrite(p.actions)?.contents ?? "";
+    const body = await renderProfile(makeCtx({ options: { endpoint } }));
     expect(body).toContain(endpoint);
     expect(body).not.toContain("127.0.0.1");
   });
 
   it("emits PowerShell exports when the host shell is PowerShell", async () => {
-    const p = await command.plan(makeCtx({ platform: "windows" }));
-    const w = profileWrite(p.actions);
-    expect(w?.path.replace(/\\/g, "/")).toMatch(/_profile\.ps1$/);
-    expect(w?.contents ?? "").toContain(
-      '$env:OTEL_EXPORTER_OTLP_ENDPOINT = "http://127.0.0.1:4317"',
-    );
+    const eb = profileEnvBlock((await command.plan(makeCtx({ platform: "windows" }))).actions);
+    expect(eb?.path.replace(/\\/g, "/")).toMatch(/_profile\.ps1$/);
+    expect(eb?.shell).toBe("powershell");
+    const body = await renderProfile(makeCtx({ platform: "windows" }));
+    expect(body).toContain('$env:OTEL_EXPORTER_OTLP_ENDPOINT = "http://127.0.0.1:4317"');
   });
 
-  it("is idempotent — re-planning over an already-written profile yields the same block", async () => {
+  it("is idempotent — re-applying over an already-written profile yields the same file", async () => {
     const ctx = makeCtx();
-    const first = await command.plan(ctx);
-    const firstBody = profileWrite(first.actions)?.contents ?? "";
-    // simulate the profile already containing the managed block on disk
-    const profilePath = makeHostAdapter({
-      platform: "linux",
-      run: ctx.run,
-      env: ctx.env,
-    }).shellProfilePaths()[0] as string;
-    writeFileSync(profilePath, firstBody);
-
-    const second = await command.plan(ctx);
-    const secondBody = profileWrite(second.actions)?.contents ?? "";
-    expect(secondBody).toBe(firstBody);
+    const profilePath = ctx.host.shellProfilePaths()[0] as string;
+    mkdirSync(dirname(profilePath), { recursive: true });
+    const applyCtx: PlanContext = { ...ctx, apply: true };
+    await executePlan(await command.plan(applyCtx), applyCtx);
+    const first = readFileSync(profilePath, "utf8");
+    await executePlan(await command.plan(applyCtx), applyCtx);
+    expect(readFileSync(profilePath, "utf8")).toBe(first);
   });
 
   it("preserves pre-existing user lines in the shell profile", async () => {
     const ctx = makeCtx();
-    const profilePath = makeHostAdapter({
-      platform: "linux",
-      run: ctx.run,
-      env: ctx.env,
-    }).shellProfilePaths()[0] as string;
+    const profilePath = ctx.host.shellProfilePaths()[0] as string;
+    mkdirSync(dirname(profilePath), { recursive: true });
     writeFileSync(profilePath, "export MY_VAR=keepme\n");
 
-    const p = await command.plan(ctx);
-    const body = profileWrite(p.actions)?.contents ?? "";
+    const applyCtx: PlanContext = { ...ctx, apply: true };
+    await executePlan(await command.plan(applyCtx), applyCtx);
+    const body = readFileSync(profilePath, "utf8");
     expect(body).toContain("export MY_VAR=keepme");
     expect(body).toContain("# >>> aih managed (telemetry) >>>");
   });
@@ -320,10 +327,10 @@ describe("telemetry plan — collector probe (read-only otelcol presence)", () =
 });
 
 describe("telemetry plan — shape", () => {
-  it("produces exactly three writes (profile, collector, fetcher) and at least one doc", async () => {
+  it("produces one profile envblock + two writes (collector, fetcher) and at least one doc", async () => {
     const p = await command.plan(makeCtx());
-    const writes = p.actions.filter((a) => a.kind === "write");
-    expect(writes).toHaveLength(3);
+    expect(p.actions.filter((a) => a.kind === "envblock")).toHaveLength(1);
+    expect(p.actions.filter((a) => a.kind === "write")).toHaveLength(2);
     expect(p.actions.some((a) => a.kind === "doc")).toBe(true);
     expect(p.capability).toBe("telemetry");
   });

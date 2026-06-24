@@ -1,4 +1,5 @@
-import type { HostAdapter } from "../platform/base.js";
+import type { EnvShell, HostAdapter } from "../platform/base.js";
+import type { EnvVar } from "./envfile.js";
 import type { Runner } from "./proc.js";
 import type { Check } from "./verify.js";
 
@@ -55,7 +56,23 @@ export interface ExecAction {
   allowFailure?: boolean;
 }
 
-export type Action = WriteAction | DocAction | ProbeAction | ExecAction;
+/**
+ * Upsert an aih-managed env block (one `scope`) into a shell profile. Unlike a
+ * plain `write`, multiple `envblock` actions targeting the SAME file COMPOSE:
+ * the executor folds every scope's block into the file in order (starting from
+ * the on-disk content), so e.g. `bootstrap` can layer certs + hardware + vdi +
+ * telemetry blocks into one profile without any of them clobbering the others.
+ */
+export interface EnvBlockAction {
+  kind: "envblock";
+  path: string;
+  scope: string;
+  shell: EnvShell;
+  vars: EnvVar[];
+  describe: string;
+}
+
+export type Action = WriteAction | DocAction | ProbeAction | ExecAction | EnvBlockAction;
 
 export interface Plan {
   capability: string;
@@ -131,6 +148,16 @@ export function exec(
   opts: { allowFailure?: boolean } = {},
 ): ExecAction {
   return { kind: "exec", describe, argv, allowFailure: opts.allowFailure };
+}
+
+export function envBlock(
+  path: string,
+  scope: string,
+  shell: EnvShell,
+  vars: EnvVar[],
+  describe: string,
+): EnvBlockAction {
+  return { kind: "envblock", path, scope, shell, vars, describe };
 }
 
 export function plan(capability: string, ...actions: Action[]): Plan {

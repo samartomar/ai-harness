@@ -1,9 +1,10 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { command } from "../../src/bootstrap/index.js";
 import { PHASES } from "../../src/bootstrap/phases.js";
+import { executePlan } from "../../src/internals/execute.js";
 import type { Action, DocAction, PlanContext, WriteAction } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
 import type {
@@ -92,6 +93,14 @@ const writeEndingWith = (actions: Action[], suffix: string): WriteAction | undef
 const docMatching = (actions: Action[], needle: string): DocAction | undefined =>
   actions.filter(isDoc).find((a) => a.describe.includes(needle) || a.text.includes(needle));
 
+const envBlockOf = (
+  actions: Action[],
+  scope: string,
+): Extract<Action, { kind: "envblock" }> | undefined =>
+  actions.find(
+    (a): a is Extract<Action, { kind: "envblock" }> => a.kind === "envblock" && a.scope === scope,
+  );
+
 const allDocText = (actions: Action[]): string =>
   actions
     .filter(isDoc)
@@ -115,6 +124,8 @@ const fingerprint = (actions: Action[]): string =>
       json: a.kind === "write" ? (a.json ?? null) : null,
       text: a.kind === "doc" ? a.text : "",
       argv: a.kind === "exec" ? a.argv.map(norm) : [],
+      scope: a.kind === "envblock" ? a.scope : "",
+      vars: a.kind === "envblock" ? a.vars : [],
     })),
   );
 
@@ -192,13 +203,11 @@ describe("bootstrap plan — full composition (all four phases)", () => {
     const home = join(root, "home");
     const p = await command.plan(makeCtx({ root, env: { HOME: home } }));
 
-    // hardware writes the tuned OLLAMA_* block into the shell profile
-    const hwWrite = p.actions.find(
-      (a): a is WriteAction =>
-        a.kind === "write" && norm(a.path).endsWith("/.bashrc") && a.describe.includes("OLLAMA_*"),
-    );
-    expect(hwWrite).toBeDefined();
-    expect(hwWrite?.contents).toContain("# >>> aih managed (hardware) >>>");
+    // hardware contributes its tuned OLLAMA_* env block (scope "hardware") to the profile
+    const hwBlock = envBlockOf(p.actions, "hardware");
+    expect(hwBlock).toBeDefined();
+    expect(norm(hwBlock?.path ?? "").endsWith("/.bashrc")).toBe(true);
+    expect(hwBlock?.vars.some((v) => v.key.startsWith("OLLAMA_"))).toBe(true);
 
     // vdi contributes its detection probe + redirection block
     const vdiProbe = p.actions.find((a) => a.kind === "probe" && a.describe === "VDI detection");
@@ -236,7 +245,7 @@ describe("bootstrap plan — --phase narrows to a single phase", () => {
     expect((headers[0] as DocAction).describe).toBe(PHASES[1]?.title);
 
     // hardware + vdi present
-    expect(p.actions.some((a) => a.kind === "write" && a.describe.includes("OLLAMA_*"))).toBe(true);
+    expect(p.actions.some((a) => a.kind === "envblock" && a.scope === "hardware")).toBe(true);
     expect(p.actions.some((a) => a.kind === "probe" && a.describe === "VDI detection")).toBe(true);
 
     // certs (Phase 1) and telemetry (Phase 4) excluded
@@ -349,8 +358,10 @@ describe("bootstrap plan — edge cases mirror the leaf capabilities", () => {
       }),
     );
     const redirect = p.actions.find(
-      (a): a is WriteAction =>
-        a.kind === "write" && norm(a.path).endsWith("/.bashrc") && a.describe.includes("scratch"),
+      (a): a is Extract<Action, { kind: "envblock" }> =>
+        a.kind === "envblock" &&
+        norm(a.path).endsWith("/.bashrc") &&
+        a.describe.includes("scratch"),
     );
     expect(redirect).toBeDefined();
     const symlink = p.actions.find(
@@ -377,8 +388,8 @@ describe("bootstrap plan — edge cases mirror the leaf capabilities", () => {
     if (vdiProbe?.kind === "probe") {
       expect((await vdiProbe.run(ctx)).verdict).toBe("skip");
     }
-    // no scratch-redirection write on a non-VDI host
-    const redirect = p.actions.find((a) => a.kind === "write" && a.describe.includes("scratch"));
+    // no scratch-redirection block on a non-VDI host
+    const redirect = p.actions.find((a) => a.kind === "envblock" && a.scope === "vdi");
     expect(redirect).toBeUndefined();
   });
 
@@ -402,5 +413,30 @@ describe("bootstrap plan — edge cases mirror the leaf capabilities", () => {
     // (certs lockdown) and a probe, not just docs
     expect(first.actions.some((a) => a.kind === "exec")).toBe(true);
     expect(first.actions.some((a) => a.kind === "probe")).toBe(true);
+  });
+});
+
+describe("bootstrap composition — env blocks fold, never clobber", () => {
+  it("applying the full bootstrap layers every workstation env block into one profile", async () => {
+    const root = freshTmp();
+    const home = join(root, "home");
+    const ctx = makeCtx({
+      root,
+      env: { HOME: home, USERPROFILE: home, USER: "dev" },
+      vdi: { isVdi: true, reason: "/scratch mount present", kind: "res" },
+    });
+    const profile = ctx.host.shellProfilePaths()[0] as string; // <home>/.bashrc
+    mkdirSync(dirname(profile), { recursive: true });
+
+    const applyCtx: PlanContext = { ...ctx, apply: true };
+    await executePlan(await command.plan(applyCtx), applyCtx);
+    const body = readFileSync(profile, "utf8");
+
+    // The regression this guards: four capabilities write the SAME profile; the
+    // executor must fold their managed blocks instead of the last clobbering the rest.
+    expect(body).toContain("# >>> aih managed (certs) >>>");
+    expect(body).toContain("# >>> aih managed (hardware) >>>");
+    expect(body).toContain("# >>> aih managed (vdi) >>>");
+    expect(body).toContain("# >>> aih managed (telemetry) >>>");
   });
 });
