@@ -1,0 +1,20 @@
+/**
+ * Library surface. The CLI (`src/cli.ts`) is the executable entry; this module
+ * re-exports the reusable core so the harness can be embedded programmatically.
+ */
+
+export { ALL_COMMANDS, CAPABILITIES, READONLY, registerCommands } from "./commands/index.js";
+export * from "./config/settings.js";
+export * from "./errors.js";
+export * from "./internals/envfile.js";
+export * from "./internals/execute.js";
+export * from "./internals/fsxn.js";
+export * from "./internals/merge.js";
+export * from "./internals/plan.js";
+export * from "./internals/proc.js";
+export * from "./internals/render.js";
+export * from "./internals/verify.js";
+export * from "./platform/base.js";
+export * from "./platform/detect.js";
+export * from "./platform/parse.js";
+export { buildProgram, VERSION } from "./program.js";

@@ -1,0 +1,51 @@
+{
+  "name": "@aih/harness",
+  "version": "0.1.0",
+  "description": "Enterprise AI Bootstrapping Harness — bootstraps governed, proxy-safe AI coding into workstations and repos",
+  "type": "module",
+  "bin": {
+    "aih": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsx src/cli.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:cov": "vitest run --coverage",
+    "lint": "biome check src tests",
+    "lint:fix": "biome check --write src tests",
+    "format": "biome format --write src tests",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "ai",
+    "harness",
+    "bootstrap",
+    "devsecops",
+    "enterprise",
+    "claude-code",
+    "mcp"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "commander": "^15.0.0",
+    "jsonc-parser": "^3.3.1",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.1",
+    "@types/node": "^26.0.0",
+    "@vitest/coverage-v8": "^4.1.9",
+    "tsup": "^8.5.1",
+    "tsx": "^4.22.4",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.9"
+  }
+}

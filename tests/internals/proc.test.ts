@@ -1,0 +1,27 @@
+import { describe, expect, it } from "vitest";
+import { defaultRunner, fakeRunner, missingToolRunner } from "../../src/internals/proc.js";
+
+describe("proc runner seam", () => {
+  it("fakeRunner returns canned results keyed off argv", async () => {
+    const run = fakeRunner((argv) =>
+      argv[0] === "nvidia-smi" ? { stdout: "8192, GPU" } : undefined,
+    );
+    expect(await run(["nvidia-smi"])).toMatchObject({ code: 0, stdout: "8192, GPU" });
+    expect(await run(["other"])).toMatchObject({ code: 0, stdout: "" });
+  });
+
+  it("missingToolRunner signals spawnError", async () => {
+    expect(await missingToolRunner(["x"])).toMatchObject({ spawnError: true, code: 127 });
+  });
+
+  it("defaultRunner runs a local process and captures stdout", async () => {
+    const res = await defaultRunner([process.execPath, "-e", "process.stdout.write('hi')"]);
+    expect(res.code).toBe(0);
+    expect(res.stdout).toBe("hi");
+  });
+
+  it("defaultRunner reports spawnError for a missing executable", async () => {
+    const res = await defaultRunner(["definitely-not-a-real-binary-xyz123"]);
+    expect(res.spawnError).toBe(true);
+  });
+});

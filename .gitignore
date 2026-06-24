@@ -1,0 +1,18 @@
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+
+# aih runtime artifacts
+*.aih.bak
+.aih-scratch/
+
+# logs / os
+*.log
+.DS_Store
+Thumbs.db
+
+# local env (the harness scans for these; never commit them)
+.env
+.env.*
+!.env.example
