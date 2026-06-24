@@ -69,6 +69,20 @@ describe("scaffold plan (dry-run shape)", () => {
     expect(w.has(".ai-context/skills/example-skill/SKILL.md")).toBe(true);
   });
 
+  it("ships the agent completion playbook + a write-once guardrails seed", async () => {
+    const w = writesByPath((await command.plan(ctx())).actions);
+    const tasks = w.get(".ai-context/SETUP-TASKS.md")?.contents ?? "";
+    expect(tasks).toContain("Map the architecture");
+    expect(tasks).toContain("Enhance guardrails");
+    expect(tasks).toContain("architecture.md");
+    // INDEX points the agent at it.
+    expect(w.get(".ai-context/INDEX.md")?.contents).toContain("SETUP-TASKS.md");
+    // The guardrails seed is write-once (the agent's edits survive re-runs).
+    const guard = w.get(".ai-context/project-guardrails.md");
+    expect(guard).toBeDefined();
+    expect(guard?.once).toBe(true);
+  });
+
   it("does NOT write root bootloaders — those are owned by `aih bootstrap-ai`", async () => {
     const w = writesByPath((await command.plan(ctx())).actions);
     expect(w.has("CLAUDE.md")).toBe(false);

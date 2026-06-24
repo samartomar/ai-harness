@@ -10,6 +10,8 @@ import {
   conventionsDoc,
   exampleSkillDoc,
   indexDoc,
+  projectGuardrailsDoc,
+  setupTasksDoc,
   tasksDoc,
 } from "./templates.js";
 
@@ -51,6 +53,19 @@ function scaffoldPlan(ctx: PlanContext): ReturnType<typeof plan> {
       inDir("skills", "example-skill", "SKILL.md"),
       exampleSkillDoc(),
       "example SKILL.md (INDEX/SKILL pattern)",
+    ),
+    // Agent-executable completion playbook — fill the skeletons from the code.
+    writeText(
+      inDir("SETUP-TASKS.md"),
+      setupTasksDoc(dir, stack),
+      "agent playbook: map context + enhance guardrails from the code",
+    ),
+    // Write-once guardrails seed the agent fleshes out (never overwritten).
+    writeText(
+      inDir("project-guardrails.md"),
+      projectGuardrailsDoc(dir, stack),
+      "project-specific guardrails seed (write-once; agent fills it)",
+      { once: true },
     ),
   ];
 

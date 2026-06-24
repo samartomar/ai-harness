@@ -50,6 +50,10 @@ export function indexDoc(dir: string): string {
     "by `aih bootstrap-ai` and point here — edit context in this directory, never",
     "in the bootloaders.",
     "",
+    "> **New / freshly scaffolded?** The files below start as skeletons. An AI agent",
+    "> can fill them from the code by following **`SETUP-TASKS.md`** in this directory —",
+    "> start there before doing other work.",
+    "",
     "## Load order (progressive disclosure)",
     "",
     "Read this index first, then load only the file the task needs:",
@@ -175,6 +179,101 @@ export function conventionsDoc(dir: string, stack: RepoStack): string {
     "",
     "- Conventional commits (`feat:`, `fix:`, `refactor:`, `docs:`, `test:`, `chore:`).",
     "- A change merges when tests/lint/types are green, the diff is surgical, and the risk is stated.",
+  );
+}
+
+/**
+ * The agent-executable completion playbook. The harness lays down skeletons; this
+ * tells an AI agent exactly how to FILL them from the code — so the harness
+ * self-completes instead of waiting on a human. Stack-aware (entry points,
+ * commands, frameworks come from the profiler) and evidence-first.
+ */
+export function setupTasksDoc(dir: string, stack: RepoStack): string {
+  const entry =
+    stack.entryPoints.length > 0
+      ? stack.entryPoints.map((e) => `\`${e}\``).join(", ")
+      : "the main handlers / CLI / server entry";
+  const lang = stack.languages[0] ?? "the repo language";
+  const fw = stack.frameworks.length > 0 ? stack.frameworks.join(", ") : "any framework in use";
+  return lines(
+    "# Harness setup tasks — run these as an AI agent",
+    "",
+    "The harness scaffolded this repo but left the project-specific content as",
+    "skeletons. Complete them by **reading the code** — ground every statement in",
+    "repo evidence (files, tests, configs). Never invent. Do them in order, then",
+    "delete the placeholder `_italics_` you replace.",
+    "",
+    `## 1. Map the architecture → \`${dir}/architecture.md\``,
+    "",
+    `- Start from the entry points (${entry}) and trace the main flow(s).`,
+    "- Fill: Overview (what it does + shape in 3–5 sentences), Modules (each",
+    "  package/dir and its responsibility — cite paths), Data flow, and",
+    "  Constraints & invariants (what must hold, and why).",
+    "",
+    `## 2. Capture conventions → \`${dir}/conventions.md\``,
+    "",
+    "- Read 5–10 representative files; extract the REAL conventions this repo uses",
+    `  (naming, error handling, module layout, test style for ${lang}) — not generic advice.`,
+    stack.testRunner
+      ? `- The test command is \`${stack.testRunner}\`${stack.lintCommand ? ` and lint is \`${stack.lintCommand}\`` : ""}; record how/where tests live.`
+      : "- No test command is configured — note that, and what testing the repo does have.",
+    "- Fill the Naming and Commits sections from what the code/history actually does.",
+    "",
+    `## 3. Enhance guardrails → \`${dir}/project-guardrails.md\``,
+    "",
+    "Generic gitleaks/pre-commit can't know this repo. From the code, add:",
+    `- Security-sensitive paths in THIS repo (auth, payments, PII, ${fw} entry points) — list them.`,
+    "- Framework/language footguns to avoid (inferred from the stack + the code).",
+    "- The quality gate that must pass before a change is done.",
+    '- Repo-specific "never do X" rules you can justify from the code.',
+    "",
+    `## 4. (Workspace only) Cross-repo map → \`${dir}/cross-repo-architecture.md\``,
+    "",
+    "- If this is a workspace root, map each repo's responsibility and the cross-repo",
+    "  feature table (UI ↔ backend ↔ contract). Read each child repo's canon first.",
+    "",
+    "## When done",
+    "",
+    "- Run `aih doctor` to verify, and `aih bootstrap-ai --verify` to confirm the",
+    "  canon is in sync. Keep this file as a checklist, or delete it once filled.",
+  );
+}
+
+/**
+ * A write-once project-guardrails seed. aih fills the detected facts; the agent
+ * fleshes out the repo-specific rules per `SETUP-TASKS.md`. Write-once so the
+ * agent's work is never overwritten on a re-run.
+ */
+export function projectGuardrailsDoc(dir: string, stack: RepoStack): string {
+  const gate = [stack.lintCommand, stack.testRunner].filter(Boolean) as string[];
+  return lines(
+    "# Project guardrails",
+    "",
+    `> Repo-specific guardrails. Seeded by aih from the detected stack; an agent`,
+    `> fleshes this out per \`${dir}/SETUP-TASKS.md\`. WRITE-ONCE — aih won't overwrite it.`,
+    "",
+    "## Detected stack",
+    "",
+    detectedStackBlock(stack),
+    "",
+    "## Quality gate",
+    "",
+    gate.length > 0
+      ? `- \`${gate.join(" && ")}\` must pass before a change is considered done.`
+      : "- _No lint/test command detected — add one and record it here._",
+    "",
+    "## Security-sensitive paths",
+    "",
+    "_List the dirs/files that handle auth, secrets, payments, or PII. Changes here",
+    "get extra review; never log or hardcode secrets in them._",
+    "",
+    "## Framework / language guardrails",
+    "",
+    "_Stack-specific rules and footguns to avoid (fill from the code)._",
+    "",
+    "## Never do",
+    "",
+    '_Repo-specific hard "no"s, justified from the code or team conventions._',
   );
 }
 
