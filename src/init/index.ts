@@ -4,8 +4,9 @@ import { INIT_PHASES } from "./phases.js";
 
 /**
  * Orchestrate a full repo bootstrap by COMPOSING the repo-scoped capabilities —
- * profile, scaffold, secrets, guardrails, mcp, sandbox — in that order. Each
- * phase's actions come straight from `command.plan(ctx)` (never re-implemented),
+ * profile, ecc, superpowers, bootstrap-ai, scaffold, secrets, guardrails, mcp,
+ * sandbox — in that order. Each phase's actions come straight from
+ * `command.plan(ctx)` (never re-implemented),
  * preceded by a `doc` headline so a dry-run reads as labelled sections. Because
  * every sub-capability is invoked with the same `ctx`, a custom `--context-dir`,
  * `--apply`, or `--verify` flows through to all of them, and
@@ -24,10 +25,11 @@ async function initPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
     actions.push(...sub.actions);
   }
 
-  // Two capabilities can target the same path (e.g. profile + scaffold both write
-  // CLAUDE.md). Keep the FIRST writer — profile runs before scaffold, so its
-  // stack-aware CLAUDE.md wins over scaffold's generic pointer, and no `.aih.bak`
-  // churn is produced. Non-write actions (docs/probes) are never deduped.
+  // Root bootloaders have a single owner (bootstrap-ai), so no two phases write
+  // the same bootloader. The dedup is a safety net for genuinely shared targets
+  // like `.claude/settings.json` (scaffold + secrets both merge-write it): keep
+  // the FIRST writer, no `.aih.bak` churn. Non-write actions (docs/probes) are
+  // never deduped.
   const seenWritePaths = new Set<string>();
   const deduped = actions.filter((a) => {
     if (a.kind !== "write") return true;
@@ -41,7 +43,8 @@ async function initPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
 
 export const command: CommandSpec = {
   name: "init",
-  summary: "Initialize a target repo: profile, scaffold, guardrails, secrets, mcp, sandbox",
+  summary:
+    "Initialize a target repo: profile + ecc + superpowers + bootstrap-ai + scaffold + secrets + guardrails + mcp + sandbox",
   options: [],
   plan: initPlan,
 };

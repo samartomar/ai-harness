@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
+import { detectClis, presentClis } from "./internals/cli-detect.js";
 import { type CommandSpec, plan, probe } from "./internals/plan.js";
 
 /**
@@ -40,6 +41,16 @@ export const command: CommandSpec = {
               name: "context-dir",
               verdict: "skip",
               detail: `${ctx.contextDir} not scaffolded — run: aih scaffold --apply`,
+            };
+      }),
+      probe("AI CLIs detected", async () => {
+        const present = presentClis(await detectClis(ctx));
+        return present.length > 0
+          ? { name: "ai-clis", verdict: "pass", detail: present.join(", ") }
+          : {
+              name: "ai-clis",
+              verdict: "skip",
+              detail: "none detected — target explicitly with --cli or --all-tools",
             };
       }),
     ),

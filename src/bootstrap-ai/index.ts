@@ -1,5 +1,6 @@
 import { basename, join, posix } from "node:path";
-import { resolveClis } from "../internals/clis.js";
+import { detectOne, resolveTargetClis } from "../internals/cli-detect.js";
+import type { Cli } from "../internals/clis.js";
 import { readIfExists } from "../internals/fsxn.js";
 import { extractManagedBlock, type ManagedBlock, mergeManagedBlock } from "../internals/markers.js";
 import {
@@ -57,6 +58,25 @@ function bootloaderProbe(relPath: string, dir: string): Action {
   });
 }
 
+/**
+ * Confirm-step probe: is this CLI actually installed on the machine? Present →
+ * pass; absent → `skip` (informational — the bootloader is still written, the
+ * tool just isn't here yet), never a hard fail.
+ */
+function presenceProbe(cli: Cli): Action {
+  return probe(`${cli} installed`, async (ctx: PlanContext): Promise<Check> => {
+    const name = `${cli} installed`;
+    const p = await detectOne(ctx, cli);
+    return p.present
+      ? { name, verdict: "pass", detail: `detected via ${p.via} (${p.detail})` }
+      : {
+          name,
+          verdict: "skip",
+          detail: "not detected on this machine (bootloader still written)",
+        };
+  });
+}
+
 /** Probe that the router itself is present. */
 function routerProbe(dir: string): Action {
   return probe(`${dir}/RULE_ROUTER.md present`, (ctx: PlanContext): Check => {
@@ -79,9 +99,9 @@ function routerProbe(dir: string): Action {
  * the router exists and every bootloader carries the current block (drift gate).
  * Honors `--cli`/`--all-tools` (default claude) and `--context-dir`.
  */
-function bootstrapAiPlan(ctx: PlanContext): Plan {
+async function bootstrapAiPlan(ctx: PlanContext): Promise<Plan> {
   const dir = ctx.contextDir;
-  const clis = resolveClis(ctx.options);
+  const clis = await resolveTargetClis(ctx);
   const stack = scanRepo(ctx.root, { maxDepth: 8 });
   const repoName = repoNameOf(ctx.root);
   const bootloaders = bootloaderPaths(clis);
@@ -128,9 +148,11 @@ function bootstrapAiPlan(ctx: PlanContext): Plan {
     );
   }
 
-  // Doctor probes (run under --verify): router present + every bootloader in sync.
+  // Doctor probes (run under --verify): router present + every bootloader in sync,
+  // plus a step-by-step confirm of which targeted CLIs are actually installed.
   actions.push(routerProbe(dir));
   for (const relPath of bootloaders) actions.push(bootloaderProbe(relPath, dir));
+  for (const cli of clis) actions.push(presenceProbe(cli));
 
   // A short orientation doc so the dry-run explains itself.
   actions.push(

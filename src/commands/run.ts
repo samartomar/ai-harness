@@ -76,6 +76,7 @@ export async function runCapability(
         caPattern: settings.caPattern,
         cli: opts.cli,
         allTools: opts.allTools,
+        detect: opts.detect,
       },
     };
 

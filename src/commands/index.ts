@@ -54,7 +54,8 @@ function addSharedFlags(cmd: Command): Command {
     .option("--context-dir <dir>", "canonical context directory name", ".ai-context")
     .option("--root <dir>", "target repository/workstation root")
     .option("--cli <list>", "target AI CLIs (comma-separated): claude,codex,cursor,antigravity,…")
-    .option("--all-tools", "target every supported AI CLI");
+    .option("--all-tools", "target every supported AI CLI")
+    .option("--detect", "target only the AI CLIs detected on this machine (config dir / binary)");
 }
 
 export function registerCommands(program: Command): void {

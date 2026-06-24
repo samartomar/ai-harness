@@ -1,4 +1,4 @@
-import { resolveClis } from "../internals/clis.js";
+import { resolveTargetClis } from "../internals/cli-detect.js";
 import {
   type Action,
   type CommandSpec,
@@ -61,8 +61,8 @@ function stackSummaryShort(inputs: EccInstallInputs): string {
  * the profiler; an empty repo installs the full profile and self-scopes on a
  * re-run once there is code.
  */
-function eccPlan(ctx: PlanContext): Plan {
-  const clis = resolveClis(ctx.options);
+async function eccPlan(ctx: PlanContext): Promise<Plan> {
+  const clis = await resolveTargetClis(ctx);
   const stack = scanRepo(ctx.root, { maxDepth: 8 });
   const { packs, installEverything } = eccLanguages(stack);
   const profile = String(ctx.options.profile ?? "core");

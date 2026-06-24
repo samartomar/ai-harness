@@ -35,7 +35,8 @@ function makeCtx(
     json: false,
     run,
     host: makeHostAdapter({ platform: "linux", run, env: {} }),
-    env: {},
+    // Point HOME at the (empty) temp dir so presence detection is hermetic.
+    env: { HOME: tmp },
     options,
   };
 }
@@ -144,6 +145,32 @@ describe("bootstrap-ai — doctor probes (drift gate)", () => {
     const res = await probe?.run(applied);
     expect(res?.verdict).toBe("fail");
     expect(res?.detail).toContain("drift");
+  });
+});
+
+describe("bootstrap-ai — CLI presence confirm step", () => {
+  it("skips the presence probe when the targeted CLI is not installed", async () => {
+    const probe = probeNamed((await command.plan(makeCtx())).actions, "claude installed");
+    expect(probe).toBeDefined();
+    const res = await probe?.run(makeCtx());
+    expect(res?.verdict).toBe("skip"); // empty $HOME, no binary → not detected
+  });
+
+  it("passes the presence probe when a config dir is present", async () => {
+    mkdirSync(join(tmp, ".claude"), { recursive: true });
+    const probe = probeNamed((await command.plan(makeCtx())).actions, "claude installed");
+    const res = await probe?.run(makeCtx());
+    expect(res?.verdict).toBe("pass");
+    expect(res?.detail).toContain("config");
+  });
+
+  it("--detect targets only the CLIs with a config dir present", async () => {
+    mkdirSync(join(tmp, ".claude"), { recursive: true });
+    mkdirSync(join(tmp, ".cursor"), { recursive: true });
+    const w = writesByPath((await command.plan(makeCtx({ detect: true }))).actions);
+    expect(w.has("CLAUDE.md")).toBe(true);
+    expect(w.has(".cursor/rules/00-canon.mdc")).toBe(true);
+    expect(w.has("AGENTS.md")).toBe(false); // codex/etc not installed in the fake home
   });
 });
 

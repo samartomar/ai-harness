@@ -63,15 +63,23 @@ Settings also read from `AIH_*` env vars (`AIH_APPLY`, `AIH_CONTEXT_DIR`, …).
 
 ### Targeting CLIs
 
-`aih ecc`, `aih superpowers`, and `aih scaffold` only touch the agent CLIs you actually use.
-Pass `--cli` with a comma-separated list, or `--all-tools` for every supported CLI; the default
-is `claude`. Supported: `claude, codex, cursor, antigravity, gemini, copilot, windsurf, opencode, zed, kimi`.
+`aih ecc`, `aih superpowers`, and `aih bootstrap-ai` only touch the agent CLIs you actually use.
+Pass `--cli` with a comma-separated list, `--all-tools` for every supported CLI, or `--detect` to
+auto-target the CLIs found on this machine; the default is `claude`. Supported:
+`claude, codex, cursor, antigravity, gemini, copilot, windsurf, opencode, zed, kimi`.
 
 ```bash
 aih ecc --cli claude,codex          # ECC for Claude (plugin) + Codex (ecc-install)
 aih superpowers --cli antigravity   # agy plugin install … (runs under --apply)
+aih bootstrap-ai --detect           # target only the CLIs installed here
 aih init . --all-tools              # bootstrap a repo for every CLI at once
 ```
+
+**Detection** (`--detect`) looks for each tool's config dir (`~/.claude`, `~/.codex`, `~/.gemini`,
+`~/.cursor`, …) or its binary on PATH (via the Runner seam — no real process in tests). Precedence:
+`--all-tools` > `--cli` > `--detect` > default `claude`. `aih doctor` reports which CLIs it detects,
+and `aih bootstrap-ai --verify` adds a per-CLI **"installed"** confirm step (pass = found, skip =
+not here yet, bootloader still written) alongside the drift gate.
 
 Shell-runnable installs (`ecc-install`, `agy`/`copilot plugin install`) execute under `--apply`;
 in-tool slash-command installs (Claude/Codex/Kimi plugins) are emitted as exact commands to run

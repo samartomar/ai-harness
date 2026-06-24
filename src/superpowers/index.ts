@@ -1,4 +1,4 @@
-import { resolveClis } from "../internals/clis.js";
+import { resolveTargetClis } from "../internals/cli-detect.js";
 import {
   type Action,
   type CommandSpec,
@@ -29,8 +29,8 @@ function summaryDoc(clis: string[]): Action {
  * `--apply`; plugin-TUI and not-yet-supported targets are emitted as exact
  * commands / a pointer to the INSTALL guide.
  */
-function superpowersPlan(ctx: PlanContext): Plan {
-  const clis = resolveClis(ctx.options);
+async function superpowersPlan(ctx: PlanContext): Promise<Plan> {
+  const clis = await resolveTargetClis(ctx);
   const actions: Action[] = [];
   for (const cli of clis) actions.push(...superpowersActionsForCli(cli));
   actions.push(superpowersOverviewDoc());
