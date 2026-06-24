@@ -75,8 +75,15 @@ describe("scaffold plan (dry-run shape)", () => {
     expect(tasks).toContain("Map the architecture");
     expect(tasks).toContain("Enhance guardrails");
     expect(tasks).toContain("architecture.md");
+    expect(tasks).toContain("VALIDATION.md"); // points at the validation playbook
     // INDEX points the agent at it.
     expect(w.get(".ai-context/INDEX.md")?.contents).toContain("SETUP-TASKS.md");
+    // Validation playbook: separates agent-confirmed from human-must-unblock + workarounds.
+    const val = w.get(".ai-context/VALIDATION.md")?.contents ?? "";
+    expect(val).toContain("Gaps to unblock");
+    expect(val).toContain("WORKAROUND");
+    expect(val).toContain("aih bootstrap-ai --verify");
+    expect(val).toContain("picture-perfect");
     // The guardrails seed is write-once (the agent's edits survive re-runs).
     const guard = w.get(".ai-context/project-guardrails.md");
     expect(guard).toBeDefined();

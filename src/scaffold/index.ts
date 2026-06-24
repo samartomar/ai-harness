@@ -13,6 +13,7 @@ import {
   projectGuardrailsDoc,
   setupTasksDoc,
   tasksDoc,
+  validationDoc,
 } from "./templates.js";
 
 /** Deny rules seeded into `.claude/settings.json` — keep secrets out of agent reach. */
@@ -59,6 +60,12 @@ function scaffoldPlan(ctx: PlanContext): ReturnType<typeof plan> {
       inDir("SETUP-TASKS.md"),
       setupTasksDoc(dir, stack),
       "agent playbook: map context + enhance guardrails from the code",
+    ),
+    // Post-setup validation — agent checks the system + reports gaps/workarounds.
+    writeText(
+      inDir("VALIDATION.md"),
+      validationDoc(dir, stack),
+      "agent validation checklist → final user report (gaps to unblock + workarounds)",
     ),
     // Write-once guardrails seed the agent fleshes out (never overwritten).
     writeText(

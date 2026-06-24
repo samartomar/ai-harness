@@ -234,8 +234,92 @@ export function setupTasksDoc(dir: string, stack: RepoStack): string {
     "",
     "## When done",
     "",
-    "- Run `aih doctor` to verify, and `aih bootstrap-ai --verify` to confirm the",
-    "  canon is in sync. Keep this file as a checklist, or delete it once filled.",
+    `- Run the validation playbook in \`${dir}/VALIDATION.md\` and give the user the`,
+    "  final report: ✅ validated, ⚠️ gaps only they can unblock (with the exact",
+    "  command/click), and 🔧 workarounds. Don't claim done on anything unverified.",
+  );
+}
+
+/**
+ * The post-setup validation playbook. An AI agent runs these checks against the
+ * REAL system and gives the user a final verdict — explicitly separating what the
+ * agent confirmed from gaps only a human can unblock, with workarounds. Conditional
+ * sections key off files actually present (`.kiro/`, `.devcontainer/`, the workspace
+ * marker), so one checklist fits every setup.
+ */
+export function validationDoc(dir: string, stack: RepoStack): string {
+  const gate = [stack.lintCommand, stack.testRunner].filter(Boolean) as string[];
+  return lines(
+    "# Harness validation — run this, then report to the user",
+    "",
+    "After setup, validate the harness against the ACTUAL system and give the user a",
+    "final verdict. For each item, classify the result:",
+    "",
+    "- ✅ **OK** — confirmed working (say what you checked).",
+    "- ⚠️ **GAP** — only the human can unblock it (you cannot); give the exact command/click.",
+    "- 🔧 **WORKAROUND** — a fallback exists; name it.",
+    "",
+    "Never report ✅ on something you could not actually verify.",
+    "",
+    "## Checks",
+    "",
+    "### 1. Canon in sync",
+    "- Run `aih bootstrap-ai --verify` — expect the router present and every bootloader `in sync`.",
+    "- You CAN fix: run `aih bootstrap-ai --apply` if anything is missing/drifted.",
+    "",
+    "### 2. Context filled (not skeletons)",
+    `- \`${dir}/architecture.md\` and \`${dir}/conventions.md\` have no \`_italic placeholders_\` left;`,
+    `  \`${dir}/project-guardrails.md\` carries real repo rules.`,
+    `- You CAN fix: complete \`${dir}/SETUP-TASKS.md\` from the code.`,
+    "",
+    "### 3. Agent tooling installed (per CLI you target)",
+    "- ECC + Superpowers present for the tool (Claude → `~/.claude/` populated; Kiro →",
+    "  `.kiro/agents`/`.kiro/skills` populated after ECC's `.kiro/install.sh`).",
+    "- ⚠️ GAP: in-tool installs (`/plugin install ecc@ecc`, Codex `/plugins`) run only by",
+    "  the human INSIDE the tool — list the exact command for them.",
+    "- 🔧 WORKAROUND: shell installs you CAN run — `aih ecc --cli <tool> --apply`,",
+    "  `bash ECC/.kiro/install.sh .` (Kiro).",
+    "",
+    "### 4. Guardrails active",
+    "- `.gitleaks.toml` and `.pre-commit-config.yaml` present.",
+    gate.length > 0
+      ? `- The quality gate is \`${gate.join(" && ")}\` — confirm it passes.`
+      : "- No lint/test command detected — note that as a gap to add one.",
+    "- ⚠️ GAP: the pre-commit hook is opt-in — the human runs `git config core.hooksPath .githooks`",
+    "  once, and `gitleaks`/`pre-commit` must be installed. 🔧 WORKAROUND: rely on the CI gate.",
+    "",
+    "### 5. MCP wired",
+    "- `.mcp.json` present; its stdio servers need `uv`, the workspace filesystem server needs `npx`.",
+    "- ⚠️ GAP if `uv`/`npx` missing → install them. 🔧 WORKAROUND: remove servers you can't launch.",
+    "",
+    "### 6. Dev tools",
+    "- Run `aih doctor` — are `rg`/`fd`/`jq` present?",
+    "- ⚠️ GAP: missing → install (winget/scoop/brew) or, on a locked-down VDI, add your bundle to PATH.",
+    "",
+    "### 7. Kiro (only if `.kiro/` exists)",
+    "- Steering files load (`inclusion: always`); `.kiro/hooks/*.kiro.hook` appear in the Agent Hooks panel.",
+    "- ⚠️ GAP: enabling a hook is a one-click action in Kiro's Agent Hooks panel — only the human can.",
+    "",
+    "### 8. Sandbox (only if `.devcontainer/` exists)",
+    "- Is Docker available (`docker info`)?",
+    "- ⚠️ GAP: Docker not running → the human starts Docker. 🔧 WORKAROUND: skip the devcontainer.",
+    "",
+    "### 9. Workspace (only if `.aih-workspace.json` exists)",
+    "- Run `aih doctor` (workspace mode): every child repo scaffolded?",
+    `  Is \`${dir}/cross-repo-architecture.md\` filled in?`,
+    "- You CAN fix: run `aih init` in each child; fill the cross-repo map.",
+    "",
+    "### 10. Secrets",
+    "- No plaintext secrets committed; `.claudeignore` + `.claude/settings.json` deny rules present.",
+    "- ⚠️ GAP: if a real secret is found, the human must rotate it.",
+    "",
+    "## Final report (give this to the user)",
+    "",
+    "- ✅ **Validated** — what's confirmed working.",
+    "- ⚠️ **Gaps to unblock** — each item only the human can do, with the exact command/click.",
+    "- 🔧 **Workarounds** — where a gap has a fallback.",
+    "",
+    'End with a one-line verdict: "picture-perfect ✅" or "N gap(s) to unblock".',
   );
 }
 
