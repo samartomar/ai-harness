@@ -3,7 +3,7 @@ import { ANALYTICS_ENDPOINT, EVENT_TYPES } from "./templates.js";
 
 /**
  * Operator guidance for the telemetry capability. Everything here is a `doc`
- * action: the cron schedule, the analytics endpoint, the five first-class event
+ * action: the cron schedule, the analytics endpoint, the telemetry event
  * types, and backend wiring (Bindplane / Langfuse / Elasticsearch). None of it
  * is executed — the harness never schedules cron or contacts a remote backend.
  */

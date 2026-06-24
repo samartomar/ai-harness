@@ -82,15 +82,18 @@ describe("telemetry command surface", () => {
 });
 
 describe("telemetry plan — OTel env block", () => {
-  it("writes the managed OTel block into the shell profile with all five vars + endpoint", async () => {
+  it("writes the managed OTel block into the shell profile with all seven vars + endpoint", async () => {
     const eb = profileEnvBlock((await command.plan(makeCtx())).actions);
     expect(eb).toBeDefined();
-    expect(eb?.vars).toHaveLength(5);
+    expect(eb?.vars).toHaveLength(7);
     const body = await renderProfile(makeCtx());
 
     expect(body).toContain("# >>> aih managed (telemetry) >>>");
     expect(body).toContain("OTEL_EXPORTER_OTLP_ENDPOINT");
     expect(body).toContain("OTEL_EXPORTER_OTLP_PROTOCOL");
+    // without these two exporters Claude Code emits nothing — the bug this guards
+    expect(body).toContain("OTEL_METRICS_EXPORTER");
+    expect(body).toContain("OTEL_LOGS_EXPORTER");
     expect(body).toContain("OTEL_LOG_USER_PROMPTS");
     expect(body).toContain("OTEL_LOG_TOOL_DETAILS");
     expect(body).toContain("CLAUDE_CODE_ENABLE_TELEMETRY");
@@ -98,15 +101,18 @@ describe("telemetry plan — OTel env block", () => {
     expect(body).toContain("http://127.0.0.1:4317");
   });
 
-  it("uses the grpc protocol and enables the five collection flags by value", () => {
+  it("uses grpc, pins both OTLP exporters to otlp, and sets the collection flags by value", () => {
     const vars = otelEnvVars("http://127.0.0.1:4317");
     const byKey = Object.fromEntries(vars.map((v) => [v.key, v.value]));
     expect(byKey.OTEL_EXPORTER_OTLP_PROTOCOL).toBe("grpc");
+    // the actual export switches — without otlp on both, no metrics/logs leave the agent
+    expect(byKey.OTEL_METRICS_EXPORTER).toBe("otlp");
+    expect(byKey.OTEL_LOGS_EXPORTER).toBe("otlp");
     expect(byKey.OTEL_LOG_USER_PROMPTS).toBe("1");
     expect(byKey.OTEL_LOG_TOOL_DETAILS).toBe("1");
     expect(byKey.CLAUDE_CODE_ENABLE_TELEMETRY).toBe("1");
     expect(byKey.OTEL_EXPORTER_OTLP_ENDPOINT).toBe("http://127.0.0.1:4317");
-    expect(vars).toHaveLength(5);
+    expect(vars).toHaveLength(7);
   });
 
   it("honors a custom --endpoint flag in the env export", async () => {
@@ -222,7 +228,7 @@ describe("telemetry plan — analytics fetcher", () => {
 });
 
 describe("telemetry plan — docs and the cloud boundary", () => {
-  it("documents the cron schedule line, all five event types, and backend setup", async () => {
+  it("documents the cron schedule line, every event type, and backend setup", async () => {
     const p = await command.plan(makeCtx());
     const docText = p.actions
       .filter((a) => a.kind === "doc")
@@ -238,13 +244,33 @@ describe("telemetry plan — docs and the cloud boundary", () => {
     expect(docText).toContain("Bindplane");
   });
 
-  it("exposes exactly the five first-class event types", () => {
+  it("exposes the full published set of Claude Code event types, including skill_activated", () => {
+    // Verbatim from the Events section of code.claude.com/docs/en/monitoring-usage,
+    // in published order. skill_activated is the per-skill usage signal.
     expect([...EVENT_TYPES]).toEqual([
-      "api_request",
-      "tool_result",
-      "tool_decision",
       "user_prompt",
+      "tool_result",
+      "api_request",
       "api_error",
+      "api_refusal",
+      "api_request_body",
+      "api_response_body",
+      "tool_decision",
+      "permission_mode_changed",
+      "auth",
+      "mcp_server_connection",
+      "internal_error",
+      "plugin_installed",
+      "plugin_loaded",
+      "skill_activated",
+      "at_mention",
+      "api_retries_exhausted",
+      "hook_registered",
+      "hook_execution_start",
+      "hook_execution_complete",
+      "hook_plugin_metrics",
+      "compaction",
+      "feedback_survey",
     ]);
   });
 

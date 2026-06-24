@@ -13,27 +13,53 @@ export const ANALYTICS_ENDPOINT =
   "https://api.anthropic.com/v1/organizations/usage_report/claude_code";
 
 /**
- * The five first-class Claude Code telemetry event types. These are the log
- * record names the OTel collector and any downstream backend key off of.
+ * Claude Code's telemetry event types — the OTel log-record names the collector
+ * and any downstream backend key off of, stored as bare suffixes (the wire name
+ * is `claude_code.<type>`). Mirrors the Events section of
+ * code.claude.com/docs/en/monitoring-usage in published order, so the generated
+ * operator doc stays byte-stable. `skill_activated` is the per-skill usage
+ * signal the org analytics work keys on.
  */
 export const EVENT_TYPES = [
-  "api_request",
-  "tool_result",
-  "tool_decision",
   "user_prompt",
+  "tool_result",
+  "api_request",
   "api_error",
+  "api_refusal",
+  "api_request_body",
+  "api_response_body",
+  "tool_decision",
+  "permission_mode_changed",
+  "auth",
+  "mcp_server_connection",
+  "internal_error",
+  "plugin_installed",
+  "plugin_loaded",
+  "skill_activated",
+  "at_mention",
+  "api_retries_exhausted",
+  "hook_registered",
+  "hook_execution_start",
+  "hook_execution_complete",
+  "hook_plugin_metrics",
+  "compaction",
+  "feedback_survey",
 ] as const;
 
 /**
  * OpenTelemetry environment for Claude Code, exported into the shell profile.
- * Faithful to the blueprint: gRPC OTLP transport to `endpoint`, full prompt and
- * tool-detail logging enabled, and the master telemetry switch on. Order is
- * deterministic so the managed block is byte-stable across runs.
+ * Faithful to the blueprint: gRPC OTLP transport to `endpoint`, the metrics and
+ * logs exporters both pinned to `otlp` (Claude Code exports nothing without them
+ * — both default to off), full prompt and tool-detail logging enabled, and the
+ * master telemetry switch on. Order is deterministic so the managed block is
+ * byte-stable across runs.
  */
 export function otelEnvVars(endpoint: string): EnvVar[] {
   return [
     { key: "OTEL_EXPORTER_OTLP_ENDPOINT", value: endpoint },
     { key: "OTEL_EXPORTER_OTLP_PROTOCOL", value: "grpc" },
+    { key: "OTEL_METRICS_EXPORTER", value: "otlp" },
+    { key: "OTEL_LOGS_EXPORTER", value: "otlp" },
     { key: "OTEL_LOG_USER_PROMPTS", value: "1" },
     { key: "OTEL_LOG_TOOL_DETAILS", value: "1" },
     { key: "CLAUDE_CODE_ENABLE_TELEMETRY", value: "1" },
