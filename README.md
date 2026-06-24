@@ -55,7 +55,8 @@ node dist/cli.js --help
 | `aih bootstrap` | Orchestrate the workstation 4-phase rollout (certs → hardware/vdi → telemetry). |
 | `aih bootstrap-ai` | Emit + verify the repo's Layer-2 `ai-coding/` canon: `RULE_ROUTER.md`, per-CLI adapters, and root bootloaders (tool preamble + a regenerated shared block). `--verify` is the drift gate. |
 | `aih init` | Initialize a repo: profile + ecc + superpowers + bootstrap-ai + scaffold + secrets + guardrails + mcp + sandbox in one pass (one writer per file). |
-| `aih doctor` | Fail-closed verification of the workstation/repo configuration. |
+| `aih workspace` | Scaffold a **multi-repo** workspace (parent-only): cross-repo architecture map (write-once) + per-repo discipline, a VS Code `.code-workspace`, a filesystem MCP spanning every child repo, and a `.aih-workspace.json` marker. |
+| `aih doctor` | Fail-closed verification of the workstation/repo configuration (+ workspace mode: validates each child repo). |
 | `aih status` | Read-only inventory of what the harness has configured. |
 
 Global flags: `--apply`, `--verify`, `--json`, `--context-dir <dir>`, `--root <dir>`, `--cli <list>`, `--all-tools`.
@@ -125,6 +126,29 @@ aih bootstrap-ai --verify              # CI drift gate (no writes; exit 1 on dri
 
 Precedence: **Layer 2 wins** on conflict — repo canon overrides the generic baseline. Run
 `aih scaffold` for the context dir (`INDEX/architecture/conventions`) the router points at.
+
+### Multi-repo workspaces
+
+Most orgs split a product across **separate repos** (a UI repo and a backend repo in one git org). An
+agent editing the UI then has no view into the backend — no cross-repo blast radius. `aih workspace`
+bridges that gap from the **parent folder** that holds the repos:
+
+```bash
+aih workspace ./my-org --apply     # auto-detects child repos (*/.git); or --repos ui,backend
+```
+
+It writes, at the parent (it does **not** touch the child repos — run `aih init` in each):
+
+- `<context-dir>/cross-repo-architecture.md` — per-repo responsibilities + a **cross-repo feature map**
+  (UI column · backend column · the contract). **Write-once** — aih seeds it from your repo list, then
+  you own it; re-running never overwrites it.
+- `<context-dir>/repo-discipline.md` — load a repo's own canon before editing it.
+- `CLAUDE.md` + `AGENTS.md` — thin workspace bootloaders pointing at the cross-repo canon.
+- `<name>.code-workspace` — opens every repo in one VS Code window.
+- `.mcp.json` — a filesystem MCP **spanning every child repo path**, so an agent at the workspace root
+  can read across repos.
+- `.aih-workspace.json` — marker that puts `aih doctor` into **workspace mode** (validates each child
+  repo is scaffolded).
 
 ### Examples
 

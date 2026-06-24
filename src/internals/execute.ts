@@ -10,8 +10,11 @@ export interface WriteSummary {
   path: string;
   describe: string;
   merged: boolean;
-  /** Effect relative to current disk state. `unchanged` writes are skipped (no backup). */
-  effect: "create" | "overwrite" | "merge" | "unchanged";
+  /**
+   * Effect relative to current disk state. `unchanged` writes are skipped (no
+   * backup); `kept` is a write-once file that already exists (left untouched).
+   */
+  effect: "create" | "overwrite" | "merge" | "unchanged" | "kept";
 }
 
 export interface PlanResult {
@@ -61,25 +64,35 @@ export async function executePlan(plan: Plan, ctx: PlanContext): Promise<PlanRes
   for (const action of plan.actions) {
     if (action.kind === "write") {
       const absPath = resolvePath(ctx, action.path);
-      const contents = resolveContents(action, absPath);
       const existing = readIfExists(absPath);
-      // Skip a write whose rendered content already matches disk — true idempotency:
-      // no rewrite, no `.aih.bak`, surfaced as `unchanged` in the plan.
-      const effect: WriteSummary["effect"] =
-        existing === undefined
-          ? "create"
-          : existing === contents
-            ? "unchanged"
-            : action.merge
-              ? "merge"
-              : "overwrite";
-      if (ctx.apply && effect !== "unchanged") txn.stage(absPath, contents, action.mode);
-      writes.push({
-        path: action.path,
-        describe: action.describe,
-        merged: Boolean(action.merge),
-        effect,
-      });
+      if (action.once && existing !== undefined) {
+        // Write-once seed file already present — preserve the user's content.
+        writes.push({
+          path: action.path,
+          describe: action.describe,
+          merged: false,
+          effect: "kept",
+        });
+      } else {
+        const contents = resolveContents(action, absPath);
+        // Skip a write whose rendered content already matches disk — true idempotency:
+        // no rewrite, no `.aih.bak`, surfaced as `unchanged` in the plan.
+        const effect: WriteSummary["effect"] =
+          existing === undefined
+            ? "create"
+            : existing === contents
+              ? "unchanged"
+              : action.merge
+                ? "merge"
+                : "overwrite";
+        if (ctx.apply && effect !== "unchanged") txn.stage(absPath, contents, action.mode);
+        writes.push({
+          path: action.path,
+          describe: action.describe,
+          merged: Boolean(action.merge),
+          effect,
+        });
+      }
     } else if (action.kind === "doc") {
       if (action.path && ctx.apply) {
         txn.stage(resolvePath(ctx, action.path), ensureTrailingNewline(action.text));

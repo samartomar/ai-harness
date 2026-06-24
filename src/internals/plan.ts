@@ -34,6 +34,8 @@ export interface WriteAction {
   merge?: boolean;
   /** POSIX file mode, e.g. 0o755 for hooks. */
   mode?: number;
+  /** Write only if the file is absent; never overwrite (user-owned seed files). */
+  once?: boolean;
 }
 
 export interface DocAction {
@@ -128,9 +130,9 @@ export function writeText(
   path: string,
   contents: string,
   describe: string,
-  opts: { mode?: number } = {},
+  opts: { mode?: number; once?: boolean } = {},
 ): WriteAction {
-  return { kind: "write", path, contents, describe, mode: opts.mode };
+  return { kind: "write", path, contents, describe, mode: opts.mode, once: opts.once };
 }
 
 export function writeJson(
