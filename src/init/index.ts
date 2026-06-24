@@ -18,9 +18,14 @@ import { INIT_PHASES } from "./phases.js";
  */
 async function initPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
   const actions: Action[] = [];
+  // `--mcp-mode` flows to the mcp phase only (standard|offline|none) so a
+  // locked-down org gets the right MCP handling in one `aih init`.
+  const mcpMode = String(ctx.options.mcpMode ?? "standard");
 
   for (const phase of INIT_PHASES) {
-    const sub = await phase.command.plan(ctx);
+    const phaseCtx =
+      phase.command.name === "mcp" ? { ...ctx, options: { ...ctx.options, mode: mcpMode } } : ctx;
+    const sub = await phase.command.plan(phaseCtx);
     actions.push(doc(`init: ${phase.command.name}`, phase.headline));
     actions.push(...sub.actions);
   }
@@ -45,6 +50,13 @@ export const command: CommandSpec = {
   name: "init",
   summary:
     "Initialize a target repo: profile + ecc + superpowers + bootstrap-ai + scaffold + secrets + guardrails + mcp + sandbox",
-  options: [],
+  options: [
+    {
+      flags: "--mcp-mode <mode>",
+      description:
+        "MCP handling: standard | offline (vendored) | none (CLI fallback, blocked orgs)",
+      default: "standard",
+    },
+  ],
   plan: initPlan,
 };

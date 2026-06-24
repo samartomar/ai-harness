@@ -1,0 +1,6 @@
+# Every change is routed to the maintainer for review.
+* @samartomar
+
+# Security-sensitive surfaces — CI, supply chain, and the action model.
+/.github/ @samartomar
+/src/internals/ @samartomar

@@ -47,9 +47,9 @@ function docs(actions: Action[]): DocAction[] {
 }
 
 describe("aih init — command surface", () => {
-  it("keeps the init name, an empty option set, and a real plan", async () => {
+  it("keeps the init name, the --mcp-mode option, and a real plan", async () => {
     expect(command.name).toBe("init");
-    expect(command.options).toEqual([]);
+    expect(command.options?.map((o) => o.flags)).toEqual(["--mcp-mode <mode>"]);
     const p = await command.plan(ctx());
     expect(p.capability).toBe("init");
     expect(p.actions.length).toBeGreaterThan(0);
@@ -294,6 +294,14 @@ describe("aih init — sub-capability options default gracefully", () => {
       (a): a is WriteAction => a.kind === "write" && a.path === ".mcp.json",
     );
     expect(mcpWrite?.describe).toContain("project scope");
+  });
+
+  it("--mcp-mode none threads to the mcp phase only (no .mcp.json; CLI fallback)", async () => {
+    const paths = writePaths((await command.plan(ctx({ options: { mcpMode: "none" } }))).actions);
+    expect(paths).not.toContain(".mcp.json");
+    expect(paths).toContain(".ai-context/mcp-fallback.md");
+    // Other phases are unaffected — the canon still lands.
+    expect(paths).toContain("CLAUDE.md");
   });
 });
 
