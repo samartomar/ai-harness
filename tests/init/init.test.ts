@@ -60,8 +60,10 @@ describe("aih init — composes all six repo-scoped capabilities", () => {
   it("includes a signature action from every sub-capability", async () => {
     const paths = writePaths((await command.plan(ctx())).actions);
 
-    // profile: thin CLAUDE.md pointer + stack cursor rule.
+    // bootstrap-ai: the CLAUDE.md bootloader (sole owner) + the RULE_ROUTER.
     expect(paths).toContain("CLAUDE.md");
+    expect(paths).toContain(".ai-context/RULE_ROUTER.md");
+    // profile: the stack cursor rule.
     expect(paths).toContain(".cursor/rules/01-stack.mdc");
     // scaffold: the canonical context INDEX.
     expect(paths).toContain(".ai-context/INDEX.md");
@@ -110,8 +112,8 @@ describe("aih init — composition, not duplication", () => {
     const headers = docs(composed).filter((d) => d.describe.startsWith("init: "));
     expect(headers).toHaveLength(INIT_PHASES.length);
 
-    // Writes are deduped by path — profile + scaffold both target CLAUDE.md, but it
-    // appears once (profile's stack-aware version wins as the first writer).
+    // Writes are deduped by path; CLAUDE.md has a single owner now (bootstrap-ai,
+    // the canon), so it appears exactly once — profile/scaffold no longer write it.
     const writePathList = composed
       .filter((a): a is WriteAction => a.kind === "write")
       .map((w) => w.path);
@@ -124,6 +126,7 @@ describe("aih init — composition, not duplication", () => {
       "profile",
       "ecc",
       "superpowers",
+      "bootstrap-ai",
       "scaffold",
       "secrets",
       "guardrails",

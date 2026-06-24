@@ -120,16 +120,17 @@ describe("scanRepo — JavaScript Serverless project (regression)", () => {
     expect(s.entryPoints).toContain("src/handlers/createPost.handler");
   });
 
-  it("plan: emits 02-node.mdc + 03-serverless.mdc, and NEVER a TypeScript rule", async () => {
+  it("plan: emits 02-node.mdc + 03-serverless.mdc, and NEVER a TypeScript rule or CLAUDE.md", async () => {
     plantServerless();
     const actions = (await command.plan(makeCtx())).actions;
     expect(findWrite(actions, ".cursor/rules/02-node.mdc")).toBeDefined();
     expect(findWrite(actions, ".cursor/rules/03-serverless.mdc")).toBeDefined();
     expect(findWrite(actions, ".cursor/rules/02-typescript.mdc")).toBeUndefined();
-    const claude = findWrite(actions, "CLAUDE.md")?.contents ?? "";
-    expect(claude).toContain("JavaScript/Node.js");
-    expect(claude).toContain("Serverless Framework");
-    expect(claude).not.toContain("vitest");
+    // Root bootloaders are owned by `aih bootstrap-ai`, never by profile.
+    expect(findWrite(actions, "CLAUDE.md")).toBeUndefined();
+    const stack = findWrite(actions, ".cursor/rules/01-stack.mdc")?.contents ?? "";
+    expect(stack).toContain("JavaScript/Node.js");
+    expect(stack).not.toContain("vitest");
   });
 });
 
@@ -264,22 +265,20 @@ describe("scanRepo — other stacks", () => {
 // ---- plan(): generated artifacts ------------------------------------------
 
 describe("profile.plan", () => {
-  it("emits a thin CLAUDE.md (< 30 lines) with the pointer sentence + real command", async () => {
+  it("emits the stack Cursor rule with the detected language + real command", async () => {
     put("package.json", pkg({ scripts: { test: "vitest run" } }));
-    const claude = findWrite((await command.plan(makeCtx())).actions, "CLAUDE.md")?.contents ?? "";
-    expect(claude.split("\n").length).toBeLessThan(30);
-    expect(claude).toContain("This file is not the full rulebook.");
-    expect(claude).toContain("npm test");
-    expect(claude).toContain(".ai-context");
+    const stack =
+      findWrite((await command.plan(makeCtx())).actions, ".cursor/rules/01-stack.mdc")?.contents ??
+      "";
+    expect(stack).toContain("JavaScript/Node.js");
+    expect(stack).toContain("npm test");
   });
 
-  it("routes CLAUDE.md to a custom context dir", async () => {
+  it("writes no root bootloader — that is `aih bootstrap-ai`'s job", async () => {
     put("go.mod", "module example.com/x\n");
-    const text =
-      findWrite((await command.plan(makeCtx({}, "ai-coding"))).actions, "CLAUDE.md")?.contents ??
-      "";
-    expect(text).toContain("ai-coding/");
-    expect(text).not.toContain(".ai-context");
+    const actions = (await command.plan(makeCtx({}, "ai-coding"))).actions;
+    expect(findWrite(actions, "CLAUDE.md")).toBeUndefined();
+    expect(findWrite(actions, ".cursor/rules/01-stack.mdc")).toBeDefined();
   });
 
   it("emits the JS node rule for a plain-JS repo (not the TS rule)", async () => {

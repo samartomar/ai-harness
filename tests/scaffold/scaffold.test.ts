@@ -6,7 +6,6 @@ import { executePlan } from "../../src/internals/execute.js";
 import type { Action, PlanContext, WriteAction } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
-import { POINTER_SENTENCE } from "../../src/scaffold/adapters.js";
 import { command } from "../../src/scaffold/index.js";
 
 let dir: string;
@@ -42,21 +41,6 @@ function writesByPath(actions: Action[]): Map<string, WriteAction> {
   return m;
 }
 
-/** Every thin pointer adapter, written only under --all-tools (one per CLI family). */
-const THIN_ADAPTERS = [
-  "CLAUDE.md",
-  "AGENTS.md",
-  ".windsurfrules",
-  ".github/copilot-instructions.md",
-  ".cursor/rules/00-index.mdc",
-  "GEMINI.md",
-];
-
-/** A ctx targeting every CLI, so all adapters are emitted. */
-function allToolsCtx(over: Partial<PlanContext> = {}): PlanContext {
-  return ctx({ options: { allTools: true }, ...over });
-}
-
 describe("scaffold command surface", () => {
   it("keeps the scaffold name and an empty option set", () => {
     expect(command.name).toBe("scaffold");
@@ -85,79 +69,25 @@ describe("scaffold plan (dry-run shape)", () => {
     expect(w.has(".ai-context/skills/example-skill/SKILL.md")).toBe(true);
   });
 
-  it("emits every thin IDE adapter under --all-tools", async () => {
-    const w = writesByPath((await command.plan(allToolsCtx())).actions);
-    for (const path of THIN_ADAPTERS) {
-      expect(w.has(path)).toBe(true);
-    }
-  });
-
-  it("by default targets only Claude Code (CLAUDE.md, no other adapters)", async () => {
+  it("does NOT write root bootloaders — those are owned by `aih bootstrap-ai`", async () => {
     const w = writesByPath((await command.plan(ctx())).actions);
-    expect(w.has("CLAUDE.md")).toBe(true);
-    expect(w.has("AGENTS.md")).toBe(false);
-    expect(w.has(".cursor/rules/00-index.mdc")).toBe(false);
-    expect(w.has("GEMINI.md")).toBe(false);
-  });
-
-  it("--cli selects exactly the matching adapters (codex+cursor → AGENTS.md + cursor)", async () => {
-    const w = writesByPath((await command.plan(ctx({ options: { cli: "codex,cursor" } }))).actions);
-    expect(w.has("AGENTS.md")).toBe(true);
-    expect(w.has(".cursor/rules/00-index.mdc")).toBe(true);
     expect(w.has("CLAUDE.md")).toBe(false);
-  });
-
-  it("dedupes AGENTS.md when several AGENTS-family CLIs are selected", async () => {
-    const actions = (await command.plan(ctx({ options: { cli: "codex,opencode,zed" } }))).actions;
-    const agents = actions.filter(
-      (a) => a.kind === "write" && a.path.replace(/\\/g, "/") === "AGENTS.md",
-    );
-    expect(agents).toHaveLength(1);
-  });
-});
-
-describe("thin adapters (pointer contract)", () => {
-  it("each adapter is < 30 lines, opens the pointer sentence, and routes to contextDir", async () => {
-    const w = writesByPath((await command.plan(allToolsCtx())).actions);
-    for (const path of THIN_ADAPTERS) {
-      const contents = w.get(path)?.contents ?? "";
-      const lineCount = contents.replace(/\n$/, "").split("\n").length;
-      expect(lineCount, `${path} should be < 30 lines`).toBeLessThan(30);
-      expect(contents, `${path} must contain the pointer sentence`).toContain(POINTER_SENTENCE);
-      expect(contents, `${path} must reference the context dir`).toContain(".ai-context");
-    }
-  });
-
-  it("the cursor adapter carries MDC frontmatter with alwaysApply + glob", async () => {
-    const w = writesByPath((await command.plan(allToolsCtx())).actions);
-    const mdc = w.get(".cursor/rules/00-index.mdc")?.contents ?? "";
-    expect(mdc.startsWith("---\n")).toBe(true);
-    expect(mdc).toContain("alwaysApply: true");
-    expect(mdc).toContain('globs: ["**/*"]');
-    expect(mdc).toContain("description:");
+    expect(w.has("AGENTS.md")).toBe(false);
+    expect(w.has("GEMINI.md")).toBe(false);
+    expect(w.has(".cursor/rules/00-index.mdc")).toBe(false);
   });
 });
 
 describe("custom context dir override", () => {
-  it("lands context files under ai-coding and points adapters there", async () => {
-    const p = await command.plan(allToolsCtx({ contextDir: "ai-coding" }));
-    const w = writesByPath(p.actions);
-    // Context files moved.
+  it("lands context files under ai-coding, never the default dir", async () => {
+    const w = writesByPath((await command.plan(ctx({ contextDir: "ai-coding" }))).actions);
     expect(w.has("ai-coding/INDEX.md")).toBe(true);
     expect(w.has("ai-coding/skills/example-skill/SKILL.md")).toBe(true);
     expect(w.has(".ai-context/INDEX.md")).toBe(false);
-    // Adapters now reference the custom dir, not the default.
-    for (const path of THIN_ADAPTERS) {
-      const contents = w.get(path)?.contents ?? "";
-      expect(contents, `${path} should reference ai-coding`).toContain("ai-coding");
-      expect(contents).not.toContain(".ai-context");
-    }
   });
 
   it("the context skeleton docs themselves reference the override, never the default", async () => {
     const w = writesByPath((await command.plan(ctx({ contextDir: "ai-coding" }))).actions);
-    // INDEX + skeletons interpolate contextDir in their own bodies; a hardcoded
-    // ".ai-context" here would pass the adapter-only assertions above.
     for (const file of ["INDEX.md", "architecture.md", "conventions.md", "tasks.md"]) {
       const contents = w.get(`ai-coding/${file}`)?.contents ?? "";
       expect(contents, `${file} should reference ai-coding`).toContain("ai-coding");
@@ -175,6 +105,8 @@ describe("INDEX routing content", () => {
     expect(index).toContain("tasks.md");
     expect(index).toContain("skills/");
     expect(index.toLowerCase()).toContain("load");
+    // Points at bootstrap-ai for the bootloaders, not at self-written adapters.
+    expect(index).toContain("bootstrap-ai");
   });
 });
 
@@ -218,16 +150,16 @@ describe("local guardrails", () => {
 });
 
 describe("apply (executor integration)", () => {
-  it("materializes context dir, adapters, settings, and hook on disk", async () => {
+  it("materializes context dir, settings, and hook on disk (no bootloaders)", async () => {
     const applied = ctx({ apply: true });
     const built = await command.plan(applied);
     const res = await executePlan(built, applied);
 
     const written = res.writes.map((x) => x.path.replace(/\\/g, "/"));
     expect(written).toContain(".ai-context/INDEX.md");
-    expect(written).toContain("CLAUDE.md");
     expect(written).toContain(".claude/settings.json");
     expect(written).toContain(".githooks/pre-commit");
+    expect(written).not.toContain("CLAUDE.md");
 
     const index = readFileSync(join(dir, ".ai-context/INDEX.md"), "utf8");
     expect(index.endsWith("\n")).toBe(true);

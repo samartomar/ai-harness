@@ -1,3 +1,4 @@
+import { command as bootstrapAi } from "../bootstrap-ai/index.js";
 import { command as ecc } from "../ecc/index.js";
 import { command as guardrails } from "../guardrails/index.js";
 import type { CommandSpec } from "../internals/plan.js";
@@ -22,12 +23,13 @@ export interface InitPhase {
 }
 
 /**
- * The fixed bootstrap order: profile → ecc → superpowers → scaffold → secrets →
- * guardrails → mcp → sandbox. Profiling detects the stack; ECC + Superpowers
- * install the agent harness for the selected CLIs; scaffolding lays down the
- * context dir and adapters; secrets + guardrails fence the repo before MCP wiring
- * and the sandbox land on top. Each headline names its capability so a composed
- * dry-run reads as labelled sections.
+ * The fixed bootstrap order: profile → ecc → superpowers → bootstrap-ai →
+ * scaffold → secrets → guardrails → mcp → sandbox. Profiling detects the stack
+ * (Cursor rules); ECC + Superpowers install the agent baseline for the selected
+ * CLIs; bootstrap-ai lays the Layer-2 canon (the SOLE writer of root bootloaders +
+ * RULE_ROUTER); scaffolding lays the context dir the router points at; secrets +
+ * guardrails fence the repo before MCP wiring and the sandbox land on top. Each
+ * file has exactly one writer, so the composed plan dedupes to one write per path.
  */
 export const INIT_PHASES: readonly InitPhase[] = [
   {
@@ -44,8 +46,14 @@ export const INIT_PHASES: readonly InitPhase[] = [
       "superpowers — install obra/Superpowers (brainstorm → plan → TDD → review) for the selected CLIs",
   },
   {
+    command: bootstrapAi,
+    headline:
+      "bootstrap-ai — emit the Layer-2 ai-coding canon: RULE_ROUTER + per-CLI adapters + the root bootloaders",
+  },
+  {
     command: scaffold,
-    headline: "scaffold — lay down the canonical context dir, INDEX/SKILL docs and IDE adapters",
+    headline:
+      "scaffold — lay down the canonical context dir (INDEX/SKILL docs) the router points at",
   },
   {
     command: secrets,

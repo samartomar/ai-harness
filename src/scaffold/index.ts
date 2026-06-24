@@ -1,10 +1,8 @@
 import { posix } from "node:path";
-import { resolveClis } from "../internals/clis.js";
 import type { Action, CommandSpec, PlanContext } from "../internals/plan.js";
 import { doc, plan, writeJson, writeText } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
 import { scanRepo } from "../profile/scan.js";
-import { adaptersForClis } from "./adapters.js";
 import { HOOKS_PATH_COMMAND, preCommitHook } from "./hooks.js";
 import {
   architectureDoc,
@@ -19,23 +17,23 @@ const SETTINGS_DENY = ["Read(./.env*)", "Read(./secrets/**)"] as const;
 
 /**
  * Scaffold the canonical context architecture for a repository: a tool-agnostic
- * context directory (INDEX + skeletons + an example skill), thin pointer adapters
- * for every IDE/agent, a `.claude/settings.json` deny-list, and an opt-in
- * pre-commit guardrail. Every path is relative to `ctx.root`; the context dir
- * name is `ctx.contextDir`, so a custom `--context-dir ai-coding` lands content
- * (and every pointer) there. Pure planning — the executor decides dry-run vs
- * apply; nothing here writes or touches a remote system.
+ * context directory (INDEX + skeletons + an example skill), a `.claude/settings.json`
+ * deny-list, and an opt-in pre-commit guardrail. Root bootloaders and the
+ * `RULE_ROUTER` that point here are owned by `aih bootstrap-ai` (one writer per
+ * file), so scaffold writes no adapters itself. Every path is relative to
+ * `ctx.root`; the context dir name is `ctx.contextDir`, so a custom
+ * `--context-dir ai-coding` lands content there. Pure planning — the executor
+ * decides dry-run vs apply; nothing here writes or touches a remote system.
  */
 function scaffoldPlan(ctx: PlanContext): ReturnType<typeof plan> {
   const dir = ctx.contextDir;
   const inDir = (...parts: string[]): string => posix.join(dir, ...parts);
   // Populate the context from the real repo, not empty placeholders.
   const stack = scanRepo(ctx.root, { maxDepth: 8 });
-  // Only emit adapters for the CLIs the user targets (default: Claude Code).
-  const clis = resolveClis(ctx.options);
 
   const actions: Action[] = [
-    // 1. Canonical context directory.
+    // 1. Canonical context directory. (Root bootloaders + RULE_ROUTER that point
+    //    here are owned by `aih bootstrap-ai`, not scaffold — one writer per file.)
     writeText(inDir("INDEX.md"), indexDoc(dir), `${dir} routing index (load order)`),
     writeText(
       inDir("architecture.md"),
@@ -55,14 +53,8 @@ function scaffoldPlan(ctx: PlanContext): ReturnType<typeof plan> {
     ),
   ];
 
-  // 2. Thin IDE/agent adapters — pointers back to the context dir (<30 lines each),
-  //    one per selected CLI (deduped: codex/antigravity/opencode/zed/kimi share AGENTS.md).
-  for (const a of adaptersForClis(clis, dir)) {
-    actions.push(writeText(a.path, a.contents, a.describe));
-  }
-
   actions.push(
-    // 3. Local guardrail: keep secrets out of the agent's read scope (merge, don't clobber).
+    // 2. Local guardrail: keep secrets out of the agent's read scope (merge, don't clobber).
     writeJson(
       posix.join(".claude", "settings.json"),
       { permissions: { deny: [...SETTINGS_DENY] } },
@@ -95,7 +87,8 @@ function scaffoldPlan(ctx: PlanContext): ReturnType<typeof plan> {
 
 export const command: CommandSpec = {
   name: "scaffold",
-  summary: "Scaffold the canonical context dir, INDEX/SKILL docs and thin IDE adapters",
+  summary:
+    "Scaffold the canonical context dir (INDEX/SKILL docs) + secret deny-list + pre-commit hook",
   options: [],
   plan: scaffoldPlan,
 };

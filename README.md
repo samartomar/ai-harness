@@ -42,10 +42,10 @@ node dist/cli.js --help
 | `aih certs` | Extract the corporate root CA from the OS trust store, lock it down, and propagate trust to npm/pip/cargo/conda. |
 | `aih hardware` | Profile CPU/RAM/GPU; compute memory/thread/parallel limits + quantization; emit tuned Ollama/llama.cpp settings. |
 | `aih vdi` | Detect VDI (Citrix/WorkSpaces/RES/RDP) and redirect caches + SQLite to local scratch (junction on Windows). |
-| `aih profile` | Recursively detect the repo's stack and synthesize a thin `CLAUDE.md` + Cursor rules. |
+| `aih profile` | Recursively detect the repo's stack and synthesize Cursor stack rules (`.cursor/rules/*.mdc`). Root bootloaders are owned by `bootstrap-ai`. |
 | `aih ecc` | Install [affaan-m/ECC](https://github.com/affaan-m/ECC) (skills, instincts, memory, security, research-first) for the selected CLIs, scoped to the detected stack: Claude plugin path, `ecc-install` for codex/cursor/zed/opencode, `consult` advisor otherwise. |
 | `aih superpowers` | Install [obra/Superpowers](https://github.com/obra/Superpowers) (brainstorm → plan → TDD → subagent-review skills) for the selected CLIs. |
-| `aih scaffold` | Create the canonical context dir (`--context-dir`, default `.ai-context`) + thin IDE adapters (one per selected CLI) + INDEX/SKILL skeleton. |
+| `aih scaffold` | Create the canonical context dir (`--context-dir`, default `.ai-context`) — INDEX/SKILL skeleton + a secret deny-list + a pre-commit hook. (Bootloaders are `bootstrap-ai`'s job.) |
 | `aih guardrails` | Generate `.gitleaks.toml`, `.pre-commit-config.yaml`, and a CI license gate that blocks AGPL/strong-copyleft. |
 | `aih secrets` | Scan for plaintext `.env*`/`secrets/` and write agent deny rules + vault-injection guidance. |
 | `aih mcp` | Generate `.mcp.json` (local/project/remote scopes) and document the SSO MCP gateway. |
@@ -54,7 +54,7 @@ node dist/cli.js --help
 | `aih crispy` | Run the CRISPY context-engineering stage machine (deterministic, gate-ordered). |
 | `aih bootstrap` | Orchestrate the workstation 4-phase rollout (certs → hardware/vdi → telemetry). |
 | `aih bootstrap-ai` | Emit + verify the repo's Layer-2 `ai-coding/` canon: `RULE_ROUTER.md`, per-CLI adapters, and root bootloaders (tool preamble + a regenerated shared block). `--verify` is the drift gate. |
-| `aih init` | Initialize a repo: profile + ecc + superpowers + scaffold + secrets + guardrails + mcp + sandbox in one pass. |
+| `aih init` | Initialize a repo: profile + ecc + superpowers + bootstrap-ai + scaffold + secrets + guardrails + mcp + sandbox in one pass (one writer per file). |
 | `aih doctor` | Fail-closed verification of the workstation/repo configuration. |
 | `aih status` | Read-only inventory of what the harness has configured. |
 
