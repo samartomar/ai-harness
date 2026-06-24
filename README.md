@@ -43,6 +43,7 @@ node dist/cli.js --help
 | `aih hardware` | Profile CPU/RAM/GPU; compute memory/thread/parallel limits + quantization; emit tuned Ollama/llama.cpp settings. |
 | `aih vdi` | Detect VDI (Citrix/WorkSpaces/RES/RDP) and redirect caches + SQLite to local scratch (junction on Windows). |
 | `aih profile` | Recursively detect the repo's stack and synthesize a thin `CLAUDE.md` + Cursor rules. |
+| `aih ecc` | Install the ECC engineering rule set customized to the detected stack (`common` + language/framework modules); empty repo → install everything; re-run self-heals. |
 | `aih scaffold` | Create the canonical context dir (`--context-dir`, default `.ai-context`) + thin IDE adapters + INDEX/SKILL skeleton. |
 | `aih guardrails` | Generate `.gitleaks.toml`, `.pre-commit-config.yaml`, and a CI license gate that blocks AGPL/strong-copyleft. |
 | `aih secrets` | Scan for plaintext `.env*`/`secrets/` and write agent deny rules + vault-injection guidance. |

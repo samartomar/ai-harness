@@ -1,3 +1,4 @@
+import { command as ecc } from "../ecc/index.js";
 import { command as guardrails } from "../guardrails/index.js";
 import type { CommandSpec } from "../internals/plan.js";
 import { command as mcp } from "../mcp/index.js";
@@ -30,6 +31,10 @@ export const INIT_PHASES: readonly InitPhase[] = [
   {
     command: profile,
     headline: "profile — detect the stack and synthesize CLAUDE.md + cursor rules",
+  },
+  {
+    command: ecc,
+    headline: "ecc — install the engineering rule set customized to the detected stack",
   },
   {
     command: scaffold,

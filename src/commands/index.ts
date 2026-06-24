@@ -3,6 +3,7 @@ import { command as bootstrap } from "../bootstrap/index.js";
 import { command as certs } from "../certs/index.js";
 import { command as crispy } from "../crispy/index.js";
 import { command as doctor } from "../doctor.js";
+import { command as ecc } from "../ecc/index.js";
 import { command as guardrails } from "../guardrails/index.js";
 import { command as hardware } from "../hardware/index.js";
 import { command as init } from "../init/index.js";
@@ -23,6 +24,7 @@ export const CAPABILITIES: CommandSpec[] = [
   hardware,
   vdi,
   profile,
+  ecc,
   scaffold,
   guardrails,
   secrets,

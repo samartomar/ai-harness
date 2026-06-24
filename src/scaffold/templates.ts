@@ -61,6 +61,8 @@ export function indexDoc(dir: string): string {
     "  Load to pick up work or record a decision.",
     `- **skills/** — focused, reusable how-to playbooks (one dir per skill,`,
     "  each with a `SKILL.md`). Load a skill only when its trigger matches.",
+    `- **rules/ecc/RULE_ROUTER.md** — the engineering rules for this stack`,
+    "  (installed by `aih ecc`). Load `rules/ecc/common.md` before any change.",
     "",
     "## Conventions for this directory",
     "",
