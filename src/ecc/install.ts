@@ -11,13 +11,21 @@ import type { EccLanguagePack } from "./select.js";
  *                  emitted as an `exec` that runs under --apply);
  *  - `consult`   — not a first-class installer target; emitted as a doc that
  *                  routes the user through ECC's `consult` advisor.
- * Source: affaan-m/ECC README (targets claude|codex|cursor|zed|opencode; plugin
- * recommended for Claude Code).
+ * Codex and Kiro are NOT `ecc-install` targets — ECC ships native scripts for
+ * them (`scripts/sync-ecc-to-codex.sh`, `.kiro/install.sh`) that need a local
+ * checkout, so they're handled in `index.ts` via clone discovery. OpenCode needs
+ * no installer — it auto-detects the root `AGENTS.md` the canon writes.
+ * Source: affaan-m/ECC README — `ecc-install --target` accepts claude|cursor|zed.
  */
 export type EccMethod = "plugin" | "installer" | "consult";
 
-/** CLIs the `ecc-install` CLI targets directly (besides Claude's plugin path). */
-const INSTALLER_TARGETS: readonly Cli[] = ["codex", "cursor", "zed", "opencode"];
+/**
+ * CLIs the `ecc-install` CLI targets directly (besides Claude's plugin path).
+ * Verified against the affaan-m/ECC README, which documents `--target` only for
+ * cursor and zed (claude defaults). Codex/Kiro use native scripts and OpenCode
+ * auto-detects AGENTS.md — all three are intercepted in `eccPlan`, not here.
+ */
+const INSTALLER_TARGETS: readonly Cli[] = ["cursor", "zed"];
 
 export function eccMethod(cli: Cli): EccMethod {
   if (cli === "claude") return "plugin";
@@ -90,9 +98,24 @@ function consultDoc(cli: Cli, inputs: EccInstallInputs): Action {
       "",
       `  npx ecc consult "${inputs.stackSummary}" --target ${cli}`,
       "",
-      "ECC's first-class targets are: claude, codex, cursor, zed, opencode.",
+      "ECC installs directly for: claude (plugin), cursor, zed. Codex and Kiro use",
+      "ECC's native sync/install scripts; OpenCode auto-detects the root `AGENTS.md`.",
       "For Gemini/Antigravity-style tools, ECC content is wired via the canonical",
       "context dir + thin adapters (see `aih scaffold`).",
+    ),
+  );
+}
+
+/** OpenCode: no installer — ECC loads via the root AGENTS.md the canon writes. */
+export function opencodeEccDoc(): Action {
+  return doc(
+    "Install ECC for OpenCode (no installer needed)",
+    lines(
+      "OpenCode auto-detects the root `AGENTS.md`, so ECC's guidance loads from the",
+      "canon's bootloader — run `aih bootstrap-ai --cli opencode` to write it. ECC has",
+      "no `ecc-install` target for OpenCode. For extra agents/skills/MCP, use the advisor:",
+      "",
+      '  npx ecc consult "<your stack>" --target opencode',
     ),
   );
 }

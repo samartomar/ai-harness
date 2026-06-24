@@ -96,16 +96,18 @@ describe("eccLanguages — map detected stack to ECC language packs", () => {
 describe("eccMethod / eccInstallerArgv", () => {
   it("routes each CLI to the right install method", () => {
     expect(eccMethod("claude")).toBe("plugin");
-    expect(eccMethod("codex")).toBe("installer");
     expect(eccMethod("cursor")).toBe("installer");
     expect(eccMethod("zed")).toBe("installer");
-    expect(eccMethod("opencode")).toBe("installer");
     expect(eccMethod("gemini")).toBe("consult");
     expect(eccMethod("antigravity")).toBe("consult");
+    // codex/kiro/opencode are NOT ecc-install targets — they're intercepted in
+    // eccPlan (native scripts / AGENTS.md auto-detect), verified in the plan tests.
+    expect(eccMethod("codex")).not.toBe("installer");
+    expect(eccMethod("opencode")).not.toBe("installer");
   });
 
   it("builds a stack-customized installer argv", () => {
-    const argv = eccInstallerArgv("codex", {
+    const argv = eccInstallerArgv("cursor", {
       profile: "core",
       packs: ["typescript", "python"],
       installEverything: false,
@@ -116,7 +118,7 @@ describe("eccMethod / eccInstallerArgv", () => {
       "--yes",
       "ecc-install",
       "--target",
-      "codex",
+      "cursor",
       "--profile",
       "core",
       "typescript",
@@ -165,20 +167,33 @@ describe("ecc.plan — real affaan-m/ECC install", () => {
     expect(text).toContain("npx ecc-agentshield scan");
   });
 
-  it("--cli codex emits a shell installer exec scoped to the detected packs", async () => {
+  it("--cli codex uses ECC's native sync-ecc-to-codex.sh, not ecc-install", async () => {
     put("package.json", JSON.stringify({ name: "svc" }));
     put("tsconfig.json", "{}");
     const actions = (await command.plan(makeCtx({ cli: "codex" }))).actions;
-    const argv = execs(actions)[0]?.argv ?? [];
-    expect(argv.slice(0, 5)).toEqual(["npx", "--yes", "ecc-install", "--target", "codex"]);
-    expect(argv).toContain("typescript");
-    expect(argv).toContain("core");
+    const blob = actions
+      .map((a) => (a.kind === "doc" ? a.text : a.kind === "exec" ? a.argv.join(" ") : ""))
+      .join("\n");
+    expect(blob).toContain("sync-ecc-to-codex.sh");
+    // Codex is not an ecc-install target — never fabricate that command.
+    expect(blob).not.toContain("ecc-install --target codex");
+  });
+
+  it("--cli opencode documents AGENTS.md auto-detect (no ecc-install target)", async () => {
+    put("package.json", JSON.stringify({ name: "svc" }));
+    put("tsconfig.json", "{}");
+    const actions = (await command.plan(makeCtx({ cli: "opencode" }))).actions;
+    const blob = actions
+      .map((a) => (a.kind === "doc" ? a.text : a.kind === "exec" ? a.argv.join(" ") : ""))
+      .join("\n");
+    expect(blob).toContain("AGENTS.md");
+    expect(blob).not.toContain("ecc-install --target opencode");
   });
 
   it("honors --profile", async () => {
     put("package.json", JSON.stringify({ name: "svc" }));
     put("tsconfig.json", "{}");
-    const actions = (await command.plan(makeCtx({ cli: "codex", profile: "full" }))).actions;
+    const actions = (await command.plan(makeCtx({ cli: "cursor", profile: "full" }))).actions;
     expect(execs(actions)[0]?.argv).toContain("full");
   });
 
@@ -202,16 +217,28 @@ describe("ecc.plan — real affaan-m/ECC install", () => {
     expect(blob).not.toContain("ecc-install --target kiro");
   });
 
-  it("--all-tools covers plugin (claude), installer (codex), and consult (gemini)", async () => {
+  it("--all-tools covers plugin (claude), installer (cursor/zed), native (codex/kiro), consult (gemini)", async () => {
     put("package.json", JSON.stringify({ name: "svc" }));
     put("tsconfig.json", "{}");
     const actions = (await command.plan(makeCtx({ allTools: true }))).actions;
     const text = docs(actions)
       .map((d) => d.text)
       .join("\n");
+    const blob = actions
+      .map((a) => (a.kind === "doc" ? a.text : a.kind === "exec" ? a.argv.join(" ") : ""))
+      .join("\n");
     expect(text).toContain("/plugin install ecc@ecc"); // claude plugin
-    const targets = execs(actions).map((e) => e.argv[e.argv.indexOf("--target") + 1]);
-    expect(targets).toEqual(expect.arrayContaining(["codex", "cursor", "zed", "opencode"]));
+    const targets = execs(actions)
+      .filter((e) => e.argv.includes("--target"))
+      .map((e) => e.argv[e.argv.indexOf("--target") + 1]);
+    expect(targets).toEqual(expect.arrayContaining(["cursor", "zed"]));
+    // codex/opencode are no longer (invalid) ecc-install targets.
+    expect(targets).not.toContain("codex");
+    expect(targets).not.toContain("opencode");
+    expect(blob).not.toContain("ecc-install --target codex");
+    expect(blob).not.toContain("ecc-install --target opencode");
+    expect(blob).toContain("sync-ecc-to-codex.sh"); // codex native script
+    expect(blob).toContain(".kiro/install.sh"); // kiro native installer
     expect(text).toContain("--target gemini"); // consult
   });
 
