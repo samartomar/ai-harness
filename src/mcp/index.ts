@@ -1,7 +1,14 @@
+import { posix } from "node:path";
 import type { Action, CommandSpec, PlanContext } from "../internals/plan.js";
-import { doc, plan, probe, writeJson } from "../internals/plan.js";
+import { doc, plan, probe, writeJson, writeText } from "../internals/plan.js";
 import type { Check } from "../internals/verify.js";
 import { scanRepo } from "../profile/scan.js";
+import {
+  enterpriseMcpDoc,
+  managedMcpExample,
+  mcpFallbackSteering,
+  stdioServers,
+} from "./enterprise.js";
 import { gatewayDoc } from "./gateway.js";
 import { mcpServers } from "./servers.js";
 
@@ -42,7 +49,66 @@ async function probeUv(ctx: PlanContext): Promise<Check> {
  * gateway setup as a `doc` — that cloud guidance is text only; the harness never
  * registers an OIDC app nor contacts the gateway.
  */
+/**
+ * Enterprise-blocked MCP (`--mode none`): emit no live servers + a CLI-tool
+ * fallback (the agent keeps each capability without the MCP wrapper), plus the
+ * admin `managed-mcp.json` template that disables MCP org-wide.
+ */
+function planMcpNone(ctx: PlanContext): ReturnType<typeof plan> {
+  const stack = scanRepo(ctx.root, { maxDepth: 8 });
+  return plan(
+    "mcp",
+    writeText(
+      posix.join(ctx.contextDir, "mcp-fallback.md"),
+      mcpFallbackSteering(stack),
+      "no-MCP fallback: the CLI tool for each MCP capability",
+    ),
+    writeJson(
+      "managed-mcp.json.example",
+      managedMcpExample({}),
+      "org admin: managed-mcp.json that DISABLES all MCP (deploy to the system path)",
+    ),
+    doc("enterprise MCP control (disabled — agent uses CLI tools)", enterpriseMcpDoc("none", {})),
+  );
+}
+
+/**
+ * Egress-blocked but spawn-allowed (`--mode offline`): keep only local stdio
+ * servers (drop http/remote that need egress) for vendoring by exact command, and
+ * emit the admin fixed-set template + the allowlist playbook.
+ */
+function planMcpOffline(ctx: PlanContext): ReturnType<typeof plan> {
+  const scope = String(ctx.options.scope ?? "project");
+  const stack = scanRepo(ctx.root, { maxDepth: 8 });
+  const stdio = stdioServers(mcpServers(scope, stack));
+  return plan(
+    "mcp",
+    writeJson(
+      ".mcp.json",
+      { mcpServers: stdio },
+      "local stdio MCP servers (offline) — vendor them; no runtime download",
+      { merge: true },
+    ),
+    writeJson(
+      "managed-mcp.json.example",
+      managedMcpExample(stdio),
+      "org admin: fixed approved MCP set (deploy to the system path)",
+    ),
+    writeText(
+      posix.join(ctx.contextDir, "mcp-fallback.md"),
+      mcpFallbackSteering(stack),
+      "CLI fallback for when even local MCP is blocked",
+    ),
+    doc("enterprise MCP control (offline / vendored)", enterpriseMcpDoc("offline", stdio)),
+    probe("uv present", probeUv),
+  );
+}
+
 function planMcp(ctx: PlanContext): ReturnType<typeof plan> {
+  const mode = String(ctx.options.mode ?? "standard");
+  if (mode === "none") return planMcpNone(ctx);
+  if (mode === "offline") return planMcpOffline(ctx);
+
   const scope = String(ctx.options.scope ?? "project");
   const stack = scanRepo(ctx.root, { maxDepth: 8 });
   const servers = mcpServers(scope, stack);
@@ -90,12 +156,19 @@ function planMcp(ctx: PlanContext): ReturnType<typeof plan> {
 
 export const command: CommandSpec = {
   name: "mcp",
-  summary: "Generate .mcp.json for local/project/remote MCP scopes and document the SSO gateway",
+  summary:
+    "Generate .mcp.json (scopes) or enterprise-blocked MCP fallback (--mode offline|none) + managed-mcp template",
   options: [
     {
       flags: "--scope <scope>",
       description: "server scope: local|project|remote",
       default: "project",
+    },
+    {
+      flags: "--mode <mode>",
+      description:
+        "standard | offline (vendored local-command servers) | none (no MCP; CLI-tool fallback)",
+      default: "standard",
     },
   ],
   plan: planMcp,

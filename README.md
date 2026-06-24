@@ -48,7 +48,7 @@ node dist/cli.js --help
 | `aih scaffold` | Create the canonical context dir (`--context-dir`, default `ai-coding`) — INDEX/SKILL skeleton, an agent **`SETUP-TASKS.md`** playbook (fill context + guardrails from the code), a write-once `project-guardrails.md`, a secret deny-list, and a pre-commit hook. (Bootloaders are `bootstrap-ai`'s job.) |
 | `aih guardrails` | Generate `.gitleaks.toml`, `.pre-commit-config.yaml`, and a CI license gate that blocks AGPL/strong-copyleft. |
 | `aih secrets` | Scan for plaintext `.env*`/`secrets/` and write agent deny rules + vault-injection guidance. |
-| `aih mcp` | Generate `.mcp.json` (local/project/remote scopes) and document the SSO MCP gateway. |
+| `aih mcp` | Generate `.mcp.json` (local/project/remote scopes); for locked-down orgs, `--mode offline` (vendored local-command servers) or `--mode none` (no MCP + a CLI-tool fallback) plus a `managed-mcp.json` admin template. |
 | `aih sandbox` | Generate a devcontainer + managed sandbox settings (egress allowlist, `failIfUnavailable`). |
 | `aih telemetry` | Inject OpenTelemetry env, a redacting Bindplane collector, and an analytics fetcher. |
 | `aih crispy` | Run the CRISPY context-engineering stage machine (deterministic, gate-ordered). |

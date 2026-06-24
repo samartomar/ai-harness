@@ -58,6 +58,37 @@ afterEach(() => {
   for (const d of tmpDirs.splice(0)) rmSync(d, { recursive: true, force: true });
 });
 
+describe("mcp enterprise modes", () => {
+  it("--mode none: no .mcp.json servers, a CLI-tool fallback, and a disable template", async () => {
+    const actions = (await command.plan(makeCtx({ options: { mode: "none" } }))).actions;
+    const writes = actions.filter((a): a is WriteAction => a.kind === "write");
+    const paths = writes.map((w) => w.path.replace(/\\/g, "/"));
+    expect(paths).not.toContain(".mcp.json");
+    expect(paths).toContain(".ai-context/mcp-fallback.md");
+    // The admin template DISABLES MCP (empty server map).
+    const managed = writes.find((w) => w.path === "managed-mcp.json.example");
+    expect((managed?.json as { mcpServers: object }).mcpServers).toEqual({});
+    // The fallback steers to CLI tools.
+    const fallback = writes.find((w) => w.path.replace(/\\/g, "/").endsWith("mcp-fallback.md"));
+    expect(fallback?.contents).toContain("rg");
+    expect(fallback?.contents).toContain("git");
+  });
+
+  it("--mode offline: drops http/remote servers, keeps stdio, + a managed fixed-set", async () => {
+    const actions = (await command.plan(makeCtx({ options: { mode: "offline", scope: "remote" } })))
+      .actions;
+    const mcp = actions.find((a): a is WriteAction => a.kind === "write" && a.path === ".mcp.json");
+    expect(mcp).toBeDefined();
+    const servers = mcp ? serversOf(mcp) : {};
+    for (const s of Object.values(servers)) expect(s.type).toBe("stdio");
+    // The hosted http servers that `remote` would add are dropped (need egress).
+    expect(servers["better-email"]).toBeUndefined();
+    expect(actions.some((a) => a.kind === "write" && a.path === "managed-mcp.json.example")).toBe(
+      true,
+    );
+  });
+});
+
 describe("aih mcp — plan shape", () => {
   it("writes .mcp.json (merge) and a uv probe for the default project scope", async () => {
     const p = await command.plan(makeCtx());
