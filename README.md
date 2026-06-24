@@ -1,5 +1,10 @@
 # aih — Enterprise AI Bootstrapping Harness
 
+[![CI](https://github.com/samartomar/ai-harness/actions/workflows/ci.yml/badge.svg)](https://github.com/samartomar/ai-harness/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/samartomar/ai-harness/actions/workflows/codeql.yml/badge.svg)](https://github.com/samartomar/ai-harness/actions/workflows/codeql.yml)
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+[![Node ≥20](https://img.shields.io/badge/node-%E2%89%A520-339933.svg)](package.json)
+
 A cross-platform CLI that prepares developer workstations and repositories for
 **safe, governed AI-assisted coding behind a corporate proxy**. It extracts
 corporate trust, tunes local inference, hardens repos with guardrails, wires up

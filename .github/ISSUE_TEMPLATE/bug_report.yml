@@ -1,0 +1,34 @@
+name: Bug report
+description: Something in aih behaves incorrectly
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: "For security issues, use **private vulnerability reporting** (Security tab) — do not open a public issue."
+  - type: input
+    id: command
+    attributes:
+      label: Command
+      description: The exact `aih` command you ran.
+      placeholder: aih bootstrap-ai --cli kiro --apply
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Expected vs actual
+      description: What you expected, and what happened. Paste the dry-run plan or output.
+    validations:
+      required: true
+  - type: textarea
+    id: env
+    attributes:
+      label: Environment
+      description: "OS, Node version (`node -v`), aih commit (`git rev-parse --short HEAD`), target CLI(s)."
+    validations:
+      required: true
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else
+      description: Logs, screenshots, or context that helps.
