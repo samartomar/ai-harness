@@ -1,5 +1,6 @@
 import type { Command } from "commander";
 import { command as bootstrap } from "../bootstrap/index.js";
+import { command as bootstrapAi } from "../bootstrap-ai/index.js";
 import { command as certs } from "../certs/index.js";
 import { command as crispy } from "../crispy/index.js";
 import { command as doctor } from "../doctor.js";
@@ -35,6 +36,7 @@ export const CAPABILITIES: CommandSpec[] = [
   telemetry,
   crispy,
   bootstrap,
+  bootstrapAi,
   init,
 ];
 

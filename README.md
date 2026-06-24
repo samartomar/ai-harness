@@ -53,6 +53,7 @@ node dist/cli.js --help
 | `aih telemetry` | Inject OpenTelemetry env, a redacting Bindplane collector, and an analytics fetcher. |
 | `aih crispy` | Run the CRISPY context-engineering stage machine (deterministic, gate-ordered). |
 | `aih bootstrap` | Orchestrate the workstation 4-phase rollout (certs → hardware/vdi → telemetry). |
+| `aih bootstrap-ai` | Emit + verify the repo's Layer-2 `ai-coding/` canon: `RULE_ROUTER.md`, per-CLI adapters, and root bootloaders (tool preamble + a regenerated shared block). `--verify` is the drift gate. |
 | `aih init` | Initialize a repo: profile + ecc + superpowers + scaffold + secrets + guardrails + mcp + sandbox in one pass. |
 | `aih doctor` | Fail-closed verification of the workstation/repo configuration. |
 | `aih status` | Read-only inventory of what the harness has configured. |
@@ -76,6 +77,29 @@ Shell-runnable installs (`ecc-install`, `agy`/`copilot plugin install`) execute 
 in-tool slash-command installs (Claude/Codex/Kimi plugins) are emitted as exact commands to run
 inside the tool. ECC and Superpowers are complementary — ECC supplies stack-aware rules, agents,
 and memory; Superpowers supplies the disciplined agent loop that uses them.
+
+### Layered AI canon (`bootstrap-ai`)
+
+The harness models the same two-layer setup used in the reference repos (eicp / ai-os / syntegris):
+
+- **Layer 1 — user baseline:** ECC + Superpowers, installed per CLI by `aih ecc` / `aih superpowers`.
+- **Layer 2 — repo canon:** the committed `ai-coding/` (or `--context-dir`) tree — `RULE_ROUTER.md`
+  (stack-aware routing entry point), `adapters/<cli>.md` (per-tool wiring notes), `REGENERATION.md`,
+  and the root **bootloaders** (`CLAUDE.md`, `AGENTS.md`, `GEMINI.md`, Cursor/Windsurf/Copilot).
+
+`aih bootstrap-ai` generates and verifies Layer 2. Each bootloader is hand-editable tool-specific
+content **plus one marker-delimited shared block** that `bootstrap-ai` regenerates idempotently —
+your edits outside the markers survive (merged in, with an `.aih.bak` backup). `aih bootstrap-ai --verify`
+is the **drift gate**: it fails if the router is missing or a bootloader's block has been hand-edited
+away from the canonical source — wire it into CI to keep every tool's entry point in sync.
+
+```bash
+aih bootstrap-ai --all-tools --apply   # lay down RULE_ROUTER + adapters + bootloaders for every CLI
+aih bootstrap-ai --verify              # CI drift gate (no writes; exit 1 on drift)
+```
+
+Precedence: **Layer 2 wins** on conflict — repo canon overrides the generic baseline. Run
+`aih scaffold` for the context dir (`INDEX/architecture/conventions`) the router points at.
 
 ### Examples
 
