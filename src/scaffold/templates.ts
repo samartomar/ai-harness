@@ -239,12 +239,54 @@ export function setupTasksDoc(dir: string, stack: RepoStack): string {
   );
 }
 
+/** Framework / stack-specific guardrails auto-derived from the detected stack. */
+function frameworkGuardrails(stack: RepoStack): string[] {
+  const fw = new Set(stack.frameworks);
+  const out: string[] = [];
+  if (
+    fw.has("Serverless Framework") ||
+    stack.deployment.includes("AWS SAM") ||
+    stack.deployment.includes("AWS CDK")
+  ) {
+    out.push("- Lambda handlers stay stateless — no local disk/session between invocations.");
+    out.push("- Resource names/ARNs come from env/config, never hardcoded; IAM least-privilege.");
+  }
+  if (fw.has("Express") || fw.has("Fastify") || fw.has("Koa") || fw.has("NestJS")) {
+    out.push(
+      "- Validate and sanitize every request input at the boundary; parameterize all queries.",
+    );
+    out.push("- Set security headers; never build SQL/paths by concatenating user input.");
+  }
+  if (
+    fw.has("React") ||
+    fw.has("Next.js") ||
+    fw.has("Vue") ||
+    fw.has("Svelte") ||
+    fw.has("Angular")
+  ) {
+    out.push("- Escape user content; no `dangerouslySetInnerHTML` / `v-html` without sanitizing.");
+    out.push("- Keep secrets server-side; never ship API keys in the client bundle.");
+  }
+  if (stack.databases.length > 0) {
+    out.push(
+      `- ${stack.databases.join("/")}: parameterized queries only; least-privilege credentials from env.`,
+    );
+  }
+  if (stack.cloud.length > 0) {
+    out.push(
+      `- ${stack.cloud.join("/")}: no hardcoded credentials — use roles/managed identity; encrypt at rest.`,
+    );
+  }
+  return out;
+}
+
 /**
- * A write-once project-guardrails seed. aih fills the detected facts; the agent
- * fleshes out the repo-specific rules per `SETUP-TASKS.md`. Write-once so the
- * agent's work is never overwritten on a re-run.
+ * A write-once project-guardrails seed. aih fills the detected facts AND derives
+ * framework/stack-specific guardrails; the agent fleshes out the rest per
+ * `SETUP-TASKS.md`. Write-once so the agent's work is never overwritten on a re-run.
  */
 export function projectGuardrailsDoc(dir: string, stack: RepoStack): string {
+  const fwGuards = frameworkGuardrails(stack);
   const gate = [stack.lintCommand, stack.testRunner].filter(Boolean) as string[];
   return lines(
     "# Project guardrails",
@@ -269,7 +311,9 @@ export function projectGuardrailsDoc(dir: string, stack: RepoStack): string {
     "",
     "## Framework / language guardrails",
     "",
-    "_Stack-specific rules and footguns to avoid (fill from the code)._",
+    ...(fwGuards.length > 0
+      ? [...fwGuards, "", "_Add any others you infer from the code._"]
+      : ["_Stack-specific rules and footguns to avoid (fill from the code)._"]),
     "",
     "## Never do",
     "",

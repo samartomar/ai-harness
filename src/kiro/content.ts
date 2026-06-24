@@ -73,6 +73,23 @@ export function kiroHooks(stack: RepoStack): KiroHook[] {
       },
     },
   ];
+  // Append a JSONL metrics line on agent turn completion (verified `agentStop`
+  // event). Git-only command so it works wherever git is on PATH.
+  hooks.push({
+    path: ".kiro/hooks/aih-metrics-on-stop.kiro.hook",
+    hook: {
+      version: "1.0.0",
+      enabled: true,
+      name: "aih-metrics-on-stop",
+      description: "Append a JSONL metrics line (last commit) when the agent finishes a turn.",
+      when: { type: "agentStop" },
+      then: {
+        type: "runCommand",
+        command:
+          'git log -1 --pretty=tformat:\'{"ts":"%cI","sha":"%h","subject":"%f"}\' >> .kiro/metrics.jsonl',
+      },
+    },
+  });
   // A manual quality gate — only when the repo actually has commands to run.
   const gate = [stack.lintCommand, stack.testRunner].filter((c): c is string => Boolean(c));
   if (gate.length > 0) {

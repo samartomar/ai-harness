@@ -83,6 +83,17 @@ describe("scaffold plan (dry-run shape)", () => {
     expect(guard?.once).toBe(true);
   });
 
+  it("project-guardrails auto-derives framework rules from the detected stack", async () => {
+    writeFileSync(
+      join(dir, "package.json"),
+      JSON.stringify({ name: "api", dependencies: { express: "^4" } }),
+    );
+    const guard =
+      writesByPath((await command.plan(ctx())).actions).get(".ai-context/project-guardrails.md")
+        ?.contents ?? "";
+    expect(guard).toContain("sanitize"); // Express input-validation guardrail
+  });
+
   it("does NOT write root bootloaders — those are owned by `aih bootstrap-ai`", async () => {
     const w = writesByPath((await command.plan(ctx())).actions);
     expect(w.has("CLAUDE.md")).toBe(false);
