@@ -1,4 +1,31 @@
 import { frontmatter, lines } from "../internals/render.js";
+import type { RepoStack } from "../profile/scan.js";
+
+/** Auto-populated bullets describing what the profiler actually detected. */
+function detectedStackBlock(stack: RepoStack): string[] {
+  const out = [
+    `- Languages: ${stack.languages.length > 0 ? stack.languages.join(", ") : "none detected"}`,
+  ];
+  if (stack.frameworks.length > 0) out.push(`- Frameworks: ${stack.frameworks.join(", ")}`);
+  if (stack.cloud.length > 0) out.push(`- Cloud: ${stack.cloud.join(", ")}`);
+  if (stack.deployment.length > 0) out.push(`- Deployment: ${stack.deployment.join(", ")}`);
+  if (stack.packageManager) out.push(`- Package manager: ${stack.packageManager}`);
+  const cmds: string[] = [];
+  if (stack.testRunner) cmds.push(`test \`${stack.testRunner}\``);
+  if (stack.buildCommand) cmds.push(`build \`${stack.buildCommand}\``);
+  if (stack.lintCommand) cmds.push(`lint \`${stack.lintCommand}\``);
+  out.push(`- Commands: ${cmds.length > 0 ? cmds.join(" · ") : "none defined in the repo"}`);
+  return out;
+}
+
+/** A one-line synthesized overview from the detected facts. */
+function overviewLine(stack: RepoStack): string {
+  if (stack.description) return stack.description;
+  const lang = stack.languages[0] ?? "a multi-language";
+  const fw = stack.frameworks.length > 0 ? ` using ${stack.frameworks.join(" + ")}` : "";
+  const cloud = stack.cloud.length > 0 ? ` on ${stack.cloud.join("/")}` : "";
+  return `A ${lang} project${fw}${cloud}.`;
+}
 
 /**
  * Canonical context-dir content. Everything routes through {@link lines} /
@@ -44,37 +71,74 @@ export function indexDoc(dir: string): string {
   );
 }
 
-/** Architecture skeleton — section headers an author fills in per repo. */
-export function architectureDoc(dir: string): string {
+/**
+ * Architecture context — the "Detected stack" / "Overview" / "Entry points"
+ * blocks are auto-populated from the profiler so the file is useful immediately;
+ * the prose sections remain author-fill prompts.
+ */
+export function architectureDoc(dir: string, stack: RepoStack): string {
+  const entryPoints =
+    stack.entryPoints.length > 0
+      ? stack.entryPoints.map((e) => `- \`${e}\``)
+      : ["_None detected — list the main entry points (handlers, CLI, server)._"];
+  const externalDeps: string[] = [];
+  for (const c of stack.cloud) externalDeps.push(`- ${c} (cloud provider / SDK detected).`);
+  for (const f of stack.frameworks) externalDeps.push(`- ${f}.`);
+  if (externalDeps.length === 0)
+    externalDeps.push("_Services, datastores, and third-party APIs this system relies on._");
+  const invariants =
+    stack.frameworks.includes("Serverless Framework") || stack.deployment.includes("AWS SAM")
+      ? [
+          "- Lambda handlers must be stateless — no local disk/session persistence between invocations.",
+          "- Resource names (tables/buckets) come from environment/config, never hardcoded ARNs.",
+        ]
+      : ["_Rules that must hold (security, performance, compliance) and why._"];
   return lines(
     "# Architecture",
     "",
     `> Canonical architecture context. Referenced from \`${dir}/INDEX.md\`.`,
+    "> The detected blocks are auto-populated by `aih`; expand the prose sections.",
     "",
     "## Overview",
     "",
-    "_What this system does and the shape of it in two or three sentences._",
+    overviewLine(stack),
+    "",
+    "_Expand: what this system does and its shape in two or three sentences._",
+    "",
+    "## Detected stack",
+    "",
+    detectedStackBlock(stack),
+    "",
+    "## Entry points",
+    "",
+    entryPoints,
     "",
     "## Modules",
     "",
     "_The major modules/packages and the responsibility of each._",
     "",
-    "## Data flow",
-    "",
-    "_How a request / job moves through the system; the important boundaries._",
-    "",
     "## External dependencies",
     "",
-    "_Services, datastores, and third-party APIs this system relies on._",
+    externalDeps,
     "",
     "## Constraints & invariants",
     "",
-    "_Rules that must hold (security, performance, compliance) and why._",
+    invariants,
   );
 }
 
-/** Conventions skeleton — section headers an author fills in per repo. */
-export function conventionsDoc(dir: string): string {
+/**
+ * Conventions context — coding-style / testing lines are seeded from the detected
+ * language, linter, and test command; naming/commit sections stay author-fill.
+ */
+export function conventionsDoc(dir: string, stack: RepoStack): string {
+  const isTs = stack.hasTypeScript;
+  const isNode = stack.languages.some((l) => l.endsWith("/Node.js"));
+  const styleLang = isNode
+    ? isTs
+      ? "TypeScript (Node.js) — explicit types on exports, no `any`."
+      : "JavaScript (Node.js) — plain JS, no TypeScript syntax; JSDoc where it helps."
+    : stack.languages.join(", ") || "see repo";
   return lines(
     "# Conventions",
     "",
@@ -82,15 +146,18 @@ export function conventionsDoc(dir: string): string {
     "",
     "## Coding style",
     "",
-    "_Formatter, linter, import ordering, and the idioms this repo prefers._",
+    `- Language: ${styleLang}`,
+    `- Lint: ${stack.lintCommand ? `\`${stack.lintCommand}\`` : "no linter configured — consider adding one"}`,
+    "- Prefer small, focused functions and immutable updates; handle errors explicitly.",
+    "",
+    "## Testing",
+    "",
+    `- Test command: ${stack.testRunner ? `\`${stack.testRunner}\`` : "none configured in the repo"}`,
+    "_Where tests live and the coverage bar — fill in._",
     "",
     "## Naming",
     "",
     "_How files, types, functions, and tests are named._",
-    "",
-    "## Testing",
-    "",
-    "_Test framework, where tests live, and the coverage bar._",
     "",
     "## Commits & reviews",
     "",

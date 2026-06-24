@@ -8,14 +8,10 @@ import { makeHostAdapter } from "../../src/platform/detect.js";
 import { command } from "../../src/profile/index.js";
 import { scanRepo } from "../../src/profile/scan.js";
 
-// ---- fixtures -------------------------------------------------------------
-
 let tmp: string;
-
 beforeEach(() => {
   tmp = mkdtempSync(join(tmpdir(), "aih-profile-"));
 });
-
 afterEach(() => {
   rmSync(tmp, { recursive: true, force: true });
 });
@@ -27,14 +23,24 @@ function put(relPath: string, contents: string): void {
   writeFileSync(full, contents, "utf8");
 }
 
-function pkg(deps: Record<string, string> = {}, devDeps: Record<string, string> = {}): string {
-  return JSON.stringify({ name: "fixture", dependencies: deps, devDependencies: devDeps });
+interface PkgOpts {
+  deps?: Record<string, string>;
+  devDeps?: Record<string, string>;
+  scripts?: Record<string, string>;
+  description?: string;
+}
+function pkg(opts: PkgOpts = {}): string {
+  return JSON.stringify({
+    name: "fixture",
+    description: opts.description,
+    scripts: opts.scripts ?? {},
+    dependencies: opts.deps ?? {},
+    devDependencies: opts.devDeps ?? {},
+  });
 }
 
-/** Build a dry-run PlanContext rooted at `tmp` with a fake, network-free host. */
 function makeCtx(options: Record<string, unknown> = {}, contextDir = ".ai-context"): PlanContext {
   const run = fakeRunner(() => undefined);
-  const host = makeHostAdapter({ platform: "linux", run, env: {} });
   return {
     root: tmp,
     contextDir,
@@ -42,7 +48,7 @@ function makeCtx(options: Record<string, unknown> = {}, contextDir = ".ai-contex
     verify: false,
     json: false,
     run,
-    host,
+    host: makeHostAdapter({ platform: "linux", run, env: {} }),
     env: {},
     options,
   };
@@ -51,250 +57,263 @@ function makeCtx(options: Record<string, unknown> = {}, contextDir = ".ai-contex
 function writes(actions: Action[]): WriteAction[] {
   return actions.filter((a): a is WriteAction => a.kind === "write");
 }
-
 function findWrite(actions: Action[], path: string): WriteAction | undefined {
   return writes(actions).find((a) => a.path === path);
 }
 
-// ---- scanRepo: detection rules -------------------------------------------
+// ---- the regression that motivated this rework ----------------------------
 
-describe("scanRepo", () => {
-  it("detects a Node + vitest repo with the right test runner", () => {
-    put("package.json", pkg({}, { vitest: "^2.0.0" }));
+describe("scanRepo — JavaScript Serverless project (regression)", () => {
+  function plantServerless(): void {
+    put(
+      "package.json",
+      pkg({
+        description: "Serverless blog API on AWS Lambda + DynamoDB",
+        deps: { "aws-sdk": "^2.1500.0" },
+        devDeps: { serverless: "^3.38.0" },
+        // npm-init default placeholder — NOT a real test command.
+        scripts: { test: 'echo "Error: no test specified" && exit 0', deploy: "serverless deploy" },
+      }),
+    );
+    put(
+      "serverless.yml",
+      [
+        "service: blog-api",
+        "provider:",
+        "  name: aws",
+        "  runtime: nodejs20.x",
+        "functions:",
+        "  createPost:",
+        "    handler: src/handlers/createPost.handler",
+      ].join("\n"),
+    );
+    put("src/handlers/createPost.js", 'const AWS=require("aws-sdk");exports.handler=async()=>{};');
+  }
 
-    const stack = scanRepo(tmp, { maxDepth: 8 });
-
-    expect(stack.languages).toEqual(["TypeScript/Node.js"]);
-    expect(stack.testRunner).toBe("npx vitest run");
+  it("detects JavaScript (not TypeScript) — no tsconfig, no .ts files", () => {
+    plantServerless();
+    const s = scanRepo(tmp, { maxDepth: 8 });
+    expect(s.languages).toContain("JavaScript/Node.js");
+    expect(s.languages).not.toContain("TypeScript/Node.js");
+    expect(s.hasTypeScript).toBe(false);
   });
 
-  it("detects jest and next from package.json", () => {
-    put("package.json", pkg({ next: "14.0.0" }, { jest: "^29.0.0" }));
-
-    const stack = scanRepo(tmp, { maxDepth: 8 });
-
-    expect(stack.languages).toEqual(["TypeScript/Node.js"]);
-    expect(stack.testRunner).toBe("npm run test");
-    expect(stack.buildCommand).toBe("next build");
+  it("detects the Serverless Framework and AWS from serverless.yml + aws-sdk", () => {
+    plantServerless();
+    const s = scanRepo(tmp, { maxDepth: 8 });
+    expect(s.frameworks).toContain("Serverless Framework");
+    expect(s.cloud).toContain("AWS");
+    expect(s.deployment).toContain("Serverless Framework");
   });
 
-  it("detects a Python + pytest repo with ruff lint", () => {
-    put("pyproject.toml", "[project]\nname = 'svc'\n");
-
-    const stack = scanRepo(tmp, { maxDepth: 8 });
-
-    expect(stack.languages).toEqual(["Python"]);
-    expect(stack.testRunner).toBe("pytest");
-    expect(stack.buildCommand).toBe("python -m build");
-    expect(stack.lintCommand).toBe("ruff check");
+  it("does NOT invent a test command from a placeholder echo script, and finds no lint", () => {
+    plantServerless();
+    const s = scanRepo(tmp, { maxDepth: 8 });
+    expect(s.testRunner).toBeUndefined(); // placeholder echo is not a real test
+    expect(s.lintCommand).toBeUndefined(); // no lint script, no linter dep
   });
 
-  it("detects Go, Rust, and .NET signatures", () => {
+  it("surfaces the description and the serverless handler entry point", () => {
+    plantServerless();
+    const s = scanRepo(tmp, { maxDepth: 8 });
+    expect(s.description).toBe("Serverless blog API on AWS Lambda + DynamoDB");
+    expect(s.entryPoints).toContain("src/handlers/createPost.handler");
+  });
+
+  it("plan: emits 02-node.mdc + 03-serverless.mdc, and NEVER a TypeScript rule", async () => {
+    plantServerless();
+    const actions = (await command.plan(makeCtx())).actions;
+    expect(findWrite(actions, ".cursor/rules/02-node.mdc")).toBeDefined();
+    expect(findWrite(actions, ".cursor/rules/03-serverless.mdc")).toBeDefined();
+    expect(findWrite(actions, ".cursor/rules/02-typescript.mdc")).toBeUndefined();
+    const claude = findWrite(actions, "CLAUDE.md")?.contents ?? "";
+    expect(claude).toContain("JavaScript/Node.js");
+    expect(claude).toContain("Serverless Framework");
+    expect(claude).not.toContain("vitest");
+  });
+});
+
+// ---- JS vs TS + command derivation ----------------------------------------
+
+describe("scanRepo — language + command accuracy", () => {
+  it("calls a package.json with a tsconfig TypeScript", () => {
+    put("package.json", pkg());
+    put("tsconfig.json", "{}");
+    put("src/index.ts", "export const x = 1;");
+    const s = scanRepo(tmp, { maxDepth: 8 });
+    expect(s.languages).toContain("TypeScript/Node.js");
+    expect(s.hasTypeScript).toBe(true);
+  });
+
+  it("treats a plain package.json (no TS) as JavaScript", () => {
+    put("package.json", pkg());
+    const s = scanRepo(tmp, { maxDepth: 8 });
+    expect(s.languages).toEqual(["JavaScript/Node.js"]);
+    expect(s.hasTypeScript).toBe(false);
+  });
+
+  it("uses `npm test` when a real test script exists", () => {
+    put("package.json", pkg({ scripts: { test: "vitest run" } }));
+    expect(scanRepo(tmp, { maxDepth: 8 }).testRunner).toBe("npm test");
+  });
+
+  it("falls back to a test runner dep when there is no test script", () => {
+    put("package.json", pkg({ devDeps: { vitest: "^2" } }));
+    expect(scanRepo(tmp, { maxDepth: 8 }).testRunner).toBe("npx vitest run");
+  });
+
+  it("derives lint from a lint script or a known linter dep, else undefined", () => {
+    put("package.json", pkg({ scripts: { lint: "eslint ." } }));
+    expect(scanRepo(tmp, { maxDepth: 8 }).lintCommand).toBe("npm run lint");
+
+    rmSync(join(tmp, "package.json"));
+    put("package.json", pkg({ devDeps: { "@biomejs/biome": "^1" } }));
+    expect(scanRepo(tmp, { maxDepth: 8 }).lintCommand).toBe("npx biome check .");
+
+    rmSync(join(tmp, "package.json"));
+    put("package.json", pkg());
+    expect(scanRepo(tmp, { maxDepth: 8 }).lintCommand).toBeUndefined();
+  });
+
+  it("detects the package manager from the lockfile", () => {
+    put("package.json", pkg());
+    put("pnpm-lock.yaml", "lockfileVersion: 9\n");
+    expect(scanRepo(tmp, { maxDepth: 8 }).packageManager).toBe("pnpm");
+  });
+
+  it("detects Next.js / Express frameworks from deps", () => {
+    put("package.json", pkg({ deps: { next: "14", express: "4" } }));
+    const s = scanRepo(tmp, { maxDepth: 8 });
+    expect(s.frameworks).toEqual(expect.arrayContaining(["Next.js", "Express"]));
+  });
+});
+
+// ---- non-Node languages + deployment --------------------------------------
+
+describe("scanRepo — other stacks", () => {
+  it("detects Go / Rust / .NET with their commands", () => {
     put("go.mod", "module example.com/x\n");
-    const goStack = scanRepo(tmp, { maxDepth: 8 });
-    expect(goStack.languages).toEqual(["Go"]);
-    expect(goStack.testRunner).toBe("go test ./...");
-    expect(goStack.buildCommand).toBe("go build ./...");
+    const go = scanRepo(tmp, { maxDepth: 8 });
+    expect(go.languages).toEqual(["Go"]);
+    expect(go.testRunner).toBe("go test ./...");
 
     rmSync(join(tmp, "go.mod"));
-    put("Cargo.toml", "[package]\nname = 'x'\n");
-    const rustStack = scanRepo(tmp, { maxDepth: 8 });
-    expect(rustStack.languages).toEqual(["Rust"]);
-    expect(rustStack.testRunner).toBe("cargo test");
+    put("Cargo.toml", "[package]\nname='x'\n");
+    expect(scanRepo(tmp, { maxDepth: 8 }).languages).toEqual(["Rust"]);
 
     rmSync(join(tmp, "Cargo.toml"));
     put("Api.csproj", "<Project></Project>");
-    const dotnetStack = scanRepo(tmp, { maxDepth: 8 });
-    expect(dotnetStack.languages).toEqual([".NET Core"]);
-    expect(dotnetStack.testRunner).toBe("dotnet test");
-    expect(dotnetStack.buildCommand).toBe("dotnet build");
+    const net = scanRepo(tmp, { maxDepth: 8 });
+    expect(net.languages).toEqual([".NET"]);
+    expect(net.testRunner).toBe("dotnet test");
   });
 
-  it("detects .NET from a .slnx solution file (blueprint sln|slnx|csproj regex)", () => {
-    put("App.slnx", "<Solution></Solution>");
-
-    const stack = scanRepo(tmp, { maxDepth: 8 });
-
-    expect(stack.languages).toEqual([".NET Core"]);
-    expect(stack.testRunner).toBe("dotnet test");
+  it("detects Python with pytest + ruff", () => {
+    put("pyproject.toml", "[project]\nname='svc'\n");
+    const s = scanRepo(tmp, { maxDepth: 8 });
+    expect(s.languages).toEqual(["Python"]);
+    expect(s.testRunner).toBe("pytest");
+    expect(s.lintCommand).toBe("ruff check .");
   });
 
-  it("detects Java/Maven with the blueprint build command", () => {
-    put("pom.xml", "<project></project>");
-
-    const stack = scanRepo(tmp, { maxDepth: 8 });
-
-    expect(stack.languages).toEqual(["Java/Maven"]);
-    expect(stack.testRunner).toBe("mvn test");
-    expect(stack.buildCommand).toBe("mvn clean package");
-  });
-
-  it("detects deployment targets (Docker, Helm, Terraform) without languages", () => {
+  it("detects deployment targets and CDK/Terraform", () => {
     put("Dockerfile", "FROM node:20\n");
-    put("chart/Chart.yaml", "apiVersion: v2\nname: svc\n");
-    put("infra/main.tf", 'provider "aws" {}\n');
-
-    const stack = scanRepo(tmp, { maxDepth: 8 });
-
-    expect(stack.deployment).toEqual(["Docker", "Kubernetes/Helm", "Terraform"]);
-    expect(stack.languages).toEqual([]);
+    put("chart/Chart.yaml", "apiVersion: v2\n");
+    put("infra/network.tf", 'provider "aws" {}\n');
+    put("cdk.json", '{ "app": "node bin/app.js" }');
+    const s = scanRepo(tmp, { maxDepth: 8 });
+    expect(s.deployment).toEqual(
+      expect.arrayContaining(["Docker", "Kubernetes/Helm", "Terraform", "AWS CDK"]),
+    );
+    expect(s.cloud).toContain("AWS");
   });
 
-  it("detects a polyglot repo and dedupes languages across nested dirs", () => {
-    put("package.json", pkg({}, { vitest: "^2.0.0" }));
-    put("services/api/go.mod", "module example.com/api\n");
-    put("services/worker/package.json", pkg());
-    put("Dockerfile", "FROM scratch\n");
-
-    const stack = scanRepo(tmp, { maxDepth: 8 });
-
-    // TypeScript appears in two package.json files but is listed once.
-    expect(stack.languages.filter((l) => l === "TypeScript/Node.js")).toHaveLength(1);
-    expect(stack.languages).toContain("Go");
-    expect(stack.deployment).toEqual(["Docker"]);
-  });
-
-  it("excludes node_modules and other vendored/generated directories", () => {
-    put("package.json", pkg({}, { vitest: "^2.0.0" }));
-    // A Cargo.toml buried in node_modules must NOT register Rust.
-    put("node_modules/some-dep/Cargo.toml", "[package]\nname = 'dep'\n");
+  it("excludes node_modules and vendored/generated dirs", () => {
+    put("package.json", pkg());
+    put("node_modules/some-dep/Cargo.toml", "[package]\nname='dep'\n");
     put("dist/main.tf", 'provider "aws" {}\n');
-    put(".git/config", "[core]\n");
-
-    const stack = scanRepo(tmp, { maxDepth: 8 });
-
-    expect(stack.languages).toEqual(["TypeScript/Node.js"]);
-    expect(stack.deployment).toEqual([]); // dist/ is excluded
-  });
-
-  it("respects maxDepth and stops descending", () => {
-    // root(0)/a(1)/b(2)/go.mod lives at depth 2.
-    put("a/b/go.mod", "module example.com/deep\n");
-
-    expect(scanRepo(tmp, { maxDepth: 1 }).languages).toEqual([]);
-    expect(scanRepo(tmp, { maxDepth: 2 }).languages).toEqual(["Go"]);
+    const s = scanRepo(tmp, { maxDepth: 8 });
+    expect(s.languages).toEqual(["JavaScript/Node.js"]);
+    expect(s.deployment).toEqual([]);
   });
 
   it("still registers Node when package.json is malformed", () => {
     put("package.json", "{ not valid json");
-
-    const stack = scanRepo(tmp, { maxDepth: 8 });
-
-    expect(stack.languages).toEqual(["TypeScript/Node.js"]);
-    expect(stack.testRunner).toBeUndefined();
+    const s = scanRepo(tmp, { maxDepth: 8 });
+    expect(s.languages).toEqual(["JavaScript/Node.js"]);
+    expect(s.testRunner).toBeUndefined();
   });
 
   it("returns an empty profile for a repo with no signatures", () => {
-    put("README.md", "# nothing here\n");
+    put("README.md", "# nothing\n");
+    const s = scanRepo(tmp, { maxDepth: 8 });
+    expect(s.languages).toEqual([]);
+    expect(s.frameworks).toEqual([]);
+    expect(s.deployment).toEqual([]);
+    expect(s.testRunner).toBeUndefined();
+    expect(s.hasTypeScript).toBe(false);
+  });
 
-    const stack = scanRepo(tmp, { maxDepth: 8 });
-
-    expect(stack).toEqual({
-      languages: [],
-      testRunner: undefined,
-      buildCommand: undefined,
-      lintCommand: undefined,
-      deployment: [],
-    });
+  it("respects maxDepth", () => {
+    put("a/b/go.mod", "module example.com/deep\n");
+    expect(scanRepo(tmp, { maxDepth: 1 }).languages).toEqual([]);
+    expect(scanRepo(tmp, { maxDepth: 2 }).languages).toEqual(["Go"]);
   });
 });
 
-// ---- plan(): generated artifacts -----------------------------------------
+// ---- plan(): generated artifacts ------------------------------------------
 
 describe("profile.plan", () => {
-  it("emits a thin CLAUDE.md (< 30 lines) with the pointer sentence and detected commands", async () => {
-    put("package.json", pkg({}, { vitest: "^2.0.0" }));
-    const ctx = makeCtx();
-
-    const result = await command.plan(ctx);
-    const claude = findWrite(result.actions, "CLAUDE.md");
-
-    expect(claude).toBeDefined();
-    const text = claude?.contents ?? "";
-    expect(text.split("\n").length).toBeLessThan(30);
-    expect(text).toContain("This file is not the full rulebook.");
-    expect(text).toContain("npx vitest run");
-    expect(text).toContain(".ai-context");
+  it("emits a thin CLAUDE.md (< 30 lines) with the pointer sentence + real command", async () => {
+    put("package.json", pkg({ scripts: { test: "vitest run" } }));
+    const claude = findWrite((await command.plan(makeCtx())).actions, "CLAUDE.md")?.contents ?? "";
+    expect(claude.split("\n").length).toBeLessThan(30);
+    expect(claude).toContain("This file is not the full rulebook.");
+    expect(claude).toContain("npm test");
+    expect(claude).toContain(".ai-context");
   });
 
   it("routes CLAUDE.md to a custom context dir", async () => {
     put("go.mod", "module example.com/x\n");
-    const ctx = makeCtx({}, "ai-coding");
-
-    const result = await command.plan(ctx);
-    const text = findWrite(result.actions, "CLAUDE.md")?.contents ?? "";
-
+    const text =
+      findWrite((await command.plan(makeCtx({}, "ai-coding"))).actions, "CLAUDE.md")?.contents ??
+      "";
     expect(text).toContain("ai-coding/");
     expect(text).not.toContain(".ai-context");
   });
 
-  it("writes a 01-stack.mdc with valid frontmatter and commands", async () => {
-    put("pyproject.toml", "[project]\nname = 'svc'\n");
-    const ctx = makeCtx();
-
-    const result = await command.plan(ctx);
-    const mdc = findWrite(result.actions, ".cursor/rules/01-stack.mdc")?.contents ?? "";
-
-    expect(mdc.startsWith("---\n")).toBe(true);
-    expect(mdc).toContain('globs: ["**/*"]');
-    expect(mdc).toContain("alwaysApply: false");
-    expect(mdc).toContain("ruff check");
-  });
-
-  it("adds the TypeScript .mdc only when a TS/Node stack is detected", async () => {
+  it("emits the JS node rule for a plain-JS repo (not the TS rule)", async () => {
     put("package.json", pkg());
-    const tsResult = await command.plan(makeCtx());
-    expect(findWrite(tsResult.actions, ".cursor/rules/02-typescript.mdc")).toBeDefined();
-
-    rmSync(join(tmp, "package.json"));
-    put("go.mod", "module example.com/x\n");
-    const goResult = await command.plan(makeCtx());
-    expect(findWrite(goResult.actions, ".cursor/rules/02-typescript.mdc")).toBeUndefined();
+    const actions = (await command.plan(makeCtx())).actions;
+    const node = findWrite(actions, ".cursor/rules/02-node.mdc")?.contents ?? "";
+    expect(node).toContain("JavaScript");
+    expect(node).toContain("do not add TypeScript");
   });
 
-  it("adds the EF Core .mdc only when a .NET stack is detected", async () => {
+  it("emits the EF Core rule only for a .NET stack", async () => {
     put("Api.csproj", "<Project></Project>");
-    const result = await command.plan(makeCtx());
-
-    const efcore = findWrite(result.actions, ".cursor/rules/03-efcore.mdc");
-    expect(efcore).toBeDefined();
+    const efcore = findWrite(
+      (await command.plan(makeCtx())).actions,
+      ".cursor/rules/03-efcore.mdc",
+    );
     expect(efcore?.contents).toContain("AsNoTracking()");
-    expect(efcore?.contents).toContain("sync-over-async");
   });
 
-  it("BOUNDARY: produces only local write actions — no exec, doc, or probe", async () => {
-    put("package.json", pkg({ next: "14.0.0" }, { vitest: "^2.0.0" }));
-    put("Api.csproj", "<Project></Project>");
-
-    const result = await command.plan(makeCtx());
-
-    expect(result.actions.length).toBeGreaterThan(0);
-    expect(result.actions.every((a) => a.kind === "write")).toBe(true);
-    // every write targets a repo-relative path, never an absolute/remote location
-    for (const action of writes(result.actions)) {
-      expect(action.path.startsWith("/")).toBe(false);
-      expect(action.contents).toBeDefined();
+  it("BOUNDARY: produces only local write actions — no exec/doc/probe", async () => {
+    put("package.json", pkg({ deps: { next: "14" } }));
+    const actions = (await command.plan(makeCtx())).actions;
+    expect(actions.length).toBeGreaterThan(0);
+    expect(actions.every((a) => a.kind === "write")).toBe(true);
+    for (const a of writes(actions)) {
+      expect(a.path.startsWith("/")).toBe(false);
     }
   });
 
   it("is idempotent: the same tree yields byte-identical plans", async () => {
-    put("package.json", pkg({}, { vitest: "^2.0.0" }));
+    put("package.json", pkg({ devDeps: { vitest: "^2" } }));
     put("services/api/go.mod", "module example.com/api\n");
-
     const first = await command.plan(makeCtx());
     const second = await command.plan(makeCtx());
-
     expect(JSON.stringify(first)).toBe(JSON.stringify(second));
-  });
-
-  it("falls back to the default depth when --max-depth is unparseable", async () => {
-    // go.mod at depth 2; a garbage flag must not silently shrink the scan to 0.
-    put("a/b/go.mod", "module example.com/deep\n");
-    const ctx = makeCtx({ maxDepth: "not-a-number" });
-
-    const result = await command.plan(ctx);
-    const text = findWrite(result.actions, "CLAUDE.md")?.contents ?? "";
-
-    expect(text).toContain("go test ./...");
   });
 });

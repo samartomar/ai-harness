@@ -2,6 +2,7 @@ import { posix } from "node:path";
 import type { Action, CommandSpec, PlanContext } from "../internals/plan.js";
 import { doc, plan, writeJson, writeText } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
+import { scanRepo } from "../profile/scan.js";
 import {
   agentsAdapter,
   claudeAdapter,
@@ -33,12 +34,22 @@ const SETTINGS_DENY = ["Read(./.env*)", "Read(./secrets/**)"] as const;
 function scaffoldPlan(ctx: PlanContext): ReturnType<typeof plan> {
   const dir = ctx.contextDir;
   const inDir = (...parts: string[]): string => posix.join(dir, ...parts);
+  // Populate the context from the real repo, not empty placeholders.
+  const stack = scanRepo(ctx.root, { maxDepth: 8 });
 
   const actions: Action[] = [
     // 1. Canonical context directory.
     writeText(inDir("INDEX.md"), indexDoc(dir), `${dir} routing index (load order)`),
-    writeText(inDir("architecture.md"), architectureDoc(dir), "architecture context skeleton"),
-    writeText(inDir("conventions.md"), conventionsDoc(dir), "conventions context skeleton"),
+    writeText(
+      inDir("architecture.md"),
+      architectureDoc(dir, stack),
+      "architecture context (auto-populated from the detected stack)",
+    ),
+    writeText(
+      inDir("conventions.md"),
+      conventionsDoc(dir, stack),
+      "conventions context (seeded from the detected language/lint/test)",
+    ),
     writeText(inDir("tasks.md"), tasksDoc(dir), "active tasks/decisions skeleton"),
     writeText(
       inDir("skills", "example-skill", "SKILL.md"),
@@ -73,7 +84,7 @@ function scaffoldPlan(ctx: PlanContext): ReturnType<typeof plan> {
     writeText(
       posix.join(".githooks", "pre-commit"),
       preCommitHook(),
-      "pre-commit hook running lint + test",
+      "pre-commit hook: runs the repo's lint/test scripts only if they exist",
       { mode: 0o755 },
     ),
     doc(

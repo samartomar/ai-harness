@@ -33,12 +33,16 @@ export type McpServer = StdioServer | HttpServer;
 export const N24Q02M_HOST = "n24q02m.com";
 
 /**
- * The canonical `mcpServers` map. Deterministic insertion order (local graph
- * server first, then the hosted toolset alphabetically) so golden assertions and
- * deep-merge output stay stable across runs.
+ * The `mcpServers` map for the given scope. `local`/`project` get ONLY the
+ * locally-runnable code-review-graph server — the harness must not write hosted
+ * third-party HTTP endpoints into a user's project config by default (they're
+ * opt-in, behind SSO, and irrelevant to most repos). The hosted `n24q02m`
+ * toolset is added ONLY for `scope === "remote"`, i.e. when the user explicitly
+ * opts into the enterprise gateway. Deterministic insertion order so golden
+ * assertions and deep-merge output stay stable.
  */
-export function mcpServers(): Record<string, McpServer> {
-  return {
+export function mcpServers(scope: string): Record<string, McpServer> {
+  const local: Record<string, McpServer> = {
     "better-code-review-graph": {
       type: "stdio",
       command: "uv",
@@ -46,6 +50,14 @@ export function mcpServers(): Record<string, McpServer> {
       description:
         "Local code-review knowledge graph (impact radius, affected flows) served over stdio via uv.",
     },
+  };
+  if (scope !== "remote") return local;
+  return { ...local, ...hostedServers() };
+}
+
+/** The opt-in hosted n24q02m toolset — only written under the `remote` scope. */
+function hostedServers(): Record<string, McpServer> {
+  return {
     "better-email": {
       type: "http",
       url: `https://better-email-mcp.${N24Q02M_HOST}/mcp`,

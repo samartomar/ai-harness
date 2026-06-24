@@ -6,6 +6,7 @@ import {
   probe,
   writeText,
 } from "../internals/plan.js";
+import { scanRepo } from "../profile/scan.js";
 import { gitleaksToml } from "./gitleaks.js";
 import { preCommitConfigYaml } from "./precommit.js";
 import { blockingLicenses, scaWorkflowYaml } from "./sca.js";
@@ -45,6 +46,7 @@ function ciNote(): string {
  * write or human-facing doc — CI execution is left to the customer's pipeline.
  */
 function guardrailsPlan(ctx: PlanContext): ReturnType<typeof plan> {
+  const stack = scanRepo(ctx.root, { maxDepth: 8 });
   return plan(
     "guardrails",
     writeText(
@@ -54,8 +56,10 @@ function guardrailsPlan(ctx: PlanContext): ReturnType<typeof plan> {
     ),
     writeText(
       PRECOMMIT_PATH,
-      preCommitConfigYaml(),
-      "Pre-commit gate: run gitleaks (and lint) on every commit",
+      preCommitConfigYaml(stack),
+      stack.lintCommand
+        ? `Pre-commit gate: gitleaks + lint (\`${stack.lintCommand}\`)`
+        : "Pre-commit gate: gitleaks (no lint script detected, so no lint hook)",
     ),
     writeText(
       SCA_PATH,

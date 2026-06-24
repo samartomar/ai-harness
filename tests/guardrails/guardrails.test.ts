@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -90,8 +90,19 @@ describe("guardrails command", () => {
     expect(yaml).toContain("id: gitleaks");
     expect(GITLEAKS_ARGS).toEqual(["--verbose", "--config=.gitleaks.toml"]);
     expect(yaml).toContain('args: ["--verbose", "--config=.gitleaks.toml"]');
-    // Plus a repo-local lint hook.
-    expect(yaml).toContain("repo: local");
+  });
+
+  it("adds a local lint hook ONLY when the repo defines a lint command", async () => {
+    // No lint command → gitleaks only, never a hook that runs a missing script.
+    const bare = writeAt((await command.plan(ctx())).actions, ".pre-commit-config.yaml");
+    expect(bare?.contents).not.toContain("repo: local");
+    expect(bare?.contents).not.toContain("npm run lint");
+
+    // With a real lint script → a local hook running that exact command.
+    writeFileSync(join(dir, "package.json"), JSON.stringify({ scripts: { lint: "eslint ." } }));
+    const withLint = writeAt((await command.plan(ctx())).actions, ".pre-commit-config.yaml");
+    expect(withLint?.contents).toContain("repo: local");
+    expect(withLint?.contents).toContain("entry: npm run lint");
   });
 
   it("sca workflow blocks AGPL / strong copyleft and notes the matrix", async () => {

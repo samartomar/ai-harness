@@ -75,14 +75,18 @@ describe("aih init — composes all six repo-scoped capabilities", () => {
     expect(paths).toContain(".devcontainer/devcontainer.json");
   });
 
-  it("merges both .claude/settings.json contributions (scaffold + secrets) — no key clobber", async () => {
+  it("dedupes the .claude/settings.json contributions into one merge write carrying the deny rules", async () => {
     const writes = (await command.plan(ctx())).actions.filter(
       (a): a is WriteAction =>
         a.kind === "write" && a.path.replace(/\\/g, "/") === ".claude/settings.json",
     );
-    // Both scaffold and secrets contribute a deny patch; each stays a merge write.
-    expect(writes.length).toBeGreaterThanOrEqual(2);
-    for (const w of writes) expect(w.merge).toBe(true);
+    // scaffold + secrets both target settings.json with identical deny rules; init
+    // dedupes to the FIRST writer (no .aih.bak churn), still a merge write.
+    expect(writes).toHaveLength(1);
+    expect(writes[0]?.merge).toBe(true);
+    const json = JSON.stringify(writes[0]?.json);
+    expect(json).toContain("Read(./.env*)");
+    expect(json).toContain("Read(./secrets/**)");
   });
 
   it("forwards the mcp probe and never leaks the remote SSO doc (project scope default)", async () => {
@@ -99,20 +103,20 @@ describe("aih init — composes all six repo-scoped capabilities", () => {
 });
 
 describe("aih init — composition, not duplication", () => {
-  it("equals the concatenation of each sub-plan's actions, one doc header per phase", async () => {
-    const shared = ctx();
+  it("emits one doc header per phase and dedupes writes (no path written twice)", async () => {
+    const composed = (await command.plan(ctx())).actions;
 
-    // Call each leaf plan directly with the SAME ctx the orchestrator uses.
-    const subActions: Action[] = [];
-    for (const phase of INIT_PHASES) {
-      const sub = await phase.command.plan(shared);
-      subActions.push(...sub.actions);
-    }
+    // Exactly one "init: <phase>" header per phase.
+    const headers = docs(composed).filter((d) => d.describe.startsWith("init: "));
+    expect(headers).toHaveLength(INIT_PHASES.length);
 
-    const composed = (await command.plan(shared)).actions;
-
-    // init adds exactly one extra (doc header) action per phase.
-    expect(composed.length).toBe(subActions.length + INIT_PHASES.length);
+    // Writes are deduped by path — profile + scaffold both target CLAUDE.md, but it
+    // appears once (profile's stack-aware version wins as the first writer).
+    const writePathList = composed
+      .filter((a): a is WriteAction => a.kind === "write")
+      .map((w) => w.path);
+    expect(new Set(writePathList).size).toBe(writePathList.length);
+    expect(writePathList.filter((p) => p === "CLAUDE.md")).toHaveLength(1);
   });
 
   it("emits a doc header per phase in the canonical order, each before its capability's actions", async () => {
@@ -167,16 +171,16 @@ describe("aih init — BOUNDARY (no remote mutation introduced by the orchestrat
     }
   });
 
-  it("introduces only doc headers of its own — no extra writes/probes/execs beyond the leaves", async () => {
+  it("adds only doc headers; dedupes writes by path and never adds probes/execs beyond the leaves", async () => {
     const shared = ctx();
-    let leafWrites = 0;
     let leafProbes = 0;
     let leafExecs = 0;
     let leafDocs = 0;
+    const leafWritePaths = new Set<string>();
     for (const phase of INIT_PHASES) {
       const sub = await phase.command.plan(shared);
       for (const a of sub.actions) {
-        if (a.kind === "write") leafWrites += 1;
+        if (a.kind === "write") leafWritePaths.add(a.path);
         else if (a.kind === "probe") leafProbes += 1;
         else if (a.kind === "exec") leafExecs += 1;
         else if (a.kind === "doc") leafDocs += 1;
@@ -185,13 +189,11 @@ describe("aih init — BOUNDARY (no remote mutation introduced by the orchestrat
 
     const composed = (await command.plan(shared)).actions;
     const count = (k: Action["kind"]) => composed.filter((a) => a.kind === k).length;
-    expect(count("write")).toBe(leafWrites);
+    // Writes equal the UNIQUE leaf write paths (deduped) — never more than the leaves.
+    expect(count("write")).toBe(leafWritePaths.size);
     expect(count("probe")).toBe(leafProbes);
     expect(count("exec")).toBe(leafExecs);
-    // The ONLY docs init adds are exactly one "init: <phase>" header per phase —
-    // it never smuggles an extra narrative doc (which could carry cloud guidance).
-    const initHeaders = docs(composed).filter((d) => d.describe.startsWith("init: "));
-    expect(initHeaders.length).toBe(INIT_PHASES.length);
+    // The ONLY docs init adds are exactly one "init: <phase>" header per phase.
     expect(count("doc")).toBe(leafDocs + INIT_PHASES.length);
   });
 });

@@ -113,8 +113,14 @@ describe("aih mcp — generated mcpServers blueprint", () => {
     expect(typeof graph.description).toBe("string");
   });
 
-  it("models better-email as an opt-in http url, not a call", async () => {
-    const p = await command.plan(makeCtx());
+  it("project scope writes ONLY the local graph server — no hosted n24q02m boilerplate", async () => {
+    const p = await command.plan(makeCtx({ options: { scope: "project" } }));
+    const w = p.actions.find((a) => a.kind === "write") as WriteAction;
+    expect(Object.keys(serversOf(w))).toEqual(["better-code-review-graph"]);
+  });
+
+  it("models better-email as an opt-in http url under the remote scope, not a call", async () => {
+    const p = await command.plan(makeCtx({ options: { scope: "remote" } }));
     const w = p.actions.find((a) => a.kind === "write") as WriteAction;
     const email = pick(serversOf(w), "better-email");
 
@@ -123,8 +129,8 @@ describe("aih mcp — generated mcpServers blueprint", () => {
     expect(email.url).toBe("https://better-email-mcp.n24q02m.com/mcp");
   });
 
-  it("includes the full n24q02m hosted toolset, each with a description", async () => {
-    const p = await command.plan(makeCtx());
+  it("includes the full n24q02m hosted toolset under remote scope, each with a description", async () => {
+    const p = await command.plan(makeCtx({ options: { scope: "remote" } }));
     const w = p.actions.find((a) => a.kind === "write") as WriteAction;
     const servers = serversOf(w);
 
@@ -146,7 +152,7 @@ describe("aih mcp — generated mcpServers blueprint", () => {
   });
 
   it("BOUNDARY: every http server carries only a url — never a local command/args", async () => {
-    const p = await command.plan(makeCtx());
+    const p = await command.plan(makeCtx({ options: { scope: "remote" } }));
     const w = p.actions.find((a) => a.kind === "write") as WriteAction;
     const servers = serversOf(w);
 

@@ -7,6 +7,7 @@ import {
   writeJson,
 } from "../internals/plan.js";
 import type { Check } from "../internals/verify.js";
+import { scanRepo } from "../profile/scan.js";
 import { devcontainerConfig, managedSandboxSettings, worktreeGuidance } from "./templates.js";
 
 const DEVCONTAINER_PATH = ".devcontainer/devcontainer.json";
@@ -31,17 +32,18 @@ async function dockerAvailable(ctx: PlanContext): Promise<Check> {
 }
 
 function sandboxPlan(ctx: PlanContext) {
+  const stack = scanRepo(ctx.root, { maxDepth: 8 });
   return plan(
     "sandbox",
     writeJson(
       DEVCONTAINER_PATH,
-      devcontainerConfig({ contextDir: ctx.contextDir }),
-      "Generate a sandboxed devcontainer (Ubuntu base, common-utils + GitHub CLI features, postCreateCommand, VS Code customizations)",
+      devcontainerConfig({ contextDir: ctx.contextDir, stack }),
+      "Generate a stack-aware devcontainer (installs the detected toolchain — Node/AWS CLI/Python — and runs the real dependency install)",
     ),
     writeJson(
       MANAGED_SETTINGS_PATH,
-      managedSandboxSettings(),
-      "Enforce Claude sandbox policy (failIfUnavailable, allowUnsandboxedCommands=false, egress allowlist) — merged into existing managed settings",
+      managedSandboxSettings(stack),
+      "Enforce Claude sandbox policy (failIfUnavailable, allowUnsandboxedCommands=false, egress allowlist incl. detected cloud) — merged into existing managed settings",
       { merge: true },
     ),
     doc(
