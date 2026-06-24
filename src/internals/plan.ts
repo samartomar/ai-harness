@@ -1,6 +1,7 @@
 import type { EnvShell, HostAdapter } from "../platform/base.js";
 import type { EnvVar } from "./envfile.js";
 import type { Runner } from "./proc.js";
+import type { Prompter } from "./prompt.js";
 import type { Check } from "./verify.js";
 
 /**
@@ -103,6 +104,11 @@ export interface PlanContext {
   run: Runner;
   host: HostAdapter;
   env: NodeJS.ProcessEnv;
+  /**
+   * Interactive prompt seam. Present only when the user opted into an interactive
+   * flow (e.g. `--detect`) in a TTY; undefined keeps the harness non-interactive.
+   */
+  prompter?: Prompter;
   /** Capability-specific options parsed from the CLI. */
   options: Record<string, unknown>;
 }

@@ -105,7 +105,10 @@ content (schemas verified against [Kiro's docs](https://kiro.dev/docs/steering/)
 **Detection** (`--detect`) looks for each tool's config dir (`~/.claude`, `~/.codex`, `~/.gemini`,
 `~/.cursor`, `~/.kiro`, …) or its binary on PATH (via the Runner seam — no real process in tests).
 Precedence: `--all-tools` > `--cli` > `--detect` > default `claude`. When `--detect` finds nothing it
-defaults to `claude` and says so. `aih doctor` reports which CLIs it detects, and
+defaults to `claude` and says so. **In an interactive terminal, `--detect` shows the detected list and
+asks you to confirm or edit it** (press Enter to accept, or type a comma-separated list to add/remove
+tools) before anything installs — pass `--yes` (or run non-interactively / piped / `--json`) to skip
+the prompt and use the detected list as-is. `aih doctor` reports which CLIs it detects, and
 `aih bootstrap-ai --verify` adds a per-CLI **"installed"** confirm step (pass = found, skip = not here
 yet, bootloader still written) alongside the drift gate.
 

@@ -57,7 +57,11 @@ function addSharedFlags(cmd: Command): Command {
     .option("--root <dir>", "target repository/workstation root")
     .option("--cli <list>", "target AI CLIs (comma-separated): claude,codex,cursor,antigravity,…")
     .option("--all-tools", "target every supported AI CLI")
-    .option("--detect", "target only the AI CLIs detected on this machine (config dir / binary)");
+    .option("--detect", "target only the AI CLIs detected on this machine (config dir / binary)")
+    .option(
+      "--yes",
+      "skip the interactive confirmation for --detect (use the detected list as-is)",
+    );
 }
 
 export function registerCommands(program: Command): void {

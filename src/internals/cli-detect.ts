@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { type Cli, resolveClis, SUPPORTED_CLIS } from "./clis.js";
 import type { PlanContext } from "./plan.js";
+import type { Prompter } from "./prompt.js";
 
 /**
  * Best-effort presence detection for each AI CLI: a home-relative config dir, or
@@ -87,17 +88,53 @@ export interface TargetResolution {
 }
 
 /**
+ * Show the auto-detected CLIs and let the user confirm or edit the list before the
+ * harness installs anything. Bare Enter accepts the detected set; typing a
+ * comma-separated list replaces it (add/remove tools). Reuses {@link resolveClis}
+ * for parsing + validation, so unknown names are dropped with the same rules.
+ * Returns the final list (possibly empty when nothing was detected and the user
+ * skipped — the caller then falls back to `claude`).
+ */
+export async function confirmDetectedClis(prompter: Prompter, detected: Cli[]): Promise<Cli[]> {
+  const supported = SUPPORTED_CLIS.join(", ");
+  const question =
+    detected.length > 0
+      ? [
+          `Detected AI CLIs on this machine: ${detected.join(", ")}`,
+          `Install for these? Press Enter to accept, or type a comma-separated list to change`,
+          `(supported: ${supported}): `,
+        ].join("\n")
+      : [
+          "No AI CLIs were detected on this machine.",
+          `Type a comma-separated list to install for, or press Enter to skip (defaults to claude).`,
+          `Supported: ${supported}: `,
+        ].join("\n");
+  const answer = await prompter.ask(question);
+  if (answer.trim().length === 0) return detected;
+  return resolveClis({ cli: answer });
+}
+
+/**
  * Resolve the target CLIs, honoring `--detect`. Precedence: `--all-tools` >
  * explicit `--cli <list>` > `--detect` (the CLIs found on this machine) > the
  * default (`claude`). When `--detect` finds nothing, fall back to `claude` so the
  * harness still produces a usable result, and flag `detectFellBack` so the caller
  * can surface a clear notice instead of silently defaulting.
+ *
+ * When a {@link Prompter} is wired (interactive TTY, not `--json`/`--yes`), the
+ * detected list is shown for confirmation/editing before it's used — so a human
+ * always sees "install for these?" while automation stays non-interactive.
  */
 export async function resolveTargets(ctx: PlanContext): Promise<TargetResolution> {
   const opts = ctx.options;
   const explicit = typeof opts.cli === "string" && opts.cli.trim().length > 0;
   if (opts.detect === true && opts.allTools !== true && !explicit) {
     const present = presentClis(await detectClis(ctx));
+    if (ctx.prompter) {
+      const confirmed = await confirmDetectedClis(ctx.prompter, present);
+      if (confirmed.length > 0) return { clis: confirmed, detectFellBack: false };
+      return { clis: ["claude"], detectFellBack: true };
+    }
     if (present.length > 0) return { clis: present, detectFellBack: false };
     return { clis: ["claude"], detectFellBack: true };
   }

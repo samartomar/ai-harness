@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+  confirmDetectedClis,
   detectClis,
   detectFallbackNotice,
   detectOne,
@@ -13,7 +14,22 @@ import {
 import { SUPPORTED_CLIS } from "../../src/internals/clis.js";
 import type { PlanContext } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
+import type { Prompter } from "../../src/internals/prompt.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
+
+/** A fake prompter that records the questions asked and returns a canned answer. */
+function fakePrompter(answer: string): { prompter: Prompter; asked: string[] } {
+  const asked: string[] = [];
+  return {
+    asked,
+    prompter: {
+      ask: async (q: string) => {
+        asked.push(q);
+        return answer;
+      },
+    },
+  };
+}
 
 let home: string;
 beforeEach(() => {
@@ -35,6 +51,7 @@ function configDir(rel: string): void {
 function makeCtx(
   options: Record<string, unknown> = {},
   presentBinaries: string[] = [],
+  prompter?: Prompter,
 ): PlanContext {
   const run = fakeRunner((argv) => {
     if ((argv[0] === "which" || argv[0] === "where") && presentBinaries.includes(argv[1] ?? "")) {
@@ -51,6 +68,7 @@ function makeCtx(
     run,
     host: makeHostAdapter({ platform: "linux", run, env: {} }),
     env: { HOME: home },
+    prompter,
     options,
   };
 }
@@ -153,5 +171,68 @@ describe("resolveTargets / detectFallbackNotice", () => {
     const n = detectFallbackNotice();
     expect(n).toContain("--cli");
     expect(n).toContain("--all-tools");
+  });
+});
+
+describe("confirmDetectedClis — review the detected list", () => {
+  it("bare Enter keeps the detected list as-is", async () => {
+    const { prompter } = fakePrompter("");
+    expect(await confirmDetectedClis(prompter, ["claude", "codex"])).toEqual(["claude", "codex"]);
+  });
+
+  it("a typed list overrides it, parsed + validated (unknowns dropped, deduped)", async () => {
+    const { prompter } = fakePrompter("kiro, bogus ,CURSOR, kiro");
+    expect(await confirmDetectedClis(prompter, ["claude"])).toEqual(["kiro", "cursor"]);
+  });
+
+  it("shows the detected names in the prompt when something was found", async () => {
+    const { prompter, asked } = fakePrompter("");
+    await confirmDetectedClis(prompter, ["claude", "gemini"]);
+    expect(asked[0]).toContain("claude, gemini");
+    expect(asked[0]).toContain("Press Enter to accept");
+  });
+
+  it("asks what to install when nothing was detected", async () => {
+    const { prompter, asked } = fakePrompter("");
+    await confirmDetectedClis(prompter, []);
+    expect(asked[0]).toContain("No AI CLIs were detected");
+  });
+});
+
+describe("resolveTargets — interactive --detect confirm", () => {
+  it("bare Enter accepts the detected set", async () => {
+    configDir(".claude");
+    const { prompter, asked } = fakePrompter("");
+    const r = await resolveTargets(makeCtx({ detect: true }, ["codex"], prompter));
+    expect(r.clis).toEqual(expect.arrayContaining(["claude", "codex"]));
+    expect(r.detectFellBack).toBe(false);
+    expect(asked).toHaveLength(1); // the user was asked exactly once
+  });
+
+  it("a typed list lets the user add/remove tools before install", async () => {
+    configDir(".claude"); // only claude detected…
+    const { prompter } = fakePrompter("kiro, codex"); // …but the user wants these
+    const r = await resolveTargets(makeCtx({ detect: true }, [], prompter));
+    expect(r.clis).toEqual(["kiro", "codex"]);
+  });
+
+  it("nothing detected + Enter falls back to claude (and flags it)", async () => {
+    const { prompter } = fakePrompter("");
+    const r = await resolveTargets(makeCtx({ detect: true }, [], prompter));
+    expect(r.clis).toEqual(["claude"]);
+    expect(r.detectFellBack).toBe(true);
+  });
+
+  it("without a prompter, --detect stays non-interactive (unchanged)", async () => {
+    configDir(".claude");
+    const r = await resolveTargets(makeCtx({ detect: true }, ["codex"])); // no prompter
+    expect(r.clis).toEqual(expect.arrayContaining(["claude", "codex"]));
+  });
+
+  it("an explicit --cli list skips the prompt entirely", async () => {
+    const { prompter, asked } = fakePrompter("zed");
+    const r = await resolveTargets(makeCtx({ detect: true, cli: "codex" }, [], prompter));
+    expect(r.clis).toEqual(["codex"]);
+    expect(asked).toHaveLength(0); // never prompted — explicit list wins
   });
 });

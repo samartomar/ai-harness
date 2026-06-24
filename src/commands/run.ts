@@ -4,12 +4,15 @@ import { AihError } from "../errors.js";
 import { executePlan, summarizeResult } from "../internals/execute.js";
 import type { CommandSpec, PlanContext } from "../internals/plan.js";
 import { defaultRunner, type Runner } from "../internals/proc.js";
+import { isInteractive, makeReadlinePrompter, type Prompter } from "../internals/prompt.js";
 import { makeHostAdapter } from "../platform/detect.js";
 
 export interface RunDeps {
   run?: Runner;
   env?: NodeJS.ProcessEnv;
   write?: (text: string) => void;
+  /** Inject a prompter (tests); production wires a readline prompter when interactive. */
+  prompter?: Prompter;
 }
 
 /** Convert a commander option flag spec into its camelCase opts key. */
@@ -62,6 +65,12 @@ export async function runCapability(
     });
     json = settings.json;
     const host = makeHostAdapter({ run, env });
+    // Wire an interactive prompter only when the user opted into `--detect`, isn't
+    // in `--json`/`--yes` mode, and the session is a real TTY. Otherwise the
+    // harness stays non-interactive (automation, CI, piped output) exactly as before.
+    const wantConfirm = opts.detect === true && opts.yes !== true && !settings.json;
+    const prompter =
+      deps.prompter ?? (wantConfirm && isInteractive(env) ? makeReadlinePrompter() : undefined);
     const ctx: PlanContext = {
       root: settings.root,
       contextDir: settings.contextDir,
@@ -71,6 +80,7 @@ export async function runCapability(
       run,
       host,
       env,
+      prompter,
       options: {
         ...extractOptions(spec, opts),
         caPattern: settings.caPattern,
