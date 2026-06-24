@@ -6,8 +6,10 @@ import {
   type Plan,
   type PlanContext,
   plan,
+  writeText,
 } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
+import { methodologySteering } from "../kiro/content.js";
 import { superpowersActionsForCli, superpowersOverviewDoc } from "./install.js";
 
 function summaryDoc(clis: string[]): Action {
@@ -33,6 +35,16 @@ async function superpowersPlan(ctx: PlanContext): Promise<Plan> {
   const { clis, detectFellBack } = await resolveTargets(ctx);
   const actions: Action[] = [];
   for (const cli of clis) actions.push(...superpowersActionsForCli(cli));
+  // Kiro can't read ~/.claude/superpowers — drop a native always-on steering bridge.
+  if (clis.includes("kiro")) {
+    actions.push(
+      writeText(
+        ".kiro/steering/superpowers-methodology.md",
+        methodologySteering(),
+        "Kiro steering: Superpowers methodology (situation → method routing)",
+      ),
+    );
+  }
   actions.push(superpowersOverviewDoc());
   if (detectFellBack) {
     actions.push(doc("no AI CLIs detected — defaulted to claude", detectFallbackNotice()));

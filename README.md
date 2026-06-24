@@ -83,6 +83,19 @@ Copilot → `.github/copilot-instructions.md`, **Kiro → `.kiro/steering/00-can
 always`, with a `#[[file:…/RULE_ROUTER.md]]` live-reference). For a tool aih doesn't target yet,
 `<context-dir>/adapters/other-tools.md` documents how to point it at `RULE_ROUTER.md`.
 
+**Kiro depth.** Since Kiro can't read `~/.claude`, selecting `kiro` also generates Kiro-native
+content (schemas verified against [Kiro's docs](https://kiro.dev/docs/steering/) and ECC's real
+`.kiro/` tree):
+
+- `aih bootstrap-ai --cli kiro` → `.kiro/steering/agent-tools.md` (stack-aware CLI usage) +
+  stack-aware `.kiro/hooks/*.kiro.hook` files (`aih-secret-scan-on-create`, `aih-tests-on-edit`,
+  `aih-quality-gate` running the repo's real lint/test) in Kiro's real hook schema.
+- `aih ecc --cli kiro` → runs ECC's **native** `.kiro/install.sh` (copies ECC's agents/skills/
+  steering/hooks into `.kiro/`) when a local ECC checkout is found (`--ecc-path <dir>`, or
+  `~/.claude/ecc`, `~/ECC`); otherwise documents the `git clone` + install.
+- `aih superpowers --cli kiro` → `.kiro/steering/superpowers-methodology.md` (the
+  brainstorm → plan → TDD → review routing, since Kiro can't load `~/.claude/superpowers`).
+
 **Detection** (`--detect`) looks for each tool's config dir (`~/.claude`, `~/.codex`, `~/.gemini`,
 `~/.cursor`, `~/.kiro`, …) or its binary on PATH (via the Runner seam — no real process in tests).
 Precedence: `--all-tools` > `--cli` > `--detect` > default `claude`. When `--detect` finds nothing it

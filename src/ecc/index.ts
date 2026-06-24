@@ -1,8 +1,12 @@
+import { existsSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { detectFallbackNotice, resolveTargets } from "../internals/cli-detect.js";
 import {
   type Action,
   type CommandSpec,
   doc,
+  exec,
   type Plan,
   type PlanContext,
   plan,
@@ -12,6 +16,64 @@ import type { RepoStack } from "../profile/scan.js";
 import { scanRepo } from "../profile/scan.js";
 import { type EccInstallInputs, eccActionsForCli, eccToolsDoc } from "./install.js";
 import { eccLanguages } from "./select.js";
+
+/** Find a local ECC checkout whose native Kiro installer exists. */
+function findEccKiroInstaller(ctx: PlanContext): string | undefined {
+  const home = ctx.env.USERPROFILE || ctx.env.HOME || homedir();
+  const explicit = typeof ctx.options.eccPath === "string" ? ctx.options.eccPath.trim() : "";
+  const candidates = [
+    ...(explicit ? [explicit] : []),
+    join(home, ".claude", "ecc"),
+    join(home, "ECC"),
+    join(home, "everything-claude-code"),
+  ];
+  for (const c of candidates) {
+    const sh = join(c, ".kiro", "install.sh");
+    if (existsSync(sh)) return sh;
+  }
+  return undefined;
+}
+
+/**
+ * ECC's native Kiro path. ECC ships `.kiro/install.sh` which copies its agents,
+ * skills, steering, and hooks into the repo's `.kiro/` (idempotent). If a local
+ * ECC checkout is found, run it under `--apply`; otherwise document the clone +
+ * install. On Windows it runs through Git Bash.
+ */
+function kiroEccActions(ctx: PlanContext): Action[] {
+  const installer = findEccKiroInstaller(ctx);
+  if (installer) {
+    return [
+      exec(
+        `Install ECC for Kiro — run ECC's native .kiro/install.sh into ${ctx.root}/.kiro/ (under --apply)`,
+        ["bash", installer, ctx.root],
+      ),
+      doc(
+        "ECC Kiro install (native installer found)",
+        lines(
+          `Using the ECC checkout at \`${installer.replace(/[\\/]\.kiro[\\/]install\.sh$/, "")}\`.`,
+          "`.kiro/install.sh` copies ECC's agents/skills/steering/hooks into this repo's",
+          "`.kiro/` (idempotent, skips existing files). On Windows it runs via Git Bash.",
+        ),
+      ),
+    ];
+  }
+  return [
+    doc(
+      "ECC Kiro install (clone + run the native installer)",
+      lines(
+        "ECC ships a native Kiro installer. Clone ECC and run it against this repo:",
+        "",
+        "  git clone https://github.com/affaan-m/ECC.git",
+        `  bash ECC/.kiro/install.sh "${ctx.root}"`,
+        "",
+        "It copies ECC's agents, skills, steering, and hooks into `.kiro/` (idempotent).",
+        "On Windows use Git Bash. Point aih at an existing checkout with",
+        "`aih ecc --cli kiro --ecc-path <dir>`.",
+      ),
+    ),
+  ];
+}
 
 /** A short, human-readable stack summary used in the `consult` advisor prompt. */
 function stackSummary(stack: RepoStack): string {
@@ -74,7 +136,12 @@ async function eccPlan(ctx: PlanContext): Promise<Plan> {
   };
 
   const actions: Action[] = [];
-  for (const cli of clis) actions.push(...eccActionsForCli(cli, inputs));
+  for (const cli of clis) {
+    // Kiro has a native ECC installer (.kiro/install.sh) — use it instead of the
+    // generic consult route.
+    if (cli === "kiro") actions.push(...kiroEccActions(ctx));
+    else actions.push(...eccActionsForCli(cli, inputs));
+  }
   actions.push(eccToolsDoc());
   if (detectFellBack) {
     actions.push(doc("no AI CLIs detected — defaulted to claude", detectFallbackNotice()));
@@ -92,6 +159,10 @@ export const command: CommandSpec = {
       flags: "--profile <profile>",
       description: "ECC install profile: minimal|core|full",
       default: "core",
+    },
+    {
+      flags: "--ecc-path <dir>",
+      description: "path to a local ECC checkout (for --cli kiro native install)",
     },
   ],
   plan: eccPlan,

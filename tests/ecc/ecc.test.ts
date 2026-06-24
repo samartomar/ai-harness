@@ -192,6 +192,16 @@ describe("ecc.plan — real affaan-m/ECC install", () => {
     expect(text).toContain("--target gemini");
   });
 
+  it("--cli kiro uses ECC's native .kiro/install.sh (exec if found, else clone doc)", async () => {
+    const actions = (await command.plan(makeCtx({ cli: "kiro" }))).actions;
+    const blob = actions
+      .map((a) => (a.kind === "doc" ? a.text : a.kind === "exec" ? a.argv.join(" ") : ""))
+      .join("\n");
+    expect(blob).toContain(".kiro/install.sh");
+    // No fabricated ECC consult/installer for kiro — it's the native installer path.
+    expect(blob).not.toContain("ecc-install --target kiro");
+  });
+
   it("--all-tools covers plugin (claude), installer (codex), and consult (gemini)", async () => {
     put("package.json", JSON.stringify({ name: "svc" }));
     put("tsconfig.json", "{}");

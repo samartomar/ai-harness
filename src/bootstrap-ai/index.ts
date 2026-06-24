@@ -12,9 +12,11 @@ import {
   type PlanContext,
   plan,
   probe,
+  writeJson,
   writeText,
 } from "../internals/plan.js";
 import type { Check } from "../internals/verify.js";
+import { agentToolsSteering, kiroHooks } from "../kiro/content.js";
 import { scanRepo } from "../profile/scan.js";
 import {
   adapterNote,
@@ -161,6 +163,22 @@ async function bootstrapAiPlan(ctx: PlanContext): Promise<Plan> {
     actions.push(
       writeText(relPath, merged, `bootloader ${relPath} (preamble + managed canonical block)`),
     );
+  }
+
+  // Kiro-native extras (Kiro can't read ~/.claude): always-on agent-tools steering
+  // + a small stack-aware hook set in Kiro's real `.kiro.hook` schema.
+  if (clis.includes("kiro")) {
+    actions.push(
+      writeText(
+        ".kiro/steering/agent-tools.md",
+        agentToolsSteering(stack),
+        "Kiro steering: stack-aware CLI tool usage",
+      ),
+    );
+    for (const h of kiroHooks(stack)) {
+      const label = h.path.replace(/^\.kiro\/hooks\//, "").replace(/\.kiro\.hook$/, "");
+      actions.push(writeJson(h.path, h.hook, `Kiro hook: ${label} (.kiro.hook schema)`));
+    }
   }
 
   // Doctor probes (run under --verify): router present + every bootloader in sync,

@@ -89,8 +89,20 @@ describe("superpowers.plan", () => {
     expect(flat).toContain("copilot");
   });
 
-  it("BOUNDARY: only doc/exec actions", async () => {
+  it("BOUNDARY: only doc/exec/write actions (write = Kiro methodology steering)", async () => {
     const actions = (await command.plan(makeCtx({ allTools: true }))).actions;
-    for (const a of actions) expect(["doc", "exec"]).toContain(a.kind);
+    for (const a of actions) expect(["doc", "exec", "write"]).toContain(a.kind);
+  });
+
+  it("--cli kiro writes the Superpowers methodology steering (inclusion: always)", async () => {
+    const actions = (await command.plan(makeCtx({ cli: "kiro" }))).actions;
+    const write = actions.find(
+      (a): a is Extract<typeof a, { kind: "write" }> =>
+        a.kind === "write" &&
+        a.path.replace(/\\/g, "/") === ".kiro/steering/superpowers-methodology.md",
+    );
+    expect(write).toBeDefined();
+    expect(write?.contents).toContain("inclusion: always");
+    expect(write?.contents).toContain("TDD");
   });
 });

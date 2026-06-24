@@ -132,6 +132,30 @@ describe("bootstrap-ai — CLI-aware bootloaders", () => {
     expect(w.has("CLAUDE.md")).toBe(false);
   });
 
+  it("--cli kiro generates real .kiro.hook files + agent-tools steering", async () => {
+    put(
+      "package.json",
+      JSON.stringify({ name: "svc", scripts: { test: "vitest run", lint: "biome" } }),
+    );
+    put("tsconfig.json", "{}");
+    const w = writesByPath((await command.plan(makeCtx({ cli: "kiro" }))).actions);
+    expect(w.has(".kiro/steering/agent-tools.md")).toBe(true);
+    // Hook uses Kiro's verified real schema (when/then types).
+    const hook = w.get(".kiro/hooks/aih-tests-on-edit.kiro.hook")?.json as {
+      when: { type: string };
+      then: { type: string };
+    };
+    expect(hook.when.type).toBe("fileEdited");
+    expect(hook.then.type).toBe("askAgent");
+    // Quality gate runs the repo's real (detected) test + lint commands.
+    const gate = w.get(".kiro/hooks/aih-quality-gate.kiro.hook")?.json as {
+      when: { type: string };
+      then: { command: string };
+    };
+    expect(gate.when.type).toBe("userTriggered");
+    expect(gate.then.command).toContain("npm test");
+  });
+
   it("--all-tools dedupes AGENTS.md to a single write", async () => {
     const actions = (await command.plan(makeCtx({ allTools: true }))).actions;
     const agents = actions.filter(
