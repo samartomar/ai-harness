@@ -1,53 +1,87 @@
 import type { RepoStack } from "../profile/scan.js";
-import { allModuleSlugs } from "./rules.js";
 
-/** Frameworks that imply the web/frontend rule module. */
-const WEB_FRAMEWORKS = new Set(["Next.js", "React", "Vue", "Svelte", "Angular"]);
-/** Frameworks that imply the serverless/AWS module. */
-const SERVERLESS_FRAMEWORKS = new Set(["Serverless Framework", "AWS SAM", "AWS CDK"]);
+/**
+ * ECC's real language-pack tokens (the args to `ecc-install` / `install.sh`,
+ * e.g. `--target cursor typescript python`). Source: affaan-m/ECC `rules/`
+ * layout. Order here is the canonical install order we emit.
+ */
+export const ECC_LANGUAGE_PACKS = [
+  "typescript",
+  "python",
+  "golang",
+  "swift",
+  "php",
+  "ruby",
+  "web",
+  "angular",
+  "vue",
+  "nuxt",
+  "arkts",
+] as const;
 
-export interface ModuleSelection {
-  /** ECC module slugs to install, deterministic order (common first). */
-  modules: string[];
-  /** True when the repo had no detectable stack, so EVERYTHING was installed. */
-  installedEverything: boolean;
+export type EccLanguagePack = (typeof ECC_LANGUAGE_PACKS)[number];
+
+export interface EccLanguageSelection {
+  /** ECC language packs to install for the detected stack (deterministic order). */
+  packs: EccLanguagePack[];
+  /**
+   * True when nothing about the stack was detectable (empty/new repo). The
+   * installer then takes the FULL profile (everything) and the user re-runs
+   * `aih ecc` once there is code to scope it down.
+   */
+  installEverything: boolean;
 }
 
-/** Map one detected language to its ECC module slug, if any. */
-function languageModule(language: string): string | undefined {
-  if (language === "TypeScript/Node.js") return "typescript";
-  if (language === "JavaScript/Node.js") return "javascript";
+/** Map one detected language to its ECC language pack, if ECC ships one. */
+function languagePack(language: string): EccLanguagePack | undefined {
+  // TypeScript and JavaScript both map to ECC's `typescript` pack (it covers
+  // .js/JSDoc explicitly), so a plain-Node repo still gets the right rules.
+  if (language === "TypeScript/Node.js" || language === "JavaScript/Node.js") return "typescript";
   if (language === "Python") return "python";
-  if (language === "Go") return "go";
-  if (language === "Rust") return "rust";
-  if (language === ".NET") return "dotnet";
-  if (language.startsWith("Java/")) return "java";
+  if (language === "Go") return "golang";
+  if (language === "Swift") return "swift";
+  if (language === "PHP") return "php";
+  if (language === "Ruby") return "ruby";
+  // Rust / .NET / Java have no dedicated ECC language pack yet — the baseline
+  // (common rules + agents) still installs via the chosen profile.
+  return undefined;
+}
+
+/** Map one detected framework to an ECC language pack, if it implies one. */
+function frameworkPack(framework: string): EccLanguagePack | undefined {
+  if (framework === "Angular") return "angular";
+  if (framework === "Nuxt") return "nuxt";
+  if (framework === "Vue") return "vue";
+  if (framework === "Next.js" || framework === "React" || framework === "Svelte") return "web";
   return undefined;
 }
 
 /**
- * Choose the ECC modules for a repo. With a detected stack, install `common`
- * plus the matching language/framework modules. With NO detectable stack (an
- * empty/new repo), install EVERYTHING — the user re-runs `aih ecc` once the repo
- * has code and the selection self-heals down to what actually applies.
+ * Choose the ECC language packs for a repo from the detected stack. With a
+ * detectable stack, select the packs that match its languages/frameworks. With
+ * NO detectable stack (empty/new repo), signal `installEverything` so the
+ * installer takes the full profile; the user re-runs once there is code and the
+ * selection scopes down to exactly what applies.
  */
-export function selectModules(stack: RepoStack): ModuleSelection {
+export function eccLanguages(stack: RepoStack): EccLanguageSelection {
   const detectedAnything =
     stack.languages.length > 0 || stack.frameworks.length > 0 || stack.deployment.length > 0;
 
   if (!detectedAnything) {
-    return { modules: allModuleSlugs(), installedEverything: true };
+    return { packs: [], installEverything: true };
   }
 
-  const wanted = new Set<string>(["common"]);
+  const wanted = new Set<EccLanguagePack>();
   for (const language of stack.languages) {
-    const slug = languageModule(language);
-    if (slug) wanted.add(slug);
+    const pack = languagePack(language);
+    if (pack) wanted.add(pack);
   }
-  if (stack.frameworks.some((f) => SERVERLESS_FRAMEWORKS.has(f))) wanted.add("serverless-aws");
-  if (stack.frameworks.some((f) => WEB_FRAMEWORKS.has(f))) wanted.add("web");
-
-  // Deterministic order: follow the canonical module order, common first.
-  const modules = allModuleSlugs().filter((slug) => wanted.has(slug));
-  return { modules, installedEverything: false };
+  for (const framework of stack.frameworks) {
+    const pack = frameworkPack(framework);
+    if (pack) wanted.add(pack);
+  }
+  // Web frameworks already imply `web`; if Vue/Angular/Nuxt matched, keep the
+  // more specific pack(s) AND `web` is only added when a bare web framework hit.
+  const packs = ECC_LANGUAGE_PACKS.filter((p) => wanted.has(p));
+  return { packs, installEverything: false };
 }

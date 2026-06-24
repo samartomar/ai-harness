@@ -42,14 +42,20 @@ function writesByPath(actions: Action[]): Map<string, WriteAction> {
   return m;
 }
 
-/** The four plain pointer adapters (filename → root-relative path). */
+/** Every thin pointer adapter, written only under --all-tools (one per CLI family). */
 const THIN_ADAPTERS = [
   "CLAUDE.md",
   "AGENTS.md",
   ".windsurfrules",
   ".github/copilot-instructions.md",
   ".cursor/rules/00-index.mdc",
+  "GEMINI.md",
 ];
+
+/** A ctx targeting every CLI, so all adapters are emitted. */
+function allToolsCtx(over: Partial<PlanContext> = {}): PlanContext {
+  return ctx({ options: { allTools: true }, ...over });
+}
 
 describe("scaffold command surface", () => {
   it("keeps the scaffold name and an empty option set", () => {
@@ -79,17 +85,40 @@ describe("scaffold plan (dry-run shape)", () => {
     expect(w.has(".ai-context/skills/example-skill/SKILL.md")).toBe(true);
   });
 
-  it("emits every thin IDE adapter", async () => {
-    const w = writesByPath((await command.plan(ctx())).actions);
+  it("emits every thin IDE adapter under --all-tools", async () => {
+    const w = writesByPath((await command.plan(allToolsCtx())).actions);
     for (const path of THIN_ADAPTERS) {
       expect(w.has(path)).toBe(true);
     }
+  });
+
+  it("by default targets only Claude Code (CLAUDE.md, no other adapters)", async () => {
+    const w = writesByPath((await command.plan(ctx())).actions);
+    expect(w.has("CLAUDE.md")).toBe(true);
+    expect(w.has("AGENTS.md")).toBe(false);
+    expect(w.has(".cursor/rules/00-index.mdc")).toBe(false);
+    expect(w.has("GEMINI.md")).toBe(false);
+  });
+
+  it("--cli selects exactly the matching adapters (codex+cursor → AGENTS.md + cursor)", async () => {
+    const w = writesByPath((await command.plan(ctx({ options: { cli: "codex,cursor" } }))).actions);
+    expect(w.has("AGENTS.md")).toBe(true);
+    expect(w.has(".cursor/rules/00-index.mdc")).toBe(true);
+    expect(w.has("CLAUDE.md")).toBe(false);
+  });
+
+  it("dedupes AGENTS.md when several AGENTS-family CLIs are selected", async () => {
+    const actions = (await command.plan(ctx({ options: { cli: "codex,opencode,zed" } }))).actions;
+    const agents = actions.filter(
+      (a) => a.kind === "write" && a.path.replace(/\\/g, "/") === "AGENTS.md",
+    );
+    expect(agents).toHaveLength(1);
   });
 });
 
 describe("thin adapters (pointer contract)", () => {
   it("each adapter is < 30 lines, opens the pointer sentence, and routes to contextDir", async () => {
-    const w = writesByPath((await command.plan(ctx())).actions);
+    const w = writesByPath((await command.plan(allToolsCtx())).actions);
     for (const path of THIN_ADAPTERS) {
       const contents = w.get(path)?.contents ?? "";
       const lineCount = contents.replace(/\n$/, "").split("\n").length;
@@ -100,7 +129,7 @@ describe("thin adapters (pointer contract)", () => {
   });
 
   it("the cursor adapter carries MDC frontmatter with alwaysApply + glob", async () => {
-    const w = writesByPath((await command.plan(ctx())).actions);
+    const w = writesByPath((await command.plan(allToolsCtx())).actions);
     const mdc = w.get(".cursor/rules/00-index.mdc")?.contents ?? "";
     expect(mdc.startsWith("---\n")).toBe(true);
     expect(mdc).toContain("alwaysApply: true");
@@ -111,7 +140,7 @@ describe("thin adapters (pointer contract)", () => {
 
 describe("custom context dir override", () => {
   it("lands context files under ai-coding and points adapters there", async () => {
-    const p = await command.plan(ctx({ contextDir: "ai-coding" }));
+    const p = await command.plan(allToolsCtx({ contextDir: "ai-coding" }));
     const w = writesByPath(p.actions);
     // Context files moved.
     expect(w.has("ai-coding/INDEX.md")).toBe(true);

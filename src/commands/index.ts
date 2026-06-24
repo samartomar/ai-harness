@@ -14,6 +14,7 @@ import { command as sandbox } from "../sandbox/index.js";
 import { command as scaffold } from "../scaffold/index.js";
 import { command as secrets } from "../secrets/index.js";
 import { command as status } from "../status.js";
+import { command as superpowers } from "../superpowers/index.js";
 import { command as telemetry } from "../telemetry/index.js";
 import { command as vdi } from "../vdi/index.js";
 import { runCapability } from "./run.js";
@@ -25,6 +26,7 @@ export const CAPABILITIES: CommandSpec[] = [
   vdi,
   profile,
   ecc,
+  superpowers,
   scaffold,
   guardrails,
   secrets,
@@ -48,7 +50,9 @@ function addSharedFlags(cmd: Command): Command {
     .option("--verify", "run verification probes after applying")
     .option("--json", "emit machine-readable JSON")
     .option("--context-dir <dir>", "canonical context directory name", ".ai-context")
-    .option("--root <dir>", "target repository/workstation root");
+    .option("--root <dir>", "target repository/workstation root")
+    .option("--cli <list>", "target AI CLIs (comma-separated): claude,codex,cursor,antigravity,…")
+    .option("--all-tools", "target every supported AI CLI");
 }
 
 export function registerCommands(program: Command): void {

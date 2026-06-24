@@ -1,15 +1,10 @@
 import { posix } from "node:path";
+import { resolveClis } from "../internals/clis.js";
 import type { Action, CommandSpec, PlanContext } from "../internals/plan.js";
 import { doc, plan, writeJson, writeText } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
 import { scanRepo } from "../profile/scan.js";
-import {
-  agentsAdapter,
-  claudeAdapter,
-  copilotAdapter,
-  cursorAdapter,
-  windsurfAdapter,
-} from "./adapters.js";
+import { adaptersForClis } from "./adapters.js";
 import { HOOKS_PATH_COMMAND, preCommitHook } from "./hooks.js";
 import {
   architectureDoc,
@@ -36,6 +31,8 @@ function scaffoldPlan(ctx: PlanContext): ReturnType<typeof plan> {
   const inDir = (...parts: string[]): string => posix.join(dir, ...parts);
   // Populate the context from the real repo, not empty placeholders.
   const stack = scanRepo(ctx.root, { maxDepth: 8 });
+  // Only emit adapters for the CLIs the user targets (default: Claude Code).
+  const clis = resolveClis(ctx.options);
 
   const actions: Action[] = [
     // 1. Canonical context directory.
@@ -56,22 +53,15 @@ function scaffoldPlan(ctx: PlanContext): ReturnType<typeof plan> {
       exampleSkillDoc(),
       "example SKILL.md (INDEX/SKILL pattern)",
     ),
+  ];
 
-    // 2. Thin IDE/agent adapters — pointers back to the context dir (<30 lines each).
-    writeText("CLAUDE.md", claudeAdapter(dir), "Claude Code pointer adapter"),
-    writeText("AGENTS.md", agentsAdapter(dir), "AGENTS.md pointer adapter"),
-    writeText(".windsurfrules", windsurfAdapter(dir), "Windsurf pointer adapter"),
-    writeText(
-      posix.join(".cursor", "rules", "00-index.mdc"),
-      cursorAdapter(dir),
-      "Cursor MDC pointer adapter",
-    ),
-    writeText(
-      posix.join(".github", "copilot-instructions.md"),
-      copilotAdapter(dir),
-      "GitHub Copilot pointer adapter",
-    ),
+  // 2. Thin IDE/agent adapters — pointers back to the context dir (<30 lines each),
+  //    one per selected CLI (deduped: codex/antigravity/opencode/zed/kimi share AGENTS.md).
+  for (const a of adaptersForClis(clis, dir)) {
+    actions.push(writeText(a.path, a.contents, a.describe));
+  }
 
+  actions.push(
     // 3. Local guardrail: keep secrets out of the agent's read scope (merge, don't clobber).
     writeJson(
       posix.join(".claude", "settings.json"),
@@ -98,7 +88,7 @@ function scaffoldPlan(ctx: PlanContext): ReturnType<typeof plan> {
         "set core.hooksPath. Unset it any time with `git config --unset core.hooksPath`.",
       ),
     ),
-  ];
+  );
 
   return plan("scaffold", ...actions);
 }

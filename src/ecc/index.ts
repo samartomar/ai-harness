@@ -1,140 +1,95 @@
-import { join, posix } from "node:path";
-import { readIfExists } from "../internals/fsxn.js";
+import { resolveClis } from "../internals/clis.js";
 import {
   type Action,
   type CommandSpec,
   doc,
-  exec,
   type Plan,
   type PlanContext,
   plan,
-  writeJson,
-  writeText,
 } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
+import type { RepoStack } from "../profile/scan.js";
 import { scanRepo } from "../profile/scan.js";
-import { moduleFor } from "./rules.js";
-import { selectModules } from "./select.js";
+import { type EccInstallInputs, eccActionsForCli, eccToolsDoc } from "./install.js";
+import { eccLanguages } from "./select.js";
 
-/** Subdirectory (under the context dir) where ECC rule modules live. */
-const ECC_SUBDIR = "rules/ecc";
-
-function moduleRelPath(ctx: PlanContext, slug: string): string {
-  return posix.join(ctx.contextDir, ECC_SUBDIR, `${slug}.md`);
-}
-function routerRelPath(ctx: PlanContext): string {
-  return posix.join(ctx.contextDir, ECC_SUBDIR, "RULE_ROUTER.md");
-}
-function manifestRelPath(ctx: PlanContext): string {
-  return posix.join(ctx.contextDir, ECC_SUBDIR, "manifest.json");
+/** A short, human-readable stack summary used in the `consult` advisor prompt. */
+function stackSummary(stack: RepoStack): string {
+  const parts: string[] = [];
+  if (stack.languages.length > 0) parts.push(stack.languages.join(" + "));
+  if (stack.frameworks.length > 0) parts.push(`using ${stack.frameworks.join(", ")}`);
+  if (stack.cloud.length > 0) parts.push(`on ${stack.cloud.join("/")}`);
+  return parts.length > 0 ? parts.join(" ") : "a new repository with no detected stack yet";
 }
 
-/** The modules installed by a previous run (drives self-heal pruning). */
-function previousModules(ctx: PlanContext): string[] {
-  const raw = readIfExists(join(ctx.root, ctx.contextDir, ECC_SUBDIR, "manifest.json"));
-  if (!raw) return [];
-  try {
-    const parsed: unknown = JSON.parse(raw);
-    if (
-      parsed &&
-      typeof parsed === "object" &&
-      Array.isArray((parsed as { modules?: unknown }).modules)
-    ) {
-      return (parsed as { modules: unknown[] }).modules.filter(
-        (m): m is string => typeof m === "string",
-      );
-    }
-  } catch {
-    // malformed manifest — treat as "nothing previously installed"
-  }
-  return [];
-}
-
-/** The RULE_ROUTER: the entry point an agent loads to know which rules apply. */
-function routerDoc(modules: string[]): string {
-  const rows = modules.map((slug) => {
-    const m = moduleFor(slug);
-    return m ? `- **${slug}.md** — ${m.summary} _(load: ${m.when})_` : `- **${slug}.md**`;
-  });
-  return lines(
-    "# RULE_ROUTER — ECC",
-    "",
-    "Active engineering rules for this repo, customized to the DETECTED stack by",
-    "`aih ecc`. Load `common.md` before any non-trivial change; load a stack module",
-    "when its trigger matches. These are standards to follow, not suggestions.",
-    "",
-    rows,
-    "",
-    "Re-run `aih ecc` (or `aih init`) after the stack changes — the active set",
-    "self-heals: new modules are added and modules that no longer apply are removed.",
+function summaryDoc(clis: string[], inputs: EccInstallInputs): Action {
+  const head = inputs.installEverything
+    ? "No stack detected (empty/new repo) — ECC installs its FULL profile. Re-run"
+    : `Detected ${stackSummaryShort(inputs)} — ECC installs the matching language packs. Re-run`;
+  return doc(
+    "ECC install summary (affaan-m/ECC)",
+    lines(
+      `${head} \`aih ecc\` after the stack changes to re-scope the install.`,
+      "",
+      `Target CLIs: ${clis.join(", ")}.`,
+      `Profile: ${inputs.installEverything ? "full" : inputs.profile}.`,
+      inputs.installEverything
+        ? "Language packs: (full profile installs all)."
+        : `Language packs: ${inputs.packs.length > 0 ? inputs.packs.join(", ") : "(baseline only — no language pack matched)"}.`,
+      "",
+      "ECC = the agent-harness performance system: skills, instincts, persistent",
+      "memory, security, and research-first development. Shell-runnable installs",
+      "(codex/cursor/zed/opencode) execute under `--apply`; the Claude plugin and",
+      "consult-routed targets are emitted as commands for you to run in the tool.",
+    ),
   );
 }
 
-/** Human note summarizing what was installed. */
-function summaryDoc(modules: string[], installedEverything: boolean): string {
-  if (installedEverything) {
-    return lines(
-      "No stack was detected (empty/new repo), so the FULL ECC rule set was installed.",
-      "Add your code, then re-run `aih ecc` (or `aih init`) — the rule set self-heals",
-      "down to exactly the modules your stack needs.",
-    );
-  }
-  return lines(
-    `Installed ECC rules for the detected stack: ${modules.join(", ")}.`,
-    "The RULE_ROUTER lists them and their load order. Re-run to self-heal after the",
-    "stack changes.",
-  );
+function stackSummaryShort(inputs: EccInstallInputs): string {
+  return inputs.packs.length > 0 ? inputs.packs.join("/") : "the baseline stack";
 }
 
 /**
- * Install the ECC engineering-rule set CUSTOMIZED to the repo's detected stack:
- * `common` always, plus the language/framework modules that apply. On a repo with
- * no detectable stack, install everything (the user re-runs once there's code and
- * the set self-heals). Re-running prunes modules that no longer apply (a local
- * `rm`/`del` exec) and refreshes the router + manifest — all local, idempotent.
+ * Install and configure affaan-m/ECC — the agent-harness optimization system —
+ * customized to the repo's detected stack and the user's selected CLIs
+ * (`--cli claude,codex` / `--all-tools`, default `claude`).
+ *
+ * Per CLI, ECC offers a different install path, so the plan mixes `exec` and
+ * `doc`: the `ecc-install` CLI runs under `--apply` for the targets it supports
+ * (codex/cursor/zed/opencode), while Claude's plugin path and non-target CLIs
+ * are emitted as exact commands to run inside the tool. Language packs come from
+ * the profiler; an empty repo installs the full profile and self-scopes on a
+ * re-run once there is code.
  */
 function eccPlan(ctx: PlanContext): Plan {
+  const clis = resolveClis(ctx.options);
   const stack = scanRepo(ctx.root, { maxDepth: 8 });
-  const { modules, installedEverything } = selectModules(stack);
-  const previous = previousModules(ctx);
+  const { packs, installEverything } = eccLanguages(stack);
+  const profile = String(ctx.options.profile ?? "core");
+  const inputs: EccInstallInputs = {
+    profile,
+    packs,
+    installEverything,
+    stackSummary: stackSummary(stack),
+  };
 
   const actions: Action[] = [];
-  for (const slug of modules) {
-    const mod = moduleFor(slug);
-    if (mod) actions.push(writeText(moduleRelPath(ctx, slug), mod.body, `ECC rule: ${slug}`));
-  }
-  actions.push(
-    writeText(
-      routerRelPath(ctx),
-      routerDoc(modules),
-      "ECC RULE_ROUTER (active modules + load order)",
-    ),
-  );
-  actions.push(
-    writeJson(
-      manifestRelPath(ctx),
-      { modules },
-      "ECC install manifest (drives self-heal on re-run)",
-    ),
-  );
-
-  // Self-heal: drop modules a previous run installed that no longer apply.
-  for (const slug of previous.filter((p) => !modules.includes(p))) {
-    const abs = join(ctx.root, ctx.contextDir, ECC_SUBDIR, `${slug}.md`);
-    const argv =
-      ctx.host.platform === "windows" ? ["cmd", "/c", "del", "/q", abs] : ["rm", "-f", abs];
-    actions.push(exec(`self-heal: remove stale ECC module ${slug}`, argv, { allowFailure: true }));
-  }
-
-  actions.push(
-    doc("ECC setup customized for the detected stack", summaryDoc(modules, installedEverything)),
-  );
+  for (const cli of clis) actions.push(...eccActionsForCli(cli, inputs));
+  actions.push(eccToolsDoc());
+  actions.push(summaryDoc(clis, inputs));
   return plan("ecc", ...actions);
 }
 
 export const command: CommandSpec = {
   name: "ecc",
-  summary: "Install ECC engineering rules customized to the detected stack (self-heals on re-run)",
-  options: [],
+  summary:
+    "Install affaan-m/ECC (skills, memory, security, research-first) for the selected CLIs, scoped to the detected stack",
+  options: [
+    {
+      flags: "--profile <profile>",
+      description: "ECC install profile: minimal|core|full",
+      default: "core",
+    },
+  ],
   plan: eccPlan,
 };

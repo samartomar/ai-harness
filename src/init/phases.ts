@@ -6,6 +6,7 @@ import { command as profile } from "../profile/index.js";
 import { command as sandbox } from "../sandbox/index.js";
 import { command as scaffold } from "../scaffold/index.js";
 import { command as secrets } from "../secrets/index.js";
+import { command as superpowers } from "../superpowers/index.js";
 
 /**
  * One repo-scoped capability folded into `aih init`, paired with the human-facing
@@ -21,11 +22,12 @@ export interface InitPhase {
 }
 
 /**
- * The fixed bootstrap order: profile → scaffold → secrets → guardrails → mcp →
- * sandbox. Profiling and scaffolding lay down the context dir and adapters first;
- * secrets + guardrails fence the repo before MCP wiring and the sandbox land on
- * top. Each headline names its capability so a composed dry-run reads as labelled
- * sections.
+ * The fixed bootstrap order: profile → ecc → superpowers → scaffold → secrets →
+ * guardrails → mcp → sandbox. Profiling detects the stack; ECC + Superpowers
+ * install the agent harness for the selected CLIs; scaffolding lays down the
+ * context dir and adapters; secrets + guardrails fence the repo before MCP wiring
+ * and the sandbox land on top. Each headline names its capability so a composed
+ * dry-run reads as labelled sections.
  */
 export const INIT_PHASES: readonly InitPhase[] = [
   {
@@ -34,7 +36,12 @@ export const INIT_PHASES: readonly InitPhase[] = [
   },
   {
     command: ecc,
-    headline: "ecc — install the engineering rule set customized to the detected stack",
+    headline: "ecc — install affaan-m/ECC (skills, memory, security) for the stack + selected CLIs",
+  },
+  {
+    command: superpowers,
+    headline:
+      "superpowers — install obra/Superpowers (brainstorm → plan → TDD → review) for the selected CLIs",
   },
   {
     command: scaffold,

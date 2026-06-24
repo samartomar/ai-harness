@@ -120,7 +120,16 @@ describe("aih init — composition, not duplication", () => {
   });
 
   it("emits a doc header per phase in the canonical order, each before its capability's actions", async () => {
-    const order = ["profile", "ecc", "scaffold", "secrets", "guardrails", "mcp", "sandbox"];
+    const order = [
+      "profile",
+      "ecc",
+      "superpowers",
+      "scaffold",
+      "secrets",
+      "guardrails",
+      "mcp",
+      "sandbox",
+    ];
     // The phase table itself is locked to the mission order.
     expect(INIT_PHASES.map((p) => p.command.name)).toEqual(order);
 

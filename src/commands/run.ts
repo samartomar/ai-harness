@@ -71,7 +71,12 @@ export async function runCapability(
       run,
       host,
       env,
-      options: { ...extractOptions(spec, opts), caPattern: settings.caPattern },
+      options: {
+        ...extractOptions(spec, opts),
+        caPattern: settings.caPattern,
+        cli: opts.cli,
+        allTools: opts.allTools,
+      },
     };
 
     const built = await spec.plan(ctx);

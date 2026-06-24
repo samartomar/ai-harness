@@ -154,26 +154,21 @@ export function stateTemplate(done: ReadonlySet<string> = new Set()): string {
   );
 }
 
-/** The install-commands doc body (Superpowers + ECC orchestration), for a human. */
+/** The install-commands doc body, pointing at the first-class install capabilities. */
 export function installDocText(): string {
   return lines(
-    "Install Superpowers — the agent-behavior layer that enforces the CRISPY-style",
-    "SDLC (brainstorm -> plan -> TDD -> subagent review). Run these yourself; they",
-    "are commands typed INSIDE your coding agent (slash commands), not shell commands.",
+    "CRISPY is the per-task loop; the agent-behavior layer and stack rules install",
+    "separately and target the CLIs you select (`--cli <list>` / `--all-tools`):",
     "",
-    "Claude Code — official marketplace (simplest, no marketplace-add needed):",
+    "  aih superpowers     # obra/Superpowers — brainstorm -> plan -> TDD -> review skills",
+    "  aih ecc             # affaan-m/ECC — stack-aware rules, agents, memory, security",
+    "",
+    "Both default to Claude Code. Quick reference for Claude Code (Superpowers):",
     "  /plugin install superpowers@claude-plugins-official",
-    "",
-    "Claude Code — via the Superpowers marketplace (alternative):",
+    "or via the Superpowers marketplace:",
     INSTALL_COMMANDS.map((c) => `  ${c}`),
     "",
-    'Codex CLI:    run /plugins, search "superpowers", then Install Plugin',
-    "Antigravity:  agy plugin install https://github.com/obra/superpowers",
-    "Copilot CLI:  copilot plugin marketplace add obra/superpowers-marketplace",
-    "              copilot plugin install superpowers@superpowers-marketplace",
-    "",
-    "ECC (Everything Claude Code) is a separate framework — see",
-    "https://github.com/affaan-m/ECC for its current setup. aih emits this guidance",
-    "and never runs it for you.",
+    "Run `aih superpowers` / `aih ecc` (dry-run by default) to see the exact, CLI-",
+    "specific commands for your selection. aih never runs in-tool slash commands for you.",
   );
 }
