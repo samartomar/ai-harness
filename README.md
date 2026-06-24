@@ -22,9 +22,10 @@ architecture — all from one command surface.
 - **Idempotent & non-destructive.** Shell-profile edits live in marked managed
   blocks; JSON configs are deep-merged (your keys survive); every overwrite is
   backed up to `*.aih.bak` and rolls back as a transaction on failure.
-- **Cross-platform.** Windows is verified on real metal (PowerShell/icacls/
-  junctions via an injectable runner); macOS and Linux are implemented and
-  fixture-tested.
+- **Cross-platform.** Windows and Linux are verified on real metal (Windows:
+  PowerShell/icacls/junctions; Linux: real `/proc`, `/etc/ssl/certs`, `chmod`,
+  `ln -sfn`, smoke-tested in a Hyper-V Ubuntu VM). macOS is implemented and
+  fixture-tested. All OS calls go through an injectable runner.
 
 ## Install
 

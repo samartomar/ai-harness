@@ -24,7 +24,9 @@ const ANCHOR_DIRS = [
  */
 export class LinuxAdapter implements HostAdapter {
   readonly platform = "linux" as const;
-  readonly verified = false;
+  // Smoke-tested on real metal (Ubuntu 24.04, kernel 6.8) via a Hyper-V VM:
+  // real /proc profiling, /etc/ssl/certs extraction, chmod lockdown, and ln -sfn.
+  readonly verified = true;
 
   constructor(
     private readonly run: Runner,

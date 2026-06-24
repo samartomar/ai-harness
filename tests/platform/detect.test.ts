@@ -10,7 +10,8 @@ describe("platform detection", () => {
   it("builds the matching adapter and reports verification status", () => {
     expect(makeHostAdapter({ platform: "windows", env: {} }).platform).toBe("windows");
     expect(makeHostAdapter({ platform: "windows", env: {} }).verified).toBe(true);
-    expect(makeHostAdapter({ platform: "linux", env: {} }).verified).toBe(false);
+    expect(makeHostAdapter({ platform: "linux", env: {} }).verified).toBe(true);
+    // macOS path is implemented + fixture-tested but not yet smoke-tested on metal.
     expect(makeHostAdapter({ platform: "darwin", env: {} }).verified).toBe(false);
   });
 });

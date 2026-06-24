@@ -5,14 +5,22 @@ import type { Check } from "./verify.js";
 
 /**
  * The harness never performs a remote mutation. Every unit of work is one of:
- *  - `write`: create/merge a local file (transactional, with backup);
- *  - `doc`:   emit guidance / commands for a human (printed, or written to a doc
- *             file) — this is where cloud setup steps live, deliberately not run;
- *  - `probe`: a read-only verification that yields a {@link Check} under --verify.
+ *  - `write`:    create/merge a local file (transactional, with backup);
+ *  - `doc`:      emit guidance / commands for a human (printed, or written to a
+ *                doc file) — this is where cloud setup steps live, deliberately
+ *                not run;
+ *  - `probe`:    a read-only verification that yields a {@link Check} under
+ *                --verify;
+ *  - `exec`:     a LOCAL mutating command run after writes under --apply (e.g.
+ *                icacls/chmod to lock down a PEM, `mklink`/`ln` for a VDI
+ *                junction) — it must never contact a remote system;
+ *  - `envblock`: upsert an aih-managed env block (one `scope`) into a shell
+ *                profile; multiple scopes targeting the same file compose
+ *                instead of clobbering each other.
  * Because no action kind can mutate a remote system, an autonomous run cannot
  * "fake provisioning" — the capability simply does not exist.
  */
-export type ActionKind = "write" | "probe" | "doc";
+export type ActionKind = "write" | "probe" | "doc" | "exec" | "envblock";
 
 export interface WriteAction {
   kind: "write";

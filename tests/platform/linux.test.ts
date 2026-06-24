@@ -30,12 +30,12 @@ describe("LinuxAdapter", () => {
     expect(a.detectVdi().isVdi).toBe(true);
   });
 
-  it("is marked unverified", () => {
+  it("is marked verified (smoke-tested on real Linux metal)", () => {
     expect(
       new LinuxAdapter(
         fakeRunner(() => undefined),
         {},
       ).verified,
-    ).toBe(false);
+    ).toBe(true);
   });
 });
