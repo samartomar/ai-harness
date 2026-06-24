@@ -1,0 +1,41 @@
+# Claude Code GitHub Action — lets you delegate jobs to an AI agent by commenting
+# "@claude <task>" on an issue or PR. The agent reads .github/AGENT_TASKS.md,
+# works on a fresh checkout, and opens/updates a PR.
+#
+# SETUP (one-time):
+#   Canonical:  run `claude /install-github-app` in a terminal — it installs the
+#               GitHub App and provisions the API-key secret for you.
+#   Manual:     add a repo secret ANTHROPIC_API_KEY
+#               (Settings → Secrets and variables → Actions). Some action versions
+#               accept `claude_code_oauth_token` instead — adjust `with:` to match.
+#   Verify the pinned action ref below against the latest release of
+#   anthropics/claude-code-action before relying on it.
+
+name: claude
+
+on:
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+  issues:
+    types: [opened, assigned]
+
+jobs:
+  claude:
+    if: >-
+      contains(github.event.comment.body, '@claude') ||
+      contains(github.event.issue.body, '@claude')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
