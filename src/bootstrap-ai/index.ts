@@ -23,6 +23,7 @@ import {
   agentBehaviorCoreDoc,
   bootloaderPaths,
   bootloaderPreamble,
+  harnessUpdateDoc,
   otherToolsDoc,
   regenerationDoc,
   ruleRouterDoc,
@@ -152,6 +153,11 @@ async function bootstrapAiPlan(ctx: PlanContext): Promise<Plan> {
       posix.join(dir, "REGENERATION.md"),
       regenerationDoc(dir, bootloaders),
       "managed-block model + regenerate/doctor flow",
+    ),
+    writeText(
+      posix.join(dir, "harness-update.md"),
+      harnessUpdateDoc(dir),
+      "update contract: harness-managed vs user-owned files + the update path",
     ),
   );
 

@@ -62,6 +62,15 @@ describe("bootstrap-ai — canon files", () => {
     expect(w.has(".ai-context/adapters/claude.md")).toBe(true);
     expect(w.has(".ai-context/adapters/other-tools.md")).toBe(true);
     expect(w.has(".ai-context/REGENERATION.md")).toBe(true);
+    expect(w.has(".ai-context/harness-update.md")).toBe(true);
+  });
+
+  it("the harness-update doc explains managed vs user-owned files + the update path", async () => {
+    const w = writesByPath((await command.plan(makeCtx())).actions);
+    const upd = w.get(".ai-context/harness-update.md")?.contents ?? "";
+    expect(upd).toContain("Harness-managed");
+    expect(upd).toContain("write-once");
+    expect(upd).toContain("aih init --apply");
   });
 
   it("the other-tools doc explains wiring an unsupported tool (incl. Kiro)", async () => {

@@ -68,6 +68,23 @@ export const command: CommandSpec = {
               detail: "none detected — target explicitly with --cli or --all-tools",
             };
       }),
+      probe("dev tools (rg/fd/jq)", async () => {
+        const tools = ["rg", "fd", "jq"];
+        const found: string[] = [];
+        for (const t of tools) {
+          const argv = ctx.host.platform === "windows" ? ["where", t] : ["which", t];
+          const res = await ctx.run(argv);
+          if (!res.spawnError && res.code === 0 && res.stdout.trim().length > 0) found.push(t);
+        }
+        const missing = tools.filter((t) => !found.includes(t));
+        return missing.length === 0
+          ? { name: "dev-tools", verdict: "pass", detail: "rg, fd, jq present" }
+          : {
+              name: "dev-tools",
+              verdict: "skip",
+              detail: `missing: ${missing.join(", ")} — install (winget/scoop/brew) or, on a locked-down VDI, add your local bundle to PATH`,
+            };
+      }),
     ];
 
     // Workspace mode: validate each child repo is scaffolded.

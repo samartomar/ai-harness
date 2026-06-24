@@ -365,6 +365,42 @@ export function regenerationDoc(dir: string, bootloaders: string[]): string {
 }
 
 /**
+ * The harness update contract — which files aih regenerates vs which are yours,
+ * and how to update safely. Re-running aih IS the update path (idempotent).
+ */
+export function harnessUpdateDoc(dir: string): string {
+  return lines(
+    "# Updating the harness",
+    "",
+    "Re-running aih is the update path — it is idempotent. What happens per file class:",
+    "",
+    "## Harness-managed (regenerated every run)",
+    "",
+    `- \`${dir}/RULE_ROUTER.md\`, \`${dir}/adapters/*\`, \`${dir}/rules/agent-behavior-core.md\`,`,
+    "  the bootloaders' shared block, and `.kiro/steering/00-canon.md` — regenerated.",
+    "- In a bootloader, hand-edits OUTSIDE the `<!-- BEGIN ai-canonical:shared -->` markers",
+    "  survive; content INSIDE the markers is overwritten. Unchanged files are skipped",
+    "  (`[unchanged]`) — no rewrite, no `.aih.bak`.",
+    "",
+    "## Yours (write-once / author-fill — never overwritten)",
+    "",
+    `- \`${dir}/architecture.md\`, \`${dir}/conventions.md\` (author-fill),`,
+    `  \`${dir}/project-guardrails.md\`, \`${dir}/cross-repo-architecture.md\` (write-once).`,
+    "  Your content is preserved across re-runs.",
+    "",
+    "## To update",
+    "",
+    "1. Update aih itself: `git -C <aih-checkout> pull && npm ci && npm run build`.",
+    "2. Re-run: `aih init --apply` (or the specific capability). Managed files regenerate,",
+    "   your write-once/author-fill files are preserved, unchanged files are skipped.",
+    "3. Verify: `aih bootstrap-ai --verify` (drift gate) and `aih doctor`.",
+    "",
+    "Never hand-edit inside a shared-block marker — re-running overwrites it. Edit the",
+    `canonical source under \`${dir}/\` instead.`,
+  );
+}
+
+/**
  * A standing doc on wiring a tool aih doesn't natively target — so an unsupported
  * tool (or a brand-new one) is never a dead end. Lists each tool's rules-file
  * mechanism; the rule is always the same: a thin pointer to `RULE_ROUTER.md`.
