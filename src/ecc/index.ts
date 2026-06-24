@@ -1,4 +1,4 @@
-import { resolveTargetClis } from "../internals/cli-detect.js";
+import { detectFallbackNotice, resolveTargets } from "../internals/cli-detect.js";
 import {
   type Action,
   type CommandSpec,
@@ -62,7 +62,7 @@ function stackSummaryShort(inputs: EccInstallInputs): string {
  * re-run once there is code.
  */
 async function eccPlan(ctx: PlanContext): Promise<Plan> {
-  const clis = await resolveTargetClis(ctx);
+  const { clis, detectFellBack } = await resolveTargets(ctx);
   const stack = scanRepo(ctx.root, { maxDepth: 8 });
   const { packs, installEverything } = eccLanguages(stack);
   const profile = String(ctx.options.profile ?? "core");
@@ -76,6 +76,9 @@ async function eccPlan(ctx: PlanContext): Promise<Plan> {
   const actions: Action[] = [];
   for (const cli of clis) actions.push(...eccActionsForCli(cli, inputs));
   actions.push(eccToolsDoc());
+  if (detectFellBack) {
+    actions.push(doc("no AI CLIs detected — defaulted to claude", detectFallbackNotice()));
+  }
   actions.push(summaryDoc(clis, inputs));
   return plan("ecc", ...actions);
 }

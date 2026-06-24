@@ -1,7 +1,8 @@
 import { basename, join, posix } from "node:path";
-import { detectOne, resolveTargetClis } from "../internals/cli-detect.js";
+import { detectFallbackNotice, detectOne, resolveTargets } from "../internals/cli-detect.js";
 import type { Cli } from "../internals/clis.js";
 import { readIfExists } from "../internals/fsxn.js";
+import { aihIgnoreWrite } from "../internals/gitignore.js";
 import { extractManagedBlock, type ManagedBlock, mergeManagedBlock } from "../internals/markers.js";
 import {
   type Action,
@@ -102,7 +103,7 @@ function routerProbe(dir: string): Action {
  */
 async function bootstrapAiPlan(ctx: PlanContext): Promise<Plan> {
   const dir = ctx.contextDir;
-  const clis = await resolveTargetClis(ctx);
+  const { clis, detectFellBack } = await resolveTargets(ctx);
   const stack = scanRepo(ctx.root, { maxDepth: 8 });
   const repoName = repoNameOf(ctx.root);
   const bootloaders = bootloaderPaths(clis);
@@ -123,6 +124,8 @@ async function bootstrapAiPlan(ctx: PlanContext): Promise<Plan> {
       agentBehaviorCoreDoc(dir),
       "agent behavior core (the working discipline the router + bootloaders point to)",
     ),
+    // Keep the harness's own backup/temp files out of git.
+    aihIgnoreWrite(ctx.root),
   ];
 
   // One tool-specific adapter note per selected CLI.
@@ -159,6 +162,11 @@ async function bootstrapAiPlan(ctx: PlanContext): Promise<Plan> {
   actions.push(routerProbe(dir));
   for (const relPath of bootloaders) actions.push(bootloaderProbe(relPath, dir));
   for (const cli of clis) actions.push(presenceProbe(cli));
+
+  // If --detect found nothing and we defaulted to claude, say so plainly.
+  if (detectFellBack) {
+    actions.push(doc("no AI CLIs detected — defaulted to claude", detectFallbackNotice()));
+  }
 
   // A short orientation doc so the dry-run explains itself.
   actions.push(

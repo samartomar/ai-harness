@@ -1,4 +1,5 @@
 import { posix } from "node:path";
+import { aihIgnoreWrite } from "../internals/gitignore.js";
 import type { Action, CommandSpec, PlanContext } from "../internals/plan.js";
 import { doc, plan, writeJson, writeText } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
@@ -54,7 +55,10 @@ function scaffoldPlan(ctx: PlanContext): ReturnType<typeof plan> {
   ];
 
   actions.push(
-    // 2. Local guardrail: keep secrets out of the agent's read scope (merge, don't clobber).
+    // 2. Repo hygiene: keep the harness's own backup/temp files out of git.
+    aihIgnoreWrite(ctx.root),
+
+    // 3. Local guardrail: keep secrets out of the agent's read scope (merge, don't clobber).
     writeJson(
       posix.join(".claude", "settings.json"),
       { permissions: { deny: [...SETTINGS_DENY] } },

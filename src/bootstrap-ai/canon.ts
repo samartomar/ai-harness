@@ -70,8 +70,7 @@ export function sharedCanonicalBlockBody(dir: string): string {
     "",
     "## Reporting",
     "",
-    "State the impact surface, the validation you ran, what you skipped, and the",
-    "remaining risk. Never report done on unverified work or hide a skipped check.",
+    "State impact, the validation you ran, what you skipped, and remaining risk — never hide a skip.",
   );
 }
 
@@ -175,14 +174,12 @@ export function ruleRouterDoc(
     "## Always read first",
     "",
     `- \`${dir}/rules/agent-behavior-core.md\` — working discipline (think → simplify → surgical → goal-driven)`,
-    `- \`${dir}/INDEX.md\` — repo context routing (run \`aih scaffold\` if absent)`,
-    `- \`${dir}/conventions.md\` — coding style, naming, testing, commits`,
-    `- \`${dir}/architecture.md\` — system shape and boundaries`,
+    `- \`${dir}/INDEX.md\` — context index; it owns the load order for architecture / conventions / tasks / skills`,
     "- The ECC `common` rules (Layer 1) before any non-trivial change",
     "",
     "Read depth: for read-only validation you may identify these files and confirm",
     "routing without opening each. For implementation, review, or security work, read",
-    "the core + conventions first, then load only the task slice below.",
+    "the core + the conventions INDEX points to first, then load only the task slice below.",
     "",
     "## Task routing",
     "",
@@ -390,8 +387,8 @@ export function bootloaderPreamble(path: string, dir: string, repoName: string):
       "This file is not the full rulebook. It is the Claude entry point; canonical",
       `guidance lives in \`${dir}/\` (start at \`RULE_ROUTER.md\`). ${seeRegen}`,
       "",
-      `Claude auto-loads *this* file, not the core — so read \`${dir}/rules/agent-behavior-core.md\``,
-      `before any non-trivial change. Full tool notes: \`${dir}/adapters/claude.md\`.`,
+      "Claude auto-loads only this bootloader — the shared block below carries the",
+      `essentials and routes to the full canon. Full Claude notes: \`${dir}/adapters/claude.md\`.`,
     );
   }
   if (norm === "GEMINI.md") {

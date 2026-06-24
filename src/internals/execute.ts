@@ -10,8 +10,8 @@ export interface WriteSummary {
   path: string;
   describe: string;
   merged: boolean;
-  /** "create" | "overwrite" | "merge" relative to current disk state. */
-  effect: "create" | "overwrite" | "merge";
+  /** Effect relative to current disk state. `unchanged` writes are skipped (no backup). */
+  effect: "create" | "overwrite" | "merge" | "unchanged";
 }
 
 export interface PlanResult {
@@ -62,13 +62,18 @@ export async function executePlan(plan: Plan, ctx: PlanContext): Promise<PlanRes
     if (action.kind === "write") {
       const absPath = resolvePath(ctx, action.path);
       const contents = resolveContents(action, absPath);
-      const exists = readIfExists(absPath) !== undefined;
-      const effect: WriteSummary["effect"] = !exists
-        ? "create"
-        : action.merge
-          ? "merge"
-          : "overwrite";
-      if (ctx.apply) txn.stage(absPath, contents, action.mode);
+      const existing = readIfExists(absPath);
+      // Skip a write whose rendered content already matches disk — true idempotency:
+      // no rewrite, no `.aih.bak`, surfaced as `unchanged` in the plan.
+      const effect: WriteSummary["effect"] =
+        existing === undefined
+          ? "create"
+          : existing === contents
+            ? "unchanged"
+            : action.merge
+              ? "merge"
+              : "overwrite";
+      if (ctx.apply && effect !== "unchanged") txn.stage(absPath, contents, action.mode);
       writes.push({
         path: action.path,
         describe: action.describe,
@@ -100,17 +105,19 @@ export async function executePlan(plan: Plan, ctx: PlanContext): Promise<PlanRes
     envByPath.set(abs, group);
   }
   for (const [absPath, { display, blocks }] of envByPath) {
-    const existed = readIfExists(absPath) !== undefined;
-    let content = readIfExists(absPath) ?? "";
+    const existing = readIfExists(absPath);
+    let content = existing ?? "";
     for (const b of blocks) {
       content = upsertManagedBlock(content, b.scope, b.vars, b.shell);
     }
-    if (ctx.apply) txn.stage(absPath, content);
+    const effect: WriteSummary["effect"] =
+      existing === undefined ? "create" : existing === content ? "unchanged" : "merge";
+    if (ctx.apply && effect !== "unchanged") txn.stage(absPath, content);
     writes.push({
       path: display,
       describe: `managed env block(s): ${blocks.map((b) => b.scope).join(", ")}`,
       merged: true,
-      effect: existed ? "merge" : "create",
+      effect,
     });
   }
 

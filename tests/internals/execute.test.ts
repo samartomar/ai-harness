@@ -56,6 +56,25 @@ describe("executePlan", () => {
     expect(readFileSync(join(dir, "a.txt"), "utf8")).toBe("hi\n");
   });
 
+  it("re-applying identical content is a no-op: unchanged effect, no backup", async () => {
+    const p = plan("t", writeText("a.txt", "hi", "write a"));
+    await executePlan(p, ctx({ apply: true }));
+    const second = await executePlan(p, ctx({ apply: true }));
+    expect(second.writes[0]?.effect).toBe("unchanged");
+    expect(second.backups).toHaveLength(0);
+    expect(existsSync(join(dir, "a.txt.aih.bak"))).toBe(false);
+  });
+
+  it("a real content change still overwrites and backs up", async () => {
+    await executePlan(plan("t", writeText("a.txt", "one", "v1")), ctx({ apply: true }));
+    const second = await executePlan(
+      plan("t", writeText("a.txt", "two", "v2")),
+      ctx({ apply: true }),
+    );
+    expect(second.writes[0]?.effect).toBe("overwrite");
+    expect(second.backups).toHaveLength(1);
+  });
+
   it("merge writes preserve existing user JSON keys", async () => {
     writeFileSync(join(dir, "c.json"), JSON.stringify({ user: 1 }));
     const res = await executePlan(

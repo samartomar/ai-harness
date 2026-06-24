@@ -283,7 +283,7 @@ describe("crispy apply path (real fs transactions)", () => {
     ).toBe(false);
   });
 
-  it("re-applying a completed stage is idempotent: identical bytes, an overwrite effect", async () => {
+  it("re-applying a completed stage is a true no-op: identical bytes, unchanged effect, no backup", async () => {
     const artifactAbs = join(dir, ".ai-context", "crispy", "1-context.md");
     const ctx = makeCtx({ stage: "context" }, ".ai-context", true);
 
@@ -294,8 +294,9 @@ describe("crispy apply path (real fs transactions)", () => {
     const secondBytes = readFileSync(artifactAbs, "utf8");
 
     expect(secondBytes).toBe(firstBytes);
-    // The artifact already existed on the second apply, so it is an overwrite.
+    // Content matches disk, so the re-apply is skipped: `unchanged`, and no `.aih.bak`.
     const artifactWrite = second.writes.find((w) => w.path.endsWith("1-context.md"));
-    expect(artifactWrite?.effect).toBe("overwrite");
+    expect(artifactWrite?.effect).toBe("unchanged");
+    expect(second.backups).toHaveLength(0);
   });
 });

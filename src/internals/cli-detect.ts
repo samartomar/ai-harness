@@ -78,18 +78,41 @@ export function presentClis(presences: CliPresence[]): Cli[] {
   return presences.filter((p) => p.present).map((p) => p.cli);
 }
 
+export interface TargetResolution {
+  /** The CLIs to act on. */
+  clis: Cli[];
+  /** True when `--detect` found nothing and the result fell back to `claude`. */
+  detectFellBack: boolean;
+}
+
 /**
  * Resolve the target CLIs, honoring `--detect`. Precedence: `--all-tools` >
  * explicit `--cli <list>` > `--detect` (the CLIs found on this machine) > the
  * default (`claude`). When `--detect` finds nothing, fall back to `claude` so the
- * harness still produces a usable result rather than nothing.
+ * harness still produces a usable result, and flag `detectFellBack` so the caller
+ * can surface a clear notice instead of silently defaulting.
  */
-export async function resolveTargetClis(ctx: PlanContext): Promise<Cli[]> {
+export async function resolveTargets(ctx: PlanContext): Promise<TargetResolution> {
   const opts = ctx.options;
   const explicit = typeof opts.cli === "string" && opts.cli.trim().length > 0;
   if (opts.detect === true && opts.allTools !== true && !explicit) {
     const present = presentClis(await detectClis(ctx));
-    return present.length > 0 ? present : ["claude"];
+    if (present.length > 0) return { clis: present, detectFellBack: false };
+    return { clis: ["claude"], detectFellBack: true };
   }
-  return resolveClis(opts);
+  return { clis: resolveClis(opts), detectFellBack: false };
+}
+
+/** Back-compat thin wrapper for callers that only need the CLI list. */
+export async function resolveTargetClis(ctx: PlanContext): Promise<Cli[]> {
+  return (await resolveTargets(ctx)).clis;
+}
+
+/** The notice emitted when `--detect` found no AI CLIs and defaulted to claude. */
+export function detectFallbackNotice(): string {
+  return [
+    "No AI CLIs were detected on this machine (no known config dir or binary on PATH),",
+    "so the target defaulted to `claude`. To target specific tools, pass `--cli <list>`",
+    "(e.g. `--cli claude,codex`) or `--all-tools`; or install a CLI and re-run with `--detect`.",
+  ].join("\n");
 }

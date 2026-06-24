@@ -4,9 +4,11 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   detectClis,
+  detectFallbackNotice,
   detectOne,
   presentClis,
   resolveTargetClis,
+  resolveTargets,
 } from "../../src/internals/cli-detect.js";
 import type { PlanContext } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
@@ -118,5 +120,30 @@ describe("resolveTargetClis", () => {
 
   it("defaults to claude with no flags (no detection performed)", async () => {
     expect(await resolveTargetClis(makeCtx())).toEqual(["claude"]);
+  });
+});
+
+describe("resolveTargets / detectFallbackNotice", () => {
+  it("flags detectFellBack when --detect finds nothing", async () => {
+    const r = await resolveTargets(makeCtx({ detect: true }, []));
+    expect(r.clis).toEqual(["claude"]);
+    expect(r.detectFellBack).toBe(true);
+  });
+
+  it("does not flag fallback when --detect finds something", async () => {
+    configDir(".claude");
+    const r = await resolveTargets(makeCtx({ detect: true }, []));
+    expect(r.detectFellBack).toBe(false);
+    expect(r.clis).toContain("claude");
+  });
+
+  it("never flags fallback without --detect", async () => {
+    expect((await resolveTargets(makeCtx())).detectFellBack).toBe(false);
+  });
+
+  it("the notice names the fix flags", () => {
+    const n = detectFallbackNotice();
+    expect(n).toContain("--cli");
+    expect(n).toContain("--all-tools");
   });
 });

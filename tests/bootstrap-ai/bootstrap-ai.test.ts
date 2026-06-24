@@ -188,6 +188,33 @@ describe("bootstrap-ai — CLI presence confirm step", () => {
   });
 });
 
+describe("bootstrap-ai — hygiene & detect notice", () => {
+  it("writes .gitignore ignoring the harness's backup/temp files", async () => {
+    const w = writesByPath((await command.plan(makeCtx())).actions);
+    expect(w.has(".gitignore")).toBe(true);
+    expect(w.get(".gitignore")?.contents).toContain("*.aih.bak");
+    expect(w.get(".gitignore")?.contents).toContain("*.aih.tmp");
+  });
+
+  it("--detect with no CLIs present emits the fallback notice", async () => {
+    const emptyHome = mkdtempSync(join(tmpdir(), "aih-eh-"));
+    const run = fakeRunner((argv) =>
+      argv[0] === "which" || argv[0] === "where" ? { code: 1, spawnError: true } : undefined,
+    );
+    const ctx: PlanContext = {
+      ...makeCtx({ detect: true }),
+      env: { HOME: emptyHome, USERPROFILE: emptyHome },
+      run,
+      host: makeHostAdapter({ platform: "linux", run, env: {} }),
+    };
+    const hasNotice = (await command.plan(ctx)).actions.some(
+      (a) => a.kind === "doc" && a.describe.includes("no AI CLIs detected"),
+    );
+    rmSync(emptyHome, { recursive: true, force: true });
+    expect(hasNotice).toBe(true);
+  });
+});
+
 describe("bootstrap-ai — boundary", () => {
   it("plans only write/probe/doc actions — no exec, no remote write target", async () => {
     const actions = (await command.plan(makeCtx({ allTools: true }))).actions;
