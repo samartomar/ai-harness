@@ -8,20 +8,18 @@ import { mcpServers } from "./servers.js";
 /** Canonical agentgateway base URL clients are pointed at in the remote scope. */
 const GATEWAY_URL = "https://agentgateway.n24q02m.com";
 
-/** Honest, non-fabricated guidance to add an AWS MCP server on an AWS repo. */
-function awsMcpNote(): string {
+/** Honest DB-server guidance (datastore MCP packages vary, so we suggest, not pin). */
+function dbMcpNote(databases: string[]): string {
   return [
-    "This repo targets AWS, but aih does not fabricate AWS MCP server config.",
-    "To give agents first-class AWS context, add an official AWS MCP server, e.g.:",
+    `This repo uses ${databases.join(", ")}. Database MCP servers vary by vendor and`,
+    "change often, so aih does not pin one into .mcp.json. Add the one you trust:",
     "",
-    '  "awslabs.core-mcp-server": {',
-    '    "command": "uvx",',
-    '    "args": ["awslabs.core-mcp-server@latest"],',
-    '    "type": "stdio"',
-    "  }",
+    "  PostgreSQL — crystaldba/postgres-mcp, or an official pg MCP server",
+    "  MongoDB    — mongodb-js/mongodb-mcp-server",
+    "  Redis      — redis/mcp-redis",
+    "  DynamoDB   — awslabs/mcp (the dynamodb server)",
     "",
-    "See https://github.com/awslabs/mcp for the current server list (cdk, lambda,",
-    "dynamodb, docs). Add only the ones this project actually uses.",
+    "Configure it under mcpServers with a READ-ONLY connection string sourced from env.",
   ].join("\n");
 }
 
@@ -47,13 +45,23 @@ async function probeUv(ctx: PlanContext): Promise<Check> {
 function planMcp(ctx: PlanContext): ReturnType<typeof plan> {
   const scope = String(ctx.options.scope ?? "project");
   const stack = scanRepo(ctx.root, { maxDepth: 8 });
+  const servers = mcpServers(scope, stack);
+  const tailored = Object.keys(servers)
+    .filter(
+      (name) =>
+        name !== "better-code-review-graph" &&
+        !name.startsWith("better-") &&
+        name !== "mnemo-mcp" &&
+        name !== "wet-mcp",
+    )
+    .join(", ");
   const describe =
     scope === "remote"
-      ? "Configure the local graph server + opt-in hosted enterprise toolset (remote scope), merged into any existing .mcp.json"
-      : `Configure the local code-review-graph MCP server (${scope} scope), merged into any existing .mcp.json`;
+      ? "Configure project-aware servers + the opt-in hosted enterprise toolset (remote scope), merged into any existing .mcp.json"
+      : `Configure project-aware MCP servers (${scope} scope)${tailored ? ` — ${tailored}` : ""}, merged into any existing .mcp.json`;
 
   const actions: Action[] = [
-    writeJson(".mcp.json", { mcpServers: mcpServers(scope) }, describe, { merge: true }),
+    writeJson(".mcp.json", { mcpServers: servers }, describe, { merge: true }),
   ];
 
   if (scope === "remote") {
@@ -65,10 +73,13 @@ function planMcp(ctx: PlanContext): ReturnType<typeof plan> {
     );
   }
 
-  // Project-relevant suggestion (not fabricated config) when the repo targets AWS.
-  if (stack.cloud.includes("AWS")) {
+  // Datastore servers vary by vendor — suggest (don't pin) when a DB is detected.
+  if (stack.databases.length > 0) {
     actions.push(
-      doc("Add an AWS MCP server for this AWS project (suggested, not written)", awsMcpNote()),
+      doc(
+        `Add a database MCP server (${stack.databases.join(", ")} detected)`,
+        dbMcpNote(stack.databases),
+      ),
     );
   }
 

@@ -29,6 +29,7 @@ function stack(over: Partial<RepoStack> = {}): RepoStack {
     languages: [],
     frameworks: [],
     cloud: [],
+    databases: [],
     deployment: [],
     hasTypeScript: false,
     scripts: {},

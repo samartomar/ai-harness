@@ -113,10 +113,48 @@ describe("aih mcp — generated mcpServers blueprint", () => {
     expect(typeof graph.description).toBe("string");
   });
 
-  it("project scope writes ONLY the local graph server — no hosted n24q02m boilerplate", async () => {
+  it("project scope on a bare repo writes ONLY the local graph server — no hosted n24q02m boilerplate", async () => {
     const p = await command.plan(makeCtx({ options: { scope: "project" } }));
     const w = p.actions.find((a) => a.kind === "write") as WriteAction;
     expect(Object.keys(serversOf(w))).toEqual(["better-code-review-graph"]);
+  });
+
+  it("is project-aware: an AWS repo gets the awslabs server, a web repo gets Playwright", async () => {
+    const awsRoot = makeTmp();
+    writeFileSync(
+      join(awsRoot, "package.json"),
+      JSON.stringify({ name: "api", dependencies: { "aws-sdk": "^2" } }),
+    );
+    const awsW = (await command.plan(makeCtx({ root: awsRoot }))).actions.find(
+      (a) => a.kind === "write",
+    ) as WriteAction;
+    const awsServers = serversOf(awsW);
+    expect(awsServers["awslabs.core-mcp-server"]).toBeDefined();
+    expect(awsServers.playwright).toBeUndefined();
+
+    const webRoot = makeTmp();
+    writeFileSync(
+      join(webRoot, "package.json"),
+      JSON.stringify({ name: "ui", dependencies: { next: "14" } }),
+    );
+    const webW = (await command.plan(makeCtx({ root: webRoot }))).actions.find(
+      (a) => a.kind === "write",
+    ) as WriteAction;
+    expect(serversOf(webW).playwright).toBeDefined();
+  });
+
+  it("suggests a database MCP server (doc) when a datastore is detected, without pinning one", async () => {
+    const root = makeTmp();
+    writeFileSync(
+      join(root, "package.json"),
+      JSON.stringify({ name: "api", dependencies: { pg: "^8" } }),
+    );
+    const p = await command.plan(makeCtx({ root }));
+    expect(p.actions.some((a) => a.kind === "doc" && a.describe.includes("database MCP"))).toBe(
+      true,
+    );
+    const w = p.actions.find((a) => a.kind === "write") as WriteAction;
+    expect(Object.keys(serversOf(w))).not.toContain("postgres"); // suggested, not fabricated
   });
 
   it("models better-email as an opt-in http url under the remote scope, not a call", async () => {

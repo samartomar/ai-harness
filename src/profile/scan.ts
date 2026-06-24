@@ -19,6 +19,8 @@ export interface RepoStack {
   frameworks: string[];
   /** Cloud providers in play (e.g. "AWS"), from SDK deps / serverless provider. */
   cloud: string[];
+  /** Datastores in play (PostgreSQL / MySQL / MongoDB / SQLite / Redis / DynamoDB). */
+  databases: string[];
   /** Deployment targets (Docker / Kubernetes-Helm / Terraform / Serverless Framework / …). */
   deployment: string[];
   /** Node package manager from the lockfile, if any (npm/pnpm/yarn/bun). */
@@ -94,6 +96,26 @@ const LINTERS: Array<[dep: string, cmd: string]> = [
   ["standard", "npx standard"],
 ];
 
+/** Dependency (Node or Python) → datastore label. */
+const DB_DEPS: Record<string, string> = {
+  pg: "PostgreSQL",
+  postgres: "PostgreSQL",
+  "pg-promise": "PostgreSQL",
+  psycopg2: "PostgreSQL",
+  "psycopg2-binary": "PostgreSQL",
+  asyncpg: "PostgreSQL",
+  mysql: "MySQL",
+  mysql2: "MySQL",
+  mongodb: "MongoDB",
+  mongoose: "MongoDB",
+  pymongo: "MongoDB",
+  "better-sqlite3": "SQLite",
+  sqlite3: "SQLite",
+  redis: "Redis",
+  ioredis: "Redis",
+  "@aws-sdk/client-dynamodb": "DynamoDB",
+};
+
 interface PkgJson {
   name?: string;
   description?: string;
@@ -106,6 +128,7 @@ interface Raw {
   languages: string[];
   frameworks: string[];
   cloud: string[];
+  databases: string[];
   deployment: string[];
   entryPoints: string[];
   packageManager?: string;
@@ -127,6 +150,7 @@ export function scanRepo(root: string, opts: ScanOptions): RepoStack {
     languages: [],
     frameworks: [],
     cloud: [],
+    databases: [],
     deployment: [],
     entryPoints: [],
     hasTsconfig: false,
@@ -278,6 +302,9 @@ function detectPythonFrameworks(path: string, raw: Raw): void {
   if (/\bfastapi\b/.test(body)) push(raw.frameworks, "FastAPI");
   if (/\bflask\b/.test(body)) push(raw.frameworks, "Flask");
   if (/\bdjango\b/.test(body)) push(raw.frameworks, "Django");
+  if (/\bpsycopg2\b|\basyncpg\b/.test(body)) push(raw.databases, "PostgreSQL");
+  if (/\bpymongo\b/.test(body)) push(raw.databases, "MongoDB");
+  if (/\bredis\b/.test(body)) push(raw.databases, "Redis");
 }
 
 function readPkg(path: string): PkgJson {
@@ -308,6 +335,7 @@ function synthesize(raw: Raw): RepoStack {
   const languages = [...raw.languages];
   const frameworks = [...raw.frameworks];
   const cloud = [...raw.cloud];
+  const databases = [...raw.databases];
   const deployment = [...raw.deployment];
   const entryPoints = [...raw.entryPoints];
   const pkg = raw.pkg;
@@ -329,6 +357,9 @@ function synthesize(raw: Raw): RepoStack {
     if ([...pkg.deps].some((d) => d === "aws-sdk" || d.startsWith("@aws-sdk/"))) push(cloud, "AWS");
     if (pkg.deps.has("serverless") || "serverless" in pkg.scripts) {
       push(frameworks, "Serverless Framework");
+    }
+    for (const [dep, db] of Object.entries(DB_DEPS)) {
+      if (pkg.deps.has(dep)) push(databases, db);
     }
 
     // Commands strictly from what the repo actually defines.
@@ -366,6 +397,7 @@ function synthesize(raw: Raw): RepoStack {
     languages: dedupe(languages),
     frameworks: dedupe(frameworks),
     cloud: dedupe(cloud),
+    databases: dedupe(databases),
     deployment: dedupe(deployment),
     packageManager: raw.packageManager,
     hasTypeScript: raw.hasTsconfig || raw.sawTsFile || (pkg?.deps.has("typescript") ?? false),

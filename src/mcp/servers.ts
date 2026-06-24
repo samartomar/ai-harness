@@ -1,48 +1,41 @@
+import type { RepoStack } from "../profile/scan.js";
+
 /**
- * The enterprise MCP server blueprint emitted into `.mcp.json`.
- *
- * Two flavours, both pure configuration the user opts into — never a call:
- *  - `better-code-review-graph` runs LOCALLY over stdio via `uv run`;
- *  - the `n24q02m` hosted toolset (`better-email`, `better-notion`,
- *    `better-telegram`, `mnemo-mcp`, `wet-mcp`) is reached by HTTP URL. The URL
- *    is a string a client dials on the user's behalf later; emitting it here
- *    contacts nothing.
- *
- * JSON has no comments, so every entry carries a `description` field to keep the
- * generated file self-documenting.
+ * The `.mcp.json` server set is assembled from the DETECTED stack, not a fixed
+ * boilerplate list:
+ *  - `better-code-review-graph` (local, stdio) — code intelligence, useful in any repo;
+ *  - real, current servers added per stack: AWS (`awslabs.core-mcp-server`) when
+ *    the repo targets AWS, Playwright (`@playwright/mcp`) for a web frontend;
+ *  - the hosted `n24q02m` toolset ONLY under `scope === "remote"` (opt-in gateway).
+ * Every entry is configuration the client dials later — emitting it contacts nothing.
  */
 
-/** A stdio MCP server launched by a local command. */
 export interface StdioServer {
   type: "stdio";
   command: string;
   args: string[];
   description: string;
 }
-
-/** An HTTP MCP server addressed by URL (a config endpoint, not a request). */
 export interface HttpServer {
   type: "http";
   url: string;
   description: string;
 }
-
 export type McpServer = StdioServer | HttpServer;
 
 /** Base host for the n24q02m hosted enterprise toolset. */
 export const N24Q02M_HOST = "n24q02m.com";
 
+/** Frameworks that warrant a browser-automation (Playwright) MCP server. */
+const WEB_FRAMEWORKS = new Set(["Next.js", "React", "Vue", "Svelte", "Angular"]);
+
 /**
- * The `mcpServers` map for the given scope. `local`/`project` get ONLY the
- * locally-runnable code-review-graph server — the harness must not write hosted
- * third-party HTTP endpoints into a user's project config by default (they're
- * opt-in, behind SSO, and irrelevant to most repos). The hosted `n24q02m`
- * toolset is added ONLY for `scope === "remote"`, i.e. when the user explicitly
- * opts into the enterprise gateway. Deterministic insertion order so golden
+ * Build the `mcpServers` map for `scope`, tailored to `stack`. Deterministic
+ * insertion order (local graph first, then stack-specific, then hosted) so golden
  * assertions and deep-merge output stay stable.
  */
-export function mcpServers(scope: string): Record<string, McpServer> {
-  const local: Record<string, McpServer> = {
+export function mcpServers(scope: string, stack: RepoStack): Record<string, McpServer> {
+  const servers: Record<string, McpServer> = {
     "better-code-review-graph": {
       type: "stdio",
       command: "uv",
@@ -51,8 +44,29 @@ export function mcpServers(scope: string): Record<string, McpServer> {
         "Local code-review knowledge graph (impact radius, affected flows) served over stdio via uv.",
     },
   };
-  if (scope !== "remote") return local;
-  return { ...local, ...hostedServers() };
+
+  // Stack-specific, real, current servers.
+  if (stack.cloud.includes("AWS")) {
+    servers["awslabs.core-mcp-server"] = {
+      type: "stdio",
+      command: "uvx",
+      args: ["awslabs.core-mcp-server@latest"],
+      description:
+        "AWS Labs core MCP server (AWS docs, service guidance). Added because the repo targets AWS.",
+    };
+  }
+  if (stack.frameworks.some((f) => WEB_FRAMEWORKS.has(f))) {
+    servers.playwright = {
+      type: "stdio",
+      command: "npx",
+      args: ["@playwright/mcp@latest"],
+      description:
+        "Playwright browser automation MCP (navigate, snapshot, interact). Added for a web frontend.",
+    };
+  }
+
+  if (scope === "remote") Object.assign(servers, hostedServers());
+  return servers;
 }
 
 /** The opt-in hosted n24q02m toolset — only written under the `remote` scope. */

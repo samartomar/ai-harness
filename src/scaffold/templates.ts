@@ -8,6 +8,7 @@ function detectedStackBlock(stack: RepoStack): string[] {
   ];
   if (stack.frameworks.length > 0) out.push(`- Frameworks: ${stack.frameworks.join(", ")}`);
   if (stack.cloud.length > 0) out.push(`- Cloud: ${stack.cloud.join(", ")}`);
+  if (stack.databases.length > 0) out.push(`- Databases: ${stack.databases.join(", ")}`);
   if (stack.deployment.length > 0) out.push(`- Deployment: ${stack.deployment.join(", ")}`);
   if (stack.packageManager) out.push(`- Package manager: ${stack.packageManager}`);
   const cmds: string[] = [];
