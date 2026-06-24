@@ -11,10 +11,17 @@ import { STAGES, type Stage } from "./stages.js";
 /** Hard ceiling on instruction bullets per stage template (blueprint Under-40). */
 export const MAX_BULLETS = 40;
 
-/** Superpowers / ECC plugin install commands — emitted as a doc, never executed. */
+/**
+ * Superpowers install commands (Claude Code, marketplace method) — emitted as a
+ * doc, never executed. These are slash commands typed INSIDE Claude Code, not
+ * shell commands: `/plugin marketplace add …` then `/plugin install …@<that
+ * marketplace>`. Verified against obra/superpowers v6.x. (The blueprint's
+ * `claude /plugin … superpowers@claude-plugins-official` mixed two install
+ * methods and shell-prefixed slash commands, so it failed.)
+ */
 export const INSTALL_COMMANDS: readonly string[] = [
-  "claude /plugin marketplace add obra/superpowers-marketplace",
-  "claude /plugin install superpowers@claude-plugins-official",
+  "/plugin marketplace add obra/superpowers-marketplace",
+  "/plugin install superpowers@superpowers-marketplace",
 ] as const;
 
 /**
@@ -147,14 +154,26 @@ export function stateTemplate(done: ReadonlySet<string> = new Set()): string {
   );
 }
 
-/** The install-commands doc body (Superpowers / ECC orchestration), for a human. */
+/** The install-commands doc body (Superpowers + ECC orchestration), for a human. */
 export function installDocText(): string {
   return lines(
-    "Install the Superpowers / ECC orchestration plugins (run these yourself):",
+    "Install Superpowers — the agent-behavior layer that enforces the CRISPY-style",
+    "SDLC (brainstorm -> plan -> TDD -> subagent review). Run these yourself; they",
+    "are commands typed INSIDE your coding agent (slash commands), not shell commands.",
     "",
-    bulletList(INSTALL_COMMANDS),
+    "Claude Code — official marketplace (simplest, no marketplace-add needed):",
+    "  /plugin install superpowers@claude-plugins-official",
     "",
-    "These wire up the agent orchestration layer that drives the CRISPY stages.",
-    "aih emits them as guidance and never runs them for you.",
+    "Claude Code — via the Superpowers marketplace (alternative):",
+    INSTALL_COMMANDS.map((c) => `  ${c}`),
+    "",
+    'Codex CLI:    run /plugins, search "superpowers", then Install Plugin',
+    "Antigravity:  agy plugin install https://github.com/obra/superpowers",
+    "Copilot CLI:  copilot plugin marketplace add obra/superpowers-marketplace",
+    "              copilot plugin install superpowers@superpowers-marketplace",
+    "",
+    "ECC (Everything Claude Code) is a separate framework — see",
+    "https://github.com/affaan-m/ECC for its current setup. aih emits this guidance",
+    "and never runs it for you.",
   );
 }
