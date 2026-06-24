@@ -144,29 +144,37 @@ export function conventionsDoc(dir: string, stack: RepoStack): string {
       ? "TypeScript (Node.js) — explicit types on exports, no `any`."
       : "JavaScript (Node.js) — plain JS, no TypeScript syntax; JSDoc where it helps."
     : stack.languages.join(", ") || "see repo";
+  const naming = isNode
+    ? "`camelCase` functions/variables, `PascalCase` types/components, `UPPER_SNAKE_CASE` constants."
+    : "match the language's idiom and the nearest peer file; be consistent across the module.";
   return lines(
     "# Conventions",
     "",
-    `> Canonical conventions context. Referenced from \`${dir}/INDEX.md\`.`,
+    `> Canonical conventions for this repo. Referenced from \`${dir}/INDEX.md\`.`,
+    "> Load before writing or reviewing code.",
     "",
     "## Coding style",
     "",
     `- Language: ${styleLang}`,
-    `- Lint: ${stack.lintCommand ? `\`${stack.lintCommand}\`` : "no linter configured — consider adding one"}`,
-    "- Prefer small, focused functions and immutable updates; handle errors explicitly.",
+    `- Lint: ${stack.lintCommand ? `\`${stack.lintCommand}\` — run it before committing` : "no linter configured — consider adding one"}`,
+    "- Small, focused functions; immutable updates over mutation; handle errors explicitly — no silent catches.",
+    "- Match the nearest peer file (naming, structure, imports) over personal preference.",
+    "- No secrets in source, config, or fixtures; read them from the environment.",
     "",
     "## Testing",
     "",
-    `- Test command: ${stack.testRunner ? `\`${stack.testRunner}\`` : "none configured in the repo"}`,
-    "_Where tests live and the coverage bar — fill in._",
+    `- Test command: ${stack.testRunner ? `\`${stack.testRunner}\`` : "none configured in the repo — add one and record it here"}`,
+    "- New behavior ships with a test; when a test fails, fix the implementation, not the test.",
+    "- Cover the boundaries: invalid input, empty and edge cases, error paths.",
     "",
     "## Naming",
     "",
-    "_How files, types, functions, and tests are named._",
+    `- ${naming}`,
     "",
-    "## Commits & reviews",
+    "## Commits & review",
     "",
-    "_Commit message format and what a change needs before it merges._",
+    "- Conventional commits (`feat:`, `fix:`, `refactor:`, `docs:`, `test:`, `chore:`).",
+    "- A change merges when tests/lint/types are green, the diff is surgical, and the risk is stated.",
   );
 }
 

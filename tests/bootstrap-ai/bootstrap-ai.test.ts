@@ -52,14 +52,28 @@ function probeNamed(actions: Action[], needle: string): ProbeAction | undefined 
 }
 
 describe("bootstrap-ai — canon files", () => {
-  it("writes the router, shared block, adapter note, and REGENERATION", async () => {
+  it("writes the router, shared block, behavior core, adapter note, and REGENERATION", async () => {
     put("package.json", JSON.stringify({ name: "svc" }));
     put("tsconfig.json", "{}");
     const w = writesByPath((await command.plan(makeCtx())).actions);
     expect(w.has(".ai-context/RULE_ROUTER.md")).toBe(true);
     expect(w.has(".ai-context/adapters/_shared-canonical-block.md")).toBe(true);
+    expect(w.has(".ai-context/rules/agent-behavior-core.md")).toBe(true);
     expect(w.has(".ai-context/adapters/claude.md")).toBe(true);
     expect(w.has(".ai-context/REGENERATION.md")).toBe(true);
+  });
+
+  it("the behavior core carries the four-part working discipline + invariants", async () => {
+    const w = writesByPath((await command.plan(makeCtx())).actions);
+    const core = w.get(".ai-context/rules/agent-behavior-core.md")?.contents ?? "";
+    expect(core).toContain("Think before coding");
+    expect(core).toContain("Simplicity first");
+    expect(core).toContain("Surgical changes");
+    expect(core).toContain("Goal-driven execution");
+    expect(core).toContain("never coerce");
+    // The router routes to it as an always-read-first file.
+    const router = w.get(".ai-context/RULE_ROUTER.md")?.contents ?? "";
+    expect(router).toContain("rules/agent-behavior-core.md");
   });
 
   it("the router is stack-aware (names the detected language)", async () => {

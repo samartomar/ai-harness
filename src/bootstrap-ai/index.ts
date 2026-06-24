@@ -17,6 +17,7 @@ import type { Check } from "../internals/verify.js";
 import { scanRepo } from "../profile/scan.js";
 import {
   adapterNote,
+  agentBehaviorCoreDoc,
   bootloaderPaths,
   bootloaderPreamble,
   regenerationDoc,
@@ -116,6 +117,11 @@ async function bootstrapAiPlan(ctx: PlanContext): Promise<Plan> {
       posix.join(dir, "adapters", "_shared-canonical-block.md"),
       sharedCanonicalBlockBody(dir),
       "shared canonical block (single source for every bootloader)",
+    ),
+    writeText(
+      posix.join(dir, "rules", "agent-behavior-core.md"),
+      agentBehaviorCoreDoc(dir),
+      "agent behavior core (the working discipline the router + bootloaders point to)",
     ),
   ];
 
