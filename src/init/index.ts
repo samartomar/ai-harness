@@ -1,11 +1,12 @@
 import type { Action, CommandSpec, PlanContext } from "../internals/plan.js";
 import { doc, plan } from "../internals/plan.js";
+import { lines } from "../internals/render.js";
 import { INIT_PHASES } from "./phases.js";
 
 /**
  * Orchestrate a full repo bootstrap by COMPOSING the repo-scoped capabilities —
- * profile, ecc, superpowers, bootstrap-ai, scaffold, secrets, guardrails, mcp,
- * sandbox — in that order. Each phase's actions come straight from
+ * profile, superpowers, bootstrap-ai, scaffold, secrets, guardrails, mcp,
+ * sandbox — in that order (ECC is a separate gated step; init points at it). Each phase's actions come straight from
  * `command.plan(ctx)` (never re-implemented),
  * preceded by a `doc` headline so a dry-run reads as labelled sections. Because
  * every sub-capability is invoked with the same `ctx`, a custom `--context-dir`,
@@ -30,6 +31,22 @@ async function initPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
     actions.push(...sub.actions);
   }
 
+  // ECC is not a phase: its installer runs the network (`npx ecc-install` / a git
+  // checkout), so `aih init` points at the separate gated step instead of running
+  // it. This single doc is the only action init adds beyond the phase headers.
+  actions.push(
+    doc(
+      "install ECC (separate, gated network step)",
+      lines(
+        "`aih init` scaffolds locally. ECC installs via ECC's OWN installer (network), so it",
+        "is a separate step you run when ready:",
+        "",
+        "  aih ecc --apply                # install ECC (latest) for your selected CLIs",
+        "  aih ecc --cli kiro --apply     # Kiro: git checkout of ECC + its native .kiro/install.sh",
+      ),
+    ),
+  );
+
   // Root bootloaders have a single owner (bootstrap-ai), so no two phases write
   // the same bootloader. The dedup is a safety net for genuinely shared targets
   // like `.claude/settings.json` (scaffold + secrets both merge-write it): keep
@@ -49,7 +66,7 @@ async function initPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
 export const command: CommandSpec = {
   name: "init",
   summary:
-    "Initialize a target repo: profile + ecc + superpowers + bootstrap-ai + scaffold + secrets + guardrails + mcp + sandbox",
+    "Initialize a target repo: profile + superpowers + bootstrap-ai + scaffold + secrets + guardrails + mcp + sandbox (ECC via `aih ecc`)",
   options: [
     {
       flags: "--mcp-mode <mode>",

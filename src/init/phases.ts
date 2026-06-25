@@ -1,5 +1,4 @@
 import { command as bootstrapAi } from "../bootstrap-ai/index.js";
-import { command as ecc } from "../ecc/index.js";
 import { command as guardrails } from "../guardrails/index.js";
 import type { CommandSpec } from "../internals/plan.js";
 import { command as mcp } from "../mcp/index.js";
@@ -23,22 +22,22 @@ export interface InitPhase {
 }
 
 /**
- * The fixed bootstrap order: profile → ecc → superpowers → bootstrap-ai →
- * scaffold → secrets → guardrails → mcp → sandbox. Profiling detects the stack
- * (Cursor rules); ECC + Superpowers install the agent baseline for the selected
- * CLIs; bootstrap-ai lays the Layer-2 canon (the SOLE writer of root bootloaders +
+ * The fixed bootstrap order: profile → superpowers → bootstrap-ai → scaffold →
+ * secrets → guardrails → mcp → sandbox. Profiling detects the stack (Cursor
+ * rules); Superpowers installs the agent baseline for the selected CLIs;
+ * bootstrap-ai lays the Layer-2 canon (the SOLE writer of root bootloaders +
  * RULE_ROUTER); scaffolding lays the context dir the router points at; secrets +
  * guardrails fence the repo before MCP wiring and the sandbox land on top. Each
  * file has exactly one writer, so the composed plan dedupes to one write per path.
+ *
+ * ECC is deliberately NOT a phase: `aih ecc` runs ECC's own network installer
+ * (`npx ecc-install` / a git checkout), so it stays a separate gated step rather
+ * than something `aih init --apply` runs silently. `initPlan` points at it.
  */
 export const INIT_PHASES: readonly InitPhase[] = [
   {
     command: profile,
     headline: "profile — detect the stack and synthesize CLAUDE.md + cursor rules",
-  },
-  {
-    command: ecc,
-    headline: "ecc — install affaan-m/ECC (skills, memory, security) for the stack + selected CLIs",
   },
   {
     command: superpowers,

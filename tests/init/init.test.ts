@@ -124,7 +124,6 @@ describe("aih init — composition, not duplication", () => {
   it("emits a doc header per phase in the canonical order, each before its capability's actions", async () => {
     const order = [
       "profile",
-      "ecc",
       "superpowers",
       "bootstrap-ai",
       "scaffold",
@@ -205,8 +204,8 @@ describe("aih init — BOUNDARY (no remote mutation introduced by the orchestrat
     expect(count("write")).toBe(leafWritePaths.size);
     expect(count("probe")).toBe(leafProbes);
     expect(count("exec")).toBe(leafExecs);
-    // The ONLY docs init adds are exactly one "init: <phase>" header per phase.
-    expect(count("doc")).toBe(leafDocs + INIT_PHASES.length);
+    // init adds one "init: <phase>" header per phase, plus a single ECC pointer doc.
+    expect(count("doc")).toBe(leafDocs + INIT_PHASES.length + 1);
   });
 });
 

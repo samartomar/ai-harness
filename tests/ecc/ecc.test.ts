@@ -3,7 +3,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { command } from "../../src/ecc/index.js";
-import { eccInstallerArgv, eccMethod } from "../../src/ecc/install.js";
+import {
+  ECC_INSTALL_TARGETS,
+  eccInstallerArgv,
+  isEccInstallTarget,
+} from "../../src/ecc/install.js";
 import { eccLanguages } from "../../src/ecc/select.js";
 import type { Action, DocAction, ExecAction, PlanContext } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
@@ -48,7 +52,8 @@ function makeCtx(options: Record<string, unknown> = {}): PlanContext {
     json: false,
     run,
     host: makeHostAdapter({ platform: "linux", run, env: {} }),
-    env: {},
+    // HOME → temp so the Kiro cache dir (~/.claude/ecc) is absent → clone path (hermetic).
+    env: { HOME: tmp, USERPROFILE: tmp },
     options,
   };
 }
@@ -57,6 +62,15 @@ const docs = (actions: Action[]): DocAction[] =>
   actions.filter((a): a is DocAction => a.kind === "doc");
 const execs = (actions: Action[]): ExecAction[] =>
   actions.filter((a): a is ExecAction => a.kind === "exec");
+const execBlob = (actions: Action[]): string =>
+  execs(actions)
+    .map((e) => e.argv.join(" "))
+    .join("\n")
+    .replace(/\\/g, "/");
+const installTargets = (actions: Action[]): (string | undefined)[] =>
+  execs(actions)
+    .filter((e) => e.argv.includes("ecc-install") && e.argv.includes("--target"))
+    .map((e) => e.argv[e.argv.indexOf("--target") + 1]);
 
 describe("eccLanguages — map detected stack to ECC language packs", () => {
   it("maps a TypeScript repo to the typescript pack", () => {
@@ -93,27 +107,29 @@ describe("eccLanguages — map detected stack to ECC language packs", () => {
   });
 });
 
-describe("eccMethod / eccInstallerArgv", () => {
-  it("routes each CLI to the right install method", () => {
-    expect(eccMethod("claude")).toBe("plugin");
-    expect(eccMethod("cursor")).toBe("installer");
-    expect(eccMethod("zed")).toBe("installer");
-    expect(eccMethod("gemini")).toBe("consult");
-    expect(eccMethod("antigravity")).toBe("consult");
-    // codex/kiro/opencode are NOT ecc-install targets — they're intercepted in
-    // eccPlan (native scripts / AGENTS.md auto-detect), verified in the plan tests.
-    expect(eccMethod("codex")).not.toBe("installer");
-    expect(eccMethod("opencode")).not.toBe("installer");
+describe("ecc install targets / argv (latest from npm)", () => {
+  it("knows which CLIs ECC installs directly from npm (v2 adapters)", () => {
+    for (const cli of [
+      "claude",
+      "codex",
+      "cursor",
+      "antigravity",
+      "gemini",
+      "opencode",
+      "zed",
+    ] as const) {
+      expect(isEccInstallTarget(cli)).toBe(true);
+    }
+    // kiro ships only in the repo; copilot/windsurf/kimi aren't ECC targets → not direct.
+    expect(isEccInstallTarget("kiro")).toBe(false);
+    expect(isEccInstallTarget("copilot")).toBe(false);
+    expect(isEccInstallTarget("windsurf")).toBe(false);
+    expect(isEccInstallTarget("kimi")).toBe(false);
+    expect(ECC_INSTALL_TARGETS).toContain("zed");
   });
 
-  it("builds a stack-customized installer argv", () => {
-    const argv = eccInstallerArgv("cursor", {
-      profile: "core",
-      packs: ["typescript", "python"],
-      installEverything: false,
-      stackSummary: "x",
-    });
-    expect(argv).toEqual([
+  it("builds the npx ecc-install argv scoped only by profile", () => {
+    expect(eccInstallerArgv("cursor", "core")).toEqual([
       "npx",
       "--yes",
       "ecc-install",
@@ -121,42 +137,39 @@ describe("eccMethod / eccInstallerArgv", () => {
       "cursor",
       "--profile",
       "core",
-      "typescript",
-      "python",
     ]);
-  });
-
-  it("uses --profile full and no packs when installing everything", () => {
-    const argv = eccInstallerArgv("cursor", {
-      profile: "core",
-      packs: [],
-      installEverything: true,
-      stackSummary: "x",
-    });
-    expect(argv).toEqual([
+    expect(eccInstallerArgv("gemini", "full")).toEqual([
       "npx",
       "--yes",
       "ecc-install",
       "--target",
-      "cursor",
+      "gemini",
       "--profile",
       "full",
     ]);
   });
 });
 
-describe("ecc.plan — real affaan-m/ECC install", () => {
-  it("default (claude) emits the plugin marketplace + install commands as a doc", async () => {
+describe("ecc.plan — runs ECC's own installer (latest)", () => {
+  it("default (claude) runs npx ecc-install --target claude under --apply", async () => {
     put("package.json", JSON.stringify({ name: "svc" }));
     put("tsconfig.json", "{}");
     const actions = (await command.plan(makeCtx())).actions;
-    const text = docs(actions)
-      .map((d) => d.text)
-      .join("\n");
-    expect(text).toContain("/plugin marketplace add https://github.com/affaan-m/ECC");
-    expect(text).toContain("/plugin install ecc@ecc");
-    // No installer exec for the default claude-only selection (plugin path).
-    expect(execs(actions)).toHaveLength(0);
+    expect(execs(actions)[0]?.argv).toEqual([
+      "npx",
+      "--yes",
+      "ecc-install",
+      "--target",
+      "claude",
+      "--profile",
+      "core",
+    ]);
+    // the marketplace plugin is still offered as a doc alternative
+    expect(
+      docs(actions)
+        .map((d) => d.text)
+        .join("\n"),
+    ).toContain("/plugin install ecc@ecc");
   });
 
   it("always documents the ECC ecosystem tools (consult + agentshield)", async () => {
@@ -167,82 +180,82 @@ describe("ecc.plan — real affaan-m/ECC install", () => {
     expect(text).toContain("npx ecc-agentshield scan");
   });
 
-  it("--cli codex uses ECC's native sync-ecc-to-codex.sh, not ecc-install", async () => {
-    put("package.json", JSON.stringify({ name: "svc" }));
-    put("tsconfig.json", "{}");
+  it("--cli codex now installs via npx ecc-install --target codex (npm v2 target)", async () => {
     const actions = (await command.plan(makeCtx({ cli: "codex" }))).actions;
-    const blob = actions
-      .map((a) => (a.kind === "doc" ? a.text : a.kind === "exec" ? a.argv.join(" ") : ""))
-      .join("\n");
-    expect(blob).toContain("sync-ecc-to-codex.sh");
-    // Codex is not an ecc-install target — never fabricate that command.
-    expect(blob).not.toContain("ecc-install --target codex");
+    expect(installTargets(actions)).toContain("codex");
+    // the old native sync-script / clone path is gone.
+    expect(execBlob(actions)).not.toContain("sync-ecc-to-codex.sh");
   });
 
-  it("--cli opencode documents AGENTS.md auto-detect (no ecc-install target)", async () => {
-    put("package.json", JSON.stringify({ name: "svc" }));
-    put("tsconfig.json", "{}");
-    const actions = (await command.plan(makeCtx({ cli: "opencode" }))).actions;
-    const blob = actions
-      .map((a) => (a.kind === "doc" ? a.text : a.kind === "exec" ? a.argv.join(" ") : ""))
-      .join("\n");
-    expect(blob).toContain("AGENTS.md");
-    expect(blob).not.toContain("ecc-install --target opencode");
+  it("--cli gemini installs via npx ecc-install (a real v2 target now, not consult)", async () => {
+    const actions = (await command.plan(makeCtx({ cli: "gemini" }))).actions;
+    expect(execs(actions)[0]?.argv).toEqual([
+      "npx",
+      "--yes",
+      "ecc-install",
+      "--target",
+      "gemini",
+      "--profile",
+      "core",
+    ]);
   });
 
   it("honors --profile", async () => {
-    put("package.json", JSON.stringify({ name: "svc" }));
-    put("tsconfig.json", "{}");
     const actions = (await command.plan(makeCtx({ cli: "cursor", profile: "full" }))).actions;
     expect(execs(actions)[0]?.argv).toContain("full");
   });
 
-  it("--cli gemini routes through the consult advisor doc", async () => {
-    put("package.json", JSON.stringify({ name: "svc" }));
-    put("tsconfig.json", "{}");
-    const text = docs((await command.plan(makeCtx({ cli: "gemini" }))).actions)
+  it("--cli windsurf (no ECC target) routes through the consult advisor doc", async () => {
+    const text = docs((await command.plan(makeCtx({ cli: "windsurf" }))).actions)
       .map((d) => d.text)
       .join("\n");
     expect(text).toContain("npx ecc consult");
-    expect(text).toContain("--target gemini");
+    expect(text).toContain("--target windsurf");
+    // never fabricate an installer target ECC doesn't have.
+    expect(execBlob((await command.plan(makeCtx({ cli: "windsurf" }))).actions)).not.toContain(
+      "ecc-install --target windsurf",
+    );
   });
 
-  it("--cli kiro uses ECC's native .kiro/install.sh (exec if found, else clone doc)", async () => {
-    const actions = (await command.plan(makeCtx({ cli: "kiro" }))).actions;
-    const blob = actions
-      .map((a) => (a.kind === "doc" ? a.text : a.kind === "exec" ? a.argv.join(" ") : ""))
-      .join("\n");
+  it("--cli kiro clones ECC (latest, shallow) to a cache, then runs .kiro/install.sh", async () => {
+    const blob = execBlob((await command.plan(makeCtx({ cli: "kiro" }))).actions);
+    expect(blob).toContain("git clone --depth 1 https://github.com/affaan-m/ECC.git");
     expect(blob).toContain(".kiro/install.sh");
-    // No fabricated ECC consult/installer for kiro — it's the native installer path.
+    // kiro isn't on npm — never fabricate an ecc-install kiro target.
     expect(blob).not.toContain("ecc-install --target kiro");
   });
 
-  it("--all-tools covers plugin (claude), installer (cursor/zed), native (codex/kiro), consult (gemini)", async () => {
-    put("package.json", JSON.stringify({ name: "svc" }));
-    put("tsconfig.json", "{}");
-    const actions = (await command.plan(makeCtx({ allTools: true }))).actions;
-    const text = docs(actions)
-      .map((d) => d.text)
-      .join("\n");
-    const blob = actions
-      .map((a) => (a.kind === "doc" ? a.text : a.kind === "exec" ? a.argv.join(" ") : ""))
-      .join("\n");
-    expect(text).toContain("/plugin install ecc@ecc"); // claude plugin
-    const targets = execs(actions)
-      .filter((e) => e.argv.includes("--target"))
-      .map((e) => e.argv[e.argv.indexOf("--target") + 1]);
-    expect(targets).toEqual(expect.arrayContaining(["cursor", "zed"]));
-    // codex/opencode are no longer (invalid) ecc-install targets.
-    expect(targets).not.toContain("codex");
-    expect(targets).not.toContain("opencode");
-    expect(blob).not.toContain("ecc-install --target codex");
-    expect(blob).not.toContain("ecc-install --target opencode");
-    expect(blob).toContain("sync-ecc-to-codex.sh"); // codex native script
-    expect(blob).toContain(".kiro/install.sh"); // kiro native installer
-    expect(text).toContain("--target gemini"); // consult
+  it("--cli kiro --ecc-path uses the given checkout (no clone)", async () => {
+    const blob = execBlob(
+      (await command.plan(makeCtx({ cli: "kiro", eccPath: "/opt/ECC" }))).actions,
+    );
+    expect(blob).toContain("/opt/ECC/.kiro/install.sh");
+    expect(blob).not.toContain("git clone");
   });
 
-  it("BOUNDARY: only doc/exec actions and no remote/URL write targets", async () => {
+  it("--all-tools: every npm target via ecc-install, kiro via git checkout", async () => {
+    put("package.json", JSON.stringify({ name: "svc" }));
+    const actions = (await command.plan(makeCtx({ allTools: true }))).actions;
+    expect(installTargets(actions)).toEqual(
+      expect.arrayContaining([
+        "claude",
+        "codex",
+        "cursor",
+        "antigravity",
+        "gemini",
+        "opencode",
+        "zed",
+      ]),
+    );
+    expect(installTargets(actions)).not.toContain("kiro");
+    expect(installTargets(actions)).not.toContain("copilot"); // not an ECC target → consult
+    expect(installTargets(actions)).not.toContain("kimi"); // not an ECC target → consult
+    const blob = execBlob(actions);
+    expect(blob).toContain(".kiro/install.sh"); // kiro native installer
+    expect(blob).not.toContain("ecc-install --target kiro");
+  });
+
+  it("BOUNDARY: only doc/exec actions (no remote/URL write targets)", async () => {
     put("package.json", JSON.stringify({ name: "svc" }));
     const actions = (await command.plan(makeCtx({ allTools: true }))).actions;
     for (const a of actions) {
