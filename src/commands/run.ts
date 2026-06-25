@@ -83,7 +83,8 @@ export async function runCapability(
     // the artifact every <sec> seconds (the page's meta-refresh reloads it). It
     // implies --open + --apply; the loop runs until Ctrl+C.
     const watchSec = positiveInt(opts.refresh);
-    const liveOpen = opts.open === true || watchSec !== undefined;
+    // `--open`, `--refresh`, and `--demo` all imply build-and-open (so --apply too).
+    const liveOpen = opts.open === true || opts.demo === true || watchSec !== undefined;
     const ctx: PlanContext = {
       root: settings.root,
       contextDir: settings.contextDir,

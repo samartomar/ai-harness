@@ -2,6 +2,12 @@ import { describe, expect, it } from "vitest";
 import { digest } from "../../src/internals/plan.js";
 import { reportHtml, reportMarkdown } from "../../src/report/artifact.js";
 
+/**
+ * The LIVE region of the report (everything before the always-embedded demo block),
+ * so assertions about *absence* aren't polluted by the demo showcase content.
+ */
+const liveOf = (html: string): string => html.split('<div id="aih-demo">')[0] ?? html;
+
 /** A full set of local-report digests with the structured `data` the HTML reads. */
 const RICH = [
   digest("Context footprint — ~56k tokens — OVER budget", "x", {
@@ -100,7 +106,7 @@ describe("reportHtml dashboard", () => {
   });
 
   it("escapes HTML and renders unrecognized digests as a styled note", () => {
-    const html = reportHtml("t<i>", [digest("a <b> & c", "x < y & z", {})]);
+    const html = liveOf(reportHtml("t<i>", [digest("a <b> & c", "x < y & z", {})]));
     expect(html).toContain("a &lt;b&gt; &amp; c");
     expect(html).toContain("x &lt; y &amp; z");
     expect(html).toContain('class="prose"');
@@ -108,9 +114,11 @@ describe("reportHtml dashboard", () => {
   });
 
   it("shows a note (not charts) for trends with fewer than two samples", () => {
-    const html = reportHtml("aih report", [
-      digest("Trends — not enough history yet", "accruing", { samples: 1, rows: [] }),
-    ]);
+    const html = liveOf(
+      reportHtml("aih report", [
+        digest("Trends — not enough history yet", "accruing", { samples: 1, rows: [] }),
+      ]),
+    );
     expect(html).not.toContain('class="mini"');
     expect(html).toContain('class="prose"');
   });
@@ -120,9 +128,11 @@ describe("reportHtml dashboard", () => {
       path: `ai-coding/file-${i}.md`,
       tokens: (20 - i) * 100,
     }));
-    const html = reportHtml("aih report", [
-      digest("Context footprint — big", "x", { totalTokens: 21000, budgetTokens: 40000, files }),
-    ]);
+    const html = liveOf(
+      reportHtml("aih report", [
+        digest("Context footprint — big", "x", { totalTokens: 21000, budgetTokens: 40000, files }),
+      ]),
+    );
     expect((html.match(/class="bar-fill"/g) ?? []).length).toBe(20); // every file, not 8
     expect(html).toContain('class="bars scroll"'); // scrollable so it doesn't dominate
     expect(html).toContain("file-0.md"); // heaviest first

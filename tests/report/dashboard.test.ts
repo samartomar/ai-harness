@@ -6,7 +6,10 @@ import { digest, type PlanContext } from "../../src/internals/plan.js";
 import { fakeRunner, type Runner } from "../../src/internals/proc.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 import { reportHtml } from "../../src/report/artifact.js";
+import { demoDigests } from "../../src/report/demo.js";
 import { aiEventsDigest } from "../../src/report/events.js";
+import { graphDigests } from "../../src/report/graph.js";
+import { guardrailDigest } from "../../src/report/guardrail.js";
 import { qualityDigest } from "../../src/report/quality.js";
 import { repoInfoDigest } from "../../src/report/repoinfo.js";
 import { toolsInstalledDigest } from "../../src/report/tools.js";
@@ -234,5 +237,130 @@ describe("reportHtml — section bands + new panels", () => {
     expect(html).toContain("source files"); // hero tile from quality
     expect(html).toContain("test ratio");
     expect(html).toContain("AI CLIs here");
+  });
+});
+
+describe("graphDigests (Phase 2 — gated)", () => {
+  it("reads .aih/graph.json → code-graph-health + build-times digests", async () => {
+    mkdirSync(join(root, ".aih"), { recursive: true });
+    writeFileSync(
+      join(root, ".aih", "graph.json"),
+      JSON.stringify({ nodes: 342, edges: 891, files: 48, density: 2.6, buildMs: 4200 }),
+    );
+    const ds = await graphDigests(ctx(fakeRunner(() => undefined)));
+    expect(ds[0]?.describe).toContain("342 nodes");
+    expect((ds[0]?.data as { edges: number }).edges).toBe(891);
+    expect(ds.some((d) => d.describe.startsWith("Build & analysis"))).toBe(true);
+  });
+
+  it("is empty when there is no graph file and no CLI", async () => {
+    expect(await graphDigests(ctx(fakeRunner(() => ({ spawnError: true, code: 127 }))))).toEqual(
+      [],
+    );
+  });
+
+  it("falls back to a code-review-graph CLI when present", async () => {
+    const run = fakeRunner((argv) =>
+      argv[0] === "code-review-graph"
+        ? { code: 0, stdout: JSON.stringify({ nodes: 10, edges: 20 }) }
+        : undefined,
+    );
+    const ds = await graphDigests(ctx(run));
+    expect((ds[0]?.data as { nodes: number }).nodes).toBe(10);
+  });
+
+  it("ignores a malformed graph.json (never fabricated) and tries the CLI", async () => {
+    mkdirSync(join(root, ".aih"), { recursive: true });
+    writeFileSync(join(root, ".aih", "graph.json"), "{ not json");
+    expect(await graphDigests(ctx(fakeRunner(() => undefined)))).toEqual([]);
+  });
+
+  it("ignores a graph.json without nodes/edges (no real graph)", async () => {
+    mkdirSync(join(root, ".aih"), { recursive: true });
+    writeFileSync(join(root, ".aih", "graph.json"), JSON.stringify({ files: 9 }));
+    expect(await graphDigests(ctx(fakeRunner(() => undefined)))).toEqual([]);
+  });
+
+  it("maps alternate stat keys (filesIndexed / buildTimeMs)", async () => {
+    mkdirSync(join(root, ".aih"), { recursive: true });
+    writeFileSync(
+      join(root, ".aih", "graph.json"),
+      JSON.stringify({ nodes: 8, edges: 16, filesIndexed: 4, buildTimeMs: 2500 }),
+    );
+    const ds = await graphDigests(ctx(fakeRunner(() => undefined)));
+    expect((ds[0]?.data as { files: number }).files).toBe(4);
+    const build = ds.find((d) => d.describe.startsWith("Build & analysis"));
+    expect((build?.data as { buildMs: number }).buildMs).toBe(2500);
+  });
+
+  it("nodes-only graph → no derived density, no build panel", async () => {
+    mkdirSync(join(root, ".aih"), { recursive: true });
+    writeFileSync(join(root, ".aih", "graph.json"), JSON.stringify({ nodes: 5 }));
+    const ds = await graphDigests(ctx(fakeRunner(() => undefined)));
+    expect(ds).toHaveLength(1); // health only — no edges/files/buildMs to show
+    expect((ds[0]?.data as { density?: number }).density).toBeUndefined();
+  });
+});
+
+describe("guardrailDigest (Phase 3 — gated)", () => {
+  it("reads severities from .aih/guardrail-scan.json", () => {
+    mkdirSync(join(root, ".aih"), { recursive: true });
+    writeFileSync(
+      join(root, ".aih", "guardrail-scan.json"),
+      JSON.stringify({ critical: 4, important: 3, style: 3 }),
+    );
+    const d = guardrailDigest(ctx(fakeRunner(() => undefined)));
+    expect(d?.data).toMatchObject({ critical: 4, important: 3, style: 3, total: 10 });
+  });
+
+  it("is undefined when no scan results exist (never fabricated)", () => {
+    expect(guardrailDigest(ctx(fakeRunner(() => undefined)))).toBeUndefined();
+  });
+
+  it("defaults missing severities to 0 (partial scan output)", () => {
+    mkdirSync(join(root, ".aih"), { recursive: true });
+    writeFileSync(join(root, ".aih", "guardrail-scan.json"), JSON.stringify({ critical: 5 }));
+    const d = guardrailDigest(ctx(fakeRunner(() => undefined)));
+    expect(d?.data).toMatchObject({ critical: 5, important: 0, style: 0, total: 5 });
+  });
+
+  it("is undefined for a scan file with no severity keys", () => {
+    mkdirSync(join(root, ".aih"), { recursive: true });
+    writeFileSync(join(root, ".aih", "guardrail-scan.json"), JSON.stringify({ scanned: true }));
+    expect(guardrailDigest(ctx(fakeRunner(() => undefined)))).toBeUndefined();
+  });
+
+  it("is undefined for a malformed scan file", () => {
+    mkdirSync(join(root, ".aih"), { recursive: true });
+    writeFileSync(join(root, ".aih", "guardrail-scan.json"), "{ broken");
+    expect(guardrailDigest(ctx(fakeRunner(() => undefined)))).toBeUndefined();
+  });
+});
+
+describe("demo mode", () => {
+  it("demoDigests carries the showcase panels incl Phase 2/3", () => {
+    const prefixes = demoDigests().map((d) => d.describe);
+    expect(prefixes.some((s) => s.startsWith("Code graph health"))).toBe(true);
+    expect(prefixes.some((s) => s.startsWith("Guardrail rules"))).toBe(true);
+    expect(prefixes.some((s) => s.startsWith("Daily commits"))).toBe(true);
+  });
+
+  it("reportHtml always embeds demo content + toggle; --demo defaults it visible", () => {
+    const html = reportHtml("t", [], { demo: true });
+    expect(html).toContain("demo-toggle");
+    expect(html).toContain('<body data-demo="on">'); // demo is the default view
+    expect(html).toContain("DEMO DATA");
+    expect(html).toContain("Code graph health"); // demo renders Phase 2 panel
+    expect(html).toContain('class="gr-fill crit"'); // demo renders Phase 3 bars
+    // the live region (empty digests here) carries none of it
+    const live = html.split('<div id="aih-demo">')[0] ?? "";
+    expect(live).not.toContain("Code graph health");
+  });
+
+  it("without --demo the demo is embedded but not the default view", () => {
+    const html = reportHtml("t", []);
+    expect(html).toContain("<body>"); // live is the default view (no demo attr on body)
+    expect(html).not.toContain('<body data-demo="on">');
+    expect(html).toContain('id="aih-demo"'); // demo content is still embedded for the toggle
   });
 });

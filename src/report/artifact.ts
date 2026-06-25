@@ -1,5 +1,6 @@
 import type { DigestAction } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
+import { demoDigests } from "./demo.js";
 import { EMBEDDED_FONTS } from "./fonts.js";
 
 /** HTML-escape text for safe embedding in markup. */
@@ -333,6 +334,38 @@ function toolsInstalledPanel(d: Bag): string {
   );
 }
 
+/** Code graph health — node/edge/file/density stats from the code-review-graph (Phase 2). */
+function graphHealthPanel(d: Bag): string {
+  const density = num(d.density);
+  const stat = (k: string, v: string): string => `<li><span>${esc(k)}</span><b>${v}</b></li>`;
+  const body = `<ul class="statlist">${
+    stat("Nodes (functions/classes)", d.nodes !== undefined ? fmt(num(d.nodes) ?? 0) : "—") +
+    stat("Edges (relationships)", d.edges !== undefined ? fmt(num(d.edges) ?? 0) : "—") +
+    stat("Files indexed", d.files !== undefined ? fmt(num(d.files) ?? 0) : "—") +
+    stat("Edge density", density !== undefined ? density.toFixed(1) : "—")
+  }</ul>`;
+  return panel("Code graph health", "", body, 5);
+}
+
+/** Build & analysis times from the code-review-graph (Phase 2). */
+function buildTimesPanel(d: Bag): string {
+  const ms = num(d.buildMs);
+  const body = `<ul class="statlist"><li><span>Graph build time</span><b>${ms !== undefined ? `${(ms / 1000).toFixed(1)}s` : "—"}</b></li><li><span>Files tracked by graph</span><b>${d.files !== undefined ? fmt(num(d.files) ?? 0) : "—"}</b></li></ul>`;
+  return panel("Build & analysis", "", body, 7);
+}
+
+/** Guardrail rules — severity counts as horizontal bars (Phase 3). */
+function guardrailRulesPanel(d: Bag): string {
+  const c = num(d.critical) ?? 0;
+  const i = num(d.important) ?? 0;
+  const s = num(d.style) ?? 0;
+  const max = Math.max(1, c, i, s);
+  const row = (label: string, n: number, cls: string): string =>
+    `<li><span class="gr-l">${label}</span><span class="bar-track"><span class="gr-fill ${cls}" style="width:${((n / max) * 100).toFixed(0)}%"></span></span><span class="gr-v">${fmt(n)}</span></li>`;
+  const body = `<ul class="guardrails">${row("CRITICAL", c, "crit") + row("IMPORTANT", i, "imp") + row("STYLE", s, "sty")}</ul>`;
+  return panel("Guardrail rules", "", body, 5);
+}
+
 /** Route one digest to its rich panel (by stable describe prefix), else a note. */
 function panelFor(d: DigestAction): string {
   const data = (d.data as Bag) ?? {};
@@ -346,6 +379,9 @@ function panelFor(d: DigestAction): string {
   if (d.describe.startsWith("Daily commits")) return dailyCommitsPanel(data);
   if (d.describe.startsWith("Lines of code")) return locPanel(data);
   if (d.describe.startsWith("Test coverage")) return testRatioPanel(data);
+  if (d.describe.startsWith("Code graph health")) return graphHealthPanel(data);
+  if (d.describe.startsWith("Guardrail rules")) return guardrailRulesPanel(data);
+  if (d.describe.startsWith("Build & analysis")) return buildTimesPanel(data);
   if (d.describe.startsWith("Repository information")) return repoInfoPanel(data);
   if (d.describe.startsWith("Tools installed")) return toolsInstalledPanel(data);
   if (d.describe.startsWith("Configuration")) return checklistPanel(data);
@@ -356,8 +392,11 @@ function panelFor(d: DigestAction): string {
 /** Section bands — group panels under labeled headers (matches the design's sections). */
 const SECTION_ORDER: { title: string; prefixes: string[] }[] = [
   { title: "Output velocity", prefixes: ["Daily commits", "Lines of code", "AI events"] },
-  { title: "Code quality", prefixes: ["Test coverage"] },
-  { title: "Performance", prefixes: ["Repository information", "Context footprint"] },
+  { title: "Code quality", prefixes: ["Test coverage", "Code graph health", "Guardrail rules"] },
+  {
+    title: "Performance",
+    prefixes: ["Repository information", "Build & analysis", "Context footprint"],
+  },
   {
     title: "Harness adoption",
     prefixes: ["Tools installed", "Configuration", "Tooling", "Usage", "Adoption"],
@@ -511,6 +550,24 @@ footer code{color:var(--mut)}
 .ratio-l{color:var(--mut);font-size:.78rem}.ratio-sub{color:var(--dim);font-size:.74rem;margin-top:.3rem}
 .ri-head{display:flex;gap:1.7rem;margin-bottom:.2rem;color:var(--mut);font-size:.8rem}
 .ri-head b{color:var(--fg);font-variant-numeric:tabular-nums;margin-right:.25rem}
+.statlist{list-style:none;margin:0;padding:0;display:grid;gap:.1rem}
+.statlist li{display:flex;justify-content:space-between;align-items:center;padding:.5rem 0;border-bottom:1px solid color-mix(in oklab,var(--line) 55%,transparent)}
+.statlist li:last-child{border-bottom:0}
+.statlist span{color:var(--mut);font-size:.82rem}
+.statlist b{font-variant-numeric:tabular-nums;font-size:1.02rem}
+.guardrails{list-style:none;margin:0;padding:0;display:grid;gap:.8rem}
+.guardrails li{display:grid;grid-template-columns:88px 1fr 32px;align-items:center;gap:.7rem}
+.gr-l{font-size:.71rem;font-weight:600;letter-spacing:.04em;color:var(--mut)}
+.gr-fill{display:block;height:100%;border-radius:999px}
+.gr-fill.crit{background:var(--bad)}.gr-fill.imp{background:var(--warn)}.gr-fill.sty{background:var(--accent)}
+.gr-v{text-align:right;font-variant-numeric:tabular-nums;font-weight:600}
+.demo-toggle{position:fixed;top:1rem;right:7.4rem;z-index:9;display:inline-flex;align-items:center;gap:.4rem;cursor:pointer;font:inherit;font-size:.75rem;color:var(--mut);background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:.35rem .7rem}
+.demo-toggle:hover{border-color:var(--accent);color:var(--accent)}
+.demo-banner{display:none;align-items:center;gap:.5rem;background:color-mix(in oklab,var(--warn) 13%,transparent);border:1px solid color-mix(in oklab,var(--warn) 32%,transparent);color:var(--warn);border-radius:var(--rs);padding:.6rem .95rem;margin-bottom:1.1rem;font-size:.8rem;font-weight:600}
+#aih-demo{display:none}
+body[data-demo="on"] #aih-live{display:none}
+body[data-demo="on"] #aih-demo{display:block}
+body[data-demo="on"] .demo-banner{display:flex}
 `.trim();
 
 /**
@@ -520,11 +577,8 @@ footer code{color:var(--mut)}
  * checklist chips, tooling badges) derived from each digest's structured `data`.
  * Byte-stable (no timestamp) so re-applying the artifact stays a no-op.
  */
-export function reportHtml(
-  title: string,
-  digests: DigestAction[],
-  opts: { refresh?: number } = {},
-): string {
+/** The hero (adoption ring + KPI strip) for a digest set — reused for live + demo. */
+function buildHero(digests: DigestAction[]): string {
   const bloat = dataFor(digests, "Context footprint");
   const repo = dataFor(digests, "Repo status");
   const trends = dataFor(digests, "Trends");
@@ -554,13 +608,23 @@ export function reportHtml(
   if (tooling)
     tiles.push(kpi(`${arr(tooling.present).length}/${num(tooling.total) ?? 0}`, "AI CLIs here"));
 
-  const hero = `<section class="hero">${
+  return `<section class="hero">${
     adoptionPct !== undefined
       ? `<div class="ring-card">${ring(adoptionPct)}<span class="ring-label">adoption</span></div>`
       : ""
   }<div class="kpis">${tiles.join("")}</div></section>`;
+}
 
-  const bands = renderBands(digests);
+export function reportHtml(
+  title: string,
+  digests: DigestAction[],
+  opts: { refresh?: number; demo?: boolean } = {},
+): string {
+  const liveContent = `${buildHero(digests)}${renderBands(digests)}`;
+  // A fixed DEMO dataset is always embedded behind the "◑ demo data" toggle (and
+  // shown by default under `--demo`) so the full report can be visualized / showcased.
+  const demoSet = demoDigests();
+  const demoContent = `${buildHero(demoSet)}${renderBands(demoSet)}`;
 
   const refreshMeta =
     opts.refresh && opts.refresh > 0
@@ -576,16 +640,18 @@ export function reportHtml(
     `  <title>${esc(title)}</title>`,
     `  <style>${STYLE}</style>`,
     "</head>",
-    "<body>",
+    `<body${opts.demo ? ' data-demo="on"' : ""}>`,
     '  <button class="theme-toggle" type="button" onclick="aihTheme()" aria-label="Toggle light / dark theme">◐ theme</button>',
+    '  <button class="demo-toggle" type="button" onclick="aihDemo()" aria-label="Toggle demo data">◑ demo data</button>',
     '  <svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" style="stop-color:var(--accent)"/><stop offset="1" style="stop-color:var(--accent2)"/></linearGradient></defs></svg>',
     "  <main>",
     `    <header><h1>${esc(title)}</h1><div class="sub">self-contained · generated by <code>aih report</code></div></header>`,
-    `    ${hero}`,
-    `    ${bands}`,
+    '    <div class="demo-banner">▲ DEMO DATA — illustrative figures for showcasing the report; not your repo. Click “◑ demo data” to switch back.</div>',
+    `    <div id="aih-live">${liveContent}</div>`,
+    `    <div id="aih-demo">${demoContent}</div>`,
     "    <footer>No external assets — open anywhere, commit nowhere (<code>.aih/</code> is git-ignored).</footer>",
     "  </main>",
-    '  <script>(function(){var r=document.documentElement,k="aih-theme";try{var s=localStorage.getItem(k);if(s)r.dataset.theme=s}catch(e){}window.aihTheme=function(){var n=r.dataset.theme==="light"?"":"light";n?r.dataset.theme=n:r.removeAttribute("data-theme");try{localStorage.setItem(k,n)}catch(e){}}})();</script>',
+    '  <script>(function(){var r=document.documentElement,k="aih-theme";try{var s=localStorage.getItem(k);if(s)r.dataset.theme=s}catch(e){}window.aihTheme=function(){var n=r.dataset.theme==="light"?"":"light";n?r.dataset.theme=n:r.removeAttribute("data-theme");try{localStorage.setItem(k,n)}catch(e){}};window.aihDemo=function(){var b=document.body;b.dataset.demo=b.dataset.demo==="on"?"":"on";window.scrollTo(0,0)}})();</script>',
     "</body>",
     "</html>",
   );

@@ -3,6 +3,8 @@ import { type DigestAction, digest, type PlanContext } from "../internals/plan.j
 import { lines } from "../internals/render.js";
 import { inventory } from "../status.js";
 import { aiEventsDigest } from "./events.js";
+import { graphDigests } from "./graph.js";
+import { guardrailDigest } from "./guardrail.js";
 import { trendsPanel } from "./history.js";
 import { qualityDigest } from "./quality.js";
 import { repoStatusPanel } from "./repo.js";
@@ -86,6 +88,8 @@ export async function localPanels(ctx: PlanContext): Promise<DigestAction[]> {
     ...(await velocityDigests(ctx)), // OUTPUT VELOCITY: daily commits + LOC 30d
     aiEventsDigest(ctx), // AI events feed (undefined when no events recorded)
     await qualityDigest(ctx), // CODE QUALITY: test/source file ratio
+    ...(await graphDigests(ctx)), // CODE QUALITY/PERF: code-review-graph (gated, Phase 2)
+    guardrailDigest(ctx), // CODE QUALITY: guardrail severity (gated, Phase 3)
     await repoInfoDigest(ctx), // PERFORMANCE: repo info + file types
     await toolsInstalledDigest(ctx), // HARNESS ADOPTION: shell tools on PATH
     await repoStatusPanel(ctx),
