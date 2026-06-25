@@ -184,13 +184,17 @@ describe("report --org command", () => {
     expect(summarizeResult(result)).toContain("Top skills");
   });
 
-  it("throws a clean AihError when the --org export is missing", () => {
-    expect(() => command.plan(ctx({ options: { org: "does-not-exist.json" } }))).toThrow(AihError);
+  it("throws a clean AihError when the --org export is missing", async () => {
+    await expect(command.plan(ctx({ options: { org: "does-not-exist.json" } }))).rejects.toThrow(
+      AihError,
+    );
   });
 
-  it("throws a clean AihError when the --org export is not JSON", () => {
+  it("throws a clean AihError when the --org export is not JSON", async () => {
     writeFileSync(join(dir, "bad.json"), "{ not json");
-    expect(() => command.plan(ctx({ options: { org: "bad.json" } }))).toThrow(/not valid JSON/);
+    await expect(command.plan(ctx({ options: { org: "bad.json" } }))).rejects.toThrow(
+      /not valid JSON/,
+    );
   });
 
   it("still defaults to the local context footprint when no --org is given", async () => {

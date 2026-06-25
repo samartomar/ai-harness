@@ -91,7 +91,7 @@ describe("report local scope — composed panels", () => {
     expect(describes.some((s) => s.includes("no local data source"))).toBe(true);
   });
 
-  it("localPanels returns exactly the three local panels", () => {
-    expect(localPanels(ctx())).toHaveLength(3);
+  it("localPanels returns the four local panels (repo, config, tooling, economy)", async () => {
+    expect(await localPanels(ctx())).toHaveLength(4);
   });
 });

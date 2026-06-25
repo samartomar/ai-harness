@@ -189,8 +189,10 @@ describe("report --format (file artifact)", () => {
     expect(w?.kind === "write" && w.path.replace(/\\/g, "/")).toBe(".aih/reports/org-report.md");
   });
 
-  it("rejects an unknown --format (fail-closed)", () => {
-    expect(() => command.plan(ctx({ options: { format: "pdf" } }))).toThrow(/unknown --format/);
+  it("rejects an unknown --format (fail-closed)", async () => {
+    await expect(command.plan(ctx({ options: { format: "pdf" } }))).rejects.toThrow(
+      /unknown --format/,
+    );
   });
 
   it("applies the artifact to disk and re-applies it as a byte-stable no-op", async () => {

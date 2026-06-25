@@ -2,6 +2,7 @@ import { detectClisByConfig } from "../internals/cli-detect.js";
 import { type DigestAction, digest, type PlanContext } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
 import { inventory } from "../status.js";
+import { repoStatusPanel } from "./repo.js";
 
 /**
  * The local-scope panels of `aih report` beyond the context footprint. Each is a
@@ -68,7 +69,10 @@ export function economyPanel(): DigestAction {
   });
 }
 
-/** All local panels beyond the context footprint, in display order. */
-export function localPanels(ctx: PlanContext): DigestAction[] {
-  return [configPanel(ctx), toolingPanel(ctx), economyPanel()];
+/**
+ * All local panels beyond the context footprint, in display order. Async because
+ * the repo/branch-status panel reads git through the Runner seam.
+ */
+export async function localPanels(ctx: PlanContext): Promise<DigestAction[]> {
+  return [await repoStatusPanel(ctx), configPanel(ctx), toolingPanel(ctx), economyPanel()];
 }

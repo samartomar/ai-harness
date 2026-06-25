@@ -85,7 +85,7 @@ interface Built {
 }
 
 /** Build the report's digests (terminal output) for the active scope. */
-function buildReport(ctx: PlanContext): Built {
+async function buildReport(ctx: PlanContext): Promise<Built> {
   const orgFile = ctx.options.org;
   if (typeof orgFile === "string" && orgFile.length > 0) {
     const data = aggregateOrg(readOrgExport(ctx, orgFile));
@@ -101,7 +101,7 @@ function buildReport(ctx: PlanContext): Built {
     title: "aih report — local developer console",
     digests: [
       digest(contextHeadline(bloat), contextBloatDigest(bloat), bloat),
-      ...localPanels(ctx),
+      ...(await localPanels(ctx)),
     ],
   };
 }
@@ -110,12 +110,14 @@ function buildReport(ctx: PlanContext): Built {
  * `aih report` — read-only analytics digest. Two scopes (local default, `--org`),
  * both emitting `digest` actions (body printed verbatim, structured `data` into
  * `--json`). With `--format md|html`, a single combined artifact is ALSO written
- * under `--apply` ({@link artifactPath}). It never calls a remote system — the org
- * scope reads a locally-saved export fetched by the telemetry script.
+ * under `--apply` ({@link artifactPath}). Network-free by default — the org scope
+ * reads a locally-saved export, and the local repo-status panel reads local git
+ * only. The sole opt-in network call is `--team` (gh/remote branch view), gated
+ * like the telemetry fetcher's `--run`.
  */
-function reportPlan(ctx: PlanContext): ReturnType<typeof plan> {
+async function reportPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
   const format = formatOf(ctx);
-  const built = buildReport(ctx);
+  const built = await buildReport(ctx);
   const actions: Action[] = [...built.digests];
   if (format !== "terminal") {
     const path = artifactPath(ctx, built.scope, format);
@@ -158,6 +160,11 @@ export const command: CommandSpec = {
       flags: "--budget <tokens>",
       description: "context token budget for the bloat warning (local scope)",
       default: String(DEFAULT_CONTEXT_BUDGET_TOKENS),
+    },
+    {
+      flags: "--team",
+      description:
+        "include in-progress team branches (gh → git ls-remote → fetched; opt-in network)",
     },
   ],
   plan: reportPlan,
