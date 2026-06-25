@@ -1,6 +1,7 @@
 import type { DigestAction } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
 import { demoDigests } from "./demo.js";
+import { GEIST_FONT } from "./font-geist.js";
 import { EMBEDDED_FONTS } from "./fonts.js";
 
 /** HTML-escape text for safe embedding in markup. */
@@ -473,8 +474,9 @@ function renderSections(digests: DigestAction[]): string {
   return out.join("");
 }
 
-const STYLE = `${EMBEDDED_FONTS}
+const STYLE = `${EMBEDDED_FONTS}${GEIST_FONT}
 :root{ color-scheme:dark;
+  --display:'Geist','Inter',ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
   --bg:#0a0d13; --panel:#11151d; --panel2:#161b25; --line:#222a38; --line2:#2c3548;
   --fg:#e8edf4; --mut:#8893a7; --dim:#737e93;
   --accent:#5b9dff; --accent2:#8a7bff; --ok:#3fdc8a; --warn:#ffc24b; --bad:#ff6b6b;
@@ -488,7 +490,7 @@ const STYLE = `${EMBEDDED_FONTS}
 :where(button,a,[tabindex]):focus-visible,.ev-wrap:focus-visible,.bars.scroll:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 @media(prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important;scroll-behavior:auto!important}}
 .topbar{position:sticky;top:0;z-index:20;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:.7rem 1rem;padding:.7rem clamp(1rem,4vw,2rem);background:color-mix(in oklab,var(--bg) 84%,transparent);backdrop-filter:blur(14px) saturate(1.4);-webkit-backdrop-filter:blur(14px) saturate(1.4);border-bottom:1px solid var(--line)}
-.tb-brand h1{font-size:1.12rem;font-weight:730;letter-spacing:-.02em;margin:0;line-height:1.15}
+.tb-brand h1{font-family:var(--display);font-size:1.15rem;font-weight:680;letter-spacing:-.02em;margin:0;line-height:1.15}
 .tb-brand .sub{color:var(--mut);font-size:.73rem;margin-top:.12rem}
 .tb-brand .sub code{color:var(--fg)}
 .tb-right{display:flex;align-items:center;gap:.55rem}
@@ -496,9 +498,11 @@ const STYLE = `${EMBEDDED_FONTS}
 .clk{display:flex;flex-direction:column;align-items:flex-end;line-height:1.1}
 .clk i{font-style:normal;color:var(--dim);font-size:.56rem;letter-spacing:.13em;text-transform:uppercase}
 .clk b{font:600 .82rem/1 'JetBrains Mono',ui-monospace,SFMono-Regular,monospace;font-variant-numeric:tabular-nums;color:var(--fg);margin-top:.13rem}
-.tb-btn{display:inline-flex;align-items:center;gap:.35rem;cursor:pointer;font:inherit;font-size:.74rem;color:var(--mut);background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:.34rem .72rem}
-.tb-btn:hover{border-color:var(--line2);color:var(--fg)}
+.tb-ico{display:inline-grid;place-items:center;width:34px;height:30px;padding:0;cursor:pointer;color:var(--mut);background:var(--panel);border:1px solid var(--line);border-radius:9px;transition:border-color .15s,color .15s,background .15s}
+.tb-ico:hover{border-color:var(--line2);color:var(--fg)}
+.tb-ico svg{display:block;width:15px;height:15px}
 .tb-demo:hover{border-color:var(--accent);color:var(--accent)}
+body[data-demo="on"] .tb-demo{background:color-mix(in oklab,var(--accent) 18%,transparent);border-color:color-mix(in oklab,var(--accent) 45%,transparent);color:var(--accent)}
 @media(max-width:640px){.clocks{display:none}.tb-brand .sub{display:none}}
 body{ background:radial-gradient(1100px 520px at 78% -8%,color-mix(in oklab,var(--accent) 13%,transparent),transparent 58%),radial-gradient(900px 600px at 6% 108%,color-mix(in oklab,var(--accent2) 9%,transparent),transparent 60%),var(--bg);
   color:var(--fg); font:14px/1.5 'Inter',ui-sans-serif,system-ui,-apple-system,"Segoe UI Variable","Segoe UI",sans-serif; -webkit-font-smoothing:antialiased; }
@@ -509,12 +513,12 @@ main{max-width:1120px;margin:0 auto;padding:1.8rem 1.5rem 5rem}
 .ring-label{color:var(--mut);font-size:.7rem;text-transform:uppercase;letter-spacing:.09em}
 .ring-bg{stroke:color-mix(in oklab,var(--fg) 9%,transparent)}
 .ring.ok .ring-fg{stroke:var(--ok)} .ring.warn .ring-fg{stroke:var(--warn)} .ring.bad .ring-fg{stroke:var(--bad)}
-.ring-num{text-anchor:middle;font-size:30px;font-weight:720;fill:var(--fg);font-variant-numeric:tabular-nums}
+.ring-num{font-family:var(--display);text-anchor:middle;font-size:30px;font-weight:660;fill:var(--fg);font-variant-numeric:tabular-nums}
 .ring-cap{text-anchor:middle;font-size:11px;fill:var(--mut)}
 .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:.7rem}
 .kpi{display:flex;flex-direction:column;justify-content:center;gap:.2rem;background:linear-gradient(180deg,var(--panel2),var(--panel));border:1px solid var(--line);border-radius:var(--r);padding:.95rem 1.05rem;box-shadow:var(--sh);transition:border-color .15s,transform .15s}
 .kpi:hover{border-color:var(--line2);transform:translateY(-1px)}
-.kpi-v{font-size:1.55rem;font-weight:700;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.kpi-v{font-family:var(--display);font-size:1.55rem;font-weight:640;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
 .kpi-v.over{color:var(--bad)}
 .kpi-l{color:var(--mut);font-size:.7rem;text-transform:uppercase;letter-spacing:.06em}
 .bento{display:grid;grid-template-columns:repeat(12,1fr);gap:1rem;grid-auto-flow:row dense}
@@ -526,7 +530,7 @@ main{max-width:1120px;margin:0 auto;padding:1.8rem 1.5rem 5rem}
 @media(max-width:820px){.span-5,.span-7{grid-column:span 12}.span-4{grid-column:span 6}}
 @media(max-width:520px){.span-4{grid-column:span 12}}
 .ph{display:flex;align-items:center;justify-content:space-between;gap:1rem;padding:.8rem 1.1rem;border-bottom:1px solid var(--line)}
-.ph h2{font-size:.82rem;font-weight:640;text-transform:uppercase;letter-spacing:.07em;margin:0}
+.ph h2{font-family:var(--display);font-size:.82rem;font-weight:640;text-transform:uppercase;letter-spacing:.07em;margin:0}
 .pb{padding:1.05rem 1.1rem}
 .badge{font-size:.71rem;font-weight:600;padding:.18rem .5rem;border-radius:999px;white-space:nowrap;background:color-mix(in oklab,var(--accent) 16%,transparent);color:var(--accent)}
 .badge.muted{background:color-mix(in oklab,var(--mut) 15%,transparent);color:var(--mut)}
@@ -581,7 +585,7 @@ main{max-width:1120px;margin:0 auto;padding:1.8rem 1.5rem 5rem}
 .cat:first-child{margin-top:.2rem}
 .cat-h{display:flex;align-items:center;gap:.65rem;margin:0 0 .9rem;padding:0 .1rem}
 .cat-no{font:600 .72rem/1 'JetBrains Mono',ui-monospace,SFMono-Regular,monospace;color:var(--accent);opacity:.7;letter-spacing:.04em}
-.cat-h h2{font-size:.82rem;font-weight:700;text-transform:uppercase;letter-spacing:.15em;color:var(--fg);margin:0;white-space:nowrap}
+.cat-h h2{font-family:var(--display);font-size:.84rem;font-weight:680;text-transform:uppercase;letter-spacing:.15em;color:var(--fg);margin:0;white-space:nowrap}
 .cat-ct{font:600 .64rem/1 'JetBrains Mono',ui-monospace,SFMono-Regular,monospace;color:var(--mut);background:color-mix(in oklab,var(--mut) 15%,transparent);border-radius:999px;padding:.18rem .44rem;font-variant-numeric:tabular-nums}
 .cat-rule{flex:1;height:1px;background:linear-gradient(90deg,var(--line2),transparent)}
 .prose{font:12.5px/1.6 'JetBrains Mono',ui-monospace,SFMono-Regular,Consolas,monospace;color:var(--mut);white-space:pre-wrap;margin:0}
@@ -607,11 +611,11 @@ footer code{color:var(--mut)}
 .vel-sub{display:flex;gap:1.5rem;margin-top:.85rem;color:var(--mut);font-size:.76rem}
 .vel-sub b{color:var(--fg);font-size:1.02rem;font-variant-numeric:tabular-nums;margin-right:.25rem}
 .loc-row{display:flex;gap:1.9rem}.loc-big{display:flex;flex-direction:column;gap:.15rem}
-.loc-big span:first-child{font-size:1.7rem;font-weight:720;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+.loc-big span:first-child{font-family:var(--display);font-size:1.7rem;font-weight:660;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
 .loc-l{color:var(--mut);font-size:.7rem;text-transform:uppercase;letter-spacing:.06em}
 .loc-net{margin-top:.75rem;color:var(--mut);font-size:.82rem;font-variant-numeric:tabular-nums}
 .ratio{display:flex;flex-direction:column;gap:.18rem}
-.ratio-v{font-size:2.15rem;font-weight:720;color:var(--warn);font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+.ratio-v{font-family:var(--display);font-size:2.15rem;font-weight:660;color:var(--warn);font-variant-numeric:tabular-nums;letter-spacing:-.02em}
 .ratio-l{color:var(--mut);font-size:.78rem}.ratio-sub{color:var(--dim);font-size:.74rem;margin-top:.3rem}
 .ri-head{display:flex;gap:1.7rem;margin-bottom:.2rem;color:var(--mut);font-size:.8rem}
 .ri-head b{color:var(--fg);font-variant-numeric:tabular-nums;margin-right:.25rem}
@@ -711,8 +715,8 @@ export function reportHtml(
     `    <div class="tb-brand"><h1>${BRAND}</h1><div class="sub">self-contained · generated by <code>aih report</code></div></div>`,
     '    <div class="tb-right">',
     '      <div class="clocks"><span class="clk"><i>UTC</i><b id="clk-utc">··:··:··</b></span><span class="clk"><i>Local</i><b id="clk-loc">··:··:··</b></span></div>',
-    '      <button class="tb-btn tb-demo" type="button" onclick="aihDemo()" aria-label="Toggle demo data">◑ demo</button>',
-    '      <button class="tb-btn" type="button" onclick="aihTheme()" aria-label="Toggle light / dark theme">◐ theme</button>',
+    '      <button class="tb-ico tb-demo" type="button" onclick="aihDemo()" aria-label="Toggle demo data" title="Demo data"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 3h6M10 3v6l-4.4 7.6A1.5 1.5 0 0 0 6.9 19h10.2a1.5 1.5 0 0 0 1.3-2.4L14 9V3"/><path d="M7.2 14h9.6"/></svg></button>',
+    '      <button class="tb-ico" type="button" onclick="aihTheme()" aria-label="Toggle light / dark theme" title="Toggle theme"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 3a9 9 0 0 0 0 18z" fill="currentColor"/></svg></button>',
     "    </div>",
     "  </header>",
     '  <svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" style="stop-color:var(--accent)"/><stop offset="1" style="stop-color:var(--accent2)"/></linearGradient></defs></svg>',
