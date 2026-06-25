@@ -4,6 +4,7 @@ import { lines } from "../internals/render.js";
 import { inventory } from "../status.js";
 import { trendsPanel } from "./history.js";
 import { repoStatusPanel } from "./repo.js";
+import { usagePanel } from "./usage.js";
 
 /**
  * The local-scope panels of `aih report` beyond the context footprint. Each is a
@@ -79,6 +80,7 @@ export async function localPanels(ctx: PlanContext): Promise<DigestAction[]> {
   return [
     await repoStatusPanel(ctx),
     trendsPanel(ctx),
+    usagePanel(ctx),
     configPanel(ctx),
     toolingPanel(ctx),
     economyPanel(),
