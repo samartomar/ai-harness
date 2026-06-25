@@ -87,21 +87,25 @@ function budgetPanel(d: Bag): string {
   const over = d.overBudget === true;
   const files = arr(d.files) as FileBloat[];
   const pct = budget > 0 ? Math.min(100, (tokens / budget) * 100) : 0;
-  const top = [...files].sort((a, b) => (b.tokens ?? 0) - (a.tokens ?? 0)).slice(0, 8);
-  const max = Math.max(1, ...top.map((f) => f.tokens ?? 0));
-  const rows = top
-    .map(
-      (f) =>
-        `<li><span class="bar-label" title="${esc(f.path)}">${esc(f.path)}</span><span class="bar-track"><span class="bar-fill" style="width:${(((f.tokens ?? 0) / max) * 100).toFixed(1)}%"></span></span><span class="bar-val">${fmt(f.tokens ?? 0)}</span></li>`,
-    )
+  // Show the FULL range — every file, heaviest first — in a scrollable list, so
+  // the whole context is analyzable (not just a top-N slice). Each row carries its
+  // share of total so you can see where the budget actually goes.
+  const all = [...files].sort((a, b) => (b.tokens ?? 0) - (a.tokens ?? 0));
+  const max = Math.max(1, ...all.map((f) => f.tokens ?? 0));
+  const rows = all
+    .map((f) => {
+      const tk = f.tokens ?? 0;
+      const share = tokens > 0 ? Math.round((tk / tokens) * 100) : 0;
+      return `<li><span class="bar-label" title="${esc(f.path)}">${esc(f.path)}</span><span class="bar-track"><span class="bar-fill" style="width:${((tk / max) * 100).toFixed(1)}%"></span></span><span class="bar-val">${fmt(tk)}<i>${share}%</i></span></li>`;
+    })
     .join("");
   const badge = over
     ? `<span class="badge over">OVER by ${fmt(tokens - budget)}</span>`
     : `<span class="badge muted">${Math.round(pct)}% of budget</span>`;
   const body = [
     `<div class="budget-track"><div class="budget-fill${over ? " over" : ""}" style="width:${pct.toFixed(1)}%"></div></div>`,
-    `<div class="budget-cap"><span>${fmt(tokens)} tokens · ${files.length} files</span><span>budget ${fmt(budget)}</span></div>`,
-    `<ul class="bars">${rows}</ul>`,
+    `<div class="budget-cap"><span>${fmt(tokens)} tokens · ${all.length} files (heaviest first — scroll for all)</span><span>budget ${fmt(budget)}</span></div>`,
+    `<ul class="bars scroll">${rows}</ul>`,
   ].join("");
   return panel("Context footprint", badge, body, 7);
 }
@@ -279,11 +283,15 @@ h1{font-size:1.42rem;font-weight:680;letter-spacing:-.015em;margin:0}
 .budget-fill.over{background:linear-gradient(90deg,var(--warn),var(--bad))}
 .budget-cap{display:flex;justify-content:space-between;color:var(--mut);font-size:.77rem;margin-top:.5rem;font-variant-numeric:tabular-nums}
 .bars{list-style:none;margin:1rem 0 0;padding:0;display:grid;gap:.5rem}
-.bars li{display:grid;grid-template-columns:1fr 96px 56px;align-items:center;gap:.7rem}
+.bars.scroll{max-height:340px;overflow-y:auto;padding-right:.5rem;scrollbar-width:thin;scrollbar-color:var(--line2) transparent}
+.bars.scroll::-webkit-scrollbar{width:8px}
+.bars.scroll::-webkit-scrollbar-thumb{background:var(--line2);border-radius:999px}
+.bars li{display:grid;grid-template-columns:minmax(0,1fr) 84px 84px;align-items:center;gap:.7rem}
 .bar-label{font:12px/1.4 'JetBrains Mono',ui-monospace,"Cascadia Code",SFMono-Regular,Consolas,monospace;color:var(--mut);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .bar-track{display:block;height:7px;border-radius:999px;background:color-mix(in oklab,var(--fg) 8%,transparent);overflow:hidden}
 .bar-fill{display:block;height:100%;border-radius:999px;background:linear-gradient(90deg,var(--accent),var(--accent2))}
 .bar-val{font:12px/1 'JetBrains Mono',ui-monospace,SFMono-Regular,monospace;color:var(--dim);text-align:right;font-variant-numeric:tabular-nums}
+.bar-val i{font-style:normal;color:var(--mut);margin-left:.4rem;opacity:.8}
 .branches{list-style:none;margin:0;padding:0;display:grid;gap:.1rem}
 .branches li{display:flex;align-items:center;gap:.55rem;padding:.45rem .5rem;border-radius:var(--rs)}
 .branches li:hover{background:color-mix(in oklab,var(--fg) 5%,transparent)}

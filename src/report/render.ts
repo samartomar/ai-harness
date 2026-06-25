@@ -6,8 +6,9 @@ export function thousands(n: number): string {
   return n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
 }
 
-/** Up to this many "largest contributor" rows in the footprint digest. */
-const TOP_FILES = 10;
+/** Up to this many "largest contributor" rows in the terminal digest (the HTML
+ * dashboard shows the full, scrollable list). */
+const TOP_FILES = 15;
 
 /**
  * Render the local context-footprint digest as plain text for a `doc` action.
@@ -36,8 +37,11 @@ export function contextBloatDigest(bloat: ContextBloat): string {
     ...(files.length === 0
       ? ["  (no agent context files found — run `aih scaffold` / `aih bootstrap-ai`)"]
       : [
-          "  Largest contributors:",
-          ...top.map((f) => `    ~${thousands(f.tokens)} tok  ${f.path}`),
+          `  Largest contributors${files.length > TOP_FILES ? ` (top ${TOP_FILES} of ${files.length} — \`aih report --open\` for all)` : ""}:`,
+          ...top.map((f) => {
+            const share = totalTokens > 0 ? Math.round((f.tokens / totalTokens) * 100) : 0;
+            return `    ~${thousands(f.tokens)} tok  (${share}%)  ${f.path}`;
+          }),
         ]),
   );
 }

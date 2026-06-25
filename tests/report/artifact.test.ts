@@ -115,6 +115,20 @@ describe("reportHtml dashboard", () => {
     expect(html).toContain('class="prose"');
   });
 
+  it("Context footprint shows ALL files (scrollable) + each file's share, not a top slice", () => {
+    const files = Array.from({ length: 20 }, (_, i) => ({
+      path: `ai-coding/file-${i}.md`,
+      tokens: (20 - i) * 100,
+    }));
+    const html = reportHtml("aih report", [
+      digest("Context footprint — big", "x", { totalTokens: 21000, budgetTokens: 40000, files }),
+    ]);
+    expect((html.match(/class="bar-fill"/g) ?? []).length).toBe(20); // every file, not 8
+    expect(html).toContain('class="bars scroll"'); // scrollable so it doesn't dominate
+    expect(html).toContain("file-0.md"); // heaviest first
+    expect(html).toMatch(/<i>\d+%<\/i>/); // per-file share of total
+  });
+
   it("embeds a meta-refresh only when a refresh interval is given (live mode)", () => {
     expect(reportHtml("aih report", RICH, { refresh: 10 })).toContain(
       '<meta http-equiv="refresh" content="10">',
