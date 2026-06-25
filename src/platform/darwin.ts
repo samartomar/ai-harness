@@ -10,6 +10,7 @@ import {
   vdiFromEnv,
 } from "./base.js";
 import { parseFirstInt, parseNvidiaSmi, parsePemBlocks } from "./parse.js";
+import { posixNpmCliPath, posixTlsProbeArgv } from "./posix.js";
 
 /**
  * macOS host adapter (implemented, fixture-tested, not smoke-tested on this box).
@@ -105,5 +106,18 @@ export class DarwinAdapter implements HostAdapter {
 
   envShell(): "posix" {
     return "posix";
+  }
+
+  // POSIX persistence is the shell-profile envblock — no registry-style exec.
+  persistentEnvArgv(): string[] {
+    return [];
+  }
+
+  npmCliPath(): string | undefined {
+    return posixNpmCliPath();
+  }
+
+  tlsProbeArgv(url: string): string[] {
+    return posixTlsProbeArgv(url);
   }
 }

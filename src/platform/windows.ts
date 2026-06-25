@@ -1,5 +1,6 @@
+import { existsSync } from "node:fs";
 import { cpus } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import type { Runner } from "../internals/proc.js";
 import {
   type CertEntry,
@@ -124,5 +125,30 @@ export class WindowsAdapter implements HostAdapter {
 
   envShell(): "powershell" {
     return "powershell";
+  }
+
+  persistentEnvArgv(key: string, value: string): string[] {
+    // Per-user registry env — what GUI-launched Kiro/Claude/IDEs actually inherit
+    // (the PowerShell $PROFILE block only reaches new shells). Local mutation only.
+    // Escape single quotes for the PowerShell single-quoted string (double them).
+    const q = (s: string) => s.replace(/'/g, "''");
+    return pwsh(`[Environment]::SetEnvironmentVariable('${q(key)}', '${q(value)}', 'User')`);
+  }
+
+  npmCliPath(): string | undefined {
+    // On Windows, node.exe and npm live in the same dir:
+    //   <dir>\node.exe  +  <dir>\node_modules\npm\bin\npm-cli.js
+    const nodeDir = dirname(process.execPath);
+    const cli = join(nodeDir, "node_modules", "npm", "bin", "npm-cli.js");
+    return existsSync(cli) ? cli : undefined;
+  }
+
+  tlsProbeArgv(url: string): string[] {
+    // Built-in Windows PowerShell 5.1 is on every supported image (curl.exe may be
+    // policy-blocked on locked-down fleets); a HEAD request exits 0 on a clean TLS
+    // handshake and 1 on any failure (cert/proxy), which is all the probe needs.
+    return winPowershell(
+      `try { Invoke-WebRequest -UseBasicParsing -Method Head -TimeoutSec 20 -Uri '${url}' | Out-Null; exit 0 } catch { exit 1 }`,
+    );
   }
 }

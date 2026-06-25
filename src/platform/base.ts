@@ -51,6 +51,28 @@ export interface HostAdapter {
   /** Shell profile file(s) where env exports belong. */
   shellProfilePaths(): string[];
   envShell(): EnvShell;
+
+  /**
+   * argv that persists a user-level env var SESSION-INDEPENDENTLY — i.e. where
+   * GUI-launched apps (Kiro, Claude Desktop, an IDE) inherit it, not just new
+   * shells. On Windows that is the per-user registry environment
+   * (`[Environment]::SetEnvironmentVariable(k,v,'User')`); on POSIX the durable
+   * seam is already the shell-profile `envblock`, so this returns `[]` (the
+   * caller emits no exec). A local mutation only — never contacts a remote.
+   */
+  persistentEnvArgv(key: string, value: string): string[];
+  /**
+   * Absolute path to npm's `npm-cli.js` relative to the running Node binary, used
+   * to compose the doc'd npm self-heal (`node <npm-cli.js> install -g npm`).
+   * `undefined` when it cannot be located (npm not installed alongside Node).
+   */
+  npmCliPath(): string | undefined;
+  /**
+   * argv for a read-only TLS reachability probe of `url`. Exit 0 = handshake OK;
+   * a non-zero exit = TLS/proxy failure; a spawn error (tool absent) lets the
+   * caller `skip`. Never mutates; the URL is a trusted module constant.
+   */
+  tlsProbeArgv(url: string): string[];
 }
 
 /** Construction shape shared by the concrete adapters. */

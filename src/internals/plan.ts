@@ -159,6 +159,13 @@ export interface CommandSpec {
   plan: PlanFn;
   /** Read-only commands (doctor/status) skip the apply path entirely. */
   readOnly?: boolean;
+  /**
+   * Force `verify` on every run so the capability's probes always populate the
+   * verification report — i.e. it DIAGNOSES by default (like `doctor`) yet still
+   * mutates under `--apply` (unlike `readOnly`). `heal` uses this so a bare
+   * `aih heal` surfaces the health report and a non-zero exit when broken.
+   */
+  alwaysVerify?: boolean;
 }
 
 // ---- builders -------------------------------------------------------------

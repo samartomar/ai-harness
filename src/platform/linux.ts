@@ -11,6 +11,7 @@ import {
   vdiFromEnv,
 } from "./base.js";
 import { parseFirstInt, parseNvidiaSmi } from "./parse.js";
+import { posixNpmCliPath, posixTlsProbeArgv } from "./posix.js";
 
 const ANCHOR_DIRS = [
   "/usr/local/share/ca-certificates",
@@ -156,6 +157,20 @@ export class LinuxAdapter implements HostAdapter {
 
   envShell(): "posix" {
     return "posix";
+  }
+
+  // POSIX persistence is the shell-profile envblock, so no separate registry-style
+  // exec is needed — the caller emits nothing when this is empty.
+  persistentEnvArgv(): string[] {
+    return [];
+  }
+
+  npmCliPath(): string | undefined {
+    return posixNpmCliPath();
+  }
+
+  tlsProbeArgv(url: string): string[] {
+    return posixTlsProbeArgv(url);
   }
 }
 
