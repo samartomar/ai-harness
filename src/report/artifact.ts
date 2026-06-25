@@ -1,5 +1,6 @@
 import type { DigestAction } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
+import { EMBEDDED_FONTS } from "./fonts.js";
 
 /** HTML-escape text for safe embedding in markup. */
 function esc(s: string): string {
@@ -230,7 +231,7 @@ function panelFor(d: DigestAction): string {
   return notePanel(d);
 }
 
-const STYLE = `
+const STYLE = `${EMBEDDED_FONTS}
 :root{ color-scheme:dark;
   --bg:#0a0d13; --panel:#11151d; --panel2:#161b25; --line:#222a38; --line2:#2c3548;
   --fg:#e8edf4; --mut:#8893a7; --dim:#5b6678;
@@ -243,7 +244,7 @@ const STYLE = `
 .theme-toggle{position:fixed;top:1rem;right:1rem;z-index:9;display:inline-flex;align-items:center;gap:.4rem;cursor:pointer;font:inherit;font-size:.75rem;color:var(--mut);background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:.35rem .7rem}
 .theme-toggle:hover{border-color:var(--line2);color:var(--fg)}
 body{ background:radial-gradient(1100px 520px at 78% -8%,color-mix(in oklab,var(--accent) 13%,transparent),transparent 58%),var(--bg);
-  color:var(--fg); font:14px/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif; -webkit-font-smoothing:antialiased; }
+  color:var(--fg); font:14px/1.5 'Inter',ui-sans-serif,system-ui,-apple-system,"Segoe UI Variable","Segoe UI",sans-serif; -webkit-font-smoothing:antialiased; }
 main{max-width:1120px;margin:0 auto;padding:2.4rem 1.5rem 5rem}
 header{margin-bottom:1.4rem}
 h1{font-size:1.42rem;font-weight:680;letter-spacing:-.015em;margin:0}
@@ -279,10 +280,10 @@ h1{font-size:1.42rem;font-weight:680;letter-spacing:-.015em;margin:0}
 .budget-cap{display:flex;justify-content:space-between;color:var(--mut);font-size:.77rem;margin-top:.5rem;font-variant-numeric:tabular-nums}
 .bars{list-style:none;margin:1rem 0 0;padding:0;display:grid;gap:.5rem}
 .bars li{display:grid;grid-template-columns:1fr 96px 56px;align-items:center;gap:.7rem}
-.bar-label{font:12px/1.4 ui-monospace,SFMono-Regular,monospace;color:var(--mut);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bar-label{font:12px/1.4 'JetBrains Mono',ui-monospace,"Cascadia Code",SFMono-Regular,Consolas,monospace;color:var(--mut);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .bar-track{display:block;height:7px;border-radius:999px;background:color-mix(in oklab,var(--fg) 8%,transparent);overflow:hidden}
 .bar-fill{display:block;height:100%;border-radius:999px;background:linear-gradient(90deg,var(--accent),var(--accent2))}
-.bar-val{font:12px/1 ui-monospace,monospace;color:var(--dim);text-align:right;font-variant-numeric:tabular-nums}
+.bar-val{font:12px/1 'JetBrains Mono',ui-monospace,SFMono-Regular,monospace;color:var(--dim);text-align:right;font-variant-numeric:tabular-nums}
 .branches{list-style:none;margin:0;padding:0;display:grid;gap:.1rem}
 .branches li{display:flex;align-items:center;gap:.55rem;padding:.45rem .5rem;border-radius:var(--rs)}
 .branches li:hover{background:color-mix(in oklab,var(--fg) 5%,transparent)}
@@ -312,7 +313,7 @@ h1{font-size:1.42rem;font-weight:680;letter-spacing:-.015em;margin:0}
 .tool{font-size:.79rem;padding:.32rem .68rem;border-radius:999px;font-weight:550}
 .tool.on{background:color-mix(in oklab,var(--accent) 17%,transparent);color:var(--accent);border:1px solid color-mix(in oklab,var(--accent) 34%,transparent)}
 .tool.off{color:var(--dim);border:1px solid var(--line);text-decoration:line-through;text-decoration-color:color-mix(in oklab,var(--dim) 55%,transparent);opacity:.72}
-.prose{font:12.5px/1.6 ui-monospace,SFMono-Regular,monospace;color:var(--mut);white-space:pre-wrap;margin:0}
+.prose{font:12.5px/1.6 'JetBrains Mono',ui-monospace,SFMono-Regular,Consolas,monospace;color:var(--mut);white-space:pre-wrap;margin:0}
 footer{color:var(--dim);font-size:.75rem;text-align:center;margin-top:2.4rem}
 footer code{color:var(--mut)}
 `.trim();
@@ -375,7 +376,7 @@ export function reportHtml(title: string, digests: DigestAction[]): string {
     `    ${bento}`,
     "    <footer>No external assets — open anywhere, commit nowhere (<code>.aih/</code> is git-ignored).</footer>",
     "  </main>",
-    "  <script>(function(){var r=document.documentElement,k=\"aih-theme\";try{var s=localStorage.getItem(k);if(s)r.dataset.theme=s}catch(e){}window.aihTheme=function(){var n=r.dataset.theme===\"light\"?\"\":\"light\";n?r.dataset.theme=n:r.removeAttribute(\"data-theme\");try{localStorage.setItem(k,n)}catch(e){}}})();</script>",
+    '  <script>(function(){var r=document.documentElement,k="aih-theme";try{var s=localStorage.getItem(k);if(s)r.dataset.theme=s}catch(e){}window.aihTheme=function(){var n=r.dataset.theme==="light"?"":"light";n?r.dataset.theme=n:r.removeAttribute("data-theme");try{localStorage.setItem(k,n)}catch(e){}}})();</script>',
     "</body>",
     "</html>",
   );
