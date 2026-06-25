@@ -1,6 +1,6 @@
 import { type Action, digest, type PlanContext } from "../internals/plan.js";
 import type { Check } from "../internals/verify.js";
-import { captured, type HealShared, type HealStep } from "./common.js";
+import { captured, classifyTool, type HealShared, type HealStep, versionArgv } from "./common.js";
 import { nodeMissingDoc, npmOfflineDoc, npmReinstallDoc } from "./templates.js";
 
 /** First non-empty trimmed line of `text` (for terse error details). */
@@ -15,8 +15,9 @@ function firstLine(text: string): string {
 
 /** Is `node` resolvable on PATH? (aih runs under Node, but the user's PATH may differ.) */
 async function nodeCheck(ctx: PlanContext): Promise<Check> {
-  const res = await ctx.run(["node", "--version"]);
-  if (res.spawnError) {
+  const win = ctx.host.platform === "windows";
+  const res = await ctx.run(versionArgv(ctx.host.platform, "node"));
+  if (classifyTool(res, win) === "absent") {
     return { name: "node: runtime", verdict: "fail", detail: "node not found on PATH" };
   }
   return { name: "node: runtime", verdict: "pass", detail: `node ${res.stdout.trim()}` };
@@ -31,11 +32,13 @@ async function npmCheck(ctx: PlanContext, nodeOk: boolean): Promise<Check> {
       detail: "blocked on node (install Node first)",
     };
   }
-  const res = await ctx.run(["npm", "--version"]);
-  if (res.spawnError) {
+  const win = ctx.host.platform === "windows";
+  const res = await ctx.run(versionArgv(ctx.host.platform, "npm"));
+  const state = classifyTool(res, win);
+  if (state === "absent") {
     return { name: "npm: runtime", verdict: "fail", detail: "npm not found on PATH" };
   }
-  if (res.code !== 0) {
+  if (state === "broken") {
     const why = firstLine(res.stderr) || `exit ${res.code}`;
     return { name: "npm: runtime", verdict: "fail", detail: `\`npm --version\` failed: ${why}` };
   }

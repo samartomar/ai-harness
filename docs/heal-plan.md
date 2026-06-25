@@ -179,3 +179,19 @@ improvement on the §4 sketch, captured here so the doc stays truthful:
    `verify` for it). Diagnosis is computed once at plan-build and captured into the probes, so the
    report renders without a second curl/pwsh spawn. Visible fix guidance rides on `digest` actions
    (the renderer prints digest text but not plain `doc` text).
+
+### Live-run hardening (found by running `aih heal` on Windows, not by the mocked tests)
+
+4. **Windows `.cmd` shim resolution.** `npm`/`npx` are `.cmd` shims; `execFile` (no shell) only
+   resolves `.exe` via `CreateProcess`, so a direct `["npm","--version"]` spawn-errored and heal
+   falsely reported "npm not found" on every Windows box. Fixed with `versionArgv` (routes through
+   `cmd /c` on Windows) + `classifyTool` (absent vs ok vs broken; the missing-command signature is
+   precisely cmd's "is not recognized", NOT a broad "cannot find" — which would swallow npm's own
+   broken "Cannot find module" error).
+5. **TLS is the authoritative cert signal.** A missing `NODE_EXTRA_CA_CERTS` is only a failure when
+   TLS is actually failing; if the handshakes to npm/pypi succeed, the unset var is expected (no
+   interception) and is a `skip`, not a `fail` — so heal no longer cries wolf (exit 1) on a machine
+   with no proxy.
+6. **De-duplicated probe output.** `summarizeResult` printed both a bare `[probe]` list and the
+   `Verification:` report; the list is now suppressed when a report is present (also tidies
+   `doctor`).

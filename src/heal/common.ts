@@ -1,4 +1,5 @@
 import { type Action, type PlanContext, type ProbeAction, probe } from "../internals/plan.js";
+import type { RunResult } from "../internals/proc.js";
 import type { Check } from "../internals/verify.js";
 
 /**
@@ -74,4 +75,31 @@ export async function tlsCheck(ctx: PlanContext, name: string, url: string): Pro
  */
 export function captured(check: Check): ProbeAction {
   return probe(check.name, () => check);
+}
+
+/**
+ * argv to run a PATH tool's `--version`. On Windows, npm/npx (and many CLIs) are
+ * `.cmd` shims that `CreateProcess` won't resolve as `.exe` via `execFile`, so the
+ * call is routed through `cmd /c` (which honors PATHEXT). POSIX runs it directly.
+ */
+export function versionArgv(platform: string, tool: string): string[] {
+  return platform === "windows" ? ["cmd", "/c", tool, "--version"] : [tool, "--version"];
+}
+
+export type ToolState = "absent" | "ok" | "broken";
+
+/**
+ * Classify a `--version` run: `absent` (not installed), `ok` (exit 0), or `broken`
+ * (present but failing — e.g. a missing transitive module). A spawn error means
+ * not-found on POSIX; on Windows the tool runs under `cmd`, which reports a missing
+ * command as a non-zero exit with "is not recognized" rather than a spawn error.
+ */
+export function classifyTool(res: RunResult, isWindows: boolean): ToolState {
+  // The Windows cmd.exe missing-command signature is specifically "is not
+  // recognized" — NOT a broad "cannot find", which would swallow npm's own broken
+  // error ("Cannot find module 'fs-minipass'") and misreport broken npm as absent.
+  const notFound =
+    res.spawnError || (isWindows && /is not recognized/i.test(`${res.stderr}${res.stdout}`));
+  if (notFound) return "absent";
+  return res.code === 0 ? "ok" : "broken";
 }

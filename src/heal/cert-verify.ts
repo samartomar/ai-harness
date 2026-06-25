@@ -9,38 +9,51 @@ const ENV_KEY = "NODE_EXTRA_CA_CERTS";
 const CHECK = "cert: NODE_EXTRA_CA_CERTS";
 
 /**
- * Diagnose whether the corporate CA is actually wired into Node's TLS — not just
- * that `certs` ran, but that the env var points at a real, valid PEM. This is the
- * file every Node-based runtime (npm, Kiro, Claude, MCP servers) reads, so a break
- * here cascades into all of them.
+ * Diagnose whether the corporate CA is wired into Node's TLS. The AUTHORITATIVE
+ * signal is the live TLS handshake (in `shared`): if it succeeds, trust is fine and
+ * a missing `NODE_EXTRA_CA_CERTS` is expected (no interception) — NOT a failure, so
+ * heal doesn't cry wolf on a machine with no proxy. The env var is only a hard fail
+ * when it's set-but-broken (a real misconfig) or when TLS is actually failing.
  */
-function caCheck(env: NodeJS.ProcessEnv): Check {
+function caCheck(env: NodeJS.ProcessEnv, tlsOk: boolean, tlsFailed: boolean): Check {
   const p = env[ENV_KEY];
-  if (!p) {
+  if (p && existsSync(p) && readIfExists(p)?.includes("BEGIN CERTIFICATE")) {
+    return { name: CHECK, verdict: "pass", detail: `${p} (valid PEM)` };
+  }
+  if (p && !existsSync(p)) {
+    return { name: CHECK, verdict: "fail", detail: `set but the file is missing: ${p}` };
+  }
+  if (p) {
+    return { name: CHECK, verdict: "fail", detail: `not a valid PEM bundle: ${p}` };
+  }
+  // Unset: defer to TLS. Failing TLS → the missing CA is the likely cause (fail);
+  // passing TLS → not needed here (skip); not probed → can't tell (skip).
+  if (tlsFailed) {
     return {
       name: CHECK,
       verdict: "fail",
-      detail: "not set — runtimes won't trust the corporate CA",
+      detail: "not set — and TLS is failing; corporate CA likely needed",
     };
   }
-  if (!existsSync(p)) {
-    return { name: CHECK, verdict: "fail", detail: `set but the file is missing: ${p}` };
+  if (tlsOk) {
+    return {
+      name: CHECK,
+      verdict: "skip",
+      detail: "not set — not needed; TLS verifies via the system store",
+    };
   }
-  const body = readIfExists(p);
-  if (!body?.includes("BEGIN CERTIFICATE")) {
-    return { name: CHECK, verdict: "fail", detail: `not a valid PEM bundle: ${p}` };
-  }
-  return { name: CHECK, verdict: "pass", detail: `${p} (valid PEM)` };
+  return { name: CHECK, verdict: "skip", detail: "not set; TLS not probed" };
 }
 
 async function planCertVerify(ctx: PlanContext, shared: HealShared): Promise<Action[]> {
-  const ca = caCheck(ctx.env);
+  const tlsOk = shared.tlsRegistry.verdict === "pass" && shared.tlsPypi.verdict === "pass";
+  const tlsFailed = shared.tlsRegistry.verdict === "fail" || shared.tlsPypi.verdict === "fail";
+  const ca = caCheck(ctx.env, tlsOk, tlsFailed);
   const actions: Action[] = [captured(ca), captured(shared.tlsRegistry), captured(shared.tlsPypi)];
 
-  // "Broken" = any hard failure in the chain. A `skip` (e.g. curl absent) is not a
-  // failure — heal can't conclude the trust is broken, so it won't prescribe a fix.
-  const broken = [ca, shared.tlsRegistry, shared.tlsPypi].some((c) => c.verdict === "fail");
-  if (broken) {
+  // Prescribe the certs fix when TLS is actually failing, or the env var is
+  // set-but-broken. A `skip` (curl absent, or unset-but-TLS-OK) never triggers it.
+  if (tlsFailed || ca.verdict === "fail") {
     const pattern = String(ctx.options.caPattern ?? "Zscaler");
     const flag =
       ctx.host.envShell() === "powershell"

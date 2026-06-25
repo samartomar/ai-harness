@@ -2,6 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { classifyTool, versionArgv } from "../../src/heal/common.js";
 import { command } from "../../src/heal/index.js";
 import { parseScope } from "../../src/heal/phases.js";
 import { executePlan } from "../../src/internals/execute.js";
@@ -54,9 +55,11 @@ function runnerFor(sc: Scenario) {
     const isTls = cmd === "curl" || cmd === "powershell.exe" || cmd === "pwsh";
     if (isTls && joined.includes("registry.npmjs.org")) return tlsResult(sc.registry ?? "ok");
     if (isTls && joined.includes("pypi.org")) return tlsResult(sc.pypi ?? "ok");
-    if (cmd === "node") return toolResult(sc.node ?? "ok", "v20.11.0");
-    if (cmd === "npm") return toolResult(sc.npm ?? "ok", "10.9.2");
-    if (cmd === "npx") return toolResult(sc.npx ?? "ok", "10.9.2");
+    // node/npm/npx run directly on POSIX, or via `cmd /c <tool> --version` on Windows.
+    const tool = cmd === "cmd" ? (argv[2] ?? "") : cmd;
+    if (tool === "node") return toolResult(sc.node ?? "ok", "v20.11.0");
+    if (tool === "npm") return toolResult(sc.npm ?? "ok", "10.9.2");
+    if (tool === "npx") return toolResult(sc.npx ?? "ok", "10.9.2");
     return undefined;
   });
 }
@@ -176,6 +179,36 @@ describe("heal — parseScope", () => {
   });
 });
 
+describe("heal — tool invocation (Windows .cmd shim)", () => {
+  it("routes PATH tools through cmd /c on Windows, directly on POSIX", () => {
+    expect(versionArgv("windows", "npm")).toEqual(["cmd", "/c", "npm", "--version"]);
+    expect(versionArgv("linux", "npm")).toEqual(["npm", "--version"]);
+  });
+
+  it("classifies a spawn error (POSIX) and 'is not recognized' (Windows cmd) as absent", () => {
+    expect(classifyTool({ code: 127, stdout: "", stderr: "", spawnError: true }, false)).toBe(
+      "absent",
+    );
+    expect(
+      classifyTool(
+        {
+          code: 1,
+          stdout: "",
+          stderr: "'npm' is not recognized as an internal or external command",
+        },
+        true,
+      ),
+    ).toBe("absent");
+  });
+
+  it("classifies exit 0 as ok and a present-but-failing tool as broken", () => {
+    expect(classifyTool({ code: 0, stdout: "10.9.2", stderr: "" }, true)).toBe("ok");
+    expect(
+      classifyTool({ code: 1, stdout: "", stderr: "Cannot find module 'fs-minipass'" }, true),
+    ).toBe("broken");
+  });
+});
+
 describe("heal — cert step", () => {
   it("all green: cert + both TLS probes pass, no fix digest", async () => {
     const p = await command.plan(makeCtx({ root: freshTmp(), ca: "valid" }));
@@ -185,12 +218,20 @@ describe("heal — cert step", () => {
     expect(findDigest(p.actions, "re-propagate corporate trust")).toBeUndefined();
   });
 
-  it("unset env var fails and emits the certs fix digest", async () => {
-    const p = await command.plan(makeCtx({ root: freshTmp(), ca: "unset" }));
+  it("unset env var + failing TLS fails and emits the certs fix digest", async () => {
+    const p = await command.plan(makeCtx({ root: freshTmp(), ca: "unset", registry: "fail" }));
     expect(findCheck(p.actions, "NODE_EXTRA_CA_CERTS")?.verdict).toBe("fail");
     expect(findDigest(p.actions, "re-propagate corporate trust")?.text).toContain(
       "aih certs --apply",
     );
+  });
+
+  it("unset env var + healthy TLS is a skip, not a failure (no-proxy machine)", async () => {
+    const p = await command.plan(
+      makeCtx({ root: freshTmp(), ca: "unset", registry: "ok", pypi: "ok" }),
+    );
+    expect(findCheck(p.actions, "NODE_EXTRA_CA_CERTS")?.verdict).toBe("skip");
+    expect(findDigest(p.actions, "re-propagate corporate trust")).toBeUndefined();
   });
 
   it("env set but file missing fails", async () => {

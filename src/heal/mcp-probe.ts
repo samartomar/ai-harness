@@ -2,7 +2,7 @@ import { join } from "node:path";
 import { readIfExists } from "../internals/fsxn.js";
 import type { Action, PlanContext } from "../internals/plan.js";
 import type { Check } from "../internals/verify.js";
-import { captured, type HealShared, type HealStep } from "./common.js";
+import { captured, classifyTool, type HealShared, type HealStep, versionArgv } from "./common.js";
 
 const CHECK = "mcp: npx launcher";
 
@@ -32,8 +32,8 @@ async function planMcpProbe(ctx: PlanContext, shared: HealShared): Promise<Actio
     return [captured(check)];
   }
 
-  const res = await ctx.run(["npx", "--version"]);
-  const npxOk = !res.spawnError && res.code === 0;
+  const res = await ctx.run(versionArgv(ctx.host.platform, "npx"));
+  const npxOk = classifyTool(res, ctx.host.platform === "windows") === "ok";
   if (npxOk) {
     check = {
       name: CHECK,
