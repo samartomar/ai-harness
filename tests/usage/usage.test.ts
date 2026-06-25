@@ -130,6 +130,21 @@ describe("aih usage command", () => {
     const actions = (await command.plan(makeCtx())).actions;
     for (const a of actions) expect(["write", "doc", "probe"]).toContain(a.kind);
   });
+
+  it("chains capture into a PRE-EXISTING post-commit hook instead of skipping it (AIH-USAGE-001)", async () => {
+    mkdirSync(join(root, ".git", "hooks"), { recursive: true });
+    writeFileSync(join(root, ".git", "hooks", "post-commit"), "#!/bin/sh\n./team-hook.sh\n");
+    const actions = (await command.plan(makeCtx())).actions;
+    // The user's hook is preserved (write-once), and a chain snippet is offered.
+    const hook = actions.find(
+      (a) => a.kind === "write" && a.path.replace(/\\/g, "/") === ".git/hooks/post-commit",
+    );
+    expect(hook?.kind === "write" && hook.once).toBe(true);
+    const chainDoc = actions.find(
+      (a) => a.kind === "doc" && a.describe.includes("existing post-commit"),
+    );
+    expect(chainDoc?.kind === "doc" && chainDoc.text).toContain("usage-record.mjs");
+  });
 });
 
 describe("usagePanel", () => {

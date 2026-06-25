@@ -8,7 +8,11 @@ import {
   GITLEAKS_REV,
   preCommitConfigYaml,
 } from "../../src/guardrails/precommit.js";
-import { blockingLicenses, LICENSE_MATRIX } from "../../src/guardrails/sca.js";
+import {
+  blockedLicensesFound,
+  blockingLicenses,
+  LICENSE_MATRIX,
+} from "../../src/guardrails/sca.js";
 import { executePlan } from "../../src/internals/execute.js";
 import type { Action, PlanContext, WriteAction } from "../../src/internals/plan.js";
 import { fakeRunner, missingToolRunner, type Runner } from "../../src/internals/proc.js";
@@ -198,6 +202,20 @@ describe("guardrails command", () => {
     // Permissive + weak-copyleft must NOT be blocking.
     expect(blocking).not.toContain("MIT");
     expect(blocking).not.toContain("MPL-2.0");
+  });
+
+  it("the license gate runs against SBOM fixtures: permissive passes, copyleft fails (AIH-SCA-TEST-001)", () => {
+    const sbom = (ids: string[]) =>
+      JSON.stringify({ packages: ids.map((id) => ({ licenseConcluded: id })) });
+    // Clean: MIT / Apache / MPL (permissive + weak) → gate passes (no blocks).
+    expect(blockedLicensesFound(sbom(["MIT", "Apache-2.0", "MPL-2.0"]))).toEqual([]);
+    // Strong copyleft, modern SPDX → blocked.
+    expect(blockedLicensesFound(sbom(["MIT", "GPL-3.0-only"]))).toContain("GPL-3.0-only");
+    // Network copyleft (AGPL) → blocked.
+    expect(blockedLicensesFound(sbom(["AGPL-3.0"]))).toContain("AGPL-3.0");
+    // Malformed / empty SBOM text → no false positives.
+    expect(blockedLicensesFound("")).toEqual([]);
+    expect(blockedLicensesFound("{ not valid json")).toEqual([]);
   });
 
   it("blocks modern GPL SPDX -only / -or-later variants, not just bare GPL-2.0/3.0", () => {

@@ -1,5 +1,6 @@
 import { join } from "node:path";
 import { resolveTargets } from "../internals/cli-detect.js";
+import { readIfExists } from "../internals/fsxn.js";
 import { aihIgnoreWrite } from "../internals/gitignore.js";
 import {
   type Action,
@@ -13,7 +14,7 @@ import {
 } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
 import type { Check } from "../internals/verify.js";
-import { gitPostCommitHook, usageRecorderScript } from "./capture.js";
+import { gitPostCommitChainSnippet, gitPostCommitHook, usageRecorderScript } from "./capture.js";
 import { USAGE_PATH } from "./events.js";
 
 const RECORDER_PATH = join(".aih", "usage-record.mjs");
@@ -89,6 +90,26 @@ async function usagePlan(ctx: PlanContext): Promise<Plan> {
     ),
     aihIgnoreWrite(ctx.root),
     coverageDoc(clis),
+  ];
+
+  // A pre-existing post-commit hook is preserved (write-once above), so the capture
+  // would otherwise never fire. Hand over a chainable snippet to add to it. (AIH-USAGE-001)
+  const existingHook = readIfExists(join(ctx.root, GIT_HOOK_PATH));
+  if (existingHook !== undefined && !existingHook.includes("usage-record.mjs")) {
+    actions.push(
+      doc(
+        "existing post-commit hook detected — chain aih usage capture into it",
+        lines(
+          "A `.git/hooks/post-commit` hook already exists, so aih did NOT overwrite it.",
+          "Append this best-effort block to that hook so commit activity is still captured:",
+          "",
+          gitPostCommitChainSnippet(),
+        ),
+      ),
+    );
+  }
+
+  actions.push(
     probe("node on PATH (the recorder needs it)", async (c): Promise<Check> => {
       const res = await c.run(["node", "--version"]);
       return res.spawnError || res.code !== 0
@@ -103,7 +124,7 @@ async function usagePlan(ctx: PlanContext): Promise<Plan> {
         detail: "accrues after the first commit (or a wired per-tool hook fires)",
       }),
     ),
-  ];
+  );
   return plan("usage", ...actions);
 }
 

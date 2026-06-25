@@ -67,6 +67,19 @@ export function blockingLicenses(): string[] {
   ).flatMap((t) => t.spdx);
 }
 
+/**
+ * The blocking SPDX ids actually present in an SBOM document — a faithful mirror of
+ * the generated workflow's gate (`grep -q "\"$spdx\"" sbom.spdx.json`). Exported so
+ * the gate's POLICY is unit-tested against representative SBOM fixtures (MIT passes,
+ * GPL/AGPL fail), not merely asserted as generated strings. Empty list = gate passes.
+ */
+export function blockedLicensesFound(
+  sbomText: string,
+  blocked: string[] = blockingLicenses(),
+): string[] {
+  return blocked.filter((spdx) => sbomText.includes(`"${spdx}"`));
+}
+
 function matrixComment(): string[] {
   const rows = LICENSE_MATRIX.map(
     (t) => `#   ${t.category.padEnd(16)} -> ${t.disposition.padEnd(12)} (${t.spdx.join(", ")})`,
