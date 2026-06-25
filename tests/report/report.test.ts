@@ -204,4 +204,22 @@ describe("report --format (file artifact)", () => {
     const w2 = second.writes.find((w) => w.path.replace(/\\/g, "/").endsWith("local-report.md"));
     expect(w2?.effect).toBe("unchanged");
   });
+
+  it("a .aih/ artifact also writes the .gitignore rule so reports aren't committed", async () => {
+    const actions = (await command.plan(ctx({ options: { format: "md" } }))).actions;
+    const ignore = actions.find((a) => a.kind === "write" && a.path === ".gitignore");
+    if (ignore?.kind !== "write") throw new Error("expected a .gitignore write");
+    expect(ignore.contents).toContain(".aih/");
+    // the first write is still the artifact (the ignore rule is appended after it)
+    const firstWrite = actions.find((a) => a.kind === "write");
+    expect(firstWrite?.kind === "write" && firstWrite.path.replace(/\\/g, "/")).toBe(
+      ".aih/reports/local-report.md",
+    );
+  });
+
+  it("a custom --out path does NOT add the .aih gitignore rule (operator owns it)", async () => {
+    const actions = (await command.plan(ctx({ options: { format: "md", out: "REPORT.md" } })))
+      .actions;
+    expect(actions.some((a) => a.kind === "write" && a.path === ".gitignore")).toBe(false);
+  });
 });

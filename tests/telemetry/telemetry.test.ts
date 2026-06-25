@@ -236,6 +236,14 @@ describe("telemetry plan — analytics fetcher", () => {
     // still gated: a live fetch only happens on --run
     expect(src).toContain("--run");
   });
+
+  it("prints the curl audit to stderr so `--run > org.json` yields JSON-only stdout", () => {
+    const src = fetchAnalyticsScript();
+    // the audit curls go to stderr; only the JSON payload goes to stdout on --run
+    expect(src).toContain("console.error(curlFor(usageUrl))");
+    expect(src).toContain("console.error(curlFor(skillsUrl))");
+    expect(src).not.toContain("console.log(curlFor");
+  });
 });
 
 describe("telemetry plan — docs and the cloud boundary", () => {

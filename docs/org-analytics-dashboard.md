@@ -36,21 +36,24 @@ is `doc`/dry-run — a deliberate governance stance, `src/telemetry/index.ts`).
 - "Org blocks" exist as **preventive config** (settings `permissions.deny`, sandbox policy,
   managed-MCP allowlist, gitleaks/CI gates) but none *log a block event*. Block **counts** come
   downstream from Claude Code's `tool_decision`/`code_edit_tool.decision` (`decision=reject`).
-- There is **no** `aih report`/aggregation command today. `aih status` (read-only presence
-  inventory) is the natural place to grow one.
+- ~~There is no `aih report` command today.~~ **Update (shipped):** `aih report` now exists
+  (Tier 1) — local context-footprint digest by default + `--org <export>` enterprise digest, with
+  `--format md|html`. `aih status` stays a pure presence inventory. See
+  [analytics-report-plan.md](analytics-report-plan.md).
 
 ### Three real gaps in the current `telemetry` command
 
-> **Update 2026-06-24 (verified vs. code):** gaps 1 and 2 are now **fixed**; only gap 3 remains
-> open. See [analytics-report-plan.md §4](analytics-report-plan.md) for the implementation track.
+> **Update 2026-06-24 (verified vs. code):** **all three gaps are now fixed.**
+> See [analytics-report-plan.md §4](analytics-report-plan.md) for the implementation track.
 
 1. ~~**It exports nothing.**~~ **Fixed** — `otelEnvVars` now pins both `OTEL_METRICS_EXPORTER`
    and `OTEL_LOGS_EXPORTER` to `otlp` (`src/telemetry/templates.ts`), so the collector receives
    metrics/logs.
 2. ~~**`EVENT_TYPES` is stale.**~~ **Fixed** — 23 types now listed, including `skill_activated`
    (the skills signal) (`src/telemetry/templates.ts`).
-3. **The fetcher only hits `usage_report/claude_code`** — not the **Skill Usage Analytics**
-   endpoint (`/v1/organizations/analytics/skills`), which is the leads' #1 metric. _(Open.)_
+3. ~~**The fetcher only hits `usage_report/claude_code`.**~~ **Fixed** — `fetch-analytics.mjs` now
+   also queries the **Skill Usage Analytics** endpoint (`/v1/organizations/analytics/skills`) and
+   emits `{ usage_report, skills }` (`src/telemetry/templates.ts`).
 
 ## B. What each CLI exposes
 

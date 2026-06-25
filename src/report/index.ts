@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { AihError } from "../errors.js";
+import { aihIgnoreWrite } from "../internals/gitignore.js";
 import {
   type Action,
   type CommandSpec,
@@ -125,6 +126,13 @@ function reportPlan(ctx: PlanContext): ReturnType<typeof plan> {
     actions.push(
       writeText(path, content, `${built.scope} report (${format}) → ${path.replace(/\\/g, "/")}`),
     );
+    // When the artifact lands in the default `.aih/` output dir, ensure git ignores
+    // it — org reports can hold sensitive aggregate usage data and must not be left
+    // as committable untracked files. Idempotent: a no-op if scaffold/bootstrap-ai/
+    // init already added the rule. A custom `--out` path is the operator's to manage.
+    if (path.replace(/\\/g, "/").startsWith(".aih/")) {
+      actions.push(aihIgnoreWrite(ctx.root));
+    }
   }
   return plan("report", ...actions);
 }

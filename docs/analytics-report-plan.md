@@ -38,19 +38,20 @@ via a shared collector) and Tier 3 (hosted SaaS) stay deferred.
 
 ## 4. Ground truth — telemetry gap status (research note was stale)
 
-The research note's "three gaps" are now **two fixed, one open** (verified against code today):
+The research note's "three gaps" are now **all three fixed** (verified against code today):
 
 1. ~~Exports nothing~~ → **FIXED**: `OTEL_METRICS_EXPORTER` / `OTEL_LOGS_EXPORTER` both pinned
-   to `otlp` ([templates.ts:61-62](../src/telemetry/templates.ts)).
+   to `otlp` ([templates.ts](../src/telemetry/templates.ts)).
 2. ~~`EVENT_TYPES` stale (5, missing `skill_activated`)~~ → **FIXED**: 23 types incl.
-   `skill_activated` ([templates.ts:23-47](../src/telemetry/templates.ts)).
-3. **Fetcher hits `usage_report/claude_code` only, not `/analytics/skills`** → **OPEN**
-   ([templates.ts:12-13](../src/telemetry/templates.ts)). This is the leads' #1 metric and the
-   one real prerequisite for the report's skills panel.
+   `skill_activated` ([templates.ts](../src/telemetry/templates.ts)).
+3. ~~Fetcher hits `usage_report/claude_code` only, not `/analytics/skills`~~ → **FIXED**: the
+   generated `fetch-analytics.mjs` now queries both endpoints and emits `{ usage_report, skills }`
+   ([templates.ts](../src/telemetry/templates.ts); see §7 Track E.1). This was the leads' #1 metric
+   and the prerequisite for the report's skills panel.
 
 ## 5. The first slice
 
-### 5a. Close gap #3 — skills-analytics fetch
+### 5a. Close gap #3 — skills-analytics fetch _(✅ shipped — see §7 Track E.1)_
 
 Extend the generated `fetch-analytics.mjs` (or add a sibling) to also query
 `https://api.anthropic.com/v1/organizations/analytics/skills` (Enterprise plan; 3-day
@@ -180,4 +181,6 @@ single place to adjust.
 - **Per-model sub-panel** — the org digest now lists tokens + cache-served % per model
   (`src/report/org-render.ts`).
 - **`.aih/` git-ignored** — added to the aih-managed `.gitignore` block so generated reports aren't
-  committed (`src/internals/gitignore.ts`; picked up by `scaffold` / `bootstrap-ai` / `init`).
+  committed (`src/internals/gitignore.ts`; written by `scaffold` / `bootstrap-ai` / `init`, and by
+  `aih report --format md|html` itself when the artifact lands in `.aih/` — so a standalone report
+  run can't leave sensitive aggregate data as an untracked file).
