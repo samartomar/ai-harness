@@ -114,4 +114,11 @@ describe("reportHtml dashboard", () => {
     expect(html).not.toContain('class="mini"');
     expect(html).toContain('class="prose"');
   });
+
+  it("embeds a meta-refresh only when a refresh interval is given (live mode)", () => {
+    expect(reportHtml("aih report", RICH, { refresh: 10 })).toContain(
+      '<meta http-equiv="refresh" content="10">',
+    );
+    expect(reportHtml("aih report", RICH)).not.toContain("http-equiv");
+  });
 });

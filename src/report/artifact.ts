@@ -325,7 +325,11 @@ footer code{color:var(--mut)}
  * checklist chips, tooling badges) derived from each digest's structured `data`.
  * Byte-stable (no timestamp) so re-applying the artifact stays a no-op.
  */
-export function reportHtml(title: string, digests: DigestAction[]): string {
+export function reportHtml(
+  title: string,
+  digests: DigestAction[],
+  opts: { refresh?: number } = {},
+): string {
   const bloat = dataFor(digests, "Context footprint");
   const repo = dataFor(digests, "Repo status");
   const trends = dataFor(digests, "Trends");
@@ -358,12 +362,17 @@ export function reportHtml(title: string, digests: DigestAction[]): string {
 
   const bento = `<div class="bento">${digests.map(panelFor).join("")}</div>`;
 
+  const refreshMeta =
+    opts.refresh && opts.refresh > 0
+      ? `  <meta http-equiv="refresh" content="${Math.floor(opts.refresh)}">`
+      : "";
   return lines(
     "<!doctype html>",
     '<html lang="en">',
     "<head>",
     '  <meta charset="utf-8">',
     '  <meta name="viewport" content="width=device-width, initial-scale=1">',
+    ...(refreshMeta ? [refreshMeta] : []),
     `  <title>${esc(title)}</title>`,
     `  <style>${STYLE}</style>`,
     "</head>",

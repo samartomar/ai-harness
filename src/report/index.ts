@@ -126,16 +126,20 @@ async function buildReport(ctx: PlanContext): Promise<Built> {
  */
 async function reportPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
   // `--open` implies the HTML dashboard (you can't usefully "open" a terminal/md
-  // report in a browser) and is the gesture that launches it.
+  // report in a browser); `--refresh <sec>` embeds a meta-refresh + also forces html
+  // (the watch loop in run.ts keeps regenerating the file while the page reloads).
   const open = ctx.options.open === true;
-  const format = open ? "html" : formatOf(ctx);
+  const refreshRaw = Number(ctx.options.refresh);
+  const refresh =
+    Number.isFinite(refreshRaw) && refreshRaw > 0 ? Math.floor(refreshRaw) : undefined;
+  const format = open || refresh !== undefined ? "html" : formatOf(ctx);
   const built = await buildReport(ctx);
   const actions: Action[] = [...built.digests];
   if (format !== "terminal") {
     const path = artifactPath(ctx, built.scope, format);
     const content =
       format === "html"
-        ? reportHtml(built.title, built.digests)
+        ? reportHtml(built.title, built.digests, { refresh })
         : reportMarkdown(built.title, built.digests);
     actions.push(
       writeText(path, content, `${built.scope} report (${format}) → ${path.replace(/\\/g, "/")}`),
@@ -192,6 +196,11 @@ export const command: CommandSpec = {
     {
       flags: "--open",
       description: "build the HTML dashboard and open it in your browser (implies html + apply)",
+    },
+    {
+      flags: "--refresh <sec>",
+      description:
+        "live mode: open the dashboard and regenerate it every <sec> seconds (Ctrl+C to stop)",
     },
   ],
   plan: reportPlan,

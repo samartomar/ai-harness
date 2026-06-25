@@ -236,4 +236,23 @@ describe("report --format (file artifact)", () => {
     expect(ex.argv[0]).toBe("xdg-open"); // linux host in tests
     expect(ex.argv[ex.argv.length - 1]).toContain("local-report.html");
   });
+
+  it("--refresh forces html + embeds the meta-refresh (live mode, opened first run)", async () => {
+    const actions = (await command.plan(ctx({ options: { open: true, refresh: "10" } }))).actions;
+    const w = actions.find(
+      (a) => a.kind === "write" && a.path.replace(/\\/g, "/").endsWith("local-report.html"),
+    );
+    if (w?.kind !== "write") throw new Error("expected an html write");
+    expect(w.contents).toContain('content="10"');
+    expect(actions.some((a) => a.kind === "exec")).toBe(true); // opens on the first run
+  });
+
+  it("--refresh without open (a watch tick) rewrites html, no re-open", async () => {
+    const actions = (await command.plan(ctx({ options: { refresh: "10" } }))).actions;
+    const w = actions.find(
+      (a) => a.kind === "write" && a.path.replace(/\\/g, "/").endsWith("local-report.html"),
+    );
+    expect(w?.kind === "write" && w.contents?.includes('content="10"')).toBe(true);
+    expect(actions.some((a) => a.kind === "exec")).toBe(false); // never re-launches on a tick
+  });
 });

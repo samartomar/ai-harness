@@ -15,6 +15,14 @@ export interface RunDeps {
   prompter?: Prompter;
 }
 
+const delay = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+
+/** A positive integer from CLI input, else undefined (used for `--refresh <sec>`). */
+function positiveInt(v: unknown): number | undefined {
+  const n = Number(v);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : undefined;
+}
+
 /** Convert a commander option flag spec into its camelCase opts key. */
 export function flagKey(flags: string): string {
   const long = flags.split(/[,\s]+/).find((tok) => tok.startsWith("--"));
@@ -71,11 +79,16 @@ export async function runCapability(
     const wantConfirm = opts.detect === true && opts.yes !== true && !settings.json;
     const prompter =
       deps.prompter ?? (wantConfirm && isInteractive(env) ? makeReadlinePrompter() : undefined);
+    // `--refresh <sec>` (report) keeps the dashboard live: open once, then regenerate
+    // the artifact every <sec> seconds (the page's meta-refresh reloads it). It
+    // implies --open + --apply; the loop runs until Ctrl+C.
+    const watchSec = positiveInt(opts.refresh);
+    const liveOpen = opts.open === true || watchSec !== undefined;
     const ctx: PlanContext = {
       root: settings.root,
       contextDir: settings.contextDir,
-      // `--open` (report) implies --apply so one `aih report --open` builds AND opens.
-      apply: spec.readOnly ? false : settings.apply || opts.open === true,
+      // `--open`/`--refresh` (report) imply --apply so one command builds AND opens.
+      apply: spec.readOnly ? false : settings.apply || liveOpen,
       verify: spec.readOnly ? true : settings.verify,
       json: settings.json,
       run,
@@ -88,6 +101,7 @@ export async function runCapability(
         cli: opts.cli,
         allTools: opts.allTools,
         detect: opts.detect,
+        open: liveOpen ? true : opts.open,
       },
     };
 
@@ -98,6 +112,21 @@ export async function runCapability(
       write(`${JSON.stringify(result, null, 2)}\n`);
     } else {
       write(`${summarizeResult(result)}\n`);
+    }
+
+    if (watchSec !== undefined && !spec.readOnly) {
+      ctx.options.open = false; // opened once above — don't relaunch the browser each tick
+      write(
+        `\n↻ live — regenerating every ${watchSec}s; the open dashboard auto-refreshes. Ctrl+C to stop.\n`,
+      );
+      for (;;) {
+        await delay(watchSec * 1000);
+        try {
+          await executePlan(await spec.plan(ctx), ctx);
+        } catch (e) {
+          write(`refresh error: ${e instanceof Error ? e.message : String(e)}\n`);
+        }
+      }
     }
     return result.report ? result.report.exitCode() : 0;
   } catch (err) {
