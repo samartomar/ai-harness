@@ -53,8 +53,14 @@ function runnerFor(sc: Scenario) {
     const cmd = argv[0] ?? "";
     const joined = argv.join(" ");
     const isTls = cmd === "curl" || cmd === "powershell.exe" || cmd === "pwsh";
-    if (isTls && joined.includes("registry.npmjs.org")) return tlsResult(sc.registry ?? "ok");
-    if (isTls && joined.includes("pypi.org")) return tlsResult(sc.pypi ?? "ok");
+    if (isTls) {
+      // Extract the probed URL and match its host EXACTLY (parse, don't substring —
+      // avoids CodeQL's incomplete-url-substring-sanitization antipattern).
+      const m = joined.match(/https?:\/\/[^\s'"]+/);
+      const host = m ? new URL(m[0]).hostname : "";
+      if (host === "registry.npmjs.org") return tlsResult(sc.registry ?? "ok");
+      if (host === "pypi.org") return tlsResult(sc.pypi ?? "ok");
+    }
     // node/npm/npx run directly on POSIX, or via `cmd /c <tool> --version` on Windows.
     const tool = cmd === "cmd" ? (argv[2] ?? "") : cmd;
     if (tool === "node") return toolResult(sc.node ?? "ok", "v20.11.0");

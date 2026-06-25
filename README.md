@@ -6,6 +6,10 @@
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Node ≥20](https://img.shields.io/badge/node-%E2%89%A520-339933.svg)](package.json)
 
+<p align="center">
+  <img src="docs/assets/aih-overview.svg" alt="aih — extract corporate trust, self-heal the runtime, tune the workstation, bootstrap a governed repo, and run AI coding safely behind any proxy" width="100%">
+</p>
+
 A cross-platform CLI that prepares developer workstations and repositories for
 **safe, governed AI-assisted coding behind a corporate proxy**. It extracts
 corporate trust, tunes local inference, hardens repos with guardrails, wires up
@@ -46,6 +50,7 @@ node dist/cli.js --help
 | Command | What it does |
 | --- | --- |
 | `aih certs` | Extract the corporate root CA from the OS trust store, lock it down, and propagate trust to npm/pip/cargo/conda. |
+| `aih heal` | Diagnose **and repair** the broken runtime `certs` assumes works — corporate TLS trust, npm, PATH, and MCP pre-flight — generically for any TLS-intercepting proxy (`--ca-pattern`/`AIH_CA_PATTERN`, never hardcoded). Diagnoses by default (exits non-zero when broken) and repairs under `--apply`; the npm self-heal is emitted as an operator-run script (never executed) and the only mutation is a local Windows registry write to persist the CA for GUI-launched apps (Kiro/Claude), so the harness never contacts a remote. `--scope certs,npm,path,mcp,all`. |
 | `aih hardware` | Profile CPU/RAM/GPU; compute memory/thread/parallel limits + quantization; emit tuned Ollama/llama.cpp settings. |
 | `aih vdi` | Detect VDI (Citrix/WorkSpaces/RES/RDP) and redirect caches + SQLite to local scratch (junction on Windows). |
 | `aih profile` | Recursively detect the repo's stack and synthesize Cursor stack rules (`.cursor/rules/*.mdc`). Root bootloaders are owned by `bootstrap-ai`. |
@@ -70,6 +75,15 @@ node dist/cli.js --help
 
 Global flags: `--apply`, `--verify`, `--json`, `--context-dir <dir>`, `--root <dir>`, `--cli <list>`, `--all-tools`.
 Settings also read from `AIH_*` env vars (`AIH_APPLY`, `AIH_CONTEXT_DIR`, …).
+
+### Dashboard
+
+`aih report --open` builds a **self-contained, offline** HTML dashboard (dark by default with a
+light toggle; fonts embedded) — context footprint + a KPI strip, an adoption ring, output-velocity
+and code-quality panels, and trend sparklines from recorded history (`aih track`). Add `--demo` for
+showcase data, or `--refresh <sec>` to keep it live.
+
+![aih report — local developer dashboard](docs/assets/dashboard.png)
 
 ### Targeting CLIs
 
