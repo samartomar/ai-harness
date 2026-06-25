@@ -221,6 +221,118 @@ function notePanel(d: DigestAction): string {
   return panel(d.describe, "", `<pre class="prose">${esc(d.text.replace(/\n+$/, ""))}</pre>`, 12);
 }
 
+interface EvRow {
+  ts: string;
+  tool: string;
+  kind: string;
+  detail: string;
+  added?: number;
+  removed?: number;
+}
+
+/** AI events — a chronological feed table (time · event · detail · ±LOC), newest first. */
+function eventsTablePanel(d: Bag): string {
+  const rows = arr(d.rows) as EvRow[];
+  const total = num(d.total) ?? rows.length;
+  const shown = num(d.shown) ?? rows.length;
+  const kindCls = (k: string): string =>
+    k === "commit" ? "k-commit" : k === "skill" ? "k-skill" : k === "mcp" ? "k-mcp" : "k-other";
+  const trs = rows
+    .map((r) => {
+      const loc =
+        r.added !== undefined || r.removed !== undefined
+          ? `<span class="add">+${fmt(r.added ?? 0)}</span> <span class="del">−${fmt(r.removed ?? 0)}</span>`
+          : '<span class="dim">—</span>';
+      return `<tr><td class="t">${esc(r.ts)}</td><td><span class="ev ${kindCls(r.kind)}">${esc(r.kind)}</span> ${esc(r.tool)}</td><td class="mono">${esc(r.detail)}</td><td class="loc">${loc}</td></tr>`;
+    })
+    .join("");
+  const more = total > shown ? `<div class="more">+${fmt(total - shown)} older</div>` : "";
+  const body = `<div class="ev-wrap"><table class="events"><thead><tr><th>Time</th><th>Event</th><th>Detail</th><th>Δ lines</th></tr></thead><tbody>${trs}</tbody></table></div>${more}`;
+  return panel("AI events", `<span class="badge muted">${fmt(total)}</span>`, body, 12);
+}
+
+/** Daily commits — a bar per active day + the 7d/30d/total commit counts. */
+function dailyCommitsPanel(d: Bag): string {
+  const daily = arr(d.daily) as { date: string; count: number }[];
+  const c = (d.commits ?? {}) as { d7?: number; d30?: number; total?: number };
+  const counts = daily.map((x) => x.count);
+  const max = Math.max(1, ...counts);
+  const h = 56;
+  const w = 14;
+  const gap = 3;
+  const bars = counts
+    .map((n, i) => {
+      const bh = Math.max(2, (n / max) * h);
+      return `<rect x="${i * (w + gap)}" y="${(h - bh).toFixed(1)}" width="${w}" height="${bh.toFixed(1)}" rx="2"><title>${esc(daily[i]?.date ?? "")}: ${n}</title></rect>`;
+    })
+    .join("");
+  const chart =
+    counts.length > 0
+      ? `<svg class="daybars" viewBox="0 0 ${counts.length * (w + gap)} ${h}" preserveAspectRatio="none">${bars}</svg>`
+      : '<div class="empty">no commits in range</div>';
+  const sub = `<div class="vel-sub"><span><b>${fmt(c.d7 ?? 0)}</b> 7d</span><span><b>${fmt(c.d30 ?? 0)}</b> 30d</span><span><b>${fmt(c.total ?? 0)}</b> total</span></div>`;
+  return panel(
+    "Daily commits",
+    `<span class="badge muted">${counts.length}d</span>`,
+    `${chart}${sub}`,
+    7,
+  );
+}
+
+/** Lines of code over a window — added / removed (colored) + net. */
+function locPanel(d: Bag): string {
+  const loc = (d.loc ?? {}) as { added?: number; removed?: number; net?: number };
+  const days = num(d.windowDays) ?? 30;
+  const net = loc.net ?? 0;
+  const body =
+    `<div class="loc-row"><div class="loc-big"><span class="add">+${fmt(loc.added ?? 0)}</span><span class="loc-l">added</span></div>` +
+    `<div class="loc-big"><span class="del">−${fmt(loc.removed ?? 0)}</span><span class="loc-l">removed</span></div></div>` +
+    `<div class="loc-net">Net: ${net >= 0 ? "+" : ""}${fmt(net)} lines</div>`;
+  return panel(`Lines of code (${days}d)`, "", body, 5);
+}
+
+/** Test coverage — the test-to-source FILE ratio (not line coverage). */
+function testRatioPanel(d: Bag): string {
+  const ratio = num(d.ratio) ?? 0;
+  const t = num(d.testFiles) ?? 0;
+  const s = num(d.sourceFiles) ?? 0;
+  const body = `<div class="ratio"><span class="ratio-v">${ratio}%</span><span class="ratio-l">test to source file ratio</span><span class="ratio-sub">${fmt(t)} test files / ${fmt(s)} source files</span></div>`;
+  return panel("Test coverage", "", body, 5);
+}
+
+/** Repository information — tracked files + git size + file-type breakdown bars. */
+function repoInfoPanel(d: Bag): string {
+  const files = num(d.files) ?? 0;
+  const size = str(d.size) ?? "—";
+  const types = arr(d.types) as { name: string; count: number }[];
+  const max = Math.max(1, ...types.map((t) => t.count));
+  const rows = types
+    .map(
+      (t) =>
+        `<li><span class="bar-label">${esc(t.name)}</span><span class="bar-track"><span class="bar-fill" style="width:${((t.count / max) * 100).toFixed(1)}%"></span></span><span class="bar-val">${fmt(t.count)}</span></li>`,
+    )
+    .join("");
+  const head = `<div class="ri-head"><span><b>${fmt(files)}</b> files</span><span><b>${esc(size)}</b> git size</span></div>`;
+  return panel("Repository information", "", `${head}<ul class="bars">${rows}</ul>`, 7);
+}
+
+/** Tools installed — agent shell tools, filled when on PATH, struck-through when absent. */
+function toolsInstalledPanel(d: Bag): string {
+  const present = arr(d.present) as string[];
+  const absent = arr(d.absent) as string[];
+  const total = num(d.total) ?? present.length + absent.length;
+  const pills = [
+    ...present.map((n) => `<span class="tool on">${esc(n)}</span>`),
+    ...absent.map((n) => `<span class="tool off">${esc(n)}</span>`),
+  ].join("");
+  return panel(
+    "Tools installed",
+    `<span class="badge muted">${present.length}/${total}</span>`,
+    `<div class="pills">${pills}</div>`,
+    7,
+  );
+}
+
 /** Route one digest to its rich panel (by stable describe prefix), else a note. */
 function panelFor(d: DigestAction): string {
   const data = (d.data as Bag) ?? {};
@@ -230,9 +342,52 @@ function panelFor(d: DigestAction): string {
     return branchesPanel(data);
   if (d.describe.startsWith("Trends"))
     return arr(data.rows).length >= 2 ? trendsPanel(data) : notePanel(d);
+  if (d.describe.startsWith("AI events")) return eventsTablePanel(data);
+  if (d.describe.startsWith("Daily commits")) return dailyCommitsPanel(data);
+  if (d.describe.startsWith("Lines of code")) return locPanel(data);
+  if (d.describe.startsWith("Test coverage")) return testRatioPanel(data);
+  if (d.describe.startsWith("Repository information")) return repoInfoPanel(data);
+  if (d.describe.startsWith("Tools installed")) return toolsInstalledPanel(data);
   if (d.describe.startsWith("Configuration")) return checklistPanel(data);
   if (d.describe.startsWith("Tooling")) return toolingPanel(data);
   return notePanel(d);
+}
+
+/** Section bands — group panels under labeled headers (matches the design's sections). */
+const SECTION_ORDER: { title: string; prefixes: string[] }[] = [
+  { title: "Output velocity", prefixes: ["Daily commits", "Lines of code", "AI events"] },
+  { title: "Code quality", prefixes: ["Test coverage"] },
+  { title: "Performance", prefixes: ["Repository information", "Context footprint"] },
+  {
+    title: "Harness adoption",
+    prefixes: ["Tools installed", "Configuration", "Tooling", "Usage", "Adoption"],
+  },
+  { title: "Repository", prefixes: ["Repo status"] },
+  { title: "Trends", prefixes: ["Trends"] },
+];
+
+function sectionIndex(describe: string): number {
+  const i = SECTION_ORDER.findIndex((s) => s.prefixes.some((p) => describe.startsWith(p)));
+  return i >= 0 ? i : SECTION_ORDER.length;
+}
+
+/** Group the digests into ordered, labeled section bands (empty sections omitted). */
+function renderBands(digests: DigestAction[]): string {
+  const groups = new Map<number, DigestAction[]>();
+  for (const d of digests) {
+    const i = sectionIndex(d.describe);
+    const g = groups.get(i) ?? [];
+    g.push(d);
+    groups.set(i, g);
+  }
+  const titleAt = (i: number): string => SECTION_ORDER[i]?.title ?? "More";
+  return [...groups.keys()]
+    .sort((a, b) => a - b)
+    .map((i) => {
+      const body = (groups.get(i) ?? []).map(panelFor).join("");
+      return `<section class="band"><div class="band-h"><h2>${esc(titleAt(i))}</h2></div><div class="bento">${body}</div></section>`;
+    })
+    .join("");
 }
 
 const STYLE = `${EMBEDDED_FONTS}
@@ -324,6 +479,38 @@ h1{font-size:1.42rem;font-weight:680;letter-spacing:-.015em;margin:0}
 .prose{font:12.5px/1.6 'JetBrains Mono',ui-monospace,SFMono-Regular,Consolas,monospace;color:var(--mut);white-space:pre-wrap;margin:0}
 footer{color:var(--dim);font-size:.75rem;text-align:center;margin-top:2.4rem}
 footer code{color:var(--mut)}
+.band{margin-bottom:1.7rem}
+.band-h{display:flex;align-items:center;gap:.8rem;margin:0 0 .9rem}
+.band-h h2{font-size:.73rem;font-weight:680;text-transform:uppercase;letter-spacing:.13em;color:var(--mut);margin:0;white-space:nowrap}
+.band-h::after{content:"";flex:1;height:1px;background:linear-gradient(90deg,var(--line2),transparent)}
+.ev-wrap{max-height:380px;overflow:auto;scrollbar-width:thin;scrollbar-color:var(--line2) transparent}
+.ev-wrap::-webkit-scrollbar{width:8px}.ev-wrap::-webkit-scrollbar-thumb{background:var(--line2);border-radius:999px}
+.events{width:100%;border-collapse:collapse;font-size:.8rem}
+.events th{position:sticky;top:0;background:var(--panel);text-align:left;color:var(--mut);font-size:.67rem;text-transform:uppercase;letter-spacing:.06em;font-weight:600;padding:.55rem .9rem;border-bottom:1px solid var(--line)}
+.events td{padding:.42rem .9rem;border-bottom:1px solid color-mix(in oklab,var(--line) 55%,transparent)}
+.events tbody tr:hover td{background:color-mix(in oklab,var(--fg) 4%,transparent)}
+.events td.t,.events td.mono{font:12px/1.4 'JetBrains Mono',ui-monospace,SFMono-Regular,monospace;color:var(--mut)}
+.events td.loc{text-align:right;font:12px/1 'JetBrains Mono',ui-monospace,monospace;white-space:nowrap}
+.ev{font-size:.66rem;font-weight:600;padding:.1rem .42rem;border-radius:999px;text-transform:uppercase;letter-spacing:.03em}
+.ev.k-commit{background:color-mix(in oklab,var(--accent) 18%,transparent);color:var(--accent)}
+.ev.k-skill{background:color-mix(in oklab,var(--accent2) 20%,transparent);color:var(--accent2)}
+.ev.k-mcp{background:color-mix(in oklab,var(--ok) 16%,transparent);color:var(--ok)}
+.ev.k-other{background:color-mix(in oklab,var(--mut) 16%,transparent);color:var(--mut)}
+.add{color:var(--ok);font-weight:600}.del{color:var(--bad);font-weight:600}.dim{color:var(--dim)}
+.more{color:var(--dim);font-size:.74rem;padding:.6rem 1.1rem 0}
+.daybars{display:block;width:100%;height:56px}.daybars rect{fill:url(#g)}
+.empty{color:var(--dim);font-size:.8rem;padding:1rem 0}
+.vel-sub{display:flex;gap:1.5rem;margin-top:.85rem;color:var(--mut);font-size:.76rem}
+.vel-sub b{color:var(--fg);font-size:1.02rem;font-variant-numeric:tabular-nums;margin-right:.25rem}
+.loc-row{display:flex;gap:1.9rem}.loc-big{display:flex;flex-direction:column;gap:.15rem}
+.loc-big span:first-child{font-size:1.7rem;font-weight:720;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+.loc-l{color:var(--mut);font-size:.7rem;text-transform:uppercase;letter-spacing:.06em}
+.loc-net{margin-top:.75rem;color:var(--mut);font-size:.82rem;font-variant-numeric:tabular-nums}
+.ratio{display:flex;flex-direction:column;gap:.18rem}
+.ratio-v{font-size:2.15rem;font-weight:720;color:var(--warn);font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+.ratio-l{color:var(--mut);font-size:.78rem}.ratio-sub{color:var(--dim);font-size:.74rem;margin-top:.3rem}
+.ri-head{display:flex;gap:1.7rem;margin-bottom:.2rem;color:var(--mut);font-size:.8rem}
+.ri-head b{color:var(--fg);font-variant-numeric:tabular-nums;margin-right:.25rem}
 `.trim();
 
 /**
@@ -343,22 +530,27 @@ export function reportHtml(
   const trends = dataFor(digests, "Trends");
   const config = dataFor(digests, "Configuration");
   const tooling = dataFor(digests, "Tooling");
+  const velocity = dataFor(digests, "Daily commits");
+  const quality = dataFor(digests, "Test coverage");
 
   const present = config ? arr(config.present).length : 0;
   const total = num(config?.total) ?? 0;
   const adoptionPct = config && total > 0 ? (100 * present) / total : undefined;
 
+  // commits prefer the velocity panel's exact count; fall back to the last trend sample.
+  const commits7d =
+    (velocity?.commits as { d7?: number } | undefined)?.d7 ??
+    (arr(trends?.rows).at(-1) as Snap | undefined)?.commits7d;
+
   const tiles: string[] = [];
+  if (commits7d !== undefined) tiles.push(kpi(fmt(commits7d), "commits (7d)"));
+  if (quality) tiles.push(kpi(fmt(num(quality.sourceFiles) ?? 0), "source files"));
+  if (quality) tiles.push(kpi(`${num(quality.ratio) ?? 0}%`, "test ratio"));
+  if (repo) tiles.push(kpi(String(arr(repo.branches).length), "active branches"));
   if (bloat)
     tiles.push(
       kpi(`~${fmt(num(bloat.totalTokens) ?? 0)}`, "context tokens", bloat.overBudget === true),
     );
-  if (bloat) tiles.push(kpi(String(arr(bloat.files).length), "context files"));
-  if (repo) tiles.push(kpi(String(arr(repo.branches).length), "local branches"));
-  if (trends) {
-    const last = arr(trends.rows).at(-1) as Snap | undefined;
-    if (last?.commits7d !== undefined) tiles.push(kpi(String(last.commits7d), "commits (7d)"));
-  }
   if (tooling)
     tiles.push(kpi(`${arr(tooling.present).length}/${num(tooling.total) ?? 0}`, "AI CLIs here"));
 
@@ -368,7 +560,7 @@ export function reportHtml(
       : ""
   }<div class="kpis">${tiles.join("")}</div></section>`;
 
-  const bento = `<div class="bento">${digests.map(panelFor).join("")}</div>`;
+  const bands = renderBands(digests);
 
   const refreshMeta =
     opts.refresh && opts.refresh > 0
@@ -390,7 +582,7 @@ export function reportHtml(
     "  <main>",
     `    <header><h1>${esc(title)}</h1><div class="sub">self-contained · generated by <code>aih report</code></div></header>`,
     `    ${hero}`,
-    `    ${bento}`,
+    `    ${bands}`,
     "    <footer>No external assets — open anywhere, commit nowhere (<code>.aih/</code> is git-ignored).</footer>",
     "  </main>",
     '  <script>(function(){var r=document.documentElement,k="aih-theme";try{var s=localStorage.getItem(k);if(s)r.dataset.theme=s}catch(e){}window.aihTheme=function(){var n=r.dataset.theme==="light"?"":"light";n?r.dataset.theme=n:r.removeAttribute("data-theme");try{localStorage.setItem(k,n)}catch(e){}}})();</script>',

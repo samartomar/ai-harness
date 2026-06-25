@@ -31,6 +31,8 @@ export interface UsageEvent {
   removed?: number;
   files?: number;
   sha?: string;
+  /** Commit branch (kind="commit"); captured going forward — older events lack it. */
+  branch?: string;
 }
 
 const KINDS = new Set(["commit", "skill", "mcp", "session", "tool"]);
