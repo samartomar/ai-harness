@@ -73,14 +73,14 @@ describe("devcontainer.json content", () => {
     >;
     // round-trips through JSON without throwing — i.e. it is serializable/valid
     const reparsed = JSON.parse(JSON.stringify(dc)) as Record<string, unknown>;
-    expect(reparsed.image).toBe("mcr.microsoft.com/devcontainers/base:ubuntu");
+    expect(reparsed.image).toBe("mcr.microsoft.com/devcontainers/base:ubuntu-24.04");
     expect(reparsed.features).toBeTypeOf("object");
     expect(reparsed.postCreateCommand).toBeTypeOf("string");
     const customizations = reparsed.customizations as { vscode?: { extensions?: unknown } };
     expect(Array.isArray(customizations.vscode?.extensions)).toBe(true);
   });
 
-  it("pins devcontainer features by ghcr reference", async () => {
+  it("pins devcontainer features to an EXACT version (no floating major tag)", async () => {
     const p = await command.plan(ctx());
     const dc = findWrite(p.actions, ".devcontainer/devcontainer.json").json as {
       features: Record<string, unknown>;
@@ -88,6 +88,25 @@ describe("devcontainer.json content", () => {
     const featureKeys = Object.keys(dc.features);
     expect(featureKeys.length).toBeGreaterThanOrEqual(2);
     expect(featureKeys.every((k) => k.startsWith("ghcr.io/devcontainers/features/"))).toBe(true);
+    // every feature reference ends with a full x.y.z — never a bare `:1` major tag
+    expect(featureKeys.every((k) => /:\d+\.\d+\.\d+$/.test(k))).toBe(true);
+  });
+
+  it("pins the installed node runtime to a concrete LTS major, not the floating `lts`", async () => {
+    // A node repo gets the node feature; its version must be a concrete major.
+    const nodeRoot = mkdtempSync(join(tmpdir(), "aih-sandbox-node-"));
+    writeFileSync(
+      join(nodeRoot, "package.json"),
+      JSON.stringify({ name: "app", version: "1.0.0" }),
+    );
+    const p = await command.plan(ctx({ root: nodeRoot }));
+    const dc = findWrite(p.actions, ".devcontainer/devcontainer.json").json as {
+      features: Record<string, { version?: string }>;
+    };
+    const nodeKey = Object.keys(dc.features).find((k) => k.includes("/node:"));
+    expect(nodeKey).toBeDefined();
+    expect(dc.features[nodeKey as string]?.version).toBe("22");
+    rmSync(nodeRoot, { recursive: true, force: true });
   });
 
   it("threads a custom contextDir into the vscode file excludes", async () => {

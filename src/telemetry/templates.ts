@@ -55,21 +55,37 @@ export const EVENT_TYPES = [
 ] as const;
 
 /**
+ * Opt-in switches for the two privacy-sensitive telemetry streams. Both default
+ * to OFF: raw prompt bodies and tool inputs/outputs routinely carry source code,
+ * customer data, ticket details, and secrets, so the harness must not export them
+ * unless an operator explicitly asks. The collector's redaction is regex-based and
+ * cannot reliably scrub free-form PII, so default-off is the only safe posture.
+ */
+export interface OtelLoggingOptions {
+  /** Export full user-prompt bodies (`OTEL_LOG_USER_PROMPTS`). */
+  logPrompts?: boolean;
+  /** Export full tool inputs/outputs (`OTEL_LOG_TOOL_DETAILS`). */
+  logToolDetails?: boolean;
+}
+
+/**
  * OpenTelemetry environment for Claude Code, exported into the shell profile.
  * Faithful to the blueprint: gRPC OTLP transport to `endpoint`, the metrics and
  * logs exporters both pinned to `otlp` (Claude Code exports nothing without them
- * — both default to off), full prompt and tool-detail logging enabled, and the
- * master telemetry switch on. Order is deterministic so the managed block is
+ * — both default to off), and the master telemetry switch on. Prompt- and
+ * tool-detail logging are **off by default** (privacy-first); they flip on only
+ * when `logging.logPrompts` / `logging.logToolDetails` are set — see
+ * {@link OtelLoggingOptions}. Order is deterministic so the managed block is
  * byte-stable across runs.
  */
-export function otelEnvVars(endpoint: string): EnvVar[] {
+export function otelEnvVars(endpoint: string, logging: OtelLoggingOptions = {}): EnvVar[] {
   return [
     { key: "OTEL_EXPORTER_OTLP_ENDPOINT", value: endpoint },
     { key: "OTEL_EXPORTER_OTLP_PROTOCOL", value: "grpc" },
     { key: "OTEL_METRICS_EXPORTER", value: "otlp" },
     { key: "OTEL_LOGS_EXPORTER", value: "otlp" },
-    { key: "OTEL_LOG_USER_PROMPTS", value: "1" },
-    { key: "OTEL_LOG_TOOL_DETAILS", value: "1" },
+    { key: "OTEL_LOG_USER_PROMPTS", value: logging.logPrompts ? "1" : "0" },
+    { key: "OTEL_LOG_TOOL_DETAILS", value: logging.logToolDetails ? "1" : "0" },
     { key: "CLAUDE_CODE_ENABLE_TELEMETRY", value: "1" },
   ];
 }

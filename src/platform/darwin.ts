@@ -7,6 +7,7 @@ import {
   type HostAdapter,
   safeCaPattern,
   type VdiInfo,
+  vdiFromEnv,
 } from "./base.js";
 import { parseFirstInt, parseNvidiaSmi, parsePemBlocks } from "./parse.js";
 
@@ -25,10 +26,14 @@ export class DarwinAdapter implements HostAdapter {
 
   async trustStoreCerts(pattern: string): Promise<CertEntry[]> {
     const p = safeCaPattern(pattern);
+    const home = this.env.HOME ?? "";
     const keychains = [
       "/Library/Keychains/System.keychain",
       "/System/Library/Keychains/SystemRootCertificates.keychain",
     ];
+    // The per-user login keychain too — corporate CAs are frequently installed
+    // there (per-user trust) rather than in the machine/System keychain.
+    if (home) keychains.unshift(join(home, "Library", "Keychains", "login.keychain-db"));
     const found: CertEntry[] = [];
     for (const kc of keychains) {
       const res = await this.run(["security", "find-certificate", "-a", "-p", "-c", p, kc]);
@@ -80,9 +85,11 @@ export class DarwinAdapter implements HostAdapter {
   }
 
   detectVdi(): VdiInfo {
-    if (this.env.AIH_FORCE_VDI === "1") {
-      return { isVdi: true, reason: "AIH_FORCE_VDI=1", kind: "generic" };
-    }
+    // macOS is rarely a VDI host, so there are no native heuristics — but an
+    // explicit AIH_VDI_KIND/AIH_FORCE_VDI declaration or a Horizon ViewClient_*
+    // session is still honored (e.g. a Mac running a Horizon/Frame desktop).
+    const fromEnv = vdiFromEnv(this.env);
+    if (fromEnv) return fromEnv;
     return { isVdi: false, reason: "no VDI markers (native macOS)" };
   }
 

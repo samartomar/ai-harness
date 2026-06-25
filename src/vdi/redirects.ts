@@ -18,12 +18,20 @@ interface RedirectSpec {
 }
 
 const REDIRECTS: readonly RedirectSpec[] = [
+  // Model/inference caches (large, write-heavy) and SQLite DBs first.
   { key: "OLLAMA_MODELS", segments: ["ollama", "models"] },
+  { key: "HF_HOME", segments: ["huggingface"] },
   { key: "CLAUDE_CACHE_DIR", segments: ["claude", "cache"] },
   { key: "CRG_GLOBAL_DB_PATH", segments: ["crg", "global.db"] },
+  // Package-manager caches: npm/npx/yarn (JS), uv/pip (Python), cargo (Rust).
   { key: "NPX_CACHE", segments: ["npx"] },
+  { key: "npm_config_cache", segments: ["npm"] },
+  { key: "YARN_CACHE_FOLDER", segments: ["yarn"] },
   { key: "CARGO_HOME", segments: ["cargo"] },
   { key: "PIP_CACHE_DIR", segments: ["pip"] },
+  { key: "UV_CACHE_DIR", segments: ["uv"] },
+  // Browser binaries pulled by Playwright (hundreds of MB) — never on the profile.
+  { key: "PLAYWRIGHT_BROWSERS_PATH", segments: ["playwright"] },
 ];
 
 /**

@@ -7,6 +7,7 @@ import {
   type HostAdapter,
   safeCaPattern,
   type VdiInfo,
+  vdiFromEnv,
 } from "./base.js";
 import { parseCertLines, parseFirstInt, parseNvidiaSmi } from "./parse.js";
 
@@ -81,6 +82,10 @@ export class WindowsAdapter implements HostAdapter {
   }
 
   detectVdi(): VdiInfo {
+    // Explicit declaration (AIH_VDI_KIND, incl. WorkSpaces) + Horizon ViewClient_*
+    // + AIH_FORCE_VDI — all honored before the SESSIONNAME/CLIENTNAME heuristics.
+    const fromEnv = vdiFromEnv(this.env);
+    if (fromEnv) return fromEnv;
     const session = this.env.SESSIONNAME;
     const clientName = this.env.CLIENTNAME;
     if (session && /^ICA/i.test(session)) {

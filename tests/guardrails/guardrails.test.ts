@@ -125,6 +125,20 @@ describe("guardrails command", () => {
     expect(yaml).toContain(`BLOCKED_LICENSES: "${blockingLicenses().join(" ")}"`);
   });
 
+  it("sca workflow SHA-pins its actions and uses the real anchore/sbom-action", async () => {
+    const p = await command.plan(ctx());
+    const yaml = writeAt(p.actions, ".github/workflows/sca.yml")?.contents ?? "";
+    // No floating major-tag action refs, and not the non-existent syft-action.
+    expect(yaml).not.toMatch(/uses: actions\/checkout@v\d/);
+    expect(yaml).not.toContain("anchore/syft-action");
+    // checkout + sbom-action pinned to a 40-hex commit SHA with a version comment.
+    expect(yaml).toMatch(/uses: actions\/checkout@[0-9a-f]{40} # v/);
+    expect(yaml).toMatch(/uses: anchore\/sbom-action@[0-9a-f]{40} # v/);
+    // correct sbom-action input is `format`, not the bogus `output-format`.
+    expect(yaml).toContain("format: spdx-json");
+    expect(yaml).not.toContain("output-format:");
+  });
+
   it("license matrix dispositions match the blueprint compliance gates", () => {
     // blueprint: Legal and Open-Source Compliance Gates matrix.
     const disp = (category: string) =>

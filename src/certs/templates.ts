@@ -42,15 +42,3 @@ export function homebrewDoc(pemPath: string): string {
     "Verify:  brew doctor",
   );
 }
-
-/** Conda trust step — managed via `conda config`, never auto-run. */
-export function condaDoc(pemPath: string): string {
-  return lines(
-    "Conda / Anaconda manages TLS verification through its own config, not the",
-    "shell environment. If `conda` is installed, point ssl_verify at the CA bundle:",
-    "",
-    `  conda config --set ssl_verify "${pemPath}"`,
-    "",
-    "Verify:  conda config --show ssl_verify",
-  );
-}

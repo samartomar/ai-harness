@@ -42,7 +42,7 @@ function vdiPlan(ctx: PlanContext) {
       SCOPE,
       doc(
         "no VDI detected — no cache redirection needed",
-        `This host shows no VDI markers (${vdi.reason}), so caches and the code-review-graph database stay in place. Re-run aih vdi inside a Citrix/WorkSpaces/RES/RDP session to redirect them onto local scratch.`,
+        `This host shows no VDI markers (${vdi.reason}), so caches and the code-review-graph database stay in place. Re-run aih vdi inside a Citrix/WorkSpaces/AVD/Horizon/RES/RDP session to redirect them onto local scratch — or, when imaging a fleet where the platform can't be sniffed from the environment (Amazon WorkSpaces, AVD), declare it with AIH_VDI_KIND=<citrix|workspaces|res|rdp|generic>.`,
       ),
       probe("VDI detection", () => ({
         name: "VDI detection",

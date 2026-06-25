@@ -26,11 +26,18 @@ const DEFAULT_ENDPOINT = "http://127.0.0.1:4317";
  */
 function telemetryPlan(ctx: PlanContext) {
   const endpoint = String(ctx.options.endpoint ?? DEFAULT_ENDPOINT);
+  // Prompt + tool-detail logging are off unless explicitly opted into — these
+  // streams carry source, customer data, and secrets the collector can't fully
+  // scrub. See OtelLoggingOptions.
+  const logging = {
+    logPrompts: ctx.options.logPrompts === true,
+    logToolDetails: ctx.options.logToolDetails === true,
+  };
 
   const collectorPath = join(ctx.contextDir, "telemetry", "collector.yaml");
   const fetcherPath = join(ctx.contextDir, "telemetry", "fetch-analytics.mjs");
 
-  const profileWrite = buildProfileWrite(ctx, endpoint);
+  const profileWrite = buildProfileWrite(ctx, endpoint, logging);
   const collectorWrite = writeText(
     collectorPath,
     collectorYaml(endpoint),
@@ -78,6 +85,16 @@ export const command: CommandSpec = {
       flags: "--endpoint <url>",
       description: "OTLP exporter endpoint",
       default: DEFAULT_ENDPOINT,
+    },
+    {
+      flags: "--log-prompts",
+      description:
+        "Opt in to exporting full user-prompt bodies (privacy-sensitive; off by default)",
+    },
+    {
+      flags: "--log-tool-details",
+      description:
+        "Opt in to exporting full tool inputs/outputs (privacy-sensitive; off by default)",
     },
   ],
   plan: telemetryPlan,

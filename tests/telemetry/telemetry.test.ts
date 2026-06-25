@@ -80,6 +80,12 @@ describe("telemetry command surface", () => {
     expect(command.name).toBe("telemetry");
     expect(command.options?.some((o) => o.flags.includes("--endpoint"))).toBe(true);
   });
+
+  it("exposes the privacy opt-in flags --log-prompts and --log-tool-details", () => {
+    const flags = (command.options ?? []).map((o) => o.flags);
+    expect(flags).toContain("--log-prompts");
+    expect(flags).toContain("--log-tool-details");
+  });
 });
 
 describe("telemetry plan — OTel env block", () => {
@@ -109,11 +115,40 @@ describe("telemetry plan — OTel env block", () => {
     // the actual export switches — without otlp on both, no metrics/logs leave the agent
     expect(byKey.OTEL_METRICS_EXPORTER).toBe("otlp");
     expect(byKey.OTEL_LOGS_EXPORTER).toBe("otlp");
-    expect(byKey.OTEL_LOG_USER_PROMPTS).toBe("1");
-    expect(byKey.OTEL_LOG_TOOL_DETAILS).toBe("1");
+    // privacy-first: prompt + tool-detail logging are OFF unless explicitly opted in
+    expect(byKey.OTEL_LOG_USER_PROMPTS).toBe("0");
+    expect(byKey.OTEL_LOG_TOOL_DETAILS).toBe("0");
     expect(byKey.CLAUDE_CODE_ENABLE_TELEMETRY).toBe("1");
     expect(byKey.OTEL_EXPORTER_OTLP_ENDPOINT).toBe("http://127.0.0.1:4317");
     expect(vars).toHaveLength(7);
+  });
+
+  it("flips the two logging vars to 1 only when opted in via the logging options", () => {
+    const byKey = Object.fromEntries(
+      otelEnvVars("http://127.0.0.1:4317", { logPrompts: true, logToolDetails: true }).map((v) => [
+        v.key,
+        v.value,
+      ]),
+    );
+    expect(byKey.OTEL_LOG_USER_PROMPTS).toBe("1");
+    expect(byKey.OTEL_LOG_TOOL_DETAILS).toBe("1");
+    // the master switch and exporters are unaffected by the opt-in
+    expect(byKey.CLAUDE_CODE_ENABLE_TELEMETRY).toBe("1");
+  });
+
+  it("threads the --log-prompts / --log-tool-details flags from ctx.options into the env block", async () => {
+    const offEb = profileEnvBlock((await command.plan(makeCtx())).actions);
+    const offByKey = Object.fromEntries((offEb?.vars ?? []).map((v) => [v.key, v.value]));
+    expect(offByKey.OTEL_LOG_USER_PROMPTS).toBe("0");
+    expect(offByKey.OTEL_LOG_TOOL_DETAILS).toBe("0");
+
+    const onEb = profileEnvBlock(
+      (await command.plan(makeCtx({ options: { logPrompts: true, logToolDetails: true } })))
+        .actions,
+    );
+    const onByKey = Object.fromEntries((onEb?.vars ?? []).map((v) => [v.key, v.value]));
+    expect(onByKey.OTEL_LOG_USER_PROMPTS).toBe("1");
+    expect(onByKey.OTEL_LOG_TOOL_DETAILS).toBe("1");
   });
 
   it("honors a custom --endpoint flag in the env export", async () => {
