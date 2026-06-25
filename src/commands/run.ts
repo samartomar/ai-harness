@@ -74,7 +74,8 @@ export async function runCapability(
     const ctx: PlanContext = {
       root: settings.root,
       contextDir: settings.contextDir,
-      apply: spec.readOnly ? false : settings.apply,
+      // `--open` (report) implies --apply so one `aih report --open` builds AND opens.
+      apply: spec.readOnly ? false : settings.apply || opts.open === true,
       verify: spec.readOnly ? true : settings.verify,
       json: settings.json,
       run,

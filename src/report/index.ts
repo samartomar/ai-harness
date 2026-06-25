@@ -7,10 +7,12 @@ import {
   type CommandSpec,
   type DigestAction,
   digest,
+  exec,
   type PlanContext,
   plan,
   writeText,
 } from "../internals/plan.js";
+import type { Platform } from "../platform/base.js";
 import { reportHtml, reportMarkdown } from "./artifact.js";
 import { type ContextBloat, DEFAULT_CONTEXT_BUDGET_TOKENS, scanContextBloat } from "./bloat.js";
 import { localPanels } from "./local.js";
@@ -78,6 +80,13 @@ function artifactPath(ctx: PlanContext, scope: Scope, format: Format): string {
   return join(".aih", "reports", `${scope}-report.${format === "html" ? "html" : "md"}`);
 }
 
+/** The OS command that opens a file in the default app (browser for the .html dashboard). */
+function openArgv(platform: Platform, file: string): string[] {
+  if (platform === "windows") return ["cmd", "/c", "start", "", file];
+  if (platform === "darwin") return ["open", file];
+  return ["xdg-open", file];
+}
+
 interface Built {
   scope: Scope;
   title: string;
@@ -116,7 +125,10 @@ async function buildReport(ctx: PlanContext): Promise<Built> {
  * like the telemetry fetcher's `--run`.
  */
 async function reportPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
-  const format = formatOf(ctx);
+  // `--open` implies the HTML dashboard (you can't usefully "open" a terminal/md
+  // report in a browser) and is the gesture that launches it.
+  const open = ctx.options.open === true;
+  const format = open ? "html" : formatOf(ctx);
   const built = await buildReport(ctx);
   const actions: Action[] = [...built.digests];
   if (format !== "terminal") {
@@ -134,6 +146,17 @@ async function reportPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
     // init already added the rule. A custom `--out` path is the operator's to manage.
     if (path.replace(/\\/g, "/").startsWith(".aih/")) {
       actions.push(aihIgnoreWrite(ctx.root));
+    }
+    // Launch the dashboard in the default browser (local exec, runs under --apply;
+    // `--open` implies --apply so a single `aih report --open` builds AND opens it).
+    if (open) {
+      actions.push(
+        exec(
+          `open ${path.replace(/\\/g, "/")} in your browser`,
+          openArgv(ctx.host.platform, resolve(ctx.root, path)),
+          { allowFailure: true }, // best-effort: the html is already written
+        ),
+      );
     }
   }
   return plan("report", ...actions);
@@ -165,6 +188,10 @@ export const command: CommandSpec = {
       flags: "--team",
       description:
         "include in-progress team branches (gh → git ls-remote → fetched; opt-in network)",
+    },
+    {
+      flags: "--open",
+      description: "build the HTML dashboard and open it in your browser (implies html + apply)",
     },
   ],
   plan: reportPlan,

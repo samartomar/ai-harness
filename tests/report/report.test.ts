@@ -224,4 +224,16 @@ describe("report --format (file artifact)", () => {
       .actions;
     expect(actions.some((a) => a.kind === "write" && a.path === ".gitignore")).toBe(false);
   });
+
+  it("--open writes the html dashboard and adds a browser-open exec", async () => {
+    const actions = (await command.plan(ctx({ options: { open: true } }))).actions;
+    const w = actions.find(
+      (a) => a.kind === "write" && a.path.replace(/\\/g, "/").endsWith("local-report.html"),
+    );
+    expect(w?.kind).toBe("write"); // --open forces the html artifact
+    const ex = actions.find((a) => a.kind === "exec");
+    if (ex?.kind !== "exec") throw new Error("expected a browser-open exec");
+    expect(ex.argv[0]).toBe("xdg-open"); // linux host in tests
+    expect(ex.argv[ex.argv.length - 1]).toContain("local-report.html");
+  });
 });

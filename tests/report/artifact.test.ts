@@ -35,4 +35,41 @@ describe("reportHtml", () => {
     expect(html).toContain("x &lt; y &amp; z");
     expect(html).not.toContain("<b>");
   });
+
+  it("builds the dashboard head — adoption ring, KPIs, and trend charts — from data", () => {
+    const html = reportHtml("aih report", [
+      digest("Context footprint — ~100 tokens", "x", { totalTokens: 100, files: [] }),
+      digest("Repo status — on main", "x", {
+        current: "main",
+        branches: [{ name: "main" }, { name: "f" }],
+      }),
+      digest("Trends — 2 samples", "x", {
+        samples: 2,
+        rows: [
+          { commits7d: 1, loc: { net: 5 }, adoptionScore: 40, branches: 1, sourceFiles: 10 },
+          { commits7d: 3, loc: { net: 12 }, adoptionScore: 60, branches: 2, sourceFiles: 12 },
+        ],
+      }),
+      digest("Configuration — 2 of 4 artifacts present", "x", {
+        present: ["a", "b"],
+        absent: ["c", "d"],
+        total: 4,
+      }),
+      digest("Tooling — 1 of 11", "x", { present: ["claude"], total: 11 }),
+    ]);
+    expect(html).toContain('class="ring'); // adoption donut
+    expect(html).toContain(">50</text>"); // 2/4 present = 50%
+    expect(html).toContain('class="kpi"'); // KPI cards
+    expect(html).toContain("context tokens");
+    expect(html).toContain("local branches");
+    expect(html).toContain('class="trends"'); // trend section present (≥2 samples)
+    expect(html).toContain('class="bars"'); // SVG bar charts
+  });
+
+  it("omits the trend section with fewer than two samples", () => {
+    const html = reportHtml("aih report", [
+      digest("Trends — not enough", "x", { samples: 1, rows: [] }),
+    ]);
+    expect(html).not.toContain('class="trends"');
+  });
 });
