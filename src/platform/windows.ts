@@ -11,9 +11,18 @@ import {
 } from "./base.js";
 import { parseCertLines, parseFirstInt, parseNvidiaSmi } from "./parse.js";
 
-/** Build a non-interactive pwsh invocation for a script string. */
+/** Build a non-interactive PowerShell 7 (`pwsh`) invocation for a script string. */
 function pwsh(script: string): string[] {
   return ["pwsh", "-NoProfile", "-NonInteractive", "-Command", script];
+}
+
+/**
+ * Build a Windows PowerShell 5.1 (`powershell.exe`) invocation — the fallback when
+ * PowerShell 7 is not installed. It ships with every supported Windows and exposes
+ * the same `Cert:` drive, so trust-store enumeration still works on stock fleets.
+ */
+function winPowershell(script: string): string[] {
+  return ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script];
 }
 
 /**
@@ -38,7 +47,10 @@ export class WindowsAdapter implements HostAdapter {
       "  Where-Object { $_.Subject -like $p } |",
       '  ForEach-Object { [System.Convert]::ToBase64String($_.RawData) + "`t" + $_.Subject }',
     ].join("\n");
-    const res = await this.run(pwsh(script));
+    let res = await this.run(pwsh(script));
+    // PowerShell 7 (pwsh) is not on many managed Windows images — fall back to the
+    // built-in Windows PowerShell 5.1 so CA bootstrap doesn't silently find nothing.
+    if (res.spawnError) res = await this.run(winPowershell(script));
     if (res.spawnError) return [];
     return parseCertLines(res.stdout);
   }

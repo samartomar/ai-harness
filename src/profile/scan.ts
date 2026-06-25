@@ -157,6 +157,9 @@ interface Raw {
   /** Build-tool wrappers present at the repo — prefer ./mvnw / ./gradlew when set. */
   hasMvnw: boolean;
   hasGradlew: boolean;
+  /** A linter is configured by a config file even if the root package.json has no lint script/dep. */
+  hasEslintConfig: boolean;
+  hasBiomeConfig: boolean;
 }
 
 /**
@@ -179,6 +182,8 @@ export function scanRepo(root: string, opts: ScanOptions): RepoStack {
     manifestCount: 0,
     hasMvnw: false,
     hasGradlew: false,
+    hasEslintConfig: false,
+    hasBiomeConfig: false,
   };
   // Exclude the configured context dir (top path segment) alongside the static
   // set, so re-scans never walk the canon aih itself generated (the default is
@@ -330,6 +335,17 @@ function inspectFile(dir: string, name: string, raw: Raw): void {
 }
 
 function detectMisc(dir: string, name: string, lower: string, raw: Raw): void {
+  // Linter config files: a linter is configured here even when the ROOT package.json
+  // carries no lint script and no linter dep (common in monorepos where eslint lives
+  // in a tooling workspace) — so a lint command is still derivable. (AIH-PROFILE-001)
+  if (/^eslint\.config\.(js|mjs|cjs|ts)$/.test(lower) || /^\.eslintrc(\.[\w.]+)?$/.test(lower)) {
+    raw.hasEslintConfig = true;
+    return;
+  }
+  if (lower === "biome.json" || lower === "biome.jsonc") {
+    raw.hasBiomeConfig = true;
+    return;
+  }
   if (/^serverless\.(yml|yaml|ts|js|json)$/.test(lower)) {
     push(raw.frameworks, "Serverless Framework");
     push(raw.deployment, "Serverless Framework");
@@ -442,7 +458,10 @@ function synthesize(raw: Raw): RepoStack {
     // Commands strictly from what the repo actually defines.
     testRunner = deriveTest(pkg);
     buildCommand = "build" in pkg.scripts ? "npm run build" : undefined;
-    lintCommand = deriveLint(pkg);
+    // A root lint script / linter dep wins; otherwise fall back to a detected linter
+    // CONFIG file (eslint.config.* / biome.json), which monorepos have even when the
+    // root package.json doesn't declare the lint script or the linter dep.
+    lintCommand = deriveLint(pkg) ?? configLint(raw);
 
     if (pkg.name && entryPoints.length === 0 && pkg.scripts.start) {
       entryPoints.push("npm start");
@@ -513,6 +532,13 @@ function deriveLint(pkg: PkgJson): string | undefined {
   for (const [dep, cmd] of LINTERS) {
     if (pkg.deps.has(dep)) return cmd;
   }
+  return undefined;
+}
+
+/** Lint command implied by a detected linter CONFIG file (biome wins over eslint). */
+function configLint(raw: Raw): string | undefined {
+  if (raw.hasBiomeConfig) return "npx biome check .";
+  if (raw.hasEslintConfig) return "npx eslint .";
   return undefined;
 }
 
