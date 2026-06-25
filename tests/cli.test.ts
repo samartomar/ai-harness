@@ -17,13 +17,9 @@ describe("CLI program", () => {
     expect(READONLY).toHaveLength(2);
   });
 
-  it(
-    "parses a dry-run capability invocation without throwing",
-    async () => {
-      const program = buildProgram();
-      program.configureOutput({ writeOut: () => {}, writeErr: () => {} });
-      await expect(program.parseAsync(["node", "aih", "certs", "--json"])).resolves.toBeDefined();
-    },
-    20000, // full-program cold start + certs dry-run can edge past the 5s default on slow Windows CI
-  );
+  it("parses a dry-run capability invocation without throwing", async () => {
+    const program = buildProgram();
+    program.configureOutput({ writeOut: () => {}, writeErr: () => {} });
+    await expect(program.parseAsync(["node", "aih", "certs", "--json"])).resolves.toBeDefined();
+  }, 20000); // full-program cold start + certs dry-run can edge past the 5s default on slow Windows CI
 });
