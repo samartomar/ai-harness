@@ -55,7 +55,7 @@ async function probeUv(ctx: PlanContext): Promise<Check> {
  * admin `managed-mcp.json` template that disables MCP org-wide.
  */
 function planMcpNone(ctx: PlanContext): ReturnType<typeof plan> {
-  const stack = scanRepo(ctx.root, { maxDepth: 8 });
+  const stack = scanRepo(ctx.root, { maxDepth: 8, contextDir: ctx.contextDir });
   return plan(
     "mcp",
     writeText(
@@ -79,7 +79,7 @@ function planMcpNone(ctx: PlanContext): ReturnType<typeof plan> {
  */
 function planMcpOffline(ctx: PlanContext): ReturnType<typeof plan> {
   const scope = String(ctx.options.scope ?? "project");
-  const stack = scanRepo(ctx.root, { maxDepth: 8 });
+  const stack = scanRepo(ctx.root, { maxDepth: 8, contextDir: ctx.contextDir });
   const stdio = stdioServers(mcpServers(scope, stack));
   return plan(
     "mcp",
@@ -110,7 +110,7 @@ function planMcp(ctx: PlanContext): ReturnType<typeof plan> {
   if (mode === "offline") return planMcpOffline(ctx);
 
   const scope = String(ctx.options.scope ?? "project");
-  const stack = scanRepo(ctx.root, { maxDepth: 8 });
+  const stack = scanRepo(ctx.root, { maxDepth: 8, contextDir: ctx.contextDir });
   const servers = mcpServers(scope, stack);
   const tailored = Object.keys(servers)
     .filter(

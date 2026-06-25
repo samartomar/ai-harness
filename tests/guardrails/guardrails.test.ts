@@ -170,6 +170,22 @@ describe("guardrails command", () => {
     expect(blocking).not.toContain("MPL-2.0");
   });
 
+  it("blocks modern GPL SPDX -only / -or-later variants, not just bare GPL-2.0/3.0", () => {
+    const blocking = blockingLicenses();
+    for (const v of ["GPL-2.0-only", "GPL-2.0-or-later", "GPL-3.0-only", "GPL-3.0-or-later"]) {
+      expect(blocking).toContain(v);
+    }
+  });
+
+  it("sca workflow enforces secret scanning in CI (gitleaks job), not only locally", async () => {
+    const p = await command.plan(ctx());
+    const yaml = writeAt(p.actions, ".github/workflows/sca.yml")?.contents ?? "";
+    expect(yaml).toContain("secret-scan:");
+    expect(yaml).toContain("gitleaks detect --config .gitleaks.toml");
+    // CI uses the SAME pinned gitleaks version as the local pre-commit hook.
+    expect(yaml).toContain(GITLEAKS_REV.replace(/^v/, ""));
+  });
+
   it("writes the taxonomy doc under the context dir as a doc action (no exec/cloud)", async () => {
     const p = await command.plan(ctx());
     const taxonomy = p.actions.find(

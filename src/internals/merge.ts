@@ -1,14 +1,26 @@
-import { type ParseError, parse as parseJsonc } from "jsonc-parser";
+import { type ParseError, parse as parseJsonc, printParseErrorCode } from "jsonc-parser";
+import { MergeError } from "../errors.js";
 
 /**
  * Parse JSON or JSONC text (tolerant of comments + trailing commas). Returns
- * `undefined` for empty/unparseable input rather than throwing, so callers can
- * fall back to "no existing config".
+ * `undefined` for empty input. Throws {@link MergeError} on a genuine syntax
+ * error: `jsonc-parser` returns a PARTIAL value for malformed input (incomplete
+ * braces, trailing garbage), and merging onto a partial parse would silently
+ * drop the user's real config — so we fail closed and ask for a manual fix
+ * instead of overwriting from a half-read file.
  */
 export function parseJsoncText(text: string): unknown {
   if (text.trim().length === 0) return undefined;
   const errors: ParseError[] = [];
   const value = parseJsonc(text, errors, { allowTrailingComma: true, disallowComments: false });
+  if (errors.length > 0) {
+    const detail = errors
+      .map((e) => `${printParseErrorCode(e.error)} at offset ${e.offset}`)
+      .join("; ");
+    throw new MergeError(
+      `refusing to merge into malformed JSON/JSONC (fix the file first): ${detail}`,
+    );
+  }
   return value;
 }
 

@@ -97,8 +97,15 @@ export async function executePlan(plan: Plan, ctx: PlanContext): Promise<PlanRes
         });
       }
     } else if (action.kind === "doc") {
-      if (action.path && ctx.apply) {
-        txn.stage(resolvePath(ctx, action.path), ensureTrailingNewline(action.text));
+      if (action.path) {
+        const absPath = resolvePath(ctx, action.path);
+        const contents = ensureTrailingNewline(action.text);
+        // Same idempotency contract as write actions: skip a doc-file write whose
+        // rendered content already matches disk, so re-running never rewrites it or
+        // churns a `.aih.bak`. (The guardrails taxonomy doc was re-backed-up every run.)
+        if (ctx.apply && readIfExists(absPath) !== contents) {
+          txn.stage(absPath, contents);
+        }
       }
       docs.push({ describe: action.describe, path: action.path });
     } else if (action.kind === "exec") {

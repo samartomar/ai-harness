@@ -32,6 +32,12 @@ describe("parseJsoncText", () => {
   it("returns undefined for empty input", () => {
     expect(parseJsoncText("   ")).toBeUndefined();
   });
+
+  it("throws on malformed input instead of returning a partial parse (fail closed)", () => {
+    // Incomplete object: jsonc-parser would otherwise return `{ a: 1 }` partially,
+    // and merging onto that would silently drop the rest of the user's real config.
+    expect(() => parseJsoncText('{ "a": 1, "b":')).toThrow(/malformed/);
+  });
 });
 
 describe("isPlainObject", () => {

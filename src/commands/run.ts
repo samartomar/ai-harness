@@ -128,7 +128,12 @@ export async function runCapability(
         }
       }
     }
-    return result.report ? result.report.exitCode() : 0;
+    // A failed non-allowFailure exec must surface as a non-zero exit, so CI and
+    // scripts never read a failed install/open/bootstrap step as success (writes are
+    // committed before execs run, so a silent success would hide partial state).
+    const execFailed = result.execs.some((e) => e.ran && e.ok === false);
+    const verifyCode = result.report ? result.report.exitCode() : 0;
+    return verifyCode || (execFailed ? 1 : 0);
   } catch (err) {
     const code = err instanceof AihError ? err.code : "AIH_ERROR";
     const message = err instanceof Error ? err.message : String(err);

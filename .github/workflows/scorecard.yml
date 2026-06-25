@@ -17,6 +17,7 @@ jobs:
     name: Scorecard analysis
     runs-on: ubuntu-latest
     permissions:
+      contents: read # required for actions/checkout in private/locked-down repos
       security-events: write # upload the SARIF result to the Security tab
       id-token: write # publish results to OSSF (powers the badge)
     steps:

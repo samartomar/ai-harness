@@ -136,7 +136,7 @@ function summaryDoc(clis: string[], inputs: EccInstallInputs, stack: RepoStack):
  */
 async function eccPlan(ctx: PlanContext): Promise<Plan> {
   const { clis, detectFellBack } = await resolveTargets(ctx);
-  const stack = scanRepo(ctx.root, { maxDepth: 8 });
+  const stack = scanRepo(ctx.root, { maxDepth: 8, contextDir: ctx.contextDir });
   const profile = String(ctx.options.profile ?? "core");
   const inputs: EccInstallInputs = { profile, stackSummary: stackSummary(stack) };
 

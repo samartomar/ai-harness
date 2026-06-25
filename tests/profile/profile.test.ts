@@ -61,6 +61,25 @@ function findWrite(actions: Action[], path: string): WriteAction | undefined {
   return writes(actions).find((a) => a.path === path);
 }
 
+describe("scanRepo — excludes its own generated context dir", () => {
+  it("does not walk the configured context dir (no self-detection of generated canon)", () => {
+    put("package.json", pkg({ scripts: {} }));
+    // A manifest INSIDE the generated canon dir must never count as repo stack.
+    put("ai-coding/nested/go.mod", "module x\n");
+    const excluded = scanRepo(tmp, { maxDepth: 8, contextDir: "ai-coding" });
+    expect(excluded.languages).not.toContain("Go");
+    // Control: without the exclusion, the nested manifest leaks into the stack —
+    // which is exactly the bug, since the default canon dir is the visible ai-coding.
+    expect(scanRepo(tmp, { maxDepth: 8 }).languages).toContain("Go");
+  });
+
+  it("still excludes the legacy .ai-context default", () => {
+    put("package.json", pkg({ scripts: {} }));
+    put(".ai-context/nested/go.mod", "module x\n");
+    expect(scanRepo(tmp, { maxDepth: 8 }).languages).not.toContain("Go");
+  });
+});
+
 // ---- the regression that motivated this rework ----------------------------
 
 describe("scanRepo — JavaScript Serverless project (regression)", () => {

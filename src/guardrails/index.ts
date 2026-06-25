@@ -46,7 +46,7 @@ function ciNote(): string {
  * write or human-facing doc — CI execution is left to the customer's pipeline.
  */
 function guardrailsPlan(ctx: PlanContext): ReturnType<typeof plan> {
-  const stack = scanRepo(ctx.root, { maxDepth: 8 });
+  const stack = scanRepo(ctx.root, { maxDepth: 8, contextDir: ctx.contextDir });
   return plan(
     "guardrails",
     writeText(

@@ -100,6 +100,15 @@ describe("executePlan", () => {
     expect(readFileSync(join(dir, "docs/guide.md"), "utf8")).toBe("do X\n");
   });
 
+  it("re-applying an identical doc-with-path is a no-op: no rewrite, no backup", async () => {
+    const p = plan("t", doc("guidance", "do X", "docs/guide.md"));
+    await executePlan(p, ctx({ apply: true }));
+    const second = await executePlan(p, ctx({ apply: true }));
+    // Doc-file writes now honor the same idempotency contract as write actions.
+    expect(second.backups).toHaveLength(0);
+    expect(existsSync(join(dir, "docs/guide.md.aih.bak"))).toBe(false);
+  });
+
   it("runs exec actions only on apply and records the exit code", async () => {
     const calls: string[][] = [];
     const run = fakeRunner((argv) => {

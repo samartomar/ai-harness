@@ -108,7 +108,7 @@ function routerProbe(dir: string): Action {
 async function bootstrapAiPlan(ctx: PlanContext): Promise<Plan> {
   const dir = ctx.contextDir;
   const { clis, detectFellBack } = await resolveTargets(ctx);
-  const stack = scanRepo(ctx.root, { maxDepth: 8 });
+  const stack = scanRepo(ctx.root, { maxDepth: 8, contextDir: ctx.contextDir });
   const repoName = repoNameOf(ctx.root);
   const bootloaders = bootloaderPaths(clis);
 

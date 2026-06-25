@@ -48,6 +48,13 @@ export interface RepoStack {
 export interface ScanOptions {
   /** How deep to recurse below `root` (root itself is depth 0). */
   maxDepth: number;
+  /**
+   * The repo's configured canonical context dir (e.g. `ai-coding`), excluded from
+   * the walk so the scanner never treats its OWN generated canon as repo stack.
+   * The static {@link EXCLUDED_DIRS} only covers the legacy `.ai-context` default,
+   * so a custom/visible context dir must be excluded dynamically.
+   */
+  contextDir?: string;
 }
 
 /** Directories never worth walking — build output, vendored deps, VCS metadata. */
@@ -173,11 +180,23 @@ export function scanRepo(root: string, opts: ScanOptions): RepoStack {
     hasMvnw: false,
     hasGradlew: false,
   };
-  walk(root, 0, Math.max(0, opts.maxDepth), raw);
+  // Exclude the configured context dir (top path segment) alongside the static
+  // set, so re-scans never walk the canon aih itself generated (the default is
+  // now the VISIBLE `ai-coding`, which EXCLUDED_DIRS does not cover).
+  const excluded = new Set<string>(EXCLUDED_DIRS);
+  const ctxTop = opts.contextDir?.split(/[/\\]/).find((s) => s.length > 0);
+  if (ctxTop) excluded.add(ctxTop);
+  walk(root, 0, Math.max(0, opts.maxDepth), raw, excluded);
   return synthesize(raw);
 }
 
-function walk(dir: string, depth: number, maxDepth: number, raw: Raw): void {
+function walk(
+  dir: string,
+  depth: number,
+  maxDepth: number,
+  raw: Raw,
+  excluded: ReadonlySet<string>,
+): void {
   let entries: Dirent[];
   try {
     entries = readdirSync(dir, { withFileTypes: true });
@@ -188,7 +207,7 @@ function walk(dir: string, depth: number, maxDepth: number, raw: Raw): void {
   const subdirs: string[] = [];
   for (const entry of entries) {
     if (entry.isDirectory()) {
-      if (!EXCLUDED_DIRS.has(entry.name)) subdirs.push(entry.name);
+      if (!excluded.has(entry.name)) subdirs.push(entry.name);
       continue;
     }
     if (entry.isFile() || entry.isSymbolicLink()) inspectFile(dir, entry.name, raw);
@@ -196,7 +215,7 @@ function walk(dir: string, depth: number, maxDepth: number, raw: Raw): void {
 
   if (depth >= maxDepth) return;
   for (const name of subdirs) {
-    walk(join(dir, name), depth + 1, maxDepth, raw);
+    walk(join(dir, name), depth + 1, maxDepth, raw, excluded);
   }
 }
 
