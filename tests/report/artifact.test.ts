@@ -2,74 +2,113 @@ import { describe, expect, it } from "vitest";
 import { digest } from "../../src/internals/plan.js";
 import { reportHtml, reportMarkdown } from "../../src/report/artifact.js";
 
-const DIGESTS = [
-  digest("Context footprint — ~100 tokens", "  Files:  1\n  Tokens: ~100", { totalTokens: 100 }),
-  digest("Tooling — 1 of 11", "  ✓ claude", { present: ["claude"] }),
+/** A full set of local-report digests with the structured `data` the HTML reads. */
+const RICH = [
+  digest("Context footprint — ~56k tokens — OVER budget", "x", {
+    totalTokens: 55983,
+    budgetTokens: 40000,
+    overBudget: true,
+    files: [
+      { path: "ai-coding/big.md", tokens: 4465 },
+      { path: "ai-coding/small.md", tokens: 100 },
+    ],
+  }),
+  digest("Repo status — on develop", "x", {
+    current: "develop",
+    main: "develop",
+    dirty: true,
+    branches: [
+      { name: "develop", age: "20h", ahead: 0, behind: 0 },
+      { name: "feature/x", age: "1h", ahead: 5, behind: 2 },
+    ],
+  }),
+  digest("Trends — 2 samples", "x", {
+    samples: 2,
+    rows: [
+      { commits7d: 1, loc: { net: 5 }, adoptionScore: 40, branches: 1, sourceFiles: 10 },
+      { commits7d: 3, loc: { net: 12 }, adoptionScore: 60, branches: 2, sourceFiles: 12 },
+    ],
+  }),
+  digest("Configuration — 2 of 3 artifacts present", "x", {
+    present: ["CLAUDE.md", "AGENTS.md"],
+    absent: ["mcp"],
+    total: 3,
+  }),
+  digest("Tooling — 1 of 11", "x", { present: ["claude"], absent: ["codex", "kiro"], total: 11 }),
+  digest("Local cache & skill economy — none", "no local data source yet", { available: false }),
 ];
 
 describe("reportMarkdown", () => {
   it("renders a heading per digest with fenced verbatim bodies", () => {
-    const md = reportMarkdown("aih report", DIGESTS);
+    const md = reportMarkdown("aih report", [digest("Tooling — 1 of 11", "  ✓ claude", {})]);
     expect(md).toContain("# aih report");
-    expect(md).toContain("## Context footprint — ~100 tokens");
     expect(md).toContain("## Tooling — 1 of 11");
     expect(md).toContain("```text");
-    expect(md).toContain("  Files:  1");
+    expect(md).toContain("✓ claude");
     expect(md.endsWith("\n")).toBe(true);
   });
 });
 
-describe("reportHtml", () => {
-  it("renders a self-contained page with a section per digest", () => {
-    const html = reportHtml("aih report", DIGESTS);
+describe("reportHtml dashboard", () => {
+  it("is a self-contained page with the title in <title> and <h1>, no external assets", () => {
+    const html = reportHtml("aih report", RICH);
     expect(html).toContain("<!doctype html>");
     expect(html).toContain("<title>aih report</title>");
-    expect(html).toContain("<h2>Context footprint — ~100 tokens</h2>");
-    expect(html).toContain("<pre>  Files:  1");
+    expect(html).toContain("<h1>aih report</h1>");
     expect(html).toContain("</html>");
+    expect(html).not.toContain("http://");
+    expect(html).not.toContain("https://");
   });
 
-  it("escapes HTML-special characters in titles and bodies", () => {
+  it("renders the adoption ring + thousands-formatted KPI tiles", () => {
+    const html = reportHtml("aih report", RICH);
+    expect(html).toContain('class="ring'); // donut
+    expect(html).toContain(">67</text>"); // 2/3 present = 67%
+    expect(html).toContain('class="kpi"');
+    expect(html).toContain("context tokens");
+    expect(html).toContain("~55,983"); // thousands separators, not 55983
+  });
+
+  it("renders a budget bar + contributor bars (data viz, not a <pre> dump)", () => {
+    const html = reportHtml("aih report", RICH);
+    expect(html).toContain('class="budget-fill over"'); // over-budget gradient
+    expect(html).toContain('class="bar-fill"');
+    expect(html).toContain("ai-coding/big.md");
+    expect(html).toContain("4,465");
+    // the recognized panels are NOT dumped as raw <pre>
+    expect(html).not.toContain("<pre>");
+  });
+
+  it("renders branch rows with ahead/behind pills + a dirty hint", () => {
+    const html = reportHtml("aih report", RICH);
+    expect(html).toContain('class="branches"');
+    expect(html).toContain('class="pill up">+5');
+    expect(html).toContain('class="pill down"'); // behind pill present
+    expect(html).toContain("uncommitted changes");
+  });
+
+  it("renders trend charts, checklist chips, and tool badges", () => {
+    const html = reportHtml("aih report", RICH);
+    expect(html).toContain('class="mini"'); // a trend chart per metric
+    expect(html).toContain('class="chip ok"'); // present artifact
+    expect(html).toContain('class="chip bad"'); // absent artifact
+    expect(html).toContain('class="tool on">claude'); // present CLI
+    expect(html).toContain('class="tool off">codex'); // absent CLI, struck through
+  });
+
+  it("escapes HTML and renders unrecognized digests as a styled note", () => {
     const html = reportHtml("t<i>", [digest("a <b> & c", "x < y & z", {})]);
     expect(html).toContain("a &lt;b&gt; &amp; c");
     expect(html).toContain("x &lt; y &amp; z");
+    expect(html).toContain('class="prose"');
     expect(html).not.toContain("<b>");
   });
 
-  it("builds the dashboard head — adoption ring, KPIs, and trend charts — from data", () => {
+  it("shows a note (not charts) for trends with fewer than two samples", () => {
     const html = reportHtml("aih report", [
-      digest("Context footprint — ~100 tokens", "x", { totalTokens: 100, files: [] }),
-      digest("Repo status — on main", "x", {
-        current: "main",
-        branches: [{ name: "main" }, { name: "f" }],
-      }),
-      digest("Trends — 2 samples", "x", {
-        samples: 2,
-        rows: [
-          { commits7d: 1, loc: { net: 5 }, adoptionScore: 40, branches: 1, sourceFiles: 10 },
-          { commits7d: 3, loc: { net: 12 }, adoptionScore: 60, branches: 2, sourceFiles: 12 },
-        ],
-      }),
-      digest("Configuration — 2 of 4 artifacts present", "x", {
-        present: ["a", "b"],
-        absent: ["c", "d"],
-        total: 4,
-      }),
-      digest("Tooling — 1 of 11", "x", { present: ["claude"], total: 11 }),
+      digest("Trends — not enough history yet", "accruing", { samples: 1, rows: [] }),
     ]);
-    expect(html).toContain('class="ring'); // adoption donut
-    expect(html).toContain(">50</text>"); // 2/4 present = 50%
-    expect(html).toContain('class="kpi"'); // KPI cards
-    expect(html).toContain("context tokens");
-    expect(html).toContain("local branches");
-    expect(html).toContain('class="trends"'); // trend section present (≥2 samples)
-    expect(html).toContain('class="bars"'); // SVG bar charts
-  });
-
-  it("omits the trend section with fewer than two samples", () => {
-    const html = reportHtml("aih report", [
-      digest("Trends — not enough", "x", { samples: 1, rows: [] }),
-    ]);
-    expect(html).not.toContain('class="trends"');
+    expect(html).not.toContain('class="mini"');
+    expect(html).toContain('class="prose"');
   });
 });

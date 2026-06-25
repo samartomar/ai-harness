@@ -48,6 +48,7 @@ export function toolingPanel(ctx: PlanContext): DigestAction {
   );
   return digest(`Tooling — ${present.length} of ${found.length} AI CLIs configured here`, body, {
     present: present.map((p) => p.cli),
+    absent: found.filter((p) => !p.present).map((p) => p.cli),
     total: found.length,
   });
 }
