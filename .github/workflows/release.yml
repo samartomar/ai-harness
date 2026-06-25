@@ -1,7 +1,8 @@
 # Cut a GitHub Release when a v* tag is pushed. Verifies the gates (typecheck,
-# lint, test, build) first so a broken tag never ships, then creates the Release
-# with auto-generated notes. Does NOT publish to npm — that is a separate,
-# deliberate decision (see CHANGELOG / package distribution).
+# lint, test+coverage, build), then PACKS a verifiable install artifact (tarball +
+# SHA256 checksum), smoke-installs it, and attaches it to the Release so an
+# enterprise user can tie the installed package back to the reviewed tag. Does NOT
+# publish to npm — that is a separate, deliberate decision (see CHANGELOG).
 name: release
 
 on:
@@ -26,13 +27,28 @@ jobs:
           node-version: "22"
           cache: npm
       - run: npm ci
-      - name: Verify (typecheck · lint · test · build)
+      - name: Verify (typecheck · lint · test+coverage · build)
         run: |
           npx tsc --noEmit
           npx biome ci src tests
-          npx vitest run
+          npx vitest run --coverage
           npx tsup
-      - name: Create GitHub Release
+      - name: Pack tarball + SHA256 checksum
+        run: |
+          set -euo pipefail
+          npm pack
+          sha256sum ./*.tgz | tee SHA256SUMS.txt
+      - name: Smoke-install the packed tarball
+        run: |
+          set -euo pipefail
+          tarball="$(ls "$GITHUB_WORKSPACE"/*.tgz)"
+          work="$(mktemp -d)"; cd "$work"; npm init -y >/dev/null
+          npm install "$tarball"
+          npx aih --version
+          npx aih --help | head -n 3
+      - name: Create GitHub Release (with verifiable artifacts)
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes
+        run: |
+          gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes \
+            ./*.tgz SHA256SUMS.txt
