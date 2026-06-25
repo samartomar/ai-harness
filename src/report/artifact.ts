@@ -278,8 +278,8 @@ h1{font-size:1.42rem;font-weight:680;letter-spacing:-.015em;margin:0}
 .bars{list-style:none;margin:1rem 0 0;padding:0;display:grid;gap:.5rem}
 .bars li{display:grid;grid-template-columns:1fr 96px 56px;align-items:center;gap:.7rem}
 .bar-label{font:12px/1.4 ui-monospace,SFMono-Regular,monospace;color:var(--mut);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.bar-track{height:7px;border-radius:999px;background:color-mix(in oklab,var(--fg) 8%,transparent);overflow:hidden}
-.bar-fill{height:100%;border-radius:999px;background:linear-gradient(90deg,var(--accent),var(--accent2))}
+.bar-track{display:block;height:7px;border-radius:999px;background:color-mix(in oklab,var(--fg) 8%,transparent);overflow:hidden}
+.bar-fill{display:block;height:100%;border-radius:999px;background:linear-gradient(90deg,var(--accent),var(--accent2))}
 .bar-val{font:12px/1 ui-monospace,monospace;color:var(--dim);text-align:right;font-variant-numeric:tabular-nums}
 .branches{list-style:none;margin:0;padding:0;display:grid;gap:.1rem}
 .branches li{display:flex;align-items:center;gap:.55rem;padding:.45rem .5rem;border-radius:var(--rs)}

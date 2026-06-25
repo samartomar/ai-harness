@@ -73,6 +73,9 @@ describe("reportHtml dashboard", () => {
     const html = reportHtml("aih report", RICH);
     expect(html).toContain('class="budget-fill over"'); // over-budget gradient
     expect(html).toContain('class="bar-fill"');
+    // the fill must be a block, else the span's width/height is ignored and it
+    // paints nothing (the bars show only the empty gray track).
+    expect(html).toContain(".bar-fill{display:block");
     expect(html).toContain("ai-coding/big.md");
     expect(html).toContain("4,465");
     // the recognized panels are NOT dumped as raw <pre>
