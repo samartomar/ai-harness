@@ -29,7 +29,7 @@ function childScaffoldedProbe(repo: string, dir: string): Action {
  * `aih workspace <parent>` — scaffold a MULTI-REPO workspace (parent-only). For a
  * parent folder holding separate repos (e.g. a UI repo and a backend repo), it
  * writes the cross-repo canon that bridges them: a workspace marker, a VS Code
- * multi-root `.code-workspace`, a filesystem MCP spanning every child repo, the
+ * multi-root `.code-workspace`, a combined graph + filesystem MCP spanning every child repo, the
  * `cross-repo-architecture.md` map (write-once, user-owned) and `repo-discipline.md`,
  * and thin `CLAUDE.md`/`AGENTS.md` workspace bootloaders. It does NOT touch the
  * child repos — run `aih init` in each. Child repos come from `--repos a,b` or are
@@ -74,7 +74,7 @@ function workspacePlan(ctx: PlanContext): Plan {
     writeJson(
       ".mcp.json",
       spanningMcp(repos, (ctx.env.AIH_MCP_FS_VERSION ?? "").trim() || undefined),
-      `filesystem MCP spanning ${repos.length} child repo(s), merged into any existing .mcp.json`,
+      `combined graph + filesystem MCP spanning ${repos.length} child repo(s), merged into any existing .mcp.json`,
       { merge: true },
     ),
     doc("workspace next steps (run `aih init` per child)", nextStepsDoc(name, repos, dir)),
@@ -88,7 +88,7 @@ function workspacePlan(ctx: PlanContext): Plan {
 export const command: CommandSpec = {
   name: "workspace",
   summary:
-    "Scaffold a multi-repo workspace: cross-repo architecture map, spanning MCP, .code-workspace (parent-only)",
+    "Scaffold a multi-repo workspace: cross-repo map, combined graph/filesystem MCP, .code-workspace (parent-only)",
   options: [
     {
       flags: "--repos <list>",

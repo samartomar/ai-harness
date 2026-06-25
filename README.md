@@ -64,7 +64,7 @@ node dist/cli.js --help
 | `aih bootstrap` | Orchestrate the workstation 4-phase rollout (certs → hardware/vdi → telemetry). |
 | `aih bootstrap-ai` | Emit + verify the repo's Layer-2 `ai-coding/` canon: `RULE_ROUTER.md`, per-CLI adapters, and root bootloaders (tool preamble + a regenerated shared block). `--verify` is the drift gate. |
 | `aih init` | Initialize a repo: profile + superpowers + bootstrap-ai + scaffold + secrets + guardrails + mcp + sandbox in one pass (one writer per file). ECC is a separate gated network step — run `aih ecc` when ready (it points at ECC's own installer). |
-| `aih workspace` | Scaffold a **multi-repo** workspace (parent-only): cross-repo architecture map (write-once) + per-repo discipline, a VS Code `.code-workspace`, a filesystem MCP spanning every child repo, and a `.aih-workspace.json` marker. |
+| `aih workspace` | Scaffold a **multi-repo** workspace (parent-only): cross-repo architecture map (write-once) + per-repo discipline, a VS Code `.code-workspace`, combined graph/filesystem MCP spanning every child repo, and a `.aih-workspace.json` marker. |
 | `aih doctor` | Fail-closed verification of the workstation/repo configuration (+ workspace mode: validates each child repo). |
 | `aih status` | Read-only inventory of what the harness has configured. |
 
@@ -170,8 +170,8 @@ It writes, at the parent (it does **not** touch the child repos — run `aih ini
 - `<context-dir>/repo-discipline.md` — load a repo's own canon before editing it.
 - `CLAUDE.md` + `AGENTS.md` — thin workspace bootloaders pointing at the cross-repo canon.
 - `<name>.code-workspace` — opens every repo in one VS Code window.
-- `.mcp.json` — a filesystem MCP **spanning every child repo path**, so an agent at the workspace root
-  can read across repos.
+- `.mcp.json` — combined **code-review graph + filesystem MCP** spanning every child repo path, so an
+  agent at the workspace root can reason about cross-repo blast radius before editing a child repo.
 - `.aih-workspace.json` — marker that puts `aih doctor` into **workspace mode** (validates each child
   repo is scaffolded).
 
