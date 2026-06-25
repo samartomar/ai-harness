@@ -61,6 +61,49 @@ function findWrite(actions: Action[], path: string): WriteAction | undefined {
   return writes(actions).find((a) => a.path === path);
 }
 
+describe("scanRepo — lint detection from a config file (AIH-PROFILE-001)", () => {
+  it("detects eslint via eslint.config.mjs even when the root package.json has no lint script/dep", () => {
+    // Mirrors a monorepo whose root package.json defines no lint and lists no linter
+    // dep, but is clearly linted — the integration-hub case that produced a
+    // gitleaks-only pre-commit gate.
+    put("package.json", pkg({ scripts: { build: "tsc" } }));
+    put("eslint.config.mjs", "export default []\n");
+    put("pnpm-workspace.yaml", "packages:\n  - apps/*\n");
+    expect(scanRepo(tmp, { maxDepth: 8 }).lintCommand).toBe("npx eslint .");
+  });
+
+  it("prefers a real root lint script over the config-file fallback", () => {
+    put("package.json", pkg({ scripts: { lint: "eslint ." } }));
+    put("eslint.config.mjs", "export default []\n");
+    expect(scanRepo(tmp, { maxDepth: 8 }).lintCommand).toBe("npm run lint");
+  });
+
+  it("detects biome via biome.json", () => {
+    put("package.json", pkg({ scripts: {} }));
+    put("biome.json", "{}\n");
+    expect(scanRepo(tmp, { maxDepth: 8 }).lintCommand).toBe("npx biome check .");
+  });
+});
+
+describe("scanRepo — excludes its own generated context dir", () => {
+  it("does not walk the configured context dir (no self-detection of generated canon)", () => {
+    put("package.json", pkg({ scripts: {} }));
+    // A manifest INSIDE the generated canon dir must never count as repo stack.
+    put("ai-coding/nested/go.mod", "module x\n");
+    const excluded = scanRepo(tmp, { maxDepth: 8, contextDir: "ai-coding" });
+    expect(excluded.languages).not.toContain("Go");
+    // Control: without the exclusion, the nested manifest leaks into the stack —
+    // which is exactly the bug, since the default canon dir is the visible ai-coding.
+    expect(scanRepo(tmp, { maxDepth: 8 }).languages).toContain("Go");
+  });
+
+  it("still excludes the legacy .ai-context default", () => {
+    put("package.json", pkg({ scripts: {} }));
+    put(".ai-context/nested/go.mod", "module x\n");
+    expect(scanRepo(tmp, { maxDepth: 8 }).languages).not.toContain("Go");
+  });
+});
+
 // ---- the regression that motivated this rework ----------------------------
 
 describe("scanRepo — JavaScript Serverless project (regression)", () => {

@@ -233,8 +233,20 @@ describe("telemetry plan — collector.yaml", () => {
     expect(yaml).toContain("bearer");
     // PII: email shape
     expect(yaml).toContain("@[A-Za-z0-9.-]+");
-    // redaction must sit in both the traces and logs pipelines
+    // redaction must sit in the traces and logs pipelines
     expect(yaml).toMatch(/processors:\s*\[attributes\/scrub-secrets, redaction, batch\]/);
+  });
+
+  it("routes METRICS through the scrubbers too — not just traces/logs (AIH-TELEMETRY-001)", () => {
+    const yaml = collectorYaml("http://127.0.0.1:4317");
+    // All three signal pipelines must carry the scrub processors; metric attributes
+    // (model, repo/user ids, endpoints, custom dims) otherwise bypass redaction.
+    const scrubbed = yaml.match(/processors:\s*\[attributes\/scrub-secrets, redaction, batch\]/g);
+    expect(scrubbed).toHaveLength(3);
+    // and the metrics pipeline specifically is no longer batch-only
+    const metricsBlock = yaml.slice(yaml.indexOf("metrics:"), yaml.indexOf("logs:"));
+    expect(metricsBlock).toContain("[attributes/scrub-secrets, redaction, batch]");
+    expect(metricsBlock).not.toMatch(/processors:\s*\[batch\]/);
   });
 
   it("routes the context-dir collector path through ctx.contextDir", async () => {

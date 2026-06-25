@@ -18,6 +18,21 @@ describe("WindowsAdapter", () => {
     expect(certs[0]?.pem).toContain("BEGIN CERTIFICATE");
   });
 
+  it("falls back to Windows PowerShell 5.1 when pwsh is absent (AIH-CERTS-001)", async () => {
+    const a = adapter((argv) => {
+      if (argv[0] === "pwsh") return { spawnError: true, code: 127 }; // no PowerShell 7
+      if (argv[0] === "powershell.exe") return { stdout: `${"Q".repeat(80)}\tCN=Zscaler\n` };
+      return undefined;
+    });
+    const certs = await a.trustStoreCerts("Zscaler");
+    expect(certs).toHaveLength(1); // recovered via the built-in Windows PowerShell
+  });
+
+  it("returns no certs only when NEITHER pwsh nor powershell.exe is available", async () => {
+    const a = adapter(() => ({ spawnError: true, code: 127 }));
+    expect(await a.trustStoreCerts("Zscaler")).toHaveLength(0);
+  });
+
   it("parses physical cores and total RAM", async () => {
     const a = adapter((argv) => {
       const s = argv.join(" ");

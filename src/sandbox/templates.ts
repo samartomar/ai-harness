@@ -66,12 +66,31 @@ function isNodeStack(stack: RepoStack): boolean {
   return stack.languages.some((l) => l.endsWith("/Node.js"));
 }
 
+/**
+ * Lockfile-aware install for the detected package manager. A detected
+ * `packageManager` means a lockfile is present, so use the reproducible
+ * frozen/ci install; only fall back to a plain `install` when no lockfile exists.
+ */
+function nodeInstall(stack: RepoStack): string {
+  switch (stack.packageManager) {
+    case "npm":
+      return "npm ci";
+    case "pnpm":
+      return "pnpm install --frozen-lockfile";
+    case "yarn":
+      return "yarn install --frozen-lockfile";
+    case "bun":
+      return "bun install --frozen-lockfile";
+    default:
+      return "npm install"; // no lockfile detected — non-reproducible, but unblocked
+  }
+}
+
 /** A `postCreateCommand` that actually installs the detected stack's deps + tools. */
 function postCreate(stack: RepoStack): string {
   const steps: string[] = [];
   if (isNodeStack(stack)) {
-    const pm = stack.packageManager ?? "npm";
-    steps.push(pm === "npm" ? "npm install" : `${pm} install`);
+    steps.push(nodeInstall(stack));
     if (stack.frameworks.includes("Serverless Framework")) steps.push("npx serverless --version");
   }
   if (stack.languages.includes("Python")) {
@@ -98,7 +117,9 @@ export function devcontainerConfig(opts: DevcontainerOptions): Record<string, un
     "ghcr.io/devcontainers/features/common-utils:2.5.9": {
       installZsh: true,
       username: "vscode",
-      upgradePackages: true,
+      // Reproducibility: do NOT upgrade the base image's apt packages at build time
+      // — that pulls whatever is latest the day you rebuild, defeating the pinned tag.
+      upgradePackages: false,
     },
     "ghcr.io/devcontainers/features/github-cli:1.1.0": {},
   };

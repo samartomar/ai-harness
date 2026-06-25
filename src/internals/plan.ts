@@ -40,6 +40,12 @@ export interface WriteAction {
   mode?: number;
   /** Write only if the file is absent; never overwrite (user-owned seed files). */
   once?: boolean;
+  /**
+   * Allow this write to land OUTSIDE the target root (home/system files: PEM
+   * bundles, shell profiles, VDI redirects). Repo-scoped writes leave this unset
+   * and the executor fails closed if their resolved path escapes the root.
+   */
+  external?: boolean;
 }
 
 export interface DocAction {
@@ -161,18 +167,26 @@ export function writeText(
   path: string,
   contents: string,
   describe: string,
-  opts: { mode?: number; once?: boolean } = {},
+  opts: { mode?: number; once?: boolean; external?: boolean } = {},
 ): WriteAction {
-  return { kind: "write", path, contents, describe, mode: opts.mode, once: opts.once };
+  return {
+    kind: "write",
+    path,
+    contents,
+    describe,
+    mode: opts.mode,
+    once: opts.once,
+    external: opts.external,
+  };
 }
 
 export function writeJson(
   path: string,
   value: unknown,
   describe: string,
-  opts: { merge?: boolean } = {},
+  opts: { merge?: boolean; external?: boolean } = {},
 ): WriteAction {
-  return { kind: "write", path, json: value, describe, merge: opts.merge };
+  return { kind: "write", path, json: value, describe, merge: opts.merge, external: opts.external };
 }
 
 export function doc(describe: string, text: string, path?: string): DocAction {

@@ -1,6 +1,6 @@
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { executePlan, summarizeResult } from "../../src/internals/execute.js";
 import {
@@ -76,6 +76,28 @@ describe("executePlan", () => {
     expect(second.backups).toHaveLength(1);
   });
 
+  it("path containment: a repo-scoped write escaping the root fails closed", async () => {
+    const outside = join(dirname(dir), "aih-escape-test.txt"); // sibling of the temp root
+    await expect(
+      executePlan(plan("t", writeText(outside, "x", "escape")), ctx({ apply: true })),
+    ).rejects.toThrow(/outside the target root/);
+    expect(existsSync(outside)).toBe(false);
+  });
+
+  it("path containment: an external write is allowed outside the root (host files)", async () => {
+    const ext = mkdtempSync(join(tmpdir(), "aih-ext-"));
+    try {
+      const target = join(ext, "host.txt");
+      await executePlan(
+        plan("t", writeText(target, "ok", "host file", { external: true })),
+        ctx({ apply: true }),
+      );
+      expect(readFileSync(target, "utf8")).toBe("ok\n");
+    } finally {
+      rmSync(ext, { recursive: true, force: true });
+    }
+  });
+
   it("merge writes preserve existing user JSON keys", async () => {
     writeFileSync(join(dir, "c.json"), JSON.stringify({ user: 1 }));
     const res = await executePlan(
@@ -98,6 +120,15 @@ describe("executePlan", () => {
   it("writes doc actions that carry a path", async () => {
     await executePlan(plan("t", doc("guidance", "do X", "docs/guide.md")), ctx({ apply: true }));
     expect(readFileSync(join(dir, "docs/guide.md"), "utf8")).toBe("do X\n");
+  });
+
+  it("re-applying an identical doc-with-path is a no-op: no rewrite, no backup", async () => {
+    const p = plan("t", doc("guidance", "do X", "docs/guide.md"));
+    await executePlan(p, ctx({ apply: true }));
+    const second = await executePlan(p, ctx({ apply: true }));
+    // Doc-file writes now honor the same idempotency contract as write actions.
+    expect(second.backups).toHaveLength(0);
+    expect(existsSync(join(dir, "docs/guide.md.aih.bak"))).toBe(false);
   });
 
   it("runs exec actions only on apply and records the exit code", async () => {

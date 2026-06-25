@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -413,6 +413,51 @@ describe("idempotency", () => {
     // Fixed point: applying again yields a byte-identical file.
     await executePlan(await command.plan(applyCtx), applyCtx);
     expect(readFileSync(bashrc, "utf8")).toBe(body);
+  });
+});
+
+describe("redirect safety (AIH-VDI-001 / AIH-VDI-002)", () => {
+  it("rejects a --scratch carrying cmd metacharacters on Windows (injection guard)", () => {
+    const c = ctx({
+      platform: "windows",
+      vdi: VDI_ON,
+      env: { USERNAME: "bob", USERPROFILE: dir },
+      options: { scratch: "C:\\tmp & calc.exe" },
+    });
+    expect(() => command.plan(c)).toThrow(/metacharacter/);
+  });
+
+  it("is a no-op when ~/.code-review-graph already points at the scratch target", async () => {
+    const scratch = "/mnt/fast/scratch";
+    const crgLink = join(dir, ".code-review-graph");
+    try {
+      symlinkSync(join(scratch, "code-review-graph"), crgLink);
+    } catch {
+      return; // symlink creation not permitted (Windows without privilege) — skip
+    }
+    const c = ctx({
+      platform: "linux",
+      vdi: VDI_ON,
+      env: { USER: "alice", HOME: dir },
+      options: { scratch },
+    });
+    const p = await command.plan(c);
+    expect(
+      (byKind(p, "exec") as ExecAction[]).find((e) => e.describe.includes("code-review-graph")),
+    ).toBeUndefined();
+    expect((byKind(p, "doc") as DocAction[]).some((d) => d.text.includes("already"))).toBe(true);
+  });
+
+  it("refuses to redirect (manual migration doc) when the link path is a real directory", async () => {
+    mkdirSync(join(dir, ".code-review-graph"), { recursive: true });
+    const c = ctx({ platform: "linux", vdi: VDI_ON, env: { USER: "alice", HOME: dir } });
+    const p = await command.plan(c);
+    expect(
+      (byKind(p, "exec") as ExecAction[]).find((e) => e.describe.includes("code-review-graph")),
+    ).toBeUndefined();
+    expect(
+      (byKind(p, "doc") as DocAction[]).some((d) => d.text.includes("will not overwrite")),
+    ).toBe(true);
   });
 });
 

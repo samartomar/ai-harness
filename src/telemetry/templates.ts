@@ -174,7 +174,9 @@ export function collectorYaml(endpoint: string): string {
     "      exporters: [otlphttp]",
     "    metrics:",
     "      receivers: [otlp]",
-    "      processors: [batch]",
+    // Metrics go through the SAME scrub processors as traces/logs: metric attributes
+    // can carry model names, repo/user identifiers, endpoints, and custom dimensions.
+    "      processors: [attributes/scrub-secrets, redaction, batch]",
     "      exporters: [otlphttp]",
     "    logs:",
     "      receivers: [otlp]",

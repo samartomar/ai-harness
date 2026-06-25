@@ -63,7 +63,7 @@ node dist/cli.js --help
 | `aih crispy` | Run the CRISPY context-engineering stage machine (deterministic, gate-ordered). |
 | `aih bootstrap` | Orchestrate the workstation 4-phase rollout (certs → hardware/vdi → telemetry). |
 | `aih bootstrap-ai` | Emit + verify the repo's Layer-2 `ai-coding/` canon: `RULE_ROUTER.md`, per-CLI adapters, and root bootloaders (tool preamble + a regenerated shared block). `--verify` is the drift gate. |
-| `aih init` | Initialize a repo: profile + ecc + superpowers + bootstrap-ai + scaffold + secrets + guardrails + mcp + sandbox in one pass (one writer per file). |
+| `aih init` | Initialize a repo: profile + superpowers + bootstrap-ai + scaffold + secrets + guardrails + mcp + sandbox in one pass (one writer per file). ECC is a separate gated network step — run `aih ecc` when ready (it points at ECC's own installer). |
 | `aih workspace` | Scaffold a **multi-repo** workspace (parent-only): cross-repo architecture map (write-once) + per-repo discipline, a VS Code `.code-workspace`, a filesystem MCP spanning every child repo, and a `.aih-workspace.json` marker. |
 | `aih doctor` | Fail-closed verification of the workstation/repo configuration (+ workspace mode: validates each child repo). |
 | `aih status` | Read-only inventory of what the harness has configured. |

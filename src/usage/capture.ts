@@ -67,3 +67,19 @@ export function gitPostCommitHook(): string {
     "exit 0",
   );
 }
+
+/**
+ * A CHAINABLE capture block to append to an EXISTING `post-commit` hook (aih never
+ * overwrites a user's hook). Namespaced var, no `exit`, `|| true` everywhere — so it
+ * slots into the middle of someone else's hook without short-circuiting or failing it.
+ */
+export function gitPostCommitChainSnippet(): string {
+  return lines(
+    "# --- aih usage capture (best-effort; never blocks the commit) ---",
+    'aih_root="$(git rev-parse --show-toplevel 2>/dev/null)"',
+    'if [ -n "$aih_root" ] && [ -f "$aih_root/.aih/usage-record.mjs" ]; then',
+    '  node "$aih_root/.aih/usage-record.mjs" git commit >/dev/null 2>&1 || true',
+    "fi",
+    "# --- end aih usage capture ---",
+  );
+}

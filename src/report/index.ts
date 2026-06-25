@@ -12,6 +12,7 @@ import {
   plan,
   writeText,
 } from "../internals/plan.js";
+import { assertNoCmdInjection } from "../internals/shell-safety.js";
 import type { Platform } from "../platform/base.js";
 import { reportHtml, reportMarkdown } from "./artifact.js";
 import { type ContextBloat, DEFAULT_CONTEXT_BUDGET_TOKENS, scanContextBloat } from "./bloat.js";
@@ -141,8 +142,13 @@ async function reportPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
       format === "html"
         ? reportHtml(built.title, built.digests, { refresh })
         : reportMarkdown(built.title, built.digests);
+    // The default artifact lands under `.aih/` (repo-contained). An explicit `--out`
+    // is the operator's own chosen target, so it opts out of repo containment.
+    const operatorOut = typeof ctx.options.out === "string" && ctx.options.out.length > 0;
     actions.push(
-      writeText(path, content, `${built.scope} report (${format}) → ${path.replace(/\\/g, "/")}`),
+      writeText(path, content, `${built.scope} report (${format}) → ${path.replace(/\\/g, "/")}`, {
+        external: operatorOut,
+      }),
     );
     // When the artifact lands in the default `.aih/` output dir, ensure git ignores
     // it — org reports can hold sensitive aggregate usage data and must not be left
@@ -154,10 +160,14 @@ async function reportPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
     // Launch the dashboard in the default browser (local exec, runs under --apply;
     // `--open` implies --apply so a single `aih report --open` builds AND opens it).
     if (open) {
+      const file = resolve(ctx.root, path);
+      // On Windows the file is opened via `cmd /c start "" <file>`; reject a
+      // metacharacter-laden `--out` before it reaches cmd.exe.
+      if (ctx.host.platform === "windows") assertNoCmdInjection(file, "--out");
       actions.push(
         exec(
           `open ${path.replace(/\\/g, "/")} in your browser`,
-          openArgv(ctx.host.platform, resolve(ctx.root, path)),
+          openArgv(ctx.host.platform, file),
           { allowFailure: true }, // best-effort: the html is already written
         ),
       );

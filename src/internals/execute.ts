@@ -1,4 +1,6 @@
-import { resolve } from "node:path";
+import { existsSync, realpathSync } from "node:fs";
+import { dirname, isAbsolute, relative, resolve } from "node:path";
+import { PathContainmentError } from "../errors.js";
 import { upsertManagedBlock } from "./envfile.js";
 import { FsTransaction, readIfExists } from "./fsxn.js";
 import { deepMerge, parseJsoncText } from "./merge.js";
@@ -35,6 +37,35 @@ function resolvePath(ctx: PlanContext, p: string): string {
   return resolve(ctx.root, p);
 }
 
+/** realpath, or a plain resolve if the path does not exist yet. */
+function realpathSafe(p: string): string {
+  try {
+    return realpathSync(p);
+  } catch {
+    return resolve(p);
+  }
+}
+
+/**
+ * Fail closed if a repo-scoped action path escapes the target root. Resolves the
+ * deepest EXISTING ancestor through realpath first, so a symlinked/junctioned
+ * parent that redirects outside the repo is caught (the not-yet-existing suffix
+ * cannot contain links). Host/system writes opt out with `external: true`.
+ */
+function assertContained(root: string, absPath: string): void {
+  const realRoot = realpathSafe(root);
+  let ancestor = absPath;
+  while (!existsSync(ancestor) && dirname(ancestor) !== ancestor) ancestor = dirname(ancestor);
+  const tail = relative(ancestor, absPath);
+  const finalReal = resolve(realpathSafe(ancestor), tail);
+  const rel = relative(realRoot, finalReal);
+  if (rel === "" || (!rel.startsWith("..") && !isAbsolute(rel))) return;
+  throw new PathContainmentError(
+    `refusing to write outside the target root\n  root:   ${realRoot}\n  target: ${absPath}\n` +
+      "(an absolute path, a `..` escape, or a symlinked parent — pass an in-repo relative path)",
+  );
+}
+
 /** Compute final file contents for a write action, applying JSON merge if requested. */
 export function resolveContents(action: WriteAction, absPath: string): string {
   if (action.json !== undefined) {
@@ -67,6 +98,7 @@ export async function executePlan(plan: Plan, ctx: PlanContext): Promise<PlanRes
   for (const action of plan.actions) {
     if (action.kind === "write") {
       const absPath = resolvePath(ctx, action.path);
+      if (!action.external) assertContained(ctx.root, absPath);
       const existing = readIfExists(absPath);
       if (action.once && existing !== undefined) {
         // Write-once seed file already present — preserve the user's content.
@@ -97,8 +129,15 @@ export async function executePlan(plan: Plan, ctx: PlanContext): Promise<PlanRes
         });
       }
     } else if (action.kind === "doc") {
-      if (action.path && ctx.apply) {
-        txn.stage(resolvePath(ctx, action.path), ensureTrailingNewline(action.text));
+      if (action.path) {
+        const absPath = resolvePath(ctx, action.path);
+        const contents = ensureTrailingNewline(action.text);
+        // Same idempotency contract as write actions: skip a doc-file write whose
+        // rendered content already matches disk, so re-running never rewrites it or
+        // churns a `.aih.bak`. (The guardrails taxonomy doc was re-backed-up every run.)
+        if (ctx.apply && readIfExists(absPath) !== contents) {
+          txn.stage(absPath, contents);
+        }
       }
       docs.push({ describe: action.describe, path: action.path });
     } else if (action.kind === "exec") {

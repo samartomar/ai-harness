@@ -37,7 +37,10 @@ function isNode(stack: RepoStack): boolean {
  * commands or a language the repo doesn't use.
  */
 function profilePlan(ctx: PlanContext): Plan {
-  const stack = scanRepo(ctx.root, { maxDepth: resolveMaxDepth(ctx.options.maxDepth) });
+  const stack = scanRepo(ctx.root, {
+    maxDepth: resolveMaxDepth(ctx.options.maxDepth),
+    contextDir: ctx.contextDir,
+  });
 
   const actions: Action[] = [
     writeText(

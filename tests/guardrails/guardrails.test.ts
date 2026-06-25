@@ -3,8 +3,16 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { command } from "../../src/guardrails/index.js";
-import { GITLEAKS_ARGS, GITLEAKS_REV } from "../../src/guardrails/precommit.js";
-import { blockingLicenses, LICENSE_MATRIX } from "../../src/guardrails/sca.js";
+import {
+  GITLEAKS_ARGS,
+  GITLEAKS_REV,
+  preCommitConfigYaml,
+} from "../../src/guardrails/precommit.js";
+import {
+  blockedLicensesFound,
+  blockingLicenses,
+  LICENSE_MATRIX,
+} from "../../src/guardrails/sca.js";
 import { executePlan } from "../../src/internals/execute.js";
 import type { Action, PlanContext, WriteAction } from "../../src/internals/plan.js";
 import { fakeRunner, missingToolRunner, type Runner } from "../../src/internals/proc.js";
@@ -92,6 +100,32 @@ describe("guardrails command", () => {
     expect(yaml).toContain('args: ["--verbose", "--config=.gitleaks.toml"]');
   });
 
+  it("preserves a USER-authored pre-commit config instead of clobbering it", async () => {
+    // A team config aih did not generate (no ownership marker), with its own hook.
+    writeFileSync(
+      join(dir, ".pre-commit-config.yaml"),
+      "repos:\n  - repo: local\n    hooks:\n      - id: team-hook\n",
+    );
+    const p = await command.plan(ctx());
+    const pre = writeAt(p.actions, ".pre-commit-config.yaml");
+    expect(pre?.once).toBe(true); // write-once → never overwrites the user's file
+    // ...and a merge doc hands over the exact gitleaks block to add.
+    const mergeDoc = p.actions.find(
+      (a) => a.kind === "doc" && a.describe.includes("gitleaks hook"),
+    );
+    expect(mergeDoc?.kind === "doc" && mergeDoc.text).toContain("gitleaks/gitleaks");
+  });
+
+  it("re-owns (normal rewrite, not once) a pre-commit config aih itself generated", async () => {
+    writeFileSync(join(dir, ".pre-commit-config.yaml"), preCommitConfigYaml()); // carries the marker
+    const p = await command.plan(ctx());
+    const pre = writeAt(p.actions, ".pre-commit-config.yaml");
+    expect(pre?.once).toBeUndefined(); // aih owns it → idempotent overwrite, no merge doc
+    expect(p.actions.some((a) => a.kind === "doc" && a.describe.includes("gitleaks hook"))).toBe(
+      false,
+    );
+  });
+
   it("adds a local lint hook ONLY when the repo defines a lint command", async () => {
     // No lint command → gitleaks only, never a hook that runs a missing script.
     const bare = writeAt((await command.plan(ctx())).actions, ".pre-commit-config.yaml");
@@ -168,6 +202,36 @@ describe("guardrails command", () => {
     // Permissive + weak-copyleft must NOT be blocking.
     expect(blocking).not.toContain("MIT");
     expect(blocking).not.toContain("MPL-2.0");
+  });
+
+  it("the license gate runs against SBOM fixtures: permissive passes, copyleft fails (AIH-SCA-TEST-001)", () => {
+    const sbom = (ids: string[]) =>
+      JSON.stringify({ packages: ids.map((id) => ({ licenseConcluded: id })) });
+    // Clean: MIT / Apache / MPL (permissive + weak) → gate passes (no blocks).
+    expect(blockedLicensesFound(sbom(["MIT", "Apache-2.0", "MPL-2.0"]))).toEqual([]);
+    // Strong copyleft, modern SPDX → blocked.
+    expect(blockedLicensesFound(sbom(["MIT", "GPL-3.0-only"]))).toContain("GPL-3.0-only");
+    // Network copyleft (AGPL) → blocked.
+    expect(blockedLicensesFound(sbom(["AGPL-3.0"]))).toContain("AGPL-3.0");
+    // Malformed / empty SBOM text → no false positives.
+    expect(blockedLicensesFound("")).toEqual([]);
+    expect(blockedLicensesFound("{ not valid json")).toEqual([]);
+  });
+
+  it("blocks modern GPL SPDX -only / -or-later variants, not just bare GPL-2.0/3.0", () => {
+    const blocking = blockingLicenses();
+    for (const v of ["GPL-2.0-only", "GPL-2.0-or-later", "GPL-3.0-only", "GPL-3.0-or-later"]) {
+      expect(blocking).toContain(v);
+    }
+  });
+
+  it("sca workflow enforces secret scanning in CI (gitleaks job), not only locally", async () => {
+    const p = await command.plan(ctx());
+    const yaml = writeAt(p.actions, ".github/workflows/sca.yml")?.contents ?? "";
+    expect(yaml).toContain("secret-scan:");
+    expect(yaml).toContain("gitleaks detect --config .gitleaks.toml");
+    // CI uses the SAME pinned gitleaks version as the local pre-commit hook.
+    expect(yaml).toContain(GITLEAKS_REV.replace(/^v/, ""));
   });
 
   it("writes the taxonomy doc under the context dir as a doc action (no exec/cloud)", async () => {

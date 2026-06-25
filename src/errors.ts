@@ -46,3 +46,17 @@ export class NotImplementedError extends AihError {
     super(message, "AIH_NOT_IMPLEMENTED");
   }
 }
+
+/** Existing config could not be parsed for a merge — fail closed, never partial-merge. */
+export class MergeError extends AihError {
+  constructor(message: string) {
+    super(message, "AIH_MERGE");
+  }
+}
+
+/** An action path escaped its intended root (path-containment violation). Fail-closed. */
+export class PathContainmentError extends AihError {
+  constructor(message: string) {
+    super(message, "AIH_PATH_CONTAINMENT");
+  }
+}

@@ -32,7 +32,7 @@ async function dockerAvailable(ctx: PlanContext): Promise<Check> {
 }
 
 function sandboxPlan(ctx: PlanContext) {
-  const stack = scanRepo(ctx.root, { maxDepth: 8 });
+  const stack = scanRepo(ctx.root, { maxDepth: 8, contextDir: ctx.contextDir });
   return plan(
     "sandbox",
     writeJson(

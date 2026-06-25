@@ -1,5 +1,7 @@
-import { join } from "node:path";
+import { lstatSync, readlinkSync } from "node:fs";
+import { join, resolve } from "node:path";
 import {
+  type Action,
   type CommandSpec,
   doc,
   envBlock,
@@ -8,9 +10,42 @@ import {
   plan,
   probe,
 } from "../internals/plan.js";
+import { assertNoCmdInjection } from "../internals/shell-safety.js";
 import { redirectEnv } from "./redirects.js";
 
 const SCOPE = "vdi";
+
+/** The on-disk state of the code-review-graph link path (decides redirect safety). */
+type LinkState = "absent" | "correct" | "wrong-link" | "directory" | "file";
+
+/** Compare two link targets tolerantly (strip Windows `\\?\`, normalize, case-fold on win32). */
+function samePath(a: string, b: string): boolean {
+  const norm = (p: string): string => {
+    const stripped = resolve(p.replace(/^\\\\\?\\/, ""));
+    return process.platform === "win32" ? stripped.toLowerCase() : stripped;
+  };
+  return norm(a) === norm(b);
+}
+
+/**
+ * Classify what already lives at the link path. `readlink` succeeds for BOTH POSIX
+ * symlinks and Windows junctions (so a correct junction re-reads as `correct`, not
+ * `directory`); a real directory/file throws EINVAL and falls through.
+ */
+function linkState(linkPath: string, target: string): LinkState {
+  let st: ReturnType<typeof lstatSync>;
+  try {
+    st = lstatSync(linkPath);
+  } catch {
+    return "absent";
+  }
+  try {
+    return samePath(readlinkSync(linkPath), target) ? "correct" : "wrong-link";
+  } catch {
+    // not a link — a real directory or file occupies the path
+  }
+  return st.isDirectory() ? "directory" : "file";
+}
 
 /** Resolve the scratch root: explicit `--scratch` wins, else the host default. */
 function resolveScratch(ctx: PlanContext, user: string): string {
@@ -56,6 +91,10 @@ function vdiPlan(ctx: PlanContext) {
   const scratch = resolveScratch(ctx, user);
   const home = ctx.env.USERPROFILE || ctx.env.HOME || "";
 
+  // On Windows the scratch path flows into `cmd /c mkdir` and `mklink /J`, both of
+  // which let cmd.exe re-parse the argument — reject command-injection metacharacters.
+  if (ctx.host.platform === "windows") assertNoCmdInjection(scratch, "--scratch");
+
   const shell = ctx.host.envShell();
   const profilePath = ctx.host.shellProfilePaths()[0] ?? "";
 
@@ -75,15 +114,41 @@ function vdiPlan(ctx: PlanContext) {
       `redirect caches/SQLite onto local scratch (${vdi.reason})`,
     ),
     exec("create local scratch root", mkdirArgv, { allowFailure: true }),
-    exec(
-      "redirect code-review-graph to scratch (junction/symlink)",
-      ctx.host.symlinkDirArgv(crgLink, crgTarget),
-    ),
+    redirectAction(ctx, crgLink, crgTarget),
     probe("VDI detection", () => ({
       name: "VDI detection",
       verdict: "pass",
       detail: `${vdi.reason} → scratch ${scratch}`,
     })),
+  );
+}
+
+/**
+ * Choose the code-review-graph redirect action by the link path's current state —
+ * never blindly emit a junction/symlink (mklink /J fails if the path exists; POSIX
+ * `ln -sfn target dir` would nest the link INSIDE an existing directory). Only link
+ * when absent; no-op when already correct; refuse + instruct when something else
+ * occupies the path (fail closed, never clobber the operator's data).
+ */
+function redirectAction(ctx: PlanContext, crgLink: string, crgTarget: string): Action {
+  const state = linkState(crgLink, crgTarget);
+  if (state === "absent") {
+    return exec(
+      "redirect code-review-graph to scratch (junction/symlink)",
+      ctx.host.symlinkDirArgv(crgLink, crgTarget),
+    );
+  }
+  if (state === "correct") {
+    return doc(
+      "code-review-graph already redirected (no-op)",
+      `${crgLink} already points at ${crgTarget} — nothing to do.`,
+    );
+  }
+  const what = state === "wrong-link" ? "a link to a different target" : `an existing ${state}`;
+  return doc(
+    "code-review-graph redirect needs manual migration",
+    `${crgLink} is ${what}; aih will not overwrite it. Move its contents to ${crgTarget}, ` +
+      `remove ${crgLink}, then re-run \`aih vdi --apply\` to create the redirect.`,
   );
 }
 

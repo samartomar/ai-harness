@@ -118,6 +118,16 @@ describe("historyWrite — append, idempotent per commit", () => {
     expect(w.path.replace(/\\/g, "/")).toBe(".aih/history.jsonl");
     expect(readHistoryFrom(w.contents ?? "")).toHaveLength(1);
   });
+
+  it("de-dupes by SHA across the WHOLE window, not just the last row (AIH-TRACK-001)", () => {
+    const ctx = makeCtx(gitFake({}));
+    // 'aaa' is NOT the last row, yet re-tracking it must not append a duplicate.
+    writeHistory([SAMPLE, { ...SAMPLE, sha: "bbb", ts: "t2" }]);
+    const w = historyWrite(ctx, { ...SAMPLE, sha: "aaa" });
+    const rows = readHistoryFrom(w.contents ?? "");
+    expect(rows).toHaveLength(2); // unchanged — no duplicate 'aaa'
+    expect(rows.filter((r) => r.sha === "aaa")).toHaveLength(1);
+  });
 });
 
 /** Parse JSONL the way readHistory does, for asserting write contents. */

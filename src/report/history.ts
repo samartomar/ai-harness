@@ -107,8 +107,11 @@ export function readHistory(ctx: PlanContext): Snapshot[] {
  */
 export function historyWrite(ctx: PlanContext, snapshot: Snapshot): WriteAction {
   const existing = readHistory(ctx);
-  const last = existing[existing.length - 1];
-  const rows = last?.sha === snapshot.sha ? existing : [...existing, snapshot];
+  // Dedupe by SHA across the WHOLE retained history, not just the last row: re-running
+  // track on an older/reordered commit (rebase, restored history, manual edit) must
+  // not append a duplicate sample — one sample per commit, regardless of position.
+  const seen = new Set(existing.map((r) => r.sha));
+  const rows = seen.has(snapshot.sha) ? existing : [...existing, snapshot];
   const content = `${rows.map((r) => JSON.stringify(r)).join("\n")}\n`;
   return writeText(
     HISTORY_PATH,

@@ -48,6 +48,13 @@ export interface RepoStack {
 export interface ScanOptions {
   /** How deep to recurse below `root` (root itself is depth 0). */
   maxDepth: number;
+  /**
+   * The repo's configured canonical context dir (e.g. `ai-coding`), excluded from
+   * the walk so the scanner never treats its OWN generated canon as repo stack.
+   * The static {@link EXCLUDED_DIRS} only covers the legacy `.ai-context` default,
+   * so a custom/visible context dir must be excluded dynamically.
+   */
+  contextDir?: string;
 }
 
 /** Directories never worth walking — build output, vendored deps, VCS metadata. */
@@ -150,6 +157,9 @@ interface Raw {
   /** Build-tool wrappers present at the repo — prefer ./mvnw / ./gradlew when set. */
   hasMvnw: boolean;
   hasGradlew: boolean;
+  /** A linter is configured by a config file even if the root package.json has no lint script/dep. */
+  hasEslintConfig: boolean;
+  hasBiomeConfig: boolean;
 }
 
 /**
@@ -172,12 +182,26 @@ export function scanRepo(root: string, opts: ScanOptions): RepoStack {
     manifestCount: 0,
     hasMvnw: false,
     hasGradlew: false,
+    hasEslintConfig: false,
+    hasBiomeConfig: false,
   };
-  walk(root, 0, Math.max(0, opts.maxDepth), raw);
+  // Exclude the configured context dir (top path segment) alongside the static
+  // set, so re-scans never walk the canon aih itself generated (the default is
+  // now the VISIBLE `ai-coding`, which EXCLUDED_DIRS does not cover).
+  const excluded = new Set<string>(EXCLUDED_DIRS);
+  const ctxTop = opts.contextDir?.split(/[/\\]/).find((s) => s.length > 0);
+  if (ctxTop) excluded.add(ctxTop);
+  walk(root, 0, Math.max(0, opts.maxDepth), raw, excluded);
   return synthesize(raw);
 }
 
-function walk(dir: string, depth: number, maxDepth: number, raw: Raw): void {
+function walk(
+  dir: string,
+  depth: number,
+  maxDepth: number,
+  raw: Raw,
+  excluded: ReadonlySet<string>,
+): void {
   let entries: Dirent[];
   try {
     entries = readdirSync(dir, { withFileTypes: true });
@@ -188,7 +212,7 @@ function walk(dir: string, depth: number, maxDepth: number, raw: Raw): void {
   const subdirs: string[] = [];
   for (const entry of entries) {
     if (entry.isDirectory()) {
-      if (!EXCLUDED_DIRS.has(entry.name)) subdirs.push(entry.name);
+      if (!excluded.has(entry.name)) subdirs.push(entry.name);
       continue;
     }
     if (entry.isFile() || entry.isSymbolicLink()) inspectFile(dir, entry.name, raw);
@@ -196,7 +220,7 @@ function walk(dir: string, depth: number, maxDepth: number, raw: Raw): void {
 
   if (depth >= maxDepth) return;
   for (const name of subdirs) {
-    walk(join(dir, name), depth + 1, maxDepth, raw);
+    walk(join(dir, name), depth + 1, maxDepth, raw, excluded);
   }
 }
 
@@ -311,6 +335,17 @@ function inspectFile(dir: string, name: string, raw: Raw): void {
 }
 
 function detectMisc(dir: string, name: string, lower: string, raw: Raw): void {
+  // Linter config files: a linter is configured here even when the ROOT package.json
+  // carries no lint script and no linter dep (common in monorepos where eslint lives
+  // in a tooling workspace) — so a lint command is still derivable. (AIH-PROFILE-001)
+  if (/^eslint\.config\.(js|mjs|cjs|ts)$/.test(lower) || /^\.eslintrc(\.[\w.]+)?$/.test(lower)) {
+    raw.hasEslintConfig = true;
+    return;
+  }
+  if (lower === "biome.json" || lower === "biome.jsonc") {
+    raw.hasBiomeConfig = true;
+    return;
+  }
   if (/^serverless\.(yml|yaml|ts|js|json)$/.test(lower)) {
     push(raw.frameworks, "Serverless Framework");
     push(raw.deployment, "Serverless Framework");
@@ -423,7 +458,10 @@ function synthesize(raw: Raw): RepoStack {
     // Commands strictly from what the repo actually defines.
     testRunner = deriveTest(pkg);
     buildCommand = "build" in pkg.scripts ? "npm run build" : undefined;
-    lintCommand = deriveLint(pkg);
+    // A root lint script / linter dep wins; otherwise fall back to a detected linter
+    // CONFIG file (eslint.config.* / biome.json), which monorepos have even when the
+    // root package.json doesn't declare the lint script or the linter dep.
+    lintCommand = deriveLint(pkg) ?? configLint(raw);
 
     if (pkg.name && entryPoints.length === 0 && pkg.scripts.start) {
       entryPoints.push("npm start");
@@ -494,6 +532,13 @@ function deriveLint(pkg: PkgJson): string | undefined {
   for (const [dep, cmd] of LINTERS) {
     if (pkg.deps.has(dep)) return cmd;
   }
+  return undefined;
+}
+
+/** Lint command implied by a detected linter CONFIG file (biome wins over eslint). */
+function configLint(raw: Raw): string | undefined {
+  if (raw.hasBiomeConfig) return "npx biome check .";
+  if (raw.hasEslintConfig) return "npx eslint .";
   return undefined;
 }
 

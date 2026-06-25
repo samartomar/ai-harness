@@ -33,7 +33,7 @@ function scaffoldPlan(ctx: PlanContext): ReturnType<typeof plan> {
   const dir = ctx.contextDir;
   const inDir = (...parts: string[]): string => posix.join(dir, ...parts);
   // Populate the context from the real repo, not empty placeholders.
-  const stack = scanRepo(ctx.root, { maxDepth: 8 });
+  const stack = scanRepo(ctx.root, { maxDepth: 8, contextDir: ctx.contextDir });
 
   const actions: Action[] = [
     // 1. Canonical context directory. (Root bootloaders + RULE_ROUTER that point

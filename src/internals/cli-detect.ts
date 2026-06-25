@@ -154,7 +154,9 @@ export async function resolveTargets(ctx: PlanContext): Promise<TargetResolution
     if (present.length > 0) return { clis: present, detectFellBack: false };
     return { clis: ["claude"], detectFellBack: true };
   }
-  return { clis: resolveClis(opts), detectFellBack: false };
+  // The explicit `--cli` flag (or default) path: validate strictly so a typo
+  // fails closed instead of silently falling back to Claude.
+  return { clis: resolveClis(opts, { strict: true }), detectFellBack: false };
 }
 
 /** Back-compat thin wrapper for callers that only need the CLI list. */

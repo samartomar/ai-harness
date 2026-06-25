@@ -80,6 +80,26 @@ describe("devcontainer.json content", () => {
     expect(Array.isArray(customizations.vscode?.extensions)).toBe(true);
   });
 
+  it("uses a lockfile-aware install (npm ci) when a lockfile is present (AIH-SANDBOX-001)", async () => {
+    writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "x", dependencies: {} }));
+    writeFileSync(join(dir, "package-lock.json"), "{}");
+    const p = await command.plan(ctx());
+    const dc = findWrite(p.actions, ".devcontainer/devcontainer.json").json as {
+      postCreateCommand: string;
+    };
+    expect(dc.postCreateCommand).toContain("npm ci");
+    expect(dc.postCreateCommand).not.toMatch(/\bnpm install\b/);
+  });
+
+  it("does not upgrade base apt packages at build time (reproducibility)", async () => {
+    const p = await command.plan(ctx());
+    const dc = findWrite(p.actions, ".devcontainer/devcontainer.json").json as {
+      features: Record<string, { upgradePackages?: boolean }>;
+    };
+    const commonUtils = Object.entries(dc.features).find(([k]) => k.includes("common-utils"))?.[1];
+    expect(commonUtils?.upgradePackages).toBe(false);
+  });
+
   it("pins devcontainer features to an EXACT version (no floating major tag)", async () => {
     const p = await command.plan(ctx());
     const dc = findWrite(p.actions, ".devcontainer/devcontainer.json").json as {

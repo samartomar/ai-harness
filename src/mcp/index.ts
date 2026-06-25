@@ -10,7 +10,31 @@ import {
   stdioServers,
 } from "./enterprise.js";
 import { gatewayDoc } from "./gateway.js";
-import { mcpServers } from "./servers.js";
+import { type McpServer, mcpServers } from "./servers.js";
+
+/** Commands that resolve/download a package at runtime — unsafe for a true air-gap. */
+const NETWORK_RESOLVERS = new Set(["npx", "uvx", "uv", "bunx", "pnpm", "yarn", "pipx"]);
+
+/**
+ * Offline-mode verify probe: fail if any generated stdio server launches through a
+ * network package resolver. `--mode offline` promises no runtime download, so an
+ * unvendored `npx`/`uvx` launcher is a real gap an operator must close (mirror the
+ * package, or pin an absolute vendored command) before air-gapping.
+ */
+function offlineVendoredProbe(stdio: Record<string, McpServer>): Check {
+  const runtime = Object.entries(stdio)
+    .filter(([, s]) => s.type === "stdio" && NETWORK_RESOLVERS.has(s.command))
+    .map(([name, s]) => `${name} (${s.type === "stdio" ? s.command : ""})`);
+  const name = "offline MCP servers are vendored";
+  if (runtime.length === 0) {
+    return { name, verdict: "pass", detail: "no runtime package resolvers in the generated set" };
+  }
+  return {
+    name,
+    verdict: "fail",
+    detail: `still resolve packages at runtime — mirror/vendor or pin an absolute command before air-gapping: ${runtime.join(", ")}`,
+  };
+}
 
 /** Canonical agentgateway base URL clients are pointed at in the remote scope. */
 const GATEWAY_URL = "https://agentgateway.n24q02m.com";
@@ -55,7 +79,7 @@ async function probeUv(ctx: PlanContext): Promise<Check> {
  * admin `managed-mcp.json` template that disables MCP org-wide.
  */
 function planMcpNone(ctx: PlanContext): ReturnType<typeof plan> {
-  const stack = scanRepo(ctx.root, { maxDepth: 8 });
+  const stack = scanRepo(ctx.root, { maxDepth: 8, contextDir: ctx.contextDir });
   return plan(
     "mcp",
     writeText(
@@ -79,14 +103,14 @@ function planMcpNone(ctx: PlanContext): ReturnType<typeof plan> {
  */
 function planMcpOffline(ctx: PlanContext): ReturnType<typeof plan> {
   const scope = String(ctx.options.scope ?? "project");
-  const stack = scanRepo(ctx.root, { maxDepth: 8 });
+  const stack = scanRepo(ctx.root, { maxDepth: 8, contextDir: ctx.contextDir });
   const stdio = stdioServers(mcpServers(scope, stack));
   return plan(
     "mcp",
     writeJson(
       ".mcp.json",
       { mcpServers: stdio },
-      "local stdio MCP servers (offline) — vendor them; no runtime download",
+      "local stdio MCP servers (offline) — mirror/vendor these; some still resolve packages at runtime until vendored (see the offline verify probe)",
       { merge: true },
     ),
     writeJson(
@@ -100,6 +124,7 @@ function planMcpOffline(ctx: PlanContext): ReturnType<typeof plan> {
       "CLI fallback for when even local MCP is blocked",
     ),
     doc("enterprise MCP control (offline / vendored)", enterpriseMcpDoc("offline", stdio)),
+    probe("offline MCP servers are vendored", () => offlineVendoredProbe(stdio)),
     probe("uv present", probeUv),
   );
 }
@@ -110,7 +135,7 @@ function planMcp(ctx: PlanContext): ReturnType<typeof plan> {
   if (mode === "offline") return planMcpOffline(ctx);
 
   const scope = String(ctx.options.scope ?? "project");
-  const stack = scanRepo(ctx.root, { maxDepth: 8 });
+  const stack = scanRepo(ctx.root, { maxDepth: 8, contextDir: ctx.contextDir });
   const servers = mcpServers(scope, stack);
   const tailored = Object.keys(servers)
     .filter(

@@ -52,10 +52,15 @@ async function planCerts(ctx: PlanContext): Promise<Plan> {
   const profile = ctx.host.shellProfilePaths()[0] ?? join(home, ".profile");
   const envVars = trustEnvVars(pemPath, outDir);
 
+  // `certs` is a HOST-level capability: every file it writes lives under the user's
+  // home/system (PEM bundle + per-manager configs), not the repo root, so each write
+  // opts out of the executor's repo containment with `external: true`.
   return plan(
     "certs",
     // 1. The exported CA bundle, then lock it down to the current user.
-    writeText(pemPath, bundle, `corporate root CA bundle (PEM, ${certs.length} cert(s))`),
+    writeText(pemPath, bundle, `corporate root CA bundle (PEM, ${certs.length} cert(s))`, {
+      external: true,
+    }),
     exec("lock down the PEM to the current user", ctx.host.lockDownFileArgv(pemPath)),
 
     // 2. Propagate trust to every runtime via shell-profile env exports.
@@ -72,17 +77,20 @@ async function planCerts(ctx: PlanContext): Promise<Plan> {
       join(home, ".npmrc"),
       upsertIniKey(readIfExists(join(home, ".npmrc")) ?? "", "cafile", pemPath),
       "npm: set cafile to the corporate CA bundle",
+      { external: true },
     ),
     pipConfigWrite(ctx, home, pemPath),
     writeText(
       join(home, ".cargo", "config.toml"),
       cargoConfig(readIfExists(join(home, ".cargo", "config.toml")) ?? "", pemPath),
       "cargo: set [http] cainfo and [net] git-fetch-with-cli",
+      { external: true },
     ),
     writeText(
       join(home, ".condarc"),
       condarcConfig(readIfExists(join(home, ".condarc")) ?? "", pemPath),
       "conda: set ssl_verify to the corporate CA bundle",
+      { external: true },
     ),
 
     // 4. Homebrew bundles its own CA store and needs a prefix-specific cp + rehash
@@ -133,6 +141,9 @@ function pipConfigWrite(ctx: PlanContext, home: string, pemPath: string) {
     pipPath,
     pipConfig(existing, pemPath),
     "pip: set global.cert to the corporate CA bundle",
+    {
+      external: true, // home/system path, not repo-scoped
+    },
   );
 }
 

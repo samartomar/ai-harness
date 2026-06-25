@@ -50,6 +50,10 @@ export function mcpServers(scope: string, stack: RepoStack): Record<string, McpS
     "better-code-review-graph": {
       type: "stdio",
       command: "uv",
+      // `uv run` executes the version installed in the project's OWN uv environment
+      // (governed by its lockfile) — it does not fetch latest from upstream the way
+      // `uvx <pkg>` would, so the running version is already reproducible. AWS /
+      // Playwright below use `uvx|npx <pkg>@<ver>` explicit pins.
       args: ["run", "better-code-review-graph", "serve"],
       description:
         "Local code-review knowledge graph (impact radius, affected flows) served over stdio via uv.",

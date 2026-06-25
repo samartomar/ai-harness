@@ -1,4 +1,5 @@
 import { lines } from "../internals/render.js";
+import { GITLEAKS_REV } from "./precommit.js";
 
 /**
  * CI software-composition-analysis (SCA) workflow: scan dependency licenses and
@@ -38,7 +39,16 @@ export const LICENSE_MATRIX: LicenseTier[] = [
   },
   {
     category: "strong-copyleft",
-    spdx: ["GPL-2.0", "GPL-3.0"],
+    // Include modern SPDX -only / -or-later variants: a dep declaring `GPL-3.0-only`
+    // carries the same obligation as `GPL-3.0` and must not slip through the gate.
+    spdx: [
+      "GPL-2.0",
+      "GPL-2.0-only",
+      "GPL-2.0-or-later",
+      "GPL-3.0",
+      "GPL-3.0-only",
+      "GPL-3.0-or-later",
+    ],
     disposition: "fail",
     note: "Whole-work reciprocity — fail the build pending legal sign-off.",
   },
@@ -57,6 +67,19 @@ export function blockingLicenses(): string[] {
   ).flatMap((t) => t.spdx);
 }
 
+/**
+ * The blocking SPDX ids actually present in an SBOM document — a faithful mirror of
+ * the generated workflow's gate (`grep -q "\"$spdx\"" sbom.spdx.json`). Exported so
+ * the gate's POLICY is unit-tested against representative SBOM fixtures (MIT passes,
+ * GPL/AGPL fail), not merely asserted as generated strings. Empty list = gate passes.
+ */
+export function blockedLicensesFound(
+  sbomText: string,
+  blocked: string[] = blockingLicenses(),
+): string[] {
+  return blocked.filter((spdx) => sbomText.includes(`"${spdx}"`));
+}
+
 function matrixComment(): string[] {
   const rows = LICENSE_MATRIX.map(
     (t) => `#   ${t.category.padEnd(16)} -> ${t.disposition.padEnd(12)} (${t.spdx.join(", ")})`,
@@ -67,6 +90,7 @@ function matrixComment(): string[] {
 /** Render `.github/workflows/sca.yml` — license scan that blocks AGPL/strong copyleft. */
 export function scaWorkflowYaml(): string {
   const blocking = blockingLicenses();
+  const gv = GITLEAKS_REV.replace(/^v/, ""); // bare semver for the release asset name
   return lines(
     "# .github/workflows/sca.yml — SCA + license gate (managed by aih guardrails)",
     "# Policy intent: every dependency change is scanned; copyleft that legal has",
@@ -84,6 +108,23 @@ export function scaWorkflowYaml(): string {
     "  contents: read",
     "",
     "jobs:",
+    // Secret scanning runs in CI too — not just the local pre-commit hook — so
+    // CI-only commits, bot commits, and developers without pre-commit installed are
+    // still gated. Same pinned gitleaks version + `.gitleaks.toml` policy as local.
+    "  secret-scan:",
+    "    runs-on: ubuntu-latest",
+    "    steps:",
+    "      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0",
+    "        with:",
+    "          fetch-depth: 0",
+    `      - name: Install gitleaks (pinned ${GITLEAKS_REV})`,
+    "        shell: bash",
+    "        run: |",
+    "          set -euo pipefail",
+    `          curl -sSfL https://github.com/gitleaks/gitleaks/releases/download/${GITLEAKS_REV}/gitleaks_${gv}_linux_x64.tar.gz \\`,
+    "            | tar -xz -C /usr/local/bin gitleaks",
+    "      - name: Scan for committed secrets",
+    "        run: gitleaks detect --config .gitleaks.toml --redact --no-banner --exit-code 1",
     "  license-gate:",
     "    runs-on: ubuntu-latest",
     "    steps:",
