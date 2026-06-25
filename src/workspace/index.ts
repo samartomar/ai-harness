@@ -73,7 +73,7 @@ function workspacePlan(ctx: PlanContext): Plan {
     ),
     writeJson(
       ".mcp.json",
-      spanningMcp(repos),
+      spanningMcp(repos, (ctx.env.AIH_MCP_FS_VERSION ?? "").trim() || undefined),
       `filesystem MCP spanning ${repos.length} child repo(s), merged into any existing .mcp.json`,
       { merge: true },
     ),

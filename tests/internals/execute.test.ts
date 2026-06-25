@@ -84,6 +84,14 @@ describe("executePlan", () => {
     expect(existsSync(outside)).toBe(false);
   });
 
+  it("path containment also covers doc-with-path writes (no out-of-repo read/write)", async () => {
+    const outside = join(dirname(dir), "aih-doc-escape.md");
+    await expect(
+      executePlan(plan("t", doc("guidance", "x", outside)), ctx({ apply: true })),
+    ).rejects.toThrow(/outside the target root/);
+    expect(existsSync(outside)).toBe(false);
+  });
+
   it("path containment: an external write is allowed outside the root (host files)", async () => {
     const ext = mkdtempSync(join(tmpdir(), "aih-ext-"));
     try {

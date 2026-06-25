@@ -217,3 +217,25 @@ from config files.
   docker-compose setup (by design; not a clobber); `aih init` bootstraps claude-only
   while `bootstrap-ai --detect --verify` spans all installed CLIs, so the documented
   Request-#2 ordering can exit 1 before `--detect --apply` runs (UX/sequencing).
+
+### Round 2b — validation-review follow-up (branch `fix/review-remediation-2`)
+
+A post-merge validation review found the Round-2 closes were mechanically green but
+incomplete on six points; all six addressed (590 → 620 tests):
+
+- **fsxn temp/backup symlink hole (P1)** — CLOSED. The target was checked but the
+  `.aih.tmp`/`.aih.bak` scratch paths were not; now reject planted symlinks there +
+  exclusive creates (`COPYFILE_EXCL`/`flag:"wx"`). Doc-with-path writes are now
+  contained too.
+- **Mutable ECC/workspace upstreams (P1)** — CLOSED via pin MECHANISM (the design
+  keeps latest-by-default per [[ecc-install-delegates-to-ecc]]): `AIH_ECC_INSTALL_VERSION`,
+  `AIH_ECC_REF`, `AIH_MCP_FS_VERSION` pin each surface, plus an unpinned-run advisory.
+  Choosing the concrete versions / internal mirror remains the org's call (→ D7).
+- **cmd `%`/`!` expansion (P1/P2)** — CLOSED. The Windows guard now rejects `%VAR%` +
+  `!VAR!` (kept `()` allowed for `Program Files (x86)`).
+- **VDI dangling link (P2)** — CLOSED. mkdir now creates the junction TARGET dir.
+- **Coverage < 80% (P2)** — IMPROVED, not fully closed. +30 real tests → branches
+  77.4%→78.9%; gate raised 75→78. The last ~1% is concentrated in `doctor.ts`
+  (verification command) → its own test pass to reach 80.
+- **Release SBOM/provenance (P2)** — CLOSED. SBOM + keyless GitHub build-provenance
+  attestation added; npm publish + cosign signing remain Part-2 (→ D1).

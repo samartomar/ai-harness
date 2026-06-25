@@ -11,13 +11,14 @@ export default defineConfig({
       include: ["src/**/*.ts"],
       exclude: ["src/**/command.ts", "src/cli.ts", "**/*.d.ts"],
       // Enforced floor: set just below the current achieved levels so coverage can
-      // only ratchet UP — CI/release fail on regression. Goal: raise branches → 80%
-      // (the stated bar) as the branch-heavy safety paths gain tests.
+      // only ratchet UP — CI/release fail on regression. Branches are at ~79%; the
+      // remaining gap to the 80% bar is concentrated in doctor.ts (verification
+      // command) — raise this to 80 as that path gains dedicated tests.
       thresholds: {
-        statements: 88,
-        branches: 75,
-        functions: 90,
-        lines: 90,
+        statements: 91,
+        branches: 78,
+        functions: 94,
+        lines: 92,
       },
     },
   },

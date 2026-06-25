@@ -98,11 +98,16 @@ function vdiPlan(ctx: PlanContext) {
   const shell = ctx.host.envShell();
   const profilePath = ctx.host.shellProfilePaths()[0] ?? "";
 
-  const mkdirArgv =
-    ctx.host.platform === "windows" ? ["cmd", "/c", "mkdir", scratch] : ["mkdir", "-p", scratch];
-
   const crgLink = join(home, ".code-review-graph");
   const crgTarget = join(scratch, "code-review-graph");
+
+  // Create the junction TARGET (this also creates the scratch root, since mkdir makes
+  // intermediate dirs): `mklink /J` and `ln -s` both link happily to a MISSING target,
+  // which would leave a dangling redirect pointing at a directory that never exists.
+  const mkdirArgv =
+    ctx.host.platform === "windows"
+      ? ["cmd", "/c", "mkdir", crgTarget]
+      : ["mkdir", "-p", crgTarget];
 
   return plan(
     SCOPE,
@@ -113,7 +118,7 @@ function vdiPlan(ctx: PlanContext) {
       redirectEnv(scratch),
       `redirect caches/SQLite onto local scratch (${vdi.reason})`,
     ),
-    exec("create local scratch root", mkdirArgv, { allowFailure: true }),
+    exec("create local scratch root + redirect target dir", mkdirArgv, { allowFailure: true }),
     redirectAction(ctx, crgLink, crgTarget),
     probe("VDI detection", () => ({
       name: "VDI detection",
