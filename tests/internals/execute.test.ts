@@ -1,6 +1,6 @@
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { executePlan, summarizeResult } from "../../src/internals/execute.js";
 import {
@@ -74,6 +74,28 @@ describe("executePlan", () => {
     );
     expect(second.writes[0]?.effect).toBe("overwrite");
     expect(second.backups).toHaveLength(1);
+  });
+
+  it("path containment: a repo-scoped write escaping the root fails closed", async () => {
+    const outside = join(dirname(dir), "aih-escape-test.txt"); // sibling of the temp root
+    await expect(
+      executePlan(plan("t", writeText(outside, "x", "escape")), ctx({ apply: true })),
+    ).rejects.toThrow(/outside the target root/);
+    expect(existsSync(outside)).toBe(false);
+  });
+
+  it("path containment: an external write is allowed outside the root (host files)", async () => {
+    const ext = mkdtempSync(join(tmpdir(), "aih-ext-"));
+    try {
+      const target = join(ext, "host.txt");
+      await executePlan(
+        plan("t", writeText(target, "ok", "host file", { external: true })),
+        ctx({ apply: true }),
+      );
+      expect(readFileSync(target, "utf8")).toBe("ok\n");
+    } finally {
+      rmSync(ext, { recursive: true, force: true });
+    }
   });
 
   it("merge writes preserve existing user JSON keys", async () => {

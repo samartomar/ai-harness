@@ -2,10 +2,12 @@ import {
   chmodSync,
   copyFileSync,
   existsSync,
+  lstatSync,
   mkdirSync,
   readFileSync,
   renameSync,
   rmSync,
+  type Stats,
   writeFileSync,
 } from "node:fs";
 import { dirname } from "node:path";
@@ -48,10 +50,21 @@ export class FsTransaction {
 
   commit(): FsTxnResult {
     const applied: AppliedWrite[] = [];
+    // Collapse repeated writes to the same target (last wins) BEFORE committing:
+    // staging one path twice would back up the first write as `<path>.aih.bak`, then
+    // overwrite that backup with the second — making a later rollback non-restorative.
+    const staged = dedupeByPath(this.staged);
     try {
-      for (const w of this.staged) {
+      for (const w of staged) {
         mkdirSync(dirname(w.path), { recursive: true });
-        const existed = existsSync(w.path);
+        // Refuse to write THROUGH an existing symlink — it can redirect the write
+        // outside the repo, and copyFileSync would back up the link's TARGET, not the
+        // link. Fail closed; the executor enforces parent-dir containment separately.
+        const info = lstatSafe(w.path);
+        if (info?.isSymbolicLink()) {
+          throw new Error(`refusing to write through a symlink: ${w.path}`);
+        }
+        const existed = info !== undefined;
         let backup: string | undefined;
         if (existed) {
           backup = `${w.path}.aih.bak`;
@@ -71,6 +84,22 @@ export class FsTransaction {
       rollback(applied);
       throw new FsTxnError(`transaction failed and was rolled back: ${(err as Error).message}`);
     }
+  }
+}
+
+/** Keep only the last staged write per target path (deterministic, insertion order). */
+function dedupeByPath(staged: StagedWrite[]): StagedWrite[] {
+  const byPath = new Map<string, StagedWrite>();
+  for (const w of staged) byPath.set(w.path, w);
+  return [...byPath.values()];
+}
+
+/** `lstat` (does not follow links) or `undefined` if the path does not exist. */
+function lstatSafe(path: string): Stats | undefined {
+  try {
+    return lstatSync(path);
+  } catch {
+    return undefined;
   }
 }
 

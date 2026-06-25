@@ -141,8 +141,13 @@ async function reportPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
       format === "html"
         ? reportHtml(built.title, built.digests, { refresh })
         : reportMarkdown(built.title, built.digests);
+    // The default artifact lands under `.aih/` (repo-contained). An explicit `--out`
+    // is the operator's own chosen target, so it opts out of repo containment.
+    const operatorOut = typeof ctx.options.out === "string" && ctx.options.out.length > 0;
     actions.push(
-      writeText(path, content, `${built.scope} report (${format}) → ${path.replace(/\\/g, "/")}`),
+      writeText(path, content, `${built.scope} report (${format}) → ${path.replace(/\\/g, "/")}`, {
+        external: operatorOut,
+      }),
     );
     // When the artifact lands in the default `.aih/` output dir, ensure git ignores
     // it — org reports can hold sensitive aggregate usage data and must not be left

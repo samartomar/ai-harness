@@ -23,6 +23,7 @@ const ContextDir = z
   .string()
   .min(1)
   .regex(/^[A-Za-z0-9._\-/]+$/, "context dir must be a simple relative path")
+  .refine((s) => !s.startsWith("/"), "context dir must be repo-relative (no leading /)")
   .refine((s) => !s.split(/[/\\]/).includes(".."), "context dir must not traverse parents");
 
 /**
