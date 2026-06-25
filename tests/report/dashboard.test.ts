@@ -260,7 +260,7 @@ describe("graphDigests (Phase 2 — gated)", () => {
     );
   });
 
-  it("falls back to a code-review-graph CLI when present", async () => {
+  it("falls back to a code-review-graph CLI when present (JSON output)", async () => {
     const run = fakeRunner((argv) =>
       argv[0] === "code-review-graph"
         ? { code: 0, stdout: JSON.stringify({ nodes: 10, edges: 20 }) }
@@ -268,6 +268,18 @@ describe("graphDigests (Phase 2 — gated)", () => {
     );
     const ds = await graphDigests(ctx(run));
     expect((ds[0]?.data as { nodes: number }).nodes).toBe(10);
+  });
+
+  it("parses `code-review-graph status` plain-text output (with thousands separators)", async () => {
+    const run = fakeRunner((argv) =>
+      argv[0] === "code-review-graph" && argv[1] === "status"
+        ? { code: 0, stdout: "Nodes: 6,285\nEdges: 27,117\nFiles: 1,122\nLanguages: python\n" }
+        : undefined,
+    );
+    const ds = await graphDigests(ctx(run));
+    expect((ds[0]?.data as { nodes: number }).nodes).toBe(6285);
+    expect((ds[0]?.data as { edges: number }).edges).toBe(27117);
+    expect((ds[0]?.data as { files: number }).files).toBe(1122);
   });
 
   it("ignores a malformed graph.json (never fabricated) and tries the CLI", async () => {

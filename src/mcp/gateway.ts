@@ -63,7 +63,7 @@ export function gatewayDoc(gateway: string, hostedServers: string[] = []): strin
     "",
     "   | IdP group            | Allowed MCP tools                         |",
     "   |----------------------|-------------------------------------------|",
-    "   | mcp-readers          | better-code-review-graph                  |",
+    "   | mcp-readers          | code-review-graph                         |",
     "   | mcp-comms            | better-email, better-telegram             |",
     "   | mcp-knowledge        | better-notion, mnemo-mcp, wet-mcp         |",
     "   | mcp-admins           | * (all tools)                             |",
