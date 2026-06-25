@@ -1,8 +1,10 @@
 # Cut a GitHub Release when a v* tag is pushed. Verifies the gates (typecheck,
 # lint, test+coverage, build), then PACKS a verifiable install artifact (tarball +
-# SHA256 checksum), smoke-installs it, and attaches it to the Release so an
-# enterprise user can tie the installed package back to the reviewed tag. Does NOT
-# publish to npm — that is a separate, deliberate decision (see CHANGELOG).
+# SHA256 checksum + CycloneDX SBOM), generates a GitHub build-provenance attestation
+# (keyless, via OIDC — no external signing infra), smoke-installs it, and attaches
+# everything to the Release so an enterprise user can tie the installed package back
+# to the reviewed tag and build identity. Does NOT publish to npm — that is a
+# separate, deliberate decision (see CHANGELOG).
 name: release
 
 on:
@@ -18,6 +20,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write # create the GitHub Release for the tag
+      id-token: write # keyless signing identity for the provenance attestation
+      attestations: write # record the build-provenance attestation
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -38,6 +42,16 @@ jobs:
           set -euo pipefail
           npm pack
           sha256sum ./*.tgz | tee SHA256SUMS.txt
+      - name: Generate CycloneDX SBOM
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+        with:
+          artifact-name: aih-sbom.spdx.json
+          format: spdx-json
+          output-file: aih-sbom.spdx.json
+      - name: Attest build provenance for the tarball
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
+        with:
+          subject-path: "./*.tgz"
       - name: Smoke-install the packed tarball
         run: |
           set -euo pipefail
@@ -51,4 +65,4 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes \
-            ./*.tgz SHA256SUMS.txt
+            ./*.tgz SHA256SUMS.txt aih-sbom.spdx.json
