@@ -262,6 +262,93 @@ describe("scanRepo — other stacks", () => {
   });
 });
 
+// ---- monorepo / workspace detection (P1-G) --------------------------------
+
+describe("scanRepo — monorepo / workspace detection", () => {
+  it("flags a pnpm workspace and labels the tool", () => {
+    put("package.json", pkg());
+    put("pnpm-workspace.yaml", "packages:\n  - 'packages/*'\n");
+    const s = scanRepo(tmp, { maxDepth: 8 });
+    expect(s.isMonorepo).toBe(true);
+    expect(s.workspaceTool).toBe("pnpm");
+  });
+
+  it("detects Turborepo from turbo.json", () => {
+    put("package.json", pkg());
+    put("turbo.json", "{}");
+    expect(scanRepo(tmp, { maxDepth: 8 }).workspaceTool).toBe("turbo");
+  });
+
+  it("detects an npm/yarn workspaces field on the root package.json", () => {
+    put("package.json", JSON.stringify({ name: "root", workspaces: ["packages/*"], scripts: {} }));
+    const s = scanRepo(tmp, { maxDepth: 8 });
+    expect(s.isMonorepo).toBe(true);
+    expect(s.workspaceTool).toBe("npm/yarn workspaces");
+  });
+
+  it("detects a Bazel workspace and a Gradle multi-project", () => {
+    put("WORKSPACE.bazel", "");
+    expect(scanRepo(tmp, { maxDepth: 8 }).workspaceTool).toBe("bazel");
+    rmSync(join(tmp, "WORKSPACE.bazel"));
+    put("settings.gradle", "include 'app'\n");
+    put("build.gradle", "");
+    expect(scanRepo(tmp, { maxDepth: 8 }).workspaceTool).toBe("gradle");
+  });
+
+  it("detects a Maven multi-module reactor from <modules>", () => {
+    put("pom.xml", "<project><modules><module>core</module></modules></project>");
+    const s = scanRepo(tmp, { maxDepth: 8 });
+    expect(s.languages).toContain("Java/Maven");
+    expect(s.workspaceTool).toBe("maven");
+    expect(s.isMonorepo).toBe(true);
+  });
+
+  it("flags multiple package manifests as a monorepo even without an orchestrator", () => {
+    put("package.json", pkg());
+    put("packages/ui/package.json", pkg());
+    put("packages/api/package.json", pkg());
+    expect(scanRepo(tmp, { maxDepth: 8 }).isMonorepo).toBe(true);
+  });
+
+  it("a single-package repo is NOT a monorepo", () => {
+    put("package.json", pkg({ scripts: { test: "vitest run" } }));
+    const s = scanRepo(tmp, { maxDepth: 8 });
+    expect(s.isMonorepo).toBe(false);
+    expect(s.workspaceTool).toBeUndefined();
+  });
+
+  it("turbo wins precedence over a bare workspaces field (deterministic)", () => {
+    put("package.json", JSON.stringify({ name: "root", workspaces: ["packages/*"], scripts: {} }));
+    put("turbo.json", "{}");
+    expect(scanRepo(tmp, { maxDepth: 8 }).workspaceTool).toBe("turbo");
+  });
+
+  it("renders the monorepo note + label in the stack rule", async () => {
+    put(
+      "package.json",
+      JSON.stringify({
+        name: "root",
+        workspaces: ["packages/*"],
+        scripts: { test: "turbo run test" },
+      }),
+    );
+    put("turbo.json", "{}");
+    const stackMdc =
+      findWrite((await command.plan(makeCtx())).actions, ".cursor/rules/01-stack.mdc")?.contents ??
+      "";
+    expect(stackMdc).toContain("Monorepo: turbo workspace");
+    expect(stackMdc).toContain("turbo monorepo");
+    // a non-monorepo stack rule carries no such note
+    rmSync(join(tmp, "turbo.json"));
+    rmSync(join(tmp, "package.json"));
+    put("package.json", pkg({ scripts: { test: "vitest run" } }));
+    const single =
+      findWrite((await command.plan(makeCtx())).actions, ".cursor/rules/01-stack.mdc")?.contents ??
+      "";
+    expect(single.toLowerCase()).not.toContain("monorepo");
+  });
+});
+
 // ---- plan(): generated artifacts ------------------------------------------
 
 describe("profile.plan", () => {

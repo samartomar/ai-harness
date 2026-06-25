@@ -131,10 +131,13 @@ function planMcp(ctx: PlanContext): ReturnType<typeof plan> {
   ];
 
   if (scope === "remote") {
+    const hosted = Object.entries(servers)
+      .filter(([, s]) => s.classification === "third-party-hosted")
+      .map(([name]) => name);
     actions.push(
       doc(
         "Identity-aware MCP gateway + SSO (Entra/Okta OIDC, tool-level RBAC) — run by hand, not contacted",
-        gatewayDoc(GATEWAY_URL),
+        gatewayDoc(GATEWAY_URL, hosted),
       ),
     );
   }

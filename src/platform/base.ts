@@ -73,3 +73,41 @@ export function safeCaPattern(pattern: string): string {
   }
   return pattern;
 }
+
+/** VDI kinds an operator may declare explicitly via `AIH_VDI_KIND`. */
+const VDI_KINDS = ["citrix", "workspaces", "res", "rdp", "generic"] as const;
+
+/**
+ * Cross-platform, env-based VDI signals shared by every host adapter, checked
+ * before the per-OS heuristics:
+ *  - `AIH_VDI_KIND=<citrix|workspaces|res|rdp|generic>` lets fleet imaging pin the
+ *    platform deterministically — the only reliable way to flag Amazon WorkSpaces
+ *    or AVD, which expose no dependable env marker (this is what finally wires the
+ *    `workspaces` kind into a reachable code path);
+ *  - `AIH_FORCE_VDI=1` forces a generic VDI (back-compat; now honored on Windows
+ *    too, which previously ignored it);
+ *  - VMware / Omnissa Horizon exports `ViewClient_*` into the session, a genuine
+ *    env-detectable marker.
+ * Returns undefined when nothing matches, so the caller's OS-specific heuristics run.
+ */
+export function vdiFromEnv(env: NodeJS.ProcessEnv): VdiInfo | undefined {
+  const declared = env.AIH_VDI_KIND?.trim().toLowerCase();
+  if (declared && (VDI_KINDS as readonly string[]).includes(declared)) {
+    return {
+      isVdi: true,
+      reason: `declared via AIH_VDI_KIND=${declared}`,
+      kind: declared as VdiInfo["kind"],
+    };
+  }
+  if (env.AIH_FORCE_VDI === "1") {
+    return { isVdi: true, reason: "forced via AIH_FORCE_VDI=1", kind: "generic" };
+  }
+  if (Object.keys(env).some((k) => /^ViewClient_/i.test(k))) {
+    return {
+      isVdi: true,
+      reason: "VMware/Omnissa Horizon session (ViewClient_*)",
+      kind: "generic",
+    };
+  }
+  return undefined;
+}

@@ -87,12 +87,14 @@ export function scaWorkflowYaml(): string {
     "  license-gate:",
     "    runs-on: ubuntu-latest",
     "    steps:",
-    "      - uses: actions/checkout@v4",
+    // Actions SHA-pinned (matching aih's own CI discipline). anchore/sbom-action
+    // is the real SBOM action — the old anchore/syft-action ref did not resolve.
+    "      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0",
     "      - name: Scan dependency licenses (SBOM)",
-    "        uses: anchore/syft-action@v0",
+    "        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0",
     "        with:",
     "          output-file: sbom.spdx.json",
-    "          output-format: spdx-json",
+    "          format: spdx-json",
     "      - name: Fail on strong / network copyleft (AGPL)",
     "        shell: bash",
     "        env:",

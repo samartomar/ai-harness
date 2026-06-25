@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { cargoConfig, command, pipConfig } from "../../src/certs/index.js";
+import { cargoConfig, command, condarcConfig, pipConfig } from "../../src/certs/index.js";
 import { upsertIniKey } from "../../src/certs/ini.js";
 import { executePlan } from "../../src/internals/execute.js";
 import type { Action, PlanContext } from "../../src/internals/plan.js";
@@ -262,25 +262,34 @@ describe("certs plan — per-manager config files carry the PEM path", () => {
   });
 });
 
-describe("certs plan — boundary: cloud/optional managers are docs, not exec/write", () => {
-  it("Homebrew and conda are doc actions carrying exact commands", async () => {
+describe("certs plan — Homebrew stays a doc; conda is now an applied .condarc write", () => {
+  it("Homebrew remains guidance (prefix-specific cp + rehash), and no manager is an exec", async () => {
     const root = freshTmp();
     const home = join(root, "home");
     const p = await command.plan(makeCtx({ root, env: { HOME: home } }));
 
     const brew = findDoc(p.actions, "Homebrew");
-    const conda = findDoc(p.actions, "conda");
     expect(brew?.text).toContain("c_rehash");
     expect(brew?.text).toContain("brew doctor");
-    expect(conda?.text).toContain("conda config --set ssl_verify");
+    // conda is no longer a doc — it's applied like npm/pip/cargo (asserted below).
+    expect(findDoc(p.actions, "conda")).toBeUndefined();
 
-    // Neither manager is ever an exec, and no write targets brew/conda dirs.
+    // No manager is ever an exec; no exec targets brew/conda/c_rehash.
     const execArgvs = p.actions
       .filter((a) => a.kind === "exec")
       .map((a) => (a as Extract<Action, { kind: "exec" }>).argv.join(" "));
     expect(
       execArgvs.some((s) => s.includes("brew") || s.includes("conda") || s.includes("c_rehash")),
     ).toBe(false);
+  });
+
+  it("writes ~/.condarc with ssl_verify=<pem> (a config file, never a conda run)", async () => {
+    const root = freshTmp();
+    const home = join(root, "home");
+    const p = await command.plan(makeCtx({ root, env: { HOME: home } }));
+    const condarc = findWrite(p.actions, "/.condarc");
+    expect(condarc).toBeDefined();
+    expect(condarc?.contents).toMatch(/^ssl_verify: .*corporate-root-ca\.pem$/m);
   });
 });
 
@@ -436,5 +445,14 @@ describe("ini helper", () => {
     expect(b).toBe(a);
     expect(a).toContain('cainfo = "/x/ca.pem"');
     expect(a).toContain("git-fetch-with-cli = true");
+  });
+
+  it("condarcConfig upserts ssl_verify, preserves other keys, and is idempotent", () => {
+    const a = condarcConfig("channels:\n  - defaults\n", "/x/ca.pem");
+    expect(a).toContain("channels:");
+    expect(a).toContain("ssl_verify: /x/ca.pem");
+    expect(condarcConfig(a, "/x/ca.pem")).toBe(a);
+    // an existing ssl_verify is REPLACED in place, not duplicated
+    expect(condarcConfig("ssl_verify: /old/ca.pem\n", "/x/ca.pem")).toBe("ssl_verify: /x/ca.pem\n");
   });
 });

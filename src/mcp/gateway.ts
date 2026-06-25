@@ -9,7 +9,27 @@ import { lines } from "../internals/render.js";
  * `gateway` is the canonical agentgateway base URL clients are pointed at; it is
  * interpolated into copy-paste commands only — it is not contacted.
  */
-export function gatewayDoc(gateway: string): string {
+export function gatewayDoc(gateway: string, hostedServers: string[] = []): string {
+  // Vendor-risk checklist for the third-party-hosted servers the remote scope adds
+  // — they are external endpoints your data is sent to, so they get an explicit
+  // "vet before enabling" callout rather than being treated as a default-on set.
+  const hostedSection =
+    hostedServers.length > 0
+      ? [
+          "",
+          "4. Third-party-hosted servers — vendor-risk review (before you enable them):",
+          "",
+          "   These remote-scope servers are HOSTED endpoints your data is sent to, not",
+          "   local processes. Treat each as a vendor-risk decision, not a default:",
+          "",
+          ...hostedServers.map((name) => `     - ${name}  (third-party-hosted)`),
+          "",
+          "   Vet first: who operates the endpoint and where data is processed; whether",
+          "   per-user tokens are isolated; SOC 2 / ISO 27001 evidence; whether it can be",
+          "   self-hosted; whether the endpoint/package can be pinned. Until cleared, treat",
+          "   these as demo/evaluation only and keep `.mcp.json` under CODEOWNERS review.",
+        ]
+      : [];
   return lines(
     "Centralized, identity-aware MCP gateway (remote scope)",
     "======================================================",
@@ -56,5 +76,6 @@ export function gatewayDoc(gateway: string): string {
     "     agentgateway login --check",
     "",
     "   A 0 exit confirms a valid identity-aware session; non-zero means re-auth.",
+    ...hostedSection,
   );
 }

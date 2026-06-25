@@ -7,8 +7,13 @@ import type { RepoStack } from "../profile/scan.js";
  * against. No dates, no random ordering — stable across runs.
  */
 
-/** Base image for the generated devcontainer (Microsoft devcontainers base). */
-export const DEVCONTAINER_IMAGE = "mcr.microsoft.com/devcontainers/base:ubuntu";
+/**
+ * Base image for the generated devcontainer. Pinned to a concrete dated tag (not
+ * the floating `:ubuntu`) so rebuilds are reproducible; bump deliberately. A
+ * `@sha256:` digest pin is the stronger, higher-maintenance option — tracked as a
+ * Part-2 decision.
+ */
+export const DEVCONTAINER_IMAGE = "mcr.microsoft.com/devcontainers/base:ubuntu-24.04";
 
 /** Egress allowlist baked into the managed sandbox settings. */
 export const SANDBOX_ALLOWED_DOMAINS = ["github.com", "pypi.org", "registry.npmjs.org"] as const;
@@ -86,19 +91,24 @@ function postCreate(stack: RepoStack): string {
  */
 export function devcontainerConfig(opts: DevcontainerOptions): Record<string, unknown> {
   const { contextDir, stack } = opts;
+  // Features pinned to exact published versions (not floating major tags) so a
+  // rebuild is reproducible; the installed runtimes are pinned too (node to a
+  // concrete LTS major, python to a minor). Bump these deliberately.
   const features: Record<string, unknown> = {
-    "ghcr.io/devcontainers/features/common-utils:2": {
+    "ghcr.io/devcontainers/features/common-utils:2.5.9": {
       installZsh: true,
       username: "vscode",
       upgradePackages: true,
     },
-    "ghcr.io/devcontainers/features/github-cli:1": {},
+    "ghcr.io/devcontainers/features/github-cli:1.1.0": {},
   };
-  if (isNodeStack(stack)) features["ghcr.io/devcontainers/features/node:1"] = { version: "lts" };
-  if (stack.languages.includes("Python")) {
-    features["ghcr.io/devcontainers/features/python:1"] = { version: "3.12" };
+  if (isNodeStack(stack)) {
+    features["ghcr.io/devcontainers/features/node:1.7.1"] = { version: "22" };
   }
-  if (stack.cloud.includes("AWS")) features["ghcr.io/devcontainers/features/aws-cli:1"] = {};
+  if (stack.languages.includes("Python")) {
+    features["ghcr.io/devcontainers/features/python:1.8.0"] = { version: "3.12" };
+  }
+  if (stack.cloud.includes("AWS")) features["ghcr.io/devcontainers/features/aws-cli:1.1.4"] = {};
 
   return {
     name: "aih-sandbox",

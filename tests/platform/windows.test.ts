@@ -53,6 +53,26 @@ describe("WindowsAdapter", () => {
     expect(adapter(() => undefined, { SESSIONNAME: "Console" }).detectVdi().isVdi).toBe(false);
   });
 
+  it("honors explicit declarations and Horizon markers (wires the workspaces kind)", () => {
+    // Fleet imaging can pin the platform — the only reliable way to flag Amazon
+    // WorkSpaces, which exposes no dependable session env marker.
+    expect(adapter(() => undefined, { AIH_VDI_KIND: "workspaces" }).detectVdi()).toMatchObject({
+      isVdi: true,
+      kind: "workspaces",
+    });
+    // AIH_FORCE_VDI is now honored on Windows (it was silently ignored before).
+    expect(adapter(() => undefined, { AIH_FORCE_VDI: "1" }).detectVdi()).toMatchObject({
+      isVdi: true,
+      kind: "generic",
+    });
+    // VMware/Omnissa Horizon exports ViewClient_* into the session.
+    expect(
+      adapter(() => undefined, { ViewClient_Machine_Name: "vdihost01" }).detectVdi(),
+    ).toMatchObject({ isVdi: true, kind: "generic" });
+    // An unrecognized AIH_VDI_KIND is ignored — falls through to the console default.
+    expect(adapter(() => undefined, { AIH_VDI_KIND: "bogus" }).detectVdi().isVdi).toBe(false);
+  });
+
   it("builds an icacls lockdown argv for the current user", () => {
     const a = adapter(() => undefined, { USERNAME: "samar" });
     expect(a.lockDownFileArgv("C:/x/ca.pem")).toEqual([

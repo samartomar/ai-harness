@@ -20,7 +20,16 @@ function stackFacts(stack: RepoStack): string[] {
   if (stack.cloud.length > 0) out.push(`- Cloud: ${stack.cloud.join(", ")}`);
   if (stack.deployment.length > 0) out.push(`- Deployment: ${stack.deployment.join(", ")}`);
   if (stack.packageManager) out.push(`- Package manager: ${stack.packageManager}`);
+  if (stack.isMonorepo) {
+    out.push(`- Monorepo: ${stack.workspaceTool ?? "multiple packages"} workspace`);
+  }
   return out;
+}
+
+/** Note appended for monorepos so a single root command isn't taken as authoritative per-package. */
+function monorepoNote(stack: RepoStack): string {
+  const tool = stack.workspaceTool ?? "multi-package";
+  return `This is a ${tool} monorepo: the commands above run at the workspace root and fan out to packages; an individual package may define its own. Confirm the command for the package you are editing before relying on a single root command.`;
 }
 
 /** Command bullets — only commands the repo actually defines. */
@@ -52,6 +61,7 @@ export function renderStackMdc(stack: RepoStack): string {
     "# Commands",
     "",
     commandLines(stack, "- Use "),
+    stack.isMonorepo ? ["", monorepoNote(stack)] : [],
     "",
     "Prefer these exact commands over guessing equivalents. If a command is",
     "missing here, it is not configured in the repo — do not invent one.",

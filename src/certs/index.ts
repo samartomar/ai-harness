@@ -14,7 +14,7 @@ import {
 } from "../internals/plan.js";
 import type { Check } from "../internals/verify.js";
 import { upsertIniKey } from "./ini.js";
-import { condaDoc, homebrewDoc, noCertDoc } from "./templates.js";
+import { homebrewDoc, noCertDoc } from "./templates.js";
 
 const DEFAULT_OUT_DIR = "~/.config/enterprise-ca";
 const PEM_NAME = "corporate-root-ca.pem";
@@ -79,10 +79,15 @@ async function planCerts(ctx: PlanContext): Promise<Plan> {
       cargoConfig(readIfExists(join(home, ".cargo", "config.toml")) ?? "", pemPath),
       "cargo: set [http] cainfo and [net] git-fetch-with-cli",
     ),
+    writeText(
+      join(home, ".condarc"),
+      condarcConfig(readIfExists(join(home, ".condarc")) ?? "", pemPath),
+      "conda: set ssl_verify to the corporate CA bundle",
+    ),
 
-    // 4. Managers that may be absent — emit exact commands, never run them.
+    // 4. Homebrew bundles its own CA store and needs a prefix-specific cp + rehash
+    //    (not a single config file), so it stays guidance — emitted, never run.
     doc("Homebrew: trust the corporate CA (run if brew is installed)", homebrewDoc(pemPath)),
-    doc("conda: trust the corporate CA (run if conda is installed)", condaDoc(pemPath)),
 
     // 5. Read-only reachability check (skips cleanly when curl is absent).
     probe("CA trust reaches pypi", (c) => pypiProbe(c)),
@@ -149,6 +154,27 @@ export function cargoConfig(existing: string, pemPath: string): string {
     section: "net",
     separator: " = ",
   });
+}
+
+/**
+ * Upsert `ssl_verify: <pem>` into a YAML `.condarc`, preserving every other line.
+ * conda/Anaconda verifies TLS through this key (not the shell env), so writing it
+ * applies the corporate trust the same way `.npmrc`/pip/cargo do — no `conda` run.
+ */
+export function condarcConfig(existing: string, pemPath: string): string {
+  const line = `ssl_verify: ${pemPath}`;
+  const src = existing.replace(/\n+$/, "");
+  const rows = src.length > 0 ? src.split("\n") : [];
+  let replaced = false;
+  const out = rows.map((r) => {
+    if (/^\s*ssl_verify\s*:/.test(r)) {
+      replaced = true;
+      return line;
+    }
+    return r;
+  });
+  if (!replaced) out.push(line);
+  return `${out.join("\n")}\n`;
 }
 
 /** Shell-appropriate `--ca-pattern` example for the no-cert guidance. */

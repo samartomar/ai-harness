@@ -183,6 +183,18 @@ describe("VDI host (posix)", () => {
     expect(body).toContain(`PIP_CACHE_DIR=${under(scratch, "pip")}`);
   });
 
+  it("also redirects the newer model/package caches off the synced profile", async () => {
+    const body = await renderProfile(
+      ctx({ platform: "linux", vdi: VDI_ON, env: { USER: "alice", HOME: dir } }),
+    );
+    const scratch = posixScratch("alice");
+    expect(body).toContain(`HF_HOME=${under(scratch, "huggingface")}`);
+    expect(body).toContain(`npm_config_cache=${under(scratch, "npm")}`);
+    expect(body).toContain(`YARN_CACHE_FOLDER=${under(scratch, "yarn")}`);
+    expect(body).toContain(`UV_CACHE_DIR=${under(scratch, "uv")}`);
+    expect(body).toContain(`PLAYWRIGHT_BROWSERS_PATH=${under(scratch, "playwright")}`);
+  });
+
   it("wraps the redirects in an aih-managed (vdi) block on the shell profile", async () => {
     const p = await command.plan(ctx({ platform: "linux", vdi: VDI_ON, env }));
     // The redirect block is an envblock (scope "vdi") targeting the shell profile.

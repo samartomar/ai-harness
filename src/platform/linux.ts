@@ -8,6 +8,7 @@ import {
   type HostAdapter,
   safeCaPattern,
   type VdiInfo,
+  vdiFromEnv,
 } from "./base.js";
 import { parseFirstInt, parseNvidiaSmi } from "./parse.js";
 
@@ -31,12 +32,15 @@ export class LinuxAdapter implements HostAdapter {
   constructor(
     private readonly run: Runner,
     private readonly env: NodeJS.ProcessEnv,
+    /** Override the trust-store anchor dirs (tests); defaults to the system set. */
+    private readonly anchorDirs: readonly string[] = ANCHOR_DIRS,
   ) {}
 
   async trustStoreCerts(pattern: string): Promise<CertEntry[]> {
-    const p = safeCaPattern(pattern).toLowerCase();
+    const needle = safeCaPattern(pattern).toLowerCase();
     const out: CertEntry[] = [];
-    for (const dir of ANCHOR_DIRS) {
+    const seen = new Set<string>();
+    for (const dir of this.anchorDirs) {
       if (!existsSync(dir)) continue;
       let names: string[];
       try {
@@ -44,20 +48,41 @@ export class LinuxAdapter implements HostAdapter {
       } catch {
         continue;
       }
+      // The consolidated system bundle is huge and full of public roots — match it
+      // by filename only (loose subject matching there could pull an unrelated CA).
+      const canSubjectMatch = dir !== "/etc/ssl/certs";
       for (const name of names) {
         if (!/\.(crt|pem|cer)$/i.test(name)) continue;
-        if (!name.toLowerCase().includes(p)) continue;
+        const full = join(dir, name);
+        const byFilename = name.toLowerCase().includes(needle);
+        if (!byFilename && !canSubjectMatch) continue;
+        // Admin-added corporate CAs in the SOURCE anchor dirs often have a filename
+        // that doesn't contain the issuer name — match the cert SUBJECT too, via
+        // openssl. Best-effort: absent/erroring openssl just falls back to filename
+        // matching (no hard dependency, preserving the original behavior).
+        const bySubject =
+          !byFilename && canSubjectMatch ? await this.subjectMatches(full, needle) : false;
+        if (!byFilename && !bySubject) continue;
         try {
-          const pem = readFileSync(join(dir, name), "utf8");
-          if (pem.includes("BEGIN CERTIFICATE")) {
-            out.push({ subject: `${name} (${dir})`, pem: pem.endsWith("\n") ? pem : `${pem}\n` });
-          }
+          const raw = readFileSync(full, "utf8");
+          if (!raw.includes("BEGIN CERTIFICATE")) continue;
+          const pem = raw.endsWith("\n") ? raw : `${raw}\n`;
+          if (seen.has(pem)) continue;
+          seen.add(pem);
+          out.push({ subject: `${name} (${dir})`, pem });
         } catch {
           // skip unreadable
         }
       }
     }
     return out;
+  }
+
+  /** Best-effort subject match via openssl; false when openssl is absent or errors. */
+  private async subjectMatches(path: string, needle: string): Promise<boolean> {
+    const res = await this.run(["openssl", "x509", "-in", path, "-noout", "-subject"]);
+    if (res.spawnError || res.code !== 0) return false;
+    return res.stdout.toLowerCase().includes(needle);
   }
 
   lockDownFileArgv(path: string): string[] {
@@ -102,11 +127,15 @@ export class LinuxAdapter implements HostAdapter {
   }
 
   detectVdi(): VdiInfo {
+    // Explicit declaration (AIH_VDI_KIND) + Horizon ViewClient_* + AIH_FORCE_VDI,
+    // checked before the /scratch and XRDP heuristics.
+    const fromEnv = vdiFromEnv(this.env);
+    if (fromEnv) return fromEnv;
     if (existsSync("/scratch")) {
       return { isVdi: true, reason: "/scratch mount present", kind: "res" };
     }
-    if (this.env.XRDP_SESSION || this.env.AIH_FORCE_VDI === "1") {
-      return { isVdi: true, reason: "remote desktop session env", kind: "rdp" };
+    if (this.env.XRDP_SESSION) {
+      return { isVdi: true, reason: "remote desktop session env (XRDP_SESSION)", kind: "rdp" };
     }
     if (this.env.SESSIONNAME && this.env.SESSIONNAME !== "Console") {
       return { isVdi: true, reason: `SESSIONNAME=${this.env.SESSIONNAME}`, kind: "generic" };

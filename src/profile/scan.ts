@@ -39,6 +39,10 @@ export interface RepoStack {
   buildCommand?: string;
   /** How to lint, or undefined when the repo defines no lint command. */
   lintCommand?: string;
+  /** True when a workspace/monorepo orchestrator or multiple package manifests are present. */
+  isMonorepo: boolean;
+  /** Detected workspace tool (turbo/nx/pnpm/rush/lerna/bazel/maven/gradle/npm-yarn), if any. */
+  workspaceTool?: string;
 }
 
 export interface ScanOptions {
@@ -121,6 +125,8 @@ interface PkgJson {
   description?: string;
   scripts: Record<string, string>;
   deps: Set<string>;
+  /** True when the manifest declares a `workspaces` field (npm/yarn workspaces). */
+  hasWorkspaces: boolean;
 }
 
 /** Mutable accumulator collected during the walk, synthesized into RepoStack at the end. */
@@ -137,6 +143,10 @@ interface Raw {
   pkg?: PkgJson;
   /** serverless.* provider name, if a serverless manifest was read. */
   serverlessProvider?: string;
+  /** Detected workspace-tool signals; precedence-resolved in synthesize. */
+  workspaceSignals: Set<string>;
+  /** Count of non-excluded package.json manifests seen during the walk. */
+  manifestCount: number;
 }
 
 /**
@@ -155,6 +165,8 @@ export function scanRepo(root: string, opts: ScanOptions): RepoStack {
     entryPoints: [],
     hasTsconfig: false,
     sawTsFile: false,
+    workspaceSignals: new Set(),
+    manifestCount: 0,
   };
   walk(root, 0, Math.max(0, opts.maxDepth), raw);
   return synthesize(raw);
@@ -190,10 +202,16 @@ function inspectFile(dir: string, name: string, raw: Raw): void {
   if (/\.tsx?$/.test(lower) && !lower.endsWith(".d.ts")) raw.sawTsFile = true;
 
   switch (name) {
-    case "package.json":
-      // Capture the shallowest package.json as the primary manifest.
-      if (!raw.pkg) raw.pkg = readPkg(join(dir, name));
+    case "package.json": {
+      raw.manifestCount++;
+      // Capture the shallowest package.json as the primary manifest; a `workspaces`
+      // field on it marks an npm/yarn workspace monorepo (root only).
+      if (!raw.pkg) {
+        raw.pkg = readPkg(join(dir, name));
+        if (raw.pkg.hasWorkspaces) raw.workspaceSignals.add("npm/yarn workspaces");
+      }
       return;
+    }
     case "tsconfig.json":
       raw.hasTsconfig = true;
       return;
@@ -209,6 +227,30 @@ function inspectFile(dir: string, name: string, raw: Raw): void {
     case "bun.lockb":
       raw.packageManager = "bun";
       return;
+    case "pnpm-workspace.yaml":
+      raw.workspaceSignals.add("pnpm");
+      return;
+    case "nx.json":
+      raw.workspaceSignals.add("nx");
+      return;
+    case "turbo.json":
+      raw.workspaceSignals.add("turbo");
+      return;
+    case "lerna.json":
+      raw.workspaceSignals.add("lerna");
+      return;
+    case "rush.json":
+      raw.workspaceSignals.add("rush");
+      return;
+    case "WORKSPACE":
+    case "WORKSPACE.bazel":
+    case "MODULE.bazel":
+      raw.workspaceSignals.add("bazel");
+      return;
+    case "settings.gradle":
+    case "settings.gradle.kts":
+      raw.workspaceSignals.add("gradle");
+      return;
     case "go.mod":
       push(raw.languages, "Go");
       return;
@@ -222,6 +264,8 @@ function inspectFile(dir: string, name: string, raw: Raw): void {
       return;
     case "pom.xml":
       push(raw.languages, "Java/Maven");
+      // A <modules> reactor makes this a Maven multi-module monorepo.
+      if (/<modules>/.test(safeRead(join(dir, name)))) raw.workspaceSignals.add("maven");
       return;
     case "build.gradle":
     case "build.gradle.kts":
@@ -308,7 +352,7 @@ function detectPythonFrameworks(path: string, raw: Raw): void {
 }
 
 function readPkg(path: string): PkgJson {
-  const pkg: PkgJson = { scripts: {}, deps: new Set() };
+  const pkg: PkgJson = { scripts: {}, deps: new Set(), hasWorkspaces: false };
   let parsed: unknown;
   try {
     parsed = JSON.parse(readFileSync(path, "utf8"));
@@ -318,6 +362,7 @@ function readPkg(path: string): PkgJson {
   if (!isRecord(parsed)) return pkg;
   if (typeof parsed.name === "string") pkg.name = parsed.name;
   if (typeof parsed.description === "string") pkg.description = parsed.description;
+  if (parsed.workspaces !== undefined) pkg.hasWorkspaces = true;
   if (isRecord(parsed.scripts)) {
     for (const [k, v] of Object.entries(parsed.scripts)) {
       if (typeof v === "string") pkg.scripts[k] = v;
@@ -393,6 +438,11 @@ function synthesize(raw: Raw): RepoStack {
     }
   }
 
+  const workspaceTool = resolveWorkspaceTool(raw.workspaceSignals);
+  // A workspace orchestrator, or simply more than one package manifest, means a
+  // single root command must not be presented as authoritative for every package.
+  const isMonorepo = workspaceTool !== undefined || raw.manifestCount > 1;
+
   return {
     languages: dedupe(languages),
     frameworks: dedupe(frameworks),
@@ -407,6 +457,8 @@ function synthesize(raw: Raw): RepoStack {
     testRunner,
     buildCommand,
     lintCommand,
+    isMonorepo,
+    workspaceTool,
   };
 }
 
@@ -433,6 +485,24 @@ function deriveLint(pkg: PkgJson): string | undefined {
 function isPlaceholderScript(script: string): boolean {
   const s = script.toLowerCase();
   return /no test specified/.test(s) || /^echo\b.*exit\s+[01]\b/.test(s.trim());
+}
+
+/** Workspace tools by specificity — the first present signal wins (deterministic). */
+const WORKSPACE_PRECEDENCE = [
+  "turbo",
+  "nx",
+  "pnpm",
+  "rush",
+  "lerna",
+  "bazel",
+  "maven",
+  "gradle",
+  "npm/yarn workspaces",
+] as const;
+
+/** Resolve the most specific workspace tool from the detected signals. */
+function resolveWorkspaceTool(signals: Set<string>): string | undefined {
+  return WORKSPACE_PRECEDENCE.find((t) => signals.has(t));
 }
 
 function matches(name: string, ext: string): boolean {

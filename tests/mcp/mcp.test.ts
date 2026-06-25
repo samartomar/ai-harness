@@ -174,6 +174,24 @@ describe("aih mcp — generated mcpServers blueprint", () => {
     expect(serversOf(webW).playwright).toBeDefined();
   });
 
+  it("pins MCP server package versions — never a floating @latest", async () => {
+    const root = makeTmp();
+    writeFileSync(
+      join(root, "package.json"),
+      JSON.stringify({ name: "app", dependencies: { "aws-sdk": "^2", next: "14" } }),
+    );
+    const w = (await command.plan(makeCtx({ root }))).actions.find(
+      (a) => a.kind === "write",
+    ) as WriteAction;
+    const servers = serversOf(w);
+    const aws = pick(servers, "awslabs.core-mcp-server");
+    const pw = pick(servers, "playwright");
+    if (aws.type !== "stdio" || pw.type !== "stdio") throw new Error("expected stdio servers");
+    expect(aws.args).toEqual(["awslabs.core-mcp-server@1.0.27"]);
+    expect(pw.args).toEqual(["@playwright/mcp@0.0.76"]);
+    expect(`${aws.args.join(" ")} ${pw.args.join(" ")}`).not.toContain("@latest");
+  });
+
   it("suggests a database MCP server (doc) when a datastore is detected, without pinning one", async () => {
     const root = makeTmp();
     writeFileSync(
@@ -242,6 +260,72 @@ describe("aih mcp — generated mcpServers blueprint", () => {
     const wa = a.actions.find((x) => x.kind === "write") as WriteAction;
     const wb = b.actions.find((x) => x.kind === "write") as WriteAction;
     expect(jsonFile(wa.json)).toBe(jsonFile(wb.json));
+  });
+});
+
+describe("aih mcp — risk classification (P1-B)", () => {
+  it("labels the local stdio graph server `local` in .mcp.json", async () => {
+    const p = await command.plan(makeCtx());
+    const w = p.actions.find((a) => a.kind === "write") as WriteAction;
+    expect(pick(serversOf(w), "better-code-review-graph").classification).toBe("local");
+  });
+
+  it("labels stack-added stdio servers (aws, playwright) `local`", async () => {
+    const awsRoot = makeTmp();
+    writeFileSync(
+      join(awsRoot, "package.json"),
+      JSON.stringify({ name: "api", dependencies: { "aws-sdk": "^2" } }),
+    );
+    const awsW = (await command.plan(makeCtx({ root: awsRoot }))).actions.find(
+      (a) => a.kind === "write",
+    ) as WriteAction;
+    expect(pick(serversOf(awsW), "awslabs.core-mcp-server").classification).toBe("local");
+
+    const webRoot = makeTmp();
+    writeFileSync(
+      join(webRoot, "package.json"),
+      JSON.stringify({ name: "ui", dependencies: { next: "14" } }),
+    );
+    const webW = (await command.plan(makeCtx({ root: webRoot }))).actions.find(
+      (a) => a.kind === "write",
+    ) as WriteAction;
+    expect(pick(serversOf(webW), "playwright").classification).toBe("local");
+  });
+
+  it("labels every hosted n24q02m server `third-party-hosted`, graph stays `local`", async () => {
+    const p = await command.plan(makeCtx({ options: { scope: "remote" } }));
+    const servers = serversOf(p.actions.find((a) => a.kind === "write") as WriteAction);
+    for (const name of [
+      "better-email",
+      "better-notion",
+      "better-telegram",
+      "mnemo-mcp",
+      "wet-mcp",
+    ]) {
+      expect(pick(servers, name).classification).toBe("third-party-hosted");
+    }
+    expect(pick(servers, "better-code-review-graph").classification).toBe("local");
+  });
+
+  it("surfaces the third-party-hosted vendor-risk callout (named servers) in the remote gateway doc", async () => {
+    const p = await command.plan(makeCtx({ options: { scope: "remote" } }));
+    const docText = p.actions
+      .filter((a) => a.kind === "doc")
+      .map((a) => (a.kind === "doc" ? a.text : ""))
+      .join("\n");
+    expect(docText).toContain("third-party-hosted");
+    expect(docText).toContain("vendor-risk");
+    expect(docText).toContain("better-email");
+    expect(docText).toContain("SOC 2");
+  });
+
+  it("never leaks classification into the admin managed-mcp template (clean command/args only)", async () => {
+    const offline = await command.plan(makeCtx({ options: { mode: "offline", scope: "remote" } }));
+    const managed = offline.actions.find(
+      (a) => a.kind === "write" && a.path === "managed-mcp.json.example",
+    ) as WriteAction;
+    const blob = JSON.stringify(managed.json);
+    expect(blob).not.toContain("classification");
   });
 });
 
