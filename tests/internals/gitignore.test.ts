@@ -29,8 +29,12 @@ describe("aihIgnoreWrite", () => {
   });
 
   it("is a no-op when the patterns are already present (byte-identical)", () => {
-    const original = "node_modules/\n*.aih.bak\n*.aih.tmp\n";
+    const original = "node_modules/\n*.aih.bak\n*.aih.tmp\n.aih/\n";
     writeFileSync(join(root, ".gitignore"), original);
     expect(aihIgnoreWrite(root).contents).toBe(original);
+  });
+
+  it("ignores the .aih/ report output dir", () => {
+    expect(aihIgnoreWrite(root).contents).toContain(".aih/");
   });
 });

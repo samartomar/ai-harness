@@ -3,7 +3,7 @@ import { upsertManagedBlock } from "./envfile.js";
 import { FsTransaction, readIfExists } from "./fsxn.js";
 import { deepMerge, parseJsoncText } from "./merge.js";
 import type { EnvBlockAction, ExecAction, Plan, PlanContext, WriteAction } from "./plan.js";
-import { ensureTrailingNewline, jsonFile } from "./render.js";
+import { ensureTrailingNewline, indent, jsonFile } from "./render.js";
 import { VerificationReport } from "./verify.js";
 
 export interface WriteSummary {
@@ -24,6 +24,8 @@ export interface PlanResult {
   docs: { describe: string; path?: string }[];
   probes: { describe: string }[];
   execs: { describe: string; argv: string[]; ran: boolean; code?: number | null; ok?: boolean }[];
+  /** Read-only computed reports surfaced verbatim (text) + machine-readable (`data`). */
+  digests: { describe: string; text: string; data?: unknown }[];
   backups: string[];
   report?: VerificationReport;
 }
@@ -58,6 +60,7 @@ export async function executePlan(plan: Plan, ctx: PlanContext): Promise<PlanRes
   const writes: WriteSummary[] = [];
   const docs: PlanResult["docs"] = [];
   const probes: PlanResult["probes"] = [];
+  const digests: PlanResult["digests"] = [];
   const execActions: ExecAction[] = [];
   const envBlockActions: EnvBlockAction[] = [];
 
@@ -102,6 +105,8 @@ export async function executePlan(plan: Plan, ctx: PlanContext): Promise<PlanRes
       execActions.push(action);
     } else if (action.kind === "envblock") {
       envBlockActions.push(action);
+    } else if (action.kind === "digest") {
+      digests.push({ describe: action.describe, text: action.text, data: action.data });
     } else {
       probes.push({ describe: action.describe });
     }
@@ -173,6 +178,7 @@ export async function executePlan(plan: Plan, ctx: PlanContext): Promise<PlanRes
     docs,
     probes,
     execs,
+    digests,
     backups,
     report,
   };
@@ -189,6 +195,10 @@ export function summarizeResult(result: PlanResult): string {
   }
   for (const d of result.docs) {
     out.push(`  [doc]${d.path ? ` ${d.path}` : ""} — ${d.describe}`);
+  }
+  for (const dg of result.digests) {
+    out.push(`  [digest] — ${dg.describe}`);
+    out.push(indent(dg.text.replace(/\n+$/, ""), 2));
   }
   for (const e of result.execs) {
     const status = e.ran ? ` (exit ${e.code})` : " (run with --apply)";

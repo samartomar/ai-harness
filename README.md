@@ -56,7 +56,8 @@ node dist/cli.js --help
 | `aih secrets` | Scan for plaintext `.env*`/`secrets/` and write agent deny rules + vault-injection guidance. |
 | `aih mcp` | Generate `.mcp.json` (local/project/remote scopes); for locked-down orgs, `--mode offline` (vendored local-command servers) or `--mode none` (no MCP + a CLI-tool fallback) plus a `managed-mcp.json` admin template. |
 | `aih sandbox` | Generate a devcontainer + managed sandbox settings (egress allowlist, `failIfUnavailable`). |
-| `aih telemetry` | Inject OpenTelemetry env, a redacting Bindplane collector, and an analytics fetcher. |
+| `aih telemetry` | Inject OpenTelemetry env, a redacting Bindplane collector, and an analytics fetcher (usage + skills endpoints → `{ usage_report, skills }`). |
+| `aih report` | Read-only analytics digest. Local: a dev console — agent **context footprint** (token bloat), repo config presence, and local AI-CLI tooling saturation. Org (`--org <export.json>`): top skills, tokens by type, **cache savings** (net-of-write estimate), and accept/reject from a saved Admin-API export. Body prints verbatim; `--json` carries structured data; `--format md\|html` writes a static artifact under `--apply`. |
 | `aih crispy` | Run the CRISPY context-engineering stage machine (deterministic, gate-ordered). |
 | `aih bootstrap` | Orchestrate the workstation 4-phase rollout (certs → hardware/vdi → telemetry). |
 | `aih bootstrap-ai` | Emit + verify the repo's Layer-2 `ai-coding/` canon: `RULE_ROUTER.md`, per-CLI adapters, and root bootloaders (tool preamble + a regenerated shared block). `--verify` is the drift gate. |

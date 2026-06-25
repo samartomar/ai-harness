@@ -2,8 +2,9 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "no
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { executePlan } from "../../src/internals/execute.js";
+import { executePlan, summarizeResult } from "../../src/internals/execute.js";
 import {
+  digest,
   doc,
   envBlock,
   exec,
@@ -169,5 +170,29 @@ describe("executePlan — envblock folding", () => {
     const second = readFileSync(join(dir, profile), "utf8");
     expect(second).toBe(first); // byte-identical re-apply
     expect(second).toContain("export USER_VAR=keep");
+  });
+});
+
+describe("executePlan — digest actions", () => {
+  it("collects digest text + data and prints the body verbatim in the summary", async () => {
+    const res = await executePlan(
+      plan("t", digest("headline N", "  line one\n  line two", { totalTokens: 42 })),
+      ctx({ apply: false }),
+    );
+    expect(res.digests).toHaveLength(1);
+    expect(res.digests[0]?.describe).toBe("headline N");
+    expect(res.digests[0]?.data).toEqual({ totalTokens: 42 });
+    expect(res.digests[0]?.text).toContain("line one");
+
+    const summary = summarizeResult(res);
+    expect(summary).toContain("[digest] — headline N");
+    expect(summary).toContain("line one");
+    expect(summary).toContain("line two");
+  });
+
+  it("routes a digest to digests, never to probes (no run, no verification)", async () => {
+    const res = await executePlan(plan("t", digest("d", "body")), ctx({ verify: true }));
+    expect(res.digests).toHaveLength(1);
+    expect(res.probes).toHaveLength(0);
   });
 });

@@ -13,6 +13,7 @@ import {
   EVENT_TYPES,
   fetchAnalyticsScript,
   otelEnvVars,
+  SKILLS_ENDPOINT,
 } from "../../src/telemetry/templates.js";
 
 let dir: string;
@@ -224,6 +225,16 @@ describe("telemetry plan — analytics fetcher", () => {
     const src = fetchAnalyticsScript();
     expect(src).toContain("process.env.ANTHROPIC_ADMIN_KEY");
     expect(src).not.toMatch(/sk-ant-[A-Za-z0-9]/);
+  });
+
+  it("also queries the skill-usage endpoint and emits the combined { usage_report, skills } shape", () => {
+    const src = fetchAnalyticsScript();
+    expect(src).toContain(SKILLS_ENDPOINT);
+    // both endpoints are present so `aih report --org` gets skills + usage in one file
+    expect(src).toContain(ANALYTICS_ENDPOINT);
+    expect(src).toContain("{ usage_report, skills }");
+    // still gated: a live fetch only happens on --run
+    expect(src).toContain("--run");
   });
 });
 

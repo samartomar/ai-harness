@@ -17,11 +17,14 @@ import type { Check } from "./verify.js";
  *                junction) — it must never contact a remote system;
  *  - `envblock`: upsert an aih-managed env block (one `scope`) into a shell
  *                profile; multiple scopes targeting the same file compose
- *                instead of clobbering each other.
+ *                instead of clobbering each other;
+ *  - `digest`:   a read-only computed result printed verbatim (an analytics
+ *                report / roll-up) plus optional structured `data` echoed into
+ *                `--json` — mutates nothing, never contacts a remote system.
  * Because no action kind can mutate a remote system, an autonomous run cannot
  * "fake provisioning" — the capability simply does not exist.
  */
-export type ActionKind = "write" | "probe" | "doc" | "exec" | "envblock";
+export type ActionKind = "write" | "probe" | "doc" | "exec" | "envblock" | "digest";
 
 export interface WriteAction {
   kind: "write";
@@ -83,7 +86,29 @@ export interface EnvBlockAction {
   describe: string;
 }
 
-export type Action = WriteAction | DocAction | ProbeAction | ExecAction | EnvBlockAction;
+/**
+ * A read-only ANALYSIS result surfaced to the operator. Unlike {@link DocAction}
+ * (whose body only ever lands in a file), a digest's `text` is printed verbatim
+ * beneath its headline by the summary, and its optional `data` rides into
+ * `--json` — the shape analytics reports and inventory roll-ups need. It mutates
+ * nothing and never contacts a remote system.
+ */
+export interface DigestAction {
+  kind: "digest";
+  describe: string;
+  /** Report body, printed verbatim beneath the headline in text mode. */
+  text: string;
+  /** Machine-readable payload echoed into `--json` output. */
+  data?: unknown;
+}
+
+export type Action =
+  | WriteAction
+  | DocAction
+  | ProbeAction
+  | ExecAction
+  | EnvBlockAction
+  | DigestAction;
 
 export interface Plan {
   capability: string;
@@ -152,6 +177,10 @@ export function writeJson(
 
 export function doc(describe: string, text: string, path?: string): DocAction {
   return { kind: "doc", describe, text, path };
+}
+
+export function digest(describe: string, text: string, data?: unknown): DigestAction {
+  return { kind: "digest", describe, text, data };
 }
 
 export function probe(describe: string, run: ProbeAction["run"]): ProbeAction {

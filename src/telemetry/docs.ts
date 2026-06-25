@@ -1,5 +1,5 @@
 import { lines } from "../internals/render.js";
-import { ANALYTICS_ENDPOINT, EVENT_TYPES } from "./templates.js";
+import { ANALYTICS_ENDPOINT, EVENT_TYPES, SKILLS_ENDPOINT } from "./templates.js";
 
 /**
  * Operator guidance for the telemetry capability. Everything here is a `doc`
@@ -21,10 +21,12 @@ export function telemetryDoc(collectorPath: string, fetcherPath: string): string
     "",
     "2. Schedule the Analytics fetcher with cron (daily at 06:00). Add via `crontab -e`:",
     `     0 6 * * * ANTHROPIC_ADMIN_KEY=$ANTHROPIC_ADMIN_KEY node ${fetcher} --run >> ~/claude-usage.log 2>&1`,
-    "   The fetcher queries the Claude Code Analytics Admin API:",
-    `     ${ANALYTICS_ENDPOINT}`,
-    "   It needs an Admin API key (ANTHROPIC_ADMIN_KEY); without --run it only prints",
-    "   the curl equivalent so you can audit the request before it leaves the box.",
+    "   The fetcher queries TWO Claude Code Analytics Admin API endpoints:",
+    `     usage:  ${ANALYTICS_ENDPOINT}`,
+    `     skills: ${SKILLS_ENDPOINT}`,
+    "   and emits { usage_report, skills } — feed that file to `aih report --org <file>`",
+    "   for the org digest. It needs an Admin API key (ANTHROPIC_ADMIN_KEY); without",
+    "   --run it only prints the curl equivalents so you can audit each request first.",
     "",
     "3. First-class telemetry event types to dashboard / alert on:",
     ...EVENT_TYPES.map((e) => `     - ${e}`),

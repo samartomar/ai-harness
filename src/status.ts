@@ -15,6 +15,25 @@ const ARTIFACTS: Array<[name: string, rel: string]> = [
   ["devcontainer", ".devcontainer/devcontainer.json"],
 ];
 
+export interface ArtifactPresence {
+  name: string;
+  /** Repo-relative path checked (the context-dir name for the "context-dir" entry). */
+  relative: string;
+  present: boolean;
+}
+
+/**
+ * The harness-managed artifacts and whether each is present under `root`. Defined
+ * once and shared: `aih status` renders it as probes, `aih report` as a
+ * configuration panel — so the inventory never drifts between the two.
+ */
+export function inventory(root: string, contextDir: string): ArtifactPresence[] {
+  return ARTIFACTS.map(([name, rel]) => {
+    const relative = name === "context-dir" ? contextDir : rel;
+    return { name, relative, present: existsSync(join(root, relative)) };
+  });
+}
+
 /**
  * Read-only inventory of what the harness has configured for the target. Every
  * check is pass/skip (never fail), so `status` always exits 0.
@@ -27,14 +46,14 @@ export const command: CommandSpec = {
   plan: (ctx) =>
     plan(
       "status",
-      ...ARTIFACTS.map(([name, rel]) =>
-        probe(`presence: ${name}`, (): Check => {
-          const relative = name === "context-dir" ? ctx.contextDir : rel;
-          const abs = join(ctx.root, relative);
-          return existsSync(abs)
-            ? { name, verdict: "pass", detail: relative }
-            : { name, verdict: "skip", detail: `${relative} not present` };
-        }),
+      ...inventory(ctx.root, ctx.contextDir).map((a) =>
+        probe(
+          `presence: ${a.name}`,
+          (): Check =>
+            a.present
+              ? { name: a.name, verdict: "pass", detail: a.relative }
+              : { name: a.name, verdict: "skip", detail: `${a.relative} not present` },
+        ),
       ),
     ),
 };

@@ -41,13 +41,16 @@ is `doc`/dry-run — a deliberate governance stance, `src/telemetry/index.ts`).
 
 ### Three real gaps in the current `telemetry` command
 
-1. **It exports nothing.** `otelEnvVars` sets `CLAUDE_CODE_ENABLE_TELEMETRY=1` + the OTLP
-   endpoint/protocol, but **not `OTEL_METRICS_EXPORTER` / `OTEL_LOGS_EXPORTER`** — which default
-   to off. The collector it wires up therefore receives no metrics/logs. _(Bug.)_
-2. **`EVENT_TYPES` is stale** — 5 listed vs. ~25 live, missing `skill_activated` (the skills
-   signal) among others.
+> **Update 2026-06-24 (verified vs. code):** gaps 1 and 2 are now **fixed**; only gap 3 remains
+> open. See [analytics-report-plan.md §4](analytics-report-plan.md) for the implementation track.
+
+1. ~~**It exports nothing.**~~ **Fixed** — `otelEnvVars` now pins both `OTEL_METRICS_EXPORTER`
+   and `OTEL_LOGS_EXPORTER` to `otlp` (`src/telemetry/templates.ts`), so the collector receives
+   metrics/logs.
+2. ~~**`EVENT_TYPES` is stale.**~~ **Fixed** — 23 types now listed, including `skill_activated`
+   (the skills signal) (`src/telemetry/templates.ts`).
 3. **The fetcher only hits `usage_report/claude_code`** — not the **Skill Usage Analytics**
-   endpoint (`/v1/organizations/analytics/skills`), which is the leads' #1 metric.
+   endpoint (`/v1/organizations/analytics/skills`), which is the leads' #1 metric. _(Open.)_
 
 ## B. What each CLI exposes
 

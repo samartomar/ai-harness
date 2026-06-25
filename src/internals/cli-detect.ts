@@ -75,6 +75,22 @@ export async function detectClis(ctx: PlanContext): Promise<CliPresence[]> {
   return Promise.all(SUPPORTED_CLIS.map((cli) => detectOne(ctx, cli)));
 }
 
+/**
+ * Config-dir-only presence (synchronous, no PATH probe), in canonical order. For
+ * read-only inventories like `aih report`, where spawning a `which`/`where` per
+ * binary isn't worth it — reuses the same {@link SIGNALS} config dirs.
+ */
+export function detectClisByConfig(ctx: PlanContext): CliPresence[] {
+  const home = homeDir(ctx);
+  return SUPPORTED_CLIS.map((cli) => {
+    for (const rel of SIGNALS[cli].configDirs) {
+      if (existsSync(join(home, rel)))
+        return { cli, present: true, via: "config", detail: `~/${rel}` };
+    }
+    return { cli, present: false };
+  });
+}
+
 /** The CLIs detected as present, in canonical order. */
 export function presentClis(presences: CliPresence[]): Cli[] {
   return presences.filter((p) => p.present).map((p) => p.cli);
