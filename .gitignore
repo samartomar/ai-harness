@@ -17,3 +17,8 @@ Thumbs.db
 .env
 .env.*
 !.env.example
+
+# aih-managed (backup, temp, and generated reports)
+*.aih.bak
+*.aih.tmp
+.aih/
