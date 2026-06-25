@@ -12,6 +12,7 @@ import {
   plan,
   writeText,
 } from "../internals/plan.js";
+import { assertNoCmdInjection } from "../internals/shell-safety.js";
 import type { Platform } from "../platform/base.js";
 import { reportHtml, reportMarkdown } from "./artifact.js";
 import { type ContextBloat, DEFAULT_CONTEXT_BUDGET_TOKENS, scanContextBloat } from "./bloat.js";
@@ -159,10 +160,14 @@ async function reportPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
     // Launch the dashboard in the default browser (local exec, runs under --apply;
     // `--open` implies --apply so a single `aih report --open` builds AND opens it).
     if (open) {
+      const file = resolve(ctx.root, path);
+      // On Windows the file is opened via `cmd /c start "" <file>`; reject a
+      // metacharacter-laden `--out` before it reaches cmd.exe.
+      if (ctx.host.platform === "windows") assertNoCmdInjection(file, "--out");
       actions.push(
         exec(
           `open ${path.replace(/\\/g, "/")} in your browser`,
-          openArgv(ctx.host.platform, resolve(ctx.root, path)),
+          openArgv(ctx.host.platform, file),
           { allowFailure: true }, // best-effort: the html is already written
         ),
       );
