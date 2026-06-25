@@ -2,6 +2,7 @@ import { detectClisByConfig } from "../internals/cli-detect.js";
 import { type DigestAction, digest, type PlanContext } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
 import { inventory } from "../status.js";
+import { trendsPanel } from "./history.js";
 import { repoStatusPanel } from "./repo.js";
 
 /**
@@ -74,5 +75,11 @@ export function economyPanel(): DigestAction {
  * the repo/branch-status panel reads git through the Runner seam.
  */
 export async function localPanels(ctx: PlanContext): Promise<DigestAction[]> {
-  return [await repoStatusPanel(ctx), configPanel(ctx), toolingPanel(ctx), economyPanel()];
+  return [
+    await repoStatusPanel(ctx),
+    trendsPanel(ctx),
+    configPanel(ctx),
+    toolingPanel(ctx),
+    economyPanel(),
+  ];
 }

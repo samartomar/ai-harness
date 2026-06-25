@@ -18,6 +18,7 @@ import { command as secrets } from "../secrets/index.js";
 import { command as status } from "../status.js";
 import { command as superpowers } from "../superpowers/index.js";
 import { command as telemetry } from "../telemetry/index.js";
+import { command as track } from "../track/index.js";
 import { command as vdi } from "../vdi/index.js";
 import { command as workspace } from "../workspace/index.js";
 import { runCapability } from "./run.js";
@@ -37,6 +38,7 @@ export const CAPABILITIES: CommandSpec[] = [
   sandbox,
   telemetry,
   report,
+  track,
   crispy,
   bootstrap,
   bootstrapAi,

@@ -1,3 +1,4 @@
+import { gitRead as git } from "../internals/git.js";
 import { type DigestAction, digest, type PlanContext } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
 
@@ -12,13 +13,6 @@ import { lines } from "../internals/render.js";
 
 const MAX_BRANCHES = 20;
 const MAIN_CANDIDATES = ["main", "master", "develop", "trunk"] as const;
-
-/** Run a read-only git command scoped to the repo root; `undefined` on any failure. */
-async function git(ctx: PlanContext, args: string[]): Promise<string | undefined> {
-  const res = await ctx.run(["git", "-C", ctx.root, ...args]);
-  if (res.spawnError || res.code !== 0) return undefined;
-  return res.stdout.replace(/\s+$/, "");
-}
 
 interface BranchRow {
   name: string;

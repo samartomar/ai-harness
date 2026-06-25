@@ -73,20 +73,21 @@ export function kiroHooks(stack: RepoStack): KiroHook[] {
       },
     },
   ];
-  // Append a JSONL metrics line on agent turn completion (verified `agentStop`
-  // event). Git-only command so it works wherever git is on PATH.
+  // Record a metrics sample on agent turn completion (verified `agentStop` event).
+  // `aih track` captures a fuller snapshot (commits, LOC, adoption, branches) into
+  // `.aih/history.jsonl`, which powers `aih report` trends — idempotent per commit.
   hooks.push({
     path: ".kiro/hooks/aih-metrics-on-stop.kiro.hook",
     hook: {
       version: "1.0.0",
       enabled: true,
       name: "aih-metrics-on-stop",
-      description: "Append a JSONL metrics line (last commit) when the agent finishes a turn.",
+      description:
+        "Record a metrics sample to .aih/history.jsonl when the agent finishes a turn (powers `aih report` trends; needs `aih` on PATH).",
       when: { type: "agentStop" },
       then: {
         type: "runCommand",
-        command:
-          'git log -1 --pretty=tformat:\'{"ts":"%cI","sha":"%h","subject":"%f"}\' >> .kiro/metrics.jsonl',
+        command: "aih track --apply",
       },
     },
   });

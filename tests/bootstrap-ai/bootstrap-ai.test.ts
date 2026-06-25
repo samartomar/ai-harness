@@ -163,13 +163,13 @@ describe("bootstrap-ai — CLI-aware bootloaders", () => {
     };
     expect(gate.when.type).toBe("userTriggered");
     expect(gate.then.command).toContain("npm test");
-    // Metrics hook fires on the verified agentStop event and appends JSONL.
+    // Metrics hook fires on the verified agentStop event and records a sample.
     const metrics = w.get(".kiro/hooks/aih-metrics-on-stop.kiro.hook")?.json as {
       when: { type: string };
       then: { command: string };
     };
     expect(metrics.when.type).toBe("agentStop");
-    expect(metrics.then.command).toContain("metrics.jsonl");
+    expect(metrics.then.command).toBe("aih track --apply");
   });
 
   it("--all-tools dedupes AGENTS.md to a single write", async () => {
