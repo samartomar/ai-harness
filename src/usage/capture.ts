@@ -40,6 +40,7 @@ export function usageRecorderScript(): string {
     "    }",
     "    ev.added = added; ev.removed = removed; ev.files = files;",
     '    ev.sha = execFileSync("git", ["rev-parse", "--short", "HEAD"], { encoding: "utf8" }).trim();',
+    '    ev.branch = execFileSync("git", ["rev-parse", "--abbrev-ref", "HEAD"], { encoding: "utf8" }).trim();',
     "  } catch {}",
     "}",
     "",

@@ -96,6 +96,8 @@ describe("capture artifacts", () => {
     expect(src).toContain(".aih/usage.jsonl");
     expect(src).toContain("appendFileSync");
     expect(src).toContain("--numstat"); // derives LOC for commit events
+    expect(src).toContain("--abbrev-ref"); // captures the commit branch (AI events table)
+    expect(src).toContain("ev.branch");
     expect(src).not.toMatch(/sk-ant-/); // no secrets
   });
 

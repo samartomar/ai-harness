@@ -2,9 +2,14 @@ import { detectClisByConfig } from "../internals/cli-detect.js";
 import { type DigestAction, digest, type PlanContext } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
 import { inventory } from "../status.js";
+import { aiEventsDigest } from "./events.js";
 import { trendsPanel } from "./history.js";
+import { qualityDigest } from "./quality.js";
 import { repoStatusPanel } from "./repo.js";
+import { repoInfoDigest } from "./repoinfo.js";
+import { toolsInstalledDigest } from "./tools.js";
 import { usagePanel } from "./usage.js";
+import { velocityDigests } from "./velocity.js";
 
 /**
  * The local-scope panels of `aih report` beyond the context footprint. Each is a
@@ -77,7 +82,12 @@ export function economyPanel(): DigestAction {
  * the repo/branch-status panel reads git through the Runner seam.
  */
 export async function localPanels(ctx: PlanContext): Promise<DigestAction[]> {
-  return [
+  const panels: (DigestAction | undefined)[] = [
+    ...(await velocityDigests(ctx)), // OUTPUT VELOCITY: daily commits + LOC 30d
+    aiEventsDigest(ctx), // AI events feed (undefined when no events recorded)
+    await qualityDigest(ctx), // CODE QUALITY: test/source file ratio
+    await repoInfoDigest(ctx), // PERFORMANCE: repo info + file types
+    await toolsInstalledDigest(ctx), // HARNESS ADOPTION: shell tools on PATH
     await repoStatusPanel(ctx),
     trendsPanel(ctx),
     usagePanel(ctx),
@@ -85,4 +95,5 @@ export async function localPanels(ctx: PlanContext): Promise<DigestAction[]> {
     toolingPanel(ctx),
     economyPanel(),
   ];
+  return panels.filter((d): d is DigestAction => d !== undefined);
 }
