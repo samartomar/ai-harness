@@ -177,3 +177,43 @@ Each needs a product/strategy call before it can be planned safely.
 - _2026-06-25_ — Quality gate green: `tsc --noEmit` clean, `biome check src tests` 141 files clean, `tsup` build (ESM+DTS) success. Net Part-1 Tier-1: **+31 tests (520→551), 6 capabilities hardened, 1 latent bug fixed**. Tier-2 (P1-F/H/I) reassessed: each has a decision-adjacent core → bridges into Part 2; decision-free skeletons can land alone on request.
 - _2026-06-25_ — Tier-1 committed + pushed: `feat/enterprise-hardening-p1` (623e096 feat, 20072f1 docs).
 - _2026-06-25_ — Tier-2 **safe slivers** landed (the decision-free parts): P1-I devcontainer `no-new-privileges`; P1-H `./mvnw`/`./gradlew` wrapper preference; P1-F `status` pre-commit-hook enforcement read-back (exit-0). 551→558 tests; tsc + build green. Decision-bound remainders of F/H/I stay queued for Part 2.
+
+---
+
+## ROUND 2 — Codex `.ai-review` remediation (branch `fix/review-remediation`)
+
+Second external review (Codex, `.ai-review/findings.json`: 0 P0 / 8 P1 / 10 P2 / 5 P3)
+plus 4 net-new findings from the local matrix harness. **All P1 + P2 + P3 addressed**
+(several fully, a few partially with the residue logged below). 558 → 590 tests; tsc,
+biome, coverage gate, build all green. CI workflows were disabled during the work and
+re-enabled at the end.
+
+**Fully fixed:** CORE-001 (path containment), CORE-002 (txn symlink/dedupe),
+CORE-003 (exec exit code), CORE-004 (JSONC fail-closed), VDI-001 (cmd injection),
+VDI-002 (redirect state-awareness), TELEMETRY-001 (metrics scrub), GUARDRAILS-001
+(CI secret-scan job), GUARDRAILS-002 (GPL SPDX variants), CLI-001 (strict `--cli`),
+CERTS-001 (PowerShell 5.1 fallback), CI-001 (scorecard perms), TEST-001 (coverage
+gate), PLATFORM-001 (OS matrix; Darwin tests already present), TRACK-001 (SHA dedupe),
+USAGE-001 (chainable hook), SCA-TEST-001 (executable gate test), DOCS-001 (README).
+Net-new (mine): pre-commit clobber (preserve user config), scanner self-walk
+(`EXCLUDED_DIRS` vs configurable contextDir), doc-write idempotency, lint detection
+from config files.
+
+**Residual (decision-/infra-bound — overlaps Part 2 above):**
+- **SUPPLY-001 / MCP-001** — offline mode is now honest + has a runtime-resolver verify
+  probe, but pinning `ecc-install` / `@modelcontextprotocol/server-filesystem` to exact
+  versions + an internal-mirror manifest needs the real published versions (→ D7).
+- **SANDBOX-001** — `npm ci`/`--frozen-lockfile` + `upgradePackages:false` landed; image
+  `@sha256:` digest pin still deferred (needs the digest; → D8).
+- **RELEASE-001** — tarball + SHA256SUMS + smoke-install + Release upload landed; npm
+  provenance / artifact attestation / signing deferred (→ D1).
+- **PLATFORM-001** — CI now exercises macOS; flip `DarwinAdapter.verified=true` only after
+  a real macOS validation run.
+- **PROFILE-001** — config-file lint detection landed; the full workspace-aware
+  multi-package command model is the larger follow-up (extends P1-G/P1-H).
+- **TEST-001** — coverage floors set just below current (88/75/90/90); raise branches
+  77%→80% as the branch-heavy safety paths gain tests.
+- **MY#3 / MY#7** — `.devcontainer` is still generated alongside an existing
+  docker-compose setup (by design; not a clobber); `aih init` bootstraps claude-only
+  while `bootstrap-ai --detect --verify` spans all installed CLIs, so the documented
+  Request-#2 ordering can exit 1 before `--detect --apply` runs (UX/sequencing).
