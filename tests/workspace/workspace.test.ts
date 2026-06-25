@@ -88,6 +88,17 @@ describe("workspace.plan — generated artifacts", () => {
     expect(mcp.mcpServers.filesystem.args).toEqual(expect.arrayContaining(["ui", "backend"]));
   });
 
+  it("pins the filesystem MCP package via AIH_MCP_FS_VERSION (AIH-SUPPLY-001)", async () => {
+    child("ui");
+    const base = makeCtx();
+    const ctx = { ...base, env: { ...base.env, AIH_MCP_FS_VERSION: "2025.1.0" } };
+    const w = writesByPath((await command.plan(ctx)).actions);
+    const mcp = w.get(".mcp.json")?.json as { mcpServers: { filesystem: { args: string[] } } };
+    expect(mcp.mcpServers.filesystem.args).toContain(
+      "@modelcontextprotocol/server-filesystem@2025.1.0",
+    );
+  });
+
   it("the cross-repo architecture map is write-once (never overwritten)", async () => {
     child("ui");
     const arch = writesByPath((await command.plan(makeCtx())).actions).get(

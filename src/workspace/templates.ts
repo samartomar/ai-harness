@@ -21,14 +21,19 @@ export function codeWorkspace(repos: string[]): unknown {
 /**
  * A filesystem MCP server scoped to every child repo path, so an agent at the
  * workspace root can read across repos (the cross-repo blast-radius bridge).
- * Merged into any existing `.mcp.json`.
+ * Merged into any existing `.mcp.json`. The package is version-pinnable via
+ * `AIH_MCP_FS_VERSION` (supply-chain control) — unset runs latest at MCP launch.
  */
-export function spanningMcp(repos: string[]): unknown {
+export function spanningMcp(repos: string[], version?: string): unknown {
+  const pkg =
+    version && version.length > 0
+      ? `@modelcontextprotocol/server-filesystem@${version}`
+      : "@modelcontextprotocol/server-filesystem";
   return {
     mcpServers: {
       filesystem: {
         command: "npx",
-        args: ["-y", "@modelcontextprotocol/server-filesystem", ...repos],
+        args: ["-y", pkg, ...repos],
       },
     },
   };

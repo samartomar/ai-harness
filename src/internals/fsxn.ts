@@ -2,6 +2,7 @@ import {
   chmodSync,
   copyFileSync,
   existsSync,
+  constants as fsConstants,
   lstatSync,
   mkdirSync,
   readFileSync,
@@ -65,15 +66,22 @@ export class FsTransaction {
           throw new Error(`refusing to write through a symlink: ${w.path}`);
         }
         const existed = info !== undefined;
+        const backupPath = `${w.path}.aih.bak`;
+        const tmpPath = `${w.path}.aih.tmp`;
+        // The temp + backup paths are followed by copyFileSync/writeFileSync, so a
+        // pre-placed symlink THERE would redirect the write/copy outside the repo just
+        // like a symlinked target. Reject a planted link and clear any stale scratch so
+        // the exclusive create below can't be tricked into following one.
+        clearScratch(backupPath);
+        clearScratch(tmpPath);
         let backup: string | undefined;
         if (existed) {
-          backup = `${w.path}.aih.bak`;
-          copyFileSync(w.path, backup);
+          backup = backupPath;
+          copyFileSync(w.path, backupPath, fsConstants.COPYFILE_EXCL);
         }
-        const tmp = `${w.path}.aih.tmp`;
-        writeFileSync(tmp, w.contents, "utf8");
-        if (w.mode !== undefined) chmodSync(tmp, w.mode);
-        renameSync(tmp, w.path);
+        writeFileSync(tmpPath, w.contents, { encoding: "utf8", flag: "wx" });
+        if (w.mode !== undefined) chmodSync(tmpPath, w.mode);
+        renameSync(tmpPath, w.path);
         applied.push({ path: w.path, backup, created: !existed });
       }
       return {
@@ -101,6 +109,21 @@ function lstatSafe(path: string): Stats | undefined {
   } catch {
     return undefined;
   }
+}
+
+/**
+ * Prepare a `.aih.tmp` / `.aih.bak` scratch path for an exclusive create: fail
+ * closed if a symlink was planted there (it would redirect the write/copy out of
+ * the repo), and remove a stale REGULAR leftover from a prior aborted run so the
+ * exclusive create doesn't `EEXIST`. Never follows or deletes through a link.
+ */
+function clearScratch(path: string): void {
+  const st = lstatSafe(path);
+  if (st === undefined) return;
+  if (st.isSymbolicLink()) {
+    throw new Error(`refusing to write through a symlinked scratch path: ${path}`);
+  }
+  rmSync(path, { force: true });
 }
 
 function rollback(applied: AppliedWrite[]): void {

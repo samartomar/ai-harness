@@ -214,11 +214,12 @@ describe("VDI host (posix)", () => {
     expect(body).toContain("# <<< aih managed (vdi) <<<");
   });
 
-  it("emits an mkdir exec for the scratch root (allowFailure)", async () => {
+  it("mkdir creates the redirect TARGET dir (so the junction isn't dangling), allowFailure", async () => {
     const p = await command.plan(ctx({ platform: "linux", vdi: VDI_ON, env }));
     const execs = byKind(p, "exec") as ExecAction[];
-    const mkdir = execs.find((e) => e.describe === "create local scratch root");
-    expect(mkdir?.argv).toEqual(["mkdir", "-p", posixScratch("alice")]);
+    const mkdir = execs.find((e) => e.describe.includes("scratch root"));
+    // Creating scratch/code-review-graph also creates the scratch root (mkdir -p).
+    expect(mkdir?.argv).toEqual(["mkdir", "-p", join(posixScratch("alice"), "code-review-graph")]);
     expect(mkdir?.allowFailure).toBe(true);
   });
 
@@ -273,10 +274,10 @@ describe("VDI host (windows)", () => {
     expect(body).toContain(`$env:CRG_GLOBAL_DB_PATH = "${under(scratch, "crg", "global.db")}"`);
 
     const p = await command.plan(ctx({ platform: "windows", vdi: VDI_ON, env }));
-    const mkdir = (byKind(p, "exec") as ExecAction[]).find(
-      (e) => e.describe === "create local scratch root",
+    const mkdir = (byKind(p, "exec") as ExecAction[]).find((e) =>
+      e.describe.includes("scratch root"),
     );
-    expect(mkdir?.argv).toEqual(["cmd", "/c", "mkdir", scratch]);
+    expect(mkdir?.argv).toEqual(["cmd", "/c", "mkdir", join(scratch, "code-review-graph")]);
   });
 
   it("creates a directory junction (mklink /J) for code-review-graph", async () => {
@@ -316,10 +317,10 @@ describe("custom --scratch override", () => {
     expect(body).toContain(`OLLAMA_MODELS=${under(scratch, "ollama", "models")}`);
 
     const execs = byKind(p, "exec") as ExecAction[];
-    expect(execs.find((e) => e.describe === "create local scratch root")?.argv).toEqual([
+    expect(execs.find((e) => e.describe.includes("scratch root"))?.argv).toEqual([
       "mkdir",
       "-p",
-      scratch,
+      join(scratch, "code-review-graph"),
     ]);
     expect(execs.find((e) => e.describe.includes("code-review-graph"))?.argv).toEqual([
       "ln",
@@ -333,10 +334,10 @@ describe("custom --scratch override", () => {
     const p = await command.plan(
       ctx({ platform: "linux", vdi: VDI_ON, env, options: { scratch: "" } }),
     );
-    const mkdir = (byKind(p, "exec") as ExecAction[]).find(
-      (e) => e.describe === "create local scratch root",
+    const mkdir = (byKind(p, "exec") as ExecAction[]).find((e) =>
+      e.describe.includes("scratch root"),
     );
-    expect(mkdir?.argv).toEqual(["mkdir", "-p", posixScratch("alice")]);
+    expect(mkdir?.argv).toEqual(["mkdir", "-p", join(posixScratch("alice"), "code-review-graph")]);
   });
 });
 

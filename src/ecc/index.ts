@@ -14,7 +14,12 @@ import {
 import { lines } from "../internals/render.js";
 import type { RepoStack } from "../profile/scan.js";
 import { scanRepo } from "../profile/scan.js";
-import { type EccInstallInputs, eccActionsForCli, eccToolsDoc } from "./install.js";
+import {
+  type EccInstallInputs,
+  eccActionsForCli,
+  eccSupplyChainDoc,
+  eccToolsDoc,
+} from "./install.js";
 import { eccLanguages } from "./select.js";
 
 const ECC_REPO_URL = "https://github.com/affaan-m/ECC.git";
@@ -57,26 +62,63 @@ function kiroEccActions(ctx: PlanContext): Action[] {
     ];
   }
 
-  // Fresh machine: shallow-clone ECC into the cache on first run, pull to refresh
-  // to the latest on later runs, then run the native installer.
+  // Fresh machine: shallow-clone ECC into the cache on first run, refresh on later
+  // runs, then run the native installer. `AIH_ECC_REF` pins the checkout to a
+  // tag/branch (supply-chain control); unset tracks latest.
   const hasCache = existsSync(join(dir, ".git"));
-  const fetchExec = hasCache
-    ? exec(
-        `Update cached ECC to latest — git -C ${posix} pull (under --apply)`,
-        ["git", "-C", dir, "pull", "--ff-only"],
-        { allowFailure: true },
-      )
-    : exec(`Clone ECC (latest, shallow) into ${posix} — git clone --depth 1 (under --apply)`, [
-        "git",
-        "clone",
-        "--depth",
-        "1",
-        ECC_REPO_URL,
-        dir,
-      ]);
+  const ref = (ctx.env.AIH_ECC_REF ?? "").trim();
+  const fetchExecs: Action[] = [];
+  if (ref) {
+    if (hasCache) {
+      fetchExecs.push(
+        exec(
+          `Fetch ECC ref ${ref} — git -C ${posix} fetch --depth 1 origin ${ref} (under --apply)`,
+          ["git", "-C", dir, "fetch", "--depth", "1", "origin", ref],
+        ),
+        exec(`Pin ECC to ${ref} — git -C ${posix} checkout --detach FETCH_HEAD (under --apply)`, [
+          "git",
+          "-C",
+          dir,
+          "checkout",
+          "--detach",
+          "FETCH_HEAD",
+        ]),
+      );
+    } else {
+      fetchExecs.push(
+        exec(`Clone ECC pinned to ${ref} (shallow) into ${posix} (under --apply)`, [
+          "git",
+          "clone",
+          "--depth",
+          "1",
+          "--branch",
+          ref,
+          ECC_REPO_URL,
+          dir,
+        ]),
+      );
+    }
+  } else {
+    fetchExecs.push(
+      hasCache
+        ? exec(
+            `Update cached ECC to latest — git -C ${posix} pull (under --apply)`,
+            ["git", "-C", dir, "pull", "--ff-only"],
+            { allowFailure: true },
+          )
+        : exec(`Clone ECC (latest, shallow) into ${posix} — git clone --depth 1 (under --apply)`, [
+            "git",
+            "clone",
+            "--depth",
+            "1",
+            ECC_REPO_URL,
+            dir,
+          ]),
+    );
+  }
 
   return [
-    fetchExec,
+    ...fetchExecs,
     installExec,
     doc(
       "ECC Kiro install (latest via cached git checkout)",
@@ -138,12 +180,21 @@ async function eccPlan(ctx: PlanContext): Promise<Plan> {
   const { clis, detectFellBack } = await resolveTargets(ctx);
   const stack = scanRepo(ctx.root, { maxDepth: 8, contextDir: ctx.contextDir });
   const profile = String(ctx.options.profile ?? "core");
-  const inputs: EccInstallInputs = { profile, stackSummary: stackSummary(stack) };
+  const installVersion = (ctx.env.AIH_ECC_INSTALL_VERSION ?? "").trim() || undefined;
+  const eccRef = (ctx.env.AIH_ECC_REF ?? "").trim() || undefined;
+  const inputs: EccInstallInputs = { profile, stackSummary: stackSummary(stack), installVersion };
 
   const actions: Action[] = [];
   for (const cli of clis) {
     if (cli === "kiro") actions.push(...kiroEccActions(ctx));
     else actions.push(...eccActionsForCli(cli, inputs));
+  }
+  // Surface the supply-chain advisory whenever an upstream surface runs unpinned:
+  // the npm installer (no install-version) or the Kiro git checkout (no ref).
+  const hasKiro = clis.includes("kiro");
+  const npmUnpinned = clis.some((c) => c !== "kiro") && installVersion === undefined;
+  if (npmUnpinned || (hasKiro && eccRef === undefined)) {
+    actions.push(eccSupplyChainDoc());
   }
   actions.push(eccToolsDoc());
   if (detectFellBack) {

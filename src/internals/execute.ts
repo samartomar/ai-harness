@@ -131,6 +131,10 @@ export async function executePlan(plan: Plan, ctx: PlanContext): Promise<PlanRes
     } else if (action.kind === "doc") {
       if (action.path) {
         const absPath = resolvePath(ctx, action.path);
+        // Contain doc-file writes too (they are repo-scoped guidance, never external),
+        // BEFORE the readIfExists below follows the path — so a symlinked/escaping doc
+        // path can neither leak an out-of-repo read nor redirect the write.
+        assertContained(ctx.root, absPath);
         const contents = ensureTrailingNewline(action.text);
         // Same idempotency contract as write actions: skip a doc-file write whose
         // rendered content already matches disk, so re-running never rewrites it or

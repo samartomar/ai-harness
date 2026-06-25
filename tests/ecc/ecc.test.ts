@@ -264,3 +264,46 @@ describe("ecc.plan — runs ECC's own installer (latest)", () => {
     }
   });
 });
+
+describe("ECC supply-chain pinning (AIH-SUPPLY-001 round 2)", () => {
+  it("eccInstallerArgv pins the version when given one, bare otherwise", () => {
+    expect(eccInstallerArgv("claude", "core", "1.2.3")).toEqual([
+      "npx",
+      "--yes",
+      "ecc-install@1.2.3",
+      "--target",
+      "claude",
+      "--profile",
+      "core",
+    ]);
+    expect(eccInstallerArgv("claude", "core")[2]).toBe("ecc-install");
+  });
+
+  it("emits a supply-chain advisory by default (unpinned latest)", async () => {
+    const p = await command.plan(makeCtx({ cli: "claude" }));
+    expect(p.actions.some((a) => a.kind === "doc" && a.describe.includes("supply chain"))).toBe(
+      true,
+    );
+  });
+
+  it("AIH_ECC_INSTALL_VERSION pins the installer argv and drops the advisory", async () => {
+    const base = makeCtx({ cli: "claude" });
+    const ctx = { ...base, env: { ...base.env, AIH_ECC_INSTALL_VERSION: "1.2.3" } };
+    const p = await command.plan(ctx);
+    const installer = p.actions.find((a): a is ExecAction => a.kind === "exec");
+    expect(installer?.argv).toContain("ecc-install@1.2.3");
+    expect(p.actions.some((a) => a.kind === "doc" && a.describe.includes("supply chain"))).toBe(
+      false,
+    );
+  });
+
+  it("AIH_ECC_REF pins the Kiro git checkout (clone --branch <ref>)", async () => {
+    const base = makeCtx({ cli: "kiro" });
+    const ctx = { ...base, env: { ...base.env, AIH_ECC_REF: "v2.1.0" } };
+    const p = await command.plan(ctx);
+    const clone = p.actions.find(
+      (a): a is ExecAction => a.kind === "exec" && a.argv.includes("clone"),
+    );
+    expect(clone?.argv).toEqual(expect.arrayContaining(["--branch", "v2.1.0"]));
+  });
+});
