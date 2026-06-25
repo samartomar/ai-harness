@@ -56,11 +56,11 @@ describe("reportMarkdown", () => {
 });
 
 describe("reportHtml dashboard", () => {
-  it("is a self-contained page with the title in <title> and <h1>, no external assets", () => {
+  it("is a self-contained page: passed title in <title>, brand in <h1>, no external assets", () => {
     const html = reportHtml("aih report", RICH);
     expect(html).toContain("<!doctype html>");
     expect(html).toContain("<title>aih report</title>");
-    expect(html).toContain("<h1>aih report</h1>");
+    expect(html).toContain("<h1>Enterprise AI Bootstrapping Harness Report</h1>");
     expect(html).toContain("</html>");
     expect(html).not.toContain("http://");
     expect(html).not.toContain("https://");
@@ -102,7 +102,8 @@ describe("reportHtml dashboard", () => {
     expect(html).toContain('class="chip ok"'); // present artifact
     expect(html).toContain('class="chip bad"'); // absent artifact
     expect(html).toContain('class="tool on">claude'); // present CLI
-    expect(html).toContain('class="tool off">codex'); // absent CLI, struck through
+    expect(html).toContain('class="tool off" data-hint="1"'); // absent CLI carries an install hint
+    expect(html).toContain("npm i -g @openai/codex"); // ...the actionable command for codex
   });
 
   it("escapes HTML and renders unrecognized digests as a styled note", () => {
