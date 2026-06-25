@@ -115,6 +115,10 @@ export function devcontainerConfig(opts: DevcontainerOptions): Record<string, un
     image: DEVCONTAINER_IMAGE,
     features,
     remoteUser: "vscode",
+    // Block in-container privilege escalation (setuid/sudo can't gain new privs).
+    // Safe, no-decision hardening — it doesn't break installs. Stricter controls
+    // (seccomp, cap-drop, read-only root) are gated on the Part-2 strict-mode call.
+    runArgs: ["--security-opt", "no-new-privileges:true"],
     postCreateCommand: postCreate(stack),
     customizations: {
       vscode: {

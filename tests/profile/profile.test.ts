@@ -349,6 +349,33 @@ describe("scanRepo — monorepo / workspace detection", () => {
   });
 });
 
+// ---- build-tool wrapper preference (P1-H sliver) --------------------------
+
+describe("scanRepo — prefers the project's build wrapper", () => {
+  it("prefers ./mvnw over mvn when the Maven wrapper is present", () => {
+    put("pom.xml", "<project></project>");
+    put("mvnw", "#!/bin/sh\n");
+    const s = scanRepo(tmp, { maxDepth: 8 });
+    expect(s.testRunner).toBe("./mvnw test");
+    expect(s.buildCommand).toBe("./mvnw clean package");
+  });
+
+  it("falls back to bare mvn when no wrapper is present", () => {
+    put("pom.xml", "<project></project>");
+    const s = scanRepo(tmp, { maxDepth: 8 });
+    expect(s.testRunner).toBe("mvn test");
+    expect(s.buildCommand).toBe("mvn clean package");
+  });
+
+  it("prefers ./gradlew over gradle when the Gradle wrapper is present", () => {
+    put("build.gradle", "");
+    put("gradlew", "#!/bin/sh\n");
+    const s = scanRepo(tmp, { maxDepth: 8 });
+    expect(s.testRunner).toBe("./gradlew test");
+    expect(s.buildCommand).toBe("./gradlew build");
+  });
+});
+
 // ---- plan(): generated artifacts ------------------------------------------
 
 describe("profile.plan", () => {
