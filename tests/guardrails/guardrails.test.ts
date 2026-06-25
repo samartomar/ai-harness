@@ -3,7 +3,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { command } from "../../src/guardrails/index.js";
-import { GITLEAKS_ARGS, GITLEAKS_REV } from "../../src/guardrails/precommit.js";
+import {
+  GITLEAKS_ARGS,
+  GITLEAKS_REV,
+  preCommitConfigYaml,
+} from "../../src/guardrails/precommit.js";
 import { blockingLicenses, LICENSE_MATRIX } from "../../src/guardrails/sca.js";
 import { executePlan } from "../../src/internals/execute.js";
 import type { Action, PlanContext, WriteAction } from "../../src/internals/plan.js";
@@ -90,6 +94,32 @@ describe("guardrails command", () => {
     expect(yaml).toContain("id: gitleaks");
     expect(GITLEAKS_ARGS).toEqual(["--verbose", "--config=.gitleaks.toml"]);
     expect(yaml).toContain('args: ["--verbose", "--config=.gitleaks.toml"]');
+  });
+
+  it("preserves a USER-authored pre-commit config instead of clobbering it", async () => {
+    // A team config aih did not generate (no ownership marker), with its own hook.
+    writeFileSync(
+      join(dir, ".pre-commit-config.yaml"),
+      "repos:\n  - repo: local\n    hooks:\n      - id: team-hook\n",
+    );
+    const p = await command.plan(ctx());
+    const pre = writeAt(p.actions, ".pre-commit-config.yaml");
+    expect(pre?.once).toBe(true); // write-once → never overwrites the user's file
+    // ...and a merge doc hands over the exact gitleaks block to add.
+    const mergeDoc = p.actions.find(
+      (a) => a.kind === "doc" && a.describe.includes("gitleaks hook"),
+    );
+    expect(mergeDoc?.kind === "doc" && mergeDoc.text).toContain("gitleaks/gitleaks");
+  });
+
+  it("re-owns (normal rewrite, not once) a pre-commit config aih itself generated", async () => {
+    writeFileSync(join(dir, ".pre-commit-config.yaml"), preCommitConfigYaml()); // carries the marker
+    const p = await command.plan(ctx());
+    const pre = writeAt(p.actions, ".pre-commit-config.yaml");
+    expect(pre?.once).toBeUndefined(); // aih owns it → idempotent overwrite, no merge doc
+    expect(p.actions.some((a) => a.kind === "doc" && a.describe.includes("gitleaks hook"))).toBe(
+      false,
+    );
   });
 
   it("adds a local lint hook ONLY when the repo defines a lint command", async () => {
