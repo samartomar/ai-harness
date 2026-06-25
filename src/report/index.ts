@@ -130,17 +130,22 @@ async function reportPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
   // report in a browser); `--refresh <sec>` embeds a meta-refresh + also forces html
   // (the watch loop in run.ts keeps regenerating the file while the page reloads).
   const open = ctx.options.open === true;
+  // `--demo` opens the dashboard defaulting to the embedded DEMO dataset (for
+  // visualizing / showcasing the full report); the in-page "◑ demo data" toggle is
+  // present in EVERY report regardless. Demo implies the HTML dashboard + open.
+  const demo = ctx.options.demo === true;
   const refreshRaw = Number(ctx.options.refresh);
   const refresh =
     Number.isFinite(refreshRaw) && refreshRaw > 0 ? Math.floor(refreshRaw) : undefined;
-  const format = open || refresh !== undefined ? "html" : formatOf(ctx);
+  const format = open || demo || refresh !== undefined ? "html" : formatOf(ctx);
+  const shouldOpen = open || demo;
   const built = await buildReport(ctx);
   const actions: Action[] = [...built.digests];
   if (format !== "terminal") {
     const path = artifactPath(ctx, built.scope, format);
     const content =
       format === "html"
-        ? reportHtml(built.title, built.digests, { refresh })
+        ? reportHtml(built.title, built.digests, { refresh, demo })
         : reportMarkdown(built.title, built.digests);
     // The default artifact lands under `.aih/` (repo-contained). An explicit `--out`
     // is the operator's own chosen target, so it opts out of repo containment.
@@ -159,7 +164,7 @@ async function reportPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
     }
     // Launch the dashboard in the default browser (local exec, runs under --apply;
     // `--open` implies --apply so a single `aih report --open` builds AND opens it).
-    if (open) {
+    if (shouldOpen) {
       const file = resolve(ctx.root, path);
       // On Windows the file is opened via `cmd /c start "" <file>`; reject a
       // metacharacter-laden `--out` before it reaches cmd.exe.
@@ -206,6 +211,11 @@ export const command: CommandSpec = {
     {
       flags: "--open",
       description: "build the HTML dashboard and open it in your browser (implies html + apply)",
+    },
+    {
+      flags: "--demo",
+      description:
+        "open the dashboard with embedded DEMO data for showcasing (implies html + open)",
     },
     {
       flags: "--refresh <sec>",
