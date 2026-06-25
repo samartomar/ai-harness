@@ -87,6 +87,16 @@ describe("mcp enterprise modes", () => {
       true,
     );
   });
+
+  it("--mode offline: a verify probe FAILS on stdio servers that resolve at runtime (AIH-MCP-001)", async () => {
+    const ctx = makeCtx({ options: { mode: "offline" }, verify: true });
+    const p = await command.plan(ctx);
+    const probe = p.actions.find((a) => a.kind === "probe" && a.describe.includes("vendored"));
+    const check = probe?.kind === "probe" ? await probe.run(ctx) : undefined;
+    // better-code-review-graph launches via `uv` (a runtime resolver) → flagged.
+    expect(check?.verdict).toBe("fail");
+    expect(check?.detail).toMatch(/runtime/);
+  });
 });
 
 describe("aih mcp — plan shape", () => {
