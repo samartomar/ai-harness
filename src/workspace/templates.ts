@@ -4,6 +4,7 @@ import { lines } from "../internals/render.js";
 export function workspaceMarker(repos: string[], dir: string): unknown {
   return {
     workspaceType: "multi-repo",
+    graphScope: "combined-child-repos",
     contextDir: dir,
     repos,
     generatedBy: "aih workspace",
@@ -19,8 +20,10 @@ export function codeWorkspace(repos: string[]): unknown {
 }
 
 /**
- * A filesystem MCP server scoped to every child repo path, so an agent at the
- * workspace root can read across repos (the cross-repo blast-radius bridge).
+ * Workspace-level MCP servers: a combined code-review graph rooted at the parent
+ * plus a filesystem MCP scoped to every child repo path. The graph answers
+ * "what is the blast radius across UI/backend/infra/docs?", while each child
+ * repo still owns its own canon and local command flow.
  * Merged into any existing `.mcp.json`. The package is version-pinnable via
  * `AIH_MCP_FS_VERSION` (supply-chain control) — unset runs latest at MCP launch.
  */
@@ -31,6 +34,10 @@ export function spanningMcp(repos: string[], version?: string): unknown {
       : "@modelcontextprotocol/server-filesystem";
   return {
     mcpServers: {
+      "better-code-review-graph": {
+        command: "uv",
+        args: ["run", "better-code-review-graph", "serve"],
+      },
       filesystem: {
         command: "npx",
         args: ["-y", pkg, ...repos],
@@ -79,6 +86,18 @@ export function crossRepoArchitectureDoc(name: string, repos: string[], dir: str
     divider,
     example,
     "",
+    "## Blast-radius protocol",
+    "",
+    "When an agent is asked to change a product behavior:",
+    "",
+    "1. Start at this workspace map and identify every repo touched by the feature.",
+    "2. Use the workspace graph/filesystem MCP to inspect cross-repo call sites, imports,",
+    "   API contracts, infra bindings, runbooks, and docs before editing.",
+    "3. Before writing code in any repo, read that repo's own canon and validation flow.",
+    "4. Make source changes inside child repos, not in the parent workspace root.",
+    "5. Run each affected repo's local validation, then update this feature map when a",
+    "   cross-repo contract changes.",
+    "",
     "## Change patterns",
     "",
     "- **Add a cross-repo feature:** define/version the contract first, implement the",
@@ -102,14 +121,17 @@ export function repoDisciplineDoc(repos: string[], dir: string): string {
   return lines(
     "# Repo discipline (workspace)",
     "",
-    "This is a multi-repo workspace. Conventions differ per repo — before editing a",
-    "repo, load THAT repo's canon first.",
+    "This parent folder is the coordination plane, not a source repo. Use it to reason",
+    "about blast radius across UI/backend/infra/docs, then do implementation work inside",
+    "the affected child repos. Conventions differ per repo — before editing a repo, load",
+    "THAT repo's canon first.",
     "",
     bullets,
     "",
     `For any change that crosses repos, consult \`${dir}/cross-repo-architecture.md\` for`,
-    "the contract, update both sides, and keep the feature map current. Never assume",
-    "one repo's conventions apply to another.",
+    "the contract, inspect the combined workspace graph, update every affected repo in",
+    "lockstep, and keep the feature map current. Never assume one repo's conventions",
+    "apply to another.",
   );
 }
 
@@ -127,6 +149,7 @@ export function workspaceBootloader(
     "",
     `- \`${dir}/cross-repo-architecture.md\` — how the repos fit together + the cross-repo feature map.`,
     `- \`${dir}/repo-discipline.md\` — read a repo's own canon before editing it.`,
+    "- Workspace MCP graph/filesystem — use for blast-radius discovery across all child repos.",
     "",
     `Repos: ${repos.length > 0 ? repos.join(", ") : "(none detected yet)"}. Each has its own canon`,
     `under \`<repo>/${dir}/\` (run \`aih init\` in each). Edit workspace guidance in \`${dir}/\`, not here.`,
@@ -148,6 +171,7 @@ export function nextStepsDoc(name: string, repos: string[], dir: string): string
     "",
     `- Fill in \`${dir}/cross-repo-architecture.md\` — it is write-once; aih won't overwrite it.`,
     `- Open \`${name}.code-workspace\` in VS Code (all repos in one window).`,
+    "- Use the parent `.mcp.json` graph/filesystem servers for cross-repo blast-radius analysis.",
     "- Validate: `aih doctor` at the workspace root checks each child is scaffolded.",
   );
 }

@@ -7,6 +7,7 @@ import { command as doctor } from "../doctor.js";
 import { command as ecc } from "../ecc/index.js";
 import { command as guardrails } from "../guardrails/index.js";
 import { command as hardware } from "../hardware/index.js";
+import { command as heal } from "../heal/index.js";
 import { command as init } from "../init/index.js";
 import type { CommandSpec } from "../internals/plan.js";
 import { command as mcp } from "../mcp/index.js";
@@ -27,6 +28,7 @@ import { runCapability } from "./run.js";
 /** Capability commands (repo/workstation mutators), dry-run by default. */
 export const CAPABILITIES: CommandSpec[] = [
   certs,
+  heal,
   hardware,
   vdi,
   profile,

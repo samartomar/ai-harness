@@ -54,7 +54,19 @@ describe("detectChildRepos", () => {
 
   it("honors an explicit repo list (filtered to existing)", () => {
     child("ui");
-    expect(detectChildRepos(parent, ["ui", "missing"])).toEqual(["ui"]);
+    expect(detectChildRepos(parent, ["ui"])).toEqual(["ui"]);
+  });
+
+  it("fails closed when an explicit repo is missing or not a git repo", () => {
+    child("ui");
+    child("docs", false);
+    expect(() => detectChildRepos(parent, ["ui", "missing"])).toThrow(/do not exist/);
+    expect(() => detectChildRepos(parent, ["docs"])).toThrow(/not git repos/);
+  });
+
+  it("rejects absolute or parent-traversing explicit repo paths", () => {
+    expect(() => detectChildRepos(parent, ["../other"])).toThrow(/traverse/);
+    expect(() => detectChildRepos(parent, ["C:/other"])).toThrow(/relative/);
   });
 });
 
@@ -80,11 +92,26 @@ describe("workspace.plan — generated artifacts", () => {
     const arch = w.get("ai-coding/cross-repo-architecture.md")?.contents ?? "";
     expect(arch).toContain("ui/ai-coding/RULE_ROUTER.md");
     expect(arch).toContain("backend/ai-coding/RULE_ROUTER.md");
-    // The marker + MCP carry the repo list.
-    const marker = w.get(".aih-workspace.json")?.json as { repos: string[]; workspaceType: string };
+    // The marker + MCP carry the repo list and combined graph scope.
+    const marker = w.get(".aih-workspace.json")?.json as {
+      repos: string[];
+      workspaceType: string;
+      graphScope: string;
+    };
     expect(marker.repos).toEqual(["backend", "ui"]);
     expect(marker.workspaceType).toBe("multi-repo");
-    const mcp = w.get(".mcp.json")?.json as { mcpServers: { filesystem: { args: string[] } } };
+    expect(marker.graphScope).toBe("combined-child-repos");
+    const mcp = w.get(".mcp.json")?.json as {
+      mcpServers: {
+        "better-code-review-graph": { command: string; args: string[] };
+        filesystem: { args: string[] };
+      };
+    };
+    expect(mcp.mcpServers["better-code-review-graph"].args).toEqual([
+      "run",
+      "better-code-review-graph",
+      "serve",
+    ]);
     expect(mcp.mcpServers.filesystem.args).toEqual(expect.arrayContaining(["ui", "backend"]));
   });
 

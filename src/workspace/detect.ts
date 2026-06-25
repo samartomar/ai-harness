@@ -1,5 +1,31 @@
 import { existsSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
+import { AihError } from "../errors.js";
+
+function normalizeRepoPath(raw: string): string {
+  const value = raw.trim().replace(/\\/g, "/");
+  if (value.length === 0) return "";
+  if (value.startsWith("/") || /^[A-Za-z]:/.test(value) || value.startsWith("//")) {
+    throw new AihError(
+      `workspace repo path must be relative to the parent: ${raw}`,
+      "AIH_WORKSPACE",
+    );
+  }
+  const parts = value.split("/").filter((p) => p.length > 0);
+  if (parts.some((p) => p === "." || p === "..")) {
+    throw new AihError(`workspace repo path must not traverse parents: ${raw}`, "AIH_WORKSPACE");
+  }
+  return parts.join("/");
+}
+
+function isGitRepo(parent: string, repo: string): boolean {
+  const dir = join(parent, repo);
+  try {
+    return statSync(dir).isDirectory() && existsSync(join(dir, ".git"));
+  } catch {
+    return false;
+  }
+}
 
 /**
  * The child repositories of a workspace parent. An explicit list (from
@@ -10,7 +36,22 @@ import { join } from "node:path";
  */
 export function detectChildRepos(parent: string, explicit: readonly string[] = []): string[] {
   if (explicit.length > 0) {
-    return explicit.map((r) => r.trim()).filter((r) => r.length > 0 && existsSync(join(parent, r)));
+    const repos = [...new Set(explicit.map(normalizeRepoPath).filter((r) => r.length > 0))];
+    const missing = repos.filter((r) => !existsSync(join(parent, r)));
+    if (missing.length > 0) {
+      throw new AihError(
+        `workspace --repos entries do not exist under the parent: ${missing.join(", ")}`,
+        "AIH_WORKSPACE",
+      );
+    }
+    const notRepos = repos.filter((r) => !isGitRepo(parent, r));
+    if (notRepos.length > 0) {
+      throw new AihError(
+        `workspace --repos entries are not git repos (missing .git): ${notRepos.join(", ")}`,
+        "AIH_WORKSPACE",
+      );
+    }
+    return repos;
   }
   let entries: string[];
   try {

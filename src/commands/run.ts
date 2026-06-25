@@ -90,7 +90,9 @@ export async function runCapability(
       contextDir: settings.contextDir,
       // `--open`/`--refresh` (report) imply --apply so one command builds AND opens.
       apply: spec.readOnly ? false : settings.apply || liveOpen,
-      verify: spec.readOnly ? true : settings.verify,
+      // readOnly (doctor/status) always verifies; a capability can also opt into
+      // always-verify (heal) so it diagnoses by default while still applying fixes.
+      verify: spec.readOnly || spec.alwaysVerify ? true : settings.verify,
       json: settings.json,
       run,
       host,

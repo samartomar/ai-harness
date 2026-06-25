@@ -247,8 +247,13 @@ export function summarizeResult(result: PlanResult): string {
     const status = e.ran ? ` (exit ${e.code})` : " (run with --apply)";
     out.push(`  [exec] ${e.argv.join(" ")} — ${e.describe}${status}`);
   }
-  for (const p of result.probes) {
-    out.push(`  [probe] ${p.describe}${result.report ? "" : " (run with --verify)"}`);
+  // Only list probes when there's no report to supersede them; otherwise the
+  // Verification section below already shows each check with its verdict + detail
+  // (listing both just duplicates every line).
+  if (!result.report) {
+    for (const p of result.probes) {
+      out.push(`  [probe] ${p.describe} (run with --verify)`);
+    }
   }
   if (result.report) {
     out.push("Verification:");
