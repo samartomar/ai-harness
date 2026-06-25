@@ -360,7 +360,7 @@ describe("demo mode", () => {
 
   it("reportHtml always embeds demo content + toggle; --demo defaults it visible", () => {
     const html = reportHtml("t", [], { demo: true });
-    expect(html).toContain("demo-toggle");
+    expect(html).toContain("aihDemo()"); // the demo toggle button
     expect(html).toContain('<body data-demo="on">'); // demo is the default view
     expect(html).toContain("DEMO DATA");
     expect(html).toContain("Code graph health"); // demo renders Phase 2 panel

@@ -21,5 +21,5 @@ describe("CLI program", () => {
     const program = buildProgram();
     program.configureOutput({ writeOut: () => {}, writeErr: () => {} });
     await expect(program.parseAsync(["node", "aih", "certs", "--json"])).resolves.toBeDefined();
-  });
+  }, 20000); // full-program cold start + certs dry-run can edge past the 5s default on slow Windows CI
 });

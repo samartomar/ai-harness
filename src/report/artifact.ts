@@ -1,6 +1,7 @@
 import type { DigestAction } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
 import { demoDigests } from "./demo.js";
+import { GEIST_FONT } from "./font-geist.js";
 import { EMBEDDED_FONTS } from "./fonts.js";
 
 /** HTML-escape text for safe embedding in markup. */
@@ -108,7 +109,7 @@ function budgetPanel(d: Bag): string {
     `<div class="budget-cap"><span>${fmt(tokens)} tokens · ${all.length} files (heaviest first — scroll for all)</span><span>budget ${fmt(budget)}</span></div>`,
     `<ul class="bars scroll" tabindex="0" role="region" aria-label="Context files by token weight">${rows}</ul>`,
   ].join("");
-  return panel("Context footprint", badge, body, 7);
+  return panel("Context footprint", badge, body, 12);
 }
 
 /** Repo status: branch rows with ahead/behind pills, current highlight, dirty hint. */
@@ -200,19 +201,56 @@ function checklistPanel(d: Bag): string {
   );
 }
 
-/** Tooling: pill per AI CLI — filled when present, struck-through when absent. */
+/**
+ * Install / enable hints for tools NOT on PATH (shell tools) or AI CLIs not configured
+ * here — surfaced as a hover tooltip on the struck-through pill so a developer can act.
+ * Protocol-less URLs (no http/https) keep the page's "no external assets" guarantee.
+ */
+const TOOL_HINTS: Record<string, string> = {
+  rg: "ripgrep — brew install ripgrep · apt install ripgrep · scoop install ripgrep",
+  sg: "ast-grep — brew install ast-grep · npm i -g @ast-grep/cli · cargo install ast-grep",
+  fd: "fd — brew install fd · apt install fd-find · scoop install fd",
+  tree: "tree — brew install tree · apt install tree",
+  comby: "comby — brew install comby · bash <(curl -sL get.comby.dev)",
+  jq: "jq — brew install jq · apt install jq · scoop install jq",
+  gh: "GitHub CLI — brew install gh · winget install GitHub.cli · cli.github.com",
+  "code-review-graph": "pip install code-review-graph (or uvx code-review-graph serve)",
+  claude: "Claude Code — npm i -g @anthropic-ai/claude-code",
+  codex: "Codex CLI — npm i -g @openai/codex",
+  cursor: "Cursor editor — cursor.com",
+  gemini: "Gemini CLI — npm i -g @google/gemini-cli",
+  antigravity: "Antigravity — antigravity.google",
+  windsurf: "Windsurf — windsurf.com",
+  kiro: "Kiro — kiro.dev",
+  copilot: "GitHub Copilot CLI — gh extension install github/gh-copilot",
+  opencode: "opencode — npm i -g opencode-ai",
+  zed: "Zed — zed.dev",
+  kimi: "Kimi CLI — kimi.com",
+};
+
+/** A tool/CLI pill — present (filled), or absent (struck-through, with an install hint). */
+function toolPill(name: string, on: boolean): string {
+  if (on) return `<span class="tool on">${esc(name)}</span>`;
+  const hint = TOOL_HINTS[name];
+  return `<span class="tool off"${hint ? ` data-hint="1" title="${esc(hint)}"` : ""}>${esc(name)}</span>`;
+}
+
+/** Present-then-absent tool pills, shared by Tools installed + Tooling. */
+function toolPills(present: string[], absent: string[]): string {
+  return [...present.map((n) => toolPill(n, true)), ...absent.map((n) => toolPill(n, false))].join(
+    "",
+  );
+}
+
+/** Tooling: pill per AI CLI — filled when present, struck-through (with hint) when absent. */
 function toolingPanel(d: Bag): string {
   const present = arr(d.present) as string[];
   const absent = arr(d.absent) as string[];
   const total = num(d.total) ?? present.length + absent.length;
-  const pills = [
-    ...present.map((n) => `<span class="tool on">${esc(n)}</span>`),
-    ...absent.map((n) => `<span class="tool off">${esc(n)}</span>`),
-  ].join("");
   return panel(
     "Tooling",
     `<span class="badge muted">${present.length}/${total}</span>`,
-    `<div class="pills">${pills}</div>`,
+    `<div class="pills">${toolPills(present, absent)}</div>`,
     7,
   );
 }
@@ -298,7 +336,7 @@ function testRatioPanel(d: Bag): string {
   const t = num(d.testFiles) ?? 0;
   const s = num(d.sourceFiles) ?? 0;
   const body = `<div class="ratio"><span class="ratio-v">${ratio}%</span><span class="ratio-l">test to source file ratio</span><span class="ratio-sub">${fmt(t)} test files / ${fmt(s)} source files</span></div>`;
-  return panel("Test coverage", "", body, 5);
+  return panel("Test coverage", "", body, 4);
 }
 
 /** Repository information — tracked files + git size + file-type breakdown bars. */
@@ -317,20 +355,16 @@ function repoInfoPanel(d: Bag): string {
   return panel("Repository information", "", `${head}<ul class="bars">${rows}</ul>`, 7);
 }
 
-/** Tools installed — agent shell tools, filled when on PATH, struck-through when absent. */
+/** Tools installed — agent shell tools, filled when on PATH, struck-through (+ hint) when absent. */
 function toolsInstalledPanel(d: Bag): string {
   const present = arr(d.present) as string[];
   const absent = arr(d.absent) as string[];
   const total = num(d.total) ?? present.length + absent.length;
-  const pills = [
-    ...present.map((n) => `<span class="tool on">${esc(n)}</span>`),
-    ...absent.map((n) => `<span class="tool off">${esc(n)}</span>`),
-  ].join("");
   return panel(
     "Tools installed",
     `<span class="badge muted">${present.length}/${total}</span>`,
-    `<div class="pills">${pills}</div>`,
-    5,
+    `<div class="pills">${toolPills(present, absent)}</div>`,
+    7,
   );
 }
 
@@ -344,14 +378,14 @@ function graphHealthPanel(d: Bag): string {
     stat("Files indexed", d.files !== undefined ? fmt(num(d.files) ?? 0) : "—") +
     stat("Edge density", density !== undefined ? density.toFixed(1) : "—")
   }</ul>`;
-  return panel("Code graph health", "", body, 7);
+  return panel("Code graph health", "", body, 4);
 }
 
 /** Build & analysis times from the code-review-graph (Phase 2). */
 function buildTimesPanel(d: Bag): string {
   const ms = num(d.buildMs);
   const body = `<ul class="statlist"><li><span>Graph build time</span><b>${ms !== undefined ? `${(ms / 1000).toFixed(1)}s` : "—"}</b></li><li><span>Files tracked by graph</span><b>${d.files !== undefined ? fmt(num(d.files) ?? 0) : "—"}</b></li></ul>`;
-  return panel("Build & analysis", "", body, 7);
+  return panel("Build & analysis", "", body, 5);
 }
 
 /** Guardrail rules — severity counts as horizontal bars (Phase 3). */
@@ -363,7 +397,7 @@ function guardrailRulesPanel(d: Bag): string {
   const row = (label: string, n: number, cls: string): string =>
     `<li><span class="gr-l">${label}</span><span class="bar-track"><span class="gr-fill ${cls}" style="width:${((n / max) * 100).toFixed(0)}%"></span></span><span class="gr-v">${fmt(n)}</span></li>`;
   const body = `<ul class="guardrails">${row("CRITICAL", c, "crit") + row("IMPORTANT", i, "imp") + row("STYLE", s, "sty")}</ul>`;
-  return panel("Guardrail rules", "", body, 5);
+  return panel("Guardrail rules", "", body, 4);
 }
 
 /** Route one digest to its rich panel (by stable describe prefix), else a note. */
@@ -390,45 +424,59 @@ function panelFor(d: DigestAction): string {
 }
 
 /**
- * Curated order for the single flowing bento. Related panels sit ADJACENT — a soft
- * grouping (velocity → quality → performance → adoption → repo → trends) achieved by
- * proximity, NOT by loud section headers — and the per-panel spans tile this exact
- * sequence into clean 12-col rows. Gated/absent panels just drop out and the grid
- * reflows; anything unrecognized sorts to the end.
+ * Category sections — panels grouped under labeled headers (the design's sections),
+ * each its own bento that tiles cleanly. Per-panel spans are tuned so each category's
+ * FULL set tiles into clean 12-col rows; gated/absent panels drop out and the grid
+ * reflows (a lone panel stretches to full width). Anything unmatched lands in "More".
  */
-const PANEL_ORDER = [
-  "Daily commits", // ─ velocity
-  "Lines of code",
-  "AI events",
-  "Test coverage", // ─ quality
-  "Code graph health",
-  "Guardrail rules",
-  "Build & analysis", // ─ performance
-  "Repository information",
-  "Tools installed", // ─ adoption
-  "Context footprint",
-  "Repo status", // ─ repository
-  "Configuration",
-  "Tooling",
-  "Trends", // ─ trends (full-width tail)
+const CATEGORIES: { title: string; prefixes: string[] }[] = [
+  { title: "Output velocity", prefixes: ["Daily commits", "Lines of code"] },
+  { title: "Code quality", prefixes: ["Test coverage", "Code graph health", "Guardrail rules"] },
+  {
+    title: "Performance",
+    prefixes: ["Repository information", "Build & analysis", "Context footprint"],
+  },
+  {
+    title: "Harness adoption",
+    prefixes: ["Tools installed", "Repo status", "Configuration", "Tooling"],
+  },
+  { title: "Trends over time", prefixes: ["Trends"] },
+  { title: "Event log", prefixes: ["AI events"] },
 ];
 
-function orderKey(describe: string): number {
-  const i = PANEL_ORDER.findIndex((p) => describe.startsWith(p));
-  return i >= 0 ? i : PANEL_ORDER.length;
+/** One category section: numbered eyebrow + title + count, then its panel bento. */
+function categorySection(title: string, no: number, panels: DigestAction[]): string {
+  const idx = String(no).padStart(2, "0");
+  return (
+    `<section class="cat"><div class="cat-h">` +
+    `<span class="cat-no">${idx}</span><h2>${esc(title)}</h2>` +
+    `<span class="cat-ct">${panels.length}</span><span class="cat-rule"></span></div>` +
+    `<div class="bento">${panels.map(panelFor).join("")}</div></section>`
+  );
 }
 
-/** All data-driven panels as ONE flowing 12-col bento, in the curated order. */
-function renderBento(digests: DigestAction[]): string {
-  const ordered = digests
-    .map((d, i) => ({ d, i })) // index tiebreak keeps the sort stable across engines
-    .sort((a, b) => orderKey(a.d.describe) - orderKey(b.d.describe) || a.i - b.i)
-    .map((x) => x.d);
-  return `<div class="bento">${ordered.map(panelFor).join("")}</div>`;
+/** Group digests into ordered, labeled category sections; unmatched fall into "More". */
+function renderSections(digests: DigestAction[]): string {
+  const used = new Set<DigestAction>();
+  const take = (prefix: string): DigestAction | undefined => {
+    const d = digests.find((x) => !used.has(x) && x.describe.startsWith(prefix));
+    if (d) used.add(d);
+    return d;
+  };
+  const out: string[] = [];
+  let n = 0;
+  for (const cat of CATEGORIES) {
+    const panels = cat.prefixes.map(take).filter((d): d is DigestAction => d !== undefined);
+    if (panels.length > 0) out.push(categorySection(cat.title, ++n, panels));
+  }
+  const leftover = digests.filter((d) => !used.has(d));
+  if (leftover.length > 0) out.push(categorySection("More", ++n, leftover));
+  return out.join("");
 }
 
-const STYLE = `${EMBEDDED_FONTS}
+const STYLE = `${EMBEDDED_FONTS}${GEIST_FONT}
 :root{ color-scheme:dark;
+  --display:'Geist','Inter',ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
   --bg:#0a0d13; --panel:#11151d; --panel2:#161b25; --line:#222a38; --line2:#2c3548;
   --fg:#e8edf4; --mut:#8893a7; --dim:#737e93;
   --accent:#5b9dff; --accent2:#8a7bff; --ok:#3fdc8a; --warn:#ffc24b; --bad:#ff6b6b;
@@ -441,36 +489,48 @@ const STYLE = `${EMBEDDED_FONTS}
 *{box-sizing:border-box} html,body{margin:0}
 :where(button,a,[tabindex]):focus-visible,.ev-wrap:focus-visible,.bars.scroll:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 @media(prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important;scroll-behavior:auto!important}}
-.theme-toggle{position:fixed;top:1rem;right:1rem;z-index:9;display:inline-flex;align-items:center;gap:.4rem;cursor:pointer;font:inherit;font-size:.75rem;color:var(--mut);background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:.35rem .7rem}
-.theme-toggle:hover{border-color:var(--line2);color:var(--fg)}
+.topbar{position:sticky;top:0;z-index:20;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:.7rem 1rem;padding:.7rem clamp(1rem,4vw,2rem);background:color-mix(in oklab,var(--bg) 84%,transparent);backdrop-filter:blur(14px) saturate(1.4);-webkit-backdrop-filter:blur(14px) saturate(1.4);border-bottom:1px solid var(--line)}
+.tb-brand h1{font-family:var(--display);font-size:1.15rem;font-weight:680;letter-spacing:-.02em;margin:0;line-height:1.15}
+.tb-brand .sub{color:var(--mut);font-size:.73rem;margin-top:.12rem}
+.tb-brand .sub code{color:var(--fg)}
+.tb-right{display:flex;align-items:center;gap:.55rem}
+.clocks{display:flex;gap:1.1rem;margin-right:.3rem}
+.clk{display:flex;flex-direction:column;align-items:flex-end;line-height:1.1}
+.clk i{font-style:normal;color:var(--dim);font-size:.56rem;letter-spacing:.13em;text-transform:uppercase}
+.clk b{font:600 .82rem/1 'JetBrains Mono',ui-monospace,SFMono-Regular,monospace;font-variant-numeric:tabular-nums;color:var(--fg);margin-top:.13rem}
+.tb-ico{display:inline-grid;place-items:center;width:34px;height:30px;padding:0;cursor:pointer;color:var(--mut);background:var(--panel);border:1px solid var(--line);border-radius:9px;transition:border-color .15s,color .15s,background .15s}
+.tb-ico:hover{border-color:var(--line2);color:var(--fg)}
+.tb-ico svg{display:block;width:15px;height:15px}
+.tb-demo:hover{border-color:var(--accent);color:var(--accent)}
+body[data-demo="on"] .tb-demo{background:color-mix(in oklab,var(--accent) 18%,transparent);border-color:color-mix(in oklab,var(--accent) 45%,transparent);color:var(--accent)}
+@media(max-width:640px){.clocks{display:none}.tb-brand .sub{display:none}}
 body{ background:radial-gradient(1100px 520px at 78% -8%,color-mix(in oklab,var(--accent) 13%,transparent),transparent 58%),radial-gradient(900px 600px at 6% 108%,color-mix(in oklab,var(--accent2) 9%,transparent),transparent 60%),var(--bg);
   color:var(--fg); font:14px/1.5 'Inter',ui-sans-serif,system-ui,-apple-system,"Segoe UI Variable","Segoe UI",sans-serif; -webkit-font-smoothing:antialiased; }
-main{max-width:1120px;margin:0 auto;padding:2.4rem 1.5rem 5rem}
-header{margin-bottom:1.4rem}
-h1{font-size:1.8rem;font-weight:740;letter-spacing:-.025em;margin:0}
-.sub{color:var(--mut);font-size:.82rem;margin-top:.3rem}
+main{max-width:1120px;margin:0 auto;padding:1.8rem 1.5rem 5rem}
 .hero{display:grid;grid-template-columns:auto 1fr;gap:1rem;margin-bottom:1rem}
-@media(max-width:680px){.hero{grid-template-columns:1fr}main{padding-top:3.6rem}}
+@media(max-width:680px){.hero{grid-template-columns:1fr}}
 .ring-card{display:grid;place-items:center;gap:.35rem;background:linear-gradient(180deg,var(--panel2),var(--panel));border:1px solid var(--line);border-radius:var(--r);padding:1.1rem 1.5rem;box-shadow:var(--sh)}
 .ring-label{color:var(--mut);font-size:.7rem;text-transform:uppercase;letter-spacing:.09em}
 .ring-bg{stroke:color-mix(in oklab,var(--fg) 9%,transparent)}
 .ring.ok .ring-fg{stroke:var(--ok)} .ring.warn .ring-fg{stroke:var(--warn)} .ring.bad .ring-fg{stroke:var(--bad)}
-.ring-num{text-anchor:middle;font-size:30px;font-weight:720;fill:var(--fg);font-variant-numeric:tabular-nums}
+.ring-num{font-family:var(--display);text-anchor:middle;font-size:30px;font-weight:660;fill:var(--fg);font-variant-numeric:tabular-nums}
 .ring-cap{text-anchor:middle;font-size:11px;fill:var(--mut)}
 .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:.7rem}
 .kpi{display:flex;flex-direction:column;justify-content:center;gap:.2rem;background:linear-gradient(180deg,var(--panel2),var(--panel));border:1px solid var(--line);border-radius:var(--r);padding:.95rem 1.05rem;box-shadow:var(--sh);transition:border-color .15s,transform .15s}
 .kpi:hover{border-color:var(--line2);transform:translateY(-1px)}
-.kpi-v{font-size:1.55rem;font-weight:700;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.kpi-v{font-family:var(--display);font-size:1.55rem;font-weight:640;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
 .kpi-v.over{color:var(--bad)}
 .kpi-l{color:var(--mut);font-size:.7rem;text-transform:uppercase;letter-spacing:.06em}
 .bento{display:grid;grid-template-columns:repeat(12,1fr);gap:1rem;grid-auto-flow:row dense}
 .panel{grid-column:span 12;background:linear-gradient(180deg,var(--panel2),var(--panel));border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--sh);overflow:hidden;position:relative;transition:border-color .15s,box-shadow .15s,transform .15s}
 .panel::before{content:"";position:absolute;inset:0 0 auto;height:1px;background:linear-gradient(90deg,transparent,color-mix(in oklab,var(--fg) 10%,transparent) 18%,color-mix(in oklab,var(--fg) 10%,transparent) 82%,transparent);pointer-events:none}
 .panel:hover{border-color:var(--line2);transform:translateY(-1px);box-shadow:0 1px 0 rgba(255,255,255,.04) inset,0 18px 40px -20px rgba(0,0,0,.8)}
-.span-5{grid-column:span 5}.span-7{grid-column:span 7}.span-12{grid-column:span 12}
-@media(max-width:820px){.span-5,.span-7{grid-column:span 12}}
+.span-4{grid-column:span 4}.span-5{grid-column:span 5}.span-7{grid-column:span 7}.span-12{grid-column:span 12}
+.bento>.panel:only-child{grid-column:1/-1}
+@media(max-width:820px){.span-5,.span-7{grid-column:span 12}.span-4{grid-column:span 6}}
+@media(max-width:520px){.span-4{grid-column:span 12}}
 .ph{display:flex;align-items:center;justify-content:space-between;gap:1rem;padding:.8rem 1.1rem;border-bottom:1px solid var(--line)}
-.ph h2{font-size:.82rem;font-weight:640;text-transform:uppercase;letter-spacing:.07em;margin:0}
+.ph h2{font-family:var(--display);font-size:.82rem;font-weight:640;text-transform:uppercase;letter-spacing:.07em;margin:0}
 .pb{padding:1.05rem 1.1rem}
 .badge{font-size:.71rem;font-weight:600;padding:.18rem .5rem;border-radius:999px;white-space:nowrap;background:color-mix(in oklab,var(--accent) 16%,transparent);color:var(--accent)}
 .badge.muted{background:color-mix(in oklab,var(--mut) 15%,transparent);color:var(--mut)}
@@ -519,6 +579,15 @@ h1{font-size:1.8rem;font-weight:740;letter-spacing:-.025em;margin:0}
 .tool{font-size:.79rem;padding:.32rem .68rem;border-radius:999px;font-weight:550}
 .tool.on{background:color-mix(in oklab,var(--accent) 17%,transparent);color:var(--accent);border:1px solid color-mix(in oklab,var(--accent) 34%,transparent)}
 .tool.off{color:var(--dim);border:1px solid var(--line);text-decoration:line-through;text-decoration-color:color-mix(in oklab,var(--dim) 55%,transparent);opacity:.72}
+.tool.off[data-hint]{cursor:help}
+.tool.off[data-hint]:hover{opacity:1;color:var(--mut);border-color:color-mix(in oklab,var(--accent) 40%,transparent)}
+.cat{margin-top:1.9rem}
+.cat:first-child{margin-top:.2rem}
+.cat-h{display:flex;align-items:center;gap:.65rem;margin:0 0 .9rem;padding:0 .1rem}
+.cat-no{font:600 .72rem/1 'JetBrains Mono',ui-monospace,SFMono-Regular,monospace;color:var(--accent);opacity:.7;letter-spacing:.04em}
+.cat-h h2{font-family:var(--display);font-size:.84rem;font-weight:680;text-transform:uppercase;letter-spacing:.15em;color:var(--fg);margin:0;white-space:nowrap}
+.cat-ct{font:600 .64rem/1 'JetBrains Mono',ui-monospace,SFMono-Regular,monospace;color:var(--mut);background:color-mix(in oklab,var(--mut) 15%,transparent);border-radius:999px;padding:.18rem .44rem;font-variant-numeric:tabular-nums}
+.cat-rule{flex:1;height:1px;background:linear-gradient(90deg,var(--line2),transparent)}
 .prose{font:12.5px/1.6 'JetBrains Mono',ui-monospace,SFMono-Regular,Consolas,monospace;color:var(--mut);white-space:pre-wrap;margin:0}
 footer{color:var(--dim);font-size:.75rem;text-align:center;margin-top:2.4rem}
 footer code{color:var(--mut)}
@@ -542,11 +611,11 @@ footer code{color:var(--mut)}
 .vel-sub{display:flex;gap:1.5rem;margin-top:.85rem;color:var(--mut);font-size:.76rem}
 .vel-sub b{color:var(--fg);font-size:1.02rem;font-variant-numeric:tabular-nums;margin-right:.25rem}
 .loc-row{display:flex;gap:1.9rem}.loc-big{display:flex;flex-direction:column;gap:.15rem}
-.loc-big span:first-child{font-size:1.7rem;font-weight:720;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+.loc-big span:first-child{font-family:var(--display);font-size:1.7rem;font-weight:660;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
 .loc-l{color:var(--mut);font-size:.7rem;text-transform:uppercase;letter-spacing:.06em}
 .loc-net{margin-top:.75rem;color:var(--mut);font-size:.82rem;font-variant-numeric:tabular-nums}
 .ratio{display:flex;flex-direction:column;gap:.18rem}
-.ratio-v{font-size:2.15rem;font-weight:720;color:var(--warn);font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+.ratio-v{font-family:var(--display);font-size:2.15rem;font-weight:660;color:var(--warn);font-variant-numeric:tabular-nums;letter-spacing:-.02em}
 .ratio-l{color:var(--mut);font-size:.78rem}.ratio-sub{color:var(--dim);font-size:.74rem;margin-top:.3rem}
 .ri-head{display:flex;gap:1.7rem;margin-bottom:.2rem;color:var(--mut);font-size:.8rem}
 .ri-head b{color:var(--fg);font-variant-numeric:tabular-nums;margin-right:.25rem}
@@ -561,8 +630,6 @@ footer code{color:var(--mut)}
 .gr-fill{display:block;height:100%;border-radius:999px}
 .gr-fill.crit{background:var(--bad)}.gr-fill.imp{background:var(--warn)}.gr-fill.sty{background:var(--accent)}
 .gr-v{text-align:right;font-variant-numeric:tabular-nums;font-weight:600}
-.demo-toggle{position:fixed;top:1rem;right:7.4rem;z-index:9;display:inline-flex;align-items:center;gap:.4rem;cursor:pointer;font:inherit;font-size:.75rem;color:var(--mut);background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:.35rem .7rem}
-.demo-toggle:hover{border-color:var(--accent);color:var(--accent)}
 .demo-banner{display:none;align-items:center;gap:.5rem;background:color-mix(in oklab,var(--warn) 13%,transparent);border:1px solid color-mix(in oklab,var(--warn) 32%,transparent);color:var(--warn);border-radius:var(--rs);padding:.6rem .95rem;margin-bottom:1.1rem;font-size:.8rem;font-weight:600}
 #aih-demo{display:none}
 body[data-demo="on"] #aih-live{display:none}
@@ -615,16 +682,19 @@ function buildHero(digests: DigestAction[]): string {
   }<div class="kpis">${tiles.join("")}</div></section>`;
 }
 
+/** The product brand shown in the sticky top bar (the report's fixed header). */
+const BRAND = "Enterprise AI Bootstrapping Harness Report";
+
 export function reportHtml(
   title: string,
   digests: DigestAction[],
   opts: { refresh?: number; demo?: boolean } = {},
 ): string {
-  const liveContent = `${buildHero(digests)}${renderBento(digests)}`;
-  // A fixed DEMO dataset is always embedded behind the "◑ demo data" toggle (and
-  // shown by default under `--demo`) so the full report can be visualized / showcased.
+  const liveContent = `${buildHero(digests)}${renderSections(digests)}`;
+  // A fixed DEMO dataset is always embedded behind the "◑ demo" toggle (and shown by
+  // default under `--demo`) so the full report can be visualized / showcased.
   const demoSet = demoDigests();
-  const demoContent = `${buildHero(demoSet)}${renderBento(demoSet)}`;
+  const demoContent = `${buildHero(demoSet)}${renderSections(demoSet)}`;
 
   const refreshMeta =
     opts.refresh && opts.refresh > 0
@@ -641,17 +711,22 @@ export function reportHtml(
     `  <style>${STYLE}</style>`,
     "</head>",
     `<body${opts.demo ? ' data-demo="on"' : ""}>`,
-    '  <button class="theme-toggle" type="button" onclick="aihTheme()" aria-label="Toggle light / dark theme">◐ theme</button>',
-    '  <button class="demo-toggle" type="button" onclick="aihDemo()" aria-label="Toggle demo data">◑ demo data</button>',
+    '  <header class="topbar">',
+    `    <div class="tb-brand"><h1>${BRAND}</h1><div class="sub">self-contained · generated by <code>aih report</code></div></div>`,
+    '    <div class="tb-right">',
+    '      <div class="clocks"><span class="clk"><i>UTC</i><b id="clk-utc">··:··:··</b></span><span class="clk"><i>Local</i><b id="clk-loc">··:··:··</b></span></div>',
+    '      <button class="tb-ico tb-demo" type="button" onclick="aihDemo()" aria-label="Toggle demo data" title="Demo data"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 3h6M10 3v6l-4.4 7.6A1.5 1.5 0 0 0 6.9 19h10.2a1.5 1.5 0 0 0 1.3-2.4L14 9V3"/><path d="M7.2 14h9.6"/></svg></button>',
+    '      <button class="tb-ico" type="button" onclick="aihTheme()" aria-label="Toggle light / dark theme" title="Toggle theme"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 3a9 9 0 0 0 0 18z" fill="currentColor"/></svg></button>',
+    "    </div>",
+    "  </header>",
     '  <svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" style="stop-color:var(--accent)"/><stop offset="1" style="stop-color:var(--accent2)"/></linearGradient></defs></svg>',
     "  <main>",
-    `    <header><h1>${esc(title)}</h1><div class="sub">self-contained · generated by <code>aih report</code></div></header>`,
-    '    <div class="demo-banner">▲ DEMO DATA — illustrative figures for showcasing the report; not your repo. Click “◑ demo data” to switch back.</div>',
+    '    <div class="demo-banner">▲ DEMO DATA — illustrative figures for showcasing the report; not your repo. Click “◑ demo” to switch back.</div>',
     `    <div id="aih-live">${liveContent}</div>`,
     `    <div id="aih-demo">${demoContent}</div>`,
     "    <footer>No external assets — open anywhere, commit nowhere (<code>.aih/</code> is git-ignored).</footer>",
     "  </main>",
-    '  <script>(function(){var r=document.documentElement,k="aih-theme";try{var s=localStorage.getItem(k);if(s)r.dataset.theme=s}catch(e){}window.aihTheme=function(){var n=r.dataset.theme==="light"?"":"light";n?r.dataset.theme=n:r.removeAttribute("data-theme");try{localStorage.setItem(k,n)}catch(e){}};window.aihDemo=function(){var b=document.body;b.dataset.demo=b.dataset.demo==="on"?"":"on";window.scrollTo(0,0)}})();</script>',
+    '  <script>(function(){var r=document.documentElement,k="aih-theme";try{var s=localStorage.getItem(k);if(s)r.dataset.theme=s}catch(e){}window.aihTheme=function(){var n=r.dataset.theme==="light"?"":"light";n?r.dataset.theme=n:r.removeAttribute("data-theme");try{localStorage.setItem(k,n)}catch(e){}};window.aihDemo=function(){var b=document.body;b.dataset.demo=b.dataset.demo==="on"?"":"on";window.scrollTo(0,0)};function p(n){return(n<10?"0":"")+n}function clk(){var d=new Date(),u=p(d.getUTCHours())+":"+p(d.getUTCMinutes())+":"+p(d.getUTCSeconds()),l=p(d.getHours())+":"+p(d.getMinutes())+":"+p(d.getSeconds()),a=document.getElementById("clk-utc"),c=document.getElementById("clk-loc");if(a)a.textContent=u;if(c)c.textContent=l}clk();setInterval(clk,1000)})();</script>',
     "</body>",
     "</html>",
   );
