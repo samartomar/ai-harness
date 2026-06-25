@@ -140,7 +140,7 @@ function planMcp(ctx: PlanContext): ReturnType<typeof plan> {
   const tailored = Object.keys(servers)
     .filter(
       (name) =>
-        name !== "better-code-review-graph" &&
+        name !== "code-review-graph" &&
         !name.startsWith("better-") &&
         name !== "mnemo-mcp" &&
         name !== "wet-mcp",

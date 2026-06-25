@@ -3,7 +3,7 @@ import type { RepoStack } from "../profile/scan.js";
 /**
  * The `.mcp.json` server set is assembled from the DETECTED stack, not a fixed
  * boilerplate list:
- *  - `better-code-review-graph` (local, stdio) — code intelligence, useful in any repo;
+ *  - `code-review-graph` (local, stdio) — code intelligence, useful in any repo;
  *  - real, current servers added per stack: AWS (`awslabs.core-mcp-server`) when
  *    the repo targets AWS, Playwright (`@playwright/mcp`) for a web frontend;
  *  - the hosted `n24q02m` toolset ONLY under `scope === "remote"` (opt-in gateway).
@@ -47,16 +47,15 @@ const WEB_FRAMEWORKS = new Set(["Next.js", "React", "Vue", "Svelte", "Angular"])
  */
 export function mcpServers(scope: string, stack: RepoStack): Record<string, McpServer> {
   const servers: Record<string, McpServer> = {
-    "better-code-review-graph": {
+    "code-review-graph": {
       type: "stdio",
-      command: "uv",
-      // `uv run` executes the version installed in the project's OWN uv environment
-      // (governed by its lockfile) — it does not fetch latest from upstream the way
-      // `uvx <pkg>` would, so the running version is already reproducible. AWS /
-      // Playwright below use `uvx|npx <pkg>@<ver>` explicit pins.
-      args: ["run", "better-code-review-graph", "serve"],
+      command: "uvx",
+      // Pinned (not @latest) for reproducible installs; bump deliberately. `uvx` runs
+      // the tool in an ephemeral env, so it works in any repo (no project-local uv env
+      // needed), matching the AWS / Playwright pins below. `serve` starts the MCP.
+      args: ["code-review-graph@2.3.6", "serve"],
       description:
-        "Local code-review knowledge graph (impact radius, affected flows) served over stdio via uv.",
+        "Local code-review knowledge graph (impact radius, affected flows) served over stdio via uvx.",
       classification: "local",
     },
   };

@@ -93,7 +93,7 @@ describe("mcp enterprise modes", () => {
     const p = await command.plan(ctx);
     const probe = p.actions.find((a) => a.kind === "probe" && a.describe.includes("vendored"));
     const check = probe?.kind === "probe" ? await probe.run(ctx) : undefined;
-    // better-code-review-graph launches via `uv` (a runtime resolver) → flagged.
+    // code-review-graph launches via `uvx` (a runtime resolver) → flagged.
     expect(check?.verdict).toBe("fail");
     expect(check?.detail).toMatch(/runtime/);
   });
@@ -142,22 +142,22 @@ describe("aih mcp — plan shape", () => {
 });
 
 describe("aih mcp — generated mcpServers blueprint", () => {
-  it("models better-code-review-graph as a uv stdio server", async () => {
+  it("models code-review-graph as a uvx stdio server", async () => {
     const p = await command.plan(makeCtx());
     const w = p.actions.find((a) => a.kind === "write") as WriteAction;
-    const graph = pick(serversOf(w), "better-code-review-graph");
+    const graph = pick(serversOf(w), "code-review-graph");
 
     expect(graph.type).toBe("stdio");
     if (graph.type !== "stdio") throw new Error("expected stdio server");
-    expect(graph.command).toBe("uv");
-    expect(graph.args).toEqual(["run", "better-code-review-graph", "serve"]);
+    expect(graph.command).toBe("uvx");
+    expect(graph.args).toEqual(["code-review-graph@2.3.6", "serve"]);
     expect(typeof graph.description).toBe("string");
   });
 
   it("project scope on a bare repo writes ONLY the local graph server — no hosted n24q02m boilerplate", async () => {
     const p = await command.plan(makeCtx({ options: { scope: "project" } }));
     const w = p.actions.find((a) => a.kind === "write") as WriteAction;
-    expect(Object.keys(serversOf(w))).toEqual(["better-code-review-graph"]);
+    expect(Object.keys(serversOf(w))).toEqual(["code-review-graph"]);
   });
 
   it("is project-aware: an AWS repo gets the awslabs server, a web repo gets Playwright", async () => {
@@ -232,7 +232,7 @@ describe("aih mcp — generated mcpServers blueprint", () => {
     const servers = serversOf(w);
 
     const expected = [
-      "better-code-review-graph",
+      "code-review-graph",
       "better-email",
       "better-notion",
       "better-telegram",
@@ -277,7 +277,7 @@ describe("aih mcp — risk classification (P1-B)", () => {
   it("labels the local stdio graph server `local` in .mcp.json", async () => {
     const p = await command.plan(makeCtx());
     const w = p.actions.find((a) => a.kind === "write") as WriteAction;
-    expect(pick(serversOf(w), "better-code-review-graph").classification).toBe("local");
+    expect(pick(serversOf(w), "code-review-graph").classification).toBe("local");
   });
 
   it("labels stack-added stdio servers (aws, playwright) `local`", async () => {
@@ -314,7 +314,7 @@ describe("aih mcp — risk classification (P1-B)", () => {
     ]) {
       expect(pick(servers, name).classification).toBe("third-party-hosted");
     }
-    expect(pick(servers, "better-code-review-graph").classification).toBe("local");
+    expect(pick(servers, "code-review-graph").classification).toBe("local");
   });
 
   it("surfaces the third-party-hosted vendor-risk callout (named servers) in the remote gateway doc", async () => {
@@ -359,7 +359,7 @@ describe("aih mcp — merge preserves user config", () => {
     // User-only server survives...
     expect(merged.mcpServers.myServer).toEqual(existing.mcpServers.myServer);
     // ...alongside the harness blueprint.
-    expect(merged.mcpServers["better-code-review-graph"]?.command).toBe("uv");
+    expect(merged.mcpServers["code-review-graph"]?.command).toBe("uvx");
   });
 
   it("is idempotent: merging the blueprint twice yields the same file", async () => {
