@@ -147,6 +147,9 @@ interface Raw {
   workspaceSignals: Set<string>;
   /** Count of non-excluded package.json manifests seen during the walk. */
   manifestCount: number;
+  /** Build-tool wrappers present at the repo — prefer ./mvnw / ./gradlew when set. */
+  hasMvnw: boolean;
+  hasGradlew: boolean;
 }
 
 /**
@@ -167,6 +170,8 @@ export function scanRepo(root: string, opts: ScanOptions): RepoStack {
     sawTsFile: false,
     workspaceSignals: new Set(),
     manifestCount: 0,
+    hasMvnw: false,
+    hasGradlew: false,
   };
   walk(root, 0, Math.max(0, opts.maxDepth), raw);
   return synthesize(raw);
@@ -250,6 +255,14 @@ function inspectFile(dir: string, name: string, raw: Raw): void {
     case "settings.gradle":
     case "settings.gradle.kts":
       raw.workspaceSignals.add("gradle");
+      return;
+    case "mvnw":
+    case "mvnw.cmd":
+      raw.hasMvnw = true;
+      return;
+    case "gradlew":
+    case "gradlew.bat":
+      raw.hasGradlew = true;
       return;
     case "go.mod":
       push(raw.languages, "Go");
@@ -427,11 +440,14 @@ function synthesize(raw: Raw): RepoStack {
       testRunner = "pytest";
       lintCommand = "ruff check .";
     } else if (languages.includes("Java/Maven")) {
-      testRunner = "mvn test";
-      buildCommand = "mvn clean package";
+      // Prefer the project's pinned wrapper over a system mvn/gradle when present.
+      const mvn = raw.hasMvnw ? "./mvnw" : "mvn";
+      testRunner = `${mvn} test`;
+      buildCommand = `${mvn} clean package`;
     } else if (languages.includes("Java/Gradle")) {
-      testRunner = "gradle test";
-      buildCommand = "gradle build";
+      const gradle = raw.hasGradlew ? "./gradlew" : "gradle";
+      testRunner = `${gradle} test`;
+      buildCommand = `${gradle} build`;
     } else if (languages.includes(".NET")) {
       testRunner = "dotnet test";
       buildCommand = "dotnet build";

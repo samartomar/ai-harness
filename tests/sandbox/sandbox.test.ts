@@ -109,6 +109,14 @@ describe("devcontainer.json content", () => {
     rmSync(nodeRoot, { recursive: true, force: true });
   });
 
+  it("hardens the container with no-new-privileges (safe, no-decision security-opt)", async () => {
+    const p = await command.plan(ctx());
+    const dc = findWrite(p.actions, ".devcontainer/devcontainer.json").json as {
+      runArgs?: string[];
+    };
+    expect(dc.runArgs).toEqual(["--security-opt", "no-new-privileges:true"]);
+  });
+
   it("threads a custom contextDir into the vscode file excludes", async () => {
     const p = await command.plan(ctx({ contextDir: ".enterprise-ctx" }));
     const dc = findWrite(p.actions, ".devcontainer/devcontainer.json").json as {

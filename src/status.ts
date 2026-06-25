@@ -35,6 +35,25 @@ export function inventory(root: string, contextDir: string): ArtifactPresence[] 
 }
 
 /**
+ * For artifacts where "file present" ≠ "control active", enrich the detail so
+ * `status` distinguishes a generated template from an actually-wired control (the
+ * advisory-vs-enforced signal — review failure-point #1). It never changes the
+ * verdict — `status` stays exit-0 — it only annotates the detail string. The
+ * deeper fail-closed `required` model is tracked separately (verify-layer work).
+ */
+function enforcementDetail(name: string, root: string, relative: string): string {
+  if (name === "pre-commit") {
+    // .pre-commit-config.yaml is inert until `pre-commit install` writes the git
+    // hook — so a present config with no hook is "generated, not enforced".
+    const hookInstalled = existsSync(join(root, ".git", "hooks", "pre-commit"));
+    return hookInstalled
+      ? `${relative} (git hook installed — active)`
+      : `${relative} present, but the git hook is NOT installed — run \`pre-commit install\` to enforce it`;
+  }
+  return relative;
+}
+
+/**
  * Read-only inventory of what the harness has configured for the target. Every
  * check is pass/skip (never fail), so `status` always exits 0.
  */
@@ -51,7 +70,11 @@ export const command: CommandSpec = {
           `presence: ${a.name}`,
           (): Check =>
             a.present
-              ? { name: a.name, verdict: "pass", detail: a.relative }
+              ? {
+                  name: a.name,
+                  verdict: "pass",
+                  detail: enforcementDetail(a.name, ctx.root, a.relative),
+                }
               : { name: a.name, verdict: "skip", detail: `${a.relative} not present` },
         ),
       ),

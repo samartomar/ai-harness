@@ -106,6 +106,9 @@ says isolate `internals/**` changes (P1-F) as their own PR.
     informational annotation **without** changing exit codes yet.
   - Touches `src/internals/**` → its own PR. The fail-closed *defaults* that use
     this primitive are Part 2.
+  - ✅ _sliver landed:_ `status` read-backs the pre-commit **git hook** and reports
+    "config present but hook NOT installed" in the detail (exit-0, no internals
+    change). The full `required`/fail model is still queued.
 
 - **P1-H · Profiler semantic parsing + command validation.** ☐ — scope L
   - Real `.sln`/`.csproj` enumeration, gradle `settings.gradle`, `pyproject.toml`
@@ -115,6 +118,9 @@ says isolate `internals/**` changes (P1-F) as their own PR.
   - ↳ _decision-adjacent:_ the **validation** half runs commands (`exec`, which is
     verify-territory) and "what to do when a generated command fails" is a behavior
     choice. The pure-parsing half is decision-free and could land alone.
+  - ✅ _sliver landed:_ profiler prefers `./mvnw` / `./gradlew` when the wrapper
+    file exists (no more bare `mvn`/`gradle` when the repo pins a wrapper). Semantic
+    `.sln`/gradle/`pyproject` parsing + dry-run command validation still queued.
 
 - **P1-I · Sandbox hardening primitives (generation only).** ☐ — scope M–L
   - Generate seccomp profile, `cap-drop`/`no-new-privileges`/`securityOpt`,
@@ -124,6 +130,8 @@ says isolate `internals/**` changes (P1-F) as their own PR.
     break the dev container (postCreate installs, tooling). Only
     `no-new-privileges` is unambiguously safe; how strict to go is the Part-2
     strict-mode call.
+  - ✅ _sliver landed:_ devcontainer emits `--security-opt no-new-privileges:true`.
+    seccomp / cap-drop / rootless / read-only mounts remain gated on Part-2 strict-mode.
 
 ---
 
@@ -167,3 +175,5 @@ Each needs a product/strategy call before it can be planned safely.
 - _2026-06-25_ — P1-E done (macOS login.keychain; Linux subject-level CA match via openssl with filename fallback + injectable anchor dirs; conda applied via `.condarc` write, Homebrew stays a doc); 542 tests, +`darwin.test.ts`.
 - _2026-06-25_ — P1-G done (workspace/monorepo detection: pnpm/nx/turbo/lerna/rush/bazel/gradle/maven/npm-yarn + manifest count → `isMonorepo`/`workspaceTool`; stack rule labels the monorepo and warns commands are per-package); 551 tests. **Tier-1 of Part 1 complete (A,B,C,D,E,G).**
 - _2026-06-25_ — Quality gate green: `tsc --noEmit` clean, `biome check src tests` 141 files clean, `tsup` build (ESM+DTS) success. Net Part-1 Tier-1: **+31 tests (520→551), 6 capabilities hardened, 1 latent bug fixed**. Tier-2 (P1-F/H/I) reassessed: each has a decision-adjacent core → bridges into Part 2; decision-free skeletons can land alone on request.
+- _2026-06-25_ — Tier-1 committed + pushed: `feat/enterprise-hardening-p1` (623e096 feat, 20072f1 docs).
+- _2026-06-25_ — Tier-2 **safe slivers** landed (the decision-free parts): P1-I devcontainer `no-new-privileges`; P1-H `./mvnw`/`./gradlew` wrapper preference; P1-F `status` pre-commit-hook enforcement read-back (exit-0). 551→558 tests; tsc + build green. Decision-bound remainders of F/H/I stay queued for Part 2.
