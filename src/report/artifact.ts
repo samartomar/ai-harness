@@ -106,7 +106,7 @@ function budgetPanel(d: Bag): string {
   const body = [
     `<div class="budget-track"><div class="budget-fill${over ? " over" : ""}" style="width:${pct.toFixed(1)}%"></div></div>`,
     `<div class="budget-cap"><span>${fmt(tokens)} tokens · ${all.length} files (heaviest first — scroll for all)</span><span>budget ${fmt(budget)}</span></div>`,
-    `<ul class="bars scroll">${rows}</ul>`,
+    `<ul class="bars scroll" tabindex="0" role="region" aria-label="Context files by token weight">${rows}</ul>`,
   ].join("");
   return panel("Context footprint", badge, body, 7);
 }
@@ -248,7 +248,7 @@ function eventsTablePanel(d: Bag): string {
     })
     .join("");
   const more = total > shown ? `<div class="more">+${fmt(total - shown)} older</div>` : "";
-  const body = `<div class="ev-wrap"><table class="events"><thead><tr><th>Time</th><th>Event</th><th>Detail</th><th>Δ lines</th></tr></thead><tbody>${trs}</tbody></table></div>${more}`;
+  const body = `<div class="ev-wrap" tabindex="0" role="region" aria-label="AI events feed, newest first"><table class="events"><thead><tr><th aria-sort="descending">Time</th><th>Event</th><th>Detail</th><th>Δ lines</th></tr></thead><tbody>${trs}</tbody></table></div>${more}`;
   return panel("AI events", `<span class="badge muted">${fmt(total)}</span>`, body, 12);
 }
 
@@ -330,7 +330,7 @@ function toolsInstalledPanel(d: Bag): string {
     "Tools installed",
     `<span class="badge muted">${present.length}/${total}</span>`,
     `<div class="pills">${pills}</div>`,
-    7,
+    5,
   );
 }
 
@@ -344,7 +344,7 @@ function graphHealthPanel(d: Bag): string {
     stat("Files indexed", d.files !== undefined ? fmt(num(d.files) ?? 0) : "—") +
     stat("Edge density", density !== undefined ? density.toFixed(1) : "—")
   }</ul>`;
-  return panel("Code graph health", "", body, 5);
+  return panel("Code graph health", "", body, 7);
 }
 
 /** Build & analysis times from the code-review-graph (Phase 2). */
@@ -389,66 +389,68 @@ function panelFor(d: DigestAction): string {
   return notePanel(d);
 }
 
-/** Section bands — group panels under labeled headers (matches the design's sections). */
-const SECTION_ORDER: { title: string; prefixes: string[] }[] = [
-  { title: "Output velocity", prefixes: ["Daily commits", "Lines of code", "AI events"] },
-  { title: "Code quality", prefixes: ["Test coverage", "Code graph health", "Guardrail rules"] },
-  {
-    title: "Performance",
-    prefixes: ["Repository information", "Build & analysis", "Context footprint"],
-  },
-  {
-    title: "Harness adoption",
-    prefixes: ["Tools installed", "Configuration", "Tooling", "Usage", "Adoption"],
-  },
-  { title: "Repository", prefixes: ["Repo status"] },
-  { title: "Trends", prefixes: ["Trends"] },
+/**
+ * Curated order for the single flowing bento. Related panels sit ADJACENT — a soft
+ * grouping (velocity → quality → performance → adoption → repo → trends) achieved by
+ * proximity, NOT by loud section headers — and the per-panel spans tile this exact
+ * sequence into clean 12-col rows. Gated/absent panels just drop out and the grid
+ * reflows; anything unrecognized sorts to the end.
+ */
+const PANEL_ORDER = [
+  "Daily commits", // ─ velocity
+  "Lines of code",
+  "AI events",
+  "Test coverage", // ─ quality
+  "Code graph health",
+  "Guardrail rules",
+  "Build & analysis", // ─ performance
+  "Repository information",
+  "Tools installed", // ─ adoption
+  "Context footprint",
+  "Repo status", // ─ repository
+  "Configuration",
+  "Tooling",
+  "Trends", // ─ trends (full-width tail)
 ];
 
-function sectionIndex(describe: string): number {
-  const i = SECTION_ORDER.findIndex((s) => s.prefixes.some((p) => describe.startsWith(p)));
-  return i >= 0 ? i : SECTION_ORDER.length;
+function orderKey(describe: string): number {
+  const i = PANEL_ORDER.findIndex((p) => describe.startsWith(p));
+  return i >= 0 ? i : PANEL_ORDER.length;
 }
 
-/** Group the digests into ordered, labeled section bands (empty sections omitted). */
-function renderBands(digests: DigestAction[]): string {
-  const groups = new Map<number, DigestAction[]>();
-  for (const d of digests) {
-    const i = sectionIndex(d.describe);
-    const g = groups.get(i) ?? [];
-    g.push(d);
-    groups.set(i, g);
-  }
-  const titleAt = (i: number): string => SECTION_ORDER[i]?.title ?? "More";
-  return [...groups.keys()]
-    .sort((a, b) => a - b)
-    .map((i) => {
-      const body = (groups.get(i) ?? []).map(panelFor).join("");
-      return `<section class="band"><div class="band-h"><h2>${esc(titleAt(i))}</h2></div><div class="bento">${body}</div></section>`;
-    })
-    .join("");
+/** All data-driven panels as ONE flowing 12-col bento, in the curated order. */
+function renderBento(digests: DigestAction[]): string {
+  const ordered = digests
+    .map((d, i) => ({ d, i })) // index tiebreak keeps the sort stable across engines
+    .sort((a, b) => orderKey(a.d.describe) - orderKey(b.d.describe) || a.i - b.i)
+    .map((x) => x.d);
+  return `<div class="bento">${ordered.map(panelFor).join("")}</div>`;
 }
 
 const STYLE = `${EMBEDDED_FONTS}
 :root{ color-scheme:dark;
   --bg:#0a0d13; --panel:#11151d; --panel2:#161b25; --line:#222a38; --line2:#2c3548;
-  --fg:#e8edf4; --mut:#8893a7; --dim:#5b6678;
+  --fg:#e8edf4; --mut:#8893a7; --dim:#737e93;
   --accent:#5b9dff; --accent2:#8a7bff; --ok:#3fdc8a; --warn:#ffc24b; --bad:#ff6b6b;
   --r:14px; --rs:9px; --sh:0 1px 0 rgba(255,255,255,.03) inset,0 10px 30px -16px rgba(0,0,0,.7); }
 :root[data-theme="light"]{ color-scheme:light;
   --bg:#eef1f6; --panel:#fff; --panel2:#f6f8fc; --line:#e4e8f0; --line2:#d6dce8;
-  --fg:#161b26; --mut:#5a6577; --dim:#8a94a6; --sh:0 1px 2px rgba(20,30,50,.05),0 10px 30px -20px rgba(20,30,50,.25); }
+  --fg:#161b26; --mut:#5a6577; --dim:#737d90;
+  --accent:#1d6fe0; --accent2:#6a4cf0; --ok:#0f9d58; --warn:#9a6700; --bad:#d12d2d;
+  --sh:0 1px 2px rgba(20,30,50,.05),0 10px 30px -20px rgba(20,30,50,.25); }
 *{box-sizing:border-box} html,body{margin:0}
+:where(button,a,[tabindex]):focus-visible,.ev-wrap:focus-visible,.bars.scroll:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+@media(prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important;scroll-behavior:auto!important}}
 .theme-toggle{position:fixed;top:1rem;right:1rem;z-index:9;display:inline-flex;align-items:center;gap:.4rem;cursor:pointer;font:inherit;font-size:.75rem;color:var(--mut);background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:.35rem .7rem}
 .theme-toggle:hover{border-color:var(--line2);color:var(--fg)}
-body{ background:radial-gradient(1100px 520px at 78% -8%,color-mix(in oklab,var(--accent) 13%,transparent),transparent 58%),var(--bg);
+body{ background:radial-gradient(1100px 520px at 78% -8%,color-mix(in oklab,var(--accent) 13%,transparent),transparent 58%),radial-gradient(900px 600px at 6% 108%,color-mix(in oklab,var(--accent2) 9%,transparent),transparent 60%),var(--bg);
   color:var(--fg); font:14px/1.5 'Inter',ui-sans-serif,system-ui,-apple-system,"Segoe UI Variable","Segoe UI",sans-serif; -webkit-font-smoothing:antialiased; }
 main{max-width:1120px;margin:0 auto;padding:2.4rem 1.5rem 5rem}
 header{margin-bottom:1.4rem}
-h1{font-size:1.42rem;font-weight:680;letter-spacing:-.015em;margin:0}
+h1{font-size:1.8rem;font-weight:740;letter-spacing:-.025em;margin:0}
 .sub{color:var(--mut);font-size:.82rem;margin-top:.3rem}
 .hero{display:grid;grid-template-columns:auto 1fr;gap:1rem;margin-bottom:1rem}
-@media(max-width:680px){.hero{grid-template-columns:1fr}}
+@media(max-width:680px){.hero{grid-template-columns:1fr}main{padding-top:3.6rem}}
 .ring-card{display:grid;place-items:center;gap:.35rem;background:linear-gradient(180deg,var(--panel2),var(--panel));border:1px solid var(--line);border-radius:var(--r);padding:1.1rem 1.5rem;box-shadow:var(--sh)}
 .ring-label{color:var(--mut);font-size:.7rem;text-transform:uppercase;letter-spacing:.09em}
 .ring-bg{stroke:color-mix(in oklab,var(--fg) 9%,transparent)}
@@ -461,8 +463,10 @@ h1{font-size:1.42rem;font-weight:680;letter-spacing:-.015em;margin:0}
 .kpi-v{font-size:1.55rem;font-weight:700;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
 .kpi-v.over{color:var(--bad)}
 .kpi-l{color:var(--mut);font-size:.7rem;text-transform:uppercase;letter-spacing:.06em}
-.bento{display:grid;grid-template-columns:repeat(12,1fr);gap:1rem}
-.panel{grid-column:span 12;background:var(--panel);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--sh);overflow:hidden}
+.bento{display:grid;grid-template-columns:repeat(12,1fr);gap:1rem;grid-auto-flow:row dense}
+.panel{grid-column:span 12;background:linear-gradient(180deg,var(--panel2),var(--panel));border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--sh);overflow:hidden;position:relative;transition:border-color .15s,box-shadow .15s,transform .15s}
+.panel::before{content:"";position:absolute;inset:0 0 auto;height:1px;background:linear-gradient(90deg,transparent,color-mix(in oklab,var(--fg) 10%,transparent) 18%,color-mix(in oklab,var(--fg) 10%,transparent) 82%,transparent);pointer-events:none}
+.panel:hover{border-color:var(--line2);transform:translateY(-1px);box-shadow:0 1px 0 rgba(255,255,255,.04) inset,0 18px 40px -20px rgba(0,0,0,.8)}
 .span-5{grid-column:span 5}.span-7{grid-column:span 7}.span-12{grid-column:span 12}
 @media(max-width:820px){.span-5,.span-7{grid-column:span 12}}
 .ph{display:flex;align-items:center;justify-content:space-between;gap:1rem;padding:.8rem 1.1rem;border-bottom:1px solid var(--line)}
@@ -518,10 +522,6 @@ h1{font-size:1.42rem;font-weight:680;letter-spacing:-.015em;margin:0}
 .prose{font:12.5px/1.6 'JetBrains Mono',ui-monospace,SFMono-Regular,Consolas,monospace;color:var(--mut);white-space:pre-wrap;margin:0}
 footer{color:var(--dim);font-size:.75rem;text-align:center;margin-top:2.4rem}
 footer code{color:var(--mut)}
-.band{margin-bottom:1.7rem}
-.band-h{display:flex;align-items:center;gap:.8rem;margin:0 0 .9rem}
-.band-h h2{font-size:.73rem;font-weight:680;text-transform:uppercase;letter-spacing:.13em;color:var(--mut);margin:0;white-space:nowrap}
-.band-h::after{content:"";flex:1;height:1px;background:linear-gradient(90deg,var(--line2),transparent)}
 .ev-wrap{max-height:380px;overflow:auto;scrollbar-width:thin;scrollbar-color:var(--line2) transparent}
 .ev-wrap::-webkit-scrollbar{width:8px}.ev-wrap::-webkit-scrollbar-thumb{background:var(--line2);border-radius:999px}
 .events{width:100%;border-collapse:collapse;font-size:.8rem}
@@ -620,11 +620,11 @@ export function reportHtml(
   digests: DigestAction[],
   opts: { refresh?: number; demo?: boolean } = {},
 ): string {
-  const liveContent = `${buildHero(digests)}${renderBands(digests)}`;
+  const liveContent = `${buildHero(digests)}${renderBento(digests)}`;
   // A fixed DEMO dataset is always embedded behind the "◑ demo data" toggle (and
   // shown by default under `--demo`) so the full report can be visualized / showcased.
   const demoSet = demoDigests();
-  const demoContent = `${buildHero(demoSet)}${renderBands(demoSet)}`;
+  const demoContent = `${buildHero(demoSet)}${renderBento(demoSet)}`;
 
   const refreshMeta =
     opts.refresh && opts.refresh > 0

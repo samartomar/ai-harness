@@ -68,6 +68,22 @@ const EVENTS = [
   { ts: "2026-06-24 17:44", tool: "codex", kind: "session", detail: "—" },
 ];
 
+// Heaviest agent-context files (descending) — sums to 38,200 tokens across 12 files.
+const CONTEXT_FILES = [
+  { path: "ai-coding/RULE_ROUTER.md", tokens: 8200 },
+  { path: "CLAUDE.md", tokens: 6100 },
+  { path: "ai-coding/agent-behavior-core.md", tokens: 5400 },
+  { path: "ai-coding/adapters/claude.md", tokens: 4300 },
+  { path: "AGENTS.md", tokens: 3500 },
+  { path: "ai-coding/repo-architecture.md", tokens: 2600 },
+  { path: ".cursor/rules/00-router.mdc", tokens: 2100 },
+  { path: "ai-coding/adapters/cursor.md", tokens: 1700 },
+  { path: "GEMINI.md", tokens: 1400 },
+  { path: ".kiro/steering/product.md", tokens: 1100 },
+  { path: "ai-coding/adapters/gemini.md", tokens: 900 },
+  { path: ".kiro/steering/tech.md", tokens: 900 },
+];
+
 /** The full demo digest set, in the order the live `localPanels` emits them. */
 export function demoDigests(): DigestAction[] {
   return [
@@ -113,6 +129,12 @@ export function demoDigests(): DigestAction[] {
       ],
     }),
     digest("Build & analysis — 4.2s", "demo", { buildMs: 4200, files: 48 }),
+    digest("Context footprint — ~38,200 tokens across 12 files", "demo", {
+      totalTokens: 38200,
+      budgetTokens: 40000,
+      overBudget: false,
+      files: CONTEXT_FILES,
+    }),
     digest("Tools installed — 7 of 8 on PATH", "demo", {
       present: ["rg", "sg", "fd", "tree", "jq", "gh", "code-review-graph"],
       absent: ["comby"],

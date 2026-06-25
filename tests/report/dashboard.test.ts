@@ -144,8 +144,8 @@ describe("toolsInstalledDigest", () => {
   });
 });
 
-describe("reportHtml — section bands + new panels", () => {
-  it("groups panels into labeled bands and renders the new panel types", () => {
+describe("reportHtml — single bento + new panels", () => {
+  it("renders all new panel types in one curated-order bento (no band headers)", () => {
     const html = reportHtml("t", [
       digest("Daily commits — 5 in 7d", "x", {
         commits: { d7: 5, d30: 10, total: 99 },
@@ -175,9 +175,10 @@ describe("reportHtml — section bands + new panels", () => {
         total: 1,
       }),
     ]);
-    // section bands
-    expect(html).toContain("Output velocity");
-    expect(html).toContain("Code quality");
+    // single flowing bento (no loud section-band headers), panels in curated order:
+    // velocity (daily commits) sits ahead of quality (test coverage)
+    expect(html).not.toContain('class="band"');
+    expect(html.indexOf("Daily commits")).toBeLessThan(html.indexOf("Test coverage"));
     // new panels rendered
     expect(html).toContain('class="events"');
     expect(html).toContain(">main<"); // branch in the events row
