@@ -74,8 +74,19 @@ function walk(root: string, relDir: string, out: string[]): void {
   }
 }
 
-function estimateTokens(bytes: number): number {
+/** Rough token estimate for a byte count (~4 chars/token). Shared with the load-group model. */
+export function estimateTokens(bytes: number): number {
   return Math.ceil(bytes / CHARS_PER_TOKEN);
+}
+
+/**
+ * One file's footprint, or `undefined` if it is missing / not a regular file.
+ * The single per-file primitive both `scanContextBloat` (full inventory) and the
+ * load-group model build on, so they share one tokenizer.
+ */
+export function fileFootprint(root: string, rel: string): ContextFile | undefined {
+  const bytes = fileSize(join(root, rel));
+  return bytes === undefined ? undefined : { path: rel, bytes, tokens: estimateTokens(bytes) };
 }
 
 /**
@@ -100,9 +111,8 @@ export function scanContextBloat(
 
   const files: ContextFile[] = [];
   for (const rel of [...rels].sort()) {
-    const bytes = fileSize(join(root, rel));
-    if (bytes === undefined) continue; // missing or not a regular file → skip
-    files.push({ path: rel, bytes, tokens: estimateTokens(bytes) });
+    const f = fileFootprint(root, rel); // missing / non-regular files are skipped
+    if (f) files.push(f);
   }
 
   const totalBytes = files.reduce((n, f) => n + f.bytes, 0);

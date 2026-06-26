@@ -10,29 +10,38 @@ import {
   exec,
   type PlanContext,
   plan,
+  probe,
   writeText,
 } from "../internals/plan.js";
 import { assertNoCmdInjection } from "../internals/shell-safety.js";
 import type { Platform } from "../platform/base.js";
 import { reportHtml, reportMarkdown } from "./artifact.js";
 import { type ContextBloat, DEFAULT_CONTEXT_BUDGET_TOKENS, scanContextBloat } from "./bloat.js";
+import { type LoadGroupModel, scanLoadGroups } from "./loadgroups.js";
 import { localPanels } from "./local.js";
 import { aggregateOrg } from "./org.js";
 import { orgDigest, orgHeadline } from "./org-render.js";
-import { contextBloatDigest } from "./render.js";
+import { contextBloatDigest, loadGroupDigest } from "./render.js";
 
 type Scope = "local" | "org";
 type Format = "terminal" | "md" | "html";
 
-/** Parse `--budget`, falling back to the default for missing/invalid input. */
+/** Parse `--token-budget` (or its `--budget` alias), falling back to the default. */
 function budgetOf(ctx: PlanContext): number {
-  const parsed = Number(ctx.options.budget);
+  const parsed = Number(ctx.options.tokenBudget ?? ctx.options.budget);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_CONTEXT_BUDGET_TOKENS;
 }
 
 function contextHeadline(bloat: ContextBloat): string {
   const flag = bloat.overBudget ? " — OVER budget" : "";
   return `Context footprint — ~${bloat.totalTokens} tokens across ${bloat.files.length} files${flag}`;
+}
+
+/** Headline for the per-turn load-group digest (the real cost: one tool's bundle). */
+function loadGroupHeadline(model: LoadGroupModel): string {
+  const who = model.worst ? ` (worst: ${model.worst.clis.join(", ")})` : "";
+  const flag = model.overBudget ? " — OVER per-turn budget" : "";
+  return `Per-turn context — ~${model.worstTokens} tokens${who}${flag}`;
 }
 
 /** Read + JSON-parse a saved Admin-API export for `--org`. Fail-closed with a stable code. */
@@ -92,6 +101,8 @@ interface Built {
   scope: Scope;
   title: string;
   digests: DigestAction[];
+  /** The local load-group model (when scope === "local"), so the gate probe can read it. */
+  model?: LoadGroupModel;
 }
 
 /** Build the report's digests (terminal output) for the active scope. */
@@ -105,12 +116,19 @@ async function buildReport(ctx: PlanContext): Promise<Built> {
       digests: [digest(orgHeadline(data), orgDigest(data), data)],
     };
   }
-  const bloat = scanContextBloat(ctx.root, ctx.contextDir, budgetOf(ctx));
+  const budget = budgetOf(ctx);
+  const bloat = scanContextBloat(ctx.root, ctx.contextDir, budget);
+  const model = scanLoadGroups(ctx.root, ctx.contextDir, budget);
   return {
     scope: "local",
     title: "aih report — local developer console",
+    model,
     digests: [
+      // Full on-disk inventory (union across all tools) — keeps the established
+      // "Context footprint" lead digest + dashboard budget bar. The per-turn
+      // worst-case panel (what one tool actually loads) follows it.
       digest(contextHeadline(bloat), contextBloatDigest(bloat), bloat),
+      digest(loadGroupHeadline(model), loadGroupDigest(model), model),
       ...(await localPanels(ctx)),
     ],
   };
@@ -141,6 +159,28 @@ async function reportPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
   const shouldOpen = open || demo;
   const built = await buildReport(ctx);
   const actions: Action[] = [...built.digests];
+  // CI gate: only with `--gate`, push a probe that flips the exit code through the
+  // existing verify→exitCode() path (the same mechanism `heal` / `bootstrap-ai
+  // --verify` use). It gates on the WORST-CASE tool, not the summed total. Without
+  // `--gate` no probe is added, so a bare `aih report` always exits 0.
+  if (ctx.options.gate === true && built.model) {
+    const m = built.model;
+    actions.push(
+      probe("per-turn token budget", () =>
+        m.overBudget
+          ? {
+              name: "token-budget",
+              verdict: "fail",
+              detail: `worst tool (${m.worst?.clis.join(", ") ?? "none"}) ~${m.worstTokens} tok > budget ${m.budgetTokens}`,
+            }
+          : {
+              name: "token-budget",
+              verdict: "pass",
+              detail: `worst tool ~${m.worstTokens} tok ≤ budget ${m.budgetTokens}`,
+            },
+      ),
+    );
+  }
   if (format !== "terminal") {
     const path = artifactPath(ctx, built.scope, format);
     const content =
@@ -183,6 +223,9 @@ async function reportPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
 
 export const command: CommandSpec = {
   name: "report",
+  // alwaysVerify so the `--gate` probe runs and drives the exit code. A bare
+  // `aih report` has no probes, so this is a no-op there (empty report → exit 0).
+  alwaysVerify: true,
   summary: "Analytics digest — local context footprint or org usage (--org); md/html via --format",
   options: [
     {
@@ -199,9 +242,18 @@ export const command: CommandSpec = {
       description: "artifact path for --format md|html (default .aih/reports/<scope>-report.<ext>)",
     },
     {
-      flags: "--budget <tokens>",
-      description: "context token budget for the bloat warning (local scope)",
+      flags: "--token-budget <tokens>",
+      description: "per-turn token budget for the worst-case tool (local scope; gate input)",
       default: String(DEFAULT_CONTEXT_BUDGET_TOKENS),
+    },
+    {
+      flags: "--budget <tokens>",
+      description: "deprecated alias for --token-budget",
+    },
+    {
+      flags: "--gate",
+      description:
+        "exit non-zero when the worst-case tool's per-turn context exceeds the budget (CI)",
     },
     {
       flags: "--team",

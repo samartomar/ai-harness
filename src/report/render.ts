@@ -1,5 +1,6 @@
 import { lines } from "../internals/render.js";
 import type { ContextBloat } from "./bloat.js";
+import type { LoadGroupModel } from "./loadgroups.js";
 
 /** Group an integer with commas, locale-independently (byte-stable digests). */
 export function thousands(n: number): string {
@@ -27,7 +28,8 @@ export function contextBloatDigest(bloat: ContextBloat): string {
     .slice(0, TOP_FILES);
 
   return lines(
-    "Agent context loaded from this repo (bootloaders · context dir · Cursor rules):",
+    "All agent-context files on disk (union of every tool's bootloaders + context",
+    "dir + Cursor rules — see the per-turn panel for what one tool actually loads):",
     "",
     `  Files:  ${files.length}`,
     `  Bytes:  ${thousands(totalBytes)}`,
@@ -43,5 +45,41 @@ export function contextBloatDigest(bloat: ContextBloat): string {
             return `    ~${thousands(f.tokens)} tok  (${share}%)  ${f.path}`;
           }),
         ]),
+  );
+}
+
+/**
+ * Render the per-tool load-group digest: the heaviest single tool's always-loaded
+ * bootloader bundle (the real per-turn cost) plus a per-group breakdown and the
+ * on-demand canon bucket. Deterministic — comma-grouped numbers, no dates, stable
+ * sort from {@link scanLoadGroups}.
+ */
+export function loadGroupDigest(model: LoadGroupModel): string {
+  const { groups, worst, worstTokens, budgetTokens, overBudget, onDemandFiles, onDemandTokens } =
+    model;
+  const present = groups.filter((g) => g.present);
+
+  const status = overBudget
+    ? `OVER per-turn budget by ${thousands(worstTokens - budgetTokens)} tokens`
+    : `within budget (${thousands(budgetTokens - worstTokens)} tokens to spare)`;
+
+  return lines(
+    "Per-turn agent context — the heaviest single tool's always-loaded bootloaders.",
+    "You pay ONE tool's bundle per turn, not the sum of every tool's files:",
+    "",
+    `  Worst tool: ~${thousands(worstTokens)} tok  ${worst ? `(${worst.label})` : "(no bootloaders on disk)"}`,
+    `  Budget:     ${thousands(budgetTokens)} tok · ${overBudget ? "⚠ " : ""}${status}`,
+    "",
+    ...(present.length === 0
+      ? ["  (no bootloaders on disk — run `aih bootstrap-ai --apply`)"]
+      : [
+          "  Always-loaded per tool group:",
+          ...present.map((g) => `    ~${thousands(g.tokens)} tok  ${g.label}`),
+        ]),
+    "",
+    `  On-demand canon (loaded via pointer, not every turn): ~${thousands(onDemandTokens)} tok across ${onDemandFiles.length} files`,
+    "  Note: Cursor/Kiro files with `inclusion: always` frontmatter are also always-loaded;",
+    "  frontmatter-aware counting is not yet implemented, so only the canon bootloader is",
+    "  attributed to each tool here.",
   );
 }

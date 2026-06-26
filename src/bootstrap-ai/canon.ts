@@ -431,8 +431,14 @@ export function otherToolsDoc(dir: string): string {
 
 // ---- bootloaders ----------------------------------------------------------
 
-/** The root bootloader file(s) each CLI reads, in canonical path form. */
-const CLI_BOOTLOADERS: Record<Cli, string[]> = {
+/**
+ * The root bootloader file(s) each CLI auto-loads as system context every turn,
+ * in canonical path form. The single source of truth shared by `bootstrap-ai`
+ * (which WRITES these) and `aih report`'s load-group model (which MEASURES the
+ * per-turn footprint) — so the reported cost can never drift from what the
+ * harness actually emits.
+ */
+export const CLI_BOOTLOADERS: Record<Cli, string[]> = {
   claude: ["CLAUDE.md"],
   codex: ["AGENTS.md"],
   opencode: ["AGENTS.md"],
