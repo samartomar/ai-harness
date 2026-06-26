@@ -19,7 +19,13 @@ function envBool(raw: string | undefined, fallback: boolean): boolean {
   throw new SettingsError(`expected a boolean value, got ${JSON.stringify(raw)}`);
 }
 
-const ContextDir = z
+/**
+ * A canonical context-dir name: a simple, repo-relative path with no traversal.
+ * Exported so {@link readAihConfig} validates the committed `.aih-config.json`
+ * marker against the SAME constraints settings enforce — a marker can never carry
+ * a dir that a flag/env value would have rejected.
+ */
+export const ContextDir = z
   .string()
   .min(1)
   .regex(/^[A-Za-z0-9._\-/]+$/, "context dir must be a simple relative path")

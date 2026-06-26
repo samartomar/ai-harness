@@ -200,12 +200,53 @@ describe("aih init — BOUNDARY (no remote mutation introduced by the orchestrat
 
     const composed = (await command.plan(shared)).actions;
     const count = (k: Action["kind"]) => composed.filter((a) => a.kind === k).length;
-    // Writes equal the UNIQUE leaf write paths (deduped) — never more than the leaves.
-    expect(count("write")).toBe(leafWritePaths.size);
+    // Writes equal the UNIQUE leaf write paths (deduped) PLUS the single
+    // `.aih-config.json` bootstrap marker init itself appends — never more.
+    expect(count("write")).toBe(leafWritePaths.size + 1);
     expect(count("probe")).toBe(leafProbes);
     expect(count("exec")).toBe(leafExecs);
     // init adds one "init: <phase>" header per phase, plus a single ECC pointer doc.
     expect(count("doc")).toBe(leafDocs + INIT_PHASES.length + 1);
+  });
+});
+
+describe("aih init — persists the .aih-config.json bootstrap marker", () => {
+  it("writes the marker at repo ROOT with schemaVersion, contextDir, and resolved targets", async () => {
+    const p = await command.plan(ctx({ contextDir: "ai-coding" }));
+    const marker = p.actions.find(
+      (a): a is WriteAction => a.kind === "write" && a.path === ".aih-config.json",
+    );
+    expect(marker).toBeDefined();
+    expect(marker?.merge).toBe(true); // non-destructive merge write, like .aih-workspace.json
+    expect(marker?.json).toEqual({
+      schemaVersion: 1,
+      contextDir: "ai-coding",
+      targets: ["claude"], // default resolution when no --cli/--all-tools
+    });
+  });
+
+  it("threads a custom context dir + explicit --cli targets into the marker", async () => {
+    const p = await command.plan(
+      ctx({ contextDir: "custom-canon", options: { cli: "claude,codex" } }),
+    );
+    const marker = p.actions.find(
+      (a): a is WriteAction => a.kind === "write" && a.path === ".aih-config.json",
+    );
+    expect(marker?.json).toEqual({
+      schemaVersion: 1,
+      contextDir: "custom-canon",
+      targets: ["claude", "codex"],
+    });
+  });
+
+  it("applies the marker to disk and a second apply is byte-identical (idempotent)", async () => {
+    const applied = ctx({ apply: true });
+    await executePlan(await command.plan(applied), applied);
+    const first = readFileSync(join(dir, ".aih-config.json"), "utf8");
+    await executePlan(await command.plan(applied), applied);
+    const second = readFileSync(join(dir, ".aih-config.json"), "utf8");
+    expect(second).toBe(first);
+    expect(JSON.parse(first)).toMatchObject({ schemaVersion: 1, contextDir: ".ai-context" });
   });
 });
 

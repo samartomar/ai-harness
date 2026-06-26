@@ -1,4 +1,5 @@
 import type { Command } from "commander";
+import { readAihConfig } from "../config/marker.js";
 import { loadSettings } from "../config/settings.js";
 import { AihError } from "../errors.js";
 import { executePlan, summarizeResult, writeArtifact } from "../internals/execute.js";
@@ -64,12 +65,29 @@ export async function runCapability(
 
   let json = false;
   try {
+    // Resolve the target root up front so the committed marker is read from the
+    // SAME root loadSettings will use.
+    const resolvedRoot =
+      positionalRoot ?? (opts.root as string | undefined) ?? env.AIH_ROOT ?? process.cwd();
+    // Context-dir precedence ladder: explicit `--context-dir` flag > committed
+    // `.aih-config.json` marker > `AIH_CONTEXT_DIR` env > `ai-coding` default.
+    // Commander fills the flag's default, so `opts.contextDir` is never undefined —
+    // the value SOURCE is what distinguishes a real flag from the default. When no
+    // flag was passed, prefer the marker so re-runs/doctor act on the dir this repo
+    // was actually bootstrapped with; passing `undefined` lets loadSettings fall
+    // through to env then default.
+    const contextDirFromFlag =
+      command.getOptionValueSource?.("contextDir") === "cli"
+        ? (opts.contextDir as string)
+        : undefined;
+    const contextDirFromMarker =
+      contextDirFromFlag === undefined ? readAihConfig(resolvedRoot)?.contextDir : undefined;
     const settings = loadSettings(env, {
       apply: opts.apply as boolean | undefined,
       verify: opts.verify as boolean | undefined,
       json: opts.json as boolean | undefined,
-      contextDir: opts.contextDir as string | undefined,
-      root: positionalRoot ?? (opts.root as string | undefined),
+      contextDir: contextDirFromFlag ?? contextDirFromMarker,
+      root: resolvedRoot,
       caPattern: opts.caPattern as string | undefined,
     });
     json = settings.json;
@@ -110,6 +128,7 @@ export async function runCapability(
         cli: opts.cli,
         allTools: opts.allTools,
         detect: opts.detect,
+        force: opts.force,
         open: liveOpen ? true : opts.open,
       },
     };

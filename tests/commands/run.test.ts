@@ -1,10 +1,10 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Command } from "commander";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { runCapability } from "../../src/commands/run.js";
-import { type CommandSpec, plan, probe } from "../../src/internals/plan.js";
+import { type CommandSpec, digest, plan, probe } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
 
 let dir: string;
@@ -73,6 +73,62 @@ async function run(
   });
   return { code, out };
 }
+
+/** A capability that echoes the resolved context dir so the ladder is observable. */
+const echoSpec: CommandSpec = {
+  name: "echo",
+  summary: "echo the resolved context dir",
+  plan: (ctx) => plan("echo", digest("context-dir", ctx.contextDir)),
+};
+
+/** Resolve the context dir runCapability lands on for the given argv + env. */
+async function resolvedDir(argv: string[], env: NodeJS.ProcessEnv): Promise<string> {
+  let out = "";
+  await runCapability(echoSpec, command(argv), {
+    run: fakeRunner(() => undefined),
+    env,
+    write: (t) => {
+      out += t;
+    },
+  });
+  return out;
+}
+
+describe("runCapability — context-dir precedence ladder (flag > marker > env > default)", () => {
+  function writeMarker(contextDir: string): void {
+    writeFileSync(
+      join(dir, ".aih-config.json"),
+      JSON.stringify({ schemaVersion: 1, contextDir, targets: [] }),
+    );
+  }
+
+  it("explicit --context-dir flag wins over marker and env", async () => {
+    writeMarker("marker-dir");
+    const out = await resolvedDir(["--context-dir", "flag-dir", "--root", dir], {
+      AIH_CONTEXT_DIR: "env-dir",
+    });
+    expect(out).toContain("flag-dir");
+    expect(out).not.toContain("marker-dir");
+    expect(out).not.toContain("env-dir");
+  });
+
+  it("committed marker wins over env when no flag is passed", async () => {
+    writeMarker("marker-dir");
+    const out = await resolvedDir(["--root", dir], { AIH_CONTEXT_DIR: "env-dir" });
+    expect(out).toContain("marker-dir");
+    expect(out).not.toContain("env-dir");
+  });
+
+  it("env wins over the default when neither flag nor marker is present", async () => {
+    const out = await resolvedDir(["--root", dir], { AIH_CONTEXT_DIR: "env-dir" });
+    expect(out).toContain("env-dir");
+  });
+
+  it("falls back to the ai-coding default when nothing else is set", async () => {
+    const out = await resolvedDir(["--root", dir], {});
+    expect(out).toContain("ai-coding");
+  });
+});
 
 describe("runCapability — --sarif wiring", () => {
   it("writes the SARIF report to a file WITHOUT --apply (drift gate runs verify-only)", async () => {

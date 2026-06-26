@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
+import { readAihConfig } from "./config/marker.js";
 import { detectClis, presentClis } from "./internals/cli-detect.js";
 import { readIfExists } from "./internals/fsxn.js";
 import { type Action, type CommandSpec, type PlanContext, plan, probe } from "./internals/plan.js";
@@ -36,6 +37,13 @@ export const command: CommandSpec = {
     },
   ],
   plan: (ctx) => {
+    // The committed bootstrap marker is the source of truth for which context dir
+    // to verify: a repo scaffolded with a custom `--context-dir` must be checked
+    // against THAT dir, not the `ai-coding` default doctor would otherwise re-derive
+    // (the silent-wrong-path gap). `cfg?.contextDir ?? ctx.contextDir` keeps the
+    // marker authoritative while falling back to the resolved setting when absent.
+    const cfg = readAihConfig(ctx.root);
+    const contextDir = cfg?.contextDir ?? ctx.contextDir;
     const base: Action[] = [
       probe("node runtime >= 20", () => {
         const major = Number.parseInt(process.versions.node.split(".")[0] ?? "0", 10);
@@ -55,16 +63,39 @@ export const command: CommandSpec = {
         detail: `${ctx.host.platform}${ctx.host.verified ? " (verified)" : " (unverified path)"}`,
       })),
       probe("canonical context dir", () => {
-        const dir = join(ctx.root, ctx.contextDir);
+        const dir = join(ctx.root, contextDir);
         return existsSync(dir)
           ? { name: "context-dir", verdict: "pass", detail: dir }
           : {
               name: "context-dir",
               verdict: "skip",
-              detail: `${ctx.contextDir} not scaffolded — run: aih scaffold --apply`,
+              detail: `${contextDir} not scaffolded — run: aih scaffold --apply`,
             };
       }),
-      probe("canon markdown lint", () => canonLintCheck(ctx.root, ctx.contextDir)),
+      probe("bootstrap config marker", () => {
+        if (!cfg) {
+          return {
+            name: "config-marker",
+            verdict: "skip",
+            detail: "no .aih-config.json — context dir derived from flags/env/default",
+          };
+        }
+        // A flag/env override different from the committed marker means doctor is
+        // about to verify the wrong dir — surface the conflict instead of silently
+        // checking it (never a hard fail; the operator may be overriding on purpose).
+        return cfg.contextDir === ctx.contextDir
+          ? {
+              name: "config-marker",
+              verdict: "pass",
+              detail: `context-dir \`${cfg.contextDir}\`, targets: ${cfg.targets.join(", ") || "none"}`,
+            }
+          : {
+              name: "config-marker",
+              verdict: "skip",
+              detail: `checking \`${ctx.contextDir}\` but this repo was bootstrapped with \`${cfg.contextDir}\` — omit --context-dir to use the committed value`,
+            };
+      }),
+      probe("canon markdown lint", () => canonLintCheck(ctx.root, contextDir)),
       probe("AI CLIs detected", async () => {
         const present = presentClis(await detectClis(ctx));
         return present.length > 0
@@ -98,12 +129,12 @@ export const command: CommandSpec = {
     const repos = workspaceRepos(ctx);
     const wsProbes: Action[] = repos.map((repo) =>
       probe(`workspace child ${repo} scaffolded`, () => {
-        const present = existsSync(join(ctx.root, repo, ctx.contextDir, "RULE_ROUTER.md"));
+        const present = existsSync(join(ctx.root, repo, contextDir, "RULE_ROUTER.md"));
         return present
           ? {
               name: `child:${repo}`,
               verdict: "pass",
-              detail: `${repo}/${ctx.contextDir}/ canon present`,
+              detail: `${repo}/${contextDir}/ canon present`,
             }
           : {
               name: `child:${repo}`,

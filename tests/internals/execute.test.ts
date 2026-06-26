@@ -2,7 +2,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "no
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { PathContainmentError } from "../../src/errors.js";
+import { DirtyWorktreeError, PathContainmentError } from "../../src/errors.js";
 import { executePlan, summarizeResult, writeArtifact } from "../../src/internals/execute.js";
 import {
   digest,
@@ -239,6 +239,55 @@ describe("writeArtifact", () => {
     expect(backups).toHaveLength(1);
     expect(readFileSync(join(dir, "out.sarif.aih.bak"), "utf8")).toBe('{"v":1}\n');
     expect(readFileSync(join(dir, "out.sarif"), "utf8")).toBe('{"v":2}\n');
+  });
+});
+
+describe("executePlan — dirty-worktree --apply preflight", () => {
+  const dirtyRun = fakeRunner((argv) =>
+    argv.includes("status") ? { stdout: " M tracked.ts\n" } : undefined,
+  );
+
+  it("refuses to apply a write over a dirty worktree (nothing written, no backup)", async () => {
+    await expect(
+      executePlan(
+        plan("t", writeText("a.txt", "hi", "write a")),
+        ctx({ apply: true, run: dirtyRun }),
+      ),
+    ).rejects.toThrow(DirtyWorktreeError);
+    expect(existsSync(join(dir, "a.txt"))).toBe(false);
+    expect(existsSync(join(dir, "a.txt.aih.bak"))).toBe(false);
+  });
+
+  it("--force overrides the gate and applies the write", async () => {
+    await executePlan(
+      plan("t", writeText("a.txt", "hi", "write a")),
+      ctx({ apply: true, run: dirtyRun, options: { force: true } }),
+    );
+    expect(readFileSync(join(dir, "a.txt"), "utf8")).toBe("hi\n");
+  });
+
+  it("a clean worktree applies normally (git status → empty)", async () => {
+    // The default fakeRunner returns empty stdout for git status → clean worktree.
+    await executePlan(plan("t", writeText("a.txt", "hi", "write a")), ctx({ apply: true }));
+    expect(readFileSync(join(dir, "a.txt"), "utf8")).toBe("hi\n");
+  });
+
+  it("dry-run (apply:false) is never gated, even on a dirty worktree", async () => {
+    const res = await executePlan(
+      plan("t", writeText("a.txt", "hi", "write a")),
+      ctx({ apply: false, run: dirtyRun }),
+    );
+    expect(res.applied).toBe(false);
+    expect(existsSync(join(dir, "a.txt"))).toBe(false);
+  });
+
+  it("a write-free plan (digest only) is not gated under --apply on a dirty worktree", async () => {
+    // Mirrors a bare `aih report`: nothing to clobber, so the gate stays out of the way.
+    const res = await executePlan(
+      plan("t", digest("d", "body")),
+      ctx({ apply: true, run: dirtyRun }),
+    );
+    expect(res.digests).toHaveLength(1);
   });
 });
 

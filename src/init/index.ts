@@ -1,5 +1,7 @@
+import { aihConfigJson } from "../config/marker.js";
+import { resolveTargets } from "../internals/cli-detect.js";
 import type { Action, CommandSpec, PlanContext } from "../internals/plan.js";
-import { doc, plan } from "../internals/plan.js";
+import { doc, plan, writeJson } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
 import { INIT_PHASES } from "./phases.js";
 
@@ -44,6 +46,23 @@ async function initPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
         "  aih ecc --apply                # install ECC (latest) for your selected CLIs",
         "  aih ecc --cli kiro --apply     # Kiro: git checkout of ECC + its native .kiro/install.sh",
       ),
+    ),
+  );
+
+  // Persist the bootstrap intent at the repo ROOT (committed — NOT under the
+  // git-ignored `.aih/`, or it would be lost on clone) so re-runs and `aih doctor`
+  // read the context-dir + CLI targets this repo was actually bootstrapped with,
+  // instead of silently re-deriving the `ai-coding` default. Resolve targets
+  // WITHOUT the prompter so the marker never triggers an extra `--detect`
+  // confirmation (the bootstrap-ai phase already prompted). Mirrors the
+  // `.aih-workspace.json` marker write in `workspace/index.ts`.
+  const { clis: resolvedTargets } = await resolveTargets({ ...ctx, prompter: undefined });
+  actions.push(
+    writeJson(
+      ".aih-config.json",
+      aihConfigJson(ctx.contextDir, resolvedTargets),
+      "persist bootstrap intent (context-dir + CLI targets) so re-runs and doctor read it",
+      { merge: true },
     ),
   );
 
