@@ -17,6 +17,7 @@ import {
 } from "../internals/plan.js";
 import type { Check } from "../internals/verify.js";
 import { agentToolsSteering, kiroHooks } from "../kiro/content.js";
+import { type GeneratedDoc, lintProbes } from "../lint/run.js";
 import { scanRepo } from "../profile/scan.js";
 import {
   adapterNote,
@@ -192,6 +193,29 @@ async function bootstrapAiPlan(ctx: PlanContext): Promise<Plan> {
   actions.push(routerProbe(dir));
   for (const relPath of bootloaders) actions.push(bootloaderProbe(relPath, dir));
   for (const cli of clis) actions.push(presenceProbe(cli));
+
+  // Weak-model-safety lint of the canon this run authors (under --verify): every
+  // `#[[file:…]]` / backtick path resolves, no leftover scaffolding, prose is
+  // imperative. Lint the GENERATED content — for bootloaders that's the preamble
+  // + managed block body, NOT the merged file, so a user's hand-edits outside the
+  // markers are never policed. Refs resolve against the set this plan will write.
+  const bootloaderSet = new Set<string>(bootloaders);
+  const plannedPaths = new Set<string>();
+  const generated: GeneratedDoc[] = [];
+  for (const a of actions) {
+    if (a.kind !== "write") continue;
+    const p = a.path.replace(/\\/g, "/");
+    plannedPaths.add(p);
+    if (bootloaderSet.has(a.path) || a.path === ".gitignore") continue;
+    if (typeof a.contents === "string") generated.push({ path: p, source: a.contents });
+  }
+  for (const relPath of bootloaders) {
+    generated.push({
+      path: relPath.replace(/\\/g, "/"),
+      source: `${bootloaderPreamble(relPath, dir, repoName)}\n\n${block.body}`,
+    });
+  }
+  actions.push(...lintProbes(generated, plannedPaths, ctx.root));
 
   // If --detect found nothing and we defaulted to claude, say so plainly.
   if (detectFellBack) {
