@@ -472,4 +472,18 @@ describe("profile.plan", () => {
     const second = await command.plan(makeCtx());
     expect(JSON.stringify(first)).toBe(JSON.stringify(second));
   });
+
+  it("is the Cursor profiler standalone (always writes), but silent when Cursor isn't a target", async () => {
+    put("package.json", pkg());
+    // Standalone (no ctx.targets): always writes the Cursor stack rule.
+    expect(
+      findWrite((await command.plan(makeCtx())).actions, ".cursor/rules/01-stack.mdc"),
+    ).toBeDefined();
+    // Under init gating with a non-cursor target set: emits nothing.
+    const gated = await command.plan({ ...makeCtx(), targets: ["claude"] });
+    expect(gated.actions).toHaveLength(0);
+    // With cursor among the targets: writes as usual.
+    const targeted = await command.plan({ ...makeCtx(), targets: ["claude", "cursor"] });
+    expect(findWrite(targeted.actions, ".cursor/rules/01-stack.mdc")).toBeDefined();
+  });
 });

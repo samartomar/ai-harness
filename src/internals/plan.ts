@@ -1,4 +1,5 @@
 import type { EnvShell, HostAdapter } from "../platform/base.js";
+import type { Cli } from "./clis.js";
 import type { EnvVar } from "./envfile.js";
 import type { Runner } from "./proc.js";
 import type { Prompter } from "./prompt.js";
@@ -140,6 +141,15 @@ export interface PlanContext {
    * flow (e.g. `--detect`) in a TTY; undefined keeps the harness non-interactive.
    */
   prompter?: Prompter;
+  /**
+   * The resolved CLI target set, injected by an orchestrator (`aih init`) that
+   * resolves `--detect`/`--cli` ONCE and threads the result into every phase. A
+   * tool-specific phase emits a tool's files only when that tool is targeted (see
+   * {@link isTargeted}). Undefined when a leaf command runs standalone — it then
+   * keeps its single-tool identity (`aih profile` is the Cursor profiler, `aih
+   * secrets` the Claude secrets guard) and always writes.
+   */
+  targets?: Cli[];
   /** Capability-specific options parsed from the CLI. */
   options: Record<string, unknown>;
 }

@@ -121,6 +121,11 @@ export async function confirmDetectedClis(prompter: Prompter, detected: Cli[]): 
  * always sees "install for these?" while automation stays non-interactive.
  */
 export async function resolveTargets(ctx: PlanContext): Promise<TargetResolution> {
+  // An orchestrator (`aih init`) resolves the target set ONCE and threads it into
+  // every phase via `ctx.targets`, so the user is prompted at most once and all
+  // phases agree on the set. When present, it is authoritative — short-circuit
+  // before any detection/prompt so no phase re-resolves or re-prompts.
+  if (ctx.targets !== undefined) return { clis: ctx.targets, detectFellBack: false };
   const opts = ctx.options;
   const explicit = typeof opts.cli === "string" && opts.cli.trim().length > 0;
   if (opts.detect === true && opts.allTools !== true && !explicit) {
@@ -141,6 +146,19 @@ export async function resolveTargets(ctx: PlanContext): Promise<TargetResolution
 /** Back-compat thin wrapper for callers that only need the CLI list. */
 export async function resolveTargetClis(ctx: PlanContext): Promise<Cli[]> {
   return (await resolveTargets(ctx)).clis;
+}
+
+/**
+ * Whether a leaf phase should emit `cli`-specific files. Under `aih init` the
+ * orchestrator pre-resolves the target set into {@link PlanContext.targets}, so a
+ * phase emits a tool's files only when that tool is targeted — e.g. on a Kiro-only
+ * `aih init --detect` neither `.cursor/*` (cursor) nor `.claude/*` (claude) is
+ * written. Run standalone (no `ctx.targets`), the leaf keeps its single-tool
+ * identity and always emits: `aih profile` is the Cursor profiler, `aih
+ * secrets`/`aih sandbox` the Claude guards.
+ */
+export function isTargeted(ctx: PlanContext, cli: Cli): boolean {
+  return ctx.targets === undefined || ctx.targets.includes(cli);
 }
 
 /** The notice emitted when `--detect` found no AI CLIs and defaulted to claude. */
