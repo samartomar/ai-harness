@@ -1,5 +1,5 @@
-import { posix } from "node:path";
-import type { Cli } from "../internals/clis.js";
+import { bootloadersFor, entry as registryEntry } from "../internals/cli-registry.js";
+import { type Cli, SUPPORTED_CLIS } from "../internals/clis.js";
 import type { ManagedBlock } from "../internals/markers.js";
 import { frontmatter, lines } from "../internals/render.js";
 import type { RepoStack } from "../profile/scan.js";
@@ -431,28 +431,19 @@ export function otherToolsDoc(dir: string): string {
 
 // ---- bootloaders ----------------------------------------------------------
 
-/** The root bootloader file(s) each CLI reads, in canonical path form. */
-const CLI_BOOTLOADERS: Record<Cli, string[]> = {
-  claude: ["CLAUDE.md"],
-  codex: ["AGENTS.md"],
-  opencode: ["AGENTS.md"],
-  zed: ["AGENTS.md"],
-  kimi: ["AGENTS.md"],
-  antigravity: ["AGENTS.md", "GEMINI.md"],
-  gemini: ["GEMINI.md"],
-  cursor: [posix.join(".cursor", "rules", "00-canon.mdc")],
-  windsurf: [".windsurfrules"],
-  copilot: [posix.join(".github", "copilot-instructions.md")],
-  kiro: [posix.join(".kiro", "steering", "00-canon.md")],
-};
+/**
+ * The root bootloader file(s) each CLI auto-loads as system context every turn,
+ * in canonical path form — derived from the single CLI registry (the source of
+ * truth shared with detection + `aih report`'s load-group model, so they can
+ * never drift). Re-exported here under the established name for existing callers.
+ */
+export const CLI_BOOTLOADERS: Record<Cli, string[]> = Object.fromEntries(
+  SUPPORTED_CLIS.map((cli) => [cli, registryEntry(cli).bootloaders]),
+) as Record<Cli, string[]>;
 
 /** The deduped set of bootloader files to write for a CLI selection (sorted-stable). */
 export function bootloaderPaths(clis: readonly Cli[]): string[] {
-  const seen: string[] = [];
-  for (const cli of clis) {
-    for (const p of CLI_BOOTLOADERS[cli]) if (!seen.includes(p)) seen.push(p);
-  }
-  return seen;
+  return bootloadersFor(clis);
 }
 
 /** The tool-specific preamble written above the shared block, per bootloader file. */

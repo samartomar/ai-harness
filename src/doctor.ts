@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { detectClis, presentClis } from "./internals/cli-detect.js";
 import { readIfExists } from "./internals/fsxn.js";
 import { type Action, type CommandSpec, type PlanContext, plan, probe } from "./internals/plan.js";
+import { canonLintCheck } from "./lint/run.js";
 
 /** Read the workspace marker's repo list, or [] when this root is not a workspace. */
 function workspaceRepos(ctx: PlanContext): string[] {
@@ -58,6 +59,7 @@ export const command: CommandSpec = {
               detail: `${ctx.contextDir} not scaffolded — run: aih scaffold --apply`,
             };
       }),
+      probe("canon markdown lint", () => canonLintCheck(ctx.root, ctx.contextDir)),
       probe("AI CLIs detected", async () => {
         const present = presentClis(await detectClis(ctx));
         return present.length > 0

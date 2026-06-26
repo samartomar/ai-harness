@@ -27,6 +27,16 @@ export interface ContextFile {
   tokens: number;
 }
 
+/** Options for {@link scanContextBloat} — keep the scan sync + pure (no async git). */
+export interface ScanOptions {
+  /**
+   * Keep only paths this predicate accepts (repo-relative POSIX). Default: keep
+   * all. Callers pass a gitignore-honoring allowlist (computed async via the
+   * Runner) so the footprint doesn't double-count generated copies or ignored files.
+   */
+  accept?: (rel: string) => boolean;
+}
+
 /** The agent context an AI CLI loads from this repo, with an estimated token footprint. */
 export interface ContextBloat {
   /** Every context file found, sorted by path for deterministic digests. */
@@ -74,8 +84,19 @@ function walk(root: string, relDir: string, out: string[]): void {
   }
 }
 
-function estimateTokens(bytes: number): number {
+/** Rough token estimate for a byte count (~4 chars/token). Shared with the load-group model. */
+export function estimateTokens(bytes: number): number {
   return Math.ceil(bytes / CHARS_PER_TOKEN);
+}
+
+/**
+ * One file's footprint, or `undefined` if it is missing / not a regular file.
+ * The single per-file primitive both `scanContextBloat` (full inventory) and the
+ * load-group model build on, so they share one tokenizer.
+ */
+export function fileFootprint(root: string, rel: string): ContextFile | undefined {
+  const bytes = fileSize(join(root, rel));
+  return bytes === undefined ? undefined : { path: rel, bytes, tokens: estimateTokens(bytes) };
 }
 
 /**
@@ -89,7 +110,9 @@ export function scanContextBloat(
   root: string,
   contextDir: string,
   budgetTokens: number = DEFAULT_CONTEXT_BUDGET_TOKENS,
+  opts: ScanOptions = {},
 ): ContextBloat {
+  const accept = opts.accept ?? (() => true);
   const rels = new Set<string>(ROOT_CONTEXT_FILES);
   for (const dir of [contextDir, ...EXTRA_CONTEXT_DIRS]) {
     if (!isDir(join(root, dir))) continue;
@@ -100,9 +123,9 @@ export function scanContextBloat(
 
   const files: ContextFile[] = [];
   for (const rel of [...rels].sort()) {
-    const bytes = fileSize(join(root, rel));
-    if (bytes === undefined) continue; // missing or not a regular file → skip
-    files.push({ path: rel, bytes, tokens: estimateTokens(bytes) });
+    if (!accept(rel)) continue; // drop ignored / untracked-generated / out-of-diff files
+    const f = fileFootprint(root, rel); // missing / non-regular files are skipped
+    if (f) files.push(f);
   }
 
   const totalBytes = files.reduce((n, f) => n + f.bytes, 0);

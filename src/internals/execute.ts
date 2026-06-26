@@ -255,7 +255,10 @@ export function summarizeResult(result: PlanResult): string {
       out.push(`  [probe] ${p.describe} (run with --verify)`);
     }
   }
-  if (result.report) {
+  // Only show the verification section when a probe actually ran. A command that
+  // always-verifies but has no probes this run (e.g. a bare `aih report` without
+  // `--gate`) produces an empty report — printing "0 passed" would be noise.
+  if (result.report && result.report.checks.length > 0) {
     out.push("Verification:");
     out.push(result.report.summary());
   }

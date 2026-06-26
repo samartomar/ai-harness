@@ -459,3 +459,39 @@ describe("aih mcp — uv probe under --verify", () => {
     expect(check?.verdict).toBe("fail");
   });
 });
+
+describe("aih mcp — per-CLI config (honors --cli)", () => {
+  it("--cli codex emits TOML guidance, NOT a .mcp.json Codex never reads", async () => {
+    const p = await command.plan(makeCtx({ options: { cli: "codex" } }));
+    const writes = p.actions.filter((a): a is WriteAction => a.kind === "write");
+    expect(writes.some((w) => w.path === ".mcp.json")).toBe(false);
+    const guide = p.actions.find((a) => a.kind === "doc" && a.describe.includes("Codex"));
+    expect(guide).toBeDefined();
+  });
+
+  it("--cli cursor writes .cursor/mcp.json (same shape, different project path)", async () => {
+    const p = await command.plan(makeCtx({ options: { cli: "cursor" } }));
+    const writes = p.actions.filter((a): a is WriteAction => a.kind === "write");
+    expect(writes.map((w) => w.path)).toContain(".cursor/mcp.json");
+    expect(writes.map((w) => w.path)).not.toContain(".mcp.json");
+  });
+
+  it("--cli claude,kimi writes ONE .mcp.json (the shared path is deduped)", async () => {
+    const p = await command.plan(makeCtx({ options: { cli: "claude,kimi" } }));
+    const dotMcp = p.actions.filter(
+      (a): a is WriteAction => a.kind === "write" && a.path === ".mcp.json",
+    );
+    expect(dotMcp).toHaveLength(1);
+  });
+
+  it("--all-tools never writes Claude's .mcp.json for a TOML/global tool", async () => {
+    const p = await command.plan(makeCtx({ options: { allTools: true } }));
+    const writes = p.actions.filter((a): a is WriteAction => a.kind === "write");
+    // Writable standard tools (claude/kimi → .mcp.json, cursor, kiro) get real writes;
+    // codex/copilot/opencode/zed/gemini/windsurf/antigravity get guidance docs.
+    expect(writes.map((w) => w.path)).toContain(".mcp.json");
+    expect(writes.map((w) => w.path)).toContain(".cursor/mcp.json");
+    const docs = p.actions.filter((a) => a.kind === "doc");
+    expect(docs.some((d) => d.describe.includes("Codex"))).toBe(true);
+  });
+});
