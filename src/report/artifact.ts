@@ -70,7 +70,6 @@ function ring(pct: number): string {
   const cls = p >= 80 ? "ok" : p >= 50 ? "warn" : "bad";
   return [
     `<svg class="ring ${cls}" viewBox="0 0 120 120" width="124" height="124" role="img" aria-label="adoption ${p} of 100">`,
-    '  <defs><filter id="glow" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="2.4" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>',
     '  <circle class="ring-bg" cx="60" cy="60" r="52" fill="none" stroke-width="11"/>',
     `  <circle class="ring-fg" cx="60" cy="60" r="52" fill="none" stroke-width="11" stroke-linecap="round" filter="url(#glow)" stroke-dasharray="${((c * p) / 100).toFixed(1)} ${c.toFixed(1)}" transform="rotate(-90 60 60)"/>`,
     `  <text x="60" y="57" class="ring-num">${p}</text><text x="60" y="78" class="ring-cap">/ 100</text>`,
@@ -145,12 +144,14 @@ function spark(label: string, v: number[]): string {
   const bars = v
     .map((x, i) => {
       const bh = Math.max(2, ((x - min) / span) * h);
-      return `<rect x="${i * (w + gap)}" y="${(h - bh).toFixed(1)}" width="${w}" height="${bh.toFixed(1)}" rx="2"/>`;
+      return `<rect x="${i * (w + gap)}" y="${(h - bh).toFixed(1)}" width="${w}" height="${bh.toFixed(1)}" rx="2"><title>${esc(label)} #${i + 1}: ${fmt(x)}</title></rect>`;
     })
     .join("");
   const last = v[v.length - 1] ?? 0;
   const delta = last - (v[0] ?? 0);
-  return `<div class="mini"><div class="mini-h"><span>${esc(label)}</span><b>${fmt(last)}<i>${delta >= 0 ? "+" : ""}${fmt(delta)}</i></b></div><svg viewBox="0 0 ${v.length * (w + gap)} ${h}" preserveAspectRatio="none">${bars}</svg></div>`;
+  const trend = delta > 0 ? "up" : delta < 0 ? "down" : "flat";
+  const summary = `${label}: ${v.length} samples, latest ${fmt(last)}, ${trend} ${fmt(Math.abs(delta))} over range`;
+  return `<div class="mini"><div class="mini-h"><span>${esc(label)}</span><b>${fmt(last)}<i>${delta >= 0 ? "+" : ""}${fmt(delta)}</i></b></div><svg viewBox="0 0 ${v.length * (w + gap)} ${h}" preserveAspectRatio="none" role="img" aria-label="${esc(summary)}">${bars}</svg></div>`;
 }
 
 /** Trends: a small bar chart per metric over the recorded samples. */
@@ -232,7 +233,11 @@ const TOOL_HINTS: Record<string, string> = {
 function toolPill(name: string, on: boolean): string {
   if (on) return `<span class="tool on">${esc(name)}</span>`;
   const hint = TOOL_HINTS[name];
-  return `<span class="tool off"${hint ? ` data-hint="1" title="${esc(hint)}"` : ""}>${esc(name)}</span>`;
+  if (!hint)
+    return `<span class="tool off" aria-label="${esc(name)} — not installed">${esc(name)}</span>`;
+  // Keyboard/SR-reachable: tabindex + aria-label surface the install hint that
+  // `title` alone (hover-only) hides; the `?` glyph gives a visible affordance.
+  return `<span class="tool off" tabindex="0" data-hint="1" title="${esc(hint)}" aria-label="${esc(name)} — not installed. ${esc(hint)}">${esc(name)}<i class="tool-i" aria-hidden="true">?</i></span>`;
 }
 
 /** Present-then-absent tool pills, shared by Tools installed + Tooling. */
@@ -286,7 +291,7 @@ function eventsTablePanel(d: Bag): string {
     })
     .join("");
   const more = total > shown ? `<div class="more">+${fmt(total - shown)} older</div>` : "";
-  const body = `<div class="ev-wrap" tabindex="0" role="region" aria-label="AI events feed, newest first"><table class="events"><thead><tr><th aria-sort="descending">Time</th><th>Event</th><th>Detail</th><th>Δ lines</th></tr></thead><tbody>${trs}</tbody></table></div>${more}`;
+  const body = `<div class="ev-wrap" tabindex="0" role="region" aria-label="AI events feed, newest first"><table class="events"><caption class="sr-only">AI events, newest first</caption><thead><tr><th>Time</th><th>Event</th><th>Detail</th><th>Δ lines</th></tr></thead><tbody>${trs}</tbody></table></div>${more}`;
   return panel("AI events", `<span class="badge muted">${fmt(total)}</span>`, body, 12);
 }
 
@@ -307,7 +312,7 @@ function dailyCommitsPanel(d: Bag): string {
     .join("");
   const chart =
     counts.length > 0
-      ? `<svg class="daybars" viewBox="0 0 ${counts.length * (w + gap)} ${h}" preserveAspectRatio="none">${bars}</svg>`
+      ? `<svg class="daybars" role="img" aria-label="Daily commits across ${counts.length} days, ${fmt(c.total ?? 0)} total" viewBox="0 0 ${counts.length * (w + gap)} ${h}" preserveAspectRatio="none">${bars}</svg>`
       : '<div class="empty">no commits in range</div>';
   const sub = `<div class="vel-sub"><span><b>${fmt(c.d7 ?? 0)}</b> 7d</span><span><b>${fmt(c.d30 ?? 0)}</b> 30d</span><span><b>${fmt(c.total ?? 0)}</b> total</span></div>`;
   return panel(
@@ -444,11 +449,38 @@ const CATEGORIES: { title: string; prefixes: string[] }[] = [
   { title: "Event log", prefixes: ["AI events"] },
 ];
 
+/** Deterministic anchor id for a category section. `prefix` keeps the live and
+ * demo trees (both rendered into the page) from colliding on the same id. */
+function catId(title: string, prefix = ""): string {
+  return `${prefix}cat-${title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")}`;
+}
+
+/**
+ * Ordered {title,id} for categories that actually render (≥1 matching digest) —
+ * drives the topbar jump-nav. Mirrors {@link renderSections}' ordering; category
+ * prefixes are disjoint, so this presence `some()` matches its consume-once `take()`.
+ * Keep adjacent to renderSections so that coupling stays visible.
+ */
+function sectionNav(digests: DigestAction[]): { title: string; id: string }[] {
+  const has = (p: string): boolean => digests.some((d) => d.describe.startsWith(p));
+  const out = CATEGORIES.filter((c) => c.prefixes.some(has)).map((c) => ({
+    title: c.title,
+    id: catId(c.title),
+  }));
+  const known = [...new Set(CATEGORIES.flatMap((c) => c.prefixes))];
+  if (digests.some((d) => !known.some((p) => d.describe.startsWith(p))))
+    out.push({ title: "More", id: catId("More") });
+  return out;
+}
+
 /** One category section: numbered eyebrow + title + count, then its panel bento. */
-function categorySection(title: string, no: number, panels: DigestAction[]): string {
+function categorySection(title: string, no: number, panels: DigestAction[], idPrefix = ""): string {
   const idx = String(no).padStart(2, "0");
   return (
-    `<section class="cat"><div class="cat-h">` +
+    `<section class="cat" id="${catId(title, idPrefix)}"><div class="cat-h">` +
     `<span class="cat-no">${idx}</span><h2>${esc(title)}</h2>` +
     `<span class="cat-ct">${panels.length}</span><span class="cat-rule"></span></div>` +
     `<div class="bento">${panels.map(panelFor).join("")}</div></section>`
@@ -456,7 +488,7 @@ function categorySection(title: string, no: number, panels: DigestAction[]): str
 }
 
 /** Group digests into ordered, labeled category sections; unmatched fall into "More". */
-function renderSections(digests: DigestAction[]): string {
+function renderSections(digests: DigestAction[], idPrefix = ""): string {
   const used = new Set<DigestAction>();
   const take = (prefix: string): DigestAction | undefined => {
     const d = digests.find((x) => !used.has(x) && x.describe.startsWith(prefix));
@@ -467,10 +499,10 @@ function renderSections(digests: DigestAction[]): string {
   let n = 0;
   for (const cat of CATEGORIES) {
     const panels = cat.prefixes.map(take).filter((d): d is DigestAction => d !== undefined);
-    if (panels.length > 0) out.push(categorySection(cat.title, ++n, panels));
+    if (panels.length > 0) out.push(categorySection(cat.title, ++n, panels, idPrefix));
   }
   const leftover = digests.filter((d) => !used.has(d));
-  if (leftover.length > 0) out.push(categorySection("More", ++n, leftover));
+  if (leftover.length > 0) out.push(categorySection("More", ++n, leftover, idPrefix));
   return out.join("");
 }
 
@@ -478,12 +510,12 @@ const STYLE = `${EMBEDDED_FONTS}${GEIST_FONT}
 :root{ color-scheme:dark;
   --display:'Geist','Inter',ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
   --bg:#0a0d13; --panel:#11151d; --panel2:#161b25; --line:#222a38; --line2:#2c3548;
-  --fg:#e8edf4; --mut:#8893a7; --dim:#737e93;
+  --fg:#e8edf4; --mut:#8893a7; --dim:#7e899e;
   --accent:#5b9dff; --accent2:#8a7bff; --ok:#3fdc8a; --warn:#ffc24b; --bad:#ff6b6b;
   --r:14px; --rs:9px; --sh:0 1px 0 rgba(255,255,255,.03) inset,0 10px 30px -16px rgba(0,0,0,.7); }
 :root[data-theme="light"]{ color-scheme:light;
   --bg:#eef1f6; --panel:#fff; --panel2:#f6f8fc; --line:#e4e8f0; --line2:#d6dce8;
-  --fg:#161b26; --mut:#5a6577; --dim:#737d90;
+  --fg:#161b26; --mut:#5a6577; --dim:#646f83;
   --accent:#1d6fe0; --accent2:#6a4cf0; --ok:#0f9d58; --warn:#9a6700; --bad:#d12d2d;
   --sh:0 1px 2px rgba(20,30,50,.05),0 10px 30px -20px rgba(20,30,50,.25); }
 *{box-sizing:border-box} html,body{margin:0}
@@ -504,6 +536,17 @@ const STYLE = `${EMBEDDED_FONTS}${GEIST_FONT}
 .tb-demo:hover{border-color:var(--accent);color:var(--accent)}
 body[data-demo="on"] .tb-demo{background:color-mix(in oklab,var(--accent) 18%,transparent);border-color:color-mix(in oklab,var(--accent) 45%,transparent);color:var(--accent)}
 @media(max-width:640px){.clocks{display:none}.tb-brand .sub{display:none}}
+.skip{position:absolute;left:.6rem;top:-3rem;z-index:30;padding:.45rem .8rem;border-radius:9px;background:var(--panel);border:1px solid var(--line);color:var(--fg);font-size:.78rem;font-weight:600;text-decoration:none;transition:top .15s}
+.skip:focus{top:.6rem}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+main:focus{outline:none}
+.tb-nav{display:flex;gap:.15rem;align-items:center;overflow-x:auto;scrollbar-width:none;margin:0 .4rem}
+.tb-nav::-webkit-scrollbar{display:none}
+.tb-nav a{white-space:nowrap;color:var(--mut);font-size:.74rem;font-weight:550;padding:.32rem .55rem;border-radius:9px;text-decoration:none;transition:color .15s,background .15s}
+.tb-nav a:hover{color:var(--fg);background:color-mix(in oklab,var(--fg) 6%,transparent)}
+@media(max-width:820px){.tb-nav{display:none}}
+.tool-i{margin-left:.34rem;font-style:normal;font-weight:700;font-size:.66rem;opacity:.7;border:1px solid currentColor;border-radius:999px;width:.95em;height:.95em;line-height:.85em;display:inline-grid;place-items:center;vertical-align:baseline}
+.tool.off[data-hint]:hover .tool-i,.tool.off[data-hint]:focus-visible .tool-i{opacity:1}
 body{ background:radial-gradient(1100px 520px at 78% -8%,color-mix(in oklab,var(--accent) 13%,transparent),transparent 58%),radial-gradient(900px 600px at 6% 108%,color-mix(in oklab,var(--accent2) 9%,transparent),transparent 60%),var(--bg);
   color:var(--fg); font:14px/1.5 'Inter',ui-sans-serif,system-ui,-apple-system,"Segoe UI Variable","Segoe UI",sans-serif; -webkit-font-smoothing:antialiased; }
 main{max-width:1120px;margin:0 auto;padding:1.8rem 1.5rem 5rem}
@@ -581,7 +624,7 @@ main{max-width:1120px;margin:0 auto;padding:1.8rem 1.5rem 5rem}
 .tool.off{color:var(--dim);border:1px solid var(--line);text-decoration:line-through;text-decoration-color:color-mix(in oklab,var(--dim) 55%,transparent);opacity:.72}
 .tool.off[data-hint]{cursor:help}
 .tool.off[data-hint]:hover{opacity:1;color:var(--mut);border-color:color-mix(in oklab,var(--accent) 40%,transparent)}
-.cat{margin-top:1.9rem}
+.cat{margin-top:1.9rem;scroll-margin-top:4.5rem}
 .cat:first-child{margin-top:.2rem}
 .cat-h{display:flex;align-items:center;gap:.65rem;margin:0 0 .9rem;padding:0 .1rem}
 .cat-no{font:600 .72rem/1 'JetBrains Mono',ui-monospace,SFMono-Regular,monospace;color:var(--accent);opacity:.7;letter-spacing:.04em}
@@ -635,6 +678,7 @@ footer code{color:var(--mut)}
 body[data-demo="on"] #aih-live{display:none}
 body[data-demo="on"] #aih-demo{display:block}
 body[data-demo="on"] .demo-banner{display:flex}
+body[data-demo="on"] .tb-nav{display:none}
 `.trim();
 
 /**
@@ -691,10 +735,14 @@ export function reportHtml(
   opts: { refresh?: number; demo?: boolean } = {},
 ): string {
   const liveContent = `${buildHero(digests)}${renderSections(digests)}`;
+  // Topbar jump-nav reflects the live report's present sections (demo shares the
+  // same category titles). The demo tree is rendered with a `demo-` id prefix so
+  // its section anchors never collide with the live ones.
+  const nav = sectionNav(digests);
   // A fixed DEMO dataset is always embedded behind the "◑ demo" toggle (and shown by
   // default under `--demo`) so the full report can be visualized / showcased.
   const demoSet = demoDigests();
-  const demoContent = `${buildHero(demoSet)}${renderSections(demoSet)}`;
+  const demoContent = `${buildHero(demoSet)}${renderSections(demoSet, "demo-")}`;
 
   const refreshMeta =
     opts.refresh && opts.refresh > 0
@@ -711,16 +759,18 @@ export function reportHtml(
     `  <style>${STYLE}</style>`,
     "</head>",
     `<body${opts.demo ? ' data-demo="on"' : ""}>`,
+    '  <a class="skip" href="#main">Skip to report</a>',
     '  <header class="topbar">',
     `    <div class="tb-brand"><h1>${BRAND}</h1><div class="sub">self-contained · generated by <code>aih report</code></div></div>`,
+    `    <nav class="tb-nav" aria-label="Report sections">${nav.map((s) => `<a href="#${s.id}">${esc(s.title)}</a>`).join("")}</nav>`,
     '    <div class="tb-right">',
     '      <div class="clocks"><span class="clk"><i>UTC</i><b id="clk-utc">··:··:··</b></span><span class="clk"><i>Local</i><b id="clk-loc">··:··:··</b></span></div>',
     '      <button class="tb-ico tb-demo" type="button" onclick="aihDemo()" aria-label="Toggle demo data" title="Demo data"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 3h6M10 3v6l-4.4 7.6A1.5 1.5 0 0 0 6.9 19h10.2a1.5 1.5 0 0 0 1.3-2.4L14 9V3"/><path d="M7.2 14h9.6"/></svg></button>',
     '      <button class="tb-ico" type="button" onclick="aihTheme()" aria-label="Toggle light / dark theme" title="Toggle theme"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 3a9 9 0 0 0 0 18z" fill="currentColor"/></svg></button>',
     "    </div>",
     "  </header>",
-    '  <svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" style="stop-color:var(--accent)"/><stop offset="1" style="stop-color:var(--accent2)"/></linearGradient></defs></svg>',
-    "  <main>",
+    '  <svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" style="stop-color:var(--accent)"/><stop offset="1" style="stop-color:var(--accent2)"/></linearGradient><filter id="glow" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="2.4" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs></svg>',
+    '  <main id="main" tabindex="-1">',
     '    <div class="demo-banner">▲ DEMO DATA — illustrative figures for showcasing the report; not your repo. Click “◑ demo” to switch back.</div>',
     `    <div id="aih-live">${liveContent}</div>`,
     `    <div id="aih-demo">${demoContent}</div>`,

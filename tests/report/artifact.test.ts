@@ -104,8 +104,37 @@ describe("reportHtml dashboard", () => {
     expect(html).toContain('class="chip ok"'); // present artifact
     expect(html).toContain('class="chip bad"'); // absent artifact
     expect(html).toContain('class="tool on">claude'); // present CLI
-    expect(html).toContain('class="tool off" data-hint="1"'); // absent CLI carries an install hint
+    // absent CLI carries an install hint that is keyboard/SR reachable (not hover-only)
+    expect(html).toContain('class="tool off" tabindex="0" data-hint="1"');
+    expect(html).toContain('aria-label="codex — not installed.'); // hint surfaced to AT
     expect(html).toContain("npm i -g @openai/codex"); // ...the actionable command for codex
+  });
+
+  it("is accessible: skip link, section nav, chart titles, no false aria-sort", () => {
+    const html = reportHtml("aih report", RICH);
+    // skip-to-main bypass block + focusable main target (WCAG 2.4.1)
+    expect(html).toContain('<a class="skip" href="#main">Skip to report</a>');
+    expect(html).toContain('<main id="main" tabindex="-1">');
+    // topbar jump-nav, anchored to id'd category sections (orientation on a long page)
+    expect(html).toContain('<nav class="tb-nav" aria-label="Report sections">');
+    expect(liveOf(html)).toContain('<section class="cat" id="cat-harness-adoption">');
+    // the embedded demo tree uses a prefixed id so anchors never collide with live
+    expect(html).toContain('id="demo-cat-');
+    // sparklines expose values: per-bar <title> + an accessible name on the svg
+    expect(html).toContain('role="img" aria-label="commits (7d): 2 samples');
+    expect(html).toMatch(/<rect[^>]*><title>commits \(7d\) #1: 1<\/title><\/rect>/);
+    // the events table must NOT claim a sort affordance it doesn't have (WCAG 4.1.2)
+    expect(html).not.toContain("aria-sort");
+    // the glow filter is defined once globally, not duplicated per adoption ring
+    expect((html.match(/<filter id="glow"/g) ?? []).length).toBe(1);
+  });
+
+  it("uses AA-contrast --dim tokens in both themes", () => {
+    const html = reportHtml("aih report", RICH);
+    expect(html).toContain("--dim:#7e899e"); // dark: clears 4.5:1, stays below --mut
+    expect(html).toContain("--dim:#646f83"); // light: clears 4.5:1, stays below --mut
+    expect(html).not.toContain("#737e93"); // old failing dark token gone
+    expect(html).not.toContain("#737d90"); // old failing light token gone
   });
 
   it("escapes HTML and renders unrecognized digests as a styled note", () => {
