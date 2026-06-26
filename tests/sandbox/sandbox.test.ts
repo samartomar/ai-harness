@@ -166,6 +166,22 @@ describe("managed-settings.json content", () => {
     expect(ms.sandbox.allowedDomains).toEqual(["github.com", "pypi.org", "registry.npmjs.org"]);
   });
 
+  it("ships the command-policy exec block alongside the egress allowlist", async () => {
+    const p = await command.plan(ctx());
+    const ms = findWrite(p.actions, ".claude/managed-settings.json").json as {
+      sandbox: {
+        allowedDomains: string[];
+        commandPolicy: { deny: Array<{ pattern: string; reason?: string }> };
+      };
+    };
+    // The egress allowlist and the command policy ship in ONE managed-settings file.
+    expect(ms.sandbox.allowedDomains).toContain("github.com");
+    const denyPatterns = ms.sandbox.commandPolicy.deny.map((r) => r.pattern);
+    expect(denyPatterns).toContain("rm -rf /");
+    const rmRule = ms.sandbox.commandPolicy.deny.find((r) => r.pattern === "rm -rf /");
+    expect(rmRule?.reason).toBe("Refuses to delete filesystem root.");
+  });
+
   it("is staged as a merge write so user keys survive", async () => {
     const p = await command.plan(ctx());
     expect(findWrite(p.actions, ".claude/managed-settings.json").merge).toBe(true);

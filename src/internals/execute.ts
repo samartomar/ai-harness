@@ -1,6 +1,7 @@
 import { existsSync, realpathSync } from "node:fs";
 import { dirname, isAbsolute, relative, resolve } from "node:path";
 import { PathContainmentError } from "../errors.js";
+import { redactSecrets } from "../guardrails/redact.js";
 import { upsertManagedBlock } from "./envfile.js";
 import { FsTransaction, readIfExists } from "./fsxn.js";
 import { deepMerge, parseJsoncText } from "./merge.js";
@@ -271,7 +272,10 @@ export function summarizeResult(result: PlanResult): string {
   }
   for (const dg of result.digests) {
     out.push(`  [digest] — ${dg.describe}`);
-    out.push(indent(dg.text.replace(/\n+$/, ""), 2));
+    // The single source-side redaction seam: every digest body printed to a human
+    // passes through redactSecrets() here, so a secret captured into a report/roll-up
+    // is masked at the one print chokepoint rather than at each call site.
+    out.push(indent(redactSecrets(dg.text.replace(/\n+$/, "")), 2));
   }
   for (const e of result.execs) {
     const status = e.ran ? ` (exit ${e.code})` : " (run with --apply)";

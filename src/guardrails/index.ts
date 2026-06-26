@@ -7,22 +7,37 @@ import {
   type PlanContext,
   plan,
   probe,
+  writeJson,
   writeText,
 } from "../internals/plan.js";
 import type { RepoStack } from "../profile/scan.js";
 import { scanRepo } from "../profile/scan.js";
+import { claudeBashPermissions, commandPolicyDoc } from "./command-policy.js";
 import { gitleaksToml } from "./gitleaks.js";
 import { gitleaksMergeSnippet, PRECOMMIT_MARKER, preCommitConfigYaml } from "./precommit.js";
+import { riskGatesDoc, riskGatesJson } from "./risk-gates.js";
 import { blockingLicenses, scaWorkflowYaml } from "./sca.js";
 import { taxonomyDoc } from "./taxonomy.js";
 
 const GITLEAKS_PATH = ".gitleaks.toml";
 const PRECOMMIT_PATH = ".pre-commit-config.yaml";
 const SCA_PATH = ".github/workflows/sca.yml";
+/** Native Claude permission file the command-policy projection merges into. */
+const CLAUDE_SETTINGS_PATH = ".claude/settings.json";
 
 /** Path of the taxonomy doc under the (configurable) canonical context dir. */
 function taxonomyPath(ctx: PlanContext): string {
   return `${ctx.contextDir}/guardrails-taxonomy.md`;
+}
+
+/** Path of the command-policy reference doc under the canonical context dir. */
+function commandPolicyPath(ctx: PlanContext): string {
+  return `${ctx.contextDir}/command-policy.md`;
+}
+
+/** Path of the CI-checkable risk-gates JSON sidecar under the canonical context dir. */
+function riskGatesPath(ctx: PlanContext): string {
+  return `${ctx.contextDir}/risk-gates.json`;
 }
 
 /** CI guidance: the SCA workflow runs in the customer's pipeline, never here. */
@@ -85,7 +100,9 @@ function preCommitActions(ctx: PlanContext, stack: RepoStack): Action[] {
 /**
  * Generate the repo's security guardrails: a gitleaks secret-scanning config, a
  * pre-commit gate that runs it, a CI license-compliance workflow that blocks
- * AGPL / strong copyleft, and the control-taxonomy doc. Every action is a local
+ * AGPL / strong copyleft, the control-taxonomy doc, and the machine-readable
+ * command-policy lexicon + risk gates (projected into the native Claude permission
+ * file where a seam exists, documented everywhere else). Every action is a local
  * write or human-facing doc — CI execution is left to the customer's pipeline.
  */
 function guardrailsPlan(ctx: PlanContext): ReturnType<typeof plan> {
@@ -109,6 +126,30 @@ function guardrailsPlan(ctx: PlanContext): ReturnType<typeof plan> {
       taxonomyPath(ctx),
     ),
     doc("CI license gate runs in your pipeline, not from aih", ciNote()),
+    // Command-policy lexicon (deny/ask/safe) — human reference doc under the context
+    // dir; the same lexicon is projected into the native Claude permission file below.
+    doc(
+      "Command-policy lexicon (deny/ask/safe) — ported from LeanHarness (MIT)",
+      commandPolicyDoc(),
+      commandPolicyPath(ctx),
+    ),
+    // Defense-in-depth: project the command lexicon into Claude's native
+    // permission file. MERGE so it composes with the secrets capability's
+    // `Read(...)` deny rules (array union) instead of clobbering them.
+    writeJson(
+      CLAUDE_SETTINGS_PATH,
+      { permissions: claudeBashPermissions() },
+      "Project the command-policy lexicon into Claude Bash permissions (merged with existing deny rules)",
+      { merge: true },
+    ),
+    // Risk gates: a CI-checkable JSON sidecar + a human-facing doc that runs in
+    // YOUR CI (ask-not-deny; aih never gates a live tool call itself).
+    writeJson(
+      riskGatesPath(ctx),
+      riskGatesJson(),
+      "Risk-gate categories (ask-not-deny), CI-checkable sidecar",
+    ),
+    doc("Risk gates run in YOUR CI, not from aih", riskGatesDoc()),
     probe("gitleaks present", async (c) => {
       const res = await c.run(["gitleaks", "version"]);
       if (res.spawnError) {
