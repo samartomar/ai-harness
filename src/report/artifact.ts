@@ -253,10 +253,85 @@ function toolingPanel(d: Bag): string {
   const absent = arr(d.absent) as string[];
   const total = num(d.total) ?? present.length + absent.length;
   return panel(
-    "Tooling",
+    "Machine tooling",
     `<span class="badge muted">${present.length}/${total}</span>`,
     `<div class="pills">${toolPills(present, absent)}</div>`,
     7,
+  );
+}
+
+interface CovCell {
+  state: string;
+  path?: string;
+  detail?: string;
+  fix?: string;
+}
+interface CovRow {
+  cli: string;
+  label: string;
+  targeted: boolean;
+  bootloader: CovCell;
+  mcp: CovCell;
+  settings: CovCell;
+}
+
+/** State → CSS class / glyph for a per-CLI wiring cell (matches the terminal legend). */
+const CELL_CLASS: Record<string, string> = {
+  wired: "ok",
+  missing: "bad",
+  manual: "warn",
+  na: "muted",
+};
+const CELL_GLYPH: Record<string, string> = { wired: "✓", missing: "✗", manual: "◐", na: "—" };
+
+/** One wiring cell — colored glyph + short file label; full detail/fix in the tooltip. */
+function covCell(c: CovCell): string {
+  const cls = CELL_CLASS[c.state] ?? "muted";
+  const glyph = CELL_GLYPH[c.state] ?? "—";
+  const label = c.state === "na" ? "n/a" : (c.path ?? "");
+  const tip = [c.path, c.detail, c.fix ? `fix: ${c.fix}` : ""].filter(Boolean).join(" — ");
+  return `<span class="cli-cell ${cls}"${tip ? ` title="${esc(tip)}"` : ""}>${glyph} ${esc(label)}</span>`;
+}
+
+function covRowHtml(r: CovRow): string {
+  const dot = r.targeted ? "●" : "○";
+  return `<tr><td class="cli-name">${dot} ${esc(r.label)}</td><td>${covCell(r.bootloader)}</td><td>${covCell(r.mcp)}</td><td>${covCell(r.settings)}</td></tr>`;
+}
+
+/**
+ * AI CLI wiring matrix — one row per CLI, columns for bootloader / MCP / settings,
+ * each a four-state cell (wired / missing / manual / n/a). Targeted tools lead;
+ * installed-but-untargeted ones follow, muted. This is the panel that makes every
+ * CLI individually visible instead of one global "configured" verdict.
+ */
+function cliMatrixPanel(d: Bag): string {
+  const rows = arr(d.rows) as CovRow[];
+  const targeted = rows.filter((r) => r.targeted);
+  const other = rows.filter((r) => !r.targeted);
+  const configured = num(d.structurallyConfigured) ?? 0;
+  const totalT = num(d.totalTargeted) ?? targeted.length;
+  const src = str(d.targetSource) ?? "";
+  const legend =
+    '<div class="cli-legend">' +
+    '<span class="cli-cell ok">✓ wired</span>' +
+    '<span class="cli-cell bad">✗ missing</span>' +
+    '<span class="cli-cell warn">◐ manual</span>' +
+    '<span class="cli-cell muted">— n/a</span>' +
+    `<span class="cli-src">targets: ${esc(src)}</span></div>`;
+  const sep = other.length
+    ? '<tr class="cli-sep"><td colspan="4">also installed (not targeted)</td></tr>'
+    : "";
+  const table =
+    '<table class="cli-matrix"><thead><tr><th>Tool</th><th>Bootloader</th><th>MCP</th><th>Settings</th></tr></thead><tbody>' +
+    targeted.map(covRowHtml).join("") +
+    sep +
+    other.map(covRowHtml).join("") +
+    "</tbody></table>";
+  return panel(
+    "AI CLI wiring",
+    `<span class="badge muted">${configured}/${totalT} configured</span>`,
+    legend + table,
+    12,
   );
 }
 
@@ -423,8 +498,9 @@ function panelFor(d: DigestAction): string {
   if (d.describe.startsWith("Build & analysis")) return buildTimesPanel(data);
   if (d.describe.startsWith("Repository information")) return repoInfoPanel(data);
   if (d.describe.startsWith("Tools installed")) return toolsInstalledPanel(data);
+  if (d.describe.startsWith("AI CLI wiring")) return cliMatrixPanel(data);
   if (d.describe.startsWith("Configuration")) return checklistPanel(data);
-  if (d.describe.startsWith("Tooling")) return toolingPanel(data);
+  if (d.describe.startsWith("Machine tooling")) return toolingPanel(data);
   return notePanel(d);
 }
 
@@ -443,7 +519,13 @@ const CATEGORIES: { title: string; prefixes: string[] }[] = [
   },
   {
     title: "Harness adoption",
-    prefixes: ["Tools installed", "Repo status", "Configuration", "Tooling"],
+    prefixes: [
+      "Tools installed",
+      "Repo status",
+      "AI CLI wiring",
+      "Configuration",
+      "Machine tooling",
+    ],
   },
   { title: "Trends over time", prefixes: ["Trends"] },
   { title: "Event log", prefixes: ["AI events"] },
@@ -673,6 +755,16 @@ footer code{color:var(--mut)}
 .gr-fill{display:block;height:100%;border-radius:999px}
 .gr-fill.crit{background:var(--bad)}.gr-fill.imp{background:var(--warn)}.gr-fill.sty{background:var(--accent)}
 .gr-v{text-align:right;font-variant-numeric:tabular-nums;font-weight:600}
+.cli-matrix{width:100%;border-collapse:collapse;font-size:.8rem}
+.cli-matrix th{text-align:left;color:var(--mut);font-weight:600;font-size:.68rem;text-transform:uppercase;letter-spacing:.05em;padding:.3rem .5rem;border-bottom:1px solid var(--line)}
+.cli-matrix td{padding:.42rem .5rem;border-bottom:1px solid color-mix(in oklab,var(--line) 55%,transparent)}
+.cli-matrix tbody tr:last-child td{border-bottom:0}
+.cli-name{font-weight:600;white-space:nowrap}
+.cli-sep td{color:var(--dim);font-size:.68rem;text-transform:uppercase;letter-spacing:.06em;padding-top:.8rem;border-bottom:0}
+.cli-cell{display:inline-flex;align-items:center;gap:.32rem;white-space:nowrap;font-variant-numeric:tabular-nums}
+.cli-cell.ok{color:var(--ok)}.cli-cell.bad{color:var(--bad)}.cli-cell.warn{color:var(--warn)}.cli-cell.muted{color:var(--dim)}
+.cli-legend{display:flex;flex-wrap:wrap;gap:.9rem;align-items:center;margin-bottom:.7rem;font-size:.72rem}
+.cli-src{color:var(--mut);margin-left:auto}
 .demo-banner{display:none;align-items:center;gap:.5rem;background:color-mix(in oklab,var(--warn) 13%,transparent);border:1px solid color-mix(in oklab,var(--warn) 32%,transparent);color:var(--warn);border-radius:var(--rs);padding:.6rem .95rem;margin-bottom:1.1rem;font-size:.8rem;font-weight:600}
 #aih-demo{display:none}
 body[data-demo="on"] #aih-live{display:none}
@@ -694,7 +786,8 @@ function buildHero(digests: DigestAction[]): string {
   const repo = dataFor(digests, "Repo status");
   const trends = dataFor(digests, "Trends");
   const config = dataFor(digests, "Configuration");
-  const tooling = dataFor(digests, "Tooling");
+  const tooling = dataFor(digests, "Machine tooling");
+  const wiring = dataFor(digests, "AI CLI wiring");
   const velocity = dataFor(digests, "Daily commits");
   const quality = dataFor(digests, "Test coverage");
 
@@ -716,8 +809,15 @@ function buildHero(digests: DigestAction[]): string {
     tiles.push(
       kpi(`~${fmt(num(bloat.totalTokens) ?? 0)}`, "context tokens", bloat.overBudget === true),
     );
+  if (wiring)
+    tiles.push(
+      kpi(
+        `${num(wiring.structurallyConfigured) ?? 0}/${num(wiring.totalTargeted) ?? 0}`,
+        "tools wired",
+      ),
+    );
   if (tooling)
-    tiles.push(kpi(`${arr(tooling.present).length}/${num(tooling.total) ?? 0}`, "AI CLIs here"));
+    tiles.push(kpi(`${arr(tooling.present).length}/${num(tooling.total) ?? 0}`, "CLIs installed"));
 
   return `<section class="hero">${
     adoptionPct !== undefined

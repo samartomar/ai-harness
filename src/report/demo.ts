@@ -154,12 +154,90 @@ export function demoDigests(): DigestAction[] {
       samples: TREND_ROWS.length,
       rows: TREND_ROWS,
     }),
+    digest("AI CLI wiring — 2 of 3 targeted tools configured", "demo", {
+      targeted: ["claude", "kiro", "codex"],
+      targetSource: "marker",
+      score: 75,
+      structurallyConfigured: 2,
+      totalTargeted: 3,
+      rows: [
+        {
+          cli: "claude",
+          label: "Claude Code",
+          targeted: true,
+          bootloader: {
+            state: "wired",
+            path: "CLAUDE.md",
+            detail: "auto-loads CLAUDE.md; shared block in sync",
+          },
+          mcp: { state: "wired", path: ".mcp.json", detail: "2 server(s) under `mcpServers`" },
+          settings: {
+            state: "wired",
+            path: ".claude/settings.json",
+            detail: ".claude/settings.json present",
+          },
+        },
+        {
+          cli: "kiro",
+          label: "Kiro",
+          targeted: true,
+          bootloader: {
+            state: "missing",
+            path: ".kiro/steering/00-canon.md",
+            detail: "not found: .kiro/steering/00-canon.md",
+            fix: "aih bootstrap-ai --apply --cli kiro",
+          },
+          mcp: {
+            state: "wired",
+            path: ".kiro/settings/mcp.json",
+            detail: "1 server(s) under `mcpServers`",
+          },
+          settings: { state: "na", detail: "Kiro has no aih-managed settings file" },
+        },
+        {
+          cli: "codex",
+          label: "Codex CLI",
+          targeted: true,
+          bootloader: {
+            state: "wired",
+            path: "AGENTS.md",
+            detail: "auto-loads AGENTS.md; shared block in sync",
+          },
+          mcp: {
+            state: "manual",
+            path: "~/.codex/config.toml",
+            detail:
+              "manual — global ~/.codex/config.toml (toml; aih emits guidance, does not own this shape)",
+            fix: "aih mcp --cli codex",
+          },
+          settings: { state: "na", detail: "Codex CLI has no aih-managed settings file" },
+        },
+        {
+          cli: "cursor",
+          label: "Cursor",
+          targeted: false,
+          bootloader: {
+            state: "missing",
+            path: ".cursor/rules/00-canon.mdc",
+            detail: "not found",
+            fix: "aih bootstrap-ai --apply --cli cursor",
+          },
+          mcp: {
+            state: "missing",
+            path: ".cursor/mcp.json",
+            detail: ".cursor/mcp.json not found",
+            fix: "aih mcp --apply --cli cursor",
+          },
+          settings: { state: "na", detail: "Cursor has no aih-managed settings file" },
+        },
+      ],
+    }),
     digest("Configuration — 17 of 20 artifacts present", "demo", {
       present: ADOPTION_PRESENT,
       absent: ADOPTION_ABSENT,
       total: ADOPTION_PRESENT.length + ADOPTION_ABSENT.length,
     }),
-    digest("Tooling — 7 of 11 AI CLIs configured here", "demo", {
+    digest("Machine tooling — 7 of 11 AI CLIs installed here", "demo", {
       present: ["claude", "codex", "cursor", "gemini", "antigravity", "windsurf", "kiro"],
       absent: ["copilot", "opencode", "zed", "kimi"],
       total: 11,

@@ -39,6 +39,19 @@ const McpProfile = z.object({
   writable: z.boolean(),
 });
 
+/**
+ * A tool-native settings file aih manages (hooks / permissions / policy). Only a
+ * few tools have one (Claude's `.claude/settings.json`); the field is optional, so
+ * the per-CLI coverage matrix scores it as n/a for tools without one rather than
+ * docking them for a file they don't use.
+ */
+const SettingsProfile = z.object({
+  /** Repo-relative settings file. */
+  configPath: z.string(),
+  /** True when aih writes it directly (else it only emits guidance). */
+  writable: z.boolean(),
+});
+
 const CliEntry = z.object({
   id: z.string(),
   label: z.string(),
@@ -49,6 +62,8 @@ const CliEntry = z.object({
   /** Root bootloader file(s) the tool auto-loads as system context every turn. */
   bootloaders: z.array(z.string()),
   mcp: McpProfile,
+  /** Tool-native settings file aih manages, when the tool has one (else n/a). */
+  settings: SettingsProfile.optional(),
 });
 export type CliEntry = z.infer<typeof CliEntry>;
 
@@ -73,6 +88,7 @@ const RAW: Record<string, z.input<typeof CliEntry>> = {
       configFormat: "json",
       writable: true,
     },
+    settings: { configPath: ".claude/settings.json", writable: true },
   },
   codex: {
     id: "codex",

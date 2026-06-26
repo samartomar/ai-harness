@@ -40,7 +40,11 @@ const RICH = [
     absent: ["mcp"],
     total: 3,
   }),
-  digest("Tooling — 1 of 11", "x", { present: ["claude"], absent: ["codex", "kiro"], total: 11 }),
+  digest("Machine tooling — 1 of 11", "x", {
+    present: ["claude"],
+    absent: ["codex", "kiro"],
+    total: 11,
+  }),
   digest("Local cache & skill economy — none", "no local data source yet", { available: false }),
 ];
 

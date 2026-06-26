@@ -221,10 +221,40 @@ describe("reportHtml — single bento + new panels", () => {
         absent: ["sg", "fd"],
         total: 8,
       }),
-      digest("Tooling — 1 of 11 AI CLIs configured here", "x", {
+      digest("Machine tooling — 1 of 11 AI CLIs installed here", "x", {
         present: ["claude"],
         absent: [],
         total: 11,
+      }),
+      digest("AI CLI wiring — 1 of 2 targeted tools configured", "x", {
+        targeted: ["claude", "kiro"],
+        targetSource: "marker",
+        score: 50,
+        structurallyConfigured: 1,
+        totalTargeted: 2,
+        rows: [
+          {
+            cli: "claude",
+            label: "Claude Code",
+            targeted: true,
+            bootloader: { state: "wired", path: "CLAUDE.md", detail: "in sync" },
+            mcp: { state: "wired", path: ".mcp.json", detail: "1 server(s)" },
+            settings: { state: "wired", path: ".claude/settings.json", detail: "present" },
+          },
+          {
+            cli: "kiro",
+            label: "Kiro",
+            targeted: true,
+            bootloader: {
+              state: "missing",
+              path: ".kiro/steering/00-canon.md",
+              detail: "not found",
+              fix: "aih bootstrap-ai --apply --cli kiro",
+            },
+            mcp: { state: "wired", path: ".kiro/settings/mcp.json", detail: "1 server(s)" },
+            settings: { state: "na", detail: "no settings file" },
+          },
+        ],
       }),
     ]);
     expect(html).toContain("k-skill");
@@ -237,7 +267,15 @@ describe("reportHtml — single bento + new panels", () => {
     expect(html).toContain('class="tool on">rg'); // tools-installed present pill
     expect(html).toContain("source files"); // hero tile from quality
     expect(html).toContain("test ratio");
-    expect(html).toContain("AI CLIs here");
+    expect(html).toContain("CLIs installed"); // machine-detection KPI (renamed)
+    // per-CLI wiring matrix: a row per tool, four-state cells, dual KPI
+    expect(html).toContain('class="cli-matrix"');
+    expect(html).toContain("tools wired"); // structural-config KPI tile
+    expect(html).toContain('class="cli-cell ok"'); // wired cell (green)
+    expect(html).toContain(">✓ CLAUDE.md</span>"); // claude bootloader wired
+    expect(html).toContain('class="cli-cell bad"'); // missing cell (red)
+    expect(html).toContain(">✗ .kiro/steering/00-canon.md</span>"); // kiro bootloader missing
+    expect(html).toContain(">— n/a</span>"); // kiro settings n/a
   });
 });
 
