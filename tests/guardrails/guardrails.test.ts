@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -17,6 +17,7 @@ import { executePlan } from "../../src/internals/execute.js";
 import type { Action, PlanContext, WriteAction } from "../../src/internals/plan.js";
 import { fakeRunner, missingToolRunner, type Runner } from "../../src/internals/proc.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
+import { command as secretsCommand } from "../../src/secrets/index.js";
 
 let dir: string;
 beforeEach(() => {
@@ -55,18 +56,80 @@ describe("guardrails command", () => {
     expect(p.actions.length).toBeGreaterThan(0);
   });
 
-  it("plans exactly the four artifacts plus CI note and gitleaks probe", async () => {
+  it("plans the security artifacts + command-policy/risk-gate projections + gitleaks probe", async () => {
     const p = await command.plan(ctx());
     const writePaths = p.actions
       .filter((a) => a.kind === "write")
       .map((a) => (a as WriteAction).path);
+    // gitleaks + pre-commit + sca, then the command-policy projection into Claude's
+    // native permission file and the CI-checkable risk-gates JSON sidecar.
     expect(writePaths).toEqual([
       ".gitleaks.toml",
       ".pre-commit-config.yaml",
       ".github/workflows/sca.yml",
+      ".claude/settings.json",
+      ".ai-context/risk-gates.json",
     ]);
-    expect(p.actions.filter((a) => a.kind === "doc")).toHaveLength(2);
+    // taxonomy (path) + license CI note + command-policy (path) + risk-gates CI note.
+    expect(p.actions.filter((a) => a.kind === "doc")).toHaveLength(4);
     expect(p.actions.filter((a) => a.kind === "probe")).toHaveLength(1);
+  });
+
+  it("projects the command lexicon into .claude/settings.json as a MERGE write", async () => {
+    const p = await command.plan(ctx());
+    const settings = writeAt(p.actions, ".claude/settings.json");
+    expect(settings?.merge).toBe(true);
+    const perms = (settings?.json as { permissions: { deny: string[]; ask: string[] } })
+      .permissions;
+    expect(perms.deny).toContain("Bash(rm -rf /)");
+    expect(perms.ask).toContain("Bash(git push*)");
+  });
+
+  it("writes the command-policy doc under the context dir (advisory reference)", async () => {
+    const p = await command.plan(ctx());
+    const cmdPolicy = p.actions.find(
+      (a) => a.kind === "doc" && a.path === ".ai-context/command-policy.md",
+    );
+    expect(cmdPolicy).toBeDefined();
+    if (cmdPolicy?.kind === "doc") {
+      expect(cmdPolicy.text).toContain("Advisory vs. enforced");
+    }
+  });
+
+  it("writes the CI-checkable risk-gates.json sidecar (aih-owned, not merged)", async () => {
+    const p = await command.plan(ctx());
+    const sidecar = writeAt(p.actions, ".ai-context/risk-gates.json");
+    expect(sidecar).toBeDefined();
+    expect(sidecar?.merge).toBeFalsy();
+    const data = sidecar?.json as { gates: { name: string }[] };
+    expect(data.gates).toHaveLength(7);
+  });
+
+  it("emits the risk-gates guidance as a doc that runs in YOUR CI (ask-not-deny)", async () => {
+    const p = await command.plan(ctx());
+    const riskNote = p.actions.find(
+      (a) =>
+        a.kind === "doc" &&
+        a.path === undefined &&
+        a.text.includes("YOUR CI") &&
+        a.text.includes("Risk Gates"),
+    );
+    expect(riskNote).toBeDefined();
+  });
+
+  it("TWO WRITERS compose: secrets Read(...) + guardrails Bash(...) both survive the merge", async () => {
+    // The §6 top risk made executable: scaffold/secrets and guardrails both write
+    // `.claude/settings.json`; deepMerge unions `permissions.deny`, so neither clobbers.
+    const applyCtx = ctx({ apply: true });
+    await executePlan(await secretsCommand.plan(applyCtx), applyCtx);
+    await executePlan(await command.plan(applyCtx), applyCtx);
+
+    const settings = JSON.parse(readFileSync(join(dir, ".claude/settings.json"), "utf8")) as {
+      permissions: { deny: string[]; ask: string[]; allow: string[] };
+    };
+    expect(settings.permissions.deny).toContain("Read(./.env*)"); // from secrets
+    expect(settings.permissions.deny).toContain("Bash(rm -rf /)"); // from guardrails
+    expect(settings.permissions.ask).toContain("Bash(git push*)"); // guardrails ask tier
   });
 
   it("gitleaks.toml extends defaults and carries BOTH enterprise regexes", async () => {

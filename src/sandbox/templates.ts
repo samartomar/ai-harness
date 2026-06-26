@@ -1,3 +1,4 @@
+import { sandboxExecPolicy } from "../guardrails/command-policy.js";
 import type { RepoStack } from "../profile/scan.js";
 
 /**
@@ -160,7 +161,10 @@ export function devcontainerConfig(opts: DevcontainerOptions): Record<string, un
  * The Claude-managed sandbox policy: fail closed, refuse unsandboxed commands,
  * and constrain egress to the registries the toolchain needs — plus the detected
  * cloud's API domain (e.g. `*.amazonaws.com`) so legitimate SDK calls aren't
- * blocked. Deep-merged onto any pre-existing `.claude/managed-settings.json`.
+ * blocked. The command-policy lexicon (deny/ask/safe) is spread in as
+ * `commandPolicy` so the exec policy ships alongside the egress allowlist in the
+ * one managed-settings file. Deep-merged onto any pre-existing
+ * `.claude/managed-settings.json`.
  */
 export function managedSandboxSettings(stack?: RepoStack): Record<string, unknown> {
   const allowedDomains: string[] = [...SANDBOX_ALLOWED_DOMAINS];
@@ -171,6 +175,7 @@ export function managedSandboxSettings(stack?: RepoStack): Record<string, unknow
       failIfUnavailable: true,
       allowUnsandboxedCommands: false,
       allowedDomains,
+      ...sandboxExecPolicy(),
     },
   };
 }
