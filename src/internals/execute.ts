@@ -180,7 +180,17 @@ export async function executePlan(plan: Plan, ctx: PlanContext): Promise<PlanRes
     } else if (action.kind === "envblock") {
       envBlockActions.push(action);
     } else if (action.kind === "digest") {
-      digests.push({ describe: action.describe, text: action.text, data: action.data });
+      // The single source-side redaction chokepoint: mask secrets in the digest
+      // body HERE, upstream of every renderer, so BOTH the human summary and the
+      // `--json` output carry the redacted text — automation reading `--json` is
+      // the case that matters most. `data` is the raw structured payload; callers
+      // must not embed secrets there (recursively redacting arbitrary JSON would
+      // risk corrupting legitimate values).
+      digests.push({
+        describe: action.describe,
+        text: redactSecrets(action.text),
+        data: action.data,
+      });
     } else {
       probes.push({ describe: action.describe });
     }
@@ -272,10 +282,9 @@ export function summarizeResult(result: PlanResult): string {
   }
   for (const dg of result.digests) {
     out.push(`  [digest] — ${dg.describe}`);
-    // The single source-side redaction seam: every digest body printed to a human
-    // passes through redactSecrets() here, so a secret captured into a report/roll-up
-    // is masked at the one print chokepoint rather than at each call site.
-    out.push(indent(redactSecrets(dg.text.replace(/\n+$/, "")), 2));
+    // Already redacted at the digest-collection chokepoint in executePlan, so the
+    // text here (and in `--json`) is consistently masked — no re-redaction needed.
+    out.push(indent(dg.text.replace(/\n+$/, ""), 2));
   }
   for (const e of result.execs) {
     const status = e.ran ? ` (exit ${e.code})` : " (run with --apply)";

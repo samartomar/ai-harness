@@ -1,6 +1,12 @@
-import { describe, expect, it } from "vitest";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { redactSecrets } from "../../src/guardrails/redact.js";
-import { type PlanResult, summarizeResult } from "../../src/internals/execute.js";
+import { executePlan, summarizeResult } from "../../src/internals/execute.js";
+import { digest, type PlanContext, plan } from "../../src/internals/plan.js";
+import { fakeRunner } from "../../src/internals/proc.js";
+import { makeHostAdapter } from "../../src/platform/detect.js";
 
 describe("redactSecrets() — secret fixtures", () => {
   it("redacts an AWS access-key id", () => {
@@ -48,20 +54,44 @@ describe("redactSecrets() — benign text untouched", () => {
   });
 });
 
-describe("the print seam: summarizeResult redacts digest bodies", () => {
-  it("masks a secret captured into a digest at the single print chokepoint", () => {
-    const result: PlanResult = {
-      capability: "report",
-      applied: false,
-      writes: [],
-      docs: [],
-      probes: [],
-      execs: [],
-      digests: [{ describe: "usage roll-up", text: "saw AKIA1234567890ABCDEF in the logs" }],
-      backups: [],
+describe("the redaction chokepoint: executePlan masks digest bodies for EVERY renderer", () => {
+  let dir: string;
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "aih-redact-"));
+  });
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  function ctx(): PlanContext {
+    const run = fakeRunner(() => undefined);
+    return {
+      root: dir,
+      contextDir: ".ai-context",
+      apply: false,
+      verify: false,
+      json: false,
+      run,
+      host: makeHostAdapter({ platform: "linux", run, env: {} }),
+      env: {},
+      options: {},
     };
-    const out = summarizeResult(result);
-    expect(out).not.toContain("AKIA1234567890ABCDEF");
-    expect(out).toContain("[REDACTED]");
+  }
+
+  it("redacts the secret in result.digests so the human summary AND --json are both clean", async () => {
+    const built = plan("report", digest("usage roll-up", "saw AKIA1234567890ABCDEF in the logs"));
+    const result = await executePlan(built, ctx());
+
+    // The collected digest text is masked at the single chokepoint, upstream of any render.
+    expect(result.digests[0]?.text).not.toContain("AKIA1234567890ABCDEF");
+    expect(result.digests[0]?.text).toContain("[REDACTED]");
+
+    // Both output paths a consumer can hit are consequently clean:
+    const human = summarizeResult(result);
+    const asJson = JSON.stringify(result, null, 2); // the `--json` path in commands/run.ts
+    for (const out of [human, asJson]) {
+      expect(out).not.toContain("AKIA1234567890ABCDEF");
+      expect(out).toContain("[REDACTED]");
+    }
   });
 });
