@@ -1,10 +1,11 @@
 import type { Command } from "commander";
 import { loadSettings } from "../config/settings.js";
 import { AihError } from "../errors.js";
-import { executePlan, summarizeResult } from "../internals/execute.js";
+import { executePlan, summarizeResult, writeArtifact } from "../internals/execute.js";
 import type { CommandSpec, PlanContext } from "../internals/plan.js";
 import { defaultRunner, type Runner } from "../internals/proc.js";
 import { isInteractive, makeReadlinePrompter, type Prompter } from "../internals/prompt.js";
+import { reportToSarif } from "../internals/sarif.js";
 import { makeHostAdapter } from "../platform/detect.js";
 
 export interface RunDeps {
@@ -92,7 +93,12 @@ export async function runCapability(
       apply: spec.readOnly ? false : settings.apply || liveOpen,
       // readOnly (doctor/status) always verifies; a capability can also opt into
       // always-verify (heal) so it diagnoses by default while still applying fixes.
-      verify: spec.readOnly || spec.alwaysVerify ? true : settings.verify,
+      // `--sarif` implies --verify: asking for the report means you want the probes
+      // run (read-only — it never forces --apply), so the artifact is self-sufficient.
+      verify:
+        spec.readOnly || spec.alwaysVerify || typeof opts.sarif === "string"
+          ? true
+          : settings.verify,
       json: settings.json,
       run,
       host,
@@ -111,10 +117,16 @@ export async function runCapability(
     const built = await spec.plan(ctx);
     const result = await executePlan(built, ctx);
 
-    if (json) {
-      write(`${JSON.stringify(result, null, 2)}\n`);
-    } else {
-      write(`${summarizeResult(result)}\n`);
+    // `--sarif -` streams the SARIF document to stdout (post-step below). When it
+    // will, suppress the normal human/JSON output so stdout is a clean SARIF artifact
+    // a code-scanning consumer can ingest directly (`… --sarif - > out.sarif`).
+    const streamSarif = opts.sarif === "-" && result.report !== undefined;
+    if (!streamSarif) {
+      if (json) {
+        write(`${JSON.stringify(result, null, 2)}\n`);
+      } else {
+        write(`${summarizeResult(result)}\n`);
+      }
     }
 
     if (watchSec !== undefined && !spec.readOnly) {
@@ -136,6 +148,28 @@ export async function runCapability(
     // committed before execs run, so a silent success would hide partial state).
     const execFailed = result.execs.some((e) => e.ran && e.ok === false);
     const verifyCode = result.report ? result.report.exitCode() : 0;
+
+    // `--sarif <file>` emits the verification report as SARIF 2.1.0 for GitHub
+    // code-scanning. It is written regardless of --apply: the SARIF is an analysis
+    // OUTPUT the operator requested by naming the path (like `report --out`), not a
+    // mutation of the managed project — and the gating use case (a CI drift gate)
+    // runs `--verify` WITHOUT `--apply`. `-` streams to stdout for a no-file CI path.
+    // See `writeArtifact` for the full apply-semantics rationale.
+    const sarifOut = opts.sarif;
+    if (typeof sarifOut === "string" && sarifOut.length > 0 && result.report) {
+      const sarif = reportToSarif(result.report);
+      if (sarifOut === "-") {
+        write(`${sarif}\n`);
+      } else {
+        const backups = writeArtifact(ctx, sarifOut, sarif);
+        if (!json) {
+          write(
+            `  [sarif] ${sarifOut}${backups.length > 0 ? " (prior saved as *.aih.bak)" : ""}\n`,
+          );
+        }
+      }
+    }
+
     return verifyCode || (execFailed ? 1 : 0);
   } catch (err) {
     const code = err instanceof AihError ? err.code : "AIH_ERROR";

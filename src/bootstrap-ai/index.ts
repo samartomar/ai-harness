@@ -257,6 +257,12 @@ export const command: CommandSpec = {
   name: "bootstrap-ai",
   summary:
     "Emit and verify the repo's Layer-2 ai-coding canon (RULE_ROUTER + per-CLI adapters + bootloaders)",
-  options: [],
+  options: [
+    {
+      flags: "--sarif <file>",
+      description:
+        "write the --verify drift report as SARIF 2.1.0 for GitHub code-scanning (`-` → stdout)",
+    },
+  ],
   plan: bootstrapAiPlan,
 };

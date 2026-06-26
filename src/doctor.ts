@@ -29,7 +29,12 @@ export const command: CommandSpec = {
   name: "doctor",
   summary: "Verify the harness / workstation / repo configuration (fail-closed)",
   readOnly: true,
-  options: [],
+  options: [
+    {
+      flags: "--sarif <file>",
+      description: "write the health report as SARIF 2.1.0 for GitHub code-scanning (`-` → stdout)",
+    },
+  ],
   plan: (ctx) => {
     const base: Action[] = [
       probe("node runtime >= 20", () => {

@@ -2,7 +2,8 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "no
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { executePlan, summarizeResult } from "../../src/internals/execute.js";
+import { PathContainmentError } from "../../src/errors.js";
+import { executePlan, summarizeResult, writeArtifact } from "../../src/internals/execute.js";
 import {
   digest,
   doc,
@@ -209,6 +210,35 @@ describe("executePlan — envblock folding", () => {
     const second = readFileSync(join(dir, profile), "utf8");
     expect(second).toBe(first); // byte-identical re-apply
     expect(second).toContain("export USER_VAR=keep");
+  });
+});
+
+describe("writeArtifact", () => {
+  it("writes the artifact even in dry-run (apply: false) — it is an output, not a managed mutation", () => {
+    // The CI drift gate runs `--verify` WITHOUT `--apply`, yet must still emit SARIF.
+    const backups = writeArtifact(ctx({ apply: false }), "out.sarif", "{}");
+    expect(backups).toEqual([]);
+    expect(readFileSync(join(dir, "out.sarif"), "utf8")).toBe("{}\n");
+  });
+
+  it("contains the path: an escape attempt fails closed with PathContainmentError", () => {
+    expect(() => writeArtifact(ctx(), "../escape.sarif", "{}")).toThrow(PathContainmentError);
+    expect(existsSync(join(dirname(dir), "escape.sarif"))).toBe(false);
+  });
+
+  it("is idempotent: re-writing identical bytes makes no backup", () => {
+    writeArtifact(ctx(), "out.sarif", "{}");
+    const backups = writeArtifact(ctx(), "out.sarif", "{}");
+    expect(backups).toEqual([]);
+    expect(existsSync(join(dir, "out.sarif.aih.bak"))).toBe(false);
+  });
+
+  it("backs up a prior artifact to *.aih.bak when the content changes", () => {
+    writeArtifact(ctx(), "out.sarif", '{"v":1}');
+    const backups = writeArtifact(ctx(), "out.sarif", '{"v":2}');
+    expect(backups).toHaveLength(1);
+    expect(readFileSync(join(dir, "out.sarif.aih.bak"), "utf8")).toBe('{"v":1}\n');
+    expect(readFileSync(join(dir, "out.sarif"), "utf8")).toBe('{"v":2}\n');
   });
 });
 
