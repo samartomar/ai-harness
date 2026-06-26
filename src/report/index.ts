@@ -13,6 +13,7 @@ import {
   probe,
   writeText,
 } from "../internals/plan.js";
+import { acceptChanged, changedSince, gitTrackedSet } from "../internals/scan-allowlist.js";
 import { assertNoCmdInjection } from "../internals/shell-safety.js";
 import type { Platform } from "../platform/base.js";
 import { reportHtml, reportMarkdown } from "./artifact.js";
@@ -117,8 +118,17 @@ async function buildReport(ctx: PlanContext): Promise<Built> {
     };
   }
   const budget = budgetOf(ctx);
-  const bloat = scanContextBloat(ctx.root, ctx.contextDir, budget);
-  const model = scanLoadGroups(ctx.root, ctx.contextDir, budget);
+  // Honor .gitignore (unless --no-gitignore) so the footprint counts only the
+  // tracked/untracked-not-ignored source, never generated per-CLI copies or
+  // ignored files. `--since <ref>` further narrows to files changed in a PR.
+  const allow = ctx.options.allFiles === true ? undefined : await gitTrackedSet(ctx);
+  // `--since` not in a git repo → silent no-op (full scan); in a repo it narrows
+  // to files changed vs the ref.
+  const since =
+    typeof ctx.options.since === "string" ? await changedSince(ctx, ctx.options.since) : undefined;
+  const scanOpts = { accept: acceptChanged(allow, since) };
+  const bloat = scanContextBloat(ctx.root, ctx.contextDir, budget, scanOpts);
+  const model = scanLoadGroups(ctx.root, ctx.contextDir, budget, scanOpts);
   return {
     scope: "local",
     title: "aih report — local developer console",
@@ -254,6 +264,15 @@ export const command: CommandSpec = {
       flags: "--gate",
       description:
         "exit non-zero when the worst-case tool's per-turn context exceeds the budget (CI)",
+    },
+    {
+      flags: "--all-files",
+      description: "skip the gitignore allowlist — count every file on disk (generated copies too)",
+    },
+    {
+      flags: "--since <ref>",
+      description:
+        "only count context files changed vs <ref> (fast PR CI; full scan when not a repo)",
     },
     {
       flags: "--team",

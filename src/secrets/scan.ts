@@ -46,7 +46,14 @@ function isDir(path: string): boolean {
  * returns repo-relative POSIX paths so results feed deterministically into deny
  * rules and warning docs.
  */
-export function scanSecrets(root: string): SecretScan {
+export function scanSecrets(
+  root: string,
+  opts: { accept?: (rel: string) => boolean } = {},
+): SecretScan {
+  // A plaintext secret on disk is a finding regardless of git status, so the
+  // default keeps everything; callers pass `accept` only to narrow by `--since`
+  // for a fast PR scan (never to honor gitignore — a gitignored .env is still a leak).
+  const accept = opts.accept ?? (() => true);
   const envFiles = new Set<string>();
   const secretDirs = new Set<string>();
 
@@ -58,10 +65,10 @@ export function scanSecrets(root: string): SecretScan {
       if (isDir(abs)) {
         // Only a ROOT-level secrets/ dir is a credential store; nested dirs
         // named "secrets" (src/secrets, tests/secrets, …) are code.
-        if (entry === "secrets" && relDir === "") secretDirs.add(rel);
+        if (entry === "secrets" && relDir === "" && accept(rel)) secretDirs.add(rel);
         // Recurse exactly one level deep (depth 0 → scan immediate children).
         if (depth > 0) visit(rel, depth - 1);
-      } else if (isEnvFile(entry)) {
+      } else if (isEnvFile(entry) && accept(rel)) {
         envFiles.add(rel);
       }
     }

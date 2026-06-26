@@ -27,6 +27,16 @@ export interface ContextFile {
   tokens: number;
 }
 
+/** Options for {@link scanContextBloat} — keep the scan sync + pure (no async git). */
+export interface ScanOptions {
+  /**
+   * Keep only paths this predicate accepts (repo-relative POSIX). Default: keep
+   * all. Callers pass a gitignore-honoring allowlist (computed async via the
+   * Runner) so the footprint doesn't double-count generated copies or ignored files.
+   */
+  accept?: (rel: string) => boolean;
+}
+
 /** The agent context an AI CLI loads from this repo, with an estimated token footprint. */
 export interface ContextBloat {
   /** Every context file found, sorted by path for deterministic digests. */
@@ -100,7 +110,9 @@ export function scanContextBloat(
   root: string,
   contextDir: string,
   budgetTokens: number = DEFAULT_CONTEXT_BUDGET_TOKENS,
+  opts: ScanOptions = {},
 ): ContextBloat {
+  const accept = opts.accept ?? (() => true);
   const rels = new Set<string>(ROOT_CONTEXT_FILES);
   for (const dir of [contextDir, ...EXTRA_CONTEXT_DIRS]) {
     if (!isDir(join(root, dir))) continue;
@@ -111,6 +123,7 @@ export function scanContextBloat(
 
   const files: ContextFile[] = [];
   for (const rel of [...rels].sort()) {
+    if (!accept(rel)) continue; // drop ignored / untracked-generated / out-of-diff files
     const f = fileFootprint(root, rel); // missing / non-regular files are skipped
     if (f) files.push(f);
   }

@@ -15,7 +15,7 @@
 
 import { CLI_BOOTLOADERS } from "../bootstrap-ai/canon.js";
 import { type Cli, SUPPORTED_CLIS } from "../internals/clis.js";
-import { type ContextFile, fileFootprint, scanContextBloat } from "./bloat.js";
+import { type ContextFile, fileFootprint, type ScanOptions, scanContextBloat } from "./bloat.js";
 
 /** One always-loaded-per-turn footprint: the bootloader files a set of tools share. */
 export interface LoadGroup {
@@ -69,9 +69,12 @@ export function scanLoadGroups(
   root: string,
   contextDir: string,
   budgetTokens: number,
+  opts: ScanOptions = {},
 ): LoadGroupModel {
+  const accept = opts.accept ?? (() => true);
   const groups: LoadGroup[] = groupClis().map(({ clis, paths }) => {
     const files = paths
+      .filter((p) => accept(p))
       .map((p) => fileFootprint(root, p))
       .filter((f): f is ContextFile => f !== undefined)
       .sort((a, b) => a.path.localeCompare(b.path));
@@ -98,7 +101,7 @@ export function scanLoadGroups(
   // On-demand = everything the bloat scan sees minus the always-loaded bootloaders
   // (so the canon tree + non-canon Cursor rules show as pointer-loaded, not per-turn).
   const bootloaderSet = new Set<string>(Object.values(CLI_BOOTLOADERS).flat());
-  const onDemandFiles = scanContextBloat(root, contextDir, budgetTokens).files.filter(
+  const onDemandFiles = scanContextBloat(root, contextDir, budgetTokens, opts).files.filter(
     (f) => !bootloaderSet.has(f.path),
   );
 
