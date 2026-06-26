@@ -1,5 +1,5 @@
 import { aihConfigJson } from "../config/marker.js";
-import { resolveTargets } from "../internals/cli-detect.js";
+import { detectFallbackNotice, resolveTargets } from "../internals/cli-detect.js";
 import type { Action, CommandSpec, PlanContext } from "../internals/plan.js";
 import { doc, plan, writeJson } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
@@ -25,9 +25,27 @@ async function initPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
   // locked-down org gets the right MCP handling in one `aih init`.
   const mcpMode = String(ctx.options.mcpMode ?? "standard");
 
+  // Resolve the target CLIs ONCE (honoring `--detect`/`--cli`, prompting once when
+  // interactive) and thread the result into every phase via `ctx.targets`. Each
+  // tool-specific phase then emits only for a targeted tool: a bare `aih init`
+  // (default `claude`) hardens for Claude but writes no orphan `.cursor/*`; an
+  // explicit `aih init --detect` on a Kiro-only box writes neither `.claude/*` nor
+  // `.cursor/*`. Without this single resolution, every phase that calls
+  // `resolveTargets` would re-prompt under `--detect`.
+  const resolution = await resolveTargets(ctx);
+  const baseCtx: PlanContext = { ...ctx, targets: resolution.clis };
+
+  // If `--detect` found nothing and we defaulted to claude, say so once at the top
+  // (the phases short-circuit on `ctx.targets`, so no phase emits this itself).
+  if (resolution.detectFellBack) {
+    actions.push(doc("no AI CLIs detected — defaulted to claude", detectFallbackNotice()));
+  }
+
   for (const phase of INIT_PHASES) {
     const phaseCtx =
-      phase.command.name === "mcp" ? { ...ctx, options: { ...ctx.options, mode: mcpMode } } : ctx;
+      phase.command.name === "mcp"
+        ? { ...baseCtx, options: { ...ctx.options, mode: mcpMode } }
+        : baseCtx;
     const sub = await phase.command.plan(phaseCtx);
     actions.push(doc(`init: ${phase.command.name}`, phase.headline));
     actions.push(...sub.actions);
@@ -52,15 +70,14 @@ async function initPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
   // Persist the bootstrap intent at the repo ROOT (committed — NOT under the
   // git-ignored `.aih/`, or it would be lost on clone) so re-runs and `aih doctor`
   // read the context-dir + CLI targets this repo was actually bootstrapped with,
-  // instead of silently re-deriving the `ai-coding` default. Resolve targets
-  // WITHOUT the prompter so the marker never triggers an extra `--detect`
-  // confirmation (the bootstrap-ai phase already prompted). Mirrors the
-  // `.aih-workspace.json` marker write in `workspace/index.ts`.
-  const { clis: resolvedTargets } = await resolveTargets({ ...ctx, prompter: undefined });
+  // instead of silently re-deriving the `ai-coding` default. Reuse the SINGLE
+  // resolution computed above (it already honored `--detect`/`--cli` and any
+  // interactive edit), so the marker records exactly the set the phases used and
+  // no extra confirmation fires. Mirrors `.aih-workspace.json` in `workspace/`.
   actions.push(
     writeJson(
       ".aih-config.json",
-      aihConfigJson(ctx.contextDir, resolvedTargets),
+      aihConfigJson(ctx.contextDir, resolution.clis),
       "persist bootstrap intent (context-dir + CLI targets) so re-runs and doctor read it",
       { merge: true },
     ),

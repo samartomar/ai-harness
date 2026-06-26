@@ -154,6 +154,26 @@ describe("secrets command", () => {
     }
   });
 
+  it("gates the Claude deny-files on the target set, but keeps vault guidance + probes", async () => {
+    plantFixture(dir);
+    // Under init with a non-claude target set: no `.claude/settings.json`, no
+    // `.claudeignore` — those are Claude-specific. The tool-agnostic vault guidance
+    // doc and the per-secret `--verify` probes still run (gitleaks is the real gate).
+    const gated = await command.plan({ ...ctx({ verify: true }), targets: ["kiro"] });
+    expect(byPath(gated.actions, ".claude/settings.json")).toBeUndefined();
+    expect(byPath(gated.actions, ".claudeignore")).toBeUndefined();
+    expect(
+      gated.actions.some(
+        (a) => a.kind === "doc" && a.describe.startsWith("Dynamic vault injection"),
+      ),
+    ).toBe(true);
+    expect(gated.actions.some((a) => a.kind === "probe")).toBe(true);
+    // With claude among the targets, the deny files return.
+    const targeted = await command.plan({ ...ctx(), targets: ["claude", "kiro"] });
+    expect(byPath(targeted.actions, ".claude/settings.json")).toBeDefined();
+    expect(byPath(targeted.actions, ".claudeignore")).toBeDefined();
+  });
+
   it("never produces exec actions (boundary: no local or remote command execution)", async () => {
     plantFixture(dir);
     const p = await command.plan(ctx());

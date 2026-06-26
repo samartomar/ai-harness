@@ -1,3 +1,4 @@
+import { isTargeted } from "../internals/cli-detect.js";
 import {
   type Action,
   type CommandSpec,
@@ -34,23 +35,33 @@ async function planSecrets(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
     typeof ctx.options.since === "string" ? await changedSince(ctx, ctx.options.since) : undefined;
   const scan = scanSecrets(ctx.root, { accept: acceptChanged(undefined, since) });
 
-  const actions: Action[] = [
-    writeJson(
-      ".claude/settings.json",
-      settingsDenyPatch(),
-      "Deny agent reads of .env* and secrets/** (merged into existing settings)",
-      { merge: true },
-    ),
-    writeText(
-      ".claudeignore",
-      claudeIgnore(),
-      "Ignore plaintext secret files (.env*, secrets/) so agents never enumerate them",
-    ),
+  const actions: Action[] = [];
+  // `.claude/settings.json` deny rules + `.claudeignore` are Claude-specific (Kiro
+  // et al. don't read them). Under `aih init` they land only when Claude is a
+  // target; the secret SCAN, vault guidance, and `--verify` probes below are
+  // tool-agnostic and always run — the real secret gate is gitleaks + pre-commit,
+  // not these read-deny files.
+  if (isTargeted(ctx, "claude")) {
+    actions.push(
+      writeJson(
+        ".claude/settings.json",
+        settingsDenyPatch(),
+        "Deny agent reads of .env* and secrets/** (merged into existing settings)",
+        { merge: true },
+      ),
+      writeText(
+        ".claudeignore",
+        claudeIgnore(),
+        "Ignore plaintext secret files (.env*, secrets/) so agents never enumerate them",
+      ),
+    );
+  }
+  actions.push(
     doc(
       "Dynamic vault injection guidance (Vault / AWS Secrets Manager / 1Password)",
       vaultGuidance(ctx.contextDir),
     ),
-  ];
+  );
 
   if (scan.matches.length > 0) {
     // The warning doc is the human remediation; the per-path probes are the machine

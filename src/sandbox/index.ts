@@ -1,4 +1,6 @@
+import { isTargeted } from "../internals/cli-detect.js";
 import {
+  type Action,
   type CommandSpec,
   doc,
   type PlanContext,
@@ -33,25 +35,38 @@ async function dockerAvailable(ctx: PlanContext): Promise<Check> {
 
 function sandboxPlan(ctx: PlanContext) {
   const stack = scanRepo(ctx.root, { maxDepth: 8, contextDir: ctx.contextDir });
-  return plan(
-    "sandbox",
+  const actions: Action[] = [
+    // The devcontainer is tool-agnostic (it provisions the toolchain for any agent),
+    // so it is always written.
     writeJson(
       DEVCONTAINER_PATH,
       devcontainerConfig({ contextDir: ctx.contextDir, stack }),
       "Generate a stack-aware devcontainer (installs the detected toolchain — Node/AWS CLI/Python — and runs the real dependency install)",
     ),
-    writeJson(
-      MANAGED_SETTINGS_PATH,
-      managedSandboxSettings(stack),
-      "Enforce Claude sandbox policy (failIfUnavailable, allowUnsandboxedCommands=false, egress allowlist incl. detected cloud) — merged into existing managed settings",
-      { merge: true },
-    ),
+  ];
+
+  // `.claude/managed-settings.json` enforces Claude's sandbox policy specifically —
+  // under `aih init` it lands only when Claude is a target (standalone `aih sandbox`
+  // always writes).
+  if (isTargeted(ctx, "claude")) {
+    actions.push(
+      writeJson(
+        MANAGED_SETTINGS_PATH,
+        managedSandboxSettings(stack),
+        "Enforce Claude sandbox policy (failIfUnavailable, allowUnsandboxedCommands=false, egress allowlist incl. detected cloud) — merged into existing managed settings",
+        { merge: true },
+      ),
+    );
+  }
+
+  actions.push(
     doc(
       "Isolate agent runs with git worktrees and project edits back to the host",
       worktreeGuidance(),
     ),
     probe("docker available", dockerAvailable),
   );
+  return plan("sandbox", ...actions);
 }
 
 export const command: CommandSpec = {

@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import { isTargeted } from "../internals/cli-detect.js";
 import { readIfExists } from "../internals/fsxn.js";
 import {
   type Action,
@@ -107,8 +108,7 @@ function preCommitActions(ctx: PlanContext, stack: RepoStack): Action[] {
  */
 function guardrailsPlan(ctx: PlanContext): ReturnType<typeof plan> {
   const stack = scanRepo(ctx.root, { maxDepth: 8, contextDir: ctx.contextDir });
-  return plan(
-    "guardrails",
+  const actions: Action[] = [
     writeText(
       GITLEAKS_PATH,
       gitleaksToml(),
@@ -133,15 +133,24 @@ function guardrailsPlan(ctx: PlanContext): ReturnType<typeof plan> {
       commandPolicyDoc(),
       commandPolicyPath(ctx),
     ),
-    // Defense-in-depth: project the command lexicon into Claude's native
-    // permission file. MERGE so it composes with the secrets capability's
-    // `Read(...)` deny rules (array union) instead of clobbering them.
-    writeJson(
-      CLAUDE_SETTINGS_PATH,
-      { permissions: claudeBashPermissions() },
-      "Project the command-policy lexicon into Claude Bash permissions (merged with existing deny rules)",
-      { merge: true },
-    ),
+  ];
+
+  // Defense-in-depth: project the command lexicon into Claude's NATIVE permission
+  // file. This is Claude-specific, so under `aih init` it lands only when Claude is
+  // a target; the tool-agnostic lexicon doc above is always emitted. MERGE so it
+  // composes with the secrets capability's `Read(...)` deny rules (array union).
+  if (isTargeted(ctx, "claude")) {
+    actions.push(
+      writeJson(
+        CLAUDE_SETTINGS_PATH,
+        { permissions: claudeBashPermissions() },
+        "Project the command-policy lexicon into Claude Bash permissions (merged with existing deny rules)",
+        { merge: true },
+      ),
+    );
+  }
+
+  actions.push(
     // Risk gates: a CI-checkable JSON sidecar + a human-facing doc that runs in
     // YOUR CI (ask-not-deny; aih never gates a live tool call itself).
     writeJson(
@@ -165,6 +174,8 @@ function guardrailsPlan(ctx: PlanContext): ReturnType<typeof plan> {
         : { name: "gitleaks present", verdict: "fail", detail: version || `exit ${res.code}` };
     }),
   );
+
+  return plan("guardrails", ...actions);
 }
 
 export const command: CommandSpec = {

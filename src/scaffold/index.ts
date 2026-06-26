@@ -1,4 +1,5 @@
 import { posix } from "node:path";
+import { isTargeted } from "../internals/cli-detect.js";
 import { aihIgnoreWrite } from "../internals/gitignore.js";
 import type { Action, CommandSpec, PlanContext } from "../internals/plan.js";
 import { doc, plan, writeJson, writeText } from "../internals/plan.js";
@@ -76,18 +77,24 @@ function scaffoldPlan(ctx: PlanContext): ReturnType<typeof plan> {
     ),
   ];
 
+  // 2. Repo hygiene: keep the harness's own backup/temp files out of git.
+  actions.push(aihIgnoreWrite(ctx.root));
+
+  // 3. Local guardrail: keep secrets out of the agent's read scope (merge, don't
+  //    clobber). `.claude/settings.json` is Claude-specific — under `aih init` it
+  //    lands only when Claude is a target (standalone `aih scaffold` always writes).
+  if (isTargeted(ctx, "claude")) {
+    actions.push(
+      writeJson(
+        posix.join(".claude", "settings.json"),
+        { permissions: { deny: [...SETTINGS_DENY] } },
+        "deny agent reads of .env / secrets in .claude/settings.json",
+        { merge: true },
+      ),
+    );
+  }
+
   actions.push(
-    // 2. Repo hygiene: keep the harness's own backup/temp files out of git.
-    aihIgnoreWrite(ctx.root),
-
-    // 3. Local guardrail: keep secrets out of the agent's read scope (merge, don't clobber).
-    writeJson(
-      posix.join(".claude", "settings.json"),
-      { permissions: { deny: [...SETTINGS_DENY] } },
-      "deny agent reads of .env / secrets in .claude/settings.json",
-      { merge: true },
-    ),
-
     // 4. Local guardrail: pre-commit lint+test hook, opt-in via core.hooksPath.
     writeText(
       posix.join(".githooks", "pre-commit"),

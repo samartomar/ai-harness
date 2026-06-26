@@ -63,8 +63,10 @@ describe("aih init — composes all six repo-scoped capabilities", () => {
     // bootstrap-ai: the CLAUDE.md bootloader (sole owner) + the RULE_ROUTER.
     expect(paths).toContain("CLAUDE.md");
     expect(paths).toContain(".ai-context/RULE_ROUTER.md");
-    // profile: the stack cursor rule.
-    expect(paths).toContain(".cursor/rules/01-stack.mdc");
+    // profile is target-gated: the default set is `claude`, so the Cursor stack rule
+    // is NOT written on a bare init (it would be an orphan — bootstrap-ai writes no
+    // Cursor canon either). See the "target-gated tool artifacts" suite below.
+    expect(paths).not.toContain(".cursor/rules/01-stack.mdc");
     // scaffold: the canonical context INDEX.
     expect(paths).toContain(".ai-context/INDEX.md");
     // secrets: the .claudeignore backstop.
@@ -152,6 +154,60 @@ describe("aih init — composition, not duplication", () => {
   });
 });
 
+describe("aih init — target-gated tool artifacts (.cursor on cursor, .claude on claude)", () => {
+  const paths = async (over: Partial<PlanContext>) =>
+    writePaths((await command.plan(ctx(over))).actions);
+
+  it("bare init (default claude): writes .claude/* but NO orphan .cursor/*", async () => {
+    const p = await paths({});
+    // Claude is the default target → its guard files land.
+    expect(p).toContain(".claude/settings.json");
+    expect(p).toContain(".claudeignore");
+    expect(p).toContain(".claude/managed-settings.json");
+    // Cursor is not targeted → neither the stack rule (profile) nor the canon
+    // (bootstrap-ai) is written, so there is no orphan 01-stack.mdc.
+    expect(p).not.toContain(".cursor/rules/01-stack.mdc");
+    expect(p).not.toContain(".cursor/rules/00-canon.mdc");
+    // Tool-agnostic guardrails are always present regardless of target.
+    expect(p).toContain(".gitleaks.toml");
+    expect(p).toContain(".devcontainer/devcontainer.json");
+  });
+
+  it("--cli kiro: writes neither .claude/* nor .cursor/*, but lays Kiro canon + agnostic guards", async () => {
+    const p = await paths({ options: { cli: "kiro" } });
+    expect(p.some((x) => x.startsWith(".claude/"))).toBe(false);
+    expect(p).not.toContain(".claudeignore");
+    expect(p.some((x) => x.startsWith(".cursor/"))).toBe(false);
+    // bootstrap-ai still lays the Kiro bootloader + the tool-agnostic guards.
+    expect(p).toContain(".kiro/steering/00-canon.md");
+    expect(p).toContain(".gitleaks.toml");
+    expect(p).toContain(".devcontainer/devcontainer.json");
+  });
+
+  it("--cli cursor: writes the Cursor stack rule AND its canon (no orphan), but no .claude/*", async () => {
+    const p = await paths({ options: { cli: "cursor" } });
+    expect(p).toContain(".cursor/rules/01-stack.mdc"); // profile
+    expect(p).toContain(".cursor/rules/00-canon.mdc"); // bootstrap-ai → companion canon
+    expect(p.some((x) => x.startsWith(".claude/"))).toBe(false);
+    expect(p).not.toContain(".claudeignore");
+  });
+
+  it("--all-tools: writes both .cursor/* and .claude/*", async () => {
+    const p = await paths({ options: { allTools: true } });
+    expect(p).toContain(".cursor/rules/01-stack.mdc");
+    expect(p).toContain(".claude/settings.json");
+    expect(p).toContain(".claude/managed-settings.json");
+    expect(p).toContain(".claudeignore");
+  });
+
+  it("records the resolved targets in the .aih-config.json marker", async () => {
+    const marker = (await command.plan(ctx({ options: { cli: "kiro" } }))).actions.find(
+      (a): a is WriteAction => a.kind === "write" && a.path === ".aih-config.json",
+    );
+    expect(marker?.json).toMatchObject({ targets: ["kiro"] });
+  });
+});
+
 describe("aih init — custom context dir propagation", () => {
   it("threads ctx.contextDir into every sub-capability", async () => {
     const p = await command.plan(ctx({ contextDir: "ai-coding" }));
@@ -184,12 +240,16 @@ describe("aih init — BOUNDARY (no remote mutation introduced by the orchestrat
 
   it("adds only doc headers; dedupes writes by path and never adds probes/execs beyond the leaves", async () => {
     const shared = ctx();
+    // init resolves the default target set (`[claude]`) once and threads it into
+    // every phase via ctx.targets; mirror that here so the per-leaf write set
+    // matches what composition actually invokes (profile is silent without cursor).
+    const leafCtx: PlanContext = { ...shared, targets: ["claude"] };
     let leafProbes = 0;
     let leafExecs = 0;
     let leafDocs = 0;
     const leafWritePaths = new Set<string>();
     for (const phase of INIT_PHASES) {
-      const sub = await phase.command.plan(shared);
+      const sub = await phase.command.plan(leafCtx);
       for (const a of sub.actions) {
         if (a.kind === "write") leafWritePaths.add(a.path);
         else if (a.kind === "probe") leafProbes += 1;
@@ -323,12 +383,12 @@ describe("aih init — apply lays the whole bootstrap down in one pass", () => {
 });
 
 describe("aih init — sub-capability options default gracefully", () => {
-  it("uses each leaf's own defaults (profile depth, mcp project scope) without init flags", async () => {
+  it("uses each leaf's own defaults (mcp project scope) without init flags", async () => {
     // init declares no options; the leaves must fall back to their defaults.
     const p = await command.plan(ctx({ options: {} }));
     const paths = writePaths(p.actions);
-    // profile still emits its stack rule (default max-depth applied).
-    expect(paths).toContain(".cursor/rules/01-stack.mdc");
+    // profile is gated on the (default `claude`) target set — no orphan Cursor rule.
+    expect(paths).not.toContain(".cursor/rules/01-stack.mdc");
     // mcp writes .mcp.json with the project-scope describe.
     const mcpWrite = p.actions.find(
       (a): a is WriteAction => a.kind === "write" && a.path === ".mcp.json",

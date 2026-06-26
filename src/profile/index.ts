@@ -1,3 +1,4 @@
+import { isTargeted } from "../internals/cli-detect.js";
 import {
   type Action,
   type CommandSpec,
@@ -37,6 +38,13 @@ function isNode(stack: RepoStack): boolean {
  * commands or a language the repo doesn't use.
  */
 function profilePlan(ctx: PlanContext): Plan {
+  // `.cursor/*` rules are Cursor-specific. Under `aih init` the orchestrator sets
+  // `ctx.targets`; emit nothing when Cursor isn't a target (the stack facts still
+  // reach the agent via the canon's RULE_ROUTER, so this is pure dedup — and it
+  // stops the orphan `01-stack.mdc` with no companion `00-canon.mdc`). Run
+  // standalone (`aih profile`, no targets) this is the Cursor profiler — always on.
+  if (!isTargeted(ctx, "cursor")) return plan("profile");
+
   const stack = scanRepo(ctx.root, {
     maxDepth: resolveMaxDepth(ctx.options.maxDepth),
     contextDir: ctx.contextDir,
