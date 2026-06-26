@@ -67,6 +67,11 @@ export const command: CommandSpec = {
       flags: "--since <ref>",
       description: "only scan secret files changed vs <ref> (fast PR CI; full scan otherwise)",
     },
+    {
+      flags: "--sarif <file>",
+      description:
+        "write the --verify report as SARIF 2.1.0 for GitHub code-scanning (`-` → stdout)",
+    },
   ],
   plan: planSecrets,
 };

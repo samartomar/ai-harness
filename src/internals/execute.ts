@@ -66,6 +66,36 @@ function assertContained(root: string, absPath: string): void {
   );
 }
 
+/**
+ * Write a single, explicitly-requested analysis artifact (e.g. a `--sarif` report)
+ * to a repo-contained path, transactionally. Returns the backups created (0 or 1).
+ *
+ * DESIGN — why this is NOT gated on `--apply`: the harness invariant "no writes
+ * without --apply" protects the user's MANAGED project surface (bootloaders,
+ * configs, the context dir) from being mutated without consent. A `--sarif` file
+ * is not part of that surface — it is a report OUTPUT the operator requested by
+ * naming its path on the command line, exactly like `report --out` or a test
+ * runner writing `junit.xml`. Naming the path IS the consent. Crucially, the
+ * primary use case — `aih bootstrap-ai --verify --sarif results.sarif` feeding
+ * GitHub code-scanning — runs the drift gate WITHOUT `--apply` (CI must not
+ * regenerate the repo it is gating); apply-gating the artifact would make the flag
+ * a no-op in exactly the scenario it exists for, or force `--apply` to also rewrite
+ * every bootloader. So the artifact is decoupled from the plan's apply gate — but
+ * NOT from its safety machinery: the path is still contained to `root`
+ * ({@link assertContained}) and an overwrite is still backed up to `*.aih.bak` via
+ * {@link FsTransaction}. Re-writing identical bytes is a no-op (no rewrite, no
+ * backup churn), matching {@link executePlan}'s idempotency contract.
+ */
+export function writeArtifact(ctx: PlanContext, relPath: string, contents: string): string[] {
+  const absPath = resolvePath(ctx, relPath);
+  assertContained(ctx.root, absPath);
+  const next = ensureTrailingNewline(contents);
+  if (readIfExists(absPath) === next) return [];
+  const txn = new FsTransaction();
+  txn.stage(absPath, next);
+  return txn.commit().backups;
+}
+
 /** Compute final file contents for a write action, applying JSON merge if requested. */
 export function resolveContents(action: WriteAction, absPath: string): string {
   if (action.json !== undefined) {
