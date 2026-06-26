@@ -5,8 +5,10 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { executePlan } from "../../src/internals/execute.js";
 import type { Action, PlanContext, WriteAction } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
+import { reportToSarif } from "../../src/internals/sarif.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 import { command } from "../../src/secrets/index.js";
+import { SECRET_RULE } from "../../src/secrets/probes.js";
 import { scanSecrets } from "../../src/secrets/scan.js";
 
 let dir: string;
@@ -152,11 +154,13 @@ describe("secrets command", () => {
     }
   });
 
-  it("never produces exec or probe actions (boundary: no remote mutation)", async () => {
+  it("never produces exec actions (boundary: no local or remote command execution)", async () => {
     plantFixture(dir);
     const p = await command.plan(ctx());
+    // The hard guarantee is no `exec`: secrets never spawns a process. Probes ARE
+    // allowed — they are read-only verdict carriers (the secret-scan gate), not
+    // mutations; their behavior is asserted in the "--verify gate" block below.
     expect(p.actions.some((a) => a.kind === "exec")).toBe(false);
-    expect(p.actions.some((a) => a.kind === "probe")).toBe(false);
   });
 
   it("routes the vault guidance to a custom contextDir", async () => {
@@ -265,5 +269,69 @@ describe("secrets executor integration", () => {
       ctx({ apply: true }),
     );
     expect(result.execs).toEqual([]);
+  });
+});
+
+describe("secrets --verify gate", () => {
+  it("plans one read-only probe per detected plaintext secret", async () => {
+    plantFixture(dir);
+    const matches = scanSecrets(dir).matches; // .env, .env.local, secrets
+    const p = await command.plan(ctx());
+    const probes = p.actions.filter((a) => a.kind === "probe");
+    expect(probes).toHaveLength(matches.length);
+    expect(matches).toHaveLength(3);
+  });
+
+  it("plans no probe for a clean repo (green gate)", async () => {
+    const p = await command.plan(ctx());
+    expect(p.actions.some((a) => a.kind === "probe")).toBe(false);
+  });
+
+  it("each secret yields a fail verdict that flips the gate exit code", async () => {
+    plantFixture(dir);
+    const result = await executePlan(
+      await command.plan(ctx({ verify: true })),
+      ctx({ verify: true }),
+    );
+    const report = result.report;
+    if (!report) throw new Error("expected a verification report under --verify");
+    const fails = report.checks.filter((c) => c.verdict === "fail");
+    expect(fails).toHaveLength(3);
+    // Stable rule id (one SARIF rule) + distinct per-path detail (distinct results).
+    expect(fails.every((c) => c.name === SECRET_RULE)).toBe(true);
+    const details = fails.map((c) => c.detail ?? "").join("\n");
+    expect(details).toContain(".env");
+    expect(details).toContain(".env.local");
+    expect(details).toContain("secrets");
+    expect(details).toContain("rotate");
+    expect(report.ok).toBe(false);
+    expect(report.exitCode()).toBe(1);
+  });
+
+  it("emits one error-level SARIF result per secret under a single plaintext-secret rule", async () => {
+    plantFixture(dir);
+    const result = await executePlan(
+      await command.plan(ctx({ verify: true })),
+      ctx({ verify: true }),
+    );
+    if (!result.report) throw new Error("expected a verification report under --verify");
+    const sarif = JSON.parse(reportToSarif(result.report));
+    const ruleIds = sarif.runs[0].tool.driver.rules.map((r: { id: string }) => r.id);
+    // One rule groups every exposure (deduped by name), matching the drift-gate shape.
+    expect(ruleIds).toContain(SECRET_RULE);
+    const errors = sarif.runs[0].results.filter((r: { level: string }) => r.level === "error");
+    expect(errors).toHaveLength(3);
+    expect(errors.every((r: { ruleId: string }) => r.ruleId === SECRET_RULE)).toBe(true);
+  });
+
+  it("renders a clean (green) report — no fail checks — when no plaintext secrets exist", async () => {
+    const result = await executePlan(
+      await command.plan(ctx({ verify: true })),
+      ctx({ verify: true }),
+    );
+    const fails = (result.report?.checks ?? []).filter((c) => c.verdict === "fail");
+    expect(fails).toEqual([]);
+    expect(result.report?.ok ?? true).toBe(true);
+    expect(result.report?.exitCode() ?? 0).toBe(0);
   });
 });

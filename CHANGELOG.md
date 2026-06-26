@@ -6,6 +6,15 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **`aih secrets --verify` is now a secret-scan CI gate.** Each detected plaintext
+  secret (`.env*` / root `secrets/`) surfaces as a read-only `fail` probe, so
+  `--verify` exits non-zero when secrets exist and `--sarif <file>` emits one
+  error-level result per path (under a single `plaintext-secret` rule) for GitHub
+  code-scanning. Probes stay read-only verdict carriers — no `exec`, no remote
+  mutation, and only the offending path (never any secret value) is reported.
+
 ## [0.1.0] - 2026-06-24
 
 First public cut of the Enterprise AI Bootstrapping Harness (`aih`) — a dry-run-first
