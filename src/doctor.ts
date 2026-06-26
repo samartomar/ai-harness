@@ -49,18 +49,28 @@ export const command: CommandSpec = {
         const major = Number.parseInt(process.versions.node.split(".")[0] ?? "0", 10);
         return major >= 20
           ? { name: "node-version", verdict: "pass", detail: `node ${process.versions.node}` }
-          : { name: "node-version", verdict: "fail", detail: `node ${process.versions.node} < 20` };
+          : {
+              name: "node-version",
+              verdict: "fail",
+              detail: `node ${process.versions.node} < 20 — install Node 20+ (nvm/winget/brew) and re-run`,
+            };
       }),
       probe("git available", async () => {
         const res = await ctx.run(["git", "--version"]);
         return res.spawnError
-          ? { name: "git", verdict: "skip", detail: "git not found on PATH" }
+          ? {
+              name: "git",
+              verdict: "skip",
+              detail: "git not found on PATH — install git (winget/apt/brew) and re-run",
+            }
           : { name: "git", verdict: "pass", detail: res.stdout.trim() };
       }),
       probe("platform adapter", () => ({
         name: "platform",
         verdict: ctx.host.verified ? "pass" : "skip",
-        detail: `${ctx.host.platform}${ctx.host.verified ? " (verified)" : " (unverified path)"}`,
+        detail: ctx.host.verified
+          ? `${ctx.host.platform} (verified)`
+          : `${ctx.host.platform} (unverified path) — proceeding on the generic path; file an issue if a step misbehaves`,
       })),
       probe("canonical context dir", () => {
         const dir = join(ctx.root, contextDir);

@@ -53,6 +53,30 @@ describe("doctor — dev tools probe", () => {
   });
 });
 
+describe("doctor — every probe carries a remediation hint", () => {
+  it("git skip names an install + re-run action", async () => {
+    const c = ctx(); // fakeRunner reports `git --version` as a spawn error
+    const probe = findProbe((await command.plan(c)).actions, "git available");
+    const res = await probe?.run(c);
+    expect(res?.verdict).toBe("skip");
+    expect(res?.detail).toMatch(/install git/);
+    expect(res?.detail).toMatch(/re-run/);
+  });
+
+  it("platform skip (unverified adapter) carries an actionable hint", async () => {
+    const run = fakeRunner(() => ({ code: 1, spawnError: true }));
+    const c: PlanContext = {
+      ...ctx(),
+      run,
+      host: makeHostAdapter({ platform: "darwin", run, env: {} }), // darwin = unverified
+    };
+    const probe = findProbe((await command.plan(c)).actions, "platform adapter");
+    const res = await probe?.run(c);
+    expect(res?.verdict).toBe("skip");
+    expect(res?.detail).toMatch(/file an issue/);
+  });
+});
+
 describe("doctor — reads the committed .aih-config.json marker", () => {
   let dir: string;
   beforeEach(() => {
