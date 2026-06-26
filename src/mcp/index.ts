@@ -1,4 +1,6 @@
 import { posix } from "node:path";
+import { resolveTargets } from "../internals/cli-detect.js";
+import { type CliEntry, entry } from "../internals/cli-registry.js";
 import type { Action, CommandSpec, PlanContext } from "../internals/plan.js";
 import { doc, plan, probe, writeJson, writeText } from "../internals/plan.js";
 import type { Check } from "../internals/verify.js";
@@ -129,15 +131,42 @@ function planMcpOffline(ctx: PlanContext): ReturnType<typeof plan> {
   );
 }
 
-function planMcp(ctx: PlanContext): ReturnType<typeof plan> {
+/**
+ * Guidance for a CLI whose MCP config aih does NOT write directly — it uses TOML,
+ * a global/home path, or a different server-object shape than aih's standard
+ * `mcpServers` set. Rather than write a file it would get wrong, aih names the
+ * exact location + key and lists the servers to add in the tool's native shape.
+ */
+function mcpGuidanceDoc(e: CliEntry, serverNames: string[]): string {
+  const p = e.mcp;
+  return [
+    `${e.label} reads MCP servers from \`${p.configPath}\` (${p.configFormat}, top-level key \`${p.configKey}\`).`,
+    "aih does not write this file directly (different format / key / shape, or a global path),",
+    "so add these servers there in the tool's native shape — see the generated `.mcp.json`",
+    "for the canonical command/args of each:",
+    "",
+    ...serverNames.map((n) => `  • ${n}`),
+    "",
+    p.configFormat === "toml"
+      ? `In TOML, each server is a \`[${p.configKey}.<name>]\` table.`
+      : `Copy each entry from \`.mcp.json\` and place it under the \`${p.configKey}\` key.`,
+  ].join("\n");
+}
+
+async function planMcp(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
   const mode = String(ctx.options.mode ?? "standard");
   if (mode === "none") return planMcpNone(ctx);
   if (mode === "offline") return planMcpOffline(ctx);
 
+  // Honor --cli/--all-tools/--detect (default: claude). Previously mcp ignored the
+  // selection and wrote Claude's `.mcp.json` for every tool — a real bug for Codex
+  // (config.toml), Copilot (.vscode/mcp.json), OpenCode, Zed, etc.
+  const { clis } = await resolveTargets(ctx);
   const scope = String(ctx.options.scope ?? "project");
   const stack = scanRepo(ctx.root, { maxDepth: 8, contextDir: ctx.contextDir });
   const servers = mcpServers(scope, stack);
-  const tailored = Object.keys(servers)
+  const serverNames = Object.keys(servers);
+  const tailored = serverNames
     .filter(
       (name) =>
         name !== "code-review-graph" &&
@@ -146,14 +175,41 @@ function planMcp(ctx: PlanContext): ReturnType<typeof plan> {
         name !== "wet-mcp",
     )
     .join(", ");
-  const describe =
-    scope === "remote"
-      ? "Configure project-aware servers + the opt-in hosted enterprise toolset (remote scope), merged into any existing .mcp.json"
-      : `Configure project-aware MCP servers (${scope} scope)${tailored ? ` — ${tailored}` : ""}, merged into any existing .mcp.json`;
 
-  const actions: Action[] = [
-    writeJson(".mcp.json", { mcpServers: servers }, describe, { merge: true }),
-  ];
+  const actions: Action[] = [];
+  const writtenPaths = new Set<string>();
+  for (const cli of clis) {
+    const e = entry(cli);
+    const p = e.mcp;
+    if (p.support === "absent" || !p.configPath) {
+      actions.push(
+        doc(
+          `${e.label}: no MCP config`,
+          `${e.label} exposes no MCP server config (use the CLI-tool fallback).`,
+        ),
+      );
+      continue;
+    }
+    if (p.writable && p.configKey) {
+      if (writtenPaths.has(p.configPath)) continue; // tools sharing a path (claude + kimi → .mcp.json)
+      writtenPaths.add(p.configPath);
+      // Preserve the exact `.mcp.json` describe (golden) for the standard path.
+      const describe =
+        p.configPath === ".mcp.json"
+          ? scope === "remote"
+            ? "Configure project-aware servers + the opt-in hosted enterprise toolset (remote scope), merged into any existing .mcp.json"
+            : `Configure project-aware MCP servers (${scope} scope)${tailored ? ` — ${tailored}` : ""}, merged into any existing .mcp.json`
+          : `${e.label} MCP servers (${scope} scope) → ${p.configPath}, merged into any existing`;
+      actions.push(writeJson(p.configPath, { [p.configKey]: servers }, describe, { merge: true }));
+    } else {
+      actions.push(
+        doc(
+          `Configure MCP for ${e.label} (${p.configFormat}, ${p.configPath})`,
+          mcpGuidanceDoc(e, serverNames),
+        ),
+      );
+    }
+  }
 
   if (scope === "remote") {
     const hosted = Object.entries(servers)

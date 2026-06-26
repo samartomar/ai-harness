@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { entry } from "./cli-registry.js";
 import { type Cli, resolveClis, SUPPORTED_CLIS } from "./clis.js";
 import type { PlanContext } from "./plan.js";
 import type { Prompter } from "./prompt.js";
@@ -9,31 +10,9 @@ import type { Prompter } from "./prompt.js";
  * Best-effort presence detection for each AI CLI: a home-relative config dir, or
  * a binary on PATH (probed through the Runner seam, so tests stay hermetic).
  * Signals are conservative — present is high-signal, absent just means "not found
- * here", never an error. Paths/binaries follow each tool's common conventions.
+ * here", never an error. The config dirs / binaries come from {@link entry} (the
+ * single CLI registry), so they can't drift from the rest of the per-CLI facts.
  */
-interface DetectSignal {
-  /** Home-relative config dirs that imply the tool is installed/configured. */
-  configDirs: string[];
-  /** Executable names to look for on PATH. */
-  binaries: string[];
-}
-
-const SIGNALS: Record<Cli, DetectSignal> = {
-  claude: { configDirs: [".claude"], binaries: ["claude"] },
-  codex: { configDirs: [".codex"], binaries: ["codex"] },
-  cursor: { configDirs: [".cursor"], binaries: ["cursor"] },
-  antigravity: {
-    configDirs: [".gemini/antigravity", ".antigravity", ".config/antigravity"],
-    binaries: ["agy", "antigravity"],
-  },
-  gemini: { configDirs: [".gemini"], binaries: ["gemini"] },
-  copilot: { configDirs: [".config/github-copilot", ".copilot"], binaries: ["copilot"] },
-  windsurf: { configDirs: [".codeium/windsurf", ".windsurf"], binaries: ["windsurf"] },
-  opencode: { configDirs: [".config/opencode", ".opencode"], binaries: ["opencode"] },
-  zed: { configDirs: [".config/zed", ".zed"], binaries: ["zed"] },
-  kimi: { configDirs: [".kimi", ".config/kimi"], binaries: ["kimi"] },
-  kiro: { configDirs: [".kiro"], binaries: ["kiro"] },
-};
 
 export interface CliPresence {
   cli: Cli;
@@ -58,7 +37,7 @@ async function binaryOnPath(ctx: PlanContext, name: string): Promise<boolean> {
 
 /** Detect one CLI: config dir wins (cheap, deterministic), else a PATH probe. */
 export async function detectOne(ctx: PlanContext, cli: Cli): Promise<CliPresence> {
-  const sig = SIGNALS[cli];
+  const sig = entry(cli);
   const home = homeDir(ctx);
   for (const rel of sig.configDirs) {
     if (existsSync(join(home, rel)))
@@ -83,7 +62,7 @@ export async function detectClis(ctx: PlanContext): Promise<CliPresence[]> {
 export function detectClisByConfig(ctx: PlanContext): CliPresence[] {
   const home = homeDir(ctx);
   return SUPPORTED_CLIS.map((cli) => {
-    for (const rel of SIGNALS[cli].configDirs) {
+    for (const rel of entry(cli).configDirs) {
       if (existsSync(join(home, rel)))
         return { cli, present: true, via: "config", detail: `~/${rel}` };
     }
