@@ -8,6 +8,7 @@ import {
   writeText,
 } from "../internals/plan.js";
 import { acceptChanged, changedSince } from "../internals/scan-allowlist.js";
+import { secretProbes } from "./probes.js";
 import { scanSecrets } from "./scan.js";
 import { claudeIgnore, exposureWarning, settingsDenyPatch, vaultGuidance } from "./templates.js";
 
@@ -19,7 +20,11 @@ import { claudeIgnore, exposureWarning, settingsDenyPatch, vaultGuidance } from 
  *    and any existing deny entries survive — the executor unions arrays);
  *  - a `.claudeignore` backstop;
  *  - dynamic-vault-injection guidance (DOC ONLY — no vault is ever contacted);
- *  - a targeted warning when plaintext secrets already exist on disk.
+ *  - a targeted warning when plaintext secrets already exist on disk;
+ *  - one read-only `fail` probe per detected plaintext secret, so `--verify` is a
+ *    secret-scan CI gate (non-zero exit when secrets exist) and `--sarif` emits an
+ *    error-level result per path for GitHub code-scanning. Probes are read-only
+ *    verdict carriers — no `exec`, no remote mutation — so the boundary holds.
  */
 async function planSecrets(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
   // `--since <ref>`: only scan secret files changed vs the ref (fast PR CI). NOT
@@ -48,11 +53,15 @@ async function planSecrets(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
   ];
 
   if (scan.matches.length > 0) {
+    // The warning doc is the human remediation; the per-path probes are the machine
+    // gate — under `--verify` each `fail` flips the exit code (secret-scan CI gate)
+    // and feeds one error-level SARIF result to GitHub code-scanning.
     actions.push(
       doc(
         `Plaintext secrets detected (${scan.matches.length}) — migrate to a vault`,
         exposureWarning(scan),
       ),
+      ...secretProbes(scan),
     );
   }
 
