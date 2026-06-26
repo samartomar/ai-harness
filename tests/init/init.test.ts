@@ -2,6 +2,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { claudeBashPermissions } from "../../src/guardrails/command-policy.js";
 import { command as guardrails } from "../../src/guardrails/index.js";
 import { command } from "../../src/init/index.js";
 import { INIT_PHASES } from "../../src/init/phases.js";
@@ -79,18 +80,27 @@ describe("aih init — composes all six repo-scoped capabilities", () => {
     expect(paths).toContain(".devcontainer/devcontainer.json");
   });
 
-  it("dedupes the .claude/settings.json contributions into one merge write carrying the deny rules", async () => {
+  it("folds the three .claude/settings.json contributions into one merge write carrying BOTH the deny rules AND the command policy", async () => {
     const writes = (await command.plan(ctx())).actions.filter(
       (a): a is WriteAction =>
         a.kind === "write" && a.path.replace(/\\/g, "/") === ".claude/settings.json",
     );
-    // scaffold + secrets both target settings.json with identical deny rules; init
-    // dedupes to the FIRST writer (no .aih.bak churn), still a merge write.
+    // THREE phases merge-write settings.json: scaffold + secrets seed identical
+    // Read(...) deny rules; guardrails projects the command-policy Bash lexicon
+    // (different content). init FOLDS them via deepMerge into ONE merge write so
+    // guardrails' permissions are not silently dropped on the init path (they would
+    // be under a first-writer-wins dedup — landing only via standalone `aih guardrails`).
     expect(writes).toHaveLength(1);
     expect(writes[0]?.merge).toBe(true);
-    const json = JSON.stringify(writes[0]?.json);
-    expect(json).toContain("Read(./.env*)");
-    expect(json).toContain("Read(./secrets/**)");
+    const perms = (writes[0]?.json as { permissions?: Record<string, string[]> }).permissions ?? {};
+    // secrets/scaffold deny rules survive...
+    expect(perms.deny).toContain("Read(./.env*)");
+    expect(perms.deny).toContain("Read(./secrets/**)");
+    // ...AND guardrails' command-policy projection (PR #20) is composed in, intact.
+    const policy = claudeBashPermissions();
+    expect(perms.deny).toEqual(expect.arrayContaining(policy.deny));
+    expect(perms.ask).toEqual(expect.arrayContaining(policy.ask));
+    expect(perms.allow).toEqual(expect.arrayContaining(policy.allow));
   });
 
   it("forwards the mcp probe and never leaks the remote SSO doc (project scope default)", async () => {
@@ -350,6 +360,29 @@ describe("aih init — apply lays the whole bootstrap down in one pass", () => {
     );
     const onDisk = readFileSync(join(dir, ".gitleaks.toml"), "utf8");
     expect(onDisk).toBe(`${(gl?.contents ?? "").replace(/\n+$/, "")}\n`);
+  });
+
+  it("composes the deny rules AND the command policy into .claude/settings.json on disk (guardrails not dropped)", async () => {
+    // ctx() defaults to no --cli → resolves to [claude], so .claude/settings.json IS
+    // a targeted write. This is the regression guard for the init-dedup fold: under
+    // the old first-writer-wins drop, guardrails' command-policy projection never
+    // reached the composed init plan (it landed only via standalone `aih guardrails`).
+    const applied = ctx({ apply: true });
+    await executePlan(await command.plan(applied), applied);
+
+    const settings = JSON.parse(readFileSync(join(dir, ".claude/settings.json"), "utf8"));
+    const deny: string[] = settings.permissions?.deny ?? [];
+    const ask: string[] = settings.permissions?.ask ?? [];
+    const allow: string[] = settings.permissions?.allow ?? [];
+
+    // secrets/scaffold deny rules...
+    expect(deny).toContain("Read(./.env*)");
+    expect(deny).toContain("Read(./secrets/**)");
+    // ...AND the full command-policy projection from guardrails (PR #20) on disk.
+    const policy = claudeBashPermissions();
+    expect(deny).toEqual(expect.arrayContaining(policy.deny));
+    expect(ask).toEqual(expect.arrayContaining(policy.ask));
+    expect(allow).toEqual(expect.arrayContaining(policy.allow));
   });
 
   it("is idempotent — applying the full bootstrap twice leaves byte-identical files", async () => {

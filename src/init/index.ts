@@ -1,6 +1,7 @@
 import { aihConfigJson } from "../config/marker.js";
 import { detectFallbackNotice, resolveTargets } from "../internals/cli-detect.js";
-import type { Action, CommandSpec, PlanContext } from "../internals/plan.js";
+import { deepMerge } from "../internals/merge.js";
+import type { Action, CommandSpec, PlanContext, WriteAction } from "../internals/plan.js";
 import { doc, plan, writeJson } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
 import { INIT_PHASES } from "./phases.js";
@@ -83,18 +84,42 @@ async function initPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
     ),
   );
 
-  // Root bootloaders have a single owner (bootstrap-ai), so no two phases write
-  // the same bootloader. The dedup is a safety net for genuinely shared targets
-  // like `.claude/settings.json` (scaffold + secrets both merge-write it): keep
-  // the FIRST writer, no `.aih.bak` churn. Non-write actions (docs/probes) are
-  // never deduped.
-  const seenWritePaths = new Set<string>();
-  const deduped = actions.filter((a) => {
-    if (a.kind !== "write") return true;
-    if (seenWritePaths.has(a.path)) return false;
-    seenWritePaths.add(a.path);
-    return true;
-  });
+  // Root bootloaders have a single owner (bootstrap-ai), so no two phases write the
+  // same bootloader. The fold below handles the genuinely SHARED target
+  // `.claude/settings.json`, which THREE phases merge-write: scaffold + secrets seed
+  // IDENTICAL `Read(...)` deny rules, and guardrails projects the command-policy Bash
+  // lexicon (DIFFERENT content). A first-writer-wins drop would keep only scaffold and
+  // silently discard guardrails' command policy from `aih init` (it would then land
+  // ONLY via standalone `aih guardrails`), defeating that defense-in-depth projection
+  // on the primary init path. So when every writer to a path is a JSON merge-write,
+  // UNION their payloads into the first action via `deepMerge` — which array-unions
+  // `permissions.deny`/`allow`, so the deny rules + command policy compose without
+  // duplicates; the executor then merges that one composed payload onto any
+  // pre-existing on-disk file. Non-mergeable repeats (write-once seeds, text/overwrite
+  // writes) keep the safe first-writer-wins drop, with no `.aih.bak` churn. Non-write
+  // actions (docs/probes) are never folded.
+  const writeSlotByPath = new Map<string, number>();
+  const deduped: Action[] = [];
+  for (const a of actions) {
+    if (a.kind !== "write") {
+      deduped.push(a);
+      continue;
+    }
+    const slot = writeSlotByPath.get(a.path);
+    if (slot === undefined) {
+      writeSlotByPath.set(a.path, deduped.length);
+      deduped.push(a);
+      continue;
+    }
+    const first = deduped[slot] as WriteAction;
+    const bothJsonMerge =
+      first.merge === true && first.json !== undefined && a.merge === true && a.json !== undefined;
+    // Fold a later JSON merge-write into the first (composing both payloads);
+    // otherwise drop it so the first writer still wins.
+    if (bothJsonMerge) {
+      deduped[slot] = { ...first, json: deepMerge(first.json, a.json) };
+    }
+  }
 
   return plan("init", ...deduped);
 }
