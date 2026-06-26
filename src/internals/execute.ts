@@ -1,13 +1,14 @@
 import { existsSync, realpathSync } from "node:fs";
 import { dirname, isAbsolute, relative, resolve } from "node:path";
-import { PathContainmentError } from "../errors.js";
+import { DirtyWorktreeError, PathContainmentError } from "../errors.js";
 import { redactSecrets } from "../guardrails/redact.js";
 import { upsertManagedBlock } from "./envfile.js";
 import { FsTransaction, readIfExists } from "./fsxn.js";
 import { deepMerge, parseJsoncText } from "./merge.js";
-import type { EnvBlockAction, ExecAction, Plan, PlanContext, WriteAction } from "./plan.js";
+import type { Action, EnvBlockAction, ExecAction, Plan, PlanContext, WriteAction } from "./plan.js";
 import { ensureTrailingNewline, indent, jsonFile } from "./render.js";
 import { VerificationReport } from "./verify.js";
+import { isWorktreeDirty } from "./worktree-gate.js";
 
 export interface WriteSummary {
   path: string;
@@ -36,6 +37,21 @@ export interface PlanResult {
 /** Resolve an action path against the context root (absolute paths pass through). */
 function resolvePath(ctx: PlanContext, p: string): string {
   return resolve(ctx.root, p);
+}
+
+/**
+ * Does the plan stage any file write? The dirty-worktree preflight only guards the
+ * mutating surface — `write`/`envblock` actions and `doc` actions that carry a
+ * path. Exec/probe/digest/path-less doc plans (e.g. a bare `aih report`) write
+ * nothing, so they bypass the gate even under `--apply`.
+ */
+function mutatesFiles(actions: Action[]): boolean {
+  return actions.some(
+    (a) =>
+      a.kind === "write" ||
+      a.kind === "envblock" ||
+      (a.kind === "doc" && typeof a.path === "string"),
+  );
 }
 
 /** realpath, or a plain resolve if the path does not exist yet. */
@@ -118,6 +134,23 @@ export function resolveContents(action: WriteAction, absPath: string): string {
  * {@link VerificationReport}.
  */
 export async function executePlan(plan: Plan, ctx: PlanContext): Promise<PlanResult> {
+  // Dirty-worktree --apply preflight: refuse to write over uncommitted work unless
+  // --force. Only an apply run that actually stages a file write is gated, so
+  // read-only commands (doctor/status) and write-free runs (a bare `aih report`)
+  // are untouched. The check runs BEFORE anything is staged, so a refusal leaves
+  // the worktree byte-for-byte unchanged. `git status --porcelain` goes through the
+  // Runner seam; git-absent / not-a-repo reads as clean (nothing to clobber).
+  if (
+    ctx.apply &&
+    ctx.options.force !== true &&
+    mutatesFiles(plan.actions) &&
+    (await isWorktreeDirty(ctx))
+  ) {
+    throw new DirtyWorktreeError(
+      "Refusing to apply with a dirty git worktree — commit/stash your changes, or pass --force.",
+    );
+  }
+
   const txn = new FsTransaction();
   const writes: WriteSummary[] = [];
   const docs: PlanResult["docs"] = [];

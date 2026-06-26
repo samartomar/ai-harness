@@ -60,3 +60,10 @@ export class PathContainmentError extends AihError {
     super(message, "AIH_PATH_CONTAINMENT");
   }
 }
+
+/** An `--apply` was attempted on a dirty git worktree without `--force`. Fail-closed. */
+export class DirtyWorktreeError extends AihError {
+  constructor(message: string) {
+    super(message, "AIH_DIRTY_WORKTREE");
+  }
+}

@@ -59,6 +59,10 @@ export const ALL_COMMANDS: CommandSpec[] = [...CAPABILITIES, ...READONLY];
 function addSharedFlags(cmd: Command): Command {
   return cmd
     .option("--apply", "execute the plan (default: dry-run; nothing is written)")
+    .option(
+      "--force",
+      "apply even when the git worktree is dirty (skip the clean-worktree preflight)",
+    )
     .option("--verify", "run verification probes after applying")
     .option("--json", "emit machine-readable JSON")
     .option("--context-dir <dir>", "canonical context directory name (any name works)", "ai-coding")
