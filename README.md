@@ -83,7 +83,7 @@ light toggle; fonts embedded) — context footprint + a KPI strip, an adoption r
 and code-quality panels, and trend sparklines from recorded history (`aih track`). Add `--demo` for
 showcase data, or `--refresh <sec>` to keep it live.
 
-![aih report dashboard — full view with `--demo` showcase data](docs/assets/dashboard.png)
+![aih report dashboard — full view with `--demo` showcase data](docs/assets/ai_harness_report_3_columns.png)
 
 ### Targeting CLIs
 
