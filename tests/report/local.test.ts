@@ -6,7 +6,12 @@ import type { PlanContext } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 import { command } from "../../src/report/index.js";
-import { configPanel, economyPanel, localPanels, toolingPanel } from "../../src/report/local.js";
+import {
+  configPanel,
+  economyPanel,
+  localPanels,
+  machineToolingPanel,
+} from "../../src/report/local.js";
 
 let dir: string; // repo root
 let home: string; // fake home for CLI config-dir detection
@@ -36,16 +41,18 @@ function ctx(over: Partial<PlanContext> = {}): PlanContext {
 }
 
 describe("configPanel", () => {
-  it("counts present artifacts and lists them via the shared status inventory", () => {
-    writeFileSync(join(dir, "CLAUDE.md"), "x");
-    writeFileSync(join(dir, ".mcp.json"), "{}");
+  it("counts present REPO-GLOBAL artifacts (per-CLI facts live in the wiring matrix)", () => {
+    writeFileSync(join(dir, ".gitleaks.toml"), "title = 'x'\n");
+    writeFileSync(join(dir, ".pre-commit-config.yaml"), "repos: []\n");
     const d = configPanel(ctx());
     expect(d.kind).toBe("digest");
     expect(d.describe).toMatch(/Configuration — 2 of \d+ artifacts present/);
-    expect(d.text).toContain("✓ CLAUDE.md");
-    expect(d.text).toContain("✓ mcp");
+    expect(d.text).toContain("✓ gitleaks");
+    expect(d.text).toContain("✓ pre-commit");
     expect(d.text).toContain("aih doctor"); // pointer to fail-closed verification
-    expect(d.data).toMatchObject({ present: expect.arrayContaining(["CLAUDE.md", "mcp"]) });
+    expect(d.data).toMatchObject({ present: expect.arrayContaining(["gitleaks", "pre-commit"]) });
+    // per-CLI artifacts are NOT in the global config panel anymore
+    expect(d.text).not.toContain("CLAUDE.md");
   });
 
   it("reports zero present for an empty repo", () => {
@@ -53,18 +60,18 @@ describe("configPanel", () => {
   });
 });
 
-describe("toolingPanel", () => {
+describe("machineToolingPanel", () => {
   it("detects an AI CLI by its home config dir", () => {
     mkdirSync(join(home, ".claude"), { recursive: true });
-    const d = toolingPanel(ctx());
-    expect(d.describe).toMatch(/Tooling — 1 of \d+ AI CLIs configured here/);
+    const d = machineToolingPanel(ctx());
+    expect(d.describe).toMatch(/Machine tooling — 1 of \d+ AI CLIs installed here/);
     expect(d.text).toContain("✓ claude");
     expect(d.data).toMatchObject({ present: ["claude"] });
   });
 
-  it("reports none configured for a bare home (hermetic — no PATH probe)", () => {
-    const d = toolingPanel(ctx());
-    expect(d.describe).toMatch(/Tooling — 0 of/);
+  it("reports none installed for a bare home (hermetic — no PATH probe)", () => {
+    const d = machineToolingPanel(ctx());
+    expect(d.describe).toMatch(/Machine tooling — 0 of/);
     expect(d.data).toMatchObject({ present: [] });
   });
 });
@@ -86,19 +93,21 @@ describe("report local scope — composed panels", () => {
     expect(actions.every((a) => a.kind === "digest")).toBe(true);
     const describes = actions.map((a) => (a.kind === "digest" ? a.describe : ""));
     expect(describes[0]).toContain("Context footprint");
+    expect(describes.some((s) => s.startsWith("AI CLI wiring"))).toBe(true);
     expect(describes.some((s) => s.startsWith("Configuration"))).toBe(true);
-    expect(describes.some((s) => s.startsWith("Tooling"))).toBe(true);
+    expect(describes.some((s) => s.startsWith("Machine tooling"))).toBe(true);
     expect(describes.some((s) => s.includes("no local data source"))).toBe(true);
   });
 
   it("localPanels returns the always-on panels; git/usage-gated panels omit off-repo", async () => {
     const panels = await localPanels(ctx());
     // Non-repo, no-usage fixture: velocity (2), AI events, test-ratio, and repo-info all
-    // return undefined and are filtered out — leaving the 7 unconditional panels:
-    // repo-status, trends, usage, config, tooling, economy, tools-installed.
-    expect(panels).toHaveLength(7);
+    // return undefined and are filtered out — leaving the 8 unconditional panels:
+    // repo-status, trends, usage, ai-cli-wiring, config, machine-tooling, economy, tools-installed.
+    expect(panels).toHaveLength(8);
     const prefixes = panels.map((p) => (p.kind === "digest" ? p.describe : ""));
     expect(prefixes.some((s) => s.startsWith("Tools installed"))).toBe(true);
     expect(prefixes.some((s) => s.startsWith("Repo status"))).toBe(true);
+    expect(prefixes.some((s) => s.startsWith("AI CLI wiring"))).toBe(true);
   });
 });

@@ -2,6 +2,7 @@ import { detectClisByConfig } from "../internals/cli-detect.js";
 import { type DigestAction, digest, type PlanContext } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
 import { inventory } from "../status.js";
+import { cliCoverageDigest } from "./cli-coverage.js";
 import { aiEventsDigest } from "./events.js";
 import { graphDigests } from "./graph.js";
 import { guardrailDigest } from "./guardrail.js";
@@ -42,12 +43,18 @@ export function configPanel(ctx: PlanContext): DigestAction {
   });
 }
 
-/** Local tooling saturation — which AI CLIs are configured on this machine. */
-export function toolingPanel(ctx: PlanContext): DigestAction {
+/**
+ * Local tooling saturation — which AI CLIs are INSTALLED on this machine (by home
+ * config dir). This is machine detection, deliberately distinct from repo wiring:
+ * the per-CLI "AI CLI wiring" matrix ({@link cliCoverageDigest}) answers "is this
+ * repo configured for that tool", which is orthogonal to "is it installed here".
+ */
+export function machineToolingPanel(ctx: PlanContext): DigestAction {
   const found = detectClisByConfig(ctx);
   const present = found.filter((p) => p.present);
   const body = lines(
-    "AI coding CLIs configured on this machine (by home config dir):",
+    "AI coding CLIs INSTALLED on this machine (by home config dir) — distinct from",
+    "repo wiring; see the AI CLI wiring panel for what this repo is configured for:",
     "",
     ...found.map(
       (p) => `  ${p.present ? "✓" : "·"} ${p.cli}${p.present && p.detail ? `  (${p.detail})` : ""}`,
@@ -55,11 +62,15 @@ export function toolingPanel(ctx: PlanContext): DigestAction {
     "",
     "  Idle tools are reallocatable seats; absent ones are onboarding opportunities.",
   );
-  return digest(`Tooling — ${present.length} of ${found.length} AI CLIs configured here`, body, {
-    present: present.map((p) => p.cli),
-    absent: found.filter((p) => !p.present).map((p) => p.cli),
-    total: found.length,
-  });
+  return digest(
+    `Machine tooling — ${present.length} of ${found.length} AI CLIs installed here`,
+    body,
+    {
+      present: present.map((p) => p.cli),
+      absent: found.filter((p) => !p.present).map((p) => p.cli),
+      total: found.length,
+    },
+  );
 }
 
 /** Honest stub: the cache/skill economy needs an on-box data source that doesn't exist yet. */
@@ -97,8 +108,9 @@ export async function localPanels(ctx: PlanContext): Promise<DigestAction[]> {
     await repoStatusPanel(ctx),
     trendsPanel(ctx),
     usagePanel(ctx),
+    cliCoverageDigest(ctx), // HARNESS ADOPTION: per-CLI wiring matrix (targeted-scoped)
     configPanel(ctx),
-    toolingPanel(ctx),
+    machineToolingPanel(ctx), // HARNESS ADOPTION: which CLIs are INSTALLED (detection)
     economyPanel(),
   ];
   return panels.filter((d): d is DigestAction => d !== undefined);

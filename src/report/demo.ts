@@ -24,16 +24,12 @@ const TREND_ROWS = [
   { commits7d: 23, loc: { net: 2630 }, adoptionScore: 85, branches: 5 },
 ];
 
+// Repo-GLOBAL config artifacts only — per-CLI bootloaders / MCP live in the
+// "AI CLI wiring" matrix, so the checklist no longer double-lists them.
 const ADOPTION_PRESENT = [
-  "CLAUDE.md",
   "RULE_ROUTER.md",
   "ai-coding dir",
   "agent-behavior-core",
-  ".cursor rules",
-  "AGENTS.md",
-  "GEMINI.md",
-  ".kiro steering",
-  "mcp",
   "gitleaks",
   "pre-commit",
   "sca workflow",
@@ -43,7 +39,7 @@ const ADOPTION_PRESENT = [
   "githooks",
   "secrets deny",
 ];
-const ADOPTION_ABSENT = ["copilot-instructions", "windsurf rules", "guardrails taxonomy"];
+const ADOPTION_ABSENT = ["guardrails taxonomy"];
 
 const EVENTS = [
   {
@@ -154,12 +150,126 @@ export function demoDigests(): DigestAction[] {
       samples: TREND_ROWS.length,
       rows: TREND_ROWS,
     }),
-    digest("Configuration — 17 of 20 artifacts present", "demo", {
+    digest("AI CLI wiring — 3 of 3 configured, 2 loadable", "demo", {
+      targeted: ["claude", "kiro", "codex"],
+      targetSource: "marker",
+      score: 100,
+      structurallyConfigured: 3,
+      provenLoadable: 2,
+      totalTargeted: 3,
+      rows: [
+        {
+          cli: "claude",
+          label: "Claude Code",
+          targeted: true,
+          bootloader: {
+            state: "wired",
+            path: "CLAUDE.md",
+            detail: "auto-loads CLAUDE.md; shared block in sync",
+          },
+          mcp: { state: "wired", path: ".mcp.json", detail: "2 server(s) under `mcpServers`" },
+          settings: {
+            state: "wired",
+            path: ".claude/settings.json",
+            detail: ".claude/settings.json present",
+          },
+          load: {
+            verdict: "loads",
+            checks: [
+              { name: "router-chain", ok: true, detail: "router + behavior core reachable" },
+            ],
+          },
+        },
+        {
+          // The showcase: every cell green, but the steering file is missing
+          // `inclusion: always` — present, in sync, and never auto-loaded.
+          cli: "kiro",
+          label: "Kiro",
+          targeted: true,
+          bootloader: {
+            state: "wired",
+            path: ".kiro/steering/00-canon.md",
+            detail: "auto-loads .kiro/steering/00-canon.md; shared block in sync",
+          },
+          mcp: {
+            state: "wired",
+            path: ".kiro/settings/mcp.json",
+            detail: "1 server(s) under `mcpServers`",
+          },
+          settings: { state: "na", detail: "Kiro has no aih-managed settings file" },
+          load: {
+            verdict: "wontLoad",
+            checks: [
+              {
+                name: "activation",
+                ok: false,
+                detail:
+                  "inclusion: always missing in .kiro/steering/00-canon.md — present but not auto-loaded",
+              },
+            ],
+            fix: "aih bootstrap-ai --apply --cli kiro",
+          },
+        },
+        {
+          cli: "codex",
+          label: "Codex CLI",
+          targeted: true,
+          bootloader: {
+            state: "wired",
+            path: "AGENTS.md",
+            detail: "auto-loads AGENTS.md; shared block in sync",
+          },
+          mcp: {
+            state: "manual",
+            path: "~/.codex/config.toml",
+            detail:
+              "manual — global ~/.codex/config.toml (toml; aih emits guidance, does not own this shape)",
+            fix: "aih mcp --cli codex",
+          },
+          settings: { state: "na", detail: "Codex CLI has no aih-managed settings file" },
+          load: {
+            verdict: "loads",
+            checks: [
+              { name: "router-chain", ok: true, detail: "router + behavior core reachable" },
+            ],
+          },
+        },
+        {
+          cli: "cursor",
+          label: "Cursor",
+          targeted: false,
+          bootloader: {
+            state: "missing",
+            path: ".cursor/rules/00-canon.mdc",
+            detail: "not found",
+            fix: "aih bootstrap-ai --apply --cli cursor",
+          },
+          mcp: {
+            state: "missing",
+            path: ".cursor/mcp.json",
+            detail: ".cursor/mcp.json not found",
+            fix: "aih mcp --apply --cli cursor",
+          },
+          settings: { state: "na", detail: "Cursor has no aih-managed settings file" },
+          load: {
+            verdict: "unverified",
+            checks: [
+              {
+                name: "activation",
+                ok: undefined,
+                detail: "no bootloader on disk — nothing to load",
+              },
+            ],
+          },
+        },
+      ],
+    }),
+    digest("Configuration — 11 of 12 artifacts present", "demo", {
       present: ADOPTION_PRESENT,
       absent: ADOPTION_ABSENT,
       total: ADOPTION_PRESENT.length + ADOPTION_ABSENT.length,
     }),
-    digest("Tooling — 7 of 11 AI CLIs configured here", "demo", {
+    digest("Machine tooling — 7 of 11 AI CLIs installed here", "demo", {
       present: ["claude", "codex", "cursor", "gemini", "antigravity", "windsurf", "kiro"],
       absent: ["copilot", "opencode", "zed", "kimi"],
       total: 11,

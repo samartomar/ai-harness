@@ -8,6 +8,7 @@ import { type DigestAction, digest, type PlanContext } from "../internals/plan.j
 import { lines } from "../internals/render.js";
 import { inventory } from "../status.js";
 import { DEFAULT_CONTEXT_BUDGET_TOKENS } from "./bloat.js";
+import { scanCliCoverage } from "./cli-coverage.js";
 import { scanLoadGroups } from "./loadgroups.js";
 
 /**
@@ -120,6 +121,60 @@ function adaptersThin(root: string, dir: string): boolean {
   return true;
 }
 
+/**
+ * Per-targeted-CLI wiring + loadability checks, from the shared {@link scanCliCoverage}
+ * model — replacing the old global trio (`bootloader-present` for ANY tool,
+ * `.mcp.json` exists, `.claude/settings.json` exists), which scored a Kiro-only repo
+ * against Claude's shape. Only TARGETED, GRADEABLE cells are scored: `manual`/`na`
+ * MCP and settings cells are skipped (not counted), and a `wontLoad` loadability
+ * verdict is a hard fail (D7) — a present-but-won't-load tool is not mature wiring.
+ */
+function wiringChecks(ctx: PlanContext): CheckResult[] {
+  const out: CheckResult[] = [];
+  for (const r of scanCliCoverage(ctx).rows) {
+    if (!r.targeted) continue;
+    out.push(
+      check(
+        `${r.cli}-bootloader`,
+        r.bootloader.state === "wired",
+        r.bootloader.fix ?? "run: aih bootstrap-ai --apply",
+        `cli-registry bootloaders (${r.cli})`,
+      ),
+    );
+    if (r.mcp.state === "wired" || r.mcp.state === "missing") {
+      out.push(
+        check(
+          `${r.cli}-mcp`,
+          r.mcp.state === "wired",
+          r.mcp.fix ?? "run: aih mcp --apply",
+          `${r.mcp.path ?? ".mcp.json"} (${r.cli})`,
+        ),
+      );
+    }
+    if (r.settings.state === "wired" || r.settings.state === "missing") {
+      out.push(
+        check(
+          `${r.cli}-settings`,
+          r.settings.state === "wired",
+          r.settings.fix ?? "run: aih bootstrap --apply",
+          `${r.settings.path ?? "settings"} (${r.cli})`,
+        ),
+      );
+    }
+    if (r.load.verdict !== "unverified") {
+      out.push(
+        check(
+          `${r.cli}-loadable`,
+          r.load.verdict === "loads",
+          r.load.fix ?? "run: aih bootstrap-ai --apply",
+          `loadability (${r.cli})`,
+        ),
+      );
+    }
+  }
+  return out;
+}
+
 /** Build the five maturity dimensions from aih's own artifacts (pure fs reads). */
 function buildDimensions(ctx: PlanContext): DimensionResult[] {
   const { root, contextDir: dir } = ctx;
@@ -164,26 +219,8 @@ function buildDimensions(ctx: PlanContext): DimensionResult[] {
         "thin-pointer contract",
       ),
     ]),
-    dim("harnessWiring", 1, [
-      check(
-        "bootloader-present",
-        present.length > 0,
-        "run: aih bootstrap-ai --apply --cli <tool> to write a native bootloader",
-        "cli-registry.ts bootloaders",
-      ),
-      check(
-        "mcp-config",
-        has("mcp"),
-        "run: aih mcp --apply to write .mcp.json",
-        ".mcp.json (inventory)",
-      ),
-      check(
-        "claude-settings",
-        has("claude-settings"),
-        "run: aih bootstrap --apply to write .claude/settings.json",
-        ".claude/settings.json (inventory)",
-      ),
-    ]),
+    // Per-targeted-CLI wiring + loadability (replaces the old global Claude-shaped trio).
+    dim("harnessWiring", 1, wiringChecks(ctx)),
     dim("guardrails", 1, [
       check(
         "gitleaks-config",

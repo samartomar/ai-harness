@@ -5,6 +5,8 @@ import { detectClis, presentClis } from "./internals/cli-detect.js";
 import { readIfExists } from "./internals/fsxn.js";
 import { type Action, type CommandSpec, type PlanContext, plan, probe } from "./internals/plan.js";
 import { canonLintCheck } from "./lint/run.js";
+import { resolveTargetSet } from "./report/cli-coverage.js";
+import { loadabilityFor, loadReason } from "./report/cli-loadability.js";
 
 /** Read the workspace marker's repo list, or [] when this root is not a workspace. */
 function workspaceRepos(ctx: PlanContext): string[] {
@@ -114,6 +116,31 @@ export const command: CommandSpec = {
               name: "ai-clis",
               verdict: "skip",
               detail: "none detected — target explicitly with --cli or --all-tools",
+            };
+      }),
+      // Present file ≠ loaded: fail closed when a targeted CLI's bootloader is on
+      // disk but won't auto-load (wrong activation frontmatter, broken router
+      // chain, BOM/frontmatter). `unverified` (no bootloader yet) never fails.
+      probe("CLI context loadability", () => {
+        const probeCtx: PlanContext = { ...ctx, contextDir };
+        const results = resolveTargetSet(probeCtx).targeted.map((cli) =>
+          loadabilityFor(probeCtx, cli),
+        );
+        const broken = results.filter((r) => r.verdict === "wontLoad");
+        if (broken.length > 0) {
+          return {
+            name: "cli-loadability",
+            verdict: "fail",
+            detail: `${broken.map((b) => `${b.cli}: ${loadReason(b)}`).join("; ")} — run aih bootstrap-ai --apply`,
+          };
+        }
+        const loads = results.filter((r) => r.verdict === "loads").map((r) => r.cli);
+        return loads.length > 0
+          ? { name: "cli-loadability", verdict: "pass", detail: `loads: ${loads.join(", ")}` }
+          : {
+              name: "cli-loadability",
+              verdict: "skip",
+              detail: "no targeted bootloaders on disk to verify",
             };
       }),
       probe("dev tools (rg/fd/jq)", async () => {
