@@ -213,7 +213,7 @@ async function pypiProbe(ctx: PlanContext): Promise<Check> {
     };
   }
   const detail = firstLine(res.stderr) || `curl exited ${res.code}`;
-  return { name: "CA trust reaches pypi", verdict: "fail", detail };
+  return { name: "CA trust reaches pypi", verdict: "fail", detail, code: "tls.verify-failed" };
 }
 
 function firstLine(text: string): string {

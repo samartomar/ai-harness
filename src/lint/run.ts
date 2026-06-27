@@ -32,6 +32,7 @@ function checkFor(path: string, source: string, rctx: LintRuleCtx): Check {
       name,
       verdict: "fail",
       detail: fails.map((f) => `${f.ruleId}: ${f.message}`).join("; "),
+      code: "canon.lint-failed",
     };
   }
   const infos = findings.filter((f) => f.severity === "info");
@@ -123,7 +124,8 @@ export function canonLintCheck(root: string, contextDir: string): Check {
       (f.severity === "fail" ? fails : infos).push(line);
     }
   }
-  if (fails.length > 0) return { name, verdict: "fail", detail: fails.join("; ") };
+  if (fails.length > 0)
+    return { name, verdict: "fail", detail: fails.join("; "), code: "canon.lint-failed" };
   if (infos.length > 0) return { name, verdict: "skip", detail: infos.join("; ") };
   return { name, verdict: "pass", detail: `${rels.length} canon file(s) weak-model-safe` };
 }

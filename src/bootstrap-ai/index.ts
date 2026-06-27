@@ -49,17 +49,37 @@ function bootloaderProbe(relPath: string, dir: string): Action {
     const name = `bootloader ${relPath} in sync`;
     const text = readIfExists(join(ctx.root, relPath));
     if (text === undefined) {
-      return { name, verdict: "fail", detail: "missing — run `aih bootstrap-ai --apply`" };
+      return {
+        name,
+        verdict: "fail",
+        detail: "missing — run `aih bootstrap-ai --apply`",
+        code: "cli.bootloader-missing",
+      };
     }
     const onDisk = extractManagedBlock(text, SHARED_MARKER);
     if (onDisk === undefined) {
-      return { name, verdict: "fail", detail: "no managed canonical block found" };
+      return {
+        name,
+        verdict: "fail",
+        detail: "no managed canonical block found",
+        code: "cli.bootloader-missing",
+      };
     }
     if (onDisk !== sharedCanonicalBlockBody(dir).trim()) {
-      return { name, verdict: "fail", detail: "drifted from the canonical block — regenerate" };
+      return {
+        name,
+        verdict: "fail",
+        detail: "drifted from the canonical block — regenerate",
+        code: "cli.bootloader-drift",
+      };
     }
     if (!text.includes("RULE_ROUTER.md")) {
-      return { name, verdict: "fail", detail: "does not reference RULE_ROUTER.md" };
+      return {
+        name,
+        verdict: "fail",
+        detail: "does not reference RULE_ROUTER.md",
+        code: "cli.bootloader-drift",
+      };
     }
     return { name, verdict: "pass", detail: "carries the current shared block" };
   });
@@ -80,6 +100,7 @@ function presenceProbe(cli: Cli): Action {
           name,
           verdict: "skip",
           detail: "not detected on this machine (bootloader still written)",
+          code: "cli.not-detected",
         };
   });
 }
@@ -90,7 +111,12 @@ function routerProbe(dir: string): Action {
     const name = `${dir}/RULE_ROUTER.md present`;
     const text = readIfExists(join(ctx.root, dir, "RULE_ROUTER.md"));
     if (text === undefined) {
-      return { name, verdict: "fail", detail: "missing — run `aih bootstrap-ai --apply`" };
+      return {
+        name,
+        verdict: "fail",
+        detail: "missing — run `aih bootstrap-ai --apply`",
+        code: "canon.router-missing",
+      };
     }
     return { name, verdict: "pass", detail: "router present" };
   });

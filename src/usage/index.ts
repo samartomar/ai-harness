@@ -113,7 +113,12 @@ async function usagePlan(ctx: PlanContext): Promise<Plan> {
     probe("node on PATH (the recorder needs it)", async (c): Promise<Check> => {
       const res = await c.run(["node", "--version"]);
       return res.spawnError || res.code !== 0
-        ? { name: "node", verdict: "fail", detail: "node not found — the recorder won't run" }
+        ? {
+            name: "node",
+            verdict: "fail",
+            detail: "node not found — the recorder won't run",
+            code: "env.node-runtime",
+          }
         : { name: "node", verdict: "pass", detail: res.stdout.trim() };
     }),
     probe(
@@ -122,6 +127,7 @@ async function usagePlan(ctx: PlanContext): Promise<Plan> {
         name: "usage-log",
         verdict: "skip",
         detail: "accrues after the first commit (or a wired per-tool hook fires)",
+        code: "usage.no-data",
       }),
     ),
   );

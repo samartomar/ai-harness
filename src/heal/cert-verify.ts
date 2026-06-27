@@ -21,10 +21,20 @@ function caCheck(env: NodeJS.ProcessEnv, tlsOk: boolean, tlsFailed: boolean): Ch
     return { name: CHECK, verdict: "pass", detail: `${p} (valid PEM)` };
   }
   if (p && !existsSync(p)) {
-    return { name: CHECK, verdict: "fail", detail: `set but the file is missing: ${p}` };
+    return {
+      name: CHECK,
+      verdict: "fail",
+      detail: `set but the file is missing: ${p}`,
+      code: "cert.ca-missing",
+    };
   }
   if (p) {
-    return { name: CHECK, verdict: "fail", detail: `not a valid PEM bundle: ${p}` };
+    return {
+      name: CHECK,
+      verdict: "fail",
+      detail: `not a valid PEM bundle: ${p}`,
+      code: "cert.ca-missing",
+    };
   }
   // Unset: defer to TLS. Failing TLS → the missing CA is the likely cause (fail);
   // passing TLS → not needed here (skip); not probed → can't tell (skip).
@@ -33,6 +43,7 @@ function caCheck(env: NodeJS.ProcessEnv, tlsOk: boolean, tlsFailed: boolean): Ch
       name: CHECK,
       verdict: "fail",
       detail: "not set — and TLS is failing; corporate CA likely needed",
+      code: "cert.ca-missing",
     };
   }
   if (tlsOk) {

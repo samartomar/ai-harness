@@ -55,6 +55,7 @@ export const command: CommandSpec = {
               name: "node-version",
               verdict: "fail",
               detail: `node ${process.versions.node} < 20 — install Node 20+ (nvm/winget/brew) and re-run`,
+              code: "env.node-runtime",
             };
       }),
       probe("git available", async () => {
@@ -64,6 +65,7 @@ export const command: CommandSpec = {
               name: "git",
               verdict: "skip",
               detail: "git not found on PATH — install git (winget/apt/brew) and re-run",
+              code: "env.git-missing",
             }
           : { name: "git", verdict: "pass", detail: res.stdout.trim() };
       }),
@@ -82,6 +84,7 @@ export const command: CommandSpec = {
               name: "context-dir",
               verdict: "skip",
               detail: `${contextDir} not scaffolded — run: aih scaffold --apply`,
+              code: "canon.context-dir-missing",
             };
       }),
       probe("bootstrap config marker", () => {
@@ -116,6 +119,7 @@ export const command: CommandSpec = {
               name: "ai-clis",
               verdict: "skip",
               detail: "none detected — target explicitly with --cli or --all-tools",
+              code: "cli.not-detected",
             };
       }),
       // Present file ≠ loaded: fail closed when a targeted CLI's bootloader is on
@@ -131,6 +135,7 @@ export const command: CommandSpec = {
           return {
             name: "cli-loadability",
             verdict: "fail",
+            code: "cli.wont-load",
             // Surface each broken tool's exact remediation command, not a generic one.
             detail: broken
               .map((b) => `${b.cli}: ${loadReason(b)} → ${b.fix ?? "aih bootstrap-ai --apply"}`)
@@ -161,6 +166,7 @@ export const command: CommandSpec = {
               name: "dev-tools",
               verdict: "skip",
               detail: `missing: ${missing.join(", ")} — install (winget/scoop/brew) or, on a locked-down VDI, add your local bundle to PATH`,
+              code: "env.dev-tool-missing",
             };
       }),
     ];
@@ -180,6 +186,7 @@ export const command: CommandSpec = {
               name: `child:${repo}`,
               verdict: "skip",
               detail: `not scaffolded — run \`aih init ./${repo} --apply\``,
+              code: "canon.context-dir-missing",
             };
       }),
     );

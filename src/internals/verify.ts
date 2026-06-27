@@ -1,10 +1,56 @@
 /** A single verification outcome produced by a probe action or `doctor`. */
 export type Verdict = "pass" | "fail" | "skip";
 
+/**
+ * Closed taxonomy of routable verification outcomes. Each member maps 1:1 to a
+ * real `fail`/`skip` emitter (see docs/research/check-code-taxonomy-plan.md) so a
+ * consumer — support templates, run-ledger findings — can `switch` over it
+ * exhaustively rather than string-match `detail` (which rots on a reword). Keep it
+ * sealed: a new failure mode means a new member here PLUS the `code` set at the
+ * emitter; never derive a code by matching `detail`.
+ */
+export type CheckCode =
+  // environment / runtime
+  | "env.node-runtime"
+  | "env.git-missing"
+  | "env.dev-tool-missing"
+  // certificates / TLS
+  | "cert.ca-missing"
+  | "tls.verify-failed"
+  // npm
+  | "npm.runtime-broken"
+  // PATH
+  | "path.missing"
+  // MCP
+  | "mcp.blocked"
+  | "mcp.uv-missing"
+  | "mcp.config-missing"
+  | "mcp.unvendored-offline"
+  // CLI bootloaders / canon
+  | "cli.not-detected"
+  | "cli.bootloader-missing"
+  | "cli.bootloader-drift"
+  | "cli.wont-load"
+  | "canon.router-missing"
+  | "canon.context-dir-missing"
+  | "canon.lint-failed"
+  // guardrails / secrets
+  | "secrets.plaintext-detected"
+  | "guardrails.gitleaks-missing"
+  // usage
+  | "usage.no-data";
+
 export interface Check {
   name: string;
   verdict: Verdict;
   detail?: string;
+  /**
+   * Stable machine code for routing (support templates, run-ledger findings). Set
+   * ONLY on `fail`/`skip` emitters a consumer keys off — never on a `pass`, and
+   * never derived from `detail`. Absent ⇒ not yet ticket-routed. Optional by
+   * design, so a Check that omits it serializes byte-for-byte as before.
+   */
+  code?: CheckCode;
 }
 
 /**
