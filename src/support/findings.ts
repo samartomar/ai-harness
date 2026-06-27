@@ -1,23 +1,20 @@
 /**
  * Turn coded verification outcomes into routable {@link SupportFinding}s — the
- * bridge between PR1's `Check.code` taxonomy and the copy-ready templates in
+ * bridge between PR1's `Check.code` taxonomy and the ticket-ready templates in
  * `templates.ts`. A finding answers "who fixes this, and how":
  *
  *   - audience !== developer  → EXTERNAL. The fix is a system/environment change
- *     owned by IT / security / a platform team. The rendered template is
- *     tool-neutral (never names this harness) and frames a project-setup problem —
- *     a `fail` becomes an `escalation`, a `skip` an `improvement` request.
+ *     owned by IT / security / a platform team. The rendered ticket is
+ *     tool-neutral (never names this harness) and frames the failed INTERNAL
+ *     configuration — a `fail` is an `escalation`, a `skip` an `improvement`.
  *   - audience === developer  → INTERNAL `self-fix`: the developer runs a command
  *     themselves, so that note may reference the harness's own tooling.
  *
- * Routing is keyed entirely off the machine `code` (never `Check.detail`, which
- * rots on a reword). The map is `Record<CheckCode, …>`, so adding a union member
- * without giving it support metadata is a compile error.
- *
- * Pure data: no I/O, no wall-clock. Live specifics (the offending path, the proxy
- * error) ride through verbatim in `details`; routing + the canned action are
- * keyed per code, and EXTERNAL actions are deliberately system-fix instructions,
- * not harness commands.
+ * Everything a ticket needs is canned per `code` (title, evidence, affected area,
+ * requested fix, acceptance criteria) so the template is filled from a stable
+ * `code + verdict + project context`, NEVER from guessed free text. The live
+ * `Check.detail`(s) ride along as supporting evidence. The map is
+ * `Record<CheckCode, …>`, so a new union member without metadata won't compile.
  */
 
 import type { Check, CheckCode } from "../internals/verify.js";
@@ -40,42 +37,62 @@ export interface SupportFinding {
   audience: Audience;
   severity: Severity;
   kind: TemplateKind;
-  /** Short human title (canned per code). */
+  /** Short, tool-neutral issue title (canned per code). */
   title: string;
-  /** What to do next (canned per code; system-fix wording for external codes). */
+  /** The requested fix — a system/environment change for external findings. */
   recommendedAction: string;
   /** Live `Check.detail`(s) for this code — deduped across checks that share it. */
   details: string[];
+  /** Canned tool-neutral observation for the "Observed evidence" block (external). */
+  evidence?: string;
+  /** Fixed-vocabulary routing hint for the Environment block (external). */
+  affectedArea?: string;
+  /** Canned post-fix checks for the "Acceptance criteria" block (external). */
+  acceptance?: string[];
   /** The capability whose verification surfaced this (e.g. "heal"). */
   capability: string;
 }
 
 /**
- * Per-code routing for the FAIL case. `kind` is NOT stored here — it derives from
- * `audience` (external→escalation, developer→self-fix) and the verdict (skip→
- * improvement). A `skip` also forces `severity`→`optional`, so the table only
- * encodes the fail severity plus the canned copy.
+ * Per-code routing for the FAIL case. `kind` is derived (not stored): external
+ * audiences escalate (fail) / request improvements (skip); developers self-fix.
+ * A `skip` forces `severity`→`optional`. External codes MUST set `evidence`,
+ * `affectedArea`, and `acceptance` (and keep `action` a tool-neutral system fix);
+ * developer codes omit them — the self-fix note doesn't use them.
  */
 interface CodeMeta {
   audience: Audience;
   failSeverity: Exclude<Severity, "optional">;
   title: string;
   action: string;
+  affectedArea?: string;
+  evidence?: string;
+  acceptance?: string[];
 }
 
+/** Acceptance line every external fix shares: the project itself must not change. */
+const NO_CODE_CHANGES = "No project code changes are required.";
+
 /**
- * The taxonomy → support routing table. Exhaustive over {@link CheckCode} by
- * construction. EXTERNAL entries (audience !== developer) MUST keep `action`
- * tool-neutral — a system/environment instruction the recipient can act on
- * without knowing or approving any particular tool.
+ * The taxonomy → support routing table. Exhaustive over {@link CheckCode}.
+ * EXTERNAL entries keep `action`/`evidence` tool-neutral — a system/environment
+ * statement the recipient can act on without knowing any particular tool.
  */
 const CODE_META: Record<CheckCode, CodeMeta> = {
   "env.node-runtime": {
     audience: "internal-it",
     failSeverity: "blocking",
-    title: "Node.js runtime missing or too old",
+    title: "required language runtime missing or unsupported",
+    affectedArea: "local developer tooling",
+    evidence:
+      "The required language runtime (Node.js 20 or newer) is missing or below the supported version on this machine.",
     action:
-      "Provision Node.js 20 or newer on this machine (internal software catalog or an approved installer), then reopen the shell.",
+      "Please provision the supported language runtime on this machine via the approved software catalog or installer, then have the developer reopen their shell.",
+    acceptance: [
+      "The supported runtime version is available on this machine.",
+      "Project setup checks pass without further manual steps.",
+      NO_CODE_CHANGES,
+    ],
   },
   "env.git-missing": {
     audience: "developer",
@@ -93,23 +110,47 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
   "cert.ca-missing": {
     audience: "internal-it",
     failSeverity: "blocking",
-    title: "Corporate certificate authority not trusted by the toolchain",
+    title: "corporate CA not trusted by development tools",
+    affectedArea: "workstation certificate trust / development toolchain trust",
+    evidence:
+      "TLS verification is failing because the approved corporate CA is not available to the tools running on this machine.\nThe Node CA bundle setting (NODE_EXTRA_CA_CERTS) is not set or does not point to a valid corporate CA bundle.",
     action:
-      "Add the corporate root certificate authority to the OS trust store and to the development toolchain's trusted-certificate configuration on this machine (for Node-based tools, the NODE_EXTRA_CA_CERTS environment variable).",
+      "Please make the approved corporate root certificate authority available on this machine and configure the development tools to trust it. For Node-based tools, this usually means setting NODE_EXTRA_CA_CERTS to the approved corporate CA bundle path, in addition to any required OS trust-store configuration.",
+    acceptance: [
+      "Development tools can complete TLS verification against approved internal and package sources.",
+      "Package access works without disabling TLS checks.",
+      NO_CODE_CHANGES,
+    ],
   },
   "tls.verify-failed": {
     audience: "internal-it",
     failSeverity: "blocking",
-    title: "TLS interception is blocking package registries",
+    title: "TLS verification to approved package sources is failing",
+    affectedArea: "workstation certificate trust / development toolchain trust",
+    evidence:
+      "TLS connections to approved package registries are failing on this machine, consistent with an intercepting proxy whose certificate is not trusted by the development tools.",
     action:
-      "Add the intercepting proxy's root certificate to the OS trust store and allowlist the package registry endpoints (registry.npmjs.org, pypi.org) for this machine.",
+      "Please ensure the intercepting proxy's certificate is trusted on this machine (OS trust store and the development toolchain) and that the approved package registry endpoints are reachable.",
+    acceptance: [
+      "Development tools can complete TLS verification against approved internal and package sources.",
+      "Package access works without disabling TLS checks.",
+      NO_CODE_CHANGES,
+    ],
   },
   "npm.runtime-broken": {
     audience: "internal-it",
     failSeverity: "blocking",
-    title: "Node.js / npm runtime is broken on this machine",
+    title: "package manager is broken on this machine",
+    affectedArea: "approved package registry access",
+    evidence:
+      "The package manager fails to run or cannot install from approved registries on this machine.",
     action:
-      "Repair the Node.js / npm installation on this machine; if the package registry is unreachable, restore corporate TLS trust first.",
+      "Please repair the package manager installation on this machine so it runs and can install from approved registries; if the registry is unreachable, restore corporate TLS trust first.",
+    acceptance: [
+      "The package manager runs and can install from approved sources.",
+      "No TLS checks are disabled to achieve this.",
+      NO_CODE_CHANGES,
+    ],
   },
   "path.missing": {
     audience: "developer",
@@ -120,16 +161,30 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
   "mcp.blocked": {
     audience: "dev-platform",
     failSeverity: "blocking",
-    title: "Package launcher (npx) cannot reach the registry",
+    title: "package launcher cannot reach the approved registry",
+    affectedArea: "approved package registry access",
+    evidence:
+      "The developer-platform package launcher cannot reach the approved package registry on this machine.",
     action:
-      "Restore outbound access to the package registry for the launcher (proxy certificate + endpoint allowlist), or approve a vendored, locally-installed server set.",
+      "Please restore access from this machine to the approved package registry for the launcher (certificate trust plus endpoint allowlisting), or approve a vendored, locally-installed server set.",
+    acceptance: [
+      "The launcher can reach approved package sources.",
+      "No TLS checks are disabled to achieve this.",
+      NO_CODE_CHANGES,
+    ],
   },
   "mcp.uv-missing": {
     audience: "dev-platform",
     failSeverity: "degraded",
-    title: "Python launcher (uv) not available",
+    title: "required package launcher not available",
+    affectedArea: "MCP / developer platform configuration",
+    evidence: "A required package launcher (uv) is not available on this machine.",
     action:
-      "Provision the `uv` launcher on this machine, or approve a vendored launcher for the local tool servers.",
+      "Please provision the required package launcher on this machine, or approve a vendored, locally-installed alternative.",
+    acceptance: [
+      "The required launcher is available, or an approved vendored alternative is in place.",
+      NO_CODE_CHANGES,
+    ],
   },
   "mcp.config-missing": {
     audience: "developer",
@@ -140,9 +195,17 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
   "mcp.unvendored-offline": {
     audience: "dev-platform",
     failSeverity: "degraded",
-    title: "Offline tool servers are not vendored",
+    title: "developer-platform servers are not vendored for offline use",
+    affectedArea: "MCP / developer platform configuration",
+    evidence:
+      "One or more developer-platform servers still resolve packages from the network at runtime, which will fail once this machine is air-gapped.",
     action:
-      "Mirror the listed packages into the internal registry, or approve a pinned absolute command for each, before air-gapping this machine.",
+      "Please mirror the required packages into the approved internal registry, or approve a pinned, locally-available command for each, before this machine is air-gapped.",
+    acceptance: [
+      "All required servers run from approved, locally available sources.",
+      "No runtime downloads are needed after air-gapping.",
+      NO_CODE_CHANGES,
+    ],
   },
   "cli.not-detected": {
     audience: "developer",
@@ -190,9 +253,16 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
   "secrets.plaintext-detected": {
     audience: "security",
     failSeverity: "blocking",
-    title: "Plaintext secret committed to the repository",
+    title: "plaintext secret committed to the repository",
+    affectedArea: "security review for plaintext secret handling",
+    evidence: "A plaintext credential was found committed to the repository working tree.",
     action:
-      "Rotate the exposed credential immediately and migrate it to the approved secret store; purge it from version control history.",
+      "Please rotate the exposed credential, move it to the approved secret store, and confirm it is removed from the working tree and version history.",
+    acceptance: [
+      "The exposed credential is rotated and stored in the approved secret store.",
+      "The plaintext value is removed from the working tree and version history.",
+      "Secret-scanning controls remain enabled.",
+    ],
   },
   "guardrails.gitleaks-missing": {
     audience: "developer",
@@ -211,7 +281,7 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
 /** Severity rank for sorting: most urgent first. */
 const SEVERITY_RANK: Record<Severity, number> = { blocking: 0, degraded: 1, optional: 2 };
 
-/** External audiences get tool-neutral, system-fix templates; developers self-fix. */
+/** External audiences get tool-neutral, system-fix tickets; developers self-fix. */
 export function isExternal(audience: Audience): boolean {
   return audience !== "developer";
 }
@@ -238,6 +308,9 @@ export function toFinding(check: Check, capability: string): SupportFinding | un
     title: meta.title,
     recommendedAction: meta.action,
     details: check.detail ? [check.detail] : [],
+    evidence: meta.evidence,
+    affectedArea: meta.affectedArea,
+    acceptance: meta.acceptance,
     capability,
   };
 }

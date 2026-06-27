@@ -47,10 +47,17 @@ describe("parseSupportGuidance", () => {
     expect(parseSupportGuidance(text).projectContext).toBe("marker paragraph");
   });
 
+  it("extracts real routing metadata only from its marker", () => {
+    const text = "<!-- support:routing -->Assignment group: Corp IT L2<!-- /support:routing -->";
+    expect(parseSupportGuidance(text).routing).toBe("Assignment group: Corp IT L2");
+    expect(parseSupportGuidance("## Install\nsteps").routing).toBeUndefined();
+  });
+
   it("returns nothing for a plain setup file", () => {
     expect(parseSupportGuidance("# Setup\n\nRun the install script.\n")).toEqual({
       projectContext: undefined,
       corporateGuidance: undefined,
+      routing: undefined,
     });
   });
 });

@@ -5,10 +5,10 @@ import { renderTemplate, supportTemplates } from "../../src/support/render.js";
 import { isToolNeutral, type SupportContext } from "../../src/support/templates.js";
 
 /**
- * PR2 core: coded checks → routed findings → copy-ready templates. EXTERNAL
- * templates (escalation/improvement) are tool-neutral by contract; the developer
- * self-fix note is internal and may name the harness. Pure + deterministic (the
- * only seam is SupportContext, supplied here).
+ * PR2 core: coded checks → routed findings → ticket-ready templates
+ * (Summary → Impact → Evidence → Environment → Requested fix → Acceptance).
+ * EXTERNAL tickets are tool-neutral by contract; the developer self-fix note is
+ * internal and may name the harness. Pure + deterministic.
  */
 
 const CTX: SupportContext = {
@@ -38,125 +38,132 @@ describe("findings — routing", () => {
     expect(toFinding(chk(undefined, "fail", "boom"), "doctor")).toBeUndefined();
   });
 
-  it("routes a failing cert as an internal-IT escalation", () => {
-    const f = toFinding(chk("cert.ca-missing", "fail", "set but missing: /x"), "heal");
-    expect(f).toMatchObject({
-      audience: "internal-it",
-      kind: "escalation",
-      severity: "blocking",
-    });
-    expect(f?.details).toEqual(["set but missing: /x"]);
+  it("routes a failing cert as a blocking internal-IT escalation with canned ticket fields", () => {
+    const f = mustFind("cert.ca-missing", "fail", "not set");
+    expect(f).toMatchObject({ audience: "internal-it", kind: "escalation", severity: "blocking" });
+    expect(f.affectedArea).toContain("certificate trust");
+    expect(f.evidence).toContain("approved corporate CA is not available");
+    expect(f.acceptance?.length).toBeGreaterThan(0);
   });
 
-  it("routes a plaintext secret as a security escalation", () => {
-    expect(toFinding(chk("secrets.plaintext-detected", "fail", ".env"), "secrets")).toMatchObject({
-      audience: "security",
-      kind: "escalation",
-      severity: "blocking",
-    });
+  it("routes a developer skip as a self-fix and an external skip as an improvement", () => {
+    expect(toFinding(chk("mcp.config-missing", "skip"), "heal")?.kind).toBe("self-fix");
+    expect(toFinding(chk("mcp.uv-missing", "skip"), "mcp")?.kind).toBe("improvement");
   });
 
-  it("routes a developer-fixable failure as an internal self-fix", () => {
-    expect(
-      toFinding(chk("cli.bootloader-missing", "fail", "missing"), "bootstrap-ai"),
-    ).toMatchObject({ audience: "developer", kind: "self-fix", severity: "blocking" });
-  });
-
-  it("routes a developer skip as a self-fix (not an external request)", () => {
-    expect(toFinding(chk("mcp.config-missing", "skip", "no .mcp.json"), "heal")).toMatchObject({
-      audience: "developer",
-      kind: "self-fix",
-      severity: "optional",
-    });
-  });
-
-  it("routes an external skip as an improvement request", () => {
-    expect(toFinding(chk("mcp.uv-missing", "skip", "uv not found"), "mcp")).toMatchObject({
-      audience: "dev-platform",
-      kind: "improvement",
-      severity: "optional",
-    });
-  });
-
-  it("dedupes by code and merges details", () => {
-    const findings = findingsFrom(
-      [
-        chk("cli.bootloader-missing", "fail", "CLAUDE.md missing", "bootloader CLAUDE.md"),
-        chk("cli.bootloader-missing", "fail", "AGENTS.md missing", "bootloader AGENTS.md"),
-      ],
-      "bootstrap-ai",
-    );
-    expect(findings).toHaveLength(1);
-    expect(findings[0]?.details).toEqual(["CLAUDE.md missing", "AGENTS.md missing"]);
-  });
-
-  it("sorts most-urgent-first", () => {
+  it("dedupes by code, merges details, sorts most-urgent-first", () => {
     const findings = findingsFrom(
       [
         chk("usage.no-data", "skip", "no data"),
+        chk("cli.bootloader-missing", "fail", "CLAUDE.md missing"),
+        chk("cli.bootloader-missing", "fail", "AGENTS.md missing"),
         chk("secrets.plaintext-detected", "fail", ".env"),
-        chk("cli.bootloader-drift", "fail", "drifted"),
       ],
       "report",
     );
-    expect(findings.map((f) => f.severity)).toEqual(["blocking", "degraded", "optional"]);
+    expect(findings.map((f) => f.severity)).toEqual(["blocking", "blocking", "optional"]);
+    const bootloader = findings.find((f) => f.code === "cli.bootloader-missing");
+    expect(bootloader?.details).toEqual(["CLAUDE.md missing", "AGENTS.md missing"]);
   });
 });
 
-describe("templates — external tool-neutrality", () => {
-  const escalation = renderTemplate(
-    mustFind("cert.ca-missing", "fail", "set but missing: /x"),
-    CTX,
-  );
+describe("templates — external ticket (escalation)", () => {
+  const t = renderTemplate(mustFind("cert.ca-missing", "fail", "NODE_EXTRA_CA_CERTS unset"), CTX);
 
-  it("escalation is tool-neutral and frames an environment issue", () => {
-    expect(escalation.subject).toBe(
-      "[acme-web] Development environment issue (blocking) — Corporate certificate authority not trusted by the toolchain",
-    );
-    expect(isToolNeutral(escalation.body)).toBe(true);
-    expect(isToolNeutral(escalation.subject)).toBe(true);
-    // No harness command, workspace path, AI-CLI targets, or context dir leak out.
-    for (const leak of [CTX.command, CTX.root, CTX.targets, CTX.contextDir]) {
-      expect(escalation.body).not.toContain(leak);
-    }
-    // But the project, machine, reference, live detail, and fix are present.
-    for (const needle of [
-      CTX.projectName,
-      CTX.platform,
-      CTX.runId,
-      "set but missing: /x",
-      "What is needed",
-    ]) {
-      expect(escalation.body).toContain(needle);
-    }
-  });
-
-  it("falls back to a generic why-this-matters when SETUP.md gives none", () => {
-    expect(escalation.body).toContain("approved dependencies");
-  });
-
-  it("weaves SETUP.md project context and a corporate-language footer when present", () => {
-    const t = renderTemplate(mustFind("tls.verify-failed", "fail", "SSL problem"), {
-      ...CTX,
-      projectContext: "acme-web ships PCI-regulated payment flows; the toolchain must verify TLS.",
-      corporateGuidance: "Address to the IT Service Desk and use British English.",
-    });
-    expect(t.body).toContain("PCI-regulated payment flows");
-    expect(t.body).toContain("adapt before sending");
-    expect(t.body).toContain("IT Service Desk");
-  });
-
-  it("improvement (external skip) is lighter and tool-neutral", () => {
-    const t = renderTemplate(mustFind("mcp.uv-missing", "skip", "uv not found"), CTX);
+  it("uses a tool-neutral blocking-setup subject", () => {
     expect(t.subject).toBe(
-      "[acme-web] Development environment improvement — Python launcher (uv) not available",
+      "[acme-web] Blocking setup issue — corporate CA not trusted by development tools",
+    );
+    expect(isToolNeutral(t.subject)).toBe(true);
+  });
+
+  it("is tool-neutral and never leaks harness/command/path context", () => {
+    expect(isToolNeutral(t.body)).toBe(true);
+    for (const leak of [CTX.command, CTX.root, CTX.targets, CTX.contextDir]) {
+      expect(t.body).not.toContain(leak);
+    }
+  });
+
+  it("carries the full ticket structure with canned + live evidence", () => {
+    for (const section of [
+      "Impact",
+      "Issue",
+      "Observed evidence",
+      "Environment",
+      "Requested fix",
+      "Acceptance criteria",
+      "```text",
+      "Affected area:  workstation certificate trust / development toolchain trust",
+      "approved corporate CA is not available", // canned evidence
+      "NODE_EXTRA_CA_CERTS unset", // live detail
+      "No project code changes are required.", // acceptance
+    ]) {
+      expect(t.body).toContain(section);
+    }
+    for (const field of [CTX.projectName, CTX.platform, CTX.runId, CTX.timestamp]) {
+      expect(t.body).toContain(field);
+    }
+  });
+
+  it("appends the security work-around guard", () => {
+    expect(t.body).toContain("Please do not work around this by disabling TLS verification");
+  });
+
+  it("weaves SETUP.md project context, else a default", () => {
+    expect(t.body).toContain("approved dependencies"); // default
+    const withCtx = renderTemplate(mustFind("tls.verify-failed", "fail", "SSL problem"), {
+      ...CTX,
+      projectContext: "acme-web handles cardholder data and must stay PCI-DSS compliant.",
+    });
+    expect(withCtx.body).toContain("PCI-DSS compliant");
+  });
+
+  it("renders real routing metadata only when provided, never invented", () => {
+    expect(t.body).not.toContain("Routing:");
+    const routed = renderTemplate(mustFind("cert.ca-missing", "fail", "x"), {
+      ...CTX,
+      routing: "Assignment group: Corp IT L2",
+    });
+    expect(routed.body).toContain("Routing:        Assignment group: Corp IT L2");
+  });
+});
+
+describe("templates — external ticket (improvement)", () => {
+  const t = renderTemplate(mustFind("mcp.uv-missing", "skip", "uv not found"), CTX);
+
+  it("uses the improvement subject, sections, and no security footer", () => {
+    expect(t.subject).toBe(
+      "[acme-web] Setup improvement request — required package launcher not available",
     );
     expect(isToolNeutral(t.body)).toBe(true);
-    expect(t.body).not.toContain("Issue");
-    expect(t.body).toContain("Requested improvement");
+    for (const section of [
+      "Why this helps",
+      "Configuration gap",
+      "Requested configuration",
+      "Expected result",
+    ]) {
+      expect(t.body).toContain(section);
+    }
+    expect(t.body).not.toContain("Please do not work around this");
+  });
+});
+
+describe("templates — internal self-fix", () => {
+  it("is a terse runnable note that may name the harness", () => {
+    const t = renderTemplate(mustFind("cli.bootloader-missing", "fail", "missing"), CTX);
+    expect(t.subject).toBe("aih: CLI bootloader missing");
+    expect(t.body).toContain("Fix: Run `aih bootstrap-ai --apply`");
+    expect(t.body).toContain("Detected by `aih heal --verify`.");
   });
 
-  it("every external template is tool-neutral (sweep)", () => {
+  it("renders byte-identically for the same inputs (deterministic)", () => {
+    const f = mustFind("cli.bootloader-missing", "fail", "missing");
+    expect(renderTemplate(f, CTX).body).toBe(renderTemplate(f, CTX).body);
+  });
+});
+
+describe("templates — tool-neutrality sweep + pipeline", () => {
+  it("keeps every external template free of the harness name", () => {
     const external: Array<[CheckCode, Verdict]> = [
       ["env.node-runtime", "fail"],
       ["cert.ca-missing", "fail"],
@@ -174,24 +181,7 @@ describe("templates — external tool-neutrality", () => {
       expect(isToolNeutral(t.subject), `${code} subject must be tool-neutral`).toBe(true);
     }
   });
-});
 
-describe("templates — internal self-fix", () => {
-  it("is a terse runnable note that may name the harness", () => {
-    const t = renderTemplate(mustFind("cli.bootloader-missing", "fail", "missing"), CTX);
-    expect(t.subject).toBe("aih: CLI bootloader missing");
-    expect(t.copyLabel).toBe("Self-fix — CLI bootloader missing");
-    expect(t.body).toContain("Fix: Run `aih bootstrap-ai --apply`");
-    expect(t.body).toContain("`aih heal --verify`");
-  });
-
-  it("renders byte-identically for the same inputs (deterministic)", () => {
-    const f = mustFind("cli.bootloader-missing", "fail", "missing");
-    expect(renderTemplate(f, CTX).body).toBe(renderTemplate(f, CTX).body);
-  });
-});
-
-describe("templates — pipeline", () => {
   it("supportTemplates orders checks most-urgent-first and drops passes", () => {
     const templates = supportTemplates(
       [

@@ -37,12 +37,14 @@ const AUDIENCE_LABEL: Record<Audience, string> = {
 };
 
 function subjectFor(finding: SupportFinding, ctx: SupportContext): string {
-  // External subjects are tool-neutral — a project / environment problem, never
-  // this harness. Only the internal self-fix note may name the tool.
-  if (finding.kind === "escalation")
-    return `[${ctx.projectName}] Development environment issue (${finding.severity}) — ${finding.title}`;
+  // External subjects are tool-neutral — a project setup problem, never this
+  // harness. Only the internal self-fix note may name the tool.
+  if (finding.kind === "escalation") {
+    const lead = finding.severity === "blocking" ? "Blocking setup issue" : "Setup issue";
+    return `[${ctx.projectName}] ${lead} — ${finding.title}`;
+  }
   if (finding.kind === "improvement")
-    return `[${ctx.projectName}] Development environment improvement — ${finding.title}`;
+    return `[${ctx.projectName}] Setup improvement request — ${finding.title}`;
   return `aih: ${finding.title}`;
 }
 

@@ -23,6 +23,12 @@ export interface SupportGuidance {
   projectContext?: string;
   /** How to adapt the outgoing message to corporate language. */
   corporateGuidance?: string;
+  /**
+   * Real routing metadata (assignment group, ticket prefix, …) the project chose
+   * to publish. Rendered verbatim in the ticket's Environment block. Only ever
+   * present when the setup file provides it — never inferred or invented.
+   */
+  routing?: string;
 }
 
 /** Headings whose first paragraph is a reasonable "why this matters" fallback. */
@@ -68,5 +74,6 @@ export function parseSupportGuidance(text: string): SupportGuidance {
   return {
     projectContext: betweenMarkers(text, "why") ?? firstParagraphUnderHeading(text),
     corporateGuidance: betweenMarkers(text, "language"),
+    routing: betweenMarkers(text, "routing"),
   };
 }
