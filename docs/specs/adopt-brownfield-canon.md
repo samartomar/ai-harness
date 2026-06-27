@@ -243,9 +243,12 @@ file into a thin pointer — backed up to `.aih/legacy/`, never silently.
 that must never run ahead of the content move — otherwise a half-finished migration silently strips a
 user's active setup. So `--migrate-cli`:
 
-1. **Refuses to convert** any tool-native file whose content is not yet confirmed present in the canon
-   (a per-artifact check: the imported rule/agent exists under `ai-coding/`). An un-imported artifact is
-   reported as *blocked: import incomplete*, never converted.
+1. **Skips (with a warning) any tool-native file whose content is not yet confirmed present in the
+   canon** — a per-artifact check (the imported rule/agent exists under `ai-coding/`). Conversion is
+   per-artifact, not all-or-nothing: ready artifacts convert, un-imported ones are **skipped and
+   reported** ("skipped: import incomplete — content not found in the canon"), and the run still exits 0
+   (a skip never fails — consistent with the rest of the harness). It is NOT a hard error that aborts the
+   whole command; the user re-runs after finishing the import and the remaining artifacts convert then.
 2. **Backs up** every converted file to `.aih/legacy/` first (recoverable even on mistake).
 3. Is **surfaced in `SETUP-TASKS.md`**: the playbook tells the agent (a) there is *scope to improve* the
    tool-native content as it lands in the canon, and (b) a hard warning — do NOT run `--migrate-cli`
@@ -277,5 +280,6 @@ full migration is deliberate, reversible, and opt-in — never a bulldoze.
    `--migrate-cli` flag, but **content-verified** — aih refuses to convert any artifact whose content
    isn't already in the canon (so a half-done migration can't strip the user's active setup), backs up
    every conversion to `.aih/legacy/`, and `SETUP-TASKS.md` surfaces both the "scope to improve" and the
-   "don't convert before VALIDATION confirms import" warning. Remaining sub-question: should the refusal
-   be a hard error (exit non-zero) or a skip-with-warning when some artifacts are un-imported?
+   "don't convert before VALIDATION confirms import" warning. Sub-question RESOLVED (2026-06-27):
+   un-imported artifacts are **skip-with-warning** (per-artifact, run still exits 0), NOT a hard error —
+   ready artifacts convert, the rest are reported and convert on a later re-run.
