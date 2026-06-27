@@ -21,7 +21,8 @@ import { z } from "zod";
  */
 
 /** Does the tool support a capability natively, can aih emit a fallback, or is it unavailable. */
-const Support = z.enum(["native", "absent"]);
+export const SUPPORT_LEVELS = ["native", "fallback", "absent"] as const;
+const Support = z.enum(SUPPORT_LEVELS);
 
 const McpProfile = z.object({
   support: Support,

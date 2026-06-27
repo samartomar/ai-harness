@@ -1,6 +1,9 @@
-# Every change is routed to the maintainer for review.
+# Repository ownership for release-critical review.
 * @samartomar
 
-# Security-sensitive surfaces — CI, supply chain, and the action model.
-/.github/ @samartomar
-/src/internals/ @samartomar
+# Supply-chain and policy surfaces require owner review.
+/.github/workflows/ @samartomar
+/package.json @samartomar
+/package-lock.json @samartomar
+/src/ @samartomar
+/tests/ @samartomar

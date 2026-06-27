@@ -56,6 +56,13 @@ export interface Check {
    * design, so a Check that omits it serializes byte-for-byte as before.
    */
   code?: CheckCode;
+  /** Optional repo-relative artifact location for file-backed findings. */
+  location?: {
+    uri: string;
+    startLine?: number;
+  };
+  /** Optional stable fingerprint for code-scanning de-dupe. */
+  fingerprint?: string;
 }
 
 /**
