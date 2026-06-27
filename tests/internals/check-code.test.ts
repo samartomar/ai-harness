@@ -367,6 +367,7 @@ describe("Check.code — invariants", () => {
       "canon.router-missing": true,
       "canon.context-dir-missing": true,
       "canon.lint-failed": true,
+      "canon.adoptable": true,
       "secrets.plaintext-detected": true,
       "guardrails.gitleaks-missing": true,
       "usage.no-data": true,

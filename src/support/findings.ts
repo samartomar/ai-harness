@@ -250,6 +250,13 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     title: "Canon fails the weak-model lint",
     action: "Fix the flagged references/placeholders in the context docs and re-verify.",
   },
+  "canon.adoptable": {
+    audience: "developer",
+    failSeverity: "degraded",
+    title: "Existing AI canon not yet on the managed model",
+    action:
+      "Run `aih adopt` to converge the existing canon onto the managed model instead of overwriting it.",
+  },
   "secrets.plaintext-detected": {
     audience: "security",
     failSeverity: "blocking",

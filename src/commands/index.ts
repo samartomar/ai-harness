@@ -1,4 +1,5 @@
 import type { Command } from "commander";
+import { command as adopt } from "../adopt/index.js";
 import { command as bootstrap } from "../bootstrap/index.js";
 import { command as bootstrapAi } from "../bootstrap-ai/index.js";
 import { command as certs } from "../certs/index.js";
@@ -47,6 +48,7 @@ export const CAPABILITIES: CommandSpec[] = [
   bootstrap,
   bootstrapAi,
   workspace,
+  adopt,
   init,
 ];
 
