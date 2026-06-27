@@ -181,7 +181,7 @@ export function demoDigests(): DigestAction[] {
           },
         },
         {
-          // The showcase: every cell green, but the steering file is missing
+          // A wontLoad example: every cell green, but the steering file is missing
           // `inclusion: always` — present, in sync, and never auto-loaded.
           cli: "kiro",
           label: "Kiro",
