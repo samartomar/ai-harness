@@ -6,7 +6,7 @@ import { command } from "../../src/adopt/index.js";
 import { SHARED_MARKER, sharedCanonicalBlockBody } from "../../src/bootstrap-ai/canon.js";
 import { beginLine, endLine } from "../../src/internals/markers.js";
 import type { Action, DigestAction, PlanContext, ProbeAction } from "../../src/internals/plan.js";
-import { fakeRunner } from "../../src/internals/proc.js";
+import { fakeRunner, type Runner } from "../../src/internals/proc.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 
 let tmp: string;
@@ -23,8 +23,8 @@ function put(rel: string, contents: string): void {
   writeFileSync(full, contents, "utf8");
 }
 
-function makeCtx(flags: { apply?: boolean; verify?: boolean } = {}): PlanContext {
-  const run = fakeRunner(() => undefined);
+function makeCtx(flags: { apply?: boolean; verify?: boolean; run?: Runner } = {}): PlanContext {
+  const run = flags.run ?? fakeRunner(() => undefined);
   return {
     root: tmp,
     contextDir: "ai-coding",
@@ -106,11 +106,47 @@ describe("aih adopt — Phase 1 (read-only)", () => {
     const text = digestOf(actions)?.text ?? "";
     expect(text).toContain("CLI-native footprint (aih will NOT modify these)");
     expect(text).toContain("[import] .claude/agents");
-    expect(text).toContain("[wired]  .cursorrules");
+    expect(text).toContain("[wired] .cursorrules");
     // The CLI-native advisory routes via canon.cli-native-unmigrated.
     const check = await probeNamed(actions, "cli-native")?.run(makeCtx({ verify: true }));
     expect(check?.verdict).toBe("skip");
     expect(check?.code).toBe("canon.cli-native-unmigrated");
+  });
+
+  it("git-committed signal: uncommitted tool content is [personal], no advisory (idempotent re-run)", async () => {
+    put("CLAUDE.md", divergentBootloader());
+    put(".claude/agents/local.md", "# a developer's own agent\n"); // present but NOT committed
+    // git ls-files returns a populated set that excludes the agent → personal.
+    const run = fakeRunner((argv) =>
+      argv.includes("ls-files") ? { stdout: "CLAUDE.md\0README.md\0" } : undefined,
+    );
+    const actions = (await command.plan(makeCtx({ run }))).actions;
+    expect(digestOf(actions)?.text).toContain("[personal] .claude/agents");
+    // No import candidates → the advisory does NOT fire (no nag loop).
+    const check = await probeNamed(actions, "cli-native")?.run(makeCtx({ run }));
+    expect(check?.verdict).toBe("pass");
+    expect(check?.code).toBeUndefined();
+  });
+
+  it("acknowledged committed content is [kept], not flagged", async () => {
+    put("CLAUDE.md", divergentBootloader());
+    put(".claude/agents/shared.md", "# a shared agent\n");
+    put(
+      ".aih-config.json",
+      JSON.stringify({
+        schemaVersion: 1,
+        contextDir: "ai-coding",
+        targets: ["claude"],
+        adopt: { acknowledged: [".claude/agents"] },
+      }),
+    );
+    const run = fakeRunner((argv) =>
+      argv.includes("ls-files") ? { stdout: ".claude/agents/shared.md\0" } : undefined,
+    );
+    const actions = (await command.plan(makeCtx({ run }))).actions;
+    expect(digestOf(actions)?.text).toContain("[kept] .claude/agents");
+    const check = await probeNamed(actions, "cli-native")?.run(makeCtx({ run }));
+    expect(check?.verdict).toBe("pass");
   });
 
   it("no CLI-native content → cli-native probe passes", async () => {

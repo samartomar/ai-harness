@@ -265,6 +265,36 @@ The default path mutates nothing tool-native (mirrors aih's existing "guidance-n
 formats" posture). The user always learns what exists and where; the agent always gets an actionable map;
 full migration is deliberate, reversible, and opt-in — never a bulldoze.
 
+### 13.6 Idempotency & the team-pollution guard
+
+A team runs `adopt` repeatedly (each developer, plus CI). Every developer's CLI keeps writing to its
+native location, and **each dev has their own style — that is fine and must NOT be pulled into the shared
+canon**. So the footprint must not become a nag loop, and it must never pressure one person's practice
+into the team's canon. Re-running `adopt` therefore sorts tool-native content into four dispositions, and
+**only one is ever an import candidate**:
+
+- **`[wired]`** — references the canon → leave alone (§13.2).
+- **`[personal]`** — **not committed** (untracked or gitignored) → one developer's local/style config.
+  Shown for awareness, **never** an import candidate, never nagged. Uses aih's existing tracked-file seam
+  (`git ls-files`, the same gitignore-honoring mechanism `aih report`'s footprint uses); when the root
+  isn't a git repo, the signal is unavailable and aih falls back to treating content as shared.
+- **`[kept]`** — committed, but the team has **acknowledged** it as intentionally tool-native (recorded in
+  the committed `.aih-config.json` under `adopt.acknowledged: [paths]`). Shown, never a candidate.
+- **`[import]`** — committed, tool-owned, and **not** acknowledged → the ONLY disposition counted as an
+  import candidate and the only one that raises `canon.cli-native-unmigrated`.
+
+The shared-vs-personal signal is **committed (tracked)**, not merely "exists on disk": a file a developer
+hasn't committed (untracked) — or has gitignored — is theirs, and stays `[personal]`. Only content the
+team chose to commit is a shared concern.
+
+This makes adopt **idempotent for a team**: personal rules are silent; once the team acknowledges the
+shared tool-native content it intends to keep, re-runs go quiet; and only genuinely NEW committed shared
+content surfaces — once — for a deliberate decision. Nothing is ever auto-pulled into the canon, so an
+individual's practice cannot pollute the shared setup by default. Acknowledging is a tiny opt-in write to
+the committed `.aih-config.json` (`aih adopt --ack <path>`, Phase 2); promotion into the canon stays the
+opt-in `--migrate-cli` act (§13.4). The read-only disposition sort (gitignore-honoring + reading an
+existing `acknowledged` list) ships in the Phase-1 footprint — so the loop is broken before any writer exists.
+
 ## 14. Open questions (need owner input)
 
 1. **Extension detection fidelity** — line-anchored diff vs a marked sub-region. Should aih ask repos to

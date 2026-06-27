@@ -39,6 +39,23 @@ export async function gitTrackedSet(ctx: PlanContext): Promise<Allowlist | undef
 }
 
 /**
+ * Repo-relative POSIX paths git considers COMMITTED (tracked) — `git ls-files`.
+ * Narrower than {@link gitTrackedSet}, which also counts untracked-not-ignored:
+ * adopt's team-pollution guard treats ONLY committed content as "shared" (a
+ * developer's uncommitted personal file must stay silent), so it needs the
+ * tracked-only set. `undefined` when not a git repo / git absent / the set is
+ * empty — callers then treat content as shared (can't prove it's personal),
+ * mirroring {@link gitTrackedSet}'s empty→undefined fallback.
+ */
+export async function gitCommittedSet(ctx: PlanContext): Promise<ReadonlySet<string> | undefined> {
+  const raw = await gitRead(ctx, ["ls-files", "-z"]);
+  if (raw === undefined) return undefined;
+  const files = new Set<string>();
+  for (const p of raw.split("\0")) if (p) files.add(norm(p));
+  return files.size > 0 ? files : undefined;
+}
+
+/**
  * Paths changed since `ref` — committed (`ref...HEAD`), working tree, and
  * untracked-not-ignored — for fast PR CI (`--since`). `undefined` when the root
  * isn't a git repo. Returns the empty set (not undefined) for a valid ref with no

@@ -91,3 +91,59 @@ describe("cliFootprint", () => {
     expect(find(".kiro/hooks")?.kind).toBe("runtime-config");
   });
 });
+
+describe("cliFootprint — §13.6 team-pollution guard", () => {
+  it("no committed set (not a git repo) → tool-owned content defaults to import", () => {
+    put(".claude/agents/x.md", "# agent\n");
+    const a = cliFootprint(tmp, DIR).artifacts.find((x) => x.path === ".claude/agents");
+    expect(a?.disposition).toBe("import");
+    expect(cliFootprint(tmp, DIR).importCandidates).toBe(1);
+  });
+
+  it("uncommitted tool-owned content → [personal], NOT a candidate (a dev's own style)", () => {
+    put(".claude/agents/x.md", "# personal agent\n");
+    // committed set is non-empty but does NOT contain the agent → personal.
+    const committed = new Set(["README.md", "src/app.ts"]);
+    const fp = cliFootprint(tmp, DIR, { committed });
+    const a = fp.artifacts.find((x) => x.path === ".claude/agents");
+    expect(a?.disposition).toBe("personal");
+    expect(fp.importCandidates).toBe(0);
+  });
+
+  it("committed tool-owned content → [import] candidate", () => {
+    put(".claude/agents/x.md", "# shared agent\n");
+    const committed = new Set([".claude/agents/x.md", "README.md"]);
+    const fp = cliFootprint(tmp, DIR, { committed });
+    expect(fp.artifacts.find((x) => x.path === ".claude/agents")?.disposition).toBe("import");
+    expect(fp.importCandidates).toBe(1);
+  });
+
+  it("a dir counts as shared if ANY file under it is committed", () => {
+    put(".claude/agents/committed.md", "# a\n");
+    put(".claude/agents/local.md", "# b\n");
+    const committed = new Set([".claude/agents/committed.md"]); // only one is tracked
+    expect(
+      cliFootprint(tmp, DIR, { committed }).artifacts.find((x) => x.path === ".claude/agents")
+        ?.disposition,
+    ).toBe("import");
+  });
+
+  it("acknowledged committed content → [kept], NOT a candidate (idempotent re-run)", () => {
+    put(".claude/agents/x.md", "# shared agent\n");
+    const committed = new Set([".claude/agents/x.md"]);
+    const acknowledged = new Set([".claude/agents"]);
+    const fp = cliFootprint(tmp, DIR, { committed, acknowledged });
+    expect(fp.artifacts.find((x) => x.path === ".claude/agents")?.disposition).toBe("kept");
+    expect(fp.importCandidates).toBe(0);
+  });
+
+  it("pointers and runtime are unaffected by the committed/ack signal", () => {
+    put(".cursorrules", "Read `ai-coding/RULE_ROUTER.md`\n");
+    put(".claude/settings.json", "{}\n");
+    const fp = cliFootprint(tmp, DIR, { committed: new Set() });
+    expect(fp.artifacts.find((x) => x.path === ".cursorrules")?.disposition).toBe("wired");
+    expect(fp.artifacts.find((x) => x.path === ".claude/settings.json")?.disposition).toBe(
+      "runtime",
+    );
+  });
+});

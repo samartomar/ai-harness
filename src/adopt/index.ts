@@ -2,6 +2,7 @@ import { basename, resolve } from "node:path";
 import { readAihConfig } from "../config/marker.js";
 import { type CommandSpec, digest, type PlanContext, plan, probe } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
+import { gitCommittedSet } from "../internals/scan-allowlist.js";
 import type { Check } from "../internals/verify.js";
 import {
   type BootloaderState,
@@ -78,22 +79,33 @@ function migrationReport(cls: CanonClassification, repo: string, contextDir: str
   return lines(...body);
 }
 
+/** Disposition → panel tag (§13.6). Only `[import]` is a candidate. */
+const DISPOSITION_TAG: Record<CliArtifact["disposition"], string> = {
+  wired: "[wired]",
+  personal: "[personal]",
+  kept: "[kept]",
+  import: "[import]",
+  runtime: "[runtime]",
+};
+
 /** One CLI-native artifact line for the footprint panel. */
 function footprintLine(a: CliArtifact): string {
-  const tag =
-    a.kind === "pointer" ? "[wired] " : a.kind === "tool-owned-content" ? "[import]" : "[runtime]";
-  return `  ${tag} ${a.path} — ${a.detail}`;
+  return `  ${DISPOSITION_TAG[a.disposition]} ${a.path} — ${a.detail}`;
 }
 
 /**
  * The CLI-native footprint panel (§13). Read-only: aih reports what each tool
- * keeps at its own location and will NOT modify any of it. Tool-owned content is
- * flagged as an import candidate; full migration is opt-in + agent-guided.
+ * keeps at its own location and will NOT modify any of it. The team-pollution
+ * guard (§13.6) means only committed, un-acknowledged tool-owned content counts as
+ * an import candidate — `[personal]` (uncommitted) and `[kept]` (acknowledged) are
+ * shown but never nagged, so re-runs don't loop.
  */
 function footprintReport(fp: CliFootprint): string {
   if (fp.artifacts.length === 0) {
     return lines("CLI-native footprint:", "  none detected.");
   }
+  const personal = fp.artifacts.filter((a) => a.disposition === "personal").length;
+  const kept = fp.artifacts.filter((a) => a.disposition === "kept").length;
   const body = [
     "CLI-native footprint (aih will NOT modify these):",
     ...fp.artifacts.map(footprintLine),
@@ -101,10 +113,19 @@ function footprintReport(fp: CliFootprint): string {
   if (fp.importCandidates > 0) {
     body.push(
       "",
-      `${fp.importCandidates} import candidate(s). Full migration into the canon is OPT-IN`,
-      "(`--migrate-cli`, content-verified) and agent-guided via `SETUP-TASKS.md` — until then",
-      "these files are left exactly as they are.",
+      `${fp.importCandidates} import candidate(s) — committed, shared, not yet in the canon.`,
+      "Full migration is OPT-IN (`--migrate-cli`, content-verified) and agent-guided via",
+      "`SETUP-TASKS.md`; until then these files are left exactly as they are.",
     );
+  } else {
+    body.push("", "No import candidates — nothing committed+shared awaits the canon.");
+  }
+  if (personal > 0 || kept > 0) {
+    const notes: string[] = [];
+    if (personal > 0)
+      notes.push(`${personal} personal (uncommitted — a developer's own, left silent)`);
+    if (kept > 0) notes.push(`${kept} kept (team-acknowledged as intentionally tool-native)`);
+    body.push(`Not counted: ${notes.join("; ")}.`);
   }
   return lines(...body);
 }
@@ -165,7 +186,12 @@ async function adoptPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
   // Resolve before basename so a `.`/relative root still names the repo dir.
   const repo = basename(resolve(ctx.root)) || "this repo";
   const cls = classifyCanon(ctx.root, contextDir);
-  const fp = cliFootprint(ctx.root, contextDir);
+  // Team-pollution guard (§13.6): committed = the "shared" signal; acknowledged =
+  // the team's committed decisions. Both read-only — uncommitted/personal and
+  // acknowledged content is shown but never counted, so re-runs don't nag-loop.
+  const committed = await gitCommittedSet(ctx);
+  const acknowledged = new Set(cfg?.adopt?.acknowledged ?? []);
+  const fp = cliFootprint(ctx.root, contextDir, { committed, acknowledged });
 
   const text = `${migrationReport(cls, repo, contextDir)}\n\n${footprintReport(fp)}`;
   return plan(
