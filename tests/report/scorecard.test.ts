@@ -76,7 +76,8 @@ function scaffoldFull(): void {
   put(`${DIR_NAME}/adapters/_shared-canonical-block.md`, sharedBlock(DIR_NAME).body);
   put(`${DIR_NAME}/REGENERATION.md`, "# Regeneration\n");
   put("CLAUDE.md", inSyncBootloader());
-  put(".mcp.json", "{}");
+  // A populated mcpServers map — the content check requires ≥1 server, not just a file.
+  put(".mcp.json", JSON.stringify({ mcpServers: { context7: { command: "npx" } } }));
   put(".claude/settings.json", "{}");
   put(".gitleaks.toml", "title = 'x'\n");
   put(".pre-commit-config.yaml", "repos: []\n");
@@ -108,6 +109,40 @@ describe("scorecardDigest — fully wired", () => {
 
     const panels = await localPanels(ctx());
     expect(panels.some((p) => p.describe.startsWith("Harness maturity"))).toBe(true);
+  });
+});
+
+describe("scorecardDigest — per-CLI wiring (Phase 2)", () => {
+  it("D7: a present-but-won't-load bootloader fails harnessWiring (drops the score)", () => {
+    // Fully wired EXCEPT the Claude bootloader points at a router that isn't there:
+    // present + in sync, but the chain won't resolve → wontLoad → a hard fail.
+    put(`${DIR_NAME}/RULE_ROUTER.md`, "Read RULE_ROUTER.md first.\n");
+    put(`${DIR_NAME}/adapters/_shared-canonical-block.md`, sharedBlock(DIR_NAME).body);
+    put(`${DIR_NAME}/REGENERATION.md`, "# Regeneration\n");
+    put("CLAUDE.md", inSyncBootloader()); // present + in sync, but core doc is absent
+    put(".mcp.json", JSON.stringify({ mcpServers: { context7: { command: "npx" } } }));
+    put(".claude/settings.json", "{}");
+
+    const d = scorecardDigest(ctx());
+    if (!d) throw new Error("expected a digest");
+    const data = d.data as ScoreData;
+    const wiring = data.dimensions.find((dim) => dim.name === "harnessWiring");
+    const loadable = wiring?.checks.find((c) => c.id === "claude-loadable");
+    expect(loadable?.passed).toBe(false); // wontLoad — router chain broken
+    expect(wiring?.score).toBeLessThan(100);
+  });
+
+  it("scopes to the marker target: a kiro-only repo is not docked for Claude files", () => {
+    put(
+      ".aih-config.json",
+      JSON.stringify({ schemaVersion: 1, contextDir: DIR_NAME, targets: ["kiro"] }),
+    );
+    put(`${DIR_NAME}/RULE_ROUTER.md`, "Read RULE_ROUTER.md first.\n");
+    const d = scorecardDigest(ctx());
+    if (!d) throw new Error("expected a digest");
+    const wiring = (d.data as ScoreData).dimensions.find((dim) => dim.name === "harnessWiring");
+    // every harnessWiring check is a kiro check — no claude-settings / .mcp.json assumption
+    expect(wiring?.checks.every((c) => c.id.startsWith("kiro-"))).toBe(true);
   });
 });
 
