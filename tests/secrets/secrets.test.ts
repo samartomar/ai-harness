@@ -344,13 +344,16 @@ describe("secrets --verify gate", () => {
     expect(errors.every((r: { ruleId: string }) => r.ruleId === SECRET_RULE)).toBe(true);
     const uris = errors
       .map(
-        (r: {
-          locations: Array<{ physicalLocation: { artifactLocation: { uri: string } } }>;
-        }) => r.locations[0]?.physicalLocation.artifactLocation.uri,
+        (r: { locations: Array<{ physicalLocation: { artifactLocation: { uri: string } } }> }) =>
+          r.locations[0]?.physicalLocation.artifactLocation.uri,
       )
       .sort();
     expect(uris).toEqual([".env", ".env.local", "secrets"]);
-    expect(errors.every((r: { partialFingerprints?: Record<string, string> }) => r.partialFingerprints?.["aih/v1"])).toBe(true);
+    expect(
+      errors.every(
+        (r: { partialFingerprints?: Record<string, string> }) => r.partialFingerprints?.["aih/v1"],
+      ),
+    ).toBe(true);
   });
 
   it("renders a clean (green) report — no fail checks — when no plaintext secrets exist", async () => {

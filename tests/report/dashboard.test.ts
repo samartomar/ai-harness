@@ -320,7 +320,9 @@ describe("graphDigests (Phase 2 — gated)", () => {
   it("ignores AIH_GRAPH_CMD unless graph stats are supplied by the contract file", async () => {
     const calls: string[][] = [];
     const run = fakeRunner((argv) =>
-      calls.push(argv) > 0 ? { code: 0, stdout: JSON.stringify({ nodes: 10, edges: 20 }) } : undefined,
+      calls.push(argv) > 0
+        ? { code: 0, stdout: JSON.stringify({ nodes: 10, edges: 20 }) }
+        : undefined,
     );
     const c = ctx(run);
     const ds = await graphDigests({ ...c, env: { ...c.env, AIH_GRAPH_CMD: "node mutate.js" } });

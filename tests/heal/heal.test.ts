@@ -184,9 +184,7 @@ describe("heal — parseScope", () => {
   });
 
   it("fails closed on unknown scope tokens", () => {
-    expect(() => parseScope("bogus,nonsense")).toThrow(
-      "unknown --scope value(s): bogus, nonsense",
-    );
+    expect(() => parseScope("bogus,nonsense")).toThrow("unknown --scope value(s): bogus, nonsense");
     expect(() => parseScope("npm,bogus")).toThrow("unknown --scope value(s): bogus");
   });
 });
