@@ -38,7 +38,10 @@ export type CheckCode =
   | "secrets.plaintext-detected"
   | "guardrails.gitleaks-missing"
   // usage
-  | "usage.no-data";
+  | "usage.no-data"
+  // report (analytics-derived advisories)
+  | "report.context-over-budget"
+  | "report.low-adoption";
 
 export interface Check {
   name: string;

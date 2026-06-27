@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
+import { readAihConfig } from "../config/marker.js";
 import { AihError } from "../errors.js";
 import { aihIgnoreWrite } from "../internals/gitignore.js";
 import {
@@ -15,7 +16,11 @@ import {
 } from "../internals/plan.js";
 import { acceptChanged, changedSince, gitTrackedSet } from "../internals/scan-allowlist.js";
 import { assertNoCmdInjection } from "../internals/shell-safety.js";
+import type { Check } from "../internals/verify.js";
 import type { Platform } from "../platform/base.js";
+import { type SupportTemplate, supportTemplates } from "../support/render.js";
+import type { SupportContext } from "../support/templates.js";
+import { type AdoptionSnapshot, reportAdvisories } from "./advisories.js";
 import { reportHtml, reportMarkdown } from "./artifact.js";
 import { type ContextBloat, DEFAULT_CONTEXT_BUDGET_TOKENS, scanContextBloat } from "./bloat.js";
 import { type LoadGroupModel, scanLoadGroups } from "./loadgroups.js";
@@ -89,6 +94,39 @@ function artifactPath(ctx: PlanContext, scope: Scope, format: Format): string {
   const out = ctx.options.out;
   if (typeof out === "string" && out.length > 0) return out;
   return join(".aih", "reports", `${scope}-report.${format === "html" ? "html" : "md"}`);
+}
+
+/** The Configuration panel's adoption snapshot (present count + absent names), if it ran. */
+function adoptionFrom(digests: DigestAction[]): AdoptionSnapshot | undefined {
+  const d = digests.find((x) => x.describe.startsWith("Configuration"));
+  const data = d?.data as { present?: unknown; absent?: unknown; total?: unknown } | undefined;
+  if (!data || !Array.isArray(data.present) || !Array.isArray(data.absent)) return undefined;
+  const absent = data.absent.filter((x): x is string => typeof x === "string");
+  return {
+    present: data.present.length,
+    total: typeof data.total === "number" ? data.total : data.present.length + absent.length,
+    absent,
+  };
+}
+
+/**
+ * Render the report's advisory checks into copy-ready templates for the dashboard.
+ * Byte-stable: every report finding is a developer self-fix note, whose body carries
+ * NO runId/timestamp, so re-applying the HTML artifact stays a no-op.
+ */
+function reportSupportTemplates(ctx: PlanContext, checks: Check[]): SupportTemplate[] {
+  if (checks.length === 0) return [];
+  const sctx: SupportContext = {
+    projectName: basename(ctx.root) || "this project",
+    root: ctx.root,
+    command: "aih report",
+    contextDir: ctx.contextDir,
+    targets: "",
+    platform: ctx.host.platform,
+    runId: "",
+    timestamp: "",
+  };
+  return supportTemplates(checks, "report", sctx);
 }
 
 /** The OS command that opens a file in the default app (browser for the .html dashboard). */
@@ -169,33 +207,28 @@ async function reportPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
   const shouldOpen = open || demo;
   const built = await buildReport(ctx);
   const actions: Action[] = [...built.digests];
-  // CI gate: only with `--gate`, push a probe that flips the exit code through the
-  // existing verify→exitCode() path (the same mechanism `heal` / `bootstrap-ai
-  // --verify` use). It gates on the WORST-CASE tool, not the summed total. Without
-  // `--gate` no probe is added, so a bare `aih report` always exits 0.
-  if (ctx.options.gate === true && built.model) {
-    const m = built.model;
-    actions.push(
-      probe("per-turn token budget", () =>
-        m.overBudget
-          ? {
-              name: "token-budget",
-              verdict: "fail",
-              detail: `worst tool (${m.worst?.clis.join(", ") ?? "none"}) ~${m.worstTokens} tok > budget ${m.budgetTokens}`,
-            }
-          : {
-              name: "token-budget",
-              verdict: "pass",
-              detail: `worst tool ~${m.worstTokens} tok ≤ budget ${m.budgetTokens}`,
-            },
-      ),
-    );
-  }
+  // Report-panel advisories → coded checks routed through the support pipeline.
+  // `--gate` keeps the per-turn budget as the CI gate ("per-turn token budget": a
+  // `fail` flips the exit via the existing verify→exitCode() path, the same
+  // mechanism `heal` / `bootstrap-ai --verify` use). WITHOUT `--gate`, over-budget
+  // is a non-gating `skip` advisory and adoption gaps surface only in an initialised
+  // repo — so a bare `aih report` still exits 0 and grows no gating probe.
+  const advisoryChecks = reportAdvisories({
+    model: built.model,
+    adoption: adoptionFrom(built.digests),
+    gate: ctx.options.gate === true,
+    initialized: readAihConfig(ctx.root) !== undefined,
+  });
+  for (const check of advisoryChecks) actions.push(probe(check.name, () => check));
   if (format !== "terminal") {
     const path = artifactPath(ctx, built.scope, format);
     const content =
       format === "html"
-        ? reportHtml(built.title, built.digests, { refresh, demo })
+        ? reportHtml(built.title, built.digests, {
+            refresh,
+            demo,
+            support: reportSupportTemplates(ctx, advisoryChecks),
+          })
         : reportMarkdown(built.title, built.digests);
     // The default artifact lands under `.aih/` (repo-contained). An explicit `--out`
     // is the operator's own chosen target, so it opts out of repo containment.

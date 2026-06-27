@@ -73,15 +73,16 @@ node dist/cli.js --help
 | `aih doctor` | Fail-closed verification of the workstation/repo configuration (+ workspace mode: validates each child repo). Includes a **canon markdown lint** (read-only) over the scaffolded `ai-coding/` tree. |
 | `aih status` | Read-only inventory of what the harness has configured. |
 
-Global flags: `--apply`, `--verify`, `--json`, `--context-dir <dir>`, `--root <dir>`, `--cli <list>`, `--all-tools`.
-Settings also read from `AIH_*` env vars (`AIH_APPLY`, `AIH_CONTEXT_DIR`, …).
+Global flags: `--apply`, `--verify`, `--json`, `--support-out <dir>`, `--no-log`, `--context-dir <dir>`, `--root <dir>`, `--cli <list>`, `--all-tools`.
+Settings also read from `AIH_*` env vars (`AIH_APPLY`, `AIH_CONTEXT_DIR`, `AIH_LOG`, …).
 
 ### Dashboard
 
 `aih report --open` builds a **self-contained, offline** HTML dashboard (dark by default with a
 light toggle; fonts embedded) — context footprint + a KPI strip, an adoption ring, output-velocity
-and code-quality panels, and trend sparklines from recorded history (`aih track`). Add `--demo` for
-showcase data, or `--refresh <sec>` to keep it live.
+and code-quality panels, and trend sparklines from recorded history (`aih track`). When the report
+derives findings (see [Support tickets](#support-tickets)), a **Suggested actions** section leads
+with copy-to-clipboard tickets. Add `--demo` for showcase data, or `--refresh <sec>` to keep it live.
 
 ![aih report dashboard — full view with `--demo` showcase data](docs/assets/ai_harness_report_3_columns.png)
 
@@ -189,6 +190,62 @@ It writes, at the parent (it does **not** touch the child repos — run `aih ini
 - `.aih-workspace.json` — marker that puts `aih doctor` into **workspace mode** (validates each child
   repo is scaffolded).
 
+### Support tickets
+
+Any verifying command (`aih doctor`, `aih heal`, `aih bootstrap-ai --verify`, `aih secrets --verify`, …)
+turns a failed or skipped check that carries a `Check.code` into a **ticket-ready, tool-neutral support
+template** — so a developer blocked by corporate environment config (untrusted CA, broken npm, blocked
+registry) can escalate without hand-writing the ask. `aih report` also derives its own **advisory**
+findings from the analytics panels (per-turn context **over budget**, incomplete **adoption** in an
+initialised repo) as developer self-fix notes — they never fail the run (a bare `aih report` still exits
+0; only `--gate` makes the budget a CI gate). Templates render in three registers, keyed off who fixes
+the issue:
+
+- **External escalation** — an external-audience check that **failed**; the fix is a system change owned
+  by IT, security, or the dev-platform team (untrusted corporate CA, broken package manager, unreachable
+  registry). Blocking failures lead with `[<project>] Blocking setup issue — …`.
+- **External improvement request** — an external-audience check that **skipped**: a non-blocking
+  configuration gap that degrades the setup without blocking it.
+- **Developer self-fix note** — a developer-audience finding the developer resolves directly (install
+  git, `aih mcp --apply`); terse, runnable, and the only register that may name `aih`.
+
+By default the terminal prints one `[copy] …` label per template under a **Support templates:** heading.
+Add **`--support-out <dir>`** to write each full ticket to a repo-contained `<dir>/<code>.md` file (you
+named the path — that's the consent, same as `--sarif <file>`). **`--json`** carries the data under a
+top-level `support: { findings, templates }` key. Support output is **suppressed when streaming SARIF**
+(`--sarif -`) so stdout stays a clean code-scanning artifact.
+
+**External tickets are tool-neutral by contract** — they never name aih or its commands; they describe
+the failed *internal configuration* the recipient must fix at the system level. Each follows the
+structure **Summary → Impact → Issue → Observed evidence → Environment → Requested fix → Acceptance
+criteria**, and every escalation ends with a security work-around guard (keep TLS verification and secret
+controls enabled; don't change project code). Evidence, affected area, and acceptance criteria are canned
+per code — never guessed — with the live check detail riding along as evidence (redacted: home-dir
+scrubbed, secret-aware argv masking).
+
+**Project context (`SETUP.md`).** A project can shape the tickets with opt-in HTML-comment markers in
+`SETUP.md`, `docs/SETUP.md`, or `.aih/SETUP.md` (first found wins):
+
+- `<!-- support:why -->…<!-- /support:why -->` — *why a correct environment matters for this project*,
+  woven into the ticket's Impact / "Why this helps" section. Falls back to the first paragraph under a
+  `## Why` / `## Overview` / `## Purpose` / `## Background` / `## About` heading, so existing setup files
+  contribute without edits.
+- `<!-- support:routing -->…<!-- /support:routing -->` — real routing metadata (assignment group, ticket
+  prefix) rendered verbatim in the Environment block. **Never invented** — shown only when you provide it.
+- `<!-- support:language -->…<!-- /support:language -->` — an instruction to adapt the message to the
+  org's corporate language, surfaced as a **terminal note** to the author, never embedded in the ticket
+  body (which stays clean to paste).
+
+### Run ledger
+
+Every `aih` invocation appends one structured row to **`.aih/runs/YYYY-MM.jsonl`** (UTC, month-sharded,
+append-only) — a "what happened" diagnostics trail: run id, capability, redacted argv, status (`success` /
+`failed` / `partial` / `error`), exit code, mode (apply/verify/json/sarif), platform, write tally, and
+verification + support counts. It's distinct from `.aih/history.jsonl` (the per-commit metrics behind
+`aih report` trends). Logging is **on only after the repo is initialised** (a committed `.aih-config.json`
+marker exists) and never fails a command; opt out with **`--no-log`** or **`AIH_LOG=0`**. Like all of
+`.aih/`, the ledger is gitignored local diagnostics — never committed.
+
 ### Examples
 
 ```bash
@@ -197,6 +254,7 @@ aih init . --apply                # bootstrap the current repo
 aih certs --ca-pattern Zscaler --apply --verify
 aih hardware                      # preview the tuned inference env block
 AIH_CONTEXT_DIR=ai-coding aih scaffold --apply
+aih doctor --support-out .aih/tickets   # write IT/support tickets for failing checks (kept local)
 ```
 
 ## Development

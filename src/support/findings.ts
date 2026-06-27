@@ -276,6 +276,20 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     title: "No usage data captured yet",
     action: "Commit once (or wire a per-tool hook) so usage analytics accrue.",
   },
+  "report.context-over-budget": {
+    audience: "developer",
+    failSeverity: "degraded",
+    title: "per-turn context exceeds the token budget",
+    action:
+      "Trim the heaviest tool's always-loaded bootloaders (push detail behind on-demand `RULE_ROUTER.md` pointers), or raise `--token-budget` if the limit is too tight. See the per-turn load-group panel in `aih report`.",
+  },
+  "report.low-adoption": {
+    audience: "developer",
+    failSeverity: "degraded",
+    title: "harness adoption is incomplete for this repo",
+    action:
+      "Wire the missing managed artifacts — `aih init --apply` (or the specific `aih scaffold`/`aih mcp`/`aih guardrails --apply`) finishes bootstrapping; re-check with `aih doctor`.",
+  },
 };
 
 /** Severity rank for sorting: most urgent first. */
