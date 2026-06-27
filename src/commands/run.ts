@@ -10,9 +10,16 @@ import type { CommandSpec, PlanContext } from "../internals/plan.js";
 import { defaultRunner, type Runner } from "../internals/proc.js";
 import { isInteractive, makeReadlinePrompter, type Prompter } from "../internals/prompt.js";
 import { reportToSarif } from "../internals/sarif.js";
+import {
+  appendRunLog,
+  buildRunEntry,
+  isLoggingEnabled,
+  type RunEntryInput,
+  statusFor,
+} from "../logging/run-log.js";
 import { makeHostAdapter } from "../platform/detect.js";
 import { buildSupport, supportSummary } from "../support/integrate.js";
-import { redactArgv } from "../support/redact.js";
+import { redactArgv, redactText } from "../support/redact.js";
 
 export interface RunDeps {
   run?: Runner;
@@ -20,10 +27,12 @@ export interface RunDeps {
   write?: (text: string) => void;
   /** Inject a prompter (tests); production wires a readline prompter when interactive. */
   prompter?: Prompter;
-  /** Clock seam — injected in tests so support timestamps are deterministic. */
+  /** Clock seam — injected in tests so support timestamps + ledger rows are deterministic. */
   now?: () => Date;
-  /** Run-id seam — injected in tests so support references are deterministic. */
+  /** Run-id seam — injected in tests so support references + ledger rows are deterministic. */
   newRunId?: () => string;
+  /** Raw invoking argv (defaults to process.argv.slice(2)); redacted before logging. */
+  argv?: string[];
 }
 
 const delay = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
@@ -83,6 +92,24 @@ export async function runCapability(
   const positionalRoot = Array.isArray(command.processedArgs)
     ? (command.processedArgs[0] as string | undefined)
     : undefined;
+
+  // Run-ledger seams, hoisted before the try so BOTH the success path and the
+  // catch can append exactly one row per invocation. Clock/id are injectable for
+  // deterministic tests; argv is redacted once here.
+  const now = deps.now ?? (() => new Date());
+  const startedAt = now();
+  const runId = (deps.newRunId ?? (() => `run_${randomUUID().slice(0, 8)}`))();
+  // Key-aware masking (--token …) THEN secret/home scrub per token, so a ledger row
+  // is safe to attach to a ticket: no secrets, no home-path layout.
+  const logArgv = redactArgv(deps.argv ?? process.argv.slice(2)).map((t) => redactText(t, env));
+  const logRoot =
+    positionalRoot ?? (opts.root as string | undefined) ?? env.AIH_ROOT ?? process.cwd();
+  // `--no-log` is a commander NEGATABLE flag → it sets `opts.log = false`.
+  const noLog = opts.log === false;
+  const logRun = (entry: RunEntryInput): void => {
+    if (isLoggingEnabled(logRoot, env, { noLog }))
+      appendRunLog(logRoot, buildRunEntry(entry), startedAt);
+  };
 
   let json = false;
   try {
@@ -157,6 +184,13 @@ export async function runCapability(
     const built = await spec.plan(ctx);
     const result = await executePlan(built, ctx);
 
+    // A failed non-allowFailure exec must surface as a non-zero exit (writes commit
+    // before execs run, so a silent success would hide partial state); a failed probe
+    // flips the verify exit code. The ledger status maps from these two signals.
+    const execFailed = result.execs.some((e) => e.ran && e.ok === false);
+    const verifyCode = result.report ? result.report.exitCode() : 0;
+    const exitCode = verifyCode || (execFailed ? 1 : 0);
+
     // Support templates: cross-cutting, derived from the verification report so any
     // verifying command (doctor / heal / `bootstrap-ai --verify` / …) turns a coded
     // failure into a ticket-ready, tool-neutral escalation. Built once here; emitted
@@ -177,8 +211,8 @@ export async function runCapability(
             contextDir: settings.contextDir,
             targets: (readAihConfig(settings.root)?.targets ?? []).join(", ") || "none",
             platform: host.platform,
-            runId: (deps.newRunId ?? (() => `run_${randomUUID().slice(0, 8)}`))(),
-            timestamp: (deps.now ?? (() => new Date()))().toISOString(),
+            runId,
+            timestamp: startedAt.toISOString(),
             setupText: readSetupText(settings.root),
             env,
           })
@@ -213,6 +247,25 @@ export async function runCapability(
       }
     }
 
+    // Append one row to the run ledger — once, BEFORE the watch loop (which never
+    // returns), so `--refresh` logs a single initial row rather than one per tick.
+    logRun({
+      runId,
+      startedAt: startedAt.toISOString(),
+      finishedAt: now().toISOString(),
+      capability: spec.name,
+      argv: logArgv,
+      status: statusFor(verifyCode === 1, execFailed),
+      exitCode,
+      mode: { apply: ctx.apply, verify: ctx.verify, json, sarif: typeof opts.sarif === "string" },
+      platform: host.platform,
+      node: process.versions.node,
+      result,
+      support: support
+        ? { findings: support.findings.length, templates: support.templates.length }
+        : undefined,
+    });
+
     if (watchSec !== undefined && !spec.readOnly) {
       ctx.options.open = false; // opened once above — don't relaunch the browser each tick
       write(
@@ -227,11 +280,6 @@ export async function runCapability(
         }
       }
     }
-    // A failed non-allowFailure exec must surface as a non-zero exit, so CI and
-    // scripts never read a failed install/open/bootstrap step as success (writes are
-    // committed before execs run, so a silent success would hide partial state).
-    const execFailed = result.execs.some((e) => e.ran && e.ok === false);
-    const verifyCode = result.report ? result.report.exitCode() : 0;
 
     // `--sarif <file>` emits the verification report as SARIF 2.1.0 for GitHub
     // code-scanning. It is written regardless of --apply: the SARIF is an analysis
@@ -254,10 +302,28 @@ export async function runCapability(
       }
     }
 
-    return verifyCode || (execFailed ? 1 : 0);
+    return exitCode;
   } catch (err) {
     const code = err instanceof AihError ? err.code : "AIH_ERROR";
     const message = err instanceof Error ? err.message : String(err);
+    // Log the crash as an `error` row (no result — settings/ctx may not exist yet).
+    logRun({
+      runId,
+      startedAt: startedAt.toISOString(),
+      finishedAt: now().toISOString(),
+      capability: spec.name,
+      argv: logArgv,
+      status: "error",
+      exitCode: 1,
+      mode: {
+        apply: opts.apply === true,
+        verify: opts.verify === true,
+        json,
+        sarif: typeof opts.sarif === "string",
+      },
+      platform: process.platform,
+      node: process.versions.node,
+    });
     if (json) {
       write(`${JSON.stringify({ error: { code, message } }, null, 2)}\n`);
     } else {

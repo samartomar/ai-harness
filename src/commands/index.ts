@@ -66,6 +66,7 @@ function addSharedFlags(cmd: Command): Command {
     .option("--verify", "run verification probes after applying")
     .option("--json", "emit machine-readable JSON")
     .option("--support-out <dir>", "write IT/support tickets for failed checks to <dir>")
+    .option("--no-log", "do not append a row to the local run ledger (.aih/runs/)")
     .option("--context-dir <dir>", "canonical context directory name (any name works)", "ai-coding")
     .option("--root <dir>", "target repository/workstation root")
     .option("--cli <list>", "target AI CLIs (comma-separated): claude,codex,cursor,antigravity,…")
@@ -87,7 +88,8 @@ export function registerCommands(program: Command): void {
       cmd
         .option("--json", "emit machine-readable JSON")
         .option("--root <dir>", "target root")
-        .option("--support-out <dir>", "write IT/support tickets for failed checks to <dir>");
+        .option("--support-out <dir>", "write IT/support tickets for failed checks to <dir>")
+        .option("--no-log", "do not append a row to the local run ledger (.aih/runs/)");
     for (const o of spec.options ?? []) {
       if (o.default !== undefined) cmd.option(o.flags, o.description, o.default);
       else cmd.option(o.flags, o.description);
