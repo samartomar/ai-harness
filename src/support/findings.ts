@@ -257,6 +257,13 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     action:
       "Run `aih adopt` to converge the existing canon onto the managed model instead of overwriting it.",
   },
+  "canon.cli-native-unmigrated": {
+    audience: "developer",
+    failSeverity: "degraded",
+    title: "CLI-native config holds content not in the canon",
+    action:
+      "Run `aih adopt` for the migration map; opt into `--migrate-cli` (content-verified) to fold it into the canon. aih never modifies CLI-native locations on its own.",
+  },
   "secrets.plaintext-detected": {
     audience: "security",
     failSeverity: "blocking",

@@ -44,6 +44,9 @@ function digestOf(actions: Action[]): DigestAction | undefined {
 function probeOf(actions: Action[]): ProbeAction | undefined {
   return actions.find((a): a is ProbeAction => a.kind === "probe");
 }
+function probeNamed(actions: Action[], needle: string): ProbeAction | undefined {
+  return actions.find((a): a is ProbeAction => a.kind === "probe" && a.describe.includes(needle));
+}
 
 function divergentBootloader(): string {
   const body = `${sharedCanonicalBlockBody("ai-coding").trim()}\n\n## EICP project extension\n\n- keep this line`;
@@ -93,6 +96,29 @@ describe("aih adopt — Phase 1 (read-only)", () => {
     const d = digestOf((await command.plan(makeCtx())).actions);
     expect(d?.text).toContain("class: foreign-scheme");
     expect(d?.text).toContain("[retire] ai-coding/scripts/regenerate-adapters.ps1");
+  });
+
+  it("surfaces a CLI-native footprint panel and flags import candidates", async () => {
+    put("CLAUDE.md", divergentBootloader());
+    put(".claude/agents/security-audit.md", "# security agent\n"); // tool-owned content
+    put(".cursorrules", "Read `ai-coding/RULE_ROUTER.md`\n"); // pointer — left alone
+    const actions = (await command.plan(makeCtx())).actions;
+    const text = digestOf(actions)?.text ?? "";
+    expect(text).toContain("CLI-native footprint (aih will NOT modify these)");
+    expect(text).toContain("[import] .claude/agents");
+    expect(text).toContain("[wired]  .cursorrules");
+    // The CLI-native advisory routes via canon.cli-native-unmigrated.
+    const check = await probeNamed(actions, "cli-native")?.run(makeCtx({ verify: true }));
+    expect(check?.verdict).toBe("skip");
+    expect(check?.code).toBe("canon.cli-native-unmigrated");
+  });
+
+  it("no CLI-native content → cli-native probe passes", async () => {
+    put("CLAUDE.md", divergentBootloader());
+    const actions = (await command.plan(makeCtx())).actions;
+    const check = await probeNamed(actions, "cli-native")?.run(makeCtx());
+    expect(check?.verdict).toBe("pass");
+    expect(check?.code).toBeUndefined();
   });
 
   it("already-adopted → pass, nothing to do", async () => {

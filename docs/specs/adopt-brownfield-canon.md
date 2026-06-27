@@ -51,6 +51,10 @@ Detection signals (all read-only, via existing `readIfExists` + `scanRepo`):
   `RULE_BOOTLOADER_MIGRATION.md`, hand `REGENERATION.md` whose body != `regenerationDoc(...)`.
 - foreign markers: any `<!-- BEGIN … -->` whose id != `SHARED_MARKER` (e.g. a future-proofing scan).
 
+These classes cover the canonical `ai-coding/` shape + the three markdown bootloaders. A second,
+orthogonal dimension — config a team already keeps at **CLI-native locations** (`.claude/`, `.cursor/`,
+`.kiro/`, …) — is handled by §13, under the hard rule that aih never auto-modifies those locations.
+
 ## 4. Command surface
 
 ```
@@ -170,7 +174,95 @@ hand `REGENERATION.md`. `--keep-legacy` leaves them in place but still annotates
   `project-canon-extension.md` and is gone from the managed block); `--verify` green post-apply;
   retirement moves the right files; greenfield still routes to `init`; CRLF repo stays CRLF.
 
-## 13. Open questions (need owner input)
+## 13. CLI-native config — discover, surface, opt-in migrate (never auto-modify)
+
+§3 looks at the canonical `ai-coding/` shape. But a team already using a specific CLI keeps
+rules/agents/memory at **tool-native locations aih does not own**. Two real shapes in the portfolio:
+
+- `ai-os-product/.cursorrules` is a **thin pointer** ("Active rules live under `ai-coding/` … read
+  `RULE_ROUTER.md`") → already wired; leave it alone.
+- `syntegris/.claude/` holds **rich, un-migrated content**: 5 agents (`agents/*.md`), rules
+  (`rules/00-index.mdc`, `canonical-platform-rules.md`), 7 memory files (`memory/*.md`) — none
+  referenced from the canon.
+
+**Hard rule (owner-stated): aih NEVER auto-modifies a CLI-native location.** The default path is
+*discover → surface → guide*. Converting a tool-native file is opt-in only, and even then the content
+move is **agent-performed**, not an aih write into the tool's dir.
+
+### 13.1 Inventory (read-only)
+
+A new read-only `cliFootprint(root)` enumerates known tool-native locations and what each holds:
+
+| CLI | Locations inventoried |
+| --- | --- |
+| Claude | `.claude/{agents,commands,skills,rules,memory}`, `.claude/settings*.json`, root `CLAUDE.md` |
+| Cursor | `.cursor/rules/*.mdc`, `.cursorrules` |
+| Kiro | `.kiro/steering`, `.kiro/hooks`, `.kiro/specs` |
+| Codex | `AGENTS.md`, `.codex/` |
+| Windsurf | `.windsurfrules`, `.windsurf/` |
+| Copilot | `.github/copilot-instructions.md`, `.github/instructions`, `.github/prompts` |
+| Gemini | `GEMINI.md`, `.gemini/` |
+
+User-level dirs (`~/.claude`, `~/.codex`, …) are reported as **out-of-repo / global** — named so the
+user knows they exist, never touched.
+
+### 13.2 Per-artifact status
+
+- **`pointer`** — the file references the canon / carries the aih marker → ✅ wired, leave alone
+  (ai-os-product `.cursorrules`).
+- **`tool-owned-content`** — rich content, no canon reference → ⚠️ *import candidate*
+  (syntegris `.claude/{agents,rules,memory}`).
+- **`runtime-config`** — `settings.json` / `launch.json` / `.kiro/hooks` → tool runtime, not canon;
+  reported, left as-is (aih's `bootstrap-ai --cli kiro` already owns Kiro hooks).
+
+### 13.3 Surface (so the user *knows*)
+
+adopt's digest, `aih status`, and `aih report` gain a **"CLI-native footprint"** panel, e.g.:
+"Detected Claude config at `.claude/` (5 agents, 3 rules, 7 memory files) — aih will NOT modify it.
+2 rules look importable into `ai-coding/rules/`; run `aih adopt --plan-cli` for the migration map."
+A `canon.cli-native-unmigrated` advisory (skip — never fails a run) routes it via support like every
+other finding.
+
+### 13.4 Opt-in full migration (agent-performed)
+
+When the user wants their whole CLI-native set folded into the canonical pattern, aih provides the
+**map + playbook**, not the CLI-native writes. Source → canonical destination:
+
+- `.claude/rules/*`, `.cursor/rules/*.mdc`, `.windsurfrules`, `.kiro/steering/*` → `ai-coding/rules/*`
+- `.claude/agents/*` → `ai-coding/agents/*` (tool-neutralized; referenced from the router)
+- `.claude/memory/*` → reconciled against `ai-coding/rules/memory-use-protocol.md` — content stays the
+  user's; surfaced, not force-moved
+- `.github/copilot-instructions.md`, `GEMINI.md`, `AGENTS.md` → thin bootloaders pointing at `RULE_ROUTER.md`
+
+The migration runs through **adopt-mode `SETUP-TASKS.md` (§7)**: aih writes the playbook (the map above +
+"verify, don't re-derive"), the user's **AI agent performs the content adaptation into the canon** (which
+aih owns), and ONLY under an explicit `--migrate-cli` flag does aih convert a now-redundant tool-native
+file into a thin pointer — backed up to `.aih/legacy/`, never silently.
+
+**Content-verified ordering (owner safety requirement).** Pointer-conversion is a SEPARATE, LATER step
+that must never run ahead of the content move — otherwise a half-finished migration silently strips a
+user's active setup. So `--migrate-cli`:
+
+1. **Refuses to convert** any tool-native file whose content is not yet confirmed present in the canon
+   (a per-artifact check: the imported rule/agent exists under `ai-coding/`). An un-imported artifact is
+   reported as *blocked: import incomplete*, never converted.
+2. **Backs up** every converted file to `.aih/legacy/` first (recoverable even on mistake).
+3. Is **surfaced in `SETUP-TASKS.md`**: the playbook tells the agent (a) there is *scope to improve* the
+   tool-native content as it lands in the canon, and (b) a hard warning — do NOT run `--migrate-cli`
+   until `VALIDATION.md` confirms each artifact's content is in the canon, or the tool will stop seeing
+   its rules. A `VALIDATION.md` check asserts "no tool-native file was pointer-converted without its
+   content present in the canon."
+
+Absent `--migrate-cli`, every tool-native file stays exactly as it is and the agent merely adds canon
+references — zero risk to the existing setup.
+
+### 13.5 Why this is safe
+
+The default path mutates nothing tool-native (mirrors aih's existing "guidance-not-writes for non-owned
+formats" posture). The user always learns what exists and where; the agent always gets an actionable map;
+full migration is deliberate, reversible, and opt-in — never a bulldoze.
+
+## 14. Open questions (need owner input)
 
 1. **Extension detection fidelity** — line-anchored diff vs a marked sub-region. Should aih ask repos to
    wrap project additions in a `<!-- project-extension -->` sub-marker going forward, so future carves
@@ -181,3 +273,9 @@ hand `REGENERATION.md`. `--keep-legacy` leaves them in place but still annotates
    annotate? Spec defaults to move; `--keep-legacy` opts out.
 4. **Class-3 rule import** — auto-map foreign rule files into `rules/`, or leave them in place and only
    add the marker block + router references? (Lower-risk = leave in place, reference them.)
+5. **`--migrate-cli` end state (§13.4)** — RESOLVED (2026-06-27): pointer-convert behind the
+   `--migrate-cli` flag, but **content-verified** — aih refuses to convert any artifact whose content
+   isn't already in the canon (so a half-done migration can't strip the user's active setup), backs up
+   every conversion to `.aih/legacy/`, and `SETUP-TASKS.md` surfaces both the "scope to improve" and the
+   "don't convert before VALIDATION confirms import" warning. Remaining sub-question: should the refusal
+   be a hard error (exit non-zero) or a skip-with-warning when some artifacts are un-imported?

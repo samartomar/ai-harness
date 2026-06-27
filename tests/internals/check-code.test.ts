@@ -368,6 +368,7 @@ describe("Check.code — invariants", () => {
       "canon.context-dir-missing": true,
       "canon.lint-failed": true,
       "canon.adoptable": true,
+      "canon.cli-native-unmigrated": true,
       "secrets.plaintext-detected": true,
       "guardrails.gitleaks-missing": true,
       "usage.no-data": true,

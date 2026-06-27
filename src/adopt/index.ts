@@ -9,6 +9,7 @@ import {
   classifyCanon,
   isAdoptable,
 } from "./classify.js";
+import { type CliArtifact, type CliFootprint, cliFootprint } from "./cli-footprint.js";
 
 /** Per-bootloader op label for the migration preview (Phase 1: analysis only). */
 function bootloaderLine(b: BootloaderState): string {
@@ -77,6 +78,55 @@ function migrationReport(cls: CanonClassification, repo: string, contextDir: str
   return lines(...body);
 }
 
+/** One CLI-native artifact line for the footprint panel. */
+function footprintLine(a: CliArtifact): string {
+  const tag =
+    a.kind === "pointer" ? "[wired] " : a.kind === "tool-owned-content" ? "[import]" : "[runtime]";
+  return `  ${tag} ${a.path} — ${a.detail}`;
+}
+
+/**
+ * The CLI-native footprint panel (§13). Read-only: aih reports what each tool
+ * keeps at its own location and will NOT modify any of it. Tool-owned content is
+ * flagged as an import candidate; full migration is opt-in + agent-guided.
+ */
+function footprintReport(fp: CliFootprint): string {
+  if (fp.artifacts.length === 0) {
+    return lines("CLI-native footprint:", "  none detected.");
+  }
+  const body = [
+    "CLI-native footprint (aih will NOT modify these):",
+    ...fp.artifacts.map(footprintLine),
+  ];
+  if (fp.importCandidates > 0) {
+    body.push(
+      "",
+      `${fp.importCandidates} import candidate(s). Full migration into the canon is OPT-IN`,
+      "(`--migrate-cli`, content-verified) and agent-guided via `SETUP-TASKS.md` — until then",
+      "these files are left exactly as they are.",
+    );
+  }
+  return lines(...body);
+}
+
+/**
+ * Verify/JSON/support routing for the CLI-native scan: tool-owned content not yet
+ * folded into the canon surfaces as a `skip` carrying `canon.cli-native-unmigrated`
+ * (advisory — never a hard fail), so the user is told it exists without aih touching it.
+ */
+function cliNativeProbe(fp: CliFootprint): Check {
+  const name = "cli-native-footprint";
+  if (fp.importCandidates > 0) {
+    return {
+      name,
+      verdict: "skip",
+      detail: `${fp.importCandidates} tool-native artifact(s) hold content not in the canon — aih won't modify them; run \`aih adopt\` for the migration map`,
+      code: "canon.cli-native-unmigrated",
+    };
+  }
+  return { name, verdict: "pass", detail: "no un-migrated CLI-native content" };
+}
+
 /**
  * Verify/JSON/support routing for the analysis: a brownfield canon not yet on the
  * managed model surfaces as a `skip` carrying `canon.adoptable` (advisory — never a
@@ -115,11 +165,14 @@ async function adoptPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
   // Resolve before basename so a `.`/relative root still names the repo dir.
   const repo = basename(resolve(ctx.root)) || "this repo";
   const cls = classifyCanon(ctx.root, contextDir);
+  const fp = cliFootprint(ctx.root, contextDir);
 
+  const text = `${migrationReport(cls, repo, contextDir)}\n\n${footprintReport(fp)}`;
   return plan(
     "adopt",
-    digest("adopt: canon migration analysis", migrationReport(cls, repo, contextDir), cls),
+    digest("adopt: canon migration analysis", text, { canon: cls, cliFootprint: fp }),
     probe("adoptable canon", () => adoptableProbe(cls)),
+    probe("cli-native footprint", () => cliNativeProbe(fp)),
   );
 }
 
