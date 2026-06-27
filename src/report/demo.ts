@@ -154,11 +154,12 @@ export function demoDigests(): DigestAction[] {
       samples: TREND_ROWS.length,
       rows: TREND_ROWS,
     }),
-    digest("AI CLI wiring — 2 of 3 targeted tools configured", "demo", {
+    digest("AI CLI wiring — 3 of 3 configured, 2 loadable", "demo", {
       targeted: ["claude", "kiro", "codex"],
       targetSource: "marker",
-      score: 75,
-      structurallyConfigured: 2,
+      score: 100,
+      structurallyConfigured: 3,
+      provenLoadable: 2,
       totalTargeted: 3,
       rows: [
         {
@@ -176,16 +177,23 @@ export function demoDigests(): DigestAction[] {
             path: ".claude/settings.json",
             detail: ".claude/settings.json present",
           },
+          load: {
+            verdict: "loads",
+            checks: [
+              { name: "router-chain", ok: true, detail: "router + behavior core reachable" },
+            ],
+          },
         },
         {
+          // The showcase: every cell green, but the steering file is missing
+          // `inclusion: always` — present, in sync, and never auto-loaded.
           cli: "kiro",
           label: "Kiro",
           targeted: true,
           bootloader: {
-            state: "missing",
+            state: "wired",
             path: ".kiro/steering/00-canon.md",
-            detail: "not found: .kiro/steering/00-canon.md",
-            fix: "aih bootstrap-ai --apply --cli kiro",
+            detail: "auto-loads .kiro/steering/00-canon.md; shared block in sync",
           },
           mcp: {
             state: "wired",
@@ -193,6 +201,18 @@ export function demoDigests(): DigestAction[] {
             detail: "1 server(s) under `mcpServers`",
           },
           settings: { state: "na", detail: "Kiro has no aih-managed settings file" },
+          load: {
+            verdict: "wontLoad",
+            checks: [
+              {
+                name: "activation",
+                ok: false,
+                detail:
+                  "inclusion: always missing in .kiro/steering/00-canon.md — present but not auto-loaded",
+              },
+            ],
+            fix: "aih bootstrap-ai --apply --cli kiro",
+          },
         },
         {
           cli: "codex",
@@ -211,6 +231,12 @@ export function demoDigests(): DigestAction[] {
             fix: "aih mcp --cli codex",
           },
           settings: { state: "na", detail: "Codex CLI has no aih-managed settings file" },
+          load: {
+            verdict: "loads",
+            checks: [
+              { name: "router-chain", ok: true, detail: "router + behavior core reachable" },
+            ],
+          },
         },
         {
           cli: "cursor",
@@ -229,6 +255,16 @@ export function demoDigests(): DigestAction[] {
             fix: "aih mcp --apply --cli cursor",
           },
           settings: { state: "na", detail: "Cursor has no aih-managed settings file" },
+          load: {
+            verdict: "unverified",
+            checks: [
+              {
+                name: "activation",
+                ok: undefined,
+                detail: "no bootloader on disk — nothing to load",
+              },
+            ],
+          },
         },
       ],
     }),

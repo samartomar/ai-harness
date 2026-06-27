@@ -64,6 +64,18 @@ const CliEntry = z.object({
   mcp: McpProfile,
   /** Tool-native settings file aih manages, when the tool has one (else n/a). */
   settings: SettingsProfile.optional(),
+  /**
+   * Frontmatter a bootloader MUST carry to be ALWAYS-loaded (Cursor `.mdc` needs
+   * `alwaysApply: true`; Kiro steering needs `inclusion: always`). Absent → the
+   * tool's bootloader is inherently always-on and needs no activation key.
+   */
+  activation: z.object({ key: z.string(), value: z.string() }).optional(),
+  /**
+   * Hard character cap on the always-loaded bundle, when the tool documents one.
+   * Unset for every tool today (no reliable per-bootloader cap), so the loadability
+   * size check is a no-op until a real number is known — never a guessed verdict.
+   */
+  contextCap: z.number().int().positive().optional(),
 });
 export type CliEntry = z.infer<typeof CliEntry>;
 
@@ -118,6 +130,7 @@ const RAW: Record<string, z.input<typeof CliEntry>> = {
       configFormat: "json",
       writable: true,
     },
+    activation: { key: "alwaysApply", value: "true" },
   },
   antigravity: {
     id: "antigravity",
@@ -234,6 +247,7 @@ const RAW: Record<string, z.input<typeof CliEntry>> = {
       configFormat: "json",
       writable: true,
     },
+    activation: { key: "inclusion", value: "always" },
   },
 };
 

@@ -9,6 +9,7 @@ import { readIfExists } from "../internals/fsxn.js";
 import { extractManagedBlock } from "../internals/markers.js";
 import { type DigestAction, digest, type PlanContext } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
+import { type CliLoadability, loadabilityFor, loadReason } from "./cli-loadability.js";
 
 /**
  * PER-CLI WIRING — the truth model behind "AI CLI coverage". The legacy surfaces
@@ -52,6 +53,8 @@ export interface CliCoverageRow {
   bootloader: CliCell;
   mcp: CliCell;
   settings: CliCell;
+  /** Will the (present) bootloader actually load + route to canon? (Phase 1.5) */
+  load: CliLoadability;
 }
 
 /** Which arm of the target-resolution precedence won — surfaced to the user. */
@@ -66,6 +69,8 @@ export interface CliCoverageModel {
   score: number;
   /** Targeted CLIs with NO `missing` cell (manual/na/wired all count as ok). */
   structurallyConfigured: number;
+  /** Targeted CLIs that are structurallyConfigured AND proven to load (`loads`). */
+  provenLoadable: number;
   totalTargeted: number;
 }
 
@@ -214,6 +219,7 @@ function buildRow(ctx: PlanContext, cli: Cli, targeted: boolean): CliCoverageRow
     bootloader: bootloaderCell(ctx, cli),
     mcp: mcpCell(ctx, cli),
     settings: settingsCell(ctx, cli),
+    load: loadabilityFor(ctx, cli),
   };
 }
 
@@ -247,12 +253,18 @@ export function scanCliCoverage(ctx: PlanContext): CliCoverageModel {
   const structurallyConfigured = targetedRows.filter((r) =>
     cellsOf(r).every((c) => c.state !== "missing"),
   ).length;
+  // Proven loadable = configured AND the bootloader is proven to load (D8): an
+  // `unverified` load never counts toward this stricter number.
+  const provenLoadable = targetedRows.filter(
+    (r) => cellsOf(r).every((c) => c.state !== "missing") && r.load.verdict === "loads",
+  ).length;
   return {
     rows,
     targeted,
     targetSource: source,
     score,
     structurallyConfigured,
+    provenLoadable,
     totalTargeted: targeted.length,
   };
 }
@@ -260,6 +272,11 @@ export function scanCliCoverage(ctx: PlanContext): CliCoverageModel {
 // ---- rendering ------------------------------------------------------------
 
 const GLYPH: Record<CellState, string> = { wired: "✓", missing: "✗", manual: "◐", na: "—" };
+const LOAD_GLYPH: Record<CliLoadability["verdict"], string> = {
+  loads: "✓",
+  wontLoad: "✗",
+  unverified: "—",
+};
 
 const SOURCE_LABEL: Record<TargetSource, string> = {
   marker: ".aih-config.json",
@@ -272,32 +289,39 @@ const SOURCE_LABEL: Record<TargetSource, string> = {
 function rowLine(r: CliCoverageRow): string {
   const overall = cellsOf(r).some((c) => c.state === "missing") ? "✗" : "✓";
   const lead = r.targeted ? overall : "·";
-  return `  ${lead} ${r.cli.padEnd(12)} boot ${GLYPH[r.bootloader.state]}  mcp ${GLYPH[r.mcp.state]}  set ${GLYPH[r.settings.state]}`;
+  return `  ${lead} ${r.cli.padEnd(12)} boot ${GLYPH[r.bootloader.state]}  mcp ${GLYPH[r.mcp.state]}  set ${GLYPH[r.settings.state]}  loads ${LOAD_GLYPH[r.load.verdict]}`;
+}
+
+/** Per-targeted-CLI remediation: missing cells AND any won't-load verdict. */
+function gapsFor(r: CliCoverageRow): string[] {
+  const out = cellsOf(r)
+    .filter((c) => c.state === "missing" && c.fix !== undefined)
+    .map((c) => `${r.cli}: ${c.fix}`);
+  if (r.load.verdict === "wontLoad" && r.load.fix) {
+    out.push(`${r.cli} (won't load — ${loadReason(r.load)}): ${r.load.fix}`);
+  }
+  return out;
 }
 
 /** Terminal/markdown body: a compact per-CLI matrix + a remediation list. */
 export function renderCliCoverage(model: CliCoverageModel): string {
   const targeted = model.rows.filter((r) => r.targeted);
   const other = model.rows.filter((r) => !r.targeted);
-  const fixes = targeted.flatMap((r) =>
-    cellsOf(r)
-      .filter((c) => c.state === "missing" && c.fix !== undefined)
-      .map((c) => `${r.cli}: ${c.fix}`),
-  );
+  const fixes = targeted.flatMap(gapsFor);
   return lines(
     "Per-CLI wiring for the tools this repo targets — a present file is not proof",
-    "the CLI loads it (load validation lands in the loadability pass).",
+    "the CLI loads it; the loads column proves activation + the router chain resolve.",
     `Target source: ${SOURCE_LABEL[model.targetSource]}.`,
     "",
-    "  legend: ✓ wired  ✗ missing  ◐ manual (guidance only)  — n/a   ·   cols: boot · mcp · set",
+    "  legend: ✓ wired  ✗ missing  ◐ manual (guidance only)  — n/a   ·   cols: boot · mcp · set · loads",
     "",
-    "  TARGETED",
+    `  TARGETED — ${model.structurallyConfigured}/${model.totalTargeted} configured, ${model.provenLoadable}/${model.totalTargeted} proven loadable`,
     ...targeted.map(rowLine),
     ...(other.length > 0 ? ["", "  ALSO INSTALLED (not targeted)", ...other.map(rowLine)] : []),
     "",
     ...(fixes.length > 0
       ? ["  To close the gaps:", ...fixes.map((f) => `    → ${f}`)]
-      : ["  All targeted tools structurally configured."]),
+      : ["  All targeted tools configured and proven loadable."]),
   );
 }
 
@@ -310,7 +334,7 @@ export function renderCliCoverage(model: CliCoverageModel): string {
 export function cliCoverageDigest(ctx: PlanContext): DigestAction {
   const model = scanCliCoverage(ctx);
   return digest(
-    `AI CLI wiring — ${model.structurallyConfigured} of ${model.totalTargeted} targeted tools configured`,
+    `AI CLI wiring — ${model.structurallyConfigured} of ${model.totalTargeted} configured, ${model.provenLoadable} loadable`,
     renderCliCoverage(model),
     model,
   );

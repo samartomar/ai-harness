@@ -266,6 +266,16 @@ interface CovCell {
   detail?: string;
   fix?: string;
 }
+interface CovLoadCheck {
+  name: string;
+  ok?: boolean;
+  detail: string;
+}
+interface CovLoad {
+  verdict: string;
+  checks?: CovLoadCheck[];
+  fix?: string;
+}
 interface CovRow {
   cli: string;
   label: string;
@@ -273,6 +283,7 @@ interface CovRow {
   bootloader: CovCell;
   mcp: CovCell;
   settings: CovCell;
+  load: CovLoad;
 }
 
 /** State → CSS class / glyph for a per-CLI wiring cell (matches the terminal legend). */
@@ -284,6 +295,15 @@ const CELL_CLASS: Record<string, string> = {
 };
 const CELL_GLYPH: Record<string, string> = { wired: "✓", missing: "✗", manual: "◐", na: "—" };
 
+/** Load verdict → CSS class / glyph / label. `unverified` is muted, never green. */
+const LOAD_CLASS: Record<string, string> = { loads: "ok", wontLoad: "bad", unverified: "muted" };
+const LOAD_GLYPH: Record<string, string> = { loads: "✓", wontLoad: "✗", unverified: "—" };
+const LOAD_LABEL: Record<string, string> = {
+  loads: "loads",
+  wontLoad: "won't load",
+  unverified: "unverified",
+};
+
 /** One wiring cell — colored glyph + short file label; full detail/fix in the tooltip. */
 function covCell(c: CovCell): string {
   const cls = CELL_CLASS[c.state] ?? "muted";
@@ -293,9 +313,19 @@ function covCell(c: CovCell): string {
   return `<span class="cli-cell ${cls}"${tip ? ` title="${esc(tip)}"` : ""}>${glyph} ${esc(label)}</span>`;
 }
 
+/** The loadability cell — proves the present bootloader actually loads + routes. */
+function loadCell(l: CovLoad): string {
+  const cls = LOAD_CLASS[l.verdict] ?? "muted";
+  const glyph = LOAD_GLYPH[l.verdict] ?? "—";
+  const label = LOAD_LABEL[l.verdict] ?? l.verdict;
+  const reasons = (l.checks ?? []).filter((c) => c.ok === false).map((c) => c.detail);
+  const tip = [...reasons, l.fix ? `fix: ${l.fix}` : ""].filter(Boolean).join(" — ");
+  return `<span class="cli-cell ${cls}"${tip ? ` title="${esc(tip)}"` : ""}>${glyph} ${esc(label)}</span>`;
+}
+
 function covRowHtml(r: CovRow): string {
   const dot = r.targeted ? "●" : "○";
-  return `<tr><td class="cli-name">${dot} ${esc(r.label)}</td><td>${covCell(r.bootloader)}</td><td>${covCell(r.mcp)}</td><td>${covCell(r.settings)}</td></tr>`;
+  return `<tr><td class="cli-name">${dot} ${esc(r.label)}</td><td>${covCell(r.bootloader)}</td><td>${covCell(r.mcp)}</td><td>${covCell(r.settings)}</td><td>${loadCell(r.load)}</td></tr>`;
 }
 
 /**
@@ -318,18 +348,19 @@ function cliMatrixPanel(d: Bag): string {
     '<span class="cli-cell warn">◐ manual</span>' +
     '<span class="cli-cell muted">— n/a</span>' +
     `<span class="cli-src">targets: ${esc(src)}</span></div>`;
+  const loadable = num(d.provenLoadable) ?? 0;
   const sep = other.length
-    ? '<tr class="cli-sep"><td colspan="4">also installed (not targeted)</td></tr>'
+    ? '<tr class="cli-sep"><td colspan="5">also installed (not targeted)</td></tr>'
     : "";
   const table =
-    '<table class="cli-matrix"><thead><tr><th>Tool</th><th>Bootloader</th><th>MCP</th><th>Settings</th></tr></thead><tbody>' +
+    '<table class="cli-matrix"><thead><tr><th>Tool</th><th>Bootloader</th><th>MCP</th><th>Settings</th><th>Loads?</th></tr></thead><tbody>' +
     targeted.map(covRowHtml).join("") +
     sep +
     other.map(covRowHtml).join("") +
     "</tbody></table>";
   return panel(
     "AI CLI wiring",
-    `<span class="badge muted">${configured}/${totalT} configured</span>`,
+    `<span class="badge muted">${configured}/${totalT} configured · ${loadable} loadable</span>`,
     legend + table,
     12,
   );
@@ -809,13 +840,11 @@ function buildHero(digests: DigestAction[]): string {
     tiles.push(
       kpi(`~${fmt(num(bloat.totalTokens) ?? 0)}`, "context tokens", bloat.overBudget === true),
     );
-  if (wiring)
-    tiles.push(
-      kpi(
-        `${num(wiring.structurallyConfigured) ?? 0}/${num(wiring.totalTargeted) ?? 0}`,
-        "tools wired",
-      ),
-    );
+  if (wiring) {
+    const total = num(wiring.totalTargeted) ?? 0;
+    tiles.push(kpi(`${num(wiring.structurallyConfigured) ?? 0}/${total}`, "tools wired"));
+    tiles.push(kpi(`${num(wiring.provenLoadable) ?? 0}/${total}`, "proven loadable"));
+  }
   if (tooling)
     tiles.push(kpi(`${arr(tooling.present).length}/${num(tooling.total) ?? 0}`, "CLIs installed"));
 

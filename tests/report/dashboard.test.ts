@@ -226,11 +226,12 @@ describe("reportHtml — single bento + new panels", () => {
         absent: [],
         total: 11,
       }),
-      digest("AI CLI wiring — 1 of 2 targeted tools configured", "x", {
+      digest("AI CLI wiring — 1 of 2 configured, 1 loadable", "x", {
         targeted: ["claude", "kiro"],
         targetSource: "marker",
         score: 50,
         structurallyConfigured: 1,
+        provenLoadable: 1,
         totalTargeted: 2,
         rows: [
           {
@@ -240,6 +241,7 @@ describe("reportHtml — single bento + new panels", () => {
             bootloader: { state: "wired", path: "CLAUDE.md", detail: "in sync" },
             mcp: { state: "wired", path: ".mcp.json", detail: "1 server(s)" },
             settings: { state: "wired", path: ".claude/settings.json", detail: "present" },
+            load: { verdict: "loads", checks: [{ name: "router-chain", ok: true, detail: "ok" }] },
           },
           {
             cli: "kiro",
@@ -253,6 +255,10 @@ describe("reportHtml — single bento + new panels", () => {
             },
             mcp: { state: "wired", path: ".kiro/settings/mcp.json", detail: "1 server(s)" },
             settings: { state: "na", detail: "no settings file" },
+            load: {
+              verdict: "unverified",
+              checks: [{ name: "activation", detail: "no bootloader on disk" }],
+            },
           },
         ],
       }),
@@ -276,6 +282,11 @@ describe("reportHtml — single bento + new panels", () => {
     expect(html).toContain('class="cli-cell bad"'); // missing cell (red)
     expect(html).toContain(">✗ .kiro/steering/00-canon.md</span>"); // kiro bootloader missing
     expect(html).toContain(">— n/a</span>"); // kiro settings n/a
+    // loadability column: proven-loadable KPI + per-row load verdict
+    expect(html).toContain("proven loadable"); // third KPI tile
+    expect(html).toContain("<th>Loads?</th>"); // matrix loads column
+    expect(html).toContain(">✓ loads</span>"); // claude proven to load
+    expect(html).toContain(">— unverified</span>"); // kiro load unverified (no bootloader)
   });
 });
 

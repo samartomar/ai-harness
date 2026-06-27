@@ -55,6 +55,20 @@ function writeWiredBootloader(rel: string): void {
   writeFileSync(path, mergeManagedBlock(undefined, sharedBlock("ai-coding"), "# preamble"));
 }
 
+/** Scaffold the canon the loadability router-chain check resolves to. */
+function scaffoldCanon(): void {
+  mkdirSync(join(dir, "ai-coding", "rules"), { recursive: true });
+  writeFileSync(join(dir, "ai-coding", "RULE_ROUTER.md"), "# router\n");
+  writeFileSync(join(dir, "ai-coding", "rules", "agent-behavior-core.md"), "# core\n");
+}
+
+/** Write a populated MCP JSON for a writable tool's config path. */
+function writeMcp(rel: string): void {
+  const path = join(dir, rel);
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, JSON.stringify({ mcpServers: { x: { command: "y" } } }));
+}
+
 function row(model: CliCoverageModel, cli: string) {
   const r = model.rows.find((x) => x.cli === cli);
   if (!r) throw new Error(`no row for ${cli}`);
@@ -157,6 +171,36 @@ describe("installed-but-untargeted rows", () => {
     const m = scanCliCoverage(ctx());
     expect(m.rows.find((r) => r.cli === "cursor")?.targeted).toBe(false);
     expect(m.totalTargeted).toBe(1);
+  });
+});
+
+describe("loadability in the coverage model (Phase 1.5)", () => {
+  it("present-but-won't-load: cells all green, but the Cursor .mdc lost its activation", () => {
+    marker("cursor");
+    scaffoldCanon();
+    // wired shared block (no frontmatter) → bootloader wired, but no alwaysApply
+    writeWiredBootloader(".cursor/rules/00-canon.mdc");
+    writeMcp(".cursor/mcp.json");
+    const m = scanCliCoverage(ctx());
+    const r = row(m, "cursor");
+    expect(r.bootloader.state).toBe("wired"); // file present + in sync
+    expect(r.mcp.state).toBe("wired");
+    expect(r.load.verdict).toBe("wontLoad"); // ...yet it won't auto-load
+    expect(m.structurallyConfigured).toBe(1); // no missing cell
+    expect(m.provenLoadable).toBe(0); // but not proven loadable — the silent gap
+  });
+
+  it("a fully wired + activated tool is both configured and proven loadable", () => {
+    marker("claude");
+    scaffoldCanon();
+    writeWiredBootloader("CLAUDE.md"); // CLAUDE.md is inherently always-on
+    writeMcp(".mcp.json");
+    mkdirSync(join(dir, ".claude"), { recursive: true });
+    writeFileSync(join(dir, ".claude", "settings.json"), "{}");
+    const m = scanCliCoverage(ctx());
+    expect(row(m, "claude").load.verdict).toBe("loads");
+    expect(m.structurallyConfigured).toBe(1);
+    expect(m.provenLoadable).toBe(1);
   });
 });
 
