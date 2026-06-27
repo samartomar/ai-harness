@@ -41,16 +41,18 @@ function ctx(over: Partial<PlanContext> = {}): PlanContext {
 }
 
 describe("configPanel", () => {
-  it("counts present artifacts and lists them via the shared status inventory", () => {
-    writeFileSync(join(dir, "CLAUDE.md"), "x");
-    writeFileSync(join(dir, ".mcp.json"), "{}");
+  it("counts present REPO-GLOBAL artifacts (per-CLI facts live in the wiring matrix)", () => {
+    writeFileSync(join(dir, ".gitleaks.toml"), "title = 'x'\n");
+    writeFileSync(join(dir, ".pre-commit-config.yaml"), "repos: []\n");
     const d = configPanel(ctx());
     expect(d.kind).toBe("digest");
     expect(d.describe).toMatch(/Configuration — 2 of \d+ artifacts present/);
-    expect(d.text).toContain("✓ CLAUDE.md");
-    expect(d.text).toContain("✓ mcp");
+    expect(d.text).toContain("✓ gitleaks");
+    expect(d.text).toContain("✓ pre-commit");
     expect(d.text).toContain("aih doctor"); // pointer to fail-closed verification
-    expect(d.data).toMatchObject({ present: expect.arrayContaining(["CLAUDE.md", "mcp"]) });
+    expect(d.data).toMatchObject({ present: expect.arrayContaining(["gitleaks", "pre-commit"]) });
+    // per-CLI artifacts are NOT in the global config panel anymore
+    expect(d.text).not.toContain("CLAUDE.md");
   });
 
   it("reports zero present for an empty repo", () => {

@@ -3,15 +3,18 @@ import { join } from "node:path";
 import { type CommandSpec, plan, probe } from "./internals/plan.js";
 import type { Check } from "./internals/verify.js";
 
+/**
+ * Repo-GLOBAL harness artifacts — ones not specific to any single AI CLI. Per-CLI
+ * facts (each tool's bootloader, its MCP config, Claude's `settings.json`) live in
+ * the per-CLI wiring matrix (`aih report` → "AI CLI wiring"), which scores them on
+ * each tool's own terms. Keeping them here too would double-represent the same fact
+ * under the old Claude-shaped global check — so `status`/`configPanel` stay global
+ * and the matrix owns per-tool truth.
+ */
 const ARTIFACTS: Array<[name: string, rel: string]> = [
   ["context-dir", ""], // resolved against ctx.contextDir below
-  ["CLAUDE.md", "CLAUDE.md"],
-  ["AGENTS.md", "AGENTS.md"],
-  ["cursor-rules", ".cursor/rules"],
-  ["mcp", ".mcp.json"],
   ["gitleaks", ".gitleaks.toml"],
   ["pre-commit", ".pre-commit-config.yaml"],
-  ["claude-settings", ".claude/settings.json"],
   ["devcontainer", ".devcontainer/devcontainer.json"],
 ];
 

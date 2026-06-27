@@ -24,16 +24,12 @@ const TREND_ROWS = [
   { commits7d: 23, loc: { net: 2630 }, adoptionScore: 85, branches: 5 },
 ];
 
+// Repo-GLOBAL config artifacts only — per-CLI bootloaders / MCP live in the
+// "AI CLI wiring" matrix, so the checklist no longer double-lists them.
 const ADOPTION_PRESENT = [
-  "CLAUDE.md",
   "RULE_ROUTER.md",
   "ai-coding dir",
   "agent-behavior-core",
-  ".cursor rules",
-  "AGENTS.md",
-  "GEMINI.md",
-  ".kiro steering",
-  "mcp",
   "gitleaks",
   "pre-commit",
   "sca workflow",
@@ -43,7 +39,7 @@ const ADOPTION_PRESENT = [
   "githooks",
   "secrets deny",
 ];
-const ADOPTION_ABSENT = ["copilot-instructions", "windsurf rules", "guardrails taxonomy"];
+const ADOPTION_ABSENT = ["guardrails taxonomy"];
 
 const EVENTS = [
   {
@@ -268,7 +264,7 @@ export function demoDigests(): DigestAction[] {
         },
       ],
     }),
-    digest("Configuration — 17 of 20 artifacts present", "demo", {
+    digest("Configuration — 11 of 12 artifacts present", "demo", {
       present: ADOPTION_PRESENT,
       absent: ADOPTION_ABSENT,
       total: ADOPTION_PRESENT.length + ADOPTION_ABSENT.length,
