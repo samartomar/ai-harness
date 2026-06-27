@@ -37,10 +37,12 @@ const AUDIENCE_LABEL: Record<Audience, string> = {
 };
 
 function subjectFor(finding: SupportFinding, ctx: SupportContext): string {
+  // External subjects are tool-neutral — a project / environment problem, never
+  // this harness. Only the internal self-fix note may name the tool.
   if (finding.kind === "escalation")
-    return `[AI Harness] ${finding.severity} — ${finding.title} (${ctx.projectName})`;
+    return `[${ctx.projectName}] Development environment issue (${finding.severity}) — ${finding.title}`;
   if (finding.kind === "improvement")
-    return `[AI Harness] improvement — ${finding.title} (${ctx.projectName})`;
+    return `[${ctx.projectName}] Development environment improvement — ${finding.title}`;
   return `aih: ${finding.title}`;
 }
 

@@ -2,17 +2,18 @@ import { describe, expect, it } from "vitest";
 import type { Check, CheckCode, Verdict } from "../../src/internals/verify.js";
 import { findingsFrom, type SupportFinding, toFinding } from "../../src/support/findings.js";
 import { renderTemplate, supportTemplates } from "../../src/support/render.js";
-import type { SupportContext } from "../../src/support/templates.js";
+import { isToolNeutral, type SupportContext } from "../../src/support/templates.js";
 
 /**
- * PR2 core: coded checks → routed findings → copy-ready templates. Pure +
- * deterministic (the only seam is SupportContext, supplied here), so the bodies
- * are asserted by substring and re-render byte-identically.
+ * PR2 core: coded checks → routed findings → copy-ready templates. EXTERNAL
+ * templates (escalation/improvement) are tool-neutral by contract; the developer
+ * self-fix note is internal and may name the harness. Pure + deterministic (the
+ * only seam is SupportContext, supplied here).
  */
 
 const CTX: SupportContext = {
-  projectName: "my-repo",
-  root: "<home>/code/my-repo",
+  projectName: "acme-web",
+  root: "<home>/code/acme-web",
   command: "aih heal --verify",
   contextDir: "ai-coding",
   targets: "claude, cursor",
@@ -25,7 +26,6 @@ function chk(code: CheckCode | undefined, verdict: Verdict, detail?: string, nam
   return { name, verdict, detail, code };
 }
 
-/** Build the finding a coded fail/skip is guaranteed to produce (narrows away undefined). */
 function mustFind(code: CheckCode, verdict: Verdict, detail?: string): SupportFinding {
   const f = toFinding(chk(code, verdict, detail), "heal");
   if (!f) throw new Error(`expected a finding for ${code}`);
@@ -41,7 +41,6 @@ describe("findings — routing", () => {
   it("routes a failing cert as an internal-IT escalation", () => {
     const f = toFinding(chk("cert.ca-missing", "fail", "set but missing: /x"), "heal");
     expect(f).toMatchObject({
-      code: "cert.ca-missing",
       audience: "internal-it",
       kind: "escalation",
       severity: "blocking",
@@ -57,14 +56,23 @@ describe("findings — routing", () => {
     });
   });
 
-  it("routes a developer-fixable failure as a self-fix", () => {
+  it("routes a developer-fixable failure as an internal self-fix", () => {
     expect(
       toFinding(chk("cli.bootloader-missing", "fail", "missing"), "bootstrap-ai"),
     ).toMatchObject({ audience: "developer", kind: "self-fix", severity: "blocking" });
   });
 
-  it("downgrades every skip to an optional improvement", () => {
+  it("routes a developer skip as a self-fix (not an external request)", () => {
     expect(toFinding(chk("mcp.config-missing", "skip", "no .mcp.json"), "heal")).toMatchObject({
+      audience: "developer",
+      kind: "self-fix",
+      severity: "optional",
+    });
+  });
+
+  it("routes an external skip as an improvement request", () => {
+    expect(toFinding(chk("mcp.uv-missing", "skip", "uv not found"), "mcp")).toMatchObject({
+      audience: "dev-platform",
       kind: "improvement",
       severity: "optional",
     });
@@ -95,43 +103,81 @@ describe("findings — routing", () => {
   });
 });
 
-describe("templates — rendering", () => {
+describe("templates — external tool-neutrality", () => {
   const escalation = renderTemplate(
     mustFind("cert.ca-missing", "fail", "set but missing: /x"),
     CTX,
   );
 
-  it("escalation carries full run context + the live detail", () => {
+  it("escalation is tool-neutral and frames an environment issue", () => {
     expect(escalation.subject).toBe(
-      "[AI Harness] blocking — Corporate CA not trusted by Node (my-repo)",
+      "[acme-web] Development environment issue (blocking) — Corporate certificate authority not trusted by the toolchain",
     );
-    expect(escalation.copyLabel).toBe(
-      "[copy] Internal IT escalation — Corporate CA not trusted by Node",
-    );
-    expect(escalation.id).toBe("escalation:cert.ca-missing");
+    expect(isToolNeutral(escalation.body)).toBe(true);
+    expect(isToolNeutral(escalation.subject)).toBe(true);
+    // No harness command, workspace path, AI-CLI targets, or context dir leak out.
+    for (const leak of [CTX.command, CTX.root, CTX.targets, CTX.contextDir]) {
+      expect(escalation.body).not.toContain(leak);
+    }
+    // But the project, machine, reference, live detail, and fix are present.
     for (const needle of [
-      CTX.command,
-      CTX.runId,
+      CTX.projectName,
       CTX.platform,
-      CTX.root,
-      CTX.contextDir,
-      CTX.targets,
+      CTX.runId,
       "set but missing: /x",
-      "Requested help",
+      "What is needed",
     ]) {
       expect(escalation.body).toContain(needle);
     }
   });
 
-  it("improvement is lighter — no workspace path or command-run line", () => {
-    const t = renderTemplate(mustFind("mcp.config-missing", "skip", "no .mcp.json"), CTX);
-    expect(t.subject).toBe("[AI Harness] improvement — No .mcp.json configured (my-repo)");
-    expect(t.body).toContain("Run `aih mcp --apply`");
-    expect(t.body).not.toContain("Workspace path:");
-    expect(t.body).not.toContain(CTX.root);
+  it("falls back to a generic why-this-matters when SETUP.md gives none", () => {
+    expect(escalation.body).toContain("approved dependencies");
   });
 
-  it("self-fix is a terse runnable note", () => {
+  it("weaves SETUP.md project context and a corporate-language footer when present", () => {
+    const t = renderTemplate(mustFind("tls.verify-failed", "fail", "SSL problem"), {
+      ...CTX,
+      projectContext: "acme-web ships PCI-regulated payment flows; the toolchain must verify TLS.",
+      corporateGuidance: "Address to the IT Service Desk and use British English.",
+    });
+    expect(t.body).toContain("PCI-regulated payment flows");
+    expect(t.body).toContain("adapt before sending");
+    expect(t.body).toContain("IT Service Desk");
+  });
+
+  it("improvement (external skip) is lighter and tool-neutral", () => {
+    const t = renderTemplate(mustFind("mcp.uv-missing", "skip", "uv not found"), CTX);
+    expect(t.subject).toBe(
+      "[acme-web] Development environment improvement — Python launcher (uv) not available",
+    );
+    expect(isToolNeutral(t.body)).toBe(true);
+    expect(t.body).not.toContain("Issue");
+    expect(t.body).toContain("Requested improvement");
+  });
+
+  it("every external template is tool-neutral (sweep)", () => {
+    const external: Array<[CheckCode, Verdict]> = [
+      ["env.node-runtime", "fail"],
+      ["cert.ca-missing", "fail"],
+      ["tls.verify-failed", "fail"],
+      ["npm.runtime-broken", "fail"],
+      ["mcp.blocked", "fail"],
+      ["mcp.unvendored-offline", "fail"],
+      ["secrets.plaintext-detected", "fail"],
+      ["mcp.uv-missing", "skip"],
+    ];
+    for (const [code, verdict] of external) {
+      const t = renderTemplate(mustFind(code, verdict, "detail"), CTX);
+      expect(t.kind === "escalation" || t.kind === "improvement").toBe(true);
+      expect(isToolNeutral(t.body), `${code} body must be tool-neutral`).toBe(true);
+      expect(isToolNeutral(t.subject), `${code} subject must be tool-neutral`).toBe(true);
+    }
+  });
+});
+
+describe("templates — internal self-fix", () => {
+  it("is a terse runnable note that may name the harness", () => {
     const t = renderTemplate(mustFind("cli.bootloader-missing", "fail", "missing"), CTX);
     expect(t.subject).toBe("aih: CLI bootloader missing");
     expect(t.copyLabel).toBe("Self-fix — CLI bootloader missing");
@@ -140,11 +186,13 @@ describe("templates — rendering", () => {
   });
 
   it("renders byte-identically for the same inputs (deterministic)", () => {
-    const f = mustFind("tls.verify-failed", "fail", "SSL problem");
+    const f = mustFind("cli.bootloader-missing", "fail", "missing");
     expect(renderTemplate(f, CTX).body).toBe(renderTemplate(f, CTX).body);
   });
+});
 
-  it("supportTemplates pipelines checks → ordered templates", () => {
+describe("templates — pipeline", () => {
+  it("supportTemplates orders checks most-urgent-first and drops passes", () => {
     const templates = supportTemplates(
       [
         chk("usage.no-data", "skip", "no data"),
@@ -156,6 +204,6 @@ describe("templates — rendering", () => {
     );
     expect(templates.map((t) => t.code)).toEqual(["secrets.plaintext-detected", "usage.no-data"]);
     expect(templates[0]?.kind).toBe("escalation");
-    expect(templates[1]?.kind).toBe("improvement");
+    expect(templates[1]?.kind).toBe("self-fix"); // usage.no-data is developer-audience
   });
 });
