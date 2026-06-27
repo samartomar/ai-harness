@@ -194,7 +194,14 @@ function basename(path: string): string {
 
 /** A placeholder/glob, not a concrete file — e.g. `#[[file:...]]`, `<your-tool>.md`, `*.mdc`. */
 function isPlaceholderRef(ref: string): boolean {
-  return /[<>*]/.test(ref) || ref.includes("..");
+  const norm = normalizeRef(ref);
+  return /[<>*]/.test(ref) || norm.split("/").some((part) => part.includes("..."));
+}
+
+/** A concrete reference that escapes the repo/context boundary, not a placeholder. */
+function isEscapingRef(ref: string): boolean {
+  const norm = normalizeRef(ref);
+  return norm.startsWith("/") || /^[A-Za-z]:\//.test(norm) || norm.split("/").includes("..");
 }
 
 /**
@@ -263,6 +270,14 @@ export const RULES: LintRule[] = [
       const out: LintFinding[] = [];
       const check = (ref: string): void => {
         if (/^(https?|mailto|tel|data):/i.test(ref) || ref.startsWith("#")) return;
+        if (isEscapingRef(ref)) {
+          out.push({
+            ruleId: "canon-ref-resolves",
+            severity: "fail",
+            message: `references \`${ref}\` outside the target repository/context root`,
+          });
+          return;
+        }
         if (isPlaceholderRef(ref)) return; // syntax-doc placeholder / glob, not a real path
         if (!refResolves(ref, ctx)) {
           out.push({
