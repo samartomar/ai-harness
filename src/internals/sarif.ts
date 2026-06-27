@@ -4,7 +4,7 @@
 // SARIF spec; aih's verdict→level mapping and driver identity are our own.
 
 import { VERSION } from "../program.js";
-import type { Verdict, VerificationReport } from "./verify.js";
+import type { Check, Verdict, VerificationReport } from "./verify.js";
 
 /** Public schema URL GitHub code-scanning validates SARIF uploads against. */
 const SARIF_SCHEMA = "https://json.schemastore.org/sarif-2.1.0.json";
@@ -22,13 +22,30 @@ function level(verdict: Verdict): "error" | "note" {
   return verdict === "fail" ? "error" : "note";
 }
 
+function locations(c: Check): unknown[] {
+  if (!c.location) return [];
+  const physicalLocation: {
+    artifactLocation: { uri: string };
+    region?: { startLine: number };
+  } = {
+    artifactLocation: { uri: c.location.uri },
+  };
+  if (c.location.startLine !== undefined) {
+    physicalLocation.region = { startLine: c.location.startLine };
+  }
+  return [{ physicalLocation }];
+}
+
+function fingerprints(c: Check): Record<string, string> | undefined {
+  return c.fingerprint ? { "aih/v1": c.fingerprint } : undefined;
+}
+
 /**
  * Render a {@link VerificationReport} (drift / doctor / future scan probes) as a
  * SARIF 2.1.0 document GitHub code-scanning can ingest. Pure — no I/O. Every check
- * becomes one result; each distinct check name becomes one rule. Results carry no
- * `locations` because aih's probes are repo-global (drift, presence, lint roll-up),
- * not line-anchored — a location-less result is valid SARIF and renders as a
- * repo-level annotation.
+ * becomes one result; each distinct check name becomes one rule. Repo-global probes
+ * stay location-less (valid SARIF); file-backed findings can attach a physical
+ * location and stable fingerprint for code-scanning triage.
  */
 export function reportToSarif(report: VerificationReport, toolName = "aih"): string {
   const ruleIds = [...new Set(report.checks.map((c) => c.name))];
@@ -42,7 +59,8 @@ export function reportToSarif(report: VerificationReport, toolName = "aih"): str
     ruleId: c.name,
     level: level(c.verdict),
     message: { text: c.detail ?? c.name },
-    locations: [] as const,
+    locations: locations(c),
+    ...(fingerprints(c) ? { partialFingerprints: fingerprints(c) } : {}),
   }));
   const sarif = {
     $schema: SARIF_SCHEMA,

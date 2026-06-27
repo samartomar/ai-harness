@@ -4,6 +4,7 @@ import {
   CLI_REGISTRY,
   entry,
   REGISTRY_IDS,
+  SUPPORT_LEVELS,
 } from "../../src/internals/cli-registry.js";
 import { SUPPORTED_CLIS } from "../../src/internals/clis.js";
 
@@ -11,6 +12,10 @@ describe("CLI registry", () => {
   it("parses (a malformed future edit fails the suite, not production)", () => {
     // The z.record(...).parse(RAW) at module load throws on bad data; reaching here = valid.
     expect(Object.keys(CLI_REGISTRY).length).toBe(SUPPORTED_CLIS.length);
+  });
+
+  it("exposes the documented support vocabulary, including fallback", () => {
+    expect(SUPPORT_LEVELS).toEqual(["native", "fallback", "absent"]);
   });
 
   it("stays in lockstep with SUPPORTED_CLIS (same ids, same canonical order)", () => {

@@ -178,10 +178,14 @@ describe("heal — parseScope", () => {
     expect(parseScope("")).toEqual(["certs", "npm", "path", "mcp"]);
     expect(parseScope("all")).toEqual(["certs", "npm", "path", "mcp"]);
   });
-  it("selects a subset in canonical order and ignores junk", () => {
+  it("selects a subset in canonical order", () => {
     expect(parseScope("npm,certs")).toEqual(["certs", "npm"]);
     expect(parseScope("mcp")).toEqual(["mcp"]);
-    expect(parseScope("bogus,nonsense")).toEqual(["certs", "npm", "path", "mcp"]);
+  });
+
+  it("fails closed on unknown scope tokens", () => {
+    expect(() => parseScope("bogus,nonsense")).toThrow("unknown --scope value(s): bogus, nonsense");
+    expect(() => parseScope("npm,bogus")).toThrow("unknown --scope value(s): bogus");
   });
 });
 
