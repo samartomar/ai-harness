@@ -307,38 +307,42 @@ describe("graphDigests (Phase 2 — gated)", () => {
     expect(ds.some((d) => d.describe.startsWith("Build & analysis"))).toBe(true);
   });
 
-  it("is empty when there is no graph file and no CLI", async () => {
-    expect(await graphDigests(ctx(fakeRunner(() => ({ spawnError: true, code: 127 }))))).toEqual(
-      [],
-    );
+  it("is empty when there is no graph file and never spawns a fallback CLI", async () => {
+    const calls: string[][] = [];
+    const run = fakeRunner((argv) => {
+      calls.push(argv);
+      return { code: 0, stdout: JSON.stringify({ nodes: 10, edges: 20 }) };
+    });
+    expect(await graphDigests(ctx(run))).toEqual([]);
+    expect(calls).toEqual([]);
   });
 
-  it("falls back to a code-review-graph CLI when present (JSON output)", async () => {
+  it("ignores AIH_GRAPH_CMD unless graph stats are supplied by the contract file", async () => {
+    const calls: string[][] = [];
     const run = fakeRunner((argv) =>
-      argv[0] === "code-review-graph"
-        ? { code: 0, stdout: JSON.stringify({ nodes: 10, edges: 20 }) }
-        : undefined,
+      calls.push(argv) > 0 ? { code: 0, stdout: JSON.stringify({ nodes: 10, edges: 20 }) } : undefined,
     );
-    const ds = await graphDigests(ctx(run));
-    expect((ds[0]?.data as { nodes: number }).nodes).toBe(10);
+    const c = ctx(run);
+    const ds = await graphDigests({ ...c, env: { ...c.env, AIH_GRAPH_CMD: "node mutate.js" } });
+    expect(ds).toEqual([]);
+    expect(calls).toEqual([]);
   });
 
-  it("parses `code-review-graph status` plain-text output (with thousands separators)", async () => {
-    const run = fakeRunner((argv) =>
-      argv[0] === "code-review-graph" && argv[1] === "status"
-        ? { code: 0, stdout: "Nodes: 6,285\nEdges: 27,117\nFiles: 1,122\nLanguages: python\n" }
-        : undefined,
-    );
-    const ds = await graphDigests(ctx(run));
-    expect((ds[0]?.data as { nodes: number }).nodes).toBe(6285);
-    expect((ds[0]?.data as { edges: number }).edges).toBe(27117);
-    expect((ds[0]?.data as { files: number }).files).toBe(1122);
-  });
-
-  it("ignores a malformed graph.json (never fabricated) and tries the CLI", async () => {
+  it("ignores a malformed graph.json without falling back to process execution", async () => {
     mkdirSync(join(root, ".aih"), { recursive: true });
     writeFileSync(join(root, ".aih", "graph.json"), "{ not json");
-    expect(await graphDigests(ctx(fakeRunner(() => undefined)))).toEqual([]);
+    const calls: string[][] = [];
+    expect(
+      await graphDigests(
+        ctx(
+          fakeRunner((argv) => {
+            calls.push(argv);
+            return { code: 0, stdout: JSON.stringify({ nodes: 10, edges: 20 }) };
+          }),
+        ),
+      ),
+    ).toEqual([]);
+    expect(calls).toEqual([]);
   });
 
   it("ignores a graph.json without nodes/edges (no real graph)", async () => {

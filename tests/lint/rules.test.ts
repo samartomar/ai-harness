@@ -64,6 +64,18 @@ describe("lint rules — canon-ref-resolves (FAIL tier, the headline rule)", () 
     expect(f[0]?.severity).toBe("fail");
   });
 
+  it("fails traversal references instead of treating them as placeholders", () => {
+    for (const ref of [
+      "Load #[[file:../secrets.md]] now.",
+      "Read `../outside.md` before editing.",
+      "Read `ai-coding/../outside.md` before editing.",
+    ]) {
+      const f = findings(ref, "canon-ref-resolves");
+      expect(f).toHaveLength(1);
+      expect(f[0]?.severity).toBe("fail");
+    }
+  });
+
   it("resolves a known sibling-canon file the harness writes via scaffold", () => {
     // bootstrap-ai references `architecture.md` (written by `aih scaffold`), not in its plan.
     expect(findings("Fill `ai-coding/architecture.md`.", "canon-ref-resolves")).toHaveLength(0);
