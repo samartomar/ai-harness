@@ -34,6 +34,8 @@ export type CheckCode =
   | "canon.router-missing"
   | "canon.context-dir-missing"
   | "canon.lint-failed"
+  | "canon.adoptable"
+  | "canon.cli-native-unmigrated"
   // guardrails / secrets
   | "secrets.plaintext-detected"
   | "guardrails.gitleaks-missing"

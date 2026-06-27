@@ -25,6 +25,12 @@ const AihConfigSchema = z.object({
   schemaVersion: z.literal(1),
   contextDir: ContextDir,
   targets: z.array(z.string()).default([]),
+  /**
+   * `aih adopt`'s team decisions: CLI-native paths the team has acknowledged as
+   * intentionally tool-native (so re-runs stop flagging them as import candidates —
+   * the idempotency guard). Optional + committed (shared by the whole team).
+   */
+  adopt: z.object({ acknowledged: z.array(z.string()).default([]) }).optional(),
 });
 
 export type AihConfig = z.infer<typeof AihConfigSchema>;

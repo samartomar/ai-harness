@@ -139,10 +139,15 @@ async function bootstrapAiPlan(ctx: PlanContext): Promise<Plan> {
   const repoName = repoNameOf(ctx.root);
   const bootloaders = bootloaderPaths(clis);
 
+  // Keep pointing at a carved project extension once `aih adopt` has written one,
+  // so a standalone `bootstrap-ai` re-run doesn't drop the reference.
+  const hasProjectExtension =
+    readIfExists(join(ctx.root, dir, "rules", "project-canon-extension.md")) !== undefined;
+
   const actions: Action[] = [
     writeText(
       posix.join(dir, "RULE_ROUTER.md"),
-      ruleRouterDoc(dir, repoName, stack, bootloaders),
+      ruleRouterDoc(dir, repoName, stack, bootloaders, { projectExtension: hasProjectExtension }),
       "stack-aware routing entry point",
     ),
     writeText(

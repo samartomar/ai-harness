@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
+import { classifyCanon, isAdoptable } from "./adopt/classify.js";
 import { readAihConfig } from "./config/marker.js";
 import { detectClis, presentClis } from "./internals/cli-detect.js";
 import { readIfExists } from "./internals/fsxn.js";
@@ -111,6 +112,29 @@ export const command: CommandSpec = {
             };
       }),
       probe("canon markdown lint", () => canonLintCheck(ctx.root, contextDir)),
+      // Brownfield advisory: a repo with EXISTING AI canon that isn't yet on aih's
+      // managed model (and has no committed marker) should be `aih adopt`-ed, not
+      // bulldozed by `bootstrap-ai --apply`. Skip (never a hard fail) — it routes
+      // via `canon.adoptable` like every other finding.
+      probe("adoptable canon", () => {
+        const cls = classifyCanon(ctx.root, contextDir);
+        if (isAdoptable(cls.kind) && !cls.configPresent) {
+          return {
+            name: "adoptable-canon",
+            verdict: "skip",
+            detail: `existing AI canon detected (${cls.kind}) — run \`aih adopt\` to converge it onto the managed model`,
+            code: "canon.adoptable",
+          };
+        }
+        return {
+          name: "adoptable-canon",
+          verdict: "pass",
+          detail:
+            cls.kind === "already-adopted"
+              ? "canon on the managed model"
+              : "no foreign canon to adopt",
+        };
+      }),
       probe("AI CLIs detected", async () => {
         const present = presentClis(await detectClis(ctx));
         return present.length > 0

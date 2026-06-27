@@ -147,8 +147,22 @@ export function ruleRouterDoc(
   repoName: string,
   stack: RepoStack,
   bootloaders: string[],
+  opts: { projectExtension?: boolean } = {},
 ): string {
   const primaryLang = stack.languages[0] ?? "the repo's language";
+  // `aih adopt` carves project-specific content out of a brownfield bootloader into
+  // rules/project-canon-extension.md (a user-owned file aih never regenerates). When
+  // it exists, the router must point to it so that carved canon stays LOADED.
+  const alwaysReadFirst = [
+    `- \`${dir}/rules/agent-behavior-core.md\` — working discipline (think → simplify → surgical → goal-driven)`,
+    `- \`${dir}/INDEX.md\` — context index; it owns the load order for architecture / conventions / tasks / skills`,
+    "- The ECC `common` rules (Layer 1) before any non-trivial change",
+  ];
+  if (opts.projectExtension) {
+    alwaysReadFirst.push(
+      `- \`${dir}/rules/project-canon-extension.md\` — project-specific canon (carved from this repo's prior bootloader by \`aih adopt\`; aih never regenerates it)`,
+    );
+  }
   return lines(
     `# ${repoName} — AI Rule Router`,
     "",
@@ -173,9 +187,7 @@ export function ruleRouterDoc(
     "",
     "## Always read first",
     "",
-    `- \`${dir}/rules/agent-behavior-core.md\` — working discipline (think → simplify → surgical → goal-driven)`,
-    `- \`${dir}/INDEX.md\` — context index; it owns the load order for architecture / conventions / tasks / skills`,
-    "- The ECC `common` rules (Layer 1) before any non-trivial change",
+    alwaysReadFirst,
     "",
     "Read depth: for read-only validation you may identify these files and confirm",
     "routing without opening each. For implementation, review, or security work, read",

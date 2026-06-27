@@ -86,6 +86,23 @@ describe("lint rules — canon-ref-resolves (FAIL tier, the headline rule)", () 
       findings("Load `ai-coding/adapters/<your-tool>.md`.", "canon-ref-resolves"),
     ).toHaveLength(0);
   });
+
+  it("resolves illustrative other-tool native entry files (not dangling refs)", () => {
+    // `other-tools.md` / `harness-update.md` legitimately mention where Copilot/Kiro/
+    // Windsurf keep config; aih only writes these when that tool is targeted, so they
+    // must not fail the gate on a claude-only repo (the pre-existing false positive).
+    for (const ref of [
+      "See `.github/copilot-instructions.md` for Copilot.",
+      "Kiro loads `.kiro/steering/00-canon.md`.",
+      "Windsurf reads `.windsurfrules`.",
+      // a root bootloader named illustratively when that tool isn't targeted
+      "Gemini-family tools use `GEMINI.md`.",
+    ]) {
+      expect(findings(ref, "canon-ref-resolves")).toHaveLength(0);
+    }
+    // A genuine typo in a canon path is still caught.
+    expect(findings("Read `ai-coding/RULE_ROUTERR.md`.", "canon-ref-resolves")).toHaveLength(1);
+  });
 });
 
 describe("lint rules — placeholder / skeleton", () => {
