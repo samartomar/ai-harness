@@ -1,13 +1,18 @@
+import { randomUUID } from "node:crypto";
+import { basename, join } from "node:path";
 import type { Command } from "commander";
 import { readAihConfig } from "../config/marker.js";
 import { loadSettings } from "../config/settings.js";
 import { AihError } from "../errors.js";
 import { executePlan, summarizeResult, writeArtifact } from "../internals/execute.js";
+import { readIfExists } from "../internals/fsxn.js";
 import type { CommandSpec, PlanContext } from "../internals/plan.js";
 import { defaultRunner, type Runner } from "../internals/proc.js";
 import { isInteractive, makeReadlinePrompter, type Prompter } from "../internals/prompt.js";
 import { reportToSarif } from "../internals/sarif.js";
 import { makeHostAdapter } from "../platform/detect.js";
+import { buildSupport, supportSummary } from "../support/integrate.js";
+import { redactArgv } from "../support/redact.js";
 
 export interface RunDeps {
   run?: Runner;
@@ -15,9 +20,25 @@ export interface RunDeps {
   write?: (text: string) => void;
   /** Inject a prompter (tests); production wires a readline prompter when interactive. */
   prompter?: Prompter;
+  /** Clock seam — injected in tests so support timestamps are deterministic. */
+  now?: () => Date;
+  /** Run-id seam — injected in tests so support references are deterministic. */
+  newRunId?: () => string;
 }
 
 const delay = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+
+/** Setup files consulted for project support context, in precedence order. */
+const SETUP_FILES = ["SETUP.md", "docs/SETUP.md", ".aih/SETUP.md"];
+
+/** First existing setup file's contents, or undefined (project context is optional). */
+function readSetupText(root: string): string | undefined {
+  for (const rel of SETUP_FILES) {
+    const text = readIfExists(join(root, rel));
+    if (text !== undefined) return text;
+  }
+  return undefined;
+}
 
 /** A positive integer from CLI input, else undefined (used for `--refresh <sec>`). */
 function positiveInt(v: unknown): number | undefined {
@@ -136,15 +157,59 @@ export async function runCapability(
     const built = await spec.plan(ctx);
     const result = await executePlan(built, ctx);
 
+    // Support templates: cross-cutting, derived from the verification report so any
+    // verifying command (doctor / heal / `bootstrap-ai --verify` / …) turns a coded
+    // failure into a ticket-ready, tool-neutral escalation. Built once here; emitted
+    // in the human/JSON branches below (and suppressed when streaming SARIF).
+    const support =
+      result.report && result.report.checks.length > 0
+        ? buildSupport({
+            capability: result.capability,
+            checks: result.report.checks,
+            projectName: basename(settings.root) || "this project",
+            root: settings.root,
+            command: redactArgv([
+              "aih",
+              spec.name,
+              ...(ctx.verify ? ["--verify"] : []),
+              ...(ctx.apply ? ["--apply"] : []),
+            ]).join(" "),
+            contextDir: settings.contextDir,
+            targets: (readAihConfig(settings.root)?.targets ?? []).join(", ") || "none",
+            platform: host.platform,
+            runId: (deps.newRunId ?? (() => `run_${randomUUID().slice(0, 8)}`))(),
+            timestamp: (deps.now ?? (() => new Date()))().toISOString(),
+            setupText: readSetupText(settings.root),
+            env,
+          })
+        : undefined;
+
+    // `--support-out <dir>` writes each full ticket to a repo-contained file — the
+    // operator named the path, so this is consent, exactly like `--sarif <file>`.
+    let savedSupport: Record<string, string> | undefined;
+    const supportOut = opts.supportOut as string | undefined;
+    if (support && typeof supportOut === "string" && supportOut.length > 0) {
+      savedSupport = {};
+      for (const t of support.templates) {
+        const rel = `${supportOut}/${t.code.replace(/[^a-z0-9.-]/gi, "_")}.md`;
+        writeArtifact(ctx, rel, `${t.subject}\n\n${t.body}`);
+        savedSupport[t.code] = rel;
+      }
+    }
+
     // `--sarif -` streams the SARIF document to stdout (post-step below). When it
     // will, suppress the normal human/JSON output so stdout is a clean SARIF artifact
     // a code-scanning consumer can ingest directly (`… --sarif - > out.sarif`).
     const streamSarif = opts.sarif === "-" && result.report !== undefined;
     if (!streamSarif) {
       if (json) {
-        write(`${JSON.stringify(result, null, 2)}\n`);
+        const payload = support
+          ? { ...result, support: { findings: support.findings, templates: support.templates } }
+          : result;
+        write(`${JSON.stringify(payload, null, 2)}\n`);
       } else {
         write(`${summarizeResult(result)}\n`);
+        if (support) write(supportSummary(support, savedSupport));
       }
     }
 
