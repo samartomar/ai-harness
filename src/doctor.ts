@@ -131,7 +131,10 @@ export const command: CommandSpec = {
           return {
             name: "cli-loadability",
             verdict: "fail",
-            detail: `${broken.map((b) => `${b.cli}: ${loadReason(b)}`).join("; ")} — run aih bootstrap-ai --apply`,
+            // Surface each broken tool's exact remediation command, not a generic one.
+            detail: broken
+              .map((b) => `${b.cli}: ${loadReason(b)} → ${b.fix ?? "aih bootstrap-ai --apply"}`)
+              .join("; "),
           };
         }
         const loads = results.filter((r) => r.verdict === "loads").map((r) => r.cli);
