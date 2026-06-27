@@ -1,12 +1,14 @@
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { SHARED_MARKER, sharedCanonicalBlockBody } from "../../src/bootstrap-ai/canon.js";
 import { claudeBashPermissions } from "../../src/guardrails/command-policy.js";
 import { command as guardrails } from "../../src/guardrails/index.js";
 import { command } from "../../src/init/index.js";
 import { INIT_PHASES } from "../../src/init/phases.js";
 import { executePlan, resolveContents } from "../../src/internals/execute.js";
+import { beginLine, endLine } from "../../src/internals/markers.js";
 import type { Action, DocAction, PlanContext, WriteAction } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
@@ -444,3 +446,23 @@ function describeOf(a: Action): string {
   if (a.kind === "doc") return `${a.describe}|${a.path ?? ""}`;
   return a.describe;
 }
+
+describe("aih init — brownfield guard (redirect to adopt)", () => {
+  it("redirects to `aih adopt` on an existing canon and writes NOTHING", async () => {
+    // A divergent bootloader = adoptable brownfield canon.
+    const body = `${sharedCanonicalBlockBody(".ai-context").trim()}\n\n## Project extension\n\n- keep me`;
+    writeFileSync(
+      join(dir, "CLAUDE.md"),
+      `# Pre\n\n${beginLine(SHARED_MARKER, "s")}\n\n${body}\n\n${endLine(SHARED_MARKER)}\n`,
+    );
+    const p = await command.plan(ctx({ apply: true }));
+    expect(writePaths(p.actions)).toHaveLength(0);
+    expect(docs(p.actions).some((d) => d.describe.includes("use `aih adopt`"))).toBe(true);
+  });
+
+  it("greenfield still composes the full bootstrap (no redirect)", async () => {
+    const p = await command.plan(ctx());
+    expect(writePaths(p.actions).length).toBeGreaterThan(0);
+    expect(docs(p.actions).some((d) => d.describe.includes("use `aih adopt`"))).toBe(false);
+  });
+});

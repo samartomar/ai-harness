@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { extractManagedBlock, mergeManagedBlock } from "../../src/internals/markers.js";
+import {
+  beginLine,
+  endLine,
+  extractManagedBlock,
+  mergeManagedBlock,
+  PROJECT_EXTENSION_MARKER,
+  splitManagedBody,
+} from "../../src/internals/markers.js";
 
 const block = {
   marker: "ai-canonical:shared",
@@ -66,5 +73,44 @@ describe("extractManagedBlock", () => {
     const a = mergeManagedBlock(undefined, block, "# P");
     const b = mergeManagedBlock(undefined, { ...block, note: "a different note" }, "# P");
     expect(extractManagedBlock(a, block.marker)).toBe(extractManagedBlock(b, block.marker));
+  });
+});
+
+describe("splitManagedBody — carve the human project extension", () => {
+  const canonical =
+    "## Start here\n\nRead the router.\n\n## Working agreement\n\n- Think before coding.";
+
+  it("returns '' when the on-disk body is already canonical (already-adopted)", () => {
+    expect(splitManagedBody(canonical, canonical)).toBe("");
+  });
+
+  it("diff-infers a folded-in extension (eicp shape)", () => {
+    const onDisk = `${canonical}\n\n## EICP project extension\n\n- Honor the gateway enforcement contract.\n- Never bypass the control plane.`;
+    const ext = splitManagedBody(onDisk, canonical);
+    expect(ext).toContain("## EICP project extension");
+    expect(ext).toContain("- Honor the gateway enforcement contract.");
+    expect(ext).toContain("- Never bypass the control plane.");
+    // Canonical lines must NOT leak into the extension.
+    expect(ext).not.toContain("Think before coding");
+    expect(ext).not.toContain("Start here");
+  });
+
+  it("a pure reordering of canonical lines yields no false extension", () => {
+    const reordered =
+      "## Working agreement\n\n- Think before coding.\n\n## Start here\n\nRead the router.";
+    expect(splitManagedBody(reordered, canonical)).toBe("");
+  });
+
+  it("prefers an explicit project-extension sub-marker (precise, verbatim)", () => {
+    const fenced = `${beginLine(PROJECT_EXTENSION_MARKER, "owned by the team")}\n\n## Custom\n\n- exact line.\n\n${endLine(PROJECT_EXTENSION_MARKER)}`;
+    const onDisk = `${canonical}\n\n${fenced}`;
+    const ext = splitManagedBody(onDisk, canonical);
+    expect(ext).toBe("## Custom\n\n- exact line.");
+  });
+
+  it("sub-marker wins even when its content overlaps canonical wording", () => {
+    // With the sub-marker present, we take it verbatim and do NOT diff.
+    const fenced = `${beginLine(PROJECT_EXTENSION_MARKER, "x")}\nThink before coding.\n${endLine(PROJECT_EXTENSION_MARKER)}`;
+    expect(splitManagedBody(`${canonical}\n\n${fenced}`, canonical)).toBe("Think before coding.");
   });
 });

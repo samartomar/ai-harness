@@ -53,15 +53,22 @@ function divergentBootloader(): string {
   return `# Preamble\n\n${beginLine(SHARED_MARKER, "src")}\n\n${body}\n\n${endLine(SHARED_MARKER)}\n`;
 }
 
-describe("aih adopt — Phase 1 (read-only)", () => {
-  it("emits a digest and a probe, and writes nothing", async () => {
+describe("aih adopt — digest + routing", () => {
+  it("emits a digest and probes; a brownfield canon yields convergence writes, greenfield none", async () => {
     put("CLAUDE.md", divergentBootloader());
     const actions = (await command.plan(makeCtx())).actions;
     expect(digestOf(actions)).toBeDefined();
     expect(probeOf(actions)).toBeDefined();
-    // Phase 1 is analysis-only: no write actions, even when --apply is passed.
-    const applyActions = (await command.plan(makeCtx({ apply: true }))).actions;
-    expect(applyActions.some((a) => a.kind === "write")).toBe(false);
+    // Brownfield: the carve + canon writes appear in the plan (dry-run shows them).
+    const writes = actions.filter((a) => a.kind === "write").map((a) => a.path.replace(/\\/g, "/"));
+    expect(writes).toContain("ai-coding/rules/project-canon-extension.md");
+    expect(writes).toContain("CLAUDE.md");
+    expect(writes).toContain(".aih-config.json");
+  });
+
+  it("greenfield writes nothing (init owns greenfield)", async () => {
+    const actions = (await command.plan(makeCtx({ apply: true }))).actions;
+    expect(actions.some((a) => a.kind === "write")).toBe(false);
   });
 
   it("reports a marker-divergent canon with [adopt] and a preserved project line", async () => {
@@ -89,13 +96,13 @@ describe("aih adopt — Phase 1 (read-only)", () => {
     expect(check?.code).toBeUndefined();
   });
 
-  it("foreign-scheme lists legacy artifacts to retire", async () => {
+  it("foreign-scheme lists legacy artifacts (report-only, never auto-deleted)", async () => {
     put("ai-coding/RULE_ROUTER.md", "# Router\n");
     put("CLAUDE.md", "# Bootloader\n");
     put("ai-coding/scripts/regenerate-adapters.ps1", "# ps\n");
     const d = digestOf((await command.plan(makeCtx())).actions);
     expect(d?.text).toContain("class: foreign-scheme");
-    expect(d?.text).toContain("[retire] ai-coding/scripts/regenerate-adapters.ps1");
+    expect(d?.text).toContain("[legacy] ai-coding/scripts/regenerate-adapters.ps1");
   });
 
   it("surfaces a CLI-native footprint panel and flags import candidates", async () => {

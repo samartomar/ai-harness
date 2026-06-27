@@ -162,6 +162,26 @@ const KNOWN_SIBLING_CANON: ReadonlySet<string> = new Set([
   "repo-discipline.md",
 ]);
 
+/**
+ * Tool entry files that aih's canon docs (`other-tools.md`, `harness-update.md`,
+ * the adapters) legitimately reference as "here is where tool X keeps its config" —
+ * the root bootloaders plus other tools' native config paths. These are
+ * illustrative cross-tool mentions, NOT intra-canon links: aih writes a bootloader
+ * only for a TARGETED tool, so a claude-only repo names `GEMINI.md` / Copilot /
+ * Kiro paths without them existing. A bounded, curated vocabulary — a genuine typo
+ * in an `ai-coding/…` path (or a misspelled bootloader) is still caught.
+ */
+const KNOWN_TOOL_NATIVE: ReadonlySet<string> = new Set([
+  // root bootloaders (written only for the targeted tool)
+  "CLAUDE.md",
+  "AGENTS.md",
+  "GEMINI.md",
+  // other tools' native entry files
+  ".github/copilot-instructions.md",
+  ".kiro/steering/00-canon.md",
+  ".windsurfrules",
+]);
+
 /** Normalize a reference to a repo-relative POSIX path for set lookup. */
 function normalizeRef(ref: string): string {
   return ref.trim().replace(/\\/g, "/").replace(/^\.\//, "");
@@ -188,6 +208,7 @@ function isPlaceholderRef(ref: string): boolean {
 function refResolves(ref: string, ctx: LintRuleCtx): boolean {
   const norm = normalizeRef(ref);
   if (ctx.plannedPaths.has(norm) || ctx.fileExists(norm)) return true;
+  if (KNOWN_TOOL_NATIVE.has(norm)) return true; // illustrative other-tool entry file
   const base = basename(norm);
   if (KNOWN_SIBLING_CANON.has(base)) return true;
   for (const p of ctx.plannedPaths) if (basename(p) === base) return true;

@@ -85,3 +85,55 @@ export function extractManagedBlock(text: string, marker: string): string | unde
   const m = normalized.match(pattern);
   return m?.[1]?.trim();
 }
+
+/** The sub-marker that fences a human "project extension" inside a managed block. */
+export const PROJECT_EXTENSION_MARKER = "project-extension";
+
+/** Trimmed, non-empty lines of a body — the unit the extension diff works on. */
+function meaningfulLines(text: string): string[] {
+  return text
+    .replace(/\r\n/g, "\n")
+    .split("\n")
+    .map((l) => l.trimEnd())
+    .filter((l) => l.trim().length > 0);
+}
+
+/**
+ * Carve the human "project extension" out of an on-disk managed-block body — the
+ * core of `aih adopt`'s non-destructive reconcile. A brownfield bootloader (e.g.
+ * eicp) folded project-specific guidance INTO the shared block; regenerating the
+ * block from the canonical source would silently delete it. This isolates exactly
+ * those human lines so the caller can re-home them to a project-owned file BEFORE
+ * the block is regenerated clean.
+ *
+ * Two strategies (the decided "diff-inferred now + sub-marker going forward"):
+ *  1. **Sub-marker (precise)** — if `onDisk` fences a region with
+ *     `<!-- BEGIN project-extension -->…<!-- END project-extension -->`, that
+ *     region's content IS the extension, verbatim and order-preserving.
+ *  2. **Diff-inferred (legacy)** — otherwise, the extension is the set of on-disk
+ *     lines whose trimmed form is absent from `canonical`, kept in on-disk order
+ *     with their original text. Whitespace-only and pure-structure lines that also
+ *     appear in canonical are dropped, so a reordering alone yields no false extension.
+ *
+ * Returns the extension as a trimmed markdown string, or `""` when there is none
+ * (i.e. the on-disk body is canonical — already adopted).
+ */
+export function splitManagedBody(onDisk: string, canonical: string): string {
+  const sub = extractManagedBlock(onDisk, PROJECT_EXTENSION_MARKER);
+  if (sub !== undefined) return sub.trim();
+
+  const canonicalSet = new Set(meaningfulLines(canonical).map((l) => l.trim()));
+  const extension: string[] = [];
+  for (const line of onDisk.replace(/\r\n/g, "\n").split("\n")) {
+    const t = line.trim();
+    if (t.length === 0) {
+      // Keep a single separating blank between kept lines; never lead with one.
+      if (extension.length > 0 && extension[extension.length - 1] !== "") extension.push("");
+      continue;
+    }
+    if (!canonicalSet.has(t)) extension.push(line.trimEnd());
+  }
+  // Drop any trailing blank, then join.
+  while (extension.length > 0 && extension[extension.length - 1] === "") extension.pop();
+  return extension.join("\n").trim();
+}

@@ -1,9 +1,17 @@
 import { basename, resolve } from "node:path";
 import { readAihConfig } from "../config/marker.js";
-import { type CommandSpec, digest, type PlanContext, plan, probe } from "../internals/plan.js";
+import {
+  type Action,
+  type CommandSpec,
+  digest,
+  type PlanContext,
+  plan,
+  probe,
+} from "../internals/plan.js";
 import { lines } from "../internals/render.js";
 import { gitCommittedSet } from "../internals/scan-allowlist.js";
 import type { Check } from "../internals/verify.js";
+import { adoptApplyActions } from "./apply.js";
 import {
   type BootloaderState,
   type CanonClassification,
@@ -50,11 +58,16 @@ function migrationReport(cls: CanonClassification, repo: string, contextDir: str
     );
   }
 
+  const carve =
+    cls.kind === "marker-divergent"
+      ? "carves your project-specific lines into `rules/project-canon-extension.md` (preserved, never regenerated), then regenerates the aih-owned canon and the clean managed block"
+      : "inserts the managed canonical block into each bootloader (your existing content is kept as the preamble) and writes the aih-owned canon";
   const body: string[] = [
     `Adopt analysis for ${repo} — class: ${cls.kind}.`,
     "",
-    "Existing canon detected. `aih adopt` converges it onto aih's managed model",
-    "WITHOUT overwriting your work. This run is READ-ONLY (Phase 1: analysis only).",
+    `Existing canon detected. \`aih adopt --apply\` converges it onto aih's managed`,
+    `model WITHOUT overwriting your work: it ${carve}, backing every changed file up`,
+    "to `*.aih.bak`. The file-level plan is below; nothing is written without `--apply`.",
     "",
     "Bootloaders:",
     ...cls.bootloaders.map(bootloaderLine),
@@ -62,19 +75,18 @@ function migrationReport(cls: CanonClassification, repo: string, contextDir: str
   body.push(
     "",
     "Canon:",
-    `  ${cls.routerPresent ? "[converge]" : "[create]"} ${contextDir}/RULE_ROUTER.md — ${cls.routerPresent ? "present; project sections re-referenced" : "missing; will be created"}`,
+    `  ${cls.routerPresent ? "[converge]" : "[create]"} ${contextDir}/RULE_ROUTER.md — ${cls.routerPresent ? "present; regenerated, project extension re-referenced" : "missing; will be created"}`,
   );
   if (cls.legacyArtifacts.length > 0) {
     body.push(
       "",
-      "Legacy to retire (Phase 2 → .aih/legacy/):",
-      ...cls.legacyArtifacts.map((p) => `  [retire] ${p} — superseded by \`aih bootstrap-ai\``),
+      "Legacy you can retire once converged (aih leaves these untouched — remove when ready):",
+      ...cls.legacyArtifacts.map((p) => `  [legacy] ${p} — superseded by the managed canon`),
     );
   }
   body.push(
     "",
-    "Next: `aih adopt --apply` (Phase 2) performs the carve + regenerate, then",
-    "`aih bootstrap-ai --verify` must report every bootloader in sync.",
+    "After `--apply`, `aih bootstrap-ai --verify` must report every bootloader in sync.",
   );
   return lines(...body);
 }
@@ -173,10 +185,13 @@ function adoptableProbe(cls: CanonClassification): Check {
  * `aih adopt` — converge a repo's EXISTING AI canon onto aih's managed model
  * instead of bulldozing it (the brownfield path `init`/`bootstrap-ai` lack).
  *
- * Phase 1 (this command today) is READ-ONLY: it classifies the canon
- * ({@link classifyCanon}) and prints a migration preview as a digest, plus a
- * `canon.adoptable` advisory under `--verify`/`--json`. The `--apply` carve +
- * regenerate path lands in Phase 2; until then `--apply` writes nothing.
+ * It classifies the canon ({@link classifyCanon}) + inventories the CLI-native
+ * footprint ({@link cliFootprint}), prints the migration as a digest, and — for a
+ * brownfield canon — emits the convergence writes ({@link adoptApplyActions}):
+ * carve the human extension out of a divergent bootloader into a preserved
+ * user-owned file, regenerate the aih-owned canon, merge the clean block, persist
+ * the marker. Dry-run by default; the writes execute only under `--apply` (with
+ * `.aih.bak` backups). Greenfield → `init`; already-adopted → no-op.
  */
 async function adoptPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
   // The committed marker is authoritative for which context dir to inspect — same
@@ -194,18 +209,26 @@ async function adoptPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
   const fp = cliFootprint(ctx.root, contextDir, { committed, acknowledged });
 
   const text = `${migrationReport(cls, repo, contextDir)}\n\n${footprintReport(fp)}`;
-  return plan(
-    "adopt",
+  const actions: Action[] = [
     digest("adopt: canon migration analysis", text, { canon: cls, cliFootprint: fp }),
     probe("adoptable canon", () => adoptableProbe(cls)),
     probe("cli-native footprint", () => cliNativeProbe(fp)),
-  );
+  ];
+
+  // Phase 2: a brownfield canon gets the real convergence writes (carve + regenerate
+  // + marker), shown in the plan and executed only under `--apply`. Greenfield and
+  // already-adopted stay write-free — `init` owns greenfield; a converged repo is a no-op.
+  if (cls.kind === "marker-divergent" || cls.kind === "foreign-scheme") {
+    actions.push(...(await adoptApplyActions(ctx, cls, contextDir)));
+  }
+
+  return plan("adopt", ...actions);
 }
 
 export const command: CommandSpec = {
   name: "adopt",
   summary:
-    "Analyze and converge an existing AI canon onto aih's managed model (brownfield migration; Phase 1: read-only)",
+    "Converge an existing AI canon onto aih's managed model without overwriting your work (brownfield migration)",
   options: [],
   plan: adoptPlan,
 };

@@ -1,3 +1,4 @@
+import { classifyCanon, isAdoptable } from "../adopt/classify.js";
 import { aihConfigJson } from "../config/marker.js";
 import { detectFallbackNotice, resolveTargets } from "../internals/cli-detect.js";
 import { deepMerge } from "../internals/merge.js";
@@ -5,6 +6,31 @@ import type { Action, CommandSpec, PlanContext, WriteAction } from "../internals
 import { doc, plan, writeJson } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
 import { INIT_PHASES } from "./phases.js";
+
+/**
+ * The brownfield guard: `aih init` regenerates the canon and would overwrite an
+ * existing, hand-built one. When a repo already carries adoptable canon (and isn't
+ * yet aih-managed), STOP and redirect to `aih adopt`, which converges it without
+ * destroying the human's work — instead of silently bulldozing it.
+ */
+function brownfieldRedirect(ctx: PlanContext): Action | undefined {
+  const cls = classifyCanon(ctx.root, ctx.contextDir);
+  if (!isAdoptable(cls.kind) || cls.configPresent) return undefined;
+  return doc(
+    "existing AI canon detected — use `aih adopt`, not `aih init`",
+    lines(
+      `This repo already has AI canon (\`${cls.kind}\`). \`aih init\` would regenerate and`,
+      "overwrite it. To converge it onto aih's managed model WITHOUT losing your work:",
+      "",
+      "  aih adopt .            # preview the migration (carve + regenerate, non-destructive)",
+      "  aih adopt . --apply    # perform it (every changed file backed up to *.aih.bak)",
+      "",
+      "`aih adopt` preserves project-specific content (carved into",
+      "`rules/project-canon-extension.md`) and never modifies your CLI-native config.",
+      "Re-run `aih init` only once the repo is on the managed model (or on a greenfield repo).",
+    ),
+  );
+}
 
 /**
  * Orchestrate a full repo bootstrap by COMPOSING the repo-scoped capabilities —
@@ -21,6 +47,11 @@ import { INIT_PHASES } from "./phases.js";
  * produce, so the harness's "no faked provisioning" guarantee is preserved.
  */
 async function initPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
+  // Brownfield guard FIRST: never bulldoze an existing hand-built canon — redirect
+  // to `aih adopt` and emit nothing else, so a dry-run or `--apply` both stop here.
+  const redirect = brownfieldRedirect(ctx);
+  if (redirect) return plan("init", redirect);
+
   const actions: Action[] = [];
   // `--mcp-mode` flows to the mcp phase only (standard|offline|none) so a
   // locked-down org gets the right MCP handling in one `aih init`.

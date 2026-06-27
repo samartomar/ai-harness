@@ -112,6 +112,10 @@ export function canonLintCheck(root: string, contextDir: string): Check {
   const fails: string[] = [];
   const infos: string[] = [];
   for (const rel of rels) {
+    // `rules/project-canon-extension.md` is user-owned prose carved by `aih adopt`
+    // — keep it in `onDisk` so the router's reference resolves, but never lint its
+    // CONTENT (policing a human's "should"/"could" there is exactly backwards).
+    if (rel.endsWith("rules/project-canon-extension.md")) continue;
     const source = readIfExists(join(root, rel));
     if (source === undefined) continue;
     const findings = lintDoc(rel, source.replace(/\r\n/g, "\n"), {
