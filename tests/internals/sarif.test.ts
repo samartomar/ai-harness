@@ -44,6 +44,24 @@ describe("reportToSarif", () => {
     expect(fail.locations).toEqual([]);
   });
 
+  it("renders file-backed findings with physical locations and stable fingerprints", () => {
+    const sarif = JSON.parse(
+      reportToSarif(
+        new VerificationReport().add({
+          name: "plaintext-secret",
+          verdict: "fail",
+          detail: ".env — plaintext secret on disk",
+          location: { uri: ".env", startLine: 1 },
+          fingerprint: "plaintext-secret:.env",
+        }),
+      ),
+    );
+    const result = sarif.runs[0].results[0];
+    expect(result.locations[0].physicalLocation.artifactLocation.uri).toBe(".env");
+    expect(result.locations[0].physicalLocation.region.startLine).toBe(1);
+    expect(result.partialFingerprints["aih/v1"]).toBe("plaintext-secret:.env");
+  });
+
   it("derives one rule per distinct check name (deduped, first-seen order)", () => {
     const report = new VerificationReport().fail("dup", "first").fail("dup", "second").pass("solo");
     const sarif = JSON.parse(reportToSarif(report));
