@@ -25,19 +25,21 @@ export const SUPPORT_LEVELS = ["native", "fallback", "absent"] as const;
 const Support = z.enum(SUPPORT_LEVELS);
 
 const McpProfile = z.object({
+  /**
+   * aih's MCP integration level for this tool:
+   *  - `native`   — aih deterministically WRITES the config: a project-relative JSON
+   *                 file using the standard `mcpServers` shape aih already generates.
+   *  - `fallback` — the tool reads MCP, but from TOML, a global path, or a different
+   *                 server shape, so aih emits exact guidance rather than a file it
+   *                 would get wrong.
+   *  - `absent`   — the tool exposes no MCP server config at all.
+   */
   support: Support,
   /** The file the client reads its MCP server map from (repo-relative or ~/home). */
   configPath: z.string().optional(),
   /** Top-level key holding the server map. */
   configKey: z.enum(["mcpServers", "mcp_servers", "mcp", "servers", "context_servers"]).optional(),
   configFormat: z.enum(["json", "toml"]).optional(),
-  /**
-   * True only when aih can deterministically WRITE this config: a project-relative
-   * JSON file using the standard `mcpServers` shape aih already generates. When
-   * false, aih emits guidance (the tool uses TOML, a global path, or a different
-   * server shape) rather than writing a file it would get wrong.
-   */
-  writable: z.boolean(),
 });
 
 /**
@@ -83,9 +85,9 @@ export type CliEntry = z.infer<typeof CliEntry>;
 /**
  * The registry, in canonical order (detection, reports, and the --detect fallback
  * notice all depend on this ordering — keep it stable). MCP facts are objective
- * per-tool documentation values; `writable` is conservative — only the tools whose
+ * per-tool documentation values; `support` is conservative — only the tools whose
  * project config is plain `mcpServers` JSON (Claude's de-facto standard shape) are
- * written, everyone else gets guidance.
+ * `native` (aih writes them); everyone else is `fallback` (aih emits guidance).
  */
 const RAW: Record<string, z.input<typeof CliEntry>> = {
   claude: {
@@ -99,7 +101,6 @@ const RAW: Record<string, z.input<typeof CliEntry>> = {
       configPath: ".mcp.json",
       configKey: "mcpServers",
       configFormat: "json",
-      writable: true,
     },
     settings: { configPath: ".claude/settings.json", writable: true },
   },
@@ -111,11 +112,10 @@ const RAW: Record<string, z.input<typeof CliEntry>> = {
     bootloaders: ["AGENTS.md"],
     // Codex reads MCP servers from ~/.codex/config.toml as [mcp_servers.<name>] (TOML, global).
     mcp: {
-      support: "native",
+      support: "fallback",
       configPath: "~/.codex/config.toml",
       configKey: "mcp_servers",
       configFormat: "toml",
-      writable: false,
     },
   },
   cursor: {
@@ -129,7 +129,6 @@ const RAW: Record<string, z.input<typeof CliEntry>> = {
       configPath: ".cursor/mcp.json",
       configKey: "mcpServers",
       configFormat: "json",
-      writable: true,
     },
     activation: { key: "alwaysApply", value: "true" },
   },
@@ -140,11 +139,10 @@ const RAW: Record<string, z.input<typeof CliEntry>> = {
     binaries: ["agy", "antigravity"],
     bootloaders: ["AGENTS.md", "GEMINI.md"],
     mcp: {
-      support: "native",
+      support: "fallback",
       configPath: "~/.antigravity/mcp.json",
       configKey: "mcpServers",
       configFormat: "json",
-      writable: false,
     },
   },
   gemini: {
@@ -155,11 +153,10 @@ const RAW: Record<string, z.input<typeof CliEntry>> = {
     bootloaders: ["GEMINI.md"],
     // Gemini reads ~/.gemini/settings.json (global, many keys) — guide, don't write.
     mcp: {
-      support: "native",
+      support: "fallback",
       configPath: "~/.gemini/settings.json",
       configKey: "mcpServers",
       configFormat: "json",
-      writable: false,
     },
   },
   copilot: {
@@ -170,11 +167,10 @@ const RAW: Record<string, z.input<typeof CliEntry>> = {
     bootloaders: [".github/copilot-instructions.md"],
     // VS Code reads .vscode/mcp.json under a `servers` key (different shape) — guide.
     mcp: {
-      support: "native",
+      support: "fallback",
       configPath: ".vscode/mcp.json",
       configKey: "servers",
       configFormat: "json",
-      writable: false,
     },
   },
   windsurf: {
@@ -184,11 +180,10 @@ const RAW: Record<string, z.input<typeof CliEntry>> = {
     binaries: ["windsurf"],
     bootloaders: [".windsurfrules"],
     mcp: {
-      support: "native",
+      support: "fallback",
       configPath: "~/.codeium/windsurf/mcp_config.json",
       configKey: "mcpServers",
       configFormat: "json",
-      writable: false,
     },
   },
   opencode: {
@@ -199,11 +194,10 @@ const RAW: Record<string, z.input<typeof CliEntry>> = {
     bootloaders: ["AGENTS.md"],
     // OpenCode's opencode.json uses an `mcp` key with a different server shape — guide.
     mcp: {
-      support: "native",
+      support: "fallback",
       configPath: "opencode.json",
       configKey: "mcp",
       configFormat: "json",
-      writable: false,
     },
   },
   zed: {
@@ -214,11 +208,10 @@ const RAW: Record<string, z.input<typeof CliEntry>> = {
     bootloaders: ["AGENTS.md"],
     // Zed settings.json uses `context_servers` with a different shape — guide.
     mcp: {
-      support: "native",
+      support: "fallback",
       configPath: "~/.config/zed/settings.json",
       configKey: "context_servers",
       configFormat: "json",
-      writable: false,
     },
   },
   kimi: {
@@ -232,7 +225,6 @@ const RAW: Record<string, z.input<typeof CliEntry>> = {
       configPath: ".mcp.json",
       configKey: "mcpServers",
       configFormat: "json",
-      writable: true,
     },
   },
   kiro: {
@@ -246,7 +238,6 @@ const RAW: Record<string, z.input<typeof CliEntry>> = {
       configPath: ".kiro/settings/mcp.json",
       configKey: "mcpServers",
       configFormat: "json",
-      writable: true,
     },
     activation: { key: "inclusion", value: "always" },
   },
