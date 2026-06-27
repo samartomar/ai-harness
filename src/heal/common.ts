@@ -65,6 +65,7 @@ export async function tlsCheck(ctx: PlanContext, name: string, url: string): Pro
     name,
     verdict: "fail",
     detail: firstErr ? `TLS/proxy failure — ${firstErr}` : `TLS probe exited ${res.code}`,
+    code: "tls.verify-failed",
   };
 }
 

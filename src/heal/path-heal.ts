@@ -49,6 +49,7 @@ async function planPathHeal(ctx: PlanContext): Promise<Action[]> {
       name: "path: ~/.local/bin",
       verdict: "fail",
       detail: `${dir} exists but is not on PATH`,
+      code: "path.missing",
     };
   }
 

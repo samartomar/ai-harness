@@ -35,6 +35,7 @@ function offlineVendoredProbe(stdio: Record<string, McpServer>): Check {
     name,
     verdict: "fail",
     detail: `still resolve packages at runtime — mirror/vendor or pin an absolute command before air-gapping: ${runtime.join(", ")}`,
+    code: "mcp.unvendored-offline",
   };
 }
 
@@ -60,12 +61,22 @@ function dbMcpNote(databases: string[]): string {
 async function probeUv(ctx: PlanContext): Promise<Check> {
   const res = await ctx.run(["uv", "--version"]);
   if (res.spawnError) {
-    return { name: "uv present", verdict: "skip", detail: "uv not found on PATH" };
+    return {
+      name: "uv present",
+      verdict: "skip",
+      detail: "uv not found on PATH",
+      code: "mcp.uv-missing",
+    };
   }
   if (res.code === 0) {
     return { name: "uv present", verdict: "pass", detail: res.stdout.trim() || "uv --version ok" };
   }
-  return { name: "uv present", verdict: "fail", detail: res.stderr.trim() || `exit ${res.code}` };
+  return {
+    name: "uv present",
+    verdict: "fail",
+    detail: res.stderr.trim() || `exit ${res.code}`,
+    code: "mcp.uv-missing",
+  };
 }
 
 /**

@@ -18,7 +18,12 @@ async function nodeCheck(ctx: PlanContext): Promise<Check> {
   const win = ctx.host.platform === "windows";
   const res = await ctx.run(versionArgv(ctx.host.platform, "node"));
   if (classifyTool(res, win) === "absent") {
-    return { name: "node: runtime", verdict: "fail", detail: "node not found on PATH" };
+    return {
+      name: "node: runtime",
+      verdict: "fail",
+      detail: "node not found on PATH",
+      code: "env.node-runtime",
+    };
   }
   return { name: "node: runtime", verdict: "pass", detail: `node ${res.stdout.trim()}` };
 }
@@ -36,11 +41,21 @@ async function npmCheck(ctx: PlanContext, nodeOk: boolean): Promise<Check> {
   const res = await ctx.run(versionArgv(ctx.host.platform, "npm"));
   const state = classifyTool(res, win);
   if (state === "absent") {
-    return { name: "npm: runtime", verdict: "fail", detail: "npm not found on PATH" };
+    return {
+      name: "npm: runtime",
+      verdict: "fail",
+      detail: "npm not found on PATH",
+      code: "npm.runtime-broken",
+    };
   }
   if (state === "broken") {
     const why = firstLine(res.stderr) || `exit ${res.code}`;
-    return { name: "npm: runtime", verdict: "fail", detail: `\`npm --version\` failed: ${why}` };
+    return {
+      name: "npm: runtime",
+      verdict: "fail",
+      detail: `\`npm --version\` failed: ${why}`,
+      code: "npm.runtime-broken",
+    };
   }
   return { name: "npm: runtime", verdict: "pass", detail: `npm ${res.stdout.trim()}` };
 }

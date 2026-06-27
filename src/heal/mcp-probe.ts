@@ -24,7 +24,12 @@ async function planMcpProbe(ctx: PlanContext, shared: HealShared): Promise<Actio
 
   let check: Check;
   if (!configured) {
-    check = { name: CHECK, verdict: "skip", detail: "no .mcp.json (no MCP servers configured)" };
+    check = {
+      name: CHECK,
+      verdict: "skip",
+      detail: "no .mcp.json (no MCP servers configured)",
+      code: "mcp.config-missing",
+    };
     return [captured(check)];
   }
   if (!usesNpx) {
@@ -45,12 +50,14 @@ async function planMcpProbe(ctx: PlanContext, shared: HealShared): Promise<Actio
       name: CHECK,
       verdict: "fail",
       detail: "npx can't reach the registry — root cause: certs/TLS (heal the certs step first)",
+      code: "mcp.blocked",
     };
   } else {
     check = {
       name: CHECK,
       verdict: "fail",
       detail: "npx unavailable — root cause: npm is broken (see the npm step)",
+      code: "mcp.blocked",
     };
   }
   return [captured(check)];

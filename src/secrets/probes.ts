@@ -32,6 +32,7 @@ export function secretProbes(scan: SecretScan): ProbeAction[] {
         name: SECRET_RULE,
         verdict: "fail",
         detail: `${path} — plaintext secret on disk; migrate to a vault and rotate the exposed credential`,
+        code: "secrets.plaintext-detected",
       }),
     ),
   );

@@ -166,12 +166,18 @@ function guardrailsPlan(ctx: PlanContext): ReturnType<typeof plan> {
           name: "gitleaks present",
           verdict: "skip",
           detail: "gitleaks not on PATH — install to enforce the pre-commit gate",
+          code: "guardrails.gitleaks-missing",
         };
       }
       const version = res.stdout.trim() || res.stderr.trim();
       return res.code === 0
         ? { name: "gitleaks present", verdict: "pass", detail: version || "installed" }
-        : { name: "gitleaks present", verdict: "fail", detail: version || `exit ${res.code}` };
+        : {
+            name: "gitleaks present",
+            verdict: "fail",
+            detail: version || `exit ${res.code}`,
+            code: "guardrails.gitleaks-missing",
+          };
     }),
   );
 
