@@ -15,6 +15,7 @@ import { lintProbes } from "../../src/lint/run.js";
 import { command as mcpCommand } from "../../src/mcp/index.js";
 import type { Platform } from "../../src/platform/base.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
+import { command as reportCommand } from "../../src/report/index.js";
 import { secretProbes } from "../../src/secrets/probes.js";
 import { scanSecrets } from "../../src/secrets/scan.js";
 import { command as usageCommand } from "../../src/usage/index.js";
@@ -293,6 +294,29 @@ describe("Check.code — secrets / guardrails / usage / lint emitters", () => {
   });
 });
 
+describe("Check.code — report emitters", () => {
+  it("tags an over-budget footprint (advisory) and low adoption in an initialised repo", async () => {
+    const root = freshTmp();
+    write(root, "CLAUDE.md", "x".repeat(4000)); // ~1000 tok bootloader → over a tiny budget
+    // The committed marker makes the repo "initialised", which gates the adoption nag.
+    write(
+      root,
+      ".aih-config.json",
+      JSON.stringify({ schemaVersion: 1, contextDir: "ai-coding", targets: ["claude"] }),
+    );
+    const ctx = makeCtx({
+      root,
+      env: { HOME: root, USERPROFILE: root },
+      options: { tokenBudget: "100" }, // over budget, no --gate → a non-gating skip advisory
+    });
+    const checks = await checksOf(await reportCommand.plan(ctx), ctx);
+    expect(codeOf(checks, "context budget")).toBe("report.context-over-budget");
+    expect(codeOf(checks, "adoption")).toBe("report.low-adoption");
+    // advisories never fail the run — a bare `aih report` keeps exiting 0.
+    expect(checks.every((c) => c.verdict !== "fail")).toBe(true);
+  });
+});
+
 describe("Check.code — invariants", () => {
   it("unifies the three node emitters under one code", async () => {
     const healRoot = freshTmp();
@@ -346,6 +370,8 @@ describe("Check.code — invariants", () => {
       "secrets.plaintext-detected": true,
       "guardrails.gitleaks-missing": true,
       "usage.no-data": true,
+      "report.context-over-budget": true,
+      "report.low-adoption": true,
     };
     const srcDir = join(process.cwd(), "src");
     const src = (readdirSync(srcDir, { recursive: true }) as string[])

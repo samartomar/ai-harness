@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { digest } from "../../src/internals/plan.js";
 import { reportHtml, reportMarkdown } from "../../src/report/artifact.js";
+import type { SupportTemplate } from "../../src/support/render.js";
 
 /**
  * The LIVE region of the report (everything before the always-embedded demo block),
@@ -119,8 +120,8 @@ describe("reportHtml dashboard", () => {
     // skip-to-main bypass block + focusable main target (WCAG 2.4.1)
     expect(html).toContain('<a class="skip" href="#main">Skip to report</a>');
     expect(html).toContain('<main id="main" tabindex="-1">');
-    // topbar jump-nav, anchored to id'd category sections (orientation on a long page)
-    expect(html).toContain('<nav class="tb-nav" aria-label="Report sections">');
+    // the topbar jump-nav was removed; sections still carry stable ids for orientation
+    expect(html).not.toContain('class="tb-nav"');
     expect(liveOf(html)).toContain('<section class="cat" id="cat-harness-adoption">');
     // the embedded demo tree uses a prefixed id so anchors never collide with live
     expect(html).toContain('id="demo-cat-');
@@ -180,5 +181,72 @@ describe("reportHtml dashboard", () => {
       '<meta http-equiv="refresh" content="10">',
     );
     expect(reportHtml("aih report", RICH)).not.toContain("http-equiv");
+  });
+});
+
+const selfFixTpl: SupportTemplate = {
+  id: "self-fix:report.context-over-budget",
+  code: "report.context-over-budget",
+  kind: "self-fix",
+  audience: "developer",
+  severity: "optional",
+  subject: "aih: per-turn context exceeds the token budget",
+  body: "per-turn context exceeds the token budget\n  - worst tool (claude) ~12000 tok > budget 8000\n\nFix: Trim the heaviest tool's bootloaders.\nDetected by `aih report`.",
+  copyLabel: "Self-fix — per-turn context exceeds the token budget",
+};
+
+describe("reportHtml — support tickets", () => {
+  it("renders a Suggested actions section: copy button, hidden body, clipboard helper", () => {
+    const full = reportHtml("t", RICH, { support: [selfFixTpl] });
+    const html = liveOf(full);
+    expect(html).toContain('id="cat-actions"');
+    expect(html).toContain("Suggested actions");
+    expect(html).toContain('class="tk-copy"');
+    expect(html).toContain('onclick="aihCopy(this)"');
+    expect(html).toContain("Copy note"); // a developer self-fix copies as a note, not an email
+    expect(html).toContain('class="tk-body" hidden'); // full paste text stashed for the button
+    expect(html).toContain("worst tool (claude) ~12000 tok"); // the body is present to copy
+    expect(full).toContain("window.aihCopy"); // clipboard helper (in the page-foot script)
+  });
+
+  it("adds a topbar copy-email icon (only when findings exist) wired to aihCopyAll", () => {
+    const withFindings = reportHtml("t", RICH, { support: [selfFixTpl] });
+    expect(withFindings).toContain('class="tb-ico tb-copy"');
+    expect(withFindings).toContain('onclick="aihCopyAll(this)"');
+    expect(withFindings).toContain("window.aihCopyAll"); // the bulk-copy helper
+    // no findings → no topbar copy button (the CSS/helper are always present; the button isn't)
+    expect(reportHtml("t", RICH)).not.toContain('onclick="aihCopyAll(this)"');
+  });
+
+  it("drives tooltips via a floating element (data-tip), not native title, on the ? affordances", () => {
+    const html = reportHtml("t", RICH);
+    expect(html).toContain('id="tip" role="tooltip"'); // the floating tooltip element
+    expect(html).toContain("[data-tip]"); // hover/focus handler targets data-tip
+    // the tool-pill install hint is carried on data-tip now (not a native title)
+    expect(html).toContain('data-tip="Codex CLI');
+    expect(html).not.toContain('title="Codex CLI');
+  });
+
+  it("labels external tickets 'Copy email' and HTML-escapes the stashed body", () => {
+    const ext: SupportTemplate = {
+      ...selfFixTpl,
+      id: "escalation:cert.ca-missing",
+      kind: "escalation",
+      audience: "internal-it",
+      severity: "blocking",
+      subject: "[proj] Blocking setup issue — <x>",
+      body: "Impact <b>injected</b>",
+    };
+    const html = liveOf(reportHtml("t", RICH, { support: [ext] }));
+    expect(html).toContain("Copy email");
+    expect(html).toContain("Impact &lt;b&gt;injected&lt;/b&gt;"); // escaped in the hidden pre
+    expect(html).not.toContain("Impact <b>injected</b>"); // never raw markup
+  });
+
+  it("omits the section (and its nav anchor) entirely when there are no findings", () => {
+    const html = reportHtml("t", RICH);
+    expect(html).not.toContain('id="cat-actions"');
+    expect(html).not.toContain("Suggested actions");
+    expect(html).not.toContain("#cat-actions");
   });
 });

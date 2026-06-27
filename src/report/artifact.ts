@@ -1,5 +1,6 @@
 import type { DigestAction } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
+import type { SupportTemplate } from "../support/render.js";
 import { demoDigests } from "./demo.js";
 import { GEIST_FONT } from "./font-geist.js";
 import { EMBEDDED_FONTS } from "./fonts.js";
@@ -237,7 +238,7 @@ function toolPill(name: string, on: boolean): string {
     return `<span class="tool off" aria-label="${esc(name)} — not installed">${esc(name)}</span>`;
   // Keyboard/SR-reachable: tabindex + aria-label surface the install hint that
   // `title` alone (hover-only) hides; the `?` glyph gives a visible affordance.
-  return `<span class="tool off" tabindex="0" data-hint="1" title="${esc(hint)}" aria-label="${esc(name)} — not installed. ${esc(hint)}">${esc(name)}<i class="tool-i" aria-hidden="true">?</i></span>`;
+  return `<span class="tool off" tabindex="0" data-hint="1" data-tip="${esc(hint)}" aria-label="${esc(name)} — not installed. ${esc(hint)}">${esc(name)}<i class="tool-i" aria-hidden="true">?</i></span>`;
 }
 
 /** Present-then-absent tool pills, shared by Tools installed + Tooling. */
@@ -314,10 +315,10 @@ const LOAD_LABEL: Record<string, string> = {
 function cellSpan(cls: string, glyph: string, label: string, detail: string, fix?: string): string {
   const body = `${glyph} ${esc(label)}`;
   if (!fix) {
-    return `<span class="cli-cell ${cls}"${detail ? ` title="${esc(detail)}"` : ""}>${body}</span>`;
+    return `<span class="cli-cell ${cls}"${detail ? ` data-tip="${esc(detail)}"` : ""}>${body}</span>`;
   }
   const tip = `${detail ? `${detail} — ` : ""}fix: ${fix}`;
-  return `<span class="cli-cell ${cls} act" tabindex="0" data-fix="1" title="${esc(tip)}" aria-label="${esc(`${label}: ${tip}`)}">${body}<i class="cli-fix" aria-hidden="true">?</i></span>`;
+  return `<span class="cli-cell ${cls} act" tabindex="0" data-fix="1" data-tip="${esc(tip)}" aria-label="${esc(`${label}: ${tip}`)}">${body}<i class="cli-fix" aria-hidden="true">?</i></span>`;
 }
 
 /** One wiring cell — colored glyph + short file label; full detail/fix in the tooltip. */
@@ -588,24 +589,6 @@ function catId(title: string, prefix = ""): string {
     .replace(/^-|-$/g, "")}`;
 }
 
-/**
- * Ordered {title,id} for categories that actually render (≥1 matching digest) —
- * drives the topbar jump-nav. Mirrors {@link renderSections}' ordering; category
- * prefixes are disjoint, so this presence `some()` matches its consume-once `take()`.
- * Keep adjacent to renderSections so that coupling stays visible.
- */
-function sectionNav(digests: DigestAction[]): { title: string; id: string }[] {
-  const has = (p: string): boolean => digests.some((d) => d.describe.startsWith(p));
-  const out = CATEGORIES.filter((c) => c.prefixes.some(has)).map((c) => ({
-    title: c.title,
-    id: catId(c.title),
-  }));
-  const known = [...new Set(CATEGORIES.flatMap((c) => c.prefixes))];
-  if (digests.some((d) => !known.some((p) => d.describe.startsWith(p))))
-    out.push({ title: "More", id: catId("More") });
-  return out;
-}
-
 /** One category section: numbered eyebrow + title + count, then its panel bento. */
 function categorySection(title: string, no: number, panels: DigestAction[], idPrefix = ""): string {
   const idx = String(no).padStart(2, "0");
@@ -670,11 +653,9 @@ body[data-demo="on"] .tb-demo{background:color-mix(in oklab,var(--accent) 18%,tr
 .skip:focus{top:.6rem}
 .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
 main:focus{outline:none}
-.tb-nav{display:flex;gap:.15rem;align-items:center;overflow-x:auto;scrollbar-width:none;margin:0 .4rem}
-.tb-nav::-webkit-scrollbar{display:none}
-.tb-nav a{white-space:nowrap;color:var(--mut);font-size:.74rem;font-weight:550;padding:.32rem .55rem;border-radius:9px;text-decoration:none;transition:color .15s,background .15s}
-.tb-nav a:hover{color:var(--fg);background:color-mix(in oklab,var(--fg) 6%,transparent)}
-@media(max-width:820px){.tb-nav{display:none}}
+.tb-copy:hover{border-color:var(--accent);color:var(--accent)}
+.tb-copy.ok{border-color:var(--ok);color:var(--ok)}
+#tip{position:fixed;z-index:60;display:none;max-width:300px;pointer-events:none;background:var(--panel2);color:var(--fg);border:1px solid var(--line2);border-radius:8px;padding:.4rem .55rem;font-size:.74rem;line-height:1.35;box-shadow:0 10px 28px -10px rgba(0,0,0,.6)}
 .tool-i{margin-left:.34rem;font-style:normal;font-weight:700;font-size:.66rem;opacity:.7;border:1px solid currentColor;border-radius:999px;width:.95em;height:.95em;line-height:.85em;display:inline-grid;place-items:center;vertical-align:baseline}
 .tool.off[data-hint]:hover .tool-i,.tool.off[data-hint]:focus-visible .tool-i{opacity:1}
 body{ background:radial-gradient(1100px 520px at 78% -8%,color-mix(in oklab,var(--accent) 13%,transparent),transparent 58%),radial-gradient(900px 600px at 6% 108%,color-mix(in oklab,var(--accent2) 9%,transparent),transparent 60%),var(--bg);
@@ -822,7 +803,16 @@ footer code{color:var(--mut)}
 body[data-demo="on"] #aih-live{display:none}
 body[data-demo="on"] #aih-demo{display:block}
 body[data-demo="on"] .demo-banner{display:flex}
-body[data-demo="on"] .tb-nav{display:none}
+.tickets{list-style:none;margin:0;padding:0;display:grid;gap:.55rem}
+.tk{background:var(--panel2);border:1px solid var(--line);border-radius:var(--rs);padding:.65rem .8rem}
+.tk-h{display:flex;align-items:center;gap:.6rem}
+.tk-kind{font-size:.62rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;padding:.16rem .44rem;border-radius:999px;white-space:nowrap}
+.tk-kind.sf{background:color-mix(in oklab,var(--accent) 16%,transparent);color:var(--accent)}
+.tk-kind.ext{background:color-mix(in oklab,var(--warn) 16%,transparent);color:var(--warn)}
+.tk-subj{flex:1;font-size:.82rem;font-weight:560;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tk-copy{cursor:pointer;font:600 .72rem/1 var(--display);color:var(--fg);background:var(--panel);border:1px solid var(--line2);border-radius:8px;padding:.36rem .62rem;white-space:nowrap;transition:border-color .15s,color .15s}
+.tk-copy:hover{border-color:var(--accent);color:var(--accent)}
+.tk-copy.ok{border-color:var(--ok);color:var(--ok)}
 `.trim();
 
 /**
@@ -879,16 +869,68 @@ function buildHero(digests: DigestAction[]): string {
 /** The product brand shown in the sticky top bar (the report's fixed header). */
 const BRAND = "Enterprise AI Bootstrapping Harness Report";
 
+const KIND_LABEL: Record<string, string> = {
+  escalation: "Escalation",
+  improvement: "Improvement",
+  "self-fix": "Self-fix",
+};
+
+/**
+ * One support ticket as a card: a kind chip + the subject + a copy-to-clipboard
+ * button. The full `subject + body` lives in a hidden `<pre>` the button reads via
+ * `textContent` (so HTML-escaping is reversed back to the raw paste text). External
+ * tickets copy as "email"; the developer self-fix note copies as "note".
+ */
+function ticketCard(t: SupportTemplate): string {
+  const isSelf = t.kind === "self-fix";
+  const kindLabel = KIND_LABEL[t.kind] ?? t.kind;
+  const copyLabel = isSelf ? "Copy note" : "Copy email";
+  const full = `${t.subject}\n\n${t.body}`;
+  return [
+    '<li class="tk">',
+    `<div class="tk-h"><span class="tk-kind ${isSelf ? "sf" : "ext"}">${esc(kindLabel)}</span>`,
+    `<span class="tk-subj">${esc(t.subject)}</span>`,
+    `<button class="tk-copy" type="button" onclick="aihCopy(this)">${esc(copyLabel)}</button></div>`,
+    `<pre class="tk-body" hidden>${esc(full)}</pre>`,
+    "</li>",
+  ].join("");
+}
+
+/**
+ * "Suggested actions" — copy-ready support tickets derived from the report's own
+ * checks (over-budget context, incomplete adoption). Rendered only when findings
+ * exist, so a healthy repo's dashboard carries no empty section.
+ */
+function ticketsSection(templates: SupportTemplate[]): string {
+  const body = `<ul class="tickets">${templates.map(ticketCard).join("")}</ul>`;
+  const p = panel(
+    "Support tickets",
+    `<span class="badge muted">${templates.length}</span>`,
+    body,
+    12,
+  );
+  return (
+    '<section class="cat" id="cat-actions"><div class="cat-h">' +
+    '<span class="cat-no">★</span><h2>Suggested actions</h2>' +
+    `<span class="cat-ct">${templates.length}</span><span class="cat-rule"></span></div>` +
+    `<div class="bento">${p}</div></section>`
+  );
+}
+
 export function reportHtml(
   title: string,
   digests: DigestAction[],
-  opts: { refresh?: number; demo?: boolean } = {},
+  opts: { refresh?: number; demo?: boolean; support?: SupportTemplate[] } = {},
 ): string {
-  const liveContent = `${buildHero(digests)}${renderSections(digests)}`;
-  // Topbar jump-nav reflects the live report's present sections (demo shares the
-  // same category titles). The demo tree is rendered with a `demo-` id prefix so
-  // its section anchors never collide with the live ones.
-  const nav = sectionNav(digests);
+  const support = opts.support ?? [];
+  const supportSection = support.length > 0 ? ticketsSection(support) : "";
+  const liveContent = `${buildHero(digests)}${supportSection}${renderSections(digests)}`;
+  // A copy-email topbar icon (next to demo/theme) when the report surfaced findings —
+  // a one-click "copy every ticket" shortcut to the Suggested-actions section below.
+  const copyIcon =
+    support.length > 0
+      ? '      <button class="tb-ico tb-copy" type="button" onclick="aihCopyAll(this)" data-tip="Copy support ticket(s)" aria-label="Copy support ticket(s) to clipboard"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></svg></button>'
+      : "";
   // A fixed DEMO dataset is always embedded behind the "◑ demo" toggle (and shown by
   // default under `--demo`) so the full report can be visualized / showcased.
   const demoSet = demoDigests();
@@ -912,11 +954,11 @@ export function reportHtml(
     '  <a class="skip" href="#main">Skip to report</a>',
     '  <header class="topbar">',
     `    <div class="tb-brand"><h1>${BRAND}</h1><div class="sub">self-contained · generated by <code>aih report</code></div></div>`,
-    `    <nav class="tb-nav" aria-label="Report sections">${nav.map((s) => `<a href="#${s.id}">${esc(s.title)}</a>`).join("")}</nav>`,
     '    <div class="tb-right">',
     '      <div class="clocks"><span class="clk"><i>UTC</i><b id="clk-utc">··:··:··</b></span><span class="clk"><i>Local</i><b id="clk-loc">··:··:··</b></span></div>',
-    '      <button class="tb-ico tb-demo" type="button" onclick="aihDemo()" aria-label="Toggle demo data" title="Demo data"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 3h6M10 3v6l-4.4 7.6A1.5 1.5 0 0 0 6.9 19h10.2a1.5 1.5 0 0 0 1.3-2.4L14 9V3"/><path d="M7.2 14h9.6"/></svg></button>',
-    '      <button class="tb-ico" type="button" onclick="aihTheme()" aria-label="Toggle light / dark theme" title="Toggle theme"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 3a9 9 0 0 0 0 18z" fill="currentColor"/></svg></button>',
+    ...(copyIcon ? [copyIcon] : []),
+    '      <button class="tb-ico tb-demo" type="button" onclick="aihDemo()" aria-label="Toggle demo data" data-tip="Demo data"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 3h6M10 3v6l-4.4 7.6A1.5 1.5 0 0 0 6.9 19h10.2a1.5 1.5 0 0 0 1.3-2.4L14 9V3"/><path d="M7.2 14h9.6"/></svg></button>',
+    '      <button class="tb-ico" type="button" onclick="aihTheme()" aria-label="Toggle light / dark theme" data-tip="Toggle theme"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 3a9 9 0 0 0 0 18z" fill="currentColor"/></svg></button>',
     "    </div>",
     "  </header>",
     '  <svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" style="stop-color:var(--accent)"/><stop offset="1" style="stop-color:var(--accent2)"/></linearGradient><filter id="glow" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="2.4" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs></svg>',
@@ -926,7 +968,8 @@ export function reportHtml(
     `    <div id="aih-demo">${demoContent}</div>`,
     "    <footer>No external assets — open anywhere, commit nowhere (<code>.aih/</code> is git-ignored).</footer>",
     "  </main>",
-    '  <script>(function(){var r=document.documentElement,k="aih-theme";try{var s=localStorage.getItem(k);if(s)r.dataset.theme=s}catch(e){}window.aihTheme=function(){var n=r.dataset.theme==="light"?"":"light";n?r.dataset.theme=n:r.removeAttribute("data-theme");try{localStorage.setItem(k,n)}catch(e){}};window.aihDemo=function(){var b=document.body;b.dataset.demo=b.dataset.demo==="on"?"":"on";window.scrollTo(0,0)};function p(n){return(n<10?"0":"")+n}function clk(){var d=new Date(),u=p(d.getUTCHours())+":"+p(d.getUTCMinutes())+":"+p(d.getUTCSeconds()),l=p(d.getHours())+":"+p(d.getMinutes())+":"+p(d.getSeconds()),a=document.getElementById("clk-utc"),c=document.getElementById("clk-loc");if(a)a.textContent=u;if(c)c.textContent=l}clk();setInterval(clk,1000)})();</script>',
+    '  <div id="tip" role="tooltip"></div>',
+    '  <script>(function(){var r=document.documentElement,k="aih-theme";try{var s=localStorage.getItem(k);if(s)r.dataset.theme=s}catch(e){}window.aihTheme=function(){var n=r.dataset.theme==="light"?"":"light";n?r.dataset.theme=n:r.removeAttribute("data-theme");try{localStorage.setItem(k,n)}catch(e){}};window.aihDemo=function(){var b=document.body;b.dataset.demo=b.dataset.demo==="on"?"":"on";window.scrollTo(0,0)};function aihClip(t,ok){var fb=function(){try{var ta=document.createElement("textarea");ta.value=t;ta.style.position="fixed";ta.style.top="-1000px";ta.style.opacity="0";document.body.appendChild(ta);ta.focus();ta.select();document.execCommand("copy");document.body.removeChild(ta)}catch(e){}if(ok)ok()};try{if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(t).then(function(){if(ok)ok()},fb)}else{fb()}}catch(e){fb()}}window.aihCopy=function(b){var li=b.closest(".tk");if(!li)return;var pre=li.querySelector(".tk-body");if(!pre)return;aihClip(pre.textContent||"",function(){var o=b.getAttribute("data-l")||b.textContent;b.setAttribute("data-l",o);b.textContent="Copied ✓";b.classList.add("ok");setTimeout(function(){b.textContent=o;b.classList.remove("ok")},1500)})};window.aihCopyAll=function(b){var ps=[].slice.call(document.querySelectorAll("#aih-live .tk-body"));if(!ps.length)return;var t=ps.map(function(p){return p.textContent||""}).join("\\n\\n----------\\n\\n");aihClip(t,function(){b.classList.add("ok");flash(b,"Copied ✓");setTimeout(function(){b.classList.remove("ok")},1500)})};var tip=document.getElementById("tip");function place(el,txt){if(!tip)return;tip.textContent=txt;tip.style.display="block";var a=el.getBoundingClientRect(),t2=tip.getBoundingClientRect();var x=a.left+a.width/2-t2.width/2;x=Math.max(6,Math.min(x,window.innerWidth-t2.width-6));var y=a.top-t2.height-8;if(y<6)y=a.bottom+8;tip.style.left=Math.round(x)+"px";tip.style.top=Math.round(y)+"px"}function hide(){if(tip)tip.style.display="none"}function flash(el,m){place(el,m);setTimeout(hide,1300)}function show(el){var x=el.getAttribute("data-tip");if(x)place(el,x)}function near(e){return e.target&&e.target.closest?e.target.closest("[data-tip]"):null}document.addEventListener("mouseover",function(e){var el=near(e);if(el)show(el)});document.addEventListener("mouseout",function(e){if(near(e))hide()});document.addEventListener("focusin",function(e){var el=near(e);if(el)show(el)});document.addEventListener("focusout",hide);window.addEventListener("scroll",hide,true);function p(n){return(n<10?"0":"")+n}function clk(){var d=new Date(),u=p(d.getUTCHours())+":"+p(d.getUTCMinutes())+":"+p(d.getUTCSeconds()),l=p(d.getHours())+":"+p(d.getMinutes())+":"+p(d.getSeconds()),a=document.getElementById("clk-utc"),c=document.getElementById("clk-loc");if(a)a.textContent=u;if(c)c.textContent=l}clk();setInterval(clk,1000)})();</script>',
     "</body>",
     "</html>",
   );
