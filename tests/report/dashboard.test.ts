@@ -278,14 +278,18 @@ describe("reportHtml — single bento + new panels", () => {
     expect(html).toContain('class="cli-matrix"');
     expect(html).toContain("tools wired"); // structural-config KPI tile
     expect(html).toContain('class="cli-cell ok"'); // wired cell (green)
-    expect(html).toContain(">✓ CLAUDE.md</span>"); // claude bootloader wired
-    expect(html).toContain('class="cli-cell bad"'); // missing cell (red)
-    expect(html).toContain(">✗ .kiro/steering/00-canon.md</span>"); // kiro bootloader missing
-    expect(html).toContain(">— n/a</span>"); // kiro settings n/a
+    expect(html).toContain(">✓ CLAUDE.md</span>"); // claude bootloader wired (plain, no fix)
+    expect(html).toContain('class="cli-cell bad act"'); // missing cell is actionable
+    expect(html).toContain(">— n/a</span>"); // kiro settings n/a (plain)
+    // actionable cells surface the fix command, keyboard/SR-reachable (WCAG-AA)
+    expect(html).toContain('data-fix="1"'); // focusable hint marker
+    expect(html).toContain('tabindex="0"');
+    expect(html).toContain('class="cli-fix"'); // visible ? affordance
+    expect(html).toContain("aih bootstrap-ai --apply --cli kiro"); // exact remediation in the cell
     // loadability column: proven-loadable KPI + per-row load verdict
     expect(html).toContain("proven loadable"); // third KPI tile
     expect(html).toContain("<th>Loads?</th>"); // matrix loads column
-    expect(html).toContain(">✓ loads</span>"); // claude proven to load
+    expect(html).toContain(">✓ loads</span>"); // claude proven to load (plain)
     expect(html).toContain(">— unverified</span>"); // kiro load unverified (no bootloader)
   });
 });

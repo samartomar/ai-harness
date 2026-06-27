@@ -304,13 +304,28 @@ const LOAD_LABEL: Record<string, string> = {
   unverified: "unverified",
 };
 
+/**
+ * A matrix cell. A cell that carries a `fix` is ACTIONABLE: it becomes keyboard /
+ * screen-reader reachable (`tabindex` + `aria-label`) with a visible `?` affordance
+ * and the exact remediation command in the tooltip — mirroring the install-hint tool
+ * pills, so the fix surfaces for everyone, not just on mouse hover. A cell with no
+ * fix (wired / n/a) stays a plain, non-focusable label.
+ */
+function cellSpan(cls: string, glyph: string, label: string, detail: string, fix?: string): string {
+  const body = `${glyph} ${esc(label)}`;
+  if (!fix) {
+    return `<span class="cli-cell ${cls}"${detail ? ` title="${esc(detail)}"` : ""}>${body}</span>`;
+  }
+  const tip = `${detail ? `${detail} — ` : ""}fix: ${fix}`;
+  return `<span class="cli-cell ${cls} act" tabindex="0" data-fix="1" title="${esc(tip)}" aria-label="${esc(`${label}: ${tip}`)}">${body}<i class="cli-fix" aria-hidden="true">?</i></span>`;
+}
+
 /** One wiring cell — colored glyph + short file label; full detail/fix in the tooltip. */
 function covCell(c: CovCell): string {
   const cls = CELL_CLASS[c.state] ?? "muted";
   const glyph = CELL_GLYPH[c.state] ?? "—";
   const label = c.state === "na" ? "n/a" : (c.path ?? "");
-  const tip = [c.path, c.detail, c.fix ? `fix: ${c.fix}` : ""].filter(Boolean).join(" — ");
-  return `<span class="cli-cell ${cls}"${tip ? ` title="${esc(tip)}"` : ""}>${glyph} ${esc(label)}</span>`;
+  return cellSpan(cls, glyph, label, c.detail ?? "", c.fix);
 }
 
 /** The loadability cell — proves the present bootloader actually loads + routes. */
@@ -318,9 +333,11 @@ function loadCell(l: CovLoad): string {
   const cls = LOAD_CLASS[l.verdict] ?? "muted";
   const glyph = LOAD_GLYPH[l.verdict] ?? "—";
   const label = LOAD_LABEL[l.verdict] ?? l.verdict;
-  const reasons = (l.checks ?? []).filter((c) => c.ok === false).map((c) => c.detail);
-  const tip = [...reasons, l.fix ? `fix: ${l.fix}` : ""].filter(Boolean).join(" — ");
-  return `<span class="cli-cell ${cls}"${tip ? ` title="${esc(tip)}"` : ""}>${glyph} ${esc(label)}</span>`;
+  const reasons = (l.checks ?? [])
+    .filter((c) => c.ok === false)
+    .map((c) => c.detail)
+    .join("; ");
+  return cellSpan(cls, glyph, label, reasons, l.fix);
 }
 
 function covRowHtml(r: CovRow): string {
@@ -794,6 +811,10 @@ footer code{color:var(--mut)}
 .cli-sep td{color:var(--dim);font-size:.68rem;text-transform:uppercase;letter-spacing:.06em;padding-top:.8rem;border-bottom:0}
 .cli-cell{display:inline-flex;align-items:center;gap:.32rem;white-space:nowrap;font-variant-numeric:tabular-nums}
 .cli-cell.ok{color:var(--ok)}.cli-cell.bad{color:var(--bad)}.cli-cell.warn{color:var(--warn)}.cli-cell.muted{color:var(--dim)}
+.cli-cell.act{cursor:help}
+.cli-cell.act:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px}
+.cli-fix{font-style:normal;font-weight:700;font-size:.6rem;opacity:.62;border:1px solid currentColor;border-radius:999px;width:.95em;height:.95em;line-height:.85em;display:inline-grid;place-items:center}
+.cli-cell.act:hover .cli-fix,.cli-cell.act:focus-visible .cli-fix{opacity:1}
 .cli-legend{display:flex;flex-wrap:wrap;gap:.9rem;align-items:center;margin-bottom:.7rem;font-size:.72rem}
 .cli-src{color:var(--mut);margin-left:auto}
 .demo-banner{display:none;align-items:center;gap:.5rem;background:color-mix(in oklab,var(--warn) 13%,transparent);border:1px solid color-mix(in oklab,var(--warn) 32%,transparent);color:var(--warn);border-radius:var(--rs);padding:.6rem .95rem;margin-bottom:1.1rem;font-size:.8rem;font-weight:600}
