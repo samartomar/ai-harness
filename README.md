@@ -50,7 +50,7 @@ node dist/cli.js --help
 | Command | What it does |
 | --- | --- |
 | `aih certs` | Extract the corporate root CA from the OS trust store, lock it down, and propagate trust to npm/pip/cargo/conda. |
-| `aih heal` | Diagnose **and repair** the broken runtime `certs` assumes works — corporate TLS trust, npm, PATH, and MCP pre-flight — generically for any TLS-intercepting proxy (`--ca-pattern`/`AIH_CA_PATTERN`, never hardcoded). Diagnoses by default (exits non-zero when broken) and repairs under `--apply`; the npm self-heal is emitted as an operator-run script (never executed) and the only mutation is a local Windows registry write to persist the CA for GUI-launched apps (Kiro/Claude), so the harness never contacts a remote. `--scope certs,npm,path,mcp,all`. |
+| `aih heal` | Diagnose **and repair** the broken runtime `certs` assumes works — corporate TLS trust, npm, PATH, and MCP pre-flight — generically for any TLS-intercepting proxy (`--ca-pattern`/`AIH_CA_PATTERN`, never hardcoded). Diagnoses by default (exits non-zero when broken) and repairs under `--apply`; the npm self-heal is emitted as an operator-run script (never executed) and the only mutation is a local Windows registry write to persist the CA for GUI-launched apps (Claude/Kiro), so the harness never contacts a remote. `--scope certs,npm,path,mcp,all`. |
 | `aih hardware` | Profile CPU/RAM/GPU; compute memory/thread/parallel limits + quantization; emit tuned Ollama/llama.cpp settings. |
 | `aih vdi` | Detect VDI (Citrix/WorkSpaces/RES/RDP) and redirect caches + SQLite to local scratch (junction on Windows). |
 | `aih profile` | Recursively detect the repo's stack and synthesize Cursor stack rules (`.cursor/rules/*.mdc`). Root bootloaders are owned by `bootstrap-ai`. |
@@ -63,7 +63,7 @@ node dist/cli.js --help
 | `aih sandbox` | Generate a devcontainer + managed sandbox settings (egress allowlist, `failIfUnavailable`). |
 | `aih telemetry` | Inject OpenTelemetry env, a redacting Bindplane collector, and an analytics fetcher (usage + skills endpoints → `{ usage_report, skills }`). |
 | `aih report` | Read-only analytics digest. Local: a dev console — agent **context footprint** (token bloat) plus a **per-turn load-group** panel (the heaviest single tool's always-loaded bootloaders — what one tool actually pays per turn, not the union sum; `--gate --token-budget <n>` exits non-zero in CI when it's exceeded). The footprint is **gitignore-honoring** (counts only tracked/untracked-not-ignored source, never generated per-CLI copies — `--all-files` to override; `--since <ref>` narrows to files changed in a PR), **repo & branch status** (current branch, ahead/behind vs main, dirty; `--team` adds in-progress team branches via a `gh` → `git ls-remote` → last-fetched ladder that degrades gracefully when gh/network is blocked), repo config presence, local AI-CLI tooling saturation, and **trends** (unicode sparklines of commits/LOC/adoption/branches over recorded history — see `aih track`). Org (`--org <export.json>`): top skills, tokens by type, **cache savings** (net-of-write estimate), and accept/reject from a saved Admin-API export. Body prints verbatim; `--json` carries structured data; `--format md\|html` writes a static artifact under `--apply`. **`--open`** builds the self-contained HTML dashboard (adoption ring, KPI strip, trend charts) and launches it in your browser (implies html + apply); **`--refresh <sec>`** keeps it live — opens once, then regenerates every `<sec>`s while the page auto-reloads (Ctrl+C to stop). Dark by default with a light toggle; Inter + JetBrains Mono are embedded so it works fully offline. Network-free by default; `--team` is the lone opt-in network call. |
-| `aih track` | Record one metrics sample (commits 7d, LOC delta, adoption score, branch count, tracked files) to `.aih/history.jsonl` — the time-series behind `aih report` trends. Read-only git/filesystem; dry-run previews, `--apply` appends (idempotent per commit). Wire into a commit / agent-stop hook so history accumulates — the Kiro `metrics-on-stop` hook (`aih bootstrap-ai --cli kiro`) runs `aih track --apply` automatically. |
+| `aih track` | Record one metrics sample (commits 7d, LOC delta, adoption score, branch count, tracked files) to `.aih/history.jsonl` — the time-series behind `aih report` trends. Read-only git/filesystem; dry-run previews, `--apply` appends (idempotent per commit). Wire into a commit / agent-stop hook so history accumulates — e.g. Kiro's `metrics-on-stop` hook (`aih bootstrap-ai --cli kiro`) runs `aih track --apply` automatically. |
 | `aih usage` | Install the **multi-tool usage-capture** layer → `.aih/usage.jsonl` (rendered by `aih report`'s Usage panel). The **universal floor** is a git `post-commit` hook that records commit activity for **any** tool (it keys off the commit, not the agent). The per-tool **skill/MCP** layer wires in via each CLI's verified local hook (Claude/Codex/Cursor/Gemini/Kiro/… — `aih usage` documents the exact mechanism); skills aggregate by source (ECC/canon/user). Behavioral capture is near-universal (9/11 CLIs have local hooks); only **dollar cost** is uneven (real USD from Claude, token counts from Codex/Gemini/Kimi/OpenCode, cloud-only for Cursor/Windsurf). |
 | `aih crispy` | Run the CRISPY context-engineering stage machine (deterministic, gate-ordered). |
 | `aih bootstrap` | Orchestrate the workstation 4-phase rollout (certs → hardware/vdi → telemetry). |
@@ -94,22 +94,25 @@ auto-target the CLIs found on this machine; the default is `claude`. Supported:
 `claude, codex, cursor, antigravity, gemini, copilot, windsurf, opencode, zed, kimi, kiro`.
 
 ```bash
+aih bootstrap-ai --cli claude       # writes CLAUDE.md (the default target, auto-loaded)
 aih ecc --cli claude,codex          # ECC for Claude (plugin) + Codex (ecc-install)
 aih superpowers --cli antigravity   # agy plugin install … (runs under --apply)
-aih bootstrap-ai --cli kiro         # writes .kiro/steering/00-canon.md (inclusion: always)
+aih bootstrap-ai --cli kiro         # Kiro: .kiro/steering/00-canon.md (inclusion: always)
 aih bootstrap-ai --detect           # target only the CLIs installed here
 aih init . --all-tools              # bootstrap a repo for every CLI at once
 ```
 
-Each CLI gets its native entry: Claude → `CLAUDE.md`, Codex/OpenCode/Zed/Kimi/Antigravity →
-`AGENTS.md`, Gemini → `GEMINI.md`, Cursor → `.cursor/rules/*.mdc`, Windsurf → `.windsurfrules`,
-Copilot → `.github/copilot-instructions.md`, **Kiro → `.kiro/steering/00-canon.md`** (`inclusion:
-always`, with a `#[[file:…/RULE_ROUTER.md]]` live-reference). For a tool aih doesn't target yet,
-`<context-dir>/adapters/other-tools.md` documents how to point it at `RULE_ROUTER.md`.
+Each CLI gets its native entry: **Claude → `CLAUDE.md`** (the default target, auto-loaded),
+Codex/OpenCode/Zed/Kimi/Antigravity → `AGENTS.md`, Gemini → `GEMINI.md`, Cursor →
+`.cursor/rules/*.mdc`, Windsurf → `.windsurfrules`, Copilot → `.github/copilot-instructions.md`,
+Kiro → `.kiro/steering/00-canon.md` (`inclusion: always`, with a `#[[file:…/RULE_ROUTER.md]]`
+live-reference). For a tool aih doesn't target yet, `<context-dir>/adapters/other-tools.md`
+documents how to point it at `RULE_ROUTER.md`.
 
-**Kiro depth.** Since Kiro can't read `~/.claude`, selecting `kiro` also generates Kiro-native
-content (schemas verified against [Kiro's docs](https://kiro.dev/docs/steering/) and ECC's real
-`.kiro/` tree):
+**Per-tool depth (Kiro example).** Claude reuses your `~/.claude` baseline, so its entry is just
+`CLAUDE.md`. Tools that can't read `~/.claude` get fuller native content instead — Kiro is the
+deepest case (schemas verified against [Kiro's docs](https://kiro.dev/docs/steering/) and ECC's
+real `.kiro/` tree):
 
 - `aih bootstrap-ai --cli kiro` → `.kiro/steering/agent-tools.md` (stack-aware CLI usage) +
   stack-aware `.kiro/hooks/*.kiro.hook` files (`aih-secret-scan-on-create`, `aih-tests-on-edit`,
