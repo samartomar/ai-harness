@@ -47,9 +47,23 @@ export function commandForArtifact(name: string): string {
   return "aih init --apply";
 }
 
+/** Indent for a step's command line(s) — aligns under the `  N. ` number prefix. */
+const STEP_INDENT = "     ";
+
 /**
- * The ordered list of concrete next-step lines (each names a command). Empty when
- * the repo is fully set up. Adoption gaps first, then telemetry wiring.
+ * One next-step: a description line, then each command on its OWN bare, indented line
+ * so the reader can copy a command verbatim and run it (the old `desc → \`cmd\`` form
+ * wasn't pasteable — the backticks + prose broke the line). A trailing `# note` is a
+ * shell comment both PowerShell and bash ignore.
+ */
+function step(desc: string, ...cmds: string[]): string {
+  return [`${desc}:`, ...cmds.map((c) => `${STEP_INDENT}${c}`)].join("\n");
+}
+
+/**
+ * The ordered list of concrete next-steps (each names its command(s) on their own
+ * copy-pasteable line). Empty when the repo is fully set up. Adoption gaps first,
+ * then telemetry, tools, and untargeted-tool wiring.
  */
 export function nextSteps(input: NextStepsInput): string[] {
   if (!input.initialized) return [];
@@ -66,7 +80,7 @@ export function nextSteps(input: NextStepsInput): string[] {
       arr.push(a);
       byCmd.set(cmd, arr);
     }
-    for (const [cmd, arts] of byCmd) steps.push(`Add ${arts.join(", ")} → \`${cmd}\``);
+    for (const [cmd, arts] of byCmd) steps.push(step(`Add ${arts.join(", ")}`, cmd));
   }
 
   // C — telemetry: prompt to WIRE it only when it isn't wired yet. Once the recorder
@@ -75,14 +89,22 @@ export function nextSteps(input: NextStepsInput): string[] {
   // matter of time).
   if (input.usageEvents === 0 && !input.telemetryWired) {
     steps.push(
-      "Wire telemetry → `aih usage --apply` + `aih track --apply` (commit/stop hook) to populate Usage + Trends",
+      step(
+        "Wire telemetry to populate Usage + Trends",
+        "aih usage --apply",
+        "aih track --apply   # commit/stop hook",
+      ),
     );
   }
 
   // Machine shell tools the agent guidance leans on — surface the install command.
   if (input.toolsMissing && input.toolsMissing > 0) {
     steps.push(
-      `Install ${input.toolsMissing} missing shell tool(s) → \`aih tools\` (preview) · \`aih tools --apply\` (install)`,
+      step(
+        `Install ${input.toolsMissing} missing shell tool(s)`,
+        "aih tools           # preview",
+        "aih tools --apply   # install",
+      ),
     );
   }
 
@@ -93,7 +115,10 @@ export function nextSteps(input: NextStepsInput): string[] {
   if (untargeted.length > 0) {
     const full = [...(input.targets ?? []), ...untargeted].join(",");
     steps.push(
-      `Wire ${untargeted.length} installed tool(s) not yet in this repo (${untargeted.join(", ")}) → \`aih init --cli ${full} --apply\``,
+      step(
+        `Wire ${untargeted.length} installed tool(s) not yet in this repo (${untargeted.join(", ")})`,
+        `aih init --cli ${full} --apply`,
+      ),
     );
   }
 

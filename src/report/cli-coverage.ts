@@ -11,6 +11,7 @@ import { type DigestAction, digest, type PlanContext } from "../internals/plan.j
 import { lines } from "../internals/render.js";
 import { isExternalMcp, mcpConfigAbs, tomlServerCount } from "../mcp/render.js";
 import { type CliLoadability, loadabilityFor, loadReason } from "./cli-loadability.js";
+import { remediationBlock } from "./render.js";
 
 /**
  * PER-CLI WIRING — the truth model behind "AI CLI coverage". The legacy surfaces
@@ -299,13 +300,14 @@ function rowLine(r: CliCoverageRow): string {
   return `  ${lead} ${r.cli.padEnd(12)} boot ${GLYPH[r.bootloader.state]}  mcp ${GLYPH[r.mcp.state]}  set ${GLYPH[r.settings.state]}  loads ${LOAD_GLYPH[r.load.verdict]}`;
 }
 
-/** Per-targeted-CLI remediation: missing cells AND any won't-load verdict. */
-function gapsFor(r: CliCoverageRow): string[] {
-  const out = cellsOf(r)
+/** Per-targeted-CLI remediation: missing cells AND any won't-load verdict, as
+ * `{command, label}` pairs so {@link remediationBlock} can print copy-pasteable lines. */
+function gapsFor(r: CliCoverageRow): Array<{ command: string; label: string }> {
+  const out: Array<{ command: string; label: string }> = cellsOf(r)
     .filter((c) => c.state === "missing" && c.fix !== undefined)
-    .map((c) => `${r.cli}: ${c.fix}`);
+    .map((c) => ({ command: c.fix as string, label: r.cli as string }));
   if (r.load.verdict === "wontLoad" && r.load.fix) {
-    out.push(`${r.cli} (won't load — ${loadReason(r.load)}): ${r.load.fix}`);
+    out.push({ command: r.load.fix, label: `${r.cli} won't load — ${loadReason(r.load)}` });
   }
   return out;
 }
@@ -327,7 +329,7 @@ export function renderCliCoverage(model: CliCoverageModel): string {
     ...(other.length > 0 ? ["", "  ALSO INSTALLED (not targeted)", ...other.map(rowLine)] : []),
     "",
     ...(fixes.length > 0
-      ? ["  To close the gaps:", ...fixes.map((f) => `    → ${f}`)]
+      ? remediationBlock("  To close the gaps — copy any line:", fixes)
       : ["  All targeted tools configured and proven loadable."]),
   );
 }

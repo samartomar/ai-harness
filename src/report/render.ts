@@ -7,6 +7,37 @@ export function thousands(n: number): string {
   return n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
 }
 
+/**
+ * Render remediation commands as their OWN bare, copy-pasteable lines.
+ *
+ * The old `→ <label>: <cmd>` form glued a label to the command, so pasting the whole
+ * line made the shell choke on `→` (`'→' is not recognized…`). Each command now stands
+ * alone on an indented line — `run:` prefix stripped, deduped — with the gap it closes
+ * as a trailing `# <label>` shell comment that BOTH PowerShell and bash ignore. So you
+ * can copy any line verbatim and it runs. Commands map 1:many to labels (several gaps
+ * can share one fix); labels for a shared command are comma-joined. Returns `[header,
+ * …command lines]`, or `[]` when there's nothing to run.
+ */
+export function remediationBlock(
+  header: string,
+  items: Array<{ command: string; label?: string }>,
+): string[] {
+  const byCmd = new Map<string, string[]>();
+  for (const it of items) {
+    const cmd = it.command.replace(/^run:\s*/i, "").trim();
+    if (cmd.length === 0) continue;
+    const labels = byCmd.get(cmd) ?? [];
+    if (it.label && !labels.includes(it.label)) labels.push(it.label);
+    byCmd.set(cmd, labels);
+  }
+  if (byCmd.size === 0) return [];
+  const width = Math.max(...[...byCmd.keys()].map((c) => c.length));
+  const rows = [...byCmd.entries()].map(([cmd, labels]) =>
+    labels.length > 0 ? `    ${cmd.padEnd(width)}  # ${labels.join(", ")}` : `    ${cmd}`,
+  );
+  return [header, ...rows];
+}
+
 /** Up to this many "largest contributor" rows in the terminal digest (the HTML
  * dashboard shows the full, scrollable list). */
 const TOP_FILES = 15;
