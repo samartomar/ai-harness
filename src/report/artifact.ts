@@ -335,10 +335,10 @@ const LOAD_LABEL: Record<string, string> = {
 
 /**
  * A matrix cell. A cell that carries a `fix` is ACTIONABLE: it becomes keyboard /
- * screen-reader reachable (`tabindex` + `aria-label`) with a visible `?` affordance
- * and the exact remediation command in the tooltip — mirroring the install-hint tool
- * pills, so the fix surfaces for everyone, not just on mouse hover. A cell with no
- * fix (wired / n/a) stays a plain, non-focusable label.
+ * screen-reader reachable (`tabindex` + `aria-label`) with a visible `›` "there's an
+ * action here" affordance and the exact remediation command in the tooltip — so the
+ * fix surfaces for everyone, not just on mouse hover. (`›`, not `?`, which read as
+ * "error/unknown".) A cell with no fix (wired / n/a) stays a plain, non-focusable label.
  */
 function cellSpan(cls: string, glyph: string, label: string, detail: string, fix?: string): string {
   const body = `${glyph} ${esc(label)}`;
@@ -346,7 +346,7 @@ function cellSpan(cls: string, glyph: string, label: string, detail: string, fix
     return `<span class="cli-cell ${cls}"${detail ? ` data-tip="${esc(detail)}"` : ""}>${body}</span>`;
   }
   const tip = `${detail ? `${detail} — ` : ""}fix: ${fix}`;
-  return `<span class="cli-cell ${cls} act" tabindex="0" data-fix="1" data-tip="${esc(tip)}" aria-label="${esc(`${label}: ${tip}`)}">${body}<i class="cli-fix" aria-hidden="true">?</i></span>`;
+  return `<span class="cli-cell ${cls} act" tabindex="0" data-fix="1" data-tip="${esc(tip)}" aria-label="${esc(`${label}: ${tip}`)}">${body}<i class="cli-fix" aria-hidden="true">›</i></span>`;
 }
 
 /** One wiring cell — colored glyph + short file label; full detail/fix in the tooltip. */
