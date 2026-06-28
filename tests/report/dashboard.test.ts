@@ -284,7 +284,7 @@ describe("reportHtml — single bento + new panels", () => {
     // actionable cells surface the fix command, keyboard/SR-reachable (WCAG-AA)
     expect(html).toContain('data-fix="1"'); // focusable hint marker
     expect(html).toContain('tabindex="0"');
-    expect(html).toContain('class="cli-fix"'); // visible ? affordance
+    expect(html).toContain('class="cli-fix" aria-hidden="true">›'); // neutral "action here" affordance (not `?`)
     expect(html).toContain("aih bootstrap-ai --apply --cli kiro"); // exact remediation in the cell
     // loadability column: proven-loadable KPI + per-row load verdict
     expect(html).toContain("proven loadable"); // third KPI tile
