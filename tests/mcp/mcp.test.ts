@@ -154,10 +154,15 @@ describe("aih mcp — generated mcpServers blueprint", () => {
     expect(typeof graph.description).toBe("string");
   });
 
-  it("project scope on a bare repo writes ONLY the local graph server — no hosted n24q02m boilerplate", async () => {
+  it("project scope on a bare repo writes the always-on base set — no hosted n24q02m boilerplate", async () => {
     const p = await command.plan(makeCtx({ options: { scope: "project" } }));
     const w = p.actions.find((a) => a.kind === "write") as WriteAction;
-    expect(Object.keys(serversOf(w))).toEqual(["code-review-graph"]);
+    // The on-by-default, secret-free base: local code intelligence + reasoning, plus
+    // the OAuth GitHub and hosted Context7 docs servers. No stack servers on a bare
+    // repo, and never the opt-in n24q02m toolset at project scope.
+    const names = Object.keys(serversOf(w));
+    expect(names).toEqual(["code-review-graph", "sequential-thinking", "github", "context7"]);
+    expect(names.some((n) => n.startsWith("better-"))).toBe(false);
   });
 
   it("is project-aware: an AWS repo gets the awslabs server, a web repo gets Playwright", async () => {
@@ -233,6 +238,9 @@ describe("aih mcp — generated mcpServers blueprint", () => {
 
     const expected = [
       "code-review-graph",
+      "sequential-thinking",
+      "github",
+      "context7",
       "better-email",
       "better-notion",
       "better-telegram",
@@ -254,7 +262,8 @@ describe("aih mcp — generated mcpServers blueprint", () => {
     const servers = serversOf(w);
 
     const httpServers = Object.values(servers).filter((s) => s.type === "http");
-    expect(httpServers.length).toBe(5);
+    // 5 hosted n24q02m + the 2 on-by-default remote servers (github, context7).
+    expect(httpServers.length).toBe(7);
     for (const s of httpServers) {
       // A hosted endpoint is a dialed-later URL string, not a launchable process.
       const bag = s as unknown as Record<string, unknown>;
@@ -329,13 +338,65 @@ describe("aih mcp — risk classification (P1-B)", () => {
     expect(docText).toContain("SOC 2");
   });
 
-  it("never leaks classification into the admin managed-mcp template (clean command/args only)", async () => {
+  it("never leaks aih risk metadata into the admin managed-mcp template (clean command/args only)", async () => {
     const offline = await command.plan(makeCtx({ options: { mode: "offline", scope: "remote" } }));
     const managed = offline.actions.find(
       (a) => a.kind === "write" && a.path === "managed-mcp.json.example",
     ) as WriteAction;
     const blob = JSON.stringify(managed.json);
-    expect(blob).not.toContain("classification");
+    for (const field of ["classification", "egress", "credentials", "supplyChain"]) {
+      expect(blob).not.toContain(field);
+    }
+  });
+});
+
+describe("aih mcp — curated default servers (secret-free, on by default)", () => {
+  it("adds sequential-thinking as a pinned, zero-egress local stdio server in any repo", async () => {
+    const p = await command.plan(makeCtx());
+    const seq = pick(
+      serversOf(p.actions.find((a) => a.kind === "write") as WriteAction),
+      "sequential-thinking",
+    );
+    expect(seq.type).toBe("stdio");
+    if (seq.type !== "stdio") throw new Error("expected stdio server");
+    expect(seq.command).toBe("npx");
+    expect(seq.args.join(" ")).toContain("@modelcontextprotocol/server-sequential-thinking@");
+    expect(seq.args.join(" ")).not.toContain("@latest");
+    expect(seq.classification).toBe("local");
+    expect(seq.egress).toBe("none");
+    expect(seq.credentials).toBe("none");
+    expect(seq.supplyChain).toBe("pinned");
+  });
+
+  it("adds GitHub as a remote OAuth server — vendor-incumbent egress, NO secret in the file", async () => {
+    const p = await command.plan(makeCtx());
+    const w = p.actions.find((a) => a.kind === "write") as WriteAction;
+    const gh = pick(serversOf(w), "github");
+    expect(gh.type).toBe("http");
+    if (gh.type !== "http") throw new Error("expected http server");
+    expect(gh.url).toBe("https://api.githubcopilot.com/mcp/");
+    expect(gh.egress).toBe("vendor-incumbent");
+    expect(gh.credentials).toBe("oauth");
+    expect(gh.supplyChain).toBe("hosted-remote");
+    // Secret-free: OAuth is the client's job, so the written config carries no token.
+    const blob = JSON.stringify(w.json).toLowerCase();
+    expect(blob).not.toContain("personal_access_token");
+    expect(blob).not.toContain("ghp_");
+  });
+
+  it("adds Context7 as a hosted docs server that NAMES its third-party egress in-file", async () => {
+    const p = await command.plan(makeCtx());
+    const c7 = pick(
+      serversOf(p.actions.find((a) => a.kind === "write") as WriteAction),
+      "context7",
+    );
+    expect(c7.type).toBe("http");
+    if (c7.type !== "http") throw new Error("expected http server");
+    expect(c7.url).toBe("https://mcp.context7.com/mcp");
+    expect(c7.egress).toBe("third-party");
+    expect(c7.credentials).toBe("none");
+    // The one-line egress warning is surfaced in the entry itself.
+    expect(c7.description).toContain("THIRD-PARTY");
   });
 });
 

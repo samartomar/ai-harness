@@ -21,7 +21,7 @@ import {
   mcpEntries,
   mcpTomlBody,
 } from "./render.js";
-import { type McpServer, mcpServers } from "./servers.js";
+import { type McpServer, mcpServers, N24Q02M_HOST } from "./servers.js";
 
 /** The aih-managed block scope used for Codex's TOML `[mcp_servers.*]` region. */
 const MCP_TOML_SCOPE = "mcp";
@@ -264,8 +264,11 @@ async function planMcp(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
   }
 
   if (scope === "remote") {
+    // The SSO gateway fronts ONLY the n24q02m hosted toolset — not GitHub (its own
+    // client OAuth) or Context7 (its own endpoint), which are third-party-hosted but
+    // NOT gateway-managed. Filter by the gateway host so the doc lists the right set.
     const hosted = Object.entries(servers)
-      .filter(([, s]) => s.classification === "third-party-hosted")
+      .filter(([, s]) => s.type === "http" && s.url.includes(N24Q02M_HOST))
       .map(([name]) => name);
     actions.push(
       doc(
