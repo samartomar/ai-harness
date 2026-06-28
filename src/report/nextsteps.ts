@@ -27,6 +27,10 @@ export interface NextStepsInput {
   telemetryWired?: boolean;
   /** Agent shell tools (rg/fd/jq/…) not on PATH — surfaces the `aih tools` install step. */
   toolsMissing?: number;
+  /** AI CLIs RUNNABLE on this machine (binary on PATH) but NOT wired in this repo. */
+  installedUntargeted?: string[];
+  /** This repo's current target set — used to build the "wire them" command. */
+  targets?: string[];
   /** Repo opted into the harness (committed marker) — only an opted-in repo is nagged. */
   initialized: boolean;
 }
@@ -79,6 +83,17 @@ export function nextSteps(input: NextStepsInput): string[] {
   if (input.toolsMissing && input.toolsMissing > 0) {
     steps.push(
       `Install ${input.toolsMissing} missing shell tool(s) → \`aih tools\` (preview) · \`aih tools --apply\` (install)`,
+    );
+  }
+
+  // AI CLIs installed on this machine but not wired in this repo — adoption targets
+  // the repo's EXISTING bootloaders, so a tool you installed later (e.g. kiro) stays
+  // unwired and silent. Surface it with the exact command to add it (the user opts in).
+  const untargeted = input.installedUntargeted ?? [];
+  if (untargeted.length > 0) {
+    const full = [...(input.targets ?? []), ...untargeted].join(",");
+    steps.push(
+      `Wire ${untargeted.length} installed tool(s) not yet in this repo (${untargeted.join(", ")}) → \`aih init --cli ${full} --apply\``,
     );
   }
 

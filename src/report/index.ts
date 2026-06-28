@@ -57,6 +57,13 @@ function usageEventsFrom(digests: DigestAction[]): number | undefined {
   return typeof n === "number" ? n : undefined;
 }
 
+/** A string[] field off a digest's `data`, or [] when absent/malformed. */
+function strArrayFrom(digests: DigestAction[], startsWith: string, key: string): string[] {
+  const d = digests.find((x) => x.describe.startsWith(startsWith));
+  const v = (d?.data as Record<string, unknown> | undefined)?.[key];
+  return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
+}
+
 /** How many agent shell tools are NOT on PATH (from the Tools-installed digest). */
 function toolsMissingFrom(digests: DigestAction[]): number | undefined {
   const d = digests.find((x) => x.describe.startsWith("Tools installed"));
@@ -201,6 +208,13 @@ async function buildReport(ctx: PlanContext): Promise<Built> {
     // an event lands. Drives dropping the "wire telemetry" step after it's done.
     telemetryWired: existsSync(join(ctx.root, ".aih", "usage-record.mjs")),
     toolsMissing: toolsMissingFrom(panels),
+    // Runnable AI CLIs on this machine (Machine tooling `present`) that this repo
+    // doesn't target (AI CLI wiring `targeted`) — e.g. kiro installed but unwired.
+    ...(() => {
+      const targets = strArrayFrom(panels, "AI CLI wiring", "targeted");
+      const present = strArrayFrom(panels, "Machine tooling", "present");
+      return { targets, installedUntargeted: present.filter((p) => !targets.includes(p)) };
+    })(),
     initialized: readAihConfig(ctx.root) !== undefined,
   };
   return {

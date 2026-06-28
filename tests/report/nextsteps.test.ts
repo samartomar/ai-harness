@@ -63,6 +63,21 @@ describe("nextSteps", () => {
     ).toBe(true);
   });
 
+  it("surfaces installed-but-untargeted CLIs with the exact wire command (the kiro case)", () => {
+    const steps = nextSteps({
+      ...base,
+      targets: ["claude", "codex", "gemini"],
+      installedUntargeted: ["opencode", "kiro"],
+    });
+    expect(
+      steps.some(
+        (s) =>
+          s.includes("opencode, kiro") &&
+          s.includes("aih init --cli claude,codex,gemini,opencode,kiro --apply"),
+      ),
+    ).toBe(true);
+  });
+
   it("emits nothing for an uninitialized repo (never nags a non-adopter)", () => {
     expect(
       nextSteps({
