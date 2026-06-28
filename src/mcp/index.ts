@@ -28,10 +28,13 @@ import {
   mcpEntries,
   mcpTomlBody,
 } from "./render.js";
-import { type McpServer, mcpServers, N24Q02M_HOST } from "./servers.js";
+import { envPlaceholders, type McpServer, mcpServers, N24Q02M_HOST } from "./servers.js";
 
 /** The aih-managed block scope used for Codex's TOML `[mcp_servers.*]` region. */
 const MCP_TOML_SCOPE = "mcp";
+
+/** The aih-managed block scope for the generated `.env.example`. */
+const MCP_ENV_SCOPE = "mcp-env";
 
 /** Commands that resolve/download a package at runtime — unsafe for a true air-gap. */
 const NETWORK_RESOLVERS = new Set(["npx", "uvx", "uv", "bunx", "pnpm", "yarn", "pipx"]);
@@ -99,6 +102,19 @@ function dbMcpNote(databases: string[]): string {
     "  DynamoDB   — awslabs/mcp (the dynamodb server)",
     "",
     "Configure it under mcpServers with a READ-ONLY connection string sourced from env.",
+  ].join("\n");
+}
+
+/** Note for `--self-host`: what changed, plus the Context7 caveat aih can't auto-resolve. */
+function selfHostNote(): string {
+  return [
+    "`--self-host` swaps GitHub's hosted MCP for the pinned local Docker image",
+    "(ghcr.io/github/github-mcp-server), with the PAT read from $GITHUB_PERSONAL_ACCESS_TOKEN —",
+    "see the generated .env.example, supply it in your untracked .env, and never commit it.",
+    "",
+    "Context7 stays on its hosted endpoint: a true self-host needs YOUR internal URL, which",
+    "aih can't know. To drop the third-party egress, run Context7's container behind your",
+    "perimeter and replace its url in .mcp.json with your internal one.",
   ].join("\n");
 }
 
@@ -219,8 +235,9 @@ async function planMcp(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
   // (config.toml), Copilot (.vscode/mcp.json), OpenCode, Zed, etc.
   const { clis } = await resolveTargets(ctx);
   const scope = String(ctx.options.scope ?? "project");
+  const selfHost = ctx.options.selfHost === true;
   const stack = scanRepo(ctx.root, { maxDepth: 8, contextDir: ctx.contextDir });
-  const servers = mcpServers(scope, stack);
+  const servers = mcpServers(scope, stack, { selfHost });
   const serverNames = Object.keys(servers);
   const tailored = serverNames
     .filter(
@@ -296,6 +313,32 @@ async function planMcp(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
     }
   }
 
+  // Self-host changes + any secret placeholders the developer must supply out-of-band.
+  if (selfHost) {
+    actions.push(
+      doc(
+        "Self-host MCP (--self-host): GitHub runs via the pinned local Docker image",
+        selfHostNote(),
+      ),
+    );
+  }
+  const placeholders = envPlaceholders(servers);
+  if (placeholders.length > 0) {
+    const abs = join(ctx.root, ".env.example");
+    const body = [
+      "# Secrets referenced by MCP servers (.mcp.json). Copy to .env (untracked) and fill",
+      "# in real values — never commit them. aih manages only the block below.",
+      ...placeholders.map((v) => `${v}=`),
+    ].join("\n");
+    actions.push(
+      writeText(
+        ".env.example",
+        upsertTextBlock(readIfExists(abs) ?? "", MCP_ENV_SCOPE, body),
+        `Document ${placeholders.length} MCP secret placeholder(s) (.env.example; real .env stays untracked)`,
+      ),
+    );
+  }
+
   if (scope === "remote") {
     // The SSO gateway fronts ONLY the n24q02m hosted toolset — not GitHub (its own
     // client OAuth) or Context7 (its own endpoint), which are third-party-hosted but
@@ -363,6 +406,11 @@ export const command: CommandSpec = {
       flags: "--posture <posture>",
       description: "governance posture: community (default) | enterprise (policy gate + doc)",
       default: "community",
+    },
+    {
+      flags: "--self-host",
+      description:
+        "emit self-hostable server forms (GitHub via the pinned local Docker image + PAT from env) instead of hosted endpoints",
     },
   ],
   plan: planMcp,
