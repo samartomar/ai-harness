@@ -10,6 +10,7 @@ import { inventory } from "../status.js";
 import { DEFAULT_CONTEXT_BUDGET_TOKENS } from "./bloat.js";
 import { scanCliCoverage } from "./cli-coverage.js";
 import { scanLoadGroups } from "./loadgroups.js";
+import { remediationBlock } from "./render.js";
 
 /**
  * HARNESS MATURITY — a weighted 0–100 scorecard that AGGREGATES aih's already-
@@ -209,13 +210,13 @@ function buildDimensions(ctx: PlanContext): DimensionResult[] {
       check(
         "bootloaders-in-sync",
         bootloadersInSync(root, present, sharedBody),
-        "run: aih bootstrap-ai --apply to regenerate the drifted bootloader block",
+        "run: aih bootstrap-ai --apply",
         "bootloaderProbe (managed-block drift)",
       ),
       check(
         "bootloaders-point-to-router",
         bootloadersPointToRouter(root, present),
-        "run: aih bootstrap-ai --apply so each bootloader points at RULE_ROUTER.md",
+        "run: aih bootstrap-ai --apply",
         "thin-pointer contract",
       ),
     ]),
@@ -225,19 +226,19 @@ function buildDimensions(ctx: PlanContext): DimensionResult[] {
       check(
         "gitleaks-config",
         has("gitleaks"),
-        "run: aih guardrails --apply to write .gitleaks.toml",
+        "run: aih guardrails --apply",
         ".gitleaks.toml (inventory)",
       ),
       check(
         "pre-commit-config",
         has("pre-commit"),
-        "run: aih guardrails --apply to write .pre-commit-config.yaml",
+        "run: aih guardrails --apply",
         ".pre-commit-config.yaml (inventory)",
       ),
       check(
         "pre-commit-installed",
         preCommitHook,
-        "run: pre-commit install to activate the git hook",
+        "run: pre-commit install",
         ".git/hooks/pre-commit (enforcement)",
       ),
     ]),
@@ -291,7 +292,10 @@ export function scorecardDigest(ctx: PlanContext): DigestAction | undefined {
     ),
     "",
     ...(failing.length > 0
-      ? failing.map((c) => `  → ${c.id}: ${c.remediation}`)
+      ? remediationBlock(
+          `  To close ${failing.length} gap${failing.length === 1 ? "" : "s"} — copy any line:`,
+          failing.map((c) => ({ command: c.remediation, label: c.id })),
+        )
       : ["  All maturity checks pass — artifacts present and in sync."]),
   );
 

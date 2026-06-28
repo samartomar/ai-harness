@@ -135,7 +135,10 @@ describe("nextStepsDigest + headline", () => {
     };
     expect(nextStepsHeadline(input)).toBe("Next steps — 2 actions");
     const body = nextStepsDigest(input);
-    expect(body).toContain("1. Add gitleaks → `aih guardrails --apply`");
+    // The description and the COMMAND are on separate lines — the command stands alone,
+    // indented and bare, so it can be copy-pasted and run (no `→`/backticks gluing it).
+    expect(body).toContain("1. Add gitleaks:");
+    expect(body).toMatch(/\n {5}aih guardrails --apply\b/);
     expect(body).toContain("aih usage --apply");
     expect(body).toContain("PER TURN"); // the budget reconciliation rode along
   });
