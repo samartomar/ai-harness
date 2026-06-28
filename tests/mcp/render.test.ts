@@ -17,12 +17,18 @@ const stdio: McpServer = {
   args: ["code-review-graph@2.3.6", "serve"],
   description: "graph",
   classification: "local",
+  egress: "none",
+  credentials: "none",
+  supplyChain: "pinned",
 };
 const http: McpServer = {
   type: "http",
   url: "https://better-email-mcp.n24q02m.com/mcp",
   description: "email",
   classification: "third-party-hosted",
+  egress: "third-party",
+  credentials: "oauth",
+  supplyChain: "hosted-remote",
 };
 
 describe("mcpEntryFor — per-tool server shapes (verified against each tool's docs)", () => {
@@ -70,7 +76,7 @@ describe("mcpEntryFor — per-tool server shapes (verified against each tool's d
     expect(mcpEntryFor("antigravity", stdio)).toEqual({ command: "uvx", args: stdio.args });
   });
 
-  it("the transformed (non-native-claude) entries never leak aih's description/classification", () => {
+  it("the transformed (non-native-claude) entries never leak aih's risk metadata", () => {
     for (const cli of [
       "gemini",
       "windsurf",
@@ -80,8 +86,15 @@ describe("mcpEntryFor — per-tool server shapes (verified against each tool's d
       "antigravity",
     ] as const) {
       const blob = JSON.stringify(mcpEntryFor(cli, stdio));
-      expect(blob).not.toContain("classification");
-      expect(blob).not.toContain("description");
+      for (const field of [
+        "classification",
+        "description",
+        "egress",
+        "credentials",
+        "supplyChain",
+      ]) {
+        expect(blob).not.toContain(field);
+      }
     }
   });
 

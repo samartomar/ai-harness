@@ -3,7 +3,11 @@ import type { RepoStack } from "../profile/scan.js";
 /**
  * The `.mcp.json` server set is assembled from the DETECTED stack, not a fixed
  * boilerplate list:
- *  - `code-review-graph` (local, stdio) — code intelligence, useful in any repo;
+ *  - `code-review-graph` + `sequential-thinking` (local, stdio) — code intelligence
+ *    and structured reasoning; useful in any repo, zero egress, zero credentials;
+ *  - `github` + `context7` — on-by-default, secret-free remote servers (GitHub via
+ *    the client's OAuth, no token stored; Context7 hosted docs). Each names its
+ *    egress in its own description so it is visible in `.mcp.json` at a glance;
  *  - real, current servers added per stack: AWS (`awslabs.core-mcp-server`) when
  *    the repo targets AWS, Playwright (`@playwright/mcp`) for a web frontend;
  *  - the hosted `n24q02m` toolset ONLY under `scope === "remote"` (opt-in gateway).
@@ -16,21 +20,57 @@ import type { RepoStack } from "../profile/scan.js";
  *  - `local`              — runs as a local process (stdio); data stays on the box.
  *  - `third-party-hosted` — an external HTTP endpoint a vendor operates; your data
  *                           leaves the machine, so it needs vendor-risk review.
+ * Kept for back-compat and at-a-glance reading; the finer axes below
+ * (egress / credentials / supplyChain) are what policy, drift, and the report read.
  */
 export type McpClassification = "local" | "third-party-hosted";
 
-export interface StdioServer {
+/**
+ * Where the server sends your data — the axis enterprises actually gate on:
+ *  - `none`             — no network egress (pure local compute).
+ *  - `local-only`       — runs locally; any network is user-directed (e.g. a browser
+ *                         it drives), not a fixed backend it reports to.
+ *  - `vendor-incumbent` — a specific vendor backend orgs typically already trust
+ *                         (GitHub, the user's own AWS account).
+ *  - `third-party`      — a non-incumbent vendor backend; needs explicit vetting.
+ */
+export type McpEgress = "none" | "local-only" | "vendor-incumbent" | "third-party";
+
+/**
+ * What the server needs to authenticate — so a reviewer knows whether a secret is
+ * involved and where it lives:
+ *  - `none`  — no credential required.
+ *  - `oauth` — interactive OAuth handled by the client; NO secret is written here.
+ *  - `token` — a token / API key, sourced from env, never hardcoded into config.
+ */
+export type McpCredentials = "none" | "oauth" | "token";
+
+/**
+ * How the server's code is sourced — the supply-chain surface:
+ *  - `pinned`        — a pinned package version launched locally (reproducible).
+ *  - `unpinned`      — a floating / `@latest` launch (aih's own set never uses this).
+ *  - `hosted-remote` — code runs on the vendor's infrastructure (an HTTP endpoint).
+ */
+export type McpSupplyChain = "pinned" | "unpinned" | "hosted-remote";
+
+/** Risk axes every server entry carries (see the per-type docs above). */
+interface McpRisk {
+  classification: McpClassification;
+  egress: McpEgress;
+  credentials: McpCredentials;
+  supplyChain: McpSupplyChain;
+}
+
+export interface StdioServer extends McpRisk {
   type: "stdio";
   command: string;
   args: string[];
   description: string;
-  classification: McpClassification;
 }
-export interface HttpServer {
+export interface HttpServer extends McpRisk {
   type: "http";
   url: string;
   description: string;
-  classification: McpClassification;
 }
 export type McpServer = StdioServer | HttpServer;
 
@@ -42,8 +82,9 @@ const WEB_FRAMEWORKS = new Set(["Next.js", "React", "Vue", "Svelte", "Angular"])
 
 /**
  * Build the `mcpServers` map for `scope`, tailored to `stack`. Deterministic
- * insertion order (local graph first, then stack-specific, then hosted) so golden
- * assertions and deep-merge output stay stable.
+ * insertion order (local stdio first, then stack-specific, then on-by-default
+ * remote, then the opt-in hosted set) so golden assertions and deep-merge output
+ * stay stable.
  */
 export function mcpServers(scope: string, stack: RepoStack): Record<string, McpServer> {
   const servers: Record<string, McpServer> = {
@@ -57,6 +98,21 @@ export function mcpServers(scope: string, stack: RepoStack): Record<string, McpS
       description:
         "Local code-review knowledge graph (impact radius, affected flows) served over stdio via uvx.",
       classification: "local",
+      egress: "none",
+      credentials: "none",
+      supplyChain: "pinned",
+    },
+    "sequential-thinking": {
+      type: "stdio",
+      command: "npx",
+      // Pinned (not @latest) for reproducible installs; bump deliberately.
+      args: ["-y", "@modelcontextprotocol/server-sequential-thinking@2025.12.18"],
+      description:
+        "Structured step-by-step reasoning scratchpad — no network, no filesystem, no credentials. Safe in any repo.",
+      classification: "local",
+      egress: "none",
+      credentials: "none",
+      supplyChain: "pinned",
     },
   };
 
@@ -70,6 +126,9 @@ export function mcpServers(scope: string, stack: RepoStack): Record<string, McpS
       description:
         "AWS Labs core MCP server (AWS docs, service guidance). Added because the repo targets AWS.",
       classification: "local",
+      egress: "local-only",
+      credentials: "none",
+      supplyChain: "pinned",
     };
   }
   if (stack.frameworks.some((f) => WEB_FRAMEWORKS.has(f))) {
@@ -79,10 +138,39 @@ export function mcpServers(scope: string, stack: RepoStack): Record<string, McpS
       // Pinned (not @latest) for reproducible installs; bump deliberately.
       args: ["@playwright/mcp@0.0.76"],
       description:
-        "Playwright browser automation MCP (navigate, snapshot, interact). Added for a web frontend.",
+        "Playwright browser automation MCP (navigate, snapshot, interact). Added for a web frontend. The browser it drives can reach any URL — point it at trusted origins.",
       classification: "local",
+      egress: "local-only",
+      credentials: "none",
+      supplyChain: "pinned",
     };
   }
+
+  // On-by-default, secret-free remote servers — useful in any repo. GitHub uses the
+  // client's interactive OAuth (no token written into this file); Context7 is a
+  // hosted docs endpoint whose third-party egress is named in its description so it
+  // is visible at a glance. Enterprise policy can filter these (a later increment);
+  // the default posture is on + clearly labeled.
+  servers.github = {
+    type: "http",
+    url: "https://api.githubcopilot.com/mcp/",
+    description:
+      "GitHub's official remote MCP (repos, issues, PRs, Actions). OAuth via the client — no token stored in this file. Egress to GitHub (vendor-incumbent).",
+    classification: "third-party-hosted",
+    egress: "vendor-incumbent",
+    credentials: "oauth",
+    supplyChain: "hosted-remote",
+  };
+  servers.context7 = {
+    type: "http",
+    url: "https://mcp.context7.com/mcp",
+    description:
+      "Up-to-date, version-matched library docs. THIRD-PARTY hosted endpoint (Upstash) — your queries leave the host; an optional CONTEXT7_API_KEY raises rate limits. Self-host or fall back to vendor docs where third-party egress is disallowed.",
+    classification: "third-party-hosted",
+    egress: "third-party",
+    credentials: "none",
+    supplyChain: "hosted-remote",
+  };
 
   if (scope === "remote") Object.assign(servers, hostedServers());
   return servers;
@@ -101,30 +189,45 @@ function hostedServers(): Record<string, McpServer> {
       url: `https://better-email-mcp.${N24Q02M_HOST}/mcp`,
       description: `Hosted email toolset — THIRD-PARTY endpoint at ${N24Q02M_HOST}; email data is sent off-host. Vet vendor risk before enabling.`,
       classification: "third-party-hosted",
+      egress: "third-party",
+      credentials: "oauth",
+      supplyChain: "hosted-remote",
     },
     "better-notion": {
       type: "http",
       url: `https://better-notion-mcp.${N24Q02M_HOST}/mcp`,
       description: `Hosted Notion workspace toolset — THIRD-PARTY endpoint at ${N24Q02M_HOST}; workspace content is sent off-host. Vet vendor risk before enabling.`,
       classification: "third-party-hosted",
+      egress: "third-party",
+      credentials: "oauth",
+      supplyChain: "hosted-remote",
     },
     "better-telegram": {
       type: "http",
       url: `https://better-telegram-mcp.${N24Q02M_HOST}/mcp`,
       description: `Hosted Telegram messaging toolset — THIRD-PARTY endpoint at ${N24Q02M_HOST}; messages are sent off-host. Vet vendor risk before enabling.`,
       classification: "third-party-hosted",
+      egress: "third-party",
+      credentials: "oauth",
+      supplyChain: "hosted-remote",
     },
     "mnemo-mcp": {
       type: "http",
       url: `https://mnemo-mcp.${N24Q02M_HOST}/mcp`,
       description: `Hosted long-term memory / recall toolset — THIRD-PARTY endpoint at ${N24Q02M_HOST}; stored memories are sent off-host. Vet vendor risk before enabling.`,
       classification: "third-party-hosted",
+      egress: "third-party",
+      credentials: "oauth",
+      supplyChain: "hosted-remote",
     },
     "wet-mcp": {
       type: "http",
       url: `https://wet-mcp.${N24Q02M_HOST}/mcp`,
       description: `Hosted web extraction / transform toolset — THIRD-PARTY endpoint at ${N24Q02M_HOST}; fetched content is processed off-host. Vet vendor risk before enabling.`,
       classification: "third-party-hosted",
+      egress: "third-party",
+      credentials: "oauth",
+      supplyChain: "hosted-remote",
     },
   };
 }
