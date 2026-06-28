@@ -12,6 +12,7 @@ import {
   localPanels,
   machineToolingPanel,
 } from "../../src/report/local.js";
+import { mcpGovernanceDigest } from "../../src/report/mcp-governance.js";
 import { toolsInstalledDigest } from "../../src/report/tools.js";
 
 let dir: string; // repo root
@@ -126,13 +127,26 @@ describe("report local scope — composed panels", () => {
   it("localPanels returns the always-on panels; git/usage-gated panels omit off-repo", async () => {
     const panels = await localPanels(ctx());
     // Non-repo, no-usage fixture: velocity (2), AI events, test-ratio, and repo-info all
-    // return undefined and are filtered out — leaving the 8 unconditional panels:
-    // repo-status, trends, usage, ai-cli-wiring, config, machine-tooling, economy, tools-installed.
-    expect(panels).toHaveLength(8);
+    // return undefined and are filtered out — leaving the 9 unconditional panels:
+    // repo-status, trends, usage, ai-cli-wiring, mcp-governance, config, machine-tooling,
+    // economy, tools-installed.
+    expect(panels).toHaveLength(9);
     const prefixes = panels.map((p) => (p.kind === "digest" ? p.describe : ""));
     expect(prefixes.some((s) => s.startsWith("Tools installed"))).toBe(true);
     expect(prefixes.some((s) => s.startsWith("Repo status"))).toBe(true);
     expect(prefixes.some((s) => s.startsWith("AI CLI wiring"))).toBe(true);
+    expect(prefixes.some((s) => s.startsWith("MCP governance"))).toBe(true);
+  });
+
+  it("mcpGovernanceDigest denies context7 (third-party egress) under the enterprise posture", () => {
+    const d = mcpGovernanceDigest(ctx());
+    expect(d.describe).toContain("MCP governance");
+    const data = d.data as { denied: { name: string }[]; allowed: string[] };
+    expect(data.denied.map((x) => x.name)).toContain("context7");
+    // The secret-free defaults are enterprise-clean: GitHub (vendor-incumbent + OAuth)
+    // and the local servers pass.
+    expect(data.allowed).toContain("github");
+    expect(data.allowed).toContain("code-review-graph");
   });
 });
 
