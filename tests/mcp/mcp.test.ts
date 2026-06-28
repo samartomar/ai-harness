@@ -461,12 +461,15 @@ describe("aih mcp — uv probe under --verify", () => {
 });
 
 describe("aih mcp — per-CLI config (honors --cli)", () => {
-  it("--cli codex emits TOML guidance, NOT a .mcp.json Codex never reads", async () => {
+  it("--cli codex writes its TOML config (external), NOT a .mcp.json Codex never reads", async () => {
     const p = await command.plan(makeCtx({ options: { cli: "codex" } }));
     const writes = p.actions.filter((a): a is WriteAction => a.kind === "write");
     expect(writes.some((w) => w.path === ".mcp.json")).toBe(false);
-    const guide = p.actions.find((a) => a.kind === "doc" && a.describe.includes("Codex"));
-    expect(guide).toBeDefined();
+    // Codex MCP is folded into ~/.codex/config.toml as an aih-managed TOML block (external).
+    const codex = writes.find((w) => w.path.replace(/\\/g, "/").endsWith(".codex/config.toml"));
+    expect(codex).toBeDefined();
+    expect(codex?.external).toBe(true);
+    expect(codex?.contents).toContain("[mcp_servers.");
   });
 
   it("--cli cursor writes .cursor/mcp.json (same shape, different project path)", async () => {
@@ -484,14 +487,18 @@ describe("aih mcp — per-CLI config (honors --cli)", () => {
     expect(dotMcp).toHaveLength(1);
   });
 
-  it("--all-tools never writes Claude's .mcp.json for a TOML/global tool", async () => {
+  it("--all-tools writes each tool's OWN MCP config — never Claude's .mcp.json for a TOML/global tool", async () => {
     const p = await command.plan(makeCtx({ options: { allTools: true } }));
     const writes = p.actions.filter((a): a is WriteAction => a.kind === "write");
-    // Writable standard tools (claude/kimi → .mcp.json, cursor, kiro) get real writes;
-    // codex/copilot/opencode/zed/gemini/windsurf/antigravity get guidance docs.
-    expect(writes.map((w) => w.path)).toContain(".mcp.json");
-    expect(writes.map((w) => w.path)).toContain(".cursor/mcp.json");
-    const docs = p.actions.filter((a) => a.kind === "doc");
-    expect(docs.some((d) => d.describe.includes("Codex"))).toBe(true);
+    const paths = writes.map((w) => w.path.replace(/\\/g, "/"));
+    // Repo-relative natives keep their own paths (claude/kimi dedupe to one .mcp.json).
+    expect(paths).toContain(".mcp.json");
+    expect(paths).toContain(".cursor/mcp.json");
+    expect(paths.some((pa) => pa.endsWith("opencode.json"))).toBe(true);
+    expect(paths.some((pa) => pa.endsWith(".vscode/mcp.json"))).toBe(true);
+    // Codex gets its TOML written (external), NOT a .mcp.json it cannot read.
+    const codex = writes.find((w) => w.path.replace(/\\/g, "/").endsWith(".codex/config.toml"));
+    expect(codex?.external).toBe(true);
+    expect(codex?.contents).toContain("[mcp_servers.");
   });
 });

@@ -27,7 +27,7 @@ describe("CLI registry", () => {
 
   it("carries the lifted per-CLI MCP facts (Codex = config.toml / mcp_servers / toml)", () => {
     expect(entry("codex").mcp).toMatchObject({
-      support: "fallback", // TOML / global → guidance, not a write
+      support: "native", // aih now renders the TOML and writes it as a managed block
       configFormat: "toml",
       configKey: "mcp_servers",
     });
@@ -47,18 +47,10 @@ describe("CLI registry", () => {
   it("classifies MCP integration as native (aih writes) vs fallback (aih guides)", () => {
     const writes = SUPPORTED_CLIS.filter((c) => entry(c).mcp.support === "native");
     const guides = SUPPORTED_CLIS.filter((c) => entry(c).mcp.support === "fallback");
-    // aih owns the standard project `mcpServers` JSON shape for exactly these four.
-    expect(writes).toEqual(["claude", "cursor", "kimi", "kiro"]);
-    // Everyone else reads MCP from TOML / a global path / a different shape → guidance.
-    expect(guides).toEqual([
-      "codex",
-      "antigravity",
-      "gemini",
-      "copilot",
-      "windsurf",
-      "opencode",
-      "zed",
-    ]);
+    // aih now renders every tool's shape (mcp/render.ts) — JSON or TOML, repo or
+    // ~/home — so every MCP-capable CLI is a native write; none fall back to guidance.
+    expect(writes).toEqual([...SUPPORTED_CLIS]);
+    expect(guides).toEqual([]);
     // No tool is `absent` today; every supported CLI exposes some MCP config.
     expect(SUPPORTED_CLIS.every((c) => entry(c).mcp.support !== "absent")).toBe(true);
   });

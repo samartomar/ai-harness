@@ -25,7 +25,7 @@ export interface CliPresence {
 }
 
 /** The user's home directory — from the injected env first (testable), then the OS. */
-function homeDir(ctx: PlanContext): string {
+export function homeDir(ctx: PlanContext): string {
   return ctx.env.USERPROFILE || ctx.env.HOME || homedir();
 }
 

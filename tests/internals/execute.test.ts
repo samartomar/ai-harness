@@ -301,6 +301,23 @@ describe("executePlan — dirty-worktree --apply preflight", () => {
     );
     expect(readFileSync(join(dir, "a.txt"), "utf8")).toBe("hi\n");
   });
+
+  it("an external write (a ~/home/system file) is NOT gated on a dirty worktree", async () => {
+    // `aih mcp --apply --cli codex` writes only the global ~/.codex/config.toml — an
+    // external file outside the repo worktree, so it can't clobber uncommitted repo
+    // work and a dirty repo must not block it. A repo-local write still gates (above).
+    const extDir = mkdtempSync(join(tmpdir(), "aih-ext-"));
+    const ext = join(extDir, "config.toml");
+    try {
+      await executePlan(
+        plan("t", writeText(ext, "hi", "external write", { external: true })),
+        ctx({ apply: true, run: dirtyRun }),
+      );
+      expect(readFileSync(ext, "utf8")).toBe("hi\n");
+    } finally {
+      rmSync(extDir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("executePlan — digest actions", () => {

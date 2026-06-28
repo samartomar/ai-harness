@@ -2,13 +2,14 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { SHARED_MARKER, sharedCanonicalBlockBody } from "../bootstrap-ai/canon.js";
 import { readAihConfig } from "../config/marker.js";
-import { detectClisByConfig } from "../internals/cli-detect.js";
+import { detectClisByConfig, homeDir } from "../internals/cli-detect.js";
 import { entry } from "../internals/cli-registry.js";
 import { type Cli, resolveClis, SUPPORTED_CLIS } from "../internals/clis.js";
 import { readIfExists } from "../internals/fsxn.js";
 import { extractManagedBlock } from "../internals/markers.js";
 import { type DigestAction, digest, type PlanContext } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
+import { isExternalMcp, mcpConfigAbs, tomlServerCount } from "../mcp/render.js";
 import { type CliLoadability, loadabilityFor, loadReason } from "./cli-loadability.js";
 
 /**
@@ -147,20 +148,22 @@ function serverCount(raw: string, key: string): number {
 }
 
 /**
- * MCP cell. Writable tools are content-checked (file parses AND the config key
- * holds a non-empty server map — a `{}` file is `missing`, not `wired`). Tools aih
- * does NOT write are `manual` — never a file-existence pass/fail; for the two
- * repo-relative manual tools the cell annotates whether the file is on disk (D2),
- * but it stays amber because aih does not own/verify that shape.
+ * MCP cell. Native (aih-written) tools are content-checked: the config file exists
+ * AND its server map is non-empty — a `{}` JSON or a server-less TOML is `missing`,
+ * not `wired`. The check follows the registry shape: TOML (Codex) counts
+ * `[mcp_servers.*]` tables, JSON counts the keys under `configKey`. A `~/home` path
+ * is read at its expanded absolute location (the config a global tool actually reads),
+ * with the cell annotated `global`. Tools aih still can't render are `manual` (amber,
+ * never graded). Pure fs reads.
  */
 function mcpCell(ctx: PlanContext, cli: Cli): CliCell {
   const e = entry(cli);
   const m = e.mcp;
-  if (m.support === "absent" || !m.configPath) {
+  if (m.support === "absent" || !m.configPath || !m.configKey) {
     return { state: "na", detail: `${e.label} exposes no MCP server config` };
   }
-  if (m.support !== "native" || !m.configKey) {
-    const repoRelative = !m.configPath.startsWith("~") && !m.configPath.startsWith("/");
+  if (m.support !== "native") {
+    const repoRelative = !isExternalMcp(m.configPath);
     const annot = repoRelative
       ? existsSync(join(ctx.root, m.configPath))
         ? `${m.configPath} present`
@@ -173,22 +176,26 @@ function mcpCell(ctx: PlanContext, cli: Cli): CliCell {
       fix: `aih mcp --cli ${cli}`,
     };
   }
-  const raw = readIfExists(join(ctx.root, m.configPath));
+  const external = isExternalMcp(m.configPath);
+  const abs = external ? mcpConfigAbs(homeDir(ctx), m.configPath) : join(ctx.root, m.configPath);
+  const scopeNote = external ? " (global)" : "";
+  const raw = readIfExists(abs);
   if (raw === undefined) {
     return {
       state: "missing",
       path: m.configPath,
-      detail: `${m.configPath} not found`,
+      detail: `${m.configPath}${scopeNote} not found`,
       fix: `aih mcp --apply --cli ${cli}`,
     };
   }
-  const n = serverCount(raw, m.configKey);
+  const n = m.configFormat === "toml" ? tomlServerCount(raw) : serverCount(raw, m.configKey);
+  const unit = m.configFormat === "toml" ? "[mcp_servers.*]" : `\`${m.configKey}\``;
   return n > 0
-    ? { state: "wired", path: m.configPath, detail: `${n} server(s) under \`${m.configKey}\`` }
+    ? { state: "wired", path: m.configPath, detail: `${n} server(s) under ${unit}${scopeNote}` }
     : {
         state: "missing",
         path: m.configPath,
-        detail: `present but no servers under \`${m.configKey}\``,
+        detail: `present but no servers under ${unit}`,
         fix: `aih mcp --apply --cli ${cli}`,
       };
 }
