@@ -69,4 +69,16 @@ describe("bootstrap-ai — canon markdown lint", () => {
     const res = await claude?.run(ctx);
     expect(res?.verdict).not.toBe("fail");
   });
+
+  it("GEMINI.md wired WITHOUT antigravity does not dangle on adapters/antigravity.md", async () => {
+    // REGRESSION: GEMINI.md's preamble hardcoded `adapters/antigravity.md`, which is
+    // only written when antigravity is targeted — so gemini-without-antigravity (the
+    // syntegris case) failed canon-ref-resolves. The preamble now points at the dir.
+    const ctx = makeCtx({ cli: "claude,codex,gemini" });
+    const probes = lintProbeActions((await command.plan(ctx)).actions);
+    const gemini = probes.find((p) => p.describe === "lint GEMINI.md");
+    expect(gemini).toBeDefined();
+    const res = await gemini?.run(ctx);
+    expect(res?.verdict, res?.detail ?? "").not.toBe("fail");
+  });
 });

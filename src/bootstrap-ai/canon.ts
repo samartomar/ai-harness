@@ -495,7 +495,11 @@ export function bootloaderPreamble(path: string, dir: string, repoName: string):
       "This file is not the full rulebook. It is the Gemini/Antigravity entry point;",
       `canonical guidance lives in \`${dir}/\` (start at \`RULE_ROUTER.md\`). ${seeRegen}`,
       "",
-      `Full tool notes: \`${dir}/adapters/antigravity.md\`.`,
+      // Reference the adapters DIR (like AGENTS.md), not a specific tool file — the
+      // gemini-family adapter written depends on which tool is targeted (gemini vs
+      // antigravity), so a hardcoded `antigravity.md` dangled whenever gemini was
+      // wired without antigravity.
+      `Per-tool notes: \`${dir}/adapters/\` (gemini / antigravity).`,
     );
   }
   if (norm === "AGENTS.md") {
