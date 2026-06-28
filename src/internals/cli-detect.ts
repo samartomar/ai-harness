@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { readAihConfig } from "../config/marker.js";
 import { entry } from "./cli-registry.js";
 import { type Cli, resolveClis, SUPPORTED_CLIS } from "./clis.js";
 import type { PlanContext } from "./plan.js";
@@ -185,6 +186,19 @@ export async function resolveTargets(ctx: PlanContext): Promise<TargetResolution
     }
     if (present.length > 0) return { clis: present, detectFellBack: false };
     return { clis: ["claude"], detectFellBack: true };
+  }
+  // No explicit selection (no --cli/--all-tools/--detect): honor the committed
+  // `.aih-config.json` targets when present. The marker records what the repo was
+  // bootstrapped FOR, so a re-run on a multi-tool adopted repo regenerates for the
+  // SAME tools instead of narrowing to the `claude` default — which would drop the
+  // codex/gemini canon. Mirrors how `doctor` treats the marker's contextDir as
+  // authoritative. Fail-soft: a malformed marker / unknown tool just falls through.
+  if (!explicit && opts.allTools !== true && opts.detect !== true) {
+    const cfg = readAihConfig(ctx.root);
+    if (cfg && cfg.targets.length > 0) {
+      const fromMarker = resolveClis({ cli: cfg.targets.join(",") });
+      if (fromMarker.length > 0) return { clis: fromMarker, detectFellBack: false };
+    }
   }
   // The explicit `--cli` flag (or default) path: validate strictly so a typo
   // fails closed instead of silently falling back to Claude.

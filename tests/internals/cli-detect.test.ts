@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -165,6 +165,29 @@ describe("resolveTargets / detectFallbackNotice", () => {
 
   it("never flags fallback without --detect", async () => {
     expect((await resolveTargets(makeCtx())).detectFellBack).toBe(false);
+  });
+
+  it("honors the committed marker's targets over the claude default (multi-tool re-run)", async () => {
+    // A repo adopted for claude+codex+gemini must regenerate for all three on a bare
+    // re-run — not narrow to the claude default (which would drop the codex/gemini canon).
+    writeFileSync(
+      join(home, ".aih-config.json"),
+      JSON.stringify({
+        schemaVersion: 1,
+        contextDir: "ai-coding",
+        targets: ["claude", "codex", "gemini"],
+      }),
+    );
+    const r = await resolveTargets(makeCtx());
+    expect(r.clis).toEqual(["claude", "codex", "gemini"]);
+  });
+
+  it("an explicit --cli still overrides the marker", async () => {
+    writeFileSync(
+      join(home, ".aih-config.json"),
+      JSON.stringify({ schemaVersion: 1, contextDir: "ai-coding", targets: ["claude", "codex"] }),
+    );
+    expect((await resolveTargets(makeCtx({ cli: "gemini" }))).clis).toEqual(["gemini"]);
   });
 
   it("the notice names the fix flags", () => {
