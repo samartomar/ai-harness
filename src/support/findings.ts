@@ -222,6 +222,13 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
       NO_CODE_CHANGES,
     ],
   },
+  "mcp.policy-denied": {
+    audience: "developer",
+    failSeverity: "degraded",
+    title: "MCP server denied by enterprise policy",
+    action:
+      "Self-host or pin the denied server (or remove it) — run `aih mcp --posture enterprise` to see the per-server verdicts, then update .mcp.json (keep it under CODEOWNERS).",
+  },
   "cli.not-detected": {
     audience: "developer",
     failSeverity: "degraded",

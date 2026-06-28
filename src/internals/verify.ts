@@ -27,6 +27,7 @@ export type CheckCode =
   | "mcp.uv-missing"
   | "mcp.config-missing"
   | "mcp.unvendored-offline"
+  | "mcp.policy-denied"
   // CLI bootloaders / canon
   | "cli.not-detected"
   | "cli.bootloader-missing"
