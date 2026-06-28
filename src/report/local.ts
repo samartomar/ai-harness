@@ -1,4 +1,4 @@
-import { detectClisByConfig } from "../internals/cli-detect.js";
+import { detectInstall } from "../internals/cli-detect.js";
 import { type DigestAction, digest, type PlanContext } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
 import { inventory } from "../status.js";
@@ -49,25 +49,37 @@ export function configPanel(ctx: PlanContext): DigestAction {
  * the per-CLI "AI CLI wiring" matrix ({@link cliCoverageDigest}) answers "is this
  * repo configured for that tool", which is orthogonal to "is it installed here".
  */
-export function machineToolingPanel(ctx: PlanContext): DigestAction {
-  const found = detectClisByConfig(ctx);
-  const present = found.filter((p) => p.present);
+export async function machineToolingPanel(ctx: PlanContext): Promise<DigestAction> {
+  const found = await detectInstall(ctx);
+  // Honest split: a binary on PATH = runnable; a config dir with NO binary is a weak
+  // signal (a leftover `~/.codeium/windsurf` survives an uninstall), so it is flagged
+  // "config only (may be stale)" rather than counted as installed.
+  const runnable = found.filter((f) => f.binary);
+  const configOnly = found.filter((f) => !f.binary && f.config);
+  const absent = found.filter((f) => !f.binary && !f.config);
+  const row = (f: (typeof found)[number]): string => {
+    if (f.binary) return `  ✓ ${f.cli}  (on PATH: ${f.binaryDetail})`;
+    if (f.config)
+      return `  ◐ ${f.cli}  (${f.configDetail} — config only; binary not on PATH, may be stale)`;
+    return `  · ${f.cli}`;
+  };
   const body = lines(
-    "AI coding CLIs INSTALLED on this machine (by home config dir) — distinct from",
-    "repo wiring; see the AI CLI wiring panel for what this repo is configured for:",
+    "AI coding CLIs on this machine — ✓ runnable (binary on PATH), ◐ config dir only",
+    "(a GUI install without a CLI launcher, or a leftover dir — may be stale), · not found.",
+    "Distinct from repo wiring; see the AI CLI wiring panel for what this repo targets.",
     "",
-    ...found.map(
-      (p) => `  ${p.present ? "✓" : "·"} ${p.cli}${p.present && p.detail ? `  (${p.detail})` : ""}`,
-    ),
+    ...found.map(row),
     "",
     "  Idle tools are reallocatable seats; absent ones are onboarding opportunities.",
   );
+  const configNote = configOnly.length > 0 ? ` · ${configOnly.length} config-only` : "";
   return digest(
-    `Machine tooling — ${present.length} of ${found.length} AI CLIs installed here`,
+    `Machine tooling — ${runnable.length} runnable${configNote} of ${found.length} AI CLIs`,
     body,
     {
-      present: present.map((p) => p.cli),
-      absent: found.filter((p) => !p.present).map((p) => p.cli),
+      present: runnable.map((f) => f.cli),
+      configOnly: configOnly.map((f) => f.cli),
+      absent: absent.map((f) => f.cli),
       total: found.length,
     },
   );
@@ -110,7 +122,7 @@ export async function localPanels(ctx: PlanContext): Promise<DigestAction[]> {
     usagePanel(ctx),
     cliCoverageDigest(ctx), // HARNESS ADOPTION: per-CLI wiring matrix (targeted-scoped)
     configPanel(ctx),
-    machineToolingPanel(ctx), // HARNESS ADOPTION: which CLIs are INSTALLED (detection)
+    await machineToolingPanel(ctx), // HARNESS ADOPTION: which CLIs are runnable vs config-only
     economyPanel(),
   ];
   return panels.filter((d): d is DigestAction => d !== undefined);

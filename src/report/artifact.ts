@@ -242,21 +242,30 @@ function toolPill(name: string, on: boolean): string {
 }
 
 /** Present-then-absent tool pills, shared by Tools installed + Tooling. */
-function toolPills(present: string[], absent: string[]): string {
-  return [...present.map((n) => toolPill(n, true)), ...absent.map((n) => toolPill(n, false))].join(
-    "",
-  );
+function toolPills(present: string[], absent: string[], configOnly: string[] = []): string {
+  return [
+    ...present.map((n) => toolPill(n, true)),
+    ...configOnly.map((n) => configOnlyPill(n)),
+    ...absent.map((n) => toolPill(n, false)),
+  ].join("");
+}
+
+/** A CLI found by config dir but with no binary on PATH — honest "may be stale" pill. */
+function configOnlyPill(name: string): string {
+  const label = `${name} — config dir found but no binary on PATH (may be stale)`;
+  return `<span class="tool stale" tabindex="0" aria-label="${esc(label)}" data-tip="${esc(label)}">${esc(name)} ◐</span>`;
 }
 
 /** Tooling: pill per AI CLI — filled when present, struck-through (with hint) when absent. */
 function toolingPanel(d: Bag): string {
   const present = arr(d.present) as string[];
+  const configOnly = arr(d.configOnly) as string[];
   const absent = arr(d.absent) as string[];
-  const total = num(d.total) ?? present.length + absent.length;
+  const total = num(d.total) ?? present.length + configOnly.length + absent.length;
   return panel(
     "Machine tooling",
-    `<span class="badge muted">${present.length}/${total}</span>`,
-    `<div class="pills">${toolPills(present, absent)}</div>`,
+    `<span class="badge muted">${present.length}/${total}${configOnly.length > 0 ? ` · ${configOnly.length} config-only` : ""}</span>`,
+    `<div class="pills">${toolPills(present, absent, configOnly)}</div>`,
     7,
   );
 }
@@ -733,6 +742,7 @@ main{max-width:1120px;margin:0 auto;padding:1.8rem 1.5rem 5rem}
 .tool{font-size:.79rem;padding:.32rem .68rem;border-radius:999px;font-weight:550}
 .tool.on{background:color-mix(in oklab,var(--accent) 17%,transparent);color:var(--accent);border:1px solid color-mix(in oklab,var(--accent) 34%,transparent)}
 .tool.off{color:var(--dim);border:1px solid var(--line);text-decoration:line-through;text-decoration-color:color-mix(in oklab,var(--dim) 55%,transparent);opacity:.72}
+.tool.stale{color:var(--warn);border:1px solid color-mix(in oklab,var(--warn) 38%,transparent);background:color-mix(in oklab,var(--warn) 10%,transparent);cursor:help}
 .tool.off[data-hint]{cursor:help}
 .tool.off[data-hint]:hover{opacity:1;color:var(--mut);border-color:color-mix(in oklab,var(--accent) 40%,transparent)}
 .cat{margin-top:1.9rem;scroll-margin-top:4.5rem}

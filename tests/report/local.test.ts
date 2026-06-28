@@ -61,18 +61,35 @@ describe("configPanel", () => {
 });
 
 describe("machineToolingPanel", () => {
-  it("detects an AI CLI by its home config dir", () => {
+  /** A runner that reports the given binaries as resolvable on PATH (which/where). */
+  const pathRunner = (...bins: string[]) =>
+    fakeRunner((argv) => {
+      const name = argv[0] === "which" || argv[0] === "where" ? argv[1] : undefined;
+      return name && bins.includes(name) ? { code: 0, stdout: `/usr/bin/${name}` } : undefined;
+    });
+
+  it("flags a config dir with NO binary on PATH as config-only (may be stale), not installed", async () => {
+    // The real `~/.codeium/windsurf`-leftover case: dir present, binary absent.
+    mkdirSync(join(home, ".codeium", "windsurf"), { recursive: true });
+    const d = await machineToolingPanel(ctx());
+    expect(d.describe).toMatch(/Machine tooling — 0 runnable · 1 config-only/);
+    expect(d.text).toContain("◐ windsurf");
+    expect(d.text).toContain("may be stale");
+    expect(d.data).toMatchObject({ present: [], configOnly: ["windsurf"] });
+  });
+
+  it("counts a tool as runnable only when its binary is on PATH", async () => {
     mkdirSync(join(home, ".claude"), { recursive: true });
-    const d = machineToolingPanel(ctx());
-    expect(d.describe).toMatch(/Machine tooling — 1 of \d+ AI CLIs installed here/);
+    const d = await machineToolingPanel(ctx({ run: pathRunner("claude") }));
+    expect(d.describe).toMatch(/Machine tooling — 1 runnable/);
     expect(d.text).toContain("✓ claude");
     expect(d.data).toMatchObject({ present: ["claude"] });
   });
 
-  it("reports none installed for a bare home (hermetic — no PATH probe)", () => {
-    const d = machineToolingPanel(ctx());
-    expect(d.describe).toMatch(/Machine tooling — 0 of/);
-    expect(d.data).toMatchObject({ present: [] });
+  it("reports none for a bare home with nothing on PATH", async () => {
+    const d = await machineToolingPanel(ctx());
+    expect(d.describe).toMatch(/Machine tooling — 0 runnable of/);
+    expect(d.data).toMatchObject({ present: [], configOnly: [], absent: expect.anything() });
   });
 });
 
