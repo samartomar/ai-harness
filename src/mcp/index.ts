@@ -201,7 +201,7 @@ async function planMcp(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
       );
       continue;
     }
-    if (p.writable && p.configKey) {
+    if (p.support === "native" && p.configKey) {
       if (writtenPaths.has(p.configPath)) continue; // tools sharing a path (claude + kimi → .mcp.json)
       writtenPaths.add(p.configPath);
       // Preserve the exact `.mcp.json` describe (golden) for the standard path.

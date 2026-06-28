@@ -27,19 +27,40 @@ describe("CLI registry", () => {
 
   it("carries the lifted per-CLI MCP facts (Codex = config.toml / mcp_servers / toml)", () => {
     expect(entry("codex").mcp).toMatchObject({
-      support: "native",
+      support: "fallback", // TOML / global → guidance, not a write
       configFormat: "toml",
       configKey: "mcp_servers",
-      writable: false, // TOML / global → guidance, not a write
     });
     expect(entry("claude").mcp).toMatchObject({
+      support: "native",
       configPath: ".mcp.json",
       configKey: "mcpServers",
       configFormat: "json",
-      writable: true,
     });
-    // Cursor uses the same shape at a different project path → writable.
-    expect(entry("cursor").mcp).toMatchObject({ configPath: ".cursor/mcp.json", writable: true });
+    // Cursor uses the same shape at a different project path → still a native write.
+    expect(entry("cursor").mcp).toMatchObject({
+      support: "native",
+      configPath: ".cursor/mcp.json",
+    });
+  });
+
+  it("classifies MCP integration as native (aih writes) vs fallback (aih guides)", () => {
+    const writes = SUPPORTED_CLIS.filter((c) => entry(c).mcp.support === "native");
+    const guides = SUPPORTED_CLIS.filter((c) => entry(c).mcp.support === "fallback");
+    // aih owns the standard project `mcpServers` JSON shape for exactly these four.
+    expect(writes).toEqual(["claude", "cursor", "kimi", "kiro"]);
+    // Everyone else reads MCP from TOML / a global path / a different shape → guidance.
+    expect(guides).toEqual([
+      "codex",
+      "antigravity",
+      "gemini",
+      "copilot",
+      "windsurf",
+      "opencode",
+      "zed",
+    ]);
+    // No tool is `absent` today; every supported CLI exposes some MCP config.
+    expect(SUPPORTED_CLIS.every((c) => entry(c).mcp.support !== "absent")).toBe(true);
   });
 
   it("preserves the detection signals migrated from cli-detect SIGNALS", () => {

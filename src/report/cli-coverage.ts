@@ -16,13 +16,13 @@ import { type CliLoadability, loadabilityFor, loadReason } from "./cli-loadabili
  * ask ONE global, Claude-shaped question (`.mcp.json` exists? `CLAUDE.md` exists?)
  * and so lie for every other tool. This scores each TARGETED CLI on its own terms,
  * derived entirely from the single {@link entry} registry (bootloader file(s), MCP
- * config path/key/writability, settings file), so it can never drift from what
+ * config path/key/support level, settings file), so it can never drift from what
  * `aih bootstrap-ai` / `aih mcp` actually write.
  *
  * Four cell states, three of which the legacy boolean conflated:
  *  - `wired`   — the tool's own artifact exists AND carries the expected content;
  *  - `missing` — aih can write it, but it isn't there (a real gap → graded);
- *  - `manual`  — aih intentionally does NOT write it (`writable:false` MCP: TOML,
+ *  - `manual`  — aih intentionally does NOT write it (`fallback` MCP: TOML,
  *                a global path, or a different server shape) — guidance only, so
  *                file existence is not a fair signal → NOT graded;
  *  - `na`      — the tool has no such capability (e.g. settings for non-Claude).
@@ -159,7 +159,7 @@ function mcpCell(ctx: PlanContext, cli: Cli): CliCell {
   if (m.support === "absent" || !m.configPath) {
     return { state: "na", detail: `${e.label} exposes no MCP server config` };
   }
-  if (!m.writable || !m.configKey) {
+  if (m.support !== "native" || !m.configKey) {
     const repoRelative = !m.configPath.startsWith("~") && !m.configPath.startsWith("/");
     const annot = repoRelative
       ? existsSync(join(ctx.root, m.configPath))
