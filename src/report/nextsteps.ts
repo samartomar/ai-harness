@@ -21,8 +21,10 @@ export interface NextStepsInput {
   bloat?: ContextBloat;
   /** Per-turn load-group model (what one tool actually loads). */
   perTurn?: LoadGroupModel;
-  /** Captured usage events; 0 = telemetry not wired yet. `undefined` = unknown. */
+  /** Captured usage events; 0 = none captured yet. `undefined` = unknown. */
   usageEvents?: number;
+  /** Telemetry capture is wired (the usage recorder + hook exist) — even with 0 events yet. */
+  telemetryWired?: boolean;
   /** Agent shell tools (rg/fd/jq/…) not on PATH — surfaces the `aih tools` install step. */
   toolsMissing?: number;
   /** Repo opted into the harness (committed marker) — only an opted-in repo is nagged. */
@@ -63,8 +65,11 @@ export function nextSteps(input: NextStepsInput): string[] {
     for (const [cmd, arts] of byCmd) steps.push(`Add ${arts.join(", ")} → \`${cmd}\``);
   }
 
-  // C — telemetry: one line wires both Usage and Trends.
-  if (input.usageEvents === 0) {
+  // C — telemetry: prompt to WIRE it only when it isn't wired yet. Once the recorder
+  // + hook exist, events accrue as you work — so a "wire telemetry" step after you've
+  // wired it would be misleading; drop it (don't nag about data that's now just a
+  // matter of time).
+  if (input.usageEvents === 0 && !input.telemetryWired) {
     steps.push(
       "Wire telemetry → `aih usage --apply` + `aih track --apply` (commit/stop hook) to populate Usage + Trends",
     );
