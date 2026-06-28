@@ -194,14 +194,23 @@ export async function resolveTargets(ctx: PlanContext): Promise<TargetResolution
   // codex/gemini canon. Mirrors how `doctor` treats the marker's contextDir as
   // authoritative. Fail-soft: a malformed marker / unknown tool just falls through.
   if (!explicit && opts.allTools !== true && opts.detect !== true) {
+    // 1. A committed marker is authoritative (an adopted repo's targets) — so a re-run
+    //    regenerates for the SAME tools instead of narrowing/widening.
     const cfg = readAihConfig(ctx.root);
     if (cfg && cfg.targets.length > 0) {
       const fromMarker = resolveClis({ cli: cfg.targets.join(",") });
       if (fromMarker.length > 0) return { clis: fromMarker, detectFellBack: false };
     }
+    // 2. No marker (a FIRST run) → default to the RUNNABLE installed CLIs (binary on
+    //    PATH) so the first run wires the tools you ACTUALLY have — not just claude,
+    //    which left every other installed CLI (kiro, codex, …) unwired and silent.
+    //    Config-only/stale dirs (e.g. a leftover `~/.windsurf` with no binary) are
+    //    excluded, so this also stops init scattering artifacts for tools you lack.
+    const runnable = (await detectInstall(ctx)).filter((i) => i.binary).map((i) => i.cli);
+    if (runnable.length > 0) return { clis: runnable, detectFellBack: false };
   }
-  // The explicit `--cli` flag (or default) path: validate strictly so a typo
-  // fails closed instead of silently falling back to Claude.
+  // Fallback: explicit `--cli` (validated strictly so a typo fails closed) or, with
+  // no flags + no marker + nothing runnable detected (CI / fresh box), claude.
   return { clis: resolveClis(opts, { strict: true }), detectFellBack: false };
 }
 

@@ -144,8 +144,23 @@ describe("resolveTargetClis", () => {
     expect(clis).toEqual(["codex"]);
   });
 
-  it("defaults to claude with no flags (no detection performed)", async () => {
+  it("falls back to claude with no flags when nothing runnable is detected", async () => {
+    // No binaries on PATH, no marker → claude (CI / fresh box).
     expect(await resolveTargetClis(makeCtx())).toEqual(["claude"]);
+  });
+
+  it("with no flags + no marker, defaults to the RUNNABLE installed CLIs (binary on PATH)", async () => {
+    // The first-run fix: wire every tool you actually have, not just claude — so a
+    // kiro user doesn't have to discover kiro was left unwired.
+    const r = await resolveTargetClis(makeCtx({}, ["claude", "kiro", "codex"]));
+    expect(r).toEqual(expect.arrayContaining(["claude", "kiro", "codex"]));
+    expect(r).not.toContain("cursor"); // not installed → not wired
+  });
+
+  it("excludes a config-only/stale tool (config dir, no binary) from the default", async () => {
+    configDir(".windsurf"); // leftover dir with no binary on PATH
+    const r = await resolveTargetClis(makeCtx()); // nothing runnable
+    expect(r).toEqual(["claude"]); // windsurf is NOT wired from a stale dir
   });
 });
 
