@@ -25,6 +25,7 @@ import { reportHtml, reportMarkdown } from "./artifact.js";
 import { type ContextBloat, DEFAULT_CONTEXT_BUDGET_TOKENS, scanContextBloat } from "./bloat.js";
 import { type LoadGroupModel, scanLoadGroups } from "./loadgroups.js";
 import { localPanels } from "./local.js";
+import { type NextStepsInput, nextSteps, nextStepsDigest, nextStepsHeadline } from "./nextsteps.js";
 import { aggregateOrg } from "./org.js";
 import { orgDigest, orgHeadline } from "./org-render.js";
 import { contextBloatDigest, loadGroupDigest } from "./render.js";
@@ -38,9 +39,22 @@ function budgetOf(ctx: PlanContext): number {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_CONTEXT_BUDGET_TOKENS;
 }
 
-function contextHeadline(bloat: ContextBloat): string {
-  const flag = bloat.overBudget ? " — OVER budget" : "";
+function contextHeadline(bloat: ContextBloat, perTurn?: LoadGroupModel): string {
+  // De-alarm: a large corpus whose PER-TURN cost is within budget is not over
+  // budget in the way that matters — say "large corpus · per-turn OK", not "OVER".
+  const flag = !bloat.overBudget
+    ? ""
+    : perTurn && !perTurn.overBudget
+      ? " — large corpus · per-turn within budget"
+      : " — OVER budget";
   return `Context footprint — ~${bloat.totalTokens} tokens across ${bloat.files.length} files${flag}`;
+}
+
+/** Captured usage events from the Usage panel digest (0 = telemetry not wired). */
+function usageEventsFrom(digests: DigestAction[]): number | undefined {
+  const d = digests.find((x) => x.describe.startsWith("Usage"));
+  const n = (d?.data as { events?: unknown } | undefined)?.events;
+  return typeof n === "number" ? n : undefined;
 }
 
 /** Headline for the per-turn load-group digest (the real cost: one tool's bundle). */
@@ -167,17 +181,32 @@ async function buildReport(ctx: PlanContext): Promise<Built> {
   const scanOpts = { accept: acceptChanged(allow, since) };
   const bloat = scanContextBloat(ctx.root, ctx.contextDir, budget, scanOpts);
   const model = scanLoadGroups(ctx.root, ctx.contextDir, budget, scanOpts);
+  const panels = await localPanels(ctx);
+  // Self-guiding "Next steps": translate the report's own signals (adoption gaps,
+  // empty telemetry, the over-budget-but-fine corpus) into exact `aih` commands, so
+  // the report tells the reader what to run instead of leaving them to diagnose it.
+  const nextInput: NextStepsInput = {
+    adoption: adoptionFrom(panels),
+    bloat,
+    perTurn: model,
+    usageEvents: usageEventsFrom(panels),
+    initialized: readAihConfig(ctx.root) !== undefined,
+  };
   return {
     scope: "local",
     title: "aih report — local developer console",
     model,
     digests: [
       // Full on-disk inventory (union across all tools) — keeps the established
-      // "Context footprint" lead digest + dashboard budget bar. The per-turn
-      // worst-case panel (what one tool actually loads) follows it.
-      digest(contextHeadline(bloat), contextBloatDigest(bloat), bloat),
+      // "Context footprint" lead digest + dashboard budget bar, now reconciled with
+      // the per-turn cost. The per-turn worst-case panel follows it.
+      digest(contextHeadline(bloat, model), contextBloatDigest(bloat, model), bloat),
       digest(loadGroupHeadline(model), loadGroupDigest(model), model),
-      ...(await localPanels(ctx)),
+      // Prominent, self-guiding action list — third so it sits above the detail panels.
+      digest(nextStepsHeadline(nextInput), nextStepsDigest(nextInput), {
+        nextSteps: nextSteps(nextInput),
+      }),
+      ...panels,
     ],
   };
 }

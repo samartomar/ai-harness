@@ -16,12 +16,23 @@ const TOP_FILES = 15;
  * Deterministic: files are re-sorted by token weight (path tie-break), numbers
  * are locale-independent, no dates — so the output is stable across runs.
  */
-export function contextBloatDigest(bloat: ContextBloat): string {
+export function contextBloatDigest(bloat: ContextBloat, perTurn?: LoadGroupModel): string {
   const { files, totalBytes, totalTokens, budgetTokens, overBudget } = bloat;
 
   const status = overBudget
     ? `OVER budget by ${thousands(totalTokens - budgetTokens)} tokens`
     : `within budget (${thousands(budgetTokens - totalTokens)} tokens to spare)`;
+
+  // Reconcile the alarming corpus total with the cost that actually matters: when
+  // the FULL corpus is over budget but a single tool's PER-TURN load is within it,
+  // say so — the rich canon loads on-demand, so the ⚠ isn't an action item.
+  const perTurnNote =
+    overBudget && perTurn && !perTurn.overBudget
+      ? [
+          `  Note: this is the FULL corpus. Per turn an agent loads only ~${thousands(perTurn.worstTokens)} tok`,
+          "  (within budget) — the rest is on-demand canon. The per-turn panel below is what `--gate` checks.",
+        ]
+      : [];
 
   const top = [...files]
     .sort((a, b) => b.tokens - a.tokens || a.path.localeCompare(b.path))
@@ -35,6 +46,7 @@ export function contextBloatDigest(bloat: ContextBloat): string {
     `  Bytes:  ${thousands(totalBytes)}`,
     `  Tokens: ~${thousands(totalTokens)} (estimate, bytes/4) · budget ${thousands(budgetTokens)}`,
     `  Status: ${overBudget ? "⚠ " : ""}${status}`,
+    ...perTurnNote,
     "",
     ...(files.length === 0
       ? ["  (no agent context files found — run `aih scaffold` / `aih bootstrap-ai`)"]
