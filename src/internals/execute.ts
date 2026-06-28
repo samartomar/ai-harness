@@ -5,10 +5,10 @@ import { redactSecrets } from "../guardrails/redact.js";
 import { upsertManagedBlock } from "./envfile.js";
 import { FsTransaction, readIfExists } from "./fsxn.js";
 import { deepMerge, parseJsoncText } from "./merge.js";
-import type { Action, EnvBlockAction, ExecAction, Plan, PlanContext, WriteAction } from "./plan.js";
+import type { EnvBlockAction, ExecAction, Plan, PlanContext, WriteAction } from "./plan.js";
 import { ensureTrailingNewline, indent, jsonFile, stripTrailingNewlines } from "./render.js";
 import { VerificationReport } from "./verify.js";
-import { isWorktreeDirty } from "./worktree-gate.js";
+import { dirtyWriteTargets, normalizeRel } from "./worktree-gate.js";
 
 export interface WriteSummary {
   path: string;
@@ -37,25 +37,6 @@ export interface PlanResult {
 /** Resolve an action path against the context root (absolute paths pass through). */
 function resolvePath(ctx: PlanContext, p: string): string {
   return resolve(ctx.root, p);
-}
-
-/**
- * Does the plan stage a write to a file INSIDE the repo? The dirty-worktree preflight
- * guards the REPO's uncommitted work, so it only counts repo-scoped mutations —
- * `write`/`doc` actions whose path lands in the root, plus `envblock`. An `external`
- * write (a `~/home`/system file: a global tool config like `~/.codex/config.toml`, a
- * PEM bundle) is NOT part of the repo worktree, so it can't clobber uncommitted repo
- * work and never trips the gate — `aih mcp --apply --cli codex` wiring only the global
- * Codex config is allowed on a dirty repo, while a repo-local `.mcp.json` write still
- * gates. Exec/probe/digest/path-less doc plans write nothing and bypass the gate too.
- */
-function mutatesFiles(actions: Action[]): boolean {
-  return actions.some(
-    (a) =>
-      (a.kind === "write" && a.external !== true) ||
-      a.kind === "envblock" ||
-      (a.kind === "doc" && typeof a.path === "string"),
-  );
 }
 
 /** realpath, or a plain resolve if the path does not exist yet. */
@@ -132,6 +113,42 @@ export function resolveContents(action: WriteAction, absPath: string): string {
 }
 
 /**
+ * Of the plan's repo-local targets that are `dirty`, the ones this apply would
+ * actually CHANGE (rendered content ≠ disk) — the true clobber set. A `write`/`doc`
+ * whose bytes already match disk is a no-op (the main loop records it `unchanged` and
+ * writes nothing), so an idempotent re-apply over an uncommitted-but-unchanged file is
+ * NOT a clobber and must not gate. A brand-new file (no existing content) and a
+ * `write`-once seed can never clobber. `envblock` targets that are dirty are treated
+ * conservatively as changes (they recompose a managed block; repo-local ones are rare).
+ */
+function changedDirtyTargets(plan: Plan, ctx: PlanContext, dirty: Set<string>): string[] {
+  const out: string[] = [];
+  for (const a of plan.actions) {
+    const p =
+      a.kind === "write" && a.external !== true
+        ? a.path
+        : a.kind === "doc" && typeof a.path === "string"
+          ? a.path
+          : a.kind === "envblock"
+            ? a.path
+            : undefined;
+    if (p === undefined) continue;
+    const abs = resolvePath(ctx, p);
+    if (!dirty.has(normalizeRel(relative(ctx.root, abs)))) continue;
+    const existing = readIfExists(abs);
+    if (
+      a.kind === "write" &&
+      (existing === undefined || a.once || resolveContents(a, abs) === existing)
+    ) {
+      continue;
+    }
+    if (a.kind === "doc" && existing === ensureTrailingNewline(a.text)) continue;
+    out.push(normalizeRel(relative(ctx.root, abs)));
+  }
+  return out;
+}
+
+/**
  * Execute a plan. In dry-run (`ctx.apply === false`) nothing is written — the
  * result still reports exactly what would change. With `ctx.apply` writes are
  * committed transactionally; with `ctx.verify` probe actions run and populate a
@@ -142,25 +159,31 @@ export async function executePlan(
   ctx: PlanContext,
   opts: { skipWorktreeGate?: boolean } = {},
 ): Promise<PlanResult> {
-  // Dirty-worktree --apply preflight: refuse to write over uncommitted work unless
-  // --force. Only an apply run that actually stages a file write is gated, so
-  // read-only commands (doctor/status) and write-free runs (a bare `aih report`)
-  // are untouched. `skipWorktreeGate` exempts pure-analytics commands (`aih report`)
-  // whose only writes are gitignored OUTPUT artifacts (the .aih/ report + its ignore
-  // rule) — those never clobber the user's uncommitted work, so blocking the report
-  // on a dirty tree is wrong. The check runs BEFORE anything is staged, so a refusal
-  // leaves the worktree byte-for-byte unchanged. `git status --porcelain` goes
-  // through the Runner seam; git-absent / not-a-repo reads as clean.
-  if (
-    ctx.apply &&
-    opts.skipWorktreeGate !== true &&
-    ctx.options.force !== true &&
-    mutatesFiles(plan.actions) &&
-    (await isWorktreeDirty(ctx))
-  ) {
-    throw new DirtyWorktreeError(
-      "Refusing to apply with a dirty git worktree — commit/stash your changes, or pass --force.",
-    );
+  // Dirty-worktree --apply preflight: refuse only when this apply would write over a
+  // file that ITSELF has uncommitted changes — the precise "clobber your work" case —
+  // not merely because some unrelated file in the repo is dirty. So creating a new
+  // `opencode.json` is allowed on a repo that just has an untracked `codex/` dir
+  // elsewhere, while regenerating a `CLAUDE.md` you have uncommitted edits to still
+  // gates. `external` writes (global ~/home configs) and write-free runs are never
+  // gated; `skipWorktreeGate` exempts pure-analytics commands (`aih report`, whose only
+  // writes are gitignored OUTPUT artifacts). The check runs BEFORE anything is staged,
+  // so a refusal leaves the worktree byte-for-byte unchanged; git goes through the
+  // read-only Runner seam (git-absent / not-a-repo → nothing dirty → not gated).
+  if (ctx.apply && opts.skipWorktreeGate !== true && ctx.options.force !== true) {
+    const dirtyTargets = new Set(await dirtyWriteTargets(plan, ctx));
+    // Effect-aware: a dirty target is only a real clobber if THIS write would change
+    // its content. A write whose rendered bytes already match disk is a no-op (the loop
+    // below records it `unchanged` and writes nothing), so re-running `aih mcp --apply`
+    // over a still-uncommitted but unchanged config must not be blocked.
+    const clobbered = dirtyTargets.size === 0 ? [] : changedDirtyTargets(plan, ctx, dirtyTargets);
+    if (clobbered.length > 0) {
+      const list = clobbered.join(", ");
+      throw new DirtyWorktreeError(
+        `Refusing to overwrite uncommitted changes in: ${list}. Commit or stash ${
+          clobbered.length > 1 ? "them" : "it"
+        } first, or pass --force.`,
+      );
+    }
   }
 
   const txn = new FsTransaction();

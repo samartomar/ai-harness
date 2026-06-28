@@ -243,22 +243,50 @@ describe("writeArtifact", () => {
 });
 
 describe("executePlan — dirty-worktree --apply preflight", () => {
+  // `a.txt` (the file the writes below target) has uncommitted changes.
   const dirtyRun = fakeRunner((argv) =>
-    argv.includes("status") ? { stdout: " M tracked.ts\n" } : undefined,
+    argv.includes("status") ? { stdout: " M a.txt\n" } : undefined,
   );
 
-  it("refuses to apply a write over a dirty worktree (nothing written, no backup)", async () => {
+  it("refuses to overwrite a dirty file the write would CHANGE (nothing written, no backup)", async () => {
+    writeFileSync(join(dir, "a.txt"), "uncommitted edits\n"); // exists, dirty, and would change
     await expect(
       executePlan(
         plan("t", writeText("a.txt", "hi", "write a")),
         ctx({ apply: true, run: dirtyRun }),
       ),
     ).rejects.toThrow(DirtyWorktreeError);
-    expect(existsSync(join(dir, "a.txt"))).toBe(false);
+    expect(readFileSync(join(dir, "a.txt"), "utf8")).toBe("uncommitted edits\n"); // untouched
     expect(existsSync(join(dir, "a.txt.aih.bak"))).toBe(false);
   });
 
+  it("does NOT gate an idempotent re-apply over a dirty file (rendered bytes match disk)", async () => {
+    // Re-running `aih mcp --apply` over a just-generated, still-uncommitted config that
+    // hasn't changed is a no-op — the dirty file is identical to what aih would write,
+    // so there's nothing to clobber and it must be allowed.
+    writeFileSync(join(dir, "a.txt"), "hi\n"); // dirty, but the write renders the same bytes
+    await executePlan(
+      plan("t", writeText("a.txt", "hi", "write a")),
+      ctx({ apply: true, run: dirtyRun }),
+    );
+    expect(readFileSync(join(dir, "a.txt"), "utf8")).toBe("hi\n");
+  });
+
+  it("ALLOWS the write when only an UNRELATED file is dirty (the new-file-on-dirty-repo fix)", async () => {
+    // `aih mcp --apply --cli opencode` creates opencode.json on a repo whose only dirty
+    // file is an untracked `codex/` dir — nothing aih writes is dirty, so it's allowed.
+    const unrelatedDirty = fakeRunner((argv) =>
+      argv.includes("status") ? { stdout: "?? codex/\n M other.ts\n" } : undefined,
+    );
+    await executePlan(
+      plan("t", writeText("a.txt", "hi", "write a")),
+      ctx({ apply: true, run: unrelatedDirty }),
+    );
+    expect(readFileSync(join(dir, "a.txt"), "utf8")).toBe("hi\n");
+  });
+
   it("--force overrides the gate and applies the write", async () => {
+    writeFileSync(join(dir, "a.txt"), "uncommitted\n"); // dirty + would change → gates without --force
     await executePlan(
       plan("t", writeText("a.txt", "hi", "write a")),
       ctx({ apply: true, run: dirtyRun, options: { force: true } }),
@@ -294,6 +322,7 @@ describe("executePlan — dirty-worktree --apply preflight", () => {
     // `aih report --open` writes a gitignored OUTPUT artifact (the .aih/ report) under
     // --apply. Its writes never clobber the user's uncommitted work, so the report must
     // not be blocked on a dirty tree — skipWorktreeGate lets the write through.
+    writeFileSync(join(dir, "a.txt"), "uncommitted\n"); // dirty + would change → gates without skip
     await executePlan(
       plan("t", writeText("a.txt", "hi", "write a")),
       ctx({ apply: true, run: dirtyRun }),
