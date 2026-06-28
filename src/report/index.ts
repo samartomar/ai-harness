@@ -29,6 +29,7 @@ import { type NextStepsInput, nextSteps, nextStepsDigest, nextStepsHeadline } fr
 import { aggregateOrg } from "./org.js";
 import { orgDigest, orgHeadline } from "./org-render.js";
 import { contextBloatDigest, loadGroupDigest } from "./render.js";
+import { reportHtmlV4 } from "./v4.js";
 
 type Scope = "local" | "org";
 type Format = "terminal" | "md" | "html";
@@ -254,10 +255,13 @@ async function reportPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
   // visualizing / showcasing the full report); the in-page "◑ demo data" toggle is
   // present in EVERY report regardless. Demo implies the HTML dashboard + open.
   const demo = ctx.options.demo === true;
+  // `--v4` opts into the next-gen dashboard skin (additive; the legacy renderer stays
+  // the default). HTML-only, like --open/--demo, so it forces the html format too.
+  const v4 = ctx.options.v4 === true;
   const refreshRaw = Number(ctx.options.refresh);
   const refresh =
     Number.isFinite(refreshRaw) && refreshRaw > 0 ? Math.floor(refreshRaw) : undefined;
-  const format = open || demo || refresh !== undefined ? "html" : formatOf(ctx);
+  const format = open || demo || v4 || refresh !== undefined ? "html" : formatOf(ctx);
   const shouldOpen = open || demo;
   const built = await buildReport(ctx);
   const actions: Action[] = [...built.digests];
@@ -276,14 +280,18 @@ async function reportPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
   for (const check of advisoryChecks) actions.push(probe(check.name, () => check));
   if (format !== "terminal") {
     const path = artifactPath(ctx, built.scope, format);
-    const content =
-      format === "html"
-        ? reportHtml(built.title, built.digests, {
+    let content: string;
+    if (format === "html") {
+      content = v4
+        ? reportHtmlV4(built.title, built.digests, { refresh, demo })
+        : reportHtml(built.title, built.digests, {
             refresh,
             demo,
             support: reportSupportTemplates(ctx, advisoryChecks),
-          })
-        : reportMarkdown(built.title, built.digests);
+          });
+    } else {
+      content = reportMarkdown(built.title, built.digests);
+    }
     // The default artifact lands under `.aih/` (repo-contained). An explicit `--out`
     // is the operator's own chosen target, so it opts out of repo containment.
     const operatorOut = typeof ctx.options.out === "string" && ctx.options.out.length > 0;
@@ -383,6 +391,10 @@ export const command: CommandSpec = {
       flags: "--refresh <sec>",
       description:
         "live mode: open the dashboard and regenerate it every <sec> seconds (Ctrl+C to stop)",
+    },
+    {
+      flags: "--v4",
+      description: "render the next-gen v0.5 dashboard skin (opt-in; implies html)",
     },
   ],
   plan: reportPlan,
