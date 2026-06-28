@@ -27,11 +27,12 @@ const Support = z.enum(SUPPORT_LEVELS);
 const McpProfile = z.object({
   /**
    * aih's MCP integration level for this tool:
-   *  - `native`   — aih deterministically WRITES the config: a project-relative JSON
-   *                 file using the standard `mcpServers` shape aih already generates.
-   *  - `fallback` — the tool reads MCP, but from TOML, a global path, or a different
-   *                 server shape, so aih emits exact guidance rather than a file it
-   *                 would get wrong.
+   *  - `native`   — aih deterministically WRITES the config, rendering the canonical
+   *                 server map into the tool's exact on-disk shape (JSON or TOML, a
+   *                 repo-relative OR `~/home` path), merge-preserving the user's other
+   *                 settings. The per-tool shape transforms live in `mcp/render.ts`.
+   *  - `fallback` — aih cannot yet render this tool's shape correctly, so it emits
+   *                 exact guidance rather than a file it would get wrong.
    *  - `absent`   — the tool exposes no MCP server config at all.
    */
   support: Support,
@@ -111,8 +112,9 @@ const RAW: Record<string, z.input<typeof CliEntry>> = {
     binaries: ["codex"],
     bootloaders: ["AGENTS.md"],
     // Codex reads MCP servers from ~/.codex/config.toml as [mcp_servers.<name>] (TOML, global).
+    // aih writes them as an aih-managed block (mcp/render.ts), preserving the rest of the file.
     mcp: {
-      support: "fallback",
+      support: "native",
       configPath: "~/.codex/config.toml",
       configKey: "mcp_servers",
       configFormat: "toml",
@@ -139,7 +141,7 @@ const RAW: Record<string, z.input<typeof CliEntry>> = {
     binaries: ["agy", "antigravity"],
     bootloaders: ["AGENTS.md", "GEMINI.md"],
     mcp: {
-      support: "fallback",
+      support: "native",
       configPath: "~/.antigravity/mcp.json",
       configKey: "mcpServers",
       configFormat: "json",
@@ -151,9 +153,10 @@ const RAW: Record<string, z.input<typeof CliEntry>> = {
     configDirs: [".gemini"],
     binaries: ["gemini"],
     bootloaders: ["GEMINI.md"],
-    // Gemini reads ~/.gemini/settings.json (global, many keys) — guide, don't write.
+    // Gemini reads ~/.gemini/settings.json (global, many keys); aih merge-writes only
+    // the mcpServers key (httpUrl for http), preserving every other setting.
     mcp: {
-      support: "fallback",
+      support: "native",
       configPath: "~/.gemini/settings.json",
       configKey: "mcpServers",
       configFormat: "json",
@@ -165,9 +168,9 @@ const RAW: Record<string, z.input<typeof CliEntry>> = {
     configDirs: [".config/github-copilot", ".copilot"],
     binaries: ["copilot"],
     bootloaders: [".github/copilot-instructions.md"],
-    // VS Code reads .vscode/mcp.json under a `servers` key (different shape) — guide.
+    // VS Code reads .vscode/mcp.json under a `servers` key ({type, command, args}).
     mcp: {
-      support: "fallback",
+      support: "native",
       configPath: ".vscode/mcp.json",
       configKey: "servers",
       configFormat: "json",
@@ -180,7 +183,7 @@ const RAW: Record<string, z.input<typeof CliEntry>> = {
     binaries: ["windsurf"],
     bootloaders: [".windsurfrules"],
     mcp: {
-      support: "fallback",
+      support: "native",
       configPath: "~/.codeium/windsurf/mcp_config.json",
       configKey: "mcpServers",
       configFormat: "json",
@@ -192,9 +195,9 @@ const RAW: Record<string, z.input<typeof CliEntry>> = {
     configDirs: [".config/opencode", ".opencode"],
     binaries: ["opencode"],
     bootloaders: ["AGENTS.md"],
-    // OpenCode's opencode.json uses an `mcp` key with a different server shape — guide.
+    // OpenCode's opencode.json uses an `mcp` key: {type:"local", command:[cmd,...args], enabled}.
     mcp: {
-      support: "fallback",
+      support: "native",
       configPath: "opencode.json",
       configKey: "mcp",
       configFormat: "json",
@@ -206,9 +209,9 @@ const RAW: Record<string, z.input<typeof CliEntry>> = {
     configDirs: [".config/zed", ".zed"],
     binaries: ["zed"],
     bootloaders: ["AGENTS.md"],
-    // Zed settings.json uses `context_servers` with a different shape — guide.
+    // Zed settings.json uses `context_servers` ({command, args}); aih merge-writes that key.
     mcp: {
-      support: "fallback",
+      support: "native",
       configPath: "~/.config/zed/settings.json",
       configKey: "context_servers",
       configFormat: "json",

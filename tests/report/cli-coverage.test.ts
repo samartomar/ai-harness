@@ -55,6 +55,13 @@ function writeWiredBootloader(rel: string): void {
   writeFileSync(path, mergeManagedBlock(undefined, sharedBlock("ai-coding"), "# preamble"));
 }
 
+/** Write a file into the fake home (for external/global tool MCP configs). */
+function writeHomeFile(rel: string, content: string): void {
+  const path = join(home, rel);
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, content);
+}
+
 /** Scaffold the canon the loadability router-chain check resolves to. */
 function scaffoldCanon(): void {
   mkdirSync(join(dir, "ai-coding", "rules"), { recursive: true });
@@ -94,11 +101,16 @@ describe("bootloader cell", () => {
   it("false-negative fixed: a Windsurf-only repo wired for windsurf scores 100", () => {
     marker("windsurf");
     writeWiredBootloader(".windsurfrules");
+    // windsurf MCP is a global (~/home) native write now — wire it in the fake home.
+    writeHomeFile(
+      ".codeium/windsurf/mcp_config.json",
+      JSON.stringify({ mcpServers: { x: { command: "y" } } }),
+    );
     const m = scanCliCoverage(ctx());
     const r = row(m, "windsurf");
     expect(r.bootloader.state).toBe("wired");
-    // windsurf MCP is global / non-writable → manual (not graded); settings n/a.
-    expect(r.mcp.state).toBe("manual");
+    expect(r.mcp.state).toBe("wired");
+    expect(r.mcp.detail).toMatch(/global/);
     expect(r.settings.state).toBe("na");
     expect(m.score).toBe(100);
     expect(m.structurallyConfigured).toBe(1);
@@ -133,23 +145,30 @@ describe("mcp cell — content check + manual model", () => {
     expect(row(scanCliCoverage(ctx()), "claude").mcp.state).toBe("wired");
   });
 
-  it("non-writable global tool (codex) is manual, never graded", () => {
+  it("native global TOML tool (codex): missing without config, wired once the TOML has servers", () => {
     marker("codex");
-    const r = row(scanCliCoverage(ctx()), "codex");
-    expect(r.mcp.state).toBe("manual");
+    let r = row(scanCliCoverage(ctx()), "codex");
+    expect(r.mcp.state).toBe("missing");
     expect(r.mcp.detail).toMatch(/global/);
+    // Codex's config is TOML — server presence is counted from `[mcp_servers.*]` tables.
+    writeHomeFile(".codex/config.toml", '[mcp_servers."code-review-graph"]\ncommand = "uvx"\n');
+    r = row(scanCliCoverage(ctx()), "codex");
+    expect(r.mcp.state).toBe("wired");
+    expect(r.mcp.detail).toMatch(/mcp_servers/);
   });
 
-  it("D2: a repo-relative manual tool (copilot) annotates file presence, stays amber", () => {
+  it("native repo-relative tool (copilot): {} is missing, a populated `servers` map is wired", () => {
     marker("copilot");
-    let r = row(scanCliCoverage(ctx()), "copilot");
-    expect(r.mcp.state).toBe("manual");
-    expect(r.mcp.detail).toMatch(/\.vscode\/mcp\.json not found/);
     mkdirSync(join(dir, ".vscode"), { recursive: true });
     writeFileSync(join(dir, ".vscode", "mcp.json"), "{}");
+    let r = row(scanCliCoverage(ctx()), "copilot");
+    expect(r.mcp.state).toBe("missing");
+    writeFileSync(
+      join(dir, ".vscode", "mcp.json"),
+      JSON.stringify({ servers: { x: { type: "stdio", command: "y" } } }),
+    );
     r = row(scanCliCoverage(ctx()), "copilot");
-    expect(r.mcp.state).toBe("manual"); // still amber — aih doesn't own the shape
-    expect(r.mcp.detail).toMatch(/\.vscode\/mcp\.json present/);
+    expect(r.mcp.state).toBe("wired");
   });
 });
 

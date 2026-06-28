@@ -37,10 +37,22 @@ export function upsertManagedBlock(
   vars: EnvVar[],
   shell: EnvShell,
 ): string {
+  return upsertTextBlock(existing, scope, vars.map((v) => formatExport(v, shell)).join("\n"));
+}
+
+/**
+ * Insert or replace the aih-managed `scope` block carrying arbitrary `body` text
+ * (the format-agnostic core of {@link upsertManagedBlock}). The `#`-comment markers
+ * are valid in any `#`-commented format — shell profiles AND TOML — so `aih mcp`
+ * reuses this to fold its `[mcp_servers.*]` tables into Codex's `~/.codex/config.toml`
+ * without clobbering the rest of the file. Idempotent: the region between the markers
+ * is replaced wholesale, content outside is untouched, and the file's EOL style
+ * (CRLF vs LF) is preserved.
+ */
+export function upsertTextBlock(existing: string, scope: string, body: string): string {
   const begin = beginMarker(scope);
   const end = endMarker(scope);
-  const blockBody = vars.map((v) => formatExport(v, shell)).join("\n");
-  const block = `${begin}\n${blockBody}\n${end}`;
+  const block = `${begin}\n${body}\n${end}`;
 
   const usesCrlf = /\r\n/.test(existing);
   const normalized = existing.replace(/\r\n/g, "\n");

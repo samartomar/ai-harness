@@ -1,6 +1,8 @@
-import { posix } from "node:path";
-import { resolveTargets } from "../internals/cli-detect.js";
+import { join, posix } from "node:path";
+import { homeDir, resolveTargets } from "../internals/cli-detect.js";
 import { type CliEntry, entry } from "../internals/cli-registry.js";
+import { upsertTextBlock } from "../internals/envfile.js";
+import { readIfExists } from "../internals/fsxn.js";
 import type { Action, CommandSpec, PlanContext } from "../internals/plan.js";
 import { doc, plan, probe, writeJson, writeText } from "../internals/plan.js";
 import type { Check } from "../internals/verify.js";
@@ -12,7 +14,17 @@ import {
   stdioServers,
 } from "./enterprise.js";
 import { gatewayDoc } from "./gateway.js";
+import {
+  existingMcpTomlNames,
+  isExternalMcp,
+  mcpConfigAbs,
+  mcpEntries,
+  mcpTomlBody,
+} from "./render.js";
 import { type McpServer, mcpServers } from "./servers.js";
+
+/** The aih-managed block scope used for Codex's TOML `[mcp_servers.*]` region. */
+const MCP_TOML_SCOPE = "mcp";
 
 /** Commands that resolve/download a package at runtime — unsafe for a true air-gap. */
 const NETWORK_RESOLVERS = new Set(["npx", "uvx", "uv", "bunx", "pnpm", "yarn", "pipx"]);
@@ -187,12 +199,13 @@ async function planMcp(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
     )
     .join(", ");
 
+  const home = homeDir(ctx);
   const actions: Action[] = [];
   const writtenPaths = new Set<string>();
   for (const cli of clis) {
     const e = entry(cli);
     const p = e.mcp;
-    if (p.support === "absent" || !p.configPath) {
+    if (p.support === "absent" || !p.configPath || !p.configKey) {
       actions.push(
         doc(
           `${e.label}: no MCP config`,
@@ -201,23 +214,51 @@ async function planMcp(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
       );
       continue;
     }
-    if (p.support === "native" && p.configKey) {
-      if (writtenPaths.has(p.configPath)) continue; // tools sharing a path (claude + kimi → .mcp.json)
-      writtenPaths.add(p.configPath);
-      // Preserve the exact `.mcp.json` describe (golden) for the standard path.
-      const describe =
-        p.configPath === ".mcp.json"
-          ? scope === "remote"
-            ? "Configure project-aware servers + the opt-in hosted enterprise toolset (remote scope), merged into any existing .mcp.json"
-            : `Configure project-aware MCP servers (${scope} scope)${tailored ? ` — ${tailored}` : ""}, merged into any existing .mcp.json`
-          : `${e.label} MCP servers (${scope} scope) → ${p.configPath}, merged into any existing`;
-      actions.push(writeJson(p.configPath, { [p.configKey]: servers }, describe, { merge: true }));
-    } else {
+    if (p.support !== "native") {
+      // A tool aih cannot yet render correctly — emit exact guidance, never a wrong file.
       actions.push(
         doc(
           `Configure MCP for ${e.label} (${p.configFormat}, ${p.configPath})`,
           mcpGuidanceDoc(e, serverNames),
         ),
+      );
+      continue;
+    }
+    // A writable tool: render the server map into ITS shape and write the config.
+    // A `~/home` path is written external (outside the repo root); merge preserves
+    // the user's other settings (Gemini/Zed settings.json carry unrelated keys).
+    const external = isExternalMcp(p.configPath);
+    const writePath = external ? mcpConfigAbs(home, p.configPath) : p.configPath;
+    if (writtenPaths.has(writePath)) continue; // tools sharing a path (claude + kimi → .mcp.json)
+    writtenPaths.add(writePath);
+    const where = external
+      ? ` ${p.configPath} (global — affects all your projects)`
+      : ` ${p.configPath}`;
+    // Preserve the exact `.mcp.json` describe (golden) for the standard path.
+    const describe =
+      p.configPath === ".mcp.json"
+        ? scope === "remote"
+          ? "Configure project-aware servers + the opt-in hosted enterprise toolset (remote scope), merged into any existing .mcp.json"
+          : `Configure project-aware MCP servers (${scope} scope)${tailored ? ` — ${tailored}` : ""}, merged into any existing .mcp.json`
+        : `${e.label} MCP servers (${scope} scope) →${where}, merged into any existing`;
+    if (p.configFormat === "toml") {
+      // Codex TOML: fold the `[mcp_servers.*]` tables into an aih-managed region of
+      // config.toml, preserving the user's other config. Read existing at plan time.
+      const abs = external ? writePath : join(ctx.root, p.configPath);
+      const existing = readIfExists(abs) ?? "";
+      // Never redefine a server the user already declared as a top-level table — a
+      // duplicate `[mcp_servers.X]` is a TOML PARSE ERROR that would break their whole
+      // config. The user's own servers win; aih's block adds only what's absent.
+      const have = existingMcpTomlNames(existing, MCP_TOML_SCOPE);
+      const fresh = Object.fromEntries(Object.entries(servers).filter(([n]) => !have.has(n)));
+      const merged = upsertTextBlock(existing, MCP_TOML_SCOPE, mcpTomlBody(fresh));
+      actions.push(writeText(writePath, merged, describe, { external }));
+    } else {
+      actions.push(
+        writeJson(writePath, { [p.configKey]: mcpEntries(cli, servers) }, describe, {
+          merge: true,
+          external,
+        }),
       );
     }
   }

@@ -40,15 +40,19 @@ function resolvePath(ctx: PlanContext, p: string): string {
 }
 
 /**
- * Does the plan stage any file write? The dirty-worktree preflight only guards the
- * mutating surface — `write`/`envblock` actions and `doc` actions that carry a
- * path. Exec/probe/digest/path-less doc plans (e.g. a bare `aih report`) write
- * nothing, so they bypass the gate even under `--apply`.
+ * Does the plan stage a write to a file INSIDE the repo? The dirty-worktree preflight
+ * guards the REPO's uncommitted work, so it only counts repo-scoped mutations —
+ * `write`/`doc` actions whose path lands in the root, plus `envblock`. An `external`
+ * write (a `~/home`/system file: a global tool config like `~/.codex/config.toml`, a
+ * PEM bundle) is NOT part of the repo worktree, so it can't clobber uncommitted repo
+ * work and never trips the gate — `aih mcp --apply --cli codex` wiring only the global
+ * Codex config is allowed on a dirty repo, while a repo-local `.mcp.json` write still
+ * gates. Exec/probe/digest/path-less doc plans write nothing and bypass the gate too.
  */
 function mutatesFiles(actions: Action[]): boolean {
   return actions.some(
     (a) =>
-      a.kind === "write" ||
+      (a.kind === "write" && a.external !== true) ||
       a.kind === "envblock" ||
       (a.kind === "doc" && typeof a.path === "string"),
   );
