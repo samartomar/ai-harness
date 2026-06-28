@@ -14,6 +14,50 @@ import {
 import { dirname } from "node:path";
 import { FsTxnError } from "../errors.js";
 
+/**
+ * Transient Windows file-lock error codes. On Windows an antivirus scanner or the
+ * Search indexer opens a file the instant it appears, so a `copyFile`/`rename`/
+ * `read` issued microseconds after a write can fail with one of these and then
+ * succeed on the very next attempt — the "failed on CI, passed on a re-run"
+ * signature. POSIX does not raise these for our in-process, same-volume sync
+ * operations, so {@link retryTransient} is a no-op there.
+ */
+const TRANSIENT_LOCK_CODES = new Set(["EBUSY", "EPERM", "EACCES"]);
+const MAX_LOCK_RETRIES = 10;
+
+/** Sleep the current thread synchronously (every fs call below is sync). */
+function sleepSync(ms: number): void {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+/**
+ * Run a synchronous fs operation, retrying ONLY the transient Windows lock codes
+ * in {@link TRANSIENT_LOCK_CODES} with a short bounded backoff (~0.5s worst case).
+ * Any other error — `EEXIST` from an exclusive create, a genuine `EACCES` on a
+ * locked-down path that never clears — is re-thrown on its first occurrence, so
+ * this absorbs the sub-millisecond scanner window without ever masking a real
+ * failure. The retry preserves the caller's atomicity/rollback guarantees: it
+ * re-issues the same single syscall, nothing more.
+ *
+ * Exported for direct unit testing — the FS-level retry is exercised through the
+ * real filesystem elsewhere, but a transient lock cannot be reproduced on demand,
+ * so the retry/give-up/passthrough contract is pinned here.
+ */
+export function retryTransient<T>(op: () => T): T {
+  let delayMs = 1;
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return op();
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      const transient = code !== undefined && TRANSIENT_LOCK_CODES.has(code);
+      if (!transient || attempt >= MAX_LOCK_RETRIES) throw err;
+      sleepSync(delayMs);
+      delayMs = Math.min(delayMs * 2, 100);
+    }
+  }
+}
+
 interface StagedWrite {
   path: string;
   contents: string;
@@ -77,11 +121,14 @@ export class FsTransaction {
         let backup: string | undefined;
         if (existed) {
           backup = backupPath;
-          copyFileSync(w.path, backupPath, fsConstants.COPYFILE_EXCL);
+          // Reads the just-written source; retry the transient Windows scanner lock.
+          retryTransient(() => copyFileSync(w.path, backupPath, fsConstants.COPYFILE_EXCL));
         }
-        writeFileSync(tmpPath, w.contents, { encoding: "utf8", flag: "wx" });
+        retryTransient(() => writeFileSync(tmpPath, w.contents, { encoding: "utf8", flag: "wx" }));
         if (w.mode !== undefined) chmodSync(tmpPath, w.mode);
-        renameSync(tmpPath, w.path);
+        // Renaming OVER the existing target is the classic Windows flake: the dest
+        // handle may be briefly held by AV/the indexer right after the prior write.
+        retryTransient(() => renameSync(tmpPath, w.path));
         applied.push({ path: w.path, backup, created: !existed });
       }
       return {
@@ -142,5 +189,8 @@ function rollback(applied: AppliedWrite[]): void {
 
 /** Read a file's text, or `undefined` if it does not exist. */
 export function readIfExists(path: string): string | undefined {
-  return existsSync(path) ? readFileSync(path, "utf8") : undefined;
+  // A read issued right after the file was written (e.g. a second `executePlan`
+  // re-reading what the first just laid down) hits the same transient Windows lock
+  // window as the write side, so it gets the same bounded retry.
+  return existsSync(path) ? retryTransient(() => readFileSync(path, "utf8")) : undefined;
 }

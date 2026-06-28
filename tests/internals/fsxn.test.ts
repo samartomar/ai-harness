@@ -2,7 +2,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSy
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { FsTransaction, readIfExists } from "../../src/internals/fsxn.js";
+import { FsTransaction, readIfExists, retryTransient } from "../../src/internals/fsxn.js";
 
 let dir: string;
 beforeEach(() => {
@@ -113,5 +113,43 @@ describe("FsTransaction", () => {
 
   it("readIfExists returns undefined for a missing file", () => {
     expect(readIfExists(join(dir, "nope"))).toBeUndefined();
+  });
+});
+
+/** A NodeJS errno error carrying a syscall `code` (what fs throws on a lock). */
+const errno = (code: string): NodeJS.ErrnoException => Object.assign(new Error(code), { code });
+
+describe("retryTransient", () => {
+  it("retries a transient Windows lock code, then returns the value", () => {
+    let calls = 0;
+    const out = retryTransient(() => {
+      calls += 1;
+      if (calls < 3) throw errno("EBUSY"); // AV/indexer holds the handle, briefly
+      return "ok";
+    });
+    expect(out).toBe("ok");
+    expect(calls).toBe(3); // failed twice, succeeded on the third
+  });
+
+  it("re-throws a non-transient error on the first attempt (never masks a real failure)", () => {
+    let calls = 0;
+    expect(() =>
+      retryTransient(() => {
+        calls += 1;
+        throw errno("EEXIST"); // exclusive-create collision — not a transient lock
+      }),
+    ).toThrow("EEXIST");
+    expect(calls).toBe(1); // no retry
+  });
+
+  it("gives up after the bounded retry budget and throws the transient error", () => {
+    let calls = 0;
+    expect(() =>
+      retryTransient(() => {
+        calls += 1;
+        throw errno("EACCES");
+      }),
+    ).toThrow("EACCES");
+    expect(calls).toBe(10); // MAX_LOCK_RETRIES — bounded, never an infinite loop
   });
 });
