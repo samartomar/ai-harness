@@ -32,6 +32,13 @@ export interface LintRuleCtx {
   plannedPaths: ReadonlySet<string>;
   /** existsSync(join(root, relPath)) — for refs to pre-existing repo files. */
   fileExists: (relPath: string) => boolean;
+  /**
+   * The canon context dir (e.g. `ai-coding`). `canon-ref-resolves` enforces
+   * resolution only for CANON references — bare basenames or paths under this dir.
+   * A slashed ref pointing elsewhere (`apps/x`, `.claude/y`, `src/z`) is the doc
+   * citing repo evidence, not a broken canon link, so it is left alone.
+   */
+  contextDir: string;
 }
 
 export interface LintRule {
@@ -279,6 +286,12 @@ export const RULES: LintRule[] = [
           return;
         }
         if (isPlaceholderRef(ref)) return; // syntax-doc placeholder / glob, not a real path
+        // Only CANON refs are enforced: a bare basename (`RULE_ROUTER.md`) or a path
+        // under the context dir. A slashed ref elsewhere (`apps/web/package.json`,
+        // `.claude/rules/x.mdc`) is the doc citing repo evidence — adopted/migrated
+        // user content does this constantly — not a broken canon link to police.
+        const refNorm = normalizeRef(ref);
+        if (refNorm.includes("/") && !refNorm.startsWith(`${ctx.contextDir}/`)) return;
         if (!refResolves(ref, ctx)) {
           out.push({
             ruleId: "canon-ref-resolves",

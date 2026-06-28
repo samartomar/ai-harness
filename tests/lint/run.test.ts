@@ -111,3 +111,25 @@ describe("canonLintCheck (doctor surface)", () => {
     expect(res.detail).toContain("skeleton");
   });
 });
+
+describe("canonLintCheck — scope: only aih-authored files", () => {
+  it("ignores a dangling ref in USER content but catches one in an aih-authored doc", () => {
+    // aih-authored router with a clean ref → fine.
+    put("ai-coding/RULE_ROUTER.md", "# Router\n\nRead `ai-coding/rules/agent-behavior-core.md`.\n");
+    put("ai-coding/rules/agent-behavior-core.md", "# Core\n\nMUST verify.\n");
+    // USER content citing real repo files / tool-native paths → NOT policed.
+    put(
+      "ai-coding/agents/security.md",
+      "Honor `.claude/rules/x.mdc` and `apps/web/package.json` and `tsconfig.app.json`.\n",
+    );
+    put("ai-coding/playbooks/p.md", "See `RULE_INDEX.md` and `graphify-out/graph.json`.\n");
+    expect(canonLintCheck(tmp, "ai-coding").verdict).toBe("pass");
+  });
+
+  it("still fails when an aih-authored doc has a broken canon link", () => {
+    put("ai-coding/RULE_ROUTER.md", "# Router\n\nRead `ai-coding/rules/MISSING.md`.\n");
+    const check = canonLintCheck(tmp, "ai-coding");
+    expect(check.verdict).toBe("fail");
+    expect(check.code).toBe("canon.lint-failed");
+  });
+});

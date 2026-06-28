@@ -246,7 +246,7 @@ async function bootstrapAiPlan(ctx: PlanContext): Promise<Plan> {
       source: `${bootloaderPreamble(relPath, dir, repoName)}\n\n${block.body}`,
     });
   }
-  actions.push(...lintProbes(generated, plannedPaths, ctx.root));
+  actions.push(...lintProbes(generated, plannedPaths, ctx.root, dir));
 
   // If --detect found nothing and we defaulted to claude, say so plainly.
   if (detectFellBack) {
