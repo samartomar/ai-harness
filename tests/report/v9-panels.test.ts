@@ -12,7 +12,9 @@ import {
   driftDigest,
   eccInventoryDigest,
   mcpServersDigest,
+  outcomeDeltasDigest,
   supportDigest,
+  winsDigest,
 } from "../../src/report/v9-panels.js";
 import type { SupportTemplate } from "../../src/support/render.js";
 
@@ -235,5 +237,72 @@ describe("coherenceDigest", () => {
     expect(data.cells.codex?.[0]).toBe("ok");
     expect(typeof data.agreementPct).toBe("number");
     expect(data.agreementPct).toBeGreaterThanOrEqual(50);
+  });
+});
+
+/** Write run-ledger rows to `.aih/runs/2026-06.jsonl`. */
+function ledger(...rows: Array<Record<string, unknown>>): void {
+  put(".aih/runs/2026-06.jsonl", `${rows.map((r) => JSON.stringify(r)).join("\n")}\n`);
+}
+
+interface OutcomeData {
+  leadTimeDays: number;
+  reworkRatePct: number;
+  mttr: { driftHours: number; externalCheckDays: number };
+}
+
+describe("outcomeDeltasDigest", () => {
+  it("returns undefined with fewer than two ledger samples", async () => {
+    ledger({ capability: "report", status: "failed", finishedAt: "2026-06-01T00:00:00Z" });
+    expect(await outcomeDeltasDigest(ctx())).toBeUndefined();
+  });
+
+  it("computes MTTR from a broken→green run-ledger transition", async () => {
+    ledger(
+      { capability: "report", status: "failed", finishedAt: "2026-06-01T00:00:00Z" },
+      { capability: "report", status: "success", finishedAt: "2026-06-01T03:00:00Z" },
+      { capability: "heal", status: "failed", finishedAt: "2026-06-02T00:00:00Z" },
+      { capability: "heal", status: "success", finishedAt: "2026-06-03T00:00:00Z" },
+    );
+    const data = (await outcomeDeltasDigest(ctx()))?.data as OutcomeData;
+    expect(data.mttr.driftHours).toBe(3); // report: 3h broken→green
+    expect(data.mttr.externalCheckDays).toBe(1); // heal: 24h → 1 day
+  });
+});
+
+interface WinsData {
+  items: Array<{ name: string; status: string }>;
+  cleared: number;
+  runs: number;
+  openOverTime: number[];
+}
+
+describe("winsDigest", () => {
+  it("returns undefined when heal has never run", () => {
+    ledger({ capability: "report", status: "success", startedAt: "2026-06-01T00:00:00Z" });
+    expect(winsDigest(ctx())).toBeUndefined();
+  });
+
+  it("summarizes the heal remediation ledger (cumulative + per-scope rows)", () => {
+    ledger(
+      {
+        capability: "heal",
+        status: "failed",
+        startedAt: "2026-06-01T00:00:00Z",
+        verification: { pass: 2, fail: 2, skip: 0 },
+      },
+      {
+        capability: "heal",
+        status: "success",
+        startedAt: "2026-06-03T00:00:00Z",
+        verification: { pass: 4, fail: 0, skip: 0 },
+      },
+    );
+    const data = winsDigest(ctx())?.data as WinsData;
+    expect(data.items).toHaveLength(4);
+    expect(data.items.every((i) => i.status === "fixed")).toBe(true);
+    expect(data.cleared).toBe(4);
+    expect(data.runs).toBe(2);
+    expect(data.openOverTime).toEqual([2, 0]);
   });
 });

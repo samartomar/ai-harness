@@ -183,6 +183,32 @@ function coherence(): DigestAction {
   });
 }
 
+function outcome(): DigestAction {
+  return digest("Outcome deltas — MTTR 3.2h drift / 1.2d external", "body", {
+    leadTimeDays: 1.8,
+    reworkRatePct: 6,
+    mttr: { driftHours: 3.2, externalCheckDays: 1.2 },
+  });
+}
+
+function wins(): DigestAction {
+  return digest("Remediation — 4 cleared across 12 runs", "body", {
+    items: [
+      {
+        name: "Certificate trust chain",
+        scope: "certs",
+        status: "fixed",
+        detail: "CA",
+        when: "3d",
+      },
+    ],
+    cleared: 4,
+    runs: 12,
+    since: "Jun 1",
+    openOverTime: [5, 4, 2, 0],
+  });
+}
+
 const ALL = [
   scorecard(),
   bloat(),
@@ -324,6 +350,25 @@ describe("buildAihDataV9 — Phase B capability flips", () => {
     const view = assembleViewV9(d, V9_DEMO);
     expect(view.sections["sec-drift"]?.html).not.toContain("span-7 preview");
     expect(view.sections["sec-drift"]?.html).toContain("88% agree");
+  });
+
+  it("flips outcome deltas to live in the period panel", () => {
+    const d = buildAihDataV9([...ALL, outcome()]);
+    expect(d.gates["cap-outcome"]).toBe("live");
+    expect(d.period?.outcomeDeltas?.leadTimeDays).toBe(1.8);
+    const view = assembleViewV9(d, V9_DEMO);
+    expect(view.sections["sec-period"]?.html).not.toContain("span-5 preview");
+    expect(view.sections["sec-period"]?.html).toContain("1.8 d");
+  });
+
+  it("flips the wins ledger to live from the remediation digest", () => {
+    const d = buildAihDataV9([...ALL, wins()]);
+    expect(d.gates["sec-wins"]).toBe("live");
+    expect(d.wins?.cleared).toBe(4);
+    const view = assembleViewV9(d, V9_DEMO);
+    expect(view.sections["sec-wins"]?.state).toBe("live");
+    expect(view.sections["sec-wins"]?.html).toContain("Certificate trust chain");
+    expect(view.sections["sec-wins"]?.html).not.toContain("run <code>aih heal</code>");
   });
 });
 

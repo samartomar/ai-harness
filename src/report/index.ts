@@ -291,7 +291,7 @@ async function reportPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
         // v9 binds extra v9-only digests (drift, MCP servers/egress, support) so the
         // shared localPanels — and thus legacy/v4 output — stay byte-identical.
         const extra = [
-          ...v9ExtraDigests(ctx),
+          ...(await v9ExtraDigests(ctx)),
           supportDigest(reportSupportTemplates(ctx, advisoryChecks)),
         ];
         content = reportHtmlV9(built.title, [...built.digests, ...extra], { refresh, demo });

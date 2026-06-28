@@ -30,9 +30,11 @@ import type {
   V9Drift,
   V9Hero,
   V9Mcp,
+  V9OutcomeDeltas,
   V9Quality,
   V9Support,
   V9View,
+  V9Wins,
 } from "./v9-types.js";
 
 /**
@@ -495,6 +497,52 @@ function buildCoherence(digests: DigestAction[]): V9Coherence | undefined {
   return { clis: strs(c.clis), dims: strs(c.dims), agreementPct: numOr(c.agreementPct, 0), cells };
 }
 
+/** §3 outcome deltas / MTTR (from the v9-only "Outcome deltas" digest), else undefined. */
+function buildOutcome(digests: DigestAction[]): V9OutcomeDeltas | undefined {
+  const o = bag(digests, "Outcome deltas");
+  if (!o) return undefined;
+  const m = (o.mttr as { driftHours?: unknown; externalCheckDays?: unknown }) ?? {};
+  return {
+    leadTimeDays: numOr(o.leadTimeDays, 0),
+    reworkRatePct: numOr(o.reworkRatePct, 0),
+    mttr: { driftHours: numOr(m.driftHours, 0), externalCheckDays: numOr(m.externalCheckDays, 0) },
+  };
+}
+
+interface WinItemRaw {
+  name?: unknown;
+  scope?: unknown;
+  status?: unknown;
+  detail?: unknown;
+  when?: unknown;
+}
+
+/** §4 wins / remediation ledger (from the v9-only "Remediation" digest), else undefined. */
+function buildWins(digests: DigestAction[]): V9Wins | undefined {
+  const w = bag(digests, "Remediation");
+  if (!w) return undefined;
+  const items = (Array.isArray(w.items) ? (w.items as WinItemRaw[]) : []).map((i) => ({
+    name: String(i.name ?? ""),
+    scope: String(i.scope ?? ""),
+    status: (i.status === "fixed" || i.status === "broken" ? i.status : "na") as
+      | "fixed"
+      | "broken"
+      | "na",
+    detail: String(i.detail ?? ""),
+    when: String(i.when ?? ""),
+  }));
+  const openOverTime = Array.isArray(w.openOverTime)
+    ? (w.openOverTime as unknown[]).filter((n): n is number => typeof n === "number")
+    : [];
+  return {
+    items,
+    cleared: numOr(w.cleared, 0),
+    runs: numOr(w.runs, 0),
+    since: String(w.since ?? ""),
+    openOverTime,
+  };
+}
+
 // ── build ─────────────────────────────────────────────────────────────────────
 
 /** Set every section + capability gate, defaulting to "empty". */
@@ -551,10 +599,19 @@ export function buildAihDataV9(digests: DigestAction[]): AihDataV9 {
   if (coherence) {
     drift = drift ? { ...drift, coherence } : { drifted: [], synced: [], coherence };
   }
+  // §3/§4 — outcome deltas ride in the period panel; wins is its own section.
+  const outcome = buildOutcome(digests);
+  const wins = buildWins(digests);
+  const period: AihDataV9["period"] | undefined = outcome
+    ? {
+        trends: { wiring: [], perTurnCtxPct: [], driftIncidents: [], openActions: [] },
+        outcomeDeltas: outcome,
+      }
+    : undefined;
 
   if (hero) gates["sec-hero"] = "live";
   gates["sec-actions"] = "live"; // always present (honest empty state when clean)
-  gates["sec-wins"] = "empty"; // wired in Phase B §4 (heal + run ledger)
+  gates["sec-wins"] = wins ? "live" : "empty"; // §4: live from the heal/run ledger
   if (context) gates["sec-context"] = "live";
   if (activity) gates["sec-activity"] = "live";
   if (quality) gates["sec-quality"] = "live";
@@ -567,12 +624,13 @@ export function buildAihDataV9(digests: DigestAction[]): AihDataV9 {
   // Capability sub-cards go live once their v9-only digest lands.
   gates["cap-ecc"] = ecc ? "live" : "preview";
   gates["cap-coherence"] = coherence ? "live" : "preview";
-  gates["cap-outcome"] = "preview"; // wired in Phase B §3
+  gates["cap-outcome"] = outcome ? "live" : "preview"; // §3
   gates["cap-usage"] = "preview"; // per-tool usage hooks not wired
 
   return {
     ...(hero ? { hero } : {}),
     actions,
+    ...(wins ? { wins } : {}),
     ...(context ? { context } : {}),
     ...(activity ? { activity } : {}),
     ...(quality ? { quality } : {}),
@@ -580,6 +638,7 @@ export function buildAihDataV9(digests: DigestAction[]): AihDataV9 {
     ...(mcp ? { mcp } : {}),
     ...(adoption ? { adoption } : {}),
     ...(support ? { support } : {}),
+    ...(period ? { period } : {}),
     gates,
   };
 }

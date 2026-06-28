@@ -9,6 +9,7 @@ import {
 import { eccLanguages } from "../ecc/select.js";
 import { SUPPORTED_CLIS } from "../internals/clis.js";
 import { readIfExists } from "../internals/fsxn.js";
+import { gitRead } from "../internals/git.js";
 import { extractManagedBlock } from "../internals/markers.js";
 import { type DigestAction, digest, type PlanContext } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
@@ -282,16 +283,196 @@ export function coherenceDigest(ctx: PlanContext): DigestAction | undefined {
   });
 }
 
+// ── run ledger (shared by §3 outcome/MTTR and §4 wins) ─────────────────────────
+
+interface LedgerRow {
+  capability?: string;
+  status?: string;
+  startedAt?: string;
+  finishedAt?: string;
+  verification?: { pass?: number; fail?: number; skip?: number };
+}
+
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/** All run-ledger rows under `.aih/runs/*.jsonl`, oldest first (empty when absent). */
+function readLedger(root: string): LedgerRow[] {
+  const dirAbs = join(root, ".aih", "runs");
+  let files: string[];
+  try {
+    files = readdirSync(dirAbs)
+      .filter((f) => f.endsWith(".jsonl"))
+      .sort();
+  } catch {
+    return [];
+  }
+  const out: LedgerRow[] = [];
+  for (const f of files) {
+    const text = readIfExists(join(dirAbs, f));
+    if (text === undefined) continue;
+    for (const line of text.split("\n")) {
+      const t = line.trim();
+      if (!t) continue;
+      try {
+        out.push(JSON.parse(t) as LedgerRow);
+      } catch {
+        // skip malformed ledger lines
+      }
+    }
+  }
+  return out.sort((a, b) => String(a.startedAt ?? "").localeCompare(String(b.startedAt ?? "")));
+}
+
+/** "Jun 1" for a ledger timestamp (absolute, deterministic from the data). */
+function sinceLabel(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  return `${MONTHS[d.getUTCMonth()] ?? "?"} ${d.getUTCDate()}`;
+}
+
+function isFail(status: string | undefined): boolean {
+  return status === "failed" || status === "error" || status === "partial";
+}
+
+/**
+ * §3 Outcome deltas / MTTR — the honest "did productivity improve" measures. MTTR
+ * (time a failing run stayed broken before a later success) comes from the run ledger;
+ * rework rate + lead time come from the git seam. Gated on the ledger having ≥2
+ * samples (the capability's real signal); otherwise undefined → panel PREVIEW.
+ */
+export async function outcomeDeltasDigest(ctx: PlanContext): Promise<DigestAction | undefined> {
+  const ledger = readLedger(ctx.root);
+  if (ledger.length < 2) return undefined;
+
+  // MTTR per failure class: walk each capability's runs, measure failed→success gaps.
+  const byCap = new Map<string, LedgerRow[]>();
+  for (const r of ledger) {
+    const cap = r.capability ?? "";
+    const arr = byCap.get(cap) ?? [];
+    arr.push(r);
+    byCap.set(cap, arr);
+  }
+  const driftGaps: number[] = [];
+  const externalGaps: number[] = [];
+  for (const [cap, rows] of byCap) {
+    let failedAt: number | undefined;
+    for (const r of rows) {
+      const ts = new Date(r.finishedAt ?? r.startedAt ?? "").getTime();
+      if (Number.isNaN(ts)) continue;
+      if (isFail(r.status)) {
+        if (failedAt === undefined) failedAt = ts;
+      } else if (r.status === "success" && failedAt !== undefined) {
+        const hours = (ts - failedAt) / 3_600_000;
+        (cap.includes("heal") ? externalGaps : driftGaps).push(hours);
+        failedAt = undefined;
+      }
+    }
+  }
+  const avg = (xs: number[]): number =>
+    xs.length === 0 ? 0 : Math.round((xs.reduce((a, b) => a + b, 0) / xs.length) * 10) / 10;
+  const driftHours = avg(driftGaps);
+  const externalCheckDays = Math.round((avg(externalGaps) / 24) * 10) / 10;
+
+  // Rework / revert rate + lead time from git (best-effort; 0 when unavailable).
+  const log = await gitRead(ctx, ["log", "--since=30.days.ago", "--format=%s"]);
+  const msgs = (log ?? "").split("\n").filter(Boolean);
+  const reverts = msgs.filter((m) =>
+    /^revert\b|\brevert\b|\bhotfix\b|\brollback\b/i.test(m),
+  ).length;
+  const reworkRatePct = msgs.length > 0 ? Math.round((reverts / msgs.length) * 100) : 0;
+  const leadTimeDays = await leadTime(ctx);
+
+  const body = lines(
+    "Outcome deltas (DORA-flavored), from the run ledger + git seam:",
+    "",
+    `  lead time ${leadTimeDays}d · rework ${reworkRatePct}% · drift MTTR ${driftHours}h · external MTTR ${externalCheckDays}d`,
+  );
+  return digest(
+    `Outcome deltas — MTTR ${driftHours}h drift / ${externalCheckDays}d external`,
+    body,
+    {
+      leadTimeDays,
+      reworkRatePct,
+      mttr: { driftHours, externalCheckDays },
+    },
+  );
+}
+
+/** Average lead time (days) from a branch's first commit to its merge, over recent merges. */
+async function leadTime(ctx: PlanContext): Promise<number> {
+  const merges =
+    (await gitRead(ctx, ["log", "--merges", "--format=%H %ct", "-n", "8", "HEAD"])) ?? "";
+  const spans: number[] = [];
+  for (const line of merges.split("\n").filter(Boolean)) {
+    const [sha, mct] = line.split(" ");
+    if (!sha || !mct) continue;
+    const branch = await gitRead(ctx, ["log", "--format=%ct", `${sha}^1..${sha}^2`]);
+    const times = (branch ?? "").split("\n").filter(Boolean).map(Number);
+    const oldest = times[times.length - 1];
+    if (oldest && Number.isFinite(oldest)) spans.push((Number(mct) - oldest) / 86_400);
+  }
+  return spans.length === 0
+    ? 0
+    : Math.round((spans.reduce((a, b) => a + b, 0) / spans.length) * 10) / 10;
+}
+
+/** The four host-runtime blockers `aih heal` clears, in dependency order. */
+const HEAL_SCOPES = [
+  { name: "Certificate trust chain", scope: "certs", detail: "corporate CA / TLS trust" },
+  { name: "npm runtime", scope: "npm", detail: "npm / node runtime resolves" },
+  { name: "PATH resolution", scope: "path", detail: "rg / fd / jq resolve" },
+  { name: "MCP pre-flight", scope: "mcp", detail: "npx can launch MCP servers" },
+] as const;
+
+/**
+ * §4 Wins / remediation ledger — what `aih heal` unblocked, from the run ledger
+ * (network-free: no inline heal probe). Cumulative (cleared / runs / since /
+ * open-over-time) is real from the ledger; the per-item rows show the four known heal
+ * scopes, marked fixed only when the latest heal run was a clean success (richer
+ * per-check detail needs heal to persist its result). Undefined when heal never ran.
+ */
+export function winsDigest(ctx: PlanContext): DigestAction | undefined {
+  const heal = readLedger(ctx.root).filter((r) => r.capability === "heal");
+  if (heal.length === 0) return undefined;
+  const last = heal[heal.length - 1];
+  const allGreen = last?.status === "success" && (last?.verification?.fail ?? 0) === 0;
+  const cleared = last?.verification?.pass ?? (allGreen ? HEAL_SCOPES.length : 0);
+  const items = HEAL_SCOPES.map((s) => ({
+    name: s.name,
+    scope: s.scope,
+    status: (allGreen ? "fixed" : "na") as "fixed" | "broken" | "na",
+    detail: s.detail,
+    when: "",
+  }));
+  const openOverTime = heal.map((r) => r.verification?.fail ?? 0);
+  const since = sinceLabel(heal[0]?.startedAt ?? "");
+  const body = lines(
+    `Remediation ledger — ${cleared} blocker(s) cleared across ${heal.length} heal run(s) since ${since}.`,
+    "",
+    ...items.map((i) => `  ${i.status === "fixed" ? "✓" : "·"} ${i.name} (${i.status})`),
+  );
+  return digest(`Remediation — ${cleared} cleared across ${heal.length} runs`, body, {
+    items,
+    cleared,
+    runs: heal.length,
+    since,
+    openOverTime,
+  });
+}
+
 /**
  * The v9-only extra digests, appended to the report's digests on the `--v9` path.
- * Phase A: drift + MCP servers/egress. Phase B: ECC inventory + coherence (support is
- * built from the caller's already-rendered templates and appended separately).
+ * Phase A: drift + MCP servers/egress. Phase B: ECC inventory, coherence, outcome
+ * deltas/MTTR and the wins ledger (support is built from the caller's already-rendered
+ * templates and appended separately). Async because the outcome digest reads git.
  */
-export function v9ExtraDigests(ctx: PlanContext): DigestAction[] {
+export async function v9ExtraDigests(ctx: PlanContext): Promise<DigestAction[]> {
   return [
     driftDigest(ctx),
     mcpServersDigest(ctx),
     eccInventoryDigest(ctx),
     coherenceDigest(ctx),
+    await outcomeDeltasDigest(ctx),
+    winsDigest(ctx),
   ].filter((d): d is DigestAction => d !== undefined);
 }
