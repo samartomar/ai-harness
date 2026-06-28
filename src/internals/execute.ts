@@ -6,7 +6,7 @@ import { upsertManagedBlock } from "./envfile.js";
 import { FsTransaction, readIfExists } from "./fsxn.js";
 import { deepMerge, parseJsoncText } from "./merge.js";
 import type { Action, EnvBlockAction, ExecAction, Plan, PlanContext, WriteAction } from "./plan.js";
-import { ensureTrailingNewline, indent, jsonFile } from "./render.js";
+import { ensureTrailingNewline, indent, jsonFile, stripTrailingNewlines } from "./render.js";
 import { VerificationReport } from "./verify.js";
 import { isWorktreeDirty } from "./worktree-gate.js";
 
@@ -325,7 +325,7 @@ export function summarizeResult(result: PlanResult): string {
     out.push(`  [digest] — ${dg.describe}`);
     // Already redacted at the digest-collection chokepoint in executePlan, so the
     // text here (and in `--json`) is consistently masked — no re-redaction needed.
-    out.push(indent(dg.text.replace(/\n+$/, ""), 2));
+    out.push(indent(stripTrailingNewlines(dg.text), 2));
   }
   for (const e of result.execs) {
     const status = e.ran ? ` (exit ${e.code})` : " (run with --apply)";

@@ -1,5 +1,5 @@
 import type { EnvShell } from "../platform/base.js";
-import { beginMarker, endMarker } from "./render.js";
+import { beginMarker, endMarker, stripTrailingNewlines } from "./render.js";
 
 export interface EnvVar {
   key: string;
@@ -51,7 +51,7 @@ export function upsertManagedBlock(
   if (pattern.test(normalized)) {
     next = normalized.replace(pattern, block);
   } else {
-    const trimmed = normalized.replace(/\n+$/, "");
+    const trimmed = stripTrailingNewlines(normalized);
     next = trimmed.length > 0 ? `${trimmed}\n\n${block}\n` : `${block}\n`;
   }
   if (!next.endsWith("\n")) next += "\n";

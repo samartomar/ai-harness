@@ -1,6 +1,7 @@
 import { join } from "node:path";
 import { readIfExists } from "./fsxn.js";
 import { type WriteAction, writeText } from "./plan.js";
+import { stripTrailingNewlines } from "./render.js";
 
 /** Patterns the harness's own generated files match — never meant to be committed. */
 const AIH_PATTERNS = ["*.aih.bak", "*.aih.tmp", ".aih/"] as const;
@@ -22,7 +23,7 @@ export function aihIgnoreWrite(root: string): WriteAction {
   } else {
     const lines = existing.split(/\r?\n/);
     const haveAll = AIH_PATTERNS.every((p) => lines.includes(p));
-    content = haveAll ? existing : `${existing.replace(/\n*$/, "")}\n\n${block}\n`;
+    content = haveAll ? existing : `${stripTrailingNewlines(existing)}\n\n${block}\n`;
   }
   return writeText(
     ".gitignore",

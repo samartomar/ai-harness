@@ -12,6 +12,8 @@
  * This is the markdown analogue of {@link upsertManagedBlock} in envfile.ts.
  */
 
+import { stripTrailingNewlines } from "./render.js";
+
 export interface ManagedBlock {
   /** Stable marker id, e.g. "ai-canonical:shared". */
   marker: string;
@@ -53,7 +55,7 @@ export function mergeManagedBlock(
   const rendered = `${beginLine(block.marker, block.note)}\n\n${block.body}\n\n${endLine(block.marker)}`;
 
   if (existing === undefined) {
-    const head = preamble.replace(/\n+$/, "");
+    const head = stripTrailingNewlines(preamble);
     return `${head}\n\n${rendered}\n`;
   }
 
@@ -65,7 +67,7 @@ export function mergeManagedBlock(
   if (pattern.test(normalized)) {
     next = normalized.replace(pattern, rendered);
   } else {
-    const trimmed = normalized.replace(/\n+$/, "");
+    const trimmed = stripTrailingNewlines(normalized);
     next = trimmed.length > 0 ? `${trimmed}\n\n${rendered}\n` : `${rendered}\n`;
   }
   if (!next.endsWith("\n")) next += "\n";

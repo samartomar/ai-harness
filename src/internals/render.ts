@@ -4,10 +4,24 @@
  * no random ordering, single trailing newline.
  */
 
+/**
+ * Strip trailing newlines in linear time. The idiomatic `/\n+$/` is a
+ * polynomial-ReDoS footgun (CodeQL `js/polynomial-redos`): on a long run of
+ * newlines followed by a non-newline a backtracking engine retries the run from
+ * every start position — O(n²). A reverse scan is provably O(n) and byte-for-byte
+ * identical (only `\n` (U+000A) is stripped, exactly as the old regex did, so
+ * `\r` in a `\r\n` sequence is preserved either way).
+ */
+export function stripTrailingNewlines(text: string): string {
+  let end = text.length;
+  while (end > 0 && text.charCodeAt(end - 1) === 10) end--;
+  return text.slice(0, end);
+}
+
 /** Join parts (strings or string arrays) with newlines; exactly one trailing newline. */
 export function lines(...parts: Array<string | string[]>): string {
   const flat = parts.flat();
-  return `${flat.join("\n").replace(/\n+$/, "")}\n`;
+  return `${stripTrailingNewlines(flat.join("\n"))}\n`;
 }
 
 /** Indent every non-empty line of `text` by `n` spaces. */
@@ -37,7 +51,7 @@ export function jsonFile(value: unknown): string {
 
 /** Ensure exactly one trailing newline. */
 export function ensureTrailingNewline(text: string): string {
-  return `${text.replace(/\n+$/, "")}\n`;
+  return `${stripTrailingNewlines(text)}\n`;
 }
 
 /** Marker that opens an aih-managed region (comment syntax works in sh + PowerShell). */
@@ -52,5 +66,5 @@ export function endMarker(scope: string): string {
 
 /** Wrap `body` in begin/end markers for in-place regeneration. */
 export function managedBlock(scope: string, body: string): string {
-  return `${beginMarker(scope)}\n${body.replace(/\n+$/, "")}\n${endMarker(scope)}`;
+  return `${beginMarker(scope)}\n${stripTrailingNewlines(body)}\n${endMarker(scope)}`;
 }
