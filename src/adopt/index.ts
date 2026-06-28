@@ -1,5 +1,5 @@
 import { basename, resolve } from "node:path";
-import { readAihConfig } from "../config/marker.js";
+import { AIH_CONFIG_FILE, aihConfigJson, readAihConfig } from "../config/marker.js";
 import {
   type Action,
   type CommandSpec,
@@ -7,6 +7,7 @@ import {
   type PlanContext,
   plan,
   probe,
+  writeJson,
 } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
 import { gitCommittedSet } from "../internals/scan-allowlist.js";
@@ -19,6 +20,7 @@ import {
   isAdoptable,
 } from "./classify.js";
 import { type CliArtifact, type CliFootprint, cliFootprint } from "./cli-footprint.js";
+import { migrateCliActions, migrateSkips } from "./migrate-cli.js";
 
 /** Per-bootloader op label for the migration preview (Phase 1: analysis only). */
 function bootloaderLine(b: BootloaderState): string {
@@ -181,6 +183,36 @@ function adoptableProbe(cls: CanonClassification): Check {
   return { name, verdict: "pass", detail: "no foreign canon to adopt" };
 }
 
+/** Parse a comma/space-separated option value into a trimmed, non-empty list. */
+function parseList(value: unknown): string[] {
+  if (typeof value !== "string") return [];
+  return value
+    .split(/[,\s]+/)
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+}
+
+/** Digest note for `--migrate-cli`: what folds into the canon, what is left. */
+function migrateReport(fp: CliFootprint): string {
+  const importing = fp.artifacts.filter((a) => a.disposition === "import").map((a) => a.path);
+  const skipped = migrateSkips(fp);
+  if (importing.length === 0) {
+    return lines("--migrate-cli: no import candidates to migrate.");
+  }
+  const body = [
+    "--migrate-cli (opt-in): folding committed tool-native content INTO the canon —",
+    "rule files become thin pointers (backed up to *.aih.bak); content dirs are copied",
+    "and the originals left for you to retire. Run with `--apply` to perform it.",
+    ...importing.map((p) => `  [migrate] ${p} → ${"ai-coding"}/`),
+  ];
+  if (skipped.length > 0) {
+    body.push(
+      `Left untouched (review manually): ${skipped.join(", ")} — memory stays yours; tool config isn't canon.`,
+    );
+  }
+  return lines(...body);
+}
+
 /**
  * `aih adopt` — converge a repo's EXISTING AI canon onto aih's managed model
  * instead of bulldozing it (the brownfield path `init`/`bootstrap-ai` lack).
@@ -205,10 +237,19 @@ async function adoptPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
   // the team's committed decisions. Both read-only — uncommitted/personal and
   // acknowledged content is shown but never counted, so re-runs don't nag-loop.
   const committed = await gitCommittedSet(ctx);
-  const acknowledged = new Set(cfg?.adopt?.acknowledged ?? []);
+  // `--ack <paths>` adds to the committed acknowledge list (§13.6). Fold the new
+  // paths into the set used for THIS run's footprint too, so the digest immediately
+  // shows them as `[kept]` rather than `[import]`.
+  const ackPaths = parseList(ctx.options.ack);
+  const acknowledged = new Set([...(cfg?.adopt?.acknowledged ?? []), ...ackPaths]);
   const fp = cliFootprint(ctx.root, contextDir, { committed, acknowledged });
 
-  const text = `${migrationReport(cls, repo, contextDir)}\n\n${footprintReport(fp)}`;
+  const migrateCli = ctx.options.migrateCli === true;
+  let text = `${migrationReport(cls, repo, contextDir)}\n\n${footprintReport(fp)}`;
+  if (migrateCli) text += `\n\n${migrateReport(fp)}`;
+  if (ackPaths.length > 0)
+    text += `\n\nAcknowledged (now [kept], not flagged): ${ackPaths.join(", ")}.`;
+
   const actions: Action[] = [
     digest("adopt: canon migration analysis", text, { canon: cls, cliFootprint: fp }),
     probe("adoptable canon", () => adoptableProbe(cls)),
@@ -222,6 +263,24 @@ async function adoptPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
     actions.push(...(await adoptApplyActions(ctx, cls, contextDir)));
   }
 
+  // §13.6 opt-in: fold committed CLI-native content INTO the canon (additive copy +
+  // pointer-convert single rule files; dirs/memory left). Tool-native writes happen
+  // ONLY here, only under this explicit flag.
+  if (migrateCli) actions.push(...migrateCliActions(ctx.root, fp, contextDir));
+
+  // `--ack` records the team decision in the committed marker (merge-write unions
+  // the acknowledged array), so future runs stop flagging those paths.
+  if (ackPaths.length > 0) {
+    actions.push(
+      writeJson(
+        AIH_CONFIG_FILE,
+        { ...aihConfigJson(contextDir, cfg?.targets ?? []), adopt: { acknowledged: ackPaths } },
+        `acknowledge ${ackPaths.length} CLI-native path(s) as intentionally tool-native`,
+        { merge: true },
+      ),
+    );
+  }
+
   return plan("adopt", ...actions);
 }
 
@@ -229,6 +288,17 @@ export const command: CommandSpec = {
   name: "adopt",
   summary:
     "Converge an existing AI canon onto aih's managed model without overwriting your work (brownfield migration)",
-  options: [],
+  options: [
+    {
+      flags: "--migrate-cli",
+      description:
+        "opt-in: fold committed CLI-native content into the canon (copy + pointer-convert rule files; content-verified, backed up)",
+    },
+    {
+      flags: "--ack <paths>",
+      description:
+        "mark CLI-native path(s) (comma-separated) as intentionally tool-native so adopt stops flagging them",
+    },
+  ],
   plan: adoptPlan,
 };

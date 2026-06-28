@@ -7,6 +7,7 @@ function ctx(overrides: Partial<LintRuleCtx> = {}): LintRuleCtx {
     path: "ai-coding/RULE_ROUTER.md",
     plannedPaths: new Set(["ai-coding/RULE_ROUTER.md"]),
     fileExists: () => false,
+    contextDir: "ai-coding",
     ...overrides,
   };
 }
@@ -114,6 +115,21 @@ describe("lint rules — canon-ref-resolves (FAIL tier, the headline rule)", () 
     }
     // A genuine typo in a canon path is still caught.
     expect(findings("Read `ai-coding/RULE_ROUTERR.md`.", "canon-ref-resolves")).toHaveLength(1);
+  });
+
+  it("does not police repo-evidence citations outside the context dir (adopted/migrated content)", () => {
+    // Migrated agents/skills + hand playbooks cite real repo files and tool-native
+    // paths; those are evidence the doc points at, not canon links to resolve.
+    for (const ref of [
+      "See `apps/web/package.json` for the entry.",
+      "Honors `.claude/rules/governance/00-allowlist-access.mdc`.",
+      "Build output in `graphify-out/graph.json`.",
+      "Edit `src/lib/foo.ts` then re-run.",
+    ]) {
+      expect(findings(ref, "canon-ref-resolves")).toHaveLength(0);
+    }
+    // But a broken link UNDER the context dir is still a failure.
+    expect(findings("Load `ai-coding/rules/MISSING.md`.", "canon-ref-resolves")).toHaveLength(1);
   });
 });
 

@@ -55,14 +55,44 @@ export function lintProbes(
   generated: readonly GeneratedDoc[],
   plannedPaths: ReadonlySet<string>,
   root: string,
+  contextDir = "ai-coding",
 ): Action[] {
   const fileExists = (rel: string): boolean => existsSync(join(root, rel));
   return generated.map(({ path, source }) =>
     probe(
       `lint ${path}`,
-      (_ctx: PlanContext): Check => checkFor(path, source, { path, plannedPaths, fileExists }),
+      (_ctx: PlanContext): Check =>
+        checkFor(path, source, { path, plannedPaths, fileExists, contextDir }),
     ),
   );
+}
+
+/** Root-level `.md` files bootstrap-ai + scaffold author (everything else is user content). */
+const AIH_ROOT_AUTHORED: ReadonlySet<string> = new Set([
+  "RULE_ROUTER.md",
+  "REGENERATION.md",
+  "harness-update.md",
+  "INDEX.md",
+  "architecture.md",
+  "conventions.md",
+  "tasks.md",
+  "SETUP-TASKS.md",
+  "VALIDATION.md",
+  "project-guardrails.md",
+]);
+
+/**
+ * Is `rel` a file aih itself authors (so the lint should police it)? Everything
+ * under `adapters/`, the behavior core, the example skill, and the root-level
+ * generated docs — but NOT user rules, playbooks, agents, skills, tools, or
+ * adopt-migrated content. Mirrors the bootstrap-ai + scaffold output set.
+ */
+function isAihAuthored(rel: string, contextDir: string): boolean {
+  const sub = rel.startsWith(`${contextDir}/`) ? rel.slice(contextDir.length + 1) : rel;
+  if (sub.startsWith("adapters/")) return true; // _shared-canonical-block, other-tools, per-cli notes
+  if (sub === "rules/agent-behavior-core.md") return true;
+  if (sub === "skills/example-skill/SKILL.md") return true;
+  return !sub.includes("/") && AIH_ROOT_AUTHORED.has(sub);
 }
 
 /** Recursively collect repo-relative POSIX paths of `.md` files under `absDir`. */
@@ -112,16 +142,20 @@ export function canonLintCheck(root: string, contextDir: string): Check {
   const fails: string[] = [];
   const infos: string[] = [];
   for (const rel of rels) {
-    // `rules/project-canon-extension.md` is user-owned prose carved by `aih adopt`
-    // — keep it in `onDisk` so the router's reference resolves, but never lint its
-    // CONTENT (policing a human's "should"/"could" there is exactly backwards).
-    if (rel.endsWith("rules/project-canon-extension.md")) continue;
+    // Lint ONLY the files aih AUTHORS — never the user's own canon (project rules,
+    // playbooks, agents, skills, tools, adopt-migrated content, the carved
+    // extension). Those are kept in `onDisk` so an aih doc's reference to them
+    // resolves, but policing a human's prose (soft-imperatives, citations of real
+    // repo files) is exactly backwards. This is the lint's documented scope: "the
+    // canon the harness AUTHORS."
+    if (!isAihAuthored(rel, contextDir)) continue;
     const source = readIfExists(join(root, rel));
     if (source === undefined) continue;
     const findings = lintDoc(rel, source.replace(/\r\n/g, "\n"), {
       path: rel,
       plannedPaths: onDisk,
       fileExists,
+      contextDir,
     });
     for (const f of findings) {
       const line = `${rel} — ${f.ruleId}: ${f.message}`;
