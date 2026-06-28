@@ -197,6 +197,9 @@ async function buildReport(ctx: PlanContext): Promise<Built> {
     bloat,
     perTurn: model,
     usageEvents: usageEventsFrom(panels),
+    // Telemetry is "wired" once `aih usage --apply` wrote its recorder — even before
+    // an event lands. Drives dropping the "wire telemetry" step after it's done.
+    telemetryWired: existsSync(join(ctx.root, ".aih", "usage-record.mjs")),
     toolsMissing: toolsMissingFrom(panels),
     initialized: readAihConfig(ctx.root) !== undefined,
   };

@@ -44,11 +44,16 @@ describe("nextSteps", () => {
     );
   });
 
-  it("adds a telemetry step when no usage events are captured", () => {
+  it("adds a telemetry step when telemetry isn't wired and no events captured", () => {
     const steps = nextSteps({ ...base, usageEvents: 0 });
     expect(
       steps.some((s) => s.includes("aih usage --apply") && s.includes("aih track --apply")),
     ).toBe(true);
+  });
+
+  it("drops the telemetry step once it's WIRED (even with 0 events yet — no false nag)", () => {
+    const steps = nextSteps({ ...base, usageEvents: 0, telemetryWired: true });
+    expect(steps.some((s) => s.includes("aih usage --apply"))).toBe(false);
   });
 
   it("adds an `aih tools` step when shell tools are missing", () => {
