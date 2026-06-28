@@ -1,6 +1,6 @@
 import { type ProbeAction, probe } from "../internals/plan.js";
 import type { Check } from "../internals/verify.js";
-import type { SecretScan } from "./scan.js";
+import type { ConfigSecretHit, SecretScan } from "./scan.js";
 
 /**
  * Stable SARIF rule id shared by every plaintext-secret finding. One rule, many
@@ -35,6 +35,31 @@ export function secretProbes(scan: SecretScan): ProbeAction[] {
         code: "secrets.plaintext-detected",
         location: { uri: path, startLine: 1 },
         fingerprint: `${SECRET_RULE}:${path}`,
+      }),
+    ),
+  );
+}
+
+/** Stable SARIF rule id for hardcoded-secret-in-config findings (one rule, many results). */
+export const MCP_SECRET_RULE = "mcp-hardcoded-secret";
+
+/**
+ * One read-only `fail` probe per hardcoded secret found in an MCP config file. Like
+ * {@link secretProbes}, the scan ran at plan-build time so each probe just carries its
+ * verdict — no spawn, no remote, no mutation. The detail names the FILE + KEY + match
+ * kind, never the secret value, so no plaintext material is emitted.
+ */
+export function mcpConfigSecretProbes(hits: ConfigSecretHit[]): ProbeAction[] {
+  return hits.map((h) =>
+    probe(
+      `hardcoded secret: ${h.file}${h.key ? ` (${h.key})` : ""}`,
+      (): Check => ({
+        name: MCP_SECRET_RULE,
+        verdict: "fail",
+        detail: `${h.file}${h.key ? ` → "${h.key}"` : ""} holds a ${h.kind} — move it to an env var referenced as \${ENV_VAR} and rotate the exposed value`,
+        code: "mcp.hardcoded-secret",
+        location: { uri: h.file, startLine: 1 },
+        fingerprint: `${MCP_SECRET_RULE}:${h.file}:${h.key}`,
       }),
     ),
   );

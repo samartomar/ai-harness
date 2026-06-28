@@ -229,6 +229,14 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     action:
       "Self-host or pin the denied server (or remove it) — run `aih mcp --posture enterprise` to see the per-server verdicts, then update .mcp.json (keep it under CODEOWNERS).",
   },
+  "mcp.hardcoded-secret": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "hardcoded secret in MCP config",
+    action:
+      // biome-ignore lint/suspicious/noTemplateCurlyInString: documents the literal ${ENV} reference form for the developer
+      "Replace the literal value in the flagged MCP config with an env reference (e.g. `${GITHUB_PERSONAL_ACCESS_TOKEN}`), supply it from the environment/vault at runtime, and rotate the exposed credential.",
+  },
   "cli.not-detected": {
     audience: "developer",
     failSeverity: "degraded",
