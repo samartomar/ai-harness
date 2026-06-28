@@ -113,6 +113,12 @@ describe("reportHtml dashboard", () => {
     expect(html).toContain('class="tool off" tabindex="0" data-hint="1"');
     expect(html).toContain('aria-label="codex — not installed.'); // hint surfaced to AT
     expect(html).toContain("npm i -g @openai/codex"); // ...the actionable command for codex
+    // not-installed uses a NEUTRAL `·`, never the ambiguous `?` (which read as error/unknown)
+    expect(html).toContain('class="tool-i" aria-hidden="true">·</i>');
+    expect(html).not.toContain('class="tool-i" aria-hidden="true">?</i>');
+    // the Machine tooling panel carries a legend so ◐/· read unambiguously
+    expect(html).toContain("◐ config-only (may be stale)");
+    expect(html).toContain("✓ runnable (binary on PATH)");
   });
 
   it("is accessible: skip link, section nav, chart titles, no false aria-sort", () => {
