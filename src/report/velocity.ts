@@ -13,6 +13,8 @@ import { lines } from "../internals/render.js";
 
 const DAILY_DAYS = 14;
 const LOC_WINDOW_DAYS = 30;
+/** Heatmap window: 15 columns × 7 rows of days for the v4 activity grid. */
+const HEATMAP_DAYS = 105;
 
 /** Sum +/- lines over a `--since` window via numstat (binary files count as 0). */
 async function locWindow(
@@ -73,6 +75,9 @@ export async function velocityDigests(ctx: PlanContext): Promise<DigestAction[]>
   const d30 = gitInt(await gitRead(ctx, ["rev-list", "--count", "--since=30.days.ago", "HEAD"]));
   const total = gitInt(await gitRead(ctx, ["rev-list", "--count", "HEAD"]));
   const daily = await dailyCommits(ctx, DAILY_DAYS);
+  // A longer per-day series for the v4 dashboard's activity heatmap (gap-filled,
+  // most-recent last). Cheap extra git call; the legacy renderer ignores it.
+  const daily90 = await dailyCommits(ctx, HEATMAP_DAYS);
   const loc = await locWindow(ctx, LOC_WINDOW_DAYS);
 
   const commitsDigest = digest(
@@ -83,7 +88,7 @@ export async function velocityDigests(ctx: PlanContext): Promise<DigestAction[]>
       `Daily commits (last ${DAILY_DAYS}d active span):`,
       `  ${daily.length > 0 ? daily.map((d) => d.count).join(" ") : "(none)"}`,
     ),
-    { commits: { d7, d30, total }, daily },
+    { commits: { d7, d30, total }, daily, daily90 },
   );
   const locDigest = digest(
     `Lines of code (${LOC_WINDOW_DAYS}d) — +${loc.added} / −${loc.removed}`,

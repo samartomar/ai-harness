@@ -54,10 +54,23 @@ function repo(): DigestAction {
 function coverage(): DigestAction {
   return digest("AI CLI wiring — 1 of 2 configured", "body", {
     rows: [
-      { cli: "claude", mcp: { state: "wired" } },
+      { cli: "claude", mcp: { state: "wired", detail: "3 server(s) under `mcpServers`" } },
       { cli: "cursor", mcp: { state: "missing" } },
     ],
     targeted: ["claude", "cursor"],
+  });
+}
+
+function daily(): DigestAction {
+  return digest("Daily commits — 5 in 7d", "body", {
+    commits: { d7: 5, d30: 7, total: 42 },
+    daily90: [
+      { date: "2026-06-24", count: 1 },
+      { date: "2026-06-25", count: 0 },
+      { date: "2026-06-26", count: 2 },
+      { date: "2026-06-27", count: 3 },
+      { date: "2026-06-28", count: 1 },
+    ],
   });
 }
 
@@ -130,6 +143,43 @@ describe("buildAihDataV4 — events", () => {
 
   it("gates the event section off when no events are recorded", () => {
     expect(buildAihDataV4([scorecard()]).gates["sec-events"]).toBe(false);
+  });
+});
+
+describe("buildAihDataV4 — activity", () => {
+  it("binds the heatmap with real streak + active-day stats", () => {
+    const data = buildAihDataV4([daily()]);
+    expect(data.gates["sec-activity"]).toBe(true);
+    const s = data.sections["sec-activity"];
+    expect(s?.title).toContain("4 active days");
+    expect(s?.title).toContain("3-day streak");
+    expect(s?.count).toBe("5 days");
+    expect(s?.grid).toContain("heatmap-grid");
+    expect(s?.grid).toContain("longest streak · 3 days");
+  });
+
+  it("gates activity off when there is no commit history", () => {
+    expect(buildAihDataV4([scorecard()]).gates["sec-activity"]).toBe(false);
+  });
+});
+
+describe("buildAihDataV4 — mcp", () => {
+  it("binds the MCP wiring panel with server count + consumers", () => {
+    const data = buildAihDataV4([coverage()]);
+    expect(data.gates["sec-mcp"]).toBe(true);
+    const s = data.sections["sec-mcp"];
+    expect(s?.title).toContain("3 servers");
+    expect(s?.title).toContain("1 CLI");
+    expect(s?.grid).toContain("claude");
+    expect(s?.grid).toContain("3 servers");
+  });
+
+  it("gates MCP off when nothing is wired", () => {
+    const none = digest("AI CLI wiring — 0 configured", "body", {
+      rows: [{ cli: "claude", mcp: { state: "missing" } }],
+      targeted: ["claude"],
+    });
+    expect(buildAihDataV4([none]).gates["sec-mcp"]).toBe(false);
   });
 });
 
