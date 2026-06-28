@@ -32,9 +32,27 @@ export function parseCertLines(stdout: string): CertEntry[] {
   return out;
 }
 
-/** Extract PEM certificate blocks from `security`/openssl `-p` style output. */
+/**
+ * Extract PEM certificate blocks from `security`/openssl `-p` style output.
+ *
+ * A linear `indexOf` walk rather than `/BEGIN[\s\S]*?END/g`: that lazy match
+ * between two literal anchors is a polynomial-ReDoS footgun (CodeQL
+ * `js/polynomial-redos`) — on output with many `BEGIN` markers and no closing
+ * `END`, the engine rescans to end from every `BEGIN`, O(n²). The walk finds
+ * each `BEGIN` then its nearest following `END` (the same blocks the lazy regex
+ * matched, in order) with non-overlapping O(n) scans.
+ */
 export function parsePemBlocks(stdout: string, subject = "(matched CA)"): CertEntry[] {
-  const blocks = stdout.match(/-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/g);
-  if (!blocks) return [];
-  return blocks.map((b) => ({ subject, pem: `${b.trim()}\n` }));
+  const BEGIN = "-----BEGIN CERTIFICATE-----";
+  const END = "-----END CERTIFICATE-----";
+  const out: CertEntry[] = [];
+  let from = 0;
+  for (let start = stdout.indexOf(BEGIN, from); start >= 0; start = stdout.indexOf(BEGIN, from)) {
+    const endAt = stdout.indexOf(END, start + BEGIN.length);
+    if (endAt < 0) break; // an unterminated BEGIN matches nothing, exactly as the regex did
+    const block = stdout.slice(start, endAt + END.length);
+    out.push({ subject, pem: `${block.trim()}\n` });
+    from = endAt + END.length;
+  }
+  return out;
 }
