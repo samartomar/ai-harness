@@ -16,8 +16,8 @@ import { command as mcpCommand } from "../../src/mcp/index.js";
 import type { Platform } from "../../src/platform/base.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 import { command as reportCommand } from "../../src/report/index.js";
-import { secretProbes } from "../../src/secrets/probes.js";
-import { scanSecrets } from "../../src/secrets/scan.js";
+import { mcpConfigSecretProbes, secretProbes } from "../../src/secrets/probes.js";
+import { scanConfigSecrets, scanSecrets } from "../../src/secrets/scan.js";
 import { command as usageCommand } from "../../src/usage/index.js";
 
 /**
@@ -256,6 +256,19 @@ describe("Check.code — secrets / guardrails / usage / lint emitters", () => {
     expect(check.code).toBe("secrets.plaintext-detected");
   });
 
+  it("tags a hardcoded secret in an MCP config file", async () => {
+    const root = freshTmp();
+    write(
+      root,
+      ".mcp.json",
+      JSON.stringify({ mcpServers: { gh: { env: { GITHUB_TOKEN: `ghp_${"a".repeat(36)}` } } } }),
+    );
+    const probe = mcpConfigSecretProbes(scanConfigSecrets(root))[0];
+    if (!probe) throw new Error("expected a config-secret probe");
+    const check = await probe.run(makeCtx({ root }));
+    expect(check.code).toBe("mcp.hardcoded-secret");
+  });
+
   it("tags a missing gitleaks binary", async () => {
     const root = freshTmp();
     const ctx = makeCtx({
@@ -362,6 +375,7 @@ describe("Check.code — invariants", () => {
       "mcp.config-missing": true,
       "mcp.unvendored-offline": true,
       "mcp.policy-denied": true,
+      "mcp.hardcoded-secret": true,
       "cli.not-detected": true,
       "cli.bootloader-missing": true,
       "cli.bootloader-drift": true,

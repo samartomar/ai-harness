@@ -9,9 +9,15 @@ import {
   writeText,
 } from "../internals/plan.js";
 import { acceptChanged, changedSince } from "../internals/scan-allowlist.js";
-import { secretProbes } from "./probes.js";
-import { scanSecrets } from "./scan.js";
-import { claudeIgnore, exposureWarning, settingsDenyPatch, vaultGuidance } from "./templates.js";
+import { mcpConfigSecretProbes, secretProbes } from "./probes.js";
+import { scanConfigSecrets, scanSecrets } from "./scan.js";
+import {
+  claudeIgnore,
+  configExposureWarning,
+  exposureWarning,
+  settingsDenyPatch,
+  vaultGuidance,
+} from "./templates.js";
 
 /**
  * Secrets redirection + plaintext-exposure prevention.
@@ -73,6 +79,20 @@ async function planSecrets(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
         exposureWarning(scan),
       ),
       ...secretProbes(scan),
+    );
+  }
+
+  // Content scan: a credential pasted INTO an MCP config (.mcp.json et al.) is a leak
+  // the filename-based scan above cannot see. Same gate shape — a warning doc for the
+  // default run, plus one `--verify` fail probe per hit for the CI gate / SARIF.
+  const configSecrets = scanConfigSecrets(ctx.root);
+  if (configSecrets.length > 0) {
+    actions.push(
+      doc(
+        `Hardcoded secrets in MCP config (${configSecrets.length}) — move to env references`,
+        configExposureWarning(configSecrets),
+      ),
+      ...mcpConfigSecretProbes(configSecrets),
     );
   }
 

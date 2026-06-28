@@ -9,7 +9,7 @@ import { reportToSarif } from "../../src/internals/sarif.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 import { command } from "../../src/secrets/index.js";
 import { SECRET_RULE } from "../../src/secrets/probes.js";
-import { scanSecrets } from "../../src/secrets/scan.js";
+import { scanConfigSecrets, scanSecrets } from "../../src/secrets/scan.js";
 
 let dir: string;
 beforeEach(() => {
@@ -109,6 +109,53 @@ describe("scanSecrets", () => {
     expect(scan.secretDirs).toEqual(["secrets"]);
     expect(scan.envFiles).toEqual(["secrets/.env"]);
     expect(scan.matches).toEqual(["secrets", "secrets/.env"]);
+  });
+});
+
+describe("scanConfigSecrets", () => {
+  it("flags a provider token hardcoded in .mcp.json", () => {
+    writeFileSync(
+      join(dir, ".mcp.json"),
+      JSON.stringify({
+        mcpServers: { gh: { command: "x", env: { GITHUB_TOKEN: `ghp_${"a".repeat(36)}` } } },
+      }),
+    );
+    const hits = scanConfigSecrets(dir);
+    expect(hits).toHaveLength(1);
+    expect(hits[0]?.file).toBe(".mcp.json");
+    expect(hits[0]?.kind).toContain("github");
+  });
+
+  it("does NOT flag an env-var placeholder (the sanctioned form)", () => {
+    writeFileSync(
+      join(dir, ".mcp.json"),
+      // biome-ignore lint/suspicious/noTemplateCurlyInString: the literal ${VAR} placeholder is the value under test
+      JSON.stringify({ mcpServers: { gh: { env: { GITHUB_TOKEN: "${GITHUB_TOKEN}" } } } }),
+    );
+    expect(scanConfigSecrets(dir)).toEqual([]);
+  });
+
+  it("flags a literal value under a secret-looking key", () => {
+    writeFileSync(
+      join(dir, ".mcp.json"),
+      JSON.stringify({ mcpServers: { db: { env: { API_KEY: "abcd1234efgh5678" } } } }),
+    );
+    const hits = scanConfigSecrets(dir);
+    expect(hits).toHaveLength(1);
+    expect(hits[0]?.key).toBe("API_KEY");
+  });
+
+  it("returns nothing for a clean / absent config", () => {
+    expect(scanConfigSecrets(dir)).toEqual([]);
+  });
+
+  it("never emits the secret value itself, only file/key/kind", () => {
+    const token = `ghp_${"b".repeat(36)}`;
+    writeFileSync(
+      join(dir, ".mcp.json"),
+      JSON.stringify({ mcpServers: { gh: { env: { TOKEN: token } } } }),
+    );
+    expect(JSON.stringify(scanConfigSecrets(dir))).not.toContain(token);
   });
 });
 

@@ -1,5 +1,5 @@
 import { lines } from "../internals/render.js";
-import type { SecretScan } from "./scan.js";
+import type { ConfigSecretHit, SecretScan } from "./scan.js";
 
 /**
  * Agent read-deny rules merged into `.claude/settings.json`. Kept as constants so
@@ -124,5 +124,29 @@ export function exposureWarning(scan: SecretScan): string {
     "  2. Replace the file with dynamic injection at runtime (no plaintext on disk).",
     "  3. Delete the plaintext copy and purge it from git history if it was committed",
     "     (e.g. `git filter-repo` / BFG), then rotate every exposed credential.",
+  );
+}
+
+/**
+ * Warning emitted when the content scan found a hardcoded secret inside an MCP config
+ * file (`.mcp.json` et al.). Names each file + key + match kind — never the secret
+ * value — and points to the sanctioned env-reference form. Deterministic ordering.
+ */
+export function configExposureWarning(hits: ConfigSecretHit[]): string {
+  const bullets = hits.map((h) => `  - ${h.file}${h.key ? ` → "${h.key}"` : ""} — ${h.kind}`);
+  return lines(
+    "# WARNING: hardcoded secret(s) in MCP config",
+    "",
+    "aih found credential-looking value(s) written directly into MCP config file(s).",
+    "A token in `.mcp.json` is plaintext on disk and usually committed — a real leak:",
+    "",
+    bullets,
+    "",
+    "Remediate each one:",
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: documents the literal ${ENV} reference form for the user
+    '  1. Replace the literal with an env reference (e.g. `"${GITHUB_PERSONAL_ACCESS_TOKEN}"`)',
+    "     and supply the value from the environment / your vault at runtime.",
+    "  2. Rotate the exposed credential — assume it is compromised once written to a file.",
+    "  3. Purge it from git history if it was committed (e.g. `git filter-repo` / BFG).",
   );
 }
