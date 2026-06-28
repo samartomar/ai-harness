@@ -133,15 +133,23 @@ export function resolveContents(action: WriteAction, absPath: string): string {
  * committed transactionally; with `ctx.verify` probe actions run and populate a
  * {@link VerificationReport}.
  */
-export async function executePlan(plan: Plan, ctx: PlanContext): Promise<PlanResult> {
+export async function executePlan(
+  plan: Plan,
+  ctx: PlanContext,
+  opts: { skipWorktreeGate?: boolean } = {},
+): Promise<PlanResult> {
   // Dirty-worktree --apply preflight: refuse to write over uncommitted work unless
   // --force. Only an apply run that actually stages a file write is gated, so
   // read-only commands (doctor/status) and write-free runs (a bare `aih report`)
-  // are untouched. The check runs BEFORE anything is staged, so a refusal leaves
-  // the worktree byte-for-byte unchanged. `git status --porcelain` goes through the
-  // Runner seam; git-absent / not-a-repo reads as clean (nothing to clobber).
+  // are untouched. `skipWorktreeGate` exempts pure-analytics commands (`aih report`)
+  // whose only writes are gitignored OUTPUT artifacts (the .aih/ report + its ignore
+  // rule) — those never clobber the user's uncommitted work, so blocking the report
+  // on a dirty tree is wrong. The check runs BEFORE anything is staged, so a refusal
+  // leaves the worktree byte-for-byte unchanged. `git status --porcelain` goes
+  // through the Runner seam; git-absent / not-a-repo reads as clean.
   if (
     ctx.apply &&
+    opts.skipWorktreeGate !== true &&
     ctx.options.force !== true &&
     mutatesFiles(plan.actions) &&
     (await isWorktreeDirty(ctx))

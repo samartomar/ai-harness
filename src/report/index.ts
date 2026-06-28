@@ -323,6 +323,10 @@ export const command: CommandSpec = {
   // alwaysVerify so the `--gate` probe runs and drives the exit code. A bare
   // `aih report` has no probes, so this is a no-op there (empty report → exit 0).
   alwaysVerify: true,
+  // Pure analytics: its only writes are the gitignored `.aih/` report artifact + its
+  // ignore rule, which never clobber uncommitted work — so `aih report --open` must
+  // not be blocked by a dirty worktree.
+  skipWorktreeGate: true,
   summary: "Analytics digest — local context footprint or org usage (--org); md/html via --format",
   options: [
     {
