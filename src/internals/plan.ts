@@ -176,6 +176,13 @@ export interface CommandSpec {
    * `aih heal` surfaces the health report and a non-zero exit when broken.
    */
   alwaysVerify?: boolean;
+  /**
+   * Exempt from the dirty-worktree `--apply` preflight. For pure-analytics commands
+   * (`aih report`) whose only writes are gitignored OUTPUT artifacts (the `.aih/`
+   * report file + its ignore rule) — those never clobber uncommitted work, so
+   * blocking the report on a dirty tree is wrong.
+   */
+  skipWorktreeGate?: boolean;
 }
 
 // ---- builders -------------------------------------------------------------

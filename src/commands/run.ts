@@ -182,7 +182,9 @@ export async function runCapability(
     };
 
     const built = await spec.plan(ctx);
-    const result = await executePlan(built, ctx);
+    const result = await executePlan(built, ctx, {
+      skipWorktreeGate: spec.skipWorktreeGate === true,
+    });
 
     // A failed non-allowFailure exec must surface as a non-zero exit (writes commit
     // before execs run, so a silent success would hide partial state); a failed probe
@@ -274,7 +276,9 @@ export async function runCapability(
       for (;;) {
         await delay(watchSec * 1000);
         try {
-          await executePlan(await spec.plan(ctx), ctx);
+          await executePlan(await spec.plan(ctx), ctx, {
+            skipWorktreeGate: spec.skipWorktreeGate === true,
+          });
         } catch (e) {
           write(`refresh error: ${e instanceof Error ? e.message : String(e)}\n`);
         }

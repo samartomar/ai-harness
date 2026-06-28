@@ -289,6 +289,18 @@ describe("executePlan — dirty-worktree --apply preflight", () => {
     );
     expect(res.digests).toHaveLength(1);
   });
+
+  it("skipWorktreeGate exempts a write plan from the gate (the `aih report` artifact)", async () => {
+    // `aih report --open` writes a gitignored OUTPUT artifact (the .aih/ report) under
+    // --apply. Its writes never clobber the user's uncommitted work, so the report must
+    // not be blocked on a dirty tree — skipWorktreeGate lets the write through.
+    await executePlan(
+      plan("t", writeText("a.txt", "hi", "write a")),
+      ctx({ apply: true, run: dirtyRun }),
+      { skipWorktreeGate: true },
+    );
+    expect(readFileSync(join(dir, "a.txt"), "utf8")).toBe("hi\n");
+  });
 });
 
 describe("executePlan — digest actions", () => {
