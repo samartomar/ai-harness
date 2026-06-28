@@ -30,6 +30,17 @@ const http: McpServer = {
   credentials: "oauth",
   supplyChain: "hosted-remote",
 };
+const stdioEnv: McpServer = {
+  type: "stdio",
+  command: "docker",
+  args: ["run", "img"],
+  description: "gh",
+  classification: "local",
+  egress: "vendor-incumbent",
+  credentials: "token",
+  supplyChain: "pinned",
+  env: { GH_TOKEN: "$GH_TOKEN" },
+};
 
 describe("mcpEntryFor — per-tool server shapes (verified against each tool's docs)", () => {
   it("claude/cursor/kiro/kimi keep the canonical aih shape (golden-preserving identity)", () => {
@@ -105,6 +116,25 @@ describe("mcpEntryFor — per-tool server shapes (verified against each tool's d
   });
 });
 
+describe("mcpEntryFor — env rendering (stdio env rides each tool's key)", () => {
+  it("uses `env` for copilot/gemini/windsurf/zed/antigravity + canonical claude", () => {
+    for (const cli of ["copilot", "gemini", "windsurf", "zed", "antigravity", "claude"] as const) {
+      const entry = mcpEntryFor(cli, stdioEnv) as Record<string, unknown>;
+      expect(entry.env).toEqual({ GH_TOKEN: "$GH_TOKEN" });
+    }
+  });
+
+  it("uses `environment` (not `env`) for opencode", () => {
+    const entry = mcpEntryFor("opencode", stdioEnv) as Record<string, unknown>;
+    expect(entry.environment).toEqual({ GH_TOKEN: "$GH_TOKEN" });
+    expect(entry.env).toBeUndefined();
+  });
+
+  it("omits env entirely when the server has none", () => {
+    expect((mcpEntryFor("copilot", stdio) as Record<string, unknown>).env).toBeUndefined();
+  });
+});
+
 describe("mcpTomlBody — Codex config.toml [mcp_servers.*] tables", () => {
   it("emits a quoted-name table with command + args", () => {
     expect(mcpTomlBody({ "code-review-graph": stdio })).toBe(
@@ -121,6 +151,13 @@ describe("mcpTomlBody — Codex config.toml [mcp_servers.*] tables", () => {
   it("renders an http server as a url table (no command/args)", () => {
     const body = mcpTomlBody({ email: http });
     expect(body).toBe('[mcp_servers."email"]\nurl = "https://better-email-mcp.n24q02m.com/mcp"');
+  });
+
+  it("renders a nested [mcp_servers.NAME.env] sub-table for a stdio server with env", () => {
+    const body = mcpTomlBody({ github: stdioEnv });
+    expect(body).toContain('[mcp_servers."github"]');
+    expect(body).toContain('[mcp_servers."github".env]');
+    expect(body).toContain('GH_TOKEN = "$GH_TOKEN"');
   });
 
   it("tomlServerCount counts [mcp_servers.*] tables", () => {

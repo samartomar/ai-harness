@@ -66,6 +66,8 @@ export interface StdioServer extends McpRisk {
   command: string;
   args: string[];
   description: string;
+  /** Process environment for the launched server. Values must be ${ENV} refs, never literals. */
+  env?: Readonly<Record<string, string>>;
 }
 export interface HttpServer extends McpRisk {
   type: "http";
@@ -80,13 +82,20 @@ export const N24Q02M_HOST = "n24q02m.com";
 /** Frameworks that warrant a browser-automation (Playwright) MCP server. */
 const WEB_FRAMEWORKS = new Set(["Next.js", "React", "Vue", "Svelte", "Angular"]);
 
+/** Pinned GitHub MCP Docker image for the `--self-host` opt-out (bump deliberately). */
+const GITHUB_MCP_IMAGE = "ghcr.io/github/github-mcp-server:v1.5.0";
+
 /**
  * Build the `mcpServers` map for `scope`, tailored to `stack`. Deterministic
  * insertion order (local stdio first, then stack-specific, then on-by-default
  * remote, then the opt-in hosted set) so golden assertions and deep-merge output
  * stay stable.
  */
-export function mcpServers(scope: string, stack: RepoStack): Record<string, McpServer> {
+export function mcpServers(
+  scope: string,
+  stack: RepoStack,
+  opts: { selfHost?: boolean } = {},
+): Record<string, McpServer> {
   const servers: Record<string, McpServer> = {
     "code-review-graph": {
       type: "stdio",
@@ -146,21 +155,36 @@ export function mcpServers(scope: string, stack: RepoStack): Record<string, McpS
     };
   }
 
-  // On-by-default, secret-free remote servers — useful in any repo. GitHub uses the
-  // client's interactive OAuth (no token written into this file); Context7 is a
-  // hosted docs endpoint whose third-party egress is named in its description so it
-  // is visible at a glance. Enterprise policy can filter these (a later increment);
+  // On-by-default, secret-free remote servers — useful in any repo. GitHub defaults to
+  // the client's interactive OAuth (no token written into this file); `--self-host`
+  // swaps it for the pinned local Docker image with the PAT sourced from env (the
+  // air-gap / no-hosted-endpoint opt-out). Context7 is a hosted docs endpoint whose
+  // third-party egress is named in its description. Enterprise policy can filter these;
   // the default posture is on + clearly labeled.
-  servers.github = {
-    type: "http",
-    url: "https://api.githubcopilot.com/mcp/",
-    description:
-      "GitHub's official remote MCP (repos, issues, PRs, Actions). OAuth via the client — no token stored in this file. Egress to GitHub (vendor-incumbent).",
-    classification: "third-party-hosted",
-    egress: "vendor-incumbent",
-    credentials: "oauth",
-    supplyChain: "hosted-remote",
-  };
+  servers.github = opts.selfHost
+    ? {
+        type: "stdio",
+        command: "docker",
+        args: ["run", "-i", "--rm", "-e", "GITHUB_PERSONAL_ACCESS_TOKEN", GITHUB_MCP_IMAGE],
+        // biome-ignore lint/suspicious/noTemplateCurlyInString: ${ENV} reference is the literal config value, not a template
+        env: { GITHUB_PERSONAL_ACCESS_TOKEN: "${GITHUB_PERSONAL_ACCESS_TOKEN}" },
+        description:
+          "GitHub's official MCP via the pinned local Docker image (self-host opt-out of the hosted endpoint). PAT sourced from $GITHUB_PERSONAL_ACCESS_TOKEN — never written here.",
+        classification: "local",
+        egress: "vendor-incumbent",
+        credentials: "token",
+        supplyChain: "pinned",
+      }
+    : {
+        type: "http",
+        url: "https://api.githubcopilot.com/mcp/",
+        description:
+          "GitHub's official remote MCP (repos, issues, PRs, Actions). OAuth via the client — no token stored in this file. Egress to GitHub (vendor-incumbent).",
+        classification: "third-party-hosted",
+        egress: "vendor-incumbent",
+        credentials: "oauth",
+        supplyChain: "hosted-remote",
+      };
   servers.context7 = {
     type: "http",
     url: "https://mcp.context7.com/mcp",
@@ -174,6 +198,24 @@ export function mcpServers(scope: string, stack: RepoStack): Record<string, McpS
 
   if (scope === "remote") Object.assign(servers, hostedServers());
   return servers;
+}
+
+/**
+ * The unique `${VAR}` names referenced by any server's `env` block — the secrets a
+ * user must supply out-of-band. Drives `.env.example` generation so the placeholders
+ * are documented without ever writing a value. Only `${VAR}` refs count (a literal
+ * would be a hardcoded secret — see the `aih secrets` MCP-config scan).
+ */
+export function envPlaceholders(servers: Record<string, McpServer>): string[] {
+  const vars = new Set<string>();
+  for (const s of Object.values(servers)) {
+    if (s.type !== "stdio" || !s.env) continue;
+    for (const value of Object.values(s.env)) {
+      const m = /^\$\{([A-Za-z_][A-Za-z0-9_]*)\}$/.exec(value.trim());
+      if (m?.[1]) vars.add(m[1]);
+    }
+  }
+  return [...vars].sort();
 }
 
 /**

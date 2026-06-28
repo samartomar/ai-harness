@@ -19,7 +19,9 @@ import type { McpServer } from "./servers.js";
  *  - opencode→ `mcp` `{type:"local", command:[cmd, ...args], enabled}` / `{type:"remote", url, enabled}`;
  *  - zed     → `context_servers` `{command, args}` / `{url}`;
  *  - codex   → TOML `[mcp_servers."name"]` tables (see {@link mcpTomlBody}).
- * Pure data transforms — no IO, no network.
+ * A stdio server's optional `env` rides along under each tool's env key (`env`, or
+ * `environment` for OpenCode, or a `[mcp_servers.NAME.env]` sub-table for Codex);
+ * http servers never carry env. Pure data transforms — no IO, no network.
  */
 
 /** One tool-shaped MCP server entry (the value under the tool's server-map key). */
@@ -30,21 +32,33 @@ export function mcpEntryFor(cli: Cli, s: McpServer): McpEntry {
   switch (cli) {
     case "opencode":
       // command + args collapse into ONE array; `type` is local|remote; `enabled` required.
+      // OpenCode's env key is `environment` (merged over process.env), not `env`.
       return s.type === "stdio"
-        ? { type: "local", command: [s.command, ...s.args], enabled: true }
+        ? {
+            type: "local",
+            command: [s.command, ...s.args],
+            enabled: true,
+            ...(s.env ? { environment: s.env } : {}),
+          }
         : { type: "remote", url: s.url, enabled: true };
     case "copilot":
       // VS Code `.vscode/mcp.json` keeps the `type` discriminator.
       return s.type === "stdio"
-        ? { type: "stdio", command: s.command, args: s.args }
+        ? { type: "stdio", command: s.command, args: s.args, ...(s.env ? { env: s.env } : {}) }
         : { type: "http", url: s.url };
     case "gemini":
-      return s.type === "stdio" ? { command: s.command, args: s.args } : { httpUrl: s.url };
+      return s.type === "stdio"
+        ? { command: s.command, args: s.args, ...(s.env ? { env: s.env } : {}) }
+        : { httpUrl: s.url };
     case "windsurf":
-      return s.type === "stdio" ? { command: s.command, args: s.args } : { serverUrl: s.url };
+      return s.type === "stdio"
+        ? { command: s.command, args: s.args, ...(s.env ? { env: s.env } : {}) }
+        : { serverUrl: s.url };
     case "zed":
     case "antigravity":
-      return s.type === "stdio" ? { command: s.command, args: s.args } : { url: s.url };
+      return s.type === "stdio"
+        ? { command: s.command, args: s.args, ...(s.env ? { env: s.env } : {}) }
+        : { url: s.url };
     default:
       // claude, cursor, kiro, kimi — the canonical aih shape, unchanged so the
       // existing `.mcp.json` / `.cursor/mcp.json` golden output stays byte-identical.
@@ -88,6 +102,14 @@ export function mcpTomlBody(servers: Record<string, McpServer>): string {
       if (s.type === "stdio") {
         const out = [head, `command = ${tomlStr(s.command)}`];
         if (s.args.length > 0) out.push(`args = ${tomlArray(s.args)}`);
+        if (s.env) {
+          // A nested `[mcp_servers.NAME.env]` table (blank line before it keeps TOML valid).
+          out.push(`\n[mcp_servers.${tomlStr(name)}.env]`);
+          for (const [k, v] of Object.entries(s.env)) {
+            const key = /^[A-Za-z0-9_-]+$/.test(k) ? k : tomlStr(k);
+            out.push(`${key} = ${tomlStr(v)}`);
+          }
+        }
         return out.join("\n");
       }
       return `${head}\nurl = ${tomlStr(s.url)}`;

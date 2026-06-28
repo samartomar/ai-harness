@@ -350,6 +350,43 @@ describe("aih mcp — risk classification (P1-B)", () => {
   });
 });
 
+describe("aih mcp — --self-host (GitHub via local Docker + .env.example)", () => {
+  it("swaps GitHub to a pinned local Docker stdio server with a PAT env ref", async () => {
+    const p = await command.plan(makeCtx({ options: { selfHost: true } }));
+    const gh = pick(serversOf(p.actions.find((a) => a.kind === "write") as WriteAction), "github");
+    expect(gh.type).toBe("stdio");
+    if (gh.type !== "stdio") throw new Error("expected stdio server");
+    expect(gh.command).toBe("docker");
+    expect(gh.args).toContain("ghcr.io/github/github-mcp-server:v1.5.0");
+    expect(gh.env?.GITHUB_PERSONAL_ACCESS_TOKEN).toMatch(/^\$\{GITHUB_PERSONAL_ACCESS_TOKEN\}$/);
+    expect(gh.credentials).toBe("token");
+    expect(gh.supplyChain).toBe("pinned");
+  });
+
+  it("default (no --self-host) keeps GitHub as the hosted OAuth http endpoint", async () => {
+    const w = (await command.plan(makeCtx())).actions.find(
+      (a) => a.kind === "write",
+    ) as WriteAction;
+    const gh = pick(serversOf(w), "github");
+    expect(gh.type).toBe("http");
+    expect(gh.credentials).toBe("oauth");
+  });
+
+  it("writes a .env.example documenting the PAT placeholder (never a value)", async () => {
+    const p = await command.plan(makeCtx({ options: { selfHost: true } }));
+    const envExample = p.actions.find(
+      (a): a is WriteAction => a.kind === "write" && a.path === ".env.example",
+    );
+    expect(envExample).toBeDefined();
+    expect(envExample?.contents).toContain("GITHUB_PERSONAL_ACCESS_TOKEN=");
+  });
+
+  it("default writes no .env.example (no secret placeholders)", async () => {
+    const p = await command.plan(makeCtx());
+    expect(p.actions.some((a) => a.kind === "write" && a.path === ".env.example")).toBe(false);
+  });
+});
+
 describe("aih mcp — curated default servers (secret-free, on by default)", () => {
   it("adds sequential-thinking as a pinned, zero-egress local stdio server in any repo", async () => {
     const p = await command.plan(makeCtx());
