@@ -57,6 +57,13 @@ function usageEventsFrom(digests: DigestAction[]): number | undefined {
   return typeof n === "number" ? n : undefined;
 }
 
+/** How many agent shell tools are NOT on PATH (from the Tools-installed digest). */
+function toolsMissingFrom(digests: DigestAction[]): number | undefined {
+  const d = digests.find((x) => x.describe.startsWith("Tools installed"));
+  const absent = (d?.data as { absent?: unknown } | undefined)?.absent;
+  return Array.isArray(absent) ? absent.length : undefined;
+}
+
 /** Headline for the per-turn load-group digest (the real cost: one tool's bundle). */
 function loadGroupHeadline(model: LoadGroupModel): string {
   const who = model.worst ? ` (worst: ${model.worst.clis.join(", ")})` : "";
@@ -190,6 +197,7 @@ async function buildReport(ctx: PlanContext): Promise<Built> {
     bloat,
     perTurn: model,
     usageEvents: usageEventsFrom(panels),
+    toolsMissing: toolsMissingFrom(panels),
     initialized: readAihConfig(ctx.root) !== undefined,
   };
   return {

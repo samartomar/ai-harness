@@ -51,6 +51,13 @@ describe("nextSteps", () => {
     ).toBe(true);
   });
 
+  it("adds an `aih tools` step when shell tools are missing", () => {
+    const steps = nextSteps({ ...base, toolsMissing: 2 });
+    expect(
+      steps.some((s) => s.includes("2 missing shell tool(s)") && s.includes("aih tools")),
+    ).toBe(true);
+  });
+
   it("emits nothing for an uninitialized repo (never nags a non-adopter)", () => {
     expect(
       nextSteps({

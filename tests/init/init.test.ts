@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -8,6 +8,7 @@ import { command as guardrails } from "../../src/guardrails/index.js";
 import { command } from "../../src/init/index.js";
 import { INIT_PHASES } from "../../src/init/phases.js";
 import { executePlan, resolveContents } from "../../src/internals/execute.js";
+import { readIfExists } from "../../src/internals/fsxn.js";
 import { beginLine, endLine } from "../../src/internals/markers.js";
 import type { Action, DocAction, PlanContext, WriteAction } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
@@ -314,11 +315,29 @@ describe("aih init — persists the .aih-config.json bootstrap marker", () => {
   it("applies the marker to disk and a second apply is byte-identical (idempotent)", async () => {
     const applied = ctx({ apply: true });
     await executePlan(await command.plan(applied), applied);
-    const first = readFileSync(join(dir, ".aih-config.json"), "utf8");
-    await executePlan(await command.plan(applied), applied);
-    const second = readFileSync(join(dir, ".aih-config.json"), "utf8");
-    expect(second).toBe(first);
-    expect(JSON.parse(first)).toMatchObject({ schemaVersion: 1, contextDir: ".ai-context" });
+    const first = readIfExists(join(dir, ".aih-config.json"));
+
+    // Second apply over the now-populated repo: it re-reads + re-renders the marker.
+    const second = await executePlan(await command.plan(applied), applied);
+    const onDisk = readIfExists(join(dir, ".aih-config.json"));
+
+    // Idempotency is the EXECUTOR recognizing identical rendered content and NOT
+    // rewriting — assert that mechanism directly (independent of FS read timing on a
+    // slow CI filesystem), rather than byte-diffing two racing on-disk reads.
+    const marker = second.writes.find((w) => w.path === ".aih-config.json");
+    expect(marker?.effect).toBe("unchanged"); // re-apply re-stages nothing for the marker
+    // ...so the second pass churns NO backup for it (the *.aih.bak risk surface).
+    expect(existsSync(join(dir, ".aih-config.json.aih.bak"))).toBe(false);
+
+    // The on-disk content is stable across applies. EOL-normalize before comparing so
+    // a stray CRLF (git autocrlf, an editor) can never fail an otherwise-identical
+    // marker, and assert the parsed shape rather than leaning on raw bytes alone.
+    const lf = (s: string | undefined) => (s ?? "").replace(/\r\n/g, "\n");
+    expect(lf(onDisk)).toBe(lf(first));
+    expect(JSON.parse(onDisk ?? "{}")).toMatchObject({
+      schemaVersion: 1,
+      contextDir: ".ai-context",
+    });
   });
 });
 
@@ -392,8 +411,13 @@ describe("aih init — apply lays the whole bootstrap down in one pass", () => {
 
     // First apply lays everything down.
     await executePlan(await command.plan(applied), applied);
+    // Read via the same hardened reader the executor uses (bounded retry over the
+    // transient Windows post-write lock) and EOL-normalize, so the cross-apply
+    // comparison tests CONTENT stability, not byte-for-byte raw reads.
     const snapshot = (paths: string[]) =>
-      Object.fromEntries(paths.map((p) => [p, readFileSync(join(dir, p), "utf8")]));
+      Object.fromEntries(
+        paths.map((p) => [p, (readIfExists(join(dir, p)) ?? "").replace(/\r\n/g, "\n")]),
+      );
 
     // Sample one plain write and every merge write (the re-merge risk surface):
     // a stable bootstrap must not drift or duplicate array entries on re-run.

@@ -352,6 +352,7 @@ describe("Check.code — invariants", () => {
       "env.node-runtime": true,
       "env.git-missing": true,
       "env.dev-tool-missing": true,
+      "env.tool-install-blocked": true,
       "cert.ca-missing": true,
       "tls.verify-failed": true,
       "npm.runtime-broken": true,
