@@ -258,7 +258,7 @@ export function coherenceDigest(ctx: PlanContext): DigestAction | undefined {
     const block = text !== undefined ? extractManagedBlock(text, SHARED_MARKER) : undefined;
     const rules: Verdict =
       block === undefined ? "bad" : block.trim() === sharedBody ? "ok" : "warn";
-    const router: Verdict = text !== undefined && text.includes("RULE_ROUTER.md") ? "ok" : "bad";
+    const router: Verdict = text?.includes("RULE_ROUTER.md") ? "ok" : "bad";
     const mcp: Verdict =
       row.mcp.state === "wired" ? "ok" : row.mcp.state === "missing" ? "bad" : "warn";
     const loads: Verdict =
