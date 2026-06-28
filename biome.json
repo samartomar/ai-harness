@@ -12,7 +12,8 @@
       "tests/**/*.ts",
       "*.config.ts",
       "!src/report/fonts.ts",
-      "!src/report/v4-template.ts"
+      "!src/report/v4-template.ts",
+      "!src/report/v9-template.ts"
     ]
   },
   "formatter": {

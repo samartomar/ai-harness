@@ -30,6 +30,8 @@ import { aggregateOrg } from "./org.js";
 import { orgDigest, orgHeadline } from "./org-render.js";
 import { contextBloatDigest, loadGroupDigest } from "./render.js";
 import { reportHtmlV4 } from "./v4.js";
+import { reportHtmlV9 } from "./v9.js";
+import { supportDigest, v9ExtraDigests } from "./v9-panels.js";
 
 type Scope = "local" | "org";
 type Format = "terminal" | "md" | "html";
@@ -258,10 +260,13 @@ async function reportPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
   // `--v4` opts into the next-gen dashboard skin (additive; the legacy renderer stays
   // the default). HTML-only, like --open/--demo, so it forces the html format too.
   const v4 = ctx.options.v4 === true;
+  // `--v9` opts into the developer-console dashboard (additive; legacy + `--v4` stay
+  // untouched). HTML-only like the others, so it forces the html format too.
+  const v9 = ctx.options.v9 === true;
   const refreshRaw = Number(ctx.options.refresh);
   const refresh =
     Number.isFinite(refreshRaw) && refreshRaw > 0 ? Math.floor(refreshRaw) : undefined;
-  const format = open || demo || v4 || refresh !== undefined ? "html" : formatOf(ctx);
+  const format = open || demo || v4 || v9 || refresh !== undefined ? "html" : formatOf(ctx);
   const shouldOpen = open || demo;
   const built = await buildReport(ctx);
   const actions: Action[] = [...built.digests];
@@ -282,13 +287,23 @@ async function reportPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
     const path = artifactPath(ctx, built.scope, format);
     let content: string;
     if (format === "html") {
-      content = v4
-        ? reportHtmlV4(built.title, built.digests, { refresh, demo })
-        : reportHtml(built.title, built.digests, {
-            refresh,
-            demo,
-            support: reportSupportTemplates(ctx, advisoryChecks),
-          });
+      if (v9) {
+        // v9 binds extra v9-only digests (drift, MCP servers/egress, support) so the
+        // shared localPanels — and thus legacy/v4 output — stay byte-identical.
+        const extra = [
+          ...v9ExtraDigests(ctx),
+          supportDigest(reportSupportTemplates(ctx, advisoryChecks)),
+        ];
+        content = reportHtmlV9(built.title, [...built.digests, ...extra], { refresh, demo });
+      } else if (v4) {
+        content = reportHtmlV4(built.title, built.digests, { refresh, demo });
+      } else {
+        content = reportHtml(built.title, built.digests, {
+          refresh,
+          demo,
+          support: reportSupportTemplates(ctx, advisoryChecks),
+        });
+      }
     } else {
       content = reportMarkdown(built.title, built.digests);
     }
@@ -395,6 +410,10 @@ export const command: CommandSpec = {
     {
       flags: "--v4",
       description: "render the next-gen v0.5 dashboard skin (opt-in; implies html)",
+    },
+    {
+      flags: "--v9",
+      description: "render the v9 developer-console dashboard skin (opt-in; implies html)",
     },
   ],
   plan: reportPlan,
