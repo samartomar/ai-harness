@@ -7,6 +7,7 @@ import { aiEventsDigest } from "./events.js";
 import { graphDigests } from "./graph.js";
 import { guardrailDigest } from "./guardrail.js";
 import { trendsPanel } from "./history.js";
+import { mcpGovernanceDigest } from "./mcp-governance.js";
 import { qualityDigest } from "./quality.js";
 import { repoStatusPanel } from "./repo.js";
 import { repoInfoDigest } from "./repoinfo.js";
@@ -124,6 +125,7 @@ export async function localPanels(ctx: PlanContext): Promise<DigestAction[]> {
     trendsPanel(ctx),
     usagePanel(ctx),
     cliCoverageDigest(ctx), // HARNESS ADOPTION: per-CLI wiring matrix (targeted-scoped)
+    mcpGovernanceDigest(ctx), // HARNESS ADOPTION: MCP enterprise-policy verdict (reuses the policy engine)
     configPanel(ctx),
     await machineToolingPanel(ctx), // HARNESS ADOPTION: which CLIs are runnable vs config-only
     economyPanel(),

@@ -623,6 +623,7 @@ const CATEGORIES: { title: string; prefixes: string[] }[] = [
       "Tools installed",
       "Repo status",
       "AI CLI wiring",
+      "MCP governance",
       "Configuration",
       "Machine tooling",
     ],
