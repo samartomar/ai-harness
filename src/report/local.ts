@@ -28,17 +28,20 @@ export function configPanel(ctx: PlanContext): DigestAction {
   const items = inventory(ctx.root, ctx.contextDir);
   const present = items.filter((i) => i.present);
   const body = lines(
-    "Repo configuration the harness manages (presence only — run `aih doctor`",
-    "for fail-closed verification):",
+    "Repo config FILES the harness manages — whether the FILE exists in THIS repo,",
+    "NOT whether a tool is installed on your machine (e.g. `gitleaks` here means the",
+    "`.gitleaks.toml` policy file, not the gitleaks binary). `aih doctor` verifies them.",
     "",
     ...items.map(
       (i) =>
-        `  ${i.present ? "✓" : "·"} ${i.name}${i.present ? "" : `  (${i.relative} not present)`}`,
+        `  ${i.present ? "✓" : "·"} ${i.name}  (${i.relative}${i.present ? "" : " — not in this repo"})`,
     ),
   );
-  return digest(`Configuration — ${present.length} of ${items.length} artifacts present`, body, {
+  return digest(`Configuration — ${present.length} of ${items.length} config files present`, body, {
     present: present.map((i) => i.name),
     absent: items.filter((i) => !i.present).map((i) => i.name),
+    // name → repo-relative file, so the dashboard can show it's a FILE, not a tool.
+    files: Object.fromEntries(items.map((i) => [i.name, i.relative])),
     total: items.length,
   });
 }
