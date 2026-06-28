@@ -15,6 +15,13 @@ import {
 } from "./enterprise.js";
 import { gatewayDoc } from "./gateway.js";
 import {
+  asPosture,
+  deniedServers,
+  evaluateMcpPolicy,
+  type McpPosture,
+  mcpGovernanceDoc,
+} from "./policy.js";
+import {
   existingMcpTomlNames,
   isExternalMcp,
   mcpConfigAbs,
@@ -48,6 +55,32 @@ function offlineVendoredProbe(stdio: Record<string, McpServer>): Check {
     verdict: "fail",
     detail: `still resolve packages at runtime — mirror/vendor or pin an absolute command before air-gapping: ${runtime.join(", ")}`,
     code: "mcp.unvendored-offline",
+  };
+}
+
+/**
+ * Enterprise-posture verify probe: fail if the catalog (at this scope) contains any
+ * server the enterprise policy denies — third-party egress or an unpinned supply
+ * chain. Mirrors {@link offlineVendoredProbe}: aih surfaces the gap and names the fix
+ * (self-host / pin / remove) instead of silently dropping the server.
+ */
+function mcpPolicyProbe(servers: Record<string, McpServer>, posture: McpPosture): Check {
+  const denied = deniedServers(evaluateMcpPolicy(servers, posture));
+  const name = "MCP servers comply with enterprise policy";
+  if (denied.length === 0) {
+    return {
+      name,
+      verdict: "pass",
+      detail: "every server is allowed under the enterprise posture",
+    };
+  }
+  return {
+    name,
+    verdict: "fail",
+    detail: `denied — self-host, pin, or remove before an enterprise rollout: ${denied
+      .map((p) => `${p.name} (${p.reason})`)
+      .join("; ")}`,
+    code: "mcp.policy-denied",
   };
 }
 
@@ -288,6 +321,23 @@ async function planMcp(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
     );
   }
 
+  // Enterprise posture (opt-in): surface a governance verdict for every server and a
+  // probe that fails on a policy-denied one. The community default adds nothing here,
+  // so standard output stays byte-identical.
+  const posture = asPosture(ctx.options.posture);
+  if (posture === "enterprise") {
+    const policies = evaluateMcpPolicy(servers, posture);
+    actions.push(
+      doc(
+        "MCP governance (enterprise posture) — per-server verdicts + skipped-with-reason",
+        mcpGovernanceDoc(policies, posture),
+      ),
+    );
+    actions.push(
+      probe("MCP servers comply with enterprise policy", () => mcpPolicyProbe(servers, posture)),
+    );
+  }
+
   actions.push(probe("uv present", probeUv));
 
   return plan("mcp", ...actions);
@@ -308,6 +358,11 @@ export const command: CommandSpec = {
       description:
         "standard | offline (vendored local-command servers) | none (no MCP; CLI-tool fallback)",
       default: "standard",
+    },
+    {
+      flags: "--posture <posture>",
+      description: "governance posture: community (default) | enterprise (policy gate + doc)",
+      default: "community",
     },
   ],
   plan: planMcp,

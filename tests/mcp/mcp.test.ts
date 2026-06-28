@@ -563,3 +563,59 @@ describe("aih mcp — per-CLI config (honors --cli)", () => {
     expect(codex?.contents).toContain("[mcp_servers.");
   });
 });
+
+describe("aih mcp — enterprise posture (governance gate, opt-in)", () => {
+  it("emits a governance doc + a policy probe that FAILS on the third-party context7 server", async () => {
+    const ctx = makeCtx({ options: { posture: "enterprise" }, verify: true });
+    const p = await command.plan(ctx);
+
+    const govText = p.actions
+      .filter((a) => a.kind === "doc")
+      .map((a) => (a.kind === "doc" ? a.text : ""))
+      .join("\n");
+    expect(govText).toContain("MCP governance — enterprise posture");
+    expect(govText).toContain("context7");
+
+    const probe = p.actions.find(
+      (a) => a.kind === "probe" && a.describe.includes("comply with enterprise policy"),
+    );
+    const check = probe?.kind === "probe" ? await probe.run(ctx) : undefined;
+    expect(check?.verdict).toBe("fail");
+    expect(check?.code).toBe("mcp.policy-denied");
+    expect(check?.detail).toContain("context7");
+  });
+
+  it("still writes .mcp.json with the FULL catalog — governance REPORTS, it never drops a server", async () => {
+    const p = await command.plan(makeCtx({ options: { posture: "enterprise" } }));
+    const w = p.actions.find((a) => a.kind === "write") as WriteAction;
+    expect(w.path).toBe(".mcp.json");
+    // context7 is denied by policy but STILL written — the human decides, aih reports.
+    expect(Object.keys(serversOf(w))).toContain("context7");
+  });
+
+  it("at remote scope the gate denies context7 AND the n24q02m hosted set, but not github/local", async () => {
+    const ctx = makeCtx({ options: { posture: "enterprise", scope: "remote" }, verify: true });
+    const p = await command.plan(ctx);
+    const probe = p.actions.find(
+      (a) => a.kind === "probe" && a.describe.includes("comply with enterprise policy"),
+    );
+    const check = probe?.kind === "probe" ? await probe.run(ctx) : undefined;
+    expect(check?.verdict).toBe("fail");
+    for (const denied of ["context7", "better-email", "wet-mcp"]) {
+      expect(check?.detail).toContain(denied);
+    }
+    // github (vendor-incumbent + oauth) and the local servers pass — not in the denied list.
+    expect(check?.detail).not.toContain("github");
+    expect(check?.detail).not.toContain("code-review-graph");
+  });
+
+  it("community posture (the default) adds NO governance doc and NO policy probe", async () => {
+    const p = await command.plan(makeCtx({ options: {} }));
+    expect(p.actions.some((a) => a.kind === "doc")).toBe(false);
+    expect(
+      p.actions.some(
+        (a) => a.kind === "probe" && a.describe.includes("comply with enterprise policy"),
+      ),
+    ).toBe(false);
+  });
+});

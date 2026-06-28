@@ -361,6 +361,7 @@ describe("Check.code — invariants", () => {
       "mcp.uv-missing": true,
       "mcp.config-missing": true,
       "mcp.unvendored-offline": true,
+      "mcp.policy-denied": true,
       "cli.not-detected": true,
       "cli.bootloader-missing": true,
       "cli.bootloader-drift": true,
