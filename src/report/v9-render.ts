@@ -284,7 +284,7 @@ export function renderQuality(q: V9Quality, eccPreview: boolean): string {
   const ecc = q.ecc;
   const eccBadge = headBadge(
     eccPreview,
-    `<span class="badge mcp">profile: ${escHtml(ecc?.profile ?? "—")}</span>`,
+    `<span class="badge mcp">${ecc?.profile ? `profile: ${escHtml(ecc.profile)}` : "installed"}</span>`,
   );
   const packs = (ecc?.packs ?? [])
     .map((p) => `<span class="tool on">${escHtml(p)}</span>`)

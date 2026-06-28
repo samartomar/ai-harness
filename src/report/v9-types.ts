@@ -129,7 +129,8 @@ export interface V9Quality {
   guardrails: Array<[string, string, "ok" | "bad" | "warn"]>;
   /** ECC inventory — PREVIEW until the ECC-inventory scan lands. */
   ecc?: {
-    profile: string;
+    /** ECC install profile, when known (the file-scan can't detect it). */
+    profile?: string;
     agents: number;
     skills: number;
     rules: number;

@@ -7,7 +7,13 @@ import { mergeManagedBlock } from "../../src/internals/markers.js";
 import type { PlanContext } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
-import { driftDigest, mcpServersDigest, supportDigest } from "../../src/report/v9-panels.js";
+import {
+  coherenceDigest,
+  driftDigest,
+  eccInventoryDigest,
+  mcpServersDigest,
+  supportDigest,
+} from "../../src/report/v9-panels.js";
 import type { SupportTemplate } from "../../src/support/render.js";
 
 const DIR = "ai-coding";
@@ -148,5 +154,86 @@ describe("supportDigest", () => {
     };
     expect(data.findings).toEqual({ selfFix: 0, improvement: 0, escalation: 0 });
     expect(data.ticket).toBe("");
+  });
+});
+
+function marker(...targets: string[]): void {
+  put(".aih-config.json", JSON.stringify({ schemaVersion: 1, contextDir: DIR, targets }));
+}
+
+function inSync(): string {
+  return mergeManagedBlock(undefined, sharedBlock(DIR), "# Repo");
+}
+
+interface EccData {
+  agents: number;
+  skills: number;
+  rules: number;
+  hooks: number;
+  packs: string[];
+}
+
+describe("eccInventoryDigest", () => {
+  it("returns undefined when no ECC content is on disk", () => {
+    expect(eccInventoryDigest(ctx())).toBeUndefined();
+  });
+
+  it("counts agents, skills (dirs) and hooks scanned from .claude/.kiro", () => {
+    put(".claude/agents/code-reviewer.md", "# agent\n");
+    put(".claude/agents/planner.md", "# agent\n");
+    put(".claude/skills/tdd/SKILL.md", "# skill\n");
+    put(".kiro/skills/review/SKILL.md", "# skill\n");
+    put(
+      ".claude/settings.json",
+      JSON.stringify({
+        hooks: {
+          PostToolUse: [{ matcher: "*", hooks: [{ type: "command" }, { type: "command" }] }],
+        },
+      }),
+    );
+    const d = eccInventoryDigest(ctx());
+    const data = d?.data as EccData;
+    expect(data.agents).toBe(2);
+    expect(data.skills).toBe(2); // one dir under each of .claude/skills and .kiro/skills
+    expect(data.hooks).toBe(2);
+    expect(Array.isArray(data.packs)).toBe(true);
+  });
+});
+
+interface CoherenceData {
+  clis: string[];
+  dims: string[];
+  cells: Record<string, string[]>;
+  agreementPct: number;
+}
+
+describe("coherenceDigest", () => {
+  it("returns undefined off-canon", () => {
+    marker("claude", "codex");
+    expect(coherenceDigest(ctx())).toBeUndefined();
+  });
+
+  it("returns undefined with fewer than two targeted CLIs", () => {
+    marker("claude");
+    put(`${DIR}/RULE_ROUTER.md`, "routing\n");
+    put("CLAUDE.md", inSync());
+    expect(coherenceDigest(ctx())).toBeUndefined();
+  });
+
+  it("computes per-CLI cells + an agreement % across two CLIs", () => {
+    marker("claude", "codex");
+    put(`${DIR}/RULE_ROUTER.md`, "routing\n");
+    put("CLAUDE.md", inSync());
+    put("AGENTS.md", inSync());
+    const d = coherenceDigest(ctx());
+    const data = d?.data as CoherenceData;
+    expect(data.clis).toEqual(["claude", "codex"]);
+    expect(data.dims).toEqual(["rules", "router", "mcp", "loads"]);
+    // in-sync bootloaders → rules + router cells are ok for both CLIs
+    expect(data.cells.claude?.[0]).toBe("ok");
+    expect(data.cells.claude?.[1]).toBe("ok");
+    expect(data.cells.codex?.[0]).toBe("ok");
+    expect(typeof data.agreementPct).toBe("number");
+    expect(data.agreementPct).toBeGreaterThanOrEqual(50);
   });
 });

@@ -164,6 +164,25 @@ function usage(): DigestAction {
   return digest("Usage — 0 events", "body", { events: 0 });
 }
 
+function ecc(): DigestAction {
+  return digest("ECC harness — 11 agents, 42 skills, 9 rules, 4 hooks", "body", {
+    agents: 11,
+    skills: 42,
+    rules: 9,
+    hooks: 4,
+    packs: ["typescript", "web"],
+  });
+}
+
+function coherence(): DigestAction {
+  return digest("Coherence — 88% across 2 CLIs", "body", {
+    clis: ["claude", "codex"],
+    dims: ["rules", "router", "mcp", "loads"],
+    cells: { claude: ["ok", "ok", "ok", "ok"], codex: ["ok", "ok", "warn", "ok"] },
+    agreementPct: 88,
+  });
+}
+
 const ALL = [
   scorecard(),
   bloat(),
@@ -284,6 +303,27 @@ describe("buildAihDataV9 — panels + gating", () => {
     expect(g["cap-ecc"]).toBe("preview");
     expect(g["cap-coherence"]).toBe("preview");
     expect(g["cap-outcome"]).toBe("preview");
+  });
+});
+
+describe("buildAihDataV9 — Phase B capability flips", () => {
+  it("flips the ECC card to live and attaches the scan to quality", () => {
+    const d = buildAihDataV9([...ALL, ecc()]);
+    expect(d.gates["cap-ecc"]).toBe("live");
+    expect(d.quality?.ecc).toMatchObject({ agents: 11, skills: 42, packs: ["typescript", "web"] });
+    // when live, the ECC card is rendered from real data WITHOUT the preview marker
+    const view = assembleViewV9(d, V9_DEMO);
+    expect(view.sections["sec-quality"]?.html).toContain(">11<"); // real agent count
+    expect(view.sections["sec-quality"]?.html).not.toContain("span-4 preview");
+  });
+
+  it("flips the coherence matrix to live and attaches it to drift", () => {
+    const d = buildAihDataV9([...ALL, coherence()]);
+    expect(d.gates["cap-coherence"]).toBe("live");
+    expect(d.drift?.coherence?.agreementPct).toBe(88);
+    const view = assembleViewV9(d, V9_DEMO);
+    expect(view.sections["sec-drift"]?.html).not.toContain("span-7 preview");
+    expect(view.sections["sec-drift"]?.html).toContain("88% agree");
   });
 });
 

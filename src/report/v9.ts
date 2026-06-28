@@ -25,6 +25,7 @@ import type {
   V9Action,
   V9Activity,
   V9Adoption,
+  V9Coherence,
   V9Context,
   V9Drift,
   V9Hero,
@@ -470,6 +471,30 @@ function buildSupport(digests: DigestAction[]): V9Support | undefined {
   };
 }
 
+// ── capability slices (Phase B) ───────────────────────────────────────────────
+
+/** §1 ECC inventory (from the v9-only "ECC harness" digest), else undefined. */
+function buildEcc(digests: DigestAction[]): V9Quality["ecc"] | undefined {
+  const e = bag(digests, "ECC harness");
+  if (!e) return undefined;
+  return {
+    agents: numOr(e.agents, 0),
+    skills: numOr(e.skills, 0),
+    rules: numOr(e.rules, 0),
+    hooks: numOr(e.hooks, 0),
+    packs: strs(e.packs),
+    ...(typeof e.profile === "string" ? { profile: e.profile } : {}),
+  };
+}
+
+/** §2 cross-CLI coherence (from the v9-only "Coherence" digest), else undefined. */
+function buildCoherence(digests: DigestAction[]): V9Coherence | undefined {
+  const c = bag(digests, "Coherence");
+  if (!c) return undefined;
+  const cells = c.cells && typeof c.cells === "object" ? (c.cells as Record<string, string[]>) : {};
+  return { clis: strs(c.clis), dims: strs(c.dims), agreementPct: numOr(c.agreementPct, 0), cells };
+}
+
 // ── build ─────────────────────────────────────────────────────────────────────
 
 /** Set every section + capability gate, defaulting to "empty". */
@@ -506,14 +531,26 @@ function emptyGates(): Record<string, PanelState> {
 export function buildAihDataV9(digests: DigestAction[]): AihDataV9 {
   const gates = emptyGates();
   const actions = deriveActions(digests);
-  const drift = buildDrift(digests);
+  let drift = buildDrift(digests);
   const hero = buildHero(digests, actions.length, drift?.drifted.length);
   const context = buildContext(digests);
   const activity = buildActivity(digests);
-  const quality = buildQuality(digests);
+  let quality = buildQuality(digests);
   const mcp = buildMcp(digests);
   const adoption = buildAdoption(digests);
   const support = buildSupport(digests);
+
+  // §1/§2 capability slices — merge into their host panels when their digest exists.
+  const ecc = buildEcc(digests);
+  if (ecc) {
+    quality = quality
+      ? { ...quality, ecc }
+      : { testRatioPct: 0, testFiles: 0, sourceFiles: 0, guardrails: [], ecc };
+  }
+  const coherence = buildCoherence(digests);
+  if (coherence) {
+    drift = drift ? { ...drift, coherence } : { drifted: [], synced: [], coherence };
+  }
 
   if (hero) gates["sec-hero"] = "live";
   gates["sec-actions"] = "live"; // always present (honest empty state when clean)
@@ -527,10 +564,10 @@ export function buildAihDataV9(digests: DigestAction[]): AihDataV9 {
   if (support) gates["sec-support"] = "live";
   gates["sec-period"] = "live"; // trends sub-stub + outcome preview until wired
   gates["sec-skills"] = "preview"; // metering + ECC scan not wired
-  // Capability sub-cards stay preview until their digest lands (Phase B).
-  gates["cap-ecc"] = "preview";
-  gates["cap-coherence"] = "preview";
-  gates["cap-outcome"] = "preview";
+  // Capability sub-cards go live once their v9-only digest lands.
+  gates["cap-ecc"] = ecc ? "live" : "preview";
+  gates["cap-coherence"] = coherence ? "live" : "preview";
+  gates["cap-outcome"] = "preview"; // wired in Phase B §3
   gates["cap-usage"] = "preview"; // per-tool usage hooks not wired
 
   return {
