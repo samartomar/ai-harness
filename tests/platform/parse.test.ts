@@ -37,4 +37,24 @@ describe("platform parsers", () => {
     const pem = "-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----";
     expect(parsePemBlocks(pem)).toHaveLength(1);
   });
+
+  it("parsePemBlocks extracts multiple blocks in order, trimming each", () => {
+    const pem = [
+      "noise",
+      "-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----",
+      "between",
+      "-----BEGIN CERTIFICATE-----\nBBBB\n-----END CERTIFICATE-----",
+    ].join("\n");
+    const blocks = parsePemBlocks(pem);
+    expect(blocks).toHaveLength(2);
+    expect(blocks[0]?.pem).toBe("-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----\n");
+    expect(blocks[1]?.pem).toContain("BBBB");
+  });
+
+  it("parsePemBlocks ignores an unterminated BEGIN (and stays linear on the ReDoS input)", () => {
+    // Many BEGINs, no END: the old lazy regex rescanned to end from each — O(n²).
+    // The indexOf walk returns [] fast and matches nothing, exactly as the regex did.
+    const evil = `${"-----BEGIN CERTIFICATE-----\n".repeat(50_000)}x`;
+    expect(parsePemBlocks(evil)).toEqual([]);
+  });
 });
