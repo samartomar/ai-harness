@@ -34,9 +34,11 @@ export function spanningMcp(repos: string[], version?: string): unknown {
       : "@modelcontextprotocol/server-filesystem";
   return {
     mcpServers: {
-      "better-code-review-graph": {
-        command: "uv",
-        args: ["run", "better-code-review-graph", "serve"],
+      // Pinned uvx form, identical to the per-repo server in src/mcp/servers.ts —
+      // ephemeral env (works from the workspace root), reproducible, bump in lockstep.
+      "code-review-graph": {
+        command: "uvx",
+        args: ["code-review-graph@2.3.6", "serve"],
       },
       filesystem: {
         command: "npx",

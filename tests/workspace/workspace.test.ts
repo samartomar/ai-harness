@@ -103,15 +103,12 @@ describe("workspace.plan — generated artifacts", () => {
     expect(marker.graphScope).toBe("combined-child-repos");
     const mcp = w.get(".mcp.json")?.json as {
       mcpServers: {
-        "better-code-review-graph": { command: string; args: string[] };
+        "code-review-graph": { command: string; args: string[] };
         filesystem: { args: string[] };
       };
     };
-    expect(mcp.mcpServers["better-code-review-graph"].args).toEqual([
-      "run",
-      "better-code-review-graph",
-      "serve",
-    ]);
+    expect(mcp.mcpServers["code-review-graph"].command).toBe("uvx");
+    expect(mcp.mcpServers["code-review-graph"].args).toEqual(["code-review-graph@2.3.6", "serve"]);
     expect(mcp.mcpServers.filesystem.args).toEqual(expect.arrayContaining(["ui", "backend"]));
   });
 
