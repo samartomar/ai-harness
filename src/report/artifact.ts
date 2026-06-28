@@ -528,9 +528,10 @@ function toolsInstalledPanel(d: Bag): string {
   );
 }
 
-/** A nice-to-have tool that isn't installed — calm "(optional)", never a failure. */
+/** A nice-to-have tool that isn't installed — calm "(optional)" + its install command. */
 function optionalPill(name: string): string {
-  const label = `${name} — optional, not installed`;
+  const hint = TOOL_HINTS[name];
+  const label = hint ? `${name} — optional; install: ${hint}` : `${name} — optional, not installed`;
   return `<span class="tool opt" tabindex="0" aria-label="${esc(label)}" data-tip="${esc(label)}">${esc(name)} ·opt</span>`;
 }
 

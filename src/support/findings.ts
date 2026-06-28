@@ -107,6 +107,21 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     action:
       "Install rg/fd/jq (winget/scoop/brew), or on a locked-down VDI add your local bundle to PATH.",
   },
+  "env.tool-install-blocked": {
+    audience: "internal-it",
+    failSeverity: "degraded",
+    title: "required developer tool could not be installed",
+    affectedArea: "local developer tooling / software installation",
+    evidence:
+      "A required command-line tool is not available, and an automated install could not complete on this machine (no supported package manager is present, privileges are insufficient, or the package source is blocked).",
+    action:
+      "Please provision the missing tool via the approved software catalog / package manager, or unblock the package source on this machine so the developer can install it.",
+    acceptance: [
+      "The tool resolves on PATH.",
+      "Project tooling checks pass without further manual steps.",
+      NO_CODE_CHANGES,
+    ],
+  },
   "cert.ca-missing": {
     audience: "internal-it",
     failSeverity: "blocking",

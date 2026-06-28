@@ -23,6 +23,8 @@ export interface NextStepsInput {
   perTurn?: LoadGroupModel;
   /** Captured usage events; 0 = telemetry not wired yet. `undefined` = unknown. */
   usageEvents?: number;
+  /** Agent shell tools (rg/fd/jq/…) not on PATH — surfaces the `aih tools` install step. */
+  toolsMissing?: number;
   /** Repo opted into the harness (committed marker) — only an opted-in repo is nagged. */
   initialized: boolean;
 }
@@ -65,6 +67,13 @@ export function nextSteps(input: NextStepsInput): string[] {
   if (input.usageEvents === 0) {
     steps.push(
       "Wire telemetry → `aih usage --apply` + `aih track --apply` (commit/stop hook) to populate Usage + Trends",
+    );
+  }
+
+  // Machine shell tools the agent guidance leans on — surface the install command.
+  if (input.toolsMissing && input.toolsMissing > 0) {
+    steps.push(
+      `Install ${input.toolsMissing} missing shell tool(s) → \`aih tools\` (preview) · \`aih tools --apply\` (install)`,
     );
   }
 
