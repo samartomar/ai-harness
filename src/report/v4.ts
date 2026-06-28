@@ -1,3 +1,4 @@
+import { SUPPORTED_CLIS } from "../internals/clis.js";
 import type { DigestAction } from "../internals/plan.js";
 import { V4_TEMPLATE } from "./v4-template.js";
 
@@ -10,14 +11,15 @@ import { V4_TEMPLATE } from "./v4-template.js";
  * `docs/research/local-report-v4-plan.md`, Phase 0).
  *
  * Honesty rule (mirrors the rest of the report): a LIVE panel is shown with real
- * numbers ONLY when its data exists today. Everything not yet bound is **gated** to
- * an explicit placeholder rather than left showing the prototype's sample figures as
- * if they were real. The embedded DEMO dataset (the `◑ demo` toggle) is untouched —
- * it remains the full showcase.
+ * numbers ONLY when its data exists today. Sections not yet bound are **hidden** in
+ * the live view (with one banner pointing to the demo) rather than left showing the
+ * prototype's sample figures as if they were real. The embedded DEMO dataset (the
+ * `◑ demo` toggle) is untouched — it remains the full showcase.
  *
- * Phase 0 / commit 1 binds the hero (maturity radar + score + tier from the
- * scorecard) and gates the rest. Subsequent commits bind adoption, events, activity,
- * and MCP wiring and ungate them one at a time.
+ * Bound so far: hero (maturity radar + score + tier), **adoption** (tools, checks,
+ * repo status, MCP consumers) and the **event timeline**. Still gated: MCP plumbing,
+ * activity heatmap, and the panels that need the capture layer (Sankey, cost,
+ * forecast, guardrails, hooks, replay, anomalies).
  */
 
 /** Radar axis labels, in the order the prototype draws them (matches scorecard dims). */
@@ -37,8 +39,8 @@ const DIM_ORDER = [
 ] as const;
 
 /**
- * Every LIVE section id in the prototype that carries data. Commit 1 binds only the
- * hero, so all of these start gated (`false`) until a later commit wires each one.
+ * Every LIVE section id in the prototype that carries data. A section is bound when
+ * {@link buildAihDataV4} produces a {@link V4Section} for it; the rest are hidden.
  */
 const LIVE_SECTIONS = [
   "sec-anomalies",
@@ -56,6 +58,9 @@ const LIVE_SECTIONS = [
   "sec-events",
 ] as const;
 
+/** Friendlier short labels for a few tool binaries (matches the prototype's pills). */
+const TOOL_LABELS: Record<string, string> = { "code-review-graph": "cr-graph" };
+
 export interface V4Radar {
   labels: string[];
   values: number[];
@@ -66,12 +71,25 @@ export interface V4Maturity {
   grade: string;
 }
 
+/** A bound LIVE section: real header text + the `.grid` inner HTML, server-rendered. */
+export interface V4Section {
+  title: string;
+  /** sec-insight inner HTML (may contain `<b>`/`<code>`). */
+  insight: string;
+  /** sec-count chip text (optional). */
+  count?: string;
+  /** `.grid` inner HTML — the section's cards. */
+  grid: string;
+}
+
 export interface AihDataV4 {
   /** Maturity radar (5 axes 0–100) — present only when the scorecard ran (on-canon). */
   radar?: V4Radar;
   /** Overall harness-health score + tier — present only when the scorecard ran. */
   maturity?: V4Maturity;
-  /** sectionId → is this LIVE panel backed by real data yet (false = show placeholder). */
+  /** sectionId → bound live content (absent → the section is hidden in the live view). */
+  sections: Record<string, V4Section>;
+  /** sectionId → is this LIVE panel backed by real data yet. */
   gates: Record<string, boolean>;
 }
 
@@ -86,6 +104,186 @@ export interface ReportHtmlV4Options {
 function bag(digests: DigestAction[], prefix: string): Record<string, unknown> | undefined {
   const d = digests.find((x) => x.describe.startsWith(prefix));
   return d?.data && typeof d.data === "object" ? (d.data as Record<string, unknown>) : undefined;
+}
+
+function escHtml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+/** A string[] field off a bag, filtered to strings (or [] when absent/malformed). */
+function strs(v: unknown): string[] {
+  return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
+}
+
+function numOr(v: unknown, fallback: number): number {
+  return typeof v === "number" ? v : fallback;
+}
+
+function toolPill(name: string, on: boolean): string {
+  const label = TOOL_LABELS[name] ?? name;
+  return `<span class="tool ${on ? "on" : "off"}"${on ? "" : ` title="${escHtml(name)}"`}>${escHtml(label)}</span>`;
+}
+
+/** Tools-installed card → prototype `.pills` of present/absent tool binaries. */
+function renderToolsCard(d: Record<string, unknown> | undefined): string | undefined {
+  if (!d) return undefined;
+  const present = strs(d.present);
+  const absent = strs(d.absent);
+  const total = numOr(d.total, present.length + absent.length);
+  const coreMissing = strs(d.coreMissing);
+  const pills = [
+    ...present.map((n) => toolPill(n, true)),
+    ...absent.map((n) => toolPill(n, false)),
+  ].join("");
+  const badge = coreMissing.length > 0 ? "badge bad" : "badge ok";
+  return `<div class="card span-4"><div class="card-head"><h3>Tools installed</h3><span class="${badge}">${present.length}/${total}</span></div><div class="card-body"><div class="pills">${pills}</div></div></div>`;
+}
+
+/** Configuration card → prototype `.chips` of present/absent adoption artifacts. */
+function renderChecksCard(d: Record<string, unknown> | undefined): string | undefined {
+  if (!d) return undefined;
+  const present = strs(d.present);
+  const absent = strs(d.absent);
+  const total = numOr(d.total, present.length + absent.length);
+  const chip = (name: string, ok: boolean) =>
+    `<span class="chip ${ok ? "ok" : "bad"}"><i>${ok ? "✓" : "✗"}</i>${escHtml(name)}</span>`;
+  const chips = [...present.map((n) => chip(n, true)), ...absent.map((n) => chip(n, false))].join(
+    "",
+  );
+  const badge = absent.length === 0 ? "badge ok" : "badge warn";
+  return `<div class="card span-4"><div class="card-head"><h3>Adoption checks</h3><span class="${badge}">${present.length}/${total}</span></div><div class="card-body"><div class="chips">${chips}</div></div></div>`;
+}
+
+interface BranchRow {
+  name?: unknown;
+  age?: unknown;
+  ahead?: unknown;
+  behind?: unknown;
+}
+
+/** Repo-status card → prototype `.branches` list (current marked, main tagged). */
+function renderRepoCard(d: Record<string, unknown> | undefined): string | undefined {
+  if (!d) return undefined;
+  if (d.isRepo === false) {
+    return '<div class="card span-4"><div class="card-head"><h3>Repo status</h3><span class="badge muted">no repo</span></div><div class="card-body"><div class="hint">not a git repository</div></div></div>';
+  }
+  const current = typeof d.current === "string" ? d.current : "—";
+  const main = typeof d.main === "string" ? d.main : "main";
+  const rows = Array.isArray(d.branches) ? (d.branches as BranchRow[]) : [];
+  const li = (b: BranchRow): string => {
+    const name = typeof b.name === "string" ? b.name : "";
+    const age = typeof b.age === "string" ? b.age : "";
+    const isCur = name === current;
+    const isMain = name === main;
+    const tag = isMain ? '<span class="tag">main</span>' : "";
+    const diffs = isMain
+      ? ""
+      : `<span class="diff up">+${numOr(b.ahead, 0)}</span><span class="diff down">−${numOr(b.behind, 0)}</span>`;
+    return `<li${isCur ? ' class="cur"' : ""}><span class="dot"></span><span class="bname">${escHtml(name)}${tag}</span>${diffs}<span class="age">${escHtml(age)}</span></li>`;
+  };
+  const items = rows.slice(0, 6).map(li).join("");
+  const hint = d.dirty === true ? '<div class="hint">uncommitted changes</div>' : "";
+  return `<div class="card span-4"><div class="card-head"><h3>Repo status</h3><span class="badge accent">${escHtml(current)}</span></div><div class="card-body"><ul class="branches">${items}</ul>${hint}</div></div>`;
+}
+
+interface CovRow {
+  cli?: unknown;
+  mcp?: { state?: unknown };
+}
+
+/** Set of CLIs whose MCP cell is `wired`, from the AI-CLI-wiring model rows. */
+function mcpWiredClis(cov: Record<string, unknown> | undefined): Set<string> {
+  const rows = cov && Array.isArray(cov.rows) ? (cov.rows as CovRow[]) : [];
+  return new Set(
+    rows
+      .filter((r) => r.mcp?.state === "wired" && typeof r.cli === "string")
+      .map((r) => r.cli as string),
+  );
+}
+
+/** MCP-consumers card → every supported CLI, lit when this repo has its MCP wired. */
+function renderMcpConsumersCard(cov: Record<string, unknown> | undefined): string {
+  const wired = mcpWiredClis(cov);
+  const pills = SUPPORTED_CLIS.map((cli) =>
+    wired.has(cli)
+      ? `<span class="tool on mcp">${escHtml(cli)}</span>`
+      : `<span class="tool off" title="${escHtml(cli)}">${escHtml(cli)}</span>`,
+  ).join("");
+  return `<div class="card span-12"><div class="card-head"><h3>AI tooling · MCP consumers</h3><span class="badge mcp">${wired.size}/${SUPPORTED_CLIS.length} MCP-enabled</span></div><div class="card-body"><div class="pills">${pills}</div></div></div>`;
+}
+
+/** Adoption section (#sec-adoption): tools, checks, repo status, MCP consumers. */
+function renderAdoptionSection(digests: DigestAction[]): V4Section | undefined {
+  const tools = bag(digests, "Tools installed");
+  const cfg = bag(digests, "Configuration");
+  if (!tools && !cfg) return undefined;
+  const cov = bag(digests, "AI CLI wiring");
+  const cards = [
+    renderToolsCard(tools),
+    renderChecksCard(cfg),
+    renderRepoCard(bag(digests, "Repo status")),
+    renderMcpConsumersCard(cov),
+  ].filter((c): c is string => Boolean(c));
+  const checksPresent = cfg ? strs(cfg.present).length : 0;
+  const absentChecks = cfg ? strs(cfg.absent) : [];
+  const checksTotal = cfg ? numOr(cfg.total, checksPresent + absentChecks.length) : 0;
+  const toolsPresent = tools ? strs(tools.present).length : 0;
+  const toolsTotal = tools ? numOr(tools.total, toolsPresent + strs(tools.absent).length) : 0;
+  const wired = mcpWiredClis(cov).size;
+  const title =
+    absentChecks.length === 0
+      ? `All ${checksTotal} adoption checks pass`
+      : `${checksPresent} of ${checksTotal} adoption checks pass`;
+  const gap =
+    absentChecks.length > 0
+      ? ` Gap${absentChecks.length > 1 ? "s" : ""}: <b class="bad">${absentChecks.map(escHtml).join(", ")}</b>.`
+      : "";
+  const insight = `${toolsPresent} of ${toolsTotal} tools installed; ${wired} of ${SUPPORTED_CLIS.length} AI CLIs MCP-enabled.${gap}`;
+  return { title, insight, count: "adoption", grid: cards.join("") };
+}
+
+interface EventRow {
+  ts?: unknown;
+  tool?: unknown;
+  kind?: unknown;
+  detail?: unknown;
+}
+
+/** Prototype `.tl-event` class for an event kind. */
+function eventKindClass(kind: string): string {
+  if (kind === "mcp") return "up mcp";
+  if (kind === "skill") return "skill";
+  if (kind === "commit") return "commit";
+  return "other";
+}
+
+/** Event-timeline section (#sec-events) from the recorded `.aih/usage.jsonl` feed. */
+function renderEventsSection(digests: DigestAction[]): V4Section | undefined {
+  const d = bag(digests, "AI events");
+  if (!d) return undefined;
+  const rows = Array.isArray(d.rows) ? (d.rows as EventRow[]) : [];
+  const total = numOr(d.total, rows.length);
+  const shown = rows.slice(0, 12);
+  const ev = (r: EventRow): string => {
+    const ts = typeof r.ts === "string" ? r.ts : "";
+    // "YYYY-MM-DD HH:MM" → "HH:MM" for the dense timeline.
+    const time = ts.length >= 16 ? ts.slice(11) : ts;
+    const kind = typeof r.kind === "string" ? r.kind : "";
+    const detail =
+      (typeof r.detail === "string" && r.detail) || (typeof r.tool === "string" ? r.tool : "");
+    return `<div class="tl-event ${eventKindClass(kind)}"><span class="tag">${escHtml(kind)}</span><span class="dot"></span><span class="time">${escHtml(time)}</span><span class="det">${escHtml(detail)}</span></div>`;
+  };
+  const items = shown.map(ev).join("");
+  const more =
+    total > shown.length ? `<div class="tl-more">+${total - shown.length} older events</div>` : "";
+  const grid = `<div class="card span-12"><div class="card-head"><h3>Event timeline</h3><span class="badge muted">newest → oldest</span></div><div class="card-body"><div class="timeline"><div class="tl-axis"></div><div class="tl-events">${items}</div></div>${more}</div></div>`;
+  return {
+    title: `Latest activity — ${total} event${total === 1 ? "" : "s"} recorded`,
+    insight:
+      "The most recent AI events from <code>.aih/usage.jsonl</code> (commits always; skills/MCP once per-tool hooks are wired).",
+    count: `${total} events`,
+    grid,
+  };
 }
 
 /**
@@ -109,9 +307,13 @@ export function buildAihDataV4(digests: DigestAction[]): AihDataV4 {
       maturity = { overall: sc.overall, grade: sc.grade };
     }
   }
-  // Commit 1: only the hero is bound — gate every other live panel honestly.
-  const gates = Object.fromEntries(LIVE_SECTIONS.map((s) => [s, false]));
-  return { radar, maturity, gates };
+  const sections: Record<string, V4Section> = {};
+  const adoption = renderAdoptionSection(digests);
+  if (adoption) sections["sec-adoption"] = adoption;
+  const events = renderEventsSection(digests);
+  if (events) sections["sec-events"] = events;
+  const gates = Object.fromEntries(LIVE_SECTIONS.map((s) => [s, Boolean(sections[s])]));
+  return { radar, maturity, sections, gates };
 }
 
 /** Replace exactly one known occurrence; throw if the template drifted so binding never silently no-ops. */
@@ -126,23 +328,22 @@ function jsonForScript(value: unknown): string {
   return JSON.stringify(value).replace(/</g, "\\u003c");
 }
 
-function escHtml(s: string): string {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-}
-
 /**
  * Post-render hydration injected after the prototype's own script (so it runs after
- * `initAll()`): binds the hero score/tier from real data and replaces every gated
- * LIVE section with an honest placeholder, leaving the DEMO subtree untouched.
+ * `initAll()`): binds the hero + every bound section from real data, hides the
+ * not-yet-wired sections, and adds one honest banner. The DEMO subtree is untouched.
  */
 const HYDRATE_SCRIPT = `<script>(function(){var d=window.AIH_DATA||{};
 var live=document.getElementById("aih-live");if(!live)return;
 if(d.maturity){var b=live.querySelector(".hero-score-big");if(b)b.innerHTML=d.maturity.overall+'<span class="of">/100</span>';var t=live.querySelector(".hero-score-tier");if(t)t.textContent=String(d.maturity.grade);}
-var sub=live.querySelector(".hero-sub");if(sub)sub.innerHTML='Maturity radar and overall score are wired to your repo. The remaining panels light up as the local capture layer lands \\u2014 see <code>docs/research/local-report-v4-plan.md</code>. Toggle <b>\\u25d1 demo</b> to preview the full design.';
+var sub=live.querySelector(".hero-sub");if(sub)sub.innerHTML='Maturity radar, score, adoption and the event feed are wired to your repo. The remaining panels light up as the local capture layer lands \\u2014 see <code>docs/research/local-report-v4-plan.md</code>. Toggle <b>\\u25d1 demo</b> for the full design.';
 var pulse=live.querySelector(".pulse-strip");if(pulse&&pulse.parentNode)pulse.parentNode.removeChild(pulse);
 var vit=live.querySelector(".hero-vitals");if(vit&&vit.parentNode)vit.parentNode.removeChild(vit);
-var g=d.gates||{};var ph='<div class="card span-12"><div class="card-body"><p style="color:var(--muted);font-size:.86rem;line-height:1.5;margin:0">Not yet wired to local data \\u2014 this panel lights up as the capture layer lands (Phase 2/3 of <code>docs/research/local-report-v4-plan.md</code>). Toggle <b>\\u25d1 demo</b> to preview the design.</p></div></div>';
-Object.keys(g).forEach(function(id){if(g[id])return;var sec=document.getElementById(id);if(!sec)return;if(sec.classList.contains("anom-strip")){if(sec.parentNode)sec.parentNode.removeChild(sec);return;}var grid=sec.querySelector(".grid");if(grid)grid.innerHTML=ph;});
+var S=d.sections||{},g=d.gates||{},hidden=0;
+Object.keys(g).forEach(function(id){var sec=document.getElementById(id);if(!sec)return;var s=S[id];
+if(s){var ti=sec.querySelector(".sec-title");if(ti)ti.textContent=s.title;var ins=sec.querySelector(".sec-insight");if(ins)ins.innerHTML=s.insight;if(s.count){var c=sec.querySelector(".sec-count");if(c)c.textContent=s.count;}var gr=sec.querySelector(".grid");if(gr)gr.innerHTML=s.grid;return;}
+sec.style.display="none";hidden++;});
+if(hidden){var hero=document.getElementById("sec-hero");if(hero&&hero.parentNode){var n=document.createElement("div");n.className="whatsnew";n.innerHTML='<span class="tag">preview</span><b>'+hidden+' panel'+(hidden>1?'s':'')+'</b> not yet wired to local data \\u2014 toggle <b>\\u25d1 demo</b> to preview them. <span class="muted">Binding lands as the capture layer ships (docs/research/local-report-v4-plan.md).</span>';hero.parentNode.insertBefore(n,hero);}}
 })();</script>`;
 
 /**
