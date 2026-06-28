@@ -998,6 +998,75 @@ var cont=el.querySelector(s.container);if(cont)cont.innerHTML=s.html;
 
 const HYDRATE_SCRIPT = `<script>(${HYDRATE_FN})(document, window.AIH_DATA||{});</script>`;
 
+/** Bounds of the `<section>` carrying `id`, as [start, end) excluding the trailing `</section>`. */
+function sectionBounds(html: string, id: string): { start: number; end: number } | undefined {
+  const idIdx = html.indexOf(`id="${id}"`);
+  if (idIdx === -1) return undefined;
+  const start = html.lastIndexOf("<section", idIdx);
+  const end = html.indexOf("</section>", idIdx);
+  if (start === -1 || end === -1) return undefined;
+  return { start, end };
+}
+
+/** Replace a non-nested header element's inner content within a section block. */
+function replaceField(block: string, re: RegExp, value: string): string {
+  return block.replace(re, (_m, open: string, close: string) => open + value + close);
+}
+
+/** Replace the inner HTML of the `<div>` carrying class `cls`, balancing nested divs. */
+function replaceDivInner(block: string, cls: string, inner: string): string {
+  const open = new RegExp(`<div class="[^"]*\\b${cls}\\b[^"]*">`).exec(block);
+  if (!open) return block;
+  const innerStart = open.index + open[0].length;
+  let depth = 1;
+  let i = innerStart;
+  while (i < block.length && depth > 0) {
+    const o = block.indexOf("<div", i);
+    const c = block.indexOf("</div>", i);
+    if (c === -1) return block;
+    if (o !== -1 && o < c) {
+      depth++;
+      i = o + 4;
+    } else {
+      depth--;
+      i = c + 6;
+    }
+  }
+  return block.slice(0, innerStart) + inner + block.slice(i - 6);
+}
+
+/**
+ * Server-render the assembled view into the embedded shell's section bodies — mirroring
+ * {@link HYDRATE_FN} but at build time, so the static HTML carries REAL (or honest-stub)
+ * content and never the baked demo, even with JavaScript disabled. The client-side
+ * hydrate then becomes an idempotent re-apply.
+ */
+function applyViewToHtml(html: string, view: V9View): string {
+  for (const id of Object.keys(view.sections)) {
+    const s = view.sections[id];
+    const b = sectionBounds(html, id);
+    if (!s || !b) continue;
+    let block = html.slice(b.start, b.end);
+    if (s.title != null)
+      block = replaceField(
+        block,
+        /(<h2 class="sec-title"[^>]*>)[\s\S]*?(<\/h2>)/,
+        escHtml(s.title),
+      );
+    if (s.insight != null)
+      block = replaceField(block, /(<p class="sec-insight"[^>]*>)[\s\S]*?(<\/p>)/, s.insight);
+    if (s.count != null)
+      block = replaceField(
+        block,
+        /(<span class="sec-count"[^>]*>)[\s\S]*?(<\/span>)/,
+        escHtml(s.count),
+      );
+    block = replaceDivInner(block, s.container.replace(/^\./, ""), s.html);
+    html = html.slice(0, b.start) + block + html.slice(b.end);
+  }
+  return html;
+}
+
 /**
  * Render the v9 dashboard. Embeds the reference shell verbatim and binds the view to
  * real digests (or the demo dataset under `--demo`); the radar values + the
@@ -1026,6 +1095,9 @@ export function reportHtmlV9(
     RADAR_ANCHOR,
     `window.AIH_DATA=${jsonForScript(view)};\nvar RADAR=(window.AIH_DATA&&AIH_DATA.radar)?AIH_DATA.radar:${RADAR_FALLBACK};`,
   );
+  // Server-render every section into the static body so the report is honest WITHOUT JS
+  // (no baked-demo bleed); the injected hydrate below is then an idempotent re-apply.
+  html = applyViewToHtml(html, view);
   html = replaceOnce(html, "</body>", `${HYDRATE_SCRIPT}\n</body>`);
   // Whole-report redaction (review-council ask): scrub secrets + the home path so the
   // dashboard is safe to share. Deterministic per machine (drives cross-machine

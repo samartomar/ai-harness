@@ -466,3 +466,30 @@ describe("reportHtmlV9 — document", () => {
     expect(html).not.toContain(`${home}/secret.txt`);
   });
 });
+
+describe("reportHtmlV9 — server-rendered honesty (no-JS)", () => {
+  it("off-canon: the static body carries the honest stub, never the baked demo", () => {
+    const html = reportHtmlV9("aih report — local developer console", []);
+    expect(html).toContain("No harness here yet");
+    expect(html).not.toContain('hero-score-big">82');
+    expect(html).not.toContain("aih cleared 4 blockers");
+    expect(html).not.toContain("1,204");
+  });
+
+  it("on-canon: the static body carries the REAL wiring score, not the demo", () => {
+    const sc = digest("Harness maturity — 73/100 (solid)", "body", {
+      overall: 73,
+      grade: "solid",
+      dimensions: [
+        { name: "layering", score: 90, checks: [] },
+        { name: "sharing", score: 90, checks: [] },
+        { name: "harnessWiring", score: 60, checks: [] },
+        { name: "guardrails", score: 40, checks: [] },
+        { name: "discoverability", score: 80, checks: [] },
+      ],
+    });
+    const html = reportHtmlV9("t", [sc]);
+    expect(html).toContain('hero-score-big">73');
+    expect(html).not.toContain('hero-score-big">82');
+  });
+});
