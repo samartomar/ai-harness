@@ -269,8 +269,9 @@ export function demoDigests(): DigestAction[] {
       absent: ADOPTION_ABSENT,
       total: ADOPTION_PRESENT.length + ADOPTION_ABSENT.length,
     }),
-    digest("Machine tooling — 7 of 11 AI CLIs installed here", "demo", {
-      present: ["claude", "codex", "cursor", "gemini", "antigravity", "windsurf", "kiro"],
+    digest("Machine tooling — 6 runnable · 1 config-only of 11 AI CLIs", "demo", {
+      present: ["claude", "codex", "cursor", "gemini", "antigravity", "kiro"],
+      configOnly: ["windsurf"],
       absent: ["copilot", "opencode", "zed", "kimi"],
       total: 11,
     }),

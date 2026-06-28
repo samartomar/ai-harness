@@ -55,6 +55,54 @@ export async function detectClis(ctx: PlanContext): Promise<CliPresence[]> {
 }
 
 /**
+ * A CLI's two install signals checked INDEPENDENTLY (unlike {@link detectOne},
+ * which short-circuits on the first hit). A config dir alone is a weak signal — it
+ * survives an uninstall — so an honest inventory needs to know whether the binary
+ * is ALSO on PATH ("runnable") vs only a (possibly stale) config dir remaining.
+ */
+export interface CliInstall {
+  cli: Cli;
+  /** A home config dir exists (weak: a leftover dir survives an uninstall). */
+  config: boolean;
+  /** A registry binary resolves on PATH (strong: the tool is actually runnable). */
+  binary: boolean;
+  /** The matching config dir (`~/…`), when `config`. */
+  configDetail?: string;
+  /** The matching binary name, when `binary`. */
+  binaryDetail?: string;
+}
+
+/**
+ * Per-CLI install signals with config AND PATH checked separately, so a caller can
+ * tell a runnable install (binary on PATH) from a config dir that may just be a
+ * leftover. Async — one PATH probe per binary through the Runner seam.
+ */
+export async function detectInstall(ctx: PlanContext): Promise<CliInstall[]> {
+  const home = homeDir(ctx);
+  return Promise.all(
+    SUPPORTED_CLIS.map(async (cli): Promise<CliInstall> => {
+      const sig = entry(cli);
+      const out: CliInstall = { cli, config: false, binary: false };
+      for (const rel of sig.configDirs) {
+        if (existsSync(join(home, rel))) {
+          out.config = true;
+          out.configDetail = `~/${rel}`;
+          break;
+        }
+      }
+      for (const bin of sig.binaries) {
+        if (await binaryOnPath(ctx, bin)) {
+          out.binary = true;
+          out.binaryDetail = bin;
+          break;
+        }
+      }
+      return out;
+    }),
+  );
+}
+
+/**
  * Config-dir-only presence (synchronous, no PATH probe), in canonical order. For
  * read-only inventories like `aih report`, where spawning a `which`/`where` per
  * binary isn't worth it — reuses the same {@link SIGNALS} config dirs.
