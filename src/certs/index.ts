@@ -12,6 +12,7 @@ import {
   probe,
   writeText,
 } from "../internals/plan.js";
+import { stripTrailingNewlines } from "../internals/render.js";
 import type { Check } from "../internals/verify.js";
 import { upsertIniKey } from "./ini.js";
 import { homebrewDoc, noCertDoc } from "./templates.js";
@@ -152,7 +153,7 @@ export function pipConfig(existing: string, pemPath: string): string {
   const hint = "# pip >= 24.2 on Python 3.10+ can instead verify via the OS store:";
   const withCert = upsertIniKey(existing, "cert", pemPath, { section: "global" });
   if (withCert.includes("use-feature")) return withCert;
-  return `${withCert.replace(/\n+$/, "")}\n${hint}\n#   use-feature = truststore\n`;
+  return `${stripTrailingNewlines(withCert)}\n${hint}\n#   use-feature = truststore\n`;
 }
 
 /** Upsert cargo's `[http] cainfo = "<pem>"` and `[net] git-fetch-with-cli = true`. */
@@ -174,7 +175,7 @@ export function cargoConfig(existing: string, pemPath: string): string {
  */
 export function condarcConfig(existing: string, pemPath: string): string {
   const line = `ssl_verify: ${pemPath}`;
-  const src = existing.replace(/\n+$/, "");
+  const src = stripTrailingNewlines(existing);
   const rows = src.length > 0 ? src.split("\n") : [];
   let replaced = false;
   const out = rows.map((r) => {

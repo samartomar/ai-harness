@@ -15,6 +15,8 @@
  * faithfully.
  */
 
+import { stripTrailingNewlines } from "../internals/render.js";
+
 export interface UpsertIniOptions {
   /** Section header to scope the key under (e.g. `global`, `http`); null for a flat file. */
   section?: string | null;
@@ -97,14 +99,14 @@ function keyMatches(rawLine: string, key: string): boolean {
 
 function splitKeepEmpty(text: string): string[] {
   if (text.length === 0) return [];
-  return text.replace(/\n+$/, "").split("\n");
+  return stripTrailingNewlines(text).split("\n");
 }
 
 function joinTrim(lines: string[]): string {
-  return `${lines.join("\n").replace(/\n+$/, "")}\n`;
+  return `${stripTrailingNewlines(lines.join("\n"))}\n`;
 }
 
 function appendLine(text: string, line: string): string {
-  const trimmed = text.replace(/\n+$/, "");
+  const trimmed = stripTrailingNewlines(text);
   return trimmed.length > 0 ? `${trimmed}\n${line}\n` : `${line}\n`;
 }

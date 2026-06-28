@@ -1,5 +1,5 @@
 import type { DigestAction } from "../internals/plan.js";
-import { lines } from "../internals/render.js";
+import { lines, stripTrailingNewlines } from "../internals/render.js";
 import type { SupportTemplate } from "../support/render.js";
 import { demoDigests } from "./demo.js";
 import { GEIST_FONT } from "./font-geist.js";
@@ -23,7 +23,7 @@ function fmt(n: number): string {
 export function reportMarkdown(title: string, digests: DigestAction[]): string {
   const parts: string[] = [`# ${title}`, ""];
   for (const d of digests) {
-    parts.push(`## ${d.describe}`, "", "```text", d.text.replace(/\n+$/, ""), "```", "");
+    parts.push(`## ${d.describe}`, "", "```text", stripTrailingNewlines(d.text), "```", "");
   }
   return lines(...parts);
 }
@@ -414,7 +414,12 @@ function cliMatrixPanel(d: Bag): string {
 
 /** A clean styled panel for notes/stubs/unrecognized digests (no data viz). */
 function notePanel(d: DigestAction): string {
-  return panel(d.describe, "", `<pre class="prose">${esc(d.text.replace(/\n+$/, ""))}</pre>`, 12);
+  return panel(
+    d.describe,
+    "",
+    `<pre class="prose">${esc(stripTrailingNewlines(d.text))}</pre>`,
+    12,
+  );
 }
 
 interface EvRow {
