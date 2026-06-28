@@ -8,8 +8,14 @@ import { lines } from "../internals/render.js";
  * seam (`where`/`which`), so tests stay hermetic. Read-only, no mutation.
  */
 
-/** Tools the harness recommends; `code-review-graph` powers the (gated) graph panels. */
-const DEV_TOOLS = ["rg", "sg", "fd", "tree", "comby", "jq", "gh", "code-review-graph"] as const;
+/**
+ * CORE tools the agent guidance actually leans on (fast search + JSON) — their
+ * absence is a real gap. OPTIONAL tools are nice-to-haves (structural search,
+ * tree view, GitHub CLI, the graph engine); their absence is NOT a shortfall, so
+ * a personal box without `sg`/`comby` shouldn't read as "2 missing".
+ */
+const CORE_TOOLS = ["rg", "fd", "jq"] as const;
+const OPTIONAL_TOOLS = ["sg", "comby", "tree", "gh", "code-review-graph"] as const;
 
 async function onPath(ctx: PlanContext, bin: string): Promise<boolean> {
   const argv = ctx.host.platform === "windows" ? ["where", bin] : ["which", bin];
@@ -18,21 +24,36 @@ async function onPath(ctx: PlanContext, bin: string): Promise<boolean> {
 }
 
 export async function toolsInstalledDigest(ctx: PlanContext): Promise<DigestAction> {
-  const results = await Promise.all(
-    DEV_TOOLS.map(async (name) => ({ name, present: await onPath(ctx, name) })),
-  );
-  const present = results.filter((r) => r.present);
-  return digest(
-    `Tools installed — ${present.length} of ${results.length} on PATH`,
-    lines(
-      "Agent shell tools on PATH:",
-      "",
-      ...results.map((r) => `  ${r.present ? "✓" : "·"} ${r.name}`),
+  const check = (name: string) => onPath(ctx, name).then((present) => ({ name, present }));
+  const core = await Promise.all(CORE_TOOLS.map(check));
+  const optional = await Promise.all(OPTIONAL_TOOLS.map(check));
+  const corePresent = core.filter((r) => r.present);
+  const optPresent = optional.filter((r) => r.present);
+  const optMissing = optional.filter((r) => !r.present).length;
+
+  const body = lines(
+    "Agent shell tools on PATH — CORE (fast search + JSON; absence is a real gap)",
+    "vs OPTIONAL (nice-to-have; absence is fine, not a shortfall):",
+    "",
+    "  Core:",
+    ...core.map((r) => `    ${r.present ? "✓" : "✗"} ${r.name}`),
+    "  Optional:",
+    ...optional.map(
+      (r) => `    ${r.present ? "✓" : "·"} ${r.name}${r.present ? "" : "  (optional)"}`,
     ),
+  );
+  return digest(
+    `Tools installed — ${corePresent.length}/${core.length} core${optMissing > 0 ? ` · ${optPresent.length}/${optional.length} optional` : " · all optional too"} on PATH`,
+    body,
     {
-      present: present.map((r) => r.name),
-      absent: results.filter((r) => !r.present).map((r) => r.name),
-      total: results.length,
+      // `present`/`absent` keep the old shape (all tools) for the dashboard pills;
+      // `core`/`optional` let the renderer style optional-absence as fine, not failed.
+      present: [...corePresent, ...optPresent].map((r) => r.name),
+      absent: [...core, ...optional].filter((r) => !r.present).map((r) => r.name),
+      core: CORE_TOOLS.slice(),
+      optional: OPTIONAL_TOOLS.slice(),
+      coreMissing: core.filter((r) => !r.present).map((r) => r.name),
+      total: core.length + optional.length,
     },
   );
 }

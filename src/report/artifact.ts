@@ -189,14 +189,25 @@ function trendsPanel(d: Bag): string {
 function checklistPanel(d: Bag): string {
   const present = arr(d.present) as string[];
   const absent = arr(d.absent) as string[];
+  const files = (d.files ?? {}) as Record<string, string>;
   const total = num(d.total) ?? present.length + absent.length;
+  // Show the FILE under each name so a reader can't mistake "gitleaks" (the
+  // `.gitleaks.toml` repo file) for the gitleaks binary being installed.
+  const fileTag = (n: string): string =>
+    files[n] ? `<small class="chip-file">${esc(files[n])}</small>` : "";
   const chips = [
-    ...present.map((n) => `<span class="chip ok"><i>✓</i>${esc(n)}</span>`),
-    ...absent.map((n) => `<span class="chip bad"><i>✗</i>${esc(n)}</span>`),
+    ...present.map(
+      (n) =>
+        `<span class="chip ok" title="${esc(files[n] ?? n)} present in repo"><i>✓</i>${esc(n)}${fileTag(n)}</span>`,
+    ),
+    ...absent.map(
+      (n) =>
+        `<span class="chip bad" title="${esc(files[n] ?? n)} not in this repo (a config file, not a tool)"><i>✗</i>${esc(n)}${fileTag(n)}</span>`,
+    ),
   ].join("");
   const cls = absent.length === 0 ? "ok" : "muted";
   return panel(
-    "Adoption checklist",
+    "Repo config files",
     `<span class="badge ${cls}">${present.length}/${total}</span>`,
     `<div class="chips">${chips}</div>`,
     5,
@@ -372,7 +383,7 @@ function cliMatrixPanel(d: Bag): string {
     '<div class="cli-legend">' +
     '<span class="cli-cell ok">✓ wired</span>' +
     '<span class="cli-cell bad">✗ missing</span>' +
-    '<span class="cli-cell warn">◐ manual</span>' +
+    '<span class="cli-cell warn" tabindex="0" data-tip="aih can\'t safely write this tool\'s config (e.g. Codex TOML, Gemini global settings), so it emits guidance instead of a file. Not a failure — see `loads`.">◐ guidance only (not a failure)</span>' +
     '<span class="cli-cell muted">— n/a</span>' +
     `<span class="cli-src">targets: ${esc(src)}</span></div>`;
   const loadable = num(d.provenLoadable) ?? 0;
@@ -493,17 +504,34 @@ function repoInfoPanel(d: Bag): string {
   return panel("Repository information", "", `${head}<ul class="bars">${rows}</ul>`, 7);
 }
 
-/** Tools installed — agent shell tools, filled when on PATH, struck-through (+ hint) when absent. */
+/** Tools installed — CORE shell tools (absence is a gap) vs OPTIONAL (absence is fine). */
 function toolsInstalledPanel(d: Bag): string {
   const present = arr(d.present) as string[];
   const absent = arr(d.absent) as string[];
-  const total = num(d.total) ?? present.length + absent.length;
+  const optional = new Set(arr(d.optional) as string[]);
+  const coreMissing = arr(d.coreMissing) as string[];
+  const core = (arr(d.core) as string[]).length || 3;
+  // Present tools fill; a MISSING CORE tool is a real ✗; a missing OPTIONAL tool is
+  // a calm "(optional)" pill, never struck-through-as-failure. So a personal box
+  // without sg/comby reads as complete, not "2 missing".
+  const optMissing = absent.filter((n) => optional.has(n));
+  const corePresent = present.filter((n) => !optional.has(n)).length;
   return panel(
     "Tools installed",
-    `<span class="badge muted">${present.length}/${total}</span>`,
-    `<div class="pills">${toolPills(present, absent)}</div>`,
+    `<span class="badge ${coreMissing.length === 0 ? "ok" : "muted"}">${corePresent}/${core} core</span>`,
+    `<div class="pills">${
+      present.map((n) => toolPill(n, true)).join("") +
+      coreMissing.map((n) => toolPill(n, false)).join("") +
+      optMissing.map((n) => optionalPill(n)).join("")
+    }</div>`,
     7,
   );
+}
+
+/** A nice-to-have tool that isn't installed — calm "(optional)", never a failure. */
+function optionalPill(name: string): string {
+  const label = `${name} — optional, not installed`;
+  return `<span class="tool opt" tabindex="0" aria-label="${esc(label)}" data-tip="${esc(label)}">${esc(name)} ·opt</span>`;
 }
 
 /** Code graph health — node/edge/file/density stats from the code-review-graph (Phase 2). */
@@ -738,11 +766,13 @@ main{max-width:1120px;margin:0 auto;padding:1.8rem 1.5rem 5rem}
 .chip i{font-style:normal;font-size:.8rem}
 .chip.ok{color:var(--ok);border-color:color-mix(in oklab,var(--ok) 28%,transparent)}
 .chip.bad{color:var(--bad);border-color:color-mix(in oklab,var(--bad) 24%,transparent);opacity:.82}
+.chip-file{font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,monospace;font-size:.68rem;color:var(--dim);opacity:.85;font-weight:400}
 .pills{display:flex;flex-wrap:wrap;gap:.5rem}
 .tool{font-size:.79rem;padding:.32rem .68rem;border-radius:999px;font-weight:550}
 .tool.on{background:color-mix(in oklab,var(--accent) 17%,transparent);color:var(--accent);border:1px solid color-mix(in oklab,var(--accent) 34%,transparent)}
 .tool.off{color:var(--dim);border:1px solid var(--line);text-decoration:line-through;text-decoration-color:color-mix(in oklab,var(--dim) 55%,transparent);opacity:.72}
 .tool.stale{color:var(--warn);border:1px solid color-mix(in oklab,var(--warn) 38%,transparent);background:color-mix(in oklab,var(--warn) 10%,transparent);cursor:help}
+.tool.opt{color:var(--dim);border:1px dashed var(--line);opacity:.8;cursor:help}
 .tool.off[data-hint]{cursor:help}
 .tool.off[data-hint]:hover{opacity:1;color:var(--mut);border-color:color-mix(in oklab,var(--accent) 40%,transparent)}
 .cat{margin-top:1.9rem;scroll-margin-top:4.5rem}

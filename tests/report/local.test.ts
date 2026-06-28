@@ -12,6 +12,7 @@ import {
   localPanels,
   machineToolingPanel,
 } from "../../src/report/local.js";
+import { toolsInstalledDigest } from "../../src/report/tools.js";
 
 let dir: string; // repo root
 let home: string; // fake home for CLI config-dir detection
@@ -46,11 +47,17 @@ describe("configPanel", () => {
     writeFileSync(join(dir, ".pre-commit-config.yaml"), "repos: []\n");
     const d = configPanel(ctx());
     expect(d.kind).toBe("digest");
-    expect(d.describe).toMatch(/Configuration — 2 of \d+ artifacts present/);
+    expect(d.describe).toMatch(/Configuration — 2 of \d+ config files present/);
     expect(d.text).toContain("✓ gitleaks");
     expect(d.text).toContain("✓ pre-commit");
+    // The FILE is shown so "gitleaks" can't be mistaken for the gitleaks binary.
+    expect(d.text).toContain(".gitleaks.toml");
+    expect(d.text).toContain("whether a tool is installed");
     expect(d.text).toContain("aih doctor"); // pointer to fail-closed verification
-    expect(d.data).toMatchObject({ present: expect.arrayContaining(["gitleaks", "pre-commit"]) });
+    expect(d.data).toMatchObject({
+      present: expect.arrayContaining(["gitleaks", "pre-commit"]),
+      files: expect.objectContaining({ gitleaks: ".gitleaks.toml" }),
+    });
     // per-CLI artifacts are NOT in the global config panel anymore
     expect(d.text).not.toContain("CLAUDE.md");
   });
@@ -126,5 +133,29 @@ describe("report local scope — composed panels", () => {
     expect(prefixes.some((s) => s.startsWith("Tools installed"))).toBe(true);
     expect(prefixes.some((s) => s.startsWith("Repo status"))).toBe(true);
     expect(prefixes.some((s) => s.startsWith("AI CLI wiring"))).toBe(true);
+  });
+});
+
+describe("toolsInstalledDigest — core vs optional", () => {
+  const pathRunner = (...bins: string[]) =>
+    fakeRunner((argv) => {
+      const name = argv[0] === "which" || argv[0] === "where" ? argv[1] : undefined;
+      return name && bins.includes(name) ? { code: 0, stdout: `/usr/bin/${name}` } : undefined;
+    });
+
+  it("counts CORE on PATH and marks missing OPTIONAL as fine, not a shortfall", async () => {
+    // rg/fd/jq present (core), sg/comby absent (optional) — the real personal-PC case.
+    const d = await toolsInstalledDigest(ctx({ run: pathRunner("rg", "fd", "jq") }));
+    expect(d.describe).toMatch(/Tools installed — 3\/3 core/);
+    expect(d.text).toContain("· sg  (optional)");
+    expect(d.text).toContain("· comby  (optional)");
+    expect(d.data).toMatchObject({ coreMissing: [] });
+  });
+
+  it("flags a MISSING core tool as a real gap (✗)", async () => {
+    const d = await toolsInstalledDigest(ctx({ run: pathRunner("rg", "jq") })); // fd missing
+    expect(d.describe).toMatch(/Tools installed — 2\/3 core/);
+    expect(d.text).toContain("✗ fd");
+    expect(d.data).toMatchObject({ coreMissing: ["fd"] });
   });
 });
