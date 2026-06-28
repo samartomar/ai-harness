@@ -248,8 +248,9 @@ function toolPill(name: string, on: boolean): string {
   if (!hint)
     return `<span class="tool off" aria-label="${esc(name)} — not installed">${esc(name)}</span>`;
   // Keyboard/SR-reachable: tabindex + aria-label surface the install hint that
-  // `title` alone (hover-only) hides; the `?` glyph gives a visible affordance.
-  return `<span class="tool off" tabindex="0" data-hint="1" data-tip="${esc(hint)}" aria-label="${esc(name)} — not installed. ${esc(hint)}">${esc(name)}<i class="tool-i" aria-hidden="true">?</i></span>`;
+  // `title` alone (hover-only) hides. A neutral `·` (matching the legend's "not
+  // installed") is the visible affordance — `?` read as "error/unknown".
+  return `<span class="tool off" tabindex="0" data-hint="1" data-tip="${esc(hint)}" aria-label="${esc(name)} — not installed. ${esc(hint)}">${esc(name)}<i class="tool-i" aria-hidden="true">·</i></span>`;
 }
 
 /** Present-then-absent tool pills, shared by Tools installed + Tooling. */
@@ -267,7 +268,14 @@ function configOnlyPill(name: string): string {
   return `<span class="tool stale" tabindex="0" aria-label="${esc(label)}" data-tip="${esc(label)}">${esc(name)} ◐</span>`;
 }
 
-/** Tooling: pill per AI CLI — filled when present, struck-through (with hint) when absent. */
+/** Legend so the pill glyphs read unambiguously (the terminal prints this inline). */
+const TOOLING_LEGEND =
+  '<div class="cli-legend">' +
+  '<span class="cli-cell ok">✓ runnable (binary on PATH)</span>' +
+  '<span class="cli-cell warn" tabindex="0" data-tip="A config dir was found but no binary is on PATH — a GUI-only install, or a leftover/stale dir. NOT proof the tool is usable.">◐ config-only (may be stale)</span>' +
+  '<span class="cli-cell muted">· not installed</span></div>';
+
+/** Tooling: pill per AI CLI — filled when present, ◐ config-only, muted when absent. */
 function toolingPanel(d: Bag): string {
   const present = arr(d.present) as string[];
   const configOnly = arr(d.configOnly) as string[];
@@ -276,7 +284,7 @@ function toolingPanel(d: Bag): string {
   return panel(
     "Machine tooling",
     `<span class="badge muted">${present.length}/${total}${configOnly.length > 0 ? ` · ${configOnly.length} config-only` : ""}</span>`,
-    `<div class="pills">${toolPills(present, absent, configOnly)}</div>`,
+    `${TOOLING_LEGEND}<div class="pills">${toolPills(present, absent, configOnly)}</div>`,
     7,
   );
 }
