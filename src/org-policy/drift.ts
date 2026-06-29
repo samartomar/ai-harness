@@ -15,7 +15,7 @@ function strongerPosture(a: Posture, b: Posture): Posture {
   return POSTURE_RANK[a] >= POSTURE_RANK[b] ? a : b;
 }
 
-function stable(value: unknown): unknown {
+export function stable(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(stable);
   if (!isPlainObject(value)) return value;
   return Object.fromEntries(
@@ -25,7 +25,7 @@ function stable(value: unknown): unknown {
   );
 }
 
-function sameJson(a: unknown, b: unknown): boolean {
+export function sameJson(a: unknown, b: unknown): boolean {
   return JSON.stringify(stable(a)) === JSON.stringify(stable(b));
 }
 
@@ -39,7 +39,7 @@ function childPath(path: string, key: string): string {
   return path.length > 0 ? `${path}.${key}` : key;
 }
 
-function missingProjectionParts(actual: unknown, expected: unknown, path = ""): string[] {
+export function missingProjectionParts(actual: unknown, expected: unknown, path = ""): string[] {
   if (isPlainObject(expected)) {
     if (!isPlainObject(actual)) return [`${path || "root"} expected object`];
     const out: string[] = [];

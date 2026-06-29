@@ -121,7 +121,7 @@ export async function localPanels(ctx: PlanContext): Promise<DigestAction[]> {
     ...(await velocityDigests(ctx)), // OUTPUT VELOCITY: daily commits + LOC 30d
     aiEventsDigest(ctx), // AI events feed (undefined when no events recorded)
     scorecardDigest(ctx), // HARNESS MATURITY: weighted wiring scorecard (undefined off-canon)
-    ...contractTruthDigest(ctx), // REPO CONTRACT: committed project.json (omitted off-contract)
+    ...(await contractTruthDigest(ctx)), // REPO CONTRACT: committed project.json (omitted off-contract)
     governanceRollupDigest(ctx), // GOVERNANCE: posture-aware control verdict roll-up
     leakPreventionsDigest(ctx), // SECURITY: scan-derived leak-prevention posture half
     await qualityDigest(ctx), // CODE QUALITY: test/source file ratio
