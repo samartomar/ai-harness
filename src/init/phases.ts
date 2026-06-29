@@ -8,6 +8,7 @@ import { command as sandbox } from "../sandbox/index.js";
 import { command as scaffold } from "../scaffold/index.js";
 import { command as secrets } from "../secrets/index.js";
 import { command as superpowers } from "../superpowers/index.js";
+import { command as usage } from "../usage/index.js";
 
 /**
  * One repo-scoped capability folded into `aih init`, paired with the human-facing
@@ -24,7 +25,7 @@ export interface InitPhase {
 
 /**
  * The fixed bootstrap order: profile → superpowers → bootstrap-ai → scaffold →
- * secrets → guardrails → mcp → sandbox. Profiling detects the stack (Cursor
+ * secrets → guardrails → mcp → sandbox → usage. Profiling detects the stack (Cursor
  * rules); Superpowers installs the agent baseline for the selected CLIs;
  * bootstrap-ai lays the Layer-2 canon (the SOLE writer of root bootloaders +
  * RULE_ROUTER); scaffolding lays the context dir the router points at; secrets +
@@ -75,5 +76,10 @@ export const INIT_PHASES: readonly InitPhase[] = [
   {
     command: sandbox,
     headline: "sandbox — generate the devcontainer and managed sandbox policy",
+  },
+  {
+    command: usage,
+    headline:
+      "usage — install the local usage recorder last so hooks merge with the finished settings policy",
   },
 ] as const;

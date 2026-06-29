@@ -14,6 +14,7 @@ import { qualityDigest } from "./quality.js";
 import { repoStatusPanel } from "./repo.js";
 import { repoInfoDigest } from "./repoinfo.js";
 import { scorecardDigest } from "./scorecard.js";
+import { leakPreventionsDigest } from "./security.js";
 import { toolsInstalledDigest } from "./tools.js";
 import { usagePanel } from "./usage.js";
 import { velocityDigests } from "./velocity.js";
@@ -119,6 +120,7 @@ export async function localPanels(ctx: PlanContext): Promise<DigestAction[]> {
     aiEventsDigest(ctx), // AI events feed (undefined when no events recorded)
     scorecardDigest(ctx), // HARNESS MATURITY: weighted wiring scorecard (undefined off-canon)
     ...contractTruthDigest(ctx), // REPO CONTRACT: committed project.json (omitted off-contract)
+    leakPreventionsDigest(ctx), // SECURITY: scan-derived leak-prevention posture half
     await qualityDigest(ctx), // CODE QUALITY: test/source file ratio
     ...(await graphDigests(ctx)), // CODE QUALITY/PERF: code-review-graph (gated, Phase 2)
     guardrailDigest(ctx), // CODE QUALITY: guardrail severity (gated, Phase 3)
