@@ -91,6 +91,8 @@ describe("scaffold plan (dry-run shape)", () => {
     expect(val).not.toContain("`.aih-workspace.json`");
     expect(val).toContain("picture-perfect");
     expect(tasks).toContain("Do not web-search for extra canon");
+    expect(tasks).toContain("Do not open `.env*` or `secrets/**`");
+    expect(tasks).toContain("aih secrets --verify");
     expect(tasks).toContain("practice -> repo evidence -> local check");
     expect(tasks).toContain("Do not edit `.ai-context/VALIDATION.md`");
     expect(tasks).toContain("Definition of done");
