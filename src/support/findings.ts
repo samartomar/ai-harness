@@ -237,6 +237,13 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
       // biome-ignore lint/suspicious/noTemplateCurlyInString: documents the literal ${ENV} reference form for the developer
       "Replace the literal value in the flagged MCP config with an env reference (e.g. `${GITHUB_PERSONAL_ACCESS_TOKEN}`), supply it from the environment/vault at runtime, and rotate the exposed credential.",
   },
+  "mcp.allowlist-drift": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "managed MCP allowlist drifted",
+    action:
+      "Re-run `aih mcp --posture enterprise --apply` (or the org-policy projection) so `.claude/managed-settings.json` matches the committed `.mcp.json` fixed server set.",
+  },
   "cli.not-detected": {
     audience: "developer",
     failSeverity: "degraded",

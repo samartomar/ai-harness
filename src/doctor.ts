@@ -7,6 +7,7 @@ import { detectInstall } from "./internals/cli-detect.js";
 import { readIfExists } from "./internals/fsxn.js";
 import { type Action, type CommandSpec, type PlanContext, plan, probe } from "./internals/plan.js";
 import { canonLintCheck } from "./lint/run.js";
+import { mcpManagedAllowlistCheck } from "./mcp/allowlist.js";
 import { resolveTargetSet } from "./report/cli-coverage.js";
 import { loadabilityFor, loadReason } from "./report/cli-loadability.js";
 import { scaleSafetyCheck } from "./scale-safety.js";
@@ -209,6 +210,7 @@ export const command: CommandSpec = {
             };
       }),
       probe("large-repo graph safety", () => scaleSafetyCheck(ctx)),
+      probe("MCP managed allowlist", () => mcpManagedAllowlistCheck(ctx)),
       probe("contract truth", () => contractTruthCheck(ctx)),
     ];
 

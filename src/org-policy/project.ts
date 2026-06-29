@@ -1,4 +1,5 @@
 import { type Action, type PlanContext, writeJson } from "../internals/plan.js";
+import { managedMcpAllowlistSettings } from "../mcp/allowlist.js";
 import { managedMcpExample } from "../mcp/enterprise.js";
 import { mcpServers, type StdioServer } from "../mcp/servers.js";
 import { scanRepo } from "../profile/scan.js";
@@ -29,14 +30,6 @@ function stdioAllowedServers(
   return out;
 }
 
-function allowedMcpServerCommands(servers: Record<string, StdioServer>): Array<{
-  serverCommand: string[];
-}> {
-  return Object.values(servers).map((server) => ({
-    serverCommand: [server.command, ...server.args],
-  }));
-}
-
 function managedSettings(
   ctx: PlanContext,
   policy: OrgPolicy,
@@ -53,8 +46,7 @@ function managedSettings(
     },
   };
   if (composed.mcp.allowManagedOnly) {
-    settings.allowManagedMcpServersOnly = true;
-    settings.allowedMcpServers = allowedMcpServerCommands(stdio);
+    Object.assign(settings, managedMcpAllowlistSettings(stdio));
   }
   return { settings, managedMcp: managedMcpExample(stdio) };
 }

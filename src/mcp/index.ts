@@ -7,6 +7,7 @@ import type { Action, CommandSpec, PlanContext } from "../internals/plan.js";
 import { doc, plan, probe, writeJson, writeText } from "../internals/plan.js";
 import type { Check } from "../internals/verify.js";
 import { scanRepo } from "../profile/scan.js";
+import { managedMcpAllowlistSettings } from "./allowlist.js";
 import {
   enterpriseMcpDoc,
   managedMcpExample,
@@ -371,6 +372,12 @@ async function planMcp(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
   if (posture === "enterprise") {
     const policies = evaluateMcpPolicy(servers, posture);
     actions.push(
+      writeJson(
+        ".claude/managed-settings.json",
+        managedMcpAllowlistSettings(servers),
+        "Enforce Claude managed MCP allowlist (fixed server commands from .mcp.json)",
+        { merge: true },
+      ),
       doc(
         "MCP governance (enterprise posture) — per-server verdicts + skipped-with-reason",
         mcpGovernanceDoc(policies, posture),
