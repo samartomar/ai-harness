@@ -107,6 +107,23 @@ describe("bootstrap-ai — canon files", () => {
     expect(router).toContain("rules/agent-behavior-core.md");
   });
 
+  it("folds in the anti-attestation + tool-selection rules and drops the immutability style-rule (§6)", async () => {
+    const w = writesByPath((await command.plan(makeCtx())).actions);
+    const shared = w.get(".ai-context/adapters/_shared-canonical-block.md")?.contents ?? "";
+    const core = w.get(".ai-context/rules/agent-behavior-core.md")?.contents ?? "";
+    // Anti-attestation: showing the command + output is required; a sanity gate is not done.
+    expect(shared).toContain("sanity gate is not a completion gate");
+    expect(core).toContain("sanity gate is not a completion gate");
+    // Tool-selection discipline.
+    expect(shared).toContain("don't load MCP servers just-in-case");
+    expect(core).toContain("don't load MCP servers just-in-case");
+    // The immutability style-rule is gone from the floor (linter-enforced; false for Go/Rust)...
+    expect(shared).not.toContain("Immutable updates over mutation");
+    expect(core).not.toContain("Immutable updates over mutation");
+    // ...but the real safety invariant stays.
+    expect(shared).toContain("no silent failures");
+  });
+
   it("the shared block carries the safety invariants (secrets + large-repo graph)", async () => {
     const w = writesByPath((await command.plan(makeCtx({ cli: "codex,gemini,kiro" }))).actions);
     const shared = w.get(".ai-context/adapters/_shared-canonical-block.md")?.contents ?? "";
