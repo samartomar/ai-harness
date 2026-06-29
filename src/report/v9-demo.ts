@@ -158,10 +158,10 @@ export const V9_DEMO: AihDataV9 = {
     coherence: {
       clis: ["claude", "codex", "cursor", "kiro"],
       dims: ["rules", "router", "mcp", "loads"],
-      agreementPct: 88,
+      agreementPct: 94,
       cells: {
         claude: ["ok", "ok", "ok", "ok"],
-        codex: ["ok", "ok", "warn", "ok"],
+        codex: ["ok", "ok", "global", "ok"],
         cursor: ["ok", "ok", "ok", "ok"],
         kiro: ["ok", "ok", "ok", "warn"],
       },

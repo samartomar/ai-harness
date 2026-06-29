@@ -291,16 +291,16 @@ describe("coherenceDigest", () => {
     expect(data.agreementPct).toBeGreaterThanOrEqual(50);
   });
 
-  it("marks a global-scoped MCP (codex ~/.codex) as a warn, not a clean match", () => {
+  it("marks a global-scoped MCP (codex ~/.codex) as 'global' — wired but machine-local", () => {
     marker("claude", "codex");
     put(`${DIR}/RULE_ROUTER.md`, "routing\n");
     put("CLAUDE.md", inSync());
     put("AGENTS.md", inSync());
     put(".mcp.json", JSON.stringify({ mcpServers: { x: {} } })); // claude: repo-committed MCP → ok
-    putHome(".codex/config.toml", '[mcp_servers.foo]\ncommand = "x"\n'); // codex: global MCP → warn
+    putHome(".codex/config.toml", '[mcp_servers.foo]\ncommand = "x"\n'); // codex: global MCP → global
     const data = coherenceDigest(ctx())?.data as CoherenceData;
     expect(data.cells.claude?.[2]).toBe("ok"); // mcp dim, repo-scoped
-    expect(data.cells.codex?.[2]).toBe("warn"); // wired but global → not a clean match
+    expect(data.cells.codex?.[2]).toBe("global"); // wired but machine-local → neutral, not a warn
   });
 });
 

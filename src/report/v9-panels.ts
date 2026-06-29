@@ -349,7 +349,7 @@ export function eccInventoryDigest(ctx: PlanContext): DigestAction | undefined {
 }
 
 /** Coherence verdict for one CLI/dimension cell. */
-type Verdict = "ok" | "warn" | "bad";
+type Verdict = "ok" | "global" | "warn" | "bad";
 
 /**
  * §2 Cross-CLI coherence diff — do all targeted CLIs load the SAME canon? For each
@@ -379,12 +379,14 @@ export function coherenceDigest(ctx: PlanContext): DigestAction | undefined {
     const rules: Verdict =
       block === undefined ? "bad" : block.trim() === sharedBody ? "ok" : "warn";
     const router: Verdict = text?.includes("RULE_ROUTER.md") ? "ok" : "bad";
-    // A global-scoped MCP (e.g. codex's ~/.codex) is wired but NOT repo-portable — it diverges
-    // from a repo-committed `.mcp.json`, so it's a warn, not a clean match.
+    // A global-scoped MCP (e.g. codex's ~/.codex, gemini's ~/.gemini) is wired and loads
+    // but is NOT repo-portable. That's not a fixable divergence — those tools only read
+    // MCP from their home config — so it gets its own neutral `global` verdict (distinct
+    // glyph, counts as agreement) instead of an amber warn that implies something to fix.
     const mcp: Verdict =
       row.mcp.state === "wired"
         ? row.mcp.scope === "global"
-          ? "warn"
+          ? "global"
           : "ok"
         : row.mcp.state === "missing"
           ? "bad"
@@ -395,14 +397,18 @@ export function coherenceDigest(ctx: PlanContext): DigestAction | undefined {
   }
   const clis = targeted.map((r) => r.cli);
   const total = clis.length * dims.length;
+  // `global` (codex/gemini MCP in ~/.codex / ~/.gemini) is wired and loads — it just
+  // isn't repo-portable. It counts toward agreement (not a divergence the user can fix);
+  // the matrix marks it with a distinct neutral glyph so it doesn't read as a problem.
   const ok = Object.values(cells)
     .flat()
-    .filter((v) => v === "ok").length;
+    .filter((v) => v === "ok" || v === "global").length;
   const agreementPct = total > 0 ? Math.round((ok / total) * 100) : 0;
   const body = lines(
     `Cross-CLI canon coherence across ${clis.length} CLIs — ${agreementPct}% of cells agree.`,
-    "A warn cell is one CLI diverging from canon (e.g. a global-scoped MCP like codex's",
-    "~/.codex — wired but not repo-portable); bad is missing/won't-load.",
+    "A warn cell is one CLI diverging from canon; bad is missing/won't-load. A global cell",
+    "(e.g. codex/gemini MCP in ~/.codex / ~/.gemini) is wired but machine-local — not",
+    "repo-portable — and counts as agreement.",
   );
   return digest(`Coherence — ${agreementPct}% across ${clis.length} CLIs`, body, {
     clis,

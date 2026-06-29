@@ -68,9 +68,16 @@ const ICON_ALERT =
   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M12 9v4M12 17h.01"/></svg>';
 const ICON_X =
   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M18 6 6 18M6 6l12 12"/></svg>';
+// Half-filled circle (◐) — a wired-but-machine-local MCP (global scope): not a
+// fixable divergence, just not repo-portable, so it gets a neutral glyph, not amber.
+const ICON_GLOBE =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 0 18Z" fill="currentColor" stroke="none"/></svg>';
 
 /** A matrix cell verdict → its CSS class + glyph. */
 function cellMark(v: string): string {
+  if (v === "global") {
+    return `<div class="mc global" title="wired · machine-local (not repo-portable)">${ICON_GLOBE}</div>`;
+  }
   const cls = v === "ok" ? "ok" : v === "warn" ? "warn" : "bad";
   const icon = v === "ok" ? ICON_CHECK : v === "warn" ? ICON_ALERT : ICON_X;
   return `<div class="mc ${cls}">${icon}</div>`;
