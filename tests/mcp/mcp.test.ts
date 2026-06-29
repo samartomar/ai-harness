@@ -490,6 +490,7 @@ describe("aih mcp — remote scope emits SSO gateway doc (cloud is doc, not writ
     expect(text).toContain("agentgateway login --check");
     // Tool-level RBAC mapping is present.
     expect(text).toContain("RBAC");
+    expect(text).toContain("mcp-gateway-rbac.json");
     // Clients are pointed at the canonical agentgateway base URL (blueprint Phase 3).
     expect(text).toContain("https://agentgateway.n24q02m.com");
     // The gateway doc carries no file path (printed guidance, not a written file).
@@ -503,22 +504,64 @@ describe("aih mcp — remote scope emits SSO gateway doc (cloud is doc, not writ
     expect(w.merge).toBe(true);
   });
 
+  it("writes a structured gateway RBAC config from catalog plus org-policy", async () => {
+    const root = makeTmp();
+    writeFileSync(
+      join(root, "aih-org-policy.json"),
+      jsonFile({
+        schemaVersion: 1,
+        minimumPosture: "team",
+        references: { repoContract: "ai-coding/project.json" },
+        mcp: {
+          allowedServers: ["code-review-graph", "better-email", "missing-server"],
+          allowManagedOnly: false,
+        },
+      }),
+    );
+    const p = await command.plan(makeCtx({ root, options: { scope: "remote" } }));
+    const rbac = p.actions.find(
+      (a): a is WriteAction =>
+        a.kind === "write" && a.path.replace(/\\/g, "/") === ".ai-context/mcp-gateway-rbac.json",
+    );
+    expect(rbac).toBeDefined();
+    const roles = (rbac?.json as { roles: Array<{ idpGroup: string; allowedServers: string[] }> })
+      .roles;
+    const orgDefault = roles.find((role) => role.idpGroup === "mcp-org-default");
+    expect(orgDefault?.allowedServers).toEqual(["better-email", "code-review-graph"]);
+    expect(JSON.stringify(rbac?.json)).toContain("missing-server");
+  });
+
+  it("turns malformed org-policy into a fail probe instead of crashing", async () => {
+    const root = makeTmp();
+    writeFileSync(join(root, "aih-org-policy.json"), "{ broken");
+
+    const p = await command.plan(makeCtx({ root, options: { scope: "remote" } }));
+    const probe = p.actions.find((a) => a.kind === "probe" && a.describe === "org-policy parse");
+    const check = probe?.kind === "probe" ? await probe.run(makeCtx({ root })) : undefined;
+
+    expect(check?.verdict).toBe("fail");
+    expect(check?.code).toBe("org-policy.drift");
+    expect(p.actions.some((a) => a.kind === "write" && a.path === ".mcp.json")).toBe(true);
+  });
+
   it("BOUNDARY: no write or exec action targets a remote host — gateway/SSO is doc only", async () => {
     const p = await command.plan(makeCtx({ options: { scope: "remote" } }));
 
     // No exec actions at all (no remote, and nothing local to mutate here).
     expect(p.actions.some((a) => a.kind === "exec")).toBe(false);
 
-    // The only write is the local .mcp.json; its contents never trigger a call —
-    // hosted servers are recorded as plain URL strings under mcpServers.
+    // Writes are local project/context artifacts; their contents never trigger a call —
+    // hosted servers are recorded as plain URL strings under mcpServers/RBAC config.
     const writes = p.actions.filter((a) => a.kind === "write") as WriteAction[];
-    expect(writes).toHaveLength(1);
-    const only = writes[0] as WriteAction;
-    expect(only.path).toBe(".mcp.json");
-    const blob = JSON.stringify(only.json);
+    expect(writes.map((w) => w.path.replace(/\\/g, "/")).sort()).toEqual([
+      ".ai-context/mcp-gateway-rbac.json",
+      ".mcp.json",
+    ]);
+    const dotMcp = writes.find((w) => w.path === ".mcp.json") as WriteAction;
+    const blob = JSON.stringify(dotMcp.json);
     // Remote endpoints live inside mcpServers as config, not as a top-level action target.
     expect(blob).toContain("n24q02m.com");
-    expect(only.path.startsWith("http")).toBe(false);
+    expect(writes.every((w) => !w.path.startsWith("http"))).toBe(true);
   });
 });
 
@@ -602,6 +645,43 @@ describe("aih mcp — per-CLI config (honors --cli)", () => {
 });
 
 describe("aih mcp — enterprise posture (governance gate, opt-in)", () => {
+  it("writes a real managed-settings MCP allowlist under enterprise posture", async () => {
+    const p = await command.plan(makeCtx({ options: { posture: "enterprise" } }));
+    const managed = p.actions.find(
+      (a): a is WriteAction => a.kind === "write" && a.path === ".claude/managed-settings.json",
+    );
+    expect(managed).toBeDefined();
+    expect(managed?.merge).toBe(true);
+    expect(managed?.json).toMatchObject({ allowManagedMcpServersOnly: true });
+    expect(JSON.stringify(managed?.json)).toContain("code-review-graph@2.3.6");
+  });
+
+  it("intersects the managed MCP allowlist with org-policy grants", async () => {
+    const root = makeTmp();
+    writeFileSync(
+      join(root, "aih-org-policy.json"),
+      jsonFile({
+        schemaVersion: 1,
+        minimumPosture: "enterprise",
+        references: { repoContract: "ai-coding/project.json" },
+        mcp: { allowedServers: ["code-review-graph"], allowManagedOnly: true },
+      }),
+    );
+    const p = await command.plan(makeCtx({ root, options: { posture: "enterprise" } }));
+    const dotMcp = p.actions.find(
+      (a): a is WriteAction => a.kind === "write" && a.path === ".mcp.json",
+    );
+    const managed = p.actions.find(
+      (a): a is WriteAction => a.kind === "write" && a.path === ".claude/managed-settings.json",
+    );
+
+    if (dotMcp === undefined) throw new Error("expected .mcp.json write");
+    expect(Object.keys(serversOf(dotMcp))).toContain("sequential-thinking");
+    const managedJson = JSON.stringify(managed?.json);
+    expect(managedJson).toContain("code-review-graph@2.3.6");
+    expect(managedJson).not.toContain("server-sequential-thinking");
+  });
+
   it("emits a governance doc + a policy probe that FAILS on the third-party context7 server", async () => {
     const ctx = makeCtx({ options: { posture: "enterprise" }, verify: true });
     const p = await command.plan(ctx);

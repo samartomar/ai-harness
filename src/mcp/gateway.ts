@@ -1,4 +1,151 @@
 import { lines } from "../internals/render.js";
+import type {
+  McpClassification,
+  McpCredentials,
+  McpEgress,
+  McpServer,
+  McpSupplyChain,
+} from "./servers.js";
+
+const OAUTH_SCOPE = "api://agentgateway/mcp_access";
+
+export interface GatewayRbacRole {
+  idpGroup: string;
+  allowedServers: string[];
+  source: "catalog" | "org-policy" | "admin";
+  criteria: string;
+}
+
+export interface GatewayRbacServer {
+  type: McpServer["type"];
+  classification: McpClassification;
+  egress: McpEgress;
+  credentials: McpCredentials;
+  supplyChain: McpSupplyChain;
+}
+
+export interface GatewayRbacConfig {
+  schemaVersion: 1;
+  gateway: {
+    baseUrl: string;
+    oauthScope: typeof OAUTH_SCOPE;
+  };
+  boundary: "config-only";
+  roles: GatewayRbacRole[];
+  catalog: Record<string, GatewayRbacServer>;
+  generatedFrom: {
+    catalogServers: string[];
+    orgPolicyAllowedServers: string[];
+    orgPolicyIgnoredServers: string[];
+  };
+}
+
+interface GatewayRbacOptions {
+  orgAllowedServers?: readonly string[];
+}
+
+function sorted(values: Iterable<string>): string[] {
+  return [...new Set(values)].sort((a, b) => a.localeCompare(b));
+}
+
+function serverNames(
+  servers: Record<string, McpServer>,
+  accept: (server: McpServer) => boolean,
+): string[] {
+  return sorted(
+    Object.entries(servers)
+      .filter(([, server]) => accept(server))
+      .map(([name]) => name),
+  );
+}
+
+function role(
+  idpGroup: string,
+  allowedServers: string[],
+  source: GatewayRbacRole["source"],
+  criteria: string,
+): GatewayRbacRole {
+  return { idpGroup, allowedServers, source, criteria };
+}
+
+function catalogSummary(servers: Record<string, McpServer>): Record<string, GatewayRbacServer> {
+  const out: Record<string, GatewayRbacServer> = {};
+  for (const name of sorted(Object.keys(servers))) {
+    const server = servers[name];
+    if (server === undefined) continue;
+    out[name] = {
+      type: server.type,
+      classification: server.classification,
+      egress: server.egress,
+      credentials: server.credentials,
+      supplyChain: server.supplyChain,
+    };
+  }
+  return out;
+}
+
+export function gatewayRbacConfig(
+  gateway: string,
+  servers: Record<string, McpServer>,
+  options: GatewayRbacOptions = {},
+): GatewayRbacConfig {
+  const catalogServers = sorted(Object.keys(servers));
+  const catalogSet = new Set(catalogServers);
+  const orgPolicyAllowedServers = sorted(options.orgAllowedServers ?? []);
+  const orgAllowed = orgPolicyAllowedServers.filter((name) => catalogSet.has(name));
+  const orgIgnored = orgPolicyAllowedServers.filter((name) => !catalogSet.has(name));
+  const roles: GatewayRbacRole[] = [
+    role(
+      "mcp-local",
+      serverNames(servers, (server) => server.egress === "none" && server.credentials === "none"),
+      "catalog",
+      "catalog.egress=none and catalog.credentials=none",
+    ),
+    role(
+      "mcp-vendor-incumbent",
+      serverNames(servers, (server) => server.egress === "vendor-incumbent"),
+      "catalog",
+      "catalog.egress=vendor-incumbent",
+    ),
+    role(
+      "mcp-third-party-reviewed",
+      serverNames(servers, (server) => server.egress === "third-party"),
+      "catalog",
+      "catalog.egress=third-party; enable only after vendor-risk review",
+    ),
+  ];
+  if (orgPolicyAllowedServers.length > 0) {
+    roles.push(
+      role(
+        "mcp-org-default",
+        orgAllowed,
+        "org-policy",
+        "aih-org-policy.json mcp.allowedServers intersected with current catalog",
+      ),
+    );
+  }
+  roles.push(role("mcp-admins", catalogServers, "admin", "all current catalog servers"));
+  return {
+    schemaVersion: 1,
+    gateway: { baseUrl: gateway, oauthScope: OAUTH_SCOPE },
+    boundary: "config-only",
+    roles,
+    catalog: catalogSummary(servers),
+    generatedFrom: {
+      catalogServers,
+      orgPolicyAllowedServers,
+      orgPolicyIgnoredServers: orgIgnored,
+    },
+  };
+}
+
+function roleRows(config: GatewayRbacConfig): string[] {
+  return config.roles.map((role) => {
+    const allowed =
+      role.allowedServers.length > 0 ? role.allowedServers.join(", ") : "(no current servers)";
+    return `   | ${role.idpGroup} | ${allowed} | ${role.criteria} |`;
+  });
+}
 
 /**
  * Identity-aware MCP gateway setup, emitted as a `doc` action for the `remote`
@@ -9,7 +156,7 @@ import { lines } from "../internals/render.js";
  * `gateway` is the canonical agentgateway base URL clients are pointed at; it is
  * interpolated into copy-paste commands only — it is not contacted.
  */
-export function gatewayDoc(gateway: string, hostedServers: string[] = []): string {
+export function gatewayDoc(config: GatewayRbacConfig, hostedServers: string[] = []): string {
   // Vendor-risk checklist for the third-party-hosted servers the remote scope adds
   // — they are external endpoints your data is sent to, so they get an explicit
   // "vet before enabling" callout rather than being treated as a default-on set.
@@ -38,8 +185,9 @@ export function gatewayDoc(gateway: string, hostedServers: string[] = []): strin
     "tool calls are authenticated per-user and authorized per-tool. Run these steps",
     "by hand against your IdP and gateway — aih does NOT contact the gateway.",
     "",
-    `Gateway base URL: ${gateway}`,
-    "OAuth scope:      api://agentgateway/mcp_access",
+    `Gateway base URL: ${config.gateway.baseUrl}`,
+    `OAuth scope:      ${config.gateway.oauthScope}`,
+    "RBAC config:      <context-dir>/mcp-gateway-rbac.json",
     "",
     "1. Register the gateway as an OIDC confidential client in your IdP:",
     "",
@@ -57,16 +205,16 @@ export function gatewayDoc(gateway: string, hostedServers: string[] = []): strin
     "     # Applications -> Create App Integration -> OIDC, Web application.",
     "     # Add a custom authorization-server scope 'mcp_access' and grant it.",
     "     #   Audience:    api://agentgateway",
-    `     #   Login redirect URI: ${gateway}/oauth/callback`,
+    `     #   Login redirect URI: ${config.gateway.baseUrl}/oauth/callback`,
     "",
-    "2. Map IdP groups to tool-level RBAC on the gateway (least privilege):",
+    "2. Apply the generated IdP-group to tool-level RBAC config on the gateway:",
     "",
-    "   | IdP group            | Allowed MCP tools                         |",
-    "   |----------------------|-------------------------------------------|",
-    "   | mcp-readers          | code-review-graph                         |",
-    "   | mcp-comms            | better-email, better-telegram             |",
-    "   | mcp-knowledge        | better-notion, mnemo-mcp, wet-mcp         |",
-    "   | mcp-admins           | * (all tools)                             |",
+    "   The machine-readable source is `<context-dir>/mcp-gateway-rbac.json`; the",
+    "   table below is rendered from the same config, not maintained separately.",
+    "",
+    "   | IdP group | Allowed MCP tools | Source/criteria |",
+    "   | --- | --- | --- |",
+    ...roleRows(config),
     "",
     "   Each client's per-user token is exchanged at the gateway; the gateway",
     "   enforces these mappings before forwarding to a backing MCP server.",

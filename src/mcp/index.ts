@@ -3,17 +3,19 @@ import { homeDir, resolveTargets } from "../internals/cli-detect.js";
 import { type CliEntry, entry } from "../internals/cli-registry.js";
 import { upsertTextBlock } from "../internals/envfile.js";
 import { readIfExists } from "../internals/fsxn.js";
-import type { Action, CommandSpec, PlanContext } from "../internals/plan.js";
+import type { Action, CommandSpec, PlanContext, ProbeAction } from "../internals/plan.js";
 import { doc, plan, probe, writeJson, writeText } from "../internals/plan.js";
 import type { Check } from "../internals/verify.js";
+import { type OrgPolicy, readOrgPolicy } from "../org-policy/schema.js";
 import { scanRepo } from "../profile/scan.js";
+import { managedMcpAllowlistSettings } from "./allowlist.js";
 import {
   enterpriseMcpDoc,
   managedMcpExample,
   mcpFallbackSteering,
   stdioServers,
 } from "./enterprise.js";
-import { gatewayDoc } from "./gateway.js";
+import { gatewayDoc, gatewayRbacConfig } from "./gateway.js";
 import {
   asPosture,
   deniedServers,
@@ -89,6 +91,33 @@ function mcpPolicyProbe(servers: Record<string, McpServer>, posture: McpPosture)
 
 /** Canonical agentgateway base URL clients are pointed at in the remote scope. */
 const GATEWAY_URL = "https://agentgateway.n24q02m.com";
+
+function readMcpOrgPolicy(ctx: PlanContext): { policy?: OrgPolicy; error?: unknown } {
+  try {
+    return { policy: readOrgPolicy(ctx.root, ctx.env) };
+  } catch (error) {
+    return { error };
+  }
+}
+
+function invalidOrgPolicyProbe(error: unknown): ProbeAction {
+  return probe("org-policy parse", () => ({
+    name: "org-policy parse",
+    verdict: "fail",
+    detail: `aih-org-policy.json cannot be parsed (${(error as Error).message})`,
+    code: "org-policy.drift",
+  }));
+}
+
+function orgAllowedServers(
+  servers: Record<string, McpServer>,
+  policy: OrgPolicy | undefined,
+): Record<string, McpServer> {
+  const allowed = policy?.mcp?.allowedServers ?? [];
+  if (allowed.length === 0) return servers;
+  const allowedSet = new Set(allowed);
+  return Object.fromEntries(Object.entries(servers).filter(([name]) => allowedSet.has(name)));
+}
 
 /** Honest DB-server guidance (datastore MCP packages vary, so we suggest, not pin). */
 function dbMcpNote(databases: string[]): string {
@@ -239,6 +268,11 @@ async function planMcp(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
   const stack = scanRepo(ctx.root, { maxDepth: 8, contextDir: ctx.contextDir });
   const servers = mcpServers(scope, stack, { selfHost });
   const serverNames = Object.keys(servers);
+  const actions: Action[] = [];
+  const orgPolicyResult = readMcpOrgPolicy(ctx);
+  if (orgPolicyResult.error !== undefined) {
+    actions.push(invalidOrgPolicyProbe(orgPolicyResult.error));
+  }
   const tailored = serverNames
     .filter(
       (name) =>
@@ -250,7 +284,6 @@ async function planMcp(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
     .join(", ");
 
   const home = homeDir(ctx);
-  const actions: Action[] = [];
   const writtenPaths = new Set<string>();
   for (const cli of clis) {
     const e = entry(cli);
@@ -346,10 +379,20 @@ async function planMcp(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
     const hosted = Object.entries(servers)
       .filter(([, s]) => s.type === "http" && s.url.includes(N24Q02M_HOST))
       .map(([name]) => name);
+    const rbac = gatewayRbacConfig(GATEWAY_URL, servers, {
+      orgAllowedServers: orgPolicyResult.policy?.mcp?.allowedServers,
+    });
+    actions.push(
+      writeJson(
+        posix.join(ctx.contextDir, "mcp-gateway-rbac.json"),
+        rbac,
+        "Identity-aware MCP gateway RBAC config generated from catalog + org-policy",
+      ),
+    );
     actions.push(
       doc(
         "Identity-aware MCP gateway + SSO (Entra/Okta OIDC, tool-level RBAC) — run by hand, not contacted",
-        gatewayDoc(GATEWAY_URL, hosted),
+        gatewayDoc(rbac, hosted),
       ),
     );
   }
@@ -367,10 +410,17 @@ async function planMcp(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
   // Enterprise posture (opt-in): surface a governance verdict for every server and a
   // probe that fails on a policy-denied one. The community default adds nothing here,
   // so standard output stays byte-identical.
-  const posture = asPosture(ctx.options.posture);
+  const posture = ctx.posture ?? asPosture(ctx.options.posture);
   if (posture === "enterprise") {
     const policies = evaluateMcpPolicy(servers, posture);
+    const managedServers = orgAllowedServers(servers, orgPolicyResult.policy);
     actions.push(
+      writeJson(
+        ".claude/managed-settings.json",
+        managedMcpAllowlistSettings(managedServers),
+        "Enforce Claude managed MCP allowlist (fixed server commands from .mcp.json)",
+        { merge: true },
+      ),
       doc(
         "MCP governance (enterprise posture) — per-server verdicts + skipped-with-reason",
         mcpGovernanceDoc(policies, posture),
@@ -401,11 +451,6 @@ export const command: CommandSpec = {
       description:
         "standard | offline (vendored local-command servers) | none (no MCP; CLI-tool fallback)",
       default: "standard",
-    },
-    {
-      flags: "--posture <posture>",
-      description: "governance posture: community (default) | enterprise (policy gate + doc)",
-      default: "community",
     },
     {
       flags: "--self-host",

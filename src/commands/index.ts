@@ -2,6 +2,7 @@ import type { Command } from "commander";
 import { command as adopt } from "../adopt/index.js";
 import { command as bootstrap } from "../bootstrap/index.js";
 import { command as bootstrapAi } from "../bootstrap-ai/index.js";
+import { command as bundle, verifyCommand as verifyBundle } from "../bundle/index.js";
 import { command as certs } from "../certs/index.js";
 import { command as contract } from "../contract/index.js";
 import { command as crispy } from "../crispy/index.js";
@@ -44,6 +45,7 @@ export const CAPABILITIES: CommandSpec[] = [
   mcp,
   sandbox,
   telemetry,
+  bundle,
   report,
   track,
   usage,
@@ -57,7 +59,7 @@ export const CAPABILITIES: CommandSpec[] = [
 ];
 
 /** Read-only commands (always safe). */
-export const READONLY: CommandSpec[] = [doctor, status];
+export const READONLY: CommandSpec[] = [doctor, status, verifyBundle];
 
 export const ALL_COMMANDS: CommandSpec[] = [...CAPABILITIES, ...READONLY];
 
@@ -71,6 +73,7 @@ function addSharedFlags(cmd: Command): Command {
     )
     .option("--verify", "run verification probes after applying")
     .option("--json", "emit machine-readable JSON")
+    .option("--posture <posture>", "governance posture: vibe | team | enterprise", "vibe")
     .option("--support-out <dir>", "write IT/support tickets for failed checks to <dir>")
     .option("--no-log", "do not append a row to the local run ledger (.aih/runs/)")
     .option("--context-dir <dir>", "canonical context directory name (any name works)", "ai-coding")

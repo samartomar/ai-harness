@@ -169,6 +169,128 @@ describe("doctor — AI CLI runnable vs config-only inventory", () => {
   });
 });
 
+describe("doctor — MCP managed allowlist drift", () => {
+  let dir: string;
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "aih-doctor-mcp-drift-"));
+  });
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  function rooted(): PlanContext {
+    const run = fakeRunner(() => ({ code: 1, spawnError: true }));
+    return {
+      root: dir,
+      contextDir: "ai-coding",
+      apply: false,
+      verify: true,
+      json: false,
+      run,
+      host: makeHostAdapter({ platform: "linux", run, env: {} }),
+      env: {},
+      options: {},
+    };
+  }
+
+  function writeMcp(command = "uvx", args = ["code-review-graph@2.3.6", "serve"]): void {
+    writeFileSync(
+      join(dir, ".mcp.json"),
+      JSON.stringify({ mcpServers: { "code-review-graph": { type: "stdio", command, args } } }),
+    );
+  }
+
+  function writeAllowlist(serverCommand: string[]): void {
+    mkdirSync(join(dir, ".claude"), { recursive: true });
+    writeFileSync(
+      join(dir, ".claude", "managed-settings.json"),
+      JSON.stringify({ allowManagedMcpServersOnly: true, allowedMcpServers: [{ serverCommand }] }),
+    );
+  }
+
+  it("passes when managed-settings allowlist matches the stdio MCP commands", async () => {
+    writeMcp();
+    writeAllowlist(["uvx", "code-review-graph@2.3.6", "serve"]);
+    const c = rooted();
+    const probe = findProbe((await command.plan(c)).actions, "MCP managed allowlist");
+    const res = await probe?.run(c);
+    expect(res?.verdict).toBe("pass");
+  });
+
+  it("fails when the allowlist drifts from .mcp.json", async () => {
+    writeMcp();
+    writeAllowlist(["uvx", "code-review-graph@2.0.0", "serve"]);
+    const c = rooted();
+    const probe = findProbe((await command.plan(c)).actions, "MCP managed allowlist");
+    const res = await probe?.run(c);
+    expect(res?.verdict).toBe("fail");
+    expect(res?.code).toBe("mcp.allowlist-drift");
+    expect(res?.detail).toContain("code-review-graph@2.3.6");
+  });
+
+  it("skips malformed managed-settings JSON as no enforceable allowlist", async () => {
+    writeMcp();
+    mkdirSync(join(dir, ".claude"), { recursive: true });
+    writeFileSync(join(dir, ".claude", "managed-settings.json"), "{ broken");
+    const c = rooted();
+    const probe = findProbe((await command.plan(c)).actions, "MCP managed allowlist");
+    const res = await probe?.run(c);
+
+    expect(res?.verdict).toBe("skip");
+    expect(res?.detail).toContain("no managed MCP allowlist");
+  });
+});
+
+describe("doctor — org-policy drift", () => {
+  let dir: string;
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "aih-doctor-org-policy-drift-"));
+  });
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  function rooted(): PlanContext {
+    const run = fakeRunner(() => ({ code: 1, spawnError: true }));
+    return {
+      root: dir,
+      contextDir: "ai-coding",
+      posture: "enterprise",
+      apply: false,
+      verify: true,
+      json: false,
+      run,
+      host: makeHostAdapter({ platform: "linux", run, env: {} }),
+      env: {},
+      options: {},
+    };
+  }
+
+  it("surfaces a coded enterprise failure when managed settings drift from org policy", async () => {
+    writeFileSync(
+      join(dir, "aih-org-policy.json"),
+      JSON.stringify({
+        schemaVersion: 1,
+        minimumPosture: "enterprise",
+        references: { repoContract: "ai-coding/project.json" },
+      }),
+    );
+    mkdirSync(join(dir, ".claude"), { recursive: true });
+    writeFileSync(
+      join(dir, ".claude", "managed-settings.json"),
+      JSON.stringify({ organizationPolicy: { minimumPosture: "enterprise" } }),
+    );
+
+    const c = rooted();
+    const probe = findProbe((await command.plan(c)).actions, "org-policy drift");
+    const res = await probe?.run(c);
+
+    expect(res?.verdict).toBe("fail");
+    expect(res?.code).toBe("org-policy.drift");
+    expect(res?.detail).toContain(".claude/managed-settings.json");
+  });
+});
+
 describe("doctor — every probe carries a remediation hint", () => {
   it("git skip names an install + re-run action", async () => {
     const c = ctx(); // fakeRunner reports `git --version` as a spawn error
@@ -190,6 +312,19 @@ describe("doctor — every probe carries a remediation hint", () => {
     const res = await probe?.run(c);
     expect(res?.verdict).toBe("skip");
     expect(res?.detail).toMatch(/file an issue/);
+  });
+});
+
+describe("doctor — VDI compatibility matrix", () => {
+  it("surfaces platform, redirect, and verified-status in a read-only probe", async () => {
+    const c = ctx();
+    const probe = findProbe((await command.plan(c)).actions, "VDI compatibility matrix");
+    const res = await probe?.run(c);
+
+    expect(res?.verdict).toBe("skip");
+    expect(res?.detail).toContain("linux");
+    expect(res?.detail).toContain("verified");
+    expect(res?.detail).toContain("redirect=not-needed");
   });
 });
 

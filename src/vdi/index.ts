@@ -3,6 +3,8 @@ import { join, resolve } from "node:path";
 import {
   type Action,
   type CommandSpec,
+  type DigestAction,
+  digest,
   doc,
   envBlock,
   exec,
@@ -10,7 +12,10 @@ import {
   plan,
   probe,
 } from "../internals/plan.js";
+import { lines } from "../internals/render.js";
 import { assertNoCmdInjection } from "../internals/shell-safety.js";
+import type { Check } from "../internals/verify.js";
+import type { Platform } from "../platform/base.js";
 import { redirectEnv } from "./redirects.js";
 
 const SCOPE = "vdi";
@@ -54,6 +59,97 @@ function resolveScratch(ctx: PlanContext, user: string): string {
   return ctx.host.scratchDir(user);
 }
 
+interface VdiCompatibilityRow {
+  platform: Platform;
+  detectionSignals: string;
+  redirectStrategy: string;
+  verifiedStatus: string;
+}
+
+const VDI_COMPATIBILITY_ROWS: readonly VdiCompatibilityRow[] = [
+  {
+    platform: "windows",
+    detectionSignals:
+      "AIH_VDI_KIND, AIH_FORCE_VDI, Horizon ViewClient_*, Citrix/RDP SESSIONNAME, CLIENTNAME",
+    redirectStrategy: "PowerShell profile env block + mklink /J for ~/.code-review-graph",
+    verifiedStatus: "verified on Windows adapter",
+  },
+  {
+    platform: "linux",
+    detectionSignals:
+      "AIH_VDI_KIND, AIH_FORCE_VDI, Horizon ViewClient_*, /scratch, XRDP, SESSIONNAME",
+    redirectStrategy: "POSIX shell profile env block + ln -sfn for ~/.code-review-graph",
+    verifiedStatus: "verified on Linux adapter",
+  },
+  {
+    platform: "darwin",
+    detectionSignals: "AIH_VDI_KIND, AIH_FORCE_VDI, Horizon ViewClient_*",
+    redirectStrategy: "zsh profile env block + ln -sfn for ~/.code-review-graph",
+    verifiedStatus: "implemented; fixture-tested, not smoke-tested on this host",
+  },
+];
+
+function currentUser(ctx: PlanContext): string {
+  return ctx.env.USERNAME || ctx.env.USER || "dev";
+}
+
+function currentCompatibility(ctx: PlanContext) {
+  const vdi = ctx.host.detectVdi();
+  const scratch = vdi.isVdi ? resolveScratch(ctx, currentUser(ctx)) : undefined;
+  return {
+    platform: ctx.host.platform,
+    verified: ctx.host.verified,
+    isVdi: vdi.isVdi,
+    reason: vdi.reason,
+    kind: vdi.kind,
+    redirect: vdi.isVdi ? "active" : "not-needed",
+    scratch,
+  };
+}
+
+export function vdiCompatibilityText(ctx: PlanContext): string {
+  const current = currentCompatibility(ctx);
+  return lines(
+    "VDI compatibility matrix",
+    "",
+    "| Platform | Detection signals | Redirect strategy | Verified status |",
+    "|---|---|---|---|",
+    ...VDI_COMPATIBILITY_ROWS.map(
+      (row) =>
+        `| ${row.platform} | ${row.detectionSignals} | ${row.redirectStrategy} | ${row.verifiedStatus} |`,
+    ),
+    "",
+    `Current host: ${current.platform} (${current.verified ? "verified" : "unverified"} adapter); ` +
+      `VDI ${current.isVdi ? "detected" : "not detected"} (${current.reason}); ` +
+      `redirect ${current.redirect}${current.scratch ? ` -> ${current.scratch}` : ""}.`,
+  );
+}
+
+function vdiCompatibilityDoc(ctx: PlanContext): Action {
+  return doc("VDI compatibility matrix", vdiCompatibilityText(ctx));
+}
+
+export function vdiCompatibilityCheck(ctx: PlanContext): Check {
+  const current = currentCompatibility(ctx);
+  return {
+    name: "VDI compatibility matrix",
+    verdict: current.isVdi && current.verified ? "pass" : "skip",
+    detail:
+      `${current.platform} ${current.verified ? "verified" : "unverified"}; ` +
+      `redirect=${current.redirect}; ${current.reason}` +
+      (current.scratch ? `; scratch=${current.scratch}` : ""),
+  };
+}
+
+export function vdiCompatibilityDigest(ctx: PlanContext): DigestAction {
+  const current = currentCompatibility(ctx);
+  const label = current.isVdi ? "VDI detected" : "native session";
+  return digest(`VDI compatibility — ${current.platform} ${label}`, vdiCompatibilityText(ctx), {
+    rows: VDI_COMPATIBILITY_ROWS,
+    current,
+  });
+}
+
 /**
  * Compute the VDI redirection plan.
  *
@@ -77,7 +173,11 @@ function vdiPlan(ctx: PlanContext) {
       SCOPE,
       doc(
         "no VDI detected — no cache redirection needed",
-        `This host shows no VDI markers (${vdi.reason}), so caches and the code-review-graph database stay in place. Re-run aih vdi inside a Citrix/WorkSpaces/AVD/Horizon/RES/RDP session to redirect them onto local scratch — or, when imaging a fleet where the platform can't be sniffed from the environment (Amazon WorkSpaces, AVD), declare it with AIH_VDI_KIND=<citrix|workspaces|res|rdp|generic>.`,
+        lines(
+          `This host shows no VDI markers (${vdi.reason}), so caches and the code-review-graph database stay in place. Re-run aih vdi inside a Citrix/WorkSpaces/AVD/Horizon/RES/RDP session to redirect them onto local scratch — or, when imaging a fleet where the platform can't be sniffed from the environment (Amazon WorkSpaces, AVD), declare it with AIH_VDI_KIND=<citrix|workspaces|res|rdp|generic>.`,
+          "",
+          vdiCompatibilityText(ctx),
+        ),
       ),
       probe("VDI detection", () => ({
         name: "VDI detection",
@@ -111,6 +211,7 @@ function vdiPlan(ctx: PlanContext) {
 
   return plan(
     SCOPE,
+    vdiCompatibilityDoc(ctx),
     envBlock(
       profilePath,
       SCOPE,

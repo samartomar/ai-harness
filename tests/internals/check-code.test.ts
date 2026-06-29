@@ -250,7 +250,7 @@ describe("Check.code — secrets / guardrails / usage / lint emitters", () => {
   it("tags a plaintext secret finding", async () => {
     const root = freshTmp();
     write(root, ".env", "API_KEY=abc123\n");
-    const probe = secretProbes(scanSecrets(root))[0];
+    const probe = secretProbes(scanSecrets(root), "team")[0];
     if (!probe) throw new Error("expected a secret probe");
     const check = await probe.run(makeCtx({ root }));
     expect(check.code).toBe("secrets.plaintext-detected");
@@ -263,7 +263,7 @@ describe("Check.code — secrets / guardrails / usage / lint emitters", () => {
       ".mcp.json",
       JSON.stringify({ mcpServers: { gh: { env: { GITHUB_TOKEN: `ghp_${"a".repeat(36)}` } } } }),
     );
-    const probe = mcpConfigSecretProbes(scanConfigSecrets(root))[0];
+    const probe = mcpConfigSecretProbes(scanConfigSecrets(root), "team")[0];
     if (!probe) throw new Error("expected a config-secret probe");
     const check = await probe.run(makeCtx({ root }));
     expect(check.code).toBe("mcp.hardcoded-secret");
@@ -376,6 +376,7 @@ describe("Check.code — invariants", () => {
       "mcp.unvendored-offline": true,
       "mcp.policy-denied": true,
       "mcp.hardcoded-secret": true,
+      "mcp.allowlist-drift": true,
       "cli.not-detected": true,
       "cli.config-only": true,
       "cli.bootloader-missing": true,
@@ -391,6 +392,7 @@ describe("Check.code — invariants", () => {
       "usage.no-data": true,
       "scale.code-review-graph-missing": true,
       "contract.path-unportable": true,
+      "org-policy.drift": true,
       "report.context-over-budget": true,
       "report.low-adoption": true,
       "report.contract-untrue": true,

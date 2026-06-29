@@ -1,3 +1,4 @@
+import { asPosture, type PolicyVerdict, type Posture } from "../config/posture.js";
 import { lines } from "../internals/render.js";
 import type { McpServer } from "./servers.js";
 
@@ -7,8 +8,8 @@ import type { McpServer } from "./servers.js";
  * is made legible in `.mcp.json` (the axes on {@link McpServer}); this module turns
  * those axes into a posture-aware verdict a reviewer can sign off on.
  *
- *  - `community`  — permissive: nothing is blocked; third-party egress (and an
- *                   unpinned supply chain) is WARNED so a reviewer still eyeballs it.
+ *  - `vibe` / `team` — permissive: nothing is blocked; third-party egress (and an
+ *                      unpinned supply chain) is WARNED so a reviewer still eyeballs it.
  *  - `enterprise` — restrictive: third-party egress and unpinned supply chains are
  *                   DENIED (self-host or pin instead); a token-bearing server is
  *                   allowed but WARNED (source the secret from env, never commit it).
@@ -18,21 +19,15 @@ import type { McpServer } from "./servers.js";
  * probe + governance doc), and — later — the report. aih REPORTS the verdicts; it
  * never silently drops a server from the written config.
  */
-export type McpPosture = "community" | "enterprise";
-
-/** Per-server outcome: `deny` blocks an enterprise rollout, `warn` flags for review, `allow` is clean. */
-export type PolicyVerdict = "allow" | "warn" | "deny";
+export { asPosture };
+export type McpPosture = Posture;
+export type { PolicyVerdict };
 
 /** One server's verdict under a posture, with a human reason for the doc / probe detail. */
 export interface ServerPolicy {
   name: string;
   verdict: PolicyVerdict;
   reason: string;
-}
-
-/** Coerce an arbitrary CLI option value to a posture (anything but "enterprise" ⇒ community). */
-export function asPosture(value: unknown): McpPosture {
-  return value === "enterprise" ? "enterprise" : "community";
 }
 
 /** Evaluate one server against a posture — pure, reads only the risk axes. */
@@ -63,7 +58,7 @@ function evaluateOne(s: McpServer, posture: McpPosture): Omit<ServerPolicy, "nam
       reason: "local or vendor-incumbent egress, pinned/hosted, no plaintext secret",
     };
   }
-  // community — permissive, but a reviewer still sees the egress surface.
+  // vibe/team — permissive, but a reviewer still sees the egress surface.
   if (s.egress === "third-party") {
     return {
       verdict: "warn",

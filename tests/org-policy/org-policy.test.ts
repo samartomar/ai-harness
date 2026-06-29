@@ -1,0 +1,271 @@
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import type { PlanContext, WriteAction } from "../../src/internals/plan.js";
+import { fakeRunner } from "../../src/internals/proc.js";
+import { composeOrgPolicy } from "../../src/org-policy/compose.js";
+import { orgPolicyDriftProbes } from "../../src/org-policy/drift.js";
+import { orgPolicyProjectionActions } from "../../src/org-policy/project.js";
+import { parseOrgPolicy, readOrgPolicy } from "../../src/org-policy/schema.js";
+import { makeHostAdapter } from "../../src/platform/detect.js";
+
+let dir: string;
+beforeEach(() => {
+  dir = mkdtempSync(join(tmpdir(), "aih-org-policy-"));
+});
+afterEach(() => {
+  rmSync(dir, { recursive: true, force: true });
+});
+
+function ctx(): PlanContext {
+  const run = fakeRunner(() => undefined);
+  return {
+    root: dir,
+    contextDir: "ai-coding",
+    posture: "team",
+    postureSource: "org-floor",
+    apply: false,
+    verify: false,
+    json: false,
+    run,
+    host: makeHostAdapter({ platform: "linux", run, env: {} }),
+    env: {},
+    options: {},
+  };
+}
+
+function policy(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    schemaVersion: 1,
+    minimumPosture: "team",
+    references: { repoContract: "ai-coding/project.json" },
+    ...overrides,
+  };
+}
+
+function writes(actions: ReturnType<typeof orgPolicyProjectionActions>): WriteAction[] {
+  return actions.filter((a): a is WriteAction => a.kind === "write");
+}
+
+describe("OrgPolicySchema", () => {
+  it("parses the separate org-owned policy shape", () => {
+    expect(
+      parseOrgPolicy(
+        policy({
+          command: { deny: { add: [{ pattern: "kubectl delete*" }], remove: ["printenv*"] } },
+          mcp: { allowedServers: ["code-review-graph"], allowManagedOnly: true },
+        }),
+      ),
+    ).toMatchObject({
+      minimumPosture: "team",
+      references: { repoContract: "ai-coding/project.json" },
+      command: { deny: { remove: ["printenv*"] } },
+    });
+  });
+
+  it("rejects redefinitions; command policy changes must be deltas", () => {
+    expect(() => parseOrgPolicy(policy({ command: { deny: ["kubectl delete*"] } }))).toThrow(
+      /org-policy/,
+    );
+  });
+
+  it("readOrgPolicy fails closed on malformed committed policy JSON", () => {
+    writeFileSync(join(dir, "aih-org-policy.json"), "{ broken");
+    expect(() => readOrgPolicy(dir, {})).toThrow(/aih-org-policy/);
+  });
+});
+
+describe("composeOrgPolicy", () => {
+  it("applies org command deltas over the baseline lexicon deterministically", () => {
+    const composed = composeOrgPolicy(
+      parseOrgPolicy(
+        policy({
+          command: {
+            deny: {
+              add: [{ pattern: "kubectl delete*", reason: "Cluster deletion requires review." }],
+              remove: ["printenv*"],
+            },
+          },
+        }),
+      ),
+    );
+
+    expect(composed.command.deny.map((r) => r.pattern)).toContain("kubectl delete*");
+    expect(composed.command.deny.map((r) => r.pattern)).not.toContain("printenv*");
+    expect(composed.command.ask.every((r) => typeof r.pattern === "string")).toBe(true);
+  });
+
+  it("adds and overrides risk gates while preserving the ask-not-deny invariant", () => {
+    const composed = composeOrgPolicy(
+      parseOrgPolicy(
+        policy({
+          riskGates: {
+            add: [
+              {
+                name: "ai_model_change",
+                description: "Changing model/provider routing.",
+                pathPatterns: ["**/ai/**"],
+                commandPatterns: [],
+              },
+            ],
+            override: {
+              public_api_break: { pathPatterns: ["src/api/**"] },
+            },
+          },
+        }),
+      ),
+    );
+
+    const added = composed.riskGates.find((g) => g.name === "ai_model_change");
+    const overridden = composed.riskGates.find((g) => g.name === "public_api_break");
+    expect(added).toMatchObject({ behavior: "ask" });
+    expect(overridden?.pathPatterns).toEqual(["src/api/**"]);
+    expect(composed.riskGates.every((g) => g.behavior === "ask")).toBe(true);
+  });
+
+  it("does not let org-policy downgrade hard-blocked license tiers", () => {
+    const composed = composeOrgPolicy(
+      parseOrgPolicy(
+        policy({
+          licenses: {
+            disposition: {
+              "network-copyleft": "auto-approve",
+              "strong-copyleft": "alert",
+            },
+          },
+        }),
+      ),
+    );
+
+    const disposition = Object.fromEntries(
+      composed.licenses.map((tier) => [tier.category, tier.disposition]),
+    );
+    expect(disposition["network-copyleft"]).toBe("block");
+    expect(disposition["strong-copyleft"]).toBe("alert");
+  });
+});
+
+describe("orgPolicyProjectionActions", () => {
+  it("projects team policy into project managed-settings only", () => {
+    const actions = orgPolicyProjectionActions(ctx(), parseOrgPolicy(policy()));
+    const paths = writes(actions).map((w) => w.path.replace(/\\/g, "/"));
+    expect(paths).toContain(".claude/managed-settings.json");
+    expect(paths).not.toContain("managed-settings.json.example");
+    expect(paths).not.toContain("managed-mcp.json.example");
+  });
+
+  it("at enterprise also emits system-path examples for admin deployment", () => {
+    const actions = orgPolicyProjectionActions(
+      { ...ctx(), posture: "enterprise" },
+      parseOrgPolicy(
+        policy({
+          minimumPosture: "enterprise",
+          mcp: { allowedServers: ["code-review-graph"], allowManagedOnly: true },
+        }),
+      ),
+    );
+    const out = Object.fromEntries(writes(actions).map((w) => [w.path.replace(/\\/g, "/"), w]));
+    expect(out[".claude/managed-settings.json"]?.merge).toBe(true);
+    expect(out["managed-settings.json.example"]).toBeDefined();
+    expect(out["managed-mcp.json.example"]).toBeDefined();
+    expect(JSON.stringify(out["managed-settings.json.example"]?.json)).toContain(
+      "allowManagedMcpServersOnly",
+    );
+    expect(JSON.stringify(out["managed-mcp.json.example"]?.json)).toContain("code-review-graph");
+  });
+
+  it("includes contractRef and command-policy deltas in the compiled managed-settings payload", () => {
+    const actions = orgPolicyProjectionActions(
+      ctx(),
+      parseOrgPolicy(
+        policy({
+          command: { deny: { add: [{ pattern: "terraform destroy*" }] } },
+          mcp: { allowedServers: ["code-review-graph"], allowManagedOnly: true },
+        }),
+      ),
+    );
+    const managed = writes(actions).find((w) => w.path === ".claude/managed-settings.json");
+    expect(managed?.json).toMatchObject({
+      organizationPolicy: {
+        minimumPosture: "team",
+        references: { repoContract: "ai-coding/project.json" },
+      },
+      allowManagedMcpServersOnly: true,
+    });
+    expect(JSON.stringify(managed?.json)).toContain("terraform destroy*");
+  });
+});
+
+describe("orgPolicyDriftProbes", () => {
+  function writePolicy(value: Record<string, unknown>): void {
+    writeFileSync(join(dir, "aih-org-policy.json"), JSON.stringify(value));
+  }
+
+  function writeManagedSettings(value: unknown): void {
+    mkdirSync(join(dir, ".claude"), { recursive: true });
+    writeFileSync(join(dir, ".claude", "managed-settings.json"), JSON.stringify(value));
+  }
+
+  it("passes when local managed settings contain the org-policy projection", async () => {
+    const value = policy({
+      command: { deny: { add: [{ pattern: "terraform destroy*" }] } },
+      mcp: { allowedServers: ["code-review-graph"], allowManagedOnly: true },
+    });
+    const parsed = parseOrgPolicy(value);
+    writePolicy(value);
+
+    const c = ctx();
+    const projected = writes(orgPolicyProjectionActions(c, parsed)).find(
+      (w) => w.path === ".claude/managed-settings.json",
+    );
+    writeManagedSettings({ ...(projected?.json as Record<string, unknown>), localOnly: true });
+
+    const probes = orgPolicyDriftProbes(c);
+    const check = await probes
+      .find((p) => p.describe.includes(".claude/managed-settings.json"))
+      ?.run(c);
+
+    expect(check?.verdict).toBe("pass");
+  });
+
+  it("downgrades drift to warning-only in vibe posture", async () => {
+    writePolicy(policy({ command: { deny: { add: [{ pattern: "terraform destroy*" }] } } }));
+    const c: PlanContext = { ...ctx(), posture: "vibe", postureSource: "flag" };
+    const probes = orgPolicyDriftProbes(c);
+    const check = await probes
+      .find((p) => p.describe.includes(".claude/managed-settings.json"))
+      ?.run(c);
+
+    expect(check?.verdict).toBe("pass");
+    expect(check?.code).toBeUndefined();
+    expect(check?.detail).toContain("warning-only (vibe posture)");
+    expect(check?.detail).toContain("missing");
+  });
+
+  it("fails closed at enterprise when local settings drift from org policy", async () => {
+    writePolicy(policy({ minimumPosture: "enterprise" }));
+    writeManagedSettings({ organizationPolicy: { minimumPosture: "enterprise" } });
+    const c: PlanContext = { ...ctx(), posture: "enterprise" };
+    const probes = orgPolicyDriftProbes(c);
+    const check = await probes
+      .find((p) => p.describe.includes(".claude/managed-settings.json"))
+      ?.run(c);
+
+    expect(check?.verdict).toBe("fail");
+    expect(check?.code).toBe("org-policy.drift");
+    expect(check?.location?.uri).toBe(".claude/managed-settings.json");
+    expect(check?.detail).toContain("org-policy drift");
+  });
+
+  it("projects drift expectations at the resolved posture, not only the policy floor", () => {
+    writePolicy(policy({ minimumPosture: "team" }));
+    const c: PlanContext = { ...ctx(), posture: "enterprise", postureSource: "flag" };
+    const probes = orgPolicyDriftProbes(c);
+
+    expect(probes.map((p) => p.describe)).toContain(
+      "org-policy drift: managed-settings.json.example",
+    );
+    expect(probes.map((p) => p.describe)).toContain("org-policy drift: managed-mcp.json.example");
+  });
+});

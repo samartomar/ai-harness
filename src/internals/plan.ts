@@ -1,3 +1,4 @@
+import type { Posture, PostureSource } from "../config/posture.js";
 import type { EnvShell, HostAdapter } from "../platform/base.js";
 import type { Cli } from "./clis.js";
 import type { EnvVar } from "./envfile.js";
@@ -128,6 +129,10 @@ export interface PlanContext {
   root: string;
   /** Canonical context directory name (default ".ai-context"). */
   contextDir: string;
+  /** Harness-wide governance posture dial, resolved by the shared ladder. */
+  posture?: Posture;
+  /** Where the active posture came from (flag/marker/env/default/org floor). */
+  postureSource?: PostureSource;
   /** When false (default), the plan is computed but nothing is written. */
   apply: boolean;
   /** When true, probe actions run and contribute to the verification report. */

@@ -149,13 +149,21 @@ export const ENFORCEMENT_NOTES: readonly string[] = [
   "The broad_refactor gate has no path patterns and is detected by heuristic or explicit trigger.",
 ];
 
+export interface RiskGatesJsonOptions {
+  required?: boolean;
+}
+
 /** The CI-checkable JSON sidecar: a CI job can diff a PR's touched paths/commands against this. */
-export function riskGatesJson(): Record<string, unknown> {
+export function riskGatesJson(options: RiskGatesJsonOptions = {}): Record<string, unknown> {
   return {
     version: POLICY_VERSION,
     gates: RISK_GATES,
     approvalSources: APPROVAL_SOURCES,
     enforcementNotes: ENFORCEMENT_NOTES,
+    ci: {
+      checkName: "risk-gates",
+      required: options.required === true,
+    },
   };
 }
 

@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { basename, join } from "node:path";
 import type { Command } from "commander";
 import { readAihConfig } from "../config/marker.js";
+import { resolvePosture } from "../config/posture.js";
 import { loadSettings } from "../config/settings.js";
 import { AihError } from "../errors.js";
 import { executePlan, summarizeResult, writeArtifact } from "../internals/execute.js";
@@ -124,12 +125,21 @@ export async function runCapability(
     // flag was passed, prefer the marker so re-runs/doctor act on the dir this repo
     // was actually bootstrapped with; passing `undefined` lets loadSettings fall
     // through to env then default.
+    const marker = readAihConfig(resolvedRoot);
     const contextDirFromFlag =
       command.getOptionValueSource?.("contextDir") === "cli"
         ? (opts.contextDir as string)
         : undefined;
-    const contextDirFromMarker =
-      contextDirFromFlag === undefined ? readAihConfig(resolvedRoot)?.contextDir : undefined;
+    const contextDirFromMarker = contextDirFromFlag === undefined ? marker?.contextDir : undefined;
+    const postureFlagSource =
+      command.getOptionValueSource?.("posture") === "cli" ? "cli" : undefined;
+    const resolvedPosture = resolvePosture({
+      root: resolvedRoot,
+      env,
+      flag: opts.posture,
+      flagSource: postureFlagSource,
+      marker,
+    });
     const settings = loadSettings(env, {
       apply: opts.apply as boolean | undefined,
       verify: opts.verify as boolean | undefined,
@@ -155,6 +165,8 @@ export async function runCapability(
     const ctx: PlanContext = {
       root: settings.root,
       contextDir: settings.contextDir,
+      posture: resolvedPosture.posture,
+      postureSource: resolvedPosture.postureSource,
       // `--open`/`--refresh` (report) imply --apply so one command builds AND opens.
       apply: spec.readOnly ? false : settings.apply || liveOpen,
       // readOnly (doctor/status) always verifies; a capability can also opt into

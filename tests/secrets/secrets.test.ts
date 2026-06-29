@@ -357,8 +357,8 @@ describe("secrets --verify gate", () => {
   it("each secret yields a fail verdict that flips the gate exit code", async () => {
     plantFixture(dir);
     const result = await executePlan(
-      await command.plan(ctx({ verify: true })),
-      ctx({ verify: true }),
+      await command.plan(ctx({ verify: true, posture: "team" })),
+      ctx({ verify: true, posture: "team" }),
     );
     const report = result.report;
     if (!report) throw new Error("expected a verification report under --verify");
@@ -375,11 +375,24 @@ describe("secrets --verify gate", () => {
     expect(report.exitCode()).toBe(1);
   });
 
-  it("emits one error-level SARIF result per secret under a single plaintext-secret rule", async () => {
+  it("keeps plaintext findings warning-only at the default vibe posture", async () => {
     plantFixture(dir);
     const result = await executePlan(
       await command.plan(ctx({ verify: true })),
       ctx({ verify: true }),
+    );
+    const checks = result.report?.checks ?? [];
+    expect(checks).toHaveLength(3);
+    expect(checks.every((c) => c.verdict === "pass")).toBe(true);
+    expect(checks.every((c) => c.detail?.includes("warning-only"))).toBe(true);
+    expect(result.report?.exitCode()).toBe(0);
+  });
+
+  it("emits one error-level SARIF result per secret under a single plaintext-secret rule", async () => {
+    plantFixture(dir);
+    const result = await executePlan(
+      await command.plan(ctx({ verify: true, posture: "enterprise" })),
+      ctx({ verify: true, posture: "enterprise" }),
     );
     if (!result.report) throw new Error("expected a verification report under --verify");
     const sarif = JSON.parse(reportToSarif(result.report));

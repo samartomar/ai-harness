@@ -35,6 +35,8 @@ function ctx(over: Partial<PlanContext> = {}): PlanContext {
     apply: false,
     verify: false,
     json: false,
+    posture: "team",
+    postureSource: "flag",
     run,
     host: makeHostAdapter({ platform: "linux", run, env: {} }),
     env: {},
@@ -76,6 +78,7 @@ describe("guardrails command", () => {
     expect(writes).toContain(".github/workflows/sca.yml");
     expect(writes).toContain(".ai-context/risk-gates.json");
     expect(writes).toContain(".claude/settings.json"); // command-policy projection survives
+    expect(writes).toContain(".claude/managed-settings.json"); // managed commandPolicy survives
   });
 
   it("plans the security artifacts + command-policy/risk-gate projections + gitleaks probe", async () => {
@@ -90,6 +93,7 @@ describe("guardrails command", () => {
       ".pre-commit-config.yaml",
       ".github/workflows/sca.yml",
       ".claude/settings.json",
+      ".claude/managed-settings.json",
       ".ai-context/risk-gates.json",
     ]);
     // taxonomy (path) + license CI note + command-policy (path) + risk-gates CI note.
@@ -105,6 +109,37 @@ describe("guardrails command", () => {
       .permissions;
     expect(perms.deny).toContain("Bash(rm -rf /)");
     expect(perms.ask).toContain("Bash(git push*)");
+  });
+
+  it("at vibe posture keeps command policy and risk gates advisory-only", async () => {
+    const p = await command.plan(ctx({ posture: "vibe" }));
+    const paths = p.actions
+      .filter((a): a is WriteAction => a.kind === "write")
+      .map((w) => w.path.replace(/\\/g, "/"));
+    expect(paths).not.toContain(".claude/settings.json");
+    expect(paths).not.toContain(".claude/managed-settings.json");
+    expect(paths).not.toContain(".ai-context/risk-gates.json");
+    expect(p.actions.some((a) => a.kind === "doc" && a.text.includes("Risk Gates"))).toBe(true);
+  });
+
+  it("at team posture writes project managed command policy and CI sidecar", async () => {
+    const p = await command.plan(ctx({ posture: "team" }));
+    const managed = writeAt(p.actions, ".claude/managed-settings.json");
+    expect(managed?.merge).toBe(true);
+    expect(JSON.stringify(managed?.json)).toContain("commandPolicy");
+    const risk = writeAt(p.actions, ".ai-context/risk-gates.json");
+    expect(risk?.json).toMatchObject({ ci: { checkName: "risk-gates", required: false } });
+    const gates = (risk?.json as { gates: Array<{ behavior: string }> }).gates;
+    expect(gates.every((g) => g.behavior === "ask")).toBe(true);
+  });
+
+  it("at enterprise emits system managed-settings example and marks risk-gates required", async () => {
+    const p = await command.plan(ctx({ posture: "enterprise" }));
+    const system = writeAt(p.actions, "managed-settings.json.example");
+    expect(system).toBeDefined();
+    expect(JSON.stringify(system?.json)).toContain("commandPolicy");
+    const risk = writeAt(p.actions, ".ai-context/risk-gates.json");
+    expect(risk?.json).toMatchObject({ ci: { checkName: "risk-gates", required: true } });
   });
 
   it("writes the command-policy doc under the context dir (advisory reference)", async () => {

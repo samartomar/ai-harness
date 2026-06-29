@@ -25,6 +25,7 @@ const AihConfigSchema = z.object({
   schemaVersion: z.literal(1),
   contextDir: ContextDir,
   targets: z.array(z.string()).default([]),
+  posture: z.enum(["vibe", "team", "enterprise"]).optional(),
   /**
    * `aih adopt`'s team decisions: CLI-native paths the team has acknowledged as
    * intentionally tool-native (so re-runs stop flagging them as import candidates —

@@ -13,6 +13,7 @@ import {
   machineToolingPanel,
 } from "../../src/report/local.js";
 import { mcpGovernanceDigest } from "../../src/report/mcp-governance.js";
+import { leakPreventionsDigest } from "../../src/report/security.js";
 import { toolsInstalledDigest } from "../../src/report/tools.js";
 import { usagePanel } from "../../src/report/usage.js";
 import { scaleSafetyDigest } from "../../src/scale-safety.js";
@@ -125,6 +126,33 @@ describe("usagePanel", () => {
   });
 });
 
+describe("leakPreventionsDigest", () => {
+  it("counts scan-derived secret findings without exposing secret values", () => {
+    writeFileSync(join(dir, ".env"), "API_KEY=sk-should-never-render\n");
+    writeFileSync(
+      join(dir, ".mcp.json"),
+      JSON.stringify({
+        mcpServers: { gh: { env: { GITHUB_TOKEN: `ghp_${"a".repeat(36)}` } } },
+      }),
+    );
+
+    const d = leakPreventionsDigest(ctx());
+    if (d === undefined) throw new Error("expected leak-preventions digest");
+
+    expect(d.describe).toContain("2 finding");
+    expect(d.text).toContain(".env");
+    expect(d.text).toContain(".mcp.json");
+    expect(d.text).not.toContain("sk-should-never-render");
+    expect(d.text).not.toContain(`ghp_${"a".repeat(36)}`);
+    expect(d.data).toMatchObject({
+      total: 2,
+      plaintext: 1,
+      mcpHardcoded: 1,
+      codes: ["secrets.plaintext-detected", "mcp.hardcoded-secret"],
+    });
+  });
+});
+
 describe("report local scope — composed panels", () => {
   it("emits context footprint first, then configuration, tooling, and economy", async () => {
     mkdirSync(join(home, ".claude"), { recursive: true });
@@ -142,15 +170,17 @@ describe("report local scope — composed panels", () => {
   it("localPanels returns the always-on panels; git/usage-gated panels omit off-repo", async () => {
     const panels = await localPanels(ctx());
     // Non-repo, no-usage fixture: velocity (2), AI events, test-ratio, and repo-info all
-    // return undefined and are filtered out — leaving the 9 unconditional panels:
-    // repo-status, trends, usage, ai-cli-wiring, mcp-governance, config, machine-tooling,
-    // economy, tools-installed.
-    expect(panels).toHaveLength(9);
+    // return undefined and are filtered out — leaving the 11 unconditional panels:
+    // governance-rollup, repo-status, trends, usage, ai-cli-wiring, mcp-governance,
+    // vdi-compatibility, config, machine-tooling, economy, tools-installed.
+    expect(panels).toHaveLength(11);
     const prefixes = panels.map((p) => (p.kind === "digest" ? p.describe : ""));
     expect(prefixes.some((s) => s.startsWith("Tools installed"))).toBe(true);
     expect(prefixes.some((s) => s.startsWith("Repo status"))).toBe(true);
     expect(prefixes.some((s) => s.startsWith("AI CLI wiring"))).toBe(true);
     expect(prefixes.some((s) => s.startsWith("MCP governance"))).toBe(true);
+    expect(prefixes.some((s) => s.startsWith("VDI compatibility"))).toBe(true);
+    expect(prefixes.some((s) => s.startsWith("Governance roll-up"))).toBe(true);
   });
 
   it("mcpGovernanceDigest denies context7 (third-party egress) under the enterprise posture", () => {

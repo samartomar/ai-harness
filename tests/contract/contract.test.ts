@@ -301,7 +301,7 @@ describe("portable-paths invariant", () => {
     seedMindworksLike(dir);
     const c = await synth();
     expect(unportablePaths(c)).toEqual([]);
-    expect(portablePathsCheck(c).verdict).toBe("pass");
+    expect(portablePathsCheck(c, "vibe").verdict).toBe("pass");
   });
 
   it("fails on .. escapes, absolute, drive-letter, and UNC values", async () => {
@@ -310,13 +310,22 @@ describe("portable-paths invariant", () => {
     for (const bad of ["../escape", "/abs/path", "C:\\win", "C:/win", "\\\\unc\\share", "a\\b"]) {
       const tampered: ProjectContract = { ...base, entrypoints: [bad] };
       expect(unportablePaths(tampered)).toContain(bad);
-      expect(portablePathsCheck(tampered).verdict).toBe("fail");
+      expect(portablePathsCheck(tampered, "team").verdict).toBe("fail");
     }
+  });
+
+  it("keeps unportable paths warning-only at vibe posture", async () => {
+    seedMindworksLike(dir);
+    const tampered: ProjectContract = { ...(await synth()), entrypoints: ["../escape"] };
+    const res = portablePathsCheck(tampered, "vibe");
+    expect(res.verdict).toBe("pass");
+    expect(res.code).toBeUndefined();
+    expect(res.detail).toContain("warning-only");
   });
 
   it("surfaces a failing probe when the context dir itself is non-portable", async () => {
     seedMindworksLike(dir);
-    const c = ctx({ contextDir: "../sneaky" });
+    const c = ctx({ contextDir: "../sneaky", posture: "team" });
     const p = await command.plan(c);
     const probeAction = p.actions.find((a) => a.kind === "probe");
     expect(probeAction).toBeDefined();
@@ -375,10 +384,19 @@ describe("PR 1D — doctor contract-truth probe", () => {
   it("fails (routable) on a non-portable path in the committed contract", async () => {
     seedMindworksLike(dir);
     writeContract({ ...(await synth()), entrypoints: ["../escape"] });
-    const res = await contractTruthCheck(ctx());
+    const res = await contractTruthCheck(ctx({ posture: "team" }));
     expect(res.verdict).toBe("fail");
     expect(res.code).toBe("contract.path-unportable");
     expect(res.detail).toContain("../escape");
+  });
+
+  it("warns without failing on a non-portable committed contract at vibe posture", async () => {
+    seedMindworksLike(dir);
+    writeContract({ ...(await synth()), entrypoints: ["../escape"] });
+    const res = await contractTruthCheck(ctx({ posture: "vibe" }));
+    expect(res.verdict).toBe("pass");
+    expect(res.code).toBeUndefined();
+    expect(res.detail).toContain("warning-only");
   });
 
   it("does not false-fail a large repo — defers deep validation to graph safety", async () => {

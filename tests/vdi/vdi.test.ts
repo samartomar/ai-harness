@@ -14,7 +14,7 @@ import type {
 import { fakeRunner } from "../../src/internals/proc.js";
 import type { Platform, VdiInfo } from "../../src/platform/base.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
-import { command } from "../../src/vdi/index.js";
+import { command, vdiCompatibilityCheck, vdiCompatibilityText } from "../../src/vdi/index.js";
 
 let dir: string;
 beforeEach(() => {
@@ -142,6 +142,11 @@ describe("non-VDI host", () => {
     const p = await command.plan(ctx({ vdi: VDI_OFF }));
     const docs = byKind(p, "doc") as DocAction[];
     expect(docs[0]?.text).toContain(VDI_OFF.reason);
+    expect(docs[0]?.text).toContain(
+      "| Platform | Detection signals | Redirect strategy | Verified status |",
+    );
+    expect(docs[0]?.text).toContain("windows");
+    expect(docs[0]?.text).toContain("darwin");
     expect(docs[0]?.path).toBeUndefined();
   });
 
@@ -245,6 +250,28 @@ describe("VDI host (posix)", () => {
     expect(check.detail).toContain(VDI_ON.reason);
     expect(check.detail).toContain(posixScratch("alice"));
   });
+
+  it("renders a platform-by-redirect compatibility matrix with current detection", () => {
+    const text = vdiCompatibilityText(ctx({ platform: "linux", vdi: VDI_ON, env }));
+    expect(text).toContain(
+      "| Platform | Detection signals | Redirect strategy | Verified status |",
+    );
+    expect(text).toContain("linux");
+    expect(text).toContain("windows");
+    expect(text).toContain("darwin");
+    expect(text).toContain("Current host: linux");
+    expect(text).toContain(VDI_ON.reason);
+    expect(text).toContain("redirect active");
+  });
+
+  it("compatibility probe exposes platform, redirect, and verified status", () => {
+    const check = vdiCompatibilityCheck(ctx({ platform: "linux", vdi: VDI_ON, env }));
+    expect(check.verdict).toBe("pass");
+    expect(check.detail).toContain("linux");
+    expect(check.detail).toContain("verified");
+    expect(check.detail).toContain("redirect=active");
+    expect(check.detail).toContain(VDI_ON.reason);
+  });
 });
 
 describe("VDI host (windows)", () => {
@@ -342,14 +369,15 @@ describe("custom --scratch override", () => {
 });
 
 describe("boundary: no remote mutation, no cloud writes", () => {
-  it("emits only envblock/exec/probe on a VDI host — never an unexpected doc", async () => {
+  it("emits only envblock/exec/probe plus the compatibility doc on a VDI host", async () => {
     const p = await command.plan(
       ctx({ platform: "linux", vdi: VDI_ON, env: { USER: "alice", HOME: "/home/alice" } }),
     );
-    // The VDI path is pure local mutation; cloud setup (none here) would be a doc.
-    expect(byKind(p, "doc")).toHaveLength(0);
+    const docs = byKind(p, "doc") as DocAction[];
+    expect(docs).toHaveLength(1);
+    expect(docs[0]?.describe).toContain("VDI compatibility matrix");
     for (const a of p.actions) {
-      expect(["envblock", "exec", "probe"]).toContain(a.kind);
+      expect(["doc", "envblock", "exec", "probe"]).toContain(a.kind);
     }
   });
 

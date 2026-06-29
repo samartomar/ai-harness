@@ -19,6 +19,27 @@ const ROOT_CONTEXT_FILES = [
 /** Extra subtrees (beyond the canonical context dir) whose files load as agent context. */
 const EXTRA_CONTEXT_DIRS = [".cursor/rules"] as const;
 
+/** Compact contract files that v1 made the steady-state context target. */
+const CONTRACT_CONTEXT_FILES = ["RULE_ROUTER.md", "project.json", "project.md"] as const;
+
+/** Legacy canon family measured against the compact contract target when present. */
+const LEGACY_CONTEXT_FILES = [
+  "RULE_ROUTER.md",
+  "INDEX.md",
+  "architecture.md",
+  "conventions.md",
+  "tasks.md",
+  "SETUP-TASKS.md",
+  "VALIDATION.md",
+  "project-guardrails.md",
+  "REGENERATION.md",
+  "harness-update.md",
+  "adapters/other-tools.md",
+  "project.json",
+  "project.md",
+  "setup.md",
+] as const;
+
 /** One context file's footprint. `tokens` is an estimate (bytes / 4). */
 export interface ContextFile {
   /** Repo-relative path, POSIX separators. */
@@ -45,6 +66,20 @@ export interface ContextBloat {
   totalTokens: number;
   budgetTokens: number;
   overBudget: boolean;
+}
+
+export interface TokenOptimizationSlice {
+  paths: string[];
+  files: number;
+  bytes: number;
+  tokens: number;
+}
+
+export interface TokenOptimizationIndex {
+  legacy: TokenOptimizationSlice;
+  contract: TokenOptimizationSlice;
+  savedTokens: number;
+  reductionPct: number;
 }
 
 /** List directory entries, tolerating an unreadable/missing dir as "empty". */
@@ -97,6 +132,49 @@ export function estimateTokens(bytes: number): number {
 export function fileFootprint(root: string, rel: string): ContextFile | undefined {
   const bytes = fileSize(join(root, rel));
   return bytes === undefined ? undefined : { path: rel, bytes, tokens: estimateTokens(bytes) };
+}
+
+function contextPath(contextDir: string, rel: string): string {
+  return `${contextDir.replace(/\\/g, "/").replace(/\/+$/, "")}/${rel}`;
+}
+
+function pathCompare(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
+function sumFiles(
+  files: readonly ContextFile[],
+  wanted: ReadonlySet<string>,
+): TokenOptimizationSlice {
+  const picked = files
+    .filter((f) => wanted.has(f.path))
+    .sort((a, b) => pathCompare(a.path, b.path));
+  const bytes = picked.reduce((n, f) => n + f.bytes, 0);
+  const tokens = picked.reduce((n, f) => n + f.tokens, 0);
+  return { paths: picked.map((f) => f.path), files: picked.length, bytes, tokens };
+}
+
+/**
+ * Token-Optimization Index (TOI): compare the legacy always-loaded family against
+ * the compact v1 contract target using the SAME `scanContextBloat().files`
+ * inventory. Missing files count in neither side; no contents are read here.
+ */
+export function tokenOptimizationIndex(
+  files: readonly ContextFile[],
+  contextDir: string,
+): TokenOptimizationIndex {
+  const legacyPaths = new Set<string>([
+    ...ROOT_CONTEXT_FILES,
+    ...LEGACY_CONTEXT_FILES.map((rel) => contextPath(contextDir, rel)),
+  ]);
+  const contractPaths = new Set<string>(
+    CONTRACT_CONTEXT_FILES.map((rel) => contextPath(contextDir, rel)),
+  );
+  const legacy = sumFiles(files, legacyPaths);
+  const contract = sumFiles(files, contractPaths);
+  const savedTokens = Math.max(0, legacy.tokens - contract.tokens);
+  const reductionPct = legacy.tokens > 0 ? Math.round((savedTokens / legacy.tokens) * 100) : 0;
+  return { legacy, contract, savedTokens, reductionPct };
 }
 
 /**
