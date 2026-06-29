@@ -381,6 +381,56 @@ describe("PR 1D — doctor contract-truth probe", () => {
     expect((await contractTruthCheck(ctx())).verdict).toBe("pass");
   });
 
+  it("fails when the committed contract drifts from the live repo facts", async () => {
+    seedNodeNoBuildStart(dir);
+    writeContract(await synth());
+    writeFileSync(
+      join(dir, "package.json"),
+      JSON.stringify({
+        name: "lib",
+        scripts: { test: "vitest run", build: "tsc -p ." },
+        devDependencies: { typescript: "^5", vitest: "^1" },
+      }),
+    );
+
+    const res = await contractTruthCheck(ctx({ posture: "team" }));
+    expect(res.verdict).toBe("fail");
+    expect(res.code).toBe("contract.stale");
+    expect(res.detail).toContain("commands.build");
+    expect(res.detail).toContain("re-run `aih contract");
+  });
+
+  it("keeps contract staleness warning-only at vibe posture", async () => {
+    seedNodeNoBuildStart(dir);
+    writeContract(await synth());
+    writeFileSync(
+      join(dir, "package.json"),
+      JSON.stringify({
+        name: "lib",
+        scripts: { test: "vitest run", build: "tsc -p ." },
+        devDependencies: { typescript: "^5", vitest: "^1" },
+      }),
+    );
+
+    const res = await contractTruthCheck(ctx({ posture: "vibe" }));
+    expect(res.verdict).toBe("pass");
+    expect(res.code).toBeUndefined();
+    expect(res.detail).toContain("warning-only");
+  });
+
+  it("ignores user-added project.json keys when checking staleness", async () => {
+    seedMindworksLike(dir);
+    mkdirSync(join(dir, "ai-coding"), { recursive: true });
+    writeFileSync(
+      join(dir, "ai-coding", "project.json"),
+      `${JSON.stringify({ ...(await synth()), teamNotes: { owner: "platform" } }, null, 2)}\n`,
+    );
+
+    const res = await contractTruthCheck(ctx({ posture: "team" }));
+    expect(res.verdict).toBe("pass");
+    expect(res.code).toBeUndefined();
+  });
+
   it("fails (routable) on a non-portable path in the committed contract", async () => {
     seedMindworksLike(dir);
     writeContract({ ...(await synth()), entrypoints: ["../escape"] });
@@ -400,9 +450,17 @@ describe("PR 1D — doctor contract-truth probe", () => {
   });
 
   it("does not false-fail a large repo — defers deep validation to graph safety", async () => {
-    seedMindworksLike(dir);
+    seedNodeNoBuildStart(dir);
     const big = gitTrackedRunner(fakeTrackedPaths(1500));
     writeContract(await synth({ run: big }));
+    writeFileSync(
+      join(dir, "package.json"),
+      JSON.stringify({
+        name: "lib",
+        scripts: { test: "vitest run", build: "tsc -p ." },
+        devDependencies: { typescript: "^5", vitest: "^1" },
+      }),
+    );
     const res = await contractTruthCheck(ctx({ run: big }));
     expect(res.verdict).toBe("pass");
     expect(res.detail).toContain("deferred");

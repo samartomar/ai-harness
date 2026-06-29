@@ -230,6 +230,42 @@ describe("Check.code — doctor emitters", () => {
     expect(codeOf(checks, "dev-tools")).toBe("env.dev-tool-missing");
     expect(codeOf(checks, "context-dir")).toBe("canon.context-dir-missing");
   });
+
+  it("tags a stale committed repo contract", async () => {
+    const root = freshTmp();
+    write(
+      root,
+      "package.json",
+      JSON.stringify({
+        name: "lib",
+        scripts: { test: "vitest run", build: "tsc -p ." },
+        devDependencies: { typescript: "^5", vitest: "^1" },
+      }),
+    );
+    write(
+      root,
+      "ai-coding/project.json",
+      JSON.stringify({
+        schemaVersion: 1,
+        contextDir: "ai-coding",
+        targets: [],
+        languages: ["TypeScript/Node.js"],
+        frameworks: [],
+        cloud: [],
+        databases: [],
+        deployment: [],
+        entrypoints: [],
+        commands: { test: { value: "npm test", confidence: "detected" } },
+        scale: { trackedFiles: 0, class: "small", isMonorepo: false },
+        sensitivePaths: [],
+        knownGaps: [],
+      }),
+    );
+    const ctx = makeCtx({ root, options: { posture: "team" } });
+    const checks = await checksOf(await doctorCommand.plan(ctx), ctx);
+
+    expect(codeOf(checks, "contract truth")).toBe("contract.stale");
+  });
 });
 
 describe("Check.code — mcp emitters", () => {
@@ -392,6 +428,7 @@ describe("Check.code — invariants", () => {
       "usage.no-data": true,
       "scale.code-review-graph-missing": true,
       "contract.path-unportable": true,
+      "contract.stale": true,
       "org-policy.drift": true,
       "report.context-over-budget": true,
       "report.low-adoption": true,
