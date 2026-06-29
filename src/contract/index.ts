@@ -1,10 +1,17 @@
 import { posix } from "node:path";
 import type { CommandSpec, Plan, PlanContext } from "../internals/plan.js";
-import { plan, probe, writeJson } from "../internals/plan.js";
+import { plan, probe, writeJson, writeText } from "../internals/plan.js";
 import type { Check } from "../internals/verify.js";
 import { scanRepo } from "../profile/scan.js";
-import { PROJECT_CONTRACT_FILE, type ProjectContract, projectContractJson } from "./schema.js";
+import {
+  PROJECT_CONTRACT_FILE,
+  PROJECT_DOC_FILE,
+  type ProjectContract,
+  projectContractJson,
+  SETUP_DOC_FILE,
+} from "./schema.js";
 import { synthesizeContract, unportablePaths } from "./synth.js";
+import { projectContractDoc, setupDoc } from "./templates.js";
 
 /**
  * The portable-paths invariant as a verification {@link Check}: every path-like value
@@ -38,14 +45,30 @@ export function portablePathsCheck(contract: ProjectContract): Check {
  * {@link projectContractJson} so only a conformant contract is ever persisted.
  */
 async function contractPlan(ctx: PlanContext): Promise<Plan> {
-  const stack = scanRepo(ctx.root, { maxDepth: 8, contextDir: ctx.contextDir });
+  const dir = ctx.contextDir;
+  const stack = scanRepo(ctx.root, { maxDepth: 8, contextDir: dir });
   const contract = projectContractJson(await synthesizeContract(ctx, stack));
-  const path = posix.join(ctx.contextDir, PROJECT_CONTRACT_FILE);
   return plan(
     "contract",
-    writeJson(path, contract, "machine-readable repo contract (the project.json seam)", {
-      merge: true,
-    }),
+    writeJson(
+      posix.join(dir, PROJECT_CONTRACT_FILE),
+      contract,
+      "machine-readable repo contract (the project.json seam)",
+      { merge: true },
+    ),
+    // The human mirror is regenerated each run (NOT once) — it tracks project.json.
+    writeText(
+      posix.join(dir, PROJECT_DOC_FILE),
+      projectContractDoc(dir, contract),
+      "human-readable contract mirror (rendered from project.json)",
+    ),
+    // The setup seed is write-once: a team owns and edits it.
+    writeText(
+      posix.join(dir, SETUP_DOC_FILE),
+      setupDoc(dir, contract),
+      "first-run setup checklist (write-once)",
+      { once: true },
+    ),
     probe("contract portable-paths", () => portablePathsCheck(contract)),
   );
 }

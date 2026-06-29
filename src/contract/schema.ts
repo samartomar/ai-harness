@@ -18,6 +18,10 @@ import { readIfExists } from "../internals/fsxn.js";
  * second writer.
  */
 export const PROJECT_CONTRACT_FILE = "project.json";
+/** The human-readable mirror, rendered from {@link PROJECT_CONTRACT_FILE} every run. */
+export const PROJECT_DOC_FILE = "project.md";
+/** The write-once first-run setup seed a team owns. */
+export const SETUP_DOC_FILE = "setup.md";
 
 /**
  * How sure we are a command is the right one to run.

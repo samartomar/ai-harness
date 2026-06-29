@@ -108,6 +108,53 @@ describe("contract plan (dry-run shape)", () => {
   });
 });
 
+describe("PR 1B — project.md + setup.md", () => {
+  const FILES = ["ai-coding/project.json", "ai-coding/project.md", "ai-coding/setup.md"];
+
+  it("emits exactly the three contract files", async () => {
+    seedMindworksLike(dir);
+    expect(writePaths((await command.plan(ctx())).actions).sort()).toEqual([...FILES].sort());
+  });
+
+  it("project.md mirrors project.json facts and defers working agreements to the canon", async () => {
+    seedMindworksLike(dir);
+    const c = await synth();
+    const md = (
+      writesByPath((await command.plan(ctx())).actions).get("ai-coding/project.md")?.contents ?? ""
+    ).replace(/\r\n/g, "\n");
+    expect(c.commands.test).toBeDefined();
+    if (c.commands.test) expect(md).toContain(c.commands.test.value); // prose === JSON value
+    expect(md).toContain("## Stack");
+    expect(md).toContain("## Commands");
+    expect(md).toContain("agent canon"); // facts only — points at the canon, never carries it
+    expect(md).not.toContain("Conventional commits"); // no working-agreement prose folded in
+  });
+
+  it("setup.md is write-once; project.md regenerates", async () => {
+    seedMindworksLike(dir);
+    const w = writesByPath((await command.plan(ctx())).actions);
+    expect(w.get("ai-coding/setup.md")?.once).toBe(true);
+    expect(w.get("ai-coding/project.md")?.once).toBeUndefined();
+
+    const a1 = ctx({ apply: true });
+    await executePlan(await command.plan(a1), a1);
+    const a2 = ctx({ apply: true });
+    const r2 = await executePlan(await command.plan(a2), a2);
+    const effect = (p: string): string | undefined =>
+      r2.writes.find((x) => x.path.replace(/\\/g, "/") === p)?.effect;
+    expect(effect("ai-coding/setup.md")).toBe("kept");
+    expect(effect("ai-coding/project.md")).toBe("unchanged");
+  });
+
+  it("renders the inferred-command caveat only when a command is inferred", async () => {
+    seedNoPackageJson(dir); // go test ./... is inferred
+    const md =
+      writesByPath((await command.plan(ctx())).actions).get("ai-coding/project.md")?.contents ?? "";
+    expect(md).toContain("inferred");
+    expect(md).toContain("confirm before relying on it");
+  });
+});
+
 describe("command confidence", () => {
   it("marks declared package.json scripts as detected", async () => {
     seedMindworksLike(dir);
