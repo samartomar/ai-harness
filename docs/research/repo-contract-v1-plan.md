@@ -56,7 +56,7 @@ New capability folder `src/contract/` — matches the per-capability idiom (`src
 
 ### PR 1A — `project.json` schema + synthesizer + writer  ·  effort M · risk Low
 Goal: land the contract object + schema + the `writeJson` emitter + portable-path probe. No prose, no init wiring.
-- Create `src/contract/schema.ts` (`ProjectContractSchema` + `readProjectContract` + `projectContractJson`, patterned on `src/config/marker.ts`), `src/contract/synth.ts` (`synthesizeContract(root, stack, ctx): ProjectContract` — calls `scanRepo`, derives confidence per §3, scale class, `scanSecrets`, `knownGaps` from `classifyCanon`+`cliFootprint`), `src/contract/index.ts` (`CommandSpec`; `plan()` emits the `writeJson` + portable-path `probe`). Register in `CAPABILITIES[]`.
+- Create `src/contract/schema.ts` (`ProjectContractSchema` + `readProjectContract` + `projectContractJson`, patterned on `src/config/marker.ts`), `src/contract/synth.ts` (`synthesizeContract(ctx, stack): Promise<ProjectContract>` — root/contextDir/targets come off `ctx`; calls `scanRepo`, derives confidence per §3, scale class, `scanSecrets`, `knownGaps` from `classifyCanon`+`cliFootprint`), `src/contract/index.ts` (`CommandSpec`; `plan()` emits the `writeJson` + portable-path `probe`). Register in `CAPABILITIES[]`.
 - Acceptance: `tests/contract/contract.test.ts` (mirror `tests/scaffold/scaffold.test.ts`). Copy `ctx()` (force `platform:'linux'`) + `writePaths`/`writesByPath` verbatim. Assert: `writePaths` contains `<dir>/project.json`; the JSON parses against the schema; **determinism** (two `plan()` runs → byte-identical `resolveContents`); **no exec actions** (`p.actions.some(a=>a.kind==='exec')===false`); portable-path probe passes clean / fails on a seeded `..`/drive-letter value. New `tests/contract/fixtures.ts`: `seedMindworksLike`, `seedNoPackageJson`, `seedMonorepoSmall`, `seedPortablePaths`, `seedLargeRepoNoGraph` (put-into-tmpdir seeders).
 - Depends on: nothing.
 
@@ -87,9 +87,9 @@ One `scanRepo(ctx.root,{maxDepth:8,contextDir})` feeds everything. Confidence is
 | field | detector | confidence |
 |---|---|---|
 | `commands.test` | `RepoStack.testRunner` (`deriveTest`, skips placeholder `echo` via `isPlaceholderScript:546`) | `npm test` script → `detected`; runner dep → `inferred`; language default → `inferred` |
-| `commands.build` | `RepoStack.buildCommand` | script exists → `detected`; else omit (no fabrication) |
+| `commands.build` | `RepoStack.buildCommand` | `npm run build` script → `detected`; **non-Node language default (`go build ./...`, `cargo build`, `./mvnw clean package`, `./gradlew build`, `dotnet build`) → `inferred`** (uniform with test/lint, scan.ts:475-496); else omit. Every `inferred` command also emits a `knownGaps` "unconfirmed … verify it runs" entry (synth.ts:87-92), so inferred is strictly better than omit (gives the agent the conventional command + a verify flag). |
 | `commands.lint` | `RepoStack.lintCommand`/`configLint` | script → `detected`; dep/config-file → `inferred` |
-| `commands.start` | `RepoStack.startCommand`/entryPoints | script → `detected`; else omit |
+| `commands.start` | `RepoStack.startCommand` | `npm start` script → `detected`; else omit. `scanRepo` derives **no language-default start** (scan.ts:475-496 set test+build only), so start is `detected`-or-omit in practice — `toCommand` stays uniform/future-proof if a start default is ever added. |
 | `languages`/`frameworks`/`cloud`/`databases`/`packageManager` | `RepoStack.*` | presence-based, no enum |
 | `entrypoints` | `RepoStack.entryPoints` | — |
 | `scale.trackedFiles` | `gitTrackedSet` (`src/internals/scan-allowlist.ts:30`) / `git ls-files` | from git; `undefined` if not a git repo |
