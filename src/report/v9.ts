@@ -491,6 +491,8 @@ function buildEcc(digests: DigestAction[]): V9Quality["ecc"] | undefined {
     },
     dup: numOr(e.dup, 0),
     packs: strs(e.packs),
+    ...(typeof e.version === "string" ? { version: e.version } : {}),
+    ...(typeof e.commit === "string" ? { commit: e.commit } : {}),
     ...(typeof e.profile === "string" ? { profile: e.profile } : {}),
   };
 }

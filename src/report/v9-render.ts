@@ -297,21 +297,24 @@ export function renderQuality(q: V9Quality, eccPreview: boolean): string {
   const rp = ecc?.repo ?? { agents: 0, skills: 0, rules: 0, hooks: 0 };
   const eccBadge = headBadge(
     eccPreview,
-    `<span class="badge mcp">${ecc?.profile ? `profile: ${escHtml(ecc.profile)}` : "this machine"}</span>`,
+    `<span class="badge mcp">${ecc?.version ? `ECC v${escHtml(ecc.version)}` : "this machine"}</span>`,
   );
   const packs = (ecc?.packs ?? [])
     .map((p) => `<span class="tool on">${escHtml(p)}</span>`)
     .join("");
   const dupRow =
     ecc && ecc.dup > 0
-      ? `<div class="row"><span class="k">duplicates machine ECC</span><span class="v" style="color:var(--warn)">${ecc.dup} — retire</span></div>`
-      : '<div class="row"><span class="k">duplicates machine ECC</span><span class="v" style="color:var(--ok)">none</span></div>';
+      ? `<div class="row"><span class="k">repo duplicates ECC</span><span class="v" style="color:var(--warn)">${ecc.dup} — retire</span></div>`
+      : '<div class="row"><span class="k">repo duplicates ECC</span><span class="v" style="color:var(--ok)">none</span></div>';
   const subLabel =
     "font-size:.6rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:600";
+  const machineLabel = ecc?.version
+    ? `Machine ECC · v${escHtml(ecc.version)}`
+    : "Machine ECC · ~/.claude";
   const eccNote = eccPreview
     ? "ECC is a system-wide rolling install (~/.claude); this needs the machine-ECC scan. <b>Not scanned yet.</b>"
-    : "ECC = your machine install (~/.claude), honored as-is. Repo agents/skills are team-local overrides — not ECC.";
-  const eccCard = `<div class="${cardClass("span-4", eccPreview)}"><div class="card-head"><h3>ECC · machine + repo impact</h3>${eccBadge}</div><div class="card-body"><div style="${subLabel};margin-bottom:.3rem">Machine ECC · ~/.claude</div><div style="display:flex;gap:.9rem;flex-wrap:wrap;margin-bottom:.6rem"><div class="heatmap-stat"><b>${m.agents}</b><span>agents</span></div><div class="heatmap-stat"><b>${m.skills}</b><span>skills</span></div><div class="heatmap-stat"><b>${m.rules}</b><span>rules</span></div></div><div style="${subLabel};margin-bottom:.3rem">Repo-local overrides (team)</div><div class="donut-meta"><div class="row"><span class="k">agents · skills · rules · hooks</span><span class="v">${rp.agents} · ${rp.skills} · ${rp.rules} · ${rp.hooks}</span></div>${dupRow}</div><div style="${subLabel};margin:.6rem 0 .3rem">ECC packs for this stack</div><div class="pills">${packs}</div><div class="method" style="margin-top:.5rem">${eccNote}</div></div></div>`;
+    : "ECC = your live machine install (~/.claude `ecc/` namespace), version from its manifest. Repo agents/skills are team-local overrides — not ECC.";
+  const eccCard = `<div class="${cardClass("span-4", eccPreview)}"><div class="card-head"><h3>ECC · machine + repo impact</h3>${eccBadge}</div><div class="card-body"><div style="${subLabel};margin-bottom:.3rem">${machineLabel}</div><div style="display:flex;gap:.9rem;flex-wrap:wrap;margin-bottom:.6rem"><div class="heatmap-stat"><b>${m.agents}</b><span>agents</span></div><div class="heatmap-stat"><b>${m.skills}</b><span>skills</span></div><div class="heatmap-stat"><b>${m.rules}</b><span>rules</span></div></div><div style="${subLabel};margin-bottom:.3rem">Repo-local overrides (team)</div><div class="donut-meta"><div class="row"><span class="k">agents · skills · rules · hooks</span><span class="v">${rp.agents} · ${rp.skills} · ${rp.rules} · ${rp.hooks}</span></div>${dupRow}</div><div style="${subLabel};margin:.6rem 0 .3rem">ECC packs for this stack</div><div class="pills">${packs}</div><div class="method" style="margin-top:.5rem">${eccNote}</div></div></div>`;
   return test + guard + eccCard;
 }
 

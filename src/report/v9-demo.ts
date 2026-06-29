@@ -141,8 +141,9 @@ export const V9_DEMO: AihDataV9 = {
       ["command-policy", "active", "ok"],
     ],
     ecc: {
-      profile: "balanced",
-      machine: { agents: 67, skills: 31, rules: 124 },
+      version: "2.0.0",
+      profile: "developer",
+      machine: { agents: 67, skills: 146, rules: 124 },
       repo: { agents: 5, skills: 11, rules: 5, hooks: 3 },
       dup: 0,
       packs: ["typescript", "web"],

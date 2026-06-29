@@ -224,22 +224,64 @@ function countMdRecursive(abs: string): number {
 }
 
 /**
- * §1 ECC inventory — ECC is a SYSTEM-WIDE, rolling install (skills versioned, agents/hooks
- * improving), so the source of truth is the MACHINE install at `~/.claude`, NOT the repo.
- * Reports the machine ECC (agents/skills/rules), the repo-local `.claude/.kiro` content as
- * TEAM OVERRIDES (never relabelled "ECC"), any repo item whose name duplicates a machine-ECC
- * one (a fork to retire), and the ECC packs that apply to this repo's stack (impact).
- * Machine-aware by design (this developer's install) → not portable across machines.
- * Undefined only when neither machine nor repo carries anything.
+ * ECC version/commit/profile from its install manifest (`~/.claude/ecc/install-state.json`).
+ * Only the metadata is taken from here — counts come from the LIVE install on disk, because the
+ * manifest is a point-in-time snapshot (ECC rolls forward: it has since namespaced skills under
+ * `skills/ecc/`, so the manifest's flat paths are stale). Undefined when ECC wasn't installed
+ * via its tracked installer.
+ */
+function readEccMeta(
+  home: string,
+): { version?: string; commit?: string; profile?: string } | undefined {
+  const text = readIfExists(join(home, ".claude", "ecc", "install-state.json"));
+  if (text === undefined) return undefined;
+  try {
+    const s = JSON.parse(text) as {
+      source?: { repoVersion?: unknown; repoCommit?: unknown };
+      request?: { profile?: unknown };
+    };
+    return {
+      version: typeof s.source?.repoVersion === "string" ? s.source.repoVersion : undefined,
+      commit:
+        typeof s.source?.repoCommit === "string" ? s.source.repoCommit.slice(0, 10) : undefined,
+      profile: typeof s.request?.profile === "string" ? s.request.profile : undefined,
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+/** Names under `base/ecc/` (ECC's namespace) when present, else flat `base/` (older/flat installs). */
+function eccNamespaced(base: string, opts: { ext?: string; dirsOnly?: boolean }): string[] {
+  const ns = join(base, "ecc");
+  return existsSync(ns) ? listNames(ns, opts) : listNames(base, opts);
+}
+
+/**
+ * §1 ECC inventory — ECC is a SYSTEM-WIDE, rolling install, so the source of truth is what's
+ * installed NOW at the machine level (~/.claude). ECC namespaces its content under `ecc/`
+ * (`skills/ecc/`, `rules/ecc/`); we count there when present (else flat, for older installs) so
+ * plugin skills sitting flat in `skills/` are never miscounted as ECC. Agents are flat. The
+ * version/commit come from ECC's install manifest (metadata only — its counts are a stale
+ * snapshot). Repo `.claude/.kiro` content is reported as TEAM OVERRIDES (never relabelled "ECC");
+ * a repo item whose name is an ECC one is a fork to retire; packs = ECC packs for this stack
+ * (impact). Machine-aware by design → not portable across machines. Undefined only when neither
+ * machine nor repo carries anything.
  */
 export function eccInventoryDigest(ctx: PlanContext): DigestAction | undefined {
   const r = ctx.root;
   const mClaude = join(homeDir(ctx), ".claude");
-  // Machine ECC — the real, rolling install (~/.claude): the source of truth.
+  const meta = readEccMeta(homeDir(ctx));
+  // Current machine ECC — count the live ecc/ namespace (skills, rules) + flat agents.
+  const eccAgentNames = eccNamespaced(join(mClaude, "agents"), { ext: ".md" });
+  const eccSkillNames = eccNamespaced(join(mClaude, "skills"), { dirsOnly: true });
+  const rulesBase = join(mClaude, "rules");
   const machine = {
-    agents: countEntries(join(mClaude, "agents"), { ext: ".md" }),
-    skills: countEntries(join(mClaude, "skills"), { dirsOnly: true }),
-    rules: countMdRecursive(join(mClaude, "rules")),
+    agents: eccAgentNames.length,
+    skills: eccSkillNames.length,
+    rules: existsSync(join(rulesBase, "ecc"))
+      ? countMdRecursive(join(rulesBase, "ecc"))
+      : countMdRecursive(rulesBase),
   };
   // Repo-local — team overrides committed under the repo's own .claude/.kiro (NOT ECC).
   const repoAgents = [
@@ -258,29 +300,50 @@ export function eccInventoryDigest(ctx: PlanContext): DigestAction | undefined {
       countEntries(join(r, ".kiro", "steering"), { ext: ".md" }),
     hooks: countHooks(join(r, ".claude", "settings.json")),
   };
-  const total =
-    machine.agents + machine.skills + machine.rules + repo.agents + repo.skills + repo.rules;
-  if (total + repo.hooks === 0) return undefined;
-  // Duplication — a repo agent/skill whose NAME collides with a machine-ECC one is a fork to retire.
-  const mAgents = new Set(listNames(join(mClaude, "agents"), { ext: ".md" }));
-  const mSkills = new Set(listNames(join(mClaude, "skills"), { dirsOnly: true }));
+  if (
+    machine.agents +
+      machine.skills +
+      machine.rules +
+      repo.agents +
+      repo.skills +
+      repo.rules +
+      repo.hooks ===
+    0
+  ) {
+    return undefined;
+  }
+  // Duplication — a repo agent/skill whose NAME is an ECC one is a fork to retire.
+  const eccAgents = new Set(eccAgentNames);
+  const eccSkills = new Set(eccSkillNames);
   const dup =
-    repoAgents.filter((n) => mAgents.has(n)).length +
-    repoSkills.filter((n) => mSkills.has(n)).length;
+    repoAgents.filter((n) => eccAgents.has(n)).length +
+    repoSkills.filter((n) => eccSkills.has(n)).length;
   const stack = scanRepo(r, { maxDepth: 8, contextDir: ctx.contextDir });
   const packs = [...eccLanguages(stack).packs];
+  const ver = meta?.version ? ` v${meta.version}` : "";
   const body = lines(
-    `Machine ECC (~/.claude): ${machine.agents} agents · ${machine.skills} skills · ${machine.rules} rules`,
+    `Machine ECC${ver} (~/.claude): ${machine.agents} agents · ${machine.skills} skills · ${machine.rules} rules`,
+    meta
+      ? "  (version from ECC install manifest; counts from the live install)"
+      : "  (no ECC manifest — counts from the live install)",
     `Repo-local (team overrides): ${repo.agents} agents · ${repo.skills} skills · ${repo.rules} rules · ${repo.hooks} hooks`,
     dup > 0
-      ? `  ⚠ ${dup} repo item(s) duplicate machine ECC — retire to inherit the rolling install.`
-      : "  No repo duplication of machine ECC.",
+      ? `  ⚠ ${dup} repo item(s) duplicate ECC — retire to inherit the rolling install.`
+      : "  No repo duplication of ECC.",
     `  ECC packs for this stack: ${packs.join(", ") || "(none detected)"}`,
   );
   return digest(
     `ECC harness — machine ${machine.agents}a/${machine.skills}s, repo ${repo.agents}a/${repo.skills}s, ${dup} dup`,
     body,
-    { machine, repo, dup, packs },
+    {
+      machine,
+      repo,
+      dup,
+      packs,
+      ...(meta?.version ? { version: meta.version } : {}),
+      ...(meta?.commit ? { commit: meta.commit } : {}),
+      ...(meta?.profile ? { profile: meta.profile } : {}),
+    },
   );
 }
 

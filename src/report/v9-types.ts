@@ -134,8 +134,12 @@ export interface V9Quality {
    * apply to this repo's stack (impact). PREVIEW until the scan lands.
    */
   ecc?: {
-    /** ECC install profile, when known (the file-scan can't detect it). */
+    /** ECC repo version + commit, from the install manifest (undefined on the dir-scan path). */
+    version?: string;
+    commit?: string;
+    /** ECC install profile, when known. */
     profile?: string;
+    /** Live machine ECC counts (from the on-disk `ecc/` namespace, else a flat dir scan). */
     machine: { agents: number; skills: number; rules: number };
     repo: { agents: number; skills: number; rules: number; hooks: number };
     dup: number;

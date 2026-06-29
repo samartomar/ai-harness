@@ -166,8 +166,11 @@ function usage(): DigestAction {
 }
 
 function ecc(): DigestAction {
-  return digest("ECC harness — machine 67a/31s, repo 5a/11s, 0 dup", "body", {
-    machine: { agents: 67, skills: 31, rules: 124 },
+  return digest("ECC harness — machine 67a/146s, repo 5a/11s, 0 dup", "body", {
+    version: "2.0.0",
+    commit: "68e926bf77",
+    profile: "developer",
+    machine: { agents: 67, skills: 146, rules: 124 },
     repo: { agents: 5, skills: 11, rules: 5, hooks: 3 },
     dup: 0,
     packs: ["typescript", "web"],
@@ -377,15 +380,17 @@ describe("buildAihDataV9 — Phase B capability flips", () => {
     const d = buildAihDataV9([...ALL, ecc()]);
     expect(d.gates["cap-ecc"]).toBe("live");
     expect(d.quality?.ecc).toMatchObject({
-      machine: { agents: 67, skills: 31, rules: 124 },
+      version: "2.0.0",
+      machine: { agents: 67, skills: 146, rules: 124 },
       repo: { agents: 5, skills: 11, hooks: 3 },
       dup: 0,
       packs: ["typescript", "web"],
     });
     const view = assembleViewV9(d, V9_DEMO);
     const html = view.sections["sec-quality"]?.html ?? "";
-    expect(html).toContain(">67<"); // machine ECC agent count (the real install)
-    expect(html).toContain("Machine ECC"); // machine-level framing, not repo-as-ECC
+    expect(html).toContain(">67<"); // machine ECC agent count (the live install)
+    expect(html).toContain(">146<"); // skills from the live ecc/ namespace, not a flat dir scan
+    expect(html).toContain("ECC v2.0.0"); // version badge from the manifest
     expect(html).not.toContain("span-4 preview");
     expect(html).not.toContain("what came along"); // old mislabel removed
   });

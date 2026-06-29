@@ -175,6 +175,7 @@ function inSync(): string {
 }
 
 interface EccData {
+  version?: string;
   machine: { agents: number; skills: number; rules: number };
   repo: { agents: number; skills: number; rules: number; hooks: number };
   dup: number;
@@ -220,6 +221,34 @@ describe("eccInventoryDigest", () => {
     expect(data.machine).toEqual({ agents: 2, skills: 1, rules: 1 });
     expect(data.repo.agents).toBe(2);
     expect(data.dup).toBe(1); // code-reviewer collides with a machine-ECC agent
+  });
+
+  it("counts the LIVE ecc/ namespace (not flat plugin skills) + takes version from the manifest", () => {
+    // manifest supplies version/commit only (its counts are a stale snapshot)
+    putHome(
+      ".claude/ecc/install-state.json",
+      JSON.stringify({
+        source: { repoVersion: "2.0.0", repoCommit: "68e926bf77dd00" },
+        request: { profile: "developer" },
+      }),
+    );
+    // current ECC lives under the ecc/ namespace …
+    putHome(".claude/agents/architect.md", "x");
+    putHome(".claude/agents/code-reviewer.md", "x");
+    putHome(".claude/skills/ecc/python-patterns/SKILL.md", "x");
+    putHome(".claude/skills/ecc/react-testing/SKILL.md", "x");
+    putHome(".claude/skills/ecc/security-review/SKILL.md", "x");
+    putHome(".claude/rules/ecc/common/coding-style.md", "x");
+    // … and a PLUGIN skill sits flat in skills/ — it must NOT count as ECC
+    putHome(".claude/skills/cloudflare/SKILL.md", "x");
+    // repo forks one ECC agent (code-reviewer) + adds its own
+    put(".claude/agents/code-reviewer.md", "forked");
+    put(".claude/agents/architecture-drift.md", "own");
+    const data = eccInventoryDigest(ctx())?.data as EccData;
+    expect(data.version).toBe("2.0.0");
+    // skills counted from skills/ecc/ (3) — the flat cloudflare plugin skill is excluded
+    expect(data.machine).toEqual({ agents: 2, skills: 3, rules: 1 });
+    expect(data.dup).toBe(1); // repo code-reviewer is an ECC agent (name match)
   });
 });
 
