@@ -85,7 +85,7 @@ function matrix(rows: string[], cols: string[], cells: Record<string, string[]>)
       return `<div class="mc row-head"><span class="nm">${escHtml(r)}</span></div>${rowCells}`;
     })
     .join("");
-  return `<div class="matrix" style="grid-template-columns:90px repeat(${cols.length},1fr)">${head}${body}</div>`;
+  return `<div class="matrix" style="grid-template-columns:minmax(64px,90px) repeat(${cols.length},minmax(26px,1fr))">${head}${body}</div>`;
 }
 
 /**

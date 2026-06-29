@@ -1,9 +1,25 @@
 # HANDBACK — `aih report --v9` (developer console)
 
-**Status: complete, gated green, NOT merged.** Implemented on `feat/local-report-v9`
+**Status: complete, gated green, rebased onto `main`, NOT merged.** Implemented on `feat/local-report-v9`
 across the three RUNBOOK phases. This is a review packet — per the deal, nothing has
 gone near `main`. A **draft PR targeting `main`** accompanies this doc; please review
 against [TEST-CRITERIA.md](TEST-CRITERIA.md) before anything merges.
+
+## Latest readiness pass — 2026-06-29
+
+This supersedes the older phase-by-phase gate counts below.
+
+- Rebased cleanly onto `origin/main` at `534ce8c`.
+- Final gate: `npm run lint:fix && npx @biomejs/biome ci src tests && npm run typecheck && npm test && npm run build` → **0**.
+- Coverage: `npm run test:cov` → **94.23% statements / 80.85% branches**.
+- Tests: **93 files / 1192 tests**.
+- Live E2E: `node dist/cli.js report --v9 --apply --no-log --out <temp> D:\dev\syntegris` → **0**, 151,092-byte HTML.
+- Honesty matrix passed in both the static no-JS body and hydrated DOM: off-canon, on-canon/no-usage, no-ECC, no-track-history, and no-run-ledger.
+- Browser visual QA passed at 1440px and 320px: radar labels fit, bars stay within tracks, matrices fit, no horizontal overflow.
+- Usage smoke passed: `aih usage --apply` idempotent for targeted CLIs with existing hooks preserved, and `aih usage --rollup` aggregated two repos.
+- Latest mobile visual polish: matrix columns now compress at 320px, and the tiny top-bar version badge hides on very narrow screens.
+
+See [RELEASE-CHECKLIST.md](RELEASE-CHECKLIST.md) for the current release checklist and owner-gated items.
 
 ## What shipped
 

@@ -8,6 +8,14 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **`aih report --v9` developer console** ships opt-in with LIVE / PREVIEW /
+  EMPTY honesty states, machine-relative ECC inventory, MCP parity/egress,
+  usage-by-CLI, heavy lifters, dormant ECC skills, remediation wins, no-JS
+  honest rendering, and responsive browser-verified layout.
+- **`aih usage --apply` per-tool metering hooks and `--rollup`.** The usage
+  layer now writes idempotent local hooks for supported targeted CLIs, records
+  local activity counts only (no prompts, args, or cost), and aggregates
+  `.aih/usage.jsonl` across repos on demand.
 - **`aih secrets --verify` is now a secret-scan CI gate.** Each detected plaintext
   secret (`.env*` / root `secrets/`) surfaces as a read-only `fail` probe, so
   `--verify` exits non-zero when secrets exist and `--sarif <file>` emits one

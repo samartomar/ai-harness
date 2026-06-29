@@ -6,15 +6,14 @@ The checklist at the bottom records what landed.
 
 ## TL;DR
 
-The usage-metering foundation already exists. This work is **not** a new subsystem — it
-**finishes** the one that's there:
+The usage-metering foundation now ships. This work is **not** a new subsystem — it
+finishes the local recorder that already existed:
 
-- **Built today:** the event schema (`.aih/usage.jsonl`), the reader, the aggregator, the
+- **Foundation:** the event schema (`.aih/usage.jsonl`), the reader, the aggregator, the
   recorder script, the **universal git floor** hook, and the `aih usage` command.
-- **The gap:** (1) the per-tool **skill/MCP hooks are only _documented_, not generated**; (2) the
-  v9 dashboard panels that should consume usage (`Usage by CLI`, `Heavy lifters`, `Dormant`) are
-  still PREVIEW; (3) **dormant detection** (ECC-installed minus actually-invoked) isn't wired;
-  (4) **cross-project rollup** reads one repo only.
+- **Finished in this branch:** per-tool skill/MCP hook generators for targeted supported CLIs,
+  v9 Usage-by-CLI / Heavy-lifters / Dormant panels, dormant detection (ECC-installed minus
+  actually-invoked), and scan-on-demand cross-project rollup.
 
 Finish those four and the "usages" + cross-project feedback loop the whole report arc was for
 goes LIVE — without inventing new infrastructure.
@@ -49,12 +48,11 @@ goes LIVE — without inventing new infrastructure.
 
 So the schema, reader, aggregator, recorder, and git floor are done. The next two layers are the gap.
 
-## Gap 1 — generate the per-tool skill/MCP hooks (the source)
+## P1 — generated per-tool skill/MCP hooks (the source)
 
-Today `aih usage` writes the git floor and **documents** each CLI's hook in `TOOL_HOOK`, with a
-note: *"the next slice auto-generates them."* This is that slice.
+`aih usage --apply` writes the git floor and generates each targeted CLI's hook from `TOOL_HOOK`.
 
-Add a generator per CLI that writes the real hook config, each calling the existing recorder:
+Each generated hook calls the existing recorder:
 
 ```
 node .aih/usage-record.mjs <tool> mcp  <tool-name> <server>
@@ -77,10 +75,9 @@ Design choices:
   `ecc` when the skill/agent name is in the machine ECC set (we now read that namespace), else
   `canon`/`user`.
 
-## Gap 2 — wire the v9 panels (the consumption)
+## P2 — v9 panels (the consumption)
 
-All three already have a home in the v9 view-model; today they render demo data behind a PREVIEW
-ribbon. Point them at `aggregateUsage(readUsage(ctx))`:
+The v9 panels consume `aggregateUsage(readUsage(ctx))`:
 
 - **`Usage by CLI`** ← `summary.tools` (per-tool event share). Flips PREVIEW→LIVE once any event exists.
 - **`Heavy lifters`** ← `summary.skills.top` (most-invoked skills/agents, 30d window).
@@ -88,7 +85,7 @@ ribbon. Point them at `aggregateUsage(readUsage(ctx))`:
 
 Honesty: each panel stays PREVIEW until `readUsage` returns ≥1 real event (live-or-don't-render).
 
-## Gap 3 — dormant detection = ECC ∩ usage (the killer panel)
+## P3 — dormant detection = ECC ∩ usage (the killer panel)
 
 We now read the **live ECC skill set** (the `~/.claude/skills/ecc/` namespace — 146 on this box)
 in the ECC panel. Dormant trim-candidates =
@@ -101,7 +98,7 @@ i.e. "you carry 146 ECC skills; 12 fired in 30d; **134 are dormant** — candida
 rolling install." This is the first panel that needs *both* the ECC inventory (done) and usage
 (Gaps 1–2). Same idea for agents.
 
-## Gap 4 — cross-project rollup
+## P5 — cross-project rollup
 
 `aggregateUsage` already folds an event list — so cross-project is "read N repos' `.aih/usage.jsonl`,
 concat, aggregate." Per the **no-local-cache** decision, this is **scan-on-demand**, not a daemon:
