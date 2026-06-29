@@ -1,0 +1,260 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { command, portablePathsCheck } from "../../src/contract/index.js";
+import type { ProjectContract } from "../../src/contract/schema.js";
+import { ProjectContractSchema, readProjectContract } from "../../src/contract/schema.js";
+import { synthesizeContract, unportablePaths } from "../../src/contract/synth.js";
+import { executePlan, resolveContents } from "../../src/internals/execute.js";
+import type { Action, PlanContext, WriteAction } from "../../src/internals/plan.js";
+import { fakeRunner, missingToolRunner } from "../../src/internals/proc.js";
+import { makeHostAdapter } from "../../src/platform/detect.js";
+import { scanRepo } from "../../src/profile/scan.js";
+import {
+  fakeTrackedPaths,
+  gitTrackedRunner,
+  seedForeignCanon,
+  seedImportableCli,
+  seedLegacyScripts,
+  seedMindworksLike,
+  seedMonorepoSmall,
+  seedNoPackageJson,
+} from "./fixtures.js";
+
+let dir: string;
+beforeEach(() => {
+  dir = mkdtempSync(join(tmpdir(), "aih-contract-"));
+});
+afterEach(() => {
+  rmSync(dir, { recursive: true, force: true });
+});
+
+function ctx(over: Partial<PlanContext> = {}): PlanContext {
+  const run = over.run ?? fakeRunner(() => undefined);
+  return {
+    root: dir,
+    contextDir: "ai-coding",
+    apply: false,
+    verify: false,
+    json: false,
+    run,
+    host: makeHostAdapter({ platform: "linux", run, env: {} }),
+    env: {},
+    options: {},
+    ...over,
+  };
+}
+
+const CONTRACT_PATH = "ai-coding/project.json";
+
+function writePaths(actions: Action[]): string[] {
+  return actions
+    .filter((a): a is WriteAction => a.kind === "write")
+    .map((a) => a.path.replace(/\\/g, "/"));
+}
+
+function writesByPath(actions: Action[]): Map<string, WriteAction> {
+  const m = new Map<string, WriteAction>();
+  for (const a of actions) {
+    if (a.kind === "write") m.set(a.path.replace(/\\/g, "/"), a);
+  }
+  return m;
+}
+
+/** Synthesize a contract for the current `dir`, with an optional ctx override. */
+function synth(over: Partial<PlanContext> = {}): Promise<ProjectContract> {
+  const c = ctx(over);
+  return synthesizeContract(c, scanRepo(c.root, { maxDepth: 8, contextDir: c.contextDir }));
+}
+
+describe("contract command surface", () => {
+  it("registers as `contract` with no extra options", () => {
+    expect(command.name).toBe("contract");
+    expect(command.options).toEqual([]);
+  });
+});
+
+describe("contract plan (dry-run shape)", () => {
+  it("emits the project.json write + the portable-paths probe — no exec, no doc", async () => {
+    seedMindworksLike(dir);
+    const p = await command.plan(ctx());
+    const kinds = p.actions.map((a) => a.kind);
+    expect(kinds).toContain("write");
+    expect(kinds).toContain("probe");
+    expect(kinds).not.toContain("exec");
+    expect(kinds).not.toContain("doc");
+    expect(writePaths(p.actions)).toContain(CONTRACT_PATH);
+  });
+
+  it("writes exactly one project.json (one-writer-per-file), schema-valid, merge:true", async () => {
+    seedMindworksLike(dir);
+    const actions = (await command.plan(ctx())).actions;
+    expect(writePaths(actions).filter((p) => p === CONTRACT_PATH)).toHaveLength(1);
+    const w = writesByPath(actions).get(CONTRACT_PATH);
+    expect(w?.merge).toBe(true);
+    expect(() => ProjectContractSchema.parse(w?.json)).not.toThrow();
+  });
+
+  it("is deterministic: two plans render byte-identical project.json", async () => {
+    seedMindworksLike(dir);
+    const a = writesByPath((await command.plan(ctx())).actions).get(CONTRACT_PATH);
+    const b = writesByPath((await command.plan(ctx())).actions).get(CONTRACT_PATH);
+    const abs = join(dir, "ai-coding", "project.json");
+    expect(a).toBeDefined();
+    expect(b).toBeDefined();
+    if (a && b) expect(resolveContents(a, abs)).toBe(resolveContents(b, abs));
+  });
+});
+
+describe("command confidence", () => {
+  it("marks declared package.json scripts as detected", async () => {
+    seedMindworksLike(dir);
+    const c = await synth();
+    expect(c.commands.test).toEqual({ value: "npm test", confidence: "detected" });
+    expect(c.commands.build).toEqual({ value: "npm run build", confidence: "detected" });
+    expect(c.commands.lint).toEqual({ value: "npm run lint", confidence: "detected" });
+    expect(c.commands.start).toEqual({ value: "npm start", confidence: "detected" });
+  });
+
+  it("marks language-default commands as inferred and omits absent ones", async () => {
+    seedNoPackageJson(dir);
+    const c = await synth();
+    expect(c.commands.test).toEqual({ value: "go test ./...", confidence: "inferred" });
+    expect(c.commands.build).toEqual({ value: "go build ./...", confidence: "inferred" });
+    expect(c.commands.lint).toBeUndefined();
+    expect(c.commands.start).toBeUndefined();
+  });
+
+  it("captures resolved CLI targets and the stack description", async () => {
+    seedMindworksLike(dir);
+    const c = await synth({ targets: ["claude", "codex"] as unknown as PlanContext["targets"] });
+    expect(c.targets).toEqual(["claude", "codex"]);
+    expect(c.description).toBe("A worked-example service");
+    expect(c.languages).toContain("TypeScript/Node.js");
+    expect(c.frameworks).toContain("Express");
+  });
+});
+
+describe("scale classification", () => {
+  it("buckets by tracked-file count from git ls-files", async () => {
+    seedMindworksLike(dir);
+    const small = await synth({ run: gitTrackedRunner(fakeTrackedPaths(50)) });
+    expect(small.scale).toMatchObject({ trackedFiles: 50, class: "small", isMonorepo: false });
+    expect((await synth({ run: gitTrackedRunner(fakeTrackedPaths(500)) })).scale.class).toBe(
+      "medium",
+    );
+    expect((await synth({ run: gitTrackedRunner(fakeTrackedPaths(1500)) })).scale.class).toBe(
+      "large",
+    );
+  });
+
+  it("reports class `unknown` with no trackedFiles when git is absent", async () => {
+    seedMindworksLike(dir);
+    const c = await synth({ run: missingToolRunner });
+    expect(c.scale.class).toBe("unknown");
+    expect(c.scale.trackedFiles).toBeUndefined();
+  });
+
+  it("floors a low-file monorepo at `medium`", async () => {
+    seedMonorepoSmall(dir);
+    const c = await synth({ run: gitTrackedRunner(fakeTrackedPaths(10)) });
+    expect(c.scale.isMonorepo).toBe(true);
+    expect(c.scale.class).toBe("medium");
+  });
+});
+
+describe("sensitive paths (value-blind)", () => {
+  it("records secret-file PATHS only — never the values", async () => {
+    seedMindworksLike(dir);
+    const c = await synth();
+    expect(c.sensitivePaths).toContain(".env");
+    expect(JSON.stringify(c)).not.toContain("do-not-read");
+  });
+});
+
+describe("known gaps", () => {
+  it("flags inferred commands as unconfirmed", async () => {
+    seedNoPackageJson(dir);
+    const gaps = (await synth()).knownGaps;
+    expect(gaps.some((g) => g.includes("go test ./...") && g.includes("inferred"))).toBe(true);
+  });
+
+  it("flags a brownfield canon for reconcile", async () => {
+    seedForeignCanon(dir);
+    const gaps = (await synth()).knownGaps;
+    expect(gaps.some((g) => g.includes("reconcile existing AI canon"))).toBe(true);
+  });
+
+  it("flags un-imported CLI rule sets", async () => {
+    seedImportableCli(dir);
+    const gaps = (await synth()).knownGaps;
+    expect(gaps.some((g) => g.includes("un-imported CLI rule set"))).toBe(true);
+  });
+
+  it("flags legacy canon scripts to retire", async () => {
+    seedLegacyScripts(dir);
+    const gaps = (await synth()).knownGaps;
+    expect(gaps.some((g) => g.includes("retire") && g.includes("regenerate-adapters"))).toBe(true);
+  });
+});
+
+describe("portable-paths invariant", () => {
+  it("passes for a synthesized contract (all repo-relative POSIX)", async () => {
+    seedMindworksLike(dir);
+    const c = await synth();
+    expect(unportablePaths(c)).toEqual([]);
+    expect(portablePathsCheck(c).verdict).toBe("pass");
+  });
+
+  it("fails on .. escapes, absolute, drive-letter, and UNC values", async () => {
+    seedMindworksLike(dir);
+    const base = await synth();
+    for (const bad of ["../escape", "/abs/path", "C:\\win", "C:/win", "\\\\unc\\share", "a\\b"]) {
+      const tampered: ProjectContract = { ...base, entrypoints: [bad] };
+      expect(unportablePaths(tampered)).toContain(bad);
+      expect(portablePathsCheck(tampered).verdict).toBe("fail");
+    }
+  });
+
+  it("surfaces a failing probe when the context dir itself is non-portable", async () => {
+    seedMindworksLike(dir);
+    const c = ctx({ contextDir: "../sneaky" });
+    const p = await command.plan(c);
+    const probeAction = p.actions.find((a) => a.kind === "probe");
+    expect(probeAction).toBeDefined();
+    if (probeAction?.kind === "probe") {
+      expect((await probeAction.run(c)).verdict).toBe("fail");
+    }
+  });
+});
+
+describe("apply + read round-trip", () => {
+  it("creates project.json, then is idempotent on re-apply", async () => {
+    seedMindworksLike(dir);
+    const a1 = ctx({ apply: true });
+    const r1 = await executePlan(await command.plan(a1), a1);
+    expect(r1.writes.find((w) => w.path.replace(/\\/g, "/") === CONTRACT_PATH)?.effect).toBe(
+      "create",
+    );
+
+    const a2 = ctx({ apply: true });
+    const r2 = await executePlan(await command.plan(a2), a2);
+    expect(r2.writes.find((w) => w.path.replace(/\\/g, "/") === CONTRACT_PATH)?.effect).toBe(
+      "unchanged",
+    );
+  });
+
+  it("round-trips through readProjectContract after apply", async () => {
+    seedMindworksLike(dir);
+    const applied = ctx({ apply: true });
+    await executePlan(await command.plan(applied), applied);
+    const read = readProjectContract(dir, "ai-coding");
+    expect(read?.schemaVersion).toBe(1);
+    expect(read?.commands.test?.value).toBe("npm test");
+  });
+
+  it("readProjectContract returns undefined when the contract is absent", () => {
+    expect(readProjectContract(dir, "ai-coding")).toBeUndefined();
+  });
+});
