@@ -137,6 +137,7 @@ describe("leakPreventionsDigest", () => {
     );
 
     const d = leakPreventionsDigest(ctx());
+    if (d === undefined) throw new Error("expected leak-preventions digest");
 
     expect(d.describe).toContain("2 finding");
     expect(d.text).toContain(".env");

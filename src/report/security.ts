@@ -22,8 +22,8 @@ export function leakPreventionsDigest(ctx: PlanContext): DigestAction | undefine
     ...(configSecrets.length > 0
       ? [
           `  Hardcoded MCP config secrets (${configSecrets.length}):`,
-          ...configSecrets.map((hit) =>
-            `    - ${hit.file}${hit.key ? ` (${hit.key})` : ""}: ${hit.kind}`,
+          ...configSecrets.map(
+            (hit) => `    - ${hit.file}${hit.key ? ` (${hit.key})` : ""}: ${hit.kind}`,
           ),
         ]
       : []),

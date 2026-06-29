@@ -146,7 +146,9 @@ function sumFiles(
   files: readonly ContextFile[],
   wanted: ReadonlySet<string>,
 ): TokenOptimizationSlice {
-  const picked = files.filter((f) => wanted.has(f.path)).sort((a, b) => pathCompare(a.path, b.path));
+  const picked = files
+    .filter((f) => wanted.has(f.path))
+    .sort((a, b) => pathCompare(a.path, b.path));
   const bytes = picked.reduce((n, f) => n + f.bytes, 0);
   const tokens = picked.reduce((n, f) => n + f.tokens, 0);
   return { paths: picked.map((f) => f.path), files: picked.length, bytes, tokens };
@@ -171,8 +173,7 @@ export function tokenOptimizationIndex(
   const legacy = sumFiles(files, legacyPaths);
   const contract = sumFiles(files, contractPaths);
   const savedTokens = Math.max(0, legacy.tokens - contract.tokens);
-  const reductionPct =
-    legacy.tokens > 0 ? Math.round((savedTokens / legacy.tokens) * 100) : 0;
+  const reductionPct = legacy.tokens > 0 ? Math.round((savedTokens / legacy.tokens) * 100) : 0;
   return { legacy, contract, savedTokens, reductionPct };
 }
 
