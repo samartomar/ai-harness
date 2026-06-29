@@ -327,6 +327,13 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     title: "No usage data captured yet",
     action: "Commit once (or wire a per-tool hook) so usage analytics accrue.",
   },
+  "scale.code-review-graph-missing": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "code-review-graph unavailable for large repo",
+    action:
+      "Enable the local graph before broad analysis: run `aih mcp --apply` and `aih tools --apply`, then re-check with `aih doctor`. Until it is available, use bounded rg/fd reads only.",
+  },
   "report.context-over-budget": {
     audience: "developer",
     failSeverity: "degraded",

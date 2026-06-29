@@ -8,6 +8,7 @@ import { type Action, type CommandSpec, type PlanContext, plan, probe } from "./
 import { canonLintCheck } from "./lint/run.js";
 import { resolveTargetSet } from "./report/cli-coverage.js";
 import { loadabilityFor, loadReason } from "./report/cli-loadability.js";
+import { scaleSafetyCheck } from "./scale-safety.js";
 
 /** Read the workspace marker's repo list, or [] when this root is not a workspace. */
 function workspaceRepos(ctx: PlanContext): string[] {
@@ -206,6 +207,7 @@ export const command: CommandSpec = {
               code: "env.dev-tool-missing",
             };
       }),
+      probe("large-repo graph safety", () => scaleSafetyCheck(ctx)),
     ];
 
     // Workspace mode: validate each child repo is scaffolded.

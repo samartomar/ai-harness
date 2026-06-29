@@ -74,6 +74,10 @@ function toolsMissingFrom(digests: DigestAction[]): number | undefined {
   return Array.isArray(absent) ? absent.length : undefined;
 }
 
+function scaleGraphMissingFrom(digests: DigestAction[]): boolean {
+  return digests.some((x) => x.describe.startsWith("Scale safety — graph missing"));
+}
+
 /** Headline for the per-turn load-group digest (the real cost: one tool's bundle). */
 function loadGroupHeadline(model: LoadGroupModel): string {
   const who = model.worst ? ` (worst: ${model.worst.clis.join(", ")})` : "";
@@ -211,6 +215,7 @@ async function buildReport(ctx: PlanContext): Promise<Built> {
     // an event lands. Drives dropping the "wire telemetry" step after it's done.
     telemetryWired: existsSync(join(ctx.root, ".aih", "usage-record.mjs")),
     toolsMissing: toolsMissingFrom(panels),
+    scaleGraphMissing: scaleGraphMissingFrom(panels),
     // Runnable AI CLIs on this machine (Machine tooling `present`) that this repo
     // doesn't target (AI CLI wiring `targeted`) — e.g. kiro installed but unwired.
     ...(() => {

@@ -102,6 +102,7 @@ describe("bootstrap-ai — canon files", () => {
     expect(core).toContain("Goal-driven execution");
     expect(core).toContain("never coerce");
     expect(core).toContain("Do not open `.env*` or `secrets/**`");
+    expect(core).toContain("code-review-graph");
     expect(core).toContain("intentionally repeated in the bootloader shared block");
     // The router routes to it as an always-read-first file.
     const router = w.get(".ai-context/RULE_ROUTER.md")?.contents ?? "";
@@ -114,6 +115,7 @@ describe("bootstrap-ai — canon files", () => {
     expect(shared).toContain("intentional always-loaded summary");
     expect(shared).toContain("repo-specific rules");
     expect(shared).toContain("aih secrets --verify");
+    expect(shared).toContain("bounded `rg`/`fd` reads");
     expect(shared).toContain("project-guardrails.md");
 
     for (const adapter of ["codex", "gemini", "kiro"]) {
@@ -135,6 +137,7 @@ describe("bootstrap-ai — canon files", () => {
     expect(router).toContain("TypeScript/Node.js");
     expect(router).toContain("Layer 2 wins");
     expect(router).toContain("Do not open `.env*` or `secrets/**`");
+    expect(router).toContain("large-repo graph safety");
   });
 
   it("honors --context-dir for every canon path and reference", async () => {

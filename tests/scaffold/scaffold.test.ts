@@ -93,6 +93,8 @@ describe("scaffold plan (dry-run shape)", () => {
     expect(tasks).toContain("Do not web-search for extra canon");
     expect(tasks).toContain("Do not open `.env*` or `secrets/**`");
     expect(tasks).toContain("aih secrets --verify");
+    expect(tasks).toContain("large-repo graph safety");
+    expect(tasks).toContain("bounded to targeted `rg`/`fd`");
     expect(tasks).toContain("practice -> repo evidence -> local check");
     expect(tasks).toContain("Do not edit `.ai-context/VALIDATION.md`");
     expect(tasks).toContain("Definition of done");

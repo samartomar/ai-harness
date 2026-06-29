@@ -45,6 +45,8 @@ export type CheckCode =
   | "guardrails.gitleaks-missing"
   // usage
   | "usage.no-data"
+  // scale safety
+  | "scale.code-review-graph-missing"
   // report (analytics-derived advisories)
   | "report.context-over-budget"
   | "report.low-adoption";
