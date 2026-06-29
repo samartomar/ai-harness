@@ -52,6 +52,13 @@ function put(rel: string, body: string): void {
   writeFileSync(abs, body);
 }
 
+/** Write under the temp HOME (the machine `~/.claude` install), not the repo root. */
+function putHome(rel: string, body: string): void {
+  const abs = join(home, rel);
+  mkdirSync(join(abs, ".."), { recursive: true });
+  writeFileSync(abs, body);
+}
+
 interface DriftData {
   drifted: Array<{ file: string; delta: string }>;
   synced: string[];
@@ -168,23 +175,22 @@ function inSync(): string {
 }
 
 interface EccData {
-  agents: number;
-  skills: number;
-  rules: number;
-  hooks: number;
+  machine: { agents: number; skills: number; rules: number };
+  repo: { agents: number; skills: number; rules: number; hooks: number };
+  dup: number;
   packs: string[];
 }
 
 describe("eccInventoryDigest", () => {
-  it("returns undefined when no ECC content is on disk", () => {
+  it("returns undefined when neither machine nor repo has ECC content", () => {
     expect(eccInventoryDigest(ctx())).toBeUndefined();
   });
 
-  it("counts agents, skills (dirs) and hooks scanned from .claude/.kiro", () => {
-    put(".claude/agents/code-reviewer.md", "# agent\n");
-    put(".claude/agents/planner.md", "# agent\n");
-    put(".claude/skills/tdd/SKILL.md", "# skill\n");
-    put(".kiro/skills/review/SKILL.md", "# skill\n");
+  it("counts repo-local content as TEAM OVERRIDES, separate from (empty) machine ECC", () => {
+    put(".claude/agents/architecture-drift.md", "# agent\n");
+    put(".claude/agents/security-audit.md", "# agent\n");
+    put(".claude/skills/aws-hardening/SKILL.md", "# skill\n");
+    put(".kiro/skills/governance/SKILL.md", "# skill\n");
     put(
       ".claude/settings.json",
       JSON.stringify({
@@ -193,12 +199,27 @@ describe("eccInventoryDigest", () => {
         },
       }),
     );
-    const d = eccInventoryDigest(ctx());
-    const data = d?.data as EccData;
-    expect(data.agents).toBe(2);
-    expect(data.skills).toBe(2); // one dir under each of .claude/skills and .kiro/skills
-    expect(data.hooks).toBe(2);
+    const data = eccInventoryDigest(ctx())?.data as EccData;
+    expect(data.repo.agents).toBe(2);
+    expect(data.repo.skills).toBe(2); // one dir under each of .claude/skills and .kiro/skills
+    expect(data.repo.hooks).toBe(2);
+    expect(data.machine).toEqual({ agents: 0, skills: 0, rules: 0 }); // empty temp home
+    expect(data.dup).toBe(0); // repo names don't collide with the (empty) machine ECC
     expect(Array.isArray(data.packs)).toBe(true);
+  });
+
+  it("reads machine ECC from ~/.claude (incl. nested rules) and flags repo duplication", () => {
+    putHome(".claude/agents/architect.md", "# agent\n");
+    putHome(".claude/agents/code-reviewer.md", "# agent\n");
+    putHome(".claude/skills/tdd/SKILL.md", "# skill\n");
+    putHome(".claude/rules/ecc/common/coding-style.md", "# rule\n"); // nested → recursive count
+    // repo forks one machine agent (code-reviewer) + adds its own
+    put(".claude/agents/code-reviewer.md", "# forked\n");
+    put(".claude/agents/architecture-drift.md", "# own\n");
+    const data = eccInventoryDigest(ctx())?.data as EccData;
+    expect(data.machine).toEqual({ agents: 2, skills: 1, rules: 1 });
+    expect(data.repo.agents).toBe(2);
+    expect(data.dup).toBe(1); // code-reviewer collides with a machine-ECC agent
   });
 });
 

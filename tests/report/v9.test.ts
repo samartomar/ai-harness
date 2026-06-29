@@ -166,11 +166,10 @@ function usage(): DigestAction {
 }
 
 function ecc(): DigestAction {
-  return digest("ECC harness — 11 agents, 42 skills, 9 rules, 4 hooks", "body", {
-    agents: 11,
-    skills: 42,
-    rules: 9,
-    hooks: 4,
+  return digest("ECC harness — machine 67a/31s, repo 5a/11s, 0 dup", "body", {
+    machine: { agents: 67, skills: 31, rules: 124 },
+    repo: { agents: 5, skills: 11, rules: 5, hooks: 3 },
+    dup: 0,
     packs: ["typescript", "web"],
   });
 }
@@ -374,14 +373,21 @@ describe("buildAihDataV9 — period trends (§2a)", () => {
 });
 
 describe("buildAihDataV9 — Phase B capability flips", () => {
-  it("flips the ECC card to live and attaches the scan to quality", () => {
+  it("flips the ECC card to live: machine ECC + repo overrides, no preview/mislabel", () => {
     const d = buildAihDataV9([...ALL, ecc()]);
     expect(d.gates["cap-ecc"]).toBe("live");
-    expect(d.quality?.ecc).toMatchObject({ agents: 11, skills: 42, packs: ["typescript", "web"] });
-    // when live, the ECC card is rendered from real data WITHOUT the preview marker
+    expect(d.quality?.ecc).toMatchObject({
+      machine: { agents: 67, skills: 31, rules: 124 },
+      repo: { agents: 5, skills: 11, hooks: 3 },
+      dup: 0,
+      packs: ["typescript", "web"],
+    });
     const view = assembleViewV9(d, V9_DEMO);
-    expect(view.sections["sec-quality"]?.html).toContain(">11<"); // real agent count
-    expect(view.sections["sec-quality"]?.html).not.toContain("span-4 preview");
+    const html = view.sections["sec-quality"]?.html ?? "";
+    expect(html).toContain(">67<"); // machine ECC agent count (the real install)
+    expect(html).toContain("Machine ECC"); // machine-level framing, not repo-as-ECC
+    expect(html).not.toContain("span-4 preview");
+    expect(html).not.toContain("what came along"); // old mislabel removed
   });
 
   it("flips the coherence matrix to live and attaches it to drift", () => {

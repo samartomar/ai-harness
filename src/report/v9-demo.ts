@@ -142,10 +142,9 @@ export const V9_DEMO: AihDataV9 = {
     ],
     ecc: {
       profile: "balanced",
-      agents: 11,
-      skills: 42,
-      rules: 9,
-      hooks: 4,
+      machine: { agents: 67, skills: 31, rules: 124 },
+      repo: { agents: 5, skills: 11, rules: 5, hooks: 3 },
+      dup: 0,
       packs: ["typescript", "web"],
     },
   },

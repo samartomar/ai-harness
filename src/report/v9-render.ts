@@ -7,7 +7,7 @@
  * The renderers are the single rendering path for BOTH live and demo: the caller
  * ({@link assembleViewV9}) chooses real vs demo data per (sub-)card and passes a
  * `preview` flag where a capability is not wired yet, which desaturates the card and
- * swaps its badge to "design" so it never reads as real.
+ * shows the `.preview` "PREVIEW · not wired yet" corner ribbon so it never reads as real.
  */
 
 import type {
@@ -293,17 +293,25 @@ export function renderQuality(q: V9Quality, eccPreview: boolean): string {
     .join("");
   const guard = `<div class="card span-4"><div class="card-head"><h3>Guardrail enforcement</h3>${gBadge}</div><div class="card-body"><div class="mat">${gRows}</div></div></div>`;
   const ecc = q.ecc;
+  const m = ecc?.machine ?? { agents: 0, skills: 0, rules: 0 };
+  const rp = ecc?.repo ?? { agents: 0, skills: 0, rules: 0, hooks: 0 };
   const eccBadge = headBadge(
     eccPreview,
-    `<span class="badge mcp">${ecc?.profile ? `profile: ${escHtml(ecc.profile)}` : "installed"}</span>`,
+    `<span class="badge mcp">${ecc?.profile ? `profile: ${escHtml(ecc.profile)}` : "this machine"}</span>`,
   );
   const packs = (ecc?.packs ?? [])
     .map((p) => `<span class="tool on">${escHtml(p)}</span>`)
     .join("");
+  const dupRow =
+    ecc && ecc.dup > 0
+      ? `<div class="row"><span class="k">duplicates machine ECC</span><span class="v" style="color:var(--warn)">${ecc.dup} — retire</span></div>`
+      : '<div class="row"><span class="k">duplicates machine ECC</span><span class="v" style="color:var(--ok)">none</span></div>';
+  const subLabel =
+    "font-size:.6rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:600";
   const eccNote = eccPreview
-    ? "Inventory of what an ECC install put on disk. <b>Not scanned yet</b> — needs the ECC-inventory scan."
-    : "guardrails: gitleaks · pre-commit · command-policy";
-  const eccCard = `<div class="${cardClass("span-4", eccPreview)}"><div class="card-head"><h3>ECC harness · what came along</h3>${eccBadge}</div><div class="card-body"><div style="display:flex;gap:.9rem;flex-wrap:wrap;margin-bottom:.6rem"><div class="heatmap-stat"><b>${ecc?.agents ?? 0}</b><span>agents</span></div><div class="heatmap-stat"><b>${ecc?.skills ?? 0}</b><span>skills</span></div><div class="heatmap-stat"><b>${ecc?.rules ?? 0}</b><span>rules</span></div><div class="heatmap-stat"><b>${ecc?.hooks ?? 0}</b><span>hooks</span></div></div><div style="font-size:.66rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:600;margin-bottom:.3rem">Stack packs</div><div class="pills">${packs}</div><div class="method" style="margin-top:.5rem">${eccNote}</div></div></div>`;
+    ? "ECC is a system-wide rolling install (~/.claude); this needs the machine-ECC scan. <b>Not scanned yet.</b>"
+    : "ECC = your machine install (~/.claude), honored as-is. Repo agents/skills are team-local overrides — not ECC.";
+  const eccCard = `<div class="${cardClass("span-4", eccPreview)}"><div class="card-head"><h3>ECC · machine + repo impact</h3>${eccBadge}</div><div class="card-body"><div style="${subLabel};margin-bottom:.3rem">Machine ECC · ~/.claude</div><div style="display:flex;gap:.9rem;flex-wrap:wrap;margin-bottom:.6rem"><div class="heatmap-stat"><b>${m.agents}</b><span>agents</span></div><div class="heatmap-stat"><b>${m.skills}</b><span>skills</span></div><div class="heatmap-stat"><b>${m.rules}</b><span>rules</span></div></div><div style="${subLabel};margin-bottom:.3rem">Repo-local overrides (team)</div><div class="donut-meta"><div class="row"><span class="k">agents · skills · rules · hooks</span><span class="v">${rp.agents} · ${rp.skills} · ${rp.rules} · ${rp.hooks}</span></div>${dupRow}</div><div style="${subLabel};margin:.6rem 0 .3rem">ECC packs for this stack</div><div class="pills">${packs}</div><div class="method" style="margin-top:.5rem">${eccNote}</div></div></div>`;
   return test + guard + eccCard;
 }
 

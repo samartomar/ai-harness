@@ -1,4 +1,4 @@
-import { existsSync, readdirSync } from "node:fs";
+import { type Dirent, existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import {
   bootloaderPaths,
@@ -7,6 +7,7 @@ import {
   sharedCanonicalBlockBody,
 } from "../bootstrap-ai/canon.js";
 import { eccLanguages } from "../ecc/select.js";
+import { homeDir } from "../internals/cli-detect.js";
 import { SUPPORTED_CLIS } from "../internals/clis.js";
 import { readIfExists } from "../internals/fsxn.js";
 import { gitRead } from "../internals/git.js";
@@ -193,38 +194,93 @@ function countHooks(abs: string): number {
   }
 }
 
+/** File/dir names under `abs` matching the filter (basename, ext stripped); [] if missing. */
+function listNames(abs: string, opts: { ext?: string; dirsOnly?: boolean }): string[] {
+  try {
+    return readdirSync(abs, { withFileTypes: true })
+      .filter((d) =>
+        opts.dirsOnly ? d.isDirectory() : opts.ext ? d.isFile() && d.name.endsWith(opts.ext) : true,
+      )
+      .map((d) => (opts.ext ? d.name.slice(0, -opts.ext.length) : d.name));
+  } catch {
+    return [];
+  }
+}
+
+/** Count `.md` files under `abs`, recursing (ECC rules nest under `rules/<pack>/`); 0 if missing. */
+function countMdRecursive(abs: string): number {
+  let dirents: Dirent[];
+  try {
+    dirents = readdirSync(abs, { withFileTypes: true });
+  } catch {
+    return 0;
+  }
+  let n = 0;
+  for (const e of dirents) {
+    if (e.isDirectory()) n += countMdRecursive(join(abs, e.name));
+    else if (e.isFile() && e.name.endsWith(".md")) n++;
+  }
+  return n;
+}
+
 /**
- * §1 ECC-inventory scan — what an ECC install actually put on disk (agents / skills /
- * rules / hooks under `.claude/` + `.kiro/`) plus the stack packs ECC selects for this
- * repo. Honest file counts ("scanned from .claude/.kiro"). Undefined when no ECC
- * content is present, so the panel gates to PREVIEW. The dormant set (installed minus
- * invoked) needs the usage recorder and stays PREVIEW until that lands.
+ * §1 ECC inventory — ECC is a SYSTEM-WIDE, rolling install (skills versioned, agents/hooks
+ * improving), so the source of truth is the MACHINE install at `~/.claude`, NOT the repo.
+ * Reports the machine ECC (agents/skills/rules), the repo-local `.claude/.kiro` content as
+ * TEAM OVERRIDES (never relabelled "ECC"), any repo item whose name duplicates a machine-ECC
+ * one (a fork to retire), and the ECC packs that apply to this repo's stack (impact).
+ * Machine-aware by design (this developer's install) → not portable across machines.
+ * Undefined only when neither machine nor repo carries anything.
  */
 export function eccInventoryDigest(ctx: PlanContext): DigestAction | undefined {
   const r = ctx.root;
-  const agents =
-    countEntries(join(r, ".claude", "agents"), { ext: ".md" }) +
-    countEntries(join(r, ".kiro", "agents"), { ext: ".md" });
-  const skills =
-    countEntries(join(r, ".claude", "skills"), { dirsOnly: true }) +
-    countEntries(join(r, ".kiro", "skills"), { dirsOnly: true });
-  const rules =
-    countEntries(join(r, ".claude", "rules"), { ext: ".md" }) +
-    countEntries(join(r, ".kiro", "steering"), { ext: ".md" });
-  const hooks = countHooks(join(r, ".claude", "settings.json"));
-  if (agents + skills + rules + hooks === 0) return undefined;
+  const mClaude = join(homeDir(ctx), ".claude");
+  // Machine ECC — the real, rolling install (~/.claude): the source of truth.
+  const machine = {
+    agents: countEntries(join(mClaude, "agents"), { ext: ".md" }),
+    skills: countEntries(join(mClaude, "skills"), { dirsOnly: true }),
+    rules: countMdRecursive(join(mClaude, "rules")),
+  };
+  // Repo-local — team overrides committed under the repo's own .claude/.kiro (NOT ECC).
+  const repoAgents = [
+    ...listNames(join(r, ".claude", "agents"), { ext: ".md" }),
+    ...listNames(join(r, ".kiro", "agents"), { ext: ".md" }),
+  ];
+  const repoSkills = [
+    ...listNames(join(r, ".claude", "skills"), { dirsOnly: true }),
+    ...listNames(join(r, ".kiro", "skills"), { dirsOnly: true }),
+  ];
+  const repo = {
+    agents: repoAgents.length,
+    skills: repoSkills.length,
+    rules:
+      countEntries(join(r, ".claude", "rules"), { ext: ".md" }) +
+      countEntries(join(r, ".kiro", "steering"), { ext: ".md" }),
+    hooks: countHooks(join(r, ".claude", "settings.json")),
+  };
+  const total =
+    machine.agents + machine.skills + machine.rules + repo.agents + repo.skills + repo.rules;
+  if (total + repo.hooks === 0) return undefined;
+  // Duplication — a repo agent/skill whose NAME collides with a machine-ECC one is a fork to retire.
+  const mAgents = new Set(listNames(join(mClaude, "agents"), { ext: ".md" }));
+  const mSkills = new Set(listNames(join(mClaude, "skills"), { dirsOnly: true }));
+  const dup =
+    repoAgents.filter((n) => mAgents.has(n)).length +
+    repoSkills.filter((n) => mSkills.has(n)).length;
   const stack = scanRepo(r, { maxDepth: 8, contextDir: ctx.contextDir });
   const packs = [...eccLanguages(stack).packs];
   const body = lines(
-    "ECC content on disk (scanned from .claude/.kiro):",
-    "",
-    `  agents ${agents} · skills ${skills} · rules ${rules} · hooks ${hooks}`,
-    `  stack packs: ${packs.join(", ") || "(none detected)"}`,
+    `Machine ECC (~/.claude): ${machine.agents} agents · ${machine.skills} skills · ${machine.rules} rules`,
+    `Repo-local (team overrides): ${repo.agents} agents · ${repo.skills} skills · ${repo.rules} rules · ${repo.hooks} hooks`,
+    dup > 0
+      ? `  ⚠ ${dup} repo item(s) duplicate machine ECC — retire to inherit the rolling install.`
+      : "  No repo duplication of machine ECC.",
+    `  ECC packs for this stack: ${packs.join(", ") || "(none detected)"}`,
   );
   return digest(
-    `ECC harness — ${agents} agents, ${skills} skills, ${rules} rules, ${hooks} hooks`,
+    `ECC harness — machine ${machine.agents}a/${machine.skills}s, repo ${repo.agents}a/${repo.skills}s, ${dup} dup`,
     body,
-    { agents, skills, rules, hooks, packs },
+    { machine, repo, dup, packs },
   );
 }
 

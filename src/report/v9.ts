@@ -479,11 +479,17 @@ function buildSupport(digests: DigestAction[]): V9Support | undefined {
 function buildEcc(digests: DigestAction[]): V9Quality["ecc"] | undefined {
   const e = bag(digests, "ECC harness");
   if (!e) return undefined;
+  const m = (e.machine ?? {}) as Record<string, unknown>;
+  const r = (e.repo ?? {}) as Record<string, unknown>;
   return {
-    agents: numOr(e.agents, 0),
-    skills: numOr(e.skills, 0),
-    rules: numOr(e.rules, 0),
-    hooks: numOr(e.hooks, 0),
+    machine: { agents: numOr(m.agents, 0), skills: numOr(m.skills, 0), rules: numOr(m.rules, 0) },
+    repo: {
+      agents: numOr(r.agents, 0),
+      skills: numOr(r.skills, 0),
+      rules: numOr(r.rules, 0),
+      hooks: numOr(r.hooks, 0),
+    },
+    dup: numOr(e.dup, 0),
     packs: strs(e.packs),
     ...(typeof e.profile === "string" ? { profile: e.profile } : {}),
   };

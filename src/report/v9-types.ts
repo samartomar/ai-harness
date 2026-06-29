@@ -127,14 +127,18 @@ export interface V9Quality {
   sourceFiles: number;
   /** [label, value, state] — e.g. ["gitleaks hook", "MISSING", "bad"]. */
   guardrails: Array<[string, string, "ok" | "bad" | "warn"]>;
-  /** ECC inventory — PREVIEW until the ECC-inventory scan lands. */
+  /**
+   * ECC inventory. `machine` = the rolling system-wide install (~/.claude, the source of
+   * truth); `repo` = team-local overrides under the repo's .claude/.kiro (NOT ECC); `dup` =
+   * repo items duplicating a machine-ECC one (a fork to retire); `packs` = ECC packs that
+   * apply to this repo's stack (impact). PREVIEW until the scan lands.
+   */
   ecc?: {
     /** ECC install profile, when known (the file-scan can't detect it). */
     profile?: string;
-    agents: number;
-    skills: number;
-    rules: number;
-    hooks: number;
+    machine: { agents: number; skills: number; rules: number };
+    repo: { agents: number; skills: number; rules: number; hooks: number };
+    dup: number;
     packs: string[];
   };
 }
