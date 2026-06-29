@@ -271,7 +271,7 @@ describe("outcomeDeltasDigest", () => {
 });
 
 interface WinsData {
-  items: Array<{ name: string; status: string }>;
+  items: Array<{ name: string; scope: string; status: string; detail: string; when: string }>;
   cleared: number;
   runs: number;
   openOverTime: number[];
@@ -304,5 +304,27 @@ describe("winsDigest", () => {
     expect(data.cleared).toBe(4);
     expect(data.runs).toBe(2);
     expect(data.openOverTime).toEqual([2, 0]);
+  });
+
+  it("marks only the scopes the last heal probed (.aih/heal-last.json); others are na (§2b)", () => {
+    ledger({
+      capability: "heal",
+      status: "success",
+      startedAt: "2026-06-03T00:00:00Z",
+      finishedAt: "2026-06-03T00:00:05Z",
+      verification: { pass: 2, fail: 0, skip: 0 },
+    });
+    put(".aih/heal-last.json", JSON.stringify({ scopes: ["certs", "npm"] }));
+    const data = winsDigest(ctx())?.data as WinsData;
+    const byScope = Object.fromEntries(data.items.map((i) => [i.scope, i]));
+    expect(byScope.certs?.status).toBe("fixed");
+    expect(byScope.npm?.status).toBe("fixed");
+    expect(byScope.path?.status).toBe("na");
+    expect(byScope.mcp?.status).toBe("na");
+    expect(byScope.mcp?.detail).toContain("(not probed)");
+    expect(data.cleared).toBe(2); // only probed + green count as cleared
+    // a fixed row carries the latest heal run's date; a na row stays blank
+    expect(byScope.certs?.when).toBe("Jun 3");
+    expect(byScope.path?.when).toBe("");
   });
 });

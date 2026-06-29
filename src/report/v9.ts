@@ -564,6 +564,7 @@ function emptyGates(): Record<string, PanelState> {
     "cap-ecc",
     "cap-coherence",
     "cap-outcome",
+    "cap-trends",
     "cap-usage",
   ]) {
     g[id] = "empty";
@@ -602,12 +603,29 @@ export function buildAihDataV9(digests: DigestAction[]): AihDataV9 {
   // §3/§4 — outcome deltas ride in the period panel; wins is its own section.
   const outcome = buildOutcome(digests);
   const wins = buildWins(digests);
-  const period: AihDataV9["period"] | undefined = outcome
-    ? {
-        trends: { wiring: [], perTurnCtxPct: [], driftIncidents: [], openActions: [] },
-        outcomeDeltas: outcome,
-      }
-    : undefined;
+  // §2a — period trends from the recorded history (Trends digest rows). Live only once
+  // ≥2 snapshots carry the v9 metrics (recorded by `aih track` since the capability landed).
+  const trendRows = (() => {
+    const t = bag(digests, "Trends");
+    return t && Array.isArray(t.rows) ? (t.rows as Array<Record<string, unknown>>) : [];
+  })();
+  const haveTrends =
+    trendRows.length >= 2 && trendRows.some((r) => typeof r.perTurnPct === "number");
+  const emptyTrends = { wiring: [], perTurnCtxPct: [], driftIncidents: [], openActions: [] };
+  const period: AihDataV9["period"] | undefined =
+    outcome || haveTrends
+      ? {
+          trends: haveTrends
+            ? {
+                wiring: trendRows.map((r) => numOr(r.wiringScore, 0)),
+                perTurnCtxPct: trendRows.map((r) => numOr(r.perTurnPct, 0)),
+                driftIncidents: trendRows.map((r) => numOr(r.driftCount, 0)),
+                openActions: trendRows.map((r) => numOr(r.openActions, 0)),
+              }
+            : emptyTrends,
+          ...(outcome ? { outcomeDeltas: outcome } : {}),
+        }
+      : undefined;
 
   if (hero) gates["sec-hero"] = "live";
   gates["sec-actions"] = "live"; // always present (honest empty state when clean)
@@ -625,6 +643,7 @@ export function buildAihDataV9(digests: DigestAction[]): AihDataV9 {
   gates["cap-ecc"] = ecc ? "live" : "preview";
   gates["cap-coherence"] = coherence ? "live" : "preview";
   gates["cap-outcome"] = outcome ? "live" : "preview"; // §3
+  gates["cap-trends"] = haveTrends ? "live" : "preview"; // §2a: ≥2 history samples w/ metrics
   gates["cap-usage"] = "preview"; // per-tool usage hooks not wired
 
   return {
@@ -919,7 +938,7 @@ export function assembleViewV9(data: AihDataV9, demo: AihDataV9): V9View {
   // 08 Period — trends live only with history; outcome preview until wired.
   {
     const outcomePreview = !isLive(g, "cap-outcome");
-    const trendsLive = false; // wired once aih track snapshots the period metrics
+    const trendsLive = isLive(g, "cap-trends"); // §2a: live once history carries the metrics
     const period = data.period ?? demo.period;
     const p = {
       trends: period?.trends ?? {

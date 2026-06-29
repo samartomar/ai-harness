@@ -209,6 +209,18 @@ function wins(): DigestAction {
   });
 }
 
+/** A Trends digest carrying ≥2 history samples with the v9 metrics (the §2a live path). */
+function trends(): DigestAction {
+  return digest("Trends — 3 samples · adoption 80/100", "body", {
+    samples: 3,
+    rows: [
+      { wiringScore: 60, perTurnPct: 40, driftCount: 2, openActions: 5 },
+      { wiringScore: 72, perTurnPct: 38, driftCount: 1, openActions: 3 },
+      { wiringScore: 82, perTurnPct: 35, driftCount: 0, openActions: 1 },
+    ],
+  });
+}
+
 const ALL = [
   scorecard(),
   bloat(),
@@ -329,6 +341,34 @@ describe("buildAihDataV9 — panels + gating", () => {
     expect(g["cap-ecc"]).toBe("preview");
     expect(g["cap-coherence"]).toBe("preview");
     expect(g["cap-outcome"]).toBe("preview");
+    expect(g["cap-trends"]).toBe("preview"); // no Trends history in ALL
+  });
+});
+
+describe("buildAihDataV9 — period trends (§2a)", () => {
+  it("flips trends to live from ≥2 recorded history samples + renders the series", () => {
+    const d = buildAihDataV9([...ALL, trends()]);
+    expect(d.gates["cap-trends"]).toBe("live");
+    expect(d.period?.trends).toEqual({
+      wiring: [60, 72, 82],
+      perTurnCtxPct: [40, 38, 35],
+      driftIncidents: [2, 1, 0],
+      openActions: [5, 3, 1],
+    });
+    const view = assembleViewV9(d, V9_DEMO);
+    expect(view.sections["sec-period"]?.html).toContain("history"); // live badge
+    expect(view.sections["sec-period"]?.html).not.toContain("needs aih track");
+  });
+
+  it("stays preview with a single sample (the honest 'needs aih track' stub)", () => {
+    const one = digest("Trends — not enough history yet", "body", {
+      samples: 1,
+      rows: [{ wiringScore: 60, perTurnPct: 40, driftCount: 0, openActions: 1 }],
+    });
+    const d = buildAihDataV9([...ALL, one]);
+    expect(d.gates["cap-trends"]).toBe("preview");
+    const view = assembleViewV9(d, V9_DEMO);
+    expect(view.sections["sec-period"]?.html).toContain("needs aih track");
   });
 });
 

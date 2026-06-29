@@ -436,14 +436,33 @@ export function winsDigest(ctx: PlanContext): DigestAction | undefined {
   if (heal.length === 0) return undefined;
   const last = heal[heal.length - 1];
   const allGreen = last?.status === "success" && (last?.verification?.fail ?? 0) === 0;
-  const cleared = last?.verification?.pass ?? (allGreen ? HEAL_SCOPES.length : 0);
-  const items = HEAL_SCOPES.map((s) => ({
-    name: s.name,
-    scope: s.scope,
-    status: (allGreen ? "fixed" : "na") as "fixed" | "broken" | "na",
-    detail: s.detail,
-    when: "",
-  }));
+  // §2b — which scopes the last heal actually probed, from `.aih/heal-last.json` (written
+  // by `aih heal`). When absent, fall back to assuming all four were probed (back-compat).
+  const probed = (() => {
+    const text = readIfExists(join(ctx.root, ".aih", "heal-last.json"));
+    if (text === undefined) return undefined;
+    try {
+      const p = JSON.parse(text) as { scopes?: unknown };
+      return Array.isArray(p.scopes)
+        ? p.scopes.filter((s): s is string => typeof s === "string")
+        : undefined;
+    } catch {
+      return undefined;
+    }
+  })();
+  const when = sinceLabel(last?.finishedAt ?? last?.startedAt ?? "");
+  const items = HEAL_SCOPES.map((s) => {
+    const inScope = probed ? probed.includes(s.scope) : true;
+    const status: "fixed" | "broken" | "na" = !inScope ? "na" : allGreen ? "fixed" : "broken";
+    return {
+      name: s.name,
+      scope: s.scope,
+      status,
+      detail: status === "na" ? `${s.detail} (not probed)` : s.detail,
+      when: status === "fixed" ? when : "",
+    };
+  });
+  const cleared = items.filter((i) => i.status === "fixed").length;
   const openOverTime = heal.map((r) => r.verification?.fail ?? 0);
   const since = sinceLabel(heal[0]?.startedAt ?? "");
   const body = lines(

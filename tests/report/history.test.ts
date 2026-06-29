@@ -97,6 +97,30 @@ describe("collectSnapshot", () => {
     expect(snap?.adoptionScore).toBeGreaterThanOrEqual(0);
     expect(snap?.adoptionScore).toBeLessThanOrEqual(100);
   });
+
+  it("records the v9 trend metrics so report trends can go live (§2a)", async () => {
+    // Off-canon temp repo (no RULE_ROUTER.md): drift is 0 and the metrics are
+    // well-formed numbers — enough to prove `aih track` captures the trend seam.
+    const snap = await collectSnapshot(
+      makeCtx(
+        gitFake({
+          "rev-parse --is-inside-work-tree": "true",
+          "log -1 --pretty=format:%cI%n%h": "2026-06-24T10:00:00Z\nabc123",
+          "rev-parse --abbrev-ref HEAD": "main",
+          "for-each-ref --format=%(refname:short) refs/heads": "main",
+          "rev-list --count --since=7 days ago HEAD": "0",
+          "log --since=7 days ago --numstat": "",
+          "ls-files": "a.ts",
+        }),
+      ),
+    );
+    expect(snap?.driftCount).toBe(0); // off-canon → nothing to drift from
+    expect(typeof snap?.perTurnPct).toBe("number");
+    expect(typeof snap?.openActions).toBe("number");
+    expect(snap?.openActions).toBeGreaterThanOrEqual(0);
+    // wiringScore is the scorecard overall (number) or undefined when unscored.
+    expect(snap?.wiringScore === undefined || typeof snap?.wiringScore === "number").toBe(true);
+  });
 });
 
 describe("historyWrite — append, idempotent per commit", () => {
