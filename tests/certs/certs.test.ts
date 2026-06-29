@@ -2,7 +2,15 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { cargoConfig, command, condarcConfig, pipConfig } from "../../src/certs/index.js";
+import {
+  cargoConfig,
+  command,
+  condarcConfig,
+  gitConfig,
+  gradleProperties,
+  mavenRc,
+  pipConfig,
+} from "../../src/certs/index.js";
 import { upsertIniKey } from "../../src/certs/ini.js";
 import { executePlan } from "../../src/internals/execute.js";
 import type { Action, PlanContext } from "../../src/internals/plan.js";
@@ -156,17 +164,22 @@ describe("certs plan — happy path", () => {
     expect(pem?.contents).toBe(PEM_ONE + PEM_TWO);
   });
 
-  it("emits the PEM lockdown as an exec over the PEM path (the only exec)", async () => {
+  it("emits local execs for PEM lockdown and user-scoped JVM truststore import", async () => {
     const root = freshTmp();
     const home = join(root, "home");
     const p = await command.plan(makeCtx({ root, env: { HOME: home } }));
 
     const execs = p.actions.filter((a) => a.kind === "exec");
-    expect(execs).toHaveLength(1);
+    expect(execs).toHaveLength(2);
     const lockdown = findExec(p.actions);
     // Linux adapter locks down with chmod 600 <pem>.
     expect(lockdown?.argv[0]).toBe("chmod");
     expect(lockdown?.argv.at(-1)?.replace(/\\/g, "/")).toContain("corporate-root-ca.pem");
+    const keytool = execs.find((a) => a.argv[0] === "keytool");
+    expect(keytool?.argv).toEqual(
+      expect.arrayContaining(["-importcert", "-noprompt", "-file", expect.any(String)]),
+    );
+    expect(keytool?.argv.join(" ").replace(/\\/g, "/")).toContain("corporate-cacerts.jks");
   });
 
   it("exports the full trust env block into the shell profile", async () => {
@@ -183,6 +196,7 @@ describe("certs plan — happy path", () => {
       "SSL_CERT_FILE",
       "REQUESTS_CA_BUNDLE",
       "CARGO_HTTP_CAINFO",
+      "GIT_SSL_CAINFO",
       "SSL_CERT_DIR",
     ]) {
       expect(keys).toContain(key);
@@ -260,6 +274,37 @@ describe("certs plan — per-manager config files carry the PEM path", () => {
     expect(cargo?.contents).toContain("[net]");
     expect(cargo?.contents).toContain("git-fetch-with-cli = true");
   });
+
+  it("git .gitconfig gets [http] sslCAInfo=<pem>", async () => {
+    const root = freshTmp();
+    const home = join(root, "home");
+    const p = await command.plan(makeCtx({ root, env: { HOME: home } }));
+    const git = findWrite(p.actions, "/.gitconfig");
+    expect(git).toBeDefined();
+    expect(git?.contents).toContain("[http]");
+    expect(git?.contents).toMatch(/sslCAInfo = .*corporate-root-ca\.pem/);
+  });
+
+  it("Docker certs.d gets a CA bundle for the default registry", async () => {
+    const root = freshTmp();
+    const home = join(root, "home");
+    const p = await command.plan(makeCtx({ root, env: { HOME: home } }));
+    const docker = findWrite(p.actions, "/.docker/certs.d/registry-1.docker.io/ca.crt");
+    expect(docker).toBeDefined();
+    expect(docker?.contents).toBe(PEM_ONE);
+  });
+
+  it("Gradle and Maven point at the generated JVM truststore", async () => {
+    const root = freshTmp();
+    const home = join(root, "home");
+    const p = await command.plan(makeCtx({ root, env: { HOME: home } }));
+    const gradle = findWrite(p.actions, "/.gradle/gradle.properties");
+    const maven = findWrite(p.actions, "/.mavenrc");
+    expect(gradle?.contents).toContain("systemProp.javax.net.ssl.trustStore=");
+    expect(gradle?.contents).toContain("corporate-cacerts.jks");
+    expect(maven?.contents).toContain("MAVEN_OPTS=");
+    expect(maven?.contents).toContain("corporate-cacerts.jks");
+  });
 });
 
 describe("certs plan — Homebrew stays a doc; conda is now an applied .condarc write", () => {
@@ -274,7 +319,7 @@ describe("certs plan — Homebrew stays a doc; conda is now an applied .condarc 
     // conda is no longer a doc — it's applied like npm/pip/cargo (asserted below).
     expect(findDoc(p.actions, "conda")).toBeUndefined();
 
-    // No manager is ever an exec; no exec targets brew/conda/c_rehash.
+    // No brew/conda action is ever an exec; Java's keytool import is local/user-scoped.
     const execArgvs = p.actions
       .filter((a) => a.kind === "exec")
       .map((a) => (a as Extract<Action, { kind: "exec" }>).argv.join(" "));
@@ -294,7 +339,7 @@ describe("certs plan — Homebrew stays a doc; conda is now an applied .condarc 
 });
 
 describe("certs plan — windows trust propagation", () => {
-  it("locks the PEM down via icacls (blueprint /inheritance:r /grant:r), the only exec", async () => {
+  it("locks the PEM down via icacls (blueprint /inheritance:r /grant:r)", async () => {
     const root = freshTmp();
     const home = join(root, "home");
     const p = await command.plan(
@@ -306,7 +351,7 @@ describe("certs plan — windows trust propagation", () => {
     );
 
     const execs = p.actions.filter((a) => a.kind === "exec");
-    expect(execs).toHaveLength(1);
+    expect(execs).toHaveLength(2);
     const lockdown = findExec(p.actions);
     // Windows adapter locks down with icacls, disabling inheritance and granting the user read.
     expect(lockdown?.argv.slice(0, 2)).toEqual(["icacls", expect.any(String)]);
@@ -454,5 +499,15 @@ describe("ini helper", () => {
     expect(condarcConfig(a, "/x/ca.pem")).toBe(a);
     // an existing ssl_verify is REPLACED in place, not duplicated
     expect(condarcConfig("ssl_verify: /old/ca.pem\n", "/x/ca.pem")).toBe("ssl_verify: /x/ca.pem\n");
+  });
+
+  it("new CA config writers are idempotent", () => {
+    const trustStore = "/x/corporate-cacerts.jks";
+    const pem = "/x/ca.pem";
+    expect(gitConfig(gitConfig("", pem), pem)).toBe(gitConfig("", pem));
+    expect(gradleProperties(gradleProperties("", trustStore), trustStore)).toBe(
+      gradleProperties("", trustStore),
+    );
+    expect(mavenRc(mavenRc("", trustStore), trustStore)).toBe(mavenRc("", trustStore));
   });
 });
