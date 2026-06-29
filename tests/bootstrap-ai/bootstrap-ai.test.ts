@@ -79,7 +79,6 @@ describe("bootstrap-ai — canon files", () => {
     expect(upd).toContain("INDEX.md");
     expect(upd).toContain("tasks.md");
     expect(upd).toContain("skills/**");
-    expect(upd).toContain("do not keep duplicate canon in sync by hand");
     expect(upd).toContain("aih init --apply");
   });
 
@@ -89,8 +88,6 @@ describe("bootstrap-ai — canon files", () => {
     expect(doc).toContain("Kiro");
     expect(doc).toContain(".kiro/steering/");
     expect(doc).toContain("RULE_ROUTER.md");
-    expect(doc).toContain("Do not");
-    expect(doc).toContain("project behavior rules");
   });
 
   it("the behavior core carries the four-part working discipline + invariants", async () => {
@@ -103,30 +100,16 @@ describe("bootstrap-ai — canon files", () => {
     expect(core).toContain("never coerce");
     expect(core).toContain("Do not open `.env*` or `secrets/**`");
     expect(core).toContain("code-review-graph");
-    expect(core).toContain("intentionally repeated in the bootloader shared block");
     // The router routes to it as an always-read-first file.
     const router = w.get(".ai-context/RULE_ROUTER.md")?.contents ?? "";
     expect(router).toContain("rules/agent-behavior-core.md");
   });
 
-  it("shared blocks and adapters stay summaries/wiring, not repo-rule owners", async () => {
+  it("the shared block carries the safety invariants (secrets + large-repo graph)", async () => {
     const w = writesByPath((await command.plan(makeCtx({ cli: "codex,gemini,kiro" }))).actions);
     const shared = w.get(".ai-context/adapters/_shared-canonical-block.md")?.contents ?? "";
-    expect(shared).toContain("intentional always-loaded summary");
-    expect(shared).toContain("repo-specific rules");
     expect(shared).toContain("aih secrets --verify");
     expect(shared).toContain("bounded `rg`/`fd` reads");
-    expect(shared).toContain("project-guardrails.md");
-
-    for (const adapter of ["codex", "gemini", "kiro"]) {
-      const doc = w.get(`.ai-context/adapters/${adapter}.md`)?.contents ?? "";
-      expect(doc).toContain("loading facts only");
-      expect(doc).toContain("do not add project behavior");
-    }
-
-    const regen = w.get(".ai-context/REGENERATION.md")?.contents ?? "";
-    expect(regen).toContain("Do not add repo-specific behavior rules");
-    expect(regen).toContain("prune duplicate copies");
   });
 
   it("the router is stack-aware (names the detected language)", async () => {

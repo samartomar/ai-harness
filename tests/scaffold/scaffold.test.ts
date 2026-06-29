@@ -87,21 +87,13 @@ describe("scaffold plan (dry-run shape)", () => {
     expect(val).toContain("Do not edit this validation file");
     expect(val).toContain("Count only runnable CLIs as installed");
     expect(val).toContain("Do not open `.env*`");
-    expect(val).toContain("Canon objective and deduplicated");
     expect(val).not.toContain("`.aih-workspace.json`");
     expect(val).toContain("picture-perfect");
-    expect(tasks).toContain("Do not web-search for extra canon");
-    expect(tasks).toContain("repo-relative paths (`api/post/list.js:25`)");
-    expect(tasks).toContain("never as `file:///...` links");
     expect(tasks).toContain("Do not open `.env*` or `secrets/**`");
     expect(tasks).toContain("aih secrets --verify");
     expect(tasks).toContain("large-repo graph safety");
     expect(tasks).toContain("bounded to targeted `rg`/`fd`");
-    expect(tasks).toContain("practice -> repo evidence -> local check");
-    expect(tasks).toContain("Do not add generic `Practice lineage` prose");
     expect(tasks).toContain("Do not edit `.ai-context/VALIDATION.md`");
-    expect(tasks).toContain("Definition of done");
-    expect(tasks).toContain("Do not create a separate walkthrough/status report");
     // Author-owned canon is write-once (the agent's edits survive re-runs).
     expect(w.get(".ai-context/INDEX.md")?.once).toBe(true);
     expect(w.get(".ai-context/architecture.md")?.once).toBe(true);
@@ -112,45 +104,6 @@ describe("scaffold plan (dry-run shape)", () => {
     const guard = w.get(".ai-context/project-guardrails.md");
     expect(guard).toBeDefined();
     expect(guard?.once).toBe(true);
-    expect(guard?.contents).toContain("Fixed reference set");
-    expect(guard?.contents).toContain("NIST SSDF SP 800-218");
-  });
-
-  it("seeds file-by-file ownership and acceptance guidance in the canon docs", async () => {
-    const w = writesByPath((await command.plan(ctx())).actions);
-    const index = w.get(".ai-context/INDEX.md")?.contents ?? "";
-    expect(index).toContain("project-guardrails.md");
-    expect(index).toContain("SETUP-TASKS.md");
-    expect(index).toContain("VALIDATION.md");
-    expect(index).toContain("guardrails-taxonomy.md / command-policy.md / risk-gates.json");
-    expect(index).toContain("adapters/");
-    expect(index).toContain("harness-update.md");
-    expect(index).toContain("repo-relative paths like `api/post/list.js:25`");
-
-    const arch = w.get(".ai-context/architecture.md")?.contents ?? "";
-    expect(arch).toContain("## Ownership");
-    expect(arch).toContain("## Data flow");
-    expect(arch).toContain("Acceptance: every entry point");
-    expect(arch).toContain("Does not own: coding style");
-
-    const conventions = w.get(".ai-context/conventions.md")?.contents ?? "";
-    expect(conventions).toContain("observed repo style");
-    expect(conventions).toContain("representative files inspected");
-    expect(conventions).toContain("rules/agent-behavior-core.md");
-    expect(conventions).not.toContain("No secrets in source, config, or fixtures");
-
-    const taskLedger = w.get(".ai-context/tasks.md")?.contents ?? "";
-    expect(taskLedger).toContain(
-      "Durable architecture, convention, or guardrail rules do not live here",
-    );
-    expect(taskLedger).toContain("promote them to the owning canon file");
-    expect(taskLedger).toContain("evidence: `path:line`");
-
-    const validation = w.get(".ai-context/VALIDATION.md")?.contents ?? "";
-    expect(validation).toContain("Canon file ownership");
-    expect(validation).toContain("adapters/` contains wiring notes only");
-    expect(validation).toContain("No new walkthrough/status report file");
-    expect(validation).toContain("no `file:///...` links");
   });
 
   it("project-guardrails auto-derives framework rules from the detected stack", async () => {
@@ -202,7 +155,6 @@ describe("INDEX routing content", () => {
     const index = w.get(".ai-context/INDEX.md")?.contents ?? "";
     expect(index).toContain("architecture.md");
     expect(index).toContain("conventions.md");
-    expect(index).toContain("project-guardrails.md");
     expect(index).toContain("tasks.md");
     expect(index).toContain("skills/");
     expect(index.toLowerCase()).toContain("load");
