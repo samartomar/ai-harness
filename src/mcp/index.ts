@@ -367,7 +367,7 @@ async function planMcp(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
   // Enterprise posture (opt-in): surface a governance verdict for every server and a
   // probe that fails on a policy-denied one. The community default adds nothing here,
   // so standard output stays byte-identical.
-  const posture = asPosture(ctx.options.posture);
+  const posture = ctx.posture ?? asPosture(ctx.options.posture);
   if (posture === "enterprise") {
     const policies = evaluateMcpPolicy(servers, posture);
     actions.push(
@@ -401,11 +401,6 @@ export const command: CommandSpec = {
       description:
         "standard | offline (vendored local-command servers) | none (no MCP; CLI-tool fallback)",
       default: "standard",
-    },
-    {
-      flags: "--posture <posture>",
-      description: "governance posture: community (default) | enterprise (policy gate + doc)",
-      default: "community",
     },
     {
       flags: "--self-host",
