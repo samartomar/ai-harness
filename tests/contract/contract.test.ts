@@ -1,7 +1,8 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { contractTruthCheck } from "../../src/contract/check.js";
 import { command, portablePathsCheck } from "../../src/contract/index.js";
 import type { ProjectContract } from "../../src/contract/schema.js";
 import { ProjectContractSchema, readProjectContract } from "../../src/contract/schema.js";
@@ -332,5 +333,40 @@ describe("apply + read round-trip", () => {
 
   it("readProjectContract returns undefined when the contract is absent", () => {
     expect(readProjectContract(dir, "ai-coding")).toBeUndefined();
+  });
+});
+
+describe("PR 1D — doctor contract-truth probe", () => {
+  function writeContract(c: ProjectContract): void {
+    mkdirSync(join(dir, "ai-coding"), { recursive: true });
+    writeFileSync(join(dir, "ai-coding", "project.json"), `${JSON.stringify(c, null, 2)}\n`);
+  }
+
+  it("skips when no contract is committed", async () => {
+    expect((await contractTruthCheck(ctx())).verdict).toBe("skip");
+  });
+
+  it("passes a clean committed contract", async () => {
+    seedMindworksLike(dir);
+    writeContract(await synth());
+    expect((await contractTruthCheck(ctx())).verdict).toBe("pass");
+  });
+
+  it("fails (routable) on a non-portable path in the committed contract", async () => {
+    seedMindworksLike(dir);
+    writeContract({ ...(await synth()), entrypoints: ["../escape"] });
+    const res = await contractTruthCheck(ctx());
+    expect(res.verdict).toBe("fail");
+    expect(res.code).toBe("contract.path-unportable");
+    expect(res.detail).toContain("../escape");
+  });
+
+  it("does not false-fail a large repo — defers deep validation to graph safety", async () => {
+    seedMindworksLike(dir);
+    const big = gitTrackedRunner(fakeTrackedPaths(1500));
+    writeContract(await synth({ run: big }));
+    const res = await contractTruthCheck(ctx({ run: big }));
+    expect(res.verdict).toBe("pass");
+    expect(res.detail).toContain("deferred");
   });
 });

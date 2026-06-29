@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { classifyCanon, isAdoptable } from "./adopt/classify.js";
 import { readAihConfig } from "./config/marker.js";
+import { contractTruthCheck } from "./contract/check.js";
 import { detectInstall } from "./internals/cli-detect.js";
 import { readIfExists } from "./internals/fsxn.js";
 import { type Action, type CommandSpec, type PlanContext, plan, probe } from "./internals/plan.js";
@@ -208,6 +209,7 @@ export const command: CommandSpec = {
             };
       }),
       probe("large-repo graph safety", () => scaleSafetyCheck(ctx)),
+      probe("contract truth", () => contractTruthCheck(ctx)),
     ];
 
     // Workspace mode: validate each child repo is scaffolded.

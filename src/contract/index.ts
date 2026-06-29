@@ -33,6 +33,7 @@ export function portablePathsCheck(contract: ProjectContract): Check {
   return {
     name,
     verdict: "fail",
+    code: "contract.path-unportable",
     detail: `non-portable path(s) in ${PROJECT_CONTRACT_FILE}: ${bad.join(", ")}`,
   };
 }

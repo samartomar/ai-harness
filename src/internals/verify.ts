@@ -47,6 +47,8 @@ export type CheckCode =
   | "usage.no-data"
   // scale safety
   | "scale.code-review-graph-missing"
+  // repo contract
+  | "contract.path-unportable"
   // report (analytics-derived advisories)
   | "report.context-over-budget"
   | "report.low-adoption";
