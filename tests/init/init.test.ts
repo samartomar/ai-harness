@@ -81,21 +81,27 @@ describe("aih init — composes all six repo-scoped capabilities", () => {
     expect(paths).toContain(".mcp.json");
     // sandbox: the devcontainer.
     expect(paths).toContain(".devcontainer/devcontainer.json");
+    // usage: the recorder + universal git hook are folded in last.
+    expect(paths).toContain(".aih/usage-record.mjs");
+    expect(paths).toContain(".git/hooks/post-commit");
   });
 
-  it("folds the three .claude/settings.json contributions into one merge write carrying BOTH the deny rules AND the command policy", async () => {
+  it("folds the .claude/settings.json contributions into one merge write carrying deny rules, command policy, and usage hooks", async () => {
     const writes = (await command.plan(ctx())).actions.filter(
       (a): a is WriteAction =>
         a.kind === "write" && a.path.replace(/\\/g, "/") === ".claude/settings.json",
     );
-    // THREE phases merge-write settings.json: scaffold + secrets seed identical
+    // Multiple phases merge-write settings.json: scaffold + secrets seed identical
     // Read(...) deny rules; guardrails projects the command-policy Bash lexicon
-    // (different content). init FOLDS them via deepMerge into ONE merge write so
-    // guardrails' permissions are not silently dropped on the init path (they would
-    // be under a first-writer-wins dedup — landing only via standalone `aih guardrails`).
+    // (different content); usage adds PostToolUse capture. init FOLDS them via
+    // deepMerge into ONE merge write so none are silently dropped on the init path.
     expect(writes).toHaveLength(1);
     expect(writes[0]?.merge).toBe(true);
-    const perms = (writes[0]?.json as { permissions?: Record<string, string[]> }).permissions ?? {};
+    const settings = writes[0]?.json as {
+      permissions?: Record<string, string[]>;
+      hooks?: { PostToolUse?: Array<{ hooks?: Array<{ command?: string }> }> };
+    };
+    const perms = settings.permissions ?? {};
     // secrets/scaffold deny rules survive...
     expect(perms.deny).toContain("Read(./.env*)");
     expect(perms.deny).toContain("Read(./secrets/**)");
@@ -104,6 +110,12 @@ describe("aih init — composes all six repo-scoped capabilities", () => {
     expect(perms.deny).toEqual(expect.arrayContaining(policy.deny));
     expect(perms.ask).toEqual(expect.arrayContaining(policy.ask));
     expect(perms.allow).toEqual(expect.arrayContaining(policy.allow));
+    const usageCommands = (settings.hooks?.PostToolUse ?? []).flatMap((group) =>
+      (group.hooks ?? []).map((hook) => hook.command ?? ""),
+    );
+    expect(usageCommands.some((cmd) => cmd.includes(".aih/usage-record.mjs --from claude"))).toBe(
+      true,
+    );
   });
 
   it("forwards the mcp probe and never leaks the remote SSO doc (project scope default)", async () => {
@@ -147,6 +159,7 @@ describe("aih init — composition, not duplication", () => {
       "guardrails",
       "mcp",
       "sandbox",
+      "usage",
     ];
     // The phase table itself is locked to the mission order.
     expect(INIT_PHASES.map((p) => p.command.name)).toEqual(order);
@@ -165,6 +178,8 @@ describe("aih init — composition, not duplication", () => {
     expect(headerIndex("guardrails")).toBeLessThan(writeIndex(".gitleaks.toml"));
     expect(headerIndex("mcp")).toBeLessThan(writeIndex(".mcp.json"));
     expect(headerIndex("profile")).toBeLessThan(headerIndex("sandbox"));
+    expect(headerIndex("usage")).toBeGreaterThan(headerIndex("sandbox"));
+    expect(headerIndex("usage")).toBeLessThan(writeIndex(".aih/usage-record.mjs"));
   });
 });
 

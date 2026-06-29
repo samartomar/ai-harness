@@ -13,6 +13,7 @@ import {
   machineToolingPanel,
 } from "../../src/report/local.js";
 import { mcpGovernanceDigest } from "../../src/report/mcp-governance.js";
+import { leakPreventionsDigest } from "../../src/report/security.js";
 import { toolsInstalledDigest } from "../../src/report/tools.js";
 import { usagePanel } from "../../src/report/usage.js";
 import { scaleSafetyDigest } from "../../src/scale-safety.js";
@@ -122,6 +123,32 @@ describe("usagePanel", () => {
     expect(d.describe).toContain("capture installed");
     expect(d.text).toContain("waiting for the first real event");
     expect(d.data).toMatchObject({ events: 0, installed: true });
+  });
+});
+
+describe("leakPreventionsDigest", () => {
+  it("counts scan-derived secret findings without exposing secret values", () => {
+    writeFileSync(join(dir, ".env"), "API_KEY=sk-should-never-render\n");
+    writeFileSync(
+      join(dir, ".mcp.json"),
+      JSON.stringify({
+        mcpServers: { gh: { env: { GITHUB_TOKEN: `ghp_${"a".repeat(36)}` } } },
+      }),
+    );
+
+    const d = leakPreventionsDigest(ctx());
+
+    expect(d.describe).toContain("2 finding");
+    expect(d.text).toContain(".env");
+    expect(d.text).toContain(".mcp.json");
+    expect(d.text).not.toContain("sk-should-never-render");
+    expect(d.text).not.toContain(`ghp_${"a".repeat(36)}`);
+    expect(d.data).toMatchObject({
+      total: 2,
+      plaintext: 1,
+      mcpHardcoded: 1,
+      codes: ["secrets.plaintext-detected", "mcp.hardcoded-secret"],
+    });
   });
 });
 

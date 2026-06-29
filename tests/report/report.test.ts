@@ -6,7 +6,11 @@ import { executePlan, summarizeResult } from "../../src/internals/execute.js";
 import type { PlanContext } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
-import { DEFAULT_CONTEXT_BUDGET_TOKENS, scanContextBloat } from "../../src/report/bloat.js";
+import {
+  DEFAULT_CONTEXT_BUDGET_TOKENS,
+  scanContextBloat,
+  tokenOptimizationIndex,
+} from "../../src/report/bloat.js";
 import { command } from "../../src/report/index.js";
 
 let dir: string;
@@ -79,6 +83,41 @@ describe("scanContextBloat", () => {
     const paths = scanContextBloat(dir, "ai-coding").files.map((f) => f.path);
     expect(paths).toEqual([...paths].sort());
     expect(paths.indexOf("AGENTS.md")).toBeLessThan(paths.indexOf("CLAUDE.md"));
+  });
+});
+
+describe("tokenOptimizationIndex", () => {
+  it("compares legacy always-loaded files to the compact contract paths from one inventory", () => {
+    mkdirSync(join(dir, "ai-coding"), { recursive: true });
+    writeFileSync(join(dir, "CLAUDE.md"), "x".repeat(400));
+    writeFileSync(join(dir, "AGENTS.md"), "x".repeat(200));
+    writeFileSync(join(dir, "ai-coding", "RULE_ROUTER.md"), "x".repeat(80));
+    writeFileSync(join(dir, "ai-coding", "project.json"), "x".repeat(40));
+    writeFileSync(join(dir, "ai-coding", "project.md"), "x".repeat(120));
+    writeFileSync(join(dir, "ai-coding", "setup.md"), "x".repeat(120));
+
+    const bloat = scanContextBloat(dir, "ai-coding");
+    const index = tokenOptimizationIndex(bloat.files, "ai-coding");
+
+    expect(index).toMatchObject({
+      legacy: { bytes: 960, tokens: 240, files: 6 },
+      contract: { bytes: 240, tokens: 60, files: 3 },
+      savedTokens: 180,
+      reductionPct: 75,
+    });
+    expect(index.legacy.paths).toEqual([
+      "AGENTS.md",
+      "CLAUDE.md",
+      "ai-coding/RULE_ROUTER.md",
+      "ai-coding/project.json",
+      "ai-coding/project.md",
+      "ai-coding/setup.md",
+    ]);
+    expect(index.contract.paths).toEqual([
+      "ai-coding/RULE_ROUTER.md",
+      "ai-coding/project.json",
+      "ai-coding/project.md",
+    ]);
   });
 });
 
