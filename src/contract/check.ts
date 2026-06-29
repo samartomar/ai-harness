@@ -1,4 +1,6 @@
+import { postureGradeCheck } from "../config/governance.js";
 import { readAihConfig } from "../config/marker.js";
+import { asPosture } from "../config/posture.js";
 import type { PlanContext } from "../internals/plan.js";
 import type { Check } from "../internals/verify.js";
 import { LARGE_REPO_FILE_THRESHOLD, trackedFileCount } from "../scale-safety.js";
@@ -10,9 +12,10 @@ import { unportablePaths } from "./synth.js";
  * without re-deriving it.
  *
  *  - No contract on disk → `skip`: a pre-init or `--canon legacy` repo is not broken.
- *  - A non-portable path in the contract → `fail` (`contract.path-unportable`): a
- *    committed `..` / absolute / drive-letter path misleads the next agent on another
- *    machine, so the doctor fails closed and the exit flips.
+ *  - A non-portable path in the contract → posture-graded finding
+ *    (`contract.path-unportable` once denying): a committed `..` / absolute /
+ *    drive-letter path misleads the next agent on another machine, so team and
+ *    enterprise runs fail while vibe remains warning-only.
  *  - Otherwise `pass`. Deep staleness validation (re-deriving the whole stack to confirm
  *    the contract is current) is graph territory on a LARGE repo, so it is deferred to the
  *    sibling `large-repo graph safety` probe ({@link scaleSafetyCheck}) rather than forced
@@ -21,6 +24,7 @@ import { unportablePaths } from "./synth.js";
  */
 export async function contractTruthCheck(ctx: PlanContext): Promise<Check> {
   const name = "contract truth";
+  const posture = ctx.posture ?? asPosture(ctx.options.posture);
   // Honor the committed context dir (like doctor + classifyCanon), not just the flag.
   const contextDir = readAihConfig(ctx.root)?.contextDir ?? ctx.contextDir;
   const contract = readProjectContract(ctx.root, contextDir);
@@ -29,12 +33,16 @@ export async function contractTruthCheck(ctx: PlanContext): Promise<Check> {
   }
   const bad = unportablePaths(contract);
   if (bad.length > 0) {
-    return {
-      name,
-      verdict: "fail",
-      code: "contract.path-unportable",
-      detail: `non-portable path(s) in ${contextDir}/${PROJECT_CONTRACT_FILE}: ${bad.join(", ")}`,
-    };
+    return postureGradeCheck(
+      {
+        name,
+        verdict: "fail",
+        code: "contract.path-unportable",
+        detail: `non-portable path(s) in ${contextDir}/${PROJECT_CONTRACT_FILE}: ${bad.join(", ")}`,
+      },
+      "path-portability",
+      posture,
+    );
   }
   const live = await trackedFileCount(ctx);
   if (live !== undefined && live >= LARGE_REPO_FILE_THRESHOLD) {

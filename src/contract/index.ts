@@ -1,4 +1,6 @@
 import { posix } from "node:path";
+import { postureGradeCheck } from "../config/governance.js";
+import { asPosture, type Posture } from "../config/posture.js";
 import type { CommandSpec, Plan, PlanContext } from "../internals/plan.js";
 import { plan, probe, writeJson, writeText } from "../internals/plan.js";
 import type { Check } from "../internals/verify.js";
@@ -15,12 +17,11 @@ import { projectContractDoc, setupDoc } from "./templates.js";
 
 /**
  * The portable-paths invariant as a verification {@link Check}: every path-like value
- * in the contract must be a portable repo-relative POSIX path. `pass` clean; `fail`
- * (flipping the exit under `--verify`) on any `..`/absolute/drive-letter value. The
- * `Check.code` is intentionally absent here — the `contract.path-unportable` taxonomy
- * member and the doctor wiring land in PR 1D; an un-routed `fail` still gates correctly.
+ * in the contract must be a portable repo-relative POSIX path. Clean contracts pass;
+ * non-portable paths are posture-graded (`vibe` warning-only, `team`/`enterprise`
+ * fail with `contract.path-unportable`).
  */
-export function portablePathsCheck(contract: ProjectContract): Check {
+export function portablePathsCheck(contract: ProjectContract, posture: Posture): Check {
   const name = "contract portable-paths";
   const bad = unportablePaths(contract);
   if (bad.length === 0) {
@@ -30,12 +31,16 @@ export function portablePathsCheck(contract: ProjectContract): Check {
       detail: "every contract path is a portable repo-relative POSIX path",
     };
   }
-  return {
-    name,
-    verdict: "fail",
-    code: "contract.path-unportable",
-    detail: `non-portable path(s) in ${PROJECT_CONTRACT_FILE}: ${bad.join(", ")}`,
-  };
+  return postureGradeCheck(
+    {
+      name,
+      verdict: "fail",
+      code: "contract.path-unportable",
+      detail: `non-portable path(s) in ${PROJECT_CONTRACT_FILE}: ${bad.join(", ")}`,
+    },
+    "path-portability",
+    posture,
+  );
 }
 
 /**
@@ -47,6 +52,7 @@ export function portablePathsCheck(contract: ProjectContract): Check {
  */
 async function contractPlan(ctx: PlanContext): Promise<Plan> {
   const dir = ctx.contextDir;
+  const posture = ctx.posture ?? asPosture(ctx.options.posture);
   const stack = scanRepo(ctx.root, { maxDepth: 8, contextDir: dir });
   const contract = projectContractJson(await synthesizeContract(ctx, stack));
   return plan(
@@ -70,7 +76,7 @@ async function contractPlan(ctx: PlanContext): Promise<Plan> {
       "first-run setup checklist (write-once)",
       { once: true },
     ),
-    probe("contract portable-paths", () => portablePathsCheck(contract)),
+    probe("contract portable-paths", () => portablePathsCheck(contract, posture)),
   );
 }
 

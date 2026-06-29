@@ -1,3 +1,4 @@
+import { asPosture } from "../config/posture.js";
 import { isTargeted } from "../internals/cli-detect.js";
 import {
   type Action,
@@ -28,12 +29,13 @@ import {
  *  - a `.claudeignore` backstop;
  *  - dynamic-vault-injection guidance (DOC ONLY — no vault is ever contacted);
  *  - a targeted warning when plaintext secrets already exist on disk;
- *  - one read-only `fail` probe per detected plaintext secret, so `--verify` is a
- *    secret-scan CI gate (non-zero exit when secrets exist) and `--sarif` emits an
- *    error-level result per path for GitHub code-scanning. Probes are read-only
- *    verdict carriers — no `exec`, no remote mutation — so the boundary holds.
+ *  - one read-only, posture-graded probe per detected plaintext secret, so `vibe`
+ *    warns while `team`/`enterprise` make `--verify` a non-zero secret-scan gate
+ *    and `--sarif` emits error-level results. Probes are read-only verdict carriers
+ *    — no `exec`, no remote mutation — so the boundary holds.
  */
 async function planSecrets(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
+  const posture = ctx.posture ?? asPosture(ctx.options.posture);
   // `--since <ref>`: only scan secret files changed vs the ref (fast PR CI). NOT
   // gitignore-honoring — a gitignored `.env` is still a real exposure, so the full
   // on-disk scan is the default; `--since` only narrows by the diff.
@@ -70,15 +72,14 @@ async function planSecrets(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
   );
 
   if (scan.matches.length > 0) {
-    // The warning doc is the human remediation; the per-path probes are the machine
-    // gate — under `--verify` each `fail` flips the exit code (secret-scan CI gate)
-    // and feeds one error-level SARIF result to GitHub code-scanning.
+    // The warning doc is the human remediation; the per-path probes are posture
+    // graded — advisory at `vibe`, a failing CI/SARIF gate at `team`/`enterprise`.
     actions.push(
       doc(
         `Plaintext secrets detected (${scan.matches.length}) — migrate to a vault`,
         exposureWarning(scan),
       ),
-      ...secretProbes(scan),
+      ...secretProbes(scan, posture),
     );
   }
 
@@ -92,7 +93,7 @@ async function planSecrets(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
         `Hardcoded secrets in MCP config (${configSecrets.length}) — move to env references`,
         configExposureWarning(configSecrets),
       ),
-      ...mcpConfigSecretProbes(configSecrets),
+      ...mcpConfigSecretProbes(configSecrets, posture),
     );
   }
 

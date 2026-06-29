@@ -301,7 +301,7 @@ describe("portable-paths invariant", () => {
     seedMindworksLike(dir);
     const c = await synth();
     expect(unportablePaths(c)).toEqual([]);
-    expect(portablePathsCheck(c).verdict).toBe("pass");
+    expect(portablePathsCheck(c, "vibe").verdict).toBe("pass");
   });
 
   it("fails on .. escapes, absolute, drive-letter, and UNC values", async () => {
