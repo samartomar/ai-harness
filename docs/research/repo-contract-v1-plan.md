@@ -4,6 +4,8 @@ _Generated 2026-06-29 on `feat/repo-contract-v1` (off `main` @ d675500). Self-co
 
 > Companion memory: `aih-repo-contract-plan.md`, `ai-coding-lean-contract-direction.md`, `local-report-v9-shipped.md` (in the user's memory vault). This doc is the authoritative build spec; the memories are the index.
 
+> **NEXT WORK — `docs/research/compact-contract-polish.md`** (post-delivery weight-review of the generated fuse-angular output). 6 generator-side improvements + polish to apply BEFORE the next re-setup: gate the 2 guardrails prose docs behind `--canon legacy` (P1, biggest win), trim the 5× adapter boundary dup (P2), finish the §6 router de-dup (P3), surface the Karma/browser-test headless caveat as a knownGap (P4), fix the browser-vs-Node language label (P5), name `aih contract` in the recovery line (P6). The contract CORE (project.json/md) is delivery-ready; this is periphery weight-trimming.
+
 ## Problem
 
 First-run `aih init --cli claude` emits **28 writes, 16 under `ai-coding/`** (verified dry-run on d675500). That is a "documentation garden": ~11 of those 16 are generated prose/meta-docs (REGENERATION, harness-update, other-tools, INDEX, architecture, conventions, tasks, SETUP-TASKS, VALIDATION, project-guardrails, example SKILL). The research thesis (ETH Zurich arXiv:2602.11988): verbose/auto-generated context *reduces* agent task success ~3% and raises cost >20%. The product goal is a **small, evidence-backed repo operating contract** that improves the next agent's first diff — not a canon file-family.
