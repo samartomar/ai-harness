@@ -141,6 +141,8 @@ describe("composeOrgPolicy", () => {
     const disposition = Object.fromEntries(
       composed.licenses.map((tier) => [tier.category, tier.disposition]),
     );
+    // Only the literal hard-block tier is immutable. Strong copyleft remains
+    // org-overridable so legal can choose an alert/fail posture per estate.
     expect(disposition["network-copyleft"]).toBe("block");
     expect(disposition["strong-copyleft"]).toBe("alert");
   });

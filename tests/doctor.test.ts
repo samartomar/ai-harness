@@ -239,6 +239,17 @@ describe("doctor — MCP managed allowlist drift", () => {
     expect(res?.verdict).toBe("skip");
     expect(res?.detail).toContain("no managed MCP allowlist");
   });
+
+  it("skips malformed .mcp.json as no comparable stdio servers", async () => {
+    writeFileSync(join(dir, ".mcp.json"), "{ broken");
+    writeAllowlist(["uvx", "code-review-graph@2.3.6", "serve"]);
+    const c = rooted();
+    const probe = findProbe((await command.plan(c)).actions, "MCP managed allowlist");
+    const res = await probe?.run(c);
+
+    expect(res?.verdict).toBe("skip");
+    expect(res?.detail).toContain("no .mcp.json stdio servers");
+  });
 });
 
 describe("doctor — org-policy drift", () => {
