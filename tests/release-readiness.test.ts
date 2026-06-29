@@ -27,6 +27,17 @@ describe("release readiness metadata", () => {
     expect(release).toContain("format: spdx-json");
   });
 
+  it("publishes through npm trusted publishing instead of a long-lived token", () => {
+    const release = read(".github/workflows/release.yml");
+    expect(release).toContain("environment:");
+    expect(release).toContain("name: npm-publish");
+    expect(release).toMatch(/id-token:\s*write/);
+    expect(release).toContain('registry-url: "https://registry.npmjs.org"');
+    expect(release).toContain("npm publish ./*.tgz --provenance --access public");
+    expect(release).not.toContain("NPM_TOKEN");
+    expect(release).not.toContain("NODE_AUTH_TOKEN");
+  });
+
   it("ships basic repository governance files for controlled rollout", () => {
     expect(existsSync(join(root, ".github", "CODEOWNERS"))).toBe(true);
     expect(existsSync(join(root, "DCO.md"))).toBe(true);
