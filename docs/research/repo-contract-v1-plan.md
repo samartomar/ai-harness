@@ -87,9 +87,9 @@ One `scanRepo(ctx.root,{maxDepth:8,contextDir})` feeds everything. Confidence is
 | field | detector | confidence |
 |---|---|---|
 | `commands.test` | `RepoStack.testRunner` (`deriveTest`, skips placeholder `echo` via `isPlaceholderScript:546`) | `npm test` script → `detected`; runner dep → `inferred`; language default → `inferred` |
-| `commands.build` | `RepoStack.buildCommand` | `npm run build` script → `detected`; **non-Node language default (`go build ./...`, `cargo build`, `./mvnw clean package`, `./gradlew build`, `dotnet build`) → `inferred`** (uniform with test/lint, scan.ts:475-496); else omit. Every `inferred` command also emits a `knownGaps` "unconfirmed … verify it runs" entry (synth.ts:87-92), so inferred is strictly better than omit (gives the agent the conventional command + a verify flag). |
+| `commands.build` | `RepoStack.buildCommand` | `npm run build` script → `detected`; **otherwise OMIT (strict).** Language-derived builds (`go build ./...`, `cargo build`, `./mvnw clean package`, `./gradlew build`, `dotnet build`) are NOT emitted in Phase 1 — undeclared, and rendered into `project.md`/`setup.md` they read as invented commands (weak models don't bind a command to a separate `knownGaps` caveat), weakening the contract's "don't invent commands" promise. Deferred to the Phase-2 `verified` tier, which RUNS the candidate and promotes it to `verified`. |
 | `commands.lint` | `RepoStack.lintCommand`/`configLint` | script → `detected`; dep/config-file → `inferred` |
-| `commands.start` | `RepoStack.startCommand` | `npm start` script → `detected`; else omit. `scanRepo` derives **no language-default start** (scan.ts:475-496 set test+build only), so start is `detected`-or-omit in practice — `toCommand` stays uniform/future-proof if a start default is ever added. |
+| `commands.start` | `RepoStack.startCommand` | `npm start` script → `detected`; **otherwise OMIT (strict).** Never inferred from entrypoints or language defaults — entrypoints stay under `entrypoints`, never promoted to a command. (`scanRepo` derives no start default anyway, scan.ts:475-496.) |
 | `languages`/`frameworks`/`cloud`/`databases`/`packageManager` | `RepoStack.*` | presence-based, no enum |
 | `entrypoints` | `RepoStack.entryPoints` | — |
 | `scale.trackedFiles` | `gitTrackedSet` (`src/internals/scan-allowlist.ts:30`) / `git ls-files` | from git; `undefined` if not a git repo |
@@ -97,6 +97,8 @@ One `scanRepo(ctx.root,{maxDepth:8,contextDir})` feeds everything. Confidence is
 | `sensitivePaths` | `scanSecrets(root)` (`src/secrets/scan.ts:49`) | **value-blind** — path/kind only, never values |
 | `knownGaps` | `classifyCanon` + `cliFootprint` + sub-`detected` commands | foreign-scheme/marker-divergent → "reconcile canon"; `importCandidates>0` → "N un-imported CLI rule sets"; `legacyArtifacts` → "retire scripts"; command `< detected` → "unconfirmed `<cmd>`" |
 | `contextDir`/`targets` | `ctx.contextDir` / resolved targets, cross-checked vs `.aih-config.json` (read-only) | — |
+
+> **PR 1A correction (pending — other session; decision 2026-06-29).** As-built, `synth.toCommand` grades a language-default `build` as `inferred`. Change **build + start to strict-omit**: emit ONLY when `value === detectedForm` (the `npm` script form) → `detected`, else `undefined`. `test`/`lint` keep `toCommand` (language-default → `inferred` allowed — a deliberate stakes-based asymmetry: a suggested test/lint is low-harm, a suggested build/start is not). `deriveKnownGaps` is unchanged (build/start simply stop being `inferred`). Tests to add/adjust: (a) no build script → `commands.build` omitted; (b) no start script → `commands.start` omitted; (c) explicit build/start scripts → emitted `detected`; (d) entrypoints stay under `entrypoints`, not commands. Rerun the full gates, then PR 1B.
 
 ## 4. Phase 2 PR stack (consumes the contract; never forks it)
 
