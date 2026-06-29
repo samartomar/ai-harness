@@ -257,12 +257,59 @@ describe("scanRepo — other stacks", () => {
     expect(net.testRunner).toBe("dotnet test");
   });
 
-  it("detects Python with pytest + ruff", () => {
-    put("pyproject.toml", "[project]\nname='svc'\n");
+  it("detects Python Poetry projects with manifest-backed pytest + ruff", () => {
+    put(
+      "pyproject.toml",
+      [
+        "[tool.poetry]",
+        'name = "svc"',
+        'version = "0.1.0"',
+        "",
+        "[tool.poetry.dependencies]",
+        'python = "^3.12"',
+        'fastapi = "*"',
+        "",
+        "[tool.poetry.group.dev.dependencies]",
+        'pytest = "*"',
+        'ruff = "*"',
+        "",
+      ].join("\n"),
+    );
     const s = scanRepo(tmp, { maxDepth: 8 });
     expect(s.languages).toEqual(["Python"]);
+    expect(s.frameworks).toContain("FastAPI");
+    expect(s.packageManager).toBe("poetry");
     expect(s.testRunner).toBe("pytest");
     expect(s.lintCommand).toBe("ruff check .");
+  });
+
+  it("detects Python uv and pip manifests without inventing absent commands", () => {
+    put("pyproject.toml", "[project]\nname = \"svc\"\ndependencies = [\"flask\"]\n");
+    put("uv.lock", "version = 1\n");
+    const uv = scanRepo(tmp, { maxDepth: 8 });
+    expect(uv.languages).toEqual(["Python"]);
+    expect(uv.frameworks).toContain("Flask");
+    expect(uv.packageManager).toBe("uv");
+    expect(uv.testRunner).toBeUndefined();
+    expect(uv.lintCommand).toBeUndefined();
+
+    rmSync(join(tmp, "pyproject.toml"));
+    rmSync(join(tmp, "uv.lock"));
+    put("requirements.txt", "django\npytest\nblack\nmypy\n");
+    const pip = scanRepo(tmp, { maxDepth: 8 });
+    expect(pip.frameworks).toContain("Django");
+    expect(pip.packageManager).toBe("pip");
+    expect(pip.testRunner).toBe("pytest");
+    expect(pip.lintCommand).toBe("black --check .");
+  });
+
+  it("detects and excludes local Python virtualenv directories", () => {
+    put("pyproject.toml", "[project]\nname = \"svc\"\n[project.optional-dependencies]\ndev = [\"pytest\"]\n");
+    put(".venv/lib/python3.12/site-packages/rust_dep/Cargo.toml", "[package]\nname='dep'\n");
+    const s = scanRepo(tmp, { maxDepth: 8 });
+    expect(s.languages).toEqual(["Python"]);
+    expect(s.languages).not.toContain("Rust");
+    expect(s.virtualEnvPaths).toEqual([".venv"]);
   });
 
   it("detects deployment targets and CDK/Terraform", () => {

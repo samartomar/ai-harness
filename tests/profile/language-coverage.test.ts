@@ -50,7 +50,7 @@ describe("language coverage benchmark", () => {
     expect(python.grades.languages).toBe("good");
     expect(python.grades.test).toBe("good");
     expect(python.grades.lint).toBe("good");
-    expect(python.grades.packageManager).toBe("none");
+    expect(python.grades.packageManager).toBe("good");
     expect(python.note).toContain("root package.json");
 
     expect(rust.grades.test).toBe("good");
