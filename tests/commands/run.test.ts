@@ -117,7 +117,12 @@ describe("runCapability — context-dir precedence ladder (flag > marker > env >
   function writeMarker(contextDir: string, posture?: string): void {
     writeFileSync(
       join(dir, ".aih-config.json"),
-      JSON.stringify({ schemaVersion: 1, contextDir, targets: [], ...(posture ? { posture } : {}) }),
+      JSON.stringify({
+        schemaVersion: 1,
+        contextDir,
+        targets: [],
+        ...(posture ? { posture } : {}),
+      }),
     );
   }
 

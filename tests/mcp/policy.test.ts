@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { Posture } from "../../src/config/posture.js";
 import {
   asPosture,
   deniedServers,
@@ -6,7 +7,6 @@ import {
   mcpGovernanceDoc,
   type ServerPolicy,
 } from "../../src/mcp/policy.js";
-import type { Posture } from "../../src/config/posture.js";
 import type { McpServer } from "../../src/mcp/servers.js";
 
 /** A minimal valid server with the three risk axes set — the only inputs the policy reads. */
