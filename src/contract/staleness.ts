@@ -2,7 +2,7 @@ import type { PlanContext } from "../internals/plan.js";
 import { missingProjectionParts, sameJson } from "../org-policy/drift.js";
 import { scanRepo } from "../profile/scan.js";
 import { LARGE_REPO_FILE_THRESHOLD, trackedFileCount } from "../scale-safety.js";
-import { type ProjectContract, PROJECT_CONTRACT_FILE } from "./schema.js";
+import { PROJECT_CONTRACT_FILE, type ProjectContract } from "./schema.js";
 import { synthesizeContract } from "./synth.js";
 
 type ContractCommandFacts = ProjectContract["commands"];
@@ -49,10 +49,7 @@ function uniqueSorted(values: string[]): string[] {
   return [...new Set(values)].sort((a, b) => a.localeCompare(b));
 }
 
-export function contractStaleFields(
-  committed: ProjectContract,
-  fresh: ProjectContract,
-): string[] {
+export function contractStaleFields(committed: ProjectContract, fresh: ProjectContract): string[] {
   const actual = factsSubset(committed);
   const expected = factsSubset(fresh);
   if (sameJson(actual, expected)) return [];

@@ -1,7 +1,7 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { scanRepo, type RepoStack } from "./scan.js";
+import { type RepoStack, scanRepo } from "./scan.js";
 
 export type CoverageGrade = "good" | "partial" | "none";
 export type CoverageRole = "lock" | "wave-2-target" | "watch";
@@ -71,7 +71,10 @@ function gradeList(actual: readonly string[], expected: readonly string[] = []):
   return present > 0 ? "partial" : "none";
 }
 
-function gradeOptional(actual: string | undefined, expected: readonly string[] = []): CoverageGrade {
+function gradeOptional(
+  actual: string | undefined,
+  expected: readonly string[] = [],
+): CoverageGrade {
   if (expected.length === 0) return actual === undefined ? "good" : "partial";
   if (actual === undefined) return "none";
   if (!expected.includes(actual)) return "partial";
@@ -143,7 +146,7 @@ function seedRust(root: string): void {
   put(
     root,
     "Cargo.toml",
-    ['[package]', 'name = "ruflo"', 'version = "0.1.0"', 'edition = "2021"', ""].join("\n"),
+    ["[package]", 'name = "ruflo"', 'version = "0.1.0"', 'edition = "2021"', ""].join("\n"),
   );
   put(root, "src/main.rs", "fn main() {}\n");
 }
@@ -189,8 +192,8 @@ function seedPolyglot(root: string): void {
   );
   put(root, "tsconfig.json", json({ compilerOptions: { strict: true } }));
   put(root, "src/index.ts", "export const x = 1;\n");
-  put(root, "services/api/pyproject.toml", "[project]\nname = \"api\"\ndependencies = [\"fastapi\"]\n");
-  put(root, "crates/worker/Cargo.toml", "[package]\nname = \"worker\"\nversion = \"0.1.0\"\n");
+  put(root, "services/api/pyproject.toml", '[project]\nname = "api"\ndependencies = ["fastapi"]\n');
+  put(root, "crates/worker/Cargo.toml", '[package]\nname = "worker"\nversion = "0.1.0"\n');
 }
 
 const FIXTURES: CoverageFixture[] = [
@@ -198,8 +201,7 @@ const FIXTURES: CoverageFixture[] = [
     id: "node-typescript-daily-stack",
     ecosystem: "Node/TypeScript daily stack",
     role: "lock",
-    note:
-      "Covered baseline: npm, TS, Angular/Vue/React, Express, PostgreSQL, and AWS CDK labels stay good; do not enhance Node here. Optional gap: CDK verbs (synth/deploy/diff) are not emitted.",
+    note: "Covered baseline: npm, TS, Angular/Vue/React, Express, PostgreSQL, and AWS CDK labels stay good; do not enhance Node here. Optional gap: CDK verbs (synth/deploy/diff) are not emitted.",
     seed: seedNodeDailyStack,
     expected: {
       languages: ["TypeScript/Node.js"],
@@ -215,8 +217,7 @@ const FIXTURES: CoverageFixture[] = [
     id: "python-pyproject",
     ecosystem: "Python pyproject",
     role: "wave-2-target",
-    note:
-      "Python works only as the primary non-Node stack today: pytest/ruff are inferred when no root package.json exists; Poetry/uv package-manager detection is absent.",
+    note: "Python works only as the primary non-Node stack today: pytest/ruff are inferred when no root package.json exists; Poetry/uv package-manager detection is absent.",
     seed: seedPython,
     expected: {
       languages: ["Python"],
@@ -231,8 +232,7 @@ const FIXTURES: CoverageFixture[] = [
     id: "rust-cargo",
     ecosystem: "Rust Cargo",
     role: "wave-2-target",
-    note:
-      "Cargo test/build defaults are visible, but lint/fmt verbs (cargo clippy/fmt) are not detected.",
+    note: "Cargo test/build defaults are visible, but lint/fmt verbs (cargo clippy/fmt) are not detected.",
     seed: seedRust,
     expected: {
       languages: ["Rust"],
@@ -284,8 +284,7 @@ const FIXTURES: CoverageFixture[] = [
     id: "node-python-rust-polyglot",
     ecosystem: "Node + Python + Rust polyglot",
     role: "wave-2-target",
-    note:
-      "Secondary languages are seen, but root Node commands win; per-workspace commands and workspace classification are missing.",
+    note: "Secondary languages are seen, but root Node commands win; per-workspace commands and workspace classification are missing.",
     seed: seedPolyglot,
     expected: {
       languages: ["TypeScript/Node.js", "Python", "Rust"],

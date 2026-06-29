@@ -2,9 +2,9 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  type LanguageCoverageRow,
   renderLanguageCoverageMarkdown,
   runLanguageCoverageBenchmark,
-  type LanguageCoverageRow,
 } from "../../src/profile/language-coverage.js";
 
 function rows(): LanguageCoverageRow[] {
