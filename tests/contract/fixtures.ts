@@ -44,6 +44,16 @@ export function seedNoPackageJson(dir: string): void {
   put(dir, "main.go", "package main\n\nfunc main() {}\n");
 }
 
+/** A Node lib that declares ONLY a test script — no build, no start (strict-omit cases). */
+export function seedNodeNoBuildStart(dir: string): void {
+  put(
+    dir,
+    "package.json",
+    json({ name: "lib", scripts: { test: "vitest run" }, devDependencies: { vitest: "^1" } }),
+  );
+  put(dir, "index.js", "module.exports = {};\n");
+}
+
 /** A pnpm workspace with a low file count — exercises the monorepo `medium` floor. */
 export function seedMonorepoSmall(dir: string): void {
   put(dir, "package.json", json({ name: "root", private: true, workspaces: ["packages/*"] }));

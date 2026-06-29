@@ -19,6 +19,7 @@ import {
   seedLegacyScripts,
   seedMindworksLike,
   seedMonorepoSmall,
+  seedNodeNoBuildStart,
   seedNoPackageJson,
 } from "./fixtures.js";
 
@@ -117,11 +118,13 @@ describe("command confidence", () => {
     expect(c.commands.start).toEqual({ value: "npm start", confidence: "detected" });
   });
 
-  it("marks language-default commands as inferred and omits absent ones", async () => {
+  it("keeps a language-default test as inferred but strict-omits a language-default build", async () => {
     seedNoPackageJson(dir);
     const c = await synth();
+    // test: low-harm to suggest → language default kept as inferred.
     expect(c.commands.test).toEqual({ value: "go test ./...", confidence: "inferred" });
-    expect(c.commands.build).toEqual({ value: "go build ./...", confidence: "inferred" });
+    // build: an undeclared `go build ./...` would read as invented → strict-omit.
+    expect(c.commands.build).toBeUndefined();
     expect(c.commands.lint).toBeUndefined();
     expect(c.commands.start).toBeUndefined();
   });
@@ -133,6 +136,32 @@ describe("command confidence", () => {
     expect(c.description).toBe("A worked-example service");
     expect(c.languages).toContain("TypeScript/Node.js");
     expect(c.frameworks).toContain("Express");
+  });
+});
+
+describe("build/start strict-omit (PR 1A correction)", () => {
+  it("omits build and start when no such script is declared", async () => {
+    seedNodeNoBuildStart(dir);
+    const c = await synth();
+    expect(c.commands.test).toEqual({ value: "npm test", confidence: "detected" });
+    expect(c.commands.build).toBeUndefined(); // (a) no build script → omitted
+    expect(c.commands.start).toBeUndefined(); // (b) no start script → omitted
+  });
+
+  it("emits declared build + start scripts as detected (never inferred)", async () => {
+    seedMindworksLike(dir);
+    const c = await synth();
+    expect(c.commands.build).toEqual({ value: "npm run build", confidence: "detected" }); // (c)
+    expect(c.commands.start).toEqual({ value: "npm start", confidence: "detected" });
+  });
+
+  it("keeps entrypoints under `entrypoints`, never promoted to a command", async () => {
+    seedMindworksLike(dir);
+    const c = await synth();
+    // (d) entrypoints are a faithful passthrough of the scanned stack, independent of
+    // the start grader — the strict-omit change must neither move nor drop them.
+    const stack = scanRepo(dir, { maxDepth: 8, contextDir: "ai-coding" });
+    expect(c.entrypoints).toEqual(stack.entryPoints);
   });
 });
 

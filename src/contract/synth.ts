@@ -15,18 +15,35 @@ const SMALL_REPO_FILE_CEILING = 100;
 type ContractCommand = { value: string; confidence: Confidence };
 
 /**
- * Recover a command's confidence tier from its final value. The tier is LATENT in
- * scanRepo's derivers: `deriveTest`/`deriveLint` return the `npm …` script form ONLY
- * when the repo declares that script (and `deriveTest` already filters placeholder
- * `echo` scripts), so the script form is the lone `detected` signal; a dependency,
- * a linter config file, or a language default all surface as `inferred`. Reading the
- * value back rather than re-deriving means the contract inherits that placeholder
- * filtering for free. (`verified` — running the command — is Phase 2 / 2E; Phase 1
- * never spawns a candidate command.)
+ * Tier grader for `test`/`lint`. The tier is LATENT in scanRepo's derivers:
+ * `deriveTest`/`deriveLint` return the `npm …` script form ONLY when the repo declares
+ * that script (and `deriveTest` already filters placeholder `echo` scripts), so the
+ * script form is the lone `detected` signal; a dependency, a linter config file, or a
+ * language default all surface as `inferred`. Reading the value back rather than
+ * re-deriving means the contract inherits that placeholder filtering for free.
+ * (`verified` — running the command — is Phase 2 / 2E; Phase 1 never spawns one.)
  */
 function toCommand(value: string | undefined, detectedForm: string): ContractCommand | undefined {
   if (value === undefined) return undefined;
   return { value, confidence: value === detectedForm ? "detected" : "inferred" };
+}
+
+/**
+ * STRICT grader for `build`/`start`: emit ONLY a DECLARED npm script (`detected`),
+ * else OMIT. A language-derived build (`go build ./...`, `./gradlew build`, `dotnet
+ * build`, …) is deliberately NOT emitted in Phase 1 — it is undeclared, and rendered
+ * into `project.md`/`setup.md` it reads as an INVENTED command (a weak model won't bind
+ * it to a separate `knownGaps` caveat), weakening the contract's "don't invent
+ * commands" promise. The Phase-2 `verified` tier runs the candidate and promotes a real
+ * one. This is the stakes-based asymmetry vs {@link toCommand}: a suggested test/lint is
+ * low-harm; a suggested build/start is not. (`scanRepo` derives no `start` default
+ * anyway, so `start` is already declared-or-omit.)
+ */
+function toDeclaredCommand(
+  value: string | undefined,
+  detectedForm: string,
+): ContractCommand | undefined {
+  return value === detectedForm ? { value, confidence: "detected" } : undefined;
 }
 
 /** Pure size bucket over the tracked-file count, with a monorepo floor. */
@@ -112,9 +129,9 @@ export async function synthesizeContract(
 
   const commands = {
     test: toCommand(stack.testRunner, "npm test"),
-    build: toCommand(stack.buildCommand, "npm run build"),
+    build: toDeclaredCommand(stack.buildCommand, "npm run build"),
     lint: toCommand(stack.lintCommand, "npm run lint"),
-    start: toCommand(stack.startCommand, "npm start"),
+    start: toDeclaredCommand(stack.startCommand, "npm start"),
   };
 
   const secrets = scanSecrets(root);
