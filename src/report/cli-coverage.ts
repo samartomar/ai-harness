@@ -45,6 +45,10 @@ export interface CliCell {
   detail: string;
   /** Exact `aih …` command to close a `missing`/`manual` gap, when one applies. */
   fix?: string;
+  /** MCP-cell only: is the config repo-committed (portable, team-shared) or a global ~/home file? */
+  scope?: "repo" | "global";
+  /** MCP-cell only: configured server count (a `~/.codex` global with 16 ≠ a repo `.mcp.json` with 5). */
+  count?: number;
 }
 
 export interface CliCoverageRow {
@@ -60,7 +64,7 @@ export interface CliCoverageRow {
 }
 
 /** Which arm of the target-resolution precedence won — surfaced to the user. */
-export type TargetSource = "marker" | "ctx" | "flag" | "detect" | "default-claude";
+export type TargetSource = "marker" | "ctx" | "flag" | "detect" | "wired" | "default-claude";
 
 export interface CliCoverageModel {
   /** Targeted rows first (canonical order), then installed-but-untargeted ones. */
@@ -99,6 +103,16 @@ export function resolveTargetSet(ctx: PlanContext): { targeted: Cli[]; source: T
       .map((p) => p.cli);
     if (present.length > 0) return { targeted: present, source: "detect" };
   }
+  // No marker/ctx/flag/detect — but the repo may already be wired by the improved
+  // install default (`aih bootstrap-ai` with no flags targets every RUNNABLE CLI).
+  // Infer that set from the per-CLI adapter notes on disk: aih writes exactly one
+  // `<contextDir>/adapters/<cli>.md` per targeted CLI, so it disambiguates tools that
+  // SHARE a bootloader (codex and opencode both use AGENTS.md). Pure fs — the scan
+  // stays spawn-free — so the report grades every wired CLI instead of the claude default.
+  const wired = SUPPORTED_CLIS.filter((c) =>
+    existsSync(join(ctx.root, ctx.contextDir, "adapters", `${c}.md`)),
+  );
+  if (wired.length > 0) return { targeted: wired, source: "wired" };
   return { targeted: ["claude"], source: "default-claude" };
 }
 
@@ -180,6 +194,7 @@ function mcpCell(ctx: PlanContext, cli: Cli): CliCell {
   const external = isExternalMcp(m.configPath);
   const abs = external ? mcpConfigAbs(homeDir(ctx), m.configPath) : join(ctx.root, m.configPath);
   const scopeNote = external ? " (global)" : "";
+  const scope: "repo" | "global" = external ? "global" : "repo";
   const raw = readIfExists(abs);
   if (raw === undefined) {
     return {
@@ -187,17 +202,27 @@ function mcpCell(ctx: PlanContext, cli: Cli): CliCell {
       path: m.configPath,
       detail: `${m.configPath}${scopeNote} not found`,
       fix: `aih mcp --apply --cli ${cli}`,
+      scope,
+      count: 0,
     };
   }
   const n = m.configFormat === "toml" ? tomlServerCount(raw) : serverCount(raw, m.configKey);
   const unit = m.configFormat === "toml" ? "[mcp_servers.*]" : `\`${m.configKey}\``;
   return n > 0
-    ? { state: "wired", path: m.configPath, detail: `${n} server(s) under ${unit}${scopeNote}` }
+    ? {
+        state: "wired",
+        path: m.configPath,
+        detail: `${n} server(s) under ${unit}${scopeNote}`,
+        scope,
+        count: n,
+      }
     : {
         state: "missing",
         path: m.configPath,
         detail: `present but no servers under ${unit}`,
         fix: `aih mcp --apply --cli ${cli}`,
+        scope,
+        count: 0,
       };
 }
 
@@ -291,6 +316,7 @@ const SOURCE_LABEL: Record<TargetSource, string> = {
   ctx: "init orchestrator",
   flag: "--cli flag",
   detect: "--detect",
+  wired: "wired adapters on disk (no marker)",
   "default-claude": "default (claude — none targeted)",
 };
 

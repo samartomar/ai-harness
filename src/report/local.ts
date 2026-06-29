@@ -1,6 +1,7 @@
 import { detectInstall } from "../internals/cli-detect.js";
 import { type DigestAction, digest, type PlanContext } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
+import { scaleSafetyDigest } from "../scale-safety.js";
 import { inventory } from "../status.js";
 import { cliCoverageDigest } from "./cli-coverage.js";
 import { aiEventsDigest } from "./events.js";
@@ -120,6 +121,7 @@ export async function localPanels(ctx: PlanContext): Promise<DigestAction[]> {
     ...(await graphDigests(ctx)), // CODE QUALITY/PERF: code-review-graph (gated, Phase 2)
     guardrailDigest(ctx), // CODE QUALITY: guardrail severity (gated, Phase 3)
     await repoInfoDigest(ctx), // PERFORMANCE: repo info + file types
+    await scaleSafetyDigest(ctx), // PERFORMANCE: large-repo analysis must have a graph path
     await toolsInstalledDigest(ctx), // HARNESS ADOPTION: shell tools on PATH
     await repoStatusPanel(ctx),
     trendsPanel(ctx),

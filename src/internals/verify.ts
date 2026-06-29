@@ -31,6 +31,7 @@ export type CheckCode =
   | "mcp.hardcoded-secret"
   // CLI bootloaders / canon
   | "cli.not-detected"
+  | "cli.config-only"
   | "cli.bootloader-missing"
   | "cli.bootloader-drift"
   | "cli.wont-load"
@@ -44,6 +45,8 @@ export type CheckCode =
   | "guardrails.gitleaks-missing"
   // usage
   | "usage.no-data"
+  // scale safety
+  | "scale.code-review-graph-missing"
   // report (analytics-derived advisories)
   | "report.context-over-budget"
   | "report.low-adoption";

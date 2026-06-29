@@ -1,6 +1,10 @@
+import { existsSync } from "node:fs";
 import { join } from "node:path";
+import { bootloaderPaths, SHARED_MARKER, sharedCanonicalBlockBody } from "../bootstrap-ai/canon.js";
+import { SUPPORTED_CLIS } from "../internals/clis.js";
 import { readIfExists } from "../internals/fsxn.js";
 import { gitInt, gitRead } from "../internals/git.js";
+import { extractManagedBlock } from "../internals/markers.js";
 import {
   type DigestAction,
   digest,
@@ -10,7 +14,9 @@ import {
 } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
 import { inventory } from "../status.js";
-import { scanContextBloat } from "./bloat.js";
+import { DEFAULT_CONTEXT_BUDGET_TOKENS, scanContextBloat } from "./bloat.js";
+import { scanLoadGroups } from "./loadgroups.js";
+import { scorecardDigest } from "./scorecard.js";
 
 /**
  * The time-series tracking layer behind `aih report` trends. `aih track` records
@@ -35,6 +41,11 @@ export interface Snapshot {
   adoptionScore: number;
   contextTokens: number;
   sourceFiles: number;
+  /** v9 trend metrics — recorded since the trends capability landed (older samples lack them). */
+  wiringScore?: number;
+  perTurnPct?: number;
+  driftCount?: number;
+  openActions?: number;
 }
 
 /** Added/removed lines across the last 7 days (binary files count as 0). */
@@ -48,6 +59,20 @@ async function locDelta(ctx: PlanContext): Promise<Snapshot["loc"]> {
     removed += gitInt(r);
   }
   return { added, removed, net: added - removed };
+}
+
+/** Count bootloaders whose shared managed block has drifted from canon (0 off-canon). */
+function countDrift(ctx: PlanContext): number {
+  if (!existsSync(join(ctx.root, ctx.contextDir, "RULE_ROUTER.md"))) return 0;
+  const sharedBody = sharedCanonicalBlockBody(ctx.contextDir).trim();
+  let n = 0;
+  for (const rel of bootloaderPaths(SUPPORTED_CLIS)) {
+    const text = readIfExists(join(ctx.root, rel));
+    if (text === undefined) continue;
+    const block = extractManagedBlock(text, SHARED_MARKER);
+    if (block !== undefined && block.trim() !== sharedBody) n++;
+  }
+  return n;
 }
 
 /** Collect one metrics snapshot from git + repo state; `undefined` outside a repo. */
@@ -69,6 +94,19 @@ export async function collectSnapshot(ctx: PlanContext): Promise<Snapshot | unde
   const inv = inventory(ctx.root, ctx.contextDir);
   const present = inv.filter((i) => i.present).length;
   const lsFiles = await gitRead(ctx, ["ls-files"]);
+  // v9 trend metrics — wiring score (scorecard), per-turn ctx %, drift count, open
+  // actions. Reuse the report's own scoring so trends match `aih report`.
+  const scData = scorecardDigest(ctx)?.data as
+    | { overall?: unknown; dimensions?: Array<{ score?: unknown }> }
+    | undefined;
+  const wiringScore = typeof scData?.overall === "number" ? scData.overall : undefined;
+  const lg = scanLoadGroups(ctx.root, ctx.contextDir, DEFAULT_CONTEXT_BUDGET_TOKENS);
+  const perTurnPct = lg.budgetTokens > 0 ? Math.round((lg.worstTokens / lg.budgetTokens) * 100) : 0;
+  const driftCount = countDrift(ctx);
+  const failingDims = Array.isArray(scData?.dimensions)
+    ? scData.dimensions.filter((d) => typeof d.score === "number" && d.score < 70).length
+    : 0;
+  const openActions = failingDims + inv.filter((i) => !i.present).length + (driftCount > 0 ? 1 : 0);
   return {
     ts,
     sha,
@@ -79,6 +117,10 @@ export async function collectSnapshot(ctx: PlanContext): Promise<Snapshot | unde
     adoptionScore: inv.length > 0 ? Math.round((100 * present) / inv.length) : 0,
     contextTokens: scanContextBloat(ctx.root, ctx.contextDir).totalTokens,
     sourceFiles: (lsFiles ?? "").split("\n").filter(Boolean).length,
+    wiringScore,
+    perTurnPct,
+    driftCount,
+    openActions,
   };
 }
 

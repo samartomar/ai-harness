@@ -121,11 +121,18 @@ describe("detectClis / presentClis", () => {
 });
 
 describe("resolveTargetClis", () => {
-  it("--detect targets only the present CLIs", async () => {
-    configDir(".claude");
+  it("--detect targets only runnable CLIs", async () => {
+    configDir(".claude"); // config-only trace, no binary
     const clis = await resolveTargetClis(makeCtx({ detect: true }, ["gemini"]));
-    expect(clis).toEqual(expect.arrayContaining(["claude", "gemini"]));
+    expect(clis).toEqual(["gemini"]);
+    expect(clis).not.toContain("claude");
     expect(clis).not.toContain("zed");
+  });
+
+  it("--detect ignores config-only traces and falls back when nothing is runnable", async () => {
+    configDir(".windsurf");
+    const clis = await resolveTargetClis(makeCtx({ detect: true }, []));
+    expect(clis).toEqual(["claude"]);
   });
 
   it("--detect with nothing installed falls back to claude", async () => {
@@ -172,8 +179,8 @@ describe("resolveTargets / detectFallbackNotice", () => {
   });
 
   it("does not flag fallback when --detect finds something", async () => {
-    configDir(".claude");
-    const r = await resolveTargets(makeCtx({ detect: true }, []));
+    configDir(".claude"); // config-only, ignored for targeting
+    const r = await resolveTargets(makeCtx({ detect: true }, ["claude"]));
     expect(r.detectFellBack).toBe(false);
     expect(r.clis).toContain("claude");
   });
@@ -227,22 +234,29 @@ describe("confirmDetectedClis — review the detected list", () => {
     const { prompter, asked } = fakePrompter("");
     await confirmDetectedClis(prompter, ["claude", "gemini"]);
     expect(asked[0]).toContain("claude, gemini");
+    expect(asked[0]).toContain("Runnable AI CLIs");
     expect(asked[0]).toContain("Press Enter to accept");
   });
 
   it("asks what to install when nothing was detected", async () => {
     const { prompter, asked } = fakePrompter("");
     await confirmDetectedClis(prompter, []);
-    expect(asked[0]).toContain("No AI CLIs were detected");
+    expect(asked[0]).toContain("No runnable AI CLIs were detected");
+  });
+
+  it("surfaces config-only traces as manual choices, not default targets", async () => {
+    const { prompter, asked } = fakePrompter("");
+    expect(await confirmDetectedClis(prompter, ["codex"], ["windsurf"])).toEqual(["codex"]);
+    expect(asked[0]).toContain("Config-only traces found");
+    expect(asked[0]).toContain("windsurf");
   });
 });
 
 describe("resolveTargets — interactive --detect confirm", () => {
   it("bare Enter accepts the detected set", async () => {
-    configDir(".claude");
     const { prompter, asked } = fakePrompter("");
     const r = await resolveTargets(makeCtx({ detect: true }, ["codex"], prompter));
-    expect(r.clis).toEqual(expect.arrayContaining(["claude", "codex"]));
+    expect(r.clis).toEqual(["codex"]);
     expect(r.detectFellBack).toBe(false);
     expect(asked).toHaveLength(1); // the user was asked exactly once
   });
@@ -262,9 +276,9 @@ describe("resolveTargets — interactive --detect confirm", () => {
   });
 
   it("without a prompter, --detect stays non-interactive (unchanged)", async () => {
-    configDir(".claude");
+    configDir(".claude"); // config-only trace, ignored
     const r = await resolveTargets(makeCtx({ detect: true }, ["codex"])); // no prompter
-    expect(r.clis).toEqual(expect.arrayContaining(["claude", "codex"]));
+    expect(r.clis).toEqual(["codex"]);
   });
 
   it("an explicit --cli list skips the prompt entirely", async () => {

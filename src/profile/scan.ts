@@ -39,6 +39,8 @@ export interface RepoStack {
   buildCommand?: string;
   /** How to lint, or undefined when the repo defines no lint command. */
   lintCommand?: string;
+  /** How to start the local app/server, or undefined when none is defined. */
+  startCommand?: string;
   /** True when a workspace/monorepo orchestrator or multiple package manifests are present. */
   isMonorepo: boolean;
   /** Detected workspace tool (turbo/nx/pnpm/rush/lerna/bazel/maven/gradle/npm-yarn), if any. */
@@ -436,6 +438,7 @@ function synthesize(raw: Raw): RepoStack {
   let testRunner: string | undefined;
   let buildCommand: string | undefined;
   let lintCommand: string | undefined;
+  let startCommand: string | undefined;
 
   if (pkg) {
     // JS vs TS: TypeScript only when genuinely present.
@@ -458,6 +461,7 @@ function synthesize(raw: Raw): RepoStack {
     // Commands strictly from what the repo actually defines.
     testRunner = deriveTest(pkg);
     buildCommand = "build" in pkg.scripts ? "npm run build" : undefined;
+    startCommand = "start" in pkg.scripts ? "npm start" : undefined;
     // A root lint script / linter dep wins; otherwise fall back to a detected linter
     // CONFIG file (eslint.config.* / biome.json), which monorepos have even when the
     // root package.json doesn't declare the lint script or the linter dep.
@@ -511,6 +515,7 @@ function synthesize(raw: Raw): RepoStack {
     testRunner,
     buildCommand,
     lintCommand,
+    startCommand,
     isMonorepo,
     workspaceTool,
   };

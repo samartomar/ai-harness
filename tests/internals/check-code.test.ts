@@ -377,6 +377,7 @@ describe("Check.code — invariants", () => {
       "mcp.policy-denied": true,
       "mcp.hardcoded-secret": true,
       "cli.not-detected": true,
+      "cli.config-only": true,
       "cli.bootloader-missing": true,
       "cli.bootloader-drift": true,
       "cli.wont-load": true,
@@ -388,6 +389,7 @@ describe("Check.code — invariants", () => {
       "secrets.plaintext-detected": true,
       "guardrails.gitleaks-missing": true,
       "usage.no-data": true,
+      "scale.code-review-graph-missing": true,
       "report.context-over-budget": true,
       "report.low-adoption": true,
     };

@@ -25,8 +25,14 @@ function put(relPath: string, contents: string): void {
 function makeCtx(
   options: Record<string, unknown> = {},
   flags: { apply?: boolean; verify?: boolean } = {},
+  presentBinaries: string[] = [],
 ): PlanContext {
-  const run = fakeRunner(() => undefined);
+  const run = fakeRunner((argv) => {
+    if ((argv[0] === "which" || argv[0] === "where") && presentBinaries.includes(argv[1] ?? "")) {
+      return { code: 0, stdout: `/usr/bin/${argv[1]}` };
+    }
+    return undefined;
+  });
   return {
     root: tmp,
     contextDir: ".ai-context",
@@ -70,6 +76,9 @@ describe("bootstrap-ai — canon files", () => {
     const upd = w.get(".ai-context/harness-update.md")?.contents ?? "";
     expect(upd).toContain("Harness-managed");
     expect(upd).toContain("write-once");
+    expect(upd).toContain("INDEX.md");
+    expect(upd).toContain("tasks.md");
+    expect(upd).toContain("skills/**");
     expect(upd).toContain("aih init --apply");
   });
 
@@ -89,18 +98,30 @@ describe("bootstrap-ai — canon files", () => {
     expect(core).toContain("Surgical changes");
     expect(core).toContain("Goal-driven execution");
     expect(core).toContain("never coerce");
+    expect(core).toContain("Do not open `.env*` or `secrets/**`");
+    expect(core).toContain("code-review-graph");
     // The router routes to it as an always-read-first file.
     const router = w.get(".ai-context/RULE_ROUTER.md")?.contents ?? "";
     expect(router).toContain("rules/agent-behavior-core.md");
   });
 
+  it("the shared block carries the safety invariants (secrets + large-repo graph)", async () => {
+    const w = writesByPath((await command.plan(makeCtx({ cli: "codex,gemini,kiro" }))).actions);
+    const shared = w.get(".ai-context/adapters/_shared-canonical-block.md")?.contents ?? "";
+    expect(shared).toContain("aih secrets --verify");
+    expect(shared).toContain("bounded `rg`/`fd` reads");
+  });
+
   it("the router is stack-aware (names the detected language)", async () => {
-    put("package.json", JSON.stringify({ name: "svc" }));
+    put("package.json", JSON.stringify({ name: "svc", scripts: { start: "node app.js" } }));
     put("tsconfig.json", "{}");
     const w = writesByPath((await command.plan(makeCtx())).actions);
     const router = w.get(".ai-context/RULE_ROUTER.md")?.contents ?? "";
     expect(router).toContain("TypeScript/Node.js");
+    expect(router).toContain("start `npm start`");
     expect(router).toContain("Layer 2 wins");
+    expect(router).toContain("Do not open `.env*` or `secrets/**`");
+    expect(router).toContain("large-repo graph safety");
   });
 
   it("honors --context-dir for every canon path and reference", async () => {
@@ -172,6 +193,14 @@ describe("bootstrap-ai — CLI-aware bootloaders", () => {
     expect(metrics.then.command).toBe("aih track --apply");
   });
 
+  it("persists the .aih-config.json marker for the resolved targets (standalone)", async () => {
+    const w = writesByPath((await command.plan(makeCtx({ cli: "claude,codex" }))).actions);
+    const marker = w.get(".aih-config.json");
+    expect(marker).toBeDefined();
+    expect(marker?.merge).toBe(true);
+    expect((marker?.json as { targets?: string[] })?.targets).toEqual(["claude", "codex"]);
+  });
+
   it("--all-tools dedupes AGENTS.md to a single write", async () => {
     const actions = (await command.plan(makeCtx({ allTools: true }))).actions;
     const agents = actions.filter(
@@ -229,19 +258,26 @@ describe("bootstrap-ai — CLI presence confirm step", () => {
     expect(res?.verdict).toBe("skip"); // empty $HOME, no binary → not detected
   });
 
-  it("passes the presence probe when a config dir is present", async () => {
+  it("skips the presence probe when only a config dir is present", async () => {
     mkdirSync(join(tmp, ".claude"), { recursive: true });
     const probe = probeNamed((await command.plan(makeCtx())).actions, "claude installed");
     const res = await probe?.run(makeCtx());
-    expect(res?.verdict).toBe("pass");
-    expect(res?.detail).toContain("config");
+    expect(res?.verdict).toBe("skip");
+    expect(res?.detail).toContain("config-only");
   });
 
-  it("--detect targets only the CLIs with a config dir present", async () => {
+  it("passes the presence probe when a CLI binary is on PATH", async () => {
+    const ctx = makeCtx({}, {}, ["claude"]);
+    const probe = probeNamed((await command.plan(ctx)).actions, "claude installed");
+    const res = await probe?.run(ctx);
+    expect(res?.verdict).toBe("pass");
+    expect(res?.detail).toContain("runnable on PATH");
+  });
+
+  it("--detect targets only runnable CLIs", async () => {
     mkdirSync(join(tmp, ".claude"), { recursive: true });
-    mkdirSync(join(tmp, ".cursor"), { recursive: true });
-    const w = writesByPath((await command.plan(makeCtx({ detect: true }))).actions);
-    expect(w.has("CLAUDE.md")).toBe(true);
+    const w = writesByPath((await command.plan(makeCtx({ detect: true }, {}, ["cursor"]))).actions);
+    expect(w.has("CLAUDE.md")).toBe(false);
     expect(w.has(".cursor/rules/00-canon.mdc")).toBe(true);
     expect(w.has("AGENTS.md")).toBe(false); // codex/etc not installed in the fake home
   });

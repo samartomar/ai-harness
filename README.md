@@ -62,9 +62,9 @@ node dist/cli.js --help
 | `aih mcp` | Generate the MCP server config **for the targeted CLIs** (`--cli`/`--all-tools`, default claude): Claude/Cursor/Kiro/Kimi get their correct project file written (`.mcp.json`, `.cursor/mcp.json`, …); Codex (TOML), Copilot, OpenCode, Zed, and global-config tools get exact per-tool guidance instead of a file aih would get wrong. Scopes: local/project/remote. For locked-down orgs, `--mode offline` (vendored local-command servers) or `--mode none` (no MCP + a CLI-tool fallback) plus a `managed-mcp.json` admin template. |
 | `aih sandbox` | Generate a devcontainer + managed sandbox settings (egress allowlist, `failIfUnavailable`). |
 | `aih telemetry` | Inject OpenTelemetry env, a redacting Bindplane collector, and an analytics fetcher (usage + skills endpoints → `{ usage_report, skills }`). |
-| `aih report` | Read-only analytics digest. Local: a dev console — agent **context footprint** (token bloat) plus a **per-turn load-group** panel (the heaviest single tool's always-loaded bootloaders — what one tool actually pays per turn, not the union sum; `--gate --token-budget <n>` exits non-zero in CI when it's exceeded). The footprint is **gitignore-honoring** (counts only tracked/untracked-not-ignored source, never generated per-CLI copies — `--all-files` to override; `--since <ref>` narrows to files changed in a PR), **repo & branch status** (current branch, ahead/behind vs main, dirty; `--team` adds in-progress team branches via a `gh` → `git ls-remote` → last-fetched ladder that degrades gracefully when gh/network is blocked), repo config presence, local AI-CLI tooling saturation, and **trends** (unicode sparklines of commits/LOC/adoption/branches over recorded history — see `aih track`). Org (`--org <export.json>`): top skills, tokens by type, **cache savings** (net-of-write estimate), and accept/reject from a saved Admin-API export. Body prints verbatim; `--json` carries structured data; `--format md\|html` writes a static artifact under `--apply`. **`--open`** builds the self-contained HTML dashboard (adoption ring, KPI strip, trend charts) and launches it in your browser (implies html + apply); **`--refresh <sec>`** keeps it live — opens once, then regenerates every `<sec>`s while the page auto-reloads (Ctrl+C to stop). Dark by default with a light toggle; Inter + JetBrains Mono are embedded so it works fully offline. Network-free by default; `--team` is the lone opt-in network call. |
+| `aih report` | Read-only analytics digest. Local: a dev console — agent **context footprint** (token bloat) plus a **per-turn load-group** panel (the heaviest single tool's always-loaded bootloaders — what one tool actually pays per turn, not the union sum; `--gate --token-budget <n>` exits non-zero in CI when it's exceeded). The footprint is **gitignore-honoring** (counts only tracked/untracked-not-ignored source, never generated per-CLI copies — `--all-files` to override; `--since <ref>` narrows to files changed in a PR), **repo & branch status** (current branch, ahead/behind vs main, dirty; `--team` adds in-progress team branches via a `gh` → `git ls-remote` → last-fetched ladder that degrades gracefully when gh/network is blocked), repo config presence, local AI-CLI tooling saturation, and **trends** (unicode sparklines of commits/LOC/adoption/branches over recorded history — see `aih track`). Org (`--org <export.json>`): top skills, tokens by type, **cache savings** (net-of-write estimate), and accept/reject from a saved Admin-API export. Body prints verbatim; `--json` carries structured data; `--format md\|html` writes a static artifact under `--apply`. **`--v9`** opts into the developer-console HTML dashboard with LIVE / PREVIEW / EMPTY panel honesty, machine-relative ECC inventory, usage-by-CLI, heavy lifters, dormant ECC skills, MCP parity, remediation wins, and no-cost local usage analytics; legacy and `--v4` remain opt-in/unchanged. **`--open`** builds the self-contained HTML dashboard and launches it in your browser (implies html + apply); **`--refresh <sec>`** keeps it live — opens once, then regenerates every `<sec>`s while the page auto-reloads (Ctrl+C to stop). Dark by default with a light toggle; fonts are embedded so it works fully offline. Network-free by default; `--team` is the lone opt-in network call. |
 | `aih track` | Record one metrics sample (commits 7d, LOC delta, adoption score, branch count, tracked files) to `.aih/history.jsonl` — the time-series behind `aih report` trends. Read-only git/filesystem; dry-run previews, `--apply` appends (idempotent per commit). Wire into a commit / agent-stop hook so history accumulates — e.g. Kiro's `metrics-on-stop` hook (`aih bootstrap-ai --cli kiro`) runs `aih track --apply` automatically. |
-| `aih usage` | Install the **multi-tool usage-capture** layer → `.aih/usage.jsonl` (rendered by `aih report`'s Usage panel). The **universal floor** is a git `post-commit` hook that records commit activity for **any** tool (it keys off the commit, not the agent). The per-tool **skill/MCP** layer wires in via each CLI's verified local hook (Claude/Codex/Cursor/Gemini/Kiro/… — `aih usage` documents the exact mechanism); skills aggregate by source (ECC/canon/user). Behavioral capture is near-universal (9/11 CLIs have local hooks); only **dollar cost** is uneven (real USD from Claude, token counts from Codex/Gemini/Kimi/OpenCode, cloud-only for Cursor/Windsurf). |
+| `aih usage` | Install the **multi-tool usage-capture** layer → `.aih/usage.jsonl` (rendered by `aih report` and `aih report --v9`). The **universal floor** is a git `post-commit` hook that records commit activity for **any** tool (it keys off the commit, not the agent). The per-tool **skill/MCP** layer wires in via each CLI's verified local hook (Claude/Codex/Cursor/Gemini/Kiro/…); skills aggregate by source (ECC/canon/user), and `--rollup <repo,repo>` aggregates local logs across repos on demand. Usage is local activity counts only — **no cost, no prompts, no arguments**, machine-local and gitignored. |
 | `aih crispy` | Run the CRISPY context-engineering stage machine (deterministic, gate-ordered). |
 | `aih bootstrap` | Orchestrate the workstation 4-phase rollout (certs → hardware/vdi → telemetry). |
 | `aih bootstrap-ai` | Emit + verify the repo's Layer-2 `ai-coding/` canon: `RULE_ROUTER.md`, per-CLI adapters, and root bootloaders (tool preamble + a regenerated shared block). `--verify` is the drift gate **and a weak-model-safety lint of the generated canon** — every `#[[file:…]]`/backtick reference must resolve and no leftover `<insert>`/`TODO` scaffolding ships (a dangling reference fails the gate; soft-imperative/taste-word prose is advisory). |
@@ -80,9 +80,11 @@ Settings also read from `AIH_*` env vars (`AIH_APPLY`, `AIH_CONTEXT_DIR`, `AIH_L
 
 `aih report --open` builds a **self-contained, offline** HTML dashboard (dark by default with a
 light toggle; fonts embedded) — context footprint + a KPI strip, an adoption ring, output-velocity
-and code-quality panels, and trend sparklines from recorded history (`aih track`). When the report
-derives findings (see [Support tickets](#support-tickets)), a **Suggested actions** section leads
-with copy-to-clipboard tickets. Add `--demo` for showcase data, or `--refresh <sec>` to keep it live.
+and code-quality panels, and trend sparklines from recorded history (`aih track`). Add `--v9` for
+the newer developer-console dashboard: every panel is explicitly LIVE, PREVIEW, or EMPTY, so demo
+data never reads as real. When the report derives findings (see [Support tickets](#support-tickets)),
+a **Suggested actions** section leads with copy-to-clipboard tickets. Add `--demo` for showcase data,
+or `--refresh <sec>` to keep it live.
 
 ![aih report dashboard — full view with `--demo` showcase data](docs/assets/ai_harness_report_3_columns.png)
 
@@ -123,15 +125,18 @@ real `.kiro/` tree):
 - `aih superpowers --cli kiro` → `.kiro/steering/superpowers-methodology.md` (the
   brainstorm → plan → TDD → review routing, since Kiro can't load `~/.claude/superpowers`).
 
-**Detection** (`--detect`) looks for each tool's config dir (`~/.claude`, `~/.codex`, `~/.gemini`,
-`~/.cursor`, `~/.kiro`, …) or its binary on PATH (via the Runner seam — no real process in tests).
-Precedence: `--all-tools` > `--cli` > `--detect` > default `claude`. When `--detect` finds nothing it
-defaults to `claude` and says so. **In an interactive terminal, `--detect` shows the detected list and
-asks you to confirm or edit it** (press Enter to accept, or type a comma-separated list to add/remove
-tools) before anything installs — pass `--yes` (or run non-interactively / piped / `--json`) to skip
-the prompt and use the detected list as-is. `aih doctor` reports which CLIs it detects, and
-`aih bootstrap-ai --verify` adds a per-CLI **"installed"** confirm step (pass = found, skip = not here
-yet, bootloader still written) alongside the drift gate.
+**Detection** (`--detect`) targets runnable CLI binaries on PATH. Config dirs (`~/.claude`,
+`~/.codex`, `~/.gemini`, `~/.cursor`, `~/.kiro`, …) are still reported as config-only traces, but
+they are advisory and may be stale; they do not drive setup unless you explicitly type the CLI with
+`--cli` or `--all-tools`. Precedence: `--all-tools` > `--cli` > `--detect` > committed marker >
+runnable CLIs > default `claude`. When `--detect` finds no runnable CLI it defaults to `claude` and
+says so. **In an interactive terminal, `--detect` shows the runnable list and any config-only traces
+before asking you to confirm or edit it** (press Enter to accept, or type a comma-separated list to
+add/remove tools) before anything installs — pass `--yes` (or run non-interactively / piped /
+`--json`) to skip the prompt and use the runnable list as-is. `aih doctor` reports runnable vs
+config-only CLIs, and `aih bootstrap-ai --verify` adds a per-CLI **"installed"** confirm step (pass =
+runnable binary on PATH, skip = config-only/not here yet, bootloader still written) alongside the
+drift gate.
 
 **Canon directory name.** Every generated file and reference adopts `--context-dir <name>` — use any
 name you like; the default is the visible `ai-coding/`:
@@ -258,6 +263,9 @@ aih certs --ca-pattern Zscaler --apply --verify
 aih hardware                      # preview the tuned inference env block
 AIH_CONTEXT_DIR=ai-coding aih scaffold --apply
 aih doctor --support-out .aih/tickets   # write IT/support tickets for failing checks (kept local)
+aih report --v9 --apply --out .aih/reports/local-v9.html
+aih usage --apply --cli claude,codex,gemini
+aih usage --rollup ../repo-a,../repo-b
 ```
 
 ## Development

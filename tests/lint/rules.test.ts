@@ -78,8 +78,9 @@ describe("lint rules — canon-ref-resolves (FAIL tier, the headline rule)", () 
   });
 
   it("resolves a known sibling-canon file the harness writes via scaffold", () => {
-    // bootstrap-ai references `architecture.md` (written by `aih scaffold`), not in its plan.
+    // bootstrap-ai references scaffold-owned canon files not in its plan.
     expect(findings("Fill `ai-coding/architecture.md`.", "canon-ref-resolves")).toHaveLength(0);
+    expect(findings("Review `ai-coding/tasks.md`.", "canon-ref-resolves")).toHaveLength(0);
   });
 
   it("resolves a reference present on disk even when not in the plan", () => {
@@ -130,6 +131,26 @@ describe("lint rules — canon-ref-resolves (FAIL tier, the headline rule)", () 
     }
     // But a broken link UNDER the context dir is still a failure.
     expect(findings("Load `ai-coding/rules/MISSING.md`.", "canon-ref-resolves")).toHaveLength(1);
+  });
+});
+
+describe("lint rules — portable-repo-paths (FAIL tier)", () => {
+  it("fails machine-local file URLs and Windows absolute paths in canon prose", () => {
+    expect(
+      findings(
+        "See [handler](file:///d:/dev/mindworks/api/post/list.js) for evidence.",
+        "portable-repo-paths",
+      )[0]?.severity,
+    ).toBe("fail");
+    expect(
+      findings("Never cite `D:/dev/mindworks/.env` in canon.", "portable-repo-paths"),
+    ).toHaveLength(1);
+  });
+
+  it("allows repo-relative evidence paths", () => {
+    expect(
+      findings("See `api/post/list.js:25` and `ai-coding/tasks.md`.", "portable-repo-paths"),
+    ).toHaveLength(0);
   });
 });
 

@@ -60,7 +60,7 @@ describe("scaffold plan (dry-run shape)", () => {
     expect(kinds.filter((k) => k === "doc")).toHaveLength(1);
   });
 
-  it("writes the canonical context dir: INDEX, three skeletons, example skill", async () => {
+  it("writes the canonical context dir: INDEX, author-owned docs, example skill", async () => {
     const w = writesByPath((await command.plan(ctx())).actions);
     expect(w.has(".ai-context/INDEX.md")).toBe(true);
     expect(w.has(".ai-context/architecture.md")).toBe(true);
@@ -69,7 +69,7 @@ describe("scaffold plan (dry-run shape)", () => {
     expect(w.has(".ai-context/skills/example-skill/SKILL.md")).toBe(true);
   });
 
-  it("ships the agent completion playbook + a write-once guardrails seed", async () => {
+  it("ships the agent completion playbook + write-once author-owned canon", async () => {
     const w = writesByPath((await command.plan(ctx())).actions);
     const tasks = w.get(".ai-context/SETUP-TASKS.md")?.contents ?? "";
     expect(tasks).toContain("Map the architecture");
@@ -83,7 +83,23 @@ describe("scaffold plan (dry-run shape)", () => {
     expect(val).toContain("Gaps to unblock");
     expect(val).toContain("WORKAROUND");
     expect(val).toContain("aih bootstrap-ai --verify");
+    expect(val).toContain("aih secrets --verify");
+    expect(val).toContain("Do not edit this validation file");
+    expect(val).toContain("Count only runnable CLIs as installed");
+    expect(val).toContain("Do not open `.env*`");
+    expect(val).not.toContain("`.aih-workspace.json`");
     expect(val).toContain("picture-perfect");
+    expect(tasks).toContain("Do not open `.env*` or `secrets/**`");
+    expect(tasks).toContain("aih secrets --verify");
+    expect(tasks).toContain("large-repo graph safety");
+    expect(tasks).toContain("bounded to targeted `rg`/`fd`");
+    expect(tasks).toContain("Do not edit `.ai-context/VALIDATION.md`");
+    // Author-owned canon is write-once (the agent's edits survive re-runs).
+    expect(w.get(".ai-context/INDEX.md")?.once).toBe(true);
+    expect(w.get(".ai-context/architecture.md")?.once).toBe(true);
+    expect(w.get(".ai-context/conventions.md")?.once).toBe(true);
+    expect(w.get(".ai-context/tasks.md")?.once).toBe(true);
+    expect(w.get(".ai-context/skills/example-skill/SKILL.md")?.once).toBe(true);
     // The guardrails seed is write-once (the agent's edits survive re-runs).
     const guard = w.get(".ai-context/project-guardrails.md");
     expect(guard).toBeDefined();
@@ -93,12 +109,17 @@ describe("scaffold plan (dry-run shape)", () => {
   it("project-guardrails auto-derives framework rules from the detected stack", async () => {
     writeFileSync(
       join(dir, "package.json"),
-      JSON.stringify({ name: "api", dependencies: { express: "^4" } }),
+      JSON.stringify({
+        name: "api",
+        scripts: { start: "node app.js" },
+        dependencies: { express: "^4" },
+      }),
     );
     const guard =
       writesByPath((await command.plan(ctx())).actions).get(".ai-context/project-guardrails.md")
         ?.contents ?? "";
     expect(guard).toContain("sanitize"); // Express input-validation guardrail
+    expect(guard).toContain("start `npm start`");
   });
 
   it("does NOT write root bootloaders — those are owned by `aih bootstrap-ai`", async () => {
@@ -172,6 +193,7 @@ describe("local guardrails", () => {
     expect(hook?.contents).toContain("#!/bin/sh");
     expect(hook?.contents?.toLowerCase()).toContain("lint");
     expect(hook?.contents?.toLowerCase()).toContain("test");
+    expect(hook?.contents).toContain("pre-commit run --hook-stage pre-commit");
 
     const docs = p.actions.filter((a) => a.kind === "doc");
     expect(docs).toHaveLength(1);
@@ -197,6 +219,25 @@ describe("apply (executor integration)", () => {
     expect(index.endsWith("\n")).toBe(true);
     const settings = JSON.parse(readFileSync(join(dir, ".claude/settings.json"), "utf8"));
     expect(settings.permissions.deny).toContain("Read(./secrets/**)");
+  });
+
+  it("preserves completed author-owned canon on re-run", async () => {
+    const applied = ctx({ apply: true });
+    await executePlan(await command.plan(applied), applied);
+
+    writeFileSync(join(dir, ".ai-context", "INDEX.md"), "# Team index\n", "utf8");
+    writeFileSync(join(dir, ".ai-context", "architecture.md"), "# Team architecture\n", "utf8");
+    writeFileSync(join(dir, ".ai-context", "tasks.md"), "# Team backlog\n", "utf8");
+
+    const res = await executePlan(await command.plan(applied), applied);
+    expect(readFileSync(join(dir, ".ai-context", "INDEX.md"), "utf8")).toBe("# Team index\n");
+    expect(readFileSync(join(dir, ".ai-context", "architecture.md"), "utf8")).toBe(
+      "# Team architecture\n",
+    );
+    expect(readFileSync(join(dir, ".ai-context", "tasks.md"), "utf8")).toBe("# Team backlog\n");
+    expect(res.writes.find((w) => w.path === ".ai-context/INDEX.md")?.effect).toBe("kept");
+    expect(res.writes.find((w) => w.path === ".ai-context/architecture.md")?.effect).toBe("kept");
+    expect(res.writes.find((w) => w.path === ".ai-context/tasks.md")?.effect).toBe("kept");
   });
 
   it("is idempotent: merge preserves a user key and dedupes an overlapping deny rule", async () => {

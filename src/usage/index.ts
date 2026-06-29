@@ -1,10 +1,11 @@
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { resolveTargets } from "../internals/cli-detect.js";
 import { readIfExists } from "../internals/fsxn.js";
 import { aihIgnoreWrite } from "../internals/gitignore.js";
 import {
   type Action,
   type CommandSpec,
+  digest,
   doc,
   type Plan,
   type PlanContext,
@@ -14,8 +15,10 @@ import {
 } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
 import type { Check } from "../internals/verify.js";
+import { aggregateUsage } from "./aggregate.js";
 import { gitPostCommitChainSnippet, gitPostCommitHook, usageRecorderScript } from "./capture.js";
-import { USAGE_PATH } from "./events.js";
+import { readUsage, USAGE_PATH, type UsageEvent } from "./events.js";
+import { usageHookActions } from "./hooks.js";
 
 const RECORDER_PATH = join(".aih", "usage-record.mjs");
 const GIT_HOOK_PATH = join(".git", "hooks", "post-commit");
@@ -28,9 +31,10 @@ const GIT_HOOK_PATH = join(".git", "hooks", "post-commit");
  */
 const TOOL_HOOK: Partial<Record<string, string>> = {
   claude: "`.claude/settings.json` hooks → `PostToolUse` (captures Skill / mcp__ tool calls)",
-  codex: "Codex hooks `PostToolUse`/`Stop` (+ `~/.codex/sessions/*.jsonl`)",
+  codex:
+    "`.codex/hooks.json` → `PostToolUse`/`Stop`; project `.codex` must be trusted and command hooks reviewed via `/hooks`",
   cursor: "`~/.cursor/hooks.json` → `afterMCPExecution` / `beforeSubmitPrompt` / `afterFileEdit`",
-  gemini: "`telemetry.outfile` (local) + hooks `AfterTool`",
+  gemini: "`.gemini/settings.json` project hooks → `AfterTool`",
   copilot: "`~/.copilot/hooks/` → `postToolUse` (+ `events.jsonl`)",
   windsurf: "Windsurf hooks `post_mcp_tool_use` + transcript JSONL",
   opencode: "OpenCode TS plugin (`tool.execute.after`) + storage JSON",
@@ -59,10 +63,53 @@ function coverageDoc(clis: string[]): Action {
       "",
       ...rows,
       "",
-      "Dollar cost is the one uneven signal: real USD only from Claude; Codex/Gemini/Kimi/",
-      "OpenCode give token counts (× your rate); Cursor/Windsurf lock tokens+cost cloud-only.",
+      "Usage records activity counts only — never prompt content, args, secrets, tokens, or cost.",
       "`aih report` aggregates whatever `.aih/usage.jsonl` holds, with a per-tool coverage note.",
     ),
+  );
+}
+
+function rollupRoots(ctx: PlanContext): string[] {
+  const raw = ctx.options.rollup;
+  if (typeof raw !== "string" || raw.trim().length === 0) return [];
+  return raw
+    .split(",")
+    .map((p) => p.trim())
+    .filter((p) => p.length > 0)
+    .map((p) => resolve(ctx.root, p));
+}
+
+function usageRollupPlan(ctx: PlanContext, roots: string[]): Plan {
+  const tagged: Array<UsageEvent & { repo: string }> = [];
+  const repos = roots.map((root) => {
+    const events = readUsage({ ...ctx, root });
+    for (const e of events) tagged.push({ ...e, repo: root });
+    return { root, events: events.length, summary: aggregateUsage(events) };
+  });
+  const summary = aggregateUsage(tagged);
+  const body = lines(
+    `Usage across ${repos.length} repo${repos.length === 1 ? "" : "s"}: ${summary.total} events`,
+    "",
+    "Repos:",
+    ...repos.map((r) => `  ${r.root} — ${r.events} event${r.events === 1 ? "" : "s"}`),
+    "",
+    summary.tools.length > 0
+      ? `Tools: ${summary.tools.map((t) => `${t.name} (${t.count})`).join(" · ")}`
+      : "Tools: (none captured)",
+    summary.skills.top.length > 0
+      ? `Skills: ${summary.skills.top.map((s) => `${s.name} (${s.count})`).join(" · ")}`
+      : "Skills: (none captured)",
+    summary.mcp.servers.length > 0
+      ? `MCP servers: ${summary.mcp.servers.map((s) => `${s.name} (${s.count})`).join(" · ")}`
+      : "MCP servers: (none captured)",
+  );
+  return plan(
+    "usage",
+    digest(`Usage rollup — ${summary.total} events across ${repos.length} repo(s)`, body, {
+      repos,
+      summary,
+      events: tagged,
+    }),
   );
 }
 
@@ -74,6 +121,9 @@ function coverageDoc(clis: string[]): Action {
  * Usage accrues in `.aih/usage.jsonl`, which `aih report` renders.
  */
 async function usagePlan(ctx: PlanContext): Promise<Plan> {
+  const roots = rollupRoots(ctx);
+  if (roots.length > 0) return usageRollupPlan(ctx, roots);
+
   const { clis } = await resolveTargets(ctx);
   const actions: Action[] = [
     writeText(
@@ -89,6 +139,7 @@ async function usagePlan(ctx: PlanContext): Promise<Plan> {
       { mode: 0o755, once: true },
     ),
     aihIgnoreWrite(ctx.root),
+    ...usageHookActions(ctx, clis),
     coverageDoc(clis),
   ];
 
@@ -138,5 +189,12 @@ export const command: CommandSpec = {
   name: "usage",
   summary:
     "Install the usage-capture layer (universal git hook → .aih/usage.jsonl); powers `aih report` usage analytics",
+  options: [
+    {
+      flags: "--rollup <dirs>",
+      description:
+        "read comma-separated repo dirs' .aih/usage.jsonl files and emit a local cross-project digest",
+    },
+  ],
   plan: usagePlan,
 };

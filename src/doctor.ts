@@ -2,12 +2,13 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { classifyCanon, isAdoptable } from "./adopt/classify.js";
 import { readAihConfig } from "./config/marker.js";
-import { detectClis, presentClis } from "./internals/cli-detect.js";
+import { detectInstall } from "./internals/cli-detect.js";
 import { readIfExists } from "./internals/fsxn.js";
 import { type Action, type CommandSpec, type PlanContext, plan, probe } from "./internals/plan.js";
 import { canonLintCheck } from "./lint/run.js";
 import { resolveTargetSet } from "./report/cli-coverage.js";
 import { loadabilityFor, loadReason } from "./report/cli-loadability.js";
+import { scaleSafetyCheck } from "./scale-safety.js";
 
 /** Read the workspace marker's repo list, or [] when this root is not a workspace. */
 function workspaceRepos(ctx: PlanContext): string[] {
@@ -136,13 +137,26 @@ export const command: CommandSpec = {
         };
       }),
       probe("AI CLIs detected", async () => {
-        const present = presentClis(await detectClis(ctx));
-        return present.length > 0
-          ? { name: "ai-clis", verdict: "pass", detail: present.join(", ") }
+        const installs = await detectInstall(ctx);
+        const runnable = installs.filter((i) => i.binary).map((i) => i.cli);
+        const configOnly = installs.filter((i) => i.config && !i.binary).map((i) => i.cli);
+        const configNote =
+          configOnly.length > 0
+            ? `; config-only traces (not runnable): ${configOnly.join(", ")}`
+            : "";
+        return runnable.length > 0
+          ? {
+              name: "ai-clis",
+              verdict: "pass",
+              detail: `runnable: ${runnable.join(", ")}${configNote}`,
+            }
           : {
               name: "ai-clis",
               verdict: "skip",
-              detail: "none detected — target explicitly with --cli or --all-tools",
+              detail:
+                configOnly.length > 0
+                  ? `no runnable CLIs; config-only traces are not enough to target setup: ${configOnly.join(", ")}`
+                  : "none runnable — target explicitly with --cli or --all-tools",
               code: "cli.not-detected",
             };
       }),
@@ -193,6 +207,7 @@ export const command: CommandSpec = {
               code: "env.dev-tool-missing",
             };
       }),
+      probe("large-repo graph safety", () => scaleSafetyCheck(ctx)),
     ];
 
     // Workspace mode: validate each child repo is scaffolded.

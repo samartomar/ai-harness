@@ -27,6 +27,8 @@ export interface NextStepsInput {
   telemetryWired?: boolean;
   /** Agent shell tools (rg/fd/jq/…) not on PATH — surfaces the `aih tools` install step. */
   toolsMissing?: number;
+  /** Large repo without a graph path — broad reads would burn the agent budget. */
+  scaleGraphMissing?: boolean;
   /** AI CLIs RUNNABLE on this machine (binary on PATH) but NOT wired in this repo. */
   installedUntargeted?: string[];
   /** This repo's current target set — used to build the "wire them" command. */
@@ -104,6 +106,16 @@ export function nextSteps(input: NextStepsInput): string[] {
         `Install ${input.toolsMissing} missing shell tool(s)`,
         "aih tools           # preview",
         "aih tools --apply   # install",
+      ),
+    );
+  }
+
+  if (input.scaleGraphMissing) {
+    steps.push(
+      step(
+        "Enable code-review-graph before large-repo analysis",
+        "aih mcp --apply",
+        "aih tools --apply   # installs code-review-graph when uv/pip is available",
       ),
     );
   }

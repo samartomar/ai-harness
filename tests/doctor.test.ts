@@ -53,6 +53,122 @@ describe("doctor — dev tools probe", () => {
   });
 });
 
+describe("doctor — large-repo graph safety", () => {
+  function scaleCtx(files: number, present: string[] = []): PlanContext {
+    const run = fakeRunner((argv) => {
+      if (argv[0] === "git" && argv.slice(3).join(" ") === "ls-files") {
+        return {
+          code: 0,
+          stdout: Array.from({ length: files }, (_, i) => `src/file-${i}.ts`).join("\n"),
+        };
+      }
+      if ((argv[0] === "which" || argv[0] === "where") && present.includes(argv[1] ?? "")) {
+        return { code: 0, stdout: `/usr/bin/${argv[1]}` };
+      }
+      return { code: 1, spawnError: true };
+    });
+    return {
+      root: dir,
+      contextDir: "ai-coding",
+      apply: false,
+      verify: true,
+      json: false,
+      run,
+      host: makeHostAdapter({ platform: "linux", run, env: {} }),
+      env: {},
+      options: {},
+    };
+  }
+
+  let dir: string;
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "aih-doctor-scale-"));
+  });
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("passes small repos without requiring code-review-graph", async () => {
+    const c = scaleCtx(12);
+    const probe = findProbe((await command.plan(c)).actions, "large-repo graph safety");
+    const res = await probe?.run(c);
+    expect(res?.verdict).toBe("pass");
+    expect(res?.detail).toContain("tracked files <");
+  });
+
+  it("fails large repos when graph is neither installed nor MCP-configured", async () => {
+    const c = scaleCtx(1000);
+    const probe = findProbe((await command.plan(c)).actions, "large-repo graph safety");
+    const res = await probe?.run(c);
+    expect(res?.verdict).toBe("fail");
+    expect(res?.code).toBe("scale.code-review-graph-missing");
+    expect(res?.detail).toContain("bounded rg/fd reads only");
+  });
+
+  it("passes large repos when the repo MCP graph is configured and uv is available", async () => {
+    writeFileSync(
+      join(dir, ".mcp.json"),
+      JSON.stringify({ mcpServers: { "code-review-graph": { command: "uvx" } } }),
+    );
+    const c = scaleCtx(1000, ["uv"]);
+    const probe = findProbe((await command.plan(c)).actions, "large-repo graph safety");
+    const res = await probe?.run(c);
+    expect(res?.verdict).toBe("pass");
+    expect(res?.detail).toContain("repo MCP code-review-graph configured");
+  });
+});
+
+describe("doctor — AI CLI runnable vs config-only inventory", () => {
+  let dir: string;
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "aih-doctor-clis-"));
+  });
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  function rooted(home: string, present: string[] = []): PlanContext {
+    const run = fakeRunner((argv) => {
+      if ((argv[0] === "which" || argv[0] === "where") && present.includes(argv[1] ?? "")) {
+        return { code: 0, stdout: `/usr/bin/${argv[1]}` };
+      }
+      return { code: 1, spawnError: true };
+    });
+    return {
+      root: dir,
+      contextDir: "ai-coding",
+      apply: false,
+      verify: true,
+      json: false,
+      run,
+      host: makeHostAdapter({ platform: "linux", run, env: {} }),
+      env: { HOME: home },
+      options: {},
+    };
+  }
+
+  it("passes on runnable CLIs and calls out config-only traces separately", async () => {
+    mkdirSync(join(dir, ".windsurf"), { recursive: true });
+    const c = rooted(dir, ["codex"]);
+    const probe = findProbe((await command.plan(c)).actions, "AI CLIs detected");
+    const res = await probe?.run(c);
+    expect(res?.verdict).toBe("pass");
+    expect(res?.detail).toContain("runnable: codex");
+    expect(res?.detail).toContain("config-only traces");
+    expect(res?.detail).toContain("windsurf");
+  });
+
+  it("does not count config-only traces as runnable setup targets", async () => {
+    mkdirSync(join(dir, ".windsurf"), { recursive: true });
+    const c = rooted(dir);
+    const probe = findProbe((await command.plan(c)).actions, "AI CLIs detected");
+    const res = await probe?.run(c);
+    expect(res?.verdict).toBe("skip");
+    expect(res?.detail).toContain("no runnable CLIs");
+    expect(res?.detail).toContain("windsurf");
+  });
+});
+
 describe("doctor — every probe carries a remediation hint", () => {
   it("git skip names an install + re-run action", async () => {
     const c = ctx(); // fakeRunner reports `git --version` as a spawn error

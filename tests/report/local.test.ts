@@ -14,6 +14,8 @@ import {
 } from "../../src/report/local.js";
 import { mcpGovernanceDigest } from "../../src/report/mcp-governance.js";
 import { toolsInstalledDigest } from "../../src/report/tools.js";
+import { usagePanel } from "../../src/report/usage.js";
+import { scaleSafetyDigest } from "../../src/scale-safety.js";
 
 let dir: string; // repo root
 let home: string; // fake home for CLI config-dir detection
@@ -110,6 +112,19 @@ describe("economyPanel", () => {
   });
 });
 
+describe("usagePanel", () => {
+  it("distinguishes capture installed from no events captured yet", () => {
+    mkdirSync(join(dir, ".aih"), { recursive: true });
+    mkdirSync(join(dir, ".git", "hooks"), { recursive: true });
+    writeFileSync(join(dir, ".aih", "usage-record.mjs"), "x\n");
+    writeFileSync(join(dir, ".git", "hooks", "post-commit"), "node .aih/usage-record.mjs\n");
+    const d = usagePanel(ctx());
+    expect(d.describe).toContain("capture installed");
+    expect(d.text).toContain("waiting for the first real event");
+    expect(d.data).toMatchObject({ events: 0, installed: true });
+  });
+});
+
 describe("report local scope — composed panels", () => {
   it("emits context footprint first, then configuration, tooling, and economy", async () => {
     mkdirSync(join(home, ".claude"), { recursive: true });
@@ -171,5 +186,36 @@ describe("toolsInstalledDigest — core vs optional", () => {
     expect(d.describe).toMatch(/Tools installed — 2\/3 core/);
     expect(d.text).toContain("✗ fd");
     expect(d.data).toMatchObject({ coreMissing: ["fd"] });
+  });
+});
+
+describe("scaleSafetyDigest", () => {
+  const largeRepoRunner = (...bins: string[]) =>
+    fakeRunner((argv) => {
+      if (argv[0] === "git" && argv.slice(3).join(" ") === "ls-files") {
+        return {
+          code: 0,
+          stdout: Array.from({ length: 1000 }, (_, i) => `src/file-${i}.ts`).join("\n"),
+        };
+      }
+      const name = argv[0] === "which" || argv[0] === "where" ? argv[1] : undefined;
+      return name && bins.includes(name) ? { code: 0, stdout: `/usr/bin/${name}` } : undefined;
+    });
+
+  it("emits a large-repo risk panel when code-review-graph is unavailable", async () => {
+    const d = await scaleSafetyDigest(ctx({ run: largeRepoRunner() }));
+    expect(d?.describe).toContain("graph missing");
+    expect(d?.text).toContain("burning the context budget");
+    expect(d?.data).toMatchObject({ ok: false, code: "scale.code-review-graph-missing" });
+  });
+
+  it("emits a positive large-repo panel when repo MCP graph plus uv is available", async () => {
+    writeFileSync(
+      join(dir, ".mcp.json"),
+      JSON.stringify({ mcpServers: { "code-review-graph": { command: "uvx" } } }),
+    );
+    const d = await scaleSafetyDigest(ctx({ run: largeRepoRunner("uv") }));
+    expect(d?.describe).toContain("graph available");
+    expect(d?.data).toMatchObject({ ok: true });
   });
 });

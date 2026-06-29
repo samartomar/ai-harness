@@ -15,6 +15,7 @@ function detectedStackBlock(stack: RepoStack): string[] {
   if (stack.testRunner) cmds.push(`test \`${stack.testRunner}\``);
   if (stack.buildCommand) cmds.push(`build \`${stack.buildCommand}\``);
   if (stack.lintCommand) cmds.push(`lint \`${stack.lintCommand}\``);
+  if (stack.startCommand) cmds.push(`start \`${stack.startCommand}\``);
   out.push(`- Commands: ${cmds.length > 0 ? cmds.join(" · ") : "none defined in the repo"}`);
   return out;
 }
@@ -203,6 +204,12 @@ export function setupTasksDoc(dir: string, stack: RepoStack): string {
     "repo evidence (files, tests, configs). Never invent. Do them in order, then",
     "delete the placeholder `_italics_` you replace.",
     "",
+    "Do not open `.env*` or `secrets/**` while gathering evidence. Run",
+    "`aih secrets --verify` and cite only the redacted finding/status.",
+    "For large repos, do not map the whole tree by reading files. Run `aih doctor`",
+    "first; if `large-repo graph safety` fails, enable code-review-graph or keep",
+    "reconnaissance bounded to targeted `rg`/`fd` results and report the gap.",
+    "",
     `As you read the code, log any bugs, risks, or EOL/missing dependencies you spot`,
     `into \`${dir}/tasks.md\` (Backlog) — track findings so they aren't lost in chat.`,
     "",
@@ -240,6 +247,8 @@ export function setupTasksDoc(dir: string, stack: RepoStack): string {
     `- Run the validation playbook in \`${dir}/VALIDATION.md\` and give the user the`,
     "  final report: ✅ validated, ⚠️ gaps only they can unblock (with the exact",
     "  command/click), and 🔧 workarounds. Don't claim done on anything unverified.",
+    `- Do not edit \`${dir}/VALIDATION.md\` to make validation pass. If it fails,`,
+    "  report the failing check or the generated-doc bug honestly.",
   );
 }
 
@@ -263,6 +272,8 @@ export function validationDoc(dir: string, stack: RepoStack): string {
     "- 🔧 **WORKAROUND** — a fallback exists; name it.",
     "",
     "Never report ✅ on something you could not actually verify.",
+    "Do not edit this validation file to make checks pass. If a check fails because",
+    "the generated validation itself is wrong, report it as an `aih` bug.",
     "",
     "## Checks",
     "",
@@ -276,7 +287,9 @@ export function validationDoc(dir: string, stack: RepoStack): string {
     `- You CAN fix: complete \`${dir}/SETUP-TASKS.md\` from the code.`,
     "",
     "### 3. Agent tooling installed (per CLI you target)",
-    "- ECC + Superpowers present for the tool (Claude → `~/.claude/` populated; Kiro →",
+    "- Run `aih doctor` and read the AI CLI inventory. Count only runnable CLIs as installed;",
+    "  config-only traces are advisory and may be stale.",
+    "- ECC + Superpowers present for each runnable targeted tool (Claude → `~/.claude/` populated; Kiro →",
     "  `.kiro/agents`/`.kiro/skills` populated after ECC's `.kiro/install.sh`).",
     "- ⚠️ GAP: in-tool installs (`/plugin install ecc@ecc`, Codex `/plugins`) run only by",
     "  the human INSIDE the tool — list the exact command for them.",
@@ -307,14 +320,16 @@ export function validationDoc(dir: string, stack: RepoStack): string {
     "- Is Docker available (`docker info`)?",
     "- ⚠️ GAP: Docker not running → the human starts Docker. 🔧 WORKAROUND: skip the devcontainer.",
     "",
-    "### 9. Workspace (only if `.aih-workspace.json` exists)",
+    "### 9. Workspace (only if workspace configuration exists)",
     "- Run `aih doctor` (workspace mode): every child repo scaffolded?",
     `  Is \`${dir}/cross-repo-architecture.md\` filled in?`,
     "- You CAN fix: run `aih init` in each child; fill the cross-repo map.",
     "",
     "### 10. Secrets",
-    "- No plaintext secrets committed; `.claudeignore` + `.claude/settings.json` deny rules present.",
-    "- ⚠️ GAP: if a real secret is found, the human must rotate it.",
+    "- Do not open `.env*` or `secrets/**`. Validate with `aih secrets --verify` instead.",
+    "- `aih secrets --verify` must pass before you claim no plaintext secrets are committed.",
+    "- `.claudeignore` + `.claude/settings.json` deny rules must be present.",
+    "- ⚠️ GAP: if a real secret is found, the human must rotate it and remove it from history.",
     "",
     "## Final report (give this to the user)",
     "",

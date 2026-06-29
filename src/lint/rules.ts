@@ -151,6 +151,8 @@ const PLACEHOLDER_SQUARE_RE =
 const BACKTICK_PATH_RE = /`([\w\-./]+\.(?:md|mdc|mdx|json|ya?ml|txt))`/g;
 /** Kiro live-reference: `#[[file:ai-coding/RULE_ROUTER.md]]`. */
 const KIRO_REF_RE = /#\[\[file:([^\]\n]+)\]\]/g;
+const LOCAL_FILE_URL_RE = /\bfile:\/\/\/[^\s)]+/gi;
+const WINDOWS_ABSOLUTE_PATH_RE = /(?:^|[`(\s])([A-Za-z]:[\\/][^\s`)]+)/g;
 
 /**
  * Canon files the harness's own context system emits across SIBLING commands
@@ -163,6 +165,7 @@ const KNOWN_SIBLING_CANON: ReadonlySet<string> = new Set([
   "INDEX.md",
   "architecture.md",
   "conventions.md",
+  "tasks.md",
   "SETUP-TASKS.md",
   "project-guardrails.md",
   "cross-repo-architecture.md",
@@ -302,6 +305,24 @@ export const RULES: LintRule[] = [
       };
       for (const m of src.matchAll(BACKTICK_PATH_RE)) check(m[1] as string);
       for (const m of src.matchAll(KIRO_REF_RE)) check(m[1] as string);
+      return out;
+    },
+  },
+  {
+    id: "portable-repo-paths",
+    severity: "fail",
+    appliesTo: PROSE,
+    run: (src) => {
+      const out: LintFinding[] = [];
+      const add = (ref: string): void => {
+        out.push({
+          ruleId: "portable-repo-paths",
+          severity: "fail",
+          message: `uses machine-local path \`${ref}\` — cite repo-relative paths only`,
+        });
+      };
+      for (const m of src.matchAll(LOCAL_FILE_URL_RE)) add(m[0]);
+      for (const m of src.matchAll(WINDOWS_ABSOLUTE_PATH_RE)) add(m[1] as string);
       return out;
     },
   },

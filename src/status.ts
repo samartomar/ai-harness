@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
+import { GITHOOKS_PATH_COMMAND, preCommitHookActive } from "./internals/git-hooks.js";
 import { type CommandSpec, plan, probe } from "./internals/plan.js";
 import type { Check } from "./internals/verify.js";
 
@@ -46,12 +47,12 @@ export function inventory(root: string, contextDir: string): ArtifactPresence[] 
  */
 function enforcementDetail(name: string, root: string, relative: string): string {
   if (name === "pre-commit") {
-    // .pre-commit-config.yaml is inert until `pre-commit install` writes the git
-    // hook — so a present config with no hook is "generated, not enforced".
-    const hookInstalled = existsSync(join(root, ".git", "hooks", "pre-commit"));
-    return hookInstalled
+    // .pre-commit-config.yaml is inert until git runs a pre-commit hook. aih's
+    // normal path is clone-local `.githooks/` via core.hooksPath; teams may also
+    // have a default `.git/hooks/pre-commit`.
+    return preCommitHookActive(root)
       ? `${relative} (git hook installed — active)`
-      : `${relative} present, but the git hook is NOT installed — run \`pre-commit install\` to enforce it`;
+      : `${relative} present, but no active git pre-commit hook was found — run \`${GITHOOKS_PATH_COMMAND}\` after scaffold`;
   }
   return relative;
 }

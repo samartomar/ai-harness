@@ -243,6 +243,13 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     title: "Target AI CLI not detected",
     action: "Install the target CLI, or target one explicitly with `--cli`/`--all-tools`.",
   },
+  "cli.config-only": {
+    audience: "developer",
+    failSeverity: "degraded",
+    title: "AI CLI config found but binary missing",
+    action:
+      "Install the CLI binary or target it explicitly only when the tool can run; config directories alone may be stale.",
+  },
   "cli.bootloader-missing": {
     audience: "developer",
     failSeverity: "blocking",
@@ -319,6 +326,13 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     failSeverity: "degraded",
     title: "No usage data captured yet",
     action: "Commit once (or wire a per-tool hook) so usage analytics accrue.",
+  },
+  "scale.code-review-graph-missing": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "code-review-graph unavailable for large repo",
+    action:
+      "Enable the local graph before broad analysis: run `aih mcp --apply` and `aih tools --apply`, then re-check with `aih doctor`. Until it is available, use bounded rg/fd reads only.",
   },
   "report.context-over-budget": {
     audience: "developer",

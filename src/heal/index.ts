@@ -1,9 +1,12 @@
+import { join } from "node:path";
+import { aihIgnoreWrite } from "../internals/gitignore.js";
 import {
   type Action,
   type CommandSpec,
   type Plan,
   type PlanContext,
   plan,
+  writeText,
 } from "../internals/plan.js";
 import type { Check } from "../internals/verify.js";
 import { type HealScope, type HealShared, PYPI_URL, REGISTRY_URL, tlsCheck } from "./common.js";
@@ -46,6 +49,17 @@ async function healPlan(ctx: PlanContext): Promise<Plan> {
   for (const step of HEAL_STEPS) {
     if (scopes.has(step.key)) actions.push(...(await step.plan(ctx, shared)));
   }
+  // Persist the in-scope set so `aih report --v9` can mark exactly which host-runtime
+  // blockers this heal probed (vs not-probed) on the wins panel. Deterministic (no clock);
+  // lands under the gitignored `.aih/`.
+  actions.push(
+    writeText(
+      join(".aih", "heal-last.json"),
+      `${JSON.stringify({ scopes: [...scopes].sort() })}\n`,
+      "record heal scope set → .aih/heal-last.json",
+    ),
+    aihIgnoreWrite(ctx.root),
+  );
   return plan("heal", ...actions);
 }
 

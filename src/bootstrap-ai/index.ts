@@ -1,5 +1,6 @@
 import { basename, join, posix } from "node:path";
-import { detectFallbackNotice, detectOne, resolveTargets } from "../internals/cli-detect.js";
+import { aihConfigJson } from "../config/marker.js";
+import { detectFallbackNotice, detectInstall, resolveTargets } from "../internals/cli-detect.js";
 import type { Cli } from "../internals/clis.js";
 import { readIfExists } from "../internals/fsxn.js";
 import { aihIgnoreWrite } from "../internals/gitignore.js";
@@ -93,15 +94,24 @@ function bootloaderProbe(relPath: string, dir: string): Action {
 function presenceProbe(cli: Cli): Action {
   return probe(`${cli} installed`, async (ctx: PlanContext): Promise<Check> => {
     const name = `${cli} installed`;
-    const p = await detectOne(ctx, cli);
-    return p.present
-      ? { name, verdict: "pass", detail: `detected via ${p.via} (${p.detail})` }
-      : {
-          name,
-          verdict: "skip",
-          detail: "not detected on this machine (bootloader still written)",
-          code: "cli.not-detected",
-        };
+    const install = (await detectInstall(ctx)).find((i) => i.cli === cli);
+    if (install?.binary) {
+      return { name, verdict: "pass", detail: `runnable on PATH (${install.binaryDetail})` };
+    }
+    if (install?.config) {
+      return {
+        name,
+        verdict: "skip",
+        detail: `${install.configDetail} exists, but no CLI binary is on PATH (config-only; setup skipped by --detect)`,
+        code: "cli.config-only",
+      };
+    }
+    return {
+      name,
+      verdict: "skip",
+      detail: "not detected on this machine (bootloader still written)",
+      code: "cli.not-detected",
+    };
   });
 }
 
@@ -200,6 +210,22 @@ async function bootstrapAiPlan(ctx: PlanContext): Promise<Plan> {
     const merged = mergeBootloader(existing, relPath, dir, repoName, block);
     actions.push(
       writeText(relPath, merged, `bootloader ${relPath} (preamble + managed canonical block)`),
+    );
+  }
+
+  // Persist the bootstrap intent (context-dir + resolved CLI targets) at the repo
+  // root so `aih report` / `aih doctor` grade against the tools this repo was wired
+  // for — not the `claude` default — even on a standalone `bootstrap-ai` run. Under
+  // `aih init` the orchestrator resolves once and owns this write (ctx.targets set),
+  // so skip it here to avoid a duplicate. Merge preserves adopt's acknowledged list.
+  if (ctx.targets === undefined) {
+    actions.push(
+      writeJson(
+        ".aih-config.json",
+        aihConfigJson(dir, clis),
+        "persist bootstrap intent (context-dir + CLI targets) so report/doctor read it",
+        { merge: true },
+      ),
     );
   }
 

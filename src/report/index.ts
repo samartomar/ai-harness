@@ -29,6 +29,9 @@ import { type NextStepsInput, nextSteps, nextStepsDigest, nextStepsHeadline } fr
 import { aggregateOrg } from "./org.js";
 import { orgDigest, orgHeadline } from "./org-render.js";
 import { contextBloatDigest, loadGroupDigest } from "./render.js";
+import { reportHtmlV4 } from "./v4.js";
+import { reportHtmlV9 } from "./v9.js";
+import { supportDigest, v9ExtraDigests } from "./v9-panels.js";
 
 type Scope = "local" | "org";
 type Format = "terminal" | "md" | "html";
@@ -50,7 +53,7 @@ function contextHeadline(bloat: ContextBloat, perTurn?: LoadGroupModel): string 
   return `Context footprint — ~${bloat.totalTokens} tokens across ${bloat.files.length} files${flag}`;
 }
 
-/** Captured usage events from the Usage panel digest (0 = telemetry not wired). */
+/** Captured usage events from the Usage panel digest (0 = none captured yet). */
 function usageEventsFrom(digests: DigestAction[]): number | undefined {
   const d = digests.find((x) => x.describe.startsWith("Usage"));
   const n = (d?.data as { events?: unknown } | undefined)?.events;
@@ -69,6 +72,10 @@ function toolsMissingFrom(digests: DigestAction[]): number | undefined {
   const d = digests.find((x) => x.describe.startsWith("Tools installed"));
   const absent = (d?.data as { absent?: unknown } | undefined)?.absent;
   return Array.isArray(absent) ? absent.length : undefined;
+}
+
+function scaleGraphMissingFrom(digests: DigestAction[]): boolean {
+  return digests.some((x) => x.describe.startsWith("Scale safety — graph missing"));
 }
 
 /** Headline for the per-turn load-group digest (the real cost: one tool's bundle). */
@@ -208,6 +215,7 @@ async function buildReport(ctx: PlanContext): Promise<Built> {
     // an event lands. Drives dropping the "wire telemetry" step after it's done.
     telemetryWired: existsSync(join(ctx.root, ".aih", "usage-record.mjs")),
     toolsMissing: toolsMissingFrom(panels),
+    scaleGraphMissing: scaleGraphMissingFrom(panels),
     // Runnable AI CLIs on this machine (Machine tooling `present`) that this repo
     // doesn't target (AI CLI wiring `targeted`) — e.g. kiro installed but unwired.
     ...(() => {
@@ -254,10 +262,16 @@ async function reportPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
   // visualizing / showcasing the full report); the in-page "◑ demo data" toggle is
   // present in EVERY report regardless. Demo implies the HTML dashboard + open.
   const demo = ctx.options.demo === true;
+  // `--v4` opts into the next-gen dashboard skin (additive; the legacy renderer stays
+  // the default). HTML-only, like --open/--demo, so it forces the html format too.
+  const v4 = ctx.options.v4 === true;
+  // `--v9` opts into the developer-console dashboard (additive; legacy + `--v4` stay
+  // untouched). HTML-only like the others, so it forces the html format too.
+  const v9 = ctx.options.v9 === true;
   const refreshRaw = Number(ctx.options.refresh);
   const refresh =
     Number.isFinite(refreshRaw) && refreshRaw > 0 ? Math.floor(refreshRaw) : undefined;
-  const format = open || demo || refresh !== undefined ? "html" : formatOf(ctx);
+  const format = open || demo || v4 || v9 || refresh !== undefined ? "html" : formatOf(ctx);
   const shouldOpen = open || demo;
   const built = await buildReport(ctx);
   const actions: Action[] = [...built.digests];
@@ -276,14 +290,28 @@ async function reportPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
   for (const check of advisoryChecks) actions.push(probe(check.name, () => check));
   if (format !== "terminal") {
     const path = artifactPath(ctx, built.scope, format);
-    const content =
-      format === "html"
-        ? reportHtml(built.title, built.digests, {
-            refresh,
-            demo,
-            support: reportSupportTemplates(ctx, advisoryChecks),
-          })
-        : reportMarkdown(built.title, built.digests);
+    let content: string;
+    if (format === "html") {
+      if (v9) {
+        // v9 binds extra v9-only digests (drift, MCP servers/egress, support) so the
+        // shared localPanels — and thus legacy/v4 output — stay byte-identical.
+        const extra = [
+          ...(await v9ExtraDigests(ctx)),
+          supportDigest(reportSupportTemplates(ctx, advisoryChecks)),
+        ];
+        content = reportHtmlV9(built.title, [...built.digests, ...extra], { refresh, demo });
+      } else if (v4) {
+        content = reportHtmlV4(built.title, built.digests, { refresh, demo });
+      } else {
+        content = reportHtml(built.title, built.digests, {
+          refresh,
+          demo,
+          support: reportSupportTemplates(ctx, advisoryChecks),
+        });
+      }
+    } else {
+      content = reportMarkdown(built.title, built.digests);
+    }
     // The default artifact lands under `.aih/` (repo-contained). An explicit `--out`
     // is the operator's own chosen target, so it opts out of repo containment.
     const operatorOut = typeof ctx.options.out === "string" && ctx.options.out.length > 0;
@@ -383,6 +411,14 @@ export const command: CommandSpec = {
       flags: "--refresh <sec>",
       description:
         "live mode: open the dashboard and regenerate it every <sec> seconds (Ctrl+C to stop)",
+    },
+    {
+      flags: "--v4",
+      description: "render the next-gen v0.5 dashboard skin (opt-in; implies html)",
+    },
+    {
+      flags: "--v9",
+      description: "render the v9 developer-console dashboard skin (opt-in; implies html)",
     },
   ],
   plan: reportPlan,

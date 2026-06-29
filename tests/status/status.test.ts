@@ -49,8 +49,18 @@ describe("status — enforcement read-back (P1-F sliver)", () => {
     const check = res.report?.checks.find((c) => c.name === "pre-commit");
     // present → pass (exit stays 0), but the detail tells the truth about enforcement
     expect(check?.verdict).toBe("pass");
-    expect(check?.detail).toContain("git hook is NOT installed");
-    expect(check?.detail).toContain("pre-commit install");
+    expect(check?.detail).toContain("no active git pre-commit hook");
+    expect(check?.detail).toContain("git config core.hooksPath .githooks");
+  });
+
+  it("reports the pre-commit control active once the managed hooks path is enabled", async () => {
+    put(".pre-commit-config.yaml", "repos: []\n");
+    put(".githooks/pre-commit", "#!/bin/sh\n");
+    put(".git/config", "[core]\n\thooksPath = .githooks\n");
+    const res = await executePlan(await command.plan(makeCtx()), makeCtx());
+    const check = res.report?.checks.find((c) => c.name === "pre-commit");
+    expect(check?.verdict).toBe("pass");
+    expect(check?.detail).toContain("hook installed — active");
   });
 
   it("reports the pre-commit control active once the git hook is installed", async () => {

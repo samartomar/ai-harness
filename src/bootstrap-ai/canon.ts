@@ -24,6 +24,7 @@ function detectedStack(stack: RepoStack): string[] {
   if (stack.testRunner) cmds.push(`test \`${stack.testRunner}\``);
   if (stack.buildCommand) cmds.push(`build \`${stack.buildCommand}\``);
   if (stack.lintCommand) cmds.push(`lint \`${stack.lintCommand}\``);
+  if (stack.startCommand) cmds.push(`start \`${stack.startCommand}\``);
   out.push(`- Commands: ${cmds.length > 0 ? cmds.join(" · ") : "none defined in the repo"}`);
   return out;
 }
@@ -58,6 +59,8 @@ export function sharedCanonicalBlockBody(dir: string): string {
     "- Validate at boundaries; reject malformed or hostile input — never coerce it. Fail closed on ambiguity.",
     "- Immutable updates over mutation; handle errors explicitly; no silent failures.",
     "- No secrets in code, config, fixtures, logs, or error text.",
+    "- Do not open `.env*` or `secrets/**`; validate secret presence with `aih secrets --verify`.",
+    "- On large repos, use code-review-graph for impact discovery; if it is unavailable, use bounded `rg`/`fd` reads only and report the gap.",
     "- Repo evidence is the truth — don't invent commands, paths, or APIs; verify a path exists before citing it.",
     "",
     "## External action boundary",
@@ -126,6 +129,8 @@ export function agentBehaviorCoreDoc(dir: string): string {
     "- Validate at boundaries; reject malformed/hostile input — never coerce. Fail closed on ambiguity.",
     "- Immutable updates over mutation; explicit error handling; no silent failures.",
     "- No secrets in code, prompts, fixtures, logs, or error text.",
+    "- Do not open `.env*` or `secrets/**`; validate secret presence with `aih secrets --verify`.",
+    "- On large repos, use code-review-graph for impact discovery; if it is unavailable, use bounded `rg`/`fd` reads only and report the gap.",
     "- Repo evidence (source, tests, schemas, CI) is the truth, not model memory. Don't",
     "  invent commands, paths, or APIs; verify a path exists before citing it.",
     "",
@@ -204,6 +209,8 @@ export function ruleRouterDoc(
     "### Implementation",
     `Load \`${dir}/conventions.md\` + \`${dir}/architecture.md\`; follow the ECC`,
     `stack rules for ${primaryLang}. State the goal and the smallest viable change first.`,
+    "For large repos, verify `large-repo graph safety` with `aih doctor`; if the",
+    "graph is unavailable, do bounded `rg`/`fd` reconnaissance and report the gap.",
     "",
     "### Code review / PR",
     `Load \`${dir}/conventions.md\`; review the diff, tests, and schemas against repo`,
@@ -216,7 +223,8 @@ export function ruleRouterDoc(
     "",
     "### Security / secrets",
     "Never read or emit plaintext secrets; validate all external input; keep cloud",
-    "setup as documentation, never run it blind. See `aih secrets` / `aih guardrails`.",
+    "setup as documentation, never run it blind. Do not open `.env*` or `secrets/**`;",
+    "use `aih secrets --verify` for redacted status. See `aih secrets` / `aih guardrails`.",
     "",
     "### External AI tooling / adapters",
     `Load \`${dir}/adapters/<your-tool>.md\` for tool-specific wiring (entry files,`,
@@ -396,8 +404,9 @@ export function harnessUpdateDoc(dir: string): string {
     "",
     "## Yours (write-once / author-fill — never overwritten)",
     "",
-    `- \`${dir}/architecture.md\`, \`${dir}/conventions.md\` (author-fill),`,
-    `  \`${dir}/project-guardrails.md\`, \`${dir}/cross-repo-architecture.md\` (write-once).`,
+    `- \`${dir}/INDEX.md\`, \`${dir}/architecture.md\`, \`${dir}/conventions.md\`,`,
+    `  \`${dir}/tasks.md\`, \`${dir}/skills/**\`, \`${dir}/project-guardrails.md\`,`,
+    `  and \`${dir}/cross-repo-architecture.md\` (write-once / author-owned).`,
     "  Your content is preserved across re-runs.",
     "",
     "## To update",

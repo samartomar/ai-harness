@@ -139,19 +139,32 @@ export interface TargetResolution {
  * Returns the final list (possibly empty when nothing was detected and the user
  * skipped — the caller then falls back to `claude`).
  */
-export async function confirmDetectedClis(prompter: Prompter, detected: Cli[]): Promise<Cli[]> {
+export async function confirmDetectedClis(
+  prompter: Prompter,
+  detected: Cli[],
+  configOnly: Cli[] = [],
+): Promise<Cli[]> {
   const supported = SUPPORTED_CLIS.join(", ");
+  const configOnlyNote =
+    configOnly.length > 0
+      ? [
+          "",
+          `Config-only traces found (not targeted unless you type them explicitly): ${configOnly.join(", ")}`,
+        ].join("\n")
+      : "";
   const question =
     detected.length > 0
       ? [
-          `Detected AI CLIs on this machine: ${detected.join(", ")}`,
+          `Runnable AI CLIs on this machine: ${detected.join(", ")}`,
           `Install for these? Press Enter to accept, or type a comma-separated list to change`,
           `(supported: ${supported}): `,
+          configOnlyNote,
         ].join("\n")
       : [
-          "No AI CLIs were detected on this machine.",
+          "No runnable AI CLIs were detected on this machine.",
           `Type a comma-separated list to install for, or press Enter to skip (defaults to claude).`,
           `Supported: ${supported}: `,
+          configOnlyNote,
         ].join("\n");
   const answer = await prompter.ask(question);
   if (answer.trim().length === 0) return detected;
@@ -178,13 +191,15 @@ export async function resolveTargets(ctx: PlanContext): Promise<TargetResolution
   const opts = ctx.options;
   const explicit = typeof opts.cli === "string" && opts.cli.trim().length > 0;
   if (opts.detect === true && opts.allTools !== true && !explicit) {
-    const present = presentClis(await detectClis(ctx));
+    const installs = await detectInstall(ctx);
+    const runnable = installs.filter((i) => i.binary).map((i) => i.cli);
+    const configOnly = installs.filter((i) => i.config && !i.binary).map((i) => i.cli);
     if (ctx.prompter) {
-      const confirmed = await confirmDetectedClis(ctx.prompter, present);
+      const confirmed = await confirmDetectedClis(ctx.prompter, runnable, configOnly);
       if (confirmed.length > 0) return { clis: confirmed, detectFellBack: false };
       return { clis: ["claude"], detectFellBack: true };
     }
-    if (present.length > 0) return { clis: present, detectFellBack: false };
+    if (runnable.length > 0) return { clis: runnable, detectFellBack: false };
     return { clis: ["claude"], detectFellBack: true };
   }
   // No explicit selection (no --cli/--all-tools/--detect): honor the committed
@@ -235,9 +250,10 @@ export function isTargeted(ctx: PlanContext, cli: Cli): boolean {
 /** The notice emitted when `--detect` found no AI CLIs and defaulted to claude. */
 export function detectFallbackNotice(): string {
   return [
-    "No AI CLIs were detected on this machine (no known config dir or binary on PATH),",
+    "No runnable AI CLIs were detected on this machine (no known binary on PATH),",
     "so the target defaulted to `claude`. To target specific tools, pass `--cli <list>`",
-    "(e.g. `--cli kiro,codex`) or `--all-tools`; or install a CLI and re-run with `--detect`.",
+    "(e.g. `--cli kiro,codex`) or `--all-tools`; or install a CLI binary and re-run with `--detect`.",
+    "Config directories alone are treated as config-only traces and are not targeted by `--detect`.",
     "Supported: claude, codex, cursor, antigravity, gemini, copilot, windsurf, opencode, zed, kimi, kiro.",
   ].join("\n");
 }

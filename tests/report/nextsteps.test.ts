@@ -63,6 +63,13 @@ describe("nextSteps", () => {
     ).toBe(true);
   });
 
+  it("adds a code-review-graph step when a large repo lacks the graph", () => {
+    const steps = nextSteps({ ...base, scaleGraphMissing: true });
+    const step = steps.find((s) => s.includes("code-review-graph"));
+    expect(step).toContain("aih mcp --apply");
+    expect(step).toContain("aih tools --apply");
+  });
+
   it("surfaces installed-but-untargeted CLIs with the exact wire command (the kiro case)", () => {
     const steps = nextSteps({
       ...base,

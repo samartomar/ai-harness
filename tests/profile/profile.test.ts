@@ -201,6 +201,11 @@ describe("scanRepo — language + command accuracy", () => {
     expect(scanRepo(tmp, { maxDepth: 8 }).testRunner).toBe("npm test");
   });
 
+  it("surfaces a real start script as a local run command", () => {
+    put("package.json", pkg({ scripts: { start: "node app.js" } }));
+    expect(scanRepo(tmp, { maxDepth: 8 }).startCommand).toBe("npm start");
+  });
+
   it("falls back to a test runner dep when there is no test script", () => {
     put("package.json", pkg({ devDeps: { vitest: "^2" } }));
     expect(scanRepo(tmp, { maxDepth: 8 }).testRunner).toBe("npx vitest run");
@@ -423,12 +428,13 @@ describe("scanRepo — prefers the project's build wrapper", () => {
 
 describe("profile.plan", () => {
   it("emits the stack Cursor rule with the detected language + real command", async () => {
-    put("package.json", pkg({ scripts: { test: "vitest run" } }));
+    put("package.json", pkg({ scripts: { test: "vitest run", start: "node app.js" } }));
     const stack =
       findWrite((await command.plan(makeCtx())).actions, ".cursor/rules/01-stack.mdc")?.contents ??
       "";
     expect(stack).toContain("JavaScript/Node.js");
     expect(stack).toContain("npm test");
+    expect(stack).toContain("npm start");
   });
 
   it("writes no root bootloader — that is `aih bootstrap-ai`'s job", async () => {
