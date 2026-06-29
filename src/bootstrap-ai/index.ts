@@ -291,21 +291,32 @@ async function bootstrapAiPlan(ctx: PlanContext): Promise<Plan> {
 
   // A short orientation doc so the dry-run explains itself.
   actions.push(
-    doc("bootstrap-ai summary (Layer-2 ai-coding canon)", summaryText(dir, clis, bootloaders)),
+    doc(
+      "bootstrap-ai summary (Layer-2 ai-coding canon)",
+      summaryText(dir, clis, bootloaders, canon),
+    ),
   );
 
   return plan("bootstrap-ai", ...actions);
 }
 
-function summaryText(dir: string, clis: string[], bootloaders: string[]): string {
+function summaryText(dir: string, clis: string[], bootloaders: string[], canon: CanonMode): string {
+  const layer2 =
+    canon === "compact"
+      ? `Layer 2 (this repo): ${dir}/RULE_ROUTER.md → the contract (${dir}/project.json + ${dir}/project.md + ${dir}/setup.md) + ${dir}/adapters/`
+      : `Layer 2 (this repo): ${dir}/RULE_ROUTER.md + ${dir}/adapters/ + ${dir}/REGENERATION.md`;
+  const contextLine =
+    canon === "compact"
+      ? "Repo contract (stack/commands/scale/gaps): `aih contract`. Re-run `aih bootstrap-ai`"
+      : "Context dir (INDEX/architecture/conventions): `aih scaffold`. Re-run `aih bootstrap-ai`";
   return [
     `Layered AI canon for ${clis.join(", ")}.`,
     "",
-    `Layer 2 (this repo): ${dir}/RULE_ROUTER.md + ${dir}/adapters/ + ${dir}/REGENERATION.md`,
+    layer2,
     `Bootloaders: ${bootloaders.join(", ")} (tool preamble + a regenerated shared block).`,
     "",
     "Layer 1 (user baseline): install ECC + Superpowers with `aih ecc` / `aih superpowers`.",
-    "Context dir (INDEX/architecture/conventions): `aih scaffold`. Re-run `aih bootstrap-ai`",
+    contextLine,
     "to regenerate (idempotent); `aih bootstrap-ai --verify` is the drift gate.",
   ].join("\n");
 }
