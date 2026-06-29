@@ -12,6 +12,7 @@ import { orgPolicyDriftProbes } from "./org-policy/drift.js";
 import { resolveTargetSet } from "./report/cli-coverage.js";
 import { loadabilityFor, loadReason } from "./report/cli-loadability.js";
 import { scaleSafetyCheck } from "./scale-safety.js";
+import { vdiCompatibilityCheck } from "./vdi/index.js";
 
 /** Read the workspace marker's repo list, or [] when this root is not a workspace. */
 function workspaceRepos(ctx: PlanContext): string[] {
@@ -211,6 +212,7 @@ export const command: CommandSpec = {
             };
       }),
       probe("large-repo graph safety", () => scaleSafetyCheck(ctx)),
+      probe("VDI compatibility matrix", () => vdiCompatibilityCheck(ctx)),
       probe("MCP managed allowlist", () => mcpManagedAllowlistCheck(ctx)),
       ...orgPolicyDriftProbes({ ...ctx, contextDir }),
       probe("contract truth", () => contractTruthCheck(ctx)),

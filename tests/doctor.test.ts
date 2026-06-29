@@ -303,6 +303,19 @@ describe("doctor — every probe carries a remediation hint", () => {
   });
 });
 
+describe("doctor — VDI compatibility matrix", () => {
+  it("surfaces platform, redirect, and verified-status in a read-only probe", async () => {
+    const c = ctx();
+    const probe = findProbe((await command.plan(c)).actions, "VDI compatibility matrix");
+    const res = await probe?.run(c);
+
+    expect(res?.verdict).toBe("skip");
+    expect(res?.detail).toContain("linux");
+    expect(res?.detail).toContain("verified");
+    expect(res?.detail).toContain("redirect=not-needed");
+  });
+});
+
 describe("doctor — reads the committed .aih-config.json marker", () => {
   let dir: string;
   beforeEach(() => {

@@ -3,6 +3,7 @@ import { type DigestAction, digest, type PlanContext } from "../internals/plan.j
 import { lines } from "../internals/render.js";
 import { scaleSafetyDigest } from "../scale-safety.js";
 import { inventory } from "../status.js";
+import { vdiCompatibilityDigest } from "../vdi/index.js";
 import { cliCoverageDigest } from "./cli-coverage.js";
 import { contractTruthDigest } from "./contract.js";
 import { aiEventsDigest } from "./events.js";
@@ -127,6 +128,7 @@ export async function localPanels(ctx: PlanContext): Promise<DigestAction[]> {
     await repoInfoDigest(ctx), // PERFORMANCE: repo info + file types
     await scaleSafetyDigest(ctx), // PERFORMANCE: large-repo analysis must have a graph path
     await toolsInstalledDigest(ctx), // HARNESS ADOPTION: shell tools on PATH
+    vdiCompatibilityDigest(ctx), // WORKSTATION: platform x redirect x verified-status matrix
     await repoStatusPanel(ctx),
     trendsPanel(ctx),
     usagePanel(ctx),
