@@ -63,4 +63,12 @@ describe("language coverage benchmark", () => {
     expect(polyglot.grades.workspace).toBe("none");
     expect(polyglot.note).toContain("per-workspace commands");
   });
+
+  it("does not mark missing non-Node package/build metadata as covered", () => {
+    expect(rowById("rust-cargo").grades.packageManager).toBe("none");
+    expect(rowById("go-module").grades.packageManager).toBe("none");
+    expect(rowById("java-maven").grades.packageManager).toBe("none");
+    expect(rowById("dotnet").grades.packageManager).toBe("none");
+    expect(rowById("node-python-rust-polyglot").grades.packageManager).toBe("none");
+  });
 });

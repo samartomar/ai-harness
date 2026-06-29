@@ -400,6 +400,36 @@ describe("PR 1D — doctor contract-truth probe", () => {
     expect(res.detail).toContain("re-run `aih contract");
   });
 
+  it("fails when generated stack facts drift beyond commands", async () => {
+    seedMindworksLike(dir);
+    writeContract(await synth());
+    writeFileSync(
+      join(dir, "package.json"),
+      JSON.stringify({
+        name: "mindworks",
+        description: "A worked-example service",
+        scripts: {
+          test: "vitest run",
+          build: "tsc -p .",
+          lint: "biome check .",
+          start: "node dist/main.js",
+        },
+        dependencies: { "@aws-sdk/client-dynamodb": "^3", express: "^4", pg: "^8" },
+        devDependencies: { typescript: "^5", vitest: "^1" },
+      }),
+    );
+    writeFileSync(join(dir, "package-lock.json"), JSON.stringify({ lockfileVersion: 3 }));
+    writeFileSync(join(dir, "Dockerfile"), "FROM node:20\n");
+
+    const res = await contractTruthCheck(ctx({ posture: "team" }));
+    expect(res.verdict).toBe("fail");
+    expect(res.code).toBe("contract.stale");
+    expect(res.detail).toContain("cloud");
+    expect(res.detail).toContain("databases");
+    expect(res.detail).toContain("deployment");
+    expect(res.detail).toContain("packageManager");
+  });
+
   it("keeps contract staleness warning-only at vibe posture", async () => {
     seedNodeNoBuildStart(dir);
     writeContract(await synth());
