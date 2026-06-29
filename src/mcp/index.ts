@@ -6,6 +6,7 @@ import { readIfExists } from "../internals/fsxn.js";
 import type { Action, CommandSpec, PlanContext } from "../internals/plan.js";
 import { doc, plan, probe, writeJson, writeText } from "../internals/plan.js";
 import type { Check } from "../internals/verify.js";
+import { readOrgPolicy } from "../org-policy/schema.js";
 import { scanRepo } from "../profile/scan.js";
 import { managedMcpAllowlistSettings } from "./allowlist.js";
 import {
@@ -14,7 +15,7 @@ import {
   mcpFallbackSteering,
   stdioServers,
 } from "./enterprise.js";
-import { gatewayDoc } from "./gateway.js";
+import { gatewayDoc, gatewayRbacConfig } from "./gateway.js";
 import {
   asPosture,
   deniedServers,
@@ -347,10 +348,21 @@ async function planMcp(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
     const hosted = Object.entries(servers)
       .filter(([, s]) => s.type === "http" && s.url.includes(N24Q02M_HOST))
       .map(([name]) => name);
+    const orgPolicy = readOrgPolicy(ctx.root, ctx.env);
+    const rbac = gatewayRbacConfig(GATEWAY_URL, servers, {
+      orgAllowedServers: orgPolicy?.mcp?.allowedServers,
+    });
+    actions.push(
+      writeJson(
+        posix.join(ctx.contextDir, "mcp-gateway-rbac.json"),
+        rbac,
+        "Identity-aware MCP gateway RBAC config generated from catalog + org-policy",
+      ),
+    );
     actions.push(
       doc(
         "Identity-aware MCP gateway + SSO (Entra/Okta OIDC, tool-level RBAC) — run by hand, not contacted",
-        gatewayDoc(GATEWAY_URL, hosted),
+        gatewayDoc(rbac, hosted),
       ),
     );
   }
