@@ -119,9 +119,7 @@ describe("guardrails command", () => {
     expect(paths).not.toContain(".claude/settings.json");
     expect(paths).not.toContain(".claude/managed-settings.json");
     expect(paths).not.toContain(".ai-context/risk-gates.json");
-    expect(
-      p.actions.some((a) => a.kind === "doc" && a.text.includes("Risk Gates")),
-    ).toBe(true);
+    expect(p.actions.some((a) => a.kind === "doc" && a.text.includes("Risk Gates"))).toBe(true);
   });
 
   it("at team posture writes project managed command policy and CI sidecar", async () => {

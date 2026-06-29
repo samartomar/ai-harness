@@ -87,7 +87,9 @@ describe("aih init — composes all six repo-scoped capabilities", () => {
   });
 
   it("folds the .claude/settings.json contributions into one merge write carrying deny rules, command policy, and usage hooks", async () => {
-    const writes = (await command.plan(ctx())).actions.filter(
+    const writes = (
+      await command.plan(ctx({ posture: "team", postureSource: "flag" }))
+    ).actions.filter(
       (a): a is WriteAction =>
         a.kind === "write" && a.path.replace(/\\/g, "/") === ".claude/settings.json",
     );
@@ -460,7 +462,7 @@ describe("aih init — apply lays the whole bootstrap down in one pass", () => {
     // a targeted write. This is the regression guard for the init-dedup fold: under
     // the old first-writer-wins drop, guardrails' command-policy projection never
     // reached the composed init plan (it landed only via standalone `aih guardrails`).
-    const applied = ctx({ apply: true });
+    const applied = ctx({ apply: true, posture: "team", postureSource: "flag" });
     await executePlan(await command.plan(applied), applied);
 
     const settings = JSON.parse(readFileSync(join(dir, ".claude/settings.json"), "utf8"));

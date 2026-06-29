@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import { asPosture } from "../config/posture.js";
 import { CANON_OPTION, canonMode } from "../internals/canon-mode.js";
 import { isTargeted } from "../internals/cli-detect.js";
 import { readIfExists } from "../internals/fsxn.js";
@@ -14,7 +15,7 @@ import {
 } from "../internals/plan.js";
 import type { RepoStack } from "../profile/scan.js";
 import { scanRepo } from "../profile/scan.js";
-import { claudeBashPermissions, commandPolicyDoc } from "./command-policy.js";
+import { claudeBashPermissions, commandPolicyDoc, sandboxExecPolicy } from "./command-policy.js";
 import { gitleaksToml } from "./gitleaks.js";
 import { gitleaksMergeSnippet, PRECOMMIT_MARKER, preCommitConfigYaml } from "./precommit.js";
 import { riskGatesDoc, riskGatesJson } from "./risk-gates.js";
@@ -26,6 +27,10 @@ const PRECOMMIT_PATH = ".pre-commit-config.yaml";
 const SCA_PATH = ".github/workflows/sca.yml";
 /** Native Claude permission file the command-policy projection merges into. */
 const CLAUDE_SETTINGS_PATH = ".claude/settings.json";
+/** Project managed-settings file for command-policy enforcement under team+. */
+const CLAUDE_MANAGED_SETTINGS_PATH = ".claude/managed-settings.json";
+/** System-path example an admin deploys at enterprise posture. */
+const SYSTEM_MANAGED_SETTINGS_EXAMPLE_PATH = "managed-settings.json.example";
 
 /** Path of the taxonomy doc under the (configurable) canonical context dir. */
 function taxonomyPath(ctx: PlanContext): string {
@@ -108,6 +113,7 @@ function preCommitActions(ctx: PlanContext, stack: RepoStack): Action[] {
  * write or human-facing doc — CI execution is left to the customer's pipeline.
  */
 function guardrailsPlan(ctx: PlanContext): ReturnType<typeof plan> {
+  const posture = ctx.posture ?? asPosture(ctx.options.posture);
   const stack = scanRepo(ctx.root, { maxDepth: 8, contextDir: ctx.contextDir });
   const actions: Action[] = [
     writeText(
@@ -144,11 +150,11 @@ function guardrailsPlan(ctx: PlanContext): ReturnType<typeof plan> {
     );
   }
 
-  // Defense-in-depth: project the command lexicon into Claude's NATIVE permission
-  // file. This is Claude-specific, so under `aih init` it lands only when Claude is
-  // a target; the tool-agnostic lexicon doc above is always emitted. MERGE so it
-  // composes with the secrets capability's `Read(...)` deny rules (array union).
-  if (isTargeted(ctx, "claude")) {
+  // Defense-in-depth: at team+ posture, project the command lexicon into Claude's
+  // native project permissions AND managed-settings commandPolicy. This is
+  // Claude-specific, so under `aih init` it lands only when Claude is a target; at
+  // `vibe`, the lexicon remains advisory docs only.
+  if (posture !== "vibe" && isTargeted(ctx, "claude")) {
     actions.push(
       writeJson(
         CLAUDE_SETTINGS_PATH,
@@ -156,17 +162,39 @@ function guardrailsPlan(ctx: PlanContext): ReturnType<typeof plan> {
         "Project the command-policy lexicon into Claude Bash permissions (merged with existing deny rules)",
         { merge: true },
       ),
+      writeJson(
+        CLAUDE_MANAGED_SETTINGS_PATH,
+        { sandbox: sandboxExecPolicy() },
+        "Project command-policy into Claude managed-settings sandbox commandPolicy",
+        { merge: true },
+      ),
+    );
+    if (posture === "enterprise") {
+      actions.push(
+        writeJson(
+          SYSTEM_MANAGED_SETTINGS_EXAMPLE_PATH,
+          { sandbox: sandboxExecPolicy() },
+          "org admin: system-path managed-settings.json example with command-policy",
+        ),
+      );
+    }
+  }
+
+  if (posture !== "vibe") {
+    actions.push(
+      // Risk gates: a CI-checkable JSON sidecar + a human-facing doc that runs in
+      // YOUR CI (ask-not-deny; aih never gates a live tool call itself).
+      writeJson(
+        riskGatesPath(ctx),
+        riskGatesJson({ required: posture === "enterprise" }),
+        posture === "enterprise"
+          ? "Risk-gate categories (ask-not-deny), required CI sidecar"
+          : "Risk-gate categories (ask-not-deny), CI-checkable sidecar",
+      ),
     );
   }
 
   actions.push(
-    // Risk gates: a CI-checkable JSON sidecar + a human-facing doc that runs in
-    // YOUR CI (ask-not-deny; aih never gates a live tool call itself).
-    writeJson(
-      riskGatesPath(ctx),
-      riskGatesJson(),
-      "Risk-gate categories (ask-not-deny), CI-checkable sidecar",
-    ),
     doc("Risk gates run in YOUR CI, not from aih", riskGatesDoc()),
     probe("gitleaks present", async (c) => {
       const res = await c.run(["gitleaks", "version"]);
