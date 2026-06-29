@@ -1,0 +1,115 @@
+import { join, resolve } from "node:path";
+import { z } from "zod";
+import { AIH_ORG_POLICY_FILE } from "../config/posture.js";
+import { AihError } from "../errors.js";
+import { readIfExists } from "../internals/fsxn.js";
+
+const PostureSchema = z.enum(["vibe", "team", "enterprise"]);
+
+const CommandRuleSchema = z.object({
+  pattern: z.string().min(1),
+  reason: z.string().optional(),
+});
+
+const CommandDeltaSchema = z
+  .object({
+    add: z.array(CommandRuleSchema).default([]),
+    remove: z.array(z.string().min(1)).default([]),
+  })
+  .strict();
+
+const RiskGateDeltaSchema = z.object({
+  name: z.string().min(1),
+  description: z.string().min(1),
+  pathPatterns: z.array(z.string()).default([]),
+  commandPatterns: z.array(z.string()).default([]),
+});
+
+const RiskGateOverrideSchema = z
+  .object({
+    description: z.string().optional(),
+    pathPatterns: z.array(z.string()).optional(),
+    commandPatterns: z.array(z.string()).optional(),
+  })
+  .strict();
+
+const LicenseDispositionSchema = z.enum(["auto-approve", "alert", "fail", "block"]);
+
+export const OrgPolicySchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    minimumPosture: PostureSchema,
+    references: z.object({
+      repoContract: z.string().min(1),
+    }),
+    command: z
+      .object({
+        deny: CommandDeltaSchema.optional(),
+        ask: CommandDeltaSchema.optional(),
+      })
+      .strict()
+      .optional(),
+    riskGates: z
+      .object({
+        add: z.array(RiskGateDeltaSchema).default([]),
+        override: z.record(z.string(), RiskGateOverrideSchema).default({}),
+      })
+      .strict()
+      .optional(),
+    licenses: z
+      .object({
+        disposition: z.record(z.string(), LicenseDispositionSchema).default({}),
+      })
+      .strict()
+      .optional(),
+    mcp: z
+      .object({
+        allowedServers: z.array(z.string().min(1)).default([]),
+        allowManagedOnly: z.boolean().default(false),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict();
+
+export type OrgPolicy = z.infer<typeof OrgPolicySchema>;
+
+export class OrgPolicyError extends AihError {
+  constructor(message: string) {
+    super(message, "AIH_ORG_POLICY");
+  }
+}
+
+export function parseOrgPolicy(value: unknown): OrgPolicy {
+  try {
+    return OrgPolicySchema.parse(value);
+  } catch (err) {
+    if (err instanceof z.ZodError) {
+      throw new OrgPolicyError(
+        `org-policy is invalid: ${err.issues.map((i) => i.message).join("; ")}`,
+      );
+    }
+    throw err;
+  }
+}
+
+function policyPath(root: string, env: NodeJS.ProcessEnv): string {
+  if (env.AIH_ORG_POLICY && env.AIH_ORG_POLICY.trim().length > 0) {
+    return resolve(root, env.AIH_ORG_POLICY.trim());
+  }
+  return join(root, AIH_ORG_POLICY_FILE);
+}
+
+export function readOrgPolicy(root: string, env: NodeJS.ProcessEnv): OrgPolicy | undefined {
+  const path = policyPath(root, env);
+  const raw = readIfExists(path);
+  if (raw === undefined) return undefined;
+  try {
+    return parseOrgPolicy(JSON.parse(raw));
+  } catch (err) {
+    if (err instanceof OrgPolicyError) throw err;
+    throw new OrgPolicyError(
+      `aih-org-policy could not be read from ${path}: ${(err as Error).message}`,
+    );
+  }
+}

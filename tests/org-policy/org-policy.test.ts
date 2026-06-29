@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -64,9 +64,9 @@ describe("OrgPolicySchema", () => {
   });
 
   it("rejects redefinitions; command policy changes must be deltas", () => {
-    expect(() =>
-      parseOrgPolicy(policy({ command: { deny: ["kubectl delete*"] } })),
-    ).toThrow(/org-policy/);
+    expect(() => parseOrgPolicy(policy({ command: { deny: ["kubectl delete*"] } }))).toThrow(
+      /org-policy/,
+    );
   });
 
   it("readOrgPolicy fails closed on malformed committed policy JSON", () => {
