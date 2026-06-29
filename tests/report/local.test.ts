@@ -14,6 +14,7 @@ import {
 } from "../../src/report/local.js";
 import { mcpGovernanceDigest } from "../../src/report/mcp-governance.js";
 import { toolsInstalledDigest } from "../../src/report/tools.js";
+import { usagePanel } from "../../src/report/usage.js";
 
 let dir: string; // repo root
 let home: string; // fake home for CLI config-dir detection
@@ -107,6 +108,19 @@ describe("economyPanel", () => {
     expect(d.describe).toContain("no local data source yet");
     expect(d.text).toContain("aih report --org");
     expect(d.data).toEqual({ available: false });
+  });
+});
+
+describe("usagePanel", () => {
+  it("distinguishes capture installed from no events captured yet", () => {
+    mkdirSync(join(dir, ".aih"), { recursive: true });
+    mkdirSync(join(dir, ".git", "hooks"), { recursive: true });
+    writeFileSync(join(dir, ".aih", "usage-record.mjs"), "x\n");
+    writeFileSync(join(dir, ".git", "hooks", "post-commit"), "node .aih/usage-record.mjs\n");
+    const d = usagePanel(ctx());
+    expect(d.describe).toContain("capture installed");
+    expect(d.text).toContain("waiting for the first real event");
+    expect(d.data).toMatchObject({ events: 0, installed: true });
   });
 });
 

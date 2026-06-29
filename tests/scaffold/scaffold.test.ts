@@ -83,11 +83,22 @@ describe("scaffold plan (dry-run shape)", () => {
     expect(val).toContain("Gaps to unblock");
     expect(val).toContain("WORKAROUND");
     expect(val).toContain("aih bootstrap-ai --verify");
+    expect(val).toContain("aih secrets --verify");
+    expect(val).toContain("Do not edit this validation file");
+    expect(val).toContain("Count only runnable CLIs as installed");
+    expect(val).toContain("Do not open `.env*`");
+    expect(val).toContain("Canon objective and deduplicated");
+    expect(val).not.toContain("`.aih-workspace.json`");
     expect(val).toContain("picture-perfect");
+    expect(tasks).toContain("Do not web-search for extra canon");
+    expect(tasks).toContain("practice -> repo evidence -> local check");
+    expect(tasks).toContain("Do not edit `.ai-context/VALIDATION.md`");
     // The guardrails seed is write-once (the agent's edits survive re-runs).
     const guard = w.get(".ai-context/project-guardrails.md");
     expect(guard).toBeDefined();
     expect(guard?.once).toBe(true);
+    expect(guard?.contents).toContain("Fixed reference set");
+    expect(guard?.contents).toContain("NIST SSDF SP 800-218");
   });
 
   it("project-guardrails auto-derives framework rules from the detected stack", async () => {
@@ -172,6 +183,7 @@ describe("local guardrails", () => {
     expect(hook?.contents).toContain("#!/bin/sh");
     expect(hook?.contents?.toLowerCase()).toContain("lint");
     expect(hook?.contents?.toLowerCase()).toContain("test");
+    expect(hook?.contents).toContain("pre-commit run --hook-stage pre-commit");
 
     const docs = p.actions.filter((a) => a.kind === "doc");
     expect(docs).toHaveLength(1);

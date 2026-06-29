@@ -165,6 +165,10 @@ function usage(): DigestAction {
   return digest("Usage — 0 events", "body", { events: 0 });
 }
 
+function usageInstalled(): DigestAction {
+  return digest("Usage — capture installed, no events yet", "body", { events: 0, installed: true });
+}
+
 function usageActive(): DigestAction {
   return digest("Usage — 5 events · 2 tool(s) · 3 skill calls", "body", {
     total: 5,
@@ -317,6 +321,14 @@ describe("buildAihDataV9 — action board", () => {
       digest("Usage — active", "body", { events: 120, total: 120 }),
     ];
     expect(buildAihDataV9(clean).actions).toEqual([]);
+  });
+
+  it("does not ask to wire usage again once capture is installed", () => {
+    const d = buildAihDataV9([
+      ...ALL.filter((x) => !x.describe.startsWith("Usage")),
+      usageInstalled(),
+    ]);
+    expect(d.actions?.map((a) => a.title)).not.toContain("Wire usage + track hooks");
   });
 });
 

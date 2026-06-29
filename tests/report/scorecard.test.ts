@@ -70,7 +70,7 @@ function inSyncBootloader(): string {
 }
 
 /** A fully-wired canon: every maturity check passes (overall should be 100). */
-function scaffoldFull(): void {
+function scaffoldFull(hook: "default" | "managed" = "default"): void {
   put(`${DIR_NAME}/RULE_ROUTER.md`, "Read RULE_ROUTER.md first — routing.\n");
   put(`${DIR_NAME}/rules/agent-behavior-core.md`, "# Agent behavior core\n");
   put(`${DIR_NAME}/adapters/_shared-canonical-block.md`, sharedBlock(DIR_NAME).body);
@@ -81,7 +81,12 @@ function scaffoldFull(): void {
   put(".claude/settings.json", "{}");
   put(".gitleaks.toml", "title = 'x'\n");
   put(".pre-commit-config.yaml", "repos: []\n");
-  put(".git/hooks/pre-commit", "#!/bin/sh\n");
+  if (hook === "managed") {
+    put(".githooks/pre-commit", "#!/bin/sh\n");
+    put(".git/config", "[core]\n\thooksPath = .githooks\n");
+  } else {
+    put(".git/hooks/pre-commit", "#!/bin/sh\n");
+  }
 }
 
 describe("scorecardDigest — off-canon", () => {
@@ -109,6 +114,15 @@ describe("scorecardDigest — fully wired", () => {
 
     const panels = await localPanels(ctx());
     expect(panels.some((p) => p.describe.startsWith("Harness maturity"))).toBe(true);
+  });
+
+  it("counts `.githooks/pre-commit` as active when core.hooksPath points at it", () => {
+    scaffoldFull("managed");
+    const d = scorecardDigest(ctx());
+    if (!d) throw new Error("expected a digest");
+    const data = d.data as ScoreData;
+    const guardrails = data.dimensions.find((dim) => dim.name === "guardrails");
+    expect(guardrails?.checks.find((c) => c.id === "pre-commit-installed")?.passed).toBe(true);
   });
 });
 

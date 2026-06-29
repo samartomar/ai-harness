@@ -53,7 +53,7 @@ function contextHeadline(bloat: ContextBloat, perTurn?: LoadGroupModel): string 
   return `Context footprint — ~${bloat.totalTokens} tokens across ${bloat.files.length} files${flag}`;
 }
 
-/** Captured usage events from the Usage panel digest (0 = telemetry not wired). */
+/** Captured usage events from the Usage panel digest (0 = none captured yet). */
 function usageEventsFrom(digests: DigestAction[]): number | undefined {
   const d = digests.find((x) => x.describe.startsWith("Usage"));
   const n = (d?.data as { events?: unknown } | undefined)?.events;

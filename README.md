@@ -125,15 +125,18 @@ real `.kiro/` tree):
 - `aih superpowers --cli kiro` → `.kiro/steering/superpowers-methodology.md` (the
   brainstorm → plan → TDD → review routing, since Kiro can't load `~/.claude/superpowers`).
 
-**Detection** (`--detect`) looks for each tool's config dir (`~/.claude`, `~/.codex`, `~/.gemini`,
-`~/.cursor`, `~/.kiro`, …) or its binary on PATH (via the Runner seam — no real process in tests).
-Precedence: `--all-tools` > `--cli` > `--detect` > default `claude`. When `--detect` finds nothing it
-defaults to `claude` and says so. **In an interactive terminal, `--detect` shows the detected list and
-asks you to confirm or edit it** (press Enter to accept, or type a comma-separated list to add/remove
-tools) before anything installs — pass `--yes` (or run non-interactively / piped / `--json`) to skip
-the prompt and use the detected list as-is. `aih doctor` reports which CLIs it detects, and
-`aih bootstrap-ai --verify` adds a per-CLI **"installed"** confirm step (pass = found, skip = not here
-yet, bootloader still written) alongside the drift gate.
+**Detection** (`--detect`) targets runnable CLI binaries on PATH. Config dirs (`~/.claude`,
+`~/.codex`, `~/.gemini`, `~/.cursor`, `~/.kiro`, …) are still reported as config-only traces, but
+they are advisory and may be stale; they do not drive setup unless you explicitly type the CLI with
+`--cli` or `--all-tools`. Precedence: `--all-tools` > `--cli` > `--detect` > committed marker >
+runnable CLIs > default `claude`. When `--detect` finds no runnable CLI it defaults to `claude` and
+says so. **In an interactive terminal, `--detect` shows the runnable list and any config-only traces
+before asking you to confirm or edit it** (press Enter to accept, or type a comma-separated list to
+add/remove tools) before anything installs — pass `--yes` (or run non-interactively / piped /
+`--json`) to skip the prompt and use the runnable list as-is. `aih doctor` reports runnable vs
+config-only CLIs, and `aih bootstrap-ai --verify` adds a per-CLI **"installed"** confirm step (pass =
+runnable binary on PATH, skip = config-only/not here yet, bootloader still written) alongside the
+drift gate.
 
 **Canon directory name.** Every generated file and reference adopts `--context-dir <name>` — use any
 name you like; the default is the visible `ai-coding/`:

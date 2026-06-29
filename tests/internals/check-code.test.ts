@@ -377,6 +377,7 @@ describe("Check.code — invariants", () => {
       "mcp.policy-denied": true,
       "mcp.hardcoded-secret": true,
       "cli.not-detected": true,
+      "cli.config-only": true,
       "cli.bootloader-missing": true,
       "cli.bootloader-drift": true,
       "cli.wont-load": true,

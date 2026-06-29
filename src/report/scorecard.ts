@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { bootloaderPaths, SHARED_MARKER, sharedCanonicalBlockBody } from "../bootstrap-ai/canon.js";
 import { SUPPORTED_CLIS } from "../internals/clis.js";
 import { readIfExists } from "../internals/fsxn.js";
+import { GITHOOKS_PATH_COMMAND, preCommitHookActive } from "../internals/git-hooks.js";
 import { extractManagedBlock } from "../internals/markers.js";
 import { type DigestAction, digest, type PlanContext } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
@@ -183,7 +184,7 @@ function buildDimensions(ctx: PlanContext): DimensionResult[] {
   const has = (name: string): boolean => inv.find((i) => i.name === name)?.present ?? false;
   const present = bootloaderPaths(SUPPORTED_CLIS).filter((rel) => existsSync(join(root, rel)));
   const sharedBody = sharedCanonicalBlockBody(dir).trim();
-  const preCommitHook = existsSync(join(root, ".git", "hooks", "pre-commit"));
+  const preCommitHook = preCommitHookActive(root);
 
   return [
     dim("layering", 1, [
@@ -238,8 +239,8 @@ function buildDimensions(ctx: PlanContext): DimensionResult[] {
       check(
         "pre-commit-installed",
         preCommitHook,
-        "run: pre-commit install",
-        ".git/hooks/pre-commit (enforcement)",
+        `run: ${GITHOOKS_PATH_COMMAND}`,
+        ".githooks/pre-commit or .git/hooks/pre-commit (enforcement)",
       ),
     ]),
     dim("discoverability", 0.5, [

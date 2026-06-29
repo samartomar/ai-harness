@@ -25,8 +25,14 @@ function put(relPath: string, contents: string): void {
 function makeCtx(
   options: Record<string, unknown> = {},
   flags: { apply?: boolean; verify?: boolean } = {},
+  presentBinaries: string[] = [],
 ): PlanContext {
-  const run = fakeRunner(() => undefined);
+  const run = fakeRunner((argv) => {
+    if ((argv[0] === "which" || argv[0] === "where") && presentBinaries.includes(argv[1] ?? "")) {
+      return { code: 0, stdout: `/usr/bin/${argv[1]}` };
+    }
+    return undefined;
+  });
   return {
     root: tmp,
     contextDir: ".ai-context",
@@ -229,19 +235,26 @@ describe("bootstrap-ai — CLI presence confirm step", () => {
     expect(res?.verdict).toBe("skip"); // empty $HOME, no binary → not detected
   });
 
-  it("passes the presence probe when a config dir is present", async () => {
+  it("skips the presence probe when only a config dir is present", async () => {
     mkdirSync(join(tmp, ".claude"), { recursive: true });
     const probe = probeNamed((await command.plan(makeCtx())).actions, "claude installed");
     const res = await probe?.run(makeCtx());
-    expect(res?.verdict).toBe("pass");
-    expect(res?.detail).toContain("config");
+    expect(res?.verdict).toBe("skip");
+    expect(res?.detail).toContain("config-only");
   });
 
-  it("--detect targets only the CLIs with a config dir present", async () => {
+  it("passes the presence probe when a CLI binary is on PATH", async () => {
+    const ctx = makeCtx({}, {}, ["claude"]);
+    const probe = probeNamed((await command.plan(ctx)).actions, "claude installed");
+    const res = await probe?.run(ctx);
+    expect(res?.verdict).toBe("pass");
+    expect(res?.detail).toContain("runnable on PATH");
+  });
+
+  it("--detect targets only runnable CLIs", async () => {
     mkdirSync(join(tmp, ".claude"), { recursive: true });
-    mkdirSync(join(tmp, ".cursor"), { recursive: true });
-    const w = writesByPath((await command.plan(makeCtx({ detect: true }))).actions);
-    expect(w.has("CLAUDE.md")).toBe(true);
+    const w = writesByPath((await command.plan(makeCtx({ detect: true }, {}, ["cursor"]))).actions);
+    expect(w.has("CLAUDE.md")).toBe(false);
     expect(w.has(".cursor/rules/00-canon.mdc")).toBe(true);
     expect(w.has("AGENTS.md")).toBe(false); // codex/etc not installed in the fake home
   });

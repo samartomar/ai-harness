@@ -1,7 +1,18 @@
+import { existsSync } from "node:fs";
+import { join } from "node:path";
+import { readIfExists } from "../internals/fsxn.js";
 import { type DigestAction, digest, type PlanContext } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
 import { aggregateUsage, type Counted } from "../usage/aggregate.js";
 import { readUsage } from "../usage/events.js";
+
+const RECORDER_PATH = join(".aih", "usage-record.mjs");
+const GIT_POST_COMMIT_PATH = join(".git", "hooks", "post-commit");
+
+function usageCaptureInstalled(ctx: PlanContext): boolean {
+  if (!existsSync(join(ctx.root, RECORDER_PATH))) return false;
+  return readIfExists(join(ctx.root, GIT_POST_COMMIT_PATH))?.includes("usage-record.mjs") === true;
+}
 
 const bar = (items: Counted[], label: string): string[] => {
   if (items.length === 0) return [`  ${label}: (none captured yet)`];
@@ -17,6 +28,18 @@ const bar = (items: Counted[], label: string): string[] => {
 export function usagePanel(ctx: PlanContext): DigestAction {
   const events = readUsage(ctx);
   if (events.length === 0) {
+    const installed = usageCaptureInstalled(ctx);
+    if (installed) {
+      return digest(
+        "Usage — capture installed, no events yet",
+        lines(
+          "Usage capture is installed and waiting for the first real event.",
+          "Commit activity appears after the next commit; per-tool hooks add skill/MCP detail.",
+          "No demo usage is shown as real data.",
+        ),
+        { events: 0, installed: true },
+      );
+    }
     return digest(
       "Usage — no events captured yet",
       lines(
@@ -24,7 +47,7 @@ export function usagePanel(ctx: PlanContext): DigestAction {
         "hook starts recording activity for ANY tool; per-tool hooks add skill/MCP detail.",
         "Usage accrues in `.aih/usage.jsonl` and shows up here.",
       ),
-      { events: 0 },
+      { events: 0, installed: false },
     );
   }
   const s = aggregateUsage(events);

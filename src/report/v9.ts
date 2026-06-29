@@ -207,7 +207,8 @@ function deriveActions(digests: DigestAction[]): V9Action[] {
   }
   const usage = bag(digests, "Usage");
   const usageEvents = usage ? numOr(usage.events ?? usage.total, 0) : 0;
-  if (usageEvents === 0) {
+  const usageInstalled = usage?.installed === true;
+  if (usageEvents === 0 && !usageInstalled) {
     out.push({
       sev: "low",
       title: "Wire usage + track hooks",

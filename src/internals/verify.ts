@@ -31,6 +31,7 @@ export type CheckCode =
   | "mcp.hardcoded-secret"
   // CLI bootloaders / canon
   | "cli.not-detected"
+  | "cli.config-only"
   | "cli.bootloader-missing"
   | "cli.bootloader-drift"
   | "cli.wont-load"

@@ -27,6 +27,16 @@
 - Owner review / `/code-review` pass.
 - Squash-merge only after explicit owner go-ahead.
 
+## Mindworks Trial Follow-Ups
+
+- **Fixed — config-only CLI detection no longer drives setup.** `--detect` targets runnable binaries on PATH; config-only traces are inventoried and can be selected only by explicit `--cli` / `--all-tools`.
+- **Fixed — validation is fail-closed and non-self-healing.** Generated validation forbids editing itself to pass, requires `aih secrets --verify`, and treats config-only CLIs as advisory.
+- **Fixed — generated canon has objective lineage.** Setup now points agents to a fixed reference set (NIST SSDF, OWASP Top 10 / LLM / CI-CD, DORA Four Keys) and requires `practice -> repo evidence -> local check`; duplicate generic rules must be pruned/pointer-converted.
+- **Fixed — clone-local hook activation is coherent.** Runtime status/report scoring use the same `git config core.hooksPath .githooks` path that scaffold emits, and the managed hook runs `.pre-commit-config.yaml` when present.
+- **Fixed — usage-installed state is honest.** When `.aih/usage-record.mjs` and the git hook are installed but no events exist, the report says capture is waiting for first real data instead of telling the user to reinstall it.
+- **Remaining — explicit prune command.** Add a safe `aih prune`/`aih canon-prune` flow for previewing and removing stale canonical artifacts/adapters/hooks when a CLI is no longer runnable or targeted.
+- **Remaining — first-developer readiness gate.** Define a single "ready for first developer task" verdict that combines runnable CLI targets, active hooks, secrets verification, quality commands, and app blockers.
+
 ## Final Local Gate
 
 Run before final push if anything changes:

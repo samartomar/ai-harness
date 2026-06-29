@@ -243,6 +243,13 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     title: "Target AI CLI not detected",
     action: "Install the target CLI, or target one explicitly with `--cli`/`--all-tools`.",
   },
+  "cli.config-only": {
+    audience: "developer",
+    failSeverity: "degraded",
+    title: "AI CLI config found but binary missing",
+    action:
+      "Install the CLI binary or target it explicitly only when the tool can run; config directories alone may be stale.",
+  },
   "cli.bootloader-missing": {
     audience: "developer",
     failSeverity: "blocking",
