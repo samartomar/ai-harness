@@ -1,6 +1,6 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { asPosture, gradeVerdict, resolvePosture } from "../../src/config/posture.js";
 
@@ -19,9 +19,10 @@ function marker(posture: string): void {
   );
 }
 
-function orgPolicy(minimumPosture: string): void {
+function orgPolicy(minimumPosture: string, path = join(dir, "aih-org-policy.json")): void {
+  mkdirSync(dirname(path), { recursive: true });
   writeFileSync(
-    join(dir, "aih-org-policy.json"),
+    path,
     JSON.stringify({
       schemaVersion: 1,
       minimumPosture,
@@ -96,5 +97,47 @@ describe("resolvePosture", () => {
         flagSource: "cli",
       }),
     ).toEqual({ posture: "enterprise", postureSource: "flag" });
+  });
+
+  it("attributes posture to org-floor when the local choice equals the floor", () => {
+    orgPolicy("enterprise");
+    expect(
+      resolvePosture({
+        root: dir,
+        env: {},
+        flag: "enterprise",
+        flagSource: "cli",
+      }),
+    ).toEqual({ posture: "enterprise", postureSource: "org-floor" });
+  });
+
+  it("uses AIH_ORG_POLICY as an exclusive floor source", () => {
+    orgPolicy("team");
+    const envPolicy = join(dir, "ops", "org-policy.json");
+    orgPolicy("enterprise", envPolicy);
+
+    expect(
+      resolvePosture({
+        root: dir,
+        env: { AIH_ORG_POLICY: envPolicy },
+        flag: "vibe",
+        flagSource: "cli",
+      }),
+    ).toEqual({ posture: "enterprise", postureSource: "org-floor" });
+  });
+
+  it("fails closed on malformed or invalid org-policy files", () => {
+    writeFileSync(join(dir, "aih-org-policy.json"), "{ broken");
+    expect(() => resolvePosture({ root: dir, env: {} })).toThrow(/aih-org-policy/);
+
+    writeFileSync(
+      join(dir, "aih-org-policy.json"),
+      JSON.stringify({
+        schemaVersion: 1,
+        minimumPosture: "oops",
+        references: { repoContract: "ai-coding/project.json" },
+      }),
+    );
+    expect(() => resolvePosture({ root: dir, env: {} })).toThrow(/org-policy is invalid/);
   });
 });

@@ -123,6 +123,27 @@ describe("composeOrgPolicy", () => {
     expect(overridden?.pathPatterns).toEqual(["src/api/**"]);
     expect(composed.riskGates.every((g) => g.behavior === "ask")).toBe(true);
   });
+
+  it("does not let org-policy downgrade hard-blocked license tiers", () => {
+    const composed = composeOrgPolicy(
+      parseOrgPolicy(
+        policy({
+          licenses: {
+            disposition: {
+              "network-copyleft": "auto-approve",
+              "strong-copyleft": "alert",
+            },
+          },
+        }),
+      ),
+    );
+
+    const disposition = Object.fromEntries(
+      composed.licenses.map((tier) => [tier.category, tier.disposition]),
+    );
+    expect(disposition["network-copyleft"]).toBe("block");
+    expect(disposition["strong-copyleft"]).toBe("alert");
+  });
 });
 
 describe("orgPolicyProjectionActions", () => {
@@ -235,5 +256,16 @@ describe("orgPolicyDriftProbes", () => {
     expect(check?.code).toBe("org-policy.drift");
     expect(check?.location?.uri).toBe(".claude/managed-settings.json");
     expect(check?.detail).toContain("org-policy drift");
+  });
+
+  it("projects drift expectations at the resolved posture, not only the policy floor", () => {
+    writePolicy(policy({ minimumPosture: "team" }));
+    const c: PlanContext = { ...ctx(), posture: "enterprise", postureSource: "flag" };
+    const probes = orgPolicyDriftProbes(c);
+
+    expect(probes.map((p) => p.describe)).toContain(
+      "org-policy drift: managed-settings.json.example",
+    );
+    expect(probes.map((p) => p.describe)).toContain("org-policy drift: managed-mcp.json.example");
   });
 });

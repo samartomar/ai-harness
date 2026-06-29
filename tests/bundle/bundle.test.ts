@@ -99,6 +99,19 @@ describe("bundle command", () => {
     expect(sign?.kind === "exec" ? sign.argv[0] : "").toBe("cosign");
     expect(sign?.kind === "exec" ? sign.allowFailure : false).toBe(true);
   });
+
+  it("keeps absolute output paths normalized for checksum verification on Windows", async () => {
+    seed();
+    const outDir = join(dir, "absolute-bundle");
+    const p = await bundleCommand.plan(ctx({ options: { out: outDir } }));
+    const paths = writes(p.actions).map((w) => w.path);
+
+    expect(paths.some((path) => path.includes("\\files\\"))).toBe(false);
+    expect(paths.some((path) => path.endsWith("/files/ai-coding/project.json"))).toBe(true);
+    expect(writes(p.actions).find((w) => w.path.endsWith("/SHA256SUMS"))?.contents).toContain(
+      "files/ai-coding/project.json",
+    );
+  });
 });
 
 describe("verify-bundle command", () => {
@@ -120,6 +133,36 @@ describe("verify-bundle command", () => {
     expect(p.actions.filter((a) => a.kind === "probe").map((a) => a.describe)).toEqual([
       "fleet bundle checksums",
       "fleet bundle signature",
+    ]);
+  });
+
+  it("verifies GitHub attestations with gh when requested", async () => {
+    const root = join(dir, "gh-bundle");
+    mkdirSync(root, { recursive: true });
+    writeFileSync(join(root, "SHA256SUMS"), `${sha256Hex("ok\n")}  files/a.txt\n`);
+    const calls: string[][] = [];
+    const run = fakeRunner((argv) => {
+      calls.push(argv);
+      return argv[0] === "gh" ? { code: 0, stdout: "verified\n" } : undefined;
+    });
+    const verifyCtx = ctx({
+      run,
+      options: { bundle: root, signer: "gh", repo: "samartomar/ai-harness" },
+    });
+    const p = await verifyCommand.plan(verifyCtx);
+    const probe = p.actions.find(
+      (a) => a.kind === "probe" && a.describe === "fleet bundle signature",
+    );
+    const check = probe?.kind === "probe" ? await probe.run(verifyCtx) : undefined;
+
+    expect(check?.verdict).toBe("pass");
+    expect(calls[0]).toEqual([
+      "gh",
+      "attestation",
+      "verify",
+      join(root, "SHA256SUMS"),
+      "--repo",
+      "samartomar/ai-harness",
     ]);
   });
 });

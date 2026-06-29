@@ -85,14 +85,17 @@ describe("governanceRollupDigest", () => {
   });
 
   it("marks CA trust as enterprise-deny until a trust env var is present", () => {
+    const team = governanceRollupDigest(ctx({ posture: "team" }));
     const missing = governanceRollupDigest(ctx({ posture: "enterprise" }));
     const configured = governanceRollupDigest(
       ctx({ posture: "enterprise", env: { NODE_EXTRA_CA_CERTS: "/corp/root.pem" } }),
     );
 
+    const teamCa = controls(team).find((c) => c.control === "ca-trust");
     const missingCa = controls(missing).find((c) => c.control === "ca-trust");
     const configuredCa = controls(configured).find((c) => c.control === "ca-trust");
 
+    expect(teamCa?.verdict).toBe("warn");
     expect(missingCa?.verdict).toBe("deny");
     expect(configuredCa?.verdict).toBe("allow");
   });

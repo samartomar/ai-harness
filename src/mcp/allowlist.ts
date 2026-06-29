@@ -40,7 +40,11 @@ export function managedMcpAllowlistSettings(
 function parseJson(path: string): unknown | undefined {
   const raw = readIfExists(path);
   if (raw === undefined) return undefined;
-  return JSON.parse(raw) as unknown;
+  try {
+    return JSON.parse(raw) as unknown;
+  } catch {
+    return undefined;
+  }
 }
 
 function mcpCommands(root: string): string[][] | undefined {

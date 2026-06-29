@@ -9,6 +9,12 @@ import type { Check } from "../internals/verify.js";
 import { orgPolicyProjectionActions } from "./project.js";
 import { readOrgPolicy } from "./schema.js";
 
+const POSTURE_RANK: Record<Posture, number> = { vibe: 0, team: 1, enterprise: 2 };
+
+function strongerPosture(a: Posture, b: Posture): Posture {
+  return POSTURE_RANK[a] >= POSTURE_RANK[b] ? a : b;
+}
+
 function stable(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(stable);
   if (!isPlainObject(value)) return value;
@@ -151,8 +157,11 @@ export function orgPolicyDriftProbes(ctx: PlanContext): ProbeAction[] {
   }
   if (policy === undefined) return [];
 
-  const projectionCtx: PlanContext = { ...ctx, posture: policy.minimumPosture };
   const posture = ctx.posture ?? policy.minimumPosture;
+  const projectionCtx: PlanContext = {
+    ...ctx,
+    posture: strongerPosture(posture, policy.minimumPosture),
+  };
   return orgPolicyProjectionActions(projectionCtx, policy)
     .filter((a): a is WriteAction => a.kind === "write")
     .map((action) => probe(`org-policy drift: ${action.path}`, driftCheck(action, posture)));

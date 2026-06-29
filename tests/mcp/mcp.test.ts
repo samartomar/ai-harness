@@ -531,6 +531,19 @@ describe("aih mcp — remote scope emits SSO gateway doc (cloud is doc, not writ
     expect(JSON.stringify(rbac?.json)).toContain("missing-server");
   });
 
+  it("turns malformed org-policy into a fail probe instead of crashing", async () => {
+    const root = makeTmp();
+    writeFileSync(join(root, "aih-org-policy.json"), "{ broken");
+
+    const p = await command.plan(makeCtx({ root, options: { scope: "remote" } }));
+    const probe = p.actions.find((a) => a.kind === "probe" && a.describe === "org-policy parse");
+    const check = probe?.kind === "probe" ? await probe.run(makeCtx({ root })) : undefined;
+
+    expect(check?.verdict).toBe("fail");
+    expect(check?.code).toBe("org-policy.drift");
+    expect(p.actions.some((a) => a.kind === "write" && a.path === ".mcp.json")).toBe(true);
+  });
+
   it("BOUNDARY: no write or exec action targets a remote host — gateway/SSO is doc only", async () => {
     const p = await command.plan(makeCtx({ options: { scope: "remote" } }));
 
@@ -641,6 +654,32 @@ describe("aih mcp — enterprise posture (governance gate, opt-in)", () => {
     expect(managed?.merge).toBe(true);
     expect(managed?.json).toMatchObject({ allowManagedMcpServersOnly: true });
     expect(JSON.stringify(managed?.json)).toContain("code-review-graph@2.3.6");
+  });
+
+  it("intersects the managed MCP allowlist with org-policy grants", async () => {
+    const root = makeTmp();
+    writeFileSync(
+      join(root, "aih-org-policy.json"),
+      jsonFile({
+        schemaVersion: 1,
+        minimumPosture: "enterprise",
+        references: { repoContract: "ai-coding/project.json" },
+        mcp: { allowedServers: ["code-review-graph"], allowManagedOnly: true },
+      }),
+    );
+    const p = await command.plan(makeCtx({ root, options: { posture: "enterprise" } }));
+    const dotMcp = p.actions.find(
+      (a): a is WriteAction => a.kind === "write" && a.path === ".mcp.json",
+    );
+    const managed = p.actions.find(
+      (a): a is WriteAction => a.kind === "write" && a.path === ".claude/managed-settings.json",
+    );
+
+    if (dotMcp === undefined) throw new Error("expected .mcp.json write");
+    expect(Object.keys(serversOf(dotMcp))).toContain("sequential-thinking");
+    const managedJson = JSON.stringify(managed?.json);
+    expect(managedJson).toContain("code-review-graph@2.3.6");
+    expect(managedJson).not.toContain("server-sequential-thinking");
   });
 
   it("emits a governance doc + a policy probe that FAILS on the third-party context7 server", async () => {

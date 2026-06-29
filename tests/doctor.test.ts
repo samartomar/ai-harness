@@ -227,6 +227,18 @@ describe("doctor — MCP managed allowlist drift", () => {
     expect(res?.code).toBe("mcp.allowlist-drift");
     expect(res?.detail).toContain("code-review-graph@2.3.6");
   });
+
+  it("skips malformed managed-settings JSON as no enforceable allowlist", async () => {
+    writeMcp();
+    mkdirSync(join(dir, ".claude"), { recursive: true });
+    writeFileSync(join(dir, ".claude", "managed-settings.json"), "{ broken");
+    const c = rooted();
+    const probe = findProbe((await command.plan(c)).actions, "MCP managed allowlist");
+    const res = await probe?.run(c);
+
+    expect(res?.verdict).toBe("skip");
+    expect(res?.detail).toContain("no managed MCP allowlist");
+  });
 });
 
 describe("doctor — org-policy drift", () => {

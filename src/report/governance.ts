@@ -108,7 +108,7 @@ function caTrustRow(ctx: PlanContext, posture: Posture): GovernanceRow {
   const configured = TRUST_ENV_KEYS.filter((key) => trustEnvConfigured(key, ctx.env[key]));
   return {
     control: "ca-trust",
-    verdict: configured.length > 0 ? "allow" : gradeVerdict("warn", "ca-drift", posture),
+    verdict: configured.length > 0 ? "allow" : gradeVerdict("warn", "ca-trust", posture),
     detail:
       configured.length > 0
         ? `trust env present: ${configured.join(", ")}`

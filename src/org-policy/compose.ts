@@ -66,7 +66,8 @@ function composeLicenses(policy: OrgPolicy): LicenseTier[] {
   const overrides = policy.licenses?.disposition ?? {};
   return LICENSE_MATRIX.map((tier) => ({
     ...tier,
-    disposition: overrides[tier.category] ?? tier.disposition,
+    disposition:
+      tier.disposition === "block" ? "block" : (overrides[tier.category] ?? tier.disposition),
   }));
 }
 

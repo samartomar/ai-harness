@@ -1,8 +1,8 @@
 import { join, resolve } from "node:path";
 import { z } from "zod";
-import { AIH_ORG_POLICY_FILE } from "../config/posture.js";
 import { AihError } from "../errors.js";
 import { readIfExists } from "../internals/fsxn.js";
+import { AIH_ORG_POLICY_FILE } from "./constants.js";
 
 const PostureSchema = z.enum(["vibe", "team", "enterprise"]);
 
@@ -93,7 +93,7 @@ export function parseOrgPolicy(value: unknown): OrgPolicy {
   }
 }
 
-function policyPath(root: string, env: NodeJS.ProcessEnv): string {
+export function orgPolicyPath(root: string, env: NodeJS.ProcessEnv): string {
   if (env.AIH_ORG_POLICY && env.AIH_ORG_POLICY.trim().length > 0) {
     return resolve(root, env.AIH_ORG_POLICY.trim());
   }
@@ -101,7 +101,7 @@ function policyPath(root: string, env: NodeJS.ProcessEnv): string {
 }
 
 export function readOrgPolicy(root: string, env: NodeJS.ProcessEnv): OrgPolicy | undefined {
-  const path = policyPath(root, env);
+  const path = orgPolicyPath(root, env);
   const raw = readIfExists(path);
   if (raw === undefined) return undefined;
   try {

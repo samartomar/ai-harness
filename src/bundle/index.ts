@@ -59,7 +59,6 @@ function verifyBundleRoot(ctx: PlanContext): string {
 }
 
 function bundlePath(out: string, ...parts: string[]): string {
-  if (isAbsolute(out)) return join(out, ...parts);
   return posix.join(posixPath(out), ...parts.map(posixPath));
 }
 
@@ -223,6 +222,33 @@ export function verifyBundleChecksums(bundleRoot: string): Check {
 
 async function verifyBundleSignature(ctx: PlanContext, bundleRoot: string): Promise<Check> {
   const sums = join(bundleRoot, CHECKSUMS_FILE);
+  if (ctx.options.signer === "gh") {
+    const repo = typeof ctx.options.repo === "string" ? ctx.options.repo.trim() : "";
+    if (repo.length === 0) {
+      return {
+        name: "fleet bundle signature",
+        verdict: "skip",
+        detail: "gh attestation verification requires --repo <owner/repo>",
+      };
+    }
+    const res = await ctx.run(["gh", "attestation", "verify", sums, "--repo", repo]);
+    if (res.spawnError) {
+      return { name: "fleet bundle signature", verdict: "skip", detail: "gh not found" };
+    }
+    if (res.code === 0) {
+      return {
+        name: "fleet bundle signature",
+        verdict: "pass",
+        detail: "GitHub attestation verified SHA256SUMS",
+      };
+    }
+    return {
+      name: "fleet bundle signature",
+      verdict: "fail",
+      detail: res.stderr.trim() || `gh attestation verify exited ${res.code}`,
+    };
+  }
+
   const sig = join(bundleRoot, SIGNATURE_FILE);
   if (readIfExists(sig) === undefined) {
     return { name: "fleet bundle signature", verdict: "skip", detail: `${SIGNATURE_FILE} missing` };
@@ -284,6 +310,14 @@ export const verifyCommand: CommandSpec = {
       flags: "--bundle <dir>",
       description: "bundle directory to verify",
       default: DEFAULT_OUT,
+    },
+    {
+      flags: "--signer <signer>",
+      description: "signature verifier: cosign | gh (default: cosign when SHA256SUMS.sig exists)",
+    },
+    {
+      flags: "--repo <owner/repo>",
+      description: "GitHub repository identity for --signer gh attestation verification",
     },
   ],
   plan: verifyPlan,

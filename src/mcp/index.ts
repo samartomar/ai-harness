@@ -3,10 +3,10 @@ import { homeDir, resolveTargets } from "../internals/cli-detect.js";
 import { type CliEntry, entry } from "../internals/cli-registry.js";
 import { upsertTextBlock } from "../internals/envfile.js";
 import { readIfExists } from "../internals/fsxn.js";
-import type { Action, CommandSpec, PlanContext } from "../internals/plan.js";
+import type { Action, CommandSpec, PlanContext, ProbeAction } from "../internals/plan.js";
 import { doc, plan, probe, writeJson, writeText } from "../internals/plan.js";
 import type { Check } from "../internals/verify.js";
-import { readOrgPolicy } from "../org-policy/schema.js";
+import { type OrgPolicy, readOrgPolicy } from "../org-policy/schema.js";
 import { scanRepo } from "../profile/scan.js";
 import { managedMcpAllowlistSettings } from "./allowlist.js";
 import {
@@ -91,6 +91,33 @@ function mcpPolicyProbe(servers: Record<string, McpServer>, posture: McpPosture)
 
 /** Canonical agentgateway base URL clients are pointed at in the remote scope. */
 const GATEWAY_URL = "https://agentgateway.n24q02m.com";
+
+function readMcpOrgPolicy(ctx: PlanContext): { policy?: OrgPolicy; error?: unknown } {
+  try {
+    return { policy: readOrgPolicy(ctx.root, ctx.env) };
+  } catch (error) {
+    return { error };
+  }
+}
+
+function invalidOrgPolicyProbe(error: unknown): ProbeAction {
+  return probe("org-policy parse", () => ({
+    name: "org-policy parse",
+    verdict: "fail",
+    detail: `aih-org-policy.json cannot be parsed (${(error as Error).message})`,
+    code: "org-policy.drift",
+  }));
+}
+
+function orgAllowedServers(
+  servers: Record<string, McpServer>,
+  policy: OrgPolicy | undefined,
+): Record<string, McpServer> {
+  const allowed = policy?.mcp?.allowedServers ?? [];
+  if (allowed.length === 0) return servers;
+  const allowedSet = new Set(allowed);
+  return Object.fromEntries(Object.entries(servers).filter(([name]) => allowedSet.has(name)));
+}
 
 /** Honest DB-server guidance (datastore MCP packages vary, so we suggest, not pin). */
 function dbMcpNote(databases: string[]): string {
@@ -241,6 +268,11 @@ async function planMcp(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
   const stack = scanRepo(ctx.root, { maxDepth: 8, contextDir: ctx.contextDir });
   const servers = mcpServers(scope, stack, { selfHost });
   const serverNames = Object.keys(servers);
+  const actions: Action[] = [];
+  const orgPolicyResult = readMcpOrgPolicy(ctx);
+  if (orgPolicyResult.error !== undefined) {
+    actions.push(invalidOrgPolicyProbe(orgPolicyResult.error));
+  }
   const tailored = serverNames
     .filter(
       (name) =>
@@ -252,7 +284,6 @@ async function planMcp(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
     .join(", ");
 
   const home = homeDir(ctx);
-  const actions: Action[] = [];
   const writtenPaths = new Set<string>();
   for (const cli of clis) {
     const e = entry(cli);
@@ -348,9 +379,8 @@ async function planMcp(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
     const hosted = Object.entries(servers)
       .filter(([, s]) => s.type === "http" && s.url.includes(N24Q02M_HOST))
       .map(([name]) => name);
-    const orgPolicy = readOrgPolicy(ctx.root, ctx.env);
     const rbac = gatewayRbacConfig(GATEWAY_URL, servers, {
-      orgAllowedServers: orgPolicy?.mcp?.allowedServers,
+      orgAllowedServers: orgPolicyResult.policy?.mcp?.allowedServers,
     });
     actions.push(
       writeJson(
@@ -383,10 +413,11 @@ async function planMcp(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
   const posture = ctx.posture ?? asPosture(ctx.options.posture);
   if (posture === "enterprise") {
     const policies = evaluateMcpPolicy(servers, posture);
+    const managedServers = orgAllowedServers(servers, orgPolicyResult.policy);
     actions.push(
       writeJson(
         ".claude/managed-settings.json",
-        managedMcpAllowlistSettings(servers),
+        managedMcpAllowlistSettings(managedServers),
         "Enforce Claude managed MCP allowlist (fixed server commands from .mcp.json)",
         { merge: true },
       ),

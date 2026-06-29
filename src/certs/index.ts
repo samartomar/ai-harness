@@ -20,6 +20,9 @@ import { homebrewDoc, noCertDoc } from "./templates.js";
 const DEFAULT_OUT_DIR = "~/.config/enterprise-ca";
 const PEM_NAME = "corporate-root-ca.pem";
 const TRUSTSTORE_NAME = "corporate-cacerts.jks";
+// JDK truststores conventionally use "changeit" as the default local password.
+// This generated user-scoped truststore is a distribution container for public CA
+// certificates, not a secret-bearing keystore.
 const TRUSTSTORE_PASSWORD = "changeit";
 const DOCKER_REGISTRY_HOST = "registry-1.docker.io";
 

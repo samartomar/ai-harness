@@ -1,9 +1,8 @@
-import { join, resolve } from "node:path";
-import { readIfExists } from "../internals/fsxn.js";
+export { AIH_ORG_POLICY_FILE } from "../org-policy/constants.js";
+
+import { orgPolicyPath, readOrgPolicy } from "../org-policy/schema.js";
 import type { AihConfig } from "./marker.js";
 import { readAihConfig } from "./marker.js";
-
-export const AIH_ORG_POLICY_FILE = "aih-org-policy.json";
 
 export type Posture = "vibe" | "team" | "enterprise";
 export type PostureSource = "flag" | "marker" | "env" | "default" | "org-floor";
@@ -14,7 +13,7 @@ export type GovernanceControl =
   | "command-policy"
   | "risk-gates"
   | "mcp"
-  | "ca-drift"
+  | "ca-trust"
   | "verify";
 
 export interface ResolvedPosture {
@@ -45,54 +44,26 @@ export function asPosture(value: unknown): Posture {
   return "vibe";
 }
 
-function isPosture(value: unknown): value is Posture {
-  return value === "vibe" || value === "team" || value === "enterprise";
-}
-
 function stronger(a: Posture, b: Posture): Posture {
   return POSTURE_RANK[a] >= POSTURE_RANK[b] ? a : b;
 }
 
-function orgPolicyPath(root: string, env: NodeJS.ProcessEnv): string[] {
-  const paths = [join(root, AIH_ORG_POLICY_FILE)];
-  if (env.AIH_ORG_POLICY && env.AIH_ORG_POLICY.trim().length > 0) {
-    const p = env.AIH_ORG_POLICY.trim();
-    paths.push(resolve(root, p));
-  }
-  return paths;
-}
-
 /**
- * P1 freezes the org-floor read seam without owning the full P2 schema. The file
- * can carry more fields, but this spine only reads `minimumPosture` and the
- * optional repo-contract reference used later for drift checks.
+ * The posture spine reads the org floor through the authoritative org-policy
+ * schema/path resolver, so malformed policy files fail closed and AIH_ORG_POLICY
+ * uses the same env-exclusive precedence as the full org-policy projection.
  */
 export function readOrgPolicyFloor(
   root: string,
   env: NodeJS.ProcessEnv,
 ): OrgPolicyFloor | undefined {
-  for (const path of orgPolicyPath(root, env)) {
-    const raw = readIfExists(path);
-    if (raw === undefined) continue;
-    try {
-      const parsed = JSON.parse(raw) as {
-        minimumPosture?: unknown;
-        references?: { repoContract?: unknown };
-      };
-      if (!isPosture(parsed.minimumPosture)) return undefined;
-      return {
-        minimumPosture: parsed.minimumPosture,
-        contractRef:
-          typeof parsed.references?.repoContract === "string"
-            ? parsed.references.repoContract
-            : undefined,
-        path,
-      };
-    } catch {
-      return undefined;
-    }
-  }
-  return undefined;
+  const policy = readOrgPolicy(root, env);
+  if (policy === undefined) return undefined;
+  return {
+    minimumPosture: policy.minimumPosture,
+    contractRef: policy.references.repoContract,
+    path: orgPolicyPath(root, env),
+  };
 }
 
 export function resolvePosture(input: ResolvePostureInput): ResolvedPosture {
@@ -111,7 +82,9 @@ export function resolvePosture(input: ResolvePostureInput): ResolvedPosture {
   const floor = readOrgPolicyFloor(input.root, input.env);
   if (floor !== undefined) {
     const clamped = stronger(resolved.posture, floor.minimumPosture);
-    if (clamped !== resolved.posture) return { posture: clamped, postureSource: "org-floor" };
+    if (POSTURE_RANK[floor.minimumPosture] >= POSTURE_RANK[resolved.posture]) {
+      return { posture: clamped, postureSource: "org-floor" };
+    }
   }
   return resolved;
 }
