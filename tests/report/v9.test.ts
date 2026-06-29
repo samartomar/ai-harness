@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { type DigestAction, digest } from "../../src/internals/plan.js";
 import { assembleViewV9, buildAihDataV9, reportHtmlV9 } from "../../src/report/v9.js";
 import { V9_DEMO } from "../../src/report/v9-demo.js";
+import { renderActivity, renderMcp } from "../../src/report/v9-render.js";
 
 /** A scorecard digest; `guardrails` controls the worst axis (default 40 = the demo gap). */
 function scorecard(guardrails = 40): DigestAction {
@@ -531,5 +532,71 @@ describe("reportHtmlV9 — server-rendered honesty (no-JS)", () => {
     const html = reportHtmlV9("t", [sc]);
     expect(html).toContain('hero-score-big">73');
     expect(html).not.toContain('hero-score-big">82');
+  });
+});
+
+describe("v9-render — bar/badge fixes", () => {
+  const activity = (over: Partial<Parameters<typeof renderActivity>[0]> = {}) => ({
+    commits: { d7: 62, d30: 209, total: 1200, streak: 14, longestStreak: 48 },
+    loc30d: { added: 33741, removed: 163027, net: -129286 },
+    repo: { current: "main", main: "main", dirty: false, branches: [] },
+    usageByCli: [
+      ["claude", 62, "#5b9dff", 747],
+      ["gemini", 4, "#f87171", 48],
+    ] as Array<[string, number, string, number]>,
+    ...over,
+  });
+  const mcp = (servers: Array<[string, string]>) => ({
+    wiring: { clis: ["claude"], cols: ["rules"], cells: { claude: ["ok"] } },
+    wiredCount: 1,
+    totalClis: 1,
+    servers,
+  });
+
+  it("scales both LOC bars against the larger side so neither overflows (was 483%)", () => {
+    const html = renderActivity(activity(), true);
+    const widths = [...html.matchAll(/width:(\d+)%/g)].map((m) => Number(m[1]));
+    expect(Math.max(...widths)).toBeLessThanOrEqual(100);
+    expect(html).toContain('class="mat-fill bad" style="width:100%"'); // removed = larger → full
+    expect(html).toContain('class="mat-fill" style="width:21%"'); // added = round(33741/163027*100)
+  });
+
+  it("labels only usage segments wide enough to hold the text", () => {
+    const html = renderActivity(activity(), true);
+    expect(html).toContain("claude 62%"); // big slice labelled
+    expect(html).not.toContain("gemini 4%"); // 4% slice left blank — legend names it
+    expect(html).toContain("gemini"); // still present in the legend
+  });
+
+  it("drops the redundant inline 'design' badge on preview cards (ribbon remains)", () => {
+    const html = renderActivity(activity(), true); // usagePreview
+    expect(html).not.toContain(">design<");
+    const view = assembleViewV9(buildAihDataV9(ALL), V9_DEMO);
+    const skills = view.sections["sec-skills"]?.html ?? "";
+    expect(skills).toContain("preview"); // .preview ribbon class
+    expect(skills).not.toContain(">design<");
+  });
+
+  it("egress badge counts unknown servers instead of calling them local/vendor", () => {
+    const html = renderMcp(
+      mcp([
+        ["code-review-graph", "local"],
+        ["shadcn", "unknown"],
+      ]),
+    );
+    expect(html).toContain("1 unknown");
+    expect(html).not.toContain("all local/vendor");
+    expect(html).toContain('class="egress unknown"'); // muted dot, not a green "local" dot
+  });
+
+  it("egress badge still flags third-party, and says all local/vendor only when truly all", () => {
+    expect(renderMcp(mcp([["context7", "third-party"]]))).toContain("1 third-party");
+    const allClassified = renderMcp(
+      mcp([
+        ["code-review-graph", "local"],
+        ["aws", "vendor API"],
+      ]),
+    );
+    expect(allClassified).toContain("all local/vendor");
   });
 });

@@ -88,9 +88,13 @@ function matrix(rows: string[], cols: string[], cells: Record<string, string[]>)
   return `<div class="matrix" style="grid-template-columns:90px repeat(${cols.length},1fr)">${head}${body}</div>`;
 }
 
-/** The badge for a card head: a live badge, or the "design" badge when previewing. */
+/**
+ * The badge for a card head: the live badge, or nothing when previewing. A `.preview`
+ * card already carries the "PREVIEW · not wired yet" corner ribbon (CSS `::after`), so
+ * emitting a second inline badge here just collides with it in the top-right.
+ */
 function headBadge(preview: boolean, live: string): string {
-  return preview ? '<span class="badge anom">design</span>' : live;
+  return preview ? "" : live;
 }
 
 /** Card class with the optional preview marker. */
@@ -227,7 +231,11 @@ function heatGrid(cells?: number[]): string {
 
 export function renderActivity(a: V9Activity, usagePreview: boolean): string {
   const heat = `<div class="card span-8"><div class="card-head"><h3>Commit activity · 90 days</h3><span class="badge muted">git history</span></div><div class="card-body"><div class="heatmap-wrap"><div class="heatmap"><div class="heatmap-grid" id="heatmap">${heatGrid(a.heatCells)}</div><div class="heatmap-legend"><span>less</span><div class="cells"><span class="cell"></span><span class="cell l1"></span><span class="cell l2"></span><span class="cell l3"></span><span class="cell l4"></span></div><span>more</span></div></div><div class="heatmap-side"><div class="heatmap-stat"><b>${a.commits.d7}</b><span>7 days</span></div><div class="heatmap-stat"><b>${a.commits.d30}</b><span>30 days</span></div><div class="heatmap-stat"><b>${a.commits.streak}</b><span>day streak</span></div><div class="heatmap-streak">longest · ${a.commits.longestStreak} days</div></div></div></div></div>`;
-  const removedPct = a.loc30d.added > 0 ? Math.round((a.loc30d.removed / a.loc30d.added) * 100) : 0;
+  // Scale both LOC bars against the larger of the two so neither overflows its track.
+  // (A big delete used to push "removed" to several hundred percent — added was pinned 100%.)
+  const locMax = Math.max(a.loc30d.added, a.loc30d.removed, 1);
+  const addedPct = Math.round((a.loc30d.added / locMax) * 100);
+  const removedPct = Math.round((a.loc30d.removed / locMax) * 100);
   const branchLis = a.repo.branches
     .map((b) => {
       const tag = b.tag ? `<span class="tag">${escHtml(b.tag)}</span>` : "";
@@ -239,12 +247,14 @@ export function renderActivity(a: V9Activity, usagePreview: boolean): string {
     })
     .join("");
   const hint = a.repo.dirty ? '<div class="hint">uncommitted changes</div>' : "";
-  const loc = `<div class="card span-4"><div class="card-head"><h3>LOC · 30d + repo</h3><span class="badge ok">net ${a.loc30d.net >= 0 ? "+" : ""}${thousands(a.loc30d.net)}</span></div><div class="card-body"><div class="mat"><div class="mat-row"><div class="mat-bar-wrap"><span class="mat-label">added</span><span class="mat-track"><span class="mat-fill" style="width:100%"></span></span></div><span class="mat-val">+${thousands(a.loc30d.added)}</span></div><div class="mat-row"><div class="mat-bar-wrap"><span class="mat-label">removed</span><span class="mat-track"><span class="mat-fill bad" style="width:${removedPct}%"></span></span></div><span class="mat-val">−${thousands(a.loc30d.removed)}</span></div></div><div style="margin-top:.7rem;font-size:.66rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:600">Repo status</div><ul class="branches" style="margin-top:.3rem">${branchLis}</ul>${hint}</div></div>`;
+  const loc = `<div class="card span-4"><div class="card-head"><h3>LOC · 30d + repo</h3><span class="badge ok">net ${a.loc30d.net >= 0 ? "+" : ""}${thousands(a.loc30d.net)}</span></div><div class="card-body"><div class="mat"><div class="mat-row"><div class="mat-bar-wrap"><span class="mat-label">added</span><span class="mat-track"><span class="mat-fill" style="width:${addedPct}%"></span></span></div><span class="mat-val">+${thousands(a.loc30d.added)}</span></div><div class="mat-row"><div class="mat-bar-wrap"><span class="mat-label">removed</span><span class="mat-track"><span class="mat-fill bad" style="width:${removedPct}%"></span></span></div><span class="mat-val">−${thousands(a.loc30d.removed)}</span></div></div><div style="margin-top:.7rem;font-size:.66rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:600">Repo status</div><ul class="branches" style="margin-top:.3rem">${branchLis}</ul>${hint}</div></div>`;
   const totalActions = a.usageByCli.reduce((n, [, , , c]) => n + c, 0);
   const segs = a.usageByCli
     .map(
       ([cli, pct, color]) =>
-        `<div class="cost-seg" style="background:${color};width:${pct}%">${escHtml(cli)} ${pct}%</div>`,
+        // Only label a segment wide enough to hold the text; tiny slices stay blank
+        // (every CLI is named in the legend below), so labels never spill their slice.
+        `<div class="cost-seg" style="background:${color};width:${pct}%">${pct >= 10 ? `${escHtml(cli)} ${pct}%` : ""}</div>`,
     )
     .join("");
   const legend = a.usageByCli
@@ -253,9 +263,10 @@ export function renderActivity(a: V9Activity, usagePreview: boolean): string {
         `<span class="cost-leg"><span class="dot" style="background:${color}"></span>${escHtml(cli)} <b>${thousands(c)}</b></span>`,
     )
     .join("");
-  const usageBadge = usagePreview
-    ? '<span class="badge anom">design</span>'
-    : `<span class="badge ok">${thousands(totalActions)} actions</span>`;
+  const usageBadge = headBadge(
+    usagePreview,
+    `<span class="badge ok">${thousands(totalActions)} actions</span>`,
+  );
   const usageNote = usagePreview
     ? "Per-CLI attribution needs the usage recorder + per-tool hooks. Shown as design intent until wired — not real activity."
     : "Share of recorded AI activity by CLI (commits + tool/skill/MCP calls). Needs per-tool hooks for non-commit attribution.";
@@ -356,13 +367,16 @@ export function renderMcp(m: V9Mcp): string {
   const mtx = matrix(m.wiring.clis, m.wiring.cols, m.wiring.cells);
   const wiring = `<div class="card span-7"><div class="card-head"><h3>Per-CLI wiring · pre-flight green</h3><span class="badge mcp">${m.wiredCount}/${m.totalClis} wired</span></div><div class="card-body">${mtx}</div></div>`;
   const thirdParty = m.servers.filter(([, e]) => EGRESS_CLASS[e] === "third").length;
+  const unknownCount = m.servers.filter(([, e]) => !EGRESS_CLASS[e]).length;
   const srvBadge =
     thirdParty > 0
       ? `<span class="badge warn">${thirdParty} third-party</span>`
-      : '<span class="badge ok">all local/vendor</span>';
+      : unknownCount > 0
+        ? `<span class="badge muted">${unknownCount} unknown</span>`
+        : '<span class="badge ok">all local/vendor</span>';
   const rows = m.servers
     .map(([name, egress]) => {
-      const cls = EGRESS_CLASS[egress] ?? "local";
+      const cls = EGRESS_CLASS[egress] ?? "unknown";
       return `<div class="srv-row"><span class="n">${escHtml(name)}</span><span class="egress ${cls}"><span class="d"></span>${escHtml(egress)}</span></div>`;
     })
     .join("");
