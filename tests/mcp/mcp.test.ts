@@ -490,6 +490,7 @@ describe("aih mcp — remote scope emits SSO gateway doc (cloud is doc, not writ
     expect(text).toContain("agentgateway login --check");
     // Tool-level RBAC mapping is present.
     expect(text).toContain("RBAC");
+    expect(text).toContain("mcp-gateway-rbac.json");
     // Clients are pointed at the canonical agentgateway base URL (blueprint Phase 3).
     expect(text).toContain("https://agentgateway.n24q02m.com");
     // The gateway doc carries no file path (printed guidance, not a written file).
@@ -503,22 +504,51 @@ describe("aih mcp — remote scope emits SSO gateway doc (cloud is doc, not writ
     expect(w.merge).toBe(true);
   });
 
+  it("writes a structured gateway RBAC config from catalog plus org-policy", async () => {
+    const root = makeTmp();
+    writeFileSync(
+      join(root, "aih-org-policy.json"),
+      jsonFile({
+        schemaVersion: 1,
+        minimumPosture: "team",
+        references: { repoContract: "ai-coding/project.json" },
+        mcp: {
+          allowedServers: ["code-review-graph", "better-email", "missing-server"],
+          allowManagedOnly: false,
+        },
+      }),
+    );
+    const p = await command.plan(makeCtx({ root, options: { scope: "remote" } }));
+    const rbac = p.actions.find(
+      (a): a is WriteAction =>
+        a.kind === "write" && a.path.replace(/\\/g, "/") === ".ai-context/mcp-gateway-rbac.json",
+    );
+    expect(rbac).toBeDefined();
+    const roles = (rbac?.json as { roles: Array<{ idpGroup: string; allowedServers: string[] }> })
+      .roles;
+    const orgDefault = roles.find((role) => role.idpGroup === "mcp-org-default");
+    expect(orgDefault?.allowedServers).toEqual(["better-email", "code-review-graph"]);
+    expect(JSON.stringify(rbac?.json)).toContain("missing-server");
+  });
+
   it("BOUNDARY: no write or exec action targets a remote host — gateway/SSO is doc only", async () => {
     const p = await command.plan(makeCtx({ options: { scope: "remote" } }));
 
     // No exec actions at all (no remote, and nothing local to mutate here).
     expect(p.actions.some((a) => a.kind === "exec")).toBe(false);
 
-    // The only write is the local .mcp.json; its contents never trigger a call —
-    // hosted servers are recorded as plain URL strings under mcpServers.
+    // Writes are local project/context artifacts; their contents never trigger a call —
+    // hosted servers are recorded as plain URL strings under mcpServers/RBAC config.
     const writes = p.actions.filter((a) => a.kind === "write") as WriteAction[];
-    expect(writes).toHaveLength(1);
-    const only = writes[0] as WriteAction;
-    expect(only.path).toBe(".mcp.json");
-    const blob = JSON.stringify(only.json);
+    expect(writes.map((w) => w.path.replace(/\\/g, "/")).sort()).toEqual([
+      ".ai-context/mcp-gateway-rbac.json",
+      ".mcp.json",
+    ]);
+    const dotMcp = writes.find((w) => w.path === ".mcp.json") as WriteAction;
+    const blob = JSON.stringify(dotMcp.json);
     // Remote endpoints live inside mcpServers as config, not as a top-level action target.
     expect(blob).toContain("n24q02m.com");
-    expect(only.path.startsWith("http")).toBe(false);
+    expect(writes.every((w) => !w.path.startsWith("http"))).toBe(true);
   });
 });
 
