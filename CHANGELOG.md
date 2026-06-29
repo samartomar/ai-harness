@@ -23,6 +23,34 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   code-scanning. Probes stay read-only verdict carriers — no `exec`, no remote
   mutation, and only the offending path (never any secret value) is reported.
 
+### Changed
+
+- **First-run `ai-coding/` canon trimmed to a lean, evidence-first shape.** Dropped
+  the ownership headers, NIST/OWASP/DORA "practice lineage" prose, definition-of-done
+  checklists, and expanded file-family index that had crept into the scaffold — the
+  generated canon stays small so it sharpens an agent's first diff instead of reading
+  as markdown sprawl. Executable safety stays: `.env`/secrets denial, `aih secrets
+  --verify`, large-repo graph-safety, and write-once author-owned canon.
+- **Cross-CLI coherence shows a neutral `global` glyph for machine-local MCP.** A
+  wired-but-global MCP (codex `~/.codex`, gemini `~/.gemini`) is no longer an amber
+  `warn` — it is a distinct neutral marker that counts toward agreement, so a repo
+  using those tools can reach 100% coherence. Genuine drift / missing / won't-load
+  still surface as warn / bad.
+
+### Fixed
+
+- **`aih report` and `aih doctor` grade every wired CLI by default, not just claude.**
+  Without a committed `.aih-config.json`, coverage previously defaulted to claude and
+  under-reported a repo wired for multiple tools. `resolveTargetSet` now infers the
+  target set from the per-CLI adapter notes on disk, and `aih bootstrap-ai` persists
+  the marker on a standalone run so the report reads the true intent.
+
+### Security
+
+- **Pinned transitive `esbuild` to `^0.28.1`** (npm `overrides`) to clear
+  GHSA-g7r4-m6w7-qqqr (dev-server arbitrary file read on Windows). Dev-only —
+  `esbuild` is a build-tool dependency (tsup / tsx / vite), never shipped in the CLI.
+
 ## [0.1.0] - 2026-06-24
 
 First public cut of the Enterprise AI Bootstrapping Harness (`aih`) — a dry-run-first
