@@ -3,10 +3,10 @@ import {
   asPosture,
   deniedServers,
   evaluateMcpPolicy,
-  type McpPosture,
   mcpGovernanceDoc,
   type ServerPolicy,
 } from "../../src/mcp/policy.js";
+import type { Posture } from "../../src/config/posture.js";
 import type { McpServer } from "../../src/mcp/servers.js";
 
 /** A minimal valid server with the three risk axes set — the only inputs the policy reads. */
@@ -28,7 +28,7 @@ function srv(
 }
 
 /** Evaluate a single-server map and return its one verdict (guarded for noUncheckedIndexedAccess). */
-function only(servers: Record<string, McpServer>, posture: McpPosture): ServerPolicy {
+function only(servers: Record<string, McpServer>, posture: Posture): ServerPolicy {
   const [p] = evaluateMcpPolicy(servers, posture);
   if (!p) throw new Error("expected exactly one policy result");
   return p;
@@ -64,23 +64,23 @@ describe("evaluateMcpPolicy — enterprise posture (the gate)", () => {
   });
 });
 
-describe("evaluateMcpPolicy — community posture (permissive, but eyes-open)", () => {
+describe("evaluateMcpPolicy — vibe posture (permissive, but eyes-open)", () => {
   it("WARNS on third-party egress but never blocks it", () => {
-    expect(only({ a: srv("third-party", "hosted-remote") }, "community").verdict).toBe("warn");
+    expect(only({ a: srv("third-party", "hosted-remote") }, "vibe").verdict).toBe("warn");
   });
 
   it("WARNS on an unpinned supply chain", () => {
-    expect(only({ a: srv("none", "unpinned") }, "community").verdict).toBe("warn");
+    expect(only({ a: srv("none", "unpinned") }, "vibe").verdict).toBe("warn");
   });
 
   it("ALLOWS clean local servers", () => {
-    expect(only({ a: srv("none", "pinned") }, "community").verdict).toBe("allow");
+    expect(only({ a: srv("none", "pinned") }, "vibe").verdict).toBe("allow");
   });
 
-  it("never denies anything — community is permissive", () => {
+  it("never denies anything — vibe is permissive", () => {
     const verdicts = evaluateMcpPolicy(
       { a: srv("third-party", "unpinned", "token"), b: srv("none", "pinned") },
-      "community",
+      "vibe",
     ).map((p) => p.verdict);
     expect(verdicts).not.toContain("deny");
   });
@@ -95,11 +95,12 @@ describe("deniedServers / asPosture / mcpGovernanceDoc", () => {
     expect(deniedServers(policies).map((p) => p.name)).toEqual(["bad"]);
   });
 
-  it("asPosture coerces anything but 'enterprise' to community", () => {
+  it("asPosture coerces community and unknown values to vibe", () => {
     expect(asPosture("enterprise")).toBe("enterprise");
-    expect(asPosture("community")).toBe("community");
-    expect(asPosture(undefined)).toBe("community");
-    expect(asPosture("nonsense")).toBe("community");
+    expect(asPosture("team")).toBe("team");
+    expect(asPosture("community")).toBe("vibe");
+    expect(asPosture(undefined)).toBe("vibe");
+    expect(asPosture("nonsense")).toBe("vibe");
   });
 
   it("the governance doc groups verdicts, names the denied set with reasons, and cites CODEOWNERS", () => {

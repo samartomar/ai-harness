@@ -53,6 +53,7 @@ function command(argv: string[]): Command {
     .option("--json")
     .option("--root <dir>")
     .option("--context-dir <dir>", "", "ai-coding")
+    .option("--posture <posture>", "", "vibe")
     .option("--sarif <file>");
   cmd.parse(argv, { from: "user" });
   return cmd;
@@ -78,7 +79,12 @@ async function run(
 const echoSpec: CommandSpec = {
   name: "echo",
   summary: "echo the resolved context dir",
-  plan: (ctx) => plan("echo", digest("context-dir", ctx.contextDir)),
+  plan: (ctx) =>
+    plan(
+      "echo",
+      digest("context-dir", ctx.contextDir),
+      digest("posture", `${ctx.posture}:${ctx.postureSource}`),
+    ),
 };
 
 /** Resolve the context dir runCapability lands on for the given argv + env. */
@@ -94,11 +100,24 @@ async function resolvedDir(argv: string[], env: NodeJS.ProcessEnv): Promise<stri
   return out;
 }
 
+/** Resolve the posture runCapability lands on for the given argv + env. */
+async function resolvedPosture(argv: string[], env: NodeJS.ProcessEnv): Promise<string> {
+  let out = "";
+  await runCapability(echoSpec, command(argv), {
+    run: fakeRunner(() => undefined),
+    env,
+    write: (t) => {
+      out += t;
+    },
+  });
+  return out;
+}
+
 describe("runCapability — context-dir precedence ladder (flag > marker > env > default)", () => {
-  function writeMarker(contextDir: string): void {
+  function writeMarker(contextDir: string, posture?: string): void {
     writeFileSync(
       join(dir, ".aih-config.json"),
-      JSON.stringify({ schemaVersion: 1, contextDir, targets: [] }),
+      JSON.stringify({ schemaVersion: 1, contextDir, targets: [], ...(posture ? { posture } : {}) }),
     );
   }
 
@@ -127,6 +146,60 @@ describe("runCapability — context-dir precedence ladder (flag > marker > env >
   it("falls back to the ai-coding default when nothing else is set", async () => {
     const out = await resolvedDir(["--root", dir], {});
     expect(out).toContain("ai-coding");
+  });
+});
+
+describe("runCapability — posture precedence ladder (org floor > flag > marker > env > default)", () => {
+  function writeMarker(posture: string): void {
+    writeFileSync(
+      join(dir, ".aih-config.json"),
+      JSON.stringify({ schemaVersion: 1, contextDir: "ai-coding", targets: [], posture }),
+    );
+  }
+
+  function writeOrgFloor(minimumPosture: string): void {
+    writeFileSync(
+      join(dir, "aih-org-policy.json"),
+      JSON.stringify({
+        schemaVersion: 1,
+        minimumPosture,
+        references: { repoContract: "ai-coding/project.json" },
+      }),
+    );
+  }
+
+  it("explicit --posture wins over marker and env", async () => {
+    writeMarker("team");
+    const out = await resolvedPosture(["--posture", "vibe", "--root", dir], {
+      AIH_POSTURE: "enterprise",
+    });
+    expect(out).toContain("vibe:flag");
+  });
+
+  it("marker wins over env when no flag is passed", async () => {
+    writeMarker("team");
+    const out = await resolvedPosture(["--root", dir], { AIH_POSTURE: "enterprise" });
+    expect(out).toContain("team:marker");
+  });
+
+  it("env wins over the default when neither flag nor marker is present", async () => {
+    const out = await resolvedPosture(["--root", dir], { AIH_POSTURE: "team" });
+    expect(out).toContain("team:env");
+  });
+
+  it("defaults to vibe", async () => {
+    const out = await resolvedPosture(["--root", dir], {});
+    expect(out).toContain("vibe:default");
+  });
+
+  it("org minimum posture clamps a lower local choice but never lowers enterprise", async () => {
+    writeOrgFloor("team");
+    expect(await resolvedPosture(["--posture", "vibe", "--root", dir], {})).toContain(
+      "team:org-floor",
+    );
+    expect(await resolvedPosture(["--posture", "enterprise", "--root", dir], {})).toContain(
+      "enterprise:flag",
+    );
   });
 });
 
