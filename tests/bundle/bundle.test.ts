@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -61,15 +61,18 @@ describe("bundle command", () => {
     expect(out[".aih/fleet-bundle/files/aih-org-policy.json"]?.contents).toBe(
       '{"schemaVersion":1}\n',
     );
-    expect(out[".aih/fleet-bundle/manifest.json"]?.json).toMatchObject({
-      schemaVersion: 1,
-      files: expect.arrayContaining([
-        { path: "ai-coding/project.json", sha256: sha256Hex('{"schemaVersion":1}\n') },
-      ]),
-    });
-    expect(out[".aih/fleet-bundle/SHA256SUMS"]?.contents).toContain(
-      "files/ai-coding/project.json",
+    expect(out[".aih/fleet-bundle/manifest.json"]?.json).toEqual(
+      expect.objectContaining({
+        schemaVersion: 1,
+        files: expect.arrayContaining([
+          expect.objectContaining({
+            path: "ai-coding/project.json",
+            sha256: sha256Hex('{"schemaVersion":1}\n'),
+          }),
+        ]),
+      }),
     );
+    expect(out[".aih/fleet-bundle/SHA256SUMS"]?.contents).toContain("files/ai-coding/project.json");
   });
 
   it("honors --include and emits signing as a thin cosign exec", async () => {
