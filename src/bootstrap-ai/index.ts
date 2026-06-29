@@ -1,4 +1,5 @@
 import { basename, join, posix } from "node:path";
+import { aihConfigJson } from "../config/marker.js";
 import { detectFallbackNotice, detectInstall, resolveTargets } from "../internals/cli-detect.js";
 import type { Cli } from "../internals/clis.js";
 import { readIfExists } from "../internals/fsxn.js";
@@ -209,6 +210,22 @@ async function bootstrapAiPlan(ctx: PlanContext): Promise<Plan> {
     const merged = mergeBootloader(existing, relPath, dir, repoName, block);
     actions.push(
       writeText(relPath, merged, `bootloader ${relPath} (preamble + managed canonical block)`),
+    );
+  }
+
+  // Persist the bootstrap intent (context-dir + resolved CLI targets) at the repo
+  // root so `aih report` / `aih doctor` grade against the tools this repo was wired
+  // for — not the `claude` default — even on a standalone `bootstrap-ai` run. Under
+  // `aih init` the orchestrator resolves once and owns this write (ctx.targets set),
+  // so skip it here to avoid a duplicate. Merge preserves adopt's acknowledged list.
+  if (ctx.targets === undefined) {
+    actions.push(
+      writeJson(
+        ".aih-config.json",
+        aihConfigJson(dir, clis),
+        "persist bootstrap intent (context-dir + CLI targets) so report/doctor read it",
+        { merge: true },
+      ),
     );
   }
 

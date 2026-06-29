@@ -193,6 +193,14 @@ describe("bootstrap-ai — CLI-aware bootloaders", () => {
     expect(metrics.then.command).toBe("aih track --apply");
   });
 
+  it("persists the .aih-config.json marker for the resolved targets (standalone)", async () => {
+    const w = writesByPath((await command.plan(makeCtx({ cli: "claude,codex" }))).actions);
+    const marker = w.get(".aih-config.json");
+    expect(marker).toBeDefined();
+    expect(marker?.merge).toBe(true);
+    expect((marker?.json as { targets?: string[] })?.targets).toEqual(["claude", "codex"]);
+  });
+
   it("--all-tools dedupes AGENTS.md to a single write", async () => {
     const actions = (await command.plan(makeCtx({ allTools: true }))).actions;
     const agents = actions.filter(

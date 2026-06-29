@@ -95,6 +95,20 @@ describe("target scoping", () => {
     expect(m.targetSource).toBe("default-claude");
     expect(m.targeted).toEqual(["claude"]);
   });
+
+  it("infers wired CLIs from on-disk adapters when no marker (source 'wired')", () => {
+    // No marker/flags, but the repo carries per-CLI adapter notes — what
+    // `aih bootstrap-ai` writes for every targeted CLI under the improved default.
+    // The scan grades those CLIs instead of collapsing to the claude default; the
+    // non-CLI adapters (_shared-canonical-block, other-tools) are ignored.
+    mkdirSync(join(dir, "ai-coding", "adapters"), { recursive: true });
+    for (const f of ["claude", "codex", "gemini", "_shared-canonical-block", "other-tools"]) {
+      writeFileSync(join(dir, "ai-coding", "adapters", `${f}.md`), "# adapter\n");
+    }
+    const m = scanCliCoverage(ctx());
+    expect(m.targetSource).toBe("wired");
+    expect(m.targeted).toEqual(["claude", "codex", "gemini"]);
+  });
 });
 
 describe("bootloader cell", () => {
