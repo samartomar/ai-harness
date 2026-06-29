@@ -170,6 +170,9 @@ export interface V9Mcp {
   totalClis: number;
   /** [server name, egress class] — e.g. ["context7", "third-party"]. */
   servers: Array<[string, string]>;
+  /** Per-CLI MCP source — [cli, label] e.g. ["claude","repo · 5"], ["codex","global · 16"].
+   * Surfaces that a repo-committed `.mcp.json` and a machine-global `~/.codex` are NOT the same. */
+  mcpScopes: Array<[string, string]>;
 }
 
 /** 06 — adoption checks + tooling. */

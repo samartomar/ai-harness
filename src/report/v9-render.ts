@@ -391,7 +391,16 @@ export function renderMcp(m: V9Mcp): string {
       return `<div class="srv-row"><span class="n">${escHtml(name)}</span><span class="egress ${cls}"><span class="d"></span>${escHtml(egress)}</span></div>`;
     })
     .join("");
-  const servers = `<div class="card span-5"><div class="card-head"><h3>Servers + egress</h3>${srvBadge}</div><div class="card-body">${rows}</div></div>`;
+  const scopePills = m.mcpScopes
+    .map(([cli, label]) => {
+      const isGlobal = label.startsWith("global");
+      return `<span class="tool ${isGlobal ? "off" : "on"}" title="MCP config scope">${escHtml(cli)} ${escHtml(label)}</span>`;
+    })
+    .join("");
+  const scopeBlock = scopePills
+    ? `<div style="font-size:.6rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:600;margin:.7rem 0 .35rem">MCP source per CLI</div><div class="pills">${scopePills}</div><div class="method" style="margin-top:.5rem">Repo <code>.mcp.json</code> is committed + team-shared; <code>global</code> (e.g. codex <code>~/.codex</code>) is machine-only — wired, but not the same portable wiring.</div>`
+    : "";
+  const servers = `<div class="card span-5"><div class="card-head"><h3>Servers + egress</h3>${srvBadge}</div><div class="card-body">${rows}${scopeBlock}</div></div>`;
   return wiring + servers;
 }
 

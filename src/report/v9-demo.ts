@@ -188,6 +188,12 @@ export const V9_DEMO: AihDataV9 = {
       ["github", "vendor API"],
       ["sequential-thinking", "local"],
     ],
+    mcpScopes: [
+      ["claude", "repo · 5"],
+      ["codex", "global · 16"],
+      ["cursor", "repo · 3"],
+      ["kiro", "repo · 2"],
+    ],
   },
 
   adoption: {

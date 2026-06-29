@@ -378,8 +378,16 @@ export function coherenceDigest(ctx: PlanContext): DigestAction | undefined {
     const rules: Verdict =
       block === undefined ? "bad" : block.trim() === sharedBody ? "ok" : "warn";
     const router: Verdict = text?.includes("RULE_ROUTER.md") ? "ok" : "bad";
+    // A global-scoped MCP (e.g. codex's ~/.codex) is wired but NOT repo-portable — it diverges
+    // from a repo-committed `.mcp.json`, so it's a warn, not a clean match.
     const mcp: Verdict =
-      row.mcp.state === "wired" ? "ok" : row.mcp.state === "missing" ? "bad" : "warn";
+      row.mcp.state === "wired"
+        ? row.mcp.scope === "global"
+          ? "warn"
+          : "ok"
+        : row.mcp.state === "missing"
+          ? "bad"
+          : "warn";
     const loads: Verdict =
       row.load.verdict === "loads" ? "ok" : row.load.verdict === "wontLoad" ? "bad" : "warn";
     cells[row.cli] = [rules, router, mcp, loads];
@@ -392,7 +400,8 @@ export function coherenceDigest(ctx: PlanContext): DigestAction | undefined {
   const agreementPct = total > 0 ? Math.round((ok / total) * 100) : 0;
   const body = lines(
     `Cross-CLI canon coherence across ${clis.length} CLIs — ${agreementPct}% of cells agree.`,
-    "A warn cell is one CLI diverging from canon; bad is missing/won't-load.",
+    "A warn cell is one CLI diverging from canon (e.g. a global-scoped MCP like codex's",
+    "~/.codex — wired but not repo-portable); bad is missing/won't-load.",
   );
   return digest(`Coherence — ${agreementPct}% across ${clis.length} CLIs`, body, {
     clis,

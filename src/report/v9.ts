@@ -393,8 +393,19 @@ interface CovRow {
   cli?: unknown;
   targeted?: unknown;
   bootloader?: { state?: unknown };
-  mcp?: { state?: unknown };
+  mcp?: { state?: unknown; scope?: unknown; count?: unknown };
   load?: { verdict?: unknown };
+}
+
+/** Per-CLI MCP source label — distinguishes a repo `.mcp.json` from a machine-global config. */
+function mcpScopeLabel(mcp: CovRow["mcp"]): string {
+  const state = mcp?.state;
+  if (state === "wired" || state === "missing") {
+    const scope = mcp?.scope === "global" ? "global" : "repo";
+    return `${scope} · ${numOr(mcp?.count, 0)}`;
+  }
+  if (state === "manual") return "manual";
+  return "n/a";
 }
 
 /** Map a coverage cell state/verdict to a matrix verdict. */
@@ -424,11 +435,16 @@ function buildMcp(digests: DigestAction[]): V9Mcp | undefined {
   const servers = bag(digests, "MCP servers");
   const srvRows =
     servers && Array.isArray(servers.servers) ? (servers.servers as Array<[string, string]>) : [];
+  const mcpScopes: Array<[string, string]> = rows.map((r) => [
+    String(r.cli ?? ""),
+    mcpScopeLabel(r.mcp),
+  ]);
   return {
     wiring: { clis, cols: ["bootloader", "mcp config", "loads"], cells },
     wiredCount,
     totalClis: SUPPORTED_CLIS.length,
     servers: srvRows,
+    mcpScopes,
   };
 }
 

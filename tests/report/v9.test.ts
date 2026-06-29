@@ -92,14 +92,14 @@ function wiring(): DigestAction {
         cli: "claude",
         targeted: true,
         bootloader: { state: "wired" },
-        mcp: { state: "wired" },
+        mcp: { state: "wired", scope: "repo", count: 5 },
         load: { verdict: "loads" },
       },
       {
         cli: "codex",
         targeted: true,
         bootloader: { state: "wired" },
-        mcp: { state: "missing" },
+        mcp: { state: "missing", scope: "global", count: 0 },
         load: { verdict: "loads" },
       },
     ],
@@ -328,6 +328,9 @@ describe("buildAihDataV9 — panels + gating", () => {
     expect(m?.wiring.cells.codex).toEqual(["ok", "bad", "ok"]); // mcp missing → bad
     expect(m?.wiredCount).toBe(1);
     expect(m?.servers).toContainEqual(["context7", "third-party"]);
+    // per-CLI MCP source: claude is repo-committed, codex is a machine-global config
+    expect(m?.mcpScopes).toContainEqual(["claude", "repo · 5"]);
+    expect(m?.mcpScopes).toContainEqual(["codex", "global · 0"]);
   });
 
   it("binds adoption, drift and support", () => {
@@ -562,6 +565,7 @@ describe("v9-render — bar/badge fixes", () => {
     wiredCount: 1,
     totalClis: 1,
     servers,
+    mcpScopes: [["claude", "repo · 5"]] as Array<[string, string]>,
   });
 
   it("scales both LOC bars against the larger side so neither overflows (was 483%)", () => {
@@ -609,5 +613,26 @@ describe("v9-render — bar/badge fixes", () => {
       ]),
     );
     expect(allClassified).toContain("all local/vendor");
+  });
+
+  it("surfaces per-CLI MCP source so global ≠ repo wiring (codex vs claude)", () => {
+    const m = {
+      wiring: {
+        clis: ["claude", "codex"],
+        cols: ["mcp config"],
+        cells: { claude: ["ok"], codex: ["warn"] },
+      },
+      wiredCount: 1,
+      totalClis: 2,
+      servers: [] as Array<[string, string]>,
+      mcpScopes: [
+        ["claude", "repo · 5"],
+        ["codex", "global · 16"],
+      ] as Array<[string, string]>,
+    };
+    const html = renderMcp(m);
+    expect(html).toContain("MCP source per CLI");
+    expect(html).toContain("claude repo · 5");
+    expect(html).toContain("codex global · 16");
   });
 });

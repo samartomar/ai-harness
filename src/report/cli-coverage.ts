@@ -45,6 +45,10 @@ export interface CliCell {
   detail: string;
   /** Exact `aih …` command to close a `missing`/`manual` gap, when one applies. */
   fix?: string;
+  /** MCP-cell only: is the config repo-committed (portable, team-shared) or a global ~/home file? */
+  scope?: "repo" | "global";
+  /** MCP-cell only: configured server count (a `~/.codex` global with 16 ≠ a repo `.mcp.json` with 5). */
+  count?: number;
 }
 
 export interface CliCoverageRow {
@@ -180,6 +184,7 @@ function mcpCell(ctx: PlanContext, cli: Cli): CliCell {
   const external = isExternalMcp(m.configPath);
   const abs = external ? mcpConfigAbs(homeDir(ctx), m.configPath) : join(ctx.root, m.configPath);
   const scopeNote = external ? " (global)" : "";
+  const scope: "repo" | "global" = external ? "global" : "repo";
   const raw = readIfExists(abs);
   if (raw === undefined) {
     return {
@@ -187,17 +192,27 @@ function mcpCell(ctx: PlanContext, cli: Cli): CliCell {
       path: m.configPath,
       detail: `${m.configPath}${scopeNote} not found`,
       fix: `aih mcp --apply --cli ${cli}`,
+      scope,
+      count: 0,
     };
   }
   const n = m.configFormat === "toml" ? tomlServerCount(raw) : serverCount(raw, m.configKey);
   const unit = m.configFormat === "toml" ? "[mcp_servers.*]" : `\`${m.configKey}\``;
   return n > 0
-    ? { state: "wired", path: m.configPath, detail: `${n} server(s) under ${unit}${scopeNote}` }
+    ? {
+        state: "wired",
+        path: m.configPath,
+        detail: `${n} server(s) under ${unit}${scopeNote}`,
+        scope,
+        count: n,
+      }
     : {
         state: "missing",
         path: m.configPath,
         detail: `present but no servers under ${unit}`,
         fix: `aih mcp --apply --cli ${cli}`,
+        scope,
+        count: 0,
       };
 }
 
