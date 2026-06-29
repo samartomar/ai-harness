@@ -15,6 +15,7 @@ function detectedStackBlock(stack: RepoStack): string[] {
   if (stack.testRunner) cmds.push(`test \`${stack.testRunner}\``);
   if (stack.buildCommand) cmds.push(`build \`${stack.buildCommand}\``);
   if (stack.lintCommand) cmds.push(`lint \`${stack.lintCommand}\``);
+  if (stack.startCommand) cmds.push(`start \`${stack.startCommand}\``);
   out.push(`- Commands: ${cmds.length > 0 ? cmds.join(" · ") : "none defined in the repo"}`);
   return out;
 }
@@ -90,6 +91,8 @@ export function indexDoc(dir: string): string {
     "",
     "- Keep each file focused; prefer many small files over one large one.",
     "- Every durable rule should carry lineage: industry practice -> repo evidence -> local check.",
+    "- Cite repo evidence with repo-relative paths like `api/post/list.js:25`; never",
+    "  use machine-local `file:///...` links or drive-letter paths.",
     "- Do not duplicate rules across files; link to the owning file and prune stale copies.",
     "- One concern per skill; name skills by outcome, not by component.",
     "- This index is the contract: when you add a context file, list it here",
@@ -266,6 +269,8 @@ export function setupTasksDoc(dir: string, stack: RepoStack): string {
     "Use the objective practice references already named in `project-guardrails.md`.",
     "Do not web-search for extra canon. Add a durable rule only when it maps to",
     "repo evidence and a local command/review check.",
+    "Cite repo evidence as portable repo-relative paths (`api/post/list.js:25`),",
+    "never as `file:///...` links or local drive paths.",
     "",
     `As you read the code, log any bugs, risks, or EOL/missing dependencies you spot`,
     `into \`${dir}/tasks.md\` (Backlog) — track findings so they aren't lost in chat.`,
@@ -295,6 +300,8 @@ export function setupTasksDoc(dir: string, stack: RepoStack): string {
     '- Repo-specific "never do X" rules you can justify from the code.',
     "- For each added rule, capture `practice -> repo evidence -> local check`; prune duplicates",
     `  instead of copying the same rule into multiple \`${dir}/\` files.`,
+    "- Do not add generic `Practice lineage` prose to architecture/conventions;",
+    `  durable controls belong in \`${dir}/project-guardrails.md\` with evidence and a check.`,
     "",
     `## 4. (Workspace only) Cross-repo map → \`${dir}/cross-repo-architecture.md\``,
     "",
@@ -376,6 +383,7 @@ export function validationDoc(dir: string, stack: RepoStack): string {
     "### 2b. Canon objective and deduplicated",
     "- Every durable rule maps to the fixed practice reference set, repo evidence, and a local check.",
     "- Generic or duplicate rules are pruned; one file owns the rule and other files link to it.",
+    "- Canon cites portable repo-relative paths only; no `file:///...` links or local drive paths.",
     "- No new walkthrough/status report file exists under the canon directory unless the user asked for one.",
     "- You CAN fix: move the rule to its owning file, replace copies with a pointer, or remove it.",
     "",

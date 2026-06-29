@@ -38,8 +38,9 @@ function commandLines(stack: RepoStack, prefix: string): string[] {
   if (stack.testRunner) out.push(`${prefix}Test: \`${stack.testRunner}\``);
   if (stack.buildCommand) out.push(`${prefix}Build: \`${stack.buildCommand}\``);
   if (stack.lintCommand) out.push(`${prefix}Lint: \`${stack.lintCommand}\``);
+  if (stack.startCommand) out.push(`${prefix}Start: \`${stack.startCommand}\``);
   if (out.length === 0) {
-    out.push(`${prefix}No test/build/lint script is defined — add one before relying on it.`);
+    out.push(`${prefix}No test/build/lint/start script is defined — add one before relying on it.`);
   }
   return out;
 }

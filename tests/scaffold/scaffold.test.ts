@@ -91,11 +91,14 @@ describe("scaffold plan (dry-run shape)", () => {
     expect(val).not.toContain("`.aih-workspace.json`");
     expect(val).toContain("picture-perfect");
     expect(tasks).toContain("Do not web-search for extra canon");
+    expect(tasks).toContain("repo-relative paths (`api/post/list.js:25`)");
+    expect(tasks).toContain("never as `file:///...` links");
     expect(tasks).toContain("Do not open `.env*` or `secrets/**`");
     expect(tasks).toContain("aih secrets --verify");
     expect(tasks).toContain("large-repo graph safety");
     expect(tasks).toContain("bounded to targeted `rg`/`fd`");
     expect(tasks).toContain("practice -> repo evidence -> local check");
+    expect(tasks).toContain("Do not add generic `Practice lineage` prose");
     expect(tasks).toContain("Do not edit `.ai-context/VALIDATION.md`");
     expect(tasks).toContain("Definition of done");
     expect(tasks).toContain("Do not create a separate walkthrough/status report");
@@ -122,6 +125,7 @@ describe("scaffold plan (dry-run shape)", () => {
     expect(index).toContain("guardrails-taxonomy.md / command-policy.md / risk-gates.json");
     expect(index).toContain("adapters/");
     expect(index).toContain("harness-update.md");
+    expect(index).toContain("repo-relative paths like `api/post/list.js:25`");
 
     const arch = w.get(".ai-context/architecture.md")?.contents ?? "";
     expect(arch).toContain("## Ownership");
@@ -146,17 +150,23 @@ describe("scaffold plan (dry-run shape)", () => {
     expect(validation).toContain("Canon file ownership");
     expect(validation).toContain("adapters/` contains wiring notes only");
     expect(validation).toContain("No new walkthrough/status report file");
+    expect(validation).toContain("no `file:///...` links");
   });
 
   it("project-guardrails auto-derives framework rules from the detected stack", async () => {
     writeFileSync(
       join(dir, "package.json"),
-      JSON.stringify({ name: "api", dependencies: { express: "^4" } }),
+      JSON.stringify({
+        name: "api",
+        scripts: { start: "node app.js" },
+        dependencies: { express: "^4" },
+      }),
     );
     const guard =
       writesByPath((await command.plan(ctx())).actions).get(".ai-context/project-guardrails.md")
         ?.contents ?? "";
     expect(guard).toContain("sanitize"); // Express input-validation guardrail
+    expect(guard).toContain("start `npm start`");
   });
 
   it("does NOT write root bootloaders — those are owned by `aih bootstrap-ai`", async () => {

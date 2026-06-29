@@ -130,11 +130,12 @@ describe("bootstrap-ai — canon files", () => {
   });
 
   it("the router is stack-aware (names the detected language)", async () => {
-    put("package.json", JSON.stringify({ name: "svc" }));
+    put("package.json", JSON.stringify({ name: "svc", scripts: { start: "node app.js" } }));
     put("tsconfig.json", "{}");
     const w = writesByPath((await command.plan(makeCtx())).actions);
     const router = w.get(".ai-context/RULE_ROUTER.md")?.contents ?? "";
     expect(router).toContain("TypeScript/Node.js");
+    expect(router).toContain("start `npm start`");
     expect(router).toContain("Layer 2 wins");
     expect(router).toContain("Do not open `.env*` or `secrets/**`");
     expect(router).toContain("large-repo graph safety");

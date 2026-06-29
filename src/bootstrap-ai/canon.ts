@@ -24,6 +24,7 @@ function detectedStack(stack: RepoStack): string[] {
   if (stack.testRunner) cmds.push(`test \`${stack.testRunner}\``);
   if (stack.buildCommand) cmds.push(`build \`${stack.buildCommand}\``);
   if (stack.lintCommand) cmds.push(`lint \`${stack.lintCommand}\``);
+  if (stack.startCommand) cmds.push(`start \`${stack.startCommand}\``);
   out.push(`- Commands: ${cmds.length > 0 ? cmds.join(" · ") : "none defined in the repo"}`);
   return out;
 }
