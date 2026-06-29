@@ -12,9 +12,9 @@ describe("CLI program", () => {
     }
   });
 
-  it("declares 24 capabilities and 2 read-only commands", () => {
-    expect(CAPABILITIES).toHaveLength(24);
-    expect(READONLY).toHaveLength(2);
+  it("declares 25 capabilities and 3 read-only commands", () => {
+    expect(CAPABILITIES).toHaveLength(25);
+    expect(READONLY).toHaveLength(3);
   });
 
   it("parses a dry-run capability invocation without throwing", async () => {
