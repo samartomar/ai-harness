@@ -144,6 +144,8 @@ export interface V9Quality {
     repo: { agents: number; skills: number; rules: number; hooks: number };
     dup: number;
     packs: string[];
+    /** ECC skill names from the live machine install, used for dormant detection. */
+    skillNames?: string[];
   };
 }
 

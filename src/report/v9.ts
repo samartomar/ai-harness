@@ -32,6 +32,7 @@ import type {
   V9Mcp,
   V9OutcomeDeltas,
   V9Quality,
+  V9Skills,
   V9Support,
   V9View,
   V9Wins,
@@ -507,9 +508,92 @@ function buildEcc(digests: DigestAction[]): V9Quality["ecc"] | undefined {
     },
     dup: numOr(e.dup, 0),
     packs: strs(e.packs),
+    skillNames: strs(e.skillNames),
     ...(typeof e.version === "string" ? { version: e.version } : {}),
     ...(typeof e.commit === "string" ? { commit: e.commit } : {}),
     ...(typeof e.profile === "string" ? { profile: e.profile } : {}),
+  };
+}
+
+interface CountRow {
+  name?: unknown;
+  count?: unknown;
+}
+
+function countedRows(v: unknown): Array<{ name: string; count: number }> {
+  return Array.isArray(v)
+    ? (v as CountRow[])
+        .map((row) => ({ name: String(row.name ?? ""), count: numOr(row.count, 0) }))
+        .filter((row) => row.name.length > 0 && row.count > 0)
+    : [];
+}
+
+const USAGE_COLORS = [
+  "var(--accent)",
+  "var(--accent-2)",
+  "var(--mcp)",
+  "var(--warn)",
+  "var(--bad)",
+  "var(--fg-2)",
+] as const;
+
+interface UsageData {
+  total: number;
+  usageByCli: V9Activity["usageByCli"];
+  skillTop: Array<{ name: string; count: number }>;
+  skillSource: Map<string, string>;
+  eccFired: Set<string>;
+}
+
+function buildUsage(digests: DigestAction[]): UsageData | undefined {
+  const u = bag(digests, "Usage");
+  const total = u ? numOr(u.total ?? u.events, 0) : 0;
+  if (!u || total <= 0) return undefined;
+  const tools = countedRows(u.tools);
+  const toolTotal = tools.reduce((n, t) => n + t.count, 0);
+  const usageByCli = tools.map((t, i): V9Activity["usageByCli"][number] => [
+    t.name,
+    toolTotal > 0 ? Math.round((t.count / toolTotal) * 100) : 0,
+    USAGE_COLORS[i % USAGE_COLORS.length] ?? "var(--accent)",
+    t.count,
+  ]);
+  const skills = (u.skills && typeof u.skills === "object" ? u.skills : {}) as Record<
+    string,
+    unknown
+  >;
+  const bySource =
+    skills.bySource && typeof skills.bySource === "object"
+      ? (skills.bySource as Record<string, unknown>)
+      : {};
+  const skillSource = new Map<string, string>();
+  for (const source of ["ecc", "canon", "user"]) {
+    for (const row of countedRows(bySource[source])) skillSource.set(row.name, source);
+  }
+  return {
+    total,
+    usageByCli,
+    skillTop: countedRows(skills.top),
+    skillSource,
+    eccFired: new Set(countedRows(bySource.ecc).map((row) => row.name)),
+  };
+}
+
+function buildSkills(
+  usage: UsageData | undefined,
+  ecc: V9Quality["ecc"] | undefined,
+): V9Skills | undefined {
+  if (!usage || usage.total <= 0) return undefined;
+  const eccNames = [...(ecc?.skillNames ?? [])].sort();
+  if (eccNames.length === 0) return undefined;
+  const heavyLifters = usage.skillTop.map((row): [string, number] => {
+    const source = usage.skillSource.get(row.name) ?? "user";
+    return [`${row.name} · ${source}`, row.count];
+  });
+  const dormant = eccNames.filter((name) => !usage.eccFired.has(name));
+  return {
+    heavyLifters,
+    totalInvocations: usage.skillTop.reduce((n, row) => n + row.count, 0),
+    dormant,
   };
 }
 
@@ -607,7 +691,10 @@ export function buildAihDataV9(digests: DigestAction[]): AihDataV9 {
   let drift = buildDrift(digests);
   const hero = buildHero(digests, actions.length, drift?.drifted.length);
   const context = buildContext(digests);
-  const activity = buildActivity(digests);
+  const usage = buildUsage(digests);
+  const baseActivity = buildActivity(digests);
+  const activity =
+    baseActivity && usage ? { ...baseActivity, usageByCli: usage.usageByCli } : baseActivity;
   let quality = buildQuality(digests);
   const mcp = buildMcp(digests);
   const adoption = buildAdoption(digests);
@@ -620,6 +707,7 @@ export function buildAihDataV9(digests: DigestAction[]): AihDataV9 {
       ? { ...quality, ecc }
       : { testRatioPct: 0, testFiles: 0, sourceFiles: 0, guardrails: [], ecc };
   }
+  const skills = buildSkills(usage, ecc);
   const coherence = buildCoherence(digests);
   if (coherence) {
     drift = drift ? { ...drift, coherence } : { drifted: [], synced: [], coherence };
@@ -662,13 +750,13 @@ export function buildAihDataV9(digests: DigestAction[]): AihDataV9 {
   if (adoption) gates["sec-adoption"] = "live";
   if (support) gates["sec-support"] = "live";
   gates["sec-period"] = "live"; // trends sub-stub + outcome preview until wired
-  gates["sec-skills"] = "preview"; // metering + ECC scan not wired
+  gates["sec-skills"] = skills ? "live" : "preview";
   // Capability sub-cards go live once their v9-only digest lands.
   gates["cap-ecc"] = ecc ? "live" : "preview";
   gates["cap-coherence"] = coherence ? "live" : "preview";
   gates["cap-outcome"] = outcome ? "live" : "preview"; // §3
   gates["cap-trends"] = haveTrends ? "live" : "preview"; // §2a: ≥2 history samples w/ metrics
-  gates["cap-usage"] = "preview"; // per-tool usage hooks not wired
+  gates["cap-usage"] = usage ? "live" : "preview";
 
   return {
     ...(hero ? { hero } : {}),
@@ -682,6 +770,7 @@ export function buildAihDataV9(digests: DigestAction[]): AihDataV9 {
     ...(adoption ? { adoption } : {}),
     ...(support ? { support } : {}),
     ...(period ? { period } : {}),
+    ...(skills ? { skills } : {}),
     gates,
   };
 }
@@ -984,18 +1073,20 @@ export function assembleViewV9(data: AihDataV9, demo: AihDataV9): V9View {
     };
   }
 
-  // 09 Skills — preview (metering + ECC scan not wired).
+  // 09 Skills — live from usage + ECC inventory, else preview.
   {
-    const skills = demo.skills;
+    const preview = !isLive(g, "sec-skills");
+    const skills = preview ? demo.skills : data.skills;
     if (skills) {
       sections["sec-skills"] = {
-        state: "preview",
+        state: preview ? "preview" : "live",
         container: ".grid",
-        title: "Heavy lifters vs dormant packs",
-        insight:
-          "Where skill investment pays off, and what to trim. Counts need usage hooks; dormant detection needs the ECC-inventory scan — shown as design intent until wired.",
+        title: preview ? "Heavy lifters vs dormant packs" : "Heavy lifters vs dormant ECC skills",
+        insight: preview
+          ? "Where skill investment pays off, and what to trim. Counts need usage hooks; dormant detection needs the ECC-inventory scan — shown as design intent until wired."
+          : "Where skill investment pays off, and what to trim. Counts are local activity only; dormant means installed ECC skills that did not fire in the usage log.",
         count: "skill investment",
-        html: renderSkills(skills, true),
+        html: renderSkills(skills, preview),
       };
     }
   }

@@ -1,8 +1,8 @@
 # Usage Metering — design (B)
 
-Status: **approved — building** · branch `feat/local-report-v9` · 2026-06-29
-Decisions resolved (see **Decisions**); P1 started (recorder `--from claude`, commit `e48a35c`).
-Implementer checklist at the bottom — ready to hand to Codex.
+Status: **implemented — gated green** · branch `feat/local-report-v9` · 2026-06-29
+Decisions resolved (see **Decisions**); P1–P5 are implemented in this branch.
+The checklist at the bottom records what landed.
 
 ## TL;DR
 
@@ -157,21 +157,23 @@ Each phase is independently shippable and leaves the report honest (PREVIEW wher
 - ✅ `e48a35c` — recorder gained a `--from <cli>` stdin mode; **claude payload mapping is done**
   (`mcp__server__tool`→mcp, `Task`→subagent, `Skill`→skill best-effort, else tool). Other CLIs return
   `undefined` from `fromHookPayload` until wired.
-- ⏳ Remaining = the checklist below (claude `settings.json` merge + other CLI hooks + panel wiring +
-  dormant + rollup).
+- ✅ This slice — `aih usage --apply` generates the targeted per-tool hooks, the recorder maps
+  representative codex/gemini/opencode payloads, v9 usage + skills panels go LIVE from real events,
+  dormant = live ECC skills minus fired ECC skills, and `aih usage --rollup <dirs>` emits a
+  scan-on-demand digest.
 
 ## Implementer checklist
 
-- [ ] **P1** — extend `fromHookPayload(cli, payload)` per targeted CLI **and** generate each hook
+- [x] **P1** — extend `fromHookPayload(cli, payload)` per targeted CLI **and** generate each hook
       (runs `node .aih/usage-record.mjs --from <cli>`); wire into `aih usage --apply` over
       `resolveTargets`, idempotent + additive (never clobber existing hooks), gated. Order: claude
       `.claude/settings.json` merge (recorder side done) → kiro (reuse `src/kiro/content.ts`) →
       **verify codex/gemini/opencode schemas vs current docs before writing them**.
-- [ ] **P2** — `Usage by CLI` ← `aggregateUsage(readUsage(ctx)).tools`; `Heavy lifters` ←
+- [x] **P2** — `Usage by CLI` ← `aggregateUsage(readUsage(ctx)).tools`; `Heavy lifters` ←
       `.skills.top`. PREVIEW until ≥1 real event.
-- [ ] **P3** — `Dormant` = live ECC skills (`~/.claude/skills/ecc/`, via `eccInventoryDigest`) −
+- [x] **P3** — `Dormant` = live ECC skills (`~/.claude/skills/ecc/`, via `eccInventoryDigest`) −
       fired (`.skills.bySource.ecc`) over the window. 0 ECC or 0 usage → PREVIEW, not a false 0.
-- [ ] **P5** — `aih usage --rollup <dir…>` (or extend `aih report --org`) → aggregate the union of
+- [x] **P5** — `aih usage --rollup <dir…>` (or extend `aih report --org`) → aggregate the union of
       repos' `.aih/usage.jsonl`, tagged by repo.
-- [ ] Gate green each phase (lint/biome ci/typecheck/vitest/build); **no cost**; `usage.jsonl`
+- [x] Gate green each phase (lint/biome ci/typecheck/vitest/build); **no cost**; `usage.jsonl`
       gitignored + excluded from the byte-stable report; demo never renders as real.

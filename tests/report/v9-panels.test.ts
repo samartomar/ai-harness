@@ -180,6 +180,7 @@ interface EccData {
   repo: { agents: number; skills: number; rules: number; hooks: number };
   dup: number;
   packs: string[];
+  skillNames?: string[];
 }
 
 describe("eccInventoryDigest", () => {
@@ -248,6 +249,7 @@ describe("eccInventoryDigest", () => {
     expect(data.version).toBe("2.0.0");
     // skills counted from skills/ecc/ (3) — the flat cloudflare plugin skill is excluded
     expect(data.machine).toEqual({ agents: 2, skills: 3, rules: 1 });
+    expect(data.skillNames).toEqual(["python-patterns", "react-testing", "security-review"]);
     expect(data.dup).toBe(1); // repo code-reviewer is an ECC agent (name match)
   });
 });

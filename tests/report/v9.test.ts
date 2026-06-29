@@ -165,6 +165,29 @@ function usage(): DigestAction {
   return digest("Usage — 0 events", "body", { events: 0 });
 }
 
+function usageActive(): DigestAction {
+  return digest("Usage — 5 events · 2 tool(s) · 3 skill calls", "body", {
+    total: 5,
+    tools: [
+      { name: "claude", count: 4 },
+      { name: "codex", count: 1 },
+    ],
+    commits: { count: 0, added: 0, removed: 0, files: 0 },
+    skills: {
+      top: [
+        { name: "tdd", count: 2 },
+        { name: "planner", count: 1 },
+      ],
+      bySource: {
+        ecc: [{ name: "tdd", count: 2 }],
+        canon: [],
+        user: [{ name: "planner", count: 1 }],
+      },
+    },
+    mcp: { servers: [], tools: [] },
+  });
+}
+
 function ecc(): DigestAction {
   return digest("ECC harness — machine 67a/146s, repo 5a/11s, 0 dup", "body", {
     version: "2.0.0",
@@ -174,6 +197,7 @@ function ecc(): DigestAction {
     repo: { agents: 5, skills: 11, rules: 5, hooks: 3 },
     dup: 0,
     packs: ["typescript", "web"],
+    skillNames: ["tdd", "security-review", "go-review"],
   });
 }
 
@@ -349,6 +373,20 @@ describe("buildAihDataV9 — panels + gating", () => {
     expect(g["cap-outcome"]).toBe("preview");
     expect(g["cap-trends"]).toBe("preview"); // no Trends history in ALL
   });
+
+  it("flips Usage by CLI live from real usage events", () => {
+    const active = ALL.filter((d) => !d.describe.startsWith("Usage"));
+    const d = buildAihDataV9([...active, usageActive()]);
+    expect(d.gates["cap-usage"]).toBe("live");
+    expect(d.activity?.usageByCli.map(([cli, pct, , calls]) => [cli, pct, calls])).toEqual([
+      ["claude", 80, 4],
+      ["codex", 20, 1],
+    ]);
+    const view = assembleViewV9(d, V9_DEMO);
+    const html = view.sections["sec-activity"]?.html ?? "";
+    expect(html).toContain("5 actions");
+    expect(html).not.toContain("design intent until wired");
+  });
 });
 
 describe("buildAihDataV9 — period trends (§2a)", () => {
@@ -396,6 +434,30 @@ describe("buildAihDataV9 — Phase B capability flips", () => {
     expect(html).toContain("ECC v2.0.0"); // version badge from the manifest
     expect(html).not.toContain("span-4 preview");
     expect(html).not.toContain("what came along"); // old mislabel removed
+  });
+
+  it("flips the skill ledger live: heavy lifters from usage, dormant from ECC minus fired", () => {
+    const active = ALL.filter((d) => !d.describe.startsWith("Usage"));
+    const d = buildAihDataV9([...active, usageActive(), ecc()]);
+    expect(d.gates["sec-skills"]).toBe("live");
+    expect(d.gates["cap-usage"]).toBe("live");
+    expect(d.skills?.heavyLifters).toEqual([
+      ["tdd · ecc", 2],
+      ["planner · user", 1],
+    ]);
+    expect(d.skills?.dormant).toEqual(["go-review", "security-review"]);
+    const view = assembleViewV9(d, V9_DEMO);
+    const html = view.sections["sec-skills"]?.html ?? "";
+    expect(html).not.toContain("preview");
+    expect(html).toContain("security-review");
+    expect(html).not.toContain("frontend-design · canon");
+  });
+
+  it("keeps the skill ledger preview when usage is absent, even if ECC inventory exists", () => {
+    const d = buildAihDataV9([...ALL, ecc()]);
+    expect(d.gates["cap-ecc"]).toBe("live");
+    expect(d.gates["sec-skills"]).toBe("preview");
+    expect(d.skills).toBeUndefined();
   });
 
   it("flips the coherence matrix to live and attaches it to drift", () => {

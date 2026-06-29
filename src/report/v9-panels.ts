@@ -340,6 +340,7 @@ export function eccInventoryDigest(ctx: PlanContext): DigestAction | undefined {
       repo,
       dup,
       packs,
+      skillNames: [...eccSkillNames].sort(),
       ...(meta?.version ? { version: meta.version } : {}),
       ...(meta?.commit ? { commit: meta.commit } : {}),
       ...(meta?.profile ? { profile: meta.profile } : {}),
