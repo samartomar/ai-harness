@@ -1,7 +1,8 @@
 # Usage Metering — design (B)
 
-Status: **draft for review** · branch `feat/local-report-v9` · 2026-06-29
-Owner decision needed before build — see **Open questions**.
+Status: **approved — building** · branch `feat/local-report-v9` · 2026-06-29
+Decisions resolved (see **Decisions**); P1 started (recorder `--from claude`, commit `e48a35c`).
+Implementer checklist at the bottom — ready to hand to Codex.
 
 ## TL;DR
 
@@ -121,11 +122,12 @@ concat, aggregate." Per the **no-local-cache** decision, this is **scan-on-deman
 
 ## Phasing
 
-1. **P1 — claude + kiro hook generators** in `aih usage --apply` (the two clearest surfaces) +
-   tests that assert the written hook calls the recorder. Unblocks real data fastest.
+1. **P1 — per-tool hook generators for ALL targeted CLIs** in `aih usage --apply` + tests that assert
+   each written hook calls the recorder. Sequence within P1: claude `settings.json` merge (recorder
+   side done) → kiro (reuse generator) → codex/gemini/opencode (schema verified first).
 2. **P2 — wire v9 `Usage by CLI` + `Heavy lifters`** to `aggregateUsage`; PREVIEW fallback intact.
 3. **P3 — dormant detection** (ECC ∩ usage) → `Dormant` panel LIVE.
-4. **P4 — remaining CLI hook generators** (codex/gemini/cursor/…), gated.
+4. **P4 — folded into P1** (the "all targeted CLIs" decision pulls the remaining generators forward).
 5. **P5 — cross-project rollup** (`--rollup` / `--org`).
 
 Each phase is independently shippable and leaves the report honest (PREVIEW where data is absent).
@@ -139,14 +141,37 @@ Each phase is independently shippable and leaves the report honest (PREVIEW wher
 - Determinism: report stays byte-stable for a fixed event log; usage log itself is excluded.
 - Gate: typecheck / biome ci / full vitest / build, as with every slice.
 
-## Open questions (need your call before P1)
+## Decisions (resolved 2026-06-29, owner)
 
-1. **Hook install UX** — auto-generate per-tool hooks inside `aih usage --apply` (my default), or a
-   separate explicit `aih usage --wire-hooks`? And confirm **claude + kiro first**.
-2. **Skill attribution depth** — Claude's `PostToolUse` cleanly captures `mcp__*` calls and
-   `Task`/subagents; *Skill* invocation is fuzzier (skills aren't always a discrete tool event).
-   OK to ship v1 at **mcp + subagent + tool** granularity, skill attribution best-effort?
-3. **Dormant baseline** — dormant = **all** ECC-installed skills minus fired (my default), or only
-   ECC skills "relevant to this repo's stack" minus fired?
-4. **Cross-project scope** — scan-on-demand over a passed list of repo dirs (my default, honors
-   no-cache), or a registry of known project paths?
+1. **Hook install** — generate per-tool hooks inside `aih usage --apply`, wiring **ALL targeted CLIs**
+   (the `resolveTargets` set), gated + idempotent. (Not claude+kiro-only.)
+2. **Attribution depth** — ship at **mcp + subagent + tool** granularity (solid); **skill identity
+   best-effort** (named when the hook payload exposes it, else counted as a tool).
+3. **Dormant baseline** *(deferred to P3)* — default = **all** ECC-installed skills minus fired;
+   revisit "stack-relevant only" if the all-set proves noisy.
+4. **Cross-project scope** *(deferred to P5)* — **scan-on-demand** over a passed list of repo dirs
+   (honors the no-cache decision); no registry/daemon.
+
+## Current state (branch `feat/local-report-v9`)
+
+- ✅ `e48a35c` — recorder gained a `--from <cli>` stdin mode; **claude payload mapping is done**
+  (`mcp__server__tool`→mcp, `Task`→subagent, `Skill`→skill best-effort, else tool). Other CLIs return
+  `undefined` from `fromHookPayload` until wired.
+- ⏳ Remaining = the checklist below (claude `settings.json` merge + other CLI hooks + panel wiring +
+  dormant + rollup).
+
+## Implementer checklist
+
+- [ ] **P1** — extend `fromHookPayload(cli, payload)` per targeted CLI **and** generate each hook
+      (runs `node .aih/usage-record.mjs --from <cli>`); wire into `aih usage --apply` over
+      `resolveTargets`, idempotent + additive (never clobber existing hooks), gated. Order: claude
+      `.claude/settings.json` merge (recorder side done) → kiro (reuse `src/kiro/content.ts`) →
+      **verify codex/gemini/opencode schemas vs current docs before writing them**.
+- [ ] **P2** — `Usage by CLI` ← `aggregateUsage(readUsage(ctx)).tools`; `Heavy lifters` ←
+      `.skills.top`. PREVIEW until ≥1 real event.
+- [ ] **P3** — `Dormant` = live ECC skills (`~/.claude/skills/ecc/`, via `eccInventoryDigest`) −
+      fired (`.skills.bySource.ecc`) over the window. 0 ECC or 0 usage → PREVIEW, not a false 0.
+- [ ] **P5** — `aih usage --rollup <dir…>` (or extend `aih report --org`) → aggregate the union of
+      repos' `.aih/usage.jsonl`, tagged by repo.
+- [ ] Gate green each phase (lint/biome ci/typecheck/vitest/build); **no cost**; `usage.jsonl`
+      gitignored + excluded from the byte-stable report; demo never renders as real.
