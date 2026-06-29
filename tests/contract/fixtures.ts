@@ -79,6 +79,25 @@ export function seedLegacyScripts(dir: string, contextDir = "ai-coding"): void {
   put(dir, `${contextDir}/scripts/regenerate-adapters.ps1`, "# legacy generator\n");
 }
 
+/** An Angular browser SPA: `karma.conf` + `@angular/core` → SPA language label + browser-test gap. */
+export function seedAngularLike(dir: string): void {
+  put(
+    dir,
+    "package.json",
+    json({
+      name: "ng-app",
+      description: "An Angular app.",
+      scripts: { test: "ng test", build: "ng build", lint: "ng lint", start: "ng serve" },
+      dependencies: { "@angular/core": "^17" },
+      devDependencies: { karma: "^6", typescript: "^5" },
+    }),
+  );
+  put(dir, "angular.json", json({ version: 1 }));
+  put(dir, "karma.conf.js", "module.exports = (config) => {};\n");
+  put(dir, "tsconfig.json", json({ compilerOptions: { strict: true } }));
+  put(dir, "src/main.ts", "export const x = 1;\n");
+}
+
 /** `n` fake tracked paths for the git-`ls-files` runner. */
 export function fakeTrackedPaths(n: number): string[] {
   return Array.from({ length: n }, (_, i) => `src/file-${i}.ts`);

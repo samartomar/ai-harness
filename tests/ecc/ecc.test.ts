@@ -38,6 +38,7 @@ function stack(over: Partial<RepoStack> = {}): RepoStack {
     hasTypeScript: false,
     scripts: {},
     entryPoints: [],
+    browserTest: false,
     isMonorepo: false,
     ...over,
   };

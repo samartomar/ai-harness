@@ -104,7 +104,7 @@ export function agentBehaviorCoreDoc(dir: string): string {
     "",
     "The minimum code that solves the problem; nothing speculative.",
     "",
-    "- No features beyond what was asked; nothing speculative.",
+    "- No features beyond what was asked.",
     "- No configurability or error handling for cases that cannot occur.",
     "- If 200 lines could be 50, rewrite it.",
     "",
@@ -326,8 +326,8 @@ function ruleRouterCompact(
     "### Implementation",
     `Load \`${dir}/project.md\` for the commands, scale, and constraints; follow the ECC`,
     `stack rules for ${primaryLang}. State the goal and the smallest viable change first.`,
-    "For large repos, verify `large-repo graph safety` with `aih doctor`; if the",
-    "graph is unavailable, do bounded `rg`/`fd` reconnaissance and report the gap.",
+    `Honor the Invariants in \`${dir}/rules/agent-behavior-core.md\` (large-repo graph safety,`,
+    "boundaries) before broad work.",
     "",
     "### Code review / PR",
     `Load \`${dir}/project.md\`; review the diff, tests, and schemas against repo`,
@@ -339,9 +339,8 @@ function ruleRouterCompact(
       : "No test command is defined in the repo — add one and record it here.",
     "",
     "### Security / secrets",
-    "Never read or emit plaintext secrets; validate all external input; keep cloud",
-    "setup as documentation, never run it blind. Do not open `.env*` or `secrets/**`;",
-    "use `aih secrets --verify` for redacted status. See `aih secrets` / `aih guardrails`.",
+    `Follow the Invariants in \`${dir}/rules/agent-behavior-core.md\` (secrets, input validation,`,
+    "cloud-setup safety). Run `aih secrets` / `aih guardrails` for the tooling.",
     "",
     "### External AI tooling / adapters",
     `Load \`${dir}/adapters/<your-tool>.md\` for tool-specific wiring (entry files,`,
@@ -351,9 +350,9 @@ function ruleRouterCompact(
     "",
     "If a tool, MCP server, graph, or memory store fails, state the failure briefly,",
     "fall back to committed repo evidence, and never invent results. Don't cite a",
-    "command, path, or API you haven't verified exists. Re-run `aih bootstrap-ai` to",
-    "regenerate this canon — it is idempotent (no diff when nothing changed);",
-    "`aih bootstrap-ai --verify` fails if a bootloader has drifted.",
+    "command, path, or API you haven't verified exists. Regenerate this canon with",
+    "`aih bootstrap-ai` (router + bootloaders) and `aih contract` (project.json /",
+    "project.md) — idempotent; `aih bootstrap-ai --verify` fails if a bootloader drifted.",
   );
 }
 
@@ -446,6 +445,17 @@ export function adapterNote(cli: Cli, dir: string, canon: CanonMode = "legacy"):
     canon === "compact"
       ? `- \`${dir}/project.md\` — the repo contract (stack, commands, scale, gaps)`
       : `- \`${dir}/INDEX.md\` — repo context (run \`aih scaffold\` if absent)`;
+  // Compact: a one-line pointer (the boundary is already in the floor + RULE_ROUTER, so
+  // restating it in all 5 adapters is pure duplication). Legacy: the full paragraph, frozen.
+  const boundaries =
+    canon === "compact"
+      ? [
+          `${m.label} may propose, implement when assigned, and review — boundaries in \`${dir}/RULE_ROUTER.md\` § External action boundary (push / PR / merge need explicit human approval).`,
+        ]
+      : [
+          `${m.label} may propose, implement when assigned, and review. It must not push,`,
+          "merge, bypass CI, or approve a merge without explicit human approval.",
+        ];
   return lines(
     `# ${m.label} adapter`,
     "",
@@ -464,8 +474,7 @@ export function adapterNote(cli: Cli, dir: string, canon: CanonMode = "legacy"):
     "",
     "## Boundaries",
     "",
-    `${m.label} may propose, implement when assigned, and review. It must not push,`,
-    "merge, bypass CI, or approve a merge without explicit human approval.",
+    ...boundaries,
     "",
     "## Baseline layer",
     "",

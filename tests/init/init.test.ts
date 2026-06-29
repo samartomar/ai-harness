@@ -279,7 +279,8 @@ describe("aih init — target-gated tool artifacts (.cursor on cursor, .claude o
 
 describe("aih init — custom context dir propagation", () => {
   it("threads ctx.contextDir into every sub-capability", async () => {
-    const p = await command.plan(ctx({ contextDir: "ai-coding" }));
+    // legacy so the guardrails taxonomy doc (a doc-with-path under the dir) is present.
+    const p = await command.plan(ctx({ contextDir: "ai-coding", options: { canon: "legacy" } }));
     const paths = writePaths(p.actions);
 
     // contract files land under the override, not the default.

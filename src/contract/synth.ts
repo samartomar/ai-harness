@@ -78,8 +78,17 @@ function deriveKnownGaps(
   contextDir: string,
   committed: ReadonlySet<string> | undefined,
   commands: Record<string, ContractCommand | undefined>,
+  browserTest: boolean,
 ): string[] {
   const gaps: string[] = [];
+
+  // The one real agent-trap: a browser test runner (Karma's `ng test`, Cypress) launches a
+  // real browser and HANGS headless-less — the move most likely to fail the next agent.
+  if (browserTest && commands.test) {
+    gaps.push(
+      `tests run in a browser (\`${commands.test.value}\`) — in a CI/agent context run them headless (e.g. \`--watch=false --browsers=ChromeHeadless\`) or they hang waiting for a browser`,
+    );
+  }
 
   const canon = classifyCanon(root, contextDir);
   if (isAdoptable(canon.kind)) {
@@ -156,7 +165,7 @@ export async function synthesizeContract(
       isMonorepo: stack.isMonorepo,
     },
     sensitivePaths: secrets.matches,
-    knownGaps: deriveKnownGaps(root, contextDir, committed, commands),
+    knownGaps: deriveKnownGaps(root, contextDir, committed, commands, stack.browserTest),
   };
 }
 

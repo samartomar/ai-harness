@@ -41,6 +41,8 @@ export interface RepoStack {
   lintCommand?: string;
   /** How to start the local app/server, or undefined when none is defined. */
   startCommand?: string;
+  /** True when tests run in a real browser (Karma/Cypress/…) — they hang in a headless agent. */
+  browserTest: boolean;
   /** True when a workspace/monorepo orchestrator or multiple package manifests are present. */
   isMonorepo: boolean;
   /** Detected workspace tool (turbo/nx/pnpm/rush/lerna/bazel/maven/gradle/npm-yarn), if any. */
@@ -109,6 +111,22 @@ const LINTERS: Array<[dep: string, cmd: string]> = [
   ["standard", "npx standard"],
 ];
 
+/** Browser-SPA framework labels — these run in the browser, not on Node. */
+const BROWSER_SPA_FRAMEWORKS = new Set(["Angular", "React", "Vue", "Svelte"]);
+/** Node-server framework labels — presence means the project DOES run on Node (keep "/Node.js"). */
+const NODE_SERVER_FRAMEWORKS = new Set([
+  "Next.js",
+  "Express",
+  "Fastify",
+  "NestJS",
+  "Koa",
+  "hapi",
+  "Serverless Framework",
+  "AWS CDK",
+]);
+/** Deps whose tests launch a real browser and hang without a headless flag. */
+const BROWSER_TEST_DEPS = ["karma", "cypress", "@web/test-runner", "@playwright/test"];
+
 /** Dependency (Node or Python) → datastore label. */
 const DB_DEPS: Record<string, string> = {
   pg: "PostgreSQL",
@@ -162,6 +180,8 @@ interface Raw {
   /** A linter is configured by a config file even if the root package.json has no lint script/dep. */
   hasEslintConfig: boolean;
   hasBiomeConfig: boolean;
+  /** A browser test runner is configured by a `karma.conf.*` file. */
+  hasKarmaConfig: boolean;
 }
 
 /**
@@ -186,6 +206,7 @@ export function scanRepo(root: string, opts: ScanOptions): RepoStack {
     hasGradlew: false,
     hasEslintConfig: false,
     hasBiomeConfig: false,
+    hasKarmaConfig: false,
   };
   // Exclude the configured context dir (top path segment) alongside the static
   // set, so re-scans never walk the canon aih itself generated (the default is
@@ -348,6 +369,10 @@ function detectMisc(dir: string, name: string, lower: string, raw: Raw): void {
     raw.hasBiomeConfig = true;
     return;
   }
+  if (/^karma\.conf\.(js|ts|cjs|mjs)$/.test(lower)) {
+    raw.hasKarmaConfig = true;
+    return;
+  }
   if (/^serverless\.(yml|yaml|ts|js|json)$/.test(lower)) {
     push(raw.frameworks, "Serverless Framework");
     push(raw.deployment, "Serverless Framework");
@@ -501,9 +526,27 @@ function synthesize(raw: Raw): RepoStack {
   // single root command must not be presented as authoritative for every package.
   const isMonorepo = workspaceTool !== undefined || raw.manifestCount > 1;
 
+  const finalFrameworks = dedupe(frameworks);
+  // A browser SPA doesn't run on Node — don't tag it "/Node.js" (it nudges a weak agent
+  // toward server assumptions). A Node-server framework (Next/Express/Nest/…) keeps the tag.
+  const isBrowserSpa =
+    finalFrameworks.some((f) => BROWSER_SPA_FRAMEWORKS.has(f)) &&
+    !finalFrameworks.some((f) => NODE_SERVER_FRAMEWORKS.has(f));
+  const finalLanguages = dedupe(languages).map((l) =>
+    isBrowserSpa && l === "TypeScript/Node.js"
+      ? "TypeScript"
+      : isBrowserSpa && l === "JavaScript/Node.js"
+        ? "JavaScript"
+        : l,
+  );
+  // Browser test runners (Karma's `ng test`, Cypress) launch a real browser and HANG in a
+  // headless/agent context — surface it so synth can warn the next agent (the real trap).
+  const browserTest =
+    raw.hasKarmaConfig || (pkg ? BROWSER_TEST_DEPS.some((d) => pkg.deps.has(d)) : false);
+
   return {
-    languages: dedupe(languages),
-    frameworks: dedupe(frameworks),
+    languages: finalLanguages,
+    frameworks: finalFrameworks,
     cloud: dedupe(cloud),
     databases: dedupe(databases),
     deployment: dedupe(deployment),
@@ -516,6 +559,7 @@ function synthesize(raw: Raw): RepoStack {
     buildCommand,
     lintCommand,
     startCommand,
+    browserTest,
     isMonorepo,
     workspaceTool,
   };

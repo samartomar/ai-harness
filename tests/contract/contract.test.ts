@@ -15,6 +15,7 @@ import { scanRepo } from "../../src/profile/scan.js";
 import {
   fakeTrackedPaths,
   gitTrackedRunner,
+  seedAngularLike,
   seedForeignCanon,
   seedImportableCli,
   seedLegacyScripts,
@@ -273,6 +274,25 @@ describe("known gaps", () => {
     seedLegacyScripts(dir);
     const gaps = (await synth()).knownGaps;
     expect(gaps.some((g) => g.includes("retire") && g.includes("regenerate-adapters"))).toBe(true);
+  });
+});
+
+describe("browser-SPA detection (P4/P5)", () => {
+  it("labels a browser SPA as TypeScript (not Node.js) and flags the browser-test trap", async () => {
+    seedAngularLike(dir);
+    const c = await synth();
+    expect(c.languages).toContain("TypeScript");
+    expect(c.languages).not.toContain("TypeScript/Node.js");
+    expect(c.frameworks).toContain("Angular");
+    // The headless agent-trap surfaces as a knownGap (renders in project.md + setup.md).
+    expect(c.knownGaps.some((g) => g.includes("browser") && g.includes("headless"))).toBe(true);
+  });
+
+  it("keeps the Node.js label + no browser gap for a Node service", async () => {
+    seedMindworksLike(dir); // Express, no karma
+    const c = await synth();
+    expect(c.languages).toContain("TypeScript/Node.js");
+    expect(c.knownGaps.some((g) => g.includes("browser"))).toBe(false);
   });
 });
 
