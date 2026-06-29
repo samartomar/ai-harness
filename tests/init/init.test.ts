@@ -53,7 +53,7 @@ function docs(actions: Action[]): DocAction[] {
 describe("aih init — command surface", () => {
   it("keeps the init name, the --mcp-mode option, and a real plan", async () => {
     expect(command.name).toBe("init");
-    expect(command.options?.map((o) => o.flags)).toEqual(["--mcp-mode <mode>"]);
+    expect(command.options?.map((o) => o.flags)).toEqual(["--mcp-mode <mode>", "--canon <mode>"]);
     const p = await command.plan(ctx());
     expect(p.capability).toBe("init");
     expect(p.actions.length).toBeGreaterThan(0);
@@ -71,8 +71,8 @@ describe("aih init — composes all six repo-scoped capabilities", () => {
     // is NOT written on a bare init (it would be an orphan — bootstrap-ai writes no
     // Cursor canon either). See the "target-gated tool artifacts" suite below.
     expect(paths).not.toContain(".cursor/rules/01-stack.mdc");
-    // scaffold: the canonical context INDEX.
-    expect(paths).toContain(".ai-context/INDEX.md");
+    // contract: the machine-readable repo contract (compact default replaces INDEX).
+    expect(paths).toContain(".ai-context/project.json");
     // secrets: the .claudeignore backstop.
     expect(paths).toContain(".claudeignore");
     // guardrails: the gitleaks policy (mission-named signature).
@@ -142,6 +142,7 @@ describe("aih init — composition, not duplication", () => {
       "superpowers",
       "bootstrap-ai",
       "scaffold",
+      "contract",
       "secrets",
       "guardrails",
       "mcp",
@@ -164,6 +165,61 @@ describe("aih init — composition, not duplication", () => {
     expect(headerIndex("guardrails")).toBeLessThan(writeIndex(".gitleaks.toml"));
     expect(headerIndex("mcp")).toBeLessThan(writeIndex(".mcp.json"));
     expect(headerIndex("profile")).toBeLessThan(headerIndex("sandbox"));
+  });
+});
+
+describe("aih init — compact default vs --canon legacy", () => {
+  it("compact (default): emits the contract files and drops the meta-doc family", async () => {
+    const paths = writePaths((await command.plan(ctx())).actions);
+    expect(paths).toContain(".ai-context/project.json");
+    expect(paths).toContain(".ai-context/project.md");
+    expect(paths).toContain(".ai-context/setup.md");
+    for (const meta of [
+      ".ai-context/INDEX.md",
+      ".ai-context/architecture.md",
+      ".ai-context/conventions.md",
+      ".ai-context/tasks.md",
+      ".ai-context/SETUP-TASKS.md",
+      ".ai-context/VALIDATION.md",
+      ".ai-context/project-guardrails.md",
+      ".ai-context/REGENERATION.md",
+      ".ai-context/harness-update.md",
+      ".ai-context/adapters/other-tools.md",
+    ]) {
+      expect(paths).not.toContain(meta);
+    }
+    // One writer per contract file + the router (the one-writer-per-file invariant).
+    for (const p of [
+      ".ai-context/RULE_ROUTER.md",
+      ".ai-context/project.json",
+      ".ai-context/project.md",
+      ".ai-context/setup.md",
+    ]) {
+      expect(paths.filter((x) => x === p)).toHaveLength(1);
+    }
+  });
+
+  it("--canon legacy reproduces the full doc family (and still lands the contract)", async () => {
+    const paths = writePaths((await command.plan(ctx({ options: { canon: "legacy" } }))).actions);
+    for (const meta of [
+      ".ai-context/INDEX.md",
+      ".ai-context/architecture.md",
+      ".ai-context/REGENERATION.md",
+      ".ai-context/adapters/other-tools.md",
+    ]) {
+      expect(paths).toContain(meta);
+    }
+    expect(paths).toContain(".ai-context/project.json"); // the contract phase always runs
+  });
+
+  it("the compact RULE_ROUTER routes at the contract, not the legacy docs", async () => {
+    const w = (await command.plan(ctx())).actions.find(
+      (a): a is WriteAction =>
+        a.kind === "write" && a.path.replace(/\\/g, "/") === ".ai-context/RULE_ROUTER.md",
+    );
+    const router = w?.contents ?? "";
+    expect(router).toContain("project.md");
+    expect(router).not.toContain("INDEX.md");
   });
 });
 
@@ -223,12 +279,13 @@ describe("aih init — target-gated tool artifacts (.cursor on cursor, .claude o
 
 describe("aih init — custom context dir propagation", () => {
   it("threads ctx.contextDir into every sub-capability", async () => {
-    const p = await command.plan(ctx({ contextDir: "ai-coding" }));
+    // legacy so the guardrails taxonomy doc (a doc-with-path under the dir) is present.
+    const p = await command.plan(ctx({ contextDir: "ai-coding", options: { canon: "legacy" } }));
     const paths = writePaths(p.actions);
 
-    // scaffold context files land under the override, not the default.
-    expect(paths).toContain("ai-coding/INDEX.md");
-    expect(paths).not.toContain(".ai-context/INDEX.md");
+    // contract files land under the override, not the default.
+    expect(paths).toContain("ai-coding/project.json");
+    expect(paths).not.toContain(".ai-context/project.json");
 
     // guardrails routes its taxonomy doc into the override dir.
     const taxonomy = docs(p.actions).find((d) =>
@@ -368,8 +425,8 @@ describe("aih init — apply lays the whole bootstrap down in one pass", () => {
     const res = await executePlan(built, applied);
 
     const written = res.writes.map((w) => w.path.replace(/\\/g, "/"));
-    expect(written).toContain("CLAUDE.md"); // profile/scaffold
-    expect(written).toContain(".ai-context/INDEX.md"); // scaffold
+    expect(written).toContain("CLAUDE.md"); // bootstrap-ai
+    expect(written).toContain(".ai-context/project.json"); // contract
     expect(written).toContain(".gitleaks.toml"); // guardrails
     expect(written).toContain(".mcp.json"); // mcp
     expect(written).toContain(".devcontainer/devcontainer.json"); // sandbox

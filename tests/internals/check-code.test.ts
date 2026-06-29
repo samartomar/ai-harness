@@ -390,8 +390,10 @@ describe("Check.code — invariants", () => {
       "guardrails.gitleaks-missing": true,
       "usage.no-data": true,
       "scale.code-review-graph-missing": true,
+      "contract.path-unportable": true,
       "report.context-over-budget": true,
       "report.low-adoption": true,
+      "report.contract-untrue": true,
     };
     const srcDir = join(process.cwd(), "src");
     const src = (readdirSync(srcDir, { recursive: true }) as string[])

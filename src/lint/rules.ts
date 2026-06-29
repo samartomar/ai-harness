@@ -162,6 +162,12 @@ const WINDOWS_ABSOLUTE_PATH_RE = /(?:^|[`(\s])([A-Za-z]:[\\/][^\s`)]+)/g;
  * basename so a `ai-coding/architecture.md` ref resolves regardless of contextDir.
  */
 const KNOWN_SIBLING_CANON: ReadonlySet<string> = new Set([
+  // The compact repo contract — emitted by the sibling `aih contract` phase, which
+  // the compact RULE_ROUTER / bootloaders reference but bootstrap-ai does not write.
+  "project.json",
+  "project.md",
+  "setup.md",
+  // The legacy doc family — emitted by `aih scaffold --canon legacy`.
   "INDEX.md",
   "architecture.md",
   "conventions.md",

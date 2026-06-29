@@ -23,6 +23,7 @@ import type { SupportContext } from "../support/templates.js";
 import { type AdoptionSnapshot, reportAdvisories } from "./advisories.js";
 import { reportHtml, reportMarkdown } from "./artifact.js";
 import { type ContextBloat, DEFAULT_CONTEXT_BUDGET_TOKENS, scanContextBloat } from "./bloat.js";
+import { contractSnapshot } from "./contract.js";
 import { type LoadGroupModel, scanLoadGroups } from "./loadgroups.js";
 import { localPanels } from "./local.js";
 import { type NextStepsInput, nextSteps, nextStepsDigest, nextStepsHeadline } from "./nextsteps.js";
@@ -284,6 +285,7 @@ async function reportPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
   const advisoryChecks = reportAdvisories({
     model: built.model,
     adoption: adoptionFrom(built.digests),
+    contract: contractSnapshot(ctx),
     gate: ctx.options.gate === true,
     initialized: readAihConfig(ctx.root) !== undefined,
   });

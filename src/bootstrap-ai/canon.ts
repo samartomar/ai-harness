@@ -1,3 +1,4 @@
+import type { CanonMode } from "../internals/canon-mode.js";
 import { bootloadersFor, entry as registryEntry } from "../internals/cli-registry.js";
 import { type Cli, SUPPORTED_CLIS } from "../internals/clis.js";
 import type { ManagedBlock } from "../internals/markers.js";
@@ -50,18 +51,18 @@ export function sharedCanonicalBlockBody(dir: string): string {
     "## Working agreement",
     "",
     "- **Think before coding** — state the goal and the smallest change that meets it; surface tradeoffs, don't pick silently.",
-    "- **Simplicity first** — minimum code that solves it; nothing speculative; no abstraction for single-use code.",
+    "- **Simplicity first** — minimum code that solves it; nothing speculative.",
     "- **Surgical changes** — touch only what the task needs; match the nearest peer file; every changed line traces to the request.",
     "- **Goal-driven** — turn the task into a verifiable check (write the failing test first), then loop until it is green.",
+    "- **Use the canon's tools** — use the canonical tool this repo names; don't load MCP servers just-in-case; when two look alike, pick the one the canon names.",
     "",
     "## Invariants",
     "",
     "- Validate at boundaries; reject malformed or hostile input — never coerce it. Fail closed on ambiguity.",
-    "- Immutable updates over mutation; handle errors explicitly; no silent failures.",
+    "- Handle errors explicitly; no silent failures.",
     "- No secrets in code, config, fixtures, logs, or error text.",
     "- Do not open `.env*` or `secrets/**`; validate secret presence with `aih secrets --verify`.",
     "- On large repos, use code-review-graph for impact discovery; if it is unavailable, use bounded `rg`/`fd` reads only and report the gap.",
-    "- Repo evidence is the truth — don't invent commands, paths, or APIs; verify a path exists before citing it.",
     "",
     "## External action boundary",
     "",
@@ -73,7 +74,9 @@ export function sharedCanonicalBlockBody(dir: string): string {
     "",
     "## Reporting",
     "",
-    "State impact, the validation you ran, what you skipped, and remaining risk — never hide a skip.",
+    "Claiming done, tests pass, or typecheck clean requires showing the command and its",
+    "output — a sanity gate is not a completion gate. If you couldn't run it, say so and",
+    "name what's unverified. State impact, what you skipped, and the remaining risk.",
   );
 }
 
@@ -86,9 +89,7 @@ export function agentBehaviorCoreDoc(dir: string): string {
   return lines(
     "# Agent behavior core",
     "",
-    "Canonical working discipline for every AI tool in this repo. Referenced from",
-    `\`${dir}/RULE_ROUTER.md\` and each bootloader's shared block — it is the rulebook`,
-    "those pointers route to. Read it before any non-trivial change.",
+    `Canonical working discipline for every AI tool in this repo — the rulebook \`${dir}/RULE_ROUTER.md\` and the bootloaders route to. Read it before any non-trivial change.`,
     "",
     "## 1. Think before coding",
     "",
@@ -103,9 +104,9 @@ export function agentBehaviorCoreDoc(dir: string): string {
     "",
     "The minimum code that solves the problem; nothing speculative.",
     "",
-    "- No features beyond what was asked; no abstractions for single-use code.",
+    "- No features beyond what was asked.",
     "- No configurability or error handling for cases that cannot occur.",
-    '- If 200 lines could be 50, rewrite it. Ask: "would a senior call this overcomplicated?"',
+    "- If 200 lines could be 50, rewrite it.",
     "",
     "## 3. Surgical changes",
     "",
@@ -127,17 +128,24 @@ export function agentBehaviorCoreDoc(dir: string): string {
     "## Invariants (always hold)",
     "",
     "- Validate at boundaries; reject malformed/hostile input — never coerce. Fail closed on ambiguity.",
-    "- Immutable updates over mutation; explicit error handling; no silent failures.",
+    "- Explicit error handling; no silent failures.",
     "- No secrets in code, prompts, fixtures, logs, or error text.",
     "- Do not open `.env*` or `secrets/**`; validate secret presence with `aih secrets --verify`.",
     "- On large repos, use code-review-graph for impact discovery; if it is unavailable, use bounded `rg`/`fd` reads only and report the gap.",
     "- Repo evidence (source, tests, schemas, CI) is the truth, not model memory. Don't",
     "  invent commands, paths, or APIs; verify a path exists before citing it.",
     "",
+    "## Tool selection",
+    "",
+    "Use the canonical tool this repo names; don't load MCP servers just-in-case; when two",
+    "tools look alike, pick the one the canon names.",
+    "",
     "## Reporting a change",
     "",
-    "Report (1) the impact surface, (2) the validation you ran, (3) higher-confidence",
-    "checks run or explicitly skipped, (4) the remaining risk. Never hide a skipped check.",
+    "Claiming done, tests pass, or typecheck clean requires showing the command and its",
+    "output — a sanity gate is not a completion gate. If you couldn't run it, say so and name",
+    "what's unverified. Then report (1) the impact surface, (2) the validation you ran,",
+    "(3) higher-confidence checks run or explicitly skipped, (4) the remaining risk.",
   );
 }
 
@@ -146,13 +154,32 @@ export function sharedBlock(dir: string): ManagedBlock {
   return { marker: SHARED_MARKER, note: sharedNote(dir), body: sharedCanonicalBlockBody(dir) };
 }
 
-/** The RULE_ROUTER — the entry point every tool reads first, stack-aware. */
+/**
+ * The RULE_ROUTER — the entry point every tool reads first, stack-aware. In `compact`
+ * (the default product mode) it routes at the repo CONTRACT (project.json/project.md/
+ * setup.md); in `legacy` it routes at the full INDEX/architecture/conventions doc
+ * family. Mode-branched so `--canon legacy` reproduces today's router byte-identically.
+ */
 export function ruleRouterDoc(
   dir: string,
   repoName: string,
   stack: RepoStack,
   bootloaders: string[],
-  opts: { projectExtension?: boolean } = {},
+  opts: { projectExtension?: boolean; canon?: CanonMode } = {},
+): string {
+  const projectExtension = opts.projectExtension ?? false;
+  return (opts.canon ?? "legacy") === "compact"
+    ? ruleRouterCompact(dir, repoName, stack, bootloaders, projectExtension)
+    : ruleRouterLegacy(dir, repoName, stack, bootloaders, projectExtension);
+}
+
+/** Legacy router body — frozen byte-identical to the pre-contract output. */
+function ruleRouterLegacy(
+  dir: string,
+  repoName: string,
+  stack: RepoStack,
+  bootloaders: string[],
+  projectExtension: boolean,
 ): string {
   const primaryLang = stack.languages[0] ?? "the repo's language";
   // `aih adopt` carves project-specific content out of a brownfield bootloader into
@@ -163,7 +190,7 @@ export function ruleRouterDoc(
     `- \`${dir}/INDEX.md\` — context index; it owns the load order for architecture / conventions / tasks / skills`,
     "- The ECC `common` rules (Layer 1) before any non-trivial change",
   ];
-  if (opts.projectExtension) {
+  if (projectExtension) {
     alwaysReadFirst.push(
       `- \`${dir}/rules/project-canon-extension.md\` — project-specific canon (carved from this repo's prior bootloader by \`aih adopt\`; aih never regenerates it)`,
     );
@@ -237,6 +264,95 @@ export function ruleRouterDoc(
     "command, path, or API you haven't verified exists. Re-run `aih bootstrap-ai` to",
     "regenerate this canon — it is idempotent (no diff when nothing changed);",
     "`aih bootstrap-ai --verify` fails if a bootloader has drifted.",
+  );
+}
+
+/**
+ * Compact router body — routes at the repo CONTRACT (project.json / project.md /
+ * setup.md from `aih contract`) instead of the legacy doc family. No "first-time
+ * setup / fill the skeletons" section: the contract is auto-derived and complete.
+ */
+function ruleRouterCompact(
+  dir: string,
+  repoName: string,
+  stack: RepoStack,
+  bootloaders: string[],
+  projectExtension: boolean,
+): string {
+  const primaryLang = stack.languages[0] ?? "the repo's language";
+  const alwaysReadFirst = [
+    `- \`${dir}/rules/agent-behavior-core.md\` — working discipline (think → simplify → surgical → goal-driven)`,
+    `- \`${dir}/project.md\` — the repo contract: stack, commands, scale, sensitive paths, known gaps (machine-readable in \`${dir}/project.json\`)`,
+    "- The ECC `common` rules (Layer 1) before any non-trivial change",
+  ];
+  if (projectExtension) {
+    alwaysReadFirst.push(
+      `- \`${dir}/rules/project-canon-extension.md\` — project-specific canon (carved from this repo's prior bootloader by \`aih adopt\`; aih never regenerates it)`,
+    );
+  }
+  return lines(
+    `# ${repoName} — AI Rule Router`,
+    "",
+    "Committed rule entry point for every AI coding tool in this repo. Load the",
+    "smallest rule set that matches the task, then verify against repo evidence",
+    "(source, tests, schemas, CI) before acting. Do not load everything blindly.",
+    "",
+    "## Layered model (baseline + repo)",
+    "",
+    "- **Layer 1 — user baseline (generic):** ECC (affaan-m/ECC) + Superpowers",
+    "  (obra/Superpowers), installed per CLI by `aih ecc` / `aih superpowers` —",
+    "  generic agents, skills, memory, security, and the brainstorm→plan→TDD→review loop.",
+    "- **Layer 2 — this repo's contract (specific):** this router, the contract",
+    `  (\`${dir}/project.json\` + \`${dir}/project.md\` + \`${dir}/setup.md\`), the working`,
+    `  discipline in \`${dir}/rules/\`, the bootloaders (${bootloaders.map((b) => `\`${b}\``).join(", ")}),`,
+    `  and the per-tool notes in \`${dir}/adapters/\`.`,
+    "",
+    "**Precedence: Layer 2 wins.** Repo canon overrides the generic baseline on conflict.",
+    "",
+    "## Detected stack",
+    "",
+    detectedStack(stack),
+    "",
+    "## Always read first",
+    "",
+    alwaysReadFirst,
+    "",
+    "Read depth: for read-only validation you may identify these files and confirm",
+    "routing without opening each. For implementation, review, or security work, read",
+    `the core + \`${dir}/project.md\` first, then load only the task slice below.`,
+    "",
+    "## Task routing",
+    "",
+    "### Implementation",
+    `Load \`${dir}/project.md\` for the commands, scale, and constraints; follow the ECC`,
+    `stack rules for ${primaryLang}. State the goal and the smallest viable change first.`,
+    `Honor the Invariants in \`${dir}/rules/agent-behavior-core.md\` (large-repo graph safety,`,
+    "boundaries) before broad work.",
+    "",
+    "### Code review / PR",
+    `Load \`${dir}/project.md\`; review the diff, tests, and schemas against repo`,
+    "evidence. Comment only unless explicitly asked to fix.",
+    "",
+    "### Testing",
+    stack.testRunner
+      ? `Run \`${stack.testRunner}\`. New behavior needs a test; fix the implementation, not the test.`
+      : "No test command is defined in the repo — add one and record it here.",
+    "",
+    "### Security / secrets",
+    `Follow the Invariants in \`${dir}/rules/agent-behavior-core.md\` (secrets, input validation,`,
+    "cloud-setup safety). Run `aih secrets` / `aih guardrails` for the tooling.",
+    "",
+    "### External AI tooling / adapters",
+    `Load \`${dir}/adapters/<your-tool>.md\` for tool-specific wiring (entry files,`,
+    "how it loads rules, boundaries).",
+    "",
+    "## Tooling failure recovery",
+    "",
+    "If a tool, MCP server, graph, or memory store fails, state the failure briefly,",
+    "fall back to committed repo evidence, and never invent results. Don't cite a",
+    "command, path, or API you haven't verified exists. Regenerate this canon with",
+    "`aih bootstrap-ai` (router + bootloaders) and `aih contract` (project.json /",
+    "project.md) — idempotent; `aih bootstrap-ai --verify` fails if a bootloader drifted.",
   );
 }
 
@@ -323,8 +439,23 @@ const CLI_META: Record<Cli, CliMeta> = {
 };
 
 /** A tool-specific wiring note under `<dir>/adapters/<cli>.md`. */
-export function adapterNote(cli: Cli, dir: string): string {
+export function adapterNote(cli: Cli, dir: string, canon: CanonMode = "legacy"): string {
   const m = CLI_META[cli];
+  const contextRef =
+    canon === "compact"
+      ? `- \`${dir}/project.md\` — the repo contract (stack, commands, scale, gaps)`
+      : `- \`${dir}/INDEX.md\` — repo context (run \`aih scaffold\` if absent)`;
+  // Compact: a one-line pointer (the boundary is already in the floor + RULE_ROUTER, so
+  // restating it in all 5 adapters is pure duplication). Legacy: the full paragraph, frozen.
+  const boundaries =
+    canon === "compact"
+      ? [
+          `${m.label} may propose, implement when assigned, and review — boundaries in \`${dir}/RULE_ROUTER.md\` § External action boundary (push / PR / merge need explicit human approval).`,
+        ]
+      : [
+          `${m.label} may propose, implement when assigned, and review. It must not push,`,
+          "merge, bypass CI, or approve a merge without explicit human approval.",
+        ];
   return lines(
     `# ${m.label} adapter`,
     "",
@@ -335,7 +466,7 @@ export function adapterNote(cli: Cli, dir: string): string {
     "",
     `- ${m.entry}`,
     `- \`${dir}/RULE_ROUTER.md\` — layered model, detected stack, task routing`,
-    `- \`${dir}/INDEX.md\` — repo context (run \`aih scaffold\` if absent)`,
+    contextRef,
     "",
     "## How it loads rules",
     "",
@@ -343,8 +474,7 @@ export function adapterNote(cli: Cli, dir: string): string {
     "",
     "## Boundaries",
     "",
-    `${m.label} may propose, implement when assigned, and review. It must not push,`,
-    "merge, bypass CI, or approve a merge without explicit human approval.",
+    ...boundaries,
     "",
     "## Baseline layer",
     "",
@@ -468,9 +598,17 @@ export function bootloaderPaths(clis: readonly Cli[]): string[] {
 }
 
 /** The tool-specific preamble written above the shared block, per bootloader file. */
-export function bootloaderPreamble(path: string, dir: string, repoName: string): string {
+export function bootloaderPreamble(
+  path: string,
+  dir: string,
+  repoName: string,
+  canon: CanonMode = "legacy",
+): string {
   const norm = path.replace(/\\/g, "/");
-  const seeRegen = `The shared block below is generated from \`${dir}/\` (see \`${dir}/REGENERATION.md\`).`;
+  const seeRegen =
+    canon === "compact"
+      ? `The shared block below is generated from \`${dir}/\`; regenerate with \`aih bootstrap-ai\`.`
+      : `The shared block below is generated from \`${dir}/\` (see \`${dir}/REGENERATION.md\`).`;
   if (norm.startsWith(".kiro/steering/")) {
     // Kiro steering file: YAML front-matter `inclusion: always` keeps it loaded in
     // every interaction; `#[[file:...]]` live-references the router.

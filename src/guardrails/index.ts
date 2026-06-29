@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import { CANON_OPTION, canonMode } from "../internals/canon-mode.js";
 import { isTargeted } from "../internals/cli-detect.js";
 import { readIfExists } from "../internals/fsxn.js";
 import {
@@ -120,20 +121,28 @@ function guardrailsPlan(ctx: PlanContext): ReturnType<typeof plan> {
       scaWorkflowYaml(),
       "CI SCA workflow: license scan that fails on AGPL / strong copyleft",
     ),
-    doc(
-      "Golden Paths / Guardrails / Safety Nets control taxonomy",
-      taxonomyDoc(),
-      taxonomyPath(ctx),
-    ),
     doc("CI license gate runs in your pipeline, not from aih", ciNote()),
-    // Command-policy lexicon (deny/ask/safe) — human reference doc under the context
-    // dir; the same lexicon is projected into the native Claude permission file below.
-    doc(
-      "Command-policy lexicon (deny/ask/safe) — ported from LeanHarness (MIT)",
-      commandPolicyDoc(),
-      commandPolicyPath(ctx),
-    ),
   ];
+
+  // The full prose taxonomy + command-policy lexicon are LEGACY-only FILES: generic
+  // platform-engineering prose with low agent-leverage. The enforcement TEETH —
+  // .gitleaks.toml, .pre-commit-config.yaml, the SCA workflow, risk-gates.json, and the
+  // command-policy projection into .claude/settings.json — are kept always (below).
+  // Compact drops the two prose docs; `--canon legacy` restores them byte-identical.
+  if (canonMode(ctx) === "legacy") {
+    actions.push(
+      doc(
+        "Golden Paths / Guardrails / Safety Nets control taxonomy",
+        taxonomyDoc(),
+        taxonomyPath(ctx),
+      ),
+      doc(
+        "Command-policy lexicon (deny/ask/safe) — ported from LeanHarness (MIT)",
+        commandPolicyDoc(),
+        commandPolicyPath(ctx),
+      ),
+    );
+  }
 
   // Defense-in-depth: project the command lexicon into Claude's NATIVE permission
   // file. This is Claude-specific, so under `aih init` it lands only when Claude is
@@ -187,6 +196,6 @@ function guardrailsPlan(ctx: PlanContext): ReturnType<typeof plan> {
 export const command: CommandSpec = {
   name: "guardrails",
   summary: "Generate gitleaks + pre-commit guardrails and a CI license-compliance gate",
-  options: [],
+  options: [CANON_OPTION],
   plan: guardrailsPlan,
 };

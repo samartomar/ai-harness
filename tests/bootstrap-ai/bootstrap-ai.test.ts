@@ -43,7 +43,9 @@ function makeCtx(
     host: makeHostAdapter({ platform: "linux", run, env: {} }),
     // Point HOME at the (empty) temp dir so presence detection is hermetic.
     env: { HOME: tmp },
-    options,
+    // Existing assertions cover the legacy canon (RULE_ROUTER → INDEX, the meta-docs);
+    // compact (the default) has its own suite below. Merge so a caller's flags survive.
+    options: { canon: "legacy", ...options },
   };
 }
 
@@ -105,6 +107,23 @@ describe("bootstrap-ai — canon files", () => {
     expect(router).toContain("rules/agent-behavior-core.md");
   });
 
+  it("folds in the anti-attestation + tool-selection rules and drops the immutability style-rule (§6)", async () => {
+    const w = writesByPath((await command.plan(makeCtx())).actions);
+    const shared = w.get(".ai-context/adapters/_shared-canonical-block.md")?.contents ?? "";
+    const core = w.get(".ai-context/rules/agent-behavior-core.md")?.contents ?? "";
+    // Anti-attestation: showing the command + output is required; a sanity gate is not done.
+    expect(shared).toContain("sanity gate is not a completion gate");
+    expect(core).toContain("sanity gate is not a completion gate");
+    // Tool-selection discipline.
+    expect(shared).toContain("don't load MCP servers just-in-case");
+    expect(core).toContain("don't load MCP servers just-in-case");
+    // The immutability style-rule is gone from the floor (linter-enforced; false for Go/Rust)...
+    expect(shared).not.toContain("Immutable updates over mutation");
+    expect(core).not.toContain("Immutable updates over mutation");
+    // ...but the real safety invariant stays.
+    expect(shared).toContain("no silent failures");
+  });
+
   it("the shared block carries the safety invariants (secrets + large-repo graph)", async () => {
     const w = writesByPath((await command.plan(makeCtx({ cli: "codex,gemini,kiro" }))).actions);
     const shared = w.get(".ai-context/adapters/_shared-canonical-block.md")?.contents ?? "";
@@ -130,6 +149,45 @@ describe("bootstrap-ai — canon files", () => {
     expect(w.has("ai-coding/RULE_ROUTER.md")).toBe(true);
     expect(w.has(".ai-context/RULE_ROUTER.md")).toBe(false);
     expect(w.get("ai-coding/REGENERATION.md")?.contents).toContain("ai-coding/adapters");
+  });
+});
+
+describe("bootstrap-ai — compact canon (default)", () => {
+  it("routes the RULE_ROUTER + adapter at the contract and drops the meta-docs", async () => {
+    const w = writesByPath((await command.plan(makeCtx({ canon: "compact" }))).actions);
+    // Meta-docs are legacy-only now.
+    expect(w.has(".ai-context/REGENERATION.md")).toBe(false);
+    expect(w.has(".ai-context/harness-update.md")).toBe(false);
+    expect(w.has(".ai-context/adapters/other-tools.md")).toBe(false);
+    // The router + adapter route at the contract, not INDEX/architecture.
+    const router = w.get(".ai-context/RULE_ROUTER.md")?.contents ?? "";
+    expect(router).toContain("project.md");
+    expect(router).toContain("project.json");
+    expect(router).not.toContain("INDEX.md");
+    const adapter = w.get(".ai-context/adapters/claude.md")?.contents ?? "";
+    expect(adapter).toContain("project.md");
+    expect(adapter).not.toContain("INDEX.md");
+    // Core canon still ships.
+    expect(w.has(".ai-context/adapters/_shared-canonical-block.md")).toBe(true);
+    expect(w.has(".ai-context/rules/agent-behavior-core.md")).toBe(true);
+  });
+
+  it("the compact bootloader preamble no longer points at REGENERATION.md", async () => {
+    const w = writesByPath((await command.plan(makeCtx({ canon: "compact" }))).actions);
+    const claude = w.get("CLAUDE.md")?.contents ?? "";
+    expect(claude).not.toContain("REGENERATION.md");
+    expect(claude).toContain("RULE_ROUTER.md"); // still routes to the canon
+  });
+
+  it("the compact canon lints clean (contract refs resolve via the sibling allowlist)", async () => {
+    // Under --verify the lint probes run; project.md/project.json resolve even though
+    // bootstrap-ai itself doesn't write them (the contract phase does).
+    const verifyCtx = makeCtx({ canon: "compact" }, { verify: true });
+    const res = await executePlan(await command.plan(verifyCtx), verifyCtx);
+    const lintFails = (res.report?.checks ?? []).filter(
+      (c) => c.verdict === "fail" && c.name.startsWith("lint "),
+    );
+    expect(lintFails).toEqual([]);
   });
 });
 

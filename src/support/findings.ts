@@ -348,6 +348,20 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     action:
       "Wire the missing managed artifacts — `aih init --apply` (or the specific `aih scaffold`/`aih mcp`/`aih guardrails --apply`) finishes bootstrapping; re-check with `aih doctor`.",
   },
+  "contract.path-unportable": {
+    audience: "developer",
+    failSeverity: "degraded",
+    title: "repo contract has a non-portable path",
+    action:
+      "Re-run `aih contract --apply` to regenerate `project.json` from the live tree. If a path is still non-portable, it was hand-edited — replace any absolute, drive-letter, or `..` path with a repo-relative POSIX path.",
+  },
+  "report.contract-untrue": {
+    audience: "developer",
+    failSeverity: "degraded",
+    title: "repo contract reports a non-portable path",
+    action:
+      "`aih report` found a non-portable path in the committed `project.json`. Re-run `aih contract --apply` to regenerate it from the live tree; verify with `aih doctor` (the `contract truth` probe).",
+  },
 };
 
 /** Severity rank for sorting: most urgent first. */

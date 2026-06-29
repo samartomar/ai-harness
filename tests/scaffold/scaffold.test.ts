@@ -27,8 +27,11 @@ function ctx(over: Partial<PlanContext> = {}): PlanContext {
     run,
     host: makeHostAdapter({ platform: "linux", run, env: {} }),
     env: {},
-    options: {},
     ...over,
+    // Existing assertions cover the legacy doc family (byte-identical to today);
+    // compact (the default) has its own suite below. `...over` first so a test can
+    // still override via `options:`; this merge keeps canon:legacy unless overridden.
+    options: { canon: "legacy", ...(over.options ?? {}) },
   };
 }
 
@@ -42,9 +45,33 @@ function writesByPath(actions: Action[]): Map<string, WriteAction> {
 }
 
 describe("scaffold command surface", () => {
-  it("keeps the scaffold name and an empty option set", () => {
+  it("keeps the scaffold name and carries the --canon option", () => {
     expect(command.name).toBe("scaffold");
-    expect(command.options).toEqual([]);
+    expect(command.options).toHaveLength(1);
+    expect(command.options?.[0]?.flags).toContain("--canon");
+  });
+});
+
+describe("scaffold compact (default) — hygiene + guardrails only, no doc family", () => {
+  it("drops the legacy context docs and emits only hygiene + settings + hook", async () => {
+    const w = writesByPath((await command.plan(ctx({ options: { canon: "compact" } }))).actions);
+    // The legacy doc family is gone under compact — the contract replaces it.
+    for (const meta of [
+      ".ai-context/INDEX.md",
+      ".ai-context/architecture.md",
+      ".ai-context/conventions.md",
+      ".ai-context/tasks.md",
+      ".ai-context/SETUP-TASKS.md",
+      ".ai-context/VALIDATION.md",
+      ".ai-context/project-guardrails.md",
+      ".ai-context/skills/example-skill/SKILL.md",
+    ]) {
+      expect(w.has(meta)).toBe(false);
+    }
+    // Hygiene + local guardrails still land.
+    expect(w.has(".claude/settings.json")).toBe(true);
+    expect(w.has(".githooks/pre-commit")).toBe(true);
+    expect(w.has(".gitignore")).toBe(true);
   });
 });
 

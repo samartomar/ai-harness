@@ -38,8 +38,11 @@ function ctx(over: Partial<PlanContext> = {}): PlanContext {
     run,
     host: makeHostAdapter({ platform: "linux", run, env: {} }),
     env: {},
-    options: {},
     ...over,
+    // Existing assertions cover the legacy guardrails prose docs (taxonomy +
+    // command-policy); compact (default) drops those 2 files. A test opts into compact
+    // via `options: { canon: "compact" }`. Merge so a caller can still override.
+    options: { canon: "legacy", ...(over.options ?? {}) },
   };
 }
 
@@ -54,6 +57,25 @@ describe("guardrails command", () => {
     const p = await command.plan(ctx());
     expect(p.capability).toBe("guardrails");
     expect(p.actions.length).toBeGreaterThan(0);
+  });
+
+  it("compact (default) drops the 2 prose docs but keeps every enforcement artifact", async () => {
+    const actions = (await command.plan(ctx({ options: { canon: "compact" } }))).actions;
+    const writes = actions
+      .filter((a): a is WriteAction => a.kind === "write")
+      .map((a) => a.path.replace(/\\/g, "/"));
+    const docPaths = actions
+      .map((a) => (a.kind === "doc" ? (a.path ?? "").replace(/\\/g, "/") : ""))
+      .filter(Boolean);
+    // The two prose docs (taxonomy + command-policy) are legacy-only files.
+    expect(docPaths).not.toContain(".ai-context/guardrails-taxonomy.md");
+    expect(docPaths).not.toContain(".ai-context/command-policy.md");
+    // Every enforcement TOOTH is kept always.
+    expect(writes).toContain(".gitleaks.toml");
+    expect(writes).toContain(".pre-commit-config.yaml");
+    expect(writes).toContain(".github/workflows/sca.yml");
+    expect(writes).toContain(".ai-context/risk-gates.json");
+    expect(writes).toContain(".claude/settings.json"); // command-policy projection survives
   });
 
   it("plans the security artifacts + command-policy/risk-gate projections + gitleaks probe", async () => {

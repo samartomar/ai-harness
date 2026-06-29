@@ -3,6 +3,7 @@ import { command as adopt } from "../adopt/index.js";
 import { command as bootstrap } from "../bootstrap/index.js";
 import { command as bootstrapAi } from "../bootstrap-ai/index.js";
 import { command as certs } from "../certs/index.js";
+import { command as contract } from "../contract/index.js";
 import { command as crispy } from "../crispy/index.js";
 import { command as doctor } from "../doctor.js";
 import { command as ecc } from "../ecc/index.js";
@@ -37,6 +38,7 @@ export const CAPABILITIES: CommandSpec[] = [
   ecc,
   superpowers,
   scaffold,
+  contract,
   guardrails,
   secrets,
   mcp,
