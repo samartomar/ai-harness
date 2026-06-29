@@ -13,6 +13,10 @@ interface ContractFactsSubset {
   entrypoints: string[];
   languages: string[];
   frameworks: string[];
+  cloud: string[];
+  databases: string[];
+  deployment: string[];
+  packageManager?: string;
   sensitivePaths: string[];
   workspaces?: unknown;
 }
@@ -35,6 +39,10 @@ function factsSubset(contract: ProjectContract): ContractFactsSubset {
     entrypoints: contract.entrypoints,
     languages: contract.languages,
     frameworks: contract.frameworks,
+    cloud: contract.cloud,
+    databases: contract.databases,
+    deployment: contract.deployment,
+    ...(contract.packageManager !== undefined ? { packageManager: contract.packageManager } : {}),
     sensitivePaths: contract.sensitivePaths,
     ...(maybeFuture.workspaces !== undefined ? { workspaces: maybeFuture.workspaces } : {}),
   };

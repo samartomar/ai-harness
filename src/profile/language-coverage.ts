@@ -239,6 +239,7 @@ const FIXTURES: CoverageFixture[] = [
       test: ["cargo test"],
       build: ["cargo build"],
       lint: ["cargo clippy", "cargo fmt"],
+      packageManager: ["cargo"],
     },
   },
   {
@@ -252,6 +253,7 @@ const FIXTURES: CoverageFixture[] = [
       test: ["go test ./..."],
       build: ["go build ./..."],
       lint: ["golangci-lint run", "go vet ./..."],
+      packageManager: ["go modules"],
     },
   },
   {
@@ -265,6 +267,7 @@ const FIXTURES: CoverageFixture[] = [
       test: ["mvn test"],
       build: ["mvn clean package"],
       lint: ["mvn checkstyle:check"],
+      packageManager: ["maven"],
     },
   },
   {
@@ -278,6 +281,7 @@ const FIXTURES: CoverageFixture[] = [
       test: ["dotnet test"],
       build: ["dotnet build"],
       lint: ["dotnet format --verify-no-changes"],
+      packageManager: ["dotnet"],
     },
   },
   {
@@ -290,6 +294,7 @@ const FIXTURES: CoverageFixture[] = [
       languages: ["TypeScript/Node.js", "Python", "Rust"],
       test: ["npm test", "pytest", "cargo test"],
       build: ["npm run build", "cargo build"],
+      packageManager: ["npm", "poetry", "cargo"],
       workspace: ["polyglot"],
     },
   },
