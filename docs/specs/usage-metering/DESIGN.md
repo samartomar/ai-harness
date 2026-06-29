@@ -161,6 +161,10 @@ Each phase is independently shippable and leaves the report honest (PREVIEW wher
   representative codex/gemini/opencode payloads, v9 usage + skills panels go LIVE from real events,
   dormant = live ECC skills minus fired ECC skills, and `aih usage --rollup <dirs>` emits a
   scan-on-demand digest.
+- ✅ Post-implementation doc check — Gemini's project `.gemini/settings.json` `AfterTool` hook shape
+  is current; Codex's project hook path stays `.codex/hooks.json` (plugin bundles may use
+  `hooks/hooks.json`), resolves the recorder from the git root, and notes that project `.codex`
+  must be trusted/reviewed before command hooks run.
 
 ## Implementer checklist
 

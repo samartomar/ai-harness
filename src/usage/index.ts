@@ -31,9 +31,10 @@ const GIT_HOOK_PATH = join(".git", "hooks", "post-commit");
  */
 const TOOL_HOOK: Partial<Record<string, string>> = {
   claude: "`.claude/settings.json` hooks → `PostToolUse` (captures Skill / mcp__ tool calls)",
-  codex: "Codex hooks `PostToolUse`/`Stop` (+ `~/.codex/sessions/*.jsonl`)",
+  codex:
+    "`.codex/hooks.json` → `PostToolUse`/`Stop`; project `.codex` must be trusted and command hooks reviewed via `/hooks`",
   cursor: "`~/.cursor/hooks.json` → `afterMCPExecution` / `beforeSubmitPrompt` / `afterFileEdit`",
-  gemini: "`telemetry.outfile` (local) + hooks `AfterTool`",
+  gemini: "`.gemini/settings.json` project hooks → `AfterTool`",
   copilot: "`~/.copilot/hooks/` → `postToolUse` (+ `events.jsonl`)",
   windsurf: "Windsurf hooks `post_mcp_tool_use` + transcript JSONL",
   opencode: "OpenCode TS plugin (`tool.execute.after`) + storage JSON",

@@ -183,11 +183,20 @@ describe("aih usage command", () => {
       expect(write, path).toBeDefined();
       expect(write?.[1]).toContain(commandText);
     }
+    const codex = writes.find(([p]) => p === ".codex/hooks.json");
+    expect(codex?.[1]).toContain("git rev-parse --show-toplevel");
+    expect(codex?.[1]).toContain("commandWindows");
+    expect(writes.some(([p]) => p === ".codex/hooks/hooks.json")).toBe(false);
+    const gemini = writes.find(([p]) => p === ".gemini/settings.json");
+    expect(gemini?.[1]).toContain('"AfterTool"');
+    expect(gemini?.[1]).toContain('"sequential":false');
     expect(writes.some(([p]) => p.includes("zed"))).toBe(false);
     const docs = actions
       .filter((a) => a.kind === "doc")
       .map((a) => (a.kind === "doc" ? a.text : ""))
       .join("\n");
+    expect(docs).toContain(".codex/hooks.json");
+    expect(docs).toContain("trusted");
     expect(docs).toContain("zed");
     expect(docs).toContain("no hooks");
   });

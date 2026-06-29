@@ -11,17 +11,31 @@ function hookCommand(cli: Cli): string {
   return `node .aih/usage-record.mjs --from ${cli}`;
 }
 
-function commandHook(cli: Cli): Record<string, unknown> {
-  return {
+function codexProjectCommand(cli: Cli): string {
+  return `node "$(git rev-parse --show-toplevel)/.aih/usage-record.mjs" --from ${cli}`;
+}
+
+function codexProjectCommandWindows(cli: Cli): string {
+  return `for /f "delims=" %r in ('git rev-parse --show-toplevel 2^>nul') do @node "%r\\.aih\\usage-record.mjs" --from ${cli}`;
+}
+
+function commandHook(cli: Cli, options: { fromGitRoot?: boolean } = {}): Record<string, unknown> {
+  const hook: Record<string, unknown> = {
     type: "command",
-    command: hookCommand(cli),
+    command: options.fromGitRoot ? codexProjectCommand(cli) : hookCommand(cli),
     timeout: 5,
     statusMessage: "Recording aih usage",
   };
+  if (options.fromGitRoot) hook.commandWindows = codexProjectCommandWindows(cli);
+  return hook;
 }
 
-function hookGroup(cli: Cli, matcher = "*"): Record<string, unknown> {
-  return { matcher, hooks: [commandHook(cli)] };
+function hookGroup(
+  cli: Cli,
+  matcher = "*",
+  options: { fromGitRoot?: boolean } = {},
+): Record<string, unknown> {
+  return { matcher, hooks: [commandHook(cli, options)] };
 }
 
 function commandOnlyHook(cli: Cli): Record<string, unknown> {
@@ -103,7 +117,7 @@ export function usageHookActions(ctx: PlanContext, clis: Cli[]): Action[] {
     actions.push(
       writeJson(
         ".codex/hooks.json",
-        { hooks: { PostToolUse: [hookGroup("codex")] } },
+        { hooks: { PostToolUse: [hookGroup("codex", "*", { fromGitRoot: true })] } },
         "Codex PostToolUse usage hook, merged into existing hooks.json",
         { merge: true },
       ),
