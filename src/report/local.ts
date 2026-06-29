@@ -4,6 +4,7 @@ import { lines } from "../internals/render.js";
 import { scaleSafetyDigest } from "../scale-safety.js";
 import { inventory } from "../status.js";
 import { cliCoverageDigest } from "./cli-coverage.js";
+import { contractTruthDigest } from "./contract.js";
 import { aiEventsDigest } from "./events.js";
 import { graphDigests } from "./graph.js";
 import { guardrailDigest } from "./guardrail.js";
@@ -117,6 +118,7 @@ export async function localPanels(ctx: PlanContext): Promise<DigestAction[]> {
     ...(await velocityDigests(ctx)), // OUTPUT VELOCITY: daily commits + LOC 30d
     aiEventsDigest(ctx), // AI events feed (undefined when no events recorded)
     scorecardDigest(ctx), // HARNESS MATURITY: weighted wiring scorecard (undefined off-canon)
+    ...contractTruthDigest(ctx), // REPO CONTRACT: committed project.json (omitted off-contract)
     await qualityDigest(ctx), // CODE QUALITY: test/source file ratio
     ...(await graphDigests(ctx)), // CODE QUALITY/PERF: code-review-graph (gated, Phase 2)
     guardrailDigest(ctx), // CODE QUALITY: guardrail severity (gated, Phase 3)

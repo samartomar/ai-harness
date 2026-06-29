@@ -51,7 +51,8 @@ export type CheckCode =
   | "contract.path-unportable"
   // report (analytics-derived advisories)
   | "report.context-over-budget"
-  | "report.low-adoption";
+  | "report.low-adoption"
+  | "report.contract-untrue";
 
 export interface Check {
   name: string;
