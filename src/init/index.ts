@@ -1,5 +1,6 @@
 import { classifyCanon, isAdoptable } from "../adopt/classify.js";
 import { aihConfigJson } from "../config/marker.js";
+import { CANON_OPTION } from "../internals/canon-mode.js";
 import { detectFallbackNotice, resolveTargets } from "../internals/cli-detect.js";
 import { deepMerge } from "../internals/merge.js";
 import type { Action, CommandSpec, PlanContext, WriteAction } from "../internals/plan.js";
@@ -166,6 +167,7 @@ export const command: CommandSpec = {
         "MCP handling: standard | offline (vendored) | none (CLI fallback, blocked orgs)",
       default: "standard",
     },
+    CANON_OPTION,
   ],
   plan: initPlan,
 };

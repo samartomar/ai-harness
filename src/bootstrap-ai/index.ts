@@ -1,5 +1,6 @@
 import { basename, join, posix } from "node:path";
 import { aihConfigJson } from "../config/marker.js";
+import { CANON_OPTION, type CanonMode, canonMode } from "../internals/canon-mode.js";
 import { detectFallbackNotice, detectInstall, resolveTargets } from "../internals/cli-detect.js";
 import type { Cli } from "../internals/clis.js";
 import { readIfExists } from "../internals/fsxn.js";
@@ -144,6 +145,7 @@ function routerProbe(dir: string): Action {
  */
 async function bootstrapAiPlan(ctx: PlanContext): Promise<Plan> {
   const dir = ctx.contextDir;
+  const canon = canonMode(ctx);
   const { clis, detectFellBack } = await resolveTargets(ctx);
   const stack = scanRepo(ctx.root, { maxDepth: 8, contextDir: ctx.contextDir });
   const repoName = repoNameOf(ctx.root);
@@ -157,7 +159,10 @@ async function bootstrapAiPlan(ctx: PlanContext): Promise<Plan> {
   const actions: Action[] = [
     writeText(
       posix.join(dir, "RULE_ROUTER.md"),
-      ruleRouterDoc(dir, repoName, stack, bootloaders, { projectExtension: hasProjectExtension }),
+      ruleRouterDoc(dir, repoName, stack, bootloaders, {
+        projectExtension: hasProjectExtension,
+        canon,
+      }),
       "stack-aware routing entry point",
     ),
     writeText(
@@ -179,35 +184,40 @@ async function bootstrapAiPlan(ctx: PlanContext): Promise<Plan> {
     actions.push(
       writeText(
         posix.join(dir, "adapters", `${cli}.md`),
-        adapterNote(cli, dir),
+        adapterNote(cli, dir, canon),
         `${cli} adapter note`,
       ),
     );
   }
 
-  actions.push(
-    writeText(
-      posix.join(dir, "adapters", "other-tools.md"),
-      otherToolsDoc(dir),
-      "how to wire any AI tool aih doesn't natively target (Kiro, etc.)",
-    ),
-    writeText(
-      posix.join(dir, "REGENERATION.md"),
-      regenerationDoc(dir, bootloaders),
-      "managed-block model + regenerate/doctor flow",
-    ),
-    writeText(
-      posix.join(dir, "harness-update.md"),
-      harnessUpdateDoc(dir),
-      "update contract: harness-managed vs user-owned files + the update path",
-    ),
-  );
+  // Meta-docs (how-to-wire / regenerate / update) land ONLY under `--canon legacy`.
+  // Compact folds their essentials into the RULE_ROUTER's "Tooling failure recovery"
+  // + the adapters; the compiler never deletes, so legacy stays byte-identical.
+  if (canon === "legacy") {
+    actions.push(
+      writeText(
+        posix.join(dir, "adapters", "other-tools.md"),
+        otherToolsDoc(dir),
+        "how to wire any AI tool aih doesn't natively target (Kiro, etc.)",
+      ),
+      writeText(
+        posix.join(dir, "REGENERATION.md"),
+        regenerationDoc(dir, bootloaders),
+        "managed-block model + regenerate/doctor flow",
+      ),
+      writeText(
+        posix.join(dir, "harness-update.md"),
+        harnessUpdateDoc(dir),
+        "update contract: harness-managed vs user-owned files + the update path",
+      ),
+    );
+  }
 
   // Root bootloaders: merge the shared block into any existing file (preserve hand-edits).
   const block = sharedBlock(dir);
   for (const relPath of bootloaders) {
     const existing = readIfExists(join(ctx.root, relPath));
-    const merged = mergeBootloader(existing, relPath, dir, repoName, block);
+    const merged = mergeBootloader(existing, relPath, dir, repoName, block, canon);
     actions.push(
       writeText(relPath, merged, `bootloader ${relPath} (preamble + managed canonical block)`),
     );
@@ -269,7 +279,7 @@ async function bootstrapAiPlan(ctx: PlanContext): Promise<Plan> {
   for (const relPath of bootloaders) {
     generated.push({
       path: relPath.replace(/\\/g, "/"),
-      source: `${bootloaderPreamble(relPath, dir, repoName)}\n\n${block.body}`,
+      source: `${bootloaderPreamble(relPath, dir, repoName, canon)}\n\n${block.body}`,
     });
   }
   actions.push(...lintProbes(generated, plannedPaths, ctx.root, dir));
@@ -306,8 +316,9 @@ function mergeBootloader(
   dir: string,
   repoName: string,
   block: ManagedBlock,
+  canon: CanonMode,
 ): string {
-  return mergeManagedBlock(existing, block, bootloaderPreamble(relPath, dir, repoName));
+  return mergeManagedBlock(existing, block, bootloaderPreamble(relPath, dir, repoName, canon));
 }
 
 export const command: CommandSpec = {
@@ -320,6 +331,7 @@ export const command: CommandSpec = {
       description:
         "write the --verify drift report as SARIF 2.1.0 for GitHub code-scanning (`-` → stdout)",
     },
+    CANON_OPTION,
   ],
   plan: bootstrapAiPlan,
 };

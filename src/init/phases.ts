@@ -1,4 +1,5 @@
 import { command as bootstrapAi } from "../bootstrap-ai/index.js";
+import { command as contract } from "../contract/index.js";
 import { command as guardrails } from "../guardrails/index.js";
 import type { CommandSpec } from "../internals/plan.js";
 import { command as mcp } from "../mcp/index.js";
@@ -52,7 +53,12 @@ export const INIT_PHASES: readonly InitPhase[] = [
   {
     command: scaffold,
     headline:
-      "scaffold — lay down the canonical context dir (INDEX/SKILL docs) the router points at",
+      "scaffold — lay down repo hygiene + local guardrails (and, under --canon legacy, the full doc family)",
+  },
+  {
+    command: contract,
+    headline:
+      "contract — synthesize the repo contract the router points at: project.json + project.md + setup.md",
   },
   {
     command: secrets,

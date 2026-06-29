@@ -1,4 +1,5 @@
 import { posix } from "node:path";
+import { CANON_OPTION, canonMode } from "../internals/canon-mode.js";
 import { isTargeted } from "../internals/cli-detect.js";
 import { aihIgnoreWrite } from "../internals/gitignore.js";
 import type { Action, CommandSpec, PlanContext } from "../internals/plan.js";
@@ -33,56 +34,65 @@ const SETTINGS_DENY = ["Read(./.env*)", "Read(./secrets/**)"] as const;
 function scaffoldPlan(ctx: PlanContext): ReturnType<typeof plan> {
   const dir = ctx.contextDir;
   const inDir = (...parts: string[]): string => posix.join(dir, ...parts);
-  // Populate the context from the real repo, not empty placeholders.
-  const stack = scanRepo(ctx.root, { maxDepth: 8, contextDir: ctx.contextDir });
+  const legacy = canonMode(ctx) === "legacy";
+  const actions: Action[] = [];
 
-  const actions: Action[] = [
-    // 1. Canonical context directory. (Root bootloaders + RULE_ROUTER that point
-    //    here are owned by `aih bootstrap-ai`, not scaffold — one writer per file.)
-    writeText(inDir("INDEX.md"), indexDoc(dir), `${dir} routing index (write-once)`, {
-      once: true,
-    }),
-    writeText(
-      inDir("architecture.md"),
-      architectureDoc(dir, stack),
-      "architecture context (write-once; auto-populated from the detected stack)",
-      { once: true },
-    ),
-    writeText(
-      inDir("conventions.md"),
-      conventionsDoc(dir, stack),
-      "conventions context (write-once; seeded from the detected language/lint/test)",
-      { once: true },
-    ),
-    writeText(inDir("tasks.md"), tasksDoc(dir), "active tasks/decisions ledger (write-once)", {
-      once: true,
-    }),
-    writeText(
-      inDir("skills", "example-skill", "SKILL.md"),
-      exampleSkillDoc(),
-      "example SKILL.md (write-once INDEX/SKILL pattern)",
-      { once: true },
-    ),
-    // Agent-executable completion playbook — fill the skeletons from the code.
-    writeText(
-      inDir("SETUP-TASKS.md"),
-      setupTasksDoc(dir, stack),
-      "agent playbook: map context + enhance guardrails from the code",
-    ),
-    // Post-setup validation — agent checks the system + reports gaps/workarounds.
-    writeText(
-      inDir("VALIDATION.md"),
-      validationDoc(dir, stack),
-      "agent validation checklist → final user report (gaps to unblock + workarounds)",
-    ),
-    // Write-once guardrails seed the agent fleshes out (never overwritten).
-    writeText(
-      inDir("project-guardrails.md"),
-      projectGuardrailsDoc(dir, stack),
-      "project-specific guardrails seed (write-once; agent fills it)",
-      { once: true },
-    ),
-  ];
+  // The full pre-contract doc family lands ONLY under `--canon legacy`. In compact
+  // (the default) the repo CONTRACT replaces it: `aih contract` emits project.json +
+  // project.md + setup.md, into which architecture/conventions fold and the rest
+  // (INDEX/tasks/SETUP-TASKS/VALIDATION/project-guardrails/example-skill) retire. The
+  // compiler never deletes, so legacy stays byte-identical for a team mid-migration.
+  if (legacy) {
+    // Populate the context from the real repo, not empty placeholders.
+    const stack = scanRepo(ctx.root, { maxDepth: 8, contextDir: ctx.contextDir });
+    actions.push(
+      // 1. Canonical context directory. (Root bootloaders + RULE_ROUTER that point
+      //    here are owned by `aih bootstrap-ai`, not scaffold — one writer per file.)
+      writeText(inDir("INDEX.md"), indexDoc(dir), `${dir} routing index (write-once)`, {
+        once: true,
+      }),
+      writeText(
+        inDir("architecture.md"),
+        architectureDoc(dir, stack),
+        "architecture context (write-once; auto-populated from the detected stack)",
+        { once: true },
+      ),
+      writeText(
+        inDir("conventions.md"),
+        conventionsDoc(dir, stack),
+        "conventions context (write-once; seeded from the detected language/lint/test)",
+        { once: true },
+      ),
+      writeText(inDir("tasks.md"), tasksDoc(dir), "active tasks/decisions ledger (write-once)", {
+        once: true,
+      }),
+      writeText(
+        inDir("skills", "example-skill", "SKILL.md"),
+        exampleSkillDoc(),
+        "example SKILL.md (write-once INDEX/SKILL pattern)",
+        { once: true },
+      ),
+      // Agent-executable completion playbook — fill the skeletons from the code.
+      writeText(
+        inDir("SETUP-TASKS.md"),
+        setupTasksDoc(dir, stack),
+        "agent playbook: map context + enhance guardrails from the code",
+      ),
+      // Post-setup validation — agent checks the system + reports gaps/workarounds.
+      writeText(
+        inDir("VALIDATION.md"),
+        validationDoc(dir, stack),
+        "agent validation checklist → final user report (gaps to unblock + workarounds)",
+      ),
+      // Write-once guardrails seed the agent fleshes out (never overwritten).
+      writeText(
+        inDir("project-guardrails.md"),
+        projectGuardrailsDoc(dir, stack),
+        "project-specific guardrails seed (write-once; agent fills it)",
+        { once: true },
+      ),
+    );
+  }
 
   // 2. Repo hygiene: keep the harness's own backup/temp files out of git.
   actions.push(aihIgnoreWrite(ctx.root));
@@ -128,7 +138,7 @@ function scaffoldPlan(ctx: PlanContext): ReturnType<typeof plan> {
 export const command: CommandSpec = {
   name: "scaffold",
   summary:
-    "Scaffold the canonical context dir (INDEX/SKILL docs) + secret deny-list + pre-commit hook",
-  options: [],
+    "Scaffold repo hygiene + secret deny-list + pre-commit hook (and, under --canon legacy, the full context-doc family)",
+  options: [CANON_OPTION],
   plan: scaffoldPlan,
 };

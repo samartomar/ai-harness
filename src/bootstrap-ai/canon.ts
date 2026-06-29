@@ -1,3 +1,4 @@
+import type { CanonMode } from "../internals/canon-mode.js";
 import { bootloadersFor, entry as registryEntry } from "../internals/cli-registry.js";
 import { type Cli, SUPPORTED_CLIS } from "../internals/clis.js";
 import type { ManagedBlock } from "../internals/markers.js";
@@ -146,13 +147,32 @@ export function sharedBlock(dir: string): ManagedBlock {
   return { marker: SHARED_MARKER, note: sharedNote(dir), body: sharedCanonicalBlockBody(dir) };
 }
 
-/** The RULE_ROUTER — the entry point every tool reads first, stack-aware. */
+/**
+ * The RULE_ROUTER — the entry point every tool reads first, stack-aware. In `compact`
+ * (the default product mode) it routes at the repo CONTRACT (project.json/project.md/
+ * setup.md); in `legacy` it routes at the full INDEX/architecture/conventions doc
+ * family. Mode-branched so `--canon legacy` reproduces today's router byte-identically.
+ */
 export function ruleRouterDoc(
   dir: string,
   repoName: string,
   stack: RepoStack,
   bootloaders: string[],
-  opts: { projectExtension?: boolean } = {},
+  opts: { projectExtension?: boolean; canon?: CanonMode } = {},
+): string {
+  const projectExtension = opts.projectExtension ?? false;
+  return (opts.canon ?? "legacy") === "compact"
+    ? ruleRouterCompact(dir, repoName, stack, bootloaders, projectExtension)
+    : ruleRouterLegacy(dir, repoName, stack, bootloaders, projectExtension);
+}
+
+/** Legacy router body — frozen byte-identical to the pre-contract output. */
+function ruleRouterLegacy(
+  dir: string,
+  repoName: string,
+  stack: RepoStack,
+  bootloaders: string[],
+  projectExtension: boolean,
 ): string {
   const primaryLang = stack.languages[0] ?? "the repo's language";
   // `aih adopt` carves project-specific content out of a brownfield bootloader into
@@ -163,7 +183,7 @@ export function ruleRouterDoc(
     `- \`${dir}/INDEX.md\` — context index; it owns the load order for architecture / conventions / tasks / skills`,
     "- The ECC `common` rules (Layer 1) before any non-trivial change",
   ];
-  if (opts.projectExtension) {
+  if (projectExtension) {
     alwaysReadFirst.push(
       `- \`${dir}/rules/project-canon-extension.md\` — project-specific canon (carved from this repo's prior bootloader by \`aih adopt\`; aih never regenerates it)`,
     );
@@ -214,6 +234,96 @@ export function ruleRouterDoc(
     "",
     "### Code review / PR",
     `Load \`${dir}/conventions.md\`; review the diff, tests, and schemas against repo`,
+    "evidence. Comment only unless explicitly asked to fix.",
+    "",
+    "### Testing",
+    stack.testRunner
+      ? `Run \`${stack.testRunner}\`. New behavior needs a test; fix the implementation, not the test.`
+      : "No test command is defined in the repo — add one and record it here.",
+    "",
+    "### Security / secrets",
+    "Never read or emit plaintext secrets; validate all external input; keep cloud",
+    "setup as documentation, never run it blind. Do not open `.env*` or `secrets/**`;",
+    "use `aih secrets --verify` for redacted status. See `aih secrets` / `aih guardrails`.",
+    "",
+    "### External AI tooling / adapters",
+    `Load \`${dir}/adapters/<your-tool>.md\` for tool-specific wiring (entry files,`,
+    "how it loads rules, boundaries).",
+    "",
+    "## Tooling failure recovery",
+    "",
+    "If a tool, MCP server, graph, or memory store fails, state the failure briefly,",
+    "fall back to committed repo evidence, and never invent results. Don't cite a",
+    "command, path, or API you haven't verified exists. Re-run `aih bootstrap-ai` to",
+    "regenerate this canon — it is idempotent (no diff when nothing changed);",
+    "`aih bootstrap-ai --verify` fails if a bootloader has drifted.",
+  );
+}
+
+/**
+ * Compact router body — routes at the repo CONTRACT (project.json / project.md /
+ * setup.md from `aih contract`) instead of the legacy doc family. No "first-time
+ * setup / fill the skeletons" section: the contract is auto-derived and complete.
+ */
+function ruleRouterCompact(
+  dir: string,
+  repoName: string,
+  stack: RepoStack,
+  bootloaders: string[],
+  projectExtension: boolean,
+): string {
+  const primaryLang = stack.languages[0] ?? "the repo's language";
+  const alwaysReadFirst = [
+    `- \`${dir}/rules/agent-behavior-core.md\` — working discipline (think → simplify → surgical → goal-driven)`,
+    `- \`${dir}/project.md\` — the repo contract: stack, commands, scale, sensitive paths, known gaps (machine-readable in \`${dir}/project.json\`)`,
+    "- The ECC `common` rules (Layer 1) before any non-trivial change",
+  ];
+  if (projectExtension) {
+    alwaysReadFirst.push(
+      `- \`${dir}/rules/project-canon-extension.md\` — project-specific canon (carved from this repo's prior bootloader by \`aih adopt\`; aih never regenerates it)`,
+    );
+  }
+  return lines(
+    `# ${repoName} — AI Rule Router`,
+    "",
+    "Committed rule entry point for every AI coding tool in this repo. Load the",
+    "smallest rule set that matches the task, then verify against repo evidence",
+    "(source, tests, schemas, CI) before acting. Do not load everything blindly.",
+    "",
+    "## Layered model (baseline + repo)",
+    "",
+    "- **Layer 1 — user baseline (generic):** ECC (affaan-m/ECC) + Superpowers",
+    "  (obra/Superpowers), installed per CLI by `aih ecc` / `aih superpowers` —",
+    "  generic agents, skills, memory, security, and the brainstorm→plan→TDD→review loop.",
+    "- **Layer 2 — this repo's contract (specific):** this router, the contract",
+    `  (\`${dir}/project.json\` + \`${dir}/project.md\` + \`${dir}/setup.md\`), the working`,
+    `  discipline in \`${dir}/rules/\`, the bootloaders (${bootloaders.map((b) => `\`${b}\``).join(", ")}),`,
+    `  and the per-tool notes in \`${dir}/adapters/\`.`,
+    "",
+    "**Precedence: Layer 2 wins.** Repo canon overrides the generic baseline on conflict.",
+    "",
+    "## Detected stack",
+    "",
+    detectedStack(stack),
+    "",
+    "## Always read first",
+    "",
+    alwaysReadFirst,
+    "",
+    "Read depth: for read-only validation you may identify these files and confirm",
+    "routing without opening each. For implementation, review, or security work, read",
+    `the core + \`${dir}/project.md\` first, then load only the task slice below.`,
+    "",
+    "## Task routing",
+    "",
+    "### Implementation",
+    `Load \`${dir}/project.md\` for the commands, scale, and constraints; follow the ECC`,
+    `stack rules for ${primaryLang}. State the goal and the smallest viable change first.`,
+    "For large repos, verify `large-repo graph safety` with `aih doctor`; if the",
+    "graph is unavailable, do bounded `rg`/`fd` reconnaissance and report the gap.",
+    "",
+    "### Code review / PR",
+    `Load \`${dir}/project.md\`; review the diff, tests, and schemas against repo`,
     "evidence. Comment only unless explicitly asked to fix.",
     "",
     "### Testing",
@@ -323,8 +433,12 @@ const CLI_META: Record<Cli, CliMeta> = {
 };
 
 /** A tool-specific wiring note under `<dir>/adapters/<cli>.md`. */
-export function adapterNote(cli: Cli, dir: string): string {
+export function adapterNote(cli: Cli, dir: string, canon: CanonMode = "legacy"): string {
   const m = CLI_META[cli];
+  const contextRef =
+    canon === "compact"
+      ? `- \`${dir}/project.md\` — the repo contract (stack, commands, scale, gaps)`
+      : `- \`${dir}/INDEX.md\` — repo context (run \`aih scaffold\` if absent)`;
   return lines(
     `# ${m.label} adapter`,
     "",
@@ -335,7 +449,7 @@ export function adapterNote(cli: Cli, dir: string): string {
     "",
     `- ${m.entry}`,
     `- \`${dir}/RULE_ROUTER.md\` — layered model, detected stack, task routing`,
-    `- \`${dir}/INDEX.md\` — repo context (run \`aih scaffold\` if absent)`,
+    contextRef,
     "",
     "## How it loads rules",
     "",
@@ -468,9 +582,17 @@ export function bootloaderPaths(clis: readonly Cli[]): string[] {
 }
 
 /** The tool-specific preamble written above the shared block, per bootloader file. */
-export function bootloaderPreamble(path: string, dir: string, repoName: string): string {
+export function bootloaderPreamble(
+  path: string,
+  dir: string,
+  repoName: string,
+  canon: CanonMode = "legacy",
+): string {
   const norm = path.replace(/\\/g, "/");
-  const seeRegen = `The shared block below is generated from \`${dir}/\` (see \`${dir}/REGENERATION.md\`).`;
+  const seeRegen =
+    canon === "compact"
+      ? `The shared block below is generated from \`${dir}/\`; regenerate with \`aih bootstrap-ai\`.`
+      : `The shared block below is generated from \`${dir}/\` (see \`${dir}/REGENERATION.md\`).`;
   if (norm.startsWith(".kiro/steering/")) {
     // Kiro steering file: YAML front-matter `inclusion: always` keeps it loaded in
     // every interaction; `#[[file:...]]` live-references the router.
