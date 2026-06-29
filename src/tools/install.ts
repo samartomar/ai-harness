@@ -121,11 +121,13 @@ export const TOOLS: ToolSpec[] = [
     tool: "code-review-graph",
     bin: "code-review-graph",
     tier: "optional",
+    // Pinned to match the uvx MCP runners (src/mcp/servers.ts + src/workspace/templates.ts);
+    // bump in lockstep. PEP 508 `==` form — pip/uv reject the uvx `@2.3.6` shorthand.
     options: [
-      { pm: "uv", argv: ["uv", "tool", "install", "code-review-graph"] },
-      { pm: "pip", argv: ["pip", "install", "code-review-graph"] },
+      { pm: "uv", argv: ["uv", "tool", "install", "code-review-graph==2.3.6"] },
+      { pm: "pip", argv: ["pip", "install", "code-review-graph==2.3.6"] },
     ],
-    manual: "pip install code-review-graph",
+    manual: "pip install code-review-graph==2.3.6",
   },
 ];
 
