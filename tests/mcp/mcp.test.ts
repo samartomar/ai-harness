@@ -602,6 +602,17 @@ describe("aih mcp — per-CLI config (honors --cli)", () => {
 });
 
 describe("aih mcp — enterprise posture (governance gate, opt-in)", () => {
+  it("writes a real managed-settings MCP allowlist under enterprise posture", async () => {
+    const p = await command.plan(makeCtx({ options: { posture: "enterprise" } }));
+    const managed = p.actions.find(
+      (a): a is WriteAction => a.kind === "write" && a.path === ".claude/managed-settings.json",
+    );
+    expect(managed).toBeDefined();
+    expect(managed?.merge).toBe(true);
+    expect(managed?.json).toMatchObject({ allowManagedMcpServersOnly: true });
+    expect(JSON.stringify(managed?.json)).toContain("code-review-graph@2.3.6");
+  });
+
   it("emits a governance doc + a policy probe that FAILS on the third-party context7 server", async () => {
     const ctx = makeCtx({ options: { posture: "enterprise" }, verify: true });
     const p = await command.plan(ctx);

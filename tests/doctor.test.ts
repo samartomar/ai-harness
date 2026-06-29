@@ -169,6 +169,66 @@ describe("doctor — AI CLI runnable vs config-only inventory", () => {
   });
 });
 
+describe("doctor — MCP managed allowlist drift", () => {
+  let dir: string;
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "aih-doctor-mcp-drift-"));
+  });
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  function rooted(): PlanContext {
+    const run = fakeRunner(() => ({ code: 1, spawnError: true }));
+    return {
+      root: dir,
+      contextDir: "ai-coding",
+      apply: false,
+      verify: true,
+      json: false,
+      run,
+      host: makeHostAdapter({ platform: "linux", run, env: {} }),
+      env: {},
+      options: {},
+    };
+  }
+
+  function writeMcp(command = "uvx", args = ["code-review-graph@2.3.6", "serve"]): void {
+    writeFileSync(
+      join(dir, ".mcp.json"),
+      JSON.stringify({ mcpServers: { "code-review-graph": { type: "stdio", command, args } } }),
+    );
+  }
+
+  function writeAllowlist(serverCommand: string[]): void {
+    mkdirSync(join(dir, ".claude"), { recursive: true });
+    writeFileSync(
+      join(dir, ".claude", "managed-settings.json"),
+      JSON.stringify({ allowManagedMcpServersOnly: true, allowedMcpServers: [{ serverCommand }] }),
+    );
+  }
+
+  it("passes when managed-settings allowlist matches the stdio MCP commands", async () => {
+    writeMcp();
+    writeAllowlist(["uvx", "code-review-graph@2.3.6", "serve"]);
+    const c = rooted();
+    const probe = findProbe((await command.plan(c)).actions, "MCP managed allowlist");
+    const res = await probe?.run(c);
+    expect(res?.verdict).toBe("pass");
+  });
+
+  it("fails when the allowlist drifts from .mcp.json", async () => {
+    writeMcp();
+    writeAllowlist(["uvx", "code-review-graph@2.0.0", "serve"]);
+    const c = rooted();
+    const probe = findProbe((await command.plan(c)).actions, "MCP managed allowlist");
+    const res = await probe?.run(c);
+    expect(res?.verdict).toBe("fail");
+    expect(res?.code).toBe("mcp.allowlist-drift");
+    expect(res?.detail).toContain("code-review-graph@2.3.6");
+  });
+});
+
 describe("doctor — every probe carries a remediation hint", () => {
   it("git skip names an install + re-run action", async () => {
     const c = ctx(); // fakeRunner reports `git --version` as a spawn error
