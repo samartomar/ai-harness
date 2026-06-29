@@ -7,6 +7,7 @@ import { vdiCompatibilityDigest } from "../vdi/index.js";
 import { cliCoverageDigest } from "./cli-coverage.js";
 import { contractTruthDigest } from "./contract.js";
 import { aiEventsDigest } from "./events.js";
+import { governanceRollupDigest } from "./governance.js";
 import { graphDigests } from "./graph.js";
 import { guardrailDigest } from "./guardrail.js";
 import { trendsPanel } from "./history.js";
@@ -121,6 +122,7 @@ export async function localPanels(ctx: PlanContext): Promise<DigestAction[]> {
     aiEventsDigest(ctx), // AI events feed (undefined when no events recorded)
     scorecardDigest(ctx), // HARNESS MATURITY: weighted wiring scorecard (undefined off-canon)
     ...contractTruthDigest(ctx), // REPO CONTRACT: committed project.json (omitted off-contract)
+    governanceRollupDigest(ctx), // GOVERNANCE: posture-aware control verdict roll-up
     leakPreventionsDigest(ctx), // SECURITY: scan-derived leak-prevention posture half
     await qualityDigest(ctx), // CODE QUALITY: test/source file ratio
     ...(await graphDigests(ctx)), // CODE QUALITY/PERF: code-review-graph (gated, Phase 2)

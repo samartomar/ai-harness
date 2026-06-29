@@ -170,16 +170,17 @@ describe("report local scope — composed panels", () => {
   it("localPanels returns the always-on panels; git/usage-gated panels omit off-repo", async () => {
     const panels = await localPanels(ctx());
     // Non-repo, no-usage fixture: velocity (2), AI events, test-ratio, and repo-info all
-    // return undefined and are filtered out — leaving the 10 unconditional panels:
-    // repo-status, trends, usage, ai-cli-wiring, mcp-governance, vdi-compatibility,
-    // config, machine-tooling, economy, tools-installed.
-    expect(panels).toHaveLength(10);
+    // return undefined and are filtered out — leaving the 11 unconditional panels:
+    // governance-rollup, repo-status, trends, usage, ai-cli-wiring, mcp-governance,
+    // vdi-compatibility, config, machine-tooling, economy, tools-installed.
+    expect(panels).toHaveLength(11);
     const prefixes = panels.map((p) => (p.kind === "digest" ? p.describe : ""));
     expect(prefixes.some((s) => s.startsWith("Tools installed"))).toBe(true);
     expect(prefixes.some((s) => s.startsWith("Repo status"))).toBe(true);
     expect(prefixes.some((s) => s.startsWith("AI CLI wiring"))).toBe(true);
     expect(prefixes.some((s) => s.startsWith("MCP governance"))).toBe(true);
     expect(prefixes.some((s) => s.startsWith("VDI compatibility"))).toBe(true);
+    expect(prefixes.some((s) => s.startsWith("Governance roll-up"))).toBe(true);
   });
 
   it("mcpGovernanceDigest denies context7 (third-party egress) under the enterprise posture", () => {
