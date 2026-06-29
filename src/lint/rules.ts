@@ -163,6 +163,7 @@ const KNOWN_SIBLING_CANON: ReadonlySet<string> = new Set([
   "INDEX.md",
   "architecture.md",
   "conventions.md",
+  "tasks.md",
   "SETUP-TASKS.md",
   "project-guardrails.md",
   "cross-repo-architecture.md",

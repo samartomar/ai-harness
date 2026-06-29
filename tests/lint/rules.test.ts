@@ -78,8 +78,9 @@ describe("lint rules — canon-ref-resolves (FAIL tier, the headline rule)", () 
   });
 
   it("resolves a known sibling-canon file the harness writes via scaffold", () => {
-    // bootstrap-ai references `architecture.md` (written by `aih scaffold`), not in its plan.
+    // bootstrap-ai references scaffold-owned canon files not in its plan.
     expect(findings("Fill `ai-coding/architecture.md`.", "canon-ref-resolves")).toHaveLength(0);
+    expect(findings("Review `ai-coding/tasks.md`.", "canon-ref-resolves")).toHaveLength(0);
   });
 
   it("resolves a reference present on disk even when not in the plan", () => {

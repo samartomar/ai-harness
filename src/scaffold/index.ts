@@ -39,22 +39,29 @@ function scaffoldPlan(ctx: PlanContext): ReturnType<typeof plan> {
   const actions: Action[] = [
     // 1. Canonical context directory. (Root bootloaders + RULE_ROUTER that point
     //    here are owned by `aih bootstrap-ai`, not scaffold — one writer per file.)
-    writeText(inDir("INDEX.md"), indexDoc(dir), `${dir} routing index (load order)`),
+    writeText(inDir("INDEX.md"), indexDoc(dir), `${dir} routing index (write-once)`, {
+      once: true,
+    }),
     writeText(
       inDir("architecture.md"),
       architectureDoc(dir, stack),
-      "architecture context (auto-populated from the detected stack)",
+      "architecture context (write-once; auto-populated from the detected stack)",
+      { once: true },
     ),
     writeText(
       inDir("conventions.md"),
       conventionsDoc(dir, stack),
-      "conventions context (seeded from the detected language/lint/test)",
+      "conventions context (write-once; seeded from the detected language/lint/test)",
+      { once: true },
     ),
-    writeText(inDir("tasks.md"), tasksDoc(dir), "active tasks/decisions skeleton"),
+    writeText(inDir("tasks.md"), tasksDoc(dir), "active tasks/decisions ledger (write-once)", {
+      once: true,
+    }),
     writeText(
       inDir("skills", "example-skill", "SKILL.md"),
       exampleSkillDoc(),
-      "example SKILL.md (INDEX/SKILL pattern)",
+      "example SKILL.md (write-once INDEX/SKILL pattern)",
+      { once: true },
     ),
     // Agent-executable completion playbook — fill the skeletons from the code.
     writeText(

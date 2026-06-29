@@ -60,7 +60,7 @@ describe("scaffold plan (dry-run shape)", () => {
     expect(kinds.filter((k) => k === "doc")).toHaveLength(1);
   });
 
-  it("writes the canonical context dir: INDEX, three skeletons, example skill", async () => {
+  it("writes the canonical context dir: INDEX, author-owned docs, example skill", async () => {
     const w = writesByPath((await command.plan(ctx())).actions);
     expect(w.has(".ai-context/INDEX.md")).toBe(true);
     expect(w.has(".ai-context/architecture.md")).toBe(true);
@@ -69,7 +69,7 @@ describe("scaffold plan (dry-run shape)", () => {
     expect(w.has(".ai-context/skills/example-skill/SKILL.md")).toBe(true);
   });
 
-  it("ships the agent completion playbook + a write-once guardrails seed", async () => {
+  it("ships the agent completion playbook + write-once author-owned canon", async () => {
     const w = writesByPath((await command.plan(ctx())).actions);
     const tasks = w.get(".ai-context/SETUP-TASKS.md")?.contents ?? "";
     expect(tasks).toContain("Map the architecture");
@@ -93,12 +93,55 @@ describe("scaffold plan (dry-run shape)", () => {
     expect(tasks).toContain("Do not web-search for extra canon");
     expect(tasks).toContain("practice -> repo evidence -> local check");
     expect(tasks).toContain("Do not edit `.ai-context/VALIDATION.md`");
+    expect(tasks).toContain("Definition of done");
+    expect(tasks).toContain("Do not create a separate walkthrough/status report");
+    // Author-owned canon is write-once (the agent's edits survive re-runs).
+    expect(w.get(".ai-context/INDEX.md")?.once).toBe(true);
+    expect(w.get(".ai-context/architecture.md")?.once).toBe(true);
+    expect(w.get(".ai-context/conventions.md")?.once).toBe(true);
+    expect(w.get(".ai-context/tasks.md")?.once).toBe(true);
+    expect(w.get(".ai-context/skills/example-skill/SKILL.md")?.once).toBe(true);
     // The guardrails seed is write-once (the agent's edits survive re-runs).
     const guard = w.get(".ai-context/project-guardrails.md");
     expect(guard).toBeDefined();
     expect(guard?.once).toBe(true);
     expect(guard?.contents).toContain("Fixed reference set");
     expect(guard?.contents).toContain("NIST SSDF SP 800-218");
+  });
+
+  it("seeds file-by-file ownership and acceptance guidance in the canon docs", async () => {
+    const w = writesByPath((await command.plan(ctx())).actions);
+    const index = w.get(".ai-context/INDEX.md")?.contents ?? "";
+    expect(index).toContain("project-guardrails.md");
+    expect(index).toContain("SETUP-TASKS.md");
+    expect(index).toContain("VALIDATION.md");
+    expect(index).toContain("guardrails-taxonomy.md / command-policy.md / risk-gates.json");
+    expect(index).toContain("adapters/");
+    expect(index).toContain("harness-update.md");
+
+    const arch = w.get(".ai-context/architecture.md")?.contents ?? "";
+    expect(arch).toContain("## Ownership");
+    expect(arch).toContain("## Data flow");
+    expect(arch).toContain("Acceptance: every entry point");
+    expect(arch).toContain("Does not own: coding style");
+
+    const conventions = w.get(".ai-context/conventions.md")?.contents ?? "";
+    expect(conventions).toContain("observed repo style");
+    expect(conventions).toContain("representative files inspected");
+    expect(conventions).toContain("rules/agent-behavior-core.md");
+    expect(conventions).not.toContain("No secrets in source, config, or fixtures");
+
+    const taskLedger = w.get(".ai-context/tasks.md")?.contents ?? "";
+    expect(taskLedger).toContain(
+      "Durable architecture, convention, or guardrail rules do not live here",
+    );
+    expect(taskLedger).toContain("promote them to the owning canon file");
+    expect(taskLedger).toContain("evidence: `path:line`");
+
+    const validation = w.get(".ai-context/VALIDATION.md")?.contents ?? "";
+    expect(validation).toContain("Canon file ownership");
+    expect(validation).toContain("adapters/` contains wiring notes only");
+    expect(validation).toContain("No new walkthrough/status report file");
   });
 
   it("project-guardrails auto-derives framework rules from the detected stack", async () => {
@@ -145,6 +188,7 @@ describe("INDEX routing content", () => {
     const index = w.get(".ai-context/INDEX.md")?.contents ?? "";
     expect(index).toContain("architecture.md");
     expect(index).toContain("conventions.md");
+    expect(index).toContain("project-guardrails.md");
     expect(index).toContain("tasks.md");
     expect(index).toContain("skills/");
     expect(index.toLowerCase()).toContain("load");
@@ -209,6 +253,25 @@ describe("apply (executor integration)", () => {
     expect(index.endsWith("\n")).toBe(true);
     const settings = JSON.parse(readFileSync(join(dir, ".claude/settings.json"), "utf8"));
     expect(settings.permissions.deny).toContain("Read(./secrets/**)");
+  });
+
+  it("preserves completed author-owned canon on re-run", async () => {
+    const applied = ctx({ apply: true });
+    await executePlan(await command.plan(applied), applied);
+
+    writeFileSync(join(dir, ".ai-context", "INDEX.md"), "# Team index\n", "utf8");
+    writeFileSync(join(dir, ".ai-context", "architecture.md"), "# Team architecture\n", "utf8");
+    writeFileSync(join(dir, ".ai-context", "tasks.md"), "# Team backlog\n", "utf8");
+
+    const res = await executePlan(await command.plan(applied), applied);
+    expect(readFileSync(join(dir, ".ai-context", "INDEX.md"), "utf8")).toBe("# Team index\n");
+    expect(readFileSync(join(dir, ".ai-context", "architecture.md"), "utf8")).toBe(
+      "# Team architecture\n",
+    );
+    expect(readFileSync(join(dir, ".ai-context", "tasks.md"), "utf8")).toBe("# Team backlog\n");
+    expect(res.writes.find((w) => w.path === ".ai-context/INDEX.md")?.effect).toBe("kept");
+    expect(res.writes.find((w) => w.path === ".ai-context/architecture.md")?.effect).toBe("kept");
+    expect(res.writes.find((w) => w.path === ".ai-context/tasks.md")?.effect).toBe("kept");
   });
 
   it("is idempotent: merge preserves a user key and dedupes an overlapping deny rule", async () => {

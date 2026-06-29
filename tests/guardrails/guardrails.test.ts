@@ -307,6 +307,8 @@ describe("guardrails command", () => {
       expect(taxonomy.text).toContain("Golden Paths");
       expect(taxonomy.text).toContain("Guardrails");
       expect(taxonomy.text).toContain("Safety Nets");
+      expect(taxonomy.text).toContain(".githooks/pre-commit");
+      expect(taxonomy.text).toContain("core.hooksPath .githooks");
     }
   });
 
