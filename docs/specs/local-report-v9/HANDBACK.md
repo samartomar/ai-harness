@@ -134,9 +134,29 @@ Generated during handback (this machine, scratchpad): `v9-live.html` (128 KB),
 
 ## Open questions for the reviewer
 
-1. Static-file honesty (deviation §7): keep the v4-style baked-demo fallback, or strip to
-   empty shells?
+1. ~~Static-file honesty (deviation §7): keep the v4-style baked-demo fallback, or strip to
+   empty shells?~~ **Resolved** — server-render the real view into the body (see post-review §1).
 2. Promote the v9-only capability digests into shared `localPanels` (deviation §1), or
-   keep them v9-scoped?
-3. Worth the small follow-ups now (deviation §5 trends metrics, §6 heal-result persistence
-   for per-item wins), or file them separately?
+   keep them v9-scoped? **Still open** — deferred; v9-scoped for now (keeps legacy byte-identical).
+3. ~~Worth the small follow-ups now (deviation §5 trends metrics, §6 heal-result persistence
+   for per-item wins), or file them separately?~~ **Resolved** — both landed (post-review §2a/§2b).
+
+## Post-review work (this session — reviewer's own follow-through)
+
+Reviewed against TEST-CRITERIA.md and validated on a real on-canon repo, then closed the
+three items the review flagged. Still **NOT merged** — PR #62 stays a draft pending Samar's call.
+
+| Commit | Item |
+|---|---|
+| `0a706fb` | Review fixes — tracked the untracked `v9-template.ts` (branch was build-broken on fresh checkout/CI) + cleared a biome `useOptionalChain` warning |
+| `11c79ba` | **§1 no-JS honesty** — `applyViewToHtml` server-renders the assembled view into the section bodies at build time (balanced-div replace mirroring `HYDRATE_FN`), so the static `--v9` body ships real/honest-stub content with **or without** JS. Off-canon body shows "No harness here yet" (demo 82/1,204/"cleared 4 blockers" → gone); client hydrate is an idempotent re-apply. +2 regression tests. |
+| `06fd5b6` | **§2a + §2b** — `aih track` records four trend metrics/snapshot → `report --v9` flips the Trends panel LIVE at ≥2 samples; `aih heal` persists its in-scope set to `.aih/heal-last.json` so wins marks each blocker fixed only when that scope was probed **and** green (unprobed → `n/a (not probed)`). +4 tests. |
+
+**Final gate (commit `06fd5b6`):** typecheck **0** · `biome ci` **0** (245 files) · `npm test` **0** — 92 files / **1145 tests** · build **0**.
+
+**Live end-to-end (on-canon temp repo):** `bootstrap-ai --cli claude,cursor` → 2× `track --apply`
+(distinct commits) → `heal --apply --scope certs,npm` → `report --v9 --apply`:
+- Trends panel = LIVE (`badge ok">history`, no "needs aih track" stub).
+- Wins = `Certificate trust chain`/`npm runtime` → `fixed · Jun 28`; `PATH resolution`/`MCP pre-flight`
+  → `n/a (not probed)` — in **both** the server-rendered body and the hydrate payload.
+- Hero score real (67), never the demo 82.
