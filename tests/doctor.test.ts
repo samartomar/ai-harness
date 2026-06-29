@@ -229,6 +229,56 @@ describe("doctor — MCP managed allowlist drift", () => {
   });
 });
 
+describe("doctor — org-policy drift", () => {
+  let dir: string;
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "aih-doctor-org-policy-drift-"));
+  });
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  function rooted(): PlanContext {
+    const run = fakeRunner(() => ({ code: 1, spawnError: true }));
+    return {
+      root: dir,
+      contextDir: "ai-coding",
+      posture: "enterprise",
+      apply: false,
+      verify: true,
+      json: false,
+      run,
+      host: makeHostAdapter({ platform: "linux", run, env: {} }),
+      env: {},
+      options: {},
+    };
+  }
+
+  it("surfaces a coded enterprise failure when managed settings drift from org policy", async () => {
+    writeFileSync(
+      join(dir, "aih-org-policy.json"),
+      JSON.stringify({
+        schemaVersion: 1,
+        minimumPosture: "enterprise",
+        references: { repoContract: "ai-coding/project.json" },
+      }),
+    );
+    mkdirSync(join(dir, ".claude"), { recursive: true });
+    writeFileSync(
+      join(dir, ".claude", "managed-settings.json"),
+      JSON.stringify({ organizationPolicy: { minimumPosture: "enterprise" } }),
+    );
+
+    const c = rooted();
+    const probe = findProbe((await command.plan(c)).actions, "org-policy drift");
+    const res = await probe?.run(c);
+
+    expect(res?.verdict).toBe("fail");
+    expect(res?.code).toBe("org-policy.drift");
+    expect(res?.detail).toContain(".claude/managed-settings.json");
+  });
+});
+
 describe("doctor — every probe carries a remediation hint", () => {
   it("git skip names an install + re-run action", async () => {
     const c = ctx(); // fakeRunner reports `git --version` as a spawn error

@@ -1,10 +1,11 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { PlanContext, WriteAction } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
 import { composeOrgPolicy } from "../../src/org-policy/compose.js";
+import { orgPolicyDriftProbes } from "../../src/org-policy/drift.js";
 import { orgPolicyProjectionActions } from "../../src/org-policy/project.js";
 import { parseOrgPolicy, readOrgPolicy } from "../../src/org-policy/schema.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
@@ -172,5 +173,67 @@ describe("orgPolicyProjectionActions", () => {
       allowManagedMcpServersOnly: true,
     });
     expect(JSON.stringify(managed?.json)).toContain("terraform destroy*");
+  });
+});
+
+describe("orgPolicyDriftProbes", () => {
+  function writePolicy(value: Record<string, unknown>): void {
+    writeFileSync(join(dir, "aih-org-policy.json"), JSON.stringify(value));
+  }
+
+  function writeManagedSettings(value: unknown): void {
+    mkdirSync(join(dir, ".claude"), { recursive: true });
+    writeFileSync(join(dir, ".claude", "managed-settings.json"), JSON.stringify(value));
+  }
+
+  it("passes when local managed settings contain the org-policy projection", async () => {
+    const value = policy({
+      command: { deny: { add: [{ pattern: "terraform destroy*" }] } },
+      mcp: { allowedServers: ["code-review-graph"], allowManagedOnly: true },
+    });
+    const parsed = parseOrgPolicy(value);
+    writePolicy(value);
+
+    const c = ctx();
+    const projected = writes(orgPolicyProjectionActions(c, parsed)).find(
+      (w) => w.path === ".claude/managed-settings.json",
+    );
+    writeManagedSettings({ ...(projected?.json as Record<string, unknown>), localOnly: true });
+
+    const probes = orgPolicyDriftProbes(c);
+    const check = await probes
+      .find((p) => p.describe.includes(".claude/managed-settings.json"))
+      ?.run(c);
+
+    expect(check?.verdict).toBe("pass");
+  });
+
+  it("downgrades drift to warning-only in vibe posture", async () => {
+    writePolicy(policy({ command: { deny: { add: [{ pattern: "terraform destroy*" }] } } }));
+    const c: PlanContext = { ...ctx(), posture: "vibe", postureSource: "flag" };
+    const probes = orgPolicyDriftProbes(c);
+    const check = await probes
+      .find((p) => p.describe.includes(".claude/managed-settings.json"))
+      ?.run(c);
+
+    expect(check?.verdict).toBe("pass");
+    expect(check?.code).toBeUndefined();
+    expect(check?.detail).toContain("warning-only (vibe posture)");
+    expect(check?.detail).toContain("missing");
+  });
+
+  it("fails closed at enterprise when local settings drift from org policy", async () => {
+    writePolicy(policy({ minimumPosture: "enterprise" }));
+    writeManagedSettings({ organizationPolicy: { minimumPosture: "enterprise" } });
+    const c: PlanContext = { ...ctx(), posture: "enterprise" };
+    const probes = orgPolicyDriftProbes(c);
+    const check = await probes
+      .find((p) => p.describe.includes(".claude/managed-settings.json"))
+      ?.run(c);
+
+    expect(check?.verdict).toBe("fail");
+    expect(check?.code).toBe("org-policy.drift");
+    expect(check?.location?.uri).toBe(".claude/managed-settings.json");
+    expect(check?.detail).toContain("org-policy drift");
   });
 });

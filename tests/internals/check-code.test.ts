@@ -392,6 +392,7 @@ describe("Check.code — invariants", () => {
       "usage.no-data": true,
       "scale.code-review-graph-missing": true,
       "contract.path-unportable": true,
+      "org-policy.drift": true,
       "report.context-over-budget": true,
       "report.low-adoption": true,
       "report.contract-untrue": true,

@@ -50,6 +50,8 @@ export type CheckCode =
   | "scale.code-review-graph-missing"
   // repo contract
   | "contract.path-unportable"
+  // org policy
+  | "org-policy.drift"
   // report (analytics-derived advisories)
   | "report.context-over-budget"
   | "report.low-adoption"

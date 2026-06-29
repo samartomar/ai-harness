@@ -362,6 +362,13 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     action:
       "Re-run `aih contract --apply` to regenerate `project.json` from the live tree. If a path is still non-portable, it was hand-edited — replace any absolute, drive-letter, or `..` path with a repo-relative POSIX path.",
   },
+  "org-policy.drift": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "org policy projection drifted",
+    action:
+      "Re-run the org-policy projection (`aih init --posture enterprise --apply`, or the narrower command that owns the drifted file) so managed settings match `aih-org-policy.json`.",
+  },
   "report.contract-untrue": {
     audience: "developer",
     failSeverity: "degraded",
