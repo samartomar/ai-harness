@@ -1,4 +1,12 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import type { Command } from "commander";
@@ -123,7 +131,7 @@ describe("workspace add acquisition plans", () => {
     expect(lock.schemaVersion).toBe(1);
     expect(lock.sources[0]).toMatchObject({
       id: sourceId,
-      source: sourceRoot,
+      source: realpathSync(sourceRoot),
       promotedSkills: ["clean"],
       analyzersRun: ["aih-native"],
     });

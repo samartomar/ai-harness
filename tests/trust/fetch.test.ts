@@ -52,7 +52,7 @@ describe("trust fetch source resolution", () => {
     expect(source).toMatchObject({ kind: "local", id: "clean" });
     if (source.kind !== "local") throw new Error("expected local source");
     expect(assertTrustTreeSafe(source.root)).toBe(source.root);
-    expect(safeSourceRelative(source.root, skillPath)).toBe("SKILL.md");
+    expect(safeSourceRelative(source.root, join(source.root, "SKILL.md"))).toBe("SKILL.md");
     expect(localFileHash(skillPath)).toMatch(/^[a-f0-9]{64}$/);
   });
 
