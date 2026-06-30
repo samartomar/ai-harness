@@ -72,6 +72,8 @@ export interface RepoStack {
   workspaceTool?: string;
   /** Per-workspace command/package facts keyed by repo-relative POSIX workspace path. */
   workspaces?: Record<string, WorkspaceStack>;
+  /** Total detected workspace roots before the emitted workspace map was capped. */
+  workspaceCount?: number;
   /** Local Python virtualenv directories found and excluded from source scanning. */
   virtualEnvPaths?: string[];
 }
@@ -111,6 +113,7 @@ const EXCLUDED_DIRS = new Set([
 
 /** Python virtualenv directories: signal their presence, but never scan their contents. */
 const VIRTUAL_ENV_DIRS = new Set([".venv"]);
+const WORKSPACE_CAP = 8;
 
 /** Node dependency → framework label. */
 const NODE_FRAMEWORKS: Record<string, string> = {
@@ -672,7 +675,7 @@ function synthesize(root: string, raw: Raw, opts: ScanOptions): RepoStack {
   // means a single root command must not be presented as authoritative for every package.
   const isMonorepo =
     workspaceTool !== undefined || raw.manifestCount > 1 || raw.workspaceRoots.size > 1;
-  const workspaces =
+  const workspaceSynthesis =
     opts.includeWorkspaces === false ? undefined : synthesizeWorkspaces(root, raw, opts);
   // Browser test runners (Karma's `ng test`, Cypress) launch a real browser and HANG in a
   // headless/agent context — surface it so synth can warn the next agent (the real trap).
@@ -698,28 +701,37 @@ function synthesize(root: string, raw: Raw, opts: ScanOptions): RepoStack {
     browserTest,
     isMonorepo,
     workspaceTool,
-    ...(workspaces ? { workspaces } : {}),
+    ...(workspaceSynthesis?.workspaces ? { workspaces: workspaceSynthesis.workspaces } : {}),
+    ...(workspaceSynthesis?.workspaceCount
+      ? { workspaceCount: workspaceSynthesis.workspaceCount }
+      : {}),
     virtualEnvPaths: raw.virtualEnvPaths,
   };
+}
+
+interface WorkspaceSynthesis {
+  workspaces?: Record<string, WorkspaceStack>;
+  workspaceCount?: number;
 }
 
 function synthesizeWorkspaces(
   root: string,
   raw: Raw,
   opts: ScanOptions,
-): Record<string, WorkspaceStack> | undefined {
+): WorkspaceSynthesis {
   const rels = [...raw.workspaceRoots]
     .filter((rel) => rel.length > 0)
     .sort((a, b) => a.localeCompare(b));
 
   const workspaces: Record<string, WorkspaceStack> = {};
   const rootSecondary = synthesizeRootSecondaryWorkspace(raw);
-  if (rootSecondary) workspaces["."] = rootSecondary;
-  if (rels.length === 0) {
-    return Object.keys(workspaces).length > 0 ? workspaces : undefined;
-  }
+  const workspaceCount = rels.length + (rootSecondary ? 1 : 0);
+  if (workspaceCount === 0) return {};
 
-  for (const rel of rels) {
+  if (rootSecondary) workspaces["."] = rootSecondary;
+
+  const remaining = Math.max(0, WORKSPACE_CAP - Object.keys(workspaces).length);
+  for (const rel of rels.slice(0, remaining)) {
     const stack = scanRepo(join(root, rel), {
       maxDepth: Math.min(4, Math.max(0, opts.maxDepth)),
       contextDir: opts.contextDir,
@@ -736,7 +748,7 @@ function synthesizeWorkspaces(
     };
   }
 
-  return Object.keys(workspaces).length > 0 ? workspaces : undefined;
+  return Object.keys(workspaces).length > 0 ? { workspaces, workspaceCount } : {};
 }
 
 function synthesizeRootSecondaryWorkspace(raw: Raw): WorkspaceStack | undefined {

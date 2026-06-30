@@ -33,12 +33,20 @@ function commandsBlock(c: ProjectContract): string[] {
     ["start", c.commands.start],
     ["cdk synth", c.commands.cdkSynth],
     ["cdk diff", c.commands.cdkDiff],
-    ["cdk deploy", c.commands.cdkDeploy],
   ];
   for (const [name, cmd] of slots) {
     if (cmd) rows.push(`- **${name}** — \`${cmd.value}\` _(${cmd.confidence})_`);
   }
   return rows.length > 0 ? rows : ["_No commands detected in the repo._"];
+}
+
+function externalActionsBlock(c: ProjectContract): string[] {
+  if (!c.commands.cdkDeploy) return [];
+  return [
+    "### External actions (human approval required)",
+    "",
+    `- \`${c.commands.cdkDeploy.value}\` deploys live infrastructure; do not run to verify _(${c.commands.cdkDeploy.confidence})_`,
+  ];
 }
 
 function workspaceCommandsBlock(c: ProjectContract): string[] {
@@ -124,6 +132,7 @@ export function projectContractDoc(dir: string, c: ProjectContract): string {
     "## Commands",
     "",
     commandsBlock(c),
+    ...(c.commands.cdkDeploy ? ["", externalActionsBlock(c)] : []),
     ...(workspaceRows.length > 0 ? ["", "### Workspace commands", "", workspaceRows] : []),
     ...(hasInferred ? ["", CONFIDENCE_NOTE] : []),
     "",

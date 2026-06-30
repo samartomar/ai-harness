@@ -2,14 +2,14 @@ import type { PlanContext } from "../internals/plan.js";
 import { missingProjectionParts, sameJson } from "../org-policy/drift.js";
 import { scanRepo } from "../profile/scan.js";
 import { LARGE_REPO_FILE_THRESHOLD, trackedFileCount } from "../scale-safety.js";
-import { PROJECT_CONTRACT_FILE, type ProjectContract } from "./schema.js";
+import { PROJECT_CONTRACT_FILE, type ProjectContract, type ScaleClass } from "./schema.js";
 import { synthesizeContract } from "./synth.js";
 
 type ContractCommandFacts = ProjectContract["commands"];
 
 interface ContractFactsSubset {
   commands: ContractCommandFacts;
-  scale: ProjectContract["scale"];
+  scale: { class: ScaleClass; isMonorepo: boolean };
   entrypoints: string[];
   languages: string[];
   frameworks: string[];
@@ -30,7 +30,7 @@ function factsSubset(contract: ProjectContract): ContractFactsSubset {
   const maybeFuture = contract as ProjectContract & { workspaces?: unknown };
   return {
     commands: contract.commands,
-    scale: contract.scale,
+    scale: { class: contract.scale.class, isMonorepo: contract.scale.isMonorepo },
     entrypoints: contract.entrypoints,
     languages: contract.languages,
     frameworks: contract.frameworks,
