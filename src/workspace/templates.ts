@@ -1,4 +1,5 @@
 import { lines } from "../internals/render.js";
+import type { WorkspaceEdge, WorkspaceRepo } from "./manifest.js";
 
 /** The workspace marker — lets `aih doctor` recognize a multi-repo workspace root. */
 export function workspaceMarker(repos: string[], dir: string, git = false): unknown {
@@ -47,6 +48,65 @@ export function spanningMcp(repos: string[], version?: string): unknown {
       },
     },
   };
+}
+
+function repoDisplayPath(path: string): string {
+  return path === "." ? "./" : `${path}/`;
+}
+
+function childRouterPath(repo: WorkspaceRepo): string {
+  return `${repo.path}/${repo.router}`;
+}
+
+/** Future-facing parent router for federated workspaces. */
+export function workspaceRouterDoc(repos: readonly WorkspaceRepo[]): string {
+  const rows =
+    repos.length > 0
+      ? repos.map(
+          (repo) =>
+            `| ${repo.id} | ${repoDisplayPath(repo.path)} | ${repo.kind ?? ""} | ${childRouterPath(repo)} |`,
+        )
+      : ["| _none_ | _none_ |  | _run `aih workspace --repos ... --apply`_ |"];
+  return lines(
+    "# Workspace Router",
+    "",
+    "This is a federated workspace, not a monorepo.",
+    "",
+    "## Repos",
+    "",
+    "| Repo | Path | Role | Router |",
+    "|---|---|---|---|",
+    rows,
+    "",
+    "## Rule",
+    "",
+    "Before editing a child repo, read that child repo's router first.",
+  );
+}
+
+/** Parent-owned contract index generated from `.aih-workspace.json` edges. */
+export function workspaceContractsDoc(edges: readonly WorkspaceEdge[]): string {
+  const rows =
+    edges.length > 0
+      ? edges.map(
+          (edge) =>
+            `| ${edge.id} | ${edge.from} | ${edge.to} | ${edge.kind} | ${edge.contractPath ?? ""} | ${edge.consumerPath ?? ""} |`,
+        )
+      : [
+          "| _none declared_ |  |  |  |  |  |",
+          "",
+          "Declare cross-repo dependencies in `.aih-workspace.json` under `edges[]`.",
+        ];
+  return lines(
+    "# Workspace Contracts",
+    "",
+    "These are explicit cross-repo dependencies for the parent coordination plane.",
+    "No child files are modified by this workspace contract document.",
+    "",
+    "| Contract | From | To | Kind | Contract file | Consumer path |",
+    "|---|---|---|---|---|---|",
+    rows,
+  );
 }
 
 /**
@@ -150,7 +210,9 @@ export function workspaceBootloader(
     "",
     "This is a multi-repo workspace, not a single repo. Start here:",
     "",
+    `- \`${dir}/workspace-router.md\` — top-level routing table into each child repo's canon.`,
     `- \`${dir}/cross-repo-architecture.md\` — how the repos fit together + the cross-repo feature map.`,
+    `- \`${dir}/workspace-contracts.md\` — declared cross-repo contract edges.`,
     `- \`${dir}/repo-discipline.md\` — read a repo's own canon before editing it.`,
     "- Workspace MCP graph/filesystem — use for blast-radius discovery across all child repos.",
     "",

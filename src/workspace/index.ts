@@ -5,6 +5,9 @@ import { doc, plan, probe, writeJson, writeText } from "../internals/plan.js";
 import type { Check } from "../internals/verify.js";
 import { detectChildRepos, reposOption } from "./detect.js";
 import { workspaceGitExecs, workspaceGitignoreWrite } from "./git.js";
+import { readWorkspaceManifest, workspaceReposFromPaths } from "./manifest.js";
+import { snapshotCommand } from "./snapshot.js";
+import { taskPlanCommand } from "./task-plan.js";
 import {
   codeWorkspace,
   crossRepoArchitectureDoc,
@@ -12,8 +15,19 @@ import {
   repoDisciplineDoc,
   spanningMcp,
   workspaceBootloader,
+  workspaceContractsDoc,
   workspaceMarker,
+  workspaceRouterDoc,
 } from "./templates.js";
+
+function hasObjectRepos(raw: unknown): raw is { repos: unknown[] } {
+  return (
+    typeof raw === "object" &&
+    raw !== null &&
+    Array.isArray((raw as { repos?: unknown }).repos) &&
+    (raw as { repos: unknown[] }).repos.some((repo) => typeof repo === "object" && repo !== null)
+  );
+}
 
 /** Probe: is the child repo scaffolded (its canon present)? Absent → skip with the fix. */
 function childScaffoldedProbe(repo: string, dir: string): Action {
@@ -41,17 +55,35 @@ async function workspacePlan(ctx: PlanContext): Promise<Plan> {
   const name = basename(ctx.root) || "workspace";
   const repos = detectChildRepos(ctx.root, reposOption(ctx.options.repos));
   const enableGit = ctx.options.git === true;
+  const existing = readWorkspaceManifest(ctx.root, dir);
+  const normalizedRepos =
+    existing && existing.repos.length > 0
+      ? existing.repos
+      : workspaceReposFromPaths(repos, posix.join(dir, "RULE_ROUTER.md"));
+  const edges = existing?.edges ?? [];
 
   const writes: WriteAction[] = [
     writeJson(
       ".aih-workspace.json",
-      workspaceMarker(repos, dir, enableGit),
+      hasObjectRepos(existing?.raw)
+        ? { ...existing.raw, ...(enableGit ? { git: true } : {}) }
+        : workspaceMarker(repos, dir, enableGit),
       `workspace marker (multi-repo: ${repos.length > 0 ? repos.join(", ") : "no repos detected"})`,
       { merge: true },
     ),
     writeJson(`${name}.code-workspace`, codeWorkspace(repos), "VS Code multi-root workspace", {
       merge: true,
     }),
+    writeText(
+      posix.join(dir, "workspace-router.md"),
+      workspaceRouterDoc(normalizedRepos),
+      "workspace router (federated child repo table of contents)",
+    ),
+    writeText(
+      posix.join(dir, "workspace-contracts.md"),
+      workspaceContractsDoc(edges),
+      "workspace contracts (parent-owned cross-repo dependency index)",
+    ),
     writeText(
       posix.join(dir, "cross-repo-architecture.md"),
       crossRepoArchitectureDoc(name, repos, dir),
@@ -113,3 +145,5 @@ export const command: CommandSpec = {
   ],
   plan: workspacePlan,
 };
+
+export { snapshotCommand, taskPlanCommand };

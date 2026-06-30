@@ -34,6 +34,10 @@ export interface RunDeps {
   newRunId?: () => string;
   /** Raw invoking argv (defaults to process.argv.slice(2)); redacted before logging. */
   argv?: string[];
+  /** Override extracted capability options (used by nested commands with custom positionals). */
+  optionOverrides?: Record<string, unknown>;
+  /** Override the positional root; false disables positional root handling. */
+  positionalRoot?: string | false;
 }
 
 const delay = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
@@ -90,9 +94,11 @@ export async function runCapability(
   const run = deps.run ?? defaultRunner;
   const opts = command.optsWithGlobals() as Record<string, unknown>;
   // Optional positional target dir (e.g. `aih init .`) overrides --root.
-  const positionalRoot = Array.isArray(command.processedArgs)
+  const defaultPositionalRoot = Array.isArray(command.processedArgs)
     ? (command.processedArgs[0] as string | undefined)
     : undefined;
+  const positionalRoot =
+    deps.positionalRoot === false ? undefined : (deps.positionalRoot ?? defaultPositionalRoot);
 
   // Run-ledger seams, hoisted before the try so BOTH the success path and the
   // catch can append exactly one row per invocation. Clock/id are injectable for
@@ -184,6 +190,7 @@ export async function runCapability(
       prompter,
       options: {
         ...extractOptions(spec, opts),
+        ...(deps.optionOverrides ?? {}),
         caPattern: settings.caPattern,
         cli: opts.cli,
         allTools: opts.allTools,

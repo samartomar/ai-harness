@@ -15,27 +15,7 @@ import { loadabilityFor, loadReason } from "./report/cli-loadability.js";
 import { scaleSafetyCheck } from "./scale-safety.js";
 import { vdiCompatibilityCheck } from "./vdi/index.js";
 import { workspaceGitignoreMissing } from "./workspace/git.js";
-
-interface WorkspaceMarker {
-  repos: string[];
-  git: boolean;
-}
-
-/** Read the workspace marker, or an empty marker when this root is not a workspace. */
-function workspaceMarker(ctx: PlanContext): WorkspaceMarker {
-  const raw = readIfExists(join(ctx.root, ".aih-workspace.json"));
-  if (!raw) return { repos: [], git: false };
-  try {
-    const parsed: unknown = JSON.parse(raw);
-    const repos = (parsed as { repos?: unknown }).repos;
-    return {
-      repos: Array.isArray(repos) ? repos.filter((r): r is string => typeof r === "string") : [],
-      git: (parsed as { git?: unknown }).git === true,
-    };
-  } catch {
-    return { repos: [], git: false };
-  }
-}
+import { readWorkspaceManifest } from "./workspace/manifest.js";
 
 /**
  * Fail-closed preflight. Returns probe actions; the read-only command path forces
@@ -229,9 +209,10 @@ export const command: CommandSpec = {
     ];
 
     // Workspace mode: validate each child repo is scaffolded.
-    const workspace = workspaceMarker(ctx);
-    const repos = workspace.repos;
-    const gitProbes: Action[] = workspace.git
+    const workspace = readWorkspaceManifest(ctx.root, contextDir);
+    const repos = workspace?.repos ?? [];
+    const repoPaths = repos.map((repo) => repo.path);
+    const gitProbes: Action[] = workspace?.git
       ? [
           probe("workspace root git", async () => {
             const inside = (await gitRead(ctx, ["rev-parse", "--is-inside-work-tree"])) === "true";
@@ -250,7 +231,7 @@ export const command: CommandSpec = {
           }),
           probe("workspace child repos gitignored", () => {
             const missing = workspaceGitignoreMissing(
-              repos,
+              repoPaths,
               readIfExists(join(ctx.root, ".gitignore")),
             );
             return missing.length === 0
@@ -259,7 +240,7 @@ export const command: CommandSpec = {
                   verdict: "pass",
                   detail:
                     repos.length > 0
-                      ? `gitignored: ${repos.join(", ")}`
+                      ? `gitignored: ${repoPaths.join(", ")}`
                       : "no child repos in marker",
                 }
               : {
@@ -271,18 +252,18 @@ export const command: CommandSpec = {
         ]
       : [];
     const wsProbes: Action[] = repos.map((repo) =>
-      probe(`workspace child ${repo} scaffolded`, () => {
-        const present = existsSync(join(ctx.root, repo, contextDir, "RULE_ROUTER.md"));
+      probe(`workspace child ${repo.id} scaffolded`, () => {
+        const present = existsSync(join(ctx.root, repo.path, repo.router));
         return present
           ? {
-              name: `child:${repo}`,
+              name: `child:${repo.id}`,
               verdict: "pass",
-              detail: `${repo}/${contextDir}/ canon present`,
+              detail: `${repo.path}/${repo.router} canon present`,
             }
           : {
-              name: `child:${repo}`,
+              name: `child:${repo.id}`,
               verdict: "skip",
-              detail: `not scaffolded — run \`aih init ./${repo} --apply\``,
+              detail: `not scaffolded — run \`aih init ./${repo.path} --apply\``,
               code: "canon.context-dir-missing",
             };
       }),
