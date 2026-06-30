@@ -279,8 +279,63 @@ describe("command confidence", () => {
     expect(c.commands.cdkSynth).toEqual({ value: "npx cdk synth", confidence: "inferred" });
     expect(c.commands.cdkDiff).toEqual({ value: "npx cdk diff", confidence: "inferred" });
     expect(c.commands.cdkDeploy).toEqual({ value: "npx cdk deploy", confidence: "inferred" });
-    expect(c.knownGaps.some((g) => g.includes("npx cdk deploy"))).toBe(true);
-    expect(projectContractDoc("ai-coding", c)).toContain("cdk deploy");
+    expect(
+      c.knownGaps.some((g) => g.includes("npx cdk synth") && g.includes("verify it runs")),
+    ).toBe(true);
+    expect(
+      c.knownGaps.some((g) => g.includes("npx cdk diff") && g.includes("verify it runs")),
+    ).toBe(true);
+    expect(
+      c.knownGaps.some((g) => g.includes("npx cdk deploy") && g.includes("verify it runs")),
+    ).toBe(false);
+    expect(
+      c.knownGaps.some(
+        (g) =>
+          g.includes("npx cdk deploy") &&
+          g.includes("requires human approval") &&
+          g.includes("do NOT run it to verify"),
+      ),
+    ).toBe(true);
+    const md = projectContractDoc("ai-coding", c);
+    expect(md).toContain("**cdk synth**");
+    expect(md).toContain("**cdk diff**");
+    expect(md).not.toContain("**cdk deploy**");
+    expect(md).toContain("### External actions (human approval required)");
+    expect(md).toContain("`npx cdk deploy` deploys live infrastructure");
+  });
+
+  it("caps large workspace maps and records the omitted-workspaces gap", async () => {
+    writeFileSync(
+      join(dir, "package.json"),
+      JSON.stringify({ name: "root", scripts: { test: "vitest run" } }),
+    );
+    for (let i = 0; i < 10; i++) {
+      const rel = join(dir, "packages", `pkg-${String(i).padStart(2, "0")}`);
+      mkdirSync(rel, { recursive: true });
+      writeFileSync(join(rel, "package.json"), JSON.stringify({ name: `pkg-${i}`, scripts: {} }));
+    }
+
+    const c = await synth();
+
+    expect(Object.keys(c.workspaces ?? {})).toHaveLength(8);
+    expect(c.knownGaps.some((g) => g.includes("showing 8 of 10 workspaces"))).toBe(true);
+  });
+
+  it("does not add a workspace truncation gap when every workspace is shown", async () => {
+    writeFileSync(
+      join(dir, "package.json"),
+      JSON.stringify({ name: "root", scripts: { test: "vitest run" } }),
+    );
+    for (let i = 0; i < 3; i++) {
+      const rel = join(dir, "packages", `pkg-${String(i).padStart(2, "0")}`);
+      mkdirSync(rel, { recursive: true });
+      writeFileSync(join(rel, "package.json"), JSON.stringify({ name: `pkg-${i}`, scripts: {} }));
+    }
+
+    const c = await synth();
+
+    expect(Object.keys(c.workspaces ?? {})).toHaveLength(3);
+    expect(c.knownGaps.some((g) => g.includes("workspaces") && g.includes("omitted"))).toBe(false);
   });
 });
 
@@ -494,6 +549,18 @@ describe("PR 1D — doctor contract-truth probe", () => {
     seedMindworksLike(dir);
     writeContract(await synth());
     expect((await contractTruthCheck(ctx())).verdict).toBe("pass");
+  });
+
+  it("does not mark the contract stale when only tracked-file count changes", async () => {
+    seedMindworksLike(dir);
+    writeContract(await synth({ run: gitTrackedRunner(fakeTrackedPaths(50)) }));
+
+    const res = await contractTruthCheck(
+      ctx({ posture: "team", run: gitTrackedRunner(fakeTrackedPaths(51)) }),
+    );
+
+    expect(res.verdict).toBe("pass");
+    expect(res.code).toBeUndefined();
   });
 
   it("fails when the committed contract drifts from the live repo facts", async () => {
