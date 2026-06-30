@@ -108,8 +108,10 @@ describe("workspace.plan — generated artifacts", () => {
 
     expect(marker.git).toBe(true);
     expect(marker.repos).toEqual(["service-api", "web-client"]);
+    const ignoreLines = ignore.split(/\r?\n/);
     expect(ignore).toContain("service-api/");
     expect(ignore).toContain("web-client/");
+    expect(ignoreLines).toContain(".aih/");
     expect(ignore).toContain(".aih/reports/");
     expect(ignore).toContain(".aih/runs/");
     expect(ignore).toContain("*.aih.bak");
