@@ -1,4 +1,4 @@
-import { type Dirent, readdirSync, readFileSync } from "node:fs";
+import { type Dirent, existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 
 /**
@@ -82,7 +82,7 @@ const EXCLUDED_DIRS = new Set([
 ]);
 
 /** Python virtualenv directories: signal their presence, but never scan their contents. */
-const VIRTUAL_ENV_DIRS = new Set([".venv", "venv"]);
+const VIRTUAL_ENV_DIRS = new Set([".venv"]);
 
 /** Node dependency → framework label. */
 const NODE_FRAMEWORKS: Record<string, string> = {
@@ -251,7 +251,7 @@ function walk(
   const subdirs: string[] = [];
   for (const entry of entries) {
     if (entry.isDirectory()) {
-      if (VIRTUAL_ENV_DIRS.has(entry.name)) {
+      if (isPythonVirtualEnvDir(dir, entry.name)) {
         push(raw.virtualEnvPaths, relative(root, join(dir, entry.name)).replace(/\\/g, "/"));
         continue;
       }
@@ -265,6 +265,11 @@ function walk(
   for (const name of subdirs) {
     walk(root, join(dir, name), depth + 1, maxDepth, raw, excluded);
   }
+}
+
+function isPythonVirtualEnvDir(parent: string, name: string): boolean {
+  if (VIRTUAL_ENV_DIRS.has(name)) return true;
+  return name === "venv" && existsSync(join(parent, name, "pyvenv.cfg"));
 }
 
 function inspectFile(dir: string, name: string, raw: Raw): void {
