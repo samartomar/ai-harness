@@ -23,8 +23,11 @@ function child(name: string, git = true): void {
   if (git) mkdirSync(join(parent, name, ".git"), { recursive: true });
 }
 
-function makeCtx(options: Record<string, unknown> = {}, apply = false): PlanContext {
-  const run = fakeRunner(() => undefined);
+function makeCtx(
+  options: Record<string, unknown> = {},
+  apply = false,
+  run = fakeRunner(() => undefined),
+): PlanContext {
   return {
     root: parent,
     contextDir: "ai-coding",
@@ -82,6 +85,40 @@ describe("workspace.plan — generated artifacts", () => {
     expect(w.has("CLAUDE.md")).toBe(true);
     expect(w.has("AGENTS.md")).toBe(true);
     expect(w.has(".mcp.json")).toBe(true);
+  });
+
+  it("without --git preserves parent-only workspace behavior", async () => {
+    child("service-api");
+    const actions = (await command.plan(makeCtx())).actions;
+    const marker = writesByPath(actions).get(".aih-workspace.json")?.json as { git?: boolean };
+
+    expect(marker.git).toBeUndefined();
+    expect(actions.some((a) => a.kind === "write" && a.path === ".gitignore")).toBe(false);
+    expect(actions.some((a) => a.kind === "exec")).toBe(false);
+  });
+
+  it("with --git records the workspace git marker and plans gitignore plus local git execs", async () => {
+    child("service-api");
+    child("web-client");
+
+    const actions = (await command.plan(makeCtx({ git: true }))).actions;
+    const w = writesByPath(actions);
+    const marker = w.get(".aih-workspace.json")?.json as { git?: boolean; repos?: string[] };
+    const ignore = w.get(".gitignore")?.contents ?? "";
+
+    expect(marker.git).toBe(true);
+    expect(marker.repos).toEqual(["service-api", "web-client"]);
+    expect(ignore).toContain("service-api/");
+    expect(ignore).toContain("web-client/");
+    expect(ignore).toContain(".aih/reports/");
+    expect(ignore).toContain(".aih/runs/");
+    expect(ignore).toContain("*.aih.bak");
+    expect(ignore).toContain("*.aih.tmp");
+    expect(actions.filter((a) => a.kind === "exec").map((a) => a.describe)).toEqual([
+      "initialize git repository at workspace root",
+      "stage changed workspace git baseline files",
+      "commit changed workspace git baseline files",
+    ]);
   });
 
   it("seeds the cross-repo map + spanning MCP with the detected repo names", async () => {
@@ -166,5 +203,58 @@ describe("workspace — write-once executor behavior", () => {
       (x) => x.path.replace(/\\/g, "/") === "ai-coding/cross-repo-architecture.md",
     );
     expect(kept?.effect).toBe("kept");
+  });
+
+  it("applies --git by initializing and committing the workspace baseline", async () => {
+    child("service-api");
+    child("web-client");
+    const ran: string[] = [];
+    const run = fakeRunner((argv) => {
+      if (argv[0] === "git") ran.push(argv.join(" "));
+      if (argv[0] === "git" && argv.includes("rev-parse")) return { code: 1 };
+      if (argv[0] === "git" && argv.includes("diff")) return { code: 1 };
+      return undefined;
+    });
+    const ctx = makeCtx({ git: true }, true, run);
+
+    await executePlan(await command.plan(ctx), ctx);
+
+    const marker = JSON.parse(readFileSync(join(parent, ".aih-workspace.json"), "utf8")) as {
+      git?: boolean;
+    };
+    const ignore = readFileSync(join(parent, ".gitignore"), "utf8");
+    expect(marker.git).toBe(true);
+    expect(ignore).toContain("service-api/");
+    expect(ignore).toContain("web-client/");
+    expect(ran).toContain(`git -C ${parent} init`);
+    const stage = ran.find((cmd) => cmd.startsWith(`git -C ${parent} add -- `)) ?? "";
+    const commit = ran.find((cmd) => cmd.startsWith(`git -C ${parent} commit -m `)) ?? "";
+    expect(stage).toContain(".aih-workspace.json");
+    expect(stage).toContain(".gitignore");
+    expect(stage).not.toContain("service-api/");
+    expect(stage).not.toContain("web-client/");
+    expect(commit).toContain("chore: initialize workspace config (aih workspace --git)");
+    expect(commit).toContain(".aih-workspace.json");
+  });
+
+  it("re-applies --git without duplicating ignores or committing a clean tree", async () => {
+    child("service-api");
+    writeFileSync(join(parent, ".gitignore"), "custom.log\nservice-api/\n*.aih.bak\n", "utf8");
+    const ran: string[] = [];
+    const run = fakeRunner((argv) => {
+      if (argv[0] === "git") ran.push(argv.join(" "));
+      if (argv[0] === "git" && argv.includes("rev-parse")) return { stdout: "true" };
+      if (argv[0] === "git" && argv.includes("diff")) return { code: 0 };
+      return undefined;
+    });
+    const ctx = makeCtx({ git: true }, true, run);
+
+    await executePlan(await command.plan(ctx), ctx);
+
+    const ignore = readFileSync(join(parent, ".gitignore"), "utf8");
+    expect(ignore.match(/^service-api\/$/gm)).toHaveLength(1);
+    expect(ignore.match(/^\*\.aih\.bak$/gm)).toHaveLength(1);
+    expect(ran).not.toContain(`git -C ${parent} init`);
+    expect(ran.some((cmd) => cmd.includes(" commit "))).toBe(false);
   });
 });
