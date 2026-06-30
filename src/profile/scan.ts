@@ -486,7 +486,9 @@ function rememberWorkspaceRoot(root: string, dir: string, raw: Raw): void {
 function isGeneratedWorkspacePath(rel: string): boolean {
   if (rel.length === 0) return false;
   const parts = rel.split("/");
-  return parts.some((part) => part === ".var" || part.endsWith(".snapshot") || part.startsWith("asset."));
+  return parts.some(
+    (part) => part === ".var" || part.endsWith(".snapshot") || part.startsWith("asset."),
+  );
 }
 
 /** Parse a serverless manifest for its provider (cloud) and function entry points. */
