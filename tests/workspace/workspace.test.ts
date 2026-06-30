@@ -121,6 +121,17 @@ describe("workspace.plan — generated artifacts", () => {
     ]);
   });
 
+  it("with --git keeps remote setup explicitly user-owned", async () => {
+    child("service-api");
+    const actions = (await command.plan(makeCtx({ git: true }))).actions;
+    const doc = actions.find((a) => a.kind === "doc" && a.describe.includes("next steps"));
+
+    expect(doc?.kind).toBe("doc");
+    if (doc?.kind !== "doc") throw new Error("expected next-steps doc");
+    expect(doc.text).toContain("Remote setup is user/team-owned");
+    expect(doc.text).not.toContain("git remote add");
+  });
+
   it("seeds the cross-repo map + spanning MCP with the detected repo names", async () => {
     child("ui");
     child("backend");
