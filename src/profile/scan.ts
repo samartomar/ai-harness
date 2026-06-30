@@ -96,6 +96,7 @@ const EXCLUDED_DIRS = new Set([
   ".serverless",
   "cdk.out",
   ".terraform",
+  ".var",
   ".venv",
   "venv",
 ]);
@@ -296,6 +297,7 @@ function isPythonVirtualEnvDir(parent: string, name: string): boolean {
 
 function inspectFile(root: string, dir: string, name: string, raw: Raw): void {
   const lower = name.toLowerCase();
+  if (isGeneratedWorkspacePath(relative(root, dir).replace(/\\/g, "/"))) return;
 
   // Source-file extension signals (JS vs TS, Python, Go, …).
   if (/\.tsx?$/.test(lower) && !lower.endsWith(".d.ts")) raw.sawTsFile = true;
@@ -477,7 +479,14 @@ function detectMisc(root: string, dir: string, name: string, lower: string, raw:
 }
 
 function rememberWorkspaceRoot(root: string, dir: string, raw: Raw): void {
-  raw.workspaceRoots.add(relative(root, dir).replace(/\\/g, "/"));
+  const rel = relative(root, dir).replace(/\\/g, "/");
+  if (!isGeneratedWorkspacePath(rel)) raw.workspaceRoots.add(rel);
+}
+
+function isGeneratedWorkspacePath(rel: string): boolean {
+  if (rel.length === 0) return false;
+  const parts = rel.split("/");
+  return parts.some((part) => part === ".var" || part.endsWith(".snapshot") || part.startsWith("asset."));
 }
 
 /** Parse a serverless manifest for its provider (cloud) and function entry points. */

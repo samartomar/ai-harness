@@ -457,6 +457,19 @@ describe("scanRepo — monorepo / workspace detection", () => {
     });
   });
 
+  it("does not promote generated cache/snapshot manifests into workspaces", () => {
+    put("package.json", pkg());
+    put(".var/cache/tool/package.json", pkg({ scripts: { test: "vitest run" } }));
+    put("tests/integ.latest.js.snapshot/asset.123/package.json", pkg());
+    put("tests/integ.latest.js.snapshot/asset.123/Cargo.toml", "[package]\nname='asset'\n");
+
+    const s = scanRepo(tmp, { maxDepth: 8 });
+
+    expect(s.languages).toEqual(["JavaScript/Node.js"]);
+    expect(s.isMonorepo).toBe(false);
+    expect(s.workspaces).toBeUndefined();
+  });
+
   it("a single-package repo is NOT a monorepo", () => {
     put("package.json", pkg({ scripts: { test: "vitest run" } }));
     const s = scanRepo(tmp, { maxDepth: 8 });
