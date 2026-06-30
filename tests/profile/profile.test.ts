@@ -414,6 +414,49 @@ describe("scanRepo — monorepo / workspace detection", () => {
     expect(scanRepo(tmp, { maxDepth: 8 }).isMonorepo).toBe(true);
   });
 
+  it("detects per-workspace commands in a Node + Python + Rust polyglot repo", () => {
+    put("package.json", pkg({ scripts: { test: "vitest run", build: "tsc -p ." } }));
+    put("package-lock.json", "{}\n");
+    put("tsconfig.json", "{}\n");
+    put("src/index.ts", "export const root = true;\n");
+    put(
+      "services/api/pyproject.toml",
+      [
+        "[tool.poetry]",
+        'name = "api"',
+        'version = "0.1.0"',
+        "",
+        "[tool.poetry.group.dev.dependencies]",
+        'pytest = "*"',
+        'ruff = "*"',
+        "",
+      ].join("\n"),
+    );
+    put("services/api/app/main.py", "print('api')\n");
+    put("crates/worker/Cargo.toml", "[package]\nname = 'worker'\nversion = '0.1.0'\n");
+
+    const s = scanRepo(tmp, { maxDepth: 8 });
+
+    expect(s.languages).toEqual(expect.arrayContaining(["TypeScript/Node.js", "Python", "Rust"]));
+    expect(s.packageManager).toBe("npm");
+    expect(s.testRunner).toBe("npm test");
+    expect(s.buildCommand).toBe("npm run build");
+    expect(s.workspaceTool).toBe("polyglot");
+    expect(s.workspaces?.["services/api"]).toMatchObject({
+      languages: ["Python"],
+      packageManager: "poetry",
+      testRunner: "pytest",
+      lintCommand: "ruff check .",
+    });
+    expect(s.workspaces?.["crates/worker"]).toMatchObject({
+      languages: ["Rust"],
+      packageManager: "cargo",
+      testRunner: "cargo test",
+      buildCommand: "cargo build",
+      lintCommand: "cargo clippy",
+    });
+  });
+
   it("a single-package repo is NOT a monorepo", () => {
     put("package.json", pkg({ scripts: { test: "vitest run" } }));
     const s = scanRepo(tmp, { maxDepth: 8 });

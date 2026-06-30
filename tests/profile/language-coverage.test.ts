@@ -60,9 +60,10 @@ describe("language coverage benchmark", () => {
     expect(rust.note).toContain("Cargo package manager");
 
     expect(polyglot.grades.languages).toBe("good");
-    expect(polyglot.grades.test).toBe("partial");
-    expect(polyglot.grades.build).toBe("partial");
-    expect(polyglot.grades.workspace).toBe("none");
+    expect(polyglot.grades.test).toBe("good");
+    expect(polyglot.grades.build).toBe("good");
+    expect(polyglot.grades.packageManager).toBe("good");
+    expect(polyglot.grades.workspace).toBe("good");
     expect(polyglot.note).toContain("per-workspace commands");
   });
 
@@ -70,6 +71,5 @@ describe("language coverage benchmark", () => {
     expect(rowById("go-module").grades.packageManager).toBe("none");
     expect(rowById("java-maven").grades.packageManager).toBe("none");
     expect(rowById("dotnet").grades.packageManager).toBe("none");
-    expect(rowById("node-python-rust-polyglot").grades.packageManager).toBe("none");
   });
 });

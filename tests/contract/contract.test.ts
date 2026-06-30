@@ -7,7 +7,7 @@ import { command, portablePathsCheck } from "../../src/contract/index.js";
 import type { ProjectContract } from "../../src/contract/schema.js";
 import { ProjectContractSchema, readProjectContract } from "../../src/contract/schema.js";
 import { synthesizeContract, unportablePaths } from "../../src/contract/synth.js";
-import { setupDoc } from "../../src/contract/templates.js";
+import { projectContractDoc, setupDoc } from "../../src/contract/templates.js";
 import { executePlan, resolveContents } from "../../src/internals/execute.js";
 import type { Action, PlanContext, WriteAction } from "../../src/internals/plan.js";
 import { fakeRunner, missingToolRunner } from "../../src/internals/proc.js";
@@ -211,6 +211,58 @@ describe("command confidence", () => {
     expect(c.description).toBe("A worked-example service");
     expect(c.languages).toContain("TypeScript/Node.js");
     expect(c.frameworks).toContain("Express");
+  });
+
+  it("records per-workspace commands for polyglot repos", async () => {
+    writeFileSync(
+      join(dir, "package.json"),
+      JSON.stringify({
+        name: "root",
+        scripts: { test: "vitest run", build: "tsc -p ." },
+        devDependencies: { typescript: "^5", vitest: "^1" },
+      }),
+    );
+    writeFileSync(join(dir, "package-lock.json"), "{}\n");
+    mkdirSync(join(dir, "services", "api"), { recursive: true });
+    writeFileSync(
+      join(dir, "services", "api", "pyproject.toml"),
+      [
+        "[tool.poetry]",
+        'name = "api"',
+        'version = "0.1.0"',
+        "",
+        "[tool.poetry.group.dev.dependencies]",
+        'pytest = "*"',
+        'ruff = "*"',
+        "",
+      ].join("\n"),
+    );
+    mkdirSync(join(dir, "crates", "worker"), { recursive: true });
+    writeFileSync(
+      join(dir, "crates", "worker", "Cargo.toml"),
+      "[package]\nname = 'worker'\nversion = '0.1.0'\n",
+    );
+
+    const c = await synth();
+
+    expect(c.commands.test).toEqual({ value: "npm test", confidence: "detected" });
+    expect(c.workspaces?.["services/api"]?.commands.test).toEqual({
+      value: "pytest",
+      confidence: "inferred",
+    });
+    expect(c.workspaces?.["services/api"]?.commands.lint).toEqual({
+      value: "ruff check .",
+      confidence: "inferred",
+    });
+    expect(c.workspaces?.["crates/worker"]?.commands.build).toEqual({
+      value: "cargo build",
+      confidence: "inferred",
+    });
+    expect(c.knownGaps.some((g) => g.includes("services/api") && g.includes("pytest"))).toBe(
+      true,
+    );
+    expect(projectContractDoc("ai-coding", c)).toContain("crates/worker");
+    expect(projectContractDoc("ai-coding", c)).toContain("cargo clippy");
   });
 });
 

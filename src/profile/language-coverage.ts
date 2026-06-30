@@ -194,9 +194,27 @@ function seedPolyglot(root: string): void {
       devDependencies: { typescript: "^5", vitest: "^1" },
     }),
   );
+  put(root, "package-lock.json", json({ lockfileVersion: 3 }));
   put(root, "tsconfig.json", json({ compilerOptions: { strict: true } }));
   put(root, "src/index.ts", "export const x = 1;\n");
-  put(root, "services/api/pyproject.toml", '[project]\nname = "api"\ndependencies = ["fastapi"]\n');
+  put(
+    root,
+    "services/api/pyproject.toml",
+    [
+      "[tool.poetry]",
+      'name = "api"',
+      'version = "0.1.0"',
+      "",
+      "[tool.poetry.dependencies]",
+      'python = "^3.12"',
+      'fastapi = "*"',
+      "",
+      "[tool.poetry.group.dev.dependencies]",
+      'pytest = "*"',
+      'ruff = "*"',
+      "",
+    ].join("\n"),
+  );
   put(root, "crates/worker/Cargo.toml", '[package]\nname = "worker"\nversion = "0.1.0"\n');
 }
 
@@ -292,12 +310,13 @@ const FIXTURES: CoverageFixture[] = [
     id: "node-python-rust-polyglot",
     ecosystem: "Node + Python + Rust polyglot",
     role: "wave-2-target",
-    note: "Secondary languages are seen, but root Node commands win; per-workspace commands and workspace classification are missing.",
+    note: "Secondary languages now keep root Node commands while exposing per-workspace Python/Rust commands and package managers.",
     seed: seedPolyglot,
     expected: {
       languages: ["TypeScript/Node.js", "Python", "Rust"],
       test: ["npm test", "pytest", "cargo test"],
       build: ["npm run build", "cargo build"],
+      lint: ["ruff check .", "cargo clippy"],
       packageManager: ["npm", "poetry", "cargo"],
       workspace: ["polyglot"],
     },
