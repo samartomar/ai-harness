@@ -300,7 +300,7 @@ export async function executePlan(
   const execs: PlanResult["execs"] = [];
   for (const a of execActions) {
     if (ctx.apply) {
-      const res = await ctx.run(a.argv);
+      const res = await ctx.run(a.argv, { cwd: a.cwd, env: a.env, timeoutMs: a.timeoutMs });
       execs.push({
         describe: a.describe,
         argv: a.argv,
@@ -318,7 +318,11 @@ export async function executePlan(
     report = new VerificationReport();
     for (const action of plan.actions) {
       if (action.kind === "probe") {
-        report.add(await action.run(ctx));
+        if (action.runMany) {
+          for (const check of await action.runMany(ctx)) report.add(check);
+        } else {
+          report.add(await action.run(ctx));
+        }
       }
     }
   }

@@ -24,8 +24,10 @@ import { command as superpowers } from "../superpowers/index.js";
 import { command as telemetry } from "../telemetry/index.js";
 import { command as tools } from "../tools/index.js";
 import { command as track } from "../track/index.js";
+import { trustScanCommand } from "../trust/scan.js";
 import { command as usage } from "../usage/index.js";
 import { command as vdi } from "../vdi/index.js";
+import { runWorkspaceAdd, workspaceAddCommand } from "../workspace/acquire.js";
 import {
   command as workspace,
   taskPlanCommand as workspacePlan,
@@ -116,6 +118,19 @@ export function registerCommands(program: Command): void {
       },
     );
     if (spec.name === "workspace") {
+      const add = cmd
+        .command(workspaceAddCommand.name)
+        .description(workspaceAddCommand.summary)
+        .argument("<source>", "local path or GitHub owner/repo trust source");
+      addSharedFlags(add);
+      for (const o of workspaceAddCommand.options ?? []) {
+        if (o.default !== undefined) add.option(o.flags, o.description, o.default);
+        else add.option(o.flags, o.description);
+      }
+      add.action(async (_source: string, _options: Record<string, unknown>, command: Command) => {
+        process.exitCode = await runWorkspaceAdd(command);
+      });
+
       const snap = cmd
         .command(workspaceSnapshot.name)
         .description(workspaceSnapshot.summary)
@@ -152,4 +167,21 @@ export function registerCommands(program: Command): void {
       });
     }
   }
+
+  const trust = program.command("trust").description("Trust-gate operations for external sources");
+  const scan = trust
+    .command(trustScanCommand.name)
+    .description(trustScanCommand.summary)
+    .argument("<target>", "local path or GitHub owner/repo trust source");
+  addSharedFlags(scan);
+  for (const o of trustScanCommand.options ?? []) {
+    if (o.default !== undefined) scan.option(o.flags, o.description, o.default);
+    else scan.option(o.flags, o.description);
+  }
+  scan.action(async (target: string, _options: Record<string, unknown>, command: Command) => {
+    process.exitCode = await runCapability(trustScanCommand, command, {
+      positionalRoot: false,
+      optionOverrides: { target },
+    });
+  });
 }

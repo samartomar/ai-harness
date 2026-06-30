@@ -156,6 +156,35 @@ describe("executePlan", () => {
     expect(applied.execs[0]).toMatchObject({ ran: true, code: 0, ok: true });
     expect(calls).toEqual([["echo", "hi"]]);
   });
+
+  it("passes exec cwd, environment, and timeout through the runner seam", async () => {
+    const calls: Array<{
+      argv: string[];
+      cwd?: string;
+      env?: NodeJS.ProcessEnv;
+      timeoutMs?: number;
+    }> = [];
+    const run = fakeRunner((argv, opts) => {
+      calls.push({ argv, cwd: opts?.cwd, env: opts?.env, timeoutMs: opts?.timeoutMs });
+      return { code: 0 };
+    });
+
+    await executePlan(
+      plan(
+        "t",
+        exec("fetch", ["node", "fetch.mjs"], {
+          cwd: dir,
+          env: { PATH: "safe-bin" },
+          timeoutMs: 1234,
+        }),
+      ),
+      ctx({ apply: true, run }),
+    );
+
+    expect(calls).toEqual([
+      { argv: ["node", "fetch.mjs"], cwd: dir, env: { PATH: "safe-bin" }, timeoutMs: 1234 },
+    ]);
+  });
 });
 
 describe("executePlan — envblock folding", () => {
