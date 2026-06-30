@@ -392,6 +392,10 @@ function detectedSummary(row: LanguageCoverageRow): string {
   return parts.join("; ");
 }
 
+function markdownTableCell(value: unknown): string {
+  return String(value).replace(/\\/g, "\\\\").replace(/\|/g, "\\|").replace(/\r?\n/g, "<br>");
+}
+
 export function renderLanguageCoverageMarkdown(rows: readonly LanguageCoverageRow[]): string {
   const header = [
     "# Language Coverage Matrix",
@@ -417,7 +421,7 @@ export function renderLanguageCoverageMarkdown(rows: readonly LanguageCoverageRo
       row.grades.workspace,
       row.note,
     ]
-      .map((cell) => String(cell).replace(/\|/g, "\\|"))
+      .map((cell) => markdownTableCell(cell))
       .join(" | "),
   );
   const detail = [

@@ -26,6 +26,19 @@ describe("language coverage benchmark", () => {
     );
   });
 
+  it("escapes markdown table cell pipes and backslashes", () => {
+    const rendered = renderLanguageCoverageMarkdown([
+      {
+        ...rowById("node-typescript-daily-stack"),
+        ecosystem: "Pipe | backslash \\ cell",
+        note: "note | \\ tail",
+      },
+    ]);
+
+    expect(rendered).toContain("Pipe \\| backslash \\\\ cell");
+    expect(rendered).toContain("note \\| \\\\ tail");
+  });
+
   it("locks the covered Node/TypeScript daily stack as a regression baseline", () => {
     const node = rowById("node-typescript-daily-stack");
 
