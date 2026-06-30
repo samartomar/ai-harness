@@ -15,7 +15,9 @@ export type GovernanceControl =
   | "risk-gates"
   | "mcp"
   | "ca-trust"
-  | "verify";
+  | "verify"
+  | "trust-danger"
+  | "trust-origin";
 
 export interface ResolvedPosture {
   posture: Posture;
@@ -101,6 +103,7 @@ export function gradeVerdict(
   posture: Posture,
 ): PolicyVerdict {
   if (finding === "allow") return "allow";
+  if (control === "trust-danger") return "deny";
   if (control === "risk-gates") return "warn";
   if (posture === "vibe") return "warn";
   if (posture === "team") {

@@ -383,6 +383,20 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     action:
       "`aih report` found a non-portable path in the committed `project.json`. Re-run `aih contract --apply` to regenerate it from the live tree; verify with `aih doctor` (the `contract truth` probe).",
   },
+  "trust.hidden-unicode": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "hidden Unicode found in external skill content",
+    action:
+      "Reject the external source until the hidden Unicode is removed or the source is replaced with a reviewed, clean commit.",
+  },
+  "trust.prompt-injection": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "prompt-injection shape found in external skill content",
+    action:
+      "Reject the external source until the hidden instruction/exfiltration text is removed or the source is replaced with a reviewed, clean commit.",
+  },
 };
 
 /** Severity rank for sorting: most urgent first. */
