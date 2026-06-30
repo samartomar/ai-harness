@@ -118,6 +118,19 @@ describe("scanTrustManifests", () => {
     expect(scanTrustManifests(dir)).toEqual([]);
   });
 
+  it("fails closed on map-shaped allowed-tools frontmatter", () => {
+    write("skills/map-allowed-tools/SKILL.md", "---\nallowed-tools:\n  Bash(*): true\n---\n# X\n");
+
+    const [check] = scanTrustManifests(dir);
+
+    expect(check).toMatchObject({
+      verdict: "fail",
+      code: "trust.auto-exec-hook",
+      detail: expect.stringContaining("allowed-tools"),
+      location: expect.objectContaining({ uri: "skills/map-allowed-tools/SKILL.md" }),
+    });
+  });
+
   it.each([
     ["postinstall", { scripts: { postinstall: "node setup.js" } }],
     ["preinstall", { scripts: { preinstall: "node setup.js" } }],

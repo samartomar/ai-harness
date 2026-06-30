@@ -132,13 +132,16 @@ export async function runCapability(
     // was actually bootstrapped with; passing `undefined` lets loadSettings fall
     // through to env then default.
     const marker = readAihConfig(resolvedRoot);
-    const contextDirFromFlag =
-      command.getOptionValueSource?.("contextDir") === "cli"
-        ? (opts.contextDir as string)
-        : undefined;
+    const contextDirSource =
+      command.getOptionValueSourceWithGlobals?.("contextDir") ??
+      command.getOptionValueSource?.("contextDir");
+    const contextDirFromFlag = contextDirSource === "cli" ? (opts.contextDir as string) : undefined;
     const contextDirFromMarker = contextDirFromFlag === undefined ? marker?.contextDir : undefined;
     const postureFlagSource =
-      command.getOptionValueSource?.("posture") === "cli" ? "cli" : undefined;
+      (command.getOptionValueSourceWithGlobals?.("posture") ??
+        command.getOptionValueSource?.("posture")) === "cli"
+        ? "cli"
+        : undefined;
     const resolvedPosture = resolvePosture({
       root: resolvedRoot,
       env,

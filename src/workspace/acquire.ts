@@ -3,7 +3,7 @@ import { existsSync, lstatSync, readdirSync, readFileSync } from "node:fs";
 import { basename, extname, join, posix } from "node:path";
 import type { Command } from "commander";
 import { readAihConfig } from "../config/marker.js";
-import { resolvePosture } from "../config/posture.js";
+import { asPosture, resolvePosture } from "../config/posture.js";
 import { loadSettings } from "../config/settings.js";
 import { AihError } from "../errors.js";
 import {
@@ -314,6 +314,10 @@ function sourceRootFor(source: TrustSource): string {
   return source.kind === "local" ? source.root : source.treePath;
 }
 
+function postureFromContext(ctx: PlanContext): NonNullable<PlanContext["posture"]> {
+  return ctx.posture ?? asPosture(ctx.options.posture);
+}
+
 export async function captureClearedWorkspaceAddTrustGate(
   ctx: PlanContext,
   report: VerificationReport | undefined,
@@ -324,7 +328,10 @@ export async function captureClearedWorkspaceAddTrustGate(
   }
   const source = sourceFromContext(ctx);
   const internalScopes = resolveInternalScopes(ctx);
-  const currentChecks = await scanTrustTree(sourceRootFor(source), internalScopes);
+  const currentChecks = await scanTrustTree(sourceRootFor(source), {
+    internalScopes,
+    posture: postureFromContext(ctx),
+  });
   if (currentChecks.some((check) => check.verdict === "fail")) {
     throw new AihError("workspace add source changed after phase 1 scan", "AIH_TRUST");
   }
@@ -353,7 +360,10 @@ export async function workspaceAddPhase2Plan(
       ),
     );
   }
-  const currentChecks = await scanTrustTree(sourceRootFor(source), gate.internalScopes);
+  const currentChecks = await scanTrustTree(sourceRootFor(source), {
+    internalScopes: gate.internalScopes,
+    posture: postureFromContext(ctx),
+  });
   if (currentChecks.some((check) => check.verdict === "fail")) {
     return plan("workspace add: promote", ...probesForChecks(currentChecks));
   }
@@ -434,12 +444,16 @@ function contextFromCommand(command: Command, deps: WorkspaceAddDeps): PlanConte
   const opts = command.optsWithGlobals() as Record<string, unknown>;
   const resolvedRoot = (opts.root as string | undefined) ?? env.AIH_ROOT ?? process.cwd();
   const marker = readAihConfig(resolvedRoot);
-  const contextDirFromFlag =
-    command.getOptionValueSource?.("contextDir") === "cli"
-      ? (opts.contextDir as string)
-      : undefined;
+  const contextDirSource =
+    command.getOptionValueSourceWithGlobals?.("contextDir") ??
+    command.getOptionValueSource?.("contextDir");
+  const contextDirFromFlag = contextDirSource === "cli" ? (opts.contextDir as string) : undefined;
   const contextDirFromMarker = contextDirFromFlag === undefined ? marker?.contextDir : undefined;
-  const postureFlagSource = command.getOptionValueSource?.("posture") === "cli" ? "cli" : undefined;
+  const postureFlagSource =
+    (command.getOptionValueSourceWithGlobals?.("posture") ??
+      command.getOptionValueSource?.("posture")) === "cli"
+      ? "cli"
+      : undefined;
   const resolvedPosture = resolvePosture({
     root: resolvedRoot,
     env,

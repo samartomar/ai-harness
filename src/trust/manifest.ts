@@ -90,6 +90,7 @@ function leadingFrontmatter(source: string): Frontmatter | undefined {
 }
 
 function containsBashWildcard(value: unknown): boolean {
+  if (value === undefined) return false;
   if (typeof value === "string") {
     return value
       .split(",")
@@ -98,7 +99,7 @@ function containsBashWildcard(value: unknown): boolean {
       .some((part) => part === "Bash" || /^Bash\([^)]*\*[^)]*\)$/.test(part));
   }
   if (Array.isArray(value)) return value.some((item) => containsBashWildcard(item));
-  return false;
+  return true;
 }
 
 function frontmatterLine(source: string, key: string, fallbackLine: number): number {
