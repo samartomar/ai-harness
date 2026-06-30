@@ -598,7 +598,9 @@ function synthesize(raw: Raw): RepoStack {
         ? "JavaScript"
         : l,
   );
-  const packageManager = pkg ? raw.packageManager : (raw.packageManager ?? pythonPackageManager(raw));
+  const packageManager = pkg
+    ? raw.packageManager
+    : (raw.packageManager ?? pythonPackageManager(raw));
   // Browser test runners (Karma's `ng test`, Cypress) launch a real browser and HANG in a
   // headless/agent context — surface it so synth can warn the next agent (the real trap).
   const browserTest =

@@ -291,7 +291,7 @@ describe("known gaps", () => {
 
   it("flags committed Python virtualenv directories as non-source", async () => {
     mkdirSync(join(dir, ".venv", "lib", "python3.12", "site-packages"), { recursive: true });
-    writeFileSync(join(dir, "pyproject.toml"), "[project]\nname = \"svc\"\n");
+    writeFileSync(join(dir, "pyproject.toml"), '[project]\nname = "svc"\n');
     const gaps = (await synth()).knownGaps;
     expect(gaps.some((g) => g.includes(".venv") && g.includes("do not treat as source"))).toBe(
       true,
