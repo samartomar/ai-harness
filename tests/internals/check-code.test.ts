@@ -437,6 +437,9 @@ describe("Check.code — invariants", () => {
       "trust.hidden-unicode": true,
       "trust.prompt-injection": true,
       "trust.source-changed": true,
+      "trust.auto-exec-hook": true,
+      "trust.dependency-confusion": true,
+      "trust.typosquat": true,
     };
     const srcDir = join(process.cwd(), "src");
     const src = (readdirSync(srcDir, { recursive: true }) as string[])

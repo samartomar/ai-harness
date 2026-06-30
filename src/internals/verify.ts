@@ -61,7 +61,10 @@ export type CheckCode =
   | "trust.fetch-blocked"
   | "trust.hidden-unicode"
   | "trust.prompt-injection"
-  | "trust.source-changed";
+  | "trust.source-changed"
+  | "trust.auto-exec-hook"
+  | "trust.dependency-confusion"
+  | "trust.typosquat";
 
 export interface Check {
   name: string;

@@ -4,6 +4,7 @@ import { AihError } from "../errors.js";
 import type { Action, CommandSpec, PlanContext, ProbeAction } from "../internals/plan.js";
 import { plan, probe, probeMany } from "../internals/plan.js";
 import type { Check } from "../internals/verify.js";
+import { resolveInternalScopes, scanTrustDependencyNames } from "./depnames.js";
 import {
   assertTrustTreeSafe,
   resolveTrustSource,
@@ -11,6 +12,7 @@ import {
   trustFetchExec,
 } from "./fetch.js";
 import { scanTrustDocument } from "./lint.js";
+import { scanTrustManifests } from "./manifest.js";
 
 const SKIP_DIRS = new Set([
   ".git",
@@ -61,12 +63,19 @@ function passCheck(root: string, scanned: number): Check {
   };
 }
 
-export async function scanTrustTree(root: string): Promise<Check[]> {
+export async function scanTrustTree(
+  root: string,
+  internalScopes: readonly string[] = [],
+): Promise<Check[]> {
   const safeRoot = assertTrustTreeSafe(root, { skipDirs: SKIP_DIRS });
   const docs = collectTrustDocs(safeRoot);
-  const checks = docs.flatMap((abs) =>
-    scanTrustDocument(toPosix(relative(safeRoot, abs)), readFileSync(abs, "utf8")),
-  );
+  const checks = [
+    ...docs.flatMap((abs) =>
+      scanTrustDocument(toPosix(relative(safeRoot, abs)), readFileSync(abs, "utf8")),
+    ),
+    ...scanTrustManifests(safeRoot),
+    ...scanTrustDependencyNames(safeRoot, internalScopes),
+  ];
   return checks.length > 0 ? checks : [passCheck(safeRoot, docs.length)];
 }
 
@@ -74,9 +83,12 @@ function probesForStaticChecks(checks: Check[]): ProbeAction[] {
   return checks.map((check) => probe(check.detail ?? check.name, () => check));
 }
 
-export async function trustScanProbes(source: TrustSource): Promise<ProbeAction[]> {
+export async function trustScanProbes(
+  source: TrustSource,
+  internalScopes: readonly string[] = [],
+): Promise<ProbeAction[]> {
   if (source.kind === "local") {
-    return probesForStaticChecks(await scanTrustTree(source.root));
+    return probesForStaticChecks(await scanTrustTree(source.root, internalScopes));
   }
   return [
     probeMany(`trust scan ${source.display}`, async (probeCtx) => {
@@ -91,7 +103,7 @@ export async function trustScanProbes(source: TrustSource): Promise<ProbeAction[
           },
         ];
       }
-      return scanTrustTree(source.treePath);
+      return scanTrustTree(source.treePath, internalScopes);
     }),
   ];
 }
@@ -102,7 +114,7 @@ export async function trustScanPlanForSource(
 ): Promise<ReturnType<typeof plan>> {
   const actions: Action[] = [];
   if (source.kind === "github") actions.push(trustFetchExec(source, ctx));
-  actions.push(...(await trustScanProbes(source)));
+  actions.push(...(await trustScanProbes(source, resolveInternalScopes(ctx))));
   return plan("trust scan", ...actions);
 }
 

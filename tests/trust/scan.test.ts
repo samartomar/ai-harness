@@ -24,7 +24,11 @@ function skill(rel: string, body: string): void {
   writeFileSync(join(root, "SKILL.md"), body, "utf8");
 }
 
-function ctx(options: Record<string, unknown> = {}): PlanContext {
+function ctx(
+  options: Record<string, unknown> = {},
+  env: NodeJS.ProcessEnv = {},
+  posture: PlanContext["posture"] = "vibe",
+): PlanContext {
   const run = fakeRunner(() => undefined);
   return {
     root: dir,
@@ -33,8 +37,9 @@ function ctx(options: Record<string, unknown> = {}): PlanContext {
     verify: true,
     json: false,
     run,
-    host: makeHostAdapter({ platform: "linux", run, env: {} }),
-    env: {},
+    host: makeHostAdapter({ platform: "linux", run, env }),
+    env,
+    posture,
     options,
   };
 }
@@ -97,6 +102,27 @@ describe("scanTrustTree", () => {
       }),
     ]);
   });
+
+  it("aggregates auto-exec manifest checks", async () => {
+    skill("skills/install", "# Install\n");
+    writeFileSync(
+      join(dir, "package.json"),
+      JSON.stringify({ scripts: { postinstall: "node setup.js" } }),
+      "utf8",
+    );
+
+    const checks = await scanTrustTree(dir);
+
+    expect(checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          verdict: "fail",
+          code: "trust.auto-exec-hook",
+          location: expect.objectContaining({ uri: "package.json" }),
+        }),
+      ]),
+    );
+  });
 });
 
 describe("trustScanCommand", () => {
@@ -128,5 +154,48 @@ describe("trustScanCommand", () => {
     const result = await executePlan(p, ctx({ target: dir }));
 
     expect(result.report?.ok).toBe(true);
+  });
+
+  it("threads internal scopes from the command environment into dependency-name checks", async () => {
+    skill("skills/clean", "# Clean\n");
+    writeFileSync(
+      join(dir, "package.json"),
+      JSON.stringify({ dependencies: { "@acme/tool": "1.0.0" } }),
+      "utf8",
+    );
+
+    const p = await trustScanCommand.plan(ctx({ target: dir }, { AIH_TRUST_INTERNAL_SCOPES: "" }));
+    const clean = await executePlan(p, ctx({ target: dir }, { AIH_TRUST_INTERNAL_SCOPES: "" }));
+    expect(clean.report?.ok).toBe(true);
+
+    const env = { AIH_TRUST_INTERNAL_SCOPES: "@acme" };
+    const blocked = await executePlan(
+      await trustScanCommand.plan(ctx({ target: dir }, env)),
+      ctx({ target: dir }, env),
+    );
+    expect(blocked.report?.exitCode()).toBe(1);
+    expect(
+      blocked.report?.checks.some((check) => check.code === "trust.dependency-confusion"),
+    ).toBe(true);
+  });
+
+  it("keeps trust-danger failures posture-invariant", async () => {
+    skill("skills/bash", "---\npermissionMode: bypassPermissions\n---\n# Bash\n");
+
+    for (const posture of ["vibe", "enterprise"] satisfies Array<
+      NonNullable<PlanContext["posture"]>
+    >) {
+      const c = ctx({ target: dir }, {}, posture);
+      const result = await executePlan(await trustScanCommand.plan(c), c);
+      expect(result.report?.exitCode()).toBe(1);
+      expect(result.report?.checks).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            verdict: "fail",
+            code: "trust.auto-exec-hook",
+          }),
+        ]),
+      );
+    }
   });
 });

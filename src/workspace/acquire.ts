@@ -20,6 +20,7 @@ import { defaultRunner, type Runner } from "../internals/proc.js";
 import type { Check, VerificationReport } from "../internals/verify.js";
 import { makeHostAdapter } from "../platform/detect.js";
 import { buildSupport, supportSummary } from "../support/integrate.js";
+import { resolveInternalScopes } from "../trust/depnames.js";
 import {
   assertTrustTreeSafe,
   localFileHash,
@@ -64,6 +65,7 @@ export interface ClearedWorkspaceAddTrustGate {
   source: TrustSourceBinding;
   artifactHashes: Array<{ path: string; sha256: string }>;
   report: VerificationReport;
+  internalScopes: string[];
 }
 
 interface TrustLock {
@@ -316,7 +318,8 @@ export async function captureClearedWorkspaceAddTrustGate(
     throw new AihError("workspace add failed trust scan; source was not promoted", "AIH_TRUST");
   }
   const source = sourceFromContext(ctx);
-  const currentChecks = await scanTrustTree(sourceRootFor(source));
+  const internalScopes = resolveInternalScopes(ctx);
+  const currentChecks = await scanTrustTree(sourceRootFor(source), internalScopes);
   if (currentChecks.some((check) => check.verdict === "fail")) {
     throw new AihError("workspace add source changed after phase 1 scan", "AIH_TRUST");
   }
@@ -325,6 +328,7 @@ export async function captureClearedWorkspaceAddTrustGate(
     source: sourceBinding(source),
     artifactHashes: promotion.artifactHashes,
     report,
+    internalScopes,
   };
 }
 
@@ -344,7 +348,7 @@ export async function workspaceAddPhase2Plan(
       ),
     );
   }
-  const currentChecks = await scanTrustTree(sourceRootFor(source));
+  const currentChecks = await scanTrustTree(sourceRootFor(source), gate.internalScopes);
   if (currentChecks.some((check) => check.verdict === "fail")) {
     return plan("workspace add: promote", ...probesForChecks(currentChecks));
   }

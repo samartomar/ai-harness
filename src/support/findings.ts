@@ -411,6 +411,27 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     action:
       "Do not promote the external source. Re-run the acquisition from the exact source/ref so the scan, artifact hashes, and promotion all refer to the same content.",
   },
+  "trust.auto-exec-hook": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "auto-execution hook found in external skill source",
+    action:
+      "Reject the external source until the auto-executing hook, install lifecycle script, permission bypass, or auto-run line is removed.",
+  },
+  "trust.dependency-confusion": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "external source declares an internal-scope dependency",
+    action:
+      "Reject the external source until the dependency is removed or replaced with a reviewed, pinned package from an approved source.",
+  },
+  "trust.typosquat": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "dependency name resembles a popular package",
+    action:
+      "Reject the external source until the dependency name is corrected or the package is independently reviewed and pinned.",
+  },
 };
 
 /** Severity rank for sorting: most urgent first. */

@@ -37,7 +37,12 @@ afterEach(() => {
   rmSync(sourceRoot, { recursive: true, force: true });
 });
 
-function ctx(source: string, apply = false, verify = true): PlanContext {
+function ctx(
+  source: string,
+  apply = false,
+  verify = true,
+  env: NodeJS.ProcessEnv = {},
+): PlanContext {
   const run = fakeRunner(() => undefined);
   return {
     root: workspace,
@@ -46,8 +51,8 @@ function ctx(source: string, apply = false, verify = true): PlanContext {
     verify,
     json: false,
     run,
-    host: makeHostAdapter({ platform: "linux", run, env: {} }),
-    env: {},
+    host: makeHostAdapter({ platform: "linux", run, env }),
+    env,
     options: { source, force: true },
   };
 }
@@ -252,6 +257,64 @@ describe("workspace add acquisition plans", () => {
 
     expect(code).toBe(1);
     expect(output.join("")).toContain("trust.prompt-injection");
+    expect(existsSync(join(workspace, "ai-coding", "skills"))).toBe(false);
+    expect(existsSync(join(workspace, ".aih", "trust-lock.json"))).toBe(false);
+  });
+
+  it("runWorkspaceAdd stops after phase 1 for an auto-exec source", async () => {
+    localSkill(sourceRoot, "evil", "# Evil\n");
+    writeFileSync(
+      join(sourceRoot, "package.json"),
+      JSON.stringify({ scripts: { postinstall: "node setup.js" } }),
+      "utf8",
+    );
+    const output: string[] = [];
+
+    const code = await runWorkspaceAdd(fakeCommand(sourceRoot), {
+      write: (text) => output.push(text),
+      env: {},
+      now: () => new Date("2026-06-30T00:00:00.000Z"),
+      newRunId: () => "run_test",
+    });
+
+    expect(code).toBe(1);
+    expect(output.join("")).toContain("trust.auto-exec-hook");
+    expect(existsSync(join(workspace, "ai-coding", "skills"))).toBe(false);
+    expect(existsSync(join(workspace, ".aih", "trust-lock.json"))).toBe(false);
+  });
+
+  it("runWorkspaceAdd applies the internal-scope dependency tell only when configured", async () => {
+    localSkill(sourceRoot, "clean", "# Clean\n");
+    writeFileSync(
+      join(sourceRoot, "package.json"),
+      JSON.stringify({ dependencies: { "@acme/tool": "1.0.0" } }),
+      "utf8",
+    );
+    const withoutScope: string[] = [];
+
+    expect(
+      await runWorkspaceAdd(fakeCommand(sourceRoot), {
+        write: (text) => withoutScope.push(text),
+        env: {},
+        now: () => new Date("2026-06-30T00:00:00.000Z"),
+        newRunId: () => "run_test",
+      }),
+    ).toBe(0);
+    expect(existsSync(join(workspace, ".aih", "trust-lock.json"))).toBe(true);
+
+    rmSync(join(workspace, "ai-coding"), { recursive: true, force: true });
+    rmSync(join(workspace, ".aih"), { recursive: true, force: true });
+    const withScope: string[] = [];
+
+    expect(
+      await runWorkspaceAdd(fakeCommand(sourceRoot), {
+        write: (text) => withScope.push(text),
+        env: { AIH_TRUST_INTERNAL_SCOPES: "@acme" },
+        now: () => new Date("2026-06-30T00:00:00.000Z"),
+        newRunId: () => "run_test",
+      }),
+    ).toBe(1);
+    expect(withScope.join("")).toContain("trust.dependency-confusion");
     expect(existsSync(join(workspace, "ai-coding", "skills"))).toBe(false);
     expect(existsSync(join(workspace, ".aih", "trust-lock.json"))).toBe(false);
   });
