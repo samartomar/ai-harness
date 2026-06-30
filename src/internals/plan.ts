@@ -14,9 +14,10 @@ import type { Check } from "./verify.js";
  *                not run;
  *  - `probe`:    a read-only verification that yields a {@link Check} under
  *                --verify;
- *  - `exec`:     a LOCAL mutating command run after writes under --apply (e.g.
+ *  - `exec`:     a LOCAL helper command run after writes under --apply (e.g.
  *                icacls/chmod to lock down a PEM, `mklink`/`ln` for a VDI
- *                junction) — it must never contact a remote system;
+ *                junction, or a read-only quarantined tarball fetch) — it must
+ *                never mutate a remote system;
  *  - `envblock`: upsert an aih-managed env block (one `scope`) into a shell
  *                profile; multiple scopes targeting the same file compose
  *                instead of clobbering each other;
@@ -62,18 +63,26 @@ export interface ProbeAction {
   kind: "probe";
   describe: string;
   run: (ctx: PlanContext) => Promise<Check> | Check;
+  /** Dynamic scans may expand to several 1:1 checks after a prior exec action. */
+  runMany?: (ctx: PlanContext) => Promise<Check[]> | Check[];
 }
 
 /**
- * A LOCAL mutating command run after writes under `--apply` (e.g. icacls/chmod
- * to lock down a PEM, `mklink /J` for a VDI junction, `update-ca-certificates`).
- * It must never contact or mutate a remote system — that is what keeps the
- * "no faked provisioning" guarantee intact.
+ * A LOCAL helper command run after writes under `--apply` (e.g. icacls/chmod to
+ * lock down a PEM, `mklink /J` for a VDI junction, `update-ca-certificates`, or
+ * a read-only quarantined tarball fetch). It must never mutate a remote system —
+ * that is what keeps the "no faked provisioning" guarantee intact.
  */
 export interface ExecAction {
   kind: "exec";
   describe: string;
   argv: string[];
+  /** Optional working directory for local, quarantined helper commands. */
+  cwd?: string;
+  /** Optional scrubbed environment for local helper commands. */
+  env?: NodeJS.ProcessEnv;
+  /** Optional timeout override for long-but-bounded local helpers. */
+  timeoutMs?: number;
   /** Continue the plan even if the command exits non-zero. */
   allowFailure?: boolean;
 }
@@ -230,12 +239,32 @@ export function probe(describe: string, run: ProbeAction["run"]): ProbeAction {
   return { kind: "probe", describe, run };
 }
 
+export function probeMany(
+  describe: string,
+  runMany: NonNullable<ProbeAction["runMany"]>,
+): ProbeAction {
+  return {
+    kind: "probe",
+    describe,
+    run: () => ({ name: describe, verdict: "skip", detail: "multi-check probe" }),
+    runMany,
+  };
+}
+
 export function exec(
   describe: string,
   argv: string[],
-  opts: { allowFailure?: boolean } = {},
+  opts: { allowFailure?: boolean; cwd?: string; env?: NodeJS.ProcessEnv; timeoutMs?: number } = {},
 ): ExecAction {
-  return { kind: "exec", describe, argv, allowFailure: opts.allowFailure };
+  return {
+    kind: "exec",
+    describe,
+    argv,
+    cwd: opts.cwd,
+    env: opts.env,
+    timeoutMs: opts.timeoutMs,
+    allowFailure: opts.allowFailure,
+  };
 }
 
 export function envBlock(

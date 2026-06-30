@@ -158,8 +158,12 @@ describe("executePlan", () => {
   });
 
   it("passes exec cwd, environment, and timeout through the runner seam", async () => {
-    const calls: Array<{ argv: string[]; cwd?: string; env?: NodeJS.ProcessEnv; timeoutMs?: number }> =
-      [];
+    const calls: Array<{
+      argv: string[];
+      cwd?: string;
+      env?: NodeJS.ProcessEnv;
+      timeoutMs?: number;
+    }> = [];
     const run = fakeRunner((argv, opts) => {
       calls.push({ argv, cwd: opts?.cwd, env: opts?.env, timeoutMs: opts?.timeoutMs });
       return { code: 0 };

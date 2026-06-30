@@ -1,0 +1,395 @@
+import { createHash } from "node:crypto";
+import {
+  existsSync,
+  lstatSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  type Stats,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { basename, isAbsolute, join, relative, resolve } from "node:path";
+import process from "node:process";
+import { AihError, PathContainmentError } from "../errors.js";
+import { type ExecAction, exec, type PlanContext } from "../internals/plan.js";
+
+export type TrustSource = LocalTrustSource | GitHubTrustSource;
+
+export interface LocalTrustSource {
+  kind: "local";
+  id: string;
+  source: string;
+  root: string;
+  display: string;
+}
+
+export interface GitHubTrustSource {
+  kind: "github";
+  id: string;
+  source: string;
+  owner: string;
+  repo: string;
+  ref: string;
+  pin?: string;
+  quarantineRoot: string;
+  treePath: string;
+  metadataPath: string;
+  display: string;
+}
+
+export interface TrustFetchMetadata {
+  kind: "github";
+  owner: string;
+  repo: string;
+  ref: string;
+  pinnedSha: string;
+  source: string;
+  treePath: string;
+}
+
+const GITHUB_SOURCE = /^([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)$/;
+const SAFE_ENV_KEYS = new Set([
+  "ALLUSERSPROFILE",
+  "APPDATA",
+  "COMSPEC",
+  "HOME",
+  "HOMEDRIVE",
+  "HOMEPATH",
+  "LANG",
+  "LOCALAPPDATA",
+  "NODE_EXTRA_CA_CERTS",
+  "PATH",
+  "PATHEXT",
+  "PROGRAMDATA",
+  "PROGRAMFILES",
+  "PROGRAMFILES(X86)",
+  "SSL_CERT_DIR",
+  "SSL_CERT_FILE",
+  "SYSTEMDRIVE",
+  "SYSTEMROOT",
+  "TEMP",
+  "TMP",
+  "TMPDIR",
+  "USERPROFILE",
+  "WINDIR",
+]);
+
+function slugify(raw: string): string {
+  const slug = raw
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return slug.length > 0 ? slug : "source";
+}
+
+function sha8(raw: string): string {
+  return createHash("sha256").update(raw).digest("hex").slice(0, 8);
+}
+
+function sourceIdForLocal(absPath: string): string {
+  return slugify(basename(absPath));
+}
+
+function sourceIdForGitHub(owner: string, repo: string): string {
+  return slugify(`${owner}-${repo}`);
+}
+
+function quarantineRoot(source: string, ref: string): string {
+  return join(tmpdir(), "aih-quarantine", `${slugify(source.replace("/", "-"))}-${sha8(ref)}`);
+}
+
+function isSecretEnvKey(key: string): boolean {
+  const upper = key.toUpperCase();
+  return (
+    upper.includes("TOKEN") ||
+    upper.includes("SECRET") ||
+    upper.includes("PASSWORD") ||
+    upper.endsWith("_KEY") ||
+    upper.endsWith("_CREDENTIALS") ||
+    upper.startsWith("AWS_") ||
+    upper.startsWith("GITHUB_") ||
+    upper.startsWith("ANTHROPIC_") ||
+    upper.startsWith("OPENAI_")
+  );
+}
+
+export function scrubFetchEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const out: NodeJS.ProcessEnv = {};
+  for (const [key, value] of Object.entries(env)) {
+    if (value === undefined || isSecretEnvKey(key)) continue;
+    if (SAFE_ENV_KEYS.has(key.toUpperCase())) out[key] = value;
+  }
+  return out;
+}
+
+export function resolveTrustSource(
+  raw: string,
+  opts: { root: string; ref?: string; pin?: string } = { root: process.cwd() },
+): TrustSource {
+  const trimmed = raw.trim();
+  if (trimmed.length === 0) throw new AihError("workspace add requires a source", "AIH_TRUST");
+
+  const local = isAbsolute(trimmed) ? trimmed : resolve(opts.root, trimmed);
+  if (existsSync(local)) {
+    const root = assertTrustTreeSafe(local);
+    return {
+      kind: "local",
+      id: sourceIdForLocal(root),
+      source: root,
+      root,
+      display: root,
+    };
+  }
+
+  const gh = GITHUB_SOURCE.exec(trimmed);
+  if (!gh) {
+    throw new AihError(
+      `unsupported trust source: ${raw} (use a local path or owner/repo)`,
+      "AIH_TRUST",
+    );
+  }
+  const owner = gh[1] ?? "";
+  const repo = gh[2] ?? "";
+  if (owner.length === 0 || repo.length === 0) {
+    throw new AihError(`unsupported GitHub trust source: ${raw}`, "AIH_TRUST");
+  }
+  const ref = opts.pin ?? opts.ref ?? "HEAD";
+  const root = quarantineRoot(trimmed, ref);
+  return {
+    kind: "github",
+    id: sourceIdForGitHub(owner, repo),
+    source: trimmed,
+    owner,
+    repo,
+    ref,
+    pin: opts.pin,
+    quarantineRoot: root,
+    treePath: join(root, "tree"),
+    metadataPath: join(root, "metadata.json"),
+    display: `${owner}/${repo}@${ref}`,
+  };
+}
+
+function statSafe(path: string): Stats | undefined {
+  try {
+    return lstatSync(path);
+  } catch {
+    return undefined;
+  }
+}
+
+function assertContained(root: string, target: string): void {
+  const rel = relative(root, target);
+  if (rel === "" || (!rel.startsWith("..") && !isAbsolute(rel))) return;
+  throw new PathContainmentError(
+    `refusing to read outside the trust source\n  root:   ${root}\n  target: ${target}`,
+  );
+}
+
+export function assertTrustTreeSafe(root: string): string {
+  const absRoot = resolve(root);
+  const rootInfo = statSafe(absRoot);
+  if (!rootInfo?.isDirectory()) {
+    throw new AihError(`trust source is not a directory: ${root}`, "AIH_TRUST");
+  }
+  if (rootInfo.isSymbolicLink()) {
+    throw new AihError(`refusing symlinked trust source: ${root}`, "AIH_TRUST");
+  }
+
+  const realRoot = realpathSync(absRoot);
+  const visit = (abs: string): void => {
+    const st = lstatSync(abs);
+    if (st.isSymbolicLink()) {
+      throw new AihError(`refusing symlink inside trust source: ${abs}`, "AIH_TRUST");
+    }
+    if (st.isFile() && st.nlink > 1) {
+      throw new AihError(`refusing hard-linked file inside trust source: ${abs}`, "AIH_TRUST");
+    }
+    assertContained(realRoot, realpathSync(abs));
+    if (!st.isDirectory()) return;
+    for (const entry of readdirSync(abs)) visit(join(abs, entry));
+  };
+  visit(realRoot);
+  return realRoot;
+}
+
+export function readTrustFetchMetadata(source: GitHubTrustSource): TrustFetchMetadata {
+  const text = readFileSync(source.metadataPath, "utf8");
+  return JSON.parse(text) as TrustFetchMetadata;
+}
+
+const GITHUB_FETCH_SCRIPT = String.raw`
+const fs = require("node:fs");
+const https = require("node:https");
+const path = require("node:path");
+const zlib = require("node:zlib");
+
+const input = JSON.parse(process.argv[1]);
+
+function fail(message) {
+  process.stderr.write(message + "\n");
+  process.exit(1);
+}
+
+function requestBuffer(url) {
+  return new Promise((resolve, reject) => {
+    const req = https.get(
+      url,
+      { headers: { "user-agent": "aih-trust-fetch", accept: "application/vnd.github+json" } },
+      (res) => {
+        if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+          res.resume();
+          requestBuffer(new URL(res.headers.location, url).toString()).then(resolve, reject);
+          return;
+        }
+        if (res.statusCode !== 200) {
+          const chunks = [];
+          res.on("data", (chunk) => chunks.push(chunk));
+          res.on("end", () => reject(new Error("HTTP " + res.statusCode + " from " + url + ": " + Buffer.concat(chunks).toString("utf8").slice(0, 400))));
+          return;
+        }
+        const chunks = [];
+        res.on("data", (chunk) => chunks.push(chunk));
+        res.on("end", () => resolve(Buffer.concat(chunks)));
+      },
+    );
+    req.on("error", reject);
+    req.setTimeout(30000, () => req.destroy(new Error("request timed out: " + url)));
+  });
+}
+
+function octal(buf, start, len) {
+  const raw = buf.subarray(start, start + len).toString("utf8").replace(/\0.*$/, "").trim();
+  return raw.length === 0 ? 0 : Number.parseInt(raw, 8);
+}
+
+function text(buf, start, len) {
+  return buf.subarray(start, start + len).toString("utf8").replace(/\0.*$/, "");
+}
+
+function safeRel(name) {
+  const rel = name.split("/").slice(1).join("/");
+  if (!rel || rel.includes("\\") || path.isAbsolute(rel)) return undefined;
+  const parts = rel.split("/");
+  if (parts.some((part) => part === ".." || part === "")) return undefined;
+  return rel;
+}
+
+function ensureContained(root, target) {
+  const rel = path.relative(root, target);
+  if (rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel))) return;
+  fail("refusing tar path escape: " + target);
+}
+
+function extractTar(buffer, outRoot) {
+  let offset = 0;
+  while (offset + 512 <= buffer.length) {
+    const header = buffer.subarray(offset, offset + 512);
+    if (header.every((byte) => byte === 0)) break;
+    const name = text(header, 0, 100);
+    const prefix = text(header, 345, 155);
+    const fullName = prefix ? prefix + "/" + name : name;
+    const size = octal(header, 124, 12);
+    const type = text(header, 156, 1) || "0";
+    offset += 512;
+    const rel = safeRel(fullName);
+    if (rel) {
+      const target = path.resolve(outRoot, rel);
+      ensureContained(outRoot, target);
+      if (type === "5") {
+        fs.mkdirSync(target, { recursive: true });
+      } else if (type === "0" || type === "\0") {
+        fs.mkdirSync(path.dirname(target), { recursive: true });
+        fs.writeFileSync(target, buffer.subarray(offset, offset + size), { flag: "wx" });
+      } else {
+        fail("refusing non-regular tar entry: " + fullName);
+      }
+    }
+    offset += Math.ceil(size / 512) * 512;
+  }
+}
+
+(async () => {
+  const sha = /^[a-f0-9]{40}$/i.test(input.pin || "") ? input.pin : undefined;
+  const resolvedSha =
+    sha ||
+    JSON.parse(
+      (await requestBuffer(
+        "https://api.github.com/repos/" +
+          encodeURIComponent(input.owner) +
+          "/" +
+          encodeURIComponent(input.repo) +
+          "/commits/" +
+          encodeURIComponent(input.ref || "HEAD"),
+      )).toString("utf8"),
+    ).sha;
+  if (!/^[a-f0-9]{40}$/i.test(resolvedSha)) fail("GitHub did not return a commit SHA");
+  fs.rmSync(input.quarantineRoot, { recursive: true, force: true });
+  fs.mkdirSync(input.treePath, { recursive: true });
+  const tarball = await requestBuffer(
+    "https://codeload.github.com/" +
+      encodeURIComponent(input.owner) +
+      "/" +
+      encodeURIComponent(input.repo) +
+      "/tar.gz/" +
+      resolvedSha,
+  );
+  extractTar(zlib.gunzipSync(tarball), input.treePath);
+  fs.writeFileSync(
+    input.metadataPath,
+    JSON.stringify(
+      {
+        kind: "github",
+        owner: input.owner,
+        repo: input.repo,
+        ref: input.ref,
+        pinnedSha: resolvedSha,
+        source: input.owner + "/" + input.repo,
+        treePath: input.treePath,
+      },
+      null,
+      2,
+    ) + "\n",
+    "utf8",
+  );
+})().catch((err) => fail(err && err.message ? err.message : String(err)));
+`;
+
+export function trustFetchExec(source: GitHubTrustSource, ctx: PlanContext): ExecAction {
+  return exec(
+    `fetch ${source.display} tarball into quarantine`,
+    [
+      process.execPath,
+      "-e",
+      GITHUB_FETCH_SCRIPT,
+      JSON.stringify({
+        owner: source.owner,
+        repo: source.repo,
+        ref: source.ref,
+        pin: source.pin,
+        quarantineRoot: source.quarantineRoot,
+        treePath: source.treePath,
+        metadataPath: source.metadataPath,
+      }),
+    ],
+    {
+      cwd: tmpdir(),
+      env: scrubFetchEnv(ctx.env),
+      timeoutMs: 120_000,
+    },
+  );
+}
+
+export function localFileHash(path: string): string {
+  return createHash("sha256").update(readFileSync(path)).digest("hex");
+}
+
+export function safeSourceRelative(root: string, absPath: string): string {
+  const rel = relative(root, absPath).replace(/\\/g, "/");
+  if (rel.length === 0 || rel.startsWith("../") || rel === ".." || isAbsolute(rel)) {
+    throw new PathContainmentError(
+      `refusing source-relative path escape\n  root:   ${root}\n  target: ${absPath}`,
+    );
+  }
+  return rel;
+}
