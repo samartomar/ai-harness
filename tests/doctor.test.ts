@@ -164,6 +164,20 @@ describe("doctor — git-enabled workspace roots", () => {
     );
   }
 
+  function writeEmptyWorkspaceMarker(): void {
+    writeFileSync(
+      join(dir, ".aih-workspace.json"),
+      JSON.stringify({
+        workspaceType: "multi-repo",
+        graphScope: "combined-child-repos",
+        contextDir: "ai-coding",
+        repos: [],
+        git: true,
+        generatedBy: "aih workspace",
+      }),
+    );
+  }
+
   it("fails when a git-enabled workspace marker is not backed by a git root", async () => {
     writeWorkspaceMarker();
     const c = rooted(false);
@@ -195,6 +209,17 @@ describe("doctor — git-enabled workspace roots", () => {
 
     expect(res?.verdict).toBe("skip");
     expect(res?.detail).toContain("web-client/");
+  });
+
+  it("passes the child-ignore probe for a git-enabled workspace with no child repos", async () => {
+    writeEmptyWorkspaceMarker();
+    writeFileSync(join(dir, ".gitignore"), ".aih/\n*.aih.bak\n*.aih.tmp\n", "utf8");
+    const c = rooted(true);
+    const probe = findProbe((await command.plan(c)).actions, "workspace child repos gitignored");
+    const res = await probe?.run(c);
+
+    expect(res?.verdict).toBe("pass");
+    expect(res?.detail).toContain("no child repos");
   });
 });
 

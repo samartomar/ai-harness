@@ -123,6 +123,21 @@ describe("workspace.plan — generated artifacts", () => {
     ]);
   });
 
+  it("with --git supports an empty workspace root", async () => {
+    const actions = (await command.plan(makeCtx({ git: true }))).actions;
+    const w = writesByPath(actions);
+    const marker = w.get(".aih-workspace.json")?.json as { git?: boolean; repos?: string[] };
+    const ignore = w.get(".gitignore")?.contents ?? "";
+
+    expect(marker.git).toBe(true);
+    expect(marker.repos).toEqual([]);
+    expect(ignore.split(/\r?\n/)).toEqual(
+      expect.arrayContaining([".aih/", ".aih/reports/", ".aih/runs/", "*.aih.bak", "*.aih.tmp"]),
+    );
+    expect(actions.filter((a) => a.kind === "exec")).toHaveLength(3);
+    expect(actions.some((a) => a.kind === "probe" && a.describe.includes("child"))).toBe(false);
+  });
+
   it("with --git keeps remote setup explicitly user-owned", async () => {
     child("service-api");
     const actions = (await command.plan(makeCtx({ git: true }))).actions;

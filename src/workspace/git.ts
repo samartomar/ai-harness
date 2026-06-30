@@ -1,4 +1,5 @@
 import { resolve } from "node:path";
+import { AihError } from "../errors.js";
 import { resolveContents } from "../internals/execute.js";
 import { readIfExists } from "../internals/fsxn.js";
 import { gitRead } from "../internals/git.js";
@@ -46,10 +47,35 @@ export function workspaceGitignoreWrite(root: string, repos: readonly string[]):
 }
 
 function writeWouldChange(ctx: PlanContext, action: WriteAction): boolean {
+  // Keep this in lockstep with executePlan's WriteAction effect calculation: the
+  // git baseline commit must stage the same writes the executor is about to apply.
   const abs = resolve(ctx.root, action.path);
   const existing = readIfExists(abs);
   if (action.once && existing !== undefined) return false;
   return resolveContents(action, abs) !== existing;
+}
+
+async function gitConfigValue(ctx: PlanContext, key: "user.email" | "user.name"): Promise<string> {
+  const res = await ctx.run(["git", "-C", ctx.root, "config", "--get", key]);
+  return res.code === 0 && !res.spawnError ? res.stdout.trim() : "";
+}
+
+async function assertGitIdentity(ctx: PlanContext): Promise<void> {
+  const [email, name] = await Promise.all([
+    gitConfigValue(ctx, "user.email"),
+    gitConfigValue(ctx, "user.name"),
+  ]);
+  const missing = [
+    email.length === 0 ? "user.email" : undefined,
+    name.length === 0 ? "user.name" : undefined,
+  ].filter((value): value is string => value !== undefined);
+  if (missing.length === 0) return;
+  throw new AihError(
+    `workspace --git needs git identity before creating the baseline commit; missing ${missing.join(
+      " and ",
+    )}. Configure it with \`git config --global user.email you@example.com\` and \`git config --global user.name "Your Name"\`, then re-run \`aih workspace --apply --git\`.`,
+    "AIH_WORKSPACE",
+  );
 }
 
 /** Local-only git setup for the workspace bridge repo; remote ownership stays user-controlled. */
@@ -69,6 +95,7 @@ export async function workspaceGitExecs(
     );
   }
   if (changedPaths.length > 0) {
+    if (ctx.apply) await assertGitIdentity(ctx);
     actions.push(
       exec("stage changed workspace git baseline files", [
         "git",
