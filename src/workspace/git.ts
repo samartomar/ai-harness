@@ -11,7 +11,13 @@ import {
 } from "../internals/plan.js";
 import { stripTrailingNewlines } from "../internals/render.js";
 
-const WORKSPACE_TRANSIENT_PATTERNS = [".aih/reports/", ".aih/runs/", "*.aih.bak", "*.aih.tmp"];
+const WORKSPACE_TRANSIENT_PATTERNS = [
+  ".aih/",
+  ".aih/reports/",
+  ".aih/runs/",
+  "*.aih.bak",
+  "*.aih.tmp",
+];
 const BASELINE_COMMIT_MESSAGE = "chore: initialize workspace config (aih workspace --git)";
 
 function repoIgnorePattern(repo: string): string {
