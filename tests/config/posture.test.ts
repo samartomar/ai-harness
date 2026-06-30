@@ -52,6 +52,18 @@ describe("gradeVerdict", () => {
     expect(gradeVerdict("warn", "risk-gates", "enterprise")).toBe("warn");
     expect(gradeVerdict("allow", "secrets", "enterprise")).toBe("allow");
   });
+
+  it("hard-blocks proven trust danger at every posture", () => {
+    expect(gradeVerdict("warn", "trust-danger", "vibe")).toBe("deny");
+    expect(gradeVerdict("warn", "trust-danger", "team")).toBe("deny");
+    expect(gradeVerdict("warn", "trust-danger", "enterprise")).toBe("deny");
+  });
+
+  it("keeps trust origin advisory at vibe/team and blocking at enterprise", () => {
+    expect(gradeVerdict("warn", "trust-origin", "vibe")).toBe("warn");
+    expect(gradeVerdict("warn", "trust-origin", "team")).toBe("warn");
+    expect(gradeVerdict("warn", "trust-origin", "enterprise")).toBe("deny");
+  });
 });
 
 describe("resolvePosture", () => {
