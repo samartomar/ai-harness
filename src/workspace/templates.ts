@@ -1,12 +1,13 @@
 import { lines } from "../internals/render.js";
 
 /** The workspace marker — lets `aih doctor` recognize a multi-repo workspace root. */
-export function workspaceMarker(repos: string[], dir: string): unknown {
+export function workspaceMarker(repos: string[], dir: string, git = false): unknown {
   return {
     workspaceType: "multi-repo",
     graphScope: "combined-child-repos",
     contextDir: dir,
     repos,
+    ...(git ? { git: true } : {}),
     generatedBy: "aih workspace",
   };
 }

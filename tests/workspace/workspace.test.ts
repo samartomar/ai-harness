@@ -250,6 +250,8 @@ describe("workspace — write-once executor behavior", () => {
     const ctx = makeCtx({ git: true }, true, run);
 
     await executePlan(await command.plan(ctx), ctx);
+    ran.length = 0;
+    await executePlan(await command.plan(ctx), ctx);
 
     const ignore = readFileSync(join(parent, ".gitignore"), "utf8");
     expect(ignore.match(/^service-api\/$/gm)).toHaveLength(1);
