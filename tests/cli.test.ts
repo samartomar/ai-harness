@@ -17,9 +17,14 @@ describe("CLI program", () => {
     expect(READONLY).toHaveLength(3);
   });
 
-  it("registers workspace snapshot and plan subcommands", () => {
+  it("registers workspace acquisition, snapshot, and plan subcommands", () => {
     const workspace = buildProgram().commands.find((c) => c.name() === "workspace");
-    expect(workspace?.commands.map((c) => c.name()).sort()).toEqual(["plan", "snapshot"]);
+    expect(workspace?.commands.map((c) => c.name()).sort()).toEqual(["add", "plan", "snapshot"]);
+  });
+
+  it("registers trust scan as a nested command", () => {
+    const trust = buildProgram().commands.find((c) => c.name() === "trust");
+    expect(trust?.commands.map((c) => c.name())).toContain("scan");
   });
 
   it("parses a dry-run capability invocation without throwing", async () => {
