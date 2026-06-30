@@ -260,6 +260,28 @@ describe("command confidence", () => {
     expect(projectContractDoc("ai-coding", c)).toContain("crates/worker");
     expect(projectContractDoc("ai-coding", c)).toContain("cargo clippy");
   });
+
+  it("emits AWS CDK verbs as inferred contract commands", async () => {
+    writeFileSync(
+      join(dir, "package.json"),
+      JSON.stringify({
+        name: "infra",
+        scripts: { test: "vitest run" },
+        dependencies: { "aws-cdk-lib": "^2" },
+        devDependencies: { vitest: "^1" },
+      }),
+    );
+    writeFileSync(join(dir, "package-lock.json"), "{}\n");
+    writeFileSync(join(dir, "cdk.json"), '{ "app": "node bin/app.js" }\n');
+
+    const c = await synth();
+
+    expect(c.commands.cdkSynth).toEqual({ value: "npx cdk synth", confidence: "inferred" });
+    expect(c.commands.cdkDiff).toEqual({ value: "npx cdk diff", confidence: "inferred" });
+    expect(c.commands.cdkDeploy).toEqual({ value: "npx cdk deploy", confidence: "inferred" });
+    expect(c.knownGaps.some((g) => g.includes("npx cdk deploy"))).toBe(true);
+    expect(projectContractDoc("ai-coding", c)).toContain("cdk deploy");
+  });
 });
 
 describe("build/start strict-omit (PR 1A correction)", () => {

@@ -331,6 +331,11 @@ describe("scanRepo — other stacks", () => {
       expect.arrayContaining(["Docker", "Kubernetes/Helm", "Terraform", "AWS CDK"]),
     );
     expect(s.cloud).toContain("AWS");
+    expect(s.deploymentCommands).toEqual({
+      cdkSynth: "npx cdk synth",
+      cdkDiff: "npx cdk diff",
+      cdkDeploy: "npx cdk deploy",
+    });
   });
 
   it("excludes node_modules and vendored/generated dirs", () => {

@@ -234,7 +234,7 @@ const FIXTURES: CoverageFixture[] = [
     id: "node-typescript-daily-stack",
     ecosystem: "Node/TypeScript daily stack",
     role: "lock",
-    note: "Covered baseline: npm, TS, Angular/Vue/React, Express, PostgreSQL, and AWS CDK labels stay good; do not enhance Node here. Optional gap: CDK verbs (synth/deploy/diff) are not emitted.",
+    note: "Covered baseline: npm, TS, Angular/Vue/React, Express, PostgreSQL, and AWS CDK labels stay good; do not enhance Node here. CDK verbs are emitted as inferred commands.",
     seed: seedNodeDailyStack,
     expected: {
       languages: ["TypeScript/Node.js"],
