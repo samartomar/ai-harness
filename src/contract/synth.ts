@@ -29,21 +29,27 @@ function toCommand(value: string | undefined, detectedForm: string): ContractCom
 }
 
 /**
- * STRICT grader for `build`/`start`: emit ONLY a DECLARED npm script (`detected`),
- * else OMIT. A language-derived build (`go build ./...`, `./gradlew build`, `dotnet
- * build`, …) is deliberately NOT emitted in Phase 1 — it is undeclared, and rendered
- * into `project.md`/`setup.md` it reads as an INVENTED command (a weak model won't bind
- * it to a separate `knownGaps` caveat), weakening the contract's "don't invent
- * commands" promise. The Phase-2 `verified` tier runs the candidate and promotes a real
- * one. This is the stakes-based asymmetry vs {@link toCommand}: a suggested test/lint is
- * low-harm; a suggested build/start is not. (`scanRepo` derives no `start` default
- * anyway, so `start` is already declared-or-omit.)
+ * STRICT grader for `start`: emit ONLY a DECLARED npm script (`detected`), else
+ * OMIT. `scanRepo` derives no `start` default, so `start` is declared-or-omit.
  */
 function toDeclaredCommand(
   value: string | undefined,
   detectedForm: string,
 ): ContractCommand | undefined {
   return value === detectedForm ? { value, confidence: "detected" } : undefined;
+}
+
+/**
+ * Conservative build grader. Node builds stay declared-only; Rust Cargo builds are
+ * a manifest-native command with a single canonical form, so Wave 2 records them as
+ * `inferred` with a known-gap verification caveat. Other language defaults remain
+ * omitted until command verification can promote them.
+ */
+function toBuildCommand(value: string | undefined): ContractCommand | undefined {
+  if (value === undefined) return undefined;
+  if (value === "npm run build") return { value, confidence: "detected" };
+  if (value === "cargo build") return { value, confidence: "inferred" };
+  return undefined;
 }
 
 /** Pure size bucket over the tracked-file count, with a monorepo floor. */
@@ -145,7 +151,7 @@ export async function synthesizeContract(
 
   const commands = {
     test: toCommand(stack.testRunner, "npm test"),
-    build: toDeclaredCommand(stack.buildCommand, "npm run build"),
+    build: toBuildCommand(stack.buildCommand),
     lint: toCommand(stack.lintCommand, "npm run lint"),
     start: toDeclaredCommand(stack.startCommand, "npm start"),
   };

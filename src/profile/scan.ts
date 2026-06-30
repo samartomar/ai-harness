@@ -23,7 +23,7 @@ export interface RepoStack {
   databases: string[];
   /** Deployment targets (Docker / Kubernetes-Helm / Terraform / Serverless Framework / …). */
   deployment: string[];
-  /** Node package manager from the lockfile, if any (npm/pnpm/yarn/bun). */
+  /** Primary package manager from manifest/lockfile signals, if any. */
   packageManager?: string;
   /** True when TypeScript is actually present (tsconfig.json or a .ts/.tsx source). */
   hasTypeScript: boolean;
@@ -562,6 +562,7 @@ function synthesize(raw: Raw): RepoStack {
     } else if (languages.includes("Rust")) {
       testRunner = "cargo test";
       buildCommand = "cargo build";
+      lintCommand = "cargo clippy";
     } else if (languages.includes("Python")) {
       testRunner = derivePythonTest(raw);
       lintCommand = derivePythonLint(raw);
@@ -600,7 +601,7 @@ function synthesize(raw: Raw): RepoStack {
   );
   const packageManager = pkg
     ? raw.packageManager
-    : (raw.packageManager ?? pythonPackageManager(raw));
+    : (raw.packageManager ?? rustPackageManager(languages) ?? pythonPackageManager(raw));
   // Browser test runners (Karma's `ng test`, Cypress) launch a real browser and HANG in a
   // headless/agent context — surface it so synth can warn the next agent (the real trap).
   const browserTest =
@@ -634,6 +635,10 @@ function pythonPackageManager(raw: Raw): string | undefined {
   if (raw.pythonManagers.has("pipenv")) return "pipenv";
   if (raw.pythonManagers.has("pip")) return "pip";
   return undefined;
+}
+
+function rustPackageManager(languages: readonly string[]): string | undefined {
+  return languages.includes("Rust") ? "cargo" : undefined;
 }
 
 function derivePythonTest(raw: Raw): string | undefined {

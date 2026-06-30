@@ -8,7 +8,7 @@ Wave-2 target order from this matrix: Python, then Rust, then polyglot coexisten
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | Node/TypeScript daily stack | lock | good | good | good | good | good | good | good | good | Covered baseline: npm, TS, Angular/Vue/React, Express, PostgreSQL, and AWS CDK labels stay good; do not enhance Node here. Optional gap: CDK verbs (synth/deploy/diff) are not emitted. |
 | Python pyproject | wave-2-target | good | good | good | good | good | good | good | good | Python primary-stack coverage now detects Poetry plus manifest-backed pytest/ruff when no root package.json exists; polyglot Python commands wait for per-workspace command routing. |
-| Rust Cargo | wave-2-target | good | good | good | good | none | good | none | good | Cargo test/build defaults are visible, but lint/fmt verbs (cargo clippy/fmt) are not detected. |
+| Rust Cargo | wave-2-target | good | good | good | good | good | good | good | good | Cargo package manager plus test/build/clippy defaults should be visible; rustfmt remains outside the current single lint-command slot. |
 | Go module | watch | good | good | good | good | none | good | none | good | Default test/build commands are present; framework, lint, DB, and workspace detail are thin. |
 | Java Maven | watch | good | good | good | good | none | good | none | good | Maven defaults are present; framework, lint, DB, and richer build-tool metadata are not. |
 | .NET | watch | good | good | good | good | none | good | none | good | .NET default test/build commands are present; framework, lint, DB, and solution detail are thin. |
@@ -18,7 +18,7 @@ Wave-2 target order from this matrix: Python, then Rust, then polyglot coexisten
 
 - `node-typescript-daily-stack`: lang=TypeScript/Node.js; fw=AWS CDK+Express+React+Vue+Angular; test=npm test; build=npm run build; lint=npm run lint; db=PostgreSQL; pm=npm; workspace=none
 - `python-pyproject`: lang=Python; fw=FastAPI; test=pytest; build=none; lint=ruff check .; db=PostgreSQL+Redis; pm=poetry; workspace=none
-- `rust-cargo`: lang=Rust; fw=none; test=cargo test; build=cargo build; lint=none; db=none; pm=none; workspace=none
+- `rust-cargo`: lang=Rust; fw=none; test=cargo test; build=cargo build; lint=cargo clippy; db=none; pm=cargo; workspace=none
 - `go-module`: lang=Go; fw=none; test=go test ./...; build=go build ./...; lint=none; db=none; pm=none; workspace=none
 - `java-maven`: lang=Java/Maven; fw=none; test=mvn test; build=mvn clean package; lint=none; db=none; pm=none; workspace=none
 - `dotnet`: lang=.NET; fw=none; test=dotnet test; build=dotnet build; lint=none; db=none; pm=none; workspace=none
