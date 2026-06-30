@@ -17,6 +17,11 @@ describe("CLI program", () => {
     expect(READONLY).toHaveLength(3);
   });
 
+  it("registers workspace snapshot and plan subcommands", () => {
+    const workspace = buildProgram().commands.find((c) => c.name() === "workspace");
+    expect(workspace?.commands.map((c) => c.name()).sort()).toEqual(["plan", "snapshot"]);
+  });
+
   it("parses a dry-run capability invocation without throwing", async () => {
     const program = buildProgram();
     program.configureOutput({ writeOut: () => {}, writeErr: () => {} });

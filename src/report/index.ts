@@ -33,8 +33,9 @@ import { contextBloatDigest, loadGroupDigest } from "./render.js";
 import { reportHtmlV4 } from "./v4.js";
 import { reportHtmlV9 } from "./v9.js";
 import { supportDigest, v9ExtraDigests } from "./v9-panels.js";
+import { workspaceManifestExists, workspaceReportDigest } from "./workspace.js";
 
-type Scope = "local" | "org";
+type Scope = "local" | "org" | "workspace";
 type Format = "terminal" | "md" | "html";
 
 /** Parse `--token-budget` (or its `--budget` alias), falling back to the default. */
@@ -129,6 +130,9 @@ function formatOf(ctx: PlanContext): Format {
 function artifactPath(ctx: PlanContext, scope: Scope, format: Format): string {
   const out = ctx.options.out;
   if (typeof out === "string" && out.length > 0) return out;
+  if (scope === "workspace") {
+    return join(".aih", `workspace-report.${format === "html" ? "html" : "md"}`);
+  }
   return join(".aih", "reports", `${scope}-report.${format === "html" ? "html" : "md"}`);
 }
 
@@ -189,6 +193,14 @@ async function buildReport(ctx: PlanContext): Promise<Built> {
       scope: "org",
       title: "aih report — org usage",
       digests: [digest(orgHeadline(data), orgDigest(data), data)],
+    };
+  }
+  if (ctx.options.workspace === true || workspaceManifestExists(ctx.root)) {
+    const d = await workspaceReportDigest(ctx);
+    return {
+      scope: "workspace",
+      title: "aih report — workspace rollup",
+      digests: d ? [d] : [digest("Workspace rollup — ERROR", "No .aih-workspace.json found.", {})],
     };
   }
   const budget = budgetOf(ctx);
@@ -298,7 +310,7 @@ async function reportPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
         // v9 binds extra v9-only digests (drift, MCP servers/egress, support) so the
         // shared localPanels — and thus legacy/v4 output — stay byte-identical.
         const extra = [
-          ...(await v9ExtraDigests(ctx)),
+          ...(built.scope === "local" ? await v9ExtraDigests(ctx) : []),
           supportDigest(reportSupportTemplates(ctx, advisoryChecks)),
         ];
         content = reportHtmlV9(built.title, [...built.digests, ...extra], { refresh, demo });
@@ -399,6 +411,11 @@ export const command: CommandSpec = {
       flags: "--team",
       description:
         "include in-progress team branches (gh → git ls-remote → fetched; opt-in network)",
+    },
+    {
+      flags: "--workspace",
+      description:
+        "force federated workspace rollup mode (auto-detected when .aih-workspace.json exists)",
     },
     {
       flags: "--open",

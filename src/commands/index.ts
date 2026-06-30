@@ -26,7 +26,11 @@ import { command as tools } from "../tools/index.js";
 import { command as track } from "../track/index.js";
 import { command as usage } from "../usage/index.js";
 import { command as vdi } from "../vdi/index.js";
-import { command as workspace } from "../workspace/index.js";
+import {
+  command as workspace,
+  taskPlanCommand as workspacePlan,
+  snapshotCommand as workspaceSnapshot,
+} from "../workspace/index.js";
 import { runCapability } from "./run.js";
 
 /** Capability commands (repo/workstation mutators), dry-run by default. */
@@ -111,5 +115,41 @@ export function registerCommands(program: Command): void {
         process.exitCode = await runCapability(spec, command);
       },
     );
+    if (spec.name === "workspace") {
+      const snap = cmd
+        .command(workspaceSnapshot.name)
+        .description(workspaceSnapshot.summary)
+        .argument("[root]", "target workspace root (defaults to --root or cwd)");
+      addSharedFlags(snap);
+      for (const o of workspaceSnapshot.options ?? []) {
+        if (o.default !== undefined) snap.option(o.flags, o.description, o.default);
+        else snap.option(o.flags, o.description);
+      }
+      snap.action(
+        async (
+          _rootArg: string | undefined,
+          _options: Record<string, unknown>,
+          command: Command,
+        ) => {
+          process.exitCode = await runCapability(workspaceSnapshot, command);
+        },
+      );
+
+      const task = cmd
+        .command(workspacePlan.name)
+        .description(workspacePlan.summary)
+        .argument("<task>", "workspace task description");
+      addSharedFlags(task);
+      for (const o of workspacePlan.options ?? []) {
+        if (o.default !== undefined) task.option(o.flags, o.description, o.default);
+        else task.option(o.flags, o.description);
+      }
+      task.action(async (taskText: string, _options: Record<string, unknown>, command: Command) => {
+        process.exitCode = await runCapability(workspacePlan, command, {
+          positionalRoot: false,
+          optionOverrides: { task: taskText },
+        });
+      });
+    }
   }
 }

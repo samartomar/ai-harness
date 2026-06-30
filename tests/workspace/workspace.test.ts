@@ -7,7 +7,7 @@ import type { Action, PlanContext, ProbeAction, WriteAction } from "../../src/in
 import { fakeRunner } from "../../src/internals/proc.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 import { detectChildRepos } from "../../src/workspace/detect.js";
-import { command } from "../../src/workspace/index.js";
+import { command, snapshotCommand, taskPlanCommand } from "../../src/workspace/index.js";
 
 let parent: string;
 beforeEach(() => {
@@ -80,6 +80,8 @@ describe("workspace.plan — generated artifacts", () => {
     const w = writesByPath((await command.plan(makeCtx())).actions);
     expect(w.has(".aih-workspace.json")).toBe(true);
     expect([...w.keys()].some((p) => p.endsWith(".code-workspace"))).toBe(true);
+    expect(w.has("ai-coding/workspace-router.md")).toBe(true);
+    expect(w.has("ai-coding/workspace-contracts.md")).toBe(true);
     expect(w.has("ai-coding/cross-repo-architecture.md")).toBe(true);
     expect(w.has("ai-coding/repo-discipline.md")).toBe(true);
     expect(w.has("CLAUDE.md")).toBe(true);
@@ -196,11 +198,56 @@ describe("workspace.plan — generated artifacts", () => {
     expect(arch?.once).toBe(true);
   });
 
+  it("generates a federated workspace router that links child rule routers", async () => {
+    child("ui");
+    child("backend");
+    const w = writesByPath((await command.plan(makeCtx())).actions);
+    const router = w.get("ai-coding/workspace-router.md")?.contents ?? "";
+
+    expect(router).toContain("This is a federated workspace, not a monorepo.");
+    expect(router).toContain("| backend | backend/ |  | backend/ai-coding/RULE_ROUTER.md |");
+    expect(router).toContain("| ui | ui/ |  | ui/ai-coding/RULE_ROUTER.md |");
+    expect(router).toContain("Before editing a child repo, read that child repo's router first.");
+  });
+
+  it("generates parent-owned workspace contract docs from declared manifest edges", async () => {
+    child("ui");
+    child("backend");
+    writeFileSync(
+      join(parent, ".aih-workspace.json"),
+      JSON.stringify(
+        {
+          repos: ["ui", "backend"],
+          edges: [
+            {
+              id: "ui-backend-api",
+              from: "ui",
+              to: "backend",
+              kind: "api-contract",
+              contractPath: "backend/openapi.yaml",
+              consumerPath: "ui/src/api",
+            },
+          ],
+        },
+        null,
+        2,
+      ),
+    );
+
+    const w = writesByPath((await command.plan(makeCtx())).actions);
+    const contracts = w.get("ai-coding/workspace-contracts.md")?.contents ?? "";
+
+    expect(contracts).toContain("| ui-backend-api | ui | backend | api-contract |");
+    expect(contracts).toContain("backend/openapi.yaml");
+    expect(contracts).toContain("No child files are modified by this workspace contract document.");
+  });
+
   it("honors --context-dir for the canon paths", async () => {
     child("ui");
     const w = writesByPath((await command.plan({ ...makeCtx(), contextDir: "ws-canon" })).actions);
     expect(w.has("ws-canon/cross-repo-architecture.md")).toBe(true);
     expect(w.has("ai-coding/cross-repo-architecture.md")).toBe(false);
+    expect(w.get("ws-canon/workspace-router.md")?.contents).toContain("ui/ws-canon/RULE_ROUTER.md");
   });
 
   it("adds a per-child scaffolded probe (skip until the child is init'd)", async () => {
@@ -211,6 +258,96 @@ describe("workspace.plan — generated artifacts", () => {
     expect(probeAction).toBeDefined();
     const res = await probeAction?.run(makeCtx());
     expect(res?.verdict).toBe("skip"); // not scaffolded yet
+  });
+});
+
+describe("workspace snapshot command", () => {
+  it("writes a local snapshot of child branches, SHAs, and dirty state", async () => {
+    child("ui");
+    writeFileSync(
+      join(parent, ".aih-workspace.json"),
+      JSON.stringify({ repos: ["ui"], contextDir: "ai-coding" }),
+    );
+    const run = fakeRunner((argv) => {
+      if (argv[0] !== "git") return undefined;
+      const tail = argv.slice(3).join(" ");
+      if (tail === "rev-parse --is-inside-work-tree") return { stdout: "true\n" };
+      if (tail === "rev-parse --abbrev-ref HEAD") return { stdout: "main\n" };
+      if (tail === "rev-parse --short HEAD") return { stdout: "abc123\n" };
+      if (tail === "status --porcelain") return { stdout: "" };
+      return undefined;
+    });
+
+    const actions = (await snapshotCommand.plan(makeCtx({ label: "known good" }, false, run)))
+      .actions;
+    const writes = writesByPath(actions);
+    const snapshot = [...writes.values()].find((w) =>
+      w.path.replace(/\\/g, "/").startsWith(".aih/workspace-snapshots/"),
+    );
+
+    expect(snapshot?.path).toMatch(/known-good\.json$/);
+    expect(snapshot?.json).toMatchObject({
+      schemaVersion: 1,
+      label: "known good",
+      repos: [{ id: "ui", path: "ui", branch: "main", sha: "abc123", dirty: false }],
+    });
+    expect(writes.get(".gitignore")?.contents).toContain(".aih/");
+  });
+
+  it("--lock writes the shared workspace lock under the context dir", async () => {
+    child("ui");
+    writeFileSync(
+      join(parent, ".aih-workspace.json"),
+      JSON.stringify({ repos: ["ui"], contextDir: "ai-coding" }),
+    );
+    const actions = (await snapshotCommand.plan(makeCtx({ lock: true }))).actions;
+
+    expect(writesByPath(actions).has("ai-coding/workspace-lock.json")).toBe(true);
+  });
+});
+
+describe("workspace plan command", () => {
+  it("writes a multi-repo task plan under .aih/workspace-plans only under apply", async () => {
+    child("ui");
+    child("backend");
+    writeFileSync(
+      join(parent, ".aih-workspace.json"),
+      JSON.stringify({
+        contextDir: "ai-coding",
+        repos: [
+          { id: "ui", path: "ui", kind: "frontend" },
+          { id: "backend", path: "backend", kind: "api" },
+        ],
+        edges: [
+          {
+            id: "ui-backend-api",
+            from: "ui",
+            to: "backend",
+            kind: "api-contract",
+            contractPath: "backend/openapi.yaml",
+            consumerPath: "ui/src/api",
+          },
+        ],
+      }),
+    );
+
+    const actions = (
+      await taskPlanCommand.plan(makeCtx({ task: "change login API and update UI" }))
+    ).actions;
+    const writes = writesByPath(actions);
+    const planWrite = [...writes.values()].find((w) =>
+      w.path.replace(/\\/g, "/").startsWith(".aih/workspace-plans/"),
+    );
+    const text = planWrite?.contents ?? "";
+
+    expect(planWrite?.path).toMatch(/change-login-api-and-update-ui\.md$/);
+    expect(text).toContain("# Workspace Plan");
+    expect(text).toContain("## Read Order");
+    expect(text).toContain("backend/ai-coding/RULE_ROUTER.md");
+    expect(text).toContain("ui/ai-coding/RULE_ROUTER.md");
+    expect(text).toContain("ui-backend-api");
+    expect(text).toContain("## Rollback");
+    expect(writes.get(".gitignore")?.contents).toContain(".aih/");
   });
 });
 
