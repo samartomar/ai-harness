@@ -82,6 +82,22 @@ export interface CliCoverageModel {
 
 const VALID = new Set<string>(SUPPORTED_CLIS);
 
+function isWorkspaceRoot(ctx: PlanContext): boolean {
+  const raw = readIfExists(join(ctx.root, ".aih-workspace.json"));
+  if (raw === undefined) return false;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return (
+      typeof parsed === "object" &&
+      parsed !== null &&
+      (parsed as { workspaceType?: unknown }).workspaceType === "multi-repo" &&
+      (parsed as { generatedBy?: unknown }).generatedBy === "aih workspace"
+    );
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Resolve the target CLI set AND where it came from — marker-authoritative, the
  * same precedence `doctor` honors. The committed `.aih-config.json` wins so a
@@ -116,8 +132,59 @@ export function resolveTargetSet(ctx: PlanContext): { targeted: Cli[]; source: T
   return { targeted: ["claude"], source: "default-claude" };
 }
 
+function workspaceBootloaderCell(ctx: PlanContext, cli: Cli): CliCell {
+  const paths = entry(cli).bootloaders;
+  const label = paths.join(" + ");
+  const missing = paths.filter((rel) => readIfExists(join(ctx.root, rel)) === undefined);
+  if (missing.length > 0) {
+    return {
+      state: "missing",
+      path: label,
+      detail: `not found: ${missing.join(", ")}`,
+      fix: "aih workspace --apply --git",
+    };
+  }
+
+  const workspaceDocs = [
+    `${ctx.contextDir}/cross-repo-architecture.md`,
+    `${ctx.contextDir}/repo-discipline.md`,
+  ];
+  const missingTargets = workspaceDocs.filter((rel) => !existsSync(join(ctx.root, rel)));
+  if (missingTargets.length > 0) {
+    return {
+      state: "missing",
+      path: label,
+      detail: `workspace target missing: ${missingTargets.join(", ")}`,
+      fix: "aih workspace --apply --git",
+    };
+  }
+
+  const missingPointers = paths.flatMap((rel) => {
+    const text = readIfExists(join(ctx.root, rel)) ?? "";
+    return workspaceDocs
+      .filter((docPath) => !text.includes(docPath))
+      .map((docPath) => `${rel} -> ${docPath}`);
+  });
+  if (missingPointers.length > 0) {
+    return {
+      state: "missing",
+      path: label,
+      detail: `workspace doc pointer missing: ${missingPointers.join(", ")}`,
+      fix: "aih workspace --apply --git",
+    };
+  }
+
+  return {
+    state: "wired",
+    path: label,
+    detail: `auto-loads ${label}; workspace docs reachable`,
+  };
+}
+
 /** Bootloader cell: every declared bootloader present, in-sync, and routing to the router. */
 function bootloaderCell(ctx: PlanContext, cli: Cli): CliCell {
+  if (isWorkspaceRoot(ctx)) return workspaceBootloaderCell(ctx, cli);
+
   const paths = entry(cli).bootloaders;
   const label = paths.join(" + ");
   const sharedBody = sharedCanonicalBlockBody(ctx.contextDir).trim();
@@ -231,6 +298,12 @@ function settingsCell(ctx: PlanContext, cli: Cli): CliCell {
   const e = entry(cli);
   const s = e.settings;
   if (!s) return { state: "na", detail: `${e.label} has no aih-managed settings file` };
+  if (isWorkspaceRoot(ctx)) {
+    return {
+      state: "na",
+      detail: `${e.label} workspace parent uses the bridge repo; child repos own per-repo settings`,
+    };
+  }
   if (!s.writable) {
     return { state: "manual", path: s.configPath, detail: `manual — ${s.configPath}` };
   }

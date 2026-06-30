@@ -40,6 +40,21 @@ function scaffoldCanon(): void {
   write("ai-coding/rules/agent-behavior-core.md", "# core\n");
 }
 
+function scaffoldWorkspaceCanon(): void {
+  write(
+    ".aih-workspace.json",
+    JSON.stringify({
+      workspaceType: "multi-repo",
+      contextDir: "ai-coding",
+      repos: ["service-api"],
+      git: true,
+      generatedBy: "aih workspace",
+    }),
+  );
+  write("ai-coding/cross-repo-architecture.md", "# Cross-repo architecture\n");
+  write("ai-coding/repo-discipline.md", "# Repo discipline\n");
+}
+
 const checkOk = (l: ReturnType<typeof loadabilityFor>, name: string) =>
   l.checks.find((c) => c.name === name)?.ok;
 
@@ -91,6 +106,29 @@ describe("hygiene + router chain", () => {
     scaffoldCanon();
     write("CLAUDE.md", "RULE_ROUTER.md\n");
     expect(loadabilityFor(ctx(), "claude").verdict).toBe("loads");
+  });
+
+  it("a workspace bootloader loads through workspace canon docs, not repo RULE_ROUTER", () => {
+    scaffoldWorkspaceCanon();
+    write("CLAUDE.md", "`ai-coding/cross-repo-architecture.md`\n`ai-coding/repo-discipline.md`\n");
+
+    const l = loadabilityFor(ctx(), "claude");
+
+    expect(l.verdict).toBe("loads");
+    expect(checkOk(l, "router-chain")).toBe(true);
+    expect(l.checks.find((c) => c.name === "router-chain")?.detail).toContain("workspace");
+  });
+
+  it("a workspace bootloader fails when a workspace canon target is missing", () => {
+    scaffoldWorkspaceCanon();
+    write("CLAUDE.md", "`ai-coding/cross-repo-architecture.md`\n");
+    rmSync(join(dir, "ai-coding", "repo-discipline.md"));
+
+    const l = loadabilityFor(ctx(), "claude");
+
+    expect(l.verdict).toBe("wontLoad");
+    expect(checkOk(l, "router-chain")).toBe(false);
+    expect(l.checks.find((c) => c.name === "router-chain")?.detail).toContain("repo-discipline.md");
   });
 });
 
