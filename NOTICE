@@ -1,0 +1,11 @@
+AI Harness (aih)
+Copyright 2026 The AI Harness (aih) authors
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+Portions of aih re-express per-tool data models and concepts from other
+open-source projects (no source code was copied). Those attributions are
+recorded inline in the relevant source files — for example
+src/internals/cli-registry.ts (@canonical/harnesses registry shape; RevealUI
+degradation vocabulary) and src/internals/sarif.ts (@razroo/isolint SARIF
+envelope shape).
