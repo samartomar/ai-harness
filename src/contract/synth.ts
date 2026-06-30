@@ -13,6 +13,7 @@ const SMALL_REPO_FILE_CEILING = 100;
 
 /** The canonical command shape carried per slot in the contract. */
 type ContractCommand = { value: string; confidence: Confidence };
+type ContractCommands = ProjectContract["commands"];
 
 /**
  * Tier grader for `test`/`lint`. The tier is LATENT in scanRepo's derivers:
@@ -52,6 +53,36 @@ function toBuildCommand(value: string | undefined): ContractCommand | undefined 
   return undefined;
 }
 
+function contractCommands(stack: {
+  testRunner?: string;
+  buildCommand?: string;
+  lintCommand?: string;
+  startCommand?: string;
+}): ContractCommands {
+  return {
+    test: toCommand(stack.testRunner, "npm test"),
+    build: toBuildCommand(stack.buildCommand),
+    lint: toCommand(stack.lintCommand, "npm run lint"),
+    start: toDeclaredCommand(stack.startCommand, "npm start"),
+  };
+}
+
+function contractWorkspaces(
+  stack: RepoStack,
+): ProjectContract["workspaces"] | undefined {
+  const entries = Object.entries(stack.workspaces ?? {}).sort(([a], [b]) => a.localeCompare(b));
+  if (entries.length === 0) return undefined;
+  const workspaces: NonNullable<ProjectContract["workspaces"]> = {};
+  for (const [path, ws] of entries) {
+    workspaces[path] = {
+      languages: ws.languages,
+      ...(ws.packageManager ? { packageManager: ws.packageManager } : {}),
+      commands: contractCommands(ws),
+    };
+  }
+  return workspaces;
+}
+
 /** Pure size bucket over the tracked-file count, with a monorepo floor. */
 function scaleClass(trackedFiles: number | undefined, isMonorepo: boolean): ScaleClass {
   if (trackedFiles === undefined) return "unknown";
@@ -86,6 +117,7 @@ function deriveKnownGaps(
   commands: Record<string, ContractCommand | undefined>,
   browserTest: boolean,
   virtualEnvPaths: readonly string[] = [],
+  workspaces: ProjectContract["workspaces"] = undefined,
 ): string[] {
   const gaps: string[] = [];
 
@@ -130,6 +162,17 @@ function deriveKnownGaps(
     }
   }
 
+  for (const [path, workspace] of Object.entries(workspaces ?? {})) {
+    for (const slot of ["test", "build", "lint", "start"] as const) {
+      const cmd = workspace.commands[slot];
+      if (cmd?.confidence === "inferred") {
+        gaps.push(
+          `unconfirmed workspace \`${path}\` \`${cmd.value}\` (${slot} inferred, not declared) — verify it runs`,
+        );
+      }
+    }
+  }
+
   return gaps;
 }
 
@@ -149,12 +192,8 @@ export async function synthesizeContract(
   const trackedFiles = await trackedFileCount(ctx);
   const committed = await gitCommittedSet(ctx);
 
-  const commands = {
-    test: toCommand(stack.testRunner, "npm test"),
-    build: toBuildCommand(stack.buildCommand),
-    lint: toCommand(stack.lintCommand, "npm run lint"),
-    start: toDeclaredCommand(stack.startCommand, "npm start"),
-  };
+  const commands = contractCommands(stack);
+  const workspaces = contractWorkspaces(stack);
 
   const secrets = scanSecrets(root);
   const targets = (ctx.targets ?? readAihConfig(root)?.targets ?? []).map((t) => String(t));
@@ -172,6 +211,7 @@ export async function synthesizeContract(
     packageManager: stack.packageManager,
     entrypoints: stack.entryPoints,
     commands,
+    ...(workspaces ? { workspaces } : {}),
     scale: {
       trackedFiles,
       class: scaleClass(trackedFiles, stack.isMonorepo),
@@ -185,6 +225,7 @@ export async function synthesizeContract(
       commands,
       stack.browserTest,
       stack.virtualEnvPaths,
+      workspaces,
     ),
   };
 }
@@ -214,6 +255,11 @@ function isPortableRel(p: string): boolean {
  * fail closed on any hit. Commands and CLI target names are not paths and are skipped.
  */
 export function unportablePaths(contract: ProjectContract): string[] {
-  const candidates = [contract.contextDir, ...contract.entrypoints, ...contract.sensitivePaths];
+  const candidates = [
+    contract.contextDir,
+    ...contract.entrypoints,
+    ...contract.sensitivePaths,
+    ...Object.keys(contract.workspaces ?? {}),
+  ];
   return candidates.filter((p) => !isPortableRel(p));
 }

@@ -24,11 +24,11 @@ export interface LanguageCoverageRow {
   detected: {
     languages: string[];
     frameworks: string[];
-    test?: string;
-    build?: string;
-    lint?: string;
+    test: string[];
+    build: string[];
+    lint: string[];
     db: string[];
-    packageManager?: string;
+    packageManager: string[];
     workspace?: string;
   };
   note: string;
@@ -71,21 +71,32 @@ function gradeList(actual: readonly string[], expected: readonly string[] = []):
   return present > 0 ? "partial" : "none";
 }
 
-function gradeOptional(
-  actual: string | undefined,
-  expected: readonly string[] = [],
-): CoverageGrade {
-  if (expected.length === 0) return actual === undefined ? "good" : "partial";
-  if (actual === undefined) return "none";
-  if (!expected.includes(actual)) return "partial";
-  return expected.length === 1 ? "good" : "partial";
-}
-
 function gradeWorkspace(stack: RepoStack, expected: readonly string[] = []): CoverageGrade {
   if (expected.length === 0) return stack.isMonorepo ? "partial" : "good";
   if (!stack.isMonorepo) return "none";
   if (stack.workspaceTool === undefined) return "partial";
   return expected.includes(stack.workspaceTool) ? "good" : "partial";
+}
+
+function commandValues(
+  stack: RepoStack,
+  field: "testRunner" | "buildCommand" | "lintCommand",
+): string[] {
+  return dedupe([
+    stack[field],
+    ...Object.values(stack.workspaces ?? {}).map((workspace) => workspace[field]),
+  ]);
+}
+
+function packageManagers(stack: RepoStack): string[] {
+  return dedupe([
+    stack.packageManager,
+    ...Object.values(stack.workspaces ?? {}).map((workspace) => workspace.packageManager),
+  ]);
+}
+
+function dedupe(values: Array<string | undefined>): string[] {
+  return [...new Set(values.filter((value): value is string => value !== undefined))];
 }
 
 function seedNodeDailyStack(root: string): void {
@@ -310,7 +321,7 @@ const FIXTURES: CoverageFixture[] = [
     id: "node-python-rust-polyglot",
     ecosystem: "Node + Python + Rust polyglot",
     role: "wave-2-target",
-    note: "Secondary languages now keep root Node commands while exposing per-workspace Python/Rust commands and package managers.",
+    note: "Secondary languages now keep root Node commands while exposing per-workspace commands and package managers for Python/Rust.",
     seed: seedPolyglot,
     expected: {
       languages: ["TypeScript/Node.js", "Python", "Rust"],
@@ -328,6 +339,10 @@ function runFixture(fixture: CoverageFixture): LanguageCoverageRow {
   try {
     fixture.seed(root);
     const stack = scanRepo(root, { maxDepth: 8, contextDir: "ai-coding" });
+    const tests = commandValues(stack, "testRunner");
+    const builds = commandValues(stack, "buildCommand");
+    const lints = commandValues(stack, "lintCommand");
+    const managers = packageManagers(stack);
     return {
       id: fixture.id,
       ecosystem: fixture.ecosystem,
@@ -335,21 +350,21 @@ function runFixture(fixture: CoverageFixture): LanguageCoverageRow {
       grades: {
         languages: gradeList(stack.languages, fixture.expected.languages),
         frameworks: gradeList(stack.frameworks, fixture.expected.frameworks),
-        test: gradeOptional(stack.testRunner, fixture.expected.test),
-        build: gradeOptional(stack.buildCommand, fixture.expected.build),
-        lint: gradeOptional(stack.lintCommand, fixture.expected.lint),
+        test: gradeList(tests, fixture.expected.test),
+        build: gradeList(builds, fixture.expected.build),
+        lint: gradeList(lints, fixture.expected.lint),
         db: gradeList(stack.databases, fixture.expected.db),
-        packageManager: gradeOptional(stack.packageManager, fixture.expected.packageManager),
+        packageManager: gradeList(managers, fixture.expected.packageManager),
         workspace: gradeWorkspace(stack, fixture.expected.workspace),
       },
       detected: {
         languages: stack.languages,
         frameworks: stack.frameworks,
-        test: stack.testRunner,
-        build: stack.buildCommand,
-        lint: stack.lintCommand,
+        test: tests,
+        build: builds,
+        lint: lints,
         db: stack.databases,
-        packageManager: stack.packageManager,
+        packageManager: managers,
         workspace: stack.workspaceTool,
       },
       note: fixture.note,
@@ -367,11 +382,11 @@ function detectedSummary(row: LanguageCoverageRow): string {
   const parts = [
     `lang=${row.detected.languages.join("+") || "none"}`,
     `fw=${row.detected.frameworks.join("+") || "none"}`,
-    `test=${row.detected.test ?? "none"}`,
-    `build=${row.detected.build ?? "none"}`,
-    `lint=${row.detected.lint ?? "none"}`,
+    `test=${row.detected.test.join("+") || "none"}`,
+    `build=${row.detected.build.join("+") || "none"}`,
+    `lint=${row.detected.lint.join("+") || "none"}`,
     `db=${row.detected.db.join("+") || "none"}`,
-    `pm=${row.detected.packageManager ?? "none"}`,
+    `pm=${row.detected.packageManager.join("+") || "none"}`,
     `workspace=${row.detected.workspace ?? "none"}`,
   ];
   return parts.join("; ");

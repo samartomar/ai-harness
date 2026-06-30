@@ -12,6 +12,21 @@ import { join, relative } from "node:path";
  * when no lint script/linter is present, so downstream hooks never reference a
  * script the repo doesn't have.
  */
+export interface WorkspaceStack {
+  /** Detected language(s) for this workspace/package root. */
+  languages: string[];
+  /** Workspace-local package manager, if one is derivable. */
+  packageManager?: string;
+  /** Workspace-local test command, when derivable from that workspace's manifest. */
+  testRunner?: string;
+  /** Workspace-local build command, when derivable from that workspace's manifest. */
+  buildCommand?: string;
+  /** Workspace-local lint command, when derivable from that workspace's manifest. */
+  lintCommand?: string;
+  /** Workspace-local start command, when declared by that workspace's manifest. */
+  startCommand?: string;
+}
+
 export interface RepoStack {
   /** Detected languages/runtimes, deduped, in first-seen order. */
   languages: string[];
@@ -47,6 +62,8 @@ export interface RepoStack {
   isMonorepo: boolean;
   /** Detected workspace tool (turbo/nx/pnpm/rush/lerna/bazel/maven/gradle/npm-yarn), if any. */
   workspaceTool?: string;
+  /** Per-workspace command/package facts keyed by repo-relative POSIX workspace path. */
+  workspaces?: Record<string, WorkspaceStack>;
   /** Local Python virtualenv directories found and excluded from source scanning. */
   virtualEnvPaths?: string[];
 }
@@ -61,6 +78,8 @@ export interface ScanOptions {
    * so a custom/visible context dir must be excluded dynamically.
    */
   contextDir?: string;
+  /** Internal: false when scanning one workspace root to avoid recursive workspace maps. */
+  includeWorkspaces?: boolean;
 }
 
 /** Directories never worth walking — build output, vendored deps, VCS metadata. */
@@ -181,6 +200,8 @@ interface Raw {
   workspaceSignals: Set<string>;
   /** Count of non-excluded package.json manifests seen during the walk. */
   manifestCount: number;
+  /** Manifest/toolchain roots seen during the walk, repo-relative POSIX paths. */
+  workspaceRoots: Set<string>;
   /** Build-tool wrappers present at the repo — prefer ./mvnw / ./gradlew when set. */
   hasMvnw: boolean;
   hasGradlew: boolean;
@@ -214,6 +235,7 @@ export function scanRepo(root: string, opts: ScanOptions): RepoStack {
     sawTsFile: false,
     workspaceSignals: new Set(),
     manifestCount: 0,
+    workspaceRoots: new Set(),
     hasMvnw: false,
     hasGradlew: false,
     hasEslintConfig: false,
@@ -230,7 +252,7 @@ export function scanRepo(root: string, opts: ScanOptions): RepoStack {
   const ctxTop = opts.contextDir?.split(/[/\\]/).find((s) => s.length > 0);
   if (ctxTop) excluded.add(ctxTop);
   walk(root, root, 0, Math.max(0, opts.maxDepth), raw, excluded);
-  return synthesize(raw);
+  return synthesize(root, raw, opts);
 }
 
 function walk(
@@ -258,7 +280,7 @@ function walk(
       if (!excluded.has(entry.name)) subdirs.push(entry.name);
       continue;
     }
-    if (entry.isFile() || entry.isSymbolicLink()) inspectFile(dir, entry.name, raw);
+    if (entry.isFile() || entry.isSymbolicLink()) inspectFile(root, dir, entry.name, raw);
   }
 
   if (depth >= maxDepth) return;
@@ -272,7 +294,7 @@ function isPythonVirtualEnvDir(parent: string, name: string): boolean {
   return name === "venv" && existsSync(join(parent, name, "pyvenv.cfg"));
 }
 
-function inspectFile(dir: string, name: string, raw: Raw): void {
+function inspectFile(root: string, dir: string, name: string, raw: Raw): void {
   const lower = name.toLowerCase();
 
   // Source-file extension signals (JS vs TS, Python, Go, …).
@@ -281,6 +303,7 @@ function inspectFile(dir: string, name: string, raw: Raw): void {
   switch (name) {
     case "package.json": {
       raw.manifestCount++;
+      rememberWorkspaceRoot(root, dir, raw);
       // Capture the shallowest package.json as the primary manifest; a `workspaces`
       // field on it marks an npm/yarn workspace monorepo (root only).
       if (!raw.pkg) {
@@ -338,13 +361,16 @@ function inspectFile(dir: string, name: string, raw: Raw): void {
       return;
     case "go.mod":
       push(raw.languages, "Go");
+      rememberWorkspaceRoot(root, dir, raw);
       return;
     case "Cargo.toml":
       push(raw.languages, "Rust");
+      rememberWorkspaceRoot(root, dir, raw);
       return;
     case "pyproject.toml":
     case "requirements.txt":
       push(raw.languages, "Python");
+      rememberWorkspaceRoot(root, dir, raw);
       detectPythonManifest(join(dir, name), name, raw);
       return;
     case "poetry.lock":
@@ -358,12 +384,14 @@ function inspectFile(dir: string, name: string, raw: Raw): void {
       return;
     case "pom.xml":
       push(raw.languages, "Java/Maven");
+      rememberWorkspaceRoot(root, dir, raw);
       // A <modules> reactor makes this a Maven multi-module monorepo.
       if (/<modules>/.test(safeRead(join(dir, name)))) raw.workspaceSignals.add("maven");
       return;
     case "build.gradle":
     case "build.gradle.kts":
       push(raw.languages, "Java/Gradle");
+      rememberWorkspaceRoot(root, dir, raw);
       return;
     case "Dockerfile":
       push(raw.deployment, "Docker");
@@ -387,11 +415,11 @@ function inspectFile(dir: string, name: string, raw: Raw): void {
       push(raw.cloud, "AWS");
       return;
     default:
-      detectMisc(dir, name, lower, raw);
+      detectMisc(root, dir, name, lower, raw);
   }
 }
 
-function detectMisc(dir: string, name: string, lower: string, raw: Raw): void {
+function detectMisc(root: string, dir: string, name: string, lower: string, raw: Raw): void {
   // Linter config files: a linter is configured here even when the ROOT package.json
   // carries no lint script and no linter dep (common in monorepos where eslint lives
   // in a tooling workspace) — so a lint command is still derivable. (AIH-PROFILE-001)
@@ -444,7 +472,12 @@ function detectMisc(dir: string, name: string, lower: string, raw: Raw): void {
   }
   if (matches(lower, ".csproj") || matches(lower, ".slnx") || matches(lower, ".sln")) {
     push(raw.languages, ".NET");
+    rememberWorkspaceRoot(root, dir, raw);
   }
+}
+
+function rememberWorkspaceRoot(root: string, dir: string, raw: Raw): void {
+  raw.workspaceRoots.add(relative(root, dir).replace(/\\/g, "/"));
 }
 
 /** Parse a serverless manifest for its provider (cloud) and function entry points. */
@@ -510,7 +543,7 @@ function readPkg(path: string): PkgJson {
 }
 
 /** Turn collected raw signals into the final, accurate stack. */
-function synthesize(raw: Raw): RepoStack {
+function synthesize(root: string, raw: Raw, opts: ScanOptions): RepoStack {
   const languages = [...raw.languages];
   const frameworks = [...raw.frameworks];
   const cloud = [...raw.cloud];
@@ -581,11 +614,6 @@ function synthesize(raw: Raw): RepoStack {
     }
   }
 
-  const workspaceTool = resolveWorkspaceTool(raw.workspaceSignals);
-  // A workspace orchestrator, or simply more than one package manifest, means a
-  // single root command must not be presented as authoritative for every package.
-  const isMonorepo = workspaceTool !== undefined || raw.manifestCount > 1;
-
   const finalFrameworks = dedupe(frameworks);
   // A browser SPA doesn't run on Node — don't tag it "/Node.js" (it nudges a weak agent
   // toward server assumptions). A Node-server framework (Next/Express/Nest/…) keeps the tag.
@@ -602,6 +630,16 @@ function synthesize(raw: Raw): RepoStack {
   const packageManager = pkg
     ? raw.packageManager
     : (raw.packageManager ?? rustPackageManager(languages) ?? pythonPackageManager(raw));
+  const explicitWorkspaceTool = resolveWorkspaceTool(raw.workspaceSignals);
+  const workspaceTool =
+    explicitWorkspaceTool ??
+    (isPolyglot(finalLanguages) && raw.workspaceRoots.size > 1 ? "polyglot" : undefined);
+  // A workspace orchestrator, multiple package manifests, or multiple manifest roots
+  // means a single root command must not be presented as authoritative for every package.
+  const isMonorepo =
+    workspaceTool !== undefined || raw.manifestCount > 1 || raw.workspaceRoots.size > 1;
+  const workspaces =
+    opts.includeWorkspaces === false ? undefined : synthesizeWorkspaces(root, raw, opts);
   // Browser test runners (Karma's `ng test`, Cypress) launch a real browser and HANG in a
   // headless/agent context — surface it so synth can warn the next agent (the real trap).
   const browserTest =
@@ -625,8 +663,40 @@ function synthesize(raw: Raw): RepoStack {
     browserTest,
     isMonorepo,
     workspaceTool,
+    ...(workspaces ? { workspaces } : {}),
     virtualEnvPaths: raw.virtualEnvPaths,
   };
+}
+
+function synthesizeWorkspaces(
+  root: string,
+  raw: Raw,
+  opts: ScanOptions,
+): Record<string, WorkspaceStack> | undefined {
+  const rels = [...raw.workspaceRoots]
+    .filter((rel) => rel.length > 0)
+    .sort((a, b) => a.localeCompare(b));
+  if (rels.length === 0) return undefined;
+
+  const workspaces: Record<string, WorkspaceStack> = {};
+  for (const rel of rels) {
+    const stack = scanRepo(join(root, rel), {
+      maxDepth: Math.min(4, Math.max(0, opts.maxDepth)),
+      contextDir: opts.contextDir,
+      includeWorkspaces: false,
+    });
+    if (stack.languages.length === 0 && stack.packageManager === undefined) continue;
+    workspaces[rel] = {
+      languages: stack.languages,
+      ...(stack.packageManager ? { packageManager: stack.packageManager } : {}),
+      ...(stack.testRunner ? { testRunner: stack.testRunner } : {}),
+      ...(stack.buildCommand ? { buildCommand: stack.buildCommand } : {}),
+      ...(stack.lintCommand ? { lintCommand: stack.lintCommand } : {}),
+      ...(stack.startCommand ? { startCommand: stack.startCommand } : {}),
+    };
+  }
+
+  return Object.keys(workspaces).length > 0 ? workspaces : undefined;
 }
 
 function pythonPackageManager(raw: Raw): string | undefined {
@@ -650,6 +720,18 @@ function derivePythonLint(raw: Raw): string | undefined {
   if (raw.pythonTools.has("black")) return "black --check .";
   if (raw.pythonTools.has("mypy")) return "mypy .";
   return undefined;
+}
+
+function isPolyglot(languages: readonly string[]): boolean {
+  return new Set(languages.map(languageFamily)).size > 1;
+}
+
+function languageFamily(language: string): string {
+  if (language.includes("Node") || language === "TypeScript" || language === "JavaScript") {
+    return "JavaScript";
+  }
+  if (language.startsWith("Java/")) return "Java";
+  return language;
 }
 
 /** Derive the test command, ignoring placeholder `echo`/no-op scripts. */

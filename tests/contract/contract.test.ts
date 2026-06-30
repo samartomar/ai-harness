@@ -401,6 +401,16 @@ describe("portable-paths invariant", () => {
     }
   });
 
+  it("fails on non-portable workspace paths", async () => {
+    seedMindworksLike(dir);
+    const tampered: ProjectContract = {
+      ...(await synth()),
+      workspaces: { "../escape": { languages: ["Python"], commands: {} } },
+    };
+    expect(unportablePaths(tampered)).toContain("../escape");
+    expect(portablePathsCheck(tampered, "team").verdict).toBe("fail");
+  });
+
   it("keeps unportable paths warning-only at vibe posture", async () => {
     seedMindworksLike(dir);
     const tampered: ProjectContract = { ...(await synth()), entrypoints: ["../escape"] };

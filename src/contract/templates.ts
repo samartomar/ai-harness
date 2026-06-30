@@ -38,6 +38,24 @@ function commandsBlock(c: ProjectContract): string[] {
   return rows.length > 0 ? rows : ["_No commands detected in the repo._"];
 }
 
+function workspaceCommandsBlock(c: ProjectContract): string[] {
+  const rows: string[] = [];
+  for (const [path, workspace] of Object.entries(c.workspaces ?? {}).sort(([a], [b]) =>
+    a.localeCompare(b),
+  )) {
+    const slots: Array<[string, ProjectContract["commands"]["test"]]> = [
+      ["test", workspace.commands.test],
+      ["build", workspace.commands.build],
+      ["lint", workspace.commands.lint],
+      ["start", workspace.commands.start],
+    ];
+    for (const [name, cmd] of slots) {
+      if (cmd) rows.push(`- \`${path}\` **${name}** — \`${cmd.value}\` _(${cmd.confidence})_`);
+    }
+  }
+  return rows;
+}
+
 function scaleLine(c: ProjectContract): string {
   if (c.scale.trackedFiles === undefined) return "- Scale: unknown (not a git repo).";
   const mono = c.scale.isMonorepo ? " · monorepo" : "";
@@ -71,9 +89,20 @@ function installCommand(packageManager: string | undefined): string | undefined 
  * never duplicated (locked decision #5; agent-behavior §6).
  */
 export function projectContractDoc(dir: string, c: ProjectContract): string {
-  const hasInferred = [c.commands.test, c.commands.build, c.commands.lint, c.commands.start].some(
-    (cmd) => cmd?.confidence === "inferred",
-  );
+  const workspaceRows = workspaceCommandsBlock(c);
+  const workspaceCommands = Object.values(c.workspaces ?? {}).flatMap((workspace) => [
+    workspace.commands.test,
+    workspace.commands.build,
+    workspace.commands.lint,
+    workspace.commands.start,
+  ]);
+  const hasInferred = [
+    c.commands.test,
+    c.commands.build,
+    c.commands.lint,
+    c.commands.start,
+    ...workspaceCommands,
+  ].some((cmd) => cmd?.confidence === "inferred");
   return lines(
     "# Repo contract",
     "",
@@ -89,6 +118,7 @@ export function projectContractDoc(dir: string, c: ProjectContract): string {
     "## Commands",
     "",
     commandsBlock(c),
+    ...(workspaceRows.length > 0 ? ["", "### Workspace commands", "", workspaceRows] : []),
     ...(hasInferred ? ["", CONFIDENCE_NOTE] : []),
     "",
     "## Scale",

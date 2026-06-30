@@ -12,7 +12,7 @@ Wave-2 target order from this matrix: Python, then Rust, then polyglot coexisten
 | Go module | watch | good | good | good | good | none | good | none | good | Default test/build commands are present; framework, lint, DB, and workspace detail are thin. |
 | Java Maven | watch | good | good | good | good | none | good | none | good | Maven defaults are present; framework, lint, DB, and richer build-tool metadata are not. |
 | .NET | watch | good | good | good | good | none | good | none | good | .NET default test/build commands are present; framework, lint, DB, and solution detail are thin. |
-| Node + Python + Rust polyglot | wave-2-target | good | partial | partial | partial | good | good | none | none | Secondary languages are seen, but root Node commands win; per-workspace commands and workspace classification are missing. |
+| Node + Python + Rust polyglot | wave-2-target | good | partial | good | good | good | good | good | good | Secondary languages now keep root Node commands while exposing per-workspace commands and package managers for Python/Rust. |
 
 ## Fixture Detection
 
@@ -22,4 +22,4 @@ Wave-2 target order from this matrix: Python, then Rust, then polyglot coexisten
 - `go-module`: lang=Go; fw=none; test=go test ./...; build=go build ./...; lint=none; db=none; pm=none; workspace=none
 - `java-maven`: lang=Java/Maven; fw=none; test=mvn test; build=mvn clean package; lint=none; db=none; pm=none; workspace=none
 - `dotnet`: lang=.NET; fw=none; test=dotnet test; build=dotnet build; lint=none; db=none; pm=none; workspace=none
-- `node-python-rust-polyglot`: lang=TypeScript/Node.js+Rust+Python; fw=FastAPI; test=npm test; build=npm run build; lint=none; db=none; pm=none; workspace=none
+- `node-python-rust-polyglot`: lang=TypeScript/Node.js+Rust+Python; fw=FastAPI; test=npm test+cargo test+pytest; build=npm run build+cargo build; lint=cargo clippy+ruff check .; db=none; pm=npm+cargo+poetry; workspace=polyglot
