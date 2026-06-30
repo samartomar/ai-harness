@@ -93,19 +93,70 @@ function hygieneCheck(ctx: PlanContext, present: string[]): LoadCheck {
       };
 }
 
-/** The canon the bootloader routes to (RULE_ROUTER.md + the core) actually exists. */
-function routerChainCheck(ctx: PlanContext): LoadCheck {
-  const targets: Array<[label: string, path: string]> = [
-    [`${ctx.contextDir}/RULE_ROUTER.md`, join(ctx.root, ctx.contextDir, "RULE_ROUTER.md")],
-    [
-      `${ctx.contextDir}/rules/agent-behavior-core.md`,
-      join(ctx.root, ctx.contextDir, "rules", "agent-behavior-core.md"),
-    ],
-  ];
+function targetChainCheck(
+  targets: Array<[label: string, path: string]>,
+  okDetail: string,
+  missingPrefix: string,
+): LoadCheck {
   const missing = targets.filter(([, p]) => !existsSync(p)).map(([label]) => label);
   return missing.length === 0
-    ? { name: "router-chain", ok: true, detail: "router + behavior core reachable" }
-    : { name: "router-chain", ok: false, detail: `pointer target missing: ${missing.join(", ")}` };
+    ? { name: "router-chain", ok: true, detail: okDetail }
+    : { name: "router-chain", ok: false, detail: `${missingPrefix}: ${missing.join(", ")}` };
+}
+
+function isWorkspaceRoot(ctx: PlanContext): boolean {
+  const raw = readIfExists(join(ctx.root, ".aih-workspace.json"));
+  if (raw === undefined) return false;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return (
+      typeof parsed === "object" &&
+      parsed !== null &&
+      (parsed as { workspaceType?: unknown }).workspaceType === "multi-repo" &&
+      (parsed as { generatedBy?: unknown }).generatedBy === "aih workspace"
+    );
+  } catch {
+    return false;
+  }
+}
+
+/** The repo canon the bootloader routes to (RULE_ROUTER.md + the core) exists. */
+function repoRouterChainCheck(ctx: PlanContext): LoadCheck {
+  return targetChainCheck(
+    [
+      [`${ctx.contextDir}/RULE_ROUTER.md`, join(ctx.root, ctx.contextDir, "RULE_ROUTER.md")],
+      [
+        `${ctx.contextDir}/rules/agent-behavior-core.md`,
+        join(ctx.root, ctx.contextDir, "rules", "agent-behavior-core.md"),
+      ],
+    ],
+    "router + behavior core reachable",
+    "pointer target missing",
+  );
+}
+
+/** The parent workspace canon the bootloader routes to exists. */
+function workspaceRouterChainCheck(ctx: PlanContext): LoadCheck {
+  return targetChainCheck(
+    [
+      [
+        `${ctx.contextDir}/cross-repo-architecture.md`,
+        join(ctx.root, ctx.contextDir, "cross-repo-architecture.md"),
+      ],
+      [
+        `${ctx.contextDir}/repo-discipline.md`,
+        join(ctx.root, ctx.contextDir, "repo-discipline.md"),
+      ],
+    ],
+    "workspace canon docs reachable",
+    "workspace target missing",
+  );
+}
+
+/** The canon the bootloader routes to actually exists. */
+function routerChainCheck(ctx: PlanContext): LoadCheck {
+  if (isWorkspaceRoot(ctx)) return workspaceRouterChainCheck(ctx);
+  return repoRouterChainCheck(ctx);
 }
 
 /** The always-loaded bundle is within the tool's documented char cap (or n/a). */

@@ -178,6 +178,13 @@ describe("doctor — git-enabled workspace roots", () => {
     );
   }
 
+  function writeWorkspaceCanon(): void {
+    mkdirSync(join(dir, "ai-coding"), { recursive: true });
+    writeFileSync(join(dir, "CLAUDE.md"), "`ai-coding/cross-repo-architecture.md`\n");
+    writeFileSync(join(dir, "ai-coding", "cross-repo-architecture.md"), "# Architecture\n");
+    writeFileSync(join(dir, "ai-coding", "repo-discipline.md"), "# Discipline\n");
+  }
+
   it("fails when a git-enabled workspace marker is not backed by a git root", async () => {
     writeWorkspaceMarker();
     const c = rooted(false);
@@ -220,6 +227,17 @@ describe("doctor — git-enabled workspace roots", () => {
 
     expect(res?.verdict).toBe("pass");
     expect(res?.detail).toContain("no child repos");
+  });
+
+  it("passes CLI loadability for workspace bootloaders without repo-level RULE_ROUTER", async () => {
+    writeWorkspaceMarker();
+    writeWorkspaceCanon();
+    const c = rooted(true);
+    const probe = findProbe((await command.plan(c)).actions, "CLI context loadability");
+    const res = await probe?.run(c);
+
+    expect(res?.verdict).toBe("pass");
+    expect(res?.detail).toContain("claude");
   });
 });
 

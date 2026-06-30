@@ -69,6 +69,26 @@ function scaffoldCanon(): void {
   writeFileSync(join(dir, "ai-coding", "rules", "agent-behavior-core.md"), "# core\n");
 }
 
+function scaffoldWorkspaceCanon(): void {
+  writeFileSync(
+    join(dir, ".aih-workspace.json"),
+    JSON.stringify({
+      workspaceType: "multi-repo",
+      contextDir: "ai-coding",
+      repos: ["service-api"],
+      git: true,
+      generatedBy: "aih workspace",
+    }),
+  );
+  mkdirSync(join(dir, "ai-coding"), { recursive: true });
+  writeFileSync(
+    join(dir, "CLAUDE.md"),
+    "`ai-coding/cross-repo-architecture.md`\n`ai-coding/repo-discipline.md`\n",
+  );
+  writeFileSync(join(dir, "ai-coding", "cross-repo-architecture.md"), "# Architecture\n");
+  writeFileSync(join(dir, "ai-coding", "repo-discipline.md"), "# Discipline\n");
+}
+
 /** Write a populated MCP JSON for a writable tool's config path. */
 function writeMcp(rel: string): void {
   const path = join(dir, rel);
@@ -147,6 +167,20 @@ describe("bootloader cell", () => {
     const r = row(scanCliCoverage(ctx()), "claude");
     expect(r.bootloader.state).toBe("missing");
     expect(r.bootloader.detail).toMatch(/drift/);
+  });
+
+  it("treats a workspace parent bootloader as wired through workspace docs", () => {
+    scaffoldWorkspaceCanon();
+    writeMcp(".mcp.json");
+    const m = scanCliCoverage(ctx());
+    const r = row(m, "claude");
+
+    expect(r.bootloader.state).toBe("wired");
+    expect(r.bootloader.detail).toContain("workspace");
+    expect(r.settings.state).toBe("na");
+    expect(r.load.verdict).toBe("loads");
+    expect(m.structurallyConfigured).toBe(1);
+    expect(m.provenLoadable).toBe(1);
   });
 });
 
