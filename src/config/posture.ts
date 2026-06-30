@@ -10,6 +10,7 @@ export type PolicyVerdict = "allow" | "warn" | "deny";
 export type GovernanceControl =
   | "secrets"
   | "path-portability"
+  | "contract-freshness"
   | "command-policy"
   | "risk-gates"
   | "mcp"
@@ -103,7 +104,11 @@ export function gradeVerdict(
   if (control === "risk-gates") return "warn";
   if (posture === "vibe") return "warn";
   if (posture === "team") {
-    return control === "secrets" || control === "path-portability" ? "deny" : "warn";
+    return control === "secrets" ||
+      control === "path-portability" ||
+      control === "contract-freshness"
+      ? "deny"
+      : "warn";
   }
   return "deny";
 }

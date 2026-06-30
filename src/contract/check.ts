@@ -5,6 +5,7 @@ import type { PlanContext } from "../internals/plan.js";
 import type { Check } from "../internals/verify.js";
 import { LARGE_REPO_FILE_THRESHOLD, trackedFileCount } from "../scale-safety.js";
 import { PROJECT_CONTRACT_FILE, readProjectContract } from "./schema.js";
+import { contractFreshness, contractStaleDetail } from "./staleness.js";
 import { unportablePaths } from "./synth.js";
 
 /**
@@ -52,5 +53,24 @@ export async function contractTruthCheck(ctx: PlanContext): Promise<Check> {
       detail: `paths portable; deep validation deferred to large-repo graph safety (${live} files)`,
     };
   }
-  return { name, verdict: "pass", detail: "contract present; every path is portable" };
+  const freshness = await contractFreshness(ctx, contextDir, contract);
+  if (freshness.status === "stale") {
+    return postureGradeCheck(
+      {
+        name,
+        verdict: "fail",
+        code: "contract.stale",
+        detail: contractStaleDetail(contextDir, freshness.fields),
+        location: { uri: `${contextDir}/${PROJECT_CONTRACT_FILE}` },
+        fingerprint: "contract-stale",
+      },
+      "contract-freshness",
+      posture,
+    );
+  }
+  return {
+    name,
+    verdict: "pass",
+    detail: "contract present; every path is portable; facts match the live repo",
+  };
 }

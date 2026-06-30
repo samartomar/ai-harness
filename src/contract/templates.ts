@@ -31,11 +31,40 @@ function commandsBlock(c: ProjectContract): string[] {
     ["build", c.commands.build],
     ["lint", c.commands.lint],
     ["start", c.commands.start],
+    ["cdk synth", c.commands.cdkSynth],
+    ["cdk diff", c.commands.cdkDiff],
   ];
   for (const [name, cmd] of slots) {
     if (cmd) rows.push(`- **${name}** — \`${cmd.value}\` _(${cmd.confidence})_`);
   }
   return rows.length > 0 ? rows : ["_No commands detected in the repo._"];
+}
+
+function externalActionsBlock(c: ProjectContract): string[] {
+  if (!c.commands.cdkDeploy) return [];
+  return [
+    "### External actions (human approval required)",
+    "",
+    `- \`${c.commands.cdkDeploy.value}\` deploys live infrastructure; do not run to verify _(${c.commands.cdkDeploy.confidence})_`,
+  ];
+}
+
+function workspaceCommandsBlock(c: ProjectContract): string[] {
+  const rows: string[] = [];
+  for (const [path, workspace] of Object.entries(c.workspaces ?? {}).sort(([a], [b]) =>
+    a.localeCompare(b),
+  )) {
+    const slots: Array<[string, ProjectContract["commands"]["test"]]> = [
+      ["test", workspace.commands.test],
+      ["build", workspace.commands.build],
+      ["lint", workspace.commands.lint],
+      ["start", workspace.commands.start],
+    ];
+    for (const [name, cmd] of slots) {
+      if (cmd) rows.push(`- \`${path}\` **${name}** — \`${cmd.value}\` _(${cmd.confidence})_`);
+    }
+  }
+  return rows;
 }
 
 function scaleLine(c: ProjectContract): string {
@@ -49,15 +78,45 @@ function pathsOrNone(items: string[]): string[] {
   return items.length > 0 ? items.map((p) => `- \`${p}\``) : ["_None detected._"];
 }
 
+function installCommand(packageManager: string | undefined): string | undefined {
+  if (packageManager === undefined) return undefined;
+  const commands: Record<string, string> = {
+    npm: "npm install",
+    pnpm: "pnpm install",
+    yarn: "yarn install",
+    bun: "bun install",
+    poetry: "poetry install",
+    uv: "uv sync",
+    pip: "python -m pip install -r requirements.txt",
+    pipenv: "pipenv install --dev",
+    cargo: "cargo fetch",
+  };
+  return commands[packageManager] ?? `${packageManager} install`;
+}
+
 /**
  * The human-readable contract mirror. Regenerated from `project.json` every run, so the
  * header warns against hand-editing. Facts only — the working agreement is referenced,
  * never duplicated (locked decision #5; agent-behavior §6).
  */
 export function projectContractDoc(dir: string, c: ProjectContract): string {
-  const hasInferred = [c.commands.test, c.commands.build, c.commands.lint, c.commands.start].some(
-    (cmd) => cmd?.confidence === "inferred",
-  );
+  const workspaceRows = workspaceCommandsBlock(c);
+  const workspaceCommands = Object.values(c.workspaces ?? {}).flatMap((workspace) => [
+    workspace.commands.test,
+    workspace.commands.build,
+    workspace.commands.lint,
+    workspace.commands.start,
+  ]);
+  const hasInferred = [
+    c.commands.test,
+    c.commands.build,
+    c.commands.lint,
+    c.commands.start,
+    c.commands.cdkSynth,
+    c.commands.cdkDiff,
+    c.commands.cdkDeploy,
+    ...workspaceCommands,
+  ].some((cmd) => cmd?.confidence === "inferred");
   return lines(
     "# Repo contract",
     "",
@@ -73,6 +132,8 @@ export function projectContractDoc(dir: string, c: ProjectContract): string {
     "## Commands",
     "",
     commandsBlock(c),
+    ...(c.commands.cdkDeploy ? ["", externalActionsBlock(c)] : []),
+    ...(workspaceRows.length > 0 ? ["", "### Workspace commands", "", workspaceRows] : []),
     ...(hasInferred ? ["", CONFIDENCE_NOTE] : []),
     "",
     "## Scale",
@@ -102,8 +163,9 @@ export function projectContractDoc(dir: string, c: ProjectContract): string {
  * purpose — this is a checklist, not a playbook.
  */
 export function setupDoc(dir: string, c: ProjectContract): string {
-  const installLine = c.packageManager
-    ? `- Install dependencies: \`${c.packageManager} install\`.`
+  const install = installCommand(c.packageManager);
+  const installLine = install
+    ? `- Install dependencies: \`${install}\`.`
     : "- Install dependencies with the repo's package manager (npm / pnpm / yarn / bun).";
   const verify: string[] = [];
   if (c.commands.test) verify.push(`- Run the tests: \`${c.commands.test.value}\``);

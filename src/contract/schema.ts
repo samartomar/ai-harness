@@ -36,6 +36,23 @@ export type Confidence = z.infer<typeof ConfidenceSchema>;
 
 /** A canonical command plus the confidence tier behind it (never a bare string). */
 const CommandSchema = z.object({ value: z.string(), confidence: ConfidenceSchema });
+const CommandsSchema = z
+  .object({
+    test: CommandSchema.optional(),
+    build: CommandSchema.optional(),
+    lint: CommandSchema.optional(),
+    start: CommandSchema.optional(),
+    cdkSynth: CommandSchema.optional(),
+    cdkDiff: CommandSchema.optional(),
+    cdkDeploy: CommandSchema.optional(),
+  })
+  .default({});
+
+const WorkspaceContractSchema = z.object({
+  languages: z.array(z.string()).default([]),
+  packageManager: z.string().optional(),
+  commands: CommandsSchema,
+});
 
 /**
  * Coarse repo-size bucket, derived purely from the tracked-file count (+ a monorepo
@@ -62,14 +79,12 @@ export const ProjectContractSchema = z.object({
   /** Notable entry points (repo-relative POSIX; validated portable by the probe). */
   entrypoints: z.array(z.string()).default([]),
   /** The canonical commands, each tagged with its confidence; absent keys are omitted. */
-  commands: z
-    .object({
-      test: CommandSchema.optional(),
-      build: CommandSchema.optional(),
-      lint: CommandSchema.optional(),
-      start: CommandSchema.optional(),
-    })
-    .default({}),
+  commands: CommandsSchema,
+  /**
+   * Per-workspace facts for polyglot/monorepo packages, keyed by repo-relative POSIX
+   * workspace path. Optional/additive so older contracts continue to parse.
+   */
+  workspaces: z.record(z.string(), WorkspaceContractSchema).optional(),
   scale: z.object({
     /** Tracked-file count from `git ls-files`; omitted when the root is not a git repo. */
     trackedFiles: z.number().int().nonnegative().optional(),

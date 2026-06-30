@@ -1,5 +1,5 @@
-import { type Dirent, readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { type Dirent, existsSync, readdirSync, readFileSync } from "node:fs";
+import { join, relative } from "node:path";
 
 /**
  * The synthesized profile of a repository: languages, frameworks, cloud/deploy
@@ -12,6 +12,27 @@ import { join } from "node:path";
  * when no lint script/linter is present, so downstream hooks never reference a
  * script the repo doesn't have.
  */
+export interface WorkspaceStack {
+  /** Detected language(s) for this workspace/package root. */
+  languages: string[];
+  /** Workspace-local package manager, if one is derivable. */
+  packageManager?: string;
+  /** Workspace-local test command, when derivable from that workspace's manifest. */
+  testRunner?: string;
+  /** Workspace-local build command, when derivable from that workspace's manifest. */
+  buildCommand?: string;
+  /** Workspace-local lint command, when derivable from that workspace's manifest. */
+  lintCommand?: string;
+  /** Workspace-local start command, when declared by that workspace's manifest. */
+  startCommand?: string;
+}
+
+export interface DeploymentCommands {
+  cdkSynth?: string;
+  cdkDiff?: string;
+  cdkDeploy?: string;
+}
+
 export interface RepoStack {
   /** Detected languages/runtimes, deduped, in first-seen order. */
   languages: string[];
@@ -23,7 +44,7 @@ export interface RepoStack {
   databases: string[];
   /** Deployment targets (Docker / Kubernetes-Helm / Terraform / Serverless Framework / …). */
   deployment: string[];
-  /** Node package manager from the lockfile, if any (npm/pnpm/yarn/bun). */
+  /** Primary package manager from manifest/lockfile signals, if any. */
   packageManager?: string;
   /** True when TypeScript is actually present (tsconfig.json or a .ts/.tsx source). */
   hasTypeScript: boolean;
@@ -41,12 +62,20 @@ export interface RepoStack {
   lintCommand?: string;
   /** How to start the local app/server, or undefined when none is defined. */
   startCommand?: string;
+  /** Deployment/tool verbs derived from deployment manifests such as cdk.json. */
+  deploymentCommands?: DeploymentCommands;
   /** True when tests run in a real browser (Karma/Cypress/…) — they hang in a headless agent. */
   browserTest: boolean;
   /** True when a workspace/monorepo orchestrator or multiple package manifests are present. */
   isMonorepo: boolean;
   /** Detected workspace tool (turbo/nx/pnpm/rush/lerna/bazel/maven/gradle/npm-yarn), if any. */
   workspaceTool?: string;
+  /** Per-workspace command/package facts keyed by repo-relative POSIX workspace path. */
+  workspaces?: Record<string, WorkspaceStack>;
+  /** Total detected workspace roots before the emitted workspace map was capped. */
+  workspaceCount?: number;
+  /** Local Python virtualenv directories found and excluded from source scanning. */
+  virtualEnvPaths?: string[];
 }
 
 export interface ScanOptions {
@@ -59,6 +88,8 @@ export interface ScanOptions {
    * so a custom/visible context dir must be excluded dynamically.
    */
   contextDir?: string;
+  /** Internal: false when scanning one workspace root to avoid recursive workspace maps. */
+  includeWorkspaces?: boolean;
 }
 
 /** Directories never worth walking — build output, vendored deps, VCS metadata. */
@@ -75,7 +106,14 @@ const EXCLUDED_DIRS = new Set([
   ".serverless",
   "cdk.out",
   ".terraform",
+  ".var",
+  ".venv",
+  "venv",
 ]);
+
+/** Python virtualenv directories: signal their presence, but never scan their contents. */
+const VIRTUAL_ENV_DIRS = new Set([".venv"]);
+const WORKSPACE_CAP = 8;
 
 /** Node dependency → framework label. */
 const NODE_FRAMEWORKS: Record<string, string> = {
@@ -174,6 +212,10 @@ interface Raw {
   workspaceSignals: Set<string>;
   /** Count of non-excluded package.json manifests seen during the walk. */
   manifestCount: number;
+  /** Manifest/toolchain roots seen during the walk, repo-relative POSIX paths. */
+  workspaceRoots: Set<string>;
+  /** Non-Node toolchains whose manifest lives at the scan root beside package.json. */
+  rootToolchains: Set<string>;
   /** Build-tool wrappers present at the repo — prefer ./mvnw / ./gradlew when set. */
   hasMvnw: boolean;
   hasGradlew: boolean;
@@ -182,6 +224,11 @@ interface Raw {
   hasBiomeConfig: boolean;
   /** A browser test runner is configured by a `karma.conf.*` file. */
   hasKarmaConfig: boolean;
+  /** Local Python virtualenv directories, repo-relative POSIX paths. */
+  virtualEnvPaths: string[];
+  /** Python package/tooling signals from manifests, lockfiles, and config files. */
+  pythonManagers: Set<string>;
+  pythonTools: Set<"pytest" | "ruff" | "black" | "mypy">;
 }
 
 /**
@@ -202,11 +249,16 @@ export function scanRepo(root: string, opts: ScanOptions): RepoStack {
     sawTsFile: false,
     workspaceSignals: new Set(),
     manifestCount: 0,
+    workspaceRoots: new Set(),
+    rootToolchains: new Set(),
     hasMvnw: false,
     hasGradlew: false,
     hasEslintConfig: false,
     hasBiomeConfig: false,
     hasKarmaConfig: false,
+    virtualEnvPaths: [],
+    pythonManagers: new Set(),
+    pythonTools: new Set(),
   };
   // Exclude the configured context dir (top path segment) alongside the static
   // set, so re-scans never walk the canon aih itself generated (the default is
@@ -214,11 +266,12 @@ export function scanRepo(root: string, opts: ScanOptions): RepoStack {
   const excluded = new Set<string>(EXCLUDED_DIRS);
   const ctxTop = opts.contextDir?.split(/[/\\]/).find((s) => s.length > 0);
   if (ctxTop) excluded.add(ctxTop);
-  walk(root, 0, Math.max(0, opts.maxDepth), raw, excluded);
-  return synthesize(raw);
+  walk(root, root, 0, Math.max(0, opts.maxDepth), raw, excluded);
+  return synthesize(root, raw, opts);
 }
 
 function walk(
+  root: string,
   dir: string,
   depth: number,
   maxDepth: number,
@@ -235,20 +288,30 @@ function walk(
   const subdirs: string[] = [];
   for (const entry of entries) {
     if (entry.isDirectory()) {
+      if (isPythonVirtualEnvDir(dir, entry.name)) {
+        push(raw.virtualEnvPaths, relative(root, join(dir, entry.name)).replace(/\\/g, "/"));
+        continue;
+      }
       if (!excluded.has(entry.name)) subdirs.push(entry.name);
       continue;
     }
-    if (entry.isFile() || entry.isSymbolicLink()) inspectFile(dir, entry.name, raw);
+    if (entry.isFile() || entry.isSymbolicLink()) inspectFile(root, dir, entry.name, raw);
   }
 
   if (depth >= maxDepth) return;
   for (const name of subdirs) {
-    walk(join(dir, name), depth + 1, maxDepth, raw, excluded);
+    walk(root, join(dir, name), depth + 1, maxDepth, raw, excluded);
   }
 }
 
-function inspectFile(dir: string, name: string, raw: Raw): void {
+function isPythonVirtualEnvDir(parent: string, name: string): boolean {
+  if (VIRTUAL_ENV_DIRS.has(name)) return true;
+  return name === "venv" && existsSync(join(parent, name, "pyvenv.cfg"));
+}
+
+function inspectFile(root: string, dir: string, name: string, raw: Raw): void {
   const lower = name.toLowerCase();
+  if (isGeneratedWorkspacePath(relative(root, dir).replace(/\\/g, "/"))) return;
 
   // Source-file extension signals (JS vs TS, Python, Go, …).
   if (/\.tsx?$/.test(lower) && !lower.endsWith(".d.ts")) raw.sawTsFile = true;
@@ -256,6 +319,7 @@ function inspectFile(dir: string, name: string, raw: Raw): void {
   switch (name) {
     case "package.json": {
       raw.manifestCount++;
+      rememberWorkspaceRoot(root, dir, raw);
       // Capture the shallowest package.json as the primary manifest; a `workspaces`
       // field on it marks an npm/yarn workspace monorepo (root only).
       if (!raw.pkg) {
@@ -313,23 +377,42 @@ function inspectFile(dir: string, name: string, raw: Raw): void {
       return;
     case "go.mod":
       push(raw.languages, "Go");
+      rememberWorkspaceRoot(root, dir, raw);
+      rememberRootToolchain(root, dir, raw, "Go");
       return;
     case "Cargo.toml":
       push(raw.languages, "Rust");
+      rememberWorkspaceRoot(root, dir, raw);
+      rememberRootToolchain(root, dir, raw, "Rust");
       return;
     case "pyproject.toml":
     case "requirements.txt":
       push(raw.languages, "Python");
-      detectPythonFrameworks(join(dir, name), raw);
+      rememberWorkspaceRoot(root, dir, raw);
+      rememberRootToolchain(root, dir, raw, "Python");
+      detectPythonManifest(join(dir, name), name, raw);
+      return;
+    case "poetry.lock":
+      raw.pythonManagers.add("poetry");
+      return;
+    case "uv.lock":
+      raw.pythonManagers.add("uv");
+      return;
+    case "Pipfile":
+      raw.pythonManagers.add("pipenv");
       return;
     case "pom.xml":
       push(raw.languages, "Java/Maven");
+      rememberWorkspaceRoot(root, dir, raw);
+      rememberRootToolchain(root, dir, raw, "Java/Maven");
       // A <modules> reactor makes this a Maven multi-module monorepo.
       if (/<modules>/.test(safeRead(join(dir, name)))) raw.workspaceSignals.add("maven");
       return;
     case "build.gradle":
     case "build.gradle.kts":
       push(raw.languages, "Java/Gradle");
+      rememberWorkspaceRoot(root, dir, raw);
+      rememberRootToolchain(root, dir, raw, "Java/Gradle");
       return;
     case "Dockerfile":
       push(raw.deployment, "Docker");
@@ -353,11 +436,11 @@ function inspectFile(dir: string, name: string, raw: Raw): void {
       push(raw.cloud, "AWS");
       return;
     default:
-      detectMisc(dir, name, lower, raw);
+      detectMisc(root, dir, name, lower, raw);
   }
 }
 
-function detectMisc(dir: string, name: string, lower: string, raw: Raw): void {
+function detectMisc(root: string, dir: string, name: string, lower: string, raw: Raw): void {
   // Linter config files: a linter is configured here even when the ROOT package.json
   // carries no lint script and no linter dep (common in monorepos where eslint lives
   // in a tooling workspace) — so a lint command is still derivable. (AIH-PROFILE-001)
@@ -371,6 +454,22 @@ function detectMisc(dir: string, name: string, lower: string, raw: Raw): void {
   }
   if (/^karma\.conf\.(js|ts|cjs|mjs)$/.test(lower)) {
     raw.hasKarmaConfig = true;
+    return;
+  }
+  if (lower === "pytest.ini") {
+    raw.pythonTools.add("pytest");
+    return;
+  }
+  if (lower === "ruff.toml" || lower === ".ruff.toml") {
+    raw.pythonTools.add("ruff");
+    return;
+  }
+  if (lower === "mypy.ini" || lower === ".mypy.ini") {
+    raw.pythonTools.add("mypy");
+    return;
+  }
+  if (/^test_.*\.py$/.test(lower) || /_test\.py$/.test(lower)) {
+    raw.pythonTools.add("pytest");
     return;
   }
   if (/^serverless\.(yml|yaml|ts|js|json)$/.test(lower)) {
@@ -394,7 +493,27 @@ function detectMisc(dir: string, name: string, lower: string, raw: Raw): void {
   }
   if (matches(lower, ".csproj") || matches(lower, ".slnx") || matches(lower, ".sln")) {
     push(raw.languages, ".NET");
+    rememberWorkspaceRoot(root, dir, raw);
+    rememberRootToolchain(root, dir, raw, ".NET");
   }
+}
+
+function rememberWorkspaceRoot(root: string, dir: string, raw: Raw): void {
+  const rel = relative(root, dir).replace(/\\/g, "/");
+  if (!isGeneratedWorkspacePath(rel)) raw.workspaceRoots.add(rel);
+}
+
+function rememberRootToolchain(root: string, dir: string, raw: Raw, language: string): void {
+  const rel = relative(root, dir).replace(/\\/g, "/");
+  if (rel.length === 0) raw.rootToolchains.add(language);
+}
+
+function isGeneratedWorkspacePath(rel: string): boolean {
+  if (rel.length === 0) return false;
+  const parts = rel.split("/");
+  return parts.some(
+    (part) => part === ".var" || part.endsWith(".snapshot") || part.startsWith("asset."),
+  );
 }
 
 /** Parse a serverless manifest for its provider (cloud) and function entry points. */
@@ -416,14 +535,23 @@ function readServerless(path: string, raw: Raw): void {
   }
 }
 
-function detectPythonFrameworks(path: string, raw: Raw): void {
+function detectPythonManifest(path: string, name: string, raw: Raw): void {
   const body = safeRead(path).toLowerCase();
+  if (name === "requirements.txt") raw.pythonManagers.add("pip");
+  if (name === "pyproject.toml") {
+    if (/\[tool\.poetry\b/.test(body)) raw.pythonManagers.add("poetry");
+    if (/\[tool\.uv\b/.test(body)) raw.pythonManagers.add("uv");
+  }
   if (/\bfastapi\b/.test(body)) push(raw.frameworks, "FastAPI");
   if (/\bflask\b/.test(body)) push(raw.frameworks, "Flask");
   if (/\bdjango\b/.test(body)) push(raw.frameworks, "Django");
   if (/\bpsycopg2\b|\basyncpg\b/.test(body)) push(raw.databases, "PostgreSQL");
   if (/\bpymongo\b/.test(body)) push(raw.databases, "MongoDB");
   if (/\bredis\b/.test(body)) push(raw.databases, "Redis");
+  if (/\bpytest\b|\[tool\.pytest\b/.test(body)) raw.pythonTools.add("pytest");
+  if (/\bruff\b|\[tool\.ruff\b/.test(body)) raw.pythonTools.add("ruff");
+  if (/\bblack\b|\[tool\.black\b/.test(body)) raw.pythonTools.add("black");
+  if (/\bmypy\b|\[tool\.mypy\b/.test(body)) raw.pythonTools.add("mypy");
 }
 
 function readPkg(path: string): PkgJson {
@@ -451,7 +579,7 @@ function readPkg(path: string): PkgJson {
 }
 
 /** Turn collected raw signals into the final, accurate stack. */
-function synthesize(raw: Raw): RepoStack {
+function synthesize(root: string, raw: Raw, opts: ScanOptions): RepoStack {
   const languages = [...raw.languages];
   const frameworks = [...raw.frameworks];
   const cloud = [...raw.cloud];
@@ -503,9 +631,10 @@ function synthesize(raw: Raw): RepoStack {
     } else if (languages.includes("Rust")) {
       testRunner = "cargo test";
       buildCommand = "cargo build";
+      lintCommand = "cargo clippy";
     } else if (languages.includes("Python")) {
-      testRunner = "pytest";
-      lintCommand = "ruff check .";
+      testRunner = derivePythonTest(raw);
+      lintCommand = derivePythonLint(raw);
     } else if (languages.includes("Java/Maven")) {
       // Prefer the project's pinned wrapper over a system mvn/gradle when present.
       const mvn = raw.hasMvnw ? "./mvnw" : "mvn";
@@ -521,11 +650,6 @@ function synthesize(raw: Raw): RepoStack {
     }
   }
 
-  const workspaceTool = resolveWorkspaceTool(raw.workspaceSignals);
-  // A workspace orchestrator, or simply more than one package manifest, means a
-  // single root command must not be presented as authoritative for every package.
-  const isMonorepo = workspaceTool !== undefined || raw.manifestCount > 1;
-
   const finalFrameworks = dedupe(frameworks);
   // A browser SPA doesn't run on Node — don't tag it "/Node.js" (it nudges a weak agent
   // toward server assumptions). A Node-server framework (Next/Express/Nest/…) keeps the tag.
@@ -539,6 +663,20 @@ function synthesize(raw: Raw): RepoStack {
         ? "JavaScript"
         : l,
   );
+  const packageManager = pkg
+    ? raw.packageManager
+    : (raw.packageManager ?? rustPackageManager(languages) ?? pythonPackageManager(raw));
+  const deploymentCommands = cdkDeploymentCommands(finalFrameworks);
+  const explicitWorkspaceTool = resolveWorkspaceTool(raw.workspaceSignals);
+  const workspaceTool =
+    explicitWorkspaceTool ??
+    (isPolyglot(finalLanguages) && raw.workspaceRoots.size > 1 ? "polyglot" : undefined);
+  // A workspace orchestrator, multiple package manifests, or multiple manifest roots
+  // means a single root command must not be presented as authoritative for every package.
+  const isMonorepo =
+    workspaceTool !== undefined || raw.manifestCount > 1 || raw.workspaceRoots.size > 1;
+  const workspaceSynthesis =
+    opts.includeWorkspaces === false ? undefined : synthesizeWorkspaces(root, raw, opts);
   // Browser test runners (Karma's `ng test`, Cypress) launch a real browser and HANG in a
   // headless/agent context — surface it so synth can warn the next agent (the real trap).
   const browserTest =
@@ -550,7 +688,7 @@ function synthesize(raw: Raw): RepoStack {
     cloud: dedupe(cloud),
     databases: dedupe(databases),
     deployment: dedupe(deployment),
-    packageManager: raw.packageManager,
+    packageManager,
     hasTypeScript: raw.hasTsconfig || raw.sawTsFile || (pkg?.deps.has("typescript") ?? false),
     scripts: pkg?.scripts ?? {},
     description: pkg?.description,
@@ -559,10 +697,123 @@ function synthesize(raw: Raw): RepoStack {
     buildCommand,
     lintCommand,
     startCommand,
+    ...(deploymentCommands ? { deploymentCommands } : {}),
     browserTest,
     isMonorepo,
     workspaceTool,
+    ...(workspaceSynthesis?.workspaces ? { workspaces: workspaceSynthesis.workspaces } : {}),
+    ...(workspaceSynthesis?.workspaceCount
+      ? { workspaceCount: workspaceSynthesis.workspaceCount }
+      : {}),
+    virtualEnvPaths: raw.virtualEnvPaths,
   };
+}
+
+interface WorkspaceSynthesis {
+  workspaces?: Record<string, WorkspaceStack>;
+  workspaceCount?: number;
+}
+
+function synthesizeWorkspaces(root: string, raw: Raw, opts: ScanOptions): WorkspaceSynthesis {
+  const rels = [...raw.workspaceRoots]
+    .filter((rel) => rel.length > 0)
+    .sort((a, b) => a.localeCompare(b));
+
+  const workspaces: Record<string, WorkspaceStack> = {};
+  const rootSecondary = synthesizeRootSecondaryWorkspace(raw);
+  const workspaceCount = rels.length + (rootSecondary ? 1 : 0);
+  if (workspaceCount === 0) return {};
+
+  if (rootSecondary) workspaces["."] = rootSecondary;
+
+  const remaining = Math.max(0, WORKSPACE_CAP - Object.keys(workspaces).length);
+  for (const rel of rels.slice(0, remaining)) {
+    const stack = scanRepo(join(root, rel), {
+      maxDepth: Math.min(4, Math.max(0, opts.maxDepth)),
+      contextDir: opts.contextDir,
+      includeWorkspaces: false,
+    });
+    if (stack.languages.length === 0 && stack.packageManager === undefined) continue;
+    workspaces[rel] = {
+      languages: stack.languages,
+      ...(stack.packageManager ? { packageManager: stack.packageManager } : {}),
+      ...(stack.testRunner ? { testRunner: stack.testRunner } : {}),
+      ...(stack.buildCommand ? { buildCommand: stack.buildCommand } : {}),
+      ...(stack.lintCommand ? { lintCommand: stack.lintCommand } : {}),
+      ...(stack.startCommand ? { startCommand: stack.startCommand } : {}),
+    };
+  }
+
+  return Object.keys(workspaces).length > 0 ? { workspaces, workspaceCount } : {};
+}
+
+function synthesizeRootSecondaryWorkspace(raw: Raw): WorkspaceStack | undefined {
+  if (!raw.pkg) return undefined;
+  if (raw.rootToolchains.has("Python")) {
+    return {
+      languages: ["Python"],
+      ...(pythonPackageManager(raw) ? { packageManager: pythonPackageManager(raw) } : {}),
+      ...(derivePythonTest(raw) ? { testRunner: derivePythonTest(raw) } : {}),
+      ...(derivePythonLint(raw) ? { lintCommand: derivePythonLint(raw) } : {}),
+    };
+  }
+  if (raw.rootToolchains.has("Rust")) {
+    return {
+      languages: ["Rust"],
+      packageManager: "cargo",
+      testRunner: "cargo test",
+      buildCommand: "cargo build",
+      lintCommand: "cargo clippy",
+    };
+  }
+  if (raw.rootToolchains.has("Go")) {
+    return { languages: ["Go"], testRunner: "go test ./...", buildCommand: "go build ./..." };
+  }
+  return undefined;
+}
+
+function cdkDeploymentCommands(frameworks: readonly string[]): DeploymentCommands | undefined {
+  if (!frameworks.includes("AWS CDK")) return undefined;
+  return {
+    cdkSynth: "npx cdk synth",
+    cdkDiff: "npx cdk diff",
+    cdkDeploy: "npx cdk deploy",
+  };
+}
+
+function pythonPackageManager(raw: Raw): string | undefined {
+  if (raw.pythonManagers.has("uv")) return "uv";
+  if (raw.pythonManagers.has("poetry")) return "poetry";
+  if (raw.pythonManagers.has("pipenv")) return "pipenv";
+  if (raw.pythonManagers.has("pip")) return "pip";
+  return undefined;
+}
+
+function rustPackageManager(languages: readonly string[]): string | undefined {
+  return languages.includes("Rust") ? "cargo" : undefined;
+}
+
+function derivePythonTest(raw: Raw): string | undefined {
+  return raw.pythonTools.has("pytest") ? "pytest" : undefined;
+}
+
+function derivePythonLint(raw: Raw): string | undefined {
+  if (raw.pythonTools.has("ruff")) return "ruff check .";
+  if (raw.pythonTools.has("black")) return "black --check .";
+  if (raw.pythonTools.has("mypy")) return "mypy .";
+  return undefined;
+}
+
+function isPolyglot(languages: readonly string[]): boolean {
+  return new Set(languages.map(languageFamily)).size > 1;
+}
+
+function languageFamily(language: string): string {
+  if (language.includes("Node") || language === "TypeScript" || language === "JavaScript") {
+    return "JavaScript";
+  }
+  if (language.startsWith("Java/")) return "Java";
+  return language;
 }
 
 /** Derive the test command, ignoring placeholder `echo`/no-op scripts. */

@@ -248,7 +248,12 @@ describe("scanRepo — other stacks", () => {
 
     rmSync(join(tmp, "go.mod"));
     put("Cargo.toml", "[package]\nname='x'\n");
-    expect(scanRepo(tmp, { maxDepth: 8 }).languages).toEqual(["Rust"]);
+    const rust = scanRepo(tmp, { maxDepth: 8 });
+    expect(rust.languages).toEqual(["Rust"]);
+    expect(rust.packageManager).toBe("cargo");
+    expect(rust.testRunner).toBe("cargo test");
+    expect(rust.buildCommand).toBe("cargo build");
+    expect(rust.lintCommand).toBe("cargo clippy");
 
     rmSync(join(tmp, "Cargo.toml"));
     put("Api.csproj", "<Project></Project>");
@@ -257,12 +262,63 @@ describe("scanRepo — other stacks", () => {
     expect(net.testRunner).toBe("dotnet test");
   });
 
-  it("detects Python with pytest + ruff", () => {
-    put("pyproject.toml", "[project]\nname='svc'\n");
+  it("detects Python Poetry projects with manifest-backed pytest + ruff", () => {
+    put(
+      "pyproject.toml",
+      [
+        "[tool.poetry]",
+        'name = "svc"',
+        'version = "0.1.0"',
+        "",
+        "[tool.poetry.dependencies]",
+        'python = "^3.12"',
+        'fastapi = "*"',
+        "",
+        "[tool.poetry.group.dev.dependencies]",
+        'pytest = "*"',
+        'ruff = "*"',
+        "",
+      ].join("\n"),
+    );
     const s = scanRepo(tmp, { maxDepth: 8 });
     expect(s.languages).toEqual(["Python"]);
+    expect(s.frameworks).toContain("FastAPI");
+    expect(s.packageManager).toBe("poetry");
     expect(s.testRunner).toBe("pytest");
     expect(s.lintCommand).toBe("ruff check .");
+  });
+
+  it("detects Python uv and pip manifests without inventing absent commands", () => {
+    put("pyproject.toml", '[project]\nname = "svc"\ndependencies = ["flask"]\n');
+    put("uv.lock", "version = 1\n");
+    const uv = scanRepo(tmp, { maxDepth: 8 });
+    expect(uv.languages).toEqual(["Python"]);
+    expect(uv.frameworks).toContain("Flask");
+    expect(uv.packageManager).toBe("uv");
+    expect(uv.testRunner).toBeUndefined();
+    expect(uv.lintCommand).toBeUndefined();
+
+    rmSync(join(tmp, "pyproject.toml"));
+    rmSync(join(tmp, "uv.lock"));
+    put("requirements.txt", "django\npytest\nblack\nmypy\n");
+    const pip = scanRepo(tmp, { maxDepth: 8 });
+    expect(pip.frameworks).toContain("Django");
+    expect(pip.packageManager).toBe("pip");
+    expect(pip.testRunner).toBe("pytest");
+    expect(pip.lintCommand).toBe("black --check .");
+  });
+
+  it("detects and excludes local Python virtualenv directories", () => {
+    put(
+      "pyproject.toml",
+      '[project]\nname = "svc"\n[project.optional-dependencies]\ndev = ["pytest"]\n',
+    );
+    put(".venv/lib/python3.12/site-packages/rust_dep/Cargo.toml", "[package]\nname='dep'\n");
+    put(".var/python/Lib/venv/not-an-env.py", "# stdlib module, not a local virtualenv\n");
+    const s = scanRepo(tmp, { maxDepth: 8 });
+    expect(s.languages).toEqual(["Python"]);
+    expect(s.languages).not.toContain("Rust");
+    expect(s.virtualEnvPaths).toEqual([".venv"]);
   });
 
   it("detects deployment targets and CDK/Terraform", () => {
@@ -275,6 +331,11 @@ describe("scanRepo — other stacks", () => {
       expect.arrayContaining(["Docker", "Kubernetes/Helm", "Terraform", "AWS CDK"]),
     );
     expect(s.cloud).toContain("AWS");
+    expect(s.deploymentCommands).toEqual({
+      cdkSynth: "npx cdk synth",
+      cdkDiff: "npx cdk diff",
+      cdkDeploy: "npx cdk deploy",
+    });
   });
 
   it("excludes node_modules and vendored/generated dirs", () => {
@@ -356,6 +417,90 @@ describe("scanRepo — monorepo / workspace detection", () => {
     put("packages/ui/package.json", pkg());
     put("packages/api/package.json", pkg());
     expect(scanRepo(tmp, { maxDepth: 8 }).isMonorepo).toBe(true);
+  });
+
+  it("detects per-workspace commands in a Node + Python + Rust polyglot repo", () => {
+    put("package.json", pkg({ scripts: { test: "vitest run", build: "tsc -p ." } }));
+    put("package-lock.json", "{}\n");
+    put("tsconfig.json", "{}\n");
+    put("src/index.ts", "export const root = true;\n");
+    put(
+      "services/api/pyproject.toml",
+      [
+        "[tool.poetry]",
+        'name = "api"',
+        'version = "0.1.0"',
+        "",
+        "[tool.poetry.group.dev.dependencies]",
+        'pytest = "*"',
+        'ruff = "*"',
+        "",
+      ].join("\n"),
+    );
+    put("services/api/app/main.py", "print('api')\n");
+    put("crates/worker/Cargo.toml", "[package]\nname = 'worker'\nversion = '0.1.0'\n");
+
+    const s = scanRepo(tmp, { maxDepth: 8 });
+
+    expect(s.languages).toEqual(expect.arrayContaining(["TypeScript/Node.js", "Python", "Rust"]));
+    expect(s.packageManager).toBe("npm");
+    expect(s.testRunner).toBe("npm test");
+    expect(s.buildCommand).toBe("npm run build");
+    expect(s.workspaceTool).toBe("polyglot");
+    expect(s.workspaces?.["services/api"]).toMatchObject({
+      languages: ["Python"],
+      packageManager: "poetry",
+      testRunner: "pytest",
+      lintCommand: "ruff check .",
+    });
+    expect(s.workspaces?.["crates/worker"]).toMatchObject({
+      languages: ["Rust"],
+      packageManager: "cargo",
+      testRunner: "cargo test",
+      buildCommand: "cargo build",
+      lintCommand: "cargo clippy",
+    });
+  });
+
+  it("keeps same-root secondary toolchain commands visible in a root workspace", () => {
+    put("package.json", pkg({ scripts: { test: "vitest run" } }));
+    put("package-lock.json", "{}\n");
+    put(
+      "pyproject.toml",
+      [
+        "[tool.poetry]",
+        'name = "root-py"',
+        'version = "0.1.0"',
+        "",
+        "[tool.poetry.group.dev.dependencies]",
+        'pytest = "*"',
+        'ruff = "*"',
+        "",
+      ].join("\n"),
+    );
+
+    const s = scanRepo(tmp, { maxDepth: 8 });
+
+    expect(s.testRunner).toBe("npm test");
+    expect(s.workspaces?.["."]).toMatchObject({
+      languages: ["Python"],
+      packageManager: "poetry",
+      testRunner: "pytest",
+      lintCommand: "ruff check .",
+    });
+  });
+
+  it("does not promote generated cache/snapshot manifests into workspaces", () => {
+    put("package.json", pkg());
+    put(".var/cache/tool/package.json", pkg({ scripts: { test: "vitest run" } }));
+    put("tests/integ.latest.js.snapshot/asset.123/package.json", pkg());
+    put("tests/integ.latest.js.snapshot/asset.123/Cargo.toml", "[package]\nname='asset'\n");
+
+    const s = scanRepo(tmp, { maxDepth: 8 });
+
+    expect(s.languages).toEqual(["JavaScript/Node.js"]);
+    expect(s.isMonorepo).toBe(false);
+    expect(s.workspaces).toBeUndefined();
   });
 
   it("a single-package repo is NOT a monorepo", () => {

@@ -362,6 +362,13 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     action:
       "Re-run `aih contract --apply` to regenerate `project.json` from the live tree. If a path is still non-portable, it was hand-edited — replace any absolute, drive-letter, or `..` path with a repo-relative POSIX path.",
   },
+  "contract.stale": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "repo contract drifted from the live repository",
+    action:
+      "Re-run `aih contract --apply` to regenerate `project.json` from the live tree, then re-check with `aih doctor`.",
+  },
   "org-policy.drift": {
     audience: "developer",
     failSeverity: "blocking",

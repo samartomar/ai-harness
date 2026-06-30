@@ -13,6 +13,7 @@ const SMALL_REPO_FILE_CEILING = 100;
 
 /** The canonical command shape carried per slot in the contract. */
 type ContractCommand = { value: string; confidence: Confidence };
+type ContractCommands = ProjectContract["commands"];
 
 /**
  * Tier grader for `test`/`lint`. The tier is LATENT in scanRepo's derivers:
@@ -29,21 +30,63 @@ function toCommand(value: string | undefined, detectedForm: string): ContractCom
 }
 
 /**
- * STRICT grader for `build`/`start`: emit ONLY a DECLARED npm script (`detected`),
- * else OMIT. A language-derived build (`go build ./...`, `./gradlew build`, `dotnet
- * build`, …) is deliberately NOT emitted in Phase 1 — it is undeclared, and rendered
- * into `project.md`/`setup.md` it reads as an INVENTED command (a weak model won't bind
- * it to a separate `knownGaps` caveat), weakening the contract's "don't invent
- * commands" promise. The Phase-2 `verified` tier runs the candidate and promotes a real
- * one. This is the stakes-based asymmetry vs {@link toCommand}: a suggested test/lint is
- * low-harm; a suggested build/start is not. (`scanRepo` derives no `start` default
- * anyway, so `start` is already declared-or-omit.)
+ * STRICT grader for `start`: emit ONLY a DECLARED npm script (`detected`), else
+ * OMIT. `scanRepo` derives no `start` default, so `start` is declared-or-omit.
  */
 function toDeclaredCommand(
   value: string | undefined,
   detectedForm: string,
 ): ContractCommand | undefined {
   return value === detectedForm ? { value, confidence: "detected" } : undefined;
+}
+
+/**
+ * Conservative build grader. Node builds stay declared-only; Rust Cargo builds are
+ * a manifest-native command with a single canonical form, so Wave 2 records them as
+ * `inferred` with a known-gap verification caveat. Other language defaults remain
+ * omitted until command verification can promote them.
+ */
+function toBuildCommand(value: string | undefined): ContractCommand | undefined {
+  if (value === undefined) return undefined;
+  if (value === "npm run build") return { value, confidence: "detected" };
+  if (value === "cargo build") return { value, confidence: "inferred" };
+  return undefined;
+}
+
+function toInferredCommand(value: string | undefined): ContractCommand | undefined {
+  return value === undefined ? undefined : { value, confidence: "inferred" };
+}
+
+function contractCommands(stack: {
+  testRunner?: string;
+  buildCommand?: string;
+  lintCommand?: string;
+  startCommand?: string;
+  deploymentCommands?: RepoStack["deploymentCommands"];
+}): ContractCommands {
+  return {
+    test: toCommand(stack.testRunner, "npm test"),
+    build: toBuildCommand(stack.buildCommand),
+    lint: toCommand(stack.lintCommand, "npm run lint"),
+    start: toDeclaredCommand(stack.startCommand, "npm start"),
+    cdkSynth: toInferredCommand(stack.deploymentCommands?.cdkSynth),
+    cdkDiff: toInferredCommand(stack.deploymentCommands?.cdkDiff),
+    cdkDeploy: toInferredCommand(stack.deploymentCommands?.cdkDeploy),
+  };
+}
+
+function contractWorkspaces(stack: RepoStack): ProjectContract["workspaces"] | undefined {
+  const entries = Object.entries(stack.workspaces ?? {}).sort(([a], [b]) => a.localeCompare(b));
+  if (entries.length === 0) return undefined;
+  const workspaces: NonNullable<ProjectContract["workspaces"]> = {};
+  for (const [path, ws] of entries) {
+    workspaces[path] = {
+      languages: ws.languages,
+      ...(ws.packageManager ? { packageManager: ws.packageManager } : {}),
+      commands: contractCommands(ws),
+    };
+  }
+  return workspaces;
 }
 
 /** Pure size bucket over the tracked-file count, with a monorepo floor. */
@@ -79,6 +122,9 @@ function deriveKnownGaps(
   committed: ReadonlySet<string> | undefined,
   commands: Record<string, ContractCommand | undefined>,
   browserTest: boolean,
+  virtualEnvPaths: readonly string[] = [],
+  workspaces: ProjectContract["workspaces"] = undefined,
+  workspaceCount: number | undefined = undefined,
 ): string[] {
   const gaps: string[] = [];
 
@@ -87,6 +133,12 @@ function deriveKnownGaps(
   if (browserTest && commands.test) {
     gaps.push(
       `tests run in a browser (\`${commands.test.value}\`) — in a CI/agent context run them headless (e.g. \`--watch=false --browsers=ChromeHeadless\`) or they hang waiting for a browser`,
+    );
+  }
+
+  for (const venv of virtualEnvPaths) {
+    gaps.push(
+      `local Python virtualenv present (${venv}) - do not treat as source; recreate dependencies from the Python manifest`,
     );
   }
 
@@ -110,11 +162,35 @@ function deriveKnownGaps(
     );
   }
 
-  for (const slot of ["test", "build", "lint", "start"] as const) {
+  for (const slot of ["test", "build", "lint", "start", "cdkSynth", "cdkDiff"] as const) {
     const cmd = commands[slot];
     if (cmd?.confidence === "inferred") {
       gaps.push(`unconfirmed \`${cmd.value}\` (${slot} inferred, not declared) — verify it runs`);
     }
+  }
+
+  if (commands.cdkDeploy) {
+    gaps.push(
+      `\`${commands.cdkDeploy.value}\` deploys live infrastructure — requires human approval; do NOT run it to verify (see command-policy \`*deploy*\` ask tier)`,
+    );
+  }
+
+  for (const [path, workspace] of Object.entries(workspaces ?? {})) {
+    for (const slot of ["test", "build", "lint", "start"] as const) {
+      const cmd = workspace.commands[slot];
+      if (cmd?.confidence === "inferred") {
+        gaps.push(
+          `unconfirmed workspace \`${path}\` \`${cmd.value}\` (${slot} inferred, not declared) — verify it runs`,
+        );
+      }
+    }
+  }
+
+  const shownCount = Object.keys(workspaces ?? {}).length;
+  if (workspaceCount !== undefined && workspaceCount > shownCount) {
+    gaps.push(
+      `showing ${shownCount} of ${workspaceCount} workspaces — others omitted; run per-package commands directly`,
+    );
   }
 
   return gaps;
@@ -136,12 +212,8 @@ export async function synthesizeContract(
   const trackedFiles = await trackedFileCount(ctx);
   const committed = await gitCommittedSet(ctx);
 
-  const commands = {
-    test: toCommand(stack.testRunner, "npm test"),
-    build: toDeclaredCommand(stack.buildCommand, "npm run build"),
-    lint: toCommand(stack.lintCommand, "npm run lint"),
-    start: toDeclaredCommand(stack.startCommand, "npm start"),
-  };
+  const commands = contractCommands(stack);
+  const workspaces = contractWorkspaces(stack);
 
   const secrets = scanSecrets(root);
   const targets = (ctx.targets ?? readAihConfig(root)?.targets ?? []).map((t) => String(t));
@@ -159,13 +231,23 @@ export async function synthesizeContract(
     packageManager: stack.packageManager,
     entrypoints: stack.entryPoints,
     commands,
+    ...(workspaces ? { workspaces } : {}),
     scale: {
       trackedFiles,
       class: scaleClass(trackedFiles, stack.isMonorepo),
       isMonorepo: stack.isMonorepo,
     },
     sensitivePaths: secrets.matches,
-    knownGaps: deriveKnownGaps(root, contextDir, committed, commands, stack.browserTest),
+    knownGaps: deriveKnownGaps(
+      root,
+      contextDir,
+      committed,
+      commands,
+      stack.browserTest,
+      stack.virtualEnvPaths,
+      workspaces,
+      stack.workspaceCount,
+    ),
   };
 }
 
@@ -194,6 +276,11 @@ function isPortableRel(p: string): boolean {
  * fail closed on any hit. Commands and CLI target names are not paths and are skipped.
  */
 export function unportablePaths(contract: ProjectContract): string[] {
-  const candidates = [contract.contextDir, ...contract.entrypoints, ...contract.sensitivePaths];
+  const candidates = [
+    contract.contextDir,
+    ...contract.entrypoints,
+    ...contract.sensitivePaths,
+    ...Object.keys(contract.workspaces ?? {}),
+  ];
   return candidates.filter((p) => !isPortableRel(p));
 }

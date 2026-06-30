@@ -7,6 +7,7 @@ import { command, portablePathsCheck } from "../../src/contract/index.js";
 import type { ProjectContract } from "../../src/contract/schema.js";
 import { ProjectContractSchema, readProjectContract } from "../../src/contract/schema.js";
 import { synthesizeContract, unportablePaths } from "../../src/contract/synth.js";
+import { projectContractDoc, setupDoc } from "../../src/contract/templates.js";
 import { executePlan, resolveContents } from "../../src/internals/execute.js";
 import type { Action, PlanContext, WriteAction } from "../../src/internals/plan.js";
 import { fakeRunner, missingToolRunner } from "../../src/internals/proc.js";
@@ -155,6 +156,19 @@ describe("PR 1B — project.md + setup.md", () => {
     expect(md).toContain("inferred");
     expect(md).toContain("confirm before relying on it");
   });
+
+  it("renders safe install commands for Python package managers", async () => {
+    seedMindworksLike(dir);
+    const base = await synth();
+    expect(setupDoc("ai-coding", { ...base, packageManager: "poetry" })).toContain(
+      "`poetry install`",
+    );
+    expect(setupDoc("ai-coding", { ...base, packageManager: "uv" })).toContain("`uv sync`");
+    expect(setupDoc("ai-coding", { ...base, packageManager: "pip" })).toContain(
+      "`python -m pip install -r requirements.txt`",
+    );
+    expect(setupDoc("ai-coding", { ...base, packageManager: "cargo" })).toContain("`cargo fetch`");
+  });
 });
 
 describe("command confidence", () => {
@@ -178,6 +192,16 @@ describe("command confidence", () => {
     expect(c.commands.start).toBeUndefined();
   });
 
+  it("emits Cargo commands and package manager as inferred Rust contract facts", async () => {
+    writeFileSync(join(dir, "Cargo.toml"), "[package]\nname = 'svc'\n");
+    const c = await synth();
+    expect(c.packageManager).toBe("cargo");
+    expect(c.commands.test).toEqual({ value: "cargo test", confidence: "inferred" });
+    expect(c.commands.build).toEqual({ value: "cargo build", confidence: "inferred" });
+    expect(c.commands.lint).toEqual({ value: "cargo clippy", confidence: "inferred" });
+    expect(c.commands.start).toBeUndefined();
+  });
+
   it("captures resolved CLI targets and the stack description", async () => {
     seedMindworksLike(dir);
     const c = await synth({ targets: ["claude", "codex"] as unknown as PlanContext["targets"] });
@@ -185,6 +209,133 @@ describe("command confidence", () => {
     expect(c.description).toBe("A worked-example service");
     expect(c.languages).toContain("TypeScript/Node.js");
     expect(c.frameworks).toContain("Express");
+  });
+
+  it("records per-workspace commands for polyglot repos", async () => {
+    writeFileSync(
+      join(dir, "package.json"),
+      JSON.stringify({
+        name: "root",
+        scripts: { test: "vitest run", build: "tsc -p ." },
+        devDependencies: { typescript: "^5", vitest: "^1" },
+      }),
+    );
+    writeFileSync(join(dir, "package-lock.json"), "{}\n");
+    mkdirSync(join(dir, "services", "api"), { recursive: true });
+    writeFileSync(
+      join(dir, "services", "api", "pyproject.toml"),
+      [
+        "[tool.poetry]",
+        'name = "api"',
+        'version = "0.1.0"',
+        "",
+        "[tool.poetry.group.dev.dependencies]",
+        'pytest = "*"',
+        'ruff = "*"',
+        "",
+      ].join("\n"),
+    );
+    mkdirSync(join(dir, "crates", "worker"), { recursive: true });
+    writeFileSync(
+      join(dir, "crates", "worker", "Cargo.toml"),
+      "[package]\nname = 'worker'\nversion = '0.1.0'\n",
+    );
+
+    const c = await synth();
+
+    expect(c.commands.test).toEqual({ value: "npm test", confidence: "detected" });
+    expect(c.workspaces?.["services/api"]?.commands.test).toEqual({
+      value: "pytest",
+      confidence: "inferred",
+    });
+    expect(c.workspaces?.["services/api"]?.commands.lint).toEqual({
+      value: "ruff check .",
+      confidence: "inferred",
+    });
+    expect(c.workspaces?.["crates/worker"]?.commands.build).toEqual({
+      value: "cargo build",
+      confidence: "inferred",
+    });
+    expect(c.knownGaps.some((g) => g.includes("services/api") && g.includes("pytest"))).toBe(true);
+    expect(projectContractDoc("ai-coding", c)).toContain("crates/worker");
+    expect(projectContractDoc("ai-coding", c)).toContain("cargo clippy");
+  });
+
+  it("emits AWS CDK verbs as inferred contract commands", async () => {
+    writeFileSync(
+      join(dir, "package.json"),
+      JSON.stringify({
+        name: "infra",
+        scripts: { test: "vitest run" },
+        dependencies: { "aws-cdk-lib": "^2" },
+        devDependencies: { vitest: "^1" },
+      }),
+    );
+    writeFileSync(join(dir, "package-lock.json"), "{}\n");
+    writeFileSync(join(dir, "cdk.json"), '{ "app": "node bin/app.js" }\n');
+
+    const c = await synth();
+
+    expect(c.commands.cdkSynth).toEqual({ value: "npx cdk synth", confidence: "inferred" });
+    expect(c.commands.cdkDiff).toEqual({ value: "npx cdk diff", confidence: "inferred" });
+    expect(c.commands.cdkDeploy).toEqual({ value: "npx cdk deploy", confidence: "inferred" });
+    expect(
+      c.knownGaps.some((g) => g.includes("npx cdk synth") && g.includes("verify it runs")),
+    ).toBe(true);
+    expect(
+      c.knownGaps.some((g) => g.includes("npx cdk diff") && g.includes("verify it runs")),
+    ).toBe(true);
+    expect(
+      c.knownGaps.some((g) => g.includes("npx cdk deploy") && g.includes("verify it runs")),
+    ).toBe(false);
+    expect(
+      c.knownGaps.some(
+        (g) =>
+          g.includes("npx cdk deploy") &&
+          g.includes("requires human approval") &&
+          g.includes("do NOT run it to verify"),
+      ),
+    ).toBe(true);
+    const md = projectContractDoc("ai-coding", c);
+    expect(md).toContain("**cdk synth**");
+    expect(md).toContain("**cdk diff**");
+    expect(md).not.toContain("**cdk deploy**");
+    expect(md).toContain("### External actions (human approval required)");
+    expect(md).toContain("`npx cdk deploy` deploys live infrastructure");
+  });
+
+  it("caps large workspace maps and records the omitted-workspaces gap", async () => {
+    writeFileSync(
+      join(dir, "package.json"),
+      JSON.stringify({ name: "root", scripts: { test: "vitest run" } }),
+    );
+    for (let i = 0; i < 10; i++) {
+      const rel = join(dir, "packages", `pkg-${String(i).padStart(2, "0")}`);
+      mkdirSync(rel, { recursive: true });
+      writeFileSync(join(rel, "package.json"), JSON.stringify({ name: `pkg-${i}`, scripts: {} }));
+    }
+
+    const c = await synth();
+
+    expect(Object.keys(c.workspaces ?? {})).toHaveLength(8);
+    expect(c.knownGaps.some((g) => g.includes("showing 8 of 10 workspaces"))).toBe(true);
+  });
+
+  it("does not add a workspace truncation gap when every workspace is shown", async () => {
+    writeFileSync(
+      join(dir, "package.json"),
+      JSON.stringify({ name: "root", scripts: { test: "vitest run" } }),
+    );
+    for (let i = 0; i < 3; i++) {
+      const rel = join(dir, "packages", `pkg-${String(i).padStart(2, "0")}`);
+      mkdirSync(rel, { recursive: true });
+      writeFileSync(join(rel, "package.json"), JSON.stringify({ name: `pkg-${i}`, scripts: {} }));
+    }
+
+    const c = await synth();
+
+    expect(Object.keys(c.workspaces ?? {})).toHaveLength(3);
+    expect(c.knownGaps.some((g) => g.includes("workspaces") && g.includes("omitted"))).toBe(false);
   });
 });
 
@@ -275,6 +426,15 @@ describe("known gaps", () => {
     const gaps = (await synth()).knownGaps;
     expect(gaps.some((g) => g.includes("retire") && g.includes("regenerate-adapters"))).toBe(true);
   });
+
+  it("flags committed Python virtualenv directories as non-source", async () => {
+    mkdirSync(join(dir, ".venv", "lib", "python3.12", "site-packages"), { recursive: true });
+    writeFileSync(join(dir, "pyproject.toml"), '[project]\nname = "svc"\n');
+    const gaps = (await synth()).knownGaps;
+    expect(gaps.some((g) => g.includes(".venv") && g.includes("do not treat as source"))).toBe(
+      true,
+    );
+  });
 });
 
 describe("browser-SPA detection (P4/P5)", () => {
@@ -312,6 +472,16 @@ describe("portable-paths invariant", () => {
       expect(unportablePaths(tampered)).toContain(bad);
       expect(portablePathsCheck(tampered, "team").verdict).toBe("fail");
     }
+  });
+
+  it("fails on non-portable workspace paths", async () => {
+    seedMindworksLike(dir);
+    const tampered: ProjectContract = {
+      ...(await synth()),
+      workspaces: { "../escape": { languages: ["Python"], commands: {} } },
+    };
+    expect(unportablePaths(tampered)).toContain("../escape");
+    expect(portablePathsCheck(tampered, "team").verdict).toBe("fail");
   });
 
   it("keeps unportable paths warning-only at vibe posture", async () => {
@@ -381,6 +551,98 @@ describe("PR 1D — doctor contract-truth probe", () => {
     expect((await contractTruthCheck(ctx())).verdict).toBe("pass");
   });
 
+  it("does not mark the contract stale when only tracked-file count changes", async () => {
+    seedMindworksLike(dir);
+    writeContract(await synth({ run: gitTrackedRunner(fakeTrackedPaths(50)) }));
+
+    const res = await contractTruthCheck(
+      ctx({ posture: "team", run: gitTrackedRunner(fakeTrackedPaths(51)) }),
+    );
+
+    expect(res.verdict).toBe("pass");
+    expect(res.code).toBeUndefined();
+  });
+
+  it("fails when the committed contract drifts from the live repo facts", async () => {
+    seedNodeNoBuildStart(dir);
+    writeContract(await synth());
+    writeFileSync(
+      join(dir, "package.json"),
+      JSON.stringify({
+        name: "lib",
+        scripts: { test: "vitest run", build: "tsc -p ." },
+        devDependencies: { typescript: "^5", vitest: "^1" },
+      }),
+    );
+
+    const res = await contractTruthCheck(ctx({ posture: "team" }));
+    expect(res.verdict).toBe("fail");
+    expect(res.code).toBe("contract.stale");
+    expect(res.detail).toContain("commands.build");
+    expect(res.detail).toContain("re-run `aih contract");
+  });
+
+  it("fails when generated stack facts drift beyond commands", async () => {
+    seedMindworksLike(dir);
+    writeContract(await synth());
+    writeFileSync(
+      join(dir, "package.json"),
+      JSON.stringify({
+        name: "mindworks",
+        description: "A worked-example service",
+        scripts: {
+          test: "vitest run",
+          build: "tsc -p .",
+          lint: "biome check .",
+          start: "node dist/main.js",
+        },
+        dependencies: { "@aws-sdk/client-dynamodb": "^3", express: "^4", pg: "^8" },
+        devDependencies: { typescript: "^5", vitest: "^1" },
+      }),
+    );
+    writeFileSync(join(dir, "package-lock.json"), JSON.stringify({ lockfileVersion: 3 }));
+    writeFileSync(join(dir, "Dockerfile"), "FROM node:20\n");
+
+    const res = await contractTruthCheck(ctx({ posture: "team" }));
+    expect(res.verdict).toBe("fail");
+    expect(res.code).toBe("contract.stale");
+    expect(res.detail).toContain("cloud");
+    expect(res.detail).toContain("databases");
+    expect(res.detail).toContain("deployment");
+    expect(res.detail).toContain("packageManager");
+  });
+
+  it("keeps contract staleness warning-only at vibe posture", async () => {
+    seedNodeNoBuildStart(dir);
+    writeContract(await synth());
+    writeFileSync(
+      join(dir, "package.json"),
+      JSON.stringify({
+        name: "lib",
+        scripts: { test: "vitest run", build: "tsc -p ." },
+        devDependencies: { typescript: "^5", vitest: "^1" },
+      }),
+    );
+
+    const res = await contractTruthCheck(ctx({ posture: "vibe" }));
+    expect(res.verdict).toBe("pass");
+    expect(res.code).toBeUndefined();
+    expect(res.detail).toContain("warning-only");
+  });
+
+  it("ignores user-added project.json keys when checking staleness", async () => {
+    seedMindworksLike(dir);
+    mkdirSync(join(dir, "ai-coding"), { recursive: true });
+    writeFileSync(
+      join(dir, "ai-coding", "project.json"),
+      `${JSON.stringify({ ...(await synth()), teamNotes: { owner: "platform" } }, null, 2)}\n`,
+    );
+
+    const res = await contractTruthCheck(ctx({ posture: "team" }));
+    expect(res.verdict).toBe("pass");
+    expect(res.code).toBeUndefined();
+  });
+
   it("fails (routable) on a non-portable path in the committed contract", async () => {
     seedMindworksLike(dir);
     writeContract({ ...(await synth()), entrypoints: ["../escape"] });
@@ -400,9 +662,17 @@ describe("PR 1D — doctor contract-truth probe", () => {
   });
 
   it("does not false-fail a large repo — defers deep validation to graph safety", async () => {
-    seedMindworksLike(dir);
+    seedNodeNoBuildStart(dir);
     const big = gitTrackedRunner(fakeTrackedPaths(1500));
     writeContract(await synth({ run: big }));
+    writeFileSync(
+      join(dir, "package.json"),
+      JSON.stringify({
+        name: "lib",
+        scripts: { test: "vitest run", build: "tsc -p ." },
+        devDependencies: { typescript: "^5", vitest: "^1" },
+      }),
+    );
     const res = await contractTruthCheck(ctx({ run: big }));
     expect(res.verdict).toBe("pass");
     expect(res.detail).toContain("deferred");

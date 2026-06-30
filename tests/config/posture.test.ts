@@ -47,6 +47,7 @@ describe("gradeVerdict", () => {
     expect(gradeVerdict("warn", "secrets", "vibe")).toBe("warn");
     expect(gradeVerdict("warn", "secrets", "team")).toBe("deny");
     expect(gradeVerdict("warn", "path-portability", "team")).toBe("deny");
+    expect(gradeVerdict("warn", "contract-freshness", "team")).toBe("deny");
     expect(gradeVerdict("warn", "secrets", "enterprise")).toBe("deny");
     expect(gradeVerdict("warn", "risk-gates", "enterprise")).toBe("warn");
     expect(gradeVerdict("allow", "secrets", "enterprise")).toBe("allow");
