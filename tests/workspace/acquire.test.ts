@@ -146,13 +146,11 @@ describe("workspace add acquisition plans", () => {
     );
 
     const sourceId = basename(sourceRoot).toLowerCase();
+    const skillWrite = result.writes.find((write) => write.path.endsWith("SKILL.md"));
     expect(result.report?.ok).toBe(true);
-    expect(
-      readFileSync(join(workspace, "ai-coding", "skills", sourceId, sourceId, "SKILL.md"), "utf8"),
-    ).toContain("# Root Skill");
-    expect(existsSync(join(workspace, "ai-coding", "skills", sourceId, sourceId, "icon.png"))).toBe(
-      false,
-    );
+    expect(skillWrite?.path).toContain(`ai-coding/skills/${sourceId}/`);
+    expect(readFileSync(join(workspace, skillWrite?.path ?? ""), "utf8")).toContain("# Root Skill");
+    expect(result.writes.some((write) => write.path.endsWith("icon.png"))).toBe(false);
     const lock = JSON.parse(readFileSync(join(workspace, ".aih", "trust-lock.json"), "utf8")) as {
       sources: Array<{ id: string }>;
     };
