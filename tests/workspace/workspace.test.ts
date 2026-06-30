@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -225,7 +225,12 @@ describe("workspace — write-once executor behavior", () => {
     const run = fakeRunner((argv) => {
       if (argv[0] === "git") ran.push(argv.join(" "));
       if (argv[0] === "git" && argv.includes("rev-parse")) return { code: 1 };
-      if (argv[0] === "git" && argv.includes("diff")) return { code: 1 };
+      if (argv[0] === "git" && argv.slice(3).join(" ") === "config --get user.email") {
+        return { stdout: "agent@example.test" };
+      }
+      if (argv[0] === "git" && argv.slice(3).join(" ") === "config --get user.name") {
+        return { stdout: "AI Harness" };
+      }
       return undefined;
     });
     const ctx = makeCtx({ git: true }, true, run);
@@ -250,6 +255,25 @@ describe("workspace — write-once executor behavior", () => {
     expect(commit).toContain(".aih-workspace.json");
   });
 
+  it("fails before writing when a baseline commit needs missing git identity", async () => {
+    child("service-api");
+    const run = fakeRunner((argv) => {
+      if (argv[0] === "git" && argv.includes("rev-parse")) return { code: 1 };
+      if (argv[0] === "git" && argv.slice(3).join(" ") === "config --get user.email") {
+        return { code: 1 };
+      }
+      if (argv[0] === "git" && argv.slice(3).join(" ") === "config --get user.name") {
+        return { code: 1 };
+      }
+      return undefined;
+    });
+    const ctx = makeCtx({ git: true }, true, run);
+
+    await expect(command.plan(ctx)).rejects.toThrow(/git identity/);
+    expect(existsSync(join(parent, ".aih-workspace.json"))).toBe(false);
+    expect(existsSync(join(parent, ".gitignore"))).toBe(false);
+  });
+
   it("re-applies --git without duplicating ignores or committing a clean tree", async () => {
     child("service-api");
     writeFileSync(join(parent, ".gitignore"), "custom.log\nservice-api/\n*.aih.bak\n", "utf8");
@@ -257,7 +281,12 @@ describe("workspace — write-once executor behavior", () => {
     const run = fakeRunner((argv) => {
       if (argv[0] === "git") ran.push(argv.join(" "));
       if (argv[0] === "git" && argv.includes("rev-parse")) return { stdout: "true" };
-      if (argv[0] === "git" && argv.includes("diff")) return { code: 0 };
+      if (argv[0] === "git" && argv.slice(3).join(" ") === "config --get user.email") {
+        return { stdout: "agent@example.test" };
+      }
+      if (argv[0] === "git" && argv.slice(3).join(" ") === "config --get user.name") {
+        return { stdout: "AI Harness" };
+      }
       return undefined;
     });
     const ctx = makeCtx({ git: true }, true, run);
