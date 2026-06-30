@@ -433,6 +433,8 @@ describe("Check.code — invariants", () => {
       "report.context-over-budget": true,
       "report.low-adoption": true,
       "report.contract-untrue": true,
+      "trust.hidden-unicode": true,
+      "trust.prompt-injection": true,
     };
     const srcDir = join(process.cwd(), "src");
     const src = (readdirSync(srcDir, { recursive: true }) as string[])

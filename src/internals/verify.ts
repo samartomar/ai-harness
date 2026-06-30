@@ -56,7 +56,10 @@ export type CheckCode =
   // report (analytics-derived advisories)
   | "report.context-over-budget"
   | "report.low-adoption"
-  | "report.contract-untrue";
+  | "report.contract-untrue"
+  // trust gate (external repos / skills)
+  | "trust.hidden-unicode"
+  | "trust.prompt-injection";
 
 export interface Check {
   name: string;
