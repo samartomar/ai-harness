@@ -306,6 +306,7 @@ describe("scanRepo — other stacks", () => {
   it("detects and excludes local Python virtualenv directories", () => {
     put("pyproject.toml", "[project]\nname = \"svc\"\n[project.optional-dependencies]\ndev = [\"pytest\"]\n");
     put(".venv/lib/python3.12/site-packages/rust_dep/Cargo.toml", "[package]\nname='dep'\n");
+    put(".var/python/Lib/venv/not-an-env.py", "# stdlib module, not a local virtualenv\n");
     const s = scanRepo(tmp, { maxDepth: 8 });
     expect(s.languages).toEqual(["Python"]);
     expect(s.languages).not.toContain("Rust");
