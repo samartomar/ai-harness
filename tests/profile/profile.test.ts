@@ -457,6 +457,34 @@ describe("scanRepo — monorepo / workspace detection", () => {
     });
   });
 
+  it("keeps same-root secondary toolchain commands visible in a root workspace", () => {
+    put("package.json", pkg({ scripts: { test: "vitest run" } }));
+    put("package-lock.json", "{}\n");
+    put(
+      "pyproject.toml",
+      [
+        "[tool.poetry]",
+        'name = "root-py"',
+        'version = "0.1.0"',
+        "",
+        "[tool.poetry.group.dev.dependencies]",
+        'pytest = "*"',
+        'ruff = "*"',
+        "",
+      ].join("\n"),
+    );
+
+    const s = scanRepo(tmp, { maxDepth: 8 });
+
+    expect(s.testRunner).toBe("npm test");
+    expect(s.workspaces?.["."]).toMatchObject({
+      languages: ["Python"],
+      packageManager: "poetry",
+      testRunner: "pytest",
+      lintCommand: "ruff check .",
+    });
+  });
+
   it("does not promote generated cache/snapshot manifests into workspaces", () => {
     put("package.json", pkg());
     put(".var/cache/tool/package.json", pkg({ scripts: { test: "vitest run" } }));

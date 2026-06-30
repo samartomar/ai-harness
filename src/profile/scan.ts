@@ -203,6 +203,8 @@ interface Raw {
   manifestCount: number;
   /** Manifest/toolchain roots seen during the walk, repo-relative POSIX paths. */
   workspaceRoots: Set<string>;
+  /** Non-Node toolchains whose manifest lives at the scan root beside package.json. */
+  rootToolchains: Set<string>;
   /** Build-tool wrappers present at the repo — prefer ./mvnw / ./gradlew when set. */
   hasMvnw: boolean;
   hasGradlew: boolean;
@@ -237,6 +239,7 @@ export function scanRepo(root: string, opts: ScanOptions): RepoStack {
     workspaceSignals: new Set(),
     manifestCount: 0,
     workspaceRoots: new Set(),
+    rootToolchains: new Set(),
     hasMvnw: false,
     hasGradlew: false,
     hasEslintConfig: false,
@@ -364,15 +367,18 @@ function inspectFile(root: string, dir: string, name: string, raw: Raw): void {
     case "go.mod":
       push(raw.languages, "Go");
       rememberWorkspaceRoot(root, dir, raw);
+      rememberRootToolchain(root, dir, raw, "Go");
       return;
     case "Cargo.toml":
       push(raw.languages, "Rust");
       rememberWorkspaceRoot(root, dir, raw);
+      rememberRootToolchain(root, dir, raw, "Rust");
       return;
     case "pyproject.toml":
     case "requirements.txt":
       push(raw.languages, "Python");
       rememberWorkspaceRoot(root, dir, raw);
+      rememberRootToolchain(root, dir, raw, "Python");
       detectPythonManifest(join(dir, name), name, raw);
       return;
     case "poetry.lock":
@@ -387,6 +393,7 @@ function inspectFile(root: string, dir: string, name: string, raw: Raw): void {
     case "pom.xml":
       push(raw.languages, "Java/Maven");
       rememberWorkspaceRoot(root, dir, raw);
+      rememberRootToolchain(root, dir, raw, "Java/Maven");
       // A <modules> reactor makes this a Maven multi-module monorepo.
       if (/<modules>/.test(safeRead(join(dir, name)))) raw.workspaceSignals.add("maven");
       return;
@@ -394,6 +401,7 @@ function inspectFile(root: string, dir: string, name: string, raw: Raw): void {
     case "build.gradle.kts":
       push(raw.languages, "Java/Gradle");
       rememberWorkspaceRoot(root, dir, raw);
+      rememberRootToolchain(root, dir, raw, "Java/Gradle");
       return;
     case "Dockerfile":
       push(raw.deployment, "Docker");
@@ -475,12 +483,18 @@ function detectMisc(root: string, dir: string, name: string, lower: string, raw:
   if (matches(lower, ".csproj") || matches(lower, ".slnx") || matches(lower, ".sln")) {
     push(raw.languages, ".NET");
     rememberWorkspaceRoot(root, dir, raw);
+    rememberRootToolchain(root, dir, raw, ".NET");
   }
 }
 
 function rememberWorkspaceRoot(root: string, dir: string, raw: Raw): void {
   const rel = relative(root, dir).replace(/\\/g, "/");
   if (!isGeneratedWorkspacePath(rel)) raw.workspaceRoots.add(rel);
+}
+
+function rememberRootToolchain(root: string, dir: string, raw: Raw, language: string): void {
+  const rel = relative(root, dir).replace(/\\/g, "/");
+  if (rel.length === 0) raw.rootToolchains.add(language);
 }
 
 function isGeneratedWorkspacePath(rel: string): boolean {
@@ -687,9 +701,14 @@ function synthesizeWorkspaces(
   const rels = [...raw.workspaceRoots]
     .filter((rel) => rel.length > 0)
     .sort((a, b) => a.localeCompare(b));
-  if (rels.length === 0) return undefined;
 
   const workspaces: Record<string, WorkspaceStack> = {};
+  const rootSecondary = synthesizeRootSecondaryWorkspace(raw);
+  if (rootSecondary) workspaces["."] = rootSecondary;
+  if (rels.length === 0) {
+    return Object.keys(workspaces).length > 0 ? workspaces : undefined;
+  }
+
   for (const rel of rels) {
     const stack = scanRepo(join(root, rel), {
       maxDepth: Math.min(4, Math.max(0, opts.maxDepth)),
@@ -708,6 +727,31 @@ function synthesizeWorkspaces(
   }
 
   return Object.keys(workspaces).length > 0 ? workspaces : undefined;
+}
+
+function synthesizeRootSecondaryWorkspace(raw: Raw): WorkspaceStack | undefined {
+  if (!raw.pkg) return undefined;
+  if (raw.rootToolchains.has("Python")) {
+    return {
+      languages: ["Python"],
+      ...(pythonPackageManager(raw) ? { packageManager: pythonPackageManager(raw) } : {}),
+      ...(derivePythonTest(raw) ? { testRunner: derivePythonTest(raw) } : {}),
+      ...(derivePythonLint(raw) ? { lintCommand: derivePythonLint(raw) } : {}),
+    };
+  }
+  if (raw.rootToolchains.has("Rust")) {
+    return {
+      languages: ["Rust"],
+      packageManager: "cargo",
+      testRunner: "cargo test",
+      buildCommand: "cargo build",
+      lintCommand: "cargo clippy",
+    };
+  }
+  if (raw.rootToolchains.has("Go")) {
+    return { languages: ["Go"], testRunner: "go test ./...", buildCommand: "go build ./..." };
+  }
+  return undefined;
 }
 
 function pythonPackageManager(raw: Raw): string | undefined {
