@@ -1,5 +1,5 @@
 import { type Dirent, readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 
 /**
  * The synthesized profile of a repository: languages, frameworks, cloud/deploy
@@ -47,6 +47,8 @@ export interface RepoStack {
   isMonorepo: boolean;
   /** Detected workspace tool (turbo/nx/pnpm/rush/lerna/bazel/maven/gradle/npm-yarn), if any. */
   workspaceTool?: string;
+  /** Local Python virtualenv directories found and excluded from source scanning. */
+  virtualEnvPaths?: string[];
 }
 
 export interface ScanOptions {
@@ -75,7 +77,12 @@ const EXCLUDED_DIRS = new Set([
   ".serverless",
   "cdk.out",
   ".terraform",
+  ".venv",
+  "venv",
 ]);
+
+/** Python virtualenv directories: signal their presence, but never scan their contents. */
+const VIRTUAL_ENV_DIRS = new Set([".venv", "venv"]);
 
 /** Node dependency → framework label. */
 const NODE_FRAMEWORKS: Record<string, string> = {
@@ -182,6 +189,11 @@ interface Raw {
   hasBiomeConfig: boolean;
   /** A browser test runner is configured by a `karma.conf.*` file. */
   hasKarmaConfig: boolean;
+  /** Local Python virtualenv directories, repo-relative POSIX paths. */
+  virtualEnvPaths: string[];
+  /** Python package/tooling signals from manifests, lockfiles, and config files. */
+  pythonManagers: Set<string>;
+  pythonTools: Set<"pytest" | "ruff" | "black" | "mypy">;
 }
 
 /**
@@ -207,6 +219,9 @@ export function scanRepo(root: string, opts: ScanOptions): RepoStack {
     hasEslintConfig: false,
     hasBiomeConfig: false,
     hasKarmaConfig: false,
+    virtualEnvPaths: [],
+    pythonManagers: new Set(),
+    pythonTools: new Set(),
   };
   // Exclude the configured context dir (top path segment) alongside the static
   // set, so re-scans never walk the canon aih itself generated (the default is
@@ -214,11 +229,12 @@ export function scanRepo(root: string, opts: ScanOptions): RepoStack {
   const excluded = new Set<string>(EXCLUDED_DIRS);
   const ctxTop = opts.contextDir?.split(/[/\\]/).find((s) => s.length > 0);
   if (ctxTop) excluded.add(ctxTop);
-  walk(root, 0, Math.max(0, opts.maxDepth), raw, excluded);
+  walk(root, root, 0, Math.max(0, opts.maxDepth), raw, excluded);
   return synthesize(raw);
 }
 
 function walk(
+  root: string,
   dir: string,
   depth: number,
   maxDepth: number,
@@ -235,6 +251,10 @@ function walk(
   const subdirs: string[] = [];
   for (const entry of entries) {
     if (entry.isDirectory()) {
+      if (VIRTUAL_ENV_DIRS.has(entry.name)) {
+        push(raw.virtualEnvPaths, relative(root, join(dir, entry.name)).replace(/\\/g, "/"));
+        continue;
+      }
       if (!excluded.has(entry.name)) subdirs.push(entry.name);
       continue;
     }
@@ -243,7 +263,7 @@ function walk(
 
   if (depth >= maxDepth) return;
   for (const name of subdirs) {
-    walk(join(dir, name), depth + 1, maxDepth, raw, excluded);
+    walk(root, join(dir, name), depth + 1, maxDepth, raw, excluded);
   }
 }
 
@@ -320,7 +340,16 @@ function inspectFile(dir: string, name: string, raw: Raw): void {
     case "pyproject.toml":
     case "requirements.txt":
       push(raw.languages, "Python");
-      detectPythonFrameworks(join(dir, name), raw);
+      detectPythonManifest(join(dir, name), name, raw);
+      return;
+    case "poetry.lock":
+      raw.pythonManagers.add("poetry");
+      return;
+    case "uv.lock":
+      raw.pythonManagers.add("uv");
+      return;
+    case "Pipfile":
+      raw.pythonManagers.add("pipenv");
       return;
     case "pom.xml":
       push(raw.languages, "Java/Maven");
@@ -373,6 +402,22 @@ function detectMisc(dir: string, name: string, lower: string, raw: Raw): void {
     raw.hasKarmaConfig = true;
     return;
   }
+  if (lower === "pytest.ini") {
+    raw.pythonTools.add("pytest");
+    return;
+  }
+  if (lower === "ruff.toml" || lower === ".ruff.toml") {
+    raw.pythonTools.add("ruff");
+    return;
+  }
+  if (lower === "mypy.ini" || lower === ".mypy.ini") {
+    raw.pythonTools.add("mypy");
+    return;
+  }
+  if (/^test_.*\.py$/.test(lower) || /_test\.py$/.test(lower)) {
+    raw.pythonTools.add("pytest");
+    return;
+  }
   if (/^serverless\.(yml|yaml|ts|js|json)$/.test(lower)) {
     push(raw.frameworks, "Serverless Framework");
     push(raw.deployment, "Serverless Framework");
@@ -416,14 +461,23 @@ function readServerless(path: string, raw: Raw): void {
   }
 }
 
-function detectPythonFrameworks(path: string, raw: Raw): void {
+function detectPythonManifest(path: string, name: string, raw: Raw): void {
   const body = safeRead(path).toLowerCase();
+  if (name === "requirements.txt") raw.pythonManagers.add("pip");
+  if (name === "pyproject.toml") {
+    if (/\[tool\.poetry\b/.test(body)) raw.pythonManagers.add("poetry");
+    if (/\[tool\.uv\b/.test(body)) raw.pythonManagers.add("uv");
+  }
   if (/\bfastapi\b/.test(body)) push(raw.frameworks, "FastAPI");
   if (/\bflask\b/.test(body)) push(raw.frameworks, "Flask");
   if (/\bdjango\b/.test(body)) push(raw.frameworks, "Django");
   if (/\bpsycopg2\b|\basyncpg\b/.test(body)) push(raw.databases, "PostgreSQL");
   if (/\bpymongo\b/.test(body)) push(raw.databases, "MongoDB");
   if (/\bredis\b/.test(body)) push(raw.databases, "Redis");
+  if (/\bpytest\b|\[tool\.pytest\b/.test(body)) raw.pythonTools.add("pytest");
+  if (/\bruff\b|\[tool\.ruff\b/.test(body)) raw.pythonTools.add("ruff");
+  if (/\bblack\b|\[tool\.black\b/.test(body)) raw.pythonTools.add("black");
+  if (/\bmypy\b|\[tool\.mypy\b/.test(body)) raw.pythonTools.add("mypy");
 }
 
 function readPkg(path: string): PkgJson {
@@ -504,8 +558,8 @@ function synthesize(raw: Raw): RepoStack {
       testRunner = "cargo test";
       buildCommand = "cargo build";
     } else if (languages.includes("Python")) {
-      testRunner = "pytest";
-      lintCommand = "ruff check .";
+      testRunner = derivePythonTest(raw);
+      lintCommand = derivePythonLint(raw);
     } else if (languages.includes("Java/Maven")) {
       // Prefer the project's pinned wrapper over a system mvn/gradle when present.
       const mvn = raw.hasMvnw ? "./mvnw" : "mvn";
@@ -539,6 +593,7 @@ function synthesize(raw: Raw): RepoStack {
         ? "JavaScript"
         : l,
   );
+  const packageManager = pkg ? raw.packageManager : (raw.packageManager ?? pythonPackageManager(raw));
   // Browser test runners (Karma's `ng test`, Cypress) launch a real browser and HANG in a
   // headless/agent context — surface it so synth can warn the next agent (the real trap).
   const browserTest =
@@ -550,7 +605,7 @@ function synthesize(raw: Raw): RepoStack {
     cloud: dedupe(cloud),
     databases: dedupe(databases),
     deployment: dedupe(deployment),
-    packageManager: raw.packageManager,
+    packageManager,
     hasTypeScript: raw.hasTsconfig || raw.sawTsFile || (pkg?.deps.has("typescript") ?? false),
     scripts: pkg?.scripts ?? {},
     description: pkg?.description,
@@ -562,7 +617,27 @@ function synthesize(raw: Raw): RepoStack {
     browserTest,
     isMonorepo,
     workspaceTool,
+    virtualEnvPaths: raw.virtualEnvPaths,
   };
+}
+
+function pythonPackageManager(raw: Raw): string | undefined {
+  if (raw.pythonManagers.has("uv")) return "uv";
+  if (raw.pythonManagers.has("poetry")) return "poetry";
+  if (raw.pythonManagers.has("pipenv")) return "pipenv";
+  if (raw.pythonManagers.has("pip")) return "pip";
+  return undefined;
+}
+
+function derivePythonTest(raw: Raw): string | undefined {
+  return raw.pythonTools.has("pytest") ? "pytest" : undefined;
+}
+
+function derivePythonLint(raw: Raw): string | undefined {
+  if (raw.pythonTools.has("ruff")) return "ruff check .";
+  if (raw.pythonTools.has("black")) return "black --check .";
+  if (raw.pythonTools.has("mypy")) return "mypy .";
+  return undefined;
 }
 
 /** Derive the test command, ignoring placeholder `echo`/no-op scripts. */

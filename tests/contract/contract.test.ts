@@ -7,6 +7,7 @@ import { command, portablePathsCheck } from "../../src/contract/index.js";
 import type { ProjectContract } from "../../src/contract/schema.js";
 import { ProjectContractSchema, readProjectContract } from "../../src/contract/schema.js";
 import { synthesizeContract, unportablePaths } from "../../src/contract/synth.js";
+import { setupDoc } from "../../src/contract/templates.js";
 import { executePlan, resolveContents } from "../../src/internals/execute.js";
 import type { Action, PlanContext, WriteAction } from "../../src/internals/plan.js";
 import { fakeRunner, missingToolRunner } from "../../src/internals/proc.js";
@@ -154,6 +155,18 @@ describe("PR 1B — project.md + setup.md", () => {
       writesByPath((await command.plan(ctx())).actions).get("ai-coding/project.md")?.contents ?? "";
     expect(md).toContain("inferred");
     expect(md).toContain("confirm before relying on it");
+  });
+
+  it("renders safe install commands for Python package managers", async () => {
+    seedMindworksLike(dir);
+    const base = await synth();
+    expect(setupDoc("ai-coding", { ...base, packageManager: "poetry" })).toContain(
+      "`poetry install`",
+    );
+    expect(setupDoc("ai-coding", { ...base, packageManager: "uv" })).toContain("`uv sync`");
+    expect(setupDoc("ai-coding", { ...base, packageManager: "pip" })).toContain(
+      "`python -m pip install -r requirements.txt`",
+    );
   });
 });
 

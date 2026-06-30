@@ -79,6 +79,7 @@ function deriveKnownGaps(
   committed: ReadonlySet<string> | undefined,
   commands: Record<string, ContractCommand | undefined>,
   browserTest: boolean,
+  virtualEnvPaths: readonly string[] = [],
 ): string[] {
   const gaps: string[] = [];
 
@@ -87,6 +88,12 @@ function deriveKnownGaps(
   if (browserTest && commands.test) {
     gaps.push(
       `tests run in a browser (\`${commands.test.value}\`) — in a CI/agent context run them headless (e.g. \`--watch=false --browsers=ChromeHeadless\`) or they hang waiting for a browser`,
+    );
+  }
+
+  for (const venv of virtualEnvPaths) {
+    gaps.push(
+      `local Python virtualenv present (${venv}) - do not treat as source; recreate dependencies from the Python manifest`,
     );
   }
 
@@ -165,7 +172,14 @@ export async function synthesizeContract(
       isMonorepo: stack.isMonorepo,
     },
     sensitivePaths: secrets.matches,
-    knownGaps: deriveKnownGaps(root, contextDir, committed, commands, stack.browserTest),
+    knownGaps: deriveKnownGaps(
+      root,
+      contextDir,
+      committed,
+      commands,
+      stack.browserTest,
+      stack.virtualEnvPaths,
+    ),
   };
 }
 

@@ -49,6 +49,21 @@ function pathsOrNone(items: string[]): string[] {
   return items.length > 0 ? items.map((p) => `- \`${p}\``) : ["_None detected._"];
 }
 
+function installCommand(packageManager: string | undefined): string | undefined {
+  if (packageManager === undefined) return undefined;
+  const commands: Record<string, string> = {
+    npm: "npm install",
+    pnpm: "pnpm install",
+    yarn: "yarn install",
+    bun: "bun install",
+    poetry: "poetry install",
+    uv: "uv sync",
+    pip: "python -m pip install -r requirements.txt",
+    pipenv: "pipenv install --dev",
+  };
+  return commands[packageManager] ?? `${packageManager} install`;
+}
+
 /**
  * The human-readable contract mirror. Regenerated from `project.json` every run, so the
  * header warns against hand-editing. Facts only — the working agreement is referenced,
@@ -102,8 +117,9 @@ export function projectContractDoc(dir: string, c: ProjectContract): string {
  * purpose — this is a checklist, not a playbook.
  */
 export function setupDoc(dir: string, c: ProjectContract): string {
-  const installLine = c.packageManager
-    ? `- Install dependencies: \`${c.packageManager} install\`.`
+  const install = installCommand(c.packageManager);
+  const installLine = install
+    ? `- Install dependencies: \`${install}\`.`
     : "- Install dependencies with the repo's package manager (npm / pnpm / yarn / bun).";
   const verify: string[] = [];
   if (c.commands.test) verify.push(`- Run the tests: \`${c.commands.test.value}\``);

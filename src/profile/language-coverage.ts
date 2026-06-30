@@ -137,6 +137,10 @@ function seedPython(root: string): void {
       'asyncpg = "*"',
       'redis = "*"',
       "",
+      "[tool.poetry.group.dev.dependencies]",
+      'pytest = "*"',
+      'ruff = "*"',
+      "",
     ].join("\n"),
   );
   put(root, "app/main.py", "from fastapi import FastAPI\napp = FastAPI()\n");
@@ -217,7 +221,7 @@ const FIXTURES: CoverageFixture[] = [
     id: "python-pyproject",
     ecosystem: "Python pyproject",
     role: "wave-2-target",
-    note: "Python works only as the primary non-Node stack today: pytest/ruff are inferred when no root package.json exists; Poetry/uv package-manager detection is absent.",
+    note: "Python primary-stack coverage now detects Poetry plus manifest-backed pytest/ruff when no root package.json exists; polyglot Python commands wait for per-workspace command routing.",
     seed: seedPython,
     expected: {
       languages: ["Python"],
@@ -225,7 +229,7 @@ const FIXTURES: CoverageFixture[] = [
       test: ["pytest"],
       lint: ["ruff check ."],
       db: ["PostgreSQL", "Redis"],
-      packageManager: ["poetry", "uv"],
+      packageManager: ["poetry"],
     },
   },
   {
