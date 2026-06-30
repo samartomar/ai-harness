@@ -248,7 +248,12 @@ describe("scanRepo — other stacks", () => {
 
     rmSync(join(tmp, "go.mod"));
     put("Cargo.toml", "[package]\nname='x'\n");
-    expect(scanRepo(tmp, { maxDepth: 8 }).languages).toEqual(["Rust"]);
+    const rust = scanRepo(tmp, { maxDepth: 8 });
+    expect(rust.languages).toEqual(["Rust"]);
+    expect(rust.packageManager).toBe("cargo");
+    expect(rust.testRunner).toBe("cargo test");
+    expect(rust.buildCommand).toBe("cargo build");
+    expect(rust.lintCommand).toBe("cargo clippy");
 
     rmSync(join(tmp, "Cargo.toml"));
     put("Api.csproj", "<Project></Project>");

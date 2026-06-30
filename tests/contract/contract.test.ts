@@ -191,6 +191,16 @@ describe("command confidence", () => {
     expect(c.commands.start).toBeUndefined();
   });
 
+  it("emits Cargo commands and package manager as inferred Rust contract facts", async () => {
+    writeFileSync(join(dir, "Cargo.toml"), "[package]\nname = 'svc'\n");
+    const c = await synth();
+    expect(c.packageManager).toBe("cargo");
+    expect(c.commands.test).toEqual({ value: "cargo test", confidence: "inferred" });
+    expect(c.commands.build).toEqual({ value: "cargo build", confidence: "inferred" });
+    expect(c.commands.lint).toEqual({ value: "cargo clippy", confidence: "inferred" });
+    expect(c.commands.start).toBeUndefined();
+  });
+
   it("captures resolved CLI targets and the stack description", async () => {
     seedMindworksLike(dir);
     const c = await synth({ targets: ["claude", "codex"] as unknown as PlanContext["targets"] });

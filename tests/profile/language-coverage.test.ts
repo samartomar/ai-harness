@@ -55,7 +55,9 @@ describe("language coverage benchmark", () => {
 
     expect(rust.grades.test).toBe("good");
     expect(rust.grades.build).toBe("good");
-    expect(rust.grades.lint).toBe("none");
+    expect(rust.grades.lint).toBe("good");
+    expect(rust.grades.packageManager).toBe("good");
+    expect(rust.note).toContain("Cargo package manager");
 
     expect(polyglot.grades.languages).toBe("good");
     expect(polyglot.grades.test).toBe("partial");
@@ -65,7 +67,6 @@ describe("language coverage benchmark", () => {
   });
 
   it("does not mark missing non-Node package/build metadata as covered", () => {
-    expect(rowById("rust-cargo").grades.packageManager).toBe("none");
     expect(rowById("go-module").grades.packageManager).toBe("none");
     expect(rowById("java-maven").grades.packageManager).toBe("none");
     expect(rowById("dotnet").grades.packageManager).toBe("none");
