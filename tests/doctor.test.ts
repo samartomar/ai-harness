@@ -118,6 +118,111 @@ describe("doctor — large-repo graph safety", () => {
   });
 });
 
+describe("doctor — git-enabled workspace roots", () => {
+  let dir: string;
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "aih-doctor-workspace-git-"));
+  });
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  function rooted(gitRoot = true): PlanContext {
+    const run = fakeRunner((argv) => {
+      if (argv[0] === "git" && argv.slice(3).join(" ") === "rev-parse --is-inside-work-tree") {
+        return gitRoot ? { stdout: "true" } : { code: 1 };
+      }
+      if (argv[0] === "git" && argv.slice(3).join(" ") === "ls-files") {
+        return { stdout: ".aih-workspace.json\n.gitignore\n" };
+      }
+      return { code: 1, spawnError: true };
+    });
+    return {
+      root: dir,
+      contextDir: "ai-coding",
+      apply: false,
+      verify: true,
+      json: false,
+      run,
+      host: makeHostAdapter({ platform: "linux", run, env: {} }),
+      env: {},
+      options: {},
+    };
+  }
+
+  function writeWorkspaceMarker(): void {
+    writeFileSync(
+      join(dir, ".aih-workspace.json"),
+      JSON.stringify({
+        workspaceType: "multi-repo",
+        graphScope: "combined-child-repos",
+        contextDir: "ai-coding",
+        repos: ["service-api", "web-client"],
+        git: true,
+        generatedBy: "aih workspace",
+      }),
+    );
+  }
+
+  function writeEmptyWorkspaceMarker(): void {
+    writeFileSync(
+      join(dir, ".aih-workspace.json"),
+      JSON.stringify({
+        workspaceType: "multi-repo",
+        graphScope: "combined-child-repos",
+        contextDir: "ai-coding",
+        repos: [],
+        git: true,
+        generatedBy: "aih workspace",
+      }),
+    );
+  }
+
+  it("fails when a git-enabled workspace marker is not backed by a git root", async () => {
+    writeWorkspaceMarker();
+    const c = rooted(false);
+    const probe = findProbe((await command.plan(c)).actions, "workspace root git");
+    const res = await probe?.run(c);
+
+    expect(res?.verdict).toBe("fail");
+    expect(res?.detail).toContain("run `aih workspace --apply --git`");
+  });
+
+  it("passes when child repos are gitignored", async () => {
+    writeWorkspaceMarker();
+    writeFileSync(join(dir, ".gitignore"), "service-api/\nweb-client/\n", "utf8");
+    const c = rooted(true);
+    const probe = findProbe((await command.plan(c)).actions, "workspace child repos gitignored");
+    const res = await probe?.run(c);
+
+    expect(res?.verdict).toBe("pass");
+    expect(res?.detail).toContain("service-api");
+    expect(res?.detail).toContain("web-client");
+  });
+
+  it("warns without failing when child repos are not gitignored", async () => {
+    writeWorkspaceMarker();
+    writeFileSync(join(dir, ".gitignore"), "service-api/\n", "utf8");
+    const c = rooted(true);
+    const probe = findProbe((await command.plan(c)).actions, "workspace child repos gitignored");
+    const res = await probe?.run(c);
+
+    expect(res?.verdict).toBe("skip");
+    expect(res?.detail).toContain("web-client/");
+  });
+
+  it("passes the child-ignore probe for a git-enabled workspace with no child repos", async () => {
+    writeEmptyWorkspaceMarker();
+    writeFileSync(join(dir, ".gitignore"), ".aih/\n*.aih.bak\n*.aih.tmp\n", "utf8");
+    const c = rooted(true);
+    const probe = findProbe((await command.plan(c)).actions, "workspace child repos gitignored");
+    const res = await probe?.run(c);
+
+    expect(res?.verdict).toBe("pass");
+    expect(res?.detail).toContain("no child repos");
+  });
+});
+
 describe("doctor — AI CLI runnable vs config-only inventory", () => {
   let dir: string;
   beforeEach(() => {

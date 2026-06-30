@@ -1,9 +1,10 @@
 import { existsSync } from "node:fs";
 import { basename, join, posix } from "node:path";
-import type { Action, CommandSpec, Plan, PlanContext } from "../internals/plan.js";
+import type { Action, CommandSpec, Plan, PlanContext, WriteAction } from "../internals/plan.js";
 import { doc, plan, probe, writeJson, writeText } from "../internals/plan.js";
 import type { Check } from "../internals/verify.js";
 import { detectChildRepos, reposOption } from "./detect.js";
+import { workspaceGitExecs, workspaceGitignoreWrite } from "./git.js";
 import {
   codeWorkspace,
   crossRepoArchitectureDoc,
@@ -35,15 +36,16 @@ function childScaffoldedProbe(repo: string, dir: string): Action {
  * child repos — run `aih init` in each. Child repos come from `--repos a,b` or are
  * auto-detected (immediate subdirs with a `.git`). Honors `--context-dir`.
  */
-function workspacePlan(ctx: PlanContext): Plan {
+async function workspacePlan(ctx: PlanContext): Promise<Plan> {
   const dir = ctx.contextDir;
   const name = basename(ctx.root) || "workspace";
   const repos = detectChildRepos(ctx.root, reposOption(ctx.options.repos));
+  const enableGit = ctx.options.git === true;
 
-  const actions: Action[] = [
+  const writes: WriteAction[] = [
     writeJson(
       ".aih-workspace.json",
-      workspaceMarker(repos, dir),
+      workspaceMarker(repos, dir, enableGit),
       `workspace marker (multi-repo: ${repos.length > 0 ? repos.join(", ") : "no repos detected"})`,
       { merge: true },
     ),
@@ -77,7 +79,16 @@ function workspacePlan(ctx: PlanContext): Plan {
       `combined graph + filesystem MCP spanning ${repos.length} child repo(s), merged into any existing .mcp.json`,
       { merge: true },
     ),
-    doc("workspace next steps (run `aih init` per child)", nextStepsDoc(name, repos, dir)),
+  ];
+  if (enableGit) writes.push(workspaceGitignoreWrite(ctx.root, repos));
+
+  const actions: Action[] = [
+    ...writes,
+    doc(
+      "workspace next steps (run `aih init` per child)",
+      nextStepsDoc(name, repos, dir, enableGit),
+    ),
+    ...(enableGit ? await workspaceGitExecs(ctx, writes) : []),
   ];
 
   for (const repo of repos) actions.push(childScaffoldedProbe(repo, dir));
@@ -93,6 +104,11 @@ export const command: CommandSpec = {
     {
       flags: "--repos <list>",
       description: "child repos (comma-separated); else auto-detect *//.git",
+    },
+    {
+      flags: "--git",
+      description:
+        "initialize a local git repo for workspace coordination files; remote setup remains user-owned",
     },
   ],
   plan: workspacePlan,

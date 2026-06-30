@@ -5,6 +5,7 @@ import { readAihConfig } from "./config/marker.js";
 import { contractTruthCheck } from "./contract/check.js";
 import { detectInstall } from "./internals/cli-detect.js";
 import { readIfExists } from "./internals/fsxn.js";
+import { gitRead } from "./internals/git.js";
 import { type Action, type CommandSpec, type PlanContext, plan, probe } from "./internals/plan.js";
 import { canonLintCheck } from "./lint/run.js";
 import { mcpManagedAllowlistCheck } from "./mcp/allowlist.js";
@@ -13,17 +14,26 @@ import { resolveTargetSet } from "./report/cli-coverage.js";
 import { loadabilityFor, loadReason } from "./report/cli-loadability.js";
 import { scaleSafetyCheck } from "./scale-safety.js";
 import { vdiCompatibilityCheck } from "./vdi/index.js";
+import { workspaceGitignoreMissing } from "./workspace/git.js";
 
-/** Read the workspace marker's repo list, or [] when this root is not a workspace. */
-function workspaceRepos(ctx: PlanContext): string[] {
+interface WorkspaceMarker {
+  repos: string[];
+  git: boolean;
+}
+
+/** Read the workspace marker, or an empty marker when this root is not a workspace. */
+function workspaceMarker(ctx: PlanContext): WorkspaceMarker {
   const raw = readIfExists(join(ctx.root, ".aih-workspace.json"));
-  if (!raw) return [];
+  if (!raw) return { repos: [], git: false };
   try {
     const parsed: unknown = JSON.parse(raw);
     const repos = (parsed as { repos?: unknown }).repos;
-    return Array.isArray(repos) ? repos.filter((r): r is string => typeof r === "string") : [];
+    return {
+      repos: Array.isArray(repos) ? repos.filter((r): r is string => typeof r === "string") : [],
+      git: (parsed as { git?: unknown }).git === true,
+    };
   } catch {
-    return [];
+    return { repos: [], git: false };
   }
 }
 
@@ -219,7 +229,47 @@ export const command: CommandSpec = {
     ];
 
     // Workspace mode: validate each child repo is scaffolded.
-    const repos = workspaceRepos(ctx);
+    const workspace = workspaceMarker(ctx);
+    const repos = workspace.repos;
+    const gitProbes: Action[] = workspace.git
+      ? [
+          probe("workspace root git", async () => {
+            const inside = (await gitRead(ctx, ["rev-parse", "--is-inside-work-tree"])) === "true";
+            return inside
+              ? {
+                  name: "workspace-git",
+                  verdict: "pass",
+                  detail: "workspace marker has git:true and root is a git worktree",
+                }
+              : {
+                  name: "workspace-git",
+                  verdict: "fail",
+                  detail:
+                    "workspace marker has git:true but root is not a git repo — run `aih workspace --apply --git`",
+                };
+          }),
+          probe("workspace child repos gitignored", () => {
+            const missing = workspaceGitignoreMissing(
+              repos,
+              readIfExists(join(ctx.root, ".gitignore")),
+            );
+            return missing.length === 0
+              ? {
+                  name: "workspace-child-gitignore",
+                  verdict: "pass",
+                  detail:
+                    repos.length > 0
+                      ? `gitignored: ${repos.join(", ")}`
+                      : "no child repos in marker",
+                }
+              : {
+                  name: "workspace-child-gitignore",
+                  verdict: "skip",
+                  detail: `missing .gitignore entries: ${missing.join(", ")}`,
+                };
+          }),
+        ]
+      : [];
     const wsProbes: Action[] = repos.map((repo) =>
       probe(`workspace child ${repo} scaffolded`, () => {
         const present = existsSync(join(ctx.root, repo, contextDir, "RULE_ROUTER.md"));
@@ -238,6 +288,6 @@ export const command: CommandSpec = {
       }),
     );
 
-    return plan("doctor", ...base, ...wsProbes);
+    return plan("doctor", ...base, ...gitProbes, ...wsProbes);
   },
 };
