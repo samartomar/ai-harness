@@ -398,7 +398,7 @@ export function renderLanguageCoverageMarkdown(rows: readonly LanguageCoverageRo
     "",
     "Generated from deterministic local fixtures by `runLanguageCoverageBenchmark()`. Grades are `good`, `partial`, or `none`: `good` means the expected signal is detected or correctly omitted when not applicable; `partial` means a subset or root-only signal is detected; `none` means an expected signal is absent.",
     "",
-    "Wave-2 target order from this matrix: Python, then Rust, then polyglot coexistence with per-workspace commands. Node/TypeScript stays a lock baseline; the only noted Node-adjacent gap is optional AWS CDK verbs.",
+    "Wave-2 target order from this matrix: Python, then Rust, then polyglot coexistence with per-workspace commands. Node/TypeScript stays a lock baseline; CDK verbs ride as inferred deployment commands.",
     "",
     "| Ecosystem | Role | Languages | Frameworks | Test | Build | Lint | DB | Package manager | Monorepo/workspace | Gap note |",
     "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",

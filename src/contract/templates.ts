@@ -31,6 +31,9 @@ function commandsBlock(c: ProjectContract): string[] {
     ["build", c.commands.build],
     ["lint", c.commands.lint],
     ["start", c.commands.start],
+    ["cdk synth", c.commands.cdkSynth],
+    ["cdk diff", c.commands.cdkDiff],
+    ["cdk deploy", c.commands.cdkDeploy],
   ];
   for (const [name, cmd] of slots) {
     if (cmd) rows.push(`- **${name}** — \`${cmd.value}\` _(${cmd.confidence})_`);
@@ -101,6 +104,9 @@ export function projectContractDoc(dir: string, c: ProjectContract): string {
     c.commands.build,
     c.commands.lint,
     c.commands.start,
+    c.commands.cdkSynth,
+    c.commands.cdkDiff,
+    c.commands.cdkDeploy,
     ...workspaceCommands,
   ].some((cmd) => cmd?.confidence === "inferred");
   return lines(

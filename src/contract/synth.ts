@@ -53,17 +53,25 @@ function toBuildCommand(value: string | undefined): ContractCommand | undefined 
   return undefined;
 }
 
+function toInferredCommand(value: string | undefined): ContractCommand | undefined {
+  return value === undefined ? undefined : { value, confidence: "inferred" };
+}
+
 function contractCommands(stack: {
   testRunner?: string;
   buildCommand?: string;
   lintCommand?: string;
   startCommand?: string;
+  deploymentCommands?: RepoStack["deploymentCommands"];
 }): ContractCommands {
   return {
     test: toCommand(stack.testRunner, "npm test"),
     build: toBuildCommand(stack.buildCommand),
     lint: toCommand(stack.lintCommand, "npm run lint"),
     start: toDeclaredCommand(stack.startCommand, "npm start"),
+    cdkSynth: toInferredCommand(stack.deploymentCommands?.cdkSynth),
+    cdkDiff: toInferredCommand(stack.deploymentCommands?.cdkDiff),
+    cdkDeploy: toInferredCommand(stack.deploymentCommands?.cdkDeploy),
   };
 }
 
@@ -153,7 +161,15 @@ function deriveKnownGaps(
     );
   }
 
-  for (const slot of ["test", "build", "lint", "start"] as const) {
+  for (const slot of [
+    "test",
+    "build",
+    "lint",
+    "start",
+    "cdkSynth",
+    "cdkDiff",
+    "cdkDeploy",
+  ] as const) {
     const cmd = commands[slot];
     if (cmd?.confidence === "inferred") {
       gaps.push(`unconfirmed \`${cmd.value}\` (${slot} inferred, not declared) — verify it runs`);

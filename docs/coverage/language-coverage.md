@@ -2,11 +2,11 @@
 
 Generated from deterministic local fixtures by `runLanguageCoverageBenchmark()`. Grades are `good`, `partial`, or `none`: `good` means the expected signal is detected or correctly omitted when not applicable; `partial` means a subset or root-only signal is detected; `none` means an expected signal is absent.
 
-Wave-2 target order from this matrix: Python, then Rust, then polyglot coexistence with per-workspace commands. Node/TypeScript stays a lock baseline; the only noted Node-adjacent gap is optional AWS CDK verbs.
+Wave-2 target order from this matrix: Python, then Rust, then polyglot coexistence with per-workspace commands. Node/TypeScript stays a lock baseline; CDK verbs ride as inferred deployment commands.
 
 | Ecosystem | Role | Languages | Frameworks | Test | Build | Lint | DB | Package manager | Monorepo/workspace | Gap note |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Node/TypeScript daily stack | lock | good | good | good | good | good | good | good | good | Covered baseline: npm, TS, Angular/Vue/React, Express, PostgreSQL, and AWS CDK labels stay good; do not enhance Node here. Optional gap: CDK verbs (synth/deploy/diff) are not emitted. |
+| Node/TypeScript daily stack | lock | good | good | good | good | good | good | good | good | Covered baseline: npm, TS, Angular/Vue/React, Express, PostgreSQL, and AWS CDK labels stay good; do not enhance Node here. CDK verbs are emitted as inferred commands. |
 | Python pyproject | wave-2-target | good | good | good | good | good | good | good | good | Python primary-stack coverage now detects Poetry plus manifest-backed pytest/ruff when no root package.json exists; polyglot Python commands wait for per-workspace command routing. |
 | Rust Cargo | wave-2-target | good | good | good | good | good | good | good | good | Cargo package manager plus test/build/clippy defaults should be visible; rustfmt remains outside the current single lint-command slot. |
 | Go module | watch | good | good | good | good | none | good | none | good | Default test/build commands are present; framework, lint, DB, and workspace detail are thin. |

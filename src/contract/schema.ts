@@ -42,6 +42,9 @@ const CommandsSchema = z
     build: CommandSchema.optional(),
     lint: CommandSchema.optional(),
     start: CommandSchema.optional(),
+    cdkSynth: CommandSchema.optional(),
+    cdkDiff: CommandSchema.optional(),
+    cdkDeploy: CommandSchema.optional(),
   })
   .default({});
 

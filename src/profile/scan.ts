@@ -27,6 +27,12 @@ export interface WorkspaceStack {
   startCommand?: string;
 }
 
+export interface DeploymentCommands {
+  cdkSynth?: string;
+  cdkDiff?: string;
+  cdkDeploy?: string;
+}
+
 export interface RepoStack {
   /** Detected languages/runtimes, deduped, in first-seen order. */
   languages: string[];
@@ -56,6 +62,8 @@ export interface RepoStack {
   lintCommand?: string;
   /** How to start the local app/server, or undefined when none is defined. */
   startCommand?: string;
+  /** Deployment/tool verbs derived from deployment manifests such as cdk.json. */
+  deploymentCommands?: DeploymentCommands;
   /** True when tests run in a real browser (Karma/Cypress/…) — they hang in a headless agent. */
   browserTest: boolean;
   /** True when a workspace/monorepo orchestrator or multiple package manifests are present. */
@@ -655,6 +663,7 @@ function synthesize(root: string, raw: Raw, opts: ScanOptions): RepoStack {
   const packageManager = pkg
     ? raw.packageManager
     : (raw.packageManager ?? rustPackageManager(languages) ?? pythonPackageManager(raw));
+  const deploymentCommands = cdkDeploymentCommands(finalFrameworks);
   const explicitWorkspaceTool = resolveWorkspaceTool(raw.workspaceSignals);
   const workspaceTool =
     explicitWorkspaceTool ??
@@ -685,6 +694,7 @@ function synthesize(root: string, raw: Raw, opts: ScanOptions): RepoStack {
     buildCommand,
     lintCommand,
     startCommand,
+    ...(deploymentCommands ? { deploymentCommands } : {}),
     browserTest,
     isMonorepo,
     workspaceTool,
@@ -752,6 +762,15 @@ function synthesizeRootSecondaryWorkspace(raw: Raw): WorkspaceStack | undefined 
     return { languages: ["Go"], testRunner: "go test ./...", buildCommand: "go build ./..." };
   }
   return undefined;
+}
+
+function cdkDeploymentCommands(frameworks: readonly string[]): DeploymentCommands | undefined {
+  if (!frameworks.includes("AWS CDK")) return undefined;
+  return {
+    cdkSynth: "npx cdk synth",
+    cdkDiff: "npx cdk diff",
+    cdkDeploy: "npx cdk deploy",
+  };
 }
 
 function pythonPackageManager(raw: Raw): string | undefined {

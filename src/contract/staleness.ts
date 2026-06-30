@@ -29,12 +29,7 @@ export type ContractFreshness =
 function factsSubset(contract: ProjectContract): ContractFactsSubset {
   const maybeFuture = contract as ProjectContract & { workspaces?: unknown };
   return {
-    commands: {
-      test: contract.commands.test,
-      build: contract.commands.build,
-      lint: contract.commands.lint,
-      start: contract.commands.start,
-    },
+    commands: contract.commands,
     scale: contract.scale,
     entrypoints: contract.entrypoints,
     languages: contract.languages,
@@ -86,7 +81,7 @@ export async function contractFreshness(
 }
 
 export function contractStaleDetail(contextDir: string, fields: readonly string[]): string {
-  const shown = fields.slice(0, 6).join(", ");
-  const more = fields.length > 6 ? `, +${fields.length - 6} more` : "";
+  const shown = fields.slice(0, 8).join(", ");
+  const more = fields.length > 8 ? `, +${fields.length - 8} more` : "";
   return `contract drifted from the live repo: ${shown}${more} in ${contextDir}/${PROJECT_CONTRACT_FILE} - re-run \`aih contract --apply\``;
 }

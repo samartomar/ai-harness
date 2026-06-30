@@ -22,7 +22,15 @@ function resolveContract(ctx: PlanContext): ProjectContract | undefined {
 
 /** Count the contract's declared commands, and how many are merely inferred. */
 function commandCount(c: ProjectContract): { total: number; inferred: number } {
-  const slots = [c.commands.test, c.commands.build, c.commands.lint, c.commands.start];
+  const slots = [
+    c.commands.test,
+    c.commands.build,
+    c.commands.lint,
+    c.commands.start,
+    c.commands.cdkSynth,
+    c.commands.cdkDiff,
+    c.commands.cdkDeploy,
+  ];
   const present = slots.filter((x): x is NonNullable<typeof x> => x !== undefined);
   return {
     total: present.length,
