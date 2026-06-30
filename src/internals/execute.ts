@@ -7,7 +7,7 @@ import { FsTransaction, readIfExists } from "./fsxn.js";
 import { deepMerge, parseJsoncText } from "./merge.js";
 import type { EnvBlockAction, ExecAction, Plan, PlanContext, WriteAction } from "./plan.js";
 import { ensureTrailingNewline, indent, jsonFile, stripTrailingNewlines } from "./render.js";
-import { VerificationReport } from "./verify.js";
+import { type Check, VerificationReport } from "./verify.js";
 import { dirtyWriteTargets, normalizeRel } from "./worktree-gate.js";
 
 export interface WriteSummary {
@@ -298,16 +298,25 @@ export async function executePlan(
 
   // Local mutating commands run only on apply, after files are in place.
   const execs: PlanResult["execs"] = [];
+  const execFailureChecks: Check[] = [];
+  let skipProbesAfterExecFailure = false;
   for (const a of execActions) {
     if (ctx.apply) {
       const res = await ctx.run(a.argv, { cwd: a.cwd, env: a.env, timeoutMs: a.timeoutMs });
+      const ok = res.code === 0 || Boolean(a.allowFailure);
       execs.push({
         describe: a.describe,
         argv: a.argv,
         ran: true,
         code: res.code,
-        ok: res.code === 0 || Boolean(a.allowFailure),
+        ok,
       });
+      if (!ok && a.failureCheck) {
+        execFailureChecks.push(
+          typeof a.failureCheck === "function" ? a.failureCheck(res) : a.failureCheck,
+        );
+        if (a.blockProbesOnFailure) skipProbesAfterExecFailure = true;
+      }
     } else {
       execs.push({ describe: a.describe, argv: a.argv, ran: false });
     }
@@ -316,12 +325,15 @@ export async function executePlan(
   let report: VerificationReport | undefined;
   if (ctx.verify) {
     report = new VerificationReport();
-    for (const action of plan.actions) {
-      if (action.kind === "probe") {
-        if (action.runMany) {
-          for (const check of await action.runMany(ctx)) report.add(check);
-        } else {
-          report.add(await action.run(ctx));
+    for (const check of execFailureChecks) report.add(check);
+    if (!skipProbesAfterExecFailure) {
+      for (const action of plan.actions) {
+        if (action.kind === "probe") {
+          if (action.runMany) {
+            for (const check of await action.runMany(ctx)) report.add(check);
+          } else {
+            report.add(await action.run(ctx));
+          }
         }
       }
     }

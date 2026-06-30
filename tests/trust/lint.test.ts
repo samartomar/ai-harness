@@ -12,6 +12,12 @@ describe("scanTrustDocument", () => {
     expect(checks.every((check) => check.verdict === "fail")).toBe(true);
   });
 
+  it("emits trust.hidden-unicode for bidi control smuggling", () => {
+    const checks = scanTrustDocument("skills/evil/SKILL.md", `# Skill\nsafe text \u202E hidden`);
+
+    expect(checks.some((check) => check.code === "trust.hidden-unicode")).toBe(true);
+  });
+
   it("catches prompt injection inside a fenced code block", () => {
     const checks = scanTrustDocument(
       "skills/fenced/SKILL.md",

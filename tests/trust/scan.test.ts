@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { linkSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -76,6 +76,17 @@ describe("scanTrustTree", () => {
     expect(checks.some((check) => check.code === "trust.prompt-injection")).toBe(true);
   });
 
+  it("does not reject hard links inside directories excluded from trust scanning", async () => {
+    mkdirSync(join(dir, "node_modules"), { recursive: true });
+    writeFileSync(join(dir, "node_modules", "original.txt"), "shared", "utf8");
+    linkSync(join(dir, "node_modules", "original.txt"), join(dir, "node_modules", "shared.txt"));
+    skill("skills/clean", "# Clean\n");
+
+    const checks = await scanTrustTree(dir);
+
+    expect(checks.every((check) => check.verdict !== "fail")).toBe(true);
+  });
+
   it("returns a pass check for a clean skill tree", async () => {
     skill("skills/clean", "# Clean\n\nUse this skill for local documentation hygiene.\n");
 
@@ -105,5 +116,17 @@ describe("trustScanCommand", () => {
     expect(result.report?.checks.some((check) => check.code === "trust.prompt-injection")).toBe(
       true,
     );
+  });
+
+  it("allows skipped-directory hard links through the command resolver path", async () => {
+    mkdirSync(join(dir, "node_modules"), { recursive: true });
+    writeFileSync(join(dir, "node_modules", "original.txt"), "shared", "utf8");
+    linkSync(join(dir, "node_modules", "original.txt"), join(dir, "node_modules", "shared.txt"));
+    skill("skills/clean", "# Clean\n");
+
+    const p = await trustScanCommand.plan(ctx({ target: dir }));
+    const result = await executePlan(p, ctx({ target: dir }));
+
+    expect(result.report?.ok).toBe(true);
   });
 });

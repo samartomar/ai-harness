@@ -58,8 +58,10 @@ export type CheckCode =
   | "report.low-adoption"
   | "report.contract-untrue"
   // trust gate (external repos / skills)
+  | "trust.fetch-blocked"
   | "trust.hidden-unicode"
-  | "trust.prompt-injection";
+  | "trust.prompt-injection"
+  | "trust.source-changed";
 
 export interface Check {
   name: string;

@@ -2,7 +2,7 @@ import type { Posture, PostureSource } from "../config/posture.js";
 import type { EnvShell, HostAdapter } from "../platform/base.js";
 import type { Cli } from "./clis.js";
 import type { EnvVar } from "./envfile.js";
-import type { Runner } from "./proc.js";
+import type { Runner, RunResult } from "./proc.js";
 import type { Prompter } from "./prompt.js";
 import type { Check } from "./verify.js";
 
@@ -83,6 +83,10 @@ export interface ExecAction {
   env?: NodeJS.ProcessEnv;
   /** Optional timeout override for long-but-bounded local helpers. */
   timeoutMs?: number;
+  /** Optional verification check to emit when the command exits non-zero. */
+  failureCheck?: Check | ((result: RunResult) => Check);
+  /** Skip follow-on probes when this command fails. */
+  blockProbesOnFailure?: boolean;
   /** Continue the plan even if the command exits non-zero. */
   allowFailure?: boolean;
 }
@@ -254,7 +258,14 @@ export function probeMany(
 export function exec(
   describe: string,
   argv: string[],
-  opts: { allowFailure?: boolean; cwd?: string; env?: NodeJS.ProcessEnv; timeoutMs?: number } = {},
+  opts: {
+    allowFailure?: boolean;
+    cwd?: string;
+    env?: NodeJS.ProcessEnv;
+    timeoutMs?: number;
+    failureCheck?: ExecAction["failureCheck"];
+    blockProbesOnFailure?: boolean;
+  } = {},
 ): ExecAction {
   return {
     kind: "exec",
@@ -263,6 +274,8 @@ export function exec(
     cwd: opts.cwd,
     env: opts.env,
     timeoutMs: opts.timeoutMs,
+    failureCheck: opts.failureCheck,
+    blockProbesOnFailure: opts.blockProbesOnFailure,
     allowFailure: opts.allowFailure,
   };
 }

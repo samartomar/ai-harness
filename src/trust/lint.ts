@@ -17,6 +17,9 @@ interface PatternRule {
 }
 
 const ZERO_WIDTH = new Set([0x200b, 0x200c, 0x200d, 0x2060, 0xfeff]);
+const BIDI_CONTROLS = new Set([
+  0x061c, 0x200e, 0x200f, 0x202a, 0x202b, 0x202c, 0x202d, 0x202e, 0x2066, 0x2067, 0x2068, 0x2069,
+]);
 
 const PROMPT_INJECTION_PATTERNS: readonly PatternRule[] = [
   {
@@ -97,7 +100,7 @@ function isTagCodePoint(cp: number): boolean {
 }
 
 function isHiddenCodePoint(cp: number): boolean {
-  return ZERO_WIDTH.has(cp) || isTagCodePoint(cp);
+  return ZERO_WIDTH.has(cp) || BIDI_CONTROLS.has(cp) || isTagCodePoint(cp);
 }
 
 function hiddenUnicodeFindings(path: string, source: string): TrustLintFinding[] {

@@ -122,16 +122,20 @@ export function scrubFetchEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   return out;
 }
 
+const FULL_SHA = /^[a-f0-9]{40}$/i;
+
 export function resolveTrustSource(
   raw: string,
-  opts: { root: string; ref?: string; pin?: string } = { root: process.cwd() },
+  opts: { root: string; ref?: string; pin?: string; skipDirs?: ReadonlySet<string> } = {
+    root: process.cwd(),
+  },
 ): TrustSource {
   const trimmed = raw.trim();
   if (trimmed.length === 0) throw new AihError("workspace add requires a source", "AIH_TRUST");
 
   const local = isAbsolute(trimmed) ? trimmed : resolve(opts.root, trimmed);
   if (existsSync(local)) {
-    const root = assertTrustTreeSafe(local);
+    const root = assertTrustTreeSafe(local, { skipDirs: opts.skipDirs });
     return {
       kind: "local",
       id: sourceIdForLocal(root),
@@ -152,6 +156,9 @@ export function resolveTrustSource(
   const repo = gh[2] ?? "";
   if (owner.length === 0 || repo.length === 0) {
     throw new AihError(`unsupported GitHub trust source: ${raw}`, "AIH_TRUST");
+  }
+  if (opts.pin !== undefined && !FULL_SHA.test(opts.pin)) {
+    throw new AihError("--pin must be a full 40-character Git commit SHA", "AIH_TRUST");
   }
   const ref = opts.pin ?? opts.ref ?? "HEAD";
   const root = quarantineRoot(trimmed, ref);
@@ -186,7 +193,10 @@ function assertContained(root: string, target: string): void {
   );
 }
 
-export function assertTrustTreeSafe(root: string): string {
+export function assertTrustTreeSafe(
+  root: string,
+  opts: { skipDirs?: ReadonlySet<string> } = {},
+): string {
   const absRoot = resolve(root);
   const rootInfo = statSafe(absRoot);
   if (!rootInfo?.isDirectory()) {
@@ -198,6 +208,7 @@ export function assertTrustTreeSafe(root: string): string {
 
   const realRoot = realpathSync(absRoot);
   const visit = (abs: string): void => {
+    if (abs !== realRoot && opts.skipDirs?.has(basename(abs))) return;
     const st = lstatSync(abs);
     if (st.isSymbolicLink()) {
       throw new AihError(`refusing symlink inside trust source: ${abs}`, "AIH_TRUST");
@@ -268,11 +279,15 @@ function text(buf, start, len) {
 }
 
 function safeRel(name) {
-  const rel = name.split("/").slice(1).join("/");
-  if (!rel || rel.includes("\\") || path.isAbsolute(rel)) return undefined;
-  const parts = rel.split("/");
-  if (parts.some((part) => part === ".." || part === "")) return undefined;
-  return rel;
+  if (name.includes("\\") || path.isAbsolute(name)) fail("refusing unsafe tar entry: " + name);
+  const normalized = name.replace(/\/+$/, "");
+  if (!normalized) return undefined;
+  const parts = normalized.split("/");
+  if (parts.some((part) => part === "." || part === ".." || part === "")) {
+    fail("refusing unsafe tar entry: " + name);
+  }
+  if (parts.length === 1) return undefined;
+  return parts.slice(1).join("/");
 }
 
 function ensureContained(root, target) {
@@ -293,23 +308,27 @@ function extractTar(buffer, outRoot) {
     const type = text(header, 156, 1) || "0";
     offset += 512;
     const rel = safeRel(fullName);
-    if (rel) {
-      const target = path.resolve(outRoot, rel);
-      ensureContained(outRoot, target);
-      if (type === "5") {
-        fs.mkdirSync(target, { recursive: true });
-      } else if (type === "0" || type === "\0") {
-        fs.mkdirSync(path.dirname(target), { recursive: true });
-        fs.writeFileSync(target, buffer.subarray(offset, offset + size), { flag: "wx" });
-      } else {
-        fail("refusing non-regular tar entry: " + fullName);
-      }
+    if (!rel) {
+      if (type !== "5") fail("refusing unsafe tar entry: " + fullName);
+      offset += Math.ceil(size / 512) * 512;
+      continue;
+    }
+    const target = path.resolve(outRoot, rel);
+    ensureContained(outRoot, target);
+    if (type === "5") {
+      fs.mkdirSync(target, { recursive: true });
+    } else if (type === "0" || type === "\0") {
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      fs.writeFileSync(target, buffer.subarray(offset, offset + size), { flag: "wx" });
+    } else {
+      fail("refusing non-regular tar entry: " + fullName);
     }
     offset += Math.ceil(size / 512) * 512;
   }
 }
 
 (async () => {
+  fs.rmSync(input.quarantineRoot, { recursive: true, force: true });
   const sha = /^[a-f0-9]{40}$/i.test(input.pin || "") ? input.pin : undefined;
   const resolvedSha =
     sha ||
@@ -324,7 +343,6 @@ function extractTar(buffer, outRoot) {
       )).toString("utf8"),
     ).sha;
   if (!/^[a-f0-9]{40}$/i.test(resolvedSha)) fail("GitHub did not return a commit SHA");
-  fs.rmSync(input.quarantineRoot, { recursive: true, force: true });
   fs.mkdirSync(input.treePath, { recursive: true });
   const tarball = await requestBuffer(
     "https://codeload.github.com/" +
@@ -376,6 +394,19 @@ export function trustFetchExec(source: GitHubTrustSource, ctx: PlanContext): Exe
       cwd: tmpdir(),
       env: scrubFetchEnv(ctx.env),
       timeoutMs: 120_000,
+      blockProbesOnFailure: true,
+      failureCheck: (result) => {
+        const reason = (result.stderr || result.stdout || "fetch command failed")
+          .replace(/\s+/g, " ")
+          .trim()
+          .slice(0, 400);
+        return {
+          name: "trust.fetch-blocked",
+          verdict: "fail",
+          code: "trust.fetch-blocked",
+          detail: `could not fetch ${source.display} into quarantine (exit ${result.code ?? "signal"}): ${reason}`,
+        };
+      },
     },
   );
 }
