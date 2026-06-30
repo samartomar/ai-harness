@@ -72,10 +72,16 @@ export async function workspaceGitExecs(
         "--",
         ...changedPaths,
       ]),
-      exec(
-        "commit changed workspace git baseline files",
-        ["git", "-C", ctx.root, "commit", "-m", BASELINE_COMMIT_MESSAGE, "--", ...changedPaths],
-      ),
+      exec("commit changed workspace git baseline files", [
+        "git",
+        "-C",
+        ctx.root,
+        "commit",
+        "-m",
+        BASELINE_COMMIT_MESSAGE,
+        "--",
+        ...changedPaths,
+      ]),
     );
   }
   return actions;

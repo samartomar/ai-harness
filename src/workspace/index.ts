@@ -84,7 +84,10 @@ async function workspacePlan(ctx: PlanContext): Promise<Plan> {
 
   const actions: Action[] = [
     ...writes,
-    doc("workspace next steps (run `aih init` per child)", nextStepsDoc(name, repos, dir)),
+    doc(
+      "workspace next steps (run `aih init` per child)",
+      nextStepsDoc(name, repos, dir, enableGit),
+    ),
     ...(enableGit ? await workspaceGitExecs(ctx, writes) : []),
   ];
 

@@ -160,11 +160,16 @@ export function workspaceBootloader(
 }
 
 /** The "what to do next" doc — parent-only scaffold, so init runs per child. */
-export function nextStepsDoc(name: string, repos: string[], dir: string): string {
+export function nextStepsDoc(name: string, repos: string[], dir: string, git = false): string {
   const initCmds =
     repos.length > 0
       ? repos.map((r) => `  aih init ./${r} --apply`)
       : ["  # (no child repos detected — clone repos under this folder, then re-run)"];
+  const gitNotes = git
+    ? [
+        "- Remote setup is user/team-owned: `aih workspace --git` creates only the local bridge repo; add an origin later if and where you choose.",
+      ]
+    : [];
   return lines(
     `Workspace scaffolded for \`${name}\` (parent-only). Detected repos: ${repos.length > 0 ? repos.join(", ") : "none"}.`,
     "",
@@ -175,6 +180,7 @@ export function nextStepsDoc(name: string, repos: string[], dir: string): string
     `- Fill in \`${dir}/cross-repo-architecture.md\` — it is write-once; aih won't overwrite it.`,
     `- Open \`${name}.code-workspace\` in VS Code (all repos in one window).`,
     "- Use the parent `.mcp.json` graph/filesystem servers for cross-repo blast-radius analysis.",
+    ...gitNotes,
     "- Validate: `aih doctor` at the workspace root checks each child is scaffolded.",
   );
 }
