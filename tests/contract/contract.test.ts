@@ -167,6 +167,9 @@ describe("PR 1B — project.md + setup.md", () => {
     expect(setupDoc("ai-coding", { ...base, packageManager: "pip" })).toContain(
       "`python -m pip install -r requirements.txt`",
     );
+    expect(setupDoc("ai-coding", { ...base, packageManager: "cargo" })).toContain(
+      "`cargo fetch`",
+    );
   });
 });
 

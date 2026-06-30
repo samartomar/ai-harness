@@ -60,6 +60,7 @@ function installCommand(packageManager: string | undefined): string | undefined 
     uv: "uv sync",
     pip: "python -m pip install -r requirements.txt",
     pipenv: "pipenv install --dev",
+    cargo: "cargo fetch",
   };
   return commands[packageManager] ?? `${packageManager} install`;
 }
