@@ -29,8 +29,10 @@
     "test:cov": "vitest run --coverage",
     "lint": "biome check src tests",
     "lint:fix": "biome check --write src tests",
+    "lint:ci": "biome ci src tests",
     "format": "biome format --write src tests",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "verify": "npm run typecheck && npm run lint:ci && npm run test:cov && npm run build"
   },
   "keywords": [
     "ai",
