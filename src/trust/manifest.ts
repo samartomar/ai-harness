@@ -3,20 +3,11 @@ import { lstatSync, readdirSync, readFileSync } from "node:fs";
 import { basename, extname, join, relative } from "node:path";
 import { parseDocument } from "yaml";
 import type { Check, CheckCode } from "../internals/verify.js";
+import { collectFilesUnder, TRUST_SKIP_DIRS } from "./scan.js";
 
 type AutoExecCode = Extract<CheckCode, "trust.auto-exec-hook">;
 
 const AUTO_EXEC_CODE: AutoExecCode = "trust.auto-exec-hook";
-const SKIP_DIRS = new Set([
-  ".git",
-  ".hg",
-  ".svn",
-  ".aih",
-  "coverage",
-  "dist",
-  "node_modules",
-  "vendor",
-]);
 const LIFECYCLE_SCRIPTS = new Set([
   "preinstall",
   "install",
@@ -63,21 +54,6 @@ function autoExecCheck(path: string, line: number, lineTextValue: string, detail
   };
 }
 
-function collectFiles(root: string): string[] {
-  const out: string[] = [];
-  const visit = (abs: string): void => {
-    const st = lstatSync(abs);
-    if (st.isDirectory()) {
-      if (abs !== root && SKIP_DIRS.has(basename(abs))) return;
-      for (const entry of readdirSync(abs)) visit(join(abs, entry));
-      return;
-    }
-    if (st.isFile()) out.push(abs);
-  };
-  visit(root);
-  return out.sort((a, b) => toPosix(relative(root, a)).localeCompare(toPosix(relative(root, b))));
-}
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -114,7 +90,13 @@ function leadingFrontmatter(source: string): Frontmatter | undefined {
 }
 
 function containsBashWildcard(value: unknown): boolean {
-  if (typeof value === "string") return value === "Bash(*)";
+  if (typeof value === "string") {
+    return value
+      .split(",")
+      .map((part) => part.trim())
+      .filter((part) => part.length > 0)
+      .some((part) => part === "Bash" || /^Bash\([^)]*\*[^)]*\)$/.test(part));
+  }
   if (Array.isArray(value)) return value.some((item) => containsBashWildcard(item));
   return false;
 }
@@ -142,14 +124,26 @@ function scanFrontmatter(rel: string, source: string): Check[] {
       autoExecCheck(rel, 1, lineText(source, 1), "unparseable YAML frontmatter in trust document"),
     ];
   }
-  const parsed = doc.toJS() as unknown;
+  let parsed: unknown;
+  try {
+    parsed = doc.toJS();
+  } catch {
+    return [
+      autoExecCheck(rel, 1, lineText(source, 1), "unparseable YAML frontmatter in trust document"),
+    ];
+  }
   if (!isRecord(parsed)) return [];
 
   const checks: Check[] = [];
   if (containsBashWildcard(parsed["allowed-tools"])) {
     const line = frontmatterLine(source, "allowed-tools", 1);
     checks.push(
-      autoExecCheck(rel, line, lineText(source, line), "frontmatter allowed-tools grants Bash(*)"),
+      autoExecCheck(
+        rel,
+        line,
+        lineText(source, line),
+        "frontmatter allowed-tools grants unsafe Bash access",
+      ),
     );
   }
   if (parsed.permissionMode === "bypassPermissions") {
@@ -184,7 +178,7 @@ function scanBangAutoRun(rel: string, source: string): Check[] {
   const startLine = skillBodyStartLine(source);
   for (let index = startLine - 1; index < lines.length; index++) {
     const text = lines[index] ?? "";
-    if (/^\s*!/.test(text)) {
+    if (/^\s*!(?!\[)/.test(text)) {
       checks.push(
         autoExecCheck(rel, index + 1, text, "SKILL body contains a leading ! auto-run line"),
       );
@@ -261,7 +255,7 @@ function scanHookDirs(root: string): Check[] {
     const st = lstatSync(abs);
     if (!st.isDirectory()) return;
     const rel = toPosix(relative(root, abs));
-    if (abs !== root && SKIP_DIRS.has(basename(abs)) && !isClaudeHooksDir(rel)) return;
+    if (abs !== root && TRUST_SKIP_DIRS.has(basename(abs)) && !isClaudeHooksDir(rel)) return;
     if (isClaudeHooksDir(rel)) {
       checks.push(
         autoExecCheck(rel, 1, rel, ".claude/hooks directory can auto-execute hook commands"),
@@ -276,7 +270,7 @@ function scanHookDirs(root: string): Check[] {
 
 export function scanTrustManifests(root: string): Check[] {
   const checks: Check[] = [...scanHookDirs(root)];
-  for (const abs of collectFiles(root)) {
+  for (const abs of collectFilesUnder(root, () => true)) {
     const rel = toPosix(relative(root, abs));
     const name = basename(abs);
     const scansFrontmatter = isFrontmatterDoc(rel);

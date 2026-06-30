@@ -220,7 +220,12 @@ function buildPromotion(ctx: PlanContext, source: TrustSource): PromotionPlan {
 function existingLock(root: string): TrustLock {
   const existing = readIfExists(join(root, ".aih", "trust-lock.json"));
   if (existing === undefined) return { schemaVersion: 1, sources: [] };
-  const parsed = JSON.parse(existing) as Partial<TrustLock>;
+  let parsed: Partial<TrustLock>;
+  try {
+    parsed = JSON.parse(existing) as Partial<TrustLock>;
+  } catch {
+    return { schemaVersion: 1, sources: [] };
+  }
   return {
     schemaVersion: 1,
     sources: Array.isArray(parsed.sources) ? parsed.sources : [],

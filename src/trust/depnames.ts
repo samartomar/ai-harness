@@ -1,8 +1,9 @@
 import { createHash } from "node:crypto";
-import { lstatSync, readdirSync, readFileSync } from "node:fs";
-import { basename, join, relative } from "node:path";
+import { readFileSync } from "node:fs";
+import { basename, relative } from "node:path";
 import type { PlanContext } from "../internals/plan.js";
 import type { Check, CheckCode } from "../internals/verify.js";
+import { collectFilesUnder } from "./scan.js";
 
 type DependencyNameCode = Extract<CheckCode, "trust.dependency-confusion" | "trust.typosquat">;
 
@@ -29,16 +30,6 @@ export const POPULAR_PACKAGES: readonly string[] = [
   "zod",
 ];
 
-const SKIP_DIRS = new Set([
-  ".git",
-  ".hg",
-  ".svn",
-  ".aih",
-  "coverage",
-  "dist",
-  "node_modules",
-  "vendor",
-]);
 const DIRECT_DEP_BLOCKS = [
   "dependencies",
   "devDependencies",
@@ -99,18 +90,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function collectPackageJson(root: string): string[] {
-  const out: string[] = [];
-  const visit = (abs: string): void => {
-    const st = lstatSync(abs);
-    if (st.isDirectory()) {
-      if (abs !== root && SKIP_DIRS.has(basename(abs))) return;
-      for (const entry of readdirSync(abs)) visit(join(abs, entry));
-      return;
-    }
-    if (st.isFile() && basename(abs) === "package.json") out.push(abs);
-  };
-  visit(root);
-  return out.sort((a, b) => toPosix(relative(root, a)).localeCompare(toPosix(relative(root, b))));
+  return collectFilesUnder(root, (abs) => basename(abs) === "package.json");
 }
 
 function directDependencyNames(pkg: Record<string, unknown>): string[] {
@@ -147,9 +127,17 @@ function scopeOfPackage(name: string): string | undefined {
   return name.slice(0, slash).toLowerCase();
 }
 
-function unscopedPackageName(name: string): string | undefined {
-  if (name.startsWith("@")) return undefined;
-  return name.toLowerCase();
+interface PackageIdentity {
+  scope?: string;
+  name: string;
+}
+
+function packageIdentity(rawName: string): PackageIdentity | undefined {
+  const name = rawName.toLowerCase();
+  if (!name.startsWith("@")) return { name };
+  const slash = name.indexOf("/");
+  if (slash <= 1 || slash === name.length - 1) return undefined;
+  return { scope: name.slice(0, slash), name: name.slice(slash + 1) };
 }
 
 function isDamerauLevenshteinDistanceOne(left: string, right: string): boolean {
@@ -189,11 +177,13 @@ function isDamerauLevenshteinDistanceOne(left: string, right: string): boolean {
 }
 
 function popularTypoTarget(name: string): string | undefined {
-  const normalized = unscopedPackageName(name);
-  if (normalized === undefined) return undefined;
-  return POPULAR_PACKAGES.find((popular) =>
-    isDamerauLevenshteinDistanceOne(normalized, popular.toLowerCase()),
-  );
+  const dependency = packageIdentity(name);
+  if (dependency === undefined) return undefined;
+  return POPULAR_PACKAGES.find((popular) => {
+    const target = packageIdentity(popular);
+    if (target === undefined || target.scope !== dependency.scope) return false;
+    return isDamerauLevenshteinDistanceOne(dependency.name, target.name);
+  });
 }
 
 function scanPackageJson(

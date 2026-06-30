@@ -14,7 +14,7 @@ import {
 import { scanTrustDocument } from "./lint.js";
 import { scanTrustManifests } from "./manifest.js";
 
-const SKIP_DIRS = new Set([
+export const TRUST_SKIP_DIRS = new Set([
   ".git",
   ".hg",
   ".svn",
@@ -30,6 +30,25 @@ function toPosix(path: string): string {
   return path.replace(/\\/g, "/");
 }
 
+export function collectFilesUnder(
+  root: string,
+  accept: (absolutePath: string) => boolean,
+  skipDirs: ReadonlySet<string> = TRUST_SKIP_DIRS,
+): string[] {
+  const out: string[] = [];
+  const visit = (abs: string): void => {
+    const st = lstatSync(abs);
+    if (st.isDirectory()) {
+      if (abs !== root && skipDirs.has(basename(abs))) return;
+      for (const entry of readdirSync(abs)) visit(join(abs, entry));
+      return;
+    }
+    if (st.isFile() && accept(abs)) out.push(abs);
+  };
+  visit(root);
+  return out.sort((a, b) => toPosix(relative(root, a)).localeCompare(toPosix(relative(root, b))));
+}
+
 function shouldScanTrustDoc(root: string, absPath: string): boolean {
   const rel = toPosix(relative(root, absPath));
   const parts = rel.split("/");
@@ -41,18 +60,7 @@ function shouldScanTrustDoc(root: string, absPath: string): boolean {
 }
 
 function collectTrustDocs(root: string): string[] {
-  const out: string[] = [];
-  const visit = (abs: string): void => {
-    const st = lstatSync(abs);
-    if (st.isDirectory()) {
-      if (abs !== root && SKIP_DIRS.has(basename(abs))) return;
-      for (const entry of readdirSync(abs)) visit(join(abs, entry));
-      return;
-    }
-    if (st.isFile() && shouldScanTrustDoc(root, abs)) out.push(abs);
-  };
-  visit(root);
-  return out.sort((a, b) => toPosix(relative(root, a)).localeCompare(toPosix(relative(root, b))));
+  return collectFilesUnder(root, (abs) => shouldScanTrustDoc(root, abs));
 }
 
 function passCheck(root: string, scanned: number): Check {
@@ -67,7 +75,7 @@ export async function scanTrustTree(
   root: string,
   internalScopes: readonly string[] = [],
 ): Promise<Check[]> {
-  const safeRoot = assertTrustTreeSafe(root, { skipDirs: SKIP_DIRS });
+  const safeRoot = assertTrustTreeSafe(root, { skipDirs: TRUST_SKIP_DIRS });
   const docs = collectTrustDocs(safeRoot);
   const checks = [
     ...docs.flatMap((abs) =>
@@ -127,7 +135,7 @@ async function trustScanPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>>
     root: ctx.root,
     ref: typeof ctx.options.ref === "string" ? ctx.options.ref : undefined,
     pin: typeof ctx.options.pin === "string" ? ctx.options.pin : undefined,
-    skipDirs: SKIP_DIRS,
+    skipDirs: TRUST_SKIP_DIRS,
   });
   if (source.kind === "local" && !isAbsolute(target)) {
     return trustScanPlanForSource(ctx, {

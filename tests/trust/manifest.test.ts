@@ -34,6 +34,22 @@ describe("scanTrustManifests", () => {
       "---\nallowed-tools: ['Bash(*)']\n---\n# Command\n",
     ],
     [
+      "comma-scalar Bash(*)",
+      "skills/bash-comma/SKILL.md",
+      "---\nallowed-tools: Read, Write, Bash(*)\n---\n# X\n",
+    ],
+    [
+      "scoped Bash wildcard",
+      "skills/bash-scoped/SKILL.md",
+      "---\nallowed-tools: Bash(rm:*)\n---\n# X\n",
+    ],
+    [
+      "block scalar Bash(*)",
+      "skills/bash-block/SKILL.md",
+      "---\nallowed-tools: |\n  Read, Write, Bash(*)\n---\n# X\n",
+    ],
+    ["bare Bash", "skills/bash-bare/SKILL.md", "---\nallowed-tools: Bash\n---\n# X\n"],
+    [
       "permissionMode bypass",
       "skills/bypass/SKILL.md",
       "---\npermissionMode: bypassPermissions\n---\n# X\n",
@@ -56,6 +72,50 @@ describe("scanTrustManifests", () => {
       location: expect.objectContaining({ uri: rel }),
     });
     expect(check?.fingerprint).toMatch(/^trust-auto-exec-hook:/);
+  });
+
+  it.each([
+    [
+      "unresolved alias",
+      "skills/alias-missing/SKILL.md",
+      "---\nallowed-tools: *missing\n---\n# X\n",
+    ],
+    [
+      "alias expansion bomb",
+      "skills/alias-bomb/SKILL.md",
+      [
+        "---",
+        "a: &a [LOL, LOL, LOL, LOL, LOL, LOL, LOL, LOL, LOL]",
+        "b: &b [*a, *a, *a, *a, *a, *a, *a, *a, *a]",
+        "c: &c [*b, *b, *b, *b, *b, *b, *b, *b, *b]",
+        "d: &d [*c, *c, *c, *c, *c, *c, *c, *c, *c]",
+        "allowed-tools: *d",
+        "---",
+        "# X",
+      ].join("\n"),
+    ],
+  ])("fails closed without throwing on YAML alias frontmatter: %s", (_name, rel, content) => {
+    write(rel, content);
+
+    let checks: ReturnType<typeof scanTrustManifests> = [];
+    expect(() => {
+      checks = scanTrustManifests(dir);
+    }).not.toThrow();
+
+    expect(checks).toEqual([
+      expect.objectContaining({
+        verdict: "fail",
+        code: "trust.auto-exec-hook",
+        detail: expect.stringContaining("unparseable YAML frontmatter in trust document"),
+        location: expect.objectContaining({ uri: rel, startLine: 1 }),
+      }),
+    ]);
+  });
+
+  it("does not flag benign comma-scalar allowed-tools", () => {
+    write("skills/clean-comma/SKILL.md", "---\nallowed-tools: Read, Write\n---\n# Clean\n");
+
+    expect(scanTrustManifests(dir)).toEqual([]);
   });
 
   it.each([
@@ -91,6 +151,18 @@ describe("scanTrustManifests", () => {
 
   it.each(["settings.json", ".claude/settings.json"])("flags hooks key in %s", (rel) => {
     write(rel, JSON.stringify({ hooks: { Stop: [] } }));
+
+    expect(codes()).toContain("trust.auto-exec-hook");
+  });
+
+  it("does not treat markdown image syntax as bang auto-run", () => {
+    write("skills/image/SKILL.md", "# Image\n\n![diagram](./x.png)\n");
+
+    expect(scanTrustManifests(dir)).toEqual([]);
+  });
+
+  it("still flags non-image bang auto-run lines", () => {
+    write("skills/bang-command/SKILL.md", "# Bang\n\n!somecommand\n");
 
     expect(codes()).toContain("trust.auto-exec-hook");
   });

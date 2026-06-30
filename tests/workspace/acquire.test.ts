@@ -364,6 +364,30 @@ describe("workspace add acquisition plans", () => {
     expect(existsSync(join(workspace, ".aih", "trust-lock.json"))).toBe(true);
   });
 
+  it("runWorkspaceAdd treats a corrupt trust lock as empty and promotes a clean source", async () => {
+    localSkill(sourceRoot, "clean", "# Clean\n");
+    mkdirSync(join(workspace, ".aih"), { recursive: true });
+    writeFileSync(join(workspace, ".aih", "trust-lock.json"), "{<<<<<<<", "utf8");
+    const output: string[] = [];
+
+    const code = await runWorkspaceAdd(fakeCommand(sourceRoot), {
+      write: (text) => output.push(text),
+      env: {},
+      now: () => new Date("2026-06-30T00:00:00.000Z"),
+      newRunId: () => "run_test",
+    });
+
+    const lock = JSON.parse(readFileSync(join(workspace, ".aih", "trust-lock.json"), "utf8")) as {
+      schemaVersion: number;
+      sources: Array<{ id: string }>;
+    };
+    expect(code).toBe(0);
+    expect(output.join("")).toContain("Applied workspace add: promote");
+    expect(lock.schemaVersion).toBe(1);
+    expect(lock.sources).toHaveLength(1);
+    expect(lock.sources[0]?.id).toBe(basename(sourceRoot).toLowerCase());
+  });
+
   it("runWorkspaceAdd dry-runs a remote source without downloading or promoting", async () => {
     const output: string[] = [];
 

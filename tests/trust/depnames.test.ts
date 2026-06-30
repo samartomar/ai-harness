@@ -70,8 +70,21 @@ describe("scanTrustDependencyNames", () => {
     ]);
   });
 
+  it("flags scoped package typos when the scope matches a popular scoped package", () => {
+    pkg({ "@types/nod": "1.0.0" });
+
+    expect(scanTrustDependencyNames(dir, [])).toEqual([
+      expect.objectContaining({
+        verdict: "fail",
+        code: "trust.typosquat",
+        detail: expect.stringContaining("@types/node"),
+        location: expect.objectContaining({ uri: "package.json" }),
+      }),
+    ]);
+  });
+
   it("does not flag exact popular names or distance-two names", () => {
-    pkg({ react: "18.0.0", "dist-2": "1.0.0" });
+    pkg({ react: "18.0.0", rxect: "1.0.0", "@types/node": "26.0.0" });
 
     expect(scanTrustDependencyNames(dir, [])).toEqual([]);
   });
