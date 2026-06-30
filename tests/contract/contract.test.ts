@@ -167,9 +167,7 @@ describe("PR 1B — project.md + setup.md", () => {
     expect(setupDoc("ai-coding", { ...base, packageManager: "pip" })).toContain(
       "`python -m pip install -r requirements.txt`",
     );
-    expect(setupDoc("ai-coding", { ...base, packageManager: "cargo" })).toContain(
-      "`cargo fetch`",
-    );
+    expect(setupDoc("ai-coding", { ...base, packageManager: "cargo" })).toContain("`cargo fetch`");
   });
 });
 
@@ -258,9 +256,7 @@ describe("command confidence", () => {
       value: "cargo build",
       confidence: "inferred",
     });
-    expect(c.knownGaps.some((g) => g.includes("services/api") && g.includes("pytest"))).toBe(
-      true,
-    );
+    expect(c.knownGaps.some((g) => g.includes("services/api") && g.includes("pytest"))).toBe(true);
     expect(projectContractDoc("ai-coding", c)).toContain("crates/worker");
     expect(projectContractDoc("ai-coding", c)).toContain("cargo clippy");
   });

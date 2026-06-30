@@ -67,9 +67,7 @@ function contractCommands(stack: {
   };
 }
 
-function contractWorkspaces(
-  stack: RepoStack,
-): ProjectContract["workspaces"] | undefined {
+function contractWorkspaces(stack: RepoStack): ProjectContract["workspaces"] | undefined {
   const entries = Object.entries(stack.workspaces ?? {}).sort(([a], [b]) => a.localeCompare(b));
   if (entries.length === 0) return undefined;
   const workspaces: NonNullable<ProjectContract["workspaces"]> = {};
