@@ -714,11 +714,7 @@ interface WorkspaceSynthesis {
   workspaceCount?: number;
 }
 
-function synthesizeWorkspaces(
-  root: string,
-  raw: Raw,
-  opts: ScanOptions,
-): WorkspaceSynthesis {
+function synthesizeWorkspaces(root: string, raw: Raw, opts: ScanOptions): WorkspaceSynthesis {
   const rels = [...raw.workspaceRoots]
     .filter((rel) => rel.length > 0)
     .sort((a, b) => a.localeCompare(b));

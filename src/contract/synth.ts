@@ -162,14 +162,7 @@ function deriveKnownGaps(
     );
   }
 
-  for (const slot of [
-    "test",
-    "build",
-    "lint",
-    "start",
-    "cdkSynth",
-    "cdkDiff",
-  ] as const) {
+  for (const slot of ["test", "build", "lint", "start", "cdkSynth", "cdkDiff"] as const) {
     const cmd = commands[slot];
     if (cmd?.confidence === "inferred") {
       gaps.push(`unconfirmed \`${cmd.value}\` (${slot} inferred, not declared) — verify it runs`);
