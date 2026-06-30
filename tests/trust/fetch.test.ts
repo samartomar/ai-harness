@@ -87,6 +87,12 @@ describe("trust fetch source resolution", () => {
     expect(action.env).not.toHaveProperty("OPENAI_API_KEY");
   });
 
+  it("rejects --pin values that are not full commit SHAs", () => {
+    expect(() => resolveTrustSource("Owner/Repo", { root: dir, pin: "main" })).toThrow(
+      /40-character Git commit SHA/i,
+    );
+  });
+
   it("scrubs secrets while preserving only fetch-safe environment keys", () => {
     expect(
       scrubFetchEnv({

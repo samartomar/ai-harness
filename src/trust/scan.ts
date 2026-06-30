@@ -62,7 +62,7 @@ function passCheck(root: string, scanned: number): Check {
 }
 
 export async function scanTrustTree(root: string): Promise<Check[]> {
-  const safeRoot = assertTrustTreeSafe(root);
+  const safeRoot = assertTrustTreeSafe(root, { skipDirs: SKIP_DIRS });
   const docs = collectTrustDocs(safeRoot);
   const checks = docs.flatMap((abs) =>
     scanTrustDocument(toPosix(relative(safeRoot, abs)), readFileSync(abs, "utf8")),
@@ -85,6 +85,7 @@ export async function trustScanProbes(source: TrustSource): Promise<ProbeAction[
           {
             name: "trust scan",
             verdict: "skip",
+            code: "trust.fetch-blocked",
             detail:
               "remote source fetch is skipped in dry-run; pass --apply to download into quarantine",
           },
@@ -114,6 +115,7 @@ async function trustScanPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>>
     root: ctx.root,
     ref: typeof ctx.options.ref === "string" ? ctx.options.ref : undefined,
     pin: typeof ctx.options.pin === "string" ? ctx.options.pin : undefined,
+    skipDirs: SKIP_DIRS,
   });
   if (source.kind === "local" && !isAbsolute(target)) {
     return trustScanPlanForSource(ctx, {

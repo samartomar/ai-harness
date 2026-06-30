@@ -185,6 +185,31 @@ describe("executePlan", () => {
       { argv: ["node", "fetch.mjs"], cwd: dir, env: { PATH: "safe-bin" }, timeoutMs: 1234 },
     ]);
   });
+
+  it("emits a configured exec failure check and blocks follow-on probes", async () => {
+    const run = fakeRunner(() => ({ code: 1, stderr: "network down" }));
+    const p = plan(
+      "t",
+      exec("fetch", ["node", "fetch.mjs"], {
+        failureCheck: {
+          name: "trust.fetch-blocked",
+          verdict: "fail",
+          code: "trust.fetch-blocked",
+          detail: "network down",
+        },
+        blockProbesOnFailure: true,
+      }),
+      probe("should not run", () => {
+        throw new Error("probe should have been blocked");
+      }),
+    );
+
+    const result = await executePlan(p, ctx({ apply: true, verify: true, run }));
+
+    expect(result.report?.checks).toEqual([
+      expect.objectContaining({ verdict: "fail", code: "trust.fetch-blocked" }),
+    ]);
+  });
 });
 
 describe("executePlan — envblock folding", () => {

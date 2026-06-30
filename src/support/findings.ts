@@ -390,12 +390,26 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     action:
       "Reject the external source until the hidden Unicode is removed or the source is replaced with a reviewed, clean commit.",
   },
+  "trust.fetch-blocked": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "external trust source could not be fetched",
+    action:
+      "Do not promote the external source. Re-run with a reachable repository and an exact reviewed commit SHA, then verify the quarantined scan passes before promotion.",
+  },
   "trust.prompt-injection": {
     audience: "developer",
     failSeverity: "blocking",
     title: "prompt-injection shape found in external skill content",
     action:
       "Reject the external source until the hidden instruction/exfiltration text is removed or the source is replaced with a reviewed, clean commit.",
+  },
+  "trust.source-changed": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "external trust source changed after clearance",
+    action:
+      "Do not promote the external source. Re-run the acquisition from the exact source/ref so the scan, artifact hashes, and promotion all refer to the same content.",
   },
 };
 
