@@ -13,19 +13,36 @@ export function normalizeRel(p: string): string {
  * Routed through the read-only {@link gitRead} seam, so it stays hermetic in tests and
  * cross-platform. Empty when git is absent / not a repo (`gitRead` → undefined): with
  * no git history there is no uncommitted work to clobber.
+ *
+ * `-uall` matters for the REMOVAL gate: default porcelain collapses an entirely
+ * untracked directory to one `?? dir/` entry, so a FILE inside it would never appear
+ * in this set and a `remove`/`--delete` of it would sail past the gate. `-uall` lists
+ * every untracked file individually (ignored files stay excluded, so it stays cheap).
+ *
+ * `-z` (NUL-delimited) matters just as much: without it git C-QUOTES any path with an
+ * "unusual" byte (an embedded newline, a `"`, or a non-ASCII byte becomes `"a\nb"`,
+ * `"a\"b"`, `\NNN`). The old human-format parser kept those escapes (and `normalizeRel`
+ * then rewrote the backslashes), so the dirty entry would NOT equal the real on-disk
+ * path the remove plan targets — a dirty/untracked removal target with a quoted name
+ * would slip past the gate, letting `--delete` move an uncommitted file without
+ * `--force`. In `-z` git emits RAW, unquoted bytes and drops the ` -> ` rename arrow,
+ * reversing the fields to `<dest>\0<src>\0`, so paths match exactly with no unquoting.
  */
 export async function dirtyPaths(ctx: PlanContext): Promise<Set<string>> {
-  const out = await gitRead(ctx, ["status", "--porcelain"]);
+  const out = await gitRead(ctx, ["status", "--porcelain", "-z", "-uall"]);
   const set = new Set<string>();
   if (typeof out !== "string") return set;
-  for (const line of out.split("\n")) {
-    if (line.length < 4) continue; // "XY path" needs the 2 status cols + a space + a char
-    let p = line.slice(3); // drop the 2 status columns and the separating space
-    const arrow = p.indexOf(" -> ");
-    if (arrow >= 0) p = p.slice(arrow + 4); // a rename: the destination is the on-disk file
-    p = p.trim();
-    if (p.startsWith('"') && p.endsWith('"')) p = p.slice(1, -1); // git quotes odd paths
-    if (p.length > 0) set.add(normalizeRel(p));
+  const tokens = out.split("\0");
+  for (let i = 0; i < tokens.length; i++) {
+    const entry = tokens[i];
+    if (entry === undefined || entry.length < 4) continue; // "XY path" = 2 cols + space + ≥1 char
+    const status = entry.slice(0, 2);
+    const path = entry.slice(3); // drop the 2 status columns and the separating space
+    // A rename/copy (R or C in either status column) emits its SOURCE as a separate
+    // NUL-terminated token right after this one; consume it so the old name is never
+    // added. In -z the entry's own path is already the destination (the on-disk file).
+    if (status.includes("R") || status.includes("C")) i += 1;
+    if (path.length > 0) set.add(normalizeRel(path));
   }
   return set;
 }

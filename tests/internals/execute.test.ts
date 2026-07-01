@@ -554,3 +554,73 @@ describe("executePlan — remove actions", () => {
     );
   });
 });
+
+describe("executePlan — hard-delete removals", () => {
+  const put = (rel: string, body = "x"): string => {
+    const abs = join(dir, rel);
+    mkdirSync(dirname(abs), { recursive: true });
+    writeFileSync(abs, body);
+    return abs;
+  };
+
+  it("--apply hard-delete renames to the sibling .aih.bak and reports effect delete", async () => {
+    const abs = put("ai-coding/adapters/codex.md", "# codex\n");
+    const res = await executePlan(
+      plan("prune", remove("ai-coding/adapters/codex.md", "stale adapter", { hardDelete: true })),
+      ctx({ apply: true }),
+    );
+    expect(existsSync(abs)).toBe(false);
+    expect(readFileSync(`${abs}.aih.bak`, "utf8")).toBe("# codex\n");
+    expect(res.removed).toEqual([
+      {
+        path: "ai-coding/adapters/codex.md",
+        describe: "stale adapter",
+        effect: "delete",
+        to: "ai-coding/adapters/codex.md.aih.bak",
+      },
+    ]);
+    // Nothing leaked into the legacy archive on the hard-delete path.
+    expect(existsSync(join(dir, ".aih", "legacy"))).toBe(false);
+    // A hard-delete counts as a mutation ("Applied", never "nothing to apply").
+    expect(summarizeResult(res)).toContain("Applied prune");
+    expect(summarizeResult(res)).toContain("[delete] ai-coding/adapters/codex.md");
+  });
+
+  it("reports the ACTUAL fallback destination when .aih.bak is already occupied", async () => {
+    // An existing `.aih.bak` is never overwritten — the hard-delete lands at
+    // `.1.aih.bak`. The summary must point the user's restore at the real slot,
+    // not the planned `.aih.bak` (the finding-2 reporting fix).
+    const abs = put("ai-coding/adapters/codex.md", "# codex v2\n");
+    writeFileSync(`${abs}.aih.bak`, "# codex v1 (never-committed backup)\n");
+    const res = await executePlan(
+      plan("prune", remove("ai-coding/adapters/codex.md", "stale adapter", { hardDelete: true })),
+      ctx({ apply: true }),
+    );
+    // The prior backup survives untouched; the new content lands at the .1 slot.
+    expect(readFileSync(`${abs}.aih.bak`, "utf8")).toBe("# codex v1 (never-committed backup)\n");
+    expect(readFileSync(`${abs}.1.aih.bak`, "utf8")).toBe("# codex v2\n");
+    // And the reported `to` reflects that actual destination, not the planned one.
+    expect(res.removed[0]?.to).toBe("ai-coding/adapters/codex.md.1.aih.bak");
+    expect(summarizeResult(res)).toContain("ai-coding/adapters/codex.md.1.aih.bak");
+  });
+
+  it("dry-run hard-delete touches nothing but reports the plan", async () => {
+    const abs = put("ai-coding/adapters/codex.md");
+    const res = await executePlan(
+      plan("prune", remove("ai-coding/adapters/codex.md", "stale", { hardDelete: true })),
+      ctx({ apply: false }),
+    );
+    expect(existsSync(abs)).toBe(true);
+    expect(existsSync(`${abs}.aih.bak`)).toBe(false);
+    expect(res.removed[0]?.effect).toBe("delete");
+  });
+
+  it("hard-delete destination is still contained (a `..` path is refused)", async () => {
+    await expect(
+      executePlan(
+        plan("prune", remove("../outside.md", "escape", { hardDelete: true })),
+        ctx({ apply: true }),
+      ),
+    ).rejects.toBeInstanceOf(PathContainmentError);
+  });
+});
