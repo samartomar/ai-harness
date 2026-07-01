@@ -22,3 +22,7 @@ Thumbs.db
 *.aih.bak
 *.aih.tmp
 .aih/
+
+# internal (non-public) docs — clone samartomar/ai-harness-internal here for
+# cross-agent access without exposing competitive/roadmap/handoff docs publicly
+.internal/
