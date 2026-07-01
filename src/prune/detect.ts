@@ -127,11 +127,17 @@ function keptPaths(targeted: readonly Cli[]): Set<string> {
   return kept;
 }
 
-/** Existing `.kiro/hooks/*.kiro.hook` files (aih writes them wholesale → `file`). */
+/**
+ * aih-GENERATED Kiro hook files only. aih namespaces every hook it writes with an
+ * `aih-` prefix precisely so it never clashes with ECC's or the team's own hooks
+ * (src/kiro/content.ts `kiroHooks`), so that prefix is the ownership signal: a bare
+ * `*.kiro.hook` glob would flag a user/team hook for removal. Written wholesale by
+ * bootstrap-ai → `file` disposition.
+ */
 function kiroHookFiles(root: string): string[] {
   try {
     return readdirSync(join(root, ".kiro", "hooks"))
-      .filter((n) => n.endsWith(".kiro.hook"))
+      .filter((n) => n.startsWith("aih-") && n.endsWith(".kiro.hook"))
       .sort()
       .map((n) => `.kiro/hooks/${n}`);
   } catch {

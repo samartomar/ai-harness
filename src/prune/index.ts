@@ -27,10 +27,26 @@ const DISPOSITION_TAG: Record<PruneArtifact["disposition"], string> = {
   block: "block",
 };
 
+/**
+ * The reassurance shown for a co-owned `block` artifact — worded for the ACTUAL
+ * subtract mechanism, which differs by kind: a bootloader carries a text
+ * marker-delimited managed block, while an MCP/settings file is JSON key-merged
+ * (no marker). Saying "managed block" for a JSON MCP config would over-claim a
+ * mechanism that isn't there, so each kind gets its own accurate note.
+ */
+const BLOCK_NOTE: Partial<Record<PruneArtifact["kind"], string>> = {
+  bootloader: "managed block subtracted; your edits outside it stay",
+  mcp: "aih's server entries removed; your other servers stay",
+  settings: "aih's entries removed; your other settings stay",
+};
+
 /** One preview line per artifact: disposition tag, path, owning CLI(s), and — for a
- * co-owned `block` — the reassurance that hand-edits survive the subtract. */
+ * co-owned `block` — a mechanism-accurate note that the rest of the file survives. */
 function artifactLine(a: PruneArtifact): string {
-  const note = a.disposition === "block" ? "  (managed block; hand-edits preserved)" : "";
+  const note =
+    a.disposition === "block"
+      ? `  (${BLOCK_NOTE[a.kind] ?? "aih's entries subtracted; the rest of the file stays"})`
+      : "";
   return `  [${DISPOSITION_TAG[a.disposition]}] ${a.path}  — ${a.clis.join(", ")}${note}`;
 }
 
@@ -50,8 +66,9 @@ function renderPreview(set: StalePruneSet): string {
   }
   return lines(
     "Stale per-CLI artifacts — CLIs bootstrapped into this repo but no longer in the",
-    "committed target set. `file` = aih-exclusive (a clean remove); `block` = an",
-    "aih-managed block inside a co-owned file (subtracted in place, never deleted).",
+    "committed target set. `file` = aih-exclusive (a clean remove); `block` = aih's own",
+    "entries inside a co-owned file (a marker block or JSON key — subtracted in place,",
+    "never deleted).",
     "",
     `Kept (${SOURCE_LABEL[set.source]}): ${set.targeted.join(", ")}`,
     `Dropped: ${set.dropped.join(", ")}`,

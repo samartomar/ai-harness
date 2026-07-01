@@ -162,4 +162,18 @@ describe("stalePruneSet — never-prune invariants", () => {
     expect(paths(set).some((p) => p.includes("_shared-canonical-block"))).toBe(false);
     expect(paths(set).some((p) => p.includes("RULE_ROUTER"))).toBe(false);
   });
+
+  it("only flags aih-namespaced Kiro hooks, never user/team hooks", () => {
+    marker("claude");
+    adapter("claude");
+    adapter("kiro");
+    write(".kiro/steering/00-canon.md"); // kiro's exclusive bootloader
+    write(".kiro/steering/agent-tools.md"); // aih-generated steering extra
+    write(".kiro/hooks/aih-tests-on-edit.kiro.hook"); // aih-owned
+    write(".kiro/hooks/team-custom.kiro.hook"); // NOT aih-owned
+    const p = paths(stalePruneSet(ctx()));
+    expect(p).toContain(".kiro/hooks/aih-tests-on-edit.kiro.hook");
+    expect(p).toContain(".kiro/steering/agent-tools.md");
+    expect(p).not.toContain(".kiro/hooks/team-custom.kiro.hook");
+  });
 });
