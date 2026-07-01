@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { digest } from "../../src/internals/plan.js";
+import { digest, dynamicDigest } from "../../src/internals/plan.js";
 import { reportHtml, reportMarkdown } from "../../src/report/artifact.js";
 import type { SupportTemplate } from "../../src/support/render.js";
 
@@ -57,6 +57,18 @@ describe("reportMarkdown", () => {
     expect(md).toContain("```text");
     expect(md).toContain("✓ claude");
     expect(md.endsWith("\n")).toBe(true);
+  });
+
+  it("throws when an unresolved dynamic digest reaches artifact rendering", () => {
+    expect(() =>
+      reportMarkdown("aih report", [dynamicDigest("late report", () => "resolved later")]),
+    ).toThrow(/unresolved dynamic digest/i);
+  });
+
+  it("still renders normal static digest text", () => {
+    expect(reportMarkdown("aih report", [digest("Static", "static body", {})])).toContain(
+      "static body",
+    );
   });
 });
 

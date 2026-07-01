@@ -35,6 +35,18 @@ const RiskGateOverrideSchema = z
 
 const LicenseDispositionSchema = z.enum(["auto-approve", "alert", "fail", "block"]);
 
+const TrustApprovedSourceSchema = z
+  .object({
+    owner: z.string().min(1),
+    repo: z.string().min(1),
+    pinnedSha: z
+      .string()
+      .regex(/^[0-9a-f]{40}$/)
+      .optional(),
+    reason: z.string().optional(),
+  })
+  .strict();
+
 export const OrgPolicySchema = z
   .object({
     schemaVersion: z.literal(1),
@@ -66,6 +78,16 @@ export const OrgPolicySchema = z
       .object({
         allowedServers: z.array(z.string().min(1)).default([]),
         allowManagedOnly: z.boolean().default(false),
+      })
+      .strict()
+      .optional(),
+    trust: z
+      .object({
+        approvedSources: z.array(TrustApprovedSourceSchema).optional(),
+        requireSignedSource: z.boolean().default(false),
+        // cisco/semgrep are future work: re-add names only with real scanner integrations.
+        requiredDetectors: z.array(z.enum(["skillspector"])).optional(),
+        internalScopes: z.array(z.string()).default([]),
       })
       .strict()
       .optional(),

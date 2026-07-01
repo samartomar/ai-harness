@@ -397,6 +397,13 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     action:
       "Do not promote the external source. Re-run with a reachable repository and an exact reviewed commit SHA, then verify the quarantined scan passes before promotion.",
   },
+  "trust.detector-unavailable": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "required trust detector unavailable",
+    action:
+      "Install the required detector locally or remove it from the enterprise trust.requiredDetectors policy. Optional detector skips only reduce coverage and do not block lower postures.",
+  },
   "trust.prompt-injection": {
     audience: "developer",
     failSeverity: "blocking",
@@ -410,6 +417,62 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     title: "external trust source changed after clearance",
     action:
       "Do not promote the external source. Re-run the acquisition from the exact source/ref so the scan, artifact hashes, and promotion all refer to the same content.",
+  },
+  "trust.auto-exec-hook": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "auto-execution hook found in external skill source",
+    action:
+      "Reject the external source until the auto-executing hook, install lifecycle script, permission bypass, or auto-run line is removed.",
+  },
+  "trust.dependency-confusion": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "external source declares an internal-scope dependency",
+    action:
+      "Reject the external source until the dependency is removed or replaced with a reviewed, pinned package from an approved source.",
+  },
+  "trust.typosquat": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "dependency name resembles a popular package",
+    action:
+      "Reject the external source until the dependency name is corrected or the package is independently reviewed and pinned.",
+  },
+  "trust.malicious-code": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "malicious code shape found in external skill source",
+    action:
+      "Reject the external source until the reverse shell, remote shell pipe, base64-to-shell payload, or equivalent malicious script shape is removed.",
+  },
+  "trust.source-drift": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "external trust source ref drifted upstream",
+    action:
+      "Treat the promoted source as stale. Re-review the upstream ref, update the approved pinned SHA if it is intentional, then reacquire the source.",
+  },
+  "trust.unpinned-dependency": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "external source declares an unpinned dependency",
+    action:
+      "Reject the external source until direct dependencies are pinned to exact versions and a package lockfile is committed.",
+  },
+  "trust.untrusted-publisher": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "external source publisher is not approved",
+    action:
+      "Use an approved external source, or add the reviewed owner/repository to the org-policy approved source list before promotion.",
+  },
+  "trust.unsigned-source": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "external source is not pinned to a reviewed commit",
+    action:
+      "Re-run the trust scan or workspace acquisition with `--pin <40-character SHA>` for the reviewed commit.",
   },
 };
 

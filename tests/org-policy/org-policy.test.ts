@@ -64,8 +64,64 @@ describe("OrgPolicySchema", () => {
     });
   });
 
+  it("parses the optional trust policy block with defaults", () => {
+    expect(
+      parseOrgPolicy(
+        policy({
+          trust: {
+            approvedSources: [
+              {
+                owner: "owner",
+                repo: "repo",
+                pinnedSha: "a".repeat(40),
+                reason: "reviewed source override",
+              },
+            ],
+            requiredDetectors: ["skillspector"],
+          },
+        }),
+      ).trust,
+    ).toEqual({
+      approvedSources: [
+        {
+          owner: "owner",
+          repo: "repo",
+          pinnedSha: "a".repeat(40),
+          reason: "reviewed source override",
+        },
+      ],
+      requireSignedSource: false,
+      requiredDetectors: ["skillspector"],
+      internalScopes: [],
+    });
+  });
+
   it("rejects redefinitions; command policy changes must be deltas", () => {
     expect(() => parseOrgPolicy(policy({ command: { deny: ["kubectl delete*"] } }))).toThrow(
+      /org-policy/,
+    );
+  });
+
+  it("rejects unknown trust policy fields", () => {
+    expect(() => parseOrgPolicy(policy({ trust: { approveEverything: true } }))).toThrow(
+      /org-policy/,
+    );
+  });
+
+  it("rejects approved source hostPattern until multi-host fetch exists", () => {
+    expect(() =>
+      parseOrgPolicy(
+        policy({
+          trust: {
+            approvedSources: [{ owner: "owner", repo: "repo", hostPattern: "github.internal" }],
+          },
+        }),
+      ),
+    ).toThrow(/org-policy/);
+  });
+
+  it("rejects detector names without a real scanner implementation", () => {
+    expect(() => parseOrgPolicy(policy({ trust: { requiredDetectors: ["semgrep"] } }))).toThrow(
       /org-policy/,
     );
   });

@@ -13,6 +13,21 @@ import type { ConfigSecretHit, SecretScan } from "./scan.js";
  */
 export const SECRET_RULE = "plaintext-secret";
 
+export function plaintextSecretCheck(path: string, posture: Posture): Check {
+  return postureGradeCheck(
+    {
+      name: SECRET_RULE,
+      verdict: "fail",
+      detail: `${path} — plaintext secret on disk; migrate to a vault and rotate the exposed credential`,
+      code: "secrets.plaintext-detected",
+      location: { uri: path, startLine: 1 },
+      fingerprint: `${SECRET_RULE}:${path}`,
+    },
+    "secrets",
+    posture,
+  );
+}
+
 /**
  * One read-only probe per detected plaintext-secret path. Posture decides whether
  * it is warning-only (`vibe`) or a failing gate (`team`/`enterprise`); only failing
@@ -27,27 +42,27 @@ export const SECRET_RULE = "plaintext-secret";
  */
 export function secretProbes(scan: SecretScan, posture: Posture): ProbeAction[] {
   return scan.matches.map((path) =>
-    probe(
-      `plaintext secret: ${path}`,
-      (): Check =>
-        postureGradeCheck(
-          {
-            name: SECRET_RULE,
-            verdict: "fail",
-            detail: `${path} — plaintext secret on disk; migrate to a vault and rotate the exposed credential`,
-            code: "secrets.plaintext-detected",
-            location: { uri: path, startLine: 1 },
-            fingerprint: `${SECRET_RULE}:${path}`,
-          },
-          "secrets",
-          posture,
-        ),
-    ),
+    probe(`plaintext secret: ${path}`, (): Check => plaintextSecretCheck(path, posture)),
   );
 }
 
 /** Stable SARIF rule id for hardcoded-secret-in-config findings (one rule, many results). */
 export const MCP_SECRET_RULE = "mcp-hardcoded-secret";
+
+export function mcpConfigSecretCheck(hit: ConfigSecretHit, posture: Posture): Check {
+  return postureGradeCheck(
+    {
+      name: MCP_SECRET_RULE,
+      verdict: "fail",
+      detail: `${hit.file}${hit.key ? ` → "${hit.key}"` : ""} holds a ${hit.kind} — move it to an env var referenced as \${ENV_VAR} and rotate the exposed value`,
+      code: "mcp.hardcoded-secret",
+      location: { uri: hit.file, startLine: 1 },
+      fingerprint: `${MCP_SECRET_RULE}:${hit.file}:${hit.key}`,
+    },
+    "secrets",
+    posture,
+  );
+}
 
 /**
  * One read-only probe per hardcoded secret found in an MCP config file. Like
@@ -60,19 +75,7 @@ export function mcpConfigSecretProbes(hits: ConfigSecretHit[], posture: Posture)
   return hits.map((h) =>
     probe(
       `hardcoded secret: ${h.file}${h.key ? ` (${h.key})` : ""}`,
-      (): Check =>
-        postureGradeCheck(
-          {
-            name: MCP_SECRET_RULE,
-            verdict: "fail",
-            detail: `${h.file}${h.key ? ` → "${h.key}"` : ""} holds a ${h.kind} — move it to an env var referenced as \${ENV_VAR} and rotate the exposed value`,
-            code: "mcp.hardcoded-secret",
-            location: { uri: h.file, startLine: 1 },
-            fingerprint: `${MCP_SECRET_RULE}:${h.file}:${h.key}`,
-          },
-          "secrets",
-          posture,
-        ),
+      (): Check => mcpConfigSecretCheck(h, posture),
     ),
   );
 }

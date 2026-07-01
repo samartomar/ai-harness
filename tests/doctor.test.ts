@@ -118,6 +118,97 @@ describe("doctor — large-repo graph safety", () => {
   });
 });
 
+describe("doctor — trust-lock local drift", () => {
+  let dir: string;
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "aih-doctor-trust-drift-"));
+  });
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  function rooted(): PlanContext {
+    const run = fakeRunner(() => ({ code: 1, spawnError: true }));
+    return {
+      root: dir,
+      contextDir: "ai-coding",
+      apply: false,
+      verify: true,
+      json: false,
+      run,
+      host: makeHostAdapter({ platform: "linux", run, env: {} }),
+      env: {},
+      options: {},
+    };
+  }
+
+  it("skips a fresh repo without a trust-lock", async () => {
+    const c = rooted();
+    const probe = findProbe((await command.plan(c)).actions, "trust-lock local drift");
+    const res = await probe?.runMany?.(c);
+
+    expect(res).toEqual([
+      expect.objectContaining({
+        name: "trust local drift",
+        verdict: "skip",
+      }),
+    ]);
+  });
+
+  it("flags edited promoted artifacts without checking upstream refs", async () => {
+    mkdirSync(join(dir, "ai-coding", "skills", "owner-repo", "clean"), { recursive: true });
+    writeFileSync(
+      join(dir, "ai-coding", "skills", "owner-repo", "clean", "SKILL.md"),
+      "# Edited\n",
+    );
+    mkdirSync(join(dir, ".aih"), { recursive: true });
+    writeFileSync(
+      join(dir, ".aih", "trust-lock.json"),
+      JSON.stringify({
+        schemaVersion: 1,
+        sources: [
+          {
+            id: "owner-repo",
+            kind: "github",
+            source: "owner/repo",
+            ref: "main",
+            pinnedSha: "a".repeat(40),
+            promotedAt: "2026-06-30T00:00:00.000Z",
+            promotedSkills: ["clean"],
+            analyzersRun: ["aih-native"],
+            artifactHashes: [{ path: "skills/clean/SKILL.md", sha256: "not-current" }],
+            findings: [],
+          },
+        ],
+      }),
+    );
+    const gitCalls: string[][] = [];
+    const run = fakeRunner((argv) => {
+      if (argv[0] === "git") gitCalls.push(argv);
+      return { code: 1, spawnError: true };
+    });
+    const c: PlanContext = {
+      ...rooted(),
+      run,
+      host: makeHostAdapter({ platform: "linux", run, env: {} }),
+    };
+
+    const probe = findProbe((await command.plan(c)).actions, "trust-lock local drift");
+    const res = await probe?.runMany?.(c);
+
+    expect(gitCalls).toEqual([]);
+    expect(res).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          verdict: "fail",
+          code: "trust.source-changed",
+          detail: expect.stringContaining("local drift"),
+        }),
+      ]),
+    );
+  });
+});
+
 describe("doctor — git-enabled workspace roots", () => {
   let dir: string;
   beforeEach(() => {

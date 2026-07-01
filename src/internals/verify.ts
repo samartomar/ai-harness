@@ -59,9 +59,18 @@ export type CheckCode =
   | "report.contract-untrue"
   // trust gate (external repos / skills)
   | "trust.fetch-blocked"
+  | "trust.detector-unavailable"
   | "trust.hidden-unicode"
   | "trust.prompt-injection"
-  | "trust.source-changed";
+  | "trust.source-changed"
+  | "trust.auto-exec-hook"
+  | "trust.dependency-confusion"
+  | "trust.typosquat"
+  | "trust.malicious-code"
+  | "trust.source-drift"
+  | "trust.unpinned-dependency"
+  | "trust.untrusted-publisher"
+  | "trust.unsigned-source";
 
 export interface Check {
   name: string;

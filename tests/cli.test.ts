@@ -24,7 +24,13 @@ describe("CLI program", () => {
 
   it("registers trust scan as a nested command", () => {
     const trust = buildProgram().commands.find((c) => c.name() === "trust");
-    expect(trust?.commands.map((c) => c.name())).toContain("scan");
+    expect(trust?.commands.map((c) => c.name()).sort()).toEqual([
+      "allow",
+      "list",
+      "pin",
+      "scan",
+      "verify",
+    ]);
   });
 
   it("parses a dry-run capability invocation without throwing", async () => {

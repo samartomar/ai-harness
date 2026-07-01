@@ -1,10 +1,13 @@
 import { createHash } from "node:crypto";
 import {
+  chmodSync,
   existsSync,
   lstatSync,
+  mkdtempSync,
   readdirSync,
   readFileSync,
   realpathSync,
+  rmSync,
   type Stats,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -82,10 +85,6 @@ function slugify(raw: string): string {
   return slug.length > 0 ? slug : "source";
 }
 
-function sha8(raw: string): string {
-  return createHash("sha256").update(raw).digest("hex").slice(0, 8);
-}
-
 function sourceIdForLocal(absPath: string): string {
   return slugify(basename(absPath));
 }
@@ -94,8 +93,24 @@ function sourceIdForGitHub(owner: string, repo: string): string {
   return slugify(`${owner}-${repo}`);
 }
 
-function quarantineRoot(source: string, ref: string): string {
-  return join(tmpdir(), "aih-quarantine", `${slugify(source.replace("/", "-"))}-${sha8(ref)}`);
+function quarantineRoot(): string {
+  const root = mkdtempSync(join(tmpdir(), "aih-quarantine-"));
+  try {
+    chmodSync(root, 0o700);
+  } catch {
+    // mkdtemp already creates an owner-only directory on POSIX. Windows ACLs
+    // are platform-managed, so chmod failures there should not block resolution.
+  }
+  return root;
+}
+
+export function cleanupQuarantine(source: TrustSource | undefined): void {
+  if (source?.kind !== "github") return;
+  // Swallow cleanup errors: a failed rmSync (e.g. a Windows AV lock) must never
+  // mask the real result/exception propagating from the surrounding try.
+  try {
+    rmSync(source.quarantineRoot, { recursive: true, force: true });
+  } catch {}
 }
 
 function isSecretEnvKey(key: string): boolean {
@@ -122,7 +137,34 @@ export function scrubFetchEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   return out;
 }
 
-const FULL_SHA = /^[a-f0-9]{40}$/i;
+const FULL_SHA = /^[a-f0-9]{40}$/;
+const SAFE_GIT_REF_CHARS = /^[A-Za-z0-9._/-]+$/;
+
+function hasWhitespaceOrControl(value: string): boolean {
+  for (const char of value) {
+    const code = char.charCodeAt(0);
+    if (code <= 32 || code === 127) return true;
+  }
+  return false;
+}
+
+export function isSafeGitRefName(ref: string): boolean {
+  if (ref.length === 0 || ref.startsWith("-")) return false;
+  if (hasWhitespaceOrControl(ref) || !SAFE_GIT_REF_CHARS.test(ref)) return false;
+  if (
+    ref.startsWith("/") ||
+    ref.endsWith("/") ||
+    ref.endsWith(".") ||
+    ref.includes("//") ||
+    ref.includes("..") ||
+    ref.includes("@{")
+  ) {
+    return false;
+  }
+  return ref
+    .split("/")
+    .every((part) => part.length > 0 && !part.startsWith(".") && !part.endsWith(".lock"));
+}
 
 export function resolveTrustSource(
   raw: string,
@@ -158,10 +200,16 @@ export function resolveTrustSource(
     throw new AihError(`unsupported GitHub trust source: ${raw}`, "AIH_TRUST");
   }
   if (opts.pin !== undefined && !FULL_SHA.test(opts.pin)) {
-    throw new AihError("--pin must be a full 40-character Git commit SHA", "AIH_TRUST");
+    throw new AihError("--pin must be a lowercase 40-character Git commit SHA", "AIH_TRUST");
+  }
+  if (opts.ref !== undefined && !isSafeGitRefName(opts.ref)) {
+    throw new AihError(
+      "--ref must be a safe Git ref (letters, numbers, '/', '.', '_' or '-', and not leading '-')",
+      "AIH_TRUST",
+    );
   }
   const ref = opts.pin ?? opts.ref ?? "HEAD";
-  const root = quarantineRoot(trimmed, ref);
+  const root = quarantineRoot();
   return {
     kind: "github",
     id: sourceIdForGitHub(owner, repo),
@@ -236,10 +284,37 @@ const path = require("node:path");
 const zlib = require("node:zlib");
 
 const input = JSON.parse(process.argv[1]);
+const OWNER_DIR_MODE = 0o700;
+const OWNER_FILE_MODE = 0o600;
 
 function fail(message) {
   process.stderr.write(message + "\n");
   process.exit(1);
+}
+
+function chmodBestEffort(target, mode) {
+  try {
+    fs.chmodSync(target, mode);
+  } catch {
+    // Windows ACLs are platform-managed; POSIX paths are already created with
+    // owner-only modes below, and chmod just tightens any umask variation.
+  }
+}
+
+function mkdirOwner(target) {
+  fs.mkdirSync(target, { recursive: true, mode: OWNER_DIR_MODE });
+  chmodBestEffort(target, OWNER_DIR_MODE);
+}
+
+function writeFileOwner(target, data, encoding) {
+  fs.writeFileSync(
+    target,
+    data,
+    encoding === undefined
+      ? { flag: "wx", mode: OWNER_FILE_MODE }
+      : { encoding, flag: "wx", mode: OWNER_FILE_MODE },
+  );
+  chmodBestEffort(target, OWNER_FILE_MODE);
 }
 
 function requestBuffer(url) {
@@ -296,6 +371,31 @@ function ensureContained(root, target) {
   fail("refusing tar path escape: " + target);
 }
 
+function prepareQuarantine(root, treePath, metadataPath) {
+  const resolvedRoot = path.resolve(root);
+  let st;
+  try {
+    st = fs.lstatSync(resolvedRoot);
+  } catch {
+    fail("quarantine root is missing: " + resolvedRoot);
+  }
+  if (!st.isDirectory() || st.isSymbolicLink()) {
+    fail("quarantine root is not a regular directory: " + resolvedRoot);
+  }
+  chmodBestEffort(resolvedRoot, OWNER_DIR_MODE);
+  const resolvedTree = path.resolve(treePath);
+  const resolvedMetadata = path.resolve(metadataPath);
+  ensureContained(resolvedRoot, resolvedTree);
+  ensureContained(resolvedRoot, resolvedMetadata);
+  fs.rmSync(resolvedTree, { recursive: true, force: true });
+  fs.rmSync(resolvedMetadata, { force: true });
+  mkdirOwner(resolvedTree);
+}
+
+function isTarMetadata(type) {
+  return type === "g" || type === "x";
+}
+
 function extractTar(buffer, outRoot) {
   let offset = 0;
   while (offset + 512 <= buffer.length) {
@@ -309,17 +409,21 @@ function extractTar(buffer, outRoot) {
     offset += 512;
     const rel = safeRel(fullName);
     if (!rel) {
-      if (type !== "5") fail("refusing unsafe tar entry: " + fullName);
+      if (type !== "5" && !isTarMetadata(type)) fail("refusing unsafe tar entry: " + fullName);
+      offset += Math.ceil(size / 512) * 512;
+      continue;
+    }
+    if (isTarMetadata(type)) {
       offset += Math.ceil(size / 512) * 512;
       continue;
     }
     const target = path.resolve(outRoot, rel);
     ensureContained(outRoot, target);
     if (type === "5") {
-      fs.mkdirSync(target, { recursive: true });
+      mkdirOwner(target);
     } else if (type === "0" || type === "\0") {
-      fs.mkdirSync(path.dirname(target), { recursive: true });
-      fs.writeFileSync(target, buffer.subarray(offset, offset + size), { flag: "wx" });
+      mkdirOwner(path.dirname(target));
+      writeFileOwner(target, buffer.subarray(offset, offset + size));
     } else {
       fail("refusing non-regular tar entry: " + fullName);
     }
@@ -328,8 +432,8 @@ function extractTar(buffer, outRoot) {
 }
 
 (async () => {
-  fs.rmSync(input.quarantineRoot, { recursive: true, force: true });
-  const sha = /^[a-f0-9]{40}$/i.test(input.pin || "") ? input.pin : undefined;
+  prepareQuarantine(input.quarantineRoot, input.treePath, input.metadataPath);
+  const sha = /^[a-f0-9]{40}$/.test(input.pin || "") ? input.pin : undefined;
   const resolvedSha =
     sha ||
     JSON.parse(
@@ -343,7 +447,6 @@ function extractTar(buffer, outRoot) {
       )).toString("utf8"),
     ).sha;
   if (!/^[a-f0-9]{40}$/i.test(resolvedSha)) fail("GitHub did not return a commit SHA");
-  fs.mkdirSync(input.treePath, { recursive: true });
   const tarball = await requestBuffer(
     "https://codeload.github.com/" +
       encodeURIComponent(input.owner) +
@@ -353,7 +456,7 @@ function extractTar(buffer, outRoot) {
       resolvedSha,
   );
   extractTar(zlib.gunzipSync(tarball), input.treePath);
-  fs.writeFileSync(
+  writeFileOwner(
     input.metadataPath,
     JSON.stringify(
       {
@@ -391,7 +494,7 @@ export function trustFetchExec(source: GitHubTrustSource, ctx: PlanContext): Exe
       }),
     ],
     {
-      cwd: tmpdir(),
+      cwd: source.quarantineRoot,
       env: scrubFetchEnv(ctx.env),
       timeoutMs: 120_000,
       blockProbesOnFailure: true,

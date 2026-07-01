@@ -5,6 +5,7 @@ import { readAihConfig } from "../config/marker.js";
 import { resolvePosture } from "../config/posture.js";
 import { loadSettings } from "../config/settings.js";
 import { AihError } from "../errors.js";
+import { optionSource } from "../internals/commander-options.js";
 import { executePlan, summarizeResult, writeArtifact } from "../internals/execute.js";
 import { readIfExists } from "../internals/fsxn.js";
 import type { CommandSpec, PlanContext } from "../internals/plan.js";
@@ -132,13 +133,10 @@ export async function runCapability(
     // was actually bootstrapped with; passing `undefined` lets loadSettings fall
     // through to env then default.
     const marker = readAihConfig(resolvedRoot);
-    const contextDirFromFlag =
-      command.getOptionValueSource?.("contextDir") === "cli"
-        ? (opts.contextDir as string)
-        : undefined;
+    const contextDirSource = optionSource(command, "contextDir");
+    const contextDirFromFlag = contextDirSource === "cli" ? (opts.contextDir as string) : undefined;
     const contextDirFromMarker = contextDirFromFlag === undefined ? marker?.contextDir : undefined;
-    const postureFlagSource =
-      command.getOptionValueSource?.("posture") === "cli" ? "cli" : undefined;
+    const postureFlagSource = optionSource(command, "posture") === "cli" ? "cli" : undefined;
     const resolvedPosture = resolvePosture({
       root: resolvedRoot,
       env,

@@ -176,7 +176,7 @@ export function chooseOption(t: ToolSpec, pms: ReadonlySet<string>): PmOption | 
  * Windows can't `execFile` a `.cmd` shim directly (npm/scoop/pnpm/yarn), so route
  * those through `cmd /c` — the same fix the rest of the harness uses for npm/npx.
  */
-const WIN_CMD_SHIMS = new Set(["npm", "npx", "yarn", "pnpm", "scoop"]);
+export const WIN_CMD_SHIMS = new Set(["npm", "npx", "pnpm", "scoop", "yarn"]);
 export function execArgv(platform: Platform, argv: string[]): string[] {
   return platform === "windows" && argv[0] !== undefined && WIN_CMD_SHIMS.has(argv[0])
     ? ["cmd", "/c", ...argv]

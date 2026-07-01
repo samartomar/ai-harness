@@ -434,9 +434,18 @@ describe("Check.code — invariants", () => {
       "report.low-adoption": true,
       "report.contract-untrue": true,
       "trust.fetch-blocked": true,
+      "trust.detector-unavailable": true,
       "trust.hidden-unicode": true,
       "trust.prompt-injection": true,
       "trust.source-changed": true,
+      "trust.auto-exec-hook": true,
+      "trust.dependency-confusion": true,
+      "trust.typosquat": true,
+      "trust.malicious-code": true,
+      "trust.source-drift": true,
+      "trust.unpinned-dependency": true,
+      "trust.untrusted-publisher": true,
+      "trust.unsigned-source": true,
     };
     const srcDir = join(process.cwd(), "src");
     const src = (readdirSync(srcDir, { recursive: true }) as string[])

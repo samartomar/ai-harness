@@ -63,6 +63,17 @@ describe("install.ts pure helpers", () => {
       "-g",
       "x",
     ]);
+    expect(execArgv("windows", ["docker", "run", "skillspector"])).toEqual([
+      "docker",
+      "run",
+      "skillspector",
+    ]);
+    expect(execArgv("windows", ["uvx", "semgrep"])).toEqual(["uvx", "semgrep"]);
+    expect(execArgv("windows", ["semgrep", "--version"])).toEqual(["semgrep", "--version"]);
+    expect(execArgv("windows", ["skillspector", "--version"])).toEqual([
+      "skillspector",
+      "--version",
+    ]);
     expect(execArgv("windows", ["winget", "install", "x"])).toEqual(["winget", "install", "x"]);
     expect(execArgv("linux", ["npm", "install", "-g", "x"])).toEqual(["npm", "install", "-g", "x"]);
   });

@@ -62,6 +62,36 @@ describe("reportToSarif", () => {
     expect(result.partialFingerprints["aih/v1"]).toBe("plaintext-secret:.env");
   });
 
+  it("drops unsafe artifact URIs from emitted SARIF locations", () => {
+    const sarif = JSON.parse(
+      reportToSarif(
+        new VerificationReport().add({
+          name: "unsafe-location",
+          verdict: "fail",
+          detail: "unsafe location",
+          location: { uri: "../../../../etc/passwd", startLine: 1 },
+        }),
+      ),
+    );
+
+    expect(sarif.runs[0].results[0].locations).toEqual([]);
+  });
+
+  it("drops drive-relative Windows artifact URIs from emitted SARIF locations", () => {
+    const sarif = JSON.parse(
+      reportToSarif(
+        new VerificationReport().add({
+          name: "unsafe-location",
+          verdict: "fail",
+          detail: "unsafe location",
+          location: { uri: "C:evil", startLine: 1 },
+        }),
+      ),
+    );
+
+    expect(sarif.runs[0].results[0].locations).toEqual([]);
+  });
+
   it("derives one rule per distinct check name (deduped, first-seen order)", () => {
     const report = new VerificationReport().fail("dup", "first").fail("dup", "second").pass("solo");
     const sarif = JSON.parse(reportToSarif(report));

@@ -118,9 +118,16 @@ export interface DigestAction {
   kind: "digest";
   describe: string;
   /** Report body, printed verbatim beneath the headline in text mode. */
-  text: string;
+  text?: string;
   /** Machine-readable payload echoed into `--json` output. */
   data?: unknown;
+  /** Optional late-bound digest for analyses that depend on earlier exec/probe actions. */
+  run?: (
+    ctx: PlanContext,
+  ) =>
+    | Promise<string | { text: string; data?: unknown }>
+    | string
+    | { text: string; data?: unknown };
 }
 
 export type Action =
@@ -237,6 +244,13 @@ export function doc(describe: string, text: string, path?: string): DocAction {
 
 export function digest(describe: string, text: string, data?: unknown): DigestAction {
   return { kind: "digest", describe, text, data };
+}
+
+export function dynamicDigest(
+  describe: string,
+  run: NonNullable<DigestAction["run"]>,
+): DigestAction {
+  return { kind: "digest", describe, run };
 }
 
 export function probe(describe: string, run: ProbeAction["run"]): ProbeAction {
