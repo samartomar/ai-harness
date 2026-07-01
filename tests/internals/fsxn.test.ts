@@ -224,3 +224,48 @@ describe("FsTransaction — removals (aih prune)", () => {
     expect(existsSync(legacyA)).toBe(false);
   });
 });
+
+describe("FsTransaction — hard-delete removals (overwriteDest)", () => {
+  const put = (name: string, body = "x"): string => {
+    const p = join(dir, name);
+    writeFileSync(p, body);
+    return p;
+  };
+
+  it("renames the file to the single-slot destination", () => {
+    const src = put("codex.md", "# codex\n");
+    const bak = `${src}.aih.bak`;
+    const t = new FsTransaction();
+    t.stageRemoval(src, bak, { overwriteDest: true });
+    const res = t.commit();
+    expect(existsSync(src)).toBe(false);
+    expect(readFileSync(bak, "utf8")).toBe("# codex\n");
+    expect(res.removed).toEqual([{ path: src, legacyPath: bak }]);
+  });
+
+  it("latest wins: a second hard-delete replaces the prior .aih.bak (no .N archive)", () => {
+    const bak = join(dir, "codex.md.aih.bak");
+    const t1 = new FsTransaction();
+    t1.stageRemoval(put("codex.md", "V1"), bak, { overwriteDest: true });
+    t1.commit();
+    const t2 = new FsTransaction();
+    t2.stageRemoval(put("codex.md", "V2"), bak, { overwriteDest: true });
+    t2.commit();
+    expect(readFileSync(bak, "utf8")).toBe("V2"); // single slot, like every write backup
+    expect(existsSync(`${bak}.1`)).toBe(false);
+  });
+
+  it("still refuses a symlink planted at the single-slot destination", () => {
+    const src = put("codex.md", "# codex\n");
+    const bak = `${src}.aih.bak`;
+    try {
+      symlinkSync(join(dir, "elsewhere.md"), bak);
+    } catch {
+      return; // symlink creation not permitted on this host — skip
+    }
+    const t = new FsTransaction();
+    t.stageRemoval(src, bak, { overwriteDest: true });
+    expect(() => t.commit()).toThrow(/symlink/);
+    expect(readFileSync(src, "utf8")).toBe("# codex\n"); // untouched
+  });
+});

@@ -74,6 +74,13 @@ interface AppliedWrite {
 interface StagedRemoval {
   path: string;
   legacyPath: string;
+  /**
+   * Single-slot destination (hard-delete's `<path>.aih.bak`): clear a stale regular
+   * file at the destination and take its place — the same latest-wins convention every
+   * write backup uses. Default (unset) NEVER overwrites an occupied destination (the
+   * `.aih/legacy/` archive picks a free `.N` sibling instead).
+   */
+  overwriteDest?: boolean;
 }
 
 interface AppliedRemoval {
@@ -108,9 +115,11 @@ export class FsTransaction {
    * `.aih/legacy/`). The move IS the backup: rollback (and the user) restore by
    * moving it back. Symlinks are refused at commit (moving a link then restoring it
    * would recreate a regular file). No-op if the source is already gone.
+   * `overwriteDest` opts into the single-slot latest-wins destination (hard-delete's
+   * sibling `<path>.aih.bak`) instead of the never-overwrite `.N` archive behavior.
    */
-  stageRemoval(path: string, legacyPath: string): void {
-    this.stagedRemovals.push({ path, legacyPath });
+  stageRemoval(path: string, legacyPath: string, opts: { overwriteDest?: boolean } = {}): void {
+    this.stagedRemovals.push({ path, legacyPath, overwriteDest: opts.overwriteDest });
   }
 
   preview(): ReadonlyArray<StagedWrite> {
@@ -177,11 +186,20 @@ export class FsTransaction {
           throw new Error(`refusing to remove a symlink: ${r.path}`);
         }
         mkdirSync(dirname(r.legacyPath), { recursive: true });
-        // NEVER overwrite an occupied legacy destination: an aborted prune rolls its
-        // move back (so it leaves nothing here), which means an existing file at the
-        // dest is a COMPLETED prior rescue — deleting it would destroy the only copy.
-        // Move to a free `.N` sibling instead so every rescue survives.
-        const dest = freeLegacyDest(r.legacyPath);
+        // Default: NEVER overwrite an occupied legacy destination — an aborted prune
+        // rolls its move back (so it leaves nothing here), which means an existing file
+        // at the dest is a COMPLETED prior rescue; deleting it would destroy the only
+        // copy. Move to a free `.N` sibling instead so every rescue survives.
+        // `overwriteDest` (hard-delete's `<path>.aih.bak`) is the explicit opt-out:
+        // single-slot latest-wins, the same convention as every write backup —
+        // clearScratch still refuses a planted symlink at the destination.
+        let dest: string;
+        if (r.overwriteDest) {
+          clearScratch(r.legacyPath);
+          dest = r.legacyPath;
+        } else {
+          dest = freeLegacyDest(r.legacyPath);
+        }
         retryTransient(() => renameSync(r.path, dest));
         removed.push({ path: r.path, legacyPath: dest });
       }

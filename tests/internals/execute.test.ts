@@ -554,3 +554,55 @@ describe("executePlan — remove actions", () => {
     );
   });
 });
+
+describe("executePlan — hard-delete removals", () => {
+  const put = (rel: string, body = "x"): string => {
+    const abs = join(dir, rel);
+    mkdirSync(dirname(abs), { recursive: true });
+    writeFileSync(abs, body);
+    return abs;
+  };
+
+  it("--apply hard-delete renames to the sibling .aih.bak and reports effect delete", async () => {
+    const abs = put("ai-coding/adapters/codex.md", "# codex\n");
+    const res = await executePlan(
+      plan("prune", remove("ai-coding/adapters/codex.md", "stale adapter", { hardDelete: true })),
+      ctx({ apply: true }),
+    );
+    expect(existsSync(abs)).toBe(false);
+    expect(readFileSync(`${abs}.aih.bak`, "utf8")).toBe("# codex\n");
+    expect(res.removed).toEqual([
+      {
+        path: "ai-coding/adapters/codex.md",
+        describe: "stale adapter",
+        effect: "delete",
+        to: "ai-coding/adapters/codex.md.aih.bak",
+      },
+    ]);
+    // Nothing leaked into the legacy archive on the hard-delete path.
+    expect(existsSync(join(dir, ".aih", "legacy"))).toBe(false);
+    // A hard-delete counts as a mutation ("Applied", never "nothing to apply").
+    expect(summarizeResult(res)).toContain("Applied prune");
+    expect(summarizeResult(res)).toContain("[delete] ai-coding/adapters/codex.md");
+  });
+
+  it("dry-run hard-delete touches nothing but reports the plan", async () => {
+    const abs = put("ai-coding/adapters/codex.md");
+    const res = await executePlan(
+      plan("prune", remove("ai-coding/adapters/codex.md", "stale", { hardDelete: true })),
+      ctx({ apply: false }),
+    );
+    expect(existsSync(abs)).toBe(true);
+    expect(existsSync(`${abs}.aih.bak`)).toBe(false);
+    expect(res.removed[0]?.effect).toBe("delete");
+  });
+
+  it("hard-delete destination is still contained (a `..` path is refused)", async () => {
+    await expect(
+      executePlan(
+        plan("prune", remove("../outside.md", "escape", { hardDelete: true })),
+        ctx({ apply: true }),
+      ),
+    ).rejects.toBeInstanceOf(PathContainmentError);
+  });
+});

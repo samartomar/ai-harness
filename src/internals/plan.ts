@@ -140,15 +140,19 @@ export interface DigestAction {
  * aih-owned (a per-CLI adapter note, a kiro steering/hook extra) once the CLI is
  * dropped. The executor fails closed: mandatory {@link assertContained} on the raw
  * path (no `external` field exists, so a global `~/home` file is structurally
- * unreachable), a symlink guard, and a backup before unlink. It MOVES the file to
- * gitignored `.aih/legacy/<path>` (reversible) — the move itself is the backup, so a
- * dropped CLI's artifacts can always be restored by moving them back.
+ * unreachable), a symlink guard, and a backup before unlink. By default it MOVES the
+ * file to gitignored `.aih/legacy/<path>` (reversible; occupied destinations are never
+ * overwritten). Under `hardDelete` it instead renames to the sibling `<path>.aih.bak`
+ * — the same single-slot, latest-wins backup every aih write gets — for users who
+ * explicitly opt out of the archive.
  */
 export interface RemoveAction {
   kind: "remove";
   /** Repo-relative path of the file to remove. */
   path: string;
   describe: string;
+  /** Opt-in: single-slot `<path>.aih.bak` rename instead of the `.aih/legacy/` archive. */
+  hardDelete?: boolean;
 }
 
 export type Action =
@@ -340,8 +344,12 @@ export function envBlock(
   return { kind: "envblock", path, scope, shell, vars, describe };
 }
 
-export function remove(path: string, describe: string): RemoveAction {
-  return { kind: "remove", path, describe };
+export function remove(
+  path: string,
+  describe: string,
+  opts: { hardDelete?: boolean } = {},
+): RemoveAction {
+  return { kind: "remove", path, describe, hardDelete: opts.hardDelete };
 }
 
 export function plan(capability: string, ...actions: Action[]): Plan {
