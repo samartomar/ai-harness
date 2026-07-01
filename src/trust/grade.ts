@@ -3,6 +3,7 @@ import type { Posture } from "../config/posture.js";
 import type { Check, CheckCode } from "../internals/verify.js";
 
 export const TRUST_ORIGIN_CODES = new Set<CheckCode>([
+  "trust.source-drift",
   "trust.unpinned-dependency",
   "trust.untrusted-publisher",
   "trust.unsigned-source",

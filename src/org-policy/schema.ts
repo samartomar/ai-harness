@@ -43,7 +43,7 @@ const TrustApprovedSourceSchema = z
       .string()
       .regex(/^[0-9a-f]{40}$/)
       .optional(),
-    hostPattern: z.string().optional(),
+    reason: z.string().optional(),
   })
   .strict();
 

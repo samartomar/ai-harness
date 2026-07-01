@@ -24,6 +24,12 @@ import { command as superpowers } from "../superpowers/index.js";
 import { command as telemetry } from "../telemetry/index.js";
 import { command as tools } from "../tools/index.js";
 import { command as track } from "../track/index.js";
+import {
+  trustAllowCommand,
+  trustListCommand,
+  trustPinCommand,
+  trustVerifyCommand,
+} from "../trust/commands.js";
 import { trustScanCommand } from "../trust/scan.js";
 import { command as usage } from "../usage/index.js";
 import { command as vdi } from "../vdi/index.js";
@@ -169,6 +175,48 @@ export function registerCommands(program: Command): void {
   }
 
   const trust = program.command("trust").description("Trust-gate operations for external sources");
+  const allow = trust
+    .command(trustAllowCommand.name)
+    .description(trustAllowCommand.summary)
+    .argument("<source>", "GitHub owner/repo trust source");
+  addSharedFlags(allow);
+  for (const o of trustAllowCommand.options ?? []) {
+    if (o.default !== undefined) allow.option(o.flags, o.description, o.default);
+    else allow.option(o.flags, o.description);
+  }
+  allow.action(async (source: string, _options: Record<string, unknown>, command: Command) => {
+    process.exitCode = await runCapability(trustAllowCommand, command, {
+      positionalRoot: false,
+      optionOverrides: { source },
+    });
+  });
+
+  const list = trust.command(trustListCommand.name).description(trustListCommand.summary);
+  addSharedFlags(list);
+  for (const o of trustListCommand.options ?? []) {
+    if (o.default !== undefined) list.option(o.flags, o.description, o.default);
+    else list.option(o.flags, o.description);
+  }
+  list.action(async (_options: Record<string, unknown>, command: Command) => {
+    process.exitCode = await runCapability(trustListCommand, command, { positionalRoot: false });
+  });
+
+  const pin = trust
+    .command(trustPinCommand.name)
+    .description(trustPinCommand.summary)
+    .argument("<source>", "GitHub owner/repo trust source");
+  addSharedFlags(pin);
+  for (const o of trustPinCommand.options ?? []) {
+    if (o.default !== undefined) pin.option(o.flags, o.description, o.default);
+    else pin.option(o.flags, o.description);
+  }
+  pin.action(async (source: string, _options: Record<string, unknown>, command: Command) => {
+    process.exitCode = await runCapability(trustPinCommand, command, {
+      positionalRoot: false,
+      optionOverrides: { source },
+    });
+  });
+
   const scan = trust
     .command(trustScanCommand.name)
     .description(trustScanCommand.summary)
@@ -184,4 +232,22 @@ export function registerCommands(program: Command): void {
       optionOverrides: { target },
     });
   });
+
+  const verify = trust
+    .command(trustVerifyCommand.name)
+    .description(trustVerifyCommand.summary)
+    .argument("[id]", "optional trust-lock source id to verify");
+  addSharedFlags(verify);
+  for (const o of trustVerifyCommand.options ?? []) {
+    if (o.default !== undefined) verify.option(o.flags, o.description, o.default);
+    else verify.option(o.flags, o.description);
+  }
+  verify.action(
+    async (id: string | undefined, _options: Record<string, unknown>, command: Command) => {
+      process.exitCode = await runCapability(trustVerifyCommand, command, {
+        positionalRoot: false,
+        optionOverrides: { id },
+      });
+    },
+  );
 }

@@ -432,6 +432,13 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     action:
       "Reject the external source until the dependency name is corrected or the package is independently reviewed and pinned.",
   },
+  "trust.source-drift": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "external trust source ref drifted upstream",
+    action:
+      "Treat the promoted source as stale. Re-review the upstream ref, update the approved pinned SHA if it is intentional, then reacquire the source.",
+  },
   "trust.unpinned-dependency": {
     audience: "developer",
     failSeverity: "blocking",

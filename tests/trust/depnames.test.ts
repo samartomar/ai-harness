@@ -54,6 +54,17 @@ describe("resolveInternalScopes", () => {
       }),
     ).toEqual(["@envscope", "@policy", "@shared"]);
   });
+
+  it("degrades to env scopes when org-policy is malformed", () => {
+    write("aih-org-policy.json", "{ broken");
+
+    expect(
+      resolveInternalScopes({
+        root: dir,
+        env: { AIH_TRUST_INTERNAL_SCOPES: "@envscope" },
+      }),
+    ).toEqual(["@envscope"]);
+  });
 });
 
 describe("scanTrustDependencyNames", () => {
@@ -160,6 +171,52 @@ describe("scanTrustDependencyNames", () => {
     );
     expect(enterprise).toHaveLength(4);
     expect(enterprise.every((check) => check.verdict === "fail")).toBe(true);
+  });
+
+  it("flags bare git shorthand unless it has a lowercase full SHA pin", () => {
+    lockfile();
+    write(
+      "package.json",
+      JSON.stringify({
+        dependencies: {
+          shorthandLoose: "owner/repo",
+          shorthandPinned: `owner/repo#${"a".repeat(40)}`,
+          shorthandUpperPinned: `owner/repo#${"A".repeat(40)}`,
+        },
+      }),
+    );
+
+    const details = scanTrustDependencyNames(dir, [], "enterprise")
+      .filter((check) => check.code === "trust.unpinned-dependency")
+      .map((check) => check.detail ?? "");
+
+    expect(details).toHaveLength(2);
+    expect(details.join("\n")).toContain("shorthandLoose");
+    expect(details.join("\n")).toContain("shorthandUpperPinned");
+    expect(details.join("\n")).not.toContain("shorthandPinned");
+  });
+
+  it("flags npm x-ranges as unpinned dependency specs", () => {
+    lockfile();
+    write(
+      "package.json",
+      JSON.stringify({
+        dependencies: {
+          majorX: "1.x",
+          minorX: "1.2.x",
+          exact: "1.2.3",
+        },
+      }),
+    );
+
+    const details = scanTrustDependencyNames(dir, [], "enterprise")
+      .filter((check) => check.code === "trust.unpinned-dependency")
+      .map((check) => check.detail ?? "")
+      .join("\n");
+
+    expect(details).toContain("majorX");
+    expect(details).toContain("minorX");
+    expect(details).not.toContain("exact");
   });
 
   it("flags dependencies declared without any lockfile in the trust source", () => {

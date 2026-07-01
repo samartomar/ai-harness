@@ -21,6 +21,13 @@ import { defaultRunner, type Runner } from "../internals/proc.js";
 import type { Check, VerificationReport } from "../internals/verify.js";
 import { makeHostAdapter } from "../platform/detect.js";
 import { buildSupport, supportSummary } from "../support/integrate.js";
+import {
+  acknowledgeCommandHint,
+  acknowledgeReason,
+  applyTrustAcknowledgements,
+  hasAcknowledgementRequest,
+} from "../trust/acknowledge.js";
+import { policyWithApprovedSourceReason } from "../trust/commands.js";
 import { resolveInternalScopes } from "../trust/depnames.js";
 import {
   assertTrustTreeSafe,
@@ -31,7 +38,7 @@ import {
   type TrustFetchMetadata,
   type TrustSource,
 } from "../trust/fetch.js";
-import { scanTrustTree, trustScanPlanForSource } from "../trust/scan.js";
+import { scanTrustTree, trustScanPlanForSource, trustSourceOriginChecks } from "../trust/scan.js";
 
 interface WorkspaceAddDeps {
   run?: Runner;
@@ -105,6 +112,15 @@ export const workspaceAddCommand: CommandSpec = {
       description: "fetch exactly this Git commit SHA for owner/repo sources",
     },
     { flags: "--ref <ref>", description: "GitHub ref to resolve before downloading the tarball" },
+    {
+      flags: "--acknowledge <fingerprints>",
+      description: "skip exact trust-origin fingerprint(s), comma-separated",
+    },
+    {
+      flags: "--acknowledge-all",
+      description: "skip every current trust-origin finding (requires --reason)",
+    },
+    { flags: "--reason <text>", description: "reason for a trust-origin acknowledgement" },
   ],
   plan: workspaceAddPhase1Plan,
   alwaysVerify: true,
@@ -302,6 +318,61 @@ function probesForChecks(checks: Check[]): Action[] {
   return checks.map((check) => probe(check.detail ?? check.name, () => check));
 }
 
+function acceptedAcknowledgementFingerprints(report: VerificationReport | undefined): string[] {
+  return (
+    report?.checks
+      .filter(
+        (check) =>
+          check.verdict === "skip" &&
+          check.fingerprint !== undefined &&
+          (check.detail ?? "").startsWith("acknowledged by"),
+      )
+      .map((check) => check.fingerprint as string) ?? []
+  );
+}
+
+async function persistAcknowledgeLedger(
+  ctx: PlanContext,
+  source: TrustSource,
+  report: VerificationReport | undefined,
+): Promise<void> {
+  if (!ctx.apply || source.kind !== "github") return;
+  const fingerprints = acceptedAcknowledgementFingerprints(report);
+  const reason = acknowledgeReason(ctx);
+  if (fingerprints.length === 0 || reason === undefined) return;
+  await executePlan(
+    plan(
+      "trust acknowledgement ledger",
+      writeJson(
+        "aih-org-policy.json",
+        policyWithApprovedSourceReason(
+          ctx,
+          { owner: source.owner, repo: source.repo },
+          reason,
+          fingerprints,
+        ),
+        "record trust-origin acknowledgement reason in org-policy",
+      ),
+    ),
+    ctx,
+  );
+}
+
+async function currentTrustChecks(
+  ctx: PlanContext,
+  source: TrustSource,
+  internalScopes: readonly string[],
+): Promise<Check[]> {
+  const checks = [
+    ...trustSourceOriginChecks(ctx, source),
+    ...(await scanTrustTree(sourceRootFor(source), {
+      internalScopes,
+      posture: postureFromContext(ctx),
+    })),
+  ];
+  return applyTrustAcknowledgements(checks, ctx).checks;
+}
+
 function sourceChangedCheck(detail: string): Check {
   return {
     name: "trust.source-changed",
@@ -325,10 +396,7 @@ export async function captureClearedWorkspaceAddTrustGate(
   }
   const source = sourceFromContext(ctx);
   const internalScopes = resolveInternalScopes(ctx);
-  const currentChecks = await scanTrustTree(sourceRootFor(source), {
-    internalScopes,
-    posture: postureFromContext(ctx),
-  });
+  const currentChecks = await currentTrustChecks(ctx, source, internalScopes);
   if (currentChecks.some((check) => check.verdict === "fail")) {
     throw new AihError("workspace add source changed after phase 1 scan", "AIH_TRUST");
   }
@@ -357,10 +425,7 @@ export async function workspaceAddPhase2Plan(
       ),
     );
   }
-  const currentChecks = await scanTrustTree(sourceRootFor(source), {
-    internalScopes: gate.internalScopes,
-    posture: postureFromContext(ctx),
-  });
+  const currentChecks = await currentTrustChecks(ctx, source, gate.internalScopes);
   if (currentChecks.some((check) => check.verdict === "fail")) {
     return plan("workspace add: promote", ...probesForChecks(currentChecks));
   }
@@ -476,6 +541,9 @@ function contextFromCommand(command: Command, deps: WorkspaceAddDeps): PlanConte
       pin: opts.pin,
       ref: opts.ref,
       force: opts.force,
+      acknowledge: opts.acknowledge,
+      acknowledgeAll: opts.acknowledgeAll,
+      reason: opts.reason,
     },
   };
 }
@@ -501,6 +569,12 @@ export async function runWorkspaceAdd(
       if (json) write(`${JSON.stringify({ phase1: phase1Result }, null, 2)}\n`);
       else {
         write(`${summarizeResult(phase1Result)}\n`);
+        const sourceText = typeof ctx.options.source === "string" ? ctx.options.source : "";
+        const hint =
+          phase1Result.report && !hasAcknowledgementRequest(ctx)
+            ? acknowledgeCommandHint("workspace add", sourceText, phase1Result.report.checks)
+            : undefined;
+        if (hint) write(`${hint}\n`);
         if (phase1Result.report) {
           saveSupport(ctx, phase1Result.report, opts, env, write, runId, startedAt.toISOString());
         }
@@ -513,6 +587,7 @@ export async function runWorkspaceAdd(
       else write(`${summarizeResult(phase1Result)}\n`);
       return 0;
     }
+    await persistAcknowledgeLedger(ctx, source, phase1Result.report);
 
     const gate = await captureClearedWorkspaceAddTrustGate(ctx, phase1Result.report);
     const phase2 = await workspaceAddPhase2Plan(ctx, gate);

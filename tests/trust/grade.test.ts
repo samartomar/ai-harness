@@ -39,6 +39,7 @@ describe("gradeTrustDanger", () => {
 describe("gradeTrustCheck", () => {
   it("keeps the trust-origin code set sealed to T5a origin findings", () => {
     expect([...TRUST_ORIGIN_CODES].sort()).toEqual([
+      "trust.source-drift",
       "trust.unpinned-dependency",
       "trust.unsigned-source",
       "trust.untrusted-publisher",

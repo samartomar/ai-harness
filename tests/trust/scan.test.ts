@@ -538,8 +538,23 @@ describe("trustScanCommand", () => {
 
   it("grades an off-list GitHub publisher through org-policy approvedSources", async () => {
     orgPolicy({
-      approvedSources: [{ owner: "trusted", repo: "source", hostPattern: "github.com" }],
+      approvedSources: [{ owner: "trusted", repo: "source" }],
     });
+
+    const team = await executePlan(
+      await trustScanCommand.plan(ctx({ target: "owner/repo" }, {}, "team")),
+      ctx({ target: "owner/repo" }, {}, "team"),
+    );
+    expect(team.report?.ok).toBe(true);
+    expect(team.report?.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "trust.untrusted-publisher",
+          verdict: "pass",
+          detail: expect.stringContaining("warning-only (team posture)"),
+        }),
+      ]),
+    );
 
     const vibe = await executePlan(
       await trustScanCommand.plan(ctx({ target: "owner/repo" }, {}, "vibe")),
@@ -574,7 +589,7 @@ describe("trustScanCommand", () => {
 
   it("does not flag an approved GitHub publisher, open policy, or local source", async () => {
     orgPolicy({
-      approvedSources: [{ owner: "owner", repo: "repo", hostPattern: "github.com" }],
+      approvedSources: [{ owner: "owner", repo: "repo" }],
     });
     const approved = await executePlan(
       await trustScanCommand.plan(ctx({ target: "owner/repo" }, {}, "enterprise")),
@@ -638,5 +653,200 @@ describe("trustScanCommand", () => {
     expect(notRequired.report?.checks.some((check) => check.name === "trust.unsigned-source")).toBe(
       false,
     );
+  });
+
+  it("warns for unsigned source at vibe and team posture", async () => {
+    orgPolicy({ requireSignedSource: true });
+
+    for (const posture of ["vibe", "team"] satisfies Array<NonNullable<PlanContext["posture"]>>) {
+      const result = await executePlan(
+        await trustScanCommand.plan(ctx({ target: "owner/repo" }, {}, posture)),
+        ctx({ target: "owner/repo" }, {}, posture),
+      );
+      expect(result.report?.ok).toBe(true);
+      expect(result.report?.checks).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            name: "trust.unsigned-source",
+            verdict: "pass",
+            detail: expect.stringContaining(`warning-only (${posture} posture)`),
+          }),
+        ]),
+      );
+    }
+  });
+
+  it("enforces approvedSources pinnedSha when present", async () => {
+    orgPolicy({
+      approvedSources: [{ owner: "owner", repo: "repo", pinnedSha: "a".repeat(40) }],
+    });
+
+    const mismatched = await executePlan(
+      await trustScanCommand.plan(
+        ctx({ target: "owner/repo", pin: "b".repeat(40) }, {}, "enterprise"),
+      ),
+      ctx({ target: "owner/repo", pin: "b".repeat(40) }, {}, "enterprise"),
+    );
+    expect(mismatched.report?.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          verdict: "fail",
+          code: "trust.untrusted-publisher",
+        }),
+      ]),
+    );
+
+    const matched = await executePlan(
+      await trustScanCommand.plan(
+        ctx({ target: "owner/repo", pin: "a".repeat(40) }, {}, "enterprise"),
+      ),
+      ctx({ target: "owner/repo", pin: "a".repeat(40) }, {}, "enterprise"),
+    );
+    expect(matched.report?.checks.some((check) => check.name === "trust.untrusted-publisher")).toBe(
+      false,
+    );
+  });
+
+  it("returns an org-policy drift check instead of throwing on malformed policy", async () => {
+    write("aih-org-policy.json", "{ broken");
+
+    const result = await executePlan(
+      await trustScanCommand.plan(ctx({ target: "owner/repo" }, {}, "enterprise")),
+      ctx({ target: "owner/repo" }, {}, "enterprise"),
+    );
+
+    expect(result.report?.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          verdict: "fail",
+          code: "org-policy.drift",
+          detail: expect.stringContaining("cannot be parsed"),
+        }),
+      ]),
+    );
+  });
+
+  it("binds source-origin fingerprints to source and policy state", async () => {
+    orgPolicy({ approvedSources: [{ owner: "trusted", repo: "repo" }] });
+    const first = await executePlan(
+      await trustScanCommand.plan(ctx({ target: "owner/repo" }, {}, "enterprise")),
+      ctx({ target: "owner/repo" }, {}, "enterprise"),
+    );
+    const firstFingerprint = first.report?.checks.find(
+      (check) => check.code === "trust.untrusted-publisher",
+    )?.fingerprint;
+
+    orgPolicy({ approvedSources: [{ owner: "other", repo: "repo" }] });
+    const second = await executePlan(
+      await trustScanCommand.plan(ctx({ target: "owner/repo" }, {}, "enterprise")),
+      ctx({ target: "owner/repo" }, {}, "enterprise"),
+    );
+    const secondFingerprint = second.report?.checks.find(
+      (check) => check.code === "trust.untrusted-publisher",
+    )?.fingerprint;
+
+    expect(firstFingerprint).toMatch(/^trust-untrusted-publisher:owner\/repo:/);
+    expect(secondFingerprint).toMatch(/^trust-untrusted-publisher:owner\/repo:/);
+    expect(secondFingerprint).not.toBe(firstFingerprint);
+  });
+
+  it("acknowledges an exact origin fingerprint and re-blocks after content changes", async () => {
+    skill("skills/dep", "# Dependency\n");
+    write("package.json", JSON.stringify({ dependencies: { react: "^18.0.0" } }));
+    write("package-lock.json", JSON.stringify({ lockfileVersion: 3, packages: {} }));
+    const initial = await executePlan(
+      await trustScanCommand.plan(ctx({ target: dir }, {}, "enterprise")),
+      ctx({ target: dir }, {}, "enterprise"),
+    );
+    const fingerprint = initial.report?.checks.find(
+      (check) => check.code === "trust.unpinned-dependency",
+    )?.fingerprint;
+    if (!fingerprint) throw new Error("expected unpinned dependency fingerprint");
+
+    const acknowledged = await executePlan(
+      await trustScanCommand.plan(
+        ctx(
+          {
+            target: dir,
+            acknowledge: fingerprint,
+            reason: "temporary source review exception",
+          },
+          {},
+          "enterprise",
+        ),
+      ),
+      ctx(
+        {
+          target: dir,
+          acknowledge: fingerprint,
+          reason: "temporary source review exception",
+        },
+        {},
+        "enterprise",
+      ),
+    );
+    expect(acknowledged.report?.ok).toBe(true);
+    expect(acknowledged.report?.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          verdict: "skip",
+          detail: expect.stringContaining("acknowledged by"),
+        }),
+      ]),
+    );
+
+    write("package.json", JSON.stringify({ dependencies: { react: "^18.1.0" } }));
+    const changed = await executePlan(
+      await trustScanCommand.plan(
+        ctx(
+          {
+            target: dir,
+            acknowledge: fingerprint,
+            reason: "temporary source review exception",
+          },
+          {},
+          "enterprise",
+        ),
+      ),
+      ctx(
+        {
+          target: dir,
+          acknowledge: fingerprint,
+          reason: "temporary source review exception",
+        },
+        {},
+        "enterprise",
+      ),
+    );
+    expect(changed.report?.exitCode()).toBe(1);
+    expect(changed.report?.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          verdict: "fail",
+          code: "trust.unpinned-dependency",
+        }),
+      ]),
+    );
+  });
+
+  it("refuses to acknowledge trust-danger findings", async () => {
+    skill("skills/bash", "---\npermissionMode: bypassPermissions\n---\n# Bash\n");
+    const initial = await scanTrustTree(dir, { posture: "enterprise" });
+    const fingerprint = initial.find((check) => check.code === "trust.auto-exec-hook")?.fingerprint;
+    if (!fingerprint) throw new Error("expected auto-exec fingerprint");
+
+    await expect(
+      trustScanCommand.plan(
+        ctx(
+          {
+            target: dir,
+            acknowledge: fingerprint,
+            reason: "not acceptable for danger",
+          },
+          {},
+          "enterprise",
+        ),
+      ),
+    ).rejects.toThrow(/cannot acknowledge trust.auto-exec-hook/);
   });
 });

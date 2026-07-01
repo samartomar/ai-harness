@@ -440,6 +440,7 @@ describe("Check.code — invariants", () => {
       "trust.auto-exec-hook": true,
       "trust.dependency-confusion": true,
       "trust.typosquat": true,
+      "trust.source-drift": true,
       "trust.unpinned-dependency": true,
       "trust.untrusted-publisher": true,
       "trust.unsigned-source": true,

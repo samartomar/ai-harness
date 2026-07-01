@@ -91,6 +91,9 @@ describe("trust fetch source resolution", () => {
     expect(() => resolveTrustSource("Owner/Repo", { root: dir, pin: "main" })).toThrow(
       /40-character Git commit SHA/i,
     );
+    expect(() => resolveTrustSource("Owner/Repo", { root: dir, pin: "A".repeat(40) })).toThrow(
+      /lowercase 40-character Git commit SHA/i,
+    );
   });
 
   it("scrubs secrets while preserving only fetch-safe environment keys", () => {

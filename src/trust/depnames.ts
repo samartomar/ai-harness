@@ -4,7 +4,7 @@ import { basename, relative } from "node:path";
 import type { Posture } from "../config/posture.js";
 import type { PlanContext } from "../internals/plan.js";
 import type { Check, CheckCode } from "../internals/verify.js";
-import { readOrgPolicy } from "../org-policy/schema.js";
+import { OrgPolicyError, readOrgPolicy } from "../org-policy/schema.js";
 import { gradeTrustCheck } from "./grade.js";
 import { collectFilesUnder } from "./scan.js";
 
@@ -165,7 +165,11 @@ export function resolveInternalScopes(
   const scopes = new Set<string>();
   addScopes(scopes, (ctx.env.AIH_TRUST_INTERNAL_SCOPES ?? "").split(","));
   if (ctx.root !== undefined) {
-    addScopes(scopes, readOrgPolicy(ctx.root, ctx.env)?.trust?.internalScopes ?? []);
+    try {
+      addScopes(scopes, readOrgPolicy(ctx.root, ctx.env)?.trust?.internalScopes ?? []);
+    } catch (error) {
+      if (!(error instanceof OrgPolicyError)) throw error;
+    }
   }
   return [...scopes].sort((a, b) => a.localeCompare(b));
 }
@@ -237,7 +241,7 @@ function popularTypoTarget(name: string): string | undefined {
 }
 
 function hasFullShaFragment(spec: string): boolean {
-  return /#[0-9a-f]{40}$/i.test(spec.trim());
+  return /#[0-9a-f]{40}$/.test(spec.trim());
 }
 
 function isGitOrUrlDependency(spec: string): boolean {

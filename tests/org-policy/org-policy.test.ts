@@ -74,7 +74,7 @@ describe("OrgPolicySchema", () => {
                 owner: "owner",
                 repo: "repo",
                 pinnedSha: "a".repeat(40),
-                hostPattern: "github.com",
+                reason: "reviewed source override",
               },
             ],
             requiredDetectors: ["skillspector", "semgrep"],
@@ -87,7 +87,7 @@ describe("OrgPolicySchema", () => {
           owner: "owner",
           repo: "repo",
           pinnedSha: "a".repeat(40),
-          hostPattern: "github.com",
+          reason: "reviewed source override",
         },
       ],
       requireSignedSource: false,
@@ -106,6 +106,18 @@ describe("OrgPolicySchema", () => {
     expect(() => parseOrgPolicy(policy({ trust: { approveEverything: true } }))).toThrow(
       /org-policy/,
     );
+  });
+
+  it("rejects approved source hostPattern until multi-host fetch exists", () => {
+    expect(() =>
+      parseOrgPolicy(
+        policy({
+          trust: {
+            approvedSources: [{ owner: "owner", repo: "repo", hostPattern: "github.internal" }],
+          },
+        }),
+      ),
+    ).toThrow(/org-policy/);
   });
 
   it("readOrgPolicy fails closed on malformed committed policy JSON", () => {

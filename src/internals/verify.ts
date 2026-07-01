@@ -65,6 +65,7 @@ export type CheckCode =
   | "trust.auto-exec-hook"
   | "trust.dependency-confusion"
   | "trust.typosquat"
+  | "trust.source-drift"
   | "trust.unpinned-dependency"
   | "trust.untrusted-publisher"
   | "trust.unsigned-source";

@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { lstatSync, readdirSync, readFileSync } from "node:fs";
 import { basename, extname, isAbsolute, join, relative, resolve } from "node:path";
 import { type Posture, postureFromContext } from "../config/posture.js";
@@ -7,12 +8,14 @@ import { plan, probe, probeMany } from "../internals/plan.js";
 import type { Check } from "../internals/verify.js";
 import { evaluateMcpPolicy } from "../mcp/policy.js";
 import type { McpServer } from "../mcp/servers.js";
-import { type OrgPolicy, readOrgPolicy } from "../org-policy/schema.js";
+import { type OrgPolicy, OrgPolicyError, readOrgPolicy } from "../org-policy/schema.js";
 import { mcpConfigSecretCheck, plaintextSecretCheck } from "../secrets/probes.js";
 import { MCP_CONFIG_FILES, scanConfigSecrets, scanSecrets } from "../secrets/scan.js";
+import { applyTrustAcknowledgements } from "./acknowledge.js";
 import { resolveInternalScopes, scanTrustDependencyNames } from "./depnames.js";
 import {
   assertTrustTreeSafe,
+  readTrustFetchMetadata,
   resolveTrustSource,
   type TrustSource,
   trustFetchExec,
@@ -38,7 +41,6 @@ const HOSTED_MCP_ADVISORY =
   "hosted MCP server has no post-approval rug-pull protection; run a runtime MCP-scan with tool-pinning before first use.";
 const MCP_POLICY_RULE = "incoming MCP policy";
 const MCP_POLICY_DENIED = "mcp.policy-denied";
-const DEFAULT_GITHUB_HOST = "github.com";
 
 interface ScanTrustTreeOptions {
   internalScopes?: readonly string[];
@@ -264,26 +266,65 @@ function passCheck(root: string, scanned: number): Check {
 
 type ApprovedTrustSource = NonNullable<NonNullable<OrgPolicy["trust"]>["approvedSources"]>[number];
 
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+function contentHash(value: unknown): string {
+  return createHash("sha256")
+    .update(JSON.stringify(stable(value)))
+    .digest("hex");
 }
 
-function hostMatchesPattern(pattern: string | undefined, host: string): boolean {
-  if (pattern === undefined || pattern.trim().length === 0) return true;
-  const normalizedPattern = pattern.trim().toLowerCase();
-  const normalizedHost = host.toLowerCase();
-  if (!normalizedPattern.includes("*")) return normalizedPattern === normalizedHost;
-  const wildcard = new RegExp(`^${escapeRegExp(normalizedPattern).replace(/\\\*/g, ".*")}$`, "i");
-  return wildcard.test(normalizedHost);
+function stable(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(stable);
+  if (!isRecord(value)) return value;
+  return Object.fromEntries(
+    Object.entries(value)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([key, item]) => [key, stable(item)]),
+  );
+}
+
+function resolvedSourceSha(source: TrustSource): string | undefined {
+  if (source.kind !== "github") return undefined;
+  if (source.pin !== undefined) return source.pin.toLowerCase();
+  try {
+    return readTrustFetchMetadata(source).pinnedSha.toLowerCase();
+  } catch {
+    return undefined;
+  }
 }
 
 function approvedSourceMatches(source: TrustSource, approved: ApprovedTrustSource): boolean {
   if (source.kind !== "github") return false;
-  return (
-    approved.owner.toLowerCase() === source.owner.toLowerCase() &&
-    approved.repo.toLowerCase() === source.repo.toLowerCase() &&
-    hostMatchesPattern(approved.hostPattern, DEFAULT_GITHUB_HOST)
-  );
+  if (approved.owner.toLowerCase() !== source.owner.toLowerCase()) return false;
+  if (approved.repo.toLowerCase() !== source.repo.toLowerCase()) return false;
+  if (approved.pinnedSha === undefined) return true;
+  return resolvedSourceSha(source) === approved.pinnedSha;
+}
+
+function sourceOriginFingerprint(
+  code: "trust.untrusted-publisher" | "trust.unsigned-source",
+  source: TrustSource,
+  policy: NonNullable<OrgPolicy["trust"]>,
+): string {
+  const sourceName =
+    source.kind === "github" ? `${source.owner}/${source.repo}`.toLowerCase() : source.id;
+  const hash = contentHash({
+    code,
+    source:
+      source.kind === "github"
+        ? {
+            owner: source.owner.toLowerCase(),
+            repo: source.repo.toLowerCase(),
+            ref: source.ref,
+            pin: source.pin?.toLowerCase(),
+            resolvedSha: resolvedSourceSha(source),
+          }
+        : { id: source.id, root: source.root },
+    policy: {
+      approvedSources: policy.approvedSources,
+      requireSignedSource: policy.requireSignedSource,
+    },
+  }).slice(0, 8);
+  return `${code.replace(/\./g, "-")}:${sourceName}:${hash}`;
 }
 
 function sourceOriginCheck(
@@ -304,9 +345,25 @@ function sourceOriginCheck(
   );
 }
 
-function trustSourceOriginChecks(ctx: PlanContext, source: TrustSource): Check[] {
+function orgPolicyDriftCheck(error: unknown): Check {
+  return {
+    name: "org-policy drift",
+    verdict: "fail",
+    detail: `org-policy drift: aih-org-policy.json cannot be parsed (${(error as Error).message})`,
+    code: "org-policy.drift",
+    fingerprint: "org-policy-drift:policy-parse",
+  };
+}
+
+export function trustSourceOriginChecks(ctx: PlanContext, source: TrustSource): Check[] {
   if (source.kind !== "github") return [];
-  const policy = readOrgPolicy(ctx.root, ctx.env)?.trust;
+  let policy: OrgPolicy["trust"] | undefined;
+  try {
+    policy = readOrgPolicy(ctx.root, ctx.env)?.trust;
+  } catch (error) {
+    if (error instanceof OrgPolicyError) return [orgPolicyDriftCheck(error)];
+    throw error;
+  }
   if (policy === undefined) return [];
 
   const posture = postureFromContext(ctx);
@@ -321,7 +378,7 @@ function trustSourceOriginChecks(ctx: PlanContext, source: TrustSource): Check[]
         "trust.untrusted-publisher",
         `${sourceName} is not listed in org-policy trust.approvedSources`,
         posture,
-        `trust-untrusted-publisher:${sourceName.toLowerCase()}`,
+        sourceOriginFingerprint("trust.untrusted-publisher", source, policy),
       ),
     );
   }
@@ -331,7 +388,7 @@ function trustSourceOriginChecks(ctx: PlanContext, source: TrustSource): Check[]
         "trust.unsigned-source",
         `${sourceName}@${source.ref} was acquired without an explicit --pin under trust.requireSignedSource`,
         posture,
-        `trust-unsigned-source:${sourceName.toLowerCase()}:${source.ref}`,
+        sourceOriginFingerprint("trust.unsigned-source", source, policy),
       ),
     );
   }
@@ -359,6 +416,10 @@ export async function scanTrustTree(
   return checks.length > 0 ? checks : [passCheck(safeRoot, docs.length)];
 }
 
+function acknowledgeChecks(checks: readonly Check[], ctx: PlanContext): Check[] {
+  return applyTrustAcknowledgements(checks, ctx).checks;
+}
+
 function probesForStaticChecks(checks: Check[]): ProbeAction[] {
   return checks.map((check) => probe(check.detail ?? check.name, () => check));
 }
@@ -366,9 +427,11 @@ function probesForStaticChecks(checks: Check[]): ProbeAction[] {
 export async function trustScanProbes(
   source: TrustSource,
   options: ScanTrustTreeOptions = {},
+  ctx?: PlanContext,
 ): Promise<ProbeAction[]> {
   if (source.kind === "local") {
-    return probesForStaticChecks(await scanTrustTree(source.root, options));
+    const checks = await scanTrustTree(source.root, options);
+    return probesForStaticChecks(ctx ? acknowledgeChecks(checks, ctx) : checks);
   }
   return [
     probeMany(`trust scan ${source.display}`, async (probeCtx) => {
@@ -383,7 +446,7 @@ export async function trustScanProbes(
           },
         ];
       }
-      return scanTrustTree(source.treePath, options);
+      return acknowledgeChecks(await scanTrustTree(source.treePath, options), probeCtx);
     }),
   ];
 }
@@ -394,12 +457,20 @@ export async function trustScanPlanForSource(
 ): Promise<ReturnType<typeof plan>> {
   const actions: Action[] = [];
   if (source.kind === "github") actions.push(trustFetchExec(source, ctx));
-  actions.push(...probesForStaticChecks(trustSourceOriginChecks(ctx, source)));
   actions.push(
-    ...(await trustScanProbes(source, {
-      internalScopes: resolveInternalScopes(ctx),
-      posture: postureFromContext(ctx),
-    })),
+    probeMany("trust source origin", (probeCtx) =>
+      acknowledgeChecks(trustSourceOriginChecks(probeCtx, source), probeCtx),
+    ),
+  );
+  actions.push(
+    ...(await trustScanProbes(
+      source,
+      {
+        internalScopes: resolveInternalScopes(ctx),
+        posture: postureFromContext(ctx),
+      },
+      ctx,
+    )),
   );
   return plan("trust scan", ...actions);
 }
@@ -437,6 +508,15 @@ export const trustScanCommand: CommandSpec = {
       flags: "--sarif <file>",
       description: "write verification results as SARIF (or - for stdout)",
     },
+    {
+      flags: "--acknowledge <fingerprints>",
+      description: "skip exact trust-origin fingerprint(s), comma-separated",
+    },
+    {
+      flags: "--acknowledge-all",
+      description: "skip every current trust-origin finding (requires --reason)",
+    },
+    { flags: "--reason <text>", description: "reason for a trust-origin acknowledgement" },
   ],
   plan: trustScanPlan,
   alwaysVerify: true,

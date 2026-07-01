@@ -122,7 +122,7 @@ export function scrubFetchEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   return out;
 }
 
-const FULL_SHA = /^[a-f0-9]{40}$/i;
+const FULL_SHA = /^[a-f0-9]{40}$/;
 
 export function resolveTrustSource(
   raw: string,
@@ -158,7 +158,7 @@ export function resolveTrustSource(
     throw new AihError(`unsupported GitHub trust source: ${raw}`, "AIH_TRUST");
   }
   if (opts.pin !== undefined && !FULL_SHA.test(opts.pin)) {
-    throw new AihError("--pin must be a full 40-character Git commit SHA", "AIH_TRUST");
+    throw new AihError("--pin must be a lowercase 40-character Git commit SHA", "AIH_TRUST");
   }
   const ref = opts.pin ?? opts.ref ?? "HEAD";
   const root = quarantineRoot(trimmed, ref);
@@ -329,7 +329,7 @@ function extractTar(buffer, outRoot) {
 
 (async () => {
   fs.rmSync(input.quarantineRoot, { recursive: true, force: true });
-  const sha = /^[a-f0-9]{40}$/i.test(input.pin || "") ? input.pin : undefined;
+  const sha = /^[a-f0-9]{40}$/.test(input.pin || "") ? input.pin : undefined;
   const resolvedSha =
     sha ||
     JSON.parse(

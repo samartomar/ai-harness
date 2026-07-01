@@ -42,6 +42,7 @@ function ctx(
   apply = false,
   verify = true,
   env: NodeJS.ProcessEnv = {},
+  options: Record<string, unknown> = {},
 ): PlanContext {
   const run = fakeRunner(() => undefined);
   return {
@@ -53,7 +54,8 @@ function ctx(
     run,
     host: makeHostAdapter({ platform: "linux", run, env }),
     env,
-    options: { source, force: true },
+    posture: (options.posture as PlanContext["posture"]) ?? "vibe",
+    options: { source, force: true, ...options },
   };
 }
 
@@ -61,6 +63,38 @@ function localSkill(source: string, rel: string, body: string): void {
   const dir = join(source, "skills", rel);
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, "SKILL.md"), body, "utf8");
+}
+
+function writePolicy(trust: Record<string, unknown>): void {
+  writeFileSync(
+    join(workspace, "aih-org-policy.json"),
+    JSON.stringify({
+      schemaVersion: 1,
+      minimumPosture: "vibe",
+      references: { repoContract: "ai-coding/project.json" },
+      trust,
+    }),
+    "utf8",
+  );
+}
+
+function writeGithubQuarantine(source: ReturnType<typeof resolveTrustSource>, sha: string): void {
+  if (source.kind !== "github") throw new Error("expected GitHub source");
+  localSkill(source.treePath, "clean", "# Clean\n");
+  mkdirSync(join(source.quarantineRoot), { recursive: true });
+  writeFileSync(
+    source.metadataPath,
+    JSON.stringify({
+      kind: "github",
+      owner: source.owner,
+      repo: source.repo,
+      ref: source.ref,
+      pinnedSha: sha,
+      source: source.source,
+      treePath: source.treePath,
+    }),
+    "utf8",
+  );
 }
 
 function fakeCommand(
@@ -238,6 +272,41 @@ describe("workspace add acquisition plans", () => {
       expect.objectContaining({ verdict: "fail", code: "trust.source-changed" }),
     ]);
     expect(existsSync(join(workspace, "ai-coding", "skills"))).toBe(false);
+  });
+
+  it("capture re-scan catches org-policy approvedSources tightened after phase 1", async () => {
+    const source = resolveTrustSource("owner/repo", { root: workspace });
+    writeGithubQuarantine(source, "a".repeat(40));
+    const report = new VerificationReport().pass("trust scan", "clean");
+    writePolicy({ approvedSources: [{ owner: "trusted", repo: "repo" }] });
+
+    await expect(
+      captureClearedWorkspaceAddTrustGate(
+        ctx("owner/repo", true, true, {}, { posture: "enterprise" }),
+        report,
+      ),
+    ).rejects.toThrow(/source changed after phase 1 scan/);
+  });
+
+  it("phase 2 promotion plan re-runs source origin checks before writing", async () => {
+    const source = resolveTrustSource("owner/repo", { root: workspace });
+    writeGithubQuarantine(source, "a".repeat(40));
+    const report = new VerificationReport().pass("trust scan", "clean");
+    const cleanCtx = ctx("owner/repo", true, true, {}, { posture: "enterprise" });
+    const gate = await captureClearedWorkspaceAddTrustGate(cleanCtx, report);
+    writePolicy({ approvedSources: [{ owner: "trusted", repo: "repo" }] });
+
+    const result = await executePlan(await workspaceAddPhase2Plan(cleanCtx, gate), cleanCtx);
+
+    expect(result.writes.some((write) => write.path.startsWith("ai-coding/skills/"))).toBe(false);
+    expect(result.report?.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          verdict: "fail",
+          code: "trust.untrusted-publisher",
+        }),
+      ]),
+    );
   });
 
   it("runWorkspaceAdd stops after phase 1 for a bad source", async () => {
