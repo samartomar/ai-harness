@@ -201,7 +201,7 @@ function deriveActions(digests: DigestAction[]): V9Action[] {
         sev: "low",
         title: `Vet ${name} MCP egress`,
         body: `${name} is a third-party MCP server (queries leave the box) — confirm it is approved for this repo.`,
-        cmd: "aih mcp --review",
+        cmd: "aih mcp --verify",
       });
     }
   }

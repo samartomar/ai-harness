@@ -1,13 +1,13 @@
 # Usage Metering — design (B)
 
-Status: **implemented — gated green** · branch `feat/local-report-v9` · 2026-06-29
+Status: **implemented — gated green** · on `main` · 2026-06-29
 Decisions resolved (see **Decisions**); P1–P5 are implemented in this branch.
 The checklist at the bottom records what landed.
 
 ## TL;DR
 
-The usage-metering foundation now ships. This work is **not** a new subsystem — it
-finishes the local recorder that already existed:
+The usage-metering foundation shipped. It was **not** a new subsystem — it
+finished the local recorder that already existed:
 
 - **Foundation:** the event schema (`.aih/usage.jsonl`), the reader, the aggregator, the
   recorder script, the **universal git floor** hook, and the `aih usage` command.
@@ -15,8 +15,7 @@ finishes the local recorder that already existed:
   v9 Usage-by-CLI / Heavy-lifters / Dormant panels, dormant detection (ECC-installed minus
   actually-invoked), and scan-on-demand cross-project rollup.
 
-Finish those four and the "usages" + cross-project feedback loop the whole report arc was for
-goes LIVE — without inventing new infrastructure.
+Those four landed, so the "usages" + cross-project feedback loop the report arc was for is LIVE — no new infrastructure invented.
 
 ## Goals / Non-goals
 
@@ -46,7 +45,7 @@ goes LIVE — without inventing new infrastructure.
 | Per-tool hook **mechanisms documented** (`TOOL_HOOK`: claude PostToolUse, kiro `.kiro.hook`, codex, cursor, gemini, copilot, windsurf, opencode, kimi, antigravity) | `src/usage/index.ts` | 📄 doc only |
 | Legacy report usage panel | `src/report/usage.ts` | ✅ |
 
-So the schema, reader, aggregator, recorder, and git floor are done. The next two layers are the gap.
+So the schema, reader, aggregator, recorder, and git floor were the base; the per-tool hooks and v9 panels (below) are now built on top.
 
 ## P1 — generated per-tool skill/MCP hooks (the source)
 
@@ -87,14 +86,14 @@ Honesty: each panel stays PREVIEW until `readUsage` returns ≥1 real event (liv
 
 ## P3 — dormant detection = ECC ∩ usage (the killer panel)
 
-We now read the **live ECC skill set** (the `~/.claude/skills/ecc/` namespace — 146 on this box)
+We read the **live ECC skill set** (the `~/.claude/skills/ecc/` namespace)
 in the ECC panel. Dormant trim-candidates =
 
 ```
 dormant = ECC-installed skills  −  skills that fired (summary.skills.bySource.ecc)  (over window)
 ```
 
-i.e. "you carry 146 ECC skills; 12 fired in 30d; **134 are dormant** — candidates to trim from the
+i.e. "of the ECC skills you carry, only a handful fired in 30d; **the rest are dormant** — candidates to trim from the
 rolling install." This is the first panel that needs *both* the ECC inventory (done) and usage
 (Gaps 1–2). Same idea for agents.
 
@@ -127,7 +126,7 @@ concat, aggregate." Per the **no-local-cache** decision, this is **scan-on-deman
 4. **P4 — folded into P1** (the "all targeted CLIs" decision pulls the remaining generators forward).
 5. **P5 — cross-project rollup** (`--rollup` / `--org`).
 
-Each phase is independently shippable and leaves the report honest (PREVIEW where data is absent).
+Each phase shipped independently and left the report honest (PREVIEW where data is absent).
 
 ## Test criteria
 
@@ -149,9 +148,9 @@ Each phase is independently shippable and leaves the report honest (PREVIEW wher
 4. **Cross-project scope** *(deferred to P5)* — **scan-on-demand** over a passed list of repo dirs
    (honors the no-cache decision); no registry/daemon.
 
-## Current state (branch `feat/local-report-v9`)
+## Current state
 
-- ✅ `e48a35c` — recorder gained a `--from <cli>` stdin mode; **claude payload mapping is done**
+- ✅ Recorder gained a `--from <cli>` stdin mode; **claude payload mapping is done**
   (`mcp__server__tool`→mcp, `Task`→subagent, `Skill`→skill best-effort, else tool). Other CLIs return
   `undefined` from `fromHookPayload` until wired.
 - ✅ This slice — `aih usage --apply` generates the targeted per-tool hooks, the recorder maps

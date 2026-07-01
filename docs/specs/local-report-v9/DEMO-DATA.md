@@ -1,7 +1,7 @@
 # DEMO DATA — the v9 demo dataset
 
-This is the dataset behind `reference-v9.html`. Ship it as a typed constant (e.g.
-`src/report/v9-demo.ts`, mirroring `src/report/demo.ts`) that `--demo` renders and that fills
+This is the dataset behind `reference-v9.html`. Shipped as `V9_DEMO` in
+`src/report/v9-demo.ts` (mirrors `src/report/demo.ts`); `--demo` renders it and it fills
 PREVIEW panels. Values are realistic for **this repo** (TypeScript/Node, on-canon). Keep them
 deterministic (no random/clock). Shapes must match `AihDataV9` (SPEC §3).
 
@@ -23,7 +23,7 @@ deterministic (no random/clock). Shapes must match `AihDataV9` (SPEC §3).
     { "sev":"high","title":"Wire guardrails","body":"Guardrails 40/100 — gitleaks config present but pre-commit hook NOT installed (present ≠ enforced).","cmd":"aih bootstrap-ai --scope guardrails --apply" },
     { "sev":"med","title":"Add AGENTS.md","body":"Missing bootloader — codex/opencode/zed can't load canon.","cmd":"aih scaffold --cli codex --apply" },
     { "sev":"med","title":"Realign drifted canon","body":"RULE_ROUTER.md +42 tok out of sync (2h).","cmd":"aih bootstrap-ai --apply" },
-    { "sev":"low","title":"Vet context7 MCP egress","body":"context7 is third-party egress — confirm approved.","cmd":"aih mcp --review" },
+    { "sev":"low","title":"Vet context7 MCP egress","body":"context7 is third-party egress — confirm approved.","cmd":"aih mcp --verify" },
     { "sev":"low","title":"Wire usage + track hooks","body":"Activity/trends/time-to-green need the recorder + per-commit snapshots.","cmd":"aih usage --apply && aih track --apply" }
   ],
 
@@ -59,13 +59,13 @@ deterministic (no random/clock). Shapes must match `AihDataV9` (SPEC §3).
     "testRatioPct": 61, "testFiles": 64, "sourceFiles": 105,   // FILE ratio, not line coverage
     "guardrails": [["gitleaks config","present","ok"],["gitleaks hook","MISSING","bad"],
                    ["pre-commit hook","installed","ok"],["command-policy","active","ok"]],
-    "ecc": { "profile":"balanced","agents":11,"skills":42,"rules":9,"hooks":4,"packs":["typescript","web"] }  // PREVIEW until ECC scan
+    "ecc": { "profile":"balanced","agents":11,"skills":42,"rules":9,"hooks":4,"packs":["typescript","web"] }  // data-gated: LIVE from eccInventoryDigest; always shown in --demo
   },
 
   "drift": {  // 04
     "drifted": [{"file":"ai-coding/RULE_ROUTER.md","delta":"+42 tok","status":"drifted","when":"2h"}],
     "synced": ["CLAUDE.md",".cursor/rules/00-canon.mdc",".kiro/steering/00-canon.md"],
-    "coherence": {  // PREVIEW until coherence diff
+    "coherence": {  // data-gated: LIVE from coherenceDigest; always shown in --demo
       "clis":["claude","codex","cursor","kiro"], "dims":["rules","router","mcp","loads"],
       "agreementPct":88,
       "cells":{"claude":["ok","ok","ok","ok"],"codex":["ok","ok","warn","ok"],"cursor":["ok","ok","ok","ok"],"kiro":["ok","ok","ok","warn"]} }
@@ -94,7 +94,7 @@ deterministic (no random/clock). Shapes must match `AihDataV9` (SPEC §3).
   "period": {  // 08
     "trends": { "wiring":[72,74,73,78,80,79,81,82], "perTurnCtxPct":[41,40,39,40,38,39,38,38],
                 "driftIncidents":[2,1,0,1,0,0,1,1], "openActions":[8,7,7,6,6,5,5,5] },
-    "outcomeDeltas": {  // PREVIEW until the capability
+    "outcomeDeltas": {  // data-gated: LIVE from outcomeDeltasDigest; always shown in --demo
       "leadTimeDays":1.8, "reworkRatePct":6, "mttr":{"driftHours":3.2,"externalCheckDays":1.2} }
   },
 
@@ -102,7 +102,7 @@ deterministic (no random/clock). Shapes must match `AihDataV9` (SPEC §3).
     "heavyLifters": [["tdd · ecc",84],["code-review · ecc",61],["plan · canon",44],
                      ["security-scan · ecc",38],["frontend-design · canon",22],["learn · user",14]],
     "totalInvocations": 263,
-    "dormant": ["go-review","php-review","ruby-review","swift-review","kotlin-review"],  // PREVIEW until ECC scan
+    "dormant": ["go-review","php-review","ruby-review","swift-review","kotlin-review"],  // data-gated: LIVE (ECC ∩ usage); always shown in --demo
     "tokensReclaimable": 2800
   }
 }

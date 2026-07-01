@@ -1,11 +1,10 @@
 # CAPABILITIES — new data the v9 panels need
 
-Four data capabilities. §1–§3 are net-new (their panels are PREVIEW until built). §4 (the
-wins ledger) is mostly wireable from existing data today. Each is a read-only digest in the
+Four data capabilities, all implemented in src/report/v9-panels.ts. Each panel renders LIVE when its digest returns data and PREVIEW otherwise (honest data-gating, not unbuilt). Each is a read-only digest in the
 `localPanels` family (`src/report/local.ts`), returns **undefined/empty when no data** (so its
 panel gates honestly), and is **pure + deterministic** (Runner seam for git/fs; no wall-clock
-in output). Add unit tests per the existing report-test conventions, and add the panel binding
-in `v9.ts` only once the digest is real.
+in output). The unit tests follow the existing report-test conventions, and the panel bindings
+live in `v9.ts` (buildV9Data).
 
 ---
 
@@ -38,7 +37,7 @@ minus a supplied invoked set; empty repo → undefined (panel omits).
 ## §2 Cross-CLI coherence diff  →  Coherence matrix (04)
 
 **Goal:** do all targeted CLIs load the *same* canon? (Today only single-CLI wiring + drift
-exist; the agreement matrix is fabricated in the mockup — build it for real.)
+exist; the agreement matrix is computed for real in coherenceDigest.)
 
 **Inputs:** the per-CLI facts already in `scanCliCoverage` (`src/report/cli-coverage.ts`) +
 `extractManagedBlock`/`bootloadersInSync` (`src/report/scorecard.ts`, already used for drift).
@@ -84,9 +83,9 @@ wireable today.**
 **Inputs:**
 - The `aih heal` checks (`src/heal/` — real step titles: **"certificate trust chain"** (certs),
   **"npm runtime"** (npm), **"PATH resolution"** (path), **"MCP pre-flight"** (mcp)). Each yields
-  a verdict (broken/fixed/skip). Read the most recent heal result, or have `aih report` surface
-  the last-known heal state. Decide: read a persisted heal-result file, or run heal's read-only
-  probes inline (heal is read-only by default — diagnose without `--apply`).
+  a verdict (broken/fixed/skip). `aih report` surfaces the last-known heal state — reading a
+  persisted heal-result file or running heal's read-only probes inline (heal is read-only by
+  default — diagnoses without `--apply`).
 - The **run ledger** `.aih/runs/` for the over-the-period cumulative (N blockers cleared across
   M runs since first run; "open blockers over time" trend).
 
