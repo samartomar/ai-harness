@@ -631,7 +631,10 @@ export async function trustScanPlanForSource(
 
 function cleanupQuarantine(source: TrustSource): void {
   if (source.kind !== "github") return;
-  rmSync(source.quarantineRoot, { recursive: true, force: true });
+  // Swallow cleanup errors so a failed rmSync never masks the surrounding result.
+  try {
+    rmSync(source.quarantineRoot, { recursive: true, force: true });
+  } catch {}
 }
 
 async function trustScanPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {

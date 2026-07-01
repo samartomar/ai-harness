@@ -434,7 +434,11 @@ export async function workspaceAddPhase2Plan(
 
 function cleanupQuarantine(source: TrustSource | undefined): void {
   if (source?.kind !== "github") return;
-  rmSync(source.quarantineRoot, { recursive: true, force: true });
+  // Swallow cleanup errors: a failed rmSync (e.g. a Windows AV lock) must never
+  // mask the real result/exception propagating from the surrounding try.
+  try {
+    rmSync(source.quarantineRoot, { recursive: true, force: true });
+  } catch {}
 }
 
 function hasFailedExec(result: PlanResult): boolean {

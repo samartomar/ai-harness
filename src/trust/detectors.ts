@@ -121,7 +121,10 @@ function sha8(raw: string): string {
 }
 
 function normalizeShellWhitespace(line: string): string {
-  return line.replace(/\$\{IFS(?:[#%]{1,2}[^}]*)?\}|\$IFS\b/g, " ");
+  // Collapse any ${IFS...} parameter-expansion form (plain, #/% removal, :offset
+  // substring, //pattern substitution) and bare $IFS to a space, so IFS-obfuscated
+  // reverse shells still match the patterns below.
+  return line.replace(/\$\{IFS[^}]*\}|\$IFS\b/g, " ");
 }
 
 // Extensions that are never a shell/interpreter script — used to exclude
