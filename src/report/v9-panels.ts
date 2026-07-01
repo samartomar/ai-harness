@@ -16,6 +16,8 @@ import { type DigestAction, digest, type PlanContext } from "../internals/plan.j
 import { lines } from "../internals/render.js";
 import { mcpServers } from "../mcp/servers.js";
 import { scanRepo } from "../profile/scan.js";
+import { skillInventory } from "../skill/index.js";
+import { readSkillsLock } from "../skill/lockfile.js";
 import type { SupportTemplate } from "../support/render.js";
 import { scanCliCoverage } from "./cli-coverage.js";
 import { readinessDigest } from "./readiness.js";
@@ -616,6 +618,45 @@ export function winsDigest(ctx: PlanContext): DigestAction | undefined {
 }
 
 /**
+ * Skill governance — the read-only join over installed external skills and their
+ * committed approvals (`skillInventory`), surfaced so the dashboard shows what is on
+ * disk vs approved (richer than the lockfile alone: it also names unapproved and
+ * pin-drifted skills). EMPTY only when there is nothing to govern — no on-disk skills
+ * AND no committed approvals; then the panel gates honestly instead of showing zeros.
+ * Pure fs (the inventory join spawns nothing), so it is safe at digest time.
+ */
+export function skillGovernanceDigest(ctx: PlanContext): DigestAction | undefined {
+  const inv = skillInventory(ctx);
+  if (inv.counts.installed === 0 && readSkillsLock(ctx.root).skills.length === 0) return undefined;
+  const { installed, approved, unapproved, stalePin } = inv.counts;
+  const notable = inv.skills.filter((s) => s.status !== "approved");
+  const rows = inv.skills.map((s) => ({
+    name: s.name,
+    status: s.status,
+    ...(s.verdict !== undefined ? { verdict: s.verdict } : {}),
+    ...(s.source !== undefined ? { source: s.source } : {}),
+    ...(s.commit !== undefined ? { commit: s.commit } : {}),
+  }));
+  const body = lines(
+    `${installed} external skill${installed === 1 ? "" : "s"} installed · ${approved} approved · ${unapproved} unapproved · ${stalePin} stale-pin.`,
+    "",
+    ...notable.map((s) =>
+      s.status === "stale-pin"
+        ? `  ! ${s.name} — stale pin (${s.driftReason ?? "commit drift"})`
+        : `  ! ${s.name} — unapproved (run \`aih skill vet\` then \`aih skill approve\`)`,
+    ),
+    notable.length === 0
+      ? `  All ${approved} installed skill${approved === 1 ? " is" : "s are"} approved and in sync.`
+      : "",
+  );
+  return digest(
+    `Skill governance — ${installed} installed (${approved} approved, ${unapproved} unapproved, ${stalePin} stale)`,
+    body,
+    { installed, approved, unapproved, stalePin, rows },
+  );
+}
+
+/**
  * The v9-only extra digests, appended to the report's digests on the `--v9` path.
  * Developer readiness (always-renders "can I start?" gate). Phase A: drift + MCP
  * servers/egress. Phase B: ECC inventory, coherence, outcome deltas/MTTR and the wins
@@ -633,5 +674,6 @@ export async function v9ExtraDigests(ctx: PlanContext): Promise<DigestAction[]> 
     coherenceDigest(ctx),
     await outcomeDeltasDigest(ctx),
     winsDigest(ctx),
+    skillGovernanceDigest(ctx),
   ].filter((d): d is DigestAction => d !== undefined);
 }

@@ -21,7 +21,12 @@ import { command as report } from "../report/index.js";
 import { command as sandbox } from "../sandbox/index.js";
 import { command as scaffold } from "../scaffold/index.js";
 import { command as secrets } from "../secrets/index.js";
-import { skillApproveCommand, skillCardCommand, skillVetCommand } from "../skill/index.js";
+import {
+  skillApproveCommand,
+  skillCardCommand,
+  skillInventoryCommand,
+  skillVetCommand,
+} from "../skill/index.js";
 import { command as status } from "../status.js";
 import { command as superpowers } from "../superpowers/index.js";
 import { command as telemetry } from "../telemetry/index.js";
@@ -276,4 +281,13 @@ export function registerCommands(program: Command): void {
       });
     });
   }
+  // `inventory` takes no <source> — register it outside the vet/card/approve loop
+  // (which forces a required positional), modeled on `trust list`.
+  const inv = skill.command("inventory").description(skillInventoryCommand.summary);
+  addSharedFlags(inv);
+  inv.action(async (_options: Record<string, unknown>, command: Command) => {
+    process.exitCode = await runCapability(skillInventoryCommand, command, {
+      positionalRoot: false,
+    });
+  });
 }

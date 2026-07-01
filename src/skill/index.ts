@@ -8,6 +8,13 @@ export {
   skillCardRelPath,
 } from "./card.js";
 export {
+  type SkillInventory,
+  type SkillInventoryRoot,
+  type SkillInventoryRow,
+  skillInventory,
+  skillInventoryCommand,
+} from "./inventory.js";
+export {
   AIH_SKILLS_LOCK_FILE,
   readSkillsLock,
   type SkillLockEntry,
