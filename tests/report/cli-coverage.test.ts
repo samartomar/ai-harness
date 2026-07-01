@@ -280,4 +280,22 @@ describe("cliCoverageDigest", () => {
     expect(d.text).toContain("Target source: .aih-config.json");
     expect((d.data as { targeted: string[] }).targeted).toEqual(["claude"]);
   });
+
+  it("surfaces a stale-artifacts advisory (and carries the set) when a CLI is dropped", () => {
+    marker("claude"); // committed intent: claude only
+    // A per-CLI adapter for cursor is on disk but cursor is no longer targeted.
+    mkdirSync(join(dir, "ai-coding", "adapters"), { recursive: true });
+    writeFileSync(join(dir, "ai-coding", "adapters", "cursor.md"), "# cursor\n");
+    const d = cliCoverageDigest(ctx());
+    expect(d.text).toContain("STALE — 1 artifact for 1 dropped CLI(s) (cursor)");
+    expect(d.text).toContain("aih prune");
+    expect((d.data as { stale: { dropped: string[] } }).stale.dropped).toEqual(["cursor"]);
+  });
+
+  it("adds no advisory for a repo whose targeted CLIs are all still wired", () => {
+    marker("claude");
+    const d = cliCoverageDigest(ctx());
+    expect(d.text).not.toContain("STALE");
+    expect((d.data as { stale: { dropped: string[] } }).stale.dropped).toEqual([]);
+  });
 });

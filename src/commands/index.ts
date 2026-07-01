@@ -15,6 +15,7 @@ import { command as init } from "../init/index.js";
 import type { CommandSpec } from "../internals/plan.js";
 import { command as mcp } from "../mcp/index.js";
 import { command as profile } from "../profile/index.js";
+import { command as prune } from "../prune/index.js";
 import { command as report } from "../report/index.js";
 import { command as sandbox } from "../sandbox/index.js";
 import { command as scaffold } from "../scaffold/index.js";
@@ -67,6 +68,7 @@ export const CAPABILITIES: CommandSpec[] = [
   bootstrapAi,
   workspace,
   adopt,
+  prune,
   init,
 ];
 
