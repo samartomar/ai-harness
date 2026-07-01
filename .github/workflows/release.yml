@@ -21,7 +21,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: npm-publish
-      url: https://www.npmjs.com/package/@aih/harness
+      url: https://www.npmjs.com/package/@aihq/harness
     permissions:
       contents: write # create the GitHub Release for the tag
       id-token: write # keyless signing identity for the provenance attestation
@@ -36,6 +36,16 @@ jobs:
           registry-url: "https://registry.npmjs.org"
           cache: npm
       - run: npm ci
+      - name: Assert package version matches the tag
+        run: |
+          set -euo pipefail
+          ver="$(node -p "require('./package.json').version")"
+          tag="${GITHUB_REF_NAME#v}"
+          if [ "$ver" != "$tag" ]; then
+            echo "::error::package.json version ($ver) does not match tag $GITHUB_REF_NAME"
+            exit 1
+          fi
+          echo "version $ver matches tag $GITHUB_REF_NAME"
       - name: Verify (typecheck · lint · test+coverage · build)
         run: |
           npx tsc --noEmit
@@ -66,7 +76,15 @@ jobs:
           npx aih --version
           npx aih --help | head -n 3
       - name: Publish to npm with trusted publishing
-        run: npm publish ./*.tgz --provenance --access public
+        run: |
+          set -euo pipefail
+          ver="$(node -p "require('./package.json').version")"
+          case "$ver" in
+            *-*) tag=next ;;   # prerelease (e.g. 0.3.0-rc.1) → next, never latest
+            *)   tag=latest ;;
+          esac
+          echo "publishing $ver to dist-tag $tag"
+          npm publish ./*.tgz --provenance --access public --tag "$tag"
       - name: Create GitHub Release (with verifiable artifacts)
         env:
           GH_TOKEN: ${{ github.token }}

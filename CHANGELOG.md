@@ -6,8 +6,17 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-07-01
+
+First release **published to npm** as [`@aihq/harness`](https://www.npmjs.com/package/@aihq/harness) —
+`npm install -g @aihq/harness`. Each release ships build **provenance** (verify with
+`npm audit signatures`), an **SPDX SBOM**, and a SHA256 checksum on the GitHub Release.
+
 ### Added
 
+- **`aih trust` external-source trust gate** — `allow` / `list` / `pin` / `scan` / `verify`
+  to review, pin, and gate external GitHub repos and skills before acquisition (danger
+  grading, dependency-confusion + typosquat detection, incoming-MCP and secret scans, SARIF).
 - **`aih report --v9` developer console** ships opt-in with LIVE / PREVIEW /
   EMPTY honesty states, machine-relative ECC inventory, MCP parity/egress,
   usage-by-CLI, heavy lifters, dormant ECC skills, remediation wins, no-JS
@@ -39,6 +48,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **`aih tools` pins `code-review-graph==2.3.6`** to match the pinned MCP runners, so the
+  globally installed CLI can't drift past the graph the harness actually runs.
 - **`aih report` and `aih doctor` grade every wired CLI by default, not just claude.**
   Without a committed `.aih-config.json`, coverage previously defaulted to claude and
   under-reported a repo wired for multiple tools. `resolveTargetSet` now infers the
@@ -51,10 +62,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   GHSA-g7r4-m6w7-qqqr (dev-server arbitrary file read on Windows). Dev-only —
   `esbuild` is a build-tool dependency (tsup / tsx / vite), never shipped in the CLI.
 
-## [0.1.0] - 2026-06-24
+## 0.1.0 - 2026-06-24
 
-First public cut of the Enterprise AI Bootstrapping Harness (`aih`) — a dry-run-first
-CLI that bootstraps governed, proxy-safe AI coding into workstations and repos.
+Initial public cut of the Enterprise AI Bootstrapping Harness (`aih`) — a dry-run-first
+CLI that bootstraps governed, proxy-safe AI coding into workstations and repos. Tagged on
+GitHub but **never published to npm**; the first published release is 0.2.0.
 
 ### Added
 
@@ -95,5 +107,5 @@ CLI that bootstraps governed, proxy-safe AI coding into workstations and repos.
   (npm + github-actions), private vulnerability reporting, `@claude` workflow gated
   to trusted authors, and GitHub Actions pinned to commit SHAs.
 
-[Unreleased]: https://github.com/samartomar/ai-harness/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/samartomar/ai-harness/releases/tag/v0.1.0
+[Unreleased]: https://github.com/samartomar/ai-harness/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/samartomar/ai-harness/releases/tag/v0.2.0

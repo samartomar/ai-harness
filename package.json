@@ -1,6 +1,6 @@
 {
-  "name": "@aih/harness",
-  "version": "0.1.0",
+  "name": "@aihq/harness",
+  "version": "0.2.0",
   "description": "Enterprise AI Bootstrapping Harness — bootstraps governed, proxy-safe AI coding into workstations and repos",
   "repository": {
     "type": "git",

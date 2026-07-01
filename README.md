@@ -40,10 +40,23 @@ architecture — all from one command surface.
 ## Install
 
 ```bash
+npm install -g @aihq/harness      # then run: aih --help
+```
+
+Verify the install's origin — every release is published with build provenance:
+
+```bash
+npm audit signatures
+```
+
+<details><summary>From source (contributors)</summary>
+
+```bash
 npm install        # deps
 npm run build      # → dist/cli.js  (bin: aih)
 node dist/cli.js --help
 ```
+</details>
 
 ## Command surface
 
@@ -59,6 +72,7 @@ node dist/cli.js --help
 | `aih scaffold` | Create the canonical context dir (`--context-dir`, default `ai-coding`) — INDEX/SKILL skeleton, an agent **`SETUP-TASKS.md`** playbook (fill context + guardrails from the code), a write-once `project-guardrails.md`, a secret deny-list, and a pre-commit hook. (Bootloaders are `bootstrap-ai`'s job.) |
 | `aih guardrails` | Generate `.gitleaks.toml`, `.pre-commit-config.yaml`, and a CI license gate that blocks AGPL/strong-copyleft. |
 | `aih secrets` | Scan for plaintext `.env*`/`secrets/` and write agent deny rules + vault-injection guidance. `--verify` is the **secret-scan CI gate** (exit 1 when plaintext secrets exist); `--sarif <file>` emits one error-level result per path for GitHub code-scanning. |
+| `aih trust` | Vet, pin, and gate external GitHub repos and skills before an agent acquires them. `scan <target>` grades danger (auto-exec hooks, dependency-confusion, typosquat, incoming-MCP, secrets) and emits SARIF; `allow`/`pin` record reviewed sources + pinned SHAs in org policy; `list`/`verify` audit the committed policy and trust-lock evidence. |
 | `aih mcp` | Generate the MCP server config **for the targeted CLIs** (`--cli`/`--all-tools`, default claude): Claude/Cursor/Kiro/Kimi get their correct project file written (`.mcp.json`, `.cursor/mcp.json`, …); Codex (TOML), Copilot, OpenCode, Zed, and global-config tools get exact per-tool guidance instead of a file aih would get wrong. Scopes: local/project/remote. For locked-down orgs, `--mode offline` (vendored local-command servers) or `--mode none` (no MCP + a CLI-tool fallback) plus a `managed-mcp.json` admin template. |
 | `aih sandbox` | Generate a devcontainer + managed sandbox settings (egress allowlist, `failIfUnavailable`). |
 | `aih telemetry` | Inject OpenTelemetry env, a redacting Bindplane collector, and an analytics fetcher (usage + skills endpoints → `{ usage_report, skills }`). |
@@ -267,6 +281,22 @@ aih report --v9 --apply --out .aih/reports/local-v9.html
 aih usage --apply --cli claude,codex,gemini
 aih usage --rollup ../repo-a,../repo-b
 ```
+
+## Releases & roadmap
+
+- **Roadmap** — [ROADMAP.md](ROADMAP.md), tracked as
+  [GitHub Milestones](https://github.com/samartomar/ai-harness/milestones).
+- **Changelog** — [CHANGELOG.md](CHANGELOG.md); tagged builds on
+  [Releases](https://github.com/samartomar/ai-harness/releases).
+- **Versioning & support** — [VERSIONING.md](VERSIONING.md). SemVer; while pre-1.0 only the
+  latest minor receives fixes.
+- **Supply chain** — every release publishes via npm **Trusted Publishing** with build
+  **provenance** and ships an **SPDX SBOM** + **SHA256 checksum** on the GitHub Release.
+  Verify an install with `npm audit signatures`. The first npm publish is tracked in
+  [#37](https://github.com/samartomar/ai-harness/issues/37); until then, install from source
+  (above).
+- **Support** — [SUPPORT.md](SUPPORT.md) · **Security** — [SECURITY.md](SECURITY.md)
+  (private reporting) · **Contributing** — [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Development
 
