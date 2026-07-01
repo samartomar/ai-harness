@@ -10,12 +10,28 @@ Your job is everything up to the tag.
 
 ## One-time setup (before the first publish)
 
-- On **npmjs.com**, create the `aih` org and add a **Trusted Publisher** for `@aih/harness`:
-  repository `samartomar/ai-harness`, workflow `.github/workflows/release.yml`, environment
-  `npm-publish`. No npm token is stored — publish is OIDC-only.
-- In **repo Settings → Environments**, confirm the `npm-publish` environment exists and add a
-  required reviewer if you want a manual approval gate before publish.
-- Tracked in [#37](https://github.com/samartomar/ai-harness/issues/37).
+The package is scoped (`@aihq/harness`). A Trusted Publisher is configured under the package's
+npm settings, so the package has to exist first. Bootstrap it once, then every release after is
+tokenless.
+
+1. **Create the `@aihq` org** — npmjs.com → **Add Organization → `aihq`** → Free (unlimited
+   public packages). This claims the `@aihq` scope. Enable **2FA** on the account.
+2. **Create the package name** with a throwaway pre-release, kept off `latest`:
+   ```bash
+   npm login
+   npm version 0.2.0-rc.0 --no-git-tag-version
+   npm publish --tag next --access public   # enter OTP; creates @aihq/harness on `next`
+   git checkout -- package.json src/program.ts
+   ```
+3. **Add the Trusted Publisher** — npmjs.com → **@aihq/harness → Settings → Trusted publishing
+   → Add** (GitHub Actions): organization/user `samartomar`, repository `ai-harness`, workflow
+   `release.yml`, environment `npm-publish`. Then **restrict token-based publishing** so only
+   OIDC can publish.
+4. The `npm-publish` environment already requires a reviewer (publish waits for approval) and
+   is restricted to `v*` tags — confirm under **repo Settings → Environments**.
+
+Tracked in [#37](https://github.com/samartomar/ai-harness/issues/37). No npm token is ever
+stored; after the bootstrap, publish is OIDC-only.
 
 ## Cut a release
 
@@ -43,7 +59,7 @@ Your job is everything up to the tag.
    If the `npm-publish` environment has a required reviewer, approve it.
 9. **Verify the published package:**
    ```bash
-   npm view @aih/harness@X.Y.Z
+   npm view @aihq/harness@X.Y.Z
    npm audit signatures        # provenance + integrity
    ```
 10. **Close the milestone** and move any spillover to the next one.
@@ -54,9 +70,9 @@ Your job is everything up to the tag.
 (e.g. `X.Y.Z-rc.1`), publish it under `next` and promote after validation:
 
 ```bash
-npm dist-tag add @aih/harness@X.Y.Z next     # or publish the rc with --tag next
+npm dist-tag add @aihq/harness@X.Y.Z next     # or publish the rc with --tag next
 # after pilots pass:
-npm dist-tag add @aih/harness@X.Y.Z latest
+npm dist-tag add @aihq/harness@X.Y.Z latest
 ```
 
 Publishing an rc under `next` currently needs a manual `npm publish --tag next` or a small
@@ -66,7 +82,7 @@ workflow tweak — the automated path always targets `latest`.
 
 - **Never re-tag a published version.** npm and provenance treat `X.Y.Z` as immutable. Fix
   forward with `X.Y.Z+1`.
-- A bad `latest` can be pointed back with `npm dist-tag add @aih/harness@<good> latest`; a
+- A bad `latest` can be pointed back with `npm dist-tag add @aihq/harness@<good> latest`; a
   published version can be **deprecated** (`npm deprecate`) but not deleted.
 - If a tag was pushed by mistake before publish completed, delete the tag
   (`git push origin :vX.Y.Z`) and the draft Release, fix, and re-tag.

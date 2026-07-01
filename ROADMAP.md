@@ -22,7 +22,7 @@ Four threads run through every release:
 First npm-published release. No new feature scope; the goal is an honest, installable,
 verifiable package.
 
-- npm trusted publishing (OIDC) + build provenance, so `npm install -g @aih/harness`
+- npm trusted publishing (OIDC) + build provenance, so `npm install -g @aihq/harness`
   works and its origin is verifiable ([#37](https://github.com/samartomar/ai-harness/issues/37)).
 - Version coherence — one version across `package.json`, the CLI, the tag, and a CI check
   that keeps them equal.

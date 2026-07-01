@@ -21,7 +21,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: npm-publish
-      url: https://www.npmjs.com/package/@aih/harness
+      url: https://www.npmjs.com/package/@aihq/harness
     permissions:
       contents: write # create the GitHub Release for the tag
       id-token: write # keyless signing identity for the provenance attestation

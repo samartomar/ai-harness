@@ -24,6 +24,6 @@ enterprises that need one should reach the maintainer via their GitHub profile.
 ## Before you file
 
 - Run `aih doctor` and include the output.
-- Confirm you are on the latest release (`npm install -g @aih/harness@latest`).
+- Confirm you are on the latest release (`npm install -g @aihq/harness@latest`).
 - Search [existing issues](https://github.com/samartomar/ai-harness/issues?q=is%3Aissue)
   first.
