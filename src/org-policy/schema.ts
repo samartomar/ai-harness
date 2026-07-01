@@ -85,7 +85,8 @@ export const OrgPolicySchema = z
       .object({
         approvedSources: z.array(TrustApprovedSourceSchema).optional(),
         requireSignedSource: z.boolean().default(false),
-        requiredDetectors: z.array(z.enum(["skillspector", "cisco", "semgrep"])).optional(),
+        // cisco/semgrep are future work: re-add names only with real scanner integrations.
+        requiredDetectors: z.array(z.enum(["skillspector"])).optional(),
         internalScopes: z.array(z.string()).default([]),
       })
       .strict()

@@ -77,7 +77,7 @@ describe("OrgPolicySchema", () => {
                 reason: "reviewed source override",
               },
             ],
-            requiredDetectors: ["skillspector", "semgrep"],
+            requiredDetectors: ["skillspector"],
           },
         }),
       ).trust,
@@ -91,7 +91,7 @@ describe("OrgPolicySchema", () => {
         },
       ],
       requireSignedSource: false,
-      requiredDetectors: ["skillspector", "semgrep"],
+      requiredDetectors: ["skillspector"],
       internalScopes: [],
     });
   });
@@ -118,6 +118,12 @@ describe("OrgPolicySchema", () => {
         }),
       ),
     ).toThrow(/org-policy/);
+  });
+
+  it("rejects detector names without a real scanner implementation", () => {
+    expect(() => parseOrgPolicy(policy({ trust: { requiredDetectors: ["semgrep"] } }))).toThrow(
+      /org-policy/,
+    );
   });
 
   it("readOrgPolicy fails closed on malformed committed policy JSON", () => {

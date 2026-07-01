@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { existsSync, lstatSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, lstatSync, readdirSync, readFileSync } from "node:fs";
 import { basename, extname, join, posix } from "node:path";
 import type { Command } from "commander";
 import { readAihConfig } from "../config/marker.js";
@@ -32,6 +32,7 @@ import { policyWithApprovedSourceReason } from "../trust/commands.js";
 import { resolveInternalScopes } from "../trust/depnames.js";
 import {
   assertTrustTreeSafe,
+  cleanupQuarantine,
   localFileHash,
   readTrustFetchMetadata,
   resolveTrustSource,
@@ -430,15 +431,6 @@ export async function workspaceAddPhase2Plan(
     })),
   ];
   return plan("workspace add: promote", ...actions);
-}
-
-function cleanupQuarantine(source: TrustSource | undefined): void {
-  if (source?.kind !== "github") return;
-  // Swallow cleanup errors: a failed rmSync (e.g. a Windows AV lock) must never
-  // mask the real result/exception propagating from the surrounding try.
-  try {
-    rmSync(source.quarantineRoot, { recursive: true, force: true });
-  } catch {}
 }
 
 function hasFailedExec(result: PlanResult): boolean {

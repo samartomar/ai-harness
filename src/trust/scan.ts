@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { lstatSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { lstatSync, readdirSync, readFileSync } from "node:fs";
 import { basename, extname, isAbsolute, join, relative, resolve } from "node:path";
 import { type Posture, postureFromContext } from "../config/posture.js";
 import { AihError } from "../errors.js";
@@ -23,6 +23,7 @@ import {
 } from "./detectors.js";
 import {
   assertTrustTreeSafe,
+  cleanupQuarantine,
   readTrustFetchMetadata,
   resolveTrustSource,
   type TrustSource,
@@ -627,14 +628,6 @@ export async function trustScanPlanForSource(
     );
   }
   return plan("trust scan", ...actions);
-}
-
-function cleanupQuarantine(source: TrustSource): void {
-  if (source.kind !== "github") return;
-  // Swallow cleanup errors so a failed rmSync never masks the surrounding result.
-  try {
-    rmSync(source.quarantineRoot, { recursive: true, force: true });
-  } catch {}
 }
 
 async function trustScanPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {

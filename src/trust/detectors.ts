@@ -10,7 +10,9 @@ import { scrubFetchEnv } from "./fetch.js";
 import { gradeTrustCheck } from "./grade.js";
 import { collectFilesUnder, TRUST_SKIP_DIRS } from "./scan.js";
 
-export type TrustDetectorName = "skillspector" | "cisco" | "semgrep";
+// cisco/semgrep are future work: re-add detector names here only when a real
+// scanner integration lands, so enterprise requiredDetectors cannot be unsatisfiable.
+export type TrustDetectorName = "skillspector";
 
 export interface TrustDetectorOptions {
   env: NodeJS.ProcessEnv;
@@ -287,15 +289,6 @@ function unavailableCheck(
   };
 }
 
-function unsupportedRequiredDetectorCheck(detector: TrustDetectorName, posture: Posture): Check {
-  return unavailableCheck(
-    detector,
-    "detector integration is not installed in this harness",
-    posture,
-    true,
-  );
-}
-
 function ruleCode(result: SarifResult): CheckCode | undefined {
   const raw = typeof result.ruleId === "string" ? result.ruleId : result.rule?.id;
   return typeof raw === "string" ? SKILLSPECTOR_RULE_MAP[raw] : undefined;
@@ -468,11 +461,6 @@ export async function runTrustDetectors(
         }
       }
     }
-  }
-
-  for (const detector of required) {
-    if (detector === "skillspector") continue;
-    checks.push(unsupportedRequiredDetectorCheck(detector, options.posture));
   }
 
   return { checks, analyzersRun };

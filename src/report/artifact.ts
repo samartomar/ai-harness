@@ -16,7 +16,11 @@ function fmt(n: number): string {
 }
 
 function digestText(d: DigestAction): string {
-  return d.text ?? "";
+  if (d.text !== undefined) return d.text;
+  if (d.run !== undefined) {
+    throw new Error(`unresolved dynamic digest reached report artifact rendering: ${d.describe}`);
+  }
+  return "";
 }
 
 /**
