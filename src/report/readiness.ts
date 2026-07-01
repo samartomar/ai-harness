@@ -71,11 +71,27 @@ interface ReadinessCheck {
 }
 
 /** A blocker/warn row echoed into `.data` for the (later) v9 panel + the text body. */
-interface ReadinessRow {
+export interface ReadinessRow {
   id: string;
   title: string;
   cmd: string;
   dimension: Dimension;
+}
+
+/**
+ * The full computed readiness picture — one composition of aih's read-only probes,
+ * shared by the digest (rich body) and the `aih ready` gate (exit-code probe) so the
+ * signal is computed ONCE per run. Deterministic: no clock, no random.
+ */
+export interface ReadinessResult {
+  banner: "NOT READY" | "READY" | "READY, WITH GAPS";
+  blockers: ReadinessRow[];
+  warns: ReadinessRow[];
+  score: number;
+  rawScore: number;
+  grade: Grade;
+  dims: DimensionResult[];
+  firstCommand: string | null;
 }
 
 const SCORE_CAP_WITH_BLOCKER = 69;
@@ -377,57 +393,69 @@ function dimensionOf(name: Dimension, checks: ReadinessCheck[]): DimensionResult
   return dim(name, 1, results);
 }
 
+/**
+ * Compute the full {@link ReadinessResult} from aih's read-only probes. Failing gates
+ * ⇒ blockers; failing warns ⇒ score dings; `skip` never counts. The single source of
+ * truth shared by {@link readinessDigest} (the rich body) and the `aih ready` gate
+ * (the exit-code probe), so both agree without double-computing.
+ */
+export async function computeReadiness(ctx: PlanContext): Promise<ReadinessResult> {
+  const checks = await buildChecks(ctx);
+
+  const blockers: ReadinessRow[] = checks
+    .filter((c) => c.severity === "gate" && c.verdict === "fail")
+    .map((c) => ({ id: c.id, title: c.title, cmd: c.cmd, dimension: c.dimension }));
+
+  const warns: ReadinessRow[] = checks
+    .filter((c) => c.severity === "warn" && c.verdict === "fail")
+    .map((c) => ({ id: c.id, title: c.title, cmd: c.cmd, dimension: c.dimension }));
+
+  const dims: DimensionResult[] = [
+    dimensionOf("machine", checks),
+    dimensionOf("repo-contract", checks),
+    dimensionOf("harness-wiring", checks),
+  ];
+  const rawScore = Math.round(dims.reduce((n, d) => n + d.score, 0) / dims.length);
+  const hasBlocker = blockers.length > 0;
+  const score = hasBlocker ? Math.min(rawScore, SCORE_CAP_WITH_BLOCKER) : rawScore;
+  const grade: Grade = gradeOf(score);
+
+  const banner: ReadinessResult["banner"] = hasBlocker
+    ? "NOT READY"
+    : score >= READY_THRESHOLD
+      ? "READY"
+      : "READY, WITH GAPS";
+
+  const stack = scanRepo(ctx.root, { maxDepth: 8, contextDir: ctx.contextDir });
+  const firstCommand = stack.startCommand ?? stack.testRunner ?? null;
+
+  return { banner, blockers, warns, score, rawScore, grade, dims, firstCommand };
+}
+
 /** Failing gates ⇒ blockers; failing warns ⇒ score dings. `skip` never counts. */
 export function readinessDigest(ctx: PlanContext): DigestAction {
   return {
     kind: "digest",
     describe: "Developer readiness",
     run: async () => {
-      const checks = await buildChecks(ctx);
-
-      const blockers: ReadinessRow[] = checks
-        .filter((c) => c.severity === "gate" && c.verdict === "fail")
-        .map((c) => ({ id: c.id, title: c.title, cmd: c.cmd, dimension: c.dimension }));
-
-      const warns: ReadinessRow[] = checks
-        .filter((c) => c.severity === "warn" && c.verdict === "fail")
-        .map((c) => ({ id: c.id, title: c.title, cmd: c.cmd, dimension: c.dimension }));
-
-      const dims: DimensionResult[] = [
-        dimensionOf("machine", checks),
-        dimensionOf("repo-contract", checks),
-        dimensionOf("harness-wiring", checks),
-      ];
-      const rawScore = Math.round(dims.reduce((n, d) => n + d.score, 0) / dims.length);
-      const hasBlocker = blockers.length > 0;
-      const score = hasBlocker ? Math.min(rawScore, SCORE_CAP_WITH_BLOCKER) : rawScore;
-      const grade: Grade = gradeOf(score);
-
-      const banner: "NOT READY" | "READY" | "READY, WITH GAPS" = hasBlocker
-        ? "NOT READY"
-        : score >= READY_THRESHOLD
-          ? "READY"
-          : "READY, WITH GAPS";
-
-      const stack = scanRepo(ctx.root, { maxDepth: 8, contextDir: ctx.contextDir });
-      const firstCommand = stack.startCommand ?? stack.testRunner ?? null;
-
-      const body = renderBody(banner, blockers, warns, dims, score, grade);
-      const data = { banner, blockers, score, rawScore, grade, warns, firstCommand };
-      return { text: body, data };
+      const r = await computeReadiness(ctx);
+      const data = {
+        banner: r.banner,
+        blockers: r.blockers,
+        score: r.score,
+        rawScore: r.rawScore,
+        grade: r.grade,
+        warns: r.warns,
+        firstCommand: r.firstCommand,
+      };
+      return { text: renderReadinessBody(r), data };
     },
   };
 }
 
 /** Terse, deterministic human summary: banner, blockers, per-dimension line, warn count. */
-function renderBody(
-  banner: string,
-  blockers: ReadinessRow[],
-  warns: ReadinessRow[],
-  dims: DimensionResult[],
-  score: number,
-  grade: Grade,
-): string {
+export function renderReadinessBody(r: ReadinessResult): string {
+  const { banner, blockers, warns, dims, score, grade } = r;
   const mark = (s: number): string => (s >= READY_THRESHOLD ? "✓" : s >= 50 ? "~" : "·");
   return lines(
     `${banner} — ${score}/100 (${grade})`,

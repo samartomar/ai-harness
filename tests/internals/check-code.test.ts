@@ -433,6 +433,7 @@ describe("Check.code — invariants", () => {
       "report.context-over-budget": true,
       "report.low-adoption": true,
       "report.contract-untrue": true,
+      "ready.blocked": true,
       "trust.fetch-blocked": true,
       "trust.detector-unavailable": true,
       "trust.hidden-unicode": true,
