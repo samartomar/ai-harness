@@ -17,19 +17,14 @@ Four threads run through every release:
 - **Governance** — policy, secrets, and evidence an org can audit.
 - **Breadth** — more CLIs, more languages, more of the workstation covered.
 
-## Now — [v0.2.0](https://github.com/samartomar/ai-harness/milestone/1)
+## Shipped
 
-First npm-published release. No new feature scope; the goal is an honest, installable,
-verifiable package.
+- **[v0.2.0](https://github.com/samartomar/ai-harness/releases/tag/v0.2.0)** — first npm
+  release. `@aihq/harness` on npm via OIDC Trusted Publishing with build **provenance** +
+  SPDX SBOM, the `aih trust` external-source gate, version-coherence CI, and the
+  release-management surface (this roadmap, versioning + support policy, release runbook).
 
-- npm trusted publishing (OIDC) + build provenance, so `npm install -g @aihq/harness`
-  works and its origin is verifiable ([#37](https://github.com/samartomar/ai-harness/issues/37)).
-- Version coherence — one version across `package.json`, the CLI, the tag, and a CI check
-  that keeps them equal.
-- A cut `CHANGELOG` and a published GitHub Release with SBOM + provenance.
-- README that documents the npm install path and the `aih trust` command group.
-
-## Next — [v0.3.0](https://github.com/samartomar/ai-harness/milestone/2)
+## Now — [v0.3.0](https://github.com/samartomar/ai-harness/milestone/2)
 
 - **First-developer readiness gate** — a single "ready for the first task" verdict over
   runnable CLIs, active hooks, secrets verification, quality commands, and app blockers.
@@ -38,12 +33,15 @@ verifiable package.
 - SARIF validated against the 2.1.0 schema in CI ([#36](https://github.com/samartomar/ai-harness/issues/36)).
 - `plan()` purity — plan-time reads modeled as ledgered probes ([#35](https://github.com/samartomar/ai-harness/issues/35)).
 
-## Later — [v1.0.0](https://github.com/samartomar/ai-harness/milestone/3) and beyond
+## Next — [v1.0.0](https://github.com/samartomar/ai-harness/milestone/3)
+
+- **1.0 stability** — freeze the CLI surface and output contract so an enterprise can pin
+  to it; begin N-1 security backports; enforce the deprecation policy.
+
+## Later — beyond 1.0
 
 Directional. Nothing here is committed to a release yet.
 
-- **1.0 stability** — freeze the CLI surface and output contract; begin N-1 security
-  backports; enforce the deprecation policy.
 - Corporate-trust propagation across more runtimes (git, Go, Docker, JVM, Gradle, Maven).
 - Trust-gate deep-scan detectors beyond the first scanner; `aih skill inventory`.
 - Broader language command routing for polyglot repos.

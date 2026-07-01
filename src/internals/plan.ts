@@ -158,6 +158,13 @@ export interface PlanContext {
   /** When true, probe actions run and contribute to the verification report. */
   verify: boolean;
   json: boolean;
+  /**
+   * Local process runner. During `plan()` (dry-run) only READ-ONLY tools on FIXED targets
+   * may be run, and only to DECIDE the plan (heal's node/npm/TLS checks pick the repair
+   * ladder; certs reads the OS trust store; report shells `git` for stats). Never shell out
+   * an arbitrary or interpolated command at plan time — that is the `AIH_GRAPH_CMD` class of
+   * bug. The read-only allowlist is pinned by `tests/internals/plan-purity.test.ts` (#35).
+   */
   run: Runner;
   host: HostAdapter;
   env: NodeJS.ProcessEnv;
