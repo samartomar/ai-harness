@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { lstatSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import process from "node:process";
@@ -80,11 +80,33 @@ describe("trust fetch source resolution", () => {
     );
 
     expect(action.argv[0]).toBe(process.execPath);
-    expect(action.cwd).toBe(tmpdir());
+    expect(action.cwd).toBe(source.quarantineRoot);
     expect(action.timeoutMs).toBe(120_000);
     expect(action.env).toMatchObject({ PATH: "safe-bin", NODE_EXTRA_CA_CERTS: "corp.pem" });
     expect(action.env).not.toHaveProperty("GITHUB_TOKEN");
     expect(action.env).not.toHaveProperty("OPENAI_API_KEY");
+    rmSync(source.quarantineRoot, { recursive: true, force: true });
+  });
+
+  it("creates fresh owner-only GitHub quarantine roots from mkdtemp", () => {
+    const first = resolveTrustSource("Owner/Repo", { root: dir, ref: "main" });
+    const second = resolveTrustSource("Owner/Repo", { root: dir, ref: "main" });
+    try {
+      if (first.kind !== "github" || second.kind !== "github") {
+        throw new Error("expected GitHub source");
+      }
+
+      expect(first.quarantineRoot).not.toBe(second.quarantineRoot);
+      expect(first.quarantineRoot).toContain("aih-quarantine-");
+      expect(first.treePath).toBe(join(first.quarantineRoot, "tree"));
+      expect(first.metadataPath).toBe(join(first.quarantineRoot, "metadata.json"));
+      if (process.platform !== "win32") {
+        expect(lstatSync(first.quarantineRoot).mode & 0o077).toBe(0);
+      }
+    } finally {
+      if (first.kind === "github") rmSync(first.quarantineRoot, { recursive: true, force: true });
+      if (second.kind === "github") rmSync(second.quarantineRoot, { recursive: true, force: true });
+    }
   });
 
   it("rejects --pin values that are not full commit SHAs", () => {

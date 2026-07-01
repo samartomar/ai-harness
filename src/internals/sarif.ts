@@ -25,7 +25,7 @@ function level(verdict: Verdict): "error" | "note" {
 
 function safeArtifactUri(raw: string): string | undefined {
   const uri = raw.replace(/\\/g, "/");
-  if (uri.length === 0 || isAbsolute(uri) || /^[A-Za-z]:\//.test(uri)) return undefined;
+  if (uri.length === 0 || isAbsolute(uri) || /^[A-Za-z]:/.test(uri)) return undefined;
   if (uri.split("/").some((part) => part === "..")) return undefined;
   return uri;
 }

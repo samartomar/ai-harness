@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { existsSync, lstatSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, lstatSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { basename, extname, join, posix } from "node:path";
 import type { Command } from "commander";
 import { readAihConfig } from "../config/marker.js";
@@ -127,8 +127,11 @@ function sourceFromContext(ctx: PlanContext): TrustSource {
   });
 }
 
-export async function workspaceAddPhase1Plan(ctx: PlanContext): Promise<Plan> {
-  const source = sourceFromContext(ctx);
+export async function workspaceAddPhase1Plan(
+  ctx: PlanContext,
+  resolvedSource?: TrustSource,
+): Promise<Plan> {
+  const source = resolvedSource ?? sourceFromContext(ctx);
   const scan = await trustScanPlanForSource(ctx, source);
   return plan("workspace add: fetch + scan", aihIgnoreWrite(ctx.root), ...scan.actions);
 }
@@ -364,12 +367,13 @@ function sourceRootFor(source: TrustSource): string {
 export async function captureClearedWorkspaceAddTrustGate(
   ctx: PlanContext,
   report: VerificationReport | undefined,
+  resolvedSource?: TrustSource,
 ): Promise<ClearedWorkspaceAddTrustGate> {
   if (!report) throw new AihError("workspace add phase 2 requires a phase 1 report", "AIH_TRUST");
   if (!report.ok) {
     throw new AihError("workspace add failed trust scan; source was not promoted", "AIH_TRUST");
   }
-  const source = sourceFromContext(ctx);
+  const source = resolvedSource ?? sourceFromContext(ctx);
   const internalScopes = resolveInternalScopes(ctx);
   const currentScan = await currentTrustScan(ctx, source, internalScopes);
   if (currentScan.checks.some((check) => check.verdict === "fail")) {
@@ -388,10 +392,11 @@ export async function captureClearedWorkspaceAddTrustGate(
 export async function workspaceAddPhase2Plan(
   ctx: PlanContext,
   gate: ClearedWorkspaceAddTrustGate | undefined,
+  resolvedSource?: TrustSource,
 ): Promise<Plan> {
   if (!gate) throw new AihError("workspace add phase 2 requires a cleared trust gate", "AIH_TRUST");
 
-  const source = sourceFromContext(ctx);
+  const source = resolvedSource ?? sourceFromContext(ctx);
   const currentBinding = sourceBinding(source);
   if (!sameSourceBinding(gate.source, currentBinding)) {
     return plan(
@@ -425,6 +430,11 @@ export async function workspaceAddPhase2Plan(
     })),
   ];
   return plan("workspace add: promote", ...actions);
+}
+
+function cleanupQuarantine(source: TrustSource | undefined): void {
+  if (source?.kind !== "github") return;
+  rmSync(source.quarantineRoot, { recursive: true, force: true });
 }
 
 function hasFailedExec(result: PlanResult): boolean {
@@ -534,11 +544,13 @@ export async function runWorkspaceAdd(
   const runId = (deps.newRunId ?? (() => `run_${randomUUID().slice(0, 8)}`))();
   const startedAt = (deps.now ?? (() => new Date()))();
   let json = false;
+  let source: TrustSource | undefined;
   try {
     const ctx = contextFromCommand(command, deps);
     json = ctx.json;
+    source = sourceFromContext(ctx);
 
-    const phase1 = await workspaceAddPhase1Plan(ctx);
+    const phase1 = await workspaceAddPhase1Plan(ctx, source);
     const phase1Result = await executePlan(phase1, ctx);
     const phase1Code = phase1Result.report?.exitCode() ?? 0;
     if (phase1Code !== 0 || hasFailedExec(phase1Result)) {
@@ -557,7 +569,6 @@ export async function runWorkspaceAdd(
       }
       return 1;
     }
-    const source = sourceFromContext(ctx);
     if (!ctx.apply && source.kind === "github") {
       if (json) write(`${JSON.stringify({ phase1: phase1Result }, null, 2)}\n`);
       else write(`${summarizeResult(phase1Result)}\n`);
@@ -565,8 +576,8 @@ export async function runWorkspaceAdd(
     }
     await persistAcknowledgeLedger(ctx, source, phase1Result.report);
 
-    const gate = await captureClearedWorkspaceAddTrustGate(ctx, phase1Result.report);
-    const phase2 = await workspaceAddPhase2Plan(ctx, gate);
+    const gate = await captureClearedWorkspaceAddTrustGate(ctx, phase1Result.report, source);
+    const phase2 = await workspaceAddPhase2Plan(ctx, gate, source);
     const phase2Result = await executePlan(phase2, ctx);
     const execFailed = hasFailedExec(phase1Result) || hasFailedExec(phase2Result);
     const phase2Code = phase2Result.report?.exitCode() ?? 0;
@@ -587,5 +598,7 @@ export async function runWorkspaceAdd(
     if (json) write(`${JSON.stringify({ error: { code, message } }, null, 2)}\n`);
     else write(`error [${code}]: ${message}\n`);
     return 1;
+  } finally {
+    cleanupQuarantine(source);
   }
 }

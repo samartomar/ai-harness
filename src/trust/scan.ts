@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { lstatSync, readdirSync, readFileSync } from "node:fs";
+import { lstatSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { basename, extname, isAbsolute, join, relative, resolve } from "node:path";
 import { type Posture, postureFromContext } from "../config/posture.js";
 import { AihError } from "../errors.js";
@@ -67,6 +67,10 @@ export interface TrustScanResult {
 interface IncomingMcpServerMap {
   key: "mcpServers" | "servers" | "mcp";
   servers: Record<string, unknown>;
+}
+
+interface TrustScanPlanOptions {
+  cleanupQuarantine?: boolean;
 }
 
 function toPosix(path: string): string {
@@ -557,6 +561,7 @@ export async function trustScanProbes(
 export async function trustScanPlanForSource(
   ctx: PlanContext,
   source: TrustSource,
+  options: TrustScanPlanOptions = {},
 ): Promise<ReturnType<typeof plan>> {
   const actions: Action[] = [];
   const policy = requiredDetectorsFromPolicy(ctx);
@@ -609,17 +614,24 @@ export async function trustScanPlanForSource(
         return acknowledgeChecks(scan.checks, probeCtx);
       }),
       dynamicDigest("trust runtime advisory", async (digestCtx) => {
-        if (!digestCtx.apply) return trustRuntimeAdvisory(["aih-native"]);
         try {
+          if (!digestCtx.apply) return trustRuntimeAdvisory(["aih-native"]);
           const scan = await scanGithubSource(digestCtx);
           return trustRuntimeAdvisory(scan.analyzersRun);
         } catch {
           return trustRuntimeAdvisory(["aih-native"]);
+        } finally {
+          if (options.cleanupQuarantine) cleanupQuarantine(source);
         }
       }),
     );
   }
   return plan("trust scan", ...actions);
+}
+
+function cleanupQuarantine(source: TrustSource): void {
+  if (source.kind !== "github") return;
+  rmSync(source.quarantineRoot, { recursive: true, force: true });
 }
 
 async function trustScanPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
@@ -639,7 +651,7 @@ async function trustScanPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>>
       display: toPosix(relative(ctx.root, resolve(ctx.root, target))) || source.display,
     });
   }
-  return trustScanPlanForSource(ctx, source);
+  return trustScanPlanForSource(ctx, source, { cleanupQuarantine: source.kind === "github" });
 }
 
 export const trustScanCommand: CommandSpec = {

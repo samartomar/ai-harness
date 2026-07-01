@@ -108,7 +108,7 @@ const MALICIOUS_PATTERNS: MaliciousPattern[] = [
   },
   {
     label: "netcat exec shell",
-    pattern: /\bnc\b[^\n]*(?:-e|-c)\s*(?:\/bin\/)?(?:bash|sh)\b/,
+    pattern: /\bnc(?:at)?\b[^\n]*(?:-e|-c)\s*(?:\/bin\/)?(?:bash|sh)\b/,
   },
 ];
 
@@ -118,6 +118,10 @@ function toPosix(path: string): string {
 
 function sha8(raw: string): string {
   return createHash("sha256").update(raw).digest("hex").slice(0, 8);
+}
+
+function normalizeShellWhitespace(line: string): string {
+  return line.replace(/\$\{IFS(?:[#%]{1,2}[^}]*)?\}|\$IFS\b/g, " ");
 }
 
 // Extensions that are never a shell/interpreter script — used to exclude
@@ -220,8 +224,9 @@ export function scanNativeMaliciousCode(root: string): Check[] {
     const rel = toPosix(relative(root, file));
     const lines = readFileSync(file, "utf8").split(/\r?\n/);
     lines.forEach((line, index) => {
+      const normalizedLine = normalizeShellWhitespace(line);
       for (const rule of MALICIOUS_PATTERNS) {
-        if (rule.pattern.test(line)) {
+        if (rule.pattern.test(normalizedLine)) {
           checks.push(maliciousCodeCheck(rel, index + 1, line, rule.label));
         }
       }
@@ -312,7 +317,7 @@ function normalizeSarifUri(raw: unknown): string {
 }
 
 function isSafeRelativeSarifUri(uri: string): boolean {
-  if (uri.length === 0 || isAbsolute(uri) || /^[A-Za-z]:\//.test(uri)) return false;
+  if (uri.length === 0 || isAbsolute(uri) || /^[A-Za-z]:/.test(uri)) return false;
   return !uri.split("/").some((part) => part === "..");
 }
 

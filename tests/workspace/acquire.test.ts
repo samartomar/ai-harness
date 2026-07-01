@@ -315,37 +315,49 @@ describe("workspace add acquisition plans", () => {
 
   it("capture re-scan catches org-policy approvedSources tightened after phase 1", async () => {
     const source = resolveTrustSource("owner/repo", { root: workspace });
-    writeGithubQuarantine(source, "a".repeat(40));
-    const report = new VerificationReport().pass("trust scan", "clean");
-    writePolicy({ approvedSources: [{ owner: "trusted", repo: "repo" }] });
+    try {
+      writeGithubQuarantine(source, "a".repeat(40));
+      const report = new VerificationReport().pass("trust scan", "clean");
+      writePolicy({ approvedSources: [{ owner: "trusted", repo: "repo" }] });
 
-    await expect(
-      captureClearedWorkspaceAddTrustGate(
-        ctx("owner/repo", true, true, {}, { posture: "enterprise" }),
-        report,
-      ),
-    ).rejects.toThrow(/source changed after phase 1 scan/);
+      await expect(
+        captureClearedWorkspaceAddTrustGate(
+          ctx("owner/repo", true, true, {}, { posture: "enterprise" }),
+          report,
+          source,
+        ),
+      ).rejects.toThrow(/source changed after phase 1 scan/);
+    } finally {
+      if (source.kind === "github") rmSync(source.quarantineRoot, { recursive: true, force: true });
+    }
   });
 
   it("phase 2 promotion plan re-runs source origin checks before writing", async () => {
     const source = resolveTrustSource("owner/repo", { root: workspace });
-    writeGithubQuarantine(source, "a".repeat(40));
-    const report = new VerificationReport().pass("trust scan", "clean");
-    const cleanCtx = ctx("owner/repo", true, true, {}, { posture: "enterprise" });
-    const gate = await captureClearedWorkspaceAddTrustGate(cleanCtx, report);
-    writePolicy({ approvedSources: [{ owner: "trusted", repo: "repo" }] });
+    try {
+      writeGithubQuarantine(source, "a".repeat(40));
+      const report = new VerificationReport().pass("trust scan", "clean");
+      const cleanCtx = ctx("owner/repo", true, true, {}, { posture: "enterprise" });
+      const gate = await captureClearedWorkspaceAddTrustGate(cleanCtx, report, source);
+      writePolicy({ approvedSources: [{ owner: "trusted", repo: "repo" }] });
 
-    const result = await executePlan(await workspaceAddPhase2Plan(cleanCtx, gate), cleanCtx);
+      const result = await executePlan(
+        await workspaceAddPhase2Plan(cleanCtx, gate, source),
+        cleanCtx,
+      );
 
-    expect(result.writes.some((write) => write.path.startsWith("ai-coding/skills/"))).toBe(false);
-    expect(result.report?.checks).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          verdict: "fail",
-          code: "trust.untrusted-publisher",
-        }),
-      ]),
-    );
+      expect(result.writes.some((write) => write.path.startsWith("ai-coding/skills/"))).toBe(false);
+      expect(result.report?.checks).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            verdict: "fail",
+            code: "trust.untrusted-publisher",
+          }),
+        ]),
+      );
+    } finally {
+      if (source.kind === "github") rmSync(source.quarantineRoot, { recursive: true, force: true });
+    }
   });
 
   it("runWorkspaceAdd stops after phase 1 for a bad source", async () => {
@@ -448,6 +460,69 @@ describe("workspace add acquisition plans", () => {
       expect(existsSync(join(workspace, ".aih", "trust-lock.json"))).toBe(false);
     } finally {
       rmSync(source.quarantineRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("runWorkspaceAdd reuses one GitHub quarantine from fetch through promotion", async () => {
+    const output: string[] = [];
+    const quarantineRoots = new Set<string>();
+    const run = fakeRunner((argv) => {
+      if (argv[0] === process.execPath && argv[1] === "-e") {
+        const input = JSON.parse(argv[3] ?? "{}") as {
+          metadataPath: string;
+          owner: string;
+          quarantineRoot: string;
+          ref: string;
+          repo: string;
+          treePath: string;
+        };
+        quarantineRoots.add(input.quarantineRoot);
+        mkdirSync(join(input.treePath, "skills", "clean"), { recursive: true });
+        writeFileSync(
+          join(input.treePath, "skills", "clean", "SKILL.md"),
+          `# Clean\n\n${input.quarantineRoot}\n`,
+          "utf8",
+        );
+        writeFileSync(
+          input.metadataPath,
+          JSON.stringify({
+            kind: "github",
+            owner: input.owner,
+            repo: input.repo,
+            ref: input.ref,
+            pinnedSha: "b".repeat(40),
+            source: `${input.owner}/${input.repo}`,
+            treePath: input.treePath,
+          }),
+          "utf8",
+        );
+        return { code: 0 };
+      }
+      return undefined;
+    });
+
+    try {
+      const code = await runWorkspaceAdd(fakeCommand("owner/repo"), {
+        run,
+        write: (text) => output.push(text),
+        env: { PATH: "bin" },
+        now: () => new Date("2026-06-30T00:00:00.000Z"),
+        newRunId: () => "run_test",
+      });
+
+      const [quarantineRoot] = [...quarantineRoots];
+      expect(code).toBe(0);
+      expect(quarantineRoots.size).toBe(1);
+      expect(output.join("")).toContain("Applied workspace add: promote");
+      expect(
+        readFileSync(
+          join(workspace, "ai-coding", "skills", "owner-repo", "clean", "SKILL.md"),
+          "utf8",
+        ),
+      ).toContain(quarantineRoot);
+      expect(existsSync(quarantineRoot ?? "")).toBe(false);
+    } finally {
+      for (const root of quarantineRoots) rmSync(root, { recursive: true, force: true });
     }
   });
 
