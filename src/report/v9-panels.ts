@@ -18,6 +18,7 @@ import { mcpServers } from "../mcp/servers.js";
 import { scanRepo } from "../profile/scan.js";
 import type { SupportTemplate } from "../support/render.js";
 import { scanCliCoverage } from "./cli-coverage.js";
+import { readinessDigest } from "./readiness.js";
 
 /**
  * v9-only report digests — the capabilities the v9 dashboard binds that the legacy
@@ -616,12 +617,16 @@ export function winsDigest(ctx: PlanContext): DigestAction | undefined {
 
 /**
  * The v9-only extra digests, appended to the report's digests on the `--v9` path.
- * Phase A: drift + MCP servers/egress. Phase B: ECC inventory, coherence, outcome
- * deltas/MTTR and the wins ledger (support is built from the caller's already-rendered
- * templates and appended separately). Async because the outcome digest reads git.
+ * Developer readiness (always-renders "can I start?" gate). Phase A: drift + MCP
+ * servers/egress. Phase B: ECC inventory, coherence, outcome deltas/MTTR and the wins
+ * ledger (support is built from the caller's already-rendered templates and appended
+ * separately). Async because the outcome digest reads git.
  */
 export async function v9ExtraDigests(ctx: PlanContext): Promise<DigestAction[]> {
   return [
+    // Readiness ALWAYS renders (even a harness-less repo earns a verdict), so its
+    // `sec-ready` panel is always LIVE on the local report path.
+    readinessDigest(ctx),
     driftDigest(ctx),
     mcpServersDigest(ctx),
     eccInventoryDigest(ctx),

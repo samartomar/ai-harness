@@ -14,6 +14,7 @@ import {
   renderMcp,
   renderPeriod,
   renderQuality,
+  renderReady,
   renderSkills,
   renderSupport,
   renderWins,
@@ -32,6 +33,7 @@ import type {
   V9Mcp,
   V9OutcomeDeltas,
   V9Quality,
+  V9Ready,
   V9Skills,
   V9Support,
   V9View,
@@ -149,10 +151,63 @@ function buildHero(
   };
 }
 
+// ── ◆ developer readiness ──────────────────────────────────────────────────────
+
+interface BlockerRaw {
+  id?: unknown;
+  title?: unknown;
+  cmd?: unknown;
+}
+
+/**
+ * The developer-readiness verdict, bound from the "Developer readiness" digest that
+ * {@link readinessDigest} emits (banner + score + grade + the blocker subset). Always
+ * present on the report's `--v9` local path (readiness ALWAYS renders — even a
+ * harness-less repo earns a verdict), so its panel is LIVE, never faked. Undefined only
+ * when the digest is absent (e.g. the org/workspace path, which does not run it).
+ */
+function buildReady(digests: DigestAction[]): V9Ready | undefined {
+  const r = bag(digests, "Developer readiness");
+  if (!r || typeof r.banner !== "string") return undefined;
+  const banner =
+    r.banner === "READY" || r.banner === "NOT READY" || r.banner === "READY, WITH GAPS"
+      ? r.banner
+      : "READY, WITH GAPS";
+  const blockers = (Array.isArray(r.blockers) ? (r.blockers as BlockerRaw[]) : []).map((b) => ({
+    id: String(b.id ?? ""),
+    title: String(b.title ?? ""),
+    cmd: String(b.cmd ?? ""),
+  }));
+  return {
+    banner,
+    score: numOr(r.score, 0),
+    grade: typeof r.grade === "string" ? r.grade : "",
+    blockers,
+  };
+}
+
 // ── ★ actions ────────────────────────────────────────────────────────────────
 
 function deriveActions(digests: DigestAction[]): V9Action[] {
   const out: V9Action[] = [];
+  // Readiness blockers lead the board: a hard stop means an agent cannot make a
+  // correct first change until it clears, so it outranks any maturity/config ding.
+  // Bound from the SAME "Developer readiness" digest the readiness panel renders, so
+  // the panel's "full remediation list is in What to fix first" is actually true —
+  // and machine blockers (Node/npm/TLS/PATH/core tools) that no other bag surfaces
+  // finally appear on the board.
+  const ready = bag(digests, "Developer readiness");
+  const blockers = ready && Array.isArray(ready.blockers) ? (ready.blockers as BlockerRaw[]) : [];
+  for (const b of blockers) {
+    const title = String(b.title ?? "");
+    if (!title) continue;
+    out.push({
+      sev: "high",
+      title: `Fix: ${title}`,
+      body: "Hard readiness blocker — an agent cannot make a correct first change until this clears.",
+      cmd: String(b.cmd ?? ""),
+    });
+  }
   const sc = bag(digests, "Harness maturity");
   if (sc) {
     const dims = Array.isArray(sc.dimensions) ? (sc.dimensions as ScDim[]) : [];
@@ -659,6 +714,7 @@ function emptyGates(): Record<string, PanelState> {
   const g: Record<string, PanelState> = {};
   for (const id of [
     "sec-hero",
+    "sec-ready",
     "sec-actions",
     "sec-wins",
     "sec-context",
@@ -691,6 +747,7 @@ export function buildAihDataV9(digests: DigestAction[]): AihDataV9 {
   const actions = deriveActions(digests);
   let drift = buildDrift(digests);
   const hero = buildHero(digests, actions.length, drift?.drifted.length);
+  const ready = buildReady(digests);
   const context = buildContext(digests);
   const usage = buildUsage(digests);
   const baseActivity = buildActivity(digests);
@@ -741,6 +798,7 @@ export function buildAihDataV9(digests: DigestAction[]): AihDataV9 {
       : undefined;
 
   if (hero) gates["sec-hero"] = "live";
+  if (ready) gates["sec-ready"] = "live"; // readiness ALWAYS renders on the local report path
   gates["sec-actions"] = "live"; // always present (honest empty state when clean)
   gates["sec-wins"] = wins ? "live" : "empty"; // §4: live from the heal/run ledger
   if (context) gates["sec-context"] = "live";
@@ -761,6 +819,7 @@ export function buildAihDataV9(digests: DigestAction[]): AihDataV9 {
 
   return {
     ...(hero ? { hero } : {}),
+    ...(ready ? { ready } : {}),
     actions,
     ...(wins ? { wins } : {}),
     ...(context ? { context } : {}),
@@ -828,6 +887,31 @@ export function assembleViewV9(data: AihDataV9, demo: AihDataV9): V9View {
     };
   } else {
     sections["sec-hero"] = { state: "empty", container: ".hero-narrative", html: heroStub() };
+  }
+
+  // ◆ Developer readiness — the single "can I start?" gate (cross-links to ★ actions).
+  if (data.ready) {
+    const r = data.ready;
+    const clean = r.blockers.length === 0;
+    sections["sec-ready"] = {
+      state: "live",
+      container: ".grid",
+      title: clean
+        ? `${r.banner} — an agent can start here`
+        : `${r.banner} — ${r.blockers.length} blocker${r.blockers.length === 1 ? "" : "s"} before an agent can work`,
+      insight:
+        'The single "can I start?" gate: the maturity score above rates harness <i>wiring</i>; this rates whether an agent can make a correct first change on THIS machine right now. A blocker is a hard stop — the full remediation list is in <b>What to fix first</b> below.',
+      count: `${r.score}/100 · ${escHtml(r.grade)}`,
+      html: renderReady(r),
+    };
+  } else {
+    sections["sec-ready"] = emptySection(
+      "Developer readiness — not measured here",
+      "Readiness is computed on the local report path only.",
+      "readiness",
+      "Developer readiness",
+      "Readiness is only measured on a local <code>aih report</code> run.",
+    );
   }
 
   // ★ Actions

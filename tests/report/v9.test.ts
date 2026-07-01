@@ -165,6 +165,26 @@ function usage(): DigestAction {
   return digest("Usage — 0 events", "body", { events: 0 });
 }
 
+/** A "Developer readiness" digest — the shape `readinessDigest` emits into `.data`. */
+function readiness(
+  over: Partial<{
+    banner: string;
+    score: number;
+    grade: string;
+    blockers: Array<{ id: string; title: string; cmd: string }>;
+  }> = {},
+): DigestAction {
+  return digest("Developer readiness — 88/100 (solid)", "body", {
+    banner: over.banner ?? "READY, WITH GAPS",
+    score: over.score ?? 88,
+    rawScore: over.score ?? 88,
+    grade: over.grade ?? "solid",
+    blockers: over.blockers ?? [],
+    warns: [],
+    firstCommand: null,
+  });
+}
+
 function usageInstalled(): DigestAction {
   return digest("Usage — capture installed, no events yet", "body", { events: 0, installed: true });
 }
@@ -268,6 +288,7 @@ const ALL = [
   servers(),
   support(),
   usage(),
+  readiness(),
 ];
 
 describe("buildAihDataV9 — hero", () => {
@@ -329,6 +350,87 @@ describe("buildAihDataV9 — action board", () => {
       usageInstalled(),
     ]);
     expect(d.actions?.map((a) => a.title)).not.toContain("Wire usage + track hooks");
+  });
+
+  it("leads the board with readiness blockers (the panel points here for the full list)", () => {
+    const withBlocker = [
+      ...ALL.filter((x) => !x.describe.startsWith("Developer readiness")),
+      readiness({
+        banner: "NOT READY",
+        blockers: [
+          { id: "node-runtime", title: "Node.js runtime (>= 20) on PATH", cmd: "install Node 20+" },
+        ],
+      }),
+    ];
+    const a = buildAihDataV9(withBlocker).actions ?? [];
+    const fix = a.find((x) => x.title === "Fix: Node.js runtime (>= 20) on PATH");
+    expect(fix).toBeDefined();
+    expect(fix?.sev).toBe("high");
+    expect(fix?.cmd).toBe("install Node 20+");
+    expect(a[0]?.sev).toBe("high"); // hard blockers lead the board
+  });
+});
+
+describe("buildAihDataV9 — developer readiness (sec-ready)", () => {
+  it("binds the readiness verdict (banner + score + grade) and gates it live", () => {
+    const d = buildAihDataV9(ALL);
+    expect(d.ready).toMatchObject({ banner: "READY, WITH GAPS", score: 88, grade: "solid" });
+    expect(d.ready?.blockers).toEqual([]);
+    expect(d.gates["sec-ready"]).toBe("live");
+  });
+
+  it("surfaces the blocker subset when NOT READY, each with its fix command", () => {
+    const d = buildAihDataV9([
+      ...ALL.filter((x) => !x.describe.startsWith("Developer readiness")),
+      readiness({
+        banner: "NOT READY",
+        score: 42,
+        grade: "at-risk",
+        blockers: [
+          { id: "node-runtime", title: "Node.js runtime (>= 20) on PATH", cmd: "install Node 20+" },
+          {
+            id: "tls-ca-trust",
+            title: "Corporate TLS/CA trust intact",
+            cmd: "aih heal --scope certs",
+          },
+        ],
+      }),
+    ]);
+    expect(d.ready?.banner).toBe("NOT READY");
+    expect(d.ready?.blockers).toHaveLength(2);
+    expect(d.ready?.blockers[0]).toMatchObject({ id: "node-runtime", cmd: "install Node 20+" });
+
+    const view = assembleViewV9(d, V9_DEMO);
+    const html = view.sections["sec-ready"]?.html ?? "";
+    // Banner + score/grade + the blocker rows, and the cross-link to the action board.
+    expect(html).toContain("NOT READY");
+    expect(html).toContain("42/100");
+    expect(html).toContain("Corporate TLS/CA trust intact");
+    expect(html).toContain("aih heal --scope certs");
+    expect(html).toContain("What to fix first"); // cross-links, does not duplicate
+    // Title reflects the blocker count.
+    expect(view.sections["sec-ready"]?.title).toContain("2 blockers");
+  });
+
+  it("shows an honest 'No blockers' state when READY", () => {
+    const d = buildAihDataV9([
+      ...ALL.filter((x) => !x.describe.startsWith("Developer readiness")),
+      readiness({ banner: "READY", score: 96, grade: "mature", blockers: [] }),
+    ]);
+    const view = assembleViewV9(d, V9_DEMO);
+    const html = view.sections["sec-ready"]?.html ?? "";
+    expect(html).toContain("READY");
+    expect(html).toContain("No blockers");
+    expect(view.sections["sec-ready"]?.title).toContain("an agent can start here");
+  });
+
+  it("gates sec-ready empty with an honest stub when the digest is absent (org path)", () => {
+    const d = buildAihDataV9(ALL.filter((x) => !x.describe.startsWith("Developer readiness")));
+    expect(d.ready).toBeUndefined();
+    expect(d.gates["sec-ready"]).toBe("empty");
+    const view = assembleViewV9(d, V9_DEMO);
+    expect(view.sections["sec-ready"]?.state).toBe("empty");
+    expect(view.sections["sec-ready"]?.html).toContain("only measured on a local");
   });
 });
 
@@ -502,10 +604,11 @@ describe("buildAihDataV9 — Phase B capability flips", () => {
 });
 
 describe("assembleViewV9 — honest rendering", () => {
-  it("renders all twelve sections (so demo never bleeds through unswapped)", () => {
+  it("renders all thirteen sections (so demo never bleeds through unswapped)", () => {
     const view = assembleViewV9(buildAihDataV9(ALL), V9_DEMO);
     for (const id of [
       "sec-hero",
+      "sec-ready",
       "sec-actions",
       "sec-wins",
       "sec-context",

@@ -57,6 +57,8 @@ export type CheckCode =
   | "report.context-over-budget"
   | "report.low-adoption"
   | "report.contract-untrue"
+  // readiness gate (`aih ready`)
+  | "ready.blocked"
   // trust gate (external repos / skills)
   | "trust.fetch-blocked"
   | "trust.detector-unavailable"

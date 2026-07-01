@@ -383,6 +383,13 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     action:
       "`aih report` found a non-portable path in the committed `project.json`. Re-run `aih contract --apply` to regenerate it from the live tree; verify with `aih doctor` (the `contract truth` probe).",
   },
+  "ready.blocked": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "developer readiness is blocked",
+    action:
+      "`aih ready` found one or more blockers that stop an agent from starting here. Clear each named blocker with its own fix (see the readiness digest — e.g. `aih heal`, `aih contract --apply`, `aih secrets --apply`, `aih bootstrap-ai --apply`), then re-run `aih ready`.",
+  },
   "trust.hidden-unicode": {
     audience: "developer",
     failSeverity: "blocking",

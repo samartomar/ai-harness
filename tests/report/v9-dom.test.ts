@@ -69,6 +69,21 @@ function onCanon(): DigestAction[] {
       synced: ["CLAUDE.md"],
       tracked: 2,
     }),
+    digest("Developer readiness — 42/100 (at-risk)", "", {
+      banner: "NOT READY",
+      score: 42,
+      rawScore: 42,
+      grade: "at-risk",
+      blockers: [
+        {
+          id: "tls-ca-trust",
+          title: "Corporate TLS/CA trust intact",
+          cmd: "aih heal --scope certs",
+        },
+      ],
+      warns: [],
+      firstCommand: null,
+    }),
   ];
 }
 
@@ -94,6 +109,11 @@ describe("reportHtmlV9 — DOM hydration", () => {
     const doc = window.document;
     // Hero: real wiring score swapped into the narrative.
     expect(doc.querySelector("#sec-hero .hero-score-big")?.textContent).toContain("82");
+    // Readiness: the NOT READY verdict + its blocker row swapped in from the digest.
+    const ready = doc.getElementById("sec-ready");
+    expect(ready?.textContent).toContain("NOT READY");
+    expect(ready?.textContent).toContain("Corporate TLS/CA trust intact");
+    expect(ready?.querySelector(".sec-title")?.textContent).toContain("1 blocker");
     // Action board: ranked anomaly cards from real signals.
     const actions = doc.getElementById("sec-actions");
     expect(actions?.querySelectorAll(".anom-card").length ?? 0).toBeGreaterThan(0);

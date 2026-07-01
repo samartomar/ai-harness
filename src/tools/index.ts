@@ -2,46 +2,19 @@ import {
   type Action,
   type CommandSpec,
   doc,
-  exec,
   type Plan,
   type PlanContext,
   plan,
   probe,
 } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
-import type { Check } from "../internals/verify.js";
 import {
-  chooseOption,
   detectPms,
-  execArgv,
+  installActionsFor,
   missingTools,
-  onPath,
   type ToolSpec,
+  verifyTool,
 } from "./install.js";
-
-/** How a tool would be installed, given the available package managers. */
-function howToInstall(t: ToolSpec, pms: ReadonlySet<string>): string {
-  const opt = chooseOption(t, pms);
-  return opt ? `\`${opt.argv.join(" ")}\`` : `manually — ${t.manual}`;
-}
-
-/**
- * Post-install verification: is the tool on PATH now? A CORE tool still missing is
- * a `fail` (real gap, drives a non-zero exit + an escalation ticket); an OPTIONAL
- * one is a `skip` (advisory improvement). Both carry `env.tool-install-blocked` so
- * the support pipeline turns a blocked install into a ready-to-send ticket.
- */
-async function verifyTool(ctx: PlanContext, t: ToolSpec, pms: ReadonlySet<string>): Promise<Check> {
-  if (await onPath(ctx, t.bin)) {
-    return { name: t.tool, verdict: "pass", detail: `${t.bin} on PATH` };
-  }
-  return {
-    name: t.tool,
-    verdict: t.tier === "core" ? "fail" : "skip",
-    detail: `${t.bin} not on PATH — install: ${howToInstall(t, pms)}`,
-    code: "env.tool-install-blocked",
-  };
-}
 
 function summaryText(missing: ToolSpec[], pms: ReadonlySet<string>): string {
   const pmList = pms.size > 0 ? [...pms].sort().join(", ") : "none detected";
@@ -73,26 +46,9 @@ async function toolsPlan(ctx: PlanContext): Promise<Plan> {
     );
   }
 
-  const actions: Action[] = [];
-  // One install action per missing tool: a LOCAL exec when a PM matches (allowFailure
-  // so one blocked install doesn't abort the rest), else a doc with the manual route.
-  for (const t of missing) {
-    const opt = chooseOption(t, pms);
-    if (opt) {
-      actions.push(
-        exec(`install ${t.tool} (${opt.pm})`, execArgv(ctx.host.platform, opt.argv), {
-          allowFailure: true,
-        }),
-      );
-    } else {
-      actions.push(
-        doc(
-          `install ${t.tool} manually (no supported package manager found)`,
-          `No detected package manager can install ${t.tool}. Install it manually: ${t.manual}`,
-        ),
-      );
-    }
-  }
+  // One install action per missing tool (LOCAL exec when a PM matches, else a manual
+  // doc) — the shared {@link installActionsFor} builder, reused by `aih ready --apply`.
+  const actions: Action[] = installActionsFor(ctx, missing, pms);
   // Verify each AFTER the execs (the executor runs execs before probes); a blocked
   // one becomes a coded finding the support layer renders as a ticket.
   for (const t of missing) {

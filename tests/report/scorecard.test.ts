@@ -7,8 +7,9 @@ import { mergeManagedBlock } from "../../src/internals/markers.js";
 import type { PlanContext } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
+import { gradeOf } from "../../src/report/grade.js";
 import { localPanels } from "../../src/report/local.js";
-import { gradeOf, scorecardDigest } from "../../src/report/scorecard.js";
+import { scorecardDigest } from "../../src/report/scorecard.js";
 
 const DIR_NAME = "ai-coding";
 

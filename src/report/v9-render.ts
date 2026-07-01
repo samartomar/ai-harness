@@ -20,6 +20,7 @@ import type {
   V9Mcp,
   V9Period,
   V9Quality,
+  V9Ready,
   V9Skills,
   V9Support,
   V9Wins,
@@ -129,6 +130,64 @@ export function renderHero(h: V9Hero): string {
   const worstSvg =
     '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--warn)"><path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>';
   return `<span class="hero-eyebrow">Harness wiring · developer console</span><h2 class="hero-headline">${headline}</h2><p class="hero-sub">${sub}</p><div class="hero-score-row"><span class="hero-score-big">${h.wiringScore}<span class="of">/100</span></span><span class="hero-score-tier">${escHtml(h.scoreLabel)}</span></div><div class="deltarow">${deltas}</div>${usage}<div class="worst">${worstSvg}<span>Weakest axis: <b>${escHtml(h.worstAxis.name)} ${h.worstAxis.value}</b> — closing it moves the score most.</span></div><p class="hero-sub" style="font-size:.74rem;color:var(--dim);margin-top:.3rem">Score = harness <b>wiring present + in sync</b>, not rule quality.</p>`;
+}
+
+// ── ◆ Developer readiness ──────────────────────────────────────────────────────
+
+const ICON_READY =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6 9 17l-5-5"/></svg>';
+const ICON_NOT_READY =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6M9 9l6 6"/></svg>';
+const ICON_GAPS =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg>';
+
+/** Banner state → its status-card visual class + glyph (reuses the drift-status look). */
+function readyStyle(banner: V9Ready["banner"]): { cls: "ok" | "warn" | "bad"; icon: string } {
+  if (banner === "READY") return { cls: "ok", icon: ICON_READY };
+  if (banner === "NOT READY") return { cls: "bad", icon: ICON_NOT_READY };
+  return { cls: "warn", icon: ICON_GAPS };
+}
+
+/**
+ * The developer-readiness verdict (`.grid`): a banner + score/grade card, and the
+ * blocker subset. It cross-links to the action board rather than duplicating the full
+ * list — the single "can I start?" gate the maturity hero + action board don't state
+ * as one verdict.
+ */
+export function renderReady(r: V9Ready): string {
+  const { cls, icon } = readyStyle(r.banner);
+  const softVar = `var(--${cls}-soft)`;
+  const strongVar = `var(--${cls})`;
+  const sub =
+    r.banner === "READY"
+      ? "an agent can make a correct first change here"
+      : r.banner === "NOT READY"
+        ? "a blocker below stops an agent from working"
+        : "an agent can work, but with gaps in the gears";
+  // Banner + score/grade — the "can I start?" answer, in the loved drift-status shell.
+  const badge = `<span class="badge ${cls}">${r.score}/100 · ${escHtml(r.grade)}</span>`;
+  const statusBox = `<div class="drift-status" style="background:${softVar};border-color:color-mix(in oklab,${strongVar} 22%,transparent)"><div class="dicon" style="background:${strongVar}">${icon}</div><div class="dtext"><b style="color:${strongVar}">${escHtml(r.banner)}</b><span>${sub}</span></div></div>`;
+  const scoreRow = `<div class="donut-meta" style="margin-top:.6rem"><div class="row"><span class="k">Readiness score</span><span class="v">${r.score}/100 (${escHtml(r.grade)})</span></div><div class="row"><span class="k">Blockers</span><span class="v" style="color:${r.blockers.length > 0 ? "var(--bad)" : "var(--ok)"}">${r.blockers.length === 0 ? "none" : `${r.blockers.length} — must fix`}</span></div></div>`;
+  const verdict = `<div class="card span-5"><div class="card-head"><h3>Can I start?</h3>${badge}</div><div class="card-body">${statusBox}${scoreRow}<div class="method" style="margin-top:.6rem">Same gate as <code>aih ready</code> — machine · repo-contract · harness-wiring, over aih's read-only probes.</div></div></div>`;
+  // Blocker subset — the drift-file row look; cross-link to the action board for the rest.
+  let blockersBody: string;
+  if (r.blockers.length === 0) {
+    blockersBody = `<div class="drift-status"><div class="dicon">${ICON_READY}</div><div class="dtext"><b>No blockers</b><span>nothing stops an agent from working here</span></div></div>`;
+  } else {
+    const rows = r.blockers
+      .map(
+        (b) =>
+          `<div class="drift-file"><span class="fd" style="background:var(--bad)"></span><span class="fn">${escHtml(b.title)}</span><span class="fs"><code style="${CODE_STYLE}">${escHtml(b.cmd)}</code></span><span class="ft bad">blocker</span></div>`,
+      )
+      .join("");
+    blockersBody = `<div class="drift-files">${rows}</div><div class="method" style="margin-top:.6rem">${r.blockers.length} blocker${r.blockers.length === 1 ? "" : "s"} above; see <b>What to fix first</b> for the full ranked list.</div>`;
+  }
+  const blockerBadge =
+    r.blockers.length > 0
+      ? `<span class="badge bad">${r.blockers.length} blocker${r.blockers.length === 1 ? "" : "s"}</span>`
+      : '<span class="badge ok">clear</span>';
+  const blockers = `<div class="card span-7"><div class="card-head"><h3>Blockers · must fix before an agent can work</h3>${blockerBadge}</div><div class="card-body">${blockersBody}</div></div>`;
+  return verdict + blockers;
 }
 
 // ── ★ Actions ────────────────────────────────────────────────────────────────
