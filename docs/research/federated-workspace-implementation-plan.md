@@ -724,5 +724,3 @@ The workspace lane is complete when:
 ai-harness workspace does not turn separate repos into a monorepo.
 It gives agents a safe map across repo boundaries while each repo keeps its own canon and evidence.
 ```
-
-This is the differentiator: a governed federated control plane for disconnected AI-coded repos.
