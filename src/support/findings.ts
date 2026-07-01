@@ -432,6 +432,27 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     action:
       "Reject the external source until the dependency name is corrected or the package is independently reviewed and pinned.",
   },
+  "trust.unpinned-dependency": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "external source declares an unpinned dependency",
+    action:
+      "Reject the external source until direct dependencies are pinned to exact versions and a package lockfile is committed.",
+  },
+  "trust.untrusted-publisher": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "external source publisher is not approved",
+    action:
+      "Use an approved external source, or add the reviewed owner/repository to the org-policy approved source list before promotion.",
+  },
+  "trust.unsigned-source": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "external source is not pinned to a reviewed commit",
+    action:
+      "Re-run the trust scan or workspace acquisition with `--pin <40-character SHA>` for the reviewed commit.",
+  },
 };
 
 /** Severity rank for sorting: most urgent first. */

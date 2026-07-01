@@ -1,11 +1,17 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { basename, relative } from "node:path";
+import type { Posture } from "../config/posture.js";
 import type { PlanContext } from "../internals/plan.js";
 import type { Check, CheckCode } from "../internals/verify.js";
+import { readOrgPolicy } from "../org-policy/schema.js";
+import { gradeTrustCheck } from "./grade.js";
 import { collectFilesUnder } from "./scan.js";
 
-type DependencyNameCode = Extract<CheckCode, "trust.dependency-confusion" | "trust.typosquat">;
+type DependencyCheckCode = Extract<
+  CheckCode,
+  "trust.dependency-confusion" | "trust.typosquat" | "trust.unpinned-dependency"
+>;
 
 export const POPULAR_PACKAGES: readonly string[] = [
   "@types/node",
@@ -36,6 +42,24 @@ const DIRECT_DEP_BLOCKS = [
   "optionalDependencies",
   "peerDependencies",
 ] as const;
+const LOCKFILE_NAMES = new Set([
+  "package-lock.json",
+  "npm-shrinkwrap.json",
+  "pnpm-lock.yaml",
+  "yarn.lock",
+]);
+const EXACT_VERSION = /^=?v?\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
+
+interface DirectDependencySpec {
+  blockName: (typeof DIRECT_DEP_BLOCKS)[number];
+  name: string;
+  spec: string;
+}
+
+interface PackageScanResult {
+  checks: Check[];
+  declaresDependencies: boolean;
+}
 
 function toPosix(path: string): string {
   return path.replace(/\\/g, "/");
@@ -46,7 +70,7 @@ function contentHash(value: string): string {
 }
 
 function fingerprint(
-  code: DependencyNameCode,
+  code: DependencyCheckCode,
   path: string,
   line: number,
   content: string,
@@ -69,7 +93,7 @@ function lineForDependency(source: string, name: string): number {
 }
 
 function dependencyCheck(
-  code: DependencyNameCode,
+  code: DependencyCheckCode,
   path: string,
   line: number,
   lineTextValue: string,
@@ -81,7 +105,7 @@ function dependencyCheck(
     detail: `${path}:${line} — ${detail}`,
     code,
     location: { uri: path, startLine: line },
-    fingerprint: fingerprint(code, path, line, lineTextValue),
+    fingerprint: fingerprint(code, path, line, `${lineTextValue}:${detail}`),
   };
 }
 
@@ -93,13 +117,31 @@ function collectPackageJson(root: string): string[] {
   return collectFilesUnder(root, (abs) => basename(abs) === "package.json");
 }
 
-function directDependencyNames(pkg: Record<string, unknown>): string[] {
-  const names = new Set<string>();
+function hasLockfile(root: string): boolean {
+  return collectFilesUnder(root, (abs) => LOCKFILE_NAMES.has(basename(abs))).length > 0;
+}
+
+function directDependencySpecs(pkg: Record<string, unknown>): DirectDependencySpec[] {
+  const specs: DirectDependencySpec[] = [];
   for (const blockName of DIRECT_DEP_BLOCKS) {
     const block = pkg[blockName];
     if (!isRecord(block)) continue;
-    for (const name of Object.keys(block)) names.add(name);
+    for (const [name, rawSpec] of Object.entries(block)) {
+      specs.push({
+        blockName,
+        name,
+        spec: typeof rawSpec === "string" ? rawSpec : "",
+      });
+    }
   }
+  return specs.sort(
+    (a, b) => a.name.localeCompare(b.name) || a.blockName.localeCompare(b.blockName),
+  );
+}
+
+function directDependencyNames(pkg: Record<string, unknown>): string[] {
+  const names = new Set<string>();
+  for (const spec of directDependencySpecs(pkg)) names.add(spec.name);
   return [...names].sort((a, b) => a.localeCompare(b));
 }
 
@@ -110,12 +152,20 @@ function normalizeScope(scope: string): string | undefined {
   return prefixed.toLowerCase();
 }
 
-export function resolveInternalScopes(ctx: Pick<PlanContext, "env">): string[] {
-  const raw = ctx.env.AIH_TRUST_INTERNAL_SCOPES ?? "";
-  const scopes = new Set<string>();
-  for (const part of raw.split(",")) {
-    const normalized = normalizeScope(part);
+function addScopes(scopes: Set<string>, values: readonly string[]): void {
+  for (const value of values) {
+    const normalized = normalizeScope(value);
     if (normalized !== undefined) scopes.add(normalized);
+  }
+}
+
+export function resolveInternalScopes(
+  ctx: Pick<PlanContext, "env"> & Partial<Pick<PlanContext, "root">>,
+): string[] {
+  const scopes = new Set<string>();
+  addScopes(scopes, (ctx.env.AIH_TRUST_INTERNAL_SCOPES ?? "").split(","));
+  if (ctx.root !== undefined) {
+    addScopes(scopes, readOrgPolicy(ctx.root, ctx.env)?.trust?.internalScopes ?? []);
   }
   return [...scopes].sort((a, b) => a.localeCompare(b));
 }
@@ -186,20 +236,80 @@ function popularTypoTarget(name: string): string | undefined {
   });
 }
 
+function hasFullShaFragment(spec: string): boolean {
+  return /#[0-9a-f]{40}$/i.test(spec.trim());
+}
+
+function isGitOrUrlDependency(spec: string): boolean {
+  const trimmed = spec.trim();
+  const lower = trimmed.toLowerCase();
+  return (
+    /^(?:git\+)?(?:https?|ssh):\/\//.test(lower) ||
+    lower.startsWith("git@") ||
+    lower.startsWith("github:") ||
+    lower.startsWith("gitlab:") ||
+    lower.startsWith("bitbucket:") ||
+    lower.startsWith("file:") ||
+    lower.startsWith("link:") ||
+    /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+(?:#.+)?$/.test(trimmed)
+  );
+}
+
+function isExactVersionSpec(spec: string): boolean {
+  const trimmed = spec.trim();
+  const npmAlias = /^npm:.+@(.+)$/.exec(trimmed);
+  return EXACT_VERSION.test(npmAlias?.[1] ?? trimmed);
+}
+
+function unpinnedDependencyReason(name: string, spec: string): string | undefined {
+  const trimmed = spec.trim();
+  if (trimmed.length === 0) return `direct dependency ${name} has an empty version spec`;
+  if (isGitOrUrlDependency(trimmed)) {
+    return hasFullShaFragment(trimmed)
+      ? undefined
+      : `direct dependency ${name} uses a git/url dependency without a 40-character SHA pin`;
+  }
+  if (isExactVersionSpec(trimmed)) return undefined;
+  return `direct dependency ${name} uses unpinned version spec ${JSON.stringify(spec)}`;
+}
+
+function unpinnedDependencyCheck(
+  rel: string,
+  line: number,
+  lineTextValue: string,
+  detail: string,
+  posture: Posture,
+): Check {
+  return gradeTrustCheck(
+    dependencyCheck("trust.unpinned-dependency", rel, line, lineTextValue, detail),
+    posture,
+  );
+}
+
 function scanPackageJson(
   rel: string,
   source: string,
   internalScopes: ReadonlySet<string>,
-): Check[] {
+  posture: Posture,
+): PackageScanResult {
   let parsed: unknown;
   try {
     parsed = JSON.parse(source);
   } catch {
-    return [];
+    return { checks: [], declaresDependencies: false };
   }
-  if (!isRecord(parsed)) return [];
+  if (!isRecord(parsed)) return { checks: [], declaresDependencies: false };
 
   const checks: Check[] = [];
+  const dependencySpecs = directDependencySpecs(parsed);
+  for (const dependency of dependencySpecs) {
+    const reason = unpinnedDependencyReason(dependency.name, dependency.spec);
+    if (reason === undefined) continue;
+    const line = lineForDependency(source, dependency.name);
+    const text = lineText(source, line);
+    checks.push(unpinnedDependencyCheck(rel, line, text, reason, posture));
+  }
+
   for (const name of directDependencyNames(parsed)) {
     const line = lineForDependency(source, name);
     const text = lineText(source, line);
@@ -230,17 +340,46 @@ function scanPackageJson(
       );
     }
   }
-  return checks;
+  return { checks, declaresDependencies: dependencySpecs.length > 0 };
 }
 
-export function scanTrustDependencyNames(root: string, internalScopes: readonly string[]): Check[] {
+function missingLockfileCheck(rel: string, source: string, posture: Posture): Check {
+  return unpinnedDependencyCheck(
+    rel,
+    1,
+    lineText(source, 1),
+    "package.json declares direct dependencies but no lockfile was found anywhere in the trust source",
+    posture,
+  );
+}
+
+export function scanTrustDependencyNames(
+  root: string,
+  internalScopes: readonly string[],
+  posture: Posture = "vibe",
+): Check[] {
   const scopes = new Set(
     internalScopes.map((scope) => normalizeScope(scope)).filter((scope) => scope !== undefined),
   );
   const checks: Check[] = [];
+  let firstPackageWithDependencies: { rel: string; source: string } | undefined;
   for (const abs of collectPackageJson(root)) {
     const rel = toPosix(relative(root, abs));
-    checks.push(...scanPackageJson(rel, readFileSync(abs, "utf8"), scopes));
+    const source = readFileSync(abs, "utf8");
+    const result = scanPackageJson(rel, source, scopes, posture);
+    checks.push(...result.checks);
+    if (result.declaresDependencies && firstPackageWithDependencies === undefined) {
+      firstPackageWithDependencies = { rel, source };
+    }
+  }
+  if (firstPackageWithDependencies !== undefined && !hasLockfile(root)) {
+    checks.push(
+      missingLockfileCheck(
+        firstPackageWithDependencies.rel,
+        firstPackageWithDependencies.source,
+        posture,
+      ),
+    );
   }
   return checks;
 }

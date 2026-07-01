@@ -64,8 +64,46 @@ describe("OrgPolicySchema", () => {
     });
   });
 
+  it("parses the optional trust policy block with defaults", () => {
+    expect(
+      parseOrgPolicy(
+        policy({
+          trust: {
+            approvedSources: [
+              {
+                owner: "owner",
+                repo: "repo",
+                pinnedSha: "a".repeat(40),
+                hostPattern: "github.com",
+              },
+            ],
+            requiredDetectors: ["skillspector", "semgrep"],
+          },
+        }),
+      ).trust,
+    ).toEqual({
+      approvedSources: [
+        {
+          owner: "owner",
+          repo: "repo",
+          pinnedSha: "a".repeat(40),
+          hostPattern: "github.com",
+        },
+      ],
+      requireSignedSource: false,
+      requiredDetectors: ["skillspector", "semgrep"],
+      internalScopes: [],
+    });
+  });
+
   it("rejects redefinitions; command policy changes must be deltas", () => {
     expect(() => parseOrgPolicy(policy({ command: { deny: ["kubectl delete*"] } }))).toThrow(
+      /org-policy/,
+    );
+  });
+
+  it("rejects unknown trust policy fields", () => {
+    expect(() => parseOrgPolicy(policy({ trust: { approveEverything: true } }))).toThrow(
       /org-policy/,
     );
   });

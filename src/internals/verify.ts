@@ -64,7 +64,10 @@ export type CheckCode =
   | "trust.source-changed"
   | "trust.auto-exec-hook"
   | "trust.dependency-confusion"
-  | "trust.typosquat";
+  | "trust.typosquat"
+  | "trust.unpinned-dependency"
+  | "trust.untrusted-publisher"
+  | "trust.unsigned-source";
 
 export interface Check {
   name: string;

@@ -30,6 +30,18 @@ function write(rel: string, body: string): void {
   writeFileSync(path, body, "utf8");
 }
 
+function orgPolicy(trust: Record<string, unknown>): void {
+  write(
+    "aih-org-policy.json",
+    JSON.stringify({
+      schemaVersion: 1,
+      minimumPosture: "vibe",
+      references: { repoContract: "ai-coding/project.json" },
+      trust,
+    }),
+  );
+}
+
 function ctx(
   options: Record<string, unknown> = {},
   env: NodeJS.ProcessEnv = {},
@@ -522,5 +534,109 @@ describe("trustScanCommand", () => {
         ]),
       );
     }
+  });
+
+  it("grades an off-list GitHub publisher through org-policy approvedSources", async () => {
+    orgPolicy({
+      approvedSources: [{ owner: "trusted", repo: "source", hostPattern: "github.com" }],
+    });
+
+    const vibe = await executePlan(
+      await trustScanCommand.plan(ctx({ target: "owner/repo" }, {}, "vibe")),
+      ctx({ target: "owner/repo" }, {}, "vibe"),
+    );
+    expect(vibe.report?.ok).toBe(true);
+    expect(vibe.report?.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "trust.untrusted-publisher",
+          verdict: "pass",
+          detail: expect.stringContaining("warning-only (vibe posture)"),
+        }),
+      ]),
+    );
+
+    const enterprise = await executePlan(
+      await trustScanCommand.plan(ctx({ target: "owner/repo" }, {}, "enterprise")),
+      ctx({ target: "owner/repo" }, {}, "enterprise"),
+    );
+    expect(enterprise.report?.exitCode()).toBe(1);
+    expect(enterprise.report?.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          verdict: "fail",
+          code: "trust.untrusted-publisher",
+          detail: expect.stringContaining("owner/repo"),
+        }),
+      ]),
+    );
+  });
+
+  it("does not flag an approved GitHub publisher, open policy, or local source", async () => {
+    orgPolicy({
+      approvedSources: [{ owner: "owner", repo: "repo", hostPattern: "github.com" }],
+    });
+    const approved = await executePlan(
+      await trustScanCommand.plan(ctx({ target: "owner/repo" }, {}, "enterprise")),
+      ctx({ target: "owner/repo" }, {}, "enterprise"),
+    );
+    expect(
+      approved.report?.checks.some((check) => check.name === "trust.untrusted-publisher"),
+    ).toBe(false);
+
+    orgPolicy({});
+    const open = await executePlan(
+      await trustScanCommand.plan(ctx({ target: "owner/repo" }, {}, "enterprise")),
+      ctx({ target: "owner/repo" }, {}, "enterprise"),
+    );
+    expect(open.report?.checks.some((check) => check.name === "trust.untrusted-publisher")).toBe(
+      false,
+    );
+
+    orgPolicy({ approvedSources: [] });
+    skill("skills/clean", "# Clean\n");
+    const local = await executePlan(
+      await trustScanCommand.plan(ctx({ target: dir }, {}, "enterprise")),
+      ctx({ target: dir }, {}, "enterprise"),
+    );
+    expect(local.report?.checks.some((check) => check.name === "trust.untrusted-publisher")).toBe(
+      false,
+    );
+  });
+
+  it("requires an explicit GitHub pin when org-policy requires signed source", async () => {
+    orgPolicy({ requireSignedSource: true });
+
+    const unsigned = await executePlan(
+      await trustScanCommand.plan(ctx({ target: "owner/repo" }, {}, "enterprise")),
+      ctx({ target: "owner/repo" }, {}, "enterprise"),
+    );
+    expect(unsigned.report?.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          verdict: "fail",
+          code: "trust.unsigned-source",
+          detail: expect.stringContaining("--pin"),
+        }),
+      ]),
+    );
+
+    const pinnedOptions = { target: "owner/repo", pin: "a".repeat(40) };
+    const pinned = await executePlan(
+      await trustScanCommand.plan(ctx(pinnedOptions, {}, "enterprise")),
+      ctx(pinnedOptions, {}, "enterprise"),
+    );
+    expect(pinned.report?.checks.some((check) => check.name === "trust.unsigned-source")).toBe(
+      false,
+    );
+
+    orgPolicy({ requireSignedSource: false });
+    const notRequired = await executePlan(
+      await trustScanCommand.plan(ctx({ target: "owner/repo" }, {}, "enterprise")),
+      ctx({ target: "owner/repo" }, {}, "enterprise"),
+    );
+    expect(notRequired.report?.checks.some((check) => check.name === "trust.unsigned-source")).toBe(
+      false,
+    );
   });
 });

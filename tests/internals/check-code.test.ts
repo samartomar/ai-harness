@@ -440,6 +440,9 @@ describe("Check.code — invariants", () => {
       "trust.auto-exec-hook": true,
       "trust.dependency-confusion": true,
       "trust.typosquat": true,
+      "trust.unpinned-dependency": true,
+      "trust.untrusted-publisher": true,
+      "trust.unsigned-source": true,
     };
     const srcDir = join(process.cwd(), "src");
     const src = (readdirSync(srcDir, { recursive: true }) as string[])
