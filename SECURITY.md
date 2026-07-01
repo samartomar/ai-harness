@@ -13,7 +13,11 @@ fix. We aim to acknowledge within a few days.
 
 ## Supported versions
 
-Early-stage project: only the latest `main` is supported; fixes land on `main`.
+Which versions receive security fixes is set by the [versioning policy](VERSIONING.md).
+While the project is pre-1.0, **only the latest minor release** is supported — upgrade to
+the newest `0.x` to receive fixes. At 1.0, security backports extend to the previous minor
+(N-1). Fixes ship as a patch on the supported line(s), documented in the
+[CHANGELOG](CHANGELOG.md) under **Security**.
 
 ## Design — safe by default
 

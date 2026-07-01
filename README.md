@@ -268,6 +268,22 @@ aih usage --apply --cli claude,codex,gemini
 aih usage --rollup ../repo-a,../repo-b
 ```
 
+## Releases & roadmap
+
+- **Roadmap** — [ROADMAP.md](ROADMAP.md), tracked as
+  [GitHub Milestones](https://github.com/samartomar/ai-harness/milestones).
+- **Changelog** — [CHANGELOG.md](CHANGELOG.md); tagged builds on
+  [Releases](https://github.com/samartomar/ai-harness/releases).
+- **Versioning & support** — [VERSIONING.md](VERSIONING.md). SemVer; while pre-1.0 only the
+  latest minor receives fixes.
+- **Supply chain** — every release publishes via npm **Trusted Publishing** with build
+  **provenance** and ships an **SPDX SBOM** + **SHA256 checksum** on the GitHub Release.
+  Verify an install with `npm audit signatures`. The first npm publish is tracked in
+  [#37](https://github.com/samartomar/ai-harness/issues/37); until then, install from source
+  (above).
+- **Support** — [SUPPORT.md](SUPPORT.md) · **Security** — [SECURITY.md](SECURITY.md)
+  (private reporting) · **Contributing** — [CONTRIBUTING.md](CONTRIBUTING.md).
+
 ## Development
 
 ```bash
