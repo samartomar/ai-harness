@@ -4,15 +4,23 @@ import { basename, extname, isAbsolute, join, relative, resolve } from "node:pat
 import { type Posture, postureFromContext } from "../config/posture.js";
 import { AihError } from "../errors.js";
 import type { Action, CommandSpec, PlanContext, ProbeAction } from "../internals/plan.js";
-import { plan, probe, probeMany } from "../internals/plan.js";
+import { digest, plan, probe, probeMany } from "../internals/plan.js";
+import type { Runner } from "../internals/proc.js";
 import type { Check } from "../internals/verify.js";
 import { evaluateMcpPolicy } from "../mcp/policy.js";
 import type { McpServer } from "../mcp/servers.js";
 import { type OrgPolicy, OrgPolicyError, readOrgPolicy } from "../org-policy/schema.js";
+import type { Platform } from "../platform/base.js";
 import { mcpConfigSecretCheck, plaintextSecretCheck } from "../secrets/probes.js";
 import { MCP_CONFIG_FILES, scanConfigSecrets, scanSecrets } from "../secrets/scan.js";
 import { applyTrustAcknowledgements } from "./acknowledge.js";
 import { resolveInternalScopes, scanTrustDependencyNames } from "./depnames.js";
+import {
+  runTrustDetectors,
+  scanNativeMaliciousCode,
+  type TrustDetectorName,
+  trustRuntimeAdvisory,
+} from "./detectors.js";
 import {
   assertTrustTreeSafe,
   readTrustFetchMetadata,
@@ -43,8 +51,17 @@ const MCP_POLICY_RULE = "incoming MCP policy";
 const MCP_POLICY_DENIED = "mcp.policy-denied";
 
 interface ScanTrustTreeOptions {
+  env?: NodeJS.ProcessEnv;
   internalScopes?: readonly string[];
+  platform?: Platform;
   posture?: Posture;
+  requiredDetectors?: readonly TrustDetectorName[];
+  run?: Runner;
+}
+
+export interface TrustScanResult {
+  checks: Check[];
+  analyzersRun: string[];
 }
 
 interface IncomingMcpServerMap {
@@ -90,12 +107,20 @@ function collectTrustDocs(root: string): string[] {
 }
 
 function normalizeScanOptions(options: ScanTrustTreeOptions = {}): {
+  env?: NodeJS.ProcessEnv;
   internalScopes: readonly string[];
+  platform?: Platform;
   posture: Posture;
+  requiredDetectors: readonly TrustDetectorName[];
+  run?: Runner;
 } {
   return {
+    env: options.env,
     internalScopes: options.internalScopes ?? [],
+    platform: options.platform,
     posture: options.posture ?? "vibe",
+    requiredDetectors: options.requiredDetectors ?? [],
+    run: options.run,
   };
 }
 
@@ -413,8 +438,16 @@ export async function scanTrustTree(
   root: string,
   options: ScanTrustTreeOptions = {},
 ): Promise<Check[]> {
+  return (await scanTrustTreeWithAnalyzers(root, options)).checks;
+}
+
+export async function scanTrustTreeWithAnalyzers(
+  root: string,
+  options: ScanTrustTreeOptions = {},
+): Promise<TrustScanResult> {
   const safeRoot = assertTrustTreeSafe(root, { skipDirs: TRUST_SKIP_DIRS });
-  const { internalScopes, posture } = normalizeScanOptions(options);
+  const { env, internalScopes, platform, posture, requiredDetectors, run } =
+    normalizeScanOptions(options);
   const docs = collectTrustDocs(safeRoot);
   const mcpConfigFiles = collectIncomingMcpConfigFiles(safeRoot);
   const checks = [
@@ -426,8 +459,23 @@ export async function scanTrustTree(
     ...plaintextSecretChecks(safeRoot, posture),
     ...mcpConfigSecretChecks(safeRoot, mcpConfigFiles, posture),
     ...incomingMcpChecks(safeRoot, mcpConfigFiles, posture),
+    ...scanNativeMaliciousCode(safeRoot),
   ];
-  return checks.length > 0 ? checks : [passCheck(safeRoot, docs.length)];
+  const detectorResult =
+    run !== undefined && platform !== undefined && env !== undefined
+      ? await runTrustDetectors(safeRoot, {
+          env,
+          platform,
+          posture,
+          requiredDetectors,
+          run,
+        })
+      : { checks: [], analyzersRun: [] };
+  const allChecks = [...checks, ...detectorResult.checks];
+  return {
+    analyzersRun: ["aih-native", ...detectorResult.analyzersRun],
+    checks: allChecks.length > 0 ? allChecks : [passCheck(safeRoot, docs.length)],
+  };
 }
 
 function acknowledgeChecks(checks: readonly Check[], ctx: PlanContext): Check[] {
@@ -438,14 +486,66 @@ function probesForStaticChecks(checks: Check[]): ProbeAction[] {
   return checks.map((check) => probe(check.detail ?? check.name, () => check));
 }
 
+function orgPolicyTrustChecks(error: unknown): Check[] {
+  if (error instanceof OrgPolicyError) return [orgPolicyDriftCheck(error)];
+  throw error;
+}
+
+function requiredDetectorsFromPolicy(ctx: PlanContext): {
+  requiredDetectors: readonly TrustDetectorName[];
+  checks: Check[];
+} {
+  try {
+    return {
+      requiredDetectors: readOrgPolicy(ctx.root, ctx.env)?.trust?.requiredDetectors ?? [],
+      checks: [],
+    };
+  } catch (error) {
+    return { requiredDetectors: [], checks: orgPolicyTrustChecks(error) };
+  }
+}
+
+export function scanOptionsFromContext(
+  ctx: PlanContext,
+  base: ScanTrustTreeOptions = {},
+): ScanTrustTreeOptions {
+  const policy = requiredDetectorsFromPolicy(ctx);
+  return {
+    ...base,
+    env: ctx.env,
+    platform: ctx.host.platform,
+    posture: base.posture ?? postureFromContext(ctx),
+    requiredDetectors: policy.requiredDetectors,
+    run: ctx.run,
+  };
+}
+
+export function analyzersRunFromChecks(checks: readonly Check[]): string[] {
+  const analyzers = new Set<string>(["aih-native"]);
+  if (
+    checks.some(
+      (check) =>
+        check.name === "trust detector skillspector" &&
+        check.verdict === "pass" &&
+        (check.detail ?? "").includes("SkillSpector Docker static scan completed"),
+    )
+  ) {
+    analyzers.add("skillspector@docker");
+  }
+  return [...analyzers];
+}
+
 export async function trustScanProbes(
   source: TrustSource,
   options: ScanTrustTreeOptions = {},
   ctx?: PlanContext,
 ): Promise<ProbeAction[]> {
   if (source.kind === "local") {
-    const checks = await scanTrustTree(source.root, options);
-    return probesForStaticChecks(ctx ? acknowledgeChecks(checks, ctx) : checks);
+    const scan = await scanTrustTreeWithAnalyzers(
+      source.root,
+      ctx ? scanOptionsFromContext(ctx, options) : options,
+    );
+    return probesForStaticChecks(ctx ? acknowledgeChecks(scan.checks, ctx) : scan.checks);
   }
   return [
     probeMany(`trust scan ${source.display}`, async (probeCtx) => {
@@ -460,7 +560,11 @@ export async function trustScanProbes(
           },
         ];
       }
-      return acknowledgeChecks(await scanTrustTree(source.treePath, options), probeCtx);
+      const scan = await scanTrustTreeWithAnalyzers(
+        source.treePath,
+        scanOptionsFromContext(probeCtx, options),
+      );
+      return acknowledgeChecks(scan.checks, probeCtx);
     }),
   ];
 }
@@ -470,22 +574,36 @@ export async function trustScanPlanForSource(
   source: TrustSource,
 ): Promise<ReturnType<typeof plan>> {
   const actions: Action[] = [];
+  const policy = requiredDetectorsFromPolicy(ctx);
+  const scanOptions = {
+    internalScopes: resolveInternalScopes(ctx),
+    posture: postureFromContext(ctx),
+    requiredDetectors: policy.requiredDetectors,
+  } satisfies ScanTrustTreeOptions;
   if (source.kind === "github") actions.push(trustFetchExec(source, ctx));
   actions.push(
     probeMany("trust source origin", (probeCtx) =>
-      acknowledgeChecks(trustSourceOriginChecks(probeCtx, source), probeCtx),
+      acknowledgeChecks(
+        policy.checks.length > 0 ? policy.checks : trustSourceOriginChecks(probeCtx, source),
+        probeCtx,
+      ),
     ),
   );
-  actions.push(
-    ...(await trustScanProbes(
-      source,
-      {
-        internalScopes: resolveInternalScopes(ctx),
-        posture: postureFromContext(ctx),
-      },
-      ctx,
-    )),
-  );
+  if (source.kind === "local") {
+    const scan = await scanTrustTreeWithAnalyzers(
+      source.root,
+      scanOptionsFromContext(ctx, scanOptions),
+    );
+    actions.push(
+      ...probesForStaticChecks(acknowledgeChecks(scan.checks, ctx)),
+      digest("trust runtime advisory", trustRuntimeAdvisory(scan.analyzersRun)),
+    );
+  } else {
+    actions.push(
+      ...(await trustScanProbes(source, scanOptions, ctx)),
+      digest("trust runtime advisory", trustRuntimeAdvisory(["aih-native"])),
+    );
+  }
   return plan("trust scan", ...actions);
 }
 

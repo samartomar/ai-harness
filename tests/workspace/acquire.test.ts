@@ -13,7 +13,7 @@ import type { Command } from "commander";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { executePlan } from "../../src/internals/execute.js";
 import type { PlanContext } from "../../src/internals/plan.js";
-import { fakeRunner } from "../../src/internals/proc.js";
+import { fakeRunner, type Runner } from "../../src/internals/proc.js";
 import { VerificationReport } from "../../src/internals/verify.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 import { resolveTrustSource } from "../../src/trust/fetch.js";
@@ -43,8 +43,8 @@ function ctx(
   verify = true,
   env: NodeJS.ProcessEnv = {},
   options: Record<string, unknown> = {},
+  run: Runner = fakeRunner(() => undefined),
 ): PlanContext {
-  const run = fakeRunner(() => undefined);
   return {
     root: workspace,
     contextDir: "ai-coding",
@@ -180,6 +180,31 @@ describe("workspace add acquisition plans", () => {
       promotedSkills: ["clean"],
       analyzersRun: ["aih-native"],
     });
+  });
+
+  it("phase 2 records optional analyzers that actually ran", async () => {
+    localSkill(sourceRoot, "clean", "# Clean\n");
+    const run = fakeRunner((argv) => {
+      if (argv[0] !== "docker") return undefined;
+      if (argv[1] === "--version") return { code: 0, stdout: "Docker version 27\n" };
+      if (argv[1] === "image" && argv[2] === "inspect") {
+        return { code: 0, stdout: "sha256:skillspector\n" };
+      }
+      if (argv[1] === "run") return { code: 0, stdout: JSON.stringify({ runs: [] }) };
+      return undefined;
+    });
+    const c = ctx(sourceRoot, true, true, {}, {}, run);
+    const phase1 = await executePlan(await workspaceAddPhase1Plan(c), c);
+    expect(phase1.report?.ok).toBe(true);
+
+    const gate = await captureClearedWorkspaceAddTrustGate(c, phase1.report);
+    const phase2 = await executePlan(await workspaceAddPhase2Plan(c, gate), c);
+
+    expect(phase2.report?.ok).toBe(true);
+    const lock = JSON.parse(readFileSync(join(workspace, ".aih", "trust-lock.json"), "utf8")) as {
+      sources: Array<{ analyzersRun: string[] }>;
+    };
+    expect(lock.sources[0]?.analyzersRun).toEqual(["aih-native", "skillspector@docker"]);
   });
 
   it("phase 2 supports a root-level skill and preserves existing lock entries", async () => {

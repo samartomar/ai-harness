@@ -40,7 +40,13 @@ import {
   type TrustSource,
 } from "../trust/fetch.js";
 import { readTrustLock, type TrustLock, type TrustLockSource } from "../trust/lock.js";
-import { scanTrustTree, trustScanPlanForSource, trustSourceOriginChecks } from "../trust/scan.js";
+import {
+  analyzersRunFromChecks,
+  scanOptionsFromContext,
+  scanTrustTree,
+  trustScanPlanForSource,
+  trustSourceOriginChecks,
+} from "../trust/scan.js";
 
 interface WorkspaceAddDeps {
   run?: Runner;
@@ -263,7 +269,7 @@ function lockWithSource(
     pinnedSha: meta?.pinnedSha,
     promotedAt: new Date().toISOString(),
     promotedSkills: promotion.promotedSkills,
-    analyzersRun: ["aih-native"],
+    analyzersRun: analyzersRunFromChecks(report.checks),
     artifactHashes: promotion.artifactHashes,
     findings: report.checks.map((check) => ({
       name: check.name,
@@ -332,6 +338,7 @@ async function currentTrustChecks(
   const checks = [
     ...trustSourceOriginChecks(ctx, source),
     ...(await scanTrustTree(sourceRootFor(source), {
+      ...scanOptionsFromContext(ctx),
       internalScopes,
       posture: postureFromContext(ctx),
     })),

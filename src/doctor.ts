@@ -6,13 +6,21 @@ import { contractTruthCheck } from "./contract/check.js";
 import { detectInstall } from "./internals/cli-detect.js";
 import { readIfExists } from "./internals/fsxn.js";
 import { gitRead } from "./internals/git.js";
-import { type Action, type CommandSpec, type PlanContext, plan, probe } from "./internals/plan.js";
+import {
+  type Action,
+  type CommandSpec,
+  type PlanContext,
+  plan,
+  probe,
+  probeMany,
+} from "./internals/plan.js";
 import { canonLintCheck } from "./lint/run.js";
 import { mcpManagedAllowlistCheck } from "./mcp/allowlist.js";
 import { orgPolicyDriftProbes } from "./org-policy/drift.js";
 import { resolveTargetSet } from "./report/cli-coverage.js";
 import { loadabilityFor, loadReason } from "./report/cli-loadability.js";
 import { scaleSafetyCheck } from "./scale-safety.js";
+import { trustLockLocalDriftChecks } from "./trust/commands.js";
 import { vdiCompatibilityCheck } from "./vdi/index.js";
 import { workspaceGitignoreMissing } from "./workspace/git.js";
 import { readWorkspaceManifest } from "./workspace/manifest.js";
@@ -204,6 +212,7 @@ export const command: CommandSpec = {
       probe("large-repo graph safety", () => scaleSafetyCheck(ctx)),
       probe("VDI compatibility matrix", () => vdiCompatibilityCheck(ctx)),
       probe("MCP managed allowlist", () => mcpManagedAllowlistCheck(ctx)),
+      probeMany("trust-lock local drift", (probeCtx) => trustLockLocalDriftChecks(probeCtx)),
       ...orgPolicyDriftProbes({ ...ctx, contextDir }),
       probe("contract truth", () => contractTruthCheck(ctx)),
     ];

@@ -397,6 +397,13 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     action:
       "Do not promote the external source. Re-run with a reachable repository and an exact reviewed commit SHA, then verify the quarantined scan passes before promotion.",
   },
+  "trust.detector-unavailable": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "required trust detector unavailable",
+    action:
+      "Install the required detector locally or remove it from the enterprise trust.requiredDetectors policy. Optional detector skips only reduce coverage and do not block lower postures.",
+  },
   "trust.prompt-injection": {
     audience: "developer",
     failSeverity: "blocking",
@@ -431,6 +438,13 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     title: "dependency name resembles a popular package",
     action:
       "Reject the external source until the dependency name is corrected or the package is independently reviewed and pinned.",
+  },
+  "trust.malicious-code": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "malicious code shape found in external skill source",
+    action:
+      "Reject the external source until the reverse shell, remote shell pipe, base64-to-shell payload, or equivalent malicious script shape is removed.",
   },
   "trust.source-drift": {
     audience: "developer",

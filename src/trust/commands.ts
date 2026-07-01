@@ -168,7 +168,7 @@ function artifactTarget(ctx: PlanContext, source: TrustLockSource, artifactPath:
   return join(ctx.root, ctx.contextDir, "skills", source.id, fallbackSkill, normalized);
 }
 
-function localDriftChecks(ctx: PlanContext, source: TrustLockSource): Check[] {
+export function localDriftChecks(ctx: PlanContext, source: TrustLockSource): Check[] {
   return source.artifactHashes.map((artifact) => {
     const target = artifactTarget(ctx, source, artifact.path);
     if (!existsSync(target)) {
@@ -198,6 +198,39 @@ function localDriftChecks(ctx: PlanContext, source: TrustLockSource): Check[] {
       fingerprint: `trust-local-drift:${source.id}:${artifact.path}:${current.slice(0, 8)}`,
     };
   });
+}
+
+export function trustLockLocalDriftChecks(ctx: PlanContext): Check[] {
+  const lockPath = join(ctx.root, ".aih", "trust-lock.json");
+  if (!existsSync(lockPath)) {
+    return [
+      {
+        name: "trust local drift",
+        verdict: "skip",
+        detail: "no .aih/trust-lock.json — no promoted trust artifacts to re-hash",
+      },
+    ];
+  }
+  const sources = readTrustLock(ctx.root).sources;
+  if (sources.length === 0) {
+    return [
+      {
+        name: "trust local drift",
+        verdict: "skip",
+        detail: ".aih/trust-lock.json has no valid promoted sources to re-hash",
+      },
+    ];
+  }
+  const checks = sources.flatMap((source) => localDriftChecks(ctx, source));
+  return checks.length > 0
+    ? checks
+    : [
+        {
+          name: "trust local drift",
+          verdict: "pass",
+          detail: "trust-lock contains no promoted artifact hashes",
+        },
+      ];
 }
 
 function isFullSha(value: string | undefined): boolean {
