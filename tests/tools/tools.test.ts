@@ -77,6 +77,18 @@ describe("install.ts pure helpers", () => {
     expect(execArgv("windows", ["winget", "install", "x"])).toEqual(["winget", "install", "x"]);
     expect(execArgv("linux", ["npm", "install", "-g", "x"])).toEqual(["npm", "install", "-g", "x"]);
   });
+
+  it("pins code-review-graph to the same version as the uvx MCP runners (==2.3.6)", () => {
+    const crg = TOOLS.find((t) => t.bin === "code-review-graph");
+    if (!crg) throw new Error("code-review-graph spec missing");
+    // PEP 508 `==` form (pip/uv reject the uvx `@2.3.6` shorthand). Must stay in lockstep
+    // with the `@2.3.6` pin in src/mcp/servers.ts + src/workspace/templates.ts.
+    expect(crg.options.map((o) => o.argv.at(-1))).toEqual([
+      "code-review-graph==2.3.6",
+      "code-review-graph==2.3.6",
+    ]);
+    expect(crg.manual).toBe("pip install code-review-graph==2.3.6");
+  });
 });
 
 describe("aih tools — plan", () => {
