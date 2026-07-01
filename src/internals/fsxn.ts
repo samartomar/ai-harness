@@ -74,6 +74,15 @@ interface AppliedWrite {
 interface StagedRemoval {
   path: string;
   legacyPath: string;
+  /**
+   * Backup-sibling destination (hard-delete's `<path>.aih.bak`). Like the default
+   * `.aih/legacy/` archive it NEVER overwrites an occupied destination — an existing
+   * `.aih.bak` may be the ONLY copy of prior content (a removal backup is not like a
+   * write backup, whose content also survives in the replaced file). A taken slot
+   * falls back to `<path>.1.aih.bak`, `<path>.2.aih.bak`, … which still match the
+   * gitignored `*.aih.bak` glob.
+   */
+  backupSibling?: boolean;
 }
 
 interface AppliedRemoval {
@@ -108,9 +117,12 @@ export class FsTransaction {
    * `.aih/legacy/`). The move IS the backup: rollback (and the user) restore by
    * moving it back. Symlinks are refused at commit (moving a link then restoring it
    * would recreate a regular file). No-op if the source is already gone.
+   * `backupSibling` marks a hard-delete destination (`<path>.aih.bak`): still
+   * never-overwrite, but a taken slot falls back to `<path>.N.aih.bak` (matches the
+   * gitignored `*.aih.bak` glob) instead of the archive's `<path>.N`.
    */
-  stageRemoval(path: string, legacyPath: string): void {
-    this.stagedRemovals.push({ path, legacyPath });
+  stageRemoval(path: string, legacyPath: string, opts: { backupSibling?: boolean } = {}): void {
+    this.stagedRemovals.push({ path, legacyPath, backupSibling: opts.backupSibling });
   }
 
   preview(): ReadonlyArray<StagedWrite> {
@@ -177,11 +189,13 @@ export class FsTransaction {
           throw new Error(`refusing to remove a symlink: ${r.path}`);
         }
         mkdirSync(dirname(r.legacyPath), { recursive: true });
-        // NEVER overwrite an occupied legacy destination: an aborted prune rolls its
-        // move back (so it leaves nothing here), which means an existing file at the
-        // dest is a COMPLETED prior rescue — deleting it would destroy the only copy.
-        // Move to a free `.N` sibling instead so every rescue survives.
-        const dest = freeLegacyDest(r.legacyPath);
+        // NEVER overwrite an occupied destination — for BOTH modes. An aborted prune
+        // rolls its move back (so it leaves nothing here), which means an existing file
+        // at the dest is a COMPLETED prior rescue (or a write backup that may be the
+        // ONLY copy of never-committed content); deleting it would destroy that copy.
+        // The archive falls back to `<path>.N`; a hard-delete backup falls back to
+        // `<path>.N.aih.bak` so every slot keeps matching the gitignored glob.
+        const dest = r.backupSibling ? freeBackupDest(r.legacyPath) : freeLegacyDest(r.legacyPath);
         retryTransient(() => renameSync(r.path, dest));
         removed.push({ path: r.path, legacyPath: dest });
       }
@@ -223,6 +237,29 @@ function freeLegacyDest(base: string): string {
     if (check(cand) === "free") return cand;
   }
   throw new Error(`too many prior rescues at ${base}`);
+}
+
+/**
+ * A free hard-delete backup destination: `<path>.aih.bak` if free, else
+ * `<path>.1.aih.bak`, `<path>.2.aih.bak`, … — the counter sits BEFORE the suffix so
+ * every fallback still matches the gitignored `*.aih.bak` glob. Same symlink refusal
+ * and never-overwrite guarantee as {@link freeLegacyDest}: an existing backup may be
+ * the only copy of never-committed content and is never destroyed.
+ */
+function freeBackupDest(base: string): string {
+  const check = (p: string): "free" | "file" => {
+    const st = lstatSafe(p);
+    if (st === undefined) return "free";
+    if (st.isSymbolicLink()) throw new Error(`refusing to move onto a symlinked backup path: ${p}`);
+    return "file";
+  };
+  if (check(base) === "free") return base;
+  const stem = base.endsWith(".aih.bak") ? base.slice(0, -".aih.bak".length) : base;
+  for (let n = 1; n < 100000; n++) {
+    const cand = `${stem}.${n}.aih.bak`;
+    if (check(cand) === "free") return cand;
+  }
+  throw new Error(`too many prior backups at ${base}`);
 }
 
 /** Restore moved-out files by renaming them back from `.aih/legacy/` (best-effort). */
