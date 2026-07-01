@@ -43,26 +43,34 @@ stored; after the bootstrap, publish is OIDC-only.
    Choose the bump per [VERSIONING.md](VERSIONING.md).
 3. **Update the CHANGELOG.** Move `[Unreleased]` items into a new `## [X.Y.Z] - YYYY-MM-DD`
    section under the right headings (Added / Changed / Deprecated / Removed / Fixed /
-   Security). Update the compare links at the bottom.
-4. **Verify locally:** `npm run verify` (typecheck · lint · test+coverage · build). Green
+   Security). Update the compare links at the bottom (add the new version's link and
+   repoint `[Unreleased]`).
+4. **Update user-facing docs.** If the release adds or changes any command or flag, update
+   the README command reference and any affected `docs/` page **in this same release PR** —
+   the CHANGELOG records the change, it does not document the feature. (The v0.3.0→v0.3.1
+   `aih prune` gap is why this step exists.)
+5. **Verify locally:** `npm run verify` (typecheck · lint · test+coverage · build). Green
    only.
-5. **Confirm versions agree:** `aih --version` (from `npm run build` output) must equal the
+6. **Confirm versions agree:** `aih --version` (from `npm run build` output) must equal the
    `package.json` version and the tag you are about to push.
-6. **Open a release PR** (`release/vX.Y.Z`), get it green in CI, and merge to `main`.
-7. **Tag and push:**
+7. **Open a release PR** (`release/vX.Y.Z`), get it green in CI, and merge to `main`.
+8. **Tag and push:**
    ```bash
    git checkout main && git pull
    git tag vX.Y.Z
    git push origin vX.Y.Z
    ```
-8. **Watch the workflow.** The `release` run publishes to npm and creates the GitHub Release.
+9. **Watch the workflow.** The `release` run publishes to npm and creates the GitHub Release.
    If the `npm-publish` environment has a required reviewer, approve it.
-9. **Verify the published package:**
+10. **Verify the published package:**
    ```bash
    npm view @aihq/harness@X.Y.Z
    npm audit signatures        # provenance + integrity
    ```
-10. **Close the milestone** and move any spillover to the next one.
+11. **Close the milestone** and move any spillover to the next one.
+12. **Sync project tracking.** Update the roadmap/progress notes and record any notable
+    decision in memory, so the next session resumes from an accurate state (not just the
+    code). This closes the loop the CHANGELOG and milestone don't cover.
 
 ## Pre-releases and dist-tags
 
