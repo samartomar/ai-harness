@@ -87,6 +87,13 @@ export const OrgPolicySchema = z
         requireSignedSource: z.boolean().default(false),
         // cisco/semgrep are future work: re-add names only with real scanner integrations.
         requiredDetectors: z.array(z.enum(["skillspector"])).optional(),
+        /**
+         * Named checks `aih skill approve` must see satisfied in the vet evidence
+         * before it approves: "license", "pin", "no-exec", "no-mcp", or a detector
+         * name that must appear in the evidence's analyzersRun (e.g. "skillspector").
+         * Absent → approve adds no extra constraints beyond the evidence chain.
+         */
+        requiredChecks: z.array(z.string().min(1)).optional(),
         internalScopes: z.array(z.string()).default([]),
       })
       .strict()

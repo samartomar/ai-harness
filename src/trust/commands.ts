@@ -25,7 +25,9 @@ export interface OwnerRepo {
   repo: string;
 }
 
-type ApprovedSource = NonNullable<NonNullable<OrgPolicy["trust"]>["approvedSources"]>[number];
+export type ApprovedSource = NonNullable<
+  NonNullable<OrgPolicy["trust"]>["approvedSources"]
+>[number];
 
 function parseOwnerRepo(raw: unknown): OwnerRepo {
   if (typeof raw !== "string") {
@@ -94,6 +96,7 @@ function upsertApprovedSource(
       requireSignedSource: policy.trust?.requireSignedSource ?? false,
       internalScopes: policy.trust?.internalScopes ?? [],
       requiredDetectors: policy.trust?.requiredDetectors,
+      requiredChecks: policy.trust?.requiredChecks,
       approvedSources: [
         ...existing.filter((approved) => !sameApprovedSource(source, approved)),
         nextEntry,
@@ -104,6 +107,19 @@ function upsertApprovedSource(
       ),
     },
   };
+}
+
+/**
+ * Committed policy body with `source` upserted into `trust.approvedSources` —
+ * the same upsert `aih trust allow/pin` writes, reused by `aih skill approve`
+ * so an approved GitHub skill source lands in org-policy through one code path.
+ */
+export function policyWithApprovedSource(
+  ctx: PlanContext,
+  source: OwnerRepo,
+  update: Partial<ApprovedSource>,
+): OrgPolicy {
+  return upsertApprovedSource(policyForWrite(ctx), source, update);
 }
 
 export function policyWithApprovedSourceReason(
