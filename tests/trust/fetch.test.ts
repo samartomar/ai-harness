@@ -96,6 +96,12 @@ describe("trust fetch source resolution", () => {
     );
   });
 
+  it("rejects refs that could be interpreted as git options", () => {
+    expect(() =>
+      resolveTrustSource("Owner/Repo", { root: dir, ref: "--upload-pack=evil" }),
+    ).toThrow(/--ref must be a safe Git ref/i);
+  });
+
   it("scrubs secrets while preserving only fetch-safe environment keys", () => {
     expect(
       scrubFetchEnv({

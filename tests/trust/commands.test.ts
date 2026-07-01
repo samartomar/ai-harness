@@ -94,6 +94,14 @@ describe("trust allow/list/pin commands", () => {
     });
   });
 
+  it("surfaces malformed policy writes as AIH_TRUST errors", () => {
+    write("aih-org-policy.json", "{ broken");
+
+    expect(() => trustAllowCommand.plan(ctx({ source: "owner/repo" }))).toThrow(
+      /cannot update aih-org-policy\.json/i,
+    );
+  });
+
   it("list labels committed policy and local evidence sources", async () => {
     write(
       "aih-org-policy.json",
@@ -131,6 +139,42 @@ describe("trust allow/list/pin commands", () => {
     expect(result.digests[0]?.text).toContain("owner/repo");
     expect(result.digests[0]?.text).toContain("Local trust-lock evidence");
     expect(result.digests[0]?.text).toContain("owner-repo");
+  });
+
+  it("drops malformed legacy trust-lock entries instead of throwing during list", async () => {
+    write(
+      ".aih/trust-lock.json",
+      JSON.stringify({
+        schemaVersion: 1,
+        sources: [
+          {
+            id: "missing-promoted-skills",
+            kind: "github",
+            source: "owner/repo",
+            ref: "main",
+            pinnedSha: "a".repeat(40),
+            promotedAt: "2026-06-30T00:00:00.000Z",
+            analyzersRun: ["aih-native"],
+            artifactHashes: [],
+          },
+          {
+            id: "missing-artifact-hashes",
+            kind: "github",
+            source: "owner/repo",
+            ref: "main",
+            pinnedSha: "a".repeat(40),
+            promotedAt: "2026-06-30T00:00:00.000Z",
+            promotedSkills: ["clean"],
+            analyzersRun: ["aih-native"],
+          },
+        ],
+      }),
+    );
+
+    const result = await executePlan(await trustListCommand.plan(ctx({})), ctx({}));
+
+    expect(result.digests[0]?.text).toContain("Local trust-lock evidence");
+    expect(result.digests[0]?.text).toContain("  (none)");
   });
 });
 
@@ -218,6 +262,76 @@ describe("trust verify command", () => {
         expect.objectContaining({
           verdict: "skip",
           code: "trust.fetch-blocked",
+        }),
+      ]),
+    );
+  });
+
+  it("drops malformed legacy trust-lock entries instead of throwing during verify", async () => {
+    write(
+      ".aih/trust-lock.json",
+      JSON.stringify({
+        schemaVersion: 1,
+        sources: [
+          {
+            id: "legacy",
+            kind: "github",
+            source: "owner/repo",
+            ref: "main",
+            pinnedSha: "a".repeat(40),
+            promotedAt: "2026-06-30T00:00:00.000Z",
+            analyzersRun: ["aih-native"],
+          },
+        ],
+      }),
+    );
+
+    const c = ctx({}, true);
+    const result = await executePlan(await trustVerifyCommand.plan(c), c);
+
+    expect(result.report?.checks).toEqual([]);
+  });
+
+  it("skips unsafe stored refs before invoking git ls-remote", async () => {
+    write(
+      ".aih/trust-lock.json",
+      JSON.stringify({
+        schemaVersion: 1,
+        sources: [
+          {
+            id: "owner-repo",
+            kind: "github",
+            source: "owner/repo",
+            ref: "--upload-pack=evil",
+            pinnedSha: "a".repeat(40),
+            promotedAt: "2026-06-30T00:00:00.000Z",
+            promotedSkills: ["clean"],
+            analyzersRun: ["aih-native"],
+            artifactHashes: [],
+            findings: [],
+          },
+        ],
+      }),
+    );
+    const gitCalls: string[][] = [];
+    const c = ctx(
+      {},
+      true,
+      fakeRunner((argv) => {
+        if (argv[0] === "git") gitCalls.push(argv);
+        return undefined;
+      }),
+    );
+
+    const result = await executePlan(await trustVerifyCommand.plan(c), c);
+
+    expect(gitCalls).toEqual([]);
+    expect(result.report?.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          verdict: "skip",
+          code: "trust.fetch-blocked",
+          detail: expect.stringContaining("unsafe Git ref"),
         }),
       ]),
     );

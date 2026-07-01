@@ -2,7 +2,6 @@ import { existsSync } from "node:fs";
 import { basename, join } from "node:path";
 import { postureFromContext } from "../config/posture.js";
 import { AihError } from "../errors.js";
-import { readIfExists } from "../internals/fsxn.js";
 import {
   type CommandSpec,
   digest,
@@ -14,8 +13,9 @@ import {
 import type { Check } from "../internals/verify.js";
 import { AIH_ORG_POLICY_FILE } from "../org-policy/constants.js";
 import { type OrgPolicy, readOrgPolicy } from "../org-policy/schema.js";
-import { localFileHash, scrubFetchEnv } from "./fetch.js";
+import { isSafeGitRefName, localFileHash, scrubFetchEnv } from "./fetch.js";
 import { gradeTrustCheck } from "./grade.js";
+import { readTrustLock, type TrustLockSource } from "./lock.js";
 
 const OWNER_REPO = /^([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)$/;
 const LOWER_FULL_SHA = /^[0-9a-f]{40}$/;
@@ -23,23 +23,6 @@ const LOWER_FULL_SHA = /^[0-9a-f]{40}$/;
 export interface OwnerRepo {
   owner: string;
   repo: string;
-}
-
-interface TrustLock {
-  schemaVersion: 1;
-  sources: TrustLockSource[];
-}
-
-interface TrustLockSource {
-  id: string;
-  kind: "local" | "github";
-  source: string;
-  ref?: string;
-  pinnedSha?: string;
-  promotedAt: string;
-  promotedSkills: string[];
-  analyzersRun: string[];
-  artifactHashes: Array<{ path: string; sha256: string }>;
 }
 
 type ApprovedSource = NonNullable<NonNullable<OrgPolicy["trust"]>["approvedSources"]>[number];
@@ -75,7 +58,14 @@ function emptyPolicy(ctx: PlanContext): OrgPolicy {
 }
 
 function policyForWrite(ctx: PlanContext): OrgPolicy {
-  return readOrgPolicy(ctx.root, ctx.env) ?? emptyPolicy(ctx);
+  try {
+    return readOrgPolicy(ctx.root, ctx.env) ?? emptyPolicy(ctx);
+  } catch (err) {
+    throw new AihError(
+      `cannot update ${AIH_ORG_POLICY_FILE}: ${(err as Error).message}`,
+      "AIH_TRUST",
+    );
+  }
 }
 
 function sameApprovedSource(source: OwnerRepo, approved: ApprovedSource): boolean {
@@ -130,20 +120,6 @@ function approvedSourceLabel(source: ApprovedSource): string {
   const pin = source.pinnedSha ? ` @ ${source.pinnedSha}` : "";
   const reason = source.reason ? ` — ${source.reason}` : "";
   return `  - ${source.owner}/${source.repo}${pin}${reason}`;
-}
-
-function readTrustLock(root: string): TrustLock {
-  const raw = readIfExists(join(root, ".aih", "trust-lock.json"));
-  if (raw === undefined) return { schemaVersion: 1, sources: [] };
-  try {
-    const parsed = JSON.parse(raw) as Partial<TrustLock>;
-    return {
-      schemaVersion: 1,
-      sources: Array.isArray(parsed.sources) ? (parsed.sources as TrustLockSource[]) : [],
-    };
-  } catch {
-    return { schemaVersion: 1, sources: [] };
-  }
 }
 
 function trustLockLabel(source: TrustLockSource): string {
@@ -261,6 +237,14 @@ async function upstreamDriftCheck(ctx: PlanContext, source: TrustLockSource): Pr
     };
   }
   const ref = source.ref ?? "HEAD";
+  if (!isSafeGitRefName(ref)) {
+    return {
+      name: "trust upstream drift",
+      verdict: "skip",
+      code: "trust.fetch-blocked",
+      detail: `${source.id}: unsafe Git ref in trust-lock (${ref}); refusing git ls-remote`,
+    };
+  }
   const result = await ctx.run(
     ["git", "ls-remote", `https://github.com/${source.source}.git`, ref],
     {

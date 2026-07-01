@@ -19,6 +19,7 @@ import type { Action, CommandSpec, Plan, PlanContext, WriteAction } from "../int
 import { plan, probe, writeJson, writeText } from "../internals/plan.js";
 import { defaultRunner, type Runner } from "../internals/proc.js";
 import type { Check, VerificationReport } from "../internals/verify.js";
+import { AIH_ORG_POLICY_FILE } from "../org-policy/constants.js";
 import { makeHostAdapter } from "../platform/detect.js";
 import { buildSupport, supportSummary } from "../support/integrate.js";
 import {
@@ -38,6 +39,7 @@ import {
   type TrustFetchMetadata,
   type TrustSource,
 } from "../trust/fetch.js";
+import { readTrustLock, type TrustLock, type TrustLockSource } from "../trust/lock.js";
 import { scanTrustTree, trustScanPlanForSource, trustSourceOriginChecks } from "../trust/scan.js";
 
 interface WorkspaceAddDeps {
@@ -74,31 +76,6 @@ export interface ClearedWorkspaceAddTrustGate {
   artifactHashes: Array<{ path: string; sha256: string }>;
   report: VerificationReport;
   internalScopes: string[];
-}
-
-interface TrustLock {
-  schemaVersion: 1;
-  sources: TrustLockSource[];
-}
-
-interface TrustLockSource {
-  id: string;
-  kind: TrustSource["kind"];
-  source: string;
-  ref?: string;
-  pinnedSha?: string;
-  promotedAt: string;
-  promotedSkills: string[];
-  analyzersRun: string[];
-  artifactHashes: Array<{ path: string; sha256: string }>;
-  findings: Array<{
-    name: string;
-    verdict: string;
-    code?: string;
-    detail?: string;
-    location?: Check["location"];
-    fingerprint?: string;
-  }>;
 }
 
 const SKIP_DIRS = new Set([".git", ".hg", ".svn", ".aih", "coverage", "dist", "node_modules"]);
@@ -235,18 +212,7 @@ function buildPromotion(ctx: PlanContext, source: TrustSource): PromotionPlan {
 }
 
 function existingLock(root: string): TrustLock {
-  const existing = readIfExists(join(root, ".aih", "trust-lock.json"));
-  if (existing === undefined) return { schemaVersion: 1, sources: [] };
-  let parsed: Partial<TrustLock>;
-  try {
-    parsed = JSON.parse(existing) as Partial<TrustLock>;
-  } catch {
-    return { schemaVersion: 1, sources: [] };
-  }
-  return {
-    schemaVersion: 1,
-    sources: Array.isArray(parsed.sources) ? parsed.sources : [],
-  };
+  return readTrustLock(root);
 }
 
 function metadataFor(source: TrustSource): TrustFetchMetadata | undefined {
@@ -344,7 +310,7 @@ async function persistAcknowledgeLedger(
     plan(
       "trust acknowledgement ledger",
       writeJson(
-        "aih-org-policy.json",
+        AIH_ORG_POLICY_FILE,
         policyWithApprovedSourceReason(
           ctx,
           { owner: source.owner, repo: source.repo },

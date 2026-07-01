@@ -188,7 +188,21 @@ describe("workspace add acquisition plans", () => {
     mkdirSync(join(workspace, ".aih"), { recursive: true });
     writeFileSync(
       join(workspace, ".aih", "trust-lock.json"),
-      JSON.stringify({ schemaVersion: 1, sources: [{ id: "existing", source: "old" }] }),
+      JSON.stringify({
+        schemaVersion: 1,
+        sources: [
+          {
+            id: "existing",
+            kind: "local",
+            source: "old",
+            promotedAt: "2026-06-30T00:00:00.000Z",
+            promotedSkills: ["old"],
+            analyzersRun: ["aih-native"],
+            artifactHashes: [],
+            findings: [],
+          },
+        ],
+      }),
       "utf8",
     );
     const report = new VerificationReport().pass("trust scan", "clean");

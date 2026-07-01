@@ -123,6 +123,33 @@ export function scrubFetchEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
 }
 
 const FULL_SHA = /^[a-f0-9]{40}$/;
+const SAFE_GIT_REF_CHARS = /^[A-Za-z0-9._/-]+$/;
+
+function hasWhitespaceOrControl(value: string): boolean {
+  for (const char of value) {
+    const code = char.charCodeAt(0);
+    if (code <= 32 || code === 127) return true;
+  }
+  return false;
+}
+
+export function isSafeGitRefName(ref: string): boolean {
+  if (ref.length === 0 || ref.startsWith("-")) return false;
+  if (hasWhitespaceOrControl(ref) || !SAFE_GIT_REF_CHARS.test(ref)) return false;
+  if (
+    ref.startsWith("/") ||
+    ref.endsWith("/") ||
+    ref.endsWith(".") ||
+    ref.includes("//") ||
+    ref.includes("..") ||
+    ref.includes("@{")
+  ) {
+    return false;
+  }
+  return ref
+    .split("/")
+    .every((part) => part.length > 0 && !part.startsWith(".") && !part.endsWith(".lock"));
+}
 
 export function resolveTrustSource(
   raw: string,
@@ -159,6 +186,12 @@ export function resolveTrustSource(
   }
   if (opts.pin !== undefined && !FULL_SHA.test(opts.pin)) {
     throw new AihError("--pin must be a lowercase 40-character Git commit SHA", "AIH_TRUST");
+  }
+  if (opts.ref !== undefined && !isSafeGitRefName(opts.ref)) {
+    throw new AihError(
+      "--ref must be a safe Git ref (letters, numbers, '/', '.', '_' or '-', and not leading '-')",
+      "AIH_TRUST",
+    );
   }
   const ref = opts.pin ?? opts.ref ?? "HEAD";
   const root = quarantineRoot(trimmed, ref);

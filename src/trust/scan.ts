@@ -187,6 +187,14 @@ function safeMcpName(name: string): string {
   return safe.length > 0 ? safe : "server";
 }
 
+function mcpServerConfigFingerprint(server: McpServer): string {
+  const normalized =
+    server.type === "stdio"
+      ? { command: server.command, args: server.args, url: null, env: server.env ?? {} }
+      : { command: null, args: [], url: server.url, env: {} };
+  return contentHash(normalized).slice(0, 8);
+}
+
 function descriptionChecks(rel: string, mapKey: string, name: string, rawServer: unknown): Check[] {
   if (!isRecord(rawServer) || typeof rawServer.description !== "string") return [];
   return scanTrustDocument(
@@ -221,7 +229,13 @@ function mcpPolicyChecks(
         } satisfies Check,
       ];
     }
-    return [mcpPolicyFail(rel, detail, `${mapKey}.${safeMcpName(policy.name)}`)];
+    return [
+      mcpPolicyFail(
+        rel,
+        detail,
+        `${mapKey}.${safeMcpName(policy.name)}:${mcpServerConfigFingerprint(server)}`,
+      ),
+    ];
   });
 }
 
@@ -510,13 +524,19 @@ export const trustScanCommand: CommandSpec = {
     },
     {
       flags: "--acknowledge <fingerprints>",
-      description: "skip exact trust-origin fingerprint(s), comma-separated",
+      description:
+        "skip exact trust-origin fingerprint(s) for this invocation only; use aih workspace add --acknowledge --reason to persist",
     },
     {
       flags: "--acknowledge-all",
-      description: "skip every current trust-origin finding (requires --reason)",
+      description:
+        "skip every current trust-origin finding for this invocation only (requires --reason); use aih workspace add to persist",
     },
-    { flags: "--reason <text>", description: "reason for a trust-origin acknowledgement" },
+    {
+      flags: "--reason <text>",
+      description:
+        "reason for a trust-origin acknowledgement; aih workspace add persists it to org-policy",
+    },
   ],
   plan: trustScanPlan,
   alwaysVerify: true,

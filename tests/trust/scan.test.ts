@@ -463,6 +463,23 @@ describe("scanTrustTree", () => {
 });
 
 describe("trustScanCommand", () => {
+  it("documents scan acknowledgements as invocation-local previews", () => {
+    const acknowledgeOption = trustScanCommand.options?.find((option) =>
+      option.flags.startsWith("--acknowledge "),
+    );
+    const acknowledgeAllOption = trustScanCommand.options?.find((option) =>
+      option.flags.startsWith("--acknowledge-all"),
+    );
+    const reasonOption = trustScanCommand.options?.find((option) =>
+      option.flags.startsWith("--reason"),
+    );
+
+    expect(acknowledgeOption?.description).toContain("this invocation only");
+    expect(acknowledgeOption?.description).toContain("workspace add");
+    expect(acknowledgeAllOption?.description).toContain("this invocation only");
+    expect(reasonOption?.description).toContain("workspace add");
+  });
+
   it("plans a read-only local scan that fails through verify checks", async () => {
     skill(
       "skills/evil",
@@ -824,6 +841,95 @@ describe("trustScanCommand", () => {
         expect.objectContaining({
           verdict: "fail",
           code: "trust.unpinned-dependency",
+        }),
+      ]),
+    );
+  });
+
+  it("acknowledges an MCP policy fingerprint and re-blocks after server config changes", async () => {
+    skill("skills/clean", "# Clean\n");
+    write(
+      ".mcp.json",
+      JSON.stringify({ mcpServers: { hosted: { url: "https://mcp.vendor.example/mcp" } } }),
+    );
+    const initial = await executePlan(
+      await trustScanCommand.plan(ctx({ target: dir }, {}, "enterprise")),
+      ctx({ target: dir }, {}, "enterprise"),
+    );
+    const fingerprint = initial.report?.checks.find(
+      (check) => check.code === "mcp.policy-denied",
+    )?.fingerprint;
+    if (!fingerprint) throw new Error("expected mcp policy fingerprint");
+
+    const acknowledged = await executePlan(
+      await trustScanCommand.plan(
+        ctx(
+          {
+            target: dir,
+            acknowledge: fingerprint,
+            reason: "reviewed hosted MCP server",
+          },
+          {},
+          "enterprise",
+        ),
+      ),
+      ctx(
+        {
+          target: dir,
+          acknowledge: fingerprint,
+          reason: "reviewed hosted MCP server",
+        },
+        {},
+        "enterprise",
+      ),
+    );
+    expect(acknowledged.report?.ok).toBe(true);
+    expect(acknowledged.report?.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          verdict: "skip",
+          code: "mcp.policy-denied",
+        }),
+      ]),
+    );
+
+    write(
+      ".mcp.json",
+      JSON.stringify({ mcpServers: { hosted: { url: "https://mcp.other.example/mcp" } } }),
+    );
+    const changed = await executePlan(
+      await trustScanCommand.plan(
+        ctx(
+          {
+            target: dir,
+            acknowledge: fingerprint,
+            reason: "reviewed hosted MCP server",
+          },
+          {},
+          "enterprise",
+        ),
+      ),
+      ctx(
+        {
+          target: dir,
+          acknowledge: fingerprint,
+          reason: "reviewed hosted MCP server",
+        },
+        {},
+        "enterprise",
+      ),
+    );
+    const changedFingerprint = changed.report?.checks.find(
+      (check) => check.code === "mcp.policy-denied",
+    )?.fingerprint;
+
+    expect(changed.report?.exitCode()).toBe(1);
+    expect(changedFingerprint).not.toBe(fingerprint);
+    expect(changed.report?.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          verdict: "fail",
+          code: "mcp.policy-denied",
         }),
       ]),
     );
