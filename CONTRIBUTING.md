@@ -33,3 +33,23 @@ architecture, and a backlog of good tasks.
 Keep diffs scoped. Add tests for new behavior. Reference the capability and the
 boundary in your description. For AI-delegated work, comment `@claude <task>` on
 an issue (see the Claude workflow).
+
+## Contributor rules
+
+By contributing you agree that:
+
+- Your contribution is licensed under the project's [Apache-2.0](LICENSE) license.
+- You have the right to submit it. **Do not submit employer-confidential, proprietary, or
+  otherwise restricted code**, or anything you are not authorized to release as open source.
+- **Do not submit secrets, tokens, credentials, private keys, or sensitive logs** — not in
+  code, tests, fixtures, or commit history.
+
+## Developer Certificate of Origin (DCO)
+
+Sign off every commit to certify the [DCO](https://developercertificate.org/) — that you wrote
+the change or have the right to submit it under Apache-2.0:
+
+```bash
+git commit -s -m "your message"     # adds: Signed-off-by: Your Name <you@example.com>
+```
+

@@ -17,9 +17,12 @@ only the latest minor is supported — upgrade to the newest `0.x` before report
 
 ## Response expectations
 
-This is an open-source project maintained on a best-effort basis. We aim to acknowledge new
-issues within a few days. Security reports are prioritized. There is no paid support SLA;
-enterprises that need one should reach the maintainer via their GitHub profile.
+This is a community open-source project maintained on a best-effort basis by volunteers.
+Issues and pull requests are handled best-effort only; security reports are prioritized.
+
+There is **no paid support, no SLA, no consulting, and no implementation service**, and using
+this project or filing an issue creates **no service relationship** of any kind. See
+[DISCLAIMER.md](DISCLAIMER.md).
 
 ## Before you file
 
