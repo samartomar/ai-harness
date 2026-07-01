@@ -586,6 +586,24 @@ describe("executePlan — hard-delete removals", () => {
     expect(summarizeResult(res)).toContain("[delete] ai-coding/adapters/codex.md");
   });
 
+  it("reports the ACTUAL fallback destination when .aih.bak is already occupied", async () => {
+    // An existing `.aih.bak` is never overwritten — the hard-delete lands at
+    // `.1.aih.bak`. The summary must point the user's restore at the real slot,
+    // not the planned `.aih.bak` (the finding-2 reporting fix).
+    const abs = put("ai-coding/adapters/codex.md", "# codex v2\n");
+    writeFileSync(`${abs}.aih.bak`, "# codex v1 (never-committed backup)\n");
+    const res = await executePlan(
+      plan("prune", remove("ai-coding/adapters/codex.md", "stale adapter", { hardDelete: true })),
+      ctx({ apply: true }),
+    );
+    // The prior backup survives untouched; the new content lands at the .1 slot.
+    expect(readFileSync(`${abs}.aih.bak`, "utf8")).toBe("# codex v1 (never-committed backup)\n");
+    expect(readFileSync(`${abs}.1.aih.bak`, "utf8")).toBe("# codex v2\n");
+    // And the reported `to` reflects that actual destination, not the planned one.
+    expect(res.removed[0]?.to).toBe("ai-coding/adapters/codex.md.1.aih.bak");
+    expect(summarizeResult(res)).toContain("ai-coding/adapters/codex.md.1.aih.bak");
+  });
+
   it("dry-run hard-delete touches nothing but reports the plan", async () => {
     const abs = put("ai-coding/adapters/codex.md");
     const res = await executePlan(

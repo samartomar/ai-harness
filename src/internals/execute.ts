@@ -357,7 +357,19 @@ export async function executePlan(
 
   let backups: string[] = [];
   if (ctx.apply) {
-    backups = txn.commit().backups;
+    const committed = txn.commit();
+    backups = committed.backups;
+    // Reconcile each removal summary's `to` with the destination commit ACTUALLY
+    // chose. A hard-delete whose `<path>.aih.bak` slot is occupied never overwrites
+    // it — it lands at `<path>.1.aih.bak` — so the planned `to` would misdirect the
+    // user's restore. `committed.removed[].path` is the absolute source we staged.
+    const actualDest = new Map(
+      committed.removed.map((r) => [r.path, normalizeRel(relative(ctx.root, r.legacyPath))]),
+    );
+    for (const summary of removes) {
+      const dest = actualDest.get(resolvePath(ctx, summary.path));
+      if (dest !== undefined) summary.to = dest;
+    }
   }
 
   // Local mutating commands run only on apply, after files are in place.
