@@ -373,13 +373,14 @@ describe("workspace add acquisition plans", () => {
       env: {},
       now: () => new Date("2026-06-30T00:00:00.000Z"),
       newRunId: () => "run_test",
+      run: fakeRunner(() => undefined), // fake the external analyzer spawns; aih's own scan still fires
     });
 
     expect(code).toBe(1);
     expect(output.join("")).toContain("trust.prompt-injection");
     expect(existsSync(join(workspace, "ai-coding", "skills"))).toBe(false);
     expect(existsSync(join(workspace, ".aih", "trust-lock.json"))).toBe(false);
-  }, 20000); // full phase-1 scan pipeline (subprocess spawns) can edge past the 5s default on slow Windows CI
+  });
 
   it("runWorkspaceAdd stops after phase 1 for an auto-exec source", async () => {
     localSkill(sourceRoot, "evil", "# Evil\n");
@@ -395,13 +396,14 @@ describe("workspace add acquisition plans", () => {
       env: {},
       now: () => new Date("2026-06-30T00:00:00.000Z"),
       newRunId: () => "run_test",
+      run: fakeRunner(() => undefined), // fake the external analyzer spawns; aih's own scan still fires
     });
 
     expect(code).toBe(1);
     expect(output.join("")).toContain("trust.auto-exec-hook");
     expect(existsSync(join(workspace, "ai-coding", "skills"))).toBe(false);
     expect(existsSync(join(workspace, ".aih", "trust-lock.json"))).toBe(false);
-  }, 20000); // full phase-1 scan pipeline (subprocess spawns) can edge past the 5s default on slow Windows CI
+  });
 
   it("runWorkspaceAdd applies the internal-scope dependency tell only when configured", async () => {
     localSkill(sourceRoot, "clean", "# Clean\n");
@@ -418,6 +420,7 @@ describe("workspace add acquisition plans", () => {
         env: {},
         now: () => new Date("2026-06-30T00:00:00.000Z"),
         newRunId: () => "run_test",
+        run: fakeRunner(() => undefined),
       }),
     ).toBe(0);
     expect(existsSync(join(workspace, ".aih", "trust-lock.json"))).toBe(true);
@@ -432,6 +435,7 @@ describe("workspace add acquisition plans", () => {
         env: { AIH_TRUST_INTERNAL_SCOPES: "@acme" },
         now: () => new Date("2026-06-30T00:00:00.000Z"),
         newRunId: () => "run_test",
+        run: fakeRunner(() => undefined),
       }),
     ).toBe(1);
     expect(withScope.join("")).toContain("trust.dependency-confusion");
@@ -535,6 +539,7 @@ describe("workspace add acquisition plans", () => {
       env: {},
       now: () => new Date("2026-06-30T00:00:00.000Z"),
       newRunId: () => "run_test",
+      run: fakeRunner(() => undefined),
     });
 
     const sourceId = basename(sourceRoot).toLowerCase();
@@ -558,6 +563,7 @@ describe("workspace add acquisition plans", () => {
       env: {},
       now: () => new Date("2026-06-30T00:00:00.000Z"),
       newRunId: () => "run_test",
+      run: fakeRunner(() => undefined),
     });
 
     const lock = JSON.parse(readFileSync(join(workspace, ".aih", "trust-lock.json"), "utf8")) as {

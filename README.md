@@ -7,18 +7,22 @@
 [![Node ≥20](https://img.shields.io/badge/node-%E2%89%A520-339933.svg)](package.json)
 
 <p align="center">
-  <img src="docs/assets/aih-overview.svg" alt="aih — extract corporate trust, self-heal the runtime, tune the workstation, bootstrap a governed repo, and run AI coding safely behind any proxy" width="100%">
+  <img src="docs/assets/aih-overview.svg" alt="aih — extract corporate trust, self-heal the runtime, tune the workstation, bootstrap a governed repo, and run AI-assisted coding behind a proxy" width="100%">
 </p>
 
-A cross-platform CLI that prepares developer workstations and repositories for
-**safe, governed AI-assisted coding behind a corporate proxy**. It extracts
-corporate trust, tunes local inference, hardens repos with guardrails, wires up
+A cross-platform CLI that helps prepare developer workstations and repositories for
+**reviewable, governed AI-assisted coding behind a corporate proxy**. It extracts
+corporate trust, tunes local inference, adds repo guardrails, wires up
 MCP / observability / sandboxing, and lays down a tool-agnostic context
 architecture — all from one command surface.
 
-> Turns the architectural blueprint *"Enterprise DevSecOps AI Bootstrapping:
+> Implements the architectural blueprint *"Enterprise DevSecOps AI Bootstrapping:
 > Cryptographic Trust, Local Performance Optimization, and Unified Observability"*
-> into a real, tested product.
+> as a tested CLI.
+
+> **Provided as open-source software under Apache-2.0 on an "AS IS" basis.** No warranty,
+> support obligation, SLA, indemnity, consulting, or professional advice is provided. `aih`
+> is dry-run by default — review the plan before running `--apply`. See [DISCLAIMER.md](DISCLAIMER.md).
 
 ## Design posture
 

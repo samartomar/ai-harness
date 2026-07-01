@@ -19,7 +19,7 @@ the newest `0.x` to receive fixes. At 1.0, security backports extend to the prev
 (N-1). Fixes ship as a patch on the supported line(s), documented in the
 [CHANGELOG](CHANGELOG.md) under **Security**.
 
-## Design — safe by default
+## Design — reviewable by default
 
 `aih` is a **local** CLI that prepares repos/workstations for AI-assisted coding.
 Its threat model is built into the action model:

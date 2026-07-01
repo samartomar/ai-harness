@@ -1,7 +1,7 @@
 import { Command } from "commander";
 import { registerCommands } from "./commands/index.js";
 
-export const VERSION = "0.2.0";
+export const VERSION = "0.3.0";
 
 /** Build the configured commander program. Imported by both the CLI entry and tests. */
 export function buildProgram(): Command {

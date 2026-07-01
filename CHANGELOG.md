@@ -6,6 +6,49 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-07-01
+
+First-developer experience plus a documentation and licensing-posture pass.
+
+### Added
+
+- **`aih ready` — first-developer readiness gate.** A single graded, blocker-aware verdict
+  ("can a developer start work with an AI agent here, now?") composed from aih's existing
+  read-only probes (runtime/TLS/PATH/core tools, per-CLI loadability, contract, secret scan).
+  Diagnoses by default; the one auto-fixable blocker (missing `rg`/`fd`/`jq`) installs under
+  confirmation. Adds a `sec-ready` panel to `aih report --v9`.
+- **`aih prune` — remove stale per-CLI artifacts** when a CLI is no longer targeted. Dry-run
+  preview by default; `--apply` moves aih-owned files to gitignored `.aih/legacy/` (reversible),
+  subtracts aih's managed block in place from co-owned bootloaders (never deletes them), and
+  leaves MCP/settings that carry no ownership marker as manual advisories. Introduces a
+  fail-closed `remove` action (containment on source and destination, symlink refusal, backup +
+  rollback, dirty-worktree guard). Diffed against committed intent only.
+
+### Changed
+
+- **Plan-time reads are modeled as ledgered, guarded probes** ([#35]): plan-shaping host/network
+  reads stay in `plan()` but are pinned by a read-only allowlist test, so a run cannot shell out
+  an arbitrary command at plan time.
+- **`summarizeResult` reports honestly** when an `--apply` run commits no writes or execs
+  ("nothing to apply") instead of claiming "Applied".
+
+### Security
+
+- **Emitted SARIF is validated against the SARIF 2.1.0 schema in CI** ([#36]) with a pinned,
+  offline validator — invalid SARIF fails the build.
+
+### Docs
+
+- **Licensing / liability posture.** Added [`DISCLAIMER.md`](DISCLAIMER.md) (Apache-2.0, AS-IS,
+  no warranty/SLA/indemnity/paid support), softened assurance wording across README/SECURITY/SUPPORT
+  (no "safe/secure/guaranteed/enterprise-ready/production-ready"), and added DCO sign-off +
+  contributor rules to [`CONTRIBUTING.md`](CONTRIBUTING.md).
+- **Public-docs hygiene.** Added [`PUBLIC_DOCS_POLICY.md`](PUBLIC_DOCS_POLICY.md) and a `docs/`
+  tree for product / workspace / security / roadmap design docs.
+
+[#35]: https://github.com/samartomar/ai-harness/issues/35
+[#36]: https://github.com/samartomar/ai-harness/issues/36
+
 ## [0.2.0] - 2026-07-01
 
 First release **published to npm** as [`@aihq/harness`](https://www.npmjs.com/package/@aihq/harness) —
