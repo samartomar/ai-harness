@@ -6,11 +6,42 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-07-01
+
+### Added
+
+- **`aih prune --delete`** — a hard-delete opt-out from the reversible `.aih/legacy/`
+  archive: renames the stale file to a gitignored `*.aih.bak` sibling instead of moving it
+  under `.aih/legacy/`. An occupied backup slot is **never overwritten** — it falls back to
+  `*.1.aih.bak`, `*.2.aih.bak`, … so a prior rescue is never destroyed.
+- **`aih prune --unrunnable`** — also prune per-CLI artifacts for a still-*targeted* CLI
+  whose binary is absent from `PATH` (probed with the readiness gate's `which`/`where`). A
+  PATH problem looks identical to a dropped CLI, so it warns loudly, never rewrites the
+  committed `.aih-config.json` marker, and never triggers on a default run or `aih report`.
+
 ### Changed
 
 - **npm package slimmed ~64%** (1.1 MB → ~400 kB packed; 3.9 MB → 1.1 MB unpacked): the
   published chunks are now minified (`keepNames` preserved, so stack traces stay readable)
   and source maps are no longer shipped — local development still debugs from `src/`.
+
+### Fixed
+
+- **`aih prune`'s dirty-worktree gate no longer misses quoted paths.** It parsed human
+  `git status --porcelain` and never C-unescaped git's quoted paths, so a dirty or untracked
+  removal target whose name needs quoting (embedded newline, `"`, non-ASCII) could slip the
+  gate and `--delete` could move an uncommitted file without `--force`. It now parses
+  NUL-delimited `--porcelain -z -uall`, matching on-disk paths exactly.
+- **`aih prune --delete` reports the actual backup path after a fallback** — when the
+  `*.aih.bak` slot was occupied and the file landed at `*.1.aih.bak`, the summary previously
+  pointed the restore hint at the wrong path.
+
+### Docs
+
+- **Documented `aih prune`** (and `--delete` / `--unrunnable`) in the README command
+  reference — it shipped in 0.3.0 without a README entry. `RELEASING.md` now carries an
+  explicit "update user-facing docs" and "sync project tracking" step so command/flag docs
+  can't silently lag a release again.
 
 ## [0.3.0] - 2026-07-01
 
@@ -156,5 +187,7 @@ GitHub but **never published to npm**; the first published release is 0.2.0.
   (npm + github-actions), private vulnerability reporting, `@claude` workflow gated
   to trusted authors, and GitHub Actions pinned to commit SHAs.
 
-[Unreleased]: https://github.com/samartomar/ai-harness/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/samartomar/ai-harness/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/samartomar/ai-harness/compare/v0.3.0...v0.3.1
+[0.3.0]: https://github.com/samartomar/ai-harness/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/samartomar/ai-harness/releases/tag/v0.2.0

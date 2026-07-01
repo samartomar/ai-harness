@@ -6,7 +6,7 @@ import type { Cli } from "../../src/internals/clis.js";
 import type { PlanContext } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
-import { stalePruneSet } from "../../src/prune/detect.js";
+import { stalePruneSet, unrunnableTargets } from "../../src/prune/detect.js";
 
 let dir: string;
 beforeEach(() => {
@@ -181,5 +181,114 @@ describe("stalePruneSet — never-prune invariants", () => {
     expect(p).toContain(".kiro/hooks/aih-tests-on-edit.kiro.hook");
     expect(p).toContain(".kiro/steering/agent-tools.md");
     expect(p).not.toContain(".kiro/hooks/team-custom.kiro.hook");
+  });
+});
+
+describe("unrunnableTargets — opt-in PATH probe", () => {
+  /** A runner where `which <bin>` succeeds only for bins in `onPath`. */
+  const pathRunner = (onPath: string[]) =>
+    fakeRunner((argv) => {
+      if (argv[0] !== "which") return undefined;
+      const bin = argv[1] ?? "";
+      return onPath.includes(bin)
+        ? { code: 0, stdout: `/usr/bin/${bin}` }
+        : { code: 1, stdout: "", stderr: "not found" };
+    });
+
+  it("flags a targeted+wired CLI whose binary is not on PATH", async () => {
+    marker("claude", "codex");
+    adapter("claude");
+    adapter("codex");
+    const c = ctx({ run: pathRunner(["claude"]) }); // codex binary absent
+    expect(await unrunnableTargets(c)).toEqual(["codex"]);
+  });
+
+  it("never flags a CLI whose binary resolves", async () => {
+    marker("claude");
+    adapter("claude");
+    const c = ctx({ run: pathRunner(["claude"]) });
+    expect(await unrunnableTargets(c)).toEqual([]);
+  });
+
+  it("skips targeted CLIs with no adapter on disk (nothing to prune anyway)", async () => {
+    marker("claude", "codex"); // codex targeted but never wired here
+    adapter("claude");
+    const c = ctx({ run: pathRunner([]) });
+    expect(await unrunnableTargets(c)).toEqual(["claude"]); // codex not probed/flagged
+  });
+
+  it("returns empty with no committed target set", async () => {
+    adapter("codex");
+    expect(await unrunnableTargets(ctx({ run: pathRunner([]) }))).toEqual([]);
+  });
+
+  it("FAIL SAFE: a broken probe (which itself spawnErrors) treats the CLI as runnable", async () => {
+    // `which` missing/blocked is a probe-infrastructure failure, NOT evidence the CLI
+    // binary is absent — an unknown CLI must never be folded into the prunable set.
+    marker("claude");
+    adapter("claude");
+    const broken = fakeRunner(() => ({ code: 127, spawnError: true }));
+    expect(await unrunnableTargets(ctx({ run: broken }))).toEqual([]);
+  });
+});
+
+describe("stalePruneSet — unknown marker targets fail closed", () => {
+  it("case-normalizes marker targets (Codex ≡ codex stays kept)", () => {
+    write(
+      ".aih-config.json",
+      JSON.stringify({ schemaVersion: 1, contextDir: "ai-coding", targets: ["Claude", "CODEX"] }),
+    );
+    adapter("claude");
+    adapter("codex");
+    const set = stalePruneSet(ctx());
+    expect(set.unknownTargets).toEqual([]);
+    expect(set.dropped).toEqual([]); // both recognized after normalization → kept
+  });
+
+  it("an unrecognizable target string empties the prune set and is surfaced", () => {
+    // "codx" may be a typo of a CLI the user means to KEEP — prune must not guess.
+    write(
+      ".aih-config.json",
+      JSON.stringify({ schemaVersion: 1, contextDir: "ai-coding", targets: ["claude", "codx"] }),
+    );
+    adapter("claude");
+    adapter("codex"); // would look dropped if aih guessed — it must not
+    const set = stalePruneSet(ctx());
+    expect(set.unknownTargets).toEqual(["codx"]);
+    expect(set.dropped).toEqual([]);
+    expect(set.artifacts).toEqual([]);
+  });
+});
+
+describe("stalePruneSet — treatAsDropped (the --unrunnable fold)", () => {
+  it("an unrunnable-but-targeted CLI's artifacts become prunable, and are labeled", () => {
+    marker("claude", "cursor");
+    adapter("claude");
+    adapter("cursor");
+    write(".cursor/rules/00-canon.mdc");
+    const set = stalePruneSet(ctx(), { treatAsDropped: ["cursor"] });
+    expect(set.dropped).toEqual(["cursor"]);
+    expect(set.unrunnable).toEqual(["cursor"]);
+    expect(set.targeted).toEqual(["claude"]); // effective kept set
+    expect(paths(set)).toContain("ai-coding/adapters/cursor.md");
+  });
+
+  it("a shared bootloader falls out once its LAST kept sharer is treated as dropped", () => {
+    // codex is the only kept CLI declaring AGENTS.md; treat it as dropped.
+    marker("claude", "codex");
+    adapter("claude");
+    adapter("codex");
+    write("AGENTS.md");
+    const set = stalePruneSet(ctx(), { treatAsDropped: ["codex"] });
+    expect(paths(set)).toContain("AGENTS.md");
+  });
+
+  it("a default run (no opt-in) never treats a targeted CLI as dropped", () => {
+    marker("claude", "cursor");
+    adapter("claude");
+    adapter("cursor");
+    const set = stalePruneSet(ctx());
+    expect(set.dropped).toEqual([]);
+    expect(set.unrunnable).toEqual([]);
   });
 });

@@ -31,9 +31,10 @@ export interface WriteSummary {
 export interface RemoveSummary {
   path: string;
   describe: string;
-  /** `remove` = present, will move to `.aih/legacy/`; `absent` = nothing on disk. */
-  effect: "remove" | "absent";
-  /** Repo-relative `.aih/legacy/` destination, when effect is `remove`. */
+  /** `remove` = move to `.aih/legacy/`; `delete` = hard-delete (single-slot `.aih.bak`
+   * backup); `absent` = nothing on disk. */
+  effect: "remove" | "delete" | "absent";
+  /** Repo-relative destination (`.aih/legacy/…` or `<path>.aih.bak`), when present. */
   to?: string;
 }
 
@@ -210,8 +211,11 @@ export async function executePlan(
     const blocked = [...clobbered, ...removedDirty];
     if (blocked.length > 0) {
       const list = blocked.join(", ");
+      // Say what would actually happen: dirty REMOVAL targets get removed, not
+      // overwritten — "overwrite" alone under-states the risk of reaching for --force.
+      const verb = removedDirty.length > 0 ? "overwrite or remove" : "overwrite";
       throw new DirtyWorktreeError(
-        `Refusing to overwrite uncommitted changes in: ${list}. Commit or stash ${
+        `Refusing to ${verb} uncommitted changes in: ${list}. Commit or stash ${
           blocked.length > 1 ? "them" : "it"
         } first, or pass --force.`,
       );
@@ -299,19 +303,24 @@ export async function executePlan(
       if (info === undefined) {
         removes.push({ path: action.path, describe: action.describe, effect: "absent" });
       } else {
-        const legacyRel = `.aih/legacy/${normalizeRel(action.path)}`;
-        const legacyAbs = resolvePath(ctx, legacyRel);
+        // Default = reversible archive move; `hardDelete` = the explicit opt-out, a
+        // single-slot rename to the sibling `<path>.aih.bak` (the same latest-wins
+        // convention every write backup uses; `*.aih.bak` is gitignored).
+        const destRel = action.hardDelete
+          ? `${normalizeRel(action.path)}.aih.bak`
+          : `.aih/legacy/${normalizeRel(action.path)}`;
+        const destAbs = resolvePath(ctx, destRel);
         // Contain the DESTINATION too, not just the source: if `.aih/` (or any parent
-        // of the legacy path) is a symlink escaping the repo, the move would rename the
-        // file OUTSIDE the root. assertContained realpaths the deepest existing ancestor,
-        // so a symlinked `.aih` parent — or a `..` surviving in the path — trips it.
-        assertContained(ctx.root, legacyAbs);
-        if (ctx.apply) txn.stageRemoval(absPath, legacyAbs);
+        // of the destination path) is a symlink escaping the repo, the move would rename
+        // the file OUTSIDE the root. assertContained realpaths the deepest existing
+        // ancestor, so a symlinked parent — or a `..` surviving in the path — trips it.
+        assertContained(ctx.root, destAbs);
+        if (ctx.apply) txn.stageRemoval(absPath, destAbs, { backupSibling: action.hardDelete });
         removes.push({
           path: action.path,
           describe: action.describe,
-          effect: "remove",
-          to: legacyRel,
+          effect: action.hardDelete ? "delete" : "remove",
+          to: destRel,
         });
       }
     } else {
@@ -348,7 +357,19 @@ export async function executePlan(
 
   let backups: string[] = [];
   if (ctx.apply) {
-    backups = txn.commit().backups;
+    const committed = txn.commit();
+    backups = committed.backups;
+    // Reconcile each removal summary's `to` with the destination commit ACTUALLY
+    // chose. A hard-delete whose `<path>.aih.bak` slot is occupied never overwrites
+    // it — it lands at `<path>.1.aih.bak` — so the planned `to` would misdirect the
+    // user's restore. `committed.removed[].path` is the absolute source we staged.
+    const actualDest = new Map(
+      committed.removed.map((r) => [r.path, normalizeRel(relative(ctx.root, r.legacyPath))]),
+    );
+    for (const summary of removes) {
+      const dest = actualDest.get(resolvePath(ctx, summary.path));
+      if (dest !== undefined) summary.to = dest;
+    }
   }
 
   // Local mutating commands run only on apply, after files are in place.
@@ -435,7 +456,7 @@ export function summarizeResult(result: PlanResult): string {
   // command, or an idempotent re-run with no diff), so claiming "Applied" would be
   // misleading. envblock upserts fold into `writes`, so writes+execs+backups cover
   // every mutating outcome.
-  const removedAny = result.removed.some((r) => r.effect === "remove");
+  const removedAny = result.removed.some((r) => r.effect !== "absent");
   const mutated =
     result.writes.length > 0 ||
     result.execs.some((e) => e.ran) ||
@@ -454,7 +475,9 @@ export function summarizeResult(result: PlanResult): string {
     out.push(
       r.effect === "remove"
         ? `  [remove] ${r.path} — ${r.describe} (→ ${r.to})`
-        : `  [absent] ${r.path} — ${r.describe}`,
+        : r.effect === "delete"
+          ? `  [delete] ${r.path} — ${r.describe} (backup: ${r.to})`
+          : `  [absent] ${r.path} — ${r.describe}`,
     );
   }
   for (const d of result.docs) {

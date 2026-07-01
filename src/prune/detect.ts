@@ -75,6 +75,13 @@ export interface StalePruneSet {
   source: KeptSource;
   /** CLIs with a per-CLI adapter on disk but no longer in the committed targets. */
   dropped: Cli[];
+  /** The subset of `dropped` that is only there because of `--unrunnable` (still in
+   * the committed targets, but no binary on PATH). Empty on every default run. */
+  unrunnable: Cli[];
+  /** Marker target strings aih does not recognize (after case-normalization). Non-empty
+   * FAILS CLOSED: no artifact is treated as stale until the marker is fixed, because a
+   * typo'd kept target would otherwise be pruned as if it were dropped. */
+  unknownTargets: string[];
   /** The concrete stale artifacts, in canonical (kind, then declared) order. */
   artifacts: PruneArtifact[];
 }
@@ -87,12 +94,22 @@ const isCli = (s: string): s is Cli => VALID.has(s);
  * reads the intent the repo was bootstrapped with); an orchestrator's threaded
  * targets are the second authoritative source. Anything else → `none` (no intent
  * to diff, so nothing is treated as stale).
+ *
+ * Marker entries are case-normalized before validation, and anything STILL
+ * unrecognized is returned in `unknown` rather than silently filtered — for a
+ * DESTRUCTIVE consumer, "the marker says `Codex` but aih only knows `codex`" must
+ * fail closed (a typo'd kept target would otherwise be pruned as dropped).
  */
-function keptTargets(ctx: PlanContext): { targeted: Cli[]; source: KeptSource } {
-  const marker = (readAihConfig(ctx.root)?.targets ?? []).filter(isCli);
-  if (marker.length > 0) return { targeted: marker, source: "marker" };
-  if (ctx.targets && ctx.targets.length > 0) return { targeted: [...ctx.targets], source: "ctx" };
-  return { targeted: [], source: "none" };
+function keptTargets(ctx: PlanContext): { targeted: Cli[]; source: KeptSource; unknown: string[] } {
+  const raw = (readAihConfig(ctx.root)?.targets ?? []).map((t) => t.trim().toLowerCase());
+  const marker = raw.filter(isCli);
+  const unknown = raw.filter((t) => t.length > 0 && !isCli(t));
+  if (marker.length > 0 || unknown.length > 0)
+    return { targeted: marker, source: "marker", unknown };
+  if (ctx.targets && ctx.targets.length > 0) {
+    return { targeted: [...ctx.targets], source: "ctx", unknown: [] };
+  }
+  return { targeted: [], source: "none", unknown: [] };
 }
 
 /**
@@ -150,17 +167,84 @@ function kiroHookFiles(root: string): string[] {
 }
 
 /**
+ * The TARGETED CLIs (committed intent) that are wired into this repo but whose binary
+ * is not on PATH — `aih prune --unrunnable`'s opt-in input. A CLI is unrunnable only
+ * when NONE of its registry binaries resolve (`which`/`where`, the same read-only
+ * PATH probe the readiness gate uses — allowlisted by the plan-purity guardrail).
+ * Only targeted∩on-disk CLIs are probed: anything else has no artifacts to prune.
+ * NEVER called on a default/`--stale` run or by the report ([prune-spec] locked:
+ * a PATH problem — new shell, VDI — looks identical to a truly dropped CLI).
+ */
+export async function unrunnableTargets(ctx: PlanContext): Promise<Cli[]> {
+  const { targeted, source } = keptTargets(ctx);
+  if (source === "none") return [];
+  const wired = new Set<Cli>(onDiskClis(ctx));
+  const out: Cli[] = [];
+  for (const cli of targeted) {
+    if (!wired.has(cli)) continue;
+    // FAIL SAFE, not fail open: only a probe that RAN and answered "not found"
+    // (clean non-zero exit) is evidence of absence. A spawnError means the probe
+    // infrastructure itself broke (`which`/`where` missing or blocked) — that is
+    // "unknown", and an unknown CLI must be treated as RUNNABLE, never pruned.
+    let runnable = false;
+    for (const bin of entry(cli).binaries) {
+      const argv = ctx.host.platform === "windows" ? ["where", bin] : ["which", bin];
+      const res = await ctx.run(argv);
+      if (res.spawnError || (res.code === 0 && res.stdout.trim().length > 0)) {
+        runnable = true;
+        break;
+      }
+    }
+    if (!runnable) out.push(cli);
+  }
+  return out;
+}
+
+/**
  * Compute the stale prune set for a repo — read-only. Returns an empty `dropped`
  * (and `artifacts`) whenever there is no committed target set to diff against, so a
  * pre-marker repo is never told it has "stale" files it in fact still uses.
+ * `treatAsDropped` (prune `--unrunnable` only) removes those CLIs from the kept set
+ * before the diff — which also lets a shared bootloader fall out once its LAST kept
+ * sharer is treated as dropped. The committed marker itself is never rewritten.
  */
-export function stalePruneSet(ctx: PlanContext): StalePruneSet {
-  const { targeted, source } = keptTargets(ctx);
-  if (source === "none") return { targeted, source, dropped: [], artifacts: [] };
+export function stalePruneSet(
+  ctx: PlanContext,
+  opts: { treatAsDropped?: readonly Cli[] } = {},
+): StalePruneSet {
+  const { targeted: committed, source, unknown } = keptTargets(ctx);
+  if (source === "none") {
+    return {
+      targeted: committed,
+      source,
+      dropped: [],
+      unrunnable: [],
+      unknownTargets: [],
+      artifacts: [],
+    };
+  }
+  // FAIL CLOSED on unrecognized marker targets: "Codex"/"codx" may be a typo of a
+  // CLI the user means to KEEP — pruning anything under that ambiguity risks
+  // deleting a kept CLI's artifacts. Surface the strings; remove nothing.
+  if (unknown.length > 0) {
+    return {
+      targeted: committed,
+      source,
+      dropped: [],
+      unrunnable: [],
+      unknownTargets: unknown,
+      artifacts: [],
+    };
+  }
 
+  const treatAsDropped = new Set<Cli>(opts.treatAsDropped ?? []);
+  const targeted = committed.filter((c) => !treatAsDropped.has(c));
   const keptSet = new Set<Cli>(targeted);
   const dropped = onDiskClis(ctx).filter((c) => !keptSet.has(c));
-  if (dropped.length === 0) return { targeted, source, dropped, artifacts: [] };
+  const unrunnable = dropped.filter((c) => treatAsDropped.has(c));
+  if (dropped.length === 0) {
+    return { targeted, source, dropped, unrunnable, unknownTargets: [], artifacts: [] };
+  }
 
   const kept = keptPaths(targeted);
   const onDisk = (rel: string): boolean => existsSync(join(ctx.root, rel));
@@ -230,7 +314,7 @@ export function stalePruneSet(ctx: PlanContext): StalePruneSet {
     }
   }
 
-  return { targeted, source, dropped, artifacts };
+  return { targeted, source, dropped, unrunnable, unknownTargets: [], artifacts };
 }
 
 /**
