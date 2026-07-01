@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { type PlanContext, plan, writeText } from "../../src/internals/plan.js";
+import { type PlanContext, plan, remove, writeText } from "../../src/internals/plan.js";
 import { fakeRunner, type Runner } from "../../src/internals/proc.js";
 import {
   dirtyPaths,
+  dirtyRemoveTargets,
   dirtyWriteTargets,
   isWorktreeDirty,
 } from "../../src/internals/worktree-gate.js";
@@ -48,7 +49,7 @@ describe("isWorktreeDirty", () => {
       return { stdout: "" };
     });
     await isWorktreeDirty(ctx(run));
-    expect(calls).toEqual([["git", "-C", "/repo", "status", "--porcelain"]]);
+    expect(calls).toEqual([["git", "-C", "/repo", "status", "--porcelain", "-uall"]]);
   });
 });
 
@@ -88,5 +89,27 @@ describe("dirtyWriteTargets — the precise clobber set", () => {
   it("ignores external writes — a ~/home config is never a repo worktree target", async () => {
     const p = plan("t", writeText("/home/u/.codex/config.toml", "x", "x", { external: true }));
     expect(await dirtyWriteTargets(p, ctx(dirtyRun(" M whatever\n")))).toEqual([]);
+  });
+});
+
+describe("dirtyRemoveTargets — removals gate on membership (incl. untracked dirs)", () => {
+  it("flags a removal target that is itself dirty", async () => {
+    const p = plan("prune", remove("ai-coding/adapters/codex.md", "stale"));
+    expect(await dirtyRemoveTargets(p, ctx(dirtyRun(" M ai-coding/adapters/codex.md\n")))).toEqual([
+      "ai-coding/adapters/codex.md",
+    ]);
+  });
+
+  it("flags an untracked FILE inside an untracked directory (-uall closes the ?? dir/ blind spot)", async () => {
+    // With -uall git lists every untracked file individually — the gate must see it.
+    const p = plan("prune", remove("ai-coding/adapters/codex.md", "stale"));
+    expect(await dirtyRemoveTargets(p, ctx(dirtyRun("?? ai-coding/adapters/codex.md\n")))).toEqual([
+      "ai-coding/adapters/codex.md",
+    ]);
+  });
+
+  it("passes a clean removal target even when unrelated files are dirty", async () => {
+    const p = plan("prune", remove("ai-coding/adapters/codex.md", "stale"));
+    expect(await dirtyRemoveTargets(p, ctx(dirtyRun(" M other.ts\n")))).toEqual([]);
   });
 });

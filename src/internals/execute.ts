@@ -211,8 +211,11 @@ export async function executePlan(
     const blocked = [...clobbered, ...removedDirty];
     if (blocked.length > 0) {
       const list = blocked.join(", ");
+      // Say what would actually happen: dirty REMOVAL targets get removed, not
+      // overwritten — "overwrite" alone under-states the risk of reaching for --force.
+      const verb = removedDirty.length > 0 ? "overwrite or remove" : "overwrite";
       throw new DirtyWorktreeError(
-        `Refusing to overwrite uncommitted changes in: ${list}. Commit or stash ${
+        `Refusing to ${verb} uncommitted changes in: ${list}. Commit or stash ${
           blocked.length > 1 ? "them" : "it"
         } first, or pass --force.`,
       );
@@ -312,7 +315,7 @@ export async function executePlan(
         // the file OUTSIDE the root. assertContained realpaths the deepest existing
         // ancestor, so a symlinked parent — or a `..` surviving in the path — trips it.
         assertContained(ctx.root, destAbs);
-        if (ctx.apply) txn.stageRemoval(absPath, destAbs, { overwriteDest: action.hardDelete });
+        if (ctx.apply) txn.stageRemoval(absPath, destAbs, { backupSibling: action.hardDelete });
         removes.push({
           path: action.path,
           describe: action.describe,

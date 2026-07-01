@@ -1,5 +1,6 @@
 import { join } from "node:path";
 import { SHARED_MARKER, sharedCanonicalBlockBody } from "../bootstrap-ai/canon.js";
+import { AIH_CONFIG_FILE } from "../config/marker.js";
 import { readIfExists } from "../internals/fsxn.js";
 import { aihIgnoreWrite } from "../internals/gitignore.js";
 import { extractManagedBlock, stripManagedBlock } from "../internals/markers.js";
@@ -116,6 +117,14 @@ function contextBody(
       "No committed target set (.aih-config.json) to diff against — nothing is treated",
       "as stale. Run `aih bootstrap-ai` to record which CLIs this repo targets, then",
       "`aih prune` will remove artifacts for any CLI you later drop.",
+    );
+  }
+  if (set.unknownTargets.length > 0) {
+    return lines(
+      `!! ${AIH_CONFIG_FILE} lists target(s) aih does not recognize: ${set.unknownTargets.join(", ")}.`,
+      "A typo here could make prune treat a CLI you MEANT TO KEEP as dropped, so nothing",
+      "is treated as stale until the marker is fixed. Valid targets: see `aih prune --help`;",
+      "re-write the marker via `aih bootstrap-ai --apply --cli <list>`.",
     );
   }
   if (set.dropped.length === 0) {

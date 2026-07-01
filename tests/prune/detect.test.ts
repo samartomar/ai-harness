@@ -221,6 +221,43 @@ describe("unrunnableTargets — opt-in PATH probe", () => {
     adapter("codex");
     expect(await unrunnableTargets(ctx({ run: pathRunner([]) }))).toEqual([]);
   });
+
+  it("FAIL SAFE: a broken probe (which itself spawnErrors) treats the CLI as runnable", async () => {
+    // `which` missing/blocked is a probe-infrastructure failure, NOT evidence the CLI
+    // binary is absent — an unknown CLI must never be folded into the prunable set.
+    marker("claude");
+    adapter("claude");
+    const broken = fakeRunner(() => ({ code: 127, spawnError: true }));
+    expect(await unrunnableTargets(ctx({ run: broken }))).toEqual([]);
+  });
+});
+
+describe("stalePruneSet — unknown marker targets fail closed", () => {
+  it("case-normalizes marker targets (Codex ≡ codex stays kept)", () => {
+    write(
+      ".aih-config.json",
+      JSON.stringify({ schemaVersion: 1, contextDir: "ai-coding", targets: ["Claude", "CODEX"] }),
+    );
+    adapter("claude");
+    adapter("codex");
+    const set = stalePruneSet(ctx());
+    expect(set.unknownTargets).toEqual([]);
+    expect(set.dropped).toEqual([]); // both recognized after normalization → kept
+  });
+
+  it("an unrecognizable target string empties the prune set and is surfaced", () => {
+    // "codx" may be a typo of a CLI the user means to KEEP — prune must not guess.
+    write(
+      ".aih-config.json",
+      JSON.stringify({ schemaVersion: 1, contextDir: "ai-coding", targets: ["claude", "codx"] }),
+    );
+    adapter("claude");
+    adapter("codex"); // would look dropped if aih guessed — it must not
+    const set = stalePruneSet(ctx());
+    expect(set.unknownTargets).toEqual(["codx"]);
+    expect(set.dropped).toEqual([]);
+    expect(set.artifacts).toEqual([]);
+  });
 });
 
 describe("stalePruneSet — treatAsDropped (the --unrunnable fold)", () => {

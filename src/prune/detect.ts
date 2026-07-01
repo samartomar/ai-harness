@@ -78,6 +78,10 @@ export interface StalePruneSet {
   /** The subset of `dropped` that is only there because of `--unrunnable` (still in
    * the committed targets, but no binary on PATH). Empty on every default run. */
   unrunnable: Cli[];
+  /** Marker target strings aih does not recognize (after case-normalization). Non-empty
+   * FAILS CLOSED: no artifact is treated as stale until the marker is fixed, because a
+   * typo'd kept target would otherwise be pruned as if it were dropped. */
+  unknownTargets: string[];
   /** The concrete stale artifacts, in canonical (kind, then declared) order. */
   artifacts: PruneArtifact[];
 }
@@ -90,12 +94,22 @@ const isCli = (s: string): s is Cli => VALID.has(s);
  * reads the intent the repo was bootstrapped with); an orchestrator's threaded
  * targets are the second authoritative source. Anything else → `none` (no intent
  * to diff, so nothing is treated as stale).
+ *
+ * Marker entries are case-normalized before validation, and anything STILL
+ * unrecognized is returned in `unknown` rather than silently filtered — for a
+ * DESTRUCTIVE consumer, "the marker says `Codex` but aih only knows `codex`" must
+ * fail closed (a typo'd kept target would otherwise be pruned as dropped).
  */
-function keptTargets(ctx: PlanContext): { targeted: Cli[]; source: KeptSource } {
-  const marker = (readAihConfig(ctx.root)?.targets ?? []).filter(isCli);
-  if (marker.length > 0) return { targeted: marker, source: "marker" };
-  if (ctx.targets && ctx.targets.length > 0) return { targeted: [...ctx.targets], source: "ctx" };
-  return { targeted: [], source: "none" };
+function keptTargets(ctx: PlanContext): { targeted: Cli[]; source: KeptSource; unknown: string[] } {
+  const raw = (readAihConfig(ctx.root)?.targets ?? []).map((t) => t.trim().toLowerCase());
+  const marker = raw.filter(isCli);
+  const unknown = raw.filter((t) => t.length > 0 && !isCli(t));
+  if (marker.length > 0 || unknown.length > 0)
+    return { targeted: marker, source: "marker", unknown };
+  if (ctx.targets && ctx.targets.length > 0) {
+    return { targeted: [...ctx.targets], source: "ctx", unknown: [] };
+  }
+  return { targeted: [], source: "none", unknown: [] };
 }
 
 /**
@@ -168,11 +182,15 @@ export async function unrunnableTargets(ctx: PlanContext): Promise<Cli[]> {
   const out: Cli[] = [];
   for (const cli of targeted) {
     if (!wired.has(cli)) continue;
+    // FAIL SAFE, not fail open: only a probe that RAN and answered "not found"
+    // (clean non-zero exit) is evidence of absence. A spawnError means the probe
+    // infrastructure itself broke (`which`/`where` missing or blocked) — that is
+    // "unknown", and an unknown CLI must be treated as RUNNABLE, never pruned.
     let runnable = false;
     for (const bin of entry(cli).binaries) {
       const argv = ctx.host.platform === "windows" ? ["where", bin] : ["which", bin];
       const res = await ctx.run(argv);
-      if (!res.spawnError && res.code === 0 && res.stdout.trim().length > 0) {
+      if (res.spawnError || (res.code === 0 && res.stdout.trim().length > 0)) {
         runnable = true;
         break;
       }
@@ -194,9 +212,29 @@ export function stalePruneSet(
   ctx: PlanContext,
   opts: { treatAsDropped?: readonly Cli[] } = {},
 ): StalePruneSet {
-  const { targeted: committed, source } = keptTargets(ctx);
+  const { targeted: committed, source, unknown } = keptTargets(ctx);
   if (source === "none") {
-    return { targeted: committed, source, dropped: [], unrunnable: [], artifacts: [] };
+    return {
+      targeted: committed,
+      source,
+      dropped: [],
+      unrunnable: [],
+      unknownTargets: [],
+      artifacts: [],
+    };
+  }
+  // FAIL CLOSED on unrecognized marker targets: "Codex"/"codx" may be a typo of a
+  // CLI the user means to KEEP — pruning anything under that ambiguity risks
+  // deleting a kept CLI's artifacts. Surface the strings; remove nothing.
+  if (unknown.length > 0) {
+    return {
+      targeted: committed,
+      source,
+      dropped: [],
+      unrunnable: [],
+      unknownTargets: unknown,
+      artifacts: [],
+    };
   }
 
   const treatAsDropped = new Set<Cli>(opts.treatAsDropped ?? []);
@@ -205,7 +243,7 @@ export function stalePruneSet(
   const dropped = onDiskClis(ctx).filter((c) => !keptSet.has(c));
   const unrunnable = dropped.filter((c) => treatAsDropped.has(c));
   if (dropped.length === 0) {
-    return { targeted, source, dropped, unrunnable, artifacts: [] };
+    return { targeted, source, dropped, unrunnable, unknownTargets: [], artifacts: [] };
   }
 
   const kept = keptPaths(targeted);
@@ -276,7 +314,7 @@ export function stalePruneSet(
     }
   }
 
-  return { targeted, source, dropped, unrunnable, artifacts };
+  return { targeted, source, dropped, unrunnable, unknownTargets: [], artifacts };
 }
 
 /**

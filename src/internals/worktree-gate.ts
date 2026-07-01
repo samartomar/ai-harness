@@ -13,9 +13,14 @@ export function normalizeRel(p: string): string {
  * Routed through the read-only {@link gitRead} seam, so it stays hermetic in tests and
  * cross-platform. Empty when git is absent / not a repo (`gitRead` → undefined): with
  * no git history there is no uncommitted work to clobber.
+ *
+ * `-uall` matters for the REMOVAL gate: default porcelain collapses an entirely
+ * untracked directory to one `?? dir/` entry, so a FILE inside it would never appear
+ * in this set and a `remove`/`--delete` of it would sail past the gate. `-uall` lists
+ * every untracked file individually (ignored files stay excluded, so it stays cheap).
  */
 export async function dirtyPaths(ctx: PlanContext): Promise<Set<string>> {
-  const out = await gitRead(ctx, ["status", "--porcelain"]);
+  const out = await gitRead(ctx, ["status", "--porcelain", "-uall"]);
   const set = new Set<string>();
   if (typeof out !== "string") return set;
   for (const line of out.split("\n")) {
