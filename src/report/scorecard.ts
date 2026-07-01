@@ -10,6 +10,7 @@ import { lines } from "../internals/render.js";
 import { inventory } from "../status.js";
 import { DEFAULT_CONTEXT_BUDGET_TOKENS } from "./bloat.js";
 import { scanCliCoverage } from "./cli-coverage.js";
+import { type CheckResult, check, type DimensionResult, dim, gradeOf } from "./grade.js";
 import { scanLoadGroups } from "./loadgroups.js";
 import { remediationBlock } from "./render.js";
 
@@ -26,63 +27,14 @@ import { remediationBlock } from "./render.js";
  * (statSync/existsSync/read) — no spawn, no network — so it is identical dry-run vs
  * `--verify` and omitted entirely off-canon (no RULE_ROUTER.md → undefined).
  *
- * Grade bands + the `round(passed/total*100)` dimension formula are lifted as short
- * factual constants from @paniolo/scan (cli.js grade bands; dist/standards/
- * reference-thresholds.json adapter_max_lines=75). paniolo's package license is
- * unconfirmed, so this attribution is kept self-contained in this header; only the
- * public formula + threshold integers are used, no code was copied.
+ * The grade/dimension machinery (bands + `round(passed/total*100)`) lives in `grade.js`
+ * with its @paniolo/scan attribution. This file adds only the maturity-specific
+ * `ADAPTER_MAX_LINES=75` threshold (dist/standards/reference-thresholds.json) — a short
+ * factual integer, self-contained here since paniolo's license is unconfirmed.
  */
 
 /** Thin-pointer ceiling — an adapter note over this many lines is duplicating, not pointing. */
 const ADAPTER_MAX_LINES = 75;
-
-/** Grade bands (min score → label), lifted verbatim from paniolo (85/70/50/0), aih voice. */
-const GRADE_BANDS = [
-  { min: 85, grade: "mature" },
-  { min: 70, grade: "solid" },
-  { min: 50, grade: "emerging" },
-  { min: 0, grade: "nascent" },
-] as const;
-
-type Grade = (typeof GRADE_BANDS)[number]["grade"];
-
-interface CheckResult {
-  id: string;
-  passed: boolean;
-  /** One-line fix, surfaced verbatim when the check fails. Every check carries one. */
-  remediation: string;
-  /** The aih artifact/command that defines the check (light evidence grade). */
-  source: string;
-}
-
-interface DimensionResult {
-  name: string;
-  weight: number;
-  /** 0..100, `round(passed/total*100)` (lifted formula). */
-  score: number;
-  checks: CheckResult[];
-}
-
-/** Map a 0–100 score to its lifted letter grade. */
-export function gradeOf(score: number): Grade {
-  for (const b of GRADE_BANDS) if (score >= b.min) return b.grade;
-  return "nascent";
-}
-
-/** A dimension's score: the share of its checks that pass, 0–100 (lifted formula). */
-function dimScore(checks: CheckResult[]): number {
-  if (checks.length === 0) return 0;
-  const passed = checks.filter((c) => c.passed).length;
-  return Math.round((passed / checks.length) * 100);
-}
-
-function check(id: string, passed: boolean, remediation: string, source: string): CheckResult {
-  return { id, passed, remediation, source };
-}
-
-function dim(name: string, weight: number, checks: CheckResult[]): DimensionResult {
-  return { name, weight, score: dimScore(checks), checks };
-}
 
 /** Every present bootloader carries the SAME managed block as the freshly generated one. */
 function bootloadersInSync(root: string, present: string[], sharedBody: string): boolean {

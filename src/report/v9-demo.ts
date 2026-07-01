@@ -26,6 +26,15 @@ export const V9_DEMO: AihDataV9 = {
     usageThisWeek: { actions: 1204, wowPct: 18 },
   },
 
+  // Coherent with the rest of the demo: the host blockers `wins` shows were all healed,
+  // so an agent can start (READY, WITH GAPS) — the guardrails gap is a warn, not a gate.
+  ready: {
+    banner: "READY, WITH GAPS",
+    score: 88,
+    grade: "solid",
+    blockers: [],
+  },
+
   actions: [
     {
       sev: "high",
@@ -248,6 +257,7 @@ export const V9_DEMO: AihDataV9 = {
 
   gates: {
     "sec-hero": "live",
+    "sec-ready": "live",
     "sec-actions": "live",
     "sec-wins": "live",
     "sec-context": "live",

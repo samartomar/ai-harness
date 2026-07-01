@@ -21,6 +21,7 @@ export type PanelState = "live" | "preview" | "empty";
 /** Every v9 section id, in the order the reference design draws them. */
 export const V9_SECTION_IDS = [
   "sec-hero",
+  "sec-ready",
   "sec-actions",
   "sec-wins",
   "sec-context",
@@ -53,6 +54,20 @@ export interface V9Hero {
   deltas: string[];
   /** Usage = recorded AI activity (NOT cost). Absent → the stat is omitted. */
   usageThisWeek?: { actions: number; wowPct: number };
+}
+
+/**
+ * Developer-readiness verdict — the single "can I start?" gate. Sourced from the same
+ * `computeReadiness` the `aih ready` command uses (via the "Developer readiness" digest),
+ * so the panel never recomputes readiness differently. Cross-links to the action board
+ * for the full remediation list rather than duplicating it.
+ */
+export interface V9Ready {
+  banner: "READY" | "READY, WITH GAPS" | "NOT READY";
+  score: number;
+  grade: string;
+  /** Failing gates (blockers) — id, title, and the exact fix command. */
+  blockers: Array<{ id: string; title: string; cmd: string }>;
 }
 
 /** One ranked action on the ★ board. */
@@ -226,6 +241,7 @@ export interface V9Skills {
  */
 export interface AihDataV9 {
   hero?: V9Hero;
+  ready?: V9Ready;
   actions?: V9Action[];
   wins?: V9Wins;
   context?: V9Context;
