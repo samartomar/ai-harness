@@ -351,6 +351,24 @@ describe("buildAihDataV9 — action board", () => {
     ]);
     expect(d.actions?.map((a) => a.title)).not.toContain("Wire usage + track hooks");
   });
+
+  it("leads the board with readiness blockers (the panel points here for the full list)", () => {
+    const withBlocker = [
+      ...ALL.filter((x) => !x.describe.startsWith("Developer readiness")),
+      readiness({
+        banner: "NOT READY",
+        blockers: [
+          { id: "node-runtime", title: "Node.js runtime (>= 20) on PATH", cmd: "install Node 20+" },
+        ],
+      }),
+    ];
+    const a = buildAihDataV9(withBlocker).actions ?? [];
+    const fix = a.find((x) => x.title === "Fix: Node.js runtime (>= 20) on PATH");
+    expect(fix).toBeDefined();
+    expect(fix?.sev).toBe("high");
+    expect(fix?.cmd).toBe("install Node 20+");
+    expect(a[0]?.sev).toBe("high"); // hard blockers lead the board
+  });
 });
 
 describe("buildAihDataV9 — developer readiness (sec-ready)", () => {

@@ -154,10 +154,15 @@ export async function runCapability(
     });
     json = settings.json;
     const host = makeHostAdapter({ run, env });
-    // Wire an interactive prompter only when the user opted into `--detect`, isn't
-    // in `--json`/`--yes` mode, and the session is a real TTY. Otherwise the
-    // harness stays non-interactive (automation, CI, piped output) exactly as before.
-    const wantConfirm = opts.detect === true && opts.yes !== true && !settings.json;
+    // Wire an interactive prompter when the user opted into `--detect`, OR the command
+    // asks for a confirmation prompt on a bare run (`spec.wantsInstallPrompt`, e.g.
+    // `aih ready` offering to install the missing core tools) — as long as it isn't
+    // `--json`/`--yes` and the session is a real TTY. Otherwise the harness stays
+    // non-interactive (automation, CI, piped output) exactly as before.
+    const wantConfirm =
+      (opts.detect === true || spec.wantsInstallPrompt === true) &&
+      opts.yes !== true &&
+      !settings.json;
     const prompter =
       deps.prompter ?? (wantConfirm && isInteractive(env) ? makeReadlinePrompter() : undefined);
     // `--refresh <sec>` (report) keeps the dashboard live: open once, then regenerate

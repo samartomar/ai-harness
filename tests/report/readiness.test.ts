@@ -31,6 +31,10 @@ interface ReadinessData {
 /** Which tools the fake runner should report as present on PATH / runnable. */
 interface Tools {
   node?: boolean;
+  /** node --version stdout (default "v20.11.0"); set e.g. "v18.19.0" to test the >=20 gate. */
+  nodeVersion?: string;
+  /** node present but exits non-zero (a broken install). */
+  nodeBroken?: boolean;
   npm?: boolean;
   git?: boolean;
   rg?: boolean;
@@ -75,8 +79,11 @@ function toolRunner(t: Tools): PlanContext["run"] {
       return { spawnError: true, code: 127 };
     }
     // node/npm `--version` run directly on POSIX.
-    if (cmd === "node")
-      return t.node === false ? { spawnError: true, code: 127 } : { code: 0, stdout: "v20.11.0" };
+    if (cmd === "node") {
+      if (t.node === false) return { spawnError: true, code: 127 };
+      if (t.nodeBroken) return { code: 1, stderr: "boom" };
+      return { code: 0, stdout: t.nodeVersion ?? "v20.11.0" };
+    }
     if (cmd === "npm")
       return t.npm === false
         ? { code: 1, stderr: "Cannot find module" }
@@ -207,6 +214,35 @@ describe("readinessDigest — a broken runtime", () => {
     const { data } = await digestData(ctx({ rg: false, fd: false, jq: false }));
     expect(data.blockers.some((b) => b.id === "core-shell-tools")).toBe(true);
     expect(data.banner).toBe("NOT READY");
+  });
+
+  it("a runnable Node OLDER than 20 fails the gate the title promises (>= 20)", async () => {
+    scaffoldReady();
+    const { data } = await digestData(ctx({ nodeVersion: "v18.19.0" }));
+    expect(data.blockers.some((b) => b.id === "node-runtime")).toBe(true);
+    expect(data.banner).toBe("NOT READY");
+  });
+
+  it("a broken Node (present but non-zero exit) fails the gate, not passes", async () => {
+    scaffoldReady();
+    const { data } = await digestData(ctx({ nodeBroken: true }));
+    expect(data.blockers.some((b) => b.id === "node-runtime")).toBe(true);
+  });
+
+  it("Node 20+ still passes (no false negative from the version parse)", async () => {
+    scaffoldReady();
+    const { data } = await digestData(ctx({ nodeVersion: "v22.3.0" }));
+    expect(data.blockers.some((b) => b.id === "node-runtime")).toBe(false);
+  });
+
+  it("a repo with no declared build/test/start command dings repo-contract (warn, not skip)", async () => {
+    // Fully wired EXCEPT there is no package.json script — the missing handoff command
+    // must lower the score as a warn, not be silently dropped as a skip.
+    scaffoldReady();
+    rmSync(join(dir, "package.json"), { force: true });
+    const { data } = await digestData(ctx());
+    expect(data.warns.some((w) => w.id === "declared-commands")).toBe(true);
+    expect(data.score).toBeLessThan(100);
   });
 });
 

@@ -139,10 +139,18 @@ async function firstHealCheck(
   return undefined;
 }
 
-/** node runtime on PATH (heal's own `versionArgv`/`classifyTool`) — GATE (machine). */
+/**
+ * node runtime on PATH — GATE (machine). Enforces what the row TITLE promises
+ * ("Node.js runtime (>= 20)"): a broken install (present but non-zero exit) fails
+ * like npm's gate does, and a runnable node older than 20 fails too — parsed from
+ * `node --version`. Fails closed on an unparseable version rather than waving it
+ * through, so the gate never green-lights a runtime the harness can't run on.
+ */
 async function nodeVerdict(ctx: PlanContext): Promise<Check["verdict"]> {
   const res = await ctx.run(versionArgv(ctx.host.platform, "node"));
-  return classifyTool(res, ctx.host.platform === "windows") === "absent" ? "fail" : "pass";
+  if (classifyTool(res, ctx.host.platform === "windows") !== "ok") return "fail";
+  const major = Number(res.stdout.match(/v?(\d+)\./)?.[1] ?? Number.NaN);
+  return Number.isFinite(major) && major >= 20 ? "pass" : "fail";
 }
 
 /** npm present and runnable — GATE (machine). Blocked on node ⇒ skip (node gate owns it). */
@@ -290,6 +298,9 @@ async function buildChecks(ctx: PlanContext): Promise<ReadinessCheck[]> {
 
   // Declared build/test/lint are unverified until Phase-2 command running — surfaced
   // as a WARN when a repo declares none of them (nothing for the agent to lean on).
+  // A missing handoff command must DING the repo-contract score (verdict `fail`, a
+  // warn-tier ding), not `skip` (which the composer drops) — otherwise a repo with no
+  // runnable command silently scores as if it had one.
   const stack = scanRepo(root, { maxDepth: 8, contextDir });
   const hasRunnable = Boolean(stack.testRunner || stack.buildCommand || stack.startCommand);
   out.push({
@@ -297,7 +308,7 @@ async function buildChecks(ctx: PlanContext): Promise<ReadinessCheck[]> {
     title: "Declared build/test/start command",
     severity: "warn",
     dimension: "repo-contract",
-    verdict: hasRunnable ? "pass" : "skip",
+    verdict: hasRunnable ? "pass" : "fail",
     cmd: "add a test/build/start script to package.json",
   });
 

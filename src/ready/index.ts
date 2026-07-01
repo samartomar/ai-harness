@@ -140,6 +140,12 @@ async function readyPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
   // interactive `y`; non-TTY without `--apply` diagnoses only.
   const missingCore = await coreToolsMissing(ctx);
   if (missingCore.length > 0 && (await shouldInstall(ctx, missingCore))) {
+    // An interactive "yes" IS apply-consent for the scoped install — aih runs dry
+    // until the user opts in, and here the prompt is that opt-in, equivalent to
+    // `--apply`. The executor only runs the install execs under `ctx.apply`, so a
+    // confirmed prompt on a bare `aih ready` must flip it. Safe because ready's plan
+    // has no file writes — the flip enables ONLY the install execs appended below.
+    ctx.apply = true;
     actions.push(...(await coreToolInstallActions(ctx, specsForMissing(missingCore))));
   }
 
@@ -151,5 +157,8 @@ export const command: CommandSpec = {
   summary:
     "Readiness gate — can a developer start work with an AI agent here? (graded, blocker-aware)",
   alwaysVerify: true,
+  // Offer the "Install rg, fd, jq now? [y/N]" confirmation on a bare `aih ready` in a
+  // TTY (not just under `--detect`) — the install is what a first-time repo opener wants.
+  wantsInstallPrompt: true,
   plan: readyPlan,
 };

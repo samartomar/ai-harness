@@ -215,6 +215,13 @@ export interface CommandSpec {
    * blocking the report on a dirty tree is wrong.
    */
   skipWorktreeGate?: boolean;
+  /**
+   * Wire an interactive prompter for this command in a TTY even without `--detect`,
+   * so a bare run can offer a confirmation (e.g. `aih ready` asking to install the
+   * missing core tools). Still suppressed under `--json`/`--yes`/non-TTY, so
+   * automation stays non-interactive.
+   */
+  wantsInstallPrompt?: boolean;
 }
 
 // ---- builders -------------------------------------------------------------

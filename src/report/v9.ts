@@ -190,6 +190,24 @@ function buildReady(digests: DigestAction[]): V9Ready | undefined {
 
 function deriveActions(digests: DigestAction[]): V9Action[] {
   const out: V9Action[] = [];
+  // Readiness blockers lead the board: a hard stop means an agent cannot make a
+  // correct first change until it clears, so it outranks any maturity/config ding.
+  // Bound from the SAME "Developer readiness" digest the readiness panel renders, so
+  // the panel's "full remediation list is in What to fix first" is actually true —
+  // and machine blockers (Node/npm/TLS/PATH/core tools) that no other bag surfaces
+  // finally appear on the board.
+  const ready = bag(digests, "Developer readiness");
+  const blockers = ready && Array.isArray(ready.blockers) ? (ready.blockers as BlockerRaw[]) : [];
+  for (const b of blockers) {
+    const title = String(b.title ?? "");
+    if (!title) continue;
+    out.push({
+      sev: "high",
+      title: `Fix: ${title}`,
+      body: "Hard readiness blocker — an agent cannot make a correct first change until this clears.",
+      cmd: String(b.cmd ?? ""),
+    });
+  }
   const sc = bag(digests, "Harness maturity");
   if (sc) {
     const dims = Array.isArray(sc.dimensions) ? (sc.dimensions as ScDim[]) : [];

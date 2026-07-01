@@ -289,6 +289,29 @@ describe("aih ready — confirmation-gated core-tool installs (slice 4)", () => 
     expect(execsOf((await command.plan(cNo)).actions)).toHaveLength(0);
   });
 
+  it("an interactive `y` flips apply so the install execs actually RUN (not just plan)", async () => {
+    scaffoldReady();
+    const yes = { ask: async (): Promise<string> => "y" };
+    const cYes = ctx({ rg: false, fd: false, jq: false, pms: ["brew"] }, { prompter: yes });
+    expect(cYes.apply).toBe(false); // dry-run before the prompt
+    await command.plan(cYes);
+    // The confirmed prompt IS apply-consent; the executor only runs execs under apply,
+    // so a bare `aih ready` + `y` would otherwise plan the install but never run it.
+    expect(cYes.apply).toBe(true);
+  });
+
+  it("`n` at the prompt leaves apply untouched (nothing installed)", async () => {
+    scaffoldReady();
+    const no = { ask: async (): Promise<string> => "n" };
+    const cNo = ctx({ rg: false, fd: false, jq: false, pms: ["brew"] }, { prompter: no });
+    await command.plan(cNo);
+    expect(cNo.apply).toBe(false);
+  });
+
+  it("declares wantsInstallPrompt so a bare `aih ready` gets a prompter in a TTY", () => {
+    expect(command.wantsInstallPrompt).toBe(true);
+  });
+
   it("a still-missing core tool after install escalates as env.tool-install-blocked", async () => {
     scaffoldReady();
     // No package manager at all → the install can't run; the verify probe fails coded.
