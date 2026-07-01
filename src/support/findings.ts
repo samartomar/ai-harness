@@ -481,6 +481,13 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     action:
       "Re-run the trust scan or workspace acquisition with `--pin <40-character SHA>` for the reviewed commit.",
   },
+  "trust.license-missing": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "external skill source declares no license",
+    action:
+      "Do not install the external source until it declares a license (a LICENSE/COPYING file or a package.json license field), or replace it with a licensed alternative.",
+  },
 };
 
 /** Severity rank for sorting: most urgent first. */

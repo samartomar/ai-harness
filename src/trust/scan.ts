@@ -45,7 +45,7 @@ export const TRUST_SKIP_DIRS = new Set([
   "vendor",
 ]);
 const ROOT_TRUST_DOCS = new Set(["AGENTS.md", "CLAUDE.md", "GEMINI.md"]);
-const INCOMING_MCP_CONFIG_FILES = new Set([...MCP_CONFIG_FILES, "mcp.json"]);
+export const INCOMING_MCP_CONFIG_FILES = new Set([...MCP_CONFIG_FILES, "mcp.json"]);
 const HOSTED_MCP_ADVISORY =
   "hosted MCP server has no post-approval rug-pull protection; run a runtime MCP-scan with tool-pinning before first use.";
 const MCP_POLICY_RULE = "incoming MCP policy";
