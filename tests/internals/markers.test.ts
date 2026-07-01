@@ -155,4 +155,11 @@ describe("stripManagedBlock", () => {
     const merged = mergeManagedBlock(undefined, block, preamble);
     expect(stripManagedBlock(merged, block.marker)).toBe(`${preamble}\n`);
   });
+
+  it("leaves intentional multi-blank runs ELSEWHERE in the file untouched", () => {
+    // A user's triple-blank run far from the fence must survive (no global collapse).
+    const file = `# A\n\n\n\nstill spaced.\n\n${beginLine(block.marker, "n")}\nx\n${endLine(block.marker)}\n`;
+    const out = stripManagedBlock(file, block.marker);
+    expect(out).toBe("# A\n\n\n\nstill spaced.\n");
+  });
 });

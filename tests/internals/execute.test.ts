@@ -1,4 +1,12 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -498,6 +506,29 @@ describe("executePlan — remove actions", () => {
     await expect(
       executePlan(plan("prune", remove("../outside.md", "escape")), ctx({ apply: true })),
     ).rejects.toBeInstanceOf(PathContainmentError);
+  });
+
+  it("refuses the move when `.aih` is a symlink escaping the repo (destination containment)", async () => {
+    const outside = mkdtempSync(join(tmpdir(), "aih-legacy-escape-"));
+    try {
+      symlinkSync(outside, join(dir, ".aih"), "dir"); // .aih → outside dir
+    } catch {
+      rmSync(outside, { recursive: true, force: true });
+      return; // symlink creation not permitted (e.g. Windows) — skip
+    }
+    try {
+      put("ai-coding/adapters/codex.md", "# codex\n");
+      await expect(
+        executePlan(
+          plan("prune", remove("ai-coding/adapters/codex.md", "stale")),
+          ctx({ apply: true }),
+        ),
+      ).rejects.toBeInstanceOf(PathContainmentError);
+      // The escaping symlink target received nothing.
+      expect(existsSync(join(outside, "legacy", "ai-coding", "adapters", "codex.md"))).toBe(false);
+    } finally {
+      rmSync(outside, { recursive: true, force: true });
+    }
   });
 
   it("aborts before removing any file when a write in the same plan fails (atomicity)", async () => {

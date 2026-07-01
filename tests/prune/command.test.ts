@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { sharedBlock } from "../../src/bootstrap-ai/canon.js";
+import { SHARED_MARKER, sharedBlock } from "../../src/bootstrap-ai/canon.js";
 import { mergeManagedBlock } from "../../src/internals/markers.js";
 import type { Action, Plan, PlanContext } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
@@ -113,5 +113,23 @@ describe("aih prune command", () => {
     expect(
       actions.some((a) => a.kind === "remove" && a.path === "ai-coding/adapters/codex.md"),
     ).toBe(true);
+  });
+
+  it("never subtracts a block whose body is NOT aih's canonical body (drift/look-alike guard)", () => {
+    marker("claude");
+    write("ai-coding/adapters/claude.md");
+    write("ai-coding/adapters/codex.md");
+    // A block carrying the aih marker but a HAND-EDITED body — not what aih generates.
+    writeFileSync(
+      join(dir, "AGENTS.md"),
+      mergeManagedBlock(
+        undefined,
+        { marker: SHARED_MARKER, note: "x", body: "hand-edited, not aih canonical" },
+        "# preamble",
+      ),
+    );
+    const actions = actionsOf();
+    // The look-alike/drifted block is left untouched (never blindly stripped).
+    expect(actions.some((a) => a.kind === "write" && a.path === "AGENTS.md")).toBe(false);
   });
 });

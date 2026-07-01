@@ -1,8 +1,8 @@
 import { join } from "node:path";
-import { SHARED_MARKER } from "../bootstrap-ai/canon.js";
+import { SHARED_MARKER, sharedCanonicalBlockBody } from "../bootstrap-ai/canon.js";
 import { readIfExists } from "../internals/fsxn.js";
 import { aihIgnoreWrite } from "../internals/gitignore.js";
-import { stripManagedBlock } from "../internals/markers.js";
+import { extractManagedBlock, stripManagedBlock } from "../internals/markers.js";
 import {
   type Action,
   type CommandSpec,
@@ -53,12 +53,21 @@ const KIND_LABEL: Record<PruneArtifact["kind"], string> = {
   "kiro-hook": "Kiro hook",
 };
 
-/** The subtracted content of a co-owned bootloader (aih's canon block removed), or
- * `undefined` when the block is absent / nothing would change. Read at plan time
- * (pure fs, no spawn) so the `write` action carries the exact bytes to land. */
+/**
+ * The subtracted content of a co-owned bootloader (aih's canon block removed), or
+ * `undefined` when there is nothing safe to subtract. It only acts when the on-disk
+ * block body EQUALS aih's freshly generated canonical body — the same ownership
+ * signal the drift check uses. So a user's look-alike `<!-- BEGIN … -->` example, a
+ * block a human edited inside the fence, or a repo whose block already drifted is
+ * left untouched (never corrupted) rather than blindly stripped. Read at plan time
+ * (pure fs, no spawn) so the `write` action carries the exact bytes to land.
+ */
 function bootloaderMinusBlock(ctx: PlanContext, rel: string): string | undefined {
   const text = readIfExists(join(ctx.root, rel));
   if (text === undefined) return undefined;
+  const onDisk = extractManagedBlock(text, SHARED_MARKER);
+  if (onDisk === undefined) return undefined; // no aih block present
+  if (onDisk !== sharedCanonicalBlockBody(ctx.contextDir).trim()) return undefined; // not aih's / drifted
   const stripped = stripManagedBlock(text, SHARED_MARKER);
   return stripped === text ? undefined : stripped;
 }

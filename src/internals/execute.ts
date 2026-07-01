@@ -300,7 +300,13 @@ export async function executePlan(
         removes.push({ path: action.path, describe: action.describe, effect: "absent" });
       } else {
         const legacyRel = `.aih/legacy/${normalizeRel(action.path)}`;
-        if (ctx.apply) txn.stageRemoval(absPath, resolvePath(ctx, legacyRel));
+        const legacyAbs = resolvePath(ctx, legacyRel);
+        // Contain the DESTINATION too, not just the source: if `.aih/` (or any parent
+        // of the legacy path) is a symlink escaping the repo, the move would rename the
+        // file OUTSIDE the root. assertContained realpaths the deepest existing ancestor,
+        // so a symlinked `.aih` parent — or a `..` surviving in the path — trips it.
+        assertContained(ctx.root, legacyAbs);
+        if (ctx.apply) txn.stageRemoval(absPath, legacyAbs);
         removes.push({
           path: action.path,
           describe: action.describe,

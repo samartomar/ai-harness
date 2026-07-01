@@ -92,11 +92,11 @@ export function stripManagedBlock(existing: string, marker: string): string {
     `\\n*<!-- BEGIN ${escapeRegExp(marker)}[\\s\\S]*?${escapeRegExp(endLine(marker))}\\n*`,
   );
   if (!pattern.test(normalized)) return existing;
-  const stripped = normalized
-    .replace(pattern, "\n\n") // block + hugging blanks → a single paragraph break
-    .replace(/\n{3,}/g, "\n\n") // never leave more than one blank line
-    .replace(/^\n+/, "")
-    .replace(/\n+$/, "");
+  // Replace the block + the blank lines hugging it with a single paragraph break, so
+  // the seam is exactly one blank line — never a double-blank gap, and WITHOUT touching
+  // any blank-line runs elsewhere in the file (a global collapse would rewrite the
+  // user's intentional spacing far from the fence).
+  const stripped = normalized.replace(pattern, "\n\n").replace(/^\n+/, "").replace(/\n+$/, "");
   const next = stripped.length > 0 ? `${stripped}\n` : "";
   return /\r\n/.test(existing) ? next.replace(/\n/g, "\r\n") : next;
 }

@@ -179,6 +179,32 @@ describe("FsTransaction — removals (aih prune)", () => {
     expect(res.removed).toEqual([]);
   });
 
+  it("never overwrites an occupied legacy dest — a second rescue lands at .N", () => {
+    const legacy = join(dir, ".aih", "legacy", "codex.md");
+    // First rescue: codex.md V1 → legacy.
+    const t1 = new FsTransaction();
+    t1.stageRemoval(put("codex.md", "V1"), legacy);
+    t1.commit();
+    expect(readFileSync(legacy, "utf8")).toBe("V1");
+    // codex.md is repopulated (re-bootstrapped) and pruned again: V1 must survive.
+    const t2 = new FsTransaction();
+    t2.stageRemoval(put("codex.md", "V2"), legacy);
+    const res = t2.commit();
+    expect(readFileSync(legacy, "utf8")).toBe("V1"); // first rescue preserved
+    expect(readFileSync(`${legacy}.1`, "utf8")).toBe("V2"); // second lands beside it
+    expect(res.removed[0]?.legacyPath).toBe(`${legacy}.1`);
+  });
+
+  it("refuses a transaction that both writes and removes the same path", () => {
+    const p = put("x.md", "hi");
+    const t = new FsTransaction();
+    t.stage(p, "new content");
+    t.stageRemoval(p, join(dir, ".aih", "legacy", "x.md"));
+    expect(() => t.commit()).toThrow(/both writes and removes/);
+    // Fail-closed: nothing happened.
+    expect(readFileSync(p, "utf8")).toBe("hi");
+  });
+
   it("rolls an applied removal BACK when a later removal fails", () => {
     const a = put("a.md", "AAA");
     const bLink = join(dir, "b.md");
