@@ -2,7 +2,7 @@
 
 _Status: ✅ shipped & verified — both tracks (E + P) plus D4 file output. Date: 2026-06-24._
 
-Consolidates the **org-analytics research note** ([org-analytics-dashboard.md](org-analytics-dashboard.md))
+Consolidates the **org-analytics research note**
 with the readable framing of the _"aih Dashboard Architecture: Personal Dev vs. Enterprise
 Views"_ research PDF, keeping only what survives contact with the codebase. This is the
 **Tier 1** slice the research note recommends: a local aggregation command, aggregate-first,
@@ -68,7 +68,7 @@ terminal digest; `--apply` optionally writes it to a file.
 **Shape** (mirrors `CommandSpec`, registered in `src/commands/index.ts`):
 
 ```
-aih report --from <usage.json> [--skills <skills.json>] [--format terminal|md] [--window 30] [--json]
+aih report [root] [--org <export.json>] [--format terminal|md|html] [--json]
 ```
 
 **Computed metrics** (only fields the API actually returns):

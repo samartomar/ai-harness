@@ -49,7 +49,7 @@ export const V9_DEMO: AihDataV9 = {
       sev: "low",
       title: "Vet context7 MCP egress",
       body: "context7 is third-party egress — confirm approved.",
-      cmd: "aih mcp --review",
+      cmd: "aih mcp --verify",
     },
     {
       sev: "low",

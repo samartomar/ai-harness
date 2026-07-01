@@ -2,7 +2,7 @@
 
 _Generated 2026-06-26. Grounded in the live source: the coverage surfaces, the CLI registry, the scorecard, and the dashboard renderer were all read end-to-end before this was written. The plan replaces the global, Claude-shaped file-exists checks with a registry-driven, target-scoped, four-state per-CLI matrix, and adds a loadability tier that closes the **present ≠ loaded** gap so no CLI silently misses the mark._
 
-> Companion: [harness-adoption-plan.md](harness-adoption-plan.md) — the capability-registry (REG) and scorecard (SCORE) specs this plan builds on.
+> Companion: the capability registry lives in [src/internals/cli-registry.ts](../../src/internals/cli-registry.ts) and the scorecard in [src/report/scorecard.ts](../../src/report/scorecard.ts) — the REG/SCORE surfaces this plan builds on.
 >
 > **Reviewed 2026-06-26** (external review, code-grounded). Verdict: proceed — this fixes a product trust gap, not scope creep. The review endorsed the defaults for D0/D1/D3/D4/D5/D6/D7/D8 and added three deltas now folded in: a **target-source** field (§3), a **dual KPI** (structurally configured vs proven loadable, §5/D8), and a locked **Installed/Targeted/Wired vocabulary** (§2). D2 accepted (annotate). The review's "validate MCP content in Phase 1" note was already satisfied — the writable-MCP content check is Phase 1, not deferred.
 >
@@ -276,4 +276,4 @@ Status legend: **RESOLVED** = default accepted (endorsed by the 2026-06-26 revie
 
 ---
 
-_Next step: only **D2** is open, and it does not block anything — Phase 1 is implementable immediately. Confirm D2 (or accept the **annotate** default) and Phase 1 can start; D2 only affects two cells' display text in the MCP column._
+_All phases shipped 2026-06-26 (see banner). D2 (annotate the two manual-MCP cells) was the only open call and blocks nothing — revisit only if the MCP column needs the file-present hint._

@@ -7,15 +7,16 @@ Reuse the Phase-0 pattern (`src/report/v4.ts`): a renderer that **embeds a stati
 binds it**, with server-side gating for honesty. Build it as a new module so the legacy
 report and the `--v4` skin are untouched.
 
-- **New module:** `src/report/v9.ts` exporting `buildAihDataV9(digests): AihDataV9` (pure,
+- **New module:** `src/report/v9.ts` exporting `buildAihDataV9(digests)` returning `AihDataV9` (pure,
   deterministic, no IO/clock — reads digest `.data` bags) and `reportHtmlV9(title, digests, opts)`.
+  (Implemented in `src/report/v9.ts` + `src/report/v9-panels.ts`.)
 - **Stylesheet/JS:** reuse the v4 design system (it already contains every component the v9
   layout needs: `donut`, `bars`, `mat`, `matrix`, `drift-*`, `hook-row`, `heatmap*`, `radar`,
   `cost-stack*` for the colorful usage bar, `anom-card` for the action/wins boards,
   `branches`, `timeline`, `pulse`, `callout`). Add only a small supplementary block:
   `.preview` (desaturate + "PREVIEW · not wired yet" badge), `.deltarow`, `.egress`, `.srv-row`.
   See `reference-v9.html`'s `<style>` for the exact supplementary CSS already written.
-- **Flag:** add `--v9` to the report command (`src/report/index.ts`), modeled exactly on
+- **Flag:** `--v9` on the report command (src/report/index.ts) is live, modeled on
   `--v4`: it forces `format = "html"` and routes the HTML path to `reportHtmlV9`. Legacy
   default unchanged. `--demo`/`--refresh`/`--open` compose with it as they do for `--v4`.
 - **Determinism:** byte-stable output — no `Date.now()`/random in rendered HTML (timestamps
@@ -35,7 +36,7 @@ report and the `--v4` skin are untouched.
 
 Order matches `reference-v9.html`. `describe` = the digest whose `.describe` starts with that
 string (read via the `bag(digests, prefix)` helper from `v4.ts`). State: 🟢 LIVE today ·
-🟡 needs a new capability (CAPABILITIES.md) · 🔵 PREVIEW until its capability lands.
+🟡 needs a new capability (CAPABILITIES.md) · 🔵 data-gated PREVIEW: renders LIVE once its capability's digest returns data (all capability digests are built — see CAPABILITIES).
 
 | # | Panel | State | Source / binding |
 |---|-------|-------|------------------|
