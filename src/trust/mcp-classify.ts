@@ -127,6 +127,9 @@ export function classifyIncomingMcp(rawServer: unknown): McpServer {
   const url = raw ? stringValue(raw.url) : undefined;
   const description = raw ? (stringValue(raw.description) ?? "") : "";
   const credentials = hasLiteralCredential(rawServer, args) ? "token" : "none";
+  // Carry env onto the classified server so its content-bound acknowledgement
+  // fingerprint (mcpServerConfigFingerprint) invalidates on an env-only rug-pull.
+  const env = raw ? Object.fromEntries(envEntries(raw.env)) : {};
 
   if (url !== undefined && /^https?:\/\//i.test(url.trim())) {
     return hosted(url.trim(), description, credentials);
@@ -140,6 +143,7 @@ export function classifyIncomingMcp(rawServer: unknown): McpServer {
     command,
     args,
     description,
+    env,
     classification: "local",
     egress: "local-only",
     credentials,

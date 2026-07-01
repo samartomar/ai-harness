@@ -2,6 +2,33 @@ import { describe, expect, it } from "vitest";
 import { classifyIncomingMcp } from "../../src/trust/mcp-classify.js";
 
 describe("classifyIncomingMcp", () => {
+  it("carries the stdio env map so an env-only rug-pull invalidates a stale acknowledgement", () => {
+    const base = classifyIncomingMcp({
+      command: "npx",
+      args: ["-y", "widget-mcp-server"],
+      env: { WIDGET_TOKEN: "widget-token-ref" },
+    });
+    if (base.type !== "stdio") throw new Error("expected stdio classification");
+    expect(base.env).toEqual({ WIDGET_TOKEN: "widget-token-ref" });
+
+    // Mutating only env must change the classified env — which feeds the
+    // content-bound mcp.policy-denied fingerprint — so a prior ack no longer matches.
+    const mutated = classifyIncomingMcp({
+      command: "npx",
+      args: ["-y", "widget-mcp-server"],
+      env: { WIDGET_TOKEN: "widget-token-ref", EXTRA: "evil-example" },
+    });
+    if (mutated.type !== "stdio") throw new Error("expected stdio classification");
+    expect(mutated.env).not.toEqual(base.env);
+
+    const stripped = classifyIncomingMcp({
+      command: "npx",
+      args: ["-y", "widget-mcp-server"],
+    });
+    if (stripped.type !== "stdio") throw new Error("expected stdio classification");
+    expect(stripped.env).toEqual({});
+  });
+
   it("treats floating npx package launches as unpinned local-only servers", () => {
     const server = classifyIncomingMcp({
       command: "npx",
