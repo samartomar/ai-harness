@@ -1,4 +1,6 @@
 import type { PlanContext } from "../internals/plan.js";
+import { type Action, doc, exec } from "../internals/plan.js";
+import type { Check } from "../internals/verify.js";
 import type { Platform } from "../platform/base.js";
 
 /**
@@ -183,4 +185,67 @@ export function execArgv(platform: Platform, argv: string[]): string[] {
   return platform === "windows" && argv[0] !== undefined && WIN_CMD_SHIMS.has(argv[0])
     ? ["cmd", "/c", ...argv]
     : argv;
+}
+
+/**
+ * The install actions for a set of missing tools, given the available package
+ * managers: one per tool — a LOCAL `exec` when a PM matches (`allowFailure` so one
+ * blocked install doesn't abort the rest), else a `doc` with the manual route. The
+ * single source of truth for "how aih installs a shell tool", reused by `aih tools`
+ * AND `aih ready --apply`. Callers append their own follow-on verify probes, which
+ * carry the `env.tool-install-blocked` escalation when an install stays blocked.
+ */
+export function installActionsFor(
+  ctx: PlanContext,
+  tools: readonly ToolSpec[],
+  pms: ReadonlySet<string>,
+): Action[] {
+  const actions: Action[] = [];
+  for (const t of tools) {
+    const opt = chooseOption(t, pms);
+    if (opt) {
+      actions.push(
+        exec(`install ${t.tool} (${opt.pm})`, execArgv(ctx.host.platform, opt.argv), {
+          allowFailure: true,
+        }),
+      );
+    } else {
+      actions.push(
+        doc(
+          `install ${t.tool} manually (no supported package manager found)`,
+          `No detected package manager can install ${t.tool}. Install it manually: ${t.manual}`,
+        ),
+      );
+    }
+  }
+  return actions;
+}
+
+/** How a tool would be installed, given the available package managers. */
+export function howToInstall(t: ToolSpec, pms: ReadonlySet<string>): string {
+  const opt = chooseOption(t, pms);
+  return opt ? `\`${opt.argv.join(" ")}\`` : `manually — ${t.manual}`;
+}
+
+/**
+ * Post-install verification: is the tool on PATH now? A CORE tool still missing is
+ * a `fail` (real gap, drives a non-zero exit + an escalation ticket); an OPTIONAL
+ * one is a `skip` (advisory improvement). Both carry `env.tool-install-blocked` so
+ * the support pipeline turns a blocked install into a ready-to-send ticket. Shared
+ * by `aih tools` and `aih ready --apply` so a blocked install escalates identically.
+ */
+export async function verifyTool(
+  ctx: PlanContext,
+  t: ToolSpec,
+  pms: ReadonlySet<string>,
+): Promise<Check> {
+  if (await onPath(ctx, t.bin)) {
+    return { name: t.tool, verdict: "pass", detail: `${t.bin} on PATH` };
+  }
+  return {
+    name: t.tool,
+    verdict: t.tier === "core" ? "fail" : "skip",
+    detail: `${t.bin} not on PATH — install: ${howToInstall(t, pms)}`,
+    code: "env.tool-install-blocked",
+  };
 }

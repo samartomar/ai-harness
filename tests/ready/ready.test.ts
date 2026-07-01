@@ -21,6 +21,8 @@ interface Tools {
   jq?: boolean;
   /** TLS handshake to the registry: "ok" (default) | "fail". */
   tls?: "ok" | "fail";
+  /** Package-manager binaries to report on PATH (for the install path), e.g. ["brew"]. */
+  pms?: string[];
 }
 
 let dir: string; // repo root
@@ -53,6 +55,8 @@ function toolRunner(t: Tools): PlanContext["run"] {
       if (bin === "rg") return present(bin, t.rg);
       if (bin === "fd") return present(bin, t.fd);
       if (bin === "jq") return present(bin, t.jq);
+      // Package managers probed by detectPms (only when the install path runs).
+      if ((t.pms ?? []).includes(bin)) return present(bin, true);
       return { spawnError: true, code: 127 };
     }
     if (cmd === "node")
@@ -200,5 +204,102 @@ describe("aih ready — the first-command handoff line", () => {
     const text = digest.text ?? "";
     expect(text).toContain("No runnable command declared — see setup.md before starting.");
     expect((digest.data as { firstCommand: string | null }).firstCommand).toBeNull();
+  });
+});
+
+/** Exec actions in a built plan (the install commands). */
+const execsOf = (actions: Action[]): Extract<Action, { kind: "exec" }>[] =>
+  actions.filter((a): a is Extract<Action, { kind: "exec" }> => a.kind === "exec");
+
+describe("aih ready — confirmation-gated core-tool installs (slice 4)", () => {
+  it("--apply with rg/fd/jq absent → the plan includes install ExecActions for the missing tools", async () => {
+    scaffoldReady();
+    // rg/fd/jq missing, brew available as the package manager.
+    const c = ctx({ rg: false, fd: false, jq: false, pms: ["brew"] }, { apply: true });
+    const built = await command.plan(c);
+
+    // The digest + gate probe STILL print (installs are additive).
+    const { digest, gate } = actionsOf(built.actions);
+    expect(digest.describe).toBe("Developer readiness");
+    expect(gate.describe).toBe("readiness — no blockers");
+
+    // One install exec per missing core tool, reusing `aih tools`'s brew commands.
+    const cmds = execsOf(built.actions).map((e) => e.argv);
+    expect(cmds).toContainEqual(["brew", "install", "ripgrep"]);
+    expect(cmds).toContainEqual(["brew", "install", "fd"]);
+    expect(cmds).toContainEqual(["brew", "install", "jq"]);
+    // Only the three core tools — no optional tools (ast-grep/gh/…) get installed here.
+    expect(execsOf(built.actions)).toHaveLength(3);
+    // The gate still reflects the pre-install diagnosis (NOT READY: core tools missing).
+    expect((digest.data as { banner: string }).banner).toBe("NOT READY");
+  });
+
+  it("only the ABSENT core tools are installed (fd present → rg + jq only)", async () => {
+    scaffoldReady();
+    const c = ctx({ rg: false, fd: true, jq: false, pms: ["brew"] }, { apply: true });
+    const cmds = execsOf((await command.plan(c)).actions).map((e) => e.argv);
+    expect(cmds).toContainEqual(["brew", "install", "ripgrep"]);
+    expect(cmds).toContainEqual(["brew", "install", "jq"]);
+    expect(cmds).not.toContainEqual(["brew", "install", "fd"]);
+    expect(cmds).toHaveLength(2);
+  });
+
+  it("no --apply, non-TTY (no prompter) → NO exec actions (diagnose only)", async () => {
+    scaffoldReady();
+    // Core tools missing but neither --apply nor a prompter → diagnose only.
+    const c = ctx({ rg: false, fd: false, jq: false, pms: ["brew"] });
+    const built = await command.plan(c);
+    expect(execsOf(built.actions)).toHaveLength(0);
+    // The gate still fails (the digest already carries the install command).
+    const { gate } = actionsOf(built.actions);
+    const check = await gate.run(c);
+    expect(check.verdict).toBe("fail");
+    expect(check.code).toBe("ready.blocked");
+  });
+
+  it("all core tools present → no install actions regardless of --apply", async () => {
+    scaffoldReady();
+    // Defaults have rg/fd/jq present; even with --apply there is nothing to install.
+    const built = await command.plan(ctx({ pms: ["brew"] }, { apply: true }));
+    expect(execsOf(built.actions)).toHaveLength(0);
+  });
+
+  it("interactive `y` at the prompt → installs; `n` → diagnose only", async () => {
+    scaffoldReady();
+    const asks: string[] = [];
+    const yes = {
+      ask: async (q: string): Promise<string> => {
+        asks.push(q);
+        return "y";
+      },
+    };
+    const no = { ask: async (): Promise<string> => "n" };
+
+    const cYes = ctx({ rg: false, fd: false, jq: false, pms: ["brew"] }, { prompter: yes });
+    const builtYes = await command.plan(cYes);
+    expect(execsOf(builtYes.actions).map((e) => e.argv)).toContainEqual([
+      "brew",
+      "install",
+      "ripgrep",
+    ]);
+    // The prompt names the missing tools.
+    expect(asks[0]).toContain("Install rg, fd, jq now?");
+
+    const cNo = ctx({ rg: false, fd: false, jq: false, pms: ["brew"] }, { prompter: no });
+    expect(execsOf((await command.plan(cNo)).actions)).toHaveLength(0);
+  });
+
+  it("a still-missing core tool after install escalates as env.tool-install-blocked", async () => {
+    scaffoldReady();
+    // No package manager at all → the install can't run; the verify probe fails coded.
+    const c = ctx({ rg: false, fd: false, jq: false, pms: [] }, { apply: true });
+    const built = await command.plan(c);
+    const rgProbe = built.actions.find(
+      (a): a is Extract<Action, { kind: "probe" }> =>
+        a.kind === "probe" && a.describe.includes("ripgrep"),
+    );
+    const check = await rgProbe?.run(c);
+    expect(check?.verdict).toBe("fail");
+    expect(check?.code).toBe("env.tool-install-blocked");
   });
 });

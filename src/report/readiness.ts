@@ -158,8 +158,12 @@ async function gitVerdict(ctx: PlanContext): Promise<Check["verdict"]> {
   return res.spawnError ? "fail" : "pass";
 }
 
-/** rg/fd/jq — reuse {@link toolsInstalledDigest}'s coreMissing without a second spawn set. */
-async function coreToolsMissing(ctx: PlanContext): Promise<string[]> {
+/**
+ * The core shell tools (rg/fd/jq) NOT on PATH, via the same `which`/`where` probe the
+ * readiness gate uses. Exported so `aih ready --apply` can emit install actions for the
+ * exact set the `core-shell-tools` gate flagged — the two never drift.
+ */
+export async function coreToolsMissing(ctx: PlanContext): Promise<string[]> {
   const missing: string[] = [];
   for (const bin of ["rg", "fd", "jq"]) {
     const argv = ctx.host.platform === "windows" ? ["where", bin] : ["which", bin];
