@@ -21,6 +21,7 @@ import { command as report } from "../report/index.js";
 import { command as sandbox } from "../sandbox/index.js";
 import { command as scaffold } from "../scaffold/index.js";
 import { command as secrets } from "../secrets/index.js";
+import { skillVetCommand } from "../skill/index.js";
 import { command as status } from "../status.js";
 import { command as superpowers } from "../superpowers/index.js";
 import { command as telemetry } from "../telemetry/index.js";
@@ -254,4 +255,23 @@ export function registerCommands(program: Command): void {
       });
     },
   );
+
+  const skill = program
+    .command("skill")
+    .description("Skill lifecycle operations for external skill sources");
+  const vet = skill
+    .command(skillVetCommand.name)
+    .description(skillVetCommand.summary)
+    .argument("<source>", "local path or GitHub owner/repo skill source");
+  addSharedFlags(vet);
+  for (const o of skillVetCommand.options ?? []) {
+    if (o.default !== undefined) vet.option(o.flags, o.description, o.default);
+    else vet.option(o.flags, o.description);
+  }
+  vet.action(async (source: string, _options: Record<string, unknown>, command: Command) => {
+    process.exitCode = await runCapability(skillVetCommand, command, {
+      positionalRoot: false,
+      optionOverrides: { source },
+    });
+  });
 }

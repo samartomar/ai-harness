@@ -137,7 +137,7 @@ export async function workspaceAddPhase1Plan(
   return plan("workspace add: fetch + scan", aihIgnoreWrite(ctx.root), ...scan.actions);
 }
 
-function collectSkillDirs(root: string): string[] {
+export function collectSkillDirs(root: string): string[] {
   const out: string[] = [];
   const visit = (abs: string): void => {
     const st = lstatSync(abs);
@@ -169,7 +169,7 @@ function sourceDirSortKey(sourceRoot: string, skillDir: string): string {
   return skillDir === sourceRoot ? "." : safeSourceRelative(sourceRoot, skillDir);
 }
 
-function promotedSkillRel(sourceRoot: string, skillDir: string): string {
+export function promotedSkillRel(sourceRoot: string, skillDir: string): string {
   if (skillDir === sourceRoot) return basename(sourceRoot);
   const rel = safeSourceRelative(sourceRoot, skillDir);
   const parts = rel.split("/");
