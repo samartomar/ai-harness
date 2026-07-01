@@ -36,7 +36,7 @@ interface SkillVetPlanOptions {
 }
 
 /** Evidence artifact schema written to `.aih/skill-reports/` under --apply. */
-interface SkillVetEvidence {
+export interface SkillVetEvidence {
   schemaVersion: 1;
   source: string;
   pinnedSha?: string;
