@@ -6,6 +6,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **npm package slimmed ~64%** (1.1 MB → ~400 kB packed; 3.9 MB → 1.1 MB unpacked): the
+  published chunks are now minified (`keepNames` preserved, so stack traces stay readable)
+  and source maps are no longer shipped — local development still debugs from `src/`.
+
 ## [0.3.0] - 2026-07-01
 
 First-developer experience plus a documentation and licensing-posture pass.
