@@ -52,6 +52,7 @@ describe("buildRunEntry", () => {
         execs: [],
         digests: [{ describe: "x", text: "t" }],
         backups: ["a.aih.bak"],
+        removed: [],
         report: new VerificationReport().pass("p").fail("f", "boom").skip("s"),
       },
     });

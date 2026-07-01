@@ -2,7 +2,9 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { PlanContext } from "../../src/internals/plan.js";
+import { SHARED_MARKER, sharedBlock } from "../../src/bootstrap-ai/canon.js";
+import { mergeManagedBlock } from "../../src/internals/markers.js";
+import type { Action, Plan, PlanContext } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 import { command } from "../../src/prune/index.js";
@@ -37,35 +39,97 @@ function write(rel: string, content = "x"): void {
   writeFileSync(path, content);
 }
 
-function previewText(over: Partial<PlanContext> = {}): string {
-  const p = command.plan(ctx(over)) as { actions: { kind: string; text?: string }[] };
-  const d = p.actions.find((a) => a.kind === "digest");
-  return d?.text ?? "";
+function marker(...targets: string[]): void {
+  writeFileSync(
+    join(dir, ".aih-config.json"),
+    JSON.stringify({ schemaVersion: 1, contextDir: "ai-coding", targets }),
+  );
 }
 
-describe("aih prune preview", () => {
+const actionsOf = (over: Partial<PlanContext> = {}): Action[] =>
+  (command.plan(ctx(over)) as Plan).actions;
+const digestText = (actions: Action[]): string => {
+  const d = actions.find((a): a is Extract<Action, { kind: "digest" }> => a.kind === "digest");
+  return d?.text ?? "";
+};
+
+describe("aih prune command", () => {
   it("guides the user when there is no committed target set to diff", () => {
-    const text = previewText();
+    const text = digestText(actionsOf());
     expect(text).toContain("No committed target set");
     expect(text).toContain("aih bootstrap-ai");
   });
 
-  it("uses a mechanism-accurate note per block kind (no 'managed block' for JSON MCP)", () => {
-    writeFileSync(
-      join(dir, ".aih-config.json"),
-      JSON.stringify({ schemaVersion: 1, contextDir: "ai-coding", targets: ["claude"] }),
-    );
+  it("emits a `remove` action per file artifact and a `write` (block-subtract) per bootloader", () => {
+    marker("claude");
     write("ai-coding/adapters/claude.md");
-    write("ai-coding/adapters/codex.md"); // dropped — bootloader AGENTS.md (text marker block)
-    write("ai-coding/adapters/cursor.md"); // dropped — MCP JSON (json key merge)
-    write("AGENTS.md");
-    write(".cursor/rules/00-canon.mdc");
+    write("ai-coding/adapters/codex.md"); // dropped → file remove
+    // codex's AGENTS.md bootloader carries a real managed block + a user preamble.
+    writeFileSync(
+      join(dir, "AGENTS.md"),
+      mergeManagedBlock(undefined, sharedBlock("ai-coding"), "# My preamble"),
+    );
+    const actions = actionsOf();
+
+    const removes = actions.filter((a) => a.kind === "remove").map((a) => a.path);
+    expect(removes).toContain("ai-coding/adapters/codex.md");
+
+    const subtract = actions.find(
+      (a): a is Extract<Action, { kind: "write" }> => a.kind === "write" && a.path === "AGENTS.md",
+    );
+    expect(subtract).toBeDefined();
+    // The write lands the file MINUS aih's canon block, preamble preserved.
+    expect(subtract?.contents).toBe("# My preamble\n");
+
+    // A .gitignore write is present so `.aih/legacy/` is ignored before the move.
+    expect(actions.some((a) => a.kind === "write" && a.path === ".gitignore")).toBe(true);
+  });
+
+  it("routes an MCP config to a manual advisory in the digest — never an auto-action", () => {
+    marker("codex"); // keep codex (AGENTS.md stays); drop cursor
+    write("ai-coding/adapters/codex.md");
+    write("ai-coding/adapters/cursor.md");
     write(".cursor/mcp.json", JSON.stringify({ mcpServers: {} }));
-    const text = previewText();
-    // Bootloader keeps the marker-block wording; MCP uses JSON-merge wording.
-    expect(text).toContain("managed block subtracted"); // AGENTS.md / .cursor bootloader
-    expect(text).toContain("aih's server entries removed"); // .cursor/mcp.json
-    // The old one-size-fits-all "managed block; hand-edits preserved" is gone for MCP.
-    expect(text).not.toContain("managed block; hand-edits preserved");
+    const actions = actionsOf();
+    // The MCP config is NOT touched by any write/remove action.
+    const touched = actions
+      .filter((a) => a.kind === "write" || a.kind === "remove")
+      .map((a) => (a as { path: string }).path);
+    expect(touched).not.toContain(".cursor/mcp.json");
+    // It appears as a manual-review line in the digest instead.
+    const text = digestText(actions);
+    expect(text).toContain("Manual review");
+    expect(text).toContain(".cursor/mcp.json");
+  });
+
+  it("skips a bootloader that carries no aih block (nothing to subtract)", () => {
+    marker("claude");
+    write("ai-coding/adapters/claude.md");
+    write("ai-coding/adapters/codex.md");
+    writeFileSync(join(dir, "AGENTS.md"), "# just my own notes, no aih block\n");
+    const actions = actionsOf();
+    // No write targets AGENTS.md (its block is absent), but the adapter is still removed.
+    expect(actions.some((a) => a.kind === "write" && a.path === "AGENTS.md")).toBe(false);
+    expect(
+      actions.some((a) => a.kind === "remove" && a.path === "ai-coding/adapters/codex.md"),
+    ).toBe(true);
+  });
+
+  it("never subtracts a block whose body is NOT aih's canonical body (drift/look-alike guard)", () => {
+    marker("claude");
+    write("ai-coding/adapters/claude.md");
+    write("ai-coding/adapters/codex.md");
+    // A block carrying the aih marker but a HAND-EDITED body — not what aih generates.
+    writeFileSync(
+      join(dir, "AGENTS.md"),
+      mergeManagedBlock(
+        undefined,
+        { marker: SHARED_MARKER, note: "x", body: "hand-edited, not aih canonical" },
+        "# preamble",
+      ),
+    );
+    const actions = actionsOf();
+    // The look-alike/drifted block is left untouched (never blindly stripped).
+    expect(actions.some((a) => a.kind === "write" && a.path === "AGENTS.md")).toBe(false);
   });
 });

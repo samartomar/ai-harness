@@ -75,6 +75,33 @@ export function mergeManagedBlock(
 }
 
 /**
+ * Remove a managed block (and the blank lines hugging it) from `existing`, leaving
+ * everything OUTSIDE the fence verbatim and preserving the file's EOL style. The
+ * inverse of {@link mergeManagedBlock}: `aih prune` uses it to SUBTRACT aih's
+ * canonical block from a co-owned bootloader when the CLI is dropped, so the
+ * tool-specific preamble and any human edits survive. Returns `existing` unchanged
+ * when the marker is absent (no-op), and `""` when the block was the file's entire
+ * content. It never deletes the file — the caller writes the stripped remainder in
+ * place (the bootloader has no reliable "pure-aih remainder" signal, so we keep it).
+ */
+export function stripManagedBlock(existing: string, marker: string): string {
+  const normalized = existing.replace(/\r\n/g, "\n");
+  // Greedily consume the blank lines around the fence so removing it doesn't leave a
+  // double-blank gap where the block used to be.
+  const pattern = new RegExp(
+    `\\n*<!-- BEGIN ${escapeRegExp(marker)}[\\s\\S]*?${escapeRegExp(endLine(marker))}\\n*`,
+  );
+  if (!pattern.test(normalized)) return existing;
+  // Replace the block + the blank lines hugging it with a single paragraph break, so
+  // the seam is exactly one blank line — never a double-blank gap, and WITHOUT touching
+  // any blank-line runs elsewhere in the file (a global collapse would rewrite the
+  // user's intentional spacing far from the fence).
+  const stripped = normalized.replace(pattern, "\n\n").replace(/^\n+/, "").replace(/\n+$/, "");
+  const next = stripped.length > 0 ? `${stripped}\n` : "";
+  return /\r\n/.test(existing) ? next.replace(/\n/g, "\r\n") : next;
+}
+
+/**
  * Extract a managed block's body (trimmed) from `text`, or `undefined` if the
  * markers are absent. Used by the drift check: compare the on-disk body to the
  * freshly generated one and fail if they differ.

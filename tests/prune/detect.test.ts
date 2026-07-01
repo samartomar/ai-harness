@@ -157,7 +157,13 @@ describe("stalePruneSet — never-prune invariants", () => {
     write(".cursor/mcp.json", JSON.stringify({ mcpServers: {} }));
     const set = stalePruneSet(ctx());
     const mcp = set.artifacts.find((a) => a.kind === "mcp");
-    expect(mcp).toMatchObject({ path: ".cursor/mcp.json", disposition: "block", clis: ["cursor"] });
+    // MCP JSON has no ownership marker (aih servers indistinguishable from the user's)
+    // → advisory, never auto-subtracted.
+    expect(mcp).toMatchObject({
+      path: ".cursor/mcp.json",
+      disposition: "advisory",
+      clis: ["cursor"],
+    });
     // The shared canonical block source / router are never in the prune set.
     expect(paths(set).some((p) => p.includes("_shared-canonical-block"))).toBe(false);
     expect(paths(set).some((p) => p.includes("RULE_ROUTER"))).toBe(false);

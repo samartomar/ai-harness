@@ -70,9 +70,22 @@ interface AppliedWrite {
   created: boolean;
 }
 
+/** A file to remove by MOVING it to `legacyPath` (under gitignored `.aih/legacy/`). */
+interface StagedRemoval {
+  path: string;
+  legacyPath: string;
+}
+
+interface AppliedRemoval {
+  path: string;
+  legacyPath: string;
+}
+
 export interface FsTxnResult {
   written: string[];
   backups: string[];
+  /** Files moved out of the tree (source → `.aih/legacy/` destination). */
+  removed: AppliedRemoval[];
 }
 
 /**
@@ -84,9 +97,20 @@ export interface FsTxnResult {
  */
 export class FsTransaction {
   private staged: StagedWrite[] = [];
+  private stagedRemovals: StagedRemoval[] = [];
 
   stage(path: string, contents: string, mode?: number): void {
     this.staged.push({ path, contents, mode });
+  }
+
+  /**
+   * Stage a file REMOVAL as a reversible move to `legacyPath` (under gitignored
+   * `.aih/legacy/`). The move IS the backup: rollback (and the user) restore by
+   * moving it back. Symlinks are refused at commit (moving a link then restoring it
+   * would recreate a regular file). No-op if the source is already gone.
+   */
+  stageRemoval(path: string, legacyPath: string): void {
+    this.stagedRemovals.push({ path, legacyPath });
   }
 
   preview(): ReadonlyArray<StagedWrite> {
@@ -95,10 +119,21 @@ export class FsTransaction {
 
   commit(): FsTxnResult {
     const applied: AppliedWrite[] = [];
+    const removed: AppliedRemoval[] = [];
     // Collapse repeated writes to the same target (last wins) BEFORE committing:
     // staging one path twice would back up the first write as `<path>.aih.bak`, then
     // overwrite that backup with the second — making a later rollback non-restorative.
     const staged = dedupeByPath(this.staged);
+    const removals = dedupeRemovals(this.stagedRemovals);
+    // A path cannot be both written AND removed in one transaction — the on-disk
+    // outcome (write, then move-to-legacy) would contradict the reported writes[].
+    // No shipping command produces this; fail closed so a future one can't silently.
+    const writePaths = new Set(staged.map((w) => w.path));
+    for (const r of removals) {
+      if (writePaths.has(r.path)) {
+        throw new FsTxnError(`transaction both writes and removes the same path: ${r.path}`);
+      }
+    }
     try {
       for (const w of staged) {
         mkdirSync(dirname(w.path), { recursive: true });
@@ -131,13 +166,75 @@ export class FsTransaction {
         retryTransient(() => renameSync(tmpPath, w.path));
         applied.push({ path: w.path, backup, created: !existed });
       }
+      // Removals commit AFTER writes so a partial failure rolls both back in order.
+      for (const r of removals) {
+        const info = lstatSafe(r.path);
+        if (info === undefined) continue; // already gone — idempotent no-op
+        // Never MOVE a symlink: rollback would renameSync it back as-is, but a link
+        // that pointed outside the repo has no place in .aih/legacy/ and restoring it
+        // silently re-establishes the escape. The executor also rejects this earlier.
+        if (info.isSymbolicLink()) {
+          throw new Error(`refusing to remove a symlink: ${r.path}`);
+        }
+        mkdirSync(dirname(r.legacyPath), { recursive: true });
+        // NEVER overwrite an occupied legacy destination: an aborted prune rolls its
+        // move back (so it leaves nothing here), which means an existing file at the
+        // dest is a COMPLETED prior rescue — deleting it would destroy the only copy.
+        // Move to a free `.N` sibling instead so every rescue survives.
+        const dest = freeLegacyDest(r.legacyPath);
+        retryTransient(() => renameSync(r.path, dest));
+        removed.push({ path: r.path, legacyPath: dest });
+      }
       return {
         written: applied.map((a) => a.path),
         backups: applied.flatMap((a) => (a.backup ? [a.backup] : [])),
+        removed,
       };
     } catch (err) {
+      rollbackRemovals(removed);
       rollback(applied);
       throw new FsTxnError(`transaction failed and was rolled back: ${(err as Error).message}`);
+    }
+  }
+}
+
+/** Keep only the last staged removal per source path (deterministic). */
+function dedupeRemovals(staged: StagedRemoval[]): StagedRemoval[] {
+  const byPath = new Map<string, StagedRemoval>();
+  for (const r of staged) byPath.set(r.path, r);
+  return [...byPath.values()];
+}
+
+/**
+ * A free legacy destination: `base` if nothing is there, else `base.1`, `base.2`, …
+ * so a second rescue of a repopulated path never clobbers the first. Refuses a
+ * symlink at any candidate (it would redirect the rename out of the repo).
+ */
+function freeLegacyDest(base: string): string {
+  const check = (p: string): "free" | "file" => {
+    const st = lstatSafe(p);
+    if (st === undefined) return "free";
+    if (st.isSymbolicLink()) throw new Error(`refusing to move onto a symlinked legacy path: ${p}`);
+    return "file";
+  };
+  if (check(base) === "free") return base;
+  for (let n = 1; n < 100000; n++) {
+    const cand = `${base}.${n}`;
+    if (check(cand) === "free") return cand;
+  }
+  throw new Error(`too many prior rescues at ${base}`);
+}
+
+/** Restore moved-out files by renaming them back from `.aih/legacy/` (best-effort). */
+function rollbackRemovals(removed: AppliedRemoval[]): void {
+  for (const r of [...removed].reverse()) {
+    try {
+      if (existsSync(r.legacyPath) && !existsSync(r.path)) {
+        mkdirSync(dirname(r.path), { recursive: true });
+        renameSync(r.legacyPath, r.path);
+      }
+    } catch {
+      // best-effort; rollback should never mask the original error
     }
   }
 }

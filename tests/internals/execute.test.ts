@@ -1,4 +1,12 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -12,6 +20,7 @@ import {
   type PlanContext,
   plan,
   probe,
+  remove,
   writeJson,
   writeText,
 } from "../../src/internals/plan.js";
@@ -442,5 +451,106 @@ describe("executePlan — digest actions", () => {
       ctx({ apply: true }),
     );
     expect(summarizeResult(res)).toContain("Applied scaffold");
+  });
+});
+
+describe("executePlan — remove actions", () => {
+  const put = (rel: string, body = "x"): string => {
+    const abs = join(dir, rel);
+    mkdirSync(dirname(abs), { recursive: true });
+    writeFileSync(abs, body);
+    return abs;
+  };
+
+  it("dry-run records the removal effect + destination but touches nothing", async () => {
+    const abs = put("ai-coding/adapters/codex.md");
+    const res = await executePlan(
+      plan("prune", remove("ai-coding/adapters/codex.md", "stale adapter")),
+      ctx({ apply: false }),
+    );
+    expect(existsSync(abs)).toBe(true); // untouched
+    expect(res.removed).toEqual([
+      {
+        path: "ai-coding/adapters/codex.md",
+        describe: "stale adapter",
+        effect: "remove",
+        to: ".aih/legacy/ai-coding/adapters/codex.md",
+      },
+    ]);
+  });
+
+  it("--apply MOVES the file to .aih/legacy/ (reversible), leaving nothing at the source", async () => {
+    const abs = put("ai-coding/adapters/codex.md", "# codex\n");
+    const res = await executePlan(
+      plan("prune", remove("ai-coding/adapters/codex.md", "stale adapter")),
+      ctx({ apply: true }),
+    );
+    expect(existsSync(abs)).toBe(false);
+    const legacy = join(dir, ".aih", "legacy", "ai-coding", "adapters", "codex.md");
+    expect(existsSync(legacy)).toBe(true);
+    expect(readFileSync(legacy, "utf8")).toBe("# codex\n"); // content preserved = the backup
+    expect(res.removed[0]?.effect).toBe("remove");
+  });
+
+  it("records `absent` (no move) when the target does not exist", async () => {
+    const res = await executePlan(
+      plan("prune", remove("ai-coding/adapters/gone.md", "stale")),
+      ctx({ apply: true }),
+    );
+    expect(res.removed).toEqual([
+      { path: "ai-coding/adapters/gone.md", describe: "stale", effect: "absent" },
+    ]);
+  });
+
+  it("refuses to remove a path that escapes the root (containment)", async () => {
+    await expect(
+      executePlan(plan("prune", remove("../outside.md", "escape")), ctx({ apply: true })),
+    ).rejects.toBeInstanceOf(PathContainmentError);
+  });
+
+  it("refuses the move when `.aih` is a symlink escaping the repo (destination containment)", async () => {
+    const outside = mkdtempSync(join(tmpdir(), "aih-legacy-escape-"));
+    try {
+      symlinkSync(outside, join(dir, ".aih"), "dir"); // .aih → outside dir
+    } catch {
+      rmSync(outside, { recursive: true, force: true });
+      return; // symlink creation not permitted (e.g. Windows) — skip
+    }
+    try {
+      put("ai-coding/adapters/codex.md", "# codex\n");
+      await expect(
+        executePlan(
+          plan("prune", remove("ai-coding/adapters/codex.md", "stale")),
+          ctx({ apply: true }),
+        ),
+      ).rejects.toBeInstanceOf(PathContainmentError);
+      // The escaping symlink target received nothing.
+      expect(existsSync(join(outside, "legacy", "ai-coding", "adapters", "codex.md"))).toBe(false);
+    } finally {
+      rmSync(outside, { recursive: true, force: true });
+    }
+  });
+
+  it("aborts before removing any file when a write in the same plan fails (atomicity)", async () => {
+    const abs = put("ai-coding/adapters/codex.md", "# codex\n");
+    // Writes commit before removals, so a failing write (here: writing THROUGH an
+    // existing file as if it were a directory) aborts the whole plan — the removal
+    // never runs and the file is left exactly as it was.
+    await expect(
+      executePlan(
+        plan(
+          "prune",
+          remove("ai-coding/adapters/codex.md", "stale"),
+          writeText("ai-coding/adapters/codex.md/nested.txt", "boom", "invalid nested write"),
+        ),
+        ctx({ apply: true }),
+      ),
+    ).rejects.toBeTruthy();
+    expect(existsSync(abs)).toBe(true);
+    expect(readFileSync(abs, "utf8")).toBe("# codex\n");
+    // Nothing leaked into the legacy dir either.
+    expect(existsSync(join(dir, ".aih", "legacy", "ai-coding", "adapters", "codex.md"))).toBe(
+      false,
+    );
   });
 });
