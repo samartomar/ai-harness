@@ -58,6 +58,14 @@ node dist/cli.js --help
 ```
 </details>
 
+## Quickstart
+
+```bash
+aih doctor              # read-only: is the workstation ready for AI coding?
+aih init .              # preview the full repo bootstrap (dry-run — nothing is written)
+aih init . --apply      # apply it
+```
+
 ## Command surface
 
 | Command | What it does |
@@ -308,8 +316,7 @@ npm run build     # tsup → dist/
 ```
 
 Stack: TypeScript (ESM) · commander · zod · vitest · biome · tsup. See
-[`.github/AGENT_TASKS.md`](.github/AGENT_TASKS.md) for architecture, the
-contributor/agent workflow, and delegatable tasks.
+[CONTRIBUTING.md](CONTRIBUTING.md) for the contributor workflow.
 
 ## License
 
