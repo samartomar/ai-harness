@@ -64,22 +64,13 @@ describe("install.ts pure helpers", () => {
       "x",
     ]);
     expect(execArgv("windows", ["docker", "run", "skillspector"])).toEqual([
-      "cmd",
-      "/c",
       "docker",
       "run",
       "skillspector",
     ]);
-    expect(execArgv("windows", ["uvx", "semgrep"])).toEqual(["cmd", "/c", "uvx", "semgrep"]);
-    expect(execArgv("windows", ["semgrep", "--version"])).toEqual([
-      "cmd",
-      "/c",
-      "semgrep",
-      "--version",
-    ]);
+    expect(execArgv("windows", ["uvx", "semgrep"])).toEqual(["uvx", "semgrep"]);
+    expect(execArgv("windows", ["semgrep", "--version"])).toEqual(["semgrep", "--version"]);
     expect(execArgv("windows", ["skillspector", "--version"])).toEqual([
-      "cmd",
-      "/c",
       "skillspector",
       "--version",
     ]);

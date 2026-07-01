@@ -3,6 +3,7 @@
 // structure ($schema, runs[].tool.driver{name,version,rules}, results[]) is the
 // SARIF spec; aih's verdict→level mapping and driver identity are our own.
 
+import { isAbsolute } from "node:path";
 import { VERSION } from "../program.js";
 import type { Check, Verdict, VerificationReport } from "./verify.js";
 
@@ -22,13 +23,22 @@ function level(verdict: Verdict): "error" | "note" {
   return verdict === "fail" ? "error" : "note";
 }
 
+function safeArtifactUri(raw: string): string | undefined {
+  const uri = raw.replace(/\\/g, "/");
+  if (uri.length === 0 || isAbsolute(uri) || /^[A-Za-z]:\//.test(uri)) return undefined;
+  if (uri.split("/").some((part) => part === "..")) return undefined;
+  return uri;
+}
+
 function locations(c: Check): unknown[] {
   if (!c.location) return [];
+  const uri = safeArtifactUri(c.location.uri);
+  if (uri === undefined) return [];
   const physicalLocation: {
     artifactLocation: { uri: string };
     region?: { startLine: number };
   } = {
-    artifactLocation: { uri: c.location.uri },
+    artifactLocation: { uri },
   };
   if (c.location.startLine !== undefined) {
     physicalLocation.region = { startLine: c.location.startLine };

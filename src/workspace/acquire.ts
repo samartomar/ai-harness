@@ -41,9 +41,9 @@ import {
 } from "../trust/fetch.js";
 import { readTrustLock, type TrustLock, type TrustLockSource } from "../trust/lock.js";
 import {
-  analyzersRunFromChecks,
   scanOptionsFromContext,
-  scanTrustTree,
+  scanTrustTreeWithAnalyzers,
+  type TrustScanResult,
   trustScanPlanForSource,
   trustSourceOriginChecks,
 } from "../trust/scan.js";
@@ -81,6 +81,7 @@ export interface ClearedWorkspaceAddTrustGate {
   source: TrustSourceBinding;
   artifactHashes: Array<{ path: string; sha256: string }>;
   report: VerificationReport;
+  analyzersRun: string[];
   internalScopes: string[];
 }
 
@@ -256,7 +257,7 @@ function sameArtifactHashes(
 function lockWithSource(
   ctx: PlanContext,
   source: TrustSource,
-  report: VerificationReport,
+  gate: ClearedWorkspaceAddTrustGate,
   promotion: PromotionPlan,
 ): TrustLock {
   const meta = metadataFor(source);
@@ -269,9 +270,9 @@ function lockWithSource(
     pinnedSha: meta?.pinnedSha,
     promotedAt: new Date().toISOString(),
     promotedSkills: promotion.promotedSkills,
-    analyzersRun: analyzersRunFromChecks(report.checks),
+    analyzersRun: [...gate.analyzersRun],
     artifactHashes: promotion.artifactHashes,
-    findings: report.checks.map((check) => ({
+    findings: gate.report.checks.map((check) => ({
       name: check.name,
       verdict: check.verdict,
       code: check.code,
@@ -330,20 +331,21 @@ async function persistAcknowledgeLedger(
   );
 }
 
-async function currentTrustChecks(
+async function currentTrustScan(
   ctx: PlanContext,
   source: TrustSource,
   internalScopes: readonly string[],
-): Promise<Check[]> {
-  const checks = [
-    ...trustSourceOriginChecks(ctx, source),
-    ...(await scanTrustTree(sourceRootFor(source), {
-      ...scanOptionsFromContext(ctx),
-      internalScopes,
-      posture: postureFromContext(ctx),
-    })),
-  ];
-  return applyTrustAcknowledgements(checks, ctx).checks;
+): Promise<TrustScanResult> {
+  const scan = await scanTrustTreeWithAnalyzers(sourceRootFor(source), {
+    ...scanOptionsFromContext(ctx),
+    internalScopes,
+    posture: postureFromContext(ctx),
+  });
+  const checks = [...trustSourceOriginChecks(ctx, source), ...scan.checks];
+  return {
+    analyzersRun: scan.analyzersRun,
+    checks: applyTrustAcknowledgements(checks, ctx).checks,
+  };
 }
 
 function sourceChangedCheck(detail: string): Check {
@@ -369,8 +371,8 @@ export async function captureClearedWorkspaceAddTrustGate(
   }
   const source = sourceFromContext(ctx);
   const internalScopes = resolveInternalScopes(ctx);
-  const currentChecks = await currentTrustChecks(ctx, source, internalScopes);
-  if (currentChecks.some((check) => check.verdict === "fail")) {
+  const currentScan = await currentTrustScan(ctx, source, internalScopes);
+  if (currentScan.checks.some((check) => check.verdict === "fail")) {
     throw new AihError("workspace add source changed after phase 1 scan", "AIH_TRUST");
   }
   const promotion = buildPromotion(ctx, source);
@@ -378,6 +380,7 @@ export async function captureClearedWorkspaceAddTrustGate(
     source: sourceBinding(source),
     artifactHashes: promotion.artifactHashes,
     report,
+    analyzersRun: currentScan.analyzersRun,
     internalScopes,
   };
 }
@@ -398,9 +401,9 @@ export async function workspaceAddPhase2Plan(
       ),
     );
   }
-  const currentChecks = await currentTrustChecks(ctx, source, gate.internalScopes);
-  if (currentChecks.some((check) => check.verdict === "fail")) {
-    return plan("workspace add: promote", ...probesForChecks(currentChecks));
+  const currentScan = await currentTrustScan(ctx, source, gate.internalScopes);
+  if (currentScan.checks.some((check) => check.verdict === "fail")) {
+    return plan("workspace add: promote", ...probesForChecks(currentScan.checks));
   }
   const promotion = buildPromotion(ctx, source);
   if (!sameArtifactHashes(gate.artifactHashes, promotion.artifactHashes)) {
@@ -411,7 +414,7 @@ export async function workspaceAddPhase2Plan(
       ),
     );
   }
-  const lock = lockWithSource(ctx, source, gate.report, promotion);
+  const lock = lockWithSource(ctx, source, gate, promotion);
   const actions: Action[] = [
     ...promotion.writes,
     writeJson(".aih/trust-lock.json", lock, "trusted external skill acquisition lock"),

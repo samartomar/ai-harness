@@ -15,6 +15,10 @@ function fmt(n: number): string {
   return String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
 }
 
+function digestText(d: DigestAction): string {
+  return d.text ?? "";
+}
+
 /**
  * Render the report's digests as a Markdown document — one section per digest,
  * the verbatim body in a fenced block so the aligned columns survive. Byte-stable
@@ -23,7 +27,7 @@ function fmt(n: number): string {
 export function reportMarkdown(title: string, digests: DigestAction[]): string {
   const parts: string[] = [`# ${title}`, ""];
   for (const d of digests) {
-    parts.push(`## ${d.describe}`, "", "```text", stripTrailingNewlines(d.text), "```", "");
+    parts.push(`## ${d.describe}`, "", "```text", stripTrailingNewlines(digestText(d)), "```", "");
   }
   return lines(...parts);
 }
@@ -417,7 +421,7 @@ function notePanel(d: DigestAction): string {
   return panel(
     d.describe,
     "",
-    `<pre class="prose">${esc(stripTrailingNewlines(d.text))}</pre>`,
+    `<pre class="prose">${esc(stripTrailingNewlines(digestText(d)))}</pre>`,
     12,
   );
 }

@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
-import { lstatSync, readdirSync, readFileSync } from "node:fs";
-import { basename, extname, join, relative } from "node:path";
+import { lstatSync, readFileSync } from "node:fs";
+import { basename, extname, isAbsolute, join, relative } from "node:path";
 import type { Posture } from "../config/posture.js";
 import type { Runner } from "../internals/proc.js";
 import type { Check, CheckCode } from "../internals/verify.js";
@@ -8,6 +8,7 @@ import type { Platform } from "../platform/base.js";
 import { execArgv } from "../tools/install.js";
 import { scrubFetchEnv } from "./fetch.js";
 import { gradeTrustCheck } from "./grade.js";
+import { collectFilesUnder, TRUST_SKIP_DIRS } from "./scan.js";
 
 export type TrustDetectorName = "skillspector" | "cisco" | "semgrep";
 
@@ -26,16 +27,7 @@ export interface TrustDetectorResult {
 
 const SKILLSPECTOR_ANALYZER = "skillspector@docker";
 const DETECTOR_UNAVAILABLE = "trust.detector-unavailable";
-const SKIP_DIRS = new Set([
-  ".git",
-  ".hg",
-  ".svn",
-  ".aih",
-  "coverage",
-  "dist",
-  "node_modules",
-  "vendor",
-]);
+const MAX_SCRIPT_SCAN_BYTES = 512 * 1024;
 const SCRIPT_EXTENSIONS = new Set([
   "",
   ".bash",
@@ -111,14 +103,6 @@ const MALICIOUS_PATTERNS: MaliciousPattern[] = [
     pattern: /\bbash\s+-i\b.*(?:>&|&>)\s*\/dev\/tcp\/[A-Za-z0-9._-]+\/\d+/,
   },
   {
-    label: "curl piped to shell",
-    pattern: /\bcurl\b[^\n|;&]*\|\s*(?:bash|sh)\b/,
-  },
-  {
-    label: "wget piped to shell",
-    pattern: /\bwget\b[^\n|;&]*\|\s*(?:bash|sh)\b/,
-  },
-  {
     label: "base64-decoded payload piped to shell",
     pattern: /\bbase64\b[^\n|;&]*(?:-d|--decode)?[^\n|;&]*\|\s*(?:bash|sh)\b/,
   },
@@ -136,27 +120,9 @@ function sha8(raw: string): string {
   return createHash("sha256").update(raw).digest("hex").slice(0, 8);
 }
 
-function collectFiles(root: string, accept: (rel: string) => boolean): string[] {
-  const out: string[] = [];
-  const visit = (abs: string): void => {
-    const st = lstatSync(abs);
-    if (st.isDirectory()) {
-      if (abs !== root && SKIP_DIRS.has(basename(abs))) return;
-      for (const entry of readdirSync(abs)) visit(join(abs, entry));
-      return;
-    }
-    if (!st.isFile()) return;
-    const rel = toPosix(relative(root, abs));
-    if (accept(rel)) out.push(abs);
-  };
-  visit(root);
-  return out.sort((a, b) => toPosix(relative(root, a)).localeCompare(toPosix(relative(root, b))));
-}
-
 function isScriptLike(rel: string): boolean {
   const name = basename(rel).toLowerCase();
   if (name === "package.json" || name === "package-lock.json") return false;
-  if (name.includes("script") || name.includes("install")) return true;
   return SCRIPT_EXTENSIONS.has(extname(name));
 }
 
@@ -185,7 +151,14 @@ function maliciousCodeCheck(rel: string, line: number, text: string, label: stri
 }
 
 export function scanNativeMaliciousCode(root: string): Check[] {
-  const files = collectFiles(root, isScriptLike);
+  const files = collectFilesUnder(
+    root,
+    (abs) => {
+      const rel = toPosix(relative(root, abs));
+      return isScriptLike(rel) && lstatSync(abs).size <= MAX_SCRIPT_SCAN_BYTES;
+    },
+    TRUST_SKIP_DIRS,
+  );
   const checks: Check[] = [];
   for (const file of files) {
     const rel = toPosix(relative(root, file));
@@ -202,6 +175,7 @@ export function scanNativeMaliciousCode(root: string): Check[] {
 }
 
 export function skillspectorDockerRunArgv(platform: Platform, tree: string): string[] {
+  // Native Windows Docker bind mounts can reject drive-letter paths; that fails safe to skip.
   return execArgv(platform, [
     "docker",
     "run",
@@ -269,13 +243,21 @@ function resultMessage(result: SarifResult): string {
     : "SkillSpector SARIF finding";
 }
 
-function normalizeSarifUri(root: string, raw: unknown): string {
+function normalizeSarifUri(raw: unknown): string {
   if (typeof raw !== "string" || raw.length === 0) return "skillspector.sarif";
-  const stripped = raw
-    .replace(/^file:\/\//, "")
-    .replace(/^\/scan\/?/, "")
-    .replace(/^scan\/?/, "");
-  return toPosix(stripped) || toPosix(relative(root, root));
+  const stripped = toPosix(
+    raw
+      .replace(/^file:\/\//, "")
+      .replace(/^\/scan\/?/, "")
+      .replace(/^scan\/?/, ""),
+  );
+  if (!isSafeRelativeSarifUri(stripped)) return "skillspector.sarif";
+  return stripped;
+}
+
+function isSafeRelativeSarifUri(uri: string): boolean {
+  if (uri.length === 0 || isAbsolute(uri) || /^[A-Za-z]:\//.test(uri)) return false;
+  return !uri.split("/").some((part) => part === "..");
 }
 
 function sarifStartLine(result: SarifResult): number {
@@ -283,10 +265,10 @@ function sarifStartLine(result: SarifResult): number {
   return typeof raw === "number" && Number.isInteger(raw) && raw > 0 ? raw : 1;
 }
 
-function sarifLocation(result: SarifResult, root: string): NonNullable<Check["location"]> {
+function sarifLocation(result: SarifResult): NonNullable<Check["location"]> {
   const physical = result.locations?.[0]?.physicalLocation;
   return {
-    uri: normalizeSarifUri(root, physical?.artifactLocation?.uri),
+    uri: normalizeSarifUri(physical?.artifactLocation?.uri),
     startLine: sarifStartLine(result),
   };
 }
@@ -315,7 +297,7 @@ function sarifChecks(stdout: string, root: string, posture: Posture): Check[] | 
     for (const result of run.results ?? []) {
       const code = ruleCode(result);
       if (code === undefined) continue;
-      const location = sarifLocation(result, root);
+      const location = sarifLocation(result);
       const detail = resultMessage(result);
       checks.push(
         gradeTrustCheck(
@@ -438,6 +420,7 @@ export function trustRuntimeAdvisory(analyzersRun: readonly string[]): string {
     "What this gate does not cover, and the manual runtime mitigations to consider:",
     "- Transitive or pinned-dependency malice: run a sandboxed `npm install --ignore-scripts` and `npm audit` before trusting dependency behavior.",
     "- Hosted-MCP rug-pull after approval: run a runtime MCP-scan with tool-pinning before first use.",
+    "- Bundled installer scripts may fetch-pipes remote code to a shell (`curl|wget ... | sh`); review setup scripts before running them.",
     '- Residual auto-exec risk: set `permissions.deny: ["Bash(*)"]` in the consuming CLI policy.',
     "These are advisory commands/settings for a human to review; the trust gate never auto-runs them.",
   ].join("\n");

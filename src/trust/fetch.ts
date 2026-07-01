@@ -329,6 +329,10 @@ function ensureContained(root, target) {
   fail("refusing tar path escape: " + target);
 }
 
+function isTarMetadata(type) {
+  return type === "g" || type === "x";
+}
+
 function extractTar(buffer, outRoot) {
   let offset = 0;
   while (offset + 512 <= buffer.length) {
@@ -342,7 +346,11 @@ function extractTar(buffer, outRoot) {
     offset += 512;
     const rel = safeRel(fullName);
     if (!rel) {
-      if (type !== "5") fail("refusing unsafe tar entry: " + fullName);
+      if (type !== "5" && !isTarMetadata(type)) fail("refusing unsafe tar entry: " + fullName);
+      offset += Math.ceil(size / 512) * 512;
+      continue;
+    }
+    if (isTarMetadata(type)) {
       offset += Math.ceil(size / 512) * 512;
       continue;
     }

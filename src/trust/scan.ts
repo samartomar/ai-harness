@@ -4,7 +4,7 @@ import { basename, extname, isAbsolute, join, relative, resolve } from "node:pat
 import { type Posture, postureFromContext } from "../config/posture.js";
 import { AihError } from "../errors.js";
 import type { Action, CommandSpec, PlanContext, ProbeAction } from "../internals/plan.js";
-import { digest, plan, probe, probeMany } from "../internals/plan.js";
+import { digest, dynamicDigest, plan, probe, probeMany } from "../internals/plan.js";
 import type { Runner } from "../internals/proc.js";
 import type { Check } from "../internals/verify.js";
 import { evaluateMcpPolicy } from "../mcp/policy.js";
@@ -520,21 +520,6 @@ export function scanOptionsFromContext(
   };
 }
 
-export function analyzersRunFromChecks(checks: readonly Check[]): string[] {
-  const analyzers = new Set<string>(["aih-native"]);
-  if (
-    checks.some(
-      (check) =>
-        check.name === "trust detector skillspector" &&
-        check.verdict === "pass" &&
-        (check.detail ?? "").includes("SkillSpector Docker static scan completed"),
-    )
-  ) {
-    analyzers.add("skillspector@docker");
-  }
-  return [...analyzers];
-}
-
 export async function trustScanProbes(
   source: TrustSource,
   options: ScanTrustTreeOptions = {},
@@ -599,9 +584,39 @@ export async function trustScanPlanForSource(
       digest("trust runtime advisory", trustRuntimeAdvisory(scan.analyzersRun)),
     );
   } else {
+    let githubScan: Promise<TrustScanResult> | undefined;
+    const scanGithubSource = (probeCtx: PlanContext): Promise<TrustScanResult> => {
+      githubScan ??= scanTrustTreeWithAnalyzers(
+        source.treePath,
+        scanOptionsFromContext(probeCtx, scanOptions),
+      );
+      return githubScan;
+    };
     actions.push(
-      ...(await trustScanProbes(source, scanOptions, ctx)),
-      digest("trust runtime advisory", trustRuntimeAdvisory(["aih-native"])),
+      probeMany(`trust scan ${source.display}`, async (probeCtx) => {
+        if (!probeCtx.apply) {
+          return [
+            {
+              name: "trust scan",
+              verdict: "skip",
+              code: "trust.fetch-blocked",
+              detail:
+                "remote source fetch is skipped in dry-run; pass --apply to download into quarantine",
+            },
+          ];
+        }
+        const scan = await scanGithubSource(probeCtx);
+        return acknowledgeChecks(scan.checks, probeCtx);
+      }),
+      dynamicDigest("trust runtime advisory", async (digestCtx) => {
+        if (!digestCtx.apply) return trustRuntimeAdvisory(["aih-native"]);
+        try {
+          const scan = await scanGithubSource(digestCtx);
+          return trustRuntimeAdvisory(scan.analyzersRun);
+        } catch {
+          return trustRuntimeAdvisory(["aih-native"]);
+        }
+      }),
     );
   }
   return plan("trust scan", ...actions);

@@ -5,7 +5,14 @@ import { redactSecrets } from "../guardrails/redact.js";
 import { upsertManagedBlock } from "./envfile.js";
 import { FsTransaction, readIfExists } from "./fsxn.js";
 import { deepMerge, parseJsoncText } from "./merge.js";
-import type { EnvBlockAction, ExecAction, Plan, PlanContext, WriteAction } from "./plan.js";
+import type {
+  DigestAction,
+  EnvBlockAction,
+  ExecAction,
+  Plan,
+  PlanContext,
+  WriteAction,
+} from "./plan.js";
 import { ensureTrailingNewline, indent, jsonFile, stripTrailingNewlines } from "./render.js";
 import { type Check, VerificationReport } from "./verify.js";
 import { dirtyWriteTargets, normalizeRel } from "./worktree-gate.js";
@@ -191,6 +198,7 @@ export async function executePlan(
   const docs: PlanResult["docs"] = [];
   const probes: PlanResult["probes"] = [];
   const digests: PlanResult["digests"] = [];
+  const digestActions: DigestAction[] = [];
   const execActions: ExecAction[] = [];
   const envBlockActions: EnvBlockAction[] = [];
 
@@ -248,17 +256,7 @@ export async function executePlan(
     } else if (action.kind === "envblock") {
       envBlockActions.push(action);
     } else if (action.kind === "digest") {
-      // The single source-side redaction chokepoint: mask secrets in the digest
-      // body HERE, upstream of every renderer, so BOTH the human summary and the
-      // `--json` output carry the redacted text — automation reading `--json` is
-      // the case that matters most. `data` is the raw structured payload; callers
-      // must not embed secrets there (recursively redacting arbitrary JSON would
-      // risk corrupting legitimate values).
-      digests.push({
-        describe: action.describe,
-        text: redactSecrets(action.text),
-        data: action.data,
-      });
+      digestActions.push(action);
     } else {
       probes.push({ describe: action.describe });
     }
@@ -337,6 +335,26 @@ export async function executePlan(
         }
       }
     }
+  }
+
+  for (const action of digestActions) {
+    const evaluated =
+      action.run !== undefined
+        ? await action.run(ctx)
+        : { text: action.text ?? "", data: action.data };
+    const text = typeof evaluated === "string" ? evaluated : evaluated.text;
+    const data = typeof evaluated === "string" ? action.data : evaluated.data;
+    // The single source-side redaction chokepoint: mask secrets in the digest
+    // body HERE, upstream of every renderer, so BOTH the human summary and the
+    // `--json` output carry the redacted text — automation reading `--json` is
+    // the case that matters most. `data` is the raw structured payload; callers
+    // must not embed secrets there (recursively redacting arbitrary JSON would
+    // risk corrupting legitimate values).
+    digests.push({
+      describe: action.describe,
+      text: redactSecrets(text),
+      data,
+    });
   }
 
   return {

