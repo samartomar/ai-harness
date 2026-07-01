@@ -120,10 +120,66 @@ function sha8(raw: string): string {
   return createHash("sha256").update(raw).digest("hex").slice(0, 8);
 }
 
+// Extensions that are never a shell/interpreter script — used to exclude
+// install/script-NAMED media/archive assets (e.g. `install-notes.png`) from the
+// text scan while still covering extensionless installers (`install`, `setup`).
+const NON_SCRIPT_EXTENSIONS = new Set([
+  ".png",
+  ".jpg",
+  ".jpeg",
+  ".gif",
+  ".svg",
+  ".webp",
+  ".ico",
+  ".bmp",
+  ".pdf",
+  ".mp4",
+  ".mov",
+  ".avi",
+  ".webm",
+  ".mp3",
+  ".wav",
+  ".ogg",
+  ".zip",
+  ".tar",
+  ".gz",
+  ".tgz",
+  ".bz2",
+  ".xz",
+  ".7z",
+  ".rar",
+  ".woff",
+  ".woff2",
+  ".ttf",
+  ".otf",
+  ".eot",
+]);
+
+// Filenames that are conventionally executable setup scripts even without a
+// script extension (a reverse shell in a bundled `install`/`setup` is the exact
+// risk this layer exists to catch).
+const SCRIPT_LIKE_SUBSTRINGS = [
+  "install",
+  "setup",
+  "configure",
+  "bootstrap",
+  "entrypoint",
+  "postinstall",
+  "preinstall",
+  "build",
+  "script",
+];
+
 function isScriptLike(rel: string): boolean {
   const name = basename(rel).toLowerCase();
   if (name === "package.json" || name === "package-lock.json") return false;
-  return SCRIPT_EXTENSIONS.has(extname(name));
+  const ext = extname(name);
+  if (SCRIPT_EXTENSIONS.has(ext)) return true;
+  // A media/archive asset that merely happens to be install-named is not a script.
+  if (NON_SCRIPT_EXTENSIONS.has(ext)) return false;
+  // Otherwise, scan setup-script-named files (incl. extensionless `install`/`setup`)
+  // so a reverse shell in a conventionally-named installer is not silently skipped.
+  return SCRIPT_LIKE_SUBSTRINGS.some((needle) => name.includes(needle));
 }
 
 function contentLine(path: string, line: number): string {
