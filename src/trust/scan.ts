@@ -1,15 +1,14 @@
 import { lstatSync, readdirSync, readFileSync } from "node:fs";
 import { basename, extname, isAbsolute, join, relative, resolve } from "node:path";
-import { postureGradeCheck } from "../config/governance.js";
-import { asPosture, type Posture } from "../config/posture.js";
+import { type Posture, postureFromContext } from "../config/posture.js";
 import { AihError } from "../errors.js";
 import type { Action, CommandSpec, PlanContext, ProbeAction } from "../internals/plan.js";
 import { plan, probe, probeMany } from "../internals/plan.js";
 import type { Check } from "../internals/verify.js";
 import { evaluateMcpPolicy } from "../mcp/policy.js";
 import type { McpServer } from "../mcp/servers.js";
-import { MCP_SECRET_RULE, SECRET_RULE } from "../secrets/probes.js";
-import { scanConfigSecrets, scanSecrets } from "../secrets/scan.js";
+import { mcpConfigSecretCheck, plaintextSecretCheck } from "../secrets/probes.js";
+import { MCP_CONFIG_FILES, scanConfigSecrets, scanSecrets } from "../secrets/scan.js";
 import { resolveInternalScopes, scanTrustDependencyNames } from "./depnames.js";
 import {
   assertTrustTreeSafe,
@@ -32,12 +31,7 @@ export const TRUST_SKIP_DIRS = new Set([
   "vendor",
 ]);
 const ROOT_TRUST_DOCS = new Set(["AGENTS.md", "CLAUDE.md", "GEMINI.md"]);
-const INCOMING_MCP_CONFIG_FILES = new Set([
-  ".mcp.json",
-  "mcp.json",
-  ".cursor/mcp.json",
-  ".vscode/mcp.json",
-]);
+const INCOMING_MCP_CONFIG_FILES = new Set([...MCP_CONFIG_FILES, "mcp.json"]);
 const HOSTED_MCP_ADVISORY =
   "hosted MCP server has no post-approval rug-pull protection; run a runtime MCP-scan with tool-pinning before first use.";
 const MCP_POLICY_RULE = "incoming MCP policy";
@@ -49,7 +43,7 @@ interface ScanTrustTreeOptions {
 }
 
 interface IncomingMcpServerMap {
-  key: "mcpServers" | "servers";
+  key: "mcpServers" | "servers" | "mcp";
   servers: Record<string, unknown>;
 }
 
@@ -90,29 +84,22 @@ function collectTrustDocs(root: string): string[] {
   return collectFilesUnder(root, (abs) => shouldScanTrustDoc(root, abs));
 }
 
-function isInternalScopeList(
-  value: readonly string[] | ScanTrustTreeOptions,
-): value is readonly string[] {
-  return Array.isArray(value);
-}
-
-function normalizeScanOptions(options: readonly string[] | ScanTrustTreeOptions = {}): {
+function normalizeScanOptions(options: ScanTrustTreeOptions = {}): {
   internalScopes: readonly string[];
   posture: Posture;
 } {
-  if (isInternalScopeList(options)) return { internalScopes: options, posture: "vibe" };
   return {
     internalScopes: options.internalScopes ?? [],
     posture: options.posture ?? "vibe",
   };
 }
 
-function postureFromContext(ctx: PlanContext): Posture {
-  return ctx.posture ?? asPosture(ctx.options.posture);
-}
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === "string" ? value : undefined;
 }
 
 function collectIncomingMcpConfigFiles(root: string): string[] {
@@ -122,20 +109,7 @@ function collectIncomingMcpConfigFiles(root: string): string[] {
 }
 
 function plaintextSecretChecks(root: string, posture: Posture): Check[] {
-  return scanSecrets(root).matches.map((path) =>
-    postureGradeCheck(
-      {
-        name: SECRET_RULE,
-        verdict: "fail",
-        detail: `${path} — plaintext secret on disk; migrate to a vault and rotate the exposed credential`,
-        code: "secrets.plaintext-detected",
-        location: { uri: path, startLine: 1 },
-        fingerprint: `${SECRET_RULE}:${path}`,
-      },
-      "secrets",
-      posture,
-    ),
-  );
+  return scanSecrets(root).matches.map((path) => plaintextSecretCheck(path, posture));
 }
 
 function mcpConfigSecretChecks(
@@ -143,20 +117,7 @@ function mcpConfigSecretChecks(
   mcpConfigFiles: readonly string[],
   posture: Posture,
 ): Check[] {
-  return scanConfigSecrets(root, mcpConfigFiles).map((hit) =>
-    postureGradeCheck(
-      {
-        name: MCP_SECRET_RULE,
-        verdict: "fail",
-        detail: `${hit.file}${hit.key ? ` → "${hit.key}"` : ""} holds a ${hit.kind} — move it to an env var referenced as \${ENV_VAR} and rotate the exposed value`,
-        code: "mcp.hardcoded-secret",
-        location: { uri: hit.file, startLine: 1 },
-        fingerprint: `${MCP_SECRET_RULE}:${hit.file}:${hit.key}`,
-      },
-      "secrets",
-      posture,
-    ),
-  );
+  return scanConfigSecrets(root, mcpConfigFiles).map((hit) => mcpConfigSecretCheck(hit, posture));
 }
 
 function mcpPolicyFail(rel: string, detail: string, fingerprintTail: string): Check {
@@ -187,7 +148,33 @@ function incomingServerMaps(parsed: unknown): IncomingMcpServerMap[] | undefined
     if (!isRecord(value)) return undefined;
     maps.push({ key, servers: value });
   }
+  if (Object.hasOwn(parsed, "mcp")) {
+    const value = parsed.mcp;
+    if (!isRecord(value)) return undefined;
+    maps.push({ key: "mcp", servers: openCodeServers(value) });
+  }
   return maps;
+}
+
+function openCodeServers(servers: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(servers).map(([name, server]) => [name, openCodeServer(server)]),
+  );
+}
+
+function openCodeServer(server: unknown): unknown {
+  if (!isRecord(server)) return server;
+  if (server.type === "remote") {
+    return { ...server, url: stringValue(server.url) };
+  }
+  const command = Array.isArray(server.command) ? server.command : [];
+  const executable = command[0];
+  return {
+    ...server,
+    command: typeof executable === "string" ? executable : undefined,
+    args: command.slice(1).filter((item): item is string => typeof item === "string"),
+    env: server.environment ?? server.env,
+  };
 }
 
 function safeMcpName(name: string): string {
@@ -274,7 +261,7 @@ function passCheck(root: string, scanned: number): Check {
 
 export async function scanTrustTree(
   root: string,
-  options: readonly string[] | ScanTrustTreeOptions = {},
+  options: ScanTrustTreeOptions = {},
 ): Promise<Check[]> {
   const safeRoot = assertTrustTreeSafe(root, { skipDirs: TRUST_SKIP_DIRS });
   const { internalScopes, posture } = normalizeScanOptions(options);
@@ -299,7 +286,7 @@ function probesForStaticChecks(checks: Check[]): ProbeAction[] {
 
 export async function trustScanProbes(
   source: TrustSource,
-  options: readonly string[] | ScanTrustTreeOptions = {},
+  options: ScanTrustTreeOptions = {},
 ): Promise<ProbeAction[]> {
   if (source.kind === "local") {
     return probesForStaticChecks(await scanTrustTree(source.root, options));

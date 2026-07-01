@@ -3,9 +3,10 @@ import { existsSync, lstatSync, readdirSync, readFileSync } from "node:fs";
 import { basename, extname, join, posix } from "node:path";
 import type { Command } from "commander";
 import { readAihConfig } from "../config/marker.js";
-import { asPosture, resolvePosture } from "../config/posture.js";
+import { postureFromContext, resolvePosture } from "../config/posture.js";
 import { loadSettings } from "../config/settings.js";
 import { AihError } from "../errors.js";
+import { optionSource } from "../internals/commander-options.js";
 import {
   executePlan,
   type PlanResult,
@@ -314,10 +315,6 @@ function sourceRootFor(source: TrustSource): string {
   return source.kind === "local" ? source.root : source.treePath;
 }
 
-function postureFromContext(ctx: PlanContext): NonNullable<PlanContext["posture"]> {
-  return ctx.posture ?? asPosture(ctx.options.posture);
-}
-
 export async function captureClearedWorkspaceAddTrustGate(
   ctx: PlanContext,
   report: VerificationReport | undefined,
@@ -444,16 +441,10 @@ function contextFromCommand(command: Command, deps: WorkspaceAddDeps): PlanConte
   const opts = command.optsWithGlobals() as Record<string, unknown>;
   const resolvedRoot = (opts.root as string | undefined) ?? env.AIH_ROOT ?? process.cwd();
   const marker = readAihConfig(resolvedRoot);
-  const contextDirSource =
-    command.getOptionValueSourceWithGlobals?.("contextDir") ??
-    command.getOptionValueSource?.("contextDir");
+  const contextDirSource = optionSource(command, "contextDir");
   const contextDirFromFlag = contextDirSource === "cli" ? (opts.contextDir as string) : undefined;
   const contextDirFromMarker = contextDirFromFlag === undefined ? marker?.contextDir : undefined;
-  const postureFlagSource =
-    (command.getOptionValueSourceWithGlobals?.("posture") ??
-      command.getOptionValueSource?.("posture")) === "cli"
-      ? "cli"
-      : undefined;
+  const postureFlagSource = optionSource(command, "posture") === "cli" ? "cli" : undefined;
   const resolvedPosture = resolvePosture({
     root: resolvedRoot,
     env,

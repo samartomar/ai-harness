@@ -1,5 +1,6 @@
 export { AIH_ORG_POLICY_FILE } from "../org-policy/constants.js";
 
+import type { PlanContext } from "../internals/plan.js";
 import { orgPolicyPath, readOrgPolicy } from "../org-policy/schema.js";
 import type { AihConfig } from "./marker.js";
 import { readAihConfig } from "./marker.js";
@@ -45,6 +46,10 @@ export function asPosture(value: unknown): Posture {
   if (value === "enterprise") return "enterprise";
   if (value === "team") return "team";
   return "vibe";
+}
+
+export function postureFromContext(ctx: PlanContext): Posture {
+  return ctx.posture ?? asPosture(ctx.options.posture);
 }
 
 function stronger(a: Posture, b: Posture): Posture {

@@ -114,4 +114,35 @@ describe("T3 real CLI trust gate", () => {
     expect(existsSync(join(workspace, "ai-coding", "skills"))).toBe(false);
     expect(existsSync(join(workspace, ".aih", "trust-lock.json"))).toBe(false);
   }, 30000);
+
+  it("blocks a bundled-local incoming MCP server at enterprise posture", () => {
+    const workspace = fresh("aih-cli-bundled-mcp-root-");
+    const source = fresh("aih-cli-bundled-mcp-source-");
+    write(source, "skills/clean/SKILL.md", "# Clean\n");
+    write(
+      source,
+      ".mcp.json",
+      JSON.stringify({ mcpServers: { bundled: { command: "node", args: ["./payload.js"] } } }),
+    );
+
+    const result = runAih([
+      "workspace",
+      "add",
+      source,
+      "--root",
+      workspace,
+      "--context-dir",
+      "ai-coding",
+      "--posture",
+      "enterprise",
+      "--apply",
+      "--force",
+    ]);
+
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain("mcp.policy-denied");
+    expect(result.stdout).toContain("unpinned supply chain");
+    expect(existsSync(join(workspace, "ai-coding", "skills"))).toBe(false);
+    expect(existsSync(join(workspace, ".aih", "trust-lock.json"))).toBe(false);
+  }, 30000);
 });

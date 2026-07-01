@@ -1,4 +1,4 @@
-import { asPosture } from "../config/posture.js";
+import { postureFromContext } from "../config/posture.js";
 import { isTargeted } from "../internals/cli-detect.js";
 import {
   type Action,
@@ -35,7 +35,7 @@ import {
  *    — no `exec`, no remote mutation — so the boundary holds.
  */
 async function planSecrets(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
-  const posture = ctx.posture ?? asPosture(ctx.options.posture);
+  const posture = postureFromContext(ctx);
   // `--since <ref>`: only scan secret files changed vs the ref (fast PR CI). NOT
   // gitignore-honoring — a gitignored `.env` is still a real exposure, so the full
   // on-disk scan is the default; `--since` only narrows by the diff.

@@ -147,6 +147,6 @@ export function classifyIncomingMcp(rawServer: unknown): McpServer {
       ? "unpinned"
       : hasExactPackage(args)
         ? "pinned"
-        : "pinned",
+        : "unpinned",
   };
 }

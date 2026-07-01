@@ -31,6 +31,33 @@ describe("classifyIncomingMcp", () => {
     });
   });
 
+  it("treats bundled local node launches as unpinned when provenance is unverifiable", () => {
+    const server = classifyIncomingMcp({
+      command: "node",
+      args: ["server.js"],
+    });
+
+    expect(server).toMatchObject({
+      classification: "local",
+      egress: "local-only",
+      credentials: "none",
+      supplyChain: "unpinned",
+    });
+  });
+
+  it("treats bare local binaries as unpinned when provenance is unverifiable", () => {
+    const server = classifyIncomingMcp({
+      command: "/opt/x/tool",
+    });
+
+    expect(server).toMatchObject({
+      classification: "local",
+      egress: "local-only",
+      credentials: "none",
+      supplyChain: "unpinned",
+    });
+  });
+
   it("treats http URLs as third-party hosted remote servers", () => {
     const server = classifyIncomingMcp({
       url: "https://mcp.vendor.example/mcp",
