@@ -379,7 +379,7 @@ describe("workspace add acquisition plans", () => {
     expect(output.join("")).toContain("trust.prompt-injection");
     expect(existsSync(join(workspace, "ai-coding", "skills"))).toBe(false);
     expect(existsSync(join(workspace, ".aih", "trust-lock.json"))).toBe(false);
-  });
+  }, 20000); // full phase-1 scan pipeline (subprocess spawns) can edge past the 5s default on slow Windows CI
 
   it("runWorkspaceAdd stops after phase 1 for an auto-exec source", async () => {
     localSkill(sourceRoot, "evil", "# Evil\n");
@@ -401,7 +401,7 @@ describe("workspace add acquisition plans", () => {
     expect(output.join("")).toContain("trust.auto-exec-hook");
     expect(existsSync(join(workspace, "ai-coding", "skills"))).toBe(false);
     expect(existsSync(join(workspace, ".aih", "trust-lock.json"))).toBe(false);
-  });
+  }, 20000); // full phase-1 scan pipeline (subprocess spawns) can edge past the 5s default on slow Windows CI
 
   it("runWorkspaceAdd applies the internal-scope dependency tell only when configured", async () => {
     localSkill(sourceRoot, "clean", "# Clean\n");

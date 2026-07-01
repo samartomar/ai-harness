@@ -372,8 +372,17 @@ export async function executePlan(
 
 /** Human-readable summary of a plan result (used when --json is off). */
 export function summarizeResult(result: PlanResult): string {
+  // "Applied" must mean a mutation was committed. A plan whose only actions are
+  // docs/digests/probes writes nothing even under --apply (e.g. an analytics-only
+  // command, or an idempotent re-run with no diff), so claiming "Applied" would be
+  // misleading. envblock upserts fold into `writes`, so writes+execs+backups cover
+  // every mutating outcome.
+  const mutated =
+    result.writes.length > 0 || result.execs.some((e) => e.ran) || result.backups.length > 0;
   const head = result.applied
-    ? `Applied ${result.capability}`
+    ? mutated
+      ? `Applied ${result.capability}`
+      : `${result.capability}: nothing to apply — the plan produced no writes or execs`
     : `Plan for ${result.capability} (dry-run — nothing written; pass --apply to execute)`;
   const out: string[] = [head];
   for (const w of result.writes) {

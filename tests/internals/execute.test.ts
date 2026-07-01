@@ -425,4 +425,22 @@ describe("executePlan — digest actions", () => {
     expect(res.digests).toHaveLength(1);
     expect(res.probes).toHaveLength(0);
   });
+
+  it("does not claim 'Applied' when an --apply run commits no writes or execs", async () => {
+    // A digest-only plan under --apply mutates nothing — the header must say so
+    // rather than falsely reporting "Applied" (the prune preview slice relies on this).
+    const res = await executePlan(plan("prune", digest("d", "body")), ctx({ apply: true }));
+    const summary = summarizeResult(res);
+    expect(res.applied).toBe(true);
+    expect(summary).not.toContain("Applied prune");
+    expect(summary).toContain("prune: nothing to apply");
+  });
+
+  it("still reports 'Applied' when an --apply run actually writes a file", async () => {
+    const res = await executePlan(
+      plan("scaffold", writeText("out.txt", "hi", "a file")),
+      ctx({ apply: true }),
+    );
+    expect(summarizeResult(res)).toContain("Applied scaffold");
+  });
 });

@@ -10,6 +10,7 @@ import { extractManagedBlock } from "../internals/markers.js";
 import { type DigestAction, digest, type PlanContext } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
 import { isExternalMcp, mcpConfigAbs, tomlServerCount } from "../mcp/render.js";
+import { staleAdvisory, stalePruneSet } from "../prune/detect.js";
 import { type CliLoadability, loadabilityFor, loadReason } from "./cli-loadability.js";
 import { remediationBlock } from "./render.js";
 
@@ -441,9 +442,15 @@ export function renderCliCoverage(model: CliCoverageModel): string {
  */
 export function cliCoverageDigest(ctx: PlanContext): DigestAction {
   const model = scanCliCoverage(ctx);
+  // A repo can carry per-CLI artifacts for a tool it no longer targets (dropped from
+  // the marker). Surface that as a non-blocking advisory beneath the matrix, pointing
+  // at `aih prune` — computed read-only from the committed target set (never a guess).
+  const stale = stalePruneSet(ctx);
+  const advisory = staleAdvisory(stale);
+  const body = advisory ? `${renderCliCoverage(model)}\n${advisory}` : renderCliCoverage(model);
   return digest(
     `AI CLI wiring — ${model.structurallyConfigured} of ${model.totalTargeted} configured, ${model.provenLoadable} loadable`,
-    renderCliCoverage(model),
-    model,
+    body,
+    { ...model, stale },
   );
 }
