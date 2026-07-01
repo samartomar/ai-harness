@@ -6,6 +6,7 @@ import {
   mergeManagedBlock,
   PROJECT_EXTENSION_MARKER,
   splitManagedBody,
+  stripManagedBlock,
 } from "../../src/internals/markers.js";
 
 const block = {
@@ -112,5 +113,46 @@ describe("splitManagedBody — carve the human project extension", () => {
     // With the sub-marker present, we take it verbatim and do NOT diff.
     const fenced = `${beginLine(PROJECT_EXTENSION_MARKER, "x")}\nThink before coding.\n${endLine(PROJECT_EXTENSION_MARKER)}`;
     expect(splitManagedBody(`${canonical}\n\n${fenced}`, canonical)).toBe("Think before coding.");
+  });
+});
+
+describe("stripManagedBlock", () => {
+  it("removes the fenced block and leaves the preamble (the prune subtract)", () => {
+    const file = mergeManagedBlock(undefined, block, "# Preamble\n\nhand text.");
+    const out = stripManagedBlock(file, block.marker);
+    expect(out).toBe("# Preamble\n\nhand text.\n");
+    expect(extractManagedBlock(out, block.marker)).toBeUndefined();
+  });
+
+  it("preserves user content BOTH before and after the block, no double-blank gap", () => {
+    const file =
+      "# Before\n\nkeep A.\n\n" +
+      `${beginLine(block.marker, "n")}\nx\n${endLine(block.marker)}` +
+      "\n\nkeep B.\n";
+    const out = stripManagedBlock(file, block.marker);
+    expect(out).toBe("# Before\n\nkeep A.\n\nkeep B.\n");
+    expect(out).not.toContain("\n\n\n");
+  });
+
+  it("is a no-op when the marker is absent (returns the input unchanged)", () => {
+    const text = "# Just my notes\n\nnothing managed here.\n";
+    expect(stripManagedBlock(text, block.marker)).toBe(text);
+  });
+
+  it("returns empty string when the block was the file's entire content", () => {
+    const only = `${beginLine(block.marker, "n")}\nbody\n${endLine(block.marker)}\n`;
+    expect(stripManagedBlock(only, block.marker)).toBe("");
+  });
+
+  it("preserves CRLF line endings", () => {
+    const file = mergeManagedBlock(undefined, block, "# P\n\nx.").replace(/\n/g, "\r\n");
+    const out = stripManagedBlock(file, block.marker);
+    expect(out).toBe("# P\r\n\r\nx.\r\n");
+  });
+
+  it("round-trips: merge then strip leaves just the preamble", () => {
+    const preamble = "# Repo — Claude Code";
+    const merged = mergeManagedBlock(undefined, block, preamble);
+    expect(stripManagedBlock(merged, block.marker)).toBe(`${preamble}\n`);
   });
 });

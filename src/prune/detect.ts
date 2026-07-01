@@ -23,16 +23,20 @@ import { isExternalMcp } from "../mcp/render.js";
  *     remove a real on-disk CLI's canon. No committed target set → nothing is stale
  *     (prune's own explicit selection is the escape hatch, not inference).
  *
- *  2. It classifies each artifact by DISPOSITION, derived from how `bootstrap-ai`
- *     actually writes it (src/bootstrap-ai/index.ts):
- *       - `file`  — aih writes it wholesale and overwrites it every run (the per-CLI
- *                   adapter note, Kiro's steering/hook extras). aih owns the whole
- *                   file → a clean remove / `.aih/legacy/` move.
- *       - `block` — aih MERGES a managed block into a possibly hand-edited file (a
- *                   bootloader's preamble + canonical block, an MCP server map, a
- *                   settings hook block). The file is CO-OWNED → aih's sub-tree is
- *                   subtracted in place; the file is never deleted outright. This is
- *                   why a `CLAUDE.md` with user edits is a `block`, not a `file`.
+ *  2. It classifies each artifact by DISPOSITION — set by whether aih can prove
+ *     ownership of what it would touch (how `bootstrap-ai`/`mcp` write it):
+ *       - `file`     — aih writes the WHOLE file and overwrites it every run (the
+ *                      per-CLI adapter note, Kiro's steering/hook extras). aih owns
+ *                      it outright → `aih prune --apply` MOVES it to `.aih/legacy/`.
+ *       - `block`    — aih merges a marker-FENCED block into a co-owned file (a
+ *                      bootloader = preamble + `<!-- BEGIN/END ai-canonical:shared -->`
+ *                      block). The fence proves ownership → `--apply` SUBTRACTS aih's
+ *                      block in place and leaves the rest; the file is never deleted.
+ *       - `advisory` — a co-owned file where aih's part CANNOT be identified on disk
+ *                      (repo MCP JSON + `.claude/settings.json` hooks: aih's servers /
+ *                      hooks are plain sibling keys, indistinguishable from the user's,
+ *                      names may collide). Auto-editing risks user data → `--apply`
+ *                      only PRINTS what to remove by hand; it never modifies the file.
  *
  * Shared artifacts (AGENTS.md is one bootloader for five CLIs) are pruned only when
  * EVERY declaring CLI is dropped — the diff subtracts the kept set's paths first.
@@ -42,7 +46,7 @@ import { isExternalMcp } from "../mcp/render.js";
  */
 
 /** How aih would remove an artifact — see the module header. */
-export type PruneDisposition = "file" | "block";
+export type PruneDisposition = "file" | "block" | "advisory";
 
 /** Which kind of per-CLI artifact this is (drives the preview grouping + copy). */
 export type PruneArtifactKind =
@@ -184,24 +188,28 @@ export function stalePruneSet(ctx: PlanContext): StalePruneSet {
     });
   }
 
-  // 3. Repo-scoped MCP configs — shared-diff (global ~/home excluded) → block.
+  // 3. Repo-scoped MCP configs — shared-diff (global ~/home excluded) → advisory.
+  //    aih writes its servers as plain sibling keys (no marker), indistinguishable
+  //    from user-added servers, so aih cannot safely subtract them — flag for manual
+  //    review instead of auto-editing.
   for (const rel of [...new Set(dropped.map(repoMcpPath).filter((p): p is string => !!p))]) {
     if (kept.has(rel) || !onDisk(rel)) continue;
     artifacts.push({
       kind: "mcp",
       path: rel,
-      disposition: "block",
+      disposition: "advisory",
       clis: dropped.filter((c) => repoMcpPath(c) === rel),
     });
   }
 
-  // 4. Settings (Claude's .claude/settings.json today) — merged → block.
+  // 4. Settings (Claude's .claude/settings.json today) — advisory. aih's hook block
+  //    carries no marker (only a command-string heuristic), so auto-subtract is unsafe.
   for (const rel of [...new Set(dropped.map(settingsPath).filter((p): p is string => !!p))]) {
     if (kept.has(rel) || !onDisk(rel)) continue;
     artifacts.push({
       kind: "settings",
       path: rel,
-      disposition: "block",
+      disposition: "advisory",
       clis: dropped.filter((c) => settingsPath(c) === rel),
     });
   }

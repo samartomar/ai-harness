@@ -71,3 +71,23 @@ export async function dirtyWriteTargets(plan: Plan, ctx: PlanContext): Promise<s
   const dirty = await dirtyPaths(ctx);
   return targets.filter((t) => dirty.has(t));
 }
+
+/**
+ * The repo-relative paths a plan would REMOVE that ALSO have uncommitted changes —
+ * the "this apply would delete your uncommitted work" set. Unlike writes, a removal
+ * has no content-equality escape: deleting a dirty or untracked file always destroys
+ * it, so this gates on plain dirty-set membership. Empty under a clean/absent git
+ * worktree, so `--force` is never needed on a committed tree.
+ */
+export async function dirtyRemoveTargets(plan: Plan, ctx: PlanContext): Promise<string[]> {
+  const targets: string[] = [];
+  for (const a of plan.actions) {
+    if (a.kind !== "remove") continue;
+    const rel = relative(ctx.root, resolve(ctx.root, a.path));
+    if (rel.length > 0 && !rel.startsWith("..") && !isAbsolute(rel))
+      targets.push(normalizeRel(rel));
+  }
+  if (targets.length === 0) return [];
+  const dirty = await dirtyPaths(ctx);
+  return targets.filter((t) => dirty.has(t));
+}

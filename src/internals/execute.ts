@@ -1,4 +1,4 @@
-import { existsSync, realpathSync } from "node:fs";
+import { existsSync, lstatSync, realpathSync } from "node:fs";
 import { dirname, isAbsolute, relative, resolve } from "node:path";
 import { DirtyWorktreeError, PathContainmentError } from "../errors.js";
 import { redactSecrets } from "../guardrails/redact.js";
@@ -15,7 +15,7 @@ import type {
 } from "./plan.js";
 import { ensureTrailingNewline, indent, jsonFile, stripTrailingNewlines } from "./render.js";
 import { type Check, VerificationReport } from "./verify.js";
-import { dirtyWriteTargets, normalizeRel } from "./worktree-gate.js";
+import { dirtyRemoveTargets, dirtyWriteTargets, normalizeRel } from "./worktree-gate.js";
 
 export interface WriteSummary {
   path: string;
@@ -28,6 +28,15 @@ export interface WriteSummary {
   effect: "create" | "overwrite" | "merge" | "unchanged" | "kept";
 }
 
+export interface RemoveSummary {
+  path: string;
+  describe: string;
+  /** `remove` = present, will move to `.aih/legacy/`; `absent` = nothing on disk. */
+  effect: "remove" | "absent";
+  /** Repo-relative `.aih/legacy/` destination, when effect is `remove`. */
+  to?: string;
+}
+
 export interface PlanResult {
   capability: string;
   applied: boolean;
@@ -38,12 +47,23 @@ export interface PlanResult {
   /** Read-only computed reports surfaced verbatim (text) + machine-readable (`data`). */
   digests: { describe: string; text: string; data?: unknown }[];
   backups: string[];
+  /** Files aih removed (moved to `.aih/legacy/`) or would remove (dry-run). */
+  removed: RemoveSummary[];
   report?: VerificationReport;
 }
 
 /** Resolve an action path against the context root (absolute paths pass through). */
 function resolvePath(ctx: PlanContext, p: string): string {
   return resolve(ctx.root, p);
+}
+
+/** lstat kind (does not follow links) or `undefined` when the path is absent. */
+function lstatKind(p: string): { isSymlink: boolean } | undefined {
+  try {
+    return { isSymlink: lstatSync(p).isSymbolicLink() };
+  } catch {
+    return undefined;
+  }
 }
 
 /** realpath, or a plain resolve if the path does not exist yet. */
@@ -183,11 +203,16 @@ export async function executePlan(
     // below records it `unchanged` and writes nothing), so re-running `aih mcp --apply`
     // over a still-uncommitted but unchanged config must not be blocked.
     const clobbered = dirtyTargets.size === 0 ? [] : changedDirtyTargets(plan, ctx, dirtyTargets);
-    if (clobbered.length > 0) {
-      const list = clobbered.join(", ");
+    // Removals gate on dirty-set MEMBERSHIP directly (no content-equality filter — a
+    // removal always destroys the file, so a dirty/untracked removal target is always a
+    // clobber). This is the case the write-only gate would silently miss.
+    const removedDirty = await dirtyRemoveTargets(plan, ctx);
+    const blocked = [...clobbered, ...removedDirty];
+    if (blocked.length > 0) {
+      const list = blocked.join(", ");
       throw new DirtyWorktreeError(
         `Refusing to overwrite uncommitted changes in: ${list}. Commit or stash ${
-          clobbered.length > 1 ? "them" : "it"
+          blocked.length > 1 ? "them" : "it"
         } first, or pass --force.`,
       );
     }
@@ -198,6 +223,7 @@ export async function executePlan(
   const docs: PlanResult["docs"] = [];
   const probes: PlanResult["probes"] = [];
   const digests: PlanResult["digests"] = [];
+  const removes: RemoveSummary[] = [];
   const digestActions: DigestAction[] = [];
   const execActions: ExecAction[] = [];
   const envBlockActions: EnvBlockAction[] = [];
@@ -257,6 +283,31 @@ export async function executePlan(
       envBlockActions.push(action);
     } else if (action.kind === "digest") {
       digestActions.push(action);
+    } else if (action.kind === "remove") {
+      const absPath = resolvePath(ctx, action.path);
+      // Fail closed BEFORE touching disk: contain the raw path (a symlinked or `..`
+      // escaping target realpaths outside the root → throws), then refuse a symlink
+      // outright — aih only removes plain files it wrote, and moving/restoring a link
+      // would silently recreate a regular file (or re-establish an out-of-repo escape).
+      assertContained(ctx.root, absPath);
+      const info = lstatKind(absPath);
+      if (info?.isSymlink) {
+        throw new PathContainmentError(
+          `refusing to remove a symlink: ${action.path} (aih only removes files it wrote)`,
+        );
+      }
+      if (info === undefined) {
+        removes.push({ path: action.path, describe: action.describe, effect: "absent" });
+      } else {
+        const legacyRel = `.aih/legacy/${normalizeRel(action.path)}`;
+        if (ctx.apply) txn.stageRemoval(absPath, resolvePath(ctx, legacyRel));
+        removes.push({
+          path: action.path,
+          describe: action.describe,
+          effect: "remove",
+          to: legacyRel,
+        });
+      }
     } else {
       probes.push({ describe: action.describe });
     }
@@ -366,6 +417,7 @@ export async function executePlan(
     execs,
     digests,
     backups,
+    removed: removes,
     report,
   };
 }
@@ -377,8 +429,12 @@ export function summarizeResult(result: PlanResult): string {
   // command, or an idempotent re-run with no diff), so claiming "Applied" would be
   // misleading. envblock upserts fold into `writes`, so writes+execs+backups cover
   // every mutating outcome.
+  const removedAny = result.removed.some((r) => r.effect === "remove");
   const mutated =
-    result.writes.length > 0 || result.execs.some((e) => e.ran) || result.backups.length > 0;
+    result.writes.length > 0 ||
+    result.execs.some((e) => e.ran) ||
+    result.backups.length > 0 ||
+    removedAny;
   const head = result.applied
     ? mutated
       ? `Applied ${result.capability}`
@@ -387,6 +443,13 @@ export function summarizeResult(result: PlanResult): string {
   const out: string[] = [head];
   for (const w of result.writes) {
     out.push(`  [${w.effect}] ${w.path} — ${w.describe}`);
+  }
+  for (const r of result.removed) {
+    out.push(
+      r.effect === "remove"
+        ? `  [remove] ${r.path} — ${r.describe} (→ ${r.to})`
+        : `  [absent] ${r.path} — ${r.describe}`,
+    );
   }
   for (const d of result.docs) {
     out.push(`  [doc]${d.path ? ` ${d.path}` : ""} — ${d.describe}`);

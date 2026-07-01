@@ -1,19 +1,41 @@
-import { type CommandSpec, digest, type Plan, type PlanContext, plan } from "../internals/plan.js";
+import { join } from "node:path";
+import { SHARED_MARKER } from "../bootstrap-ai/canon.js";
+import { readIfExists } from "../internals/fsxn.js";
+import { aihIgnoreWrite } from "../internals/gitignore.js";
+import { stripManagedBlock } from "../internals/markers.js";
+import {
+  type Action,
+  type CommandSpec,
+  digest,
+  type Plan,
+  type PlanContext,
+  plan,
+  remove,
+  writeText,
+} from "../internals/plan.js";
 import { lines } from "../internals/render.js";
 import { type PruneArtifact, type StalePruneSet, stalePruneSet } from "./detect.js";
 
 /**
- * `aih prune` — preview the stale per-CLI artifacts a repo carries for CLIs it no
- * longer targets ({@link stalePruneSet}). This release is PREVIEW-ONLY: it emits a
- * grouped digest of exactly what a later `--apply` would remove, and writes nothing.
- * Removal (the fail-closed `remove` action: `.aih/legacy/` move for `file`
- * artifacts, in-place block-subtract for `block` artifacts, with a dirty-worktree
- * guard and per-file backups) lands in the next slice — so the flag surface here
- * never over-promises.
+ * `aih prune` — remove the stale per-CLI artifacts a repo carries for CLIs it no
+ * longer targets ({@link stalePruneSet}). Dry-run by default (like every aih
+ * mutator); `--apply` executes. Each artifact is handled by its proven-safe
+ * disposition:
+ *
+ *  - `file`     → a `remove` action: aih owns the whole file, so `--apply` MOVES it
+ *                 to gitignored `.aih/legacy/<path>` (reversible — move it back).
+ *  - `block`    → a `write` action: the bootloader's `<!-- BEGIN/END … -->` fence
+ *                 proves ownership, so aih subtracts JUST that block in place
+ *                 ({@link stripManagedBlock}) and keeps the tool preamble + any human
+ *                 edits (backed up to `.aih.bak`). The file is never deleted.
+ *  - `advisory` → NO auto-edit: a repo MCP JSON / settings hook has no on-disk marker
+ *                 separating aih's entries from the user's, so `--apply` only PRINTS
+ *                 what to remove by hand (surfaced in the digest), never touching it.
  *
  * The stale set is diffed against COMMITTED INTENT only (the `.aih-config.json`
- * marker), so a bare `aih prune` is safe to run anywhere: with no committed target
- * set it reports nothing rather than guessing what to delete.
+ * marker), so a bare `aih prune` is safe anywhere: with no committed target set it
+ * reports nothing rather than guessing what to delete. Removals go through the
+ * dirty-worktree preflight (a dirty/untracked target refuses without `--force`).
  */
 
 const SOURCE_LABEL: Record<StalePruneSet["source"], string> = {
@@ -22,40 +44,47 @@ const SOURCE_LABEL: Record<StalePruneSet["source"], string> = {
   none: "none",
 };
 
-const DISPOSITION_TAG: Record<PruneArtifact["disposition"], string> = {
-  file: "file ",
-  block: "block",
+const KIND_LABEL: Record<PruneArtifact["kind"], string> = {
+  adapter: "adapter note",
+  bootloader: "bootloader canon block",
+  mcp: "MCP config",
+  settings: "settings",
+  "kiro-steering": "Kiro steering",
+  "kiro-hook": "Kiro hook",
 };
 
-/**
- * The reassurance shown for a co-owned `block` artifact — worded for the ACTUAL
- * subtract mechanism, which differs by kind: a bootloader carries a text
- * marker-delimited managed block, while an MCP/settings file is JSON key-merged
- * (no marker). Saying "managed block" for a JSON MCP config would over-claim a
- * mechanism that isn't there, so each kind gets its own accurate note.
- */
-const BLOCK_NOTE: Partial<Record<PruneArtifact["kind"], string>> = {
-  bootloader: "managed block subtracted; your edits outside it stay",
-  mcp: "aih's server entries removed; your other servers stay",
-  settings: "aih's entries removed; your other settings stay",
-};
-
-/** One preview line per artifact: disposition tag, path, owning CLI(s), and — for a
- * co-owned `block` — a mechanism-accurate note that the rest of the file survives. */
-function artifactLine(a: PruneArtifact): string {
-  const note =
-    a.disposition === "block"
-      ? `  (${BLOCK_NOTE[a.kind] ?? "aih's entries subtracted; the rest of the file stays"})`
-      : "";
-  return `  [${DISPOSITION_TAG[a.disposition]}] ${a.path}  — ${a.clis.join(", ")}${note}`;
+/** The subtracted content of a co-owned bootloader (aih's canon block removed), or
+ * `undefined` when the block is absent / nothing would change. Read at plan time
+ * (pure fs, no spawn) so the `write` action carries the exact bytes to land. */
+function bootloaderMinusBlock(ctx: PlanContext, rel: string): string | undefined {
+  const text = readIfExists(join(ctx.root, rel));
+  if (text === undefined) return undefined;
+  const stripped = stripManagedBlock(text, SHARED_MARKER);
+  return stripped === text ? undefined : stripped;
 }
 
-function renderPreview(set: StalePruneSet): string {
+/** The manual-review advisory lines for the artifacts aih can't safely auto-edit. */
+function advisoryLines(set: StalePruneSet): string[] {
+  const advisory = set.artifacts.filter((a) => a.disposition === "advisory");
+  if (advisory.length === 0) return [];
+  return [
+    "",
+    "Manual review — aih can't safely edit these (its entries carry no on-disk marker,",
+    "and names may collide with yours), so it will NOT touch them:",
+    ...advisory.map(
+      (a) => `  [manual] ${a.path}  — remove ${a.clis.join(", ")}'s entries by hand if unused`,
+    ),
+  ];
+}
+
+/** The context digest: kept/dropped summary + the manual-review advisory. The
+ * `file`/`block` changes are carried by their own action preview lines. */
+function contextBody(set: StalePruneSet, moved: number, subtracted: number): string {
   if (set.source === "none") {
     return lines(
       "No committed target set (.aih-config.json) to diff against — nothing is treated",
       "as stale. Run `aih bootstrap-ai` to record which CLIs this repo targets, then",
-      "`aih prune` will preview artifacts for any CLI you later drop.",
+      "`aih prune` will remove artifacts for any CLI you later drop.",
     );
   }
   if (set.dropped.length === 0) {
@@ -65,37 +94,57 @@ function renderPreview(set: StalePruneSet): string {
     );
   }
   return lines(
-    "Stale per-CLI artifacts — CLIs bootstrapped into this repo but no longer in the",
-    "committed target set. `file` = aih-exclusive (a clean remove); `block` = aih's own",
-    "entries inside a co-owned file (a marker block or JSON key — subtracted in place,",
-    "never deleted).",
-    "",
     `Kept (${SOURCE_LABEL[set.source]}): ${set.targeted.join(", ")}`,
     `Dropped: ${set.dropped.join(", ")}`,
     "",
-    ...set.artifacts.map(artifactLine),
-    "",
-    "Preview only — this release removes nothing. `aih prune --apply` (next slice)",
-    "moves `file` artifacts to .aih/legacy/ (reversible) and subtracts `block`",
-    "artifacts in place, behind a dirty-worktree guard with per-file backups.",
+    `${moved} file(s) move to .aih/legacy/ (reversible), ${subtracted} bootloader block(s)`,
+    "subtracted in place; the actions above list each. Pass --apply to execute.",
+    ...advisoryLines(set),
   );
+}
+
+/** The action for one artifact, or `undefined` when there is nothing safe/needed to do. */
+function actionFor(ctx: PlanContext, a: PruneArtifact): Action | undefined {
+  const who = `${a.clis.join(", ")} dropped`;
+  if (a.disposition === "file") {
+    return remove(a.path, `stale ${KIND_LABEL[a.kind]} (${who})`);
+  }
+  if (a.disposition === "block") {
+    const stripped = bootloaderMinusBlock(ctx, a.path);
+    return stripped === undefined
+      ? undefined // block already absent — nothing to subtract
+      : writeText(a.path, stripped, `subtract aih canon block from ${a.path} (${who})`);
+  }
+  return undefined; // advisory → surfaced in the digest, never an auto-action
 }
 
 function prunePlan(ctx: PlanContext): Plan {
   const set = stalePruneSet(ctx);
+  const actions: Action[] = [];
+  // Ensure `.aih/` is gitignored BEFORE any file moves into `.aih/legacy/`
+  // (idempotent — records `unchanged` when the pattern is already there).
+  if (set.artifacts.some((a) => a.disposition === "file")) {
+    actions.push(aihIgnoreWrite(ctx.root));
+  }
+  let moved = 0;
+  let subtracted = 0;
+  for (const a of set.artifacts) {
+    const action = actionFor(ctx, a);
+    if (!action) continue;
+    actions.push(action);
+    if (action.kind === "remove") moved += 1;
+    else if (action.kind === "write") subtracted += 1;
+  }
   const headline =
     set.dropped.length > 0
       ? `Stale artifacts — ${set.artifacts.length} for ${set.dropped.length} dropped CLI(s)`
       : "Stale artifacts — none";
-  return plan("prune", digest(headline, renderPreview(set), set));
+  actions.push(digest(headline, contextBody(set, moved, subtracted), set));
+  return plan("prune", ...actions);
 }
 
 export const command: CommandSpec = {
   name: "prune",
-  summary: "Preview stale per-CLI artifacts left by CLIs this repo no longer targets",
-  // Preview-only in this release: the plan is a single read-only digest and writes
-  // nothing, so the dirty-worktree preflight has no write targets to guard. When
-  // removal lands, drop this and let the executor gate the remove actions.
-  skipWorktreeGate: true,
+  summary: "Remove stale per-CLI artifacts left by CLIs this repo no longer targets",
   plan: prunePlan,
 };

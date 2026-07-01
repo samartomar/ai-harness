@@ -24,10 +24,14 @@ import type { Check } from "./verify.js";
  *  - `digest`:   a read-only computed result printed verbatim (an analytics
  *                report / roll-up) plus optional structured `data` echoed into
  *                `--json` — mutates nothing, never contacts a remote system.
+ *  - `remove`:   delete a repo-LOCAL file aih exclusively owns (a stale per-CLI
+ *                adapter / kiro extra when its CLI is dropped), reversibly by
+ *                default (moved to gitignored `.aih/legacy/`). Fail-closed:
+ *                contained, symlink-guarded, backed up before unlink. Never remote.
  * Because no action kind can mutate a remote system, an autonomous run cannot
  * "fake provisioning" — the capability simply does not exist.
  */
-export type ActionKind = "write" | "probe" | "doc" | "exec" | "envblock" | "digest";
+export type ActionKind = "write" | "probe" | "doc" | "exec" | "envblock" | "digest" | "remove";
 
 export interface WriteAction {
   kind: "write";
@@ -130,13 +134,31 @@ export interface DigestAction {
     | { text: string; data?: unknown };
 }
 
+/**
+ * Remove a repo-LOCAL file that aih exclusively owns — aih's only destructive
+ * action. Emitted solely by `aih prune` for artifacts its detection proved
+ * aih-owned (a per-CLI adapter note, a kiro steering/hook extra) once the CLI is
+ * dropped. The executor fails closed: mandatory {@link assertContained} on the raw
+ * path (no `external` field exists, so a global `~/home` file is structurally
+ * unreachable), a symlink guard, and a backup before unlink. It MOVES the file to
+ * gitignored `.aih/legacy/<path>` (reversible) — the move itself is the backup, so a
+ * dropped CLI's artifacts can always be restored by moving them back.
+ */
+export interface RemoveAction {
+  kind: "remove";
+  /** Repo-relative path of the file to remove. */
+  path: string;
+  describe: string;
+}
+
 export type Action =
   | WriteAction
   | DocAction
   | ProbeAction
   | ExecAction
   | EnvBlockAction
-  | DigestAction;
+  | DigestAction
+  | RemoveAction;
 
 export interface Plan {
   capability: string;
@@ -316,6 +338,10 @@ export function envBlock(
   describe: string,
 ): EnvBlockAction {
   return { kind: "envblock", path, scope, shell, vars, describe };
+}
+
+export function remove(path: string, describe: string): RemoveAction {
+  return { kind: "remove", path, describe };
 }
 
 export function plan(capability: string, ...actions: Action[]): Plan {
