@@ -1,5 +1,6 @@
 import { join } from "node:path";
 import { SHARED_MARKER, sharedCanonicalBlockBody } from "../bootstrap-ai/canon.js";
+import { AIH_CONFIG_FILE } from "../config/marker.js";
 import { readIfExists } from "../internals/fsxn.js";
 import { aihIgnoreWrite } from "../internals/gitignore.js";
 import { extractManagedBlock, stripManagedBlock } from "../internals/markers.js";
@@ -14,7 +15,12 @@ import {
   writeText,
 } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
-import { type PruneArtifact, type StalePruneSet, stalePruneSet } from "./detect.js";
+import {
+  type PruneArtifact,
+  type StalePruneSet,
+  stalePruneSet,
+  unrunnableTargets,
+} from "./detect.js";
 
 /**
  * `aih prune` — remove the stale per-CLI artifacts a repo carries for CLIs it no
@@ -86,14 +92,39 @@ function advisoryLines(set: StalePruneSet): string[] {
   ];
 }
 
+/** The loud `--unrunnable` warning: a PATH problem looks identical to a dropped CLI. */
+function unrunnableLines(set: StalePruneSet): string[] {
+  if (set.unrunnable.length === 0) return [];
+  return [
+    "",
+    `!! --unrunnable: treating ${set.unrunnable.join(", ")} as dropped because no binary is`,
+    "on PATH. A PATH problem (fresh shell, VDI, not-yet-installed tool) looks IDENTICAL",
+    "to a truly dropped CLI — prune these only if you actually stopped using them.",
+    "Targets in .aih-config.json are unchanged; re-target via `aih bootstrap-ai`.",
+  ];
+}
+
 /** The context digest: kept/dropped summary + the manual-review advisory. The
  * `file`/`block` changes are carried by their own action preview lines. */
-function contextBody(set: StalePruneSet, moved: number, subtracted: number): string {
+function contextBody(
+  set: StalePruneSet,
+  moved: number,
+  subtracted: number,
+  hardDelete: boolean,
+): string {
   if (set.source === "none") {
     return lines(
       "No committed target set (.aih-config.json) to diff against — nothing is treated",
       "as stale. Run `aih bootstrap-ai` to record which CLIs this repo targets, then",
       "`aih prune` will remove artifacts for any CLI you later drop.",
+    );
+  }
+  if (set.unknownTargets.length > 0) {
+    return lines(
+      `!! ${AIH_CONFIG_FILE} lists target(s) aih does not recognize: ${set.unknownTargets.join(", ")}.`,
+      "A typo here could make prune treat a CLI you MEANT TO KEEP as dropped, so nothing",
+      "is treated as stale until the marker is fixed. Valid targets: see `aih prune --help`;",
+      "re-write the marker via `aih bootstrap-ai --apply --cli <list>`.",
     );
   }
   if (set.dropped.length === 0) {
@@ -102,21 +133,25 @@ function contextBody(set: StalePruneSet, moved: number, subtracted: number): str
       `Kept (${SOURCE_LABEL[set.source]}): ${set.targeted.join(", ") || "none"}.`,
     );
   }
+  const disposal = hardDelete
+    ? `${moved} file(s) hard-delete (single-slot <path>.aih.bak backup), ${subtracted} bootloader block(s)`
+    : `${moved} file(s) move to .aih/legacy/ (reversible), ${subtracted} bootloader block(s)`;
   return lines(
-    `Kept (${SOURCE_LABEL[set.source]}): ${set.targeted.join(", ")}`,
+    `Kept (${SOURCE_LABEL[set.source]}): ${set.targeted.join(", ") || "none"}`,
     `Dropped: ${set.dropped.join(", ")}`,
+    ...unrunnableLines(set),
     "",
-    `${moved} file(s) move to .aih/legacy/ (reversible), ${subtracted} bootloader block(s)`,
+    disposal,
     "subtracted in place; the actions above list each. Pass --apply to execute.",
     ...advisoryLines(set),
   );
 }
 
 /** The action for one artifact, or `undefined` when there is nothing safe/needed to do. */
-function actionFor(ctx: PlanContext, a: PruneArtifact): Action | undefined {
+function actionFor(ctx: PlanContext, a: PruneArtifact, hardDelete: boolean): Action | undefined {
   const who = `${a.clis.join(", ")} dropped`;
   if (a.disposition === "file") {
-    return remove(a.path, `stale ${KIND_LABEL[a.kind]} (${who})`);
+    return remove(a.path, `stale ${KIND_LABEL[a.kind]} (${who})`, { hardDelete });
   }
   if (a.disposition === "block") {
     const stripped = bootloaderMinusBlock(ctx, a.path);
@@ -127,18 +162,23 @@ function actionFor(ctx: PlanContext, a: PruneArtifact): Action | undefined {
   return undefined; // advisory → surfaced in the digest, never an auto-action
 }
 
-function prunePlan(ctx: PlanContext): Plan {
-  const set = stalePruneSet(ctx);
+async function prunePlan(ctx: PlanContext): Promise<Plan> {
+  // `--unrunnable` is the ONLY path that probes PATH (which/where, read-only,
+  // plan-purity-allowlisted); a default or report-driven scan never does.
+  const treatAsDropped = ctx.options.unrunnable === true ? await unrunnableTargets(ctx) : undefined;
+  const hardDelete = ctx.options.delete === true;
+  const set = stalePruneSet(ctx, { treatAsDropped });
   const actions: Action[] = [];
   // Ensure `.aih/` is gitignored BEFORE any file moves into `.aih/legacy/`
-  // (idempotent — records `unchanged` when the pattern is already there).
+  // (idempotent — records `unchanged` when the pattern is already there). Hard-delete
+  // needs it too: `*.aih.bak` is in the same managed ignore block.
   if (set.artifacts.some((a) => a.disposition === "file")) {
     actions.push(aihIgnoreWrite(ctx.root));
   }
   let moved = 0;
   let subtracted = 0;
   for (const a of set.artifacts) {
-    const action = actionFor(ctx, a);
+    const action = actionFor(ctx, a, hardDelete);
     if (!action) continue;
     actions.push(action);
     if (action.kind === "remove") moved += 1;
@@ -148,12 +188,24 @@ function prunePlan(ctx: PlanContext): Plan {
     set.dropped.length > 0
       ? `Stale artifacts — ${set.artifacts.length} for ${set.dropped.length} dropped CLI(s)`
       : "Stale artifacts — none";
-  actions.push(digest(headline, contextBody(set, moved, subtracted), set));
+  actions.push(digest(headline, contextBody(set, moved, subtracted, hardDelete), set));
   return plan("prune", ...actions);
 }
 
 export const command: CommandSpec = {
   name: "prune",
   summary: "Remove stale per-CLI artifacts left by CLIs this repo no longer targets",
+  options: [
+    {
+      flags: "--delete",
+      description:
+        "hard-delete stale files (single-slot <path>.aih.bak backup) instead of the reversible .aih/legacy/ move",
+    },
+    {
+      flags: "--unrunnable",
+      description:
+        "ALSO treat targeted CLIs with no binary on PATH as prunable (loud opt-in — a PATH problem looks identical to a dropped CLI)",
+    },
+  ],
   plan: prunePlan,
 };

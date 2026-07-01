@@ -33,9 +33,9 @@ describe("CLI program", () => {
     ]);
   });
 
-  it("registers skill vet as a nested command", () => {
+  it("registers skill vet, card, and approve as nested commands", () => {
     const skill = buildProgram().commands.find((c) => c.name() === "skill");
-    expect(skill?.commands.map((c) => c.name()).sort()).toEqual(["vet"]);
+    expect(skill?.commands.map((c) => c.name()).sort()).toEqual(["approve", "card", "vet"]);
   });
 
   it("parses a dry-run capability invocation without throwing", async () => {
