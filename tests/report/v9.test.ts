@@ -277,6 +277,12 @@ function skillGov(): DigestAction {
       },
       { name: "loose", status: "unapproved" },
     ],
+    // v0.5 pack rollup (with a parked member — the #111 shape) + the v0.6
+    // distribution/audit surfaces, so the mapping is exercised end to end.
+    packs: [{ name: "docs", skills: 2, approved: 1, quarantined: 1 }],
+    marketplace: { skills: 1, findings: 0, signed: true },
+    evidence: { artifacts: 3, current: true, stale: true },
+    orgPolicy: { present: true, valid: false, error: "org-policy is invalid: bad posture" },
   });
 }
 
@@ -640,6 +646,40 @@ describe("buildAihDataV9 — Phase B capability flips", () => {
     expect(liveView.sections["sec-skillgov"]?.html).toContain("clean");
     expect(liveView.sections["sec-skillgov"]?.html).toContain("loose");
     expect(liveView.sections["sec-skillgov"]?.title).toContain("1 installed skill unattested");
+  });
+
+  it("maps the v0.5/v0.6 governance surfaces through the view-model and renders them", () => {
+    const live = buildAihDataV9([...ALL, skillGov()]);
+    // The digest's optional fields ride through the mapping intact.
+    expect(live.skillGov?.packs).toEqual([
+      { name: "docs", skills: 2, approved: 1, quarantined: 1 },
+    ]);
+    expect(live.skillGov?.marketplace).toEqual({ skills: 1, findings: 0, signed: true });
+    expect(live.skillGov?.evidence).toEqual({ artifacts: 3, current: true, stale: true });
+    expect(live.skillGov?.orgPolicy).toEqual({
+      present: true,
+      valid: false,
+      error: "org-policy is invalid: bad posture",
+    });
+    const html = assembleViewV9(live, V9_DEMO).sections["sec-skillgov"]?.html ?? "";
+    expect(html).toContain("1 of 2 approved · 1 quarantined");
+    expect(html).toContain("marketplace artifact");
+    expect(html).toContain("signature file present");
+    expect(html).toContain("behind live skills lock");
+    expect(html).toContain("invalid — org-policy is invalid: bad posture");
+  });
+
+  it("showcases every governance block in --demo (marketplace, evidence, org policy)", () => {
+    // `--demo` renders V9_DEMO as both data and demo — panel 10 must be live there
+    // and carry every optional block, or the showcase silently renders nothing.
+    const view = assembleViewV9(V9_DEMO, V9_DEMO);
+    expect(view.sections["sec-skillgov"]?.state).toBe("live");
+    const html = view.sections["sec-skillgov"]?.html ?? "";
+    expect(html).toContain("pack docs-quality");
+    expect(html).toContain("0 of 1 approved · 1 quarantined");
+    expect(html).toContain("2 skills · 0 findings · signature file present");
+    expect(html).toContain("14 artifacts · internally consistent");
+    expect(html).toContain("valid (schema parse)");
   });
 });
 

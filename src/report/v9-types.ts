@@ -258,9 +258,38 @@ export interface V9SkillGovernance {
   /**
    * Installed skills grouped by their lock entry's `pack` tag — the pack-level
    * rollup. Absent when no skill carries a tag (a pack-free repo's panel stays
-   * byte-identical to the pre-pack output).
+   * byte-identical to the pre-pack output). `quarantined` counts the pack's parked
+   * members (they keep their tag — the PR #111 fix) and is present only when
+   * non-zero, so a quarantine-free pack renders byte-identically.
    */
-  packs?: Array<{ name: string; skills: number; approved: number }>;
+  packs?: Array<{ name: string; skills: number; approved: number; quarantined?: number }>;
+  /**
+   * v0.6 marketplace artifact (`.aih/marketplace`), when built: packaged-skill
+   * count, `marketplace validate`'s pure-fs finding count, and whether the
+   * publisher signature FILE (`SHA256SUMS.sig`) exists — a presence claim only,
+   * never "verified" (verification spawns cosign/gh and stays `aih marketplace
+   * validate`'s job). Absent when the artifact directory does not exist, so the
+   * panel renders byte-identically on repos without one.
+   */
+  marketplace?: { skills: number; findings: number; signed: boolean };
+  /**
+   * v0.6 evidence bundle (`.aih/evidence-bundle`), when built: `evidence.json`
+   * kind-index artifact count; `current` = the bundled copies still match the
+   * bundle's own SHA256SUMS (INTERNAL consistency — never freshness vs the live
+   * repo), `undefined` when the bundle is too large to re-hash at digest time
+   * (a report must stay cheap — `aih verify-bundle` is the full check); `stale` =
+   * the live skills lock no longer matches its bundled copy (the bundle predates
+   * an approval change → rebuild with `aih evidence build --apply`). Absent when
+   * the bundle directory does not exist.
+   */
+  evidence?: { artifacts: number; current?: boolean; stale: boolean };
+  /**
+   * Org policy (`aih-org-policy.json`) presence + schema-parse state — the shallow
+   * read only; deep validation stays `aih policy validate`. Absent when the file
+   * does not exist: vibe repos carry no org policy, and absence is not a finding.
+   * `error` is the first parse-error line, control-char-stripped and truncated.
+   */
+  orgPolicy?: { present: true; valid: boolean; error?: string };
 }
 
 /**

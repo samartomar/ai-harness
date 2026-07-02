@@ -201,6 +201,36 @@ describe("skillInventory — the pure join", () => {
     expect(result.skills.map((s) => s.root).sort()).toEqual(["promoted", "promoted", "repo"]);
   });
 
+  it("keeps the lock entry's provenance — incl. the pack tag — on a quarantined row (#111 regression)", () => {
+    // Quarantine MOVES the directory to `.aih/quarantine/` but KEEPS the approval;
+    // the old early-return skipped the lock join, so a parked pack member lost its
+    // `pack` tag and vanished from every pack rollup keyed on it.
+    writeLock([{ name: "parked", pack: "docs-quality" }]);
+    write(`.aih/quarantine/${CONTEXT_DIR}/skills/owner-repo/parked/SKILL.md`, "# parked\n");
+    const result = inv();
+    expect(result.counts).toMatchObject({ installed: 1, approved: 0, quarantined: 1 });
+    expect(result.skills[0]).toMatchObject({
+      name: "parked",
+      root: "quarantined",
+      status: "quarantined", // still DISABLED — provenance joins, grading does not
+      verdict: "GREEN",
+      source: `owner/repo@${PIN}`,
+      commit: PIN,
+      pack: "docs-quality",
+    });
+    // Grading fields stay off quarantined rows: parked copies are not vetted-active.
+    expect(result.skills[0]?.cardPresent).toBeUndefined();
+    expect(result.skills[0]?.driftReason).toBeUndefined();
+  });
+
+  it("leaves a quarantined row bare when the lock has no entry for its name", () => {
+    write(`.aih/quarantine/${CONTEXT_DIR}/skills/owner-repo/stray/SKILL.md`, "# stray\n");
+    const result = inv();
+    expect(result.skills[0]).toMatchObject({ name: "stray", status: "quarantined" });
+    expect(result.skills[0]?.pack).toBeUndefined();
+    expect(result.skills[0]?.source).toBeUndefined();
+  });
+
   it("keeps one row per PHYSICAL install — duplicates of a name never collapse (Codex high-1)", () => {
     // Two promoted sources and two repo CLI dirs all ship `foo`: 4 physical installs.
     // Hiding any behind a name-keyed dedupe would let a destructive consumer treat

@@ -721,6 +721,7 @@ interface GovPackRaw {
   name?: unknown;
   skills?: unknown;
   approved?: unknown;
+  quarantined?: unknown;
 }
 
 /** Skill governance (from the v9-only "Skill governance" digest), else undefined. */
@@ -737,11 +738,45 @@ function buildSkillGovernance(digests: DigestAction[]): V9SkillGovernance | unde
     ...(typeof r.commit === "string" ? { commit: r.commit } : {}),
   }));
   // Pack rollup — present only when the digest carried tags (pack-free stays absent).
+  // `quarantined` rides through only when the digest emitted it (non-zero), so a
+  // quarantine-free pack's view-model — and its render — stays byte-identical.
   const packs = (Array.isArray(g.packs) ? (g.packs as GovPackRaw[]) : []).map((p) => ({
     name: String(p.name ?? ""),
     skills: numOr(p.skills, 0),
     approved: numOr(p.approved, 0),
+    ...(typeof p.quarantined === "number" && p.quarantined > 0
+      ? { quarantined: p.quarantined }
+      : {}),
   }));
+  // v0.6 marketplace artifact state — rides through only when the digest carried
+  // it (absent artifact → absent key → the panel renders byte-identically).
+  const mp = g.marketplace as
+    | { skills?: unknown; findings?: unknown; signed?: unknown }
+    | undefined;
+  const marketplace =
+    mp !== undefined && mp !== null && typeof mp === "object"
+      ? { skills: numOr(mp.skills, 0), findings: numOr(mp.findings, 0), signed: mp.signed === true }
+      : undefined;
+  // v0.6 evidence-bundle state — same absent-stays-absent contract.
+  const ev = g.evidence as { artifacts?: unknown; current?: unknown; stale?: unknown } | undefined;
+  const evidence =
+    ev !== undefined && ev !== null && typeof ev === "object"
+      ? {
+          artifacts: numOr(ev.artifacts, 0),
+          current: ev.current === true,
+          stale: ev.stale === true,
+        }
+      : undefined;
+  // Org-policy presence + parse state — same absent-stays-absent contract.
+  const op = g.orgPolicy as { valid?: unknown; error?: unknown } | undefined;
+  const orgPolicy =
+    op !== undefined && op !== null && typeof op === "object"
+      ? {
+          present: true as const,
+          valid: op.valid === true,
+          ...(typeof op.error === "string" ? { error: op.error } : {}),
+        }
+      : undefined;
   return {
     installed: numOr(g.installed, 0),
     approved: numOr(g.approved, 0),
@@ -750,6 +785,9 @@ function buildSkillGovernance(digests: DigestAction[]): V9SkillGovernance | unde
     quarantined: numOr(g.quarantined, 0),
     rows,
     ...(packs.length > 0 ? { packs } : {}),
+    ...(marketplace !== undefined ? { marketplace } : {}),
+    ...(evidence !== undefined ? { evidence } : {}),
+    ...(orgPolicy !== undefined ? { orgPolicy } : {}),
   };
 }
 

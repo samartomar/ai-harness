@@ -599,10 +599,29 @@ export function renderSkillGovernance(model: V9SkillGovernance): string {
   // Quarantined skills count as NOT clean: "all approved" must never render while a
   // disabled skill sits parked (it is installed, and it is not in a vetted-active state).
   const unattested = model.unapproved + model.stalePin + model.quarantined;
-  const clean = unattested === 0;
+  // The governance ARTIFACTS count against the headline too: a green "all approved"
+  // badge must never sit directly above a failing marketplace/evidence/org-policy row
+  // it contradicts. An UNCHECKED evidence bundle (`current` undefined — too large to
+  // re-hash at digest time) is neutral, not an issue.
+  const artifactIssues =
+    (model.marketplace?.findings ?? 0) > 0 ||
+    model.evidence?.current === false ||
+    model.evidence?.stale === true ||
+    model.orgPolicy?.valid === false;
+  const clean = unattested === 0 && !artifactIssues;
+  const warnBox = (headline: string, detail: string): string =>
+    `<div class="drift-status" style="background:var(--warn-soft);border-color:color-mix(in oklab,var(--warn) 22%,transparent)"><div class="dicon" style="background:var(--warn)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg></div><div class="dtext"><b style="color:var(--warn)">${headline}</b><span>${detail}</span></div></div>`;
   const statusBox = clean
     ? `<div class="drift-status"><div class="dicon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6 9 17l-5-5"/></svg></div><div class="dtext"><b>All ${model.approved} installed skill${model.approved === 1 ? "" : "s"} approved</b><span>every external skill on disk is vetted and in sync</span></div></div>`
-    : `<div class="drift-status" style="background:var(--warn-soft);border-color:color-mix(in oklab,var(--warn) 22%,transparent)"><div class="dicon" style="background:var(--warn)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg></div><div class="dtext"><b style="color:var(--warn)">${unattested} of ${model.installed} installed skill${model.installed === 1 ? "" : "s"} not fully approved</b><span>an external skill is unapproved, stale, or quarantined</span></div></div>`;
+    : unattested > 0
+      ? warnBox(
+          `${unattested} of ${model.installed} installed skill${model.installed === 1 ? "" : "s"} not fully approved`,
+          "an external skill is unapproved, stale, or quarantined",
+        )
+      : warnBox(
+          "Governance artifacts need attention",
+          "installed skills are approved; a marketplace, evidence-bundle, or org-policy row below has findings",
+        );
   // escHtml stops executable injection; this additionally strips C0/C1 and bidi
   // formatting controls so a hostile lock/pack label cannot VISUALLY spoof a row
   // (RTL-override reversing "approved", zero-width padding, etc.).
@@ -625,7 +644,9 @@ export function renderSkillGovernance(model: V9SkillGovernance): string {
     .join("");
   const badge = clean
     ? '<span class="badge ok">all approved</span>'
-    : `<span class="badge warn">${unattested} unattested</span>`;
+    : unattested > 0
+      ? `<span class="badge warn">${unattested} unattested</span>`
+      : '<span class="badge warn">artifacts need attention</span>';
   // The quarantined count line renders only when non-zero, so a quarantine-free
   // report stays byte-identical to the pre-quarantine output.
   const quarantinedRow =
@@ -634,13 +655,48 @@ export function renderSkillGovernance(model: V9SkillGovernance): string {
       : "";
   // Per-pack rollup rows — rendered only when a lock entry carries a `pack` tag,
   // so a pack-free repo's panel stays byte-identical (the quarantined-row pattern).
+  // A pack's parked members are named explicitly (` · N quarantined`, only when
+  // non-zero): quarantined rows keep their pack tag (the PR #111 fix), and a rollup
+  // that silently folded them into "not approved" would hide WHY the pack is short.
   const packRows = (model.packs ?? [])
     .map(
       (p) =>
-        `<div class="row"><span class="k">pack ${escHtml(plainLabel(p.name))}</span><span class="v"${p.approved < p.skills ? ' style="color:var(--warn)"' : ""}>${p.approved} of ${p.skills} approved</span></div>`,
+        `<div class="row"><span class="k">pack ${escHtml(plainLabel(p.name))}</span><span class="v"${p.approved < p.skills ? ' style="color:var(--warn)"' : ""}>${p.approved} of ${p.skills} approved${p.quarantined !== undefined && p.quarantined > 0 ? ` · ${p.quarantined} quarantined` : ""}</span></div>`,
     )
     .join("");
-  const status = `<div class="card span-5"><div class="card-head"><h3>Approval status</h3>${badge}</div><div class="card-body">${statusBox}<div class="donut-meta" style="margin-top:.6rem"><div class="row"><span class="k">installed · approved</span><span class="v">${model.installed} · ${model.approved}</span></div><div class="row"><span class="k">unapproved · stale-pin</span><span class="v" style="color:${unattested > 0 ? "var(--warn)" : "var(--ok)"}">${model.unapproved} · ${model.stalePin}</span></div>${quarantinedRow}${packRows}</div><div class="method" style="margin-top:.6rem">External skills acquired via <code>aih workspace add</code>, joined to the committed <code>aih-skills.lock.json</code> approvals.</div></div></div>`;
+  // v0.6 marketplace artifact row — same absent→empty-string idiom as the
+  // quarantined row. "signature file present" is a PRESENCE claim only:
+  // verification spawns cosign/gh and belongs to `aih marketplace validate`, so
+  // this panel must never upgrade the label to "signed/verified".
+  const mp = model.marketplace;
+  const marketplaceRow = mp
+    ? `<div class="row"><span class="k">marketplace artifact</span><span class="v"${mp.findings > 0 ? ' style="color:var(--warn)"' : ""}>${mp.skills} skill${mp.skills === 1 ? "" : "s"} · ${mp.findings} finding${mp.findings === 1 ? "" : "s"} · ${mp.signed ? "signature file present" : "unsigned"}</span></div>`
+    : "";
+  // Evidence-bundle row — "internally consistent" is deliberately narrow: the check
+  // is the bundle against its OWN SHA256SUMS, not against the live repo. The one
+  // live comparison made (the skills lock vs its bundled copy) gets its own honest
+  // phrase; anything more is `aih verify-bundle` / `aih evidence build`'s business.
+  const ev = model.evidence;
+  // `current` undefined = the bundle was too large to re-hash at digest time — a
+  // neutral "not re-verified" (aih verify-bundle owns the full check), never a warn.
+  const evIssue = ev !== undefined && (ev.current === false || ev.stale);
+  const evConsistency =
+    ev?.current === undefined
+      ? "not re-verified (large bundle)"
+      : ev.current
+        ? "internally consistent"
+        : "checksums mismatch";
+  const evidenceRow = ev
+    ? `<div class="row"><span class="k">evidence bundle</span><span class="v"${evIssue ? ' style="color:var(--warn)"' : ""}>${ev.artifacts} artifact${ev.artifacts === 1 ? "" : "s"} · ${evConsistency}${ev.stale ? " · behind live skills lock" : ""}</span></div>`
+    : "";
+  // Org-policy row — presence + parse only ("valid (schema parse)" says exactly how
+  // far the claim goes; deep validation is `aih policy validate`'s). The error line
+  // is lock/JSON-derived text, so it takes the same strip + escape as skill labels.
+  const op = model.orgPolicy;
+  const orgPolicyRow = op
+    ? `<div class="row"><span class="k">org policy</span><span class="v"${op.valid ? "" : ' style="color:var(--bad)"'}>${op.valid ? "valid (schema parse)" : `invalid — ${escHtml(plainLabel(op.error ?? "unreadable"))}`}</span></div>`
+    : "";
+  const status = `<div class="card span-5"><div class="card-head"><h3>Approval status</h3>${badge}</div><div class="card-body">${statusBox}<div class="donut-meta" style="margin-top:.6rem"><div class="row"><span class="k">installed · approved</span><span class="v">${model.installed} · ${model.approved}</span></div><div class="row"><span class="k">unapproved · stale-pin</span><span class="v" style="color:${unattested > 0 ? "var(--warn)" : "var(--ok)"}">${model.unapproved} · ${model.stalePin}</span></div>${quarantinedRow}${packRows}${marketplaceRow}${evidenceRow}${orgPolicyRow}</div><div class="method" style="margin-top:.6rem">External skills acquired via <code>aih workspace add</code>, joined to the committed <code>aih-skills.lock.json</code> approvals.</div></div></div>`;
   const list = `<div class="card span-7"><div class="card-head"><h3>Installed skills</h3><span class="badge muted">${model.installed} on disk</span></div><div class="card-body"><div class="drift-files">${rows}</div></div></div>`;
   return status + list;
 }

@@ -6,18 +6,24 @@ import {
   SHARED_MARKER,
   sharedCanonicalBlockBody,
 } from "../bootstrap-ai/canon.js";
+import { verifyBundleChecksums } from "../bundle/index.js";
 import { eccLanguages } from "../ecc/select.js";
+import { DEFAULT_EVIDENCE_OUT, EVIDENCE_FILE, EvidenceBundleSchema } from "../evidence/manifest.js";
 import { homeDir } from "../internals/cli-detect.js";
 import { SUPPORTED_CLIS } from "../internals/clis.js";
 import { readIfExists } from "../internals/fsxn.js";
 import { gitRead } from "../internals/git.js";
 import { extractManagedBlock } from "../internals/markers.js";
 import { type DigestAction, digest, type PlanContext } from "../internals/plan.js";
-import { lines } from "../internals/render.js";
+import { ensureTrailingNewline, lines } from "../internals/render.js";
+import { DEFAULT_MARKETPLACE_OUT, readMarketplaceManifest } from "../marketplace/manifest.js";
+import { marketplaceReport } from "../marketplace/validate.js";
 import { mcpServers } from "../mcp/servers.js";
+import { AIH_ORG_POLICY_FILE } from "../org-policy/constants.js";
+import { OrgPolicyError, readOrgPolicy } from "../org-policy/schema.js";
 import { scanRepo } from "../profile/scan.js";
 import { skillInventory } from "../skill/index.js";
-import { readSkillsLock } from "../skill/lockfile.js";
+import { AIH_SKILLS_LOCK_FILE, readSkillsLock } from "../skill/lockfile.js";
 import type { SupportTemplate } from "../support/render.js";
 import { scanCliCoverage } from "./cli-coverage.js";
 import { readinessDigest } from "./readiness.js";
@@ -617,17 +623,158 @@ export function winsDigest(ctx: PlanContext): DigestAction | undefined {
   });
 }
 
+/** The publisher-signature filename beside `SHA256SUMS` (marketplace + bundles). */
+const SIGNATURE_FILE = "SHA256SUMS.sig";
+
+/**
+ * Marketplace artifact state for the governance digest — present only when the
+ * DEFAULT artifact (`.aih/marketplace`) exists under the target root; absent dir →
+ * `undefined` → the panel renders byte-identically. Grades with the SAME pure-fs
+ * join `marketplace validate` runs ({@link marketplaceReport} — no spawn; the
+ * spawning signature probe is validate's verify-phase concern, never the digest's),
+ * and reads `marketplace.json` for the packaged-skill count. `signed` reports only
+ * that the signature FILE exists — a presence claim, NEVER "verified": proving the
+ * signature needs cosign/gh, which is `aih marketplace validate`'s job (the
+ * plan-purity floor, #35, keeps digest time spawn-free).
+ */
+function marketplaceState(
+  ctx: PlanContext,
+): { skills: number; findings: number; signed: boolean } | undefined {
+  const dir = join(ctx.root, DEFAULT_MARKETPLACE_OUT);
+  if (!existsSync(dir)) return undefined;
+  const read = readMarketplaceManifest(dir);
+  return {
+    skills: read.ok ? read.manifest.skills.length : 0,
+    findings: marketplaceReport(dir).findings.length,
+    signed: existsSync(join(dir, SIGNATURE_FILE)),
+  };
+}
+
+/**
+ * The re-hash budget for the digest-time integrity check: past this many bundled
+ * bytes (summed from `manifest.json`, one cheap read), `current` is reported as
+ * `undefined` ("not re-verified") instead of re-hashing the whole bundle on every
+ * report generation. Evidence bundles ACCUMULATE run logs and prior reports, so an
+ * uncapped pass would make `aih report --v9` cost grow with bundle history —
+ * disproportionate for a one-boolean answer that `aih verify-bundle` owns anyway.
+ */
+const EVIDENCE_REHASH_BUDGET_BYTES = 16 * 1024 * 1024;
+
+/**
+ * Evidence-bundle state for the governance digest — present only when the DEFAULT
+ * bundle (`.aih/evidence-bundle`) exists under the target root; absent dir →
+ * `undefined` → the panel renders byte-identically. Three honest, cheap reads:
+ * `artifacts` counts the `evidence.json` kind-index entries; `current` reuses the
+ * fleet bundle's {@link verifyBundleChecksums} (pure fs), which checks the BUNDLED
+ * COPIES against the bundle's own SHA256SUMS — INTERNAL consistency, never
+ * freshness vs the live repo — and is SKIPPED (`undefined`) when the bundle's
+ * manifest-declared size exceeds {@link EVIDENCE_REHASH_BUDGET_BYTES}; `stale` is
+ * the one freshness probe cheap enough to be worth making: the LIVE skills lock
+ * compared byte-for-byte (after the write engine's trailing-newline normalization,
+ * the same one `evidence build` hashes through) to its bundled copy. The lock is
+ * the approval authority every other bundled artifact follows, so lock drift means
+ * the bundle predates a governance change — the `aih evidence build --apply`
+ * rebuild hint. Anything deeper stays `aih verify-bundle`'s job.
+ */
+function evidenceState(
+  ctx: PlanContext,
+): { artifacts: number; current?: boolean; stale: boolean } | undefined {
+  const dir = join(ctx.root, DEFAULT_EVIDENCE_OUT);
+  if (!existsSync(dir)) return undefined;
+  const artifacts = (() => {
+    const raw = readIfExists(join(dir, EVIDENCE_FILE));
+    if (raw === undefined) return 0;
+    try {
+      const parsed = EvidenceBundleSchema.safeParse(JSON.parse(raw));
+      return parsed.success ? parsed.data.artifacts.length : 0;
+    } catch {
+      return 0; // unreadable index → 0 indexed artifacts; `current` still grades the tree
+    }
+  })();
+  // Manifest-declared size (one small read) gates the full re-hash. An unreadable
+  // manifest grades as 0 declared bytes: verifyBundleChecksums then runs and fails
+  // loudly on the missing/mismatched manifest rather than being silently skipped.
+  const declaredBytes = (() => {
+    const raw = readIfExists(join(dir, "manifest.json"));
+    if (raw === undefined) return 0;
+    try {
+      const parsed = JSON.parse(raw) as { files?: Array<{ bytes?: unknown }> } | null;
+      if (!Array.isArray(parsed?.files)) return 0;
+      return parsed.files.reduce(
+        (sum, f) => sum + (typeof f.bytes === "number" && f.bytes > 0 ? f.bytes : 0),
+        0,
+      );
+    } catch {
+      return 0;
+    }
+  })();
+  const current =
+    declaredBytes > EVIDENCE_REHASH_BUDGET_BYTES
+      ? undefined
+      : verifyBundleChecksums(dir).verdict === "pass";
+  const norm = (text: string | undefined): string | undefined =>
+    text === undefined ? undefined : ensureTrailingNewline(text);
+  const live = norm(readIfExists(join(ctx.root, AIH_SKILLS_LOCK_FILE)));
+  const bundled = norm(readIfExists(join(dir, "files", AIH_SKILLS_LOCK_FILE)));
+  return { artifacts, ...(current !== undefined ? { current } : {}), stale: live !== bundled };
+}
+
+/**
+ * Org-policy state for the governance digest — presence + schema PARSE only, the
+ * deliberately shallow read: deep validation (reference resolution, bundle rules)
+ * stays `aih policy validate`'s job, and the digest line says so. Absent file →
+ * `undefined` → absent field: vibe repos carry no org policy, and absence is not a
+ * finding. `readOrgPolicy` THROWS {@link OrgPolicyError} on an unreadable or
+ * schema-invalid file — here that is a `valid: false` datum (the report must render
+ * through a broken policy, never crash on it), carrying the first error line with
+ * control/bidi characters stripped and hard-capped so a hand-edited JSON message
+ * cannot visually spoof or flood the panel.
+ */
+function orgPolicyState(
+  ctx: PlanContext,
+): { present: true; valid: boolean; error?: string } | undefined {
+  try {
+    // ONE read: readOrgPolicy returns undefined for an absent file (not a finding)
+    // and throws OrgPolicyError for a present-but-broken one.
+    if (readOrgPolicy(ctx.root, ctx.env) === undefined) return undefined;
+    return { present: true, valid: true };
+  } catch (err) {
+    if (!(err instanceof OrgPolicyError)) throw err;
+    const first = (err.message.split("\n")[0] ?? "").replace(
+      // biome-ignore lint/suspicious/noControlCharactersInRegex: stripping them is the point
+      /[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2066-\u2069]/g,
+      "",
+    );
+    const error = first.length > 160 ? `${first.slice(0, 159)}…` : first;
+    return { present: true, valid: false, ...(error.length > 0 ? { error } : {}) };
+  }
+}
+
 /**
  * Skill governance — the read-only join over installed external skills and their
  * committed approvals (`skillInventory`), surfaced so the dashboard shows what is on
  * disk vs approved (richer than the lockfile alone: it also names unapproved and
- * pin-drifted skills). EMPTY only when there is nothing to govern — no on-disk skills
- * AND no committed approvals; then the panel gates honestly instead of showing zeros.
- * Pure fs (the inventory join spawns nothing), so it is safe at digest time.
+ * pin-drifted skills). Also carries the v0.6 distribution/audit surfaces when they
+ * exist on disk (marketplace artifact, evidence bundle, org policy — each absent one
+ * stays absent, keeping the panel byte-identical). EMPTY only when there is nothing
+ * to govern — no on-disk skills, no committed approvals, and no governance
+ * artifacts; then the panel gates honestly instead of showing zeros. Pure fs
+ * (nothing here spawns), so it is safe at digest time.
  */
 export function skillGovernanceDigest(ctx: PlanContext): DigestAction | undefined {
   const inv = skillInventory(ctx);
-  if (inv.counts.installed === 0 && readSkillsLock(ctx.root).skills.length === 0) return undefined;
+  const marketplace = marketplaceState(ctx);
+  const evidence = evidenceState(ctx);
+  const orgPolicy = orgPolicyState(ctx);
+  if (
+    inv.counts.installed === 0 &&
+    readSkillsLock(ctx.root).skills.length === 0 &&
+    marketplace === undefined &&
+    evidence === undefined &&
+    orgPolicy === undefined
+  ) {
+    return undefined;
+  }
   const { installed, approved, unapproved, stalePin, quarantined } = inv.counts;
   const notable = inv.skills.filter((s) => s.status !== "approved");
   const rows = inv.skills.map((s) => ({
@@ -639,16 +786,66 @@ export function skillGovernanceDigest(ctx: PlanContext): DigestAction | undefine
   }));
   // Pack rollup — installed skills grouped by their lock entry's `pack` tag. Rendered
   // (body line + data key) ONLY when at least one skill carries a tag, so a pack-free
-  // repo's digest stays byte-identical (the quarantined-count pattern).
-  const byPack = new Map<string, { name: string; skills: number; approved: number }>();
+  // repo's digest stays byte-identical (the quarantined-count pattern). Quarantined
+  // members COUNT (their rows keep the lock entry's pack tag — the PR #111 fix): a
+  // parked member is still the pack's, just disabled, so it widens `skills` without
+  // widening `approved` and carries its own count. The per-pack `quarantined` key is
+  // emitted only when non-zero — a quarantine-free pack repo's digest stays byte-identical.
+  const byPack = new Map<
+    string,
+    { name: string; skills: number; approved: number; quarantined: number }
+  >();
   for (const s of inv.skills) {
     if (s.pack === undefined) continue;
-    const entry = byPack.get(s.pack) ?? { name: s.pack, skills: 0, approved: 0 };
+    const entry = byPack.get(s.pack) ?? { name: s.pack, skills: 0, approved: 0, quarantined: 0 };
     entry.skills += 1;
     if (s.status === "approved") entry.approved += 1;
+    if (s.status === "quarantined") entry.quarantined += 1;
     byPack.set(s.pack, entry);
   }
-  const packs = [...byPack.values()].sort((a, b) => a.name.localeCompare(b.name));
+  const packs = [...byPack.values()]
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .map((p) => ({
+      name: p.name,
+      skills: p.skills,
+      approved: p.approved,
+      ...(p.quarantined > 0 ? { quarantined: p.quarantined } : {}),
+    }));
+  // v0.6 distribution/audit lines — one grouped section (the "by pack:" pattern),
+  // rendered only when at least one surface exists so everything before it stays
+  // byte-identical on repos without governance artifacts.
+  const artifactLines = [
+    ...(marketplace
+      ? [
+          `  marketplace artifact (${DEFAULT_MARKETPLACE_OUT}) — ${marketplace.skills} skill(s) · ` +
+            `${marketplace.findings} finding(s) · ${marketplace.signed ? "signature file present" : "unsigned"} ` +
+            "(verify: `aih marketplace validate`)",
+        ]
+      : []),
+    ...(evidence
+      ? [
+          `  evidence bundle (${DEFAULT_EVIDENCE_OUT}) — ${evidence.artifacts} artifact(s) · ` +
+            (evidence.current === undefined
+              ? "integrity not re-verified (large bundle; check: `aih verify-bundle`)"
+              : evidence.current
+                ? "internally consistent"
+                : "bundled copies do NOT match SHA256SUMS") +
+            (evidence.stale ? " · live skills lock has moved past the bundled copy" : "") +
+            (evidence.current === false || evidence.stale
+              ? " (rebuild: `aih evidence build --apply`)"
+              : ""),
+        ]
+      : []),
+    ...(orgPolicy
+      ? [
+          `  org policy (${AIH_ORG_POLICY_FILE}) — ` +
+            (orgPolicy.valid
+              ? "present · parses against the org-policy schema"
+              : `INVALID: ${orgPolicy.error ?? "unreadable"}`) +
+            " (deep validation: `aih policy validate`)",
+        ]
+      : []),
+  ];
   const body = lines(
     `${installed} external skill${installed === 1 ? "" : "s"} installed · ${approved} approved · ${unapproved} unapproved · ${stalePin} stale-pin · ${quarantined} quarantined.`,
     "",
@@ -663,8 +860,17 @@ export function skillGovernanceDigest(ctx: PlanContext): DigestAction | undefine
       ? `  All ${approved} installed skill${approved === 1 ? " is" : "s are"} approved and in sync.`
       : "",
     ...(packs.length > 0
-      ? ["", "by pack:", ...packs.map((p) => `  ${p.name} — ${p.approved}/${p.skills} approved`)]
+      ? [
+          "",
+          "by pack:",
+          ...packs.map(
+            (p) =>
+              `  ${p.name} — ${p.approved}/${p.skills} approved` +
+              (p.quarantined !== undefined ? ` · ${p.quarantined} quarantined` : ""),
+          ),
+        ]
       : []),
+    ...(artifactLines.length > 0 ? ["", "distribution & audit:", ...artifactLines] : []),
   );
   // The parenthetical breakdown must SUM to `installed` — quarantined rows count as
   // installed, so omitting them here would silently drop skills from the explanation.
@@ -680,6 +886,9 @@ export function skillGovernanceDigest(ctx: PlanContext): DigestAction | undefine
     quarantined,
     rows,
     ...(packs.length > 0 ? { packs } : {}),
+    ...(marketplace !== undefined ? { marketplace } : {}),
+    ...(evidence !== undefined ? { evidence } : {}),
+    ...(orgPolicy !== undefined ? { orgPolicy } : {}),
   });
 }
 

@@ -255,6 +255,48 @@ export const V9_DEMO: AihDataV9 = {
     tokensReclaimable: 2800,
   },
 
+  // 10 — the trust join plus the v0.6 distribution/audit surfaces in their healthy
+  // shapes (a pack with a parked member, a built + signature-carrying marketplace
+  // artifact, a current evidence bundle, a valid org policy), so `--demo` showcases
+  // every optional block the live panel can grow.
+  skillGov: {
+    installed: 3,
+    approved: 2,
+    unapproved: 0,
+    stalePin: 0,
+    quarantined: 1,
+    rows: [
+      {
+        name: "changelog-writer",
+        status: "approved",
+        verdict: "GREEN",
+        source: "acme/agent-skills",
+        commit: "6a1f0c9d2b374e58a0c1b2d3e4f5061728394a5b",
+      },
+      {
+        name: "release-notes",
+        status: "approved",
+        verdict: "YELLOW",
+        source: "acme/agent-skills",
+        commit: "6a1f0c9d2b374e58a0c1b2d3e4f5061728394a5b",
+      },
+      {
+        name: "sql-scratchpad",
+        status: "quarantined",
+        verdict: "YELLOW",
+        source: "acme/agent-skills",
+        commit: "6a1f0c9d2b374e58a0c1b2d3e4f5061728394a5b",
+      },
+    ],
+    packs: [
+      { name: "docs-quality", skills: 2, approved: 2 },
+      { name: "eng-tools", skills: 1, approved: 0, quarantined: 1 },
+    ],
+    marketplace: { skills: 2, findings: 0, signed: true },
+    evidence: { artifacts: 14, current: true, stale: false },
+    orgPolicy: { present: true, valid: true },
+  },
+
   gates: {
     "sec-hero": "live",
     "sec-ready": "live",
@@ -269,7 +311,7 @@ export const V9_DEMO: AihDataV9 = {
     "sec-support": "live",
     "sec-period": "live",
     "sec-skills": "preview",
-    "sec-skillgov": "empty",
+    "sec-skillgov": "live",
     // capability sub-cards stay preview until their digest lands
     "cap-ecc": "preview",
     "cap-coherence": "preview",

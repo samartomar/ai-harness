@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { sharedBlock } from "../../src/bootstrap-ai/canon.js";
+import { sha256Hex } from "../../src/bundle/index.js";
 import { mergeManagedBlock } from "../../src/internals/markers.js";
 import type { PlanContext } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
@@ -469,20 +470,87 @@ describe("skillGovernanceDigest", () => {
   it("strips control/bidi characters from skill and pack labels (Codex low)", () => {
     // escHtml stops executable injection; bidi overrides could still VISUALLY spoof
     // a governance row (e.g. RTL-reversing "approved"). Both label paths strip them.
+    // Escapes only — never literal bidi bytes in source (repo rule).
     const html = renderSkillGovernance({
       installed: 1,
       approved: 1,
       unapproved: 0,
       stalePin: 0,
       quarantined: 0,
-      rows: [{ name: "docs‮what", status: "approved", source: "a/b​x" }],
-      packs: [{ name: "core‪evil", skills: 1, approved: 1 }],
+      rows: [{ name: "docs\u202ewhat", status: "approved", source: "a/b\u200bx" }],
+      packs: [{ name: "core\u202aevil", skills: 1, approved: 1 }],
     });
-    expect(html).not.toContain("‮");
-    expect(html).not.toContain("‪");
-    expect(html).not.toContain("​");
+    expect(html).not.toContain("\u202e");
+    expect(html).not.toContain("\u202a");
+    expect(html).not.toContain("\u200b");
     expect(html).toContain("docswhat");
     expect(html).toContain("pack coreevil");
+  });
+
+  it("never renders 'all approved' above a failing governance artifact (review HIGH)", () => {
+    // Zero installed skills + a broken, unsigned marketplace artifact: the badge and
+    // status box must warn — a green headline directly above a warn row is a lie.
+    const base = {
+      installed: 0,
+      approved: 0,
+      unapproved: 0,
+      stalePin: 0,
+      quarantined: 0,
+      rows: [],
+    };
+    const broken = renderSkillGovernance({
+      ...base,
+      marketplace: { skills: 0, findings: 3, signed: false },
+    });
+    expect(broken).not.toContain("all approved");
+    expect(broken).toContain("artifacts need attention");
+    expect(broken).toContain("Governance artifacts need attention");
+    // Same for a checksum-mismatched or stale evidence bundle and an invalid policy.
+    for (const model of [
+      { ...base, evidence: { artifacts: 1, current: false, stale: false } },
+      { ...base, evidence: { artifacts: 1, current: true, stale: true } },
+      { ...base, orgPolicy: { present: true as const, valid: false } },
+    ]) {
+      expect(renderSkillGovernance(model)).not.toContain("all approved");
+    }
+    // HEALTHY artifacts must not flip the badge: all-green stays "all approved".
+    const healthy = renderSkillGovernance({
+      ...base,
+      installed: 1,
+      approved: 1,
+      rows: [{ name: "clean", status: "approved" as const }],
+      marketplace: { skills: 1, findings: 0, signed: true },
+      evidence: { artifacts: 2, current: true, stale: false },
+      orgPolicy: { present: true as const, valid: true },
+    });
+    expect(healthy).toContain("all approved");
+    // And skill problems still take precedence over the artifact wording.
+    const unattested = renderSkillGovernance({
+      ...base,
+      installed: 1,
+      unapproved: 1,
+      rows: [{ name: "rogue", status: "unapproved" as const }],
+      marketplace: { skills: 0, findings: 3, signed: false },
+    });
+    expect(unattested).toContain("1 unattested");
+  });
+
+  it("renders an un-re-verified large bundle neutrally — not as an issue", () => {
+    // `current` undefined = re-hash skipped for size; that is honesty about NOT
+    // checking, so it must neither claim consistency nor warn like a mismatch.
+    const html = renderSkillGovernance({
+      installed: 1,
+      approved: 1,
+      unapproved: 0,
+      stalePin: 0,
+      quarantined: 0,
+      rows: [{ name: "clean", status: "approved" }],
+      evidence: { artifacts: 40, stale: false },
+    });
+    expect(html).toContain("not re-verified (large bundle)");
+    expect(html).not.toContain("checksums mismatch");
+    expect(html).not.toContain("internally consistent");
+    expect(html).toContain("all approved"); // unchecked ≠ failing
   });
 
   /** A schema-valid lock entry for `name`, optionally tagged with a pack. */
@@ -556,6 +624,51 @@ describe("skillGovernanceDigest", () => {
     expect(renderSkillGovernance(model)).not.toContain("pack docs");
   });
 
+  it("counts a quarantined member in its pack's rollup — tag survives quarantine (#111 regression)", () => {
+    put(`${DIR}/skills/src/alpha/SKILL.md`, "# alpha\n");
+    put(`.aih/quarantine/${DIR}/skills/src/parked/SKILL.md`, "# parked\n");
+    put(
+      "aih-skills.lock.json",
+      JSON.stringify({
+        schemaVersion: 1,
+        skills: [lockEntry("alpha", "docs"), lockEntry("parked", "docs")],
+      }),
+    );
+    const d = skillGovernanceDigest(ctx());
+    const data = d?.data as SkillGovData & {
+      packs?: Array<{ name: string; skills: number; approved: number; quarantined?: number }>;
+    };
+    // The parked member widens `skills` (not `approved`) and is named per pack.
+    expect(data.packs).toEqual([{ name: "docs", skills: 2, approved: 1, quarantined: 1 }]);
+    expect(d?.text).toContain("  docs — 1/2 approved · 1 quarantined");
+    // Its row keeps the lock provenance (source/commit), no longer "not in lock".
+    const parked = data.rows.find((r) => r.name === "parked");
+    expect(parked).toMatchObject({ status: "quarantined", commit: "a".repeat(40) });
+    // Render: the per-pack row names the parked member only when the count rides in.
+    const model = {
+      installed: 2,
+      approved: 1,
+      unapproved: 0,
+      stalePin: 0,
+      quarantined: 1,
+      rows: [],
+    };
+    const withQuarantined = renderSkillGovernance({
+      ...model,
+      packs: [{ name: "docs", skills: 2, approved: 1, quarantined: 1 }],
+    });
+    expect(withQuarantined).toContain("1 of 2 approved · 1 quarantined");
+    // Absent and zero render byte-identically — the conditional-render idiom.
+    expect(
+      renderSkillGovernance({ ...model, packs: [{ name: "docs", skills: 2, approved: 1 }] }),
+    ).toBe(
+      renderSkillGovernance({
+        ...model,
+        packs: [{ name: "docs", skills: 2, approved: 1, quarantined: 0 }],
+      }),
+    );
+  });
+
   it("keeps a pack-free repo's digest byte-identical (no by-pack section, no packs key)", () => {
     put(`${DIR}/skills/src/clean/SKILL.md`, "# clean\n");
     put("aih-skills.lock.json", JSON.stringify({ schemaVersion: 1, skills: [lockEntry("clean")] }));
@@ -566,5 +679,277 @@ describe("skillGovernanceDigest", () => {
       "1 external skill installed · 1 approved · 0 unapproved · 0 stale-pin · 0 quarantined.\n\n  All 1 installed skill is approved and in sync.\n",
     );
     expect(Object.keys(d?.data as Record<string, unknown>)).not.toContain("packs");
+    // No marketplace artifact on disk → no key, no "distribution & audit" section.
+    expect(Object.keys(d?.data as Record<string, unknown>)).not.toContain("marketplace");
+    expect(d?.text).not.toContain("distribution & audit");
+  });
+
+  /**
+   * A minimal GREEN marketplace artifact under `.aih/marketplace`: one packaged
+   * skill, every file present + hashed, SHA256SUMS covering the whole tree — the
+   * exact shape `marketplace build` writes, so `marketplaceReport` grades it clean.
+   */
+  const putMarketplace = (withSig: boolean): void => {
+    const skillBody = "# x\n";
+    const cardBody = "{}\n";
+    const evidenceBody = "{}\n";
+    const manifest = JSON.stringify({
+      schemaVersion: 1,
+      name: "acme",
+      skills: [
+        {
+          name: "x",
+          source: `owner/repo@${"a".repeat(40)}`,
+          commit: "a".repeat(40),
+          verdict: "GREEN",
+          card: "cards/x.json",
+          evidence: "evidence/x.json",
+          files: [
+            {
+              path: "files/x/SKILL.md",
+              sha256: sha256Hex(skillBody),
+              bytes: Buffer.byteLength(skillBody),
+            },
+          ],
+        },
+      ],
+    });
+    put(".aih/marketplace/marketplace.json", manifest);
+    put(".aih/marketplace/cards/x.json", cardBody);
+    put(".aih/marketplace/evidence/x.json", evidenceBody);
+    put(".aih/marketplace/files/x/SKILL.md", skillBody);
+    const sums = `${[
+      `${sha256Hex(manifest)}  marketplace.json`,
+      `${sha256Hex(cardBody)}  cards/x.json`,
+      `${sha256Hex(evidenceBody)}  evidence/x.json`,
+      `${sha256Hex(skillBody)}  files/x/SKILL.md`,
+    ].join("\n")}\n`;
+    put(".aih/marketplace/SHA256SUMS", sums);
+    if (withSig) put(".aih/marketplace/SHA256SUMS.sig", "sig-bytes\n");
+  };
+
+  it("surfaces a green marketplace artifact — and keeps the digest live from it alone", () => {
+    // No skills, no lock: the built artifact IS something to govern.
+    putMarketplace(true);
+    const d = skillGovernanceDigest(ctx());
+    expect(d).toBeDefined();
+    const data = d?.data as SkillGovData & {
+      marketplace?: { skills: number; findings: number; signed: boolean };
+    };
+    expect(data.marketplace).toEqual({ skills: 1, findings: 0, signed: true });
+    expect(d?.text).toContain("distribution & audit:");
+    // Presence claim ONLY — verification is `marketplace validate`'s spawn.
+    expect(d?.text).toContain("1 skill(s) · 0 finding(s) · signature file present");
+    expect(d?.text).not.toContain("signature verified");
+  });
+
+  it("grades a broken, unsigned marketplace artifact with findings (never crashes)", () => {
+    // A manifest alone: sums missing → coverage finding; no sig → unsigned.
+    put(".aih/marketplace/marketplace.json", "{ not json");
+    const d = skillGovernanceDigest(ctx());
+    const data = d?.data as SkillGovData & {
+      marketplace?: { skills: number; findings: number; signed: boolean };
+    };
+    expect(data.marketplace?.skills).toBe(0);
+    expect(data.marketplace?.findings).toBeGreaterThan(0);
+    expect(data.marketplace?.signed).toBe(false);
+    expect(d?.text).toContain("unsigned");
+  });
+
+  /**
+   * A minimal evidence bundle under `.aih/evidence-bundle` in `evidence build`'s
+   * exact layout: `files/<rel>` copy of the skills lock, SHA256SUMS over it, and
+   * the `evidence.json` kind index.
+   */
+  const putEvidenceBundle = (lockBody: string): void => {
+    const bundled = `${lockBody}\n`; // evidence build normalizes to one trailing newline
+    put(".aih/evidence-bundle/files/aih-skills.lock.json", bundled);
+    put(".aih/evidence-bundle/SHA256SUMS", `${sha256Hex(bundled)}  files/aih-skills.lock.json\n`);
+    put(
+      ".aih/evidence-bundle/evidence.json",
+      JSON.stringify({
+        schemaVersion: 1,
+        artifacts: [
+          {
+            kind: "skills-lock",
+            path: "aih-skills.lock.json",
+            sha256: sha256Hex(bundled),
+            schemaVersion: 1,
+          },
+        ],
+      }),
+    );
+  };
+
+  it("surfaces a current, non-stale evidence bundle — live from the bundle alone", () => {
+    const lock = JSON.stringify({ schemaVersion: 1, skills: [lockEntry("clean")] });
+    put("aih-skills.lock.json", lock);
+    putEvidenceBundle(lock);
+    const d = skillGovernanceDigest(ctx());
+    expect(d).toBeDefined();
+    const data = d?.data as SkillGovData & {
+      evidence?: { artifacts: number; current: boolean; stale: boolean };
+    };
+    expect(data.evidence).toEqual({ artifacts: 1, current: true, stale: false });
+    expect(d?.text).toContain("evidence bundle (.aih/evidence-bundle) — 1 artifact(s)");
+    expect(d?.text).toContain("internally consistent");
+    expect(d?.text).not.toContain("rebuild:");
+  });
+
+  it("flags a bundle whose bundled lock the live lock has moved past as stale", () => {
+    const oldLock = JSON.stringify({ schemaVersion: 1, skills: [] });
+    putEvidenceBundle(oldLock);
+    // The live lock gained an approval AFTER the bundle was built.
+    put("aih-skills.lock.json", JSON.stringify({ schemaVersion: 1, skills: [lockEntry("newer")] }));
+    const d = skillGovernanceDigest(ctx());
+    const data = d?.data as SkillGovData & {
+      evidence?: { artifacts: number; current: boolean; stale: boolean };
+    };
+    // Internally the bundle still verifies — staleness is the LIVE-lock signal.
+    expect(data.evidence).toEqual({ artifacts: 1, current: true, stale: true });
+    expect(d?.text).toContain("live skills lock has moved past the bundled copy");
+    expect(d?.text).toContain("rebuild: `aih evidence build --apply`");
+  });
+
+  it("flags a tampered bundled copy as not internally consistent", () => {
+    const lock = JSON.stringify({ schemaVersion: 1, skills: [] });
+    put("aih-skills.lock.json", lock);
+    putEvidenceBundle(lock);
+    put(".aih/evidence-bundle/files/aih-skills.lock.json", '{"tampered":true}\n');
+    const d = skillGovernanceDigest(ctx());
+    const data = d?.data as SkillGovData & { evidence?: { current: boolean; stale: boolean } };
+    expect(data.evidence?.current).toBe(false);
+    expect(data.evidence?.stale).toBe(true); // the bundled copy no longer matches the live lock either
+    expect(d?.text).toContain("bundled copies do NOT match SHA256SUMS");
+  });
+
+  it("skips the integrity re-hash past the manifest-declared size budget (review MEDIUM)", () => {
+    // A bundle whose manifest declares more bytes than the digest-time budget is NOT
+    // re-hashed on every report — `current` is omitted and the text says so honestly.
+    // (The bundled files themselves stay tiny; only the DECLARED size trips the cap,
+    // which is the point: one cheap manifest read decides, no hashing happens.)
+    const lock = JSON.stringify({ schemaVersion: 1, skills: [] });
+    put("aih-skills.lock.json", lock);
+    putEvidenceBundle(lock);
+    put(
+      ".aih/evidence-bundle/manifest.json",
+      JSON.stringify({
+        schemaVersion: 1,
+        files: [{ path: "aih-skills.lock.json", bytes: 32 * 1024 * 1024, sha256: "0".repeat(64) }],
+      }),
+    );
+    const d = skillGovernanceDigest(ctx());
+    const data = d?.data as SkillGovData & {
+      evidence?: { artifacts: number; current?: boolean; stale: boolean };
+    };
+    expect(data.evidence).toBeDefined();
+    expect(data.evidence && "current" in data.evidence).toBe(false);
+    expect(d?.text).toContain(
+      "integrity not re-verified (large bundle; check: `aih verify-bundle`)",
+    );
+    expect(d?.text).not.toContain("internally consistent");
+    // Not an issue → no rebuild hint from the consistency side (the lock is in sync here).
+    expect(d?.text).not.toContain("rebuild:");
+  });
+
+  it("renders the evidence row only when the model carries it (byte-identical absent)", () => {
+    const model = {
+      installed: 1,
+      approved: 1,
+      unapproved: 0,
+      stalePin: 0,
+      quarantined: 0,
+      rows: [],
+    };
+    const current = renderSkillGovernance({
+      ...model,
+      evidence: { artifacts: 14, current: true, stale: false },
+    });
+    expect(current).toContain("evidence bundle");
+    expect(current).toContain("14 artifacts · internally consistent");
+    const stale = renderSkillGovernance({
+      ...model,
+      evidence: { artifacts: 14, current: true, stale: true },
+    });
+    expect(stale).toContain("internally consistent · behind live skills lock");
+    expect(renderSkillGovernance(model)).not.toContain("evidence bundle");
+  });
+
+  it("renders the marketplace row only when the model carries it (byte-identical absent)", () => {
+    const model = {
+      installed: 1,
+      approved: 1,
+      unapproved: 0,
+      stalePin: 0,
+      quarantined: 0,
+      rows: [],
+    };
+    const withMp = renderSkillGovernance({
+      ...model,
+      marketplace: { skills: 2, findings: 0, signed: true },
+    });
+    expect(withMp).toContain("marketplace artifact");
+    expect(withMp).toContain("2 skills · 0 findings · signature file present");
+    const unsigned = renderSkillGovernance({
+      ...model,
+      marketplace: { skills: 2, findings: 3, signed: false },
+    });
+    expect(unsigned).toContain("3 findings · unsigned");
+    expect(renderSkillGovernance(model)).not.toContain("marketplace artifact");
+  });
+
+  it("surfaces a valid org policy — live from the policy file alone", () => {
+    put(
+      "aih-org-policy.json",
+      JSON.stringify({
+        schemaVersion: 1,
+        minimumPosture: "team",
+        references: { repoContract: `${DIR}/project.md` },
+      }),
+    );
+    const d = skillGovernanceDigest(ctx());
+    expect(d).toBeDefined();
+    const data = d?.data as SkillGovData & {
+      orgPolicy?: { present: true; valid: boolean; error?: string };
+    };
+    expect(data.orgPolicy).toEqual({ present: true, valid: true });
+    // Presence + parse ONLY — the line routes the deep check to `policy validate`.
+    expect(d?.text).toContain("org policy (aih-org-policy.json) — present · parses");
+    expect(d?.text).toContain("deep validation: `aih policy validate`");
+  });
+
+  it("reports an invalid org policy with a sanitized, truncated first error line", () => {
+    // Schema-invalid (missing references) + a bidi override smuggled into a value.
+    put("aih-org-policy.json", JSON.stringify({ schemaVersion: 1, minimumPosture: "team\u202e" }));
+    const d = skillGovernanceDigest(ctx());
+    const data = d?.data as SkillGovData & {
+      orgPolicy?: { present: true; valid: boolean; error?: string };
+    };
+    expect(data.orgPolicy?.present).toBe(true);
+    expect(data.orgPolicy?.valid).toBe(false);
+    expect(data.orgPolicy?.error).toBeDefined();
+    expect(data.orgPolicy?.error).not.toContain("\u202e");
+    expect((data.orgPolicy?.error ?? "").length).toBeLessThanOrEqual(160);
+    expect(d?.text).toContain("INVALID:");
+  });
+
+  it("renders the org-policy row only when the model carries it (byte-identical absent)", () => {
+    const model = {
+      installed: 1,
+      approved: 1,
+      unapproved: 0,
+      stalePin: 0,
+      quarantined: 0,
+      rows: [],
+    };
+    const valid = renderSkillGovernance({ ...model, orgPolicy: { present: true, valid: true } });
+    expect(valid).toContain("org policy");
+    expect(valid).toContain("valid (schema parse)");
+    const invalid = renderSkillGovernance({
+      ...model,
+      orgPolicy: { present: true, valid: false, error: "org-policy is invalid: <bad & broken>" },
+    });
+    expect(invalid).toContain("invalid — org-policy is invalid: &lt;bad &amp; broken&gt;");
+    expect(renderSkillGovernance(model)).not.toContain("org policy");
   });
 });

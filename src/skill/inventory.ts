@@ -28,15 +28,15 @@ export interface SkillInventoryRow {
   abs: string;
   /** `quarantined` = disabled under `.aih/quarantine/` (approval kept, not graded). */
   status: "approved" | "unapproved" | "stale-pin" | "quarantined";
-  /** Approval verdict from the lock entry, when approved. */
+  /** Approval verdict from the lock entry, when the lock carries one for this name. */
   verdict?: SkillLockEntry["verdict"];
-  /** Source string from the lock entry, when approved. */
+  /** Source string from the lock entry, when the lock carries one for this name. */
   source?: string;
-  /** Approved commit from the lock entry, when approved. */
+  /** Approved commit from the lock entry, when the lock carries one for this name. */
   commit?: string;
-  /** Skill pack from the lock entry, when approved. */
+  /** Skill pack from the lock entry, when the lock carries one for this name. */
   pack?: string;
-  /** Committed card path from the lock entry, when approved. */
+  /** Committed card path from the lock entry, when the lock carries one for this name. */
   card?: string;
   /** Whether the card the lock entry references is present on disk. */
   cardPresent?: boolean;
@@ -177,9 +177,28 @@ export function skillInventory(ctx: PlanContext): SkillInventory {
   const skills: SkillInventoryRow[] = discoverSkills(roots, ctx.contextDir).map((hit) => {
     // A quarantined skill is DISABLED, not graded: its approval is intentionally kept
     // (that is quarantine's contract), so classifying it approved/unapproved/stale
-    // would misread a parked copy as live governance state.
+    // would misread a parked copy as live governance state. But the lock entry's
+    // IDENTITY (verdict/source/commit/pack/card) is still real — quarantine keeps the
+    // approval, and dropping this join made a parked pack member vanish from every
+    // pack rollup keyed on `row.pack` (the PR #111 review gap). Join for provenance
+    // only, never for grading: no cardPresent probe, no stale-pin drift check.
     if (hit.root === "quarantined") {
-      return { name: hit.name, root: hit.root, abs: hit.abs, status: "quarantined" };
+      const entry = byName.get(hit.name);
+      return {
+        name: hit.name,
+        root: hit.root,
+        abs: hit.abs,
+        status: "quarantined",
+        ...(entry === undefined
+          ? {}
+          : {
+              verdict: entry.verdict,
+              source: entry.source,
+              commit: entry.commit,
+              pack: entry.pack,
+              card: entry.card,
+            }),
+      };
     }
     const entry = byName.get(hit.name);
     if (entry === undefined) {

@@ -97,6 +97,27 @@ describe("readSkillsLock", () => {
     expect(lock.skills).toHaveLength(1);
     expect(lock.skills[0]?.name).toBe("clean");
   });
+
+  it("drops duplicate-name entries — first wins (review MEDIUM)", () => {
+    // Every aih writer dedupes by name, so a duplicate means a hand-edited file.
+    // Letting it through would make every downstream by-name join (inventory,
+    // packs, marketplace) silently last-write-wins on the skill's provenance.
+    writeLock(
+      JSON.stringify({
+        schemaVersion: 1,
+        skills: [
+          entry({ name: "dup", commit: "a".repeat(40) }),
+          entry({ name: "dup", commit: "b".repeat(40) }),
+          entry({ name: "unique" }),
+        ],
+      }),
+    );
+
+    const lock = readSkillsLock(root);
+
+    expect(lock.skills.map((s) => s.name)).toEqual(["dup", "unique"]);
+    expect(lock.skills[0]?.commit).toBe("a".repeat(40)); // the FIRST entry's pin survives
+  });
 });
 
 describe("upsertSkillLockEntry", () => {
