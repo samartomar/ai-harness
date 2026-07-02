@@ -25,6 +25,7 @@ import {
   skillApproveCommand,
   skillCardCommand,
   skillInventoryCommand,
+  skillRemoveCommand,
   skillVetCommand,
 } from "../skill/index.js";
 import { command as status } from "../status.js";
@@ -289,5 +290,13 @@ export function registerCommands(program: Command): void {
     process.exitCode = await runCapability(skillInventoryCommand, command, {
       positionalRoot: false,
     });
+  });
+  // `remove` takes no <source> either (targets an installed skill via `--name`), so
+  // register it like `inventory` — separate from the source-forcing vet/card/approve loop.
+  const rm = skill.command("remove").description(skillRemoveCommand.summary);
+  addSharedFlags(rm);
+  for (const o of skillRemoveCommand.options ?? []) rm.option(o.flags, o.description);
+  rm.action(async (_options: Record<string, unknown>, command: Command) => {
+    process.exitCode = await runCapability(skillRemoveCommand, command, { positionalRoot: false });
   });
 }

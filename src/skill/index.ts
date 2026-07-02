@@ -17,8 +17,10 @@ export {
 export {
   AIH_SKILLS_LOCK_FILE,
   readSkillsLock,
+  removeSkillLockEntry,
   type SkillLockEntry,
   type SkillsLock,
   upsertSkillLockEntry,
 } from "./lockfile.js";
+export { skillRemoveCommand } from "./remove.js";
 export { type SkillVetEvidence, skillVetCommand } from "./vet.js";
