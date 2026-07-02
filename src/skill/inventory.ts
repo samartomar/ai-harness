@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import { homeDir } from "../internals/cli-detect.js";
 import { type CommandSpec, digest, type Plan, type PlanContext, plan } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
@@ -26,7 +26,8 @@ export interface SkillInventoryRow {
   root: string;
   /** Absolute path of the skill directory on disk. */
   abs: string;
-  status: "approved" | "unapproved" | "stale-pin";
+  /** `quarantined` = disabled under `.aih/quarantine/` (approval kept, not graded). */
+  status: "approved" | "unapproved" | "stale-pin" | "quarantined";
   /** Approval verdict from the lock entry, when approved. */
   verdict?: SkillLockEntry["verdict"];
   /** Source string from the lock entry, when approved. */
@@ -53,7 +54,13 @@ export interface SkillInventoryRoot {
 export interface SkillInventory {
   roots: SkillInventoryRoot[];
   skills: SkillInventoryRow[];
-  counts: { installed: number; approved: number; unapproved: number; stalePin: number };
+  counts: {
+    installed: number;
+    approved: number;
+    unapproved: number;
+    stalePin: number;
+    quarantined: number;
+  };
 }
 
 /** A discovered skill dir before its approval join. */
@@ -66,7 +73,9 @@ interface DiscoveredSkill {
 /**
  * The roots we scan for skills, in report order: the PROMOTED root (external skills
  * acquired via `workspace add`, under `<ctx>/skills`), the repo-committed per-CLI
- * skill dirs (`.claude`/`.kiro`), and the MACHINE `~/.claude/skills` install. Only
+ * skill dirs (`.claude`/`.kiro`), the MACHINE `~/.claude/skills` install, and the
+ * QUARANTINE archive (`.aih/quarantine/`, where `skill quarantine` parks a disabled
+ * skill under its original repo-relative layout). Only
  * those that exist on disk are scanned (a missing root is `present: false`, never an
  * error). `homeDir` reads the injected env first, so tests stay hermetic.
  */
@@ -76,6 +85,7 @@ function inventoryRoots(ctx: PlanContext): SkillInventoryRoot[] {
     { label: "repo", abs: join(ctx.root, ".claude", "skills") },
     { label: "repo", abs: join(ctx.root, ".kiro", "skills") },
     { label: "machine", abs: join(homeDir(ctx), ".claude", "skills") },
+    { label: "quarantined", abs: join(ctx.root, ".aih", "quarantine") },
   ];
   return specs.map((spec) => ({ ...spec, present: existsSync(spec.abs) }));
 }
@@ -96,6 +106,22 @@ function skillNameFor(rootLabel: string, rootAbs: string, skillDir: string): str
 }
 
 /**
+ * The logical name for a QUARANTINED skill dir. `skill quarantine` moves a skill to
+ * `.aih/quarantine/<original repo-relative dir>`, so a quarantined PROMOTED skill
+ * reappears under `<quarantine>/<ctx>/skills/<id>/<skillRel>` — the same id-nested
+ * layout as the live promoted root, so the same leading-id strip applies. Every other
+ * quarantined layout (`.claude`/`.kiro` repo skills) is flat past its `skills`
+ * segment, which `promotedSkillRel` already strips.
+ */
+function quarantinedSkillName(contextDir: string, rootAbs: string, skillDir: string): string {
+  const rel = relative(rootAbs, skillDir).replace(/\\/g, "/");
+  const logical = promotedSkillRel(rootAbs, skillDir);
+  if (!rel.startsWith(`${contextDir}/skills/`)) return logical;
+  const slash = logical.indexOf("/");
+  return slash >= 0 ? logical.slice(slash + 1) : logical;
+}
+
+/**
  * Discover every skill under the present roots — one row per PHYSICAL directory,
  * never collapsed by name. Two installs can share a logical name (two promoted
  * sources shipping `foo`, or `.claude/skills/foo` + `.kiro/skills/foo`); hiding one
@@ -104,12 +130,16 @@ function skillNameFor(rootLabel: string, rootAbs: string, skillDir: string): str
  * shared approval. The roots are disjoint directories and `collectSkillDirs` yields
  * unique dirs per root, so no dedupe is needed.
  */
-function discoverSkills(roots: SkillInventoryRoot[]): DiscoveredSkill[] {
+function discoverSkills(roots: SkillInventoryRoot[], contextDir: string): DiscoveredSkill[] {
   const out: DiscoveredSkill[] = [];
   for (const root of roots) {
     if (!root.present) continue;
     for (const dir of collectSkillDirs(root.abs)) {
-      out.push({ name: skillNameFor(root.label, root.abs, dir), root: root.label, abs: dir });
+      const name =
+        root.label === "quarantined"
+          ? quarantinedSkillName(contextDir, root.abs, dir)
+          : skillNameFor(root.label, root.abs, dir);
+      out.push({ name, root: root.label, abs: dir });
     }
   }
   return out;
@@ -144,7 +174,13 @@ export function skillInventory(ctx: PlanContext): SkillInventory {
   const byName = new Map(lock.skills.map((entry) => [entry.name, entry]));
   const trustSources = readTrustLock(ctx.root).sources;
 
-  const skills: SkillInventoryRow[] = discoverSkills(roots).map((hit) => {
+  const skills: SkillInventoryRow[] = discoverSkills(roots, ctx.contextDir).map((hit) => {
+    // A quarantined skill is DISABLED, not graded: its approval is intentionally kept
+    // (that is quarantine's contract), so classifying it approved/unapproved/stale
+    // would misread a parked copy as live governance state.
+    if (hit.root === "quarantined") {
+      return { name: hit.name, root: hit.root, abs: hit.abs, status: "quarantined" };
+    }
     const entry = byName.get(hit.name);
     if (entry === undefined) {
       return { name: hit.name, root: hit.root, abs: hit.abs, status: "unapproved" };
@@ -171,6 +207,7 @@ export function skillInventory(ctx: PlanContext): SkillInventory {
     approved: skills.filter((s) => s.status === "approved").length,
     unapproved: skills.filter((s) => s.status === "unapproved").length,
     stalePin: skills.filter((s) => s.status === "stale-pin").length,
+    quarantined: skills.filter((s) => s.status === "quarantined").length,
   };
   return { roots, skills, counts };
 }
@@ -197,7 +234,7 @@ function rowLine(row: SkillInventoryRow): string {
 
 /** The digest text — a counts header, then rows grouped by root (or an empty note). */
 function inventoryText(inv: SkillInventory): string {
-  const { installed, approved, unapproved, stalePin } = inv.counts;
+  const { installed, approved, unapproved, stalePin, quarantined } = inv.counts;
   if (installed === 0) {
     return lines(
       "0 installed · 0 approved · 0 unapproved · 0 stale",
@@ -205,13 +242,25 @@ function inventoryText(inv: SkillInventory): string {
       "No skills installed — nothing to inventory. Acquire one with `aih workspace add <source>`.",
     );
   }
-  const header = `${installed} installed · ${approved} approved · ${unapproved} unapproved · ${stalePin} stale`;
+  const header =
+    `${installed} installed · ${approved} approved · ${unapproved} unapproved · ${stalePin} stale` +
+    (quarantined > 0 ? ` · ${quarantined} quarantined` : "");
   const rootLabels = ["promoted", "repo", "machine"];
   const sections: string[] = [];
   for (const label of rootLabels) {
     const rows = inv.skills.filter((s) => s.root === label);
     if (rows.length === 0) continue;
     sections.push("", `${label}:`, ...rows.map(rowLine));
+  }
+  // Quarantined skills get their own trailing section — they are disabled, not
+  // graded, and the restore path is a plain move-back (no aih command needed).
+  const qRows = inv.skills.filter((s) => s.root === "quarantined");
+  if (qRows.length > 0) {
+    sections.push(
+      "",
+      "quarantined:",
+      ...qRows.map((row) => `  - ${row.name}  [quarantined]  (move back to restore)`),
+    );
   }
   return lines(header, ...sections);
 }

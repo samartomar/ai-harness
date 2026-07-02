@@ -90,7 +90,13 @@ function inv(): SkillInventory {
 describe("skillInventory — the pure join", () => {
   it("returns all-zero counts for an empty repo with a friendly note", () => {
     const result = inv();
-    expect(result.counts).toEqual({ installed: 0, approved: 0, unapproved: 0, stalePin: 0 });
+    expect(result.counts).toEqual({
+      installed: 0,
+      approved: 0,
+      unapproved: 0,
+      stalePin: 0,
+      quarantined: 0,
+    });
     expect(result.skills).toEqual([]);
     // The promoted root does not exist → present: false.
     expect(result.roots.find((r) => r.label === "promoted")?.present).toBe(false);

@@ -585,6 +585,7 @@ function govStatus(status: V9SkillGovernance["rows"][number]["status"]): {
 } {
   if (status === "approved") return { cls: "ok", label: "approved" };
   if (status === "stale-pin") return { cls: "warn", label: "stale pin" };
+  if (status === "quarantined") return { cls: "warn", label: "quarantined" };
   return { cls: "bad", label: "unapproved" };
 }
 
@@ -595,11 +596,13 @@ function govStatus(status: V9SkillGovernance["rows"][number]["status"]): {
  * trees and a committed lockfile. Pure, deterministic (no clock/IO).
  */
 export function renderSkillGovernance(model: V9SkillGovernance): string {
-  const unattested = model.unapproved + model.stalePin;
+  // Quarantined skills count as NOT clean: "all approved" must never render while a
+  // disabled skill sits parked (it is installed, and it is not in a vetted-active state).
+  const unattested = model.unapproved + model.stalePin + model.quarantined;
   const clean = unattested === 0;
   const statusBox = clean
     ? `<div class="drift-status"><div class="dicon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6 9 17l-5-5"/></svg></div><div class="dtext"><b>All ${model.approved} installed skill${model.approved === 1 ? "" : "s"} approved</b><span>every external skill on disk is vetted and in sync</span></div></div>`
-    : `<div class="drift-status" style="background:var(--warn-soft);border-color:color-mix(in oklab,var(--warn) 22%,transparent)"><div class="dicon" style="background:var(--warn)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg></div><div class="dtext"><b style="color:var(--warn)">${unattested} of ${model.installed} installed skill${model.installed === 1 ? "" : "s"} unattested</b><span>an external skill is on disk without a matching approval</span></div></div>`;
+    : `<div class="drift-status" style="background:var(--warn-soft);border-color:color-mix(in oklab,var(--warn) 22%,transparent)"><div class="dicon" style="background:var(--warn)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg></div><div class="dtext"><b style="color:var(--warn)">${unattested} of ${model.installed} installed skill${model.installed === 1 ? "" : "s"} not fully approved</b><span>an external skill is unapproved, stale, or quarantined</span></div></div>`;
   const rows = model.rows
     .map((r) => {
       const { cls, label } = govStatus(r.status);
@@ -617,7 +620,13 @@ export function renderSkillGovernance(model: V9SkillGovernance): string {
   const badge = clean
     ? '<span class="badge ok">all approved</span>'
     : `<span class="badge warn">${unattested} unattested</span>`;
-  const status = `<div class="card span-5"><div class="card-head"><h3>Approval status</h3>${badge}</div><div class="card-body">${statusBox}<div class="donut-meta" style="margin-top:.6rem"><div class="row"><span class="k">installed · approved</span><span class="v">${model.installed} · ${model.approved}</span></div><div class="row"><span class="k">unapproved · stale-pin</span><span class="v" style="color:${unattested > 0 ? "var(--warn)" : "var(--ok)"}">${model.unapproved} · ${model.stalePin}</span></div></div><div class="method" style="margin-top:.6rem">External skills acquired via <code>aih workspace add</code>, joined to the committed <code>aih-skills.lock.json</code> approvals.</div></div></div>`;
+  // The quarantined count line renders only when non-zero, so a quarantine-free
+  // report stays byte-identical to the pre-quarantine output.
+  const quarantinedRow =
+    model.quarantined > 0
+      ? `<div class="row"><span class="k">quarantined</span><span class="v" style="color:var(--warn)">${model.quarantined}</span></div>`
+      : "";
+  const status = `<div class="card span-5"><div class="card-head"><h3>Approval status</h3>${badge}</div><div class="card-body">${statusBox}<div class="donut-meta" style="margin-top:.6rem"><div class="row"><span class="k">installed · approved</span><span class="v">${model.installed} · ${model.approved}</span></div><div class="row"><span class="k">unapproved · stale-pin</span><span class="v" style="color:${unattested > 0 ? "var(--warn)" : "var(--ok)"}">${model.unapproved} · ${model.stalePin}</span></div>${quarantinedRow}</div><div class="method" style="margin-top:.6rem">External skills acquired via <code>aih workspace add</code>, joined to the committed <code>aih-skills.lock.json</code> approvals.</div></div></div>`;
   const list = `<div class="card span-7"><div class="card-head"><h3>Installed skills</h3><span class="badge muted">${model.installed} on disk</span></div><div class="card-body"><div class="drift-files">${rows}</div></div></div>`;
   return status + list;
 }

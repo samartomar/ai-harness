@@ -628,7 +628,7 @@ export function winsDigest(ctx: PlanContext): DigestAction | undefined {
 export function skillGovernanceDigest(ctx: PlanContext): DigestAction | undefined {
   const inv = skillInventory(ctx);
   if (inv.counts.installed === 0 && readSkillsLock(ctx.root).skills.length === 0) return undefined;
-  const { installed, approved, unapproved, stalePin } = inv.counts;
+  const { installed, approved, unapproved, stalePin, quarantined } = inv.counts;
   const notable = inv.skills.filter((s) => s.status !== "approved");
   const rows = inv.skills.map((s) => ({
     name: s.name,
@@ -638,22 +638,33 @@ export function skillGovernanceDigest(ctx: PlanContext): DigestAction | undefine
     ...(s.commit !== undefined ? { commit: s.commit } : {}),
   }));
   const body = lines(
-    `${installed} external skill${installed === 1 ? "" : "s"} installed · ${approved} approved · ${unapproved} unapproved · ${stalePin} stale-pin.`,
+    `${installed} external skill${installed === 1 ? "" : "s"} installed · ${approved} approved · ${unapproved} unapproved · ${stalePin} stale-pin · ${quarantined} quarantined.`,
     "",
     ...notable.map((s) =>
       s.status === "stale-pin"
         ? `  ! ${s.name} — stale pin (${s.driftReason ?? "commit drift"})`
-        : `  ! ${s.name} — unapproved (run \`aih skill vet\` then \`aih skill approve\`)`,
+        : s.status === "quarantined"
+          ? `  ! ${s.name} — quarantined (disabled; move it back from .aih/quarantine to restore)`
+          : `  ! ${s.name} — unapproved (run \`aih skill vet\` then \`aih skill approve\`)`,
     ),
     notable.length === 0
       ? `  All ${approved} installed skill${approved === 1 ? " is" : "s are"} approved and in sync.`
       : "",
   );
-  return digest(
-    `Skill governance — ${installed} installed (${approved} approved, ${unapproved} unapproved, ${stalePin} stale)`,
-    body,
-    { installed, approved, unapproved, stalePin, rows },
-  );
+  // The parenthetical breakdown must SUM to `installed` — quarantined rows count as
+  // installed, so omitting them here would silently drop skills from the explanation.
+  const breakdown =
+    quarantined > 0
+      ? `${approved} approved, ${unapproved} unapproved, ${stalePin} stale, ${quarantined} quarantined`
+      : `${approved} approved, ${unapproved} unapproved, ${stalePin} stale`;
+  return digest(`Skill governance — ${installed} installed (${breakdown})`, body, {
+    installed,
+    approved,
+    unapproved,
+    stalePin,
+    quarantined,
+    rows,
+  });
 }
 
 /**

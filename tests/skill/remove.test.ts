@@ -247,6 +247,25 @@ describe("skillRemoveCommand — the destructive inverse", () => {
     }
   });
 
+  it("refuses removing a live copy while a same-named QUARANTINED sibling exists (review medium)", () => {
+    // The parked copy shares the name-keyed approval — removing the live install
+    // would drop the lock entry + card the quarantined copy's restore relies on.
+    installApproved("owner-repo", "clean");
+    mkdirSync(join(workspace, ".aih/quarantine/ai-coding/skills/other-src/clean"), {
+      recursive: true,
+    });
+    writeFileSync(
+      join(workspace, ".aih/quarantine/ai-coding/skills/other-src/clean/SKILL.md"),
+      "# parked\n",
+    );
+    const c = ctx({ apply: true, options: { name: "clean" } });
+    expect(() => skillRemoveCommand.plan(c)).toThrow(
+      /also has a quarantined copy .* restore or delete the quarantined copy first/s,
+    );
+    // Nothing changed: live copy, lock entry, and parked copy all intact.
+    expect(existsSync(promotedDir("owner-repo", "clean"))).toBe(true);
+  });
+
   it("refuses (AIH_TRUST) duplicate physical installs of the same name in ONE root (Codex high-1)", () => {
     // Two promoted SOURCES ship the same logical skill name; the inventory keeps one
     // row per physical dir, so the resolver must see BOTH and refuse — removing an

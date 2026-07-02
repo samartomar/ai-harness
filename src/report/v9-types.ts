@@ -246,9 +246,11 @@ export interface V9SkillGovernance {
   approved: number;
   unapproved: number;
   stalePin: number;
+  /** Skills parked under `.aih/quarantine/` — disabled, approval kept. */
+  quarantined: number;
   rows: Array<{
     name: string;
-    status: "approved" | "unapproved" | "stale-pin";
+    status: "approved" | "unapproved" | "stale-pin" | "quarantined";
     verdict?: string;
     source?: string;
     commit?: string;

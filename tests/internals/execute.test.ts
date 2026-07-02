@@ -555,6 +555,70 @@ describe("executePlan — remove actions", () => {
   });
 });
 
+describe("executePlan — archiveRoot removals (the quarantine root)", () => {
+  const put = (rel: string, body = "x"): string => {
+    const abs = join(dir, rel);
+    mkdirSync(dirname(abs), { recursive: true });
+    writeFileSync(abs, body);
+    return abs;
+  };
+
+  it("archiveRoot .aih/quarantine moves the file under the quarantine root, not legacy", async () => {
+    const abs = put("ai-coding/skills/owner/foo/SKILL.md", "# foo\n");
+    const res = await executePlan(
+      plan(
+        "skill quarantine",
+        remove("ai-coding/skills/owner/foo/SKILL.md", "quarantine foo", {
+          archiveRoot: ".aih/quarantine",
+        }),
+      ),
+      ctx({ apply: true }),
+    );
+    expect(existsSync(abs)).toBe(false);
+    const parked = join(dir, ".aih", "quarantine", "ai-coding", "skills", "owner", "foo");
+    expect(readFileSync(join(parked, "SKILL.md"), "utf8")).toBe("# foo\n");
+    expect(res.removed).toEqual([
+      {
+        path: "ai-coding/skills/owner/foo/SKILL.md",
+        describe: "quarantine foo",
+        effect: "remove",
+        to: ".aih/quarantine/ai-coding/skills/owner/foo/SKILL.md",
+      },
+    ]);
+    // Nothing leaked into the default legacy archive.
+    expect(existsSync(join(dir, ".aih", "legacy"))).toBe(false);
+  });
+
+  it("never overwrites an occupied quarantine slot — the second rescue lands at a .1 sibling", async () => {
+    const p = plan(
+      "skill quarantine",
+      remove("notes.md", "quarantine notes", { archiveRoot: ".aih/quarantine" }),
+    );
+    put("notes.md", "first\n");
+    await executePlan(p, ctx({ apply: true }));
+    put("notes.md", "second\n"); // the path was re-populated by hand
+    const res = await executePlan(p, ctx({ apply: true }));
+    // Both copies survive: the first at the base slot, the second at the .1 sibling —
+    // and the reported `to` reflects the ACTUAL fallback destination.
+    expect(readFileSync(join(dir, ".aih", "quarantine", "notes.md"), "utf8")).toBe("first\n");
+    expect(readFileSync(join(dir, ".aih", "quarantine", "notes.md.1"), "utf8")).toBe("second\n");
+    expect(res.removed[0]?.to).toBe(".aih/quarantine/notes.md.1");
+  });
+
+  it("containment still fires for an escaping path with archiveRoot set", async () => {
+    await expect(
+      executePlan(
+        plan(
+          "skill quarantine",
+          remove("../outside.md", "escape", { archiveRoot: ".aih/quarantine" }),
+        ),
+        ctx({ apply: true }),
+      ),
+    ).rejects.toBeInstanceOf(PathContainmentError);
+    expect(existsSync(join(dirname(dir), "outside.md"))).toBe(false);
+  });
+});
+
 describe("executePlan — hard-delete removals", () => {
   const put = (rel: string, body = "x"): string => {
     const abs = join(dir, rel);
