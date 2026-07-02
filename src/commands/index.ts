@@ -28,6 +28,7 @@ import {
   packValidateCommand,
   runPackInstall,
 } from "../pack/index.js";
+import { sanitizeLabel } from "../plugins/registry.js";
 import { command as profile } from "../profile/index.js";
 import { command as prune } from "../prune/index.js";
 import { command as ready } from "../ready/index.js";
@@ -101,8 +102,38 @@ export const READONLY: CommandSpec[] = [doctor, status, verifyBundle];
 
 export const ALL_COMMANDS: CommandSpec[] = [...CAPABILITIES, ...READONLY];
 
-/** Flags shared by every subcommand (placed on the subcommand so `aih certs --apply` works). */
-function addSharedFlags(cmd: Command): Command {
+/** Parent command groups registered below as bare commander groups (not CommandSpecs). */
+const PARENT_GROUPS = ["workspace", "trust", "skill", "pack", "marketplace"];
+
+/**
+ * Names commander itself claims on every program: the implicit `help`
+ * subcommand and the `--version`/`version` surface. Reserved so a plugin can
+ * never register a command that shadows or impersonates either.
+ */
+const RESERVED_COMMAND_NAMES = ["help", "version"];
+
+/**
+ * Every top-level name the core CLI claims: ALL_COMMANDS plus the parent group
+ * names (`workspace` is both a CommandSpec and a group — the Set folds it)
+ * plus commander's own reserved `help`/`version`. The plugin registry refuses
+ * any external spec colliding with one of these, so a plugin can never shadow
+ * `doctor`, capture the `marketplace` group, or impersonate `help`.
+ */
+export function builtinCommandNames(): ReadonlySet<string> {
+  return new Set([
+    ...ALL_COMMANDS.map((spec) => spec.name),
+    ...PARENT_GROUPS,
+    ...RESERVED_COMMAND_NAMES,
+  ]);
+}
+
+/**
+ * Flags shared by every subcommand (placed on the subcommand so `aih certs
+ * --apply` works). Exported as the authoritative shared-flag surface: the
+ * plugin registry's SHARED_FLAG_TOKENS mirror (src/plugins/registry.ts) is
+ * pinned against this exact registration by tests, so the two cannot drift.
+ */
+export function addSharedFlags(cmd: Command): Command {
   return cmd
     .option("--apply", "execute the plan (default: dry-run; nothing is written)")
     .option(
@@ -128,75 +159,113 @@ function addSharedFlags(cmd: Command): Command {
     );
 }
 
-export function registerCommands(program: Command): void {
-  for (const spec of ALL_COMMANDS) {
-    const cmd = program.command(spec.name).description(spec.summary);
-    // Optional positional target dir, e.g. `aih init .` or `aih profile ./repo`.
-    cmd.argument("[root]", "target repository/workstation root (defaults to --root or cwd)");
-    if (!spec.readOnly) addSharedFlags(cmd);
-    else
-      cmd
-        .option("--json", "emit machine-readable JSON")
-        .option("--root <dir>", "target root")
-        .option("--support-out <dir>", "write IT/support tickets for failed checks to <dir>")
-        .option("--no-log", "do not append a row to the local run ledger (.aih/runs/)");
-    for (const o of spec.options ?? []) {
-      if (o.default !== undefined) cmd.option(o.flags, o.description, o.default);
-      else cmd.option(o.flags, o.description);
+/**
+ * Register ONE top-level CommandSpec — the identical path for built-ins and
+ * gated plugin specs: same shared flags, same optional `[root]` positional,
+ * same runCapability action (posture resolution, dirty-worktree gate, run
+ * ledger). The command is assembled DETACHED and attached last, so a
+ * mid-registration throw (contained per-spec for plugins in registerCommands)
+ * cannot leave a half-registered command on the program.
+ */
+function registerSpec(program: Command, spec: CommandSpec): void {
+  // .command() would copy inherited settings and attach immediately; doing the
+  // copy explicitly and attaching at the end yields the same net configuration.
+  const cmd = program.createCommand(spec.name).description(spec.summary);
+  cmd.copyInheritedSettings(program);
+  // Optional positional target dir, e.g. `aih init .` or `aih profile ./repo`.
+  cmd.argument("[root]", "target repository/workstation root (defaults to --root or cwd)");
+  if (!spec.readOnly) addSharedFlags(cmd);
+  else
+    cmd
+      .option("--json", "emit machine-readable JSON")
+      .option("--root <dir>", "target root")
+      .option("--support-out <dir>", "write IT/support tickets for failed checks to <dir>")
+      .option("--no-log", "do not append a row to the local run ledger (.aih/runs/)");
+  for (const o of spec.options ?? []) {
+    if (o.default !== undefined) cmd.option(o.flags, o.description, o.default);
+    else cmd.option(o.flags, o.description);
+  }
+  cmd.action(
+    async (_rootArg: string | undefined, _options: Record<string, unknown>, command: Command) => {
+      process.exitCode = await runCapability(spec, command);
+    },
+  );
+  if (spec.name === "workspace") {
+    const add = cmd
+      .command(workspaceAddCommand.name)
+      .description(workspaceAddCommand.summary)
+      .argument("<source>", "local path or GitHub owner/repo trust source");
+    addSharedFlags(add);
+    for (const o of workspaceAddCommand.options ?? []) {
+      if (o.default !== undefined) add.option(o.flags, o.description, o.default);
+      else add.option(o.flags, o.description);
     }
-    cmd.action(
+    add.action(async (_source: string, _options: Record<string, unknown>, command: Command) => {
+      process.exitCode = await runWorkspaceAdd(command);
+    });
+
+    const snap = cmd
+      .command(workspaceSnapshot.name)
+      .description(workspaceSnapshot.summary)
+      .argument("[root]", "target workspace root (defaults to --root or cwd)");
+    addSharedFlags(snap);
+    for (const o of workspaceSnapshot.options ?? []) {
+      if (o.default !== undefined) snap.option(o.flags, o.description, o.default);
+      else snap.option(o.flags, o.description);
+    }
+    snap.action(
       async (_rootArg: string | undefined, _options: Record<string, unknown>, command: Command) => {
-        process.exitCode = await runCapability(spec, command);
+        process.exitCode = await runCapability(workspaceSnapshot, command);
       },
     );
-    if (spec.name === "workspace") {
-      const add = cmd
-        .command(workspaceAddCommand.name)
-        .description(workspaceAddCommand.summary)
-        .argument("<source>", "local path or GitHub owner/repo trust source");
-      addSharedFlags(add);
-      for (const o of workspaceAddCommand.options ?? []) {
-        if (o.default !== undefined) add.option(o.flags, o.description, o.default);
-        else add.option(o.flags, o.description);
-      }
-      add.action(async (_source: string, _options: Record<string, unknown>, command: Command) => {
-        process.exitCode = await runWorkspaceAdd(command);
-      });
 
-      const snap = cmd
-        .command(workspaceSnapshot.name)
-        .description(workspaceSnapshot.summary)
-        .argument("[root]", "target workspace root (defaults to --root or cwd)");
-      addSharedFlags(snap);
-      for (const o of workspaceSnapshot.options ?? []) {
-        if (o.default !== undefined) snap.option(o.flags, o.description, o.default);
-        else snap.option(o.flags, o.description);
-      }
-      snap.action(
-        async (
-          _rootArg: string | undefined,
-          _options: Record<string, unknown>,
-          command: Command,
-        ) => {
-          process.exitCode = await runCapability(workspaceSnapshot, command);
-        },
+    const task = cmd
+      .command(workspacePlan.name)
+      .description(workspacePlan.summary)
+      .argument("<task>", "workspace task description");
+    addSharedFlags(task);
+    for (const o of workspacePlan.options ?? []) {
+      if (o.default !== undefined) task.option(o.flags, o.description, o.default);
+      else task.option(o.flags, o.description);
+    }
+    task.action(async (taskText: string, _options: Record<string, unknown>, command: Command) => {
+      process.exitCode = await runCapability(workspacePlan, command, {
+        positionalRoot: false,
+        optionOverrides: { task: taskText },
+      });
+    });
+  }
+  program.addCommand(cmd);
+}
+
+/**
+ * Register every command on the program. `extra` carries EXTERNAL plugin specs
+ * (see src/plugins/registry.ts, already gated + collision-free): they flow
+ * through the IDENTICAL registerSpec path as the built-ins — same shared
+ * flags, same optional `[root]` positional, same runCapability action (posture
+ * resolution, dirty-worktree gate, run ledger). TOP-LEVEL specs only: a plugin
+ * cannot contribute subcommands to a parent group (trust/skill/pack/…) in v1.
+ *
+ * Containment: built-ins register OUTSIDE any try/catch — a throw there is a
+ * core bug that must crash loudly. Each plugin spec registers inside its own
+ * try/catch: a Commander throw (e.g. a flag conflict the structural gate
+ * cannot predict) drops THAT spec with a warning pushed to the `warnings`
+ * sink, and every other command stays live.
+ */
+export function registerCommands(
+  program: Command,
+  extra: CommandSpec[] = [],
+  warnings?: string[],
+): void {
+  for (const spec of ALL_COMMANDS) registerSpec(program, spec);
+  for (const spec of extra) {
+    try {
+      registerSpec(program, spec);
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      warnings?.push(
+        `plugin command "${sanitizeLabel(spec.name)}" failed to register (${sanitizeLabel(detail, 200)}); dropped`,
       );
-
-      const task = cmd
-        .command(workspacePlan.name)
-        .description(workspacePlan.summary)
-        .argument("<task>", "workspace task description");
-      addSharedFlags(task);
-      for (const o of workspacePlan.options ?? []) {
-        if (o.default !== undefined) task.option(o.flags, o.description, o.default);
-        else task.option(o.flags, o.description);
-      }
-      task.action(async (taskText: string, _options: Record<string, unknown>, command: Command) => {
-        process.exitCode = await runCapability(workspacePlan, command, {
-          positionalRoot: false,
-          optionOverrides: { task: taskText },
-        });
-      });
     }
   }
 

@@ -64,10 +64,17 @@ function positiveInt(v: unknown): number | undefined {
 /** Convert a commander option flag spec into its camelCase opts key. */
 export function flagKey(flags: string): string {
   const long = flags.split(/[,\s]+/).find((tok) => tok.startsWith("--"));
-  const name = (long ?? flags)
-    .replace(/^--/, "")
-    .replace(/[<[].*$/, "")
-    .trim();
+  const stripped = (long ?? flags).replace(/^--/, "");
+  // Cut at the value placeholder ("<dir>" / "[value]") by index scan, not a
+  // backtracking regex: plugin option flags reach this function, so it must
+  // stay linear on hostile input (polynomial ReDoS).
+  const angle = stripped.indexOf("<");
+  const bracket = stripped.indexOf("[");
+  const cut = Math.min(
+    angle === -1 ? stripped.length : angle,
+    bracket === -1 ? stripped.length : bracket,
+  );
+  const name = stripped.slice(0, cut).trim();
   return name.replace(/-([a-z])/g, (_, c: string) => c.toUpperCase());
 }
 

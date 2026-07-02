@@ -3,7 +3,13 @@
  * re-exports the reusable core so the harness can be embedded programmatically.
  */
 
-export { ALL_COMMANDS, CAPABILITIES, READONLY, registerCommands } from "./commands/index.js";
+export {
+  ALL_COMMANDS,
+  builtinCommandNames,
+  CAPABILITIES,
+  READONLY,
+  registerCommands,
+} from "./commands/index.js";
 export * from "./config/settings.js";
 export * from "./errors.js";
 export * from "./internals/envfile.js";
@@ -17,4 +23,5 @@ export * from "./internals/verify.js";
 export * from "./platform/base.js";
 export * from "./platform/detect.js";
 export * from "./platform/parse.js";
-export { buildProgram, VERSION } from "./program.js";
+export * from "./plugins/registry.js";
+export { buildProgram, buildProgramWithPlugins, VERSION } from "./program.js";
