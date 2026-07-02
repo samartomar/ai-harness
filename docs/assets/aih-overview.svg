@@ -1,4 +1,4 @@
-<svg width="1200" height="630" viewBox="0 0 1200 630" xmlns="http://www.w3.org/2000/svg" font-family="ui-sans-serif, -apple-system, Segoe UI, Roboto, sans-serif">
+<svg width="1200" height="720" viewBox="0 0 1200 720" xmlns="http://www.w3.org/2000/svg" font-family="ui-sans-serif, -apple-system, Segoe UI, Roboto, sans-serif">
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0" stop-color="#0b0e14"/>
@@ -17,15 +17,19 @@
   </defs>
 
   <!-- backdrop -->
-  <rect width="1200" height="630" fill="url(#bg)"/>
-  <rect width="1200" height="630" fill="url(#dots)"/>
-  <rect width="1200" height="630" fill="url(#glow)"/>
-  <rect x="0.5" y="0.5" width="1199" height="629" rx="0" fill="none" stroke="#222a35" stroke-width="1"/>
+  <rect width="1200" height="720" fill="url(#bg)"/>
+  <rect width="1200" height="720" fill="url(#dots)"/>
+  <rect width="1200" height="720" fill="url(#glow)"/>
+  <rect x="0.5" y="0.5" width="1199" height="719" rx="0" fill="none" stroke="#222a35" stroke-width="1"/>
 
   <!-- ===== header ===== -->
   <text x="64" y="118" font-size="78" font-weight="800" fill="#e6edf3" letter-spacing="-2">aih</text>
   <rect x="206" y="58" width="2" height="74" fill="#2b323c"/>
   <text x="230" y="86" font-size="25" font-weight="700" fill="#e6edf3">Enterprise AI Bootstrapping Harness</text>
+  <g transform="translate(716,66)">
+    <rect width="148" height="27" rx="13.5" fill="#3fb950" fill-opacity="0.14" stroke="#3fb950" stroke-opacity="0.55"/>
+    <text x="74" y="18" font-size="13" font-weight="700" fill="#56d364" text-anchor="middle">v1.0 · stable contract</text>
+  </g>
   <text x="230" y="118" font-size="17" fill="#8b949e">One cross-platform CLI · dry-run by default · never mutates a remote system</text>
 
   <!-- tag, top-right -->
@@ -34,7 +38,7 @@
     <text x="0" y="22" font-size="14" fill="#6e7681" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">TypeScript · Apache-2.0</text>
   </g>
 
-  <text x="64" y="178" font-size="18" fill="#adbac7">Prepares developer workstations &amp; repos for <tspan fill="#e6edf3" font-weight="600">safe, governed AI-assisted coding behind a corporate proxy.</tspan></text>
+  <text x="64" y="178" font-size="18" fill="#adbac7">Prepares developer workstations &amp; repos for <tspan fill="#e6edf3" font-weight="600">safe, governed AI-assisted coding in enterprise environments.</tspan></text>
 
   <!-- ===== pipeline ===== -->
   <!-- 5 cards: x = 49, 273, 497, 721, 945 ; width 206 ; y 224 ; h 212 -->
@@ -114,11 +118,7 @@
       <text x="22" y="151" font-size="13" fill="#8b949e">marketplace &amp; evidence</text>
       <g transform="translate(22,172)">
         <text x="0" y="14" font-size="13" fill="#adbac7" font-family="ui-monospace, Menlo, monospace">aih skill vet</text>
-        <text x="0" y="33" font-size="13" fill="#d29922" font-family="ui-monospace, Menlo, monospace" font-weight="700">aih marketplace</text>
-        <g transform="translate(126,21)">
-          <rect width="40" height="17" rx="8.5" fill="#d29922" fill-opacity="0.16" stroke="#d29922" stroke-opacity="0.5"/>
-          <text x="20" y="13" font-size="10.5" font-weight="700" fill="#e3b341" text-anchor="middle">NEW</text>
-        </g>
+        <text x="0" y="33" font-size="13" fill="#adbac7" font-family="ui-monospace, Menlo, monospace">aih marketplace</text>
       </g>
     </g>
   </g>
@@ -155,9 +155,32 @@
     </g>
   </g>
 
+  <!-- ===== the road to 1.0 (release journey) ===== -->
+  <g>
+    <text x="64" y="552" font-size="11" font-weight="700" fill="#6e7681" letter-spacing="2" font-family="ui-monospace, Menlo, monospace">THE ROAD TO 1.0</text>
+    <line x1="64" y1="574" x2="1136" y2="574" stroke="#2b323c" stroke-width="1.6"/>
+    <g fill="#8b949e">
+      <circle cx="70" cy="574" r="4" fill="#58a6ff"/>
+      <circle cx="290" cy="574" r="4" fill="#58a6ff"/>
+      <circle cx="500" cy="574" r="4" fill="#58a6ff"/>
+      <circle cx="710" cy="574" r="4" fill="#58a6ff"/>
+      <circle cx="905" cy="574" r="4" fill="#58a6ff"/>
+      <circle cx="1120" cy="574" r="5.5" fill="#3fb950"/>
+    </g>
+    <g font-size="12" fill="#8b949e" font-family="ui-monospace, Menlo, monospace">
+      <text x="64" y="596">0.2 foundation</text>
+      <text x="290" y="596" text-anchor="middle">0.3 dev experience</text>
+      <text x="500" y="596" text-anchor="middle">0.4 skill trust gate</text>
+      <text x="710" y="596" text-anchor="middle">0.5 skill packs</text>
+      <text x="905" y="596" text-anchor="middle">0.6 marketplace + seams</text>
+      <text x="1136" y="596" text-anchor="end" fill="#56d364" font-weight="700">1.0 frozen contract</text>
+    </g>
+    <text x="64" y="622" font-size="13" fill="#adbac7">v1.0 freezes the CLI · JSON · SARIF · exit-code contract — <tspan fill="#e6edf3" font-weight="600">snapshot-tested in CI</tspan> · Sigstore-signed releases · N-1 security backports</text>
+  </g>
+
   <!-- footer -->
-  <line x1="64" y1="560" x2="1136" y2="560" stroke="#1d242e"/>
-  <text x="64" y="586" font-size="13" fill="#6e7681" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">$ aih init . --apply&#160;&#160;&#160;#  profile · superpowers · bootstrap-ai · scaffold · secrets · guardrails · mcp · sandbox</text>
-  <text x="64" y="608" font-size="13" fill="#6e7681" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">$ aih skill vet · approve&#160;&#160;·&#160;&#160;pack install&#160;&#160;·&#160;&#160;marketplace build&#160;&#160;·&#160;&#160;policy validate&#160;&#160;·&#160;&#160;evidence build</text>
-  <text x="1136" y="586" font-size="13" fill="#6e7681" text-anchor="end" font-family="ui-monospace, Menlo, monospace">github.com/samartomar/ai-harness</text>
+  <line x1="64" y1="646" x2="1136" y2="646" stroke="#1d242e"/>
+  <text x="64" y="672" font-size="13" fill="#6e7681" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">$ aih init . --apply&#160;&#160;&#160;#  profile · superpowers · bootstrap-ai · scaffold · secrets · guardrails · mcp · sandbox</text>
+  <text x="64" y="694" font-size="13" fill="#6e7681" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">$ aih skill vet · approve&#160;&#160;·&#160;&#160;pack install&#160;&#160;·&#160;&#160;marketplace build&#160;&#160;·&#160;&#160;policy validate&#160;&#160;·&#160;&#160;evidence build</text>
+  <text x="1136" y="672" font-size="13" fill="#6e7681" text-anchor="end" font-family="ui-monospace, Menlo, monospace">github.com/samartomar/ai-harness</text>
 </svg>

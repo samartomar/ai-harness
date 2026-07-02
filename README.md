@@ -8,16 +8,17 @@
 [![Node ≥20](https://img.shields.io/badge/node-%E2%89%A520-339933.svg)](package.json)
 
 <p align="center">
-  <img src="docs/assets/aih-overview.svg" alt="aih — extract corporate trust, self-heal the runtime, tune the workstation, bootstrap a governed repo, and run AI-assisted coding behind a proxy" width="100%">
+  <img src="docs/assets/aih-overview.svg" alt="aih — extract corporate trust, self-heal the runtime, tune the workstation, bootstrap a governed repo, govern agent skills, and run AI-assisted coding in enterprise environments" width="100%">
 </p>
 
 A cross-platform CLI that helps prepare developer workstations and repositories for
-**reviewable, governed AI-assisted coding behind a corporate proxy**. It extracts
-corporate trust, tunes local inference, adds repo guardrails, wires up
-MCP / observability / sandboxing, and lays down a tool-agnostic context
-architecture — all from one command surface. On top of that setup it runs a
-governance loop for external agent skills — vet → approve → pack → marketplace →
-evidence — anchored in a committed approval lock (`aih-skills.lock.json`).
+**reviewable, governed AI-assisted coding in enterprise environments** — from
+locked-down, TLS-intercepted networks to open ones. It extracts corporate trust,
+tunes local inference, adds repo guardrails, wires up MCP / observability /
+sandboxing, and lays down a tool-agnostic context architecture — all from one
+command surface. On top of that setup it runs a governance loop for external
+agent skills — vet → approve → pack → marketplace → evidence — anchored in a
+committed approval lock (`aih-skills.lock.json`).
 
 > Implements the architectural blueprint *"Enterprise DevSecOps AI Bootstrapping:
 > Cryptographic Trust, Local Performance Optimization, and Unified Observability"*
@@ -346,11 +347,12 @@ aih usage --rollup ../repo-a,../repo-b
   [GitHub Milestones](https://github.com/samartomar/ai-harness/milestones).
 - **Changelog** — [CHANGELOG.md](CHANGELOG.md); tagged builds on
   [Releases](https://github.com/samartomar/ai-harness/releases).
-- **Versioning & support** — [VERSIONING.md](VERSIONING.md). SemVer; while pre-1.0 only the
-  latest minor receives fixes.
+- **Versioning & support** — [VERSIONING.md](VERSIONING.md). SemVer; from 1.0, security
+  fixes land on the latest **and the previous minor** (N-1) of the current major.
 - **Supply chain** — every release publishes via npm **Trusted Publishing** with build
-  **provenance** and ships an **SPDX SBOM** + **SHA256 checksum** on the GitHub Release.
-  Verify an install with `npm audit signatures`.
+  **provenance** and ships an **SPDX SBOM**, a **SHA256 checksum**, its keyless **cosign
+  signature bundle** (`SHA256SUMS.txt.sigstore.json`), and the Sigstore **build-provenance
+  bundle** on the GitHub Release. Verify an install with `npm audit signatures`.
 - **Support** — [SUPPORT.md](SUPPORT.md) · **Security** — [SECURITY.md](SECURITY.md)
   (private reporting) · **Contributing** — [CONTRIBUTING.md](CONTRIBUTING.md).
 
