@@ -523,6 +523,48 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     action:
       "Fix aih-packs.json: schemaVersion 1 with a `packs` array where each pack has a name and at least one {name, source, commit} skill ref. Malformed entries are dropped on read, so a file that yields zero packs is unreadable curation.",
   },
+  "marketplace.manifest-parse": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "marketplace manifest missing or unreadable",
+    action:
+      "Rebuild the artifact from the approval lock (`aih marketplace build --apply`) rather than hand-editing marketplace.json — the manifest must parse and pass its schema before the artifact is distributable.",
+  },
+  "marketplace.path-traversal": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "marketplace artifact references an unsafe path",
+    action:
+      "Treat the artifact as hostile and do not consume it: a manifest or SHA256SUMS path escapes the artifact directory (`..`, absolute, or backslash form). Rebuild from a trusted checkout with `aih marketplace build --apply`.",
+  },
+  "marketplace.missing-file": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "marketplace artifact is missing a referenced file",
+    action:
+      "The manifest or SHA256SUMS attests a file that is not in the artifact — an incomplete copy or a stripped payload. Re-fetch the artifact, or rebuild it with `aih marketplace build --apply`.",
+  },
+  "marketplace.checksum-mismatch": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "marketplace file bytes disagree with the recorded checksum",
+    action:
+      "Do not consume the artifact: a shipped file no longer hashes to what marketplace.json/SHA256SUMS record (tampering or corruption in transit). Rebuild from a trusted checkout with `aih marketplace build --apply`.",
+  },
+  "marketplace.sums-coverage": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "marketplace SHA256SUMS does not cover the artifact tree",
+    action:
+      "Every file in the artifact must be attested by SHA256SUMS — an uncovered file is a smuggled payload until proven otherwise. Remove the stray file or rebuild with `aih marketplace build --apply` so the sums cover the whole tree.",
+  },
+  "marketplace.unapproved-verdict": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "marketplace skill carries a non-distributable verdict",
+    action:
+      "Only GREEN/YELLOW skills are distributable; a RED/UNKNOWN (or unrecognized) verdict in marketplace.json means the artifact was not built from the approval lock. Rebuild with `aih marketplace build --apply` from a repo whose approvals are current.",
+  },
 };
 
 /** Severity rank for sorting: most urgent first. */
