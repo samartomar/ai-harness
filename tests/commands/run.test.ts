@@ -54,6 +54,9 @@ function command(argv: string[]): Command {
     .option("--root <dir>")
     .option("--context-dir <dir>", "", "ai-coding")
     .option("--posture <posture>", "", "vibe")
+    // Mirror heal/certs: a commander DEFAULT of "Zscaler" so opts.caPattern is never
+    // undefined — the exact condition run.ts must not let masquerade as an override.
+    .option("--ca-pattern <pattern>", "", "Zscaler")
     .option("--sarif <file>");
   cmd.parse(argv, { from: "user" });
   return cmd;
@@ -86,6 +89,26 @@ const echoSpec: CommandSpec = {
       digest("posture", `${ctx.posture}:${ctx.postureSource}`),
     ),
 };
+
+/** A capability that echoes the resolved CA pattern so the env/flag ladder is observable. */
+const caEchoSpec: CommandSpec = {
+  name: "ca-echo",
+  summary: "echo the resolved ca pattern",
+  plan: (ctx) => plan("ca-echo", digest("ca-pattern", String(ctx.options.caPattern))),
+};
+
+/** Resolve the CA pattern runCapability lands on for the given argv + env. */
+async function resolvedCaPattern(argv: string[], env: NodeJS.ProcessEnv): Promise<string> {
+  let out = "";
+  await runCapability(caEchoSpec, command(argv), {
+    run: fakeRunner(() => undefined),
+    env,
+    write: (t) => {
+      out += t;
+    },
+  });
+  return out;
+}
 
 /** Resolve the context dir runCapability lands on for the given argv + env. */
 async function resolvedDir(argv: string[], env: NodeJS.ProcessEnv): Promise<string> {
@@ -205,6 +228,30 @@ describe("runCapability — posture precedence ladder (org floor > flag > marker
     expect(await resolvedPosture(["--posture", "enterprise", "--root", dir], {})).toContain(
       "enterprise:flag",
     );
+  });
+});
+
+describe("runCapability — ca-pattern env fallback (flag > env > default)", () => {
+  it("honors AIH_CA_PATTERN when --ca-pattern is not passed (commander default must not shadow env)", async () => {
+    // Regression: heal/certs give --ca-pattern a "Zscaler" default, so opts.caPattern is
+    // never undefined. Passing that default into loadSettings shadowed AIH_CA_PATTERN and
+    // always printed "Zscaler". With no flag, the env var must win.
+    const out = await resolvedCaPattern(["--root", dir], { AIH_CA_PATTERN: "Netskope" });
+    expect(out).toContain("Netskope");
+    expect(out).not.toContain("Zscaler");
+  });
+
+  it("an explicit --ca-pattern still wins over the env var", async () => {
+    const out = await resolvedCaPattern(["--ca-pattern", "Foo", "--root", dir], {
+      AIH_CA_PATTERN: "Netskope",
+    });
+    expect(out).toContain("Foo");
+    expect(out).not.toContain("Netskope");
+  });
+
+  it("falls back to the Zscaler default when neither flag nor env is set", async () => {
+    const out = await resolvedCaPattern(["--root", dir], {});
+    expect(out).toContain("Zscaler");
   });
 });
 

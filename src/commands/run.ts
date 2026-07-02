@@ -146,6 +146,13 @@ export async function runCapability(
     const contextDirSource = optionSource(command, "contextDir");
     const contextDirFromFlag = contextDirSource === "cli" ? (opts.contextDir as string) : undefined;
     const contextDirFromMarker = contextDirFromFlag === undefined ? marker?.contextDir : undefined;
+    // Same source-aware pattern for `--ca-pattern`: heal/certs give it a commander
+    // default ("Zscaler"), so `opts.caPattern` is never undefined. Passing that default
+    // straight into loadSettings would shadow `AIH_CA_PATTERN` — the env var enterprise
+    // fleets set at image time. Only forward the value when the user actually typed the
+    // flag; otherwise pass undefined so settings' env-then-default resolution wins.
+    const caPatternFromFlag =
+      optionSource(command, "caPattern") === "cli" ? (opts.caPattern as string) : undefined;
     const postureFlagSource = optionSource(command, "posture") === "cli" ? "cli" : undefined;
     const resolvedPosture = resolvePosture({
       root: resolvedRoot,
@@ -160,7 +167,7 @@ export async function runCapability(
       json: opts.json as boolean | undefined,
       contextDir: contextDirFromFlag ?? contextDirFromMarker,
       root: resolvedRoot,
-      caPattern: opts.caPattern as string | undefined,
+      caPattern: caPatternFromFlag,
     });
     json = settings.json;
     const host = makeHostAdapter({ run, env });
