@@ -79,7 +79,14 @@ export type CheckCode =
   | "pack.duplicate-name"
   | "pack.pin-mismatch"
   | "pack.missing-approval"
-  | "pack.unknown-manifest";
+  | "pack.unknown-manifest"
+  // marketplace artifact (hostable distribution directory built from the approval lock)
+  | "marketplace.manifest-parse"
+  | "marketplace.path-traversal"
+  | "marketplace.missing-file"
+  | "marketplace.checksum-mismatch"
+  | "marketplace.sums-coverage"
+  | "marketplace.unapproved-verdict";
 
 export interface Check {
   name: string;

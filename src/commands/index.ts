@@ -13,6 +13,8 @@ import { command as hardware } from "../hardware/index.js";
 import { command as heal } from "../heal/index.js";
 import { command as init } from "../init/index.js";
 import type { CommandSpec } from "../internals/plan.js";
+import { marketplaceBuildCommand } from "../marketplace/build.js";
+import { marketplaceValidateCommand } from "../marketplace/validate.js";
 import { command as mcp } from "../mcp/index.js";
 import {
   packAddCommand,
@@ -356,4 +358,21 @@ export function registerCommands(program: Command): void {
   packInstall.action(async (_options: Record<string, unknown>, command: Command) => {
     process.exitCode = await runPackInstall(command);
   });
+
+  // `marketplace` mirrors the `pack` group: options-only subcommands (no
+  // positional), `build` is the artifact writer, `validate` the read-only gate.
+  const marketplace = program
+    .command("marketplace")
+    .description("Build + validate a hostable distribution artifact from the skill approval lock");
+  for (const spec of [marketplaceBuildCommand, marketplaceValidateCommand]) {
+    const sub = marketplace.command(spec.name).description(spec.summary);
+    addSharedFlags(sub);
+    for (const o of spec.options ?? []) {
+      if (o.default !== undefined) sub.option(o.flags, o.description, o.default);
+      else sub.option(o.flags, o.description);
+    }
+    sub.action(async (_options: Record<string, unknown>, command: Command) => {
+      process.exitCode = await runCapability(spec, command, { positionalRoot: false });
+    });
+  }
 }

@@ -453,6 +453,12 @@ describe("Check.code — invariants", () => {
       "pack.pin-mismatch": true,
       "pack.missing-approval": true,
       "pack.unknown-manifest": true,
+      "marketplace.manifest-parse": true,
+      "marketplace.path-traversal": true,
+      "marketplace.missing-file": true,
+      "marketplace.checksum-mismatch": true,
+      "marketplace.sums-coverage": true,
+      "marketplace.unapproved-verdict": true,
     };
     const srcDir = join(process.cwd(), "src");
     const src = (readdirSync(srcDir, { recursive: true }) as string[])
