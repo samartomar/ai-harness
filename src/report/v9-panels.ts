@@ -639,16 +639,31 @@ export function skillGovernanceDigest(ctx: PlanContext): DigestAction | undefine
   }));
   // Pack rollup — installed skills grouped by their lock entry's `pack` tag. Rendered
   // (body line + data key) ONLY when at least one skill carries a tag, so a pack-free
-  // repo's digest stays byte-identical (the quarantined-count pattern).
-  const byPack = new Map<string, { name: string; skills: number; approved: number }>();
+  // repo's digest stays byte-identical (the quarantined-count pattern). Quarantined
+  // members COUNT (their rows keep the lock entry's pack tag — the PR #111 fix): a
+  // parked member is still the pack's, just disabled, so it widens `skills` without
+  // widening `approved` and carries its own count. The per-pack `quarantined` key is
+  // emitted only when non-zero — a quarantine-free pack repo's digest stays byte-identical.
+  const byPack = new Map<
+    string,
+    { name: string; skills: number; approved: number; quarantined: number }
+  >();
   for (const s of inv.skills) {
     if (s.pack === undefined) continue;
-    const entry = byPack.get(s.pack) ?? { name: s.pack, skills: 0, approved: 0 };
+    const entry = byPack.get(s.pack) ?? { name: s.pack, skills: 0, approved: 0, quarantined: 0 };
     entry.skills += 1;
     if (s.status === "approved") entry.approved += 1;
+    if (s.status === "quarantined") entry.quarantined += 1;
     byPack.set(s.pack, entry);
   }
-  const packs = [...byPack.values()].sort((a, b) => a.name.localeCompare(b.name));
+  const packs = [...byPack.values()]
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .map((p) => ({
+      name: p.name,
+      skills: p.skills,
+      approved: p.approved,
+      ...(p.quarantined > 0 ? { quarantined: p.quarantined } : {}),
+    }));
   const body = lines(
     `${installed} external skill${installed === 1 ? "" : "s"} installed · ${approved} approved · ${unapproved} unapproved · ${stalePin} stale-pin · ${quarantined} quarantined.`,
     "",
@@ -663,7 +678,15 @@ export function skillGovernanceDigest(ctx: PlanContext): DigestAction | undefine
       ? `  All ${approved} installed skill${approved === 1 ? " is" : "s are"} approved and in sync.`
       : "",
     ...(packs.length > 0
-      ? ["", "by pack:", ...packs.map((p) => `  ${p.name} — ${p.approved}/${p.skills} approved`)]
+      ? [
+          "",
+          "by pack:",
+          ...packs.map(
+            (p) =>
+              `  ${p.name} — ${p.approved}/${p.skills} approved` +
+              (p.quarantined !== undefined ? ` · ${p.quarantined} quarantined` : ""),
+          ),
+        ]
       : []),
   );
   // The parenthetical breakdown must SUM to `installed` — quarantined rows count as

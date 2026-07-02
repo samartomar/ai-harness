@@ -556,6 +556,51 @@ describe("skillGovernanceDigest", () => {
     expect(renderSkillGovernance(model)).not.toContain("pack docs");
   });
 
+  it("counts a quarantined member in its pack's rollup — tag survives quarantine (#111 regression)", () => {
+    put(`${DIR}/skills/src/alpha/SKILL.md`, "# alpha\n");
+    put(`.aih/quarantine/${DIR}/skills/src/parked/SKILL.md`, "# parked\n");
+    put(
+      "aih-skills.lock.json",
+      JSON.stringify({
+        schemaVersion: 1,
+        skills: [lockEntry("alpha", "docs"), lockEntry("parked", "docs")],
+      }),
+    );
+    const d = skillGovernanceDigest(ctx());
+    const data = d?.data as SkillGovData & {
+      packs?: Array<{ name: string; skills: number; approved: number; quarantined?: number }>;
+    };
+    // The parked member widens `skills` (not `approved`) and is named per pack.
+    expect(data.packs).toEqual([{ name: "docs", skills: 2, approved: 1, quarantined: 1 }]);
+    expect(d?.text).toContain("  docs — 1/2 approved · 1 quarantined");
+    // Its row keeps the lock provenance (source/commit), no longer "not in lock".
+    const parked = data.rows.find((r) => r.name === "parked");
+    expect(parked).toMatchObject({ status: "quarantined", commit: "a".repeat(40) });
+    // Render: the per-pack row names the parked member only when the count rides in.
+    const model = {
+      installed: 2,
+      approved: 1,
+      unapproved: 0,
+      stalePin: 0,
+      quarantined: 1,
+      rows: [],
+    };
+    const withQuarantined = renderSkillGovernance({
+      ...model,
+      packs: [{ name: "docs", skills: 2, approved: 1, quarantined: 1 }],
+    });
+    expect(withQuarantined).toContain("1 of 2 approved · 1 quarantined");
+    // Absent and zero render byte-identically — the conditional-render idiom.
+    expect(
+      renderSkillGovernance({ ...model, packs: [{ name: "docs", skills: 2, approved: 1 }] }),
+    ).toBe(
+      renderSkillGovernance({
+        ...model,
+        packs: [{ name: "docs", skills: 2, approved: 1, quarantined: 0 }],
+      }),
+    );
+  });
+
   it("keeps a pack-free repo's digest byte-identical (no by-pack section, no packs key)", () => {
     put(`${DIR}/skills/src/clean/SKILL.md`, "# clean\n");
     put("aih-skills.lock.json", JSON.stringify({ schemaVersion: 1, skills: [lockEntry("clean")] }));

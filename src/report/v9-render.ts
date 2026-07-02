@@ -634,10 +634,13 @@ export function renderSkillGovernance(model: V9SkillGovernance): string {
       : "";
   // Per-pack rollup rows — rendered only when a lock entry carries a `pack` tag,
   // so a pack-free repo's panel stays byte-identical (the quarantined-row pattern).
+  // A pack's parked members are named explicitly (` · N quarantined`, only when
+  // non-zero): quarantined rows keep their pack tag (the PR #111 fix), and a rollup
+  // that silently folded them into "not approved" would hide WHY the pack is short.
   const packRows = (model.packs ?? [])
     .map(
       (p) =>
-        `<div class="row"><span class="k">pack ${escHtml(plainLabel(p.name))}</span><span class="v"${p.approved < p.skills ? ' style="color:var(--warn)"' : ""}>${p.approved} of ${p.skills} approved</span></div>`,
+        `<div class="row"><span class="k">pack ${escHtml(plainLabel(p.name))}</span><span class="v"${p.approved < p.skills ? ' style="color:var(--warn)"' : ""}>${p.approved} of ${p.skills} approved${p.quarantined !== undefined && p.quarantined > 0 ? ` · ${p.quarantined} quarantined` : ""}</span></div>`,
     )
     .join("");
   const status = `<div class="card span-5"><div class="card-head"><h3>Approval status</h3>${badge}</div><div class="card-body">${statusBox}<div class="donut-meta" style="margin-top:.6rem"><div class="row"><span class="k">installed · approved</span><span class="v">${model.installed} · ${model.approved}</span></div><div class="row"><span class="k">unapproved · stale-pin</span><span class="v" style="color:${unattested > 0 ? "var(--warn)" : "var(--ok)"}">${model.unapproved} · ${model.stalePin}</span></div>${quarantinedRow}${packRows}</div><div class="method" style="margin-top:.6rem">External skills acquired via <code>aih workspace add</code>, joined to the committed <code>aih-skills.lock.json</code> approvals.</div></div></div>`;

@@ -721,6 +721,7 @@ interface GovPackRaw {
   name?: unknown;
   skills?: unknown;
   approved?: unknown;
+  quarantined?: unknown;
 }
 
 /** Skill governance (from the v9-only "Skill governance" digest), else undefined. */
@@ -737,10 +738,15 @@ function buildSkillGovernance(digests: DigestAction[]): V9SkillGovernance | unde
     ...(typeof r.commit === "string" ? { commit: r.commit } : {}),
   }));
   // Pack rollup — present only when the digest carried tags (pack-free stays absent).
+  // `quarantined` rides through only when the digest emitted it (non-zero), so a
+  // quarantine-free pack's view-model — and its render — stays byte-identical.
   const packs = (Array.isArray(g.packs) ? (g.packs as GovPackRaw[]) : []).map((p) => ({
     name: String(p.name ?? ""),
     skills: numOr(p.skills, 0),
     approved: numOr(p.approved, 0),
+    ...(typeof p.quarantined === "number" && p.quarantined > 0
+      ? { quarantined: p.quarantined }
+      : {}),
   }));
   return {
     installed: numOr(g.installed, 0),

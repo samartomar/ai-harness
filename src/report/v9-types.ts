@@ -258,9 +258,11 @@ export interface V9SkillGovernance {
   /**
    * Installed skills grouped by their lock entry's `pack` tag — the pack-level
    * rollup. Absent when no skill carries a tag (a pack-free repo's panel stays
-   * byte-identical to the pre-pack output).
+   * byte-identical to the pre-pack output). `quarantined` counts the pack's parked
+   * members (they keep their tag — the PR #111 fix) and is present only when
+   * non-zero, so a quarantine-free pack renders byte-identically.
    */
-  packs?: Array<{ name: string; skills: number; approved: number }>;
+  packs?: Array<{ name: string; skills: number; approved: number; quarantined?: number }>;
 }
 
 /**
