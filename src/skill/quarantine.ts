@@ -1,4 +1,5 @@
-import { relative } from "node:path";
+import { existsSync } from "node:fs";
+import { join, relative } from "node:path";
 import { AihError } from "../errors.js";
 import {
   type CommandSpec,
@@ -135,6 +136,18 @@ function skillQuarantinePlan(ctx: PlanContext): Plan {
   // remove action moves the whole subtree atomically — into the quarantine root.
   const relDir = normalizeRel(relative(ctx.root, row.abs));
   const to = `${QUARANTINE_ROOT}/${relDir}`;
+  // FAIL CLOSED when the quarantine destination is already occupied (a prior copy of
+  // this skill was quarantined, then the name re-installed). The engine's
+  // never-overwrite fallback would park THIS copy at a `.1` sibling — but the digest's
+  // restore path would then point at the OLDER payload under the kept approval,
+  // steering a restore to the wrong bytes. Refusing keeps every printed path truthful
+  // (and dry-run byte-stable); the `.1` machinery stays as engine-level defense only.
+  if (existsSync(join(ctx.root, to))) {
+    throw refuse(
+      `a quarantined copy of ${name} already exists at ${to} — restore it (move it back) ` +
+        "or delete it by hand before quarantining this install",
+    );
+  }
   const advisories = loaderAdvisories(ctx, name);
   return plan(
     "skill quarantine",

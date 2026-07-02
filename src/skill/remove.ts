@@ -114,6 +114,18 @@ function resolveTarget(ctx: PlanContext, name: string): SkillInventoryRow | unde
         "remove the copy you mean by hand, or uninstall the duplicate first",
     );
   }
+  // A same-named QUARANTINED sibling shares the name-keyed approval too: removing the
+  // live copy would drop the lock entry + card the parked copy still relies on for its
+  // restore path — the exact hazard the ambiguity guard exists for. Fail closed.
+  const parkedSibling = matches.find((row) => row.root === "quarantined");
+  if (parkedSibling !== undefined) {
+    throw refuse(
+      `skill ${name} also has a quarantined copy at ${normalizeRel(
+        relative(ctx.root, parkedSibling.abs),
+      )} — removing the live install would drop the shared approval that parked copy ` +
+        "still relies on; restore or delete the quarantined copy first",
+    );
+  }
   // A machine-root skill lives under `~/.claude/skills`, outside this repo — aih
   // will not reach into the user's global install.
   const row = active[0];

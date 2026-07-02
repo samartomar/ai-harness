@@ -17,6 +17,7 @@ import {
   supportDigest,
   winsDigest,
 } from "../../src/report/v9-panels.js";
+import { renderSkillGovernance } from "../../src/report/v9-render.js";
 import type { SupportTemplate } from "../../src/support/render.js";
 
 const DIR = "ai-coding";
@@ -442,5 +443,26 @@ describe("skillGovernanceDigest", () => {
     // On disk it's absent → installed 0, but the lock keeps the panel live to govern.
     const data = d?.data as SkillGovData;
     expect(data.installed).toBe(0);
+  });
+
+  it("counts a quarantined skill in the title breakdown and NEVER as clean (review high)", () => {
+    put(`.aih/quarantine/${DIR}/skills/src/parked/SKILL.md`, "# parked\n");
+    const d = skillGovernanceDigest(ctx());
+    expect(d).toBeDefined();
+    // The breakdown must sum to installed — quarantined is named, not silently dropped.
+    expect(d?.describe).toContain("1 installed (0 approved, 0 unapproved, 0 stale, 1 quarantined)");
+    const data = d?.data as SkillGovData & { quarantined: number };
+    expect(data.quarantined).toBe(1);
+    // And the rendered panel must not claim "all approved" while a skill is parked.
+    const html = renderSkillGovernance({
+      installed: 1,
+      approved: 0,
+      unapproved: 0,
+      stalePin: 0,
+      quarantined: 1,
+      rows: [{ name: "parked", status: "quarantined" }],
+    });
+    expect(html).not.toContain("approved</b><span>every external skill");
+    expect(html).toContain("not fully approved");
   });
 });

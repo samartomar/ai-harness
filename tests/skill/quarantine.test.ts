@@ -383,17 +383,39 @@ describe("skillQuarantineCommand — disable without removing", () => {
     expect(JSON.parse(readFileSync(lockPath(), "utf8")).skills).toHaveLength(1);
   });
 
-  it("a second quarantine after a manual re-install lands at a .1 sibling (never-overwrite)", async () => {
+  it("REFUSES a second quarantine while a parked copy occupies the destination (Codex high)", async () => {
+    // The engine's never-overwrite fallback would park the second copy at a `.1`
+    // sibling — but every printed restore path would then name the OLDER payload
+    // under the kept approval, steering a restore to the wrong bytes. The command
+    // fails closed instead; the `.1` machinery remains as engine-level defense.
     installApproved("owner-repo", "clean");
     await applyQuarantine("clean");
     // Re-install the same skill by hand (lock + card are still intact by design).
     promoteSkill("owner-repo", "clean");
-    await applyQuarantine("clean");
 
-    // Both parked copies survive: the first at the base slot, the second at `.1`.
+    const c = ctx({ apply: true, options: { name: "clean" } });
+    expect(() => skillQuarantineCommand.plan(c)).toThrow(
+      /a quarantined copy of clean already exists at .* restore it/s,
+    );
+    // Nothing moved: the live re-install and the original parked copy both survive.
+    expect(existsSync(join(promotedDir("owner-repo", "clean"), "SKILL.md"))).toBe(true);
     expect(existsSync(join(quarantineDir("owner-repo", "clean"), "SKILL.md"))).toBe(true);
-    expect(existsSync(join(`${quarantineDir("owner-repo", "clean")}.1`, "SKILL.md"))).toBe(true);
-    expect(existsSync(promotedDir("owner-repo", "clean"))).toBe(false);
+    expect(existsSync(`${quarantineDir("owner-repo", "clean")}.1`)).toBe(false);
+  });
+
+  it("quarantines a repo-root .claude/skills skill with the bare name (review low)", async () => {
+    // The non-promoted branch of quarantinedSkillName: no id segment to strip.
+    write(".claude/skills/rooty/SKILL.md", "# rooty\n");
+    const c = ctx({ apply: true, options: { name: "rooty" } });
+    const result = await executePlan(await planOf(c), c);
+    expect(existsSync(join(workspace, ".aih/quarantine/.claude/skills/rooty/SKILL.md"))).toBe(true);
+    expect(existsSync(join(workspace, ".claude/skills/rooty"))).toBe(false);
+    const d = result.digests.find((x) => x.describe === "skill quarantine");
+    expect(d?.text).toContain(".aih/quarantine/.claude/skills/rooty");
+    // Inventory reports it quarantined under its bare name.
+    const inv = skillInventory(c);
+    const row = inv.skills.find((s) => s.status === "quarantined");
+    expect(row?.name).toBe("rooty");
   });
 
   it("declares the quarantine command shape (mutator, --name option, no --delete)", () => {

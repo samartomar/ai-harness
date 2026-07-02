@@ -596,11 +596,13 @@ function govStatus(status: V9SkillGovernance["rows"][number]["status"]): {
  * trees and a committed lockfile. Pure, deterministic (no clock/IO).
  */
 export function renderSkillGovernance(model: V9SkillGovernance): string {
-  const unattested = model.unapproved + model.stalePin;
+  // Quarantined skills count as NOT clean: "all approved" must never render while a
+  // disabled skill sits parked (it is installed, and it is not in a vetted-active state).
+  const unattested = model.unapproved + model.stalePin + model.quarantined;
   const clean = unattested === 0;
   const statusBox = clean
     ? `<div class="drift-status"><div class="dicon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6 9 17l-5-5"/></svg></div><div class="dtext"><b>All ${model.approved} installed skill${model.approved === 1 ? "" : "s"} approved</b><span>every external skill on disk is vetted and in sync</span></div></div>`
-    : `<div class="drift-status" style="background:var(--warn-soft);border-color:color-mix(in oklab,var(--warn) 22%,transparent)"><div class="dicon" style="background:var(--warn)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg></div><div class="dtext"><b style="color:var(--warn)">${unattested} of ${model.installed} installed skill${model.installed === 1 ? "" : "s"} unattested</b><span>an external skill is on disk without a matching approval</span></div></div>`;
+    : `<div class="drift-status" style="background:var(--warn-soft);border-color:color-mix(in oklab,var(--warn) 22%,transparent)"><div class="dicon" style="background:var(--warn)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg></div><div class="dtext"><b style="color:var(--warn)">${unattested} of ${model.installed} installed skill${model.installed === 1 ? "" : "s"} not fully approved</b><span>an external skill is unapproved, stale, or quarantined</span></div></div>`;
   const rows = model.rows
     .map((r) => {
       const { cls, label } = govStatus(r.status);

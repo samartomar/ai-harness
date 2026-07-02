@@ -651,11 +651,20 @@ export function skillGovernanceDigest(ctx: PlanContext): DigestAction | undefine
       ? `  All ${approved} installed skill${approved === 1 ? " is" : "s are"} approved and in sync.`
       : "",
   );
-  return digest(
-    `Skill governance — ${installed} installed (${approved} approved, ${unapproved} unapproved, ${stalePin} stale)`,
-    body,
-    { installed, approved, unapproved, stalePin, quarantined, rows },
-  );
+  // The parenthetical breakdown must SUM to `installed` — quarantined rows count as
+  // installed, so omitting them here would silently drop skills from the explanation.
+  const breakdown =
+    quarantined > 0
+      ? `${approved} approved, ${unapproved} unapproved, ${stalePin} stale, ${quarantined} quarantined`
+      : `${approved} approved, ${unapproved} unapproved, ${stalePin} stale`;
+  return digest(`Skill governance — ${installed} installed (${breakdown})`, body, {
+    installed,
+    approved,
+    unapproved,
+    stalePin,
+    quarantined,
+    rows,
+  });
 }
 
 /**
