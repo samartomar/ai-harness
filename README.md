@@ -111,6 +111,18 @@ aih init . --apply      # apply it
 Global flags: `--apply`, `--verify`, `--json`, `--support-out <dir>`, `--no-log`, `--context-dir <dir>`, `--root <dir>`, `--cli <list>`, `--all-tools`.
 Settings also read from `AIH_*` env vars (`AIH_APPLY`, `AIH_CONTEXT_DIR`, `AIH_LOG`, …).
 
+### Plugins
+
+At startup `aih` probes for exactly one optional peer package: **`@aihq/enterprise`** — the literal
+name, never env- or config-selectable, so nothing can point the probe at other code. When installed,
+its `aihCommands` export (a `CommandSpec[]`) registers as native subcommands through the identical
+path as the built-ins: shared flags, posture resolution, the dirty-worktree gate, and the run ledger
+all apply unchanged. Not installed → zero output, fully local. `AIH_NO_PLUGINS=1` disables the
+probe. A plugin that fails to load, exports the wrong shape, or ships an invalid spec degrades to
+local-only with a one-line `aih: plugin:` warning on stderr — and a plugin command can never shadow
+a built-in (built-ins always win). Installing the plugin package **is** the trust decision:
+importing it runs its code, exactly like any other dependency you install.
+
 ### Dashboard
 
 `aih report --open` builds a **self-contained, offline** HTML dashboard (dark by default with a

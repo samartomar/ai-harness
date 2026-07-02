@@ -101,6 +101,19 @@ export const READONLY: CommandSpec[] = [doctor, status, verifyBundle];
 
 export const ALL_COMMANDS: CommandSpec[] = [...CAPABILITIES, ...READONLY];
 
+/** Parent command groups registered below as bare commander groups (not CommandSpecs). */
+const PARENT_GROUPS = ["workspace", "trust", "skill", "pack", "marketplace"];
+
+/**
+ * Every top-level name the core CLI claims: ALL_COMMANDS plus the parent group
+ * names (`workspace` is both a CommandSpec and a group — the Set folds it).
+ * The plugin registry refuses any external spec colliding with one of these,
+ * so a plugin can never shadow `doctor` or capture the `marketplace` group.
+ */
+export function builtinCommandNames(): ReadonlySet<string> {
+  return new Set([...ALL_COMMANDS.map((spec) => spec.name), ...PARENT_GROUPS]);
+}
+
 /** Flags shared by every subcommand (placed on the subcommand so `aih certs --apply` works). */
 function addSharedFlags(cmd: Command): Command {
   return cmd
@@ -128,8 +141,16 @@ function addSharedFlags(cmd: Command): Command {
     );
 }
 
-export function registerCommands(program: Command): void {
-  for (const spec of ALL_COMMANDS) {
+/**
+ * Register every command on the program. `extra` carries EXTERNAL plugin specs
+ * (see src/plugins/registry.ts, already gated + collision-free): they flow
+ * through the IDENTICAL loop as the built-ins — same shared flags, same
+ * optional `[root]` positional, same runCapability action (posture resolution,
+ * dirty-worktree gate, run ledger). TOP-LEVEL specs only: a plugin cannot
+ * contribute subcommands to a parent group (trust/skill/pack/…) in v1.
+ */
+export function registerCommands(program: Command, extra: CommandSpec[] = []): void {
+  for (const spec of [...ALL_COMMANDS, ...extra]) {
     const cmd = program.command(spec.name).description(spec.summary);
     // Optional positional target dir, e.g. `aih init .` or `aih profile ./repo`.
     cmd.argument("[root]", "target repository/workstation root (defaults to --root or cwd)");
