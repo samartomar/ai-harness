@@ -147,6 +147,10 @@ describe("marketplace validate — the green path", () => {
       "--require-signature",
       "--signer <signer>",
       "--repo <owner/repo>",
+      "--key <path>",
+      "--certificate-identity <identity>",
+      "--certificate-oidc-issuer <issuer>",
+      "--signer-workflow <workflow>",
     ]);
   });
 });
@@ -178,6 +182,27 @@ describe("marketplace validate — coded findings", () => {
     const report = await validate();
     const finding = report.checks.find((c) => c.code === "marketplace.sums-coverage");
     expect(finding?.detail).toContain("stray.txt");
+    expect(report.exitCode()).toBe(1);
+  });
+
+  it("fails an undeclared file even when its correct hash line rides in SHA256SUMS", async () => {
+    seedApproved(["alpha"]);
+    await buildArtifact();
+    // The smuggle the coverage sweep alone cannot see: drop a payload into the
+    // artifact AND append its correct hash line to SHA256SUMS. Coverage stays
+    // green — the manifest is the declaration authority that refuses the ride.
+    const body = "smuggled payload\n";
+    writeFileSync(artifact("smuggled.txt"), body, "utf8");
+    const sums = readFileSync(artifact("SHA256SUMS"), "utf8");
+    writeFileSync(artifact("SHA256SUMS"), `${sums}${sha(body)}  smuggled.txt\n`, "utf8");
+    const report = await validate();
+    const fails = report.checks.filter((c) => c.verdict === "fail");
+    expect(fails).toHaveLength(1); // the undeclared finding, and nothing else
+    expect(fails[0]?.code).toBe("marketplace.sums-coverage");
+    expect(fails[0]?.fingerprint).toBe("marketplace-undeclared:smuggled.txt");
+    expect(fails[0]?.detail).toContain(
+      "smuggled.txt exists in the artifact but marketplace.json does not declare it",
+    );
     expect(report.exitCode()).toBe(1);
   });
 
@@ -280,8 +305,9 @@ describe("marketplace validate — the signature probe", () => {
     seedApproved(["alpha"]);
     await buildArtifact();
     // The detached sig is coverage-exempt, so integrity stays green around it.
+    // --key supplies the identity material cosign now requires to spawn at all.
     writeFileSync(artifact("SHA256SUMS.sig"), "sig-bytes\n", "utf8");
-    const report = await validate({}, { run: missingToolRunner });
+    const report = await validate({ key: "keys/pub.key" }, { run: missingToolRunner });
     const check = signatureOf(report);
     expect(check?.verdict).toBe("skip");
     expect(check?.detail).toContain("cosign not found");
@@ -317,11 +343,16 @@ describe("marketplace validate — the signature probe", () => {
     expect(noRepoCheck?.detail).toContain("requires --repo");
     expect(noRepo.exitCode()).toBe(1);
 
-    // Verifier tool absent — cosign (inferred from the sig file) and gh alike.
+    // Verifier tool absent — cosign (inferred from the sig file, spawned with
+    // --key identity material) and gh alike.
     writeFileSync(artifact("SHA256SUMS.sig"), "sig-bytes\n", "utf8");
-    const noCosign = await validate({ requireSignature: true }, { run: missingToolRunner });
+    const noCosign = await validate(
+      { requireSignature: true, key: "keys/pub.key" },
+      { run: missingToolRunner },
+    );
     expect(signatureOf(noCosign)?.verdict).toBe("fail");
     expect(signatureOf(noCosign)?.code).toBe("marketplace.signature");
+    expect(signatureOf(noCosign)?.detail).toContain("cosign not found");
     expect(noCosign.exitCode()).toBe(1);
     const noGh = await validate(
       { requireSignature: true, signer: "gh", repo: "owner/repo" },
@@ -332,7 +363,7 @@ describe("marketplace validate — the signature probe", () => {
     expect(noGh.exitCode()).toBe(1);
   });
 
-  it("passes a cosign verify-blob that exits 0, with the exact argv", async () => {
+  it("passes a cosign verify-blob that exits 0, with the exact --key argv", async () => {
     seedApproved(["alpha"]);
     await buildArtifact();
     writeFileSync(artifact("SHA256SUMS.sig"), "sig-bytes\n", "utf8");
@@ -341,12 +372,54 @@ describe("marketplace validate — the signature probe", () => {
       calls.push(argv);
       return undefined; // exit 0
     });
-    const report = await validate({ requireSignature: true }, { run });
+    const report = await validate({ requireSignature: true, key: "keys/pub.key" }, { run });
     const check = signatureOf(report);
     expect(check?.verdict).toBe("pass");
     expect(check?.detail).toContain("cosign verified");
     expect(calls.filter((argv) => argv[0] === "cosign")).toEqual([
-      ["cosign", "verify-blob", "--signature", artifact("SHA256SUMS.sig"), artifact("SHA256SUMS")],
+      [
+        "cosign",
+        "verify-blob",
+        "--signature",
+        artifact("SHA256SUMS.sig"),
+        "--key",
+        "keys/pub.key",
+        artifact("SHA256SUMS"),
+      ],
+    ]);
+    expect(report.exitCode()).toBe(0);
+  });
+
+  it("passes a keyless cosign verify with the exact identity-pair argv", async () => {
+    seedApproved(["alpha"]);
+    await buildArtifact();
+    writeFileSync(artifact("SHA256SUMS.sig"), "sig-bytes\n", "utf8");
+    const calls: string[][] = [];
+    const run = fakeRunner((argv) => {
+      calls.push(argv);
+      return undefined; // exit 0
+    });
+    const report = await validate(
+      {
+        requireSignature: true,
+        certificateIdentity: "me@example.com",
+        certificateOidcIssuer: "https://accounts.example.com",
+      },
+      { run },
+    );
+    expect(signatureOf(report)?.verdict).toBe("pass");
+    expect(calls.filter((argv) => argv[0] === "cosign")).toEqual([
+      [
+        "cosign",
+        "verify-blob",
+        "--signature",
+        artifact("SHA256SUMS.sig"),
+        "--certificate-identity",
+        "me@example.com",
+        "--certificate-oidc-issuer",
+        "https://accounts.example.com",
+        artifact("SHA256SUMS"),
+      ],
     ]);
     expect(report.exitCode()).toBe(0);
   });
@@ -379,7 +452,10 @@ describe("marketplace validate — the signature probe", () => {
     const run = fakeRunner((argv) =>
       argv[0] === "cosign" ? { code: 1, stderr: "bad signature\n" } : undefined,
     );
-    for (const options of [{}, { requireSignature: true }]) {
+    for (const options of [
+      { key: "keys/pub.key" },
+      { requireSignature: true, key: "keys/pub.key" },
+    ]) {
       const report = await validate(options, { run });
       const check = signatureOf(report);
       expect(check?.verdict).toBe("fail");
@@ -397,5 +473,132 @@ describe("marketplace validate — the signature probe", () => {
     expect(ghCheck?.verdict).toBe("fail");
     expect(ghCheck?.detail).toContain("attestation not found");
     expect(ghReport.exitCode()).toBe(1);
+  });
+
+  it("fails an unknown --signer in BOTH modes (operator error, not an unverifiable state)", async () => {
+    seedApproved(["alpha"]);
+    await buildArtifact();
+    for (const options of [{ signer: "gpg" }, { signer: "gpg", requireSignature: true }]) {
+      const report = await validate(options);
+      const check = signatureOf(report);
+      expect(check?.verdict).toBe("fail");
+      expect(check?.code).toBe("marketplace.signature");
+      expect(check?.detail).toContain('--signer must be cosign or gh — got "gpg"');
+      expect(report.exitCode()).toBe(1);
+    }
+  });
+
+  it("an explicit --repo beats a stale leftover .sig — gh is chosen, cosign never spawns", async () => {
+    seedApproved(["alpha"]);
+    await buildArtifact();
+    // The stale-sig shadowing regression: an earlier cosign publish left a .sig
+    // behind; the operator explicitly names a gh identity via --repo.
+    writeFileSync(artifact("SHA256SUMS.sig"), "stale cosign sig\n", "utf8");
+    const calls: string[][] = [];
+    const run = fakeRunner((argv) => {
+      calls.push(argv);
+      return argv[0] === "gh" ? { code: 0, stdout: "verified\n" } : undefined;
+    });
+    const report = await validate({ repo: "owner/repo" }, { run });
+    const check = signatureOf(report);
+    expect(check?.verdict).toBe("pass");
+    expect(check?.detail).toContain("owner/repo");
+    expect(calls.filter((argv) => argv[0] === "cosign")).toEqual([]);
+    expect(calls.filter((argv) => argv[0] === "gh")).toEqual([
+      ["gh", "attestation", "verify", artifact("SHA256SUMS"), "--repo", "owner/repo"],
+    ]);
+  });
+
+  it("cosign with no identity material NEVER spawns: skip locally, fail under the gate", async () => {
+    seedApproved(["alpha"]);
+    await buildArtifact();
+    writeFileSync(artifact("SHA256SUMS.sig"), "sig-bytes\n", "utf8");
+    const calls: string[][] = [];
+    const run = fakeRunner((argv) => {
+      calls.push(argv);
+      return undefined;
+    });
+
+    // Local mode: a tolerated skip — and cosign's nonzero exit stays reserved
+    // for tampering evidence, so the runner is never invoked at all.
+    const local = await validate({}, { run });
+    const localCheck = signatureOf(local);
+    expect(localCheck?.verdict).toBe("skip");
+    expect(localCheck?.detail).toContain(
+      "proves an identity only with --key, or --certificate-identity + --certificate-oidc-issuer",
+    );
+    expect(calls).toEqual([]);
+    expect(local.exitCode()).toBe(0);
+
+    // Gate mode: the same unverifiable state becomes a coded fail — still no spawn.
+    const gated = await validate({ requireSignature: true }, { run });
+    const gatedCheck = signatureOf(gated);
+    expect(gatedCheck?.verdict).toBe("fail");
+    expect(gatedCheck?.code).toBe("marketplace.signature");
+    expect(gatedCheck?.detail).toContain("--require-signature makes this a failure");
+    expect(calls).toEqual([]);
+    expect(gated.exitCode()).toBe(1);
+  });
+
+  it("exactly one half of the keyless pair fails naming the missing option (both modes)", async () => {
+    seedApproved(["alpha"]);
+    await buildArtifact();
+    writeFileSync(artifact("SHA256SUMS.sig"), "sig-bytes\n", "utf8");
+    for (const requireSignature of [false, true]) {
+      const idOnly = await validate({ requireSignature, certificateIdentity: "me@example.com" });
+      expect(signatureOf(idOnly)?.verdict).toBe("fail");
+      expect(signatureOf(idOnly)?.detail).toContain("requires --certificate-oidc-issuer");
+      expect(idOnly.exitCode()).toBe(1);
+      const issuerOnly = await validate({
+        requireSignature,
+        certificateOidcIssuer: "https://accounts.example.com",
+      });
+      expect(signatureOf(issuerOnly)?.verdict).toBe("fail");
+      expect(signatureOf(issuerOnly)?.detail).toContain("requires --certificate-identity");
+      expect(issuerOnly.exitCode()).toBe(1);
+    }
+  });
+
+  it("--signer-workflow narrows the gh attestation verify argv", async () => {
+    seedApproved(["alpha"]);
+    await buildArtifact();
+    const calls: string[][] = [];
+    const run = fakeRunner((argv) => {
+      calls.push(argv);
+      return argv[0] === "gh" ? { code: 0 } : undefined;
+    });
+    const report = await validate(
+      { signer: "gh", repo: "owner/repo", signerWorkflow: ".github/workflows/release.yml" },
+      { run },
+    );
+    expect(signatureOf(report)?.verdict).toBe("pass");
+    expect(calls.filter((argv) => argv[0] === "gh")).toEqual([
+      [
+        "gh",
+        "attestation",
+        "verify",
+        artifact("SHA256SUMS"),
+        "--repo",
+        "owner/repo",
+        "--signer-workflow",
+        ".github/workflows/release.yml",
+      ],
+    ]);
+  });
+
+  it("refuses a dash-leading --repo before spawning anything (argv-flag smuggling)", async () => {
+    seedApproved(["alpha"]);
+    await buildArtifact();
+    const calls: string[][] = [];
+    const run = fakeRunner((argv) => {
+      calls.push(argv);
+      return undefined;
+    });
+    const report = await validate({ repo: "--evil" }, { run });
+    const check = signatureOf(report);
+    expect(check?.verdict).toBe("fail");
+    expect(check?.detail).toContain("refusing to pass a value that parses as a flag");
+    expect(calls).toEqual([]); // neither verifier was ever spawned
+    expect(report.exitCode()).toBe(1);
   });
 });

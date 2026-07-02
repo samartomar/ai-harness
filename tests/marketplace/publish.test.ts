@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -149,6 +149,12 @@ describe("marketplace publish — fail-closed refusals", () => {
 });
 
 describe("marketplace publish — the signing exec", () => {
+  /** The apply-time content pin every sign exec must carry: exact sums path + sha. */
+  const sumsPin = (): { path: string; sha256: string } => ({
+    path: artifact("SHA256SUMS"),
+    sha256: sha(readFileSync(artifact("SHA256SUMS"), "utf8")),
+  });
+
   it("plans exactly one cosign sign-blob exec over <dir>/SHA256SUMS, then the digest", async () => {
     seedApproved(["alpha"]);
     await buildArtifact();
@@ -166,6 +172,9 @@ describe("marketplace publish — the signing exec", () => {
     // Deliberate divergence from bundle's best-effort signAction: a publish
     // whose signing fails must fail loudly.
     expect(sign.allowFailure).toBe(false);
+    // The validate-then-sign TOCTOU pin: the exec carries the exact sha the
+    // preflight graded, so the signer only ever signs those bytes.
+    expect(sign.expect).toEqual(sumsPin());
   });
 
   it("plans the gh attestation sign exec for --signer gh", async () => {
@@ -175,6 +184,36 @@ describe("marketplace publish — the signing exec", () => {
     const sign = plan.actions[0] as ExecAction;
     expect(sign.argv).toEqual(["gh", "attestation", "sign", artifact("SHA256SUMS")]);
     expect(sign.allowFailure).toBe(false);
+    expect(sign.expect).toEqual(sumsPin());
+  });
+
+  it("threads --key into the cosign sign-blob argv (keyed signing)", async () => {
+    seedApproved(["alpha"]);
+    await buildArtifact();
+    const plan = await planOf(ctx({ signer: "cosign", key: "keys/signing.key" }));
+    const sign = plan.actions[0] as ExecAction;
+    expect(sign.argv).toEqual([
+      "cosign",
+      "sign-blob",
+      "--yes",
+      "--key",
+      "keys/signing.key",
+      "--output-signature",
+      artifact("SHA256SUMS.sig"),
+      artifact("SHA256SUMS"),
+    ]);
+    expect(sign.expect).toEqual(sumsPin());
+  });
+
+  it("refuses a --key value that parses as a flag (argv smuggling)", async () => {
+    seedApproved(["alpha"]);
+    await buildArtifact();
+    const err = await planOf(ctx({ signer: "cosign", key: "--insecure-ignore-tlog=true" })).catch(
+      (e: unknown) => e,
+    );
+    expect(err).toBeInstanceOf(AihError);
+    expect((err as AihError).code).toBe("AIH_TRUST");
+    expect((err as AihError).message).toContain("parses as a flag");
   });
 
   it("resolves an explicit --dir to the same argv as the default", async () => {
@@ -209,25 +248,28 @@ describe("marketplace publish — the digest", () => {
     expect(report?.describe).toBe("marketplace publish");
     expect(report?.text).toContain("SHA256SUMS signed with cosign");
     expect(report?.text).toContain("SHA256SUMS.sig");
+    // The hint names the signer AND its identity material — verification must
+    // prove WHO signed, so the consumer command is spelled out per signer.
     expect(report?.text).toContain(
-      "`aih marketplace validate --dir .aih/marketplace --require-signature`",
+      "`aih marketplace validate --dir .aih/marketplace --require-signature --signer cosign --key <pub.key>`",
     );
     expect(report?.data).toMatchObject({
       dir: OUT,
       signer: "cosign",
-      verify: "aih marketplace validate --dir .aih/marketplace --require-signature",
+      verify:
+        "aih marketplace validate --dir .aih/marketplace --require-signature --signer cosign --key <pub.key>",
     });
     expect((report?.data as { verifies: string }).verifies).toContain("SHA256SUMS.sig");
   });
 
-  it("points gh consumers at the attestation and the --repo verify form", async () => {
+  it("points gh consumers at the attestation and the --signer gh --repo verify form", async () => {
     seedApproved(["alpha"]);
     await buildArtifact();
     const plan = await planOf(ctx({ signer: "gh" }));
     const report = plan.actions.find((a): a is DigestAction => a.kind === "digest");
     expect((report?.data as { verifies: string }).verifies).toContain("GitHub attestation");
     expect((report?.data as { verify: string }).verify).toBe(
-      "aih marketplace validate --dir .aih/marketplace --require-signature --repo <owner/repo>",
+      "aih marketplace validate --dir .aih/marketplace --require-signature --signer gh --repo <owner/repo>",
     );
   });
 });
@@ -238,6 +280,7 @@ describe("marketplace publish — command shape", () => {
     expect(marketplacePublishCommand.options?.map((o) => o.flags)).toEqual([
       "--dir <dir>",
       "--signer <signer>",
+      "--key <path>",
     ]);
     expect(marketplacePublishCommand.options?.find((o) => o.flags === "--dir <dir>")?.default).toBe(
       OUT,

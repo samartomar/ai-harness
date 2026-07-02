@@ -1,5 +1,7 @@
 import { isAbsolute, join, resolve } from "node:path";
+import { sha256Hex } from "../bundle/index.js";
 import { AihError } from "../errors.js";
+import { readIfExists } from "../internals/fsxn.js";
 import {
   type CommandSpec,
   digest,
@@ -22,7 +24,10 @@ import { marketplaceReport } from "./validate.js";
  * re-grades the artifact through {@link marketplaceReport} (pure fs reads,
  * #35 — the signing itself only happens via the exec action under `--apply`).
  * ANY failing finding refuses the whole publish: a signature over a broken
- * artifact would launder the breakage as provenance.
+ * artifact would launder the breakage as provenance. The exec itself carries an
+ * apply-time content pin (`expect`) over `SHA256SUMS`, so the signer can only
+ * ever sign the exact bytes the preflight graded — never a file swapped in
+ * between plan and apply.
  */
 
 const CHECKSUMS_FILE = "SHA256SUMS";
@@ -91,6 +96,23 @@ function marketplacePublishPlan(ctx: PlanContext): Plan {
   if (sums.startsWith("-") || sig.startsWith("-")) {
     throw refuse(`refusing to sign a path that parses as a flag: ${sums}`);
   }
+  const rawKey = ctx.options.key;
+  const key = typeof rawKey === "string" && rawKey.trim().length > 0 ? rawKey.trim() : undefined;
+  // The same dash guard for the operator-supplied signing key.
+  if (key?.startsWith("-")) {
+    throw refuse(`refusing to pass a --key value that parses as a flag: ${key}`);
+  }
+
+  // Apply-time content pin (closes the validate-then-sign TOCTOU): the signer
+  // only ever signs the exact bytes the preflight graded — if SHA256SUMS is
+  // swapped between plan and apply, the exec refuses instead of laundering the
+  // new bytes as validated provenance. The preflight above guarantees the sums
+  // exist; refuse defensively if they vanished since.
+  const sumsContent = readIfExists(sums);
+  if (sumsContent === undefined) {
+    throw refuse(`${CHECKSUMS_FILE} vanished after the preflight graded it — rebuild, then re-run`);
+  }
+  const expect = { path: sums, sha256: sha256Hex(sumsContent) };
 
   // ONE exec, signing at --apply time. DELIBERATE divergence from the fleet
   // bundle's best-effort `signAction` (`allowFailure: true`): a bundle
@@ -100,22 +122,28 @@ function marketplacePublishPlan(ctx: PlanContext): Plan {
     signer === "cosign"
       ? exec(
           "sign marketplace SHA256SUMS with cosign",
-          ["cosign", "sign-blob", "--yes", "--output-signature", sig, sums],
-          { allowFailure: false },
+          key !== undefined
+            ? ["cosign", "sign-blob", "--yes", "--key", key, "--output-signature", sig, sums]
+            : ["cosign", "sign-blob", "--yes", "--output-signature", sig, sums],
+          { allowFailure: false, expect },
         )
       : exec(
           "sign marketplace SHA256SUMS with GitHub attestations",
           ["gh", "attestation", "sign", sums],
-          { allowFailure: false },
+          { allowFailure: false, expect },
         );
 
   const verifies =
     signer === "cosign"
       ? `${SIGNATURE_FILE} (detached cosign signature over ${CHECKSUMS_FILE})`
       : `the GitHub attestation recorded for ${CHECKSUMS_FILE}`;
-  const hint = `aih marketplace validate --dir ${display} --require-signature${
-    signer === "gh" ? " --repo <owner/repo>" : ""
-  }`;
+  // The verify hint names the signer + its identity material explicitly:
+  // verification must prove WHO signed, so the consumer command is spelled out
+  // per signer rather than left to inference.
+  const hint =
+    signer === "cosign"
+      ? `aih marketplace validate --dir ${display} --require-signature --signer cosign --key <pub.key>`
+      : `aih marketplace validate --dir ${display} --require-signature --signer gh --repo <owner/repo>`;
   return plan(
     "marketplace publish",
     sign,
@@ -142,6 +170,11 @@ export const marketplacePublishCommand: CommandSpec = {
       flags: "--signer <signer>",
       description:
         "signing tool (REQUIRED): cosign | gh — a publish without a signer is refused (that is just a build)",
+    },
+    {
+      flags: "--key <path>",
+      description:
+        "cosign signing key for sign-blob (omit for keyless); consumers verify with the matching public key",
     },
   ],
   plan: marketplacePublishPlan,

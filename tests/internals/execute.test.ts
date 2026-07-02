@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import {
   existsSync,
   mkdirSync,
@@ -10,7 +11,7 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { DirtyWorktreeError, PathContainmentError } from "../../src/errors.js";
+import { AihError, DirtyWorktreeError, PathContainmentError } from "../../src/errors.js";
 import { executePlan, summarizeResult, writeArtifact } from "../../src/internals/execute.js";
 import {
   digest,
@@ -218,6 +219,91 @@ describe("executePlan", () => {
     expect(result.report?.checks).toEqual([
       expect.objectContaining({ verdict: "fail", code: "trust.fetch-blocked" }),
     ]);
+  });
+});
+
+describe("executePlan — exec apply-time content pins (expect)", () => {
+  const pinOf = (text: string): string => createHash("sha256").update(text, "utf8").digest("hex");
+
+  it("refuses (AIH_TRUST) and never runs the command when the pinned file changed after planning", async () => {
+    const target = join(dir, "SHA256SUMS");
+    writeFileSync(target, "graded content\n");
+    const calls: string[][] = [];
+    const run = fakeRunner((argv) => {
+      calls.push(argv);
+      return { code: 0 };
+    });
+    const p = plan(
+      "t",
+      exec("sign the sums", ["cosign", "sign-blob", target], {
+        expect: { path: target, sha256: pinOf("graded content\n") },
+      }),
+    );
+    writeFileSync(target, "swapped after the plan\n"); // the TOCTOU write
+    const err = await executePlan(p, ctx({ apply: true, run })).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(AihError);
+    expect((err as AihError).code).toBe("AIH_TRUST");
+    expect((err as AihError).message).toContain("changed after the plan was computed");
+    expect((err as AihError).message).toContain("re-run the command");
+    expect(calls).toEqual([]); // the command never ran
+  });
+
+  it("runs the pinned exec normally when the file still hashes to the pin", async () => {
+    const target = join(dir, "SHA256SUMS");
+    writeFileSync(target, "graded content\n");
+    const calls: string[][] = [];
+    const run = fakeRunner((argv) => {
+      calls.push(argv);
+      return { code: 0 };
+    });
+    const res = await executePlan(
+      plan(
+        "t",
+        exec("sign the sums", ["cosign", "sign-blob", target], {
+          expect: { path: target, sha256: pinOf("graded content\n") },
+        }),
+      ),
+      ctx({ apply: true, run }),
+    );
+    expect(res.execs[0]).toMatchObject({ ran: true, code: 0, ok: true });
+    expect(calls).toEqual([["cosign", "sign-blob", target]]);
+  });
+
+  it("a pinned file that is missing at apply time refuses as 'missing' without running", async () => {
+    const target = join(dir, "SHA256SUMS");
+    const calls: string[][] = [];
+    const run = fakeRunner((argv) => {
+      calls.push(argv);
+      return { code: 0 };
+    });
+    const err = await executePlan(
+      plan(
+        "t",
+        exec("sign the sums", ["cosign", "sign-blob", target], {
+          expect: { path: target, sha256: pinOf("never written\n") },
+        }),
+      ),
+      ctx({ apply: true, run }),
+    ).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(AihError);
+    expect((err as AihError).code).toBe("AIH_TRUST");
+    expect((err as AihError).message).toContain("found missing");
+    expect(calls).toEqual([]);
+  });
+
+  it("dry-run never evaluates the pin — a stale pin only bites under --apply", async () => {
+    const target = join(dir, "SHA256SUMS");
+    writeFileSync(target, "current content\n");
+    const res = await executePlan(
+      plan(
+        "t",
+        exec("sign the sums", ["cosign", "sign-blob", target], {
+          expect: { path: target, sha256: pinOf("some other content\n") },
+        }),
+      ),
+      ctx({ apply: false }),
+    );
+    expect(res.execs[0]?.ran).toBe(false);
   });
 });
 
