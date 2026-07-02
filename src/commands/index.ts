@@ -25,6 +25,7 @@ import {
   skillApproveCommand,
   skillCardCommand,
   skillInventoryCommand,
+  skillQuarantineCommand,
   skillRemoveCommand,
   skillVetCommand,
 } from "../skill/index.js";
@@ -298,5 +299,14 @@ export function registerCommands(program: Command): void {
   for (const o of skillRemoveCommand.options ?? []) rm.option(o.flags, o.description);
   rm.action(async (_options: Record<string, unknown>, command: Command) => {
     process.exitCode = await runCapability(skillRemoveCommand, command, { positionalRoot: false });
+  });
+  // `quarantine` mirrors `remove`'s registration (no <source>, targets via `--name`).
+  const quarantine = skill.command("quarantine").description(skillQuarantineCommand.summary);
+  addSharedFlags(quarantine);
+  for (const o of skillQuarantineCommand.options ?? []) quarantine.option(o.flags, o.description);
+  quarantine.action(async (_options: Record<string, unknown>, command: Command) => {
+    process.exitCode = await runCapability(skillQuarantineCommand, command, {
+      positionalRoot: false,
+    });
   });
 }

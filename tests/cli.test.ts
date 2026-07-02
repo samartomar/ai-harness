@@ -33,12 +33,13 @@ describe("CLI program", () => {
     ]);
   });
 
-  it("registers skill vet, card, approve, inventory, and remove as nested commands", () => {
+  it("registers skill vet, card, approve, inventory, quarantine, and remove as nested commands", () => {
     const skill = buildProgram().commands.find((c) => c.name() === "skill");
     expect(skill?.commands.map((c) => c.name()).sort()).toEqual([
       "approve",
       "card",
       "inventory",
+      "quarantine",
       "remove",
       "vet",
     ]);

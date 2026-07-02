@@ -22,5 +22,6 @@ export {
   type SkillsLock,
   upsertSkillLockEntry,
 } from "./lockfile.js";
+export { skillQuarantineCommand } from "./quarantine.js";
 export { skillRemoveCommand } from "./remove.js";
 export { type SkillVetEvidence, skillVetCommand } from "./vet.js";

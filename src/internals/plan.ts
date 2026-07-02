@@ -136,14 +136,18 @@ export interface DigestAction {
 
 /**
  * Remove a repo-LOCAL file or directory that aih exclusively owns — aih's only
- * destructive action. Two emitters: `aih prune` (artifacts its detection proved
+ * destructive action. Three emitters: `aih prune` (artifacts its detection proved
  * aih-owned — a per-CLI adapter note, a kiro steering/hook extra — once the CLI is
- * dropped) and `aih skill remove` (a user-directed removal of an installed skill's
- * directory + committed card). The executor fails closed: mandatory {@link assertContained} on the raw
+ * dropped), `aih skill remove` (a user-directed removal of an installed skill's
+ * directory + committed card), and `aih skill quarantine` (the same reversible move,
+ * but into `.aih/quarantine/` with the skill's approval kept). The executor fails
+ * closed: mandatory {@link assertContained} on the raw
  * path (no `external` field exists, so a global `~/home` file is structurally
  * unreachable), a symlink guard, and a backup before unlink. By default it MOVES the
  * file to gitignored `.aih/legacy/<path>` (reversible; occupied destinations are never
- * overwritten). Under `hardDelete` it instead renames to the sibling `<path>.aih.bak`
+ * overwritten); `archiveRoot` picks `.aih/quarantine/` instead, with the identical
+ * containment/symlink/never-overwrite machinery. Under `hardDelete` it instead renames
+ * to the sibling `<path>.aih.bak`
  * — the same single-slot, latest-wins backup every aih write gets — for users who
  * explicitly opt out of the archive.
  */
@@ -154,6 +158,8 @@ export interface RemoveAction {
   describe: string;
   /** Opt-in: single-slot `<path>.aih.bak` rename instead of the `.aih/legacy/` archive. */
   hardDelete?: boolean;
+  /** Archive root for the reversible move. Closed union — never an arbitrary path. */
+  archiveRoot?: ".aih/legacy" | ".aih/quarantine";
 }
 
 export type Action =
@@ -348,9 +354,15 @@ export function envBlock(
 export function remove(
   path: string,
   describe: string,
-  opts: { hardDelete?: boolean } = {},
+  opts: { hardDelete?: boolean; archiveRoot?: RemoveAction["archiveRoot"] } = {},
 ): RemoveAction {
-  return { kind: "remove", path, describe, hardDelete: opts.hardDelete };
+  return {
+    kind: "remove",
+    path,
+    describe,
+    hardDelete: opts.hardDelete,
+    archiveRoot: opts.archiveRoot,
+  };
 }
 
 export function plan(capability: string, ...actions: Action[]): Plan {

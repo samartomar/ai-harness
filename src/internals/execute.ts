@@ -303,12 +303,13 @@ export async function executePlan(
       if (info === undefined) {
         removes.push({ path: action.path, describe: action.describe, effect: "absent" });
       } else {
-        // Default = reversible archive move; `hardDelete` = the explicit opt-out, a
+        // Default = reversible archive move (to `archiveRoot`, a closed union that
+        // defaults to `.aih/legacy`); `hardDelete` = the explicit opt-out, a
         // single-slot rename to the sibling `<path>.aih.bak` (the same latest-wins
         // convention every write backup uses; `*.aih.bak` is gitignored).
         const destRel = action.hardDelete
           ? `${normalizeRel(action.path)}.aih.bak`
-          : `.aih/legacy/${normalizeRel(action.path)}`;
+          : `${action.archiveRoot ?? ".aih/legacy"}/${normalizeRel(action.path)}`;
         const destAbs = resolvePath(ctx, destRel);
         // Contain the DESTINATION too, not just the source: if `.aih/` (or any parent
         // of the destination path) is a symlink escaping the repo, the move would rename

@@ -60,10 +60,25 @@ function posixAbs(abs: string): string {
 }
 
 /**
+ * The OTHER discovered skills whose directories live INSIDE `row`'s directory — the
+ * collateral set a whole-subtree move would take along. Shared by `skill remove` and
+ * `skill quarantine`, whose engines both move the directory atomically.
+ */
+export function nestedChildSkills(
+  skills: readonly SkillInventoryRow[],
+  row: SkillInventoryRow,
+): SkillInventoryRow[] {
+  const parentPrefix = `${posixAbs(row.abs)}/`;
+  return skills.filter((other) => other !== row && posixAbs(other.abs).startsWith(parentPrefix));
+}
+
+/**
  * The single on-disk skill row for `<name>`, `undefined` for an ORPHANED approval
  * (no physical install, but the lockfile still carries the name — the dir was
  * deleted by hand and the governance record survived), or a fail-closed AIH_TRUST
- * refusal. Guards, in order: nothing on disk AND nothing in the lock; a name
+ * refusal. Guards, in order: a name whose only install is QUARANTINED (restore it
+ * first — the `.aih/quarantine/` copy is the one restorable backup, not a removal
+ * target); nothing on disk AND nothing in the lock; a name
  * matching MORE THAN ONE physical install (each listed — the inventory keeps one
  * row per physical directory precisely so duplicates cannot hide behind a
  * name-keyed dedupe); a nested child skill inside the target dir; a `machine`-root
@@ -72,25 +87,36 @@ function posixAbs(abs: string): string {
 function resolveTarget(ctx: PlanContext, name: string): SkillInventoryRow | undefined {
   const inventory = skillInventory(ctx);
   const matches = inventory.skills.filter((row) => row.name === name);
-  if (matches.length === 0) {
+  // A QUARANTINED row is not removable in place — its directory lives under
+  // `.aih/quarantine/`, and removing it there would silently vaporize the one
+  // restorable copy. Additive guard: only active (non-quarantined) rows resolve.
+  const active = matches.filter((row) => row.root !== "quarantined");
+  if (active.length === 0) {
+    const quarantined = matches.find((row) => row.root === "quarantined");
+    if (quarantined !== undefined) {
+      throw refuse(
+        `skill ${name} is quarantined at ${normalizeRel(relative(ctx.root, quarantined.abs))} — ` +
+          "restore it first (move the directory back) or delete the quarantined copy by hand",
+      );
+    }
     if (readSkillsLock(ctx.root).skills.some((entry) => entry.name === name)) {
       return undefined; // orphaned approval — no files, but the lock entry is ours to drop
     }
     throw refuse(`nothing to remove — no installed skill named ${name}`);
   }
-  if (matches.length > 1) {
-    const where = matches
+  if (active.length > 1) {
+    const where = active
       .map((row) => `  - ${normalizeRel(relative(ctx.root, row.abs))} (${row.root})`)
       .join("\n");
     throw refuse(
-      `skill ${name} matches ${matches.length} physical installs — ambiguous, refusing to ` +
+      `skill ${name} matches ${active.length} physical installs — ambiguous, refusing to ` +
         `remove an arbitrary copy (the name-keyed approval is shared):\n${where}\n` +
         "remove the copy you mean by hand, or uninstall the duplicate first",
     );
   }
   // A machine-root skill lives under `~/.claude/skills`, outside this repo — aih
   // will not reach into the user's global install.
-  const row = matches[0];
+  const row = active[0];
   if (row === undefined || row.root === "machine") {
     throw refuse(
       `skill ${name} is installed only in the machine root (~/.claude/skills) — ` +
@@ -100,10 +126,7 @@ function resolveTarget(ctx: PlanContext, name: string): SkillInventoryRow | unde
   // NESTED-CHILD guard: the engine moves the whole directory subtree, so any OTHER
   // discovered skill living INSIDE this one would be removed as collateral while its
   // own approval/card survive, dangling. Fail closed until the nesting is resolved.
-  const parentPrefix = `${posixAbs(row.abs)}/`;
-  const nested = inventory.skills.filter(
-    (other) => other !== row && posixAbs(other.abs).startsWith(parentPrefix),
-  );
+  const nested = nestedChildSkills(inventory.skills, row);
   if (nested.length > 0) {
     const children = nested
       .map((child) => `  - ${child.name} (${normalizeRel(relative(ctx.root, child.abs))})`)
@@ -131,8 +154,10 @@ const LOADER_REF_FILES = [
  * Manual-review advisory lines for loader files that EXIST and mention the skill
  * `name` — mirrors prune's `advisoryLines` disposition (aih can't tell its own entry
  * from the user's, so it refuses to edit and only reports). Pure fs (read-only).
+ * Shared with `skill quarantine` (a disabled skill's loader refs deserve the same
+ * manual-review surfacing).
  */
-function loaderAdvisories(ctx: PlanContext, name: string): string[] {
+export function loaderAdvisories(ctx: PlanContext, name: string): string[] {
   const out: string[] = [];
   for (const rel of LOADER_REF_FILES) {
     const text = readIfExists(join(ctx.root, rel));
@@ -143,8 +168,8 @@ function loaderAdvisories(ctx: PlanContext, name: string): string[] {
   return out;
 }
 
-/** The shared advisory tail for both digest variants. */
-function advisoryTail(advisories: string[]): string[] {
+/** The shared advisory tail for the remove/orphan/quarantine digest variants. */
+export function advisoryTail(advisories: string[]): string[] {
   if (advisories.length > 0) {
     return [
       "",

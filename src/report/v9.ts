@@ -723,10 +723,9 @@ function buildSkillGovernance(digests: DigestAction[]): V9SkillGovernance | unde
   if (!g) return undefined;
   const rows = (Array.isArray(g.rows) ? (g.rows as GovRowRaw[]) : []).map((r) => ({
     name: String(r.name ?? ""),
-    status: (r.status === "unapproved" || r.status === "stale-pin" ? r.status : "approved") as
-      | "approved"
-      | "unapproved"
-      | "stale-pin",
+    status: (r.status === "unapproved" || r.status === "stale-pin" || r.status === "quarantined"
+      ? r.status
+      : "approved") as "approved" | "unapproved" | "stale-pin" | "quarantined",
     ...(typeof r.verdict === "string" ? { verdict: r.verdict } : {}),
     ...(typeof r.source === "string" ? { source: r.source } : {}),
     ...(typeof r.commit === "string" ? { commit: r.commit } : {}),
@@ -736,6 +735,7 @@ function buildSkillGovernance(digests: DigestAction[]): V9SkillGovernance | unde
     approved: numOr(g.approved, 0),
     unapproved: numOr(g.unapproved, 0),
     stalePin: numOr(g.stalePin, 0),
+    quarantined: numOr(g.quarantined, 0),
     rows,
   };
 }

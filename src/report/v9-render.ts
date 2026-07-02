@@ -585,6 +585,7 @@ function govStatus(status: V9SkillGovernance["rows"][number]["status"]): {
 } {
   if (status === "approved") return { cls: "ok", label: "approved" };
   if (status === "stale-pin") return { cls: "warn", label: "stale pin" };
+  if (status === "quarantined") return { cls: "warn", label: "quarantined" };
   return { cls: "bad", label: "unapproved" };
 }
 
@@ -617,7 +618,13 @@ export function renderSkillGovernance(model: V9SkillGovernance): string {
   const badge = clean
     ? '<span class="badge ok">all approved</span>'
     : `<span class="badge warn">${unattested} unattested</span>`;
-  const status = `<div class="card span-5"><div class="card-head"><h3>Approval status</h3>${badge}</div><div class="card-body">${statusBox}<div class="donut-meta" style="margin-top:.6rem"><div class="row"><span class="k">installed · approved</span><span class="v">${model.installed} · ${model.approved}</span></div><div class="row"><span class="k">unapproved · stale-pin</span><span class="v" style="color:${unattested > 0 ? "var(--warn)" : "var(--ok)"}">${model.unapproved} · ${model.stalePin}</span></div></div><div class="method" style="margin-top:.6rem">External skills acquired via <code>aih workspace add</code>, joined to the committed <code>aih-skills.lock.json</code> approvals.</div></div></div>`;
+  // The quarantined count line renders only when non-zero, so a quarantine-free
+  // report stays byte-identical to the pre-quarantine output.
+  const quarantinedRow =
+    model.quarantined > 0
+      ? `<div class="row"><span class="k">quarantined</span><span class="v" style="color:var(--warn)">${model.quarantined}</span></div>`
+      : "";
+  const status = `<div class="card span-5"><div class="card-head"><h3>Approval status</h3>${badge}</div><div class="card-body">${statusBox}<div class="donut-meta" style="margin-top:.6rem"><div class="row"><span class="k">installed · approved</span><span class="v">${model.installed} · ${model.approved}</span></div><div class="row"><span class="k">unapproved · stale-pin</span><span class="v" style="color:${unattested > 0 ? "var(--warn)" : "var(--ok)"}">${model.unapproved} · ${model.stalePin}</span></div>${quarantinedRow}</div><div class="method" style="margin-top:.6rem">External skills acquired via <code>aih workspace add</code>, joined to the committed <code>aih-skills.lock.json</code> approvals.</div></div></div>`;
   const list = `<div class="card span-7"><div class="card-head"><h3>Installed skills</h3><span class="badge muted">${model.installed} on disk</span></div><div class="card-body"><div class="drift-files">${rows}</div></div></div>`;
   return status + list;
 }
