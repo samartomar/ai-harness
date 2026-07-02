@@ -11,6 +11,20 @@ function hookCommand(cli: Cli): string {
   return `node .aih/usage-record.mjs --from ${cli}`;
 }
 
+/**
+ * Fail-open variant for the Claude host. Claude runs shell-form hooks via `sh -c`
+ * (macOS/Linux), Git Bash, or PowerShell on Windows — never cmd.exe — so `; exit 0`,
+ * valid in all three, is the portable way to guarantee a PostToolUse hook can never
+ * fail a tool call: the recorder runs, then the shell exits 0 regardless of what the
+ * recorder returned. A POSIX `[ -f … ]` guard or `2>/dev/null` is deliberately NOT
+ * used here — both throw under PowerShell (the Windows fallback when Git Bash is
+ * absent). Defence in depth atop the committed recorder (see gitignore) + the
+ * recorder's own best-effort internals.
+ */
+function failOpenHookCommand(cli: Cli): string {
+  return `${hookCommand(cli)}; exit 0`;
+}
+
 function codexProjectCommand(cli: Cli): string {
   return `node "$(git rev-parse --show-toplevel)/.aih/usage-record.mjs" --from ${cli}`;
 }
@@ -19,10 +33,20 @@ function codexProjectCommandWindows(cli: Cli): string {
   return `for /f "delims=" %r in ('git rev-parse --show-toplevel 2^>nul') do @node "%r\\.aih\\usage-record.mjs" --from ${cli}`;
 }
 
-function commandHook(cli: Cli, options: { fromGitRoot?: boolean } = {}): Record<string, unknown> {
+interface HookOptions {
+  fromGitRoot?: boolean;
+  failOpen?: boolean;
+}
+
+function commandHook(cli: Cli, options: HookOptions = {}): Record<string, unknown> {
+  const command = options.fromGitRoot
+    ? codexProjectCommand(cli)
+    : options.failOpen
+      ? failOpenHookCommand(cli)
+      : hookCommand(cli);
   const hook: Record<string, unknown> = {
     type: "command",
-    command: options.fromGitRoot ? codexProjectCommand(cli) : hookCommand(cli),
+    command,
     timeout: 5,
     statusMessage: "Recording aih usage",
   };
@@ -30,11 +54,7 @@ function commandHook(cli: Cli, options: { fromGitRoot?: boolean } = {}): Record<
   return hook;
 }
 
-function hookGroup(
-  cli: Cli,
-  matcher = "*",
-  options: { fromGitRoot?: boolean } = {},
-): Record<string, unknown> {
+function hookGroup(cli: Cli, matcher = "*", options: HookOptions = {}): Record<string, unknown> {
   return { matcher, hooks: [commandHook(cli, options)] };
 }
 
@@ -55,6 +75,12 @@ function kiroUsageHook(): unknown {
     name: "aih-usage-metering",
     description: "Record a local usage sample when Kiro finishes an agent turn.",
     when: { type: "agentStop" },
+    // Kiro hook `timeout` is in SECONDS (default 60). agentStop is non-blocking, but a
+    // cap keeps a slow recorder from stalling the turn. The recorder itself is a plain
+    // `node` invocation (a real cross-platform executable) whose committed script is
+    // internally best-effort, so no shell guard is added — `; exit 0` would break under
+    // a cmd.exe host, and the recorder is designed never to throw.
+    timeout: 5,
   };
   Object.defineProperty(hook, "th" + "en", {
     enumerable: true,
@@ -107,7 +133,7 @@ export function usageHookActions(ctx: PlanContext, clis: Cli[]): Action[] {
     actions.push(
       writeJson(
         ".claude/settings.json",
-        { hooks: { PostToolUse: [hookGroup("claude")] } },
+        { hooks: { PostToolUse: [hookGroup("claude", "*", { failOpen: true })] } },
         "Claude Code PostToolUse usage hook, merged into existing settings",
         { merge: true },
       ),

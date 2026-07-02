@@ -21,6 +21,7 @@ import { resolveTargetSet } from "./report/cli-coverage.js";
 import { loadabilityFor, loadReason } from "./report/cli-loadability.js";
 import { scaleSafetyCheck } from "./scale-safety.js";
 import { trustLockLocalDriftChecks } from "./trust/commands.js";
+import { metricsToolCheck, usageRecorderCheck } from "./usage/hook-health.js";
 import { vdiCompatibilityCheck } from "./vdi/index.js";
 import { workspaceGitignoreMissing } from "./workspace/git.js";
 import { readWorkspaceManifest } from "./workspace/manifest.js";
@@ -215,6 +216,11 @@ export const command: CommandSpec = {
       probeMany("trust-lock local drift", (probeCtx) => trustLockLocalDriftChecks(probeCtx)),
       ...orgPolicyDriftProbes({ ...ctx, contextDir }),
       probe("contract truth", () => contractTruthCheck(ctx)),
+      // Usage-capture hook health: a committed hook that references an absent recorder
+      // errors on every event (the `.aih/` gitignore trap); the Kiro metrics hook
+      // degrades when `aih` isn't on PATH. Both self-skip when their hooks aren't present.
+      probe("usage recorder present", () => usageRecorderCheck(ctx)),
+      probe("metrics hook tool on PATH", () => metricsToolCheck(ctx)),
     ];
 
     // Workspace mode: validate each child repo is scaffolded.

@@ -28,13 +28,74 @@ describe("aihIgnoreWrite", () => {
     expect(w.contents).toContain("*.aih.bak");
   });
 
-  it("is a no-op when the patterns are already present (byte-identical)", () => {
-    const original = "node_modules/\n*.aih.bak\n*.aih.tmp\n.aih/\n";
+  it("is a no-op when the current block is already present (byte-identical)", () => {
+    const original =
+      "node_modules/\n\n# aih-managed (backup, temp, and generated reports)\n" +
+      "*.aih.bak\n*.aih.tmp\n.aih/*\n!.aih/usage-record.mjs\n";
     writeFileSync(join(root, ".gitignore"), original);
     expect(aihIgnoreWrite(root).contents).toBe(original);
   });
 
-  it("ignores the .aih/ report output dir", () => {
-    expect(aihIgnoreWrite(root).contents).toContain(".aih/");
+  it("ignores .aih data but keeps the committed recorder tracked (negation)", () => {
+    const c = aihIgnoreWrite(root).contents ?? "";
+    expect(c).toContain(".aih/*"); // ignore the data dir contents
+    expect(c).toContain("!.aih/usage-record.mjs"); // but re-include the recorder tool
+    // A bare `.aih/` would re-exclude the dir and neuter the negation — must be gone.
+    expect(c.split(/\r?\n/)).not.toContain(".aih/");
+  });
+
+  it.each([
+    ".aih/",
+    "/.aih/",
+    ".aih",
+    "/.aih",
+  ])("supersedes every `.aih`-dir exclude form (%s) so the negation actually re-includes the recorder", (excludeForm) => {
+    // Any of these excludes the .aih DIRECTORY; git then can't re-include a child, so
+    // leaving one would silently re-strand the recorder (the original bug). It MUST be
+    // stripped — this is intentional, not a user-line loss, and is the only way the fix works.
+    writeFileSync(join(root, ".gitignore"), `node_modules/\n${excludeForm}\n`);
+    const lines = (aihIgnoreWrite(root).contents ?? "").split(/\r?\n/);
+    expect(lines).not.toContain(excludeForm); // the dir-exclude is gone
+    expect(lines).toContain(".aih/*"); // replaced by a contents-only ignore
+    expect(lines).toContain("!.aih/usage-record.mjs"); // that the negation can pierce
+    expect(lines).toContain("node_modules/"); // unrelated content preserved
+  });
+
+  it("does NOT touch `.aih/*` or `.aih/**` (they leave the dir traversable — negation works)", () => {
+    // These ignore contents, not the directory, so they coexist with the negation and
+    // are not `.aih`-dir excludes — a user's `.aih/**` must survive.
+    writeFileSync(join(root, ".gitignore"), "node_modules/\n.aih/**\n");
+    const lines = (aihIgnoreWrite(root).contents ?? "").split(/\r?\n/);
+    expect(lines).toContain(".aih/**"); // preserved (not a dir-exclude)
+  });
+
+  it("preserves CRLF EOL and stays byte-identical when the block is already correct", () => {
+    const crlf =
+      "node_modules/\r\n\r\n# aih-managed (backup, temp, and generated reports)\r\n" +
+      "*.aih.bak\r\n*.aih.tmp\r\n.aih/*\r\n!.aih/usage-record.mjs\r\n";
+    writeFileSync(join(root, ".gitignore"), crlf);
+    const out = aihIgnoreWrite(root).contents ?? "";
+    expect(out).toBe(crlf); // no LF rewrite, no noisy diff on Windows
+    expect(out).toContain("\r\n");
+    expect(out).not.toMatch(/[^\r]\n/); // every LF is part of a CRLF
+  });
+
+  it("migrates a legacy bare `.aih/` block to `.aih/*` + negation without duplication", () => {
+    // The exact block older aih versions wrote (wholesale-ignore, no recorder tracked).
+    writeFileSync(
+      join(root, ".gitignore"),
+      "node_modules/\n# aih-managed (backup, temp, and generated reports)\n*.aih.bak\n*.aih.tmp\n.aih/\n",
+    );
+    const lines = (aihIgnoreWrite(root).contents ?? "").split(/\r?\n/);
+    // Legacy line stripped; each managed pattern appears exactly once.
+    expect(lines).not.toContain(".aih/");
+    expect(lines.filter((l) => l === "*.aih.bak")).toHaveLength(1);
+    expect(lines.filter((l) => l === ".aih/*")).toHaveLength(1);
+    expect(lines.filter((l) => l === "!.aih/usage-record.mjs")).toHaveLength(1);
+    // Only one managed header survives the migration.
+    expect(
+      lines.filter((l) => l === "# aih-managed (backup, temp, and generated reports)"),
+    ).toHaveLength(1);
+    expect(lines).toContain("node_modules/"); // unrelated content preserved
   });
 });
