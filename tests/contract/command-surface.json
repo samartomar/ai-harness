@@ -1,0 +1,3357 @@
+{
+  "name": "aih",
+  "hasDescription": true,
+  "arguments": [],
+  "options": [
+    {
+      "flags": "-V, --version"
+    }
+  ],
+  "commands": [
+    {
+      "name": "adopt",
+      "hasDescription": true,
+      "arguments": [
+        {
+          "name": "root",
+          "required": false
+        }
+      ],
+      "options": [
+        {
+          "flags": "--ack <paths>"
+        },
+        {
+          "flags": "--all-tools"
+        },
+        {
+          "flags": "--apply"
+        },
+        {
+          "flags": "--cli <list>"
+        },
+        {
+          "flags": "--context-dir <dir>",
+          "defaultValue": "ai-coding"
+        },
+        {
+          "flags": "--detect"
+        },
+        {
+          "flags": "--force"
+        },
+        {
+          "flags": "--json"
+        },
+        {
+          "flags": "--migrate-cli"
+        },
+        {
+          "flags": "--no-log"
+        },
+        {
+          "flags": "--posture <posture>",
+          "defaultValue": "vibe"
+        },
+        {
+          "flags": "--root <dir>"
+        },
+        {
+          "flags": "--support-out <dir>"
+        },
+        {
+          "flags": "--verify"
+        },
+        {
+          "flags": "--yes"
+        }
+      ],
+      "commands": []
+    },
+    {
+      "name": "bootstrap",
+      "hasDescription": true,
+      "arguments": [
+        {
+          "name": "root",
+          "required": false
+        }
+      ],
+      "options": [
+        {
+          "flags": "--all-tools"
+        },
+        {
+          "flags": "--apply"
+        },
+        {
+          "flags": "--cli <list>"
+        },
+        {
+          "flags": "--context-dir <dir>",
+          "defaultValue": "ai-coding"
+        },
+        {
+          "flags": "--detect"
+        },
+        {
+          "flags": "--force"
+        },
+        {
+          "flags": "--json"
+        },
+        {
+          "flags": "--no-log"
+        },
+        {
+          "flags": "--phase <n>"
+        },
+        {
+          "flags": "--posture <posture>",
+          "defaultValue": "vibe"
+        },
+        {
+          "flags": "--root <dir>"
+        },
+        {
+          "flags": "--support-out <dir>"
+        },
+        {
+          "flags": "--verify"
+        },
+        {
+          "flags": "--yes"
+        }
+      ],
+      "commands": []
+    },
+    {
+      "name": "bootstrap-ai",
+      "hasDescription": true,
+      "arguments": [
+        {
+          "name": "root",
+          "required": false
+        }
+      ],
+      "options": [
+        {
+          "flags": "--all-tools"
+        },
+        {
+          "flags": "--apply"
+        },
+        {
+          "flags": "--canon <mode>",
+          "defaultValue": "compact"
+        },
+        {
+          "flags": "--cli <list>"
+        },
+        {
+          "flags": "--context-dir <dir>",
+          "defaultValue": "ai-coding"
+        },
+        {
+          "flags": "--detect"
+        },
+        {
+          "flags": "--force"
+        },
+        {
+          "flags": "--json"
+        },
+        {
+          "flags": "--no-log"
+        },
+        {
+          "flags": "--posture <posture>",
+          "defaultValue": "vibe"
+        },
+        {
+          "flags": "--root <dir>"
+        },
+        {
+          "flags": "--sarif <file>"
+        },
+        {
+          "flags": "--support-out <dir>"
+        },
+        {
+          "flags": "--verify"
+        },
+        {
+          "flags": "--yes"
+        }
+      ],
+      "commands": []
+    },
+    {
+      "name": "bundle",
+      "hasDescription": true,
+      "arguments": [
+        {
+          "name": "root",
+          "required": false
+        }
+      ],
+      "options": [
+        {
+          "flags": "--all-tools"
+        },
+        {
+          "flags": "--apply"
+        },
+        {
+          "flags": "--cli <list>"
+        },
+        {
+          "flags": "--context-dir <dir>",
+          "defaultValue": "ai-coding"
+        },
+        {
+          "flags": "--detect"
+        },
+        {
+          "flags": "--force"
+        },
+        {
+          "flags": "--include <paths>"
+        },
+        {
+          "flags": "--json"
+        },
+        {
+          "flags": "--no-log"
+        },
+        {
+          "flags": "--out <dir>",
+          "defaultValue": ".aih/fleet-bundle"
+        },
+        {
+          "flags": "--posture <posture>",
+          "defaultValue": "vibe"
+        },
+        {
+          "flags": "--root <dir>"
+        },
+        {
+          "flags": "--sign <signer>"
+        },
+        {
+          "flags": "--support-out <dir>"
+        },
+        {
+          "flags": "--verify"
+        },
+        {
+          "flags": "--yes"
+        }
+      ],
+      "commands": []
+    },
+    {
+      "name": "certs",
+      "hasDescription": true,
+      "arguments": [
+        {
+          "name": "root",
+          "required": false
+        }
+      ],
+      "options": [
+        {
+          "flags": "--all-tools"
+        },
+        {
+          "flags": "--apply"
+        },
+        {
+          "flags": "--ca-pattern <pattern>",
+          "defaultValue": "Zscaler"
+        },
+        {
+          "flags": "--cli <list>"
+        },
+        {
+          "flags": "--context-dir <dir>",
+          "defaultValue": "ai-coding"
+        },
+        {
+          "flags": "--detect"
+        },
+        {
+          "flags": "--force"
+        },
+        {
+          "flags": "--json"
+        },
+        {
+          "flags": "--no-log"
+        },
+        {
+          "flags": "--out <dir>",
+          "defaultValue": "~/.config/enterprise-ca"
+        },
+        {
+          "flags": "--posture <posture>",
+          "defaultValue": "vibe"
+        },
+        {
+          "flags": "--root <dir>"
+        },
+        {
+          "flags": "--support-out <dir>"
+        },
+        {
+          "flags": "--verify"
+        },
+        {
+          "flags": "--yes"
+        }
+      ],
+      "commands": []
+    },
+    {
+      "name": "contract",
+      "hasDescription": true,
+      "arguments": [
+        {
+          "name": "root",
+          "required": false
+        }
+      ],
+      "options": [
+        {
+          "flags": "--all-tools"
+        },
+        {
+          "flags": "--apply"
+        },
+        {
+          "flags": "--cli <list>"
+        },
+        {
+          "flags": "--context-dir <dir>",
+          "defaultValue": "ai-coding"
+        },
+        {
+          "flags": "--detect"
+        },
+        {
+          "flags": "--force"
+        },
+        {
+          "flags": "--json"
+        },
+        {
+          "flags": "--no-log"
+        },
+        {
+          "flags": "--posture <posture>",
+          "defaultValue": "vibe"
+        },
+        {
+          "flags": "--root <dir>"
+        },
+        {
+          "flags": "--support-out <dir>"
+        },
+        {
+          "flags": "--verify"
+        },
+        {
+          "flags": "--yes"
+        }
+      ],
+      "commands": []
+    },
+    {
+      "name": "crispy",
+      "hasDescription": true,
+      "arguments": [
+        {
+          "name": "root",
+          "required": false
+        }
+      ],
+      "options": [
+        {
+          "flags": "--all-tools"
+        },
+        {
+          "flags": "--apply"
+        },
+        {
+          "flags": "--cli <list>"
+        },
+        {
+          "flags": "--context-dir <dir>",
+          "defaultValue": "ai-coding"
+        },
+        {
+          "flags": "--detect"
+        },
+        {
+          "flags": "--force"
+        },
+        {
+          "flags": "--init"
+        },
+        {
+          "flags": "--json"
+        },
+        {
+          "flags": "--no-log"
+        },
+        {
+          "flags": "--posture <posture>",
+          "defaultValue": "vibe"
+        },
+        {
+          "flags": "--root <dir>"
+        },
+        {
+          "flags": "--stage <stage>"
+        },
+        {
+          "flags": "--support-out <dir>"
+        },
+        {
+          "flags": "--verify"
+        },
+        {
+          "flags": "--yes"
+        }
+      ],
+      "commands": []
+    },
+    {
+      "name": "doctor",
+      "hasDescription": true,
+      "arguments": [
+        {
+          "name": "root",
+          "required": false
+        }
+      ],
+      "options": [
+        {
+          "flags": "--json"
+        },
+        {
+          "flags": "--no-log"
+        },
+        {
+          "flags": "--root <dir>"
+        },
+        {
+          "flags": "--sarif <file>"
+        },
+        {
+          "flags": "--support-out <dir>"
+        }
+      ],
+      "commands": []
+    },
+    {
+      "name": "ecc",
+      "hasDescription": true,
+      "arguments": [
+        {
+          "name": "root",
+          "required": false
+        }
+      ],
+      "options": [
+        {
+          "flags": "--all-tools"
+        },
+        {
+          "flags": "--apply"
+        },
+        {
+          "flags": "--cli <list>"
+        },
+        {
+          "flags": "--context-dir <dir>",
+          "defaultValue": "ai-coding"
+        },
+        {
+          "flags": "--detect"
+        },
+        {
+          "flags": "--ecc-path <dir>"
+        },
+        {
+          "flags": "--force"
+        },
+        {
+          "flags": "--json"
+        },
+        {
+          "flags": "--no-log"
+        },
+        {
+          "flags": "--posture <posture>",
+          "defaultValue": "vibe"
+        },
+        {
+          "flags": "--profile <profile>",
+          "defaultValue": "core"
+        },
+        {
+          "flags": "--root <dir>"
+        },
+        {
+          "flags": "--support-out <dir>"
+        },
+        {
+          "flags": "--verify"
+        },
+        {
+          "flags": "--yes"
+        }
+      ],
+      "commands": []
+    },
+    {
+      "name": "evidence",
+      "hasDescription": true,
+      "arguments": [],
+      "options": [],
+      "commands": [
+        {
+          "name": "build",
+          "hasDescription": true,
+          "arguments": [],
+          "options": [
+            {
+              "flags": "--all-tools"
+            },
+            {
+              "flags": "--apply"
+            },
+            {
+              "flags": "--cli <list>"
+            },
+            {
+              "flags": "--context-dir <dir>",
+              "defaultValue": "ai-coding"
+            },
+            {
+              "flags": "--detect"
+            },
+            {
+              "flags": "--force"
+            },
+            {
+              "flags": "--json"
+            },
+            {
+              "flags": "--no-log"
+            },
+            {
+              "flags": "--out <dir>",
+              "defaultValue": ".aih/evidence-bundle"
+            },
+            {
+              "flags": "--posture <posture>",
+              "defaultValue": "vibe"
+            },
+            {
+              "flags": "--root <dir>"
+            },
+            {
+              "flags": "--sign <signer>"
+            },
+            {
+              "flags": "--support-out <dir>"
+            },
+            {
+              "flags": "--verify"
+            },
+            {
+              "flags": "--yes"
+            }
+          ],
+          "commands": []
+        }
+      ]
+    },
+    {
+      "name": "guardrails",
+      "hasDescription": true,
+      "arguments": [
+        {
+          "name": "root",
+          "required": false
+        }
+      ],
+      "options": [
+        {
+          "flags": "--all-tools"
+        },
+        {
+          "flags": "--apply"
+        },
+        {
+          "flags": "--canon <mode>",
+          "defaultValue": "compact"
+        },
+        {
+          "flags": "--cli <list>"
+        },
+        {
+          "flags": "--context-dir <dir>",
+          "defaultValue": "ai-coding"
+        },
+        {
+          "flags": "--detect"
+        },
+        {
+          "flags": "--force"
+        },
+        {
+          "flags": "--json"
+        },
+        {
+          "flags": "--no-log"
+        },
+        {
+          "flags": "--posture <posture>",
+          "defaultValue": "vibe"
+        },
+        {
+          "flags": "--root <dir>"
+        },
+        {
+          "flags": "--support-out <dir>"
+        },
+        {
+          "flags": "--verify"
+        },
+        {
+          "flags": "--yes"
+        }
+      ],
+      "commands": []
+    },
+    {
+      "name": "hardware",
+      "hasDescription": true,
+      "arguments": [
+        {
+          "name": "root",
+          "required": false
+        }
+      ],
+      "options": [
+        {
+          "flags": "--all-tools"
+        },
+        {
+          "flags": "--apply"
+        },
+        {
+          "flags": "--cli <list>"
+        },
+        {
+          "flags": "--context-dir <dir>",
+          "defaultValue": "ai-coding"
+        },
+        {
+          "flags": "--detect"
+        },
+        {
+          "flags": "--engine <engine>",
+          "defaultValue": "ollama"
+        },
+        {
+          "flags": "--force"
+        },
+        {
+          "flags": "--json"
+        },
+        {
+          "flags": "--model-size-gb <n>",
+          "defaultValue": "5"
+        },
+        {
+          "flags": "--no-log"
+        },
+        {
+          "flags": "--posture <posture>",
+          "defaultValue": "vibe"
+        },
+        {
+          "flags": "--root <dir>"
+        },
+        {
+          "flags": "--support-out <dir>"
+        },
+        {
+          "flags": "--verify"
+        },
+        {
+          "flags": "--yes"
+        }
+      ],
+      "commands": []
+    },
+    {
+      "name": "heal",
+      "hasDescription": true,
+      "arguments": [
+        {
+          "name": "root",
+          "required": false
+        }
+      ],
+      "options": [
+        {
+          "flags": "--all-tools"
+        },
+        {
+          "flags": "--apply"
+        },
+        {
+          "flags": "--ca-pattern <pattern>",
+          "defaultValue": "Zscaler"
+        },
+        {
+          "flags": "--cli <list>"
+        },
+        {
+          "flags": "--context-dir <dir>",
+          "defaultValue": "ai-coding"
+        },
+        {
+          "flags": "--detect"
+        },
+        {
+          "flags": "--force"
+        },
+        {
+          "flags": "--json"
+        },
+        {
+          "flags": "--no-log"
+        },
+        {
+          "flags": "--posture <posture>",
+          "defaultValue": "vibe"
+        },
+        {
+          "flags": "--root <dir>"
+        },
+        {
+          "flags": "--scope <list>",
+          "defaultValue": "all"
+        },
+        {
+          "flags": "--support-out <dir>"
+        },
+        {
+          "flags": "--verify"
+        },
+        {
+          "flags": "--yes"
+        }
+      ],
+      "commands": []
+    },
+    {
+      "name": "init",
+      "hasDescription": true,
+      "arguments": [
+        {
+          "name": "root",
+          "required": false
+        }
+      ],
+      "options": [
+        {
+          "flags": "--all-tools"
+        },
+        {
+          "flags": "--apply"
+        },
+        {
+          "flags": "--canon <mode>",
+          "defaultValue": "compact"
+        },
+        {
+          "flags": "--cli <list>"
+        },
+        {
+          "flags": "--context-dir <dir>",
+          "defaultValue": "ai-coding"
+        },
+        {
+          "flags": "--detect"
+        },
+        {
+          "flags": "--force"
+        },
+        {
+          "flags": "--json"
+        },
+        {
+          "flags": "--mcp-mode <mode>",
+          "defaultValue": "standard"
+        },
+        {
+          "flags": "--no-log"
+        },
+        {
+          "flags": "--posture <posture>",
+          "defaultValue": "vibe"
+        },
+        {
+          "flags": "--root <dir>"
+        },
+        {
+          "flags": "--support-out <dir>"
+        },
+        {
+          "flags": "--verify"
+        },
+        {
+          "flags": "--yes"
+        }
+      ],
+      "commands": []
+    },
+    {
+      "name": "marketplace",
+      "hasDescription": true,
+      "arguments": [],
+      "options": [],
+      "commands": [
+        {
+          "name": "build",
+          "hasDescription": true,
+          "arguments": [],
+          "options": [
+            {
+              "flags": "--all-tools"
+            },
+            {
+              "flags": "--apply"
+            },
+            {
+              "flags": "--cli <list>"
+            },
+            {
+              "flags": "--context-dir <dir>",
+              "defaultValue": "ai-coding"
+            },
+            {
+              "flags": "--detect"
+            },
+            {
+              "flags": "--force"
+            },
+            {
+              "flags": "--json"
+            },
+            {
+              "flags": "--name <name>"
+            },
+            {
+              "flags": "--no-log"
+            },
+            {
+              "flags": "--out <dir>",
+              "defaultValue": ".aih/marketplace"
+            },
+            {
+              "flags": "--posture <posture>",
+              "defaultValue": "vibe"
+            },
+            {
+              "flags": "--root <dir>"
+            },
+            {
+              "flags": "--stamp <iso>"
+            },
+            {
+              "flags": "--support-out <dir>"
+            },
+            {
+              "flags": "--verify"
+            },
+            {
+              "flags": "--yes"
+            }
+          ],
+          "commands": []
+        },
+        {
+          "name": "publish",
+          "hasDescription": true,
+          "arguments": [],
+          "options": [
+            {
+              "flags": "--all-tools"
+            },
+            {
+              "flags": "--apply"
+            },
+            {
+              "flags": "--cli <list>"
+            },
+            {
+              "flags": "--context-dir <dir>",
+              "defaultValue": "ai-coding"
+            },
+            {
+              "flags": "--detect"
+            },
+            {
+              "flags": "--dir <dir>",
+              "defaultValue": ".aih/marketplace"
+            },
+            {
+              "flags": "--force"
+            },
+            {
+              "flags": "--json"
+            },
+            {
+              "flags": "--key <path>"
+            },
+            {
+              "flags": "--no-log"
+            },
+            {
+              "flags": "--posture <posture>",
+              "defaultValue": "vibe"
+            },
+            {
+              "flags": "--root <dir>"
+            },
+            {
+              "flags": "--signer <signer>"
+            },
+            {
+              "flags": "--support-out <dir>"
+            },
+            {
+              "flags": "--verify"
+            },
+            {
+              "flags": "--yes"
+            }
+          ],
+          "commands": []
+        },
+        {
+          "name": "validate",
+          "hasDescription": true,
+          "arguments": [],
+          "options": [
+            {
+              "flags": "--all-tools"
+            },
+            {
+              "flags": "--apply"
+            },
+            {
+              "flags": "--certificate-identity <identity>"
+            },
+            {
+              "flags": "--certificate-oidc-issuer <issuer>"
+            },
+            {
+              "flags": "--cli <list>"
+            },
+            {
+              "flags": "--context-dir <dir>",
+              "defaultValue": "ai-coding"
+            },
+            {
+              "flags": "--detect"
+            },
+            {
+              "flags": "--dir <dir>",
+              "defaultValue": ".aih/marketplace"
+            },
+            {
+              "flags": "--force"
+            },
+            {
+              "flags": "--json"
+            },
+            {
+              "flags": "--key <path>"
+            },
+            {
+              "flags": "--no-log"
+            },
+            {
+              "flags": "--posture <posture>",
+              "defaultValue": "vibe"
+            },
+            {
+              "flags": "--repo <owner/repo>"
+            },
+            {
+              "flags": "--require-signature"
+            },
+            {
+              "flags": "--root <dir>"
+            },
+            {
+              "flags": "--signer <signer>"
+            },
+            {
+              "flags": "--signer-workflow <workflow>"
+            },
+            {
+              "flags": "--support-out <dir>"
+            },
+            {
+              "flags": "--verify"
+            },
+            {
+              "flags": "--yes"
+            }
+          ],
+          "commands": []
+        }
+      ]
+    },
+    {
+      "name": "mcp",
+      "hasDescription": true,
+      "arguments": [
+        {
+          "name": "root",
+          "required": false
+        }
+      ],
+      "options": [
+        {
+          "flags": "--all-tools"
+        },
+        {
+          "flags": "--apply"
+        },
+        {
+          "flags": "--cli <list>"
+        },
+        {
+          "flags": "--context-dir <dir>",
+          "defaultValue": "ai-coding"
+        },
+        {
+          "flags": "--detect"
+        },
+        {
+          "flags": "--force"
+        },
+        {
+          "flags": "--json"
+        },
+        {
+          "flags": "--mode <mode>",
+          "defaultValue": "standard"
+        },
+        {
+          "flags": "--no-log"
+        },
+        {
+          "flags": "--posture <posture>",
+          "defaultValue": "vibe"
+        },
+        {
+          "flags": "--root <dir>"
+        },
+        {
+          "flags": "--scope <scope>",
+          "defaultValue": "project"
+        },
+        {
+          "flags": "--self-host"
+        },
+        {
+          "flags": "--support-out <dir>"
+        },
+        {
+          "flags": "--verify"
+        },
+        {
+          "flags": "--yes"
+        }
+      ],
+      "commands": []
+    },
+    {
+      "name": "pack",
+      "hasDescription": true,
+      "arguments": [],
+      "options": [],
+      "commands": [
+        {
+          "name": "add",
+          "hasDescription": true,
+          "arguments": [],
+          "options": [
+            {
+              "flags": "--all-tools"
+            },
+            {
+              "flags": "--apply"
+            },
+            {
+              "flags": "--cli <list>"
+            },
+            {
+              "flags": "--context-dir <dir>",
+              "defaultValue": "ai-coding"
+            },
+            {
+              "flags": "--description <text>"
+            },
+            {
+              "flags": "--detect"
+            },
+            {
+              "flags": "--force"
+            },
+            {
+              "flags": "--json"
+            },
+            {
+              "flags": "--no-log"
+            },
+            {
+              "flags": "--pack <pack>"
+            },
+            {
+              "flags": "--posture <posture>",
+              "defaultValue": "vibe"
+            },
+            {
+              "flags": "--root <dir>"
+            },
+            {
+              "flags": "--skill <name>"
+            },
+            {
+              "flags": "--support-out <dir>"
+            },
+            {
+              "flags": "--verify"
+            },
+            {
+              "flags": "--yes"
+            }
+          ],
+          "commands": []
+        },
+        {
+          "name": "init",
+          "hasDescription": true,
+          "arguments": [],
+          "options": [
+            {
+              "flags": "--all-tools"
+            },
+            {
+              "flags": "--apply"
+            },
+            {
+              "flags": "--cli <list>"
+            },
+            {
+              "flags": "--context-dir <dir>",
+              "defaultValue": "ai-coding"
+            },
+            {
+              "flags": "--description <text>"
+            },
+            {
+              "flags": "--detect"
+            },
+            {
+              "flags": "--force"
+            },
+            {
+              "flags": "--json"
+            },
+            {
+              "flags": "--no-log"
+            },
+            {
+              "flags": "--pack <pack>"
+            },
+            {
+              "flags": "--posture <posture>",
+              "defaultValue": "vibe"
+            },
+            {
+              "flags": "--root <dir>"
+            },
+            {
+              "flags": "--support-out <dir>"
+            },
+            {
+              "flags": "--verify"
+            },
+            {
+              "flags": "--yes"
+            }
+          ],
+          "commands": []
+        },
+        {
+          "name": "install",
+          "hasDescription": true,
+          "arguments": [],
+          "options": [
+            {
+              "flags": "--acknowledge <fingerprints>"
+            },
+            {
+              "flags": "--acknowledge-all"
+            },
+            {
+              "flags": "--all-tools"
+            },
+            {
+              "flags": "--apply"
+            },
+            {
+              "flags": "--cli <list>"
+            },
+            {
+              "flags": "--context-dir <dir>",
+              "defaultValue": "ai-coding"
+            },
+            {
+              "flags": "--detect"
+            },
+            {
+              "flags": "--force"
+            },
+            {
+              "flags": "--json"
+            },
+            {
+              "flags": "--no-log"
+            },
+            {
+              "flags": "--pack <name>"
+            },
+            {
+              "flags": "--posture <posture>",
+              "defaultValue": "vibe"
+            },
+            {
+              "flags": "--root <dir>"
+            },
+            {
+              "flags": "--support-out <dir>"
+            },
+            {
+              "flags": "--verify"
+            },
+            {
+              "flags": "--yes"
+            }
+          ],
+          "commands": []
+        },
+        {
+          "name": "plan",
+          "hasDescription": true,
+          "arguments": [],
+          "options": [
+            {
+              "flags": "--all-tools"
+            },
+            {
+              "flags": "--apply"
+            },
+            {
+              "flags": "--cli <list>"
+            },
+            {
+              "flags": "--context-dir <dir>",
+              "defaultValue": "ai-coding"
+            },
+            {
+              "flags": "--detect"
+            },
+            {
+              "flags": "--force"
+            },
+            {
+              "flags": "--json"
+            },
+            {
+              "flags": "--no-log"
+            },
+            {
+              "flags": "--pack <name>"
+            },
+            {
+              "flags": "--posture <posture>",
+              "defaultValue": "vibe"
+            },
+            {
+              "flags": "--root <dir>"
+            },
+            {
+              "flags": "--support-out <dir>"
+            },
+            {
+              "flags": "--verify"
+            },
+            {
+              "flags": "--yes"
+            }
+          ],
+          "commands": []
+        },
+        {
+          "name": "remove-entry",
+          "hasDescription": true,
+          "arguments": [],
+          "options": [
+            {
+              "flags": "--all-tools"
+            },
+            {
+              "flags": "--apply"
+            },
+            {
+              "flags": "--cli <list>"
+            },
+            {
+              "flags": "--context-dir <dir>",
+              "defaultValue": "ai-coding"
+            },
+            {
+              "flags": "--detect"
+            },
+            {
+              "flags": "--force"
+            },
+            {
+              "flags": "--json"
+            },
+            {
+              "flags": "--no-log"
+            },
+            {
+              "flags": "--pack <pack>"
+            },
+            {
+              "flags": "--posture <posture>",
+              "defaultValue": "vibe"
+            },
+            {
+              "flags": "--root <dir>"
+            },
+            {
+              "flags": "--skill <name>"
+            },
+            {
+              "flags": "--support-out <dir>"
+            },
+            {
+              "flags": "--verify"
+            },
+            {
+              "flags": "--yes"
+            }
+          ],
+          "commands": []
+        },
+        {
+          "name": "status",
+          "hasDescription": true,
+          "arguments": [],
+          "options": [
+            {
+              "flags": "--all-tools"
+            },
+            {
+              "flags": "--apply"
+            },
+            {
+              "flags": "--cli <list>"
+            },
+            {
+              "flags": "--context-dir <dir>",
+              "defaultValue": "ai-coding"
+            },
+            {
+              "flags": "--detect"
+            },
+            {
+              "flags": "--force"
+            },
+            {
+              "flags": "--json"
+            },
+            {
+              "flags": "--no-log"
+            },
+            {
+              "flags": "--pack <name>"
+            },
+            {
+              "flags": "--posture <posture>",
+              "defaultValue": "vibe"
+            },
+            {
+              "flags": "--root <dir>"
+            },
+            {
+              "flags": "--support-out <dir>"
+            },
+            {
+              "flags": "--verify"
+            },
+            {
+              "flags": "--yes"
+            }
+          ],
+          "commands": []
+        },
+        {
+          "name": "uninstall",
+          "hasDescription": true,
+          "arguments": [],
+          "options": [
+            {
+              "flags": "--all-tools"
+            },
+            {
+              "flags": "--apply"
+            },
+            {
+              "flags": "--cli <list>"
+            },
+            {
+              "flags": "--context-dir <dir>",
+              "defaultValue": "ai-coding"
+            },
+            {
+              "flags": "--delete"
+            },
+            {
+              "flags": "--detect"
+            },
+            {
+              "flags": "--force"
+            },
+            {
+              "flags": "--json"
+            },
+            {
+              "flags": "--no-log"
+            },
+            {
+              "flags": "--pack <name>"
+            },
+            {
+              "flags": "--posture <posture>",
+              "defaultValue": "vibe"
+            },
+            {
+              "flags": "--root <dir>"
+            },
+            {
+              "flags": "--support-out <dir>"
+            },
+            {
+              "flags": "--verify"
+            },
+            {
+              "flags": "--yes"
+            }
+          ],
+          "commands": []
+        },
+        {
+          "name": "validate",
+          "hasDescription": true,
+          "arguments": [],
+          "options": [
+            {
+              "flags": "--all-tools"
+            },
+            {
+              "flags": "--apply"
+            },
+            {
+              "flags": "--cli <list>"
+            },
+            {
+              "flags": "--context-dir <dir>",
+              "defaultValue": "ai-coding"
+            },
+            {
+              "flags": "--detect"
+            },
+            {
+              "flags": "--force"
+            },
+            {
+              "flags": "--json"
+            },
+            {
+              "flags": "--no-log"
+            },
+            {
+              "flags": "--pack <name>"
+            },
+            {
+              "flags": "--posture <posture>",
+              "defaultValue": "vibe"
+            },
+            {
+              "flags": "--root <dir>"
+            },
+            {
+              "flags": "--support-out <dir>"
+            },
+            {
+              "flags": "--verify"
+            },
+            {
+              "flags": "--yes"
+            }
+          ],
+          "commands": []
+        }
+      ]
+    },
+    {
+      "name": "policy",
+      "hasDescription": true,
+      "arguments": [],
+      "options": [],
+      "commands": [
+        {
+          "name": "validate",
+          "hasDescription": true,
+          "arguments": [],
+          "options": [
+            {
+              "flags": "--all-tools"
+            },
+            {
+              "flags": "--apply"
+            },
+            {
+              "flags": "--bundle <path>"
+            },
+            {
+              "flags": "--cli <list>"
+            },
+            {
+              "flags": "--context-dir <dir>",
+              "defaultValue": "ai-coding"
+            },
+            {
+              "flags": "--detect"
+            },
+            {
+              "flags": "--force"
+            },
+            {
+              "flags": "--json"
+            },
+            {
+              "flags": "--no-log"
+            },
+            {
+              "flags": "--posture <posture>",
+              "defaultValue": "vibe"
+            },
+            {
+              "flags": "--root <dir>"
+            },
+            {
+              "flags": "--support-out <dir>"
+            },
+            {
+              "flags": "--verify"
+            },
+            {
+              "flags": "--yes"
+            }
+          ],
+          "commands": []
+        }
+      ]
+    },
+    {
+      "name": "profile",
+      "hasDescription": true,
+      "arguments": [
+        {
+          "name": "root",
+          "required": false
+        }
+      ],
+      "options": [
+        {
+          "flags": "--all-tools"
+        },
+        {
+          "flags": "--apply"
+        },
+        {
+          "flags": "--cli <list>"
+        },
+        {
+          "flags": "--context-dir <dir>",
+          "defaultValue": "ai-coding"
+        },
+        {
+          "flags": "--detect"
+        },
+        {
+          "flags": "--force"
+        },
+        {
+          "flags": "--json"
+        },
+        {
+          "flags": "--max-depth <n>",
+          "defaultValue": "8"
+        },
+        {
+          "flags": "--no-log"
+        },
+        {
+          "flags": "--posture <posture>",
+          "defaultValue": "vibe"
+        },
+        {
+          "flags": "--root <dir>"
+        },
+        {
+          "flags": "--support-out <dir>"
+        },
+        {
+          "flags": "--verify"
+        },
+        {
+          "flags": "--yes"
+        }
+      ],
+      "commands": []
+    },
+    {
+      "name": "prune",
+      "hasDescription": true,
+      "arguments": [
+        {
+          "name": "root",
+          "required": false
+        }
+      ],
+      "options": [
+        {
+          "flags": "--all-tools"
+        },
+        {
+          "flags": "--apply"
+        },
+        {
+          "flags": "--cli <list>"
+        },
+        {
+          "flags": "--context-dir <dir>",
+          "defaultValue": "ai-coding"
+        },
+        {
+          "flags": "--delete"
+        },
+        {
+          "flags": "--detect"
+        },
+        {
+          "flags": "--force"
+        },
+        {
+          "flags": "--json"
+        },
+        {
+          "flags": "--no-log"
+        },
+        {
+          "flags": "--posture <posture>",
+          "defaultValue": "vibe"
+        },
+        {
+          "flags": "--root <dir>"
+        },
+        {
+          "flags": "--support-out <dir>"
+        },
+        {
+          "flags": "--unrunnable"
+        },
+        {
+          "flags": "--verify"
+        },
+        {
+          "flags": "--yes"
+        }
+      ],
+      "commands": []
+    },
+    {
+      "name": "ready",
+      "hasDescription": true,
+      "arguments": [
+        {
+          "name": "root",
+          "required": false
+        }
+      ],
+      "options": [
+        {
+          "flags": "--all-tools"
+        },
+        {
+          "flags": "--apply"
+        },
+        {
+          "flags": "--cli <list>"
+        },
+        {
+          "flags": "--context-dir <dir>",
+          "defaultValue": "ai-coding"
+        },
+        {
+          "flags": "--detect"
+        },
+        {
+          "flags": "--force"
+        },
+        {
+          "flags": "--json"
+        },
+        {
+          "flags": "--no-log"
+        },
+        {
+          "flags": "--posture <posture>",
+          "defaultValue": "vibe"
+        },
+        {
+          "flags": "--root <dir>"
+        },
+        {
+          "flags": "--support-out <dir>"
+        },
+        {
+          "flags": "--verify"
+        },
+        {
+          "flags": "--yes"
+        }
+      ],
+      "commands": []
+    },
+    {
+      "name": "report",
+      "hasDescription": true,
+      "arguments": [
+        {
+          "name": "root",
+          "required": false
+        }
+      ],
+      "options": [
+        {
+          "flags": "--all-files"
+        },
+        {
+          "flags": "--all-tools"
+        },
+        {
+          "flags": "--apply"
+        },
+        {
+          "flags": "--budget <tokens>"
+        },
+        {
+          "flags": "--cli <list>"
+        },
+        {
+          "flags": "--context-dir <dir>",
+          "defaultValue": "ai-coding"
+        },
+        {
+          "flags": "--demo"
+        },
+        {
+          "flags": "--detect"
+        },
+        {
+          "flags": "--force"
+        },
+        {
+          "flags": "--format <fmt>",
+          "defaultValue": "terminal"
+        },
+        {
+          "flags": "--gate"
+        },
+        {
+          "flags": "--json"
+        },
+        {
+          "flags": "--no-log"
+        },
+        {
+          "flags": "--open"
+        },
+        {
+          "flags": "--org <file>"
+        },
+        {
+          "flags": "--out <path>"
+        },
+        {
+          "flags": "--posture <posture>",
+          "defaultValue": "vibe"
+        },
+        {
+          "flags": "--refresh <sec>"
+        },
+        {
+          "flags": "--root <dir>"
+        },
+        {
+          "flags": "--since <ref>"
+        },
+        {
+          "flags": "--support-out <dir>"
+        },
+        {
+          "flags": "--team"
+        },
+        {
+          "flags": "--token-budget <tokens>",
+          "defaultValue": "40000"
+        },
+        {
+          "flags": "--v4"
+        },
+        {
+          "flags": "--v9"
+        },
+        {
+          "flags": "--verify"
+        },
+        {
+          "flags": "--workspace"
+        },
+        {
+          "flags": "--yes"
+        }
+      ],
+      "commands": []
+    },
+    {
+      "name": "sandbox",
+      "hasDescription": true,
+      "arguments": [
+        {
+          "name": "root",
+          "required": false
+        }
+      ],
+      "options": [
+        {
+          "flags": "--all-tools"
+        },
+        {
+          "flags": "--apply"
+        },
+        {
+          "flags": "--cli <list>"
+        },
+        {
+          "flags": "--context-dir <dir>",
+          "defaultValue": "ai-coding"
+        },
+        {
+          "flags": "--detect"
+        },
+        {
+          "flags": "--force"
+        },
+        {
+          "flags": "--json"
+        },
+        {
+          "flags": "--no-log"
+        },
+        {
+          "flags": "--posture <posture>",
+          "defaultValue": "vibe"
+        },
+        {
+          "flags": "--root <dir>"
+        },
+        {
+          "flags": "--support-out <dir>"
+        },
+        {
+          "flags": "--verify"
+        },
+        {
+          "flags": "--worktree <name>"
+        },
+        {
+          "flags": "--yes"
+        }
+      ],
+      "commands": []
+    },
+    {
+      "name": "scaffold",
+      "hasDescription": true,
+      "arguments": [
+        {
+          "name": "root",
+          "required": false
+        }
+      ],
+      "options": [
+        {
+          "flags": "--all-tools"
+        },
+        {
+          "flags": "--apply"
+        },
+        {
+          "flags": "--canon <mode>",
+          "defaultValue": "compact"
+        },
+        {
+          "flags": "--cli <list>"
+        },
+        {
+          "flags": "--context-dir <dir>",
+          "defaultValue": "ai-coding"
+        },
+        {
+          "flags": "--detect"
+        },
+        {
+          "flags": "--force"
+        },
+        {
+          "flags": "--json"
+        },
+        {
+          "flags": "--no-log"
+        },
+        {
+          "flags": "--posture <posture>",
+          "defaultValue": "vibe"
+        },
+        {
+          "flags": "--root <dir>"
+        },
+        {
+          "flags": "--support-out <dir>"
+        },
+        {
+          "flags": "--verify"
+        },
+        {
+          "flags": "--yes"
+        }
+      ],
+      "commands": []
+    },
+    {
+      "name": "secrets",
+      "hasDescription": true,
+      "arguments": [
+        {
+          "name": "root",
+          "required": false
+        }
+      ],
+      "options": [
+        {
+          "flags": "--all-tools"
+        },
+        {
+          "flags": "--apply"
+        },
+        {
+          "flags": "--cli <list>"
+        },
+        {
+          "flags": "--context-dir <dir>",
+          "defaultValue": "ai-coding"
+        },
+        {
+          "flags": "--detect"
+        },
+        {
+          "flags": "--force"
+        },
+        {
+          "flags": "--json"
+        },
+        {
+          "flags": "--no-log"
+        },
+        {
+          "flags": "--posture <posture>",
+          "defaultValue": "vibe"
+        },
+        {
+          "flags": "--root <dir>"
+        },
+        {
+          "flags": "--sarif <file>"
+        },
+        {
+          "flags": "--since <ref>"
+        },
+        {
+          "flags": "--support-out <dir>"
+        },
+        {
+          "flags": "--verify"
+        },
+        {
+          "flags": "--yes"
+        }
+      ],
+      "commands": []
+    },
+    {
+      "name": "skill",
+      "hasDescription": true,
+      "arguments": [],
+      "options": [],
+      "commands": [
+        {
+          "name": "approve",
+          "hasDescription": true,
+          "arguments": [
+            {
+              "name": "source",
+              "required": true
+            }
+          ],
+          "options": [
+            {
+              "flags": "--all-tools"
+            },
+            {
+              "flags": "--apply"
+            },
+            {
+              "flags": "--cli <list>"
+            },
+            {
+              "flags": "--context-dir <dir>",
+              "defaultValue": "ai-coding"
+            },
+            {
+              "flags": "--detect"
+            },
+            {
+              "flags": "--force"
+            },
+            {
+              "flags": "--intended-use <text>"
+            },
+            {
+              "flags": "--json"
+            },
+            {
+              "flags": "--mode <mode>"
+            },
+            {
+              "flags": "--name <skill>"
+            },
+            {
+              "flags": "--no-log"
+            },
+            {
+              "flags": "--owner <team>"
+            },
+            {
+              "flags": "--pack <pack>"
+            },
+            {
+              "flags": "--pin <sha>"
+            },
+            {
+              "flags": "--posture <posture>",
+              "defaultValue": "vibe"
+            },
+            {
+              "flags": "--root <dir>"
+            },
+            {
+              "flags": "--support-out <dir>"
+            },
+            {
+              "flags": "--verify"
+            },
+            {
+              "flags": "--yes"
+            }
+          ],
+          "commands": []
+        },
+        {
+          "name": "card",
+          "hasDescription": true,
+          "arguments": [
+            {
+              "name": "source",
+              "required": true
+            }
+          ],
+          "options": [
+            {
+              "flags": "--all-tools"
+            },
+            {
+              "flags": "--apply"
+            },
+            {
+              "flags": "--cli <list>"
+            },
+            {
+              "flags": "--context-dir <dir>",
+              "defaultValue": "ai-coding"
+            },
+            {
+              "flags": "--detect"
+            },
+            {
+              "flags": "--force"
+            },
+            {
+              "flags": "--intended-use <text>"
+            },
+            {
+              "flags": "--json"
+            },
+            {
+              "flags": "--mode <mode>"
+            },
+            {
+              "flags": "--name <skill>"
+            },
+            {
+              "flags": "--no-log"
+            },
+            {
+              "flags": "--owner <team>"
+            },
+            {
+              "flags": "--pack <pack>"
+            },
+            {
+              "flags": "--pin <sha>"
+            },
+            {
+              "flags": "--posture <posture>",
+              "defaultValue": "vibe"
+            },
+            {
+              "flags": "--root <dir>"
+            },
+            {
+              "flags": "--support-out <dir>"
+            },
+            {
+              "flags": "--verify"
+            },
+            {
+              "flags": "--yes"
+            }
+          ],
+          "commands": []
+        },
+        {
+          "name": "inventory",
+          "hasDescription": true,
+          "arguments": [],
+          "options": [
+            {
+              "flags": "--all-tools"
+            },
+            {
+              "flags": "--apply"
+            },
+            {
+              "flags": "--cli <list>"
+            },
+            {
+              "flags": "--context-dir <dir>",
+              "defaultValue": "ai-coding"
+            },
+            {
+              "flags": "--detect"
+            },
+            {
+              "flags": "--force"
+            },
+            {
+              "flags": "--json"
+            },
+            {
+              "flags": "--no-log"
+            },
+            {
+              "flags": "--posture <posture>",
+              "defaultValue": "vibe"
+            },
+            {
+              "flags": "--root <dir>"
+            },
+            {
+              "flags": "--support-out <dir>"
+            },
+            {
+              "flags": "--verify"
+            },
+            {
+              "flags": "--yes"
+            }
+          ],
+          "commands": []
+        },
+        {
+          "name": "quarantine",
+          "hasDescription": true,
+          "arguments": [],
+          "options": [
+            {
+              "flags": "--all-tools"
+            },
+            {
+              "flags": "--apply"
+            },
+            {
+              "flags": "--cli <list>"
+            },
+            {
+              "flags": "--context-dir <dir>",
+              "defaultValue": "ai-coding"
+            },
+            {
+              "flags": "--detect"
+            },
+            {
+              "flags": "--force"
+            },
+            {
+              "flags": "--json"
+            },
+            {
+              "flags": "--name <skill>"
+            },
+            {
+              "flags": "--no-log"
+            },
+            {
+              "flags": "--posture <posture>",
+              "defaultValue": "vibe"
+            },
+            {
+              "flags": "--root <dir>"
+            },
+            {
+              "flags": "--support-out <dir>"
+            },
+            {
+              "flags": "--verify"
+            },
+            {
+              "flags": "--yes"
+            }
+          ],
+          "commands": []
+        },
+        {
+          "name": "remove",
+          "hasDescription": true,
+          "arguments": [],
+          "options": [
+            {
+              "flags": "--all-tools"
+            },
+            {
+              "flags": "--apply"
+            },
+            {
+              "flags": "--cli <list>"
+            },
+            {
+              "flags": "--context-dir <dir>",
+              "defaultValue": "ai-coding"
+            },
+            {
+              "flags": "--delete"
+            },
+            {
+              "flags": "--detect"
+            },
+            {
+              "flags": "--force"
+            },
+            {
+              "flags": "--json"
+            },
+            {
+              "flags": "--name <skill>"
+            },
+            {
+              "flags": "--no-log"
+            },
+            {
+              "flags": "--posture <posture>",
+              "defaultValue": "vibe"
+            },
+            {
+              "flags": "--root <dir>"
+            },
+            {
+              "flags": "--support-out <dir>"
+            },
+            {
+              "flags": "--verify"
+            },
+            {
+              "flags": "--yes"
+            }
+          ],
+          "commands": []
+        },
+        {
+          "name": "vet",
+          "hasDescription": true,
+          "arguments": [
+            {
+              "name": "source",
+              "required": true
+            }
+          ],
+          "options": [
+            {
+              "flags": "--all-tools"
+            },
+            {
+              "flags": "--apply"
+            },
+            {
+              "flags": "--cli <list>"
+            },
+            {
+              "flags": "--context-dir <dir>",
+              "defaultValue": "ai-coding"
+            },
+            {
+              "flags": "--detect"
+            },
+            {
+              "flags": "--force"
+            },
+            {
+              "flags": "--json"
+            },
+            {
+              "flags": "--no-log"
+            },
+            {
+              "flags": "--pin <sha>"
+            },
+            {
+              "flags": "--posture <posture>",
+              "defaultValue": "vibe"
+            },
+            {
+              "flags": "--ref <ref>"
+            },
+            {
+              "flags": "--root <dir>"
+            },
+            {
+              "flags": "--support-out <dir>"
+            },
+            {
+              "flags": "--verify"
+            },
+            {
+              "flags": "--yes"
+            }
+          ],
+          "commands": []
+        }
+      ]
+    },
+    {
+      "name": "status",
+      "hasDescription": true,
+      "arguments": [
+        {
+          "name": "root",
+          "required": false
+        }
+      ],
+      "options": [
+        {
+          "flags": "--json"
+        },
+        {
+          "flags": "--no-log"
+        },
+        {
+          "flags": "--root <dir>"
+        },
+        {
+          "flags": "--support-out <dir>"
+        }
+      ],
+      "commands": []
+    },
+    {
+      "name": "superpowers",
+      "hasDescription": true,
+      "arguments": [
+        {
+          "name": "root",
+          "required": false
+        }
+      ],
+      "options": [
+        {
+          "flags": "--all-tools"
+        },
+        {
+          "flags": "--apply"
+        },
+        {
+          "flags": "--cli <list>"
+        },
+        {
+          "flags": "--context-dir <dir>",
+          "defaultValue": "ai-coding"
+        },
+        {
+          "flags": "--detect"
+        },
+        {
+          "flags": "--force"
+        },
+        {
+          "flags": "--json"
+        },
+        {
+          "flags": "--no-log"
+        },
+        {
+          "flags": "--posture <posture>",
+          "defaultValue": "vibe"
+        },
+        {
+          "flags": "--root <dir>"
+        },
+        {
+          "flags": "--support-out <dir>"
+        },
+        {
+          "flags": "--verify"
+        },
+        {
+          "flags": "--yes"
+        }
+      ],
+      "commands": []
+    },
+    {
+      "name": "telemetry",
+      "hasDescription": true,
+      "arguments": [
+        {
+          "name": "root",
+          "required": false
+        }
+      ],
+      "options": [
+        {
+          "flags": "--all-tools"
+        },
+        {
+          "flags": "--apply"
+        },
+        {
+          "flags": "--cli <list>"
+        },
+        {
+          "flags": "--context-dir <dir>",
+          "defaultValue": "ai-coding"
+        },
+        {
+          "flags": "--detect"
+        },
+        {
+          "flags": "--endpoint <url>",
+          "defaultValue": "http://127.0.0.1:4317"
+        },
+        {
+          "flags": "--force"
+        },
+        {
+          "flags": "--json"
+        },
+        {
+          "flags": "--log-prompts"
+        },
+        {
+          "flags": "--log-tool-details"
+        },
+        {
+          "flags": "--no-log"
+        },
+        {
+          "flags": "--posture <posture>",
+          "defaultValue": "vibe"
+        },
+        {
+          "flags": "--root <dir>"
+        },
+        {
+          "flags": "--support-out <dir>"
+        },
+        {
+          "flags": "--verify"
+        },
+        {
+          "flags": "--yes"
+        }
+      ],
+      "commands": []
+    },
+    {
+      "name": "tools",
+      "hasDescription": true,
+      "arguments": [
+        {
+          "name": "root",
+          "required": false
+        }
+      ],
+      "options": [
+        {
+          "flags": "--all-tools"
+        },
+        {
+          "flags": "--apply"
+        },
+        {
+          "flags": "--cli <list>"
+        },
+        {
+          "flags": "--context-dir <dir>",
+          "defaultValue": "ai-coding"
+        },
+        {
+          "flags": "--detect"
+        },
+        {
+          "flags": "--force"
+        },
+        {
+          "flags": "--json"
+        },
+        {
+          "flags": "--no-log"
+        },
+        {
+          "flags": "--posture <posture>",
+          "defaultValue": "vibe"
+        },
+        {
+          "flags": "--root <dir>"
+        },
+        {
+          "flags": "--support-out <dir>"
+        },
+        {
+          "flags": "--verify"
+        },
+        {
+          "flags": "--yes"
+        }
+      ],
+      "commands": []
+    },
+    {
+      "name": "track",
+      "hasDescription": true,
+      "arguments": [
+        {
+          "name": "root",
+          "required": false
+        }
+      ],
+      "options": [
+        {
+          "flags": "--all-tools"
+        },
+        {
+          "flags": "--apply"
+        },
+        {
+          "flags": "--cli <list>"
+        },
+        {
+          "flags": "--context-dir <dir>",
+          "defaultValue": "ai-coding"
+        },
+        {
+          "flags": "--detect"
+        },
+        {
+          "flags": "--force"
+        },
+        {
+          "flags": "--json"
+        },
+        {
+          "flags": "--no-log"
+        },
+        {
+          "flags": "--posture <posture>",
+          "defaultValue": "vibe"
+        },
+        {
+          "flags": "--root <dir>"
+        },
+        {
+          "flags": "--support-out <dir>"
+        },
+        {
+          "flags": "--verify"
+        },
+        {
+          "flags": "--yes"
+        }
+      ],
+      "commands": []
+    },
+    {
+      "name": "trust",
+      "hasDescription": true,
+      "arguments": [],
+      "options": [],
+      "commands": [
+        {
+          "name": "allow",
+          "hasDescription": true,
+          "arguments": [
+            {
+              "name": "source",
+              "required": true
+            }
+          ],
+          "options": [
+            {
+              "flags": "--all-tools"
+            },
+            {
+              "flags": "--apply"
+            },
+            {
+              "flags": "--cli <list>"
+            },
+            {
+              "flags": "--context-dir <dir>",
+              "defaultValue": "ai-coding"
+            },
+            {
+              "flags": "--detect"
+            },
+            {
+              "flags": "--force"
+            },
+            {
+              "flags": "--json"
+            },
+            {
+              "flags": "--no-log"
+            },
+            {
+              "flags": "--pin <sha>"
+            },
+            {
+              "flags": "--posture <posture>",
+              "defaultValue": "vibe"
+            },
+            {
+              "flags": "--root <dir>"
+            },
+            {
+              "flags": "--support-out <dir>"
+            },
+            {
+              "flags": "--verify"
+            },
+            {
+              "flags": "--yes"
+            }
+          ],
+          "commands": []
+        },
+        {
+          "name": "list",
+          "hasDescription": true,
+          "arguments": [],
+          "options": [
+            {
+              "flags": "--all-tools"
+            },
+            {
+              "flags": "--apply"
+            },
+            {
+              "flags": "--cli <list>"
+            },
+            {
+              "flags": "--context-dir <dir>",
+              "defaultValue": "ai-coding"
+            },
+            {
+              "flags": "--detect"
+            },
+            {
+              "flags": "--force"
+            },
+            {
+              "flags": "--json"
+            },
+            {
+              "flags": "--no-log"
+            },
+            {
+              "flags": "--posture <posture>",
+              "defaultValue": "vibe"
+            },
+            {
+              "flags": "--root <dir>"
+            },
+            {
+              "flags": "--support-out <dir>"
+            },
+            {
+              "flags": "--verify"
+            },
+            {
+              "flags": "--yes"
+            }
+          ],
+          "commands": []
+        },
+        {
+          "name": "pin",
+          "hasDescription": true,
+          "arguments": [
+            {
+              "name": "source",
+              "required": true
+            }
+          ],
+          "options": [
+            {
+              "flags": "--all-tools"
+            },
+            {
+              "flags": "--apply"
+            },
+            {
+              "flags": "--cli <list>"
+            },
+            {
+              "flags": "--context-dir <dir>",
+              "defaultValue": "ai-coding"
+            },
+            {
+              "flags": "--detect"
+            },
+            {
+              "flags": "--force"
+            },
+            {
+              "flags": "--json"
+            },
+            {
+              "flags": "--no-log"
+            },
+            {
+              "flags": "--pin <sha>"
+            },
+            {
+              "flags": "--posture <posture>",
+              "defaultValue": "vibe"
+            },
+            {
+              "flags": "--root <dir>"
+            },
+            {
+              "flags": "--support-out <dir>"
+            },
+            {
+              "flags": "--verify"
+            },
+            {
+              "flags": "--yes"
+            }
+          ],
+          "commands": []
+        },
+        {
+          "name": "scan",
+          "hasDescription": true,
+          "arguments": [
+            {
+              "name": "target",
+              "required": true
+            }
+          ],
+          "options": [
+            {
+              "flags": "--acknowledge <fingerprints>"
+            },
+            {
+              "flags": "--acknowledge-all"
+            },
+            {
+              "flags": "--all-tools"
+            },
+            {
+              "flags": "--apply"
+            },
+            {
+              "flags": "--cli <list>"
+            },
+            {
+              "flags": "--context-dir <dir>",
+              "defaultValue": "ai-coding"
+            },
+            {
+              "flags": "--detect"
+            },
+            {
+              "flags": "--force"
+            },
+            {
+              "flags": "--json"
+            },
+            {
+              "flags": "--no-log"
+            },
+            {
+              "flags": "--pin <sha>"
+            },
+            {
+              "flags": "--posture <posture>",
+              "defaultValue": "vibe"
+            },
+            {
+              "flags": "--reason <text>"
+            },
+            {
+              "flags": "--ref <ref>"
+            },
+            {
+              "flags": "--root <dir>"
+            },
+            {
+              "flags": "--sarif <file>"
+            },
+            {
+              "flags": "--support-out <dir>"
+            },
+            {
+              "flags": "--verify"
+            },
+            {
+              "flags": "--yes"
+            }
+          ],
+          "commands": []
+        },
+        {
+          "name": "verify",
+          "hasDescription": true,
+          "arguments": [
+            {
+              "name": "id",
+              "required": false
+            }
+          ],
+          "options": [
+            {
+              "flags": "--all-tools"
+            },
+            {
+              "flags": "--apply"
+            },
+            {
+              "flags": "--cli <list>"
+            },
+            {
+              "flags": "--context-dir <dir>",
+              "defaultValue": "ai-coding"
+            },
+            {
+              "flags": "--detect"
+            },
+            {
+              "flags": "--force"
+            },
+            {
+              "flags": "--json"
+            },
+            {
+              "flags": "--no-log"
+            },
+            {
+              "flags": "--posture <posture>",
+              "defaultValue": "vibe"
+            },
+            {
+              "flags": "--root <dir>"
+            },
+            {
+              "flags": "--sarif <file>"
+            },
+            {
+              "flags": "--support-out <dir>"
+            },
+            {
+              "flags": "--verify"
+            },
+            {
+              "flags": "--yes"
+            }
+          ],
+          "commands": []
+        }
+      ]
+    },
+    {
+      "name": "usage",
+      "hasDescription": true,
+      "arguments": [
+        {
+          "name": "root",
+          "required": false
+        }
+      ],
+      "options": [
+        {
+          "flags": "--all-tools"
+        },
+        {
+          "flags": "--apply"
+        },
+        {
+          "flags": "--cli <list>"
+        },
+        {
+          "flags": "--context-dir <dir>",
+          "defaultValue": "ai-coding"
+        },
+        {
+          "flags": "--detect"
+        },
+        {
+          "flags": "--force"
+        },
+        {
+          "flags": "--json"
+        },
+        {
+          "flags": "--no-log"
+        },
+        {
+          "flags": "--posture <posture>",
+          "defaultValue": "vibe"
+        },
+        {
+          "flags": "--rollup <dirs>"
+        },
+        {
+          "flags": "--root <dir>"
+        },
+        {
+          "flags": "--support-out <dir>"
+        },
+        {
+          "flags": "--verify"
+        },
+        {
+          "flags": "--yes"
+        }
+      ],
+      "commands": []
+    },
+    {
+      "name": "vdi",
+      "hasDescription": true,
+      "arguments": [
+        {
+          "name": "root",
+          "required": false
+        }
+      ],
+      "options": [
+        {
+          "flags": "--all-tools"
+        },
+        {
+          "flags": "--apply"
+        },
+        {
+          "flags": "--cli <list>"
+        },
+        {
+          "flags": "--context-dir <dir>",
+          "defaultValue": "ai-coding"
+        },
+        {
+          "flags": "--detect"
+        },
+        {
+          "flags": "--force"
+        },
+        {
+          "flags": "--json"
+        },
+        {
+          "flags": "--no-log"
+        },
+        {
+          "flags": "--posture <posture>",
+          "defaultValue": "vibe"
+        },
+        {
+          "flags": "--root <dir>"
+        },
+        {
+          "flags": "--scratch <dir>"
+        },
+        {
+          "flags": "--support-out <dir>"
+        },
+        {
+          "flags": "--verify"
+        },
+        {
+          "flags": "--yes"
+        }
+      ],
+      "commands": []
+    },
+    {
+      "name": "verify-bundle",
+      "hasDescription": true,
+      "arguments": [
+        {
+          "name": "root",
+          "required": false
+        }
+      ],
+      "options": [
+        {
+          "flags": "--bundle <dir>",
+          "defaultValue": ".aih/fleet-bundle"
+        },
+        {
+          "flags": "--json"
+        },
+        {
+          "flags": "--no-log"
+        },
+        {
+          "flags": "--repo <owner/repo>"
+        },
+        {
+          "flags": "--root <dir>"
+        },
+        {
+          "flags": "--signer <signer>"
+        },
+        {
+          "flags": "--support-out <dir>"
+        }
+      ],
+      "commands": []
+    },
+    {
+      "name": "workspace",
+      "hasDescription": true,
+      "arguments": [
+        {
+          "name": "root",
+          "required": false
+        }
+      ],
+      "options": [
+        {
+          "flags": "--all-tools"
+        },
+        {
+          "flags": "--apply"
+        },
+        {
+          "flags": "--cli <list>"
+        },
+        {
+          "flags": "--context-dir <dir>",
+          "defaultValue": "ai-coding"
+        },
+        {
+          "flags": "--detect"
+        },
+        {
+          "flags": "--force"
+        },
+        {
+          "flags": "--git"
+        },
+        {
+          "flags": "--json"
+        },
+        {
+          "flags": "--no-log"
+        },
+        {
+          "flags": "--posture <posture>",
+          "defaultValue": "vibe"
+        },
+        {
+          "flags": "--repos <list>"
+        },
+        {
+          "flags": "--root <dir>"
+        },
+        {
+          "flags": "--support-out <dir>"
+        },
+        {
+          "flags": "--verify"
+        },
+        {
+          "flags": "--yes"
+        }
+      ],
+      "commands": [
+        {
+          "name": "add",
+          "hasDescription": true,
+          "arguments": [
+            {
+              "name": "source",
+              "required": true
+            }
+          ],
+          "options": [
+            {
+              "flags": "--acknowledge <fingerprints>"
+            },
+            {
+              "flags": "--acknowledge-all"
+            },
+            {
+              "flags": "--all-tools"
+            },
+            {
+              "flags": "--apply"
+            },
+            {
+              "flags": "--cli <list>"
+            },
+            {
+              "flags": "--context-dir <dir>",
+              "defaultValue": "ai-coding"
+            },
+            {
+              "flags": "--detect"
+            },
+            {
+              "flags": "--force"
+            },
+            {
+              "flags": "--json"
+            },
+            {
+              "flags": "--no-log"
+            },
+            {
+              "flags": "--pin <sha>"
+            },
+            {
+              "flags": "--posture <posture>",
+              "defaultValue": "vibe"
+            },
+            {
+              "flags": "--reason <text>"
+            },
+            {
+              "flags": "--ref <ref>"
+            },
+            {
+              "flags": "--root <dir>"
+            },
+            {
+              "flags": "--support-out <dir>"
+            },
+            {
+              "flags": "--verify"
+            },
+            {
+              "flags": "--yes"
+            }
+          ],
+          "commands": []
+        },
+        {
+          "name": "plan",
+          "hasDescription": true,
+          "arguments": [
+            {
+              "name": "task",
+              "required": true
+            }
+          ],
+          "options": [
+            {
+              "flags": "--all-tools"
+            },
+            {
+              "flags": "--apply"
+            },
+            {
+              "flags": "--cli <list>"
+            },
+            {
+              "flags": "--context-dir <dir>",
+              "defaultValue": "ai-coding"
+            },
+            {
+              "flags": "--detect"
+            },
+            {
+              "flags": "--force"
+            },
+            {
+              "flags": "--json"
+            },
+            {
+              "flags": "--no-log"
+            },
+            {
+              "flags": "--posture <posture>",
+              "defaultValue": "vibe"
+            },
+            {
+              "flags": "--root <dir>"
+            },
+            {
+              "flags": "--support-out <dir>"
+            },
+            {
+              "flags": "--verify"
+            },
+            {
+              "flags": "--yes"
+            }
+          ],
+          "commands": []
+        },
+        {
+          "name": "snapshot",
+          "hasDescription": true,
+          "arguments": [
+            {
+              "name": "root",
+              "required": false
+            }
+          ],
+          "options": [
+            {
+              "flags": "--all-tools"
+            },
+            {
+              "flags": "--apply"
+            },
+            {
+              "flags": "--cli <list>"
+            },
+            {
+              "flags": "--context-dir <dir>",
+              "defaultValue": "ai-coding"
+            },
+            {
+              "flags": "--detect"
+            },
+            {
+              "flags": "--force"
+            },
+            {
+              "flags": "--json"
+            },
+            {
+              "flags": "--label <label>"
+            },
+            {
+              "flags": "--lock"
+            },
+            {
+              "flags": "--no-log"
+            },
+            {
+              "flags": "--posture <posture>",
+              "defaultValue": "vibe"
+            },
+            {
+              "flags": "--root <dir>"
+            },
+            {
+              "flags": "--support-out <dir>"
+            },
+            {
+              "flags": "--verify"
+            },
+            {
+              "flags": "--yes"
+            }
+          ],
+          "commands": []
+        }
+      ]
+    }
+  ]
+}
