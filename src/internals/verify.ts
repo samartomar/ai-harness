@@ -86,7 +86,8 @@ export type CheckCode =
   | "marketplace.missing-file"
   | "marketplace.checksum-mismatch"
   | "marketplace.sums-coverage"
-  | "marketplace.unapproved-verdict";
+  | "marketplace.unapproved-verdict"
+  | "marketplace.signature";
 
 export interface Check {
   name: string;

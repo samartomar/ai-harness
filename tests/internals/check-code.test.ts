@@ -459,6 +459,7 @@ describe("Check.code — invariants", () => {
       "marketplace.checksum-mismatch": true,
       "marketplace.sums-coverage": true,
       "marketplace.unapproved-verdict": true,
+      "marketplace.signature": true,
     };
     const srcDir = join(process.cwd(), "src");
     const src = (readdirSync(srcDir, { recursive: true }) as string[])

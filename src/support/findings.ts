@@ -565,6 +565,13 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     action:
       "Only GREEN/YELLOW skills are distributable; a RED/UNKNOWN (or unrecognized) verdict in marketplace.json means the artifact was not built from the approval lock. Rebuild with `aih marketplace build --apply` from a repo whose approvals are current.",
   },
+  "marketplace.signature": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "marketplace signature missing or unverifiable",
+    action:
+      "The artifact's SHA256SUMS could not be verified against a publisher signature — sign at publish time (`aih marketplace publish --dir <dir> --signer cosign|gh --apply`) and gate consumption with `aih marketplace validate --dir <dir> --require-signature` (add `--repo <owner/repo>` for gh attestations). A missing signature, missing verifier tool, or failed verification leaves the artifact's provenance unproven — do not consume it in gated environments.",
+  },
 };
 
 /** Severity rank for sorting: most urgent first. */

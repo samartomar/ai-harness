@@ -1,6 +1,7 @@
-import { existsSync, lstatSync, realpathSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, lstatSync, readFileSync, realpathSync } from "node:fs";
 import { dirname, isAbsolute, relative, resolve } from "node:path";
-import { DirtyWorktreeError, PathContainmentError } from "../errors.js";
+import { AihError, DirtyWorktreeError, PathContainmentError } from "../errors.js";
 import { redactSecrets } from "../guardrails/redact.js";
 import { upsertManagedBlock } from "./envfile.js";
 import { FsTransaction, readIfExists } from "./fsxn.js";
@@ -379,6 +380,30 @@ export async function executePlan(
   let skipProbesAfterExecFailure = false;
   for (const a of execActions) {
     if (ctx.apply) {
+      if (a.expect !== undefined) {
+        // Apply-time content pin: the command must consume the exact bytes the
+        // plan preflighted. ONE read (no stat-then-read window), hashed the same
+        // way the pin was computed; a missing file and a swapped file both abort
+        // the apply BEFORE the command runs — nothing is spawned over content
+        // the plan never graded.
+        let live: string | undefined;
+        try {
+          live = createHash("sha256")
+            .update(readFileSync(a.expect.path, "utf8"), "utf8")
+            .digest("hex");
+        } catch {
+          live = undefined;
+        }
+        if (live !== a.expect.sha256) {
+          throw new AihError(
+            `refusing to run "${a.describe}" — ${a.expect.path} changed after the plan was ` +
+              `computed (expected ${a.expect.sha256.slice(0, 12)}…, found ${
+                live !== undefined ? `${live.slice(0, 12)}…` : "missing"
+              }); re-run the command`,
+            "AIH_TRUST",
+          );
+        }
+      }
       const res = await ctx.run(a.argv, { cwd: a.cwd, env: a.env, timeoutMs: a.timeoutMs });
       const ok = res.code === 0 || Boolean(a.allowFailure);
       execs.push({

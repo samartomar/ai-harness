@@ -93,6 +93,13 @@ export interface ExecAction {
   blockProbesOnFailure?: boolean;
   /** Continue the plan even if the command exits non-zero. */
   allowFailure?: boolean;
+  /**
+   * Apply-time content pin: refuse to run (abort the apply) unless the file's
+   * bytes still hash to `sha256` — pins an apply-time exec to the plan-time
+   * preflighted content, so nothing swapped in between plan and apply can ever
+   * be consumed by the command (the validate-then-use TOCTOU).
+   */
+  expect?: { path: string; sha256: string };
 }
 
 /**
@@ -326,6 +333,7 @@ export function exec(
     timeoutMs?: number;
     failureCheck?: ExecAction["failureCheck"];
     blockProbesOnFailure?: boolean;
+    expect?: ExecAction["expect"];
   } = {},
 ): ExecAction {
   return {
@@ -338,6 +346,7 @@ export function exec(
     failureCheck: opts.failureCheck,
     blockProbesOnFailure: opts.blockProbesOnFailure,
     allowFailure: opts.allowFailure,
+    expect: opts.expect,
   };
 }
 
