@@ -386,7 +386,7 @@ describe("skillRemoveCommand — the destructive inverse", () => {
     return expect(executePlan(planOfSync(c), c)).rejects.toMatchObject({
       code: "AIH_DIRTY_WORKTREE",
     });
-  });
+  }, 20000); // real git init + status subprocesses can edge past the 5s default on slow Windows CI
 
   it("proceeds past a dirty removal target when --force is passed", async () => {
     initGitRepoWithInstalledSkill();

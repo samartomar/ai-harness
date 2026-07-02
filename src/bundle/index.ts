@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { type Dirent, readdirSync, statSync } from "node:fs";
 import { isAbsolute, join, posix, resolve, sep } from "node:path";
-import { readIfExists } from "../internals/fsxn.js";
+import { readIfExists, readRegularFile } from "../internals/fsxn.js";
 import {
   type Action,
   type CommandSpec,
@@ -104,8 +104,9 @@ function candidatePaths(ctx: PlanContext): string[] {
 
 /**
  * Expand a candidate that names an existing DIRECTORY (the skill-cards dir)
- * into its regular files, one level deep, name-sorted — `readIfExists` only
- * reads files, so an unexpanded directory candidate would silently vanish.
+ * into its regular files, one level deep, name-sorted — the per-file read
+ * below only reads files, so an unexpanded directory candidate would silently
+ * vanish.
  * Fail-closed on hostile entry names: a separator or `..` inside a directory
  * ENTRY can only mean a hostile filesystem, so the entry is refused rather
  * than composed into a path. Symlinked entries are skipped (`isFile()` is
@@ -118,7 +119,7 @@ function expandDir(root: string, rel: string): string[] {
     if (!statSync(join(root, rel)).isDirectory()) return [rel];
     entries = readdirSync(join(root, rel), { withFileTypes: true });
   } catch {
-    return [rel]; // absent → readIfExists skips it, exactly as before
+    return [rel]; // absent → the per-file read below skips it, exactly as before
   }
   return entries
     .filter((entry) => entry.isFile())
@@ -139,8 +140,12 @@ function readBundleFiles(ctx: PlanContext): BundleFile[] {
     for (const fileRel of expandDir(ctx.root, rel)) {
       if (seen.has(fileRel)) continue; // an --include may repeat an expanded entry
       seen.add(fileRel);
-      const contents = readIfExists(join(ctx.root, fileRel));
-      if (contents === undefined) continue;
+      // fd-guarded: expanded entries were discovered by a directory scan, so a
+      // plain exists-then-read here would be a symlink-swap window (the bundle
+      // packages what it reads).
+      const buf = readRegularFile(join(ctx.root, fileRel));
+      if (buf === undefined) continue;
+      const contents = buf.toString("utf8");
       files.push({
         path: fileRel,
         contents,

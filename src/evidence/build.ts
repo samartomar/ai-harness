@@ -1,7 +1,7 @@
 import { type Dirent, readdirSync } from "node:fs";
 import { isAbsolute, join, posix } from "node:path";
 import { sha256Hex, signAction } from "../bundle/index.js";
-import { readIfExists } from "../internals/fsxn.js";
+import { readRegularFile } from "../internals/fsxn.js";
 import {
   type Action,
   type CommandSpec,
@@ -161,12 +161,17 @@ function artifactSchemaVersion(raw: string): number {
  * Read every candidate that exists, normalize ONCE, hash the normalized
  * content — the identical string the write action emits — and sort by path so
  * the manifest, sums, and index are name-sorted regardless of discovery order.
+ * Every read is fd-guarded ({@link readRegularFile}): most candidates were
+ * DISCOVERED by a directory scan, and an exists-then-read pair on a scanned
+ * path is the swap window where a symlink planted after enumeration gets its
+ * target's bytes laundered into the audit trail.
  */
 function discoverArtifacts(ctx: PlanContext): DiscoveredArtifact[] {
   const found: DiscoveredArtifact[] = [];
   for (const candidate of candidates(ctx)) {
-    const raw = readIfExists(join(ctx.root, candidate.rel));
-    if (raw === undefined) continue; // absent kind → silently not indexed
+    const buf = readRegularFile(join(ctx.root, candidate.rel));
+    if (buf === undefined) continue; // absent kind → silently not indexed
+    const raw = buf.toString("utf8");
     const contents = ensureTrailingNewline(raw);
     found.push({
       kind: candidate.kind,

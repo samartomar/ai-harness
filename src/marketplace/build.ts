@@ -1,17 +1,9 @@
 import { createHash } from "node:crypto";
-import {
-  closeSync,
-  existsSync,
-  constants as fsConstants,
-  fstatSync,
-  lstatSync,
-  openSync,
-  readdirSync,
-  readFileSync,
-} from "node:fs";
+import { existsSync, lstatSync, readdirSync, readFileSync } from "node:fs";
 import { basename, isAbsolute, join, posix, relative, resolve } from "node:path";
 import { sha256Hex } from "../bundle/index.js";
 import { AihError } from "../errors.js";
+import { readRegularFile } from "../internals/fsxn.js";
 import {
   type Action,
   type CommandSpec,
@@ -296,31 +288,6 @@ function buildSkill(
 /** sha256 of exact on-disk bytes — the buffer-level hash approvals and the trust-lock record. */
 function sha256OfBytes(buf: Buffer): string {
   return createHash("sha256").update(buf).digest("hex");
-}
-
-/** `O_NOFOLLOW` where the platform has it (absent at runtime on Windows despite the typings). */
-const O_NOFOLLOW = (fsConstants as Record<string, number | undefined>).O_NOFOLLOW ?? 0;
-
-/**
- * Open-then-read on ONE file descriptor: the regular-file check (`fstat` on the
- * open fd, never a second path lookup) and the read cannot be raced apart, and
- * a symlink swapped in after directory enumeration is refused at open where
- * `O_NOFOLLOW` exists rather than silently followed. Returns undefined for
- * anything that is not a readable regular file.
- */
-function readRegularFile(abs: string): Buffer | undefined {
-  let fd: number;
-  try {
-    fd = openSync(abs, fsConstants.O_RDONLY | O_NOFOLLOW);
-  } catch {
-    return undefined;
-  }
-  try {
-    if (!fstatSync(fd).isFile()) return undefined;
-    return readFileSync(fd);
-  } finally {
-    closeSync(fd);
-  }
 }
 
 /**
