@@ -6,6 +6,55 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-07-02
+
+The **skill lifecycle** release: a complete governance loop for external agent skills —
+assess (`vet`), gate (`approve`), observe (`inventory` + report), retract (`remove`) —
+layered on the `aih trust` primitive. (The `vet`/`card`/`approve` code physically rode
+inside the 0.3.1 package undocumented — a tag that landed after their merge; 0.4.0 is
+their official, supported introduction.)
+
+### Added
+
+- **`aih skill vet <repo-or-path>`** — the read-only gate pipeline: resolve → fetch under
+  `--apply` (pinned SHA, env-scrubbed temp quarantine) → skill-shape record (skill dirs,
+  install scripts, MCP config, package manifests, full-codebase-analysis signal) →
+  license check → the trust scan battery → a **GREEN / YELLOW / RED / UNKNOWN verdict**
+  (proven-dangerous fail → RED; not-fetched / detector-unavailable / license-missing /
+  unpinned → UNKNOWN; other findings + shape triggers → YELLOW) → a local evidence
+  artifact (`.aih/skill-reports/<id>-<sha>.json`). Never installs; exit codes stay
+  binary and the verdict rides the digest / `--json`.
+- **`aih skill card` + `aih skill approve --pin --owner`** — turn vet evidence into
+  committed governance state: a committed skill card (`<ctx>/skill-cards/<name>.json`)
+  and a committed root **`aih-skills.lock.json`** entry pinning the evidence sha256.
+  Fail-closed evidence chain: no approval without a pinned commit, matching evidence,
+  an approvable verdict (RED blocked, UNKNOWN refused, YELLOW approvable — approve IS
+  the manual review), a recorded license, and `--owner`. Org-policy
+  `trust.requiredChecks` (license / pin / no-exec / no-mcp / detector names) evaluated
+  at approve; unknown names fail closed.
+- **`aih skill inventory`** — the read-only join of on-disk skills (promoted
+  `<ctx>/skills`, repo `.claude`/`.kiro/skills`, machine `~/.claude/skills`) against the
+  committed approvals: **approved / unapproved / stale-pin** (approved commit ≠ the
+  trust-lock source's acquired pin). One row per **physical** install — duplicates of a
+  logical name never collapse. Plus a **"Skill governance" panel** in
+  `aih report --v9` consuming the same join (legacy report output stays byte-identical).
+- **`aih skill remove --name <skill> [--delete]`** — the destructive retraction step:
+  moves the skill's directory to the reversible `.aih/legacy/` archive (or a gitignored
+  `*.aih.bak` sibling with `--delete`), drops its lockfile approval and committed card.
+  Fail-closed refusals: a name matching **more than one physical install** (each listed);
+  a skill dir **containing another skill** (collateral named); machine-root skills. An
+  **orphaned approval** (dir deleted by hand, lock entry surviving) is cleaned up rather
+  than refused. Loader references (settings/MCP/bootloaders) are advisory-only — never
+  auto-edited. Reviewed by two independent lenses (external security pass +
+  code-quality pass); every finding fixed with regression tests before merge.
+
+### Fixed
+
+- **The dirty-worktree gate is directory-aware for removals**: a removal target
+  directory now refuses when any uncommitted file lives **inside** it (previously only
+  an exactly-matching dirty path gated, so a whole-dir move could clobber uncommitted
+  work inside the dir without `--force`).
+
 ## [0.3.1] - 2026-07-01
 
 ### Added
@@ -187,7 +236,8 @@ GitHub but **never published to npm**; the first published release is 0.2.0.
   (npm + github-actions), private vulnerability reporting, `@claude` workflow gated
   to trusted authors, and GitHub Actions pinned to commit SHAs.
 
-[Unreleased]: https://github.com/samartomar/ai-harness/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/samartomar/ai-harness/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/samartomar/ai-harness/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/samartomar/ai-harness/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/samartomar/ai-harness/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/samartomar/ai-harness/releases/tag/v0.2.0
