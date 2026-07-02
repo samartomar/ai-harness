@@ -46,6 +46,12 @@ import type { CommandSpec } from "../internals/plan.js";
  *    commander's reserved `--help`/`-h`/`--version`/`-V`.
  *  - `skipWorktreeGate` is never honored for plugin commands — the field is
  *    stripped from the registered copy (see {@link stripWorktreeGateField}).
+ *  - `deprecatedAliases` is never honored for plugin commands — aliases are
+ *    the CORE rename machinery (STABILITY.md), and an alias is an extra
+ *    dispatch name the collision rules above do not walk. The field is
+ *    stripped from the registered copy with a warning (see
+ *    {@link stripDeprecatedAliasesField}); built-in aliases stay reserved
+ *    against plugin NAMES via builtinCommandNames.
  *  - Warnings render hostile input: every plugin-influenced string that lands
  *    in a warning routes through {@link sanitizeLabel} first.
  *
@@ -390,6 +396,24 @@ function stripWorktreeGateField(spec: CommandSpec, warnings: string[]): CommandS
   return cleaned;
 }
 
+/**
+ * Deprecated aliases are the CORE alias-before-removal machinery
+ * (STABILITY.md): an alias is an extra invocation name commander dispatches
+ * on, and the collision rules in {@link gateModule} check spec NAMES only —
+ * honoring a plugin's aliases would hand plugins exactly the shadowing
+ * surface this registry exists to police. A plugin ships new commands; it
+ * never renames core ones. The field is stripped from a shallow CLONE — the
+ * plugin's own object is never mutated — with a warning naming the command.
+ */
+function stripDeprecatedAliasesField(spec: CommandSpec, warnings: string[]): CommandSpec {
+  if (!("deprecatedAliases" in spec)) return spec;
+  warnings.push(
+    `plugin command "${sanitizeLabel(spec.name)}": deprecatedAliases is not honored for plugin commands (deprecation aliases are core-only); dropped`,
+  );
+  const { deprecatedAliases, ...cleaned } = spec;
+  return cleaned;
+}
+
 /** Gate the loaded module's export down to registrable, non-colliding specs. */
 function gateModule(mod: unknown, builtinNames: ReadonlySet<string>): PluginLoadResult {
   const exported = isRecord(mod) ? mod.aihCommands : undefined;
@@ -429,7 +453,7 @@ function gateModule(mod: unknown, builtinNames: ReadonlySet<string>): PluginLoad
       continue;
     }
     taken.add(spec.name);
-    commands.push(stripWorktreeGateField(spec, warnings));
+    commands.push(stripWorktreeGateField(stripDeprecatedAliasesField(spec, warnings), warnings));
   }
   return { commands, warnings };
 }

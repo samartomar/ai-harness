@@ -42,5 +42,8 @@ describe("release readiness metadata", () => {
     expect(existsSync(join(root, ".github", "CODEOWNERS"))).toBe(true);
     expect(existsSync(join(root, "DCO.md"))).toBe(true);
     expect(existsSync(join(root, "TRADEMARKS.md"))).toBe(true);
+    // The contract tests' drift guidance points breaking changes at STABILITY.md —
+    // the v1 stability contract must exist for those messages to mean anything.
+    expect(existsSync(join(root, "STABILITY.md"))).toBe(true);
   });
 });

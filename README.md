@@ -376,7 +376,8 @@ committed fixture ([command-surface.json](tests/contract/command-surface.json)),
 `--json` envelope is schema-pinned, and exit-code semantics are pinned. Any drift fails
 CI and forces a reviewed decision — additive changes regenerate the fixture in the same
 PR (label it `contract:additive`); removals or renames of anything pinned are breaking
-and ship in majors only, per the stability policy in STABILITY.md.
+and ship in majors only, per the stability policy in [STABILITY.md](STABILITY.md) —
+renames ship with a deprecated alias of the old name until the removing major.
 
 ## License
 
