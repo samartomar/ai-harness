@@ -1,4 +1,12 @@
 export {
+  deriveRef,
+  packAddCommand,
+  packInitCommand,
+  packRemoveEntryCommand,
+  removeEntry,
+  upsertPack,
+} from "./authoring.js";
+export {
   AIH_PACKS_FILE,
   type Pack,
   PackSchema,
@@ -7,6 +15,7 @@ export {
   type PacksFile,
   PacksFileSchema,
   readPacksFile,
+  readPacksFileStrictForWrite,
 } from "./manifest.js";
 export {
   type PackFinding,

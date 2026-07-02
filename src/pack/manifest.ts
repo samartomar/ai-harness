@@ -1,5 +1,6 @@
 import { join } from "node:path";
 import { z } from "zod";
+import { AihError } from "../errors.js";
 import { readIfExists } from "../internals/fsxn.js";
 
 /**
@@ -74,4 +75,34 @@ export function readPacksFile(root: string): PacksFile {
   } catch {
     return { schemaVersion: 1, packs: [] };
   }
+}
+
+/**
+ * Read the manifest for a WRITE path (authoring) — fail-CLOSED, the inverse of
+ * {@link readPacksFile}'s fail-soft. A read→modify→rewrite cycle built on the
+ * fail-soft read would silently DELETE any sibling pack the schema dropped, so
+ * authoring refuses unless the raw file parses AND the WHOLE file survives
+ * strict validation — aih never silently destroys operator data it cannot
+ * faithfully round-trip. An absent file is a fresh start (zero packs).
+ */
+export function readPacksFileStrictForWrite(root: string): PacksFile {
+  const raw = readIfExists(join(root, AIH_PACKS_FILE));
+  if (raw === undefined) return { schemaVersion: 1, packs: [] };
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new AihError(
+      `${AIH_PACKS_FILE} is not valid JSON — fix it by hand first (rewriting it would destroy what is there)`,
+      "AIH_TRUST",
+    );
+  }
+  const result = PacksFileSchema.safeParse(parsed);
+  if (!result.success) {
+    throw new AihError(
+      `${AIH_PACKS_FILE} contains entries aih cannot parse — fix them by hand first (a rewrite would silently drop them)`,
+      "AIH_TRUST",
+    );
+  }
+  return result.data;
 }
