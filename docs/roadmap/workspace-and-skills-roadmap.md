@@ -1,7 +1,24 @@
 # ai-harness Implementation Roadmap: Workspace + Skills + Enterprise Packs
-> Status: design/proposed direction, not shipped features. See [ROADMAP.md](../../ROADMAP.md).
 
-Status: design / proposed
+> Status: shipped. Every step below has landed on main — the workspace steps
+> incrementally, the skill/pack/marketplace steps as the v0.4.0 → v0.6.0 releases
+> (confirmed against merged PRs #103–#118). Per-step as-built status:
+>
+> | Step | Status | Evidence |
+> |---|---|---|
+> | 1 Workspace bootloader recognition | shipped | parent marker + bootloaders (`src/workspace/`); recognized by `src/report/workspace.ts` |
+> | 2 Manifest + report rollup | shipped | `src/workspace/manifest.ts`, `src/report/workspace.ts` |
+> | 3 Workspace router | shipped | `src/workspace/templates.ts` → `<contextDir>/workspace-router.md` |
+> | 4 Contract edges | shipped (manifest `edges[]` + `workspace-contracts.md`); the `aih workspace link` command was not implemented | `src/workspace/manifest.ts`, `templates.ts` |
+> | 5 Snapshots | shipped — `aih workspace snapshot` | `src/workspace/snapshot.ts` → `.aih/workspace-snapshots/` |
+> | 6 Task plans | shipped — `aih workspace plan "<task>"` | `src/workspace/task-plan.ts` → `.aih/workspace-plans/` |
+> | 7 Skill vet | shipped (v0.4.0) | `src/skill/vet.ts`; GREEN/YELLOW/RED/UNKNOWN in `src/skill/verdict.ts` |
+> | 8 Card + approval lockfile | shipped (v0.4.0) — as committed `aih-skills.lock.json` + `<contextDir>/skill-cards/`, not `.aih/approved-skills.lock` | `src/skill/{card,approve,lockfile}.ts` |
+> | 9 Pack install | shipped (v0.5.0) — as `aih-packs.json` curation with `--pack <name>`; no built-in pack catalog | `src/pack/` |
+> | 10 Internal marketplace | shipped (v0.6.0 slices on main) — build/validate/publish with signed SHA256SUMS | `src/marketplace/` |
+>
+> The body below is the original design record; the file names it predicted match the
+> as-built tree closely, with divergences noted above.
 
 ## Goal
 

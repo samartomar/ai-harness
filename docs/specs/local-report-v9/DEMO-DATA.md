@@ -1,5 +1,8 @@
 # DEMO DATA — the v9 demo dataset
 
+> Status: shipped — `V9_DEMO` in `src/report/v9-demo.ts`; rendered by
+> `aih report --v9 --demo`.
+
 This is the dataset behind `reference-v9.html`. Shipped as `V9_DEMO` in
 `src/report/v9-demo.ts` (mirrors `src/report/demo.ts`); `--demo` renders it and it fills
 PREVIEW panels. Values are realistic for **this repo** (TypeScript/Node, on-canon). Keep them

@@ -3,7 +3,7 @@
 ## Getting help
 
 - **Questions & usage** — open a [GitHub issue](https://github.com/samartomar/ai-harness/issues/new/choose)
-  with the `question` label, or start a discussion if the repo has Discussions enabled.
+  with the `question` label, or start a [Discussion](https://github.com/samartomar/ai-harness/discussions).
 - **Bugs** — open an issue with reproduction steps, the `aih` version (`aih --version`),
   your OS, and the CLI you were targeting. `aih doctor` output helps.
 - **Security** — do not open a public issue; follow [SECURITY.md](SECURITY.md).

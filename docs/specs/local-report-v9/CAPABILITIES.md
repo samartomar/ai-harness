@@ -1,5 +1,8 @@
 # CAPABILITIES — new data the v9 panels need
 
+> Status: shipped — all four capability digests live in `src/report/v9-panels.ts`
+> (`eccInventoryDigest`, `coherenceDigest`, `outcomeDeltasDigest`, `winsDigest`).
+
 Four data capabilities, all implemented in src/report/v9-panels.ts. Each panel renders LIVE when its digest returns data and PREVIEW otherwise (honest data-gating, not unbuilt). Each is a read-only digest in the
 `localPanels` family (`src/report/local.ts`), returns **undefined/empty when no data** (so its
 panel gates honestly), and is **pure + deterministic** (Runner seam for git/fs; no wall-clock

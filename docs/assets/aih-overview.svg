@@ -30,7 +30,7 @@
 
   <!-- tag, top-right -->
   <g transform="translate(1136,74)" text-anchor="end">
-    <text x="0" y="0" font-size="14" fill="#6e7681" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">21 commands</text>
+    <text x="0" y="0" font-size="14" fill="#6e7681" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">37 commands</text>
     <text x="0" y="22" font-size="14" fill="#6e7681" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">TypeScript · Apache-2.0</text>
   </g>
 
@@ -66,11 +66,7 @@
       <text x="22" y="151" font-size="13" fill="#8b949e">propagate &amp; self-heal it</text>
       <g transform="translate(22,172)">
         <text x="0" y="14" font-size="13" fill="#adbac7" font-family="ui-monospace, Menlo, monospace">aih certs</text>
-        <text x="0" y="33" font-size="13" fill="#d29922" font-family="ui-monospace, Menlo, monospace" font-weight="700">aih heal</text>
-        <g transform="translate(74,21)">
-          <rect width="40" height="17" rx="8.5" fill="#d29922" fill-opacity="0.16" stroke="#d29922" stroke-opacity="0.5"/>
-          <text x="20" y="13" font-size="10.5" font-weight="700" fill="#e3b341" text-anchor="middle">NEW</text>
-        </g>
+        <text x="0" y="33" font-size="13" fill="#adbac7" font-family="ui-monospace, Menlo, monospace">aih heal</text>
       </g>
     </g>
 
@@ -106,18 +102,24 @@
       <text x="22" y="201" font-size="11.5" fill="#6e7681" font-family="ui-monospace, Menlo, monospace">guardrails · mcp · sandbox</text>
     </g>
 
-    <!-- 5 · Governed AI -->
+    <!-- 5 · Governed AI (v0.6: skill trust gate + marketplace + policy/evidence seams) -->
     <g transform="translate(945,224)">
-      <rect width="206" height="212" rx="14" fill="#151a22" stroke="#2b323c"/>
+      <rect width="206" height="212" rx="14" fill="#151a22" stroke="#3a4150"/>
       <rect width="206" height="4" rx="2" fill="#bc8cff"/>
       <g transform="translate(22,28)" fill="#bc8cff">
         <path d="M16 0 L20 12 L32 16 L20 20 L16 32 L12 20 L0 16 L12 12 Z"/>
       </g>
       <text x="22" y="106" font-size="19" font-weight="700" fill="#e6edf3">Governed AI</text>
-      <text x="22" y="132" font-size="13" fill="#8b949e">Tool-agnostic context,</text>
-      <text x="22" y="151" font-size="13" fill="#8b949e">guardrails &amp; observability</text>
-      <text x="22" y="184" font-size="11.5" fill="#6e7681" font-family="ui-monospace, Menlo, monospace">Claude · Codex · Cursor</text>
-      <text x="22" y="201" font-size="11.5" fill="#6e7681" font-family="ui-monospace, Menlo, monospace">Gemini · Kiro · Copilot…</text>
+      <text x="22" y="132" font-size="13" fill="#8b949e">Skill trust gate, packs,</text>
+      <text x="22" y="151" font-size="13" fill="#8b949e">marketplace &amp; evidence</text>
+      <g transform="translate(22,172)">
+        <text x="0" y="14" font-size="13" fill="#adbac7" font-family="ui-monospace, Menlo, monospace">aih skill vet</text>
+        <text x="0" y="33" font-size="13" fill="#d29922" font-family="ui-monospace, Menlo, monospace" font-weight="700">aih marketplace</text>
+        <g transform="translate(126,21)">
+          <rect width="40" height="17" rx="8.5" fill="#d29922" fill-opacity="0.16" stroke="#d29922" stroke-opacity="0.5"/>
+          <text x="20" y="13" font-size="10.5" font-weight="700" fill="#e3b341" text-anchor="middle">NEW</text>
+        </g>
+      </g>
     </g>
   </g>
 
@@ -155,6 +157,7 @@
 
   <!-- footer -->
   <line x1="64" y1="560" x2="1136" y2="560" stroke="#1d242e"/>
-  <text x="64" y="592" font-size="13" fill="#6e7681" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">$ aih init . --apply&#160;&#160;&#160;#  profile · superpowers · bootstrap-ai · scaffold · secrets · guardrails · mcp · sandbox</text>
-  <text x="1136" y="592" font-size="13" fill="#6e7681" text-anchor="end" font-family="ui-monospace, Menlo, monospace">github.com/samartomar/ai-harness</text>
+  <text x="64" y="586" font-size="13" fill="#6e7681" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">$ aih init . --apply&#160;&#160;&#160;#  profile · superpowers · bootstrap-ai · scaffold · secrets · guardrails · mcp · sandbox</text>
+  <text x="64" y="608" font-size="13" fill="#6e7681" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">$ aih skill vet · approve&#160;&#160;·&#160;&#160;pack install&#160;&#160;·&#160;&#160;marketplace build&#160;&#160;·&#160;&#160;policy validate&#160;&#160;·&#160;&#160;evidence build</text>
+  <text x="1136" y="586" font-size="13" fill="#6e7681" text-anchor="end" font-family="ui-monospace, Menlo, monospace">github.com/samartomar/ai-harness</text>
 </svg>

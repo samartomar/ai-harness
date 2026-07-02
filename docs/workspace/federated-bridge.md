@@ -1,7 +1,17 @@
 # ai-harness Workspace Federated Bridge
-> Status: design/proposed direction, not shipped features. See [ROADMAP.md](../../ROADMAP.md).
 
-Status: design / proposed
+> Status: largely shipped. `aih workspace` scaffolds the parent bridge —
+> `.aih-workspace.json`, `<contextDir>/workspace-router.md`, `workspace-contracts.md`,
+> `cross-repo-architecture.md`, `repo-discipline.md`, thin bootloaders, and a spanning
+> `.mcp.json` (`src/workspace/index.ts` + `templates.ts`). The manifest reader supports
+> object repos and `edges[]` (`src/workspace/manifest.ts`). Snapshots
+> (`aih workspace snapshot` → `.aih/workspace-snapshots/`) and task plans
+> (`aih workspace plan` → `.aih/workspace-plans/`) shipped (`src/workspace/snapshot.ts`,
+> `task-plan.ts`). The parent report rollup is implemented in `src/report/workspace.ts`
+> with the honest status vocabulary below (plus a `NOT_COLLECTED` state). Trust-gated
+> skill acquisition is `aih workspace add` (`src/workspace/acquire.ts`). Not implemented:
+> an `aih workspace link` command and the recursive child-write opt-ins
+> (`--recursive`, `--refresh-children`). The body below is the original design record.
 
 ## One-line positioning
 

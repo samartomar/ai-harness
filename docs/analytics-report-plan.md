@@ -1,6 +1,8 @@
 # `aih report` — analytics dashboard implementation plan
 
-_Status: ✅ shipped & verified — both tracks (E + P) plus D4 file output. Date: 2026-06-24._
+_Status: ✅ shipped & verified — both tracks (E + P) plus D4 file output; on main
+(`src/report/org.ts`, `org-render.ts`, `pricing.ts`; digest primitives in
+`src/internals/plan.ts` / `execute.ts`). Date: 2026-06-24._
 
 Consolidates the **org-analytics research note**
 with the readable framing of the _"aih Dashboard Architecture: Personal Dev vs. Enterprise
