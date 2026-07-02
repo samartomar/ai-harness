@@ -275,9 +275,12 @@ describe("heal — cert step", () => {
     const e = execs(p.actions);
     expect(e).toHaveLength(1);
     // `setx` (not a pwsh-only [Environment]::SetEnvironmentVariable) so the persist works
-    // on managed images without PowerShell 7 and under Constrained Language Mode.
-    expect(e[0]?.argv.slice(0, 4)).toEqual(["cmd", "/c", "setx", "NODE_EXTRA_CA_CERTS"]);
-    expect(e[0]?.argv[4]).toContain("ca.pem");
+    // on managed images without PowerShell 7 and under Constrained Language Mode. Spawned
+    // DIRECTLY (no `cmd /c` wrapper), so the CA path is a single literal argv element and
+    // cmd never re-parses `&`/`%`/`^` in it (see persistentEnvArgv).
+    expect(e[0]?.argv.slice(0, 2)).toEqual(["setx", "NODE_EXTRA_CA_CERTS"]);
+    expect(e[0]?.argv).toHaveLength(3);
+    expect(e[0]?.argv[2]).toContain("ca.pem");
     expect(findDigest(p.actions, "GUI apps inherit the CA")).toBeDefined();
   });
 
@@ -287,18 +290,18 @@ describe("heal — cert step", () => {
     // "0 failed" — a contradiction any scripted gate on heal would choke on. Now a
     // failureCheck lands the failure IN the report so exit code and report agree.
     const ctx = makeCtx({ root: freshTmp(), platform: "windows", ca: "valid", apply: true });
-    // Fail ONLY the `cmd /c setx …` persist exec (as on a locked-down box where setx is
+    // Fail ONLY the `setx …` persist exec (as on a locked-down box where setx is
     // policy-blocked); TLS + node/npm/npx still answer healthy via the base runner.
     const base = ctx.run;
     ctx.run = async (argv, opts) =>
-      argv[0] === "cmd" && argv[2] === "setx"
+      argv[0] === "setx"
         ? { code: 127, stdout: "", stderr: "'setx' is not recognized", spawnError: true }
         : base(argv, opts);
 
     const result = await executePlan(await command.plan(ctx), ctx);
 
     // The persist exec ran and failed …
-    const persist = result.execs.find((x) => x.argv[2] === "setx");
+    const persist = result.execs.find((x) => x.argv[0] === "setx");
     expect(persist?.ran).toBe(true);
     expect(persist?.ok).toBe(false);
     // … and that failure is now the report's single failing check (cert-coded), so

@@ -133,9 +133,13 @@ export class WindowsAdapter implements HostAdapter {
     // writes that same per-user scope, ships on every supported Windows, and works under
     // Constrained Language Mode — unlike a pwsh-only [Environment]::SetEnvironmentVariable,
     // which ENOENTs (exit 127) on the many managed images without PowerShell 7 (the same
-    // reason trustStoreCerts falls back). Run through `cmd /c`, like symlinkDirArgv, so it
-    // goes over the injected Runner. A LOCAL registry write only — never a remote call.
-    return ["cmd", "/c", "setx", key, value];
+    // reason trustStoreCerts falls back). setx.exe is a real executable, so the injected
+    // execFile Runner spawns it DIRECTLY with `value` as one literal argv element — never
+    // `cmd /c setx`: cmd would re-parse `&`, `%`, and `^` in the value as its own
+    // metacharacters, and those are all LEGAL path characters (e.g. a CA under an `R&D`
+    // folder), so a wrapped call would corrupt the persisted path AND execute whatever
+    // followed an `&`. A LOCAL registry write only — never a remote call.
+    return ["setx", key, value];
   }
 
   npmCliPath(): string | undefined {
