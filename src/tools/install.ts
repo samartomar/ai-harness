@@ -15,6 +15,32 @@ import type { Platform } from "../platform/base.js";
 
 export type Tier = "core" | "optional";
 
+/**
+ * winget's first run pops an interactive source/package agreement prompt and can
+ * stall a hidden child on a slow corporate-proxy download. These flags make every
+ * winget install non-interactive: auto-accept both agreements, disable the
+ * interactivity prompts, and install to `--scope user` (the scope these four tools
+ * ship user-mode installers for, which also sidesteps the non-admin elevation
+ * failure). Appended to every `winget install` argv below. Validated against an
+ * enterprise Windows field report where a first-run `aih tools`/`aih ready --apply`
+ * hung on the agreement prompt.
+ */
+const WINGET_NONINTERACTIVE_FLAGS = [
+  "--accept-source-agreements",
+  "--accept-package-agreements",
+  "--disable-interactivity",
+  "--scope",
+  "user",
+];
+
+/**
+ * Generous ceiling for a single tool install (5 min). A winget download behind a
+ * corporate proxy routinely exceeds the runner's 30s DEFAULT_TIMEOUT_MS, and a
+ * timed-out child maps to exit 1 — which reproduced the field report "every
+ * install exits 1". This bounds the wait without inheriting that default.
+ */
+const INSTALL_TIMEOUT_MS = 300_000;
+
 /** One package-manager install option: the PM that must be present, and its argv. */
 export interface PmOption {
   pm: string;
@@ -45,7 +71,17 @@ export const TOOLS: ToolSpec[] = [
     bin: "rg",
     tier: "core",
     options: [
-      { pm: "winget", argv: ["winget", "install", "-e", "--id", "BurntSushi.ripgrep.MSVC"] },
+      {
+        pm: "winget",
+        argv: [
+          "winget",
+          "install",
+          "-e",
+          "--id",
+          "BurntSushi.ripgrep.MSVC",
+          ...WINGET_NONINTERACTIVE_FLAGS,
+        ],
+      },
       { pm: "scoop", argv: ["scoop", "install", "ripgrep"] },
       { pm: "brew", argv: ["brew", "install", "ripgrep"] },
       { pm: "apt", argv: ["sudo", "apt-get", "install", "-y", "ripgrep"] },
@@ -58,7 +94,10 @@ export const TOOLS: ToolSpec[] = [
     bin: "fd",
     tier: "core",
     options: [
-      { pm: "winget", argv: ["winget", "install", "-e", "--id", "sharkdp.fd"] },
+      {
+        pm: "winget",
+        argv: ["winget", "install", "-e", "--id", "sharkdp.fd", ...WINGET_NONINTERACTIVE_FLAGS],
+      },
       { pm: "scoop", argv: ["scoop", "install", "fd"] },
       { pm: "brew", argv: ["brew", "install", "fd"] },
       { pm: "apt", argv: ["sudo", "apt-get", "install", "-y", "fd-find"] },
@@ -71,7 +110,10 @@ export const TOOLS: ToolSpec[] = [
     bin: "jq",
     tier: "core",
     options: [
-      { pm: "winget", argv: ["winget", "install", "-e", "--id", "jqlang.jq"] },
+      {
+        pm: "winget",
+        argv: ["winget", "install", "-e", "--id", "jqlang.jq", ...WINGET_NONINTERACTIVE_FLAGS],
+      },
       { pm: "scoop", argv: ["scoop", "install", "jq"] },
       { pm: "brew", argv: ["brew", "install", "jq"] },
       { pm: "apt", argv: ["sudo", "apt-get", "install", "-y", "jq"] },
@@ -112,7 +154,10 @@ export const TOOLS: ToolSpec[] = [
     bin: "gh",
     tier: "optional",
     options: [
-      { pm: "winget", argv: ["winget", "install", "-e", "--id", "GitHub.cli"] },
+      {
+        pm: "winget",
+        argv: ["winget", "install", "-e", "--id", "GitHub.cli", ...WINGET_NONINTERACTIVE_FLAGS],
+      },
       { pm: "scoop", argv: ["scoop", "install", "gh"] },
       { pm: "brew", argv: ["brew", "install", "gh"] },
       { pm: "apt", argv: ["sudo", "apt-get", "install", "-y", "gh"] },
@@ -207,6 +252,9 @@ export function installActionsFor(
       actions.push(
         exec(`install ${t.tool} (${opt.pm})`, execArgv(ctx.host.platform, opt.argv), {
           allowFailure: true,
+          // A winget/proxy download easily exceeds the runner's 30s default, whose
+          // timeout-kill maps to exit 1 ("every install exits 1"); give installs room.
+          timeoutMs: INSTALL_TIMEOUT_MS,
         }),
       );
     } else {
