@@ -247,7 +247,11 @@ export interface CommandSpec {
    * major (VERSIONING.md), staying reserved in {@link builtinCommandNames}
    * for its whole grace window. Core-only: the plugin registry strips this
    * field from plugin specs — a plugin ships new commands, it never renames
-   * (or shadows) core ones.
+   * (or shadows) core ones. TOP-LEVEL commands only: specs registered through
+   * the manual parent-group paths (trust/skill/pack/marketplace/policy/
+   * evidence subcommands) never pass through registerSpec, so the field is
+   * silently ignored there — wire alias support into that path before the
+   * first nested rename.
    */
   deprecatedAliases?: string[];
   options?: CommandOption[];
