@@ -214,25 +214,32 @@ describe("aih usage command", () => {
     expect(serialized).not.toContain("2>/dev/null");
   });
 
-  it("confines the `; exit 0` fail-open masker to Claude — no other host's command carries it", async () => {
-    // Regression guard: only Claude runs hooks under sh/Git Bash/PowerShell where `; exit 0`
-    // is portable. On a cmd.exe host (codex windows, possibly others) `; exit 0` would
-    // misbehave, so flipping the `commandHook` ternary or adding `failOpen` to another host
-    // must fail here, not ship silently.
-    const actions = (
-      await command.plan(
-        makeCtx({ cli: "codex,cursor,antigravity,gemini,copilot,windsurf,opencode,kimi,kiro" }),
-      )
-    ).actions;
-    const nonClaudeWrites = actions.filter((a) => a.kind === "write").map((a) => JSON.stringify(a));
+  it("confines the `; exit 0` fail-open masker to the Claude-derived hosts (Claude + Antigravity)", async () => {
+    // Regression guard: only the Claude-Code-derived CLIs run hooks under
+    // sh/Git Bash/PowerShell where `; exit 0` is portable. On a cmd.exe host (codex
+    // windows, possibly others) `; exit 0` would misbehave, so flipping the
+    // `commandHook` ternary or adding `failOpen` to a cmd-hosted CLI must fail here,
+    // not ship silently.
+    const noMaskerHosts = "codex,cursor,gemini,copilot,windsurf,opencode,kimi,kiro";
+    const nonClaudeWrites = (await command.plan(makeCtx({ cli: noMaskerHosts }))).actions
+      .filter((a) => a.kind === "write")
+      .map((a) => JSON.stringify(a));
     for (const serialized of nonClaudeWrites) {
       expect(serialized).not.toContain("; exit 0");
     }
-    // And Claude DOES carry it (the positive half of the invariant).
-    const claude = (await command.plan(makeCtx({ cli: "claude" }))).actions.find(
-      (a) => a.kind === "write" && a.path.replace(/\\/g, "/") === ".claude/settings.json",
+    // And BOTH Claude-derived hosts DO carry it (the positive half of the invariant):
+    // Antigravity is a Claude-Code fork on the identical hook schema + shell hosts.
+    const claudeDerived = (
+      await command.plan(makeCtx({ cli: "claude,antigravity" }))
+    ).actions.filter(
+      (a) =>
+        a.kind === "write" &&
+        [".claude/settings.json", ".antigravity/hooks.json"].includes(a.path.replace(/\\/g, "/")),
     );
-    expect(claude?.kind === "write" ? JSON.stringify(claude.json) : "").toContain("; exit 0");
+    expect(claudeDerived).toHaveLength(2);
+    for (const write of claudeDerived) {
+      expect(write.kind === "write" ? JSON.stringify(write.json) : "").toContain("; exit 0");
+    }
   });
 
   it("gives the Kiro usage hook a seconds-unit timeout (agentStop is non-blocking)", async () => {

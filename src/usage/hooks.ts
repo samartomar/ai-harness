@@ -12,14 +12,14 @@ function hookCommand(cli: Cli): string {
 }
 
 /**
- * Fail-open variant for the Claude host. Claude runs shell-form hooks via `sh -c`
- * (macOS/Linux), Git Bash, or PowerShell on Windows — never cmd.exe — so `; exit 0`,
- * valid in all three, is the portable way to guarantee a PostToolUse hook can never
- * fail a tool call: the recorder runs, then the shell exits 0 regardless of what the
- * recorder returned. A POSIX `[ -f … ]` guard or `2>/dev/null` is deliberately NOT
- * used here — both throw under PowerShell (the Windows fallback when Git Bash is
- * absent). Defence in depth atop the committed recorder (see gitignore) + the
- * recorder's own best-effort internals.
+ * Fail-open variant for the Claude-Code-derived hosts (Claude and Antigravity). Both
+ * run shell-form PostToolUse hooks via `sh -c` (macOS/Linux), Git Bash, or PowerShell
+ * on Windows — never cmd.exe — so `; exit 0`, valid in all three, is the portable way
+ * to guarantee a hook can never fail a tool call: the recorder runs, then the shell
+ * exits 0 regardless of what the recorder returned. A POSIX `[ -f … ]` guard or
+ * `2>/dev/null` is deliberately NOT used here — both throw under PowerShell (the
+ * Windows fallback when Git Bash is absent). Defence in depth atop the committed
+ * recorder (see gitignore) + the recorder's own best-effort internals.
  */
 function failOpenHookCommand(cli: Cli): string {
   return `${hookCommand(cli)}; exit 0`;
@@ -163,7 +163,7 @@ export function usageHookActions(ctx: PlanContext, clis: Cli[]): Action[] {
     actions.push(
       writeJson(
         ".antigravity/hooks.json",
-        { hooks: { PostToolUse: [hookGroup("antigravity")] } },
+        { hooks: { PostToolUse: [hookGroup("antigravity", "*", { failOpen: true })] } },
         "Antigravity PostToolUse usage hook, merged into existing hooks.json",
         { merge: true },
       ),
