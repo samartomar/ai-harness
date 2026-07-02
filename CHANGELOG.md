@@ -6,6 +6,89 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-07-02
+
+The **marketplace + seams** release: the approved skill set becomes a **reproducible,
+verifiable distribution artifact** a team can host anywhere (never a registry or server —
+`aih-skills.lock.json` stays the approval authority and `workspace add` stays the consume
+channel), plus the three additive seams that keep a future enterprise layer a bolt-on
+instead of a fork: a pluggable command registry, a policy-bundle schema, and an
+evidence-bundle schema. The signing and code-loading slices each passed two independent
+review lenses with every finding fixed before merge; CodeQL contributed a third catch of
+its own.
+
+### Added
+
+- **`aih marketplace build`** — package every `aih-skills.lock.json` entry (the
+  **approval authority**) into a hostable directory: the exact vetted skill bytes
+  (trust-lock hash cross-checked), committed cards, content-addressed vet evidence,
+  a strict `marketplace.json` manifest (schemaVersion 1), and `SHA256SUMS`.
+  **Approved-only and bytes-exact**: an uninstalled, drifted, ambiguous, or
+  card/evidence-less approval refuses the whole build. Byte-identical rebuilds — no
+  wall-clock anywhere (`--stamp` is operator-supplied). (#114)
+- **`aih marketplace validate`** — the read-only artifact gate: schema, checksums,
+  path containment (checked **before** any filesystem access), approved-verdict, sums
+  coverage, and a **declared-set rule** (a payload file the manifest never declared is a
+  coded failure, not a free rider). Coded `marketplace.*` findings throughout. (#114, #115)
+- **`aih marketplace publish`** — provenance for the artifact: sign its `SHA256SUMS`
+  with cosign (detached signature) or a GitHub attestation. `--signer` is mandatory and
+  closed (a publish without a signer is just a build); a plan-time preflight refuses to
+  sign anything that does not validate clean; an **apply-time content pin** refuses to
+  sign bytes that changed after the plan was computed. `validate --require-signature`
+  turns every unverifiable-signature skip into a coded failure, and both verifier
+  families demand identity material (cosign: `--key` or certificate identity + OIDC
+  issuer; gh: `--repo`, optional `--signer-workflow`). (#115)
+- **Pluggable command registry** — on startup the CLI probes the optional peer
+  `@aihq/enterprise` (LITERAL specifier, never configurable; `AIH_NO_PLUGINS=1` kill
+  switch) and registers its exported `aihCommands` through the identical path as
+  built-ins: shared flags, posture, dirty-worktree gate, run ledger. The probe is
+  fenced: an **install-tree resolution boundary** (a hostile repo's planted
+  `node_modules/@aihq/enterprise` is refused; any anomaly fails closed to local-only),
+  a 2-second import budget, a `--version` fast path that never touches plugins,
+  name/flag reservations (built-ins, parent groups, `help`/`version`, shared and
+  reserved flags), per-spec registration containment, `skipWorktreeGate` stripped from
+  plugin specs, and one sanitizer for every plugin-influenced warning. An unenrolled
+  machine sees zero output and zero behavior change. (#116)
+- **Policy-bundle schema + `aih policy validate`** — a versioned envelope
+  (`schemaVersion`, `bundleVersion`, `issuer`, `issuedAt`, embedded org policy,
+  optional `rings`) shared by the local `aih-org-policy.json` and a future signed org
+  bundle; read-only validation with layer-attributed errors and coded
+  `org-policy.invalid` / `org-policy.bundle-invalid` findings. (#118)
+- **Evidence-bundle schema + `aih evidence build`** — a typed kind-index over the
+  governance artifacts aih already emits (run logs, vet evidence, skill cards, the
+  skills/trust locks, packs, reports, SARIF) written to `.aih/evidence-bundle/` in the
+  fleet-bundle layout (`files/` + `manifest.json` + `SHA256SUMS` + `evidence.json`),
+  deterministic and name-sorted, with optional best-effort `--sign cosign|gh`. (#118)
+- **Fleet bundle** now carries the approval chain: `aih-skills.lock.json`,
+  `aih-packs.json`, and the committed skill cards (via new one-level directory
+  expansion with hostile-entry refusal) ride the signed channel. (#118)
+- **Release provenance on GitHub Releases**: each release now attaches a keyless cosign
+  signature over `SHA256SUMS.txt` (`.sig` + `.pem`) and the Sigstore build-provenance
+  bundle, alongside the existing SBOM + checksums. Coverage uploads to Codecov (badge
+  in the README); workflow tokens default to read-only. (#117)
+
+### Fixed
+
+- `flagKey`'s option-placeholder trim is an index scan — the previous regex backtracked
+  polynomially and became reachable by plugin-supplied option flags (CodeQL
+  `js/polynomial-redos`, caught after both human review lenses passed). (#116)
+- Scan-discovered artifact reads (evidence bundle, fleet-bundle directory expansion)
+  are fd-guarded via a shared `readRegularFile` — one descriptor for the
+  regular-file check and the read, closing a symlink-swap window between directory
+  enumeration and read (code-review HIGH). (#118)
+- README documented a nonexistent `aih bundle verify`; the command is
+  `aih verify-bundle`. (#118)
+
+### Docs
+
+- **BetterDoc pass over the whole public doc surface** (20 files): every command,
+  flag, path, and status claim verified against the source or the built CLI;
+  RELEASING.md's asset list and prerelease dist-tag corrected against the real
+  workflow; ROADMAP moved five shipped releases out of future tense; spec/plan docs
+  gained verified status lines with src pointers. Report imagery is now the
+  `aih report --demo --v9` developer console; the overview card's values refreshed
+  (37 commands, marketplace flagged as the new surface). (#119)
+
 ## [0.5.0] - 2026-07-02
 
 The **skill packs** release: named, committed **curation manifests** over the per-skill
@@ -320,7 +403,8 @@ GitHub but **never published to npm**; the first published release is 0.2.0.
   (npm + github-actions), private vulnerability reporting, `@claude` workflow gated
   to trusted authors, and GitHub Actions pinned to commit SHAs.
 
-[Unreleased]: https://github.com/samartomar/ai-harness/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/samartomar/ai-harness/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/samartomar/ai-harness/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/samartomar/ai-harness/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/samartomar/ai-harness/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/samartomar/ai-harness/compare/v0.3.1...v0.4.0

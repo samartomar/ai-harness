@@ -1,6 +1,6 @@
 # Claude Code GitHub Action — lets you delegate jobs to an AI agent by commenting
-# "@claude <task>" on an issue or PR. The agent reads .github/AGENT_TASKS.md,
-# works on a fresh checkout, and opens/updates a PR.
+# "@claude <task>" on an issue or PR. The agent works on a fresh checkout and
+# opens/updates a PR.
 #
 # SETUP (one-time):
 #   Canonical:  run `claude /install-github-app` in a terminal — it installs the
