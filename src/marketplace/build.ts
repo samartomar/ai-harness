@@ -295,17 +295,30 @@ function findEvidenceFile(
  * Fold staged artifact files into one deterministic map. Cards are keyed by
  * unique skill name and evidence is content-addressed, so a destination
  * collision with DIFFERENT bytes can only mean the composition itself is wrong
- * — fail closed rather than let the last write win silently.
+ * — fail closed rather than let the last write win silently. Collisions are
+ * also checked CASE-INSENSITIVELY: two lock names differing only by case (each
+ * valid alone, installable under different discovery roots) resolve to ONE
+ * on-disk path on the case-insensitive filesystems the artifact will be built
+ * or consumed on (Windows/macOS defaults), so the last write would silently
+ * clobber the other skill's files.
  */
 function foldArtifactFiles(built: readonly BuiltSkill[]): Map<string, string> {
   const byDest = new Map<string, string>();
+  const byDestFolded = new Map<string, string>();
   for (const skill of built) {
     for (const file of skill.files) {
+      const priorRel = byDestFolded.get(file.rel.toLowerCase());
+      if (priorRel !== undefined && priorRel !== file.rel) {
+        throw refuse(
+          `marketplace artifact path collision on case-insensitive filesystems: ${priorRel} vs ${file.rel}`,
+        );
+      }
       const existing = byDest.get(file.rel);
       if (existing !== undefined && existing !== file.contents) {
         throw refuse(`marketplace artifact path collision with differing content: ${file.rel}`);
       }
       byDest.set(file.rel, file.contents);
+      byDestFolded.set(file.rel.toLowerCase(), file.rel);
     }
   }
   return byDest;

@@ -317,6 +317,26 @@ describe("marketplace build — fail-closed refusals", () => {
     await expect(planOf(ctx())).rejects.toThrow(/2 physical installs — ambiguous/);
   });
 
+  it("refuses case-varying names whose artifact paths collide on case-insensitive filesystems", async () => {
+    // `Greeter` (repo .claude root) and `greeter` (promoted root) are separately
+    // valid, unambiguous installs — but `skills/Greeter/…` and `skills/greeter/…`
+    // fold to ONE physical path on the case-insensitive filesystems (Windows/
+    // macOS defaults) the artifact is built or consumed on, so the last write
+    // would silently clobber the other skill. Shared content-addressed evidence
+    // keeps the fixture valid on case-insensitive hosts too.
+    const evidence = evidenceBody("shared");
+    write(".aih/skill-reports/owner-repo-shared.json", evidence);
+    write(join(CONTEXT_DIR, "skills", "owner-repo", "greeter", "SKILL.md"), "# greeter\n");
+    write(join(".claude", "skills", "Greeter", "SKILL.md"), "# Greeter\n");
+    write(`${CONTEXT_DIR}/skill-cards/greeter.json`, `${JSON.stringify(validCard("greeter"))}\n`);
+    write(`${CONTEXT_DIR}/skill-cards/Greeter.json`, `${JSON.stringify(validCard("Greeter"))}\n`);
+    writeLock([
+      { name: "Greeter", evidenceSha256: sha(evidence) },
+      { name: "greeter", evidenceSha256: sha(evidence) },
+    ]);
+    await expect(planOf(ctx())).rejects.toThrow(/case-insensitive/);
+  });
+
   it("refuses when installed bytes differ from the vetted trust-lock hash", async () => {
     seedInstalled("alpha");
     writeLock([{ name: "alpha" }]);
