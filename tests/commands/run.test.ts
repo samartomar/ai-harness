@@ -208,6 +208,53 @@ describe("runCapability — posture precedence ladder (org floor > flag > marker
   });
 });
 
+describe("runCapability — root resolution", () => {
+  /** A capability that echoes ctx.root so the resolution boundary is observable. */
+  const rootEchoSpec: CommandSpec = {
+    name: "root-echo",
+    summary: "echo the resolved root",
+    plan: (ctx) => plan("root-echo", digest("root", ctx.root)),
+  };
+
+  it("resolves a relative positional root ('.') to an absolute ctx.root", async () => {
+    // Regression: `aih workspace . --apply` passed "." through to ctx.root, where
+    // basename(".") derived "..code-workspace" and tripped AIH_PATH_CONTAINMENT.
+    const prevCwd = process.cwd();
+    process.chdir(dir);
+    try {
+      let out = "";
+      await runCapability(rootEchoSpec, command(["."]), {
+        run: fakeRunner(() => undefined),
+        env: {},
+        write: (t) => {
+          out += t;
+        },
+      });
+      expect(out).toContain(process.cwd());
+    } finally {
+      process.chdir(prevCwd);
+    }
+  });
+
+  it("resolves a relative --root to an absolute ctx.root", async () => {
+    const prevCwd = process.cwd();
+    process.chdir(dir);
+    try {
+      let out = "";
+      await runCapability(rootEchoSpec, command(["--root", "."]), {
+        run: fakeRunner(() => undefined),
+        env: {},
+        write: (t) => {
+          out += t;
+        },
+      });
+      expect(out).toContain(process.cwd());
+    } finally {
+      process.chdir(prevCwd);
+    }
+  });
+});
+
 describe("runCapability — --sarif wiring", () => {
   it("writes the SARIF report to a file WITHOUT --apply (drift gate runs verify-only)", async () => {
     const { code, out } = await run(["--verify", "--sarif", "aih.sarif", "--root", dir]);

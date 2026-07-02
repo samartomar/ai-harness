@@ -1,3 +1,4 @@
+import { isAbsolute, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { loadSettings } from "../../src/config/settings.js";
 import { SettingsError } from "../../src/errors.js";
@@ -32,5 +33,10 @@ describe("loadSettings", () => {
 
   it("rejects a context dir that traverses parents", () => {
     expect(() => loadSettings({}, { contextDir: "../escape" })).toThrow(SettingsError);
+  });
+
+  it("resolves a relative root to an absolute path (a '.' can't leak into derived names)", () => {
+    expect(loadSettings({}, { root: "." }).root).toBe(resolve("."));
+    expect(isAbsolute(loadSettings({ AIH_ROOT: "." }).root)).toBe(true);
   });
 });

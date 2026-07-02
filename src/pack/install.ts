@@ -413,7 +413,7 @@ function contextFromCommand(command: Command, deps: PackInstallDeps): PlanContex
   const env = deps.env ?? process.env;
   const run = deps.run ?? defaultRunner;
   const opts = command.optsWithGlobals() as Record<string, unknown>;
-  const resolvedRoot = (opts.root as string | undefined) ?? env.AIH_ROOT ?? process.cwd();
+  const resolvedRoot = resolve((opts.root as string | undefined) ?? env.AIH_ROOT ?? process.cwd());
   const marker = readAihConfig(resolvedRoot);
   const contextDirSource = optionSource(command, "contextDir");
   const contextDirFromFlag = contextDirSource === "cli" ? (opts.contextDir as string) : undefined;

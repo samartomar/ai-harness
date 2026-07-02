@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { executePlan } from "../../src/internals/execute.js";
 import type { Action, PlanContext, ProbeAction, WriteAction } from "../../src/internals/plan.js";
@@ -348,6 +348,24 @@ describe("workspace plan command", () => {
     expect(text).toContain("ui-backend-api");
     expect(text).toContain("## Rollback");
     expect(writes.get(".gitignore")?.contents).toContain(".aih/");
+  });
+});
+
+describe("workspace — relative root (regression: AIH_PATH_CONTAINMENT on '..code-workspace')", () => {
+  it("derives the workspace name from the resolved root when invoked with '.'", async () => {
+    child("ui");
+    const prevCwd = process.cwd();
+    process.chdir(parent);
+    try {
+      // basename(".") is "." — before resolving, the plan wrote "..code-workspace",
+      // which the executor's containment guard rejected as a parent escape.
+      const ctx = { ...makeCtx({}, true), root: "." };
+      await executePlan(await command.plan(ctx), ctx);
+      expect(existsSync(join(parent, `${basename(process.cwd())}.code-workspace`))).toBe(true);
+      expect(existsSync(join(parent, "..code-workspace"))).toBe(false);
+    } finally {
+      process.chdir(prevCwd);
+    }
   });
 });
 

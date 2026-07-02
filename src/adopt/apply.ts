@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { basename, join, posix } from "node:path";
+import { basename, join, posix, resolve } from "node:path";
 import {
   bootloaderPaths,
   ruleRouterDoc,
@@ -123,7 +123,7 @@ export async function adoptApplyActions(
   // and when carving, swap the router for one that references the carved extension —
   // computed from the SAME inputs bootstrap-ai used, so they stay byte-identical
   // apart from that one "Always read first" line.
-  const repoName = basename(applyCtx.root) || "this repo";
+  const repoName = basename(resolve(applyCtx.root)) || "this repo";
   const stack = scanRepo(applyCtx.root, { maxDepth: 8, contextDir: dir });
   const bootloaders = bootloaderPaths(clis);
   for (const a of base.actions) {
