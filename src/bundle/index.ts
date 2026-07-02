@@ -125,19 +125,28 @@ function sha256Sums(files: BundleFile[]): string {
   return `${files.map((file) => `${file.sha256}  files/${file.path}`).join("\n")}\n`;
 }
 
-function signAction(out: string, signer: unknown): Action | undefined {
+/**
+ * Best-effort SHA256SUMS signing (`allowFailure: true` — the fleet-bundle idiom,
+ * distinct from the marketplace's fail-loud publish signing). Shared with
+ * `aih evidence build`, which emits the same bundle-standard layout.
+ */
+export function signAction(
+  out: string,
+  signer: unknown,
+  what = "fleet bundle",
+): Action | undefined {
   const sums = bundlePath(out, CHECKSUMS_FILE);
   const sig = bundlePath(out, SIGNATURE_FILE);
   if (signer === "cosign") {
     return exec(
-      "sign fleet bundle checksums with cosign",
+      `sign ${what} checksums with cosign`,
       ["cosign", "sign-blob", "--yes", "--output-signature", sig, sums],
       { allowFailure: true },
     );
   }
   if (signer === "gh") {
     return exec(
-      "sign fleet bundle checksums with GitHub attestations",
+      `sign ${what} checksums with GitHub attestations`,
       ["gh", "attestation", "sign", sums],
       {
         allowFailure: true,

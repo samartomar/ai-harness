@@ -2,6 +2,9 @@ import { join } from "node:path";
 import { readIfExists } from "../internals/fsxn.js";
 import type { Check } from "../internals/verify.js";
 
+/** Repo-relative trust lockfile path — the promoted-source evidence `trust verify` re-hashes. */
+export const TRUST_LOCK_FILE = ".aih/trust-lock.json";
+
 export interface TrustLock {
   schemaVersion: 1;
   sources: TrustLockSource[];
@@ -121,7 +124,7 @@ export function parseTrustLockSource(value: unknown): TrustLockSource | undefine
 }
 
 export function readTrustLock(root: string): TrustLock {
-  const raw = readIfExists(join(root, ".aih", "trust-lock.json"));
+  const raw = readIfExists(join(root, TRUST_LOCK_FILE));
   if (raw === undefined) return { schemaVersion: 1, sources: [] };
   try {
     const parsed = JSON.parse(raw) as { sources?: unknown };

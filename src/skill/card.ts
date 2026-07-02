@@ -86,9 +86,14 @@ export function buildCard(input: BuildCardInput): SkillCard {
   };
 }
 
+/** Repo-relative committed skill-cards directory (POSIX) — the one place the segment is spelled. */
+export function skillCardsDir(contextDir: string): string {
+  return posix.join(contextDir, "skill-cards");
+}
+
 /** Repo-relative committed card path for a skill name. */
 export function skillCardRelPath(contextDir: string, name: string): string {
-  const rel = posix.join(contextDir, "skill-cards", `${name}.json`);
+  const rel = posix.join(skillCardsDir(contextDir), `${name}.json`);
   // DEFENSE IN DEPTH behind the schema-boundary name validation: a traversal name
   // (`../../x`) would normalize OUT of the card directory and steer a destructive
   // consumer (skill remove / pack uninstall) at an arbitrary in-repo file.

@@ -43,7 +43,8 @@ import type { SkillShape } from "./shape.js";
 
 const APPROVED_AT_PLACEHOLDER = "(set at apply)";
 const LICENSE_MISSING_CODE = "trust.license-missing";
-const EVIDENCE_DIR = ".aih/skill-reports";
+/** Where `skill vet --apply` lands its evidence artifacts (gitignored, content-addressed at approve). */
+export const EVIDENCE_DIR = ".aih/skill-reports";
 
 const EvidenceShapeSchema = z.object({
   skillDirs: z.array(z.string()),
