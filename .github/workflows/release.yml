@@ -64,9 +64,29 @@ jobs:
           format: spdx-json
           output-file: aih-sbom.spdx.json
       - name: Attest build provenance for the tarball
+        id: attest
         uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
           subject-path: "./*.tgz"
+      # Attach VERIFIABLE signature files to the Release itself (not only the
+      # attestation store): a keyless cosign signature over SHA256SUMS.txt plus
+      # the Sigstore provenance bundle. Consumers verify with
+      #   cosign verify-blob --signature SHA256SUMS.txt.sig \
+      #     --certificate SHA256SUMS.txt.pem \
+      #     --certificate-identity-regexp 'github.com/samartomar/ai-harness' \
+      #     --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+      #     SHA256SUMS.txt
+      # (also what OpenSSF Scorecard's Signed-Releases check looks for).
+      - name: Install cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+      - name: Sign SHA256SUMS (keyless, GitHub OIDC)
+        run: |
+          set -euo pipefail
+          cosign sign-blob --yes \
+            --output-signature SHA256SUMS.txt.sig \
+            --output-certificate SHA256SUMS.txt.pem \
+            SHA256SUMS.txt
+          cp "${{ steps.attest.outputs.bundle-path }}" provenance.intoto.jsonl
       - name: Smoke-install the packed tarball
         run: |
           set -euo pipefail
@@ -90,4 +110,5 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes \
-            ./*.tgz SHA256SUMS.txt aih-sbom.spdx.json
+            ./*.tgz SHA256SUMS.txt SHA256SUMS.txt.sig SHA256SUMS.txt.pem \
+            provenance.intoto.jsonl aih-sbom.spdx.json

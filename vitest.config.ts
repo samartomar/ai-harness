@@ -8,6 +8,8 @@ export default defineConfig({
     coverage: {
       provider: "v8",
       reportsDirectory: "coverage",
+      // lcov feeds the Codecov upload in CI; text/html stay for humans.
+      reporter: ["text", "html", "lcov"],
       include: ["src/**/*.ts"],
       exclude: ["src/**/command.ts", "src/cli.ts", "**/*.d.ts"],
       // Enforced floor: set just below the current achieved levels so coverage can

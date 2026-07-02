@@ -21,6 +21,11 @@ on:
   issues:
     types: [opened, assigned]
 
+# Default the workflow token to read-only; the claude job below re-requests the
+# writes it needs at job level (OpenSSF Scorecard: Token-Permissions).
+permissions:
+  contents: read
+
 jobs:
   claude:
     # PUBLIC REPO GUARD: only trusted authors (owner/member/collaborator) can

@@ -34,6 +34,15 @@ jobs:
       - name: Test + coverage gate
         if: matrix.os == 'ubuntu-latest'
         run: npx vitest run --coverage
+      # Tokenless upload works for public repos; installing the Codecov GitHub
+      # App (or a CODECOV_TOKEN secret) upgrades reliability. Never fails CI —
+      # the coverage GATE is the vitest thresholds above, not the upload.
+      - name: Upload coverage to Codecov
+        if: matrix.os == 'ubuntu-latest'
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
+        with:
+          files: coverage/lcov.info
+          fail_ci_if_error: false
       - name: Test
         if: matrix.os != 'ubuntu-latest'
         run: npx vitest run
