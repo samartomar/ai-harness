@@ -34,6 +34,12 @@ Keep diffs scoped. Add tests for new behavior. Reference the capability and the
 boundary in your description. For AI-delegated work, comment `@claude <task>` on
 an issue (see the Claude workflow).
 
+A CLI-surface change (command/flag/positional) must regenerate
+`tests/contract/command-surface.json` in the same PR
+(`AIH_REGEN_CONTRACT=1 npx vitest run tests/contract/command-surface.test.ts`) and
+carry the `contract:additive` label; removals/renames are majors-only — see
+[STABILITY.md](STABILITY.md).
+
 ## Contributor rules
 
 By contributing you agree that:

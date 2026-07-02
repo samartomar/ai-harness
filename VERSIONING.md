@@ -29,7 +29,9 @@ A **patch** (`0.2.0 → 0.2.1`) never breaks.
 
 `1.0.0` marks a stability commitment. It ships when:
 
-- the CLI surface and generated-artifact shape are stable enough to pin against;
+- the CLI surface and generated-artifact shape are stable enough to pin against —
+  the enforced contract (surfaces, tests, what each bump may change) is
+  [STABILITY.md](STABILITY.md);
 - N-1 security backports begin (see below);
 - the deprecation policy below is in force.
 
@@ -40,8 +42,9 @@ A **patch** (`0.2.0 → 0.2.1`) never breaks.
 | **Pre-1.0 (now)** | Only the **latest minor** receives fixes. Upgrade to the latest `0.x` to get security and bug fixes. |
 | **1.0 onward** | The **latest minor** plus the **previous minor** (N-1) receive security backports. |
 
-Security reporting is in [SECURITY.md](SECURITY.md). Fixes ship as a patch on the
-supported line(s).
+From 1.0, a security fix lands on **both** the latest minor and the previous minor
+of the current major — as a patch on each line. Non-security bug fixes land on the
+latest minor only. Security reporting is in [SECURITY.md](SECURITY.md).
 
 ## Deprecation policy
 
@@ -53,6 +56,10 @@ We do not remove or repurpose a flag or behavior without warning.
 2. **Grace period** — the deprecated path keeps working for at least **one minor release**.
 3. **Remove** — removal happens in the next eligible release (a **major** at/after 1.0; a
    **minor** while pre-1.0), documented under **Removed**.
+
+For a command rename, steps 1–2 are built in: the old name ships as a deprecated
+alias of the new command — same flags, same behavior, one stderr notice — until the
+removing major (mechanics in [STABILITY.md](STABILITY.md#deprecation-alias-before-removal)).
 
 ## Node.js support
 
