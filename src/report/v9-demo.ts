@@ -269,6 +269,7 @@ export const V9_DEMO: AihDataV9 = {
     "sec-support": "live",
     "sec-period": "live",
     "sec-skills": "preview",
+    "sec-skillgov": "empty",
     // capability sub-cards stay preview until their digest lands
     "cap-ecc": "preview",
     "cap-coherence": "preview",

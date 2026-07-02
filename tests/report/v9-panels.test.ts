@@ -13,6 +13,7 @@ import {
   eccInventoryDigest,
   mcpServersDigest,
   outcomeDeltasDigest,
+  skillGovernanceDigest,
   supportDigest,
   winsDigest,
 } from "../../src/report/v9-panels.js";
@@ -390,5 +391,56 @@ describe("winsDigest", () => {
     // a fixed row carries the latest heal run's date; a na row stays blank
     expect(byScope.certs?.when).toBe("Jun 3");
     expect(byScope.path?.when).toBe("");
+  });
+});
+
+interface SkillGovData {
+  installed: number;
+  approved: number;
+  unapproved: number;
+  stalePin: number;
+  rows: Array<{ name: string; status: string; source?: string; commit?: string }>;
+}
+
+describe("skillGovernanceDigest", () => {
+  it("returns undefined with no skills on disk and no committed approvals", () => {
+    expect(skillGovernanceDigest(ctx())).toBeUndefined();
+  });
+
+  it("is live with an unapproved on-disk skill (nothing in the lock)", () => {
+    put(`${DIR}/skills/loose/foo/SKILL.md`, "# foo\n");
+    const d = skillGovernanceDigest(ctx());
+    expect(d).toBeDefined();
+    expect(d?.describe).toContain("1 installed (0 approved, 1 unapproved, 0 stale)");
+    const data = d?.data as SkillGovData;
+    expect(data).toMatchObject({ installed: 1, approved: 0, unapproved: 1, stalePin: 0 });
+    expect(data.rows[0]).toMatchObject({ name: "foo", status: "unapproved" });
+    expect(d?.text).toContain("foo — unapproved");
+  });
+
+  it("is live from the lock alone even when no skill is on disk yet", () => {
+    put(
+      "aih-skills.lock.json",
+      JSON.stringify({
+        schemaVersion: 1,
+        skills: [
+          {
+            name: "clean",
+            source: `owner/repo@${"a".repeat(40)}`,
+            commit: "a".repeat(40),
+            verdict: "GREEN",
+            scope: "repo",
+            card: `${DIR}/skill-cards/clean.json`,
+            evidenceSha256: "0".repeat(64),
+            approvedAt: "2026-01-01T00:00:00.000Z",
+          },
+        ],
+      }),
+    );
+    const d = skillGovernanceDigest(ctx());
+    expect(d).toBeDefined();
+    // On disk it's absent → installed 0, but the lock keeps the panel live to govern.
+    const data = d?.data as SkillGovData;
+    expect(data.installed).toBe(0);
   });
 });

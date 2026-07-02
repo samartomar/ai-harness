@@ -15,6 +15,7 @@ import {
   renderPeriod,
   renderQuality,
   renderReady,
+  renderSkillGovernance,
   renderSkills,
   renderSupport,
   renderWins,
@@ -34,6 +35,7 @@ import type {
   V9OutcomeDeltas,
   V9Quality,
   V9Ready,
+  V9SkillGovernance,
   V9Skills,
   V9Support,
   V9View,
@@ -707,6 +709,37 @@ function buildWins(digests: DigestAction[]): V9Wins | undefined {
   };
 }
 
+interface GovRowRaw {
+  name?: unknown;
+  status?: unknown;
+  verdict?: unknown;
+  source?: unknown;
+  commit?: unknown;
+}
+
+/** Skill governance (from the v9-only "Skill governance" digest), else undefined. */
+function buildSkillGovernance(digests: DigestAction[]): V9SkillGovernance | undefined {
+  const g = bag(digests, "Skill governance");
+  if (!g) return undefined;
+  const rows = (Array.isArray(g.rows) ? (g.rows as GovRowRaw[]) : []).map((r) => ({
+    name: String(r.name ?? ""),
+    status: (r.status === "unapproved" || r.status === "stale-pin" ? r.status : "approved") as
+      | "approved"
+      | "unapproved"
+      | "stale-pin",
+    ...(typeof r.verdict === "string" ? { verdict: r.verdict } : {}),
+    ...(typeof r.source === "string" ? { source: r.source } : {}),
+    ...(typeof r.commit === "string" ? { commit: r.commit } : {}),
+  }));
+  return {
+    installed: numOr(g.installed, 0),
+    approved: numOr(g.approved, 0),
+    unapproved: numOr(g.unapproved, 0),
+    stalePin: numOr(g.stalePin, 0),
+    rows,
+  };
+}
+
 // ── build ─────────────────────────────────────────────────────────────────────
 
 /** Set every section + capability gate, defaulting to "empty". */
@@ -726,6 +759,7 @@ function emptyGates(): Record<string, PanelState> {
     "sec-support",
     "sec-period",
     "sec-skills",
+    "sec-skillgov",
     "cap-ecc",
     "cap-coherence",
     "cap-outcome",
@@ -773,6 +807,9 @@ export function buildAihDataV9(digests: DigestAction[]): AihDataV9 {
   // §3/§4 — outcome deltas ride in the period panel; wins is its own section.
   const outcome = buildOutcome(digests);
   const wins = buildWins(digests);
+  // Skill governance — its own section, live whenever the digest exists (there is
+  // something to govern), else an honest empty stub.
+  const skillGov = buildSkillGovernance(digests);
   // §2a — period trends from the recorded history (Trends digest rows). Live only once
   // ≥2 snapshots carry the v9 metrics (recorded by `aih track` since the capability landed).
   const trendRows = (() => {
@@ -810,6 +847,7 @@ export function buildAihDataV9(digests: DigestAction[]): AihDataV9 {
   if (support) gates["sec-support"] = "live";
   gates["sec-period"] = "live"; // trends sub-stub + outcome preview until wired
   gates["sec-skills"] = skills ? "live" : "preview";
+  gates["sec-skillgov"] = skillGov ? "live" : "empty"; // live from the inventory join
   // Capability sub-cards go live once their v9-only digest lands.
   gates["cap-ecc"] = ecc ? "live" : "preview";
   gates["cap-coherence"] = coherence ? "live" : "preview";
@@ -831,6 +869,7 @@ export function buildAihDataV9(digests: DigestAction[]): AihDataV9 {
     ...(support ? { support } : {}),
     ...(period ? { period } : {}),
     ...(skills ? { skills } : {}),
+    ...(skillGov ? { skillGov } : {}),
     gates,
   };
 }
@@ -1174,6 +1213,32 @@ export function assembleViewV9(data: AihDataV9, demo: AihDataV9): V9View {
         html: renderSkills(skills, preview),
       };
     }
+  }
+
+  // 10 Skill governance — live from the inventory join, else an honest stub.
+  if (data.skillGov && isLive(g, "sec-skillgov")) {
+    const sg = data.skillGov;
+    const unattested = sg.unapproved + sg.stalePin;
+    sections["sec-skillgov"] = {
+      state: "live",
+      container: ".grid",
+      title:
+        unattested > 0
+          ? `${unattested} installed skill${unattested === 1 ? "" : "s"} unattested — vet + approve`
+          : "Every installed skill is approved",
+      insight:
+        "External skills acquired via <code>aih workspace add</code>, joined to the committed <code>aih-skills.lock.json</code>. Unapproved = on disk without an approval; stale-pin = approved at a commit the source has since moved past.",
+      count: "skill trust",
+      html: renderSkillGovernance(sg),
+    };
+  } else {
+    sections["sec-skillgov"] = emptySection(
+      "Skill governance — nothing to govern",
+      "No external skills installed and no committed approvals on this run.",
+      "skill trust",
+      "Skill governance",
+      "No external skills are installed and <code>aih-skills.lock.json</code> is absent — nothing to govern. Acquire one with <code>aih workspace add &lt;source&gt;</code>.",
+    );
   }
 
   return { radar: data.hero?.radar ?? null, sections };
