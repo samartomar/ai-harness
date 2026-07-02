@@ -1,5 +1,6 @@
 import { join, posix } from "node:path";
 import { z } from "zod";
+import { AihError } from "../errors.js";
 import { readIfExists } from "../internals/fsxn.js";
 
 /**
@@ -87,7 +88,14 @@ export function buildCard(input: BuildCardInput): SkillCard {
 
 /** Repo-relative committed card path for a skill name. */
 export function skillCardRelPath(contextDir: string, name: string): string {
-  return posix.join(contextDir, "skill-cards", `${name}.json`);
+  const rel = posix.join(contextDir, "skill-cards", `${name}.json`);
+  // DEFENSE IN DEPTH behind the schema-boundary name validation: a traversal name
+  // (`../../x`) would normalize OUT of the card directory and steer a destructive
+  // consumer (skill remove / pack uninstall) at an arbitrary in-repo file.
+  if (!rel.startsWith(`${contextDir}/skill-cards/`)) {
+    throw new AihError(`unsafe skill name for card path: ${name}`, "AIH_TRUST");
+  }
+  return rel;
 }
 
 /**

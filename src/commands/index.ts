@@ -21,6 +21,7 @@ import {
   packPlanCommand,
   packRemoveEntryCommand,
   packStatusCommand,
+  packUninstallCommand,
   packValidateCommand,
   runPackInstall,
 } from "../pack/index.js";
@@ -323,7 +324,7 @@ export function registerCommands(program: Command): void {
   // `pack` mirrors the `skill` group; every subcommand takes NO positional
   // (options only), modeled on `trust list` / `skill remove` — status/validate
   // are read-only joins, plan the read-only install preview, add/init/remove-entry
-  // are manifest mutators.
+  // are manifest mutators, uninstall composes per-member skill-remove plans.
   const pack = program
     .command("pack")
     .description("Skill-pack curation over the committed per-skill approvals");
@@ -333,6 +334,7 @@ export function registerCommands(program: Command): void {
     packPlanCommand,
     packRemoveEntryCommand,
     packStatusCommand,
+    packUninstallCommand,
     packValidateCommand,
   ]) {
     const sub = pack.command(spec.name).description(spec.summary);

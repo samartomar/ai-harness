@@ -465,4 +465,106 @@ describe("skillGovernanceDigest", () => {
     expect(html).not.toContain("approved</b><span>every external skill");
     expect(html).toContain("not fully approved");
   });
+
+  it("strips control/bidi characters from skill and pack labels (Codex low)", () => {
+    // escHtml stops executable injection; bidi overrides could still VISUALLY spoof
+    // a governance row (e.g. RTL-reversing "approved"). Both label paths strip them.
+    const html = renderSkillGovernance({
+      installed: 1,
+      approved: 1,
+      unapproved: 0,
+      stalePin: 0,
+      quarantined: 0,
+      rows: [{ name: "docs‮what", status: "approved", source: "a/b​x" }],
+      packs: [{ name: "core‪evil", skills: 1, approved: 1 }],
+    });
+    expect(html).not.toContain("‮");
+    expect(html).not.toContain("‪");
+    expect(html).not.toContain("​");
+    expect(html).toContain("docswhat");
+    expect(html).toContain("pack coreevil");
+  });
+
+  /** A schema-valid lock entry for `name`, optionally tagged with a pack. */
+  const lockEntry = (name: string, pack?: string): Record<string, unknown> => ({
+    name,
+    source: `owner/repo@${"a".repeat(40)}`,
+    commit: "a".repeat(40),
+    verdict: "GREEN",
+    ...(pack !== undefined ? { pack } : {}),
+    scope: "repo",
+    card: `${DIR}/skill-cards/${name}.json`,
+    evidenceSha256: "0".repeat(64),
+    approvedAt: "2026-01-01T00:00:00.000Z",
+  });
+
+  it("adds the by-pack rollup (data + body line) when lock entries carry pack tags", () => {
+    put(`${DIR}/skills/src/alpha/SKILL.md`, "# alpha\n");
+    put(`${DIR}/skills/src/beta/SKILL.md`, "# beta\n");
+    put(
+      "aih-skills.lock.json",
+      JSON.stringify({
+        schemaVersion: 1,
+        skills: [lockEntry("alpha", "docs"), lockEntry("beta", "docs")],
+      }),
+    );
+    // beta was acquired at a DIFFERENT commit than the approval pin → stale-pin, so
+    // the pack rollup's `approved` must count 1 of 2 (not skills-on-disk).
+    put(
+      ".aih/trust-lock.json",
+      JSON.stringify({
+        schemaVersion: 1,
+        sources: [
+          {
+            id: "owner-repo",
+            kind: "github",
+            source: "owner/repo",
+            pinnedSha: "d".repeat(40),
+            promotedAt: "2026-01-01T00:00:00.000Z",
+            promotedSkills: ["beta"],
+            analyzersRun: ["aih-native"],
+            artifactHashes: [],
+            findings: [],
+          },
+        ],
+      }),
+    );
+    const d = skillGovernanceDigest(ctx());
+    const data = d?.data as SkillGovData & {
+      packs?: Array<{ name: string; skills: number; approved: number }>;
+    };
+    expect(data.packs).toEqual([{ name: "docs", skills: 2, approved: 1 }]);
+    expect(d?.text).toContain("by pack:");
+    expect(d?.text).toContain("  docs — 1/2 approved");
+    // The rendered panel gains the per-pack row only when the model carries packs.
+    const model = {
+      installed: 2,
+      approved: 1,
+      unapproved: 0,
+      stalePin: 1,
+      quarantined: 0,
+      rows: [],
+    };
+    const withPacks = renderSkillGovernance({
+      ...model,
+      packs: [{ name: "docs", skills: 2, approved: 1 }],
+    });
+    expect(withPacks).toContain("pack docs");
+    expect(withPacks).toContain("1 of 2 approved");
+    // Pack-free models render byte-identically whether `packs` is absent or empty.
+    expect(renderSkillGovernance(model)).toBe(renderSkillGovernance({ ...model, packs: [] }));
+    expect(renderSkillGovernance(model)).not.toContain("pack docs");
+  });
+
+  it("keeps a pack-free repo's digest byte-identical (no by-pack section, no packs key)", () => {
+    put(`${DIR}/skills/src/clean/SKILL.md`, "# clean\n");
+    put("aih-skills.lock.json", JSON.stringify({ schemaVersion: 1, skills: [lockEntry("clean")] }));
+    const d = skillGovernanceDigest(ctx());
+    // Exact pre-pack strings — the rollup must not perturb a repo with no pack tags.
+    expect(d?.describe).toBe("Skill governance — 1 installed (1 approved, 0 unapproved, 0 stale)");
+    expect(d?.text).toBe(
+      "1 external skill installed · 1 approved · 0 unapproved · 0 stale-pin · 0 quarantined.\n\n  All 1 installed skill is approved and in sync.\n",
+    );
+    expect(Object.keys(d?.data as Record<string, unknown>)).not.toContain("packs");
+  });
 });
