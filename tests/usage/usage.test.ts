@@ -201,6 +201,52 @@ describe("aih usage command", () => {
     expect(docs).toContain("no hooks");
   });
 
+  it("makes the Claude PostToolUse command fail-open (`; exit 0`, no PowerShell-hostile guards)", async () => {
+    const actions = (await command.plan(makeCtx({ cli: "claude" }))).actions;
+    const settings = actions.find(
+      (a) => a.kind === "write" && a.path.replace(/\\/g, "/") === ".claude/settings.json",
+    );
+    const serialized = settings?.kind === "write" ? JSON.stringify(settings.json) : "";
+    // Recorder still invoked, then the shell always exits 0 so a tool call can't fail.
+    expect(serialized).toContain("node .aih/usage-record.mjs --from claude; exit 0");
+    // Claude runs hooks via sh/Git Bash/PowerShell — POSIX-only guards break PowerShell.
+    expect(serialized).not.toContain("[ -f");
+    expect(serialized).not.toContain("2>/dev/null");
+  });
+
+  it("confines the `; exit 0` fail-open masker to Claude — no other host's command carries it", async () => {
+    // Regression guard: only Claude runs hooks under sh/Git Bash/PowerShell where `; exit 0`
+    // is portable. On a cmd.exe host (codex windows, possibly others) `; exit 0` would
+    // misbehave, so flipping the `commandHook` ternary or adding `failOpen` to another host
+    // must fail here, not ship silently.
+    const actions = (
+      await command.plan(
+        makeCtx({ cli: "codex,cursor,antigravity,gemini,copilot,windsurf,opencode,kimi,kiro" }),
+      )
+    ).actions;
+    const nonClaudeWrites = actions.filter((a) => a.kind === "write").map((a) => JSON.stringify(a));
+    for (const serialized of nonClaudeWrites) {
+      expect(serialized).not.toContain("; exit 0");
+    }
+    // And Claude DOES carry it (the positive half of the invariant).
+    const claude = (await command.plan(makeCtx({ cli: "claude" }))).actions.find(
+      (a) => a.kind === "write" && a.path.replace(/\\/g, "/") === ".claude/settings.json",
+    );
+    expect(claude?.kind === "write" ? JSON.stringify(claude.json) : "").toContain("; exit 0");
+  });
+
+  it("gives the Kiro usage hook a seconds-unit timeout (agentStop is non-blocking)", async () => {
+    const actions = (await command.plan(makeCtx({ cli: "kiro" }))).actions;
+    const hook = actions.find(
+      (a) =>
+        a.kind === "write" &&
+        a.path.replace(/\\/g, "/") === ".kiro/hooks/aih-usage-metering.kiro.hook",
+    );
+    const json = hook?.kind === "write" ? (hook.json as { timeout?: number; when?: unknown }) : {};
+    expect(json.timeout).toBeGreaterThan(0);
+    expect(json.when).toMatchObject({ type: "agentStop" });
+  });
+
   it("merges the Claude usage hook additively and idempotently", async () => {
     mkdirSync(join(root, ".claude"), { recursive: true });
     writeFileSync(

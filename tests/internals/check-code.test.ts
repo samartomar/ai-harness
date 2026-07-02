@@ -426,6 +426,8 @@ describe("Check.code — invariants", () => {
       "secrets.plaintext-detected": true,
       "guardrails.gitleaks-missing": true,
       "usage.no-data": true,
+      "usage.recorder-missing": true,
+      "usage.metrics-tool-missing": true,
       "scale.code-review-graph-missing": true,
       "contract.path-unportable": true,
       "contract.stale": true,

@@ -46,6 +46,8 @@ export type CheckCode =
   | "guardrails.gitleaks-missing"
   // usage
   | "usage.no-data"
+  | "usage.recorder-missing"
+  | "usage.metrics-tool-missing"
   // scale safety
   | "scale.code-review-graph-missing"
   // repo contract

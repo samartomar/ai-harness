@@ -242,13 +242,19 @@ describe("bootstrap-ai — CLI-aware bootloaders", () => {
     };
     expect(gate.when.type).toBe("userTriggered");
     expect(gate.then.command).toContain("npm test");
-    // Metrics hook fires on the verified agentStop event and records a sample.
+    // Metrics hook fires on the verified agentStop event and records a sample,
+    // fail-open: `aih track` runs inside a one-shot `node -e` try/catch so a missing
+    // or hung `aih` can never fail the turn, with a seconds-unit timeout cap.
     const metrics = w.get(".kiro/hooks/aih-metrics-on-stop.kiro.hook")?.json as {
       when: { type: string };
+      timeout: number;
       then: { command: string };
     };
     expect(metrics.when.type).toBe("agentStop");
-    expect(metrics.then.command).toBe("aih track --apply");
+    expect(metrics.then.command).toContain("aih track --apply");
+    expect(metrics.then.command.startsWith("node -e ")).toBe(true); // dependency-free wrapper
+    expect(metrics.then.command).toContain("catch"); // swallows missing/failing aih
+    expect(metrics.timeout).toBeGreaterThan(0); // caps a stuck aih (Kiro timeout is seconds)
   });
 
   it("persists the .aih-config.json marker for the resolved targets (standalone)", async () => {

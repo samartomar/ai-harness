@@ -624,3 +624,44 @@ describe("doctor — reads the committed .aih-config.json marker", () => {
     expect(res?.detail).toContain("no .aih-config.json");
   });
 });
+
+describe("doctor — usage-capture hook health probes", () => {
+  let dir: string;
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "aih-doctor-hookhealth-"));
+  });
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  function rooted(): PlanContext {
+    const run = fakeRunner(() => ({ code: 1, spawnError: true }));
+    return {
+      root: dir,
+      contextDir: "ai-coding",
+      apply: false,
+      verify: true,
+      json: false,
+      run,
+      host: makeHostAdapter({ platform: "linux", run, env: {} }),
+      env: {},
+      options: {},
+    };
+  }
+
+  it("wires both hook-health probes into the doctor plan", async () => {
+    const actions = (await command.plan(rooted())).actions;
+    expect(findProbe(actions, "usage recorder present")).toBeDefined();
+    expect(findProbe(actions, "metrics hook tool on PATH")).toBeDefined();
+  });
+
+  it("both self-skip cleanly on a repo with no usage hooks", async () => {
+    const c = rooted();
+    const rec = await findProbe((await command.plan(c)).actions, "usage recorder present")?.run(c);
+    const tool = await findProbe((await command.plan(c)).actions, "metrics hook tool on PATH")?.run(
+      c,
+    );
+    expect(rec?.verdict).toBe("skip");
+    expect(tool?.verdict).toBe("skip");
+  });
+});

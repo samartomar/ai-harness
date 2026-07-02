@@ -69,13 +69,17 @@ describe("aihConfigJson", () => {
 });
 
 describe("the marker file is committable (not git-ignored by aih's own patterns)", () => {
-  /** Minimal matcher for the three glob shapes aih emits (`*.x`, `.aih/`, literal). */
+  /** Minimal matcher for the glob shapes aih emits (`*.x`, `dir/*`, `dir/`, literal, `!negation`). */
   function ignoredBy(rel: string, patterns: string[]): boolean {
-    return patterns.some((p) => {
+    const matches = (p: string): boolean => {
+      if (p.endsWith("/*")) return rel.startsWith(p.slice(0, -1)); // `.aih/*` → anything under `.aih/`
       if (p.endsWith("/")) return rel === p.slice(0, -1) || rel.startsWith(p);
       if (p.startsWith("*")) return rel.endsWith(p.slice(1));
       return rel === p;
-    });
+    };
+    // A `!`-negation re-includes a path a positive pattern would otherwise ignore.
+    if (patterns.some((p) => p.startsWith("!") && matches(p.slice(1)))) return false;
+    return patterns.some((p) => !p.startsWith("!") && matches(p));
   }
 
   it("lives at the repo root, not under the git-ignored .aih/ dir", () => {
@@ -95,5 +99,8 @@ describe("the marker file is committable (not git-ignored by aih's own patterns)
     // Sanity: the matcher DOES catch a real .aih/ artifact, so the negative above
     // is meaningful (not a matcher that never matches anything).
     expect(ignoredBy(".aih/report.html", patterns)).toBe(true);
+    // The committed recorder must stay tracked (the `!.aih/usage-record.mjs` negation),
+    // else every fresh clone hits MODULE_NOT_FOUND on hook events.
+    expect(ignoredBy(".aih/usage-record.mjs", patterns)).toBe(false);
   });
 });

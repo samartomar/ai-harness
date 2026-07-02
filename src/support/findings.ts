@@ -334,6 +334,20 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     title: "No usage data captured yet",
     action: "Commit once (or wire a per-tool hook) so usage analytics accrue.",
   },
+  "usage.recorder-missing": {
+    audience: "developer",
+    failSeverity: "degraded",
+    title: "Usage recorder missing but referenced by a committed hook",
+    action:
+      "Run `aih usage --apply` and commit `.aih/usage-record.mjs` so a fresh clone has the recorder the hooks invoke (it is kept out of the `.aih/*` ignore by design).",
+  },
+  "usage.metrics-tool-missing": {
+    audience: "developer",
+    failSeverity: "degraded",
+    title: "Metrics-on-stop hook cannot find `aih` on PATH",
+    action:
+      "Add the npm-global bin directory to PATH so the Kiro metrics hook can run `aih track` (the hook is fail-open and simply skips the snapshot until then).",
+  },
   "scale.code-review-graph-missing": {
     audience: "developer",
     failSeverity: "blocking",
