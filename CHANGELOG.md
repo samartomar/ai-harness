@@ -6,6 +6,42 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-07-02
+
+The **stability** release: the CLI / JSON / SARIF output contract is now FROZEN and
+CI-enforced. An enterprise can pin the major (`@aihq/harness@^1`), consume `--json`
+output, SARIF, and exit codes in automation, and trust that no minor or patch release
+breaks any of it — every surface change now fails a committed-fixture test until it is
+made as a reviewed contract decision. See [STABILITY.md](STABILITY.md).
+
+### Added
+
+- **Contract snapshot tests** (`tests/contract/`) — the enforcement layer: a committed
+  fixture of the FULL command surface (64 command nodes, 837 options, 40 arguments,
+  aliases included) walked from the real program, byte-stable across OS/locale; zod
+  shape tests for the `--json` envelope (required keys/types enforced, unknown-key
+  ADDITIONS stay legal — additive changes remain minors); pinned exit-code semantics
+  (0 = clean dry-run / passing verify / skips-never-fail; 1 = failing check, refusal,
+  failed exec under `--apply`). Any drift fails CI with the contract procedure in the
+  failure message. (#124)
+- **Deprecation machinery — alias-before-removal**: `CommandSpec.deprecatedAliases`
+  registers a renamed command's old names as aliases of the SAME command (flags can
+  never drift), visible in help as `name|alias`; invoking an alias emits one stderr
+  warning naming the replacement and runs the identical action (`--json` stdout stays
+  clean). Plugin specs cannot carry or squat on aliases (stripped + reserved). Ships
+  proven-but-dormant: zero deprecations exist today. (#125)
+- **STABILITY.md** — the contract document: covered surfaces (exactly what the
+  contract tests enforce), the breaking/minor/patch table, the alias-before-removal
+  policy (an alias lives ≥1 minor; only the next major removes it), and the
+  enforcement pointers. VERSIONING.md gains the **N-1 security-backport policy**
+  (fixes land on the latest and the previous minor of the current major);
+  CONTRIBUTING.md documents the fixture-regen procedure. (#125)
+
+### Changed
+
+- Nothing. That is the point: 1.0.0 is 0.6.0's surface, frozen. No command, flag,
+  output shape, exit code, or on-disk layout changed.
+
 ## [0.6.0] - 2026-07-02
 
 The **marketplace + seams** release: the approved skill set becomes a **reproducible,
@@ -403,7 +439,8 @@ GitHub but **never published to npm**; the first published release is 0.2.0.
   (npm + github-actions), private vulnerability reporting, `@claude` workflow gated
   to trusted authors, and GitHub Actions pinned to commit SHAs.
 
-[Unreleased]: https://github.com/samartomar/ai-harness/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/samartomar/ai-harness/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/samartomar/ai-harness/compare/v0.6.0...v1.0.0
 [0.6.0]: https://github.com/samartomar/ai-harness/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/samartomar/ai-harness/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/samartomar/ai-harness/compare/v0.4.0...v0.4.1
