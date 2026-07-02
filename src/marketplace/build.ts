@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { existsSync, lstatSync, readdirSync, readFileSync } from "node:fs";
 import { basename, isAbsolute, join, posix, relative, resolve } from "node:path";
 import { sha256Hex } from "../bundle/index.js";
@@ -16,7 +17,6 @@ import { ensureTrailingNewline, jsonFile, lines } from "../internals/render.js";
 import { readSkillCard, skillCardRelPath } from "../skill/card.js";
 import { type SkillInventoryRow, skillInventory } from "../skill/inventory.js";
 import { AIH_SKILLS_LOCK_FILE, readSkillsLock, type SkillLockEntry } from "../skill/lockfile.js";
-import { localFileHash } from "../trust/fetch.js";
 import { readTrustLock, type TrustLockSource } from "../trust/lock.js";
 import {
   AIH_MARKETPLACE_FILE,
@@ -208,14 +208,18 @@ function buildSkill(
   for (const fileRel of collectSkillFiles(name, row.abs)) {
     const abs = join(row.abs, fileRel);
     const repoRel = toPosix(relative(ctx.root, abs));
+    // ONE read per file: the bytes the drift check verifies are the bytes that
+    // get packaged — a hash-then-reread pair would open a swap window where
+    // unvetted bytes ship under a vetted skill's name.
+    const raw = readFileSync(abs);
     const vetted = vettedHashFor(owner, name, fileRel, repoRel);
-    if (vetted !== undefined && localFileHash(abs) !== vetted) {
+    if (vetted !== undefined && sha256OfBytes(raw) !== vetted) {
       throw refuse(
         `skill ${name}: ${fileRel} bytes differ from what was vetted (trust-lock hash mismatch) — ` +
           "re-vet and re-approve, or restore the vetted bytes",
       );
     }
-    const contents = ensureTrailingNewline(readFileSync(abs, "utf8"));
+    const contents = ensureTrailingNewline(raw.toString("utf8"));
     const dest = assertSafeArtifactPath(`skills/${name}/${fileRel}`, `skill ${name} file`);
     files.push({ rel: dest, contents });
     const size = Buffer.byteLength(contents, "utf8");
@@ -274,7 +278,17 @@ function buildSkill(
   };
 }
 
-/** The `.aih/skill-reports/` file whose raw bytes hash to `sha256` (name-sorted scan). */
+/** sha256 of exact on-disk bytes — the buffer-level hash approvals and the trust-lock record. */
+function sha256OfBytes(buf: Buffer): string {
+  return createHash("sha256").update(buf).digest("hex");
+}
+
+/**
+ * The `.aih/skill-reports/` file whose raw bytes hash to `sha256` (name-sorted
+ * scan). Each candidate is read ONCE and hashed in memory, and the returned
+ * contents are exactly the bytes that matched — a hash-then-reread pair would
+ * open a swap window where unverified bytes get packaged as approved evidence.
+ */
 function findEvidenceFile(
   root: string,
   sha256: string,
@@ -284,8 +298,14 @@ function findEvidenceFile(
   for (const entry of [...readdirSync(dir)].sort((a, b) => a.localeCompare(b))) {
     const abs = join(dir, entry);
     if (!lstatSync(abs).isFile()) continue;
-    if (localFileHash(abs) === sha256) {
-      return { filename: entry, contents: readFileSync(abs, "utf8") };
+    let raw: Buffer;
+    try {
+      raw = readFileSync(abs);
+    } catch {
+      continue;
+    }
+    if (sha256OfBytes(raw) === sha256) {
+      return { filename: entry, contents: raw.toString("utf8") };
     }
   }
   return undefined;
