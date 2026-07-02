@@ -45,11 +45,13 @@ describe("CLI program", () => {
     ]);
   });
 
-  it("registers pack authoring, status, and validate as nested commands", () => {
+  it("registers pack authoring, install, plan, status, and validate as nested commands", () => {
     const pack = buildProgram().commands.find((c) => c.name() === "pack");
     expect(pack?.commands.map((c) => c.name()).sort()).toEqual([
       "add",
       "init",
+      "install",
+      "plan",
       "remove-entry",
       "status",
       "validate",

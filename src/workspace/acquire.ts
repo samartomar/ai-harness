@@ -184,13 +184,74 @@ function isTextPromotionFile(path: string): boolean {
   return ext === "" || [".md", ".txt", ".json", ".yaml", ".yml", ".toml"].includes(ext);
 }
 
-function buildPromotion(ctx: PlanContext, source: TrustSource): PromotionPlan {
+/**
+ * `selectSkills` (pack installs) narrows the promotion to the skill dirs whose
+ * {@link promotedSkillRel} name is in the set — writes, `promotedSkills`, and
+ * `artifactHashes` are all filtered. A selected name the source does not ship is
+ * a fail-closed refusal: silently promoting fewer skills than the pack curates
+ * would leave a half-installed pack that reports success. Default (no set) is
+ * byte-identical to the original promote-everything behavior.
+ */
+function buildPromotion(
+  ctx: PlanContext,
+  source: TrustSource,
+  selectSkills?: ReadonlySet<string>,
+): PromotionPlan {
   const sourceRoot = assertTrustTreeSafe(source.kind === "local" ? source.root : source.treePath, {
     skipDirs: SKIP_DIRS,
   });
-  const skills = collectSkillDirs(sourceRoot);
-  if (skills.length === 0) {
+  const discovered = collectSkillDirs(sourceRoot);
+  if (discovered.length === 0) {
     throw new AihError(`no SKILL.md files found in trust source: ${source.display}`, "AIH_TRUST");
+  }
+  if (selectSkills !== undefined) {
+    const available = new Set(discovered.map((skillDir) => promotedSkillRel(sourceRoot, skillDir)));
+    const missing = [...selectSkills].filter((name) => !available.has(name)).sort();
+    if (missing.length > 0) {
+      throw new AihError(
+        `pack ref ${missing.join(", ")} not found in source ${source.display}`,
+        "AIH_TRUST",
+      );
+    }
+  }
+  const skills =
+    selectSkills === undefined
+      ? discovered
+      : discovered.filter((skillDir) => selectSkills.has(promotedSkillRel(sourceRoot, skillDir)));
+  if (skills.length === 0) {
+    throw new AihError(
+      `no skills selected for promotion from trust source: ${source.display}`,
+      "AIH_TRUST",
+    );
+  }
+  // NESTED-CHILD guard under a subset: a selected skill's directory can CONTAIN
+  // another discovered skill (parent/ and parent/child/ are both valid roots).
+  // `collectFiles` descends the whole subtree, so an UNSELECTED nested skill's
+  // content would ride along under the parent — promoted without appearing in
+  // `promotedSkills`, invisible to the approval gate. Fail closed: every nested
+  // skill root under a selected skill must itself be selected (and thus approved).
+  if (selectSkills !== undefined) {
+    const smuggled: string[] = [];
+    for (const skillDir of skills) {
+      const parentPrefix = `${skillDir.replace(/\\/g, "/")}/`;
+      for (const other of discovered) {
+        const otherPosix = other.replace(/\\/g, "/");
+        const otherName = promotedSkillRel(sourceRoot, other);
+        if (otherPosix.startsWith(parentPrefix) && !selectSkills.has(otherName)) {
+          smuggled.push(
+            `${promotedSkillRel(sourceRoot, skillDir)} contains nested skill ${otherName}`,
+          );
+        }
+      }
+    }
+    if (smuggled.length > 0) {
+      throw new AihError(
+        `refusing subset promotion — unselected nested skill(s) would ride along unapproved:\n` +
+          `${smuggled.map((line) => `  - ${line}`).join("\n")}\n` +
+          "select (and approve) the nested skill(s) too, or restructure the source",
+        "AIH_TRUST",
+      );
+    }
   }
 
   const files: PromotionFile[] = skills.flatMap((skillDir) => {
@@ -259,11 +320,53 @@ function sameArtifactHashes(
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
+/**
+ * Union-merge guard for repeat promotions of the SAME source content: when the
+ * existing lock entry shares the entry's kind + origin AND (for github) the same
+ * pinned SHA — i.e. two subset promotions of one identical tree, the pack-install
+ * case — replacing it would clobber the earlier promotion's receipts. Merge
+ * instead: `promotedSkills` = sorted union, `artifactHashes` = union by path
+ * (the NEW promotion wins on a shared path), findings / analyzersRun /
+ * promotedAt from the LATEST promotion. A different pinned SHA is a different
+ * tree ⇒ replace (the pre-existing behavior); an undefined SHA on either side
+ * never merges (fail-closed).
+ */
+function mergedLockEntry(
+  existing: TrustLockSource | undefined,
+  entry: TrustLockSource,
+): TrustLockSource {
+  const sameOrigin =
+    existing !== undefined &&
+    existing.kind === entry.kind &&
+    existing.source === entry.source &&
+    (entry.kind !== "github" ||
+      (existing.pinnedSha !== undefined && existing.pinnedSha === entry.pinnedSha));
+  if (existing === undefined || !sameOrigin) return entry;
+  const newPaths = new Set(entry.artifactHashes.map((item) => item.path));
+  const carried = existing.artifactHashes.filter((item) => !newPaths.has(item.path));
+  return {
+    ...entry,
+    promotedSkills: [...new Set([...existing.promotedSkills, ...entry.promotedSkills])].sort(
+      (a, b) => a.localeCompare(b),
+    ),
+    artifactHashes: [...carried, ...entry.artifactHashes],
+  };
+}
+
+/**
+ * `subset` = this promotion installed a SELECTED slice of the source (a pack
+ * install). Only then do receipts UNION-MERGE with the prior entry — two packs
+ * sharing a source must not clobber each other's promotedSkills. A DEFAULT
+ * (whole-source) promotion keeps the original replace semantics: it re-promoted
+ * everything the source currently ships, so carrying old receipts forward would
+ * let a mutable local source's REMOVED skills linger as stale trust-lock evidence.
+ */
 function lockWithSource(
   ctx: PlanContext,
   source: TrustSource,
   gate: ClearedWorkspaceAddTrustGate,
   promotion: PromotionPlan,
+  subset: boolean,
 ): TrustLock {
   const meta = metadataFor(source);
   const current = existingLock(ctx.root);
@@ -286,9 +389,13 @@ function lockWithSource(
       fingerprint: check.fingerprint,
     })),
   };
+  const existing = current.sources.find((item) => item.id === source.id);
   return {
     schemaVersion: 1,
-    sources: [...current.sources.filter((item) => item.id !== source.id), entry],
+    sources: [
+      ...current.sources.filter((item) => item.id !== source.id),
+      subset ? mergedLockEntry(existing, entry) : entry,
+    ],
   };
 }
 
@@ -437,6 +544,7 @@ export async function captureClearedWorkspaceAddTrustGate(
   ctx: PlanContext,
   report: VerificationReport | undefined,
   resolvedSource?: TrustSource,
+  selectSkills?: ReadonlySet<string>,
 ): Promise<ClearedWorkspaceAddTrustGate> {
   if (!report) throw new AihError("workspace add phase 2 requires a phase 1 report", "AIH_TRUST");
   if (!report.ok) {
@@ -448,7 +556,7 @@ export async function captureClearedWorkspaceAddTrustGate(
   if (currentScan.checks.some((check) => check.verdict === "fail")) {
     throw new AihError("workspace add source changed after phase 1 scan", "AIH_TRUST");
   }
-  const promotion = buildPromotion(ctx, source);
+  const promotion = buildPromotion(ctx, source, selectSkills);
   return {
     source: sourceBinding(source),
     artifactHashes: promotion.artifactHashes,
@@ -462,6 +570,7 @@ export async function workspaceAddPhase2Plan(
   ctx: PlanContext,
   gate: ClearedWorkspaceAddTrustGate | undefined,
   resolvedSource?: TrustSource,
+  selectSkills?: ReadonlySet<string>,
 ): Promise<Plan> {
   if (!gate) throw new AihError("workspace add phase 2 requires a cleared trust gate", "AIH_TRUST");
 
@@ -479,7 +588,7 @@ export async function workspaceAddPhase2Plan(
   if (currentScan.checks.some((check) => check.verdict === "fail")) {
     return plan("workspace add: promote", ...probesForChecks(currentScan.checks));
   }
-  const promotion = buildPromotion(ctx, source);
+  const promotion = buildPromotion(ctx, source, selectSkills);
   const approvalChecks = unapprovedSkillChecks(ctx, source, promotion.promotedSkills);
   if (approvalChecks.some((check) => check.verdict === "fail")) {
     return plan("workspace add: promote", ...probesForChecks(approvalChecks));
@@ -492,7 +601,7 @@ export async function workspaceAddPhase2Plan(
       ),
     );
   }
-  const lock = lockWithSource(ctx, source, gate, promotion);
+  const lock = lockWithSource(ctx, source, gate, promotion, selectSkills !== undefined);
   const actions: Action[] = [
     ...probesForChecks(approvalChecks),
     ...promotion.writes,

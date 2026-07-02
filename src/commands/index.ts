@@ -17,9 +17,12 @@ import { command as mcp } from "../mcp/index.js";
 import {
   packAddCommand,
   packInitCommand,
+  packInstallCommand,
+  packPlanCommand,
   packRemoveEntryCommand,
   packStatusCommand,
   packValidateCommand,
+  runPackInstall,
 } from "../pack/index.js";
 import { command as profile } from "../profile/index.js";
 import { command as prune } from "../prune/index.js";
@@ -319,13 +322,15 @@ export function registerCommands(program: Command): void {
 
   // `pack` mirrors the `skill` group; every subcommand takes NO positional
   // (options only), modeled on `trust list` / `skill remove` — status/validate
-  // are read-only joins, add/init/remove-entry are manifest mutators.
+  // are read-only joins, plan the read-only install preview, add/init/remove-entry
+  // are manifest mutators.
   const pack = program
     .command("pack")
     .description("Skill-pack curation over the committed per-skill approvals");
   for (const spec of [
     packAddCommand,
     packInitCommand,
+    packPlanCommand,
     packRemoveEntryCommand,
     packStatusCommand,
     packValidateCommand,
@@ -340,4 +345,13 @@ export function registerCommands(program: Command): void {
       process.exitCode = await runCapability(spec, command, { positionalRoot: false });
     });
   }
+  // `install` composes several plans per invocation (one two-phase pipeline per
+  // pack source), so it gets a dedicated runner like `workspace add` instead of
+  // the single-plan runCapability path.
+  const packInstall = pack.command(packInstallCommand.name).description(packInstallCommand.summary);
+  addSharedFlags(packInstall);
+  for (const o of packInstallCommand.options ?? []) packInstall.option(o.flags, o.description);
+  packInstall.action(async (_options: Record<string, unknown>, command: Command) => {
+    process.exitCode = await runPackInstall(command);
+  });
 }
