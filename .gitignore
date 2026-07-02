@@ -1,4 +1,31 @@
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+
+# aih runtime artifacts
+*.aih.bak
+.aih-scratch/
+.aih-workflow/
+
+# logs / os
+*.log
+.DS_Store
+Thumbs.db
+
+# local env (the harness scans for these; never commit them)
+.env
+.env.*
+!.env.example
+
+# aih-managed (backup, temp, and generated reports)
 *.aih.bak
 *.aih.tmp
-.aih/*
-!.aih/usage-record.mjs
+.aih/
+
+# internal (non-public) docs — clone samartomar/ai-harness-internal here for
+# cross-agent access without exposing competitive/roadmap/handoff docs publicly
+.internal/
+
+# Claude Code session artifacts (agent worktrees, local settings)
+.claude/
