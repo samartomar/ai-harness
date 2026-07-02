@@ -372,6 +372,31 @@ describe("loadExternalCommands — collisions (built-ins always win)", () => {
     }
   });
 
+  it("a plugin name colliding with a built-in's deprecated alias is refused (old names stay reserved)", async () => {
+    // Zero built-ins carry an alias today, so exercise the reservation through
+    // builtinCommandNames' spec-list seam: a renamed built-in keeps its old name
+    // in the reserved set for the whole grace window, and the registry's name
+    // check refuses a plugin squatting on it exactly like a live name.
+    const reserved = builtinCommandNames([
+      {
+        name: "renamed-demo",
+        summary: "renamed built-in",
+        deprecatedAliases: ["old-demo"],
+        plan: () => plan("renamed-demo"),
+      },
+    ]);
+    expect(reserved.has("renamed-demo")).toBe(true);
+    expect(reserved.has("old-demo")).toBe(true);
+
+    const res = await loadExternalCommands(reserved, {
+      importer: moduleOf({ aihCommands: [validSpec("old-demo")] }),
+    });
+    expect(res.commands).toEqual([]);
+    expect(res.warnings).toHaveLength(1);
+    expect(res.warnings[0]).toContain("refusing to shadow");
+    expect(res.warnings[0]).toContain("old-demo");
+  });
+
   it("duplicate plugin names — the first registration wins", async () => {
     const first = { ...validSpec("zap"), summary: "first zap" };
     const second = { ...validSpec("zap"), summary: "second zap" };
@@ -396,6 +421,20 @@ describe("loadExternalCommands — ungated field strip", () => {
     expect(original.skipWorktreeGate).toBe(true);
     expect(res.warnings).toEqual([
       'plugin command "zap": skipWorktreeGate is not honored for plugin commands (dirty-worktree preflight applies)',
+    ]);
+  });
+
+  it("strips deprecatedAliases from the registered copy, warns, and never mutates the plugin's object", async () => {
+    const original = { ...validSpec("zap"), deprecatedAliases: ["old-zap"] };
+    const res = await loadExternalCommands(builtins, {
+      importer: moduleOf({ aihCommands: [original] }),
+    });
+    expect(res.commands).toHaveLength(1);
+    expect(res.commands[0]).not.toHaveProperty("deprecatedAliases");
+    // Shallow clone: the plugin's own object is untouched.
+    expect(original.deprecatedAliases).toEqual(["old-zap"]);
+    expect(res.warnings).toEqual([
+      'plugin command "zap": deprecatedAliases is not honored for plugin commands (deprecation aliases are core-only); dropped',
     ]);
   });
 

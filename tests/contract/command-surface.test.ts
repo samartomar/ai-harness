@@ -3,7 +3,8 @@
  *
  * `tests/contract/command-surface.json` is the COMMITTED snapshot of the entire
  * commander surface built by `buildProgram()` (sync — core commands only, no
- * plugins): every command and nested subcommand with its name,
+ * plugins): every command and nested subcommand with its name, deprecated
+ * aliases when present (old names still dispatched — aliases ARE contract),
  * description-presence, positional arguments (name + required), and options
  * (flags + string/boolean defaults). An enterprise pinning `@aihq/harness@^1`
  * relies on this surface not changing under a minor/patch — so ANY drift fails
@@ -30,6 +31,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Command } from "commander";
 import { describe, expect, it } from "vitest";
+import { type CommandSpec, plan } from "../../src/internals/plan.js";
 import { buildProgram } from "../../src/program.js";
 
 const FIXTURE_PATH = join(dirname(fileURLToPath(import.meta.url)), "command-surface.json");
@@ -47,6 +49,12 @@ interface SurfaceOption {
 
 interface SurfaceCommand {
   name: string;
+  /**
+   * Deprecated old names this command still answers to (CommandSpec
+   * .deprecatedAliases — see STABILITY.md). Key present only when non-empty,
+   * so today's alias-free surface stays byte-identical.
+   */
+  aliases?: string[];
   /** Presence only, never the text — reworded help must not be a contract change. */
   hasDescription: boolean;
   arguments: SurfaceArgument[];
@@ -65,10 +73,18 @@ function shapeOption(flags: string, defaultValue: unknown): SurfaceOption {
     : { flags };
 }
 
+/** `aliases` key only when non-empty (sorted) — absent-vs-empty must not churn the fixture. */
+function shapeAliases(aliases: readonly string[] | undefined): { aliases?: string[] } {
+  return aliases !== undefined && aliases.length > 0
+    ? { aliases: [...aliases].sort(byCodeUnit) }
+    : {};
+}
+
 /** Walk one commander Command into its canonical (sorted, fixed-key-order) surface node. */
 function surfaceOf(cmd: Command): SurfaceCommand {
   return {
     name: cmd.name(),
+    ...shapeAliases(cmd.aliases()),
     hasDescription: cmd.description().length > 0,
     // Positional order is part of the CLI contract — do NOT sort arguments.
     arguments: cmd.registeredArguments.map((a) => ({ name: a.name(), required: a.required })),
@@ -83,6 +99,7 @@ function surfaceOf(cmd: Command): SurfaceCommand {
 function canonicalize(node: SurfaceCommand): SurfaceCommand {
   return {
     name: node.name,
+    ...shapeAliases(node.aliases),
     hasDescription: node.hasDescription,
     arguments: node.arguments.map((a) => ({ name: a.name, required: a.required })),
     options: node.options
@@ -142,5 +159,23 @@ describe("v1 contract — CLI command surface", () => {
     expect(text).not.toMatch(/[A-Za-z]:\\/); // Windows drive-letter paths
     expect(text).not.toMatch(/\/(?:home|Users)\//); // POSIX home dirs
     expect(text).not.toContain("\\\\"); // UNC / escaped backslashes
+  });
+
+  it("walk captures deprecated aliases (aliases ARE contract) — and today's surface has none", () => {
+    // Zero built-ins carry a deprecated alias yet: the committed fixture must stay alias-free.
+    const carriesAlias = (node: SurfaceCommand): boolean =>
+      (node.aliases?.length ?? 0) > 0 || node.commands.some((c) => carriesAlias(c));
+    expect(carriesAlias(liveSurface())).toBe(false);
+
+    // The moment a spec declares deprecatedAliases, the walked surface pins them —
+    // so removing an alias before its major is a fixture diff, not a silent break.
+    const renamed: CommandSpec = {
+      name: "renamed-demo",
+      summary: "surface-walk alias capture demo",
+      deprecatedAliases: ["old-demo"],
+      plan: () => plan("renamed-demo"),
+    };
+    const node = surfaceOf(buildProgram([renamed])).commands.find((c) => c.name === "renamed-demo");
+    expect(node?.aliases).toEqual(["old-demo"]);
   });
 });

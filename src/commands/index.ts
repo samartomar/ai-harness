@@ -115,15 +115,23 @@ const PARENT_GROUPS = ["workspace", "trust", "skill", "pack", "marketplace", "po
 const RESERVED_COMMAND_NAMES = ["help", "version"];
 
 /**
- * Every top-level name the core CLI claims: ALL_COMMANDS plus the parent group
- * names (`workspace` is both a CommandSpec and a group — the Set folds it)
- * plus commander's own reserved `help`/`version`. The plugin registry refuses
- * any external spec colliding with one of these, so a plugin can never shadow
- * `doctor`, capture the `marketplace` group, or impersonate `help`.
+ * Every top-level name the core CLI claims: ALL_COMMANDS' names AND their
+ * deprecated aliases (an old name stays reserved for its whole grace window —
+ * see CommandSpec.deprecatedAliases), plus the parent group names
+ * (`workspace` is both a CommandSpec and a group — the Set folds it) plus
+ * commander's own reserved `help`/`version`. The plugin registry refuses any
+ * external spec colliding with one of these, so a plugin can never shadow
+ * `doctor`, capture the `marketplace` group, impersonate `help`, or squat on
+ * a deprecated old name mid-migration. `specs` is a test seam (defaults to
+ * ALL_COMMANDS) so the alias reservation is provable while zero built-ins
+ * carry one.
  */
-export function builtinCommandNames(): ReadonlySet<string> {
+export function builtinCommandNames(
+  specs: readonly CommandSpec[] = ALL_COMMANDS,
+): ReadonlySet<string> {
   return new Set([
-    ...ALL_COMMANDS.map((spec) => spec.name),
+    ...specs.map((spec) => spec.name),
+    ...specs.flatMap((spec) => spec.deprecatedAliases ?? []),
     ...PARENT_GROUPS,
     ...RESERVED_COMMAND_NAMES,
   ]);
@@ -162,6 +170,38 @@ export function addSharedFlags(cmd: Command): Command {
 }
 
 /**
+ * The deprecated alias this invocation was actually typed with, if any.
+ * Commander offers no "which alias matched" API, but the parent keeps
+ * `args[0]` as the literal subcommand token right up to dispatch
+ * (`this.args = operands.concat(unknown)` precedes `_dispatchSubcommand`), so
+ * comparing that token against the spec's alias list identifies an alias
+ * invocation. Only meaningful on the top-level registerSpec path, where the
+ * parent is the program.
+ */
+function invokedDeprecatedAlias(spec: CommandSpec, command: Command): string | undefined {
+  const aliases = spec.deprecatedAliases;
+  if (aliases === undefined || aliases.length === 0) return undefined;
+  const typed = command.parent?.args[0];
+  return typed !== undefined && typed !== spec.name && aliases.includes(typed) ? typed : undefined;
+}
+
+/**
+ * ONE stderr line when a command ran under a deprecated old name — emitted
+ * BEFORE the action so the migration hint lands even when the run itself
+ * fails, and on stderr so `--json`/`--sarif -` stdout stays machine-clean.
+ * The alias echoed here is a code-reviewed literal from a built-in spec
+ * (plugin specs never carry aliases — the registry strips the field), so no
+ * sanitizer is needed.
+ */
+function warnIfDeprecatedAlias(spec: CommandSpec, command: Command): void {
+  const alias = invokedDeprecatedAlias(spec, command);
+  if (alias === undefined) return;
+  process.stderr.write(
+    `aih: ${alias} is deprecated — use ${spec.name} (removal comes with the next major)\n`,
+  );
+}
+
+/**
  * Register ONE top-level CommandSpec — the identical path for built-ins and
  * gated plugin specs: same shared flags, same optional `[root]` positional,
  * same runCapability action (posture resolution, dirty-worktree gate, run
@@ -174,6 +214,14 @@ function registerSpec(program: Command, spec: CommandSpec): void {
   // copy explicitly and attaching at the end yields the same net configuration.
   const cmd = program.createCommand(spec.name).description(spec.summary);
   cmd.copyInheritedSettings(program);
+  // Alias-before-removal (STABILITY.md): each deprecated old name stays a live
+  // commander alias — same flags, same action, one stderr warning at dispatch.
+  // NOT hidden: commander shows the first alias in help as `name|alias`, which
+  // keeps the migration hint discoverable right next to the replacement.
+  // Commander itself refuses an alias equal to the command's name or to any
+  // sibling command, so a bad built-in alias crashes loudly at startup (a core
+  // bug), and a plugin spec's alias throw is contained per-spec upstream.
+  for (const alias of spec.deprecatedAliases ?? []) cmd.alias(alias);
   // Optional positional target dir, e.g. `aih init .` or `aih profile ./repo`.
   cmd.argument("[root]", "target repository/workstation root (defaults to --root or cwd)");
   if (!spec.readOnly) addSharedFlags(cmd);
@@ -189,6 +237,7 @@ function registerSpec(program: Command, spec: CommandSpec): void {
   }
   cmd.action(
     async (_rootArg: string | undefined, _options: Record<string, unknown>, command: Command) => {
+      warnIfDeprecatedAlias(spec, command);
       process.exitCode = await runCapability(spec, command);
     },
   );

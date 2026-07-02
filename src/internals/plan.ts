@@ -237,6 +237,19 @@ export interface CommandOption {
 export interface CommandSpec {
   name: string;
   summary: string;
+  /**
+   * Old command NAMES this command still answers to after a rename — the
+   * alias-before-removal deprecation machinery (STABILITY.md). Each entry
+   * registers as a commander alias of this command on the shared registerSpec
+   * path (src/commands/index.ts): the old name dispatches the SAME action with
+   * the same flags, after ONE stderr line naming the replacement. An alias
+   * lives for at least one minor release and is removed only by the next
+   * major (VERSIONING.md), staying reserved in {@link builtinCommandNames}
+   * for its whole grace window. Core-only: the plugin registry strips this
+   * field from plugin specs — a plugin ships new commands, it never renames
+   * (or shadows) core ones.
+   */
+  deprecatedAliases?: string[];
   options?: CommandOption[];
   plan: PlanFn;
   /** Read-only commands (doctor/status) skip the apply path entirely. */
