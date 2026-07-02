@@ -260,6 +260,26 @@ function wins(): DigestAction {
   });
 }
 
+/** A "Skill governance" digest — the shape `skillGovernanceDigest` emits. */
+function skillGov(): DigestAction {
+  return digest("Skill governance — 2 installed (1 approved, 1 unapproved, 0 stale)", "body", {
+    installed: 2,
+    approved: 1,
+    unapproved: 1,
+    stalePin: 0,
+    rows: [
+      {
+        name: "clean",
+        status: "approved",
+        verdict: "GREEN",
+        source: "owner/repo",
+        commit: "a".repeat(40),
+      },
+      { name: "loose", status: "unapproved" },
+    ],
+  });
+}
+
 /** A Trends digest carrying ≥2 history samples with the v9 metrics (the §2a live path). */
 function trends(): DigestAction {
   return digest("Trends — 3 samples · adoption 80/100", "body", {
@@ -601,10 +621,30 @@ describe("buildAihDataV9 — Phase B capability flips", () => {
     expect(view.sections["sec-wins"]?.html).toContain("Certificate trust chain");
     expect(view.sections["sec-wins"]?.html).not.toContain("run <code>aih heal</code>");
   });
+
+  it("gates skill governance empty (honest stub) with no digest, live from the join", () => {
+    // Empty: no "Skill governance" digest on this run → honest stub, not zeros-as-real.
+    const empty = buildAihDataV9(ALL);
+    expect(empty.gates["sec-skillgov"]).toBe("empty");
+    expect(empty.skillGov).toBeUndefined();
+    const emptyView = assembleViewV9(empty, V9_DEMO);
+    expect(emptyView.sections["sec-skillgov"]?.state).toBe("empty");
+    expect(emptyView.sections["sec-skillgov"]?.html).toContain("nothing to govern");
+
+    // Live: the digest carries the inventory join → real counts + rows rendered.
+    const live = buildAihDataV9([...ALL, skillGov()]);
+    expect(live.gates["sec-skillgov"]).toBe("live");
+    expect(live.skillGov).toMatchObject({ installed: 2, approved: 1, unapproved: 1, stalePin: 0 });
+    const liveView = assembleViewV9(live, V9_DEMO);
+    expect(liveView.sections["sec-skillgov"]?.state).toBe("live");
+    expect(liveView.sections["sec-skillgov"]?.html).toContain("clean");
+    expect(liveView.sections["sec-skillgov"]?.html).toContain("loose");
+    expect(liveView.sections["sec-skillgov"]?.title).toContain("1 installed skill unattested");
+  });
 });
 
 describe("assembleViewV9 — honest rendering", () => {
-  it("renders all thirteen sections (so demo never bleeds through unswapped)", () => {
+  it("renders all fourteen sections (so demo never bleeds through unswapped)", () => {
     const view = assembleViewV9(buildAihDataV9(ALL), V9_DEMO);
     for (const id of [
       "sec-hero",
@@ -620,6 +660,7 @@ describe("assembleViewV9 — honest rendering", () => {
       "sec-support",
       "sec-period",
       "sec-skills",
+      "sec-skillgov",
     ]) {
       expect(view.sections[id]).toBeDefined();
     }

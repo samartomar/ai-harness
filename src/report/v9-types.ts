@@ -33,6 +33,7 @@ export const V9_SECTION_IDS = [
   "sec-support",
   "sec-period",
   "sec-skills",
+  "sec-skillgov",
 ] as const;
 
 export type V9SectionId = (typeof V9_SECTION_IDS)[number];
@@ -235,6 +236,26 @@ export interface V9Skills {
 }
 
 /**
+ * 10 — skill governance. The read-only join over installed external skills and their
+ * committed approvals (from `skillInventory`): counts + a notable-rows list, so the
+ * dashboard shows what is on disk vs approved (unapproved + stale-pin highlighted).
+ * LIVE whenever there is anything to govern; EMPTY only with no skills and no lock.
+ */
+export interface V9SkillGovernance {
+  installed: number;
+  approved: number;
+  unapproved: number;
+  stalePin: number;
+  rows: Array<{
+    name: string;
+    status: "approved" | "unapproved" | "stale-pin";
+    verdict?: string;
+    source?: string;
+    commit?: string;
+  }>;
+}
+
+/**
  * The full v9 data view-model. Each slice is optional: present when its panel is
  * bound (live) or filled for preview; absent when the panel is empty/omitted.
  * `gates` records the honesty state of every section id.
@@ -253,6 +274,7 @@ export interface AihDataV9 {
   support?: V9Support;
   period?: V9Period;
   skills?: V9Skills;
+  skillGov?: V9SkillGovernance;
   gates: Record<string, PanelState>;
 }
 
