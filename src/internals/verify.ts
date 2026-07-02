@@ -74,7 +74,12 @@ export type CheckCode =
   | "trust.untrusted-publisher"
   | "trust.unsigned-source"
   | "trust.license-missing"
-  | "trust.unapproved-skill";
+  | "trust.unapproved-skill"
+  // skill packs (committed aih-packs.json curation manifest)
+  | "pack.duplicate-name"
+  | "pack.pin-mismatch"
+  | "pack.missing-approval"
+  | "pack.unknown-manifest";
 
 export interface Check {
   name: string;

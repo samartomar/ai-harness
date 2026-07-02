@@ -495,6 +495,34 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     action:
       "Vet and approve the skill before installing at this posture: `aih skill vet <source> --apply`, review the verdict, then `aih skill approve <source> --pin <sha> --owner <team> --apply`. At vibe posture this is advisory only.",
   },
+  "pack.duplicate-name": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "skill listed more than once across packs",
+    action:
+      "Edit aih-packs.json so each skill name appears in exactly one pack, exactly once — curation must be unambiguous before packs can gate installs.",
+  },
+  "pack.pin-mismatch": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "pack manifest ref disagrees with the committed approval pin",
+    action:
+      "aih-skills.lock.json is the pin authority. Update the pack's {source, commit} in aih-packs.json to match the approved lock entry — or, if the new pin is intentional, re-approve the skill first (`aih skill approve <source> --pin <sha> --owner <team> --apply`) and then update the manifest.",
+  },
+  "pack.missing-approval": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "pack references a skill with no committed approval",
+    action:
+      "Vet and approve the referenced skill (`aih skill vet <source> --apply`, then `aih skill approve <source> --pin <sha> --owner <team> --apply`) so it lands in aih-skills.lock.json, or drop the ref from aih-packs.json.",
+  },
+  "pack.unknown-manifest": {
+    audience: "developer",
+    failSeverity: "degraded",
+    title: "pack manifest contains no valid packs",
+    action:
+      "Fix aih-packs.json: schemaVersion 1 with a `packs` array where each pack has a name and at least one {name, source, commit} skill ref. Malformed entries are dropped on read, so a file that yields zero packs is unreadable curation.",
+  },
 };
 
 /** Severity rank for sorting: most urgent first. */
