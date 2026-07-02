@@ -21,6 +21,7 @@ import { defaultRunner, type Runner } from "../internals/proc.js";
 import type { Check, VerificationReport } from "../internals/verify.js";
 import { AIH_ORG_POLICY_FILE } from "../org-policy/constants.js";
 import { makeHostAdapter } from "../platform/detect.js";
+import { readSkillsLock } from "../skill/lockfile.js";
 import { buildSupport, supportSummary } from "../support/integrate.js";
 import {
   acknowledgeCommandHint,
@@ -352,6 +353,73 @@ async function currentTrustScan(
   };
 }
 
+/** Control characters replaced for display — raw names are used only for matching. */
+function safeSkillLabel(name: string): string {
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: stripping them is the point
+  const cleaned = name.replace(/[\u0000-\u001f\u007f]/g, "?");
+  return cleaned.length > 120 ? `${cleaned.slice(0, 117)}...` : cleaned;
+}
+
+/**
+ * Posture-gated INSTALL enforcement (#102): every skill this promotion would land
+ * must carry a committed `aih-skills.lock.json` approval FOR THIS SOURCE. Matching
+ * is content-addressed, not name-only (a same-named skill from an unrelated,
+ * never-vetted source must not inherit another source's approval): a GitHub
+ * promotion matches only an entry whose `commit` equals the fetched pinned SHA —
+ * which also rejects a STALE approval (approved at X, installing Y — re-vet and
+ * re-approve); a local promotion matches only a `commit: "local"` entry (local
+ * approvals are name-scoped by design — a developer-loop convenience whose recorded
+ * path string is not stable across invocation contexts).
+ *
+ * A missing approval emits a `trust.unapproved-skill` check — ADVISORY at `vibe`
+ * (pass with the standard warning-only detail), a promotion-blocking FAIL at
+ * `team`/`enterprise`. Graded locally rather than through the shared trust-origin
+ * ladder: that ladder denies only at enterprise, but an install-time approval gate
+ * is the committed lockfile's teeth and #102 specs team as enforcing too — and
+ * widening the shared ladder would harden four already-released origin codes as a
+ * side effect. The DENIAL lives in {@link workspaceAddPhase2Plan}'s probes-only
+ * path (never a bare throw), so a refusal carries coded checks into the report —
+ * SARIF, support tickets, and the run ledger all see it. Pure fs.
+ */
+function unapprovedSkillChecks(
+  ctx: PlanContext,
+  source: TrustSource,
+  promotedSkills: readonly string[],
+): Check[] {
+  const entries = readSkillsLock(ctx.root).skills;
+  const pinned =
+    source.kind === "github" ? metadataFor(source)?.pinnedSha?.toLowerCase() : undefined;
+  const isApproved = (name: string): boolean =>
+    entries.some(
+      (entry) =>
+        entry.name === name &&
+        (source.kind === "github"
+          ? pinned !== undefined && entry.commit.toLowerCase() === pinned
+          : entry.commit === "local"),
+    );
+  const posture = postureFromContext(ctx);
+  const at = source.kind === "github" ? ` at commit ${(pinned ?? "unknown").slice(0, 12)}` : "";
+  return promotedSkills
+    .filter((name) => !isApproved(name))
+    .map((name) => {
+      const label = safeSkillLabel(name);
+      const detail = `skill ${label} has no committed approval in aih-skills.lock.json for this source${at} — run \`aih skill vet <source> --apply\` then \`aih skill approve <source> --pin <sha> --owner <team> --apply\``;
+      if (posture === "vibe") {
+        return {
+          name: `trust.unapproved-skill ${label}`,
+          verdict: "pass" as const,
+          detail: `warning-only (vibe posture): ${detail}`,
+        };
+      }
+      return {
+        name: `trust.unapproved-skill ${label}`,
+        verdict: "fail" as const,
+        code: "trust.unapproved-skill" as const,
+        detail,
+      };
+    });
+}
+
 function sourceChangedCheck(detail: string): Check {
   return {
     name: "trust.source-changed",
@@ -412,6 +480,10 @@ export async function workspaceAddPhase2Plan(
     return plan("workspace add: promote", ...probesForChecks(currentScan.checks));
   }
   const promotion = buildPromotion(ctx, source);
+  const approvalChecks = unapprovedSkillChecks(ctx, source, promotion.promotedSkills);
+  if (approvalChecks.some((check) => check.verdict === "fail")) {
+    return plan("workspace add: promote", ...probesForChecks(approvalChecks));
+  }
   if (!sameArtifactHashes(gate.artifactHashes, promotion.artifactHashes)) {
     return plan(
       "workspace add: promote",
@@ -422,6 +494,7 @@ export async function workspaceAddPhase2Plan(
   }
   const lock = lockWithSource(ctx, source, gate, promotion);
   const actions: Action[] = [
+    ...probesForChecks(approvalChecks),
     ...promotion.writes,
     writeJson(".aih/trust-lock.json", lock, "trusted external skill acquisition lock"),
     probe("trust promotion guard", () => ({

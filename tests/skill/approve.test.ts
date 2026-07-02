@@ -304,6 +304,25 @@ describe("skillApproveCommand", () => {
     );
   });
 
+  it("refuses a --name override that matches no skill in the evidence (Codex medium)", () => {
+    // An arbitrary override would commit an approval no promotion can ever match —
+    // workspace add binds enforcement to the PROMOTED skill name.
+    writeEvidence(
+      evidence({
+        shape: {
+          skillDirs: ["clean", "extra"],
+          installScripts: false,
+          mcpConfig: false,
+          packageManifests: [],
+          fullCodebaseAnalysis: false,
+        },
+      }),
+    );
+    expect(() => skillApproveCommand.plan(ctx(approveOptions({ name: "ghost" })))).toThrow(
+      /--name ghost does not match a skill .* evidence records: clean, extra/,
+    );
+  });
+
   it("approves a multi-skill source when --name picks one", async () => {
     writeEvidence(
       evidence({
