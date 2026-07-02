@@ -6,8 +6,11 @@ import { AihError } from "../../src/errors.js";
 import { executePlan } from "../../src/internals/execute.js";
 import type { PlanContext } from "../../src/internals/plan.js";
 import { fakeRunner, type Runner } from "../../src/internals/proc.js";
+import { readPacksFile } from "../../src/pack/manifest.js";
 import { packUninstallCommand } from "../../src/pack/uninstall.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
+import { skillCardRelPath } from "../../src/skill/card.js";
+import { readSkillsLock } from "../../src/skill/lockfile.js";
 
 const PIN = "a".repeat(40);
 const CONTEXT_DIR = "ai-coding";
@@ -302,5 +305,91 @@ describe("packUninstallCommand — pack closure", () => {
       "--pack <name>",
       "--delete",
     ]);
+  });
+});
+
+describe("pack uninstall — dual-lens hardening (Codex highs + review low)", () => {
+  it("a traversal skill name is rejected at BOTH schema boundaries (Codex high-1)", () => {
+    // Hand-crafted committed files naming `../../package-lock` must never reach the
+    // card-path builder. The fail-soft readers drop the poisoned entries entirely.
+    write(
+      "aih-skills.lock.json",
+      JSON.stringify({
+        schemaVersion: 1,
+        skills: [
+          {
+            name: "../../package-lock",
+            source: "x",
+            commit: "local",
+            verdict: "GREEN",
+            scope: "repo",
+            card: "c.json",
+            evidenceSha256: "0".repeat(64),
+            approvedAt: "2026-01-01T00:00:00.000Z",
+          },
+        ],
+      }),
+    );
+    expect(readSkillsLock(workspace).skills).toHaveLength(0); // dropped, not parsed
+    write(
+      "aih-packs.json",
+      JSON.stringify({
+        schemaVersion: 1,
+        packs: [{ name: "evil", skills: [{ name: "../../pl", source: "x", commit: "local" }] }],
+      }),
+    );
+    expect(readPacksFile(workspace).packs).toHaveLength(0); // whole pack dropped
+    // Defense in depth: the card-path builder itself refuses a traversal name.
+    expect(() => skillCardRelPath(CONTEXT_DIR, "../../package-lock")).toThrow(/unsafe skill name/);
+  });
+
+  it("refuses when the pack ref's source/commit disagrees with the lock (Codex high-2)", async () => {
+    // A hostile manifest names the REAL skill but claims a different origin — it
+    // does not own that approval and must not retract it.
+    installFiles("src-a", "alpha");
+    writeLock(["alpha"]);
+    write(
+      "aih-packs.json",
+      JSON.stringify({
+        schemaVersion: 1,
+        packs: [
+          {
+            name: "evil",
+            skills: [
+              { name: "alpha", source: "attacker/repo@" + "b".repeat(40), commit: "b".repeat(40) },
+            ],
+          },
+        ],
+      }),
+    );
+    const c = ctx({ apply: true, options: { pack: "evil" } });
+    await expect(planOf(c)).rejects.toThrow(/not a clean owner/i);
+    expect(existsSync(promotedDir("src-a", "alpha"))).toBe(true);
+    expect(readLock().skills).toHaveLength(1); // approval intact
+  });
+
+  it("refuses when the member's name is curated in ANOTHER pack too (Codex medium)", async () => {
+    installFiles("src-a", "alpha");
+    writeLock(["alpha"]);
+    writePacks([
+      { name: "docs", skills: ["alpha"] },
+      { name: "tools", skills: ["alpha"] },
+    ]);
+    const c = ctx({ apply: true, options: { pack: "docs" } });
+    await expect(planOf(c)).rejects.toThrow(/not a clean owner/i);
+    expect(existsSync(promotedDir("src-a", "alpha"))).toBe(true);
+  });
+
+  it("a pack whose EVERY member is not-installed is a friendly no-op (review low)", async () => {
+    writeLock([]);
+    writePacks([{ name: "docs", skills: ["ghost-one", "ghost-two"] }]);
+    const c = ctx({ apply: true, options: { pack: "docs" } });
+    const result = await executePlan(await planOf(c), c);
+    expect(result.writes).toHaveLength(0);
+    expect(result.removed).toHaveLength(0);
+    const data = digestOf(result).data as {
+      counts: { members: number; removed: number; notInstalled: number };
+    };
+    expect(data.counts).toMatchObject({ members: 2, removed: 0, notInstalled: 2 });
   });
 });

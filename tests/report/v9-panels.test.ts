@@ -466,6 +466,25 @@ describe("skillGovernanceDigest", () => {
     expect(html).toContain("not fully approved");
   });
 
+  it("strips control/bidi characters from skill and pack labels (Codex low)", () => {
+    // escHtml stops executable injection; bidi overrides could still VISUALLY spoof
+    // a governance row (e.g. RTL-reversing "approved"). Both label paths strip them.
+    const html = renderSkillGovernance({
+      installed: 1,
+      approved: 1,
+      unapproved: 0,
+      stalePin: 0,
+      quarantined: 0,
+      rows: [{ name: "docs‮what", status: "approved", source: "a/b​x" }],
+      packs: [{ name: "core‪evil", skills: 1, approved: 1 }],
+    });
+    expect(html).not.toContain("‮");
+    expect(html).not.toContain("‪");
+    expect(html).not.toContain("​");
+    expect(html).toContain("docswhat");
+    expect(html).toContain("pack coreevil");
+  });
+
   /** A schema-valid lock entry for `name`, optionally tagged with a pack. */
   const lockEntry = (name: string, pack?: string): Record<string, unknown> => ({
     name,

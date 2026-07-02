@@ -14,6 +14,7 @@ import { skillInventory } from "../skill/inventory.js";
 import { AIH_SKILLS_LOCK_FILE, readSkillsLock } from "../skill/lockfile.js";
 import { advisoryTail, type SkillRemovalSummary, skillRemovalActions } from "../skill/remove.js";
 import { AIH_PACKS_FILE, readPacksFile } from "./manifest.js";
+import { packStatus } from "./status.js";
 
 /**
  * `aih pack uninstall` — slice 4 of packs (pack CLOSURE): the destructive inverse
@@ -133,6 +134,35 @@ function packUninstallPlan(ctx: PlanContext): Plan {
   }
 
   const hardDelete = ctx.options.delete === true;
+
+  // OWNERSHIP PREFLIGHT — the same approval axis install gates on. Uninstall is
+  // name-keyed and DESTRUCTIVE, so the manifest ref must actually OWN the lock
+  // entry it is about to retract:
+  //  - pin-mismatch (the pack claims a different source/commit than the lock) →
+  //    refuse: a hostile or stale manifest must not remove the REAL skill and
+  //    drop an approval it never granted.
+  //  - duplicate-name (this name curated in >1 pack, or twice here) → refuse: the
+  //    name-keyed approval is shared; a one-pack uninstall would strand the other.
+  //  - missing-approval → the pack has nothing authoritative to retract: skip the
+  //    member ("nothing to do"; use skill remove for an on-disk unapproved copy).
+  const statusReport = packStatus(ctx, packName);
+  const statusPack = statusReport.packs.find((entry) => entry.name === packName);
+  const blocking = statusReport.findings.filter(
+    (finding) =>
+      finding.check.code === "pack.pin-mismatch" || finding.check.code === "pack.duplicate-name",
+  );
+  if (blocking.length > 0) {
+    const details = blocking
+      .map((finding) => `  - ${finding.check.detail ?? finding.check.name}`)
+      .join("\n");
+    throw refuse(
+      `pack ${packName} is not a clean owner of its members — refusing to uninstall:\n` +
+        `${details}\n` +
+        "fix the manifest (aih pack validate) or remove members individually with `aih skill remove`",
+    );
+  }
+  const approvalByName = new Map((statusPack?.skills ?? []).map((ref) => [ref.name, ref.approval]));
+
   // The read-only joins, computed ONCE: the inventory decides "anything on disk?"
   // (any root — a machine-only or quarantined-only member must still reach the
   // per-member guard, not be skipped) and the lock decides "orphaned approval?".
@@ -142,6 +172,10 @@ function packUninstallPlan(ctx: PlanContext): Plan {
   const actions: Action[] = [];
   const members: PackMemberRow[] = [];
   for (const name of [...new Set(pack.skills.map((ref) => ref.name))]) {
+    if (approvalByName.get(name) === "missing-approval") {
+      members.push({ name, outcome: "not-installed" });
+      continue;
+    }
     const onDisk = inventory.skills.some((row) => row.name === name);
     const approved = lock.skills.some((entry) => entry.name === name);
     if (!onDisk && !approved) {

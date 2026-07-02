@@ -603,18 +603,24 @@ export function renderSkillGovernance(model: V9SkillGovernance): string {
   const statusBox = clean
     ? `<div class="drift-status"><div class="dicon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6 9 17l-5-5"/></svg></div><div class="dtext"><b>All ${model.approved} installed skill${model.approved === 1 ? "" : "s"} approved</b><span>every external skill on disk is vetted and in sync</span></div></div>`
     : `<div class="drift-status" style="background:var(--warn-soft);border-color:color-mix(in oklab,var(--warn) 22%,transparent)"><div class="dicon" style="background:var(--warn)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg></div><div class="dtext"><b style="color:var(--warn)">${unattested} of ${model.installed} installed skill${model.installed === 1 ? "" : "s"} not fully approved</b><span>an external skill is unapproved, stale, or quarantined</span></div></div>`;
+  // escHtml stops executable injection; this additionally strips C0/C1 and bidi
+  // formatting controls so a hostile lock/pack label cannot VISUALLY spoof a row
+  // (RTL-override reversing "approved", zero-width padding, etc.).
+  const plainLabel = (value: string): string =>
+    // biome-ignore lint/suspicious/noControlCharactersInRegex: stripping them is the point
+    value.replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2066-\u2069]/g, "");
   const rows = model.rows
     .map((r) => {
       const { cls, label } = govStatus(r.status);
       const dot = cls === "ok" ? "" : ` style="background:var(--${cls})"`;
       const src = r.source
-        ? `${r.source}${r.commit ? `@${r.commit.slice(0, 12)}` : ""}`
+        ? `${plainLabel(r.source)}${r.commit ? `@${plainLabel(r.commit).slice(0, 12)}` : ""}`
         : "not in lock";
       const ft =
         cls === "ok"
           ? '<span class="ft ok">approved</span>'
           : `<span class="ft ${cls}">${escHtml(label)}</span>`;
-      return `<div class="drift-file"><span class="fd"${dot}></span><span class="fn">${escHtml(r.name)}</span><span class="fs">${escHtml(src)}</span>${ft}</div>`;
+      return `<div class="drift-file"><span class="fd"${dot}></span><span class="fn">${escHtml(plainLabel(r.name))}</span><span class="fs">${escHtml(src)}</span>${ft}</div>`;
     })
     .join("");
   const badge = clean
@@ -631,7 +637,7 @@ export function renderSkillGovernance(model: V9SkillGovernance): string {
   const packRows = (model.packs ?? [])
     .map(
       (p) =>
-        `<div class="row"><span class="k">pack ${escHtml(p.name)}</span><span class="v"${p.approved < p.skills ? ' style="color:var(--warn)"' : ""}>${p.approved} of ${p.skills} approved</span></div>`,
+        `<div class="row"><span class="k">pack ${escHtml(plainLabel(p.name))}</span><span class="v"${p.approved < p.skills ? ' style="color:var(--warn)"' : ""}>${p.approved} of ${p.skills} approved</span></div>`,
     )
     .join("");
   const status = `<div class="card span-5"><div class="card-head"><h3>Approval status</h3>${badge}</div><div class="card-body">${statusBox}<div class="donut-meta" style="margin-top:.6rem"><div class="row"><span class="k">installed · approved</span><span class="v">${model.installed} · ${model.approved}</span></div><div class="row"><span class="k">unapproved · stale-pin</span><span class="v" style="color:${unattested > 0 ? "var(--warn)" : "var(--ok)"}">${model.unapproved} · ${model.stalePin}</span></div>${quarantinedRow}${packRows}</div><div class="method" style="margin-top:.6rem">External skills acquired via <code>aih workspace add</code>, joined to the committed <code>aih-skills.lock.json</code> approvals.</div></div></div>`;

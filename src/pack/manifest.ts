@@ -2,6 +2,7 @@ import { join } from "node:path";
 import { z } from "zod";
 import { AihError } from "../errors.js";
 import { readIfExists } from "../internals/fsxn.js";
+import { skillNameSchema } from "../skill/lockfile.js";
 
 /**
  * Committed pack manifest at the repo ROOT (`aih-packs.json`) — a NAMED curation
@@ -18,8 +19,8 @@ export const AIH_PACKS_FILE = "aih-packs.json";
 /** One skill reference inside a pack — a cross-check against the lock entry of the same name. */
 export const PackSkillRefSchema = z
   .object({
-    /** Must match a lock entry / promoted skill name. */
-    name: z.string().min(1),
+    /** Must match a lock entry / promoted skill name (path-safe segments only). */
+    name: skillNameSchema,
     /** Cross-check vs the lock entry's source (the lock stays the pin authority). */
     source: z.string().min(1),
     /** Cross-check vs the lock entry's commit (full SHA or "local"). */
@@ -29,7 +30,8 @@ export const PackSkillRefSchema = z
 
 export const PackSchema = z
   .object({
-    name: z.string().min(1),
+    // Pack names surface in digests/report labels and CLI messages — same safety rule.
+    name: skillNameSchema,
     description: z.string().optional(),
     /**
      * Per-pack TIGHTENING of org-policy's required-check list (superset
