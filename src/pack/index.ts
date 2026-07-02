@@ -6,6 +6,7 @@ export {
   removeEntry,
   upsertPack,
 } from "./authoring.js";
+export { packInstallCommand, packPlanCommand, runPackInstall } from "./install.js";
 export {
   AIH_PACKS_FILE,
   type Pack,
