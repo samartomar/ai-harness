@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { type Dirent, readdirSync, statSync } from "node:fs";
 import { isAbsolute, join, posix, resolve, sep } from "node:path";
 import { readIfExists } from "../internals/fsxn.js";
 import {
@@ -12,6 +13,9 @@ import {
   writeText,
 } from "../internals/plan.js";
 import type { Check } from "../internals/verify.js";
+import { AIH_PACKS_FILE } from "../pack/manifest.js";
+import { skillCardsDir } from "../skill/card.js";
+import { AIH_SKILLS_LOCK_FILE } from "../skill/lockfile.js";
 
 const DEFAULT_OUT = ".aih/fleet-bundle";
 const CHECKSUMS_FILE = "SHA256SUMS";
@@ -70,6 +74,10 @@ function defaultBundlePaths(ctx: PlanContext): string[] {
   return [
     posix.join(ctx.contextDir, "project.json"),
     "aih-org-policy.json",
+    AIH_SKILLS_LOCK_FILE,
+    AIH_PACKS_FILE,
+    // A directory candidate: readBundleFiles expands it one level (see expandDir).
+    skillCardsDir(ctx.contextDir),
     ".claude/managed-settings.json",
     "managed-settings.json.example",
     "managed-mcp.json.example",
@@ -94,18 +102,52 @@ function candidatePaths(ctx: PlanContext): string[] {
   );
 }
 
+/**
+ * Expand a candidate that names an existing DIRECTORY (the skill-cards dir)
+ * into its regular files, one level deep, name-sorted — `readIfExists` only
+ * reads files, so an unexpanded directory candidate would silently vanish.
+ * Fail-closed on hostile entry names: a separator or `..` inside a directory
+ * ENTRY can only mean a hostile filesystem, so the entry is refused rather
+ * than composed into a path. Symlinked entries are skipped (`isFile()` is
+ * false for a Dirent symlink); anything that is not an existing directory
+ * passes through unchanged for the plain-file read below.
+ */
+function expandDir(root: string, rel: string): string[] {
+  let entries: Dirent[];
+  try {
+    if (!statSync(join(root, rel)).isDirectory()) return [rel];
+    entries = readdirSync(join(root, rel), { withFileTypes: true });
+  } catch {
+    return [rel]; // absent → readIfExists skips it, exactly as before
+  }
+  return entries
+    .filter((entry) => entry.isFile())
+    .map((entry) => entry.name)
+    .filter(
+      (name) =>
+        name.length > 0 && !name.includes("/") && !name.includes("\\") && !name.includes(".."),
+    )
+    .sort((a, b) => a.localeCompare(b))
+    .map((name) => posix.join(rel, name));
+}
+
 function readBundleFiles(ctx: PlanContext): BundleFile[] {
   const files: BundleFile[] = [];
+  const seen = new Set<string>();
   for (const rel of candidatePaths(ctx)) {
     if (isAbsolute(rel) || rel.split("/").includes("..")) continue;
-    const contents = readIfExists(join(ctx.root, rel));
-    if (contents === undefined) continue;
-    files.push({
-      path: rel,
-      contents,
-      bytes: Buffer.byteLength(contents, "utf8"),
-      sha256: sha256Hex(contents),
-    });
+    for (const fileRel of expandDir(ctx.root, rel)) {
+      if (seen.has(fileRel)) continue; // an --include may repeat an expanded entry
+      seen.add(fileRel);
+      const contents = readIfExists(join(ctx.root, fileRel));
+      if (contents === undefined) continue;
+      files.push({
+        path: fileRel,
+        contents,
+        bytes: Buffer.byteLength(contents, "utf8"),
+        sha256: sha256Hex(contents),
+      });
+    }
   }
   return files;
 }
