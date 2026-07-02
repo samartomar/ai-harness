@@ -396,7 +396,7 @@ describe("skillRemoveCommand — the destructive inverse", () => {
     expect(existsSync(promotedDir("owner-repo", "clean"))).toBe(false);
     expect(existsSync(join(legacyDir("owner-repo", "clean"), "SKILL.md"))).toBe(true);
     expect(existsSync(cardPath("clean"))).toBe(false);
-  });
+  }, 20000); // real git init + status subprocesses can edge past the 5s default on slow Windows CI
 
   it("declares the remove command shape (mutator, --name + --delete options)", () => {
     expect(skillRemoveCommand.name).toBe("remove");
