@@ -28,7 +28,9 @@ import type { Check } from "../internals/verify.js";
 import { makeHostAdapter } from "../platform/detect.js";
 import { AIH_SKILLS_LOCK_FILE } from "../skill/lockfile.js";
 import { buildSupport, supportSummary } from "../support/integrate.js";
+import { localDriftChecks } from "../trust/commands.js";
 import { cleanupQuarantine, resolveTrustSource, type TrustSource } from "../trust/fetch.js";
+import { readTrustLock } from "../trust/lock.js";
 import { TRUST_SKIP_DIRS } from "../trust/scan.js";
 import {
   type ClearedWorkspaceAddTrustGate,
@@ -87,12 +89,15 @@ interface PackSourceGroup {
   pending: PackSkillStatus[];
   /** Refs already live on disk (idempotent re-run: reported, never re-promoted). */
   installed: PackSkillStatus[];
+  /** Pending refs that are on disk but DRIFTED from trust-lock receipts (reinstalling). */
+  driftedNames: string[];
 }
 
 /** One source's trip through the two-phase pipeline. */
 interface SourceRun {
   group: PackSourceGroup;
-  source: TrustSource;
+  /** Absent when the source failed to RESOLVE (recorded in `failure`). */
+  source?: TrustSource;
   /** The pack's refs for this source — the `selectSkills` promotion subset. */
   select: ReadonlySet<string>;
   phase1?: PlanResult;
@@ -175,8 +180,34 @@ function gatedPackStatus(ctx: PlanContext, command: string): PackStatus {
   return pack;
 }
 
-/** Group the pack's refs by (source, commit), sorted — one pipeline run per group. */
-function groupBySource(pack: PackStatus): PackSourceGroup[] {
+/**
+ * Skill names whose PROMOTED files no longer match the trust-lock receipts —
+ * missing or hash-changed on disk (tampered, hand-edited, or partially deleted).
+ * An "already installed" ref with drift must NOT be skipped as a success: it is
+ * routed back through the full gated pipeline so the pinned source's content is
+ * re-promoted (the dirty-worktree gate still fronts any overwrite). Pure fs.
+ */
+function driftedSkillNames(ctx: PlanContext): Set<string> {
+  const drifted = new Set<string>();
+  for (const source of readTrustLock(ctx.root).sources) {
+    for (const check of localDriftChecks(ctx, source)) {
+      if (check.verdict !== "fail") continue;
+      const path = (check.location?.uri ?? "").replace(/\\/g, "/");
+      const hits = source.promotedSkills.filter(
+        (name) => path === `skills/${name}` || path.startsWith(`skills/${name}/`),
+      );
+      // A drifted artifact that maps to no specific skill (root-level layouts)
+      // conservatively re-drives every skill the source promoted.
+      for (const name of hits.length > 0 ? hits : source.promotedSkills) drifted.add(name);
+    }
+  }
+  return drifted;
+}
+
+/** Group the pack's refs by (source, commit), sorted — one pipeline run per group.
+ * Installed refs whose promoted files DRIFTED from the trust-lock receipts are
+ * routed back to `pending` (reinstall through the gate), never counted as done. */
+function groupBySource(pack: PackStatus, drifted: ReadonlySet<string>): PackSourceGroup[] {
   const groups = new Map<string, PackSourceGroup>();
   for (const ref of pack.skills) {
     const key = JSON.stringify([ref.source, ref.commit]);
@@ -186,8 +217,14 @@ function groupBySource(pack: PackStatus): PackSourceGroup[] {
       kind: ref.commit === "local" ? ("local" as const) : ("github" as const),
       pending: [],
       installed: [],
+      driftedNames: [],
     };
-    (ref.install === "installed" ? group.installed : group.pending).push(ref);
+    if (ref.install === "installed" && drifted.has(ref.name)) {
+      group.pending.push(ref);
+      group.driftedNames.push(ref.name);
+    } else {
+      (ref.install === "installed" ? group.installed : group.pending).push(ref);
+    }
     groups.set(key, group);
   }
   return [...groups.values()].sort(
@@ -282,7 +319,7 @@ function previewData(pack: PackStatus, groups: PackSourceGroup[]): unknown {
  * created).
  */
 function previewPlan(ctx: PlanContext, pack: PackStatus): Plan {
-  const groups = groupBySource(pack);
+  const groups = groupBySource(pack, driftedSkillNames(ctx));
   const pending = groups.reduce((n, g) => n + g.pending.length, 0);
   if (pending === 0) {
     return plan(
@@ -486,7 +523,7 @@ export async function runPackInstall(
     json = ctx.json;
     refuseAcknowledgeFlags(ctx);
     const pack = gatedPackStatus(ctx, "install");
-    const groups = groupBySource(pack);
+    const groups = groupBySource(pack, driftedSkillNames(ctx));
     const pendingCount = groups.reduce((n, g) => n + g.pending.length, 0);
 
     // No --apply behaves exactly like `aih pack plan`; a fully installed pack is
@@ -498,29 +535,47 @@ export async function runPackInstall(
       return 0;
     }
 
-    // Resolve EVERY source before any fetch or scan — a broken ref refuses the
-    // whole install while the workspace is still byte-for-byte untouched.
+    // Resolve EVERY source before any fetch or scan — a broken ref poisons the
+    // whole install while the workspace is still byte-for-byte untouched. Each
+    // resolution is try/caught so a source that VANISHED after packStatus (or any
+    // resolver throw) lands in that source's outcome row, not a generic error.
+    let anyFailure = false;
     const runs: SourceRun[] = groups
       .filter((group) => group.pending.length > 0)
       .map((group) => {
-        const source = resolveGroupSource(ctx, group);
-        resolved.push(source);
-        return { group, source, select: new Set(group.pending.map((ref) => ref.name)) };
+        const run: SourceRun = {
+          group,
+          select: new Set(group.pending.map((ref) => ref.name)),
+        };
+        try {
+          run.source = resolveGroupSource(ctx, group);
+          resolved.push(run.source);
+        } catch (err) {
+          run.failure = err instanceof Error ? err.message : String(err);
+          anyFailure = true;
+        }
+        return run;
       });
 
     // PHASE A — fetch + scan + capture the cleared gate for ALL sources. Every
     // source is scanned even after a failure so the digest is complete, but a
     // single failure poisons the whole run.
-    let anyFailure = false;
+    // Every step below is per-source try/caught: a mid-loop THROW (a source dir
+    // vanished after packStatus, a dirty-worktree refusal, an fs error) must land
+    // in that source's outcome row — never escape to the generic outer catch,
+    // which would discard the whole per-source report. In phase B that matters
+    // doubly: an earlier source's promotion may ALREADY be on disk, and the
+    // operator must see the accurate partial picture, not a bare error line.
     for (const run of runs) {
-      const phase1 = await executePlan(await workspaceAddPhase1Plan(ctx, run.source), ctx);
-      run.phase1 = phase1;
-      if ((phase1.report?.exitCode() ?? 0) !== 0 || hasFailedExec(phase1)) {
-        run.failure = `trust scan failed for ${run.group.source}`;
-        anyFailure = true;
-        continue;
-      }
+      if (run.source === undefined) continue; // resolution already failed above
       try {
+        const phase1 = await executePlan(await workspaceAddPhase1Plan(ctx, run.source), ctx);
+        run.phase1 = phase1;
+        if ((phase1.report?.exitCode() ?? 0) !== 0 || hasFailedExec(phase1)) {
+          run.failure = `trust scan failed for ${run.group.source}`;
+          anyFailure = true;
+          continue;
+        }
         run.gate = await captureClearedWorkspaceAddTrustGate(
           ctx,
           phase1.report,
@@ -535,16 +590,29 @@ export async function runPackInstall(
 
     // PHASE B — promote only when EVERY source cleared phase A. Nothing has
     // been written before this point, so a phase-A failure leaves zero installs.
+    // Inside the loop, STOP at the first failure: phase-2 re-verifies each source
+    // against its captured gate (binding/hash replay), and once one source fails
+    // that re-check, promoting the REST would widen a partial install the operator
+    // hasn't seen yet. Earlier successes stay on disk (reported accurately below);
+    // an idempotent re-run resumes exactly where this stopped.
     if (!anyFailure) {
       for (const run of runs) {
-        const phase2 = await executePlan(
-          await workspaceAddPhase2Plan(ctx, run.gate, run.source, run.select),
-          ctx,
-        );
-        run.phase2 = phase2;
-        if ((phase2.report?.exitCode() ?? 0) !== 0 || hasFailedExec(phase2)) {
-          run.failure = `promotion failed for ${run.group.source}`;
+        if (run.source === undefined || run.gate === undefined) continue;
+        try {
+          const phase2 = await executePlan(
+            await workspaceAddPhase2Plan(ctx, run.gate, run.source, run.select),
+            ctx,
+          );
+          run.phase2 = phase2;
+          if ((phase2.report?.exitCode() ?? 0) !== 0 || hasFailedExec(phase2)) {
+            run.failure = `promotion failed for ${run.group.source}`;
+            anyFailure = true;
+            break;
+          }
+        } catch (err) {
+          run.failure = err instanceof Error ? err.message : String(err);
           anyFailure = true;
+          break;
         }
       }
     }

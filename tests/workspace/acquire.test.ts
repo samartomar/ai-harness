@@ -783,6 +783,32 @@ describe("pack-install seam: selectSkills subset + trust-lock union-merge", () =
     ]);
   });
 
+  it("refuses a subset that would smuggle an UNSELECTED nested skill (Codex high)", async () => {
+    // parent/ and parent/child/ are both discovered skills; selecting only parent
+    // would promote child's files under parent's dir — content the approval gate
+    // never sees. Fail closed until the nested skill is selected (and approved) too.
+    localSkill(sourceRoot, "parent", "# Parent\n");
+    localSkill(sourceRoot, "parent/child", "# Child\n");
+    const c = ctx(sourceRoot, true, true);
+    const phase1 = await executePlan(await workspaceAddPhase1Plan(c), c);
+    expect(phase1.report?.ok).toBe(true);
+    await expect(
+      captureClearedWorkspaceAddTrustGate(c, phase1.report, undefined, new Set(["parent"])),
+    ).rejects.toThrow(/unselected nested skill.*parent\/child/s);
+    // Selecting BOTH promotes both (each carries its own approval-gate entry).
+    const gate = await captureClearedWorkspaceAddTrustGate(
+      c,
+      phase1.report,
+      undefined,
+      new Set(["parent", "parent/child"]),
+    );
+    const result = await executePlan(
+      await workspaceAddPhase2Plan(c, gate, undefined, new Set(["parent", "parent/child"])),
+      c,
+    );
+    expect(result.report?.ok).toBe(true);
+  });
+
   it("refuses a selected pack ref the source does not ship", async () => {
     localSkill(sourceRoot, "clean", "# Clean\n");
     const c = ctx(sourceRoot, true, true);
@@ -840,14 +866,18 @@ describe("pack-install seam: selectSkills subset + trust-lock union-merge", () =
     );
   }
 
-  async function promoteGithub(sha: string, skillName: string): Promise<void> {
+  async function promoteGithub(
+    sha: string,
+    skillName: string,
+    select?: ReadonlySet<string>,
+  ): Promise<void> {
     const source = resolveTrustSource("owner/repo", { root: workspace });
     try {
       seedGithubQuarantine(source, sha, skillName);
       const report = new VerificationReport().pass("trust scan", "clean");
       const c = ctx("owner/repo", true, true);
-      const gate = await captureClearedWorkspaceAddTrustGate(c, report, source);
-      const result = await executePlan(await workspaceAddPhase2Plan(c, gate, source), c);
+      const gate = await captureClearedWorkspaceAddTrustGate(c, report, source, select);
+      const result = await executePlan(await workspaceAddPhase2Plan(c, gate, source, select), c);
       expect(result.report?.ok).toBe(true);
     } finally {
       if (source.kind === "github") {
@@ -856,19 +886,32 @@ describe("pack-install seam: selectSkills subset + trust-lock union-merge", () =
     }
   }
 
-  it("union-merges a github entry at the SAME pinned sha, replaces at a different sha", async () => {
-    await promoteGithub("a".repeat(40), "one");
-    await promoteGithub("a".repeat(40), "two");
+  it("SUBSET promotions union-merge at the SAME pinned sha, replace at a different sha", async () => {
+    // Merge semantics exist for pack installs — two packs sharing a source must not
+    // clobber each other's receipts. Subset mode is what pack install uses.
+    await promoteGithub("a".repeat(40), "one", new Set(["one"]));
+    await promoteGithub("a".repeat(40), "two", new Set(["two"]));
     let lock = readLock();
     expect(lock.sources).toHaveLength(1);
     expect(lock.sources[0]?.promotedSkills).toEqual(["one", "two"]);
     expect(lock.sources[0]?.pinnedSha).toBe("a".repeat(40));
 
     // A different pinned SHA is a different tree — replace, never merge.
-    await promoteGithub("b".repeat(40), "three");
+    await promoteGithub("b".repeat(40), "three", new Set(["three"]));
     lock = readLock();
     expect(lock.sources).toHaveLength(1);
     expect(lock.sources[0]?.promotedSkills).toEqual(["three"]);
     expect(lock.sources[0]?.pinnedSha).toBe("b".repeat(40));
+  });
+
+  it("DEFAULT (whole-source) promotions REPLACE receipts — stale skills never linger (Codex med)", async () => {
+    // A mutable source promoted `one`, later ships only `two`: a default re-promotion
+    // re-promotes everything the source NOW ships, so carrying old receipts forward
+    // would leave `one` as stale trust-lock evidence for content no longer there.
+    await promoteGithub("a".repeat(40), "one");
+    await promoteGithub("a".repeat(40), "two");
+    const lock = readLock();
+    expect(lock.sources).toHaveLength(1);
+    expect(lock.sources[0]?.promotedSkills).toEqual(["two"]); // replaced, not merged
   });
 });

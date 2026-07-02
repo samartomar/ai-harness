@@ -224,6 +224,35 @@ function buildPromotion(
       "AIH_TRUST",
     );
   }
+  // NESTED-CHILD guard under a subset: a selected skill's directory can CONTAIN
+  // another discovered skill (parent/ and parent/child/ are both valid roots).
+  // `collectFiles` descends the whole subtree, so an UNSELECTED nested skill's
+  // content would ride along under the parent — promoted without appearing in
+  // `promotedSkills`, invisible to the approval gate. Fail closed: every nested
+  // skill root under a selected skill must itself be selected (and thus approved).
+  if (selectSkills !== undefined) {
+    const smuggled: string[] = [];
+    for (const skillDir of skills) {
+      const parentPrefix = `${skillDir.replace(/\\/g, "/")}/`;
+      for (const other of discovered) {
+        const otherPosix = other.replace(/\\/g, "/");
+        const otherName = promotedSkillRel(sourceRoot, other);
+        if (otherPosix.startsWith(parentPrefix) && !selectSkills.has(otherName)) {
+          smuggled.push(
+            `${promotedSkillRel(sourceRoot, skillDir)} contains nested skill ${otherName}`,
+          );
+        }
+      }
+    }
+    if (smuggled.length > 0) {
+      throw new AihError(
+        `refusing subset promotion — unselected nested skill(s) would ride along unapproved:\n` +
+          `${smuggled.map((line) => `  - ${line}`).join("\n")}\n` +
+          "select (and approve) the nested skill(s) too, or restructure the source",
+        "AIH_TRUST",
+      );
+    }
+  }
 
   const files: PromotionFile[] = skills.flatMap((skillDir) => {
     const skillRel = promotedSkillRel(sourceRoot, skillDir);
@@ -324,11 +353,20 @@ function mergedLockEntry(
   };
 }
 
+/**
+ * `subset` = this promotion installed a SELECTED slice of the source (a pack
+ * install). Only then do receipts UNION-MERGE with the prior entry — two packs
+ * sharing a source must not clobber each other's promotedSkills. A DEFAULT
+ * (whole-source) promotion keeps the original replace semantics: it re-promoted
+ * everything the source currently ships, so carrying old receipts forward would
+ * let a mutable local source's REMOVED skills linger as stale trust-lock evidence.
+ */
 function lockWithSource(
   ctx: PlanContext,
   source: TrustSource,
   gate: ClearedWorkspaceAddTrustGate,
   promotion: PromotionPlan,
+  subset: boolean,
 ): TrustLock {
   const meta = metadataFor(source);
   const current = existingLock(ctx.root);
@@ -356,7 +394,7 @@ function lockWithSource(
     schemaVersion: 1,
     sources: [
       ...current.sources.filter((item) => item.id !== source.id),
-      mergedLockEntry(existing, entry),
+      subset ? mergedLockEntry(existing, entry) : entry,
     ],
   };
 }
@@ -563,7 +601,7 @@ export async function workspaceAddPhase2Plan(
       ),
     );
   }
-  const lock = lockWithSource(ctx, source, gate, promotion);
+  const lock = lockWithSource(ctx, source, gate, promotion, selectSkills !== undefined);
   const actions: Action[] = [
     ...probesForChecks(approvalChecks),
     ...promotion.writes,

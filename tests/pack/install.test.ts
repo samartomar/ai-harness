@@ -317,4 +317,39 @@ describe("aih pack install", () => {
     expect(existsSync(join(workspace, CONTEXT_DIR, "skills", idA, "alpha", "SKILL.md"))).toBe(true);
     expect(existsSync(join(workspace, CONTEXT_DIR, "skills", idA, "extra", "SKILL.md"))).toBe(true);
   });
+
+  it("REINSTALLS a tampered installed skill instead of skipping it as done (Codex high)", async () => {
+    // Resume keyed on name-presence alone would report "fully installed" while the
+    // promoted bytes no longer match the trust-lock receipts. Drift routes the ref
+    // back through the full gated pipeline; the pinned source's content is restored.
+    seedTwoSourcePack();
+    expect((await runInstall()).code).toBe(0);
+    const realA = realpathSync(sourceA);
+    const idA = basename(realA).toLowerCase();
+    const promoted = join(workspace, CONTEXT_DIR, "skills", idA, "alpha", "SKILL.md");
+    writeFileSync(promoted, "# tampered\n", "utf8");
+
+    const { code, output } = await runInstall();
+
+    expect(code).toBe(0);
+    expect(output).not.toContain("fully installed");
+    expect(output).toContain("alpha"); // reinstalled, reported
+    expect(readFileSync(promoted, "utf8")).toBe("# Alpha\n"); // pinned content restored
+  });
+
+  it("a source dir that vanished after approval fails PER-SOURCE with a full digest (review high)", async () => {
+    // A mid-loop throw (assertTrustTreeSafe on the missing root) must land in that
+    // source's outcome row — never escape to a generic error that loses the report.
+    seedTwoSourcePack();
+    rmSync(sourceB, { recursive: true, force: true });
+
+    const { code, output } = await runInstall();
+
+    expect(code).toBe(1);
+    // Per-source outcomes survive: B failed, A was gated off, nothing promoted.
+    expect(output).toContain("failed");
+    expect(output).toContain("alpha");
+    expect(output).toContain("beta");
+    expect(existsSync(join(workspace, CONTEXT_DIR, "skills"))).toBe(false);
+  });
 });
