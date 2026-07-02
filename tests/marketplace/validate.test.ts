@@ -5,7 +5,8 @@ import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { executePlan } from "../../src/internals/execute.js";
 import type { PlanContext } from "../../src/internals/plan.js";
-import { fakeRunner } from "../../src/internals/proc.js";
+import { fakeRunner, missingToolRunner } from "../../src/internals/proc.js";
+import type { Check } from "../../src/internals/verify.js";
 import { marketplaceBuildCommand } from "../../src/marketplace/build.js";
 import { marketplaceValidateCommand } from "../../src/marketplace/validate.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
@@ -106,8 +107,8 @@ async function buildArtifact(): Promise<void> {
 }
 
 /** Execute the validate plan and return the verification report. */
-async function validate(options: Record<string, unknown> = {}) {
-  const c = ctx(options);
+async function validate(options: Record<string, unknown> = {}, over: Partial<PlanContext> = {}) {
+  const c = ctx(options, over);
   const result = await executePlan(await Promise.resolve(marketplaceValidateCommand.plan(c)), c);
   if (result.report === undefined) throw new Error("expected a verification report");
   return result.report;
@@ -124,15 +125,29 @@ describe("marketplace validate — the green path", () => {
       "marketplace checksums verified",
       "marketplace coverage complete",
       "marketplace manifest valid",
+      "marketplace signature",
     ]);
-    expect(report.checks.every((c) => c.verdict === "pass")).toBe(true);
+    // Provenance is opt-in locally: an unsigned artifact skips (never fails)
+    // without --require-signature — see the signature-probe describe below.
+    const signature = report.checks.find((c) => c.name === "marketplace signature");
+    expect(signature?.verdict).toBe("skip");
+    expect(
+      report.checks
+        .filter((c) => c.name !== "marketplace signature")
+        .every((c) => c.verdict === "pass"),
+    ).toBe(true);
     expect(report.exitCode()).toBe(0);
   });
 
-  it("declares the command shape (read-only, always-verify, --dir only)", () => {
+  it("declares the command shape (read-only, always-verify, signature gate flags)", () => {
     expect(marketplaceValidateCommand.readOnly).toBe(true);
     expect(marketplaceValidateCommand.alwaysVerify).toBe(true);
-    expect(marketplaceValidateCommand.options?.map((o) => o.flags)).toEqual(["--dir <dir>"]);
+    expect(marketplaceValidateCommand.options?.map((o) => o.flags)).toEqual([
+      "--dir <dir>",
+      "--require-signature",
+      "--signer <signer>",
+      "--repo <owner/repo>",
+    ]);
   });
 });
 
@@ -243,5 +258,144 @@ describe("marketplace validate — coded findings", () => {
     const finding = report.checks.find((c) => c.code === "marketplace.checksum-mismatch");
     expect(finding?.detail).toContain("malformed line");
     expect(report.exitCode()).toBe(1);
+  });
+});
+
+describe("marketplace validate — the signature probe", () => {
+  const signatureOf = (report: { checks: Check[] }): Check | undefined =>
+    report.checks.find((c) => c.name === "marketplace signature");
+
+  it("skips (never fails) without --require-signature when there is no signature and no --repo", async () => {
+    seedApproved(["alpha"]);
+    await buildArtifact();
+    const report = await validate();
+    const check = signatureOf(report);
+    expect(check?.verdict).toBe("skip");
+    expect(check?.code).toBe("marketplace.signature");
+    expect(check?.detail).toContain("no signature to verify");
+    expect(report.exitCode()).toBe(0);
+  });
+
+  it("skips when the verifier tool is absent (spawnError)", async () => {
+    seedApproved(["alpha"]);
+    await buildArtifact();
+    // The detached sig is coverage-exempt, so integrity stays green around it.
+    writeFileSync(artifact("SHA256SUMS.sig"), "sig-bytes\n", "utf8");
+    const report = await validate({}, { run: missingToolRunner });
+    const check = signatureOf(report);
+    expect(check?.verdict).toBe("skip");
+    expect(check?.detail).toContain("cosign not found");
+    expect(report.exitCode()).toBe(0);
+  });
+
+  it("skips an explicit --signer cosign whose detached signature is missing on disk", async () => {
+    seedApproved(["alpha"]);
+    await buildArtifact();
+    const report = await validate({ signer: "cosign" });
+    const check = signatureOf(report);
+    expect(check?.verdict).toBe("skip");
+    expect(check?.detail).toContain("SHA256SUMS.sig missing");
+    expect(report.exitCode()).toBe(0);
+  });
+
+  it("--require-signature turns every unverifiable skip into a coded fail (the CI gate)", async () => {
+    seedApproved(["alpha"]);
+    await buildArtifact();
+
+    // No signature at all.
+    const noSig = await validate({ requireSignature: true });
+    const noSigCheck = signatureOf(noSig);
+    expect(noSigCheck?.verdict).toBe("fail");
+    expect(noSigCheck?.code).toBe("marketplace.signature");
+    expect(noSigCheck?.detail).toContain("--require-signature makes this a failure");
+    expect(noSig.exitCode()).toBe(1);
+
+    // gh requested without the repository identity it verifies against.
+    const noRepo = await validate({ requireSignature: true, signer: "gh" });
+    const noRepoCheck = signatureOf(noRepo);
+    expect(noRepoCheck?.verdict).toBe("fail");
+    expect(noRepoCheck?.detail).toContain("requires --repo");
+    expect(noRepo.exitCode()).toBe(1);
+
+    // Verifier tool absent — cosign (inferred from the sig file) and gh alike.
+    writeFileSync(artifact("SHA256SUMS.sig"), "sig-bytes\n", "utf8");
+    const noCosign = await validate({ requireSignature: true }, { run: missingToolRunner });
+    expect(signatureOf(noCosign)?.verdict).toBe("fail");
+    expect(signatureOf(noCosign)?.code).toBe("marketplace.signature");
+    expect(noCosign.exitCode()).toBe(1);
+    const noGh = await validate(
+      { requireSignature: true, signer: "gh", repo: "owner/repo" },
+      { run: missingToolRunner },
+    );
+    expect(signatureOf(noGh)?.verdict).toBe("fail");
+    expect(signatureOf(noGh)?.detail).toContain("gh not found");
+    expect(noGh.exitCode()).toBe(1);
+  });
+
+  it("passes a cosign verify-blob that exits 0, with the exact argv", async () => {
+    seedApproved(["alpha"]);
+    await buildArtifact();
+    writeFileSync(artifact("SHA256SUMS.sig"), "sig-bytes\n", "utf8");
+    const calls: string[][] = [];
+    const run = fakeRunner((argv) => {
+      calls.push(argv);
+      return undefined; // exit 0
+    });
+    const report = await validate({ requireSignature: true }, { run });
+    const check = signatureOf(report);
+    expect(check?.verdict).toBe("pass");
+    expect(check?.detail).toContain("cosign verified");
+    expect(calls.filter((argv) => argv[0] === "cosign")).toEqual([
+      ["cosign", "verify-blob", "--signature", artifact("SHA256SUMS.sig"), artifact("SHA256SUMS")],
+    ]);
+    expect(report.exitCode()).toBe(0);
+  });
+
+  it("passes a gh attestation verify that exits 0, with the exact argv", async () => {
+    seedApproved(["alpha"]);
+    await buildArtifact();
+    const calls: string[][] = [];
+    const run = fakeRunner((argv) => {
+      calls.push(argv);
+      return argv[0] === "gh" ? { code: 0, stdout: "verified\n" } : undefined;
+    });
+    const report = await validate(
+      { requireSignature: true, signer: "gh", repo: "owner/repo" },
+      { run },
+    );
+    const check = signatureOf(report);
+    expect(check?.verdict).toBe("pass");
+    expect(check?.detail).toContain("owner/repo");
+    expect(calls.filter((argv) => argv[0] === "gh")).toEqual([
+      ["gh", "attestation", "verify", artifact("SHA256SUMS"), "--repo", "owner/repo"],
+    ]);
+    expect(report.exitCode()).toBe(0);
+  });
+
+  it("a verification that RAN and failed is tampering evidence — fails in BOTH modes", async () => {
+    seedApproved(["alpha"]);
+    await buildArtifact();
+    writeFileSync(artifact("SHA256SUMS.sig"), "sig-bytes\n", "utf8");
+    const run = fakeRunner((argv) =>
+      argv[0] === "cosign" ? { code: 1, stderr: "bad signature\n" } : undefined,
+    );
+    for (const options of [{}, { requireSignature: true }]) {
+      const report = await validate(options, { run });
+      const check = signatureOf(report);
+      expect(check?.verdict).toBe("fail");
+      expect(check?.code).toBe("marketplace.signature");
+      expect(check?.detail).toContain("bad signature");
+      expect(report.exitCode()).toBe(1);
+    }
+
+    // Same ladder rung for gh: ran, exited non-zero → fail even without the gate.
+    const ghRun = fakeRunner((argv) =>
+      argv[0] === "gh" ? { code: 1, stderr: "attestation not found\n" } : undefined,
+    );
+    const ghReport = await validate({ signer: "gh", repo: "owner/repo" }, { run: ghRun });
+    const ghCheck = signatureOf(ghReport);
+    expect(ghCheck?.verdict).toBe("fail");
+    expect(ghCheck?.detail).toContain("attestation not found");
+    expect(ghReport.exitCode()).toBe(1);
   });
 });

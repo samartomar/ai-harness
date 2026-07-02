@@ -20,9 +20,19 @@ import {
  * every path read out of the manifest or SHA256SUMS is containment-checked
  * BEFORE any filesystem access uses it, so a hostile artifact cannot steer the
  * validator's reads outside its own directory.
+ *
+ * Slice 2 adds the PROVENANCE probe: `marketplace publish` signs `SHA256SUMS`
+ * (cosign detached sig, or a GitHub attestation), and the signature probe here
+ * verifies it under the verify phase via ctx.run — mirroring the fleet bundle's
+ * `verifyBundleSignature`. Without `--require-signature` an unverifiable
+ * signature (no sig file, tool absent, no `--repo` for gh) is a tolerated
+ * `skip` for local use; with it, every one of those skips becomes a coded
+ * `marketplace.signature` FAIL — the CI gate mode. A signature that EXISTS but
+ * fails verification is tampering evidence and fails in BOTH modes.
  */
 
 const CHECKSUMS_FILE = "SHA256SUMS";
+const SIGNATURE_FILE = "SHA256SUMS.sig";
 
 interface MarketplaceReport {
   findings: Check[];
@@ -277,7 +287,10 @@ function sumsFindings(dir: string): Check[] {
     }
   }
   for (const rel of collectArtifactFiles(dir)) {
-    if (rel === CHECKSUMS_FILE || covered.has(rel)) continue;
+    // The detached signature is signed OVER the sums, so the sums cannot attest
+    // it — like SHA256SUMS itself, it is exempt from coverage; the signature
+    // probe (not the coverage sweep) is what holds it to account.
+    if (rel === CHECKSUMS_FILE || rel === SIGNATURE_FILE || covered.has(rel)) continue;
     findings.push({
       name: "marketplace sums coverage",
       verdict: "fail",
@@ -330,7 +343,11 @@ export function marketplaceReport(dir: string): MarketplaceReport {
 
   const read = readMarketplaceManifest(dir);
   const skills = read.ok ? read.manifest.skills.length : 0;
-  const files = collectArtifactFiles(dir).length;
+  // Attested payload count: everything except the sums and their detached
+  // signature (neither can be covered by the sums themselves).
+  const attested = collectArtifactFiles(dir).filter(
+    (rel) => rel !== CHECKSUMS_FILE && rel !== SIGNATURE_FILE,
+  ).length;
   return {
     findings: [],
     passes: [
@@ -342,7 +359,7 @@ export function marketplaceReport(dir: string): MarketplaceReport {
       {
         name: "marketplace checksums verified",
         verdict: "pass",
-        detail: `${files - 1} file(s) match ${CHECKSUMS_FILE} and the manifest hashes`,
+        detail: `${attested} file(s) match ${CHECKSUMS_FILE} and the manifest hashes`,
       },
       {
         name: "marketplace coverage complete",
@@ -353,21 +370,108 @@ export function marketplaceReport(dir: string): MarketplaceReport {
   };
 }
 
+/**
+ * Grade the publisher signature over `SHA256SUMS`, mirroring the fleet bundle's
+ * `verifyBundleSignature`: cosign verifies the detached `SHA256SUMS.sig`, gh
+ * verifies the GitHub attestation (which needs `--repo`). Runs via ctx.run
+ * under the VERIFY phase only — never at plan time (#35). Signer resolution:
+ * an explicit `--signer` wins; otherwise infer — a detached sig means cosign,
+ * a `--repo` means gh, neither means there is nothing to verify.
+ *
+ * Verdict ladder: exit 0 → pass. An UNVERIFIABLE signature (no sig file, tool
+ * absent via spawnError, gh without --repo) is a `skip` for local use — unless
+ * `--require-signature`, which turns every such skip into a coded FAIL (the CI
+ * gate mode). A verification that RAN and failed is tampering evidence and
+ * fails in both modes.
+ */
+async function signatureCheck(ctx: PlanContext, dir: string): Promise<Check> {
+  const required = ctx.options.requireSignature === true;
+  const repo = typeof ctx.options.repo === "string" ? ctx.options.repo.trim() : "";
+  const hint = ctx.options.signer;
+  const sums = join(dir, CHECKSUMS_FILE);
+  const sig = join(dir, SIGNATURE_FILE);
+  const sigExists = readIfExists(sig) !== undefined;
+
+  // Unverifiable (as opposed to failed): tolerated skip, or a fail under the gate.
+  const unverifiable = (detail: string): Check => ({
+    name: "marketplace signature",
+    verdict: required ? "fail" : "skip",
+    code: "marketplace.signature",
+    detail: required ? `${detail} — --require-signature makes this a failure` : detail,
+    location: { uri: CHECKSUMS_FILE },
+    fingerprint: "marketplace-signature",
+  });
+  const failed = (detail: string): Check => ({
+    name: "marketplace signature",
+    verdict: "fail",
+    code: "marketplace.signature",
+    detail,
+    location: { uri: CHECKSUMS_FILE },
+    fingerprint: "marketplace-signature",
+  });
+
+  const signer =
+    hint === "cosign" || hint === "gh"
+      ? hint
+      : sigExists
+        ? "cosign"
+        : repo.length > 0
+          ? "gh"
+          : undefined;
+  if (signer === undefined) {
+    return unverifiable(
+      `no signature to verify — ${SIGNATURE_FILE} is absent and no --repo was given`,
+    );
+  }
+
+  if (signer === "gh") {
+    if (repo.length === 0) {
+      return unverifiable("gh attestation verification requires --repo <owner/repo>");
+    }
+    const res = await ctx.run(["gh", "attestation", "verify", sums, "--repo", repo]);
+    if (res.spawnError) return unverifiable("gh not found");
+    if (res.code === 0) {
+      return {
+        name: "marketplace signature",
+        verdict: "pass",
+        detail: `GitHub attestation verified ${CHECKSUMS_FILE} for ${repo}`,
+      };
+    }
+    return failed(res.stderr.trim() || `gh attestation verify exited ${res.code}`);
+  }
+
+  if (!sigExists) return unverifiable(`${SIGNATURE_FILE} missing`);
+  const res = await ctx.run(["cosign", "verify-blob", "--signature", sig, sums]);
+  if (res.spawnError) return unverifiable("cosign not found");
+  if (res.code === 0) {
+    return {
+      name: "marketplace signature",
+      verdict: "pass",
+      detail: `cosign verified ${CHECKSUMS_FILE} against ${SIGNATURE_FILE}`,
+    };
+  }
+  return failed(res.stderr.trim() || `cosign verify-blob exited ${res.code}`);
+}
+
 function marketplaceValidatePlan(ctx: PlanContext): Plan {
-  const report = marketplaceReport(marketplaceDir(ctx));
+  const dir = marketplaceDir(ctx);
+  const report = marketplaceReport(dir);
   // One coded probe per finding (the CI gate shape, like `pack validate`), or
-  // the green-path pass checks — never both.
+  // the green-path pass checks — never both. The signature probe rides along in
+  // BOTH cases: provenance is independent of integrity, and its skip/fail
+  // semantics are self-contained.
   const checks = report.findings.length > 0 ? report.findings : report.passes;
   return plan(
     "marketplace validate",
     ...checks.map((check) => probe(check.detail ?? check.name, () => check)),
+    probe("marketplace signature", (c) => signatureCheck(c, dir)),
   );
 }
 
 export const marketplaceValidateCommand: CommandSpec = {
   name: "validate",
   summary:
-    "Validate a marketplace artifact — manifest, checksums, coverage, and path safety (read-only CI gate)",
+    "Validate a marketplace artifact — manifest, checksums, coverage, path safety, and publisher signature (read-only CI gate)",
   readOnly: true,
   alwaysVerify: true,
   options: [
@@ -375,6 +479,20 @@ export const marketplaceValidateCommand: CommandSpec = {
       flags: "--dir <dir>",
       description: "marketplace artifact directory to validate",
       default: DEFAULT_MARKETPLACE_OUT,
+    },
+    {
+      flags: "--require-signature",
+      description:
+        "fail (rather than skip) when the SHA256SUMS signature cannot be verified — the CI gate mode",
+    },
+    {
+      flags: "--signer <signer>",
+      description:
+        "signature verifier: cosign | gh (default: infer — cosign when SHA256SUMS.sig exists, gh when --repo is given)",
+    },
+    {
+      flags: "--repo <owner/repo>",
+      description: "GitHub repository identity for gh attestation verification",
     },
   ],
   plan: marketplaceValidatePlan,
