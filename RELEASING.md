@@ -2,13 +2,18 @@
 
 How a maintainer cuts a release. The heavy lifting is automated: pushing a `v*` tag runs
 [`.github/workflows/release.yml`](.github/workflows/release.yml), which verifies the gates,
-packs a tarball + SHA256 + SPDX SBOM, attests build provenance (keyless OIDC), smoke-installs
-the tarball, publishes to npm via Trusted Publishing with `--provenance`, and creates the
-GitHub Release with generated notes and the artifacts attached.
+packs a tarball + SHA256 checksum + SPDX SBOM, attests build provenance (keyless OIDC),
+signs the checksum file with keyless cosign, smoke-installs the tarball, publishes to npm
+via Trusted Publishing with `--provenance`, and creates the GitHub Release with generated
+notes and the artifacts attached: the tarball, `SHA256SUMS.txt` (+ `SHA256SUMS.txt.sig` and
+`SHA256SUMS.txt.pem`), `provenance.intoto.jsonl`, and `aih-sbom.spdx.json`.
 
 Your job is everything up to the tag.
 
-## One-time setup (before the first publish)
+## One-time setup (done — kept for reference)
+
+This bootstrap is complete: `@aihq/harness` is live on npm and publishing is OIDC-only
+([#37](https://github.com/samartomar/ai-harness/issues/37), closed).
 
 The package is scoped (`@aihq/harness`). A Trusted Publisher is configured under the package's
 npm settings, so the package has to exist first. Bootstrap it once, then every release after is
@@ -30,8 +35,8 @@ tokenless.
 4. The `npm-publish` environment already requires a reviewer (publish waits for approval) and
    is restricted to `v*` tags — confirm under **repo Settings → Environments**.
 
-Tracked in [#37](https://github.com/samartomar/ai-harness/issues/37). No npm token is ever
-stored; after the bootstrap, publish is OIDC-only.
+Tracked in [#37](https://github.com/samartomar/ai-harness/issues/37) (closed). No npm token
+is ever stored; after the bootstrap, publish is OIDC-only.
 
 ## Cut a release
 
@@ -74,17 +79,16 @@ stored; after the bootstrap, publish is OIDC-only.
 
 ## Pre-releases and dist-tags
 
-`release.yml` publishes to the `latest` dist-tag. To ship a pre-release for pilots first
-(e.g. `X.Y.Z-rc.1`), publish it under `next` and promote after validation:
+`release.yml` picks the dist-tag from the version: a **pre-release** (any version containing
+`-`, e.g. `X.Y.Z-rc.1`) publishes under `next` and never touches `latest`; a stable version
+publishes to `latest`. So tagging `vX.Y.Z-rc.1` ships a pilot build automatically. Dist-tags
+can also be moved by hand:
 
 ```bash
 npm dist-tag add @aihq/harness@X.Y.Z next     # or publish the rc with --tag next
 # after pilots pass:
 npm dist-tag add @aihq/harness@X.Y.Z latest
 ```
-
-Publishing an rc under `next` currently needs a manual `npm publish --tag next` or a small
-workflow tweak — the automated path always targets `latest`.
 
 ## If something goes wrong
 
@@ -97,6 +101,9 @@ workflow tweak — the automated path always targets `latest`.
 
 ## Version coherence (guardrail)
 
-`src/program.ts` holds `VERSION` as a constant, separate from `package.json`. Until a CI
-assertion enforces `program.ts VERSION === package.json version === tag` (planned for
-v0.2.0), step 5 above is the manual guard — do not skip it.
+`src/program.ts` holds `VERSION` as a constant, separate from `package.json`. The trio
+`program.ts VERSION === package.json version === tag` is enforced automatically:
+`tests/version.test.ts` pins `VERSION` to `package.json` (a mismatch fails `npm run verify`,
+CI, and the release workflow's verify step), and the release workflow refuses a tag that
+does not match `package.json`. Steps 5–6 above catch any drift locally, before the tag
+exists — do not skip them.

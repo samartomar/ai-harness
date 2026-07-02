@@ -15,7 +15,9 @@ A cross-platform CLI that helps prepare developer workstations and repositories 
 **reviewable, governed AI-assisted coding behind a corporate proxy**. It extracts
 corporate trust, tunes local inference, adds repo guardrails, wires up
 MCP / observability / sandboxing, and lays down a tool-agnostic context
-architecture — all from one command surface.
+architecture — all from one command surface. On top of that setup it runs a
+governance loop for external agent skills — vet → approve → pack → marketplace →
+evidence — anchored in a committed approval lock (`aih-skills.lock.json`).
 
 > Implements the architectural blueprint *"Enterprise DevSecOps AI Bootstrapping:
 > Cryptographic Trust, Local Performance Optimization, and Unified Observability"*
@@ -29,6 +31,12 @@ architecture — all from one command surface.
 
 - **Dry-run by default.** `aih <cmd>` computes and prints a plan; nothing is
   written until you add `--apply`. Add `--verify` to run read-only checks.
+- **Gated writes.** `--apply` refuses a dirty git worktree unless you add
+  `--force`. Commands resolve a governance posture (`--posture vibe|team|enterprise`,
+  default `vibe`): the skill-install gate refuses unapproved skills at
+  `team`/`enterprise` and stays advisory at `vibe`; pack installs are fail-closed
+  at every posture. Once a repo is initialised, every run is recorded in the
+  local [run ledger](#run-ledger).
 - **Never mutates a remote system.** Every unit of work is a local `write`, a
   local `exec` (icacls/chmod/junction…), a read-only `probe`, or a `doc` (the
   exact commands for cloud setup — SSO, gateways, Langfuse, MDM — emitted for a
@@ -90,7 +98,7 @@ aih init . --apply      # apply it
 | `aih trust` | Vet, pin, and gate external GitHub repos and skills before an agent acquires them. `scan <target>` grades danger (auto-exec hooks, dependency-confusion, typosquat, incoming-MCP, secrets) and emits SARIF; `allow`/`pin` record reviewed sources + pinned SHAs in org policy; `list`/`verify` audit the committed policy and trust-lock evidence. |
 | `aih skill` | The **skill lifecycle** on top of `trust` — a complete governance loop for external agent skills. `vet <src>` runs the read-only gate pipeline (shape, license, trust scan) to a **GREEN/YELLOW/RED/UNKNOWN** verdict + a local evidence artifact (never installs). `card`/`approve --pin --owner` turn that evidence into committed governance: a skill card + a root **`aih-skills.lock.json`** entry, behind a fail-closed chain (pin → evidence → approvable verdict → license → owner; RED blocked, UNKNOWN refused, YELLOW = the manual review). The lockfile has **install-time teeth**: `workspace add` refuses promoting a skill with no committed approval *for that source's pinned commit* at `team`/`enterprise` posture (advisory at `vibe`) — a same-named skill from an unrelated source never inherits an approval, and stale approvals are refused. `inventory` joins on-disk skills against the approvals — approved / unapproved / stale-pin / quarantined, one row per physical install — and feeds a "Skill governance" panel in `report --v9`. `quarantine --name <skill>` **disables reversibly** (dir → `.aih/quarantine/`, approval kept; move it back to restore). `remove --name <skill>` retracts: archives the skill dir reversibly (`--delete` to hard-delete), drops the approval + card; refuses ambiguous duplicates, nested-skill collateral, machine-root installs, and stranding a parked copy's approval; cleans up orphaned approvals. |
 | `aih pack` | **Curation manifests** on top of the per-skill lifecycle — a committed root `aih-packs.json` names sets of approved skills so a team installs "the docs-quality pack", not N individual approvals. The `aih-skills.lock.json` stays the **pin authority**: every manifest ref is a fail-closed cross-check against the lock entry (`pack.pin-mismatch` blocks; a disagreeing manifest is never a second pin). `status`/`validate` grade each pack on the two orthogonal axes (approval × install) — `validate` is the **CI gate** (coded findings: `pack.missing-approval`, `pack.pin-mismatch`, `pack.duplicate-name`). `add`/`remove-entry`/`init` author the manifest with refs **derived from the lock** (authoring never invents a pin; `init` seeds a pack from `skill approve --pack` tags; an emptied pack is dropped whole). `plan`/`install` drive the gated two-phase acquisition once per source — **gate ALL sources before promoting ANY**, promote only the pack's refs (subset-exact), route drifted installs back through the gate, resume idempotently — fail-closed at every posture (clean approvals required even at `vibe`; `--acknowledge` refused, acknowledgements stay per-source). `uninstall` retracts every installed member with `skill remove`'s exact per-member semantics — reversible archive (or `--delete`), approval + card dropped, loader-ref advisories, the same refusal guards, and **one blocked member refuses the whole plan**; the manifest curation stays. Installed skills' pack tags roll up in the report's Skill-governance panel. |
-| `aih marketplace` | Package the approved skill set into a **reproducible, verifiable distribution artifact** — a directory a team can host anywhere (git repo or static host), never a registry/server. `build` reads `aih-skills.lock.json` (the **approval authority**) and emits the exact vetted skill bytes (trust-lock hash cross-checked), the committed skill cards, the content-addressed vet evidence, a `marketplace.json` manifest, and `SHA256SUMS` — byte-identical across builds from identical inputs (no wall-clock; `--stamp` is operator-supplied), and **fail-closed whole**: an approved skill that is uninstalled, drifted, ambiguous, or missing its card/evidence refuses the entire build. `validate` is the **read-only CI gate** over a built or fetched artifact (coded findings: `marketplace.manifest-parse`, `marketplace.path-traversal`, `marketplace.missing-file`, `marketplace.checksum-mismatch`, `marketplace.sums-coverage`, `marketplace.unapproved-verdict`), containment-checking every manifest/sums path **before** touching the filesystem with it. Consumers stay on `aih workspace add` — the vet gate still runs at consume time. |
+| `aih marketplace` | Package the approved skill set into a **reproducible, verifiable distribution artifact** — a directory a team can host anywhere (git repo or static host), never a registry/server. `build` reads `aih-skills.lock.json` (the **approval authority**) and emits the exact vetted skill bytes (trust-lock hash cross-checked), the committed skill cards, the content-addressed vet evidence, a `marketplace.json` manifest, and `SHA256SUMS` — byte-identical across builds from identical inputs (no wall-clock; `--stamp` is operator-supplied), and **fail-closed whole**: an approved skill that is uninstalled, drifted, ambiguous, or missing its card/evidence refuses the entire build. `validate` is the **read-only CI gate** over a built or fetched artifact (coded findings: `marketplace.manifest-parse`, `marketplace.path-traversal`, `marketplace.missing-file`, `marketplace.checksum-mismatch`, `marketplace.sums-coverage`, `marketplace.unapproved-verdict`, `marketplace.signature`), containment-checking every manifest/sums path **before** touching the filesystem with it. `publish` signs the artifact's `SHA256SUMS` (cosign or a GitHub attestation — a publish without a signer is refused; that's just a build); `validate --require-signature` then **fails rather than skips** when that signature can't be verified. Consumers stay on `aih workspace add` — the vet gate still runs at consume time. |
 | `aih mcp` | Generate the MCP server config **for the targeted CLIs** (`--cli`/`--all-tools`, default claude): Claude/Cursor/Kiro/Kimi get their correct project file written (`.mcp.json`, `.cursor/mcp.json`, …); Codex (TOML), Copilot, OpenCode, Zed, and global-config tools get exact per-tool guidance instead of a file aih would get wrong. Scopes: local/project/remote. For locked-down orgs, `--mode offline` (vendored local-command servers) or `--mode none` (no MCP + a CLI-tool fallback) plus a `managed-mcp.json` admin template. |
 | `aih sandbox` | Generate a devcontainer + managed sandbox settings (egress allowlist, `failIfUnavailable`). |
 | `aih telemetry` | Inject OpenTelemetry env, a redacting Bindplane collector, and an analytics fetcher (usage + skills endpoints → `{ usage_report, skills }`). |
@@ -111,7 +119,7 @@ aih init . --apply      # apply it
 | `aih doctor` | Fail-closed verification of the workstation/repo configuration (+ workspace mode: validates each child repo). Includes a **canon markdown lint** (read-only) over the scaffolded `ai-coding/` tree. |
 | `aih status` | Read-only inventory of what the harness has configured. |
 
-Global flags: `--apply`, `--verify`, `--json`, `--support-out <dir>`, `--no-log`, `--context-dir <dir>`, `--root <dir>`, `--cli <list>`, `--all-tools`.
+Shared flags: `--apply`, `--force`, `--verify`, `--json`, `--posture <vibe|team|enterprise>`, `--support-out <dir>`, `--no-log`, `--context-dir <dir>`, `--root <dir>`, `--cli <list>`, `--all-tools`, `--detect`, `--yes` (the read-only `doctor`/`status`/`verify-bundle` take the relevant subset).
 Settings also read from `AIH_*` env vars (`AIH_APPLY`, `AIH_CONTEXT_DIR`, `AIH_LOG`, …).
 
 ### Plugins
@@ -146,7 +154,11 @@ data never reads as real. When the report derives findings (see [Support tickets
 a **Suggested actions** section leads with copy-to-clipboard tickets. Add `--demo` for showcase data,
 or `--refresh <sec>` to keep it live.
 
-![aih report dashboard — full view with `--demo` showcase data](docs/assets/ai_harness_report_3_columns.png)
+![aih report --v9 developer-console dashboard rendered with --demo showcase data, showing the harness-wiring score, ranked fix actions, and the remediation ledger](docs/assets/aih-report-v9.png)
+
+*The `--v9` developer console with `--demo` showcase data: harness-wiring score, ranked
+fix actions, and the remediation ledger. `aih report --demo --v9` opens the same dashboard
+locally.*
 
 ### Targeting CLIs
 
@@ -338,9 +350,7 @@ aih usage --rollup ../repo-a,../repo-b
   latest minor receives fixes.
 - **Supply chain** — every release publishes via npm **Trusted Publishing** with build
   **provenance** and ships an **SPDX SBOM** + **SHA256 checksum** on the GitHub Release.
-  Verify an install with `npm audit signatures`. The first npm publish is tracked in
-  [#37](https://github.com/samartomar/ai-harness/issues/37); until then, install from source
-  (above).
+  Verify an install with `npm audit signatures`.
 - **Support** — [SUPPORT.md](SUPPORT.md) · **Security** — [SECURITY.md](SECURITY.md)
   (private reporting) · **Contributing** — [CONTRIBUTING.md](CONTRIBUTING.md).
 
@@ -353,7 +363,9 @@ npm run lint      # biome
 npm run build     # tsup → dist/
 ```
 
-Stack: TypeScript (ESM) · commander · zod · vitest · biome · tsup. See
+Stack: TypeScript (ESM) · commander · zod · vitest · biome · tsup. Coverage floors
+are enforced in [vitest.config.ts](vitest.config.ts) — set just below the achieved
+levels so coverage only ratchets up; CI and releases fail on regression. See
 [CONTRIBUTING.md](CONTRIBUTING.md) for the contributor workflow.
 
 ## License

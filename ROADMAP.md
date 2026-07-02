@@ -23,15 +23,35 @@ Four threads run through every release:
   release. `@aihq/harness` on npm via OIDC Trusted Publishing with build **provenance** +
   SPDX SBOM, the `aih trust` external-source gate, version-coherence CI, and the
   release-management surface (this roadmap, versioning + support policy, release runbook).
+- **[v0.3.0](https://github.com/samartomar/ai-harness/releases/tag/v0.3.0)** /
+  **[v0.3.1](https://github.com/samartomar/ai-harness/releases/tag/v0.3.1)** —
+  first-developer experience. The **`aih ready`** readiness gate, **`aih prune`** for stale
+  per-CLI artifacts (with `--delete` / `--unrunnable`), SARIF validated against the 2.1.0
+  schema in CI ([#36](https://github.com/samartomar/ai-harness/issues/36)), plan-time reads
+  pinned as ledgered probes ([#35](https://github.com/samartomar/ai-harness/issues/35)),
+  and the licensing/disclaimer docs pass.
+- **[v0.4.0](https://github.com/samartomar/ai-harness/releases/tag/v0.4.0)** /
+  **[v0.4.1](https://github.com/samartomar/ai-harness/releases/tag/v0.4.1)** — the **skill
+  lifecycle**: `aih skill vet` / `card` / `approve` / `inventory` / `remove`, the committed
+  `aih-skills.lock.json` approval authority, posture-gated install enforcement in
+  `aih workspace add`, and `aih skill quarantine`.
+- **[v0.5.0](https://github.com/samartomar/ai-harness/releases/tag/v0.5.0)** — **skill
+  packs**: the committed `aih-packs.json` curation manifest and the `aih pack` command
+  group (status / validate / authoring / gated batch install / uninstall), plus the
+  report's per-pack governance rollup.
 
-## Now — [v0.3.0](https://github.com/samartomar/ai-harness/milestone/2)
+## Now — [v0.6.0](https://github.com/samartomar/ai-harness/milestone/8)
 
-- **First-developer readiness gate** — a single "ready for the first task" verdict over
-  runnable CLIs, active hooks, secrets verification, quality commands, and app blockers.
-- **`aih prune`** — preview and remove stale canon, adapters, and hooks when a CLI is no
-  longer targeted.
-- SARIF validated against the 2.1.0 schema in CI ([#36](https://github.com/samartomar/ai-harness/issues/36)).
-- `plan()` purity — plan-time reads modeled as ledgered probes ([#35](https://github.com/samartomar/ai-harness/issues/35)).
+Marketplace + additive enterprise seams
+([#113](https://github.com/samartomar/ai-harness/issues/113)). All four feature slices are
+merged to `main`; the release itself is the remaining step.
+
+- **`aih marketplace build` / `validate` / `publish`** — a reproducible, hostable
+  distribution artifact built from the skill approval lock, with a signed `SHA256SUMS`.
+- **Pluggable CommandSpec registry** — a gated startup probe of the optional
+  `@aihq/enterprise` peer, so a future enterprise layer stays a bolt-on instead of a fork.
+- **Policy-bundle + evidence-bundle schemas** — `aih policy validate` and
+  `aih evidence build` over the governance artifacts aih already emits.
 
 ## Next — [v1.0.0](https://github.com/samartomar/ai-harness/milestone/3)
 
@@ -43,7 +63,7 @@ Four threads run through every release:
 Directional. Nothing here is committed to a release yet.
 
 - Corporate-trust propagation across more runtimes (git, Go, Docker, JVM, Gradle, Maven).
-- Trust-gate deep-scan detectors beyond the first scanner; `aih skill inventory`.
+- Trust-gate deep-scan detectors beyond the first scanner.
 - Broader language command routing for polyglot repos.
 
 ## How to influence it

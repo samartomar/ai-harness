@@ -1,5 +1,9 @@
 # SPEC — v9 dashboard implementation
 
+> Status: shipped — `aih report --v9` merged to main (PR #62, 2026-06-29). Implementation:
+> `src/report/v9.ts` (`buildAihDataV9`, `reportHtmlV9`) + `v9-panels.ts`, `v9-render.ts`,
+> `v9-template.ts`, `v9-types.ts`, `v9-demo.ts`.
+
 ## 1. Architecture
 
 Reuse the Phase-0 pattern (`src/report/v4.ts`): a renderer that **embeds a static shell

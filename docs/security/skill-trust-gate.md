@@ -1,7 +1,23 @@
 # ai-harness Skill Trust Gate
-> Status: design/proposed direction, not shipped features. See [ROADMAP.md](../../ROADMAP.md).
 
-Status: design / proposed
+> Status: shipped. The lifecycle designed here landed across v0.4.0, v0.4.1, v0.5.0, and the
+> v0.6.0 slices now on main:
+> `aih skill vet|card|approve|inventory|remove|quarantine` (`src/skill/`), the trust scan and
+> shape detectors (`src/trust/`, `src/skill/shape.ts`), posture-gated install enforcement in
+> `aih workspace add` (`src/workspace/acquire.ts`), pack curation (`src/pack/`), and
+> marketplace build/validate/publish (`src/marketplace/`). The GREEN/YELLOW/RED/UNKNOWN
+> verdict engine shipped as specified (`src/skill/verdict.ts`).
+>
+> As-built divergences from the design below:
+>
+> - The approval lockfile is the committed repo-root `aih-skills.lock.json`, not
+>   `.aih/approved-skills.lock`.
+> - Skill cards are committed at `<contextDir>/skill-cards/<name>.json`, not
+>   `.aih/skill-cards/`.
+> - There is no standalone `aih skill install`; installs ride `aih workspace add` and
+>   `aih pack install`, both approval-gated.
+>
+> The body below is the original design record.
 
 ## Purpose
 

@@ -1,7 +1,8 @@
 # Usage Metering — design (B)
 
-Status: **implemented — gated green** · on `main` · 2026-06-29
-Decisions resolved (see **Decisions**); P1–P5 are implemented in this branch.
+Status: **implemented — gated green** · on `main` · 2026-06-29 · `src/usage/`
+(events.ts, aggregate.ts, capture.ts, hooks.ts)
+Decisions resolved (see **Decisions**); P1–P5 are implemented on main.
 The checklist at the bottom records what landed.
 
 ## TL;DR

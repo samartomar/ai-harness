@@ -1,7 +1,12 @@
 # Suggested Repo Documentation Placement
-> Status: design/proposed direction, not shipped features. See [ROADMAP.md](../../ROADMAP.md).
 
-Status: design / proposed
+> Status: placement implemented — the recommended tree below exists (all five docs live at
+> these paths) and `docs/README.md` is the index. Several of the suggested tracking issues
+> have since shipped: the workspace router and report rollup (`src/workspace/`,
+> `src/report/workspace.ts`), `aih skill vet` (`src/skill/vet.ts`, v0.4.0), and the pack
+> commands (`src/pack/`, v0.5.0 — shipped as `aih-packs.json` curation with
+> `--pack <name>`, without the built-in pack list suggested here). The README wording and
+> issue-label sections remain suggestions. Kept as the design record.
 
 ## Goal
 

@@ -1,7 +1,12 @@
 # Enterprise Skill Pack Model for ai-harness
-> Status: design/proposed direction, not shipped features. See [ROADMAP.md](../../ROADMAP.md).
 
-Status: design / proposed
+> Status: historical design exploration. A pack system has since shipped (v0.5.0,
+> PRs #108–#111 — `src/pack/`), but with a different shape than proposed here: packs are a
+> committed curation manifest (`aih-packs.json`) over per-skill approvals, addressed as
+> `aih pack install --pack <name>`. See [pack-manifest.md](pack-manifest.md) for the shipped
+> model. The built-in pack catalog below (enterprise-core, workspace-intel, product-ui, …),
+> the positional `aih pack install <name>` shapes, and the manifest format in this doc were
+> not implemented. Kept as the design record.
 
 ## Goal
 

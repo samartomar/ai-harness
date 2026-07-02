@@ -1,6 +1,7 @@
 # The pack manifest (`aih-packs.json`)
 
-> Status: shipped. For the earlier design exploration, see
+> Status: shipped in v0.5.0 (PRs #108–#111) — `src/pack/` (manifest.ts, status.ts,
+> authoring.ts, install.ts, uninstall.ts). For the earlier design exploration, see
 > [enterprise-packaging-model.md](enterprise-packaging-model.md).
 
 `aih-packs.json` is a **committed curation manifest at the repo root**: it names sets of

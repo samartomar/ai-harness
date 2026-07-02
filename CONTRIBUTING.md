@@ -9,7 +9,8 @@ npm ci
 npm run typecheck && npm run lint && npm test && npm run build
 ```
 
-CI (`.github/workflows/ci.yml`) runs the same gates on every push/PR — keep them green.
+`npm run verify` runs the same gates in one command, with the coverage thresholds CI
+enforces. CI (`.github/workflows/ci.yml`) runs them on every push/PR — keep them green.
 
 ## Conventions
 
@@ -24,9 +25,8 @@ CI (`.github/workflows/ci.yml`) runs the same gates on every push/PR — keep th
 
 No production code may authenticate to, provision, or mutate a **remote** system.
 Cloud/SSO/gateway/observability-backend/MDM setup is emitted as `doc` actions
-(commands for a human), never executed. See
-[`.github/AGENT_TASKS.md`](.github/AGENT_TASKS.md) for the full agent brief,
-architecture, and a backlog of good tasks.
+(commands for a human), never executed. Design and architecture docs live under
+[`docs/`](docs/README.md).
 
 ## Pull requests
 

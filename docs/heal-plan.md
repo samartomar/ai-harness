@@ -1,6 +1,9 @@
 # `aih heal` — self-healing system-doctor implementation plan
 
-_Status: ✅ implemented on `feat/heal-self-doctor` — typecheck + `biome ci` clean, 676 tests pass (+29), `src/heal` 98.5% line coverage. Date: 2026-06-25. See §10 for as-built deviations._
+_Status: ✅ shipped — merged to main; `aih heal` is a registered capability
+(`src/heal/`: cert-verify, npm-heal, path-heal, mcp-probe, phases, templates). Originally
+implemented on `feat/heal-self-doctor` — typecheck + `biome ci` clean, 676 tests pass (+29),
+`src/heal` 98.5% line coverage. Date: 2026-06-25. See §10 for as-built deviations._
 
 Adds a **diagnose-and-repair** capability for the broken workstation runtime that `aih certs`
 assumes already works (npm, Node, PATH, MCP). Genericized from a corporate harness so it works
