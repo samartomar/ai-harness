@@ -6,6 +6,42 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-07-02
+
+The skill lifecycle grows **teeth and a pause button**: committed approvals are now
+enforced at install time, and a skill can be disabled reversibly without retracting
+its approval. Every change on this destructive/gate surface passed two independent
+review lenses (an external security pass and a code-quality pass) with **every
+finding fixed and regression-tested before merge**.
+
+### Added
+
+- **Posture-gated skill install enforcement** — `aih workspace add` now requires a
+  committed `aih-skills.lock.json` approval **for this source** before promoting a
+  skill: matching is content-addressed (a GitHub promotion matches only an entry
+  whose commit equals the fetched pinned SHA — a same-named skill from an unrelated
+  source can never inherit an approval, and a *stale* approval is refused; local
+  promotions match `commit: "local"` entries). Advisory at `vibe` posture
+  (warning-only, installs proceed); a promotion-blocking `trust.unapproved-skill`
+  fail at `team`/`enterprise` — surfaced as a coded check through the normal
+  report/SARIF/support-ticket flow, never a bare error.
+- **`aih skill quarantine --name <skill>`** — disable a skill **without removing
+  it**: moves its directory to the deterministic `.aih/quarantine/<path>` while
+  keeping its lockfile approval and committed card; restore by moving the directory
+  back (the digest prints the exact path). Refuses an already-occupied quarantine
+  destination (printed restore paths are always truthful), ambiguous duplicates,
+  nested-skill collateral, and machine-root installs. `skill inventory` and the
+  report governance panel gain a `quarantined` state — and the panel never claims
+  "all approved" while a skill sits parked. `skill remove` refuses to strand a
+  same-named parked copy's shared approval.
+- The remove engine's reversible move gained a **closed-union archive root**
+  (`.aih/legacy` | `.aih/quarantine`) — never an arbitrary path; containment,
+  symlink refusal, never-overwrite, the dirty-worktree gate, and rollback apply to
+  both roots unchanged.
+- `aih skill approve --name` now validates the override against the vetted
+  evidence's skill list (an arbitrary name would commit an approval no promotion
+  could ever match).
+
 ## [0.4.0] - 2026-07-02
 
 The **skill lifecycle** release: a complete governance loop for external agent skills —
@@ -236,7 +272,8 @@ GitHub but **never published to npm**; the first published release is 0.2.0.
   (npm + github-actions), private vulnerability reporting, `@claude` workflow gated
   to trusted authors, and GitHub Actions pinned to commit SHAs.
 
-[Unreleased]: https://github.com/samartomar/ai-harness/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/samartomar/ai-harness/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/samartomar/ai-harness/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/samartomar/ai-harness/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/samartomar/ai-harness/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/samartomar/ai-harness/compare/v0.2.0...v0.3.0
