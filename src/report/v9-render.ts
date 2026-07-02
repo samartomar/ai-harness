@@ -599,10 +599,29 @@ export function renderSkillGovernance(model: V9SkillGovernance): string {
   // Quarantined skills count as NOT clean: "all approved" must never render while a
   // disabled skill sits parked (it is installed, and it is not in a vetted-active state).
   const unattested = model.unapproved + model.stalePin + model.quarantined;
-  const clean = unattested === 0;
+  // The governance ARTIFACTS count against the headline too: a green "all approved"
+  // badge must never sit directly above a failing marketplace/evidence/org-policy row
+  // it contradicts. An UNCHECKED evidence bundle (`current` undefined — too large to
+  // re-hash at digest time) is neutral, not an issue.
+  const artifactIssues =
+    (model.marketplace?.findings ?? 0) > 0 ||
+    model.evidence?.current === false ||
+    model.evidence?.stale === true ||
+    model.orgPolicy?.valid === false;
+  const clean = unattested === 0 && !artifactIssues;
+  const warnBox = (headline: string, detail: string): string =>
+    `<div class="drift-status" style="background:var(--warn-soft);border-color:color-mix(in oklab,var(--warn) 22%,transparent)"><div class="dicon" style="background:var(--warn)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg></div><div class="dtext"><b style="color:var(--warn)">${headline}</b><span>${detail}</span></div></div>`;
   const statusBox = clean
     ? `<div class="drift-status"><div class="dicon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6 9 17l-5-5"/></svg></div><div class="dtext"><b>All ${model.approved} installed skill${model.approved === 1 ? "" : "s"} approved</b><span>every external skill on disk is vetted and in sync</span></div></div>`
-    : `<div class="drift-status" style="background:var(--warn-soft);border-color:color-mix(in oklab,var(--warn) 22%,transparent)"><div class="dicon" style="background:var(--warn)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg></div><div class="dtext"><b style="color:var(--warn)">${unattested} of ${model.installed} installed skill${model.installed === 1 ? "" : "s"} not fully approved</b><span>an external skill is unapproved, stale, or quarantined</span></div></div>`;
+    : unattested > 0
+      ? warnBox(
+          `${unattested} of ${model.installed} installed skill${model.installed === 1 ? "" : "s"} not fully approved`,
+          "an external skill is unapproved, stale, or quarantined",
+        )
+      : warnBox(
+          "Governance artifacts need attention",
+          "installed skills are approved; a marketplace, evidence-bundle, or org-policy row below has findings",
+        );
   // escHtml stops executable injection; this additionally strips C0/C1 and bidi
   // formatting controls so a hostile lock/pack label cannot VISUALLY spoof a row
   // (RTL-override reversing "approved", zero-width padding, etc.).
@@ -625,7 +644,9 @@ export function renderSkillGovernance(model: V9SkillGovernance): string {
     .join("");
   const badge = clean
     ? '<span class="badge ok">all approved</span>'
-    : `<span class="badge warn">${unattested} unattested</span>`;
+    : unattested > 0
+      ? `<span class="badge warn">${unattested} unattested</span>`
+      : '<span class="badge warn">artifacts need attention</span>';
   // The quarantined count line renders only when non-zero, so a quarantine-free
   // report stays byte-identical to the pre-quarantine output.
   const quarantinedRow =
@@ -656,8 +677,17 @@ export function renderSkillGovernance(model: V9SkillGovernance): string {
   // live comparison made (the skills lock vs its bundled copy) gets its own honest
   // phrase; anything more is `aih verify-bundle` / `aih evidence build`'s business.
   const ev = model.evidence;
+  // `current` undefined = the bundle was too large to re-hash at digest time — a
+  // neutral "not re-verified" (aih verify-bundle owns the full check), never a warn.
+  const evIssue = ev !== undefined && (ev.current === false || ev.stale);
+  const evConsistency =
+    ev?.current === undefined
+      ? "not re-verified (large bundle)"
+      : ev.current
+        ? "internally consistent"
+        : "checksums mismatch";
   const evidenceRow = ev
-    ? `<div class="row"><span class="k">evidence bundle</span><span class="v"${ev.current && !ev.stale ? "" : ' style="color:var(--warn)"'}>${ev.artifacts} artifact${ev.artifacts === 1 ? "" : "s"} · ${ev.current ? "internally consistent" : "checksums mismatch"}${ev.stale ? " · behind live skills lock" : ""}</span></div>`
+    ? `<div class="row"><span class="k">evidence bundle</span><span class="v"${evIssue ? ' style="color:var(--warn)"' : ""}>${ev.artifacts} artifact${ev.artifacts === 1 ? "" : "s"} · ${evConsistency}${ev.stale ? " · behind live skills lock" : ""}</span></div>`
     : "";
   // Org-policy row — presence + parse only ("valid (schema parse)" says exactly how
   // far the claim goes; deep validation is `aih policy validate`'s). The error line

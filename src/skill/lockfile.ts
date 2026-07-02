@@ -59,7 +59,11 @@ export interface SkillsLock {
  * Read the committed skills lockfile. Fail-SOFT per entry (mirrors
  * `readTrustLock`): a malformed file yields an empty lock and a malformed ENTRY
  * is dropped while valid siblings survive — so an upsert + rewrite never
- * crashes on hand-edited state, and never amplifies it either.
+ * crashes on hand-edited state, and never amplifies it either. Duplicate NAMES
+ * are dropped the same way (first entry wins): every aih writer dedupes by name,
+ * so a duplicate can only come from a hand-edited file — and letting it through
+ * would make every by-name join downstream (inventory, packs, marketplace)
+ * silently last-write-wins on which source/commit/pack a skill "has".
  */
 export function readSkillsLock(root: string): SkillsLock {
   const raw = readIfExists(join(root, AIH_SKILLS_LOCK_FILE));
@@ -67,11 +71,14 @@ export function readSkillsLock(root: string): SkillsLock {
   try {
     const parsed = JSON.parse(raw) as { skills?: unknown };
     const skills = Array.isArray(parsed.skills) ? parsed.skills : [];
+    const seen = new Set<string>();
     return {
       schemaVersion: 1,
       skills: skills.flatMap((entry) => {
         const result = SkillLockEntrySchema.safeParse(entry);
-        return result.success ? [result.data] : [];
+        if (!result.success || seen.has(result.data.name)) return [];
+        seen.add(result.data.name);
+        return [result.data];
       }),
     };
   } catch {

@@ -20,7 +20,7 @@ import { DEFAULT_MARKETPLACE_OUT, readMarketplaceManifest } from "../marketplace
 import { marketplaceReport } from "../marketplace/validate.js";
 import { mcpServers } from "../mcp/servers.js";
 import { AIH_ORG_POLICY_FILE } from "../org-policy/constants.js";
-import { OrgPolicyError, orgPolicyPath, readOrgPolicy } from "../org-policy/schema.js";
+import { OrgPolicyError, readOrgPolicy } from "../org-policy/schema.js";
 import { scanRepo } from "../profile/scan.js";
 import { skillInventory } from "../skill/index.js";
 import { AIH_SKILLS_LOCK_FILE, readSkillsLock } from "../skill/lockfile.js";
@@ -651,23 +651,34 @@ function marketplaceState(
 }
 
 /**
+ * The re-hash budget for the digest-time integrity check: past this many bundled
+ * bytes (summed from `manifest.json`, one cheap read), `current` is reported as
+ * `undefined` ("not re-verified") instead of re-hashing the whole bundle on every
+ * report generation. Evidence bundles ACCUMULATE run logs and prior reports, so an
+ * uncapped pass would make `aih report --v9` cost grow with bundle history —
+ * disproportionate for a one-boolean answer that `aih verify-bundle` owns anyway.
+ */
+const EVIDENCE_REHASH_BUDGET_BYTES = 16 * 1024 * 1024;
+
+/**
  * Evidence-bundle state for the governance digest — present only when the DEFAULT
  * bundle (`.aih/evidence-bundle`) exists under the target root; absent dir →
  * `undefined` → the panel renders byte-identically. Three honest, cheap reads:
  * `artifacts` counts the `evidence.json` kind-index entries; `current` reuses the
  * fleet bundle's {@link verifyBundleChecksums} (pure fs), which checks the BUNDLED
  * COPIES against the bundle's own SHA256SUMS — INTERNAL consistency, never
- * freshness vs the live repo; `stale` is the one freshness probe cheap enough to
- * be worth making: the LIVE skills lock compared byte-for-byte (after the write
- * engine's trailing-newline normalization, the same one `evidence build` hashes
- * through) to its bundled copy. The lock is the approval authority every other
- * bundled artifact follows, so lock drift means the bundle predates a governance
- * change — the `aih evidence build --apply` rebuild hint. Anything deeper stays
- * `aih verify-bundle`'s job.
+ * freshness vs the live repo — and is SKIPPED (`undefined`) when the bundle's
+ * manifest-declared size exceeds {@link EVIDENCE_REHASH_BUDGET_BYTES}; `stale` is
+ * the one freshness probe cheap enough to be worth making: the LIVE skills lock
+ * compared byte-for-byte (after the write engine's trailing-newline normalization,
+ * the same one `evidence build` hashes through) to its bundled copy. The lock is
+ * the approval authority every other bundled artifact follows, so lock drift means
+ * the bundle predates a governance change — the `aih evidence build --apply`
+ * rebuild hint. Anything deeper stays `aih verify-bundle`'s job.
  */
 function evidenceState(
   ctx: PlanContext,
-): { artifacts: number; current: boolean; stale: boolean } | undefined {
+): { artifacts: number; current?: boolean; stale: boolean } | undefined {
   const dir = join(ctx.root, DEFAULT_EVIDENCE_OUT);
   if (!existsSync(dir)) return undefined;
   const artifacts = (() => {
@@ -680,12 +691,32 @@ function evidenceState(
       return 0; // unreadable index → 0 indexed artifacts; `current` still grades the tree
     }
   })();
-  const current = verifyBundleChecksums(dir).verdict === "pass";
+  // Manifest-declared size (one small read) gates the full re-hash. An unreadable
+  // manifest grades as 0 declared bytes: verifyBundleChecksums then runs and fails
+  // loudly on the missing/mismatched manifest rather than being silently skipped.
+  const declaredBytes = (() => {
+    const raw = readIfExists(join(dir, "manifest.json"));
+    if (raw === undefined) return 0;
+    try {
+      const parsed = JSON.parse(raw) as { files?: Array<{ bytes?: unknown }> } | null;
+      if (!Array.isArray(parsed?.files)) return 0;
+      return parsed.files.reduce(
+        (sum, f) => sum + (typeof f.bytes === "number" && f.bytes > 0 ? f.bytes : 0),
+        0,
+      );
+    } catch {
+      return 0;
+    }
+  })();
+  const current =
+    declaredBytes > EVIDENCE_REHASH_BUDGET_BYTES
+      ? undefined
+      : verifyBundleChecksums(dir).verdict === "pass";
   const norm = (text: string | undefined): string | undefined =>
     text === undefined ? undefined : ensureTrailingNewline(text);
   const live = norm(readIfExists(join(ctx.root, AIH_SKILLS_LOCK_FILE)));
   const bundled = norm(readIfExists(join(dir, "files", AIH_SKILLS_LOCK_FILE)));
-  return { artifacts, current, stale: live !== bundled };
+  return { artifacts, ...(current !== undefined ? { current } : {}), stale: live !== bundled };
 }
 
 /**
@@ -702,9 +733,10 @@ function evidenceState(
 function orgPolicyState(
   ctx: PlanContext,
 ): { present: true; valid: boolean; error?: string } | undefined {
-  if (readIfExists(orgPolicyPath(ctx.root, ctx.env)) === undefined) return undefined;
   try {
-    readOrgPolicy(ctx.root, ctx.env);
+    // ONE read: readOrgPolicy returns undefined for an absent file (not a finding)
+    // and throws OrgPolicyError for a present-but-broken one.
+    if (readOrgPolicy(ctx.root, ctx.env) === undefined) return undefined;
     return { present: true, valid: true };
   } catch (err) {
     if (!(err instanceof OrgPolicyError)) throw err;
@@ -793,11 +825,15 @@ export function skillGovernanceDigest(ctx: PlanContext): DigestAction | undefine
     ...(evidence
       ? [
           `  evidence bundle (${DEFAULT_EVIDENCE_OUT}) — ${evidence.artifacts} artifact(s) · ` +
-            (evidence.current
-              ? "internally consistent"
-              : "bundled copies do NOT match SHA256SUMS") +
+            (evidence.current === undefined
+              ? "integrity not re-verified (large bundle; check: `aih verify-bundle`)"
+              : evidence.current
+                ? "internally consistent"
+                : "bundled copies do NOT match SHA256SUMS") +
             (evidence.stale ? " · live skills lock has moved past the bundled copy" : "") +
-            (evidence.current && !evidence.stale ? "" : " (rebuild: `aih evidence build --apply`)"),
+            (evidence.current === false || evidence.stale
+              ? " (rebuild: `aih evidence build --apply`)"
+              : ""),
         ]
       : []),
     ...(orgPolicy

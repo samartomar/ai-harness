@@ -276,11 +276,13 @@ export interface V9SkillGovernance {
    * v0.6 evidence bundle (`.aih/evidence-bundle`), when built: `evidence.json`
    * kind-index artifact count; `current` = the bundled copies still match the
    * bundle's own SHA256SUMS (INTERNAL consistency — never freshness vs the live
-   * repo); `stale` = the live skills lock no longer matches its bundled copy (the
-   * bundle predates an approval change → rebuild with `aih evidence build
-   * --apply`). Absent when the bundle directory does not exist.
+   * repo), `undefined` when the bundle is too large to re-hash at digest time
+   * (a report must stay cheap — `aih verify-bundle` is the full check); `stale` =
+   * the live skills lock no longer matches its bundled copy (the bundle predates
+   * an approval change → rebuild with `aih evidence build --apply`). Absent when
+   * the bundle directory does not exist.
    */
-  evidence?: { artifacts: number; current: boolean; stale: boolean };
+  evidence?: { artifacts: number; current?: boolean; stale: boolean };
   /**
    * Org policy (`aih-org-policy.json`) presence + schema-parse state — the shallow
    * read only; deep validation stays `aih policy validate`. Absent when the file

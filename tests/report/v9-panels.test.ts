@@ -470,20 +470,87 @@ describe("skillGovernanceDigest", () => {
   it("strips control/bidi characters from skill and pack labels (Codex low)", () => {
     // escHtml stops executable injection; bidi overrides could still VISUALLY spoof
     // a governance row (e.g. RTL-reversing "approved"). Both label paths strip them.
+    // Escapes only — never literal bidi bytes in source (repo rule).
     const html = renderSkillGovernance({
       installed: 1,
       approved: 1,
       unapproved: 0,
       stalePin: 0,
       quarantined: 0,
-      rows: [{ name: "docs‮what", status: "approved", source: "a/b​x" }],
-      packs: [{ name: "core‪evil", skills: 1, approved: 1 }],
+      rows: [{ name: "docs\u202ewhat", status: "approved", source: "a/b\u200bx" }],
+      packs: [{ name: "core\u202aevil", skills: 1, approved: 1 }],
     });
-    expect(html).not.toContain("‮");
-    expect(html).not.toContain("‪");
-    expect(html).not.toContain("​");
+    expect(html).not.toContain("\u202e");
+    expect(html).not.toContain("\u202a");
+    expect(html).not.toContain("\u200b");
     expect(html).toContain("docswhat");
     expect(html).toContain("pack coreevil");
+  });
+
+  it("never renders 'all approved' above a failing governance artifact (review HIGH)", () => {
+    // Zero installed skills + a broken, unsigned marketplace artifact: the badge and
+    // status box must warn — a green headline directly above a warn row is a lie.
+    const base = {
+      installed: 0,
+      approved: 0,
+      unapproved: 0,
+      stalePin: 0,
+      quarantined: 0,
+      rows: [],
+    };
+    const broken = renderSkillGovernance({
+      ...base,
+      marketplace: { skills: 0, findings: 3, signed: false },
+    });
+    expect(broken).not.toContain("all approved");
+    expect(broken).toContain("artifacts need attention");
+    expect(broken).toContain("Governance artifacts need attention");
+    // Same for a checksum-mismatched or stale evidence bundle and an invalid policy.
+    for (const model of [
+      { ...base, evidence: { artifacts: 1, current: false, stale: false } },
+      { ...base, evidence: { artifacts: 1, current: true, stale: true } },
+      { ...base, orgPolicy: { present: true as const, valid: false } },
+    ]) {
+      expect(renderSkillGovernance(model)).not.toContain("all approved");
+    }
+    // HEALTHY artifacts must not flip the badge: all-green stays "all approved".
+    const healthy = renderSkillGovernance({
+      ...base,
+      installed: 1,
+      approved: 1,
+      rows: [{ name: "clean", status: "approved" as const }],
+      marketplace: { skills: 1, findings: 0, signed: true },
+      evidence: { artifacts: 2, current: true, stale: false },
+      orgPolicy: { present: true as const, valid: true },
+    });
+    expect(healthy).toContain("all approved");
+    // And skill problems still take precedence over the artifact wording.
+    const unattested = renderSkillGovernance({
+      ...base,
+      installed: 1,
+      unapproved: 1,
+      rows: [{ name: "rogue", status: "unapproved" as const }],
+      marketplace: { skills: 0, findings: 3, signed: false },
+    });
+    expect(unattested).toContain("1 unattested");
+  });
+
+  it("renders an un-re-verified large bundle neutrally — not as an issue", () => {
+    // `current` undefined = re-hash skipped for size; that is honesty about NOT
+    // checking, so it must neither claim consistency nor warn like a mismatch.
+    const html = renderSkillGovernance({
+      installed: 1,
+      approved: 1,
+      unapproved: 0,
+      stalePin: 0,
+      quarantined: 0,
+      rows: [{ name: "clean", status: "approved" }],
+      evidence: { artifacts: 40, stale: false },
+    });
+    expect(html).toContain("not re-verified (large bundle)");
+    expect(html).not.toContain("checksums mismatch");
+    expect(html).not.toContain("internally consistent");
+    expect(html).toContain("all approved"); // unchecked ≠ failing
   });
 
   /** A schema-valid lock entry for `name`, optionally tagged with a pack. */
@@ -756,6 +823,35 @@ describe("skillGovernanceDigest", () => {
     expect(d?.text).toContain("bundled copies do NOT match SHA256SUMS");
   });
 
+  it("skips the integrity re-hash past the manifest-declared size budget (review MEDIUM)", () => {
+    // A bundle whose manifest declares more bytes than the digest-time budget is NOT
+    // re-hashed on every report — `current` is omitted and the text says so honestly.
+    // (The bundled files themselves stay tiny; only the DECLARED size trips the cap,
+    // which is the point: one cheap manifest read decides, no hashing happens.)
+    const lock = JSON.stringify({ schemaVersion: 1, skills: [] });
+    put("aih-skills.lock.json", lock);
+    putEvidenceBundle(lock);
+    put(
+      ".aih/evidence-bundle/manifest.json",
+      JSON.stringify({
+        schemaVersion: 1,
+        files: [{ path: "aih-skills.lock.json", bytes: 32 * 1024 * 1024, sha256: "0".repeat(64) }],
+      }),
+    );
+    const d = skillGovernanceDigest(ctx());
+    const data = d?.data as SkillGovData & {
+      evidence?: { artifacts: number; current?: boolean; stale: boolean };
+    };
+    expect(data.evidence).toBeDefined();
+    expect(data.evidence && "current" in data.evidence).toBe(false);
+    expect(d?.text).toContain(
+      "integrity not re-verified (large bundle; check: `aih verify-bundle`)",
+    );
+    expect(d?.text).not.toContain("internally consistent");
+    // Not an issue → no rebuild hint from the consistency side (the lock is in sync here).
+    expect(d?.text).not.toContain("rebuild:");
+  });
+
   it("renders the evidence row only when the model carries it (byte-identical absent)", () => {
     const model = {
       installed: 1,
@@ -824,7 +920,7 @@ describe("skillGovernanceDigest", () => {
 
   it("reports an invalid org policy with a sanitized, truncated first error line", () => {
     // Schema-invalid (missing references) + a bidi override smuggled into a value.
-    put("aih-org-policy.json", JSON.stringify({ schemaVersion: 1, minimumPosture: "team‮" }));
+    put("aih-org-policy.json", JSON.stringify({ schemaVersion: 1, minimumPosture: "team\u202e" }));
     const d = skillGovernanceDigest(ctx());
     const data = d?.data as SkillGovData & {
       orgPolicy?: { present: true; valid: boolean; error?: string };
@@ -832,7 +928,7 @@ describe("skillGovernanceDigest", () => {
     expect(data.orgPolicy?.present).toBe(true);
     expect(data.orgPolicy?.valid).toBe(false);
     expect(data.orgPolicy?.error).toBeDefined();
-    expect(data.orgPolicy?.error).not.toContain("‮");
+    expect(data.orgPolicy?.error).not.toContain("\u202e");
     expect((data.orgPolicy?.error ?? "").length).toBeLessThanOrEqual(160);
     expect(d?.text).toContain("INVALID:");
   });
