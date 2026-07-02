@@ -1,5 +1,14 @@
 import { createHash } from "node:crypto";
-import { existsSync, lstatSync, readdirSync, readFileSync } from "node:fs";
+import {
+  closeSync,
+  existsSync,
+  constants as fsConstants,
+  fstatSync,
+  lstatSync,
+  openSync,
+  readdirSync,
+  readFileSync,
+} from "node:fs";
 import { basename, isAbsolute, join, posix, relative, resolve } from "node:path";
 import { sha256Hex } from "../bundle/index.js";
 import { AihError } from "../errors.js";
@@ -208,10 +217,16 @@ function buildSkill(
   for (const fileRel of collectSkillFiles(name, row.abs)) {
     const abs = join(row.abs, fileRel);
     const repoRel = toPosix(relative(ctx.root, abs));
-    // ONE read per file: the bytes the drift check verifies are the bytes that
-    // get packaged — a hash-then-reread pair would open a swap window where
-    // unvetted bytes ship under a vetted skill's name.
-    const raw = readFileSync(abs);
+    // ONE fd-guarded read per file: the bytes the drift check verifies are the
+    // bytes that get packaged — a hash-then-reread pair would open a swap
+    // window where unvetted bytes ship under a vetted skill's name, and a
+    // symlink swapped in after enumeration must be refused, not followed.
+    const raw = readRegularFile(abs);
+    if (raw === undefined) {
+      throw refuse(
+        `skill ${name}: ${fileRel} vanished or stopped being a regular file during packaging`,
+      );
+    }
     const vetted = vettedHashFor(owner, name, fileRel, repoRel);
     if (vetted !== undefined && sha256OfBytes(raw) !== vetted) {
       throw refuse(
@@ -283,11 +298,37 @@ function sha256OfBytes(buf: Buffer): string {
   return createHash("sha256").update(buf).digest("hex");
 }
 
+/** `O_NOFOLLOW` where the platform has it (absent at runtime on Windows despite the typings). */
+const O_NOFOLLOW = (fsConstants as Record<string, number | undefined>).O_NOFOLLOW ?? 0;
+
+/**
+ * Open-then-read on ONE file descriptor: the regular-file check (`fstat` on the
+ * open fd, never a second path lookup) and the read cannot be raced apart, and
+ * a symlink swapped in after directory enumeration is refused at open where
+ * `O_NOFOLLOW` exists rather than silently followed. Returns undefined for
+ * anything that is not a readable regular file.
+ */
+function readRegularFile(abs: string): Buffer | undefined {
+  let fd: number;
+  try {
+    fd = openSync(abs, fsConstants.O_RDONLY | O_NOFOLLOW);
+  } catch {
+    return undefined;
+  }
+  try {
+    if (!fstatSync(fd).isFile()) return undefined;
+    return readFileSync(fd);
+  } finally {
+    closeSync(fd);
+  }
+}
+
 /**
  * The `.aih/skill-reports/` file whose raw bytes hash to `sha256` (name-sorted
- * scan). Each candidate is read ONCE and hashed in memory, and the returned
- * contents are exactly the bytes that matched — a hash-then-reread pair would
- * open a swap window where unverified bytes get packaged as approved evidence.
+ * scan). Each candidate is read ONCE through {@link readRegularFile} and hashed
+ * in memory, and the returned contents are exactly the bytes that matched — a
+ * hash-then-reread pair would open a swap window where unverified bytes get
+ * packaged as approved evidence.
  */
 function findEvidenceFile(
   root: string,
@@ -296,14 +337,8 @@ function findEvidenceFile(
   const dir = join(root, ".aih", "skill-reports");
   if (!existsSync(dir)) return undefined;
   for (const entry of [...readdirSync(dir)].sort((a, b) => a.localeCompare(b))) {
-    const abs = join(dir, entry);
-    if (!lstatSync(abs).isFile()) continue;
-    let raw: Buffer;
-    try {
-      raw = readFileSync(abs);
-    } catch {
-      continue;
-    }
+    const raw = readRegularFile(join(dir, entry));
+    if (raw === undefined) continue;
     if (sha256OfBytes(raw) === sha256) {
       return { filename: entry, contents: raw.toString("utf8") };
     }
