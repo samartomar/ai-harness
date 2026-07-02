@@ -1,10 +1,17 @@
 # ai-harness Docs
 
 Design, spec, and plan docs for [aih](../README.md) — the user-facing overview and
-command surface live in the root README. Two kinds of doc live here: **direction
-docs** carry a "design/proposed, not shipped" status note (tracked in
-[ROADMAP.md](../ROADMAP.md)), and **specs / implementation plans** are build records
+one-line command surface live in the root README. Three kinds of doc live here: the
+**command reference** ([commands.md](commands.md)) carries the long-form per-command
+detail, **direction docs** carry a "design/proposed, not shipped" status note (tracked
+in [ROADMAP.md](../ROADMAP.md)), and **specs / implementation plans** are build records
 that carry their own status line.
+
+## Reference
+
+- [commands.md](commands.md) — the command reference: long-form behavior detail for
+  every `aih` command plus the support-ticket contract, relocated from the README's
+  command surface. Shipped.
 
 ## Product
 
