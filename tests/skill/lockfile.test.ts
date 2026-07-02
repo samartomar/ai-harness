@@ -7,6 +7,7 @@ import {
   readSkillsLock,
   type SkillLockEntry,
   type SkillsLock,
+  skillNameSchema,
   upsertSkillLockEntry,
 } from "../../src/skill/lockfile.js";
 
@@ -38,6 +39,33 @@ function entry(overrides: Partial<SkillLockEntry> = {}): SkillLockEntry {
     ...overrides,
   };
 }
+
+describe("skillNameSchema", () => {
+  it("accepts plain and slash-nested names", () => {
+    expect(skillNameSchema.safeParse("clean").success).toBe(true);
+    expect(skillNameSchema.safeParse("group/clean").success).toBe(true);
+  });
+
+  it("rejects traversal, absolute, and drive-letter forms", () => {
+    for (const name of ["../evil", "a/../b", "/abs", "C:evil", ".", ".."]) {
+      expect(skillNameSchema.safeParse(name).success).toBe(false);
+    }
+  });
+
+  it("rejects backslashes — a Windows join() treats them as separators", () => {
+    // A hand-edited lock name like `..\..\x` is ONE forward-slash segment (so the
+    // segment checks pass) but traverses on win32; the schema is the boundary.
+    for (const name of ["..\\..\\evil", "foo\\bar", "\\\\unc\\share"]) {
+      expect(skillNameSchema.safeParse(name).success).toBe(false);
+    }
+  });
+
+  it("rejects control characters", () => {
+    expect(skillNameSchema.safeParse("evil\u0000name").success).toBe(false);
+    expect(skillNameSchema.safeParse("evil\u001fname").success).toBe(false);
+    expect(skillNameSchema.safeParse("evil\u007fname").success).toBe(false);
+  });
+});
 
 describe("readSkillsLock", () => {
   it("returns an empty lock when the file is absent", () => {
