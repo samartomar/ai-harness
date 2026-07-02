@@ -45,6 +45,11 @@ describe("CLI program", () => {
     ]);
   });
 
+  it("registers pack status and validate as nested commands", () => {
+    const pack = buildProgram().commands.find((c) => c.name() === "pack");
+    expect(pack?.commands.map((c) => c.name()).sort()).toEqual(["status", "validate"]);
+  });
+
   it("parses a dry-run capability invocation without throwing", async () => {
     const program = buildProgram();
     program.configureOutput({ writeOut: () => {}, writeErr: () => {} });
