@@ -1,3 +1,4 @@
+import { resolve } from "node:path";
 import { z } from "zod";
 import { SettingsError } from "../errors.js";
 
@@ -43,7 +44,9 @@ export function loadSettings(env: NodeJS.ProcessEnv, overrides: Partial<Settings
     const verify = overrides.verify ?? envBool(env.AIH_VERIFY, false);
     const json = overrides.json ?? envBool(env.AIH_JSON, false);
     const contextDir = ContextDir.parse(overrides.contextDir ?? env.AIH_CONTEXT_DIR ?? "ai-coding");
-    const root = overrides.root ?? env.AIH_ROOT ?? process.cwd();
+    // Always absolute: a relative root ("." / AIH_ROOT=..) would leak into
+    // basename()-derived names ("." → "..code-workspace") and path containment.
+    const root = resolve(overrides.root ?? env.AIH_ROOT ?? process.cwd());
     const caPattern = (overrides.caPattern ?? env.AIH_CA_PATTERN ?? "Zscaler").trim();
     if (caPattern.length === 0) {
       throw new SettingsError("caPattern must not be empty");

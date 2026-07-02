@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, lstatSync, readdirSync, readFileSync } from "node:fs";
-import { basename, extname, join, posix } from "node:path";
+import { basename, extname, join, posix, resolve } from "node:path";
 import type { Command } from "commander";
 import { readAihConfig } from "../config/marker.js";
 import { postureFromContext, resolvePosture } from "../config/posture.js";
@@ -668,7 +668,7 @@ function contextFromCommand(command: Command, deps: WorkspaceAddDeps): PlanConte
   const env = deps.env ?? process.env;
   const run = deps.run ?? defaultRunner;
   const opts = command.optsWithGlobals() as Record<string, unknown>;
-  const resolvedRoot = (opts.root as string | undefined) ?? env.AIH_ROOT ?? process.cwd();
+  const resolvedRoot = resolve((opts.root as string | undefined) ?? env.AIH_ROOT ?? process.cwd());
   const marker = readAihConfig(resolvedRoot);
   const contextDirSource = optionSource(command, "contextDir");
   const contextDirFromFlag = contextDirSource === "cli" ? (opts.contextDir as string) : undefined;

@@ -1,4 +1,4 @@
-import { basename, join, posix } from "node:path";
+import { basename, join, posix, resolve } from "node:path";
 import { aihConfigJson } from "../config/marker.js";
 import { CANON_OPTION, type CanonMode, canonMode } from "../internals/canon-mode.js";
 import { detectFallbackNotice, detectInstall, resolveTargets } from "../internals/cli-detect.js";
@@ -35,9 +35,9 @@ import {
   sharedCanonicalBlockBody,
 } from "./canon.js";
 
-/** A best-effort repo name for the router heading. */
+/** A best-effort repo name for the router heading (resolve first: basename(".") is "."). */
 function repoNameOf(root: string): string {
-  const base = basename(root);
+  const base = basename(resolve(root));
   return base.length > 0 ? base : "this repo";
 }
 

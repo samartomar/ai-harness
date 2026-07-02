@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { basename, join, posix } from "node:path";
+import { basename, join, posix, resolve } from "node:path";
 import type { Action, CommandSpec, Plan, PlanContext, WriteAction } from "../internals/plan.js";
 import { doc, plan, probe, writeJson, writeText } from "../internals/plan.js";
 import type { Check } from "../internals/verify.js";
@@ -52,7 +52,9 @@ function childScaffoldedProbe(repo: string, dir: string): Action {
  */
 async function workspacePlan(ctx: PlanContext): Promise<Plan> {
   const dir = ctx.contextDir;
-  const name = basename(ctx.root) || "workspace";
+  // resolve() first: basename(".") is "." which would plan a "..code-workspace"
+  // write that the executor's containment guard rejects as a parent escape.
+  const name = basename(resolve(ctx.root)) || "workspace";
   const repos = detectChildRepos(ctx.root, reposOption(ctx.options.repos));
   const enableGit = ctx.options.git === true;
   const existing = readWorkspaceManifest(ctx.root, dir);

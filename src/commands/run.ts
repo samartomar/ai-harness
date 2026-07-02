@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { basename, join } from "node:path";
+import { basename, join, resolve } from "node:path";
 import type { Command } from "commander";
 import { readAihConfig } from "../config/marker.js";
 import { resolvePosture } from "../config/posture.js";
@@ -117,21 +117,24 @@ export async function runCapability(
   // Key-aware masking (--token …) THEN secret/home scrub per token, so a ledger row
   // is safe to attach to a ticket: no secrets, no home-path layout.
   const logArgv = redactArgv(deps.argv ?? process.argv.slice(2)).map((t) => redactText(t, env));
-  const logRoot =
-    positionalRoot ?? (opts.root as string | undefined) ?? env.AIH_ROOT ?? process.cwd();
+  // Resolve the target root up front, and to an ABSOLUTE path: a relative
+  // positional (`aih workspace . --apply`), --root, or AIH_ROOT would otherwise
+  // flow into ctx.root, where basename(".") derives "." as the project name and
+  // plans a "..code-workspace" write the containment guard rejects. Resolving
+  // once here also keeps the run ledger, the committed marker, and loadSettings
+  // all reading from the SAME root.
+  const resolvedRoot = resolve(
+    positionalRoot ?? (opts.root as string | undefined) ?? env.AIH_ROOT ?? process.cwd(),
+  );
   // `--no-log` is a commander NEGATABLE flag → it sets `opts.log = false`.
   const noLog = opts.log === false;
   const logRun = (entry: RunEntryInput): void => {
-    if (isLoggingEnabled(logRoot, env, { noLog }))
-      appendRunLog(logRoot, buildRunEntry(entry), startedAt);
+    if (isLoggingEnabled(resolvedRoot, env, { noLog }))
+      appendRunLog(resolvedRoot, buildRunEntry(entry), startedAt);
   };
 
   let json = false;
   try {
-    // Resolve the target root up front so the committed marker is read from the
-    // SAME root loadSettings will use.
-    const resolvedRoot =
-      positionalRoot ?? (opts.root as string | undefined) ?? env.AIH_ROOT ?? process.cwd();
     // Context-dir precedence ladder: explicit `--context-dir` flag > committed
     // `.aih-config.json` marker > `AIH_CONTEXT_DIR` env > `ai-coding` default.
     // Commander fills the flag's default, so `opts.contextDir` is never undefined —
