@@ -128,11 +128,14 @@ export class WindowsAdapter implements HostAdapter {
   }
 
   persistentEnvArgv(key: string, value: string): string[] {
-    // Per-user registry env — what GUI-launched Kiro/Claude/IDEs actually inherit
-    // (the PowerShell $PROFILE block only reaches new shells). Local mutation only.
-    // Escape single quotes for the PowerShell single-quoted string (double them).
-    const q = (s: string) => s.replace(/'/g, "''");
-    return pwsh(`[Environment]::SetEnvironmentVariable('${q(key)}', '${q(value)}', 'User')`);
+    // Per-user registry env (HKCU\Environment) — what GUI-launched Kiro/Claude/IDEs
+    // actually inherit; the PowerShell $PROFILE block only reaches new shells. `setx`
+    // writes that same per-user scope, ships on every supported Windows, and works under
+    // Constrained Language Mode — unlike a pwsh-only [Environment]::SetEnvironmentVariable,
+    // which ENOENTs (exit 127) on the many managed images without PowerShell 7 (the same
+    // reason trustStoreCerts falls back). Run through `cmd /c`, like symlinkDirArgv, so it
+    // goes over the injected Runner. A LOCAL registry write only — never a remote call.
+    return ["cmd", "/c", "setx", key, value];
   }
 
   npmCliPath(): string | undefined {

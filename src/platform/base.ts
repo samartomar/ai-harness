@@ -56,9 +56,11 @@ export interface HostAdapter {
    * argv that persists a user-level env var SESSION-INDEPENDENTLY — i.e. where
    * GUI-launched apps (Kiro, Claude Desktop, an IDE) inherit it, not just new
    * shells. On Windows that is the per-user registry environment
-   * (`[Environment]::SetEnvironmentVariable(k,v,'User')`); on POSIX the durable
-   * seam is already the shell-profile `envblock`, so this returns `[]` (the
-   * caller emits no exec). A local mutation only — never contacts a remote.
+   * (`HKCU\Environment`), written with `setx` — which ships on every supported
+   * image and works under Constrained Language Mode, unlike a pwsh-only
+   * `[Environment]::SetEnvironmentVariable`. On POSIX the durable seam is already
+   * the shell-profile `envblock`, so this returns `[]` (the caller emits no exec).
+   * A local mutation only — never contacts a remote.
    */
   persistentEnvArgv(key: string, value: string): string[];
   /**
