@@ -107,6 +107,22 @@ deterministic (no random/clock). Shapes must match `AihDataV9` (SPEC §3).
     "totalInvocations": 263,
     "dormant": ["go-review","php-review","ruby-review","swift-review","kotlin-review"],  // data-gated: LIVE (ECC ∩ usage); always shown in --demo
     "tokensReclaimable": 2800
+  },
+
+  "skillGov": {  // 10 — trust join + the v0.6 distribution/audit surfaces (healthy shapes)
+    "installed": 3, "approved": 2, "unapproved": 0, "stalePin": 0, "quarantined": 1,
+    "rows": [
+      { "name":"changelog-writer","status":"approved","verdict":"GREEN","source":"acme/agent-skills","commit":"6a1f0c9d2b374e58a0c1b2d3e4f5061728394a5b" },
+      { "name":"release-notes","status":"approved","verdict":"YELLOW","source":"acme/agent-skills","commit":"6a1f0c9d2b374e58a0c1b2d3e4f5061728394a5b" },
+      { "name":"sql-scratchpad","status":"quarantined","verdict":"YELLOW","source":"acme/agent-skills","commit":"6a1f0c9d2b374e58a0c1b2d3e4f5061728394a5b" }
+    ],
+    "packs": [  // quarantined member keeps its pack tag (#111 fix); per-pack count only when non-zero
+      { "name":"docs-quality","skills":2,"approved":2 },
+      { "name":"eng-tools","skills":1,"approved":0,"quarantined":1 }
+    ],
+    "marketplace": { "skills":2, "findings":0, "signed":true },   // signed = SHA256SUMS.sig PRESENT, never "verified"
+    "evidence": { "artifacts":14, "current":true, "stale":false }, // current = internal consistency; stale = live skills lock moved past the bundled copy
+    "orgPolicy": { "present":true, "valid":true }                  // presence + schema parse; deep validation = `aih policy validate`
   }
 }
 ```

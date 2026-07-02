@@ -659,7 +659,14 @@ export function renderSkillGovernance(model: V9SkillGovernance): string {
   const evidenceRow = ev
     ? `<div class="row"><span class="k">evidence bundle</span><span class="v"${ev.current && !ev.stale ? "" : ' style="color:var(--warn)"'}>${ev.artifacts} artifact${ev.artifacts === 1 ? "" : "s"} · ${ev.current ? "internally consistent" : "checksums mismatch"}${ev.stale ? " · behind live skills lock" : ""}</span></div>`
     : "";
-  const status = `<div class="card span-5"><div class="card-head"><h3>Approval status</h3>${badge}</div><div class="card-body">${statusBox}<div class="donut-meta" style="margin-top:.6rem"><div class="row"><span class="k">installed · approved</span><span class="v">${model.installed} · ${model.approved}</span></div><div class="row"><span class="k">unapproved · stale-pin</span><span class="v" style="color:${unattested > 0 ? "var(--warn)" : "var(--ok)"}">${model.unapproved} · ${model.stalePin}</span></div>${quarantinedRow}${packRows}${marketplaceRow}${evidenceRow}</div><div class="method" style="margin-top:.6rem">External skills acquired via <code>aih workspace add</code>, joined to the committed <code>aih-skills.lock.json</code> approvals.</div></div></div>`;
+  // Org-policy row — presence + parse only ("valid (schema parse)" says exactly how
+  // far the claim goes; deep validation is `aih policy validate`'s). The error line
+  // is lock/JSON-derived text, so it takes the same strip + escape as skill labels.
+  const op = model.orgPolicy;
+  const orgPolicyRow = op
+    ? `<div class="row"><span class="k">org policy</span><span class="v"${op.valid ? "" : ' style="color:var(--bad)"'}>${op.valid ? "valid (schema parse)" : `invalid — ${escHtml(plainLabel(op.error ?? "unreadable"))}`}</span></div>`
+    : "";
+  const status = `<div class="card span-5"><div class="card-head"><h3>Approval status</h3>${badge}</div><div class="card-body">${statusBox}<div class="donut-meta" style="margin-top:.6rem"><div class="row"><span class="k">installed · approved</span><span class="v">${model.installed} · ${model.approved}</span></div><div class="row"><span class="k">unapproved · stale-pin</span><span class="v" style="color:${unattested > 0 ? "var(--warn)" : "var(--ok)"}">${model.unapproved} · ${model.stalePin}</span></div>${quarantinedRow}${packRows}${marketplaceRow}${evidenceRow}${orgPolicyRow}</div><div class="method" style="margin-top:.6rem">External skills acquired via <code>aih workspace add</code>, joined to the committed <code>aih-skills.lock.json</code> approvals.</div></div></div>`;
   const list = `<div class="card span-7"><div class="card-head"><h3>Installed skills</h3><span class="badge muted">${model.installed} on disk</span></div><div class="card-body"><div class="drift-files">${rows}</div></div></div>`;
   return status + list;
 }

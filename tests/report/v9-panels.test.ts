@@ -801,4 +801,62 @@ describe("skillGovernanceDigest", () => {
     expect(unsigned).toContain("3 findings · unsigned");
     expect(renderSkillGovernance(model)).not.toContain("marketplace artifact");
   });
+
+  it("surfaces a valid org policy — live from the policy file alone", () => {
+    put(
+      "aih-org-policy.json",
+      JSON.stringify({
+        schemaVersion: 1,
+        minimumPosture: "team",
+        references: { repoContract: `${DIR}/project.md` },
+      }),
+    );
+    const d = skillGovernanceDigest(ctx());
+    expect(d).toBeDefined();
+    const data = d?.data as SkillGovData & {
+      orgPolicy?: { present: true; valid: boolean; error?: string };
+    };
+    expect(data.orgPolicy).toEqual({ present: true, valid: true });
+    // Presence + parse ONLY — the line routes the deep check to `policy validate`.
+    expect(d?.text).toContain("org policy (aih-org-policy.json) — present · parses");
+    expect(d?.text).toContain("deep validation: `aih policy validate`");
+  });
+
+  it("reports an invalid org policy with a sanitized, truncated first error line", () => {
+    // Schema-invalid (missing references) + a bidi override smuggled into a value.
+    put(
+      "aih-org-policy.json",
+      JSON.stringify({ schemaVersion: 1, minimumPosture: "team‮" }),
+    );
+    const d = skillGovernanceDigest(ctx());
+    const data = d?.data as SkillGovData & {
+      orgPolicy?: { present: true; valid: boolean; error?: string };
+    };
+    expect(data.orgPolicy?.present).toBe(true);
+    expect(data.orgPolicy?.valid).toBe(false);
+    expect(data.orgPolicy?.error).toBeDefined();
+    expect(data.orgPolicy?.error).not.toContain("‮");
+    expect((data.orgPolicy?.error ?? "").length).toBeLessThanOrEqual(160);
+    expect(d?.text).toContain("INVALID:");
+  });
+
+  it("renders the org-policy row only when the model carries it (byte-identical absent)", () => {
+    const model = {
+      installed: 1,
+      approved: 1,
+      unapproved: 0,
+      stalePin: 0,
+      quarantined: 0,
+      rows: [],
+    };
+    const valid = renderSkillGovernance({ ...model, orgPolicy: { present: true, valid: true } });
+    expect(valid).toContain("org policy");
+    expect(valid).toContain("valid (schema parse)");
+    const invalid = renderSkillGovernance({
+      ...model,
+      orgPolicy: { present: true, valid: false, error: "org-policy is invalid: <bad & broken>" },
+    });
+    expect(invalid).toContain("invalid — org-policy is invalid: &lt;bad &amp; broken&gt;");
+    expect(renderSkillGovernance(model)).not.toContain("org policy");
+  });
 });

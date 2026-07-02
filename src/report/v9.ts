@@ -761,6 +761,16 @@ function buildSkillGovernance(digests: DigestAction[]): V9SkillGovernance | unde
     ev !== undefined && ev !== null && typeof ev === "object"
       ? { artifacts: numOr(ev.artifacts, 0), current: ev.current === true, stale: ev.stale === true }
       : undefined;
+  // Org-policy presence + parse state — same absent-stays-absent contract.
+  const op = g.orgPolicy as { valid?: unknown; error?: unknown } | undefined;
+  const orgPolicy =
+    op !== undefined && op !== null && typeof op === "object"
+      ? {
+          present: true as const,
+          valid: op.valid === true,
+          ...(typeof op.error === "string" ? { error: op.error } : {}),
+        }
+      : undefined;
   return {
     installed: numOr(g.installed, 0),
     approved: numOr(g.approved, 0),
@@ -771,6 +781,7 @@ function buildSkillGovernance(digests: DigestAction[]): V9SkillGovernance | unde
     ...(packs.length > 0 ? { packs } : {}),
     ...(marketplace !== undefined ? { marketplace } : {}),
     ...(evidence !== undefined ? { evidence } : {}),
+    ...(orgPolicy !== undefined ? { orgPolicy } : {}),
   };
 }
 

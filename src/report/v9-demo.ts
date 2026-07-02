@@ -257,7 +257,8 @@ export const V9_DEMO: AihDataV9 = {
 
   // 10 — the trust join plus the v0.6 distribution/audit surfaces in their healthy
   // shapes (a pack with a parked member, a built + signature-carrying marketplace
-  // artifact), so `--demo` showcases every optional block the live panel can grow.
+  // artifact, a current evidence bundle, a valid org policy), so `--demo` showcases
+  // every optional block the live panel can grow.
   skillGov: {
     installed: 3,
     approved: 2,
@@ -293,6 +294,7 @@ export const V9_DEMO: AihDataV9 = {
     ],
     marketplace: { skills: 2, findings: 0, signed: true },
     evidence: { artifacts: 14, current: true, stale: false },
+    orgPolicy: { present: true, valid: true },
   },
 
   gates: {

@@ -281,6 +281,13 @@ export interface V9SkillGovernance {
    * --apply`). Absent when the bundle directory does not exist.
    */
   evidence?: { artifacts: number; current: boolean; stale: boolean };
+  /**
+   * Org policy (`aih-org-policy.json`) presence + schema-parse state — the shallow
+   * read only; deep validation stays `aih policy validate`. Absent when the file
+   * does not exist: vibe repos carry no org policy, and absence is not a finding.
+   * `error` is the first parse-error line, control-char-stripped and truncated.
+   */
+  orgPolicy?: { present: true; valid: boolean; error?: string };
 }
 
 /**

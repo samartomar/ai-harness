@@ -23,6 +23,8 @@ import { ensureTrailingNewline, lines } from "../internals/render.js";
 import { DEFAULT_MARKETPLACE_OUT, readMarketplaceManifest } from "../marketplace/manifest.js";
 import { marketplaceReport } from "../marketplace/validate.js";
 import { mcpServers } from "../mcp/servers.js";
+import { AIH_ORG_POLICY_FILE } from "../org-policy/constants.js";
+import { OrgPolicyError, orgPolicyPath, readOrgPolicy } from "../org-policy/schema.js";
 import { scanRepo } from "../profile/scan.js";
 import { skillInventory } from "../skill/index.js";
 import { AIH_SKILLS_LOCK_FILE, readSkillsLock } from "../skill/lockfile.js";
@@ -691,25 +693,57 @@ function evidenceState(
 }
 
 /**
+ * Org-policy state for the governance digest — presence + schema PARSE only, the
+ * deliberately shallow read: deep validation (reference resolution, bundle rules)
+ * stays `aih policy validate`'s job, and the digest line says so. Absent file →
+ * `undefined` → absent field: vibe repos carry no org policy, and absence is not a
+ * finding. `readOrgPolicy` THROWS {@link OrgPolicyError} on an unreadable or
+ * schema-invalid file — here that is a `valid: false` datum (the report must render
+ * through a broken policy, never crash on it), carrying the first error line with
+ * control/bidi characters stripped and hard-capped so a hand-edited JSON message
+ * cannot visually spoof or flood the panel.
+ */
+function orgPolicyState(
+  ctx: PlanContext,
+): { present: true; valid: boolean; error?: string } | undefined {
+  if (readIfExists(orgPolicyPath(ctx.root, ctx.env)) === undefined) return undefined;
+  try {
+    readOrgPolicy(ctx.root, ctx.env);
+    return { present: true, valid: true };
+  } catch (err) {
+    if (!(err instanceof OrgPolicyError)) throw err;
+    const first = (err.message.split("\n")[0] ?? "").replace(
+      // biome-ignore lint/suspicious/noControlCharactersInRegex: stripping them is the point
+      /[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2066-\u2069]/g,
+      "",
+    );
+    const error = first.length > 160 ? `${first.slice(0, 159)}…` : first;
+    return { present: true, valid: false, ...(error.length > 0 ? { error } : {}) };
+  }
+}
+
+/**
  * Skill governance — the read-only join over installed external skills and their
  * committed approvals (`skillInventory`), surfaced so the dashboard shows what is on
  * disk vs approved (richer than the lockfile alone: it also names unapproved and
  * pin-drifted skills). Also carries the v0.6 distribution/audit surfaces when they
- * exist on disk (marketplace artifact, evidence bundle — each absent one stays
- * absent, keeping the panel byte-identical). EMPTY only when there is nothing to
- * govern — no on-disk skills, no committed approvals, and no governance artifacts;
- * then the panel gates honestly instead of showing zeros. Pure fs (nothing here
- * spawns), so it is safe at digest time.
+ * exist on disk (marketplace artifact, evidence bundle, org policy — each absent one
+ * stays absent, keeping the panel byte-identical). EMPTY only when there is nothing
+ * to govern — no on-disk skills, no committed approvals, and no governance
+ * artifacts; then the panel gates honestly instead of showing zeros. Pure fs
+ * (nothing here spawns), so it is safe at digest time.
  */
 export function skillGovernanceDigest(ctx: PlanContext): DigestAction | undefined {
   const inv = skillInventory(ctx);
   const marketplace = marketplaceState(ctx);
   const evidence = evidenceState(ctx);
+  const orgPolicy = orgPolicyState(ctx);
   if (
     inv.counts.installed === 0 &&
     readSkillsLock(ctx.root).skills.length === 0 &&
     marketplace === undefined &&
-    evidence === undefined
+    evidence === undefined &&
+    orgPolicy === undefined
   ) {
     return undefined;
   }
@@ -772,6 +806,15 @@ export function skillGovernanceDigest(ctx: PlanContext): DigestAction | undefine
               : " (rebuild: `aih evidence build --apply`)"),
         ]
       : []),
+    ...(orgPolicy
+      ? [
+          `  org policy (${AIH_ORG_POLICY_FILE}) — ` +
+            (orgPolicy.valid
+              ? "present · parses against the org-policy schema"
+              : `INVALID: ${orgPolicy.error ?? "unreadable"}`) +
+            " (deep validation: `aih policy validate`)",
+        ]
+      : []),
   ];
   const body = lines(
     `${installed} external skill${installed === 1 ? "" : "s"} installed · ${approved} approved · ${unapproved} unapproved · ${stalePin} stale-pin · ${quarantined} quarantined.`,
@@ -815,6 +858,7 @@ export function skillGovernanceDigest(ctx: PlanContext): DigestAction | undefine
     ...(packs.length > 0 ? { packs } : {}),
     ...(marketplace !== undefined ? { marketplace } : {}),
     ...(evidence !== undefined ? { evidence } : {}),
+    ...(orgPolicy !== undefined ? { orgPolicy } : {}),
   });
 }
 
