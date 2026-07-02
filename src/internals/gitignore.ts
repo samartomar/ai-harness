@@ -14,8 +14,25 @@ const MANAGED_HEADER = "# aih-managed (backup, temp, and generated reports)";
  * directory is excluded", would neuter the negation — which is exactly why every
  * clone used to hit MODULE_NOT_FOUND when a committed hook fired against the ignored
  * (never-cloned) recorder.
+ *
+ * The leading `!.aih/` re-includes the DIRECTORY before `.aih/*` re-ignores its
+ * contents: this is what lets the negation survive an EARLIER broad rule that excludes
+ * the dir itself (e.g. a bare-dotfile-dir glob like ".*" plus a trailing slash — common
+ * for hiding dotfiles). Because our block is appended at the END of `.gitignore` and
+ * later rules win, `!.aih/` overrides the earlier dir-exclude so `.aih/` is traversable
+ * again, `.aih/*` then ignores the data, and `!.aih/usage-record.mjs` re-includes the
+ * one committed file. Without the `!.aih/` line, a repo whose `.gitignore` already
+ * excludes the `.aih` parent (via a glob it never wrote by hand, so `excludesAihDir`
+ * can't strip it) would re-strand the recorder even though our own block looks correct
+ * in isolation.
  */
-const AIH_PATTERNS = ["*.aih.bak", "*.aih.tmp", ".aih/*", "!.aih/usage-record.mjs"] as const;
+const AIH_PATTERNS = [
+  "*.aih.bak",
+  "*.aih.tmp",
+  "!.aih/",
+  ".aih/*",
+  "!.aih/usage-record.mjs",
+] as const;
 
 /** The exact managed lines (header + current patterns) we always rewrite. */
 const OWNED_EXACT = new Set<string>([MANAGED_HEADER, ...AIH_PATTERNS]);

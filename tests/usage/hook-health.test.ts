@@ -37,13 +37,20 @@ function write(rel: string, content: string): void {
   writeFileSync(join(root, rel), content);
 }
 
-/** `git check-ignore -q <path>` exits 0 iff the path IS ignored, 1 if tracked/unignored. */
-function gitIgnoreRunner(ignored: boolean): Runner {
-  return fakeRunner((argv) =>
-    argv[0] === "git" && argv[1] === "check-ignore"
-      ? { code: ignored ? 0 : 1, stdout: "" }
-      : undefined,
-  );
+/**
+ * Models the two git probes `usageRecorderCheck` runs:
+ * - `git check-ignore -q` exits 0 iff the path IS ignored (1 otherwise).
+ * - `git ls-files --error-unmatch` exits 0 iff the path is TRACKED (1 if untracked).
+ * `git` absent → every git call is a spawnError (ENOENT).
+ */
+function gitRunner(opts: { ignored?: boolean; tracked?: boolean; gitAbsent?: boolean }): Runner {
+  return fakeRunner((argv) => {
+    if (argv[0] !== "git") return undefined;
+    if (opts.gitAbsent) return { code: 127, stdout: "", spawnError: true };
+    if (argv[1] === "check-ignore") return { code: opts.ignored ? 0 : 1, stdout: "" };
+    if (argv[1] === "ls-files") return { code: opts.tracked ? 0 : 1, stdout: "" };
+    return undefined;
+  });
 }
 
 const CLAUDE_HOOK = JSON.stringify({
@@ -68,13 +75,13 @@ describe("usageRecorderCheck", () => {
     expect(c.detail).toContain(".aih/usage-record.mjs");
   });
 
-  it("passes once the recorder is present AND tracked (not git-ignored)", async () => {
+  it("passes once the recorder is present, not ignored, AND git-tracked", async () => {
     write(
       ".kiro/hooks/aih-usage-metering.kiro.hook",
       '{"when":{"type":"agentStop"},"command":"node .aih/usage-record.mjs --from kiro"}',
     );
     write(".aih/usage-record.mjs", "// recorder\n");
-    const c = await usageRecorderCheck(makeCtx(gitIgnoreRunner(false)));
+    const c = await usageRecorderCheck(makeCtx(gitRunner({ ignored: false, tracked: true })));
     expect(c.verdict).toBe("pass");
     expect(c.detail).toContain("tracked");
   });
@@ -84,10 +91,32 @@ describe("usageRecorderCheck", () => {
     // the commit, so a fresh clone re-hits the missing-recorder failure.
     write(".claude/settings.json", CLAUDE_HOOK);
     write(".aih/usage-record.mjs", "// recorder\n");
-    const c = await usageRecorderCheck(makeCtx(gitIgnoreRunner(true)));
+    const c = await usageRecorderCheck(makeCtx(gitRunner({ ignored: true })));
     expect(c.verdict).toBe("fail");
     expect(c.code).toBe("usage.recorder-missing");
     expect(c.detail).toContain("git-ignored");
+  });
+
+  it("fails when the recorder is present and un-ignored but never git-added (untracked)", async () => {
+    // The subtler false-pass: `check-ignore` exits non-zero for an untracked file just
+    // as it does for a tracked one, so "not ignored" alone would wrongly pass. A fresh
+    // clone still won't have an uncommitted recorder.
+    write(".claude/settings.json", CLAUDE_HOOK);
+    write(".aih/usage-record.mjs", "// recorder\n");
+    const c = await usageRecorderCheck(makeCtx(gitRunner({ ignored: false, tracked: false })));
+    expect(c.verdict).toBe("fail");
+    expect(c.code).toBe("usage.recorder-missing");
+    expect(c.detail).toContain("untracked");
+  });
+
+  it("skips (can't determine) when the recorder is present but git is unavailable", async () => {
+    // Best-effort/fail-open: a git-absent environment can't confirm the recorder is
+    // committed, so it must skip — never a hard fail and never a false pass.
+    write(".claude/settings.json", CLAUDE_HOOK);
+    write(".aih/usage-record.mjs", "// recorder\n");
+    const c = await usageRecorderCheck(makeCtx(gitRunner({ gitAbsent: true })));
+    expect(c.verdict).toBe("skip");
+    expect(c.code).toBeUndefined();
   });
 });
 

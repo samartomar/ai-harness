@@ -69,7 +69,13 @@ describe("aihConfigJson", () => {
 });
 
 describe("the marker file is committable (not git-ignored by aih's own patterns)", () => {
-  /** Minimal matcher for the glob shapes aih emits (`*.x`, `dir/*`, `dir/`, literal, `!negation`). */
+  /**
+   * Minimal matcher for the glob shapes aih emits (`*.x`, `dir/*`, `dir/`, literal,
+   * `!negation`). Applies patterns in ORDER with git's last-match-wins rule, so the
+   * `!.aih/` (re-include dir) → `.aih/*` (re-ignore contents) → `!.aih/usage-record.mjs`
+   * (re-include recorder) sequence resolves like real git: a bare `!.aih/` dir-reinclude
+   * does NOT re-include everything beneath it, because the later `.aih/*` re-ignores it.
+   */
   function ignoredBy(rel: string, patterns: string[]): boolean {
     const matches = (p: string): boolean => {
       if (p.endsWith("/*")) return rel.startsWith(p.slice(0, -1)); // `.aih/*` → anything under `.aih/`
@@ -77,9 +83,16 @@ describe("the marker file is committable (not git-ignored by aih's own patterns)
       if (p.startsWith("*")) return rel.endsWith(p.slice(1));
       return rel === p;
     };
-    // A `!`-negation re-includes a path a positive pattern would otherwise ignore.
-    if (patterns.some((p) => p.startsWith("!") && matches(p.slice(1)))) return false;
-    return patterns.some((p) => !p.startsWith("!") && matches(p));
+    let ignored = false;
+    for (const p of patterns) {
+      const negated = p.startsWith("!");
+      const body = negated ? p.slice(1) : p;
+      // A bare directory re-include (`!.aih/`) restores traversal but doesn't itself
+      // re-include children — only a matching negation for the child path does.
+      if (negated && body.endsWith("/") && rel !== body.slice(0, -1)) continue;
+      if (matches(body)) ignored = !negated;
+    }
+    return ignored;
   }
 
   it("lives at the repo root, not under the git-ignored .aih/ dir", () => {

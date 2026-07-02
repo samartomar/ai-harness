@@ -60,13 +60,37 @@ export async function usageRecorderCheck(ctx: PlanContext): Promise<Check> {
   // clone hits the same missing-recorder failure. `check-ignore -q` exits 0 iff the
   // path IS ignored; a non-git dir / missing git yields a non-zero code and is treated
   // as "can't determine → don't fail" (best-effort, matches doctor's fail-open probes).
-  const res = await ctx.run(["git", "check-ignore", "-q", RECORDER_REL], { cwd: ctx.root });
-  if (!res.spawnError && res.code === 0) {
+  const ignored = await ctx.run(["git", "check-ignore", "-q", RECORDER_REL], { cwd: ctx.root });
+  if (!ignored.spawnError && ignored.code === 0) {
     return {
       name: "usage-recorder",
       verdict: "fail",
       code: "usage.recorder-missing",
       detail: `${RECORDER_REL} exists locally but is git-ignored — it won't survive a fresh clone; run \`aih usage --apply\` to narrow \`.aih/\` to \`.aih/*\` + the recorder negation, then commit it`,
+    };
+  }
+  // Not ignored is NOT the same as tracked: `check-ignore` also exits non-zero for a
+  // file that was never `git add`ed (untracked). Such a recorder won't survive a fresh
+  // clone either, so "not ignored" alone must not pass. `ls-files --error-unmatch` exits
+  // 0 iff the path is tracked, non-zero if untracked. Git absent (spawnError) → can't
+  // determine → skip (never a false pass); present-but-untracked → the same clone-miss
+  // failure; only a tracked recorder earns the pass.
+  const tracked = await ctx.run(["git", "ls-files", "--error-unmatch", "--", RECORDER_REL], {
+    cwd: ctx.root,
+  });
+  if (tracked.spawnError) {
+    return {
+      name: "usage-recorder",
+      verdict: "skip",
+      detail: `${RECORDER_REL} present but git is unavailable — can't confirm it's committed for a fresh clone`,
+    };
+  }
+  if (tracked.code !== 0) {
+    return {
+      name: "usage-recorder",
+      verdict: "fail",
+      code: "usage.recorder-missing",
+      detail: `${RECORDER_REL} exists locally but is untracked/uncommitted — a fresh clone won't have it; run \`aih usage --apply\` then commit ${RECORDER_REL}`,
     };
   }
   return {
