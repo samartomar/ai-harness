@@ -45,9 +45,15 @@ describe("CLI program", () => {
     ]);
   });
 
-  it("registers pack status and validate as nested commands", () => {
+  it("registers pack authoring, status, and validate as nested commands", () => {
     const pack = buildProgram().commands.find((c) => c.name() === "pack");
-    expect(pack?.commands.map((c) => c.name()).sort()).toEqual(["status", "validate"]);
+    expect(pack?.commands.map((c) => c.name()).sort()).toEqual([
+      "add",
+      "init",
+      "remove-entry",
+      "status",
+      "validate",
+    ]);
   });
 
   it("parses a dry-run capability invocation without throwing", async () => {

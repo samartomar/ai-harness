@@ -14,7 +14,13 @@ import { command as heal } from "../heal/index.js";
 import { command as init } from "../init/index.js";
 import type { CommandSpec } from "../internals/plan.js";
 import { command as mcp } from "../mcp/index.js";
-import { packStatusCommand, packValidateCommand } from "../pack/index.js";
+import {
+  packAddCommand,
+  packInitCommand,
+  packRemoveEntryCommand,
+  packStatusCommand,
+  packValidateCommand,
+} from "../pack/index.js";
 import { command as profile } from "../profile/index.js";
 import { command as prune } from "../prune/index.js";
 import { command as ready } from "../ready/index.js";
@@ -311,12 +317,19 @@ export function registerCommands(program: Command): void {
     });
   });
 
-  // `pack` mirrors the `skill` group; both subcommands are read-only joins that
-  // take NO positional (options only), modeled on `trust list` / `skill inventory`.
+  // `pack` mirrors the `skill` group; every subcommand takes NO positional
+  // (options only), modeled on `trust list` / `skill remove` — status/validate
+  // are read-only joins, add/init/remove-entry are manifest mutators.
   const pack = program
     .command("pack")
     .description("Skill-pack curation over the committed per-skill approvals");
-  for (const spec of [packStatusCommand, packValidateCommand]) {
+  for (const spec of [
+    packAddCommand,
+    packInitCommand,
+    packRemoveEntryCommand,
+    packStatusCommand,
+    packValidateCommand,
+  ]) {
     const sub = pack.command(spec.name).description(spec.summary);
     addSharedFlags(sub);
     for (const o of spec.options ?? []) {
