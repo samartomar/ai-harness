@@ -632,7 +632,7 @@ describe("posture-gated install enforcement (trust.unapproved-skill, #102)", () 
         skills: names.map((name) => ({
           name,
           source: "acme/tools",
-          commit: "aaa1112223334445556667778889990001112223",
+          commit: "local", // the enforcement binds local promotions to commit:"local" entries
           verdict: "GREEN",
           scope: "repo",
           card: "ai-coding/skill-cards/" + name + ".json",
@@ -651,13 +651,20 @@ describe("posture-gated install enforcement (trust.unapproved-skill, #102)", () 
     return { c, report: phase1.report };
   }
 
-  it("REFUSES the gate at team posture when a promoted skill has no committed approval", async () => {
+  it("REFUSES at team posture when a promoted skill has no committed approval (coded check)", async () => {
     localSkill(sourceRoot, "clean", "# Clean\n");
     const { c, report } = await clearedPhase1("team");
-    await expect(captureClearedWorkspaceAddTrustGate(c, report)).rejects.toThrow(
-      /unapproved|lack a committed/i,
+    const gate = await captureClearedWorkspaceAddTrustGate(c, report);
+    const result = await executePlan(await workspaceAddPhase2Plan(c, gate), c);
+    // The denial is a CODED failing check in the report (SARIF / support-ticket
+    // reachable), not a bare thrown error — and nothing is promoted.
+    expect(result.report?.exitCode()).toBe(1);
+    expect(result.writes).toHaveLength(0);
+    expect(result.report?.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ verdict: "fail", code: "trust.unapproved-skill" }),
+      ]),
     );
-    // Nothing was promoted.
     expect(existsSync(join(workspace, "ai-coding", "skills"))).toBe(false);
   });
 
@@ -686,6 +693,37 @@ describe("posture-gated install enforcement (trust.unapproved-skill, #102)", () 
     // Files still promoted at vibe.
     const sourceId = basename(sourceRoot).toLowerCase();
     expect(existsSync(join(workspace, "ai-coding", "skills", sourceId, "clean"))).toBe(true);
+  });
+
+  it("does NOT let a same-named approval from another source satisfy the gate (source-bound)", async () => {
+    // The lock entry has the right NAME but was granted for a GitHub commit — a
+    // never-vetted LOCAL source shipping skills/clean must not inherit it.
+    localSkill(sourceRoot, "clean", "# Clean\n");
+    writeFileSync(
+      join(workspace, "aih-skills.lock.json"),
+      JSON.stringify({
+        schemaVersion: 1,
+        skills: [
+          {
+            name: "clean",
+            source: "trusted/repo",
+            commit: "c".repeat(40), // approval bound to a github commit, not this local tree
+            verdict: "GREEN",
+            scope: "repo",
+            card: "ai-coding/skill-cards/clean.json",
+            evidenceSha256: "b".repeat(64),
+            approvedAt: "2026-07-01T00:00:00Z",
+          },
+        ],
+      }),
+      "utf8",
+    );
+    const { c, report } = await clearedPhase1("team");
+    const gate = await captureClearedWorkspaceAddTrustGate(c, report);
+    const result = await executePlan(await workspaceAddPhase2Plan(c, gate), c);
+    expect(result.report?.exitCode()).toBe(1);
+    expect(result.writes).toHaveLength(0);
+    expect(existsSync(join(workspace, "ai-coding", "skills"))).toBe(false);
   });
 
   it("phase-2 plan itself refuses when posture hardened between phases (defense in depth)", async () => {

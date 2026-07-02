@@ -184,7 +184,18 @@ function licenseFromEvidence(evidence: VetEvidence): string | undefined {
 }
 
 function skillNameFrom(shape: SkillShape, override: string | undefined, display: string): string {
-  if (override !== undefined) return override;
+  if (override !== undefined) {
+    // An arbitrary override would commit an approval no promotion can ever match
+    // (workspace add binds by the PROMOTED name) — validate it names a real skill.
+    if (!shape.skillDirs.includes(override)) {
+      throw refuse(
+        `--name ${override} does not match a skill in ${display} — evidence records: ${
+          shape.skillDirs.join(", ") || "(none)"
+        }`,
+      );
+    }
+    return override;
+  }
   const dirs = shape.skillDirs;
   const sole = dirs[0];
   if (dirs.length === 1 && sole !== undefined) return sole;
