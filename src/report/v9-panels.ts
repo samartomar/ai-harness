@@ -8,11 +8,7 @@ import {
 } from "../bootstrap-ai/canon.js";
 import { verifyBundleChecksums } from "../bundle/index.js";
 import { eccLanguages } from "../ecc/select.js";
-import {
-  DEFAULT_EVIDENCE_OUT,
-  EVIDENCE_FILE,
-  EvidenceBundleSchema,
-} from "../evidence/manifest.js";
+import { DEFAULT_EVIDENCE_OUT, EVIDENCE_FILE, EvidenceBundleSchema } from "../evidence/manifest.js";
 import { homeDir } from "../internals/cli-detect.js";
 import { SUPPORTED_CLIS } from "../internals/clis.js";
 import { readIfExists } from "../internals/fsxn.js";
@@ -801,9 +797,7 @@ export function skillGovernanceDigest(ctx: PlanContext): DigestAction | undefine
               ? "internally consistent"
               : "bundled copies do NOT match SHA256SUMS") +
             (evidence.stale ? " · live skills lock has moved past the bundled copy" : "") +
-            (evidence.current && !evidence.stale
-              ? ""
-              : " (rebuild: `aih evidence build --apply`)"),
+            (evidence.current && !evidence.stale ? "" : " (rebuild: `aih evidence build --apply`)"),
         ]
       : []),
     ...(orgPolicy

@@ -824,10 +824,7 @@ describe("skillGovernanceDigest", () => {
 
   it("reports an invalid org policy with a sanitized, truncated first error line", () => {
     // Schema-invalid (missing references) + a bidi override smuggled into a value.
-    put(
-      "aih-org-policy.json",
-      JSON.stringify({ schemaVersion: 1, minimumPosture: "team‮" }),
-    );
+    put("aih-org-policy.json", JSON.stringify({ schemaVersion: 1, minimumPosture: "team‮" }));
     const d = skillGovernanceDigest(ctx());
     const data = d?.data as SkillGovData & {
       orgPolicy?: { present: true; valid: boolean; error?: string };

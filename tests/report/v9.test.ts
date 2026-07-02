@@ -651,7 +651,9 @@ describe("buildAihDataV9 — Phase B capability flips", () => {
   it("maps the v0.5/v0.6 governance surfaces through the view-model and renders them", () => {
     const live = buildAihDataV9([...ALL, skillGov()]);
     // The digest's optional fields ride through the mapping intact.
-    expect(live.skillGov?.packs).toEqual([{ name: "docs", skills: 2, approved: 1, quarantined: 1 }]);
+    expect(live.skillGov?.packs).toEqual([
+      { name: "docs", skills: 2, approved: 1, quarantined: 1 },
+    ]);
     expect(live.skillGov?.marketplace).toEqual({ skills: 1, findings: 0, signed: true });
     expect(live.skillGov?.evidence).toEqual({ artifacts: 3, current: true, stale: true });
     expect(live.skillGov?.orgPolicy).toEqual({

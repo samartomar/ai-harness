@@ -750,7 +750,9 @@ function buildSkillGovernance(digests: DigestAction[]): V9SkillGovernance | unde
   }));
   // v0.6 marketplace artifact state — rides through only when the digest carried
   // it (absent artifact → absent key → the panel renders byte-identically).
-  const mp = g.marketplace as { skills?: unknown; findings?: unknown; signed?: unknown } | undefined;
+  const mp = g.marketplace as
+    | { skills?: unknown; findings?: unknown; signed?: unknown }
+    | undefined;
   const marketplace =
     mp !== undefined && mp !== null && typeof mp === "object"
       ? { skills: numOr(mp.skills, 0), findings: numOr(mp.findings, 0), signed: mp.signed === true }
@@ -759,7 +761,11 @@ function buildSkillGovernance(digests: DigestAction[]): V9SkillGovernance | unde
   const ev = g.evidence as { artifacts?: unknown; current?: unknown; stale?: unknown } | undefined;
   const evidence =
     ev !== undefined && ev !== null && typeof ev === "object"
-      ? { artifacts: numOr(ev.artifacts, 0), current: ev.current === true, stale: ev.stale === true }
+      ? {
+          artifacts: numOr(ev.artifacts, 0),
+          current: ev.current === true,
+          stale: ev.stale === true,
+        }
       : undefined;
   // Org-policy presence + parse state — same absent-stays-absent contract.
   const op = g.orgPolicy as { valid?: unknown; error?: unknown } | undefined;
