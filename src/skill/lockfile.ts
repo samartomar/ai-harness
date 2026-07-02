@@ -66,3 +66,8 @@ export function upsertSkillLockEntry(lock: SkillsLock, entry: SkillLockEntry): S
     ),
   };
 }
+
+/** Drop the entry for `name` — immutable, sibling order preserved (the mirror of {@link upsertSkillLockEntry}). */
+export function removeSkillLockEntry(lock: SkillsLock, name: string): SkillsLock {
+  return { schemaVersion: 1, skills: lock.skills.filter((skill) => skill.name !== name) };
+}

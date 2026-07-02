@@ -93,8 +93,14 @@ export async function dirtyWriteTargets(plan: Plan, ctx: PlanContext): Promise<s
  * The repo-relative paths a plan would REMOVE that ALSO have uncommitted changes —
  * the "this apply would delete your uncommitted work" set. Unlike writes, a removal
  * has no content-equality escape: deleting a dirty or untracked file always destroys
- * it, so this gates on plain dirty-set membership. Empty under a clean/absent git
- * worktree, so `--force` is never needed on a committed tree.
+ * it, so this gates on dirty-set membership. Empty under a clean/absent git worktree,
+ * so `--force` is never needed on a committed tree.
+ *
+ * A removal target may be a DIRECTORY (e.g. `aih skill remove` moves a whole skill
+ * dir in one action). A dirty file lives in the set under its own path, never under
+ * the parent dir's, so an exact-match test alone would let a dir removal clobber an
+ * uncommitted file INSIDE it without `--force`. So a target also gates when any dirty
+ * path is a descendant of it (`<target>/…`) — the dir carries its dirty children.
  */
 export async function dirtyRemoveTargets(plan: Plan, ctx: PlanContext): Promise<string[]> {
   const targets: string[] = [];
@@ -106,5 +112,11 @@ export async function dirtyRemoveTargets(plan: Plan, ctx: PlanContext): Promise<
   }
   if (targets.length === 0) return [];
   const dirty = await dirtyPaths(ctx);
-  return targets.filter((t) => dirty.has(t));
+  const dirtyUnder = (target: string): boolean => {
+    if (dirty.has(target)) return true; // the target file itself is dirty
+    const prefix = `${target}/`; // …or a dirty file lives inside a removal directory
+    for (const d of dirty) if (d.startsWith(prefix)) return true;
+    return false;
+  };
+  return targets.filter(dirtyUnder);
 }

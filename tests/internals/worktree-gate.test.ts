@@ -140,4 +140,21 @@ describe("dirtyRemoveTargets — removals gate on membership (incl. untracked di
     const p = plan("prune", remove("ai-coding/adapters/codex.md", "stale"));
     expect(await dirtyRemoveTargets(p, ctx(dirtyRun(z(" M other.ts"))))).toEqual([]);
   });
+
+  it("flags a removal DIRECTORY when a dirty file lives inside it (`skill remove` moves a whole dir)", async () => {
+    // A dirty file is listed under its own path, never the parent dir's — so removing
+    // the dir must gate on any dirty DESCENDANT, else it clobbers uncommitted work.
+    const p = plan("prune", remove("ai-coding/skills/acme/formatter", "remove skill"));
+    expect(
+      await dirtyRemoveTargets(p, ctx(dirtyRun(z("?? ai-coding/skills/acme/formatter/SKILL.md")))),
+    ).toEqual(["ai-coding/skills/acme/formatter"]);
+  });
+
+  it("does NOT flag a removal dir on a sibling-prefix false match (`foo` vs `foobar/x`)", async () => {
+    const p = plan("prune", remove("ai-coding/skills/foo", "remove skill"));
+    // `foobar/…` is a sibling, not a descendant of `foo` — the `<target>/` prefix guards it.
+    expect(
+      await dirtyRemoveTargets(p, ctx(dirtyRun(z("?? ai-coding/skills/foobar/SKILL.md")))),
+    ).toEqual([]);
+  });
 });
