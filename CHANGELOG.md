@@ -6,6 +6,54 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-07-02
+
+The **skill packs** release: named, committed **curation manifests** over the per-skill
+governance lifecycle — approval stays per-skill and `aih-skills.lock.json` stays the pin
+authority; a pack batches, scopes, and cross-checks. Every destructive or gate-adjacent
+slice passed two independent review lenses with all findings fixed before merge.
+
+### Added
+
+- **`aih pack status` / `aih pack validate`** — the read-only join of the new committed
+  `aih-packs.json` manifest against the lockfile and inventory: per skill an `approval`
+  axis (approved / missing-approval / **pin-mismatch** — the manifest's `{source, commit}`
+  is a fail-closed cross-check, never a second pin) and an `install` axis (installed /
+  not-installed / quarantined / stale-pin), with a `ready`/`blocked` pack rollup.
+  `validate` is a CI gate: coded `pack.*` findings (duplicate-name, pin-mismatch,
+  missing-approval, unknown-manifest), exit 1 on findings.
+- **`aih pack add` / `remove-entry` / `init`** — authoring that DERIVES every skill ref
+  from its lock entry (never invents pins; refuses unapproved skills and cross-pack
+  duplicates). A fail-closed write guard refuses to rewrite a manifest containing
+  entries aih cannot parse — operator data is never silently destroyed.
+- **`aih pack install` / `aih pack plan`** — the gated batch install: refs grouped by
+  (source, commit), pins taken FROM the lock, **all sources gated before any promotion**
+  (one poisoned source blocks everything), promotion limited to exactly the pack's refs
+  (an unselected skill in the same source — including a *nested* one — never rides
+  along), resume is idempotent **and drift-aware** (tampered promoted files are detected
+  against trust-lock receipts and reinstalled through the gate). Fail-closed at every
+  posture; `plan` never fetches. Per-source failures always land in the outcome report.
+- **`aih pack uninstall`** — retracts every installed member with the exact `skill
+  remove` semantics in ONE all-or-nothing plan (any member's guard refusal aborts before
+  anything moves), behind an **ownership preflight**: a manifest ref whose source/commit
+  disagrees with the lock cannot retract the real skill's approval, and duplicate-name
+  refs are refused. The manifest itself is never touched.
+- **Report governance panel: per-pack rollup** (`pack <name> — N of M approved`), plus
+  the pack tag in inventory provenance. Renders only when packs exist.
+- Docs: README `aih pack` command row and `docs/product/pack-manifest.md` (schema,
+  worked example, the bump-pin → re-vet → re-approve → status-green → install flow).
+
+### Security
+
+- **Skill names are validated at every schema boundary** (lock entries, pack refs, pack
+  names): path-safe segments only — a crafted committed name like `../../package-lock`
+  can no longer steer destructive cleanup at arbitrary in-repo files (found by external
+  review with a live repro; also guarded defense-in-depth inside the card-path builder).
+- Report labels strip control/bidi characters before rendering (visual-spoofing hardening).
+- Trust-lock receipts union-merge ONLY for subset (pack) promotions; whole-source
+  promotions keep replace semantics so a mutable source's removed skills cannot linger
+  as stale evidence.
+
 ## [0.4.1] - 2026-07-02
 
 The skill lifecycle grows **teeth and a pause button**: committed approvals are now
@@ -272,7 +320,8 @@ GitHub but **never published to npm**; the first published release is 0.2.0.
   (npm + github-actions), private vulnerability reporting, `@claude` workflow gated
   to trusted authors, and GitHub Actions pinned to commit SHAs.
 
-[Unreleased]: https://github.com/samartomar/ai-harness/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/samartomar/ai-harness/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/samartomar/ai-harness/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/samartomar/ai-harness/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/samartomar/ai-harness/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/samartomar/ai-harness/compare/v0.3.0...v0.3.1
