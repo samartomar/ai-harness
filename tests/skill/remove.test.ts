@@ -286,6 +286,32 @@ describe("skillRemoveCommand — the destructive inverse", () => {
     }
   });
 
+  it("drops an ORPHANED approval whose skill dir is already gone (review medium)", async () => {
+    // The dir was deleted by hand; the committed lock entry + card survived. That
+    // stale governance state is exactly this command's job — no file move, but the
+    // approval and card are dropped rather than refusing with "nothing to remove".
+    installApproved("owner-repo", "clean");
+    rmSync(promotedDir("owner-repo", "clean"), { recursive: true, force: true });
+    const c = ctx({ apply: true, options: { name: "clean" } });
+    const result = await executePlan(await planOf(c), c);
+
+    const lock = JSON.parse(readFileSync(join(workspace, "aih-skills.lock.json"), "utf8"));
+    expect(lock.skills).toHaveLength(0); // orphaned entry dropped
+    expect(existsSync(cardPath("clean"))).toBe(false); // card cleaned up too
+    expect(result.removed.map((r) => r.path)).toEqual(["ai-coding/skill-cards/clean.json"]);
+    expect(digestData(result)).toMatchObject({
+      status: "orphaned-approval",
+      droppedApproval: true,
+      cardRemoved: true,
+    });
+  });
+
+  it("still refuses when the name is in NEITHER the inventory nor the lockfile", () => {
+    installApproved("owner-repo", "clean");
+    const c = ctx({ options: { name: "ghost" } });
+    expect(() => skillRemoveCommand.plan(c)).toThrow(/nothing to remove/);
+  });
+
   it("removes a MALFORMED committed card by its canonical path (Codex low)", async () => {
     // The card exists at the canonical path but fails the schema — removal keys on
     // path EXISTENCE (never schema validity, never the lockfile's `card` field), so

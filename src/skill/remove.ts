@@ -31,12 +31,15 @@ import { AIH_SKILLS_LOCK_FILE, readSkillsLock, removeSkillLockEntry } from "./lo
  * Resolution is the READ-ONLY {@link skillInventory} join (pure fs, no spawn), so
  * plan() stays pure (#35): the move + lockfile/card writes happen in execute under
  * `--apply`. Fail-closed AIH_TRUST refusals: no `--name`; a name matching no on-disk
- * skill; a name matching MORE THAN ONE physical install (two sources or CLI dirs can
- * ship the same logical name — removing an arbitrary copy while dropping the shared
- * name-keyed approval would leave the survivor active-but-unapproved); a skill dir
- * that CONTAINS another discovered skill (a nested child would be moved as collateral
- * while its own approval survives, dangling); and a `machine`-root skill
- * (`~/.claude/skills` is not this repo's to touch). Loader references (settings/MCP
+ * skill AND no approval; a name matching MORE THAN ONE physical install (two sources
+ * or CLI dirs can ship the same logical name — removing an arbitrary copy while
+ * dropping the shared name-keyed approval would leave the survivor
+ * active-but-unapproved); a skill dir that CONTAINS another discovered skill (a
+ * nested child would be moved as collateral while its own approval survives,
+ * dangling); and a `machine`-root skill (`~/.claude/skills` is not this repo's to
+ * touch). A name with NO on-disk install but a surviving lockfile entry is an
+ * ORPHANED approval (the dir was deleted by hand) — that is still this command's job,
+ * so it drops the entry + card without a file move. Loader references (settings/MCP
  * JSON, root bootloaders) are NEVER auto-edited — like prune's advisory dispositions,
  * they carry no on-disk marker separating aih's entries from the user's, so they are
  * only surfaced for manual review.
@@ -57,19 +60,22 @@ function posixAbs(abs: string): string {
 }
 
 /**
- * The single on-disk skill row for `<name>` plus the full inventory it came from,
- * or a fail-closed AIH_TRUST refusal. Guards, in order: no matching on-disk skill;
- * a name matching MORE THAN ONE physical install (each listed — the inventory keeps
- * one row per physical directory precisely so duplicates cannot hide behind a
- * name-keyed dedupe); a `machine`-root skill (not this repo's to remove).
+ * The single on-disk skill row for `<name>`, `undefined` for an ORPHANED approval
+ * (no physical install, but the lockfile still carries the name — the dir was
+ * deleted by hand and the governance record survived), or a fail-closed AIH_TRUST
+ * refusal. Guards, in order: nothing on disk AND nothing in the lock; a name
+ * matching MORE THAN ONE physical install (each listed — the inventory keeps one
+ * row per physical directory precisely so duplicates cannot hide behind a
+ * name-keyed dedupe); a nested child skill inside the target dir; a `machine`-root
+ * skill (not this repo's to remove).
  */
-function resolveTarget(
-  ctx: PlanContext,
-  name: string,
-): { row: SkillInventoryRow; all: SkillInventoryRow[] } {
+function resolveTarget(ctx: PlanContext, name: string): SkillInventoryRow | undefined {
   const inventory = skillInventory(ctx);
   const matches = inventory.skills.filter((row) => row.name === name);
   if (matches.length === 0) {
+    if (readSkillsLock(ctx.root).skills.some((entry) => entry.name === name)) {
+      return undefined; // orphaned approval — no files, but the lock entry is ours to drop
+    }
     throw refuse(`nothing to remove — no installed skill named ${name}`);
   }
   if (matches.length > 1) {
@@ -108,7 +114,7 @@ function resolveTarget(
         "remove the nested skill(s) first, then retry",
     );
   }
-  return { row, all: inventory.skills };
+  return row;
 }
 
 /** Loader files whose text may reference a skill by name — surfaced, never auto-edited. */
@@ -137,6 +143,19 @@ function loaderAdvisories(ctx: PlanContext, name: string): string[] {
   return out;
 }
 
+/** The shared advisory tail for both digest variants. */
+function advisoryTail(advisories: string[]): string[] {
+  if (advisories.length > 0) {
+    return [
+      "",
+      "Manual review — aih can't safely edit these (its entries carry no on-disk marker,",
+      "and names may collide with yours), so it will NOT touch them:",
+      ...advisories,
+    ];
+  }
+  return ["", "No loader files reference this skill by name."];
+}
+
 function removeDigestText(
   name: string,
   row: SkillInventoryRow,
@@ -152,24 +171,56 @@ function removeDigestText(
   const disposal = hardDelete
     ? `hard-delete (single-slot ${rollback} backup)`
     : `move to ${rollback} (reversible — move it back)`;
-  const lines = [
+  return [
     `Skill: ${name} (${row.status})`,
     `Root: ${row.root}`,
     `Remove: ${relDir} → ${disposal}`,
     `Approval: ${droppedApproval ? `dropped from ${AIH_SKILLS_LOCK_FILE}` : "was not approved (no lockfile entry)"}`,
     `Card: ${cardRemoved ? "committed card removed" : "no committed card"}`,
+    ...advisoryTail(advisories),
+  ].join("\n");
+}
+
+function orphanDigestText(name: string, cardRemoved: boolean, advisories: string[]): string {
+  return [
+    `Skill: ${name} (orphaned approval — no on-disk install)`,
+    "Remove: nothing on disk (the skill directory is already gone)",
+    `Approval: dropped from ${AIH_SKILLS_LOCK_FILE}`,
+    `Card: ${cardRemoved ? "committed card removed" : "no committed card"}`,
+    ...advisoryTail(advisories),
+  ].join("\n");
+}
+
+/**
+ * The plan for an ORPHANED approval — the skill's directory is already gone (deleted
+ * by hand), but the committed lockfile entry (and possibly the card) survived. There
+ * is no file move; the command's remaining job is dropping the stale governance state.
+ */
+function orphanRemovePlan(ctx: PlanContext, name: string): Plan {
+  const actions: Action[] = [
+    writeJson(
+      AIH_SKILLS_LOCK_FILE,
+      removeSkillLockEntry(readSkillsLock(ctx.root), name),
+      `drop the orphaned approval for ${name} (no on-disk install)`,
+    ),
   ];
-  if (advisories.length > 0) {
-    lines.push(
-      "",
-      "Manual review — aih can't safely edit these (its entries carry no on-disk marker,",
-      "and names may collide with yours), so it will NOT touch them:",
-      ...advisories,
-    );
-  } else {
-    lines.push("", "No loader files reference this skill by name.");
+  const cardRel = skillCardRelPath(ctx.contextDir, name);
+  const cardRemoved = existsSync(join(ctx.root, cardRel));
+  if (cardRemoved) {
+    actions.push(remove(cardRel, `remove committed skill card for ${name}`));
   }
-  return lines.join("\n");
+  const advisories = loaderAdvisories(ctx, name);
+  actions.push(
+    digest("skill remove", orphanDigestText(name, cardRemoved, advisories), {
+      name,
+      status: "orphaned-approval",
+      hardDelete: false,
+      droppedApproval: true,
+      cardRemoved,
+      advisories,
+    }),
+  );
+  return plan("skill remove", ...actions);
 }
 
 function skillRemovePlan(ctx: PlanContext): Plan {
@@ -177,7 +228,8 @@ function skillRemovePlan(ctx: PlanContext): Plan {
   if (name === undefined) {
     throw refuse("skill remove requires --name <skill> — the installed skill to remove");
   }
-  const { row } = resolveTarget(ctx, name);
+  const row = resolveTarget(ctx, name);
+  if (row === undefined) return orphanRemovePlan(ctx, name);
   const hardDelete = ctx.options.delete === true;
   // The remove engine wants a repo-relative POSIX path; `row.abs` is the skill DIR,
   // so one remove action moves the whole subtree atomically (renameSync on a dir).

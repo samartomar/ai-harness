@@ -135,10 +135,11 @@ export interface DigestAction {
 }
 
 /**
- * Remove a repo-LOCAL file that aih exclusively owns — aih's only destructive
- * action. Emitted solely by `aih prune` for artifacts its detection proved
- * aih-owned (a per-CLI adapter note, a kiro steering/hook extra) once the CLI is
- * dropped. The executor fails closed: mandatory {@link assertContained} on the raw
+ * Remove a repo-LOCAL file or directory that aih exclusively owns — aih's only
+ * destructive action. Two emitters: `aih prune` (artifacts its detection proved
+ * aih-owned — a per-CLI adapter note, a kiro steering/hook extra — once the CLI is
+ * dropped) and `aih skill remove` (a user-directed removal of an installed skill's
+ * directory + committed card). The executor fails closed: mandatory {@link assertContained} on the raw
  * path (no `external` field exists, so a global `~/home` file is structurally
  * unreachable), a symlink guard, and a backup before unlink. By default it MOVES the
  * file to gitignored `.aih/legacy/<path>` (reversible; occupied destinations are never
