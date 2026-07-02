@@ -17,7 +17,9 @@ export function buildProgram(extra: CommandSpec[] = [], warnings?: string[]): Co
   const program = new Command();
   program
     .name("aih")
-    .description("Enterprise AI Bootstrapping Harness — governed, proxy-safe AI coding setup")
+    .description(
+      "Enterprise AI Bootstrapping Harness — governed AI coding setup for enterprise workstations and repos",
+    )
     .version(VERSION)
     .showHelpAfterError("(add --help for usage)");
   registerCommands(program, extra, warnings);
