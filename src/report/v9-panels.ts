@@ -14,6 +14,8 @@ import { gitRead } from "../internals/git.js";
 import { extractManagedBlock } from "../internals/markers.js";
 import { type DigestAction, digest, type PlanContext } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
+import { DEFAULT_MARKETPLACE_OUT, readMarketplaceManifest } from "../marketplace/manifest.js";
+import { marketplaceReport } from "../marketplace/validate.js";
 import { mcpServers } from "../mcp/servers.js";
 import { scanRepo } from "../profile/scan.js";
 import { skillInventory } from "../skill/index.js";
@@ -617,17 +619,54 @@ export function winsDigest(ctx: PlanContext): DigestAction | undefined {
   });
 }
 
+/** The publisher-signature filename beside `SHA256SUMS` (marketplace + bundles). */
+const SIGNATURE_FILE = "SHA256SUMS.sig";
+
+/**
+ * Marketplace artifact state for the governance digest — present only when the
+ * DEFAULT artifact (`.aih/marketplace`) exists under the target root; absent dir →
+ * `undefined` → the panel renders byte-identically. Grades with the SAME pure-fs
+ * join `marketplace validate` runs ({@link marketplaceReport} — no spawn; the
+ * spawning signature probe is validate's verify-phase concern, never the digest's),
+ * and reads `marketplace.json` for the packaged-skill count. `signed` reports only
+ * that the signature FILE exists — a presence claim, NEVER "verified": proving the
+ * signature needs cosign/gh, which is `aih marketplace validate`'s job (the
+ * plan-purity floor, #35, keeps digest time spawn-free).
+ */
+function marketplaceState(
+  ctx: PlanContext,
+): { skills: number; findings: number; signed: boolean } | undefined {
+  const dir = join(ctx.root, DEFAULT_MARKETPLACE_OUT);
+  if (!existsSync(dir)) return undefined;
+  const read = readMarketplaceManifest(dir);
+  return {
+    skills: read.ok ? read.manifest.skills.length : 0,
+    findings: marketplaceReport(dir).findings.length,
+    signed: existsSync(join(dir, SIGNATURE_FILE)),
+  };
+}
+
 /**
  * Skill governance — the read-only join over installed external skills and their
  * committed approvals (`skillInventory`), surfaced so the dashboard shows what is on
  * disk vs approved (richer than the lockfile alone: it also names unapproved and
- * pin-drifted skills). EMPTY only when there is nothing to govern — no on-disk skills
- * AND no committed approvals; then the panel gates honestly instead of showing zeros.
- * Pure fs (the inventory join spawns nothing), so it is safe at digest time.
+ * pin-drifted skills). Also carries the v0.6 distribution/audit surfaces when they
+ * exist on disk (marketplace artifact — each absent one stays absent, keeping the
+ * panel byte-identical). EMPTY only when there is nothing to govern — no on-disk
+ * skills, no committed approvals, and no governance artifacts; then the panel gates
+ * honestly instead of showing zeros. Pure fs (nothing here spawns), so it is safe at
+ * digest time.
  */
 export function skillGovernanceDigest(ctx: PlanContext): DigestAction | undefined {
   const inv = skillInventory(ctx);
-  if (inv.counts.installed === 0 && readSkillsLock(ctx.root).skills.length === 0) return undefined;
+  const marketplace = marketplaceState(ctx);
+  if (
+    inv.counts.installed === 0 &&
+    readSkillsLock(ctx.root).skills.length === 0 &&
+    marketplace === undefined
+  ) {
+    return undefined;
+  }
   const { installed, approved, unapproved, stalePin, quarantined } = inv.counts;
   const notable = inv.skills.filter((s) => s.status !== "approved");
   const rows = inv.skills.map((s) => ({
@@ -664,6 +703,18 @@ export function skillGovernanceDigest(ctx: PlanContext): DigestAction | undefine
       approved: p.approved,
       ...(p.quarantined > 0 ? { quarantined: p.quarantined } : {}),
     }));
+  // v0.6 distribution/audit lines — one grouped section (the "by pack:" pattern),
+  // rendered only when at least one surface exists so everything before it stays
+  // byte-identical on repos without governance artifacts.
+  const artifactLines = [
+    ...(marketplace
+      ? [
+          `  marketplace artifact (${DEFAULT_MARKETPLACE_OUT}) — ${marketplace.skills} skill(s) · ` +
+            `${marketplace.findings} finding(s) · ${marketplace.signed ? "signature file present" : "unsigned"} ` +
+            "(verify: `aih marketplace validate`)",
+        ]
+      : []),
+  ];
   const body = lines(
     `${installed} external skill${installed === 1 ? "" : "s"} installed · ${approved} approved · ${unapproved} unapproved · ${stalePin} stale-pin · ${quarantined} quarantined.`,
     "",
@@ -688,6 +739,7 @@ export function skillGovernanceDigest(ctx: PlanContext): DigestAction | undefine
           ),
         ]
       : []),
+    ...(artifactLines.length > 0 ? ["", "distribution & audit:", ...artifactLines] : []),
   );
   // The parenthetical breakdown must SUM to `installed` — quarantined rows count as
   // installed, so omitting them here would silently drop skills from the explanation.
@@ -703,6 +755,7 @@ export function skillGovernanceDigest(ctx: PlanContext): DigestAction | undefine
     quarantined,
     rows,
     ...(packs.length > 0 ? { packs } : {}),
+    ...(marketplace !== undefined ? { marketplace } : {}),
   });
 }
 

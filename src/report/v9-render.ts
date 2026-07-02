@@ -643,7 +643,15 @@ export function renderSkillGovernance(model: V9SkillGovernance): string {
         `<div class="row"><span class="k">pack ${escHtml(plainLabel(p.name))}</span><span class="v"${p.approved < p.skills ? ' style="color:var(--warn)"' : ""}>${p.approved} of ${p.skills} approved${p.quarantined !== undefined && p.quarantined > 0 ? ` · ${p.quarantined} quarantined` : ""}</span></div>`,
     )
     .join("");
-  const status = `<div class="card span-5"><div class="card-head"><h3>Approval status</h3>${badge}</div><div class="card-body">${statusBox}<div class="donut-meta" style="margin-top:.6rem"><div class="row"><span class="k">installed · approved</span><span class="v">${model.installed} · ${model.approved}</span></div><div class="row"><span class="k">unapproved · stale-pin</span><span class="v" style="color:${unattested > 0 ? "var(--warn)" : "var(--ok)"}">${model.unapproved} · ${model.stalePin}</span></div>${quarantinedRow}${packRows}</div><div class="method" style="margin-top:.6rem">External skills acquired via <code>aih workspace add</code>, joined to the committed <code>aih-skills.lock.json</code> approvals.</div></div></div>`;
+  // v0.6 marketplace artifact row — same absent→empty-string idiom as the
+  // quarantined row. "signature file present" is a PRESENCE claim only:
+  // verification spawns cosign/gh and belongs to `aih marketplace validate`, so
+  // this panel must never upgrade the label to "signed/verified".
+  const mp = model.marketplace;
+  const marketplaceRow = mp
+    ? `<div class="row"><span class="k">marketplace artifact</span><span class="v"${mp.findings > 0 ? ' style="color:var(--warn)"' : ""}>${mp.skills} skill${mp.skills === 1 ? "" : "s"} · ${mp.findings} finding${mp.findings === 1 ? "" : "s"} · ${mp.signed ? "signature file present" : "unsigned"}</span></div>`
+    : "";
+  const status = `<div class="card span-5"><div class="card-head"><h3>Approval status</h3>${badge}</div><div class="card-body">${statusBox}<div class="donut-meta" style="margin-top:.6rem"><div class="row"><span class="k">installed · approved</span><span class="v">${model.installed} · ${model.approved}</span></div><div class="row"><span class="k">unapproved · stale-pin</span><span class="v" style="color:${unattested > 0 ? "var(--warn)" : "var(--ok)"}">${model.unapproved} · ${model.stalePin}</span></div>${quarantinedRow}${packRows}${marketplaceRow}</div><div class="method" style="margin-top:.6rem">External skills acquired via <code>aih workspace add</code>, joined to the committed <code>aih-skills.lock.json</code> approvals.</div></div></div>`;
   const list = `<div class="card span-7"><div class="card-head"><h3>Installed skills</h3><span class="badge muted">${model.installed} on disk</span></div><div class="card-body"><div class="drift-files">${rows}</div></div></div>`;
   return status + list;
 }

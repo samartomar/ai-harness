@@ -263,6 +263,15 @@ export interface V9SkillGovernance {
    * non-zero, so a quarantine-free pack renders byte-identically.
    */
   packs?: Array<{ name: string; skills: number; approved: number; quarantined?: number }>;
+  /**
+   * v0.6 marketplace artifact (`.aih/marketplace`), when built: packaged-skill
+   * count, `marketplace validate`'s pure-fs finding count, and whether the
+   * publisher signature FILE (`SHA256SUMS.sig`) exists — a presence claim only,
+   * never "verified" (verification spawns cosign/gh and stays `aih marketplace
+   * validate`'s job). Absent when the artifact directory does not exist, so the
+   * panel renders byte-identically on repos without one.
+   */
+  marketplace?: { skills: number; findings: number; signed: boolean };
 }
 
 /**

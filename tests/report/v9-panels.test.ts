@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { sharedBlock } from "../../src/bootstrap-ai/canon.js";
+import { sha256Hex } from "../../src/bundle/index.js";
 import { mergeManagedBlock } from "../../src/internals/markers.js";
 import type { PlanContext } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
@@ -611,5 +612,103 @@ describe("skillGovernanceDigest", () => {
       "1 external skill installed · 1 approved · 0 unapproved · 0 stale-pin · 0 quarantined.\n\n  All 1 installed skill is approved and in sync.\n",
     );
     expect(Object.keys(d?.data as Record<string, unknown>)).not.toContain("packs");
+    // No marketplace artifact on disk → no key, no "distribution & audit" section.
+    expect(Object.keys(d?.data as Record<string, unknown>)).not.toContain("marketplace");
+    expect(d?.text).not.toContain("distribution & audit");
+  });
+
+  /**
+   * A minimal GREEN marketplace artifact under `.aih/marketplace`: one packaged
+   * skill, every file present + hashed, SHA256SUMS covering the whole tree — the
+   * exact shape `marketplace build` writes, so `marketplaceReport` grades it clean.
+   */
+  const putMarketplace = (withSig: boolean): void => {
+    const skillBody = "# x\n";
+    const cardBody = "{}\n";
+    const evidenceBody = "{}\n";
+    const manifest = JSON.stringify({
+      schemaVersion: 1,
+      name: "acme",
+      skills: [
+        {
+          name: "x",
+          source: `owner/repo@${"a".repeat(40)}`,
+          commit: "a".repeat(40),
+          verdict: "GREEN",
+          card: "cards/x.json",
+          evidence: "evidence/x.json",
+          files: [
+            {
+              path: "files/x/SKILL.md",
+              sha256: sha256Hex(skillBody),
+              bytes: Buffer.byteLength(skillBody),
+            },
+          ],
+        },
+      ],
+    });
+    put(".aih/marketplace/marketplace.json", manifest);
+    put(".aih/marketplace/cards/x.json", cardBody);
+    put(".aih/marketplace/evidence/x.json", evidenceBody);
+    put(".aih/marketplace/files/x/SKILL.md", skillBody);
+    const sums = `${[
+      `${sha256Hex(manifest)}  marketplace.json`,
+      `${sha256Hex(cardBody)}  cards/x.json`,
+      `${sha256Hex(evidenceBody)}  evidence/x.json`,
+      `${sha256Hex(skillBody)}  files/x/SKILL.md`,
+    ].join("\n")}\n`;
+    put(".aih/marketplace/SHA256SUMS", sums);
+    if (withSig) put(".aih/marketplace/SHA256SUMS.sig", "sig-bytes\n");
+  };
+
+  it("surfaces a green marketplace artifact — and keeps the digest live from it alone", () => {
+    // No skills, no lock: the built artifact IS something to govern.
+    putMarketplace(true);
+    const d = skillGovernanceDigest(ctx());
+    expect(d).toBeDefined();
+    const data = d?.data as SkillGovData & {
+      marketplace?: { skills: number; findings: number; signed: boolean };
+    };
+    expect(data.marketplace).toEqual({ skills: 1, findings: 0, signed: true });
+    expect(d?.text).toContain("distribution & audit:");
+    // Presence claim ONLY — verification is `marketplace validate`'s spawn.
+    expect(d?.text).toContain("1 skill(s) · 0 finding(s) · signature file present");
+    expect(d?.text).not.toContain("signature verified");
+  });
+
+  it("grades a broken, unsigned marketplace artifact with findings (never crashes)", () => {
+    // A manifest alone: sums missing → coverage finding; no sig → unsigned.
+    put(".aih/marketplace/marketplace.json", "{ not json");
+    const d = skillGovernanceDigest(ctx());
+    const data = d?.data as SkillGovData & {
+      marketplace?: { skills: number; findings: number; signed: boolean };
+    };
+    expect(data.marketplace?.skills).toBe(0);
+    expect(data.marketplace?.findings).toBeGreaterThan(0);
+    expect(data.marketplace?.signed).toBe(false);
+    expect(d?.text).toContain("unsigned");
+  });
+
+  it("renders the marketplace row only when the model carries it (byte-identical absent)", () => {
+    const model = {
+      installed: 1,
+      approved: 1,
+      unapproved: 0,
+      stalePin: 0,
+      quarantined: 0,
+      rows: [],
+    };
+    const withMp = renderSkillGovernance({
+      ...model,
+      marketplace: { skills: 2, findings: 0, signed: true },
+    });
+    expect(withMp).toContain("marketplace artifact");
+    expect(withMp).toContain("2 skills · 0 findings · signature file present");
+    const unsigned = renderSkillGovernance({
+      ...model,
+      marketplace: { skills: 2, findings: 3, signed: false },
+    });
+    expect(unsigned).toContain("3 findings · unsigned");
+    expect(renderSkillGovernance(model)).not.toContain("marketplace artifact");
   });
 });

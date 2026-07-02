@@ -748,6 +748,13 @@ function buildSkillGovernance(digests: DigestAction[]): V9SkillGovernance | unde
       ? { quarantined: p.quarantined }
       : {}),
   }));
+  // v0.6 marketplace artifact state — rides through only when the digest carried
+  // it (absent artifact → absent key → the panel renders byte-identically).
+  const mp = g.marketplace as { skills?: unknown; findings?: unknown; signed?: unknown } | undefined;
+  const marketplace =
+    mp !== undefined && mp !== null && typeof mp === "object"
+      ? { skills: numOr(mp.skills, 0), findings: numOr(mp.findings, 0), signed: mp.signed === true }
+      : undefined;
   return {
     installed: numOr(g.installed, 0),
     approved: numOr(g.approved, 0),
@@ -756,6 +763,7 @@ function buildSkillGovernance(digests: DigestAction[]): V9SkillGovernance | unde
     quarantined: numOr(g.quarantined, 0),
     rows,
     ...(packs.length > 0 ? { packs } : {}),
+    ...(marketplace !== undefined ? { marketplace } : {}),
   };
 }
 
