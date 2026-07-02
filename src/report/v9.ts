@@ -755,6 +755,12 @@ function buildSkillGovernance(digests: DigestAction[]): V9SkillGovernance | unde
     mp !== undefined && mp !== null && typeof mp === "object"
       ? { skills: numOr(mp.skills, 0), findings: numOr(mp.findings, 0), signed: mp.signed === true }
       : undefined;
+  // v0.6 evidence-bundle state — same absent-stays-absent contract.
+  const ev = g.evidence as { artifacts?: unknown; current?: unknown; stale?: unknown } | undefined;
+  const evidence =
+    ev !== undefined && ev !== null && typeof ev === "object"
+      ? { artifacts: numOr(ev.artifacts, 0), current: ev.current === true, stale: ev.stale === true }
+      : undefined;
   return {
     installed: numOr(g.installed, 0),
     approved: numOr(g.approved, 0),
@@ -764,6 +770,7 @@ function buildSkillGovernance(digests: DigestAction[]): V9SkillGovernance | unde
     rows,
     ...(packs.length > 0 ? { packs } : {}),
     ...(marketplace !== undefined ? { marketplace } : {}),
+    ...(evidence !== undefined ? { evidence } : {}),
   };
 }
 

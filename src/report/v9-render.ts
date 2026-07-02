@@ -651,7 +651,15 @@ export function renderSkillGovernance(model: V9SkillGovernance): string {
   const marketplaceRow = mp
     ? `<div class="row"><span class="k">marketplace artifact</span><span class="v"${mp.findings > 0 ? ' style="color:var(--warn)"' : ""}>${mp.skills} skill${mp.skills === 1 ? "" : "s"} · ${mp.findings} finding${mp.findings === 1 ? "" : "s"} · ${mp.signed ? "signature file present" : "unsigned"}</span></div>`
     : "";
-  const status = `<div class="card span-5"><div class="card-head"><h3>Approval status</h3>${badge}</div><div class="card-body">${statusBox}<div class="donut-meta" style="margin-top:.6rem"><div class="row"><span class="k">installed · approved</span><span class="v">${model.installed} · ${model.approved}</span></div><div class="row"><span class="k">unapproved · stale-pin</span><span class="v" style="color:${unattested > 0 ? "var(--warn)" : "var(--ok)"}">${model.unapproved} · ${model.stalePin}</span></div>${quarantinedRow}${packRows}${marketplaceRow}</div><div class="method" style="margin-top:.6rem">External skills acquired via <code>aih workspace add</code>, joined to the committed <code>aih-skills.lock.json</code> approvals.</div></div></div>`;
+  // Evidence-bundle row — "internally consistent" is deliberately narrow: the check
+  // is the bundle against its OWN SHA256SUMS, not against the live repo. The one
+  // live comparison made (the skills lock vs its bundled copy) gets its own honest
+  // phrase; anything more is `aih verify-bundle` / `aih evidence build`'s business.
+  const ev = model.evidence;
+  const evidenceRow = ev
+    ? `<div class="row"><span class="k">evidence bundle</span><span class="v"${ev.current && !ev.stale ? "" : ' style="color:var(--warn)"'}>${ev.artifacts} artifact${ev.artifacts === 1 ? "" : "s"} · ${ev.current ? "internally consistent" : "checksums mismatch"}${ev.stale ? " · behind live skills lock" : ""}</span></div>`
+    : "";
+  const status = `<div class="card span-5"><div class="card-head"><h3>Approval status</h3>${badge}</div><div class="card-body">${statusBox}<div class="donut-meta" style="margin-top:.6rem"><div class="row"><span class="k">installed · approved</span><span class="v">${model.installed} · ${model.approved}</span></div><div class="row"><span class="k">unapproved · stale-pin</span><span class="v" style="color:${unattested > 0 ? "var(--warn)" : "var(--ok)"}">${model.unapproved} · ${model.stalePin}</span></div>${quarantinedRow}${packRows}${marketplaceRow}${evidenceRow}</div><div class="method" style="margin-top:.6rem">External skills acquired via <code>aih workspace add</code>, joined to the committed <code>aih-skills.lock.json</code> approvals.</div></div></div>`;
   const list = `<div class="card span-7"><div class="card-head"><h3>Installed skills</h3><span class="badge muted">${model.installed} on disk</span></div><div class="card-body"><div class="drift-files">${rows}</div></div></div>`;
   return status + list;
 }

@@ -272,6 +272,15 @@ export interface V9SkillGovernance {
    * panel renders byte-identically on repos without one.
    */
   marketplace?: { skills: number; findings: number; signed: boolean };
+  /**
+   * v0.6 evidence bundle (`.aih/evidence-bundle`), when built: `evidence.json`
+   * kind-index artifact count; `current` = the bundled copies still match the
+   * bundle's own SHA256SUMS (INTERNAL consistency — never freshness vs the live
+   * repo); `stale` = the live skills lock no longer matches its bundled copy (the
+   * bundle predates an approval change → rebuild with `aih evidence build
+   * --apply`). Absent when the bundle directory does not exist.
+   */
+  evidence?: { artifacts: number; current: boolean; stale: boolean };
 }
 
 /**

@@ -292,6 +292,7 @@ export const V9_DEMO: AihDataV9 = {
       { name: "eng-tools", skills: 1, approved: 0, quarantined: 1 },
     ],
     marketplace: { skills: 2, findings: 0, signed: true },
+    evidence: { artifacts: 14, current: true, stale: false },
   },
 
   gates: {

@@ -689,6 +689,96 @@ describe("skillGovernanceDigest", () => {
     expect(d?.text).toContain("unsigned");
   });
 
+  /**
+   * A minimal evidence bundle under `.aih/evidence-bundle` in `evidence build`'s
+   * exact layout: `files/<rel>` copy of the skills lock, SHA256SUMS over it, and
+   * the `evidence.json` kind index.
+   */
+  const putEvidenceBundle = (lockBody: string): void => {
+    const bundled = `${lockBody}\n`; // evidence build normalizes to one trailing newline
+    put(".aih/evidence-bundle/files/aih-skills.lock.json", bundled);
+    put(".aih/evidence-bundle/SHA256SUMS", `${sha256Hex(bundled)}  files/aih-skills.lock.json\n`);
+    put(
+      ".aih/evidence-bundle/evidence.json",
+      JSON.stringify({
+        schemaVersion: 1,
+        artifacts: [
+          {
+            kind: "skills-lock",
+            path: "aih-skills.lock.json",
+            sha256: sha256Hex(bundled),
+            schemaVersion: 1,
+          },
+        ],
+      }),
+    );
+  };
+
+  it("surfaces a current, non-stale evidence bundle — live from the bundle alone", () => {
+    const lock = JSON.stringify({ schemaVersion: 1, skills: [lockEntry("clean")] });
+    put("aih-skills.lock.json", lock);
+    putEvidenceBundle(lock);
+    const d = skillGovernanceDigest(ctx());
+    expect(d).toBeDefined();
+    const data = d?.data as SkillGovData & {
+      evidence?: { artifacts: number; current: boolean; stale: boolean };
+    };
+    expect(data.evidence).toEqual({ artifacts: 1, current: true, stale: false });
+    expect(d?.text).toContain("evidence bundle (.aih/evidence-bundle) — 1 artifact(s)");
+    expect(d?.text).toContain("internally consistent");
+    expect(d?.text).not.toContain("rebuild:");
+  });
+
+  it("flags a bundle whose bundled lock the live lock has moved past as stale", () => {
+    const oldLock = JSON.stringify({ schemaVersion: 1, skills: [] });
+    putEvidenceBundle(oldLock);
+    // The live lock gained an approval AFTER the bundle was built.
+    put("aih-skills.lock.json", JSON.stringify({ schemaVersion: 1, skills: [lockEntry("newer")] }));
+    const d = skillGovernanceDigest(ctx());
+    const data = d?.data as SkillGovData & {
+      evidence?: { artifacts: number; current: boolean; stale: boolean };
+    };
+    // Internally the bundle still verifies — staleness is the LIVE-lock signal.
+    expect(data.evidence).toEqual({ artifacts: 1, current: true, stale: true });
+    expect(d?.text).toContain("live skills lock has moved past the bundled copy");
+    expect(d?.text).toContain("rebuild: `aih evidence build --apply`");
+  });
+
+  it("flags a tampered bundled copy as not internally consistent", () => {
+    const lock = JSON.stringify({ schemaVersion: 1, skills: [] });
+    put("aih-skills.lock.json", lock);
+    putEvidenceBundle(lock);
+    put(".aih/evidence-bundle/files/aih-skills.lock.json", '{"tampered":true}\n');
+    const d = skillGovernanceDigest(ctx());
+    const data = d?.data as SkillGovData & { evidence?: { current: boolean; stale: boolean } };
+    expect(data.evidence?.current).toBe(false);
+    expect(data.evidence?.stale).toBe(true); // the bundled copy no longer matches the live lock either
+    expect(d?.text).toContain("bundled copies do NOT match SHA256SUMS");
+  });
+
+  it("renders the evidence row only when the model carries it (byte-identical absent)", () => {
+    const model = {
+      installed: 1,
+      approved: 1,
+      unapproved: 0,
+      stalePin: 0,
+      quarantined: 0,
+      rows: [],
+    };
+    const current = renderSkillGovernance({
+      ...model,
+      evidence: { artifacts: 14, current: true, stale: false },
+    });
+    expect(current).toContain("evidence bundle");
+    expect(current).toContain("14 artifacts · internally consistent");
+    const stale = renderSkillGovernance({
+      ...model,
+      evidence: { artifacts: 14, current: true, stale: true },
+    });
+    expect(stale).toContain("internally consistent · behind live skills lock");
+    expect(renderSkillGovernance(model)).not.toContain("evidence bundle");
+  });
+
   it("renders the marketplace row only when the model carries it (byte-identical absent)", () => {
     const model = {
       installed: 1,

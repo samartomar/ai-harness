@@ -6,20 +6,26 @@ import {
   SHARED_MARKER,
   sharedCanonicalBlockBody,
 } from "../bootstrap-ai/canon.js";
+import { verifyBundleChecksums } from "../bundle/index.js";
 import { eccLanguages } from "../ecc/select.js";
+import {
+  DEFAULT_EVIDENCE_OUT,
+  EVIDENCE_FILE,
+  EvidenceBundleSchema,
+} from "../evidence/manifest.js";
 import { homeDir } from "../internals/cli-detect.js";
 import { SUPPORTED_CLIS } from "../internals/clis.js";
 import { readIfExists } from "../internals/fsxn.js";
 import { gitRead } from "../internals/git.js";
 import { extractManagedBlock } from "../internals/markers.js";
 import { type DigestAction, digest, type PlanContext } from "../internals/plan.js";
-import { lines } from "../internals/render.js";
+import { ensureTrailingNewline, lines } from "../internals/render.js";
 import { DEFAULT_MARKETPLACE_OUT, readMarketplaceManifest } from "../marketplace/manifest.js";
 import { marketplaceReport } from "../marketplace/validate.js";
 import { mcpServers } from "../mcp/servers.js";
 import { scanRepo } from "../profile/scan.js";
 import { skillInventory } from "../skill/index.js";
-import { readSkillsLock } from "../skill/lockfile.js";
+import { AIH_SKILLS_LOCK_FILE, readSkillsLock } from "../skill/lockfile.js";
 import type { SupportTemplate } from "../support/render.js";
 import { scanCliCoverage } from "./cli-coverage.js";
 import { readinessDigest } from "./readiness.js";
@@ -647,23 +653,63 @@ function marketplaceState(
 }
 
 /**
+ * Evidence-bundle state for the governance digest — present only when the DEFAULT
+ * bundle (`.aih/evidence-bundle`) exists under the target root; absent dir →
+ * `undefined` → the panel renders byte-identically. Three honest, cheap reads:
+ * `artifacts` counts the `evidence.json` kind-index entries; `current` reuses the
+ * fleet bundle's {@link verifyBundleChecksums} (pure fs), which checks the BUNDLED
+ * COPIES against the bundle's own SHA256SUMS — INTERNAL consistency, never
+ * freshness vs the live repo; `stale` is the one freshness probe cheap enough to
+ * be worth making: the LIVE skills lock compared byte-for-byte (after the write
+ * engine's trailing-newline normalization, the same one `evidence build` hashes
+ * through) to its bundled copy. The lock is the approval authority every other
+ * bundled artifact follows, so lock drift means the bundle predates a governance
+ * change — the `aih evidence build --apply` rebuild hint. Anything deeper stays
+ * `aih verify-bundle`'s job.
+ */
+function evidenceState(
+  ctx: PlanContext,
+): { artifacts: number; current: boolean; stale: boolean } | undefined {
+  const dir = join(ctx.root, DEFAULT_EVIDENCE_OUT);
+  if (!existsSync(dir)) return undefined;
+  const artifacts = (() => {
+    const raw = readIfExists(join(dir, EVIDENCE_FILE));
+    if (raw === undefined) return 0;
+    try {
+      const parsed = EvidenceBundleSchema.safeParse(JSON.parse(raw));
+      return parsed.success ? parsed.data.artifacts.length : 0;
+    } catch {
+      return 0; // unreadable index → 0 indexed artifacts; `current` still grades the tree
+    }
+  })();
+  const current = verifyBundleChecksums(dir).verdict === "pass";
+  const norm = (text: string | undefined): string | undefined =>
+    text === undefined ? undefined : ensureTrailingNewline(text);
+  const live = norm(readIfExists(join(ctx.root, AIH_SKILLS_LOCK_FILE)));
+  const bundled = norm(readIfExists(join(dir, "files", AIH_SKILLS_LOCK_FILE)));
+  return { artifacts, current, stale: live !== bundled };
+}
+
+/**
  * Skill governance — the read-only join over installed external skills and their
  * committed approvals (`skillInventory`), surfaced so the dashboard shows what is on
  * disk vs approved (richer than the lockfile alone: it also names unapproved and
  * pin-drifted skills). Also carries the v0.6 distribution/audit surfaces when they
- * exist on disk (marketplace artifact — each absent one stays absent, keeping the
- * panel byte-identical). EMPTY only when there is nothing to govern — no on-disk
- * skills, no committed approvals, and no governance artifacts; then the panel gates
- * honestly instead of showing zeros. Pure fs (nothing here spawns), so it is safe at
- * digest time.
+ * exist on disk (marketplace artifact, evidence bundle — each absent one stays
+ * absent, keeping the panel byte-identical). EMPTY only when there is nothing to
+ * govern — no on-disk skills, no committed approvals, and no governance artifacts;
+ * then the panel gates honestly instead of showing zeros. Pure fs (nothing here
+ * spawns), so it is safe at digest time.
  */
 export function skillGovernanceDigest(ctx: PlanContext): DigestAction | undefined {
   const inv = skillInventory(ctx);
   const marketplace = marketplaceState(ctx);
+  const evidence = evidenceState(ctx);
   if (
     inv.counts.installed === 0 &&
     readSkillsLock(ctx.root).skills.length === 0 &&
-    marketplace === undefined
+    marketplace === undefined &&
+    evidence === undefined
   ) {
     return undefined;
   }
@@ -714,6 +760,18 @@ export function skillGovernanceDigest(ctx: PlanContext): DigestAction | undefine
             "(verify: `aih marketplace validate`)",
         ]
       : []),
+    ...(evidence
+      ? [
+          `  evidence bundle (${DEFAULT_EVIDENCE_OUT}) — ${evidence.artifacts} artifact(s) · ` +
+            (evidence.current
+              ? "internally consistent"
+              : "bundled copies do NOT match SHA256SUMS") +
+            (evidence.stale ? " · live skills lock has moved past the bundled copy" : "") +
+            (evidence.current && !evidence.stale
+              ? ""
+              : " (rebuild: `aih evidence build --apply`)"),
+        ]
+      : []),
   ];
   const body = lines(
     `${installed} external skill${installed === 1 ? "" : "s"} installed · ${approved} approved · ${unapproved} unapproved · ${stalePin} stale-pin · ${quarantined} quarantined.`,
@@ -756,6 +814,7 @@ export function skillGovernanceDigest(ctx: PlanContext): DigestAction | undefine
     rows,
     ...(packs.length > 0 ? { packs } : {}),
     ...(marketplace !== undefined ? { marketplace } : {}),
+    ...(evidence !== undefined ? { evidence } : {}),
   });
 }
 
