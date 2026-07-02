@@ -376,6 +376,20 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     action:
       "Re-run the org-policy projection (`aih init --posture enterprise --apply`, or the narrower command that owns the drifted file) so managed settings match `aih-org-policy.json`.",
   },
+  "org-policy.invalid": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "org policy file does not parse",
+    action:
+      "Fix aih-org-policy.json until it passes the schema — `aih policy validate` lists the failing paths. A committed policy that does not parse enforces nothing (drift probes and posture floors all no-op).",
+  },
+  "org-policy.bundle-invalid": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "org policy bundle envelope is invalid",
+    action:
+      "Re-issue the policy bundle so BOTH layers parse — the envelope (schemaVersion 1, bundleVersion, issuer, ISO-8601 issuedAt) and the embedded org policy. `aih policy validate --bundle <path>` names the failing layer; do not distribute the bundle until it validates.",
+  },
   "report.contract-untrue": {
     audience: "developer",
     failSeverity: "degraded",

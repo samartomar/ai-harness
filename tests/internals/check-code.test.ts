@@ -430,6 +430,8 @@ describe("Check.code — invariants", () => {
       "contract.path-unportable": true,
       "contract.stale": true,
       "org-policy.drift": true,
+      "org-policy.invalid": true,
+      "org-policy.bundle-invalid": true,
       "report.context-over-budget": true,
       "report.low-adoption": true,
       "report.contract-untrue": true,
