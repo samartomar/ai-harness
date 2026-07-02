@@ -8,6 +8,7 @@ import { command as contract } from "../contract/index.js";
 import { command as crispy } from "../crispy/index.js";
 import { command as doctor } from "../doctor.js";
 import { command as ecc } from "../ecc/index.js";
+import { evidenceBuildCommand } from "../evidence/build.js";
 import { command as guardrails } from "../guardrails/index.js";
 import { command as hardware } from "../hardware/index.js";
 import { command as heal } from "../heal/index.js";
@@ -17,6 +18,7 @@ import { marketplaceBuildCommand } from "../marketplace/build.js";
 import { marketplacePublishCommand } from "../marketplace/publish.js";
 import { marketplaceValidateCommand } from "../marketplace/validate.js";
 import { command as mcp } from "../mcp/index.js";
+import { policyValidateCommand } from "../org-policy/validate.js";
 import {
   packAddCommand,
   packInitCommand,
@@ -103,7 +105,7 @@ export const READONLY: CommandSpec[] = [doctor, status, verifyBundle];
 export const ALL_COMMANDS: CommandSpec[] = [...CAPABILITIES, ...READONLY];
 
 /** Parent command groups registered below as bare commander groups (not CommandSpecs). */
-const PARENT_GROUPS = ["workspace", "trust", "skill", "pack", "marketplace"];
+const PARENT_GROUPS = ["workspace", "trust", "skill", "pack", "marketplace", "policy", "evidence"];
 
 /**
  * Names commander itself claims on every program: the implicit `help`
@@ -443,6 +445,42 @@ export function registerCommands(
     marketplacePublishCommand,
   ]) {
     const sub = marketplace.command(spec.name).description(spec.summary);
+    addSharedFlags(sub);
+    for (const o of spec.options ?? []) {
+      if (o.default !== undefined) sub.option(o.flags, o.description, o.default);
+      else sub.option(o.flags, o.description);
+    }
+    sub.action(async (_options: Record<string, unknown>, command: Command) => {
+      process.exitCode = await runCapability(spec, command, { positionalRoot: false });
+    });
+  }
+
+  // `policy` mirrors the `marketplace` group: options-only subcommands (no
+  // positional). `validate` is the read-only schema gate over the local
+  // aih-org-policy.json (or, under --bundle, a policy-bundle envelope).
+  const policy = program
+    .command("policy")
+    .description("Validate the org policy — the local aih-org-policy.json or a policy-bundle");
+  for (const spec of [policyValidateCommand]) {
+    const sub = policy.command(spec.name).description(spec.summary);
+    addSharedFlags(sub);
+    for (const o of spec.options ?? []) {
+      if (o.default !== undefined) sub.option(o.flags, o.description, o.default);
+      else sub.option(o.flags, o.description);
+    }
+    sub.action(async (_options: Record<string, unknown>, command: Command) => {
+      process.exitCode = await runCapability(spec, command, { positionalRoot: false });
+    });
+  }
+
+  // `evidence` mirrors the same options-only shape: `build` packages the
+  // governance artifacts aih already emits into a verifiable, bundle-standard
+  // directory (re-checked by `aih verify-bundle`).
+  const evidence = program
+    .command("evidence")
+    .description("Package aih's committed governance artifacts into a verifiable evidence bundle");
+  for (const spec of [evidenceBuildCommand]) {
+    const sub = evidence.command(spec.name).description(spec.summary);
     addSharedFlags(sub);
     for (const o of spec.options ?? []) {
       if (o.default !== undefined) sub.option(o.flags, o.description, o.default);
