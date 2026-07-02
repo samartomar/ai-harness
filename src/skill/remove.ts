@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { join, relative } from "node:path";
 import { AihError } from "../errors.js";
 import { readIfExists } from "../internals/fsxn.js";
@@ -12,7 +13,7 @@ import {
   writeJson,
 } from "../internals/plan.js";
 import { normalizeRel } from "../internals/worktree-gate.js";
-import { readSkillCard, skillCardRelPath } from "./card.js";
+import { skillCardRelPath } from "./card.js";
 import { type SkillInventoryRow, skillInventory } from "./inventory.js";
 import { AIH_SKILLS_LOCK_FILE, readSkillsLock, removeSkillLockEntry } from "./lockfile.js";
 
@@ -29,12 +30,16 @@ import { AIH_SKILLS_LOCK_FILE, readSkillsLock, removeSkillLockEntry } from "./lo
  *
  * Resolution is the READ-ONLY {@link skillInventory} join (pure fs, no spawn), so
  * plan() stays pure (#35): the move + lockfile/card writes happen in execute under
- * `--apply`. It refuses (AIH_TRUST) on the three ambiguity/safety cases: no `--name`,
- * a name matching no on-disk skill, a name matching skills in MULTIPLE roots, and a
- * `machine`-root skill (`~/.claude/skills` is not this repo's to touch). Loader
- * references (settings/MCP JSON, root bootloaders) are NEVER auto-edited — like
- * prune's advisory dispositions, they carry no on-disk marker separating aih's
- * entries from the user's, so they are only surfaced for manual review.
+ * `--apply`. Fail-closed AIH_TRUST refusals: no `--name`; a name matching no on-disk
+ * skill; a name matching MORE THAN ONE physical install (two sources or CLI dirs can
+ * ship the same logical name — removing an arbitrary copy while dropping the shared
+ * name-keyed approval would leave the survivor active-but-unapproved); a skill dir
+ * that CONTAINS another discovered skill (a nested child would be moved as collateral
+ * while its own approval survives, dangling); and a `machine`-root skill
+ * (`~/.claude/skills` is not this repo's to touch). Loader references (settings/MCP
+ * JSON, root bootloaders) are NEVER auto-edited — like prune's advisory dispositions,
+ * they carry no on-disk marker separating aih's entries from the user's, so they are
+ * only surfaced for manual review.
  */
 
 function refuse(message: string): AihError {
@@ -46,27 +51,39 @@ function optionString(ctx: PlanContext, key: string): string | undefined {
   return typeof raw === "string" && raw.trim().length > 0 ? raw.trim() : undefined;
 }
 
+/** Forward-slashed absolute path, for descendant tests independent of OS separators. */
+function posixAbs(abs: string): string {
+  return abs.replace(/\\/g, "/");
+}
+
 /**
- * The single on-disk skill row for `<name>`, or a fail-closed AIH_TRUST refusal.
- * Guards, in order: no `--name`; no matching on-disk skill; a name matching skills
- * in MULTIPLE roots (ambiguous — list them); a `machine`-root-only skill (not this
- * repo's to remove). Exactly one removable row → returned.
+ * The single on-disk skill row for `<name>` plus the full inventory it came from,
+ * or a fail-closed AIH_TRUST refusal. Guards, in order: no matching on-disk skill;
+ * a name matching MORE THAN ONE physical install (each listed — the inventory keeps
+ * one row per physical directory precisely so duplicates cannot hide behind a
+ * name-keyed dedupe); a `machine`-root skill (not this repo's to remove).
  */
-function resolveTarget(ctx: PlanContext, name: string): SkillInventoryRow {
-  const matches = skillInventory(ctx).skills.filter((row) => row.name === name);
+function resolveTarget(
+  ctx: PlanContext,
+  name: string,
+): { row: SkillInventoryRow; all: SkillInventoryRow[] } {
+  const inventory = skillInventory(ctx);
+  const matches = inventory.skills.filter((row) => row.name === name);
   if (matches.length === 0) {
     throw refuse(`nothing to remove — no installed skill named ${name}`);
   }
-  const roots = [...new Set(matches.map((row) => row.root))];
-  if (roots.length > 1) {
+  if (matches.length > 1) {
+    const where = matches
+      .map((row) => `  - ${normalizeRel(relative(ctx.root, row.abs))} (${row.root})`)
+      .join("\n");
     throw refuse(
-      `skill ${name} is installed under multiple roots (${roots.join(", ")}) — ambiguous; ` +
-        "remove the copy you mean by hand, this command only removes an unambiguous single skill",
+      `skill ${name} matches ${matches.length} physical installs — ambiguous, refusing to ` +
+        `remove an arbitrary copy (the name-keyed approval is shared):\n${where}\n` +
+        "remove the copy you mean by hand, or uninstall the duplicate first",
     );
   }
-  // A machine-root-only skill lives under `~/.claude/skills`, outside this repo — aih
-  // will not reach into the user's global install. (A promoted/repo copy of the same
-  // name would have widened `roots` above, so this fires only when machine is the sole root.)
+  // A machine-root skill lives under `~/.claude/skills`, outside this repo — aih
+  // will not reach into the user's global install.
   const row = matches[0];
   if (row === undefined || row.root === "machine") {
     throw refuse(
@@ -74,7 +91,24 @@ function resolveTarget(ctx: PlanContext, name: string): SkillInventoryRow {
         "that global install is not this repo's to remove; delete it by hand if unwanted",
     );
   }
-  return row;
+  // NESTED-CHILD guard: the engine moves the whole directory subtree, so any OTHER
+  // discovered skill living INSIDE this one would be removed as collateral while its
+  // own approval/card survive, dangling. Fail closed until the nesting is resolved.
+  const parentPrefix = `${posixAbs(row.abs)}/`;
+  const nested = inventory.skills.filter(
+    (other) => other !== row && posixAbs(other.abs).startsWith(parentPrefix),
+  );
+  if (nested.length > 0) {
+    const children = nested
+      .map((child) => `  - ${child.name} (${normalizeRel(relative(ctx.root, child.abs))})`)
+      .join("\n");
+    throw refuse(
+      `skill ${name}'s directory contains ${nested.length} other installed skill(s) — ` +
+        `removing it would take them as collateral:\n${children}\n` +
+        "remove the nested skill(s) first, then retry",
+    );
+  }
+  return { row, all: inventory.skills };
 }
 
 /** Loader files whose text may reference a skill by name — surfaced, never auto-edited. */
@@ -143,7 +177,7 @@ function skillRemovePlan(ctx: PlanContext): Plan {
   if (name === undefined) {
     throw refuse("skill remove requires --name <skill> — the installed skill to remove");
   }
-  const row = resolveTarget(ctx, name);
+  const { row } = resolveTarget(ctx, name);
   const hardDelete = ctx.options.delete === true;
   // The remove engine wants a repo-relative POSIX path; `row.abs` is the skill DIR,
   // so one remove action moves the whole subtree atomically (renameSync on a dir).
@@ -167,13 +201,14 @@ function skillRemovePlan(ctx: PlanContext): Plan {
     );
   }
 
-  // Drop the committed card too, reversibly, through the same engine — only when one
-  // exists on disk (readSkillCard is fail-soft: absent/unreadable → undefined → skip).
-  const cardRemoved = readSkillCard(ctx.root, ctx.contextDir, name) !== undefined;
+  // Drop the committed card too, reversibly, through the same engine. Keyed on the
+  // CANONICAL card path's existence — never the lockfile entry's `card` field (a
+  // hostile lockfile could point that at any in-repo file), and never on schema
+  // validity (a malformed card would be orphaned as stale review material otherwise).
+  const cardRel = skillCardRelPath(ctx.contextDir, name);
+  const cardRemoved = existsSync(join(ctx.root, cardRel));
   if (cardRemoved) {
-    actions.push(
-      remove(skillCardRelPath(ctx.contextDir, name), `remove committed skill card for ${name}`),
-    );
+    actions.push(remove(cardRel, `remove committed skill card for ${name}`));
   }
 
   const advisories = loaderAdvisories(ctx, name);

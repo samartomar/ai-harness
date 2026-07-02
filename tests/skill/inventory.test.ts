@@ -194,6 +194,21 @@ describe("skillInventory — the pure join", () => {
     expect(result.counts).toMatchObject({ installed: 3, approved: 1, unapproved: 2, stalePin: 0 });
     expect(result.skills.map((s) => s.root).sort()).toEqual(["promoted", "promoted", "repo"]);
   });
+
+  it("keeps one row per PHYSICAL install — duplicates of a name never collapse (Codex high-1)", () => {
+    // Two promoted sources and two repo CLI dirs all ship `foo`: 4 physical installs.
+    // Hiding any behind a name-keyed dedupe would let a destructive consumer treat
+    // the name as unambiguous and remove an arbitrary copy.
+    promoteSkill("source-a", "foo");
+    promoteSkill("source-b", "foo");
+    write(".claude/skills/foo/SKILL.md", "# foo\n");
+    write(".kiro/skills/foo/SKILL.md", "# foo\n");
+    const result = inv();
+    const foos = result.skills.filter((s) => s.name === "foo");
+    expect(foos).toHaveLength(4);
+    expect(new Set(foos.map((s) => s.abs)).size).toBe(4); // 4 distinct physical dirs
+    expect(result.counts.installed).toBe(4);
+  });
 });
 
 describe("skillInventoryCommand", () => {

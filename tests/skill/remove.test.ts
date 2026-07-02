@@ -243,8 +243,59 @@ describe("skillRemoveCommand — the destructive inverse", () => {
     } catch (e) {
       expect(e).toBeInstanceOf(AihError);
       expect((e as AihError).code).toBe("AIH_TRUST");
-      expect((e as AihError).message).toContain("multiple roots");
+      expect((e as AihError).message).toContain("physical installs");
     }
+  });
+
+  it("refuses (AIH_TRUST) duplicate physical installs of the same name in ONE root (Codex high-1)", () => {
+    // Two promoted SOURCES ship the same logical skill name; the inventory keeps one
+    // row per physical dir, so the resolver must see BOTH and refuse — removing an
+    // arbitrary copy while dropping the shared name-keyed approval would leave the
+    // survivor active-but-unapproved.
+    promoteSkill("source-a", "foo");
+    promoteSkill("source-b", "foo");
+    const c = ctx({ options: { name: "foo" } });
+    try {
+      skillRemoveCommand.plan(c);
+      throw new Error("expected a refusal");
+    } catch (e) {
+      expect(e).toBeInstanceOf(AihError);
+      expect((e as AihError).code).toBe("AIH_TRUST");
+      const msg = (e as AihError).message;
+      expect(msg).toContain("2 physical installs");
+      expect(msg).toContain("source-a/foo");
+      expect(msg).toContain("source-b/foo");
+    }
+  });
+
+  it("refuses (AIH_TRUST) removing a skill whose dir CONTAINS another skill (Codex high-2)", () => {
+    // parent/ and parent/child/ are both valid discovered skills; moving parent/ would
+    // take child/ as collateral while child's approval survives, dangling.
+    promoteSkill("owner-repo", "parent");
+    write("ai-coding/skills/owner-repo/parent/child/SKILL.md", "# child\n");
+    const c = ctx({ options: { name: "parent" } });
+    try {
+      skillRemoveCommand.plan(c);
+      throw new Error("expected a refusal");
+    } catch (e) {
+      expect(e).toBeInstanceOf(AihError);
+      expect((e as AihError).code).toBe("AIH_TRUST");
+      const msg = (e as AihError).message;
+      expect(msg).toContain("collateral");
+      expect(msg).toContain("parent/child");
+    }
+  });
+
+  it("removes a MALFORMED committed card by its canonical path (Codex low)", async () => {
+    // The card exists at the canonical path but fails the schema — removal keys on
+    // path EXISTENCE (never schema validity, never the lockfile's `card` field), so
+    // stale review material is not orphaned by a destructive remove.
+    installApproved("owner-repo", "clean");
+    write("ai-coding/skill-cards/clean.json", "{ not valid json");
+    const c = ctx({ apply: true, options: { name: "clean" } });
+    const result = await executePlan(await planOf(c), c);
+    expect(existsSync(join(workspace, "ai-coding/skill-cards/clean.json"))).toBe(false);
+    expect(digestData(result)).toMatchObject({ cardRemoved: true });
   });
 
   it("refuses (AIH_TRUST) a skill installed only in the machine root", () => {
