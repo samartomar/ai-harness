@@ -274,9 +274,40 @@ describe("heal — cert step", () => {
     const p = await command.plan(makeCtx({ root: freshTmp(), platform: "windows", ca: "valid" }));
     const e = execs(p.actions);
     expect(e).toHaveLength(1);
-    expect(e[0]?.argv.join(" ")).toContain("SetEnvironmentVariable");
-    expect(e[0]?.argv.join(" ")).toContain("NODE_EXTRA_CA_CERTS");
+    // `setx` (not a pwsh-only [Environment]::SetEnvironmentVariable) so the persist works
+    // on managed images without PowerShell 7 and under Constrained Language Mode.
+    expect(e[0]?.argv.slice(0, 4)).toEqual(["cmd", "/c", "setx", "NODE_EXTRA_CA_CERTS"]);
+    expect(e[0]?.argv[4]).toContain("ca.pem");
     expect(findDigest(p.actions, "GUI apps inherit the CA")).toBeDefined();
+  });
+
+  it("a failed persist exec under --apply surfaces a failing check (not an invisible exit-1)", async () => {
+    // Before the fix the persist exec was pwsh-only: on a box without PowerShell 7 it
+    // ENOENTed (exit 127), runCapability set exit 1 (execFailed), yet the report printed
+    // "0 failed" — a contradiction any scripted gate on heal would choke on. Now a
+    // failureCheck lands the failure IN the report so exit code and report agree.
+    const ctx = makeCtx({ root: freshTmp(), platform: "windows", ca: "valid", apply: true });
+    // Fail ONLY the `cmd /c setx …` persist exec (as on a locked-down box where setx is
+    // policy-blocked); TLS + node/npm/npx still answer healthy via the base runner.
+    const base = ctx.run;
+    ctx.run = async (argv, opts) =>
+      argv[0] === "cmd" && argv[2] === "setx"
+        ? { code: 127, stdout: "", stderr: "'setx' is not recognized", spawnError: true }
+        : base(argv, opts);
+
+    const result = await executePlan(await command.plan(ctx), ctx);
+
+    // The persist exec ran and failed …
+    const persist = result.execs.find((x) => x.argv[2] === "setx");
+    expect(persist?.ran).toBe(true);
+    expect(persist?.ok).toBe(false);
+    // … and that failure is now the report's single failing check (cert-coded), so
+    // result.report.exitCode() (1) agrees with runCapability's execFailed-driven exit.
+    const fails = result.report?.checks.filter((c) => c.verdict === "fail") ?? [];
+    expect(fails).toHaveLength(1);
+    expect(fails[0]?.name).toBe("cert: persist at user scope");
+    expect(fails[0]?.code).toBe("cert.ca-missing");
+    expect(result.report?.exitCode()).toBe(1);
   });
 
   it("POSIX emits no persist exec (the profile envblock is the durable seam)", async () => {
@@ -356,7 +387,7 @@ describe("heal — path step", () => {
     expect(findDigest(p.actions, "add the tool dir to PATH")?.text).toContain('export PATH="');
   });
 
-  it("Windows fix uses the registry SetEnvironmentVariable form", async () => {
+  it("Windows fix offers the PowerShell registry form and a cmd/setx fallback", async () => {
     const p = await command.plan(
       makeCtx({
         root: freshTmp(),
@@ -366,9 +397,15 @@ describe("heal — path step", () => {
         binOnPath: false,
       }),
     );
-    expect(findDigest(p.actions, "add the tool dir to PATH")?.text).toContain(
-      "SetEnvironmentVariable",
-    );
+    const text = findDigest(p.actions, "add the tool dir to PATH")?.text;
+    // Primary: PowerShell appends to the User Path without clobbering.
+    expect(text).toContain("SetEnvironmentVariable");
+    // Fallback for cmd.exe / no-PowerShell-7 / Constrained Language Mode boxes.
+    expect(text).toContain("setx Path");
+    // The fallback reads the USER Path specifically and appends via a placeholder —
+    // never the combined %Path% that setx would truncate at 1024 chars.
+    expect(text).toContain("reg query HKCU\\Environment");
+    expect(text).toContain('setx Path "<current-user-path>');
   });
 });
 

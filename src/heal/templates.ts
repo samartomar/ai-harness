@@ -131,6 +131,16 @@ export function pathFixDoc(binDir: string, shell: "posix" | "powershell"): strin
       "",
       `  [Environment]::SetEnvironmentVariable('Path', [Environment]::GetEnvironmentVariable('Path','User') + ';${binDir}', 'User')`,
       "",
+      "On cmd.exe, or a locked-down box without PowerShell 7 (or under Constrained",
+      "Language Mode, where the [Environment] call above is blocked), use setx. Read",
+      "your current USER Path, then append it back — do NOT reuse %Path%, which folds",
+      "in the machine Path and can truncate the value at setx's 1024-char limit:",
+      "",
+      "  reg query HKCU\\Environment /v Path",
+      `  setx Path "<current-user-path>;${binDir}"`,
+      "",
+      `(If that reg query reports no value your user Path is empty — then just: setx Path "${binDir}")`,
+      "",
       "Then open a new terminal (and relaunch GUI apps) for it to take effect.",
     );
   }

@@ -7,6 +7,7 @@ import { certFixDoc, guiCaNote } from "./templates.js";
 
 const ENV_KEY = "NODE_EXTRA_CA_CERTS";
 const CHECK = "cert: NODE_EXTRA_CA_CERTS";
+const PERSIST_CHECK = "cert: persist at user scope";
 
 /**
  * Diagnose whether the corporate CA is wired into Node's TLS. The AUTHORITATIVE
@@ -82,7 +83,23 @@ async function planCertVerify(ctx: PlanContext, shared: HealShared): Promise<Act
   if (ca.verdict === "pass") {
     const persist = ctx.host.persistentEnvArgv(ENV_KEY, ctx.env[ENV_KEY] as string);
     if (persist.length > 0) {
-      actions.push(exec("persist the CA at user scope so GUI apps inherit it", persist));
+      actions.push(
+        exec("persist the CA at user scope so GUI apps inherit it", persist, {
+          // Surface a persist failure in the verification report instead of leaving it
+          // invisible: a non-zero exec already flips runCapability's exit code (execFailed
+          // → 1), but with no failureCheck the report still prints "0 failed", so a scripted
+          // gate on `aih heal` sees an exit-1/report-0 contradiction it can't act on. A fail
+          // Check reconciles the two and routes to the same corporate-trust remediation.
+          failureCheck: (result) => ({
+            name: PERSIST_CHECK,
+            verdict: "fail",
+            code: "cert.ca-missing",
+            detail: `could not persist ${ENV_KEY} at user scope (exit ${
+              result.code ?? "signal"
+            }); GUI-launched apps may not inherit the CA — run: aih certs --apply`,
+          }),
+        }),
+      );
       actions.push(digest("heal: GUI apps inherit the CA (Windows)", guiCaNote()));
     }
   }
