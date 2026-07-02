@@ -284,6 +284,30 @@ describe("heal — cert step", () => {
     expect(findDigest(p.actions, "GUI apps inherit the CA")).toBeDefined();
   });
 
+  it("skips the setx persist and fails visibly when the CA path exceeds setx's 1024-char limit", async () => {
+    const root = freshTmp();
+    // A valid PEM at a >1024-char path: setx would silently truncate the value (exit 0)
+    // and persist a corrupted CA path, so heal must fail visibly instead of running it.
+    let deep = root;
+    for (let i = 0; i < 12; i++) deep = join(deep, `seg${i}`.padEnd(90, "x"));
+    mkdirSync(deep, { recursive: true });
+    const longPem = join(deep, "ca.pem");
+    writeFileSync(longPem, PEM, "utf8");
+    expect(longPem.length).toBeGreaterThan(1024);
+
+    const ctx = makeCtx({ root, platform: "windows", ca: "unset" });
+    ctx.env.NODE_EXTRA_CA_CERTS = longPem;
+
+    const p = await command.plan(ctx);
+    // No setx exec (it would corrupt the path via truncation) …
+    expect(execs(p.actions).some((e) => e.argv[0] === "setx")).toBe(false);
+    // … and a failing persist check surfaces instead, routed to the certs remediation.
+    const check = findCheck(p.actions, "persist at user scope");
+    expect(check?.verdict).toBe("fail");
+    expect(check?.code).toBe("cert.ca-missing");
+    expect(check?.detail).toContain("truncates");
+  });
+
   it("a failed persist exec under --apply surfaces a failing check (not an invisible exit-1)", async () => {
     // Before the fix the persist exec was pwsh-only: on a box without PowerShell 7 it
     // ENOENTed (exit 127), runCapability set exit 1 (execFailed), yet the report printed
