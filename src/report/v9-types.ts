@@ -255,6 +255,12 @@ export interface V9SkillGovernance {
     source?: string;
     commit?: string;
   }>;
+  /**
+   * Installed skills grouped by their lock entry's `pack` tag — the pack-level
+   * rollup. Absent when no skill carries a tag (a pack-free repo's panel stays
+   * byte-identical to the pre-pack output).
+   */
+  packs?: Array<{ name: string; skills: number; approved: number }>;
 }
 
 /**

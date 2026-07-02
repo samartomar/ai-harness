@@ -5,6 +5,7 @@ import { readIfExists } from "../internals/fsxn.js";
 import {
   type Action,
   type CommandSpec,
+  type DigestAction,
   digest,
   type Plan,
   type PlanContext,
@@ -15,7 +16,12 @@ import {
 import { normalizeRel } from "../internals/worktree-gate.js";
 import { skillCardRelPath } from "./card.js";
 import { type SkillInventoryRow, skillInventory } from "./inventory.js";
-import { AIH_SKILLS_LOCK_FILE, readSkillsLock, removeSkillLockEntry } from "./lockfile.js";
+import {
+  AIH_SKILLS_LOCK_FILE,
+  readSkillsLock,
+  removeSkillLockEntry,
+  type SkillsLock,
+} from "./lockfile.js";
 
 /**
  * `aih skill remove <name>` — slice 4 of the skill lifecycle: the DESTRUCTIVE
@@ -30,7 +36,10 @@ import { AIH_SKILLS_LOCK_FILE, readSkillsLock, removeSkillLockEntry } from "./lo
  *
  * Resolution is the READ-ONLY {@link skillInventory} join (pure fs, no spawn), so
  * plan() stays pure (#35): the move + lockfile/card writes happen in execute under
- * `--apply`. Fail-closed AIH_TRUST refusals: no `--name`; a name matching no on-disk
+ * `--apply`. The engine + guards are exposed as {@link skillRemovalActions} (one
+ * member's actions + summary, digest-free) so `aih pack uninstall` composes N
+ * members' removals — identical semantics — under one plan and one final digest.
+ * Fail-closed AIH_TRUST refusals: no `--name`; a name matching no on-disk
  * skill AND no approval; a name matching MORE THAN ONE physical install (two sources
  * or CLI dirs can ship the same logical name — removing an arbitrary copy while
  * dropping the shared name-keyed approval would leave the survivor
@@ -193,28 +202,140 @@ export function advisoryTail(advisories: string[]): string[] {
   return ["", "No loader files reference this skill by name."];
 }
 
-function removeDigestText(
+/**
+ * The summary one member's removal produces — every digest input, minus the digest
+ * itself, so `skill remove` renders its per-command digest and `pack uninstall`
+ * renders one per-member row from the same facts.
+ */
+export type SkillRemovalSummary =
+  | {
+      kind: "installed";
+      name: string;
+      status: SkillInventoryRow["status"];
+      root: string;
+      /** Repo-relative POSIX dir the remove action targets. */
+      from: string;
+      hardDelete: boolean;
+      droppedApproval: boolean;
+      cardRemoved: boolean;
+      advisories: string[];
+    }
+  | {
+      kind: "orphaned-approval";
+      name: string;
+      cardRemoved: boolean;
+      advisories: string[];
+    };
+
+export interface SkillRemoval {
+  /** The engine actions (dir move, lockfile rewrite, card removal) — digest-free. */
+  actions: Action[];
+  summary: SkillRemovalSummary;
+  /** The lock AFTER this removal — thread it into the next member's removal so a
+   * composed plan's sequential lockfile writes accumulate instead of resurrecting
+   * an earlier member's dropped entry. */
+  lock: SkillsLock;
+}
+
+/**
+ * ONE skill's guarded removal: {@link resolveTarget}'s fail-closed guards, then the
+ * engine actions `skillRemovePlan` has always emitted — the atomic dir move (or an
+ * orphaned approval's no-move variant), the lockfile drop, the committed-card
+ * removal — plus the summary the caller's digest is built from. `lock` is the
+ * working lockfile state (defaults to the on-disk read); composed callers thread
+ * each member's returned `lock` into the next call.
+ */
+export function skillRemovalActions(
+  ctx: PlanContext,
   name: string,
-  row: SkillInventoryRow,
-  relDir: string,
   hardDelete: boolean,
-  droppedApproval: boolean,
-  cardRemoved: boolean,
-  advisories: string[],
-): string {
-  const rollback = hardDelete
-    ? `${normalizeRel(relDir)}.aih.bak`
-    : `.aih/legacy/${normalizeRel(relDir)}`;
-  const disposal = hardDelete
+  lock: SkillsLock = readSkillsLock(ctx.root),
+): SkillRemoval {
+  const row = resolveTarget(ctx, name);
+  // Card removal keys on the CANONICAL card path's existence — never the lockfile
+  // entry's `card` field (a hostile lockfile could point that at any in-repo file),
+  // and never on schema validity (a malformed card would be orphaned as stale
+  // review material otherwise).
+  const cardRel = skillCardRelPath(ctx.contextDir, name);
+  const cardRemoved = existsSync(join(ctx.root, cardRel));
+  const advisories = loaderAdvisories(ctx, name);
+
+  // ORPHANED approval — the skill's directory is already gone (deleted by hand),
+  // but the committed lockfile entry (and possibly the card) survived. There is no
+  // file move; the remaining job is dropping the stale governance state.
+  if (row === undefined) {
+    const next = removeSkillLockEntry(lock, name);
+    const actions: Action[] = [
+      writeJson(
+        AIH_SKILLS_LOCK_FILE,
+        next,
+        `drop the orphaned approval for ${name} (no on-disk install)`,
+      ),
+    ];
+    if (cardRemoved) {
+      actions.push(remove(cardRel, `remove committed skill card for ${name}`));
+    }
+    return {
+      actions,
+      summary: { kind: "orphaned-approval", name, cardRemoved, advisories },
+      lock: next,
+    };
+  }
+
+  // The remove engine wants a repo-relative POSIX path; `row.abs` is the skill DIR,
+  // so one remove action moves the whole subtree atomically (renameSync on a dir).
+  const relDir = normalizeRel(relative(ctx.root, row.abs));
+  const actions: Action[] = [
+    remove(relDir, `remove skill ${name} (${row.status})`, { hardDelete }),
+  ];
+
+  // Drop the committed approval — only when there IS one (an unapproved on-disk skill
+  // has no lockfile entry, so skip the write rather than rewrite an unchanged file).
+  const droppedApproval = lock.skills.some((entry) => entry.name === name);
+  const next = droppedApproval ? removeSkillLockEntry(lock, name) : lock;
+  if (droppedApproval) {
+    actions.push(
+      writeJson(AIH_SKILLS_LOCK_FILE, next, `drop ${name} from the skill approval lockfile`),
+    );
+  }
+
+  if (cardRemoved) {
+    actions.push(remove(cardRel, `remove committed skill card for ${name}`));
+  }
+
+  return {
+    actions,
+    summary: {
+      kind: "installed",
+      name,
+      status: row.status,
+      root: row.root,
+      from: relDir,
+      hardDelete,
+      droppedApproval,
+      cardRemoved,
+      advisories,
+    },
+    lock: next,
+  };
+}
+
+type InstalledRemoval = Extract<SkillRemovalSummary, { kind: "installed" }>;
+
+function removeDigestText(s: InstalledRemoval): string {
+  const rollback = s.hardDelete
+    ? `${normalizeRel(s.from)}.aih.bak`
+    : `.aih/legacy/${normalizeRel(s.from)}`;
+  const disposal = s.hardDelete
     ? `hard-delete (single-slot ${rollback} backup)`
     : `move to ${rollback} (reversible — move it back)`;
   return [
-    `Skill: ${name} (${row.status})`,
-    `Root: ${row.root}`,
-    `Remove: ${relDir} → ${disposal}`,
-    `Approval: ${droppedApproval ? `dropped from ${AIH_SKILLS_LOCK_FILE}` : "was not approved (no lockfile entry)"}`,
-    `Card: ${cardRemoved ? "committed card removed" : "no committed card"}`,
-    ...advisoryTail(advisories),
+    `Skill: ${s.name} (${s.status})`,
+    `Root: ${s.root}`,
+    `Remove: ${s.from} → ${disposal}`,
+    `Approval: ${s.droppedApproval ? `dropped from ${AIH_SKILLS_LOCK_FILE}` : "was not approved (no lockfile entry)"}`,
+    `Card: ${s.cardRemoved ? "committed card removed" : "no committed card"}`,
+    ...advisoryTail(s.advisories),
   ].join("\n");
 }
 
@@ -228,36 +349,27 @@ function orphanDigestText(name: string, cardRemoved: boolean, advisories: string
   ].join("\n");
 }
 
-/**
- * The plan for an ORPHANED approval — the skill's directory is already gone (deleted
- * by hand), but the committed lockfile entry (and possibly the card) survived. There
- * is no file move; the command's remaining job is dropping the stale governance state.
- */
-function orphanRemovePlan(ctx: PlanContext, name: string): Plan {
-  const actions: Action[] = [
-    writeJson(
-      AIH_SKILLS_LOCK_FILE,
-      removeSkillLockEntry(readSkillsLock(ctx.root), name),
-      `drop the orphaned approval for ${name} (no on-disk install)`,
-    ),
-  ];
-  const cardRel = skillCardRelPath(ctx.contextDir, name);
-  const cardRemoved = existsSync(join(ctx.root, cardRel));
-  if (cardRemoved) {
-    actions.push(remove(cardRel, `remove committed skill card for ${name}`));
-  }
-  const advisories = loaderAdvisories(ctx, name);
-  actions.push(
-    digest("skill remove", orphanDigestText(name, cardRemoved, advisories), {
-      name,
+/** The per-command digest for `skill remove`, built from the extracted summary. */
+function skillRemoveDigest(s: SkillRemovalSummary): DigestAction {
+  if (s.kind === "orphaned-approval") {
+    return digest("skill remove", orphanDigestText(s.name, s.cardRemoved, s.advisories), {
+      name: s.name,
       status: "orphaned-approval",
       hardDelete: false,
       droppedApproval: true,
-      cardRemoved,
-      advisories,
-    }),
-  );
-  return plan("skill remove", ...actions);
+      cardRemoved: s.cardRemoved,
+      advisories: s.advisories,
+    });
+  }
+  return digest("skill remove", removeDigestText(s), {
+    name: s.name,
+    status: s.status,
+    from: s.from,
+    hardDelete: s.hardDelete,
+    droppedApproval: s.droppedApproval,
+    cardRemoved: s.cardRemoved,
+    advisories: s.advisories,
+  });
 }
 
 function skillRemovePlan(ctx: PlanContext): Plan {
@@ -265,58 +377,8 @@ function skillRemovePlan(ctx: PlanContext): Plan {
   if (name === undefined) {
     throw refuse("skill remove requires --name <skill> — the installed skill to remove");
   }
-  const row = resolveTarget(ctx, name);
-  if (row === undefined) return orphanRemovePlan(ctx, name);
-  const hardDelete = ctx.options.delete === true;
-  // The remove engine wants a repo-relative POSIX path; `row.abs` is the skill DIR,
-  // so one remove action moves the whole subtree atomically (renameSync on a dir).
-  const relDir = normalizeRel(relative(ctx.root, row.abs));
-
-  const actions: Action[] = [
-    remove(relDir, `remove skill ${name} (${row.status})`, { hardDelete }),
-  ];
-
-  // Drop the committed approval — only when there IS one (an unapproved on-disk skill
-  // has no lockfile entry, so skip the write rather than rewrite an unchanged file).
-  const lock = readSkillsLock(ctx.root);
-  const droppedApproval = lock.skills.some((entry) => entry.name === name);
-  if (droppedApproval) {
-    actions.push(
-      writeJson(
-        AIH_SKILLS_LOCK_FILE,
-        removeSkillLockEntry(lock, name),
-        `drop ${name} from the skill approval lockfile`,
-      ),
-    );
-  }
-
-  // Drop the committed card too, reversibly, through the same engine. Keyed on the
-  // CANONICAL card path's existence — never the lockfile entry's `card` field (a
-  // hostile lockfile could point that at any in-repo file), and never on schema
-  // validity (a malformed card would be orphaned as stale review material otherwise).
-  const cardRel = skillCardRelPath(ctx.contextDir, name);
-  const cardRemoved = existsSync(join(ctx.root, cardRel));
-  if (cardRemoved) {
-    actions.push(remove(cardRel, `remove committed skill card for ${name}`));
-  }
-
-  const advisories = loaderAdvisories(ctx, name);
-  actions.push(
-    digest(
-      "skill remove",
-      removeDigestText(name, row, relDir, hardDelete, droppedApproval, cardRemoved, advisories),
-      {
-        name,
-        status: row.status,
-        from: relDir,
-        hardDelete,
-        droppedApproval,
-        cardRemoved,
-        advisories,
-      },
-    ),
-  );
-  return plan("skill remove", ...actions);
+  const { actions, summary } = skillRemovalActions(ctx, name, ctx.options.delete === true);
+  return plan("skill remove", ...actions, skillRemoveDigest(summary));
 }
 
 export const skillRemoveCommand: CommandSpec = {

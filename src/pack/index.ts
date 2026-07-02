@@ -29,3 +29,4 @@ export {
   packStatusCommand,
   packValidateCommand,
 } from "./status.js";
+export { packUninstallCommand } from "./uninstall.js";

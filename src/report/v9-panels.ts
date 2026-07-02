@@ -637,6 +637,18 @@ export function skillGovernanceDigest(ctx: PlanContext): DigestAction | undefine
     ...(s.source !== undefined ? { source: s.source } : {}),
     ...(s.commit !== undefined ? { commit: s.commit } : {}),
   }));
+  // Pack rollup — installed skills grouped by their lock entry's `pack` tag. Rendered
+  // (body line + data key) ONLY when at least one skill carries a tag, so a pack-free
+  // repo's digest stays byte-identical (the quarantined-count pattern).
+  const byPack = new Map<string, { name: string; skills: number; approved: number }>();
+  for (const s of inv.skills) {
+    if (s.pack === undefined) continue;
+    const entry = byPack.get(s.pack) ?? { name: s.pack, skills: 0, approved: 0 };
+    entry.skills += 1;
+    if (s.status === "approved") entry.approved += 1;
+    byPack.set(s.pack, entry);
+  }
+  const packs = [...byPack.values()].sort((a, b) => a.name.localeCompare(b.name));
   const body = lines(
     `${installed} external skill${installed === 1 ? "" : "s"} installed · ${approved} approved · ${unapproved} unapproved · ${stalePin} stale-pin · ${quarantined} quarantined.`,
     "",
@@ -650,6 +662,9 @@ export function skillGovernanceDigest(ctx: PlanContext): DigestAction | undefine
     notable.length === 0
       ? `  All ${approved} installed skill${approved === 1 ? " is" : "s are"} approved and in sync.`
       : "",
+    ...(packs.length > 0
+      ? ["", "by pack:", ...packs.map((p) => `  ${p.name} — ${p.approved}/${p.skills} approved`)]
+      : []),
   );
   // The parenthetical breakdown must SUM to `installed` — quarantined rows count as
   // installed, so omitting them here would silently drop skills from the explanation.
@@ -664,6 +679,7 @@ export function skillGovernanceDigest(ctx: PlanContext): DigestAction | undefine
     stalePin,
     quarantined,
     rows,
+    ...(packs.length > 0 ? { packs } : {}),
   });
 }
 

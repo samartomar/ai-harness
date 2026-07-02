@@ -717,6 +717,12 @@ interface GovRowRaw {
   commit?: unknown;
 }
 
+interface GovPackRaw {
+  name?: unknown;
+  skills?: unknown;
+  approved?: unknown;
+}
+
 /** Skill governance (from the v9-only "Skill governance" digest), else undefined. */
 function buildSkillGovernance(digests: DigestAction[]): V9SkillGovernance | undefined {
   const g = bag(digests, "Skill governance");
@@ -730,6 +736,12 @@ function buildSkillGovernance(digests: DigestAction[]): V9SkillGovernance | unde
     ...(typeof r.source === "string" ? { source: r.source } : {}),
     ...(typeof r.commit === "string" ? { commit: r.commit } : {}),
   }));
+  // Pack rollup — present only when the digest carried tags (pack-free stays absent).
+  const packs = (Array.isArray(g.packs) ? (g.packs as GovPackRaw[]) : []).map((p) => ({
+    name: String(p.name ?? ""),
+    skills: numOr(p.skills, 0),
+    approved: numOr(p.approved, 0),
+  }));
   return {
     installed: numOr(g.installed, 0),
     approved: numOr(g.approved, 0),
@@ -737,6 +749,7 @@ function buildSkillGovernance(digests: DigestAction[]): V9SkillGovernance | unde
     stalePin: numOr(g.stalePin, 0),
     quarantined: numOr(g.quarantined, 0),
     rows,
+    ...(packs.length > 0 ? { packs } : {}),
   };
 }
 
