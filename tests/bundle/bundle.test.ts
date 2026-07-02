@@ -150,7 +150,8 @@ describe("bundle command", () => {
       ctx({ options: { include: "ai-coding/skill-cards/alpha.json" } }),
     );
     const hits = writes(p.actions).filter(
-      (w) => w.path.replace(/\\/g, "/") === ".aih/fleet-bundle/files/ai-coding/skill-cards/alpha.json",
+      (w) =>
+        w.path.replace(/\\/g, "/") === ".aih/fleet-bundle/files/ai-coding/skill-cards/alpha.json",
     );
     expect(hits).toHaveLength(1);
   });
