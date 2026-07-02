@@ -5,8 +5,8 @@ How a maintainer cuts a release. The heavy lifting is automated: pushing a `v*` 
 packs a tarball + SHA256 checksum + SPDX SBOM, attests build provenance (keyless OIDC),
 signs the checksum file with keyless cosign, smoke-installs the tarball, publishes to npm
 via Trusted Publishing with `--provenance`, and creates the GitHub Release with generated
-notes and the artifacts attached: the tarball, `SHA256SUMS.txt` (+ `SHA256SUMS.txt.sig` and
-`SHA256SUMS.txt.pem`), `provenance.intoto.jsonl`, and `aih-sbom.spdx.json`.
+notes and the artifacts attached: the tarball, `SHA256SUMS.txt` (+ its cosign signature
+bundle `SHA256SUMS.txt.sigstore.json`), `provenance.intoto.jsonl`, and `aih-sbom.spdx.json`.
 
 Your job is everything up to the tag.
 

@@ -69,10 +69,12 @@ jobs:
         with:
           subject-path: "./*.tgz"
       # Attach VERIFIABLE signature files to the Release itself (not only the
-      # attestation store): a keyless cosign signature over SHA256SUMS.txt plus
-      # the Sigstore provenance bundle. Consumers verify with
-      #   cosign verify-blob --signature SHA256SUMS.txt.sig \
-      #     --certificate SHA256SUMS.txt.pem \
+      # attestation store): a keyless cosign SIGNATURE BUNDLE over SHA256SUMS.txt
+      # (cosign v3 new-bundle-format — one .sigstore.json carrying signature +
+      # certificate; the v2 --output-signature/--output-certificate flags are
+      # deprecated no-ops there and broke the v0.6.0 run) plus the build-provenance
+      # bundle. Consumers verify with
+      #   cosign verify-blob --bundle SHA256SUMS.txt.sigstore.json \
       #     --certificate-identity-regexp 'github.com/samartomar/ai-harness' \
       #     --certificate-oidc-issuer https://token.actions.githubusercontent.com \
       #     SHA256SUMS.txt
@@ -83,8 +85,7 @@ jobs:
         run: |
           set -euo pipefail
           cosign sign-blob --yes \
-            --output-signature SHA256SUMS.txt.sig \
-            --output-certificate SHA256SUMS.txt.pem \
+            --bundle SHA256SUMS.txt.sigstore.json \
             SHA256SUMS.txt
           cp "${{ steps.attest.outputs.bundle-path }}" provenance.intoto.jsonl
       - name: Smoke-install the packed tarball
@@ -110,5 +111,5 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes \
-            ./*.tgz SHA256SUMS.txt SHA256SUMS.txt.sig SHA256SUMS.txt.pem \
+            ./*.tgz SHA256SUMS.txt SHA256SUMS.txt.sigstore.json \
             provenance.intoto.jsonl aih-sbom.spdx.json
