@@ -6,6 +6,27 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-07-02
+
+Documentation and presentation only — no code, CLI surface, output, or behavior change
+(the 1.0 contract is untouched; the command-surface fixture is unchanged).
+
+### Changed
+
+- **Repositioning**: the product framing moves off "AI-assisted coding behind a corporate
+  proxy" — the proxy is one capability (`aih certs` / `aih heal`), not the audience. The
+  README, hero image, and package/CLI descriptions now describe **governed AI-assisted
+  coding in enterprise environments**, from locked-down TLS-intercepted networks to open
+  ones.
+- **README restructure**: a **The 1.0 contract** callout leads (pin `^1`; surface
+  snapshot-tested in CI; alias-before-removal; N-1 security backports). The single 37-row
+  command table becomes five grouped one-line tables; the full per-command reference moves
+  verbatim to [docs/commands.md](docs/commands.md). The stale pre-1.0 versioning note is
+  corrected, and the supply-chain summary names the signed release assets
+  (`SHA256SUMS.txt.sigstore.json`, provenance bundle).
+- **Hero image**: refreshed for 1.0 — a stable-contract badge and a "road to 1.0" release
+  journey (0.2 → 1.0).
+
 ## [1.0.0] - 2026-07-02
 
 The **stability** release: the CLI / JSON / SARIF output contract is now FROZEN and
@@ -439,7 +460,8 @@ GitHub but **never published to npm**; the first published release is 0.2.0.
   (npm + github-actions), private vulnerability reporting, `@claude` workflow gated
   to trusted authors, and GitHub Actions pinned to commit SHAs.
 
-[Unreleased]: https://github.com/samartomar/ai-harness/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/samartomar/ai-harness/compare/v1.0.1...HEAD
+[1.0.1]: https://github.com/samartomar/ai-harness/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/samartomar/ai-harness/compare/v0.6.0...v1.0.0
 [0.6.0]: https://github.com/samartomar/ai-harness/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/samartomar/ai-harness/compare/v0.4.1...v0.5.0
