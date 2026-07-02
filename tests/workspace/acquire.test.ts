@@ -336,6 +336,27 @@ describe("workspace add acquisition plans", () => {
     const source = resolveTrustSource("owner/repo", { root: workspace });
     try {
       writeGithubQuarantine(source, "a".repeat(40));
+      // The new install-enforcement gate (#102) fails unapproved skills at enterprise;
+      // approve the fixture skill so this test still exercises ONLY publisher drift.
+      writeFileSync(
+        join(workspace, "aih-skills.lock.json"),
+        JSON.stringify({
+          schemaVersion: 1,
+          skills: [
+            {
+              name: "clean",
+              source: "owner/repo",
+              commit: "a".repeat(40),
+              verdict: "GREEN",
+              scope: "repo",
+              card: "ai-coding/skill-cards/clean.json",
+              evidenceSha256: "b".repeat(64),
+              approvedAt: "2026-07-01T00:00:00Z",
+            },
+          ],
+        }),
+        "utf8",
+      );
       const report = new VerificationReport().pass("trust scan", "clean");
       const cleanCtx = ctx("owner/repo", true, true, {}, { posture: "enterprise" });
       const gate = await captureClearedWorkspaceAddTrustGate(cleanCtx, report, source);
@@ -598,5 +619,84 @@ describe("workspace add acquisition plans", () => {
     expect(payload.phase1.execs[0]?.ran).toBe(false);
     expect(payload.phase1.report.checks[0]?.verdict).toBe("skip");
     expect(payload.phase2).toBeUndefined();
+  });
+});
+
+describe("posture-gated install enforcement (trust.unapproved-skill, #102)", () => {
+  const SHA64 = "a".repeat(64);
+  function writeSkillsLock(names: string[]): void {
+    writeFileSync(
+      join(workspace, "aih-skills.lock.json"),
+      JSON.stringify({
+        schemaVersion: 1,
+        skills: names.map((name) => ({
+          name,
+          source: "acme/tools",
+          commit: "aaa1112223334445556667778889990001112223",
+          verdict: "GREEN",
+          scope: "repo",
+          card: "ai-coding/skill-cards/" + name + ".json",
+          evidenceSha256: SHA64,
+          approvedAt: "2026-07-01T00:00:00Z",
+        })),
+      }),
+      "utf8",
+    );
+  }
+
+  async function clearedPhase1(posture: string) {
+    const c = ctx(sourceRoot, true, true, {}, { posture });
+    const phase1 = await executePlan(await workspaceAddPhase1Plan(c), c);
+    expect(phase1.report?.ok).toBe(true);
+    return { c, report: phase1.report };
+  }
+
+  it("REFUSES the gate at team posture when a promoted skill has no committed approval", async () => {
+    localSkill(sourceRoot, "clean", "# Clean\n");
+    const { c, report } = await clearedPhase1("team");
+    await expect(captureClearedWorkspaceAddTrustGate(c, report)).rejects.toThrow(
+      /unapproved|lack a committed/i,
+    );
+    // Nothing was promoted.
+    expect(existsSync(join(workspace, "ai-coding", "skills"))).toBe(false);
+  });
+
+  it("promotes at enterprise posture when every skill IS approved in the lockfile", async () => {
+    localSkill(sourceRoot, "clean", "# Clean\n");
+    writeSkillsLock(["clean"]);
+    const { c, report } = await clearedPhase1("enterprise");
+    const gate = await captureClearedWorkspaceAddTrustGate(c, report);
+    const result = await executePlan(await workspaceAddPhase2Plan(c, gate), c);
+    expect(result.report?.ok).toBe(true);
+    const sourceId = basename(sourceRoot).toLowerCase();
+    expect(existsSync(join(workspace, "ai-coding", "skills", sourceId, "clean"))).toBe(true);
+  });
+
+  it("stays ADVISORY at vibe posture — promotes, with a warning-only check in the plan", async () => {
+    localSkill(sourceRoot, "clean", "# Clean\n");
+    const { c, report } = await clearedPhase1("vibe");
+    const gate = await captureClearedWorkspaceAddTrustGate(c, report);
+    const result = await executePlan(await workspaceAddPhase2Plan(c, gate), c);
+    expect(result.report?.ok).toBe(true); // advisory never fails the gate
+    const advisory = result.report?.checks.find((check) =>
+      check.name.includes("trust.unapproved-skill"),
+    );
+    expect(advisory?.verdict).toBe("pass");
+    expect(advisory?.detail).toContain("warning-only");
+    // Files still promoted at vibe.
+    const sourceId = basename(sourceRoot).toLowerCase();
+    expect(existsSync(join(workspace, "ai-coding", "skills", sourceId, "clean"))).toBe(true);
+  });
+
+  it("phase-2 plan itself refuses when posture hardened between phases (defense in depth)", async () => {
+    localSkill(sourceRoot, "clean", "# Clean\n");
+    const { c: vibeCtx, report } = await clearedPhase1("vibe");
+    const gate = await captureClearedWorkspaceAddTrustGate(vibeCtx, report);
+    // Same workspace, but phase 2 now runs at team posture (e.g. org policy tightened).
+    const teamCtx = ctx(sourceRoot, true, true, {}, { posture: "team" });
+    const result = await executePlan(await workspaceAddPhase2Plan(teamCtx, gate), teamCtx);
+    expect(result.report?.exitCode()).toBe(1); // fail check, no promotion
+    expect(result.writes).toHaveLength(0);
+    expect(existsSync(join(workspace, "ai-coding", "skills"))).toBe(false);
   });
 });

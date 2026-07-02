@@ -488,6 +488,13 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     action:
       "Do not install the external source until it declares a license (a LICENSE/COPYING file or a package.json license field), or replace it with a licensed alternative.",
   },
+  "trust.unapproved-skill": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "skill has no committed approval in aih-skills.lock.json",
+    action:
+      "Vet and approve the skill before installing at this posture: `aih skill vet <source> --apply`, review the verdict, then `aih skill approve <source> --pin <sha> --owner <team> --apply`. At vibe posture this is advisory only.",
+  },
 };
 
 /** Severity rank for sorting: most urgent first. */

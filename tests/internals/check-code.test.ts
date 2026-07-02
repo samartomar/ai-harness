@@ -448,6 +448,7 @@ describe("Check.code — invariants", () => {
       "trust.untrusted-publisher": true,
       "trust.unsigned-source": true,
       "trust.license-missing": true,
+      "trust.unapproved-skill": true,
     };
     const srcDir = join(process.cwd(), "src");
     const src = (readdirSync(srcDir, { recursive: true }) as string[])

@@ -73,7 +73,8 @@ export type CheckCode =
   | "trust.unpinned-dependency"
   | "trust.untrusted-publisher"
   | "trust.unsigned-source"
-  | "trust.license-missing";
+  | "trust.license-missing"
+  | "trust.unapproved-skill";
 
 export interface Check {
   name: string;

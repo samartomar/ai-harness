@@ -21,6 +21,7 @@ import { defaultRunner, type Runner } from "../internals/proc.js";
 import type { Check, VerificationReport } from "../internals/verify.js";
 import { AIH_ORG_POLICY_FILE } from "../org-policy/constants.js";
 import { makeHostAdapter } from "../platform/detect.js";
+import { readSkillsLock } from "../skill/lockfile.js";
 import { buildSupport, supportSummary } from "../support/integrate.js";
 import {
   acknowledgeCommandHint,
@@ -352,6 +353,40 @@ async function currentTrustScan(
   };
 }
 
+/**
+ * Posture-gated INSTALL enforcement (#102): every skill this promotion would land
+ * must carry a committed `aih-skills.lock.json` approval. A missing entry emits a
+ * `trust.unapproved-skill` check — ADVISORY at `vibe` (pass with the standard
+ * warning-only detail), a promotion-blocking FAIL at `team`/`enterprise`. Graded
+ * locally rather than through the shared trust-origin ladder: that ladder denies
+ * only at enterprise, but an install-time approval gate is the committed lockfile's
+ * teeth and the issue specs team as enforcing too — and widening the shared ladder
+ * would harden four already-released origin codes as a side effect. Pure fs; the
+ * caller decides whether fails abort the gate.
+ */
+function unapprovedSkillChecks(ctx: PlanContext, promotedSkills: readonly string[]): Check[] {
+  const approved = new Set(readSkillsLock(ctx.root).skills.map((entry) => entry.name));
+  const posture = postureFromContext(ctx);
+  return promotedSkills
+    .filter((name) => !approved.has(name))
+    .map((name) => {
+      const detail = `skill ${name} has no committed approval in aih-skills.lock.json — vet + approve it first`;
+      if (posture === "vibe") {
+        return {
+          name: `trust.unapproved-skill ${name}`,
+          verdict: "pass" as const,
+          detail: `warning-only (vibe posture): ${detail}`,
+        };
+      }
+      return {
+        name: `trust.unapproved-skill ${name}`,
+        verdict: "fail" as const,
+        code: "trust.unapproved-skill" as const,
+        detail,
+      };
+    });
+}
+
 function sourceChangedCheck(detail: string): Check {
   return {
     name: "trust.source-changed",
@@ -381,6 +416,18 @@ export async function captureClearedWorkspaceAddTrustGate(
     throw new AihError("workspace add source changed after phase 1 scan", "AIH_TRUST");
   }
   const promotion = buildPromotion(ctx, source);
+  const unapproved = unapprovedSkillChecks(ctx, promotion.promotedSkills).filter(
+    (check) => check.verdict === "fail",
+  );
+  if (unapproved.length > 0) {
+    const names = unapproved.map((check) => check.name.replace("trust.unapproved-skill ", ""));
+    throw new AihError(
+      `workspace add refused at ${postureFromContext(ctx)} posture — ${names.length} skill(s) ` +
+        `lack a committed aih-skills.lock.json approval: ${names.join(", ")}. ` +
+        "Run `aih skill vet <source> --apply` then `aih skill approve <source> --pin <sha> --owner <team> --apply` first.",
+      "AIH_TRUST",
+    );
+  }
   return {
     source: sourceBinding(source),
     artifactHashes: promotion.artifactHashes,
@@ -412,6 +459,10 @@ export async function workspaceAddPhase2Plan(
     return plan("workspace add: promote", ...probesForChecks(currentScan.checks));
   }
   const promotion = buildPromotion(ctx, source);
+  const approvalChecks = unapprovedSkillChecks(ctx, promotion.promotedSkills);
+  if (approvalChecks.some((check) => check.verdict === "fail")) {
+    return plan("workspace add: promote", ...probesForChecks(approvalChecks));
+  }
   if (!sameArtifactHashes(gate.artifactHashes, promotion.artifactHashes)) {
     return plan(
       "workspace add: promote",
@@ -422,6 +473,7 @@ export async function workspaceAddPhase2Plan(
   }
   const lock = lockWithSource(ctx, source, gate, promotion);
   const actions: Action[] = [
+    ...probesForChecks(approvalChecks),
     ...promotion.writes,
     writeJson(".aih/trust-lock.json", lock, "trusted external skill acquisition lock"),
     probe("trust promotion guard", () => ({
