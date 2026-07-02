@@ -313,6 +313,31 @@ describe("heal — cert step", () => {
     },
   );
 
+  // Boundary: setx truncates only ABOVE 1024, so a path of EXACTLY 1024 must still persist
+  // (guards against a future `>=` regression). macOS PATH_MAX (1024) can't hold it → skip.
+  it.skipIf(process.platform === "darwin")(
+    "persists normally at exactly the 1024-char boundary (only >1024 truncates)",
+    async () => {
+      const root = freshTmp();
+      let base = root;
+      while (base.length < 800) base = join(base, "seg".padEnd(90, "x"));
+      mkdirSync(base, { recursive: true });
+      // Pad a leaf so the full path is EXACTLY 1024 chars (one join separator + ".pem").
+      const leafLen = 1024 - base.length - 1;
+      const pem1024 = join(base, `${"z".repeat(leafLen - 4)}.pem`);
+      expect(pem1024.length).toBe(1024);
+      writeFileSync(pem1024, PEM, "utf8");
+
+      const ctx = makeCtx({ root, platform: "windows", ca: "unset" });
+      ctx.env.NODE_EXTRA_CA_CERTS = pem1024;
+
+      const p = await command.plan(ctx);
+      // Exactly 1024 → the setx persist IS emitted (no truncation), no failing check.
+      expect(execs(p.actions).some((e) => e.argv[0] === "setx")).toBe(true);
+      expect(findCheck(p.actions, "persist at user scope")).toBeUndefined();
+    },
+  );
+
   it("a failed persist exec under --apply surfaces a failing check (not an invisible exit-1)", async () => {
     // Before the fix the persist exec was pwsh-only: on a box without PowerShell 7 it
     // ENOENTed (exit 127), runCapability set exit 1 (execFailed), yet the report printed
