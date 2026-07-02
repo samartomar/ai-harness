@@ -1,0 +1,15 @@
+# Codecov is INFORMATIONAL here: the enforced coverage gate is vitest's
+# thresholds (vitest.config.ts), run in CI on ubuntu. Codecov provides the
+# badge, the PR diff-coverage comment, and trend history — it never blocks.
+coverage:
+  status:
+    project:
+      default:
+        informational: true
+    patch:
+      default:
+        informational: true
+
+comment:
+  layout: "condensed_header, diff, files"
+  require_changes: true
