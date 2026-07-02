@@ -8,6 +8,10 @@ import { certFixDoc, guiCaNote } from "./templates.js";
 const ENV_KEY = "NODE_EXTRA_CA_CERTS";
 const CHECK = "cert: NODE_EXTRA_CA_CERTS";
 const PERSIST_CHECK = "cert: persist at user scope";
+// The Windows per-user-env persist mechanism (`setx`) silently truncates a value over
+// 1024 chars and still exits 0 — a plain exec would corrupt the stored CA path while the
+// report shows "0 failed". We preflight the length and fail visibly instead.
+const SETX_MAX_VALUE_LEN = 1024;
 
 /**
  * Diagnose whether the corporate CA is wired into Node's TLS. The AUTHORITATIVE
@@ -81,8 +85,20 @@ async function planCertVerify(ctx: PlanContext, shared: HealShared): Promise<Act
   // emitted off-Windows. The set is idempotent (same value), and it's a LOCAL
   // registry write — never a remote call.
   if (ca.verdict === "pass") {
-    const persist = ctx.host.persistentEnvArgv(ENV_KEY, ctx.env[ENV_KEY] as string);
-    if (persist.length > 0) {
+    const caPath = ctx.env[ENV_KEY] as string;
+    const persist = ctx.host.persistentEnvArgv(ENV_KEY, caPath);
+    if (persist.length > 0 && caPath.length > SETX_MAX_VALUE_LEN) {
+      // Persisting via setx would silently truncate this path (exit 0) and leave GUI apps
+      // inheriting a corrupted CA path — fail visibly instead of writing a broken value.
+      actions.push(
+        captured({
+          name: PERSIST_CHECK,
+          verdict: "fail",
+          code: "cert.ca-missing",
+          detail: `${ENV_KEY} path is ${caPath.length} chars — the user-env persist store truncates values over ${SETX_MAX_VALUE_LEN}, which would corrupt the CA path GUI apps inherit; move the PEM to a shorter path, then run: aih certs --apply`,
+        }),
+      );
+    } else if (persist.length > 0) {
       actions.push(
         exec("persist the CA at user scope so GUI apps inherit it", persist, {
           // Surface a persist failure in the verification report instead of leaving it

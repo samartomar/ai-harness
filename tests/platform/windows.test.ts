@@ -33,6 +33,17 @@ describe("WindowsAdapter", () => {
     expect(await a.trustStoreCerts("Zscaler")).toHaveLength(0);
   });
 
+  it("persists env via setx DIRECTLY — no cmd wrapper that would re-parse the value", () => {
+    const a = adapter(() => undefined);
+    // A CA path under a legal `R&D` folder: `&`/`%`/`^` are valid path characters. Routing
+    // this through `cmd /c setx` would let cmd split on `&` — corrupting the persisted path
+    // to `C:\R` and executing `D\certs\ca.pem` as a command. Direct setx.exe spawn (execFile,
+    // no shell) keeps the whole path as one literal argv element.
+    const argv = a.persistentEnvArgv("NODE_EXTRA_CA_CERTS", "C:\\R&D\\certs\\ca%1.pem");
+    expect(argv).toEqual(["setx", "NODE_EXTRA_CA_CERTS", "C:\\R&D\\certs\\ca%1.pem"]);
+    expect(argv[0]).not.toBe("cmd");
+  });
+
   it("parses physical cores and total RAM", async () => {
     const a = adapter((argv) => {
       const s = argv.join(" ");
