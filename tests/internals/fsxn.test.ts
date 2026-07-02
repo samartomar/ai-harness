@@ -1,8 +1,21 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { FsTransaction, readIfExists, retryTransient } from "../../src/internals/fsxn.js";
+import {
+  FsTransaction,
+  readIfExists,
+  readRegularFile,
+  retryTransient,
+} from "../../src/internals/fsxn.js";
 
 let dir: string;
 beforeEach(() => {
@@ -271,5 +284,35 @@ describe("FsTransaction — hard-delete removals (backupSibling)", () => {
     t.stageRemoval(src, bak, { backupSibling: true });
     expect(() => t.commit()).toThrow(/symlink/);
     expect(readFileSync(src, "utf8")).toBe("# codex\n"); // untouched
+  });
+});
+
+describe("readRegularFile — the fd-guarded read for scan-discovered paths", () => {
+  it("returns the exact bytes of a regular file", () => {
+    writeFileSync(join(dir, "a.json"), '{"ok":true}\n', "utf8");
+    expect(readRegularFile(join(dir, "a.json"))?.toString("utf8")).toBe('{"ok":true}\n');
+  });
+
+  it("returns undefined for a missing path", () => {
+    expect(readRegularFile(join(dir, "absent.json"))).toBeUndefined();
+  });
+
+  it("returns undefined for a directory", () => {
+    mkdirSync(join(dir, "sub"));
+    expect(readRegularFile(join(dir, "sub"))).toBeUndefined();
+  });
+
+  it("refuses a symlink instead of following it (POSIX O_NOFOLLOW)", () => {
+    writeFileSync(join(dir, "target.json"), "secret\n", "utf8");
+    try {
+      symlinkSync(join(dir, "target.json"), join(dir, "link.json"));
+    } catch {
+      return; // symlink creation needs privileges on Windows — skip
+    }
+    // Windows has no O_NOFOLLOW at runtime; there the guarantee is the
+    // single-descriptor check-then-read, exercised by the cases above.
+    if (process.platform !== "win32") {
+      expect(readRegularFile(join(dir, "link.json"))).toBeUndefined();
+    }
   });
 });

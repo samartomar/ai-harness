@@ -121,6 +121,9 @@ function formatOf(ctx: PlanContext): Format {
   );
 }
 
+/** Default report artifact directory (repo/local scopes) — `aih evidence build` indexes it too. */
+export const REPORTS_DIR = join(".aih", "reports");
+
 /**
  * Artifact path for `--format md|html`. Defaults to `.aih/reports/<scope>-report.<ext>`
  * — deliberately OUTSIDE the context dir, so the generated report is never itself
@@ -133,7 +136,7 @@ function artifactPath(ctx: PlanContext, scope: Scope, format: Format): string {
   if (scope === "workspace") {
     return join(".aih", `workspace-report.${format === "html" ? "html" : "md"}`);
   }
-  return join(".aih", "reports", `${scope}-report.${format === "html" ? "html" : "md"}`);
+  return join(REPORTS_DIR, `${scope}-report.${format === "html" ? "html" : "md"}`);
 }
 
 /** The Configuration panel's adoption snapshot (present count + absent names), if it ran. */

@@ -100,6 +100,62 @@ describe("bundle command", () => {
     expect(sign?.kind === "exec" ? sign.allowFailure : false).toBe(true);
   });
 
+  it("bundles the skill governance set: skills lock, packs manifest, and expanded skill cards", async () => {
+    seed();
+    writeFileSync(join(dir, "aih-skills.lock.json"), '{"schemaVersion":1,"skills":[]}\n');
+    writeFileSync(join(dir, "aih-packs.json"), '{"schemaVersion":1,"packs":[]}\n');
+    mkdirSync(join(dir, "ai-coding", "skill-cards"), { recursive: true });
+    writeFileSync(join(dir, "ai-coding", "skill-cards", "beta.json"), '{"name":"beta"}\n');
+    writeFileSync(join(dir, "ai-coding", "skill-cards", "alpha.json"), '{"name":"alpha"}\n');
+
+    const p = await bundleCommand.plan(ctx());
+    const paths = writes(p.actions).map((w) => w.path.replace(/\\/g, "/"));
+    expect(paths).toContain(".aih/fleet-bundle/files/aih-skills.lock.json");
+    expect(paths).toContain(".aih/fleet-bundle/files/aih-packs.json");
+    // dir candidate expands one level, name-sorted
+    const cards = paths.filter((p) => p.includes("/files/ai-coding/skill-cards/"));
+    expect(cards).toEqual([
+      ".aih/fleet-bundle/files/ai-coding/skill-cards/alpha.json",
+      ".aih/fleet-bundle/files/ai-coding/skill-cards/beta.json",
+    ]);
+    expect(writes(p.actions).find((w) => w.path.endsWith("SHA256SUMS"))?.contents).toContain(
+      "files/ai-coding/skill-cards/alpha.json",
+    );
+  });
+
+  it("skips the skill-cards dir silently when absent and refuses hostile entry names", async () => {
+    seed();
+    const bare = await bundleCommand.plan(ctx());
+    expect(
+      writes(bare.actions).some((w) => w.path.replace(/\\/g, "/").includes("skill-cards")),
+    ).toBe(false);
+
+    mkdirSync(join(dir, "ai-coding", "skill-cards", "nested"), { recursive: true });
+    writeFileSync(join(dir, "ai-coding", "skill-cards", "ok.json"), '{"name":"ok"}\n');
+    writeFileSync(join(dir, "ai-coding", "skill-cards", "x..y.json"), '{"name":"x"}\n');
+    writeFileSync(join(dir, "ai-coding", "skill-cards", "nested", "deep.json"), "{}\n");
+    const p = await bundleCommand.plan(ctx());
+    const cards = writes(p.actions)
+      .map((w) => w.path.replace(/\\/g, "/"))
+      .filter((path) => path.includes("skill-cards"));
+    // one level deep, containment-checked: ok.json only — no `..` name, no nested file
+    expect(cards).toEqual([".aih/fleet-bundle/files/ai-coding/skill-cards/ok.json"]);
+  });
+
+  it("does not duplicate a file that is both --included and dir-expanded", async () => {
+    seed();
+    mkdirSync(join(dir, "ai-coding", "skill-cards"), { recursive: true });
+    writeFileSync(join(dir, "ai-coding", "skill-cards", "alpha.json"), '{"name":"alpha"}\n');
+    const p = await bundleCommand.plan(
+      ctx({ options: { include: "ai-coding/skill-cards/alpha.json" } }),
+    );
+    const hits = writes(p.actions).filter(
+      (w) =>
+        w.path.replace(/\\/g, "/") === ".aih/fleet-bundle/files/ai-coding/skill-cards/alpha.json",
+    );
+    expect(hits).toHaveLength(1);
+  });
+
   it("keeps absolute output paths normalized for checksum verification on Windows", async () => {
     seed();
     const outDir = join(dir, "absolute-bundle");

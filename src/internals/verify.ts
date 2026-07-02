@@ -53,6 +53,8 @@ export type CheckCode =
   | "contract.stale"
   // org policy
   | "org-policy.drift"
+  | "org-policy.invalid"
+  | "org-policy.bundle-invalid"
   // report (analytics-derived advisories)
   | "report.context-over-budget"
   | "report.low-adoption"

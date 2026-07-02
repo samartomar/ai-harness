@@ -1,10 +1,13 @@
 import {
   chmodSync,
+  closeSync,
   copyFileSync,
   existsSync,
   constants as fsConstants,
+  fstatSync,
   lstatSync,
   mkdirSync,
+  openSync,
   readFileSync,
   renameSync,
   rmSync,
@@ -327,4 +330,35 @@ export function readIfExists(path: string): string | undefined {
   // re-reading what the first just laid down) hits the same transient Windows lock
   // window as the write side, so it gets the same bounded retry.
   return existsSync(path) ? retryTransient(() => readFileSync(path, "utf8")) : undefined;
+}
+
+/** `O_NOFOLLOW` where the platform has it (absent at runtime on Windows despite the typings). */
+const O_NOFOLLOW = (fsConstants as Record<string, number | undefined>).O_NOFOLLOW ?? 0;
+
+/**
+ * Open-then-read on ONE file descriptor: the regular-file check (`fstat` on the
+ * open fd, never a second path lookup) and the read cannot be raced apart, and
+ * a symlink swapped in after directory enumeration is refused at open where
+ * `O_NOFOLLOW` exists rather than silently followed. Returns undefined for
+ * anything that is not a readable regular file.
+ *
+ * Use this — not {@link readIfExists} — for any path DISCOVERED by a directory
+ * scan: a plain exists-then-read pair on a scanned path is a swap window where
+ * a symlink planted between enumeration and read gets silently followed and its
+ * target's bytes laundered into an artifact (marketplace build, evidence
+ * bundle, fleet bundle all package what they read).
+ */
+export function readRegularFile(abs: string): Buffer | undefined {
+  let fd: number;
+  try {
+    fd = openSync(abs, fsConstants.O_RDONLY | O_NOFOLLOW);
+  } catch {
+    return undefined;
+  }
+  try {
+    if (!fstatSync(fd).isFile()) return undefined;
+    return readFileSync(fd);
+  } finally {
+    closeSync(fd);
+  }
 }
