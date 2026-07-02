@@ -368,6 +368,16 @@ are enforced in [vitest.config.ts](vitest.config.ts) — set just below the achi
 levels so coverage only ratchets up; CI and releases fail on regression. See
 [CONTRIBUTING.md](CONTRIBUTING.md) for the contributor workflow.
 
+### Stability
+
+The CLI surface and machine-readable outputs are contract-tested in
+[tests/contract/](tests/contract/): every command and option is snapshotted against a
+committed fixture ([command-surface.json](tests/contract/command-surface.json)), the
+`--json` envelope is schema-pinned, and exit-code semantics are pinned. Any drift fails
+CI and forces a reviewed decision — additive changes regenerate the fixture in the same
+PR (label it `contract:additive`); removals or renames of anything pinned are breaking
+and ship in majors only, per the stability policy in STABILITY.md.
+
 ## License
 
 [Apache-2.0](LICENSE).
