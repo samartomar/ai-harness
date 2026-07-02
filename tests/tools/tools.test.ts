@@ -78,6 +78,29 @@ describe("install.ts pure helpers", () => {
     expect(execArgv("linux", ["npm", "install", "-g", "x"])).toEqual(["npm", "install", "-g", "x"]);
   });
 
+  it("every winget install argv is non-interactive and user-scoped (first-run reliability)", () => {
+    // Field report: a first-run winget install stalled on the source/package agreement
+    // prompt (and a non-admin machine-scope elevation failure). Every winget option must
+    // carry the four flags that make it non-interactive + user-scoped, while keeping the
+    // exact `-e --id <pkg>` shape.
+    const wingetArgvs = TOOLS.flatMap((t) => t.options)
+      .filter((o) => o.pm === "winget")
+      .map((o) => o.argv);
+    // rg / fd / jq / gh — the four tools that ship winget installers.
+    expect(wingetArgvs).toHaveLength(4);
+    for (const argv of wingetArgvs) {
+      expect(argv.slice(0, 3)).toEqual(["winget", "install", "-e"]);
+      expect(argv).toContain("--id");
+      expect(argv).toContain("--accept-source-agreements");
+      expect(argv).toContain("--accept-package-agreements");
+      expect(argv).toContain("--disable-interactivity");
+      // `--scope user` — a two-token flag, so assert they are adjacent.
+      const scopeIdx = argv.indexOf("--scope");
+      expect(scopeIdx).toBeGreaterThan(-1);
+      expect(argv[scopeIdx + 1]).toBe("user");
+    }
+  });
+
   it("pins code-review-graph to the same version as the uvx MCP runners (==2.3.6)", () => {
     const crg = TOOLS.find((t) => t.bin === "code-review-graph");
     if (!crg) throw new Error("code-review-graph spec missing");
@@ -105,6 +128,32 @@ describe("aih tools — plan", () => {
     const rgExec = execs(actions).find((e) => e.describe.startsWith("install ripgrep"));
     expect(rgExec?.argv).toEqual(["brew", "install", "ripgrep"]);
     expect(rgExec?.allowFailure).toBe(true);
+  });
+
+  it("every install exec carries the 5-minute timeout (a proxy download > the 30s default)", async () => {
+    // Field report: installs "every install exits 1" because a winget/proxy download
+    // exceeds the runner's 30s DEFAULT_TIMEOUT_MS and the timeout-kill maps to exit 1.
+    // Every install exec must set a generous 300_000ms bound (and keep allowFailure).
+    const installs = execs((await command.plan(ctx(["brew"]))).actions).filter((e) =>
+      e.describe.startsWith("install "),
+    );
+    expect(installs.length).toBeGreaterThan(0);
+    for (const e of installs) {
+      expect(e.timeoutMs).toBe(300_000);
+      expect(e.allowFailure).toBe(true);
+    }
+  });
+
+  it("the winget install exec (Windows) carries both the non-interactive flags and the timeout", async () => {
+    // On Windows with winget present, rg installs via winget: the exec's argv keeps the
+    // agreement/interactivity/user-scope flags AND the 5-minute bound.
+    const actions = (await command.plan(ctx(["winget"], "windows"))).actions;
+    const rgExec = execs(actions).find((e) => e.describe.startsWith("install ripgrep"));
+    expect(rgExec?.argv).toContain("--accept-source-agreements");
+    expect(rgExec?.argv).toContain("--accept-package-agreements");
+    expect(rgExec?.argv).toContain("--disable-interactivity");
+    expect(rgExec?.argv).toContain("user");
+    expect(rgExec?.timeoutMs).toBe(300_000);
   });
 
   it("missing tool with NO supported PM → a manual doc, not an exec", async () => {
