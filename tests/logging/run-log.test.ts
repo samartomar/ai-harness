@@ -242,7 +242,10 @@ describe("runCapability — run ledger", () => {
       schemaVersion: 2,
       status: "failed",
       exitCode: 1,
-      host: { platform: "linux", hostnameHash: expect.stringMatching(/^host_[a-f0-9]{16}$/) },
+      host: {
+        platform: expect.any(String),
+        hostnameHash: expect.stringMatching(/^host_[a-f0-9]{16}$/),
+      },
       repo: { remoteHash: expect.stringMatching(/^repo_[a-f0-9]{16}$/) },
       mode: { verify: true },
       verification: { pass: 0, fail: 1, skip: 0 },

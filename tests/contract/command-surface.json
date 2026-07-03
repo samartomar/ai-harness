@@ -3110,6 +3110,31 @@
       "commands": []
     },
     {
+      "name": "verify-release",
+      "hasDescription": true,
+      "arguments": [
+        {
+          "name": "version",
+          "required": false
+        }
+      ],
+      "options": [
+        {
+          "flags": "--json"
+        },
+        {
+          "flags": "--no-log"
+        },
+        {
+          "flags": "--root <dir>"
+        },
+        {
+          "flags": "--support-out <dir>"
+        }
+      ],
+      "commands": []
+    },
+    {
       "name": "workspace",
       "hasDescription": true,
       "arguments": [

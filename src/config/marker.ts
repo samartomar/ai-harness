@@ -21,7 +21,7 @@ export const AIH_CONFIG_FILE = ".aih-config.json";
  * constraints settings enforce; `targets` is the resolved CLI list at bootstrap
  * time (defaulted to `[]` so an older/partial marker still parses).
  */
-const AihConfigSchema = z.object({
+export const AihConfigSchema = z.object({
   schemaVersion: z.literal(1),
   contextDir: ContextDir,
   targets: z.array(z.string()).default([]),

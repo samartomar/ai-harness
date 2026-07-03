@@ -34,6 +34,7 @@ import { sanitizeLabel } from "../plugins/registry.js";
 import { command as profile } from "../profile/index.js";
 import { command as prune } from "../prune/index.js";
 import { command as ready } from "../ready/index.js";
+import { verifyReleaseCommand } from "../release/verify-release.js";
 import { command as report } from "../report/index.js";
 import { command as sandbox } from "../sandbox/index.js";
 import { command as scaffold } from "../scaffold/index.js";
@@ -100,7 +101,7 @@ export const CAPABILITIES: CommandSpec[] = [
 ];
 
 /** Read-only commands (always safe). */
-export const READONLY: CommandSpec[] = [doctor, status, verifyBundle];
+export const READONLY: CommandSpec[] = [doctor, status, verifyBundle, verifyReleaseCommand];
 
 export const ALL_COMMANDS: CommandSpec[] = [...CAPABILITIES, ...READONLY];
 
@@ -223,7 +224,15 @@ function registerSpec(program: Command, spec: CommandSpec): void {
   // bug), and a plugin spec's alias throw is contained per-spec upstream.
   for (const alias of spec.deprecatedAliases ?? []) cmd.alias(alias);
   // Optional positional target dir, e.g. `aih init .` or `aih profile ./repo`.
-  cmd.argument("[root]", "target repository/workstation root (defaults to --root or cwd)");
+  // A spec can instead name a custom positional (e.g. `verify-release [version]`).
+  if (spec.positional) {
+    const token = spec.positional.required
+      ? `<${spec.positional.name}>`
+      : `[${spec.positional.name}]`;
+    cmd.argument(token, spec.positional.description ?? spec.positional.name);
+  } else {
+    cmd.argument("[root]", "target repository/workstation root (defaults to --root or cwd)");
+  }
   if (!spec.readOnly) addSharedFlags(cmd);
   else
     cmd
@@ -238,7 +247,16 @@ function registerSpec(program: Command, spec: CommandSpec): void {
   cmd.action(
     async (_rootArg: string | undefined, _options: Record<string, unknown>, command: Command) => {
       warnIfDeprecatedAlias(spec, command);
-      process.exitCode = await runCapability(spec, command);
+      process.exitCode = await runCapability(
+        spec,
+        command,
+        spec.positional?.optionName
+          ? {
+              positionalRoot: false,
+              optionOverrides: { [spec.positional.optionName]: _rootArg },
+            }
+          : undefined,
+      );
     },
   );
   if (spec.name === "workspace") {

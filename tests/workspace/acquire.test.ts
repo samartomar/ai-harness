@@ -5,6 +5,7 @@ import {
   readFileSync,
   realpathSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -205,6 +206,30 @@ describe("workspace add acquisition plans", () => {
       sources: Array<{ analyzersRun: string[] }>;
     };
     expect(lock.sources[0]?.analyzersRun).toEqual(["aih-native", "skillspector@docker"]);
+  });
+
+  it("phase 2 promotes safe symlinked skill files as regular bytes", async () => {
+    const skillDir = join(sourceRoot, "skills", "linked");
+    mkdirSync(skillDir, { recursive: true });
+    writeFileSync(join(skillDir, "REAL.md"), "# Linked\n", "utf8");
+    try {
+      symlinkSync("REAL.md", join(skillDir, "SKILL.md"));
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === "EPERM") return;
+      throw err;
+    }
+
+    const c = ctx(sourceRoot, true, true);
+    const phase1 = await executePlan(await workspaceAddPhase1Plan(c), c);
+    expect(phase1.report?.ok).toBe(true);
+    const gate = await captureClearedWorkspaceAddTrustGate(c, phase1.report);
+    const result = await executePlan(await workspaceAddPhase2Plan(c, gate), c);
+
+    const sourceId = basename(sourceRoot).toLowerCase();
+    expect(result.report?.ok).toBe(true);
+    expect(
+      readFileSync(join(workspace, "ai-coding", "skills", sourceId, "linked", "SKILL.md"), "utf8"),
+    ).toBe("# Linked\n");
   });
 
   it("phase 2 supports a root-level skill and preserves existing lock entries", async () => {

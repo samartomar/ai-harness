@@ -12,14 +12,18 @@
  * Trust model: log only once a repo is initialised (a committed `.aih-config.json`
  * marker exists), and never when the operator opts out (`--no-log` / `AIH_LOG=0`).
  * Writing must NEVER fail the command — {@link appendRunLog} swallows its own I/O
- * errors. Pure assembly ({@link buildRunEntry}) is separated from the write so it
- * stays deterministic and testable.
+ * errors. Entry assembly ({@link buildRunEntry}) is separated from the append; raw
+ * ledger files are local diagnostics, while tamper evidence/integrity comes from
+ * packaging them with `aih evidence build`.
  */
 
+import { createHash } from "node:crypto";
 import { appendFileSync, mkdirSync } from "node:fs";
+import { hostname } from "node:os";
 import { join } from "node:path";
 import { readAihConfig } from "../config/marker.js";
 import type { PlanResult, WriteSummary } from "../internals/execute.js";
+import { readIfExists } from "../internals/fsxn.js";
 import type { Verdict } from "../internals/verify.js";
 
 export const RUNS_DIR = join(".aih", "runs");
@@ -37,7 +41,7 @@ export interface WriteTally {
 }
 
 export interface RunLogEntry {
-  schemaVersion: 1;
+  schemaVersion: 2;
   runId: string;
   startedAt: string;
   finishedAt: string;
@@ -50,6 +54,8 @@ export interface RunLogEntry {
   mode: { apply: boolean; verify: boolean; json: boolean; sarif: boolean };
   platform: string;
   node: string;
+  host: { platform: string; hostnameHash: string };
+  repo: { remoteHash: string };
   writes: WriteTally;
   docs: number;
   execs: number;
@@ -89,16 +95,28 @@ export interface RunEntryInput {
   mode: { apply: boolean; verify: boolean; json: boolean; sarif: boolean };
   platform: string;
   node: string;
+  root?: string;
   /** The plan result, when one was produced (absent on a thrown error). */
   result?: PlanResult;
   support?: { findings: number; templates: number };
 }
 
-/** Assemble a {@link RunLogEntry} from a run's inputs. Pure — no I/O, no clock. */
+function stableHash(prefix: string, value: string): string {
+  return `${prefix}_${createHash("sha256").update(value).digest("hex").slice(0, 16)}`;
+}
+
+function repoIdentity(root: string | undefined): string {
+  if (root === undefined) return stableHash("repo", "unknown");
+  const config = readIfExists(join(root, ".git", "config"));
+  const remote = config?.match(/^\s*url\s*=\s*(.+)\s*$/m)?.[1]?.trim();
+  return stableHash("repo", remote && remote.length > 0 ? remote : "unknown");
+}
+
+/** Assemble a {@link RunLogEntry} from a run's inputs. No clock; repo identity is hashed. */
 export function buildRunEntry(input: RunEntryInput): RunLogEntry {
   const { result } = input;
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     runId: input.runId,
     startedAt: input.startedAt,
     finishedAt: input.finishedAt,
@@ -113,6 +131,13 @@ export function buildRunEntry(input: RunEntryInput): RunLogEntry {
     mode: input.mode,
     platform: input.platform,
     node: input.node,
+    host: {
+      platform: input.platform,
+      hostnameHash: stableHash("host", hostname()),
+    },
+    repo: {
+      remoteHash: repoIdentity(input.root),
+    },
     writes: tallyWrites(result?.writes ?? []),
     docs: result?.docs.length ?? 0,
     execs: result?.execs.length ?? 0,

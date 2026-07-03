@@ -58,8 +58,11 @@ const SAFE_ENV_KEYS = new Set([
   "HOME",
   "HOMEDRIVE",
   "HOMEPATH",
+  "HTTP_PROXY",
+  "HTTPS_PROXY",
   "LANG",
   "LOCALAPPDATA",
+  "NO_PROXY",
   "NODE_EXTRA_CA_CERTS",
   "PATH",
   "PATHEXT",
@@ -248,19 +251,20 @@ export function assertTrustTreeSafe(
 ): string {
   const absRoot = resolve(root);
   const rootInfo = statSafe(absRoot);
-  if (!rootInfo?.isDirectory()) {
+  if (rootInfo === undefined) {
     throw new AihError(`trust source is not a directory: ${root}`, "AIH_TRUST");
-  }
-  if (rootInfo.isSymbolicLink()) {
-    throw new AihError(`refusing symlinked trust source: ${root}`, "AIH_TRUST");
   }
 
   const realRoot = realpathSync(absRoot);
+  if (!lstatSync(realRoot).isDirectory()) {
+    throw new AihError(`trust source is not a directory: ${root}`, "AIH_TRUST");
+  }
   const visit = (abs: string): void => {
     if (abs !== realRoot && opts.skipDirs?.has(basename(abs))) return;
     const st = lstatSync(abs);
     if (st.isSymbolicLink()) {
-      throw new AihError(`refusing symlink inside trust source: ${abs}`, "AIH_TRUST");
+      assertContained(realRoot, realpathSync(abs));
+      return;
     }
     if (st.isFile() && st.nlink > 1) {
       throw new AihError(`refusing hard-linked file inside trust source: ${abs}`, "AIH_TRUST");
@@ -280,8 +284,10 @@ export function readTrustFetchMetadata(source: GitHubTrustSource): TrustFetchMet
 
 const GITHUB_FETCH_SCRIPT = String.raw`
 const fs = require("node:fs");
+const http = require("node:http");
 const https = require("node:https");
 const path = require("node:path");
+const tls = require("node:tls");
 const zlib = require("node:zlib");
 
 const input = JSON.parse(process.argv[1]);
@@ -318,30 +324,126 @@ function writeFileOwner(target, data, encoding) {
   chmodBestEffort(target, OWNER_FILE_MODE);
 }
 
+function envValue(names) {
+  for (const name of names) {
+    const value = process.env[name];
+    if (value && value.trim().length > 0) return value.trim();
+  }
+  return undefined;
+}
+
+function noProxyMatches(target) {
+  const raw = envValue(["NO_PROXY", "no_proxy"]);
+  if (!raw) return false;
+  const host = target.hostname.toLowerCase();
+  const port = target.port || (target.protocol === "https:" ? "443" : "80");
+  for (const item of raw.split(",")) {
+    const rule = item.trim().toLowerCase();
+    if (!rule) continue;
+    if (rule === "*") return true;
+    const colon = rule.lastIndexOf(":");
+    const hasPort = colon > -1 && !rule.startsWith("[") && /^\d+$/.test(rule.slice(colon + 1));
+    const ruleHost = hasPort ? rule.slice(0, colon) : rule;
+    const rulePort = hasPort ? rule.slice(colon + 1) : "";
+    if (rulePort && rulePort !== port) continue;
+    if (ruleHost.startsWith(".")) {
+      const domain = ruleHost.slice(1);
+      if (host === domain || host.endsWith("." + domain)) return true;
+    } else if (host === ruleHost || host.endsWith("." + ruleHost)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function proxyFor(target) {
+  if (noProxyMatches(target)) return undefined;
+  const raw = envValue(["HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy"]);
+  if (!raw) return undefined;
+  let proxy;
+  try {
+    proxy = new URL(raw);
+  } catch {
+    fail("invalid proxy URL in HTTPS_PROXY/HTTP_PROXY");
+  }
+  if (proxy.protocol !== "http:") {
+    fail("only http:// proxy URLs are supported for quarantined GitHub fetches");
+  }
+  return proxy;
+}
+
+function proxyAuth(proxy) {
+  if (!proxy.username && !proxy.password) return undefined;
+  const user = decodeURIComponent(proxy.username || "");
+  const pass = decodeURIComponent(proxy.password || "");
+  return "Basic " + Buffer.from(user + ":" + pass).toString("base64");
+}
+
+function connectThroughProxy(target, proxy) {
+  return new Promise((resolve, reject) => {
+    const targetPort = target.port || "443";
+    const connectPath = target.hostname + ":" + targetPort;
+    const headers = { Host: connectPath };
+    const auth = proxyAuth(proxy);
+    if (auth) headers["Proxy-Authorization"] = auth;
+    const req = http.request({
+      host: proxy.hostname,
+      port: proxy.port || "80",
+      method: "CONNECT",
+      path: connectPath,
+      headers,
+    });
+    req.once("connect", (res, socket) => {
+      if (res.statusCode !== 200) {
+        socket.destroy();
+        reject(new Error("proxy CONNECT " + res.statusCode + " for " + connectPath));
+        return;
+      }
+      const secure = tls.connect({ socket, servername: target.hostname });
+      secure.once("secureConnect", () => resolve(secure));
+      secure.once("error", reject);
+    });
+    req.once("error", reject);
+    req.setTimeout(30000, () => req.destroy(new Error("proxy CONNECT timed out: " + connectPath)));
+    req.end();
+  });
+}
+
+function collectResponse(url, res, resolve, reject) {
+  if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+    res.resume();
+    requestBuffer(new URL(res.headers.location, url).toString()).then(resolve, reject);
+    return;
+  }
+  if (res.statusCode !== 200) {
+    const chunks = [];
+    res.on("data", (chunk) => chunks.push(chunk));
+    res.on("end", () => reject(new Error("HTTP " + res.statusCode + " from " + url + ": " + Buffer.concat(chunks).toString("utf8").slice(0, 400))));
+    return;
+  }
+  const chunks = [];
+  res.on("data", (chunk) => chunks.push(chunk));
+  res.on("end", () => resolve(Buffer.concat(chunks)));
+}
+
 function requestBuffer(url) {
   return new Promise((resolve, reject) => {
-    const req = https.get(
-      url,
-      { headers: { "user-agent": "aih-trust-fetch", accept: "application/vnd.github+json" } },
-      (res) => {
-        if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-          res.resume();
-          requestBuffer(new URL(res.headers.location, url).toString()).then(resolve, reject);
-          return;
-        }
-        if (res.statusCode !== 200) {
-          const chunks = [];
-          res.on("data", (chunk) => chunks.push(chunk));
-          res.on("end", () => reject(new Error("HTTP " + res.statusCode + " from " + url + ": " + Buffer.concat(chunks).toString("utf8").slice(0, 400))));
-          return;
-        }
-        const chunks = [];
-        res.on("data", (chunk) => chunks.push(chunk));
-        res.on("end", () => resolve(Buffer.concat(chunks)));
-      },
-    );
-    req.on("error", reject);
-    req.setTimeout(30000, () => req.destroy(new Error("request timed out: " + url)));
+    const target = new URL(url);
+    const headers = { "user-agent": "aih-trust-fetch", accept: "application/vnd.github+json" };
+    const proxy = proxyFor(target);
+    const start = (options) => {
+      const req = https.request(target, options, (res) => collectResponse(url, res, resolve, reject));
+      req.on("error", reject);
+      req.setTimeout(30000, () => req.destroy(new Error("request timed out: " + url)));
+      req.end();
+    };
+    if (!proxy) {
+      start({ headers });
+      return;
+    }
+    connectThroughProxy(target, proxy)
+      .then((socket) => start({ headers, createConnection: () => socket }))
+      .catch(reject);
   });
 }
 
@@ -372,6 +474,12 @@ function ensureContained(root, target) {
   fail("refusing tar path escape: " + target);
 }
 
+function ensureSafeLinkTarget(linkName) {
+  if (!linkName || linkName.includes("\\") || path.isAbsolute(linkName)) {
+    fail("refusing unsafe tar symlink target: " + linkName);
+  }
+}
+
 function prepareQuarantine(root, treePath, metadataPath) {
   const resolvedRoot = path.resolve(root);
   let st;
@@ -399,12 +507,14 @@ function isTarMetadata(type) {
 
 function extractTar(buffer, outRoot) {
   let offset = 0;
+  const pendingSymlinks = [];
   while (offset + 512 <= buffer.length) {
     const header = buffer.subarray(offset, offset + 512);
     if (header.every((byte) => byte === 0)) break;
     const name = text(header, 0, 100);
     const prefix = text(header, 345, 155);
     const fullName = prefix ? prefix + "/" + name : name;
+    const linkName = text(header, 157, 100);
     const size = octal(header, 124, 12);
     const type = text(header, 156, 1) || "0";
     offset += 512;
@@ -425,10 +535,28 @@ function extractTar(buffer, outRoot) {
     } else if (type === "0" || type === "\0") {
       mkdirOwner(path.dirname(target));
       writeFileOwner(target, buffer.subarray(offset, offset + size));
+    } else if (type === "2") {
+      pendingSymlinks.push({ fullName, rel, linkName, target });
     } else {
       fail("refusing non-regular tar entry: " + fullName);
     }
     offset += Math.ceil(size / 512) * 512;
+  }
+  for (const link of pendingSymlinks) {
+    ensureSafeLinkTarget(link.linkName);
+    const resolved = path.resolve(path.dirname(link.target), link.linkName);
+    ensureContained(outRoot, resolved);
+    mkdirOwner(path.dirname(link.target));
+    let targetInfo;
+    try {
+      targetInfo = fs.statSync(resolved);
+    } catch {
+      fail("refusing dangling tar symlink: " + link.fullName + " -> " + link.linkName);
+    }
+    if (!targetInfo.isFile()) {
+      fail("refusing non-file tar symlink target: " + link.fullName + " -> " + link.linkName);
+    }
+    writeFileOwner(link.target, fs.readFileSync(resolved));
   }
 }
 

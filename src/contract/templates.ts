@@ -78,6 +78,12 @@ function pathsOrNone(items: string[]): string[] {
   return items.length > 0 ? items.map((p) => `- \`${p}\``) : ["_None detected._"];
 }
 
+function mcpServersBlock(c: ProjectContract): string[] {
+  return c.mcpServers.length > 0
+    ? c.mcpServers.map((server) => `- \`${server}\``)
+    : ["_No root `.mcp.json` servers detected._"];
+}
+
 function installCommand(packageManager: string | undefined): string | undefined {
   if (packageManager === undefined) return undefined;
   const commands: Record<string, string> = {
@@ -92,6 +98,22 @@ function installCommand(packageManager: string | undefined): string | undefined 
     cargo: "cargo fetch",
   };
   return commands[packageManager] ?? `${packageManager} install`;
+}
+
+function mcpToolingBlock(c: ProjectContract): string[] {
+  const detected =
+    c.mcpServers.length > 0
+      ? [
+          "- Detected root `.mcp.json` servers:",
+          ...c.mcpServers.map((server) => `  - \`${server}\``),
+        ]
+      : ["- No root `.mcp.json` servers detected yet."];
+  return [
+    "## 3. MCP and AI tooling",
+    "",
+    "- Review and apply the repo AI tooling surface: `aih init --apply`.",
+    ...detected,
+  ];
 }
 
 /**
@@ -143,6 +165,10 @@ export function projectContractDoc(dir: string, c: ProjectContract): string {
     "## Entry points",
     "",
     pathsOrNone(c.entrypoints),
+    "",
+    "## MCP servers",
+    "",
+    mcpServersBlock(c),
     "",
     "## Sensitive paths",
     "",
@@ -205,7 +231,9 @@ export function setupDoc(dir: string, c: ProjectContract): string {
     "- `git config core.hooksPath .githooks` — enables the pre-commit lint/test/secret hook.",
     "- `aih secrets --verify` — confirm no plaintext secrets are committed.",
     "",
-    "## 3. Close the known gaps",
+    mcpToolingBlock(c),
+    "",
+    "## 4. Close the known gaps",
     "",
     gaps,
     ...largeRepo,

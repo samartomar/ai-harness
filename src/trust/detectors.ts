@@ -1,19 +1,21 @@
 import { createHash } from "node:crypto";
-import { lstatSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, extname, isAbsolute, join, relative } from "node:path";
 import type { Posture } from "../config/posture.js";
 import type { Runner, RunResult } from "../internals/proc.js";
 import type { Check, CheckCode } from "../internals/verify.js";
 import type { Platform } from "../platform/base.js";
+import { MCP_CONFIG_FILES } from "../secrets/scan.js";
 import { execArgv } from "../tools/install.js";
 import { scrubFetchEnv } from "./fetch.js";
 import { gradeTrustCheck } from "./grade.js";
 import { collectFilesUnder, TRUST_SKIP_DIRS } from "./scan.js";
 
-// semgrep is future work: re-add detector names here only when a real
-// scanner integration lands, so enterprise requiredDetectors cannot be unsatisfiable.
-export type TrustDetectorName = "skillspector" | "cisco";
+// semgrep is future work: add detector names here only when the adapter can at
+// least surface an honest availability check. A required-but-unavailable detector
+// fails closed at enterprise posture rather than silently passing.
+export type TrustDetectorName = "skillspector" | "cisco" | "mcp-scanner";
 
 export interface TrustDetector {
   name: TrustDetectorName;
@@ -47,6 +49,8 @@ export interface TrustDetectorResult {
 
 const DETECTOR_UNAVAILABLE = "trust.detector-unavailable";
 const CISCO_SKILL_SCANNER_PACKAGE = "cisco-ai-skill-scanner";
+const CISCO_MCP_SCANNER_PACKAGE = "cisco-ai-mcp-scanner";
+const SKILLSPECTOR_IMAGE = "skillspector:aih-326a2b489411";
 const MAX_SCRIPT_SCAN_BYTES = 512 * 1024;
 const SCRIPT_EXTENSIONS = new Set([
   "",
@@ -243,7 +247,7 @@ export function scanNativeMaliciousCode(root: string): Check[] {
     root,
     (abs) => {
       const rel = toPosix(relative(root, abs));
-      return isScriptLike(rel) && lstatSync(abs).size <= MAX_SCRIPT_SCAN_BYTES;
+      return isScriptLike(rel) && statSync(abs).size <= MAX_SCRIPT_SCAN_BYTES;
     },
     TRUST_SKIP_DIRS,
   );
@@ -269,9 +273,14 @@ export function skillspectorDockerRunArgv(platform: Platform, tree: string): str
     "docker",
     "run",
     "--rm",
-    "-v",
-    `${tree}:/scan`,
-    "skillspector",
+    "--network",
+    "none",
+    "--read-only",
+    "--tmpfs",
+    "/tmp:rw,noexec,nosuid,size=64m",
+    "--mount",
+    `type=bind,source=${tree},target=/scan,readonly`,
+    SKILLSPECTOR_IMAGE,
     "scan",
     "/scan",
     "--no-llm",
@@ -292,8 +301,24 @@ function ciscoSkillScannerBaseArgv(): string[] {
   ];
 }
 
+function mcpScannerBaseArgv(): string[] {
+  return [
+    "uvx",
+    "--offline",
+    "--no-python-downloads",
+    "--no-env-file",
+    "--from",
+    CISCO_MCP_SCANNER_PACKAGE,
+    "mcp-scanner",
+  ];
+}
+
 function ciscoSkillScannerVersionArgv(platform: Platform): string[] {
   return execArgv(platform, [...ciscoSkillScannerBaseArgv(), "--version"]);
+}
+
+function mcpScannerHelpArgv(platform: Platform): string[] {
+  return execArgv(platform, [...mcpScannerBaseArgv(), "--help"]);
 }
 
 export function ciscoSkillScannerRunArgv(
@@ -312,12 +337,40 @@ export function ciscoSkillScannerRunArgv(
   ]);
 }
 
+export function mcpScannerStaticArgv(
+  platform: Platform,
+  inputJson: string,
+  outputSarif: string,
+): string[] {
+  return execArgv(platform, [
+    ...mcpScannerBaseArgv(),
+    "--storage",
+    "memory",
+    "static",
+    "--tools",
+    inputJson,
+    "--format",
+    "sarif",
+    "--output",
+    outputSarif,
+    "--analyzers",
+    "yara,prompt-injection,tool-poisoning,secrets",
+  ]);
+}
+
 function dockerVersionArgv(platform: Platform): string[] {
   return execArgv(platform, ["docker", "--version"]);
 }
 
 function skillspectorImageInspectArgv(platform: Platform): string[] {
-  return execArgv(platform, ["docker", "image", "inspect", "skillspector", "--format", "{{.Id}}"]);
+  return execArgv(platform, [
+    "docker",
+    "image",
+    "inspect",
+    SKILLSPECTOR_IMAGE,
+    "--format",
+    "{{.Id}}",
+  ]);
 }
 
 function runFailureReason(result: RunResult, fallback: string): string | undefined {
@@ -375,6 +428,26 @@ async function checkCiscoAvailable(
   if (reason !== undefined) return reason;
   if (`${version.stdout}${version.stderr}`.trim().length === 0) {
     return "skill-scanner version check emitted no output";
+  }
+  return undefined;
+}
+
+async function checkMcpScannerAvailable(
+  run: Runner,
+  platform: Platform,
+  env: NodeJS.ProcessEnv,
+): Promise<string | undefined> {
+  if (env.AIH_ENABLE_MCP_SCANNER !== "1") {
+    return "mcp-scanner detector is wired but intentionally skipped until a real local static scan is verified; set AIH_ENABLE_MCP_SCANNER=1 to opt in";
+  }
+  const help = await run(mcpScannerHelpArgv(platform), {
+    env: scrubFetchEnv(env),
+    timeoutMs: 30_000,
+  });
+  const reason = runFailureReason(help, `uvx exit ${help.code ?? "signal"}`);
+  if (reason !== undefined) return reason;
+  if (`${help.stdout}${help.stderr}`.trim().length === 0) {
+    return "mcp-scanner help check emitted no output";
   }
   return undefined;
 }
@@ -456,8 +529,90 @@ async function runCiscoSkillScan(
   return JSON.stringify({ version: "2.1.0", runs });
 }
 
+function mcpConfigFiles(root: string): string[] {
+  const known = new Set(MCP_CONFIG_FILES);
+  return collectFilesUnder(root, (abs) => known.has(toPosix(relative(root, abs))), TRUST_SKIP_DIRS);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function safeToolName(raw: string): string {
+  const safe = raw.replace(/[^A-Za-z0-9._:-]/g, "_").replace(/^_+|_+$/g, "");
+  return safe.length > 0 ? safe.slice(0, 120) : "mcp-server";
+}
+
+function mcpStaticToolsFromConfig(rel: string, parsed: unknown): Array<Record<string, unknown>> {
+  if (!isRecord(parsed)) return [];
+  const maps: Array<Record<string, unknown>> = [];
+  for (const key of ["mcpServers", "servers", "mcp"]) {
+    const value = parsed[key];
+    if (isRecord(value)) maps.push(value);
+  }
+  return maps.flatMap((servers) =>
+    Object.entries(servers)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([name, rawServer]) => {
+        const description =
+          isRecord(rawServer) && typeof rawServer.description === "string"
+            ? rawServer.description.slice(0, 400)
+            : `MCP server declared in ${rel}`;
+        return {
+          name: safeToolName(`${rel}:${name}`),
+          description,
+          inputSchema: { type: "object", properties: {} },
+        };
+      }),
+  );
+}
+
+function mcpStaticTools(root: string): Array<Record<string, unknown>> {
+  return mcpConfigFiles(root).flatMap((abs) => {
+    const rel = toPosix(relative(root, abs));
+    try {
+      return mcpStaticToolsFromConfig(rel, JSON.parse(readFileSync(abs, "utf8")) as unknown);
+    } catch {
+      return [
+        {
+          name: safeToolName(`${rel}:malformed`),
+          description: `Malformed MCP config declared in ${rel}`,
+          inputSchema: { type: "object", properties: {} },
+        },
+      ];
+    }
+  });
+}
+
+async function runMcpScannerScan(
+  run: Runner,
+  platform: Platform,
+  env: NodeJS.ProcessEnv,
+  tree: string,
+): Promise<string> {
+  const tmp = mkdtempSync(join(tmpdir(), "aih-mcp-scanner-"));
+  const input = join(tmp, "tools.json");
+  const output = join(tmp, "results.sarif");
+  try {
+    writeFileSync(input, `${JSON.stringify({ tools: mcpStaticTools(tree) }, null, 2)}\n`, "utf8");
+    const scan = await run(mcpScannerStaticArgv(platform, input, output), {
+      env: scrubFetchEnv(env),
+      timeoutMs: 120_000,
+    });
+    const reason = runFailureReason(scan, `detector exit ${scan.code ?? "signal"}`);
+    if (reason !== undefined) throw new Error(reason);
+    return readFileSync(output, "utf8");
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+}
+
 function unavailableDetail(detector: TrustDetectorName, reason: string): string {
-  return `DEGRADED-COVERAGE: deep scan SKIPPED — ${detector} not available (${reason}); coverage is GREEN-tier only. Analyzers run: aih-native`;
+  const runbook =
+    detector === "skillspector"
+      ? " See docs/security/skillspector.md to build the pinned image."
+      : "";
+  return `DEGRADED-COVERAGE: deep scan SKIPPED — ${detector} not available (${reason}); coverage is GREEN-tier only. Analyzers run: aih-native.${runbook}`;
 }
 
 function unavailableCheck(
@@ -497,11 +652,18 @@ function resultRuleId(result: SarifResult): string | undefined {
 function ruleCode(result: SarifResult, detector: TrustDetector): CheckCode | undefined {
   const raw = resultRuleId(result);
   if (raw === undefined) return undefined;
-  return detector.ruleMap[raw] ?? (detector.name === "cisco" ? "trust.cisco-finding" : undefined);
+  return (
+    detector.ruleMap[raw] ??
+    (detector.name === "cisco" || detector.name === "mcp-scanner"
+      ? "trust.cisco-finding"
+      : undefined)
+  );
 }
 
 function detectorFindingLabel(detector: TrustDetector): string {
-  return detector.name === "skillspector" ? "SkillSpector" : "Cisco AI Defense skill-scanner";
+  if (detector.name === "skillspector") return "SkillSpector";
+  if (detector.name === "mcp-scanner") return "Cisco AI Defense mcp-scanner";
+  return "Cisco AI Defense skill-scanner";
 }
 
 function resultMessage(result: SarifResult, detector: TrustDetector): string {
@@ -597,6 +759,13 @@ function analyzerPassCheck(detector: TrustDetector, analyzersRun: readonly strin
       detail: `SkillSpector Docker static scan completed with --no-llm. No findings != safe. Analyzers run: ${analyzersRun.join(", ")}`,
     };
   }
+  if (detector.name === "mcp-scanner") {
+    return {
+      name: "trust detector mcp-scanner",
+      verdict: "pass",
+      detail: `Cisco AI Defense mcp-scanner static scan completed through uvx --offline defaults-only. No findings != safe. Analyzers run: ${analyzersRun.join(", ")}`,
+    };
+  }
   return {
     name: "trust detector cisco",
     verdict: "pass",
@@ -611,7 +780,7 @@ function isRequired(
   return requiredDetectors.includes(detector);
 }
 
-const TRUST_DETECTORS: TrustDetector[] = [
+const SKILL_TRUST_DETECTORS: TrustDetector[] = [
   {
     name: "skillspector",
     analyzerLabel: "skillspector@docker",
@@ -628,7 +797,18 @@ const TRUST_DETECTORS: TrustDetector[] = [
   },
 ];
 
-export async function runTrustDetectors(
+const MCP_CONFIG_DETECTORS: TrustDetector[] = [
+  {
+    name: "mcp-scanner",
+    analyzerLabel: "mcp-scanner@uvx",
+    checkAvailable: checkMcpScannerAvailable,
+    runScan: runMcpScannerScan,
+    ruleMap: {},
+  },
+];
+
+async function runDetectorList(
+  detectors: readonly TrustDetector[],
   root: string,
   options: TrustDetectorOptions,
 ): Promise<TrustDetectorResult> {
@@ -636,7 +816,7 @@ export async function runTrustDetectors(
   const checks: Check[] = [];
   const analyzersRun: string[] = [];
 
-  for (const detector of TRUST_DETECTORS) {
+  for (const detector of detectors) {
     const unavailable = await detector.checkAvailable(options.run, options.platform, options.env);
     if (unavailable !== undefined) {
       checks.push(
@@ -684,6 +864,20 @@ export async function runTrustDetectors(
   }
 
   return { checks, analyzersRun };
+}
+
+export async function runTrustDetectors(
+  root: string,
+  options: TrustDetectorOptions,
+): Promise<TrustDetectorResult> {
+  return runDetectorList(SKILL_TRUST_DETECTORS, root, options);
+}
+
+export async function runMcpConfigDetectors(
+  root: string,
+  options: TrustDetectorOptions,
+): Promise<TrustDetectorResult> {
+  return runDetectorList(MCP_CONFIG_DETECTORS, root, options);
 }
 
 export function trustRuntimeAdvisory(analyzersRun: readonly string[]): string {

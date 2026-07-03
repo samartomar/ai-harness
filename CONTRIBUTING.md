@@ -55,6 +55,12 @@ Keep diffs scoped. Add tests for new behavior. Reference the capability and the
 boundary in your description. For AI-delegated work, comment `@claude <task>` on
 an issue (see the Claude workflow).
 
+Before a PR is marked ready for review or merged, run the required review
+skills/agents for the change: at minimum code review and security review, plus
+the relevant domain reviewer for the touched area. Record the reviewers used,
+their findings, and any critical/high remediation in the PR description or a PR
+comment so the merge decision has durable evidence.
+
 A CLI-surface change (command/flag/positional) must regenerate
 `tests/contract/command-surface.json` in the same PR
 (`AIH_REGEN_CONTRACT=1 npx vitest run tests/contract/command-surface.test.ts`) and
@@ -79,4 +85,3 @@ the change or have the right to submit it under Apache-2.0:
 ```bash
 git commit -s -m "your message"     # adds: Signed-off-by: Your Name <you@example.com>
 ```
-

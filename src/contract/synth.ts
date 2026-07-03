@@ -1,6 +1,9 @@
+import { createHash } from "node:crypto";
+import { join } from "node:path";
 import { classifyCanon, isAdoptable } from "../adopt/classify.js";
 import { cliFootprint } from "../adopt/cli-footprint.js";
 import { readAihConfig } from "../config/marker.js";
+import { readIfExists } from "../internals/fsxn.js";
 import type { PlanContext } from "../internals/plan.js";
 import { gitCommittedSet } from "../internals/scan-allowlist.js";
 import type { RepoStack } from "../profile/scan.js";
@@ -87,6 +90,36 @@ function contractWorkspaces(stack: RepoStack): ProjectContract["workspaces"] | u
     };
   }
   return workspaces;
+}
+
+function readMcpServers(root: string): string[] {
+  const raw = readIfExists(join(root, ".mcp.json"));
+  if (raw === undefined) return [];
+  try {
+    const parsed = JSON.parse(raw) as { mcpServers?: unknown };
+    if (typeof parsed.mcpServers !== "object" || parsed.mcpServers === null) return [];
+    return [...new Set(Object.keys(parsed.mcpServers).map(safeMcpServerLabel))].sort((a, b) =>
+      a.localeCompare(b),
+    );
+  } catch {
+    return [];
+  }
+}
+
+const MCP_SERVER_LABEL = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,79}$/;
+
+function sha8(raw: string): string {
+  return createHash("sha256").update(raw).digest("hex").slice(0, 8);
+}
+
+function safeMcpServerLabel(raw: string): string {
+  if (MCP_SERVER_LABEL.test(raw)) return raw;
+  const scrubbed = raw
+    .replace(/[^A-Za-z0-9._:-]+/g, "-")
+    .replace(/^[^A-Za-z0-9]+/, "")
+    .replace(/[^A-Za-z0-9]+$/, "")
+    .slice(0, 64);
+  return `${scrubbed.length > 0 ? scrubbed : "mcp-server"}-${sha8(raw)}`;
 }
 
 /** Pure size bucket over the tracked-file count, with a monorepo floor. */
@@ -230,6 +263,7 @@ export async function synthesizeContract(
     deployment: stack.deployment,
     packageManager: stack.packageManager,
     entrypoints: stack.entryPoints,
+    mcpServers: readMcpServers(root),
     commands,
     ...(workspaces ? { workspaces } : {}),
     scale: {

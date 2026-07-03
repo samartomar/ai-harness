@@ -1,14 +1,11 @@
-import {
-  lstatSync,
-  mkdirSync,
-  mkdtempSync,
-  rmSync,
-  symlinkSync,
-  writeFileSync,
-} from "node:fs";
+import { lstatSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { createServer } from "node:http";
+import { createRequire } from "node:module";
+import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import process from "node:process";
+import { runInNewContext } from "node:vm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { PlanContext } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
@@ -23,6 +20,7 @@ import {
 } from "../../src/trust/fetch.js";
 
 let dir: string;
+const nodeRequire = createRequire(import.meta.url);
 
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), "aih-trust-fetch-"));
@@ -45,6 +43,48 @@ function ctx(env: NodeJS.ProcessEnv = {}): PlanContext {
     env,
     options: {},
   };
+}
+
+function githubFetchScript(): string {
+  const source = resolveTrustSource("Owner/Repo", { root: dir, pin: "a".repeat(40) });
+  if (source.kind !== "github") throw new Error("expected GitHub source");
+  try {
+    return trustFetchExec(source, ctx()).argv[2] ?? "";
+  } finally {
+    rmSync(source.quarantineRoot, { recursive: true, force: true });
+  }
+}
+
+async function runFetchScriptHelpers<T>(body: string, env: NodeJS.ProcessEnv = {}): Promise<T> {
+  const script = githubFetchScript();
+  const helpers = script.slice(0, script.indexOf("(async () => {"));
+  const sandbox = {
+    Buffer,
+    URL,
+    clearTimeout,
+    console,
+    process: {
+      argv: ["node", "{}"],
+      env: { ...env },
+      exit: (code: number) => {
+        throw new Error(`script exited ${code}`);
+      },
+      nextTick: process.nextTick.bind(process),
+      stderr: { write: (text: string) => text.length },
+    },
+    require: (name: string) =>
+      name === "node:tls"
+        ? {
+            connect: ({ socket }: { socket: { emit: (event: string) => boolean } }) => {
+              process.nextTick(() => socket.emit("secureConnect"));
+              return socket;
+            },
+          }
+        : nodeRequire(name),
+    setTimeout,
+  } as Record<string, unknown>;
+  runInNewContext(`${helpers}\nglobalThis.__result = (async () => {\n${body}\n})();`, sandbox);
+  return (await sandbox.__result) as T;
 }
 
 describe("trust fetch source resolution", () => {
@@ -81,6 +121,9 @@ describe("trust fetch source resolution", () => {
       ctx({
         PATH: "safe-bin",
         GITHUB_TOKEN: "secret",
+        HTTPS_PROXY: "http://proxy.example:8443",
+        HTTP_PROXY: "http://proxy.example:8080",
+        NO_PROXY: "github.com",
         OPENAI_API_KEY: "secret",
         NODE_EXTRA_CA_CERTS: "corp.pem",
       }),
@@ -89,7 +132,13 @@ describe("trust fetch source resolution", () => {
     expect(action.argv[0]).toBe(process.execPath);
     expect(action.cwd).toBe(source.quarantineRoot);
     expect(action.timeoutMs).toBe(120_000);
-    expect(action.env).toMatchObject({ PATH: "safe-bin", NODE_EXTRA_CA_CERTS: "corp.pem" });
+    expect(action.env).toMatchObject({
+      PATH: "safe-bin",
+      HTTPS_PROXY: "http://proxy.example:8443",
+      HTTP_PROXY: "http://proxy.example:8080",
+      NO_PROXY: "github.com",
+      NODE_EXTRA_CA_CERTS: "corp.pem",
+    });
     expect(action.env).not.toHaveProperty("GITHUB_TOKEN");
     expect(action.env).not.toHaveProperty("OPENAI_API_KEY");
     rmSync(source.quarantineRoot, { recursive: true, force: true });
@@ -113,6 +162,81 @@ describe("trust fetch source resolution", () => {
     } finally {
       if (first.kind === "github") rmSync(first.quarantineRoot, { recursive: true, force: true });
       if (second.kind === "github") rmSync(second.quarantineRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps the quarantined tar extractor on the symlink materialization path", () => {
+    const source = resolveTrustSource("Owner/Repo", { root: dir, pin: "a".repeat(40) });
+    if (source.kind !== "github") throw new Error("expected GitHub source");
+    try {
+      const script = trustFetchExec(source, ctx()).argv[2] ?? "";
+
+      expect(script).toContain('type === "2"');
+      expect(script).toContain("refusing dangling tar symlink");
+      expect(script).toContain("writeFileOwner(link.target, fs.readFileSync(resolved))");
+    } finally {
+      rmSync(source.quarantineRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("honors NO_PROXY in the quarantined fetch helper", async () => {
+    const result = await runFetchScriptHelpers<{
+      bypassGithub: boolean;
+      bypassSubdomain: boolean;
+      proxiedHost: string;
+    }>(
+      [
+        'process.env.HTTPS_PROXY = "http://proxy.example:8080";',
+        'process.env.NO_PROXY = "api.github.com,.corp.example:443";',
+        "const github = proxyFor(new URL('https://api.github.com/repos/owner/repo'));",
+        "const corp = proxyFor(new URL('https://tools.corp.example/status'));",
+        "const codeload = proxyFor(new URL('https://codeload.github.com/owner/repo'));",
+        "return {",
+        "  bypassGithub: github === undefined,",
+        "  bypassSubdomain: corp === undefined,",
+        "  proxiedHost: codeload && codeload.hostname,",
+        "};",
+      ].join("\n"),
+    );
+
+    expect(result).toEqual({
+      bypassGithub: true,
+      bypassSubdomain: true,
+      proxiedHost: "proxy.example",
+    });
+  });
+
+  it("uses HTTP CONNECT for proxied GitHub HTTPS fetches", async () => {
+    const proxy = createServer();
+    const sockets = new Set<{ destroy: () => void }>();
+    let connectPath = "";
+    let proxyAuth = "";
+    proxy.on("connect", (req, socket) => {
+      sockets.add(socket);
+      socket.once("close", () => sockets.delete(socket));
+      connectPath = req.url ?? "";
+      proxyAuth = String(req.headers["proxy-authorization"] ?? "");
+      socket.write("HTTP/1.1 200 Connection Established\r\n\r\n");
+    });
+    await new Promise<void>((resolve) => proxy.listen(0, "127.0.0.1", resolve));
+    const port = (proxy.address() as AddressInfo).port;
+    try {
+      const result = await runFetchScriptHelpers<{ connected: boolean }>(
+        [
+          `process.env.HTTPS_PROXY = "http://user:pass@127.0.0.1:${port}";`,
+          "const target = new URL('https://codeload.github.com/owner/repo');",
+          "const socket = await connectThroughProxy(target, proxyFor(target));",
+          "socket.destroy();",
+          "return { connected: true };",
+        ].join("\n"),
+      );
+
+      expect(result.connected).toBe(true);
+      expect(connectPath).toBe("codeload.github.com:443");
+      expect(proxyAuth).toMatch(/^Basic /);
+    } finally {
+      for (const socket of sockets) socket.destroy();
+      await new Promise<void>((resolve) => proxy.close(() => resolve()));
     }
   });
 
@@ -167,7 +291,9 @@ describe("trust fetch source resolution", () => {
       expect(() => assertTrustTreeSafe(join(dir, "skills"))).not.toThrow();
 
       symlinkSync(join(outside, "SECRET.md"), join(skillDir, "ESCAPE.md"));
-      expect(() => assertTrustTreeSafe(join(dir, "skills"))).toThrow(/outside|escape|trust source/i);
+      expect(() => assertTrustTreeSafe(join(dir, "skills"))).toThrow(
+        /outside|escape|trust source/i,
+      );
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code === "EPERM") return;
       throw err;

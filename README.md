@@ -20,9 +20,8 @@ command surface. On top of that setup it runs a governance loop for external
 agent skills — vet → approve → pack → marketplace → evidence — anchored in a
 committed approval lock (`aih-skills.lock.json`).
 
-> Implements the architectural blueprint *"Enterprise DevSecOps AI Bootstrapping:
-> Cryptographic Trust, Local Performance Optimization, and Unified Observability"*
-> as a tested CLI.
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the shipped architecture and
+current trust boundaries.
 
 > **Provided as open-source software under Apache-2.0 on an "AS IS" basis.** No warranty,
 > support obligation, SLA, indemnity, consulting, or professional advice is provided. `aih`
@@ -40,19 +39,23 @@ and security fixes land on the latest and the previous minor. The full policy:
 
 ## Design posture
 
-- **Dry-run by default.** `aih <cmd>` computes and prints a plan; nothing is
-  written until you add `--apply`. Add `--verify` to run read-only checks.
+- **Dry-run by default for managed project changes.** `aih <cmd>` computes and
+  prints a plan; repo/workstation mutations wait for `--apply`. Named output
+  files (`--sarif`, `--support-out`, report outputs), browser launch flags
+  (`--open`, `--refresh`, `--demo`), the local run ledger, and `AIH_APPLY=1`
+  are explicit opt-ins rather than silent writes. Add `--verify` to run
+  read-only checks.
 - **Gated writes.** `--apply` refuses a dirty git worktree unless you add
   `--force`. Commands resolve a governance posture (`--posture vibe|team|enterprise`,
   default `vibe`): the skill-install gate refuses unapproved skills at
   `team`/`enterprise` and stays advisory at `vibe`; pack installs are fail-closed
   at every posture. Once a repo is initialised, every run is recorded in the
   local [run ledger](#run-ledger).
-- **Never mutates a remote system.** Every unit of work is a local `write`, a
-  local `exec` (icacls/chmod/junction…), a read-only `probe`, or a `doc` (the
-  exact commands for cloud setup — SSO, gateways, Langfuse, MDM — emitted for a
-  human, never executed). There is no code path that provisions cloud infra, so
-  an automated run cannot "fake" it.
+- **No remote mutation except explicit signing flows.** Normal work is local:
+  `write`, `remove`, `exec`, `envblock`, `digest`, read-only `probe`, or `doc`
+  instructions for humans to run. The exceptions are opt-in provenance paths:
+  GitHub attestations can write to GitHub's attestation store, and keyless
+  cosign signing can append to Rekor.
 - **Idempotent & non-destructive.** Shell-profile edits live in marked managed
   blocks; JSON configs are deep-merged (your keys survive); every overwrite is
   backed up to `*.aih.bak` and rolls back as a transaction on failure.
@@ -71,6 +74,7 @@ Verify the install's origin — every release is published with build provenance
 
 ```bash
 npm audit signatures
+aih verify-release          # also checks GitHub release sums + cosign bundle
 ```
 
 <details><summary>From source (contributors)</summary>
@@ -134,8 +138,15 @@ One honest line per command — the long-form behavior detail for every command 
 | [`aih policy`](docs/commands.md#aih-policy) | Validate the committed org policy — or a policy-bundle envelope — as a read-only CI gate. |
 | [`aih evidence`](docs/commands.md#aih-evidence) | Package the audit trail aih already emits (locks, cards, vet evidence, run logs) into one deterministic evidence bundle. |
 | [`aih bundle`](docs/commands.md#aih-bundle) | Build a deterministic fleet bundle (contract + policy + config) with checksums; `aih verify-bundle` re-checks any copy. |
+| [`aih verify-release`](docs/commands.md#aih-verify-release) | Verify a published aih release: npm signatures, GitHub release cosign bundle, and tarball hash. |
 | [`aih secrets`](docs/commands.md#aih-secrets) | Scan for plaintext `.env*`/`secrets/` and write agent deny rules; `--verify` is the secret-scan CI gate. |
 | [`aih guardrails`](docs/commands.md#aih-guardrails) | Generate `.gitleaks.toml`, `.pre-commit-config.yaml`, and a CI license gate that blocks AGPL/strong-copyleft. |
+
+### Trust configuration notes
+
+`trust.internalScopes` is intentionally inert until an org configures internal package scopes in
+policy. Without that scope list, dependency-confusion checks still report general package risk but do
+not guess which names are private to your organization.
 
 ### Analytics & operations
 
@@ -155,13 +166,14 @@ One honest line per command — the long-form behavior detail for every command 
 | [`aih doctor`](docs/commands.md#aih-doctor) | Verify the workstation/repo configuration fail-closed; workspace mode validates each child repo. |
 | [`aih status`](docs/commands.md#aih-status) | Show a read-only inventory of what the harness has configured. |
 
-Shared flags: `--apply`, `--force`, `--verify`, `--json`, `--posture <vibe|team|enterprise>`, `--support-out <dir>`, `--no-log`, `--context-dir <dir>`, `--root <dir>`, `--cli <list>`, `--all-tools`, `--detect`, `--yes` (the read-only `doctor`/`status`/`verify-bundle` take the relevant subset).
+Shared flags: `--apply`, `--force`, `--verify`, `--json`, `--posture <vibe|team|enterprise>`, `--support-out <dir>`, `--no-log`, `--context-dir <dir>`, `--root <dir>`, `--cli <list>`, `--all-tools`, `--detect`, `--yes` (the read-only `doctor`/`status`/`verify-bundle`/`verify-release` take the relevant subset).
 Settings also read from `AIH_*` env vars (`AIH_APPLY`, `AIH_CONTEXT_DIR`, `AIH_LOG`, …).
 
 ### Plugins
 
 At startup `aih` probes for exactly one optional peer package: **`@aihq/enterprise`** — the literal
-name, never env- or config-selectable, so nothing can point the probe at other code. When installed,
+name, never env- or config-selectable, so nothing can point the probe at other code. The package name
+is a reserved extension point; the open-source harness does not require it to be published. When installed,
 its `aihCommands` export (a `CommandSpec[]`) registers as native subcommands through the identical
 path as the built-ins: shared flags, posture resolution, the dirty-worktree gate, and the run ledger
 all apply unchanged. Not installed → zero output, fully local. `AIH_NO_PLUGINS=1` disables the
@@ -317,12 +329,13 @@ the `SETUP.md` context markers: [docs/commands.md](docs/commands.md#support-tick
 ### Run ledger
 
 Every `aih` invocation appends one structured row to **`.aih/runs/YYYY-MM.jsonl`** (UTC, month-sharded,
-append-only) — a "what happened" diagnostics trail: run id, capability, redacted argv, status (`success` /
-`failed` / `partial` / `error`), exit code, mode (apply/verify/json/sarif), platform, write tally, and
-verification + support counts. It's distinct from `.aih/history.jsonl` (the per-commit metrics behind
-`aih report` trends). Logging is **on only after the repo is initialised** (a committed `.aih-config.json`
-marker exists) and never fails a command; opt out with **`--no-log`** or **`AIH_LOG=0`**. Like all of
-`.aih/`, the ledger is gitignored local diagnostics — never committed.
+append-only) — a "what happened" diagnostics trail: schema version, run id, capability, redacted argv,
+status (`success` / `failed` / `partial` / `error`), exit code, mode (apply/verify/json/sarif), platform,
+host hash, repo remote hash, write tally, and verification + support counts. It's distinct from
+`.aih/history.jsonl` (the per-commit metrics behind `aih report` trends). Logging is **on only after the
+repo is initialised** (a committed `.aih-config.json` marker exists) and never fails a command; opt out
+with **`--no-log`** or **`AIH_LOG=0`**. Like all of `.aih/`, the ledger is gitignored local diagnostics
+— never committed. For tamper-evident sharing, package it with `aih evidence build`.
 
 ### Examples
 
@@ -349,7 +362,9 @@ aih usage --rollup ../repo-a,../repo-b
 - **Supply chain** — every release publishes via npm **Trusted Publishing** with build
   **provenance** and ships an **SPDX SBOM**, a **SHA256 checksum**, its keyless **cosign
   signature bundle** (`SHA256SUMS.txt.sigstore.json`), and the Sigstore **build-provenance
-  bundle** on the GitHub Release. Verify an install with `npm audit signatures`.
+  bundle** on the GitHub Release. This is SLSA v1 provenance material, but the project does
+  not claim a SLSA level. Verify an install with `npm audit signatures` and
+  `aih verify-release [version]`.
 - **Support** — [SUPPORT.md](SUPPORT.md) · **Security** — [SECURITY.md](SECURITY.md)
   (private reporting) · **Contributing** — [CONTRIBUTING.md](CONTRIBUTING.md).
 

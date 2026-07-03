@@ -234,6 +234,14 @@ export interface CommandOption {
   default?: string | boolean;
 }
 
+export interface CommandPositional {
+  name: string;
+  description?: string;
+  required?: boolean;
+  /** When set, the positional value is passed through ctx.options[optionName]. */
+  optionName?: string;
+}
+
 export interface CommandSpec {
   name: string;
   summary: string;
@@ -254,6 +262,7 @@ export interface CommandSpec {
    * first nested rename.
    */
   deprecatedAliases?: string[];
+  positional?: CommandPositional;
   options?: CommandOption[];
   plan: PlanFn;
   /** Read-only commands (doctor/status) skip the apply path entirely. */

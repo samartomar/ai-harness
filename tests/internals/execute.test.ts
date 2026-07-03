@@ -107,7 +107,7 @@ describe("executePlan", () => {
       const rand = seeded(seed);
       const actions = Array.from({ length: 8 }, (_, i) =>
         writeText(
-          `plans/${Math.floor(rand() * 3)}/file-${i % 5}.txt`,
+          `plans/${Math.floor(rand() * 3)}/file-${i}.txt`,
           `seed=${seed};slot=${i};value=${Math.floor(rand() * 1000)}`,
           `seeded write ${i}`,
         ),

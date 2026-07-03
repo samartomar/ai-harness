@@ -213,6 +213,17 @@ Build a deterministic **fleet bundle** — the repo contract, org policy, and ma
 with a checksum manifest (and an optional `gh`-attested signature) for distribution to a team or
 CI. `aih verify-bundle` re-checks a bundle against its checksums + signature.
 
+## aih verify-release
+
+Read-only release verification for published `@aihq/harness` versions. With no positional version,
+it resolves the latest package version from npm; with `aih verify-release <version>`, it checks that
+specific version. The command installs that exact package into a temporary prefix with scripts
+disabled, runs `npm audit signatures --prefix <temp>`, downloads the GitHub Release checksum and
+Sigstore bundle, verifies the checksum file with `cosign verify-blob` against the tag-specific release
+workflow identity, packs the npm tarball, and compares its SHA-256 hash to `SHA256SUMS.txt`.
+Missing local tools (`npm`, `gh`, or `cosign`) produce
+honest skips instead of false passes.
+
 ## aih secrets
 
 Scan for plaintext `.env*`/`secrets/` and write agent deny rules + vault-injection guidance.
