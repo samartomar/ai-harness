@@ -101,10 +101,15 @@ export function mcpServers(
     "code-review-graph": {
       type: "stdio",
       command: "uvx",
-      // Pinned (not @latest) for reproducible installs; bump deliberately. `uvx` runs
-      // the tool in an ephemeral env, so it works in any repo (no project-local uv env
-      // needed), matching the AWS / Playwright pins below. `serve` starts the MCP.
-      args: ["code-review-graph@2.3.6", "serve"],
+      // Pinned (not @latest) for reproducible installs; bump deliberately. `uvx`
+      // runs offline so locked-down sandboxes never fetch while starting the MCP.
+      args: [
+        "--offline",
+        "--no-python-downloads",
+        "--no-env-file",
+        "code-review-graph@2.3.6",
+        "serve",
+      ],
       description:
         "Local code-review knowledge graph (impact radius, affected flows) served over stdio via uvx.",
       classification: "local",
@@ -115,10 +120,10 @@ export function mcpServers(
     "codebase-memory-mcp": {
       type: "stdio",
       command: "uvx",
-      // Pinned (not @latest); bump deliberately. Bare invocation runs the stdio MCP server
-      // (no subcommand). The local memory companion to code-review-graph: index + semantic
-      // search + trace_path + ADR memory.
-      args: ["codebase-memory-mcp@0.8.1"],
+      // Pinned (not @latest); bump deliberately. Bare invocation runs the stdio MCP
+      // server. Keep uvx offline/no-env so locked-down sandboxes never fetch or read
+      // project .env files while starting the local memory companion.
+      args: ["--offline", "--no-python-downloads", "--no-env-file", "codebase-memory-mcp@0.8.1"],
       description:
         "Local codebase memory/knowledge graph (index_repository, search_graph, query_graph, trace_path) — memory companion to code-review-graph, served over stdio via uvx.",
       classification: "local",

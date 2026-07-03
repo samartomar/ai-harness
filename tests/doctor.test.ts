@@ -80,6 +80,36 @@ describe("doctor — large-repo graph safety", () => {
     };
   }
 
+  const populatedGraphStatus = [
+    "Nodes: 5454",
+    "Edges: 64205",
+    "Files: 388",
+    "Languages: javascript, bash, typescript",
+  ].join("\n");
+
+  const emptyGraphStatus = [
+    "Nodes: 0",
+    "Edges: 0",
+    "Files: 0",
+    "Languages: ",
+    "Last updated: never",
+  ].join("\n");
+
+  function writeGraphMcp(): void {
+    writeFileSync(
+      join(dir, ".mcp.json"),
+      JSON.stringify({
+        mcpServers: {
+          "code-review-graph": {
+            type: "stdio",
+            command: "uvx",
+            args: ["code-review-graph@2.3.6", "serve"],
+          },
+        },
+      }),
+    );
+  }
+
   let dir: string;
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), "aih-doctor-scale-"));
@@ -105,16 +135,160 @@ describe("doctor — large-repo graph safety", () => {
     expect(res?.detail).toContain("bounded rg/fd reads only");
   });
 
-  it("passes large repos when the repo MCP graph is configured and uv is available", async () => {
-    writeFileSync(
-      join(dir, ".mcp.json"),
-      JSON.stringify({ mcpServers: { "code-review-graph": { command: "uvx" } } }),
-    );
-    const c = scaleCtx(1000, ["uv"]);
+  it("passes large repos when the repo MCP graph is configured and uvx is available", async () => {
+    writeGraphMcp();
+    const run = fakeRunner((argv) => {
+      if (argv[0] === "git" && argv.slice(3).join(" ") === "ls-files") {
+        return {
+          code: 0,
+          stdout: Array.from({ length: 1000 }, (_, i) => `src/file-${i}.ts`).join("\n"),
+        };
+      }
+      if ((argv[0] === "which" || argv[0] === "where") && argv[1] === "uvx") {
+        return { code: 0, stdout: "/usr/bin/uvx" };
+      }
+      if (argv[0] === "uvx" && argv.includes("status")) {
+        return { code: 0, stdout: populatedGraphStatus };
+      }
+      return { code: 1, spawnError: true };
+    });
+    const c = {
+      ...scaleCtx(1000, ["uvx"]),
+      run,
+      host: makeHostAdapter({ platform: "linux", run, env: {} }),
+    };
     const probe = findProbe((await command.plan(c)).actions, "large-repo graph safety");
     const res = await probe?.run(c);
     expect(res?.verdict).toBe("pass");
     expect(res?.detail).toContain("repo MCP code-review-graph configured");
+  });
+
+  it("uses uv tool run when uvx is unavailable but uv is available", async () => {
+    writeGraphMcp();
+    const calls: string[][] = [];
+    const run = fakeRunner((argv) => {
+      calls.push(argv);
+      if (argv[0] === "git" && argv.slice(3).join(" ") === "ls-files") {
+        return {
+          code: 0,
+          stdout: Array.from({ length: 1000 }, (_, i) => `src/file-${i}.ts`).join("\n"),
+        };
+      }
+      if ((argv[0] === "which" || argv[0] === "where") && argv[1] === "uv") {
+        return { code: 0, stdout: "/usr/bin/uv" };
+      }
+      if (
+        argv[0] === "uv" &&
+        argv.slice(1, 3).join(" ") === "tool run" &&
+        argv.includes("status")
+      ) {
+        return { code: 0, stdout: populatedGraphStatus };
+      }
+      return { code: 1, spawnError: true };
+    });
+    const c = {
+      ...scaleCtx(1000, ["uv"]),
+      run,
+      host: makeHostAdapter({ platform: "linux", run, env: {} }),
+    };
+
+    const probe = findProbe((await command.plan(c)).actions, "large-repo graph safety");
+    const res = await probe?.run(c);
+
+    expect(res?.verdict).toBe("pass");
+    expect(calls).toContainEqual([
+      "uv",
+      "tool",
+      "run",
+      "--offline",
+      "--no-python-downloads",
+      "--no-env-file",
+      "code-review-graph@2.3.6",
+      "status",
+      "--repo",
+      dir,
+    ]);
+  });
+
+  it("builds the repo MCP graph offline when status reports zero nodes or files", async () => {
+    writeGraphMcp();
+    const calls: string[][] = [];
+    let statusCalls = 0;
+    const run = fakeRunner((argv) => {
+      calls.push(argv);
+      if (argv[0] === "git" && argv.slice(3).join(" ") === "ls-files") {
+        return {
+          code: 0,
+          stdout: Array.from({ length: 1000 }, (_, i) => `src/file-${i}.ts`).join("\n"),
+        };
+      }
+      if ((argv[0] === "which" || argv[0] === "where") && argv[1] === "uvx") {
+        return { code: 0, stdout: "/usr/bin/uvx" };
+      }
+      if (argv[0] === "uvx" && argv.includes("status")) {
+        statusCalls += 1;
+        return { code: 0, stdout: statusCalls === 1 ? emptyGraphStatus : populatedGraphStatus };
+      }
+      if (argv[0] === "uvx" && argv.includes("build")) {
+        return { code: 0, stdout: "Full build: 388 files, 5479 nodes, 64735 edges" };
+      }
+      return { code: 1, spawnError: true };
+    });
+    const c = {
+      ...scaleCtx(1000, ["uvx"]),
+      run,
+      host: makeHostAdapter({ platform: "linux", run, env: {} }),
+    };
+
+    const probe = findProbe((await command.plan(c)).actions, "large-repo graph safety");
+    const res = await probe?.run(c);
+
+    expect(res?.verdict).toBe("pass");
+    expect(res?.detail).toContain("rebuilt offline");
+    expect(calls).toContainEqual([
+      "uvx",
+      "--offline",
+      "--no-python-downloads",
+      "--no-env-file",
+      "code-review-graph@2.3.6",
+      "build",
+      "--repo",
+      dir,
+    ]);
+  });
+
+  it("fails large repo graph safety when offline rebuild still leaves an empty graph", async () => {
+    writeGraphMcp();
+    const run = fakeRunner((argv) => {
+      if (argv[0] === "git" && argv.slice(3).join(" ") === "ls-files") {
+        return {
+          code: 0,
+          stdout: Array.from({ length: 1000 }, (_, i) => `src/file-${i}.ts`).join("\n"),
+        };
+      }
+      if ((argv[0] === "which" || argv[0] === "where") && argv[1] === "uvx") {
+        return { code: 0, stdout: "/usr/bin/uvx" };
+      }
+      if (argv[0] === "uvx" && argv.includes("status")) {
+        return { code: 0, stdout: emptyGraphStatus };
+      }
+      if (argv[0] === "uvx" && argv.includes("build")) {
+        return { code: 0, stdout: "Full build: 0 files, 0 nodes, 0 edges" };
+      }
+      return { code: 1, spawnError: true };
+    });
+    const c = {
+      ...scaleCtx(1000, ["uvx"]),
+      run,
+      host: makeHostAdapter({ platform: "linux", run, env: {} }),
+    };
+
+    const probe = findProbe((await command.plan(c)).actions, "large-repo graph safety");
+    const res = await probe?.run(c);
+
+    expect(res?.verdict).toBe("fail");
+    expect(res?.code).toBe("scale.code-review-graph-missing");
+    expect(res?.detail).toContain("offline rebuild did not populate the graph");
   });
 });
 

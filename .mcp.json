@@ -4,6 +4,9 @@
       "type": "stdio",
       "command": "uvx",
       "args": [
+        "--offline",
+        "--no-python-downloads",
+        "--no-env-file",
         "code-review-graph@2.3.6",
         "serve"
       ],
@@ -17,6 +20,9 @@
       "type": "stdio",
       "command": "uvx",
       "args": [
+        "--offline",
+        "--no-python-downloads",
+        "--no-env-file",
         "codebase-memory-mcp@0.8.1"
       ],
       "description": "Local codebase memory/knowledge graph (index_repository, search_graph, query_graph, trace_path) — the memory companion to code-review-graph, served over stdio via uvx.",

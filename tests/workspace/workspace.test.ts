@@ -175,7 +175,13 @@ describe("workspace.plan — generated artifacts", () => {
       };
     };
     expect(mcp.mcpServers["code-review-graph"].command).toBe("uvx");
-    expect(mcp.mcpServers["code-review-graph"].args).toEqual(["code-review-graph@2.3.6", "serve"]);
+    expect(mcp.mcpServers["code-review-graph"].args).toEqual([
+      "--offline",
+      "--no-python-downloads",
+      "--no-env-file",
+      "code-review-graph@2.3.6",
+      "serve",
+    ]);
     expect(mcp.mcpServers.filesystem.args).toEqual(expect.arrayContaining(["ui", "backend"]));
   });
 
