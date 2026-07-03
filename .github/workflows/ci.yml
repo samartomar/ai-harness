@@ -24,6 +24,8 @@ jobs:
           node-version: "22"
           cache: npm
       - run: npm ci
+      - name: Tracked artifact guard
+        run: npm run check:artifacts
       - name: Typecheck
         run: npx tsc --noEmit
       - name: Lint & format check
