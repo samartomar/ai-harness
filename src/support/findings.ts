@@ -446,6 +446,13 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     action:
       "Install the required detector locally or remove it from the enterprise trust.requiredDetectors policy. Optional detector skips only reduce coverage and do not block lower postures.",
   },
+  "trust.cisco-finding": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "Cisco AI Defense skill-scanner finding",
+    action:
+      "Review the Cisco AI Defense finding, map the rule to a specific trust check if it is a known-dangerous pattern, or reject the external source until the flagged content is removed.",
+  },
   "trust.prompt-injection": {
     audience: "developer",
     failSeverity: "blocking",

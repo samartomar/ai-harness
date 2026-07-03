@@ -1,8 +1,9 @@
 import { createHash } from "node:crypto";
-import { lstatSync, readFileSync } from "node:fs";
-import { basename, extname, isAbsolute, join, relative } from "node:path";
+import { lstatSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { basename, dirname, extname, isAbsolute, join, relative } from "node:path";
 import type { Posture } from "../config/posture.js";
-import type { Runner } from "../internals/proc.js";
+import type { Runner, RunResult } from "../internals/proc.js";
 import type { Check, CheckCode } from "../internals/verify.js";
 import type { Platform } from "../platform/base.js";
 import { execArgv } from "../tools/install.js";
@@ -10,9 +11,26 @@ import { scrubFetchEnv } from "./fetch.js";
 import { gradeTrustCheck } from "./grade.js";
 import { collectFilesUnder, TRUST_SKIP_DIRS } from "./scan.js";
 
-// cisco/semgrep are future work: re-add detector names here only when a real
+// semgrep is future work: re-add detector names here only when a real
 // scanner integration lands, so enterprise requiredDetectors cannot be unsatisfiable.
-export type TrustDetectorName = "skillspector";
+export type TrustDetectorName = "skillspector" | "cisco";
+
+export interface TrustDetector {
+  name: TrustDetectorName;
+  analyzerLabel: string;
+  checkAvailable: (
+    run: Runner,
+    platform: Platform,
+    env: NodeJS.ProcessEnv,
+  ) => Promise<string | undefined>;
+  runScan: (
+    run: Runner,
+    platform: Platform,
+    env: NodeJS.ProcessEnv,
+    tree: string,
+  ) => Promise<string>;
+  ruleMap: Record<string, CheckCode>;
+}
 
 export interface TrustDetectorOptions {
   env: NodeJS.ProcessEnv;
@@ -27,8 +45,8 @@ export interface TrustDetectorResult {
   analyzersRun: string[];
 }
 
-const SKILLSPECTOR_ANALYZER = "skillspector@docker";
 const DETECTOR_UNAVAILABLE = "trust.detector-unavailable";
+const CISCO_SKILL_SCANNER_PACKAGE = "cisco-ai-skill-scanner";
 const MAX_SCRIPT_SCAN_BYTES = 512 * 1024;
 const SCRIPT_EXTENSIONS = new Set([
   "",
@@ -60,6 +78,11 @@ const SKILLSPECTOR_RULE_MAP: Record<string, CheckCode> = {
   "skillspector.prompt-injection": "trust.prompt-injection",
   "skillspector.typosquat": "trust.typosquat",
   typosquat: "trust.typosquat",
+};
+
+export const CISCO_RULE_MAP: Record<string, CheckCode> = {
+  PROMPT_INJECTION_IGNORE_INSTRUCTIONS: "trust.prompt-injection",
+  YARA_command_injection_generic: "trust.malicious-code",
 };
 
 interface SarifArtifactLocation {
@@ -257,12 +280,180 @@ export function skillspectorDockerRunArgv(platform: Platform, tree: string): str
   ]);
 }
 
+function ciscoSkillScannerBaseArgv(): string[] {
+  return [
+    "uvx",
+    "--offline",
+    "--no-python-downloads",
+    "--no-env-file",
+    "--from",
+    CISCO_SKILL_SCANNER_PACKAGE,
+    "skill-scanner",
+  ];
+}
+
+function ciscoSkillScannerVersionArgv(platform: Platform): string[] {
+  return execArgv(platform, [...ciscoSkillScannerBaseArgv(), "--version"]);
+}
+
+export function ciscoSkillScannerRunArgv(
+  platform: Platform,
+  tree: string,
+  outputSarif: string,
+): string[] {
+  return execArgv(platform, [
+    ...ciscoSkillScannerBaseArgv(),
+    "scan",
+    tree,
+    "--format",
+    "sarif",
+    "--output-sarif",
+    outputSarif,
+  ]);
+}
+
 function dockerVersionArgv(platform: Platform): string[] {
   return execArgv(platform, ["docker", "--version"]);
 }
 
 function skillspectorImageInspectArgv(platform: Platform): string[] {
   return execArgv(platform, ["docker", "image", "inspect", "skillspector", "--format", "{{.Id}}"]);
+}
+
+function runFailureReason(result: RunResult, fallback: string): string | undefined {
+  if (!result.spawnError && result.code === 0) return undefined;
+  return result.stderr || result.stdout || fallback;
+}
+
+async function checkSkillspectorAvailable(
+  run: Runner,
+  platform: Platform,
+  env: NodeJS.ProcessEnv,
+): Promise<string | undefined> {
+  const version = await run(dockerVersionArgv(platform), {
+    env: scrubFetchEnv(env),
+    timeoutMs: 30_000,
+  });
+  const versionReason = runFailureReason(version, `docker exit ${version.code ?? "signal"}`);
+  if (versionReason !== undefined) return versionReason;
+
+  const image = await run(skillspectorImageInspectArgv(platform), {
+    env: scrubFetchEnv(env),
+    timeoutMs: 30_000,
+  });
+  const imageReason = runFailureReason(image, "skillspector Docker image not present locally");
+  if (imageReason !== undefined) return imageReason;
+  if (image.stdout.trim().length === 0) return "skillspector Docker image not present locally";
+  return undefined;
+}
+
+async function runSkillspectorScan(
+  run: Runner,
+  platform: Platform,
+  env: NodeJS.ProcessEnv,
+  tree: string,
+): Promise<string> {
+  const scan = await run(skillspectorDockerRunArgv(platform, tree), {
+    env: scrubFetchEnv(env),
+    timeoutMs: 120_000,
+  });
+  const reason = runFailureReason(scan, `detector exit ${scan.code ?? "signal"}`);
+  if (reason !== undefined) throw new Error(reason);
+  return scan.stdout;
+}
+
+async function checkCiscoAvailable(
+  run: Runner,
+  platform: Platform,
+  env: NodeJS.ProcessEnv,
+): Promise<string | undefined> {
+  const version = await run(ciscoSkillScannerVersionArgv(platform), {
+    env: scrubFetchEnv(env),
+    timeoutMs: 30_000,
+  });
+  const reason = runFailureReason(version, `uvx exit ${version.code ?? "signal"}`);
+  if (reason !== undefined) return reason;
+  if (`${version.stdout}${version.stderr}`.trim().length === 0) {
+    return "skill-scanner version check emitted no output";
+  }
+  return undefined;
+}
+
+function collectCiscoSkillDirs(root: string): string[] {
+  const skillFiles = collectFilesUnder(
+    root,
+    (abs) => basename(abs) === "SKILL.md",
+    TRUST_SKIP_DIRS,
+  );
+  return [...new Set(skillFiles.map((file) => dirname(file)))].sort((a, b) =>
+    toPosix(relative(root, a)).localeCompare(toPosix(relative(root, b))),
+  );
+}
+
+function prefixSafeCiscoUri(prefix: string, raw: unknown): unknown {
+  if (typeof raw !== "string" || raw.length === 0) return raw;
+  const stripped = toPosix(raw.replace(/^file:\/\//, ""));
+  if (!isSafeRelativeSarifUri(stripped)) return raw;
+  return prefix.length > 0 ? `${prefix}/${stripped}` : stripped;
+}
+
+function prefixCiscoSarifUris(sarifText: string, root: string, skillRoot: string): SarifLog {
+  const parsed = parseSarifLog(sarifText);
+  if (parsed === undefined) throw new Error("detector did not emit valid SARIF");
+  const prefix = toPosix(relative(root, skillRoot));
+  return {
+    ...parsed,
+    runs: parsed.runs?.map((run) => ({
+      ...run,
+      results: run.results?.map((result) => ({
+        ...result,
+        locations: result.locations?.map((location) => ({
+          ...location,
+          physicalLocation:
+            location.physicalLocation === undefined
+              ? undefined
+              : {
+                  ...location.physicalLocation,
+                  artifactLocation: {
+                    ...location.physicalLocation.artifactLocation,
+                    uri: prefixSafeCiscoUri(
+                      prefix,
+                      location.physicalLocation.artifactLocation?.uri,
+                    ),
+                  },
+                },
+        })),
+      })),
+    })),
+  };
+}
+
+async function runCiscoSkillScan(
+  run: Runner,
+  platform: Platform,
+  env: NodeJS.ProcessEnv,
+  tree: string,
+): Promise<string> {
+  const skillDirs = collectCiscoSkillDirs(tree);
+  if (skillDirs.length === 0) throw new Error("no SKILL.md directories found for Cisco scan");
+  const runs: SarifRun[] = [];
+  for (const skillDir of skillDirs) {
+    const tmp = mkdtempSync(join(tmpdir(), "aih-cisco-sarif-"));
+    const output = join(tmp, "results.sarif");
+    try {
+      const scan = await run(ciscoSkillScannerRunArgv(platform, skillDir, output), {
+        env: scrubFetchEnv(env),
+        timeoutMs: 120_000,
+      });
+      const reason = runFailureReason(scan, `detector exit ${scan.code ?? "signal"}`);
+      if (reason !== undefined) throw new Error(reason);
+      const prefixed = prefixCiscoSarifUris(readFileSync(output, "utf8"), tree, skillDir);
+      runs.push(...(prefixed.runs ?? []));
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  }
+  return JSON.stringify({ version: "2.1.0", runs });
 }
 
 function unavailableDetail(detector: TrustDetectorName, reason: string): string {
@@ -289,26 +480,46 @@ function unavailableCheck(
   };
 }
 
-function ruleCode(result: SarifResult): CheckCode | undefined {
-  const raw = typeof result.ruleId === "string" ? result.ruleId : result.rule?.id;
-  return typeof raw === "string" ? SKILLSPECTOR_RULE_MAP[raw] : undefined;
+function parseSarifLog(raw: string): (SarifLog & { runs: SarifRun[] }) | undefined {
+  try {
+    const parsed = JSON.parse(raw) as SarifLog;
+    return Array.isArray(parsed.runs) ? { ...parsed, runs: parsed.runs } : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
-function resultMessage(result: SarifResult): string {
+function resultRuleId(result: SarifResult): string | undefined {
+  const raw = typeof result.ruleId === "string" ? result.ruleId : result.rule?.id;
+  return typeof raw === "string" ? raw : undefined;
+}
+
+function ruleCode(result: SarifResult, detector: TrustDetector): CheckCode | undefined {
+  const raw = resultRuleId(result);
+  if (raw === undefined) return undefined;
+  return detector.ruleMap[raw] ?? (detector.name === "cisco" ? "trust.cisco-finding" : undefined);
+}
+
+function detectorFindingLabel(detector: TrustDetector): string {
+  return detector.name === "skillspector" ? "SkillSpector" : "Cisco AI Defense skill-scanner";
+}
+
+function resultMessage(result: SarifResult, detector: TrustDetector): string {
   return typeof result.message?.text === "string" && result.message.text.length > 0
     ? result.message.text
-    : "SkillSpector SARIF finding";
+    : `${detectorFindingLabel(detector)} SARIF finding`;
 }
 
-function normalizeSarifUri(raw: unknown): string {
-  if (typeof raw !== "string" || raw.length === 0) return "skillspector.sarif";
+function normalizeSarifUri(raw: unknown, detector: TrustDetector): string {
+  const fallback = `${detector.name}.sarif`;
+  if (typeof raw !== "string" || raw.length === 0) return fallback;
   const stripped = toPosix(
     raw
       .replace(/^file:\/\//, "")
       .replace(/^\/scan\/?/, "")
       .replace(/^scan\/?/, ""),
   );
-  if (!isSafeRelativeSarifUri(stripped)) return "skillspector.sarif";
+  if (!isSafeRelativeSarifUri(stripped)) return fallback;
   return stripped;
 }
 
@@ -322,10 +533,13 @@ function sarifStartLine(result: SarifResult): number {
   return typeof raw === "number" && Number.isInteger(raw) && raw > 0 ? raw : 1;
 }
 
-function sarifLocation(result: SarifResult): NonNullable<Check["location"]> {
+function sarifLocation(
+  result: SarifResult,
+  detector: TrustDetector,
+): NonNullable<Check["location"]> {
   const physical = result.locations?.[0]?.physicalLocation;
   return {
-    uri: normalizeSarifUri(physical?.artifactLocation?.uri),
+    uri: normalizeSarifUri(physical?.artifactLocation?.uri, detector),
     startLine: sarifStartLine(result),
   };
 }
@@ -335,36 +549,37 @@ function sarifFingerprint(
   root: string,
   location: NonNullable<Check["location"]>,
   detail: string,
+  detector: TrustDetector,
 ): string {
   const line = location.startLine ?? 1;
   const sourceLine = fileLine(join(root, location.uri), line) ?? detail;
-  return `${code.replace(/\./g, "-")}:skillspector:${location.uri}:${line}:${sha8(sourceLine)}`;
+  return `${code.replace(/\./g, "-")}:${detector.name}:${location.uri}:${line}:${sha8(sourceLine)}`;
 }
 
-function sarifChecks(stdout: string, root: string, posture: Posture): Check[] | undefined {
-  let parsed: SarifLog;
-  try {
-    parsed = JSON.parse(stdout) as SarifLog;
-  } catch {
-    return undefined;
-  }
-  if (!Array.isArray(parsed.runs)) return undefined;
+function sarifChecks(
+  stdout: string,
+  root: string,
+  posture: Posture,
+  detector: TrustDetector,
+): Check[] | undefined {
+  const parsed = parseSarifLog(stdout);
+  if (parsed === undefined) return undefined;
   const checks: Check[] = [];
   for (const run of parsed.runs) {
     for (const result of run.results ?? []) {
-      const code = ruleCode(result);
+      const code = ruleCode(result, detector);
       if (code === undefined) continue;
-      const location = sarifLocation(result);
-      const detail = resultMessage(result);
+      const location = sarifLocation(result, detector);
+      const detail = resultMessage(result, detector);
       checks.push(
         gradeTrustCheck(
           {
             name: code,
             verdict: "fail",
             code,
-            detail: `${location.uri}:${location.startLine ?? 1} — SkillSpector: ${detail}`,
+            detail: `${location.uri}:${location.startLine ?? 1} — ${detectorFindingLabel(detector)}: ${detail}`,
             location,
-            fingerprint: sarifFingerprint(code, root, location, detail),
+            fingerprint: sarifFingerprint(code, root, location, detail, detector),
           },
           posture,
         ),
@@ -374,11 +589,18 @@ function sarifChecks(stdout: string, root: string, posture: Posture): Check[] | 
   return checks;
 }
 
-function analyzerPassCheck(analyzersRun: readonly string[]): Check {
+function analyzerPassCheck(detector: TrustDetector, analyzersRun: readonly string[]): Check {
+  if (detector.name === "skillspector") {
+    return {
+      name: "trust detector skillspector",
+      verdict: "pass",
+      detail: `SkillSpector Docker static scan completed with --no-llm. No findings != safe. Analyzers run: ${analyzersRun.join(", ")}`,
+    };
+  }
   return {
-    name: "trust detector skillspector",
+    name: "trust detector cisco",
     verdict: "pass",
-    detail: `SkillSpector Docker static scan completed with --no-llm. No findings != safe. Analyzers run: ${analyzersRun.join(", ")}`,
+    detail: `Cisco AI Defense skill-scanner static scan completed through uvx --offline defaults-only. No findings != safe. Analyzers run: ${analyzersRun.join(", ")}`,
   };
 }
 
@@ -389,6 +611,23 @@ function isRequired(
   return requiredDetectors.includes(detector);
 }
 
+const TRUST_DETECTORS: TrustDetector[] = [
+  {
+    name: "skillspector",
+    analyzerLabel: "skillspector@docker",
+    checkAvailable: checkSkillspectorAvailable,
+    runScan: runSkillspectorScan,
+    ruleMap: SKILLSPECTOR_RULE_MAP,
+  },
+  {
+    name: "cisco",
+    analyzerLabel: "cisco@uvx",
+    checkAvailable: checkCiscoAvailable,
+    runScan: runCiscoSkillScan,
+    ruleMap: CISCO_RULE_MAP,
+  },
+];
+
 export async function runTrustDetectors(
   root: string,
   options: TrustDetectorOptions,
@@ -397,70 +636,51 @@ export async function runTrustDetectors(
   const checks: Check[] = [];
   const analyzersRun: string[] = [];
 
-  const version = await options.run(dockerVersionArgv(options.platform), {
-    env: scrubFetchEnv(options.env),
-    timeoutMs: 30_000,
-  });
-  if (version.spawnError || version.code === 127 || version.code !== 0) {
-    checks.push(
-      unavailableCheck(
-        "skillspector",
-        version.stderr || version.stdout || `docker exit ${version.code ?? "signal"}`,
-        options.posture,
-        isRequired("skillspector", required),
-      ),
-    );
-  } else {
-    const image = await options.run(skillspectorImageInspectArgv(options.platform), {
-      env: scrubFetchEnv(options.env),
-      timeoutMs: 30_000,
-    });
-    if (
-      image.spawnError ||
-      image.code === 127 ||
-      image.code !== 0 ||
-      image.stdout.trim().length === 0
-    ) {
+  for (const detector of TRUST_DETECTORS) {
+    const unavailable = await detector.checkAvailable(options.run, options.platform, options.env);
+    if (unavailable !== undefined) {
       checks.push(
         unavailableCheck(
-          "skillspector",
-          image.stderr || image.stdout || "skillspector Docker image not present locally",
+          detector.name,
+          unavailable,
           options.posture,
-          isRequired("skillspector", required),
+          isRequired(detector.name, required),
         ),
       );
-    } else {
-      const scan = await options.run(skillspectorDockerRunArgv(options.platform, root), {
-        env: scrubFetchEnv(options.env),
-        timeoutMs: 120_000,
-      });
-      if (scan.spawnError || scan.code === 127 || scan.code !== 0) {
-        checks.push(
-          unavailableCheck(
-            "skillspector",
-            scan.stderr || scan.stdout || `detector exit ${scan.code ?? "signal"}`,
-            options.posture,
-            isRequired("skillspector", required),
-          ),
-        );
-      } else {
-        const mapped = sarifChecks(scan.stdout, root, options.posture);
-        if (mapped === undefined) {
-          checks.push(
-            unavailableCheck(
-              "skillspector",
-              "detector did not emit valid SARIF",
-              options.posture,
-              isRequired("skillspector", required),
-            ),
-          );
-        } else {
-          analyzersRun.push(SKILLSPECTOR_ANALYZER);
-          const completedAnalyzers = ["aih-native", ...analyzersRun];
-          checks.push(analyzerPassCheck(completedAnalyzers), ...mapped);
-        }
-      }
+      continue;
     }
+
+    let sarifText: string;
+    try {
+      sarifText = await detector.runScan(options.run, options.platform, options.env, root);
+    } catch (error) {
+      checks.push(
+        unavailableCheck(
+          detector.name,
+          (error as Error).message,
+          options.posture,
+          isRequired(detector.name, required),
+        ),
+      );
+      continue;
+    }
+
+    const mapped = sarifChecks(sarifText, root, options.posture, detector);
+    if (mapped === undefined) {
+      checks.push(
+        unavailableCheck(
+          detector.name,
+          "detector did not emit valid SARIF",
+          options.posture,
+          isRequired(detector.name, required),
+        ),
+      );
+      continue;
+    }
+
+    analyzersRun.push(detector.analyzerLabel);
+    const completedAnalyzers = ["aih-native", ...analyzersRun];
+    checks.push(analyzerPassCheck(detector, completedAnalyzers), ...mapped);
   }
 
   return { checks, analyzersRun };

@@ -27,9 +27,15 @@ function write(root: string, rel: string, content: string): void {
 
 function runAih(args: string[]) {
   const tsx = join(process.cwd(), "node_modules", "tsx", "dist", "cli.mjs");
+  const detectorFreePath = dirname(process.execPath);
   return spawnSync(process.execPath, [tsx, "src/cli.ts", ...args], {
     cwd: process.cwd(),
-    env: { ...process.env, AIH_TRUST_INTERNAL_SCOPES: "" },
+    env: {
+      ...process.env,
+      AIH_TRUST_INTERNAL_SCOPES: "",
+      Path: detectorFreePath,
+      PATH: detectorFreePath,
+    },
     encoding: "utf8",
   });
 }

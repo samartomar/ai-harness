@@ -441,6 +441,7 @@ describe("Check.code — invariants", () => {
       "ready.blocked": true,
       "trust.fetch-blocked": true,
       "trust.detector-unavailable": true,
+      "trust.cisco-finding": true,
       "trust.hidden-unicode": true,
       "trust.prompt-injection": true,
       "trust.source-changed": true,

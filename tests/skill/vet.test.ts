@@ -73,15 +73,25 @@ function license(): void {
   write("LICENSE", "MIT License\n\nCopyright (c) Example\n");
 }
 
-/** Stubs the full SkillSpector Docker ladder so no detector-unavailable skip degrades the verdict. */
+/** Stubs the full optional detector ladder so no detector-unavailable skip degrades the verdict. */
 function detectorRunner(): Runner {
   return fakeRunner((argv) => {
-    if (argv[0] !== "docker") return undefined;
-    if (argv[1] === "--version") return { code: 0, stdout: "Docker version 27\n" };
-    if (argv[1] === "image" && argv[2] === "inspect") {
-      return { code: 0, stdout: "sha256:skillspector\n" };
+    if (argv[0] === "docker") {
+      if (argv[1] === "--version") return { code: 0, stdout: "Docker version 27\n" };
+      if (argv[1] === "image" && argv[2] === "inspect") {
+        return { code: 0, stdout: "sha256:skillspector\n" };
+      }
+      if (argv[1] === "run") return { code: 0, stdout: JSON.stringify({ runs: [] }) };
     }
-    if (argv[1] === "run") return { code: 0, stdout: JSON.stringify({ runs: [] }) };
+    if (argv[0] === "uvx") {
+      if (argv.includes("--version")) return { code: 0, stdout: "skill-scanner 2.0.12\n" };
+      if (argv.includes("skill-scanner") && argv.includes("scan")) {
+        const out = argv[argv.indexOf("--output-sarif") + 1];
+        if (out === undefined) return { code: 1, stderr: "missing --output-sarif" };
+        writeFileSync(out, JSON.stringify({ runs: [] }), "utf8");
+        return { code: 0, stdout: `Report saved to: ${out}\n` };
+      }
+    }
     return undefined;
   });
 }
@@ -110,7 +120,7 @@ describe("skillVetCommand", () => {
     expect(digest.data.verdict).toBe("GREEN");
     expect(digest.data.reasons).toEqual([]);
     expect(digest.data.shape?.skillDirs).toEqual(["clean"]);
-    expect(digest.data.analyzersRun).toEqual(["aih-native", "skillspector@docker"]);
+    expect(digest.data.analyzersRun).toEqual(["aih-native", "skillspector@docker", "cisco@uvx"]);
     expect(digest.text).toContain("Verdict: GREEN");
     expect(digest.text).toContain("Skill directories: clean");
     expect(existsSync(join(workspace, ".aih"))).toBe(false);
@@ -142,7 +152,7 @@ describe("skillVetCommand", () => {
     expect(evidence.verdict).toBe("GREEN");
     expect(evidence.reasons).toEqual([]);
     expect(evidence.shape.skillDirs).toEqual(["clean"]);
-    expect(evidence.analyzersRun).toEqual(["aih-native", "skillspector@docker"]);
+    expect(evidence.analyzersRun).toEqual(["aih-native", "skillspector@docker", "cisco@uvx"]);
     expect(evidence.checks).toEqual(
       expect.arrayContaining([expect.objectContaining({ name: "skill license", verdict: "pass" })]),
     );
