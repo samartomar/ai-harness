@@ -670,4 +670,25 @@ describe("workspace — write-once executor behavior", () => {
     expect(raw.edges).toHaveLength(1);
     expect(raw.unknownFutureField).toEqual({ keep: true });
   });
+
+  it("honors explicit --repos paths even when an existing object id matches another path", async () => {
+    child("api");
+    writeFileSync(
+      join(parent, ".aih-workspace.json"),
+      JSON.stringify(
+        {
+          contextDir: "ai-coding",
+          repos: [{ id: "api", path: "services/api", kind: "backend" }],
+        },
+        null,
+        2,
+      ),
+    );
+    const ctx = makeCtx({ repos: "api" }, true);
+
+    await executePlan(await command.plan(ctx), ctx);
+
+    const raw = JSON.parse(readFileSync(join(parent, ".aih-workspace.json"), "utf8"));
+    expect(raw.repos).toEqual([{ id: "api", path: "api", router: "ai-coding/RULE_ROUTER.md" }]);
+  });
 });
