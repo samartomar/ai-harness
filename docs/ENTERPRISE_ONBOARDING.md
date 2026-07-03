@@ -12,6 +12,13 @@
    aih verify-release
    ```
 
+   Expected healthy output: npm signature verification passes, the GitHub Release
+   checksum file is fetched, the cosign bundle over `SHA256SUMS.txt` verifies, and
+   the installed tarball hash matches the checksum file. If `npm`, `gh`, or
+   `cosign` is missing, the command reports an explicit skip for that leg rather
+   than a pass; install the missing verifier before treating the release as fully
+   verified.
+
 2. Run workstation readiness and repair:
 
    ```bash
@@ -31,7 +38,13 @@
 
    ```bash
    npm run dev -- policy validate --root .
+   npm run dev -- policy verify --against <sha256-or-bundle> --root .
    ```
+
+   Treat the trusted policy channel as either the committed `aih-org-policy.json`
+   reviewed in the repo or a signed/distributed bundle whose hash you pin out of
+   band. `AIH_ORG_POLICY` is an emergency override, not a silent replacement:
+   `aih doctor` and `aih report` surface it as policy-source integrity signal.
 
 5. Gate PRs with the repo checks:
 
@@ -39,7 +52,15 @@
    npm run verify
    npm run dev -- bootstrap-ai --verify
    npm run dev -- secrets --verify
+   npm run dev -- evidence build --posture enterprise --sign gh --require-signature --apply
+   npm run dev -- verify-bundle --bundle .aih/evidence-bundle --signer gh --repo <owner/repo> --require-signature
    ```
+
+   Evidence bundle failure modes are intentionally loud in enterprise posture:
+   missing `--sign`, missing verifier identity (`--repo` for GitHub attestations),
+   missing local signing/verifier tools, or a failed verification produces a coded
+   `bundle.signature` finding instead of a quiet skip. For cosign, use your key or
+   OIDC identity material consistently at signing and verification time.
 
 6. Before a PR is marked ready or merged, run and record the required review
    skills/agents: code review, security review, and the domain reviewer for the
@@ -166,3 +187,6 @@ Record these in every PR before ready-for-review or merge:
 For release PRs, include `aih verify-release <version>` output after the release is
 published. For schema changes, link the SchemaStore submission PR after the schema
 has shipped.
+
+See [CONTROL_MATRIX.md](CONTROL_MATRIX.md) for the public claim-to-test matrix that
+security and platform reviewers can use during adoption review.

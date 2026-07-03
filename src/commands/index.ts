@@ -18,7 +18,7 @@ import { marketplaceBuildCommand } from "../marketplace/build.js";
 import { marketplacePublishCommand } from "../marketplace/publish.js";
 import { marketplaceValidateCommand } from "../marketplace/validate.js";
 import { command as mcp } from "../mcp/index.js";
-import { policyValidateCommand } from "../org-policy/validate.js";
+import { policyValidateCommand, policyVerifyCommand } from "../org-policy/validate.js";
 import {
   packAddCommand,
   packInitCommand,
@@ -106,7 +106,61 @@ export const READONLY: CommandSpec[] = [doctor, status, verifyBundle, verifyRele
 export const ALL_COMMANDS: CommandSpec[] = [...CAPABILITIES, ...READONLY];
 
 /** Parent command groups registered below as bare commander groups (not CommandSpecs). */
-const PARENT_GROUPS = ["workspace", "trust", "skill", "pack", "marketplace", "policy", "evidence"];
+export const PARENT_GROUPS = [
+  "workspace",
+  "trust",
+  "skill",
+  "pack",
+  "marketplace",
+  "policy",
+  "evidence",
+] as const;
+
+export const GROUPED_COMMAND_SPECS = {
+  workspace: [workspaceAddCommand, workspaceSnapshot, workspacePlan],
+  trust: [
+    trustAllowCommand,
+    trustListCommand,
+    trustPinCommand,
+    trustScanCommand,
+    trustVerifyCommand,
+  ],
+  skill: [
+    skillVetCommand,
+    skillCardCommand,
+    skillApproveCommand,
+    skillInventoryCommand,
+    skillRemoveCommand,
+    skillQuarantineCommand,
+  ],
+  pack: [
+    packAddCommand,
+    packInitCommand,
+    packPlanCommand,
+    packRemoveEntryCommand,
+    packStatusCommand,
+    packUninstallCommand,
+    packValidateCommand,
+    packInstallCommand,
+  ],
+  marketplace: [marketplaceBuildCommand, marketplaceValidateCommand, marketplacePublishCommand],
+  policy: [policyValidateCommand, policyVerifyCommand],
+  evidence: [evidenceBuildCommand],
+} as const satisfies Record<(typeof PARENT_GROUPS)[number], readonly CommandSpec[]>;
+
+/** Every built-in CommandSpec, including nested specs under parent groups. */
+export const ALL_COMMAND_SPECS: CommandSpec[] = [
+  ...ALL_COMMANDS,
+  ...Object.values(GROUPED_COMMAND_SPECS).flat(),
+];
+
+/** Stable command paths for the spec registry completeness guard. */
+export const ALL_COMMAND_SPEC_PATHS: ReadonlyArray<readonly string[]> = [
+  ...ALL_COMMANDS.map((spec) => [spec.name] as const),
+  ...Object.entries(GROUPED_COMMAND_SPECS).flatMap(([parent, specs]) =>
+    specs.map((spec) => [parent, spec.name] as const),
+  ),
+];
 
 /**
  * Names commander itself claims on every program: the implicit `help`
@@ -528,7 +582,7 @@ export function registerCommands(
   const policy = program
     .command("policy")
     .description("Validate the org policy — the local aih-org-policy.json or a policy-bundle");
-  for (const spec of [policyValidateCommand]) {
+  for (const spec of [policyValidateCommand, policyVerifyCommand]) {
     const sub = policy.command(spec.name).description(spec.summary);
     addSharedFlags(sub);
     for (const o of spec.options ?? []) {

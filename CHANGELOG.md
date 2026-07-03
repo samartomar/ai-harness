@@ -13,6 +13,16 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `packs/docs-quality/betterdoc/` and installable via `aih pack install --pack
   docs-quality --apply`. Documented in
   [docs/product/docs-quality-pack.md](docs/product/docs-quality-pack.md). (#166)
+- **CONTROL_MATRIX.md** maps public claims to implementation seams and regression
+  tests, including posture grading and offline/no-default-phone-home boundaries.
+  (#160)
+- **Canonical command-spec registry proof** now enumerates grouped subcommands and
+  uses that registry in plan-purity and apply-time exec-locality tests. (#161)
+- **Evidence bundle harness provenance block** records aih version/release refs,
+  package name, checksum/signature asset references, npm provenance status, and the
+  verification command in `evidence.json`. (#162)
+- **`aih policy verify --against <sha256|bundle>`** verifies the active org policy
+  against a pinned hash, policy-bundle envelope, or fleet-bundle policy copy. (#163)
 
 ### Changed
 
@@ -21,6 +31,14 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   detector (SkillSpector/Cisco) no longer forces UNKNOWN for a repo-relative path,
   so first-party skills are approvable without Docker. Remote and out-of-repo
   sources are unchanged, and native RED plus shape/license rules still apply. (#166)
+
+### Security
+
+- Evidence and fleet-bundle signatures can now be required with
+  `--require-signature`; enterprise evidence builds fail closed on missing or
+  failed signing with coded `bundle.signature` findings. (#162)
+- `aih doctor` and `aih report` surface active org-policy source, `AIH_ORG_POLICY`
+  overrides, and local HEAD drift as policy-integrity signals. (#163)
 
 ## [1.2.1] - 2026-07-03
 

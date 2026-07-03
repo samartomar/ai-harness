@@ -2,8 +2,9 @@ import { Command } from "commander";
 import { builtinCommandNames, registerCommands } from "./commands/index.js";
 import type { CommandSpec } from "./internals/plan.js";
 import { loadExternalCommands } from "./plugins/registry.js";
+import { VERSION } from "./version.js";
 
-export const VERSION = "1.2.1";
+export { VERSION } from "./version.js";
 
 /**
  * Build the configured commander program. Imported by both the CLI entry and

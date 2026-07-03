@@ -192,26 +192,36 @@ publish without a signer is refused; that's just a build); `validate --require-s
 
 ## aih policy
 
-Schema gates for the org policy. `validate` is the **read-only CI gate** over the committed
-`aih-org-policy.json` — a missing file is a friendly skip (vibe repos carry no org policy), a
-parse/schema failure is a coded finding (`org-policy.invalid`) — or, under `--bundle <path>`, over
-a distributable **policy-bundle envelope** (`org-policy.bundle-invalid`, naming which layer failed:
-the envelope or the embedded policy).
+Schema and trusted-channel gates for the org policy. `validate` is the **read-only CI gate** over
+the committed `aih-org-policy.json` — a missing file is a friendly skip (vibe repos carry no org
+policy), a parse/schema failure is a coded finding (`org-policy.invalid`) — or, under
+`--bundle <path>`, over a distributable **policy-bundle envelope**
+(`org-policy.bundle-invalid`, naming which layer failed: the envelope or the embedded policy).
+`verify --against <sha256|bundle>` compares the active policy (including an explicit
+`AIH_ORG_POLICY` override) with a pinned raw SHA-256, a policy-bundle JSON envelope, or a fleet
+bundle directory containing `files/aih-org-policy.json`; mismatches fail closed as
+`org-policy.drift`.
 
 ## aih evidence
 
 Package the **audit trail aih already emits** — approval lock, packs manifest, trust lock, skill
 cards, vet evidence, run logs, report/SARIF outputs — into one deterministic **evidence bundle**
 (`build`): the exact fleet-bundle layout (`files/<rel>` copies, `manifest.json`, `SHA256SUMS`,
-optional best-effort `--sign cosign|gh`) plus `evidence.json`, a typed kind index. Byte-identical
-across builds from identical inputs (no wall-clock); absent artifact kinds are skipped silently;
-re-check any copy with `aih verify-bundle --bundle <out>`.
+optional `--sign cosign|gh`) plus `evidence.json`, a typed kind index and harness provenance block
+(`aihVersion`, release tag, package name, checksum/signature asset refs, and verification command).
+Byte-identical across builds from identical inputs (no wall-clock); absent artifact kinds are
+skipped silently. At enterprise posture, or with `--require-signature`, signing is strict: a missing
+signer, missing local signing tool, or failed signing exec emits coded `bundle.signature` evidence
+instead of being treated as best effort. Re-check any copy with
+`aih verify-bundle --bundle <out> --require-signature`.
 
 ## aih bundle
 
 Build a deterministic **fleet bundle** — the repo contract, org policy, and managed config packaged
-with a checksum manifest (and an optional `gh`-attested signature) for distribution to a team or
-CI. `aih verify-bundle` re-checks a bundle against its checksums + signature.
+with a checksum manifest (and optional `cosign` or `gh` signing) for distribution to a team or CI.
+`aih verify-bundle` always re-checks checksums; `--require-signature` turns a missing signature,
+missing verifier tool, missing GitHub `--repo`, or failed signature verification into a coded
+`bundle.signature` failure instead of an optional skip.
 
 ## aih verify-release
 

@@ -192,6 +192,31 @@ describe("verify-bundle command", () => {
     ]);
   });
 
+  it("keeps missing signatures optional unless --require-signature is set", async () => {
+    const root = join(dir, "unsigned-bundle");
+    mkdirSync(root, { recursive: true });
+    writeFileSync(join(root, "SHA256SUMS"), `${sha256Hex("ok\n")}  files/a.txt\n`);
+
+    const optionalCtx = ctx({ options: { bundle: root } });
+    const optionalPlan = await verifyCommand.plan(optionalCtx);
+    const optionalProbe = optionalPlan.actions.find(
+      (a) => a.kind === "probe" && a.describe === "fleet bundle signature",
+    );
+    const optional =
+      optionalProbe?.kind === "probe" ? await optionalProbe.run(optionalCtx) : undefined;
+    expect(optional?.verdict).toBe("skip");
+    expect(optional?.code).toBeUndefined();
+
+    const strictCtx = ctx({ options: { bundle: root, requireSignature: true } });
+    const strictPlan = await verifyCommand.plan(strictCtx);
+    const strictProbe = strictPlan.actions.find(
+      (a) => a.kind === "probe" && a.describe === "fleet bundle signature",
+    );
+    const strict = strictProbe?.kind === "probe" ? await strictProbe.run(strictCtx) : undefined;
+    expect(strict?.verdict).toBe("fail");
+    expect(strict?.code).toBe("bundle.signature");
+  });
+
   it("verifies GitHub attestations with gh when requested", async () => {
     const root = join(dir, "gh-bundle");
     mkdirSync(root, { recursive: true });
@@ -220,5 +245,23 @@ describe("verify-bundle command", () => {
       "--repo",
       "samartomar/ai-harness",
     ]);
+  });
+
+  it("fails strict GitHub attestation verification when --repo is missing", async () => {
+    const root = join(dir, "gh-bundle");
+    mkdirSync(root, { recursive: true });
+    writeFileSync(join(root, "SHA256SUMS"), `${sha256Hex("ok\n")}  files/a.txt\n`);
+    const verifyCtx = ctx({
+      options: { bundle: root, signer: "gh", requireSignature: true },
+    });
+    const p = await verifyCommand.plan(verifyCtx);
+    const probe = p.actions.find(
+      (a) => a.kind === "probe" && a.describe === "fleet bundle signature",
+    );
+    const check = probe?.kind === "probe" ? await probe.run(verifyCtx) : undefined;
+
+    expect(check?.verdict).toBe("fail");
+    expect(check?.code).toBe("bundle.signature");
+    expect(check?.detail).toContain("--repo");
   });
 });

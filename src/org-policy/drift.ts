@@ -1,13 +1,23 @@
+import { createHash } from "node:crypto";
 import { resolve } from "node:path";
 import { postureGradeCheck } from "../config/governance.js";
 import type { Posture } from "../config/posture.js";
 import { readIfExists } from "../internals/fsxn.js";
+import { gitRead } from "../internals/git.js";
 import { isPlainObject, parseJsoncText } from "../internals/merge.js";
-import { type PlanContext, type ProbeAction, probe, type WriteAction } from "../internals/plan.js";
+import {
+  type DigestAction,
+  digest,
+  type PlanContext,
+  type ProbeAction,
+  probe,
+  type WriteAction,
+} from "../internals/plan.js";
 import { ensureTrailingNewline } from "../internals/render.js";
 import type { Check } from "../internals/verify.js";
+import { AIH_ORG_POLICY_FILE } from "./constants.js";
 import { orgPolicyProjectionActions } from "./project.js";
-import { readOrgPolicy } from "./schema.js";
+import { orgPolicyPath, readOrgPolicy } from "./schema.js";
 
 const POSTURE_RANK: Record<Posture, number> = { vibe: 0, team: 1, enterprise: 2 };
 
@@ -146,6 +156,154 @@ function invalidPolicyProbe(error: unknown): ProbeAction {
     code: "org-policy.drift",
     fingerprint: "org-policy-drift:policy-parse",
   }));
+}
+
+function sha256(text: string): string {
+  return createHash("sha256").update(text, "utf8").digest("hex");
+}
+
+function policySource(ctx: PlanContext): {
+  kind: "repo-default" | "env-override";
+  display: string;
+  abs: string;
+} {
+  const override = ctx.env.AIH_ORG_POLICY?.trim();
+  if (override !== undefined && override.length > 0) {
+    return {
+      kind: "env-override",
+      display: override.replace(/\\/g, "/"),
+      abs: orgPolicyPath(ctx.root, ctx.env),
+    };
+  }
+  return {
+    kind: "repo-default",
+    display: AIH_ORG_POLICY_FILE,
+    abs: orgPolicyPath(ctx.root, ctx.env),
+  };
+}
+
+function activePosture(ctx: PlanContext): Posture {
+  return ctx.posture ?? "vibe";
+}
+
+function sourceCheck(ctx: PlanContext): Check {
+  const source = policySource(ctx);
+  if (source.kind === "repo-default") {
+    const present = readIfExists(source.abs) !== undefined;
+    return {
+      name: "org-policy source",
+      verdict: present ? "pass" : "skip",
+      detail: present
+        ? `policy source: default repo file ${AIH_ORG_POLICY_FILE}`
+        : `policy source: default repo file ${AIH_ORG_POLICY_FILE} absent`,
+    };
+  }
+
+  return postureGradeCheck(
+    {
+      name: "org-policy source",
+      verdict: "fail",
+      code: "org-policy.drift",
+      detail:
+        `policy source: AIH_ORG_POLICY env override (${source.display}); ` +
+        "team/enterprise control planes should use a trusted managed channel or an explicit `aih policy verify --against <pin>` gate",
+      location: { uri: source.display },
+      fingerprint: "org-policy-source:env-override",
+    },
+    "verify",
+    activePosture(ctx),
+  );
+}
+
+async function headDriftCheck(ctx: PlanContext): Promise<Check> {
+  const source = policySource(ctx);
+  if (source.kind !== "repo-default") {
+    return {
+      name: "org-policy HEAD drift",
+      verdict: "skip",
+      detail: `HEAD drift checks the default ${AIH_ORG_POLICY_FILE}; active source is AIH_ORG_POLICY (${source.display})`,
+    };
+  }
+  const local = readIfExists(source.abs);
+  const head = await gitRead(ctx, ["show", `HEAD:${AIH_ORG_POLICY_FILE}`]);
+  if (local === undefined && head === undefined) {
+    return {
+      name: "org-policy HEAD drift",
+      verdict: "skip",
+      detail: `${AIH_ORG_POLICY_FILE} is not present locally or in HEAD`,
+    };
+  }
+  if (head === undefined) {
+    return {
+      name: "org-policy HEAD drift",
+      verdict: "skip",
+      detail: `${AIH_ORG_POLICY_FILE} is not tracked in HEAD; use a pinned bundle/hash for enterprise enforcement`,
+    };
+  }
+  if (local === undefined) {
+    return postureGradeCheck(
+      {
+        name: "org-policy HEAD drift",
+        verdict: "fail",
+        code: "org-policy.drift",
+        detail: `${AIH_ORG_POLICY_FILE} is tracked in HEAD but missing from the working tree`,
+        location: { uri: AIH_ORG_POLICY_FILE },
+        fingerprint: "org-policy-head-drift:missing",
+      },
+      "verify",
+      activePosture(ctx),
+    );
+  }
+  const localHash = sha256(local);
+  const headHash = sha256(ensureTrailingNewline(head));
+  if (localHash === headHash) {
+    return {
+      name: "org-policy HEAD drift",
+      verdict: "pass",
+      detail: `${AIH_ORG_POLICY_FILE} matches HEAD (${localHash.slice(0, 12)}...)`,
+    };
+  }
+  return postureGradeCheck(
+    {
+      name: "org-policy HEAD drift",
+      verdict: "fail",
+      code: "org-policy.drift",
+      detail:
+        `${AIH_ORG_POLICY_FILE} differs from HEAD (` +
+        `local ${localHash.slice(0, 12)}..., HEAD ${headHash.slice(0, 12)}...); ` +
+        "this catches uncommitted local control-plane edits only — use `aih policy verify --against <pin>` for branch/commit weakening",
+      location: { uri: AIH_ORG_POLICY_FILE },
+      fingerprint: "org-policy-head-drift:hash",
+    },
+    "verify",
+    activePosture(ctx),
+  );
+}
+
+export function orgPolicyIntegrityProbes(_ctx: PlanContext): ProbeAction[] {
+  return [
+    probe("org-policy source", (ctx) => sourceCheck(ctx)),
+    probe("org-policy HEAD drift", (ctx) => headDriftCheck(ctx)),
+  ];
+}
+
+export async function orgPolicyIntegrityDigest(
+  ctx: PlanContext,
+): Promise<DigestAction | undefined> {
+  const checks = [];
+  for (const p of orgPolicyIntegrityProbes(ctx)) checks.push(await p.run(ctx));
+  if (checks.every((check) => check.verdict === "skip")) return undefined;
+  const failed = checks.filter((check) => check.verdict === "fail").length;
+  const body = [
+    "| Row | Verdict | Signal |",
+    "|---|---|---|",
+    ...checks.map(
+      (check) => `| ${check.name} | ${check.verdict.toUpperCase()} | ${check.detail ?? ""} |`,
+    ),
+  ].join("\n");
+  return digest(`Org policy integrity — ${failed} fail · ${checks.length - failed} visible`, body, {
+    checks,
+  });
 }
 
 export function orgPolicyDriftProbes(ctx: PlanContext): ProbeAction[] {

@@ -5,6 +5,7 @@ import { readIfExists, readRegularFile } from "../internals/fsxn.js";
 import {
   type Action,
   type CommandSpec,
+  type ExecAction,
   exec,
   type PlanContext,
   plan,
@@ -172,23 +173,44 @@ function sha256Sums(files: BundleFile[]): string {
   return `${files.map((file) => `${file.sha256}  files/${file.path}`).join("\n")}\n`;
 }
 
+function signatureFailureCheck(
+  what: string,
+  tool: string,
+): NonNullable<ExecAction["failureCheck"]> {
+  return (result) => ({
+    name: `${what} signature`,
+    verdict: "fail",
+    code: "bundle.signature",
+    detail:
+      (result.stderr.trim() || result.stdout.trim() || `${tool} exited ${result.code}`).slice(
+        0,
+        800,
+      ) || `${tool} did not produce a verifiable signature`,
+  });
+}
+
 /**
- * Best-effort SHA256SUMS signing (`allowFailure: true` — the fleet-bundle idiom,
- * distinct from the marketplace's fail-loud publish signing). Shared with
- * `aih evidence build`, which emits the same bundle-standard layout.
+ * SHA256SUMS signing. Best-effort by default (`allowFailure: true` — the
+ * fleet-bundle idiom), with a strict mode for enterprise evidence gates. Shared
+ * with `aih evidence build`, which emits the same bundle-standard layout.
  */
 export function signAction(
   out: string,
   signer: unknown,
   what = "fleet bundle",
+  opts: { allowFailure?: boolean } = {},
 ): Action | undefined {
   const sums = bundlePath(out, CHECKSUMS_FILE);
   const sig = bundlePath(out, SIGNATURE_FILE);
+  const allowFailure = opts.allowFailure ?? true;
   if (signer === "cosign") {
     return exec(
       `sign ${what} checksums with cosign`,
       ["cosign", "sign-blob", "--yes", "--output-signature", sig, sums],
-      { allowFailure: true },
+      {
+        allowFailure,
+        failureCheck: signatureFailureCheck(what, "cosign"),
+      },
     );
   }
   if (signer === "gh") {
@@ -196,7 +218,8 @@ export function signAction(
       `sign ${what} checksums with GitHub attestations`,
       ["gh", "attestation", "sign", sums],
       {
-        allowFailure: true,
+        allowFailure,
+        failureCheck: signatureFailureCheck(what, "gh attestation sign"),
       },
     );
   }
@@ -276,55 +299,57 @@ export function verifyBundleChecksums(bundleRoot: string): Check {
   return { name: "fleet bundle checksums", verdict: "pass", detail: "all checksums match" };
 }
 
+function requireSignature(ctx: PlanContext): boolean {
+  return ctx.options.requireSignature === true;
+}
+
+function signatureCheck(verdict: Check["verdict"], detail: string, require: boolean): Check {
+  return {
+    name: "fleet bundle signature",
+    verdict,
+    detail,
+    ...(verdict !== "pass" && require ? { code: "bundle.signature" as const } : {}),
+  };
+}
+
 async function verifyBundleSignature(ctx: PlanContext, bundleRoot: string): Promise<Check> {
   const sums = join(bundleRoot, CHECKSUMS_FILE);
+  const strict = requireSignature(ctx);
   if (ctx.options.signer === "gh") {
     const repo = typeof ctx.options.repo === "string" ? ctx.options.repo.trim() : "";
     if (repo.length === 0) {
-      return {
-        name: "fleet bundle signature",
-        verdict: "skip",
-        detail: "gh attestation verification requires --repo <owner/repo>",
-      };
+      return signatureCheck(
+        strict ? "fail" : "skip",
+        "gh attestation verification requires --repo <owner/repo>",
+        strict,
+      );
     }
     const res = await ctx.run(["gh", "attestation", "verify", sums, "--repo", repo]);
     if (res.spawnError) {
-      return { name: "fleet bundle signature", verdict: "skip", detail: "gh not found" };
+      return signatureCheck(strict ? "fail" : "skip", "gh not found", strict);
     }
     if (res.code === 0) {
-      return {
-        name: "fleet bundle signature",
-        verdict: "pass",
-        detail: "GitHub attestation verified SHA256SUMS",
-      };
+      return signatureCheck("pass", "GitHub attestation verified SHA256SUMS", strict);
     }
-    return {
-      name: "fleet bundle signature",
-      verdict: "fail",
-      detail: res.stderr.trim() || `gh attestation verify exited ${res.code}`,
-    };
+    return signatureCheck(
+      "fail",
+      res.stderr.trim() || `gh attestation verify exited ${res.code}`,
+      strict,
+    );
   }
 
   const sig = join(bundleRoot, SIGNATURE_FILE);
   if (readIfExists(sig) === undefined) {
-    return { name: "fleet bundle signature", verdict: "skip", detail: `${SIGNATURE_FILE} missing` };
+    return signatureCheck(strict ? "fail" : "skip", `${SIGNATURE_FILE} missing`, strict);
   }
   const res = await ctx.run(["cosign", "verify-blob", "--signature", sig, sums]);
   if (res.spawnError) {
-    return { name: "fleet bundle signature", verdict: "skip", detail: "cosign not found" };
+    return signatureCheck(strict ? "fail" : "skip", "cosign not found", strict);
   }
   if (res.code === 0) {
-    return {
-      name: "fleet bundle signature",
-      verdict: "pass",
-      detail: "cosign verified SHA256SUMS",
-    };
+    return signatureCheck("pass", "cosign verified SHA256SUMS", strict);
   }
-  return {
-    name: "fleet bundle signature",
-    verdict: "fail",
-    detail: res.stderr.trim() || `cosign exited ${res.code}`,
-  };
+  return signatureCheck("fail", res.stderr.trim() || `cosign exited ${res.code}`, strict);
 }
 
 function verifyPlan(ctx: PlanContext) {
@@ -374,6 +399,11 @@ export const verifyCommand: CommandSpec = {
     {
       flags: "--repo <owner/repo>",
       description: "GitHub repository identity for --signer gh attestation verification",
+    },
+    {
+      flags: "--require-signature",
+      description:
+        "fail instead of skip when bundle signature/provenance is missing or unverifiable",
     },
   ],
   plan: verifyPlan,
