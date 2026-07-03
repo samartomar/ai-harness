@@ -1,4 +1,4 @@
-import { join, posix } from "node:path";
+import { join } from "node:path";
 import { readIfExists } from "../internals/fsxn.js";
 import { isPlainObject, parseJsoncText } from "../internals/merge.js";
 
@@ -257,8 +257,9 @@ export function workspaceReposFromPaths(
   paths: readonly string[],
   router = defaultRouter(),
 ): WorkspaceRepo[] {
+  const normalizedRouter = normalizeWorkspacePath(router, "workspace repo router");
   return paths.map((raw) => {
     const path = normalizeWorkspacePath(raw, "workspace repo path");
-    return { id: idFromPath(path), path, router: posix.normalize(router).replace(/\\/g, "/") };
+    return { id: idFromPath(path), path, router: normalizedRouter };
   });
 }

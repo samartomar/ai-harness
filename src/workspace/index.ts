@@ -20,15 +20,6 @@ import {
   workspaceRouterDoc,
 } from "./templates.js";
 
-function hasObjectRepos(raw: unknown): raw is { repos: unknown[] } {
-  return (
-    typeof raw === "object" &&
-    raw !== null &&
-    Array.isArray((raw as { repos?: unknown }).repos) &&
-    (raw as { repos: unknown[] }).repos.some((repo) => typeof repo === "object" && repo !== null)
-  );
-}
-
 /** Probe: is the child repo scaffolded (its canon present)? Absent → skip with the fix. */
 function childScaffoldedProbe(repo: string, dir: string): Action {
   return probe(`child ${repo} scaffolded`, (ctx: PlanContext): Check => {
@@ -55,25 +46,27 @@ async function workspacePlan(ctx: PlanContext): Promise<Plan> {
   // resolve() first: basename(".") is "." which would plan a "..code-workspace"
   // write that the executor's containment guard rejects as a parent escape.
   const name = basename(resolve(ctx.root)) || "workspace";
-  const repos = detectChildRepos(ctx.root, reposOption(ctx.options.repos));
+  const explicitRepos = reposOption(ctx.options.repos);
+  const repos = detectChildRepos(ctx.root, explicitRepos);
   const enableGit = ctx.options.git === true;
   const existing = readWorkspaceManifest(ctx.root, dir);
-  const normalizedRepos =
-    existing && existing.repos.length > 0
-      ? existing.repos
-      : workspaceReposFromPaths(repos, posix.join(dir, "RULE_ROUTER.md"));
+  const useExistingRepos = explicitRepos.length === 0 && existing && existing.repos.length > 0;
+  const normalizedRepos = useExistingRepos
+    ? existing.repos
+    : workspaceReposFromPaths(repos, posix.join(dir, "RULE_ROUTER.md"));
+  const repoPaths = normalizedRepos.map((repo) => repo.path);
   const edges = existing?.edges ?? [];
 
   const writes: WriteAction[] = [
     writeJson(
       ".aih-workspace.json",
-      hasObjectRepos(existing?.raw)
+      useExistingRepos
         ? { ...existing.raw, ...(enableGit ? { git: true } : {}) }
         : workspaceMarker(repos, dir, enableGit),
-      `workspace marker (multi-repo: ${repos.length > 0 ? repos.join(", ") : "no repos detected"})`,
+      `workspace marker (multi-repo: ${repoPaths.length > 0 ? repoPaths.join(", ") : "no repos detected"})`,
       { merge: true },
     ),
-    writeJson(`${name}.code-workspace`, codeWorkspace(repos), "VS Code multi-root workspace", {
+    writeJson(`${name}.code-workspace`, codeWorkspace(repoPaths), "VS Code multi-root workspace", {
       merge: true,
     }),
     writeText(
@@ -88,44 +81,44 @@ async function workspacePlan(ctx: PlanContext): Promise<Plan> {
     ),
     writeText(
       posix.join(dir, "cross-repo-architecture.md"),
-      crossRepoArchitectureDoc(name, repos, dir),
+      crossRepoArchitectureDoc(name, repoPaths, dir),
       "cross-repo architecture + feature map (write-once — you own it)",
       { once: true },
     ),
     writeText(
       posix.join(dir, "repo-discipline.md"),
-      repoDisciplineDoc(repos, dir),
+      repoDisciplineDoc(repoPaths, dir),
       "per-repo discipline routing (read a repo's canon before editing it)",
     ),
     writeText(
       "CLAUDE.md",
-      workspaceBootloader("Claude workspace", name, repos, dir),
+      workspaceBootloader("Claude workspace", name, repoPaths, dir),
       "Claude workspace bootloader → cross-repo canon",
     ),
     writeText(
       "AGENTS.md",
-      workspaceBootloader("agent workspace", name, repos, dir),
+      workspaceBootloader("agent workspace", name, repoPaths, dir),
       "AGENTS.md workspace bootloader (Codex/Kiro/… ) → cross-repo canon",
     ),
     writeJson(
       ".mcp.json",
-      spanningMcp(repos, (ctx.env.AIH_MCP_FS_VERSION ?? "").trim() || undefined),
-      `combined graph + filesystem MCP spanning ${repos.length} child repo(s), merged into any existing .mcp.json`,
+      spanningMcp(repoPaths, (ctx.env.AIH_MCP_FS_VERSION ?? "").trim() || undefined),
+      `combined graph + filesystem MCP spanning ${repoPaths.length} child repo(s), merged into any existing .mcp.json`,
       { merge: true },
     ),
   ];
-  if (enableGit) writes.push(workspaceGitignoreWrite(ctx.root, repos));
+  if (enableGit) writes.push(workspaceGitignoreWrite(ctx.root, repoPaths));
 
   const actions: Action[] = [
     ...writes,
     doc(
       "workspace next steps (run `aih init` per child)",
-      nextStepsDoc(name, repos, dir, enableGit),
+      nextStepsDoc(name, repoPaths, dir, enableGit),
     ),
     ...(enableGit ? await workspaceGitExecs(ctx, writes) : []),
   ];
 
-  for (const repo of repos) actions.push(childScaffoldedProbe(repo, dir));
+  for (const repo of repoPaths) actions.push(childScaffoldedProbe(repo, dir));
 
   return plan("workspace", ...actions);
 }

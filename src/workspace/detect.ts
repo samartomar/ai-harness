@@ -1,6 +1,15 @@
-import { existsSync, readdirSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, lstatSync, readdirSync, realpathSync } from "node:fs";
+import { isAbsolute, join, relative } from "node:path";
 import { AihError } from "../errors.js";
+
+function cleanPrintable(value: string, label: string): void {
+  if (/[\r\n\t|]/.test(value)) {
+    throw new AihError(
+      `${label} must be safe to print in workspace reports: ${value}`,
+      "AIH_WORKSPACE",
+    );
+  }
+}
 
 function normalizeRepoPath(raw: string): string {
   const value = raw.trim().replace(/\\/g, "/");
@@ -11,6 +20,7 @@ function normalizeRepoPath(raw: string): string {
       "AIH_WORKSPACE",
     );
   }
+  cleanPrintable(value, "workspace repo path");
   const parts = value.split("/").filter((p) => p.length > 0);
   if (parts.some((p) => p === "." || p === "..")) {
     throw new AihError(`workspace repo path must not traverse parents: ${raw}`, "AIH_WORKSPACE");
@@ -18,10 +28,21 @@ function normalizeRepoPath(raw: string): string {
   return parts.join("/");
 }
 
+function isContainedPath(parent: string, child: string): boolean {
+  const rel = relative(realpathSync(parent), realpathSync(child));
+  return rel.length === 0 || (!rel.startsWith("..") && !isAbsolute(rel));
+}
+
 function isGitRepo(parent: string, repo: string): boolean {
   const dir = join(parent, repo);
   try {
-    return statSync(dir).isDirectory() && existsSync(join(dir, ".git"));
+    const info = lstatSync(dir);
+    return (
+      !info.isSymbolicLink() &&
+      info.isDirectory() &&
+      isContainedPath(parent, dir) &&
+      existsSync(join(dir, ".git"))
+    );
   } catch {
     return false;
   }
@@ -61,14 +82,7 @@ export function detectChildRepos(parent: string, explicit: readonly string[] = [
   }
   return entries
     .filter((name) => !name.startsWith("."))
-    .filter((name) => {
-      const dir = join(parent, name);
-      try {
-        return statSync(dir).isDirectory() && existsSync(join(dir, ".git"));
-      } catch {
-        return false;
-      }
-    })
+    .filter((name) => isGitRepo(parent, name))
     .sort();
 }
 
