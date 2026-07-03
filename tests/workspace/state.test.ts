@@ -1,10 +1,22 @@
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { PlanContext } from "../../src/internals/plan.js";
 import type { Runner } from "../../src/internals/proc.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 import type { WorkspaceManifest, WorkspaceRepo } from "../../src/workspace/manifest.js";
 import { collectWorkspaceSnapshot, readWorkspaceRepoState } from "../../src/workspace/state.js";
+
+let parent: string;
+
+beforeEach(() => {
+  parent = mkdtempSync(join(tmpdir(), "aih-ws-state-"));
+});
+
+afterEach(() => {
+  rmSync(parent, { recursive: true, force: true });
+});
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -12,7 +24,7 @@ function delay(ms: number): Promise<void> {
 
 function ctx(run: Runner): PlanContext {
   return {
-    root: join("D:", "workspace-parent"),
+    root: parent,
     contextDir: "ai-coding",
     apply: false,
     verify: false,
@@ -26,6 +38,11 @@ function ctx(run: Runner): PlanContext {
 
 function repo(id: string): WorkspaceRepo {
   return { id, path: id, router: "ai-coding/RULE_ROUTER.md" };
+}
+
+function childRepo(id: string): WorkspaceRepo {
+  mkdirSync(join(parent, id, ".git"), { recursive: true });
+  return repo(id);
 }
 
 function manifest(repos: WorkspaceRepo[]): WorkspaceManifest {
@@ -61,9 +78,10 @@ describe("workspace state collection", () => {
       return { code: 0, stdout: "", stderr: "" };
     };
 
-    await readWorkspaceRepoState(ctx(run), repo("ui"));
+    const state = await readWorkspaceRepoState(ctx(run), childRepo("ui"));
 
     expect(maxActive).toBeGreaterThan(1);
+    expect(state).toMatchObject({ ahead: 2, behind: 1 });
   });
 
   it("collects repo snapshots concurrently across workspace children", async () => {
@@ -84,7 +102,7 @@ describe("workspace state collection", () => {
       return { code: 1, stdout: "", stderr: "" };
     };
 
-    await collectWorkspaceSnapshot(ctx(run), manifest([repo("ui"), repo("backend")]));
+    await collectWorkspaceSnapshot(ctx(run), manifest([childRepo("ui"), childRepo("backend")]));
 
     expect(maxInsideChecks).toBeGreaterThan(1);
   });
@@ -109,7 +127,7 @@ describe("workspace state collection", () => {
 
     await collectWorkspaceSnapshot(
       ctx(run),
-      manifest(["api", "docs", "infra", "shared", "ui", "web", "worker", "jobs"].map(repo)),
+      manifest(["api", "docs", "infra", "shared", "ui", "web", "worker", "jobs"].map(childRepo)),
     );
 
     expect(maxInsideChecks).toBeGreaterThan(1);

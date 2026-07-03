@@ -14,6 +14,7 @@ import {
 } from "../workspace/manifest.js";
 import {
   latestWorkspaceSnapshotPath,
+  mapWorkspaceRepos,
   readWorkspaceRepoState,
   type WorkspaceRepoState,
 } from "../workspace/state.js";
@@ -521,8 +522,8 @@ export async function workspaceReportDigest(ctx: PlanContext): Promise<DigestAct
           readIfExists(join(ctx.root, ".gitignore")),
         )
       : [];
-  const rows = await Promise.all(
-    manifest.repos.map((repo) => childRow(ctx, manifest, repo, missingIgnores)),
+  const rows = await mapWorkspaceRepos(manifest.repos, (repo) =>
+    childRow(ctx, manifest, repo, missingIgnores),
   );
   const contracts = manifest.edges.map((edge) => contractStatus(ctx.root, edge));
   const mcp = workspaceMcpStatus(ctx.root);

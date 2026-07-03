@@ -3,7 +3,7 @@ import { basename, join, posix, resolve } from "node:path";
 import type { Action, CommandSpec, Plan, PlanContext, WriteAction } from "../internals/plan.js";
 import { doc, plan, probe, writeJson, writeText } from "../internals/plan.js";
 import type { Check } from "../internals/verify.js";
-import { detectChildRepos, reposOption } from "./detect.js";
+import { checkWorkspaceChildPath, detectChildRepos, reposOption } from "./detect.js";
 import { workspaceGitExecs, workspaceGitignoreWrite } from "./git.js";
 import { readWorkspaceManifest, workspaceReposFromPaths } from "./manifest.js";
 import { snapshotCommand } from "./snapshot.js";
@@ -54,6 +54,7 @@ async function workspacePlan(ctx: PlanContext): Promise<Plan> {
   const normalizedRepos = useExistingRepos
     ? existing.repos
     : workspaceReposFromPaths(repos, posix.join(dir, "RULE_ROUTER.md"));
+  for (const repo of normalizedRepos) checkWorkspaceChildPath(ctx.root, repo.path);
   const repoPaths = normalizedRepos.map((repo) => repo.path);
   const edges = existing?.edges ?? [];
 

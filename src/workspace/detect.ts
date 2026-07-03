@@ -33,16 +33,42 @@ function isContainedPath(parent: string, child: string): boolean {
   return rel.length === 0 || (!rel.startsWith("..") && !isAbsolute(rel));
 }
 
-function isGitRepo(parent: string, repo: string): boolean {
-  const dir = join(parent, repo);
+export interface WorkspaceChildPathCheck {
+  path: string;
+  exists: boolean;
+  git: boolean;
+}
+
+export function checkWorkspaceChildPath(parent: string, repo: string): WorkspaceChildPathCheck {
+  const path = normalizeRepoPath(repo);
+  const dir = join(parent, path);
+  let info: ReturnType<typeof lstatSync>;
   try {
-    const info = lstatSync(dir);
-    return (
-      !info.isSymbolicLink() &&
-      info.isDirectory() &&
-      isContainedPath(parent, dir) &&
-      existsSync(join(dir, ".git"))
+    info = lstatSync(dir);
+  } catch {
+    return { path, exists: false, git: false };
+  }
+  if (info.isSymbolicLink()) {
+    throw new AihError(
+      `workspace repo path must be a real directory inside the parent, not a link: ${repo}`,
+      "AIH_WORKSPACE",
     );
+  }
+  if (!info.isDirectory()) {
+    throw new AihError(`workspace repo path must be a directory: ${repo}`, "AIH_WORKSPACE");
+  }
+  if (!isContainedPath(parent, dir)) {
+    throw new AihError(
+      `workspace repo path must stay inside the parent workspace: ${repo}`,
+      "AIH_WORKSPACE",
+    );
+  }
+  return { path, exists: true, git: existsSync(join(dir, ".git")) };
+}
+
+function isGitRepo(parent: string, repo: string): boolean {
+  try {
+    return checkWorkspaceChildPath(parent, repo).git;
   } catch {
     return false;
   }

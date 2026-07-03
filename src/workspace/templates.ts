@@ -28,9 +28,10 @@ export function codeWorkspace(repos: string[]): unknown {
  * "what is the blast radius across UI/backend/infra/docs?", while each child
  * repo still owns its own canon and local command flow.
  * Merged into any existing `.mcp.json`. The package is version-pinnable via
- * `AIH_MCP_FS_VERSION` (supply-chain control) — unset runs latest at MCP launch.
+ * `AIH_MCP_FS_VERSION` (supply-chain control) — unset uses the pinned default.
  */
 const EXACT_SEMVER_RE = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
+const DEFAULT_FILESYSTEM_MCP_VERSION = "2026.1.14";
 
 export function spanningMcp(repos: string[], version?: string): unknown {
   if (version && !EXACT_SEMVER_RE.test(version)) {
@@ -42,7 +43,7 @@ export function spanningMcp(repos: string[], version?: string): unknown {
   const pkg =
     version && version.length > 0
       ? `@modelcontextprotocol/server-filesystem@${version}`
-      : "@modelcontextprotocol/server-filesystem";
+      : `@modelcontextprotocol/server-filesystem@${DEFAULT_FILESYSTEM_MCP_VERSION}`;
   return {
     mcpServers: {
       // Pinned uvx form, identical to the per-repo server in src/mcp/servers.ts —
