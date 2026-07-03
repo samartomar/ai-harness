@@ -88,4 +88,31 @@ describe("workspace state collection", () => {
 
     expect(maxInsideChecks).toBeGreaterThan(1);
   });
+
+  it("caps concurrent repo git probes while collecting larger workspace snapshots", async () => {
+    let activeInsideChecks = 0;
+    let maxInsideChecks = 0;
+    const run: Runner = async (argv) => {
+      const tail = argv.slice(3).join(" ");
+      if (tail === "rev-parse --is-inside-work-tree") {
+        activeInsideChecks++;
+        maxInsideChecks = Math.max(maxInsideChecks, activeInsideChecks);
+        await delay(5);
+        activeInsideChecks--;
+        return { code: 0, stdout: "true\n", stderr: "" };
+      }
+      if (tail === "rev-parse --abbrev-ref HEAD") return { code: 0, stdout: "main\n", stderr: "" };
+      if (tail === "rev-parse --short HEAD") return { code: 0, stdout: "abc123\n", stderr: "" };
+      if (tail === "status --porcelain") return { code: 0, stdout: "", stderr: "" };
+      return { code: 1, stdout: "", stderr: "" };
+    };
+
+    await collectWorkspaceSnapshot(
+      ctx(run),
+      manifest(["api", "docs", "infra", "shared", "ui", "web", "worker", "jobs"].map(repo)),
+    );
+
+    expect(maxInsideChecks).toBeGreaterThan(1);
+    expect(maxInsideChecks).toBeLessThanOrEqual(4);
+  });
 });

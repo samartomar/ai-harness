@@ -1,4 +1,11 @@
-import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  symlinkSync,
+  utimesSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -222,6 +229,19 @@ describe("report workspace rollup", () => {
     expect(data.rows).toEqual([]);
   });
 
+  it("fails closed when a manifest repo path points through a link outside the workspace", async () => {
+    const external = mkdtempSync(join(tmpdir(), "aih-workspace-report-external-"));
+    try {
+      mkdirSync(join(external, ".git"), { recursive: true });
+      symlinkSync(external, join(root, "linked"), "junction");
+      writeWorkspaceManifest({ repos: ["linked"], contextDir: "ai-coding" });
+
+      await expect(command.plan(ctx())).rejects.toThrow(/real directory/);
+    } finally {
+      rmSync(external, { recursive: true, force: true });
+    }
+  });
+
   it("writes workspace report artifacts under .aih/workspace-report.*", async () => {
     writeWorkspaceManifest({ repos: ["ui"], contextDir: "ai-coding" });
     child("ui");
@@ -311,5 +331,39 @@ describe("report workspace rollup", () => {
     await command.plan(ctx({}, run));
 
     expect(maxInsideChecks).toBeGreaterThan(1);
+  });
+
+  it("caps concurrent child evidence git probes for larger workspaces", async () => {
+    const repos = ["api", "docs", "infra", "shared", "ui", "web", "worker", "jobs"];
+    writeWorkspaceManifest({ repos, contextDir: "ai-coding" });
+    for (const name of repos) child(name);
+    let activeInsideChecks = 0;
+    let maxInsideChecks = 0;
+    const run: Runner = async (argv) => {
+      if (argv[0] !== "git") return { code: 0, stdout: "", stderr: "" };
+      const tail = argv.slice(3).join(" ");
+      const repo = String(argv[2] ?? "")
+        .replace(/\\/g, "/")
+        .split("/")
+        .at(-1);
+      if (tail === "rev-parse --is-inside-work-tree") {
+        activeInsideChecks++;
+        maxInsideChecks = Math.max(maxInsideChecks, activeInsideChecks);
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        activeInsideChecks--;
+        return { code: 0, stdout: "true\n", stderr: "" };
+      }
+      if (tail === "rev-parse --abbrev-ref HEAD") return { code: 0, stdout: "main\n", stderr: "" };
+      if (tail === "rev-parse --short HEAD") {
+        return { code: 0, stdout: `${repo ?? "abc123"}\n`, stderr: "" };
+      }
+      if (tail === "status --porcelain") return { code: 0, stdout: "", stderr: "" };
+      return { code: 1, stdout: "", stderr: "" };
+    };
+
+    await command.plan(ctx({}, run));
+
+    expect(maxInsideChecks).toBeGreaterThan(1);
+    expect(maxInsideChecks).toBeLessThanOrEqual(4);
   });
 });

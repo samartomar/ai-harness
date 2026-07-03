@@ -230,6 +230,32 @@ describe("workspace.plan — generated artifacts", () => {
     expect(mcp.mcpServers.filesystem.args).toEqual(expect.arrayContaining(["packages/api"]));
   });
 
+  it("rejects manifest-declared repo paths that point through links outside the workspace", async () => {
+    const external = mkdtempSync(join(tmpdir(), "aih-ws-external-"));
+    try {
+      mkdirSync(join(external, ".git"), { recursive: true });
+      symlinkSync(external, join(parent, "linked"), "junction");
+      writeFileSync(
+        join(parent, ".aih-workspace.json"),
+        JSON.stringify({ contextDir: "ai-coding", repos: [{ id: "linked", path: "linked" }] }),
+      );
+
+      await expect(command.plan(makeCtx())).rejects.toThrow(/real directory/);
+    } finally {
+      rmSync(external, { recursive: true, force: true });
+    }
+  });
+
+  it("pins the filesystem MCP package by default", async () => {
+    child("ui");
+    const w = writesByPath((await command.plan(makeCtx())).actions);
+    const mcp = w.get(".mcp.json")?.json as { mcpServers: { filesystem: { args: string[] } } };
+
+    expect(mcp.mcpServers.filesystem.args).toContain(
+      "@modelcontextprotocol/server-filesystem@2026.1.14",
+    );
+  });
+
   it("pins the filesystem MCP package via AIH_MCP_FS_VERSION (AIH-SUPPLY-001)", async () => {
     child("ui");
     const base = makeCtx();
@@ -372,6 +398,22 @@ describe("workspace snapshot command", () => {
     );
 
     await expect(snapshotCommand.plan(makeCtx())).rejects.toThrow(/valid \.aih-workspace\.json/);
+  });
+
+  it("fails closed when a manifest repo path points through a link outside the workspace", async () => {
+    const external = mkdtempSync(join(tmpdir(), "aih-ws-external-"));
+    try {
+      mkdirSync(join(external, ".git"), { recursive: true });
+      symlinkSync(external, join(parent, "linked"), "junction");
+      writeFileSync(
+        join(parent, ".aih-workspace.json"),
+        JSON.stringify({ repos: ["linked"], contextDir: "ai-coding" }),
+      );
+
+      await expect(snapshotCommand.plan(makeCtx())).rejects.toThrow(/real directory/);
+    } finally {
+      rmSync(external, { recursive: true, force: true });
+    }
   });
 });
 
