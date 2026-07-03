@@ -27,8 +27,19 @@ import type {
   V9Wins,
 } from "./v9-types.js";
 
+/**
+ * HTML-escape a value for text AND (double/single-quoted) attributes — all five
+ * significant chars incl. quotes, so an interpolated value (skill name/source,
+ * branch, tool name) can't break out of a `title="…"` attribute. Quote-escaping in
+ * text content is harmless (renders identically).
+ */
 export function escHtml(s: string): string {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
 
 /** Deterministic thousands grouping (no locale). */

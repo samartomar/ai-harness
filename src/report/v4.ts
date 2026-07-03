@@ -107,8 +107,18 @@ function bag(digests: DigestAction[], prefix: string): Record<string, unknown> |
   return d?.data && typeof d.data === "object" ? (d.data as Record<string, unknown>) : undefined;
 }
 
+/**
+ * HTML-escape a value for text AND (double/single-quoted) attributes — all five
+ * significant chars incl. quotes, so an interpolated value can't break out of a
+ * `title="…"`/`aria-label="…"` attribute. Quote-escaping in text content is harmless.
+ */
 function escHtml(s: string): string {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
 
 /** A string[] field off a bag, filtered to strings (or [] when absent/malformed). */

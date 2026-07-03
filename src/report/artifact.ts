@@ -5,9 +5,20 @@ import { demoDigests } from "./demo.js";
 import { GEIST_FONT } from "./font-geist.js";
 import { EMBEDDED_FONTS } from "./fonts.js";
 
-/** HTML-escape text for safe embedding in markup. */
+/**
+ * HTML-escape a value for safe embedding in markup — text AND (double/single-quoted)
+ * attributes. Escapes all five significant characters incl. quotes, so an
+ * interpolated value (repo path, branch, tool output) can't break out of an
+ * attribute (`title="…"`, `data-tip="…"`, `aria-label="…"`). Over-escaping quotes in
+ * text content is harmless (renders identically).
+ */
 function esc(s: string): string {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
 
 /** Group digits with thousands separators, deterministically (no locale). */

@@ -18,8 +18,20 @@ import {
   supportDigest,
   winsDigest,
 } from "../../src/report/v9-panels.js";
-import { renderSkillGovernance } from "../../src/report/v9-render.js";
+import { escHtml, renderSkillGovernance } from "../../src/report/v9-render.js";
 import type { SupportTemplate } from "../../src/support/render.js";
+
+describe("escHtml — attribute-safe HTML escaping", () => {
+  it("escapes all five significant characters incl. quotes (attribute-safe)", () => {
+    expect(escHtml(`&<>"'`)).toBe("&amp;&lt;&gt;&quot;&#39;");
+  });
+
+  it('escapes & first, so a value in a title="…" attribute can\'t break out', () => {
+    // `js/incomplete-html-attribute-sanitization`: the quote must become an entity.
+    expect(escHtml('a" onmouseover="x')).toBe("a&quot; onmouseover=&quot;x");
+    expect(escHtml("x&y")).toBe("x&amp;y"); // & escaped once, not double-escaped
+  });
+});
 
 const DIR = "ai-coding";
 

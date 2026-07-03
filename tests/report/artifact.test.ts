@@ -168,6 +168,22 @@ describe("reportHtml dashboard", () => {
     expect(html).not.toContain("<b>");
   });
 
+  it("escapes quotes in attribute-interpolated values so a value can't break out of an attribute", () => {
+    // A repo file path flows into title="…" (js/incomplete-html-attribute-sanitization):
+    // `esc` must escape the quote or the value escapes the attribute.
+    const html = liveOf(
+      reportHtml("aih report", [
+        digest("Context footprint — x", "x", {
+          totalTokens: 100,
+          budgetTokens: 200,
+          files: [{ path: 'a" onmouseover="alert(1)', tokens: 50 }],
+        }),
+      ]),
+    );
+    expect(html).toContain("a&quot; onmouseover=&quot;alert(1)"); // quote entity-escaped
+    expect(html).not.toContain('a" onmouseover="alert(1)'); // no raw attribute breakout
+  });
+
   it("shows a note (not charts) for trends with fewer than two samples", () => {
     const html = liveOf(
       reportHtml("aih report", [
