@@ -635,7 +635,7 @@ describe("posture-gated install enforcement (trust.unapproved-skill, #102)", () 
           commit: "local", // the enforcement binds local promotions to commit:"local" entries
           verdict: "GREEN",
           scope: "repo",
-          card: "ai-coding/skill-cards/" + name + ".json",
+          card: `ai-coding/skill-cards/${name}.json`,
           evidenceSha256: SHA64,
           approvedAt: "2026-07-01T00:00:00Z",
         })),

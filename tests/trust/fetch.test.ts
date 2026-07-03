@@ -132,8 +132,14 @@ describe("trust fetch source resolution", () => {
         AWS_SECRET_ACCESS_KEY: "secret",
         RANDOM_VAR: "drop-me",
         SSL_CERT_FILE: "corp.pem",
+        UV_CACHE_DIR: "/cache/uv",
       }),
-    ).toEqual({ PATH: "bin", HOME: "/home/me", SSL_CERT_FILE: "corp.pem" });
+    ).toEqual({
+      PATH: "bin",
+      HOME: "/home/me",
+      SSL_CERT_FILE: "corp.pem",
+      UV_CACHE_DIR: "/cache/uv",
+    });
   });
 
   it("rejects empty, unsupported, and escaping source-relative paths", () => {

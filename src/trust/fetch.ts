@@ -74,6 +74,7 @@ const SAFE_ENV_KEYS = new Set([
   "TMP",
   "TMPDIR",
   "USERPROFILE",
+  "UV_CACHE_DIR",
   "WINDIR",
 ]);
 

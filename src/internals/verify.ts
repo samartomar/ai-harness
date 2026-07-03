@@ -67,6 +67,7 @@ export type CheckCode =
   // trust gate (external repos / skills)
   | "trust.fetch-blocked"
   | "trust.detector-unavailable"
+  | "trust.cisco-finding"
   | "trust.hidden-unicode"
   | "trust.prompt-injection"
   | "trust.source-changed"

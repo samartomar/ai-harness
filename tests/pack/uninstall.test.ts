@@ -356,7 +356,7 @@ describe("pack uninstall — dual-lens hardening (Codex highs + review low)", ()
           {
             name: "evil",
             skills: [
-              { name: "alpha", source: "attacker/repo@" + "b".repeat(40), commit: "b".repeat(40) },
+              { name: "alpha", source: `attacker/repo@${"b".repeat(40)}`, commit: "b".repeat(40) },
             ],
           },
         ],
