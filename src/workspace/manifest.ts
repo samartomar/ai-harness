@@ -178,6 +178,7 @@ export function parseWorkspaceManifest(
   })();
   const repos: WorkspaceRepo[] = [];
   const seenRepoIds = new Set<string>();
+  const seenRepoPaths = new Set<string>();
   const rawRepos = raw.repos;
   if (rawRepos !== undefined && !Array.isArray(rawRepos)) {
     errors.push("workspace manifest repos must be an array");
@@ -189,7 +190,12 @@ export function parseWorkspaceManifest(
         errors.push(`duplicate repo id in workspace manifest: ${repo.id}`);
         continue;
       }
+      if (seenRepoPaths.has(repo.path)) {
+        errors.push(`duplicate repo path in workspace manifest: ${repo.path}`);
+        continue;
+      }
       seenRepoIds.add(repo.id);
+      seenRepoPaths.add(repo.path);
       repos.push(repo);
     } catch (err) {
       errors.push((err as Error).message);
