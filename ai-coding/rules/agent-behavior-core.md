@@ -49,7 +49,15 @@ Define success criteria, then loop until verified.
 ## Tool selection
 
 Use the canonical tool this repo names; don't load MCP servers just-in-case; when two
-tools look alike, pick the one the canon names.
+tools look alike, pick the one the canon names — and here the canon names the graph pair:
+
+- **code-review-graph** — change-time reasoning: impact radius, affected flows, review
+  context, refactor planning, architecture. Reach for it BEFORE editing (the impact rule above).
+- **codebase-memory-mcp** — retrieval + memory: semantic code search, trace a path between
+  symbols, structural graph queries, and durable decision memory (ADRs).
+
+They each build their own graph, so don't run the same query against both:
+impact / what-breaks -> code-review-graph; find / trace / recall -> codebase-memory-mcp.
 
 ## Reporting a change
 
