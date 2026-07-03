@@ -293,6 +293,52 @@ describe("report workspace rollup", () => {
     expect(data.mcp.status).toBe("WARN");
   });
 
+  it("warns when the workspace filesystem MCP package uses a floating tag", async () => {
+    writeWorkspaceManifest({ repos: ["ui"], contextDir: "ai-coding" });
+    writeFileSync(
+      join(root, ".mcp.json"),
+      json({
+        mcpServers: {
+          filesystem: {
+            command: "npx",
+            args: ["-y", "@modelcontextprotocol/server-filesystem@latest", "ui"],
+          },
+        },
+      }),
+    );
+    child("ui");
+
+    const data = (await workspaceDigest()).data as WorkspaceReportDigest;
+
+    expect(data.mcp).toMatchObject({
+      status: "WARN",
+      packageSpec: "@modelcontextprotocol/server-filesystem@latest",
+    });
+  });
+
+  it("warns when the workspace filesystem MCP package uses a version range", async () => {
+    writeWorkspaceManifest({ repos: ["ui"], contextDir: "ai-coding" });
+    writeFileSync(
+      join(root, ".mcp.json"),
+      json({
+        mcpServers: {
+          filesystem: {
+            command: "npx",
+            args: ["-y", "@modelcontextprotocol/server-filesystem@^2026.1.14", "ui"],
+          },
+        },
+      }),
+    );
+    child("ui");
+
+    const data = (await workspaceDigest()).data as WorkspaceReportDigest;
+
+    expect(data.mcp).toMatchObject({
+      status: "WARN",
+      packageSpec: "@modelcontextprotocol/server-filesystem@^2026.1.14",
+    });
+  });
+
   it("builds independent child evidence rows concurrently", async () => {
     writeWorkspaceManifest({ repos: ["ui", "backend"], contextDir: "ai-coding" });
     child("ui");

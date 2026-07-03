@@ -82,6 +82,9 @@ describe("detectChildRepos", () => {
 
   it("rejects explicit repo paths that are unsafe to render in generated workspace docs", () => {
     expect(() => detectChildRepos(parent, ["bad|name"])).toThrow(/safe to print/);
+    expect(() => detectChildRepos(parent, ["bad\nname"])).toThrow(
+      "workspace repo path must be safe to print in workspace reports",
+    );
   });
 
   it("does not follow linked child directories to git repos outside the workspace parent", () => {
@@ -244,6 +247,16 @@ describe("workspace.plan — generated artifacts", () => {
     } finally {
       rmSync(external, { recursive: true, force: true });
     }
+  });
+
+  it("fails closed when the existing workspace manifest has validation errors", async () => {
+    child("ui");
+    writeFileSync(
+      join(parent, ".aih-workspace.json"),
+      JSON.stringify({ repos: ["ui", "../escape"], contextDir: "ai-coding" }),
+    );
+
+    await expect(command.plan(makeCtx())).rejects.toThrow(/valid \.aih-workspace\.json/);
   });
 
   it("pins the filesystem MCP package by default", async () => {
