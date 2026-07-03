@@ -355,6 +355,16 @@ describe("workspace snapshot command", () => {
 
     expect(writesByPath(actions).has("ai-coding/workspace-lock.json")).toBe(true);
   });
+
+  it("fails closed when the workspace manifest has validation errors", async () => {
+    child("ui");
+    writeFileSync(
+      join(parent, ".aih-workspace.json"),
+      JSON.stringify({ repos: ["ui", "../escape"], contextDir: "ai-coding" }),
+    );
+
+    await expect(snapshotCommand.plan(makeCtx())).rejects.toThrow(/valid \.aih-workspace\.json/);
+  });
 });
 
 describe("workspace plan command", () => {
@@ -399,6 +409,18 @@ describe("workspace plan command", () => {
     expect(text).toContain("ui-backend-api");
     expect(text).toContain("## Rollback");
     expect(writes.get(".gitignore")?.contents).toContain(".aih/");
+  });
+
+  it("fails closed when the workspace manifest has validation errors", async () => {
+    child("ui");
+    writeFileSync(
+      join(parent, ".aih-workspace.json"),
+      JSON.stringify({ repos: ["ui", "../escape"], contextDir: "ai-coding" }),
+    );
+
+    await expect(taskPlanCommand.plan(makeCtx({ task: "ship workspace fix" }))).rejects.toThrow(
+      /valid \.aih-workspace\.json/,
+    );
   });
 });
 
