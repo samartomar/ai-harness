@@ -24,6 +24,7 @@ smallest rule set that matches the task, then verify against repo evidence
 ## Always read first
 
 - `ai-coding/rules/agent-behavior-core.md` — working discipline (think → simplify → surgical → goal-driven)
+- `ai-coding/rules/project-canon-extension.md` — repo-specific rules, as a load-on-demand map; read a rule file only when your task hits its trigger
 - `ai-coding/project.md` — the repo contract: stack, commands, scale, sensitive paths, known gaps (machine-readable in `ai-coding/project.json`)
 - The ECC `common` rules (Layer 1) before any non-trivial change
 
