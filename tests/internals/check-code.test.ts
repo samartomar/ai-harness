@@ -400,6 +400,7 @@ describe("Check.code — invariants", () => {
     const present: Record<CheckCode, true> = {
       "env.node-runtime": true,
       "env.git-missing": true,
+      "env.git-bash-missing": true,
       "env.dev-tool-missing": true,
       "env.tool-install-blocked": true,
       "cert.ca-missing": true,

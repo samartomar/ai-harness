@@ -9,7 +9,13 @@ import {
   isEccInstallTarget,
 } from "../../src/ecc/install.js";
 import { eccLanguages } from "../../src/ecc/select.js";
-import type { Action, DocAction, ExecAction, PlanContext } from "../../src/internals/plan.js";
+import type {
+  Action,
+  DocAction,
+  ExecAction,
+  PlanContext,
+  ProbeAction,
+} from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 import type { RepoStack } from "../../src/profile/scan.js";
@@ -57,6 +63,30 @@ function makeCtx(options: Record<string, unknown> = {}): PlanContext {
     // HOME → temp so the Kiro cache dir (~/.claude/ecc) is absent → clone path (hermetic).
     env: { HOME: tmp, USERPROFILE: tmp },
     options,
+  };
+}
+
+/**
+ * A Windows-host plan context — exercises the Kiro Git Bash resolution and the npx
+ * `.cmd`-shim routing. `USERPROFILE → tmp` keeps the Kiro cache dir absent (clone
+ * path, hermetic); callers pass `env` to point the Git-install probe dirs at
+ * controlled tmp locations so bash.exe presence is deterministic across OSes.
+ */
+function makeWinCtx(
+  over: { env?: NodeJS.ProcessEnv; options?: Record<string, unknown> } = {},
+): PlanContext {
+  const run = fakeRunner(() => undefined);
+  const env: NodeJS.ProcessEnv = { USERPROFILE: tmp, ...over.env };
+  return {
+    root: tmp,
+    contextDir: ".ai-context",
+    apply: false,
+    verify: false,
+    json: false,
+    run,
+    host: makeHostAdapter({ platform: "windows", run, env }),
+    env,
+    options: over.options ?? { cli: "kiro" },
   };
 }
 
@@ -263,6 +293,58 @@ describe("ecc.plan — runs ECC's own installer (latest)", () => {
     for (const a of actions) {
       expect(["doc", "exec"]).toContain(a.kind);
     }
+  });
+});
+
+describe("ecc.plan — Windows Git Bash resolution + npx cmd shim", () => {
+  it("--cli kiro on Windows resolves bash.exe from the Git install dir (absolute argv[0], not bare 'bash')", async () => {
+    // A default Git for Windows install leaves bash.exe on disk (Git\bin) but off PATH.
+    const pf = join(tmp, "pf");
+    const bashExe = join(pf, "Git", "bin", "bash.exe");
+    mkdirSync(join(pf, "Git", "bin"), { recursive: true });
+    writeFileSync(bashExe, "", "utf8");
+    const actions = (await command.plan(makeWinCtx({ env: { ProgramFiles: pf } }))).actions;
+    const install = execs(actions).find((e) =>
+      e.argv[1]?.replace(/\\/g, "/").endsWith(".kiro/install.sh"),
+    );
+    expect(install).toBeDefined();
+    expect(install?.argv[0]).toBe(bashExe); // absolute bash.exe, resolved off-PATH
+    expect(install?.argv[0]).not.toBe("bash"); // the exit-127 bug: bare "bash"
+  });
+
+  it("--cli kiro on Windows with no Git Bash emits guidance + a git-bash-missing check (no bash exec)", async () => {
+    // Point every Git-install probe dir at an empty tmp location so resolveBash finds
+    // none — deterministic on any host OS (overrides a real machine's C:\Program Files\Git).
+    const env: NodeJS.ProcessEnv = {
+      ProgramFiles: join(tmp, "pf"),
+      "ProgramFiles(x86)": join(tmp, "pf86"),
+      LocalAppData: join(tmp, "lad"),
+    };
+    const actions = (await command.plan(makeWinCtx({ env }))).actions;
+    // no exec spawns bash on install.sh — a bare `bash` would just ENOENT to exit 127
+    expect(
+      execs(actions).some((e) => e.argv[1]?.replace(/\\/g, "/").endsWith(".kiro/install.sh")),
+    ).toBe(false);
+    // the fix is named in a printed doc headline, not buried in a body summarizeResult drops
+    expect(
+      docs(actions)
+        .map((d) => d.describe)
+        .join("\n"),
+    ).toContain("Git Bash");
+    // a coded probe escalates the gap under --verify (routable support ticket, not a bare 127)
+    const probes = actions.filter((a): a is ProbeAction => a.kind === "probe");
+    const checks = await Promise.all(probes.map((p) => p.run(makeWinCtx({ env }))));
+    const gitBash = checks.find((c) => c.code === "env.git-bash-missing");
+    expect(gitBash?.verdict).toBe("fail");
+  });
+
+  it("routes the npx ECC installer through `cmd /c` on Windows (execFile can't spawn a .cmd shim)", async () => {
+    const actions = (await command.plan(makeWinCtx({ options: { cli: "claude" } }))).actions;
+    const installer = execs(actions)[0];
+    expect(installer?.argv.slice(0, 3)).toEqual(["cmd", "/c", "npx"]);
+    // the real installer argv is preserved after the shim prefix
+    expect(installer?.argv).toContain("ecc-install");
+    expect(installer?.argv).toContain("--target");
   });
 });
 
