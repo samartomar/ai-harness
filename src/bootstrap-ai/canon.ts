@@ -22,12 +22,24 @@ function detectedStack(stack: RepoStack): string[] {
   if (stack.cloud.length > 0) out.push(`- Cloud: ${stack.cloud.join(", ")}`);
   if (stack.databases.length > 0) out.push(`- Databases: ${stack.databases.join(", ")}`);
   const cmds: string[] = [];
+  if (stack.verifyCommand) cmds.push(`verify \`${stack.verifyCommand}\``);
+  if (stack.typecheckCommand) cmds.push(`typecheck \`${stack.typecheckCommand}\``);
   if (stack.testRunner) cmds.push(`test \`${stack.testRunner}\``);
   if (stack.buildCommand) cmds.push(`build \`${stack.buildCommand}\``);
   if (stack.lintCommand) cmds.push(`lint \`${stack.lintCommand}\``);
   if (stack.startCommand) cmds.push(`start \`${stack.startCommand}\``);
   out.push(`- Commands: ${cmds.length > 0 ? cmds.join(" · ") : "none defined in the repo"}`);
   return out;
+}
+
+function testRoutingLine(stack: RepoStack): string {
+  if (stack.verifyCommand) {
+    return `Run \`${stack.verifyCommand}\` as the pre-completion gate; use \`${stack.testRunner ?? stack.typecheckCommand ?? stack.verifyCommand}\` for narrower TDD loops. New behavior needs a test; fix the implementation, not the test.`;
+  }
+  if (stack.testRunner) {
+    return `Run \`${stack.testRunner}\`. New behavior needs a test; fix the implementation, not the test.`;
+  }
+  return "No test command is defined in the repo — add one and record it here.";
 }
 
 /**
@@ -249,12 +261,12 @@ function ruleRouterLegacy(
     "",
     "### Code review / PR",
     `Load \`${dir}/conventions.md\`; review the diff, tests, and schemas against repo`,
-    "evidence. Comment only unless explicitly asked to fix.",
+    "evidence. Before a PR is marked ready or merged, run and record the required",
+    "review skills/agents: code review, security review, and any domain-specific",
+    "reviewer for the touched area. Comment only unless explicitly asked to fix.",
     "",
     "### Testing",
-    stack.testRunner
-      ? `Run \`${stack.testRunner}\`. New behavior needs a test; fix the implementation, not the test.`
-      : "No test command is defined in the repo — add one and record it here.",
+    testRoutingLine(stack),
     "",
     "### Security / secrets",
     "Never read or emit plaintext secrets; validate all external input; keep cloud",
@@ -339,12 +351,12 @@ function ruleRouterCompact(
     "",
     "### Code review / PR",
     `Load \`${dir}/project.md\`; review the diff, tests, and schemas against repo`,
-    "evidence. Comment only unless explicitly asked to fix.",
+    "evidence. Before a PR is marked ready or merged, run and record the required",
+    "review skills/agents: code review, security review, and any domain-specific",
+    "reviewer for the touched area. Comment only unless explicitly asked to fix.",
     "",
     "### Testing",
-    stack.testRunner
-      ? `Run \`${stack.testRunner}\`. New behavior needs a test; fix the implementation, not the test.`
-      : "No test command is defined in the repo — add one and record it here.",
+    testRoutingLine(stack),
     "",
     "### Security / secrets",
     `Follow the Invariants in \`${dir}/rules/agent-behavior-core.md\` (secrets, input validation,`,

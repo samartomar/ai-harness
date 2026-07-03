@@ -27,6 +27,8 @@ function stackBlock(c: ProjectContract): string[] {
 function commandsBlock(c: ProjectContract): string[] {
   const rows: string[] = [];
   const slots: Array<[string, ProjectContract["commands"]["test"]]> = [
+    ["verify (completion gate)", c.commands.verify],
+    ["typecheck", c.commands.typecheck],
     ["test", c.commands.test],
     ["build", c.commands.build],
     ["lint", c.commands.lint],
@@ -55,6 +57,8 @@ function workspaceCommandsBlock(c: ProjectContract): string[] {
     a.localeCompare(b),
   )) {
     const slots: Array<[string, ProjectContract["commands"]["test"]]> = [
+      ["verify", workspace.commands.verify],
+      ["typecheck", workspace.commands.typecheck],
       ["test", workspace.commands.test],
       ["build", workspace.commands.build],
       ["lint", workspace.commands.lint],
@@ -78,6 +82,12 @@ function pathsOrNone(items: string[]): string[] {
   return items.length > 0 ? items.map((p) => `- \`${p}\``) : ["_None detected._"];
 }
 
+function mcpServersBlock(c: ProjectContract): string[] {
+  return c.mcpServers.length > 0
+    ? c.mcpServers.map((server) => `- \`${server}\``)
+    : ["_No root `.mcp.json` servers detected._"];
+}
+
 function installCommand(packageManager: string | undefined): string | undefined {
   if (packageManager === undefined) return undefined;
   const commands: Record<string, string> = {
@@ -92,6 +102,22 @@ function installCommand(packageManager: string | undefined): string | undefined 
     cargo: "cargo fetch",
   };
   return commands[packageManager] ?? `${packageManager} install`;
+}
+
+function mcpToolingBlock(c: ProjectContract): string[] {
+  const detected =
+    c.mcpServers.length > 0
+      ? [
+          "- Detected root `.mcp.json` servers:",
+          ...c.mcpServers.map((server) => `  - \`${server}\``),
+        ]
+      : ["- No root `.mcp.json` servers detected yet."];
+  return [
+    "## 3. MCP and AI tooling",
+    "",
+    "- Review and apply the repo AI tooling surface: `aih init --apply`.",
+    ...detected,
+  ];
 }
 
 /**
@@ -112,6 +138,8 @@ export function projectContractDoc(dir: string, c: ProjectContract): string {
     c.commands.build,
     c.commands.lint,
     c.commands.start,
+    c.commands.verify,
+    c.commands.typecheck,
     c.commands.cdkSynth,
     c.commands.cdkDiff,
     c.commands.cdkDeploy,
@@ -144,6 +172,10 @@ export function projectContractDoc(dir: string, c: ProjectContract): string {
     "",
     pathsOrNone(c.entrypoints),
     "",
+    "## MCP servers",
+    "",
+    mcpServersBlock(c),
+    "",
     "## Sensitive paths",
     "",
     "_Never read or log these — `aih` denies agent reads of them._",
@@ -168,10 +200,29 @@ export function setupDoc(dir: string, c: ProjectContract): string {
     ? `- Install dependencies: \`${install}\`.`
     : "- Install dependencies with the repo's package manager (npm / pnpm / yarn / bun).";
   const verify: string[] = [];
-  if (c.commands.test) verify.push(`- Run the tests: \`${c.commands.test.value}\``);
-  if (c.commands.lint) verify.push(`- Lint: \`${c.commands.lint.value}\``);
+  const partialChecks = [
+    c.commands.typecheck,
+    c.commands.test,
+    c.commands.build,
+    c.commands.lint,
+  ].filter((cmd): cmd is NonNullable<ProjectContract["commands"]["test"]> => cmd !== undefined);
+  if (c.commands.verify) {
+    verify.push(`- Run the completion gate: \`${c.commands.verify.value}\`.`);
+    if (partialChecks.length > 0) {
+      verify.push(
+        `- Fast partial checks: ${partialChecks.map((cmd) => `\`${cmd.value}\``).join(", ")}.`,
+      );
+    }
+  } else {
+    if (c.commands.typecheck) verify.push(`- Typecheck: \`${c.commands.typecheck.value}\``);
+    if (c.commands.test) verify.push(`- Run the tests: \`${c.commands.test.value}\``);
+    if (c.commands.build) verify.push(`- Build: \`${c.commands.build.value}\``);
+    if (c.commands.lint) verify.push(`- Lint: \`${c.commands.lint.value}\``);
+  }
   if (verify.length === 0) {
-    verify.push("- _No test/lint command detected — add one and record it in `project.json`._");
+    verify.push(
+      "- _No verify/test/lint command detected — add one and record it in `project.json`._",
+    );
   }
   const gaps =
     c.knownGaps.length > 0
@@ -205,7 +256,9 @@ export function setupDoc(dir: string, c: ProjectContract): string {
     "- `git config core.hooksPath .githooks` — enables the pre-commit lint/test/secret hook.",
     "- `aih secrets --verify` — confirm no plaintext secrets are committed.",
     "",
-    "## 3. Close the known gaps",
+    mcpToolingBlock(c),
+    "",
+    "## 4. Close the known gaps",
     "",
     gaps,
     ...largeRepo,

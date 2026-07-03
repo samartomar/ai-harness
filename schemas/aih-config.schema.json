@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "type": "number",
+      "const": 1
+    },
+    "contextDir": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9._\\-/]+$"
+    },
+    "targets": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "posture": {
+      "type": "string",
+      "enum": [
+        "vibe",
+        "team",
+        "enterprise"
+      ]
+    },
+    "adopt": {
+      "type": "object",
+      "properties": {
+        "acknowledged": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "contextDir"
+  ],
+  "title": ".aih-config.json"
+}

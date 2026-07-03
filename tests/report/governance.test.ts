@@ -45,6 +45,7 @@ const CONTRACT: ProjectContract = {
   databases: [],
   deployment: [],
   entrypoints: ["../escape"],
+  mcpServers: [],
   commands: {},
   scale: { class: "small", isMonorepo: false },
   sensitivePaths: [],

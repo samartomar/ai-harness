@@ -62,7 +62,9 @@ describe("buildRunEntry", () => {
     expect(entry.backups).toBe(1);
     expect(entry.verification).toEqual({ pass: 1, fail: 1, skip: 1 });
     expect(entry.durationMs).toBe(1500);
-    expect(entry.schemaVersion).toBe(1);
+    expect(entry.schemaVersion).toBe(2);
+    expect(entry.host).toMatchObject({ platform: "linux", hostnameHash: expect.any(String) });
+    expect(entry.repo).toMatchObject({ remoteHash: expect.any(String) });
   });
 
   it("handles a thrown run with no result", () => {
@@ -126,7 +128,7 @@ describe("appendRunLog", () => {
   afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
   const entry: RunLogEntry = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     runId: "run_x",
     startedAt: "2026-06-26T12:00:00.000Z",
     finishedAt: "2026-06-26T12:00:00.000Z",
@@ -138,6 +140,8 @@ describe("appendRunLog", () => {
     mode: { apply: false, verify: true, json: false, sarif: false },
     platform: "linux",
     node: "20.0.0",
+    host: { platform: "linux", hostnameHash: "host_abc12345" },
+    repo: { remoteHash: "repo_def67890" },
     writes: { create: 0, overwrite: 0, merge: 0, unchanged: 0, kept: 0 },
     docs: 0,
     execs: 0,
@@ -235,8 +239,14 @@ describe("runCapability — run ledger", () => {
     expect(rows[0]).toMatchObject({
       runId: "run_test01",
       capability: "diag",
+      schemaVersion: 2,
       status: "failed",
       exitCode: 1,
+      host: {
+        platform: expect.any(String),
+        hostnameHash: expect.stringMatching(/^host_[a-f0-9]{16}$/),
+      },
+      repo: { remoteHash: expect.stringMatching(/^repo_[a-f0-9]{16}$/) },
       mode: { verify: true },
       verification: { pass: 0, fail: 1, skip: 0 },
     });

@@ -1,0 +1,70 @@
+# aih Architecture
+
+> Status: shipped architecture for the open-source CLI. Directional ideas live in
+> separate design docs and must not be read as shipped behavior.
+
+`aih` is a local TypeScript CLI that turns repo/workstation setup into reviewed,
+repeatable plans. The implementation is intentionally boring: each capability
+exports a command spec, the command registry applies shared flags and posture,
+and the executor is the only layer that performs filesystem or process effects.
+
+## Component Map
+
+- **Command registry** (`src/commands/`) wires built-in command specs, shared
+  flags, posture, JSON envelope handling, and the run ledger.
+- **Planner/executor** (`src/internals/`) turns capability plans into typed
+  actions (`write`, `remove`, `exec`, `envblock`, `probe`, `digest`, `doc`) and
+  applies them transactionally.
+- **Repo canon** (`src/bootstrap-ai/`, `src/contract/`, `src/profile/`) detects
+  the stack, writes tool bootloaders, and emits `ai-coding/project.json`.
+- **Trust and skill governance** (`src/trust/`, `src/skill/`, `src/pack/`,
+  `src/marketplace/`) vets external skill sources, pins commits, records
+  approvals, and blocks unapproved installs at team/enterprise posture.
+- **Policy and schemas** (`src/org-policy/`, `src/config/`, `schemas/`) validate
+  committed org policy and bootstrap markers.
+- **Evidence and release verification** (`src/evidence/`, `src/bundle/`,
+  `src/release/`) package local audit material and verify published releases.
+- **Reporting and local telemetry** (`src/report/`, `src/logging/`,
+  `src/usage/`) render local diagnostics. They do not transmit prompts or costs.
+
+## Data Boundaries
+
+- `.aih-config.json`, `ai-coding/`, lock files, and policy files are committed
+  repo state.
+- `.aih/` is local diagnostics and generated output. The run ledger under
+  `.aih/runs/YYYY-MM.jsonl` is gitignored and should be shared through
+  `aih evidence build` when tamper evidence is needed.
+- `.env*` and `secrets/**` are denied inputs. Agents must not read or log them;
+  validate presence with `aih secrets --verify`.
+- External skill sources are treated as hostile until vetted, pinned, and
+  approved. A same-named skill from a different source never inherits approval.
+
+## Mutation Model
+
+Dry runs are the default for managed project changes. Under `--apply`, the
+executor can write local files, remove local files through guarded actions, run
+local commands, emit shell environment blocks, compute digests, run read-only
+probes, and print operator-run docs.
+
+Remote mutation is outside the normal action model. The only explicit exceptions
+are provenance paths: GitHub attestations can write to GitHub's attestation
+store, and keyless cosign signing can append to Rekor. Cloud, SSO, MDM,
+gateway, and observability-backend setup remains `doc` output for a human.
+
+## Optional Extensions
+
+The only optional peer package the open-source CLI probes for is
+`@aihq/enterprise`, by literal name from the install tree that loaded `aih`.
+It is a reserved extension point. Not installed means local-only behavior.
+
+MCP configuration is generated per supported CLI. MCP servers are never loaded
+just-in-case by the CLI; they are emitted into tool-specific config for the
+operator's AI coding tool to use.
+
+## Release Integrity
+
+Published releases use npm trusted publishing, GitHub release assets, SPDX SBOMs,
+checksums, and a keyless cosign bundle for `SHA256SUMS.txt`. This provides SLSA
+v1 provenance material, but the project does not claim a SLSA level. Operators
+can run `aih verify-release [version]` to verify npm signatures, the GitHub
+release cosign bundle, and the npm tarball hash.

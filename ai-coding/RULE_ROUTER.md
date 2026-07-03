@@ -19,7 +19,7 @@ smallest rule set that matches the task, then verify against repo evidence
 ## Detected stack
 
 - Languages: TypeScript/Node.js
-- Commands: test `npm test` · build `npm run build` · lint `npm run lint`
+- Commands: verify `npm run verify` · typecheck `npm run typecheck` · test `npm test` · build `npm run build` · lint `npm run lint`
 
 ## Always read first
 
@@ -41,10 +41,12 @@ boundaries) before broad work.
 
 ### Code review / PR
 Load `ai-coding/project.md`; review the diff, tests, and schemas against repo
-evidence. Comment only unless explicitly asked to fix.
+evidence. Before a PR is marked ready or merged, run and record the required
+review skills/agents: code review, security review, and any domain-specific
+reviewer for the touched area. Comment only unless explicitly asked to fix.
 
 ### Testing
-Run `npm test`. New behavior needs a test; fix the implementation, not the test.
+Run `npm run verify` as the pre-completion gate; use `npm test` for narrower TDD loops. New behavior needs a test; fix the implementation, not the test.
 
 ### Security / secrets
 Follow the Invariants in `ai-coding/rules/agent-behavior-core.md` (secrets, input validation,

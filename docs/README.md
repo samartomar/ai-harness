@@ -12,6 +12,12 @@ that carry their own status line.
 - [commands.md](commands.md) — the command reference: long-form behavior detail for
   every `aih` command plus the support-ticket contract, relocated from the README's
   command surface. Shipped.
+- [ARCHITECTURE.md](ARCHITECTURE.md) — shipped component map, data boundaries, and
+  write/remote-mutation model.
+- [THREAT_MODEL.md](THREAT_MODEL.md) — supported actors, assets, trust boundaries, and
+  fail-closed expectations.
+- [ENTERPRISE_ONBOARDING.md](ENTERPRISE_ONBOARDING.md) — enterprise rollout checklist,
+  policy examples, and verification gates.
 
 ## Product
 
@@ -32,6 +38,10 @@ that carry their own status line.
 - [security/skill-trust-gate.md](security/skill-trust-gate.md) — vet, pin, and approve
   skills under policy. Design/proposed; the shipped surface is `aih trust` / `aih skill`
   in the root README.
+- [security/skillspector.md](security/skillspector.md) — pinned local SkillSpector
+  image workflow and review guidance.
+- [security/run-ledger-siem.md](security/run-ledger-siem.md) — run-ledger v2 field map
+  and SIEM import recipe.
 
 ## Specs and implementation plans
 

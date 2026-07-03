@@ -47,6 +47,7 @@ const BASE: ProjectContract = {
   databases: [],
   deployment: [],
   entrypoints: [],
+  mcpServers: [],
   commands: {
     test: { value: "npm test", confidence: "detected" },
     lint: { value: "npx biome check .", confidence: "inferred" },

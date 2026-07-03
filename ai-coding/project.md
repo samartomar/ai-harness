@@ -13,17 +13,29 @@ Enterprise AI Bootstrapping Harness — governed AI-assisted coding for enterpri
 
 ## Commands
 
+- **verify (completion gate)** — `npm run verify` _(detected)_
+- **typecheck** — `npm run typecheck` _(detected)_
 - **test** — `npm test` _(detected)_
 - **build** — `npm run build` _(detected)_
 - **lint** — `npm run lint` _(detected)_
 
 ## Scale
 
-- 443 tracked files · medium
+- 471 tracked files · medium
 
 ## Entry points
 
-_None detected._
+- `dist/cli.js`
+- `src/cli.ts`
+- `src/index.ts`
+
+## MCP servers
+
+- `code-review-graph`
+- `codebase-memory-mcp`
+- `context7`
+- `github`
+- `sequential-thinking`
 
 ## Sensitive paths
 
@@ -33,4 +45,4 @@ _None detected._
 
 ## Known gaps
 
-_None — the contract is clean._
+- 1 un-imported CLI rule set — review with `aih adopt`

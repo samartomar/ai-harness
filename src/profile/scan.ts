@@ -25,6 +25,10 @@ export interface WorkspaceStack {
   lintCommand?: string;
   /** Workspace-local start command, when declared by that workspace's manifest. */
   startCommand?: string;
+  /** Workspace-local aggregate verification command, when declared by its manifest. */
+  verifyCommand?: string;
+  /** Workspace-local typecheck command, when declared by its manifest. */
+  typecheckCommand?: string;
 }
 
 export interface DeploymentCommands {
@@ -62,6 +66,10 @@ export interface RepoStack {
   lintCommand?: string;
   /** How to start the local app/server, or undefined when none is defined. */
   startCommand?: string;
+  /** Aggregate quality gate, declared-only and never inferred. */
+  verifyCommand?: string;
+  /** Typecheck gate, declared-only and never inferred. */
+  typecheckCommand?: string;
   /** Deployment/tool verbs derived from deployment manifests such as cdk.json. */
   deploymentCommands?: DeploymentCommands;
   /** True when tests run in a real browser (Karma/Cypress/…) — they hang in a headless agent. */
@@ -188,6 +196,8 @@ const DB_DEPS: Record<string, string> = {
 interface PkgJson {
   name?: string;
   description?: string;
+  main?: string;
+  binEntries: string[];
   scripts: Record<string, string>;
   deps: Set<string>;
   /** True when the manifest declares a `workspaces` field (npm/yarn workspaces). */
@@ -555,7 +565,7 @@ function detectPythonManifest(path: string, name: string, raw: Raw): void {
 }
 
 function readPkg(path: string): PkgJson {
-  const pkg: PkgJson = { scripts: {}, deps: new Set(), hasWorkspaces: false };
+  const pkg: PkgJson = { binEntries: [], scripts: {}, deps: new Set(), hasWorkspaces: false };
   let parsed: unknown;
   try {
     parsed = JSON.parse(readFileSync(path, "utf8"));
@@ -565,6 +575,13 @@ function readPkg(path: string): PkgJson {
   if (!isRecord(parsed)) return pkg;
   if (typeof parsed.name === "string") pkg.name = parsed.name;
   if (typeof parsed.description === "string") pkg.description = parsed.description;
+  if (typeof parsed.main === "string") pkg.main = parsed.main;
+  if (typeof parsed.bin === "string") pkg.binEntries.push(parsed.bin);
+  else if (isRecord(parsed.bin)) {
+    for (const [, value] of Object.entries(parsed.bin).sort(([a], [b]) => a.localeCompare(b))) {
+      if (typeof value === "string") pkg.binEntries.push(value);
+    }
+  }
   if (parsed.workspaces !== undefined) pkg.hasWorkspaces = true;
   if (isRecord(parsed.scripts)) {
     for (const [k, v] of Object.entries(parsed.scripts)) {
@@ -576,6 +593,35 @@ function readPkg(path: string): PkgJson {
     if (isRecord(section)) for (const dep of Object.keys(section)) pkg.deps.add(dep);
   }
   return pkg;
+}
+
+function normalizeEntrypoint(raw: string): string | undefined {
+  const normalized = raw.replace(/\\/g, "/").replace(/^\.\//, "");
+  if (
+    normalized.length === 0 ||
+    normalized.startsWith("/") ||
+    /^[A-Za-z]:/.test(normalized) ||
+    normalized.split("/").some((part) => part.length === 0 || part === "." || part === "..")
+  ) {
+    return undefined;
+  }
+  return normalized;
+}
+
+function pushEntrypoint(out: string[], raw: string | undefined): void {
+  if (raw === undefined) return;
+  const normalized = normalizeEntrypoint(raw);
+  if (normalized !== undefined) push(out, normalized);
+}
+
+function packageEntrypoints(root: string, pkg: PkgJson): string[] {
+  const out: string[] = [];
+  for (const entry of pkg.binEntries) pushEntrypoint(out, entry);
+  pushEntrypoint(out, pkg.main);
+  for (const rel of ["src/cli.ts", "src/index.ts", "src/main.ts", "src/server.ts"]) {
+    if (existsSync(join(root, rel))) pushEntrypoint(out, rel);
+  }
+  return out;
 }
 
 /** Turn collected raw signals into the final, accurate stack. */
@@ -592,6 +638,8 @@ function synthesize(root: string, raw: Raw, opts: ScanOptions): RepoStack {
   let buildCommand: string | undefined;
   let lintCommand: string | undefined;
   let startCommand: string | undefined;
+  let verifyCommand: string | undefined;
+  let typecheckCommand: string | undefined;
 
   if (pkg) {
     // JS vs TS: TypeScript only when genuinely present.
@@ -615,11 +663,14 @@ function synthesize(root: string, raw: Raw, opts: ScanOptions): RepoStack {
     testRunner = deriveTest(pkg);
     buildCommand = "build" in pkg.scripts ? "npm run build" : undefined;
     startCommand = "start" in pkg.scripts ? "npm start" : undefined;
+    verifyCommand = "verify" in pkg.scripts ? "npm run verify" : undefined;
+    typecheckCommand = "typecheck" in pkg.scripts ? "npm run typecheck" : undefined;
     // A root lint script / linter dep wins; otherwise fall back to a detected linter
     // CONFIG file (eslint.config.* / biome.json), which monorepos have even when the
     // root package.json doesn't declare the lint script or the linter dep.
     lintCommand = deriveLint(pkg) ?? configLint(raw);
 
+    for (const entry of packageEntrypoints(root, pkg)) push(entryPoints, entry);
     if (pkg.name && entryPoints.length === 0 && pkg.scripts.start) {
       entryPoints.push("npm start");
     }
@@ -697,6 +748,8 @@ function synthesize(root: string, raw: Raw, opts: ScanOptions): RepoStack {
     buildCommand,
     lintCommand,
     startCommand,
+    verifyCommand,
+    typecheckCommand,
     ...(deploymentCommands ? { deploymentCommands } : {}),
     browserTest,
     isMonorepo,
@@ -741,6 +794,8 @@ function synthesizeWorkspaces(root: string, raw: Raw, opts: ScanOptions): Worksp
       ...(stack.buildCommand ? { buildCommand: stack.buildCommand } : {}),
       ...(stack.lintCommand ? { lintCommand: stack.lintCommand } : {}),
       ...(stack.startCommand ? { startCommand: stack.startCommand } : {}),
+      ...(stack.verifyCommand ? { verifyCommand: stack.verifyCommand } : {}),
+      ...(stack.typecheckCommand ? { typecheckCommand: stack.typecheckCommand } : {}),
     };
   }
 

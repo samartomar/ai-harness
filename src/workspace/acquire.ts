@@ -1,5 +1,5 @@
-import { randomUUID } from "node:crypto";
-import { existsSync, lstatSync, readdirSync, readFileSync } from "node:fs";
+import { createHash, randomUUID } from "node:crypto";
+import { existsSync, lstatSync, readdirSync, realpathSync, statSync } from "node:fs";
 import { basename, extname, join, posix, resolve } from "node:path";
 import type { Command } from "commander";
 import { readAihConfig } from "../config/marker.js";
@@ -13,7 +13,7 @@ import {
   summarizeResult,
   writeArtifact,
 } from "../internals/execute.js";
-import { readIfExists } from "../internals/fsxn.js";
+import { readIfExists, readRegularFile } from "../internals/fsxn.js";
 import { aihIgnoreWrite } from "../internals/gitignore.js";
 import type { Action, CommandSpec, Plan, PlanContext, WriteAction } from "../internals/plan.js";
 import { plan, probe, writeJson, writeText } from "../internals/plan.js";
@@ -34,7 +34,6 @@ import { resolveInternalScopes } from "../trust/depnames.js";
 import {
   assertTrustTreeSafe,
   cleanupQuarantine,
-  localFileHash,
   readTrustFetchMetadata,
   resolveTrustSource,
   safeSourceRelative,
@@ -63,6 +62,7 @@ interface PromotionFile {
   sourceRel: string;
   targetRel: string;
   hash: string;
+  contents: string;
 }
 
 interface PromotionPlan {
@@ -155,6 +155,10 @@ function collectFiles(root: string): string[] {
   const out: string[] = [];
   const visit = (abs: string): void => {
     const st = lstatSync(abs);
+    if (st.isSymbolicLink()) {
+      if (statSync(abs).isFile()) out.push(abs);
+      return;
+    }
     if (st.isDirectory()) {
       if (abs !== root && SKIP_DIRS.has(basename(abs))) return;
       for (const entry of readdirSync(abs)) visit(join(abs, entry));
@@ -182,6 +186,24 @@ export function promotedSkillRel(sourceRoot: string, skillDir: string): string {
 function isTextPromotionFile(path: string): boolean {
   const ext = extname(path).toLowerCase();
   return ext === "" || [".md", ".txt", ".json", ".yaml", ".yml", ".toml"].includes(ext);
+}
+
+function sha256Bytes(bytes: Buffer): string {
+  return createHash("sha256").update(bytes).digest("hex");
+}
+
+function promotionFileBytes(sourceRoot: string, sourcePath: string): Buffer {
+  const st = lstatSync(sourcePath);
+  const readPath = st.isSymbolicLink() ? realpathSync(sourcePath) : sourcePath;
+  if (st.isSymbolicLink()) safeSourceRelative(sourceRoot, readPath);
+  const bytes = readRegularFile(readPath);
+  if (bytes === undefined) {
+    throw new AihError(
+      `refusing unreadable or non-regular promotion file: ${sourcePath}`,
+      "AIH_TRUST",
+    );
+  }
+  return bytes;
 }
 
 /**
@@ -262,22 +284,20 @@ function buildPromotion(
       .map((sourcePath) => {
         const fileRel = safeSourceRelative(skillDir, sourcePath);
         const sourceRel = safeSourceRelative(sourceRoot, sourcePath);
+        const bytes = promotionFileBytes(sourceRoot, sourcePath);
         return {
           sourcePath,
           sourceRel,
           targetRel: posix.join(targetBase, fileRel),
-          hash: localFileHash(sourcePath),
+          hash: sha256Bytes(bytes),
+          contents: bytes.toString("utf8"),
         };
       });
   });
 
   return {
     writes: files.map((file) =>
-      writeText(
-        file.targetRel,
-        readFileSync(file.sourcePath, "utf8"),
-        `promote trusted skill file ${file.sourceRel}`,
-      ),
+      writeText(file.targetRel, file.contents, `promote trusted skill file ${file.sourceRel}`),
     ),
     promotedSkills: skills.map((skillDir) => promotedSkillRel(sourceRoot, skillDir)),
     artifactHashes: files.map((file) => ({ path: file.sourceRel, sha256: file.hash })),

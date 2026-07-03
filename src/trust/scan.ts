@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { lstatSync, readdirSync, readFileSync } from "node:fs";
+import { lstatSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { basename, extname, isAbsolute, join, relative, resolve } from "node:path";
 import { type Posture, postureFromContext } from "../config/posture.js";
 import { AihError } from "../errors.js";
@@ -16,6 +16,7 @@ import { MCP_CONFIG_FILES, scanConfigSecrets, scanSecrets } from "../secrets/sca
 import { applyTrustAcknowledgements } from "./acknowledge.js";
 import { resolveInternalScopes, scanTrustDependencyNames } from "./depnames.js";
 import {
+  runMcpConfigDetectors,
   runTrustDetectors,
   scanNativeMaliciousCode,
   type TrustDetectorName,
@@ -86,6 +87,11 @@ export function collectFilesUnder(
   const out: string[] = [];
   const visit = (abs: string): void => {
     const st = lstatSync(abs);
+    if (st.isSymbolicLink()) {
+      const target = statSync(abs);
+      if (target.isFile() && accept(abs)) out.push(abs);
+      return;
+    }
     if (st.isDirectory()) {
       if (abs !== root && skipDirs.has(basename(abs))) return;
       for (const entry of readdirSync(abs)) visit(join(abs, entry));
@@ -476,9 +482,19 @@ export async function scanTrustTreeWithAnalyzers(
           run,
         })
       : { checks: [], analyzersRun: [] };
-  const allChecks = [...checks, ...detectorResult.checks];
+  const mcpDetectorResult =
+    mcpConfigFiles.length > 0 && run !== undefined && platform !== undefined && env !== undefined
+      ? await runMcpConfigDetectors(safeRoot, {
+          env,
+          platform,
+          posture,
+          requiredDetectors,
+          run,
+        })
+      : { checks: [], analyzersRun: [] };
+  const allChecks = [...checks, ...detectorResult.checks, ...mcpDetectorResult.checks];
   return {
-    analyzersRun: ["aih-native", ...detectorResult.analyzersRun],
+    analyzersRun: ["aih-native", ...detectorResult.analyzersRun, ...mcpDetectorResult.analyzersRun],
     checks: allChecks.length > 0 ? allChecks : [passCheck(safeRoot, docs.length)],
   };
 }

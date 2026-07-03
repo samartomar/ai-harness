@@ -38,6 +38,8 @@ export type Confidence = z.infer<typeof ConfidenceSchema>;
 const CommandSchema = z.object({ value: z.string(), confidence: ConfidenceSchema });
 const CommandsSchema = z
   .object({
+    verify: CommandSchema.optional(),
+    typecheck: CommandSchema.optional(),
     test: CommandSchema.optional(),
     build: CommandSchema.optional(),
     lint: CommandSchema.optional(),
@@ -62,6 +64,8 @@ const WorkspaceContractSchema = z.object({
 const ScaleClassSchema = z.enum(["small", "medium", "large", "unknown"]);
 export type ScaleClass = z.infer<typeof ScaleClassSchema>;
 
+const McpServerLabelSchema = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,79}$/);
+
 export const ProjectContractSchema = z.object({
   schemaVersion: z.literal(1),
   /** The canonical context dir this contract lives under (echoes `ctx.contextDir`). */
@@ -78,6 +82,8 @@ export const ProjectContractSchema = z.object({
   packageManager: z.string().optional(),
   /** Notable entry points (repo-relative POSIX; validated portable by the probe). */
   entrypoints: z.array(z.string()).default([]),
+  /** MCP servers declared in the repo's root .mcp.json, if present. */
+  mcpServers: z.array(McpServerLabelSchema).default([]),
   /** The canonical commands, each tagged with its confidence; absent keys are omitted. */
   commands: CommandsSchema,
   /**

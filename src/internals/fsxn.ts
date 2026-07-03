@@ -317,6 +317,7 @@ function rollback(applied: AppliedWrite[]): void {
         if (existsSync(a.path)) rmSync(a.path, { force: true });
       } else if (a.backup && existsSync(a.backup)) {
         copyFileSync(a.backup, a.path);
+        rmSync(a.backup, { force: true });
       }
     } catch {
       // best-effort; rollback should never mask the original error

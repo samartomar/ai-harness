@@ -301,6 +301,7 @@ export async function runCapability(
       mode: { apply: ctx.apply, verify: ctx.verify, json, sarif: typeof opts.sarif === "string" },
       platform: host.platform,
       node: process.versions.node,
+      root: resolvedRoot,
       result,
       support: support
         ? { findings: support.findings.length, templates: support.templates.length }
@@ -366,6 +367,7 @@ export async function runCapability(
       },
       platform: process.platform,
       node: process.versions.node,
+      root: resolvedRoot,
     });
     if (json) {
       write(`${JSON.stringify({ error: { code, message } }, null, 2)}\n`);

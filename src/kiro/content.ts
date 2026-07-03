@@ -51,7 +51,8 @@ interface KiroHook {
 /**
  * A small, stack-aware hook set in the verified `.kiro.hook` schema, namespaced
  * `aih-` so it never clashes with ECC's hooks. The quality-gate runs the repo's
- * own test/lint commands; the others ask the agent on the relevant events.
+ * own declared verify gate when present, otherwise its test/lint commands; the
+ * others ask the agent on the relevant events.
  */
 export function kiroHooks(stack: RepoStack): KiroHook[] {
   const globs = sourceGlobs(stack);
@@ -81,9 +82,11 @@ export function kiroHooks(stack: RepoStack): KiroHook[] {
         when: { type: "fileEdited", patterns: globs },
         then: {
           type: "askAgent",
-          prompt: stack.testRunner
-            ? `A source file was edited. Check that the modified behavior has test coverage; add missing tests and run \`${stack.testRunner}\` to verify.`
-            : "A source file was edited. Check that the modified behavior has test coverage and suggest tests for anything new (no test command is configured in this repo yet).",
+          prompt: stack.verifyCommand
+            ? `A source file was edited. Check that the modified behavior has test coverage; add missing tests and run \`${stack.verifyCommand}\` before completion.`
+            : stack.testRunner
+              ? `A source file was edited. Check that the modified behavior has test coverage; add missing tests and run \`${stack.testRunner}\` to verify.`
+              : "A source file was edited. Check that the modified behavior has test coverage and suggest tests for anything new (no test command is configured in this repo yet).",
         },
       },
     },
@@ -110,7 +113,9 @@ export function kiroHooks(stack: RepoStack): KiroHook[] {
     },
   });
   // A manual quality gate — only when the repo actually has commands to run.
-  const gate = [stack.lintCommand, stack.testRunner].filter((c): c is string => Boolean(c));
+  const gate = stack.verifyCommand
+    ? [stack.verifyCommand]
+    : [stack.lintCommand, stack.testRunner].filter((c): c is string => Boolean(c));
   if (gate.length > 0) {
     hooks.push({
       path: ".kiro/hooks/aih-quality-gate.kiro.hook",
@@ -118,8 +123,7 @@ export function kiroHooks(stack: RepoStack): KiroHook[] {
         version: "1.0.0",
         enabled: true,
         name: "aih-quality-gate",
-        description:
-          "Run the repo's lint + test quality gate. Trigger manually from the Hooks panel.",
+        description: "Run the repo's declared quality gate. Trigger manually from the Hooks panel.",
         when: { type: "userTriggered" },
         then: { type: "runCommand", command: gate.join(" && ") },
       },
@@ -131,6 +135,8 @@ export function kiroHooks(stack: RepoStack): KiroHook[] {
 /** Stack-aware CLI-tool usage, as always-on Kiro steering. */
 export function agentToolsSteering(stack: RepoStack): string {
   const stackTools: string[] = [];
+  if (stack.verifyCommand) stackTools.push(`- \`${stack.verifyCommand}\` — completion gate.`);
+  if (stack.typecheckCommand) stackTools.push(`- \`${stack.typecheckCommand}\` — typecheck.`);
   if (stack.testRunner) stackTools.push(`- \`${stack.testRunner}\` — run the tests.`);
   if (stack.lintCommand) stackTools.push(`- \`${stack.lintCommand}\` — lint before committing.`);
   if (stack.buildCommand) stackTools.push(`- \`${stack.buildCommand}\` — build.`);
