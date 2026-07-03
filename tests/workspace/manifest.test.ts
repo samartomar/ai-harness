@@ -83,6 +83,21 @@ describe("workspace manifest parser", () => {
     expect(m.errors.join("\n")).toMatch(/duplicate repo id/);
   });
 
+  it("rejects duplicate repo paths even when repo ids differ", () => {
+    const m = parseWorkspaceManifest(
+      {
+        repos: [
+          { id: "api-a", path: "api", kind: "backend" },
+          { id: "api-b", path: "api", kind: "frontend" },
+        ],
+      },
+      "ai-coding",
+    );
+
+    expect(m.status).toBe("ERROR");
+    expect(m.errors.join("\n")).toMatch(/duplicate repo path/);
+  });
+
   it("rejects inline Markdown and HTML syntax in printable manifest fields", () => {
     const m = parseWorkspaceManifest(
       {
