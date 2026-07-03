@@ -128,6 +128,19 @@ describe("buildAihDataV4 — adoption", () => {
     expect(s?.title).toContain("3 of 4 adoption checks");
     expect(s?.insight).toContain("devcontainer");
   });
+
+  it("escapes quotes in tool-name title attributes so a value can't break out (v4)", () => {
+    const data = buildAihDataV4([
+      digest("Tools installed — x", "body", {
+        present: [],
+        absent: ['a" onmouseover="x'],
+        total: 1,
+      }),
+    ]);
+    const grid = data.sections["sec-adoption"]?.grid ?? "";
+    expect(grid).toContain('title="a&quot; onmouseover=&quot;x"'); // quote entity-escaped
+    expect(grid).not.toContain('title="a" onmouseover="x"'); // no raw attribute breakout
+  });
 });
 
 describe("buildAihDataV4 — events", () => {
