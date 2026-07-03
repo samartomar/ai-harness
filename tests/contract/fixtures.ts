@@ -24,6 +24,8 @@ export function seedMindworksLike(dir: string): void {
       name: "mindworks",
       description: "A worked-example service",
       scripts: {
+        verify: "npm run typecheck && npm test && npm run build",
+        typecheck: "tsc --noEmit",
         test: "vitest run",
         build: "tsc -p .",
         lint: "biome check .",

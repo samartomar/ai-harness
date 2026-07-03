@@ -160,6 +160,21 @@ describe("PR 1B — project.md + setup.md", () => {
     expect(md).toContain("confirm before relying on it");
   });
 
+  it("renders declared verify as the completion gate and other commands as partial checks", async () => {
+    seedMindworksLike(dir);
+    const c = await synth();
+    const project = projectContractDoc("ai-coding", c);
+    const setup = setupDoc("ai-coding", c);
+
+    expect(project).toContain("**verify (completion gate)** — `npm run verify` _(detected)_");
+    expect(project).toContain("**typecheck** — `npm run typecheck` _(detected)_");
+    expect(setup).toContain("Run the completion gate: `npm run verify`");
+    expect(setup).toContain("Fast partial checks:");
+    expect(setup).toContain("`npm run typecheck`");
+    expect(setup).toContain("`npm test`");
+    expect(setup).toContain("`npm run lint`");
+  });
+
   it("renders safe install commands for Python package managers", async () => {
     seedMindworksLike(dir);
     const base = await synth();
@@ -244,6 +259,10 @@ describe("command confidence", () => {
   it("marks declared package.json scripts as detected", async () => {
     seedMindworksLike(dir);
     const c = await synth();
+    expect(c.commands).toMatchObject({
+      verify: { value: "npm run verify", confidence: "detected" },
+      typecheck: { value: "npm run typecheck", confidence: "detected" },
+    });
     expect(c.commands.test).toEqual({ value: "npm test", confidence: "detected" });
     expect(c.commands.build).toEqual({ value: "npm run build", confidence: "detected" });
     expect(c.commands.lint).toEqual({ value: "npm run lint", confidence: "detected" });
@@ -259,6 +278,8 @@ describe("command confidence", () => {
     expect(c.commands.build).toBeUndefined();
     expect(c.commands.lint).toBeUndefined();
     expect(c.commands.start).toBeUndefined();
+    expect(c.commands).not.toHaveProperty("verify");
+    expect(c.commands).not.toHaveProperty("typecheck");
   });
 
   it("emits Cargo commands and package manager as inferred Rust contract facts", async () => {
