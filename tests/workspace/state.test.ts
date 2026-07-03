@@ -6,7 +6,11 @@ import type { PlanContext } from "../../src/internals/plan.js";
 import type { Runner } from "../../src/internals/proc.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 import type { WorkspaceManifest, WorkspaceRepo } from "../../src/workspace/manifest.js";
-import { collectWorkspaceSnapshot, readWorkspaceRepoState } from "../../src/workspace/state.js";
+import {
+  collectWorkspaceSnapshot,
+  mapWorkspaceRepos,
+  readWorkspaceRepoState,
+} from "../../src/workspace/state.js";
 
 let parent: string;
 
@@ -132,5 +136,12 @@ describe("workspace state collection", () => {
 
     expect(maxInsideChecks).toBeGreaterThan(1);
     expect(maxInsideChecks).toBeLessThanOrEqual(4);
+  });
+
+  it("rejects sparse repo arrays instead of returning holes", async () => {
+    const repos = new Array<WorkspaceRepo>(2);
+    repos[1] = childRepo("ui");
+
+    await expect(mapWorkspaceRepos(repos, async (item) => item.id)).rejects.toThrow(/dense/);
   });
 });
