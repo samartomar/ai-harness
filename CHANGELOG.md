@@ -6,6 +6,60 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-07-03
+
+This package release ships the completed v1.0.2, v1.1.0, and v1.2.0 roadmap
+milestones together. The milestone tags remain on their GitHub issues; the npm
+artifact advances directly from 1.0.1 to 1.2.0 because the completed work landed
+as one verified mainline release train.
+
+### Added
+
+- **`aih verify-release`** verifies a published aih version across npm registry
+  signatures, GitHub Release checksums, the cosign bundle over `SHA256SUMS.txt`,
+  and the release tarball hash. It resolves the version once per plan so every
+  probe grades the same artifact. (#151)
+- **Generated JSON Schemas** for `.aih-config.json` and `aih-org-policy.json`,
+  plus the SchemaStore submission path for editor/catalog integration. (#152)
+- **Run-ledger schemaVersion 2** adds host and repo identity fields, with a SIEM
+  collector recipe for enterprise ingestion. (#153)
+- **mcp-scanner detector support** for the `.mcp.json` layer, gated behind
+  explicit onboarding so teams can opt into the Cisco scanner follow-on without
+  surprise egress or credentials exposure. (#154)
+- **Enterprise review pack**: architecture, threat model, and enterprise
+  onboarding docs for security and platform reviewers. (#146)
+- **codebase-memory-mcp catalog wiring** in the always-on MCP/tooling surface.
+  (#150)
+- **Contract quality gates** now include declared-only `verify` and `typecheck`
+  command slots, so generated contracts, setup docs, router guidance, and Kiro
+  steering can point agents at the real `npm run verify` completion gate. (#157)
+- **Property-based executor and fault-injection coverage** for the executor
+  surface. (#155)
+
+### Changed
+
+- Generated contract artifacts now populate CLI entrypoints from `package.json`
+  bin/main metadata and render setup/known-gaps guidance from the richer contract
+  surface. (#147, #149)
+- Report remediation commands are validated against the CLI contract before being
+  emitted, reducing the chance that docs or reports tell users to run a stale or
+  nonexistent command. (#148)
+- Public docs and roadmap notes now reflect shipped release mechanics, command
+  references, schema links, and review-gate expectations. (#142)
+- Release version coherence now covers `package-lock.json` as well as
+  `package.json` and the CLI `VERSION` constant, and RELEASING.md names the
+  lockfile update explicitly.
+
+### Security
+
+- Quarantined GitHub fetches honor `HTTPS_PROXY`, `HTTP_PROXY`, and `NO_PROXY`
+  without weakening the fetch boundary, so enterprise proxy networks can acquire
+  pinned sources through the same trust gate. (#143)
+- Skill-source extraction allows in-tree symlinks only after realpath containment
+  checks and continues to reject tree-escaping entries. (#144)
+- The SkillSpector detector image is sourced and pinned, with hardened container
+  execution and read-only source mounts. (#145)
+
 ## [1.0.1] - 2026-07-02
 
 Documentation and presentation only — no code, CLI surface, output, or behavior change
@@ -460,7 +514,8 @@ GitHub but **never published to npm**; the first published release is 0.2.0.
   (npm + github-actions), private vulnerability reporting, `@claude` workflow gated
   to trusted authors, and GitHub Actions pinned to commit SHAs.
 
-[Unreleased]: https://github.com/samartomar/ai-harness/compare/v1.0.1...HEAD
+[Unreleased]: https://github.com/samartomar/ai-harness/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/samartomar/ai-harness/compare/v1.0.1...v1.2.0
 [1.0.1]: https://github.com/samartomar/ai-harness/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/samartomar/ai-harness/compare/v0.6.0...v1.0.0
 [0.6.0]: https://github.com/samartomar/ai-harness/compare/v0.5.0...v0.6.0
