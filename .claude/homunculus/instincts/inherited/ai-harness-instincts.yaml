@@ -1,0 +1,580 @@
+# Instincts generated from https://github.com/samartomar/ai-harness
+# Generated: 2026-07-03T17:16:04.589Z
+# Version: 2.0
+# NOTE: This file supplements (does not replace) any existing curated instincts.
+# High-confidence manually curated instincts should be preserved alongside these.
+
+---
+id: ai-harness-commit-conventional
+trigger: "when writing a commit message"
+confidence: 0.85
+domain: git
+source: repo-analysis
+source_repo: https://github.com/samartomar/ai-harness
+---
+
+# Ai Harness Commit Conventional
+
+## Action
+
+Use conventional commit format with prefixes: test, fix, chore
+
+## Evidence
+
+- 18 commits analyzed
+- Detected conventional commit pattern
+- Examples: test: add workspace command audit repros, fix: harden workspace repo scopes
+
+---
+id: ai-harness-commit-length
+trigger: "when writing a commit message"
+confidence: 0.6
+domain: git
+source: repo-analysis
+source_repo: https://github.com/samartomar/ai-harness
+---
+
+# Ai Harness Commit Length
+
+## Action
+
+Keep commit messages concise (~41 characters)
+
+## Evidence
+
+- Average commit message length: 41 chars
+- Based on 18 commits
+
+---
+id: ai-harness-naming-files
+trigger: "when creating a new file"
+confidence: 0.8
+domain: code-style
+source: repo-analysis
+source_repo: https://github.com/samartomar/ai-harness
+---
+
+# Ai Harness Naming Files
+
+## Action
+
+Use camelCase naming convention
+
+## Evidence
+
+- Analyzed file naming patterns in repository
+- Dominant pattern: camelCase
+
+---
+id: ai-harness-import-relative
+trigger: "when importing modules"
+confidence: 0.75
+domain: code-style
+source: repo-analysis
+source_repo: https://github.com/samartomar/ai-harness
+---
+
+# Ai Harness Import Relative
+
+## Action
+
+Use relative imports for project files
+
+## Evidence
+
+- Import analysis shows relative import pattern
+- Example: import { x } from '../lib/x'
+
+---
+id: ai-harness-export-style
+trigger: "when exporting from a module"
+confidence: 0.7
+domain: code-style
+source: repo-analysis
+source_repo: https://github.com/samartomar/ai-harness
+---
+
+# Ai Harness Export Style
+
+## Action
+
+Prefer named exports
+
+## Evidence
+
+- Export pattern analysis
+- Dominant style: named
+
+---
+id: ai-harness-test-separate
+trigger: "when writing tests"
+confidence: 0.8
+domain: testing
+source: repo-analysis
+source_repo: https://github.com/samartomar/ai-harness
+---
+
+# Ai Harness Test Separate
+
+## Action
+
+Place tests in the tests/ or __tests__/ directory, mirroring src structure
+
+## Evidence
+
+- Separate test directory pattern detected
+- Tests live in dedicated test folders
+
+---
+id: ai-harness-test-framework
+trigger: "when writing tests"
+confidence: 0.9
+domain: testing
+source: repo-analysis
+source_repo: https://github.com/samartomar/ai-harness
+---
+
+# Ai Harness Test Framework
+
+## Action
+
+Use vitest as the test framework
+
+## Evidence
+
+- Test framework detected: vitest
+- File pattern: *.test.ts
+
+---
+id: ai-harness-test-naming
+trigger: "when creating a test file"
+confidence: 0.85
+domain: testing
+source: repo-analysis
+source_repo: https://github.com/samartomar/ai-harness
+---
+
+# Ai Harness Test Naming
+
+## Action
+
+Name test files using the pattern: *.test.ts
+
+## Evidence
+
+- File pattern: *.test.ts
+- Consistent across test files
+
+---
+id: ai-harness-test-types
+trigger: "when planning tests for a feature"
+confidence: 0.7
+domain: testing
+source: repo-analysis
+source_repo: https://github.com/samartomar/ai-harness
+---
+
+# Ai Harness Test Types
+
+## Action
+
+Write unit, integration tests to match project standards
+
+## Evidence
+
+- Test types detected: unit, integration
+- Coverage config: yes
+
+---
+id: ai-harness-workflow-feature-development
+trigger: "when implementing a new feature"
+confidence: 0.9
+domain: workflow
+source: repo-analysis
+source_repo: https://github.com/samartomar/ai-harness
+---
+
+# Ai Harness Workflow Feature Development
+
+## Action
+
+Follow the feature-development workflow:
+1. Add feature implementation
+2. Add tests for feature
+3. Update documentation
+
+## Evidence
+
+- Workflow detected from commit patterns
+- Frequency: ~10x per month
+- Files: tests/workspace/*, tests/report/*, **/*.test.*
+
+---
+id: ai-harness-workflow-bugfix-with-corresponding-tests
+trigger: "when doing bugfix with corresponding tests"
+confidence: 0.8
+domain: workflow
+source: repo-analysis
+source_repo: https://github.com/samartomar/ai-harness
+---
+
+# Ai Harness Workflow Bugfix With Corresponding Tests
+
+## Action
+
+Follow the bugfix-with-corresponding-tests workflow:
+1. Edit one or more files in src/workspace/ or src/report/ to implement the fix.
+2. Edit or add one or more files in tests/workspace/ or tests/report/ to add or update tests for the fix.
+
+## Evidence
+
+- Workflow detected from commit patterns
+- Frequency: ~6x per month
+- Files: src/workspace/*.ts, src/report/*.ts, tests/workspace/*.test.ts
+
+---
+id: ai-harness-workflow-test-driven-repro-workflow
+trigger: "when doing test driven repro workflow"
+confidence: 0.85
+domain: workflow
+source: repo-analysis
+source_repo: https://github.com/samartomar/ai-harness
+---
+
+# Ai Harness Workflow Test Driven Repro Workflow
+
+## Action
+
+Follow the test-driven-repro-workflow workflow:
+1. Edit or add one or more test files in tests/workspace/ or tests/report/ to cover a new scenario or bug.
+2. No changes to src/ files in this commit.
+
+## Evidence
+
+- Workflow detected from commit patterns
+- Frequency: ~7x per month
+- Files: tests/workspace/*.test.ts, tests/report/*.test.ts
+
+---
+id: ai-harness-workflow-version-bump-release
+trigger: "when doing version bump release"
+confidence: 0.55
+domain: workflow
+source: repo-analysis
+source_repo: https://github.com/samartomar/ai-harness
+---
+
+# Ai Harness Workflow Version Bump Release
+
+## Action
+
+Follow the version-bump-release workflow:
+1. Edit package.json and package-lock.json to update the version.
+2. Edit CHANGELOG.md to document the release.
+3. Edit src/program.ts to update version reference.
+
+## Evidence
+
+- Workflow detected from commit patterns
+- Frequency: ~1x per month
+- Files: package.json, package-lock.json, CHANGELOG.md
+
+---
+id: ai-harness-instinct-file-naming
+trigger: "When creating a new file in the codebase"
+confidence: 0.9
+domain: code-style
+source: repo-analysis
+source_repo: samartomar/ai-harness
+---
+
+# Ai Harness Instinct File Naming
+
+## Action
+
+Name the file using camelCase
+
+## Evidence
+
+- Pattern in namingConventions.files
+- Observed in src/workspace/manifest.ts
+
+---
+id: ai-harness-instinct-function-naming
+trigger: "When defining a new function"
+confidence: 0.9
+domain: code-style
+source: repo-analysis
+source_repo: samartomar/ai-harness
+---
+
+# Ai Harness Instinct Function Naming
+
+## Action
+
+Name the function using camelCase
+
+## Evidence
+
+- Pattern in namingConventions.functions
+- Observed in src/workspace/detect.ts
+
+---
+id: ai-harness-instinct-class-naming
+trigger: "When defining a new class"
+confidence: 0.9
+domain: code-style
+source: repo-analysis
+source_repo: samartomar/ai-harness
+---
+
+# Ai Harness Instinct Class Naming
+
+## Action
+
+Name the class using PascalCase
+
+## Evidence
+
+- Pattern in namingConventions.classes
+
+---
+id: ai-harness-instinct-constant-naming
+trigger: "When declaring a constant"
+confidence: 0.9
+domain: code-style
+source: repo-analysis
+source_repo: samartomar/ai-harness
+---
+
+# Ai Harness Instinct Constant Naming
+
+## Action
+
+Name the constant using SCREAMING_SNAKE_CASE
+
+## Evidence
+
+- Pattern in namingConventions.constants
+
+---
+id: ai-harness-instinct-import-style
+trigger: "When importing modules within the project"
+confidence: 0.8
+domain: code-style
+source: repo-analysis
+source_repo: samartomar/ai-harness
+---
+
+# Ai Harness Instinct Import Style
+
+## Action
+
+Use relative import paths
+
+## Evidence
+
+- Pattern in importStyle
+- Observed in src/workspace/index.ts
+
+---
+id: ai-harness-instinct-export-style
+trigger: "When exporting from a module"
+confidence: 0.8
+domain: code-style
+source: repo-analysis
+source_repo: samartomar/ai-harness
+---
+
+# Ai Harness Instinct Export Style
+
+## Action
+
+Use named exports
+
+## Evidence
+
+- Pattern in exportStyle
+
+---
+id: ai-harness-instinct-test-file-pattern
+trigger: "When creating a new test file"
+confidence: 0.9
+domain: testing
+source: repo-analysis
+source_repo: samartomar/ai-harness
+---
+
+# Ai Harness Instinct Test File Pattern
+
+## Action
+
+Name the file with the pattern *.test.ts and place it in the tests/ directory
+
+## Evidence
+
+- Pattern in testing.filePattern
+- Observed in tests/workspace/manifest.test.ts
+
+---
+id: ai-harness-instinct-test-framework
+trigger: "When writing or running tests"
+confidence: 0.9
+domain: testing
+source: repo-analysis
+source_repo: samartomar/ai-harness
+---
+
+# Ai Harness Instinct Test Framework
+
+## Action
+
+Use the vitest testing framework
+
+## Evidence
+
+- Pattern in testing.framework
+- Presence of vitest config
+
+---
+id: ai-harness-instinct-test-types
+trigger: "When designing tests"
+confidence: 0.8
+domain: testing
+source: repo-analysis
+source_repo: samartomar/ai-harness
+---
+
+# Ai Harness Instinct Test Types
+
+## Action
+
+Include both unit and integration tests
+
+## Evidence
+
+- Pattern in testing.testTypes
+- Examples in tests/workspace/manifest.test.ts
+
+---
+id: ai-harness-instinct-test-coverage
+trigger: "When configuring tests"
+confidence: 0.8
+domain: testing
+source: repo-analysis
+source_repo: samartomar/ai-harness
+---
+
+# Ai Harness Instinct Test Coverage
+
+## Action
+
+Enable and maintain test coverage configuration
+
+## Evidence
+
+- Pattern in testing.coverageConfig
+
+---
+id: ai-harness-instinct-commit-format
+trigger: "When making a git commit"
+confidence: 0.9
+domain: git
+source: repo-analysis
+source_repo: samartomar/ai-harness
+---
+
+# Ai Harness Instinct Commit Format
+
+## Action
+
+Use conventional commit prefixes: test, fix, or chore, followed by a colon and a short description
+
+## Evidence
+
+- Seen in commit 'test: add workspace command audit repros'
+- Seen in commit 'fix: harden workspace repo scopes'
+- Pattern in commits.prefixes
+
+---
+id: ai-harness-instinct-commit-length
+trigger: "When writing a commit message"
+confidence: 0.7
+domain: git
+source: repo-analysis
+source_repo: samartomar/ai-harness
+---
+
+# Ai Harness Instinct Commit Length
+
+## Action
+
+Keep the commit message concise (around 41 characters on average)
+
+## Evidence
+
+- Pattern in commits.averageLength
+
+---
+id: ai-harness-instinct-bugfix-with-tests
+trigger: "When fixing a bug or hardening logic in workspace or report modules"
+confidence: 0.95
+domain: workflow
+source: repo-analysis
+source_repo: samartomar/ai-harness
+---
+
+# Ai Harness Instinct Bugfix With Tests
+
+## Action
+
+Edit src/workspace/*.ts or src/report/*.ts and add or update corresponding tests in tests/workspace/*.test.ts or tests/report/*.test.ts
+
+## Evidence
+
+- Workflow: bugfix-with-corresponding-tests
+- Seen in commit sequence: fix + test
+- Files: src/workspace/*.ts, tests/workspace/*.test.ts
+
+---
+id: ai-harness-instinct-test-driven-repro
+trigger: "When adding a test to reproduce a bug or validate a scenario in workspace logic"
+confidence: 0.9
+domain: workflow
+source: repo-analysis
+source_repo: samartomar/ai-harness
+---
+
+# Ai Harness Instinct Test Driven Repro
+
+## Action
+
+Edit or add test files in tests/workspace/*.test.ts or tests/report/*.test.ts without changing src/ files
+
+## Evidence
+
+- Workflow: test-driven-repro-workflow
+- Seen in commit: test: add workspace validation and performance repros
+- Files: tests/workspace/*.test.ts
+
+---
+id: ai-harness-instinct-version-bump-release
+trigger: "When releasing a new version"
+confidence: 1
+domain: workflow
+source: repo-analysis
+source_repo: samartomar/ai-harness
+---
+
+# Ai Harness Instinct Version Bump Release
+
+## Action
+
+Update package.json and package-lock.json version, edit CHANGELOG.md, and update version reference in src/program.ts
+
+## Evidence
+
+- Workflow: version-bump-release
+- Seen in commit: chore: bump version to 1.2.1
+- Files: package.json, CHANGELOG.md, src/program.ts
+
