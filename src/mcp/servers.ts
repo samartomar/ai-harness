@@ -3,8 +3,9 @@ import type { RepoStack } from "../profile/scan.js";
 /**
  * The `.mcp.json` server set is assembled from the DETECTED stack, not a fixed
  * boilerplate list:
- *  - `code-review-graph` + `sequential-thinking` (local, stdio) — code intelligence
- *    and structured reasoning; useful in any repo, zero egress, zero credentials;
+ *  - `code-review-graph` + `codebase-memory-mcp` + `sequential-thinking` (local, stdio) —
+ *    code intelligence (impact/blast radius), codebase memory (search/trace/ADR), and
+ *    structured reasoning; useful in any repo, zero egress, zero credentials;
  *  - `github` + `context7` — on-by-default, secret-free remote servers (GitHub via
  *    the client's OAuth, no token stored; Context7 hosted docs). Each names its
  *    egress in its own description so it is visible in `.mcp.json` at a glance;
@@ -106,6 +107,20 @@ export function mcpServers(
       args: ["code-review-graph@2.3.6", "serve"],
       description:
         "Local code-review knowledge graph (impact radius, affected flows) served over stdio via uvx.",
+      classification: "local",
+      egress: "none",
+      credentials: "none",
+      supplyChain: "pinned",
+    },
+    "codebase-memory-mcp": {
+      type: "stdio",
+      command: "uvx",
+      // Pinned (not @latest); bump deliberately. Bare invocation runs the stdio MCP server
+      // (no subcommand). The local memory companion to code-review-graph: index + semantic
+      // search + trace_path + ADR memory.
+      args: ["codebase-memory-mcp@0.8.1"],
+      description:
+        "Local codebase memory/knowledge graph (index_repository, search_graph, query_graph, trace_path) — memory companion to code-review-graph, served over stdio via uvx.",
       classification: "local",
       egress: "none",
       credentials: "none",
