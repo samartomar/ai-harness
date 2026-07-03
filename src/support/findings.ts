@@ -100,6 +100,13 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     title: "git not found on PATH",
     action: "Install git (winget/apt/brew or your software catalog) and reopen the shell.",
   },
+  "env.git-bash-missing": {
+    audience: "developer",
+    failSeverity: "degraded",
+    title: "Git Bash not found (needed to run ECC's Kiro installer on Windows)",
+    action:
+      "Install Git for Windows (https://git-scm.com/download/win), which bundles Git Bash, then re-run `aih ecc --cli kiro --apply`. A default Git install only puts `Git\\cmd` on PATH, not `Git\\bin` (bash.exe) — aih auto-resolves bash.exe from the standard install path, so it need not be on PATH once Git for Windows is installed.",
+  },
   "env.dev-tool-missing": {
     audience: "developer",
     failSeverity: "degraded",

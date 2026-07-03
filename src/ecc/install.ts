@@ -1,6 +1,8 @@
 import type { Cli } from "../internals/clis.js";
 import { type Action, doc, exec } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
+import type { Platform } from "../platform/base.js";
+import { execArgv } from "../tools/install.js";
 
 /**
  * ECC is installed by running ECC's OWN published installer — aih assembles no ECC
@@ -37,6 +39,11 @@ export interface EccInstallInputs {
   /** Short human stack summary for the advisor / summary docs. */
   stackSummary: string;
   /**
+   * Host platform — routes the `npx` installer through `cmd /c` on Windows, where
+   * `execFile` cannot spawn a `.cmd` shim directly (npm/npx have no `.exe`).
+   */
+  platform: Platform;
+  /**
    * Optional pin for `npx ecc-install@<version>` (enterprise supply-chain control,
    * from `AIH_ECC_INSTALL_VERSION`). Unset → latest from npm.
    */
@@ -54,12 +61,14 @@ export function eccInstallerArgv(cli: Cli, profile: string, version?: string): s
 }
 
 /** Run ECC's real installer for a supported CLI, under --apply (pinned if requested). */
-function installerExec(cli: Cli, profile: string, version?: string): Action {
+function installerExec(cli: Cli, profile: string, platform: Platform, version?: string): Action {
   const spec = installerSpec(version);
   const tag = version ? `pinned ${spec}` : "latest from npm";
   return exec(
     `Install ECC for ${cli} — npx ${spec} --target ${cli} --profile ${profile} (${tag}, under --apply)`,
-    eccInstallerArgv(cli, profile, version),
+    // Windows execFile can't spawn the `npx` .cmd shim directly (no .exe) — route it
+    // through `cmd /c`, the same shim fix the rest of the harness uses (tools/install.ts).
+    execArgv(platform, eccInstallerArgv(cli, profile, version)),
   );
 }
 
@@ -97,7 +106,9 @@ function consultDoc(cli: Cli, inputs: EccInstallInputs): Action {
 /** Build the ECC install action(s) for one CLI (Kiro is handled in index.ts). */
 export function eccActionsForCli(cli: Cli, inputs: EccInstallInputs): Action[] {
   if (isEccInstallTarget(cli)) {
-    const actions: Action[] = [installerExec(cli, inputs.profile, inputs.installVersion)];
+    const actions: Action[] = [
+      installerExec(cli, inputs.profile, inputs.platform, inputs.installVersion),
+    ];
     if (cli === "claude") actions.push(claudePluginDoc());
     return actions;
   }

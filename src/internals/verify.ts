@@ -13,6 +13,7 @@ export type CheckCode =
   // environment / runtime
   | "env.node-runtime"
   | "env.git-missing"
+  | "env.git-bash-missing"
   | "env.dev-tool-missing"
   | "env.tool-install-blocked"
   // certificates / TLS
