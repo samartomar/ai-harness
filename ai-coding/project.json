@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "contextDir": "ai-coding",
+  "targets": [],
+  "description": "Enterprise AI Bootstrapping Harness — governed AI-assisted coding for enterprise workstations and repos: TLS trust, repo canon, skill supply chain, evidence",
+  "languages": [
+    "TypeScript/Node.js"
+  ],
+  "frameworks": [],
+  "cloud": [],
+  "databases": [],
+  "deployment": [],
+  "packageManager": "npm",
+  "entrypoints": [],
+  "commands": {
+    "test": {
+      "value": "npm test",
+      "confidence": "detected"
+    },
+    "build": {
+      "value": "npm run build",
+      "confidence": "detected"
+    },
+    "lint": {
+      "value": "npm run lint",
+      "confidence": "detected"
+    }
+  },
+  "scale": {
+    "trackedFiles": 443,
+    "class": "medium",
+    "isMonorepo": false
+  },
+  "sensitivePaths": [],
+  "knownGaps": []
+}
