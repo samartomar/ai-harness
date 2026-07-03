@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs";
 import { basename, join, posix, resolve } from "node:path";
+import { AihError } from "../errors.js";
 import type { Action, CommandSpec, Plan, PlanContext, WriteAction } from "../internals/plan.js";
 import { doc, plan, probe, writeJson, writeText } from "../internals/plan.js";
 import type { Check } from "../internals/verify.js";
@@ -50,6 +51,12 @@ async function workspacePlan(ctx: PlanContext): Promise<Plan> {
   const repos = detectChildRepos(ctx.root, explicitRepos);
   const enableGit = ctx.options.git === true;
   const existing = readWorkspaceManifest(ctx.root, dir);
+  if (existing?.status === "ERROR") {
+    throw new AihError(
+      `workspace requires a valid .aih-workspace.json: ${existing.errors.join("; ")}`,
+      "AIH_WORKSPACE",
+    );
+  }
   const useExistingRepos = explicitRepos.length === 0 && existing && existing.repos.length > 0;
   const normalizedRepos = useExistingRepos
     ? existing.repos

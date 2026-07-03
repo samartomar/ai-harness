@@ -4,10 +4,7 @@ import { AihError } from "../errors.js";
 
 function cleanPrintable(value: string, label: string): void {
   if (/[\r\n\t|]/.test(value)) {
-    throw new AihError(
-      `${label} must be safe to print in workspace reports: ${value}`,
-      "AIH_WORKSPACE",
-    );
+    throw new AihError(`${label} must be safe to print in workspace reports`, "AIH_WORKSPACE");
   }
 }
 
