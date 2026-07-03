@@ -6,6 +6,18 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-07-03
+
+### Fixed
+
+- Preserve object-form workspace manifest repos when re-running
+  `aih workspace --repos ... --apply`, avoiding object/string repo duplication
+  that could leave the manifest fail-closed on the next run.
+- Reject inline Markdown/HTML control syntax in workspace manifest printable
+  fields before those values reach generated reports and docs.
+- Reject sparse workspace repo arrays during parallel repo-state fan-out instead
+  of returning holes or partial results.
+
 ## [1.2.0] - 2026-07-03
 
 This package release ships the completed v1.0.2, v1.1.0, and v1.2.0 roadmap
@@ -514,7 +526,8 @@ GitHub but **never published to npm**; the first published release is 0.2.0.
   (npm + github-actions), private vulnerability reporting, `@claude` workflow gated
   to trusted authors, and GitHub Actions pinned to commit SHAs.
 
-[Unreleased]: https://github.com/samartomar/ai-harness/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/samartomar/ai-harness/compare/v1.2.1...HEAD
+[1.2.1]: https://github.com/samartomar/ai-harness/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/samartomar/ai-harness/compare/v1.0.1...v1.2.0
 [1.0.1]: https://github.com/samartomar/ai-harness/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/samartomar/ai-harness/compare/v0.6.0...v1.0.0
