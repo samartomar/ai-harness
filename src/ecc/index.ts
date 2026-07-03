@@ -99,16 +99,28 @@ function kiroInstallActions(ctx: PlanContext, dir: string, posix: string): Actio
       {
         // A failed install otherwise renders as a bare "(exit 127)" under a misleading
         // "Applied ecc", with the exit code silently non-zero and the report showing
-        // "0 failed". Land it IN the report so --verify escalates a routable ticket
-        // (peer: heal/cert-verify.ts's persist exec).
-        failureCheck: (result) => ({
-          name: "Kiro ECC install (Git Bash)",
-          verdict: "fail",
-          code: "env.git-bash-missing",
-          detail: `ECC's .kiro/install.sh (Git Bash) exited ${
-            result.code ?? "on a signal"
-          }; ensure Git for Windows / Git Bash is installed and healthy, then re-run \`aih ecc --cli kiro --apply\``,
-        }),
+        // "0 failed". Land it IN the report so --verify escalates it (peer:
+        // heal/cert-verify.ts's persist exec). Only a spawn failure / 127 is actually
+        // "Git Bash missing" — a bash we resolved can still fail install.sh for its own
+        // reason (interrupted clone, read-only root, an ECC installer bug); leave that
+        // uncoded so it surfaces + flips the exit WITHOUT misrouting the "install Git
+        // for Windows" self-fix guidance.
+        failureCheck: (result) => {
+          const bashMissing = result.spawnError === true || result.code === 127;
+          const exit = result.code ?? "on a signal";
+          return bashMissing
+            ? {
+                name: "Kiro ECC install (Git Bash)",
+                verdict: "fail",
+                code: "env.git-bash-missing",
+                detail: `Git Bash could not run ECC's .kiro/install.sh (exit ${exit}); ensure Git for Windows is installed, then re-run \`aih ecc --cli kiro --apply\``,
+              }
+            : {
+                name: "Kiro ECC install (Git Bash)",
+                verdict: "fail",
+                detail: `ECC's .kiro/install.sh exited ${exit}; re-run \`aih ecc --cli kiro --apply\` — if it persists, check the ECC installer output`,
+              };
+        },
       },
     ),
   ];

@@ -346,6 +346,27 @@ describe("ecc.plan — Windows Git Bash resolution + npx cmd shim", () => {
     expect(installer?.argv).toContain("ecc-install");
     expect(installer?.argv).toContain("--target");
   });
+
+  it("codes the Kiro install failure as git-bash-missing only on a spawn error, not a generic exit", async () => {
+    const pf = join(tmp, "pf");
+    mkdirSync(join(pf, "Git", "bin"), { recursive: true });
+    writeFileSync(join(pf, "Git", "bin", "bash.exe"), "", "utf8");
+    const actions = (await command.plan(makeWinCtx({ env: { ProgramFiles: pf } }))).actions;
+    const install = execs(actions).find((e) =>
+      e.argv[1]?.replace(/\\/g, "/").endsWith(".kiro/install.sh"),
+    );
+    const fc = install?.failureCheck;
+    if (typeof fc !== "function") throw new Error("expected a failureCheck function");
+    // bash could not spawn (ENOENT → 127) → the missing-Git-Bash ticket
+    expect(fc({ code: 127, stdout: "", stderr: "", spawnError: true }).code).toBe(
+      "env.git-bash-missing",
+    );
+    // install.sh ran but exited non-zero for its own reason → surfaced but NOT coded,
+    // so the "install Git for Windows" self-fix guidance is never misrouted
+    const generic = fc({ code: 1, stdout: "", stderr: "boom" });
+    expect(generic.verdict).toBe("fail");
+    expect(generic.code).toBeUndefined();
+  });
 });
 
 describe("ECC supply-chain pinning (AIH-SUPPLY-001 round 2)", () => {
