@@ -1,0 +1,60 @@
+{
+  "mcpServers": {
+    "code-review-graph": {
+      "type": "stdio",
+      "command": "uvx",
+      "args": [
+        "code-review-graph@2.3.6",
+        "serve"
+      ],
+      "description": "Local code-review knowledge graph (impact radius, affected flows) served over stdio via uvx.",
+      "classification": "local",
+      "egress": "none",
+      "credentials": "none",
+      "supplyChain": "pinned"
+    },
+    "codebase-memory-mcp": {
+      "type": "stdio",
+      "command": "uvx",
+      "args": [
+        "codebase-memory-mcp@0.8.1"
+      ],
+      "description": "Local codebase memory/knowledge graph (index_repository, search_graph, query_graph, trace_path) — the memory companion to code-review-graph, served over stdio via uvx.",
+      "classification": "local",
+      "egress": "none",
+      "credentials": "none",
+      "supplyChain": "pinned"
+    },
+    "sequential-thinking": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-sequential-thinking@2025.12.18"
+      ],
+      "description": "Structured step-by-step reasoning scratchpad — no network, no filesystem, no credentials. Safe in any repo.",
+      "classification": "local",
+      "egress": "none",
+      "credentials": "none",
+      "supplyChain": "pinned"
+    },
+    "github": {
+      "type": "http",
+      "url": "https://api.githubcopilot.com/mcp/",
+      "description": "GitHub's official remote MCP (repos, issues, PRs, Actions). OAuth via the client — no token stored in this file. Egress to GitHub (vendor-incumbent).",
+      "classification": "third-party-hosted",
+      "egress": "vendor-incumbent",
+      "credentials": "oauth",
+      "supplyChain": "hosted-remote"
+    },
+    "context7": {
+      "type": "http",
+      "url": "https://mcp.context7.com/mcp",
+      "description": "Up-to-date, version-matched library docs. THIRD-PARTY hosted endpoint (Upstash) — your queries leave the host; an optional CONTEXT7_API_KEY raises rate limits. Self-host or fall back to vendor docs where third-party egress is disallowed.",
+      "classification": "third-party-hosted",
+      "egress": "third-party",
+      "credentials": "none",
+      "supplyChain": "hosted-remote"
+    }
+  }
+}

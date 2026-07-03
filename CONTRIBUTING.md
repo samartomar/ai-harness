@@ -12,6 +12,27 @@ npm run typecheck && npm run lint && npm test && npm run build
 `npm run verify` runs the same gates in one command, with the coverage thresholds CI
 enforces. CI (`.github/workflows/ci.yml`) runs them on every push/PR — keep them green.
 
+## Running vs. developing `aih`
+
+`aih` is published to npm, so you may have it installed globally. Inside this repo a
+bare `aih` runs the **published** binary against your working tree — not your edits.
+Always exercise your changes through the source runner:
+
+```bash
+npm run dev -- <command>     # runs src/ live via tsx — your working tree, no build
+node dist/cli.js <command>   # a built artifact, after `npm run build`
+```
+
+A global `aih` is fine for other projects; just don't rely on it here. A short alias
+keeps the two unambiguous — `aihd <command>` = this repo, `aih <command>` = published:
+
+```bash
+alias aihd='npm run dev --'
+```
+
+`aih --version` reports the same number for both until the `VERSION` constant in
+`src/program.ts` is bumped, so it cannot tell you which binary ran.
+
 ## Conventions
 
 - TypeScript ESM, `commander` for the CLI, `zod` for boundary validation,

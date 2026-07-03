@@ -4,7 +4,6 @@ coverage/
 *.tsbuildinfo
 
 # aih runtime artifacts
-*.aih.bak
 .aih-scratch/
 .aih-workflow/
 
@@ -19,11 +18,6 @@ Thumbs.db
 !.env.example
 
 # aih-managed (backup, temp, generated reports; keep committed recorder)
-*.aih.bak
-*.aih.tmp
-!.aih/
-.aih/*
-!.aih/usage-record.mjs
 
 # internal (non-public) docs — clone samartomar/ai-harness-internal here for
 # cross-agent access without exposing competitive/roadmap/handoff docs publicly
@@ -31,3 +25,10 @@ Thumbs.db
 
 # Claude Code session artifacts (agent worktrees, local settings)
 .claude/
+
+# aih-managed (backup, temp, and generated reports)
+*.aih.bak
+*.aih.tmp
+!.aih/
+.aih/*
+!.aih/usage-record.mjs

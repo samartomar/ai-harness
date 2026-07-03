@@ -157,11 +157,17 @@ describe("aih mcp — generated mcpServers blueprint", () => {
   it("project scope on a bare repo writes the always-on base set — no hosted n24q02m boilerplate", async () => {
     const p = await command.plan(makeCtx({ options: { scope: "project" } }));
     const w = p.actions.find((a) => a.kind === "write") as WriteAction;
-    // The on-by-default, secret-free base: local code intelligence + reasoning, plus
+    // The on-by-default, secret-free base: local code intelligence + memory + reasoning, plus
     // the OAuth GitHub and hosted Context7 docs servers. No stack servers on a bare
     // repo, and never the opt-in n24q02m toolset at project scope.
     const names = Object.keys(serversOf(w));
-    expect(names).toEqual(["code-review-graph", "sequential-thinking", "github", "context7"]);
+    expect(names).toEqual([
+      "code-review-graph",
+      "codebase-memory-mcp",
+      "sequential-thinking",
+      "github",
+      "context7",
+    ]);
     expect(names.some((n) => n.startsWith("better-"))).toBe(false);
   });
 
@@ -238,6 +244,7 @@ describe("aih mcp — generated mcpServers blueprint", () => {
 
     const expected = [
       "code-review-graph",
+      "codebase-memory-mcp",
       "sequential-thinking",
       "github",
       "context7",

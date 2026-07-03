@@ -1,0 +1,22 @@
+#!/bin/sh
+# Managed by `aih scaffold`. Local guardrail: block a commit that fails
+# the pre-commit policy, lint, or tests. Enable with: git config core.hooksPath .githooks
+set -eu
+
+echo "[aih] pre-commit: policy + lint + test"
+
+# If aih guardrails wrote a pre-commit policy, run it through the same hook path.
+if [ -f .pre-commit-config.yaml ]; then
+  if command -v pre-commit >/dev/null 2>&1; then
+    pre-commit run --hook-stage pre-commit
+  else
+    echo "[aih] .pre-commit-config.yaml is present but pre-commit is not installed" >&2
+    exit 1
+  fi
+fi
+
+# Prefer the repo's package scripts; skip gracefully if a script is absent.
+if [ -f package.json ]; then
+  if npm run --silent | grep -qE "^  lint"; then npm run --silent lint; fi
+  if npm run --silent | grep -qE "^  test"; then npm test --silent; fi
+fi
