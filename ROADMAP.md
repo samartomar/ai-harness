@@ -39,24 +39,28 @@ Four threads run through every release:
   packs**: the committed `aih-packs.json` curation manifest and the `aih pack` command
   group (status / validate / authoring / gated batch install / uninstall), plus the
   report's per-pack governance rollup.
+- **[v0.6.0](https://github.com/samartomar/ai-harness/releases/tag/v0.6.0)** —
+  marketplace + additive enterprise seams: `aih marketplace build` / `validate` /
+  `publish`, the pluggable CommandSpec registry, policy-bundle validation, and
+  evidence-bundle generation.
+- **[v1.0.0](https://github.com/samartomar/ai-harness/releases/tag/v1.0.0)** /
+  **[v1.0.1](https://github.com/samartomar/ai-harness/releases/tag/v1.0.1)** — the
+  stability release and documentation repositioning pass: CLI / JSON / SARIF contract
+  freeze, alias-before-removal policy, N-1 security backports, STABILITY.md, and the 1.0
+  public-docs cleanup.
+- **[v1.2.0](https://github.com/samartomar/ai-harness/releases/tag/v1.2.0)** —
+  enterprise unblock and verification depth. This package release includes the completed
+  v1.0.2, v1.1.0, and v1.2.0 roadmap milestones: claim hygiene, proxy-aware quarantined
+  fetches, in-tree symlink containment, pinned SkillSpector execution, contract/report
+  fixes, the enterprise review pack, codebase-memory-mcp catalog wiring,
+  `aih verify-release`, generated JSON Schemas, run-ledger schemaVersion 2, SIEM
+  guidance, and mcp-scanner detector support.
 
-## Now — [v0.6.0](https://github.com/samartomar/ai-harness/milestone/8)
+## Now
 
-Marketplace + additive enterprise seams
-([#113](https://github.com/samartomar/ai-harness/issues/113)). All four feature slices are
-merged to `main`; the release itself is the remaining step.
-
-- **`aih marketplace build` / `validate` / `publish`** — a reproducible, hostable
-  distribution artifact built from the skill approval lock, with a signed `SHA256SUMS`.
-- **Pluggable CommandSpec registry** — a gated startup probe of the optional
-  `@aihq/enterprise` peer, so a future enterprise layer stays a bolt-on instead of a fork.
-- **Policy-bundle + evidence-bundle schemas** — `aih policy validate` and
-  `aih evidence build` over the governance artifacts aih already emits.
-
-## Next — [v1.0.0](https://github.com/samartomar/ai-harness/milestone/3)
-
-- **1.0 stability** — freeze the CLI surface and output contract so an enterprise can pin
-  to it; begin N-1 security backports; enforce the deprecation policy.
+The v1.0.2, v1.1.0, and v1.2.0 milestones have no open issues. The next public roadmap
+milestone will be opened after the release package is published and any follow-up from
+the v1.2.0 rollout is triaged.
 
 ## Later — beyond 1.0
 
