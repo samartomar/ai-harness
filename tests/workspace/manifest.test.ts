@@ -83,6 +83,44 @@ describe("workspace manifest parser", () => {
     expect(m.errors.join("\n")).toMatch(/duplicate repo id/);
   });
 
+  it("rejects duplicate repo paths even when repo ids differ", () => {
+    const m = parseWorkspaceManifest(
+      {
+        repos: [
+          { id: "api-a", path: "api", kind: "backend" },
+          { id: "api-b", path: "api", kind: "frontend" },
+        ],
+      },
+      "ai-coding",
+    );
+
+    expect(m.status).toBe("ERROR");
+    expect(m.errors.join("\n")).toMatch(/duplicate repo path/);
+  });
+
+  it("rejects inline Markdown and HTML syntax in printable manifest fields", () => {
+    const m = parseWorkspaceManifest(
+      {
+        repos: [
+          { id: "ok", path: "ok", kind: "[link](javascript:alert(1))" },
+          "<img src=x onerror=alert(1)>",
+        ],
+        edges: [
+          {
+            id: "edge",
+            from: "ok",
+            to: "ok",
+            kind: "<b>api</b>",
+          },
+        ],
+      },
+      "ai-coding",
+    );
+
+    expect(m.status).toBe("ERROR");
+    expect(m.errors.join("\n")).toMatch(/safe to print/);
+  });
+
   it("builds normalized repo objects for generated workspace docs", () => {
     expect(workspaceReposFromPaths(["services/api", "ui"])).toEqual([
       {
@@ -92,5 +130,9 @@ describe("workspace manifest parser", () => {
       },
       { id: "ui", path: "ui", router: "ai-coding/RULE_ROUTER.md" },
     ]);
+  });
+
+  it("rejects generated workspace router paths that escape the child repo", () => {
+    expect(() => workspaceReposFromPaths(["ui"], "../escape.md")).toThrow(/must not traverse/);
   });
 });

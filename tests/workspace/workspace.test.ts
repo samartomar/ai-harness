@@ -1,4 +1,12 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -8,6 +16,7 @@ import { fakeRunner } from "../../src/internals/proc.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 import { detectChildRepos } from "../../src/workspace/detect.js";
 import { command, snapshotCommand, taskPlanCommand } from "../../src/workspace/index.js";
+import { parseWorkspaceManifest } from "../../src/workspace/manifest.js";
 
 let parent: string;
 beforeEach(() => {
@@ -70,6 +79,26 @@ describe("detectChildRepos", () => {
   it("rejects absolute or parent-traversing explicit repo paths", () => {
     expect(() => detectChildRepos(parent, ["../other"])).toThrow(/traverse/);
     expect(() => detectChildRepos(parent, ["C:/other"])).toThrow(/relative/);
+  });
+
+  it("rejects explicit repo paths that are unsafe to render in generated workspace docs", () => {
+    expect(() => detectChildRepos(parent, ["bad|name"])).toThrow(/safe to print/);
+    expect(() => detectChildRepos(parent, ["bad\nname"])).toThrow(
+      "workspace repo path must be safe to print in workspace reports",
+    );
+  });
+
+  it("does not follow linked child directories to git repos outside the workspace parent", () => {
+    const external = mkdtempSync(join(tmpdir(), "aih-ws-external-"));
+    try {
+      mkdirSync(join(external, ".git"), { recursive: true });
+      symlinkSync(external, join(parent, "linked"), "junction");
+
+      expect(detectChildRepos(parent)).toEqual([]);
+      expect(() => detectChildRepos(parent, ["linked"])).toThrow(/not git repos/);
+    } finally {
+      rmSync(external, { recursive: true, force: true });
+    }
   });
 });
 
@@ -185,6 +214,62 @@ describe("workspace.plan — generated artifacts", () => {
     expect(mcp.mcpServers.filesystem.args).toEqual(expect.arrayContaining(["ui", "backend"]));
   });
 
+  it("uses declared object manifest repos for the VS Code and MCP workspace scopes", async () => {
+    writeFileSync(
+      join(parent, ".aih-workspace.json"),
+      JSON.stringify({
+        contextDir: "ai-coding",
+        repos: [{ id: "api", path: "packages/api", kind: "service" }],
+      }),
+    );
+
+    const w = writesByPath((await command.plan(makeCtx())).actions);
+    const codeWorkspaceWrite = [...w.values()].find((write) =>
+      write.path.endsWith(".code-workspace"),
+    );
+    const codeWorkspaceJson = codeWorkspaceWrite?.json as { folders: { path: string }[] };
+    const mcp = w.get(".mcp.json")?.json as { mcpServers: { filesystem: { args: string[] } } };
+
+    expect(codeWorkspaceJson.folders).toContainEqual({ path: "packages/api" });
+    expect(mcp.mcpServers.filesystem.args).toEqual(expect.arrayContaining(["packages/api"]));
+  });
+
+  it("rejects manifest-declared repo paths that point through links outside the workspace", async () => {
+    const external = mkdtempSync(join(tmpdir(), "aih-ws-external-"));
+    try {
+      mkdirSync(join(external, ".git"), { recursive: true });
+      symlinkSync(external, join(parent, "linked"), "junction");
+      writeFileSync(
+        join(parent, ".aih-workspace.json"),
+        JSON.stringify({ contextDir: "ai-coding", repos: [{ id: "linked", path: "linked" }] }),
+      );
+
+      await expect(command.plan(makeCtx())).rejects.toThrow(/real directory/);
+    } finally {
+      rmSync(external, { recursive: true, force: true });
+    }
+  });
+
+  it("fails closed when the existing workspace manifest has validation errors", async () => {
+    child("ui");
+    writeFileSync(
+      join(parent, ".aih-workspace.json"),
+      JSON.stringify({ repos: ["ui", "../escape"], contextDir: "ai-coding" }),
+    );
+
+    await expect(command.plan(makeCtx())).rejects.toThrow(/valid \.aih-workspace\.json/);
+  });
+
+  it("pins the filesystem MCP package by default", async () => {
+    child("ui");
+    const w = writesByPath((await command.plan(makeCtx())).actions);
+    const mcp = w.get(".mcp.json")?.json as { mcpServers: { filesystem: { args: string[] } } };
+
+    expect(mcp.mcpServers.filesystem.args).toContain(
+      "@modelcontextprotocol/server-filesystem@2026.1.14",
+    );
+  });
+
   it("pins the filesystem MCP package via AIH_MCP_FS_VERSION (AIH-SUPPLY-001)", async () => {
     child("ui");
     const base = makeCtx();
@@ -194,6 +279,14 @@ describe("workspace.plan — generated artifacts", () => {
     expect(mcp.mcpServers.filesystem.args).toContain(
       "@modelcontextprotocol/server-filesystem@2025.1.0",
     );
+  });
+
+  it("rejects non-version filesystem MCP specs from AIH_MCP_FS_VERSION", async () => {
+    child("ui");
+    const base = makeCtx();
+    const ctx = { ...base, env: { ...base.env, AIH_MCP_FS_VERSION: "latest" } };
+
+    await expect(command.plan(ctx)).rejects.toThrow(/exact semver/);
   });
 
   it("the cross-repo architecture map is write-once (never overwritten)", async () => {
@@ -310,6 +403,32 @@ describe("workspace snapshot command", () => {
 
     expect(writesByPath(actions).has("ai-coding/workspace-lock.json")).toBe(true);
   });
+
+  it("fails closed when the workspace manifest has validation errors", async () => {
+    child("ui");
+    writeFileSync(
+      join(parent, ".aih-workspace.json"),
+      JSON.stringify({ repos: ["ui", "../escape"], contextDir: "ai-coding" }),
+    );
+
+    await expect(snapshotCommand.plan(makeCtx())).rejects.toThrow(/valid \.aih-workspace\.json/);
+  });
+
+  it("fails closed when a manifest repo path points through a link outside the workspace", async () => {
+    const external = mkdtempSync(join(tmpdir(), "aih-ws-external-"));
+    try {
+      mkdirSync(join(external, ".git"), { recursive: true });
+      symlinkSync(external, join(parent, "linked"), "junction");
+      writeFileSync(
+        join(parent, ".aih-workspace.json"),
+        JSON.stringify({ repos: ["linked"], contextDir: "ai-coding" }),
+      );
+
+      await expect(snapshotCommand.plan(makeCtx())).rejects.toThrow(/real directory/);
+    } finally {
+      rmSync(external, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("workspace plan command", () => {
@@ -354,6 +473,36 @@ describe("workspace plan command", () => {
     expect(text).toContain("ui-backend-api");
     expect(text).toContain("## Rollback");
     expect(writes.get(".gitignore")?.contents).toContain(".aih/");
+  });
+
+  it("fails closed when the workspace manifest has validation errors", async () => {
+    child("ui");
+    writeFileSync(
+      join(parent, ".aih-workspace.json"),
+      JSON.stringify({ repos: ["ui", "../escape"], contextDir: "ai-coding" }),
+    );
+
+    await expect(taskPlanCommand.plan(makeCtx({ task: "ship workspace fix" }))).rejects.toThrow(
+      /valid \.aih-workspace\.json/,
+    );
+  });
+
+  it("keeps task text on one printable line in generated Markdown", async () => {
+    child("ui");
+    writeFileSync(
+      join(parent, ".aih-workspace.json"),
+      JSON.stringify({ repos: ["ui"], contextDir: "ai-coding" }),
+    );
+
+    const actions = (
+      await taskPlanCommand.plan(makeCtx({ task: "ship fix\n## Injected\n| bad | table |" }))
+    ).actions;
+    const text =
+      actions.find((action): action is WriteAction => action.kind === "write")?.contents ?? "";
+
+    expect(text).toContain("Task: ship fix ## Injected bad table");
+    expect(text).not.toContain("\n## Injected");
+    expect(text).not.toContain("| bad | table |");
   });
 });
 
@@ -476,5 +625,70 @@ describe("workspace — write-once executor behavior", () => {
     expect(ignore.match(/^\*\.aih\.bak$/gm)).toHaveLength(1);
     expect(ran).not.toContain(`git -C ${parent} init`);
     expect(ran.some((cmd) => cmd.includes(" commit "))).toBe(false);
+  });
+
+  it("applies --repos over an object-form manifest without corrupting the repo list", async () => {
+    child("api");
+    child("web");
+    child("worker");
+    writeFileSync(
+      join(parent, ".aih-workspace.json"),
+      JSON.stringify(
+        {
+          contextDir: "ai-coding",
+          repos: [
+            { id: "api", path: "api", kind: "backend" },
+            { id: "web", path: "web", kind: "frontend" },
+          ],
+          edges: [
+            {
+              id: "web-api",
+              from: "web",
+              to: "api",
+              kind: "api-contract",
+              contractPath: "api/openapi.yaml",
+            },
+          ],
+          unknownFutureField: { keep: true },
+        },
+        null,
+        2,
+      ),
+    );
+    const ctx = makeCtx({ repos: "api,web,worker" }, true);
+
+    await executePlan(await command.plan(ctx), ctx);
+
+    const raw = JSON.parse(readFileSync(join(parent, ".aih-workspace.json"), "utf8"));
+    const parsed = parseWorkspaceManifest(raw, "ai-coding");
+    expect(parsed.status).toBe("OK");
+    expect(raw.repos).toEqual([
+      { id: "api", path: "api", kind: "backend" },
+      { id: "web", path: "web", kind: "frontend" },
+      { id: "worker", path: "worker", router: "ai-coding/RULE_ROUTER.md" },
+    ]);
+    expect(raw.edges).toHaveLength(1);
+    expect(raw.unknownFutureField).toEqual({ keep: true });
+  });
+
+  it("honors explicit --repos paths even when an existing object id matches another path", async () => {
+    child("api");
+    writeFileSync(
+      join(parent, ".aih-workspace.json"),
+      JSON.stringify(
+        {
+          contextDir: "ai-coding",
+          repos: [{ id: "api", path: "services/api", kind: "backend" }],
+        },
+        null,
+        2,
+      ),
+    );
+    const ctx = makeCtx({ repos: "api" }, true);
+
+    await executePlan(await command.plan(ctx), ctx);
+
+    const raw = JSON.parse(readFileSync(join(parent, ".aih-workspace.json"), "utf8"));
+    expect(raw.repos).toEqual([{ id: "api", path: "api", router: "ai-coding/RULE_ROUTER.md" }]);
   });
 });

@@ -1,9 +1,9 @@
-import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { DigestAction, PlanContext } from "../../src/internals/plan.js";
-import { fakeRunner } from "../../src/internals/proc.js";
+import { fakeRunner, type Runner } from "../../src/internals/proc.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 import { command } from "../../src/report/index.js";
 import type { WorkspaceReportDigest } from "../../src/report/workspace.js";
@@ -25,8 +25,8 @@ function json(value: unknown): string {
   return `${JSON.stringify(value, null, 2)}\n`;
 }
 
-function ctx(options: Record<string, unknown> = {}): PlanContext {
-  const run = fakeRunner((argv) => {
+function defaultGitRunner(): Runner {
+  return fakeRunner((argv) => {
     if (argv[0] !== "git") return undefined;
     const cwd = String(argv[2] ?? "");
     const repo = cwd.replace(/\\/g, "/").split("/").at(-1) ?? "";
@@ -40,6 +40,9 @@ function ctx(options: Record<string, unknown> = {}): PlanContext {
     }
     return undefined;
   });
+}
+
+function ctx(options: Record<string, unknown> = {}, run: Runner = defaultGitRunner()): PlanContext {
   return {
     root,
     contextDir: "ai-coding",
@@ -219,6 +222,19 @@ describe("report workspace rollup", () => {
     expect(data.rows).toEqual([]);
   });
 
+  it("fails closed when a manifest repo path points through a link outside the workspace", async () => {
+    const external = mkdtempSync(join(tmpdir(), "aih-workspace-report-external-"));
+    try {
+      mkdirSync(join(external, ".git"), { recursive: true });
+      symlinkSync(external, join(root, "linked"), "junction");
+      writeWorkspaceManifest({ repos: ["linked"], contextDir: "ai-coding" });
+
+      await expect(command.plan(ctx())).rejects.toThrow(/real directory/);
+    } finally {
+      rmSync(external, { recursive: true, force: true });
+    }
+  });
+
   it("writes workspace report artifacts under .aih/workspace-report.*", async () => {
     writeWorkspaceManifest({ repos: ["ui"], contextDir: "ai-coding" });
     child("ui");
@@ -275,5 +291,118 @@ describe("report workspace rollup", () => {
 
     expect(d.text).toContain("Workspace MCP filesystem server is unpinned.");
     expect(data.mcp.status).toBe("WARN");
+  });
+
+  it("warns when the workspace filesystem MCP package uses a floating tag", async () => {
+    writeWorkspaceManifest({ repos: ["ui"], contextDir: "ai-coding" });
+    writeFileSync(
+      join(root, ".mcp.json"),
+      json({
+        mcpServers: {
+          filesystem: {
+            command: "npx",
+            args: ["-y", "@modelcontextprotocol/server-filesystem@latest", "ui"],
+          },
+        },
+      }),
+    );
+    child("ui");
+
+    const data = (await workspaceDigest()).data as WorkspaceReportDigest;
+
+    expect(data.mcp).toMatchObject({
+      status: "WARN",
+      packageSpec: "@modelcontextprotocol/server-filesystem@latest",
+    });
+  });
+
+  it("warns when the workspace filesystem MCP package uses a version range", async () => {
+    writeWorkspaceManifest({ repos: ["ui"], contextDir: "ai-coding" });
+    writeFileSync(
+      join(root, ".mcp.json"),
+      json({
+        mcpServers: {
+          filesystem: {
+            command: "npx",
+            args: ["-y", "@modelcontextprotocol/server-filesystem@^2026.1.14", "ui"],
+          },
+        },
+      }),
+    );
+    child("ui");
+
+    const data = (await workspaceDigest()).data as WorkspaceReportDigest;
+
+    expect(data.mcp).toMatchObject({
+      status: "WARN",
+      packageSpec: "@modelcontextprotocol/server-filesystem@^2026.1.14",
+    });
+  });
+
+  it("builds independent child evidence rows concurrently", async () => {
+    writeWorkspaceManifest({ repos: ["ui", "backend"], contextDir: "ai-coding" });
+    child("ui");
+    child("backend");
+    let activeInsideChecks = 0;
+    let maxInsideChecks = 0;
+    const run: Runner = async (argv) => {
+      if (argv[0] !== "git") return { code: 0, stdout: "", stderr: "" };
+      const tail = argv.slice(3).join(" ");
+      const repo = String(argv[2] ?? "")
+        .replace(/\\/g, "/")
+        .split("/")
+        .at(-1);
+      if (tail === "rev-parse --is-inside-work-tree") {
+        activeInsideChecks++;
+        maxInsideChecks = Math.max(maxInsideChecks, activeInsideChecks);
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        activeInsideChecks--;
+        return { code: 0, stdout: "true\n", stderr: "" };
+      }
+      if (tail === "rev-parse --abbrev-ref HEAD") return { code: 0, stdout: "main\n", stderr: "" };
+      if (tail === "rev-parse --short HEAD") {
+        return { code: 0, stdout: `${repo ?? "abc123"}\n`, stderr: "" };
+      }
+      if (tail === "status --porcelain") return { code: 0, stdout: "", stderr: "" };
+      return { code: 1, stdout: "", stderr: "" };
+    };
+
+    await command.plan(ctx({}, run));
+
+    expect(maxInsideChecks).toBeGreaterThan(1);
+  });
+
+  it("caps concurrent child evidence git probes for larger workspaces", async () => {
+    const repos = ["api", "docs", "infra", "shared", "ui", "web", "worker", "jobs"];
+    writeWorkspaceManifest({ repos, contextDir: "ai-coding" });
+    for (const name of repos) child(name);
+    let activeInsideChecks = 0;
+    let maxInsideChecks = 0;
+    const run: Runner = async (argv) => {
+      if (argv[0] !== "git") return { code: 0, stdout: "", stderr: "" };
+      const tail = argv.slice(3).join(" ");
+      const repo = String(argv[2] ?? "")
+        .replace(/\\/g, "/")
+        .split("/")
+        .at(-1);
+      if (tail === "rev-parse --is-inside-work-tree") {
+        activeInsideChecks++;
+        maxInsideChecks = Math.max(maxInsideChecks, activeInsideChecks);
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        activeInsideChecks--;
+        return { code: 0, stdout: "true\n", stderr: "" };
+      }
+      if (tail === "rev-parse --abbrev-ref HEAD") return { code: 0, stdout: "main\n", stderr: "" };
+      if (tail === "rev-parse --short HEAD") {
+        return { code: 0, stdout: `${repo ?? "abc123"}\n`, stderr: "" };
+      }
+      if (tail === "status --porcelain") return { code: 0, stdout: "", stderr: "" };
+      return { code: 1, stdout: "", stderr: "" };
+    };
+
+    await command.plan(ctx({}, run));
+
+    expect(maxInsideChecks).toBeGreaterThan(1);
+    expect(maxInsideChecks).toBeLessThanOrEqual(4);
   });
 });

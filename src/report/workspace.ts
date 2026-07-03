@@ -14,11 +14,13 @@ import {
 } from "../workspace/manifest.js";
 import {
   latestWorkspaceSnapshotPath,
+  mapWorkspaceRepos,
   readWorkspaceRepoState,
   type WorkspaceRepoState,
 } from "../workspace/state.js";
 
 const FRESH_DAYS = 7;
+const EXACT_MCP_SEMVER_RE = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
 
 export interface WorkspaceEvidenceCell {
   status: WorkspaceEvidenceStatus;
@@ -169,9 +171,21 @@ function workspaceMcpStatus(root: string): WorkspaceReportDigest["mcp"] {
           "Workspace MCP filesystem server is unpinned. Set AIH_MCP_FS_VERSION or enforce a managed MCP policy.",
       };
     }
-    return packageSpec.startsWith(`${base}@`)
-      ? { status: "OK", packageSpec, detail: "workspace filesystem MCP package is pinned" }
-      : { status: "UNKNOWN", packageSpec, detail: "workspace filesystem MCP package is unknown" };
+    if (packageSpec.startsWith(`${base}@`)) {
+      const version = packageSpec.slice(`${base}@`.length);
+      return EXACT_MCP_SEMVER_RE.test(version)
+        ? { status: "OK", packageSpec, detail: "workspace filesystem MCP package is pinned" }
+        : {
+            status: "WARN",
+            packageSpec,
+            detail: "workspace filesystem MCP package must use an exact version pin",
+          };
+    }
+    return {
+      status: "UNKNOWN",
+      packageSpec,
+      detail: "workspace filesystem MCP package is unknown",
+    };
   } catch {
     return { status: "ERROR", detail: "parent .mcp.json is malformed" };
   }
@@ -521,8 +535,9 @@ export async function workspaceReportDigest(ctx: PlanContext): Promise<DigestAct
           readIfExists(join(ctx.root, ".gitignore")),
         )
       : [];
-  const rows: WorkspaceChildReportRow[] = [];
-  for (const repo of manifest.repos) rows.push(await childRow(ctx, manifest, repo, missingIgnores));
+  const rows = await mapWorkspaceRepos(manifest.repos, (repo) =>
+    childRow(ctx, manifest, repo, missingIgnores),
+  );
   const contracts = manifest.edges.map((edge) => contractStatus(ctx.root, edge));
   const mcp = workspaceMcpStatus(ctx.root);
   const snapshot = workspaceSnapshot(ctx.root, manifest, rows);

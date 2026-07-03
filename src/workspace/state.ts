@@ -1,6 +1,8 @@
 import { readdirSync } from "node:fs";
 import { join } from "node:path";
+import { AihError } from "../errors.js";
 import type { PlanContext } from "../internals/plan.js";
+import { checkWorkspaceChildPath } from "./detect.js";
 import type { WorkspaceManifest, WorkspaceRepo } from "./manifest.js";
 
 export interface WorkspaceRepoState {
@@ -20,6 +22,8 @@ export interface WorkspaceSnapshot {
   label?: string;
   repos: WorkspaceRepoState[];
 }
+
+export const WORKSPACE_REPO_CONCURRENCY = 4;
 
 async function gitChildRead(
   ctx: PlanContext,
@@ -45,14 +49,18 @@ export async function readWorkspaceRepoState(
   ctx: PlanContext,
   repo: WorkspaceRepo,
 ): Promise<WorkspaceRepoState> {
+  const checked = checkWorkspaceChildPath(ctx.root, repo.path);
+  if (!checked.exists) return { id: repo.id, path: repo.path, dirty: false, git: false };
   const inside = (await gitChildRead(ctx, repo, ["rev-parse", "--is-inside-work-tree"])) === "true";
   if (!inside) return { id: repo.id, path: repo.path, dirty: false, git: false };
-  const branch = await gitChildRead(ctx, repo, ["rev-parse", "--abbrev-ref", "HEAD"]);
-  const sha = await gitChildRead(ctx, repo, ["rev-parse", "--short", "HEAD"]);
-  const dirty = ((await gitChildRead(ctx, repo, ["status", "--porcelain"])) ?? "").length > 0;
-  const aheadBehind = parseAheadBehind(
-    await gitChildRead(ctx, repo, ["rev-list", "--left-right", "--count", "HEAD...@{upstream}"]),
-  );
+  const [branch, sha, status, upstream] = await Promise.all([
+    gitChildRead(ctx, repo, ["rev-parse", "--abbrev-ref", "HEAD"]),
+    gitChildRead(ctx, repo, ["rev-parse", "--short", "HEAD"]),
+    gitChildRead(ctx, repo, ["status", "--porcelain"]),
+    gitChildRead(ctx, repo, ["rev-list", "--left-right", "--count", "HEAD...@{upstream}"]),
+  ]);
+  const dirty = (status ?? "").length > 0;
+  const aheadBehind = parseAheadBehind(upstream);
   return {
     id: repo.id,
     path: repo.path,
@@ -64,13 +72,40 @@ export async function readWorkspaceRepoState(
   };
 }
 
+export async function mapWorkspaceRepos<T>(
+  repos: readonly WorkspaceRepo[],
+  mapper: (repo: WorkspaceRepo) => Promise<T>,
+): Promise<T[]> {
+  const out = new Array<T>(repos.length);
+  let next = 0;
+  const workerCount = Math.min(WORKSPACE_REPO_CONCURRENCY, repos.length);
+  const workers = Array.from({ length: workerCount }, async () => {
+    for (;;) {
+      const index = next;
+      next += 1;
+      if (index >= repos.length) return;
+      const repo = repos[index];
+      if (repo === undefined) {
+        throw new AihError(
+          "workspace repo list must be dense; sparse entries cannot be collected safely",
+          "AIH_WORKSPACE",
+        );
+      }
+      out[index] = await mapper(repo);
+    }
+  });
+  await Promise.all(workers);
+  return out;
+}
+
 export async function collectWorkspaceSnapshot(
   ctx: PlanContext,
   manifest: WorkspaceManifest,
   opts: { label?: string; createdAt?: string } = {},
 ): Promise<WorkspaceSnapshot> {
-  const repos: WorkspaceRepoState[] = [];
-  for (const repo of manifest.repos) repos.push(await readWorkspaceRepoState(ctx, repo));
+  const repos = await mapWorkspaceRepos(manifest.repos, (repo) =>
+    readWorkspaceRepoState(ctx, repo),
+  );
   return {
     schemaVersion: 1,
     createdAt: opts.createdAt ?? new Date().toISOString(),
