@@ -1,4 +1,12 @@
-import { lstatSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { createServer } from "node:http";
 import { createRequire } from "node:module";
 import type { AddressInfo } from "node:net";
@@ -314,7 +322,7 @@ describe("trust fetch source resolution", () => {
       throw err;
     }
 
-    expect(assertTrustTreeSafe(linkedRoot)).toBe(realRoot);
+    expect(assertTrustTreeSafe(linkedRoot)).toBe(realpathSync(realRoot));
   });
 
   it("rejects empty, unsupported, and escaping source-relative paths", () => {
