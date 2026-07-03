@@ -3,6 +3,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   rmSync,
   symlinkSync,
@@ -52,6 +53,30 @@ function ctx(over: Partial<PlanContext> = {}): PlanContext {
   };
 }
 
+function treeSnapshot(root: string): Map<string, string> {
+  const out = new Map<string, string>();
+  const visit = (rel: string): void => {
+    for (const entry of readdirSync(join(root, rel), { withFileTypes: true })) {
+      const child = rel.length === 0 ? entry.name : join(rel, entry.name);
+      if (entry.isDirectory()) {
+        visit(child);
+      } else if (entry.isFile()) {
+        out.set(child.replace(/\\/g, "/"), readFileSync(join(root, child), "utf8"));
+      }
+    }
+  };
+  visit("");
+  return out;
+}
+
+function seeded(seed: number): () => number {
+  let state = seed >>> 0;
+  return () => {
+    state = (state * 1664525 + 1013904223) >>> 0;
+    return state / 0x100000000;
+  };
+}
+
 describe("executePlan", () => {
   it("dry-run reports planned writes but writes nothing", async () => {
     const res = await executePlan(
@@ -75,6 +100,50 @@ describe("executePlan", () => {
     expect(second.writes[0]?.effect).toBe("unchanged");
     expect(second.backups).toHaveLength(0);
     expect(existsSync(join(dir, "a.txt.aih.bak"))).toBe(false);
+  });
+
+  it("seeded random write plans are idempotent on the second apply", async () => {
+    for (const seed of [11, 23, 37, 51]) {
+      const rand = seeded(seed);
+      const actions = Array.from({ length: 8 }, (_, i) =>
+        writeText(
+          `plans/${Math.floor(rand() * 3)}/file-${i % 5}.txt`,
+          `seed=${seed};slot=${i};value=${Math.floor(rand() * 1000)}`,
+          `seeded write ${i}`,
+        ),
+      );
+      const p = plan(`seed-${seed}`, ...actions);
+      await executePlan(p, ctx({ apply: true }));
+
+      const before = treeSnapshot(dir);
+      const second = await executePlan(p, ctx({ apply: true }));
+
+      expect(second.writes.every((write) => write.effect === "unchanged")).toBe(true);
+      expect(second.backups).toEqual([]);
+      expect(treeSnapshot(dir)).toEqual(before);
+    }
+  });
+
+  it("fault injection during a transaction restores every touched path byte-for-byte", async () => {
+    writeFileSync(join(dir, "a.txt"), "original a\n");
+    writeFileSync(join(dir, "b.txt"), "original b\n");
+    const before = treeSnapshot(dir);
+
+    await expect(
+      executePlan(
+        plan(
+          "fault-injection",
+          writeText("a.txt", "next a", "overwrite a"),
+          writeText("b.txt", "next b", "overwrite b"),
+          writeText("b.txt/nested.txt", "boom", "force ENOTDIR during commit"),
+        ),
+        ctx({ apply: true }),
+      ),
+    ).rejects.toThrow(/rolled back/);
+
+    expect(treeSnapshot(dir)).toEqual(before);
+    expect(existsSync(join(dir, "a.txt.aih.bak"))).toBe(false);
+    expect(existsSync(join(dir, "b.txt.aih.bak"))).toBe(false);
   });
 
   it("a real content change still overwrites and backs up", async () => {

@@ -77,7 +77,7 @@ describe("OrgPolicySchema", () => {
                 reason: "reviewed source override",
               },
             ],
-            requiredDetectors: ["skillspector", "cisco"],
+            requiredDetectors: ["skillspector", "cisco", "mcp-scanner"],
           },
         }),
       ).trust,
@@ -91,7 +91,7 @@ describe("OrgPolicySchema", () => {
         },
       ],
       requireSignedSource: false,
-      requiredDetectors: ["skillspector", "cisco"],
+      requiredDetectors: ["skillspector", "cisco", "mcp-scanner"],
       internalScopes: [],
     });
   });

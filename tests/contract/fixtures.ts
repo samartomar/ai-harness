@@ -38,6 +38,52 @@ export function seedMindworksLike(dir: string): void {
   put(dir, ".env", "SECRET=do-not-read\n");
 }
 
+/** A CLI package with package.json bin/main plus common source entry files. */
+export function seedCliEntrypoints(dir: string): void {
+  put(
+    dir,
+    "package.json",
+    json({
+      name: "cli-tool",
+      main: "dist/index.js",
+      bin: { "cli-tool": "dist/cli.js", helper: "dist/helper.js" },
+      scripts: { test: "vitest run" },
+      devDependencies: { typescript: "^5", vitest: "^1" },
+    }),
+  );
+  put(dir, "tsconfig.json", json({ compilerOptions: { strict: true } }));
+  put(dir, "src/cli.ts", "export const cli = true;\n");
+  put(dir, "src/index.ts", "export const index = true;\n");
+}
+
+/** A package that uses the string form of package.json bin. */
+export function seedStringBinEntrypoint(dir: string): void {
+  put(
+    dir,
+    "package.json",
+    json({
+      name: "string-bin",
+      bin: "dist/run.js",
+      scripts: { test: "vitest run" },
+      devDependencies: { vitest: "^1" },
+    }),
+  );
+}
+
+/** A package where main is the only declared entrypoint. */
+export function seedMainOnlyEntrypoint(dir: string): void {
+  put(
+    dir,
+    "package.json",
+    json({
+      name: "main-only",
+      main: "lib/index.js",
+      scripts: { test: "vitest run" },
+      devDependencies: { vitest: "^1" },
+    }),
+  );
+}
+
 /** A Go repo with NO package.json: commands come from language defaults (→ `inferred`). */
 export function seedNoPackageJson(dir: string): void {
   put(dir, "go.mod", "module example.com/app\n\ngo 1.22\n");

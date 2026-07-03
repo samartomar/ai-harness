@@ -14,7 +14,11 @@ import { executePlan } from "../../src/internals/execute.js";
 import type { PlanContext } from "../../src/internals/plan.js";
 import { fakeRunner, type Runner } from "../../src/internals/proc.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
-import { ciscoSkillScannerRunArgv, skillspectorDockerRunArgv } from "../../src/trust/detectors.js";
+import {
+  ciscoSkillScannerRunArgv,
+  mcpScannerStaticArgv,
+  skillspectorDockerRunArgv,
+} from "../../src/trust/detectors.js";
 import {
   scanTrustTree,
   scanTrustTreeWithAnalyzers,
@@ -537,6 +541,9 @@ describe("scanTrustTree", () => {
     );
     expect(result.checks.map((check) => check.detail ?? "").join("\n")).toContain(
       "Analyzers run: aih-native",
+    );
+    expect(result.checks.map((check) => check.detail ?? "").join("\n")).toContain(
+      "docs/security/skillspector.md",
     );
   });
 
@@ -1139,6 +1146,30 @@ describe("scanTrustTree", () => {
     expect(argv).not.toEqual(expect.arrayContaining(["--use-llm"]));
     expect(argv).not.toEqual(expect.arrayContaining(["--use-virustotal"]));
     expect(argv).not.toEqual(expect.arrayContaining(["--use-aidefense"]));
+  });
+
+  it("builds the Cisco mcp-scanner static argv with offline uvx defaults", () => {
+    const argv = mcpScannerStaticArgv(
+      "linux",
+      "/repo/.aih/mcp-scanner-input.json",
+      "/tmp/mcp.sarif",
+    );
+
+    expect(argv).toEqual([
+      "uvx",
+      "--offline",
+      "--no-python-downloads",
+      "--no-env-file",
+      "--from",
+      "cisco-ai-mcp-scanner",
+      "mcp-scanner",
+      "static",
+      "/repo/.aih/mcp-scanner-input.json",
+      "--format",
+      "sarif",
+      "--output",
+      "/tmp/mcp.sarif",
+    ]);
   });
 });
 

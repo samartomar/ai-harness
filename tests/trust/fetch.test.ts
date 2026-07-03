@@ -1,4 +1,11 @@
-import { lstatSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import process from "node:process";
@@ -129,6 +136,9 @@ describe("trust fetch source resolution", () => {
       scrubFetchEnv({
         PATH: "bin",
         HOME: "/home/me",
+        HTTPS_PROXY: "http://proxy.example:8443",
+        HTTP_PROXY: "http://proxy.example:8080",
+        NO_PROXY: "localhost,.corp.example",
         AWS_SECRET_ACCESS_KEY: "secret",
         RANDOM_VAR: "drop-me",
         SSL_CERT_FILE: "corp.pem",
@@ -137,9 +147,48 @@ describe("trust fetch source resolution", () => {
     ).toEqual({
       PATH: "bin",
       HOME: "/home/me",
+      HTTPS_PROXY: "http://proxy.example:8443",
+      HTTP_PROXY: "http://proxy.example:8080",
+      NO_PROXY: "localhost,.corp.example",
       SSL_CERT_FILE: "corp.pem",
       UV_CACHE_DIR: "/cache/uv",
     });
+  });
+
+  it("allows in-tree symlinks but rejects links that resolve outside the trust source", () => {
+    const skillDir = join(dir, "skills", "linked");
+    const outside = mkdtempSync(join(tmpdir(), "aih-trust-outside-"));
+    mkdirSync(skillDir, { recursive: true });
+    writeFileSync(join(skillDir, "CLAUDE.md"), "# Linked\n", "utf8");
+    writeFileSync(join(outside, "SECRET.md"), "# Outside\n", "utf8");
+
+    try {
+      symlinkSync("CLAUDE.md", join(skillDir, "AGENTS.md"));
+      expect(() => assertTrustTreeSafe(join(dir, "skills"))).not.toThrow();
+
+      symlinkSync(join(outside, "SECRET.md"), join(skillDir, "ESCAPE.md"));
+      expect(() => assertTrustTreeSafe(join(dir, "skills"))).toThrow(/outside|escape|trust source/i);
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === "EPERM") return;
+      throw err;
+    } finally {
+      rmSync(outside, { recursive: true, force: true });
+    }
+  });
+
+  it("accepts a symlinked local source root after resolving it to the real tree", () => {
+    const realRoot = join(dir, "real-source");
+    const linkedRoot = join(dir, "linked-source");
+    mkdirSync(realRoot, { recursive: true });
+    writeFileSync(join(realRoot, "SKILL.md"), "# Root link\n", "utf8");
+    try {
+      symlinkSync(realRoot, linkedRoot, "dir");
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === "EPERM") return;
+      throw err;
+    }
+
+    expect(assertTrustTreeSafe(linkedRoot)).toBe(realRoot);
   });
 
   it("rejects empty, unsupported, and escaping source-relative paths", () => {

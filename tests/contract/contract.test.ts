@@ -17,13 +17,16 @@ import {
   fakeTrackedPaths,
   gitTrackedRunner,
   seedAngularLike,
+  seedCliEntrypoints,
   seedForeignCanon,
   seedImportableCli,
   seedLegacyScripts,
+  seedMainOnlyEntrypoint,
   seedMindworksLike,
   seedMonorepoSmall,
   seedNodeNoBuildStart,
   seedNoPackageJson,
+  seedStringBinEntrypoint,
 } from "./fixtures.js";
 
 let dir: string;
@@ -168,6 +171,23 @@ describe("PR 1B — project.md + setup.md", () => {
       "`python -m pip install -r requirements.txt`",
     );
     expect(setupDoc("ai-coding", { ...base, packageManager: "cargo" })).toContain("`cargo fetch`");
+  });
+
+  it("renders MCP/tooling setup with detected .mcp.json servers", async () => {
+    seedMindworksLike(dir);
+    writeFileSync(
+      join(dir, ".mcp.json"),
+      JSON.stringify({ mcpServers: { "code-review-graph": {}, "codebase-memory": {} } }),
+    );
+
+    const c = await synth();
+    const setup = setupDoc("ai-coding", c);
+
+    expect(c.mcpServers).toEqual(["code-review-graph", "codebase-memory"]);
+    expect(setup).toContain("## 3. MCP and AI tooling");
+    expect(setup).toContain("code-review-graph");
+    expect(setup).toContain("codebase-memory");
+    expect(setup).toContain("aih init --apply");
   });
 });
 
@@ -362,6 +382,34 @@ describe("build/start strict-omit (PR 1A correction)", () => {
     // the start grader — the strict-omit change must neither move nor drop them.
     const stack = scanRepo(dir, { maxDepth: 8, contextDir: "ai-coding" });
     expect(c.entrypoints).toEqual(stack.entryPoints);
+  });
+
+  it("populates entrypoints from package.json bin/main and common source entries", async () => {
+    seedCliEntrypoints(dir);
+    const c = await synth();
+    expect(c.entrypoints).toEqual([
+      "dist/cli.js",
+      "dist/helper.js",
+      "dist/index.js",
+      "src/cli.ts",
+      "src/index.ts",
+    ]);
+    expect(c.commands.start).toBeUndefined();
+  });
+
+  it("supports string bin and main-only package entrypoints", async () => {
+    seedStringBinEntrypoint(dir);
+    expect((await synth()).entrypoints).toEqual(["dist/run.js"]);
+
+    rmSync(dir, { recursive: true, force: true });
+    mkdirSync(dir, { recursive: true });
+    seedMainOnlyEntrypoint(dir);
+    expect((await synth()).entrypoints).toEqual(["lib/index.js"]);
+  });
+
+  it("keeps entrypoints empty when the repo declares none", async () => {
+    seedNodeNoBuildStart(dir);
+    expect((await synth()).entrypoints).toEqual([]);
   });
 });
 
