@@ -33,6 +33,13 @@ function timestampSlug(date = new Date()): string {
     .replace(/\.\d{3}Z$/, "Z");
 }
 
+function printableTask(raw: string): string {
+  return raw
+    .replace(/[\r\n\t|]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function repoOrder(repo: WorkspaceRepo): number {
   const kind = repo.kind?.toLowerCase();
   if (kind && KIND_ORDER[kind] !== undefined) return KIND_ORDER[kind];
@@ -115,10 +122,11 @@ async function workspaceTaskPlan(ctx: PlanContext): Promise<ReturnType<typeof pl
       "AIH_WORKSPACE",
     );
   }
-  const task =
+  const taskRaw =
     typeof ctx.options.task === "string" && ctx.options.task.trim().length > 0
       ? ctx.options.task.trim()
       : undefined;
+  const task = taskRaw ? printableTask(taskRaw) : undefined;
   if (!task) throw new AihError("workspace plan requires a task description", "AIH_WORKSPACE");
   const file = posix.join(".aih", "workspace-plans", `${timestampSlug()}-${slugify(task)}.md`);
   return plan(

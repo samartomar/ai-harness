@@ -1,3 +1,4 @@
+import { AihError } from "../errors.js";
 import { lines } from "../internals/render.js";
 import type { WorkspaceEdge, WorkspaceRepo } from "./manifest.js";
 
@@ -29,7 +30,15 @@ export function codeWorkspace(repos: string[]): unknown {
  * Merged into any existing `.mcp.json`. The package is version-pinnable via
  * `AIH_MCP_FS_VERSION` (supply-chain control) — unset runs latest at MCP launch.
  */
+const EXACT_SEMVER_RE = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
+
 export function spanningMcp(repos: string[], version?: string): unknown {
+  if (version && !EXACT_SEMVER_RE.test(version)) {
+    throw new AihError(
+      "AIH_MCP_FS_VERSION must be an exact semver version, for example 2025.1.0",
+      "AIH_WORKSPACE",
+    );
+  }
   const pkg =
     version && version.length > 0
       ? `@modelcontextprotocol/server-filesystem@${version}`
