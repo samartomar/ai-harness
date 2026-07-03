@@ -46,9 +46,10 @@ export interface WorkspaceManifest {
 }
 
 const ID_RE = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+const UNSAFE_PRINTABLE_FIELD_RE = /[\r\n\t|<>[\]`]/;
 
-function cleanPrintable(value: string, label: string): void {
-  if (/[\r\n\t|]/.test(value)) {
+export function assertWorkspacePrintable(value: string, label: string): void {
+  if (UNSAFE_PRINTABLE_FIELD_RE.test(value)) {
     throw new Error(`${label} must be safe to print in workspace reports`);
   }
 }
@@ -59,7 +60,7 @@ export function normalizeWorkspacePath(raw: string, label = "workspace path"): s
   if (value.startsWith("/") || /^[A-Za-z]:/.test(value) || value.startsWith("//")) {
     throw new Error(`${label} must be relative to the parent workspace: ${raw}`);
   }
-  cleanPrintable(value, label);
+  assertWorkspacePrintable(value, label);
   const parts = value.split("/").filter((p) => p.length > 0);
   if (parts.some((p) => p === "." || p === "..")) {
     throw new Error(`${label} must not traverse parents: ${raw}`);
@@ -69,7 +70,7 @@ export function normalizeWorkspacePath(raw: string, label = "workspace path"): s
 
 function safeId(raw: string, label = "workspace repo id"): string {
   const value = raw.trim();
-  cleanPrintable(value, label);
+  assertWorkspacePrintable(value, label);
   if (!ID_RE.test(value)) {
     throw new Error(`${label} must be stable, unique, and path-safe: ${raw}`);
   }
@@ -84,7 +85,7 @@ function idFromPath(path: string): string {
 function safeKind(raw: unknown): string | undefined {
   if (typeof raw !== "string" || raw.trim().length === 0) return undefined;
   const value = raw.trim();
-  cleanPrintable(value, "workspace repo kind");
+  assertWorkspacePrintable(value, "workspace repo kind");
   return value;
 }
 
@@ -108,10 +109,11 @@ function normalizeRepo(raw: unknown): WorkspaceRepo {
   if (typeof pathRaw !== "string") throw new Error("workspace repo object needs a string path");
   const path = normalizeWorkspacePath(pathRaw, "workspace repo path");
   const id = typeof raw.id === "string" ? safeId(raw.id) : idFromPath(path);
+  const kind = safeKind(raw.kind);
   return {
     id,
     path,
-    ...(safeKind(raw.kind) ? { kind: safeKind(raw.kind) } : {}),
+    ...(kind ? { kind } : {}),
     router: normalizeRouter(raw.router),
   };
 }
@@ -125,7 +127,7 @@ function normalizeEdge(raw: unknown): WorkspaceEdge {
   if (id.length === 0 || from.length === 0 || to.length === 0 || kind.length === 0) {
     throw new Error("workspace edge needs id, from, to, and kind");
   }
-  cleanPrintable(kind, "workspace edge kind");
+  assertWorkspacePrintable(kind, "workspace edge kind");
   const contractPath =
     typeof raw.contractPath === "string" && raw.contractPath.trim().length > 0
       ? normalizeWorkspacePath(raw.contractPath, "workspace edge contractPath")

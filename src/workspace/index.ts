@@ -6,7 +6,12 @@ import { doc, plan, probe, writeJson, writeText } from "../internals/plan.js";
 import type { Check } from "../internals/verify.js";
 import { checkWorkspaceChildPath, detectChildRepos, reposOption } from "./detect.js";
 import { workspaceGitExecs, workspaceGitignoreWrite } from "./git.js";
-import { readWorkspaceManifest, workspaceReposFromPaths } from "./manifest.js";
+import {
+  readWorkspaceManifest,
+  type WorkspaceManifest,
+  type WorkspaceRepo,
+  workspaceReposFromPaths,
+} from "./manifest.js";
 import { snapshotCommand } from "./snapshot.js";
 import { taskPlanCommand } from "./task-plan.js";
 import {
@@ -30,6 +35,57 @@ function childScaffoldedProbe(repo: string, dir: string): Action {
       ? { name, verdict: "pass", detail: `${repo}/${dir}/ canon present` }
       : { name, verdict: "skip", detail: `not scaffolded — run \`aih init ./${repo} --apply\`` };
   });
+}
+
+function repoObjectEntriesByPath(manifest: WorkspaceManifest | undefined): Map<string, unknown> {
+  const out = new Map<string, unknown>();
+  const rawRepos = manifest?.raw.repos;
+  if (manifest === undefined || !Array.isArray(rawRepos)) return out;
+  manifest.repos.forEach((repo, index) => {
+    const raw = rawRepos[index];
+    if (typeof raw === "object" && raw !== null && !Array.isArray(raw)) {
+      out.set(repo.path, raw);
+    }
+  });
+  return out;
+}
+
+function reposFromPathsWithExistingMetadata(
+  paths: readonly string[],
+  manifest: WorkspaceManifest | undefined,
+  router: string,
+): WorkspaceRepo[] {
+  const generated = workspaceReposFromPaths(paths, router);
+  if (manifest === undefined) return generated;
+  const byPath = new Map(manifest.repos.map((repo) => [repo.path, repo]));
+  const byId = new Map(manifest.repos.map((repo) => [repo.id, repo]));
+  return generated.map((repo) => byPath.get(repo.path) ?? byId.get(repo.id) ?? repo);
+}
+
+function markerRepoEntries(
+  manifest: WorkspaceManifest | undefined,
+  repos: readonly WorkspaceRepo[],
+): unknown[] {
+  const existingObjects = repoObjectEntriesByPath(manifest);
+  if (existingObjects.size === 0) return repos.map((repo) => repo.path);
+  return repos.map((repo) => existingObjects.get(repo.path) ?? repo);
+}
+
+function markerForWrite(
+  manifest: WorkspaceManifest | undefined,
+  repos: readonly WorkspaceRepo[],
+  dir: string,
+  enableGit: boolean,
+): unknown {
+  const repoPaths = repos.map((repo) => repo.path);
+  const marker = workspaceMarker(repoPaths, dir, enableGit) as Record<string, unknown>;
+  if (manifest === undefined) return marker;
+  return {
+    ...manifest.raw,
+    ...marker,
+    repos: markerRepoEntries(manifest, repos),
+    ...(enableGit ? { git: true } : {}),
+  };
 }
 
 /**
@@ -60,7 +116,7 @@ async function workspacePlan(ctx: PlanContext): Promise<Plan> {
   const useExistingRepos = explicitRepos.length === 0 && existing && existing.repos.length > 0;
   const normalizedRepos = useExistingRepos
     ? existing.repos
-    : workspaceReposFromPaths(repos, posix.join(dir, "RULE_ROUTER.md"));
+    : reposFromPathsWithExistingMetadata(repos, existing, posix.join(dir, "RULE_ROUTER.md"));
   for (const repo of normalizedRepos) checkWorkspaceChildPath(ctx.root, repo.path);
   const repoPaths = normalizedRepos.map((repo) => repo.path);
   const edges = existing?.edges ?? [];
@@ -68,11 +124,8 @@ async function workspacePlan(ctx: PlanContext): Promise<Plan> {
   const writes: WriteAction[] = [
     writeJson(
       ".aih-workspace.json",
-      useExistingRepos
-        ? { ...existing.raw, ...(enableGit ? { git: true } : {}) }
-        : workspaceMarker(repos, dir, enableGit),
+      markerForWrite(existing, normalizedRepos, dir, enableGit),
       `workspace marker (multi-repo: ${repoPaths.length > 0 ? repoPaths.join(", ") : "no repos detected"})`,
-      { merge: true },
     ),
     writeJson(`${name}.code-workspace`, codeWorkspace(repoPaths), "VS Code multi-root workspace", {
       merge: true,

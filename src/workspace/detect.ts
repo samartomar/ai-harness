@@ -1,9 +1,12 @@
 import { existsSync, lstatSync, readdirSync, realpathSync } from "node:fs";
 import { isAbsolute, join, relative } from "node:path";
 import { AihError } from "../errors.js";
+import { assertWorkspacePrintable } from "./manifest.js";
 
 function cleanPrintable(value: string, label: string): void {
-  if (/[\r\n\t|]/.test(value)) {
+  try {
+    assertWorkspacePrintable(value, label);
+  } catch {
     throw new AihError(`${label} must be safe to print in workspace reports`, "AIH_WORKSPACE");
   }
 }

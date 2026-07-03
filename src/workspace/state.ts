@@ -1,5 +1,6 @@
 import { readdirSync } from "node:fs";
 import { join } from "node:path";
+import { AihError } from "../errors.js";
 import type { PlanContext } from "../internals/plan.js";
 import { checkWorkspaceChildPath } from "./detect.js";
 import type { WorkspaceManifest, WorkspaceRepo } from "./manifest.js";
@@ -84,7 +85,12 @@ export async function mapWorkspaceRepos<T>(
       next += 1;
       if (index >= repos.length) return;
       const repo = repos[index];
-      if (repo === undefined) return;
+      if (repo === undefined) {
+        throw new AihError(
+          "workspace repo list must be dense; sparse entries cannot be collected safely",
+          "AIH_WORKSPACE",
+        );
+      }
       out[index] = await mapper(repo);
     }
   });

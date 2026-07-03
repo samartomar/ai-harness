@@ -14,9 +14,9 @@ import { executePlan } from "../../src/internals/execute.js";
 import type { Action, PlanContext, ProbeAction, WriteAction } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
-import { parseWorkspaceManifest } from "../../src/workspace/manifest.js";
 import { detectChildRepos } from "../../src/workspace/detect.js";
 import { command, snapshotCommand, taskPlanCommand } from "../../src/workspace/index.js";
+import { parseWorkspaceManifest } from "../../src/workspace/manifest.js";
 
 let parent: string;
 beforeEach(() => {
