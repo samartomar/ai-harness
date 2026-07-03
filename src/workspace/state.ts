@@ -47,12 +47,14 @@ export async function readWorkspaceRepoState(
 ): Promise<WorkspaceRepoState> {
   const inside = (await gitChildRead(ctx, repo, ["rev-parse", "--is-inside-work-tree"])) === "true";
   if (!inside) return { id: repo.id, path: repo.path, dirty: false, git: false };
-  const branch = await gitChildRead(ctx, repo, ["rev-parse", "--abbrev-ref", "HEAD"]);
-  const sha = await gitChildRead(ctx, repo, ["rev-parse", "--short", "HEAD"]);
-  const dirty = ((await gitChildRead(ctx, repo, ["status", "--porcelain"])) ?? "").length > 0;
-  const aheadBehind = parseAheadBehind(
-    await gitChildRead(ctx, repo, ["rev-list", "--left-right", "--count", "HEAD...@{upstream}"]),
-  );
+  const [branch, sha, status, upstream] = await Promise.all([
+    gitChildRead(ctx, repo, ["rev-parse", "--abbrev-ref", "HEAD"]),
+    gitChildRead(ctx, repo, ["rev-parse", "--short", "HEAD"]),
+    gitChildRead(ctx, repo, ["status", "--porcelain"]),
+    gitChildRead(ctx, repo, ["rev-list", "--left-right", "--count", "HEAD...@{upstream}"]),
+  ]);
+  const dirty = (status ?? "").length > 0;
+  const aheadBehind = parseAheadBehind(upstream);
   return {
     id: repo.id,
     path: repo.path,
@@ -69,8 +71,7 @@ export async function collectWorkspaceSnapshot(
   manifest: WorkspaceManifest,
   opts: { label?: string; createdAt?: string } = {},
 ): Promise<WorkspaceSnapshot> {
-  const repos: WorkspaceRepoState[] = [];
-  for (const repo of manifest.repos) repos.push(await readWorkspaceRepoState(ctx, repo));
+  const repos = await Promise.all(manifest.repos.map((repo) => readWorkspaceRepoState(ctx, repo)));
   return {
     schemaVersion: 1,
     createdAt: opts.createdAt ?? new Date().toISOString(),

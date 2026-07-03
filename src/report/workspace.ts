@@ -521,8 +521,9 @@ export async function workspaceReportDigest(ctx: PlanContext): Promise<DigestAct
           readIfExists(join(ctx.root, ".gitignore")),
         )
       : [];
-  const rows: WorkspaceChildReportRow[] = [];
-  for (const repo of manifest.repos) rows.push(await childRow(ctx, manifest, repo, missingIgnores));
+  const rows = await Promise.all(
+    manifest.repos.map((repo) => childRow(ctx, manifest, repo, missingIgnores)),
+  );
   const contracts = manifest.edges.map((edge) => contractStatus(ctx.root, edge));
   const mcp = workspaceMcpStatus(ctx.root);
   const snapshot = workspaceSnapshot(ctx.root, manifest, rows);

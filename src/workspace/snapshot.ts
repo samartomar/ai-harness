@@ -26,6 +26,12 @@ async function workspaceSnapshotPlan(ctx: PlanContext): Promise<ReturnType<typeo
   if (!manifest) {
     throw new AihError("workspace snapshot requires .aih-workspace.json", "AIH_WORKSPACE");
   }
+  if (manifest.status === "ERROR") {
+    throw new AihError(
+      `workspace snapshot requires a valid .aih-workspace.json: ${manifest.errors.join("; ")}`,
+      "AIH_WORKSPACE",
+    );
+  }
   const label = typeof ctx.options.label === "string" ? ctx.options.label.trim() : "";
   const snapshot = await collectWorkspaceSnapshot(ctx, manifest, {
     ...(label.length > 0 ? { label } : {}),

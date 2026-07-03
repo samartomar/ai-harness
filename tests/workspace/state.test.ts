@@ -50,7 +50,8 @@ describe("workspace state collection", () => {
       maxActive = Math.max(maxActive, active);
       await delay(5);
       active--;
-      if (tail === "rev-parse --is-inside-work-tree") return { code: 0, stdout: "true\n", stderr: "" };
+      if (tail === "rev-parse --is-inside-work-tree")
+        return { code: 0, stdout: "true\n", stderr: "" };
       if (tail === "rev-parse --abbrev-ref HEAD") return { code: 0, stdout: "main\n", stderr: "" };
       if (tail === "rev-parse --short HEAD") return { code: 0, stdout: "abc123\n", stderr: "" };
       if (tail === "status --porcelain") return { code: 0, stdout: "", stderr: "" };

@@ -109,6 +109,12 @@ function taskPlanDoc(
 async function workspaceTaskPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
   const manifest = readWorkspaceManifest(ctx.root, ctx.contextDir);
   if (!manifest) throw new AihError("workspace plan requires .aih-workspace.json", "AIH_WORKSPACE");
+  if (manifest.status === "ERROR") {
+    throw new AihError(
+      `workspace plan requires a valid .aih-workspace.json: ${manifest.errors.join("; ")}`,
+      "AIH_WORKSPACE",
+    );
+  }
   const task =
     typeof ctx.options.task === "string" && ctx.options.task.trim().length > 0
       ? ctx.options.task.trim()
