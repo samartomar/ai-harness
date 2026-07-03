@@ -58,8 +58,7 @@ function reposFromPathsWithExistingMetadata(
   const generated = workspaceReposFromPaths(paths, router);
   if (manifest === undefined) return generated;
   const byPath = new Map(manifest.repos.map((repo) => [repo.path, repo]));
-  const byId = new Map(manifest.repos.map((repo) => [repo.id, repo]));
-  return generated.map((repo) => byPath.get(repo.path) ?? byId.get(repo.id) ?? repo);
+  return generated.map((repo) => byPath.get(repo.path) ?? repo);
 }
 
 function markerRepoEntries(
