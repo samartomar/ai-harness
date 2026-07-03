@@ -1,4 +1,12 @@
-import { existsSync, linkSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  linkSync,
+  mkdirSync,
+  mkdtempSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -733,7 +741,7 @@ describe("scanTrustTree", () => {
     });
 
     expect(result.analyzersRun).toEqual(["aih-native", "skillspector@docker", "cisco@uvx"]);
-    expect(scanTargets).toEqual([join(dir, "skills", "clean")]);
+    expect(scanTargets).toEqual([realpathSync(join(dir, "skills", "clean"))]);
     expect(result.checks).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
