@@ -239,12 +239,29 @@ describe("scaleSafetyDigest", () => {
     expect(d?.data).toMatchObject({ ok: false, code: "scale.code-review-graph-missing" });
   });
 
-  it("emits a positive large-repo panel when repo MCP graph plus uv is available", async () => {
+  it("emits a positive large-repo panel when repo MCP graph plus uvx has a populated graph", async () => {
     writeFileSync(
       join(dir, ".mcp.json"),
       JSON.stringify({ mcpServers: { "code-review-graph": { command: "uvx" } } }),
     );
-    const d = await scaleSafetyDigest(ctx({ run: largeRepoRunner("uv") }));
+    const run = fakeRunner((argv) => {
+      if (argv[0] === "git" && argv.slice(3).join(" ") === "ls-files") {
+        return {
+          code: 0,
+          stdout: Array.from({ length: 1000 }, (_, i) => `src/file-${i}.ts`).join("\n"),
+        };
+      }
+      if ((argv[0] === "which" || argv[0] === "where") && argv[1] === "uvx") {
+        return { code: 0, stdout: "/usr/bin/uvx" };
+      }
+      if (argv[0] === "uvx" && argv.includes("status")) {
+        return { code: 0, stdout: "Nodes: 5454\nEdges: 64205\nFiles: 388\n" };
+      }
+      return { code: 1, spawnError: true };
+    });
+    const d = await scaleSafetyDigest(
+      ctx({ run, host: makeHostAdapter({ platform: "linux", run, env: {} }) }),
+    );
     expect(d?.describe).toContain("graph available");
     expect(d?.data).toMatchObject({ ok: true });
   });

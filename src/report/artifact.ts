@@ -247,7 +247,7 @@ const TOOL_HINTS: Record<string, string> = {
   jq: "jq — brew install jq · apt install jq · scoop install jq",
   gh: "GitHub CLI — brew install gh · winget install GitHub.cli · cli.github.com",
   "code-review-graph":
-    "pip install code-review-graph==2.3.6 (or uvx code-review-graph@2.3.6 serve)",
+    "pip install code-review-graph==2.3.6 (or uvx --offline --no-python-downloads --no-env-file code-review-graph@2.3.6 serve)",
   claude: "Claude Code — npm i -g @anthropic-ai/claude-code",
   codex: "Codex CLI — npm i -g @openai/codex",
   cursor: "Cursor editor — cursor.com",

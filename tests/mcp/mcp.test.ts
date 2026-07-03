@@ -150,8 +150,31 @@ describe("aih mcp — generated mcpServers blueprint", () => {
     expect(graph.type).toBe("stdio");
     if (graph.type !== "stdio") throw new Error("expected stdio server");
     expect(graph.command).toBe("uvx");
-    expect(graph.args).toEqual(["code-review-graph@2.3.6", "serve"]);
+    expect(graph.args).toEqual([
+      "--offline",
+      "--no-python-downloads",
+      "--no-env-file",
+      "code-review-graph@2.3.6",
+      "serve",
+    ]);
     expect(typeof graph.description).toBe("string");
+  });
+
+  it("models codebase-memory-mcp as an offline uvx stdio server", async () => {
+    const p = await command.plan(makeCtx());
+    const w = p.actions.find((a) => a.kind === "write") as WriteAction;
+    const memory = pick(serversOf(w), "codebase-memory-mcp");
+
+    expect(memory.type).toBe("stdio");
+    if (memory.type !== "stdio") throw new Error("expected stdio server");
+    expect(memory.command).toBe("uvx");
+    expect(memory.args).toEqual([
+      "--offline",
+      "--no-python-downloads",
+      "--no-env-file",
+      "codebase-memory-mcp@0.8.1",
+    ]);
+    expect(typeof memory.description).toBe("string");
   });
 
   it("project scope on a bare repo writes the always-on base set — no hosted n24q02m boilerplate", async () => {
