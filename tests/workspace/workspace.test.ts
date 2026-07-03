@@ -241,6 +241,14 @@ describe("workspace.plan — generated artifacts", () => {
     );
   });
 
+  it("rejects non-version filesystem MCP specs from AIH_MCP_FS_VERSION", async () => {
+    child("ui");
+    const base = makeCtx();
+    const ctx = { ...base, env: { ...base.env, AIH_MCP_FS_VERSION: "latest" } };
+
+    await expect(command.plan(ctx)).rejects.toThrow(/exact semver/);
+  });
+
   it("the cross-repo architecture map is write-once (never overwritten)", async () => {
     child("ui");
     const arch = writesByPath((await command.plan(makeCtx())).actions).get(
@@ -421,6 +429,24 @@ describe("workspace plan command", () => {
     await expect(taskPlanCommand.plan(makeCtx({ task: "ship workspace fix" }))).rejects.toThrow(
       /valid \.aih-workspace\.json/,
     );
+  });
+
+  it("keeps task text on one printable line in generated Markdown", async () => {
+    child("ui");
+    writeFileSync(
+      join(parent, ".aih-workspace.json"),
+      JSON.stringify({ repos: ["ui"], contextDir: "ai-coding" }),
+    );
+
+    const actions = (
+      await taskPlanCommand.plan(makeCtx({ task: "ship fix\n## Injected\n| bad | table |" }))
+    ).actions;
+    const text =
+      actions.find((action): action is WriteAction => action.kind === "write")?.contents ?? "";
+
+    expect(text).toContain("Task: ship fix ## Injected bad table");
+    expect(text).not.toContain("\n## Injected");
+    expect(text).not.toContain("| bad | table |");
   });
 });
 
