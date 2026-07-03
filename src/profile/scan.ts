@@ -25,6 +25,10 @@ export interface WorkspaceStack {
   lintCommand?: string;
   /** Workspace-local start command, when declared by that workspace's manifest. */
   startCommand?: string;
+  /** Workspace-local aggregate verification command, when declared by its manifest. */
+  verifyCommand?: string;
+  /** Workspace-local typecheck command, when declared by its manifest. */
+  typecheckCommand?: string;
 }
 
 export interface DeploymentCommands {
@@ -62,6 +66,10 @@ export interface RepoStack {
   lintCommand?: string;
   /** How to start the local app/server, or undefined when none is defined. */
   startCommand?: string;
+  /** Aggregate quality gate, declared-only and never inferred. */
+  verifyCommand?: string;
+  /** Typecheck gate, declared-only and never inferred. */
+  typecheckCommand?: string;
   /** Deployment/tool verbs derived from deployment manifests such as cdk.json. */
   deploymentCommands?: DeploymentCommands;
   /** True when tests run in a real browser (Karma/Cypress/…) — they hang in a headless agent. */
@@ -630,6 +638,8 @@ function synthesize(root: string, raw: Raw, opts: ScanOptions): RepoStack {
   let buildCommand: string | undefined;
   let lintCommand: string | undefined;
   let startCommand: string | undefined;
+  let verifyCommand: string | undefined;
+  let typecheckCommand: string | undefined;
 
   if (pkg) {
     // JS vs TS: TypeScript only when genuinely present.
@@ -653,6 +663,8 @@ function synthesize(root: string, raw: Raw, opts: ScanOptions): RepoStack {
     testRunner = deriveTest(pkg);
     buildCommand = "build" in pkg.scripts ? "npm run build" : undefined;
     startCommand = "start" in pkg.scripts ? "npm start" : undefined;
+    verifyCommand = "verify" in pkg.scripts ? "npm run verify" : undefined;
+    typecheckCommand = "typecheck" in pkg.scripts ? "npm run typecheck" : undefined;
     // A root lint script / linter dep wins; otherwise fall back to a detected linter
     // CONFIG file (eslint.config.* / biome.json), which monorepos have even when the
     // root package.json doesn't declare the lint script or the linter dep.
@@ -736,6 +748,8 @@ function synthesize(root: string, raw: Raw, opts: ScanOptions): RepoStack {
     buildCommand,
     lintCommand,
     startCommand,
+    verifyCommand,
+    typecheckCommand,
     ...(deploymentCommands ? { deploymentCommands } : {}),
     browserTest,
     isMonorepo,
@@ -780,6 +794,8 @@ function synthesizeWorkspaces(root: string, raw: Raw, opts: ScanOptions): Worksp
       ...(stack.buildCommand ? { buildCommand: stack.buildCommand } : {}),
       ...(stack.lintCommand ? { lintCommand: stack.lintCommand } : {}),
       ...(stack.startCommand ? { startCommand: stack.startCommand } : {}),
+      ...(stack.verifyCommand ? { verifyCommand: stack.verifyCommand } : {}),
+      ...(stack.typecheckCommand ? { typecheckCommand: stack.typecheckCommand } : {}),
     };
   }
 

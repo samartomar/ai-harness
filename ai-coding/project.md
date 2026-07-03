@@ -13,13 +13,15 @@ Enterprise AI Bootstrapping Harness — governed AI-assisted coding for enterpri
 
 ## Commands
 
+- **verify (completion gate)** — `npm run verify` _(detected)_
+- **typecheck** — `npm run typecheck` _(detected)_
 - **test** — `npm test` _(detected)_
 - **build** — `npm run build` _(detected)_
 - **lint** — `npm run lint` _(detected)_
 
 ## Scale
 
-- 461 tracked files · medium
+- 471 tracked files · medium
 
 ## Entry points
 

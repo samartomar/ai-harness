@@ -24,11 +24,11 @@ interface KiroHookJson {
   name: string;
   when: { type: string };
   timeout?: number;
-  then: { type: string; command: string };
+  then: { type: string; command?: string; prompt?: string };
 }
 
-function hookByName(name: string): KiroHookJson {
-  const found = kiroHooks(stack()).find((h) => (h.hook as KiroHookJson).name === name);
+function hookByName(name: string, over: Partial<RepoStack> = {}): KiroHookJson {
+  const found = kiroHooks(stack(over)).find((h) => (h.hook as KiroHookJson).name === name);
   if (!found) throw new Error(`hook ${name} not generated`);
   return found.hook as KiroHookJson;
 }
@@ -41,7 +41,7 @@ describe("kiroHooks — aih-metrics-on-stop (fail-open)", () => {
   });
 
   it("wraps `aih track --apply` in a dependency-free, fail-open node one-shot", () => {
-    const cmd = hookByName("aih-metrics-on-stop").then.command;
+    const cmd = hookByName("aih-metrics-on-stop").then.command ?? "";
     // Still runs the real snapshot command...
     expect(cmd).toContain("aih track --apply");
     // ...but via `node -e` (a real cross-platform exe; resolves the `.cmd` shim through
@@ -78,5 +78,15 @@ describe("kiroHooks — base set is unchanged", () => {
     expect(names).toContain("aih-tests-on-edit");
     expect(names).toContain("aih-metrics-on-stop");
     expect(names).toContain("aih-quality-gate");
+  });
+
+  it("uses the declared verify command as the manual quality gate when available", () => {
+    const gate = hookByName("aih-quality-gate", {
+      verifyCommand: "npm run verify",
+      testRunner: "npm test",
+      lintCommand: "npm run lint",
+    });
+
+    expect(gate.then.command).toBe("npm run verify");
   });
 });

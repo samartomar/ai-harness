@@ -278,8 +278,8 @@ describe("command confidence", () => {
     expect(c.commands.build).toBeUndefined();
     expect(c.commands.lint).toBeUndefined();
     expect(c.commands.start).toBeUndefined();
-    expect(c.commands).not.toHaveProperty("verify");
-    expect(c.commands).not.toHaveProperty("typecheck");
+    expect(c.commands.verify).toBeUndefined();
+    expect(c.commands.typecheck).toBeUndefined();
   });
 
   it("emits Cargo commands and package manager as inferred Rust contract facts", async () => {
@@ -727,7 +727,9 @@ describe("PR 1D — doctor contract-truth probe", () => {
     expect(res.detail).toContain("cloud");
     expect(res.detail).toContain("databases");
     expect(res.detail).toContain("deployment");
-    expect(res.detail).toContain("packageManager");
+    expect(res.detail).toContain("commands.verify");
+    expect(res.detail).toContain("commands.typecheck");
+    expect(res.detail).toContain("+1 more");
   });
 
   it("keeps contract staleness warning-only at vibe posture", async () => {

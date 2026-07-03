@@ -27,6 +27,8 @@ function stackBlock(c: ProjectContract): string[] {
 function commandsBlock(c: ProjectContract): string[] {
   const rows: string[] = [];
   const slots: Array<[string, ProjectContract["commands"]["test"]]> = [
+    ["verify (completion gate)", c.commands.verify],
+    ["typecheck", c.commands.typecheck],
     ["test", c.commands.test],
     ["build", c.commands.build],
     ["lint", c.commands.lint],
@@ -55,6 +57,8 @@ function workspaceCommandsBlock(c: ProjectContract): string[] {
     a.localeCompare(b),
   )) {
     const slots: Array<[string, ProjectContract["commands"]["test"]]> = [
+      ["verify", workspace.commands.verify],
+      ["typecheck", workspace.commands.typecheck],
       ["test", workspace.commands.test],
       ["build", workspace.commands.build],
       ["lint", workspace.commands.lint],
@@ -134,6 +138,8 @@ export function projectContractDoc(dir: string, c: ProjectContract): string {
     c.commands.build,
     c.commands.lint,
     c.commands.start,
+    c.commands.verify,
+    c.commands.typecheck,
     c.commands.cdkSynth,
     c.commands.cdkDiff,
     c.commands.cdkDeploy,
@@ -194,10 +200,29 @@ export function setupDoc(dir: string, c: ProjectContract): string {
     ? `- Install dependencies: \`${install}\`.`
     : "- Install dependencies with the repo's package manager (npm / pnpm / yarn / bun).";
   const verify: string[] = [];
-  if (c.commands.test) verify.push(`- Run the tests: \`${c.commands.test.value}\``);
-  if (c.commands.lint) verify.push(`- Lint: \`${c.commands.lint.value}\``);
+  const partialChecks = [
+    c.commands.typecheck,
+    c.commands.test,
+    c.commands.build,
+    c.commands.lint,
+  ].filter((cmd): cmd is NonNullable<ProjectContract["commands"]["test"]> => cmd !== undefined);
+  if (c.commands.verify) {
+    verify.push(`- Run the completion gate: \`${c.commands.verify.value}\`.`);
+    if (partialChecks.length > 0) {
+      verify.push(
+        `- Fast partial checks: ${partialChecks.map((cmd) => `\`${cmd.value}\``).join(", ")}.`,
+      );
+    }
+  } else {
+    if (c.commands.typecheck) verify.push(`- Typecheck: \`${c.commands.typecheck.value}\``);
+    if (c.commands.test) verify.push(`- Run the tests: \`${c.commands.test.value}\``);
+    if (c.commands.build) verify.push(`- Build: \`${c.commands.build.value}\``);
+    if (c.commands.lint) verify.push(`- Lint: \`${c.commands.lint.value}\``);
+  }
   if (verify.length === 0) {
-    verify.push("- _No test/lint command detected — add one and record it in `project.json`._");
+    verify.push(
+      "- _No verify/test/lint command detected — add one and record it in `project.json`._",
+    );
   }
   const gaps =
     c.knownGaps.length > 0

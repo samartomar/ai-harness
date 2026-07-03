@@ -7,8 +7,8 @@
 ## 1. Install & verify
 
 - Install dependencies: `npm install`.
-- Run the tests: `npm test`
-- Lint: `npm run lint`
+- Run the completion gate: `npm run verify`.
+- Fast partial checks: `npm run typecheck`, `npm test`, `npm run build`, `npm run lint`.
 
 ## 2. Turn on the guardrails (once per clone)
 

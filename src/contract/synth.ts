@@ -61,6 +61,8 @@ function toInferredCommand(value: string | undefined): ContractCommand | undefin
 }
 
 function contractCommands(stack: {
+  verifyCommand?: string;
+  typecheckCommand?: string;
   testRunner?: string;
   buildCommand?: string;
   lintCommand?: string;
@@ -68,6 +70,8 @@ function contractCommands(stack: {
   deploymentCommands?: RepoStack["deploymentCommands"];
 }): ContractCommands {
   return {
+    verify: toDeclaredCommand(stack.verifyCommand, "npm run verify"),
+    typecheck: toDeclaredCommand(stack.typecheckCommand, "npm run typecheck"),
     test: toCommand(stack.testRunner, "npm test"),
     build: toBuildCommand(stack.buildCommand),
     lint: toCommand(stack.lintCommand, "npm run lint"),
@@ -195,7 +199,16 @@ function deriveKnownGaps(
     );
   }
 
-  for (const slot of ["test", "build", "lint", "start", "cdkSynth", "cdkDiff"] as const) {
+  for (const slot of [
+    "verify",
+    "typecheck",
+    "test",
+    "build",
+    "lint",
+    "start",
+    "cdkSynth",
+    "cdkDiff",
+  ] as const) {
     const cmd = commands[slot];
     if (cmd?.confidence === "inferred") {
       gaps.push(`unconfirmed \`${cmd.value}\` (${slot} inferred, not declared) — verify it runs`);
@@ -209,7 +222,7 @@ function deriveKnownGaps(
   }
 
   for (const [path, workspace] of Object.entries(workspaces ?? {})) {
-    for (const slot of ["test", "build", "lint", "start"] as const) {
+    for (const slot of ["verify", "typecheck", "test", "build", "lint", "start"] as const) {
       const cmd = workspace.commands[slot];
       if (cmd?.confidence === "inferred") {
         gaps.push(

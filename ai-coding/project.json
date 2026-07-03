@@ -20,6 +20,14 @@
     "src/index.ts"
   ],
   "commands": {
+    "verify": {
+      "value": "npm run verify",
+      "confidence": "detected"
+    },
+    "typecheck": {
+      "value": "npm run typecheck",
+      "confidence": "detected"
+    },
     "test": {
       "value": "npm test",
       "confidence": "detected"
@@ -34,7 +42,7 @@
     }
   },
   "scale": {
-    "trackedFiles": 461,
+    "trackedFiles": 471,
     "class": "medium",
     "isMonorepo": false
   },

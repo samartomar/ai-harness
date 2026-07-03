@@ -38,6 +38,8 @@ export type Confidence = z.infer<typeof ConfidenceSchema>;
 const CommandSchema = z.object({ value: z.string(), confidence: ConfidenceSchema });
 const CommandsSchema = z
   .object({
+    verify: CommandSchema.optional(),
+    typecheck: CommandSchema.optional(),
     test: CommandSchema.optional(),
     build: CommandSchema.optional(),
     lint: CommandSchema.optional(),
