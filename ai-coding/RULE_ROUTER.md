@@ -25,7 +25,6 @@ smallest rule set that matches the task, then verify against repo evidence
 
 - `ai-coding/rules/agent-behavior-core.md` — working discipline (think → simplify → surgical → goal-driven)
 - `ai-coding/project.md` — the repo contract: stack, commands, scale, sensitive paths, known gaps (machine-readable in `ai-coding/project.json`)
-- `ai-coding/rules/project-canon-extension.md` — repo-specific rules (Windows env, git/CI, review, engine invariants, product principles, doc homes); load the slice your task touches
 - The ECC `common` rules (Layer 1) before any non-trivial change
 
 Read depth: for read-only validation you may identify these files and confirm
