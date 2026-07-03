@@ -1,4 +1,12 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -70,6 +78,23 @@ describe("detectChildRepos", () => {
   it("rejects absolute or parent-traversing explicit repo paths", () => {
     expect(() => detectChildRepos(parent, ["../other"])).toThrow(/traverse/);
     expect(() => detectChildRepos(parent, ["C:/other"])).toThrow(/relative/);
+  });
+
+  it("rejects explicit repo paths that are unsafe to render in generated workspace docs", () => {
+    expect(() => detectChildRepos(parent, ["bad|name"])).toThrow(/safe to print/);
+  });
+
+  it("does not follow linked child directories to git repos outside the workspace parent", () => {
+    const external = mkdtempSync(join(tmpdir(), "aih-ws-external-"));
+    try {
+      mkdirSync(join(external, ".git"), { recursive: true });
+      symlinkSync(external, join(parent, "linked"), "junction");
+
+      expect(detectChildRepos(parent)).toEqual([]);
+      expect(() => detectChildRepos(parent, ["linked"])).toThrow(/not git repos/);
+    } finally {
+      rmSync(external, { recursive: true, force: true });
+    }
   });
 });
 
@@ -183,6 +208,26 @@ describe("workspace.plan — generated artifacts", () => {
       "serve",
     ]);
     expect(mcp.mcpServers.filesystem.args).toEqual(expect.arrayContaining(["ui", "backend"]));
+  });
+
+  it("uses declared object manifest repos for the VS Code and MCP workspace scopes", async () => {
+    writeFileSync(
+      join(parent, ".aih-workspace.json"),
+      JSON.stringify({
+        contextDir: "ai-coding",
+        repos: [{ id: "api", path: "packages/api", kind: "service" }],
+      }),
+    );
+
+    const w = writesByPath((await command.plan(makeCtx())).actions);
+    const codeWorkspaceWrite = [...w.values()].find((write) =>
+      write.path.endsWith(".code-workspace"),
+    );
+    const codeWorkspaceJson = codeWorkspaceWrite?.json as { folders: { path: string }[] };
+    const mcp = w.get(".mcp.json")?.json as { mcpServers: { filesystem: { args: string[] } } };
+
+    expect(codeWorkspaceJson.folders).toContainEqual({ path: "packages/api" });
+    expect(mcp.mcpServers.filesystem.args).toEqual(expect.arrayContaining(["packages/api"]));
   });
 
   it("pins the filesystem MCP package via AIH_MCP_FS_VERSION (AIH-SUPPLY-001)", async () => {

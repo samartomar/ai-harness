@@ -93,4 +93,8 @@ describe("workspace manifest parser", () => {
       { id: "ui", path: "ui", router: "ai-coding/RULE_ROUTER.md" },
     ]);
   });
+
+  it("rejects generated workspace router paths that escape the child repo", () => {
+    expect(() => workspaceReposFromPaths(["ui"], "../escape.md")).toThrow(/must not traverse/);
+  });
 });
