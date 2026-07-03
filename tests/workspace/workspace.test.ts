@@ -14,6 +14,7 @@ import { executePlan } from "../../src/internals/execute.js";
 import type { Action, PlanContext, ProbeAction, WriteAction } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
+import { parseWorkspaceManifest } from "../../src/workspace/manifest.js";
 import { detectChildRepos } from "../../src/workspace/detect.js";
 import { command, snapshotCommand, taskPlanCommand } from "../../src/workspace/index.js";
 
@@ -624,5 +625,49 @@ describe("workspace — write-once executor behavior", () => {
     expect(ignore.match(/^\*\.aih\.bak$/gm)).toHaveLength(1);
     expect(ran).not.toContain(`git -C ${parent} init`);
     expect(ran.some((cmd) => cmd.includes(" commit "))).toBe(false);
+  });
+
+  it("applies --repos over an object-form manifest without corrupting the repo list", async () => {
+    child("api");
+    child("web");
+    child("worker");
+    writeFileSync(
+      join(parent, ".aih-workspace.json"),
+      JSON.stringify(
+        {
+          contextDir: "ai-coding",
+          repos: [
+            { id: "api", path: "api", kind: "backend" },
+            { id: "web", path: "web", kind: "frontend" },
+          ],
+          edges: [
+            {
+              id: "web-api",
+              from: "web",
+              to: "api",
+              kind: "api-contract",
+              contractPath: "api/openapi.yaml",
+            },
+          ],
+          unknownFutureField: { keep: true },
+        },
+        null,
+        2,
+      ),
+    );
+    const ctx = makeCtx({ repos: "api,web,worker" }, true);
+
+    await executePlan(await command.plan(ctx), ctx);
+
+    const raw = JSON.parse(readFileSync(join(parent, ".aih-workspace.json"), "utf8"));
+    const parsed = parseWorkspaceManifest(raw, "ai-coding");
+    expect(parsed.status).toBe("OK");
+    expect(raw.repos).toEqual([
+      { id: "api", path: "api", kind: "backend" },
+      { id: "web", path: "web", kind: "frontend" },
+      { id: "worker", path: "worker", router: "ai-coding/RULE_ROUTER.md" },
+    ]);
+    expect(raw.edges).toHaveLength(1);
+    expect(raw.unknownFutureField).toEqual({ keep: true });
   });
 });
