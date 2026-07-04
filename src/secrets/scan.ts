@@ -149,7 +149,7 @@ function matchProvider(value: string): string | undefined {
 }
 
 function hasRawBearerLiteral(value: string): boolean {
-  const re = /["']?authorization["']?\s*[:=]\s*["']Bearer\s+([^"'\r\n]+)["']/gi;
+  const re = /["']?\bauthorization\b["']?\s*[:=]\s*["']?Bearer\s+([^"'\r\n]*)/gi;
   for (const m of value.matchAll(re)) {
     const credential = m[1]?.trim();
     if (credential !== undefined && !isPlaceholderOrEmpty(credential)) return true;

@@ -139,7 +139,7 @@ export function policyAwareMcpCatalog(
       githubAuth,
       githubHost,
       githubIncumbent: hostedGithub
-        ? githubIsIncumbent(policyResult.policy, githubHost)
+        ? githubIsIncumbent(hostPolicyResult.policy, githubHost)
         : undefined,
     });
     const servers = includeDisabled
