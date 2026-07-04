@@ -686,6 +686,101 @@ describe("aih mcp — enterprise posture (governance gate, opt-in)", () => {
     expect(JSON.stringify(managed?.json)).toContain("code-review-graph@2.3.6");
   });
 
+  it("does not auto-pass hosted GitHub when org-policy declares no incumbent GitHub host", async () => {
+    const root = makeTmp();
+    writeFileSync(
+      join(root, "aih-org-policy.json"),
+      jsonFile({
+        schemaVersion: 1,
+        minimumPosture: "enterprise",
+        references: { repoContract: "ai-coding/project.json" },
+        mcp: {
+          allowedServers: ["code-review-graph", "github"],
+          allowManagedOnly: true,
+          incumbentHosts: [],
+        },
+      }),
+    );
+    const ctx = makeCtx({ root, options: { posture: "enterprise" }, verify: true });
+    const p = await command.plan(ctx);
+    const probe = p.actions.find(
+      (a) => a.kind === "probe" && a.describe.includes("comply with enterprise policy"),
+    );
+    const check = probe?.kind === "probe" ? await probe.run(ctx) : undefined;
+
+    expect(check?.verdict).toBe("fail");
+    expect(check?.detail).toContain("github");
+    expect(check?.detail).toContain("set host");
+    expect(check?.detail).toContain("disable");
+  });
+
+  it("uses a configured GitHub host instead of the hardcoded hosted default", async () => {
+    const root = makeTmp();
+    writeFileSync(
+      join(root, "aih-org-policy.json"),
+      jsonFile({
+        schemaVersion: 1,
+        minimumPosture: "enterprise",
+        references: { repoContract: "ai-coding/project.json" },
+        mcp: {
+          githubHost: "https://github.internal.example",
+          incumbentHosts: ["github.internal.example"],
+        },
+      }),
+    );
+    const p = await command.plan(makeCtx({ root }));
+    const gh = pick(serversOf(p.actions.find((a) => a.kind === "write") as WriteAction), "github");
+
+    expect(gh.type).toBe("http");
+    if (gh.type !== "http") throw new Error("expected http server");
+    expect(gh.url).toBe("https://github.internal.example/mcp/");
+    expect(gh.url).not.toBe("https://api.githubcopilot.com/mcp/");
+  });
+
+  it("keeps hosted GitHub allowed when org-policy declares its host incumbent", async () => {
+    const root = makeTmp();
+    writeFileSync(
+      join(root, "aih-org-policy.json"),
+      jsonFile({
+        schemaVersion: 1,
+        minimumPosture: "enterprise",
+        references: { repoContract: "ai-coding/project.json" },
+        mcp: {
+          allowedServers: ["code-review-graph", "github"],
+          allowManagedOnly: true,
+          incumbentHosts: ["api.githubcopilot.com"],
+        },
+      }),
+    );
+    const ctx = makeCtx({ root, options: { posture: "enterprise" }, verify: true });
+    const p = await command.plan(ctx);
+    const probe = p.actions.find(
+      (a) => a.kind === "probe" && a.describe.includes("comply with enterprise policy"),
+    );
+    const check = probe?.kind === "probe" ? await probe.run(ctx) : undefined;
+
+    expect(check?.detail).not.toContain("github");
+  });
+
+  it("can disable the hosted GitHub server through org-policy", async () => {
+    const root = makeTmp();
+    writeFileSync(
+      join(root, "aih-org-policy.json"),
+      jsonFile({
+        schemaVersion: 1,
+        minimumPosture: "enterprise",
+        references: { repoContract: "ai-coding/project.json" },
+        mcp: {
+          disabledServers: ["github"],
+        },
+      }),
+    );
+    const p = await command.plan(makeCtx({ root }));
+    const w = p.actions.find((a) => a.kind === "write") as WriteAction;
+
+    expect(Object.keys(serversOf(w))).not.toContain("github");
+  });
+
   it("intersects the managed MCP allowlist with org-policy grants", async () => {
     const root = makeTmp();
     writeFileSync(

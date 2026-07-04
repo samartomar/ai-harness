@@ -68,6 +68,28 @@ describe("OrgPolicySchema", () => {
     });
   });
 
+  it("parses MCP host incumbency, GitHub host, and disabled server policy", () => {
+    expect(
+      parseOrgPolicy(
+        policy({
+          mcp: {
+            allowedServers: ["code-review-graph", "github"],
+            allowManagedOnly: true,
+            incumbentHosts: ["github.internal.example"],
+            githubHost: "https://github.internal.example",
+            disabledServers: ["context7"],
+          },
+        }),
+      ).mcp,
+    ).toMatchObject({
+      allowedServers: ["code-review-graph", "github"],
+      allowManagedOnly: true,
+      incumbentHosts: ["github.internal.example"],
+      githubHost: "https://github.internal.example",
+      disabledServers: ["context7"],
+    });
+  });
+
   it("parses the optional trust policy block with defaults", () => {
     expect(
       parseOrgPolicy(
