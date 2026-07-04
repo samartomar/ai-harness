@@ -1,7 +1,20 @@
+import { join } from "node:path";
+import { readIfExists } from "../internals/fsxn.js";
 import type { PlanContext } from "../internals/plan.js";
-import { normalizeHttpsOrigin, type OrgPolicy, readOrgPolicy } from "../org-policy/schema.js";
+import { AIH_ORG_POLICY_FILE } from "../org-policy/constants.js";
+import {
+  normalizeHttpsOrigin,
+  type OrgPolicy,
+  parseOrgPolicy,
+  readOrgPolicy,
+} from "../org-policy/schema.js";
 import { type RepoStack, scanRepo } from "../profile/scan.js";
-import { DEFAULT_GITHUB_MCP_URL, type McpServer, mcpServers } from "./servers.js";
+import {
+  DEFAULT_GITHUB_MCP_URL,
+  type GithubMcpAuth,
+  type McpServer,
+  mcpServers,
+} from "./servers.js";
 
 export interface PolicyAwareMcpCatalog {
   policy?: OrgPolicy;
@@ -17,6 +30,27 @@ export function readMcpOrgPolicy(ctx: PlanContext): { policy?: OrgPolicy; error?
   } catch (error) {
     return { error };
   }
+}
+
+function readRootMcpOrgPolicy(ctx: PlanContext): { policy?: OrgPolicy; error?: unknown } {
+  try {
+    const raw = readIfExists(join(ctx.root, AIH_ORG_POLICY_FILE));
+    if (raw === undefined) return {};
+    return { policy: parseOrgPolicy(JSON.parse(raw)) };
+  } catch (error) {
+    return { error };
+  }
+}
+
+function tokenHostPolicy(
+  ctx: PlanContext,
+  active: { policy?: OrgPolicy },
+): {
+  policy?: OrgPolicy;
+  error?: unknown;
+} {
+  if ((ctx.env.AIH_ORG_POLICY ?? "").trim().length === 0) return active;
+  return readRootMcpOrgPolicy(ctx);
 }
 
 export function configuredGitHubHost(
@@ -43,6 +77,17 @@ export function githubIsIncumbent(
   return incumbentHosts.has(githubHostName(githubHost));
 }
 
+function configuredGitHubHostForAuth(
+  ctx: PlanContext,
+  policy: OrgPolicy | undefined,
+  auth: GithubMcpAuth,
+): string | undefined {
+  if (auth !== "token") return configuredGitHubHost(ctx, policy);
+  const policyHost = policy?.mcp?.githubHost;
+  if (policyHost !== undefined && githubIsIncumbent(policy, policyHost)) return policyHost;
+  return undefined;
+}
+
 export function removeDisabledServers(
   servers: Record<string, McpServer>,
   policy: OrgPolicy | undefined,
@@ -57,6 +102,7 @@ export function policyAwareMcpCatalog(
   opts: {
     scope: string;
     selfHost?: boolean;
+    githubAuth?: GithubMcpAuth;
     stack?: RepoStack;
     includeHostedGitHub?: boolean;
     includeDisabledServers?: boolean;
@@ -74,13 +120,26 @@ export function policyAwareMcpCatalog(
       opts.selfHost !== true &&
       opts.includeHostedGitHub !== false &&
       (includeDisabled || !githubDisabled);
+    const githubAuth = opts.githubAuth ?? "oauth";
+    const hostPolicyResult =
+      githubAuth === "token" ? tokenHostPolicy(ctx, policyResult) : policyResult;
+    if (hostPolicyResult.error !== undefined) {
+      return {
+        policy: policyResult.policy,
+        error: hostPolicyResult.error,
+        errorSource: "org-policy",
+      };
+    }
     const githubHost =
-      hostedGithub && !githubDisabled ? configuredGitHubHost(ctx, policyResult.policy) : undefined;
+      hostedGithub && !githubDisabled
+        ? configuredGitHubHostForAuth(ctx, hostPolicyResult.policy, githubAuth)
+        : undefined;
     const rawServers = mcpServers(opts.scope, stack, {
       selfHost: opts.selfHost,
+      githubAuth,
       githubHost,
       githubIncumbent: hostedGithub
-        ? githubIsIncumbent(policyResult.policy, githubHost)
+        ? githubIsIncumbent(hostPolicyResult.policy, githubHost)
         : undefined,
     });
     const servers = includeDisabled

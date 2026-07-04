@@ -105,6 +105,7 @@ export interface ConfigSecretHit {
 export const MCP_CONFIG_FILES: readonly string[] = [
   ".mcp.json",
   ".cursor/mcp.json",
+  ".kiro/settings/mcp.json",
   ".vscode/mcp.json",
   "opencode.json",
 ];
@@ -137,9 +138,23 @@ function isPlaceholderOrEmpty(value: string): boolean {
   );
 }
 
+function isBearerPlaceholder(value: string): boolean {
+  const m = /^Bearer\s+(.+)$/i.exec(value.trim());
+  return m?.[1] !== undefined && isPlaceholderOrEmpty(m[1]);
+}
+
 /** First provider token shape that matches `value`, if any. */
 function matchProvider(value: string): string | undefined {
   return TOKEN_PATTERNS.find((p) => p.re.test(value))?.kind;
+}
+
+function hasRawBearerLiteral(value: string): boolean {
+  const re = /["']?\bauthorization\b["']?\s*[:=]\s*["']?Bearer\s+([^"'\r\n]*)/gi;
+  for (const m of value.matchAll(re)) {
+    const credential = m[1]?.trim();
+    if (credential !== undefined && !isPlaceholderOrEmpty(credential)) return true;
+  }
+  return false;
 }
 
 /**
@@ -152,6 +167,14 @@ function walkJson(node: unknown, key: string, file: string, hits: ConfigSecretHi
     const provider = matchProvider(node);
     if (provider !== undefined) {
       hits.push({ file, key, kind: provider });
+      return;
+    }
+    if (
+      key.toLowerCase() === "authorization" &&
+      /^Bearer\s+\S+/i.test(node.trim()) &&
+      !isBearerPlaceholder(node)
+    ) {
+      hits.push({ file, key, kind: "authorization bearer literal" });
       return;
     }
     if (
@@ -199,6 +222,9 @@ export function scanConfigSecrets(
       // raw bytes is still a leak — catch that rather than skip the file entirely.
       const provider = matchProvider(raw);
       if (provider !== undefined) hits.push({ file: rel, key: "", kind: provider });
+      else if (hasRawBearerLiteral(raw)) {
+        hits.push({ file: rel, key: "", kind: "authorization bearer literal" });
+      }
     }
   }
   return hits;

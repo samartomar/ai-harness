@@ -33,7 +33,7 @@ import {
   mcpTomlBody,
   removeMcpTomlServers,
 } from "./render.js";
-import { envPlaceholders, type McpServer, N24Q02M_HOST } from "./servers.js";
+import { envPlaceholders, type GithubMcpAuth, type McpServer, N24Q02M_HOST } from "./servers.js";
 
 /** The aih-managed block scope used for Codex's TOML `[mcp_servers.*]` region. */
 const MCP_TOML_SCOPE = "mcp";
@@ -108,6 +108,12 @@ function errorDetail(error: unknown): string {
 
 function invalidOrgPolicyError(error: unknown): SettingsError {
   return new SettingsError(`aih-org-policy.json cannot be parsed (${errorDetail(error)})`);
+}
+
+function githubAuthOption(value: unknown): GithubMcpAuth {
+  if (value === undefined) return "oauth";
+  if (value === "oauth" || value === "token") return value;
+  throw new SettingsError("--github-auth must be one of: oauth, token");
 }
 
 function mcpCatalogError(catalog: PolicyAwareMcpCatalog): SettingsError {
@@ -277,6 +283,7 @@ function mcpGuidanceDoc(e: CliEntry, serverNames: string[]): string {
 }
 
 async function planMcp(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
+  const githubAuth = githubAuthOption(ctx.options.githubAuth);
   const mode = String(ctx.options.mode ?? "standard");
   if (mode === "none") return planMcpNone(ctx);
   if (mode === "offline") return planMcpOffline(ctx);
@@ -289,7 +296,7 @@ async function planMcp(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
   const selfHost = ctx.options.selfHost === true;
   const stack = scanRepo(ctx.root, { maxDepth: 8, contextDir: ctx.contextDir });
   const actions: Action[] = [];
-  const catalog = policyAwareMcpCatalog(ctx, { scope, selfHost, stack });
+  const catalog = policyAwareMcpCatalog(ctx, { scope, selfHost, githubAuth, stack });
   if (catalog.error !== undefined || catalog.servers === undefined) {
     throw mcpCatalogError(catalog);
   }
@@ -482,6 +489,12 @@ export const command: CommandSpec = {
       flags: "--self-host",
       description:
         "emit self-hostable server forms (GitHub via the pinned local Docker image + PAT from env) instead of hosted endpoints",
+    },
+    {
+      flags: "--github-auth <auth>",
+      description:
+        "hosted GitHub MCP auth: oauth (DCR-capable clients) | token (Authorization header from env)",
+      default: "oauth",
     },
   ],
   plan: planMcp,

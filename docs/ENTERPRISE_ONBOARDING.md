@@ -188,6 +188,14 @@ For GitHub MCP, treat incumbency as an org fact. If github.com is reachable and 
 https origin and include its host in `mcp.incumbentHosts`; if GitHub is blocked or not your VCS,
 put `"github"` in `mcp.disabledServers` or use `aih mcp --mode offline|none`.
 
+GitHub's hosted MCP endpoint supports client OAuth where the client has a registered OAuth app.
+For clients that cannot dynamically register with GitHub's auth server, use
+`aih mcp --github-auth token`: the generated server stays on the hosted URL but sends an
+`Authorization` header sourced from `${GITHUB_PERSONAL_ACCESS_TOKEN}`. Put the real token only in
+your untracked environment or secret manager; aih writes the placeholder to `.env.example`, never
+the token value. Token auth ignores ambient `GITHUB_HOST`; non-default hosted GitHub MCP endpoints
+must come from committed org policy and `mcp.incumbentHosts`.
+
 ## PR Evidence
 
 Record these in every PR before ready-for-review or merge:
