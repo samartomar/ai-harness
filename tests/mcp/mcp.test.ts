@@ -573,7 +573,7 @@ describe("aih mcp — remote scope emits SSO gateway doc (cloud is doc, not writ
 
     expect(check?.verdict).toBe("fail");
     expect(check?.code).toBe("org-policy.drift");
-    expect(p.actions.some((a) => a.kind === "write" && a.path === ".mcp.json")).toBe(true);
+    expect(p.actions.some((a) => a.kind === "write")).toBe(false);
   });
 
   it("BOUNDARY: no write or exec action targets a remote host — gateway/SSO is doc only", async () => {
@@ -746,6 +746,23 @@ describe("aih mcp — enterprise posture (governance gate, opt-in)", () => {
     expect(gh.type).toBe("http");
     if (gh.type !== "http") throw new Error("expected http server");
     expect(gh.url).toBe("https://github.env.example/mcp/");
+  });
+
+  it("does not classify a GITHUB_HOST override as incumbent without org-policy", async () => {
+    const ctx = makeCtx({
+      env: { GITHUB_HOST: "https://unreviewed.example" },
+      options: { posture: "enterprise" },
+      verify: true,
+    });
+    const p = await command.plan(ctx);
+    const gh = pick(serversOf(p.actions.find((a) => a.kind === "write") as WriteAction), "github");
+    const probe = p.actions.find(
+      (a) => a.kind === "probe" && a.describe.includes("comply with enterprise policy"),
+    );
+    const check = probe?.kind === "probe" ? await probe.run(ctx) : undefined;
+
+    expect(gh.egress).toBe("third-party");
+    expect(check?.detail).toContain("github");
   });
 
   it("keeps hosted GitHub allowed when org-policy declares its host incumbent", async () => {

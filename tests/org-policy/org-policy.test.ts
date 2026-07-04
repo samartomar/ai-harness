@@ -228,6 +228,14 @@ describe("composeOrgPolicy", () => {
     expect(disposition["network-copyleft"]).toBe("block");
     expect(disposition["strong-copyleft"]).toBe("alert");
   });
+
+  it("carries disabled MCP servers into the composed policy", () => {
+    const composed = composeOrgPolicy(
+      parseOrgPolicy(policy({ mcp: { disabledServers: ["code-review-graph"] } })),
+    );
+
+    expect(composed.mcp.disabledServers).toEqual(["code-review-graph"]);
+  });
 });
 
 describe("orgPolicyProjectionActions", () => {
@@ -278,6 +286,27 @@ describe("orgPolicyProjectionActions", () => {
       allowManagedMcpServersOnly: true,
     });
     expect(JSON.stringify(managed?.json)).toContain("terraform destroy*");
+  });
+
+  it("filters disabled MCP servers out of managed projections", () => {
+    const actions = orgPolicyProjectionActions(
+      { ...ctx(), posture: "enterprise" },
+      parseOrgPolicy(
+        policy({
+          minimumPosture: "enterprise",
+          mcp: {
+            allowedServers: ["code-review-graph", "sequential-thinking"],
+            allowManagedOnly: true,
+            disabledServers: ["code-review-graph"],
+          },
+        }),
+      ),
+    );
+    const managedMcp = writes(actions).find((w) => w.path === "managed-mcp.json.example");
+    const blob = JSON.stringify(managedMcp?.json);
+
+    expect(blob).not.toContain("code-review-graph");
+    expect(blob).toContain("server-sequential-thinking");
   });
 });
 
