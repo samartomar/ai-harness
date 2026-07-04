@@ -446,7 +446,38 @@ describe("aih mcp — --self-host (GitHub via local Docker + .env.example)", () 
     ) as WriteAction;
     const gh = pick(serversOf(w), "github");
     expect(gh.type).toBe("http");
+    if (gh.type !== "http") throw new Error("expected http server");
+    expect(gh.url).toBe("https://api.githubcopilot.com/mcp/");
     expect(gh.credentials).toBe("oauth");
+    expect(JSON.stringify(gh)).not.toContain("GITHUB_PERSONAL_ACCESS_TOKEN");
+  });
+
+  it("--github-auth token keeps hosted GitHub and authenticates with an env-sourced header", async () => {
+    const p = await command.plan(makeCtx({ options: { githubAuth: "token" } }));
+    const gh = pick(serversOf(p.actions.find((a) => a.kind === "write") as WriteAction), "github");
+
+    expect(gh.type).toBe("http");
+    if (gh.type !== "http") throw new Error("expected http server");
+    expect(gh.url).toBe("https://api.githubcopilot.com/mcp/");
+    expect(gh.credentials).toBe("token");
+    expect(gh.headers?.Authorization).toBe("Bearer ${GITHUB_PERSONAL_ACCESS_TOKEN}");
+    expect(JSON.stringify(gh)).not.toContain("ghp_literal_secret");
+  });
+
+  it("--github-auth token writes only the PAT placeholder to .env.example", async () => {
+    const p = await command.plan(
+      makeCtx({
+        options: { githubAuth: "token" },
+        env: { GITHUB_PERSONAL_ACCESS_TOKEN: "ghp_literal_secret" },
+      }),
+    );
+    const envExample = p.actions.find(
+      (a): a is WriteAction => a.kind === "write" && a.path === ".env.example",
+    );
+
+    expect(envExample).toBeDefined();
+    expect(envExample?.contents).toContain("GITHUB_PERSONAL_ACCESS_TOKEN=");
+    expect(JSON.stringify(p.actions)).not.toContain("ghp_literal_secret");
   });
 
   it("writes a .env.example documenting the PAT placeholder (never a value)", async () => {
