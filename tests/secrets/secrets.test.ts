@@ -218,6 +218,19 @@ describe("scanConfigSecrets", () => {
     expect(JSON.stringify(hits)).not.toContain("pasted-token-value");
   });
 
+  it("flags a literal Authorization bearer header ending at EOF in malformed MCP JSON", () => {
+    writeFileSync(
+      join(dir, ".mcp.json"),
+      '{"mcpServers":{"gh":{"headers":{"Authorization":"Bearer pasted-token-value',
+    );
+    const hits = scanConfigSecrets(dir);
+
+    expect(hits).toHaveLength(1);
+    expect(hits[0]?.file).toBe(".mcp.json");
+    expect(hits[0]?.kind).toContain("authorization bearer");
+    expect(JSON.stringify(hits)).not.toContain("pasted-token-value");
+  });
+
   it("allows malformed MCP JSON when the bearer header is an env placeholder", () => {
     writeFileSync(
       join(dir, ".mcp.json"),
