@@ -296,10 +296,10 @@ endpoints → `{ usage_report, skills }`).
 ## aih mcp
 
 Generate the MCP server config **for the targeted CLIs** (`--cli`/`--all-tools`, default claude):
-Claude/Cursor/Kiro/Kimi get their correct project file written (`.mcp.json`, `.cursor/mcp.json`,
-`.kiro/settings/mcp.json`, `.kimi/mcp.json`); Codex gets native TOML in
-`~/.codex/config.toml` (including `bearer_token_env_var` for token auth), and Copilot/OpenCode/Zed
-or global-config entries get their registry-specific native writes or guidance. Scopes:
+Claude/Kimi share `.mcp.json`, Cursor uses `.cursor/mcp.json`, and Kiro uses
+`.kiro/settings/mcp.json`; Codex gets native TOML in `~/.codex/config.toml` (including
+`bearer_token_env_var` for token auth), and Copilot/OpenCode/Zed or global-config entries get their
+registry-specific native writes or guidance. Scopes:
 local/project/remote. For locked-down orgs,
 `--mode offline` (vendored local-command servers) or `--mode none` (no MCP + a CLI-tool fallback)
 plus a `managed-mcp.json` admin template. Enterprise org policy can also tune the hosted GitHub
