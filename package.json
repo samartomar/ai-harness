@@ -1,6 +1,6 @@
 {
   "name": "@aihq/harness",
-  "version": "1.2.1",
+  "version": "1.3.0",
   "description": "Enterprise AI Bootstrapping Harness — governed AI-assisted coding for enterprise workstations and repos: TLS trust, repo canon, skill supply chain, evidence",
   "repository": {
     "type": "git",

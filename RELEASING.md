@@ -26,7 +26,7 @@ tokenless.
    npm login
    npm version 0.2.0-rc.0 --no-git-tag-version
    npm publish --tag next --access public   # enter OTP; creates @aihq/harness on `next`
-   git checkout -- package.json src/program.ts
+   git checkout -- package.json src/version.ts
    ```
 3. **Add the Trusted Publisher** — npmjs.com → **@aihq/harness → Settings → Trusted publishing
    → Add** (GitHub Actions): organization/user `samartomar`, repository `ai-harness`, workflow
@@ -47,7 +47,7 @@ is ever stored; after the bootstrap, publish is OIDC-only.
    constant. These places must match; see the check below:
    - `package.json` `version`
    - `package-lock.json` root/package version
-   - `src/program.ts` `VERSION`
+   - `src/version.ts` `VERSION`
    Choose the bump per [VERSIONING.md](VERSIONING.md).
 3. **Update the CHANGELOG.** Move `[Unreleased]` items into a new `## [X.Y.Z] - YYYY-MM-DD`
    section under the right headings (Added / Changed / Deprecated / Removed / Fixed /
@@ -104,9 +104,9 @@ npm dist-tag add @aihq/harness@X.Y.Z latest
 
 ## Version coherence (guardrail)
 
-`src/program.ts` holds `VERSION` as a constant, separate from `package.json`, and
+`src/version.ts` holds `VERSION` as a constant, separate from `package.json`, and
 `package-lock.json` also records the root package version. The four-way release check is:
-`program.ts VERSION === package.json version === package-lock root version === tag`.
+`version.ts VERSION === package.json version === package-lock root version === tag`.
 `tests/version.test.ts` pins the first three values (a mismatch fails `npm run verify`,
 CI, and the release workflow's verify step), and the release workflow refuses a tag that
 does not match `package.json`. Steps 5–6 above catch any drift locally, before the tag
