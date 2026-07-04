@@ -1,3 +1,4 @@
+import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import {
   parseCertLines,
@@ -5,6 +6,12 @@ import {
   parseNvidiaSmi,
   parsePemBlocks,
 } from "../../src/platform/parse.js";
+
+const PEM_BEGIN = "-----BEGIN CERTIFICATE-----";
+const PEM_END = "-----END CERTIFICATE-----";
+
+const stripPemMarkers = (value: string): string =>
+  value.replaceAll(PEM_BEGIN, "").replaceAll(PEM_END, "");
 
 describe("platform parsers", () => {
   it("parseFirstInt extracts the first integer", () => {
@@ -61,5 +68,32 @@ describe("platform parsers", () => {
     // The indexOf walk returns [] fast and matches nothing, exactly as the regex did.
     const evil = `${"-----BEGIN CERTIFICATE-----\n".repeat(50_000)}x`;
     expect(parsePemBlocks(evil)).toEqual([]);
+  });
+
+  it("parsePemBlocks preserves every complete certificate block across arbitrary surrounding text", () => {
+    const safeText = fc.string({ maxLength: 80 }).map(stripPemMarkers);
+    const segment = fc.record({
+      before: safeText,
+      body: safeText,
+      after: safeText,
+    });
+
+    fc.assert(
+      fc.property(fc.array(segment, { minLength: 1, maxLength: 20 }), (segments) => {
+        const input = segments
+          .map(({ before, body, after }) => `${before}${PEM_BEGIN}\n${body}\n${PEM_END}${after}`)
+          .join("\n");
+
+        const certs = parsePemBlocks(input, "fuzz subject");
+
+        expect(certs).toHaveLength(segments.length);
+        for (const cert of certs) {
+          expect(cert.subject).toBe("fuzz subject");
+          expect(cert.pem.startsWith(PEM_BEGIN)).toBe(true);
+          expect(cert.pem.endsWith(`${PEM_END}\n`)).toBe(true);
+        }
+      }),
+      { numRuns: 200 },
+    );
   });
 });
