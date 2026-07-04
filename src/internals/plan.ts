@@ -302,13 +302,14 @@ export function writeText(
   path: string,
   contents: string,
   describe: string,
-  opts: { mode?: number; once?: boolean; external?: boolean } = {},
+  opts: { merge?: boolean; mode?: number; once?: boolean; external?: boolean } = {},
 ): WriteAction {
   return {
     kind: "write",
     path,
     contents,
     describe,
+    merge: opts.merge,
     mode: opts.mode,
     once: opts.once,
     external: opts.external,

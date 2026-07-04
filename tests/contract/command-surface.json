@@ -443,6 +443,10 @@
           "flags": "--no-log"
         },
         {
+          "flags": "--posture <posture>",
+          "defaultValue": "vibe"
+        },
+        {
           "flags": "--root <dir>"
         },
         {
@@ -2485,6 +2489,10 @@
           "flags": "--no-log"
         },
         {
+          "flags": "--posture <posture>",
+          "defaultValue": "vibe"
+        },
+        {
           "flags": "--root <dir>"
         },
         {
@@ -3154,6 +3162,10 @@
           "flags": "--no-log"
         },
         {
+          "flags": "--posture <posture>",
+          "defaultValue": "vibe"
+        },
+        {
           "flags": "--repo <owner/repo>"
         },
         {
@@ -3186,6 +3198,10 @@
         },
         {
           "flags": "--no-log"
+        },
+        {
+          "flags": "--posture <posture>",
+          "defaultValue": "vibe"
         },
         {
           "flags": "--root <dir>"

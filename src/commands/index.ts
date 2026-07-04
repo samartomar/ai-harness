@@ -291,6 +291,7 @@ function registerSpec(program: Command, spec: CommandSpec): void {
   else
     cmd
       .option("--json", "emit machine-readable JSON")
+      .option("--posture <posture>", "governance posture: vibe | team | enterprise", "vibe")
       .option("--root <dir>", "target root")
       .option("--support-out <dir>", "write IT/support tickets for failed checks to <dir>")
       .option("--no-log", "do not append a row to the local run ledger (.aih/runs/)");

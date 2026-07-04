@@ -219,7 +219,9 @@ async function bootstrapAiPlan(ctx: PlanContext): Promise<Plan> {
     const existing = readIfExists(join(ctx.root, relPath));
     const merged = mergeBootloader(existing, relPath, dir, repoName, block, canon);
     actions.push(
-      writeText(relPath, merged, `bootloader ${relPath} (preamble + managed canonical block)`),
+      writeText(relPath, merged, `bootloader ${relPath} (preamble + managed canonical block)`, {
+        merge: true,
+      }),
     );
   }
 

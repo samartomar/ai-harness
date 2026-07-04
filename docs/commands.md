@@ -76,7 +76,9 @@ Emit + verify the repo's Layer-2 `ai-coding/` canon: `RULE_ROUTER.md`, per-CLI a
 bootloaders (tool preamble + a regenerated shared block). `--verify` is the drift gate **and a
 weak-model-safety lint of the generated canon** — every `#[[file:…]]`/backtick reference must
 resolve and no leftover `<insert>`/`TODO` scaffolding ships (a dangling reference fails the gate;
-soft-imperative/taste-word prose is advisory).
+soft-imperative/taste-word prose is advisory). Existing bootloaders are merged: hand-written
+content outside the managed block is preserved, and dry-run/apply summaries report those writes as
+`merge` rather than `overwrite`.
 
 ## aih contract
 
@@ -91,7 +93,8 @@ Converge an **existing** AI canon onto aih's managed model **without overwriting
 (brownfield migration) — for a repo that already has an `AGENTS.md`/`.cursor`/`ai-*` setup.
 `--migrate-cli` folds committed CLI-native content into the canon (copy + pointer-convert,
 content-verified, backed up); `--ack <paths>` marks paths as intentionally tool-native so adopt
-stops flagging them.
+stops flagging them. Bootloader convergence uses the same managed-block merge reporting as
+`bootstrap-ai`.
 
 ## aih prune
 
@@ -103,6 +106,8 @@ of `bootstrap-ai`). Dry-run preview by default; `--apply` moves aih-owned files 
 target refuses without `--force`. `--delete` hard-deletes to a gitignored `*.aih.bak` sibling
 (never overwriting a prior backup) instead of archiving; `--unrunnable` also prunes a
 still-targeted CLI whose binary is absent from `PATH` (loud warning; never the default).
+Shared selection flags (`--cli`, `--all-tools`, `--detect`) are accepted by the command surface but
+ignored by `prune`; the digest says so and keeps the diff anchored to committed intent.
 
 ## aih ecc
 
@@ -324,10 +329,15 @@ Generate a devcontainer + managed sandbox settings (egress allowlist, `failIfUna
 
 Fail-closed verification of the workstation/repo configuration (+ workspace mode: validates each
 child repo). Includes a **canon markdown lint** (read-only) over the scaffolded `ai-coding/` tree.
+Accepts `--posture <posture>` like other verification surfaces; it remains read-only.
 
 ## aih status
 
-Read-only inventory of what the harness has configured.
+Read-only inventory of what the harness has configured. Accepts `--posture <posture>` for script
+consistency; it remains read-only.
+
+`aih verify-bundle` and `aih verify-release` also accept `--posture <posture>` for the same
+script-friendly surface, while preserving their read-only behavior.
 
 ## Support tickets
 
