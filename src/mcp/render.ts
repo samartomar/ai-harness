@@ -137,8 +137,7 @@ export function mcpConfigAbs(home: string, configPath: string): string {
  * bare dotted-key segment — but NOT a sub-table like `[mcp_servers.x.env]` (the name
  * must be the last segment before `]`). Capture group 1 = quoted name, 2 = bare name.
  */
-const TOML_SERVER_HEADER =
-  /^[ \t]*\[mcp_servers\.(?:"([^"]+)"|([^.\]"]+))\][ \t]*(?:#.*)?$/gm;
+const TOML_SERVER_HEADER = /^[ \t]*\[mcp_servers\.(?:"([^"]+)"|([^.\]"]+))\][ \t]*(?:#.*)?$/gm;
 const TOML_TABLE_HEADER = /^[ \t]*\[/;
 const TOML_MCP_TREE_HEADER =
   /^[ \t]*\[mcp_servers\.(?:"([^"]+)"|([^.\]"]+))(?:\.[^\]]+)?\][ \t]*(?:#.*)?$/;

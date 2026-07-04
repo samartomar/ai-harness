@@ -10,7 +10,7 @@ import type { Check } from "../internals/verify.js";
 import type { OrgPolicy } from "../org-policy/schema.js";
 import { scanRepo } from "../profile/scan.js";
 import { managedMcpAllowlistSettings } from "./allowlist.js";
-import { policyAwareMcpCatalog, type PolicyAwareMcpCatalog } from "./catalog.js";
+import { type PolicyAwareMcpCatalog, policyAwareMcpCatalog } from "./catalog.js";
 import {
   enterpriseMcpDoc,
   managedMcpExample,
