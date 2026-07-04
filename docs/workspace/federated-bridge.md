@@ -142,6 +142,8 @@ Keep backward compatibility with the current string-array repo list, but support
       "id": "backend",
       "path": "backend",
       "kind": "api",
+      "remote": "https://github.com/acme/backend.git",
+      "ref": "main",
       "router": "ai-coding/RULE_ROUTER.md",
       "owner": "platform"
     },
@@ -174,6 +176,12 @@ Keep backward compatibility with the current string-array repo list, but support
   "generatedBy": "aih workspace"
 }
 ```
+
+`repos[]` can remain a bare string path for lightweight workspaces. Object-form
+entries keep the required `path` plus stable `id`, optional role/source metadata
+(`kind`, `remote`, `ref`), and the child router path. `remote` and `ref` are
+metadata only here: `aih workspace` records and validates them without fetching or
+mutating any child repo.
 
 ## Workspace router
 

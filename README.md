@@ -317,7 +317,7 @@ It writes, at the parent (it does **not** touch the child repos — run `aih ini
 - `.mcp.json` — combined **code-review graph + filesystem MCP** spanning every child repo path, so an
   agent at the workspace root can reason about cross-repo blast radius before editing a child repo.
 - `.aih-workspace.json` — marker that puts `aih doctor` into **workspace mode** (validates each child
-  repo is scaffolded).
+  repo is scaffolded); object-form repos can retain optional `remote`/`ref` source metadata.
 
 ### Support tickets
 
