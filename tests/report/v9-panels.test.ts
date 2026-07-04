@@ -114,6 +114,7 @@ describe("driftDigest", () => {
 interface ServerData {
   servers: Array<[string, string]>;
   thirdParty: number;
+  catalogError?: string;
 }
 
 describe("mcpServersDigest", () => {
@@ -163,14 +164,17 @@ describe("mcpServersDigest", () => {
     expect(data.thirdParty).toBe(1);
   });
 
-  it("does not fall back to vendor egress when the policy-aware catalog fails", () => {
+  it("fails closed instead of claiming no third-party egress when the catalog fails", () => {
     put(".mcp.json", JSON.stringify({ mcpServers: { github: {} } }));
 
-    const data = mcpServersDigest(ctx({ env: { GITHUB_HOST: "github.internal.example" } }))
-      ?.data as ServerData;
+    const d = mcpServersDigest(ctx({ env: { GITHUB_HOST: "github.internal.example" } }));
+    const data = d?.data as ServerData;
 
-    expect(data.servers).toContainEqual(["github", "unknown"]);
-    expect(data.servers).not.toContainEqual(["github", "vendor"]);
+    expect(d?.text).toContain("policy-aware MCP catalog unavailable");
+    expect(d?.text).not.toContain("No third-party egress.");
+    expect(data.catalogError).toContain("Invalid URL");
+    expect(data.servers).toEqual([["github", "unknown"]]);
+    expect(data.thirdParty).toBeUndefined();
   });
 });
 
