@@ -48,7 +48,7 @@ const OTHER_FAIL: Check = {
 };
 
 const CLEARED = { pinned: true, fetched: true };
-const LOCAL = { pinned: true, fetched: true, local: true };
+const FIRST_PARTY = { pinned: true, fetched: true, firstParty: true };
 
 describe("skillVerdict", () => {
   it("grades RED for a proven-dangerous finding and RED beats everything", () => {
@@ -75,38 +75,38 @@ describe("skillVerdict", () => {
     expect(graded.verdict).toBe("UNKNOWN");
   });
 
-  it("grades UNKNOWN on a detector-unavailable skip for a remote source", () => {
+  it("grades UNKNOWN on a detector-unavailable skip for a non-first-party source", () => {
     const graded = skillVerdict([PASS, LICENSE_PASS, DETECTOR_SKIP], cleanShape(), CLEARED);
 
     expect(graded.verdict).toBe("UNKNOWN");
     expect(graded.reasons).toEqual([expect.stringContaining("detector")]);
   });
 
-  it("exempts a local first-party source from the detector-unavailable UNKNOWN and grades GREEN", () => {
-    const graded = skillVerdict([PASS, LICENSE_PASS, DETECTOR_SKIP], cleanShape(), LOCAL);
+  it("exempts a first-party source from the detector-unavailable UNKNOWN and grades GREEN", () => {
+    const graded = skillVerdict([PASS, LICENSE_PASS, DETECTOR_SKIP], cleanShape(), FIRST_PARTY);
 
     expect(graded).toEqual({ verdict: "GREEN", reasons: [] });
   });
 
-  it("still grades a local source RED on a danger finding when a detector is unavailable", () => {
-    const graded = skillVerdict([DANGER, LICENSE_PASS, DETECTOR_SKIP], cleanShape(), LOCAL);
+  it("still grades a first-party source RED on a danger finding when a detector is unavailable", () => {
+    const graded = skillVerdict([DANGER, LICENSE_PASS, DETECTOR_SKIP], cleanShape(), FIRST_PARTY);
 
     expect(graded.verdict).toBe("RED");
   });
 
-  it("still grades a local source YELLOW on a shape trigger when a detector is unavailable", () => {
+  it("still grades a first-party source YELLOW on a shape trigger when a detector is unavailable", () => {
     const graded = skillVerdict(
       [PASS, LICENSE_PASS, DETECTOR_SKIP],
       cleanShape({ installScripts: true }),
-      LOCAL,
+      FIRST_PARTY,
     );
 
     expect(graded.verdict).toBe("YELLOW");
     expect(graded.reasons).toEqual([expect.stringContaining("install scripts")]);
   });
 
-  it("still grades a local source UNKNOWN on a missing license (the exemption is detector-only)", () => {
-    const graded = skillVerdict([PASS, LICENSE_MISSING, DETECTOR_SKIP], cleanShape(), LOCAL);
+  it("still grades a first-party source UNKNOWN on a missing license (the exemption is detector-only)", () => {
+    const graded = skillVerdict([PASS, LICENSE_MISSING, DETECTOR_SKIP], cleanShape(), FIRST_PARTY);
 
     expect(graded.verdict).toBe("UNKNOWN");
     expect(graded.reasons).toEqual([expect.stringContaining("license")]);

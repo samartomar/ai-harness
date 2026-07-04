@@ -226,7 +226,12 @@ export async function skillVetPlanForSource(
       ...staticChecks.map((check) => probe(check.detail ?? check.name, () => check)),
       dynamicDigest("skill vet verdict", (digestCtx) => {
         const checks = [...trustSourceOriginChecks(digestCtx, source), ...staticChecks];
-        const graded = skillVerdict(checks, shape, { pinned: true, fetched: true, local: true });
+        // First-party = a local source resolved UNDER the repo root (a bundled,
+        // in-repo skill). A local path outside the repo is NOT first-party and stays
+        // strictly graded (detector-unavailable → UNKNOWN, like any other source).
+        const rel = relative(digestCtx.root, source.root);
+        const firstParty = rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
+        const graded = skillVerdict(checks, shape, { pinned: true, fetched: true, firstParty });
         return vetDigestResult(
           digestCtx,
           source,
@@ -256,7 +261,7 @@ export async function skillVetPlanForSource(
       const graded = skillVerdict(checks, emptyShape(), {
         pinned: isPinned(source),
         fetched: false,
-        local: false,
+        firstParty: false,
       });
       return buildEvidence(source, source.pin?.toLowerCase(), undefined, checks, [], graded);
     };
@@ -280,7 +285,7 @@ export async function skillVetPlanForSource(
           const graded = skillVerdict(checks, vetted.shape, {
             pinned: isPinned(source),
             fetched: true,
-            local: false,
+            firstParty: false,
           });
           return vetDigestResult(
             digestCtx,

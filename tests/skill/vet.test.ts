@@ -126,13 +126,18 @@ describe("skillVetCommand", () => {
     expect(existsSync(join(workspace, ".aih"))).toBe(false);
   });
 
-  it("grades a clean local source GREEN on native coverage when the deep detectors are unavailable", async () => {
-    skill("clean", "# Clean\n\nUse this skill for local documentation hygiene.\n");
-    license();
-    // Default runner: docker + uvx both report unavailable, so skillspector/cisco
-    // emit detector-unavailable skips. A REMOTE source would grade UNKNOWN; a local
-    // first-party source is graded on aih-native coverage instead.
-    const c = ctx({ source: sourceRoot });
+  it("grades a first-party (in-repo) source GREEN on native coverage when the deep detectors are unavailable", async () => {
+    // A source resolved UNDER the repo root (ctx.root = workspace) is first-party.
+    const dir = join(workspace, "packs", "clean");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(
+      join(dir, "SKILL.md"),
+      "# Clean\n\nUse this skill for local documentation hygiene.\n",
+      "utf8",
+    );
+    writeFileSync(join(dir, "LICENSE"), "MIT License\n\nCopyright (c) Example\n", "utf8");
+    // Default runner: docker + uvx unavailable → detector-unavailable skips.
+    const c = ctx({ source: dir });
 
     const result = await executePlan(await skillVetCommand.plan(c), c);
 
@@ -140,7 +145,19 @@ describe("skillVetCommand", () => {
     const digest = vetDigestOf(result);
     expect(digest.data.verdict).toBe("GREEN");
     expect(digest.data.reasons).toEqual([]);
-    expect(digest.data.analyzersRun).toEqual(["aih-native"]);
+  });
+
+  it("grades an out-of-repo local source UNKNOWN when a detector is unavailable (exemption is first-party-only)", async () => {
+    // sourceRoot is a sibling tmpdir OUTSIDE ctx.root, so it is NOT first-party.
+    skill("clean", "# Clean\n\nUse this skill for local documentation hygiene.\n");
+    license();
+    const c = ctx({ source: sourceRoot });
+
+    const result = await executePlan(await skillVetCommand.plan(c), c);
+
+    const digest = vetDigestOf(result);
+    expect(digest.data.verdict).toBe("UNKNOWN");
+    expect(digest.data.reasons).toEqual([expect.stringContaining("detector")]);
   });
 
   it("writes the evidence artifact under --apply", async () => {

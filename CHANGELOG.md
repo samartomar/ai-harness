@@ -16,11 +16,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
-- **First-party trust tier**: `aih skill vet` now grades a **local** source on
-  aih-native coverage — an *unavailable* deep detector (SkillSpector/Cisco) no
-  longer forces UNKNOWN for a local path, so first-party skills are approvable
-  without Docker. Remote sources are unchanged, and native RED plus shape/license
-  rules still apply. (#166)
+- **First-party trust tier**: `aih skill vet` now grades a **first-party** source
+  (a local path under the repo root) on aih-native coverage — an *unavailable* deep
+  detector (SkillSpector/Cisco) no longer forces UNKNOWN for a repo-relative path,
+  so first-party skills are approvable without Docker. Remote and out-of-repo
+  sources are unchanged, and native RED plus shape/license rules still apply. (#166)
 
 ## [1.2.1] - 2026-07-03
 

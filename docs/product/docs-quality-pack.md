@@ -40,34 +40,40 @@ So BetterDoc is vetted and approved as a local path. The approval is still fully
 lockfile entry, owner (`aih-maintainers`), license (Apache-2.0), and vet evidence — and
 `aih pack install` still runs the trust scan before promoting.
 
-### First-party trust tier (verdict grading for local sources)
+### First-party trust tier (verdict grading for first-party sources)
 
 `aih skill vet` grades a source GREEN/YELLOW/RED/UNKNOWN. Previously, an **unavailable** deep
 detector (SkillSpector via Docker, or the Cisco skill-scanner via `uvx`) forced **UNKNOWN** for
 *any* source, and `skill approve` refuses UNKNOWN. That is correct for a remote fetch — without
-the deep scan you cannot vouch for downloaded code — but it made a first-party local skill
-impossible to approve on a machine or CI without Docker.
+the deep scan you cannot vouch for downloaded code — but it made a first-party skill impossible to
+approve on a machine or CI without Docker.
 
-The verdict engine (`src/skill/verdict.ts`) now scopes that rule to **remote** sources. A local
-source is graded on aih-native coverage, so a merely *unavailable* deep detector no longer forces
-UNKNOWN. The exemption is narrow and detector-only:
+The verdict engine (`src/skill/verdict.ts`) now scopes that rule so it applies to every source
+**except a first-party one**. A **first-party** source — a local path resolved **under the repo
+root** (e.g. a bundled skill in `packs/`) — is graded on aih-native coverage, so a merely
+*unavailable* deep detector no longer forces UNKNOWN. A local path **outside** the repo is not
+first-party and stays strictly graded (still UNKNOWN without the detectors). The exemption is narrow
+and detector-only:
 
 - a native malicious-code finding is still **RED**,
 - a shape trigger (install scripts / MCP config / full-codebase analysis) is still **YELLOW**,
 - a missing license is still **UNKNOWN**,
-- when Docker/`uvx` **are** available, the deep detectors still run on local sources and still
+- when Docker/`uvx` **are** available, the deep detectors still run on first-party sources and still
   escalate on their findings.
 
-Residual risk: a local path that happens to hold sophisticated third-party malware could grade
-GREEN on native coverage where a deep scanner might have caught more. The boundary is defensible —
-the operator chose a local path, native malicious-code and shape checks still run, and the primary
-threat model (unreviewed *remote* skills) is unchanged — but it is a real security-posture choice.
+Residual risk: an in-repo path is graded on native coverage, so a deep scanner might catch something
+the native pass does not. The boundary is deliberately narrow — only repo-relative, human-reviewed,
+git-tracked content qualifies; anything fetched or outside the repo is unchanged — but it is a real
+security-posture choice. Treat a first-party approval as *"reviewed in the PR,"* not *"deep-scanned
+clean,"* and record the real scanner verdict when a scanner-equipped box is available.
 
-> Owner hand-off: the broader "may aih carry packaged skill bytes / how do first-party skills earn
-> approval" policy (roadmap item F3) is not settled by this change. A separate hand-off note will
-> lay out the options (native tier vs. a first-party pinned host repo vs. an explicit audited
-> `--first-party` attestation) for the repo owner to decide. This PR ships the smallest mechanism
-> that makes the first-party pack installable today.
+> Owner decisions (F3, resolved): the first-party approval model is the **native tier scoped to
+> repo-relative sources** (this PR), with a first-party marker on the approval for auditability (a
+> tracked fast-follow). Packaging: the pack is **not shipped in the npm tarball** — `packs/` stays
+> out of the package `files` because the CLI never reads its own `packs/` at runtime; revisit only if
+> a scaffold is added to seed packs into external repos. `aih marketplace build` **excludes
+> first-party (`commit:"local"`) skills** and reports them — a bundled first-party skill is delivered
+> by the repo, not the hostable marketplace artifact.
 
 ## Install and verify
 
