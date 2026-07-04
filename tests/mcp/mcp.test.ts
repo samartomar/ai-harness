@@ -508,6 +508,36 @@ describe("aih mcp — --self-host (GitHub via local Docker + .env.example)", () 
     expect(JSON.stringify(gh)).not.toContain("evil.example");
   });
 
+  it("--github-auth token ignores AIH_ORG_POLICY host overrides for token egress", async () => {
+    const root = makeTmp();
+    writeFileSync(
+      join(root, "uncommitted-policy.json"),
+      jsonFile({
+        schemaVersion: 1,
+        minimumPosture: "enterprise",
+        references: { repoContract: "ai-coding/project.json" },
+        mcp: {
+          githubHost: "https://evil.example",
+          incumbentHosts: ["evil.example"],
+        },
+      }),
+    );
+    const p = await command.plan(
+      makeCtx({
+        root,
+        options: { githubAuth: "token" },
+        env: { AIH_ORG_POLICY: "uncommitted-policy.json" },
+      }),
+    );
+    const gh = pick(serversOf(p.actions.find((a) => a.kind === "write") as WriteAction), "github");
+
+    expect(gh.type).toBe("http");
+    if (gh.type !== "http") throw new Error("expected http server");
+    expect(gh.url).toBe("https://api.githubcopilot.com/mcp/");
+    expect(gh.headers?.Authorization).toBe("Bearer $" + "{GITHUB_PERSONAL_ACCESS_TOKEN}");
+    expect(JSON.stringify(gh)).not.toContain("evil.example");
+  });
+
   it("writes a .env.example documenting the PAT placeholder (never a value)", async () => {
     const p = await command.plan(makeCtx({ options: { selfHost: true } }));
     const envExample = p.actions.find(

@@ -172,6 +172,62 @@ describe("scanConfigSecrets", () => {
     expect(scanConfigSecrets(dir)).toEqual([]);
   });
 
+  it("scans Kiro MCP config for a literal Authorization bearer header", () => {
+    mkdirSync(join(dir, ".kiro", "settings"), { recursive: true });
+    writeFileSync(
+      join(dir, ".kiro", "settings", "mcp.json"),
+      JSON.stringify({
+        mcpServers: {
+          gh: { headers: { Authorization: "Bearer pasted-token-value" } },
+        },
+      }),
+    );
+    const hits = scanConfigSecrets(dir);
+
+    expect(hits).toHaveLength(1);
+    expect(hits[0]?.file).toBe(".kiro/settings/mcp.json");
+    expect(hits[0]?.kind).toContain("authorization bearer");
+    expect(JSON.stringify(hits)).not.toContain("pasted-token-value");
+  });
+
+  it("allows Kiro MCP Authorization bearer env placeholders", () => {
+    mkdirSync(join(dir, ".kiro", "settings"), { recursive: true });
+    writeFileSync(
+      join(dir, ".kiro", "settings", "mcp.json"),
+      JSON.stringify({
+        mcpServers: {
+          gh: { headers: { Authorization: "Bearer $" + "{GITHUB_PERSONAL_ACCESS_TOKEN}" } },
+        },
+      }),
+    );
+
+    expect(scanConfigSecrets(dir)).toEqual([]);
+  });
+
+  it("flags a literal Authorization bearer header in malformed MCP JSON", () => {
+    writeFileSync(
+      join(dir, ".mcp.json"),
+      '{"mcpServers":{"gh":{"headers":{"Authorization":"Bearer pasted-token-value"}}',
+    );
+    const hits = scanConfigSecrets(dir);
+
+    expect(hits).toHaveLength(1);
+    expect(hits[0]?.file).toBe(".mcp.json");
+    expect(hits[0]?.key).toBe("");
+    expect(hits[0]?.kind).toContain("authorization bearer");
+    expect(JSON.stringify(hits)).not.toContain("pasted-token-value");
+  });
+
+  it("allows malformed MCP JSON when the bearer header is an env placeholder", () => {
+    writeFileSync(
+      join(dir, ".mcp.json"),
+      '{"mcpServers":{"gh":{"headers":{"Authorization":"Bearer $' +
+        '{GITHUB_PERSONAL_ACCESS_TOKEN}"}}',
+    );
+
+    expect(scanConfigSecrets(dir)).toEqual([]);
+  });
+
   it("returns nothing for a clean / absent config", () => {
     expect(scanConfigSecrets(dir)).toEqual([]);
   });
