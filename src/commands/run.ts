@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { basename, join, resolve } from "node:path";
 import type { Command } from "commander";
 import { readAihConfig } from "../config/marker.js";
-import { resolvePosture } from "../config/posture.js";
+import { parsePostureInput, resolvePosture } from "../config/posture.js";
 import { loadSettings } from "../config/settings.js";
 import { AihError } from "../errors.js";
 import { optionSource } from "../internals/commander-options.js";
@@ -153,7 +153,9 @@ export async function runCapability(
     // flag; otherwise pass undefined so settings' env-then-default resolution wins.
     const caPatternFromFlag =
       optionSource(command, "caPattern") === "cli" ? (opts.caPattern as string) : undefined;
-    const postureFlagSource = optionSource(command, "posture") === "cli" ? "cli" : undefined;
+    const postureTyped = optionSource(command, "posture") === "cli";
+    if (postureTyped && spec.readOnly) parsePostureInput(opts.posture, "--posture");
+    const postureFlagSource = postureTyped && !spec.readOnly ? "cli" : undefined;
     const resolvedPosture = resolvePosture({
       root: resolvedRoot,
       env,

@@ -104,6 +104,26 @@ function unrunnableLines(set: StalePruneSet): string[] {
   ];
 }
 
+/** Selection flags are shared CLI surface, but prune only trusts committed intent. */
+function ignoredSelectionFlags(ctx: PlanContext): string[] {
+  const flags: string[] = [];
+  if (typeof ctx.options.cli === "string" && ctx.options.cli.trim().length > 0) {
+    flags.push("--cli");
+  }
+  if (ctx.options.allTools === true) flags.push("--all-tools");
+  if (ctx.options.detect === true) flags.push("--detect");
+  return flags;
+}
+
+function ignoredSelectionLines(flags: readonly string[]): string[] {
+  if (flags.length === 0) return [];
+  return [
+    "",
+    `Selection flag(s) ignored by prune: ${flags.join(", ")}.`,
+    "Prune diffs committed intent only (.aih-config.json); re-target with `aih bootstrap-ai --apply --cli <list>` first.",
+  ];
+}
+
 /** The context digest: kept/dropped summary + the manual-review advisory. The
  * `file`/`block` changes are carried by their own action preview lines. */
 function contextBody(
@@ -111,12 +131,14 @@ function contextBody(
   moved: number,
   subtracted: number,
   hardDelete: boolean,
+  ignoredFlags: readonly string[],
 ): string {
   if (set.source === "none") {
     return lines(
       "No committed target set (.aih-config.json) to diff against — nothing is treated",
       "as stale. Run `aih bootstrap-ai` to record which CLIs this repo targets, then",
       "`aih prune` will remove artifacts for any CLI you later drop.",
+      ...ignoredSelectionLines(ignoredFlags),
     );
   }
   if (set.unknownTargets.length > 0) {
@@ -125,12 +147,14 @@ function contextBody(
       "A typo here could make prune treat a CLI you MEANT TO KEEP as dropped, so nothing",
       "is treated as stale until the marker is fixed. Valid targets: see `aih prune --help`;",
       "re-write the marker via `aih bootstrap-ai --apply --cli <list>`.",
+      ...ignoredSelectionLines(ignoredFlags),
     );
   }
   if (set.dropped.length === 0) {
     return lines(
       "No stale per-CLI artifacts — every CLI wired into this repo is still targeted.",
       `Kept (${SOURCE_LABEL[set.source]}): ${set.targeted.join(", ") || "none"}.`,
+      ...ignoredSelectionLines(ignoredFlags),
     );
   }
   const disposal = hardDelete
@@ -140,6 +164,7 @@ function contextBody(
     `Kept (${SOURCE_LABEL[set.source]}): ${set.targeted.join(", ") || "none"}`,
     `Dropped: ${set.dropped.join(", ")}`,
     ...unrunnableLines(set),
+    ...ignoredSelectionLines(ignoredFlags),
     "",
     disposal,
     "subtracted in place; the actions above list each. Pass --apply to execute.",
@@ -188,7 +213,13 @@ async function prunePlan(ctx: PlanContext): Promise<Plan> {
     set.dropped.length > 0
       ? `Stale artifacts — ${set.artifacts.length} for ${set.dropped.length} dropped CLI(s)`
       : "Stale artifacts — none";
-  actions.push(digest(headline, contextBody(set, moved, subtracted, hardDelete), set));
+  actions.push(
+    digest(
+      headline,
+      contextBody(set, moved, subtracted, hardDelete, ignoredSelectionFlags(ctx)),
+      set,
+    ),
+  );
   return plan("prune", ...actions);
 }
 

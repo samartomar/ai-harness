@@ -20,6 +20,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Docker-optional path without writing token values into config. Token mode
   ignores ambient `GITHUB_HOST`; non-default endpoints must come from committed
   incumbent org policy. (#179)
+- **v1.3.1 UX polish**: `bootstrap-ai`/`adopt` now report managed bootloader
+  convergence as `merge` instead of `overwrite`, read-only `doctor`/`status`/
+  `verify-bundle`/`verify-release` accept and validate `--posture` while ignoring
+  it as a read-only posture source, strict `--cli` whitespace mistakes hint at
+  comma-separated lists, and `prune` warns when shared selection flags are ignored
+  because it diffs committed intent only. (#173, #174, #175, #176)
 
 ## [1.3.0] - 2026-07-04
 

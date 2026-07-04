@@ -47,8 +47,11 @@ export function resolveClis(
       .filter((s) => s.length > 0);
     const unknown = tokens.filter((s) => !VALID.has(s));
     if (opts.strict && unknown.length > 0) {
+      const commaHint = unknown.some((s) => /\s/.test(s))
+        ? " Use a comma-separated list, e.g. --cli claude,codex."
+        : "";
       throw new SettingsError(
-        `unknown --cli target(s): ${unknown.join(", ")}. Supported: ${SUPPORTED_CLIS.join(", ")}`,
+        `unknown --cli target(s): ${unknown.join(", ")}. Supported: ${SUPPORTED_CLIS.join(", ")}.${commaHint}`,
       );
     }
     // In strict mode any unknown token already threw above, so reaching here means
