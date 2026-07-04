@@ -1,6 +1,7 @@
 import { isAbsolute, join } from "node:path";
 import type { Cli } from "../internals/clis.js";
 import { removeManagedBlock } from "../internals/envfile.js";
+import { beginMarker, endMarker } from "../internals/render.js";
 import type { McpServer } from "./servers.js";
 
 /**
@@ -136,9 +137,11 @@ export function mcpConfigAbs(home: string, configPath: string): string {
  * bare dotted-key segment — but NOT a sub-table like `[mcp_servers.x.env]` (the name
  * must be the last segment before `]`). Capture group 1 = quoted name, 2 = bare name.
  */
-const TOML_SERVER_HEADER = /^[ \t]*\[mcp_servers\.(?:"([^"]+)"|([^.\]"]+))\][ \t]*$/gm;
+const TOML_SERVER_HEADER =
+  /^[ \t]*\[mcp_servers\.(?:"([^"]+)"|([^.\]"]+))\][ \t]*(?:#.*)?$/gm;
 const TOML_TABLE_HEADER = /^[ \t]*\[/;
-const TOML_MCP_TREE_HEADER = /^[ \t]*\[mcp_servers\.(?:"([^"]+)"|([^.\]"]+))(?:\.[^\]]+)?\][ \t]*$/;
+const TOML_MCP_TREE_HEADER =
+  /^[ \t]*\[mcp_servers\.(?:"([^"]+)"|([^.\]"]+))(?:\.[^\]]+)?\][ \t]*(?:#.*)?$/;
 
 /** Count direct `[mcp_servers.NAME]` server tables (ignores `.env`/sub-tables). */
 export function tomlServerCount(raw: string): number {
@@ -165,8 +168,16 @@ export function removeMcpTomlServers(existing: string, names: readonly string[])
   const usesCrlf = /\r\n/.test(existing);
   const lines = existing.replace(/\r\n/g, "\n").split("\n");
   const kept: string[] = [];
+  const managedBegin = beginMarker("mcp");
+  const managedEnd = endMarker("mcp");
   let removing = false;
   for (const line of lines) {
+    const trimmed = line.trim();
+    if (trimmed === managedBegin || trimmed === managedEnd) {
+      removing = false;
+      kept.push(line);
+      continue;
+    }
     const mcpHeader = TOML_MCP_TREE_HEADER.exec(line);
     if (mcpHeader !== null) {
       removing = disabled.has(mcpHeader[1] ?? mcpHeader[2] ?? "");

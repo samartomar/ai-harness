@@ -8,6 +8,7 @@ export interface PolicyAwareMcpCatalog {
   servers?: Record<string, McpServer>;
   githubHost?: string;
   error?: unknown;
+  errorSource?: "org-policy" | "catalog";
 }
 
 export function readMcpOrgPolicy(ctx: PlanContext): { policy?: OrgPolicy; error?: unknown } {
@@ -62,7 +63,9 @@ export function policyAwareMcpCatalog(
   },
 ): PolicyAwareMcpCatalog {
   const policyResult = readMcpOrgPolicy(ctx);
-  if (policyResult.error !== undefined) return { error: policyResult.error };
+  if (policyResult.error !== undefined) {
+    return { error: policyResult.error, errorSource: "org-policy" };
+  }
   try {
     const stack = opts.stack ?? scanRepo(ctx.root, { maxDepth: 8, contextDir: ctx.contextDir });
     const includeDisabled = opts.includeDisabledServers === true;
@@ -71,7 +74,8 @@ export function policyAwareMcpCatalog(
       opts.selfHost !== true &&
       opts.includeHostedGitHub !== false &&
       (includeDisabled || !githubDisabled);
-    const githubHost = hostedGithub ? configuredGitHubHost(ctx, policyResult.policy) : undefined;
+    const githubHost =
+      hostedGithub && !githubDisabled ? configuredGitHubHost(ctx, policyResult.policy) : undefined;
     const rawServers = mcpServers(opts.scope, stack, {
       selfHost: opts.selfHost,
       githubHost,
@@ -84,6 +88,6 @@ export function policyAwareMcpCatalog(
       : removeDisabledServers(rawServers, policyResult.policy);
     return { policy: policyResult.policy, servers, githubHost };
   } catch (error) {
-    return { policy: policyResult.policy, error };
+    return { policy: policyResult.policy, error, errorSource: "catalog" };
   }
 }

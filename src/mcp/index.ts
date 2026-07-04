@@ -10,7 +10,7 @@ import type { Check } from "../internals/verify.js";
 import type { OrgPolicy } from "../org-policy/schema.js";
 import { scanRepo } from "../profile/scan.js";
 import { managedMcpAllowlistSettings } from "./allowlist.js";
-import { policyAwareMcpCatalog } from "./catalog.js";
+import { policyAwareMcpCatalog, type PolicyAwareMcpCatalog } from "./catalog.js";
 import {
   enterpriseMcpDoc,
   managedMcpExample,
@@ -108,6 +108,11 @@ function errorDetail(error: unknown): string {
 
 function invalidOrgPolicyError(error: unknown): SettingsError {
   return new SettingsError(`aih-org-policy.json cannot be parsed (${errorDetail(error)})`);
+}
+
+function mcpCatalogError(catalog: PolicyAwareMcpCatalog): SettingsError {
+  if (catalog.errorSource === "org-policy") return invalidOrgPolicyError(catalog.error);
+  return new SettingsError(`MCP catalog cannot be built: ${errorDetail(catalog.error)}`);
 }
 
 function disabledServerRemovals(
@@ -222,7 +227,7 @@ function planMcpOffline(ctx: PlanContext): ReturnType<typeof plan> {
     includeHostedGitHub: false,
   });
   if (catalog.error !== undefined || catalog.servers === undefined) {
-    throw invalidOrgPolicyError(catalog.error);
+    throw mcpCatalogError(catalog);
   }
   const stdio = stdioServers(catalog.servers);
   return plan(
@@ -286,7 +291,7 @@ async function planMcp(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
   const actions: Action[] = [];
   const catalog = policyAwareMcpCatalog(ctx, { scope, selfHost, stack });
   if (catalog.error !== undefined || catalog.servers === undefined) {
-    throw invalidOrgPolicyError(catalog.error);
+    throw mcpCatalogError(catalog);
   }
   const servers = catalog.servers;
   const serverNames = Object.keys(servers);
