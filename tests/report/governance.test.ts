@@ -128,6 +128,24 @@ describe("governanceRollupDigest", () => {
     expect(mcp?.count).toBe(summary.counts.allowed + summary.counts.warned + summary.counts.denied);
   });
 
+  it("uses org-policy MCP egress and disabled-server rules in the summary", () => {
+    writeFileSync(
+      join(dir, "aih-org-policy.json"),
+      JSON.stringify({
+        schemaVersion: 1,
+        minimumPosture: "enterprise",
+        references: { repoContract: "ai-coding/project.json" },
+        mcp: { incumbentHosts: [], disabledServers: ["context7"] },
+      }),
+    );
+
+    const summary = mcpGovernanceSummary(ctx({ posture: "enterprise" }), "enterprise");
+
+    expect(summary.denied.map((p) => p.name)).toContain("github");
+    expect(summary.denied.map((p) => p.name)).not.toContain("context7");
+    expect(summary.allowed).not.toContain("github");
+  });
+
   it("keeps command policy posture-graded while risk gates stay warn", () => {
     const vibe = Object.fromEntries(
       controls(governanceRollupDigest(ctx({ posture: "vibe" }))).map((c) => [c.control, c.verdict]),

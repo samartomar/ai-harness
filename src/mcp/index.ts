@@ -6,9 +6,10 @@ import { readIfExists } from "../internals/fsxn.js";
 import type { Action, CommandSpec, PlanContext, ProbeAction } from "../internals/plan.js";
 import { doc, plan, probe, writeJson, writeText } from "../internals/plan.js";
 import type { Check } from "../internals/verify.js";
-import { type OrgPolicy, readOrgPolicy } from "../org-policy/schema.js";
+import type { OrgPolicy } from "../org-policy/schema.js";
 import { scanRepo } from "../profile/scan.js";
 import { managedMcpAllowlistSettings } from "./allowlist.js";
+import { policyAwareMcpCatalog } from "./catalog.js";
 import {
   enterpriseMcpDoc,
   managedMcpExample,
@@ -30,13 +31,7 @@ import {
   mcpEntries,
   mcpTomlBody,
 } from "./render.js";
-import {
-  DEFAULT_GITHUB_MCP_URL,
-  envPlaceholders,
-  type McpServer,
-  mcpServers,
-  N24Q02M_HOST,
-} from "./servers.js";
+import { envPlaceholders, type McpServer, mcpServers, N24Q02M_HOST } from "./servers.js";
 
 /** The aih-managed block scope used for Codex's TOML `[mcp_servers.*]` region. */
 const MCP_TOML_SCOPE = "mcp";
@@ -104,64 +99,6 @@ function policyDetail(policy: { name: string; reason: string }): string {
 
 /** Canonical agentgateway base URL clients are pointed at in the remote scope. */
 const GATEWAY_URL = "https://agentgateway.n24q02m.com";
-
-function readMcpOrgPolicy(ctx: PlanContext): { policy?: OrgPolicy; error?: unknown } {
-  try {
-    return { policy: readOrgPolicy(ctx.root, ctx.env) };
-  } catch (error) {
-    return { error };
-  }
-}
-
-function httpsOrigin(value: string, source: string): string {
-  try {
-    const url = new URL(value);
-    if (
-      value !== value.trim() ||
-      url.protocol !== "https:" ||
-      url.origin !== value ||
-      url.username !== "" ||
-      url.password !== "" ||
-      url.pathname !== "/" ||
-      url.search !== "" ||
-      url.hash !== ""
-    ) {
-      throw new Error("invalid origin");
-    }
-    return url.origin;
-  } catch {
-    throw new Error(`${source} must be an https origin such as https://github.example.com`);
-  }
-}
-
-function configuredGitHubHost(ctx: PlanContext, policy: OrgPolicy | undefined): string | undefined {
-  const policyHost = policy?.mcp?.githubHost;
-  if (policyHost !== undefined) return policyHost;
-  const envHost = ctx.env.GITHUB_HOST;
-  if (envHost === undefined || envHost.length === 0) return undefined;
-  return httpsOrigin(envHost, "GITHUB_HOST");
-}
-
-function githubHostName(githubHost: string | undefined): string {
-  return new URL(githubHost ?? DEFAULT_GITHUB_MCP_URL).host.toLowerCase();
-}
-
-function githubIsIncumbent(policy: OrgPolicy | undefined, githubHost: string | undefined): boolean {
-  if (policy === undefined) return githubHostName(githubHost) === githubHostName(undefined);
-  const incumbentHosts = new Set(
-    (policy.mcp?.incumbentHosts ?? []).map((host) => host.toLowerCase()),
-  );
-  return incumbentHosts.has(githubHostName(githubHost));
-}
-
-function removeDisabledServers(
-  servers: Record<string, McpServer>,
-  policy: OrgPolicy | undefined,
-): Record<string, McpServer> {
-  const disabled = new Set(policy?.mcp?.disabledServers ?? []);
-  if (disabled.size === 0) return servers;
-  return Object.fromEntries(Object.entries(servers).filter(([name]) => !disabled.has(name)));
-}
 
 function invalidOrgPolicyProbe(error: unknown): ProbeAction {
   return probe("org-policy parse", () => ({
@@ -330,19 +267,11 @@ async function planMcp(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
   const selfHost = ctx.options.selfHost === true;
   const stack = scanRepo(ctx.root, { maxDepth: 8, contextDir: ctx.contextDir });
   const actions: Action[] = [];
-  const orgPolicyResult = readMcpOrgPolicy(ctx);
-  if (orgPolicyResult.error !== undefined) {
-    return plan("mcp", invalidOrgPolicyProbe(orgPolicyResult.error));
+  const catalog = policyAwareMcpCatalog(ctx, { scope, selfHost, stack });
+  if (catalog.error !== undefined || catalog.servers === undefined) {
+    return plan("mcp", invalidOrgPolicyProbe(catalog.error));
   }
-  const githubHost = configuredGitHubHost(ctx, orgPolicyResult.policy);
-  const servers = removeDisabledServers(
-    mcpServers(scope, stack, {
-      selfHost,
-      githubHost,
-      githubIncumbent: githubIsIncumbent(orgPolicyResult.policy, githubHost),
-    }),
-    orgPolicyResult.policy,
-  );
+  const servers = catalog.servers;
   const serverNames = Object.keys(servers);
   const tailored = serverNames
     .filter(
@@ -451,7 +380,7 @@ async function planMcp(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
       .filter(([, s]) => s.type === "http" && s.url.includes(N24Q02M_HOST))
       .map(([name]) => name);
     const rbac = gatewayRbacConfig(GATEWAY_URL, servers, {
-      orgAllowedServers: orgPolicyResult.policy?.mcp?.allowedServers,
+      orgAllowedServers: catalog.policy?.mcp?.allowedServers,
     });
     actions.push(
       writeJson(
@@ -484,7 +413,7 @@ async function planMcp(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
   const posture = ctx.posture ?? asPosture(ctx.options.posture);
   if (posture === "enterprise") {
     const policies = evaluateMcpPolicy(servers, posture);
-    const managedServers = orgAllowedServers(servers, orgPolicyResult.policy);
+    const managedServers = orgAllowedServers(servers, catalog.policy);
     actions.push(
       writeJson(
         ".claude/managed-settings.json",

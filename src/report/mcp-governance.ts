@@ -1,6 +1,7 @@
 import type { Posture } from "../config/posture.js";
 import { type DigestAction, digest, type PlanContext } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
+import { policyAwareMcpCatalog } from "../mcp/catalog.js";
 import { evaluateMcpPolicy } from "../mcp/policy.js";
 import { mcpServers } from "../mcp/servers.js";
 import { scanRepo } from "../profile/scan.js";
@@ -19,7 +20,8 @@ export function mcpGovernanceSummary(
   posture: Posture = "enterprise",
 ): McpGovernanceSummary {
   const stack = scanRepo(ctx.root, { maxDepth: 8, contextDir: ctx.contextDir });
-  const policies = evaluateMcpPolicy(mcpServers("project", stack), posture);
+  const catalog = policyAwareMcpCatalog(ctx, { scope: "project", stack });
+  const policies = evaluateMcpPolicy(catalog.servers ?? mcpServers("project", stack), posture);
   const denied = policies.filter((p) => p.verdict === "deny");
   const warned = policies.filter((p) => p.verdict === "warn");
   const allowed = policies.filter((p) => p.verdict === "allow");

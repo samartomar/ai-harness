@@ -18,6 +18,7 @@ import { type DigestAction, digest, type PlanContext } from "../internals/plan.j
 import { ensureTrailingNewline, lines } from "../internals/render.js";
 import { DEFAULT_MARKETPLACE_OUT, readMarketplaceManifest } from "../marketplace/manifest.js";
 import { marketplaceReport } from "../marketplace/validate.js";
+import { policyAwareMcpCatalog } from "../mcp/catalog.js";
 import { mcpServers } from "../mcp/servers.js";
 import { AIH_ORG_POLICY_FILE } from "../org-policy/constants.js";
 import { OrgPolicyError, readOrgPolicy } from "../org-policy/schema.js";
@@ -118,7 +119,8 @@ export function mcpServersDigest(ctx: PlanContext): DigestAction | undefined {
   const names = configuredServerNames(ctx.root);
   if (names === undefined) return undefined;
   const stack = scanRepo(ctx.root, { maxDepth: 8, contextDir: ctx.contextDir });
-  const catalog = mcpServers("local", stack);
+  const catalog =
+    policyAwareMcpCatalog(ctx, { scope: "local", stack }).servers ?? mcpServers("local", stack);
   const servers: Array<[string, string]> = names.map((n) => {
     const entry = catalog[n] as { egress?: string } | undefined;
     return [n, egressLabel(entry?.egress)];

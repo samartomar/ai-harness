@@ -138,6 +138,28 @@ describe("mcpServersDigest", () => {
     expect(data.servers).toContainEqual(["context7", "third-party"]);
     expect(data.thirdParty).toBe(1);
   });
+
+  it("uses org-policy MCP egress and disabled-server rules", () => {
+    put(
+      ".mcp.json",
+      JSON.stringify({ mcpServers: { github: {}, context7: {}, "code-review-graph": {} } }),
+    );
+    put(
+      "aih-org-policy.json",
+      JSON.stringify({
+        schemaVersion: 1,
+        minimumPosture: "enterprise",
+        references: { repoContract: "ai-coding/project.json" },
+        mcp: { incumbentHosts: [], disabledServers: ["context7"] },
+      }),
+    );
+
+    const data = mcpServersDigest(ctx())?.data as ServerData;
+
+    expect(data.servers).toContainEqual(["github", "third-party"]);
+    expect(data.servers).toContainEqual(["context7", "unknown"]);
+    expect(data.thirdParty).toBe(1);
+  });
 });
 
 /** A minimal SupportTemplate for the given kind (only the fields supportDigest reads). */

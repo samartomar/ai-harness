@@ -205,7 +205,6 @@
           "type": "boolean"
         },
         "incumbentHosts": {
-          "default": [],
           "type": "array",
           "items": {
             "type": "string",

@@ -90,6 +90,22 @@ describe("OrgPolicySchema", () => {
     });
   });
 
+  it("normalizes MCP hosts the same way runtime URL matching does", () => {
+    expect(
+      parseOrgPolicy(
+        policy({
+          mcp: {
+            incumbentHosts: ["API.GitHubCopilot.com:443"],
+            githubHost: "https://GitHub.Internal.Example:443",
+          },
+        }),
+      ).mcp,
+    ).toMatchObject({
+      incumbentHosts: ["api.githubcopilot.com"],
+      githubHost: "https://github.internal.example",
+    });
+  });
+
   it("parses the optional trust policy block with defaults", () => {
     expect(
       parseOrgPolicy(
