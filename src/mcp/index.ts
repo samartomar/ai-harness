@@ -1,9 +1,10 @@
 import { join, posix } from "node:path";
+import { SettingsError } from "../errors.js";
 import { homeDir, resolveTargets } from "../internals/cli-detect.js";
 import { type CliEntry, entry } from "../internals/cli-registry.js";
 import { upsertTextBlock } from "../internals/envfile.js";
 import { readIfExists } from "../internals/fsxn.js";
-import type { Action, CommandSpec, PlanContext, ProbeAction } from "../internals/plan.js";
+import type { Action, CommandSpec, PlanContext } from "../internals/plan.js";
 import { doc, plan, probe, writeJson, writeText } from "../internals/plan.js";
 import type { Check } from "../internals/verify.js";
 import type { OrgPolicy } from "../org-policy/schema.js";
@@ -101,13 +102,12 @@ function policyDetail(policy: { name: string; reason: string }): string {
 /** Canonical agentgateway base URL clients are pointed at in the remote scope. */
 const GATEWAY_URL = "https://agentgateway.n24q02m.com";
 
-function invalidOrgPolicyProbe(error: unknown): ProbeAction {
-  return probe("org-policy parse", () => ({
-    name: "org-policy parse",
-    verdict: "fail",
-    detail: `aih-org-policy.json cannot be parsed (${(error as Error).message})`,
-    code: "org-policy.drift",
-  }));
+function errorDetail(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function invalidOrgPolicyError(error: unknown): SettingsError {
+  return new SettingsError(`aih-org-policy.json cannot be parsed (${errorDetail(error)})`);
 }
 
 function disabledServerRemovals(
@@ -222,7 +222,7 @@ function planMcpOffline(ctx: PlanContext): ReturnType<typeof plan> {
     includeHostedGitHub: false,
   });
   if (catalog.error !== undefined || catalog.servers === undefined) {
-    return plan("mcp", invalidOrgPolicyProbe(catalog.error));
+    throw invalidOrgPolicyError(catalog.error);
   }
   const stdio = stdioServers(catalog.servers);
   return plan(
@@ -286,7 +286,7 @@ async function planMcp(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
   const actions: Action[] = [];
   const catalog = policyAwareMcpCatalog(ctx, { scope, selfHost, stack });
   if (catalog.error !== undefined || catalog.servers === undefined) {
-    return plan("mcp", invalidOrgPolicyProbe(catalog.error));
+    throw invalidOrgPolicyError(catalog.error);
   }
   const servers = catalog.servers;
   const serverNames = Object.keys(servers);
@@ -440,7 +440,7 @@ async function planMcp(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
         ".claude/managed-settings.json",
         managedMcpAllowlistSettings(managedServers),
         "Enforce Claude managed MCP allowlist (fixed server commands from .mcp.json)",
-        { merge: true },
+        { merge: true, replaceJsonKeys: ["allowedMcpServers"] },
       ),
       doc(
         "MCP governance (enterprise posture) — per-server verdicts + skipped-with-reason",

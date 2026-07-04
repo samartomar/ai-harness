@@ -53,26 +53,35 @@ export function removeDisabledServers(
 
 export function policyAwareMcpCatalog(
   ctx: PlanContext,
-  opts: { scope: string; selfHost?: boolean; stack?: RepoStack; includeHostedGitHub?: boolean },
+  opts: {
+    scope: string;
+    selfHost?: boolean;
+    stack?: RepoStack;
+    includeHostedGitHub?: boolean;
+    includeDisabledServers?: boolean;
+  },
 ): PolicyAwareMcpCatalog {
   const policyResult = readMcpOrgPolicy(ctx);
   if (policyResult.error !== undefined) return { error: policyResult.error };
   try {
     const stack = opts.stack ?? scanRepo(ctx.root, { maxDepth: 8, contextDir: ctx.contextDir });
+    const includeDisabled = opts.includeDisabledServers === true;
     const githubDisabled = policyResult.policy?.mcp?.disabledServers?.includes("github") ?? false;
     const hostedGithub =
-      opts.selfHost !== true && opts.includeHostedGitHub !== false && !githubDisabled;
+      opts.selfHost !== true &&
+      opts.includeHostedGitHub !== false &&
+      (includeDisabled || !githubDisabled);
     const githubHost = hostedGithub ? configuredGitHubHost(ctx, policyResult.policy) : undefined;
-    const servers = removeDisabledServers(
-      mcpServers(opts.scope, stack, {
-        selfHost: opts.selfHost,
-        githubHost,
-        githubIncumbent: hostedGithub
-          ? githubIsIncumbent(policyResult.policy, githubHost)
-          : undefined,
-      }),
-      policyResult.policy,
-    );
+    const rawServers = mcpServers(opts.scope, stack, {
+      selfHost: opts.selfHost,
+      githubHost,
+      githubIncumbent: hostedGithub
+        ? githubIsIncumbent(policyResult.policy, githubHost)
+        : undefined,
+    });
+    const servers = includeDisabled
+      ? rawServers
+      : removeDisabledServers(rawServers, policyResult.policy);
     return { policy: policyResult.policy, servers, githubHost };
   } catch (error) {
     return { policy: policyResult.policy, error };

@@ -43,6 +43,35 @@ function removeJsonKeys(value: unknown, removals: WriteAction["removeJsonKeys"])
   return next ?? value;
 }
 
+function replaceJsonKeys(
+  value: unknown,
+  incoming: unknown,
+  replacements: WriteAction["replaceJsonKeys"],
+): unknown {
+  if (replacements === undefined || !isRecord(value) || !isRecord(incoming)) return value;
+  let next: Record<string, unknown> | undefined;
+  for (const key of new Set(replacements)) {
+    if (!Object.hasOwn(incoming, key)) continue;
+    next ??= { ...value };
+    next[key] = incoming[key];
+  }
+  return next ?? value;
+}
+
+function removeJsonTopLevelKeys(
+  value: unknown,
+  removals: WriteAction["removeJsonTopLevelKeys"],
+): unknown {
+  if (removals === undefined || !isRecord(value)) return value;
+  let next: Record<string, unknown> | undefined;
+  for (const key of new Set(removals)) {
+    if (!Object.hasOwn(next ?? value, key)) continue;
+    next ??= { ...value };
+    delete next[key];
+  }
+  return next ?? value;
+}
+
 export interface WriteSummary {
   path: string;
   describe: string;
@@ -160,8 +189,11 @@ export function resolveContents(action: WriteAction, absPath: string): string {
       const existing = readIfExists(absPath);
       const base = existing !== undefined ? parseJsoncText(existing) : undefined;
       value = base !== undefined ? deepMerge(base, action.json) : action.json;
+      value = replaceJsonKeys(value, action.json, action.replaceJsonKeys);
     }
-    return jsonFile(removeJsonKeys(value, action.removeJsonKeys));
+    value = removeJsonKeys(value, action.removeJsonKeys);
+    value = removeJsonTopLevelKeys(value, action.removeJsonTopLevelKeys);
+    return jsonFile(value);
   }
   return ensureTrailingNewline(action.contents ?? "");
 }
