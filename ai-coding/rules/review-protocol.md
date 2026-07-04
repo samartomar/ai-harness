@@ -1,9 +1,9 @@
 # Review
 
-> Load when: opening or reviewing a PR, or acting on review/external feedback.
+> Load when: reviewing a PR, verifying a change, or acting on review/external feedback.
 
-`CONTRIBUTING.md` requires recording code review + security review before a PR is
-ready. The deltas that record does not state:
+`CONTRIBUTING.md` requires recording a code review + security review before a PR
+is ready. The deltas it leaves unstated:
 
 - **Two independent lenses before merging a high-risk PR** (deletes/moves files,
   trust/security/exec surfaces, release machinery): an external security review

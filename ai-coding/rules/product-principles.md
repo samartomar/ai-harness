@@ -34,8 +34,8 @@ default output byte-identical.
 
 - **Live, preview, or omit — never demo data styled as real**, in both the
   hydrated DOM and the static body. Omit-when-absent is a server decision.
-- **No cost / forecast / ROI panels** — cost is unpredictable, so it isn't a
-  metric. Score labels say "wiring", not "quality".
+- **No cost / forecast / ROI panels** — cost is unpredictable. Score labels say
+  "wiring", not "quality".
 - **The shipped report is the spec** (`docs/specs/local-report-v9/`) — diff a
   prototype against it and warn on regressions rather than adopting it. Adopt
   design ideas additively; confirm before any structural reorganization.

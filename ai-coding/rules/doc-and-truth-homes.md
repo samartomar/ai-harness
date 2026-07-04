@@ -14,7 +14,7 @@ the public-safe half.
   derivative.
 - Public-facing text (README, docs, npm page, report copy) doesn't claim
   *enterprise-grade, production-ready, guaranteed, secure by default, compliant*
-  (and the rest of the docs-quality skill's banned list). Scope absolute claims;
+  (the full banned list lives in `PUBLIC_DOCS_POLICY.md`). Scope absolute claims;
   "no telemetry" reads "no default phone-home". Em dashes are house style here.
 - Audit which docs are public-safe against `main`, not a working branch.
 

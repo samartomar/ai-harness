@@ -24,7 +24,7 @@ relying on it.
 - **Never execute an untrusted source.** The scanner only reads files — no
   install, no running its scripts, no fetching its URLs. Acquire as a tarball at a
   pinned SHA into a quarantine dir; parse structurally; contain symlinks (in-tree
-  allowed, escaping refused) rather than blanket-refusing. Preserve proxy/CA env
+  allowed, escaping refused). Preserve proxy/CA env
   when scrubbing (`scrubFetchEnv`) — the target runs behind corporate proxies.
 - **`.aih/` is disposable, gitignored runtime data — never a source of truth.**
   Committed intent lives at the repo root. Probe ignore state with

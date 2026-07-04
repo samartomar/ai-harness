@@ -1,6 +1,6 @@
 # Tracking & done
 
-> Load when: wrapping up a unit of work or opening a PR.
+> Load when: closing out a unit of work, or before opening a PR.
 
 Keep the public repo self-tracking so milestones update themselves instead of by
 hand: progress is *derived* from issues closing, not something to maintain

@@ -13,11 +13,11 @@ re-spelling it; verify against repo evidence before acting.
 |---|---|
 | touching platform / shell / spawn / paths | `rules/environment.md` |
 | branching, committing, reading CI | `rules/git-ci-discipline.md` |
-| opening or reviewing a PR; acting on feedback | `rules/review-protocol.md` |
+| reviewing a PR, or acting on review/external feedback | `rules/review-protocol.md` |
 | editing `src/` engines, checks, plans, trust, writers | `rules/engine-invariants.md` |
 | proposing a feature or flag; report / dashboard work | `rules/product-principles.md` |
 | writing docs; choosing where a fact lives | `rules/doc-and-truth-homes.md` |
-| wrapping up work or opening a PR | `rules/tracking-and-done.md` |
+| closing out a unit of work; before opening a PR | `rules/tracking-and-done.md` |
 
 Precedence: this extension is Layer 2 and wins over the generic baseline on
 conflict. Where a rule points at `CONTRIBUTING.md`, `RELEASING.md`,
