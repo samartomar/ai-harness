@@ -8,7 +8,7 @@ import type { PlanContext, WriteAction } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
 import { jsonFile } from "../../src/internals/render.js";
 import { command } from "../../src/mcp/index.js";
-import { removeMcpTomlServers } from "../../src/mcp/render.js";
+import { existingMcpTomlNames, removeMcpTomlServers } from "../../src/mcp/render.js";
 import type { McpServer } from "../../src/mcp/servers.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 
@@ -776,6 +776,47 @@ describe("aih mcp — per-CLI config (honors --cli)", () => {
     expect(pruned).not.toContain("mcp.context7.com");
     expect(pruned).toContain("[mcp_servers.local]");
     expect(pruned).toContain('command = "local-mcp"');
+  });
+
+  it("removes disabled Codex TOML entries with single-quoted table keys", () => {
+    const existing = [
+      "[mcp_servers.'github']",
+      'url = "https://api.githubcopilot.com/mcp/"',
+      "",
+      "[mcp_servers.'context7'].env",
+      'TOKEN = "${CONTEXT7_API_KEY}"',
+      "",
+      "[mcp_servers.local]",
+      'command = "local-mcp"',
+      "",
+    ].join("\n");
+
+    const pruned = removeMcpTomlServers(existing, ["github", "context7"]);
+
+    expect(pruned).not.toContain("github");
+    expect(pruned).not.toContain("api.githubcopilot.com");
+    expect(pruned).not.toContain("context7");
+    expect(pruned).not.toContain("CONTEXT7_API_KEY");
+    expect(pruned).toContain("[mcp_servers.local]");
+  });
+
+  it("detects existing Codex TOML names with single-quoted table keys", () => {
+    const existing = [
+      "[mcp_servers.'github']",
+      'url = "https://api.githubcopilot.com/mcp/"',
+      "",
+      "# >>> aih managed (mcp) >>>",
+      "[mcp_servers.'context7']",
+      'url = "https://mcp.context7.com/mcp"',
+      "# <<< aih managed (mcp) <<<",
+      "",
+    ].join("\n");
+
+    const names = existingMcpTomlNames(existing, "mcp");
+
+    expect(names.has("github")).toBe(true);
+    expect(names.has("'github'")).toBe(false);
+    expect(names.has("context7")).toBe(false);
   });
 
   it("--cli cursor writes .cursor/mcp.json (same shape, different project path)", async () => {
