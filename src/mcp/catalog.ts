@@ -1,5 +1,13 @@
+import { join } from "node:path";
+import { readIfExists } from "../internals/fsxn.js";
 import type { PlanContext } from "../internals/plan.js";
-import { normalizeHttpsOrigin, type OrgPolicy, readOrgPolicy } from "../org-policy/schema.js";
+import { AIH_ORG_POLICY_FILE } from "../org-policy/constants.js";
+import {
+  normalizeHttpsOrigin,
+  type OrgPolicy,
+  parseOrgPolicy,
+  readOrgPolicy,
+} from "../org-policy/schema.js";
 import { type RepoStack, scanRepo } from "../profile/scan.js";
 import {
   DEFAULT_GITHUB_MCP_URL,
@@ -22,6 +30,27 @@ export function readMcpOrgPolicy(ctx: PlanContext): { policy?: OrgPolicy; error?
   } catch (error) {
     return { error };
   }
+}
+
+function readRootMcpOrgPolicy(ctx: PlanContext): { policy?: OrgPolicy; error?: unknown } {
+  try {
+    const raw = readIfExists(join(ctx.root, AIH_ORG_POLICY_FILE));
+    if (raw === undefined) return {};
+    return { policy: parseOrgPolicy(JSON.parse(raw)) };
+  } catch (error) {
+    return { error };
+  }
+}
+
+function tokenHostPolicy(
+  ctx: PlanContext,
+  active: { policy?: OrgPolicy },
+): {
+  policy?: OrgPolicy;
+  error?: unknown;
+} {
+  if ((ctx.env.AIH_ORG_POLICY ?? "").trim().length === 0) return active;
+  return readRootMcpOrgPolicy(ctx);
 }
 
 export function configuredGitHubHost(
@@ -92,9 +121,18 @@ export function policyAwareMcpCatalog(
       opts.includeHostedGitHub !== false &&
       (includeDisabled || !githubDisabled);
     const githubAuth = opts.githubAuth ?? "oauth";
+    const hostPolicyResult =
+      githubAuth === "token" ? tokenHostPolicy(ctx, policyResult) : policyResult;
+    if (hostPolicyResult.error !== undefined) {
+      return {
+        policy: policyResult.policy,
+        error: hostPolicyResult.error,
+        errorSource: "org-policy",
+      };
+    }
     const githubHost =
       hostedGithub && !githubDisabled
-        ? configuredGitHubHostForAuth(ctx, policyResult.policy, githubAuth)
+        ? configuredGitHubHostForAuth(ctx, hostPolicyResult.policy, githubAuth)
         : undefined;
     const rawServers = mcpServers(opts.scope, stack, {
       selfHost: opts.selfHost,
