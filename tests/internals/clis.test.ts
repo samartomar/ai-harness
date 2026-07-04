@@ -40,6 +40,12 @@ describe("resolveClis", () => {
     expect(() => resolveClis({ cli: "claude,codx" }, { strict: true })).toThrow(/codx/);
   });
 
+  it("strict mode hints at comma-separated lists when input contains spaces", () => {
+    expect(() => resolveClis({ cli: "claude codex gemini" }, { strict: true })).toThrow(
+      /comma-separated/,
+    );
+  });
+
   it("strict mode throws (not claude-default) when every name is unknown", () => {
     expect(() => resolveClis({ cli: "nope,unknown" }, { strict: true })).toThrow(/unknown --cli/);
   });

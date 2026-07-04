@@ -281,6 +281,15 @@ describe("bootstrap-ai — CLI-aware bootloaders", () => {
     expect(claude).toContain("Project-specific note.");
     expect(claude).toContain("<!-- BEGIN ai-canonical:shared");
   });
+
+  it("reports existing bootloader writes as merge effects, not overwrites", async () => {
+    put("CLAUDE.md", "# My hand-written header\n\nProject-specific note.\n");
+    const ctx = makeCtx();
+    const res = await executePlan(await command.plan(ctx), ctx);
+    const claude = res.writes.find((w) => w.path === "CLAUDE.md");
+    expect(claude?.effect).toBe("merge");
+    expect(claude?.effect).not.toBe("overwrite");
+  });
 });
 
 describe("bootstrap-ai — doctor probes (drift gate)", () => {

@@ -192,4 +192,22 @@ describe("aih prune --delete / --unrunnable", () => {
     expect(actions.some((a) => a.kind === "remove")).toBe(false);
     expect(digestText(actions)).toContain("No stale per-CLI artifacts");
   });
+
+  it("treats --cli/--all-tools/--detect as ignored selection flags, not prune intent", async () => {
+    marker("claude", "codex", "gemini");
+    write("ai-coding/adapters/claude.md");
+    write("ai-coding/adapters/codex.md");
+    write("ai-coding/adapters/gemini.md");
+
+    const actions = await actionsOf({ options: { allTools: true, cli: "claude", detect: true } });
+    expect(actions.some((a) => a.kind === "remove")).toBe(false);
+
+    const text = digestText(actions);
+    expect(text).toContain("--cli");
+    expect(text).toContain("--all-tools");
+    expect(text).toContain("--detect");
+    expect(text).toContain("ignored");
+    expect(text).toContain("committed intent only");
+    expect(text).toContain("Kept (.aih-config.json): claude, codex, gemini");
+  });
 });

@@ -161,6 +161,14 @@ describe("v1 contract — CLI command surface", () => {
     expect(text).not.toContain("\\\\"); // UNC / escaped backslashes
   });
 
+  it("read-only top-level commands accept the posture flag without changing apply behavior", () => {
+    const root = liveSurface();
+    for (const name of ["doctor", "status", "verify-bundle", "verify-release"]) {
+      const cmd = root.commands.find((c) => c.name === name);
+      expect(cmd?.options.map((o) => o.flags)).toContain("--posture <posture>");
+    }
+  });
+
   it("walk captures deprecated aliases (aliases ARE contract) — and today's surface has none", () => {
     // Zero built-ins carry a deprecated alias yet: the committed fixture must stay alias-free.
     const carriesAlias = (node: SurfaceCommand): boolean =>

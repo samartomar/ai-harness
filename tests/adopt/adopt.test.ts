@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { command } from "../../src/adopt/index.js";
 import { SHARED_MARKER, sharedCanonicalBlockBody } from "../../src/bootstrap-ai/canon.js";
+import { executePlan } from "../../src/internals/execute.js";
 import { beginLine, endLine } from "../../src/internals/markers.js";
 import type { Action, DigestAction, PlanContext, ProbeAction } from "../../src/internals/plan.js";
 import { fakeRunner, type Runner } from "../../src/internals/proc.js";
@@ -64,6 +65,15 @@ describe("aih adopt — digest + routing", () => {
     expect(writes).toContain("ai-coding/rules/project-canon-extension.md");
     expect(writes).toContain("CLAUDE.md");
     expect(writes).toContain(".aih-config.json");
+  });
+
+  it("reports adopted bootloader convergence as merge effects, not overwrites", async () => {
+    put("CLAUDE.md", divergentBootloader());
+    const ctx = makeCtx();
+    const res = await executePlan(await command.plan(ctx), ctx);
+    const bootloaderWrites = res.writes.filter((w) => w.path === "CLAUDE.md");
+    expect(bootloaderWrites.length).toBeGreaterThan(0);
+    expect(bootloaderWrites.every((w) => w.effect !== "overwrite")).toBe(true);
   });
 
   it("greenfield writes nothing (init owns greenfield)", async () => {
