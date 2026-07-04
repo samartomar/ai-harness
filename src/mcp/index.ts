@@ -30,7 +30,13 @@ import {
   mcpEntries,
   mcpTomlBody,
 } from "./render.js";
-import { envPlaceholders, type McpServer, mcpServers, N24Q02M_HOST } from "./servers.js";
+import {
+  DEFAULT_GITHUB_MCP_URL,
+  envPlaceholders,
+  type McpServer,
+  mcpServers,
+  N24Q02M_HOST,
+} from "./servers.js";
 
 /** The aih-managed block scope used for Codex's TOML `[mcp_servers.*]` region. */
 const MCP_TOML_SCOPE = "mcp";
@@ -83,10 +89,17 @@ function mcpPolicyProbe(servers: Record<string, McpServer>, posture: McpPosture)
     name,
     verdict: "fail",
     detail: `denied — self-host, pin, or remove before an enterprise rollout: ${denied
-      .map((p) => `${p.name} (${p.reason})`)
+      .map((p) => `${p.name} (${policyDetail(p)})`)
       .join("; ")}`,
     code: "mcp.policy-denied",
   };
+}
+
+function policyDetail(policy: { name: string; reason: string }): string {
+  if (policy.name !== "github" || !policy.reason.includes("third-party egress")) {
+    return policy.reason;
+  }
+  return `${policy.reason}; GitHub blocked, self-hosted GHES, or not your VCS? set host, self-host, or disable the GitHub MCP server`;
 }
 
 /** Canonical agentgateway base URL clients are pointed at in the remote scope. */
@@ -98,6 +111,56 @@ function readMcpOrgPolicy(ctx: PlanContext): { policy?: OrgPolicy; error?: unkno
   } catch (error) {
     return { error };
   }
+}
+
+function httpsOrigin(value: string, source: string): string {
+  try {
+    const url = new URL(value);
+    if (
+      value !== value.trim() ||
+      url.protocol !== "https:" ||
+      url.origin !== value ||
+      url.username !== "" ||
+      url.password !== "" ||
+      url.pathname !== "/" ||
+      url.search !== "" ||
+      url.hash !== ""
+    ) {
+      throw new Error("invalid origin");
+    }
+    return url.origin;
+  } catch {
+    throw new Error(`${source} must be an https origin such as https://github.example.com`);
+  }
+}
+
+function configuredGitHubHost(ctx: PlanContext, policy: OrgPolicy | undefined): string | undefined {
+  const policyHost = policy?.mcp?.githubHost;
+  if (policyHost !== undefined) return policyHost;
+  const envHost = ctx.env.GITHUB_HOST;
+  if (envHost === undefined || envHost.length === 0) return undefined;
+  return httpsOrigin(envHost, "GITHUB_HOST");
+}
+
+function githubHostName(githubHost: string | undefined): string {
+  return new URL(githubHost ?? DEFAULT_GITHUB_MCP_URL).host.toLowerCase();
+}
+
+function githubIsIncumbent(policy: OrgPolicy | undefined, githubHost: string | undefined): boolean {
+  if (policy === undefined) return true;
+  const incumbentHosts = new Set(
+    (policy.mcp?.incumbentHosts ?? []).map((host) => host.toLowerCase()),
+  );
+  return incumbentHosts.has(githubHostName(githubHost));
+}
+
+function removeDisabledServers(
+  servers: Record<string, McpServer>,
+  policy: OrgPolicy | undefined,
+): Record<string, McpServer> {
+  const disabled = new Set(policy?.mcp?.disabledServers ?? []);
+  if (disabled.size === 0) return servers;
+  return Object.fromEntries(Object.entries(servers).filter(([name]) => !disabled.has(name)));
 }
 
 function invalidOrgPolicyProbe(error: unknown): ProbeAction {
@@ -266,13 +329,21 @@ async function planMcp(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
   const scope = String(ctx.options.scope ?? "project");
   const selfHost = ctx.options.selfHost === true;
   const stack = scanRepo(ctx.root, { maxDepth: 8, contextDir: ctx.contextDir });
-  const servers = mcpServers(scope, stack, { selfHost });
-  const serverNames = Object.keys(servers);
   const actions: Action[] = [];
   const orgPolicyResult = readMcpOrgPolicy(ctx);
   if (orgPolicyResult.error !== undefined) {
     actions.push(invalidOrgPolicyProbe(orgPolicyResult.error));
   }
+  const githubHost = configuredGitHubHost(ctx, orgPolicyResult.policy);
+  const servers = removeDisabledServers(
+    mcpServers(scope, stack, {
+      selfHost,
+      githubHost,
+      githubIncumbent: githubIsIncumbent(orgPolicyResult.policy, githubHost),
+    }),
+    orgPolicyResult.policy,
+  );
+  const serverNames = Object.keys(servers);
   const tailored = serverNames
     .filter(
       (name) =>
@@ -347,7 +418,7 @@ async function planMcp(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
   }
 
   // Self-host changes + any secret placeholders the developer must supply out-of-band.
-  if (selfHost) {
+  if (selfHost && servers.github !== undefined) {
     actions.push(
       doc(
         "Self-host MCP (--self-host): GitHub runs via the pinned local Docker image",

@@ -35,6 +35,36 @@ const RiskGateOverrideSchema = z
 
 const LicenseDispositionSchema = z.enum(["auto-approve", "alert", "fail", "block"]);
 
+const HostnameSchema = z
+  .string()
+  .regex(
+    /^[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?(?::[0-9]{1,5})?$/,
+    "host must be a hostname, optionally with a port",
+  );
+
+const HttpsOriginSchema = z
+  .string()
+  .url()
+  .refine(
+    (value) => {
+      try {
+        const url = new URL(value);
+        return (
+          url.protocol === "https:" &&
+          url.origin === value &&
+          url.username === "" &&
+          url.password === "" &&
+          url.pathname === "/" &&
+          url.search === "" &&
+          url.hash === ""
+        );
+      } catch {
+        return false;
+      }
+    },
+    { message: "must be an https origin such as https://github.example.com" },
+  );
+
 const TrustApprovedSourceSchema = z
   .object({
     owner: z.string().min(1),
@@ -78,6 +108,9 @@ export const OrgPolicySchema = z
       .object({
         allowedServers: z.array(z.string().min(1)).default([]),
         allowManagedOnly: z.boolean().default(false),
+        incumbentHosts: z.array(HostnameSchema).default([]),
+        githubHost: HttpsOriginSchema.optional(),
+        disabledServers: z.array(z.string().min(1)).default([]),
       })
       .strict()
       .optional(),

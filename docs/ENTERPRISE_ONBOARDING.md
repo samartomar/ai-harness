@@ -88,7 +88,10 @@
       "context7",
       "github"
     ],
-    "allowManagedOnly": true
+    "allowManagedOnly": true,
+    "incumbentHosts": [
+      "api.githubcopilot.com"
+    ]
   },
   "trust": {
     "requireSignedSource": false,
@@ -145,7 +148,12 @@
       "github",
       "sequential-thinking"
     ],
-    "allowManagedOnly": true
+    "allowManagedOnly": true,
+    "githubHost": "https://github.internal.example",
+    "incumbentHosts": [
+      "github.internal.example"
+    ],
+    "disabledServers": []
   },
   "trust": {
     "requireSignedSource": true,
@@ -174,6 +182,11 @@ scanner path on managed workstations. If you keep it in `requiredDetectors`, set
 `AIH_ENABLE_MCP_SCANNER=1` in the verification environment and confirm the local
 `uvx --offline` scanner can run. Otherwise omit `mcp-scanner` and treat its result
 as an explicit degraded-coverage skip.
+
+For GitHub MCP, treat incumbency as an org fact. If github.com is reachable and approved, include
+`api.githubcopilot.com` in `mcp.incumbentHosts`; if you use GHES, set `mcp.githubHost` to that
+https origin and include its host in `mcp.incumbentHosts`; if GitHub is blocked or not your VCS,
+put `"github"` in `mcp.disabledServers` or use `aih mcp --mode offline|none`.
 
 ## PR Evidence
 

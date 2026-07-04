@@ -35,12 +35,14 @@ interface CtxOverrides {
   contextDir?: string;
   verify?: boolean;
   options?: Record<string, unknown>;
+  env?: NodeJS.ProcessEnv;
   run?: PlanContext["run"];
 }
 
 function makeCtx(over: CtxOverrides = {}): PlanContext {
   const run = over.run ?? fakeRunner(() => undefined);
-  const host = makeHostAdapter({ platform: "linux", run, env: {} });
+  const env = over.env ?? {};
+  const host = makeHostAdapter({ platform: "linux", run, env });
   return {
     root: over.root ?? makeTmp(),
     contextDir: over.contextDir ?? ".ai-context",
@@ -49,7 +51,7 @@ function makeCtx(over: CtxOverrides = {}): PlanContext {
     json: false,
     run,
     host,
-    env: {},
+    env,
     options: over.options ?? {},
   };
 }
@@ -735,6 +737,15 @@ describe("aih mcp — enterprise posture (governance gate, opt-in)", () => {
     if (gh.type !== "http") throw new Error("expected http server");
     expect(gh.url).toBe("https://github.internal.example/mcp/");
     expect(gh.url).not.toBe("https://api.githubcopilot.com/mcp/");
+  });
+
+  it("uses GITHUB_HOST when no policy GitHub host is set", async () => {
+    const p = await command.plan(makeCtx({ env: { GITHUB_HOST: "https://github.env.example" } }));
+    const gh = pick(serversOf(p.actions.find((a) => a.kind === "write") as WriteAction), "github");
+
+    expect(gh.type).toBe("http");
+    if (gh.type !== "http") throw new Error("expected http server");
+    expect(gh.url).toBe("https://github.env.example/mcp/");
   });
 
   it("keeps hosted GitHub allowed when org-policy declares its host incumbent", async () => {

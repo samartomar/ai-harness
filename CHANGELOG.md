@@ -6,6 +6,15 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Enterprise MCP policy for GitHub**: org policy can now declare incumbent MCP
+  hosts, configure a GitHub/GHES MCP origin, or disable the hosted GitHub server.
+  Under enterprise posture, a committed org policy that does not declare the
+  GitHub host incumbent no longer lets hosted GitHub auto-pass as
+  `vendor-incumbent`; the verify remediation names set-host/self-host/disable
+  paths. (#190)
+
 ## [1.3.0] - 2026-07-04
 
 ### Added
