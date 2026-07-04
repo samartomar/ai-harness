@@ -61,15 +61,16 @@ and detector-only:
 - when Docker/`uvx` **are** available, the deep detectors still run on first-party sources and still
   escalate on their findings.
 
-Residual risk: an in-repo path is graded on native coverage, so a deep scanner might catch something
-the native pass does not. The boundary is deliberately narrow — only repo-relative, human-reviewed,
-git-tracked content qualifies; anything fetched or outside the repo is unchanged — but it is a real
-security-posture choice. Treat a first-party approval as *"reviewed in the PR,"* not *"deep-scanned
-clean,"* and record the real scanner verdict when a scanner-equipped box is available.
+Residual risk: an in-repo path can be graded on native coverage if a deep scanner is unavailable,
+so a scanner-equipped box can still add useful coverage before approval. The boundary is
+deliberately narrow — only repo-relative, human-reviewed, git-tracked content qualifies; anything
+fetched or outside the repo is unchanged — but it is a real security-posture choice. For the
+committed BetterDoc approval, the vet evidence was regenerated on a scanner-equipped box with both
+SkillSpector and Cisco `skill-scanner` passing, and the lockfile pins that evidence hash.
 
 > Owner decisions (F3, resolved): the first-party approval model is the **native tier scoped to
-> repo-relative sources** (this PR), with a first-party marker on the approval for auditability (a
-> tracked fast-follow). Packaging: the pack is **not shipped in the npm tarball** — `packs/` stays
+> repo-relative sources** (this PR), with a first-party marker on the approval for auditability.
+> Packaging: the pack is **not shipped in the npm tarball** — `packs/` stays
 > out of the package `files` because the CLI never reads its own `packs/` at runtime; revisit only if
 > a scaffold is added to seed packs into external repos. `aih marketplace build` **excludes
 > first-party (`commit:"local"`) skills** and reports them — a bundled first-party skill is delivered

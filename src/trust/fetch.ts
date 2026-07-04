@@ -237,7 +237,15 @@ export function resolveTrustSource(
  */
 export function isFirstPartySource(root: string, source: TrustSource): boolean {
   if (source.kind !== "local") return false;
-  const rel = relative(root, source.root);
+  let realRoot: string;
+  let realSource: string;
+  try {
+    realRoot = realpathSync(resolve(root));
+    realSource = realpathSync(resolve(source.root));
+  } catch {
+    return false;
+  }
+  const rel = relative(realRoot, realSource);
   return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
 }
 

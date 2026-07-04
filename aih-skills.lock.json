@@ -10,9 +10,9 @@
       "firstParty": true,
       "scope": "repo",
       "card": "ai-coding/skill-cards/betterdoc.json",
-      "evidenceSha256": "e89b59a64f1c85f4c1368cfc51de0c7afba89f20fba180921147f8b500e27ec5",
+      "evidenceSha256": "a06f788daa3f8bac9986ae63b419277b76435366c37a6d63491b55497b6ee620",
       "approvedBy": "aih-maintainers",
-      "approvedAt": "2026-07-04T03:19:48.317Z"
+      "approvedAt": "2026-07-04T03:46:47.410Z"
     }
   ]
 }
