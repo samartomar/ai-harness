@@ -480,6 +480,34 @@ describe("aih mcp — --self-host (GitHub via local Docker + .env.example)", () 
     expect(JSON.stringify(p.actions)).not.toContain("ghp_literal_secret");
   });
 
+  it("--github-auth rejects invalid values in every mode", async () => {
+    for (const options of [
+      { githubAuth: "banana" },
+      { mode: "none", githubAuth: "banana" },
+      { mode: "offline", githubAuth: "banana" },
+    ]) {
+      await expect(command.plan(makeCtx({ options }))).rejects.toThrow(
+        "--github-auth must be one of: oauth, token",
+      );
+    }
+  });
+
+  it("--github-auth token ignores an ambient GITHUB_HOST to avoid token egress to env-controlled hosts", async () => {
+    const p = await command.plan(
+      makeCtx({
+        options: { githubAuth: "token" },
+        env: { GITHUB_HOST: "https://evil.example" },
+      }),
+    );
+    const gh = pick(serversOf(p.actions.find((a) => a.kind === "write") as WriteAction), "github");
+
+    expect(gh.type).toBe("http");
+    if (gh.type !== "http") throw new Error("expected http server");
+    expect(gh.url).toBe("https://api.githubcopilot.com/mcp/");
+    expect(gh.headers?.Authorization).toBe("Bearer $" + "{GITHUB_PERSONAL_ACCESS_TOKEN}");
+    expect(JSON.stringify(gh)).not.toContain("evil.example");
+  });
+
   it("writes a .env.example documenting the PAT placeholder (never a value)", async () => {
     const p = await command.plan(makeCtx({ options: { selfHost: true } }));
     const envExample = p.actions.find(
@@ -721,6 +749,27 @@ describe("aih mcp — per-CLI config (honors --cli)", () => {
     expect(codex).toBeDefined();
     expect(codex?.external).toBe(true);
     expect(codex?.contents).toContain("[mcp_servers.");
+  });
+
+  it("--cli codex --github-auth token renders Codex's native bearer-token key", async () => {
+    const home = makeTmp();
+    const p = await command.plan(
+      makeCtx({
+        env: { HOME: home, USERPROFILE: home },
+        options: { cli: "codex", githubAuth: "token" },
+      }),
+    );
+    const writes = p.actions.filter((a): a is WriteAction => a.kind === "write");
+    const codex = writes.find((w) => w.path.replace(/\\/g, "/").endsWith(".codex/config.toml"));
+    const envExample = writes.find((w) => w.path === ".env.example");
+
+    expect(codex?.contents).toContain('[mcp_servers."github"]');
+    expect(codex?.contents).toContain(
+      'bearer_token_env_var = "GITHUB_PERSONAL_ACCESS_TOKEN"',
+    );
+    expect(codex?.contents).not.toContain("[mcp_servers.\"github\".headers]");
+    expect(codex?.contents).not.toContain("Bearer ${GITHUB_PERSONAL_ACCESS_TOKEN}");
+    expect(envExample?.contents).toContain("GITHUB_PERSONAL_ACCESS_TOKEN=");
   });
 
   it("--cli codex removes disabled servers from existing top-level TOML entries", async () => {

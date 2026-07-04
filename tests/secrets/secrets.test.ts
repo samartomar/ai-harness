@@ -145,6 +145,33 @@ describe("scanConfigSecrets", () => {
     expect(hits[0]?.key).toBe("API_KEY");
   });
 
+  it("flags a literal Authorization bearer header", () => {
+    const literal = "Bearer pasted-token-value";
+    writeFileSync(
+      join(dir, ".mcp.json"),
+      JSON.stringify({ mcpServers: { gh: { headers: { Authorization: literal } } } }),
+    );
+    const hits = scanConfigSecrets(dir);
+
+    expect(hits).toHaveLength(1);
+    expect(hits[0]?.key).toBe("Authorization");
+    expect(hits[0]?.kind).toContain("authorization bearer");
+    expect(JSON.stringify(hits)).not.toContain(literal);
+  });
+
+  it("does NOT flag an Authorization bearer env placeholder", () => {
+    writeFileSync(
+      join(dir, ".mcp.json"),
+      JSON.stringify({
+        mcpServers: {
+          gh: { headers: { Authorization: "Bearer $" + "{GITHUB_PERSONAL_ACCESS_TOKEN}" } },
+        },
+      }),
+    );
+
+    expect(scanConfigSecrets(dir)).toEqual([]);
+  });
+
   it("returns nothing for a clean / absent config", () => {
     expect(scanConfigSecrets(dir)).toEqual([]);
   });
