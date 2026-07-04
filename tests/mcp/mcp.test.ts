@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -686,6 +686,40 @@ describe("aih mcp — per-CLI config (honors --cli)", () => {
     expect(codex).toBeDefined();
     expect(codex?.external).toBe(true);
     expect(codex?.contents).toContain("[mcp_servers.");
+  });
+
+  it("--cli codex removes disabled servers from existing top-level TOML entries", async () => {
+    const root = makeTmp();
+    const home = makeTmp();
+    const codexDir = join(home, ".codex");
+    mkdirSync(codexDir, { recursive: true });
+    writeFileSync(
+      join(codexDir, "config.toml"),
+      'model = "gpt-5"\n\n[mcp_servers.github]\nurl = "https://api.githubcopilot.com/mcp/"\n',
+    );
+    writeFileSync(
+      join(root, "aih-org-policy.json"),
+      jsonFile({
+        schemaVersion: 1,
+        minimumPosture: "enterprise",
+        references: { repoContract: "ai-coding/project.json" },
+        mcp: {
+          disabledServers: ["github"],
+        },
+      }),
+    );
+
+    const p = await command.plan(
+      makeCtx({ root, env: { HOME: home, USERPROFILE: home }, options: { cli: "codex" } }),
+    );
+    const codex = p.actions.find(
+      (a): a is WriteAction =>
+        a.kind === "write" && a.path.replace(/\\/g, "/").endsWith(".codex/config.toml"),
+    );
+
+    expect(codex?.contents).toContain('model = "gpt-5"');
+    expect(codex?.contents).not.toContain("[mcp_servers.github]");
+    expect(codex?.contents).not.toContain("api.githubcopilot.com");
   });
 
   it("--cli cursor writes .cursor/mcp.json (same shape, different project path)", async () => {

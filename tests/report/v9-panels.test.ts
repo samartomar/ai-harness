@@ -46,8 +46,9 @@ afterEach(() => {
   rmSync(home, { recursive: true, force: true });
 });
 
-function ctx(): PlanContext {
+function ctx(over: Partial<PlanContext> = {}): PlanContext {
   const run = fakeRunner(() => undefined);
+  const env = { HOME: home, USERPROFILE: home, ...(over.env ?? {}) };
   return {
     root: dir,
     contextDir: DIR,
@@ -55,9 +56,10 @@ function ctx(): PlanContext {
     verify: false,
     json: false,
     run,
-    host: makeHostAdapter({ platform: "linux", run, env: {} }),
-    env: { HOME: home, USERPROFILE: home },
+    host: makeHostAdapter({ platform: "linux", run, env }),
+    env,
     options: {},
+    ...over,
   };
 }
 
@@ -159,6 +161,16 @@ describe("mcpServersDigest", () => {
     expect(data.servers).toContainEqual(["github", "third-party"]);
     expect(data.servers).toContainEqual(["context7", "unknown"]);
     expect(data.thirdParty).toBe(1);
+  });
+
+  it("does not fall back to vendor egress when the policy-aware catalog fails", () => {
+    put(".mcp.json", JSON.stringify({ mcpServers: { github: {} } }));
+
+    const data = mcpServersDigest(ctx({ env: { GITHUB_HOST: "github.internal.example" } }))
+      ?.data as ServerData;
+
+    expect(data.servers).toContainEqual(["github", "unknown"]);
+    expect(data.servers).not.toContainEqual(["github", "vendor"]);
   });
 });
 

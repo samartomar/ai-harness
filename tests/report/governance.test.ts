@@ -146,6 +146,20 @@ describe("governanceRollupDigest", () => {
     expect(summary.allowed).not.toContain("github");
   });
 
+  it("fails closed instead of falling back when the MCP catalog cannot be built", () => {
+    const summary = mcpGovernanceSummary(
+      ctx({ posture: "enterprise", env: { GITHUB_HOST: "github.internal.example" } }),
+      "enterprise",
+    );
+
+    expect(summary.allowed).not.toContain("github");
+    expect(summary.denied).toContainEqual(
+      expect.objectContaining({
+        name: "catalog",
+      }),
+    );
+  });
+
   it("keeps command policy posture-graded while risk gates stay warn", () => {
     const vibe = Object.fromEntries(
       controls(governanceRollupDigest(ctx({ posture: "vibe" }))).map((c) => [c.control, c.verdict]),
