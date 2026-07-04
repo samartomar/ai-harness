@@ -156,7 +156,7 @@ function isSafeRemoteUrl(remote: string): boolean {
   return false;
 }
 
-function safeRemote(raw: unknown): string | undefined {
+export function normalizeWorkspaceRemote(raw: unknown): string | undefined {
   const remote = safeOptionalMetadata(raw, "workspace repo remote");
   if (remote === undefined) return undefined;
   if (!isSafeRemoteUrl(remote)) {
@@ -199,7 +199,7 @@ function normalizeRepo(raw: unknown): WorkspaceRepo {
   const path = normalizeWorkspacePath(pathRaw, "workspace repo path");
   const id = typeof raw.id === "string" ? safeId(raw.id) : idFromPath(path);
   const kind = safeKind(raw.kind);
-  const remote = safeRemote(raw.remote);
+  const remote = normalizeWorkspaceRemote(raw.remote);
   const ref = safeRef(raw.ref);
   return {
     id,

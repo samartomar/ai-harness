@@ -318,6 +318,9 @@ It writes, at the parent (it does **not** touch the child repos — run `aih ini
   agent at the workspace root can reason about cross-repo blast radius before editing a child repo.
 - `.aih-workspace.json` — marker that puts `aih doctor` into **workspace mode** (validates each child
   repo is scaffolded); object-form repos can retain optional `remote`/`ref` source metadata.
+- `aih workspace snapshot --lock --apply` also writes each child repo's local `origin` URL into
+  `<context-dir>/workspace-lock.json` when present, so a lock captures both the commit and fetch
+  location. It reads only child-local Git config and never fetches.
 
 ### Support tickets
 

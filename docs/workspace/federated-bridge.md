@@ -183,6 +183,11 @@ entries keep the required `path` plus stable `id`, optional role/source metadata
 metadata only here: `aih workspace` records and validates them without fetching or
 mutating any child repo.
 
+`aih workspace snapshot --lock --apply` also carries the child repo's local `origin`
+URL into `workspace-lock.json` when present. Snapshot collection reads only
+child-local Git config, so ambient/global Git config cannot inject a fetch
+location, and unavailable or unsafe values are omitted.
+
 ## Workspace router
 
 Path:

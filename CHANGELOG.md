@@ -12,6 +12,9 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   repos may now carry optional `remote` and `ref` fields for future hydrate/source
   reconstruction. The parser validates them as safe printable strings and existing
   object entries round-trip without flattening to bare path strings. (#180)
+- **Workspace snapshot child remotes**: `aih workspace snapshot --lock --apply` now records
+  each child repo's local origin URL when available, preserving fetch location in
+  `workspace-lock.json` without consulting ambient Git config or touching remotes. (#181)
 
 ### Fixed
 

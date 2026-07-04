@@ -3,11 +3,16 @@ import { join } from "node:path";
 import { AihError } from "../errors.js";
 import type { PlanContext } from "../internals/plan.js";
 import { checkWorkspaceChildPath } from "./detect.js";
-import type { WorkspaceManifest, WorkspaceRepo } from "./manifest.js";
+import {
+  normalizeWorkspaceRemote,
+  type WorkspaceManifest,
+  type WorkspaceRepo,
+} from "./manifest.js";
 
 export interface WorkspaceRepoState {
   id: string;
   path: string;
+  remote?: string;
   branch?: string;
   sha?: string;
   dirty: boolean;
@@ -45,6 +50,24 @@ function parseAheadBehind(raw: string | undefined): { ahead?: number; behind?: n
   };
 }
 
+function safeObservedRemote(raw: string | undefined): string | undefined {
+  if (raw === undefined || raw.length === 0) return undefined;
+  try {
+    return normalizeWorkspaceRemote(raw);
+  } catch {
+    return undefined;
+  }
+}
+
+async function readWorkspaceRepoRemote(
+  ctx: PlanContext,
+  repo: WorkspaceRepo,
+): Promise<string | undefined> {
+  return safeObservedRemote(
+    await gitChildRead(ctx, repo, ["config", "--local", "--get", "remote.origin.url"]),
+  );
+}
+
 export async function readWorkspaceRepoState(
   ctx: PlanContext,
   repo: WorkspaceRepo,
@@ -53,17 +76,19 @@ export async function readWorkspaceRepoState(
   if (!checked.exists) return { id: repo.id, path: repo.path, dirty: false, git: false };
   const inside = (await gitChildRead(ctx, repo, ["rev-parse", "--is-inside-work-tree"])) === "true";
   if (!inside) return { id: repo.id, path: repo.path, dirty: false, git: false };
-  const [branch, sha, status, upstream] = await Promise.all([
+  const [branch, sha, status, upstream, remote] = await Promise.all([
     gitChildRead(ctx, repo, ["rev-parse", "--abbrev-ref", "HEAD"]),
     gitChildRead(ctx, repo, ["rev-parse", "--short", "HEAD"]),
     gitChildRead(ctx, repo, ["status", "--porcelain"]),
     gitChildRead(ctx, repo, ["rev-list", "--left-right", "--count", "HEAD...@{upstream}"]),
+    repo.remote === undefined ? readWorkspaceRepoRemote(ctx, repo) : Promise.resolve(repo.remote),
   ]);
   const dirty = (status ?? "").length > 0;
   const aheadBehind = parseAheadBehind(upstream);
   return {
     id: repo.id,
     path: repo.path,
+    ...(remote ? { remote } : {}),
     ...(branch ? { branch } : {}),
     ...(sha ? { sha } : {}),
     dirty,
