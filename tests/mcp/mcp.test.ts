@@ -460,7 +460,7 @@ describe("aih mcp — --self-host (GitHub via local Docker + .env.example)", () 
     if (gh.type !== "http") throw new Error("expected http server");
     expect(gh.url).toBe("https://api.githubcopilot.com/mcp/");
     expect(gh.credentials).toBe("token");
-    expect(gh.headers?.Authorization).toBe("Bearer ${GITHUB_PERSONAL_ACCESS_TOKEN}");
+    expect(gh.headers?.Authorization).toBe("Bearer $" + "{GITHUB_PERSONAL_ACCESS_TOKEN}");
     expect(JSON.stringify(gh)).not.toContain("ghp_literal_secret");
   });
 

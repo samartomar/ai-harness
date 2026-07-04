@@ -41,7 +41,12 @@ export function mcpEntryFor(cli: Cli, s: McpServer): McpEntry {
             enabled: true,
             ...(s.env ? { environment: s.env } : {}),
           }
-        : { type: "remote", url: s.url, enabled: true, ...(s.headers ? { headers: s.headers } : {}) };
+        : {
+            type: "remote",
+            url: s.url,
+            enabled: true,
+            ...(s.headers ? { headers: s.headers } : {}),
+          };
     case "copilot":
       // VS Code `.vscode/mcp.json` keeps the `type` discriminator.
       return s.type === "stdio"

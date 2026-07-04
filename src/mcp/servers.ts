@@ -223,8 +223,8 @@ export function mcpServers(
           githubAuth === "token"
             ? "GitHub's official remote MCP (repos, issues, PRs, Actions). Token auth via Authorization header sourced from $GITHUB_PERSONAL_ACCESS_TOKEN — never written here."
             : opts.githubIncumbent === false
-            ? "GitHub's official remote MCP (repos, issues, PRs, Actions). OAuth via the client — no token stored in this file. Egress to GitHub, but this org policy has not declared that host incumbent/reachable."
-            : "GitHub's official remote MCP (repos, issues, PRs, Actions). OAuth via the client — no token stored in this file. Egress to GitHub (vendor-incumbent).",
+              ? "GitHub's official remote MCP (repos, issues, PRs, Actions). OAuth via the client — no token stored in this file. Egress to GitHub, but this org policy has not declared that host incumbent/reachable."
+              : "GitHub's official remote MCP (repos, issues, PRs, Actions). OAuth via the client — no token stored in this file. Egress to GitHub (vendor-incumbent).",
         ...(githubAuth === "token"
           ? {
               // biome-ignore lint/suspicious/noTemplateCurlyInString: ${ENV} reference is the literal config value, not a template
