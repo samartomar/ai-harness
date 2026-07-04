@@ -974,9 +974,7 @@ describe("aih mcp — enterprise posture (governance gate, opt-in)", () => {
       jsonFile({
         localOnly: true,
         allowManagedMcpServersOnly: true,
-        allowedMcpServers: [
-          { serverCommand: ["uvx", "code-review-graph@2.3.6", "serve"] },
-        ],
+        allowedMcpServers: [{ serverCommand: ["uvx", "code-review-graph@2.3.6", "serve"] }],
       }),
     );
     writeFileSync(

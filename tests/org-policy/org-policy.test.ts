@@ -333,9 +333,7 @@ describe("orgPolicyProjectionActions", () => {
       JSON.stringify({
         localOnly: true,
         allowManagedMcpServersOnly: true,
-        allowedMcpServers: [
-          { serverCommand: ["uvx", "code-review-graph@2.3.6", "serve"] },
-        ],
+        allowedMcpServers: [{ serverCommand: ["uvx", "code-review-graph@2.3.6", "serve"] }],
       }),
     );
     const actions = orgPolicyProjectionActions(
