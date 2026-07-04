@@ -90,6 +90,34 @@ describe("mcp enterprise modes", () => {
     );
   });
 
+  it("--mode offline: honors org-policy disabledServers for generated and managed MCP sets", async () => {
+    const root = makeTmp();
+    writeFileSync(
+      join(root, "aih-org-policy.json"),
+      jsonFile({
+        schemaVersion: 1,
+        minimumPosture: "enterprise",
+        references: { repoContract: "ai-coding/project.json" },
+        mcp: {
+          disabledServers: ["code-review-graph"],
+        },
+      }),
+    );
+
+    const actions = (await command.plan(makeCtx({ root, options: { mode: "offline" } }))).actions;
+    const mcp = actions.find((a): a is WriteAction => a.kind === "write" && a.path === ".mcp.json");
+    const managed = actions.find(
+      (a): a is WriteAction => a.kind === "write" && a.path === "managed-mcp.json.example",
+    );
+
+    expect(mcp).toBeDefined();
+    expect(managed).toBeDefined();
+    expect(Object.keys(mcp ? serversOf(mcp) : {})).not.toContain("code-review-graph");
+    expect(
+      Object.keys((managed?.json as { mcpServers: Record<string, unknown> }).mcpServers),
+    ).not.toContain("code-review-graph");
+  });
+
   it("--mode offline: a verify probe FAILS on stdio servers that resolve at runtime (AIH-MCP-001)", async () => {
     const ctx = makeCtx({ options: { mode: "offline" }, verify: true });
     const p = await command.plan(ctx);
@@ -822,6 +850,40 @@ describe("aih mcp — enterprise posture (governance gate, opt-in)", () => {
     const w = p.actions.find((a) => a.kind === "write") as WriteAction;
 
     expect(Object.keys(serversOf(w))).not.toContain("github");
+  });
+
+  it("removes disabled servers when merging into an existing .mcp.json", async () => {
+    const root = makeTmp();
+    writeFileSync(
+      join(root, ".mcp.json"),
+      jsonFile({
+        mcpServers: {
+          github: { type: "http", url: "https://api.githubcopilot.com/mcp/" },
+          context7: { type: "http", url: "https://mcp.context7.com/mcp" },
+          existingLocal: { type: "stdio", command: "custom-mcp", args: ["serve"] },
+        },
+      }),
+    );
+    writeFileSync(
+      join(root, "aih-org-policy.json"),
+      jsonFile({
+        schemaVersion: 1,
+        minimumPosture: "enterprise",
+        references: { repoContract: "ai-coding/project.json" },
+        mcp: {
+          disabledServers: ["github", "context7"],
+        },
+      }),
+    );
+    const p = await command.plan(makeCtx({ root }));
+    const w = p.actions.find((a): a is WriteAction => a.kind === "write" && a.path === ".mcp.json");
+    const merged = JSON.parse(resolveContents(w as WriteAction, join(root, ".mcp.json"))) as {
+      mcpServers: Record<string, unknown>;
+    };
+
+    expect(Object.keys(merged.mcpServers)).not.toContain("github");
+    expect(Object.keys(merged.mcpServers)).not.toContain("context7");
+    expect(Object.keys(merged.mcpServers)).toContain("existingLocal");
   });
 
   it("ignores an invalid ambient GITHUB_HOST when org-policy disables GitHub", async () => {
