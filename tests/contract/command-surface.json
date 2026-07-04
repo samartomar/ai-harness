@@ -1056,6 +1056,10 @@
           "flags": "--force"
         },
         {
+          "flags": "--github-auth <auth>",
+          "defaultValue": "oauth"
+        },
+        {
           "flags": "--json"
         },
         {

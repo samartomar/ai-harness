@@ -306,6 +306,10 @@ MCP entry: `mcp.incumbentHosts` declares which vendor hosts are reachable/incumb
 can remove `github` entirely. Without committed org policy, the legacy github.com default remains
 unchanged; with committed org policy, the GitHub host must be declared incumbent before it passes
 the enterprise gate. `GITHUB_HOST` may supply the same https origin when no policy host is set.
+GitHub auth defaults to `--github-auth oauth`, which works for clients with a registered OAuth
+app; use `--github-auth token` for clients that need a PAT-backed `Authorization` header. The token
+value is never written into MCP config — the header references `${GITHUB_PERSONAL_ACCESS_TOKEN}`
+and `.env.example` documents only that placeholder.
 
 ## aih sandbox
 

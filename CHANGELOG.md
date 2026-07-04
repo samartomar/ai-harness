@@ -14,6 +14,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   GitHub host incumbent no longer lets hosted GitHub auto-pass as
   `vendor-incumbent`; the verify remediation names set-host/self-host/disable
   paths. (#190)
+- **Hosted GitHub MCP auth**: `aih mcp --github-auth token` now keeps the hosted
+  GitHub endpoint but emits `credentials:"token"` plus an `Authorization` header
+  sourced from `${GITHUB_PERSONAL_ACCESS_TOKEN}`, giving non-DCR MCP clients a
+  Docker-free path without writing token values into config. (#179)
 
 ## [1.3.0] - 2026-07-04
 
