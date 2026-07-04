@@ -128,6 +128,68 @@ describe("governanceRollupDigest", () => {
     expect(mcp?.count).toBe(summary.counts.allowed + summary.counts.warned + summary.counts.denied);
   });
 
+  it("uses org-policy MCP egress and disabled-server rules in the summary", () => {
+    writeFileSync(
+      join(dir, "aih-org-policy.json"),
+      JSON.stringify({
+        schemaVersion: 1,
+        minimumPosture: "enterprise",
+        references: { repoContract: "ai-coding/project.json" },
+        mcp: { incumbentHosts: [], disabledServers: ["context7"] },
+      }),
+    );
+
+    const summary = mcpGovernanceSummary(ctx({ posture: "enterprise" }), "enterprise");
+
+    expect(summary.denied.map((p) => p.name)).toContain("github");
+    expect(summary.denied).toContainEqual(
+      expect.objectContaining({
+        name: "context7",
+        reason: expect.stringContaining("disabled by org policy"),
+      }),
+    );
+    expect(summary.allowed).not.toContain("github");
+  });
+
+  it("reports disabled GitHub without consulting invalid ambient GITHUB_HOST", () => {
+    writeFileSync(
+      join(dir, "aih-org-policy.json"),
+      JSON.stringify({
+        schemaVersion: 1,
+        minimumPosture: "enterprise",
+        references: { repoContract: "ai-coding/project.json" },
+        mcp: { disabledServers: ["github"] },
+      }),
+    );
+
+    const summary = mcpGovernanceSummary(
+      ctx({ posture: "enterprise", env: { GITHUB_HOST: "github.internal.example" } }),
+      "enterprise",
+    );
+
+    expect(summary.denied).not.toContainEqual(expect.objectContaining({ name: "catalog" }));
+    expect(summary.denied).toContainEqual(
+      expect.objectContaining({
+        name: "github",
+        reason: expect.stringContaining("disabled by org policy"),
+      }),
+    );
+  });
+
+  it("fails closed instead of falling back when the MCP catalog cannot be built", () => {
+    const summary = mcpGovernanceSummary(
+      ctx({ posture: "enterprise", env: { GITHUB_HOST: "github.internal.example" } }),
+      "enterprise",
+    );
+
+    expect(summary.allowed).not.toContain("github");
+    expect(summary.denied).toContainEqual(
+      expect.objectContaining({
+        name: "catalog",
+      }),
+    );
+  });
+
   it("keeps command policy posture-graded while risk gates stay warn", () => {
     const vibe = Object.fromEntries(
       controls(governanceRollupDigest(ctx({ posture: "vibe" }))).map((c) => [c.control, c.verdict]),

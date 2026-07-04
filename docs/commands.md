@@ -300,7 +300,12 @@ Claude/Cursor/Kiro/Kimi get their correct project file written (`.mcp.json`, `.c
 …); Codex (TOML), Copilot, OpenCode, Zed, and global-config tools get exact per-tool guidance
 instead of a file aih would get wrong. Scopes: local/project/remote. For locked-down orgs,
 `--mode offline` (vendored local-command servers) or `--mode none` (no MCP + a CLI-tool fallback)
-plus a `managed-mcp.json` admin template.
+plus a `managed-mcp.json` admin template. Enterprise org policy can also tune the hosted GitHub
+MCP entry: `mcp.incumbentHosts` declares which vendor hosts are reachable/incumbent,
+`mcp.githubHost` points at a GHES or internal GitHub MCP origin, and `mcp.disabledServers`
+can remove `github` entirely. Without committed org policy, the legacy github.com default remains
+unchanged; with committed org policy, the GitHub host must be declared incumbent before it passes
+the enterprise gate. `GITHUB_HOST` may supply the same https origin when no policy host is set.
 
 ## aih sandbox
 

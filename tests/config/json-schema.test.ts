@@ -14,6 +14,13 @@ describe("committed JSON Schemas", () => {
     expect(validate(value), JSON.stringify(validate.errors, null, 2)).toBe(true);
   }
 
+  function rejectCommittedSchema(path: string, value: unknown): void {
+    const schema = JSON.parse(readFileSync(join(root, path), "utf8"));
+    const ajv = new Ajv2020({ strict: false, allErrors: true });
+    const validate = ajv.compile(schema);
+    expect(validate(value)).toBe(false);
+  }
+
   it("emits editor schemas for .aih-config.json and aih-org-policy.json", () => {
     const schemas = generatedConfigSchemas();
 
@@ -52,5 +59,30 @@ describe("committed JSON Schemas", () => {
       command: { deny: {} },
       trust: {},
     });
+  });
+
+  it("rejects githubHost values that are not bare https origins", () => {
+    const base = {
+      schemaVersion: 1,
+      minimumPosture: "enterprise",
+      references: { repoContract: "ai-coding/project.json" },
+    };
+    validateCommittedSchema("schemas/aih-org-policy.schema.json", {
+      ...base,
+      mcp: { githubHost: "https://github.internal.example" },
+    });
+    for (const githubHost of [
+      "http://github.internal.example",
+      "https://github.internal.example/",
+      "https://github.internal.example/path",
+      "https://github.internal.example?x=1",
+      "https://user:pass@github.internal.example",
+      "https://github.internal.example#fragment",
+    ]) {
+      rejectCommittedSchema("schemas/aih-org-policy.schema.json", {
+        ...base,
+        mcp: { githubHost },
+      });
+    }
   });
 });

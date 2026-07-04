@@ -86,6 +86,21 @@ const WEB_FRAMEWORKS = new Set(["Next.js", "React", "Vue", "Svelte", "Angular"])
 /** Pinned GitHub MCP Docker image for the `--self-host` opt-out (bump deliberately). */
 const GITHUB_MCP_IMAGE = "ghcr.io/github/github-mcp-server:v1.5.0";
 
+/** Hosted GitHub MCP endpoint used when no org-specific host is configured. */
+export const DEFAULT_GITHUB_MCP_URL = "https://api.githubcopilot.com/mcp/";
+
+/** Options that tune the GitHub catalog entry from committed org policy. */
+export interface McpServersOptions {
+  selfHost?: boolean;
+  githubHost?: string;
+  githubIncumbent?: boolean;
+}
+
+function githubMcpUrl(host: string | undefined): string {
+  if (host === undefined) return DEFAULT_GITHUB_MCP_URL;
+  return `${host}/mcp/`;
+}
+
 /**
  * Build the `mcpServers` map for `scope`, tailored to `stack`. Deterministic
  * insertion order (local stdio first, then stack-specific, then on-by-default
@@ -95,7 +110,7 @@ const GITHUB_MCP_IMAGE = "ghcr.io/github/github-mcp-server:v1.5.0";
 export function mcpServers(
   scope: string,
   stack: RepoStack,
-  opts: { selfHost?: boolean } = {},
+  opts: McpServersOptions = {},
 ): Record<string, McpServer> {
   const servers: Record<string, McpServer> = {
     "code-review-graph": {
@@ -197,11 +212,13 @@ export function mcpServers(
       }
     : {
         type: "http",
-        url: "https://api.githubcopilot.com/mcp/",
+        url: githubMcpUrl(opts.githubHost),
         description:
-          "GitHub's official remote MCP (repos, issues, PRs, Actions). OAuth via the client — no token stored in this file. Egress to GitHub (vendor-incumbent).",
+          opts.githubIncumbent === false
+            ? "GitHub's official remote MCP (repos, issues, PRs, Actions). OAuth via the client — no token stored in this file. Egress to GitHub, but this org policy has not declared that host incumbent/reachable."
+            : "GitHub's official remote MCP (repos, issues, PRs, Actions). OAuth via the client — no token stored in this file. Egress to GitHub (vendor-incumbent).",
         classification: "third-party-hosted",
-        egress: "vendor-incumbent",
+        egress: opts.githubIncumbent === false ? "third-party" : "vendor-incumbent",
         credentials: "oauth",
         supplyChain: "hosted-remote",
       };

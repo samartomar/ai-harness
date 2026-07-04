@@ -75,6 +75,34 @@ export function missingProjectionParts(actual: unknown, expected: unknown, path 
     : [`${path || "root"} expected ${short(expected)} but found ${short(actual)}`];
 }
 
+function exactProjectionParts(
+  actual: unknown,
+  expected: unknown,
+  keys: WriteAction["replaceJsonKeys"],
+): string[] {
+  if (keys === undefined || !isPlainObject(expected) || !isPlainObject(actual)) return [];
+  const out: string[] = [];
+  for (const key of new Set(keys)) {
+    if (!Object.hasOwn(expected, key)) continue;
+    if (!Object.hasOwn(actual, key)) {
+      out.push(`${key} missing`);
+    } else if (!sameJson(actual[key], expected[key])) {
+      out.push(`${key} expected ${short(expected[key])} but found ${short(actual[key])}`);
+    }
+  }
+  return out;
+}
+
+function removedProjectionParts(
+  actual: unknown,
+  keys: WriteAction["removeJsonTopLevelKeys"],
+): string[] {
+  if (keys === undefined || !isPlainObject(actual)) return [];
+  return [...new Set(keys)]
+    .filter((key) => Object.hasOwn(actual, key))
+    .map((key) => `${key} should be absent`);
+}
+
 function driftCheck(action: WriteAction, posture: Posture): (ctx: PlanContext) => Check {
   return (ctx) => {
     const abs = resolve(ctx.root, action.path);
@@ -113,11 +141,30 @@ function driftCheck(action: WriteAction, posture: Posture): (ctx: PlanContext) =
           posture,
         );
       }
-      diffs = action.merge
-        ? missingProjectionParts(actual, action.json)
-        : sameJson(actual, action.json)
+      if (action.merge) {
+        const exactDiffs = exactProjectionParts(actual, action.json, action.replaceJsonKeys);
+        diffs = [
+          ...missingProjectionParts(actual, action.json),
+          ...exactDiffs,
+          ...removedProjectionParts(actual, action.removeJsonTopLevelKeys),
+        ];
+        if (exactDiffs.length > 0 && posture !== "vibe") {
+          return {
+            name: `org-policy drift: ${action.path}`,
+            verdict: "fail",
+            detail: `org-policy drift in ${action.path}: ${diffs.slice(0, 6).join("; ")}${
+              diffs.length > 6 ? `; +${diffs.length - 6} more` : ""
+            }`,
+            code: "org-policy.drift",
+            location: { uri: action.path },
+            fingerprint: `org-policy-drift:${action.path}`,
+          };
+        }
+      } else {
+        diffs = sameJson(actual, action.json)
           ? []
           : ["content differs from compiled org-policy projection"];
+      }
     } else {
       const expected = ensureTrailingNewline(action.contents ?? "");
       diffs = raw === expected ? [] : ["content differs from compiled org-policy projection"];

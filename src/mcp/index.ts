@@ -1,14 +1,16 @@
 import { join, posix } from "node:path";
+import { SettingsError } from "../errors.js";
 import { homeDir, resolveTargets } from "../internals/cli-detect.js";
 import { type CliEntry, entry } from "../internals/cli-registry.js";
 import { upsertTextBlock } from "../internals/envfile.js";
 import { readIfExists } from "../internals/fsxn.js";
-import type { Action, CommandSpec, PlanContext, ProbeAction } from "../internals/plan.js";
+import type { Action, CommandSpec, PlanContext } from "../internals/plan.js";
 import { doc, plan, probe, writeJson, writeText } from "../internals/plan.js";
 import type { Check } from "../internals/verify.js";
-import { type OrgPolicy, readOrgPolicy } from "../org-policy/schema.js";
+import type { OrgPolicy } from "../org-policy/schema.js";
 import { scanRepo } from "../profile/scan.js";
 import { managedMcpAllowlistSettings } from "./allowlist.js";
+import { type PolicyAwareMcpCatalog, policyAwareMcpCatalog } from "./catalog.js";
 import {
   enterpriseMcpDoc,
   managedMcpExample,
@@ -29,8 +31,9 @@ import {
   mcpConfigAbs,
   mcpEntries,
   mcpTomlBody,
+  removeMcpTomlServers,
 } from "./render.js";
-import { envPlaceholders, type McpServer, mcpServers, N24Q02M_HOST } from "./servers.js";
+import { envPlaceholders, type McpServer, N24Q02M_HOST } from "./servers.js";
 
 /** The aih-managed block scope used for Codex's TOML `[mcp_servers.*]` region. */
 const MCP_TOML_SCOPE = "mcp";
@@ -83,30 +86,41 @@ function mcpPolicyProbe(servers: Record<string, McpServer>, posture: McpPosture)
     name,
     verdict: "fail",
     detail: `denied — self-host, pin, or remove before an enterprise rollout: ${denied
-      .map((p) => `${p.name} (${p.reason})`)
+      .map((p) => `${p.name} (${policyDetail(p)})`)
       .join("; ")}`,
     code: "mcp.policy-denied",
   };
 }
 
+function policyDetail(policy: { name: string; reason: string }): string {
+  if (policy.name !== "github" || !policy.reason.includes("third-party egress")) {
+    return policy.reason;
+  }
+  return `${policy.reason}; GitHub blocked, self-hosted GHES, or not your VCS? set host, self-host, or disable the GitHub MCP server`;
+}
+
 /** Canonical agentgateway base URL clients are pointed at in the remote scope. */
 const GATEWAY_URL = "https://agentgateway.n24q02m.com";
 
-function readMcpOrgPolicy(ctx: PlanContext): { policy?: OrgPolicy; error?: unknown } {
-  try {
-    return { policy: readOrgPolicy(ctx.root, ctx.env) };
-  } catch (error) {
-    return { error };
-  }
+function errorDetail(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
-function invalidOrgPolicyProbe(error: unknown): ProbeAction {
-  return probe("org-policy parse", () => ({
-    name: "org-policy parse",
-    verdict: "fail",
-    detail: `aih-org-policy.json cannot be parsed (${(error as Error).message})`,
-    code: "org-policy.drift",
-  }));
+function invalidOrgPolicyError(error: unknown): SettingsError {
+  return new SettingsError(`aih-org-policy.json cannot be parsed (${errorDetail(error)})`);
+}
+
+function mcpCatalogError(catalog: PolicyAwareMcpCatalog): SettingsError {
+  if (catalog.errorSource === "org-policy") return invalidOrgPolicyError(catalog.error);
+  return new SettingsError(`MCP catalog cannot be built: ${errorDetail(catalog.error)}`);
+}
+
+function disabledServerRemovals(
+  policy: OrgPolicy | undefined,
+  configKey: string,
+): Record<string, readonly string[]> | undefined {
+  const disabled = policy?.mcp?.disabledServers ?? [];
+  return disabled.length > 0 ? { [configKey]: disabled } : undefined;
 }
 
 function orgAllowedServers(
@@ -207,14 +221,22 @@ function planMcpNone(ctx: PlanContext): ReturnType<typeof plan> {
 function planMcpOffline(ctx: PlanContext): ReturnType<typeof plan> {
   const scope = String(ctx.options.scope ?? "project");
   const stack = scanRepo(ctx.root, { maxDepth: 8, contextDir: ctx.contextDir });
-  const stdio = stdioServers(mcpServers(scope, stack));
+  const catalog = policyAwareMcpCatalog(ctx, {
+    scope,
+    stack,
+    includeHostedGitHub: false,
+  });
+  if (catalog.error !== undefined || catalog.servers === undefined) {
+    throw mcpCatalogError(catalog);
+  }
+  const stdio = stdioServers(catalog.servers);
   return plan(
     "mcp",
     writeJson(
       ".mcp.json",
       { mcpServers: stdio },
       "local stdio MCP servers (offline) — mirror/vendor these; some still resolve packages at runtime until vendored (see the offline verify probe)",
-      { merge: true },
+      { merge: true, removeJsonKeys: disabledServerRemovals(catalog.policy, "mcpServers") },
     ),
     writeJson(
       "managed-mcp.json.example",
@@ -266,13 +288,13 @@ async function planMcp(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
   const scope = String(ctx.options.scope ?? "project");
   const selfHost = ctx.options.selfHost === true;
   const stack = scanRepo(ctx.root, { maxDepth: 8, contextDir: ctx.contextDir });
-  const servers = mcpServers(scope, stack, { selfHost });
-  const serverNames = Object.keys(servers);
   const actions: Action[] = [];
-  const orgPolicyResult = readMcpOrgPolicy(ctx);
-  if (orgPolicyResult.error !== undefined) {
-    actions.push(invalidOrgPolicyProbe(orgPolicyResult.error));
+  const catalog = policyAwareMcpCatalog(ctx, { scope, selfHost, stack });
+  if (catalog.error !== undefined || catalog.servers === undefined) {
+    throw mcpCatalogError(catalog);
   }
+  const servers = catalog.servers;
+  const serverNames = Object.keys(servers);
   const tailored = serverNames
     .filter(
       (name) =>
@@ -328,7 +350,10 @@ async function planMcp(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
       // Codex TOML: fold the `[mcp_servers.*]` tables into an aih-managed region of
       // config.toml, preserving the user's other config. Read existing at plan time.
       const abs = external ? writePath : join(ctx.root, p.configPath);
-      const existing = readIfExists(abs) ?? "";
+      const existing = removeMcpTomlServers(
+        readIfExists(abs) ?? "",
+        catalog.policy?.mcp?.disabledServers ?? [],
+      );
       // Never redefine a server the user already declared as a top-level table — a
       // duplicate `[mcp_servers.X]` is a TOML PARSE ERROR that would break their whole
       // config. The user's own servers win; aih's block adds only what's absent.
@@ -341,13 +366,14 @@ async function planMcp(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
         writeJson(writePath, { [p.configKey]: mcpEntries(cli, servers) }, describe, {
           merge: true,
           external,
+          removeJsonKeys: disabledServerRemovals(catalog.policy, p.configKey),
         }),
       );
     }
   }
 
   // Self-host changes + any secret placeholders the developer must supply out-of-band.
-  if (selfHost) {
+  if (selfHost && servers.github !== undefined) {
     actions.push(
       doc(
         "Self-host MCP (--self-host): GitHub runs via the pinned local Docker image",
@@ -380,7 +406,7 @@ async function planMcp(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
       .filter(([, s]) => s.type === "http" && s.url.includes(N24Q02M_HOST))
       .map(([name]) => name);
     const rbac = gatewayRbacConfig(GATEWAY_URL, servers, {
-      orgAllowedServers: orgPolicyResult.policy?.mcp?.allowedServers,
+      orgAllowedServers: catalog.policy?.mcp?.allowedServers,
     });
     actions.push(
       writeJson(
@@ -413,13 +439,13 @@ async function planMcp(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
   const posture = ctx.posture ?? asPosture(ctx.options.posture);
   if (posture === "enterprise") {
     const policies = evaluateMcpPolicy(servers, posture);
-    const managedServers = orgAllowedServers(servers, orgPolicyResult.policy);
+    const managedServers = orgAllowedServers(servers, catalog.policy);
     actions.push(
       writeJson(
         ".claude/managed-settings.json",
         managedMcpAllowlistSettings(managedServers),
         "Enforce Claude managed MCP allowlist (fixed server commands from .mcp.json)",
-        { merge: true },
+        { merge: true, replaceJsonKeys: ["allowedMcpServers"] },
       ),
       doc(
         "MCP governance (enterprise posture) — per-server verdicts + skipped-with-reason",

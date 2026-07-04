@@ -18,7 +18,7 @@ import { type DigestAction, digest, type PlanContext } from "../internals/plan.j
 import { ensureTrailingNewline, lines } from "../internals/render.js";
 import { DEFAULT_MARKETPLACE_OUT, readMarketplaceManifest } from "../marketplace/manifest.js";
 import { marketplaceReport } from "../marketplace/validate.js";
-import { mcpServers } from "../mcp/servers.js";
+import { policyAwareMcpCatalog } from "../mcp/catalog.js";
 import { AIH_ORG_POLICY_FILE } from "../org-policy/constants.js";
 import { OrgPolicyError, readOrgPolicy } from "../org-policy/schema.js";
 import { scanRepo } from "../profile/scan.js";
@@ -95,6 +95,10 @@ function egressLabel(egress: string | undefined): string {
   return "unknown";
 }
 
+function errorDetail(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 /** Configured MCP server names from this repo's `.mcp.json` (undefined when absent). */
 function configuredServerNames(root: string): string[] | undefined {
   const text = readIfExists(join(root, ".mcp.json"));
@@ -118,17 +122,48 @@ export function mcpServersDigest(ctx: PlanContext): DigestAction | undefined {
   const names = configuredServerNames(ctx.root);
   if (names === undefined) return undefined;
   const stack = scanRepo(ctx.root, { maxDepth: 8, contextDir: ctx.contextDir });
-  const catalog = mcpServers("local", stack);
+  const catalogResult = policyAwareMcpCatalog(ctx, {
+    scope: "local",
+    stack,
+    includeDisabledServers: true,
+  });
+  if (catalogResult.error !== undefined || catalogResult.servers === undefined) {
+    const catalogError =
+      catalogResult.error !== undefined ? errorDetail(catalogResult.error) : "missing catalog";
+    const servers: Array<[string, string]> = names.map((n) => [n, "unknown"]);
+    const body = lines(
+      `MCP servers configured in .mcp.json (${servers.length}); egress per server:`,
+      "",
+      ...servers.map(([n, e]) => `  · ${n}  (${e})`),
+      "",
+      `  policy-aware MCP catalog unavailable: ${catalogError}`,
+      "  Refusing to assert third-party egress status until policy/catalog input is valid.",
+    );
+    return digest(`MCP servers — ${servers.length} configured, catalog unavailable`, body, {
+      servers,
+      catalogError,
+    });
+  }
+  const catalog = catalogResult.servers;
+  const disabled = new Set(catalogResult.policy?.mcp?.disabledServers ?? []);
   const servers: Array<[string, string]> = names.map((n) => {
     const entry = catalog[n] as { egress?: string } | undefined;
     return [n, egressLabel(entry?.egress)];
   });
   const thirdParty = servers.filter(([, e]) => e === "third-party").length;
+  const policyDisabled = names.filter((n) => disabled.has(n));
   const body = lines(
     `MCP servers configured in .mcp.json (${servers.length}); egress per server:`,
     "",
     ...servers.map(([n, e]) => `  ${e === "third-party" ? "!" : "·"} ${n}  (${e})`),
     "",
+    ...(policyDisabled.length > 0
+      ? [
+          `  Policy-disabled configured server(s): ${policyDisabled.join(", ")}.`,
+          "  Remove them from .mcp.json or update aih-org-policy.json before rollout.",
+          "",
+        ]
+      : []),
     thirdParty > 0
       ? `  ${thirdParty} third-party server(s) send queries off-box — confirm approved.`
       : "  No third-party egress.",
@@ -136,6 +171,7 @@ export function mcpServersDigest(ctx: PlanContext): DigestAction | undefined {
   return digest(`MCP servers — ${servers.length} configured, ${thirdParty} third-party`, body, {
     servers,
     thirdParty,
+    policyDisabled,
   });
 }
 

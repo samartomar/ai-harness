@@ -18,13 +18,15 @@ function commandPolicyFor(composed: ReturnType<typeof composeOrgPolicy>): Record
 function stdioAllowedServers(
   ctx: PlanContext,
   allowed: readonly string[],
+  disabled: readonly string[],
 ): Record<string, StdioServer> {
   const stack = scanRepo(ctx.root, { maxDepth: 8, contextDir: ctx.contextDir });
   const catalog = mcpServers("project", stack);
   const allowedSet = new Set(allowed.length > 0 ? allowed : Object.keys(catalog));
+  const disabledSet = new Set(disabled);
   const out: Record<string, StdioServer> = {};
   for (const [name, server] of Object.entries(catalog)) {
-    if (!allowedSet.has(name) || server.type !== "stdio") continue;
+    if (disabledSet.has(name) || !allowedSet.has(name) || server.type !== "stdio") continue;
     out[name] = server;
   }
   return out;
@@ -33,9 +35,13 @@ function stdioAllowedServers(
 function managedSettings(
   ctx: PlanContext,
   policy: OrgPolicy,
-): { settings: Record<string, unknown>; managedMcp: Record<string, unknown> } {
+): {
+  settings: Record<string, unknown>;
+  managedMcp: Record<string, unknown>;
+  managedMcpEnabled: boolean;
+} {
   const composed = composeOrgPolicy(policy);
-  const stdio = stdioAllowedServers(ctx, composed.mcp.allowedServers);
+  const stdio = stdioAllowedServers(ctx, composed.mcp.allowedServers, composed.mcp.disabledServers);
   const settings: Record<string, unknown> = {
     organizationPolicy: {
       minimumPosture: composed.minimumPosture,
@@ -48,19 +54,29 @@ function managedSettings(
   if (composed.mcp.allowManagedOnly) {
     Object.assign(settings, managedMcpAllowlistSettings(stdio));
   }
-  return { settings, managedMcp: managedMcpExample(stdio) };
+  return {
+    settings,
+    managedMcp: managedMcpExample(stdio),
+    managedMcpEnabled: composed.mcp.allowManagedOnly,
+  };
 }
 
 export function orgPolicyProjectionActions(ctx: PlanContext, policy: OrgPolicy): Action[] {
   const posture = ctx.posture ?? policy.minimumPosture;
   if (posture === "vibe") return [];
-  const { settings, managedMcp } = managedSettings(ctx, policy);
+  const { settings, managedMcp, managedMcpEnabled } = managedSettings(ctx, policy);
   const actions: Action[] = [
     writeJson(
       ".claude/managed-settings.json",
       settings,
       "project managed-settings compiled from aih-org-policy.json",
-      { merge: true },
+      {
+        merge: true,
+        replaceJsonKeys: managedMcpEnabled ? ["allowedMcpServers"] : undefined,
+        removeJsonTopLevelKeys: managedMcpEnabled
+          ? undefined
+          : ["allowManagedMcpServersOnly", "allowedMcpServers"],
+      },
     ),
   ];
   if (posture === "enterprise") {

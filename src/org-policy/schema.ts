@@ -35,6 +35,62 @@ const RiskGateOverrideSchema = z
 
 const LicenseDispositionSchema = z.enum(["auto-approve", "alert", "fail", "block"]);
 
+const HOST_WITH_OPTIONAL_PORT =
+  "[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?(?::(?:[0-9]|[1-9][0-9]{1,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5]))?";
+const HOSTNAME_PATTERN = new RegExp(`^${HOST_WITH_OPTIONAL_PORT}$`);
+const HTTPS_ORIGIN_PATTERN = new RegExp(`^https://${HOST_WITH_OPTIONAL_PORT}$`);
+const HTTPS_ORIGIN_MESSAGE = "must be an https origin such as https://github.example.com";
+
+export function normalizePolicyHost(value: string, source = "host"): string {
+  try {
+    if (value !== value.trim() || !HOSTNAME_PATTERN.test(value)) {
+      throw new Error("invalid host");
+    }
+    return new URL(`https://${value}`).host.toLowerCase();
+  } catch {
+    throw new Error(`${source} must be a hostname, optionally with a port`);
+  }
+}
+
+export function normalizeHttpsOrigin(value: string, source = "value"): string {
+  try {
+    if (value !== value.trim() || !HTTPS_ORIGIN_PATTERN.test(value)) {
+      throw new Error("invalid origin");
+    }
+    const url = new URL(value);
+    if (
+      url.protocol !== "https:" ||
+      url.username !== "" ||
+      url.password !== "" ||
+      url.pathname !== "/" ||
+      url.search !== "" ||
+      url.hash !== ""
+    ) {
+      throw new Error("invalid origin");
+    }
+    return url.origin;
+  } catch {
+    throw new Error(`${source} ${HTTPS_ORIGIN_MESSAGE}`);
+  }
+}
+
+const HostnameSchema = z
+  .string()
+  .regex(HOSTNAME_PATTERN, "host must be a hostname, optionally with a port")
+  .transform((value) => normalizePolicyHost(value));
+
+const HttpsOriginSchema = z
+  .string()
+  .regex(HTTPS_ORIGIN_PATTERN, HTTPS_ORIGIN_MESSAGE)
+  .transform((value, ctx) => {
+    try {
+      return normalizeHttpsOrigin(value);
+    } catch {
+      ctx.addIssue({ code: "custom", message: HTTPS_ORIGIN_MESSAGE });
+      return z.NEVER;
+    }
+  });
+
 const TrustApprovedSourceSchema = z
   .object({
     owner: z.string().min(1),
@@ -78,6 +134,9 @@ export const OrgPolicySchema = z
       .object({
         allowedServers: z.array(z.string().min(1)).default([]),
         allowManagedOnly: z.boolean().default(false),
+        incumbentHosts: z.array(HostnameSchema).default([]),
+        githubHost: HttpsOriginSchema.optional(),
+        disabledServers: z.array(z.string().min(1)).default([]),
       })
       .strict()
       .optional(),

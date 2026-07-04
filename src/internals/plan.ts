@@ -43,6 +43,12 @@ export interface WriteAction {
   json?: unknown;
   /** Deep-merge `json` onto an existing file instead of overwriting. */
   merge?: boolean;
+  /** Remove named child keys from top-level JSON objects after merge. */
+  removeJsonKeys?: Record<string, readonly string[]>;
+  /** Replace named top-level JSON keys with the generated value after merge. */
+  replaceJsonKeys?: readonly string[];
+  /** Remove named top-level JSON keys after merge. */
+  removeJsonTopLevelKeys?: readonly string[];
   /** POSIX file mode, e.g. 0o755 for hooks. */
   mode?: number;
   /** Write only if the file is absent; never overwrite (user-owned seed files). */
@@ -313,9 +319,25 @@ export function writeJson(
   path: string,
   value: unknown,
   describe: string,
-  opts: { merge?: boolean; external?: boolean } = {},
+  opts: {
+    merge?: boolean;
+    external?: boolean;
+    removeJsonKeys?: Record<string, readonly string[]>;
+    replaceJsonKeys?: readonly string[];
+    removeJsonTopLevelKeys?: readonly string[];
+  } = {},
 ): WriteAction {
-  return { kind: "write", path, json: value, describe, merge: opts.merge, external: opts.external };
+  return {
+    kind: "write",
+    path,
+    json: value,
+    describe,
+    merge: opts.merge,
+    external: opts.external,
+    removeJsonKeys: opts.removeJsonKeys,
+    replaceJsonKeys: opts.replaceJsonKeys,
+    removeJsonTopLevelKeys: opts.removeJsonTopLevelKeys,
+  };
 }
 
 export function doc(describe: string, text: string, path?: string): DocAction {

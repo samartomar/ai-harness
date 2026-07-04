@@ -2,6 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { resolveContents } from "../../src/internals/execute.js";
 import type { PlanContext, WriteAction } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
 import { composeOrgPolicy } from "../../src/org-policy/compose.js";
@@ -65,6 +66,44 @@ describe("OrgPolicySchema", () => {
       minimumPosture: "team",
       references: { repoContract: "ai-coding/project.json" },
       command: { deny: { remove: ["printenv*"] } },
+    });
+  });
+
+  it("parses MCP host incumbency, GitHub host, and disabled server policy", () => {
+    expect(
+      parseOrgPolicy(
+        policy({
+          mcp: {
+            allowedServers: ["code-review-graph", "github"],
+            allowManagedOnly: true,
+            incumbentHosts: ["github.internal.example"],
+            githubHost: "https://github.internal.example",
+            disabledServers: ["context7"],
+          },
+        }),
+      ).mcp,
+    ).toMatchObject({
+      allowedServers: ["code-review-graph", "github"],
+      allowManagedOnly: true,
+      incumbentHosts: ["github.internal.example"],
+      githubHost: "https://github.internal.example",
+      disabledServers: ["context7"],
+    });
+  });
+
+  it("normalizes MCP hosts the same way runtime URL matching does", () => {
+    expect(
+      parseOrgPolicy(
+        policy({
+          mcp: {
+            incumbentHosts: ["API.GitHubCopilot.com:443"],
+            githubHost: "https://GitHub.Internal.Example:443",
+          },
+        }),
+      ).mcp,
+    ).toMatchObject({
+      incumbentHosts: ["api.githubcopilot.com"],
+      githubHost: "https://github.internal.example",
     });
   });
 
@@ -206,6 +245,14 @@ describe("composeOrgPolicy", () => {
     expect(disposition["network-copyleft"]).toBe("block");
     expect(disposition["strong-copyleft"]).toBe("alert");
   });
+
+  it("carries disabled MCP servers into the composed policy", () => {
+    const composed = composeOrgPolicy(
+      parseOrgPolicy(policy({ mcp: { disabledServers: ["code-review-graph"] } })),
+    );
+
+    expect(composed.mcp.disabledServers).toEqual(["code-review-graph"]);
+  });
 });
 
 describe("orgPolicyProjectionActions", () => {
@@ -256,6 +303,62 @@ describe("orgPolicyProjectionActions", () => {
       allowManagedMcpServersOnly: true,
     });
     expect(JSON.stringify(managed?.json)).toContain("terraform destroy*");
+  });
+
+  it("filters disabled MCP servers out of managed projections", () => {
+    const actions = orgPolicyProjectionActions(
+      { ...ctx(), posture: "enterprise" },
+      parseOrgPolicy(
+        policy({
+          minimumPosture: "enterprise",
+          mcp: {
+            allowedServers: ["code-review-graph", "sequential-thinking"],
+            allowManagedOnly: true,
+            disabledServers: ["code-review-graph"],
+          },
+        }),
+      ),
+    );
+    const managedMcp = writes(actions).find((w) => w.path === "managed-mcp.json.example");
+    const blob = JSON.stringify(managedMcp?.json);
+
+    expect(blob).not.toContain("code-review-graph");
+    expect(blob).toContain("server-sequential-thinking");
+  });
+
+  it("replaces stale managed MCP allowlist entries when projecting onto existing settings", () => {
+    mkdirSync(join(dir, ".claude"), { recursive: true });
+    writeFileSync(
+      join(dir, ".claude", "managed-settings.json"),
+      JSON.stringify({
+        localOnly: true,
+        allowManagedMcpServersOnly: true,
+        allowedMcpServers: [{ serverCommand: ["uvx", "code-review-graph@2.3.6", "serve"] }],
+      }),
+    );
+    const actions = orgPolicyProjectionActions(
+      { ...ctx(), posture: "enterprise" },
+      parseOrgPolicy(
+        policy({
+          minimumPosture: "enterprise",
+          mcp: {
+            allowedServers: ["code-review-graph", "sequential-thinking"],
+            allowManagedOnly: true,
+            disabledServers: ["code-review-graph"],
+          },
+        }),
+      ),
+    );
+    const managed = writes(actions).find((w) => w.path === ".claude/managed-settings.json");
+    if (managed === undefined) throw new Error("expected managed-settings write");
+    const merged = JSON.parse(
+      resolveContents(managed, join(dir, ".claude", "managed-settings.json")),
+    ) as { localOnly?: boolean; allowedMcpServers?: unknown[] };
+    const allowlist = JSON.stringify(merged.allowedMcpServers);
+
+    expect(merged.localOnly).toBe(true);
+    expect(allowlist).toContain("server-sequential-thinking");
+    expect(allowlist).not.toContain("code-review-graph");
   });
 });
 
@@ -318,6 +421,37 @@ describe("orgPolicyDriftProbes", () => {
     expect(check?.code).toBe("org-policy.drift");
     expect(check?.location?.uri).toBe(".claude/managed-settings.json");
     expect(check?.detail).toContain("org-policy drift");
+  });
+
+  it("fails when managed settings contain extra stale MCP allowlist entries", async () => {
+    const value = policy({
+      mcp: {
+        allowedServers: ["sequential-thinking"],
+        allowManagedOnly: true,
+        disabledServers: ["code-review-graph"],
+      },
+    });
+    const parsed = parseOrgPolicy(value);
+    writePolicy(value);
+    const c = ctx();
+    const projected = writes(orgPolicyProjectionActions(c, parsed)).find(
+      (w) => w.path === ".claude/managed-settings.json",
+    );
+    writeManagedSettings({
+      ...(projected?.json as Record<string, unknown>),
+      allowedMcpServers: [
+        ...((projected?.json as { allowedMcpServers?: unknown[] }).allowedMcpServers ?? []),
+        { serverCommand: ["uvx", "code-review-graph@2.3.6", "serve"] },
+      ],
+    });
+
+    const check = await orgPolicyDriftProbes(c)
+      .find((p) => p.describe.includes(".claude/managed-settings.json"))
+      ?.run(c);
+
+    expect(check?.verdict).toBe("fail");
+    expect(check?.code).toBe("org-policy.drift");
+    expect(check?.detail).toContain("allowedMcpServers");
   });
 
   it("projects drift expectations at the resolved posture, not only the policy floor", () => {
