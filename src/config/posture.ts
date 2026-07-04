@@ -1,5 +1,6 @@
 export { AIH_ORG_POLICY_FILE } from "../org-policy/constants.js";
 
+import { SettingsError } from "../errors.js";
 import type { PlanContext } from "../internals/plan.js";
 import { orgPolicyPath, readOrgPolicy } from "../org-policy/schema.js";
 import type { AihConfig } from "./marker.js";
@@ -48,6 +49,12 @@ export function asPosture(value: unknown): Posture {
   return "vibe";
 }
 
+export function parsePostureInput(value: unknown, source: "--posture" | "AIH_POSTURE"): Posture {
+  if (value === "enterprise" || value === "team" || value === "vibe") return value;
+  if (value === "community") return "vibe";
+  throw new SettingsError(`invalid ${source}: expected vibe, team, or enterprise`);
+}
+
 export function postureFromContext(ctx: PlanContext): Posture {
   return ctx.posture ?? asPosture(ctx.options.posture);
 }
@@ -78,11 +85,14 @@ export function resolvePosture(input: ResolvePostureInput): ResolvedPosture {
   const marker = input.marker ?? readAihConfig(input.root);
   let resolved: ResolvedPosture;
   if (input.flagSource === "cli") {
-    resolved = { posture: asPosture(input.flag), postureSource: "flag" };
+    resolved = { posture: parsePostureInput(input.flag, "--posture"), postureSource: "flag" };
   } else if (marker?.posture !== undefined) {
     resolved = { posture: marker.posture, postureSource: "marker" };
   } else if (input.env.AIH_POSTURE !== undefined) {
-    resolved = { posture: asPosture(input.env.AIH_POSTURE), postureSource: "env" };
+    resolved = {
+      posture: parsePostureInput(input.env.AIH_POSTURE, "AIH_POSTURE"),
+      postureSource: "env",
+    };
   } else {
     resolved = { posture: "vibe", postureSource: "default" };
   }

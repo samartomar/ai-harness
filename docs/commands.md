@@ -329,15 +329,16 @@ Generate a devcontainer + managed sandbox settings (egress allowlist, `failIfUna
 
 Fail-closed verification of the workstation/repo configuration (+ workspace mode: validates each
 child repo). Includes a **canon markdown lint** (read-only) over the scaffolded `ai-coding/` tree.
-Accepts `--posture <posture>` like other verification surfaces; it remains read-only.
+Accepts and validates `--posture <posture>` like other verification surfaces, but ignores the value;
+it remains read-only.
 
 ## aih status
 
-Read-only inventory of what the harness has configured. Accepts `--posture <posture>` for script
-consistency; it remains read-only.
+Read-only inventory of what the harness has configured. Accepts and validates `--posture <posture>`
+for script consistency, but ignores the value; it remains read-only.
 
-`aih verify-bundle` and `aih verify-release` also accept `--posture <posture>` for the same
-script-friendly surface, while preserving their read-only behavior.
+`aih verify-bundle` and `aih verify-release` also accept and validate `--posture <posture>` for the
+same script-friendly surface, while ignoring the value and preserving their read-only behavior.
 
 ## Support tickets
 

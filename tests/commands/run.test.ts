@@ -124,9 +124,13 @@ async function resolvedDir(argv: string[], env: NodeJS.ProcessEnv): Promise<stri
 }
 
 /** Resolve the posture runCapability lands on for the given argv + env. */
-async function resolvedPosture(argv: string[], env: NodeJS.ProcessEnv): Promise<string> {
+async function resolvedPosture(
+  argv: string[],
+  env: NodeJS.ProcessEnv,
+  spec: CommandSpec = echoSpec,
+): Promise<string> {
   let out = "";
-  await runCapability(echoSpec, command(argv), {
+  await runCapability(spec, command(argv), {
     run: fakeRunner(() => undefined),
     env,
     write: (t) => {
@@ -228,6 +232,46 @@ describe("runCapability — posture precedence ladder (org floor > flag > marker
     expect(await resolvedPosture(["--posture", "enterprise", "--root", dir], {})).toContain(
       "enterprise:flag",
     );
+  });
+
+  it("read-only specs accept --posture but ignore it as a posture source", async () => {
+    const readOnlyEchoSpec: CommandSpec = { ...echoSpec, readOnly: true };
+    const out = await resolvedPosture(
+      ["--posture", "enterprise", "--root", dir],
+      {},
+      readOnlyEchoSpec,
+    );
+    expect(out).toContain("vibe:default");
+  });
+
+  it("rejects malformed --posture input instead of falling back to vibe", async () => {
+    let out = "";
+    const code = await runCapability(
+      echoSpec,
+      command(["--posture", "enterprsie", "--root", dir]),
+      {
+        run: fakeRunner(() => undefined),
+        env: {},
+        write: (t) => {
+          out += t;
+        },
+      },
+    );
+    expect(code).toBe(1);
+    expect(out).toContain("invalid --posture");
+  });
+
+  it("rejects malformed AIH_POSTURE input instead of falling back to vibe", async () => {
+    let out = "";
+    const code = await runCapability(echoSpec, command(["--root", dir]), {
+      run: fakeRunner(() => undefined),
+      env: { AIH_POSTURE: "enterprsie" },
+      write: (t) => {
+        out += t;
+      },
+    });
+    expect(code).toBe(1);
+    expect(out).toContain("invalid AIH_POSTURE");
   });
 });
 
