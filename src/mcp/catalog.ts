@@ -59,12 +59,16 @@ export function policyAwareMcpCatalog(
   if (policyResult.error !== undefined) return { error: policyResult.error };
   try {
     const stack = opts.stack ?? scanRepo(ctx.root, { maxDepth: 8, contextDir: ctx.contextDir });
-    const githubHost = configuredGitHubHost(ctx, policyResult.policy);
+    const githubDisabled = policyResult.policy?.mcp?.disabledServers?.includes("github") ?? false;
+    const hostedGithub = opts.selfHost !== true && !githubDisabled;
+    const githubHost = hostedGithub ? configuredGitHubHost(ctx, policyResult.policy) : undefined;
     const servers = removeDisabledServers(
       mcpServers(opts.scope, stack, {
         selfHost: opts.selfHost,
         githubHost,
-        githubIncumbent: githubIsIncumbent(policyResult.policy, githubHost),
+        githubIncumbent: hostedGithub
+          ? githubIsIncumbent(policyResult.policy, githubHost)
+          : undefined,
       }),
       policyResult.policy,
     );
