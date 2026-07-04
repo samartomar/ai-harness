@@ -7,6 +7,7 @@ import type { Check } from "../internals/verify.js";
 import { resolveInternalScopes } from "../trust/depnames.js";
 import {
   cleanupQuarantine,
+  isFirstPartySource,
   readTrustFetchMetadata,
   resolveTrustSource,
   type TrustSource,
@@ -226,11 +227,7 @@ export async function skillVetPlanForSource(
       ...staticChecks.map((check) => probe(check.detail ?? check.name, () => check)),
       dynamicDigest("skill vet verdict", (digestCtx) => {
         const checks = [...trustSourceOriginChecks(digestCtx, source), ...staticChecks];
-        // First-party = a local source resolved UNDER the repo root (a bundled,
-        // in-repo skill). A local path outside the repo is NOT first-party and stays
-        // strictly graded (detector-unavailable → UNKNOWN, like any other source).
-        const rel = relative(digestCtx.root, source.root);
-        const firstParty = rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
+        const firstParty = isFirstPartySource(digestCtx.root, source);
         const graded = skillVerdict(checks, shape, { pinned: true, fetched: true, firstParty });
         return vetDigestResult(
           digestCtx,

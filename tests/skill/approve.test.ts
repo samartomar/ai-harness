@@ -10,7 +10,7 @@ import { makeHostAdapter } from "../../src/platform/detect.js";
 import { skillApproveCommand, skillCardCommand } from "../../src/skill/approve.js";
 import { readSkillCard, type SkillCard } from "../../src/skill/card.js";
 import type { SkillsLock } from "../../src/skill/lockfile.js";
-import type { SkillVetEvidence } from "../../src/skill/vet.js";
+import { type SkillVetEvidence, skillVetCommand } from "../../src/skill/vet.js";
 
 const PIN = "a".repeat(40);
 const EVIDENCE_REL = `.aih/skill-reports/owner-repo-${PIN.slice(0, 8)}.json`;
@@ -122,6 +122,7 @@ describe("skillApproveCommand", () => {
     });
     expect(card.approval).toMatchObject({ verdict: "GREEN", approvedBy: "docs-platform" });
     expect(card.approval?.approvedAt).toMatch(ISO_TIMESTAMP);
+    expect(card.firstParty).toBeUndefined(); // a GitHub source is not first-party
 
     const lock = readJson<SkillsLock>("aih-skills.lock.json");
     expect(lock.schemaVersion).toBe(1);
@@ -143,6 +144,24 @@ describe("skillApproveCommand", () => {
     expect(policy.trust?.approvedSources).toEqual([
       expect.objectContaining({ owner: "owner", repo: "repo", pinnedSha: PIN }),
     ]);
+  });
+
+  it("marks a repo-relative local source firstParty on the card and lockfile", async () => {
+    // A skill under the repo root (workspace) is first-party; vet writes the local
+    // evidence, approve reads it and stamps the marker.
+    write("packs/clean/SKILL.md", "# clean\n\nLocal documentation hygiene.\n");
+    write("packs/clean/LICENSE", "MIT License\n");
+    const vetC = ctx({ source: "packs/clean" }, true);
+    await executePlan(await skillVetCommand.plan(vetC), vetC);
+    const c = ctx({ source: "packs/clean", owner: "aih-maintainers" }, true);
+
+    const result = await executePlan(await skillApproveCommand.plan(c), c);
+
+    expect(result.report?.ok).toBe(true);
+    const card = readJson<SkillCard>("ai-coding/skill-cards/clean.json");
+    expect(card.firstParty).toBe(true);
+    const lock = readJson<SkillsLock>("aih-skills.lock.json");
+    expect(lock.skills[0]?.firstParty).toBe(true);
   });
 
   it("approves a YELLOW verdict — approve IS the manual review", async () => {

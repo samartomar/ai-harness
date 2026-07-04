@@ -229,6 +229,18 @@ export function resolveTrustSource(
   };
 }
 
+/**
+ * A first-party source: a LOCAL path resolved UNDER the repo root (e.g. a bundled
+ * skill in `packs/`). First-party sources are graded on aih-native coverage
+ * (skillVerdict) and marked on their approval (card + lockfile) for auditability;
+ * a local path OUTSIDE the repo is NOT first-party.
+ */
+export function isFirstPartySource(root: string, source: TrustSource): boolean {
+  if (source.kind !== "local") return false;
+  const rel = relative(root, source.root);
+  return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
+}
+
 function statSafe(path: string): Stats | undefined {
   try {
     return lstatSync(path);

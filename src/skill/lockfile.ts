@@ -39,6 +39,8 @@ export const SkillLockEntrySchema = z.object({
   commit: z.string().min(1),
   verdict: z.enum(["GREEN", "YELLOW"]),
   pack: z.string().min(1).optional(),
+  /** True when the approval is a first-party (repo-relative local) skill. */
+  firstParty: z.boolean().optional(),
   scope: z.string().min(1),
   /** Repo-relative path of the committed skill card this entry approves. */
   card: z.string().min(1),

@@ -6,6 +6,7 @@
   "license": "Apache License",
   "owner": "aih-maintainers",
   "pack": "docs-quality",
+  "firstParty": true,
   "intendedUse": "claim-first, evidence-grounded documentation editing and review",
   "installScope": "repo",
   "riskClass": "green",
@@ -17,6 +18,6 @@
   "approval": {
     "verdict": "GREEN",
     "approvedBy": "aih-maintainers",
-    "approvedAt": "2026-07-03T23:55:01.667Z"
+    "approvedAt": "2026-07-04T03:19:48.317Z"
   }
 }
