@@ -2,7 +2,8 @@
 
 > Status: shipped in v0.5.0 (PRs #108–#111) — `src/pack/` (manifest.ts, status.ts,
 > authoring.ts, install.ts, uninstall.ts). For the earlier design exploration, see
-> [enterprise-packaging-model.md](enterprise-packaging-model.md).
+> [enterprise-packaging-model.md](enterprise-packaging-model.md). For the first shipped
+> first-party pack (BetterDoc), see [docs-quality-pack.md](docs-quality-pack.md).
 
 `aih-packs.json` is a **committed curation manifest at the repo root**: it names sets of
 already-approved skills ("packs") so a team reasons about *the docs-quality set*, not N

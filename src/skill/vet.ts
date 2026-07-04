@@ -7,6 +7,7 @@ import type { Check } from "../internals/verify.js";
 import { resolveInternalScopes } from "../trust/depnames.js";
 import {
   cleanupQuarantine,
+  isFirstPartySource,
   readTrustFetchMetadata,
   resolveTrustSource,
   type TrustSource,
@@ -226,7 +227,8 @@ export async function skillVetPlanForSource(
       ...staticChecks.map((check) => probe(check.detail ?? check.name, () => check)),
       dynamicDigest("skill vet verdict", (digestCtx) => {
         const checks = [...trustSourceOriginChecks(digestCtx, source), ...staticChecks];
-        const graded = skillVerdict(checks, shape, { pinned: true, fetched: true });
+        const firstParty = isFirstPartySource(digestCtx.root, source);
+        const graded = skillVerdict(checks, shape, { pinned: true, fetched: true, firstParty });
         return vetDigestResult(
           digestCtx,
           source,
@@ -256,6 +258,7 @@ export async function skillVetPlanForSource(
       const graded = skillVerdict(checks, emptyShape(), {
         pinned: isPinned(source),
         fetched: false,
+        firstParty: false,
       });
       return buildEvidence(source, source.pin?.toLowerCase(), undefined, checks, [], graded);
     };
@@ -279,6 +282,7 @@ export async function skillVetPlanForSource(
           const graded = skillVerdict(checks, vetted.shape, {
             pinned: isPinned(source),
             fetched: true,
+            firstParty: false,
           });
           return vetDigestResult(
             digestCtx,

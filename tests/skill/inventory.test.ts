@@ -55,6 +55,7 @@ interface LockEntryInput {
   verdict?: "GREEN" | "YELLOW";
   pack?: string;
   card?: string;
+  firstParty?: boolean;
 }
 
 function writeLock(entries: LockEntryInput[]): void {
@@ -68,6 +69,7 @@ function writeLock(entries: LockEntryInput[]): void {
         commit: e.commit ?? PIN,
         verdict: e.verdict ?? "GREEN",
         ...(e.pack ? { pack: e.pack } : {}),
+        ...(e.firstParty ? { firstParty: true } : {}),
         scope: "repo",
         card: e.card ?? `${CONTEXT_DIR}/skill-cards/${e.name}.json`,
         evidenceSha256: "0".repeat(64),
@@ -119,6 +121,14 @@ describe("skillInventory — the pure join", () => {
     });
     expect(row?.source).toBe(`owner/repo@${PIN}`);
     expect(row?.commit).toBe(PIN);
+  });
+
+  it("carries the first-party marker from the lock entry into the row", () => {
+    writeLock([{ name: "clean", commit: "local", pack: "docs-quality", firstParty: true }]);
+    write(`${CONTEXT_DIR}/skill-cards/clean.json`, JSON.stringify(validCard("clean")));
+    promoteSkill("owner-repo", "clean");
+    const row = inv().skills.find((s) => s.name === "clean");
+    expect(row?.firstParty).toBe(true);
   });
 
   it("flags an on-disk skill with no lock entry as unapproved", () => {

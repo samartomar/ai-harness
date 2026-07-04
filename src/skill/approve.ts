@@ -9,6 +9,7 @@ import { readOrgPolicy } from "../org-policy/schema.js";
 import { policyWithApprovedSource } from "../trust/commands.js";
 import {
   cleanupQuarantine,
+  isFirstPartySource,
   localFileHash,
   resolveTrustSource,
   type TrustSource,
@@ -98,6 +99,7 @@ interface SkillApprovalGate {
   name: string;
   commit: string;
   license: string;
+  firstParty: boolean;
   flags: SkillFlagInputs;
 }
 
@@ -261,6 +263,7 @@ function skillApprovalGate(ctx: PlanContext, command: string): SkillApprovalGate
     name,
     commit,
     license,
+    firstParty: isFirstPartySource(ctx.root, source),
     flags: {
       owner: optionString(ctx, "owner"),
       pack: optionString(ctx, "pack"),
@@ -313,6 +316,7 @@ function cardFor(gate: SkillApprovalGate, approval?: SkillCardApproval): SkillCa
     requiresMcp: gate.shape.mcpConfig,
     requiresShell: gate.shape.installScripts,
     scanEvidence: [gate.evidenceRel],
+    firstParty: gate.firstParty || undefined,
     owner: gate.flags.owner,
     pack: gate.flags.pack,
     intendedUse: gate.flags.intendedUse,
@@ -387,6 +391,7 @@ function skillApprovePlan(ctx: PlanContext): Plan {
     commit: gate.commit,
     verdict: gate.verdict,
     pack: gate.flags.pack,
+    ...(gate.firstParty ? { firstParty: true } : {}),
     scope: SKILL_INSTALL_SCOPE,
     card: cardRel,
     evidenceSha256: gate.evidenceSha256,

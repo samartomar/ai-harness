@@ -357,11 +357,23 @@ function skillLine(skill: BuiltSkill): string {
   return `- ${m.name}  ${m.verdict}  ${m.commit.slice(0, 12)}  ${m.files.length} file(s)`;
 }
 
-function buildText(out: string, built: readonly BuiltSkill[], totalFiles: number): string {
+function buildText(
+  out: string,
+  built: readonly BuiltSkill[],
+  totalFiles: number,
+  firstParty: readonly SkillLockEntry[] = [],
+): string {
   const bytes = built.reduce((sum, skill) => sum + skill.bytes, 0);
   return lines(
     `marketplace artifact: ${built.length} skill(s) · ${totalFiles} file(s) · ${bytes} bytes → ${out}`,
     ...built.map(skillLine),
+    ...(firstParty.length > 0
+      ? [
+          `excluded ${firstParty.length} first-party skill(s) — ship in-repo, not via the marketplace: ${firstParty
+            .map((entry) => entry.name)
+            .join(", ")}`,
+        ]
+      : []),
     "",
     "host this directory (git repo or static host) and consume with `aih workspace add` — " +
       "the vet gate still runs at consume time",
@@ -387,7 +399,14 @@ function marketplaceBuildPlan(ctx: PlanContext): Plan {
   // hand-edited lock must not be able to reorder the artifact.
   const inventory = skillInventory(ctx);
   const trustSources = readTrustLock(ctx.root).sources;
-  const entries = [...lock.skills].sort((a, b) => a.name.localeCompare(b.name));
+  // First-party skills (commit "local") ship IN the repo, not through the hosted
+  // marketplace artifact: a bundled first-party skill is delivered by having the
+  // repo, and keeps no committed promoted copy or vet evidence to package. Exclude
+  // them here, but REPORT them below — this module's fail-closed contract forbids a
+  // SILENT drop; they are simply out of scope for a distributable artifact.
+  const sorted = [...lock.skills].sort((a, b) => a.name.localeCompare(b.name));
+  const firstParty = sorted.filter((entry) => entry.commit === "local");
+  const entries = sorted.filter((entry) => entry.commit !== "local");
   const built = entries.map((entry) =>
     buildSkill(ctx, entry, resolveInstalledSkill(inventory.skills, ctx, entry), trustSources),
   );
@@ -424,7 +443,7 @@ function marketplaceBuildPlan(ctx: PlanContext): Plan {
       "marketplace SHA256SUMS",
       { external },
     ),
-    digest("marketplace build", buildText(out, built, sumsEntries.length + 1), {
+    digest("marketplace build", buildText(out, built, sumsEntries.length + 1, firstParty), {
       out,
       name,
       ...(stamp !== undefined ? { stamp } : {}),
@@ -440,6 +459,9 @@ function marketplaceBuildPlan(ctx: PlanContext): Plan {
         commit: skill.manifest.commit,
         files: skill.manifest.files.length,
       })),
+      ...(firstParty.length > 0
+        ? { firstPartyExcluded: firstParty.map((entry) => entry.name) }
+        : {}),
     }),
   );
   return plan("marketplace build", ...actions);

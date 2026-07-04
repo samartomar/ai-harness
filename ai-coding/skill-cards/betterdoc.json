@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "name": "betterdoc",
+  "source": "packs/docs-quality/betterdoc",
+  "commit": "local",
+  "license": "Apache-2.0",
+  "owner": "aih-maintainers",
+  "pack": "docs-quality",
+  "firstParty": true,
+  "intendedUse": "claim-first, evidence-grounded documentation editing and review",
+  "installScope": "repo",
+  "riskClass": "green",
+  "requiresMcp": false,
+  "requiresShell": false,
+  "scanEvidence": [
+    ".aih/skill-reports/betterdoc-local.json"
+  ],
+  "approval": {
+    "verdict": "GREEN",
+    "approvedBy": "aih-maintainers",
+    "approvedAt": "2026-07-04T03:46:47.410Z"
+  }
+}

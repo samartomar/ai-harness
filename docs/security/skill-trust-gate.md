@@ -16,6 +16,10 @@
 >   `.aih/skill-cards/`.
 > - There is no standalone `aih skill install`; installs ride `aih workspace add` and
 >   `aih pack install`, both approval-gated.
+> - First-party (repo-relative local) sources are graded on aih-native coverage: an *unavailable*
+>   deep detector no longer forces UNKNOWN for a path under the repo root (it still does for remote
+>   or out-of-repo sources). Native RED and shape/license rules are unchanged. See
+>   [docs/product/docs-quality-pack.md](../product/docs-quality-pack.md). (#166)
 >
 > The body below is the original design record.
 
