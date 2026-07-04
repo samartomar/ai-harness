@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "skills": [
+    {
+      "name": "betterdoc",
+      "source": "packs/docs-quality/betterdoc",
+      "commit": "local",
+      "verdict": "GREEN",
+      "pack": "docs-quality",
+      "firstParty": true,
+      "scope": "repo",
+      "card": "ai-coding/skill-cards/betterdoc.json",
+      "evidenceSha256": "a06f788daa3f8bac9986ae63b419277b76435366c37a6d63491b55497b6ee620",
+      "approvedBy": "aih-maintainers",
+      "approvedAt": "2026-07-04T03:46:47.410Z"
+    }
+  ]
+}

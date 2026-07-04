@@ -30,6 +30,7 @@ export const SkillCardSchema = z.object({
   license: z.string().min(1),
   owner: z.string().min(1).optional(),
   pack: z.string().min(1).optional(),
+  firstParty: z.boolean().optional(),
   intendedUse: z.string().min(1).optional(),
   installScope: z.string().min(1),
   riskClass: RiskClassSchema,
@@ -60,6 +61,7 @@ export interface BuildCardInput {
   scanEvidence: string[];
   owner?: string;
   pack?: string;
+  firstParty?: boolean;
   intendedUse?: string;
   mode?: string;
   approval?: SkillCardApproval;
@@ -75,6 +77,7 @@ export function buildCard(input: BuildCardInput): SkillCard {
     license: input.license,
     owner: input.owner,
     pack: input.pack,
+    firstParty: input.firstParty,
     intendedUse: input.intendedUse,
     installScope: SKILL_INSTALL_SCOPE,
     riskClass: input.riskClass,

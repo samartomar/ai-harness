@@ -20,6 +20,7 @@ import { fakeRunner } from "../../src/internals/proc.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 import {
   assertTrustTreeSafe,
+  isFirstPartySource,
   localFileHash,
   resolveTrustSource,
   safeSourceRelative,
@@ -109,6 +110,26 @@ describe("trust fetch source resolution", () => {
     expect(assertTrustTreeSafe(source.root)).toBe(source.root);
     expect(safeSourceRelative(source.root, join(source.root, "SKILL.md"))).toBe("SKILL.md");
     expect(localFileHash(skillPath)).toMatch(/^[a-f0-9]{64}$/);
+  });
+
+  it("recognizes first-party sources when root and source use different realpath aliases", () => {
+    const realRepo = join(dir, "real-repo");
+    const aliasRepo = join(dir, "alias-repo");
+    const skillDir = join(realRepo, "packs", "clean");
+    mkdirSync(skillDir, { recursive: true });
+    writeFileSync(join(skillDir, "SKILL.md"), "# Clean\n", "utf8");
+    try {
+      symlinkSync(realRepo, aliasRepo, process.platform === "win32" ? "junction" : "dir");
+    } catch {
+      return;
+    }
+
+    const source = resolveTrustSource("packs/clean", { root: aliasRepo });
+
+    if (source.kind !== "local") throw new Error("expected local source");
+    expect(source.root).toBe(realpathSync(skillDir));
+    expect(realpathSync(aliasRepo)).toBe(realpathSync(realRepo));
+    expect(isFirstPartySource(aliasRepo, source)).toBe(true);
   });
 
   it("resolves owner/repo sources and builds a quarantined, scrubbed fetch exec", () => {

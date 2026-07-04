@@ -36,6 +36,8 @@ export interface SkillInventoryRow {
   commit?: string;
   /** Skill pack from the lock entry, when the lock carries one for this name. */
   pack?: string;
+  /** True when the approval marks this a first-party (repo-relative local) skill. */
+  firstParty?: boolean;
   /** Committed card path from the lock entry, when the lock carries one for this name. */
   card?: string;
   /** Whether the card the lock entry references is present on disk. */
@@ -215,6 +217,7 @@ export function skillInventory(ctx: PlanContext): SkillInventory {
       source: entry.source,
       commit: entry.commit,
       pack: entry.pack,
+      firstParty: entry.firstParty,
       card: entry.card,
       cardPresent,
       ...(driftReason !== undefined ? { driftReason } : {}),
@@ -243,7 +246,8 @@ function provenanceNote(row: SkillInventoryRow): string {
   if (row.source === undefined) return `(${row.root})`;
   const commit = row.commit ? `@${row.commit.slice(0, 12)}` : "";
   const pack = row.pack ? ` · ${row.pack}` : "";
-  return `(${row.source}${commit}${pack} · ${row.root})`;
+  const firstParty = row.firstParty ? " · first-party" : "";
+  return `(${row.source}${commit}${pack}${firstParty} · ${row.root})`;
 }
 
 /** One inventory row, grouped by root — `<name>  [status]  (provenance)`. */

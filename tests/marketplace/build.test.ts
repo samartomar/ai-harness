@@ -177,6 +177,71 @@ describe("marketplace build — the packaged approval set", () => {
     expect(sums).not.toContain("SHA256SUMS");
   });
 
+  it("excludes first-party (commit 'local') skills, packaging only hostable ones", async () => {
+    // A hostable github skill (installed) + a first-party local skill (commit
+    // "local", deliberately NOT installed and with no card): the local one must be
+    // excluded BEFORE the installed/evidence checks, never packaged.
+    seedInstalled("hosted");
+    write(
+      "aih-skills.lock.json",
+      JSON.stringify({
+        schemaVersion: 1,
+        skills: [
+          {
+            name: "hosted",
+            source: `owner/repo@${PIN}`,
+            commit: PIN,
+            verdict: "GREEN",
+            scope: "repo",
+            card: `${CONTEXT_DIR}/skill-cards/hosted.json`,
+            evidenceSha256: sha(evidenceBody("hosted")),
+            approvedBy: "docs-platform",
+            approvedAt: "2026-01-01T00:00:00.000Z",
+          },
+          {
+            name: "fp-skill",
+            source: "packs/docs-quality/fp-skill",
+            commit: "local",
+            verdict: "GREEN",
+            scope: "repo",
+            card: `${CONTEXT_DIR}/skill-cards/fp-skill.json`,
+            evidenceSha256: "b".repeat(64),
+            approvedBy: "aih-maintainers",
+            approvedAt: "2026-01-01T00:00:00.000Z",
+          },
+        ],
+      }),
+    );
+
+    const manifest = manifestOf(await planOf(ctx()));
+    expect(manifest.skills.map((s) => s.name)).toEqual(["hosted"]);
+  });
+
+  it("does not error when every approved skill is first-party (empty artifact)", async () => {
+    write(
+      "aih-skills.lock.json",
+      JSON.stringify({
+        schemaVersion: 1,
+        skills: [
+          {
+            name: "fp-skill",
+            source: "packs/docs-quality/fp-skill",
+            commit: "local",
+            verdict: "GREEN",
+            scope: "repo",
+            card: `${CONTEXT_DIR}/skill-cards/fp-skill.json`,
+            evidenceSha256: "b".repeat(64),
+            approvedBy: "aih-maintainers",
+            approvedAt: "2026-01-01T00:00:00.000Z",
+          },
+        ],
+      }),
+    );
+
+    const manifest = manifestOf(await planOf(ctx()));
+    expect(manifest.skills).toEqual([]);
+  });
+
   it("is byte-identical across two plans from identical inputs (reproducible)", async () => {
     seedInstalled("alpha");
     seedInstalled("beta");

@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "packs": [
+    {
+      "name": "docs-quality",
+      "description": "First-party claim-first, evidence-grounded documentation skill (BetterDoc) — edits, reviews, and creates source-grounded docs with a bounded anti-slop lint that never overrides source truth.",
+      "skills": [
+        {
+          "name": "betterdoc",
+          "source": "packs/docs-quality/betterdoc",
+          "commit": "local"
+        }
+      ]
+    }
+  ]
+}
