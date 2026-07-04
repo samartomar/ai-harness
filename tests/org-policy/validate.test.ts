@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -5,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { PlanContext } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
 import type { Check } from "../../src/internals/verify.js";
-import { policyValidateCommand } from "../../src/org-policy/validate.js";
+import { policyValidateCommand, policyVerifyCommand } from "../../src/org-policy/validate.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 
 let dir: string;
@@ -46,6 +47,10 @@ function validPolicy(): string {
   })}\n`;
 }
 
+function sha256(text: string): string {
+  return createHash("sha256").update(text, "utf8").digest("hex");
+}
+
 function validBundle(overrides: Record<string, unknown> = {}): string {
   return `${JSON.stringify({
     schemaVersion: 1,
@@ -67,6 +72,16 @@ async function checks(c: PlanContext): Promise<Check[]> {
   const out: Check[] = [];
   for (const a of p.actions) {
     expect(a.kind).toBe("probe"); // read-only: probes only, nothing else (#35)
+    if (a.kind === "probe") out.push(await a.run(c));
+  }
+  return out;
+}
+
+async function verifyChecks(c: PlanContext): Promise<Check[]> {
+  const p = await policyVerifyCommand.plan(c);
+  const out: Check[] = [];
+  for (const a of p.actions) {
+    expect(a.kind).toBe("probe");
     if (a.kind === "probe") out.push(await a.run(c));
   }
   return out;
@@ -163,5 +178,66 @@ describe("policy validate — --bundle envelope mode", () => {
     expect(check?.verdict).toBe("fail");
     expect(check?.code).toBe("org-policy.bundle-invalid");
     expect(check?.detail).toContain("embedded org policy is invalid");
+  });
+});
+
+describe("policy verify — pinned policy integrity", () => {
+  it("passes when the active policy matches a pinned sha256", async () => {
+    const policy = validPolicy();
+    write("aih-org-policy.json", policy);
+    const [check] = await verifyChecks(ctx({ options: { against: sha256(policy) } }));
+
+    expect(check?.verdict).toBe("pass");
+    expect(check?.detail).toContain("matches pinned sha256");
+  });
+
+  it("fails closed when the pinned sha256 does not match", async () => {
+    write("aih-org-policy.json", validPolicy());
+    const [check] = await verifyChecks(ctx({ options: { against: "0".repeat(64) } }));
+
+    expect(check?.verdict).toBe("fail");
+    expect(check?.code).toBe("org-policy.drift");
+    expect(check?.detail).toContain("sha256 mismatch");
+  });
+
+  it("passes when the active policy semantically matches a policy-bundle envelope", async () => {
+    write("aih-org-policy.json", validPolicy());
+    write("org-bundle.json", validBundle());
+    const [check] = await verifyChecks(ctx({ options: { against: "org-bundle.json" } }));
+
+    expect(check?.verdict).toBe("pass");
+    expect(check?.detail).toContain("semantically matches policy bundle");
+  });
+
+  it("passes when the active policy matches a fleet-bundle policy copy", async () => {
+    const policy = validPolicy();
+    write("aih-org-policy.json", policy);
+    write("bundle/files/aih-org-policy.json", policy);
+    const [check] = await verifyChecks(ctx({ options: { against: "bundle" } }));
+
+    expect(check?.verdict).toBe("pass");
+    expect(check?.detail).toContain("matches bundled files/aih-org-policy.json");
+  });
+
+  it("honors AIH_ORG_POLICY as the active source during pin verification", async () => {
+    const override = validPolicy();
+    write(
+      "aih-org-policy.json",
+      JSON.stringify({
+        schemaVersion: 1,
+        minimumPosture: "vibe",
+        references: { repoContract: "ai-coding/project.json" },
+      }),
+    );
+    write("policies/org.json", override);
+    const [check] = await verifyChecks(
+      ctx({
+        env: { AIH_ORG_POLICY: "policies/org.json" },
+        options: { against: sha256(override) },
+      }),
+    );
+
+    expect(check?.verdict).toBe("pass");
+    expect(check?.detail).toContain("policies/org.json");
   });
 });

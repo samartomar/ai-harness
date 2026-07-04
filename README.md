@@ -21,7 +21,8 @@ agent skills — vet → approve → pack → marketplace → evidence — ancho
 committed approval lock (`aih-skills.lock.json`).
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the shipped architecture and
-current trust boundaries.
+current trust boundaries, and [docs/CONTROL_MATRIX.md](docs/CONTROL_MATRIX.md) for
+the claim -> implementation -> test proof map.
 
 > **Provided as open-source software under Apache-2.0 on an "AS IS" basis.** No warranty,
 > support obligation, SLA, indemnity, consulting, or professional advice is provided. `aih`
@@ -135,9 +136,9 @@ One honest line per command — the long-form behavior detail for every command 
 | [`aih skill`](docs/commands.md#aih-skill) | Govern the skill lifecycle — vet → approve → inventory → quarantine → remove — anchored in `aih-skills.lock.json`. |
 | [`aih pack`](docs/commands.md#aih-pack) | Curate committed sets of approved skills (`aih-packs.json`); every ref is cross-checked against the lock, fail-closed. |
 | [`aih marketplace`](docs/commands.md#aih-marketplace) | Build, validate, and publish a reproducible, verifiable distribution artifact from the approval lock — never a registry. |
-| [`aih policy`](docs/commands.md#aih-policy) | Validate the committed org policy — or a policy-bundle envelope — as a read-only CI gate. |
-| [`aih evidence`](docs/commands.md#aih-evidence) | Package the audit trail aih already emits (locks, cards, vet evidence, run logs) into one deterministic evidence bundle. |
-| [`aih bundle`](docs/commands.md#aih-bundle) | Build a deterministic fleet bundle (contract + policy + config) with checksums; `aih verify-bundle` re-checks any copy. |
+| [`aih policy`](docs/commands.md#aih-policy) | Validate the committed org policy or verify the active policy against a pinned hash/bundle. |
+| [`aih evidence`](docs/commands.md#aih-evidence) | Package the audit trail aih already emits into one deterministic evidence bundle with a harness provenance block. |
+| [`aih bundle`](docs/commands.md#aih-bundle) | Build a deterministic fleet bundle with checksums; `aih verify-bundle --require-signature` turns missing/unverifiable signatures into failures. |
 | [`aih verify-release`](docs/commands.md#aih-verify-release) | Verify a published aih release: npm signatures, GitHub release cosign bundle, and tarball hash. |
 | [`aih secrets`](docs/commands.md#aih-secrets) | Scan for plaintext `.env*`/`secrets/` and write agent deny rules; `--verify` is the secret-scan CI gate. |
 | [`aih guardrails`](docs/commands.md#aih-guardrails) | Generate `.gitleaks.toml`, `.pre-commit-config.yaml`, and a CI license gate that blocks AGPL/strong-copyleft. |

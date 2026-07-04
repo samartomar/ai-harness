@@ -435,6 +435,7 @@ describe("Check.code — invariants", () => {
       "org-policy.drift": true,
       "org-policy.invalid": true,
       "org-policy.bundle-invalid": true,
+      "bundle.signature": true,
       "report.context-over-budget": true,
       "report.low-adoption": true,
       "report.contract-untrue": true,

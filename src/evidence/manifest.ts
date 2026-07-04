@@ -51,12 +51,28 @@ export const EvidenceArtifactSchema = z
   })
   .strict();
 
+export const EvidenceHarnessSchema = z
+  .object({
+    aihVersion: z.string().min(1),
+    releaseTag: z.string().min(1),
+    releaseCommit: z.string().min(1),
+    packageName: z.string().min(1),
+    tarballSha256: z.string().min(1),
+    checksumFile: z.string().min(1),
+    cosignBundle: z.string().min(1),
+    npmProvenance: z.enum(["not-checked", "verified", "unverified", "unknown"]),
+    verificationCommand: z.string().min(1),
+  })
+  .strict();
+
 export const EvidenceBundleSchema = z
   .object({
     schemaVersion: z.literal(1),
     artifacts: z.array(EvidenceArtifactSchema),
+    harness: EvidenceHarnessSchema.optional(),
   })
   .strict();
 
 export type EvidenceArtifact = z.infer<typeof EvidenceArtifactSchema>;
+export type EvidenceHarness = z.infer<typeof EvidenceHarnessSchema>;
 export type EvidenceBundle = z.infer<typeof EvidenceBundleSchema>;

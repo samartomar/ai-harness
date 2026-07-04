@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { ALL_COMMANDS } from "../../src/commands/index.js";
+import { ALL_COMMAND_SPECS } from "../../src/commands/index.js";
 import type { PlanContext } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
@@ -63,7 +63,7 @@ function ctxWithRecorder(recorded: string[][]): PlanContext {
 describe("plan() purity — no arbitrary exec during dry-run (#35)", () => {
   it("every command's plan(ctx) only execs read-only, allowlisted binaries", async () => {
     const violations: string[] = [];
-    for (const spec of ALL_COMMANDS) {
+    for (const spec of ALL_COMMAND_SPECS) {
       const recorded: string[][] = [];
       const ctx = ctxWithRecorder(recorded);
       try {

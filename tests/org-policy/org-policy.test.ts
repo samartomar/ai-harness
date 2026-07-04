@@ -5,7 +5,11 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { PlanContext, WriteAction } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
 import { composeOrgPolicy } from "../../src/org-policy/compose.js";
-import { orgPolicyDriftProbes } from "../../src/org-policy/drift.js";
+import {
+  orgPolicyDriftProbes,
+  orgPolicyIntegrityDigest,
+  orgPolicyIntegrityProbes,
+} from "../../src/org-policy/drift.js";
 import { orgPolicyProjectionActions } from "../../src/org-policy/project.js";
 import { parseOrgPolicy, readOrgPolicy } from "../../src/org-policy/schema.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
@@ -325,5 +329,84 @@ describe("orgPolicyDriftProbes", () => {
       "org-policy drift: managed-settings.json.example",
     );
     expect(probes.map((p) => p.describe)).toContain("org-policy drift: managed-mcp.json.example");
+  });
+});
+
+describe("orgPolicyIntegrityProbes", () => {
+  function writePolicy(value: Record<string, unknown>): string {
+    const raw = JSON.stringify(value);
+    writeFileSync(join(dir, "aih-org-policy.json"), raw);
+    return raw;
+  }
+
+  it("flags AIH_ORG_POLICY env overrides prominently at enterprise posture", async () => {
+    writeFileSync(join(dir, "override.json"), JSON.stringify(policy()));
+    const c: PlanContext = {
+      ...ctx(),
+      posture: "enterprise",
+      env: { AIH_ORG_POLICY: "override.json" },
+    };
+    const check = await orgPolicyIntegrityProbes(c)
+      .find((p) => p.describe === "org-policy source")
+      ?.run(c);
+
+    expect(check?.verdict).toBe("fail");
+    expect(check?.code).toBe("org-policy.drift");
+    expect(check?.detail).toContain("AIH_ORG_POLICY env override");
+  });
+
+  it("downgrades env override visibility to warning-only at team posture", async () => {
+    writeFileSync(join(dir, "override.json"), JSON.stringify(policy()));
+    const c: PlanContext = { ...ctx(), posture: "team", env: { AIH_ORG_POLICY: "override.json" } };
+    const check = await orgPolicyIntegrityProbes(c)
+      .find((p) => p.describe === "org-policy source")
+      ?.run(c);
+
+    expect(check?.verdict).toBe("pass");
+    expect(check?.detail).toContain("warning-only (team posture)");
+  });
+
+  it("flags working-tree policy drift from HEAD", async () => {
+    const head = JSON.stringify(policy({ minimumPosture: "team" }));
+    writePolicy(policy({ minimumPosture: "enterprise" }));
+    const run = fakeRunner((argv) => {
+      if (argv[0] === "git" && argv.includes(`HEAD:aih-org-policy.json`)) {
+        return { code: 0, stdout: head };
+      }
+      return undefined;
+    });
+    const c: PlanContext = {
+      ...ctx(),
+      posture: "enterprise",
+      run,
+      host: makeHostAdapter({ platform: "linux", run, env: {} }),
+    };
+    const check = await orgPolicyIntegrityProbes(c)
+      .find((p) => p.describe === "org-policy HEAD drift")
+      ?.run(c);
+
+    expect(check?.verdict).toBe("fail");
+    expect(check?.code).toBe("org-policy.drift");
+    expect(check?.detail).toContain("differs from HEAD");
+  });
+
+  it("emits a report digest when policy integrity has a visible signal", async () => {
+    writePolicy(policy());
+    const run = fakeRunner((argv) => {
+      if (argv[0] === "git" && argv.includes(`HEAD:aih-org-policy.json`)) {
+        return { code: 0, stdout: JSON.stringify(policy()) };
+      }
+      return undefined;
+    });
+    const c: PlanContext = {
+      ...ctx(),
+      run,
+      host: makeHostAdapter({ platform: "linux", run, env: {} }),
+    };
+    const digest = await orgPolicyIntegrityDigest(c);
+
+    expect(digest?.describe).toContain("Org policy integrity");
+    expect(digest?.text).toContain("org-policy source");
+    expect(digest?.text).toContain("org-policy HEAD drift");
   });
 });

@@ -14,6 +14,8 @@ that carry their own status line.
   command surface. Shipped.
 - [ARCHITECTURE.md](ARCHITECTURE.md) — shipped component map, data boundaries, and
   write/remote-mutation model.
+- [CONTROL_MATRIX.md](CONTROL_MATRIX.md) — public claim -> implementation -> test
+  map, including posture grading and offline/no-default-phone-home boundaries.
 - [THREAT_MODEL.md](THREAT_MODEL.md) — supported actors, assets, trust boundaries, and
   fail-closed expectations.
 - [ENTERPRISE_ONBOARDING.md](ENTERPRISE_ONBOARDING.md) — enterprise rollout checklist,

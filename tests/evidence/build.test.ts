@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { sha256Hex, verifyBundleChecksums } from "../../src/bundle/index.js";
 import { evidenceBuildCommand } from "../../src/evidence/build.js";
 import { EvidenceBundleSchema } from "../../src/evidence/manifest.js";
+import { executePlan } from "../../src/internals/execute.js";
 import type {
   DigestAction,
   ExecAction,
@@ -14,6 +15,7 @@ import type {
 import { fakeRunner } from "../../src/internals/proc.js";
 import { jsonFile } from "../../src/internals/render.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
+import { PACKAGE_NAME, VERSION } from "../../src/version.js";
 
 let dir: string;
 beforeEach(() => {
@@ -79,6 +81,13 @@ describe("evidence build — kind index", () => {
     expect(indexWrite).toBeDefined();
     const index = EvidenceBundleSchema.parse(indexWrite?.json);
     expect(index.schemaVersion).toBe(1);
+    expect(index.harness).toMatchObject({
+      aihVersion: VERSION,
+      releaseTag: `v${VERSION}`,
+      packageName: PACKAGE_NAME,
+      verificationCommand: `aih verify-release ${VERSION}`,
+      npmProvenance: "not-checked",
+    });
 
     const byPath = new Map(index.artifacts.map((a) => [a.path, a]));
     expect(byPath.get("aih-skills.lock.json")?.kind).toBe("skills-lock");
@@ -130,6 +139,12 @@ describe("evidence build — kind index", () => {
     ]);
     const index = EvidenceBundleSchema.parse(out[".aih/evidence-bundle/evidence.json"]?.json);
     expect(index.artifacts).toEqual([]);
+    expect(index.harness?.checksumFile).toContain(`v${VERSION}/SHA256SUMS.txt`);
+  });
+
+  it("keeps older evidence indexes without a harness block valid", () => {
+    const old = EvidenceBundleSchema.parse({ schemaVersion: 1, artifacts: [] });
+    expect(old.harness).toBeUndefined();
   });
 
   it("refuses hostile directory-entry names instead of composing paths from them", async () => {
@@ -217,6 +232,55 @@ describe("evidence build — signing and digest", () => {
     expect(ghExec?.allowFailure).toBe(true);
   });
 
+  it("makes signing strict under enterprise posture or --require-signature", async () => {
+    seedAllKinds();
+    const enterprise = await evidenceBuildCommand.plan(
+      ctx({ posture: "enterprise", options: { sign: "cosign" } }),
+    );
+    const strictExec = enterprise.actions.find((a): a is ExecAction => a.kind === "exec");
+    expect(strictExec?.argv[0]).toBe("cosign");
+    expect(strictExec?.allowFailure).toBe(false);
+
+    const required = await evidenceBuildCommand.plan(
+      ctx({ options: { sign: "gh", requireSignature: true } }),
+    );
+    const ghExec = required.actions.find((a): a is ExecAction => a.kind === "exec");
+    expect(ghExec?.argv.slice(0, 3)).toEqual(["gh", "attestation", "sign"]);
+    expect(ghExec?.allowFailure).toBe(false);
+  });
+
+  it("emits a coded verification failure when strict signing is requested without a signer", async () => {
+    const c = ctx({ options: { requireSignature: true }, verify: true });
+    const result = await executePlan(await evidenceBuildCommand.plan(c), c);
+    const check = result.report?.checks.find((item) => item.name === "evidence bundle signature");
+
+    expect(result.report?.ok).toBe(false);
+    expect(check?.verdict).toBe("fail");
+    expect(check?.code).toBe("bundle.signature");
+  });
+
+  it("records a coded failure when strict signing exec fails", async () => {
+    seedAllKinds();
+    const run = fakeRunner((argv) =>
+      argv[0] === "cosign" ? { code: 1, stderr: "signing refused" } : undefined,
+    );
+    const c = ctx({
+      apply: true,
+      verify: true,
+      run,
+      host: makeHostAdapter({ platform: "linux", run, env: {} }),
+      posture: "enterprise",
+      options: { sign: "cosign" },
+    });
+    const result = await executePlan(await evidenceBuildCommand.plan(c), c);
+    const check = result.report?.checks.find((item) => item.name === "evidence bundle signature");
+
+    expect(result.execs.find((item) => item.argv[0] === "cosign")?.ok).toBe(false);
+    expect(result.report?.ok).toBe(false);
+    expect(check?.code).toBe("bundle.signature");
+    expect(check?.detail).toContain("signing refused");
+  });
+
   it("summarizes per-kind counts and the verify-bundle hint in the digest", async () => {
     seedAllKinds();
     const p = await evidenceBuildCommand.plan(ctx());
@@ -225,5 +289,6 @@ describe("evidence build — signing and digest", () => {
     expect(d?.text).toContain("- skill-card  2 file(s)");
     expect(d?.text).toContain("- report  2 file(s)");
     expect(d?.text).toContain("aih verify-bundle --bundle .aih/evidence-bundle");
+    expect(d?.data).toMatchObject({ harness: { aihVersion: VERSION } });
   });
 });

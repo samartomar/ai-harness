@@ -411,6 +411,13 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     action:
       "Re-issue the policy bundle so BOTH layers parse — the envelope (schemaVersion 1, bundleVersion, issuer, ISO-8601 issuedAt) and the embedded org policy. `aih policy validate --bundle <path>` names the failing layer; do not distribute the bundle until it validates.",
   },
+  "bundle.signature": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "bundle signature missing or unverifiable",
+    action:
+      "Sign the bundle checksums (`aih bundle --sign cosign|gh --apply` or `aih evidence build --sign cosign|gh --apply`) and verify with `aih verify-bundle --bundle <dir> --require-signature` (add `--signer gh --repo <owner/repo>` for GitHub attestations). A missing signature, missing verifier tool, or failed verification leaves provenance unproven in gated environments.",
+  },
   "report.contract-untrue": {
     audience: "developer",
     failSeverity: "degraded",

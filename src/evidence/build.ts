@@ -9,10 +9,12 @@ import {
   type Plan,
   type PlanContext,
   plan,
+  probe,
   writeJson,
   writeText,
 } from "../internals/plan.js";
 import { ensureTrailingNewline, lines } from "../internals/render.js";
+import type { Check } from "../internals/verify.js";
 import { RUNS_DIR } from "../logging/run-log.js";
 import { AIH_PACKS_FILE } from "../pack/manifest.js";
 import { REPORTS_DIR } from "../report/index.js";
@@ -20,11 +22,13 @@ import { EVIDENCE_DIR } from "../skill/approve.js";
 import { skillCardsDir } from "../skill/card.js";
 import { AIH_SKILLS_LOCK_FILE } from "../skill/lockfile.js";
 import { TRUST_LOCK_FILE } from "../trust/lock.js";
+import { PACKAGE_NAME, REPO, VERSION } from "../version.js";
 import {
   DEFAULT_EVIDENCE_OUT,
   EVIDENCE_FILE,
   EVIDENCE_KINDS,
   type EvidenceBundle,
+  type EvidenceHarness,
   type EvidenceKind,
 } from "./manifest.js";
 
@@ -202,13 +206,55 @@ function buildText(out: string, artifacts: readonly DiscoveredArtifact[]): strin
   );
 }
 
+function requireSignature(ctx: PlanContext): boolean {
+  return ctx.posture === "enterprise" || ctx.options.requireSignature === true;
+}
+
+function missingSignatureCheck(out: string): Check {
+  return {
+    name: "evidence bundle signature",
+    verdict: "fail",
+    code: "bundle.signature",
+    detail:
+      `enterprise evidence requires --sign cosign|gh (or --require-signature was set); ` +
+      `no signer was configured for ${out}`,
+  };
+}
+
+function releaseUrl(version: string): string {
+  return `https://github.com/${REPO}/releases/download/v${version}`;
+}
+
+function harnessBlock(ctx: PlanContext): EvidenceHarness {
+  const version = VERSION;
+  const tag = `v${version}`;
+  const base = releaseUrl(version);
+  const releaseCommit =
+    typeof ctx.env.GITHUB_SHA === "string" && ctx.env.GITHUB_SHA.trim().length > 0
+      ? ctx.env.GITHUB_SHA.trim()
+      : `resolved by release tag ${tag}`;
+  return {
+    aihVersion: version,
+    releaseTag: tag,
+    releaseCommit,
+    packageName: PACKAGE_NAME,
+    tarballSha256: `${base}/SHA256SUMS.txt entry for aihq-harness-${version}.tgz`,
+    checksumFile: `${base}/SHA256SUMS.txt`,
+    cosignBundle: `${base}/SHA256SUMS.txt.sigstore.json`,
+    npmProvenance: "not-checked",
+    verificationCommand: `aih verify-release ${version}`,
+  };
+}
+
 function evidenceBuildPlan(ctx: PlanContext): Plan {
   const out = optionString(ctx, "out") ?? DEFAULT_EVIDENCE_OUT;
   const external = isAbsolute(out);
   const artifacts = discoverArtifacts(ctx);
+  const strictSignature = requireSignature(ctx);
 
   const index: EvidenceBundle = {
     schemaVersion: 1,
+    harness: harnessBlock(ctx),
     artifacts: artifacts.map((artifact) => ({
       kind: artifact.kind,
       path: artifact.rel,
@@ -239,13 +285,19 @@ function evidenceBuildPlan(ctx: PlanContext): Plan {
     writeText(bundlePath(out, CHECKSUMS_FILE), sums, "evidence bundle SHA256SUMS", { external }),
     writeJson(bundlePath(out, EVIDENCE_FILE), index, "evidence kind index", { external }),
   );
-  const sign = signAction(out, ctx.options.sign, "evidence bundle");
+  const sign = signAction(out, ctx.options.sign, "evidence bundle", {
+    allowFailure: !strictSignature,
+  });
   if (sign) actions.push(sign);
+  if (strictSignature && sign === undefined) {
+    actions.push(probe("evidence bundle signature", () => missingSignatureCheck(out)));
+  }
   actions.push(
     digest("evidence build", buildText(out, artifacts), {
       out,
       counts: { artifacts: artifacts.length },
       artifacts: index.artifacts,
+      harness: index.harness,
     }),
   );
   return plan("evidence build", ...actions);
@@ -263,8 +315,13 @@ export const evidenceBuildCommand: CommandSpec = {
     },
     {
       flags: "--sign <signer>",
-      description: "optional SHA256SUMS signer: cosign | gh (best-effort, the fleet-bundle idiom)",
+      description: "optional SHA256SUMS signer: cosign | gh",
+    },
+    {
+      flags: "--require-signature",
+      description: "fail when the evidence bundle cannot be signed (implied at enterprise posture)",
     },
   ],
+  alwaysVerify: true,
   plan: evidenceBuildPlan,
 };

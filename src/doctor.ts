@@ -16,7 +16,7 @@ import {
 } from "./internals/plan.js";
 import { canonLintCheck } from "./lint/run.js";
 import { mcpManagedAllowlistCheck } from "./mcp/allowlist.js";
-import { orgPolicyDriftProbes } from "./org-policy/drift.js";
+import { orgPolicyDriftProbes, orgPolicyIntegrityProbes } from "./org-policy/drift.js";
 import { resolveTargetSet } from "./report/cli-coverage.js";
 import { loadabilityFor, loadReason } from "./report/cli-loadability.js";
 import { scaleSafetyCheck } from "./scale-safety.js";
@@ -214,6 +214,7 @@ export const command: CommandSpec = {
       probe("VDI compatibility matrix", () => vdiCompatibilityCheck(ctx)),
       probe("MCP managed allowlist", () => mcpManagedAllowlistCheck(ctx)),
       probeMany("trust-lock local drift", (probeCtx) => trustLockLocalDriftChecks(probeCtx)),
+      ...orgPolicyIntegrityProbes({ ...ctx, contextDir }),
       ...orgPolicyDriftProbes({ ...ctx, contextDir }),
       probe("contract truth", () => contractTruthCheck(ctx)),
       // Usage-capture hook health: a committed hook that references an absent recorder

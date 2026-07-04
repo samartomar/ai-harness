@@ -6,6 +6,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-07-04
+
 ### Added
 
 - **`docs-quality` pack (BetterDoc)**: the first first-party pack — a claim-first,
@@ -13,6 +15,16 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `packs/docs-quality/betterdoc/` and installable via `aih pack install --pack
   docs-quality --apply`. Documented in
   [docs/product/docs-quality-pack.md](docs/product/docs-quality-pack.md). (#166)
+- **CONTROL_MATRIX.md** maps public claims to implementation seams and regression
+  tests, including posture grading and offline/no-default-phone-home boundaries.
+  (#160)
+- **Canonical command-spec registry proof** now enumerates grouped subcommands and
+  uses that registry in plan-purity and apply-time exec-locality tests. (#161)
+- **Evidence bundle harness provenance block** records aih version/release refs,
+  package name, checksum/signature asset references, npm provenance status, and the
+  verification command in `evidence.json`. (#162)
+- **`aih policy verify --against <sha256|bundle>`** verifies the active org policy
+  against a pinned hash, policy-bundle envelope, or fleet-bundle policy copy. (#163)
 
 ### Changed
 
@@ -21,6 +33,17 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   detector (SkillSpector/Cisco) no longer forces UNKNOWN for a repo-relative path,
   so first-party skills are approvable without Docker. Remote and out-of-repo
   sources are unchanged, and native RED plus shape/license rules still apply. (#166)
+- **Repo agent canon** now loads rule files on demand through a small dispatch map
+  and adds a tracking/done rule so issue linkage, milestone hygiene, and docs updates
+  are part of the repo's completion contract. (#170)
+
+### Security
+
+- Evidence and fleet-bundle signatures can now be required with
+  `--require-signature`; enterprise evidence builds fail closed on missing or
+  failed signing with coded `bundle.signature` findings. (#162)
+- `aih doctor` and `aih report` surface active org-policy source, `AIH_ORG_POLICY`
+  overrides, and local HEAD drift as policy-integrity signals. (#163)
 
 ## [1.2.1] - 2026-07-03
 
@@ -542,7 +565,8 @@ GitHub but **never published to npm**; the first published release is 0.2.0.
   (npm + github-actions), private vulnerability reporting, `@claude` workflow gated
   to trusted authors, and GitHub Actions pinned to commit SHAs.
 
-[Unreleased]: https://github.com/samartomar/ai-harness/compare/v1.2.1...HEAD
+[Unreleased]: https://github.com/samartomar/ai-harness/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/samartomar/ai-harness/compare/v1.2.1...v1.3.0
 [1.2.1]: https://github.com/samartomar/ai-harness/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/samartomar/ai-harness/compare/v1.0.1...v1.2.0
 [1.0.1]: https://github.com/samartomar/ai-harness/compare/v1.0.0...v1.0.1

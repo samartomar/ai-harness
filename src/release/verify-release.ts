@@ -6,9 +6,8 @@ import { type CommandSpec, plan, probe } from "../internals/plan.js";
 import type { Check } from "../internals/verify.js";
 import { redactText } from "../support/redact.js";
 import { execArgv } from "../tools/install.js";
+import { PACKAGE_NAME, REPO } from "../version.js";
 
-const PACKAGE_NAME = "@aihq/harness";
-const REPO = "samartomar/ai-harness";
 type ReleasePlanContext = Parameters<CommandSpec["plan"]>[0];
 type VersionResolver = (ctx: ReleasePlanContext) => Promise<string | undefined>;
 

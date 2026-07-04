@@ -58,6 +58,7 @@ export type CheckCode =
   | "org-policy.drift"
   | "org-policy.invalid"
   | "org-policy.bundle-invalid"
+  | "bundle.signature"
   // report (analytics-derived advisories)
   | "report.context-over-budget"
   | "report.low-adoption"
