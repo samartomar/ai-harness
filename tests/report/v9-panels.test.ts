@@ -172,7 +172,7 @@ describe("mcpServersDigest", () => {
 
     expect(d?.text).toContain("policy-aware MCP catalog unavailable");
     expect(d?.text).not.toContain("No third-party egress.");
-    expect(data.catalogError).toContain("Invalid URL");
+    expect(data.catalogError).toContain("GITHUB_HOST must be an https origin");
     expect(data.servers).toEqual([["github", "unknown"]]);
     expect(data.thirdParty).toBeUndefined();
   });

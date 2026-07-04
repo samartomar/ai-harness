@@ -95,6 +95,10 @@ function egressLabel(egress: string | undefined): string {
   return "unknown";
 }
 
+function errorDetail(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 /** Configured MCP server names from this repo's `.mcp.json` (undefined when absent). */
 function configuredServerNames(root: string): string[] | undefined {
   const text = readIfExists(join(root, ".mcp.json"));
@@ -119,7 +123,24 @@ export function mcpServersDigest(ctx: PlanContext): DigestAction | undefined {
   if (names === undefined) return undefined;
   const stack = scanRepo(ctx.root, { maxDepth: 8, contextDir: ctx.contextDir });
   const catalogResult = policyAwareMcpCatalog(ctx, { scope: "local", stack });
-  const catalog = catalogResult.error === undefined ? (catalogResult.servers ?? {}) : {};
+  if (catalogResult.error !== undefined || catalogResult.servers === undefined) {
+    const catalogError =
+      catalogResult.error !== undefined ? errorDetail(catalogResult.error) : "missing catalog";
+    const servers: Array<[string, string]> = names.map((n) => [n, "unknown"]);
+    const body = lines(
+      `MCP servers configured in .mcp.json (${servers.length}); egress per server:`,
+      "",
+      ...servers.map(([n, e]) => `  · ${n}  (${e})`),
+      "",
+      `  policy-aware MCP catalog unavailable: ${catalogError}`,
+      "  Refusing to assert third-party egress status until policy/catalog input is valid.",
+    );
+    return digest(`MCP servers — ${servers.length} configured, catalog unavailable`, body, {
+      servers,
+      catalogError,
+    });
+  }
+  const catalog = catalogResult.servers;
   const servers: Array<[string, string]> = names.map((n) => {
     const entry = catalog[n] as { egress?: string } | undefined;
     return [n, egressLabel(entry?.egress)];
