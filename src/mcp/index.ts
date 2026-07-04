@@ -283,6 +283,7 @@ function mcpGuidanceDoc(e: CliEntry, serverNames: string[]): string {
 }
 
 async function planMcp(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
+  const githubAuth = githubAuthOption(ctx.options.githubAuth);
   const mode = String(ctx.options.mode ?? "standard");
   if (mode === "none") return planMcpNone(ctx);
   if (mode === "offline") return planMcpOffline(ctx);
@@ -293,7 +294,6 @@ async function planMcp(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
   const { clis } = await resolveTargets(ctx);
   const scope = String(ctx.options.scope ?? "project");
   const selfHost = ctx.options.selfHost === true;
-  const githubAuth = githubAuthOption(ctx.options.githubAuth);
   const stack = scanRepo(ctx.root, { maxDepth: 8, contextDir: ctx.contextDir });
   const actions: Action[] = [];
   const catalog = policyAwareMcpCatalog(ctx, { scope, selfHost, githubAuth, stack });

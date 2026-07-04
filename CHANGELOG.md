@@ -17,7 +17,9 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Hosted GitHub MCP auth**: `aih mcp --github-auth token` now keeps the hosted
   GitHub endpoint but emits `credentials:"token"` plus an `Authorization` header
   sourced from `${GITHUB_PERSONAL_ACCESS_TOKEN}`, giving non-DCR MCP clients a
-  Docker-free path without writing token values into config. (#179)
+  Docker-optional path without writing token values into config. Token mode
+  ignores ambient `GITHUB_HOST`; non-default endpoints must come from committed
+  incumbent org policy. (#179)
 
 ## [1.3.0] - 2026-07-04
 

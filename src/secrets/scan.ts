@@ -137,6 +137,11 @@ function isPlaceholderOrEmpty(value: string): boolean {
   );
 }
 
+function isBearerPlaceholder(value: string): boolean {
+  const m = /^Bearer\s+(.+)$/i.exec(value.trim());
+  return m?.[1] !== undefined && isPlaceholderOrEmpty(m[1]);
+}
+
 /** First provider token shape that matches `value`, if any. */
 function matchProvider(value: string): string | undefined {
   return TOKEN_PATTERNS.find((p) => p.re.test(value))?.kind;
@@ -152,6 +157,14 @@ function walkJson(node: unknown, key: string, file: string, hits: ConfigSecretHi
     const provider = matchProvider(node);
     if (provider !== undefined) {
       hits.push({ file, key, kind: provider });
+      return;
+    }
+    if (
+      key.toLowerCase() === "authorization" &&
+      /^Bearer\s+\S+/i.test(node.trim()) &&
+      !isBearerPlaceholder(node)
+    ) {
+      hits.push({ file, key, kind: "authorization bearer literal" });
       return;
     }
     if (

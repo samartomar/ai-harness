@@ -48,6 +48,17 @@ export function githubIsIncumbent(
   return incumbentHosts.has(githubHostName(githubHost));
 }
 
+function configuredGitHubHostForAuth(
+  ctx: PlanContext,
+  policy: OrgPolicy | undefined,
+  auth: GithubMcpAuth,
+): string | undefined {
+  if (auth !== "token") return configuredGitHubHost(ctx, policy);
+  const policyHost = policy?.mcp?.githubHost;
+  if (policyHost !== undefined && githubIsIncumbent(policy, policyHost)) return policyHost;
+  return undefined;
+}
+
 export function removeDisabledServers(
   servers: Record<string, McpServer>,
   policy: OrgPolicy | undefined,
@@ -80,11 +91,14 @@ export function policyAwareMcpCatalog(
       opts.selfHost !== true &&
       opts.includeHostedGitHub !== false &&
       (includeDisabled || !githubDisabled);
+    const githubAuth = opts.githubAuth ?? "oauth";
     const githubHost =
-      hostedGithub && !githubDisabled ? configuredGitHubHost(ctx, policyResult.policy) : undefined;
+      hostedGithub && !githubDisabled
+        ? configuredGitHubHostForAuth(ctx, policyResult.policy, githubAuth)
+        : undefined;
     const rawServers = mcpServers(opts.scope, stack, {
       selfHost: opts.selfHost,
-      githubAuth: opts.githubAuth,
+      githubAuth,
       githubHost,
       githubIncumbent: hostedGithub
         ? githubIsIncumbent(policyResult.policy, githubHost)

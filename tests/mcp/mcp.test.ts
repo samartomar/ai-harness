@@ -764,11 +764,9 @@ describe("aih mcp — per-CLI config (honors --cli)", () => {
     const envExample = writes.find((w) => w.path === ".env.example");
 
     expect(codex?.contents).toContain('[mcp_servers."github"]');
-    expect(codex?.contents).toContain(
-      'bearer_token_env_var = "GITHUB_PERSONAL_ACCESS_TOKEN"',
-    );
-    expect(codex?.contents).not.toContain("[mcp_servers.\"github\".headers]");
-    expect(codex?.contents).not.toContain("Bearer ${GITHUB_PERSONAL_ACCESS_TOKEN}");
+    expect(codex?.contents).toContain('bearer_token_env_var = "GITHUB_PERSONAL_ACCESS_TOKEN"');
+    expect(codex?.contents).not.toContain('[mcp_servers."github".headers]');
+    expect(codex?.contents).not.toContain("Bearer $" + "{GITHUB_PERSONAL_ACCESS_TOKEN}");
     expect(envExample?.contents).toContain("GITHUB_PERSONAL_ACCESS_TOKEN=");
   });
 

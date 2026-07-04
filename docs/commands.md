@@ -309,7 +309,8 @@ the enterprise gate. `GITHUB_HOST` may supply the same https origin when no poli
 GitHub auth defaults to `--github-auth oauth`, which works for clients with a registered OAuth
 app; use `--github-auth token` for clients that need a PAT-backed `Authorization` header. The token
 value is never written into MCP config — the header references `${GITHUB_PERSONAL_ACCESS_TOKEN}`
-and `.env.example` documents only that placeholder.
+and `.env.example` documents only that placeholder. Token auth ignores ambient `GITHUB_HOST`;
+non-default hosted GitHub MCP endpoints must come from committed org policy and incumbent hosts.
 
 ## aih sandbox
 

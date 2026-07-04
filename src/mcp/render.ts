@@ -94,6 +94,24 @@ function tomlArray(items: string[]): string {
   return `[${items.map(tomlStr).join(", ")}]`;
 }
 
+function envRef(value: string): string | undefined {
+  const trimmed = value.trim();
+  return (
+    /^\$\{([A-Za-z_][A-Za-z0-9_]*)\}$/.exec(trimmed)?.[1] ??
+    /^\$([A-Za-z_][A-Za-z0-9_]*)$/.exec(trimmed)?.[1] ??
+    /^%([A-Za-z_][A-Za-z0-9_]*)%$/.exec(trimmed)?.[1]
+  );
+}
+
+function bearerTokenEnv(headers: Readonly<Record<string, string>>): string | undefined {
+  for (const [key, value] of Object.entries(headers)) {
+    if (key.toLowerCase() !== "authorization") continue;
+    const match = /^Bearer\s+(.+)$/i.exec(value.trim());
+    if (match?.[1]) return envRef(match[1]);
+  }
+  return undefined;
+}
+
 /**
  * Render the server map as Codex `config.toml` `[mcp_servers."name"]` tables (no
  * markers — {@link upsertTextBlock} wraps these in the aih-managed region). The
@@ -120,10 +138,29 @@ export function mcpTomlBody(servers: Record<string, McpServer>): string {
       }
       const out = [head, `url = ${tomlStr(s.url)}`];
       if (s.headers) {
-        out.push(`\n[mcp_servers.${tomlStr(name)}.headers]`);
+        const bearerEnv = bearerTokenEnv(s.headers);
+        if (bearerEnv !== undefined) out.push(`bearer_token_env_var = ${tomlStr(bearerEnv)}`);
+        const envHeaders: Record<string, string> = {};
+        const staticHeaders: Record<string, string> = {};
         for (const [k, v] of Object.entries(s.headers)) {
-          const key = /^[A-Za-z0-9_-]+$/.test(k) ? k : tomlStr(k);
-          out.push(`${key} = ${tomlStr(v)}`);
+          if (bearerEnv !== undefined && k.toLowerCase() === "authorization") continue;
+          const env = envRef(v);
+          if (env !== undefined) envHeaders[k] = env;
+          else staticHeaders[k] = v;
+        }
+        if (Object.keys(envHeaders).length > 0) {
+          out.push(`\n[mcp_servers.${tomlStr(name)}.env_http_headers]`);
+          for (const [k, v] of Object.entries(envHeaders)) {
+            const key = /^[A-Za-z0-9_-]+$/.test(k) ? k : tomlStr(k);
+            out.push(`${key} = ${tomlStr(v)}`);
+          }
+        }
+        if (Object.keys(staticHeaders).length > 0) {
+          out.push(`\n[mcp_servers.${tomlStr(name)}.http_headers]`);
+          for (const [k, v] of Object.entries(staticHeaders)) {
+            const key = /^[A-Za-z0-9_-]+$/.test(k) ? k : tomlStr(k);
+            out.push(`${key} = ${tomlStr(v)}`);
+          }
         }
       }
       return out.join("\n");
