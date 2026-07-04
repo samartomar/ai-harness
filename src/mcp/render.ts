@@ -135,12 +135,17 @@ export function mcpConfigAbs(home: string, configPath: string): string {
 /**
  * Matches a top-level Codex `[mcp_servers.NAME]` table header — a quoted key OR a
  * bare dotted-key segment — but NOT a sub-table like `[mcp_servers.x.env]` (the name
- * must be the last segment before `]`). Capture group 1 = quoted name, 2 = bare name.
+ * must be the last segment before `]`).
  */
-const TOML_SERVER_HEADER = /^[ \t]*\[mcp_servers\.(?:"([^"]+)"|([^.\]"]+))\][ \t]*(?:#.*)?$/gm;
+const TOML_SERVER_HEADER =
+  /^[ \t]*\[mcp_servers\.(?:"([^"]+)"|'([^']+)'|([^.\]'"]+))\][ \t]*(?:#.*)?$/gm;
 const TOML_TABLE_HEADER = /^[ \t]*\[/;
 const TOML_MCP_TREE_HEADER =
-  /^[ \t]*\[mcp_servers\.(?:"([^"]+)"|([^.\]"]+))(?:\.[^\]]+)?\][ \t]*(?:#.*)?$/;
+  /^[ \t]*\[mcp_servers\.(?:"([^"]+)"|'([^']+)'|([^.\]'"]+))(?:\.[^\]]+)?\][ \t]*(?:#.*)?$/;
+
+function tomlHeaderName(match: RegExpMatchArray): string {
+  return match[1] ?? match[2] ?? match[3] ?? "";
+}
 
 /** Count direct `[mcp_servers.NAME]` server tables (ignores `.env`/sub-tables). */
 export function tomlServerCount(raw: string): number {
@@ -157,7 +162,7 @@ export function tomlServerCount(raw: string): number {
 export function existingMcpTomlNames(existing: string, scope: string): Set<string> {
   const outside = removeManagedBlock(existing, scope);
   const names = new Set<string>();
-  for (const m of outside.matchAll(TOML_SERVER_HEADER)) names.add(m[1] ?? m[2] ?? "");
+  for (const m of outside.matchAll(TOML_SERVER_HEADER)) names.add(tomlHeaderName(m));
   return names;
 }
 
@@ -179,7 +184,7 @@ export function removeMcpTomlServers(existing: string, names: readonly string[])
     }
     const mcpHeader = TOML_MCP_TREE_HEADER.exec(line);
     if (mcpHeader !== null) {
-      removing = disabled.has(mcpHeader[1] ?? mcpHeader[2] ?? "");
+      removing = disabled.has(tomlHeaderName(mcpHeader));
     } else if (TOML_TABLE_HEADER.test(line)) {
       removing = false;
     }

@@ -783,7 +783,7 @@ describe("aih mcp — per-CLI config (honors --cli)", () => {
       "[mcp_servers.'github']",
       'url = "https://api.githubcopilot.com/mcp/"',
       "",
-      "[mcp_servers.'context7'].env",
+      "[mcp_servers.'context7'.env]",
       'TOKEN = "${CONTEXT7_API_KEY}"',
       "",
       "[mcp_servers.local]",
