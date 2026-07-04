@@ -142,7 +142,12 @@ describe("governanceRollupDigest", () => {
     const summary = mcpGovernanceSummary(ctx({ posture: "enterprise" }), "enterprise");
 
     expect(summary.denied.map((p) => p.name)).toContain("github");
-    expect(summary.denied.map((p) => p.name)).not.toContain("context7");
+    expect(summary.denied).toContainEqual(
+      expect.objectContaining({
+        name: "context7",
+        reason: expect.stringContaining("disabled by org policy"),
+      }),
+    );
     expect(summary.allowed).not.toContain("github");
   });
 

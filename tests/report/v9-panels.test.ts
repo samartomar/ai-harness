@@ -113,8 +113,9 @@ describe("driftDigest", () => {
 
 interface ServerData {
   servers: Array<[string, string]>;
-  thirdParty: number;
+  thirdParty?: number;
   catalogError?: string;
+  policyDisabled?: string[];
 }
 
 describe("mcpServersDigest", () => {
@@ -160,8 +161,9 @@ describe("mcpServersDigest", () => {
     const data = mcpServersDigest(ctx())?.data as ServerData;
 
     expect(data.servers).toContainEqual(["github", "third-party"]);
-    expect(data.servers).toContainEqual(["context7", "unknown"]);
-    expect(data.thirdParty).toBe(1);
+    expect(data.servers).toContainEqual(["context7", "third-party"]);
+    expect(data.policyDisabled).toEqual(["context7"]);
+    expect(data.thirdParty).toBe(2);
   });
 
   it("fails closed instead of claiming no third-party egress when the catalog fails", () => {

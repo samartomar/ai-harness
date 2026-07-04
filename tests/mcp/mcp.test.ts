@@ -606,17 +606,13 @@ describe("aih mcp — remote scope emits SSO gateway doc (cloud is doc, not writ
     expect(JSON.stringify(rbac?.json)).toContain("missing-server");
   });
 
-  it("turns malformed org-policy into a fail probe instead of crashing", async () => {
+  it("fails closed during planning when org-policy is malformed", async () => {
     const root = makeTmp();
     writeFileSync(join(root, "aih-org-policy.json"), "{ broken");
 
-    const p = await command.plan(makeCtx({ root, options: { scope: "remote" } }));
-    const probe = p.actions.find((a) => a.kind === "probe" && a.describe === "org-policy parse");
-    const check = probe?.kind === "probe" ? await probe.run(makeCtx({ root })) : undefined;
-
-    expect(check?.verdict).toBe("fail");
-    expect(check?.code).toBe("org-policy.drift");
-    expect(p.actions.some((a) => a.kind === "write")).toBe(false);
+    await expect(command.plan(makeCtx({ root, options: { scope: "remote" } }))).rejects.toThrow(
+      /aih-org-policy\.json cannot be parsed/,
+    );
   });
 
   it("BOUNDARY: no write or exec action targets a remote host — gateway/SSO is doc only", async () => {
@@ -968,6 +964,48 @@ describe("aih mcp — enterprise posture (governance gate, opt-in)", () => {
     const managedJson = JSON.stringify(managed?.json);
     expect(managedJson).toContain("code-review-graph@2.3.6");
     expect(managedJson).not.toContain("server-sequential-thinking");
+  });
+
+  it("replaces stale managed MCP allowlist entries during JSON merge", async () => {
+    const root = makeTmp();
+    mkdirSync(join(root, ".claude"), { recursive: true });
+    writeFileSync(
+      join(root, ".claude", "managed-settings.json"),
+      jsonFile({
+        localOnly: true,
+        allowManagedMcpServersOnly: true,
+        allowedMcpServers: [
+          { serverCommand: ["uvx", "code-review-graph@2.3.6", "serve"] },
+        ],
+      }),
+    );
+    writeFileSync(
+      join(root, "aih-org-policy.json"),
+      jsonFile({
+        schemaVersion: 1,
+        minimumPosture: "enterprise",
+        references: { repoContract: "ai-coding/project.json" },
+        mcp: {
+          allowedServers: ["code-review-graph", "sequential-thinking"],
+          allowManagedOnly: true,
+          disabledServers: ["code-review-graph"],
+        },
+      }),
+    );
+
+    const p = await command.plan(makeCtx({ root, options: { posture: "enterprise" } }));
+    const managed = p.actions.find(
+      (a): a is WriteAction => a.kind === "write" && a.path === ".claude/managed-settings.json",
+    );
+    if (managed === undefined) throw new Error("expected managed-settings write");
+    const merged = JSON.parse(
+      resolveContents(managed, join(root, ".claude", "managed-settings.json")),
+    ) as { localOnly?: boolean; allowedMcpServers?: unknown[] };
+    const allowlist = JSON.stringify(merged.allowedMcpServers);
+
+    expect(merged.localOnly).toBe(true);
+    expect(allowlist).toContain("server-sequential-thinking");
+    expect(allowlist).not.toContain("code-review-graph");
   });
 
   it("emits a governance doc + a policy probe that FAILS on the third-party context7 server", async () => {
