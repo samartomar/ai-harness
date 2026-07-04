@@ -137,6 +137,8 @@ export function mcpConfigAbs(home: string, configPath: string): string {
  * must be the last segment before `]`). Capture group 1 = quoted name, 2 = bare name.
  */
 const TOML_SERVER_HEADER = /^[ \t]*\[mcp_servers\.(?:"([^"]+)"|([^.\]"]+))\][ \t]*$/gm;
+const TOML_TABLE_HEADER = /^[ \t]*\[/;
+const TOML_MCP_TREE_HEADER = /^[ \t]*\[mcp_servers\.(?:"([^"]+)"|([^.\]"]+))(?:\.[^\]]+)?\][ \t]*$/;
 
 /** Count direct `[mcp_servers.NAME]` server tables (ignores `.env`/sub-tables). */
 export function tomlServerCount(raw: string): number {
@@ -155,4 +157,24 @@ export function existingMcpTomlNames(existing: string, scope: string): Set<strin
   const names = new Set<string>();
   for (const m of outside.matchAll(TOML_SERVER_HEADER)) names.add(m[1] ?? m[2] ?? "");
   return names;
+}
+
+export function removeMcpTomlServers(existing: string, names: readonly string[]): string {
+  const disabled = new Set(names);
+  if (disabled.size === 0 || existing.length === 0) return existing;
+  const usesCrlf = /\r\n/.test(existing);
+  const lines = existing.replace(/\r\n/g, "\n").split("\n");
+  const kept: string[] = [];
+  let removing = false;
+  for (const line of lines) {
+    const mcpHeader = TOML_MCP_TREE_HEADER.exec(line);
+    if (mcpHeader !== null) {
+      removing = disabled.has(mcpHeader[1] ?? mcpHeader[2] ?? "");
+    } else if (TOML_TABLE_HEADER.test(line)) {
+      removing = false;
+    }
+    if (!removing) kept.push(line);
+  }
+  const next = kept.join("\n");
+  return usesCrlf ? next.replace(/\n/g, "\r\n") : next;
 }

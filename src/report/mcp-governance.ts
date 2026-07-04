@@ -3,7 +3,6 @@ import { type DigestAction, digest, type PlanContext } from "../internals/plan.j
 import { lines } from "../internals/render.js";
 import { policyAwareMcpCatalog } from "../mcp/catalog.js";
 import { evaluateMcpPolicy } from "../mcp/policy.js";
-import { mcpServers } from "../mcp/servers.js";
 import { scanRepo } from "../profile/scan.js";
 
 export interface McpGovernanceSummary {
@@ -14,6 +13,10 @@ export interface McpGovernanceSummary {
   counts: { denied: number; warned: number; allowed: number };
 }
 
+function errorDetail(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 /** Shared MCP governance spine: one catalog scan and policy engine for every report consumer. */
 export function mcpGovernanceSummary(
   ctx: PlanContext,
@@ -21,7 +24,21 @@ export function mcpGovernanceSummary(
 ): McpGovernanceSummary {
   const stack = scanRepo(ctx.root, { maxDepth: 8, contextDir: ctx.contextDir });
   const catalog = policyAwareMcpCatalog(ctx, { scope: "project", stack });
-  const policies = evaluateMcpPolicy(catalog.servers ?? mcpServers("project", stack), posture);
+  if (catalog.error !== undefined || catalog.servers === undefined) {
+    return {
+      posture,
+      denied: [
+        {
+          name: "catalog",
+          reason: `policy-aware MCP catalog unavailable: ${errorDetail(catalog.error)}`,
+        },
+      ],
+      warned: [],
+      allowed: [],
+      counts: { denied: 1, warned: 0, allowed: 0 },
+    };
+  }
+  const policies = evaluateMcpPolicy(catalog.servers, posture);
   const denied = policies.filter((p) => p.verdict === "deny");
   const warned = policies.filter((p) => p.verdict === "warn");
   const allowed = policies.filter((p) => p.verdict === "allow");

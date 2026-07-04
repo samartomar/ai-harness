@@ -30,6 +30,7 @@ import {
   mcpConfigAbs,
   mcpEntries,
   mcpTomlBody,
+  removeMcpTomlServers,
 } from "./render.js";
 import { envPlaceholders, type McpServer, N24Q02M_HOST } from "./servers.js";
 
@@ -344,7 +345,10 @@ async function planMcp(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
       // Codex TOML: fold the `[mcp_servers.*]` tables into an aih-managed region of
       // config.toml, preserving the user's other config. Read existing at plan time.
       const abs = external ? writePath : join(ctx.root, p.configPath);
-      const existing = readIfExists(abs) ?? "";
+      const existing = removeMcpTomlServers(
+        readIfExists(abs) ?? "",
+        catalog.policy?.mcp?.disabledServers ?? [],
+      );
       // Never redefine a server the user already declared as a top-level table — a
       // duplicate `[mcp_servers.X]` is a TOML PARSE ERROR that would break their whole
       // config. The user's own servers win; aih's block adds only what's absent.
