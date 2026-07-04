@@ -18,13 +18,15 @@ function commandPolicyFor(composed: ReturnType<typeof composeOrgPolicy>): Record
 function stdioAllowedServers(
   ctx: PlanContext,
   allowed: readonly string[],
+  disabled: readonly string[],
 ): Record<string, StdioServer> {
   const stack = scanRepo(ctx.root, { maxDepth: 8, contextDir: ctx.contextDir });
   const catalog = mcpServers("project", stack);
   const allowedSet = new Set(allowed.length > 0 ? allowed : Object.keys(catalog));
+  const disabledSet = new Set(disabled);
   const out: Record<string, StdioServer> = {};
   for (const [name, server] of Object.entries(catalog)) {
-    if (!allowedSet.has(name) || server.type !== "stdio") continue;
+    if (disabledSet.has(name) || !allowedSet.has(name) || server.type !== "stdio") continue;
     out[name] = server;
   }
   return out;
@@ -35,7 +37,7 @@ function managedSettings(
   policy: OrgPolicy,
 ): { settings: Record<string, unknown>; managedMcp: Record<string, unknown> } {
   const composed = composeOrgPolicy(policy);
-  const stdio = stdioAllowedServers(ctx, composed.mcp.allowedServers);
+  const stdio = stdioAllowedServers(ctx, composed.mcp.allowedServers, composed.mcp.disabledServers);
   const settings: Record<string, unknown> = {
     organizationPolicy: {
       minimumPosture: composed.minimumPosture,

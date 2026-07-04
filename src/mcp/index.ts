@@ -147,7 +147,7 @@ function githubHostName(githubHost: string | undefined): string {
 }
 
 function githubIsIncumbent(policy: OrgPolicy | undefined, githubHost: string | undefined): boolean {
-  if (policy === undefined) return true;
+  if (policy === undefined) return githubHostName(githubHost) === githubHostName(undefined);
   const incumbentHosts = new Set(
     (policy.mcp?.incumbentHosts ?? []).map((host) => host.toLowerCase()),
   );
@@ -332,7 +332,7 @@ async function planMcp(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
   const actions: Action[] = [];
   const orgPolicyResult = readMcpOrgPolicy(ctx);
   if (orgPolicyResult.error !== undefined) {
-    actions.push(invalidOrgPolicyProbe(orgPolicyResult.error));
+    return plan("mcp", invalidOrgPolicyProbe(orgPolicyResult.error));
   }
   const githubHost = configuredGitHubHost(ctx, orgPolicyResult.policy);
   const servers = removeDisabledServers(

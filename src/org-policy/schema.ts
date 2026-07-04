@@ -35,16 +35,18 @@ const RiskGateOverrideSchema = z
 
 const LicenseDispositionSchema = z.enum(["auto-approve", "alert", "fail", "block"]);
 
+const HOST_WITH_OPTIONAL_PORT =
+  "[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?(?::(?:[0-9]|[1-9][0-9]{1,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5]))?";
+const HOSTNAME_PATTERN = new RegExp(`^${HOST_WITH_OPTIONAL_PORT}$`);
+const HTTPS_ORIGIN_PATTERN = new RegExp(`^https://${HOST_WITH_OPTIONAL_PORT}$`);
+
 const HostnameSchema = z
   .string()
-  .regex(
-    /^[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?(?::[0-9]{1,5})?$/,
-    "host must be a hostname, optionally with a port",
-  );
+  .regex(HOSTNAME_PATTERN, "host must be a hostname, optionally with a port");
 
 const HttpsOriginSchema = z
   .string()
-  .url()
+  .regex(HTTPS_ORIGIN_PATTERN, "must be an https origin such as https://github.example.com")
   .refine(
     (value) => {
       try {

@@ -16,6 +16,7 @@ export interface ComposedOrgPolicy {
   mcp: {
     allowedServers: string[];
     allowManagedOnly: boolean;
+    disabledServers: string[];
   };
 }
 
@@ -81,6 +82,7 @@ export function composeOrgPolicy(policy: OrgPolicy): ComposedOrgPolicy {
     mcp: {
       allowedServers: [...(policy.mcp?.allowedServers ?? [])],
       allowManagedOnly: policy.mcp?.allowManagedOnly ?? false,
+      disabledServers: [...(policy.mcp?.disabledServers ?? [])],
     },
   };
 }
