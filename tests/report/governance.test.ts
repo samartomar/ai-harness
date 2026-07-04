@@ -151,6 +151,31 @@ describe("governanceRollupDigest", () => {
     expect(summary.allowed).not.toContain("github");
   });
 
+  it("reports disabled GitHub without consulting invalid ambient GITHUB_HOST", () => {
+    writeFileSync(
+      join(dir, "aih-org-policy.json"),
+      JSON.stringify({
+        schemaVersion: 1,
+        minimumPosture: "enterprise",
+        references: { repoContract: "ai-coding/project.json" },
+        mcp: { disabledServers: ["github"] },
+      }),
+    );
+
+    const summary = mcpGovernanceSummary(
+      ctx({ posture: "enterprise", env: { GITHUB_HOST: "github.internal.example" } }),
+      "enterprise",
+    );
+
+    expect(summary.denied).not.toContainEqual(expect.objectContaining({ name: "catalog" }));
+    expect(summary.denied).toContainEqual(
+      expect.objectContaining({
+        name: "github",
+        reason: expect.stringContaining("disabled by org policy"),
+      }),
+    );
+  });
+
   it("fails closed instead of falling back when the MCP catalog cannot be built", () => {
     const summary = mcpGovernanceSummary(
       ctx({ posture: "enterprise", env: { GITHUB_HOST: "github.internal.example" } }),

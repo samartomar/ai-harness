@@ -166,6 +166,27 @@ describe("mcpServersDigest", () => {
     expect(data.thirdParty).toBe(2);
   });
 
+  it("reports disabled GitHub egress without consulting invalid ambient GITHUB_HOST", () => {
+    put(".mcp.json", JSON.stringify({ mcpServers: { github: {} } }));
+    put(
+      "aih-org-policy.json",
+      JSON.stringify({
+        schemaVersion: 1,
+        minimumPosture: "enterprise",
+        references: { repoContract: "ai-coding/project.json" },
+        mcp: { disabledServers: ["github"] },
+      }),
+    );
+
+    const d = mcpServersDigest(ctx({ env: { GITHUB_HOST: "github.internal.example" } }));
+    const data = d?.data as ServerData;
+
+    expect(d?.text).not.toContain("policy-aware MCP catalog unavailable");
+    expect(data.catalogError).toBeUndefined();
+    expect(data.servers).toContainEqual(["github", "third-party"]);
+    expect(data.policyDisabled).toEqual(["github"]);
+  });
+
   it("fails closed instead of claiming no third-party egress when the catalog fails", () => {
     put(".mcp.json", JSON.stringify({ mcpServers: { github: {} } }));
 

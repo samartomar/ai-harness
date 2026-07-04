@@ -3,10 +3,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { resolveContents } from "../../src/internals/execute.js";
+import { upsertTextBlock } from "../../src/internals/envfile.js";
 import type { PlanContext, WriteAction } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
 import { jsonFile } from "../../src/internals/render.js";
 import { command } from "../../src/mcp/index.js";
+import { removeMcpTomlServers } from "../../src/mcp/render.js";
 import type { McpServer } from "../../src/mcp/servers.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 
@@ -615,6 +617,12 @@ describe("aih mcp — remote scope emits SSO gateway doc (cloud is doc, not writ
     );
   });
 
+  it("reports MCP catalog errors without blaming org-policy parsing", async () => {
+    await expect(
+      command.plan(makeCtx({ env: { GITHUB_HOST: "github.internal.example" } })),
+    ).rejects.toThrow(/MCP catalog cannot be built: GITHUB_HOST must be an https origin/);
+  });
+
   it("BOUNDARY: no write or exec action targets a remote host — gateway/SSO is doc only", async () => {
     const p = await command.plan(makeCtx({ options: { scope: "remote" } }));
 
@@ -716,6 +724,58 @@ describe("aih mcp — per-CLI config (honors --cli)", () => {
     expect(codex?.contents).toContain('model = "gpt-5"');
     expect(codex?.contents).not.toContain("[mcp_servers.github]");
     expect(codex?.contents).not.toContain("api.githubcopilot.com");
+  });
+
+  it("preserves Codex managed TOML block markers while pruning the final disabled table", () => {
+    const existing = [
+      'model = "gpt-5"',
+      "",
+      "# >>> aih managed (mcp) >>>",
+      "[mcp_servers.github]",
+      'url = "https://api.githubcopilot.com/mcp/"',
+      "# <<< aih managed (mcp) <<<",
+      "",
+      "[ui]",
+      'theme = "dark"',
+      "",
+    ].join("\n");
+
+    const pruned = removeMcpTomlServers(existing, ["github"]);
+    const rewritten = upsertTextBlock(
+      pruned,
+      "mcp",
+      '[mcp_servers."code-review-graph"]\ncommand = "uvx"',
+    );
+
+    expect(pruned).toContain("# >>> aih managed (mcp) >>>");
+    expect(pruned).toContain("# <<< aih managed (mcp) <<<");
+    expect(pruned).toContain("[ui]");
+    expect(rewritten.match(/# >>> aih managed \(mcp\) >>>/g)).toHaveLength(1);
+    expect(rewritten).toContain("[ui]\n");
+    expect(rewritten).toContain('theme = "dark"');
+  });
+
+  it("removes disabled Codex TOML entries with inline-comment table headers", () => {
+    const existing = [
+      "[mcp_servers.github] # operator note",
+      'url = "https://api.githubcopilot.com/mcp/"',
+      "",
+      "[mcp_servers.context7] # operator note",
+      'url = "https://mcp.context7.com/mcp"',
+      "",
+      "[mcp_servers.local]",
+      'command = "local-mcp"',
+      "",
+    ].join("\n");
+
+    const pruned = removeMcpTomlServers(existing, ["github", "context7"]);
+
+    expect(pruned).not.toContain("github");
+    expect(pruned).not.toContain("api.githubcopilot.com");
+    expect(pruned).not.toContain("context7");
+    expect(pruned).not.toContain("mcp.context7.com");
+    expect(pruned).toContain("[mcp_servers.local]");
+    expect(pruned).toContain('command = "local-mcp"');
   });
 
   it("--cli cursor writes .cursor/mcp.json (same shape, different project path)", async () => {
