@@ -671,6 +671,53 @@ describe("workspace — write-once executor behavior", () => {
     expect(raw.unknownFutureField).toEqual({ keep: true });
   });
 
+  it("round-trips per-child remote and ref when re-applying an object manifest", async () => {
+    child("api");
+    child("web");
+    writeFileSync(
+      join(parent, ".aih-workspace.json"),
+      JSON.stringify(
+        {
+          contextDir: "ai-coding",
+          repos: [
+            {
+              id: "api",
+              path: "api",
+              kind: "backend",
+              remote: "https://github.com/acme/api.git",
+              ref: "release/v1.5.0",
+            },
+          ],
+        },
+        null,
+        2,
+      ),
+    );
+    const ctx = makeCtx({ repos: "api,web" }, true);
+
+    await executePlan(await command.plan(ctx), ctx);
+
+    const raw = JSON.parse(readFileSync(join(parent, ".aih-workspace.json"), "utf8"));
+    const parsed = parseWorkspaceManifest(raw, "ai-coding");
+    expect(parsed.status).toBe("OK");
+    expect(raw.repos).toEqual([
+      {
+        id: "api",
+        path: "api",
+        kind: "backend",
+        remote: "https://github.com/acme/api.git",
+        ref: "release/v1.5.0",
+      },
+      { id: "web", path: "web", router: "ai-coding/RULE_ROUTER.md" },
+    ]);
+    expect(parsed.repos[0]).toMatchObject({
+      id: "api",
+      path: "api",
+      remote: "https://github.com/acme/api.git",
+      ref: "release/v1.5.0",
+    });
+  });
+
   it("honors explicit --repos paths even when an existing object id matches another path", async () => {
     child("api");
     writeFileSync(

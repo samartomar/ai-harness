@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import { URL } from "node:url";
 import { readIfExists } from "../internals/fsxn.js";
 import { isPlainObject, parseJsoncText } from "../internals/merge.js";
 
@@ -17,6 +18,8 @@ export interface WorkspaceRepo {
   id: string;
   path: string;
   kind?: string;
+  remote?: string;
+  ref?: string;
   /** Path to the child repo's router, relative to the child repo root. */
   router: string;
 }
@@ -47,6 +50,8 @@ export interface WorkspaceManifest {
 
 const ID_RE = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const UNSAFE_PRINTABLE_FIELD_RE = /[\r\n\t|<>[\]`]/;
+const SAFE_GIT_REF_CHARS_RE = /^[A-Za-z0-9._/-]+$/;
+const SAFE_SCP_REMOTE_RE = /^[A-Za-z0-9._-]+@[A-Za-z0-9.-]+:[A-Za-z0-9._~/-]+$/;
 
 export function assertWorkspacePrintable(value: string, label: string): void {
   if (UNSAFE_PRINTABLE_FIELD_RE.test(value)) {
@@ -89,6 +94,90 @@ function safeKind(raw: unknown): string | undefined {
   return value;
 }
 
+function hasWhitespaceOrControl(value: string): boolean {
+  for (const char of value) {
+    if (/\s/u.test(char)) return true;
+    const code = char.charCodeAt(0);
+    if (code <= 31 || code === 127) return true;
+  }
+  return false;
+}
+
+function safeOptionalMetadata(raw: unknown, label: string): string | undefined {
+  if (raw === undefined) return undefined;
+  if (typeof raw !== "string") throw new Error(`${label} must be a string`);
+  if (raw.length === 0) return undefined;
+  assertWorkspacePrintable(raw, label);
+  if (hasWhitespaceOrControl(raw)) {
+    throw new Error(`${label} must not contain whitespace or control characters`);
+  }
+  return raw;
+}
+
+function isSafeGitRefName(ref: string): boolean {
+  if (ref.length === 0 || ref.startsWith("-")) return false;
+  if (!SAFE_GIT_REF_CHARS_RE.test(ref)) return false;
+  if (
+    ref.startsWith("/") ||
+    ref.endsWith("/") ||
+    ref.endsWith(".") ||
+    ref.includes("//") ||
+    ref.includes("..") ||
+    ref.includes("@{")
+  ) {
+    return false;
+  }
+  return ref
+    .split("/")
+    .every((part) => part.length > 0 && !part.startsWith(".") && !part.endsWith(".lock"));
+}
+
+function isSafeRemoteUrl(remote: string): boolean {
+  if (remote.startsWith("-")) return false;
+  if (SAFE_SCP_REMOTE_RE.test(remote)) return true;
+  if (
+    !remote.startsWith("https://") &&
+    !remote.startsWith("ssh://") &&
+    !remote.startsWith("git+ssh://")
+  ) {
+    return false;
+  }
+  if (remote.includes("\\")) return false;
+  let url: URL;
+  try {
+    url = new URL(remote);
+  } catch {
+    return false;
+  }
+  if (url.hostname.length === 0 || url.pathname.length <= 1) return false;
+  if (url.search.length > 0 || url.hash.length > 0) return false;
+  if (url.protocol === "https:") return url.username.length === 0 && url.password.length === 0;
+  if (url.protocol === "ssh:" || url.protocol === "git+ssh:") return url.password.length === 0;
+  return false;
+}
+
+function safeRemote(raw: unknown): string | undefined {
+  const remote = safeOptionalMetadata(raw, "workspace repo remote");
+  if (remote === undefined) return undefined;
+  if (!isSafeRemoteUrl(remote)) {
+    throw new Error(
+      "workspace repo remote must be an https or ssh Git remote URL, or scp-like git remote",
+    );
+  }
+  return remote;
+}
+
+function safeRef(raw: unknown): string | undefined {
+  const ref = safeOptionalMetadata(raw, "workspace repo ref");
+  if (ref === undefined) return undefined;
+  if (!isSafeGitRefName(ref)) {
+    throw new Error(
+      "workspace repo ref must be a safe Git ref (letters, numbers, '/', '.', '_' or '-', and not leading '-')",
+    );
+  }
+  return ref;
+}
+
 function defaultRouter(): string {
   return "ai-coding/RULE_ROUTER.md";
 }
@@ -110,10 +199,14 @@ function normalizeRepo(raw: unknown): WorkspaceRepo {
   const path = normalizeWorkspacePath(pathRaw, "workspace repo path");
   const id = typeof raw.id === "string" ? safeId(raw.id) : idFromPath(path);
   const kind = safeKind(raw.kind);
+  const remote = safeRemote(raw.remote);
+  const ref = safeRef(raw.ref);
   return {
     id,
     path,
     ...(kind ? { kind } : {}),
+    ...(remote ? { remote } : {}),
+    ...(ref ? { ref } : {}),
     router: normalizeRouter(raw.router),
   };
 }

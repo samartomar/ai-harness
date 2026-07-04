@@ -6,6 +6,13 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Workspace manifest child source metadata**: object-form `.aih-workspace.json`
+  repos may now carry optional `remote` and `ref` fields for future hydrate/source
+  reconstruction. The parser validates them as safe printable strings and existing
+  object entries round-trip without flattening to bare path strings. (#180)
+
 ### Fixed
 
 - **Enterprise MCP policy for GitHub**: org policy can now declare incumbent MCP

@@ -61,12 +61,18 @@ function reposFromPathsWithExistingMetadata(
   return generated.map((repo) => byPath.get(repo.path) ?? repo);
 }
 
+function repoMarkerEntry(repo: WorkspaceRepo): string | WorkspaceRepo {
+  return repo.kind !== undefined || repo.remote !== undefined || repo.ref !== undefined
+    ? repo
+    : repo.path;
+}
+
 function markerRepoEntries(
   manifest: WorkspaceManifest | undefined,
   repos: readonly WorkspaceRepo[],
 ): unknown[] {
   const existingObjects = repoObjectEntriesByPath(manifest);
-  if (existingObjects.size === 0) return repos.map((repo) => repo.path);
+  if (existingObjects.size === 0) return repos.map(repoMarkerEntry);
   return repos.map((repo) => existingObjects.get(repo.path) ?? repo);
 }
 

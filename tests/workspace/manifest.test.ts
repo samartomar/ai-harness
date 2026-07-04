@@ -63,6 +63,152 @@ describe("workspace manifest parser", () => {
     ]);
   });
 
+  it("preserves per-child remote and ref on object repo entries", () => {
+    const m = parseWorkspaceManifest(
+      {
+        repos: [
+          {
+            id: "backend",
+            path: "services/backend",
+            remote: "https://github.com/acme/backend.git",
+            ref: "release/v1.5.0",
+          },
+        ],
+      },
+      "ai-coding",
+    );
+
+    expect(m.status).toBe("OK");
+    expect(m.repos).toEqual([
+      {
+        id: "backend",
+        path: "services/backend",
+        remote: "https://github.com/acme/backend.git",
+        ref: "release/v1.5.0",
+        router: "ai-coding/RULE_ROUTER.md",
+      },
+    ]);
+  });
+
+  it("accepts https, ssh, and scp-like child remotes with safe refs", () => {
+    const m = parseWorkspaceManifest(
+      {
+        repos: [
+          {
+            id: "https",
+            path: "https",
+            remote: "https://github.com/acme/https.git",
+            ref: "refs/heads/main",
+          },
+          {
+            id: "ssh",
+            path: "ssh",
+            remote: "ssh://git@github.com/acme/ssh.git",
+            ref: "a".repeat(40),
+          },
+          {
+            id: "scp",
+            path: "scp",
+            remote: "git@github.com:acme/scp.git",
+            ref: "release/v1.5.0",
+          },
+        ],
+      },
+      "ai-coding",
+    );
+
+    expect(m.status).toBe("OK");
+    expect(m.repos.map((repo) => repo.remote)).toEqual([
+      "https://github.com/acme/https.git",
+      "ssh://git@github.com/acme/ssh.git",
+      "git@github.com:acme/scp.git",
+    ]);
+  });
+
+  it("rejects invalid per-child remote and ref metadata without throwing", () => {
+    const m = parseWorkspaceManifest(
+      {
+        repos: [
+          {
+            id: "unsafe-remote",
+            path: "services/api",
+            remote: "https://github.com/acme/api.git\n--upload-pack=sh",
+          },
+          {
+            id: "bad-ref",
+            path: "services/ui",
+            ref: 42,
+          },
+        ],
+      },
+      "ai-coding",
+    );
+
+    expect(m.status).toBe("ERROR");
+    expect(m.repos).toEqual([]);
+    expect(m.errors.join("\n")).toMatch(/workspace repo remote must be safe to print/);
+    expect(m.errors.join("\n")).toMatch(/workspace repo ref must be a string/);
+  });
+
+  it("rejects option-like or boundary-whitespace child source metadata", () => {
+    const m = parseWorkspaceManifest(
+      {
+        repos: [
+          {
+            id: "leading-space",
+            path: "leading-space",
+            remote: " https://github.com/acme/api.git",
+          },
+          {
+            id: "option-remote",
+            path: "option-remote",
+            remote: "--upload-pack=evil",
+          },
+          {
+            id: "noncanonical-remote",
+            path: "noncanonical-remote",
+            remote: "https:github.com/acme/api.git",
+          },
+          {
+            id: "single-slash-remote",
+            path: "single-slash-remote",
+            remote: "https:/github.com/acme/api.git",
+          },
+          {
+            id: "backslash-remote",
+            path: "backslash-remote",
+            remote: "https://github.com\\acme\\api.git",
+          },
+          {
+            id: "credential-remote",
+            path: "credential-remote",
+            remote: "https://token@github.com/acme/api.git",
+          },
+          {
+            id: "option-ref",
+            path: "option-ref",
+            remote: "https://github.com/acme/api.git",
+            ref: "--upload-pack=evil",
+          },
+          {
+            id: "dotdot-ref",
+            path: "dotdot-ref",
+            remote: "https://github.com/acme/api.git",
+            ref: "main..evil",
+          },
+        ],
+      },
+      "ai-coding",
+    );
+
+    expect(m.status).toBe("ERROR");
+    expect(m.repos).toEqual([]);
+    const errors = m.errors.join("\n");
+    expect(errors).toMatch(/workspace repo remote must not contain whitespace/);
+    expect(errors).toMatch(/workspace repo remote must be an https or ssh Git remote URL/);
+    expect(errors).toMatch(/workspace repo ref must be a safe Git ref/);
+  });
+
   it("degrades invalid repo entries to ERROR without throwing", () => {
     const m = parseWorkspaceManifest(
       {
