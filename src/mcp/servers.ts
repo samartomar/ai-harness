@@ -6,8 +6,8 @@ import type { RepoStack } from "../profile/scan.js";
  *  - `code-review-graph` + `codebase-memory-mcp` + `sequential-thinking` (local, stdio) —
  *    code intelligence (impact/blast radius), codebase memory (search/trace/ADR), and
  *    structured reasoning; useful in any repo, zero egress, zero credentials;
- *  - `github` + `context7` — on-by-default, secret-free remote servers (GitHub via
- *    the client's OAuth, no token stored; Context7 hosted docs). Each names its
+ *  - `github` + `context7` — on-by-default remote servers (GitHub via the client's
+ *    OAuth by default, or an env-sourced token header when requested; Context7 hosted docs). Each names its
  *    egress in its own description so it is visible in `.mcp.json` at a glance;
  *  - real, current servers added per stack: AWS (`awslabs.core-mcp-server`) when
  *    the repo targets AWS, Playwright (`@playwright/mcp`) for a web frontend;
@@ -74,6 +74,8 @@ export interface HttpServer extends McpRisk {
   type: "http";
   url: string;
   description: string;
+  /** HTTP headers for clients that support them. Values must be env refs, never literals. */
+  headers?: Readonly<Record<string, string>>;
 }
 export type McpServer = StdioServer | HttpServer;
 
@@ -89,9 +91,12 @@ const GITHUB_MCP_IMAGE = "ghcr.io/github/github-mcp-server:v1.5.0";
 /** Hosted GitHub MCP endpoint used when no org-specific host is configured. */
 export const DEFAULT_GITHUB_MCP_URL = "https://api.githubcopilot.com/mcp/";
 
+export type GithubMcpAuth = "oauth" | "token";
+
 /** Options that tune the GitHub catalog entry from committed org policy. */
 export interface McpServersOptions {
   selfHost?: boolean;
+  githubAuth?: GithubMcpAuth;
   githubHost?: string;
   githubIncumbent?: boolean;
 }
@@ -196,6 +201,7 @@ export function mcpServers(
   // air-gap / no-hosted-endpoint opt-out). Context7 is a hosted docs endpoint whose
   // third-party egress is named in its description. Enterprise policy can filter these;
   // the default posture is on + clearly labeled.
+  const githubAuth = opts.githubAuth ?? "oauth";
   servers.github = opts.selfHost
     ? {
         type: "stdio",
@@ -214,12 +220,20 @@ export function mcpServers(
         type: "http",
         url: githubMcpUrl(opts.githubHost),
         description:
-          opts.githubIncumbent === false
+          githubAuth === "token"
+            ? "GitHub's official remote MCP (repos, issues, PRs, Actions). Token auth via Authorization header sourced from $GITHUB_PERSONAL_ACCESS_TOKEN — never written here."
+            : opts.githubIncumbent === false
             ? "GitHub's official remote MCP (repos, issues, PRs, Actions). OAuth via the client — no token stored in this file. Egress to GitHub, but this org policy has not declared that host incumbent/reachable."
             : "GitHub's official remote MCP (repos, issues, PRs, Actions). OAuth via the client — no token stored in this file. Egress to GitHub (vendor-incumbent).",
+        ...(githubAuth === "token"
+          ? {
+              // biome-ignore lint/suspicious/noTemplateCurlyInString: ${ENV} reference is the literal config value, not a template
+              headers: { Authorization: "Bearer ${GITHUB_PERSONAL_ACCESS_TOKEN}" },
+            }
+          : {}),
         classification: "third-party-hosted",
         egress: opts.githubIncumbent === false ? "third-party" : "vendor-incumbent",
-        credentials: "oauth",
+        credentials: githubAuth,
         supplyChain: "hosted-remote",
       };
   servers.context7 = {
@@ -245,12 +259,15 @@ export function mcpServers(
  */
 export function envPlaceholders(servers: Record<string, McpServer>): string[] {
   const vars = new Set<string>();
-  for (const s of Object.values(servers)) {
-    if (s.type !== "stdio" || !s.env) continue;
-    for (const value of Object.values(s.env)) {
-      const m = /^\$\{([A-Za-z_][A-Za-z0-9_]*)\}$/.exec(value.trim());
-      if (m?.[1]) vars.add(m[1]);
+  const collect = (value: string): void => {
+    for (const m of value.matchAll(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g)) {
+      if (m[1]) vars.add(m[1]);
     }
+  };
+  for (const s of Object.values(servers)) {
+    if (s.type === "stdio" && s.env) for (const value of Object.values(s.env)) collect(value);
+    if (s.type === "http" && s.headers)
+      for (const value of Object.values(s.headers)) collect(value);
   }
   return [...vars].sort();
 }

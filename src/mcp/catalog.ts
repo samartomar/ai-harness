@@ -1,7 +1,12 @@
 import type { PlanContext } from "../internals/plan.js";
 import { normalizeHttpsOrigin, type OrgPolicy, readOrgPolicy } from "../org-policy/schema.js";
 import { type RepoStack, scanRepo } from "../profile/scan.js";
-import { DEFAULT_GITHUB_MCP_URL, type McpServer, mcpServers } from "./servers.js";
+import {
+  DEFAULT_GITHUB_MCP_URL,
+  type GithubMcpAuth,
+  type McpServer,
+  mcpServers,
+} from "./servers.js";
 
 export interface PolicyAwareMcpCatalog {
   policy?: OrgPolicy;
@@ -57,6 +62,7 @@ export function policyAwareMcpCatalog(
   opts: {
     scope: string;
     selfHost?: boolean;
+    githubAuth?: GithubMcpAuth;
     stack?: RepoStack;
     includeHostedGitHub?: boolean;
     includeDisabledServers?: boolean;
@@ -78,6 +84,7 @@ export function policyAwareMcpCatalog(
       hostedGithub && !githubDisabled ? configuredGitHubHost(ctx, policyResult.policy) : undefined;
     const rawServers = mcpServers(opts.scope, stack, {
       selfHost: opts.selfHost,
+      githubAuth: opts.githubAuth,
       githubHost,
       githubIncumbent: hostedGithub
         ? githubIsIncumbent(policyResult.policy, githubHost)

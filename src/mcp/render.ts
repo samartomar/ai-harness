@@ -41,25 +41,25 @@ export function mcpEntryFor(cli: Cli, s: McpServer): McpEntry {
             enabled: true,
             ...(s.env ? { environment: s.env } : {}),
           }
-        : { type: "remote", url: s.url, enabled: true };
+        : { type: "remote", url: s.url, enabled: true, ...(s.headers ? { headers: s.headers } : {}) };
     case "copilot":
       // VS Code `.vscode/mcp.json` keeps the `type` discriminator.
       return s.type === "stdio"
         ? { type: "stdio", command: s.command, args: s.args, ...(s.env ? { env: s.env } : {}) }
-        : { type: "http", url: s.url };
+        : { type: "http", url: s.url, ...(s.headers ? { headers: s.headers } : {}) };
     case "gemini":
       return s.type === "stdio"
         ? { command: s.command, args: s.args, ...(s.env ? { env: s.env } : {}) }
-        : { httpUrl: s.url };
+        : { httpUrl: s.url, ...(s.headers ? { headers: s.headers } : {}) };
     case "windsurf":
       return s.type === "stdio"
         ? { command: s.command, args: s.args, ...(s.env ? { env: s.env } : {}) }
-        : { serverUrl: s.url };
+        : { serverUrl: s.url, ...(s.headers ? { headers: s.headers } : {}) };
     case "zed":
     case "antigravity":
       return s.type === "stdio"
         ? { command: s.command, args: s.args, ...(s.env ? { env: s.env } : {}) }
-        : { url: s.url };
+        : { url: s.url, ...(s.headers ? { headers: s.headers } : {}) };
     default:
       // claude, cursor, kiro, kimi — the canonical aih shape, unchanged so the
       // existing `.mcp.json` / `.cursor/mcp.json` golden output stays byte-identical.
@@ -113,7 +113,15 @@ export function mcpTomlBody(servers: Record<string, McpServer>): string {
         }
         return out.join("\n");
       }
-      return `${head}\nurl = ${tomlStr(s.url)}`;
+      const out = [head, `url = ${tomlStr(s.url)}`];
+      if (s.headers) {
+        out.push(`\n[mcp_servers.${tomlStr(name)}.headers]`);
+        for (const [k, v] of Object.entries(s.headers)) {
+          const key = /^[A-Za-z0-9_-]+$/.test(k) ? k : tomlStr(k);
+          out.push(`${key} = ${tomlStr(v)}`);
+        }
+      }
+      return out.join("\n");
     })
     .join("\n\n");
 }
