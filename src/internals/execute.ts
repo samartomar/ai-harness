@@ -18,6 +18,31 @@ import { ensureTrailingNewline, indent, jsonFile, stripTrailingNewlines } from "
 import { type Check, VerificationReport } from "./verify.js";
 import { dirtyRemoveTargets, dirtyWriteTargets, normalizeRel } from "./worktree-gate.js";
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function removeJsonKeys(value: unknown, removals: WriteAction["removeJsonKeys"]): unknown {
+  if (removals === undefined || !isRecord(value)) return value;
+  let next: Record<string, unknown> | undefined;
+  for (const [topKey, childKeys] of Object.entries(removals)) {
+    const target = (next ?? value)[topKey];
+    if (!isRecord(target)) continue;
+    const pruned = { ...target };
+    let changed = false;
+    for (const childKey of new Set(childKeys)) {
+      if (Object.hasOwn(pruned, childKey)) {
+        delete pruned[childKey];
+        changed = true;
+      }
+    }
+    if (!changed) continue;
+    next ??= { ...value };
+    next[topKey] = pruned;
+  }
+  return next ?? value;
+}
+
 export interface WriteSummary {
   path: string;
   describe: string;
@@ -130,13 +155,13 @@ export function writeArtifact(ctx: PlanContext, relPath: string, contents: strin
 /** Compute final file contents for a write action, applying JSON merge if requested. */
 export function resolveContents(action: WriteAction, absPath: string): string {
   if (action.json !== undefined) {
+    let value: unknown = action.json;
     if (action.merge) {
       const existing = readIfExists(absPath);
       const base = existing !== undefined ? parseJsoncText(existing) : undefined;
-      const merged = base !== undefined ? deepMerge(base, action.json) : action.json;
-      return jsonFile(merged);
+      value = base !== undefined ? deepMerge(base, action.json) : action.json;
     }
-    return jsonFile(action.json);
+    return jsonFile(removeJsonKeys(value, action.removeJsonKeys));
   }
   return ensureTrailingNewline(action.contents ?? "");
 }

@@ -31,7 +31,7 @@ import {
   mcpEntries,
   mcpTomlBody,
 } from "./render.js";
-import { envPlaceholders, type McpServer, mcpServers, N24Q02M_HOST } from "./servers.js";
+import { envPlaceholders, type McpServer, N24Q02M_HOST } from "./servers.js";
 
 /** The aih-managed block scope used for Codex's TOML `[mcp_servers.*]` region. */
 const MCP_TOML_SCOPE = "mcp";
@@ -107,6 +107,14 @@ function invalidOrgPolicyProbe(error: unknown): ProbeAction {
     detail: `aih-org-policy.json cannot be parsed (${(error as Error).message})`,
     code: "org-policy.drift",
   }));
+}
+
+function disabledServerRemovals(
+  policy: OrgPolicy | undefined,
+  configKey: string,
+): Record<string, readonly string[]> | undefined {
+  const disabled = policy?.mcp?.disabledServers ?? [];
+  return disabled.length > 0 ? { [configKey]: disabled } : undefined;
 }
 
 function orgAllowedServers(
@@ -207,14 +215,22 @@ function planMcpNone(ctx: PlanContext): ReturnType<typeof plan> {
 function planMcpOffline(ctx: PlanContext): ReturnType<typeof plan> {
   const scope = String(ctx.options.scope ?? "project");
   const stack = scanRepo(ctx.root, { maxDepth: 8, contextDir: ctx.contextDir });
-  const stdio = stdioServers(mcpServers(scope, stack));
+  const catalog = policyAwareMcpCatalog(ctx, {
+    scope,
+    stack,
+    includeHostedGitHub: false,
+  });
+  if (catalog.error !== undefined || catalog.servers === undefined) {
+    return plan("mcp", invalidOrgPolicyProbe(catalog.error));
+  }
+  const stdio = stdioServers(catalog.servers);
   return plan(
     "mcp",
     writeJson(
       ".mcp.json",
       { mcpServers: stdio },
       "local stdio MCP servers (offline) — mirror/vendor these; some still resolve packages at runtime until vendored (see the offline verify probe)",
-      { merge: true },
+      { merge: true, removeJsonKeys: disabledServerRemovals(catalog.policy, "mcpServers") },
     ),
     writeJson(
       "managed-mcp.json.example",
@@ -341,6 +357,7 @@ async function planMcp(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
         writeJson(writePath, { [p.configKey]: mcpEntries(cli, servers) }, describe, {
           merge: true,
           external,
+          removeJsonKeys: disabledServerRemovals(catalog.policy, p.configKey),
         }),
       );
     }
