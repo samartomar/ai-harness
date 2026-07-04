@@ -126,6 +126,23 @@ describe("skillVetCommand", () => {
     expect(existsSync(join(workspace, ".aih"))).toBe(false);
   });
 
+  it("grades a clean local source GREEN on native coverage when the deep detectors are unavailable", async () => {
+    skill("clean", "# Clean\n\nUse this skill for local documentation hygiene.\n");
+    license();
+    // Default runner: docker + uvx both report unavailable, so skillspector/cisco
+    // emit detector-unavailable skips. A REMOTE source would grade UNKNOWN; a local
+    // first-party source is graded on aih-native coverage instead.
+    const c = ctx({ source: sourceRoot });
+
+    const result = await executePlan(await skillVetCommand.plan(c), c);
+
+    expect(result.report?.ok).toBe(true);
+    const digest = vetDigestOf(result);
+    expect(digest.data.verdict).toBe("GREEN");
+    expect(digest.data.reasons).toEqual([]);
+    expect(digest.data.analyzersRun).toEqual(["aih-native"]);
+  });
+
   it("writes the evidence artifact under --apply", async () => {
     skill("clean", "# Clean\n\nUse this skill for local documentation hygiene.\n");
     license();

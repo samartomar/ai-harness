@@ -30,18 +30,27 @@ function isUnattributedFail(check: Check): boolean {
  * Pure verdict engine: fold checks + shape + acquisition facts into one
  * GREEN/YELLOW/RED/UNKNOWN verdict. Rules, in priority order:
  *   1. any proven-dangerous FAIL (TRUST_DANGER_CODES)          → RED
- *   2. not fetched / fetch-blocked, detector-unavailable skip,
- *      license missing, or an unpinned GitHub source           → UNKNOWN
+ *   2. not fetched / fetch-blocked, a detector-unavailable skip on a REMOTE
+ *      source, license missing, or an unpinned GitHub source   → UNKNOWN
  *   3. any other FAIL, or a shape trigger (install scripts /
  *      MCP config / full-codebase analysis)                    → YELLOW
  *   4. otherwise                                               → GREEN
  * Every contributing rule pushes a human-readable reason, so a RED verdict
  * still lists its UNKNOWN/YELLOW contributors for the operator.
+ *
+ * First-party exemption: a LOCAL source (`opts.local`) is graded on aih-native
+ * coverage, so an unavailable third-party deep detector (skillspector/cisco) does
+ * NOT force UNKNOWN — those scanners guard UNTRUSTED REMOTE fetches, while a local
+ * path is operator-controlled in-repo content whose approval anchor is the human
+ * review + git history. Native rules still fully apply: a malicious-code finding
+ * is still RED, a shape trigger is still YELLOW, and a missing license is still
+ * UNKNOWN. When the deep detectors ARE available they still run on local sources
+ * and still escalate on their findings.
  */
 export function skillVerdict(
   checks: readonly Check[],
   shape: SkillShape,
-  opts: { pinned: boolean; fetched: boolean },
+  opts: { pinned: boolean; fetched: boolean; local?: boolean },
 ): SkillVerdictResult {
   const reasons: string[] = [];
   let verdict: SkillVerdict = "GREEN";
@@ -60,6 +69,7 @@ export function skillVerdict(
     escalate("UNKNOWN", "source was not fetched; scan evidence is insufficient");
   }
   if (
+    !opts.local &&
     checks.some((check) => check.verdict === "skip" && check.code === "trust.detector-unavailable")
   ) {
     escalate("UNKNOWN", "a trust detector was unavailable; scan coverage is degraded");

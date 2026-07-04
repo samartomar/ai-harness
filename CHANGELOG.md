@@ -6,6 +6,22 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **`docs-quality` pack (BetterDoc)**: the first first-party pack — a claim-first,
+  evidence-grounded documentation skill shipped in-repo at
+  `packs/docs-quality/betterdoc/` and installable via `aih pack install --pack
+  docs-quality --apply`. Documented in
+  [docs/product/docs-quality-pack.md](docs/product/docs-quality-pack.md). (#166)
+
+### Changed
+
+- **First-party trust tier**: `aih skill vet` now grades a **local** source on
+  aih-native coverage — an *unavailable* deep detector (SkillSpector/Cisco) no
+  longer forces UNKNOWN for a local path, so first-party skills are approvable
+  without Docker. Remote sources are unchanged, and native RED plus shape/license
+  rules still apply. (#166)
+
 ## [1.2.1] - 2026-07-03
 
 ### Fixed

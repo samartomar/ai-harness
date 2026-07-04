@@ -226,7 +226,7 @@ export async function skillVetPlanForSource(
       ...staticChecks.map((check) => probe(check.detail ?? check.name, () => check)),
       dynamicDigest("skill vet verdict", (digestCtx) => {
         const checks = [...trustSourceOriginChecks(digestCtx, source), ...staticChecks];
-        const graded = skillVerdict(checks, shape, { pinned: true, fetched: true });
+        const graded = skillVerdict(checks, shape, { pinned: true, fetched: true, local: true });
         return vetDigestResult(
           digestCtx,
           source,
@@ -256,6 +256,7 @@ export async function skillVetPlanForSource(
       const graded = skillVerdict(checks, emptyShape(), {
         pinned: isPinned(source),
         fetched: false,
+        local: false,
       });
       return buildEvidence(source, source.pin?.toLowerCase(), undefined, checks, [], graded);
     };
@@ -279,6 +280,7 @@ export async function skillVetPlanForSource(
           const graded = skillVerdict(checks, vetted.shape, {
             pinned: isPinned(source),
             fetched: true,
+            local: false,
           });
           return vetDigestResult(
             digestCtx,
