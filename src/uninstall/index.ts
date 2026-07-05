@@ -87,20 +87,18 @@ function hasManagedContextEvidence(ctx: PlanContext, contextDir: string): boolea
 }
 
 function bootloaderAdvisories(ctx: PlanContext): UninstallArtifact[] {
-  return bootloadersFor(REGISTRY_IDS)
-    .filter((path, index, all) => all.indexOf(path) === index)
-    .flatMap((path): UninstallArtifact[] => {
-      const text = read(ctx, path);
-      if (text === undefined || extractManagedBlock(text, SHARED_MARKER) === undefined) return [];
-      return [
-        {
-          path,
-          kind: "bootloader",
-          disposition: "advisory",
-          reason: "co-owned bootloader still carries an aih managed block",
-        },
-      ];
-    });
+  return bootloadersFor(REGISTRY_IDS).flatMap((path): UninstallArtifact[] => {
+    const text = read(ctx, path);
+    if (text === undefined || extractManagedBlock(text, SHARED_MARKER) === undefined) return [];
+    return [
+      {
+        path,
+        kind: "bootloader",
+        disposition: "advisory",
+        reason: "co-owned bootloader still carries an aih managed block",
+      },
+    ];
+  });
 }
 
 function coreUninstallSet(ctx: PlanContext): UninstallSet {

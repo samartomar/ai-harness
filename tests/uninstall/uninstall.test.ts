@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -5,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { command as bootstrapAiCommand } from "../../src/bootstrap-ai/index.js";
 import { executePlan } from "../../src/internals/execute.js";
 import type { PlanContext } from "../../src/internals/plan.js";
-import { fakeRunner } from "../../src/internals/proc.js";
+import { defaultRunner, fakeRunner, type Runner } from "../../src/internals/proc.js";
 import { command as mcpCommand } from "../../src/mcp/index.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 import { command as uninstallCommand } from "../../src/uninstall/index.js";
@@ -29,8 +30,8 @@ function put(relPath: string, contents: string): void {
 function makeCtx(
   options: Record<string, unknown> = {},
   flags: { apply?: boolean; verify?: boolean } = {},
+  run: Runner = fakeRunner(() => undefined),
 ): PlanContext {
-  const run = fakeRunner(() => undefined);
   return {
     root: tmp,
     contextDir: "ai-coding",
@@ -42,6 +43,22 @@ function makeCtx(
     env: { HOME: tmp },
     options,
   };
+}
+
+const git = (...args: string[]): void => {
+  execFileSync("git", ["-C", tmp, ...args], { stdio: "ignore" });
+};
+
+function gitCtx(options: Record<string, unknown> = {}): PlanContext {
+  return makeCtx(options, { apply: true }, defaultRunner);
+}
+
+function commitFixture(): void {
+  git("init", "-q");
+  git("config", "user.email", "t@t.com");
+  git("config", "user.name", "t");
+  git("add", "-A");
+  git("commit", "-qm", "base");
 }
 
 async function bootstrapFixture(): Promise<void> {
@@ -118,6 +135,25 @@ describe("aih uninstall", () => {
       ]),
     );
   });
+
+  it("refuses to remove dirty install targets without --force", async () => {
+    await bootstrapFixture();
+    commitFixture();
+    writeFileSync(join(tmp, "ai-coding", "RULE_ROUTER.md"), "# dirty edit\n", "utf8");
+
+    const ctx = gitCtx();
+    await expect(executePlan(await uninstallCommand.plan(ctx), ctx)).rejects.toMatchObject({
+      code: "AIH_DIRTY_WORKTREE",
+    });
+    expect(existsSync(join(tmp, "ai-coding"))).toBe(true);
+
+    const forced = gitCtx({ force: true });
+    await executePlan(await uninstallCommand.plan(forced), forced);
+    expect(existsSync(join(tmp, "ai-coding"))).toBe(false);
+    expect(readFileSync(join(tmp, "ai-coding.aih.bak", "RULE_ROUTER.md"), "utf8")).toBe(
+      "# dirty edit\n",
+    );
+  }, 20000);
 
   it("never treats the repo root as the removable context directory", async () => {
     put(
