@@ -435,6 +435,95 @@ describe("executePlan", () => {
     );
   });
 
+  it("drops unknown structured sidecar fields before JSON serialization", async () => {
+    const secret = "SECRET_TOKEN=rawsidecarvalue123";
+    const structuredWithExtra = {
+      passName: "structured.extra",
+      verdict: "warn",
+      severity: "medium",
+      confidence: "high",
+      evidence: [],
+      message: "known fields are clean",
+      category: "security",
+      rawLog: `raw ${secret}`,
+    } as VerificationResult & { rawLog: string };
+    const p = plan(
+      "t",
+      structuredProbe("structured extra gate", () => structuredRun([structuredWithExtra])),
+    );
+
+    const result = await executePlan(p, ctx({ verify: true }));
+    const payload = JSON.stringify(result.verification);
+
+    expect(payload).not.toContain("rawLog");
+    expect(payload).not.toContain(secret);
+    expect(result.verification?.results[0]).toEqual({
+      passName: "structured.extra",
+      verdict: "warn",
+      severity: "medium",
+      confidence: "high",
+      evidence: [],
+      message: "known fields are clean",
+      category: "security",
+    });
+  });
+
+  it("truncates structured sidecar text without splitting surrogate pairs", async () => {
+    const splitBoundaryDetail = `${"x".repeat(MAX_VERIFICATION_STRING_FIELD_LENGTH - 16)}😀${"y".repeat(20)}`;
+    const p = plan(
+      "t",
+      structuredProbe("emoji detail", () => ({
+        results: [
+          {
+            passName: "structured.emoji",
+            verdict: "pass",
+            severity: "info",
+            confidence: "high",
+            evidence: [],
+            message: splitBoundaryDetail,
+            category: "other",
+          },
+        ],
+        summary: {
+          finalVerdict: "pass",
+          trustScore: 100,
+          aggregatedEvidence: [],
+          failedPasses: [],
+          warnings: [],
+        },
+        evidenceGraph: { nodes: [], edges: [] },
+      })),
+    );
+
+    const result = await executePlan(p, ctx({ verify: true }));
+    const message = result.verification?.results[0]?.message ?? "";
+
+    expect(message).toHaveLength(MAX_VERIFICATION_STRING_FIELD_LENGTH);
+    expect(isWellFormedUtf16(message)).toBe(true);
+    expect(message.endsWith("[truncated]")).toBe(true);
+  });
+
+  it("suffixes long duplicate sidecar pass names without splitting surrogate pairs", async () => {
+    const boundaryName = `${"x".repeat(MAX_VERIFICATION_STRING_FIELD_LENGTH - 3)}😀y`;
+    const p = plan(
+      "t",
+      probeMany("duplicate long gates", () => [
+        { name: boundaryName, verdict: "pass" },
+        { name: boundaryName, verdict: "pass" },
+      ]),
+    );
+
+    const result = await executePlan(p, ctx({ verify: true }));
+    const passNames = result.verification?.results.map((entry) => entry.passName) ?? [];
+
+    expect(passNames).toHaveLength(2);
+    expect(new Set(passNames).size).toBe(2);
+    expect(
+      passNames.every((passName) => passName.length <= MAX_VERIFICATION_STRING_FIELD_LENGTH),
+    ).toBe(true);
+    expect(passNames.every(isWellFormedUtf16)).toBe(true);
+  });
+
   it("writes doc actions that carry a path", async () => {
     await executePlan(plan("t", doc("guidance", "do X", "docs/guide.md")), ctx({ apply: true }));
     expect(readFileSync(join(dir, "docs/guide.md"), "utf8")).toBe("do X\n");

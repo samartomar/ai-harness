@@ -32,6 +32,8 @@ import { ensureTrailingNewline, indent, jsonFile, stripTrailingNewlines } from "
 import { type Check, VerificationReport } from "./verify.js";
 import { dirtyRemoveTargets, dirtyWriteTargets, normalizeRel } from "./worktree-gate.js";
 
+const VERIFICATION_TRUNCATION_SUFFIX = "... [truncated]";
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -169,13 +171,20 @@ function toWellFormedUtf16(value: string): string {
   return text;
 }
 
+function truncateVerificationPrefix(value: string, maxLength: number): string {
+  return toWellFormedUtf16(value.slice(0, maxLength));
+}
+
 function verificationText(value: string | undefined, fallback: string): string {
   let text = value ?? fallback;
   if (!isWellFormedUtf16(text)) text = toWellFormedUtf16(text);
   text = redactSecrets(text);
   if (text.length === 0) text = fallback;
   if (text.length <= MAX_VERIFICATION_STRING_FIELD_LENGTH) return text;
-  return `${text.slice(0, MAX_VERIFICATION_STRING_FIELD_LENGTH - 15)}... [truncated]`;
+  return `${truncateVerificationPrefix(
+    text,
+    MAX_VERIFICATION_STRING_FIELD_LENGTH - VERIFICATION_TRUNCATION_SUFFIX.length,
+  )}${VERIFICATION_TRUNCATION_SUFFIX}`;
 }
 
 function optionalVerificationText(value: string | undefined): string | undefined {
@@ -195,12 +204,15 @@ function sanitizedEvidence(evidence: Evidence, passName: string, index: number):
 function sanitizedVerificationResult(result: VerificationResult): VerificationResult {
   const passName = verificationText(result.passName, "structured verification");
   return {
-    ...result,
     passName,
+    verdict: result.verdict,
+    severity: result.severity,
+    confidence: result.confidence,
     evidence: result.evidence.map((evidence, index) =>
       sanitizedEvidence(evidence, passName, index),
     ),
     message: verificationText(result.message, passName),
+    category: result.category,
   };
 }
 
@@ -222,7 +234,10 @@ function suffixedPassName(passName: string, suffix: number): string {
   if (passName.length + suffixText.length <= MAX_VERIFICATION_STRING_FIELD_LENGTH) {
     return `${passName}${suffixText}`;
   }
-  return `${passName.slice(0, MAX_VERIFICATION_STRING_FIELD_LENGTH - suffixText.length)}${suffixText}`;
+  return `${truncateVerificationPrefix(
+    passName,
+    MAX_VERIFICATION_STRING_FIELD_LENGTH - suffixText.length,
+  )}${suffixText}`;
 }
 
 function uniqueVerificationResults(results: readonly VerificationResult[]): VerificationResult[] {
