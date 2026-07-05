@@ -6,8 +6,8 @@ import {
   AIH_CAPABILITIES_FILE,
   capabilityPruneCommand,
   capabilityResolveCommand,
-  machineCapabilityCachePath,
   type MachineCapabilityCache,
+  machineCapabilityCachePath,
 } from "../../src/capability/index.js";
 import { executePlan } from "../../src/internals/execute.js";
 import type { PlanContext } from "../../src/internals/plan.js";
@@ -193,6 +193,40 @@ describe("aih capability prune", () => {
     expect(next.repos.map((repo) => repo.root)).toEqual([workspace]);
     expect(result.digests[0]?.text).toContain("pruned 1 stale repo");
     expect(result.removed).toEqual([]);
+  });
+
+  it("prunes cache entries whose committed manifest is unreadable", async () => {
+    seedNodeRepo();
+    const c = ctx({ apply: true });
+    await executePlan(await capabilityResolveCommand.plan(c), c);
+
+    write(AIH_CAPABILITIES_FILE, "{ not json", staleRepo);
+    const cachePath = machineCapabilityCachePath(c);
+    const cache = readJson<MachineCapabilityCache>(cachePath);
+    writeFileSync(
+      cachePath,
+      JSON.stringify(
+        {
+          ...cache,
+          repos: [
+            ...cache.repos,
+            {
+              root: staleRepo,
+              manifestPath: AIH_CAPABILITIES_FILE,
+              manifestSha256: "0".repeat(64),
+              capabilities: ["common.security-review"],
+            },
+          ],
+        },
+        null,
+        2,
+      ),
+    );
+
+    await executePlan(await capabilityPruneCommand.plan(c), c);
+
+    const next = readJson<MachineCapabilityCache>(cachePath);
+    expect(next.repos.map((repo) => repo.root)).toEqual([workspace]);
   });
 
   it("fails closed on a malformed machine cache instead of overwriting it", async () => {

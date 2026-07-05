@@ -111,6 +111,18 @@ still-targeted CLI whose binary is absent from `PATH` (loud warning; never the d
 Shared selection flags (`--cli`, `--all-tools`, `--detect`) are accepted by the command surface but
 ignored by `prune`; the digest says so and keeps the diff anchored to committed intent.
 
+## aih capability
+
+Resolve the repo's agent-capability needs into committed intent plus a derived machine cache.
+`capability resolve` scans the repo stack, emits evidence-backed decisions
+(`{name, install, reason, evidence[]}`), writes root `aih-capabilities.json` under `--apply`, and
+updates `$HOME/.aih/capabilities/cache.json` as a rebuildable cache. It never fetches, installs, or
+vendors third-party bytes. At `vibe` posture detected capabilities are auto-add decisions; at
+`team` they warn; at `Enterprise` they are approval-required hints for the org policy/on-ramp.
+`capability prune` rewrites only that derived cache, dropping repo entries whose committed
+`aih-capabilities.json` is gone or unreadable. The committed repo file remains the source of truth;
+`~/.aih/` is safe to delete and rebuild.
+
 ## aih uninstall
 
 Remove the core aih install footprint from a repo; `aih clean` is the same command. Dry-run

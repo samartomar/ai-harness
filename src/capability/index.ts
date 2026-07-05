@@ -274,9 +274,9 @@ function resolveDecisions(ctx: PlanContext, stack: RepoStack): CapabilityDecisio
   return decisions.sort((a, b) => a.name.localeCompare(b.name));
 }
 
-function projectManifest(report: CapabilityResolveReport): z.infer<
-  typeof ProjectCapabilitiesFileSchema
-> {
+function projectManifest(
+  report: CapabilityResolveReport,
+): z.infer<typeof ProjectCapabilitiesFileSchema> {
   return {
     schemaVersion: 1,
     requires: report.decisions.map((decision) => ({
@@ -294,7 +294,7 @@ function upsertCache(
   manifest: z.infer<typeof ProjectCapabilitiesFileSchema>,
 ): MachineCapabilityCache {
   const rendered = jsonFile(manifest);
-  const repoEntry = {
+  const repoEntry: MachineCapabilityCache["repos"][number] = {
     root: ctx.root,
     manifestPath: AIH_CAPABILITIES_FILE,
     manifestSha256: sha256Hex(rendered),
@@ -302,10 +302,9 @@ function upsertCache(
   };
   return {
     schemaVersion: 1,
-    repos: [
-      ...cache.repos.filter((repo) => repo.root !== ctx.root),
-      repoEntry,
-    ].sort((a, b) => a.root.localeCompare(b.root)),
+    repos: [...cache.repos.filter((repo) => repo.root !== ctx.root), repoEntry].sort((a, b) =>
+      a.root.localeCompare(b.root),
+    ),
   };
 }
 
@@ -355,8 +354,12 @@ function prunedCache(cache: MachineCapabilityCache): {
     if (!existsSync(repo.root)) return false;
     const raw = readIfExists(join(repo.root, repo.manifestPath));
     if (raw === undefined) return false;
-    const result = ProjectCapabilitiesFileSchema.safeParse(JSON.parse(raw));
-    return result.success;
+    try {
+      const result = ProjectCapabilitiesFileSchema.safeParse(JSON.parse(raw));
+      return result.success;
+    } catch {
+      return false;
+    }
   });
   return {
     cache: { schemaVersion: 1, repos },
