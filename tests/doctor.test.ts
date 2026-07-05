@@ -515,6 +515,78 @@ describe("doctor — git-enabled workspace roots", () => {
     expect(res?.detail).toContain("no child repos");
   });
 
+  it("checks graph coverage against each present child repo, not just the workspace parent", async () => {
+    writeWorkspaceMarker();
+    mkdirSync(join(dir, "service-api"), { recursive: true });
+    writeFileSync(
+      join(dir, ".mcp.json"),
+      JSON.stringify({
+        mcpServers: {
+          "aih-workspace-graph-service-api": {
+            command: "uvx",
+            args: [
+              "--offline",
+              "--no-python-downloads",
+              "--no-env-file",
+              "code-review-graph@2.3.6",
+              "serve",
+              "--repo",
+              join(dir, "service-api"),
+            ],
+          },
+        },
+      }),
+    );
+    const childGraphStatus = ["Nodes: 5454", "Edges: 64205", "Files: 388"].join("\n");
+    const calls: string[][] = [];
+    const run = fakeRunner((argv) => {
+      calls.push(argv);
+      if (
+        argv[0] === "git" &&
+        argv[2] === dir &&
+        argv.slice(3).join(" ") === "rev-parse --is-inside-work-tree"
+      ) {
+        return { stdout: "true" };
+      }
+      if (argv[0] === "git" && argv[2] === join(dir, "service-api") && argv[3] === "ls-files") {
+        return {
+          stdout: Array.from({ length: 1000 }, (_, i) => `src/file-${i}.ts`).join("\n"),
+        };
+      }
+      if (argv[0] === "git" && argv[2] === dir && argv[3] === "ls-files") {
+        return { stdout: ".aih-workspace.json\n.gitignore\n" };
+      }
+      if ((argv[0] === "which" || argv[0] === "where") && argv[1] === "uvx") {
+        return { stdout: "/usr/bin/uvx" };
+      }
+      if (argv[0] === "uvx" && argv.includes("status")) {
+        return { stdout: childGraphStatus };
+      }
+      return { code: 1, spawnError: true };
+    });
+    const c: PlanContext = {
+      ...rooted(true),
+      run,
+      host: makeHostAdapter({ platform: "linux", run, env: {} }),
+    };
+
+    const probe = findProbe((await command.plan(c)).actions, "workspace child service-api graph safety");
+    const res = await probe?.run(c);
+
+    expect(res?.verdict).toBe("pass");
+    expect(res?.detail).toContain("service-api");
+    expect(calls).toContainEqual([
+      "uvx",
+      "--offline",
+      "--no-python-downloads",
+      "--no-env-file",
+      "code-review-graph@2.3.6",
+      "status",
+      "--repo",
+      join(dir, "service-api"),
+    ]);
+  });
+
   it("does not render child repo paths into scaffold guidance commands", async () => {
     writeFileSync(
       join(dir, ".aih-workspace.json"),
