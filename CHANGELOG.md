@@ -20,6 +20,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   offline and delegates content by reference; posture changes the decision mode
   (`vibe` auto-add, `team` warn, `Enterprise` approval-required) without adding
   a second authority.
+- **Init v3 bootstrap intelligence**: `aih init --v3` now appends a structured
+  repo scan, gap analysis, evidence-backed capability install plan, and derived
+  `.aih/fingerprint.json` to the existing init flow. Under `--apply`, root
+  committed intent remains the source of truth while `.aih/` and `~/.aih/` stay
+  rebuildable derived state. (#218)
 - **Enterprise baseline attestation in `aih doctor`**: at Enterprise posture, `doctor`
   now compares MCP servers and packaged marketplace skills against the declared
   registry in `aih-org-policy.json`, emitting coded `baseline.*` findings for

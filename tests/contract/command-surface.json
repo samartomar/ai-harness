@@ -937,6 +937,9 @@
           "flags": "--support-out <dir>"
         },
         {
+          "flags": "--v3"
+        },
+        {
           "flags": "--verify"
         },
         {

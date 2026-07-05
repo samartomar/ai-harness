@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { SHARED_MARKER, sharedCanonicalBlockBody } from "../../src/bootstrap-ai/canon.js";
+import { AIH_CAPABILITIES_FILE, machineCapabilityCachePath } from "../../src/capability/index.js";
 import { claudeBashPermissions } from "../../src/guardrails/command-policy.js";
 import { command as guardrails } from "../../src/guardrails/index.js";
 import { command } from "../../src/init/index.js";
@@ -15,11 +16,14 @@ import { fakeRunner } from "../../src/internals/proc.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 
 let dir: string;
+let home: string;
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), "aih-init-"));
+  home = mkdtempSync(join(tmpdir(), "aih-init-home-"));
 });
 afterEach(() => {
   rmSync(dir, { recursive: true, force: true });
+  rmSync(home, { recursive: true, force: true });
 });
 
 function ctx(over: Partial<PlanContext> = {}): PlanContext {
@@ -38,6 +42,26 @@ function ctx(over: Partial<PlanContext> = {}): PlanContext {
   };
 }
 
+function seedNodeRepo(): void {
+  writeFileSync(
+    join(dir, "package.json"),
+    JSON.stringify({
+      name: "svc",
+      scripts: { test: "vitest run", build: "tsc -p .", verify: "npm test" },
+      devDependencies: { typescript: "^5.0.0", vitest: "^2.0.0" },
+    }),
+  );
+  writeFileSync(join(dir, "tsconfig.json"), "{}");
+}
+
+function initV3Ctx(over: Partial<PlanContext> = {}): PlanContext {
+  return ctx({
+    env: { HOME: home, USERPROFILE: home },
+    options: { v3: true },
+    ...over,
+  });
+}
+
 /** Root-relative write paths (normalized to forward slashes). */
 function writePaths(actions: Action[]): string[] {
   return actions
@@ -50,12 +74,20 @@ function docs(actions: Action[]): DocAction[] {
   return actions.filter((a): a is DocAction => a.kind === "doc");
 }
 
+interface InitV3Digest {
+  scan: { stack: { languages: string[] } };
+  gaps: Array<{ id: string }>;
+  plan: { decisions: Array<{ name: string; install: string }> };
+  fingerprint: { fingerprintSha256: string };
+}
+
 describe("aih init — command surface", () => {
   it("keeps the init name, the --mcp-mode option, and a real plan", async () => {
     expect(command.name).toBe("init");
     expect(command.options?.map((o) => o.flags)).toEqual([
       "--mcp-mode <mode>",
       "--mcp-compliant",
+      "--v3",
       "--canon <mode>",
       "--baseline <id>",
     ]);
@@ -108,6 +140,77 @@ describe("aih init — command surface", () => {
     expect(merged.sandbox).toMatchObject({ keep: true });
     expect(allowlist).toContain("code-review-graph@2.3.6");
     expect(allowlist).not.toContain("stale-denied-mcp");
+  });
+});
+
+describe("aih init --v3 — bootstrap intelligence", () => {
+  it("adds scan, gap, capability-plan, and fingerprint evidence without execs", async () => {
+    seedNodeRepo();
+
+    const c = initV3Ctx({ posture: "team", postureSource: "flag" });
+    const p = await command.plan(c);
+    const digest = p.actions.find(
+      (a) => a.kind === "digest" && a.describe === "init v3 bootstrap intelligence",
+    );
+    const data = digest?.kind === "digest" ? (digest.data as InitV3Digest | undefined) : undefined;
+
+    expect(p.actions.some((a) => a.kind === "exec")).toBe(false);
+    expect(data?.scan.stack.languages).toContain("TypeScript/Node.js");
+    expect(data?.gaps.map((gap) => gap.id)).toEqual(
+      expect.arrayContaining([
+        "missing-bootstrap-intent",
+        "missing-capability-intent",
+        "missing-derived-fingerprint",
+      ]),
+    );
+    expect(data?.plan.decisions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: "common.security-review", install: "warn" }),
+        expect.objectContaining({ name: "common.tdd-workflow", install: "warn" }),
+        expect.objectContaining({ name: "stack.node-typescript", install: "warn" }),
+      ]),
+    );
+    expect(data?.fingerprint.fingerprintSha256).toMatch(/^[a-f0-9]{64}$/);
+
+    expect(writePaths(p.actions)).toEqual(
+      expect.arrayContaining([
+        AIH_CAPABILITIES_FILE,
+        machineCapabilityCachePath(c).replace(/\\/g, "/"),
+        ".aih/fingerprint.json",
+      ]),
+    );
+  });
+
+  it("--apply writes committed capability intent plus derived cache/fingerprint idempotently", async () => {
+    seedNodeRepo();
+    const c = initV3Ctx({ apply: true });
+
+    await executePlan(await command.plan(c), c);
+    const firstFingerprint = readFileSync(join(dir, ".aih", "fingerprint.json"), "utf8");
+
+    expect(existsSync(join(dir, AIH_CAPABILITIES_FILE))).toBe(true);
+    expect(existsSync(machineCapabilityCachePath(c))).toBe(true);
+    expect(JSON.parse(firstFingerprint)).toMatchObject({
+      schemaVersion: 1,
+      kind: "init-v3",
+      contextDir: ".ai-context",
+    });
+
+    const second = await executePlan(await command.plan(c), c);
+    const fingerprintWrite = second.writes.find((write) =>
+      write.path.replace(/\\/g, "/").endsWith(".aih/fingerprint.json"),
+    );
+
+    expect(fingerprintWrite?.effect).toBe("unchanged");
+    expect(readFileSync(join(dir, ".aih", "fingerprint.json"), "utf8")).toBe(firstFingerprint);
+  });
+
+  it("fails closed on malformed committed init markers", async () => {
+    writeFileSync(join(dir, ".aih-config.json"), "{ not json", "utf8");
+
+    await expect(async () => {
+      await command.plan(initV3Ctx());
+    }).rejects.toThrow(/\.aih-config\.json contains entries aih cannot parse/);
   });
 });
 
