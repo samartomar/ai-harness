@@ -95,6 +95,20 @@ describe("context budget engine", () => {
       decision: "exclude",
       reasons: expect.arrayContaining(["large lock artifact"]),
     });
+    expect(
+      scoreContextFile({ path: "package-lock.json", type: "source", bytes: 100 }),
+    ).toMatchObject({
+      type: "lockfile",
+      classification: "soft-exclude",
+      decision: "exclude",
+      reasons: expect.arrayContaining(["large lock artifact"]),
+    });
+    expect(scoreContextFile({ path: "dist/cli.js", type: "source", bytes: 100 })).toMatchObject({
+      type: "generated",
+      classification: "soft-exclude",
+      decision: "exclude",
+      reasons: expect.arrayContaining(["generated artifact"]),
+    });
   });
 
   it("builds a structured report with included and excluded files plus reason traces", () => {

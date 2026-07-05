@@ -435,6 +435,24 @@ function classificationBase(classification: ContextFileClassification): number {
   }
 }
 
+function classificationRank(classification: ContextFileClassification): number {
+  switch (classification) {
+    case "hard-exclude":
+      return 3;
+    case "soft-exclude":
+      return 2;
+    case "conditional-include":
+      return 1;
+  }
+}
+
+function moreRestrictiveClassification(
+  a: ContextFileClassification,
+  b: ContextFileClassification,
+): ContextFileClassification {
+  return classificationRank(a) >= classificationRank(b) ? a : b;
+}
+
 function normalizedTaskPaths(taskPaths: readonly string[] | undefined): string[] {
   return (taskPaths ?? [])
     .map((path) => normalizeRepoPath(path))
@@ -486,14 +504,18 @@ export function scoreContextFile(
   const classified = classifyContextFile(candidate.path, options);
   const normalized = normalizeRepoPath(candidate.path);
   const canonicalPath = normalized.hostile ? classified.path : normalized.canonical;
-  const type =
-    classified.classification === "hard-exclude"
-      ? classified.type
-      : (candidate.type ?? classified.type);
+  const candidateType = candidate.type ?? classified.type;
+  const candidateClassification = normalized.hostile
+    ? classified.classification
+    : classificationFor(candidateType, normalized.segments);
   const classification =
     classified.classification === "hard-exclude"
       ? classified.classification
-      : classificationFor(type, normalized.segments);
+      : moreRestrictiveClassification(classified.classification, candidateClassification);
+  const type =
+    classificationRank(classified.classification) >= classificationRank(candidateClassification)
+      ? classified.type
+      : candidateType;
   const relevance = normalizeRelevance(candidate.relevance);
   const tokenEstimate = estimateTokens(candidate.bytes, type);
   const score = clampScore(
