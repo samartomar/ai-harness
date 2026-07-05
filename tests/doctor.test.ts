@@ -626,6 +626,48 @@ describe("doctor — git-enabled workspace roots", () => {
     expect(res?.detail).toContain("workspace graph coverage is unverified");
   });
 
+  it("does not accept a bare graph binary as workspace child MCP coverage", async () => {
+    writeWorkspaceMarker();
+    mkdirSync(join(dir, "service-api"), { recursive: true });
+    const run = fakeRunner((argv) => {
+      if (
+        argv[0] === "git" &&
+        argv[2] === dir &&
+        argv.slice(3).join(" ") === "rev-parse --is-inside-work-tree"
+      ) {
+        return { stdout: "true" };
+      }
+      if (argv[0] === "git" && argv[2] === join(dir, "service-api") && argv[3] === "ls-files") {
+        return { stdout: "src/index.ts\n" };
+      }
+      if (argv[0] === "git" && argv[2] === dir && argv[3] === "ls-files") {
+        return { stdout: ".aih-workspace.json\n.gitignore\n" };
+      }
+      if ((argv[0] === "which" || argv[0] === "where") && argv[1] === "code-review-graph") {
+        return { stdout: "/usr/bin/code-review-graph" };
+      }
+      if (argv[0] === "code-review-graph" && argv.includes("status")) {
+        return { stdout: ["Nodes: 5454", "Edges: 64205", "Files: 388"].join("\n") };
+      }
+      return { code: 1, spawnError: true };
+    });
+    const c: PlanContext = {
+      ...rooted(true),
+      run,
+      host: makeHostAdapter({ platform: "linux", run, env: {} }),
+    };
+
+    const probe = findProbe(
+      (await command.plan(c)).actions,
+      "workspace child service-api graph safety",
+    );
+    const res = await probe?.run(c);
+
+    expect(res?.verdict).toBe("skip");
+    expect(res?.code).toBe("scale.code-review-graph-missing");
+    expect(res?.detail).toContain("workspace graph MCP server for this child is missing");
+  });
+
   it("fails closed before probing graph coverage for linked child repo paths", async () => {
     const external = mkdtempSync(join(tmpdir(), "aih-doctor-workspace-external-"));
     try {
