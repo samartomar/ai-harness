@@ -69,6 +69,7 @@ function operationalShape(server: McpServer): unknown {
     : {
         type: server.type,
         url: server.url,
+        headers: server.headers ?? {},
       };
 }
 
@@ -201,33 +202,65 @@ function parseMcpConfig(
   return { maps };
 }
 
+type McpCatalog = Record<string, McpServer[]>;
+
+function addCatalogServer(catalog: McpCatalog, name: string, server: McpServer): void {
+  const existing = catalog[name] ?? [];
+  if (existing.some((candidate) => sameOperationalShape(candidate, server))) {
+    catalog[name] = existing;
+    return;
+  }
+  catalog[name] = [...existing, server];
+}
+
+function generatedMcpCatalog(ctx: PlanContext): { catalog: McpCatalog; error?: Check } {
+  const variants = [
+    { scope: "project" },
+    { scope: "remote" },
+    { scope: "project", githubAuth: "token" as const },
+    { scope: "remote", githubAuth: "token" as const },
+    { scope: "project", selfHost: true },
+    { scope: "remote", selfHost: true },
+  ];
+  const catalog: McpCatalog = {};
+  for (const variant of variants) {
+    const catalogResult = policyAwareMcpCatalog(ctx, variant);
+    if (catalogResult.error !== undefined && catalogResult.errorSource === "catalog") {
+      return {
+        catalog: {},
+        error: {
+          name: "enterprise baseline attestation",
+          verdict: "fail",
+          code: "baseline.registry-invalid",
+          detail: `MCP catalog cannot be built for baseline attestation: ${(catalogResult.error as Error).message}`,
+          fingerprint: "baseline-invalid:mcp-catalog",
+        },
+      };
+    }
+    for (const [name, server] of Object.entries(catalogResult.servers ?? {})) {
+      addCatalogServer(catalog, name, server);
+    }
+  }
+  return { catalog };
+}
+
 function catalogBoundServer(
-  catalog: Record<string, McpServer>,
+  catalog: McpCatalog,
   name: string,
   classified: McpServer,
 ): { server: McpServer; declaredByCatalog: boolean } {
-  const expected = catalog[name];
-  if (expected !== undefined && sameOperationalShape(classified, expected)) {
-    return { server: expected, declaredByCatalog: true };
+  for (const expected of catalog[name] ?? []) {
+    if (sameOperationalShape(classified, expected)) {
+      return { server: expected, declaredByCatalog: true };
+    }
   }
   return { server: classified, declaredByCatalog: false };
 }
 
 function parseMcpSurfaces(ctx: PlanContext): { surfaces: CapabilitySurface[]; error?: Check } {
-  const catalogResult = policyAwareMcpCatalog(ctx, { scope: "project" });
-  if (catalogResult.error !== undefined && catalogResult.errorSource === "catalog") {
-    return {
-      surfaces: [],
-      error: {
-        name: "enterprise baseline attestation",
-        verdict: "fail",
-        code: "baseline.registry-invalid",
-        detail: `MCP catalog cannot be built for baseline attestation: ${(catalogResult.error as Error).message}`,
-        fingerprint: "baseline-invalid:mcp-catalog",
-      },
-    };
-  }
-  const catalog = catalogResult.servers ?? {};
+  const catalogResult = generatedMcpCatalog(ctx);
+  if (catalogResult.error) return { surfaces: [], error: catalogResult.error };
+  const catalog = catalogResult.catalog;
   const workspaceGraphServers = declaredWorkspaceGraphServers(ctx.root, ctx.contextDir);
   const surfaces: CapabilitySurface[] = [];
   for (const rel of MCP_CONFIG_FILES) {

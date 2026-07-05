@@ -292,6 +292,41 @@ describe("enterprise baseline attestation", () => {
     expect(check.detail).not.toContain("none/none/pinned");
   });
 
+  it("accepts generated token-auth GitHub MCP shape when declared", () => {
+    writePolicy(["github"]);
+    writeMcp({
+      github: {
+        type: "http",
+        url: "https://api.githubcopilot.com/mcp/",
+        headers: {
+          Authorization: "Bearer $" + "{GITHUB_PERSONAL_ACCESS_TOKEN}",
+        },
+      },
+    });
+
+    const check = enterpriseBaselineAttestationCheck(ctx());
+
+    expect(check.verdict).toBe("pass");
+    expect(check.detail).toContain("mcp:github @ .mcp.json");
+    expect(check.detail).toContain("third-party/token/hosted-remote");
+  });
+
+  it("accepts generated remote-scope MCP servers when declared", () => {
+    writePolicy(["better-email"]);
+    writeMcp({
+      "better-email": {
+        type: "http",
+        url: "https://better-email-mcp.n24q02m.com/mcp",
+      },
+    });
+
+    const check = enterpriseBaselineAttestationCheck(ctx());
+
+    expect(check.verdict).toBe("pass");
+    expect(check.detail).toContain("mcp:better-email @ .mcp.json");
+    expect(check.detail).toContain("third-party/oauth/hosted-remote");
+  });
+
   it("emits a positive attestation when every external surface is a registry member", () => {
     writePolicy(["github", "context7"], [{ owner: "owner", repo: "repo", pinnedSha: A_SHA }]);
     writeMcp({

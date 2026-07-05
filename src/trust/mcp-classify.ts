@@ -57,6 +57,22 @@ function envEntries(value: unknown): Array<[string, string]> {
   });
 }
 
+function stringRecord(value: unknown): Record<string, string> | undefined {
+  if (!isRecord(value)) return undefined;
+  const entries = Object.entries(value).filter((entry): entry is [string, string] => {
+    const [, entryValue] = entry;
+    return typeof entryValue === "string";
+  });
+  return entries.length > 0 ? Object.fromEntries(entries) : undefined;
+}
+
+function hasCredentialHeader(headers: Record<string, string> | undefined): boolean {
+  if (headers === undefined) return false;
+  return Object.keys(headers).some(
+    (key) => SECRET_KEY_RE.test(key) || key.toLowerCase() === "authorization",
+  );
+}
+
 function hasLiteralCredential(raw: unknown, args: readonly string[]): boolean {
   const env = isRecord(raw) ? envEntries(raw.env) : [];
   for (const [key, value] of env) {
@@ -95,11 +111,13 @@ function hosted(
   url: string,
   description: string,
   credentials: McpServer["credentials"],
+  headers: Record<string, string> | undefined,
 ): McpServer {
   return {
     type: "http",
     url,
     description,
+    ...(headers ? { headers } : {}),
     classification: "third-party-hosted",
     egress: "third-party",
     credentials,
@@ -126,13 +144,15 @@ export function classifyIncomingMcp(rawServer: unknown): McpServer {
   const args = raw ? stringArray(raw.args) : [];
   const url = raw ? stringValue(raw.url) : undefined;
   const description = raw ? (stringValue(raw.description) ?? "") : "";
-  const credentials = hasLiteralCredential(rawServer, args) ? "token" : "none";
+  const headers = raw ? stringRecord(raw.headers) : undefined;
+  const credentials =
+    hasLiteralCredential(rawServer, args) || hasCredentialHeader(headers) ? "token" : "none";
   // Carry env onto the classified server so its content-bound acknowledgement
   // fingerprint (mcpServerConfigFingerprint) invalidates on an env-only rug-pull.
   const env = raw ? Object.fromEntries(envEntries(raw.env)) : {};
 
   if (url !== undefined && /^https?:\/\//i.test(url.trim())) {
-    return hosted(url.trim(), description, credentials);
+    return hosted(url.trim(), description, credentials, headers);
   }
   if (command === undefined || command.trim().length === 0) {
     return flagged(description, credentials);
