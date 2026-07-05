@@ -314,6 +314,7 @@ export const command: CommandSpec = {
           detailPrefix: repo.path,
           mcpRoot: ctx.root,
           name: `child:${repo.id}:graph`,
+          requireGraph: true,
           repoRoot: childRoot,
         });
       }),

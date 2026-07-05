@@ -213,6 +213,7 @@ export interface ScaleSafetyCheckOptions {
   detailPrefix?: string;
   mcpRoot?: string;
   name?: string;
+  requireGraph?: boolean;
   repoRoot?: string;
 }
 
@@ -227,7 +228,7 @@ export async function scaleSafetyCheck(
   if (files === undefined) {
     return { name, verdict: "skip", detail: `${detailPrefix}not a git repo or git unavailable` };
   }
-  if (files < LARGE_REPO_FILE_THRESHOLD) {
+  if (files < LARGE_REPO_FILE_THRESHOLD && !options.requireGraph) {
     return {
       name,
       verdict: "pass",
@@ -240,6 +241,16 @@ export async function scaleSafetyCheck(
       name,
       verdict: "pass",
       detail: `${detailPrefix}${files} tracked files; ${graph.detail}`,
+    };
+  }
+  if (files < LARGE_REPO_FILE_THRESHOLD) {
+    return {
+      name,
+      verdict: "skip",
+      code: "scale.code-review-graph-unverified",
+      detail:
+        `${detailPrefix}${files} tracked files < ${LARGE_REPO_FILE_THRESHOLD}, but workspace graph coverage is unverified; ${graph.detail}. ` +
+        "Re-run `aih workspace --apply` to emit per-child graph MCP servers, or use bounded rg/fd reads only.",
     };
   }
   return {
