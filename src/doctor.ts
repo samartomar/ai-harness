@@ -299,7 +299,26 @@ export const command: CommandSpec = {
             };
       }),
     );
+    const childGraphProbes: Action[] = repos.map((repo) =>
+      probe(`workspace child ${repo.id} graph safety`, () => {
+        const childRoot = join(ctx.root, repo.path);
+        if (!existsSync(childRoot)) {
+          return {
+            name: `child:${repo.id}:graph`,
+            verdict: "skip",
+            detail: `${repo.path} absent — run \`aih workspace hydrate --apply\` or create the child repo`,
+            code: "workspace.child-missing",
+          };
+        }
+        return scaleSafetyCheck(ctx, {
+          detailPrefix: repo.path,
+          mcpRoot: ctx.root,
+          name: `child:${repo.id}:graph`,
+          repoRoot: childRoot,
+        });
+      }),
+    );
 
-    return plan("doctor", ...base, ...gitProbes, ...wsProbes);
+    return plan("doctor", ...base, ...gitProbes, ...wsProbes, ...childGraphProbes);
   },
 };
