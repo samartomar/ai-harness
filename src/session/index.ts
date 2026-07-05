@@ -89,17 +89,19 @@ const SECRET_PATTERNS: Array<{ kind: string; pattern: RegExp }> = [
 
 const DANGEROUS_ACTION_PATTERNS: Array<{ kind: string; pattern: RegExp }> = [
   { kind: "git-reset-hard", pattern: /\bgit\s+reset\s+--hard\b/gi },
-  { kind: "recursive-remove", pattern: /\brm\s+-[A-Za-z]*r[A-Za-z]*f?[A-Za-z]*\s+\S+/gi },
   {
     kind: "recursive-remove",
-    pattern: /\brm\b(?=[^\r\n;&|]*\s--recursive\b)(?=[^\r\n;&|]*\s--force\b)[^\r\n;&|]*\s+\S+/gi,
+    pattern: /\brm\b(?=[^,\r\n;&|]*\s-(?:[A-Za-z]*r[A-Za-z]*|-recursive)\b)[^,\r\n;&|]*\s+\S+/gi,
   },
   {
     kind: "powershell-recursive-remove",
     pattern:
-      /\bRemove-Item\b(?=[^\r\n;&|]*\s-(?:Recurse|r)\b)(?=[^\r\n;&|]*\s-(?:Force|f)\b)[^\r\n;&|]*/gi,
+      /\bRemove-Item\b(?=[^,\r\n;&|]*\s-(?:Recurse|r)\b)(?=[^,\r\n;&|]*\s-(?:Force|f)\b)[^,\r\n;&|]*/gi,
   },
-  { kind: "git-clean-force", pattern: /\bgit\s+clean\s+-[A-Za-z]*[fdx][A-Za-z]*\b/gi },
+  {
+    kind: "git-clean-force",
+    pattern: /\bgit\s+clean\b(?=[^,\r\n;&|]*\s-(?:[A-Za-z]*[fdx][A-Za-z]*|-force)\b)[^,\r\n;&|]*/gi,
+  },
   { kind: "world-writable", pattern: /\bchmod\s+-R\s+777\b/gi },
   {
     kind: "remote-pipe-shell",

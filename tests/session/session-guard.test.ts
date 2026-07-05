@@ -136,7 +136,7 @@ describe("session guardrails", () => {
   it("detects PowerShell and GNU destructive remove forms", async () => {
     const report = await runSessionGuardrails(
       {
-        text: "Run Remove-Item C:\\work -Force -Recurse, then rm --recursive --force /tmp/work.",
+        text: "Run Remove-Item C:\\work -Force -Recurse, rm --recursive --force /tmp/work, rm --recursive -f /tmp/mixed, and git clean --force -d.",
         source: "draft",
       },
       { projectRoot: dir },
@@ -146,6 +146,8 @@ describe("session guardrails", () => {
     expect(report.summary.aggregatedEvidence.map((item) => item.source)).toEqual([
       "draft#action[0]",
       "draft#action[1]",
+      "draft#action[2]",
+      "draft#action[3]",
     ]);
   });
 
