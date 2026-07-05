@@ -58,6 +58,10 @@ sandbox in one pass (one writer per file). `--baseline ecc|gstack|gsd` selects t
 baseline and records the choice in `.aih-config.json`; `ecc` remains the default. ECC is a separate
 gated network step — run `aih ecc` when ready (it points at ECC's own installer). For locked-down
 MCP rollout, `--mcp-mode offline|none` and `--mcp-compliant` are forwarded to the MCP phase.
+`--v3` adds the structured bootstrap-intelligence lane: repo scan, gap analysis, capability install
+plan, and derived `.aih/fingerprint.json`. Under `--apply`, it also writes committed capability
+intent via `aih-capabilities.json` and refreshes the rebuildable `$HOME/.aih/capabilities/cache.json`.
+The v3 lane stays offline and never treats `.aih/` or `~/.aih/` as authority.
 
 ## aih profile
 

@@ -13,6 +13,7 @@ import type { Action, CommandSpec, PlanContext, WriteAction } from "../internals
 import { doc, plan, writeJson } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
 import { INIT_PHASES } from "./phases.js";
+import { initV3Actions } from "./v3.js";
 
 /**
  * The brownfield guard: `aih init` regenerates the canon and would overwrite an
@@ -177,6 +178,10 @@ async function initPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
     ),
   );
 
+  if (ctx.options.v3 === true) {
+    actions.push(...(await initV3Actions(baseCtx)));
+  }
+
   // Root bootloaders have a single owner (bootstrap-ai), so no two phases write the
   // same bootloader. The fold below handles the genuinely SHARED target
   // `.claude/settings.json`, which THREE phases merge-write: scaffold + secrets seed
@@ -258,6 +263,10 @@ export const command: CommandSpec = {
       flags: "--mcp-compliant",
       description:
         "under Enterprise posture, write only policy-allowed MCP servers and quarantine denied ones",
+    },
+    {
+      flags: "--v3",
+      description: "include the structured init-v3 scan, gap, install-plan, and fingerprint flow",
     },
     CANON_OPTION,
     BASELINE_OPTION,
