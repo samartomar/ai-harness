@@ -208,6 +208,25 @@ describe("structured verification legacy compatibility", () => {
     expect(JSON.stringify(check)).not.toContain(fakeSecret);
   });
 
+  it("sanitizes legacy check names", () => {
+    const fakeSecret = "sk-test-not-real-secret-123456";
+    const check = structuredVerificationResultToCheck(
+      result(`pass ${fakeSecret}\u009b31m`, {
+        verdict: "fail",
+        severity: "high",
+        message: "bad pass name",
+      }),
+    );
+    const aggregate = structuredVerificationRunToCheck(run([result("docs")]), {
+      name: `aggregate ${fakeSecret}\u202e`,
+      passDetail: "all structured checks passed",
+    });
+
+    expect(check.name).toBe("pass [REDACTED]");
+    expect(aggregate.name).toBe("aggregate [REDACTED]");
+    expect(JSON.stringify([check, aggregate])).not.toContain(fakeSecret);
+  });
+
   it("drops unsafe legacy metadata from non-repo evidence", () => {
     const check = structuredVerificationResultToCheck(
       result("policy", {
@@ -234,6 +253,23 @@ describe("structured verification legacy compatibility", () => {
       name: "policy",
       verdict: "fail",
       detail: "policy evidence was not repo-relative",
+    });
+  });
+
+  it("does not attach arbitrary child metadata to all-pass aggregate checks", () => {
+    const check = structuredVerificationRunToCheck(
+      run([
+        result("policy", {
+          evidence: [{ id: "policy:org-policy", type: "file", source: "aih-org-policy.json" }],
+        }),
+      ]),
+      { name: "structured verification", passDetail: "all structured checks passed" },
+    );
+
+    expect(check).toEqual({
+      name: "structured verification",
+      verdict: "pass",
+      detail: "all structured checks passed",
     });
   });
 

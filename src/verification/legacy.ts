@@ -186,6 +186,10 @@ function boundedDetail(value: string | undefined): string | undefined {
   return `${normalized.slice(0, MAX_VERIFICATION_STRING_FIELD_LENGTH - 15)}... [truncated]`;
 }
 
+function boundedName(value: string | undefined, fallback: string): string {
+  return boundedDetail(value) ?? fallback;
+}
+
 function detailFromResults(results: readonly VerificationResult[]): string | undefined {
   if (results.length === 0) return undefined;
   return boundedDetail(results.map((result) => `${result.passName}: ${result.message}`).join("; "));
@@ -196,7 +200,7 @@ export function structuredVerificationResultToCheck(
   options: StructuredVerificationLegacyOptions = {},
 ): Check {
   const check: Check = {
-    name: result.passName,
+    name: boundedName(result.passName, "structured verification"),
     verdict: legacyVerdictFor(result, options),
     detail: boundedDetail(result.message),
   };
@@ -239,7 +243,7 @@ export function structuredVerificationRunToCheck(
   const noteworthy =
     failing.length > 0 ? failing : entries.filter((entry) => entry.result.verdict !== "pass");
   const check: Check = {
-    name: options.name,
+    name: boundedName(options.name, "structured verification"),
     verdict:
       failing.length > 0
         ? "fail"
@@ -254,8 +258,7 @@ export function structuredVerificationRunToCheck(
     noteworthy.find(
       (entry) => entry.check.location !== undefined || entry.check.fingerprint !== undefined,
     )?.check ??
-    checks.find((entry) => entry.verdict === check.verdict) ??
-    checks[0];
+    (noteworthy.length > 0 ? checks.find((entry) => entry.verdict === check.verdict) : undefined);
   if (sourceCheck?.location !== undefined) check.location = sourceCheck.location;
   if (sourceCheck?.fingerprint !== undefined) check.fingerprint = sourceCheck.fingerprint;
   return check;
