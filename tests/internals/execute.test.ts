@@ -22,6 +22,7 @@ import {
   type PlanContext,
   plan,
   probe,
+  probeMany,
   remove,
   structuredProbe,
   writeJson,
@@ -377,6 +378,61 @@ describe("executePlan", () => {
       "structured.fail",
     ]);
     expect(result.verification?.summary.finalVerdict).toBe("fail");
+  });
+
+  it("keeps generated structured sidecar pass names unique when legacy names already include suffixes", async () => {
+    const p = plan(
+      "t",
+      probeMany("duplicate legacy gates", () => [
+        { name: "dup", verdict: "pass" },
+        { name: "dup", verdict: "pass" },
+        { name: "dup#2", verdict: "pass" },
+      ]),
+    );
+
+    const result = await executePlan(p, ctx({ verify: true }));
+    const passNames = result.verification?.results.map((entry) => entry.passName) ?? [];
+
+    expect(result.report?.checks.map((check) => check.name)).toEqual(["dup", "dup", "dup#2"]);
+    expect(new Set(passNames).size).toBe(passNames.length);
+    expect(result.verification?.evidenceGraph.nodes).toHaveLength(3);
+  });
+
+  it("redacts structured probe sidecar text before JSON serialization", async () => {
+    const secret = "SECRET_TOKEN=supersecretvalue123";
+    const p = plan(
+      "t",
+      structuredProbe("structured secret gate", () =>
+        structuredRun([
+          {
+            passName: "structured.secret",
+            verdict: "warn",
+            severity: "medium",
+            confidence: "high",
+            evidence: [
+              {
+                id: `evidence-${secret}`,
+                type: "log",
+                source: `logs/${secret}.txt`,
+                snippet: `raw ${secret}`,
+              },
+            ],
+            message: `message ${secret}`,
+            category: "security",
+          },
+        ]),
+      ),
+    );
+
+    const result = await executePlan(p, ctx({ verify: true }));
+    const payload = JSON.stringify(result.verification);
+
+    expect(payload).not.toContain(secret);
+    expect(result.verification?.results[0]?.message).toContain("[REDACTED]");
+    expect(result.verification?.summary.aggregatedEvidence[0]?.snippet).toContain("[REDACTED]");
+    expect(result.verification?.evidenceGraph.nodes).toContainEqual(
+      expect.objectContaining({ kind: "source", source: "logs/[REDACTED]" }),
+    );
   });
 
   it("writes doc actions that carry a path", async () => {

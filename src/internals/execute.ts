@@ -10,7 +10,11 @@ import {
   structuredVerificationRunToCheck,
 } from "../verification/legacy.js";
 import { mergeVerificationResults } from "../verification/merge.js";
-import type { VerificationPipelineRun, VerificationResult } from "../verification/types.js";
+import type {
+  Evidence,
+  VerificationPipelineRun,
+  VerificationResult,
+} from "../verification/types.js";
 import { isWellFormedUtf16 } from "../verification/validation.js";
 import { upsertManagedBlock } from "./envfile.js";
 import { FsTransaction, readIfExists } from "./fsxn.js";
@@ -174,6 +178,32 @@ function verificationText(value: string | undefined, fallback: string): string {
   return `${text.slice(0, MAX_VERIFICATION_STRING_FIELD_LENGTH - 15)}... [truncated]`;
 }
 
+function optionalVerificationText(value: string | undefined): string | undefined {
+  return value === undefined ? undefined : verificationText(value, "");
+}
+
+function sanitizedEvidence(evidence: Evidence, passName: string, index: number): Evidence {
+  const snippet = optionalVerificationText(evidence.snippet);
+  return {
+    id: verificationText(evidence.id, `${passName}:evidence:${index}`),
+    type: verificationText(evidence.type, "evidence"),
+    source: verificationText(evidence.source, "unknown"),
+    ...(snippet === undefined ? {} : { snippet }),
+  };
+}
+
+function sanitizedVerificationResult(result: VerificationResult): VerificationResult {
+  const passName = verificationText(result.passName, "structured verification");
+  return {
+    ...result,
+    passName,
+    evidence: result.evidence.map((evidence, index) =>
+      sanitizedEvidence(evidence, passName, index),
+    ),
+    message: verificationText(result.message, passName),
+  };
+}
+
 function legacyCheckToVerificationResult(check: Check): VerificationResult {
   const passName = verificationText(check.name, "legacy check");
   return {
@@ -187,13 +217,31 @@ function legacyCheckToVerificationResult(check: Check): VerificationResult {
   };
 }
 
+function suffixedPassName(passName: string, suffix: number): string {
+  const suffixText = `#${suffix}`;
+  if (passName.length + suffixText.length <= MAX_VERIFICATION_STRING_FIELD_LENGTH) {
+    return `${passName}${suffixText}`;
+  }
+  return `${passName.slice(0, MAX_VERIFICATION_STRING_FIELD_LENGTH - suffixText.length)}${suffixText}`;
+}
+
 function uniqueVerificationResults(results: readonly VerificationResult[]): VerificationResult[] {
-  const seen = new Map<string, number>();
+  const used = new Set<string>();
+  const nextSuffix = new Map<string, number>();
   return results.map((result) => {
-    const count = seen.get(result.passName) ?? 0;
-    seen.set(result.passName, count + 1);
-    if (count === 0) return result;
-    return { ...result, passName: `${result.passName}#${count + 1}` };
+    if (!used.has(result.passName)) {
+      used.add(result.passName);
+      return result;
+    }
+    let suffix = nextSuffix.get(result.passName) ?? 2;
+    let passName = suffixedPassName(result.passName, suffix);
+    while (used.has(passName)) {
+      suffix += 1;
+      passName = suffixedPassName(result.passName, suffix);
+    }
+    nextSuffix.set(result.passName, suffix + 1);
+    used.add(passName);
+    return { ...result, passName };
   });
 }
 
@@ -201,7 +249,7 @@ function verificationRunFromResults(
   results: readonly VerificationResult[],
 ): VerificationPipelineRun | undefined {
   if (results.length === 0) return undefined;
-  const uniqueResults = uniqueVerificationResults(results);
+  const uniqueResults = uniqueVerificationResults(results.map(sanitizedVerificationResult));
   return {
     results: uniqueResults,
     summary: mergeVerificationResults(uniqueResults),
