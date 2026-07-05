@@ -217,10 +217,13 @@ function normalizeRepoPath(raw: string): NormalizedPath {
   if (slash.length === 0) reasons.push("empty path rejected");
   // biome-ignore lint/suspicious/noControlCharactersInRegex: path boundary validation rejects controls
   if (/[\u0000-\u001f\u007f-\u009f]/.test(slash)) reasons.push("control character rejected");
-  if (slash.startsWith("/") || slash.startsWith("//") || /^[A-Za-z]:\//.test(slash)) {
+  if (slash.startsWith("/") || slash.startsWith("//") || /^[A-Za-z]:/.test(slash)) {
     reasons.push("absolute path rejected");
   }
   const segments = slash.split("/");
+  if (segments.some((segment) => segment.includes(":"))) {
+    reasons.push("windows reserved colon rejected");
+  }
   if (segments.some((segment) => segment.length === 0 || segment === "." || segment === "..")) {
     reasons.push("path traversal rejected");
   }
@@ -245,7 +248,8 @@ function normalizeRepoPath(raw: string): NormalizedPath {
 }
 
 function normalizeContextDir(raw: string | undefined): string {
-  const normalized = normalizeRepoPath(raw ?? DEFAULT_CONTEXT_DIR);
+  const candidate = (raw ?? DEFAULT_CONTEXT_DIR).trim().replace(/\\/g, "/").replace(/\/+$/g, "");
+  const normalized = normalizeRepoPath(candidate.length > 0 ? candidate : DEFAULT_CONTEXT_DIR);
   return normalized.hostile ? DEFAULT_CONTEXT_DIR : normalized.canonical;
 }
 
@@ -260,9 +264,10 @@ function basename(path: string): string {
 }
 
 function isSecretPath(segments: readonly string[]): boolean {
+  const lower = segments.map((segment) => segment.toLowerCase());
   return (
-    segments[0] === "secrets" ||
-    segments.some((segment) => segment === ".env" || segment.startsWith(".env."))
+    lower[0] === "secrets" ||
+    lower.some((segment) => segment === ".env" || segment.startsWith(".env"))
   );
 }
 
@@ -317,7 +322,7 @@ function classificationFor(
   type: ContextFileType,
   segments: readonly string[],
 ): ContextFileClassification {
-  const first = segments[0];
+  const first = segments[0]?.toLowerCase();
   if (type === "secret") return "hard-exclude";
   if (first !== undefined && HARD_EXCLUDE_TOP_DIRS.has(first)) return "hard-exclude";
   if (type === "generated" || type === "lockfile" || type === "binary") return "soft-exclude";
@@ -371,8 +376,12 @@ export function classifyContextFile(
   const contextDir = normalizeContextDir(options.contextDir);
   const type = inferContextFileType(normalized.canonical, normalized.segments, contextDir);
   const classification = classificationFor(type, normalized.segments);
-  const reasons = [reasonFor(type, classification)];
-  return { path: normalized.label, classification, type, reasons };
+  return {
+    path: normalized.label,
+    classification,
+    type,
+    reasons: [reasonFor(type, classification)],
+  };
 }
 
 function normalizeRelevance(value: number | undefined): number {
@@ -460,6 +469,10 @@ function clampScore(value: number): number {
   return Math.max(0, Math.min(100, Math.round(value)));
 }
 
+function tokenPenalty(tokenEstimate: number): number {
+  return Math.min(30, Math.floor(tokenEstimate / 1000));
+}
+
 function boundedMaxFileTokens(value: number | undefined): number {
   if (value === undefined) return DEFAULT_MAX_FILE_TOKENS;
   if (!Number.isFinite(value) || value < 0) return 0;
@@ -473,35 +486,46 @@ export function scoreContextFile(
   const classified = classifyContextFile(candidate.path, options);
   const normalized = normalizeRepoPath(candidate.path);
   const canonicalPath = normalized.hostile ? classified.path : normalized.canonical;
-  const type = candidate.type ?? classified.type;
+  const type =
+    classified.classification === "hard-exclude"
+      ? classified.type
+      : (candidate.type ?? classified.type);
+  const classification =
+    classified.classification === "hard-exclude"
+      ? classified.classification
+      : classificationFor(type, normalized.segments);
   const relevance = normalizeRelevance(candidate.relevance);
   const tokenEstimate = estimateTokens(candidate.bytes, type);
   const score = clampScore(
-    classificationBase(classified.classification) +
+    classificationBase(classification) +
       typeWeight(type) +
       relevance * 40 +
       taskPathBonus(canonicalPath, options.taskPaths) +
-      keywordBonus(canonicalPath, options.taskKeywords),
+      keywordBonus(canonicalPath, options.taskKeywords) -
+      tokenPenalty(tokenEstimate),
   );
   const maxFileTokens = boundedMaxFileTokens(options.maxFileTokens);
   const reasons = [
-    ...classified.reasons,
+    ...(classified.classification === "hard-exclude"
+      ? classified.reasons
+      : [reasonFor(type, classification)]),
     `relevance ${relevance.toFixed(2)}`,
     `${tokenEstimate} token estimate`,
   ];
   if (tokenEstimate > maxFileTokens) reasons.push("file token estimate exceeds per-file budget");
 
   let decision: ContextInclusionDecision = "include";
-  if (classified.classification === "hard-exclude") decision = "exclude";
+  if (classification === "hard-exclude") decision = "exclude";
   else if (tokenEstimate > maxFileTokens) decision = "exclude";
-  else if (classified.classification === "soft-exclude" && score < 75) decision = "exclude";
-  else if (classified.classification === "conditional-include" && score < 35) decision = "exclude";
-  if (decision === "exclude" && classified.classification === "soft-exclude") {
+  else if (classification === "soft-exclude" && score < 75) decision = "exclude";
+  else if (classification === "conditional-include" && score < 35) decision = "exclude";
+  if (decision === "exclude" && classification === "soft-exclude") {
     reasons.push("soft-excluded unless explicitly relevant");
   }
 
   return {
     ...classified,
+    classification,
     type,
     decision,
     score,
@@ -520,7 +544,21 @@ function byScoreThenPath(
   a: { file: ContextFileScore; index: number },
   b: { file: ContextFileScore; index: number },
 ): number {
-  return b.file.score - a.file.score || a.file.path.localeCompare(b.file.path) || a.index - b.index;
+  return (
+    b.file.score - a.file.score ||
+    a.file.tokenEstimate - b.file.tokenEstimate ||
+    compareCodeUnits(a.file.path, b.file.path) ||
+    a.index - b.index
+  );
+}
+
+function compareCodeUnits(a: string, b: string): number {
+  const length = Math.min(a.length, b.length);
+  for (let i = 0; i < length; i++) {
+    const delta = a.charCodeAt(i) - b.charCodeAt(i);
+    if (delta !== 0) return delta;
+  }
+  return a.length - b.length;
 }
 
 export function buildContextBudgetReport(
@@ -561,7 +599,10 @@ function pushUnique(paths: string[], path: string): void {
   if (!paths.includes(path)) paths.push(path);
 }
 
-function shouldLoadEnvironmentRule(paths: readonly string[]): boolean {
+function shouldLoadEnvironmentRule(
+  taskKind: ContextTaskKind | undefined,
+  paths: readonly string[],
+): boolean {
   return paths.some(
     (path) =>
       path.startsWith("src/internals/fs") ||
@@ -570,6 +611,7 @@ function shouldLoadEnvironmentRule(paths: readonly string[]): boolean {
       path.startsWith("src/tools/") ||
       path.startsWith("src/sandbox/") ||
       path.startsWith("src/workspace/") ||
+      (taskKind === "security" && path.startsWith("src/context/")) ||
       path.includes("shell") ||
       path.includes("spawn") ||
       path.includes("path"),
@@ -625,7 +667,9 @@ export function selectLazyCanonFiles(options: LazyCanonOptions = {}): LazyCanonF
   ) {
     pushUnique(paths, rule("engine-invariants.md"));
   }
-  if (shouldLoadEnvironmentRule(touchedPaths)) pushUnique(paths, rule("environment.md"));
+  if (shouldLoadEnvironmentRule(options.taskKind, touchedPaths)) {
+    pushUnique(paths, rule("environment.md"));
+  }
   if (options.taskKind === "review") pushUnique(paths, rule("review-protocol.md"));
   if (shouldLoadProductRule(touchedPaths)) pushUnique(paths, rule("product-principles.md"));
   if (shouldLoadDocsRule(options.taskKind, touchedPaths)) {

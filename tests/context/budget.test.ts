@@ -28,11 +28,29 @@ describe("context budget engine", () => {
       path: "secrets/prod.env",
       classification: "hard-exclude",
     });
+    for (const secretPath of [
+      ".envrc",
+      ".env-prod",
+      ".ENV.local",
+      "config/.env.test",
+      "Secrets/prod.env",
+    ]) {
+      expect(classifyContextFile(secretPath), secretPath).toMatchObject({
+        classification: "hard-exclude",
+      });
+    }
 
     const hostile = classifyContextFile("../secrets/prod.env");
     expect(hostile.classification).toBe("hard-exclude");
     expect(hostile.path).toMatch(/^hostile-path-[a-f0-9]{12}$/);
     expect(hostile.reasons).toContain("hostile path rejected");
+
+    for (const hostilePath of ["C:tmp/foo.ts", "C:secrets/prod.env", "src/file.ts:stream"]) {
+      expect(classifyContextFile(hostilePath), hostilePath).toMatchObject({
+        classification: "hard-exclude",
+      });
+      expect(classifyContextFile(hostilePath).path).toMatch(/^hostile-path-[a-f0-9]{12}$/);
+    }
   });
 
   it("scores files by path type relevance and bounded token weight", () => {
@@ -64,6 +82,19 @@ describe("context budget engine", () => {
       classification: "soft-exclude",
       decision: "exclude",
     });
+
+    const small = scoreContextFile({ path: "src/same.ts", bytes: 400, relevance: 0.5 });
+    const large = scoreContextFile({ path: "src/same-copy.ts", bytes: 200_000, relevance: 0.5 });
+    expect(small.score).toBeGreaterThan(large.score);
+
+    expect(
+      scoreContextFile({ path: "src/generated-lock.ts", type: "lockfile", bytes: 100 }),
+    ).toMatchObject({
+      type: "lockfile",
+      classification: "soft-exclude",
+      decision: "exclude",
+      reasons: expect.arrayContaining(["large lock artifact"]),
+    });
   });
 
   it("builds a structured report with included and excluded files plus reason traces", () => {
@@ -85,8 +116,8 @@ describe("context budget engine", () => {
     expect(report.totalTokenEstimate).toBe(600);
     expect(report.excluded.map((file) => [file.path, file.classification, file.decision])).toEqual([
       ["docs/ARCHITECTURE.md", "conditional-include", "exclude"],
-      ["package-lock.json", "soft-exclude", "exclude"],
       [".env", "hard-exclude", "exclude"],
+      ["package-lock.json", "soft-exclude", "exclude"],
     ]);
     expect(report.reasonTrace).toEqual(
       expect.arrayContaining([
@@ -98,7 +129,7 @@ describe("context budget engine", () => {
 
   it("selects a lazy task-relevant canon slice instead of loading the whole canon", () => {
     const files = selectLazyCanonFiles({
-      contextDir: ".ai-context",
+      contextDir: ".ai-context/",
       taskKind: "implementation",
       touchedPaths: ["src/context/index.ts", "src/internals/fsxn.ts"],
     });
@@ -115,5 +146,34 @@ describe("context budget engine", () => {
     expect(files.map((file) => file.path)).not.toContain(
       ".ai-context/rules/doc-and-truth-homes.md",
     );
+  });
+
+  it("keeps budget ordering deterministic and prefers smaller ties", () => {
+    const report = buildContextBudgetReport(
+      [
+        { path: "src/Beta.ts", bytes: 400, relevance: 0.5 },
+        { path: "src/alpha.ts", bytes: 400, relevance: 0.5 },
+        { path: "src/big.ts", bytes: 200_000, relevance: 0.5 },
+        { path: "src/small.ts", bytes: 400, relevance: 0.5 },
+      ],
+      { maxFileTokens: 100_000, maxTokens: 100_000 },
+    );
+
+    expect(report.included.map((file) => file.path)).toEqual([
+      "src/Beta.ts",
+      "src/alpha.ts",
+      "src/small.ts",
+      "src/big.ts",
+    ]);
+  });
+
+  it("loads environment rules for security work touching context path classification", () => {
+    const files = selectLazyCanonFiles({
+      contextDir: "ai-coding",
+      taskKind: "security",
+      touchedPaths: ["src/context/index.ts"],
+    });
+
+    expect(files.map((file) => file.path)).toContain("ai-coding/rules/environment.md");
   });
 });
