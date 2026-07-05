@@ -32,9 +32,12 @@ function fromGitleaks(src: string): RegExp {
 const PATTERNS: RegExp[] = [
   fromGitleaks(AWS_KEY_REGEX), // AKIA… / A3T… access-key ids
   fromGitleaks(PRIVATE_KEY_REGEX), // -----BEGIN … PRIVATE KEY-----
+  /\b(?:ghp|gho|ghu|ghs|github_pat)_[A-Za-z0-9_]{10,}\b/g, // GitHub tokens
+  /\bsk-[A-Za-z0-9_-]{12,}\b/g, // OpenAI-style API keys
   /sk-ant-[A-Za-z0-9_-]{8,}/g, // Anthropic API keys
   /ghp_[A-Za-z0-9]{36,}/g, // GitHub personal-access tokens
   /bearer\s+[A-Za-z0-9._-]+/gi, // Authorization: Bearer <token>
+  /\b[A-Z][A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|PASSWD|API_KEY|ACCESS_KEY)[A-Z0-9_]*\s*[:=]\s*["']?[^\s"']{8,}/gi,
   /\b[A-Z_]*(?:TOKEN|SECRET|PASSWORD|API_KEY)\s*=\s*\S+/g, // FOO_TOKEN=…, API_KEY=…
 ];
 

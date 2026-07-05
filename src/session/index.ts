@@ -1,8 +1,9 @@
 import { createHash } from "node:crypto";
 import { AihError } from "../errors.js";
 import type { CommandSpec, PlanContext } from "../internals/plan.js";
-import { digest, plan } from "../internals/plan.js";
+import { digest, plan, probe } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
+import type { Check } from "../internals/verify.js";
 import {
   type Evidence,
   runVerificationPipeline,
@@ -15,6 +16,7 @@ import {
 import { isWellFormedUtf16 } from "../verification/validation.js";
 
 export const SESSION_GUARDRAIL_PASS_NAMES = [
+  "session-input-bounds",
   "session-secret-detection",
   "session-dangerous-action",
 ] as const;
@@ -89,8 +91,13 @@ const DANGEROUS_ACTION_PATTERNS: Array<{ kind: string; pattern: RegExp }> = [
   { kind: "git-reset-hard", pattern: /\bgit\s+reset\s+--hard\b/gi },
   { kind: "recursive-remove", pattern: /\brm\s+-[A-Za-z]*r[A-Za-z]*f?[A-Za-z]*\s+\S+/gi },
   {
+    kind: "recursive-remove",
+    pattern: /\brm\b(?=[^\r\n;&|]*\s--recursive\b)(?=[^\r\n;&|]*\s--force\b)[^\r\n;&|]*\s+\S+/gi,
+  },
+  {
     kind: "powershell-recursive-remove",
-    pattern: /\bRemove-Item\b[^\r\n;&|]*\b-Recurse\b[^\r\n;&|]*\b-Force\b/gi,
+    pattern:
+      /\bRemove-Item\b(?=[^\r\n;&|]*\s-(?:Recurse|r)\b)(?=[^\r\n;&|]*\s-(?:Force|f)\b)[^\r\n;&|]*/gi,
   },
   { kind: "git-clean-force", pattern: /\bgit\s+clean\s+-[A-Za-z]*[fdx][A-Za-z]*\b/gi },
   { kind: "world-writable", pattern: /\bchmod\s+-R\s+777\b/gi },
@@ -202,7 +209,7 @@ function result(
     confidence: "high",
     evidence,
     message,
-    category: passName === "session-secret-detection" ? "security" : "exec",
+    category: passName === "session-dangerous-action" ? "exec" : "security",
   };
 }
 
@@ -237,6 +244,33 @@ function evidenceFor(
     type,
     source: `${source}#${passName === "session-secret-detection" ? "secret" : "action"}[${finding.index}]`,
   }));
+}
+
+function sessionInputBoundsPass(): VerificationPass {
+  return {
+    name: "session-input-bounds",
+    category: "security",
+    async run(input) {
+      const session = readSessionGuardInput(input);
+      if (session === undefined) return missingInputResult("session-input-bounds");
+      if (!session.truncated) {
+        return result("session-input-bounds", "pass", "info", "session input inspected fully");
+      }
+      return result(
+        "session-input-bounds",
+        "fail",
+        "high",
+        "session input exceeded maxChars; only a bounded prefix was inspected",
+        [
+          {
+            id: "session-input-bounds:truncated:0",
+            type: "session-truncated",
+            source: `${session.source}#truncated`,
+          },
+        ],
+      );
+    },
+  };
 }
 
 function sessionSecretDetectionPass(): VerificationPass {
@@ -294,7 +328,7 @@ function sessionDangerousActionPass(): VerificationPass {
 }
 
 export function createSessionGuardrailPasses(): VerificationPass[] {
-  return [sessionSecretDetectionPass(), sessionDangerousActionPass()];
+  return [sessionInputBoundsPass(), sessionSecretDetectionPass(), sessionDangerousActionPass()];
 }
 
 export async function runSessionGuardrails(
@@ -358,6 +392,18 @@ function reportText(report: SessionGuardReport): string {
   );
 }
 
+function checkFromReport(report: SessionGuardReport): Check {
+  const failed = report.results.filter((entry) => entry.verdict === "fail");
+  return {
+    name: "session guardrails",
+    verdict: failed.length > 0 ? "fail" : "pass",
+    detail:
+      failed.length > 0
+        ? failed.map((entry) => `${entry.passName}: ${entry.message}`).join("; ")
+        : "no session guardrail findings",
+  };
+}
+
 async function sessionGuardPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
   const report = await runSessionGuardrails(
     {
@@ -367,7 +413,11 @@ async function sessionGuardPlan(ctx: PlanContext): Promise<ReturnType<typeof pla
     },
     { projectRoot: ctx.root },
   );
-  return plan("session-guard", digest("session guardrails", reportText(report), report));
+  return plan(
+    "session-guard",
+    digest("session guardrails", reportText(report), report),
+    probe("session guardrails", () => checkFromReport(report)),
+  );
 }
 
 export const command: CommandSpec = {
@@ -375,7 +425,7 @@ export const command: CommandSpec = {
   summary: "Inspect session text for secrets and dangerous local actions",
   readOnly: true,
   options: [
-    { flags: "--text <text>", description: "session or action text to inspect" },
+    { flags: "--text <text>", description: "session or action text to inspect", sensitive: true },
     { flags: "--source <label>", description: "source label for evidence", default: "session" },
     {
       flags: "--max-chars <n>",

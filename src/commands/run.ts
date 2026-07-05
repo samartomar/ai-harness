@@ -87,6 +87,13 @@ function extractOptions(spec: CommandSpec, opts: Record<string, unknown>): Recor
   return picked;
 }
 
+function sensitiveOptionFlags(spec: CommandSpec): string[] {
+  return (spec.options ?? [])
+    .filter((option) => option.sensitive === true)
+    .map((option) => option.flags.split(/[,\s]+/).find((token) => token.startsWith("--")))
+    .filter((flag): flag is string => flag !== undefined);
+}
+
 /**
  * Shared execution path for every capability command: resolve settings + host,
  * build the {@link PlanContext}, run the capability's `plan`, execute it (honoring
@@ -116,7 +123,9 @@ export async function runCapability(
   const runId = (deps.newRunId ?? (() => `run_${randomUUID().slice(0, 8)}`))();
   // Key-aware masking (--token …) THEN secret/home scrub per token, so a ledger row
   // is safe to attach to a ticket: no secrets, no home-path layout.
-  const logArgv = redactArgv(deps.argv ?? process.argv.slice(2)).map((t) => redactText(t, env));
+  const logArgv = redactArgv(deps.argv ?? process.argv.slice(2), {
+    sensitiveFlags: sensitiveOptionFlags(spec),
+  }).map((t) => redactText(t, env));
   // Resolve the target root up front, and to an ABSOLUTE path: a relative
   // positional (`aih workspace . --apply`), --root, or AIH_ROOT would otherwise
   // flow into ctx.root, where basename(".") derives "." as the project name and
