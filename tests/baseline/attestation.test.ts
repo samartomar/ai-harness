@@ -1,11 +1,12 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { enterpriseBaselineAttestationCheck } from "../../src/baseline/attestation.js";
 import type { PlanContext } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
+import { spanningMcp } from "../../src/workspace/templates.js";
 
 let dir: string;
 
@@ -51,6 +52,20 @@ function writePolicy(
 
 function writeMcp(servers: Record<string, unknown>): void {
   writeFileSync(join(dir, ".mcp.json"), JSON.stringify({ mcpServers: servers }));
+}
+
+function writeWorkspaceManifest(repos: string[]): void {
+  writeFileSync(
+    join(dir, ".aih-workspace.json"),
+    JSON.stringify({
+      schemaVersion: 1,
+      workspaceType: "multi-repo",
+      graphScope: "combined-child-repos",
+      contextDir: "ai-coding",
+      repos,
+      generatedBy: "aih workspace",
+    }),
+  );
 }
 
 function writeMarketplaceSkill(
@@ -150,6 +165,60 @@ describe("enterprise baseline attestation", () => {
     expect(check.verdict).toBe("fail");
     expect(check.code).toBe("baseline.undeclared-surface");
     expect(check.detail).toContain("marketplace:stranger/repo@aaaaaaaaaaaa");
+  });
+
+  it("fails closed on unsafe MCP names instead of matching their sanitized label", () => {
+    writePolicy(["github"]);
+    writeMcp({
+      "github!": {
+        type: "http",
+        url: "https://api.githubcopilot.com/mcp/",
+      },
+    });
+
+    const check = enterpriseBaselineAttestationCheck(ctx());
+
+    expect(check.verdict).toBe("fail");
+    expect(check.code).toBe("baseline.registry-invalid");
+    expect(check.detail).toContain("safe registry identity");
+  });
+
+  it("ignores generated workspace graph MCP only when scoped to a declared child repo", () => {
+    mkdirSync(join(dir, "ui"));
+    writeWorkspaceManifest(["ui"]);
+    writeMcp(spanningMcp(dir, ["ui"]).mcpServers);
+
+    const check = enterpriseBaselineAttestationCheck(ctx());
+
+    expect(check.verdict).toBe("pass");
+    expect(check.detail).toContain("no external capability surfaces discovered");
+  });
+
+  it("flags workspace graph MCP residue when the scoped repo is not declared", () => {
+    mkdirSync(join(dir, "ui"));
+    mkdirSync(join(dir, "rogue"));
+    writeWorkspaceManifest(["ui"]);
+    writePolicy([]);
+    writeMcp({
+      "aih-workspace-graph-rogue": {
+        command: "uvx",
+        args: [
+          "--offline",
+          "--no-python-downloads",
+          "--no-env-file",
+          "code-review-graph@2.3.6",
+          "serve",
+          "--repo",
+          resolve(dir, "rogue"),
+        ],
+      },
+    });
+
+    const check = enterpriseBaselineAttestationCheck(ctx());
+
+    expect(check.verdict).toBe("fail");
+    expect(check.code).toBe("baseline.undeclared-surface");
+    expect(check.detail).toContain("mcp:aih-workspace-graph-rogue");
   });
 
   it("does not enforce the enterprise baseline outside enterprise posture", () => {

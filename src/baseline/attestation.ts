@@ -1,4 +1,5 @@
-import { join } from "node:path";
+import { existsSync, realpathSync } from "node:fs";
+import { isAbsolute, join, relative, resolve } from "node:path";
 import { readIfExists } from "../internals/fsxn.js";
 import type { PlanContext } from "../internals/plan.js";
 import type { Check } from "../internals/verify.js";
@@ -7,7 +8,9 @@ import type { McpCredentials, McpEgress, McpSupplyChain } from "../mcp/servers.j
 import { AIH_ORG_POLICY_FILE } from "../org-policy/constants.js";
 import { type OrgPolicy, readOrgPolicy } from "../org-policy/schema.js";
 import { classifyIncomingMcp } from "../trust/mcp-classify.js";
-import { isAihWorkspaceGraphMcpServer } from "../workspace/templates.js";
+import { checkWorkspaceChildPath } from "../workspace/detect.js";
+import { readWorkspaceManifest } from "../workspace/manifest.js";
+import { aihWorkspaceGraphRepo } from "../workspace/templates.js";
 
 type SurfaceKind = "mcp" | "marketplace";
 
@@ -16,11 +19,13 @@ interface CapabilitySurface {
   id: string;
   label: string;
   metadata: string;
+  forceUndeclared?: boolean;
   owner?: string;
   repo?: string;
   pinnedSha?: string;
 }
 
+const MCP_REGISTRY_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,79}$/;
 const EGRESS_VALUES = new Set<McpEgress>(["none", "local-only", "vendor-incumbent", "third-party"]);
 const CREDENTIAL_VALUES = new Set<McpCredentials>(["none", "oauth", "token"]);
 const SUPPLY_CHAIN_VALUES = new Set<McpSupplyChain>(["pinned", "unpinned", "hosted-remote"]);
@@ -57,7 +62,58 @@ function mcpMetadata(rawServer: unknown): string {
   return `${egress}/${credentials}/${supplyChain}`;
 }
 
-function parseMcpSurfaces(root: string): { surfaces: CapabilitySurface[]; error?: Check } {
+function realOrResolved(path: string): string {
+  return existsSync(path) ? realpathSync(path) : resolve(path);
+}
+
+function isContainedPath(root: string, candidate: string): boolean {
+  const rel = relative(root, candidate);
+  return rel.length === 0 || (!rel.startsWith("..") && !isAbsolute(rel));
+}
+
+function declaredWorkspaceGraphRepos(root: string, contextDir: string): Set<string> {
+  const manifest = readWorkspaceManifest(root, contextDir);
+  if (manifest?.status !== "OK") return new Set();
+  const rootAbs = realOrResolved(root);
+  const out = new Set<string>();
+  for (const repo of manifest.repos) {
+    try {
+      const checked = checkWorkspaceChildPath(rootAbs, repo.path);
+      if (!checked.exists) continue;
+      const child = realOrResolved(join(rootAbs, checked.path));
+      if (isContainedPath(rootAbs, child)) out.add(child);
+    } catch {
+      // An invalid declared child path is not eligible for the internal exemption.
+    }
+  }
+  return out;
+}
+
+function isDeclaredWorkspaceGraphServer(root: string, contextDir: string, value: unknown): boolean {
+  const repo = aihWorkspaceGraphRepo(value);
+  if (repo === undefined || !isAbsolute(repo)) return false;
+  const rootAbs = realOrResolved(root);
+  const repoAbs = realOrResolved(repo);
+  if (!isContainedPath(rootAbs, repoAbs)) return false;
+  return declaredWorkspaceGraphRepos(rootAbs, contextDir).has(repoAbs);
+}
+
+function invalidMcpName(name: string): Check {
+  const label = safeLabel(name);
+  return {
+    name: "enterprise baseline attestation",
+    verdict: "fail",
+    code: "baseline.registry-invalid",
+    detail: `.mcp.json mcpServers.${label} is not a safe registry identity; MCP names must match ${MCP_REGISTRY_ID_RE.source}`,
+    location: { uri: `.mcp.json#mcpServers.${label}` },
+    fingerprint: `baseline-invalid:mcp-name:${label}`,
+  };
+}
+
+function parseMcpSurfaces(
+  root: string,
+  contextDir: string,
+): { surfaces: CapabilitySurface[]; error?: Check } {
   const raw = readIfExists(join(root, ".mcp.json"));
   if (raw === undefined) return { surfaces: [] };
   let parsed: unknown;
@@ -91,22 +147,39 @@ function parseMcpSurfaces(root: string): { surfaces: CapabilitySurface[]; error?
       },
     };
   }
-  const surfaces = Object.entries(servers)
-    .sort(([a], [b]) => a.localeCompare(b))
-    .flatMap(([name, value]) => {
-      if (name.startsWith("aih-workspace-graph-") && isAihWorkspaceGraphMcpServer(value)) {
-        return [];
-      }
-      const id = safeLabel(name);
-      return [
-        {
-          kind: "mcp" as const,
-          id,
-          label: `mcp:${id}`,
-          metadata: mcpMetadata(value),
+  const surfaces: CapabilitySurface[] = [];
+  const labels = new Set<string>();
+  for (const [name, value] of Object.entries(servers).sort(([a], [b]) => a.localeCompare(b))) {
+    if (!MCP_REGISTRY_ID_RE.test(name)) return { surfaces: [], error: invalidMcpName(name) };
+    if (
+      name.startsWith("aih-workspace-graph-") &&
+      isDeclaredWorkspaceGraphServer(root, contextDir, value)
+    ) {
+      continue;
+    }
+    const label = `mcp:${safeLabel(name)}`;
+    if (labels.has(label)) {
+      return {
+        surfaces: [],
+        error: {
+          name: "enterprise baseline attestation",
+          verdict: "fail",
+          code: "baseline.registry-invalid",
+          detail: `.mcp.json contains colliding MCP registry labels at ${label}`,
+          location: { uri: ".mcp.json" },
+          fingerprint: `baseline-invalid:mcp-label-collision:${label}`,
         },
-      ];
+      };
+    }
+    labels.add(label);
+    surfaces.push({
+      kind: "mcp",
+      id: name,
+      label,
+      metadata: mcpMetadata(value),
+      forceUndeclared: name.startsWith("aih-workspace-graph-") ? true : undefined,
     });
+  }
   return { surfaces };
 }
 
@@ -166,8 +239,11 @@ function parseMarketplaceSurfaces(root: string): { surfaces: CapabilitySurface[]
   };
 }
 
-function collectSurfaces(root: string): { surfaces: CapabilitySurface[]; error?: Check } {
-  const mcp = parseMcpSurfaces(root);
+function collectSurfaces(
+  root: string,
+  contextDir: string,
+): { surfaces: CapabilitySurface[]; error?: Check } {
+  const mcp = parseMcpSurfaces(root, contextDir);
   if (mcp.error) return mcp;
   const marketplace = parseMarketplaceSurfaces(root);
   if (marketplace.error) return marketplace;
@@ -175,6 +251,7 @@ function collectSurfaces(root: string): { surfaces: CapabilitySurface[]; error?:
 }
 
 function isDeclared(surface: CapabilitySurface, policy: OrgPolicy): boolean {
+  if (surface.forceUndeclared === true) return false;
   if (surface.kind === "mcp") {
     const allowed = new Set(policy.mcp?.allowedServers ?? []);
     return allowed.has(surface.id) || allowed.has(surface.label);
@@ -200,7 +277,7 @@ export function enterpriseBaselineAttestationCheck(ctx: PlanContext): Check {
     };
   }
 
-  const collected = collectSurfaces(ctx.root);
+  const collected = collectSurfaces(ctx.root, ctx.contextDir);
   if (collected.error) return collected.error;
   if (collected.surfaces.length === 0) {
     return {
