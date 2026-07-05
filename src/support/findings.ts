@@ -289,6 +289,19 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     title: "RULE_ROUTER.md missing",
     action: "Run `aih bootstrap-ai --apply` to write the router.",
   },
+  "canon.generated-missing": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "Generated canon file missing",
+    action: "Run `aih bootstrap-ai --apply` to write generated canon files.",
+  },
+  "canon.generated-drift": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "Generated canon file drifted from selected baseline",
+    action:
+      "Run `aih bootstrap-ai --apply` to regenerate generated canon files from the committed marker.",
+  },
   "canon.context-dir-missing": {
     audience: "developer",
     failSeverity: "degraded",

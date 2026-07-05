@@ -85,6 +85,28 @@ describe("aih adopt --apply — marker-divergent carve + regenerate", () => {
     expect(classifyCanon(tmp, DIR).kind).toBe("already-adopted");
   });
 
+  it("keeps a persisted non-default baseline when carving a divergent router", async () => {
+    put("CLAUDE.md", divergentBootloader());
+    put(
+      ".aih-config.json",
+      JSON.stringify({
+        schemaVersion: 1,
+        contextDir: DIR,
+        targets: ["claude"],
+        baseline: "gstack",
+      }),
+    );
+
+    const ctx = makeCtx({ apply: true });
+    await executePlan(await command.plan(ctx), ctx);
+
+    const router = read(`${DIR}/RULE_ROUTER.md`);
+    expect(router).toContain("garrytan/gstack");
+    expect(router).not.toContain("affaan-m/ECC");
+    expect(router).not.toContain("Superpowers");
+    expect(JSON.parse(read(".aih-config.json")).baseline).toBe("gstack");
+  });
+
   it("is idempotent: a second adopt run after convergence writes nothing", async () => {
     put("CLAUDE.md", divergentBootloader());
     const ctx = makeCtx({ apply: true });

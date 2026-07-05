@@ -136,6 +136,16 @@ describe("PR 1B — project.md + setup.md", () => {
     expect(md).not.toContain("Conventional commits"); // no working-agreement prose folded in
   });
 
+  it("project.md points at the selected baseline without duplicating its rules", async () => {
+    seedMindworksLike(dir);
+    const c = await synth();
+    const md = projectContractDoc("ai-coding", c, { baseline: "gstack" });
+
+    expect(md).toContain("RULE_ROUTER.md");
+    expect(md).toContain("garrytan/gstack");
+    expect(md).not.toContain("ECC / Superpowers");
+  });
+
   it("setup.md is write-once; project.md regenerates", async () => {
     seedMindworksLike(dir);
     const w = writesByPath((await command.plan(ctx())).actions);

@@ -2,7 +2,12 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { AIH_CONFIG_FILE, aihConfigJson, readAihConfig } from "../../src/config/marker.js";
+import {
+  AIH_CONFIG_FILE,
+  aihConfigJson,
+  readAihConfig,
+  readAihConfigBaseline,
+} from "../../src/config/marker.js";
 import { aihIgnoreWrite } from "../../src/internals/gitignore.js";
 
 let dir: string;
@@ -46,6 +51,17 @@ describe("readAihConfig", () => {
     expect(readAihConfig(dir)).toBeUndefined();
   });
 
+  it("fails closed when a persisted baseline is invalid", () => {
+    writeMarker({ schemaVersion: 1, contextDir: "ai-coding", baseline: "missing" });
+    expect(readAihConfig(dir)).toEqual({
+      schemaVersion: 1,
+      contextDir: "ai-coding",
+      targets: [],
+      baseline: undefined,
+    });
+    expect(() => readAihConfigBaseline(dir)).toThrow(/invalid baseline/);
+  });
+
   it("returns undefined on a context dir that traverses parents (reuses settings constraints)", () => {
     writeMarker({ schemaVersion: 1, contextDir: "../escape" });
     expect(readAihConfig(dir)).toBeUndefined();
@@ -59,6 +75,25 @@ describe("aihConfigJson", () => {
       contextDir: "ai-coding",
       targets: ["claude"],
     });
+  });
+
+  it("persists only non-default baseline choices", () => {
+    expect(aihConfigJson("ai-coding", ["claude"], "ecc")).toEqual({
+      schemaVersion: 1,
+      contextDir: "ai-coding",
+      targets: ["claude"],
+    });
+    expect(aihConfigJson("ai-coding", ["claude"], "gstack")).toEqual({
+      schemaVersion: 1,
+      contextDir: "ai-coding",
+      targets: ["claude"],
+      baseline: "gstack",
+    });
+  });
+
+  it("parses a persisted non-default baseline", () => {
+    writeMarker(aihConfigJson("ai-coding", ["claude"], "gsd"));
+    expect(readAihConfig(dir)?.baseline).toBe("gsd");
   });
 
   it("round-trips through readAihConfig byte-for-byte", () => {

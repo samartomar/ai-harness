@@ -26,7 +26,7 @@ export interface InitPhase {
 /**
  * The fixed bootstrap order: profile → superpowers → bootstrap-ai → scaffold →
  * secrets → guardrails → mcp → sandbox → usage. Profiling detects the stack (Cursor
- * rules); Superpowers installs the agent baseline for the selected CLIs;
+ * rules); Superpowers installs the default ECC-adjacent agent baseline for the selected CLIs;
  * bootstrap-ai lays the Layer-2 canon (the SOLE writer of root bootloaders +
  * RULE_ROUTER); scaffolding lays the context dir the router points at; secrets +
  * guardrails fence the repo before MCP wiring and the sandbox land on top. Each

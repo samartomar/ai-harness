@@ -7,7 +7,11 @@ import {
   sharedCanonicalBlockBody,
 } from "../bootstrap-ai/canon.js";
 import { command as bootstrapAiCommand } from "../bootstrap-ai/index.js";
-import { AIH_CONFIG_FILE, aihConfigJson } from "../config/marker.js";
+import { AIH_CONFIG_FILE, aihConfigJson, readAihConfigBaseline } from "../config/marker.js";
+import {
+  DEFAULT_BASELINE_SOURCE_ID,
+  resolveBaselineSource,
+} from "../internals/baseline-sources.js";
 import { resolveTargets } from "../internals/cli-detect.js";
 import type { Cli } from "../internals/clis.js";
 import { readIfExists } from "../internals/fsxn.js";
@@ -106,6 +110,7 @@ export async function adoptApplyActions(
 
   const base = await bootstrapAiCommand.plan(applyCtx);
   const { clis } = await resolveTargets(applyCtx);
+  const baseline = resolveBaselineSource(applyCtx.options, readAihConfigBaseline(applyCtx.root));
   const routerRel = posix.join(dir, "RULE_ROUTER.md");
 
   const actions: Action[] = [];
@@ -132,7 +137,10 @@ export async function adoptApplyActions(
       actions.push(
         writeText(
           routerRel,
-          ruleRouterDoc(dir, repoName, stack, bootloaders, { projectExtension: true }),
+          ruleRouterDoc(dir, repoName, stack, bootloaders, {
+            projectExtension: true,
+            baseline,
+          }),
           a.describe,
         ),
       );
@@ -145,10 +153,12 @@ export async function adoptApplyActions(
   actions.push(
     writeJson(
       AIH_CONFIG_FILE,
-      aihConfigJson(dir, clis),
+      aihConfigJson(dir, clis, baseline.id),
       "persist adopt intent (context-dir + targets)",
       {
         merge: true,
+        removeJsonTopLevelKeys:
+          ctx.options.baseline === DEFAULT_BASELINE_SOURCE_ID ? ["baseline"] : undefined,
       },
     ),
   );

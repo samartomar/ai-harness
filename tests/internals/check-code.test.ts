@@ -420,6 +420,8 @@ describe("Check.code — invariants", () => {
       "cli.bootloader-drift": true,
       "cli.wont-load": true,
       "canon.router-missing": true,
+      "canon.generated-missing": true,
+      "canon.generated-drift": true,
       "canon.context-dir-missing": true,
       "canon.lint-failed": true,
       "canon.adoptable": true,

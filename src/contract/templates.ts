@@ -1,3 +1,9 @@
+import {
+  type BaselineSource,
+  type BaselineSourceId,
+  baselineRepoRefs,
+  resolveBaselineSource,
+} from "../internals/baseline-sources.js";
 import { lines } from "../internals/render.js";
 import type { ProjectContract } from "./schema.js";
 
@@ -125,8 +131,17 @@ function mcpToolingBlock(c: ProjectContract): string[] {
  * header warns against hand-editing. Facts only — the working agreement is referenced,
  * never duplicated (locked decision #5; agent-behavior §6).
  */
-export function projectContractDoc(dir: string, c: ProjectContract): string {
+export function projectContractDoc(
+  dir: string,
+  c: ProjectContract,
+  opts: { baseline?: BaselineSource | BaselineSourceId } = {},
+): string {
   const workspaceRows = workspaceCommandsBlock(c);
+  const baseline =
+    typeof opts.baseline === "object"
+      ? opts.baseline
+      : resolveBaselineSource({ baseline: opts.baseline });
+  const canonRef = baseline.id === "ecc" ? "ECC / Superpowers" : baselineRepoRefs(baseline);
   const workspaceCommands = Object.values(c.workspaces ?? {}).flatMap((workspace) => [
     workspace.commands.test,
     workspace.commands.build,
@@ -150,7 +165,7 @@ export function projectContractDoc(dir: string, c: ProjectContract): string {
     "",
     `> Facts about how this repo is built and run — rendered from \`${dir}/project.json\`.`,
     "> Do not hand-edit; re-run `aih contract` to refresh. Working agreements live in the",
-    "> agent canon (`RULE_ROUTER.md` → ECC / Superpowers), not here.",
+    `> agent canon (\`RULE_ROUTER.md\` → ${canonRef}), not here.`,
     ...(c.description ? ["", c.description] : []),
     "",
     "## Stack",

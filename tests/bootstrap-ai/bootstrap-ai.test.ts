@@ -292,6 +292,57 @@ describe("bootstrap-ai — CLI-aware bootloaders", () => {
   });
 });
 
+describe("bootstrap-ai — selectable Layer-1 baseline", () => {
+  it("--baseline gstack rewrites Layer 1 to garrytan/gstack and persists the choice", async () => {
+    const w = writesByPath(
+      (await command.plan(makeCtx({ canon: "compact", baseline: "gstack" }))).actions,
+    );
+    const router = w.get(".ai-context/RULE_ROUTER.md")?.contents ?? "";
+    const adapter = w.get(".ai-context/adapters/claude.md")?.contents ?? "";
+    const marker = w.get(".aih-config.json")?.json as { baseline?: string };
+
+    expect(router).toContain("garrytan/gstack");
+    expect(router).not.toContain("affaan-m/ECC");
+    expect(router).not.toContain("Superpowers");
+    expect(adapter).toContain("garrytan/gstack");
+    expect(marker.baseline).toBe("gstack");
+  });
+
+  it("--baseline gsd rewrites Layer 1 to open-gsd/gsd-core", async () => {
+    const w = writesByPath(
+      (await command.plan(makeCtx({ canon: "compact", baseline: "gsd" }))).actions,
+    );
+    const router = w.get(".ai-context/RULE_ROUTER.md")?.contents ?? "";
+
+    expect(router).toContain("open-gsd/gsd-core");
+    expect(router).not.toContain("affaan-m/ECC");
+  });
+
+  it("default and explicit --baseline ecc render byte-identical canon and marker payloads", async () => {
+    const def = writesByPath((await command.plan(makeCtx({ canon: "compact" }))).actions);
+    const ecc = writesByPath(
+      (await command.plan(makeCtx({ canon: "compact", baseline: "ecc" }))).actions,
+    );
+
+    expect(ecc.get(".ai-context/RULE_ROUTER.md")?.contents).toBe(
+      def.get(".ai-context/RULE_ROUTER.md")?.contents,
+    );
+    expect(ecc.get(".ai-context/adapters/claude.md")?.contents).toBe(
+      def.get(".ai-context/adapters/claude.md")?.contents,
+    );
+    expect(ecc.get(".aih-config.json")?.json).toEqual(def.get(".aih-config.json")?.json);
+  });
+
+  it("explicit --baseline ecc clears any previously persisted non-default baseline", async () => {
+    const marker = writesByPath(
+      (await command.plan(makeCtx({ canon: "compact", baseline: "ecc" }))).actions,
+    ).get(".aih-config.json");
+
+    expect(marker?.json).not.toHaveProperty("baseline");
+    expect(marker?.removeJsonTopLevelKeys).toEqual(["baseline"]);
+  });
+});
+
 describe("bootstrap-ai — doctor probes (drift gate)", () => {
   it("fails when the bootloader is missing, passes after --apply", async () => {
     const probe = probeNamed((await command.plan(makeCtx())).actions, "CLAUDE.md in sync");
@@ -320,6 +371,32 @@ describe("bootstrap-ai — doctor probes (drift gate)", () => {
     const res = await probe?.run(applied);
     expect(res?.verdict).toBe("fail");
     expect(res?.detail).toContain("drift");
+  });
+
+  it("fails on baseline drift when the marker and generated router/adapter disagree", async () => {
+    const applied = makeCtx({ canon: "compact", baseline: "ecc" }, { apply: true });
+    await executePlan(await command.plan(applied), applied);
+    put(
+      ".aih-config.json",
+      JSON.stringify({
+        schemaVersion: 1,
+        contextDir: ".ai-context",
+        targets: ["claude"],
+        baseline: "gstack",
+      }),
+    );
+
+    const verifyCtx = makeCtx({ canon: "compact" }, { verify: true });
+    const res = await executePlan(await command.plan(verifyCtx), verifyCtx);
+    const failed = (res.report?.checks ?? []).filter((c) => c.verdict === "fail");
+
+    expect(failed.map((c) => c.name)).toEqual(
+      expect.arrayContaining([
+        ".ai-context/RULE_ROUTER.md in sync",
+        ".ai-context/adapters/claude.md in sync",
+      ]),
+    );
+    expect(failed.map((c) => c.code)).toContain("canon.generated-drift");
   });
 });
 
