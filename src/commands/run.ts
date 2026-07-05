@@ -133,7 +133,7 @@ export async function runCapability(
       appendRunLog(resolvedRoot, buildRunEntry(entry), startedAt);
   };
 
-  let json = false;
+  let json = opts.json === true;
   try {
     // Context-dir precedence ladder: explicit `--context-dir` flag > committed
     // `.aih-config.json` marker > `AIH_CONTEXT_DIR` env > `ai-coding` default.

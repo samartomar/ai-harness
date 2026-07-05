@@ -410,6 +410,7 @@ describe("Check.code — invariants", () => {
       "mcp.blocked": true,
       "mcp.uv-missing": true,
       "mcp.config-missing": true,
+      "mcp.config-invalid": true,
       "mcp.unvendored-offline": true,
       "mcp.policy-denied": true,
       "mcp.compliant-config-read": true,
