@@ -68,6 +68,15 @@ function seedNodeRepo(): void {
   write("tsconfig.json", "{}");
 }
 
+function requirement(id: string, install = "auto-add") {
+  return {
+    id,
+    install,
+    reason: `${id} requirement`,
+    evidence: [{ kind: "catalog", source: id, detail: `${id} evidence` }],
+  };
+}
+
 function readJson<T>(path: string): T {
   return JSON.parse(readFileSync(path, "utf8")) as T;
 }
@@ -129,6 +138,42 @@ describe("aih capability resolve", () => {
     expect(existsSync(join(workspace, ".aih", "capabilities"))).toBe(false);
   });
 
+  it("preserves committed intent and never downgrades stricter existing installs", async () => {
+    seedNodeRepo();
+    write(
+      AIH_CAPABILITIES_FILE,
+      JSON.stringify({
+        schemaVersion: 1,
+        requires: [
+          requirement("custom.manual", "warn"),
+          requirement("stack.node-typescript", "requires-approval"),
+        ],
+      }),
+    );
+    const c = ctx({ apply: true, posture: "vibe" });
+
+    await executePlan(await capabilityResolveCommand.plan(c), c);
+
+    const manifest = readJson<{
+      requires: Array<{ id: string; install: string }>;
+    }>(join(workspace, AIH_CAPABILITIES_FILE));
+    expect(manifest.requires).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "custom.manual", install: "warn" }),
+        expect.objectContaining({
+          id: "stack.node-typescript",
+          install: "requires-approval",
+        }),
+        expect.objectContaining({ id: "common.security-review", install: "auto-add" }),
+      ]),
+    );
+
+    const cache = readJson<MachineCapabilityCache>(machineCapabilityCachePath(c));
+    expect(cache.repos[0]?.capabilities).toEqual(
+      expect.arrayContaining(["custom.manual", "stack.node-typescript"]),
+    );
+  });
+
   it("enterprise posture records needs as approval-required hints, not auto-adds", async () => {
     seedNodeRepo();
 
@@ -150,6 +195,21 @@ describe("aih capability resolve", () => {
         }),
       ]),
     );
+  });
+
+  it("team posture records detected needs as warnings", async () => {
+    seedNodeRepo();
+
+    const result = await executePlan(
+      await capabilityResolveCommand.plan(ctx({ posture: "team" })),
+      ctx({ posture: "team" }),
+    );
+    const digest = result.digests.find((item) => item.describe === "capability resolve");
+    const data = digest?.data as {
+      decisions: Array<{ install: string }>;
+    };
+
+    expect(data.decisions.map((d) => d.install)).toEqual(["warn", "warn", "warn"]);
   });
 });
 
@@ -227,6 +287,61 @@ describe("aih capability prune", () => {
 
     const next = readJson<MachineCapabilityCache>(cachePath);
     expect(next.repos.map((repo) => repo.root)).toEqual([workspace]);
+  });
+
+  it("refreshes stale cache entries from committed manifests", async () => {
+    seedNodeRepo();
+    const c = ctx({ apply: true });
+    await executePlan(await capabilityResolveCommand.plan(c), c);
+    const cachePath = machineCapabilityCachePath(c);
+    const before = readJson<MachineCapabilityCache>(cachePath);
+
+    write(
+      AIH_CAPABILITIES_FILE,
+      JSON.stringify({
+        schemaVersion: 1,
+        requires: [requirement("common.security-review", "warn")],
+      }),
+    );
+
+    const result = await executePlan(await capabilityPruneCommand.plan(c), c);
+
+    const next = readJson<MachineCapabilityCache>(cachePath);
+    expect(next.repos).toHaveLength(1);
+    expect(next.repos[0]?.capabilities).toEqual(["common.security-review"]);
+    expect(next.repos[0]?.manifestSha256).not.toBe(before.repos[0]?.manifestSha256);
+    expect(result.digests[0]?.data).toMatchObject({ pruned: 0, refreshed: 1 });
+    expect(result.digests[0]?.text).toContain("refreshed 1 repo");
+  });
+
+  it("prunes invalid cache roots before touching their manifests", async () => {
+    const c = ctx({ apply: true });
+    const cachePath = machineCapabilityCachePath(c);
+    mkdirSync(dirname(cachePath), { recursive: true });
+    writeFileSync(
+      cachePath,
+      JSON.stringify(
+        {
+          schemaVersion: 1,
+          repos: [
+            {
+              root: "\\\\example.invalid\\share",
+              manifestPath: AIH_CAPABILITIES_FILE,
+              manifestSha256: "0".repeat(64),
+              capabilities: ["common.security-review"],
+            },
+          ],
+        },
+        null,
+        2,
+      ),
+    );
+
+    const result = await executePlan(await capabilityPruneCommand.plan(c), c);
+
+    const next = readJson<MachineCapabilityCache>(cachePath);
+    expect(next.repos).toEqual([]);
+    expect(result.digests[0]?.data).toMatchObject({ pruned: 1, refreshed: 0 });
   });
 
   it("fails closed on a malformed machine cache instead of overwriting it", async () => {

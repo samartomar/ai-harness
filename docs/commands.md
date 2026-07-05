@@ -120,8 +120,9 @@ updates `$HOME/.aih/capabilities/cache.json` as a rebuildable cache. It never fe
 vendors third-party bytes. At `vibe` posture detected capabilities are auto-add decisions; at
 `team` they warn; at `Enterprise` they are approval-required hints for the org policy/on-ramp.
 `capability prune` rewrites only that derived cache, dropping repo entries whose committed
-`aih-capabilities.json` is gone or unreadable. The committed repo file remains the source of truth;
-`~/.aih/` is safe to delete and rebuild.
+`aih-capabilities.json` is gone or unreadable and refreshing cache hashes/capability lists from
+retained manifests. The committed repo file remains the source of truth; `~/.aih/` is safe to
+delete and rebuild.
 
 ## aih uninstall
 
