@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { reportAdvisories } from "../../src/report/advisories.js";
+import { reportAdvisories, reportAdvisoryResults } from "../../src/report/advisories.js";
 import type { LoadGroupModel } from "../../src/report/loadgroups.js";
 
 /** A minimal LoadGroupModel — reportAdvisories only reads worst/worstTokens/budget/overBudget. */
@@ -23,6 +23,48 @@ const model = (over: boolean): LoadGroupModel =>
   }) as LoadGroupModel;
 
 describe("reportAdvisories", () => {
+  it("models report advisories as structured warnings before adapting them to legacy skips", () => {
+    const input = {
+      model: model(true),
+      adoption: { present: 2, total: 5, absent: ["mcp", "guardrails", "sandbox"] },
+      contract: { unportable: 1, knownGaps: 0 },
+      gate: false,
+      initialized: true,
+    };
+
+    expect(
+      reportAdvisoryResults(input).map((result) => ({
+        passName: result.passName,
+        verdict: result.verdict,
+        code: result.evidence[0]?.type,
+      })),
+    ).toEqual([
+      {
+        passName: "context budget (advisory)",
+        verdict: "warn",
+        code: "report.context-over-budget",
+      },
+      { passName: "harness adoption", verdict: "warn", code: "report.low-adoption" },
+      { passName: "contract truth (advisory)", verdict: "warn", code: "report.contract-untrue" },
+    ]);
+
+    expect(
+      reportAdvisories(input).map((check) => ({
+        name: check.name,
+        verdict: check.verdict,
+        code: check.code,
+      })),
+    ).toEqual([
+      {
+        name: "context budget (advisory)",
+        verdict: "skip",
+        code: "report.context-over-budget",
+      },
+      { name: "harness adoption", verdict: "skip", code: "report.low-adoption" },
+      { name: "contract truth (advisory)", verdict: "skip", code: "report.contract-untrue" },
+    ]);
+  });
+
   it("over budget + --gate → coded fail under the gate name (drives the CI exit)", () => {
     const checks = reportAdvisories({ model: model(true), gate: true, initialized: false });
     expect(checks).toHaveLength(1);

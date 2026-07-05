@@ -19,7 +19,16 @@
  * already computed for the panels.
  */
 
-import type { Check } from "../internals/verify.js";
+import type { Check, CheckCode } from "../internals/verify.js";
+import { buildEvidenceGraph } from "../verification/graph.js";
+import { structuredVerificationRunToChecks } from "../verification/legacy.js";
+import { mergeVerificationResults } from "../verification/merge.js";
+import type {
+  Evidence,
+  Verdict as StructuredVerdict,
+  VerificationPipelineRun,
+  VerificationResult,
+} from "../verification/types.js";
 import type { LoadGroupModel } from "./loadgroups.js";
 
 /** The Configuration panel's adoption snapshot (present count + the absent artifact names). */
@@ -54,42 +63,87 @@ function budgetDetail(m: LoadGroupModel): string {
   return `${who}~${m.worstTokens} tok ${m.overBudget ? ">" : "≤"} budget ${m.budgetTokens}`;
 }
 
-/** Report-panel advisories as coded {@link Check}s, most-actionable first. */
-export function reportAdvisories(input: AdvisoryInput): Check[] {
-  const out: Check[] = [];
+const REPORT_ADVISORY_CODES = [
+  "report.context-over-budget",
+  "report.low-adoption",
+  "report.contract-untrue",
+] as const satisfies readonly CheckCode[];
+
+type ReportAdvisoryCode = (typeof REPORT_ADVISORY_CODES)[number];
+
+function isReportAdvisoryCode(value: string | undefined): value is ReportAdvisoryCode {
+  return value !== undefined && (REPORT_ADVISORY_CODES as readonly string[]).includes(value);
+}
+
+function reportEvidence(code: ReportAdvisoryCode): Evidence {
+  return { id: code, type: code, source: "report" };
+}
+
+function reportResult(
+  passName: string,
+  verdict: StructuredVerdict,
+  message: string,
+  code?: ReportAdvisoryCode,
+): VerificationResult {
+  return {
+    passName,
+    verdict,
+    severity: verdict === "fail" ? "high" : verdict === "warn" ? "low" : "info",
+    confidence: "high",
+    evidence: code === undefined ? [] : [reportEvidence(code)],
+    message,
+    category: "other",
+  };
+}
+
+function reportCodeFrom(result: VerificationResult): ReportAdvisoryCode | undefined {
+  for (const entry of result.evidence) {
+    if (isReportAdvisoryCode(entry.type)) return entry.type;
+  }
+  return undefined;
+}
+
+function reportAdvisoryRun(input: AdvisoryInput): VerificationPipelineRun | undefined {
+  const results = reportAdvisoryResults(input);
+  if (results.length === 0) return undefined;
+  return {
+    results,
+    summary: mergeVerificationResults(results),
+    evidenceGraph: buildEvidenceGraph(results),
+  };
+}
+
+/** Report-panel advisories as structured verification results, most-actionable first. */
+export function reportAdvisoryResults(input: AdvisoryInput): VerificationResult[] {
+  const out: VerificationResult[] = [];
   const m = input.model;
   if (m) {
+    const detail = budgetDetail(m);
     if (input.gate) {
       // Unchanged gate semantics — the only check whose `fail` drives the exit.
       out.push(
         m.overBudget
-          ? {
-              name: "per-turn token budget",
-              verdict: "fail",
-              detail: budgetDetail(m),
-              code: "report.context-over-budget",
-            }
-          : { name: "per-turn token budget", verdict: "pass", detail: budgetDetail(m) },
+          ? reportResult("per-turn token budget", "fail", detail, "report.context-over-budget")
+          : reportResult("per-turn token budget", "pass", detail),
       );
     } else if (m.overBudget) {
       // Advisory only: a distinct name (so the gate probe stays gate-only) and a
       // `skip` verdict (so a bare `aih report` keeps exiting 0).
-      out.push({
-        name: "context budget (advisory)",
-        verdict: "skip",
-        detail: budgetDetail(m),
-        code: "report.context-over-budget",
-      });
+      out.push(
+        reportResult("context budget (advisory)", "warn", detail, "report.context-over-budget"),
+      );
     }
   }
   const a = input.adoption;
   if (input.initialized && a && a.absent.length > 0) {
-    out.push({
-      name: "harness adoption",
-      verdict: "skip",
-      detail: `${a.present} of ${a.total} managed artifacts present; missing: ${a.absent.join(", ")}`,
-      code: "report.low-adoption",
-    });
+    out.push(
+      reportResult(
+        "harness adoption",
+        "warn",
+        `${a.present} of ${a.total} managed artifacts present; missing: ${a.absent.join(", ")}`,
+        "report.low-adoption",
+      ),
+    );
   }
   // A committed contract that hard-codes a non-portable path is "untrue" — it lies about
   // the repo on another machine. Under `--gate` it flips the exit (like the budget gate);
@@ -100,14 +154,24 @@ export function reportAdvisories(input: AdvisoryInput): Check[] {
     const detail = `${ct.unportable} non-portable path(s) in project.json — re-run \`aih contract --apply\``;
     out.push(
       input.gate
-        ? { name: "contract truth", verdict: "fail", detail, code: "report.contract-untrue" }
-        : {
-            name: "contract truth (advisory)",
-            verdict: "skip",
-            detail,
-            code: "report.contract-untrue",
-          },
+        ? reportResult("contract truth", "fail", detail, "report.contract-untrue")
+        : reportResult("contract truth (advisory)", "warn", detail, "report.contract-untrue"),
     );
   }
   return out;
+}
+
+/** Report-panel advisories as coded legacy {@link Check}s, most-actionable first. */
+export function reportAdvisories(input: AdvisoryInput): Check[] {
+  const run = reportAdvisoryRun(input);
+  if (run === undefined) return [];
+  return structuredVerificationRunToChecks(run, {
+    warnAs: "skip",
+    includeMetadata: false,
+  }).map((check, index) => {
+    const result = run.results[index];
+    if (result === undefined) return check;
+    const code = reportCodeFrom(result);
+    return code === undefined ? check : { ...check, code };
+  });
 }

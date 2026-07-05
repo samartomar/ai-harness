@@ -8,6 +8,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Report advisory structured bridge integration**: `aih report` now models
+  budget, adoption, and contract-truth advisories as structured verification
+  results before adapting them back to legacy coded checks, preserving existing
+  report exit-code and support-template behavior. (#224)
 - **Structured verification compatibility bridge**: new exported helpers convert
   structured verification results and pipeline runs into the legacy
   `VerificationReport`/probe contract, preserving legacy exit-code behavior while
