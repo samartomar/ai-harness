@@ -590,6 +590,42 @@ describe("doctor — git-enabled workspace roots", () => {
     ]);
   });
 
+  it("warns instead of silently passing when small child graph coverage is unverified", async () => {
+    writeWorkspaceMarker();
+    mkdirSync(join(dir, "service-api"), { recursive: true });
+    const run = fakeRunner((argv) => {
+      if (
+        argv[0] === "git" &&
+        argv[2] === dir &&
+        argv.slice(3).join(" ") === "rev-parse --is-inside-work-tree"
+      ) {
+        return { stdout: "true" };
+      }
+      if (argv[0] === "git" && argv[2] === join(dir, "service-api") && argv[3] === "ls-files") {
+        return { stdout: "src/index.ts\n" };
+      }
+      if (argv[0] === "git" && argv[2] === dir && argv[3] === "ls-files") {
+        return { stdout: ".aih-workspace.json\n.gitignore\n" };
+      }
+      return { code: 1, spawnError: true };
+    });
+    const c: PlanContext = {
+      ...rooted(true),
+      run,
+      host: makeHostAdapter({ platform: "linux", run, env: {} }),
+    };
+
+    const probe = findProbe(
+      (await command.plan(c)).actions,
+      "workspace child service-api graph safety",
+    );
+    const res = await probe?.run(c);
+
+    expect(res?.verdict).toBe("skip");
+    expect(res?.code).toBe("scale.code-review-graph-unverified");
+    expect(res?.detail).toContain("workspace graph coverage is unverified");
+  });
+
   it("does not render child repo paths into scaffold guidance commands", async () => {
     writeFileSync(
       join(dir, ".aih-workspace.json"),
