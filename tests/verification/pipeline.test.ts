@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildEvidenceGraph,
   mergeVerificationResults,
   runVerificationPipeline,
   type VerificationPass,
@@ -119,7 +120,306 @@ describe("verification pipeline core", () => {
       "exec:remote",
       "docs:setup",
     ]);
+    expect(run.evidenceGraph.nodes.map((node) => node.id)).toEqual([
+      "finding:exec-locality",
+      "source:source:src%2Fcommands%2Frun.ts",
+      "finding:docs",
+      "source:file:ai-coding%2Fsetup.md",
+    ]);
+    expect(run.evidenceGraph.edges.map((edge) => edge.id)).toEqual([
+      "edge:exec-locality:source:src%2Fcommands%2Frun.ts:exec%3Aremote",
+      "edge:docs:file:ai-coding%2Fsetup.md:docs%3Asetup",
+    ]);
     expect(run.summary.trustScore).toBeLessThan(100);
+  });
+
+  it("runs passes in parallel while keeping deterministic output and graph ordering", async () => {
+    const completionOrder: string[] = [];
+    const slowPass: VerificationPass = {
+      name: "slow-docs",
+      category: "doc",
+      async run() {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        completionOrder.push("slow-docs");
+        return result("slow-docs", {
+          verdict: "warn",
+          severity: "low",
+          category: "doc",
+          evidence: [{ id: "docs:slow", type: "file", source: "README.md" }],
+        });
+      },
+    };
+    const fastPass: VerificationPass = {
+      name: "fast-security",
+      category: "security",
+      async run() {
+        completionOrder.push("fast-security");
+        return result("fast-security", {
+          verdict: "fail",
+          severity: "critical",
+          category: "security",
+          evidence: [{ id: "secret", type: "file", source: "src/config.ts" }],
+        });
+      },
+    };
+
+    const run = await runVerificationPipeline(
+      { projectRoot: "D:/repo" },
+      { passes: [slowPass, fastPass], timeoutMs: 250 },
+    );
+
+    expect(completionOrder).toEqual(["fast-security", "slow-docs"]);
+    expect(run.results.map((entry) => entry.passName)).toEqual(["slow-docs", "fast-security"]);
+    expect(run.summary.failedPasses).toEqual(["fast-security"]);
+    expect(run.evidenceGraph.nodes.map((node) => node.id)).toEqual([
+      "finding:fast-security",
+      "source:file:src%2Fconfig.ts",
+      "finding:slow-docs",
+      "source:file:README.md",
+    ]);
+  });
+
+  it("builds a deterministic evidence graph with explicit findings for missing evidence", () => {
+    const graph = buildEvidenceGraph([
+      result("docs", {
+        verdict: "warn",
+        category: "doc",
+        severity: "low",
+      }),
+      result("exec-locality", {
+        verdict: "fail",
+        category: "exec",
+        severity: "high",
+        evidence: [
+          { id: "exec:remote", type: "file", source: "src/commands/run.ts", snippet: "curl" },
+          { id: "exec:remote", type: "file", source: "src/commands/run.ts", snippet: "curl" },
+        ],
+      }),
+    ]);
+
+    expect(graph.nodes).toEqual([
+      {
+        id: "finding:exec-locality",
+        kind: "finding",
+        passName: "exec-locality",
+        verdict: "fail",
+        severity: "high",
+        category: "exec",
+        confidence: "high",
+        message: "exec-locality complete",
+        evidenceCount: 1,
+      },
+      {
+        id: "source:file:src%2Fcommands%2Frun.ts",
+        kind: "source",
+        evidenceType: "file",
+        source: "src/commands/run.ts",
+      },
+      {
+        id: "finding:docs",
+        kind: "finding",
+        passName: "docs",
+        verdict: "warn",
+        severity: "low",
+        category: "doc",
+        confidence: "high",
+        message: "docs complete",
+        evidenceCount: 0,
+      },
+    ]);
+    expect(graph.edges).toEqual([
+      {
+        id: "edge:exec-locality:file:src%2Fcommands%2Frun.ts:exec%3Aremote",
+        kind: "finding-source",
+        from: "finding:exec-locality",
+        to: "source:file:src%2Fcommands%2Frun.ts",
+        evidenceId: "exec:remote",
+      },
+    ]);
+    expect(() => buildEvidenceGraph([])).toThrow(/buildEvidenceGraph requires at least one result/);
+    expect(() => buildEvidenceGraph([result("dupe"), result("dupe")])).toThrow(
+      /buildEvidenceGraph received duplicate passName: dupe/,
+    );
+    expect(() =>
+      buildEvidenceGraph(Array.from({ length: 129 }, (_, index) => result(`result-${index}`))),
+    ).toThrow(/buildEvidenceGraph received too many results: 129\/128/);
+    expect(() =>
+      buildEvidenceGraph([
+        result("too-noisy", {
+          evidence: Array.from({ length: 1_001 }, (_, index) => ({
+            id: `evidence-${index}`,
+            type: "file",
+            source: `${index}.txt`,
+          })),
+        }),
+      ]),
+    ).toThrow(/buildEvidenceGraph received too much evidence at result 0: 1001\/1000/);
+    expect(() =>
+      buildEvidenceGraph([
+        { ...result("bad-category"), category: "bad" } as unknown as VerificationResult,
+      ]),
+    ).toThrow(/buildEvidenceGraph received invalid category at result 0: bad/);
+  });
+
+  it("fails closed on malformed direct evidence graph inputs", () => {
+    const oversized = "x".repeat(4097);
+
+    expect(() => buildEvidenceGraph([result("ok")], { maxResults: 0 })).toThrow(
+      /verification graph max results must be a positive integer: 0/,
+    );
+    expect(() => buildEvidenceGraph([result("ok")], { maxEvidencePerResult: Number.NaN })).toThrow(
+      /verification graph max evidence per result must be a positive integer: NaN/,
+    );
+    expect(() =>
+      buildEvidenceGraph([
+        { ...result("bad-verdict"), verdict: "skip" } as unknown as VerificationResult,
+      ]),
+    ).toThrow(/buildEvidenceGraph received invalid verdict at result 0: skip/);
+    expect(() =>
+      buildEvidenceGraph([
+        { ...result("bad-severity"), severity: "urgent" } as unknown as VerificationResult,
+      ]),
+    ).toThrow(/buildEvidenceGraph received invalid severity at result 0: urgent/);
+    expect(() =>
+      buildEvidenceGraph([
+        { ...result("bad-confidence"), confidence: "sure" } as unknown as VerificationResult,
+      ]),
+    ).toThrow(/buildEvidenceGraph received invalid confidence at result 0: sure/);
+    expect(() => buildEvidenceGraph([{ ...result("bad-message"), message: oversized }])).toThrow(
+      /buildEvidenceGraph received message that is too long at result 0: 4097\/4096/,
+    );
+    expect(() =>
+      buildEvidenceGraph([
+        result("bad-snippet", {
+          evidence: [{ id: "one", type: "file", source: "one.txt", snippet: oversized }],
+        }),
+      ]),
+    ).toThrow(
+      /buildEvidenceGraph received evidence\.snippet that is too long at result 0\[0\]: 4097\/4096/,
+    );
+    expect(() => buildEvidenceGraph([null as unknown as VerificationResult])).toThrow(
+      /buildEvidenceGraph received invalid result at index 0/,
+    );
+    expect(() =>
+      buildEvidenceGraph([
+        { ...result("bad-evidence-array"), evidence: {} } as unknown as VerificationResult,
+      ]),
+    ).toThrow(/buildEvidenceGraph received invalid evidence at result 0/);
+    expect(() =>
+      buildEvidenceGraph([
+        { ...result("bad-evidence-entry"), evidence: [null] } as unknown as VerificationResult,
+      ]),
+    ).toThrow(/buildEvidenceGraph received invalid evidence at result 0\[0\]/);
+    expect(() =>
+      buildEvidenceGraph([
+        result("bad-surrogate", {
+          evidence: [{ id: "\uD800", type: "file", source: "one.txt" }],
+        }),
+      ]),
+    ).toThrow(/buildEvidenceGraph received malformed evidence.id at result 0/);
+  });
+
+  it("builds shared source nodes and delimiter-safe ids across findings", () => {
+    const sharedSourceGraph = buildEvidenceGraph([
+      result("policy/scan", {
+        verdict: "fail",
+        category: "policy",
+        severity: "medium",
+        evidence: [{ id: "rule:2", type: "file:ts", source: "src/config:settings.ts" }],
+      }),
+      result("security:scan", {
+        verdict: "fail",
+        category: "security",
+        severity: "high",
+        evidence: [{ id: "rule:1", type: "file:ts", source: "src/config:settings.ts" }],
+      }),
+    ]);
+
+    expect(sharedSourceGraph.nodes.map((node) => node.id)).toEqual([
+      "finding:security%3Ascan",
+      "source:file%3Ats:src%2Fconfig%3Asettings.ts",
+      "finding:policy%2Fscan",
+    ]);
+    expect(sharedSourceGraph.edges).toEqual([
+      {
+        id: "edge:security%3Ascan:file%3Ats:src%2Fconfig%3Asettings.ts:rule%3A1",
+        kind: "finding-source",
+        from: "finding:security%3Ascan",
+        to: "source:file%3Ats:src%2Fconfig%3Asettings.ts",
+        evidenceId: "rule:1",
+      },
+      {
+        id: "edge:policy%2Fscan:file%3Ats:src%2Fconfig%3Asettings.ts:rule%3A2",
+        kind: "finding-source",
+        from: "finding:policy%2Fscan",
+        to: "source:file%3Ats:src%2Fconfig%3Asettings.ts",
+        evidenceId: "rule:2",
+      },
+    ]);
+
+    const collisionGraph = buildEvidenceGraph([
+      result("left", {
+        evidence: [{ id: "one", type: "a:b", source: "c" }],
+      }),
+      result("right", {
+        evidence: [{ id: "two", type: "a", source: "b:c" }],
+      }),
+    ]);
+
+    expect(
+      collisionGraph.nodes.filter((node) => node.kind === "source").map((node) => node.id),
+    ).toEqual(["source:a%3Ab:c", "source:a:b%3Ac"]);
+
+    const emojiGraph = buildEvidenceGraph([
+      result("emoji-\u{1F600}", {
+        evidence: [{ id: "smile-\u{1F600}", type: "file", source: "src/\u{1F600}.ts" }],
+      }),
+    ]);
+
+    expect(emojiGraph.nodes.map((node) => node.id)).toEqual([
+      "finding:emoji-%F0%9F%98%80",
+      "source:file:src%2F%F0%9F%98%80.ts",
+    ]);
+    expect(emojiGraph.edges.map((edge) => edge.id)).toEqual([
+      "edge:emoji-%F0%9F%98%80:file:src%2F%F0%9F%98%80.ts:smile-%F0%9F%98%80",
+    ]);
+  });
+
+  it("keeps graph evidence deduplication aligned with merged evidence", () => {
+    const results = [
+      result("policy", {
+        evidence: [
+          { id: "same", type: "file", source: "first.txt" },
+          { id: "same", type: "file", source: "second.txt" },
+        ],
+      }),
+    ];
+
+    const graph = buildEvidenceGraph(results);
+    const summary = mergeVerificationResults(results);
+
+    expect(summary.aggregatedEvidence).toEqual([{ id: "same", type: "file", source: "first.txt" }]);
+    expect(graph.nodes.find((node) => node.kind === "finding")).toMatchObject({
+      id: "finding:policy",
+      evidenceCount: 1,
+    });
+    expect(graph.edges).toHaveLength(1);
+    expect(graph.edges[0]?.to).toBe("source:file:first.txt");
+  });
+
+  it("rejects malformed UTF-16 at the pipeline boundary", async () => {
+    const badPass: VerificationPass = {
+      name: "bad-surrogate",
+      async run() {
+        return result("bad-surrogate", {
+          evidence: [{ id: "\uD800", type: "file", source: "one.txt" }],
+        });
+      },
+    };
+
+    await expect(
+      runVerificationPipeline({ projectRoot: "D:/repo" }, { passes: [badPass] }),
+    ).rejects.toThrow(/verification pass returned malformed evidence.id: bad-surrogate/);
   });
 
   it("fails closed when no passes are selected", async () => {
