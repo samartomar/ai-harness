@@ -78,7 +78,19 @@ interface InitV3Digest {
   scan: { stack: { languages: string[] } };
   gaps: Array<{ id: string }>;
   plan: { decisions: Array<{ name: string; install: string }> };
-  fingerprint: { fingerprintSha256: string };
+  fingerprint: {
+    plannedCapabilities: Array<{ name: string; install: string }>;
+    fingerprintSha256: string;
+  };
+}
+
+function initV3Digest(actions: Action[]): InitV3Digest {
+  const digest = actions.find(
+    (a) => a.kind === "digest" && a.describe === "init v3 bootstrap intelligence",
+  );
+  const data = digest?.kind === "digest" ? (digest.data as InitV3Digest | undefined) : undefined;
+  if (data === undefined) throw new Error("expected init-v3 digest");
+  return data;
 }
 
 describe("aih init — command surface", () => {
@@ -149,10 +161,7 @@ describe("aih init --v3 — bootstrap intelligence", () => {
 
     const c = initV3Ctx({ posture: "team", postureSource: "flag" });
     const p = await command.plan(c);
-    const digest = p.actions.find(
-      (a) => a.kind === "digest" && a.describe === "init v3 bootstrap intelligence",
-    );
-    const data = digest?.kind === "digest" ? (digest.data as InitV3Digest | undefined) : undefined;
+    const data = initV3Digest(p.actions);
 
     expect(p.actions.some((a) => a.kind === "exec")).toBe(false);
     expect(data?.scan.stack.languages).toContain("TypeScript/Node.js");
@@ -179,6 +188,30 @@ describe("aih init --v3 — bootstrap intelligence", () => {
         ".aih/fingerprint.json",
       ]),
     );
+  });
+
+  it("fingerprints install-mode changes, not just capability ids", async () => {
+    seedNodeRepo();
+
+    const team = initV3Digest((await command.plan(initV3Ctx({ posture: "team" }))).actions);
+    const enterprise = initV3Digest(
+      (await command.plan(initV3Ctx({ posture: "enterprise" }))).actions,
+    );
+
+    expect(team.fingerprint.plannedCapabilities).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: "common.security-review", install: "warn" }),
+      ]),
+    );
+    expect(enterprise.fingerprint.plannedCapabilities).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "common.security-review",
+          install: "requires-approval",
+        }),
+      ]),
+    );
+    expect(enterprise.fingerprint.fingerprintSha256).not.toBe(team.fingerprint.fingerprintSha256);
   });
 
   it("--apply writes committed capability intent plus derived cache/fingerprint idempotently", async () => {

@@ -59,7 +59,7 @@ export interface InitV3Fingerprint {
   contextDir: string;
   targets: string[];
   stack: InitV3StackSummary;
-  plannedCapabilities: string[];
+  plannedCapabilities: Array<{ name: string; install: string }>;
   fingerprintSha256: string;
 }
 
@@ -239,13 +239,16 @@ function buildFingerprint(
   stack: InitV3StackSummary,
   decisions: InitV3Report["plan"]["decisions"],
 ): InitV3Fingerprint {
+  const plannedCapabilities = decisions
+    .map((decision) => ({ name: decision.name, install: decision.install }))
+    .sort((a, b) => byCodeUnit(`${a.name}:${a.install}`, `${b.name}:${b.install}`));
   const body = {
     schemaVersion: 1 as const,
     kind: "init-v3" as const,
     contextDir: ctx.contextDir,
     targets: [...(ctx.targets ?? [])].sort(byCodeUnit),
     stack,
-    plannedCapabilities: decisions.map((decision) => decision.name).sort(byCodeUnit),
+    plannedCapabilities,
   };
   return {
     ...body,
