@@ -335,7 +335,7 @@ function parseMarketplaceSurfaces(root: string): { surfaces: CapabilitySurface[]
           name: "enterprise baseline attestation",
           verdict: "fail",
           code: "baseline.registry-invalid",
-          detail: `${skill.name}: ${parsed.error}`,
+          detail: `${safeLabel(skill.name)}: ${parsed.error}`,
           location: { uri: `${DEFAULT_MARKETPLACE_OUT}/marketplace.json` },
           fingerprint: `baseline-invalid:marketplace-pin:${safeLabel(skill.name)}`,
         },
@@ -351,7 +351,7 @@ function parseMarketplaceSurfaces(root: string): { surfaces: CapabilitySurface[]
       kind: "marketplace",
       id: ref,
       label: `marketplace:${ref}`,
-      metadata: `${skill.name}/${skill.verdict}`,
+      metadata: `${safeLabel(skill.name)}/${skill.verdict}`,
       ...parsed.ref,
     });
   }

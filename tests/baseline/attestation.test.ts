@@ -93,7 +93,11 @@ function writeWorkspaceManifest(repos: string[]): void {
   );
 }
 
-function writeMarketplaceSkill(source = `owner/repo@${A_SHA}`, commit = A_SHA): void {
+function writeMarketplaceSkill(
+  source = `owner/repo@${A_SHA}`,
+  commit = A_SHA,
+  name = "clean",
+): void {
   mkdirSync(join(dir, ".aih", "marketplace"), { recursive: true });
   writeFileSync(
     join(dir, ".aih", "marketplace", "marketplace.json"),
@@ -102,7 +106,7 @@ function writeMarketplaceSkill(source = `owner/repo@${A_SHA}`, commit = A_SHA): 
       name: "acme-skills",
       skills: [
         {
-          name: "clean",
+          name,
           source,
           commit,
           verdict: "GREEN",
@@ -339,6 +343,18 @@ describe("enterprise baseline attestation", () => {
     expect(check.code).toBe("baseline.undeclared-surface");
     expect(check.detail).toContain("marketplace:");
     expect(check.detail).not.toContain("\u001b");
+  });
+
+  it("sanitizes marketplace skill names before reporting metadata", () => {
+    writePolicy([]);
+    writeMarketplaceSkill(`stranger/repo@${A_SHA}`, A_SHA, "clean name");
+
+    const check = enterpriseBaselineAttestationCheck(ctx());
+
+    expect(check.verdict).toBe("fail");
+    expect(check.code).toBe("baseline.undeclared-surface");
+    expect(check.detail).toContain("clean-name/GREEN");
+    expect(check.detail).not.toContain("clean name/GREEN");
   });
 
   it("fails closed when a marketplace source pin disagrees with the packaged commit", () => {
