@@ -173,6 +173,39 @@ describe("aih uninstall", () => {
     expect(removed.has(".kiro/hooks/team-custom.kiro.hook")).toBe(false);
   });
 
+  it("does not back up Kiro-looking extras without generated Kiro ownership evidence", async () => {
+    put(
+      ".aih-config.json",
+      JSON.stringify({ schemaVersion: 1, contextDir: "ai-coding", targets: ["kiro"] }),
+    );
+    put(".kiro/steering/agent-tools.md", "# Team-owned tools\n");
+    put(".kiro/hooks/aih-team.kiro.hook", "{}\n");
+
+    const ctx = makeCtx();
+    const result = await executePlan(await uninstallCommand.plan(ctx), ctx);
+    const digest = result.digests.find((d) => d.describe.includes("core install footprint"));
+    const artifacts = digest?.data as
+      | { artifacts?: Array<{ path: string; disposition: string; kind: string }> }
+      | undefined;
+
+    expect(result.removed.map((r) => r.path)).not.toContain(".kiro/steering/agent-tools.md");
+    expect(result.removed.map((r) => r.path)).not.toContain(".kiro/hooks/aih-team.kiro.hook");
+    expect(artifacts?.artifacts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          path: ".kiro/steering/agent-tools.md",
+          kind: "kiro-steering",
+          disposition: "advisory",
+        }),
+        expect.objectContaining({
+          path: ".kiro/hooks/aih-team.kiro.hook",
+          kind: "kiro-hook",
+          disposition: "advisory",
+        }),
+      ]),
+    );
+  });
+
   it("refuses to remove dirty install targets without --force", async () => {
     await bootstrapFixture();
     commitFixture();
@@ -221,6 +254,7 @@ describe("aih uninstall", () => {
       JSON.stringify({ schemaVersion: 1, contextDir: "docs", targets: ["claude"] }),
     );
     put("docs/guide.md", "# User docs\n");
+    put(".aih/user-cache.jsonl", "{}\n");
 
     const ctx = makeCtx();
     const result = await executePlan(await uninstallCommand.plan(ctx), ctx);
@@ -230,9 +264,13 @@ describe("aih uninstall", () => {
       | undefined;
 
     expect(result.removed.map((r) => r.path)).not.toContain("docs");
+    expect(result.removed.map((r) => r.path)).not.toContain(".aih");
     expect(result.removed.map((r) => r.path)).toContain(".aih-config.json");
     expect(artifacts?.artifacts).toEqual(
-      expect.arrayContaining([expect.objectContaining({ path: "docs", disposition: "advisory" })]),
+      expect.arrayContaining([
+        expect.objectContaining({ path: "docs", disposition: "advisory" }),
+        expect.objectContaining({ path: ".aih", disposition: "advisory" }),
+      ]),
     );
   });
 

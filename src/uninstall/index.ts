@@ -130,6 +130,11 @@ function kiroHookFiles(ctx: PlanContext): string[] {
   }
 }
 
+function hasKiroOwnershipEvidence(ctx: PlanContext): boolean {
+  const text = read(ctx, ".kiro/steering/00-canon.md");
+  return text !== undefined && extractManagedBlock(text, SHARED_MARKER) !== undefined;
+}
+
 function kiroExtraArtifacts(ctx: PlanContext, owned: boolean): UninstallArtifact[] {
   const disposition = owned ? "backup" : "advisory";
   const ownership = owned
@@ -160,10 +165,12 @@ function coreUninstallSet(ctx: PlanContext): UninstallSet {
   const markerTargets = new Set((marker?.targets ?? []).map((target) => target.toLowerCase()));
   const markerContextDir = marker ? removableContextDir(marker.contextDir) : undefined;
   const artifacts: UninstallArtifact[] = [];
+  let ownsContextDir = false;
 
   if (markerContextDir !== undefined) {
     const contextDir = canonicalExistingRel(ctx, markerContextDir);
     if (contextDir !== undefined && hasManagedContextEvidence(ctx, contextDir)) {
+      ownsContextDir = true;
       artifacts.push({
         path: contextDir,
         kind: "context-dir",
@@ -202,9 +209,11 @@ function coreUninstallSet(ctx: PlanContext): UninstallSet {
   }
   artifacts.push(...repoMcpAdvisories(ctx));
   artifacts.push(...bootloaderAdvisories(ctx));
-  artifacts.push(...kiroExtraArtifacts(ctx, markerTargets.has("kiro")));
+  artifacts.push(
+    ...kiroExtraArtifacts(ctx, markerTargets.has("kiro") && hasKiroOwnershipEvidence(ctx)),
+  );
 
-  if (exists(ctx, ".aih") && marker !== undefined) {
+  if (exists(ctx, ".aih") && ownsContextDir) {
     artifacts.push({
       path: ".aih",
       kind: "cache",
