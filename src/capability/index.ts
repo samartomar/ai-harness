@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { existsSync, lstatSync } from "node:fs";
-import { isAbsolute, join, parse } from "node:path";
+import { isAbsolute, join, parse, resolve } from "node:path";
 import { z } from "zod";
 import { AihError } from "../errors.js";
 import { readIfExists, readRegularFile } from "../internals/fsxn.js";
@@ -349,7 +349,13 @@ function resolveDecisions(ctx: PlanContext, stack: RepoStack): CapabilityDecisio
   const decisions: CapabilityDecision[] = [];
 
   const security = byId.get("common.security-review");
-  if (security) decisions.push(decision(ctx, security, [catalogEvidence(security)]));
+  if (security === undefined) {
+    throw new AihError(
+      "capability catalog is incompatible with this aih version: common.security-review is unavailable",
+      "AIH_CONFIG",
+    );
+  }
+  decisions.push(decision(ctx, security, [catalogEvidence(security)]));
 
   const tdd = byId.get("common.tdd-workflow");
   if (tdd && stack.testRunner !== undefined) {
@@ -469,19 +475,25 @@ function sameCacheEntry(a: MachineCapabilityRepo, b: MachineCapabilityRepo): boo
   );
 }
 
-function isSafeLocalCacheRoot(root: string): boolean {
-  if (root.length === 0 || root.trim() !== root) return false;
+function safeLocalCacheRoot(root: string): string | undefined {
+  if (root.length === 0 || root.trim() !== root) return undefined;
   if ([...root].some((char) => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127)) {
-    return false;
+    return undefined;
   }
-  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(root)) return false;
-  if (root.replaceAll("\\", "/").startsWith("//")) return false;
-  if (!isAbsolute(root)) return false;
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(root)) return undefined;
+  if (root.replaceAll("\\", "/").startsWith("//")) return undefined;
+  if (!isAbsolute(root)) return undefined;
+  const normalized = resolve(root);
+  if (normalized.replaceAll("\\", "/").startsWith("//")) return undefined;
   if (process.platform === "win32") {
-    const parsed = parse(root);
-    if (parsed.root === "\\" || parsed.root === "/") return false;
+    const parsed = parse(normalized);
+    if (parsed.root === "\\" || parsed.root === "/") return undefined;
   }
-  return true;
+  return normalized;
+}
+
+function isSafeLocalCacheRoot(root: string): boolean {
+  return safeLocalCacheRoot(root) !== undefined;
 }
 
 function upsertCache(
@@ -489,17 +501,18 @@ function upsertCache(
   ctx: PlanContext,
   manifest: ProjectCapabilitiesFile,
 ): MachineCapabilityCache {
-  if (!isSafeLocalCacheRoot(ctx.root)) {
+  const safeRoot = safeLocalCacheRoot(ctx.root);
+  if (safeRoot === undefined) {
     throw new AihError(
       "capability resolve requires a safe local absolute repo root for the machine cache",
       "AIH_CONFIG",
     );
   }
-  const repoEntry = cacheEntryFor(ctx.root, manifest);
+  const repoEntry = cacheEntryFor(safeRoot, manifest);
   return {
     schemaVersion: 1,
     repos: [
-      ...cache.repos.filter((repo) => repo.root !== ctx.root && isSafeLocalCacheRoot(repo.root)),
+      ...cache.repos.filter((repo) => repo.root !== safeRoot && isSafeLocalCacheRoot(repo.root)),
       repoEntry,
     ].sort((a, b) => a.root.localeCompare(b.root)),
   };
@@ -521,7 +534,7 @@ function resolveText(report: CapabilityResolveReport): string {
 }
 
 function capabilityResolvePlan(ctx: PlanContext): Plan {
-  if (!isSafeLocalCacheRoot(ctx.root)) {
+  if (safeLocalCacheRoot(ctx.root) === undefined) {
     throw new AihError(
       "capability resolve requires a safe local absolute repo root for the machine cache",
       "AIH_CONFIG",
@@ -551,17 +564,18 @@ function prunedCache(cache: MachineCapabilityCache): {
   let pruned = 0;
   let refreshed = 0;
   for (const repo of cache.repos) {
-    if (!isSafeLocalCacheRoot(repo.root) || !existsSync(repo.root)) {
+    const root = safeLocalCacheRoot(repo.root);
+    if (root === undefined || !existsSync(root)) {
       pruned += 1;
       continue;
     }
-    const read = readProjectManifest(repo.root, false);
+    const read = readProjectManifest(root, false);
     if (read === undefined) {
       pruned += 1;
       continue;
     }
     try {
-      const next = cacheEntryFor(repo.root, read.manifest, read.raw);
+      const next = cacheEntryFor(root, read.manifest, read.raw);
       if (!sameCacheEntry(next, repo)) {
         refreshed += 1;
       }

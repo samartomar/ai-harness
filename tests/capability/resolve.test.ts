@@ -9,7 +9,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   AIH_CAPABILITIES_FILE,
@@ -157,6 +157,17 @@ describe("aih capability resolve", () => {
     await expect(async () => {
       await capabilityResolveCommand.plan(c);
     }).rejects.toThrow(/safe local absolute repo root/);
+  });
+
+  it("normalizes safe absolute repo roots before writing machine cache entries", async () => {
+    seedNodeRepo();
+    mkdirSync(join(workspace, "nested"));
+    const c = ctx({ apply: true, root: join(workspace, "nested", "..") });
+
+    await executePlan(await capabilityResolveCommand.plan(c), c);
+
+    const cache = readJson<MachineCapabilityCache>(machineCapabilityCachePath(c));
+    expect(cache.repos[0]?.root).toBe(resolve(workspace));
   });
 
   it("preserves committed intent and never downgrades stricter existing installs", async () => {
@@ -346,6 +357,21 @@ describe("aih capability resolve", () => {
       await expect(async () => {
         await module.capabilityResolveCommand.plan(ctx());
       }).rejects.toThrow(/requires a semver aih VERSION/);
+    } finally {
+      vi.doUnmock("../../src/version.js");
+      vi.resetModules();
+    }
+  });
+
+  it("fails closed when the mandatory security-review capability is engine-incompatible", async () => {
+    seedNodeRepo();
+    vi.resetModules();
+    vi.doMock("../../src/version.js", () => ({ VERSION: "2.0.0" }));
+    try {
+      const module = await import("../../src/capability/index.js");
+      await expect(async () => {
+        await module.capabilityResolveCommand.plan(ctx());
+      }).rejects.toThrow(/common\.security-review is unavailable/);
     } finally {
       vi.doUnmock("../../src/version.js");
       vi.resetModules();
