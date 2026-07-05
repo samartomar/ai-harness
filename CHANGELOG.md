@@ -6,6 +6,13 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-07-05
+
+This package release ships the completed v1.3.1, v1.4.0, v1.5.0,
+v1.6.0, and v2.0.0 roadmap milestones together. The milestone labels remain on
+their GitHub issues; the npm artifact advances directly from 1.3.0 to 2.0.0
+because the completed work landed as one verified mainline release train.
+
 ### Added
 
 - **Executor structured verification sidecar**: `executePlan(..., { verify: true })`
@@ -30,13 +37,18 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   summaries, evidence aggregation, ordered pass selection, and duplicate-safe pass
   registration. This is the Wave 1 / EPIC 0 foundation for parallel verification
   and evidence graph work. (#210)
+- **Parallel verification runner, pass catalog, and context budgeting**: structured
+  verification can now run bounded pass sets with deterministic merge/evidence
+  graph output, built-in exec-locality/policy/security/dependency/doc passes, and
+  lazy canon loading that respects context budgets and secret/path exclusions.
+  (#212, #214, #216)
 - **Capability resolve/cache substrate**: new `aih capability resolve` and
   `aih capability prune` commands emit evidence-backed capability decisions,
   persist committed repo intent in `aih-capabilities.json`, and maintain a
   rebuildable `$HOME/.aih/capabilities/cache.json` machine cache. Resolve stays
   offline and delegates content by reference; posture changes the decision mode
   (`vibe` auto-add, `team` warn, `Enterprise` approval-required) without adding
-  a second authority.
+  a second authority. (#205)
 - **Init v3 bootstrap intelligence**: `aih init --v3` now appends a structured
   repo scan, gap analysis, evidence-backed capability install plan, and derived
   `.aih/fingerprint.json` to the existing init flow. Under `--apply`, root
@@ -59,6 +71,14 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Workspace snapshot child remotes**: `aih workspace snapshot --lock --apply` now records
   each child repo's local origin URL when available, preserving fetch location in
   `workspace-lock.json` without consulting ambient Git config or touching remotes. (#181)
+- **Workspace reconstruction and lifecycle hardening**: workspace bootloader
+  targeting, hydrate from committed locks, nested-repo safety, absolute child path
+  reporting, child graph coverage, posture-transitive verification, and
+  uninstall/footprint removal now cover the main workspace lifecycle without
+  treating generated state as authority. (#177, #182, #183, #184, #185, #186, #188)
+- **Selectable canon baseline**: repo canon bootstrapping can select pinned
+  baseline sources instead of hardcoding one framework, preserving delegate-don't-
+  vendor while making framework neutrality explicit. (#191)
 - **MCP approval on-ramp**: org policy can now combine `mcp.allowedServers` with
   `mcp.approvals[]` reviewer evidence so vetted third-party MCP servers warn
   instead of deny under Enterprise posture. `aih mcp approve <server>
@@ -74,6 +94,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **Paired structured verification coverage**: `skill vet`, `trust allow`/`pin`/
+  `verify`, `doctor`, and `workspace add` phase-2 promotion now route their
+  remaining gate checks through paired structured probes on the existing `probe`
+  action kind, preserving legacy report order/count/verdict/detail behavior while
+  adding structured sidecar results for the new verification pipeline. (#234,
+  #236, #238, #240)
 - **Trust scan paired structured probes**: `trust scan` now routes static and
   fetched-source verification checks through paired structured probes on the
   existing `probe` action kind, preserving one-to-one legacy report checks while
@@ -663,7 +689,8 @@ GitHub but **never published to npm**; the first published release is 0.2.0.
   (npm + github-actions), private vulnerability reporting, `@claude` workflow gated
   to trusted authors, and GitHub Actions pinned to commit SHAs.
 
-[Unreleased]: https://github.com/samartomar/ai-harness/compare/v1.3.0...HEAD
+[Unreleased]: https://github.com/samartomar/ai-harness/compare/v2.0.0...HEAD
+[2.0.0]: https://github.com/samartomar/ai-harness/compare/v1.3.0...v2.0.0
 [1.3.0]: https://github.com/samartomar/ai-harness/compare/v1.2.1...v1.3.0
 [1.2.1]: https://github.com/samartomar/ai-harness/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/samartomar/ai-harness/compare/v1.0.1...v1.2.0
