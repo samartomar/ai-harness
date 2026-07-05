@@ -2,13 +2,12 @@ import { createHash } from "node:crypto";
 import { AihError } from "../errors.js";
 import { redactSecrets } from "../guardrails/redact.js";
 import type { CommandSpec, PlanContext } from "../internals/plan.js";
-import { digest, plan, probe } from "../internals/plan.js";
+import { digest, plan, structuredProbe } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
 import {
   type Evidence,
   runVerificationPipeline,
   type Severity,
-  structuredVerificationRunToCheck,
   type VerificationInput,
   type VerificationPass,
   type VerificationPipelineRun,
@@ -428,13 +427,10 @@ async function sessionGuardPlan(ctx: PlanContext): Promise<ReturnType<typeof pla
   return plan(
     "session-guard",
     digest("session guardrails", reportText(report), report),
-    probe("session guardrails", () =>
-      structuredVerificationRunToCheck(report, {
-        name: "session guardrails",
-        passDetail: "no session guardrail findings",
-        includeMetadata: false,
-      }),
-    ),
+    structuredProbe("session guardrails", () => report, {
+      passDetail: "no session guardrail findings",
+      includeMetadata: false,
+    }),
   );
 }
 
