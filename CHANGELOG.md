@@ -72,6 +72,13 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   narrow the managed stdio command allowlist unless `mcp.allowManagedOnly` is set.
   (#187)
 
+### Changed
+
+- **Executor structured-first verification cleanup**: executor verification now
+  collects structured entries first and adapts the legacy `VerificationReport`
+  from that shared pass data, preserving legacy coded checks, locations, and
+  fingerprints while adding file-backed evidence to the structured sidecar. (#230)
+
 ### Fixed
 
 - **Enterprise MCP policy for GitHub**: org policy can now declare incumbent MCP
