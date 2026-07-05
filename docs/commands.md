@@ -127,7 +127,7 @@ Run the CRISPY context-engineering stage machine (deterministic, gate-ordered).
 ## aih workspace
 
 Scaffold a **multi-repo** workspace (parent-only): cross-repo architecture map (write-once) +
-per-repo discipline, a VS Code `.code-workspace`, graph MCP scoped per present declared child repo
+per-repo discipline, selected CLI bootloaders, a VS Code `.code-workspace`, graph MCP scoped per present declared child repo
 with absolute root-anchored paths, and a `.aih-workspace.json` marker. Declare the scope with `--repos a,b` or an existing
 `.aih-workspace.json`; detected child Git repos are reported as candidates but are not auto-enrolled.
 With `--git`, the generated `.gitignore` defensively ignores all immediate child Git repos, including

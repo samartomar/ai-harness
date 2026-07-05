@@ -261,7 +261,7 @@ export function repoDisciplineDoc(repos: string[], dir: string): string {
   );
 }
 
-/** A thin workspace bootloader (CLAUDE.md / AGENTS.md at the parent) → the canon. */
+/** A thin tool-native workspace bootloader at the parent → the canon. */
 export function workspaceBootloader(
   tool: string,
   name: string,
