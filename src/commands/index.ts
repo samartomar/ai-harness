@@ -18,7 +18,7 @@ import type { CommandSpec } from "../internals/plan.js";
 import { marketplaceBuildCommand } from "../marketplace/build.js";
 import { marketplacePublishCommand } from "../marketplace/publish.js";
 import { marketplaceValidateCommand } from "../marketplace/validate.js";
-import { command as mcp } from "../mcp/index.js";
+import { command as mcp, mcpApproveCommand } from "../mcp/index.js";
 import { policyValidateCommand, policyVerifyCommand } from "../org-policy/validate.js";
 import {
   packAddCommand,
@@ -157,12 +157,14 @@ export const GROUPED_COMMAND_SPECS = {
 /** Every built-in CommandSpec, including nested specs under parent groups. */
 export const ALL_COMMAND_SPECS: CommandSpec[] = [
   ...ALL_COMMANDS,
+  mcpApproveCommand,
   ...Object.values(GROUPED_COMMAND_SPECS).flat(),
 ];
 
 /** Stable command paths for the spec registry completeness guard. */
 export const ALL_COMMAND_SPEC_PATHS: ReadonlyArray<readonly string[]> = [
   ...ALL_COMMANDS.map((spec) => [spec.name] as const),
+  ["mcp", mcpApproveCommand.name] as const,
   ...Object.entries(GROUPED_COMMAND_SPECS).flatMap(([parent, specs]) =>
     specs.map((spec) => [parent, spec.name] as const),
   ),
@@ -379,6 +381,23 @@ function registerSpec(program: Command, spec: CommandSpec): void {
       process.exitCode = await runCapability(workspacePlan, command, {
         positionalRoot: false,
         optionOverrides: { task: taskText },
+      });
+    });
+  }
+  if (spec.name === "mcp") {
+    const approve = cmd
+      .command(mcpApproveCommand.name)
+      .description(mcpApproveCommand.summary)
+      .argument("<server>", "MCP server name to approve");
+    addSharedFlags(approve);
+    for (const o of mcpApproveCommand.options ?? []) {
+      if (o.default !== undefined) approve.option(o.flags, o.description, o.default);
+      else approve.option(o.flags, o.description);
+    }
+    approve.action(async (server: string, _options: Record<string, unknown>, command: Command) => {
+      process.exitCode = await runCapability(mcpApproveCommand, command, {
+        positionalRoot: false,
+        optionOverrides: { server },
       });
     });
   }

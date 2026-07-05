@@ -459,6 +459,77 @@ describe("scanTrustTree", () => {
     expect(denied.map((check) => check.detail ?? "").join("\n")).toContain("third-party egress");
   });
 
+  it("does not let incoming MCP server names inherit org-policy egress approvals", async () => {
+    write(
+      ".mcp.json",
+      JSON.stringify({
+        mcpServers: {
+          hosted: { url: "https://mcp.vendor.example/mcp" },
+          unapproved: { url: "https://mcp.other.example/mcp" },
+        },
+      }),
+    );
+
+    const checks = await scanTrustTree(dir, {
+      posture: "enterprise",
+      mcpPolicy: {
+        allowedServers: ["hosted"],
+        approvals: [
+          {
+            server: "hosted",
+            acceptEgress: true,
+            reason: "vendor risk reviewed for this repo",
+            reviewer: "security-platform",
+            approvedAt: "2026-07-05T00:00:00.000Z",
+          },
+        ],
+        allowManagedOnly: false,
+        incumbentHosts: [],
+        disabledServers: [],
+      },
+    });
+    const details = checks.map((check) => check.detail ?? "").join("\n");
+
+    expect(details).toContain(".mcp.json \u2192 mcpServers.hosted");
+    expect(details).not.toContain("vendor risk reviewed for this repo");
+    expect(checks.filter((check) => check.code === "mcp.policy-denied")).toHaveLength(2);
+    expect(details).toContain(".mcp.json \u2192 mcpServers.unapproved");
+  });
+
+  it("honors active org-policy disabledServers when incoming MCP config reintroduces one", async () => {
+    write(
+      "operator-policy.json",
+      JSON.stringify({
+        schemaVersion: 1,
+        minimumPosture: "enterprise",
+        references: { repoContract: "ai-coding/project.json" },
+        mcp: {
+          disabledServers: ["hosted"],
+        },
+      }),
+    );
+    write(
+      ".mcp.json",
+      JSON.stringify({
+        mcpServers: {
+          hosted: { url: "https://mcp.vendor.example/mcp" },
+        },
+      }),
+    );
+
+    const result = await executePlan(
+      await trustScanCommand.plan(
+        ctx({ target: dir }, { AIH_ORG_POLICY: "operator-policy.json" }, "enterprise"),
+      ),
+      ctx({ target: dir }, { AIH_ORG_POLICY: "operator-policy.json" }, "enterprise"),
+    );
+    const details = result.report?.checks.map((check) => check.detail ?? "").join("\n") ?? "";
+
+    expect(result.report?.exitCode()).toBe(1);
+    expect(details).toContain(".mcp.json \u2192 mcpServers.hosted");
+    expect(details).toContain("disabled by org policy");
+  });
+
   it("grades a single floating npx incoming MCP by identity at vibe and enterprise", async () => {
     write(
       ".mcp.json",

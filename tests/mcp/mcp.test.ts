@@ -7,7 +7,7 @@ import { resolveContents } from "../../src/internals/execute.js";
 import type { PlanContext, WriteAction } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
 import { jsonFile } from "../../src/internals/render.js";
-import { command } from "../../src/mcp/index.js";
+import { command, mcpApproveCommand } from "../../src/mcp/index.js";
 import { existingMcpTomlNames, removeMcpTomlServers } from "../../src/mcp/render.js";
 import type { McpServer } from "../../src/mcp/servers.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
@@ -1019,7 +1019,7 @@ describe("aih mcp — enterprise posture (governance gate, opt-in)", () => {
         minimumPosture: "enterprise",
         references: { repoContract: "ai-coding/project.json" },
         mcp: {
-          allowedServers: ["code-review-graph", "github"],
+          allowedServers: ["code-review-graph"],
           allowManagedOnly: true,
           incumbentHosts: [],
         },
@@ -1273,6 +1273,152 @@ describe("aih mcp — enterprise posture (governance gate, opt-in)", () => {
     expect(check?.verdict).toBe("fail");
     expect(check?.code).toBe("mcp.policy-denied");
     expect(check?.detail).toContain("context7");
+  });
+
+  it("lets org-policy approved third-party MCP egress pass the enterprise probe with a visible reason", async () => {
+    const root = makeTmp();
+    writeFileSync(
+      join(root, "aih-org-policy.json"),
+      jsonFile({
+        schemaVersion: 1,
+        minimumPosture: "enterprise",
+        references: { repoContract: "ai-coding/project.json" },
+        mcp: {
+          allowedServers: ["context7"],
+          approvals: [
+            {
+              server: "context7",
+              acceptEgress: true,
+              reason: "legal approved hosted docs lookup",
+              reviewer: "security-platform",
+              approvedAt: "2026-07-05T00:00:00.000Z",
+            },
+          ],
+          incumbentHosts: ["api.githubcopilot.com"],
+        },
+      }),
+    );
+    const ctx = makeCtx({ root, options: { posture: "enterprise" }, verify: true });
+    const p = await command.plan(ctx);
+    const govText = p.actions
+      .filter((a) => a.kind === "doc")
+      .map((a) => (a.kind === "doc" ? a.text : ""))
+      .join("\n");
+    const probe = p.actions.find(
+      (a) => a.kind === "probe" && a.describe.includes("comply with enterprise policy"),
+    );
+    const check = probe?.kind === "probe" ? await probe.run(ctx) : undefined;
+
+    expect(check).toMatchObject({ verdict: "pass" });
+    expect(govText).toContain("Warn (1)");
+    expect(govText).toContain("context7");
+    expect(govText).toContain("legal approved hosted docs lookup");
+  });
+
+  it("uses AIH_ORG_POLICY as the winning source over a committed local MCP approval", async () => {
+    const root = makeTmp();
+    writeFileSync(
+      join(root, "aih-org-policy.json"),
+      jsonFile({
+        schemaVersion: 1,
+        minimumPosture: "enterprise",
+        references: { repoContract: "ai-coding/project.json" },
+        mcp: {
+          allowedServers: ["context7"],
+          approvals: [
+            {
+              server: "context7",
+              acceptEgress: true,
+              reason: "local repo approval should not win over fleet policy",
+              approvedAt: "2026-07-05T00:00:00.000Z",
+            },
+          ],
+          incumbentHosts: ["api.githubcopilot.com"],
+        },
+      }),
+    );
+    writeFileSync(
+      join(root, "operator-policy.json"),
+      jsonFile({
+        schemaVersion: 1,
+        minimumPosture: "enterprise",
+        references: { repoContract: "ai-coding/project.json" },
+        mcp: {
+          allowedServers: ["github"],
+          incumbentHosts: ["api.githubcopilot.com"],
+        },
+      }),
+    );
+
+    const ctx = makeCtx({
+      root,
+      env: { AIH_ORG_POLICY: "operator-policy.json" },
+      options: { posture: "enterprise" },
+      verify: true,
+    });
+    const p = await command.plan(ctx);
+    const probe = p.actions.find(
+      (a) => a.kind === "probe" && a.describe.includes("comply with enterprise policy"),
+    );
+    const check = probe?.kind === "probe" ? await probe.run(ctx) : undefined;
+
+    expect(check).toMatchObject({ verdict: "fail", code: "mcp.policy-denied" });
+    expect(check?.detail).toContain("context7");
+    expect(check?.detail).not.toContain("local repo approval should not win");
+  });
+
+  it("plans mcp approve as a local org-policy write with review evidence", async () => {
+    const root = makeTmp();
+    const p = await mcpApproveCommand.plan(
+      makeCtx({
+        root,
+        options: {
+          server: "context7",
+          acceptEgress: true,
+          reason: "vendor risk accepted for docs lookup",
+          reviewer: "security-platform",
+        },
+      }),
+    );
+    const write = p.actions.find(
+      (a): a is WriteAction => a.kind === "write" && a.path === "aih-org-policy.json",
+    );
+
+    expect(write?.json).toMatchObject({
+      schemaVersion: 1,
+      minimumPosture: "enterprise",
+      mcp: {
+        allowedServers: ["context7"],
+        approvals: [
+          {
+            server: "context7",
+            acceptEgress: true,
+            reason: "vendor risk accepted for docs lookup",
+            reviewer: "security-platform",
+          },
+        ],
+      },
+    });
+    const approval = (write?.json as { mcp?: { approvals?: Array<{ approvedAt?: string }> } }).mcp
+      ?.approvals?.[0];
+    expect(approval?.approvedAt).toBe("0000-00-00T00:00:00.000Z");
+    expect(write?.describe).toContain("Preview creating local org policy");
+    expect(write?.describe).toContain("approvedAt is set when rerun with --apply");
+  });
+
+  it("refuses mcp approve local writes while AIH_ORG_POLICY is active", () => {
+    expect(() =>
+      mcpApproveCommand.plan(
+        makeCtx({
+          env: { AIH_ORG_POLICY: "operator-policy.json" },
+          options: {
+            server: "context7",
+            acceptEgress: true,
+            reason: "vendor risk accepted for docs lookup",
+          },
+        }),
+      ),
+    ).toThrow(/AIH_ORG_POLICY is active/);
   });
 
   it("still writes .mcp.json with the FULL catalog — governance REPORTS, it never drops a server", async () => {

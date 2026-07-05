@@ -35,6 +35,11 @@ describe("CLI program", () => {
     ]);
   });
 
+  it("registers mcp approve as a nested command", () => {
+    const mcp = buildProgram().commands.find((c) => c.name() === "mcp");
+    expect(mcp?.commands.map((c) => c.name()).sort()).toEqual(["approve"]);
+  });
+
   it("registers trust scan as a nested command", () => {
     const trust = buildProgram().commands.find((c) => c.name() === "trust");
     expect(trust?.commands.map((c) => c.name()).sort()).toEqual([

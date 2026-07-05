@@ -103,6 +103,26 @@ const TrustApprovedSourceSchema = z
   })
   .strict();
 
+const SINGLE_LINE_POLICY_TEXT_PATTERN = "^(?=.*\\S)[^\\u0000-\\u001F\\u007F]+$";
+const SingleLinePolicyTextPattern = new RegExp(SINGLE_LINE_POLICY_TEXT_PATTERN);
+
+const SingleLinePolicyTextSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(500)
+  .regex(SingleLinePolicyTextPattern, "must be a single line with visible text");
+
+const McpApprovalSchema = z
+  .object({
+    server: SingleLinePolicyTextSchema,
+    acceptEgress: z.literal(true),
+    reason: SingleLinePolicyTextSchema,
+    reviewer: SingleLinePolicyTextSchema.optional(),
+    approvedAt: z.string().regex(/^\d{4}-\d{2}-\d{2}T/, "approvedAt must be an ISO-8601 timestamp"),
+  })
+  .strict();
+
 export const OrgPolicySchema = z
   .object({
     schemaVersion: z.literal(1),
@@ -133,6 +153,7 @@ export const OrgPolicySchema = z
     mcp: z
       .object({
         allowedServers: z.array(z.string().min(1)).default([]),
+        approvals: z.array(McpApprovalSchema).default([]),
         allowManagedOnly: z.boolean().default(false),
         incumbentHosts: z.array(HostnameSchema).default([]),
         githubHost: HttpsOriginSchema.optional(),

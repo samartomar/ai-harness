@@ -151,6 +151,40 @@ describe("governanceRollupDigest", () => {
     expect(summary.allowed).not.toContain("github");
   });
 
+  it("uses org-policy MCP approval evidence in the summary", () => {
+    writeFileSync(
+      join(dir, "aih-org-policy.json"),
+      JSON.stringify({
+        schemaVersion: 1,
+        minimumPosture: "enterprise",
+        references: { repoContract: "ai-coding/project.json" },
+        mcp: {
+          allowedServers: ["context7", "github"],
+          approvals: [
+            {
+              server: "context7",
+              acceptEgress: true,
+              reason: "legal approved hosted docs lookup",
+              reviewer: "security-platform",
+              approvedAt: "2026-07-05T00:00:00.000Z",
+            },
+          ],
+          incumbentHosts: ["api.githubcopilot.com"],
+        },
+      }),
+    );
+
+    const summary = mcpGovernanceSummary(ctx({ posture: "enterprise" }), "enterprise");
+
+    expect(summary.warned).toContainEqual(
+      expect.objectContaining({
+        name: "context7",
+        reason: expect.stringContaining("legal approved hosted docs lookup"),
+      }),
+    );
+    expect(summary.denied).not.toContainEqual(expect.objectContaining({ name: "context7" }));
+  });
+
   it("reports disabled GitHub without consulting invalid ambient GITHUB_HOST", () => {
     writeFileSync(
       join(dir, "aih-org-policy.json"),

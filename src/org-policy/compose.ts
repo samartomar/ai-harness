@@ -15,6 +15,13 @@ export interface ComposedOrgPolicy {
   licenses: LicenseTier[];
   mcp: {
     allowedServers: string[];
+    approvals: Array<{
+      server: string;
+      acceptEgress: true;
+      reason: string;
+      reviewer?: string;
+      approvedAt: string;
+    }>;
     allowManagedOnly: boolean;
     disabledServers: string[];
   };
@@ -81,6 +88,7 @@ export function composeOrgPolicy(policy: OrgPolicy): ComposedOrgPolicy {
     licenses: composeLicenses(policy),
     mcp: {
       allowedServers: [...(policy.mcp?.allowedServers ?? [])],
+      approvals: [...(policy.mcp?.approvals ?? [])],
       allowManagedOnly: policy.mcp?.allowManagedOnly ?? false,
       disabledServers: [...(policy.mcp?.disabledServers ?? [])],
     },

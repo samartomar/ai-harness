@@ -29,6 +29,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Workspace snapshot child remotes**: `aih workspace snapshot --lock --apply` now records
   each child repo's local origin URL when available, preserving fetch location in
   `workspace-lock.json` without consulting ambient Git config or touching remotes. (#181)
+- **MCP approval on-ramp**: org policy can now combine `mcp.allowedServers` with
+  `mcp.approvals[]` reviewer evidence so vetted third-party MCP servers warn
+  instead of deny under Enterprise posture. `aih mcp approve <server>
+  --accept-egress --reason <text> --apply` writes the repo-local approval entry while
+  `AIH_ORG_POLICY` remains the winning policy source. (#178)
 
 ### Fixed
 

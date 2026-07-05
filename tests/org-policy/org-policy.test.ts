@@ -75,6 +75,15 @@ describe("OrgPolicySchema", () => {
         policy({
           mcp: {
             allowedServers: ["code-review-graph", "github"],
+            approvals: [
+              {
+                server: "context7",
+                acceptEgress: true,
+                reason: "vendor risk reviewed",
+                reviewer: "security-platform",
+                approvedAt: "2026-07-05T00:00:00.000Z",
+              },
+            ],
             allowManagedOnly: true,
             incumbentHosts: ["github.internal.example"],
             githubHost: "https://github.internal.example",
@@ -84,6 +93,15 @@ describe("OrgPolicySchema", () => {
       ).mcp,
     ).toMatchObject({
       allowedServers: ["code-review-graph", "github"],
+      approvals: [
+        {
+          server: "context7",
+          acceptEgress: true,
+          reason: "vendor risk reviewed",
+          reviewer: "security-platform",
+          approvedAt: "2026-07-05T00:00:00.000Z",
+        },
+      ],
       allowManagedOnly: true,
       incumbentHosts: ["github.internal.example"],
       githubHost: "https://github.internal.example",
