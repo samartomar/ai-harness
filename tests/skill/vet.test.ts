@@ -201,12 +201,23 @@ describe("skillVetCommand", () => {
     license();
     const c = ctx({ source: sourceRoot });
 
-    const result = await executePlan(await skillVetCommand.plan(c), c);
+    const vetPlan = await skillVetCommand.plan(c);
+    const pairedProbeCount = vetPlan.actions.filter(
+      (action) => action.kind === "probe" && "runStructuredLegacy" in action,
+    ).length;
+    expect(pairedProbeCount).toBeGreaterThan(2);
+
+    const result = await executePlan(vetPlan, c);
 
     expect(result.report?.exitCode()).toBe(1);
+    expect(result.probes.map((probe) => probe.describe)).not.toContain("skill vet scan");
+    expect(result.probes.length).toBeGreaterThan(2);
     expect(result.report?.checks.some((check) => check.code === "trust.prompt-injection")).toBe(
       true,
     );
+    expect(
+      result.verification?.results.some((entry) => entry.passName === "trust.prompt-injection"),
+    ).toBe(true);
     const digest = vetDigestOf(result);
     expect(digest.data.verdict).toBe("RED");
     expect(digest.data.reasons).toEqual(
@@ -252,6 +263,9 @@ describe("skillVetCommand", () => {
 
     const plan = await skillVetCommand.plan(c);
     expect(plan.actions[0]?.kind).toBe("exec");
+    expect(
+      plan.actions.filter((action) => action.kind === "probe" && "runStructuredLegacy" in action),
+    ).toHaveLength(2);
 
     const result = await executePlan(plan, c);
 
@@ -261,6 +275,9 @@ describe("skillVetCommand", () => {
       expect.arrayContaining([
         expect.objectContaining({ verdict: "skip", code: "trust.fetch-blocked" }),
       ]),
+    );
+    expect(result.verification?.results.some((entry) => entry.passName === "skill vet scan")).toBe(
+      true,
     );
     const digest = vetDigestOf(result);
     expect(digest.data.verdict).toBe("UNKNOWN");
