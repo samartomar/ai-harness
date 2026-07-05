@@ -1,11 +1,12 @@
 import { existsSync } from "node:fs";
 import { basename, join, posix, resolve } from "node:path";
 import { AihError } from "../errors.js";
-import { bootloadersFor } from "../internals/cli-registry.js";
-import { resolveClis } from "../internals/clis.js";
+import { bootloadersFor, entry as registryEntry } from "../internals/cli-registry.js";
+import { type Cli, resolveClis } from "../internals/clis.js";
 import { readIfExists } from "../internals/fsxn.js";
 import type { Action, CommandSpec, Plan, PlanContext, WriteAction } from "../internals/plan.js";
 import { doc, plan, probe, writeJson, writeText } from "../internals/plan.js";
+import { frontmatter } from "../internals/render.js";
 import type { Check } from "../internals/verify.js";
 import {
   checkWorkspaceChildPath,
@@ -149,8 +150,46 @@ function workspaceBootloaderLabel(path: string): string {
   return WORKSPACE_BOOTLOADER_LABELS[path] ?? `${path} workspace`;
 }
 
+type BootloaderActivation = { key: string; value: string };
+
+function bootloaderActivationsFor(clis: readonly Cli[]): Map<string, BootloaderActivation> {
+  const activations = new Map<string, BootloaderActivation>();
+  for (const cli of clis) {
+    const cliEntry = registryEntry(cli);
+    if (!cliEntry.activation) continue;
+    for (const path of cliEntry.bootloaders) activations.set(path, cliEntry.activation);
+  }
+  return activations;
+}
+
+function workspaceBootloaderActivationFrontmatter(
+  path: string,
+  dir: string,
+  activation: BootloaderActivation | undefined,
+): string | undefined {
+  if (!activation) return undefined;
+  const fields: Record<string, string | boolean | number | string[]> = path.endsWith(".mdc")
+    ? { description: `Routes to the workspace canon in ${dir}/`, globs: ["**/*"] }
+    : {};
+  fields[activation.key] = activation.value;
+  return frontmatter(fields);
+}
+
+function workspaceBootloaderContents(
+  path: string,
+  name: string,
+  repoPaths: readonly string[],
+  dir: string,
+  activation: BootloaderActivation | undefined,
+): string {
+  const body = workspaceBootloader(workspaceBootloaderLabel(path), name, [...repoPaths], dir);
+  const activationFrontmatter = workspaceBootloaderActivationFrontmatter(path, dir, activation);
+  return activationFrontmatter ? `${activationFrontmatter}\n\n${body}` : body;
+}
+
 function workspaceBootloaderWrites(
   bootloaders: readonly string[],
+  activations: ReadonlyMap<string, BootloaderActivation>,
   name: string,
   repoPaths: readonly string[],
   dir: string,
@@ -158,7 +197,7 @@ function workspaceBootloaderWrites(
   return bootloaders.map((path) =>
     writeText(
       path,
-      workspaceBootloader(workspaceBootloaderLabel(path), name, [...repoPaths], dir),
+      workspaceBootloaderContents(path, name, repoPaths, dir, activations.get(path)),
       `${path} workspace bootloader → cross-repo canon`,
     ),
   );
@@ -210,7 +249,9 @@ async function workspacePlan(ctx: PlanContext): Promise<Plan> {
   const mcp = spanningMcp(ctx.root, presentRepoPaths);
   const mcpKeys = Object.keys(mcp.mcpServers);
   const staleMcpKeys = staleManagedMcpServerKeys(ctx.root, mcpKeys);
-  const bootloaders = bootloadersFor(resolveClis(ctx.options, { strict: true }));
+  const clis = resolveClis(ctx.options, { strict: true });
+  const bootloaders = bootloadersFor(clis);
+  const bootloaderActivations = bootloaderActivationsFor(clis);
 
   const writes: WriteAction[] = [
     writeJson(
@@ -242,7 +283,7 @@ async function workspacePlan(ctx: PlanContext): Promise<Plan> {
       repoDisciplineDoc(repoPaths, dir),
       "per-repo discipline routing (read a repo's canon before editing it)",
     ),
-    ...workspaceBootloaderWrites(bootloaders, name, repoPaths, dir),
+    ...workspaceBootloaderWrites(bootloaders, bootloaderActivations, name, repoPaths, dir),
     writeJson(
       ".mcp.json",
       mcp,

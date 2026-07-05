@@ -142,6 +142,7 @@ describe("workspace.plan — generated artifacts", () => {
     expect(w.has("CLAUDE.md")).toBe(true);
     expect(w.has("AGENTS.md")).toBe(false);
     expect(w.has("GEMINI.md")).toBe(false);
+    expect(w.has(".cursor/rules/00-canon.mdc")).toBe(false);
     expect(w.has(".kiro/steering/00-canon.md")).toBe(false);
     expect(w.has(".mcp.json")).toBe(true);
   });
@@ -149,13 +150,16 @@ describe("workspace.plan — generated artifacts", () => {
   it("writes workspace bootloaders for every targeted CLI", async () => {
     child("ui");
     const w = writesByPath(
-      (await command.plan(makeCtx({ cli: "claude,codex,gemini,kiro" }))).actions,
+      (await command.plan(makeCtx({ cli: "claude,codex,gemini,cursor,kiro" }))).actions,
     );
 
     expect(w.has("CLAUDE.md")).toBe(true);
     expect(w.has("AGENTS.md")).toBe(true);
     expect(w.has("GEMINI.md")).toBe(true);
+    expect(w.has(".cursor/rules/00-canon.mdc")).toBe(true);
     expect(w.has(".kiro/steering/00-canon.md")).toBe(true);
+    expect(w.get(".cursor/rules/00-canon.mdc")?.contents).toContain("alwaysApply: true");
+    expect(w.get(".kiro/steering/00-canon.md")?.contents).toContain("inclusion: always");
     expect(w.get(".kiro/steering/00-canon.md")?.contents).toContain("Workspace graph MCP");
   });
 
