@@ -64,6 +64,7 @@ import { command as vdi } from "../vdi/index.js";
 import { runWorkspaceAdd, workspaceAddCommand } from "../workspace/acquire.js";
 import {
   command as workspace,
+  workspaceHydrateCommand as workspaceHydrate,
   taskPlanCommand as workspacePlan,
   snapshotCommand as workspaceSnapshot,
 } from "../workspace/index.js";
@@ -117,7 +118,7 @@ export const PARENT_GROUPS = [
 ] as const;
 
 export const GROUPED_COMMAND_SPECS = {
-  workspace: [workspaceAddCommand, workspaceSnapshot, workspacePlan],
+  workspace: [workspaceAddCommand, workspaceHydrate, workspaceSnapshot, workspacePlan],
   trust: [
     trustAllowCommand,
     trustListCommand,
@@ -340,6 +341,21 @@ function registerSpec(program: Command, spec: CommandSpec): void {
     snap.action(
       async (_rootArg: string | undefined, _options: Record<string, unknown>, command: Command) => {
         process.exitCode = await runCapability(workspaceSnapshot, command);
+      },
+    );
+
+    const hydrate = cmd
+      .command(workspaceHydrate.name)
+      .description(workspaceHydrate.summary)
+      .argument("[root]", "target workspace root (defaults to --root or cwd)");
+    addSharedFlags(hydrate);
+    for (const o of workspaceHydrate.options ?? []) {
+      if (o.default !== undefined) hydrate.option(o.flags, o.description, o.default);
+      else hydrate.option(o.flags, o.description);
+    }
+    hydrate.action(
+      async (_rootArg: string | undefined, _options: Record<string, unknown>, command: Command) => {
+        process.exitCode = await runCapability(workspaceHydrate, command);
       },
     );
 

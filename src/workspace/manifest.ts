@@ -170,7 +170,7 @@ export function normalizeWorkspaceRemote(raw: unknown): string | undefined {
   return remote;
 }
 
-function safeRef(raw: unknown): string | undefined {
+export function normalizeWorkspaceRef(raw: unknown): string | undefined {
   const ref = safeOptionalMetadata(raw, "workspace repo ref");
   if (ref === undefined) return undefined;
   if (!isSafeGitRefName(ref)) {
@@ -203,7 +203,7 @@ function normalizeRepo(raw: unknown): WorkspaceRepo {
   const id = typeof raw.id === "string" ? safeId(raw.id) : idFromPath(path);
   const kind = safeKind(raw.kind);
   const remote = normalizeWorkspaceRemote(raw.remote);
-  const ref = safeRef(raw.ref);
+  const ref = normalizeWorkspaceRef(raw.ref);
   return {
     id,
     path,

@@ -72,6 +72,40 @@ export function checkWorkspaceChildPath(parent: string, repo: string): Workspace
   return { path, exists: true, git: existsSync(join(dir, ".git")) };
 }
 
+export function assertWorkspaceChildCloneTarget(parent: string, repo: string): string {
+  const path = normalizeRepoPath(repo);
+  const parts = path.split("/").filter((part) => part.length > 0);
+  let current = parent;
+  for (const segment of parts.slice(0, -1)) {
+    current = join(current, segment);
+    let info: ReturnType<typeof lstatSync>;
+    try {
+      info = lstatSync(current);
+    } catch {
+      break;
+    }
+    if (info.isSymbolicLink()) {
+      throw new AihError(
+        `workspace repo path ancestor must be a real directory inside the parent, not a link: ${repo}`,
+        "AIH_WORKSPACE",
+      );
+    }
+    if (!info.isDirectory()) {
+      throw new AihError(
+        `workspace repo path ancestor must be a directory: ${repo}`,
+        "AIH_WORKSPACE",
+      );
+    }
+    if (!isContainedPath(parent, current)) {
+      throw new AihError(
+        `workspace repo path must stay inside the parent workspace: ${repo}`,
+        "AIH_WORKSPACE",
+      );
+    }
+  }
+  return path;
+}
+
 function isSafeGitignoreLineName(name: string): boolean {
   if (name.endsWith(" ")) return false;
   for (const ch of name) {

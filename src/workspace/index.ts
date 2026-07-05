@@ -12,6 +12,7 @@ import {
   reposOption,
 } from "./detect.js";
 import { workspaceGitExecs, workspaceGitignoreWrite } from "./git.js";
+import { workspaceHydrateCommand } from "./hydrate.js";
 import {
   readWorkspaceManifest,
   type WorkspaceManifest,
@@ -267,4 +268,4 @@ export const command: CommandSpec = {
   plan: workspacePlan,
 };
 
-export { snapshotCommand, taskPlanCommand };
+export { snapshotCommand, taskPlanCommand, workspaceHydrateCommand };

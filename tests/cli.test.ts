@@ -27,7 +27,12 @@ describe("CLI program", () => {
 
   it("registers workspace acquisition, snapshot, and plan subcommands", () => {
     const workspace = buildProgram().commands.find((c) => c.name() === "workspace");
-    expect(workspace?.commands.map((c) => c.name()).sort()).toEqual(["add", "plan", "snapshot"]);
+    expect(workspace?.commands.map((c) => c.name()).sort()).toEqual([
+      "add",
+      "hydrate",
+      "plan",
+      "snapshot",
+    ]);
   });
 
   it("registers trust scan as a nested command", () => {
