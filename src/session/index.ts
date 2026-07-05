@@ -133,14 +133,35 @@ function takeChars(text: string, maxChars: number): string {
   return Array.from(text).slice(0, maxChars).join("");
 }
 
+function isSafeSourceChar(char: string): boolean {
+  const code = char.codePointAt(0);
+  return (
+    code !== undefined &&
+    ((code >= 48 && code <= 57) ||
+      (code >= 65 && code <= 90) ||
+      (code >= 97 && code <= 122) ||
+      char === "." ||
+      char === "_" ||
+      char === ":" ||
+      char === "@" ||
+      char === "/" ||
+      char === "#" ||
+      char === "-")
+  );
+}
+
 function sanitizeField(value: string, fallback: string, maxLength = 160): string {
-  const normalized = value
-    .trim()
-    // biome-ignore lint/suspicious/noControlCharactersInRegex: session labels must be terminal-safe
-    .replace(/[\u0000-\u001f\u007f-\u009f]/g, "-")
-    .replace(/[^A-Za-z0-9._:@/#-]+/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^-+|-+$/g, "");
+  let normalized = "";
+  let pendingDash = false;
+  for (const char of value.trim()) {
+    if (isSafeSourceChar(char) && char !== "-") {
+      if (pendingDash && normalized.length > 0) normalized += "-";
+      normalized += char;
+      pendingDash = false;
+    } else {
+      pendingDash = true;
+    }
+  }
   const base = normalized.length > 0 ? normalized : fallback;
   if (base.length <= maxLength) return base;
   return `${base.slice(0, maxLength - 13)}-${sha256Hex(base).slice(0, 12)}`;
