@@ -2290,6 +2290,45 @@
       "commands": []
     },
     {
+      "name": "session-guard",
+      "hasDescription": true,
+      "arguments": [
+        {
+          "name": "root",
+          "required": false
+        }
+      ],
+      "options": [
+        {
+          "flags": "--json"
+        },
+        {
+          "flags": "--max-chars <n>"
+        },
+        {
+          "flags": "--no-log"
+        },
+        {
+          "flags": "--posture <posture>",
+          "defaultValue": "vibe"
+        },
+        {
+          "flags": "--root <dir>"
+        },
+        {
+          "flags": "--source <label>",
+          "defaultValue": "session"
+        },
+        {
+          "flags": "--support-out <dir>"
+        },
+        {
+          "flags": "--text <text>"
+        }
+      ],
+      "commands": []
+    },
+    {
       "name": "skill",
       "hasDescription": true,
       "arguments": [],

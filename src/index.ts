@@ -27,6 +27,7 @@ export * from "./platform/detect.js";
 export * from "./platform/parse.js";
 export * from "./plugins/registry.js";
 export { buildProgram, buildProgramWithPlugins, VERSION } from "./program.js";
+export * from "./session/index.js";
 export {
   buildEvidenceGraph,
   type Confidence as VerificationConfidence,
