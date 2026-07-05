@@ -84,6 +84,11 @@ export type MachineCapabilityCache = z.infer<typeof MachineCapabilityCacheSchema
 type ProjectCapabilitiesFile = z.infer<typeof ProjectCapabilitiesFileSchema>;
 type MachineCapabilityRepo = MachineCapabilityCache["repos"][number];
 
+interface ReadProjectManifest {
+  manifest: ProjectCapabilitiesFile;
+  raw: string;
+}
+
 interface CatalogCapability {
   id: string;
   class: "runtime" | "feature";
@@ -199,7 +204,9 @@ function compareSemver(a: [number, number, number], b: [number, number, number])
 
 function satisfiesAihEngine(range: string): boolean {
   const current = parseSemver(VERSION);
-  if (current === undefined) return false;
+  if (current === undefined) {
+    throw new AihError("capability catalog requires a semver aih VERSION", "AIH_CONFIG");
+  }
   const exact = parseSemver(range);
   if (exact !== undefined) return compareSemver(current, exact) === 0;
   const caret = /^\^(\d+)\.(\d+)\.(\d+)$/.exec(range);
@@ -240,7 +247,7 @@ export function machineCapabilityCachePath(ctx: PlanContext): string {
 function readProjectManifest(
   root: string,
   failOnInvalid: boolean,
-): ProjectCapabilitiesFile | undefined {
+): ReadProjectManifest | undefined {
   const path = join(root, AIH_CAPABILITIES_FILE);
   let info: ReturnType<typeof lstatSync>;
   try {
@@ -264,7 +271,7 @@ function readProjectManifest(
     throw new AihError(`${AIH_CAPABILITIES_FILE} cannot be read as a regular file`, "AIH_CONFIG");
   }
   try {
-    return ProjectCapabilitiesFileSchema.parse(JSON.parse(raw));
+    return { manifest: ProjectCapabilitiesFileSchema.parse(JSON.parse(raw)), raw };
   } catch {
     if (!failOnInvalid) return undefined;
     throw new AihError(
@@ -439,12 +446,15 @@ function mergeEvidence(
   return merged;
 }
 
-function cacheEntryFor(root: string, manifest: ProjectCapabilitiesFile): MachineCapabilityRepo {
-  const rendered = jsonFile(manifest);
+function cacheEntryFor(
+  root: string,
+  manifest: ProjectCapabilitiesFile,
+  rawManifest = jsonFile(manifest),
+): MachineCapabilityRepo {
   return {
     root,
     manifestPath: AIH_CAPABILITIES_FILE,
-    manifestSha256: sha256Hex(rendered),
+    manifestSha256: sha256Hex(rawManifest),
     capabilities: manifest.requires.map((item) => item.id).sort((a, b) => a.localeCompare(b)),
   };
 }
@@ -479,6 +489,12 @@ function upsertCache(
   ctx: PlanContext,
   manifest: ProjectCapabilitiesFile,
 ): MachineCapabilityCache {
+  if (!isSafeLocalCacheRoot(ctx.root)) {
+    throw new AihError(
+      "capability resolve requires a safe local absolute repo root for the machine cache",
+      "AIH_CONFIG",
+    );
+  }
   const repoEntry = cacheEntryFor(ctx.root, manifest);
   return {
     schemaVersion: 1,
@@ -505,7 +521,13 @@ function resolveText(report: CapabilityResolveReport): string {
 }
 
 function capabilityResolvePlan(ctx: PlanContext): Plan {
-  const existing = readProjectManifest(ctx.root, true);
+  if (!isSafeLocalCacheRoot(ctx.root)) {
+    throw new AihError(
+      "capability resolve requires a safe local absolute repo root for the machine cache",
+      "AIH_CONFIG",
+    );
+  }
+  const existing = readProjectManifest(ctx.root, true)?.manifest;
   const stack = scanRepo(ctx.root, { maxDepth: 8, contextDir: ctx.contextDir });
   const manifest = mergedProjectManifest(existing, resolveDecisions(ctx, stack));
   const report = projectReport(ctx, manifest);
@@ -533,13 +555,13 @@ function prunedCache(cache: MachineCapabilityCache): {
       pruned += 1;
       continue;
     }
-    const manifest = readProjectManifest(repo.root, false);
-    if (manifest === undefined) {
+    const read = readProjectManifest(repo.root, false);
+    if (read === undefined) {
       pruned += 1;
       continue;
     }
     try {
-      const next = cacheEntryFor(repo.root, manifest);
+      const next = cacheEntryFor(repo.root, read.manifest, read.raw);
       if (!sameCacheEntry(next, repo)) {
         refreshed += 1;
       }

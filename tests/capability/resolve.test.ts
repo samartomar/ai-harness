@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import {
   existsSync,
   mkdirSync,
@@ -9,7 +10,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   AIH_CAPABILITIES_FILE,
   capabilityPruneCommand,
@@ -89,6 +90,10 @@ function readJson<T>(path: string): T {
   return JSON.parse(readFileSync(path, "utf8")) as T;
 }
 
+function sha256Hex(text: string): string {
+  return createHash("sha256").update(text, "utf8").digest("hex");
+}
+
 describe("aih capability resolve", () => {
   it("plans evidence-backed repo capability decisions without fetching or executing", async () => {
     seedNodeRepo();
@@ -144,6 +149,14 @@ describe("aih capability resolve", () => {
     });
     expect(cache.repos[0]?.capabilities).toContain("common.security-review");
     expect(existsSync(join(workspace, ".aih", "capabilities"))).toBe(false);
+  });
+
+  it("rejects unsafe repo roots before planning cache writes", async () => {
+    const c = ctx({ root: "\\\\example.invalid\\share" });
+
+    await expect(async () => {
+      await capabilityResolveCommand.plan(c);
+    }).rejects.toThrow(/safe local absolute repo root/);
   });
 
   it("preserves committed intent and never downgrades stricter existing installs", async () => {
@@ -323,6 +336,21 @@ describe("aih capability resolve", () => {
 
     expect(data.decisions.map((d) => d.install)).toEqual(["warn", "warn", "warn"]);
   });
+
+  it("fails closed when the catalog engine check cannot parse the current aih version", async () => {
+    seedNodeRepo();
+    vi.resetModules();
+    vi.doMock("../../src/version.js", () => ({ VERSION: "dev" }));
+    try {
+      const module = await import("../../src/capability/index.js");
+      await expect(async () => {
+        await module.capabilityResolveCommand.plan(ctx());
+      }).rejects.toThrow(/requires a semver aih VERSION/);
+    } finally {
+      vi.doUnmock("../../src/version.js");
+      vi.resetModules();
+    }
+  });
 });
 
 describe("aih capability prune", () => {
@@ -419,9 +447,11 @@ describe("aih capability prune", () => {
     const result = await executePlan(await capabilityPruneCommand.plan(c), c);
 
     const next = readJson<MachineCapabilityCache>(cachePath);
+    const rawManifest = readFileSync(join(workspace, AIH_CAPABILITIES_FILE), "utf8");
     expect(next.repos).toHaveLength(1);
     expect(next.repos[0]?.capabilities).toEqual(["common.security-review"]);
     expect(next.repos[0]?.manifestSha256).not.toBe(before.repos[0]?.manifestSha256);
+    expect(next.repos[0]?.manifestSha256).toBe(sha256Hex(rawManifest));
     expect(result.digests[0]?.data).toMatchObject({ pruned: 0, refreshed: 1 });
     expect(result.digests[0]?.text).toContain("refreshed 1 repo");
   });
