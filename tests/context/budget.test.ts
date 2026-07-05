@@ -109,6 +109,11 @@ describe("context budget engine", () => {
       decision: "exclude",
       reasons: expect.arrayContaining(["generated artifact"]),
     });
+    expect(scoreContextFile({ path: "README", type: "doc", bytes: 100 })).toMatchObject({
+      type: "doc",
+      classification: "conditional-include",
+      reasons: expect.arrayContaining(["documentation file"]),
+    });
   });
 
   it("builds a structured report with included and excluded files plus reason traces", () => {

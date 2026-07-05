@@ -513,7 +513,7 @@ export function scoreContextFile(
       ? classified.classification
       : moreRestrictiveClassification(classified.classification, candidateClassification);
   const type =
-    classificationRank(classified.classification) >= classificationRank(candidateClassification)
+    classificationRank(classified.classification) > classificationRank(candidateClassification)
       ? classified.type
       : candidateType;
   const relevance = normalizeRelevance(candidate.relevance);
