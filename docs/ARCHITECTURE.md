@@ -29,11 +29,14 @@ and the executor is the only layer that performs filesystem or process effects.
 
 ## Data Boundaries
 
-- `.aih-config.json`, `ai-coding/`, lock files, and policy files are committed
-  repo state.
+- `.aih-config.json`, `ai-coding/`, lock files, `aih-capabilities.json`, and
+  policy files are committed repo state.
 - `.aih/` is local diagnostics and generated output. The run ledger under
   `.aih/runs/YYYY-MM.jsonl` is gitignored and should be shared through
   `aih evidence build` when tamper evidence is needed.
+- `~/.aih/capabilities/cache.json` is a machine-local derived cache of repo
+  capability needs. It is rebuildable from committed repo manifests and policy;
+  deleting it loses convenience state, not authority.
 - `.env*` and `secrets/**` are denied inputs. Agents must not read or log them;
   validate presence with `aih secrets --verify`.
 - External skill sources are treated as hostile until vetted, pinned, and

@@ -33,11 +33,13 @@ The contract is not prose — every covered surface is pinned by a committed tes
   (vendored, offline) in
   [tests/internals/sarif-schema.test.ts](tests/internals/sarif-schema.test.ts).
 - **Owned on-disk layouts** — the layouts aih writes and re-reads: the committed
-  control files `.aih-config.json`, `aih-skills.lock.json`, `aih-packs.json`; the
-  `.aih/` output dir (`runs/` ledger, `legacy/` and `quarantine/` archives,
-  fleet/evidence/marketplace bundle outputs); and the marketplace artifact +
-  evidence-bundle manifests. The structured families carry `schemaVersion: 1` —
-  changing one incompatibly means bumping that version, which is a major.
+  control files `.aih-config.json`, `aih-skills.lock.json`, `aih-packs.json`,
+  `aih-capabilities.json`; the `.aih/` output dir (`runs/` ledger, `legacy/` and
+  `quarantine/` archives, fleet/evidence/marketplace bundle outputs); the
+  derived machine cache `~/.aih/capabilities/cache.json`; and the marketplace
+  artifact + evidence-bundle manifests. The structured families carry
+  `schemaVersion: 1` — changing one incompatibly means bumping that version,
+  which is a major.
 
 Not covered: human-oriented text — summaries, help prose, warning wording, the
 report dashboard HTML. Parse `--json`, not text.

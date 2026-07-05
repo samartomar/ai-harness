@@ -72,6 +72,11 @@ describe("CLI program", () => {
     ]);
   });
 
+  it("registers capability resolve and prune as nested commands", () => {
+    const capability = buildProgram().commands.find((c) => c.name() === "capability");
+    expect(capability?.commands.map((c) => c.name()).sort()).toEqual(["prune", "resolve"]);
+  });
+
   it("registers policy validation and pin verification as nested commands", () => {
     const policy = buildProgram().commands.find((c) => c.name() === "policy");
     expect(policy?.commands.map((c) => c.name()).sort()).toEqual(["validate", "verify"]);

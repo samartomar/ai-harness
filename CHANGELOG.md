@@ -8,6 +8,13 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Capability resolve/cache substrate**: new `aih capability resolve` and
+  `aih capability prune` commands emit evidence-backed capability decisions,
+  persist committed repo intent in `aih-capabilities.json`, and maintain a
+  rebuildable `$HOME/.aih/capabilities/cache.json` machine cache. Resolve stays
+  offline and delegates content by reference; posture changes the decision mode
+  (`vibe` auto-add, `team` warn, `Enterprise` approval-required) without adding
+  a second authority.
 - **Enterprise baseline attestation in `aih doctor`**: at Enterprise posture, `doctor`
   now compares MCP servers and packaged marketplace skills against the declared
   registry in `aih-org-policy.json`, emitting coded `baseline.*` findings for
