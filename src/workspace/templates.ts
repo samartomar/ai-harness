@@ -1,6 +1,13 @@
-import { AihError } from "../errors.js";
 import { lines } from "../internals/render.js";
 import type { WorkspaceEdge, WorkspaceRepo } from "./manifest.js";
+
+const GRAPH_BASE_ARGS = [
+  "--offline",
+  "--no-python-downloads",
+  "--no-env-file",
+  "code-review-graph@2.3.6",
+  "serve",
+] as const;
 
 /** The workspace marker — lets `aih doctor` recognize a multi-repo workspace root. */
 export function workspaceMarker(repos: string[], dir: string, git = false): unknown {
@@ -23,47 +30,81 @@ export function codeWorkspace(repos: string[]): unknown {
 }
 
 /**
- * Workspace-level MCP servers: a combined code-review graph rooted at the parent
- * plus a filesystem MCP scoped to every child repo path. The graph answers
- * "what is the blast radius across UI/backend/infra/docs?", while each child
- * repo still owns its own canon and local command flow.
- * Merged into any existing `.mcp.json`. The package is version-pinnable via
- * `AIH_MCP_FS_VERSION` (supply-chain control) — unset uses the pinned default.
+ * Workspace-level MCP servers: one code-review graph per declared child repo.
+ * The filesystem MCP server is intentionally omitted here because MCP Roots can
+ * broaden argv directory scopes in Roots-capable clients; child repo read scope
+ * must stay enforceable by the emitted command.
+ * Merged into any existing `.mcp.json`.
  */
-const EXACT_SEMVER_RE = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
-const DEFAULT_FILESYSTEM_MCP_VERSION = "2026.1.14";
-
-export function spanningMcp(repos: string[], version?: string): unknown {
-  if (version && !EXACT_SEMVER_RE.test(version)) {
-    throw new AihError(
-      "AIH_MCP_FS_VERSION must be an exact semver version, for example 2025.1.0",
-      "AIH_WORKSPACE",
-    );
+function graphServerSuffix(repo: string, index: number, used: Set<string>): string {
+  const base =
+    repo.replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || `repo-${index + 1}`;
+  let suffix = base;
+  let n = 2;
+  while (used.has(suffix)) {
+    suffix = `${base}-${n}`;
+    n += 1;
   }
-  const pkg =
-    version && version.length > 0
-      ? `@modelcontextprotocol/server-filesystem@${version}`
-      : `@modelcontextprotocol/server-filesystem@${DEFAULT_FILESYSTEM_MCP_VERSION}`;
+  used.add(suffix);
+  return suffix;
+}
+
+export function spanningMcp(repos: string[]): { mcpServers: Record<string, unknown> } {
+  const used = new Set<string>();
   return {
-    mcpServers: {
-      // Pinned uvx form aligned with the per-repo code-review-graph server —
-      // ephemeral env (works from the workspace root), reproducible, bump in lockstep.
-      "code-review-graph": {
-        command: "uvx",
-        args: [
-          "--offline",
-          "--no-python-downloads",
-          "--no-env-file",
-          "code-review-graph@2.3.6",
-          "serve",
-        ],
-      },
-      filesystem: {
-        command: "npx",
-        args: ["-y", pkg, ...repos],
-      },
-    },
+    mcpServers: Object.fromEntries(
+      repos.map((repo, index) => [
+        `aih-workspace-graph-${graphServerSuffix(repo, index, used)}`,
+        {
+          // Pinned uvx form aligned with the per-repo code-review-graph server —
+          // ephemeral env, reproducible, scoped by --repo.
+          command: "uvx",
+          args: [...GRAPH_BASE_ARGS, "--repo", repo],
+        },
+      ]),
+    ),
   };
+}
+
+function stringArgs(value: unknown): string[] | undefined {
+  return Array.isArray(value) && value.every((arg) => typeof arg === "string") ? value : undefined;
+}
+
+function argsEqual(actual: readonly string[], expected: readonly string[]): boolean {
+  return actual.length === expected.length && actual.every((arg, index) => arg === expected[index]);
+}
+
+function mcpServer(value: unknown): { command?: unknown; args?: unknown } | undefined {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
+  return value as { command?: unknown; args?: unknown };
+}
+
+export function isAihLegacyCodeReviewGraphMcpServer(value: unknown): boolean {
+  const server = mcpServer(value);
+  if (server?.command !== "uvx") return false;
+  const args = stringArgs(server.args);
+  return args !== undefined && argsEqual(args, GRAPH_BASE_ARGS);
+}
+
+export function aihWorkspaceGraphRepo(value: unknown): string | undefined {
+  const server = mcpServer(value);
+  if (server?.command !== "uvx") return undefined;
+  const args = stringArgs(server.args);
+  if (args === undefined || args.length !== GRAPH_BASE_ARGS.length + 2) return undefined;
+  if (!argsEqual(args.slice(0, GRAPH_BASE_ARGS.length), GRAPH_BASE_ARGS)) return undefined;
+  if (args[GRAPH_BASE_ARGS.length] !== "--repo") return undefined;
+  const repo = args[GRAPH_BASE_ARGS.length + 1];
+  return typeof repo === "string" && repo.length > 0 ? repo : undefined;
+}
+
+export function isAihWorkspaceGraphMcpServer(value: unknown): boolean {
+  return aihWorkspaceGraphRepo(value) !== undefined;
+}
+
+export function isLegacyAihWorkspaceMcpServer(name: string, value: unknown): boolean {
+  if (name === "code-review-graph") return isAihLegacyCodeReviewGraphMcpServer(value);
+  if (name.startsWith("aih-workspace-graph-")) return isAihWorkspaceGraphMcpServer(value);
+  return false;
 }
 
 function repoDisplayPath(path: string): string {
@@ -127,7 +168,7 @@ export function workspaceContractsDoc(edges: readonly WorkspaceEdge[]): string {
 
 /**
  * The cross-repo architecture map — the heart of the workspace. Seeded with the
- * detected repo names, then OWNED by the user (write-once: aih never overwrites
+ * declared repo names, then OWNED by the user (write-once: aih never overwrites
  * it). This is what gives an agent editing the UI a view into the backend.
  */
 export function crossRepoArchitectureDoc(name: string, repos: string[], dir: string): string {
@@ -170,7 +211,7 @@ export function crossRepoArchitectureDoc(name: string, repos: string[], dir: str
     "When an agent is asked to change a product behavior:",
     "",
     "1. Start at this workspace map and identify every repo touched by the feature.",
-    "2. Use the workspace graph/filesystem MCP to inspect cross-repo call sites, imports,",
+    "2. Use the workspace graph MCP to inspect cross-repo call sites, imports,",
     "   API contracts, infra bindings, runbooks, and docs before editing.",
     "3. Before writing code in any repo, read that repo's own canon and validation flow.",
     "4. Make source changes inside child repos, not in the parent workspace root.",
@@ -208,7 +249,7 @@ export function repoDisciplineDoc(repos: string[], dir: string): string {
     bullets,
     "",
     `For any change that crosses repos, consult \`${dir}/cross-repo-architecture.md\` for`,
-    "the contract, inspect the combined workspace graph, update every affected repo in",
+    "the contract, inspect the workspace graph MCP servers for the affected repos, update every affected repo in",
     "lockstep, and keep the feature map current. Never assume one repo's conventions",
     "apply to another.",
   );
@@ -230,9 +271,9 @@ export function workspaceBootloader(
     `- \`${dir}/cross-repo-architecture.md\` — how the repos fit together + the cross-repo feature map.`,
     `- \`${dir}/workspace-contracts.md\` — declared cross-repo contract edges.`,
     `- \`${dir}/repo-discipline.md\` — read a repo's own canon before editing it.`,
-    "- Workspace MCP graph/filesystem — use for blast-radius discovery across all child repos.",
+    "- Workspace graph MCP — use for blast-radius discovery across declared child repos.",
     "",
-    `Repos: ${repos.length > 0 ? repos.join(", ") : "(none detected yet)"}. Each has its own canon`,
+    `Repos: ${repos.length > 0 ? repos.join(", ") : "(none declared yet)"}. Each has its own canon`,
     `under \`<repo>/${dir}/\` (run \`aih init\` in each). Edit workspace guidance in \`${dir}/\`, not here.`,
   );
 }
@@ -241,15 +282,15 @@ export function workspaceBootloader(
 export function nextStepsDoc(name: string, repos: string[], dir: string, git = false): string {
   const initCmds =
     repos.length > 0
-      ? repos.map((r) => `  aih init ./${r} --apply`)
-      : ["  # (no child repos detected — clone repos under this folder, then re-run)"];
+      ? ["  cd <child-repo>", "  aih init --apply"]
+      : ["  # (no child repos declared — re-run with --repos when you are ready)"];
   const gitNotes = git
     ? [
         "- Remote setup is user/team-owned: `aih workspace --git` creates only the local bridge repo; add an origin later if and where you choose.",
       ]
     : [];
   return lines(
-    `Workspace scaffolded for \`${name}\` (parent-only). Detected repos: ${repos.length > 0 ? repos.join(", ") : "none"}.`,
+    `Workspace scaffolded for \`${name}\` (parent-only). Declared repos: ${repos.length > 0 ? repos.join(", ") : "none"}.`,
     "",
     "Lay down each repo's canon (run from the workspace root):",
     "",
@@ -257,7 +298,7 @@ export function nextStepsDoc(name: string, repos: string[], dir: string, git = f
     "",
     `- Fill in \`${dir}/cross-repo-architecture.md\` — it is write-once; aih won't overwrite it.`,
     `- Open \`${name}.code-workspace\` in VS Code (all repos in one window).`,
-    "- Use the parent `.mcp.json` graph/filesystem servers for cross-repo blast-radius analysis.",
+    "- Use the parent `.mcp.json` graph servers for cross-repo blast-radius analysis.",
     ...gitNotes,
     "- Validate: `aih doctor` at the workspace root checks each child is scaffolded.",
   );

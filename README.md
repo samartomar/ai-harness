@@ -126,7 +126,7 @@ One honest line per command — the long-form behavior detail for every command 
 | [`aih ecc`](docs/commands.md#aih-ecc) | Install affaan-m/ECC (skills, instincts, memory) for the selected CLIs via ECC's own installer. |
 | [`aih superpowers`](docs/commands.md#aih-superpowers) | Install obra/Superpowers (brainstorm → plan → TDD → subagent-review skills) for the selected CLIs. |
 | [`aih crispy`](docs/commands.md#aih-crispy) | Run the CRISPY context-engineering stage machine (deterministic, gate-ordered). |
-| [`aih workspace`](docs/commands.md#aih-workspace) | Scaffold a multi-repo workspace at the parent folder: cross-repo map, combined MCP, `.code-workspace`. |
+| [`aih workspace`](docs/commands.md#aih-workspace) | Scaffold a multi-repo workspace at the parent folder: cross-repo map, declared-repo graph MCP, `.code-workspace`. |
 
 ### Skill governance & supply chain
 
@@ -303,7 +303,7 @@ agent editing the UI then has no view into the backend — no cross-repo blast r
 bridges that gap from the **parent folder** that holds the repos:
 
 ```bash
-aih workspace ./my-org --apply     # auto-detects child repos (*/.git); or --repos ui,backend
+aih workspace ./my-org --repos ui,backend --apply
 ```
 
 It writes, at the parent (it does **not** touch the child repos — run `aih init` in each):
@@ -314,10 +314,13 @@ It writes, at the parent (it does **not** touch the child repos — run `aih ini
 - `<context-dir>/repo-discipline.md` — load a repo's own canon before editing it.
 - `CLAUDE.md` + `AGENTS.md` — thin workspace bootloaders pointing at the cross-repo canon.
 - `<name>.code-workspace` — opens every repo in one VS Code window.
-- `.mcp.json` — combined **code-review graph + filesystem MCP** spanning every child repo path, so an
-  agent at the workspace root can reason about cross-repo blast radius before editing a child repo.
+- `.mcp.json` — one **code-review graph MCP** per declared child repo, so an agent at the workspace
+  root can reason about cross-repo blast radius before editing a child repo.
 - `.aih-workspace.json` — marker that puts `aih doctor` into **workspace mode** (validates each child
   repo is scaffolded); object-form repos can retain optional `remote`/`ref` source metadata.
+- Child repos are an explicit allowlist: use `--repos` or an existing `.aih-workspace.json`. If child
+  Git repos are present without an allowlist, `aih workspace` reports candidates but does not add them
+  to `.aih-workspace.json` or workspace MCP scope.
 - `aih workspace snapshot --lock --apply` also writes each child repo's local `origin` URL into
   `<context-dir>/workspace-lock.json` when present, so a lock captures both the commit and fetch
   location. It reads only child-local Git config and never fetches.

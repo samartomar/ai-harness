@@ -14,7 +14,11 @@ import { executePlan } from "../../src/internals/execute.js";
 import type { Action, PlanContext, ProbeAction, WriteAction } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
-import { detectChildRepos } from "../../src/workspace/detect.js";
+import {
+  assertDiscoverableChildGitRepoName,
+  detectChildRepos,
+} from "../../src/workspace/detect.js";
+import { workspaceGitignorePatternForRepo } from "../../src/workspace/git.js";
 import { command, snapshotCommand, taskPlanCommand } from "../../src/workspace/index.js";
 import { parseWorkspaceManifest } from "../../src/workspace/manifest.js";
 
@@ -57,11 +61,11 @@ function writesByPath(actions: Action[]): Map<string, WriteAction> {
 }
 
 describe("detectChildRepos", () => {
-  it("auto-detects immediate subdirs containing .git, sorted", () => {
+  it("does not silently auto-enroll immediate child git repos", () => {
     child("ui");
     child("backend");
     child("docs", false); // no .git → not a repo
-    expect(detectChildRepos(parent)).toEqual(["backend", "ui"]);
+    expect(detectChildRepos(parent)).toEqual([]);
   });
 
   it("honors an explicit repo list (filtered to existing)", () => {
@@ -81,10 +85,32 @@ describe("detectChildRepos", () => {
     expect(() => detectChildRepos(parent, ["C:/other"])).toThrow(/relative/);
   });
 
+  it("rejects dash-leading explicit repo path segments before graph MCP argv emission", () => {
+    child("--help");
+    child("packages/-api");
+
+    expect(() => detectChildRepos(parent, ["--help"])).toThrow(/must not start with '-'/);
+    expect(() => detectChildRepos(parent, ["packages/-api"])).toThrow(/must not start with '-'/);
+  });
+
   it("rejects explicit repo paths that are unsafe to render in generated workspace docs", () => {
     expect(() => detectChildRepos(parent, ["bad|name"])).toThrow(/safe to print/);
     expect(() => detectChildRepos(parent, ["bad\nname"])).toThrow(
       "workspace repo path must be safe to print in workspace reports",
+    );
+  });
+
+  it("fails closed on discovered child git repo names that cannot be reported or gitignored safely", () => {
+    expect(() => assertDiscoverableChildGitRepoName("bad\nname")).toThrow(/safe to print/);
+    expect(() => assertDiscoverableChildGitRepoName("bad|name")).toThrow(/safe to print/);
+    expect(() => assertDiscoverableChildGitRepoName("bad\tname", { printableOnly: false })).toThrow(
+      /represented safely in \.gitignore/,
+    );
+    expect(() =>
+      assertDiscoverableChildGitRepoName(String.raw`bad\name`, { printableOnly: false }),
+    ).toThrow(/represented safely in \.gitignore/);
+    expect(() => assertDiscoverableChildGitRepoName("repo ", { printableOnly: false })).toThrow(
+      /represented safely in \.gitignore/,
     );
   });
 
@@ -95,7 +121,7 @@ describe("detectChildRepos", () => {
       symlinkSync(external, join(parent, "linked"), "junction");
 
       expect(detectChildRepos(parent)).toEqual([]);
-      expect(() => detectChildRepos(parent, ["linked"])).toThrow(/not git repos/);
+      expect(() => detectChildRepos(parent, ["linked"])).toThrow(/real directory/);
     } finally {
       rmSync(external, { recursive: true, force: true });
     }
@@ -132,7 +158,8 @@ describe("workspace.plan — generated artifacts", () => {
     child("service-api");
     child("web-client");
 
-    const actions = (await command.plan(makeCtx({ git: true }))).actions;
+    const actions = (await command.plan(makeCtx({ git: true, repos: "service-api,web-client" })))
+      .actions;
     const w = writesByPath(actions);
     const marker = w.get(".aih-workspace.json")?.json as { git?: boolean; repos?: string[] };
     const ignore = w.get(".gitignore")?.contents ?? "";
@@ -169,6 +196,111 @@ describe("workspace.plan — generated artifacts", () => {
     expect(actions.some((a) => a.kind === "probe" && a.describe.includes("child"))).toBe(false);
   });
 
+  it("does not silently enroll undeclared child git repos into marker or MCP scope", async () => {
+    child("service-api");
+    child("notes");
+
+    const w = writesByPath((await command.plan(makeCtx())).actions);
+    const marker = w.get(".aih-workspace.json")?.json as { repos?: string[] };
+    const mcp = w.get(".mcp.json")?.json as { mcpServers: Record<string, { args: string[] }> };
+
+    expect(marker.repos).toEqual([]);
+    expect(mcp.mcpServers).toEqual({});
+  });
+
+  it("with --git defensively ignores undeclared immediate child git repos", async () => {
+    child("service-api");
+    child("notes");
+    child(" leading-space");
+
+    const actions = (await command.plan(makeCtx({ git: true, repos: "service-api" }))).actions;
+    const w = writesByPath(actions);
+    const marker = w.get(".aih-workspace.json")?.json as { repos?: string[] };
+    const ignore = w.get(".gitignore")?.contents ?? "";
+
+    expect(marker.repos).toEqual(["service-api"]);
+    expect(ignore.split(/\r?\n/)).toEqual(
+      expect.arrayContaining(["/service-api/", "/notes/", "/ leading-space/"]),
+    );
+  });
+
+  it("with --git escapes gitignore metacharacters in declared and undeclared repos", async () => {
+    child("!declared");
+    child("#scratch");
+    child("literal[set]");
+
+    const actions = (await command.plan(makeCtx({ git: true, repos: "!declared" }))).actions;
+    const w = writesByPath(actions);
+    const marker = w.get(".aih-workspace.json")?.json as { repos?: string[] };
+    const ignore = w.get(".gitignore")?.contents ?? "";
+    const ignoreLines = ignore.split(/\r?\n/);
+
+    expect(marker.repos).toEqual(["!declared"]);
+    expect(ignoreLines).toContain("/\\!declared/");
+    expect(ignoreLines).toContain("/\\#scratch/");
+    expect(ignoreLines).toContain("/literal\\[set\\]/");
+    expect(ignoreLines).not.toContain("!declared/");
+    expect(ignoreLines).not.toContain("#scratch/");
+  });
+
+  it("escapes wildcard gitignore metacharacters before writing repo ignore patterns", () => {
+    expect(workspaceGitignorePatternForRepo("*")).toBe("/\\*/");
+    expect(workspaceGitignorePatternForRepo("literal[set]?")).toBe("/literal\\[set\\]\\?/");
+    expect(workspaceGitignorePatternForRepo(String.raw`packages\api`)).toBe("/packages/api/");
+    expect(workspaceGitignorePatternForRepo("packages/api")).toBe("/packages/api/");
+  });
+
+  it("reports skipped candidates without constructing a shell command from their names", async () => {
+    child("api;echo-pwned");
+
+    const docAction = (await command.plan(makeCtx())).actions.find(
+      (a) => a.kind === "doc" && a.describe === "workspace auto-enroll skipped",
+    );
+
+    expect(docAction?.kind).toBe("doc");
+    if (docAction?.kind !== "doc") throw new Error("expected auto-enroll skipped doc");
+    expect(docAction.text).toContain("- api;echo-pwned");
+    expect(docAction.text).toContain("aih workspace --repos <comma-separated-child-repos> --apply");
+    expect(docAction.text).not.toContain("aih workspace --repos api;echo-pwned --apply");
+  });
+
+  it("does not render declared repo paths into copy-paste init commands", async () => {
+    child("api;echo-pwned");
+
+    const actions = (await command.plan(makeCtx({ repos: "api;echo-pwned" }))).actions;
+    const docAction = actions.find(
+      (a) => a.kind === "doc" && a.describe === "workspace next steps (run `aih init` per child)",
+    );
+    const probeAction = actions.find(
+      (a): a is ProbeAction => a.kind === "probe" && a.describe.includes("api;echo-pwned"),
+    );
+
+    expect(docAction?.kind).toBe("doc");
+    if (docAction?.kind !== "doc") throw new Error("expected next steps doc");
+    expect(docAction.text).toContain("Declared repos: api;echo-pwned.");
+    expect(docAction.text).toContain("cd <child-repo>");
+    expect(docAction.text).toContain("aih init --apply");
+    expect(docAction.text).not.toContain("aih init ./api;echo-pwned --apply");
+    expect(await probeAction?.run(makeCtx())).toMatchObject({
+      verdict: "skip",
+      detail: "not scaffolded — run `aih init --apply` inside the child repo",
+    });
+  });
+
+  it("describes declared workspace repos rather than re-reporting candidates as none", async () => {
+    child("service-api");
+
+    const docAction = (await command.plan(makeCtx())).actions.find(
+      (a) => a.kind === "doc" && a.describe.includes("next steps"),
+    );
+
+    expect(docAction?.kind).toBe("doc");
+    if (docAction?.kind !== "doc") throw new Error("expected next steps doc");
+    expect(docAction.text).toContain("Declared repos: none.");
+    expect(docAction.text).not.toContain("Detected repos: none.");
+    expect(docAction.text).toContain("no child repos declared");
+  });
+
   it("with --git keeps remote setup explicitly user-owned", async () => {
     child("service-api");
     const actions = (await command.plan(makeCtx({ git: true }))).actions;
@@ -180,38 +312,47 @@ describe("workspace.plan — generated artifacts", () => {
     expect(doc.text).not.toContain("git remote add");
   });
 
-  it("seeds the cross-repo map + spanning MCP with the detected repo names", async () => {
+  it("seeds the cross-repo map + spanning MCP with the declared repo names", async () => {
     child("ui");
     child("backend");
-    const actions = (await command.plan(makeCtx())).actions;
+    const actions = (await command.plan(makeCtx({ repos: "ui,backend" }))).actions;
     const w = writesByPath(actions);
     const arch = w.get("ai-coding/cross-repo-architecture.md")?.contents ?? "";
+    const discipline = w.get("ai-coding/repo-discipline.md")?.contents ?? "";
     expect(arch).toContain("ui/ai-coding/RULE_ROUTER.md");
     expect(arch).toContain("backend/ai-coding/RULE_ROUTER.md");
-    // The marker + MCP carry the repo list and combined graph scope.
+    expect(discipline).toContain("workspace graph MCP servers");
+    expect(discipline).not.toContain("combined workspace graph");
+    // The marker + MCP carry the declared repo list and graph scope.
     const marker = w.get(".aih-workspace.json")?.json as {
       repos: string[];
       workspaceType: string;
       graphScope: string;
     };
-    expect(marker.repos).toEqual(["backend", "ui"]);
+    expect(marker.repos).toEqual(["ui", "backend"]);
     expect(marker.workspaceType).toBe("multi-repo");
     expect(marker.graphScope).toBe("combined-child-repos");
     const mcp = w.get(".mcp.json")?.json as {
-      mcpServers: {
-        "code-review-graph": { command: string; args: string[] };
-        filesystem: { args: string[] };
-      };
+      mcpServers: Record<string, { command: string; args: string[] }>;
     };
-    expect(mcp.mcpServers["code-review-graph"].command).toBe("uvx");
-    expect(mcp.mcpServers["code-review-graph"].args).toEqual([
+    expect(Object.keys(mcp.mcpServers).sort()).toEqual([
+      "aih-workspace-graph-backend",
+      "aih-workspace-graph-ui",
+    ]);
+    expect(mcp.mcpServers["aih-workspace-graph-ui"]?.command).toBe("uvx");
+    expect(mcp.mcpServers["aih-workspace-graph-ui"]?.args).toEqual([
       "--offline",
       "--no-python-downloads",
       "--no-env-file",
       "code-review-graph@2.3.6",
       "serve",
+      "--repo",
+      "ui",
     ]);
-    expect(mcp.mcpServers.filesystem.args).toEqual(expect.arrayContaining(["ui", "backend"]));
+    expect(mcp.mcpServers["aih-workspace-graph-backend"]?.args).toEqual(
+      expect.arrayContaining(["--repo", "backend"]),
+    );
+    expect(mcp.mcpServers).not.toHaveProperty("filesystem");
   });
 
   it("uses declared object manifest repos for the VS Code and MCP workspace scopes", async () => {
@@ -228,10 +369,15 @@ describe("workspace.plan — generated artifacts", () => {
       write.path.endsWith(".code-workspace"),
     );
     const codeWorkspaceJson = codeWorkspaceWrite?.json as { folders: { path: string }[] };
-    const mcp = w.get(".mcp.json")?.json as { mcpServers: { filesystem: { args: string[] } } };
+    const mcp = w.get(".mcp.json")?.json as {
+      mcpServers: Record<string, { args: string[] }>;
+    };
 
     expect(codeWorkspaceJson.folders).toContainEqual({ path: "packages/api" });
-    expect(mcp.mcpServers.filesystem.args).toEqual(expect.arrayContaining(["packages/api"]));
+    expect(mcp.mcpServers["aih-workspace-graph-packages-api"]?.args).toEqual(
+      expect.arrayContaining(["--repo", "packages/api"]),
+    );
+    expect(mcp.mcpServers).not.toHaveProperty("filesystem");
   });
 
   it("rejects manifest-declared repo paths that point through links outside the workspace", async () => {
@@ -260,33 +406,29 @@ describe("workspace.plan — generated artifacts", () => {
     await expect(command.plan(makeCtx())).rejects.toThrow(/valid \.aih-workspace\.json/);
   });
 
-  it("pins the filesystem MCP package by default", async () => {
+  it("omits filesystem MCP because client roots can broaden argv scopes", async () => {
     child("ui");
-    const w = writesByPath((await command.plan(makeCtx())).actions);
-    const mcp = w.get(".mcp.json")?.json as { mcpServers: { filesystem: { args: string[] } } };
+    const w = writesByPath((await command.plan(makeCtx({ repos: "ui" }))).actions);
+    const mcp = w.get(".mcp.json")?.json as {
+      mcpServers: Record<string, { command: string; args: string[] }>;
+    };
 
-    expect(mcp.mcpServers.filesystem.args).toContain(
-      "@modelcontextprotocol/server-filesystem@2026.1.14",
+    expect(mcp.mcpServers).not.toHaveProperty("filesystem");
+    expect(mcp.mcpServers["aih-workspace-graph-ui"]?.args).toEqual(
+      expect.arrayContaining(["--repo", "ui"]),
     );
   });
 
-  it("pins the filesystem MCP package via AIH_MCP_FS_VERSION (AIH-SUPPLY-001)", async () => {
+  it("does not emit filesystem MCP even when AIH_MCP_FS_VERSION is set", async () => {
     child("ui");
     const base = makeCtx();
     const ctx = { ...base, env: { ...base.env, AIH_MCP_FS_VERSION: "2025.1.0" } };
     const w = writesByPath((await command.plan(ctx)).actions);
-    const mcp = w.get(".mcp.json")?.json as { mcpServers: { filesystem: { args: string[] } } };
-    expect(mcp.mcpServers.filesystem.args).toContain(
-      "@modelcontextprotocol/server-filesystem@2025.1.0",
-    );
-  });
+    const mcp = w.get(".mcp.json")?.json as {
+      mcpServers: Record<string, { command: string; args: string[] }>;
+    };
 
-  it("rejects non-version filesystem MCP specs from AIH_MCP_FS_VERSION", async () => {
-    child("ui");
-    const base = makeCtx();
-    const ctx = { ...base, env: { ...base.env, AIH_MCP_FS_VERSION: "latest" } };
-
-    await expect(command.plan(ctx)).rejects.toThrow(/exact semver/);
+    expect(mcp.mcpServers).not.toHaveProperty("filesystem");
   });
 
   it("the cross-repo architecture map is write-once (never overwritten)", async () => {
@@ -300,7 +442,7 @@ describe("workspace.plan — generated artifacts", () => {
   it("generates a federated workspace router that links child rule routers", async () => {
     child("ui");
     child("backend");
-    const w = writesByPath((await command.plan(makeCtx())).actions);
+    const w = writesByPath((await command.plan(makeCtx({ repos: "ui,backend" }))).actions);
     const router = w.get("ai-coding/workspace-router.md")?.contents ?? "";
 
     expect(router).toContain("This is a federated workspace, not a monorepo.");
@@ -343,7 +485,9 @@ describe("workspace.plan — generated artifacts", () => {
 
   it("honors --context-dir for the canon paths", async () => {
     child("ui");
-    const w = writesByPath((await command.plan({ ...makeCtx(), contextDir: "ws-canon" })).actions);
+    const w = writesByPath(
+      (await command.plan({ ...makeCtx({ repos: "ui" }), contextDir: "ws-canon" })).actions,
+    );
     expect(w.has("ws-canon/cross-repo-architecture.md")).toBe(true);
     expect(w.has("ai-coding/cross-repo-architecture.md")).toBe(false);
     expect(w.get("ws-canon/workspace-router.md")?.contents).toContain("ui/ws-canon/RULE_ROUTER.md");
@@ -351,7 +495,7 @@ describe("workspace.plan — generated artifacts", () => {
 
   it("adds a per-child scaffolded probe (skip until the child is init'd)", async () => {
     child("ui");
-    const probeAction = (await command.plan(makeCtx())).actions.find(
+    const probeAction = (await command.plan(makeCtx({ repos: "ui" }))).actions.find(
       (a): a is ProbeAction => a.kind === "probe" && a.describe.includes("child ui"),
     );
     expect(probeAction).toBeDefined();
@@ -567,8 +711,9 @@ describe("workspace — write-once executor behavior", () => {
     };
     const ignore = readFileSync(join(parent, ".gitignore"), "utf8");
     expect(marker.git).toBe(true);
-    expect(ignore).toContain("service-api/");
-    expect(ignore).toContain("web-client/");
+    expect(ignore.split(/\r?\n/)).toEqual(
+      expect.arrayContaining(["/service-api/", "/web-client/"]),
+    );
     expect(ran).toContain(`git -C ${parent} init`);
     const stage = ran.find((cmd) => cmd.startsWith(`git -C ${parent} add -- `)) ?? "";
     const commit = ran.find((cmd) => cmd.startsWith(`git -C ${parent} commit -m `)) ?? "";
@@ -578,6 +723,128 @@ describe("workspace — write-once executor behavior", () => {
     expect(stage).not.toContain("web-client/");
     expect(commit).toContain("chore: initialize workspace config (aih workspace --git)");
     expect(commit).toContain(".aih-workspace.json");
+  });
+
+  it("replaces stale managed graph MCP scope while preserving user MCP servers", async () => {
+    child("service-api");
+    child("notes");
+    writeFileSync(
+      join(parent, ".mcp.json"),
+      JSON.stringify(
+        {
+          mcpServers: {
+            filesystem: {
+              command: "npx",
+              args: ["-y", "@modelcontextprotocol/server-filesystem@2026.1.14", "notes"],
+            },
+            "code-review-graph": {
+              command: "uvx",
+              args: [
+                "--offline",
+                "--no-python-downloads",
+                "--no-env-file",
+                "code-review-graph@2.3.6",
+                "serve",
+              ],
+            },
+            "aih-workspace-graph-notes": {
+              command: "uvx",
+              args: [
+                "--offline",
+                "--no-python-downloads",
+                "--no-env-file",
+                "code-review-graph@2.3.6",
+                "serve",
+                "--repo",
+                "notes",
+              ],
+            },
+            "user-owned": {
+              command: "node",
+              args: ["server.js"],
+            },
+          },
+        },
+        null,
+        2,
+      ),
+    );
+
+    await executePlan(
+      await command.plan(makeCtx({ repos: "service-api" }, true)),
+      makeCtx({}, true),
+    );
+
+    const mcp = JSON.parse(readFileSync(join(parent, ".mcp.json"), "utf8")) as {
+      mcpServers: Record<string, { command: string; args: string[] } | undefined>;
+    };
+    expect(mcp.mcpServers.filesystem).toEqual({
+      command: "npx",
+      args: ["-y", "@modelcontextprotocol/server-filesystem@2026.1.14", "notes"],
+    });
+    expect(mcp.mcpServers).not.toHaveProperty("code-review-graph");
+    expect(mcp.mcpServers).not.toHaveProperty("aih-workspace-graph-notes");
+    expect(mcp.mcpServers["aih-workspace-graph-service-api"]?.args).toEqual([
+      "--offline",
+      "--no-python-downloads",
+      "--no-env-file",
+      "code-review-graph@2.3.6",
+      "serve",
+      "--repo",
+      "service-api",
+    ]);
+    expect(mcp.mcpServers["user-owned"]).toEqual({ command: "node", args: ["server.js"] });
+  });
+
+  it("preserves user-owned MCP servers that use formerly managed names", async () => {
+    child("service-api");
+    writeFileSync(
+      join(parent, ".mcp.json"),
+      JSON.stringify(
+        {
+          mcpServers: {
+            filesystem: {
+              command: "npx",
+              args: ["-y", "@modelcontextprotocol/server-filesystem@2026.1.14", "."],
+            },
+            "code-review-graph": {
+              command: "uvx",
+              args: ["custom-wrapper", "code-review-graph@2.3.6", "serve"],
+            },
+            "aih-workspace-graph-notes": {
+              command: "uvx",
+              args: ["custom-wrapper", "code-review-graph@2.3.6", "serve", "--repo", "notes"],
+            },
+          },
+        },
+        null,
+        2,
+      ),
+    );
+
+    await executePlan(
+      await command.plan(makeCtx({ repos: "service-api" }, true)),
+      makeCtx({}, true),
+    );
+
+    const mcp = JSON.parse(readFileSync(join(parent, ".mcp.json"), "utf8")) as {
+      mcpServers: Record<string, { command: string; args: string[] } | undefined>;
+    };
+    expect(mcp.mcpServers.filesystem).toEqual({
+      command: "npx",
+      args: ["-y", "@modelcontextprotocol/server-filesystem@2026.1.14", "."],
+    });
+    expect(mcp.mcpServers["code-review-graph"]).toEqual({
+      command: "uvx",
+      args: ["custom-wrapper", "code-review-graph@2.3.6", "serve"],
+    });
+    expect(mcp.mcpServers["aih-workspace-graph-notes"]).toEqual({
+      command: "uvx",
+      args: ["custom-wrapper", "code-review-graph@2.3.6", "serve", "--repo", "notes"],
+    });
+    expect(mcp.mcpServers["aih-workspace-graph-service-api"]?.args).toEqual(
+      expect.arrayContaining(["--repo", "service-api"]),
+    );
   });
 
   it("fails before writing when a baseline commit needs missing git identity", async () => {
@@ -621,7 +888,7 @@ describe("workspace — write-once executor behavior", () => {
     await executePlan(await command.plan(ctx), ctx);
 
     const ignore = readFileSync(join(parent, ".gitignore"), "utf8");
-    expect(ignore.match(/^service-api\/$/gm)).toHaveLength(1);
+    expect(ignore.match(/^\/service-api\/$/gm)).toHaveLength(1);
     expect(ignore.match(/^\*\.aih\.bak$/gm)).toHaveLength(1);
     expect(ran).not.toContain(`git -C ${parent} init`);
     expect(ran.some((cmd) => cmd.includes(" commit "))).toBe(false);

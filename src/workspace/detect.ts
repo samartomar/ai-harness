@@ -25,6 +25,12 @@ function normalizeRepoPath(raw: string): string {
   if (parts.some((p) => p === "." || p === "..")) {
     throw new AihError(`workspace repo path must not traverse parents: ${raw}`, "AIH_WORKSPACE");
   }
+  if (parts.some((p) => p.startsWith("-"))) {
+    throw new AihError(
+      `workspace repo path segment must not start with '-': ${raw}`,
+      "AIH_WORKSPACE",
+    );
+  }
   return parts.join("/");
 }
 
@@ -66,32 +72,93 @@ export function checkWorkspaceChildPath(parent: string, repo: string): Workspace
   return { path, exists: true, git: existsSync(join(dir, ".git")) };
 }
 
-function isGitRepo(parent: string, repo: string): boolean {
+function isSafeGitignoreLineName(name: string): boolean {
+  if (name.endsWith(" ")) return false;
+  for (const ch of name) {
+    if (ch === "\\" || ch.charCodeAt(0) < 0x20) return false;
+  }
+  return true;
+}
+
+export function assertDiscoverableChildGitRepoName(
+  name: string,
+  options: DiscoverChildGitRepoOptions = {},
+): void {
+  if (options.printableOnly !== false) {
+    cleanPrintable(name, "workspace repo path");
+  }
+  if (!isSafeGitignoreLineName(name)) {
+    throw new AihError(
+      options.printableOnly !== false
+        ? "workspace child git repo name must be safe to print in workspace reports"
+        : "workspace child git repo name cannot be represented safely in .gitignore",
+      "AIH_WORKSPACE",
+    );
+  }
+}
+
+function isDiscoveredChildGitRepo(
+  parent: string,
+  name: string,
+  options: DiscoverChildGitRepoOptions,
+): boolean {
   try {
-    return checkWorkspaceChildPath(parent, repo).git;
-  } catch {
+    const dir = join(parent, name);
+    const info = lstatSync(dir);
+    if (info.isSymbolicLink() || !info.isDirectory()) return false;
+    if (!isContainedPath(parent, dir)) return false;
+    if (!existsSync(join(dir, ".git"))) return false;
+    assertDiscoverableChildGitRepoName(name, options);
+    return true;
+  } catch (error) {
+    if (error instanceof AihError) throw error;
     return false;
   }
 }
 
+export interface DiscoverChildGitRepoOptions {
+  includeHidden?: boolean;
+  printableOnly?: boolean;
+}
+
 /**
- * The child repositories of a workspace parent. An explicit list (from
- * `--repos a,b`) is honored as-is (filtered to those that exist); otherwise every
- * immediate subdirectory that contains a `.git` (dir for a clone, file for a
- * worktree/submodule) is treated as a repo. Hidden dirs are skipped. Deterministic
- * order (sorted) so the plan is stable.
+ * Immediate child directories containing `.git` metadata. This is discovery only:
+ * callers must not use it as an implicit workspace read-scope allowlist.
+ */
+export function discoverChildGitRepos(
+  parent: string,
+  options: DiscoverChildGitRepoOptions = {},
+): string[] {
+  let entries: string[];
+  try {
+    entries = readdirSync(parent);
+  } catch {
+    return [];
+  }
+  return entries
+    .filter((name) => options.includeHidden === true || !name.startsWith("."))
+    .filter((name) => isDiscoveredChildGitRepo(parent, name, options))
+    .sort();
+}
+
+/**
+ * The declared child repositories of a workspace parent. An explicit list (from
+ * `--repos a,b`) is honored as-is after validation. When `--repos` is absent, this
+ * returns an empty allowlist rather than silently enrolling every child `.git`
+ * directory into generated workspace/MCP read scopes.
  */
 export function detectChildRepos(parent: string, explicit: readonly string[] = []): string[] {
   if (explicit.length > 0) {
     const repos = [...new Set(explicit.map(normalizeRepoPath).filter((r) => r.length > 0))];
-    const missing = repos.filter((r) => !existsSync(join(parent, r)));
+    const checks = repos.map((repo) => checkWorkspaceChildPath(parent, repo));
+    const missing = checks.filter((check) => !check.exists).map((check) => check.path);
     if (missing.length > 0) {
       throw new AihError(
         `workspace --repos entries do not exist under the parent: ${missing.join(", ")}`,
         "AIH_WORKSPACE",
       );
     }
-    const notRepos = repos.filter((r) => !isGitRepo(parent, r));
+    const notRepos = checks.filter((check) => !check.git).map((check) => check.path);
     if (notRepos.length > 0) {
       throw new AihError(
         `workspace --repos entries are not git repos (missing .git): ${notRepos.join(", ")}`,
@@ -100,16 +167,7 @@ export function detectChildRepos(parent: string, explicit: readonly string[] = [
     }
     return repos;
   }
-  let entries: string[];
-  try {
-    entries = readdirSync(parent);
-  } catch {
-    return [];
-  }
-  return entries
-    .filter((name) => !name.startsWith("."))
-    .filter((name) => isGitRepo(parent, name))
-    .sort();
+  return [];
 }
 
 /** Parse `--repos a,b,c` into a list (empty when the flag is absent). */

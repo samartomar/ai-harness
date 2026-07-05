@@ -47,6 +47,10 @@ export interface WriteAction {
   removeJsonKeys?: Record<string, readonly string[]>;
   /** Replace named top-level JSON keys with the generated value after merge. */
   replaceJsonKeys?: readonly string[];
+  /** Replace named child JSON keys with generated values after merge. */
+  replaceJsonChildKeys?: Record<string, readonly string[]>;
+  /** Prune generated child JSON keys after merge, while keeping keys present in the new value. */
+  pruneJsonChildKeys?: Record<string, { exact?: readonly string[]; prefixes?: readonly string[] }>;
   /** Remove named top-level JSON keys after merge. */
   removeJsonTopLevelKeys?: readonly string[];
   /** POSIX file mode, e.g. 0o755 for hooks. */
@@ -325,6 +329,11 @@ export function writeJson(
     external?: boolean;
     removeJsonKeys?: Record<string, readonly string[]>;
     replaceJsonKeys?: readonly string[];
+    replaceJsonChildKeys?: Record<string, readonly string[]>;
+    pruneJsonChildKeys?: Record<
+      string,
+      { exact?: readonly string[]; prefixes?: readonly string[] }
+    >;
     removeJsonTopLevelKeys?: readonly string[];
   } = {},
 ): WriteAction {
@@ -337,6 +346,8 @@ export function writeJson(
     external: opts.external,
     removeJsonKeys: opts.removeJsonKeys,
     replaceJsonKeys: opts.replaceJsonKeys,
+    replaceJsonChildKeys: opts.replaceJsonChildKeys,
+    pruneJsonChildKeys: opts.pruneJsonChildKeys,
     removeJsonTopLevelKeys: opts.removeJsonTopLevelKeys,
   };
 }

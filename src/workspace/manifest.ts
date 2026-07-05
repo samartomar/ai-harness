@@ -70,6 +70,9 @@ export function normalizeWorkspacePath(raw: string, label = "workspace path"): s
   if (parts.some((p) => p === "." || p === "..")) {
     throw new Error(`${label} must not traverse parents: ${raw}`);
   }
+  if (label === "workspace repo path" && parts.some((p) => p.startsWith("-"))) {
+    throw new Error(`${label} segment must not start with '-': ${raw}`);
+  }
   return parts.join("/");
 }
 

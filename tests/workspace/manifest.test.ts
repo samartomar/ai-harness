@@ -244,6 +244,19 @@ describe("workspace manifest parser", () => {
     expect(m.errors.join("\n")).toMatch(/duplicate repo path/);
   });
 
+  it("rejects dash-leading repo path segments before graph MCP argv emission", () => {
+    const m = parseWorkspaceManifest(
+      {
+        repos: ["--help", { id: "nested", path: "packages/-api" }],
+      },
+      "ai-coding",
+    );
+
+    expect(m.status).toBe("ERROR");
+    expect(m.repos).toEqual([]);
+    expect(m.errors.join("\n")).toMatch(/workspace repo path segment must not start with '-'/);
+  });
+
   it("rejects inline Markdown and HTML syntax in printable manifest fields", () => {
     const m = parseWorkspaceManifest(
       {

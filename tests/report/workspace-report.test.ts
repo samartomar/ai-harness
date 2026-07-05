@@ -25,6 +25,20 @@ function json(value: unknown): string {
   return `${JSON.stringify(value, null, 2)}\n`;
 }
 
+function legacyGraphArgs(): string[] {
+  return [
+    "--offline",
+    "--no-python-downloads",
+    "--no-env-file",
+    "code-review-graph@2.3.6",
+    "serve",
+  ];
+}
+
+function workspaceGraphArgs(repo: string): string[] {
+  return [...legacyGraphArgs(), "--repo", repo];
+}
+
 function defaultGitRunner(): Runner {
   return fakeRunner((argv) => {
     if (argv[0] !== "git") return undefined;
@@ -271,7 +285,20 @@ describe("report workspace rollup", () => {
     ]);
   });
 
-  it("warns when the workspace filesystem MCP package is unpinned", async () => {
+  it("warns when declared workspace repos have no parent graph MCP config", async () => {
+    writeWorkspaceManifest({ repos: ["ui"], contextDir: "ai-coding" });
+    child("ui");
+
+    const data = (await workspaceDigest()).data as WorkspaceReportDigest;
+
+    expect(data.mcp).toMatchObject({
+      status: "WARN",
+      detail:
+        "declared workspace repos have no parent .mcp.json; run `aih workspace --apply` to add graph MCP servers",
+    });
+  });
+
+  it("warns when stale workspace filesystem MCP is still present", async () => {
     writeWorkspaceManifest({ repos: ["ui"], contextDir: "ai-coding" });
     writeFileSync(
       join(root, ".mcp.json"),
@@ -289,19 +316,90 @@ describe("report workspace rollup", () => {
     const d = await workspaceDigest();
     const data = d.data as WorkspaceReportDigest;
 
-    expect(d.text).toContain("Workspace MCP filesystem server is unpinned.");
+    expect(d.text).toContain(
+      "Workspace MCP filesystem server has broad workspace scope (filesystem);",
+    );
+    expect(d.text).toContain("remove or narrow it manually");
     expect(data.mcp.status).toBe("WARN");
   });
 
-  it("warns when the workspace filesystem MCP package uses a floating tag", async () => {
+  it("warns when stale workspace filesystem MCP uses a custom server name", async () => {
     writeWorkspaceManifest({ repos: ["ui"], contextDir: "ai-coding" });
     writeFileSync(
       join(root, ".mcp.json"),
       json({
         mcpServers: {
-          filesystem: {
+          "custom-files": {
             command: "npx",
-            args: ["-y", "@modelcontextprotocol/server-filesystem@latest", "ui"],
+            args: ["-y", "@modelcontextprotocol/server-filesystem@2026.1.14", "."],
+          },
+        },
+      }),
+    );
+    child("ui");
+
+    const data = (await workspaceDigest()).data as WorkspaceReportDigest;
+
+    expect(data.mcp.status).toBe("WARN");
+    expect(data.mcp.detail).toContain("custom-files");
+    expect(data.mcp.detail).toContain("remove or narrow it manually");
+    expect(data.mcp.detail).not.toContain("Re-run `aih workspace --apply`");
+  });
+
+  it("sanitizes MCP-derived labels before rendering governance details", async () => {
+    writeWorkspaceManifest({ repos: ["ui"], contextDir: "ai-coding" });
+    writeFileSync(
+      join(root, ".mcp.json"),
+      json({
+        mcpServers: {
+          "bad\n[link](command)`server`": {
+            command: "npx",
+            args: ["-y", "@modelcontextprotocol/server-filesystem@2026.1.14", "."],
+          },
+        },
+      }),
+    );
+    child("ui");
+
+    const data = (await workspaceDigest()).data as WorkspaceReportDigest;
+
+    expect(data.mcp.status).toBe("WARN");
+    expect(data.mcp.detail).toContain("bad link command server");
+    expect(data.mcp.detail).not.toContain("bad\n[link](command)`server`");
+    expect(data.mcp.detail).not.toContain("[link](command)");
+    expect(data.mcp.detail).not.toContain("`server`");
+  });
+
+  it("warns when stale parent-root code-review-graph MCP is still present", async () => {
+    writeWorkspaceManifest({ repos: ["ui"], contextDir: "ai-coding" });
+    writeFileSync(
+      join(root, ".mcp.json"),
+      json({
+        mcpServers: {
+          "code-review-graph": {
+            command: "uvx",
+            args: legacyGraphArgs(),
+          },
+        },
+      }),
+    );
+    child("ui");
+
+    const data = (await workspaceDigest()).data as WorkspaceReportDigest;
+
+    expect(data.mcp.status).toBe("WARN");
+    expect(data.mcp.detail).toContain("stale parent-root code-review-graph");
+  });
+
+  it("accepts only graph MCP servers scoped to declared workspace repos", async () => {
+    writeWorkspaceManifest({ repos: ["ui"], contextDir: "ai-coding" });
+    writeFileSync(
+      join(root, ".mcp.json"),
+      json({
+        mcpServers: {
+          "aih-workspace-graph-ui": {
+            command: "uvx",
+            args: workspaceGraphArgs("ui"),
           },
         },
       }),
@@ -311,20 +409,20 @@ describe("report workspace rollup", () => {
     const data = (await workspaceDigest()).data as WorkspaceReportDigest;
 
     expect(data.mcp).toMatchObject({
-      status: "WARN",
-      packageSpec: "@modelcontextprotocol/server-filesystem@latest",
+      status: "OK",
+      detail: "workspace graph MCP is scoped to declared repos",
     });
   });
 
-  it("warns when the workspace filesystem MCP package uses a version range", async () => {
+  it("warns when a workspace graph MCP server has the wrong shape", async () => {
     writeWorkspaceManifest({ repos: ["ui"], contextDir: "ai-coding" });
     writeFileSync(
       join(root, ".mcp.json"),
       json({
         mcpServers: {
-          filesystem: {
-            command: "npx",
-            args: ["-y", "@modelcontextprotocol/server-filesystem@^2026.1.14", "ui"],
+          "aih-workspace-graph-ui": {
+            command: "uvx",
+            args: ["code-review-graph@2.3.6", "serve", "--repo", "ui"],
           },
         },
       }),
@@ -333,10 +431,88 @@ describe("report workspace rollup", () => {
 
     const data = (await workspaceDigest()).data as WorkspaceReportDigest;
 
-    expect(data.mcp).toMatchObject({
+    expect(data.mcp.status).toBe("WARN");
+    expect(data.mcp.detail).toContain("missing declared repo graph MCP: ui");
+    expect(data.mcp.detail).toContain("invalid workspace graph MCP: aih-workspace-graph-ui");
+  });
+
+  it("warns when workspace graph MCP scopes an undeclared repo", async () => {
+    writeWorkspaceManifest({ repos: ["ui"], contextDir: "ai-coding" });
+    writeFileSync(
+      join(root, ".mcp.json"),
+      json({
+        mcpServers: {
+          "aih-workspace-graph-backend": {
+            command: "uvx",
+            args: workspaceGraphArgs("backend"),
+          },
+        },
+      }),
+    );
+    child("ui");
+
+    const data = (await workspaceDigest()).data as WorkspaceReportDigest;
+
+    expect(data.mcp.status).toBe("WARN");
+    expect(data.mcp.detail).toContain("missing declared repo graph MCP: ui");
+    expect(data.mcp.detail).toContain("undeclared repo graph MCP: backend");
+  });
+
+  it("sanitizes graph repo args before rendering governance details", async () => {
+    writeWorkspaceManifest({ repos: ["ui"], contextDir: "ai-coding" });
+    writeFileSync(
+      join(root, ".mcp.json"),
+      json({
+        mcpServers: {
+          "aih-workspace-graph-backend": {
+            command: "uvx",
+            args: workspaceGraphArgs("backend\n[link](danger)`repo`"),
+          },
+        },
+      }),
+    );
+    child("ui");
+
+    const data = (await workspaceDigest()).data as WorkspaceReportDigest;
+
+    expect(data.mcp.status).toBe("WARN");
+    expect(data.mcp.detail).toContain("undeclared repo graph MCP: backend link danger repo");
+    expect(data.mcp.detail).not.toContain("backend\n[link](danger)`repo`");
+    expect(data.mcp.detail).not.toContain("[link](danger)");
+    expect(data.mcp.detail).not.toContain("`repo`");
+  });
+
+  it("warns when parent git does not ignore a declared child repo", async () => {
+    writeWorkspaceManifest({ repos: ["ui"], contextDir: "ai-coding", git: true });
+    writeFileSync(join(root, ".gitignore"), ".aih/\n");
+    child("ui");
+
+    const data = (await workspaceDigest()).data as WorkspaceReportDigest;
+
+    expect(data.rows[0]?.parentIgnored).toMatchObject({
       status: "WARN",
-      packageSpec: "@modelcontextprotocol/server-filesystem@^2026.1.14",
+      detail: "parent git does not ignore child repo path",
     });
+    expect(data.rows[0]?.status).toBe("WARN");
+  });
+
+  it("warns when parent git does not ignore an undeclared immediate child repo", async () => {
+    writeWorkspaceManifest({ repos: ["ui"], contextDir: "ai-coding", git: true });
+    writeFileSync(join(root, ".gitignore"), "/ui/\n.aih/\n");
+    child("ui");
+    child("notes");
+    child("bad[link](x)`repo");
+
+    const d = await workspaceDigest();
+    const data = d.data as WorkspaceReportDigest;
+
+    expect(data.gitignore).toMatchObject({
+      status: "WARN",
+      detail: "missing .gitignore entries: /bad link x repo/, /notes/",
+    });
+    expect(d.text).toContain("/notes/");
+    expect(d.text).toContain("/bad link x repo/");
+    expect(d.text).not.toContain("bad[link](x)`repo");
   });
 
   it("builds independent child evidence rows concurrently", async () => {

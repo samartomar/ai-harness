@@ -11,6 +11,7 @@ import {
   writeText,
 } from "../internals/plan.js";
 import { stripTrailingNewlines } from "../internals/render.js";
+import { discoverChildGitRepos } from "./detect.js";
 
 const WORKSPACE_TRANSIENT_PATTERNS = [
   ".aih/",
@@ -21,18 +22,31 @@ const WORKSPACE_TRANSIENT_PATTERNS = [
 ];
 const BASELINE_COMMIT_MESSAGE = "chore: initialize workspace config (aih workspace --git)";
 
-function repoIgnorePattern(repo: string): string {
-  return `${repo.replace(/\\/g, "/").replace(/\/+$/, "")}/`;
+export function workspaceGitignorePatternForRepo(repo: string): string {
+  const normalized = repo.replace(/\\/g, "/").replace(/\/+$/, "");
+  return `/${normalized.replace(/[\\#!*?[\]]/g, "\\$&")}/`;
 }
 
-function workspaceGitignorePatterns(repos: readonly string[]): string[] {
-  return [...repos.map(repoIgnorePattern), ...WORKSPACE_TRANSIENT_PATTERNS];
+function legacyWorkspaceGitignorePatternForRepo(repo: string): string {
+  return workspaceGitignorePatternForRepo(repo).replace(/^\//, "");
+}
+
+export function workspaceGitignoreRequiredRepos(root: string, repos: readonly string[]): string[] {
+  const discovered = discoverChildGitRepos(root, { includeHidden: true, printableOnly: false });
+  return [...new Set([...repos, ...discovered])];
+}
+
+function workspaceGitignorePatterns(root: string, repos: readonly string[]): string[] {
+  const repoPatterns = workspaceGitignoreRequiredRepos(root, repos).map(
+    workspaceGitignorePatternForRepo,
+  );
+  return [...repoPatterns, ...WORKSPACE_TRANSIENT_PATTERNS];
 }
 
 /** Ensure the parent workspace repo ignores child repo worktrees and transient outputs. */
 export function workspaceGitignoreWrite(root: string, repos: readonly string[]): WriteAction {
   const existing = readIfExists(resolve(root, ".gitignore"));
-  const patterns = workspaceGitignorePatterns(repos);
+  const patterns = workspaceGitignorePatterns(root, repos);
   const existingLines = existing?.split(/\r?\n/).map((line) => line.trim()) ?? [];
   const missing = patterns.filter((pattern) => !existingLines.includes(pattern));
   const block = ["# aih-managed (workspace git)", ...missing].join("\n");
@@ -125,5 +139,11 @@ export function workspaceGitignoreMissing(
   gitignore: string | undefined,
 ): string[] {
   const lines = gitignore?.split(/\r?\n/).map((line) => line.trim()) ?? [];
-  return repos.map(repoIgnorePattern).filter((pattern) => !lines.includes(pattern));
+  return repos
+    .map((repo) => ({
+      anchored: workspaceGitignorePatternForRepo(repo),
+      legacy: legacyWorkspaceGitignorePatternForRepo(repo),
+    }))
+    .filter(({ anchored, legacy }) => !lines.includes(anchored) && !lines.includes(legacy))
+    .map(({ anchored }) => anchored);
 }

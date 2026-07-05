@@ -3,7 +3,11 @@ import { join, relative } from "node:path";
 import { readIfExists } from "../internals/fsxn.js";
 import { type DigestAction, digest, type PlanContext } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
-import { workspaceGitignoreMissing } from "../workspace/git.js";
+import {
+  workspaceGitignoreMissing,
+  workspaceGitignorePatternForRepo,
+  workspaceGitignoreRequiredRepos,
+} from "../workspace/git.js";
 import {
   readWorkspaceManifest,
   type WorkspaceEdge,
@@ -18,10 +22,12 @@ import {
   readWorkspaceRepoState,
   type WorkspaceRepoState,
 } from "../workspace/state.js";
+import {
+  aihWorkspaceGraphRepo,
+  isAihLegacyCodeReviewGraphMcpServer,
+} from "../workspace/templates.js";
 
 const FRESH_DAYS = 7;
-const EXACT_MCP_SEMVER_RE = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
-
 export interface WorkspaceEvidenceCell {
   status: WorkspaceEvidenceStatus;
   detail?: string;
@@ -73,6 +79,7 @@ export interface WorkspaceReportDigest {
     git: boolean;
     contextDir: string;
   };
+  gitignore: WorkspaceEvidenceCell;
   rows: WorkspaceChildReportRow[];
   contracts: WorkspaceContractReportRow[];
   snapshot?: {
@@ -144,48 +151,101 @@ function lineCount(text: string | undefined): number {
   return text.split(/\r?\n/).filter((line) => line.trim().length > 0).length;
 }
 
-function workspaceMcpStatus(root: string): WorkspaceReportDigest["mcp"] {
+function reportLabel(value: string): string {
+  const safe = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._:-/ ";
+  const label = [...value]
+    .map((char) => (safe.includes(char) ? char : " "))
+    .join("")
+    .replace(/\s+/g, " ")
+    .trim();
+  return label.length > 0 ? label : "<unsafe>";
+}
+
+function reportList(values: readonly string[]): string {
+  return values.map(reportLabel).join(", ");
+}
+
+function mcpFilesystemPackageSpec(server: unknown): string | undefined {
+  if (typeof server !== "object" || server === null || Array.isArray(server)) return undefined;
+  const args = (server as { args?: unknown }).args;
+  if (!Array.isArray(args)) return undefined;
+  return args.find(
+    (arg): arg is string =>
+      typeof arg === "string" && arg.startsWith("@modelcontextprotocol/server-filesystem"),
+  );
+}
+
+function workspaceMcpStatus(
+  root: string,
+  manifest: WorkspaceManifest,
+): WorkspaceReportDigest["mcp"] {
   const text = readIfExists(join(root, ".mcp.json"));
-  if (text === undefined) return { status: "UNKNOWN", detail: "no parent .mcp.json" };
+  if (text === undefined) {
+    return manifest.repos.length > 0
+      ? {
+          status: "WARN",
+          detail:
+            "declared workspace repos have no parent .mcp.json; run `aih workspace --apply` to add graph MCP servers",
+        }
+      : { status: "UNKNOWN", detail: "no parent .mcp.json" };
+  }
   try {
     const parsed = JSON.parse(text) as {
-      mcpServers?: { filesystem?: { args?: unknown } };
+      mcpServers?: Record<string, unknown>;
     };
-    const args = parsed.mcpServers?.filesystem?.args;
-    if (!Array.isArray(args)) {
-      return { status: "UNKNOWN", detail: "workspace filesystem MCP server not configured" };
-    }
-    const packageSpec = args.find(
-      (arg): arg is string =>
-        typeof arg === "string" && arg.startsWith("@modelcontextprotocol/server-filesystem"),
+    const servers = parsed.mcpServers ?? {};
+    const filesystem = Object.entries(servers).find(
+      ([, server]) => mcpFilesystemPackageSpec(server) !== undefined,
     );
-    if (!packageSpec) {
-      return { status: "UNKNOWN", detail: "workspace filesystem MCP package not found" };
-    }
-    const base = "@modelcontextprotocol/server-filesystem";
-    if (packageSpec === base) {
+    if (filesystem !== undefined) {
+      const [serverName, server] = filesystem;
+      const packageSpec = mcpFilesystemPackageSpec(server);
       return {
         status: "WARN",
-        packageSpec,
-        detail:
-          "Workspace MCP filesystem server is unpinned. Set AIH_MCP_FS_VERSION or enforce a managed MCP policy.",
+        ...(packageSpec ? { packageSpec } : {}),
+        detail: `Workspace MCP filesystem server has broad workspace scope (${reportLabel(serverName)}); generated workspace MCP is graph-only, so remove or narrow it manually if it is not intentionally user-owned.`,
       };
     }
-    if (packageSpec.startsWith(`${base}@`)) {
-      const version = packageSpec.slice(`${base}@`.length);
-      return EXACT_MCP_SEMVER_RE.test(version)
-        ? { status: "OK", packageSpec, detail: "workspace filesystem MCP package is pinned" }
-        : {
-            status: "WARN",
-            packageSpec,
-            detail: "workspace filesystem MCP package must use an exact version pin",
-          };
+    if (isAihLegacyCodeReviewGraphMcpServer(servers["code-review-graph"])) {
+      return {
+        status: "WARN",
+        detail:
+          "Workspace MCP has a stale parent-root code-review-graph server. Re-run `aih workspace --apply` to scope graph servers per declared repo.",
+      };
     }
-    return {
-      status: "UNKNOWN",
-      packageSpec,
-      detail: "workspace filesystem MCP package is unknown",
-    };
+    const expectedRepos = new Set(manifest.repos.map((repo) => repo.path));
+    const graphRepos = new Set<string>();
+    const invalidGraphs: string[] = [];
+    for (const [name, server] of Object.entries(servers)) {
+      if (!name.startsWith("aih-workspace-graph-")) continue;
+      const repo = aihWorkspaceGraphRepo(server);
+      if (repo === undefined) {
+        invalidGraphs.push(name);
+        continue;
+      }
+      graphRepos.add(repo);
+    }
+    const missing = [...expectedRepos].filter((repo) => !graphRepos.has(repo));
+    const extra = [...graphRepos].filter((repo) => !expectedRepos.has(repo));
+    if (missing.length > 0 || extra.length > 0 || invalidGraphs.length > 0) {
+      return {
+        status: "WARN",
+        detail: [
+          missing.length > 0
+            ? `missing declared repo graph MCP: ${reportList(missing)}`
+            : undefined,
+          extra.length > 0 ? `undeclared repo graph MCP: ${reportList(extra)}` : undefined,
+          invalidGraphs.length > 0
+            ? `invalid workspace graph MCP: ${reportList(invalidGraphs)}`
+            : undefined,
+        ]
+          .filter((value): value is string => value !== undefined)
+          .join("; "),
+      };
+    }
+    return expectedRepos.size > 0
+      ? { status: "OK", detail: "workspace graph MCP is scoped to declared repos" }
+      : { status: "OK", detail: "workspace MCP has no declared repo graph scope" };
   } catch {
     return { status: "ERROR", detail: "parent .mcp.json is malformed" };
   }
@@ -266,7 +326,7 @@ async function childRow(
     ? readConfigStatus(ctx.root, repo, manifest)
     : { status: "MISSING" as const };
   const parentIgnored: WorkspaceEvidenceCell =
-    manifest.git && missingIgnores.includes(repo.path)
+    manifest.git && missingIgnores.includes(workspaceGitignorePatternForRepo(repo.path))
       ? { status: "WARN", detail: "parent git does not ignore child repo path" }
       : { status: "OK" };
   const historyPath = join(ctx.root, repo.path, ".aih", "history.jsonl");
@@ -505,10 +565,15 @@ function renderWorkspaceText(data: WorkspaceReportDigest): string {
         "",
       ]
     : [];
-  const mcp =
+  const governance = [
+    data.gitignore.status === "WARN" || data.gitignore.status === "ERROR"
+      ? (data.gitignore.detail ?? data.gitignore.status)
+      : undefined,
     data.mcp.status === "WARN" || data.mcp.status === "ERROR"
-      ? ["## Governance", "", data.mcp.detail ?? data.mcp.status, ""]
-      : [];
+      ? (data.mcp.detail ?? data.mcp.status)
+      : undefined,
+  ].filter((detail): detail is string => detail !== undefined);
+  const governanceSection = governance.length > 0 ? ["## Governance", "", ...governance, ""] : [];
   return lines(
     "Local child evidence is summarized here; child repos remain the source of truth.",
     "",
@@ -521,25 +586,35 @@ function renderWorkspaceText(data: WorkspaceReportDigest): string {
     "",
     contracts,
     "",
-    mcp,
+    governanceSection,
   );
 }
 
 export async function workspaceReportDigest(ctx: PlanContext): Promise<DigestAction | undefined> {
   const manifest = readWorkspaceManifest(ctx.root, ctx.contextDir);
   if (!manifest) return undefined;
-  const missingIgnores =
+  const requiredIgnores =
     manifest.git === true
-      ? workspaceGitignoreMissing(
+      ? workspaceGitignoreRequiredRepos(
+          ctx.root,
           manifest.repos.map((repo) => repo.path),
-          readIfExists(join(ctx.root, ".gitignore")),
         )
       : [];
+  const missingIgnores =
+    manifest.git === true
+      ? workspaceGitignoreMissing(requiredIgnores, readIfExists(join(ctx.root, ".gitignore")))
+      : [];
+  const gitignore: WorkspaceEvidenceCell =
+    manifest.git !== true
+      ? { status: "OK" }
+      : missingIgnores.length === 0
+        ? { status: "OK", detail: "parent git ignores workspace child repos" }
+        : { status: "WARN", detail: `missing .gitignore entries: ${reportList(missingIgnores)}` };
   const rows = await mapWorkspaceRepos(manifest.repos, (repo) =>
     childRow(ctx, manifest, repo, missingIgnores),
   );
   const contracts = manifest.edges.map((edge) => contractStatus(ctx.root, edge));
-  const mcp = workspaceMcpStatus(ctx.root);
+  const mcp = workspaceMcpStatus(ctx.root, manifest);
   const snapshot = workspaceSnapshot(ctx.root, manifest, rows);
   const data: WorkspaceReportDigest = {
     manifest: {
@@ -550,6 +625,7 @@ export async function workspaceReportDigest(ctx: PlanContext): Promise<DigestAct
       git: manifest.git,
       contextDir: manifest.contextDir,
     },
+    gitignore,
     rows,
     contracts,
     ...(snapshot ? { snapshot } : {}),
@@ -561,6 +637,8 @@ export async function workspaceReportDigest(ctx: PlanContext): Promise<DigestAct
       ? "ERROR"
       : rows.some((row) => row.status !== "OK") ||
           contracts.some((edge) => edge.status !== "OK") ||
+          gitignore.status === "WARN" ||
+          gitignore.status === "ERROR" ||
           mcp.status === "WARN" ||
           mcp.status === "ERROR"
         ? "WARN"
