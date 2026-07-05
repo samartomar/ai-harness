@@ -53,6 +53,7 @@ export const command: CommandSpec = {
   name: "doctor",
   summary: "Verify the harness / workstation / repo configuration (fail-closed)",
   readOnly: true,
+  honorReadOnlyPostureFlag: true,
   options: [
     {
       flags: "--sarif <file>",
