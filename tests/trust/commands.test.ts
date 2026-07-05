@@ -55,12 +55,18 @@ function readPolicy(): Record<string, unknown> {
 
 describe("trust allow/list/pin commands", () => {
   it("allow appends an approved source only when applied", async () => {
-    const dry = await executePlan(
-      await trustAllowCommand.plan(ctx({ source: "owner/repo", pin: "a".repeat(40) })),
-      ctx({ source: "owner/repo", pin: "a".repeat(40) }),
-    );
+    const dryCtx = ctx({ source: "owner/repo", pin: "a".repeat(40) });
+    const dryPlan = await trustAllowCommand.plan(dryCtx);
+    expect(
+      dryPlan.actions.some((action) => action.kind === "probe" && "runStructuredLegacy" in action),
+    ).toBe(true);
+
+    const dry = await executePlan(dryPlan, dryCtx);
     expect(dry.writes).toHaveLength(1);
     expect(existsSync(join(root, "aih-org-policy.json"))).toBe(false);
+    expect(dry.verification?.results.some((entry) => entry.passName === "trust allow policy")).toBe(
+      true,
+    );
 
     const appliedCtx = ctx({ source: "owner/repo", pin: "a".repeat(40) }, true);
     const applied = await executePlan(await trustAllowCommand.plan(appliedCtx), appliedCtx);
@@ -85,13 +91,21 @@ describe("trust allow/list/pin commands", () => {
     );
 
     const c = ctx({ source: "owner/repo", pin: "b".repeat(40) }, true);
-    await executePlan(await trustPinCommand.plan(c), c);
+    const pinPlan = await trustPinCommand.plan(c);
+    expect(
+      pinPlan.actions.some((action) => action.kind === "probe" && "runStructuredLegacy" in action),
+    ).toBe(true);
+
+    const result = await executePlan(pinPlan, c);
 
     expect(readPolicy()).toMatchObject({
       trust: {
         approvedSources: [{ owner: "owner", repo: "repo", pinnedSha: "b".repeat(40) }],
       },
     });
+    expect(
+      result.verification?.results.some((entry) => entry.passName === "trust pin policy"),
+    ).toBe(true);
   });
 
   it("surfaces malformed policy writes as AIH_TRUST errors", () => {
@@ -211,7 +225,14 @@ describe("trust verify command", () => {
   it("flags changed promoted artifacts as local drift", async () => {
     writePromotedLock();
     const c = ctx({ id: "owner-repo" }, true);
-    const result = await executePlan(await trustVerifyCommand.plan(c), c);
+    const verifyPlan = await trustVerifyCommand.plan(c);
+    expect(
+      verifyPlan.actions
+        .filter((action) => action.kind === "probe")
+        .every((action) => "runStructuredLegacy" in action),
+    ).toBe(true);
+
+    const result = await executePlan(verifyPlan, c);
 
     expect(result.report?.checks).toEqual(
       expect.arrayContaining([
@@ -222,6 +243,9 @@ describe("trust verify command", () => {
         }),
       ]),
     );
+    expect(
+      result.verification?.results.some((entry) => entry.passName === "trust local drift"),
+    ).toBe(true);
   });
 
   it("flags moved upstream refs as source drift", async () => {
@@ -244,6 +268,11 @@ describe("trust verify command", () => {
         }),
       ]),
     );
+    expect(
+      result.verification?.results.some(
+        (entry) => entry.passName === "trust upstream drift" && entry.verdict === "fail",
+      ),
+    ).toBe(true);
   });
 
   it("skips upstream drift when ls-remote is blocked", async () => {
@@ -265,6 +294,37 @@ describe("trust verify command", () => {
         }),
       ]),
     );
+  });
+
+  it("skips upstream drift without invoking git ls-remote in dry-run", async () => {
+    writePromotedLock();
+    const gitCalls: string[][] = [];
+    const c = ctx(
+      { id: "owner-repo" },
+      false,
+      fakeRunner((argv) => {
+        if (argv[0] === "git") gitCalls.push(argv);
+        return undefined;
+      }),
+    );
+
+    const result = await executePlan(await trustVerifyCommand.plan(c), c);
+
+    expect(gitCalls).toEqual([]);
+    expect(result.report?.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          verdict: "skip",
+          code: "trust.fetch-blocked",
+          detail: expect.stringContaining("git ls-remote is skipped in dry-run"),
+        }),
+      ]),
+    );
+    expect(
+      result.verification?.results.some(
+        (entry) => entry.passName === "trust upstream drift" && entry.verdict === "warn",
+      ),
+    ).toBe(true);
   });
 
   it("drops malformed legacy trust-lock entries instead of throwing during verify", async () => {
