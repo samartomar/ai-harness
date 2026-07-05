@@ -155,6 +155,28 @@ async function codeReviewGraphAvailabilityFor(
   available: boolean;
   detail: string;
 }> {
+  if (resolve(mcpRoot) !== resolve(repoRoot)) {
+    const workspacePackage = workspaceMcpCodeReviewGraphPackage(mcpRoot, repoRoot);
+    if (workspacePackage === undefined) {
+      return {
+        available: false,
+        detail:
+          "workspace graph MCP server for this child is missing or stale; re-run `aih workspace --apply`",
+      };
+    }
+    if (!(await onPath(ctx, "uvx"))) {
+      return {
+        available: false,
+        detail: "workspace MCP code-review-graph scoped to child repo, but uvx is not on PATH",
+      };
+    }
+    return ensureCodeReviewGraphPopulated(
+      ctx,
+      "workspace MCP code-review-graph scoped to child repo and uvx is on PATH",
+      (command) => ["uvx", ...UVX_OFFLINE_FLAGS, workspacePackage, command, "--repo", repoRoot],
+    );
+  }
+
   if (await onPath(ctx, "code-review-graph")) {
     return ensureCodeReviewGraphPopulated(ctx, "code-review-graph binary on PATH", (command) => [
       "code-review-graph",
@@ -164,20 +186,6 @@ async function codeReviewGraphAvailabilityFor(
     ]);
   }
   const uvxPresent = await onPath(ctx, "uvx");
-  const workspacePackage = workspaceMcpCodeReviewGraphPackage(mcpRoot, repoRoot);
-  let workspaceGraphUnavailable: string | undefined;
-  if (workspacePackage !== undefined) {
-    if (uvxPresent) {
-      return ensureCodeReviewGraphPopulated(
-        ctx,
-        "workspace MCP code-review-graph scoped to child repo and uvx is on PATH",
-        (command) => ["uvx", ...UVX_OFFLINE_FLAGS, workspacePackage, command, "--repo", repoRoot],
-      );
-    }
-    workspaceGraphUnavailable =
-      "workspace MCP code-review-graph scoped to child repo, but uvx is not on PATH";
-  }
-
   const mcpConfigured = repoMcpHasCodeReviewGraph(mcpRoot);
   const uvPresent = uvxPresent ? false : await onPath(ctx, "uv");
   if (mcpConfigured && (uvxPresent || uvPresent)) {
@@ -190,12 +198,6 @@ async function codeReviewGraphAvailabilityFor(
       `repo MCP code-review-graph configured and ${uvxPresent ? "uvx" : "uv tool run"} is on PATH`,
       (command) => [...prefix, packageArg, command, "--repo", repoRoot],
     );
-  }
-  if (workspaceGraphUnavailable) {
-    return {
-      available: false,
-      detail: workspaceGraphUnavailable,
-    };
   }
   if (mcpConfigured) {
     return {
