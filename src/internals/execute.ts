@@ -58,6 +58,60 @@ function replaceJsonKeys(
   return next ?? value;
 }
 
+function replaceJsonChildKeys(
+  value: unknown,
+  incoming: unknown,
+  replacements: WriteAction["replaceJsonChildKeys"],
+): unknown {
+  if (replacements === undefined || !isRecord(value) || !isRecord(incoming)) return value;
+  let next: Record<string, unknown> | undefined;
+  for (const [topKey, childKeys] of Object.entries(replacements)) {
+    const target = (next ?? value)[topKey];
+    const incomingTarget = incoming[topKey];
+    if (!isRecord(target) || !isRecord(incomingTarget)) continue;
+    let replaced: Record<string, unknown> | undefined;
+    for (const childKey of new Set(childKeys)) {
+      if (!Object.hasOwn(incomingTarget, childKey)) continue;
+      replaced ??= { ...target };
+      replaced[childKey] = incomingTarget[childKey];
+    }
+    if (replaced === undefined) continue;
+    next ??= { ...value };
+    next[topKey] = replaced;
+  }
+  return next ?? value;
+}
+
+function pruneJsonChildKeys(
+  value: unknown,
+  incoming: unknown,
+  prunes: WriteAction["pruneJsonChildKeys"],
+): unknown {
+  if (prunes === undefined || !isRecord(value)) return value;
+  const incomingRecord = isRecord(incoming) ? incoming : {};
+  let next: Record<string, unknown> | undefined;
+  for (const [topKey, prune] of Object.entries(prunes)) {
+    const target = (next ?? value)[topKey];
+    if (!isRecord(target)) continue;
+    const incomingTarget = isRecord(incomingRecord[topKey]) ? incomingRecord[topKey] : {};
+    const exact = new Set(prune.exact ?? []);
+    const prefixes = prune.prefixes ?? [];
+    let pruned: Record<string, unknown> | undefined;
+    for (const childKey of Object.keys(target)) {
+      if (Object.hasOwn(incomingTarget, childKey)) continue;
+      if (!exact.has(childKey) && !prefixes.some((prefix) => childKey.startsWith(prefix))) {
+        continue;
+      }
+      pruned ??= { ...target };
+      delete pruned[childKey];
+    }
+    if (pruned === undefined) continue;
+    next ??= { ...value };
+    next[topKey] = pruned;
+  }
+  return next ?? value;
+}
+
 function removeJsonTopLevelKeys(
   value: unknown,
   removals: WriteAction["removeJsonTopLevelKeys"],
@@ -190,6 +244,8 @@ export function resolveContents(action: WriteAction, absPath: string): string {
       const base = existing !== undefined ? parseJsoncText(existing) : undefined;
       value = base !== undefined ? deepMerge(base, action.json) : action.json;
       value = replaceJsonKeys(value, action.json, action.replaceJsonKeys);
+      value = replaceJsonChildKeys(value, action.json, action.replaceJsonChildKeys);
+      value = pruneJsonChildKeys(value, action.json, action.pruneJsonChildKeys);
     }
     value = removeJsonKeys(value, action.removeJsonKeys);
     value = removeJsonTopLevelKeys(value, action.removeJsonTopLevelKeys);

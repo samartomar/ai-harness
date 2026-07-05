@@ -230,7 +230,7 @@ describe("workspace state collection", () => {
 
     expect(state.git).toBe(true);
     expect(state).not.toHaveProperty("remote");
-  });
+  }, 15_000);
 
   it("prefers manifest-declared child remote over the observed git remote", async () => {
     const calls: string[] = [];

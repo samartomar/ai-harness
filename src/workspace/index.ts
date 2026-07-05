@@ -1,10 +1,16 @@
 import { existsSync } from "node:fs";
 import { basename, join, posix, resolve } from "node:path";
 import { AihError } from "../errors.js";
+import { readIfExists } from "../internals/fsxn.js";
 import type { Action, CommandSpec, Plan, PlanContext, WriteAction } from "../internals/plan.js";
 import { doc, plan, probe, writeJson, writeText } from "../internals/plan.js";
 import type { Check } from "../internals/verify.js";
-import { checkWorkspaceChildPath, detectChildRepos, reposOption } from "./detect.js";
+import {
+  checkWorkspaceChildPath,
+  detectChildRepos,
+  discoverChildGitRepos,
+  reposOption,
+} from "./detect.js";
 import { workspaceGitExecs, workspaceGitignoreWrite } from "./git.js";
 import {
   readWorkspaceManifest,
@@ -17,6 +23,7 @@ import { taskPlanCommand } from "./task-plan.js";
 import {
   codeWorkspace,
   crossRepoArchitectureDoc,
+  isLegacyAihWorkspaceMcpServer,
   nextStepsDoc,
   repoDisciplineDoc,
   spanningMcp,
@@ -33,8 +40,34 @@ function childScaffoldedProbe(repo: string, dir: string): Action {
     const present = existsSync(join(ctx.root, repo, dir, "RULE_ROUTER.md"));
     return present
       ? { name, verdict: "pass", detail: `${repo}/${dir}/ canon present` }
-      : { name, verdict: "skip", detail: `not scaffolded — run \`aih init ./${repo} --apply\`` };
+      : {
+          name,
+          verdict: "skip",
+          detail: "not scaffolded — run `aih init --apply` inside the child repo",
+        };
   });
+}
+
+function staleManagedMcpServerKeys(root: string, incomingKeys: readonly string[]): string[] {
+  const text = readIfExists(resolve(root, ".mcp.json"));
+  if (text === undefined) return [];
+  try {
+    const parsed = JSON.parse(text) as { mcpServers?: unknown };
+    if (
+      typeof parsed.mcpServers !== "object" ||
+      parsed.mcpServers === null ||
+      Array.isArray(parsed.mcpServers)
+    ) {
+      return [];
+    }
+    const incoming = new Set(incomingKeys);
+    return Object.entries(parsed.mcpServers)
+      .filter(([name]) => !incoming.has(name))
+      .filter(([name, value]) => isLegacyAihWorkspaceMcpServer(name, value))
+      .map(([name]) => name);
+  } catch {
+    return [];
+  }
 }
 
 function repoObjectEntriesByPath(manifest: WorkspaceManifest | undefined): Map<string, unknown> {
@@ -97,11 +130,12 @@ function markerForWrite(
  * `aih workspace <parent>` — scaffold a MULTI-REPO workspace (parent-only). For a
  * parent folder holding separate repos (e.g. a UI repo and a backend repo), it
  * writes the cross-repo canon that bridges them: a workspace marker, a VS Code
- * multi-root `.code-workspace`, a combined graph + filesystem MCP spanning every child repo, the
+ * multi-root `.code-workspace`, graph MCP scoped per declared child repo, the
  * `cross-repo-architecture.md` map (write-once, user-owned) and `repo-discipline.md`,
  * and thin `CLAUDE.md`/`AGENTS.md` workspace bootloaders. It does NOT touch the
- * child repos — run `aih init` in each. Child repos come from `--repos a,b` or are
- * auto-detected (immediate subdirs with a `.git`). Honors `--context-dir`.
+ * child repos — run `aih init` in each. Child repos come from `--repos a,b` or an
+ * existing workspace marker; detected child git repos are reported but not auto-enrolled.
+ * Honors `--context-dir`.
  */
 async function workspacePlan(ctx: PlanContext): Promise<Plan> {
   const dir = ctx.contextDir;
@@ -109,6 +143,7 @@ async function workspacePlan(ctx: PlanContext): Promise<Plan> {
   // write that the executor's containment guard rejects as a parent escape.
   const name = basename(resolve(ctx.root)) || "workspace";
   const explicitRepos = reposOption(ctx.options.repos);
+  const discoveredRepos = explicitRepos.length === 0 ? discoverChildGitRepos(ctx.root) : [];
   const repos = detectChildRepos(ctx.root, explicitRepos);
   const enableGit = ctx.options.git === true;
   const existing = readWorkspaceManifest(ctx.root, dir);
@@ -125,12 +160,15 @@ async function workspacePlan(ctx: PlanContext): Promise<Plan> {
   for (const repo of normalizedRepos) checkWorkspaceChildPath(ctx.root, repo.path);
   const repoPaths = normalizedRepos.map((repo) => repo.path);
   const edges = existing?.edges ?? [];
+  const mcp = spanningMcp(repoPaths);
+  const mcpKeys = Object.keys(mcp.mcpServers);
+  const staleMcpKeys = staleManagedMcpServerKeys(ctx.root, mcpKeys);
 
   const writes: WriteAction[] = [
     writeJson(
       ".aih-workspace.json",
       markerForWrite(existing, normalizedRepos, dir, enableGit),
-      `workspace marker (multi-repo: ${repoPaths.length > 0 ? repoPaths.join(", ") : "no repos detected"})`,
+      `workspace marker (multi-repo: ${repoPaths.length > 0 ? repoPaths.join(", ") : "no repos declared"})`,
     ),
     writeJson(`${name}.code-workspace`, codeWorkspace(repoPaths), "VS Code multi-root workspace", {
       merge: true,
@@ -168,15 +206,37 @@ async function workspacePlan(ctx: PlanContext): Promise<Plan> {
     ),
     writeJson(
       ".mcp.json",
-      spanningMcp(repoPaths, (ctx.env.AIH_MCP_FS_VERSION ?? "").trim() || undefined),
-      `combined graph + filesystem MCP spanning ${repoPaths.length} child repo(s), merged into any existing .mcp.json`,
-      { merge: true },
+      mcp,
+      `workspace graph MCP scoped to ${repoPaths.length} declared child repo(s), merged into any existing .mcp.json`,
+      {
+        merge: true,
+        replaceJsonChildKeys: { mcpServers: mcpKeys },
+        ...(staleMcpKeys.length > 0
+          ? { pruneJsonChildKeys: { mcpServers: { exact: staleMcpKeys } } }
+          : {}),
+      },
     ),
   ];
   if (enableGit) writes.push(workspaceGitignoreWrite(ctx.root, repoPaths));
 
   const actions: Action[] = [
     ...writes,
+    ...(explicitRepos.length === 0 && !useExistingRepos && discoveredRepos.length > 0
+      ? [
+          doc(
+            "workspace auto-enroll skipped",
+            [
+              "Child git repos were detected but not enrolled automatically.",
+              "",
+              "Detected candidates:",
+              ...discoveredRepos.map((repo) => `- ${repo}`),
+              "",
+              "Re-run with an explicit allowlist, for example:",
+              "aih workspace --repos <comma-separated-child-repos> --apply",
+            ].join("\n"),
+          ),
+        ]
+      : []),
     doc(
       "workspace next steps (run `aih init` per child)",
       nextStepsDoc(name, repoPaths, dir, enableGit),
@@ -192,11 +252,11 @@ async function workspacePlan(ctx: PlanContext): Promise<Plan> {
 export const command: CommandSpec = {
   name: "workspace",
   summary:
-    "Scaffold a multi-repo workspace: cross-repo map, combined graph/filesystem MCP, .code-workspace (parent-only)",
+    "Scaffold a multi-repo workspace: cross-repo map, declared-repo graph MCP, .code-workspace (parent-only)",
   options: [
     {
       flags: "--repos <list>",
-      description: "child repos (comma-separated); else auto-detect *//.git",
+      description: "explicit child repo allowlist (comma-separated)",
     },
     {
       flags: "--git",

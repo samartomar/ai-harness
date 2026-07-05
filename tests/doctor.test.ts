@@ -450,6 +450,10 @@ describe("doctor — git-enabled workspace roots", () => {
     writeFileSync(join(dir, "ai-coding", "repo-discipline.md"), "# Discipline\n");
   }
 
+  function childRepo(name: string): void {
+    mkdirSync(join(dir, name, ".git"), { recursive: true });
+  }
+
   it("fails when a git-enabled workspace marker is not backed by a git root", async () => {
     writeWorkspaceMarker();
     const c = rooted(false);
@@ -474,13 +478,30 @@ describe("doctor — git-enabled workspace roots", () => {
 
   it("warns without failing when child repos are not gitignored", async () => {
     writeWorkspaceMarker();
-    writeFileSync(join(dir, ".gitignore"), "service-api/\n", "utf8");
+    writeFileSync(join(dir, ".gitignore"), "/service-api/\n", "utf8");
     const c = rooted(true);
     const probe = findProbe((await command.plan(c)).actions, "workspace child repos gitignored");
     const res = await probe?.run(c);
 
     expect(res?.verdict).toBe("skip");
-    expect(res?.detail).toContain("web-client/");
+    expect(res?.detail).toContain("/web-client/");
+  });
+
+  it("warns when an undeclared immediate child repo is not gitignored", async () => {
+    writeWorkspaceMarker();
+    childRepo("service-api");
+    childRepo("web-client");
+    childRepo("notes");
+    childRepo("bad[link](x)`repo");
+    writeFileSync(join(dir, ".gitignore"), "/service-api/\n/web-client/\n", "utf8");
+    const c = rooted(true);
+    const probe = findProbe((await command.plan(c)).actions, "workspace child repos gitignored");
+    const res = await probe?.run(c);
+
+    expect(res?.verdict).toBe("skip");
+    expect(res?.detail).toContain("/notes/");
+    expect(res?.detail).toContain("/bad link x repo/");
+    expect(res?.detail).not.toContain("bad[link](x)`repo");
   });
 
   it("passes the child-ignore probe for a git-enabled workspace with no child repos", async () => {
@@ -492,6 +513,27 @@ describe("doctor — git-enabled workspace roots", () => {
 
     expect(res?.verdict).toBe("pass");
     expect(res?.detail).toContain("no child repos");
+  });
+
+  it("does not render child repo paths into scaffold guidance commands", async () => {
+    writeFileSync(
+      join(dir, ".aih-workspace.json"),
+      JSON.stringify({
+        workspaceType: "multi-repo",
+        graphScope: "combined-child-repos",
+        contextDir: "ai-coding",
+        repos: ["api;echo-pwned"],
+        git: true,
+        generatedBy: "aih workspace",
+      }),
+    );
+    const c = rooted(true);
+    const probe = findProbe((await command.plan(c)).actions, "workspace child api-echo-pwned");
+    const res = await probe?.run(c);
+
+    expect(res?.verdict).toBe("skip");
+    expect(res?.detail).toContain("run `aih init --apply` inside the child repo");
+    expect(res?.detail).not.toContain("aih init ./api;echo-pwned --apply");
   });
 
   it("passes CLI loadability for workspace bootloaders without repo-level RULE_ROUTER", async () => {

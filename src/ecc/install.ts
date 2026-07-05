@@ -129,10 +129,9 @@ export function eccSupplyChainDoc(): Action {
       "",
       "  AIH_ECC_INSTALL_VERSION=<x.y.z>   # pins `npx ecc-install@<x.y.z>` (npm targets)",
       "  AIH_ECC_REF=<tag|sha>             # pins the Kiro git checkout to a tag/commit",
-      "  AIH_MCP_FS_VERSION=<x.y.z>        # pins the workspace filesystem MCP server",
       "",
-      "Or mirror `ecc-install` / `@modelcontextprotocol/server-filesystem` into your",
-      "internal registry and point npm/uv at it. Unpinned `npx`/`git pull` execution is",
+      "Or mirror `ecc-install` and `code-review-graph` into your internal registries",
+      "and point npm/uv at them. Unpinned `npx`/`git pull` execution is",
       "the residual supply-chain risk — pin or mirror before an air-gapped/audited deploy.",
     ),
   );

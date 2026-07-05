@@ -23,8 +23,22 @@ import { scaleSafetyCheck } from "./scale-safety.js";
 import { trustLockLocalDriftChecks } from "./trust/commands.js";
 import { metricsToolCheck, usageRecorderCheck } from "./usage/hook-health.js";
 import { vdiCompatibilityCheck } from "./vdi/index.js";
-import { workspaceGitignoreMissing } from "./workspace/git.js";
+import { workspaceGitignoreMissing, workspaceGitignoreRequiredRepos } from "./workspace/git.js";
 import { readWorkspaceManifest } from "./workspace/manifest.js";
+
+function safeProbeLabel(value: string): string {
+  const safe = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._:-/ ";
+  const label = [...value]
+    .map((char) => (safe.includes(char) ? char : " "))
+    .join("")
+    .replace(/\s+/g, " ")
+    .trim();
+  return label.length > 0 ? label : "<unsafe>";
+}
+
+function safeProbeList(values: readonly string[]): string {
+  return values.map(safeProbeLabel).join(", ");
+}
 
 /**
  * Fail-closed preflight. Returns probe actions; the read-only command path forces
@@ -246,8 +260,9 @@ export const command: CommandSpec = {
                 };
           }),
           probe("workspace child repos gitignored", () => {
+            const requiredRepos = workspaceGitignoreRequiredRepos(ctx.root, repoPaths);
             const missing = workspaceGitignoreMissing(
-              repoPaths,
+              requiredRepos,
               readIfExists(join(ctx.root, ".gitignore")),
             );
             return missing.length === 0
@@ -255,14 +270,14 @@ export const command: CommandSpec = {
                   name: "workspace-child-gitignore",
                   verdict: "pass",
                   detail:
-                    repos.length > 0
-                      ? `gitignored: ${repoPaths.join(", ")}`
+                    requiredRepos.length > 0
+                      ? `gitignored: ${safeProbeList(requiredRepos)}`
                       : "no child repos in marker",
                 }
               : {
                   name: "workspace-child-gitignore",
                   verdict: "skip",
-                  detail: `missing .gitignore entries: ${missing.join(", ")}`,
+                  detail: `missing .gitignore entries: ${safeProbeList(missing)}`,
                 };
           }),
         ]
@@ -279,7 +294,7 @@ export const command: CommandSpec = {
           : {
               name: `child:${repo.id}`,
               verdict: "skip",
-              detail: `not scaffolded — run \`aih init ./${repo.path} --apply\``,
+              detail: "not scaffolded — run `aih init --apply` inside the child repo",
               code: "canon.context-dir-missing",
             };
       }),
