@@ -8,6 +8,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Executor structured probe seam**: `plan()` can now emit structured
+  verification probe runs on the existing `probe` action kind, with the executor
+  adapting them through the legacy report bridge. `session-guard` now uses this
+  seam while preserving CLI output and exit-code behavior. (#226)
 - **Report advisory structured bridge integration**: `aih report` now models
   budget, adoption, and contract-truth advisories as structured verification
   results before adapting them back to legacy coded checks, preserving existing

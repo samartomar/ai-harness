@@ -23,11 +23,18 @@ import {
   plan,
   probe,
   remove,
+  structuredProbe,
   writeJson,
   writeText,
 } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
+import {
+  buildEvidenceGraph,
+  mergeVerificationResults,
+  type VerificationPipelineRun,
+  type VerificationResult,
+} from "../../src/verification/index.js";
 
 let dir: string;
 beforeEach(() => {
@@ -74,6 +81,14 @@ function seeded(seed: number): () => number {
   return () => {
     state = (state * 1664525 + 1013904223) >>> 0;
     return state / 0x100000000;
+  };
+}
+
+function structuredRun(results: VerificationResult[]): VerificationPipelineRun {
+  return {
+    results,
+    summary: mergeVerificationResults(results),
+    evidenceGraph: buildEvidenceGraph(results),
   };
 }
 
@@ -203,6 +218,42 @@ describe("executePlan", () => {
     );
     expect((await executePlan(p, ctx({ verify: false }))).report).toBeUndefined();
     expect((await executePlan(p, ctx({ verify: true }))).report?.ok).toBe(true);
+  });
+
+  it("adapts structured probe runs into legacy verification report checks", async () => {
+    const p = plan(
+      "t",
+      structuredProbe(
+        "structured gate",
+        () =>
+          structuredRun([
+            {
+              passName: "policy.check",
+              verdict: "warn",
+              severity: "medium",
+              confidence: "high",
+              evidence: [],
+              message: "org policy warning",
+              category: "policy",
+            },
+          ]),
+        { warnAs: "skip", passDetail: "all clear", includeMetadata: false },
+      ),
+    );
+
+    expect(p.actions[0]?.kind).toBe("probe");
+    expect((await executePlan(p, ctx({ verify: false }))).report).toBeUndefined();
+
+    const result = await executePlan(p, ctx({ verify: true }));
+
+    expect(result.report?.checks).toEqual([
+      {
+        name: "structured gate",
+        verdict: "skip",
+        detail: "policy.check: org policy warning",
+      },
+    ]);
+    expect(result.report?.exitCode()).toBe(0);
   });
 
   it("writes doc actions that carry a path", async () => {

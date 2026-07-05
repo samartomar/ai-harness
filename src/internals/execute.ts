@@ -3,6 +3,10 @@ import { existsSync, lstatSync, readFileSync, realpathSync } from "node:fs";
 import { dirname, isAbsolute, relative, resolve } from "node:path";
 import { AihError, DirtyWorktreeError, PathContainmentError } from "../errors.js";
 import { redactSecrets } from "../guardrails/redact.js";
+import {
+  type StructuredVerificationRunCheckOptions,
+  structuredVerificationRunToCheck,
+} from "../verification/legacy.js";
 import { upsertManagedBlock } from "./envfile.js";
 import { FsTransaction, readIfExists } from "./fsxn.js";
 import { deepMerge, parseJsoncText } from "./merge.js";
@@ -12,6 +16,7 @@ import type {
   ExecAction,
   Plan,
   PlanContext,
+  ProbeAction,
   WriteAction,
 } from "./plan.js";
 import { ensureTrailingNewline, indent, jsonFile, stripTrailingNewlines } from "./render.js";
@@ -124,6 +129,11 @@ function removeJsonTopLevelKeys(
     delete next[key];
   }
   return next ?? value;
+}
+
+function structuredProbeCheckOptions(action: ProbeAction): StructuredVerificationRunCheckOptions {
+  const options = action.structured ?? {};
+  return { ...options, name: options.name ?? action.describe };
 }
 
 export interface WriteSummary {
@@ -566,10 +576,19 @@ export async function executePlan(
     if (!skipProbesAfterExecFailure) {
       for (const action of plan.actions) {
         if (action.kind === "probe") {
-          if (action.runMany) {
+          if (action.runStructured) {
+            report.add(
+              structuredVerificationRunToCheck(
+                await action.runStructured(ctx),
+                structuredProbeCheckOptions(action),
+              ),
+            );
+          } else if (action.runMany) {
             for (const check of await action.runMany(ctx)) report.add(check);
-          } else {
+          } else if (action.run) {
             report.add(await action.run(ctx));
+          } else {
+            throw new AihError(`probe action has no runner: ${action.describe}`, "AIH_CONFIG");
           }
         }
       }

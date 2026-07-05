@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { Command } from "commander";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { runCapability } from "../../src/commands/run.js";
+import { executePlan } from "../../src/internals/execute.js";
 import type { PlanContext } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
@@ -228,7 +229,8 @@ describe("session guardrails", () => {
     const probeAction = p.actions.find(
       (action) => action.kind === "probe" && action.describe === "session guardrails",
     );
-    const check = probeAction?.kind === "probe" ? await probeAction.run(ctx()) : undefined;
+    const result = await executePlan(p, ctx({ verify: true }));
+    const check = result.report?.checks[0];
 
     expect(p.actions.some((action) => ["write", "exec", "remove"].includes(action.kind))).toBe(
       false,
@@ -237,6 +239,7 @@ describe("session guardrails", () => {
       schemaVersion: 1,
       summary: { finalVerdict: "fail" },
     });
+    expect(probeAction?.kind === "probe" ? probeAction.runStructured : undefined).toBeDefined();
     expect(check).toMatchObject({ name: "session guardrails", verdict: "fail" });
     expect(check).not.toHaveProperty("location");
     expect(check).not.toHaveProperty("fingerprint");

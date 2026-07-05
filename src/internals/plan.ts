@@ -1,5 +1,10 @@
 import type { Posture, PostureSource } from "../config/posture.js";
 import type { EnvShell, HostAdapter } from "../platform/base.js";
+import {
+  type StructuredVerificationRunCheckOptions,
+  structuredVerificationRunToCheck,
+} from "../verification/legacy.js";
+import type { VerificationPipelineRun } from "../verification/types.js";
 import type { Cli } from "./clis.js";
 import type { EnvVar } from "./envfile.js";
 import type { Runner, RunResult } from "./proc.js";
@@ -73,12 +78,29 @@ export interface DocAction {
   path?: string;
 }
 
+export type ProbeRun = (ctx: PlanContext) => Promise<Check> | Check;
+
 export interface ProbeAction {
   kind: "probe";
   describe: string;
-  run: (ctx: PlanContext) => Promise<Check> | Check;
+  run: ProbeRun;
   /** Dynamic scans may expand to several 1:1 checks after a prior exec action. */
   runMany?: (ctx: PlanContext) => Promise<Check[]> | Check[];
+  /** Structured verification runs are adapted by the executor into the legacy report. */
+  runStructured?: (ctx: PlanContext) => Promise<VerificationPipelineRun> | VerificationPipelineRun;
+  /** Legacy adaptation options for structured verification runs. */
+  structured?: StructuredProbeOptions;
+}
+
+export type StructuredProbeOptions = Omit<StructuredVerificationRunCheckOptions, "name"> & {
+  name?: string;
+};
+
+function structuredProbeCheckOptions(
+  describe: string,
+  structured: StructuredProbeOptions,
+): StructuredVerificationRunCheckOptions {
+  return { ...structured, name: structured.name ?? describe };
 }
 
 /**
@@ -377,8 +399,26 @@ export function dynamicDigest(
   return { kind: "digest", describe, run };
 }
 
-export function probe(describe: string, run: ProbeAction["run"]): ProbeAction {
+export function probe(describe: string, run: ProbeRun): ProbeAction {
   return { kind: "probe", describe, run };
+}
+
+export function structuredProbe(
+  describe: string,
+  runStructured: NonNullable<ProbeAction["runStructured"]>,
+  structured: StructuredProbeOptions = {},
+): ProbeAction {
+  return {
+    kind: "probe",
+    describe,
+    run: async (ctx) =>
+      structuredVerificationRunToCheck(
+        await runStructured(ctx),
+        structuredProbeCheckOptions(describe, structured),
+      ),
+    runStructured,
+    structured,
+  };
 }
 
 export function probeMany(
