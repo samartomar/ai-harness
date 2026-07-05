@@ -39,6 +39,62 @@ function brownfieldRedirect(ctx: PlanContext): Action | undefined {
   );
 }
 
+function uniqueList(values: readonly string[] | undefined): readonly string[] | undefined {
+  return values === undefined || values.length === 0 ? undefined : [...new Set(values)];
+}
+
+function mergeStringList(
+  first: readonly string[] | undefined,
+  next: readonly string[] | undefined,
+): readonly string[] | undefined {
+  return uniqueList([...(first ?? []), ...(next ?? [])]);
+}
+
+function mergeChildKeyMap(
+  first: Record<string, readonly string[]> | undefined,
+  next: Record<string, readonly string[]> | undefined,
+): Record<string, readonly string[]> | undefined {
+  const entries = new Map<string, readonly string[]>();
+  for (const source of [first, next]) {
+    for (const [key, values] of Object.entries(source ?? {})) {
+      entries.set(key, mergeStringList(entries.get(key), values) ?? []);
+    }
+  }
+  return entries.size > 0 ? Object.fromEntries(entries) : undefined;
+}
+
+function mergePruneJsonChildKeys(
+  first: WriteAction["pruneJsonChildKeys"],
+  next: WriteAction["pruneJsonChildKeys"],
+): WriteAction["pruneJsonChildKeys"] {
+  const entries = new Map<string, { exact?: readonly string[]; prefixes?: readonly string[] }>();
+  for (const source of [first, next]) {
+    for (const [key, prune] of Object.entries(source ?? {})) {
+      const prior = entries.get(key);
+      entries.set(key, {
+        exact: mergeStringList(prior?.exact, prune.exact),
+        prefixes: mergeStringList(prior?.prefixes, prune.prefixes),
+      });
+    }
+  }
+  return entries.size > 0 ? Object.fromEntries(entries) : undefined;
+}
+
+function mergeJsonWriteActions(first: WriteAction, next: WriteAction): WriteAction {
+  return {
+    ...first,
+    json: deepMerge(first.json, next.json),
+    removeJsonKeys: mergeChildKeyMap(first.removeJsonKeys, next.removeJsonKeys),
+    replaceJsonKeys: mergeStringList(first.replaceJsonKeys, next.replaceJsonKeys),
+    replaceJsonChildKeys: mergeChildKeyMap(first.replaceJsonChildKeys, next.replaceJsonChildKeys),
+    pruneJsonChildKeys: mergePruneJsonChildKeys(first.pruneJsonChildKeys, next.pruneJsonChildKeys),
+    removeJsonTopLevelKeys: mergeStringList(
+      first.removeJsonTopLevelKeys,
+      next.removeJsonTopLevelKeys,
+    ),
+  };
+}
+
 /**
  * Orchestrate a full repo bootstrap by COMPOSING the repo-scoped capabilities —
  * profile, superpowers, bootstrap-ai, scaffold, secrets, guardrails, mcp,
@@ -154,7 +210,7 @@ async function initPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
     // Fold a later JSON merge-write into the first (composing both payloads);
     // otherwise drop it so the first writer still wins.
     if (bothJsonMerge) {
-      deduped[slot] = { ...first, json: deepMerge(first.json, a.json) };
+      deduped[slot] = mergeJsonWriteActions(first, a);
     }
   }
 
@@ -197,6 +253,11 @@ export const command: CommandSpec = {
       description:
         "MCP handling: standard | offline (vendored) | none (CLI fallback, blocked orgs)",
       default: "standard",
+    },
+    {
+      flags: "--mcp-compliant",
+      description:
+        "under Enterprise posture, write only policy-allowed MCP servers and quarantine denied ones",
     },
     CANON_OPTION,
     BASELINE_OPTION,

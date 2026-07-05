@@ -150,7 +150,11 @@ export function deniedServers(policies: ServerPolicy[]): ServerPolicy[] {
  * called out first (the skipped-with-reason list) plus how to remediate. Emitted as
  * a `doc` action under the enterprise posture — guidance only, no file is mutated.
  */
-export function mcpGovernanceDoc(policies: ServerPolicy[], posture: McpPosture): string {
+export function mcpGovernanceDoc(
+  policies: ServerPolicy[],
+  posture: McpPosture,
+  opts: { compliantApply?: boolean } = {},
+): string {
   const denied = policies.filter((p) => p.verdict === "deny");
   const warned = policies.filter((p) => p.verdict === "warn");
   const allowed = policies.filter((p) => p.verdict === "allow");
@@ -158,13 +162,16 @@ export function mcpGovernanceDoc(policies: ServerPolicy[], posture: McpPosture):
     items.length > 0 ? items.map((p) => `  - ${p.name} — ${p.reason}`) : ["  (none)"];
   const nameOnly = (items: ServerPolicy[]): string[] =>
     items.length > 0 ? items.map((p) => `  - ${p.name}`) : ["  (none)"];
+  const governanceMode = opts.compliantApply
+    ? "With --mcp-compliant, denied servers are omitted from generated MCP configs and listed here with reasons."
+    : "aih REPORTS these verdicts; it does not silently drop servers from .mcp.json.";
   return lines(
     `MCP governance — ${posture} posture`,
     "===================================",
     "",
     "Same catalog, judged ONLY on each server's risk axes (egress / credentials /",
-    "supply chain) plus explicit org-policy approvals — the auditable line item a reviewer signs off on. aih REPORTS",
-    "these verdicts; it does not silently drop servers from .mcp.json.",
+    "supply chain) plus explicit org-policy approvals — the auditable line item a reviewer signs off on.",
+    governanceMode,
     "",
     `Denied (${denied.length}) — remediate or remove before an enterprise rollout:`,
     ...withReason(denied),

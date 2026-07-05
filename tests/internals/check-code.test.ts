@@ -412,6 +412,8 @@ describe("Check.code — invariants", () => {
       "mcp.config-missing": true,
       "mcp.unvendored-offline": true,
       "mcp.policy-denied": true,
+      "mcp.compliant-config-read": true,
+      "mcp.compliant-stale-denied": true,
       "mcp.hardcoded-secret": true,
       "mcp.allowlist-drift": true,
       "cli.not-detected": true,

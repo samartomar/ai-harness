@@ -34,6 +34,13 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   instead of deny under Enterprise posture. `aih mcp approve <server>
   --accept-egress --reason <text> --apply` writes the repo-local approval entry while
   `AIH_ORG_POLICY` remains the winning policy source. (#178)
+- **Enterprise-compliant MCP apply**: `aih mcp --posture enterprise
+  --mcp-compliant --apply` now writes only policy-approved generated MCP servers,
+  quarantines denied generated entries with reasons, and pairs with
+  `--mcp-compliant --verify` to fail if exact generated denied entries still remain
+  in targeted client configs. Egress approvals in `mcp.allowedServers` no longer
+  narrow the managed stdio command allowlist unless `mcp.allowManagedOnly` is set.
+  (#187)
 
 ### Fixed
 

@@ -1,7 +1,9 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { Command } from "commander";
 import { afterEach, describe, expect, it } from "vitest";
+import { runCapability } from "../../src/commands/run.js";
 import { upsertTextBlock } from "../../src/internals/envfile.js";
 import { resolveContents } from "../../src/internals/execute.js";
 import type { PlanContext, WriteAction } from "../../src/internals/plan.js";
@@ -56,6 +58,43 @@ function makeCtx(over: CtxOverrides = {}): PlanContext {
     env,
     options: over.options ?? {},
   };
+}
+
+function mcpCliCommand(argv: string[]): Command {
+  const cmd = new Command("mcp");
+  cmd.exitOverride();
+  cmd.configureOutput({ writeOut: () => {}, writeErr: () => {} });
+  cmd.argument("[root]");
+  cmd
+    .option("--apply")
+    .option("--verify")
+    .option("--json")
+    .option("--root <dir>")
+    .option("--context-dir <dir>", "", "ai-coding")
+    .option("--posture <posture>", "", "vibe")
+    .option("--cli <list>")
+    .option("--all-tools")
+    .option("--detect")
+    .option("--force")
+    .option("--scope <scope>", "", "project")
+    .option("--mode <mode>", "", "standard")
+    .option("--self-host")
+    .option("--github-auth <auth>", "", "oauth")
+    .option("--mcp-compliant");
+  cmd.parse(argv, { from: "user" });
+  return cmd;
+}
+
+async function runMcp(argv: string[]): Promise<{ code: number; out: string }> {
+  let out = "";
+  const code = await runCapability(command, mcpCliCommand(argv), {
+    run: fakeRunner((args) => (args[0] === "uv" ? { code: 0, stdout: "uv 0.11.19\n" } : undefined)),
+    env: {},
+    write: (text) => {
+      out += text;
+    },
+  });
+  return { code, out };
 }
 
 afterEach(() => {
@@ -999,6 +1038,215 @@ describe("aih mcp — per-CLI config (honors --cli)", () => {
 });
 
 describe("aih mcp — enterprise posture (governance gate, opt-in)", () => {
+  it("warns when enterprise apply writes policy-denied servers without --mcp-compliant", async () => {
+    const p = await command.plan(makeCtx({ options: { posture: "enterprise" } }));
+    const dotMcp = p.actions.find(
+      (a): a is WriteAction => a.kind === "write" && a.path === ".mcp.json",
+    );
+    const warning = p.actions.find(
+      (a) => a.kind === "doc" && a.describe === "Enterprise MCP apply warning",
+    );
+
+    expect(Object.keys(serversOf(dotMcp as WriteAction))).toContain("context7");
+    expect(warning?.kind === "doc" ? warning.text : "").toContain("context7");
+    expect(warning?.kind === "doc" ? warning.text : "").toContain("third-party egress");
+    expect(warning?.kind === "doc" ? warning.text : "").toContain("mcp --verify");
+  });
+
+  it("prints quarantined server details and then verifies the compliant config cleanly", async () => {
+    const root = makeTmp();
+    const apply = await runMcp([
+      "--root",
+      root,
+      "--cli",
+      "claude",
+      "--posture",
+      "enterprise",
+      "--mcp-compliant",
+      "--apply",
+    ]);
+    const verify = await runMcp([
+      "--root",
+      root,
+      "--cli",
+      "claude",
+      "--posture",
+      "enterprise",
+      "--mcp-compliant",
+      "--verify",
+    ]);
+
+    expect(apply.code).toBe(0);
+    expect(apply.out).toContain("[digest] — Quarantined MCP servers");
+    expect(apply.out).toContain("context7");
+    expect(apply.out).toContain("third-party egress");
+    expect(readFileSync(join(root, ".mcp.json"), "utf8")).not.toContain("context7");
+    expect(verify.code).toBe(0);
+    expect(verify.out).toContain("Verification:");
+    expect(verify.out).toContain("0 failed");
+  });
+
+  it("--mcp-compliant verify fails when an exact generated denied server remains on disk", async () => {
+    const root = makeTmp();
+    const stalePlan = await command.plan(makeCtx({ root, options: { posture: "enterprise" } }));
+    const staleWrite = stalePlan.actions.find(
+      (a): a is WriteAction => a.kind === "write" && a.path === ".mcp.json",
+    );
+    const staleServers = serversOf(staleWrite as WriteAction);
+    writeFileSync(
+      join(root, ".mcp.json"),
+      jsonFile({ mcpServers: { context7: staleServers.context7 } }),
+    );
+
+    const verify = await runMcp([
+      "--root",
+      root,
+      "--cli",
+      "claude",
+      "--posture",
+      "enterprise",
+      "--mcp-compliant",
+      "--verify",
+    ]);
+
+    expect(verify.code).toBe(1);
+    expect(verify.out).toContain("MCP configs contain no quarantined generated servers");
+    expect(verify.out).toContain("context7");
+    expect(verify.out).toContain("rerun with --apply");
+  });
+
+  it("--mcp-compliant drops denied servers, quarantines them in guidance, and verifies clean", async () => {
+    const ctx = makeCtx({
+      options: { posture: "enterprise", mcpCompliant: true },
+      verify: true,
+    });
+    const p = await command.plan(ctx);
+    const dotMcp = p.actions.find(
+      (a): a is WriteAction => a.kind === "write" && a.path === ".mcp.json",
+    );
+    const servers = serversOf(dotMcp as WriteAction);
+    const quarantine = p.actions.find(
+      (a) => a.kind === "doc" && a.describe === "Quarantined MCP servers",
+    );
+    const policyProbe = p.actions.find(
+      (a) => a.kind === "probe" && a.describe === "MCP servers comply with enterprise policy",
+    );
+    const check = policyProbe?.kind === "probe" ? await policyProbe.run(ctx) : undefined;
+
+    expect(Object.keys(servers)).toContain("code-review-graph");
+    expect(Object.keys(servers)).not.toContain("context7");
+    expect(quarantine?.kind === "doc" ? quarantine.text : "").toContain("context7");
+    expect(quarantine?.kind === "doc" ? quarantine.text : "").toContain("third-party egress");
+    expect(check?.verdict).toBe("pass");
+  });
+
+  it("--mcp-compliant keeps reviewed third-party egress approvals", async () => {
+    const root = makeTmp();
+    writeFileSync(
+      join(root, "aih-org-policy.json"),
+      jsonFile({
+        schemaVersion: 1,
+        minimumPosture: "enterprise",
+        references: { repoContract: "ai-coding/project.json" },
+        mcp: {
+          allowedServers: ["context7"],
+          approvals: [
+            {
+              server: "context7",
+              acceptEgress: true,
+              reason: "approved docs lookup",
+              reviewer: "security",
+              approvedAt: "2026-07-05T00:00:00.000Z",
+            },
+          ],
+        },
+      }),
+    );
+
+    const p = await command.plan(
+      makeCtx({ root, options: { posture: "enterprise", mcpCompliant: true } }),
+    );
+    const dotMcp = p.actions.find(
+      (a): a is WriteAction => a.kind === "write" && a.path === ".mcp.json",
+    );
+    const managed = p.actions.find(
+      (a): a is WriteAction => a.kind === "write" && a.path === ".claude/managed-settings.json",
+    );
+    const governance = p.actions.find(
+      (a) =>
+        a.kind === "doc" &&
+        a.describe ===
+          "MCP governance (enterprise posture) — per-server verdicts + skipped-with-reason",
+    );
+
+    expect(Object.keys(serversOf(dotMcp as WriteAction))).toContain("context7");
+    expect(JSON.stringify(managed?.json)).toContain("code-review-graph@2.3.6");
+    expect(governance?.kind === "doc" ? governance.text : "").toContain(
+      "third-party egress accepted by org policy",
+    );
+  });
+
+  it("--mcp-compliant removes denied generated servers when merging an existing .mcp.json", async () => {
+    const root = makeTmp();
+    const remotePlan = await command.plan(makeCtx({ root, options: { scope: "remote" } }));
+    const remoteWrite = remotePlan.actions.find(
+      (a): a is WriteAction => a.kind === "write" && a.path === ".mcp.json",
+    );
+    const remoteServers = serversOf(remoteWrite as WriteAction);
+    writeFileSync(
+      join(root, ".mcp.json"),
+      jsonFile({
+        mcpServers: {
+          "better-email": remoteServers["better-email"],
+          context7: remoteServers.context7,
+          existingLocal: { type: "stdio", command: "custom-mcp", args: ["serve"] },
+        },
+      }),
+    );
+
+    const p = await command.plan(
+      makeCtx({ root, options: { posture: "enterprise", mcpCompliant: true } }),
+    );
+    const dotMcp = p.actions.find(
+      (a): a is WriteAction => a.kind === "write" && a.path === ".mcp.json",
+    );
+    const merged = JSON.parse(resolveContents(dotMcp as WriteAction, join(root, ".mcp.json"))) as {
+      mcpServers: Record<string, unknown>;
+    };
+    const quarantine = p.actions.find(
+      (a) => a.kind === "doc" && a.describe === "Quarantined MCP servers",
+    );
+
+    expect(Object.keys(merged.mcpServers)).not.toContain("better-email");
+    expect(Object.keys(merged.mcpServers)).not.toContain("context7");
+    expect(Object.keys(merged.mcpServers)).toContain("existingLocal");
+    expect(quarantine?.kind === "doc" ? quarantine.text : "").toContain("better-email");
+  });
+
+  it("--mcp-compliant preserves a same-name operator-remediated server", async () => {
+    const root = makeTmp();
+    writeFileSync(
+      join(root, ".mcp.json"),
+      jsonFile({
+        mcpServers: {
+          context7: { type: "http", url: "https://context7.internal.example/mcp" },
+        },
+      }),
+    );
+
+    const p = await command.plan(
+      makeCtx({ root, options: { posture: "enterprise", mcpCompliant: true } }),
+    );
+    const dotMcp = p.actions.find(
+      (a): a is WriteAction => a.kind === "write" && a.path === ".mcp.json",
+    );
+    const merged = JSON.parse(resolveContents(dotMcp as WriteAction, join(root, ".mcp.json"))) as {
+      mcpServers: Record<string, { url?: string }>;
+    };
+
+    expect(merged.mcpServers.context7?.url).toBe("https://context7.internal.example/mcp");
+  });
+
   it("writes a real managed-settings MCP allowlist under enterprise posture", async () => {
     const p = await command.plan(makeCtx({ options: { posture: "enterprise" } }));
     const managed = p.actions.find(

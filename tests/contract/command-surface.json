@@ -917,6 +917,9 @@
           "flags": "--json"
         },
         {
+          "flags": "--mcp-compliant"
+        },
+        {
           "flags": "--mcp-mode <mode>",
           "defaultValue": "standard"
         },
@@ -1177,6 +1180,9 @@
         },
         {
           "flags": "--json"
+        },
+        {
+          "flags": "--mcp-compliant"
         },
         {
           "flags": "--mode <mode>",

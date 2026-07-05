@@ -56,7 +56,8 @@ Orchestrate the workstation 4-phase rollout (certs → hardware/vdi → telemetr
 Initialize a repo: profile + selected baseline + bootstrap-ai + scaffold + secrets + guardrails + mcp +
 sandbox in one pass (one writer per file). `--baseline ecc|gstack|gsd` selects the Layer-1 canon
 baseline and records the choice in `.aih-config.json`; `ecc` remains the default. ECC is a separate
-gated network step — run `aih ecc` when ready (it points at ECC's own installer).
+gated network step — run `aih ecc` when ready (it points at ECC's own installer). For locked-down
+MCP rollout, `--mcp-mode offline|none` and `--mcp-compliant` are forwarded to the MCP phase.
 
 ## aih profile
 
@@ -355,7 +356,11 @@ the enterprise gate. `GITHUB_HOST` may supply the same https origin when no poli
 For vetted third-party MCP, add the server to `mcp.allowedServers` and keep reviewer evidence in
 `mcp.approvals`; `aih mcp approve <server> --accept-egress --reason "<why>" --apply` writes that
 local policy entry. Without `--apply`, it previews the change. When `AIH_ORG_POLICY` is set, edit
-the distributed org policy instead because it wins over local files.
+the distributed org policy instead because it wins over local files. `allowedServers` narrows the
+managed stdio allowlist only when `mcp.allowManagedOnly` is true. At Enterprise posture, a normal
+apply keeps the full generated server set but warns when policy denies any server; add
+`--mcp-compliant` to omit denied generated servers from MCP client configs and list them with reasons
+in the governance guidance. Use the same flag on `--verify` to verify the compliant plan.
 GitHub auth defaults to `--github-auth oauth`, which works for clients with a registered OAuth
 app; use `--github-auth token` for clients that need a PAT-backed `Authorization` header. The token
 value is never written into MCP config — the header references `${GITHUB_PERSONAL_ACCESS_TOKEN}`
