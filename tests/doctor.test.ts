@@ -653,7 +653,10 @@ describe("doctor — git-enabled workspace roots", () => {
         host: makeHostAdapter({ platform: "linux", run, env: {} }),
       };
 
-      const probe = findProbe((await command.plan(c)).actions, "workspace child linked graph safety");
+      const probe = findProbe(
+        (await command.plan(c)).actions,
+        "workspace child linked graph safety",
+      );
       const res = await probe?.run(c);
 
       expect(res?.verdict).toBe("fail");

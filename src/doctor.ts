@@ -23,6 +23,7 @@ import { scaleSafetyCheck } from "./scale-safety.js";
 import { trustLockLocalDriftChecks } from "./trust/commands.js";
 import { metricsToolCheck, usageRecorderCheck } from "./usage/hook-health.js";
 import { vdiCompatibilityCheck } from "./vdi/index.js";
+import { checkWorkspaceChildPath } from "./workspace/detect.js";
 import { workspaceGitignoreMissing, workspaceGitignoreRequiredRepos } from "./workspace/git.js";
 import { readWorkspaceManifest } from "./workspace/manifest.js";
 
@@ -301,8 +302,17 @@ export const command: CommandSpec = {
     );
     const childGraphProbes: Action[] = repos.map((repo) =>
       probe(`workspace child ${repo.id} graph safety`, () => {
-        const childRoot = join(ctx.root, repo.path);
-        if (!existsSync(childRoot)) {
+        let checked: ReturnType<typeof checkWorkspaceChildPath>;
+        try {
+          checked = checkWorkspaceChildPath(ctx.root, repo.path);
+        } catch (err) {
+          return {
+            name: `child:${repo.id}:graph`,
+            verdict: "fail",
+            detail: `${repo.path}: ${(err as Error).message}`,
+          };
+        }
+        if (!checked.exists) {
           return {
             name: `child:${repo.id}:graph`,
             verdict: "skip",
@@ -314,7 +324,7 @@ export const command: CommandSpec = {
           mcpRoot: ctx.root,
           name: `child:${repo.id}:graph`,
           requireGraph: true,
-          repoRoot: childRoot,
+          repoRoot: join(ctx.root, checked.path),
         });
       }),
     );
