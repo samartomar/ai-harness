@@ -236,6 +236,20 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     action:
       "Self-host or pin the denied server (or remove it) — run `aih mcp --posture enterprise` to see the per-server verdicts, then update .mcp.json (keep it under CODEOWNERS).",
   },
+  "mcp.compliant-config-read": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "MCP config could not be inspected for quarantined servers",
+    action:
+      "Fix the malformed MCP client config named in the verification detail, then rerun `aih mcp --posture enterprise --mcp-compliant --verify`.",
+  },
+  "mcp.compliant-stale-denied": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "quarantined MCP server still present in client config",
+    action:
+      "Rerun `aih mcp --posture enterprise --mcp-compliant --apply`, or remove the exact generated denied server entry named in the verification detail, then rerun compliant verify.",
+  },
   "mcp.hardcoded-secret": {
     audience: "developer",
     failSeverity: "blocking",

@@ -4,8 +4,10 @@ import { homeDir, resolveTargets } from "../internals/cli-detect.js";
 import { type CliEntry, entry } from "../internals/cli-registry.js";
 import { upsertTextBlock } from "../internals/envfile.js";
 import { readIfExists } from "../internals/fsxn.js";
+import { isPlainObject, parseJsoncText } from "../internals/merge.js";
 import type { Action, CommandSpec, PlanContext } from "../internals/plan.js";
-import { doc, plan, probe, writeJson, writeText } from "../internals/plan.js";
+import { digest, doc, plan, probe, writeJson, writeText } from "../internals/plan.js";
+import { beginMarker, endMarker } from "../internals/render.js";
 import type { Check } from "../internals/verify.js";
 import { AIH_ORG_POLICY_FILE } from "../org-policy/constants.js";
 import { type OrgPolicy, parseOrgPolicy } from "../org-policy/schema.js";
@@ -26,10 +28,12 @@ import {
   type McpPosture,
   mcpGovernanceDoc,
   mcpPolicyOptionsFromConfig,
+  type ServerPolicy,
 } from "./policy.js";
 import {
   existingMcpTomlNames,
   isExternalMcp,
+  type McpEntry,
   mcpConfigAbs,
   mcpEntries,
   mcpTomlBody,
@@ -131,12 +135,20 @@ function mcpCatalogError(catalog: PolicyAwareMcpCatalog): SettingsError {
   return new SettingsError(`MCP catalog cannot be built: ${errorDetail(catalog.error)}`);
 }
 
-function disabledServerRemovals(
+function serverRemovalNames(
+  policy: OrgPolicy | undefined,
+  extraNames: readonly string[] = [],
+): string[] {
+  return [...new Set([...(policy?.mcp?.disabledServers ?? []), ...extraNames])];
+}
+
+function serverConfigRemovals(
   policy: OrgPolicy | undefined,
   configKey: string,
+  extraNames: readonly string[] = [],
 ): Record<string, readonly string[]> | undefined {
-  const disabled = policy?.mcp?.disabledServers ?? [];
-  return disabled.length > 0 ? { [configKey]: disabled } : undefined;
+  const names = serverRemovalNames(policy, extraNames);
+  return names.length > 0 ? { [configKey]: names } : undefined;
 }
 
 function orgAllowedServers(
@@ -144,9 +156,180 @@ function orgAllowedServers(
   policy: OrgPolicy | undefined,
 ): Record<string, McpServer> {
   const allowed = policy?.mcp?.allowedServers ?? [];
-  if (allowed.length === 0) return servers;
+  if (policy?.mcp?.allowManagedOnly !== true || allowed.length === 0) return servers;
   const allowedSet = new Set(allowed);
   return Object.fromEntries(Object.entries(servers).filter(([name]) => allowedSet.has(name)));
+}
+
+interface DeniedGeneratedServer extends ServerPolicy {
+  server: McpServer;
+}
+
+interface JsonCompliantConfigCheck {
+  kind: "json";
+  path: string;
+  absPath: string;
+  configKey: string;
+  generatedEntries: Record<string, McpEntry>;
+}
+
+interface TomlCompliantConfigCheck {
+  kind: "toml";
+  path: string;
+  absPath: string;
+  deniedNames: readonly string[];
+}
+
+type CompliantConfigCheck = JsonCompliantConfigCheck | TomlCompliantConfigCheck;
+
+function omitDeniedServers(
+  servers: Record<string, McpServer>,
+  denied: readonly ServerPolicy[],
+): Record<string, McpServer> {
+  if (denied.length === 0) return servers;
+  const deniedNames = new Set(denied.map((p) => p.name));
+  return Object.fromEntries(Object.entries(servers).filter(([name]) => !deniedNames.has(name)));
+}
+
+function deniedPolicyLines(denied: readonly ServerPolicy[]): string[] {
+  return denied.map((p) => `  - ${p.name} — ${policyDetail(p)}`);
+}
+
+function enterpriseApplyWarningDoc(denied: readonly ServerPolicy[]): string {
+  return [
+    "Enterprise posture denies these generated MCP servers, but --mcp-compliant was not set:",
+    ...deniedPolicyLines(denied),
+    "",
+    "The default path keeps reporting behavior unchanged and still writes the full generated server set.",
+    "A same-posture default `aih mcp --verify` will keep reporting this denial until these servers are self-hosted, approved, pinned, or removed.",
+    "To opt into the compliant contract, use the flag on both apply and verify:",
+    "",
+    "  aih mcp --posture enterprise --mcp-compliant --apply",
+    "  aih mcp --posture enterprise --mcp-compliant --verify",
+  ].join("\n");
+}
+
+function quarantinedMcpServersDoc(denied: readonly ServerPolicy[]): string {
+  return [
+    "The following generated MCP servers were quarantined by --mcp-compliant and were NOT written to MCP client configs:",
+    "",
+    ...denied.map((p) => `  // ${p.name}: ${policyDetail(p)}`),
+    "",
+    "Remediate by self-hosting, approving reviewed third-party egress in org policy, pinning supply-chain inputs, or leaving the server disabled.",
+    "Verify the compliant plan with `aih mcp --posture enterprise --mcp-compliant --verify`.",
+  ].join("\n");
+}
+
+function deniedGeneratedServers(
+  servers: Record<string, McpServer>,
+  posture: McpPosture,
+  policy: OrgPolicy | undefined,
+): ServerPolicy[] {
+  return deniedServers(
+    evaluateMcpPolicy(servers, posture, mcpPolicyOptionsFromConfig(policy?.mcp)),
+  );
+}
+
+function deniedGeneratedServerDetails(
+  servers: Record<string, McpServer>,
+  posture: McpPosture,
+  policy: OrgPolicy | undefined,
+): DeniedGeneratedServer[] {
+  const deniedByName = new Map(
+    deniedGeneratedServers(servers, posture, policy).map((p) => [p.name, p]),
+  );
+  return Object.entries(servers).flatMap(([name, server]) => {
+    const denied = deniedByName.get(name);
+    return denied === undefined ? [] : [{ ...denied, server }];
+  });
+}
+
+function uniqueDeniedGenerated(items: readonly DeniedGeneratedServer[]): DeniedGeneratedServer[] {
+  const out = new Map<string, DeniedGeneratedServer>();
+  for (const item of items) if (!out.has(item.name)) out.set(item.name, item);
+  return [...out.values()];
+}
+
+function jsonStable(value: unknown): string {
+  return JSON.stringify(value);
+}
+
+function matchingGeneratedJsonServerNames(
+  absPath: string,
+  configKey: string,
+  generatedEntries: Record<string, McpEntry>,
+): string[] {
+  const raw = readIfExists(absPath);
+  if (raw === undefined || Object.keys(generatedEntries).length === 0) return [];
+  const parsed = parseJsoncText(raw);
+  if (!isPlainObject(parsed)) return [];
+  const servers = parsed[configKey];
+  if (!isPlainObject(servers)) return [];
+  return Object.entries(generatedEntries)
+    .filter(([name, generated]) => jsonStable(servers[name]) === jsonStable(generated))
+    .map(([name]) => name);
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function managedBlockText(existing: string, scope: string): string | undefined {
+  const begin = beginMarker(scope);
+  const end = endMarker(scope);
+  const normalized = existing.replace(/\r\n/g, "\n");
+  const match = new RegExp(`${escapeRegExp(begin)}\\n([\\s\\S]*?)\\n${escapeRegExp(end)}`).exec(
+    normalized,
+  );
+  return match?.[1];
+}
+
+function matchingManagedTomlServerNames(absPath: string, deniedNames: readonly string[]): string[] {
+  if (deniedNames.length === 0) return [];
+  const block = managedBlockText(readIfExists(absPath) ?? "", MCP_TOML_SCOPE);
+  if (block === undefined) return [];
+  const present = existingMcpTomlNames(block, "__aih-no-managed-block__");
+  return deniedNames.filter((name) => present.has(name));
+}
+
+function compliantConfigProbe(
+  checks: readonly CompliantConfigCheck[],
+  policiesByName: ReadonlyMap<string, ServerPolicy>,
+): Check {
+  const name = "MCP configs contain no quarantined generated servers";
+  const stale: string[] = [];
+  try {
+    for (const check of checks) {
+      const names =
+        check.kind === "json"
+          ? matchingGeneratedJsonServerNames(check.absPath, check.configKey, check.generatedEntries)
+          : matchingManagedTomlServerNames(check.absPath, check.deniedNames);
+      for (const server of names) {
+        const detail = policiesByName.get(server)?.reason ?? "policy-denied generated server";
+        stale.push(`${check.path}:${server} (${detail})`);
+      }
+    }
+  } catch (error) {
+    return {
+      name,
+      verdict: "fail",
+      detail: `could not inspect MCP config for quarantined servers: ${errorDetail(error)}`,
+      code: "mcp.compliant-config-read",
+    };
+  }
+  if (stale.length === 0) {
+    return {
+      name,
+      verdict: "pass",
+      detail: "no exact generated denied MCP server entries remain in targeted configs",
+    };
+  }
+  return {
+    name,
+    verdict: "fail",
+    detail: `rerun with --apply or remove quarantined generated entries: ${stale.join("; ")}`,
+    code: "mcp.compliant-stale-denied",
+  };
 }
 
 function approvalText(value: unknown, label: string): string {
@@ -354,7 +537,7 @@ function planMcpOffline(ctx: PlanContext): ReturnType<typeof plan> {
       ".mcp.json",
       { mcpServers: stdio },
       "local stdio MCP servers (offline) — mirror/vendor these; some still resolve packages at runtime until vendored (see the offline verify probe)",
-      { merge: true, removeJsonKeys: disabledServerRemovals(catalog.policy, "mcpServers") },
+      { merge: true, removeJsonKeys: serverConfigRemovals(catalog.policy, "mcpServers") },
     ),
     writeJson(
       "managed-mcp.json.example",
@@ -413,8 +596,38 @@ async function planMcp(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
     throw mcpCatalogError(catalog);
   }
   const servers = catalog.servers;
-  const serverNames = Object.keys(servers);
-  const tailored = serverNames
+  const posture = ctx.posture ?? asPosture(ctx.options.posture);
+  const policyOptions = mcpPolicyOptionsFromConfig(catalog.policy?.mcp);
+  const policies =
+    posture === "enterprise" ? evaluateMcpPolicy(servers, posture, policyOptions) : [];
+  const denied = posture === "enterprise" ? deniedServers(policies) : [];
+  const mcpCompliant = posture === "enterprise" && ctx.options.mcpCompliant === true;
+  const currentDeniedGenerated =
+    posture === "enterprise" ? deniedGeneratedServerDetails(servers, posture, catalog.policy) : [];
+  const remoteCatalog =
+    mcpCompliant && scope !== "remote"
+      ? policyAwareMcpCatalog(ctx, { scope: "remote", selfHost, githubAuth, stack })
+      : undefined;
+  if (
+    remoteCatalog !== undefined &&
+    (remoteCatalog.error !== undefined || remoteCatalog.servers === undefined)
+  ) {
+    throw mcpCatalogError(remoteCatalog);
+  }
+  const remoteDeniedGenerated =
+    remoteCatalog?.servers !== undefined
+      ? deniedGeneratedServerDetails(remoteCatalog.servers, posture, catalog.policy)
+      : currentDeniedGenerated;
+  const deniedGenerated = mcpCompliant
+    ? uniqueDeniedGenerated([...currentDeniedGenerated, ...remoteDeniedGenerated])
+    : currentDeniedGenerated;
+  const deniedGeneratedNames = deniedGenerated.map((item) => item.name);
+  const deniedGeneratedPoliciesByName = new Map<string, ServerPolicy>(
+    deniedGenerated.map(({ server: _server, ...policy }) => [policy.name, policy]),
+  );
+  const writeServers = mcpCompliant ? omitDeniedServers(servers, denied) : servers;
+  const writeServerNames = Object.keys(writeServers);
+  const tailored = writeServerNames
     .filter(
       (name) =>
         name !== "code-review-graph" &&
@@ -426,6 +639,8 @@ async function planMcp(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
 
   const home = homeDir(ctx);
   const writtenPaths = new Set<string>();
+  const compliantConfigChecks: CompliantConfigCheck[] = [];
+  const quarantinedPolicies = new Map<string, ServerPolicy>(denied.map((p) => [p.name, p]));
   for (const cli of clis) {
     const e = entry(cli);
     const p = e.mcp;
@@ -443,7 +658,7 @@ async function planMcp(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
       actions.push(
         doc(
           `Configure MCP for ${e.label} (${p.configFormat}, ${p.configPath})`,
-          mcpGuidanceDoc(e, serverNames),
+          mcpGuidanceDoc(e, writeServerNames),
         ),
       );
       continue;
@@ -471,28 +686,57 @@ async function planMcp(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
       const abs = external ? writePath : join(ctx.root, p.configPath);
       const existing = removeMcpTomlServers(
         readIfExists(abs) ?? "",
-        catalog.policy?.mcp?.disabledServers ?? [],
+        serverRemovalNames(catalog.policy),
       );
+      if (mcpCompliant) {
+        compliantConfigChecks.push({
+          kind: "toml",
+          path: writePath,
+          absPath: abs,
+          deniedNames: deniedGeneratedNames,
+        });
+      }
       // Never redefine a server the user already declared as a top-level table — a
       // duplicate `[mcp_servers.X]` is a TOML PARSE ERROR that would break their whole
       // config. The user's own servers win; aih's block adds only what's absent.
       const have = existingMcpTomlNames(existing, MCP_TOML_SCOPE);
-      const fresh = Object.fromEntries(Object.entries(servers).filter(([n]) => !have.has(n)));
+      const fresh = Object.fromEntries(Object.entries(writeServers).filter(([n]) => !have.has(n)));
       const merged = upsertTextBlock(existing, MCP_TOML_SCOPE, mcpTomlBody(fresh));
       actions.push(writeText(writePath, merged, describe, { external }));
     } else {
+      const abs = external ? writePath : join(ctx.root, p.configPath);
+      const deniedGeneratedServerMap = Object.fromEntries(
+        deniedGenerated.map((item) => [item.name, item.server]),
+      );
+      const generatedDeniedEntries = mcpCompliant ? mcpEntries(cli, deniedGeneratedServerMap) : {};
+      const staleGeneratedNames = mcpCompliant
+        ? matchingGeneratedJsonServerNames(abs, p.configKey, generatedDeniedEntries)
+        : [];
+      for (const name of staleGeneratedNames) {
+        const policy = deniedGeneratedPoliciesByName.get(name);
+        if (policy !== undefined) quarantinedPolicies.set(name, policy);
+      }
+      if (mcpCompliant) {
+        compliantConfigChecks.push({
+          kind: "json",
+          path: writePath,
+          absPath: abs,
+          configKey: p.configKey,
+          generatedEntries: generatedDeniedEntries,
+        });
+      }
       actions.push(
-        writeJson(writePath, { [p.configKey]: mcpEntries(cli, servers) }, describe, {
+        writeJson(writePath, { [p.configKey]: mcpEntries(cli, writeServers) }, describe, {
           merge: true,
           external,
-          removeJsonKeys: disabledServerRemovals(catalog.policy, p.configKey),
+          removeJsonKeys: serverConfigRemovals(catalog.policy, p.configKey, staleGeneratedNames),
         }),
       );
     }
   }
 
   // Self-host changes + any secret placeholders the developer must supply out-of-band.
-  if (selfHost && servers.github !== undefined) {
+  if (selfHost && writeServers.github !== undefined) {
     actions.push(
       doc(
         "Self-host MCP (--self-host): GitHub runs via the pinned local Docker image",
@@ -500,7 +744,7 @@ async function planMcp(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
       ),
     );
   }
-  const placeholders = envPlaceholders(servers);
+  const placeholders = envPlaceholders(writeServers);
   if (placeholders.length > 0) {
     const abs = join(ctx.root, ".env.example");
     const body = [
@@ -521,10 +765,10 @@ async function planMcp(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
     // The SSO gateway fronts ONLY the n24q02m hosted toolset — not GitHub (its own
     // client OAuth) or Context7 (its own endpoint), which are third-party-hosted but
     // NOT gateway-managed. Filter by the gateway host so the doc lists the right set.
-    const hosted = Object.entries(servers)
+    const hosted = Object.entries(writeServers)
       .filter(([, s]) => s.type === "http" && s.url.includes(N24Q02M_HOST))
       .map(([name]) => name);
-    const rbac = gatewayRbacConfig(GATEWAY_URL, servers, {
+    const rbac = gatewayRbacConfig(GATEWAY_URL, writeServers, {
       orgAllowedServers: catalog.policy?.mcp?.allowedServers,
     });
     actions.push(
@@ -555,11 +799,17 @@ async function planMcp(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
   // Enterprise posture (opt-in): surface a governance verdict for every server and a
   // probe that fails on a policy-denied one. The community default adds nothing here,
   // so standard output stays byte-identical.
-  const posture = ctx.posture ?? asPosture(ctx.options.posture);
   if (posture === "enterprise") {
-    const policyOptions = mcpPolicyOptionsFromConfig(catalog.policy?.mcp);
-    const policies = evaluateMcpPolicy(servers, posture, policyOptions);
-    const managedServers = orgAllowedServers(servers, catalog.policy);
+    const quarantined = [...quarantinedPolicies.values()];
+    if (quarantined.length > 0) {
+      const noticeText = mcpCompliant
+        ? quarantinedMcpServersDoc(quarantined)
+        : enterpriseApplyWarningDoc(quarantined);
+      const noticeTitle = mcpCompliant ? "Quarantined MCP servers" : "Enterprise MCP apply warning";
+      actions.push(digest(noticeTitle, noticeText), doc(noticeTitle, noticeText));
+    }
+    const policyProbeServers = mcpCompliant ? writeServers : servers;
+    const managedServers = orgAllowedServers(writeServers, catalog.policy);
     actions.push(
       writeJson(
         ".claude/managed-settings.json",
@@ -569,12 +819,19 @@ async function planMcp(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
       ),
       doc(
         "MCP governance (enterprise posture) — per-server verdicts + skipped-with-reason",
-        mcpGovernanceDoc(policies, posture),
+        mcpGovernanceDoc(policies, posture, { compliantApply: mcpCompliant }),
       ),
     );
+    if (mcpCompliant) {
+      actions.push(
+        probe("MCP configs contain no quarantined generated servers", () =>
+          compliantConfigProbe(compliantConfigChecks, deniedGeneratedPoliciesByName),
+        ),
+      );
+    }
     actions.push(
       probe("MCP servers comply with enterprise policy", () =>
-        mcpPolicyProbe(servers, posture, catalog.policy),
+        mcpPolicyProbe(policyProbeServers, posture, catalog.policy),
       ),
     );
   }
@@ -610,6 +867,11 @@ export const command: CommandSpec = {
       description:
         "hosted GitHub MCP auth: oauth (DCR-capable clients) | token (Authorization header from env)",
       default: "oauth",
+    },
+    {
+      flags: "--mcp-compliant",
+      description:
+        "under Enterprise posture, write only policy-allowed MCP servers and quarantine denied ones",
     },
   ],
   plan: planMcp,

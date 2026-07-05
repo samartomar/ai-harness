@@ -195,8 +195,14 @@
 }
 ```
 
-For vetted third-party MCP under Enterprise posture, `mcp.allowedServers` is the
-allowlist and `mcp.approvals[]` records the accepted egress review evidence. Run
+For vetted third-party MCP under Enterprise posture, `mcp.allowedServers` names
+servers eligible for egress approval and managed allowlist projection, while
+`mcp.approvals[]` records the accepted egress review evidence. It is not a
+blanket block of zero-egress local servers; use `mcp.disabledServers` to remove
+a server. When `mcp.allowManagedOnly` is true, `allowedServers` also narrows the
+managed stdio command allowlist. Use
+`aih mcp --posture enterprise --mcp-compliant --apply` to write only
+policy-approved generated servers and quarantine denied ones. Run
 `aih mcp approve <server> --accept-egress --reason "<why this egress is accepted>" --apply`
 to write the local `aih-org-policy.json` entry. If `AIH_ORG_POLICY` points at a
 distributed policy, update that source instead; org policy wins over local approval

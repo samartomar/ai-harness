@@ -29,6 +29,8 @@ export type CheckCode =
   | "mcp.config-missing"
   | "mcp.unvendored-offline"
   | "mcp.policy-denied"
+  | "mcp.compliant-config-read"
+  | "mcp.compliant-stale-denied"
   | "mcp.hardcoded-secret"
   | "mcp.allowlist-drift"
   // CLI bootloaders / canon

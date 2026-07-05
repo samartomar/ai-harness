@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -55,12 +55,59 @@ describe("aih init — command surface", () => {
     expect(command.name).toBe("init");
     expect(command.options?.map((o) => o.flags)).toEqual([
       "--mcp-mode <mode>",
+      "--mcp-compliant",
       "--canon <mode>",
       "--baseline <id>",
     ]);
     const p = await command.plan(ctx());
     expect(p.capability).toBe("init");
     expect(p.actions.length).toBeGreaterThan(0);
+  });
+
+  it("threads --mcp-compliant into the composed MCP phase", async () => {
+    const p = await command.plan(ctx({ options: { posture: "enterprise", mcpCompliant: true } }));
+    const dotMcp = p.actions.find(
+      (a): a is WriteAction => a.kind === "write" && a.path === ".mcp.json",
+    );
+    const servers = (dotMcp?.json as { mcpServers?: Record<string, unknown> } | undefined)
+      ?.mcpServers;
+    const quarantine = p.actions.find(
+      (a) => a.kind === "doc" && a.describe === "Quarantined MCP servers",
+    );
+
+    expect(Object.keys(servers ?? {})).toContain("code-review-graph");
+    expect(Object.keys(servers ?? {})).not.toContain("context7");
+    expect(quarantine?.kind === "doc" ? quarantine.text : "").toContain("context7");
+  });
+
+  it("preserves folded JSON merge controls for managed MCP replacement", async () => {
+    mkdirSync(join(dir, ".claude"), { recursive: true });
+    writeFileSync(
+      join(dir, ".claude", "managed-settings.json"),
+      JSON.stringify(
+        {
+          sandbox: { keep: true },
+          allowManagedMcpServersOnly: true,
+          allowedMcpServers: [{ serverCommand: ["stale-denied-mcp"] }],
+        },
+        null,
+        2,
+      ),
+    );
+
+    const p = await command.plan(ctx({ options: { posture: "enterprise", mcpCompliant: true } }));
+    const managed = p.actions.find(
+      (a): a is WriteAction => a.kind === "write" && a.path === ".claude/managed-settings.json",
+    );
+    if (managed === undefined) throw new Error("expected managed-settings write");
+    const merged = JSON.parse(
+      resolveContents(managed, join(dir, ".claude", "managed-settings.json")),
+    ) as { sandbox?: unknown; allowedMcpServers?: unknown[] };
+    const allowlist = JSON.stringify(merged.allowedMcpServers);
+
+    expect(merged.sandbox).toMatchObject({ keep: true });
+    expect(allowlist).toContain("code-review-graph@2.3.6");
+    expect(allowlist).not.toContain("stale-denied-mcp");
   });
 });
 
@@ -449,7 +496,7 @@ describe("aih init — deterministic plan", () => {
     const bodies = (actions: Action[]) =>
       actions
         .filter((a): a is WriteAction => a.kind === "write")
-        .map((w) => `${w.path} ${resolveContents(w, w.path)}`);
+        .map((w) => `${w.path}\\u0000${resolveContents(w, w.path)}`);
     const a = bodies((await command.plan(ctx())).actions);
     const b = bodies((await command.plan(ctx())).actions);
     expect(a).toEqual(b);
