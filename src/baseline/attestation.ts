@@ -1,5 +1,4 @@
-import { existsSync, realpathSync } from "node:fs";
-import { isAbsolute, join, relative, resolve } from "node:path";
+import { join } from "node:path";
 import { readIfExists } from "../internals/fsxn.js";
 import type { PlanContext } from "../internals/plan.js";
 import type { Check } from "../internals/verify.js";
@@ -12,7 +11,7 @@ import { MCP_CONFIG_FILES } from "../secrets/scan.js";
 import { classifyIncomingMcp } from "../trust/mcp-classify.js";
 import { checkWorkspaceChildPath } from "../workspace/detect.js";
 import { readWorkspaceManifest } from "../workspace/manifest.js";
-import { aihWorkspaceGraphRepo } from "../workspace/templates.js";
+import { spanningMcp } from "../workspace/templates.js";
 
 type SurfaceKind = "mcp" | "marketplace";
 
@@ -79,40 +78,30 @@ function sameOperationalShape(a: McpServer, b: McpServer): boolean {
   );
 }
 
-function realOrResolved(path: string): string {
-  return existsSync(path) ? realpathSync(path) : resolve(path);
-}
-
-function isContainedPath(root: string, candidate: string): boolean {
-  const rel = relative(root, candidate);
-  return rel.length === 0 || (!rel.startsWith("..") && !isAbsolute(rel));
-}
-
-function declaredWorkspaceGraphRepos(root: string, contextDir: string): Set<string> {
+function declaredWorkspaceGraphServers(root: string, contextDir: string): Record<string, unknown> {
   const manifest = readWorkspaceManifest(root, contextDir);
-  if (manifest?.status !== "OK") return new Set();
-  const rootAbs = realOrResolved(root);
-  const out = new Set<string>();
+  if (manifest?.status !== "OK") return {};
+  const repos: string[] = [];
   for (const repo of manifest.repos) {
     try {
-      const checked = checkWorkspaceChildPath(rootAbs, repo.path);
+      const checked = checkWorkspaceChildPath(root, repo.path);
       if (!checked.exists) continue;
-      const child = realOrResolved(join(rootAbs, checked.path));
-      if (isContainedPath(rootAbs, child)) out.add(child);
+      repos.push(checked.path);
     } catch {
       // An invalid declared child path is not eligible for the internal exemption.
     }
   }
-  return out;
+  return spanningMcp(root, repos).mcpServers;
 }
 
-function isDeclaredWorkspaceGraphServer(root: string, contextDir: string, value: unknown): boolean {
-  const repo = aihWorkspaceGraphRepo(value);
-  if (repo === undefined || !isAbsolute(repo)) return false;
-  const rootAbs = realOrResolved(root);
-  const repoAbs = realOrResolved(repo);
-  if (!isContainedPath(rootAbs, repoAbs)) return false;
-  return declaredWorkspaceGraphRepos(rootAbs, contextDir).has(repoAbs);
+function isDeclaredWorkspaceGraphServer(
+  generated: Record<string, unknown>,
+  name: string,
+  value: unknown,
+): boolean {
+  const expected = generated[name];
+  if (expected === undefined) return false;
+  return sameOperationalShape(classifyIncomingMcp(value), classifyIncomingMcp(expected));
 }
 
 function invalidMcpName(rel: string, name: string): Check {
@@ -239,6 +228,7 @@ function parseMcpSurfaces(ctx: PlanContext): { surfaces: CapabilitySurface[]; er
     };
   }
   const catalog = catalogResult.servers ?? {};
+  const workspaceGraphServers = declaredWorkspaceGraphServers(ctx.root, ctx.contextDir);
   const surfaces: CapabilitySurface[] = [];
   for (const rel of MCP_CONFIG_FILES) {
     const read = parseMcpConfig(ctx.root, rel);
@@ -252,7 +242,7 @@ function parseMcpSurfaces(ctx: PlanContext): { surfaces: CapabilitySurface[]; er
           return { surfaces: [], error: invalidMcpName(rel, name) };
         if (
           name.startsWith("aih-workspace-graph-") &&
-          isDeclaredWorkspaceGraphServer(ctx.root, ctx.contextDir, value)
+          isDeclaredWorkspaceGraphServer(workspaceGraphServers, name, value)
         ) {
           continue;
         }

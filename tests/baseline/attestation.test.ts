@@ -11,6 +11,13 @@ import { spanningMcp } from "../../src/workspace/templates.js";
 let dir: string;
 const A_SHA = "a".repeat(40);
 const B_SHA = "b".repeat(40);
+const CODE_REVIEW_GRAPH_ARGS = [
+  "--offline",
+  "--no-python-downloads",
+  "--no-env-file",
+  "code-review-graph@2.3.6",
+  "serve",
+] as const;
 
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), "aih-baseline-attestation-"));
@@ -151,6 +158,24 @@ describe("enterprise baseline attestation", () => {
     expect(check.detail).toContain("marketplace artifact cannot be parsed");
   });
 
+  it("fails closed when the declared registry cannot be read", () => {
+    writeText("aih-org-policy.json", "{not-json");
+    writeMcp({
+      github: {
+        type: "http",
+        url: "https://api.githubcopilot.com/mcp/",
+      },
+    });
+
+    const check = enterpriseBaselineAttestationCheck(ctx());
+
+    expect(check).toMatchObject({
+      verdict: "fail",
+      code: "baseline.registry-invalid",
+    });
+    expect(check.detail).toContain("declared capability registry cannot be read");
+  });
+
   it("flags MCP servers that are not members of the declared registry", () => {
     writePolicy(["github"]);
     writeMcp({
@@ -199,6 +224,30 @@ describe("enterprise baseline attestation", () => {
       code: "baseline.undeclared-surface",
     });
     expect(check.detail).toContain("mcp:rogue @ .cursor/mcp.json");
+  });
+
+  it("attests OpenCode MCP maps by their normalized command and remote shapes", () => {
+    writePolicy(["code-review-graph", "context7"]);
+    writeMcpConfig("opencode.json", {
+      mcp: {
+        "code-review-graph": {
+          type: "local",
+          command: ["uvx", ...CODE_REVIEW_GRAPH_ARGS],
+          enabled: true,
+        },
+        context7: {
+          type: "remote",
+          url: "https://mcp.context7.com/mcp",
+          enabled: true,
+        },
+      },
+    });
+
+    const check = enterpriseBaselineAttestationCheck(ctx());
+
+    expect(check.verdict).toBe("pass");
+    expect(check.detail).toContain("mcp:code-review-graph @ opencode.json");
+    expect(check.detail).toContain("mcp:context7 @ opencode.json");
   });
 
   it("rejects name-only MCP declarations when the configured endpoint drifts", () => {
@@ -353,6 +402,28 @@ describe("enterprise baseline attestation", () => {
 
     expect(check.verdict).toBe("pass");
     expect(check.detail).toContain("no external capability surfaces discovered");
+  });
+
+  it("flags workspace graph MCP residue when the generated shape is tampered", () => {
+    mkdirSync(join(dir, "ui"));
+    writeWorkspaceManifest(["ui"]);
+    writePolicy([]);
+    const generated = spanningMcp(dir, ["ui"]).mcpServers["aih-workspace-graph-ui"] as Record<
+      string,
+      unknown
+    >;
+    writeMcp({
+      "aih-workspace-graph-ui": {
+        ...generated,
+        env: { NODE_OPTIONS: "--require ./hook.js" },
+      },
+    });
+
+    const check = enterpriseBaselineAttestationCheck(ctx());
+
+    expect(check.verdict).toBe("fail");
+    expect(check.code).toBe("baseline.undeclared-surface");
+    expect(check.detail).toContain("mcp:aih-workspace-graph-ui");
   });
 
   it("flags workspace graph MCP residue when the scoped repo is not declared", () => {
