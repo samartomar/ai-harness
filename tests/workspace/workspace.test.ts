@@ -8,7 +8,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, join } from "node:path";
+import { basename, join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { executePlan } from "../../src/internals/execute.js";
 import type { Action, PlanContext, ProbeAction, WriteAction } from "../../src/internals/plan.js";
@@ -347,15 +347,16 @@ describe("workspace.plan — generated artifacts", () => {
       "code-review-graph@2.3.6",
       "serve",
       "--repo",
-      "ui",
+      resolve(parent, "ui"),
     ]);
     expect(mcp.mcpServers["aih-workspace-graph-backend"]?.args).toEqual(
-      expect.arrayContaining(["--repo", "backend"]),
+      expect.arrayContaining(["--repo", resolve(parent, "backend")]),
     );
     expect(mcp.mcpServers).not.toHaveProperty("filesystem");
   });
 
   it("uses declared object manifest repos for the VS Code and MCP workspace scopes", async () => {
+    mkdirSync(join(parent, "packages", "api", ".git"), { recursive: true });
     writeFileSync(
       join(parent, ".aih-workspace.json"),
       JSON.stringify({
@@ -375,9 +376,42 @@ describe("workspace.plan — generated artifacts", () => {
 
     expect(codeWorkspaceJson.folders).toContainEqual({ path: "packages/api" });
     expect(mcp.mcpServers["aih-workspace-graph-packages-api"]?.args).toEqual(
-      expect.arrayContaining(["--repo", "packages/api"]),
+      expect.arrayContaining(["--repo", resolve(parent, "packages/api")]),
     );
     expect(mcp.mcpServers).not.toHaveProperty("filesystem");
+  });
+
+  it("skips absent manifest children from MCP scope and emits a hydrate note", async () => {
+    child("ui");
+    writeFileSync(
+      join(parent, ".aih-workspace.json"),
+      JSON.stringify({ contextDir: "ai-coding", repos: ["ui", "backend"] }),
+    );
+
+    const actions = (await command.plan(makeCtx())).actions;
+    const mcp = writesByPath(actions).get(".mcp.json")?.json as {
+      mcpServers: Record<string, { args: string[] }>;
+    };
+    const absentDoc = actions.find(
+      (a) => a.kind === "doc" && a.describe === "workspace child repo absent",
+    );
+    const absentProbe = actions.find(
+      (a): a is ProbeAction => a.kind === "probe" && a.describe === "child backend scaffolded",
+    );
+
+    expect(Object.keys(mcp.mcpServers)).toEqual(["aih-workspace-graph-ui"]);
+    expect(mcp.mcpServers["aih-workspace-graph-ui"]?.args).toEqual(
+      expect.arrayContaining(["--repo", resolve(parent, "ui")]),
+    );
+    expect(absentDoc?.kind).toBe("doc");
+    if (absentDoc?.kind !== "doc") throw new Error("expected absent child doc");
+    expect(absentDoc.text).toContain("- backend/");
+    expect(absentDoc.text).toContain("aih workspace hydrate --apply");
+    expect(absentProbe?.run(makeCtx())).toMatchObject({
+      verdict: "skip",
+      detail:
+        "child repo path is missing — run `aih workspace hydrate --apply` or create the child repo",
+    });
   });
 
   it("rejects manifest-declared repo paths that point through links outside the workspace", async () => {
@@ -415,7 +449,7 @@ describe("workspace.plan — generated artifacts", () => {
 
     expect(mcp.mcpServers).not.toHaveProperty("filesystem");
     expect(mcp.mcpServers["aih-workspace-graph-ui"]?.args).toEqual(
-      expect.arrayContaining(["--repo", "ui"]),
+      expect.arrayContaining(["--repo", resolve(parent, "ui")]),
     );
   });
 
@@ -800,7 +834,7 @@ describe("workspace — write-once executor behavior", () => {
       "code-review-graph@2.3.6",
       "serve",
       "--repo",
-      "service-api",
+      resolve(parent, "service-api"),
     ]);
     expect(mcp.mcpServers["user-owned"]).toEqual({ command: "node", args: ["server.js"] });
   });
@@ -852,7 +886,7 @@ describe("workspace — write-once executor behavior", () => {
       args: ["custom-wrapper", "code-review-graph@2.3.6", "serve", "--repo", "notes"],
     });
     expect(mcp.mcpServers["aih-workspace-graph-service-api"]?.args).toEqual(
-      expect.arrayContaining(["--repo", "service-api"]),
+      expect.arrayContaining(["--repo", resolve(parent, "service-api")]),
     );
   });
 

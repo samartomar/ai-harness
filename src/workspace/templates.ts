@@ -1,3 +1,4 @@
+import { resolve } from "node:path";
 import { lines } from "../internals/render.js";
 import type { WorkspaceEdge, WorkspaceRepo } from "./manifest.js";
 
@@ -49,7 +50,12 @@ function graphServerSuffix(repo: string, index: number, used: Set<string>): stri
   return suffix;
 }
 
-export function spanningMcp(repos: string[]): { mcpServers: Record<string, unknown> } {
+export function spanningMcp(
+  root: string,
+  repos: readonly string[],
+): {
+  mcpServers: Record<string, unknown>;
+} {
   const used = new Set<string>();
   return {
     mcpServers: Object.fromEntries(
@@ -59,7 +65,7 @@ export function spanningMcp(repos: string[]): { mcpServers: Record<string, unkno
           // Pinned uvx form aligned with the per-repo code-review-graph server —
           // ephemeral env, reproducible, scoped by --repo.
           command: "uvx",
-          args: [...GRAPH_BASE_ARGS, "--repo", repo],
+          args: [...GRAPH_BASE_ARGS, "--repo", resolve(root, repo)],
         },
       ]),
     ),
