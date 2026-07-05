@@ -12,6 +12,7 @@ import {
 } from "../verification/constants.js";
 import { buildEvidenceGraph } from "../verification/graph.js";
 import {
+  legacyCheckToVerificationResult,
   type StructuredVerificationRunCheckOptions,
   structuredVerificationRunToCheck,
 } from "../verification/legacy.js";
@@ -32,6 +33,7 @@ import type {
   Plan,
   PlanContext,
   ProbeAction,
+  StructuredLegacyProbeRun,
   WriteAction,
 } from "./plan.js";
 import { ensureTrailingNewline, indent, jsonFile, stripTrailingNewlines } from "./render.js";
@@ -240,92 +242,6 @@ function sanitizedVerificationResult(
   };
 }
 
-function legacyCheckToVerificationResult(check: Check): VerificationResult {
-  const passName = verificationText(check.name, "legacy check");
-  return {
-    passName,
-    verdict: check.verdict === "skip" ? "warn" : check.verdict,
-    severity: check.verdict === "fail" ? "high" : "info",
-    confidence: "high",
-    evidence: legacyCheckEvidence(check),
-    message: verificationText(check.detail, passName),
-    category: "other",
-  };
-}
-
-function legacyCheckEvidence(check: Check): Evidence[] {
-  const source = legacyCheckSource(check);
-  if (source === undefined) return [];
-  const id = check.fingerprint ?? check.code ?? `legacy:${source}`;
-  return [
-    {
-      id,
-      type: "legacy-check",
-      source,
-      ...(check.detail === undefined ? {} : { snippet: check.detail }),
-    },
-  ];
-}
-
-function hasControlCharacter(value: string): boolean {
-  for (const char of value) {
-    const code = char.codePointAt(0);
-    if (code === undefined || code < 0x20 || code === 0x7f) return true;
-  }
-  return false;
-}
-
-function isSafeLegacyLocationPart(value: string): boolean {
-  for (const char of value) {
-    const code = char.codePointAt(0);
-    const safe =
-      code !== undefined &&
-      ((code >= 48 && code <= 57) ||
-        (code >= 65 && code <= 90) ||
-        (code >= 97 && code <= 122) ||
-        char === "." ||
-        char === "_" ||
-        char === "@" ||
-        char === "+" ||
-        char === "-");
-    if (!safe) return false;
-  }
-  return true;
-}
-
-function safeLegacyLocationUri(uri: string): string | undefined {
-  if (uri.length === 0 || uri.trim() !== uri || hasControlCharacter(uri)) return undefined;
-  if (redactSecrets(uri) !== uri) return undefined;
-  const normalized = uri.replaceAll("\\", "/");
-  if (redactSecrets(normalized) !== normalized) return undefined;
-  if (
-    normalized.startsWith("/") ||
-    normalized.startsWith("~") ||
-    /^[A-Za-z]:/.test(normalized) ||
-    /^[A-Za-z][A-Za-z0-9+.-]*:/.test(normalized)
-  ) {
-    return undefined;
-  }
-  const parts = normalized.split("/");
-  if (parts.some((part) => part.length === 0 || part === "." || part === "..")) {
-    return undefined;
-  }
-  if (parts.some((part) => !isSafeLegacyLocationPart(part))) return undefined;
-  return normalized;
-}
-
-function legacyCheckSource(check: Check): string | undefined {
-  const location = check.location;
-  if (location === undefined) return undefined;
-  const uri = safeLegacyLocationUri(location.uri);
-  if (uri === undefined) return undefined;
-  const startLine = location.startLine;
-  if (startLine !== undefined && (!Number.isSafeInteger(startLine) || startLine < 1)) {
-    return undefined;
-  }
-  return startLine === undefined ? uri : `${uri}#L${startLine}`;
-}
-
 function suffixedPassName(passName: string, suffix: number): string {
   const suffixText = `#${suffix}`;
   if (passName.length + suffixText.length <= MAX_VERIFICATION_STRING_FIELD_LENGTH) {
@@ -398,6 +314,26 @@ function structuredVerificationEntries(
   const reportCheck = structuredVerificationRunToCheck(run, structuredProbeCheckOptions(action));
   if (entries[0] !== undefined) entries[0].reportCheck = reportCheck;
   else entries.push({ reportCheck });
+  return entries;
+}
+
+function structuredLegacyVerificationEntries(run: StructuredLegacyProbeRun): VerificationEntry[] {
+  const results = run.verification?.results ?? [];
+  if (results.length !== run.reportChecks.length) {
+    throw new AihError(
+      `structured legacy probe returned mismatched result/check counts: ${results.length}/${run.reportChecks.length}`,
+      "AIH_CONFIG",
+    );
+  }
+  const entries: VerificationEntry[] = [];
+  for (let index = 0; index < run.reportChecks.length; index += 1) {
+    const result = results[index];
+    const reportCheck = run.reportChecks[index];
+    if (result === undefined || reportCheck === undefined) {
+      throw new AihError("structured legacy probe returned sparse results", "AIH_CONFIG");
+    }
+    entries.push({ result, reportCheck });
+  }
   return entries;
 }
 
@@ -862,7 +798,10 @@ export async function executePlan(
     if (!skipProbesAfterExecFailure) {
       for (const action of plan.actions) {
         if (action.kind === "probe") {
-          if (action.runStructured) {
+          if (action.runStructuredLegacy) {
+            const structuredLegacyRun = await action.runStructuredLegacy(ctx);
+            verificationEntries.push(...structuredLegacyVerificationEntries(structuredLegacyRun));
+          } else if (action.runStructured) {
             const structuredRun = await action.runStructured(ctx);
             verificationEntries.push(...structuredVerificationEntries(action, structuredRun));
           } else if (action.runMany) {

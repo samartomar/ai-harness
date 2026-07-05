@@ -4,7 +4,7 @@ import { basename, extname, isAbsolute, join, relative, resolve } from "node:pat
 import { type Posture, postureFromContext } from "../config/posture.js";
 import { AihError } from "../errors.js";
 import type { Action, CommandSpec, PlanContext, ProbeAction } from "../internals/plan.js";
-import { digest, dynamicDigest, plan, probe, probeMany } from "../internals/plan.js";
+import { digest, dynamicDigest, plan, structuredChecksProbe } from "../internals/plan.js";
 import type { Runner } from "../internals/proc.js";
 import type { Check } from "../internals/verify.js";
 import { evaluateMcpPolicy, mcpPolicyOptionsFromConfig } from "../mcp/policy.js";
@@ -513,7 +513,7 @@ function acknowledgeChecks(checks: readonly Check[], ctx: PlanContext): Check[] 
 }
 
 function probesForStaticChecks(checks: Check[]): ProbeAction[] {
-  return checks.map((check) => probe(check.detail ?? check.name, () => check));
+  return [structuredChecksProbe("trust scan", () => [...checks])];
 }
 
 function orgPolicyTrustChecks(error: unknown): Check[] {
@@ -567,7 +567,7 @@ export async function trustScanProbes(
     return probesForStaticChecks(ctx ? acknowledgeChecks(scan.checks, ctx) : scan.checks);
   }
   return [
-    probeMany(`trust scan ${source.display}`, async (probeCtx) => {
+    structuredChecksProbe(`trust scan ${source.display}`, async (probeCtx) => {
       if (!probeCtx.apply) {
         return [
           {
@@ -602,7 +602,7 @@ export async function trustScanPlanForSource(
   } satisfies ScanTrustTreeOptions;
   if (source.kind === "github") actions.push(trustFetchExec(source, ctx));
   actions.push(
-    probeMany("trust source origin", (probeCtx) =>
+    structuredChecksProbe("trust source origin", (probeCtx) =>
       acknowledgeChecks(
         policy.checks.length > 0 ? policy.checks : trustSourceOriginChecks(probeCtx, source),
         probeCtx,
@@ -628,7 +628,7 @@ export async function trustScanPlanForSource(
       return githubScan;
     };
     actions.push(
-      probeMany(`trust scan ${source.display}`, async (probeCtx) => {
+      structuredChecksProbe(`trust scan ${source.display}`, async (probeCtx) => {
         if (!probeCtx.apply) {
           return [
             {
