@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -513,6 +513,200 @@ describe("doctor — git-enabled workspace roots", () => {
 
     expect(res?.verdict).toBe("pass");
     expect(res?.detail).toContain("no child repos");
+  });
+
+  it("checks graph coverage against each present child repo, not just the workspace parent", async () => {
+    writeWorkspaceMarker();
+    mkdirSync(join(dir, "service-api"), { recursive: true });
+    writeFileSync(
+      join(dir, ".mcp.json"),
+      JSON.stringify({
+        mcpServers: {
+          "aih-workspace-graph-service-api": {
+            command: "uvx",
+            args: [
+              "--offline",
+              "--no-python-downloads",
+              "--no-env-file",
+              "code-review-graph@2.3.6",
+              "serve",
+              "--repo",
+              join(dir, "service-api"),
+            ],
+          },
+        },
+      }),
+    );
+    const childGraphStatus = ["Nodes: 5454", "Edges: 64205", "Files: 388"].join("\n");
+    const calls: string[][] = [];
+    const run = fakeRunner((argv) => {
+      calls.push(argv);
+      if (
+        argv[0] === "git" &&
+        argv[2] === dir &&
+        argv.slice(3).join(" ") === "rev-parse --is-inside-work-tree"
+      ) {
+        return { stdout: "true" };
+      }
+      if (argv[0] === "git" && argv[2] === join(dir, "service-api") && argv[3] === "ls-files") {
+        return {
+          stdout: Array.from({ length: 1000 }, (_, i) => `src/file-${i}.ts`).join("\n"),
+        };
+      }
+      if (argv[0] === "git" && argv[2] === dir && argv[3] === "ls-files") {
+        return { stdout: ".aih-workspace.json\n.gitignore\n" };
+      }
+      if ((argv[0] === "which" || argv[0] === "where") && argv[1] === "uvx") {
+        return { stdout: "/usr/bin/uvx" };
+      }
+      if (argv[0] === "uvx" && argv.includes("status")) {
+        return { stdout: childGraphStatus };
+      }
+      return { code: 1, spawnError: true };
+    });
+    const c: PlanContext = {
+      ...rooted(true),
+      run,
+      host: makeHostAdapter({ platform: "linux", run, env: {} }),
+    };
+
+    const probe = findProbe(
+      (await command.plan(c)).actions,
+      "workspace child service-api graph safety",
+    );
+    const res = await probe?.run(c);
+
+    expect(res?.verdict).toBe("pass");
+    expect(res?.detail).toContain("service-api");
+    expect(calls).toContainEqual([
+      "uvx",
+      "--offline",
+      "--no-python-downloads",
+      "--no-env-file",
+      "code-review-graph@2.3.6",
+      "status",
+      "--repo",
+      join(dir, "service-api"),
+    ]);
+  });
+
+  it("warns instead of silently passing when small child graph coverage is unverified", async () => {
+    writeWorkspaceMarker();
+    mkdirSync(join(dir, "service-api"), { recursive: true });
+    const run = fakeRunner((argv) => {
+      if (
+        argv[0] === "git" &&
+        argv[2] === dir &&
+        argv.slice(3).join(" ") === "rev-parse --is-inside-work-tree"
+      ) {
+        return { stdout: "true" };
+      }
+      if (argv[0] === "git" && argv[2] === join(dir, "service-api") && argv[3] === "ls-files") {
+        return { stdout: "src/index.ts\n" };
+      }
+      if (argv[0] === "git" && argv[2] === dir && argv[3] === "ls-files") {
+        return { stdout: ".aih-workspace.json\n.gitignore\n" };
+      }
+      return { code: 1, spawnError: true };
+    });
+    const c: PlanContext = {
+      ...rooted(true),
+      run,
+      host: makeHostAdapter({ platform: "linux", run, env: {} }),
+    };
+
+    const probe = findProbe(
+      (await command.plan(c)).actions,
+      "workspace child service-api graph safety",
+    );
+    const res = await probe?.run(c);
+
+    expect(res?.verdict).toBe("skip");
+    expect(res?.code).toBe("scale.code-review-graph-missing");
+    expect(res?.detail).toContain("workspace graph coverage is unverified");
+  });
+
+  it("does not accept a bare graph binary as workspace child MCP coverage", async () => {
+    writeWorkspaceMarker();
+    mkdirSync(join(dir, "service-api"), { recursive: true });
+    const run = fakeRunner((argv) => {
+      if (
+        argv[0] === "git" &&
+        argv[2] === dir &&
+        argv.slice(3).join(" ") === "rev-parse --is-inside-work-tree"
+      ) {
+        return { stdout: "true" };
+      }
+      if (argv[0] === "git" && argv[2] === join(dir, "service-api") && argv[3] === "ls-files") {
+        return { stdout: "src/index.ts\n" };
+      }
+      if (argv[0] === "git" && argv[2] === dir && argv[3] === "ls-files") {
+        return { stdout: ".aih-workspace.json\n.gitignore\n" };
+      }
+      if ((argv[0] === "which" || argv[0] === "where") && argv[1] === "code-review-graph") {
+        return { stdout: "/usr/bin/code-review-graph" };
+      }
+      if (argv[0] === "code-review-graph" && argv.includes("status")) {
+        return { stdout: ["Nodes: 5454", "Edges: 64205", "Files: 388"].join("\n") };
+      }
+      return { code: 1, spawnError: true };
+    });
+    const c: PlanContext = {
+      ...rooted(true),
+      run,
+      host: makeHostAdapter({ platform: "linux", run, env: {} }),
+    };
+
+    const probe = findProbe(
+      (await command.plan(c)).actions,
+      "workspace child service-api graph safety",
+    );
+    const res = await probe?.run(c);
+
+    expect(res?.verdict).toBe("skip");
+    expect(res?.code).toBe("scale.code-review-graph-missing");
+    expect(res?.detail).toContain("workspace graph MCP server for this child is missing");
+  });
+
+  it("fails closed before probing graph coverage for linked child repo paths", async () => {
+    const external = mkdtempSync(join(tmpdir(), "aih-doctor-workspace-external-"));
+    try {
+      mkdirSync(join(external, ".git"), { recursive: true });
+      symlinkSync(external, join(dir, "linked"), "junction");
+      writeFileSync(
+        join(dir, ".aih-workspace.json"),
+        JSON.stringify({
+          workspaceType: "multi-repo",
+          graphScope: "combined-child-repos",
+          contextDir: "ai-coding",
+          repos: ["linked"],
+          git: true,
+          generatedBy: "aih workspace",
+        }),
+      );
+      const calls: string[][] = [];
+      const run = fakeRunner((argv) => {
+        calls.push(argv);
+        return { code: 1, spawnError: true };
+      });
+      const c: PlanContext = {
+        ...rooted(true),
+        run,
+        host: makeHostAdapter({ platform: "linux", run, env: {} }),
+      };
+
+      const probe = findProbe(
+        (await command.plan(c)).actions,
+        "workspace child linked graph safety",
+      );
+      const res = await probe?.run(c);
+
+      expect(res?.verdict).toBe("fail");
+      expect(res?.detail).toContain("real directory");
+      expect(calls).toEqual([]);
+    } finally {
+      rmSync(external, { recursive: true, force: true });
+    }
   });
 
   it("does not render child repo paths into scaffold guidance commands", async () => {

@@ -1,9 +1,10 @@
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { readIfExists } from "./internals/fsxn.js";
 import { gitRead } from "./internals/git.js";
 import { type DigestAction, digest, type PlanContext } from "./internals/plan.js";
 import { lines } from "./internals/render.js";
 import type { Check } from "./internals/verify.js";
+import { aihWorkspaceGraphRepo } from "./workspace/templates.js";
 
 export const LARGE_REPO_FILE_THRESHOLD = 1000;
 const CODE_REVIEW_GRAPH_PACKAGE = "code-review-graph@2.3.6";
@@ -21,23 +22,27 @@ export async function trackedFileCount(ctx: PlanContext): Promise<number | undef
   return ls.split("\n").filter(Boolean).length;
 }
 
-function readRepoMcpCodeReviewGraph(ctx: PlanContext): unknown | undefined {
-  const raw = readIfExists(join(ctx.root, ".mcp.json"));
+function readMcpServers(root: string): Record<string, unknown> | undefined {
+  const raw = readIfExists(join(root, ".mcp.json"));
   if (!raw) return undefined;
   try {
     const parsed = JSON.parse(raw) as { mcpServers?: Record<string, unknown> };
-    return parsed.mcpServers?.["code-review-graph"];
+    return parsed.mcpServers;
   } catch {
     return undefined;
   }
 }
 
-function repoMcpHasCodeReviewGraph(ctx: PlanContext): boolean {
-  return readRepoMcpCodeReviewGraph(ctx) !== undefined;
+function readRepoMcpCodeReviewGraph(mcpRoot: string): unknown | undefined {
+  return readMcpServers(mcpRoot)?.["code-review-graph"];
 }
 
-function repoMcpCodeReviewGraphPackage(ctx: PlanContext): string {
-  const server = readRepoMcpCodeReviewGraph(ctx);
+function repoMcpHasCodeReviewGraph(mcpRoot: string): boolean {
+  return readRepoMcpCodeReviewGraph(mcpRoot) !== undefined;
+}
+
+function repoMcpCodeReviewGraphPackage(mcpRoot: string): string {
+  const server = readRepoMcpCodeReviewGraph(mcpRoot);
   if (!server || typeof server !== "object") return CODE_REVIEW_GRAPH_PACKAGE;
   const args = (server as { args?: unknown }).args;
   if (!Array.isArray(args)) return CODE_REVIEW_GRAPH_PACKAGE;
@@ -46,6 +51,23 @@ function repoMcpCodeReviewGraphPackage(ctx: PlanContext): string {
       (arg): arg is string => typeof arg === "string" && arg.startsWith("code-review-graph@"),
     ) ?? CODE_REVIEW_GRAPH_PACKAGE
   );
+}
+
+function workspaceMcpCodeReviewGraphPackage(mcpRoot: string, repoRoot: string): string | undefined {
+  const servers = readMcpServers(mcpRoot) ?? {};
+  const wanted = resolve(repoRoot);
+  for (const server of Object.values(servers)) {
+    const graphRepo = aihWorkspaceGraphRepo(server);
+    if (graphRepo === undefined || resolve(mcpRoot, graphRepo) !== wanted) continue;
+    const args = (server as { args?: unknown }).args;
+    if (!Array.isArray(args)) return CODE_REVIEW_GRAPH_PACKAGE;
+    return (
+      args.find(
+        (arg): arg is string => typeof arg === "string" && arg.startsWith("code-review-graph@"),
+      ) ?? CODE_REVIEW_GRAPH_PACKAGE
+    );
+  }
+  return undefined;
 }
 
 interface GraphStatus {
@@ -125,30 +147,56 @@ async function ensureCodeReviewGraphPopulated(
   };
 }
 
-async function codeReviewGraphAvailability(ctx: PlanContext): Promise<{
+async function codeReviewGraphAvailabilityFor(
+  ctx: PlanContext,
+  repoRoot: string,
+  mcpRoot: string,
+): Promise<{
   available: boolean;
   detail: string;
 }> {
+  if (resolve(mcpRoot) !== resolve(repoRoot)) {
+    const workspacePackage = workspaceMcpCodeReviewGraphPackage(mcpRoot, repoRoot);
+    if (workspacePackage === undefined) {
+      return {
+        available: false,
+        detail:
+          "workspace graph MCP server for this child is missing or stale; re-run `aih workspace --apply`",
+      };
+    }
+    if (!(await onPath(ctx, "uvx"))) {
+      return {
+        available: false,
+        detail: "workspace MCP code-review-graph scoped to child repo, but uvx is not on PATH",
+      };
+    }
+    return ensureCodeReviewGraphPopulated(
+      ctx,
+      "workspace MCP code-review-graph scoped to child repo and uvx is on PATH",
+      (command) => ["uvx", ...UVX_OFFLINE_FLAGS, workspacePackage, command, "--repo", repoRoot],
+    );
+  }
+
   if (await onPath(ctx, "code-review-graph")) {
     return ensureCodeReviewGraphPopulated(ctx, "code-review-graph binary on PATH", (command) => [
       "code-review-graph",
       command,
       "--repo",
-      ctx.root,
+      repoRoot,
     ]);
   }
-  const mcpConfigured = repoMcpHasCodeReviewGraph(ctx);
   const uvxPresent = await onPath(ctx, "uvx");
+  const mcpConfigured = repoMcpHasCodeReviewGraph(mcpRoot);
   const uvPresent = uvxPresent ? false : await onPath(ctx, "uv");
   if (mcpConfigured && (uvxPresent || uvPresent)) {
-    const packageArg = repoMcpCodeReviewGraphPackage(ctx);
+    const packageArg = repoMcpCodeReviewGraphPackage(mcpRoot);
     const prefix = uvxPresent
       ? ["uvx", ...UVX_OFFLINE_FLAGS]
       : ["uv", "tool", "run", ...UVX_OFFLINE_FLAGS];
     return ensureCodeReviewGraphPopulated(
       ctx,
       `repo MCP code-review-graph configured and ${uvxPresent ? "uvx" : "uv tool run"} is on PATH`,
-      (command) => [...prefix, packageArg, command, "--repo", ctx.root],
+      (command) => [...prefix, packageArg, command, "--repo", repoRoot],
     );
   }
   if (mcpConfigured) {
@@ -163,25 +211,48 @@ async function codeReviewGraphAvailability(ctx: PlanContext): Promise<{
   };
 }
 
-export async function scaleSafetyCheck(ctx: PlanContext): Promise<Check> {
-  const files = await trackedFileCount(ctx);
-  const name = "large-repo graph safety";
+export interface ScaleSafetyCheckOptions {
+  detailPrefix?: string;
+  mcpRoot?: string;
+  name?: string;
+  requireGraph?: boolean;
+  repoRoot?: string;
+}
+
+export async function scaleSafetyCheck(
+  ctx: PlanContext,
+  options: ScaleSafetyCheckOptions = {},
+): Promise<Check> {
+  const repoRoot = options.repoRoot ?? ctx.root;
+  const files = await trackedFileCount({ ...ctx, root: repoRoot });
+  const name = options.name ?? "large-repo graph safety";
+  const detailPrefix = options.detailPrefix ? `${options.detailPrefix}: ` : "";
   if (files === undefined) {
-    return { name, verdict: "skip", detail: "not a git repo or git unavailable" };
+    return { name, verdict: "skip", detail: `${detailPrefix}not a git repo or git unavailable` };
   }
-  if (files < LARGE_REPO_FILE_THRESHOLD) {
+  if (files < LARGE_REPO_FILE_THRESHOLD && !options.requireGraph) {
     return {
       name,
       verdict: "pass",
-      detail: `${files} tracked files < ${LARGE_REPO_FILE_THRESHOLD}; bounded rg/fd reconnaissance is acceptable`,
+      detail: `${detailPrefix}${files} tracked files < ${LARGE_REPO_FILE_THRESHOLD}; bounded rg/fd reconnaissance is acceptable`,
     };
   }
-  const graph = await codeReviewGraphAvailability(ctx);
+  const graph = await codeReviewGraphAvailabilityFor(ctx, repoRoot, options.mcpRoot ?? repoRoot);
   if (graph.available) {
     return {
       name,
       verdict: "pass",
-      detail: `${files} tracked files; ${graph.detail}`,
+      detail: `${detailPrefix}${files} tracked files; ${graph.detail}`,
+    };
+  }
+  if (files < LARGE_REPO_FILE_THRESHOLD) {
+    return {
+      name,
+      verdict: "skip",
+      code: "scale.code-review-graph-missing",
+      detail:
+        `${detailPrefix}${files} tracked files < ${LARGE_REPO_FILE_THRESHOLD}, but workspace graph coverage is unverified; ${graph.detail}. ` +
+        "Re-run `aih workspace --apply` to emit per-child graph MCP servers, or use bounded rg/fd reads only.",
     };
   }
   return {
@@ -189,7 +260,7 @@ export async function scaleSafetyCheck(ctx: PlanContext): Promise<Check> {
     verdict: "fail",
     code: "scale.code-review-graph-missing",
     detail:
-      `${files} tracked files >= ${LARGE_REPO_FILE_THRESHOLD}; ${graph.detail}. ` +
+      `${detailPrefix}${files} tracked files >= ${LARGE_REPO_FILE_THRESHOLD}; ${graph.detail}. ` +
       "Install/enable code-review-graph before broad analysis: `aih mcp --apply` and `aih tools --apply`. " +
       "Until then, use bounded rg/fd reads only.",
   };
