@@ -1,4 +1,5 @@
 export * from "./graph.js";
+export * from "./legacy.js";
 export * from "./merge.js";
 export * from "./passes.js";
 export * from "./pipeline.js";
