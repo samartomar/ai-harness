@@ -256,6 +256,94 @@ describe("executePlan", () => {
     expect(result.report?.exitCode()).toBe(0);
   });
 
+  it("returns a structured verification run for legacy probes without changing the legacy report", async () => {
+    const p = plan(
+      "t",
+      probe("legacy gate", () => ({
+        name: "legacy gate",
+        verdict: "fail",
+        detail: "legacy failure",
+        code: "ready.blocked",
+      })),
+    );
+
+    const result = await executePlan(p, ctx({ verify: true }));
+
+    expect(result.report?.checks).toEqual([
+      {
+        name: "legacy gate",
+        verdict: "fail",
+        detail: "legacy failure",
+        code: "ready.blocked",
+      },
+    ]);
+    expect(result.report?.exitCode()).toBe(1);
+    expect(result.verification?.summary.finalVerdict).toBe("fail");
+    expect(result.verification?.results).toEqual([
+      expect.objectContaining({
+        passName: "legacy gate",
+        verdict: "fail",
+        severity: "high",
+        confidence: "high",
+        message: "legacy failure",
+        category: "other",
+      }),
+    ]);
+    expect(result.verification?.evidenceGraph.nodes).toEqual([
+      expect.objectContaining({ kind: "finding", passName: "legacy gate", verdict: "fail" }),
+    ]);
+  });
+
+  it("preserves structured probe results in the executor verification run without double execution", async () => {
+    let calls = 0;
+    const p = plan(
+      "t",
+      structuredProbe(
+        "structured gate",
+        () => {
+          calls += 1;
+          return structuredRun([
+            {
+              passName: "structured.pass",
+              verdict: "pass",
+              severity: "info",
+              confidence: "high",
+              evidence: [],
+              message: "ok",
+              category: "policy",
+            },
+            {
+              passName: "structured.fail",
+              verdict: "fail",
+              severity: "high",
+              confidence: "high",
+              evidence: [],
+              message: "blocked",
+              category: "policy",
+            },
+          ]);
+        },
+        { includeMetadata: false },
+      ),
+    );
+
+    const result = await executePlan(p, ctx({ verify: true }));
+
+    expect(calls).toBe(1);
+    expect(result.report?.checks).toEqual([
+      {
+        name: "structured gate",
+        verdict: "fail",
+        detail: "structured.fail: blocked",
+      },
+    ]);
+    expect(result.verification?.results.map((entry) => entry.passName)).toEqual([
+      "structured.pass",
+      "structured.fail",
+    ]);
+    expect(result.verification?.summary.finalVerdict).toBe("fail");
+  });
+
   it("writes doc actions that carry a path", async () => {
     await executePlan(plan("t", doc("guidance", "do X", "docs/guide.md")), ctx({ apply: true }));
     expect(readFileSync(join(dir, "docs/guide.md"), "utf8")).toBe("do X\n");

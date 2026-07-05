@@ -3,10 +3,13 @@ import { existsSync, lstatSync, readFileSync, realpathSync } from "node:fs";
 import { dirname, isAbsolute, relative, resolve } from "node:path";
 import { AihError, DirtyWorktreeError, PathContainmentError } from "../errors.js";
 import { redactSecrets } from "../guardrails/redact.js";
+import { buildEvidenceGraph } from "../verification/graph.js";
 import {
   type StructuredVerificationRunCheckOptions,
   structuredVerificationRunToCheck,
 } from "../verification/legacy.js";
+import { mergeVerificationResults } from "../verification/merge.js";
+import type { VerificationPipelineRun, VerificationResult } from "../verification/types.js";
 import { upsertManagedBlock } from "./envfile.js";
 import { FsTransaction, readIfExists } from "./fsxn.js";
 import { deepMerge, parseJsoncText } from "./merge.js";
@@ -136,6 +139,40 @@ function structuredProbeCheckOptions(action: ProbeAction): StructuredVerificatio
   return { ...options, name: options.name ?? action.describe };
 }
 
+function legacyCheckToVerificationResult(check: Check): VerificationResult {
+  return {
+    passName: check.name,
+    verdict: check.verdict === "skip" ? "warn" : check.verdict,
+    severity: check.verdict === "fail" ? "high" : "info",
+    confidence: "high",
+    evidence: [],
+    message: check.detail ?? check.name,
+    category: "other",
+  };
+}
+
+function uniqueVerificationResults(results: readonly VerificationResult[]): VerificationResult[] {
+  const seen = new Map<string, number>();
+  return results.map((result) => {
+    const count = seen.get(result.passName) ?? 0;
+    seen.set(result.passName, count + 1);
+    if (count === 0) return result;
+    return { ...result, passName: `${result.passName}#${count + 1}` };
+  });
+}
+
+function verificationRunFromResults(
+  results: readonly VerificationResult[],
+): VerificationPipelineRun | undefined {
+  if (results.length === 0) return undefined;
+  const uniqueResults = uniqueVerificationResults(results);
+  return {
+    results: uniqueResults,
+    summary: mergeVerificationResults(uniqueResults),
+    evidenceGraph: buildEvidenceGraph(uniqueResults),
+  };
+}
+
 export interface WriteSummary {
   path: string;
   describe: string;
@@ -170,6 +207,8 @@ export interface PlanResult {
   /** Files aih removed (moved to `.aih/legacy/`) or would remove (dry-run). */
   removed: RemoveSummary[];
   report?: VerificationReport;
+  /** Structured verification sidecar; legacy `report` remains the CLI compatibility surface. */
+  verification?: VerificationPipelineRun;
 }
 
 /** Resolve an action path against the context root (absolute paths pass through). */
@@ -570,29 +609,39 @@ export async function executePlan(
   }
 
   let report: VerificationReport | undefined;
+  let verification: VerificationPipelineRun | undefined;
   if (ctx.verify) {
     report = new VerificationReport();
-    for (const check of execFailureChecks) report.add(check);
+    const verificationResults: VerificationResult[] = [];
+    for (const check of execFailureChecks) {
+      report.add(check);
+      verificationResults.push(legacyCheckToVerificationResult(check));
+    }
     if (!skipProbesAfterExecFailure) {
       for (const action of plan.actions) {
         if (action.kind === "probe") {
           if (action.runStructured) {
+            const structuredRun = await action.runStructured(ctx);
+            verificationResults.push(...structuredRun.results);
             report.add(
-              structuredVerificationRunToCheck(
-                await action.runStructured(ctx),
-                structuredProbeCheckOptions(action),
-              ),
+              structuredVerificationRunToCheck(structuredRun, structuredProbeCheckOptions(action)),
             );
           } else if (action.runMany) {
-            for (const check of await action.runMany(ctx)) report.add(check);
+            for (const check of await action.runMany(ctx)) {
+              report.add(check);
+              verificationResults.push(legacyCheckToVerificationResult(check));
+            }
           } else if (action.run) {
-            report.add(await action.run(ctx));
+            const check = await action.run(ctx);
+            report.add(check);
+            verificationResults.push(legacyCheckToVerificationResult(check));
           } else {
             throw new AihError(`probe action has no runner: ${action.describe}`, "AIH_CONFIG");
           }
         }
       }
     }
+    verification = verificationRunFromResults(verificationResults);
   }
 
   for (const action of digestActions) {
@@ -626,6 +675,7 @@ export async function executePlan(
     backups,
     removed: removes,
     report,
+    verification,
   };
 }
 

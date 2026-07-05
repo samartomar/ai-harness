@@ -8,6 +8,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Executor structured verification sidecar**: `executePlan(..., { verify: true })`
+  now returns an additive structured verification pipeline run alongside the
+  legacy `VerificationReport`, preserving the existing report shape while
+  exposing per-pass structured results and evidence graph data for both legacy
+  and structured probes. (#228)
 - **Executor structured probe seam**: `plan()` can now emit structured
   verification probe runs on the existing `probe` action kind, with the executor
   adapting them through the legacy report bridge. `session-guard` now uses this
