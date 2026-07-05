@@ -268,7 +268,7 @@ function verificationRunFromResults(
   return {
     results: uniqueResults,
     summary: mergeVerificationResults(uniqueResults),
-    evidenceGraph: buildEvidenceGraph(uniqueResults),
+    evidenceGraph: buildEvidenceGraph(uniqueResults, { maxResults: uniqueResults.length }),
   };
 }
 

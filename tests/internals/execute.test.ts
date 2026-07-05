@@ -398,6 +398,24 @@ describe("executePlan", () => {
     expect(result.verification?.evidenceGraph.nodes).toHaveLength(3);
   });
 
+  it("does not cap the structured sidecar graph below legacy probeMany result count", async () => {
+    const p = plan(
+      "t",
+      probeMany("many legacy gates", () =>
+        Array.from({ length: 129 }, (_, index) => ({
+          name: `legacy.${index}`,
+          verdict: "pass",
+        })),
+      ),
+    );
+
+    const result = await executePlan(p, ctx({ verify: true }));
+
+    expect(result.report?.checks).toHaveLength(129);
+    expect(result.verification?.results).toHaveLength(129);
+    expect(result.verification?.evidenceGraph.nodes).toHaveLength(129);
+  });
+
   it("redacts structured probe sidecar text before JSON serialization", async () => {
     const secret = "SECRET_TOKEN=supersecretvalue123";
     const p = plan(
