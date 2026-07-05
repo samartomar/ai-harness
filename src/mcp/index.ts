@@ -7,7 +7,8 @@ import { readIfExists } from "../internals/fsxn.js";
 import type { Action, CommandSpec, PlanContext } from "../internals/plan.js";
 import { doc, plan, probe, writeJson, writeText } from "../internals/plan.js";
 import type { Check } from "../internals/verify.js";
-import type { OrgPolicy } from "../org-policy/schema.js";
+import { AIH_ORG_POLICY_FILE } from "../org-policy/constants.js";
+import { type OrgPolicy, parseOrgPolicy } from "../org-policy/schema.js";
 import { scanRepo } from "../profile/scan.js";
 import { managedMcpAllowlistSettings } from "./allowlist.js";
 import { type PolicyAwareMcpCatalog, policyAwareMcpCatalog } from "./catalog.js";
@@ -24,6 +25,7 @@ import {
   evaluateMcpPolicy,
   type McpPosture,
   mcpGovernanceDoc,
+  mcpPolicyOptionsFromConfig,
 } from "./policy.js";
 import {
   existingMcpTomlNames,
@@ -40,6 +42,8 @@ const MCP_TOML_SCOPE = "mcp";
 
 /** The aih-managed block scope for the generated `.env.example`. */
 const MCP_ENV_SCOPE = "mcp-env";
+
+const MCP_APPROVED_AT_PREVIEW = "0000-00-00T00:00:00.000Z";
 
 /** Commands that resolve/download a package at runtime — unsafe for a true air-gap. */
 const NETWORK_RESOLVERS = new Set(["npx", "uvx", "uv", "bunx", "pnpm", "yarn", "pipx"]);
@@ -72,8 +76,14 @@ function offlineVendoredProbe(stdio: Record<string, McpServer>): Check {
  * chain. Mirrors {@link offlineVendoredProbe}: aih surfaces the gap and names the fix
  * (self-host / pin / remove) instead of silently dropping the server.
  */
-function mcpPolicyProbe(servers: Record<string, McpServer>, posture: McpPosture): Check {
-  const denied = deniedServers(evaluateMcpPolicy(servers, posture));
+function mcpPolicyProbe(
+  servers: Record<string, McpServer>,
+  posture: McpPosture,
+  policy: OrgPolicy | undefined,
+): Check {
+  const denied = deniedServers(
+    evaluateMcpPolicy(servers, posture, mcpPolicyOptionsFromConfig(policy?.mcp)),
+  );
   const name = "MCP servers comply with enterprise policy";
   if (denied.length === 0) {
     return {
@@ -137,6 +147,108 @@ function orgAllowedServers(
   if (allowed.length === 0) return servers;
   const allowedSet = new Set(allowed);
   return Object.fromEntries(Object.entries(servers).filter(([name]) => allowedSet.has(name)));
+}
+
+function approvalText(value: unknown, label: string): string {
+  if (typeof value !== "string") throw new SettingsError(`${label} is required`);
+  const trimmed = value.trim();
+  if (trimmed.length === 0) throw new SettingsError(`${label} is required`);
+  if (trimmed.length > 500 || hasControlCharacter(trimmed)) {
+    throw new SettingsError(`${label} must be a single line of 500 characters or fewer`);
+  }
+  return trimmed;
+}
+
+function hasControlCharacter(value: string): boolean {
+  for (const char of value) {
+    const code = char.codePointAt(0);
+    if (code !== undefined && (code <= 0x1f || code === 0x7f)) return true;
+  }
+  return false;
+}
+
+function readLocalOrgPolicyForApproval(ctx: PlanContext): { policy: OrgPolicy; exists: boolean } {
+  const override = ctx.env.AIH_ORG_POLICY?.trim();
+  if (override !== undefined && override.length > 0) {
+    throw new SettingsError(
+      "AIH_ORG_POLICY is active; org policy wins over local approvals, so update that policy instead of writing a repo-local approval",
+    );
+  }
+  const raw = readIfExists(join(ctx.root, AIH_ORG_POLICY_FILE));
+  if (raw === undefined) {
+    return {
+      policy: {
+        schemaVersion: 1,
+        minimumPosture: "enterprise",
+        references: { repoContract: posix.join(ctx.contextDir, "project.json") },
+      },
+      exists: false,
+    };
+  }
+  try {
+    return { policy: parseOrgPolicy(JSON.parse(raw)), exists: true };
+  } catch (error) {
+    throw invalidOrgPolicyError(error);
+  }
+}
+
+function uniquePreservingOrder(values: readonly string[]): string[] {
+  return [...new Set(values)];
+}
+
+function approveMcpPlan(ctx: PlanContext): ReturnType<typeof plan> {
+  const server = approvalText(ctx.options.server, "server");
+  if (ctx.options.acceptEgress !== true) {
+    throw new SettingsError("--accept-egress is required to approve third-party MCP egress");
+  }
+  const reason = approvalText(ctx.options.reason, "--reason");
+  const reviewer =
+    typeof ctx.options.reviewer === "string" && ctx.options.reviewer.trim().length > 0
+      ? approvalText(ctx.options.reviewer, "--reviewer")
+      : "local-operator";
+  const { policy, exists: policyExists } = readLocalOrgPolicyForApproval(ctx);
+  if ((policy.mcp?.disabledServers ?? []).includes(server)) {
+    throw new SettingsError(
+      `${server} is listed in mcp.disabledServers; remove that org-policy denial before approving it`,
+    );
+  }
+  const approval = {
+    server,
+    acceptEgress: true as const,
+    reason,
+    reviewer,
+    approvedAt: ctx.apply ? new Date().toISOString() : MCP_APPROVED_AT_PREVIEW,
+  };
+  const mcp: NonNullable<OrgPolicy["mcp"]> = {
+    allowedServers: policy.mcp?.allowedServers ?? [],
+    approvals: policy.mcp?.approvals ?? [],
+    allowManagedOnly: policy.mcp?.allowManagedOnly ?? false,
+    incumbentHosts: policy.mcp?.incumbentHosts ?? [],
+    disabledServers: policy.mcp?.disabledServers ?? [],
+    ...(policy.mcp?.githubHost !== undefined ? { githubHost: policy.mcp.githubHost } : {}),
+  };
+  const next: OrgPolicy = {
+    ...policy,
+    mcp: {
+      ...mcp,
+      allowedServers: uniquePreservingOrder([...mcp.allowedServers, server]),
+      approvals: [...mcp.approvals.filter((entry) => entry.server !== server), approval],
+    },
+  };
+  return plan(
+    "mcp approve",
+    writeJson(
+      AIH_ORG_POLICY_FILE,
+      next,
+      ctx.apply
+        ? policyExists
+          ? `Record reviewed MCP egress approval for ${server} in local org policy`
+          : `Create local org policy and record reviewed MCP egress approval for ${server}`
+        : policyExists
+          ? `Preview reviewed MCP egress approval for ${server}; approvedAt is set when rerun with --apply`
+          : `Preview creating local org policy for ${server}; approvedAt is set when rerun with --apply`,
+    ),
+  );
 }
 
 /** Honest DB-server guidance (datastore MCP packages vary, so we suggest, not pin). */
@@ -445,7 +557,8 @@ async function planMcp(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
   // so standard output stays byte-identical.
   const posture = ctx.posture ?? asPosture(ctx.options.posture);
   if (posture === "enterprise") {
-    const policies = evaluateMcpPolicy(servers, posture);
+    const policyOptions = mcpPolicyOptionsFromConfig(catalog.policy?.mcp);
+    const policies = evaluateMcpPolicy(servers, posture, policyOptions);
     const managedServers = orgAllowedServers(servers, catalog.policy);
     actions.push(
       writeJson(
@@ -460,7 +573,9 @@ async function planMcp(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
       ),
     );
     actions.push(
-      probe("MCP servers comply with enterprise policy", () => mcpPolicyProbe(servers, posture)),
+      probe("MCP servers comply with enterprise policy", () =>
+        mcpPolicyProbe(servers, posture, catalog.policy),
+      ),
     );
   }
 
@@ -498,4 +613,30 @@ export const command: CommandSpec = {
     },
   ],
   plan: planMcp,
+};
+
+export const mcpApproveCommand: CommandSpec = {
+  name: "approve",
+  summary: "Record a reviewed third-party MCP egress approval in local org policy",
+  positional: {
+    name: "server",
+    required: true,
+    optionName: "server",
+    description: "MCP server name to approve",
+  },
+  options: [
+    {
+      flags: "--accept-egress",
+      description: "confirm reviewer acceptance of third-party MCP egress for this server",
+    },
+    {
+      flags: "--reason <text>",
+      description: "single-line review reason recorded with the approval",
+    },
+    {
+      flags: "--reviewer <name>",
+      description: "reviewer or team name recorded with the approval",
+    },
+  ],
+  plan: approveMcpPlan,
 };

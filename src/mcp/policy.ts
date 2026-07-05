@@ -14,10 +14,9 @@ import type { McpServer } from "./servers.js";
  *                   DENIED (self-host or pin instead); a token-bearing server is
  *                   allowed but WARNED (source the secret from env, never commit it).
  *
- * Both branches read ONLY the risk axes (egress / credentials / supplyChain), so the
- * one engine drives community defaults, the enterprise gate (the `aih mcp` policy
- * probe + governance doc), and — later — the report. aih REPORTS the verdicts; it
- * never silently drops a server from the written config.
+ * Both branches read the risk axes (egress / credentials / supplyChain) plus the
+ * explicit org-policy approval set. aih REPORTS the verdicts; it never silently
+ * drops a server from the written config.
  */
 export { asPosture };
 export type McpPosture = Posture;
@@ -30,21 +29,75 @@ export interface ServerPolicy {
   reason: string;
 }
 
-/** Evaluate one server against a posture — pure, reads only the risk axes. */
-function evaluateOne(s: McpServer, posture: McpPosture): Omit<ServerPolicy, "name"> {
+export interface McpApproval {
+  server: string;
+  acceptEgress: true;
+  reason: string;
+  reviewer?: string;
+  approvedAt?: string;
+}
+
+export interface McpPolicyOptions {
+  allowedServers?: readonly string[];
+  approvals?: readonly McpApproval[];
+  disabledServers?: readonly string[];
+}
+
+export function mcpPolicyOptionsFromConfig(
+  mcp: McpPolicyOptions | undefined,
+  opts: { includeEgressApprovals?: boolean } = {},
+): McpPolicyOptions | undefined {
+  if (mcp === undefined) return undefined;
+  return {
+    allowedServers: mcp.allowedServers,
+    approvals: opts.includeEgressApprovals === false ? [] : mcp.approvals,
+    disabledServers: mcp.disabledServers,
+  };
+}
+
+function approvalFor(name: string, opts: McpPolicyOptions | undefined): McpApproval | undefined {
+  if (!(opts?.allowedServers ?? []).includes(name)) return undefined;
+  return opts?.approvals?.find((approval) => approval.server === name && approval.acceptEgress);
+}
+
+function approvedEgressReason(approval: McpApproval): string {
+  const reviewer = approval.reviewer !== undefined ? `; reviewer: ${approval.reviewer}` : "";
+  return `third-party egress accepted by org policy — ${approval.reason}${reviewer}`;
+}
+
+/** Evaluate one server against a posture — pure, reads only risk axes + approval data. */
+function evaluateOne(
+  name: string,
+  s: McpServer,
+  posture: McpPosture,
+  opts: McpPolicyOptions | undefined,
+): Omit<ServerPolicy, "name"> {
+  if ((opts?.disabledServers ?? []).includes(name)) {
+    return {
+      verdict: "deny",
+      reason: "disabled by org policy — remove it from generated/user MCP config",
+    };
+  }
   if (posture === "enterprise") {
-    if (s.egress === "third-party") {
-      return {
-        verdict: "deny",
-        reason:
-          "third-party egress — self-host the server or remove it; data must not leave for a non-incumbent vendor",
-      };
-    }
     if (s.supplyChain === "unpinned") {
       return {
         verdict: "deny",
         reason:
           "unpinned supply chain — pin an exact version (or vendor an absolute command) for reproducible, reviewable installs",
+      };
+    }
+    if (s.egress === "third-party") {
+      const approval = approvalFor(name, opts);
+      if (approval !== undefined) {
+        return {
+          verdict: "warn",
+          reason: approvedEgressReason(approval),
+        };
+      }
+      return {
+        verdict: "deny",
+        reason:
+          "third-party egress — self-host the server or remove it; data must not leave for a non-incumbent vendor",
       };
     }
     if (s.credentials === "token") {
@@ -79,8 +132,12 @@ function evaluateOne(s: McpServer, posture: McpPosture): Omit<ServerPolicy, "nam
 export function evaluateMcpPolicy(
   servers: Record<string, McpServer>,
   posture: McpPosture,
+  opts?: McpPolicyOptions,
 ): ServerPolicy[] {
-  return Object.entries(servers).map(([name, s]) => ({ name, ...evaluateOne(s, posture) }));
+  return Object.entries(servers).map(([name, s]) => ({
+    name,
+    ...evaluateOne(name, s, posture, opts),
+  }));
 }
 
 /** The denied subset — the "skipped-with-reason" list an enterprise rollout must resolve. */
@@ -106,7 +163,7 @@ export function mcpGovernanceDoc(policies: ServerPolicy[], posture: McpPosture):
     "===================================",
     "",
     "Same catalog, judged ONLY on each server's risk axes (egress / credentials /",
-    "supply chain) — the auditable line item a reviewer signs off on. aih REPORTS",
+    "supply chain) plus explicit org-policy approvals — the auditable line item a reviewer signs off on. aih REPORTS",
     "these verdicts; it does not silently drop servers from .mcp.json.",
     "",
     `Denied (${denied.length}) — remediate or remove before an enterprise rollout:`,

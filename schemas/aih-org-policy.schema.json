@@ -200,6 +200,48 @@
             "minLength": 1
           }
         },
+        "approvals": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "server": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 500,
+                "pattern": "^(?=.*\\S)[^\\u0000-\\u001F\\u007F]+$"
+              },
+              "acceptEgress": {
+                "type": "boolean",
+                "const": true
+              },
+              "reason": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 500,
+                "pattern": "^(?=.*\\S)[^\\u0000-\\u001F\\u007F]+$"
+              },
+              "reviewer": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 500,
+                "pattern": "^(?=.*\\S)[^\\u0000-\\u001F\\u007F]+$"
+              },
+              "approvedAt": {
+                "type": "string",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}T"
+              }
+            },
+            "required": [
+              "server",
+              "acceptEgress",
+              "reason",
+              "approvedAt"
+            ],
+            "additionalProperties": false
+          }
+        },
         "allowManagedOnly": {
           "default": false,
           "type": "boolean"

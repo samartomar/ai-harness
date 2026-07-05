@@ -88,6 +88,15 @@
       "context7",
       "github"
     ],
+    "approvals": [
+      {
+        "server": "context7",
+        "acceptEgress": true,
+        "reason": "Docs lookup endpoint accepted for team use.",
+        "reviewer": "dev-platform",
+        "approvedAt": "2026-07-05T00:00:00.000Z"
+      }
+    ],
     "allowManagedOnly": true,
     "incumbentHosts": [
       "api.githubcopilot.com"
@@ -148,6 +157,15 @@
       "github",
       "sequential-thinking"
     ],
+    "approvals": [
+      {
+        "server": "context7",
+        "acceptEgress": true,
+        "reason": "Approved docs lookup endpoint; no source code or secrets.",
+        "reviewer": "security-platform",
+        "approvedAt": "2026-07-05T00:00:00.000Z"
+      }
+    ],
     "allowManagedOnly": true,
     "githubHost": "https://github.internal.example",
     "incumbentHosts": [
@@ -176,6 +194,13 @@
   }
 }
 ```
+
+For vetted third-party MCP under Enterprise posture, `mcp.allowedServers` is the
+allowlist and `mcp.approvals[]` records the accepted egress review evidence. Run
+`aih mcp approve <server> --accept-egress --reason "<why this egress is accepted>" --apply`
+to write the local `aih-org-policy.json` entry. If `AIH_ORG_POLICY` points at a
+distributed policy, update that source instead; org policy wins over local approval
+files.
 
 `mcp-scanner` is intentionally opt-in until your team has verified the local static
 scanner path on managed workstations. If you keep it in `requiredDetectors`, set

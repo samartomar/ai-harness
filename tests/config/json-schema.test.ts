@@ -94,4 +94,63 @@ describe("committed JSON Schemas", () => {
       });
     }
   });
+
+  it("validates MCP approval evidence in the org policy editor schema", () => {
+    const base = {
+      schemaVersion: 1,
+      minimumPosture: "enterprise",
+      references: { repoContract: "ai-coding/project.json" },
+    };
+    validateCommittedSchema("schemas/aih-org-policy.schema.json", {
+      ...base,
+      mcp: {
+        allowedServers: ["context7"],
+        approvals: [
+          {
+            server: "context7",
+            acceptEgress: true,
+            reason: "Approved docs lookup endpoint.",
+            reviewer: "security-platform",
+            approvedAt: "2026-07-05T00:00:00.000Z",
+          },
+        ],
+      },
+    });
+    rejectCommittedSchema("schemas/aih-org-policy.schema.json", {
+      ...base,
+      mcp: {
+        allowedServers: ["context7"],
+        approvals: [
+          {
+            server: "context7",
+            acceptEgress: false,
+            reason: "This must be explicit acceptance.",
+            approvedAt: "2026-07-05T00:00:00.000Z",
+          },
+        ],
+      },
+    });
+    for (const approval of [
+      {
+        server: "   ",
+        acceptEgress: true,
+        reason: "Approved docs lookup endpoint.",
+        approvedAt: "2026-07-05T00:00:00.000Z",
+      },
+      {
+        server: "context7",
+        acceptEgress: true,
+        reason: "Approved docs lookup endpoint.\nSecond line.",
+        approvedAt: "2026-07-05T00:00:00.000Z",
+      },
+    ]) {
+      rejectCommittedSchema("schemas/aih-org-policy.schema.json", {
+        ...base,
+        mcp: {
+          allowedServers: ["context7"],
+          approvals: [approval],
+        },
+      });
+    }
+  });
 });

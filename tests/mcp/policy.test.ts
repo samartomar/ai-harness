@@ -41,10 +41,92 @@ describe("evaluateMcpPolicy — enterprise posture (the gate)", () => {
     expect(p.reason).toContain("third-party egress");
   });
 
+  it("WARNS instead of denying approved third-party egress, keeping the approval reason visible", () => {
+    const policies = evaluateMcpPolicy(
+      {
+        context7: srv("third-party", "hosted-remote"),
+        unapproved: srv("third-party", "hosted-remote"),
+      },
+      "enterprise",
+      {
+        allowedServers: ["context7"],
+        approvals: [
+          {
+            server: "context7",
+            acceptEgress: true,
+            reason: "vendor risk reviewed for docs lookup",
+          },
+        ],
+      },
+    );
+
+    expect(policies.find((p) => p.name === "context7")).toMatchObject({
+      verdict: "warn",
+      reason: expect.stringContaining("vendor risk reviewed"),
+    });
+    expect(deniedServers(policies).map((p) => p.name)).toEqual(["unapproved"]);
+  });
+
+  it("DENIES third-party egress when allowedServers has no matching approval evidence", () => {
+    const policies = evaluateMcpPolicy(
+      { context7: srv("third-party", "hosted-remote") },
+      "enterprise",
+      {
+        allowedServers: ["context7"],
+      },
+    );
+
+    expect(policies[0]).toMatchObject({
+      verdict: "deny",
+      reason: expect.stringContaining("third-party egress"),
+    });
+  });
+
   it("DENIES an unpinned supply chain", () => {
     const p = only({ a: srv("none", "unpinned") }, "enterprise");
     expect(p.verdict).toBe("deny");
     expect(p.reason).toContain("unpinned");
+  });
+
+  it("DENIES an approved third-party server when its supply chain is unpinned", () => {
+    const policies = evaluateMcpPolicy({ context7: srv("third-party", "unpinned") }, "enterprise", {
+      allowedServers: ["context7"],
+      approvals: [
+        {
+          server: "context7",
+          acceptEgress: true,
+          reason: "vendor risk reviewed for docs lookup",
+        },
+      ],
+    });
+
+    expect(policies[0]).toMatchObject({
+      verdict: "deny",
+      reason: expect.stringContaining("unpinned"),
+    });
+  });
+
+  it("DENIES disabled servers before approval or risk-axis allow rules", () => {
+    const policies = evaluateMcpPolicy(
+      { context7: srv("third-party", "hosted-remote"), local: srv("none", "pinned") },
+      "enterprise",
+      {
+        allowedServers: ["context7"],
+        approvals: [
+          {
+            server: "context7",
+            acceptEgress: true,
+            reason: "vendor risk reviewed for docs lookup",
+          },
+        ],
+        disabledServers: ["context7", "local"],
+      },
+    );
+
+    expect(policies.map((p) => [p.name, p.verdict, p.reason])).toEqual([
+      ["context7", "deny", expect.stringContaining("disabled by org policy")],
+      ["local", "deny", expect.stringContaining("disabled by org policy")],
+    ]);
   });
 
   it("WARNS (does not deny) on a token credential when egress + supply chain are clean", () => {

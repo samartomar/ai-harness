@@ -1209,7 +1209,71 @@
           "flags": "--yes"
         }
       ],
-      "commands": []
+      "commands": [
+        {
+          "name": "approve",
+          "hasDescription": true,
+          "arguments": [
+            {
+              "name": "server",
+              "required": true
+            }
+          ],
+          "options": [
+            {
+              "flags": "--accept-egress"
+            },
+            {
+              "flags": "--all-tools"
+            },
+            {
+              "flags": "--apply"
+            },
+            {
+              "flags": "--cli <list>"
+            },
+            {
+              "flags": "--context-dir <dir>",
+              "defaultValue": "ai-coding"
+            },
+            {
+              "flags": "--detect"
+            },
+            {
+              "flags": "--force"
+            },
+            {
+              "flags": "--json"
+            },
+            {
+              "flags": "--no-log"
+            },
+            {
+              "flags": "--posture <posture>",
+              "defaultValue": "vibe"
+            },
+            {
+              "flags": "--reason <text>"
+            },
+            {
+              "flags": "--reviewer <name>"
+            },
+            {
+              "flags": "--root <dir>"
+            },
+            {
+              "flags": "--support-out <dir>"
+            },
+            {
+              "flags": "--verify"
+            },
+            {
+              "flags": "--yes"
+            }
+          ],
+          "commands": []
+        }
+      ]
     },
     {
       "name": "pack",

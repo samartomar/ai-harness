@@ -2,7 +2,7 @@ import type { Posture } from "../config/posture.js";
 import { type DigestAction, digest, type PlanContext } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
 import { policyAwareMcpCatalog } from "../mcp/catalog.js";
-import { evaluateMcpPolicy } from "../mcp/policy.js";
+import { evaluateMcpPolicy, mcpPolicyOptionsFromConfig } from "../mcp/policy.js";
 import { scanRepo } from "../profile/scan.js";
 
 export interface McpGovernanceSummary {
@@ -42,19 +42,14 @@ export function mcpGovernanceSummary(
       counts: { denied: 1, warned: 0, allowed: 0 },
     };
   }
-  const disabled = new Set(catalog.policy?.mcp?.disabledServers ?? []);
-  const policies = evaluateMcpPolicy(catalog.servers, posture);
-  const denied = [
-    ...policies
-      .filter((p) => disabled.has(p.name))
-      .map((p) => ({
-        name: p.name,
-        reason: "disabled by org policy — remove it from generated/user MCP config",
-      })),
-    ...policies.filter((p) => p.verdict === "deny" && !disabled.has(p.name)),
-  ];
-  const warned = policies.filter((p) => p.verdict === "warn" && !disabled.has(p.name));
-  const allowed = policies.filter((p) => p.verdict === "allow" && !disabled.has(p.name));
+  const policies = evaluateMcpPolicy(
+    catalog.servers,
+    posture,
+    mcpPolicyOptionsFromConfig(catalog.policy?.mcp),
+  );
+  const denied = policies.filter((p) => p.verdict === "deny");
+  const warned = policies.filter((p) => p.verdict === "warn");
+  const allowed = policies.filter((p) => p.verdict === "allow");
   return {
     posture,
     denied,

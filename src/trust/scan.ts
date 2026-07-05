@@ -7,7 +7,7 @@ import type { Action, CommandSpec, PlanContext, ProbeAction } from "../internals
 import { digest, dynamicDigest, plan, probe, probeMany } from "../internals/plan.js";
 import type { Runner } from "../internals/proc.js";
 import type { Check } from "../internals/verify.js";
-import { evaluateMcpPolicy } from "../mcp/policy.js";
+import { evaluateMcpPolicy, mcpPolicyOptionsFromConfig } from "../mcp/policy.js";
 import type { McpServer } from "../mcp/servers.js";
 import { type OrgPolicy, OrgPolicyError, readOrgPolicy } from "../org-policy/schema.js";
 import type { Platform } from "../platform/base.js";
@@ -57,6 +57,7 @@ interface ScanTrustTreeOptions {
   internalScopes?: readonly string[];
   platform?: Platform;
   posture?: Posture;
+  mcpPolicy?: OrgPolicy["mcp"];
   requiredDetectors?: readonly TrustDetectorName[];
   run?: Runner;
 }
@@ -120,6 +121,7 @@ function collectTrustDocs(root: string): string[] {
 function normalizeScanOptions(options: ScanTrustTreeOptions = {}): {
   env?: NodeJS.ProcessEnv;
   internalScopes: readonly string[];
+  mcpPolicy?: OrgPolicy["mcp"];
   platform?: Platform;
   posture: Posture;
   requiredDetectors: readonly TrustDetectorName[];
@@ -128,6 +130,7 @@ function normalizeScanOptions(options: ScanTrustTreeOptions = {}): {
   return {
     env: options.env,
     internalScopes: options.internalScopes ?? [],
+    mcpPolicy: options.mcpPolicy,
     platform: options.platform,
     posture: options.posture ?? "vibe",
     requiredDetectors: options.requiredDetectors ?? [],
@@ -244,12 +247,17 @@ function mcpPolicyChecks(
   mapKey: string,
   rawServers: Record<string, unknown>,
   posture: Posture,
+  mcpPolicy: OrgPolicy["mcp"] | undefined,
 ): Check[] {
   const classifiedEntries = Object.entries(rawServers)
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([name, raw]) => [name, classifyIncomingMcp(raw)] as const);
   const classified: Record<string, McpServer> = Object.fromEntries(classifiedEntries);
-  const policies = evaluateMcpPolicy(classified, posture);
+  const policies = evaluateMcpPolicy(
+    classified,
+    posture,
+    mcpPolicyOptionsFromConfig(mcpPolicy, { includeEgressApprovals: false }),
+  );
   return policies.flatMap((policy) => {
     const server = classified[policy.name];
     if (server === undefined || policy.verdict === "allow") return [];
@@ -279,6 +287,7 @@ function incomingMcpChecks(
   root: string,
   mcpConfigFiles: readonly string[],
   posture: Posture,
+  mcpPolicy: OrgPolicy["mcp"] | undefined,
 ): Check[] {
   const checks: Check[] = [];
   for (const rel of mcpConfigFiles) {
@@ -300,7 +309,7 @@ function incomingMcpChecks(
       )) {
         checks.push(...descriptionChecks(rel, map.key, name, rawServer));
       }
-      checks.push(...mcpPolicyChecks(rel, map.key, map.servers, posture));
+      checks.push(...mcpPolicyChecks(rel, map.key, map.servers, posture, mcpPolicy));
     }
   }
   return checks;
@@ -457,7 +466,7 @@ export async function scanTrustTreeWithAnalyzers(
   options: ScanTrustTreeOptions = {},
 ): Promise<TrustScanResult> {
   const safeRoot = assertTrustTreeSafe(root, { skipDirs: TRUST_SKIP_DIRS });
-  const { env, internalScopes, platform, posture, requiredDetectors, run } =
+  const { env, internalScopes, mcpPolicy, platform, posture, requiredDetectors, run } =
     normalizeScanOptions(options);
   const docs = collectTrustDocs(safeRoot);
   const mcpConfigFiles = collectIncomingMcpConfigFiles(safeRoot);
@@ -469,7 +478,7 @@ export async function scanTrustTreeWithAnalyzers(
     ...scanTrustDependencyNames(safeRoot, internalScopes, posture),
     ...plaintextSecretChecks(safeRoot, posture),
     ...mcpConfigSecretChecks(safeRoot, mcpConfigFiles, posture),
-    ...incomingMcpChecks(safeRoot, mcpConfigFiles, posture),
+    ...incomingMcpChecks(safeRoot, mcpConfigFiles, posture, mcpPolicy),
     ...scanNativeMaliciousCode(safeRoot),
   ];
   const detectorResult =
@@ -514,11 +523,14 @@ function orgPolicyTrustChecks(error: unknown): Check[] {
 
 function requiredDetectorsFromPolicy(ctx: PlanContext): {
   requiredDetectors: readonly TrustDetectorName[];
+  mcpPolicy?: OrgPolicy["mcp"];
   checks: Check[];
 } {
   try {
+    const policy = readOrgPolicy(ctx.root, ctx.env);
     return {
-      requiredDetectors: readOrgPolicy(ctx.root, ctx.env)?.trust?.requiredDetectors ?? [],
+      requiredDetectors: policy?.trust?.requiredDetectors ?? [],
+      mcpPolicy: policy?.mcp,
       checks: [],
     };
   } catch (error) {
@@ -536,6 +548,7 @@ export function scanOptionsFromContext(
     env: ctx.env,
     platform: ctx.host.platform,
     posture: base.posture ?? postureFromContext(ctx),
+    mcpPolicy: base.mcpPolicy ?? policy.mcpPolicy,
     requiredDetectors: policy.requiredDetectors,
     run: ctx.run,
   };
