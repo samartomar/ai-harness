@@ -311,6 +311,31 @@ describe("enterprise baseline attestation", () => {
     expect(check.detail).toContain("third-party/token/hosted-remote");
   });
 
+  it("accepts generated self-host GitHub MCP shape when declared", () => {
+    writePolicy(["github"]);
+    writeMcp({
+      github: {
+        type: "stdio",
+        command: "docker",
+        args: [
+          "run",
+          "-i",
+          "--rm",
+          "-e",
+          "GITHUB_PERSONAL_ACCESS_TOKEN",
+          "ghcr.io/github/github-mcp-server:v1.5.0",
+        ],
+        env: { GITHUB_PERSONAL_ACCESS_TOKEN: "$" + "{GITHUB_PERSONAL_ACCESS_TOKEN}" },
+      },
+    });
+
+    const check = enterpriseBaselineAttestationCheck(ctx());
+
+    expect(check.verdict).toBe("pass");
+    expect(check.detail).toContain("mcp:github @ .mcp.json");
+    expect(check.detail).toContain("vendor-incumbent/token/pinned");
+  });
+
   it("accepts generated remote-scope MCP servers when declared", () => {
     writePolicy(["better-email"]);
     writeMcp({

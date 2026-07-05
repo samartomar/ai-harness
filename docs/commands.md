@@ -360,10 +360,10 @@ servers from known repo-scoped MCP config files (`.mcp.json`, Cursor, Kiro, VS C
 and packaged marketplace skills from `.aih/marketplace/marketplace.json` must be declared in
 `aih-org-policy.json` (`mcp.allowedServers` / `trust.approvedSources`), or `doctor` emits coded
 `baseline.*` findings for a missing registry, invalid registry input, or undeclared residue. MCP
-declarations are bound to the generated catalog's command/URL shape, and marketplace declarations
-must include the reviewed `pinnedSha` that matches the artifact's packaged commit. Workspace graph
-MCPs generated for declared child repos are treated as internal workspace plumbing; the full Package
-Graph schema remains the follow-on registry unification.
+declarations are bound to the generated catalog's command/args/env or URL/headers shape, and
+marketplace declarations must include the reviewed `pinnedSha` that matches the artifact's packaged
+commit. Workspace graph MCPs generated for declared child repos are treated as internal workspace
+plumbing; the full Package Graph schema remains the follow-on registry unification.
 
 ## aih status
 

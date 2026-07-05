@@ -464,7 +464,7 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     failSeverity: "blocking",
     title: "undeclared external capability surface detected",
     action:
-      "Declare each named MCP server only when its configured command/URL matches the generated catalog, declare each marketplace skill source with a reviewed pinned SHA in `aih-org-policy.json`, or remove the residue if it is not part of the approved capability set. Re-run `aih doctor --posture enterprise` once the registry and discovered surfaces agree.",
+      "Declare each named MCP server only when its configured command/args/env or URL/headers shape matches the generated catalog, declare each marketplace skill source with a reviewed pinned SHA in `aih-org-policy.json`, or remove the residue if it is not part of the approved capability set. Re-run `aih doctor --posture enterprise` once the registry and discovered surfaces agree.",
   },
   "trust.hidden-unicode": {
     audience: "developer",
