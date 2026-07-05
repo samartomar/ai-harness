@@ -7,7 +7,7 @@ import {
   digest,
   type PlanContext,
   plan,
-  probe,
+  structuredChecksProbe,
   writeJson,
 } from "../internals/plan.js";
 import type { Check } from "../internals/verify.js";
@@ -355,11 +355,13 @@ export const trustAllowCommand: CommandSpec = {
         upsertApprovedSource(policyForWrite(ctx), source, pin ? { pinnedSha: pin } : {}),
         "update committed trust approved sources",
       ),
-      probe("trust allow policy", () => ({
-        name: "trust allow policy",
-        verdict: "pass",
-        detail: `${source.owner}/${source.repo} is present in ${AIH_ORG_POLICY_FILE}`,
-      })),
+      structuredChecksProbe("trust allow policy", () => [
+        {
+          name: "trust allow policy",
+          verdict: "pass",
+          detail: `${source.owner}/${source.repo} is present in ${AIH_ORG_POLICY_FILE}`,
+        },
+      ]),
     );
   },
   alwaysVerify: true,
@@ -379,11 +381,13 @@ export const trustPinCommand: CommandSpec = {
         upsertApprovedSource(policyForWrite(ctx), source, { pinnedSha: pin }),
         "pin committed trust approved source",
       ),
-      probe("trust pin policy", () => ({
-        name: "trust pin policy",
-        verdict: "pass",
-        detail: `${source.owner}/${source.repo} pinned to ${pin}`,
-      })),
+      structuredChecksProbe("trust pin policy", () => [
+        {
+          name: "trust pin policy",
+          verdict: "pass",
+          detail: `${source.owner}/${source.repo} pinned to ${pin}`,
+        },
+      ]),
     );
   },
   alwaysVerify: true,
@@ -409,11 +413,11 @@ export const trustVerifyCommand: CommandSpec = {
     const checks = sources.flatMap((source) => localDriftChecks(ctx, source));
     return plan(
       "trust verify",
-      ...checks.map((check) => probe(check.detail ?? check.name, () => check)),
+      ...checks.map((check) => structuredChecksProbe(check.detail ?? check.name, () => [check])),
       ...sources.map((source) =>
-        probe(`trust upstream drift: ${source.id}`, (probeCtx) =>
-          upstreamDriftCheck(probeCtx, source),
-        ),
+        structuredChecksProbe(`trust upstream drift: ${source.id}`, async (probeCtx) => [
+          await upstreamDriftCheck(probeCtx, source),
+        ]),
       ),
     );
   },
