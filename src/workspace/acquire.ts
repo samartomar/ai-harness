@@ -16,7 +16,7 @@ import {
 import { readIfExists, readRegularFile } from "../internals/fsxn.js";
 import { aihIgnoreWrite } from "../internals/gitignore.js";
 import type { Action, CommandSpec, Plan, PlanContext, WriteAction } from "../internals/plan.js";
-import { plan, probe, writeJson, writeText } from "../internals/plan.js";
+import { plan, structuredChecksProbe, writeJson, writeText } from "../internals/plan.js";
 import { defaultRunner, type Runner } from "../internals/proc.js";
 import type { Check, VerificationReport } from "../internals/verify.js";
 import { AIH_ORG_POLICY_FILE } from "../org-policy/constants.js";
@@ -420,7 +420,7 @@ function lockWithSource(
 }
 
 function probesForChecks(checks: Check[]): Action[] {
-  return checks.map((check) => probe(check.detail ?? check.name, () => check));
+  return checks.map((check) => structuredChecksProbe(check.detail ?? check.name, () => [check]));
 }
 
 function acceptedAcknowledgementFingerprints(report: VerificationReport | undefined): string[] {
@@ -599,9 +599,9 @@ export async function workspaceAddPhase2Plan(
   if (!sameSourceBinding(gate.source, currentBinding)) {
     return plan(
       "workspace add: promote",
-      probe("trust source binding", () =>
+      structuredChecksProbe("trust source binding", () => [
         sourceChangedCheck("trust source identity changed after phase 1 clearance"),
-      ),
+      ]),
     );
   }
   const currentScan = await currentTrustScan(ctx, source, gate.internalScopes);
@@ -616,9 +616,9 @@ export async function workspaceAddPhase2Plan(
   if (!sameArtifactHashes(gate.artifactHashes, promotion.artifactHashes)) {
     return plan(
       "workspace add: promote",
-      probe("trust source artifact hashes", () =>
+      structuredChecksProbe("trust source artifact hashes", () => [
         sourceChangedCheck("trusted source artifacts changed after phase 1 clearance"),
-      ),
+      ]),
     );
   }
   const lock = lockWithSource(ctx, source, gate, promotion, selectSkills !== undefined);
@@ -626,11 +626,13 @@ export async function workspaceAddPhase2Plan(
     ...probesForChecks(approvalChecks),
     ...promotion.writes,
     writeJson(".aih/trust-lock.json", lock, "trusted external skill acquisition lock"),
-    probe("trust promotion guard", () => ({
-      name: "trust promotion guard",
-      verdict: "pass",
-      detail: "phase 1 trust scan passed before promotion writes were planned",
-    })),
+    structuredChecksProbe("trust promotion guard", () => [
+      {
+        name: "trust promotion guard",
+        verdict: "pass",
+        detail: "phase 1 trust scan passed before promotion writes were planned",
+      },
+    ]),
   ];
   return plan("workspace add: promote", ...actions);
 }

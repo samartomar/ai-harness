@@ -13,7 +13,7 @@ import { basename, join } from "node:path";
 import type { Command } from "commander";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { executePlan } from "../../src/internals/execute.js";
-import type { PlanContext } from "../../src/internals/plan.js";
+import type { Action, PlanContext, ProbeAction } from "../../src/internals/plan.js";
 import { fakeRunner, type Runner } from "../../src/internals/proc.js";
 import { VerificationReport } from "../../src/internals/verify.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
@@ -115,6 +115,28 @@ function fakeCommand(
   } as unknown as Command;
 }
 
+function probeActions(actions: readonly Action[]): ProbeAction[] {
+  return actions.filter((action): action is ProbeAction => action.kind === "probe");
+}
+
+function expectEveryProbePaired(actions: readonly Action[]): void {
+  const probes = probeActions(actions);
+  expect(probes.length).toBeGreaterThan(0);
+  expect(probes.every((action) => "runStructuredLegacy" in action)).toBe(true);
+}
+
+function expectStructuredResult(
+  result: { verification?: { results: ReadonlyArray<{ passName: string; verdict: string }> } },
+  passName: string,
+  verdict: "pass" | "warn" | "fail",
+): void {
+  expect(
+    result.verification?.results.some(
+      (entry) => entry.passName === passName && entry.verdict === verdict,
+    ),
+  ).toBe(true);
+}
+
 describe("workspace add acquisition plans", () => {
   it("phase 1 scans before promotion and leaves a bad source unpromoted", async () => {
     localSkill(
@@ -158,10 +180,13 @@ describe("workspace add acquisition plans", () => {
       phase1Result.report,
     );
     const phase2 = await workspaceAddPhase2Plan(ctx(sourceRoot, true, true), gate);
+    expectEveryProbePaired(phase2.actions);
     const result = await executePlan(phase2, ctx(sourceRoot, true, true));
 
     const sourceId = basename(sourceRoot).toLowerCase();
     expect(result.report?.ok).toBe(true);
+    expectStructuredResult(result, "trust.unapproved-skill clean", "pass");
+    expectStructuredResult(result, "trust promotion guard", "pass");
     expect(
       readFileSync(join(workspace, "ai-coding", "skills", sourceId, "clean", "SKILL.md"), "utf8"),
     ).toContain("# Clean");
@@ -181,6 +206,26 @@ describe("workspace add acquisition plans", () => {
       promotedSkills: ["clean"],
       analyzersRun: ["aih-native"],
     });
+  });
+
+  it("phase 2 rejects a source-binding mismatch through a paired structured probe", async () => {
+    localSkill(sourceRoot, "clean", "# Clean\n");
+    const c = ctx(sourceRoot, true, true);
+    const phase1Result = await executePlan(await workspaceAddPhase1Plan(c), c);
+    expect(phase1Result.report?.ok).toBe(true);
+    const gate = await captureClearedWorkspaceAddTrustGate(c, phase1Result.report);
+    const phase2 = await workspaceAddPhase2Plan(c, {
+      ...gate,
+      source: { ...gate.source, id: `${gate.source.id}-changed` },
+    });
+    expectEveryProbePaired(phase2.actions);
+
+    const result = await executePlan(phase2, c);
+
+    expect(result.report?.checks).toEqual([
+      expect.objectContaining({ verdict: "fail", code: "trust.source-changed" }),
+    ]);
+    expectStructuredResult(result, "trust.source-changed", "fail");
   });
 
   it("phase 2 records optional analyzers that actually ran", async () => {
@@ -326,15 +371,15 @@ describe("workspace add acquisition plans", () => {
     );
     writeFileSync(skillPath, "# Clean\n\nMore harmless text.\n", "utf8");
 
-    const result = await executePlan(
-      await workspaceAddPhase2Plan(ctx(sourceRoot, true, true), gate),
-      ctx(sourceRoot, true, true),
-    );
+    const phase2 = await workspaceAddPhase2Plan(ctx(sourceRoot, true, true), gate);
+    expectEveryProbePaired(phase2.actions);
+    const result = await executePlan(phase2, ctx(sourceRoot, true, true));
 
     expect(result.writes.some((write) => write.path.startsWith("ai-coding/skills/"))).toBe(false);
     expect(result.report?.checks).toEqual([
       expect.objectContaining({ verdict: "fail", code: "trust.source-changed" }),
     ]);
+    expectStructuredResult(result, "trust.source-changed", "fail");
     expect(existsSync(join(workspace, "ai-coding", "skills"))).toBe(false);
   });
 
@@ -387,10 +432,9 @@ describe("workspace add acquisition plans", () => {
       const gate = await captureClearedWorkspaceAddTrustGate(cleanCtx, report, source);
       writePolicy({ approvedSources: [{ owner: "trusted", repo: "repo" }] });
 
-      const result = await executePlan(
-        await workspaceAddPhase2Plan(cleanCtx, gate, source),
-        cleanCtx,
-      );
+      const phase2 = await workspaceAddPhase2Plan(cleanCtx, gate, source);
+      expectEveryProbePaired(phase2.actions);
+      const result = await executePlan(phase2, cleanCtx);
 
       expect(result.writes.some((write) => write.path.startsWith("ai-coding/skills/"))).toBe(false);
       expect(result.report?.checks).toEqual(
@@ -401,6 +445,7 @@ describe("workspace add acquisition plans", () => {
           }),
         ]),
       );
+      expectStructuredResult(result, "trust.untrusted-publisher", "fail");
     } finally {
       if (source.kind === "github") rmSync(source.quarantineRoot, { recursive: true, force: true });
     }
@@ -680,7 +725,9 @@ describe("posture-gated install enforcement (trust.unapproved-skill, #102)", () 
     localSkill(sourceRoot, "clean", "# Clean\n");
     const { c, report } = await clearedPhase1("team");
     const gate = await captureClearedWorkspaceAddTrustGate(c, report);
-    const result = await executePlan(await workspaceAddPhase2Plan(c, gate), c);
+    const phase2 = await workspaceAddPhase2Plan(c, gate);
+    expectEveryProbePaired(phase2.actions);
+    const result = await executePlan(phase2, c);
     // The denial is a CODED failing check in the report (SARIF / support-ticket
     // reachable), not a bare thrown error — and nothing is promoted.
     expect(result.report?.exitCode()).toBe(1);
@@ -690,6 +737,7 @@ describe("posture-gated install enforcement (trust.unapproved-skill, #102)", () 
         expect.objectContaining({ verdict: "fail", code: "trust.unapproved-skill" }),
       ]),
     );
+    expectStructuredResult(result, "trust.unapproved-skill clean", "fail");
     expect(existsSync(join(workspace, "ai-coding", "skills"))).toBe(false);
   });
 
@@ -708,13 +756,16 @@ describe("posture-gated install enforcement (trust.unapproved-skill, #102)", () 
     localSkill(sourceRoot, "clean", "# Clean\n");
     const { c, report } = await clearedPhase1("vibe");
     const gate = await captureClearedWorkspaceAddTrustGate(c, report);
-    const result = await executePlan(await workspaceAddPhase2Plan(c, gate), c);
+    const phase2 = await workspaceAddPhase2Plan(c, gate);
+    expectEveryProbePaired(phase2.actions);
+    const result = await executePlan(phase2, c);
     expect(result.report?.ok).toBe(true); // advisory never fails the gate
     const advisory = result.report?.checks.find((check) =>
       check.name.includes("trust.unapproved-skill"),
     );
     expect(advisory?.verdict).toBe("pass");
     expect(advisory?.detail).toContain("warning-only");
+    expectStructuredResult(result, "trust.unapproved-skill clean", "pass");
     // Files still promoted at vibe.
     const sourceId = basename(sourceRoot).toLowerCase();
     expect(existsSync(join(workspace, "ai-coding", "skills", sourceId, "clean"))).toBe(true);
@@ -757,9 +808,12 @@ describe("posture-gated install enforcement (trust.unapproved-skill, #102)", () 
     const gate = await captureClearedWorkspaceAddTrustGate(vibeCtx, report);
     // Same workspace, but phase 2 now runs at team posture (e.g. org policy tightened).
     const teamCtx = ctx(sourceRoot, true, true, {}, { posture: "team" });
-    const result = await executePlan(await workspaceAddPhase2Plan(teamCtx, gate), teamCtx);
+    const phase2 = await workspaceAddPhase2Plan(teamCtx, gate);
+    expectEveryProbePaired(phase2.actions);
+    const result = await executePlan(phase2, teamCtx);
     expect(result.report?.exitCode()).toBe(1); // fail check, no promotion
     expect(result.writes).toHaveLength(0);
+    expectStructuredResult(result, "trust.unapproved-skill clean", "fail");
     expect(existsSync(join(workspace, "ai-coding", "skills"))).toBe(false);
   });
 });
