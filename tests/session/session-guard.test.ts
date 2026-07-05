@@ -109,6 +109,24 @@ describe("session guardrails", () => {
     expect(JSON.stringify(report)).not.toContain(fakeValue);
   });
 
+  it("redacts secret-like source labels before report and evidence output", async () => {
+    const fakeSourceValue = "sk-test-not-real-source-123456";
+    const report = await runSessionGuardrails(
+      {
+        text: "Run rm -rf /tmp/work.",
+        source: `OPENAI_API_KEY=${fakeSourceValue}`,
+      },
+      { projectRoot: dir },
+    );
+
+    expect(report.summary.finalVerdict).toBe("fail");
+    expect(report.input.source).not.toContain(fakeSourceValue);
+    expect(report.summary.aggregatedEvidence.map((item) => item.source).join("\n")).not.toContain(
+      fakeSourceValue,
+    );
+    expect(JSON.stringify(report)).not.toContain(fakeSourceValue);
+  });
+
   it("detects dangerous local actions deterministically", async () => {
     const report = await runSessionGuardrails(
       { text: "Run git reset --hard, then rm -rf /tmp/work, then npm publish.", source: "draft" },

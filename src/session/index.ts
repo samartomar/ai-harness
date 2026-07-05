@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { AihError } from "../errors.js";
+import { redactSecrets } from "../guardrails/redact.js";
 import type { CommandSpec, PlanContext } from "../internals/plan.js";
 import { digest, plan, probe } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
@@ -153,7 +154,7 @@ function isSafeSourceChar(char: string): boolean {
 function sanitizeField(value: string, fallback: string, maxLength = 160): string {
   let normalized = "";
   let pendingDash = false;
-  for (const char of value.trim()) {
+  for (const char of redactSecrets(value).trim()) {
     if (isSafeSourceChar(char) && char !== "-") {
       if (pendingDash && normalized.length > 0) normalized += "-";
       normalized += char;
