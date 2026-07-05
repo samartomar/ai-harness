@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { classifyCanon, isAdoptable } from "./adopt/classify.js";
+import { enterpriseBaselineAttestationCheck } from "./baseline/attestation.js";
 import { readAihConfig } from "./config/marker.js";
 import { contractTruthCheck } from "./contract/check.js";
 import { detectInstall } from "./internals/cli-detect.js";
@@ -231,6 +232,9 @@ export const command: CommandSpec = {
       probeMany("trust-lock local drift", (probeCtx) => trustLockLocalDriftChecks(probeCtx)),
       ...orgPolicyIntegrityProbes({ ...ctx, contextDir }),
       ...orgPolicyDriftProbes({ ...ctx, contextDir }),
+      probe("enterprise baseline attestation", () =>
+        enterpriseBaselineAttestationCheck({ ...ctx, contextDir }),
+      ),
       probe("contract truth", () => contractTruthCheck(ctx)),
       // Usage-capture hook health: a committed hook that references an absent recorder
       // errors on every event (the `.aih/` gitignore trap); the Kiro metrics hook

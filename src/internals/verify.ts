@@ -67,6 +67,10 @@ export type CheckCode =
   | "report.contract-untrue"
   // readiness gate (`aih ready`)
   | "ready.blocked"
+  // enterprise baseline attestation
+  | "baseline.registry-missing"
+  | "baseline.registry-invalid"
+  | "baseline.undeclared-surface"
   // trust gate (external repos / skills)
   | "trust.fetch-blocked"
   | "trust.detector-unavailable"
