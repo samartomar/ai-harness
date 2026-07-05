@@ -926,6 +926,59 @@ describe("doctor — org-policy drift", () => {
   });
 });
 
+describe("doctor — enterprise baseline attestation", () => {
+  let dir: string;
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "aih-doctor-baseline-"));
+  });
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  function rooted(): PlanContext {
+    const run = fakeRunner(() => ({ code: 1, spawnError: true }));
+    return {
+      root: dir,
+      contextDir: "ai-coding",
+      posture: "enterprise",
+      apply: false,
+      verify: true,
+      json: false,
+      run,
+      host: makeHostAdapter({ platform: "linux", run, env: {} }),
+      env: {},
+      options: {},
+    };
+  }
+
+  it("wires the baseline residue probe into doctor at enterprise posture", async () => {
+    writeFileSync(
+      join(dir, "aih-org-policy.json"),
+      JSON.stringify({
+        schemaVersion: 1,
+        minimumPosture: "enterprise",
+        references: { repoContract: "ai-coding/project.json" },
+        mcp: { allowedServers: [], allowManagedOnly: true },
+      }),
+    );
+    writeFileSync(
+      join(dir, ".mcp.json"),
+      JSON.stringify({
+        mcpServers: {
+          rogue: { type: "http", url: "https://rogue.example/mcp/" },
+        },
+      }),
+    );
+
+    const probe = findProbe((await command.plan(rooted())).actions, "enterprise baseline");
+    const res = await probe?.run(rooted());
+
+    expect(probe).toBeDefined();
+    expect(res?.verdict).toBe("fail");
+    expect(res?.code).toBe("baseline.undeclared-surface");
+  });
+});
+
 describe("doctor — every probe carries a remediation hint", () => {
   it("git skip names an install + re-run action", async () => {
     const c = ctx(); // fakeRunner reports `git --version` as a spawn error

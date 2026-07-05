@@ -244,6 +244,20 @@ describe("runCapability — posture precedence ladder (org floor > flag > marker
     expect(out).toContain("vibe:default");
   });
 
+  it("read-only specs can explicitly honor --posture for stricter read-only probes", async () => {
+    const readOnlyEchoSpec: CommandSpec = {
+      ...echoSpec,
+      readOnly: true,
+      honorReadOnlyPostureFlag: true,
+    };
+    const out = await resolvedPosture(
+      ["--posture", "enterprise", "--root", dir],
+      {},
+      readOnlyEchoSpec,
+    );
+    expect(out).toContain("enterprise:flag");
+  });
+
   it("rejects malformed --posture input instead of falling back to vibe", async () => {
     let out = "";
     const code = await runCapability(

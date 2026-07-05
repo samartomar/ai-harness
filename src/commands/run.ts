@@ -155,7 +155,10 @@ export async function runCapability(
       optionSource(command, "caPattern") === "cli" ? (opts.caPattern as string) : undefined;
     const postureTyped = optionSource(command, "posture") === "cli";
     if (postureTyped && spec.readOnly) parsePostureInput(opts.posture, "--posture");
-    const postureFlagSource = postureTyped && !spec.readOnly ? "cli" : undefined;
+    const postureFlagSource =
+      postureTyped && (!spec.readOnly || spec.honorReadOnlyPostureFlag === true)
+        ? "cli"
+        : undefined;
     const resolvedPosture = resolvePosture({
       root: resolvedRoot,
       env,

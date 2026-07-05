@@ -280,6 +280,12 @@ export interface CommandSpec {
   /** Read-only commands (doctor/status) skip the apply path entirely. */
   readOnly?: boolean;
   /**
+   * Read-only commands usually validate `--posture` for script compatibility but
+   * do not let it change the resolved posture. Set this for read-only verifiers
+   * whose checks are explicitly posture-scoped and remain mutation-free.
+   */
+  honorReadOnlyPostureFlag?: boolean;
+  /**
    * Force `verify` on every run so the capability's probes always populate the
    * verification report — i.e. it DIAGNOSES by default (like `doctor`) yet still
    * mutates under `--apply` (unlike `readOnly`). `heal` uses this so a bare

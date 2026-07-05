@@ -101,6 +101,26 @@ describe("classifyIncomingMcp", () => {
     });
   });
 
+  it("carries http headers and treats credential headers as token-backed remote servers", () => {
+    const server = classifyIncomingMcp({
+      url: "https://mcp.vendor.example/mcp",
+      headers: {
+        Authorization: "Bearer $" + "{VENDOR_TOKEN}",
+        Accept: "application/json",
+      },
+    });
+
+    expect(server).toMatchObject({
+      type: "http",
+      url: "https://mcp.vendor.example/mcp",
+      headers: {
+        Authorization: "Bearer $" + "{VENDOR_TOKEN}",
+        Accept: "application/json",
+      },
+      credentials: "token",
+    });
+  });
+
   it("detects literal token-looking values in args and env but ignores env placeholders", () => {
     expect(
       classifyIncomingMcp({
