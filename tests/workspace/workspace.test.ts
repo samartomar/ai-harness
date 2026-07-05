@@ -129,7 +129,7 @@ describe("detectChildRepos", () => {
 });
 
 describe("workspace.plan — generated artifacts", () => {
-  it("writes the marker, .code-workspace, cross-repo canon, bootloaders, and spanning MCP", async () => {
+  it("writes the marker, .code-workspace, cross-repo canon, default bootloader, and spanning MCP", async () => {
     child("ui");
     child("backend");
     const w = writesByPath((await command.plan(makeCtx())).actions);
@@ -140,8 +140,25 @@ describe("workspace.plan — generated artifacts", () => {
     expect(w.has("ai-coding/cross-repo-architecture.md")).toBe(true);
     expect(w.has("ai-coding/repo-discipline.md")).toBe(true);
     expect(w.has("CLAUDE.md")).toBe(true);
-    expect(w.has("AGENTS.md")).toBe(true);
+    expect(w.has("AGENTS.md")).toBe(false);
+    expect(w.has("GEMINI.md")).toBe(false);
+    expect(w.has(".kiro/steering/00-canon.md")).toBe(false);
     expect(w.has(".mcp.json")).toBe(true);
+  });
+
+  it("writes workspace bootloaders for every targeted CLI", async () => {
+    child("ui");
+    const w = writesByPath(
+      (await command.plan(makeCtx({ cli: "claude,codex,gemini,kiro" }))).actions,
+    );
+
+    expect(w.has("CLAUDE.md")).toBe(true);
+    expect(w.has("AGENTS.md")).toBe(true);
+    expect(w.has("GEMINI.md")).toBe(true);
+    expect(w.has(".kiro/steering/00-canon.md")).toBe(true);
+    expect(w.get(".kiro/steering/00-canon.md")?.contents).toContain(
+      "Workspace graph MCP",
+    );
   });
 
   it("without --git preserves parent-only workspace behavior", async () => {
