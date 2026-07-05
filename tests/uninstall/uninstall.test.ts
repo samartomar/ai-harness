@@ -61,11 +61,11 @@ function commitFixture(): void {
   git("commit", "-qm", "base");
 }
 
-async function bootstrapFixture(): Promise<void> {
+async function bootstrapFixture(cli = "claude"): Promise<void> {
   put("package.json", JSON.stringify({ name: "fixture" }));
-  const bootstrapCtx = makeCtx({ cli: "claude", canon: "compact" }, { apply: true });
+  const bootstrapCtx = makeCtx({ cli, canon: "compact" }, { apply: true });
   await executePlan(await bootstrapAiCommand.plan(bootstrapCtx), bootstrapCtx);
-  const mcpCtx = makeCtx({ cli: "claude", scope: "project" }, { apply: true });
+  const mcpCtx = makeCtx({ cli, scope: "project" }, { apply: true });
   await executePlan(await mcpCommand.plan(mcpCtx), mcpCtx);
   put(".aih/runs/one.jsonl", "{}\n");
 }
@@ -134,6 +134,43 @@ describe("aih uninstall", () => {
         }),
       ]),
     );
+  });
+
+  it("surfaces repo-scoped MCP configs outside the root .mcp.json path", async () => {
+    await bootstrapFixture("cursor");
+
+    const ctx = makeCtx();
+    const result = await executePlan(await uninstallCommand.plan(ctx), ctx);
+    const digest = result.digests.find((d) => d.describe.includes("core install footprint"));
+    const artifacts = digest?.data as
+      | { artifacts?: Array<{ path: string; disposition: string; kind: string }> }
+      | undefined;
+
+    expect(result.removed.map((r) => r.path)).not.toContain(".cursor/mcp.json");
+    expect(artifacts?.artifacts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          path: ".cursor/mcp.json",
+          kind: "mcp",
+          disposition: "advisory",
+        }),
+      ]),
+    );
+  });
+
+  it("backs up Kiro-owned steering and hook extras without touching team hooks", async () => {
+    await bootstrapFixture("kiro");
+    put(".kiro/hooks/team-custom.kiro.hook", "{}\n");
+
+    const ctx = makeCtx();
+    const result = await executePlan(await uninstallCommand.plan(ctx), ctx);
+    const removed = new Map(result.removed.map((r) => [r.path, r]));
+
+    expect(removed.get(".kiro/steering/agent-tools.md")?.effect).toBe("delete");
+    expect(removed.get(".kiro/hooks/aih-secret-scan-on-create.kiro.hook")?.effect).toBe("delete");
+    expect(removed.get(".kiro/hooks/aih-tests-on-edit.kiro.hook")?.effect).toBe("delete");
+    expect(removed.get(".kiro/hooks/aih-metrics-on-stop.kiro.hook")?.effect).toBe("delete");
+    expect(removed.has(".kiro/hooks/team-custom.kiro.hook")).toBe(false);
   });
 
   it("refuses to remove dirty install targets without --force", async () => {

@@ -2,7 +2,7 @@ import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { SHARED_MARKER, sharedCanonicalBlockBody } from "../bootstrap-ai/canon.js";
 import { AIH_CONFIG_FILE, readAihConfig } from "../config/marker.js";
-import { bootloadersFor, REGISTRY_IDS } from "../internals/cli-registry.js";
+import { bootloadersFor, entry, REGISTRY_IDS } from "../internals/cli-registry.js";
 import { readIfExists } from "../internals/fsxn.js";
 import { extractManagedBlock } from "../internals/markers.js";
 import {
@@ -15,12 +15,13 @@ import {
   remove,
 } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
+import { isExternalMcp } from "../mcp/render.js";
 
 type UninstallDisposition = "backup" | "advisory";
 
 interface UninstallArtifact {
   path: string;
-  kind: "context-dir" | "marker" | "mcp" | "cache" | "bootloader";
+  kind: "context-dir" | "marker" | "mcp" | "cache" | "bootloader" | "kiro-steering" | "kiro-hook";
   disposition: UninstallDisposition;
   reason: string;
 }
@@ -101,8 +102,62 @@ function bootloaderAdvisories(ctx: PlanContext): UninstallArtifact[] {
   });
 }
 
+function repoMcpAdvisories(ctx: PlanContext): UninstallArtifact[] {
+  const paths = new Set<string>();
+  for (const cli of REGISTRY_IDS) {
+    const configPath = entry(cli).mcp.configPath;
+    if (configPath === undefined || isExternalMcp(configPath) || !exists(ctx, configPath)) {
+      continue;
+    }
+    paths.add(configPath);
+  }
+  return [...paths].map((path) => ({
+    path,
+    kind: "mcp",
+    disposition: "advisory",
+    reason: "co-owned project MCP config; entries have no on-disk ownership marker",
+  }));
+}
+
+function kiroHookFiles(ctx: PlanContext): string[] {
+  try {
+    return readdirSync(join(ctx.root, ".kiro", "hooks"))
+      .filter((name) => name.startsWith("aih-") && name.endsWith(".kiro.hook"))
+      .sort()
+      .map((name) => `.kiro/hooks/${name}`);
+  } catch {
+    return [];
+  }
+}
+
+function kiroExtraArtifacts(ctx: PlanContext, owned: boolean): UninstallArtifact[] {
+  const disposition = owned ? "backup" : "advisory";
+  const ownership = owned
+    ? "with marker-backed Kiro ownership evidence"
+    : "found, but no valid Kiro target marker proves ownership";
+  const artifacts: UninstallArtifact[] = [];
+  if (exists(ctx, ".kiro/steering/agent-tools.md")) {
+    artifacts.push({
+      path: ".kiro/steering/agent-tools.md",
+      kind: "kiro-steering",
+      disposition,
+      reason: `aih Kiro steering extra ${ownership}`,
+    });
+  }
+  for (const hook of kiroHookFiles(ctx)) {
+    artifacts.push({
+      path: hook,
+      kind: "kiro-hook",
+      disposition,
+      reason: `aih-namespaced Kiro hook ${ownership}`,
+    });
+  }
+  return artifacts;
+}
+
 function coreUninstallSet(ctx: PlanContext): UninstallSet {
   const marker = readAihConfig(ctx.root);
+  const markerTargets = new Set((marker?.targets ?? []).map((target) => target.toLowerCase()));
   const markerContextDir = marker ? removableContextDir(marker.contextDir) : undefined;
   const artifacts: UninstallArtifact[] = [];
 
@@ -145,15 +200,9 @@ function coreUninstallSet(ctx: PlanContext): UninstallSet {
       reason: "committed aih install marker",
     });
   }
-  if (exists(ctx, ".mcp.json")) {
-    artifacts.push({
-      path: ".mcp.json",
-      kind: "mcp",
-      disposition: "advisory",
-      reason: "co-owned project MCP config; entries have no on-disk ownership marker",
-    });
-  }
+  artifacts.push(...repoMcpAdvisories(ctx));
   artifacts.push(...bootloaderAdvisories(ctx));
+  artifacts.push(...kiroExtraArtifacts(ctx, markerTargets.has("kiro")));
 
   if (exists(ctx, ".aih") && marker !== undefined) {
     artifacts.push({
