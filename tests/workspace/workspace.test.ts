@@ -156,9 +156,7 @@ describe("workspace.plan — generated artifacts", () => {
     expect(w.has("AGENTS.md")).toBe(true);
     expect(w.has("GEMINI.md")).toBe(true);
     expect(w.has(".kiro/steering/00-canon.md")).toBe(true);
-    expect(w.get(".kiro/steering/00-canon.md")?.contents).toContain(
-      "Workspace graph MCP",
-    );
+    expect(w.get(".kiro/steering/00-canon.md")?.contents).toContain("Workspace graph MCP");
   });
 
   it("without --git preserves parent-only workspace behavior", async () => {

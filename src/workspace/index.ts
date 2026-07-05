@@ -1,6 +1,8 @@
 import { existsSync } from "node:fs";
 import { basename, join, posix, resolve } from "node:path";
 import { AihError } from "../errors.js";
+import { bootloadersFor } from "../internals/cli-registry.js";
+import { resolveClis } from "../internals/clis.js";
 import { readIfExists } from "../internals/fsxn.js";
 import type { Action, CommandSpec, Plan, PlanContext, WriteAction } from "../internals/plan.js";
 import { doc, plan, probe, writeJson, writeText } from "../internals/plan.js";
@@ -136,13 +138,39 @@ function markerForWrite(
   };
 }
 
+const WORKSPACE_BOOTLOADER_LABELS: Record<string, string> = {
+  "CLAUDE.md": "Claude workspace",
+  "AGENTS.md": "AGENTS.md workspace",
+  "GEMINI.md": "Gemini workspace",
+  ".kiro/steering/00-canon.md": "Kiro workspace",
+};
+
+function workspaceBootloaderLabel(path: string): string {
+  return WORKSPACE_BOOTLOADER_LABELS[path] ?? `${path} workspace`;
+}
+
+function workspaceBootloaderWrites(
+  bootloaders: readonly string[],
+  name: string,
+  repoPaths: readonly string[],
+  dir: string,
+): WriteAction[] {
+  return bootloaders.map((path) =>
+    writeText(
+      path,
+      workspaceBootloader(workspaceBootloaderLabel(path), name, [...repoPaths], dir),
+      `${path} workspace bootloader → cross-repo canon`,
+    ),
+  );
+}
+
 /**
  * `aih workspace <parent>` — scaffold a MULTI-REPO workspace (parent-only). For a
  * parent folder holding separate repos (e.g. a UI repo and a backend repo), it
  * writes the cross-repo canon that bridges them: a workspace marker, a VS Code
  * multi-root `.code-workspace`, graph MCP scoped per declared child repo, the
  * `cross-repo-architecture.md` map (write-once, user-owned) and `repo-discipline.md`,
- * and thin `CLAUDE.md`/`AGENTS.md` workspace bootloaders. It does NOT touch the
+ * and tool-native workspace bootloaders. It does NOT touch the
  * child repos — run `aih init` in each. Child repos come from `--repos a,b` or an
  * existing workspace marker; detected child git repos are reported but not auto-enrolled.
  * Honors `--context-dir`.
@@ -182,6 +210,7 @@ async function workspacePlan(ctx: PlanContext): Promise<Plan> {
   const mcp = spanningMcp(ctx.root, presentRepoPaths);
   const mcpKeys = Object.keys(mcp.mcpServers);
   const staleMcpKeys = staleManagedMcpServerKeys(ctx.root, mcpKeys);
+  const bootloaders = bootloadersFor(resolveClis(ctx.options, { strict: true }));
 
   const writes: WriteAction[] = [
     writeJson(
@@ -213,16 +242,7 @@ async function workspacePlan(ctx: PlanContext): Promise<Plan> {
       repoDisciplineDoc(repoPaths, dir),
       "per-repo discipline routing (read a repo's canon before editing it)",
     ),
-    writeText(
-      "CLAUDE.md",
-      workspaceBootloader("Claude workspace", name, repoPaths, dir),
-      "Claude workspace bootloader → cross-repo canon",
-    ),
-    writeText(
-      "AGENTS.md",
-      workspaceBootloader("agent workspace", name, repoPaths, dir),
-      "AGENTS.md workspace bootloader (Codex/Kiro/… ) → cross-repo canon",
-    ),
+    ...workspaceBootloaderWrites(bootloaders, name, repoPaths, dir),
     writeJson(
       ".mcp.json",
       mcp,

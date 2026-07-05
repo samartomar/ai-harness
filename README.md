@@ -312,7 +312,8 @@ It writes, at the parent (it does **not** touch the child repos — run `aih ini
   (UI column · backend column · the contract). **Write-once** — aih seeds it from your repo list, then
   you own it; re-running never overwrites it.
 - `<context-dir>/repo-discipline.md` — load a repo's own canon before editing it.
-- `CLAUDE.md` + `AGENTS.md` — thin workspace bootloaders pointing at the cross-repo canon.
+- Targeted CLI bootloaders — `CLAUDE.md` by default; `--cli`/`--all-tools` can add
+  `AGENTS.md`, `GEMINI.md`, `.kiro/steering/00-canon.md`, and other tool-native entries.
 - `<name>.code-workspace` — opens every repo in one VS Code window.
 - `.mcp.json` — one **code-review graph MCP** per present declared child repo, using absolute
   root-anchored child paths so MCP clients work from any launch directory.
