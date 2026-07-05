@@ -247,10 +247,83 @@ function legacyCheckToVerificationResult(check: Check): VerificationResult {
     verdict: check.verdict === "skip" ? "warn" : check.verdict,
     severity: check.verdict === "fail" ? "high" : "info",
     confidence: "high",
-    evidence: [],
+    evidence: legacyCheckEvidence(check),
     message: verificationText(check.detail, passName),
     category: "other",
   };
+}
+
+function legacyCheckEvidence(check: Check): Evidence[] {
+  const source = legacyCheckSource(check);
+  if (source === undefined) return [];
+  const id = check.fingerprint ?? check.code ?? `legacy:${source}`;
+  return [
+    {
+      id,
+      type: "legacy-check",
+      source,
+      ...(check.detail === undefined ? {} : { snippet: check.detail }),
+    },
+  ];
+}
+
+function hasControlCharacter(value: string): boolean {
+  for (const char of value) {
+    const code = char.codePointAt(0);
+    if (code === undefined || code < 0x20 || code === 0x7f) return true;
+  }
+  return false;
+}
+
+function isSafeLegacyLocationPart(value: string): boolean {
+  for (const char of value) {
+    const code = char.codePointAt(0);
+    const safe =
+      code !== undefined &&
+      ((code >= 48 && code <= 57) ||
+        (code >= 65 && code <= 90) ||
+        (code >= 97 && code <= 122) ||
+        char === "." ||
+        char === "_" ||
+        char === "@" ||
+        char === "+" ||
+        char === "-");
+    if (!safe) return false;
+  }
+  return true;
+}
+
+function safeLegacyLocationUri(uri: string): string | undefined {
+  if (uri.length === 0 || uri.trim() !== uri || hasControlCharacter(uri)) return undefined;
+  if (redactSecrets(uri) !== uri) return undefined;
+  const normalized = uri.replaceAll("\\", "/");
+  if (redactSecrets(normalized) !== normalized) return undefined;
+  if (
+    normalized.startsWith("/") ||
+    normalized.startsWith("~") ||
+    /^[A-Za-z]:/.test(normalized) ||
+    /^[A-Za-z][A-Za-z0-9+.-]*:/.test(normalized)
+  ) {
+    return undefined;
+  }
+  const parts = normalized.split("/");
+  if (parts.some((part) => part.length === 0 || part === "." || part === "..")) {
+    return undefined;
+  }
+  if (parts.some((part) => !isSafeLegacyLocationPart(part))) return undefined;
+  return normalized;
+}
+
+function legacyCheckSource(check: Check): string | undefined {
+  const location = check.location;
+  if (location === undefined) return undefined;
+  const uri = safeLegacyLocationUri(location.uri);
+  if (uri === undefined) return undefined;
+  const startLine = location.startLine;
+  if (startLine !== undefined && (!Number.isSafeInteger(startLine) || startLine < 1)) {
+    return undefined;
+  }
+  return startLine === undefined ? uri : `${uri}#L${startLine}`;
 }
 
 function suffixedPassName(passName: string, suffix: number): string {
@@ -303,6 +376,45 @@ function verificationRunFromResults(
       maxEvidencePerResult: maxEvidencePerResult(uniqueResults),
     }),
   };
+}
+
+interface VerificationEntry {
+  result?: VerificationResult;
+  reportCheck?: Check;
+}
+
+function legacyVerificationEntry(check: Check): VerificationEntry {
+  return {
+    result: legacyCheckToVerificationResult(check),
+    reportCheck: check,
+  };
+}
+
+function structuredVerificationEntries(
+  action: ProbeAction,
+  run: VerificationPipelineRun,
+): VerificationEntry[] {
+  const entries: VerificationEntry[] = run.results.map((result) => ({ result }));
+  const reportCheck = structuredVerificationRunToCheck(run, structuredProbeCheckOptions(action));
+  if (entries[0] !== undefined) entries[0].reportCheck = reportCheck;
+  else entries.push({ reportCheck });
+  return entries;
+}
+
+function verificationRunFromEntries(
+  entries: readonly VerificationEntry[],
+): VerificationPipelineRun | undefined {
+  return verificationRunFromResults(
+    entries.flatMap((entry) => (entry.result === undefined ? [] : [entry.result])),
+  );
+}
+
+function reportFromVerificationEntries(entries: readonly VerificationEntry[]): VerificationReport {
+  const report = new VerificationReport();
+  for (const entry of entries) {
+    if (entry.reportCheck !== undefined) report.add(entry.reportCheck);
+  }
+  return report;
 }
 
 export interface WriteSummary {
@@ -743,37 +855,31 @@ export async function executePlan(
   let report: VerificationReport | undefined;
   let verification: VerificationPipelineRun | undefined;
   if (ctx.verify) {
-    report = new VerificationReport();
-    const verificationResults: VerificationResult[] = [];
+    const verificationEntries: VerificationEntry[] = [];
     for (const check of execFailureChecks) {
-      report.add(check);
-      verificationResults.push(legacyCheckToVerificationResult(check));
+      verificationEntries.push(legacyVerificationEntry(check));
     }
     if (!skipProbesAfterExecFailure) {
       for (const action of plan.actions) {
         if (action.kind === "probe") {
           if (action.runStructured) {
             const structuredRun = await action.runStructured(ctx);
-            verificationResults.push(...structuredRun.results);
-            report.add(
-              structuredVerificationRunToCheck(structuredRun, structuredProbeCheckOptions(action)),
-            );
+            verificationEntries.push(...structuredVerificationEntries(action, structuredRun));
           } else if (action.runMany) {
             for (const check of await action.runMany(ctx)) {
-              report.add(check);
-              verificationResults.push(legacyCheckToVerificationResult(check));
+              verificationEntries.push(legacyVerificationEntry(check));
             }
           } else if (action.run) {
             const check = await action.run(ctx);
-            report.add(check);
-            verificationResults.push(legacyCheckToVerificationResult(check));
+            verificationEntries.push(legacyVerificationEntry(check));
           } else {
             throw new AihError(`probe action has no runner: ${action.describe}`, "AIH_CONFIG");
           }
         }
       }
     }
-    verification = verificationRunFromResults(verificationResults);
+    verification = verificationRunFromEntries(verificationEntries);
+    report = reportFromVerificationEntries(verificationEntries);
   }
 
   for (const action of digestActions) {

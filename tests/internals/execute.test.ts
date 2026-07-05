@@ -29,6 +29,7 @@ import {
   writeText,
 } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
+import type { Check } from "../../src/internals/verify.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 import { MAX_VERIFICATION_STRING_FIELD_LENGTH } from "../../src/verification/constants.js";
 import {
@@ -294,6 +295,142 @@ describe("executePlan", () => {
     ]);
     expect(result.verification?.evidenceGraph.nodes).toEqual([
       expect.objectContaining({ kind: "finding", passName: "legacy gate", verdict: "fail" }),
+    ]);
+  });
+
+  it("preserves legacy probe metadata as structured sidecar evidence", async () => {
+    const p = plan(
+      "t",
+      probe("legacy metadata gate", () => ({
+        name: "legacy metadata gate",
+        verdict: "fail",
+        detail: "legacy failure with routing",
+        code: "ready.blocked",
+        location: { uri: "src/readiness.ts", startLine: 12 },
+        fingerprint: "ready:blocked:src-readiness",
+      })),
+    );
+
+    const result = await executePlan(p, ctx({ verify: true }));
+
+    expect(result.report?.checks).toEqual([
+      {
+        name: "legacy metadata gate",
+        verdict: "fail",
+        detail: "legacy failure with routing",
+        code: "ready.blocked",
+        location: { uri: "src/readiness.ts", startLine: 12 },
+        fingerprint: "ready:blocked:src-readiness",
+      },
+    ]);
+    expect(result.verification?.results[0]?.evidence).toEqual([
+      {
+        id: "ready:blocked:src-readiness",
+        type: "legacy-check",
+        source: "src/readiness.ts#L12",
+        snippet: "legacy failure with routing",
+      },
+    ]);
+    expect(result.verification?.evidenceGraph.nodes).toContainEqual(
+      expect.objectContaining({
+        kind: "source",
+        evidenceType: "legacy-check",
+        source: "src/readiness.ts#L12",
+      }),
+    );
+  });
+
+  it("omits unsafe legacy locations from structured sidecar evidence", async () => {
+    const unsafeChecks: Check[] = [
+      {
+        name: "absolute location",
+        verdict: "fail",
+        detail: "absolute path",
+        fingerprint: "legacy:absolute",
+        location: { uri: "/Users/samar/.aih/config.json" },
+      },
+      {
+        name: "drive location",
+        verdict: "fail",
+        detail: "drive path",
+        fingerprint: "legacy:drive",
+        location: { uri: "C:\\Users\\samar\\.aih\\config.json" },
+      },
+      {
+        name: "traversal location",
+        verdict: "fail",
+        detail: "traversal path",
+        fingerprint: "legacy:traversal",
+        location: { uri: "../secrets.env" },
+      },
+      {
+        name: "url location",
+        verdict: "fail",
+        detail: "url path",
+        fingerprint: "legacy:url",
+        location: { uri: "https://example.com/secrets.env" },
+      },
+      {
+        name: "control location",
+        verdict: "fail",
+        detail: "control path",
+        fingerprint: "legacy:control",
+        location: { uri: "src/\u0007secret.ts" },
+      },
+      {
+        name: "zero line location",
+        verdict: "fail",
+        detail: "invalid line",
+        fingerprint: "legacy:line",
+        location: { uri: "src/readiness.ts", startLine: 0 },
+      },
+    ];
+    const p = plan(
+      "t",
+      probeMany("unsafe legacy metadata gates", () => unsafeChecks),
+    );
+
+    const result = await executePlan(p, ctx({ verify: true }));
+
+    expect(result.report?.checks).toEqual(unsafeChecks);
+    expect(result.verification?.results).toHaveLength(unsafeChecks.length);
+    expect(result.verification?.results.every((entry) => entry.evidence.length === 0)).toBe(true);
+    expect(result.verification?.evidenceGraph.nodes).toHaveLength(unsafeChecks.length);
+    expect(result.verification?.evidenceGraph.nodes.some((node) => node.kind === "source")).toBe(
+      false,
+    );
+  });
+
+  it("preserves safe legacy location-only metadata in structured sidecar evidence", async () => {
+    const secret = "SECRET_TOKEN=legacydetailvalue123";
+    const p = plan(
+      "t",
+      probe("legacy location-only gate", () => ({
+        name: "legacy location-only gate",
+        verdict: "fail",
+        detail: `legacy ${secret}`,
+        location: { uri: "src/readiness.ts", startLine: 12 },
+      })),
+    );
+
+    const result = await executePlan(p, ctx({ verify: true }));
+
+    expect(result.report?.checks).toEqual([
+      {
+        name: "legacy location-only gate",
+        verdict: "fail",
+        detail: `legacy ${secret}`,
+        location: { uri: "src/readiness.ts", startLine: 12 },
+      },
+    ]);
+    expect(JSON.stringify(result.verification)).not.toContain(secret);
+    expect(result.verification?.results[0]?.evidence).toEqual([
+      {
+        id: "legacy:src/readiness.ts#L12",
+        type: "legacy-check",
+        source: "src/readiness.ts#L12",
+        snippet: "legacy [REDACTED]",
+      },
     ]);
   });
 
@@ -694,6 +831,8 @@ describe("executePlan", () => {
           verdict: "fail",
           code: "trust.fetch-blocked",
           detail: "network down",
+          location: { uri: "tools/fetch.mjs" },
+          fingerprint: "trust:fetch-blocked:tools-fetch",
         },
         blockProbesOnFailure: true,
       }),
@@ -705,7 +844,26 @@ describe("executePlan", () => {
     const result = await executePlan(p, ctx({ apply: true, verify: true, run }));
 
     expect(result.report?.checks).toEqual([
-      expect.objectContaining({ verdict: "fail", code: "trust.fetch-blocked" }),
+      expect.objectContaining({
+        verdict: "fail",
+        code: "trust.fetch-blocked",
+        location: { uri: "tools/fetch.mjs" },
+        fingerprint: "trust:fetch-blocked:tools-fetch",
+      }),
+    ]);
+    expect(result.verification?.results).toEqual([
+      expect.objectContaining({
+        passName: "trust.fetch-blocked",
+        verdict: "fail",
+        evidence: [
+          {
+            id: "trust:fetch-blocked:tools-fetch",
+            type: "legacy-check",
+            source: "tools/fetch.mjs",
+            snippet: "network down",
+          },
+        ],
+      }),
     ]);
   });
 });
