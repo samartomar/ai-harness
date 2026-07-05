@@ -284,6 +284,10 @@ function uniqueVerificationResults(results: readonly VerificationResult[]): Veri
   });
 }
 
+function maxEvidencePerResult(results: readonly VerificationResult[]): number {
+  return Math.max(1, ...results.map((result) => result.evidence.length));
+}
+
 function verificationRunFromResults(
   results: readonly VerificationResult[],
 ): VerificationPipelineRun | undefined {
@@ -294,7 +298,10 @@ function verificationRunFromResults(
   return {
     results: uniqueResults,
     summary: mergeVerificationResults(uniqueResults),
-    evidenceGraph: buildEvidenceGraph(uniqueResults, { maxResults: uniqueResults.length }),
+    evidenceGraph: buildEvidenceGraph(uniqueResults, {
+      maxResults: uniqueResults.length,
+      maxEvidencePerResult: maxEvidencePerResult(uniqueResults),
+    }),
   };
 }
 

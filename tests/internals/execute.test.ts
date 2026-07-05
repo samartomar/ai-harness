@@ -416,6 +416,46 @@ describe("executePlan", () => {
     expect(result.verification?.evidenceGraph.nodes).toHaveLength(129);
   });
 
+  it("does not cap the structured sidecar graph below structured evidence count", async () => {
+    const evidence = Array.from({ length: 1001 }, (_, index) => ({
+      id: `evidence.${index}`,
+      type: "log",
+      source: `logs/${index}.txt`,
+    }));
+    const p = plan(
+      "t",
+      structuredProbe("many evidence gate", () => ({
+        results: [
+          {
+            passName: "structured.many-evidence",
+            verdict: "pass",
+            severity: "info",
+            confidence: "high",
+            evidence,
+            message: "ok",
+            category: "other",
+          },
+        ],
+        summary: {
+          finalVerdict: "pass",
+          trustScore: 100,
+          aggregatedEvidence: evidence,
+          failedPasses: [],
+          warnings: [],
+        },
+        evidenceGraph: { nodes: [], edges: [] },
+      })),
+    );
+
+    const result = await executePlan(p, ctx({ verify: true }));
+
+    expect(result.report?.checks).toEqual([
+      { name: "many evidence gate", verdict: "pass", detail: undefined },
+    ]);
+    expect(result.verification?.results[0]?.evidence).toHaveLength(1001);
+    expect(result.verification?.evidenceGraph.edges).toHaveLength(1001);
+  });
+
   it("redacts structured probe sidecar text before JSON serialization", async () => {
     const secret = "SECRET_TOKEN=supersecretvalue123";
     const p = plan(
