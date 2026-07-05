@@ -51,6 +51,7 @@ describe("committed JSON Schemas", () => {
     validateCommittedSchema("schemas/aih-config.schema.json", {
       schemaVersion: 1,
       contextDir: "ai-coding",
+      baseline: "gstack",
     });
     validateCommittedSchema("schemas/aih-org-policy.schema.json", {
       schemaVersion: 1,
@@ -58,6 +59,14 @@ describe("committed JSON Schemas", () => {
       references: { repoContract: "ai-coding/project.json" },
       command: { deny: {} },
       trust: {},
+    });
+  });
+
+  it("rejects unknown baseline ids in .aih-config.json", () => {
+    rejectCommittedSchema("schemas/aih-config.schema.json", {
+      schemaVersion: 1,
+      contextDir: "ai-coding",
+      baseline: "missing",
     });
   });
 

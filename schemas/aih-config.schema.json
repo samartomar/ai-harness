@@ -18,6 +18,14 @@
         "type": "string"
       }
     },
+    "baseline": {
+      "type": "string",
+      "enum": [
+        "ecc",
+        "gstack",
+        "gsd"
+      ]
+    },
     "posture": {
       "type": "string",
       "enum": [

@@ -1,5 +1,11 @@
 import { classifyCanon, isAdoptable } from "../adopt/classify.js";
-import { aihConfigJson } from "../config/marker.js";
+import { aihConfigJson, readAihConfigBaseline } from "../config/marker.js";
+import {
+  BASELINE_OPTION,
+  DEFAULT_BASELINE_SOURCE_ID,
+  describeBaselineSource,
+  resolveBaselineSource,
+} from "../internals/baseline-sources.js";
 import { CANON_OPTION } from "../internals/canon-mode.js";
 import { detectFallbackNotice, resolveTargets } from "../internals/cli-detect.js";
 import { deepMerge } from "../internals/merge.js";
@@ -66,7 +72,12 @@ async function initPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
   // `.cursor/*`. Without this single resolution, every phase that calls
   // `resolveTargets` would re-prompt under `--detect`.
   const resolution = await resolveTargets(ctx);
-  const baseCtx: PlanContext = { ...ctx, targets: resolution.clis };
+  const baseline = resolveBaselineSource(ctx.options, readAihConfigBaseline(ctx.root));
+  const baseCtx: PlanContext = {
+    ...ctx,
+    targets: resolution.clis,
+    options: { ...ctx.options, baseline: baseline.id },
+  };
 
   // If `--detect` found nothing and we defaulted to claude, say so once at the top
   // (the phases short-circuit on `ctx.targets`, so no phase emits this itself).
@@ -75,6 +86,7 @@ async function initPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
   }
 
   for (const phase of INIT_PHASES) {
+    if (phase.command.name === "superpowers" && baseline.id !== "ecc") continue;
     const phaseCtx =
       phase.command.name === "mcp"
         ? { ...baseCtx, options: { ...ctx.options, mode: mcpMode } }
@@ -87,18 +99,7 @@ async function initPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
   // ECC is not a phase: its installer runs the network (`npx ecc-install` / a git
   // checkout), so `aih init` points at the separate gated step instead of running
   // it. This single doc is the only action init adds beyond the phase headers.
-  actions.push(
-    doc(
-      "install ECC (separate, gated network step)",
-      lines(
-        "`aih init` scaffolds locally. ECC installs via ECC's OWN installer (network), so it",
-        "is a separate step you run when ready:",
-        "",
-        "  aih ecc --apply                # install ECC (latest) for your selected CLIs",
-        "  aih ecc --cli kiro --apply     # Kiro: git checkout of ECC + its native .kiro/install.sh",
-      ),
-    ),
-  );
+  actions.push(baselineInstallDoc(baseline));
 
   // Persist the bootstrap intent at the repo ROOT (committed — NOT under the
   // git-ignored `.aih/`, or it would be lost on clone) so re-runs and `aih doctor`
@@ -110,9 +111,13 @@ async function initPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
   actions.push(
     writeJson(
       ".aih-config.json",
-      aihConfigJson(ctx.contextDir, resolution.clis),
+      aihConfigJson(ctx.contextDir, resolution.clis, baseline.id),
       "persist bootstrap intent (context-dir + CLI targets) so re-runs and doctor read it",
-      { merge: true },
+      {
+        merge: true,
+        removeJsonTopLevelKeys:
+          ctx.options.baseline === DEFAULT_BASELINE_SOURCE_ID ? ["baseline"] : undefined,
+      },
     ),
   );
 
@@ -156,10 +161,36 @@ async function initPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
   return plan("init", ...deduped);
 }
 
+function baselineInstallDoc(baseline: ReturnType<typeof resolveBaselineSource>): Action {
+  if (baseline.id === "ecc") {
+    return doc(
+      "install ECC (separate, gated network step)",
+      lines(
+        "`aih init` scaffolds locally. ECC installs via ECC's OWN installer (network), so it",
+        "is a separate step you run when ready:",
+        "",
+        "  aih ecc --apply                # install ECC (latest) for your selected CLIs",
+        "  aih ecc --cli kiro --apply     # Kiro: git checkout of ECC + its native .kiro/install.sh",
+      ),
+    );
+  }
+  return doc(
+    "install selected baseline (separate, gated network step)",
+    lines(
+      `\`aih init\` scaffolds locally. ${baseline.label} is delegated to ${describeBaselineSource(
+        baseline,
+      )},`,
+      "so install it separately with the source's own pinned instructions when ready:",
+      "",
+      `  ${baseline.installVerb}`,
+    ),
+  );
+}
+
 export const command: CommandSpec = {
   name: "init",
   summary:
-    "Initialize a target repo: profile + superpowers + bootstrap-ai + scaffold + secrets + guardrails + mcp + sandbox (ECC via `aih ecc`)",
+    "Initialize a target repo: profile + selected baseline + bootstrap-ai + scaffold + secrets + guardrails + mcp + sandbox",
   options: [
     {
       flags: "--mcp-mode <mode>",
@@ -168,6 +199,7 @@ export const command: CommandSpec = {
       default: "standard",
     },
     CANON_OPTION,
+    BASELINE_OPTION,
   ],
   plan: initPlan,
 };

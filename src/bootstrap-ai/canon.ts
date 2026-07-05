@@ -1,3 +1,9 @@
+import {
+  type BaselineSource,
+  baselineRepoRefs,
+  describeBaselineSource,
+  resolveBaselineSource,
+} from "../internals/baseline-sources.js";
 import type { CanonMode } from "../internals/canon-mode.js";
 import { bootloadersFor, entry as registryEntry } from "../internals/cli-registry.js";
 import { type Cli, SUPPORTED_CLIS } from "../internals/clis.js";
@@ -185,12 +191,61 @@ export function ruleRouterDoc(
   repoName: string,
   stack: RepoStack,
   bootloaders: string[],
-  opts: { projectExtension?: boolean; canon?: CanonMode } = {},
+  opts: { projectExtension?: boolean; canon?: CanonMode; baseline?: BaselineSource } = {},
 ): string {
   const projectExtension = opts.projectExtension ?? false;
+  const baseline = opts.baseline ?? resolveBaselineSource({});
   return (opts.canon ?? "legacy") === "compact"
-    ? ruleRouterCompact(dir, repoName, stack, bootloaders, projectExtension)
-    : ruleRouterLegacy(dir, repoName, stack, bootloaders, projectExtension);
+    ? ruleRouterCompact(dir, repoName, stack, bootloaders, projectExtension, baseline)
+    : ruleRouterLegacy(dir, repoName, stack, bootloaders, projectExtension, baseline);
+}
+
+function baselineLayerLines(source: BaselineSource): string[] {
+  if (source.id === "ecc") {
+    return [
+      "- **Layer 1 — user baseline (generic):** ECC (affaan-m/ECC) + Superpowers",
+      "  (obra/Superpowers), installed per CLI by `aih ecc` / `aih superpowers` —",
+      "  generic agents, skills, memory, security, and the brainstorm→plan→TDD→review loop.",
+    ];
+  }
+  return [
+    `- **Layer 1 — user baseline (generic):** ${source.label} (${baselineRepoRefs(source)}),`,
+    `  pinned at ${describeBaselineSource(source)} and installed via ${source.installVerb} —`,
+    "  generic working discipline, skills, memory, security, and the plan→TDD→review loop.",
+  ];
+}
+
+function baselineAlwaysReadLine(source: BaselineSource): string {
+  return source.id === "ecc"
+    ? "- The ECC `common` rules (Layer 1) before any non-trivial change"
+    : `- The ${source.label} baseline (${baselineRepoRefs(source)}) before any non-trivial change`;
+}
+
+function baselineImplementationLines(
+  source: BaselineSource,
+  dir: string,
+  primaryLang: string,
+  canon: CanonMode,
+): string[] {
+  if (source.id === "ecc") {
+    return canon === "compact"
+      ? [
+          `Load \`${dir}/project.md\` for the commands, scale, and constraints; follow the ECC`,
+          `stack rules for ${primaryLang}. State the goal and the smallest viable change first.`,
+        ]
+      : [
+          `Load \`${dir}/conventions.md\` + \`${dir}/architecture.md\`; follow the ECC`,
+          `stack rules for ${primaryLang}. State the goal and the smallest viable change first.`,
+        ];
+  }
+  const load =
+    canon === "compact"
+      ? `Load \`${dir}/project.md\` for the commands, scale, and constraints; follow`
+      : `Load \`${dir}/conventions.md\` + \`${dir}/architecture.md\`; follow`;
+  return [
+    `${load} ${source.label}`,
+    `guidance for ${primaryLang}. State the goal and the smallest viable change first.`,
+  ];
 }
 
 /** Legacy router body — frozen byte-identical to the pre-contract output. */
@@ -200,6 +255,7 @@ function ruleRouterLegacy(
   stack: RepoStack,
   bootloaders: string[],
   projectExtension: boolean,
+  baseline: BaselineSource,
 ): string {
   const primaryLang = stack.languages[0] ?? "the repo's language";
   // `aih adopt` carves project-specific content out of a brownfield bootloader into
@@ -208,7 +264,7 @@ function ruleRouterLegacy(
   const alwaysReadFirst = [
     `- \`${dir}/rules/agent-behavior-core.md\` — working discipline (think → simplify → surgical → goal-driven)`,
     `- \`${dir}/INDEX.md\` — context index; it owns the load order for architecture / conventions / tasks / skills`,
-    "- The ECC `common` rules (Layer 1) before any non-trivial change",
+    baselineAlwaysReadLine(baseline),
   ];
   if (projectExtension) {
     alwaysReadFirst.push(
@@ -224,9 +280,7 @@ function ruleRouterLegacy(
     "",
     "## Layered model (baseline + repo)",
     "",
-    "- **Layer 1 — user baseline (generic):** ECC (affaan-m/ECC) + Superpowers",
-    "  (obra/Superpowers), installed per CLI by `aih ecc` / `aih superpowers` —",
-    "  generic agents, skills, memory, security, and the brainstorm→plan→TDD→review loop.",
+    baselineLayerLines(baseline),
     `- **Layer 2 — this repo's canon (specific):** this router and the files under`,
     `  \`${dir}/\`, plus the bootloaders (${bootloaders.map((b) => `\`${b}\``).join(", ")})`,
     `  and the per-tool notes in \`${dir}/adapters/\`.`,
@@ -254,8 +308,7 @@ function ruleRouterLegacy(
     "## Task routing",
     "",
     "### Implementation",
-    `Load \`${dir}/conventions.md\` + \`${dir}/architecture.md\`; follow the ECC`,
-    `stack rules for ${primaryLang}. State the goal and the smallest viable change first.`,
+    baselineImplementationLines(baseline, dir, primaryLang, "legacy"),
     "For large repos, verify `large-repo graph safety` with `aih doctor`; if the",
     "graph is unavailable, do bounded `rg`/`fd` reconnaissance and report the gap.",
     "",
@@ -298,12 +351,13 @@ function ruleRouterCompact(
   stack: RepoStack,
   bootloaders: string[],
   projectExtension: boolean,
+  baseline: BaselineSource,
 ): string {
   const primaryLang = stack.languages[0] ?? "the repo's language";
   const alwaysReadFirst = [
     `- \`${dir}/rules/agent-behavior-core.md\` — working discipline (think → simplify → surgical → goal-driven)`,
     `- \`${dir}/project.md\` — the repo contract: stack, commands, scale, sensitive paths, known gaps (machine-readable in \`${dir}/project.json\`)`,
-    "- The ECC `common` rules (Layer 1) before any non-trivial change",
+    baselineAlwaysReadLine(baseline),
   ];
   if (projectExtension) {
     alwaysReadFirst.push(
@@ -319,9 +373,7 @@ function ruleRouterCompact(
     "",
     "## Layered model (baseline + repo)",
     "",
-    "- **Layer 1 — user baseline (generic):** ECC (affaan-m/ECC) + Superpowers",
-    "  (obra/Superpowers), installed per CLI by `aih ecc` / `aih superpowers` —",
-    "  generic agents, skills, memory, security, and the brainstorm→plan→TDD→review loop.",
+    baselineLayerLines(baseline),
     "- **Layer 2 — this repo's contract (specific):** this router, the contract",
     `  (\`${dir}/project.json\` + \`${dir}/project.md\` + \`${dir}/setup.md\`), the working`,
     `  discipline in \`${dir}/rules/\`, the bootloaders (${bootloaders.map((b) => `\`${b}\``).join(", ")}),`,
@@ -344,8 +396,7 @@ function ruleRouterCompact(
     "## Task routing",
     "",
     "### Implementation",
-    `Load \`${dir}/project.md\` for the commands, scale, and constraints; follow the ECC`,
-    `stack rules for ${primaryLang}. State the goal and the smallest viable change first.`,
+    baselineImplementationLines(baseline, dir, primaryLang, "compact"),
     `Honor the Invariants in \`${dir}/rules/agent-behavior-core.md\` (large-repo graph safety,`,
     "boundaries) before broad work.",
     "",
@@ -459,7 +510,12 @@ const CLI_META: Record<Cli, CliMeta> = {
 };
 
 /** A tool-specific wiring note under `<dir>/adapters/<cli>.md`. */
-export function adapterNote(cli: Cli, dir: string, canon: CanonMode = "legacy"): string {
+export function adapterNote(
+  cli: Cli,
+  dir: string,
+  canon: CanonMode = "legacy",
+  baseline: BaselineSource = resolveBaselineSource({}),
+): string {
   const m = CLI_META[cli];
   const contextRef =
     canon === "compact"
@@ -475,6 +531,17 @@ export function adapterNote(cli: Cli, dir: string, canon: CanonMode = "legacy"):
       : [
           `${m.label} may propose, implement when assigned, and review. It must not push,`,
           "merge, bypass CI, or approve a merge without explicit human approval.",
+        ];
+  const baselineLayer =
+    baseline.id === "ecc"
+      ? [
+          `ECC + Superpowers install the generic baseline at ${m.baseline}; repo canon`,
+          `under \`${dir}/\` overrides it on conflict (see \`RULE_ROUTER.md\` § Layered model).`,
+        ]
+      : [
+          `${baseline.label} provides the generic baseline (${describeBaselineSource(baseline)}) via`,
+          `${baseline.installVerb}; repo canon under \`${dir}/\` overrides it on conflict`,
+          "(see `RULE_ROUTER.md` § Layered model).",
         ];
   return lines(
     `# ${m.label} adapter`,
@@ -498,8 +565,7 @@ export function adapterNote(cli: Cli, dir: string, canon: CanonMode = "legacy"):
     "",
     "## Baseline layer",
     "",
-    `ECC + Superpowers install the generic baseline at ${m.baseline}; repo canon`,
-    `under \`${dir}/\` overrides it on conflict (see \`RULE_ROUTER.md\` § Layered model).`,
+    baselineLayer,
   );
 }
 

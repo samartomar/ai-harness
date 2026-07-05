@@ -142,6 +142,9 @@
           "flags": "--apply"
         },
         {
+          "flags": "--baseline <id>"
+        },
+        {
           "flags": "--canon <mode>",
           "defaultValue": "compact"
         },
@@ -783,6 +786,9 @@
         },
         {
           "flags": "--apply"
+        },
+        {
+          "flags": "--baseline <id>"
         },
         {
           "flags": "--canon <mode>",

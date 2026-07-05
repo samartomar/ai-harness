@@ -1,6 +1,8 @@
 import { posix } from "node:path";
 import { postureGradeCheck } from "../config/governance.js";
+import { readAihConfigBaseline } from "../config/marker.js";
 import { asPosture, type Posture } from "../config/posture.js";
+import { resolveBaselineSource } from "../internals/baseline-sources.js";
 import type { CommandSpec, Plan, PlanContext } from "../internals/plan.js";
 import { plan, probe, writeJson, writeText } from "../internals/plan.js";
 import type { Check } from "../internals/verify.js";
@@ -53,6 +55,7 @@ export function portablePathsCheck(contract: ProjectContract, posture: Posture):
 async function contractPlan(ctx: PlanContext): Promise<Plan> {
   const dir = ctx.contextDir;
   const posture = ctx.posture ?? asPosture(ctx.options.posture);
+  const baseline = resolveBaselineSource(ctx.options, readAihConfigBaseline(ctx.root));
   const stack = scanRepo(ctx.root, { maxDepth: 8, contextDir: dir });
   const contract = projectContractJson(await synthesizeContract(ctx, stack));
   return plan(
@@ -66,7 +69,7 @@ async function contractPlan(ctx: PlanContext): Promise<Plan> {
     // The human mirror is regenerated each run (NOT once) — it tracks project.json.
     writeText(
       posix.join(dir, PROJECT_DOC_FILE),
-      projectContractDoc(dir, contract),
+      projectContractDoc(dir, contract, { baseline }),
       "human-readable contract mirror (rendered from project.json)",
     ),
     // The setup seed is write-once: a team owns and edits it.

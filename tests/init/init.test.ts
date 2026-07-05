@@ -53,7 +53,11 @@ function docs(actions: Action[]): DocAction[] {
 describe("aih init — command surface", () => {
   it("keeps the init name, the --mcp-mode option, and a real plan", async () => {
     expect(command.name).toBe("init");
-    expect(command.options?.map((o) => o.flags)).toEqual(["--mcp-mode <mode>", "--canon <mode>"]);
+    expect(command.options?.map((o) => o.flags)).toEqual([
+      "--mcp-mode <mode>",
+      "--canon <mode>",
+      "--baseline <id>",
+    ]);
     const p = await command.plan(ctx());
     expect(p.capability).toBe("init");
     expect(p.actions.length).toBeGreaterThan(0);
@@ -284,6 +288,23 @@ describe("aih init — target-gated tool artifacts (.cursor on cursor, .claude o
     expect(p).toContain(".claude/settings.json");
     expect(p).toContain(".claude/managed-settings.json");
     expect(p).toContain(".claudeignore");
+  });
+
+  it("--baseline gstack skips the Superpowers phase and records the selected baseline", async () => {
+    const p = await command.plan(ctx({ options: { cli: "kiro", baseline: "gstack" } }));
+    const paths = writePaths(p.actions);
+    const docText = docs(p.actions)
+      .map((d) => `${d.describe}\n${d.text}`)
+      .join("\n");
+    const marker = p.actions.find(
+      (a): a is WriteAction => a.kind === "write" && a.path === ".aih-config.json",
+    );
+
+    expect(docs(p.actions).map((d) => d.describe)).not.toContain("init: superpowers");
+    expect(paths).not.toContain(".kiro/steering/superpowers-methodology.md");
+    expect(docText).toContain("garrytan/gstack");
+    expect(docText).not.toContain("Superpowers install summary");
+    expect(marker?.json).toMatchObject({ baseline: "gstack", targets: ["kiro"] });
   });
 
   it("records the resolved targets in the .aih-config.json marker", async () => {

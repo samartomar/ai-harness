@@ -1,5 +1,10 @@
 import { basename, join, posix, resolve } from "node:path";
-import { aihConfigJson } from "../config/marker.js";
+import { aihConfigJson, readAihConfigBaseline } from "../config/marker.js";
+import {
+  BASELINE_OPTION,
+  DEFAULT_BASELINE_SOURCE_ID,
+  resolveBaselineSource,
+} from "../internals/baseline-sources.js";
 import { CANON_OPTION, type CanonMode, canonMode } from "../internals/canon-mode.js";
 import { detectFallbackNotice, detectInstall, resolveTargets } from "../internals/cli-detect.js";
 import type { Cli } from "../internals/clis.js";
@@ -133,6 +138,31 @@ function routerProbe(dir: string): Action {
   });
 }
 
+/** Probe that a fully generated text file still matches this run's planned output. */
+function generatedTextProbe(relPath: string, expected: string): Action {
+  return probe(`${relPath} in sync`, (ctx: PlanContext): Check => {
+    const name = `${relPath} in sync`;
+    const text = readIfExists(join(ctx.root, relPath));
+    if (text === undefined) {
+      return {
+        name,
+        verdict: "fail",
+        detail: "missing - run `aih bootstrap-ai --apply`",
+        code: "canon.generated-missing",
+      };
+    }
+    if (text.replace(/\r\n/g, "\n") !== expected.replace(/\r\n/g, "\n")) {
+      return {
+        name,
+        verdict: "fail",
+        detail: "drifted from the planned generated content - regenerate",
+        code: "canon.generated-drift",
+      };
+    }
+    return { name, verdict: "pass", detail: "matches the planned generated content" };
+  });
+}
+
 /**
  * `aih bootstrap-ai` — lay down the repo's Layer-2 `ai-coding/` canon and verify
  * it (the repo doctor). Emits the RULE_ROUTER, the shared canonical block source,
@@ -147,6 +177,7 @@ async function bootstrapAiPlan(ctx: PlanContext): Promise<Plan> {
   const dir = ctx.contextDir;
   const canon = canonMode(ctx);
   const { clis, detectFellBack } = await resolveTargets(ctx);
+  const baseline = resolveBaselineSource(ctx.options, readAihConfigBaseline(ctx.root));
   const stack = scanRepo(ctx.root, { maxDepth: 8, contextDir: ctx.contextDir });
   const repoName = repoNameOf(ctx.root);
   const bootloaders = bootloaderPaths(clis);
@@ -155,16 +186,15 @@ async function bootstrapAiPlan(ctx: PlanContext): Promise<Plan> {
   // so a standalone `bootstrap-ai` re-run doesn't drop the reference.
   const hasProjectExtension =
     readIfExists(join(ctx.root, dir, "rules", "project-canon-extension.md")) !== undefined;
+  const routerContents = ruleRouterDoc(dir, repoName, stack, bootloaders, {
+    projectExtension: hasProjectExtension,
+    canon,
+    baseline,
+  });
+  const adapterContents = new Map<Cli, string>();
 
   const actions: Action[] = [
-    writeText(
-      posix.join(dir, "RULE_ROUTER.md"),
-      ruleRouterDoc(dir, repoName, stack, bootloaders, {
-        projectExtension: hasProjectExtension,
-        canon,
-      }),
-      "stack-aware routing entry point",
-    ),
+    writeText(posix.join(dir, "RULE_ROUTER.md"), routerContents, "stack-aware routing entry point"),
     writeText(
       posix.join(dir, "adapters", "_shared-canonical-block.md"),
       sharedCanonicalBlockBody(dir),
@@ -181,12 +211,10 @@ async function bootstrapAiPlan(ctx: PlanContext): Promise<Plan> {
 
   // One tool-specific adapter note per selected CLI.
   for (const cli of clis) {
+    const contents = adapterNote(cli, dir, canon, baseline);
+    adapterContents.set(cli, contents);
     actions.push(
-      writeText(
-        posix.join(dir, "adapters", `${cli}.md`),
-        adapterNote(cli, dir, canon),
-        `${cli} adapter note`,
-      ),
+      writeText(posix.join(dir, "adapters", `${cli}.md`), contents, `${cli} adapter note`),
     );
   }
 
@@ -234,9 +262,13 @@ async function bootstrapAiPlan(ctx: PlanContext): Promise<Plan> {
     actions.push(
       writeJson(
         ".aih-config.json",
-        aihConfigJson(dir, clis),
+        aihConfigJson(dir, clis, baseline.id),
         "persist bootstrap intent (context-dir + CLI targets) so report/doctor read it",
-        { merge: true },
+        {
+          merge: true,
+          removeJsonTopLevelKeys:
+            ctx.options.baseline === DEFAULT_BASELINE_SOURCE_ID ? ["baseline"] : undefined,
+        },
       ),
     );
   }
@@ -260,6 +292,10 @@ async function bootstrapAiPlan(ctx: PlanContext): Promise<Plan> {
   // Doctor probes (run under --verify): router present + every bootloader in sync,
   // plus a step-by-step confirm of which targeted CLIs are actually installed.
   actions.push(routerProbe(dir));
+  actions.push(generatedTextProbe(posix.join(dir, "RULE_ROUTER.md"), routerContents));
+  for (const [cli, contents] of adapterContents) {
+    actions.push(generatedTextProbe(posix.join(dir, "adapters", `${cli}.md`), contents));
+  }
   for (const relPath of bootloaders) actions.push(bootloaderProbe(relPath, dir));
   for (const cli of clis) actions.push(presenceProbe(cli));
 
@@ -295,14 +331,20 @@ async function bootstrapAiPlan(ctx: PlanContext): Promise<Plan> {
   actions.push(
     doc(
       "bootstrap-ai summary (Layer-2 ai-coding canon)",
-      summaryText(dir, clis, bootloaders, canon),
+      summaryText(dir, clis, bootloaders, canon, baseline),
     ),
   );
 
   return plan("bootstrap-ai", ...actions);
 }
 
-function summaryText(dir: string, clis: string[], bootloaders: string[], canon: CanonMode): string {
+function summaryText(
+  dir: string,
+  clis: string[],
+  bootloaders: string[],
+  canon: CanonMode,
+  baseline: ReturnType<typeof resolveBaselineSource>,
+): string {
   const layer2 =
     canon === "compact"
       ? `Layer 2 (this repo): ${dir}/RULE_ROUTER.md → the contract (${dir}/project.json + ${dir}/project.md + ${dir}/setup.md) + ${dir}/adapters/`
@@ -311,13 +353,19 @@ function summaryText(dir: string, clis: string[], bootloaders: string[], canon: 
     canon === "compact"
       ? "Repo contract (stack/commands/scale/gaps): `aih contract`. Re-run `aih bootstrap-ai`"
       : "Context dir (INDEX/architecture/conventions): `aih scaffold`. Re-run `aih bootstrap-ai`";
+  const layer1 =
+    baseline.id === "ecc"
+      ? "Layer 1 (user baseline): install ECC + Superpowers with `aih ecc` / `aih superpowers`."
+      : `Layer 1 (user baseline): ${baseline.label} (${baseline.sources
+          .map((repo) => `${repo.owner}/${repo.repo}@${repo.pinnedSha.slice(0, 12)}`)
+          .join(" + ")}), installed via ${baseline.installVerb}.`;
   return [
     `Layered AI canon for ${clis.join(", ")}.`,
     "",
     layer2,
     `Bootloaders: ${bootloaders.join(", ")} (tool preamble + a regenerated shared block).`,
     "",
-    "Layer 1 (user baseline): install ECC + Superpowers with `aih ecc` / `aih superpowers`.",
+    layer1,
     contextLine,
     "to regenerate (idempotent); `aih bootstrap-ai --verify` is the drift gate.",
   ].join("\n");
@@ -345,6 +393,7 @@ export const command: CommandSpec = {
         "write the --verify drift report as SARIF 2.1.0 for GitHub code-scanning (`-` → stdout)",
     },
     CANON_OPTION,
+    BASELINE_OPTION,
   ],
   plan: bootstrapAiPlan,
 };

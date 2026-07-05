@@ -38,6 +38,8 @@ export type CheckCode =
   | "cli.bootloader-drift"
   | "cli.wont-load"
   | "canon.router-missing"
+  | "canon.generated-missing"
+  | "canon.generated-drift"
   | "canon.context-dir-missing"
   | "canon.lint-failed"
   | "canon.adoptable"
