@@ -11,6 +11,7 @@ export {
   registerCommands,
 } from "./commands/index.js";
 export * from "./config/settings.js";
+export * from "./context/index.js";
 export * from "./errors.js";
 export * from "./internals/envfile.js";
 export * from "./internals/execute.js";
