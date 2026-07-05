@@ -50,9 +50,9 @@ interface SurfaceOption {
 interface SurfaceCommand {
   name: string;
   /**
-   * Deprecated old names this command still answers to (CommandSpec
-   * .deprecatedAliases — see STABILITY.md). Key present only when non-empty,
-   * so today's alias-free surface stays byte-identical.
+   * Alternate names this command answers to (CommandSpec aliases and
+   * deprecatedAliases). Key present only when non-empty, so alias-free commands
+   * stay byte-identical.
    */
   aliases?: string[];
   /** Presence only, never the text — reworded help must not be a contract change. */
@@ -169,11 +169,10 @@ describe("v1 contract — CLI command surface", () => {
     }
   });
 
-  it("walk captures deprecated aliases (aliases ARE contract) — and today's surface has none", () => {
-    // Zero built-ins carry a deprecated alias yet: the committed fixture must stay alias-free.
-    const carriesAlias = (node: SurfaceCommand): boolean =>
-      (node.aliases?.length ?? 0) > 0 || node.commands.some((c) => carriesAlias(c));
-    expect(carriesAlias(liveSurface())).toBe(false);
+  it("walk captures aliases (aliases ARE contract)", () => {
+    const root = liveSurface();
+    const uninstall = root.commands.find((c) => c.name === "uninstall");
+    expect(uninstall?.aliases).toEqual(["clean"]);
 
     // The moment a spec declares deprecatedAliases, the walked surface pins them —
     // so removing an alias before its major is a fixture diff, not a silent break.

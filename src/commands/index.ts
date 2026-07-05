@@ -59,6 +59,7 @@ import {
   trustVerifyCommand,
 } from "../trust/commands.js";
 import { trustScanCommand } from "../trust/scan.js";
+import { command as uninstall } from "../uninstall/index.js";
 import { command as usage } from "../usage/index.js";
 import { command as vdi } from "../vdi/index.js";
 import { runWorkspaceAdd, workspaceAddCommand } from "../workspace/acquire.js";
@@ -98,6 +99,7 @@ export const CAPABILITIES: CommandSpec[] = [
   workspace,
   adopt,
   prune,
+  uninstall,
   init,
 ];
 
@@ -187,6 +189,7 @@ export function builtinCommandNames(
 ): ReadonlySet<string> {
   return new Set([
     ...specs.map((spec) => spec.name),
+    ...specs.flatMap((spec) => spec.aliases ?? []),
     ...specs.flatMap((spec) => spec.deprecatedAliases ?? []),
     ...PARENT_GROUPS,
     ...RESERVED_COMMAND_NAMES,
@@ -270,6 +273,7 @@ function registerSpec(program: Command, spec: CommandSpec): void {
   // copy explicitly and attaching at the end yields the same net configuration.
   const cmd = program.createCommand(spec.name).description(spec.summary);
   cmd.copyInheritedSettings(program);
+  for (const alias of spec.aliases ?? []) cmd.alias(alias);
   // Alias-before-removal (STABILITY.md): each deprecated old name stays a live
   // commander alias — same flags, same action, one stderr warning at dispatch.
   // NOT hidden: commander shows the first alias in help as `name|alias`, which

@@ -111,6 +111,16 @@ still-targeted CLI whose binary is absent from `PATH` (loud warning; never the d
 Shared selection flags (`--cli`, `--all-tools`, `--detect`) are accepted by the command surface but
 ignored by `prune`; the digest says so and keeps the diff anchored to committed intent.
 
+## aih uninstall
+
+Remove the core aih install footprint from a repo; `aih clean` is the same command. Dry-run
+preview by default. Under `--apply`, aih-owned whole paths (`ai-coding/` or the committed
+context dir, `.aih-config.json`, and `.aih/`) move to reversible sibling `*.aih.bak` backups,
+which avoids archiving into `.aih/legacy/` while `.aih/` itself is being removed. Co-owned
+files such as root `.mcp.json` are surfaced as manual advisories instead of being edited or
+deleted, because aih's entries have no on-disk ownership marker there. Dirty/untracked removal
+targets refuse without `--force`.
+
 ## aih ecc
 
 Install [affaan-m/ECC](https://github.com/affaan-m/ECC) (skills, instincts, memory, security,

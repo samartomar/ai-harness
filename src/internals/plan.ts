@@ -255,6 +255,8 @@ export interface CommandPositional {
 export interface CommandSpec {
   name: string;
   summary: string;
+  /** Current command aliases that dispatch without a deprecation warning. */
+  aliases?: string[];
   /**
    * Old command NAMES this command still answers to after a rename — the
    * alias-before-removal deprecation machinery (STABILITY.md). Each entry
