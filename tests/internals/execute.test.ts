@@ -686,6 +686,24 @@ describe("executePlan — remove actions", () => {
     }
   });
 
+  it("refuses to remove through a symlinked parent even when it resolves inside the repo", async () => {
+    const real = put("real-adapters/codex.md", "# codex\n");
+    mkdirSync(join(dir, "ai-coding"), { recursive: true });
+    try {
+      symlinkSync(join(dir, "real-adapters"), join(dir, "ai-coding", "adapters"), "dir");
+    } catch {
+      return; // symlink creation not permitted (e.g. Windows) — skip
+    }
+
+    await expect(
+      executePlan(
+        plan("prune", remove("ai-coding/adapters/codex.md", "stale")),
+        ctx({ apply: true }),
+      ),
+    ).rejects.toBeInstanceOf(PathContainmentError);
+    expect(readFileSync(real, "utf8")).toBe("# codex\n");
+  });
+
   it("aborts before removing any file when a write in the same plan fails (atomicity)", async () => {
     const abs = put("ai-coding/adapters/codex.md", "# codex\n");
     // Writes commit before removals, so a failing write (here: writing THROUGH an

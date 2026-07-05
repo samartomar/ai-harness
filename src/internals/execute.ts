@@ -176,6 +176,25 @@ function lstatKind(p: string): { isSymlink: boolean } | undefined {
   }
 }
 
+function assertNoSymlinkParents(root: string, absPath: string, displayPath: string): void {
+  const rel = relative(root, absPath);
+  if (rel === "" || rel.startsWith("..") || isAbsolute(rel)) return;
+  const parts = rel.split(/[\\/]+/).filter((part) => part.length > 0);
+  let current = root;
+  for (const part of parts.slice(0, -1)) {
+    current = resolve(current, part);
+    const info = lstatKind(current);
+    if (info === undefined) return;
+    if (info.isSymlink) {
+      throw new PathContainmentError(
+        `refusing to remove through a symlinked parent: ${displayPath} (parent ${normalizeRel(
+          relative(root, current),
+        )})`,
+      );
+    }
+  }
+}
+
 /** realpath, or a plain resolve if the path does not exist yet. */
 function realpathSafe(p: string): string {
   try {
@@ -405,9 +424,11 @@ export async function executePlan(
       const absPath = resolvePath(ctx, action.path);
       // Fail closed BEFORE touching disk: contain the raw path (a symlinked or `..`
       // escaping target realpaths outside the root → throws), then refuse a symlink
-      // outright — aih only removes plain files it wrote, and moving/restoring a link
-      // would silently recreate a regular file (or re-establish an out-of-repo escape).
+      // outright, including symlinked parents. aih only removes plain files it wrote,
+      // and moving/restoring a link would silently recreate a regular file (or
+      // re-establish an escape / dirty-gate bypass through an alternate path).
       assertContained(ctx.root, absPath);
+      assertNoSymlinkParents(ctx.root, absPath, action.path);
       const info = lstatKind(absPath);
       if (info?.isSymlink) {
         throw new PathContainmentError(
@@ -430,6 +451,7 @@ export async function executePlan(
         // the file OUTSIDE the root. assertContained realpaths the deepest existing
         // ancestor, so a symlinked parent — or a `..` surviving in the path — trips it.
         assertContained(ctx.root, destAbs);
+        assertNoSymlinkParents(ctx.root, destAbs, destRel);
         if (ctx.apply) txn.stageRemoval(absPath, destAbs, { backupSibling: action.hardDelete });
         removes.push({
           path: action.path,
