@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -624,6 +624,44 @@ describe("doctor — git-enabled workspace roots", () => {
     expect(res?.verdict).toBe("skip");
     expect(res?.code).toBe("scale.code-review-graph-missing");
     expect(res?.detail).toContain("workspace graph coverage is unverified");
+  });
+
+  it("fails closed before probing graph coverage for linked child repo paths", async () => {
+    const external = mkdtempSync(join(tmpdir(), "aih-doctor-workspace-external-"));
+    try {
+      mkdirSync(join(external, ".git"), { recursive: true });
+      symlinkSync(external, join(dir, "linked"), "junction");
+      writeFileSync(
+        join(dir, ".aih-workspace.json"),
+        JSON.stringify({
+          workspaceType: "multi-repo",
+          graphScope: "combined-child-repos",
+          contextDir: "ai-coding",
+          repos: ["linked"],
+          git: true,
+          generatedBy: "aih workspace",
+        }),
+      );
+      const calls: string[][] = [];
+      const run = fakeRunner((argv) => {
+        calls.push(argv);
+        return { code: 1, spawnError: true };
+      });
+      const c: PlanContext = {
+        ...rooted(true),
+        run,
+        host: makeHostAdapter({ platform: "linux", run, env: {} }),
+      };
+
+      const probe = findProbe((await command.plan(c)).actions, "workspace child linked graph safety");
+      const res = await probe?.run(c);
+
+      expect(res?.verdict).toBe("fail");
+      expect(res?.detail).toContain("real directory");
+      expect(calls).toEqual([]);
+    } finally {
+      rmSync(external, { recursive: true, force: true });
+    }
   });
 
   it("does not render child repo paths into scaffold guidance commands", async () => {
