@@ -247,7 +247,7 @@ export async function scaleSafetyCheck(
     return {
       name,
       verdict: "skip",
-      code: "scale.code-review-graph-unverified",
+      code: "scale.code-review-graph-missing",
       detail:
         `${detailPrefix}${files} tracked files < ${LARGE_REPO_FILE_THRESHOLD}, but workspace graph coverage is unverified; ${graph.detail}. ` +
         "Re-run `aih workspace --apply` to emit per-child graph MCP servers, or use bounded rg/fd reads only.",

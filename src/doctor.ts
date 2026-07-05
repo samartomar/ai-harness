@@ -307,7 +307,6 @@ export const command: CommandSpec = {
             name: `child:${repo.id}:graph`,
             verdict: "skip",
             detail: `${repo.path} absent — run \`aih workspace hydrate --apply\` or create the child repo`,
-            code: "workspace.child-missing",
           };
         }
         return scaleSafetyCheck(ctx, {

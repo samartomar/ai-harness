@@ -622,7 +622,7 @@ describe("doctor — git-enabled workspace roots", () => {
     const res = await probe?.run(c);
 
     expect(res?.verdict).toBe("skip");
-    expect(res?.code).toBe("scale.code-review-graph-unverified");
+    expect(res?.code).toBe("scale.code-review-graph-missing");
     expect(res?.detail).toContain("workspace graph coverage is unverified");
   });
 
