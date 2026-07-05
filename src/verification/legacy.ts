@@ -1,3 +1,4 @@
+import { redactSecrets } from "../guardrails/redact.js";
 import {
   type Check,
   type Verdict as LegacyVerdict,
@@ -42,6 +43,7 @@ function hasControlCharacter(value: string): boolean {
 
 function isSafeFingerprint(value: string): boolean {
   if (value.length === 0 || value.length > 256 || hasControlCharacter(value)) return false;
+  if (redactSecrets(value) !== value) return false;
   for (const char of value) {
     const code = char.codePointAt(0);
     const safe =
@@ -65,13 +67,19 @@ function safeFingerprint(evidence: Evidence): string | undefined {
   return isSafeFingerprint(evidence.id) ? evidence.id : undefined;
 }
 
+function looksPathLike(uri: string): boolean {
+  if (uri.includes("/")) return true;
+  const last = uri.split("/").at(-1) ?? "";
+  return last.startsWith(".") || last.includes(".");
+}
+
 function safeLocation(evidence: Evidence): Check["location"] | undefined {
-  if (evidence.type !== "file") return undefined;
   const rawPath = evidence.source.split("#", 1)[0]?.trim();
   if (rawPath === undefined || rawPath.length === 0 || hasControlCharacter(rawPath)) {
     return undefined;
   }
   const uri = rawPath.replaceAll("\\", "/");
+  if (!looksPathLike(uri)) return undefined;
   if (
     uri.startsWith("/") ||
     uri.startsWith("~") ||
@@ -111,17 +119,48 @@ function firstSafeLocation(evidence: readonly Evidence[]): Check["location"] | u
 
 function firstSafeFingerprint(evidence: readonly Evidence[]): string | undefined {
   for (const item of evidence) {
-    if (item.type === "file" && safeLocation(item) === undefined) continue;
+    if (safeLocation(item) === undefined) continue;
     const fingerprint = safeFingerprint(item);
     if (fingerprint !== undefined) return fingerprint;
   }
   return undefined;
 }
 
+function normalizeDetailText(value: string): string {
+  const redacted = redactSecrets(value);
+  const chars = Array.from(redacted);
+  let normalized = "";
+  let pendingSpace = false;
+  for (let index = 0; index < chars.length; index += 1) {
+    const char = chars[index] ?? "";
+    if (char === "\u001b" && chars[index + 1] === "[") {
+      index += 2;
+      while (index < chars.length) {
+        const code = chars[index]?.codePointAt(0);
+        if (code !== undefined && code >= 64 && code <= 126) break;
+        index += 1;
+      }
+      pendingSpace = true;
+      continue;
+    }
+    const code = char.codePointAt(0);
+    if (code === undefined || code < 32 || code === 127) {
+      pendingSpace = true;
+      continue;
+    }
+    if (pendingSpace && normalized.length > 0 && !normalized.endsWith(" ")) normalized += " ";
+    normalized += char;
+    pendingSpace = false;
+  }
+  return normalized.trim();
+}
+
 function boundedDetail(value: string | undefined): string | undefined {
   if (value === undefined || value.length === 0) return undefined;
-  if (value.length <= MAX_VERIFICATION_STRING_FIELD_LENGTH) return value;
-  return `${value.slice(0, MAX_VERIFICATION_STRING_FIELD_LENGTH - 15)}... [truncated]`;
+  const normalized = normalizeDetailText(value);
+  if (normalized.length === 0) return undefined;
+  if (normalized.length <= MAX_VERIFICATION_STRING_FIELD_LENGTH) return normalized;
+  return `${normalized.slice(0, MAX_VERIFICATION_STRING_FIELD_LENGTH - 15)}... [truncated]`;
 }
 
 function detailFromResults(results: readonly VerificationResult[]): string | undefined {
@@ -165,11 +204,15 @@ export function structuredVerificationRunToCheck(
   run: VerificationPipelineRun,
   options: StructuredVerificationRunCheckOptions,
 ): Check {
-  const checks = structuredVerificationRunToChecks(run, options);
-  const failing = run.results.filter((result) => legacyVerdictFor(result, options) === "fail");
+  const entries = run.results.map((result) => ({
+    result,
+    check: structuredVerificationResultToCheck(result, options),
+  }));
+  const checks = entries.map((entry) => entry.check);
+  const failing = entries.filter((entry) => legacyVerdictFor(entry.result, options) === "fail");
   const skipped = checks.filter((check) => check.verdict === "skip");
   const noteworthy =
-    failing.length > 0 ? failing : run.results.filter((result) => result.verdict !== "pass");
+    failing.length > 0 ? failing : entries.filter((entry) => entry.result.verdict !== "pass");
   const check: Check = {
     name: options.name,
     verdict:
@@ -178,9 +221,16 @@ export function structuredVerificationRunToCheck(
         : skipped.length > 0 && skipped.length === checks.length
           ? "skip"
           : "pass",
-    detail: detailFromResults(noteworthy) ?? options.passDetail,
+    detail:
+      detailFromResults(noteworthy.map((entry) => entry.result)) ??
+      boundedDetail(options.passDetail),
   };
-  const sourceCheck = checks.find((entry) => entry.verdict === check.verdict) ?? checks[0];
+  const sourceCheck =
+    noteworthy.find(
+      (entry) => entry.check.location !== undefined || entry.check.fingerprint !== undefined,
+    )?.check ??
+    checks.find((entry) => entry.verdict === check.verdict) ??
+    checks[0];
   if (sourceCheck?.location !== undefined) check.location = sourceCheck.location;
   if (sourceCheck?.fingerprint !== undefined) check.fingerprint = sourceCheck.fingerprint;
   return check;

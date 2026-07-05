@@ -110,6 +110,78 @@ describe("structured verification legacy compatibility", () => {
     });
   });
 
+  it("preserves locations from real file-backed structured evidence types", () => {
+    const report = structuredVerificationRunToReport(
+      run([
+        result("exec-locality", {
+          verdict: "fail",
+          severity: "high",
+          category: "exec",
+          evidence: [
+            {
+              id: "exec-locality:script:setup",
+              type: "package-script",
+              source: "package.json#scripts.setup",
+            },
+          ],
+        }),
+        result("security", {
+          verdict: "fail",
+          severity: "critical",
+          category: "security",
+          evidence: [
+            {
+              id: "security:config:ai-coding/project.json:token",
+              type: "config-secret",
+              source: "ai-coding/project.json",
+            },
+          ],
+        }),
+        result("dependency", {
+          verdict: "warn",
+          severity: "medium",
+          category: "dependency",
+          evidence: [
+            {
+              id: "dependency:dependency:left-pad",
+              type: "package-dependency",
+              source: "package.json#dependencies.left-pad",
+            },
+          ],
+        }),
+      ]),
+    );
+
+    expect(report.checks.map((check) => check.location)).toEqual([
+      { uri: "package.json" },
+      { uri: "ai-coding/project.json" },
+      { uri: "package.json" },
+    ]);
+  });
+
+  it("sanitizes legacy detail and secret-shaped fingerprints", () => {
+    const fakeSecret = "sk-test-not-real-secret-123456";
+    const check = structuredVerificationResultToCheck(
+      result("security", {
+        verdict: "fail",
+        severity: "critical",
+        category: "security",
+        evidence: [
+          {
+            id: fakeSecret,
+            type: "config-secret",
+            source: "ai-coding/project.json",
+          },
+        ],
+        message: `leaked ${fakeSecret}\u001b[31m`,
+      }),
+    );
+
+    expect(check.detail).toBe("leaked [REDACTED]");
+    expect(JSON.stringify(check)).not.toContain(fakeSecret);
+    expect(check.fingerprint).toBeUndefined();
+  });
+
   it("drops unsafe legacy metadata from non-repo evidence", () => {
     const check = structuredVerificationResultToCheck(
       result("policy", {
@@ -136,6 +208,38 @@ describe("structured verification legacy compatibility", () => {
       name: "policy",
       verdict: "fail",
       detail: "policy evidence was not repo-relative",
+    });
+  });
+
+  it("uses noteworthy results for aggregate legacy metadata", () => {
+    const check = structuredVerificationRunToCheck(
+      run([
+        result("policy", {
+          evidence: [{ id: "policy:org-policy", type: "file", source: "aih-org-policy.json" }],
+        }),
+        result("dependency", {
+          verdict: "warn",
+          severity: "medium",
+          category: "dependency",
+          evidence: [
+            {
+              id: "dependency:dependency:left-pad",
+              type: "package-dependency",
+              source: "package.json#dependencies.left-pad",
+            },
+          ],
+          message: "dependency spec needs pinned provenance",
+        }),
+      ]),
+      { name: "structured verification", passDetail: "all structured checks passed" },
+    );
+
+    expect(check).toEqual({
+      name: "structured verification",
+      verdict: "pass",
+      detail: "dependency: dependency spec needs pinned provenance",
+      location: { uri: "package.json" },
+      fingerprint: "dependency:dependency:left-pad",
     });
   });
 
