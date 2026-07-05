@@ -1,13 +1,25 @@
-import { existsSync } from "node:fs";
+import { existsSync, lstatSync } from "node:fs";
 import { basename, join, posix, resolve } from "node:path";
-import { AihError } from "../errors.js";
+import { asPosture } from "../config/posture.js";
+import { AihError, SettingsError } from "../errors.js";
 import { bootloadersFor, entry as registryEntry } from "../internals/cli-registry.js";
 import { type Cli, resolveClis } from "../internals/clis.js";
-import { readIfExists } from "../internals/fsxn.js";
+import { readRegularFile } from "../internals/fsxn.js";
+import { isPlainObject, parseJsoncText } from "../internals/merge.js";
 import type { Action, CommandSpec, Plan, PlanContext, WriteAction } from "../internals/plan.js";
 import { doc, plan, probe, writeJson, writeText } from "../internals/plan.js";
 import { frontmatter } from "../internals/render.js";
 import type { Check } from "../internals/verify.js";
+import { readMcpOrgPolicy } from "../mcp/catalog.js";
+import {
+  deniedServers,
+  evaluateMcpPolicy,
+  type McpPosture,
+  mcpPolicyOptionsFromConfig,
+} from "../mcp/policy.js";
+import type { McpServer } from "../mcp/servers.js";
+import type { OrgPolicy } from "../org-policy/schema.js";
+import { classifyIncomingMcp } from "../trust/mcp-classify.js";
 import {
   checkWorkspaceChildPath,
   detectChildRepos,
@@ -61,11 +73,276 @@ function childScaffoldedProbe(repo: string, dir: string): Action {
   });
 }
 
-function staleManagedMcpServerKeys(root: string, incomingKeys: readonly string[]): string[] {
-  const text = readIfExists(resolve(root, ".mcp.json"));
-  if (text === undefined) return [];
+const EXACT_PACKAGE_RE =
+  /^(?:@[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+|[A-Za-z0-9._-]+)@\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/;
+
+const PACKAGE_RESOLVERS = new Set(["npx", "uvx", "uv", "bunx", "pnpm", "yarn", "pipx"]);
+
+const RESOLVER_BOOLEAN_FLAGS = new Set([
+  "-y",
+  "--yes",
+  "--offline",
+  "--no-python-downloads",
+  "--no-env-file",
+]);
+
+const DOCKER_BOOLEAN_RUN_FLAGS = new Set(["--init", "--read-only", "--rm"]);
+
+const DOCKER_VALUE_RUN_FLAGS = new Set([
+  "-e",
+  "--env",
+  "--env-file",
+  "-h",
+  "--hostname",
+  "--name",
+  "--network",
+  "-p",
+  "--publish",
+  "-u",
+  "--user",
+  "-v",
+  "--volume",
+  "-w",
+  "--workdir",
+  "--add-host",
+  "--entrypoint",
+  "--platform",
+  "--pull",
+]);
+
+const PINNED_GITHUB_MCP_IMAGE_RE =
+  /^ghcr\.io\/github\/github-mcp-server(?::v\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?|@sha256:[a-f0-9]{64})$/;
+
+function errorDetail(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function invalidOrgPolicyError(error: unknown): SettingsError {
+  return new SettingsError(`aih-org-policy.json cannot be parsed (${errorDetail(error)})`);
+}
+
+function workspaceMcpConfigPath(ctx: PlanContext, repo: string | undefined): string {
+  return repo === undefined ? join(ctx.root, ".mcp.json") : join(ctx.root, repo, ".mcp.json");
+}
+
+function workspaceMcpConfigRel(repo: string | undefined): string {
+  return repo === undefined ? ".mcp.json" : posix.join(repo, ".mcp.json");
+}
+
+function readWorkspaceMcpConfig(path: string): { text?: string; absent?: true; issue?: string } {
+  let stat: ReturnType<typeof lstatSync>;
   try {
-    const parsed = JSON.parse(text) as { mcpServers?: unknown };
+    stat = lstatSync(path);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return { absent: true };
+    return { issue: `cannot stat .mcp.json (${errorDetail(error)})` };
+  }
+  if (stat.isSymbolicLink()) {
+    return { issue: ".mcp.json is a symlink; replace it with a regular file" };
+  }
+  if (!stat.isFile()) return { issue: ".mcp.json is not a regular file" };
+  const bytes = readRegularFile(path);
+  if (bytes === undefined) return { issue: ".mcp.json cannot be read as a regular file" };
+  // Defense in depth for platforms where O_NOFOLLOW is unavailable at open time:
+  // re-check that the path still names the same regular file after reading. This
+  // narrows the Windows race window, though a local writer with directory access
+  // can still modify the file directly and must not be considered trusted input.
+  let after: ReturnType<typeof lstatSync>;
+  try {
+    after = lstatSync(path);
+  } catch (error) {
+    return { issue: `cannot re-stat .mcp.json after reading (${errorDetail(error)})` };
+  }
+  if (after.isSymbolicLink() || !after.isFile()) {
+    return { issue: ".mcp.json changed while it was being read" };
+  }
+  if (
+    after.dev !== stat.dev ||
+    after.ino !== stat.ino ||
+    after.size !== stat.size ||
+    after.mtimeMs !== stat.mtimeMs
+  ) {
+    return { issue: ".mcp.json changed while it was being read" };
+  }
+  return { text: bytes.toString("utf8") };
+}
+
+function commandName(command: string): string {
+  const last = command.split(/[\\/]/).at(-1) ?? command;
+  return last.replace(/\.(?:cmd|exe)$/i, "").toLowerCase();
+}
+
+function resolverPackageArg(command: string, args: readonly string[]): string | undefined {
+  if (!PACKAGE_RESOLVERS.has(commandName(command))) return undefined;
+  for (const raw of args) {
+    const arg = raw.trim();
+    if (arg.length === 0) continue;
+    if (RESOLVER_BOOLEAN_FLAGS.has(arg)) continue;
+    if (arg.startsWith("-")) return undefined;
+    return arg;
+  }
+  return undefined;
+}
+
+function isDockerBooleanShortFlag(arg: string): boolean {
+  return /^-[itd]+$/.test(arg);
+}
+
+function dockerImageArg(command: string, args: readonly string[]): string | undefined {
+  if (!["docker", "podman"].includes(commandName(command))) return undefined;
+  if (args[0] !== "run") return undefined;
+  for (let index = 1; index < args.length; index += 1) {
+    const arg = args[index]?.trim() ?? "";
+    if (arg.length === 0) continue;
+    if (arg === "--") return args[index + 1];
+    if (DOCKER_BOOLEAN_RUN_FLAGS.has(arg) || isDockerBooleanShortFlag(arg)) continue;
+    if (DOCKER_VALUE_RUN_FLAGS.has(arg)) {
+      index += 1;
+      continue;
+    }
+    if (arg.startsWith("--") && arg.includes("=")) continue;
+    if (arg.startsWith("-")) return undefined;
+    return arg;
+  }
+  return undefined;
+}
+
+function workspaceStdioSupplyChain(
+  current: McpServer["supplyChain"],
+  command: string,
+  args: readonly string[],
+): McpServer["supplyChain"] {
+  const packageArg = resolverPackageArg(command, args);
+  if (packageArg !== undefined) return EXACT_PACKAGE_RE.test(packageArg) ? "pinned" : "unpinned";
+  const imageArg = dockerImageArg(command, args);
+  if (imageArg !== undefined && PINNED_GITHUB_MCP_IMAGE_RE.test(imageArg)) return "pinned";
+  return current === "hosted-remote" ? current : "unpinned";
+}
+
+function classifyWorkspaceMcpServer(raw: unknown): McpServer {
+  const classified = classifyIncomingMcp(raw);
+  return classified.type === "stdio"
+    ? {
+        ...classified,
+        supplyChain: workspaceStdioSupplyChain(
+          classified.supplyChain,
+          classified.command,
+          classified.args,
+        ),
+      }
+    : classified;
+}
+
+function classifyWorkspaceMcpServers(parsed: unknown): {
+  servers?: Record<string, McpServer>;
+  error?: string;
+} {
+  if (!isPlainObject(parsed)) return { error: ".mcp.json root must be an object" };
+  const rawServers = parsed.mcpServers;
+  if (rawServers === undefined) return { servers: {} };
+  if (!isPlainObject(rawServers)) return { error: ".mcp.json mcpServers must be an object" };
+  return {
+    servers: Object.fromEntries(
+      Object.entries(rawServers)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([name, raw]) => [name, classifyWorkspaceMcpServer(raw)]),
+    ),
+  };
+}
+
+function workspaceMcpConfigIssue(name: string, rel: string, detail: string): Check {
+  return {
+    name,
+    verdict: "fail",
+    detail: `${rel}: ${detail}`,
+    code: "mcp.config-invalid",
+    location: { uri: rel, startLine: 1 },
+  };
+}
+
+function displayMcpServerName(name: string): string {
+  const printable = [...name]
+    .map((char) => {
+      const code = char.charCodeAt(0);
+      return code <= 0x1f || (code >= 0x7f && code <= 0x9f) ? "?" : char;
+    })
+    .join("");
+  return printable.length <= 120 ? printable : `${printable.slice(0, 117)}...`;
+}
+
+function workspacePolicyDetail(
+  policy: { name: string; reason: string },
+  server: McpServer | undefined,
+): string {
+  if (server?.egress !== "third-party") return policy.reason;
+  return `${policy.reason}; org-policy egress approvals do not apply to workspace on-disk MCP configs`;
+}
+
+function workspaceMcpPolicyProbe(
+  label: string,
+  repo: string | undefined,
+  posture: McpPosture,
+  policy: OrgPolicy | undefined,
+): Action {
+  return probe(`${label} MCP policy`, (ctx: PlanContext): Check => {
+    const name = `${label} MCP policy`;
+    const rel = workspaceMcpConfigRel(repo);
+    const config = readWorkspaceMcpConfig(workspaceMcpConfigPath(ctx, repo));
+    if (config.absent === true) {
+      return {
+        name,
+        verdict: "skip",
+        detail: `${rel} is absent — no on-disk MCP config to evaluate`,
+        code: "mcp.config-missing",
+        location: { uri: rel, startLine: 1 },
+      };
+    }
+    if (config.issue !== undefined) return workspaceMcpConfigIssue(name, rel, config.issue);
+
+    let parsed: unknown;
+    try {
+      parsed = parseJsoncText(config.text ?? "");
+    } catch (error) {
+      return workspaceMcpConfigIssue(name, rel, `malformed MCP config (${errorDetail(error)})`);
+    }
+
+    const classified = classifyWorkspaceMcpServers(parsed);
+    if (classified.error !== undefined) return workspaceMcpConfigIssue(name, rel, classified.error);
+    const servers = classified.servers ?? {};
+    const denied = deniedServers(
+      evaluateMcpPolicy(
+        servers,
+        posture,
+        mcpPolicyOptionsFromConfig(policy?.mcp, { includeEgressApprovals: false }),
+      ),
+    );
+    if (denied.length > 0) {
+      return {
+        name,
+        verdict: "fail",
+        detail: `${rel} denied — self-host, pin, approve, or remove before an enterprise rollout: ${denied
+          .map(
+            (p) => `${displayMcpServerName(p.name)} (${workspacePolicyDetail(p, servers[p.name])})`,
+          )
+          .join("; ")}`,
+        code: "mcp.policy-denied",
+        location: { uri: rel, startLine: 1 },
+      };
+    }
+    const count = Object.keys(servers).length;
+    return {
+      name,
+      verdict: "pass",
+      detail: `${rel}: ${count} MCP server${count === 1 ? "" : "s"} allowed under the enterprise posture`,
+    };
+  });
+}
+
+function staleManagedMcpServerKeys(root: string, incomingKeys: readonly string[]): string[] {
+  const config = readWorkspaceMcpConfig(resolve(root, ".mcp.json"));
+  if (config.text === undefined) return [];
+  try {
+    const parsed = JSON.parse(config.text) as { mcpServers?: unknown };
     if (
       typeof parsed.mcpServers !== "object" ||
       parsed.mcpServers === null ||
@@ -216,6 +493,7 @@ function workspaceBootloaderWrites(
  */
 async function workspacePlan(ctx: PlanContext): Promise<Plan> {
   const dir = ctx.contextDir;
+  const posture = ctx.posture ?? asPosture(ctx.options.posture);
   // resolve() first: basename(".") is "." which would plan a "..code-workspace"
   // write that the executor's containment guard rejects as a parent escape.
   const name = basename(resolve(ctx.root)) || "workspace";
@@ -252,6 +530,8 @@ async function workspacePlan(ctx: PlanContext): Promise<Plan> {
   const clis = resolveClis(ctx.options, { strict: true });
   const bootloaders = bootloadersFor(clis);
   const bootloaderActivations = bootloaderActivationsFor(clis);
+  const policyResult = posture === "enterprise" ? readMcpOrgPolicy(ctx) : {};
+  if (policyResult.error !== undefined) throw invalidOrgPolicyError(policyResult.error);
 
   const writes: WriteAction[] = [
     writeJson(
@@ -339,6 +619,12 @@ async function workspacePlan(ctx: PlanContext): Promise<Plan> {
     ...(enableGit ? await workspaceGitExecs(ctx, writes) : []),
   ];
 
+  if (posture === "enterprise") {
+    actions.push(workspaceMcpPolicyProbe("parent", undefined, posture, policyResult.policy));
+    for (const repo of repoPaths) {
+      actions.push(workspaceMcpPolicyProbe(`child ${repo}`, repo, posture, policyResult.policy));
+    }
+  }
   for (const repo of repoPaths) actions.push(childScaffoldedProbe(repo, dir));
 
   return plan("workspace", ...actions);

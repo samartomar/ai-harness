@@ -27,6 +27,7 @@ export type CheckCode =
   | "mcp.blocked"
   | "mcp.uv-missing"
   | "mcp.config-missing"
+  | "mcp.config-invalid"
   | "mcp.unvendored-offline"
   | "mcp.policy-denied"
   | "mcp.compliant-config-read"

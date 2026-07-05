@@ -9,10 +9,13 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
+import { Command } from "commander";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { runCapability } from "../../src/commands/run.js";
 import { executePlan } from "../../src/internals/execute.js";
 import type { Action, PlanContext, ProbeAction, WriteAction } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
+import type { Check } from "../../src/internals/verify.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 import {
   assertDiscoverableChildGitRepoName,
@@ -36,6 +39,12 @@ function child(name: string, git = true): void {
   if (git) mkdirSync(join(parent, name, ".git"), { recursive: true });
 }
 
+function scaffoldedChild(name: string): void {
+  child(name);
+  mkdirSync(join(parent, name, "ai-coding"), { recursive: true });
+  writeFileSync(join(parent, name, "ai-coding", "RULE_ROUTER.md"), "# Child Router\n", "utf8");
+}
+
 function makeCtx(
   options: Record<string, unknown> = {},
   apply = false,
@@ -52,6 +61,49 @@ function makeCtx(
     env: {},
     options,
   };
+}
+
+function workspaceCliCommand(argv: string[]): Command {
+  const cmd = new Command("workspace");
+  cmd.exitOverride();
+  cmd.configureOutput({ writeOut: () => {}, writeErr: () => {} });
+  cmd.argument("[root]");
+  cmd
+    .option("--apply")
+    .option("--verify")
+    .option("--json")
+    .option("--root <dir>")
+    .option("--context-dir <dir>", "", "ai-coding")
+    .option("--posture <posture>", "", "vibe")
+    .option("--cli <list>")
+    .option("--all-tools")
+    .option("--detect")
+    .option("--force")
+    .option("--repos <list>")
+    .option("--git");
+  cmd.parse(argv, { from: "user" });
+  return cmd;
+}
+
+async function probeChecks(actions: Action[], ctx: PlanContext): Promise<Check[]> {
+  const checks: Check[] = [];
+  for (const action of actions) {
+    if (action.kind !== "probe") continue;
+    checks.push(await action.run(ctx));
+  }
+  return checks;
+}
+
+async function runWorkspace(argv: string[]): Promise<{ code: number; out: string }> {
+  let out = "";
+  const code = await runCapability(command, workspaceCliCommand(argv), {
+    run: fakeRunner(() => undefined),
+    env: {},
+    write: (text) => {
+      out += text;
+    },
+  });
+  return { code, out };
 }
 
 function writesByPath(actions: Action[]): Map<string, WriteAction> {
@@ -554,6 +606,451 @@ describe("workspace.plan — generated artifacts", () => {
     expect(probeAction).toBeDefined();
     const res = await probeAction?.run(makeCtx());
     expect(res?.verdict).toBe("skip"); // not scaffolded yet
+  });
+
+  it("under enterprise fails when a child .mcp.json contains a policy-denied server", async () => {
+    scaffoldedChild("ui");
+    writeFileSync(
+      join(parent, "ui", ".mcp.json"),
+      JSON.stringify({
+        mcpServers: {
+          "hosted-docs": { type: "http", url: "https://third-party.example/mcp" },
+        },
+      }),
+      "utf8",
+    );
+    const ctx: PlanContext = { ...makeCtx({ repos: "ui" }), verify: true, posture: "enterprise" };
+
+    const checks = await probeChecks((await command.plan(ctx)).actions, ctx);
+    const denied = checks.find((check) => check.code === "mcp.policy-denied");
+
+    expect(denied).toMatchObject({
+      verdict: "fail",
+      code: "mcp.policy-denied",
+    });
+    expect(denied?.detail).toContain("ui/.mcp.json");
+    expect(denied?.detail).toContain("hosted-docs");
+  });
+
+  it("under default posture emits no on-disk MCP policy probe", async () => {
+    scaffoldedChild("ui");
+    writeFileSync(
+      join(parent, "ui", ".mcp.json"),
+      JSON.stringify({
+        mcpServers: {
+          "hosted-docs": { type: "http", url: "https://third-party.example/mcp" },
+        },
+      }),
+      "utf8",
+    );
+
+    const actions = (await command.plan(makeCtx({ repos: "ui" }))).actions;
+
+    expect(
+      actions.some((action) => action.kind === "probe" && action.describe.includes("MCP policy")),
+    ).toBe(false);
+  });
+
+  it("sanitizes denied MCP server names before rendering human verification detail", async () => {
+    scaffoldedChild("ui");
+    writeFileSync(
+      join(parent, "ui", ".mcp.json"),
+      JSON.stringify({
+        mcpServers: {
+          "bad\u001b[2Jname": { type: "http", url: "https://third-party.example/mcp" },
+        },
+      }),
+      "utf8",
+    );
+    const ctx: PlanContext = { ...makeCtx({ repos: "ui" }), verify: true, posture: "enterprise" };
+
+    const checks = await probeChecks((await command.plan(ctx)).actions, ctx);
+    const denied = checks.find((check) => check.code === "mcp.policy-denied");
+
+    expect(denied?.detail).not.toContain("\u001b");
+    expect(denied?.detail).toContain("bad?[2Jname");
+  });
+
+  it("under enterprise skips a child MCP policy probe when .mcp.json is absent", async () => {
+    scaffoldedChild("ui");
+    const ctx: PlanContext = { ...makeCtx({ repos: "ui" }), verify: true, posture: "enterprise" };
+
+    const checks = await probeChecks((await command.plan(ctx)).actions, ctx);
+    const skipped = checks.find((check) => check.name === "child ui MCP policy");
+
+    expect(skipped).toMatchObject({
+      verdict: "skip",
+      code: "mcp.config-missing",
+    });
+    expect(skipped?.detail).toContain("ui/.mcp.json is absent");
+  });
+
+  it("under enterprise fails closed when child .mcp.json is not a regular file", async () => {
+    scaffoldedChild("ui");
+    mkdirSync(join(parent, "ui", ".mcp.json"));
+    const ctx: PlanContext = { ...makeCtx({ repos: "ui" }), verify: true, posture: "enterprise" };
+
+    const checks = await probeChecks((await command.plan(ctx)).actions, ctx);
+    const failed = checks.find((check) => check.name === "child ui MCP policy");
+
+    expect(failed).toMatchObject({
+      verdict: "fail",
+      code: "mcp.config-invalid",
+      detail: expect.stringContaining("not a regular file"),
+    });
+  });
+
+  it("under enterprise fails closed when child .mcp.json is a symlink", async () => {
+    scaffoldedChild("ui");
+    const external = mkdtempSync(join(tmpdir(), "aih-ws-mcp-external-"));
+    try {
+      writeFileSync(
+        join(external, "mcp.json"),
+        JSON.stringify({ mcpServers: { external: { type: "http", url: "https://example.test" } } }),
+        "utf8",
+      );
+      try {
+        symlinkSync(join(external, "mcp.json"), join(parent, "ui", ".mcp.json"), "file");
+      } catch {
+        return;
+      }
+      const ctx: PlanContext = {
+        ...makeCtx({ repos: "ui" }),
+        verify: true,
+        posture: "enterprise",
+      };
+
+      const checks = await probeChecks((await command.plan(ctx)).actions, ctx);
+      const failed = checks.find((check) => check.name === "child ui MCP policy");
+
+      expect(failed).toMatchObject({
+        verdict: "fail",
+        code: "mcp.config-invalid",
+        detail: expect.stringContaining("symlink"),
+      });
+    } finally {
+      rmSync(external, { recursive: true, force: true });
+    }
+  });
+
+  it("under enterprise allows exact-version workspace graph MCP stdio entries", async () => {
+    scaffoldedChild("ui");
+    writeFileSync(
+      join(parent, ".mcp.json"),
+      JSON.stringify({
+        mcpServers: {
+          "aih-workspace-graph-ui": {
+            command: "uvx",
+            args: [
+              "--offline",
+              "--no-python-downloads",
+              "--no-env-file",
+              "code-review-graph@2.3.6",
+              "serve",
+              "--repo",
+              resolve(parent, "ui"),
+            ],
+          },
+        },
+      }),
+      "utf8",
+    );
+    const ctx: PlanContext = { ...makeCtx({ repos: "ui" }), verify: true, posture: "enterprise" };
+
+    const checks = await probeChecks((await command.plan(ctx)).actions, ctx);
+
+    expect(checks.some((check) => check.code === "mcp.policy-denied")).toBe(false);
+    expect(checks.find((check) => check.name === "parent MCP policy")).toMatchObject({
+      verdict: "pass",
+    });
+  });
+
+  it("under enterprise fails relative stdio wrappers without an exact package pin", async () => {
+    scaffoldedChild("ui");
+    writeFileSync(
+      join(parent, "ui", ".mcp.json"),
+      JSON.stringify({
+        mcpServers: {
+          "local-wrapper": { command: "node", args: ["server.js"] },
+        },
+      }),
+      "utf8",
+    );
+    const ctx: PlanContext = { ...makeCtx({ repos: "ui" }), verify: true, posture: "enterprise" };
+
+    const checks = await probeChecks((await command.plan(ctx)).actions, ctx);
+    const denied = checks.find((check) => check.code === "mcp.policy-denied");
+
+    expect(denied).toMatchObject({
+      verdict: "fail",
+      code: "mcp.policy-denied",
+      detail: expect.stringContaining("local-wrapper"),
+    });
+    expect(denied?.detail).toContain("unpinned supply chain");
+  });
+
+  it("under enterprise ignores @latest-looking metadata outside the resolver package operand", async () => {
+    scaffoldedChild("ui");
+    writeFileSync(
+      join(parent, "ui", ".mcp.json"),
+      JSON.stringify({
+        mcpServers: {
+          "local-graph": {
+            command: "uvx",
+            args: [
+              "--offline",
+              "--no-python-downloads",
+              "--no-env-file",
+              "code-review-graph@2.3.6",
+              "--annotation=@latest-review",
+            ],
+          },
+        },
+      }),
+      "utf8",
+    );
+    const ctx: PlanContext = { ...makeCtx({ repos: "ui" }), verify: true, posture: "enterprise" };
+
+    const checks = await probeChecks((await command.plan(ctx)).actions, ctx);
+
+    expect(checks.some((check) => check.code === "mcp.policy-denied")).toBe(false);
+    expect(checks.find((check) => check.name === "child ui MCP policy")).toMatchObject({
+      verdict: "pass",
+    });
+  });
+
+  it("under enterprise does not apply name-only org-policy approvals to on-disk child MCP egress", async () => {
+    scaffoldedChild("ui");
+    writeFileSync(
+      join(parent, "aih-org-policy.json"),
+      JSON.stringify({
+        schemaVersion: 1,
+        minimumPosture: "team",
+        references: { repoContract: "ai-coding/project.json" },
+        mcp: {
+          allowedServers: ["hosted-docs"],
+          approvals: [
+            {
+              server: "hosted-docs",
+              acceptEgress: true,
+              reason: "vendor reviewed for workspace docs",
+              approvedAt: "2026-07-05T00:00:00.000Z",
+            },
+          ],
+        },
+      }),
+      "utf8",
+    );
+    writeFileSync(
+      join(parent, "ui", ".mcp.json"),
+      JSON.stringify({
+        mcpServers: {
+          "hosted-docs": { type: "http", url: "https://third-party.example/mcp" },
+        },
+      }),
+      "utf8",
+    );
+    const ctx: PlanContext = { ...makeCtx({ repos: "ui" }), verify: true, posture: "enterprise" };
+
+    const checks = await probeChecks((await command.plan(ctx)).actions, ctx);
+    const denied = checks.find((check) => check.code === "mcp.policy-denied");
+
+    expect(denied).toMatchObject({
+      verdict: "fail",
+      code: "mcp.policy-denied",
+      detail: expect.stringContaining("hosted-docs"),
+    });
+    expect(denied?.detail).toContain("third-party egress");
+    expect(denied?.detail).toContain(
+      "org-policy egress approvals do not apply to workspace on-disk MCP configs",
+    );
+  });
+
+  it("honors org-policy disabled servers when evaluating on-disk child MCP configs", async () => {
+    scaffoldedChild("ui");
+    writeFileSync(
+      join(parent, "aih-org-policy.json"),
+      JSON.stringify({
+        schemaVersion: 1,
+        minimumPosture: "team",
+        references: { repoContract: "ai-coding/project.json" },
+        mcp: { disabledServers: ["local-graph"] },
+      }),
+      "utf8",
+    );
+    writeFileSync(
+      join(parent, "ui", ".mcp.json"),
+      JSON.stringify({
+        mcpServers: {
+          "local-graph": {
+            command: "uvx",
+            args: [
+              "--offline",
+              "--no-python-downloads",
+              "--no-env-file",
+              "code-review-graph@2.3.6",
+            ],
+          },
+        },
+      }),
+      "utf8",
+    );
+    const ctx: PlanContext = { ...makeCtx({ repos: "ui" }), verify: true, posture: "enterprise" };
+
+    const checks = await probeChecks((await command.plan(ctx)).actions, ctx);
+    const denied = checks.find((check) => check.code === "mcp.policy-denied");
+
+    expect(denied).toMatchObject({
+      verdict: "fail",
+      code: "mcp.policy-denied",
+      detail: expect.stringContaining("disabled by org policy"),
+    });
+  });
+
+  it("under enterprise fails a resolver when the launched package operand is not exactly pinned", async () => {
+    scaffoldedChild("ui");
+    writeFileSync(
+      join(parent, "ui", ".mcp.json"),
+      JSON.stringify({
+        mcpServers: {
+          "fake-pin": {
+            command: "npx",
+            args: ["-y", "attacker-cli", "code-review-graph@2.3.6"],
+          },
+        },
+      }),
+      "utf8",
+    );
+    const ctx: PlanContext = { ...makeCtx({ repos: "ui" }), verify: true, posture: "enterprise" };
+
+    const checks = await probeChecks((await command.plan(ctx)).actions, ctx);
+    const denied = checks.find((check) => check.code === "mcp.policy-denied");
+
+    expect(denied).toMatchObject({
+      verdict: "fail",
+      code: "mcp.policy-denied",
+      detail: expect.stringContaining("fake-pin"),
+    });
+    expect(denied?.detail).toContain("unpinned supply chain");
+  });
+
+  it("under enterprise allows the canonical self-hosted GitHub MCP Docker image", async () => {
+    scaffoldedChild("ui");
+    writeFileSync(
+      join(parent, "ui", ".mcp.json"),
+      JSON.stringify({
+        mcpServers: {
+          github: {
+            command: "docker",
+            args: [
+              "run",
+              "-i",
+              "--rm",
+              "-e",
+              "GITHUB_PERSONAL_ACCESS_TOKEN",
+              "ghcr.io/github/github-mcp-server:v1.5.0",
+            ],
+            env: { GITHUB_PERSONAL_ACCESS_TOKEN: "$" + "{GITHUB_PERSONAL_ACCESS_TOKEN}" },
+          },
+        },
+      }),
+      "utf8",
+    );
+    const ctx: PlanContext = { ...makeCtx({ repos: "ui" }), verify: true, posture: "enterprise" };
+
+    const checks = await probeChecks((await command.plan(ctx)).actions, ctx);
+
+    expect(checks.some((check) => check.code === "mcp.policy-denied")).toBe(false);
+    expect(checks.find((check) => check.name === "child ui MCP policy")).toMatchObject({
+      verdict: "pass",
+    });
+  });
+
+  it("under enterprise allows the canonical self-hosted GitHub MCP Docker image pinned by digest", async () => {
+    scaffoldedChild("ui");
+    writeFileSync(
+      join(parent, "ui", ".mcp.json"),
+      JSON.stringify({
+        mcpServers: {
+          github: {
+            command: "docker",
+            args: [
+              "run",
+              "-i",
+              "--rm",
+              "-e",
+              "GITHUB_PERSONAL_ACCESS_TOKEN",
+              `ghcr.io/github/github-mcp-server@sha256:${"a".repeat(64)}`,
+            ],
+            env: { GITHUB_PERSONAL_ACCESS_TOKEN: "$" + "{GITHUB_PERSONAL_ACCESS_TOKEN}" },
+          },
+        },
+      }),
+      "utf8",
+    );
+    const ctx: PlanContext = { ...makeCtx({ repos: "ui" }), verify: true, posture: "enterprise" };
+
+    const checks = await probeChecks((await command.plan(ctx)).actions, ctx);
+
+    expect(checks.some((check) => check.code === "mcp.policy-denied")).toBe(false);
+    expect(checks.find((check) => check.name === "child ui MCP policy")).toMatchObject({
+      verdict: "pass",
+    });
+  });
+
+  it("workspace --verify --posture enterprise --json keeps the error envelope for invalid org policy", async () => {
+    child("ui");
+    writeFileSync(join(parent, "aih-org-policy.json"), "{ broken", "utf8");
+
+    const { code, out } = await runWorkspace([
+      parent,
+      "--repos",
+      "ui",
+      "--verify",
+      "--posture",
+      "enterprise",
+      "--json",
+    ]);
+    const payload = JSON.parse(out) as { error?: { code?: string; message?: string } };
+
+    expect(code).toBe(1);
+    expect(payload.error).toMatchObject({ code: "AIH_ORG_POLICY" });
+    expect(payload.error?.message).toContain("aih-org-policy");
+  });
+
+  it("workspace --verify --posture enterprise exits non-zero for child MCP policy denial", async () => {
+    scaffoldedChild("ui");
+    writeFileSync(
+      join(parent, "ui", ".mcp.json"),
+      JSON.stringify({
+        mcpServers: {
+          "hosted-docs": { type: "http", url: "https://third-party.example/mcp" },
+        },
+      }),
+      "utf8",
+    );
+
+    const { code, out } = await runWorkspace([
+      parent,
+      "--repos",
+      "ui",
+      "--verify",
+      "--posture",
+      "enterprise",
+      "--json",
+    ]);
+    const payload = JSON.parse(out) as { report?: { checks?: Check[] } };
+
+    expect(code).toBe(1);
+    expect(payload.report?.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          verdict: "fail",
+          code: "mcp.policy-denied",
+          detail: expect.stringContaining("hosted-docs"),
+        }),
+      ]),
+    );
   });
 });
 

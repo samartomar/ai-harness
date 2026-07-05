@@ -214,6 +214,13 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     title: "No .mcp.json configured",
     action: "Run `aih mcp --apply` to generate the project MCP configuration.",
   },
+  "mcp.config-invalid": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: ".mcp.json could not be safely inspected",
+    action:
+      "Replace the flagged MCP config with a regular, parseable `.mcp.json` file, then rerun the verification command.",
+  },
   "mcp.unvendored-offline": {
     audience: "dev-platform",
     failSeverity: "degraded",
