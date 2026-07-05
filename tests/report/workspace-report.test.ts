@@ -418,6 +418,56 @@ describe("report workspace rollup", () => {
     });
   });
 
+  it("accepts generated graph MCP when a declared child is absent and skipped", async () => {
+    writeWorkspaceManifest({ repos: ["ui", "backend"], contextDir: "ai-coding" });
+    writeFileSync(
+      join(root, ".mcp.json"),
+      json({
+        mcpServers: {
+          "aih-workspace-graph-ui": {
+            command: "uvx",
+            args: workspaceGraphArgs("ui"),
+          },
+        },
+      }),
+    );
+    child("ui");
+
+    const data = (await workspaceDigest()).data as WorkspaceReportDigest;
+
+    expect(data.rows.find((row) => row.path === "backend")?.status).toBe("MISSING");
+    expect(data.mcp).toMatchObject({
+      status: "OK",
+      detail: "workspace graph MCP is scoped to declared repos",
+    });
+  });
+
+  it("warns when graph MCP still scopes an absent declared child", async () => {
+    writeWorkspaceManifest({ repos: ["ui", "backend"], contextDir: "ai-coding" });
+    writeFileSync(
+      join(root, ".mcp.json"),
+      json({
+        mcpServers: {
+          "aih-workspace-graph-ui": {
+            command: "uvx",
+            args: workspaceGraphArgs("ui"),
+          },
+          "aih-workspace-graph-backend": {
+            command: "uvx",
+            args: workspaceGraphArgs("backend"),
+          },
+        },
+      }),
+    );
+    child("ui");
+
+    const data = (await workspaceDigest()).data as WorkspaceReportDigest;
+
+    expect(data.mcp.status).toBe("WARN");
+    expect(data.mcp.detail).toContain("absent declared repo graph MCP: backend");
+    expect(data.mcp.detail).not.toContain("missing declared repo graph MCP: backend");
+  });
+
   it("warns when workspace graph MCP uses relative child repo args", async () => {
     writeWorkspaceManifest({ repos: ["ui"], contextDir: "ai-coding" });
     writeFileSync(

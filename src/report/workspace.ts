@@ -1,8 +1,9 @@
-import { existsSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readdirSync, realpathSync, statSync } from "node:fs";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { readIfExists } from "../internals/fsxn.js";
 import { type DigestAction, digest, type PlanContext } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
+import { checkWorkspaceChildPath } from "../workspace/detect.js";
 import {
   workspaceGitignoreMissing,
   workspaceGitignorePatternForRepo,
@@ -179,6 +180,41 @@ function graphRepoLabel(root: string, repo: string): string {
   return isPathInside(root, repo) && rel.length > 0 ? rel.replace(/\\/g, "/") : repo;
 }
 
+interface WorkspaceGraphScopes {
+  expected: Set<string>;
+  expectedLabels: Map<string, string>;
+  absent: Set<string>;
+  absentLabels: Map<string, string>;
+}
+
+function graphRepoScope(root: string, repo: string): { key: string; label: string } {
+  const resolved = graphRepoKey(root, repo);
+  const key = existsSync(resolved) ? realpathSync(resolved) : resolved;
+  return { key, label: graphRepoLabel(root, key) };
+}
+
+function workspaceGraphScopes(root: string, manifest: WorkspaceManifest): WorkspaceGraphScopes {
+  const scopes: WorkspaceGraphScopes = {
+    expected: new Set<string>(),
+    expectedLabels: new Map<string, string>(),
+    absent: new Set<string>(),
+    absentLabels: new Map<string, string>(),
+  };
+  for (const repo of manifest.repos) {
+    const checked = checkWorkspaceChildPath(root, repo.path);
+    if (!checked.exists) {
+      const key = graphRepoKey(root, checked.path);
+      scopes.absent.add(key);
+      scopes.absentLabels.set(key, checked.path);
+      continue;
+    }
+    const scope = graphRepoScope(root, checked.path);
+    scopes.expected.add(scope.key);
+    scopes.expectedLabels.set(scope.key, checked.path);
+  }
+  return scopes;
+}
+
 function mcpFilesystemPackageSpec(server: unknown): string | undefined {
   if (typeof server !== "object" || server === null || Array.isArray(server)) return undefined;
   const args = (server as { args?: unknown }).args;
@@ -204,85 +240,99 @@ function workspaceMcpStatus(
         }
       : { status: "UNKNOWN", detail: "no parent .mcp.json" };
   }
+  let parsed: { mcpServers?: Record<string, unknown> };
   try {
-    const parsed = JSON.parse(text) as {
-      mcpServers?: Record<string, unknown>;
-    };
-    const servers = parsed.mcpServers ?? {};
-    const filesystem = Object.entries(servers).find(
-      ([, server]) => mcpFilesystemPackageSpec(server) !== undefined,
-    );
-    if (filesystem !== undefined) {
-      const [serverName, server] = filesystem;
-      const packageSpec = mcpFilesystemPackageSpec(server);
-      return {
-        status: "WARN",
-        ...(packageSpec ? { packageSpec } : {}),
-        detail: `Workspace MCP filesystem server has broad workspace scope (${reportLabel(serverName)}); generated workspace MCP is graph-only, so remove or narrow it manually if it is not intentionally user-owned.`,
-      };
-    }
-    if (isAihLegacyCodeReviewGraphMcpServer(servers["code-review-graph"])) {
-      return {
-        status: "WARN",
-        detail:
-          "Workspace MCP has a stale parent-root code-review-graph server. Re-run `aih workspace --apply` to scope graph servers per declared repo.",
-      };
-    }
-    const expectedRepos = new Set(manifest.repos.map((repo) => graphRepoKey(rootAbs, repo.path)));
-    const graphRepos = new Set<string>();
-    const graphRepoLabels = new Map<string, string>();
-    const invalidGraphs: string[] = [];
-    const relativeGraphs: string[] = [];
-    for (const [name, server] of Object.entries(servers)) {
-      if (!name.startsWith("aih-workspace-graph-")) continue;
-      const repo = aihWorkspaceGraphRepo(server);
-      if (repo === undefined) {
-        invalidGraphs.push(name);
-        continue;
-      }
-      if (!isAbsolute(repo)) relativeGraphs.push(name);
-      const key = graphRepoKey(rootAbs, repo);
-      graphRepos.add(key);
-      graphRepoLabels.set(key, graphRepoLabel(rootAbs, key));
-    }
-    const missing = [...expectedRepos].filter((repo) => !graphRepos.has(repo));
-    const extra = [...graphRepos].filter((repo) => !expectedRepos.has(repo));
-    if (
-      missing.length > 0 ||
-      extra.length > 0 ||
-      invalidGraphs.length > 0 ||
-      relativeGraphs.length > 0
-    ) {
-      return {
-        status: "WARN",
-        detail: [
-          relativeGraphs.length > 0
-            ? `relative workspace graph MCP path: ${reportList(relativeGraphs)}; re-run \`aih workspace --apply\` to root-anchor child repo paths`
-            : undefined,
-          missing.length > 0
-            ? `missing declared repo graph MCP: ${reportList(
-                missing.map((repo) => graphRepoLabel(rootAbs, repo)),
-              )}`
-            : undefined,
-          extra.length > 0
-            ? `undeclared repo graph MCP: ${reportList(
-                extra.map((repo) => graphRepoLabels.get(repo) ?? graphRepoLabel(rootAbs, repo)),
-              )}`
-            : undefined,
-          invalidGraphs.length > 0
-            ? `invalid workspace graph MCP: ${reportList(invalidGraphs)}`
-            : undefined,
-        ]
-          .filter((value): value is string => value !== undefined)
-          .join("; "),
-      };
-    }
-    return expectedRepos.size > 0
-      ? { status: "OK", detail: "workspace graph MCP is scoped to declared repos" }
-      : { status: "OK", detail: "workspace MCP has no declared repo graph scope" };
+    parsed = JSON.parse(text) as { mcpServers?: Record<string, unknown> };
   } catch {
     return { status: "ERROR", detail: "parent .mcp.json is malformed" };
   }
+  const servers = parsed.mcpServers ?? {};
+  const filesystem = Object.entries(servers).find(
+    ([, server]) => mcpFilesystemPackageSpec(server) !== undefined,
+  );
+  if (filesystem !== undefined) {
+    const [serverName, server] = filesystem;
+    const packageSpec = mcpFilesystemPackageSpec(server);
+    return {
+      status: "WARN",
+      ...(packageSpec ? { packageSpec } : {}),
+      detail: `Workspace MCP filesystem server has broad workspace scope (${reportLabel(serverName)}); generated workspace MCP is graph-only, so remove or narrow it manually if it is not intentionally user-owned.`,
+    };
+  }
+  if (isAihLegacyCodeReviewGraphMcpServer(servers["code-review-graph"])) {
+    return {
+      status: "WARN",
+      detail:
+        "Workspace MCP has a stale parent-root code-review-graph server. Re-run `aih workspace --apply` to scope graph servers per declared repo.",
+    };
+  }
+  const expectedScopes = workspaceGraphScopes(rootAbs, manifest);
+  const graphRepos = new Set<string>();
+  const graphRepoLabels = new Map<string, string>();
+  const invalidGraphs: string[] = [];
+  const relativeGraphs: string[] = [];
+  for (const [name, server] of Object.entries(servers)) {
+    if (!name.startsWith("aih-workspace-graph-")) continue;
+    const repo = aihWorkspaceGraphRepo(server);
+    if (repo === undefined) {
+      invalidGraphs.push(name);
+      continue;
+    }
+    if (!isAbsolute(repo)) relativeGraphs.push(name);
+    const { key, label } = graphRepoScope(rootAbs, repo);
+    graphRepos.add(key);
+    graphRepoLabels.set(key, label);
+  }
+  const missing = [...expectedScopes.expected].filter((repo) => !graphRepos.has(repo));
+  const extra = [...graphRepos].filter((repo) => !expectedScopes.expected.has(repo));
+  const absent = extra.filter((repo) => expectedScopes.absent.has(repo));
+  const undeclared = extra.filter((repo) => !expectedScopes.absent.has(repo));
+  if (
+    missing.length > 0 ||
+    absent.length > 0 ||
+    undeclared.length > 0 ||
+    invalidGraphs.length > 0 ||
+    relativeGraphs.length > 0
+  ) {
+    return {
+      status: "WARN",
+      detail: [
+        relativeGraphs.length > 0
+          ? `relative workspace graph MCP path: ${reportList(relativeGraphs)}; re-run \`aih workspace --apply\` to root-anchor child repo paths`
+          : undefined,
+        missing.length > 0
+          ? `missing declared repo graph MCP: ${reportList(
+              missing.map(
+                (repo) => expectedScopes.expectedLabels.get(repo) ?? graphRepoLabel(rootAbs, repo),
+              ),
+            )}`
+          : undefined,
+        absent.length > 0
+          ? `absent declared repo graph MCP: ${reportList(
+              absent.map(
+                (repo) =>
+                  expectedScopes.absentLabels.get(repo) ??
+                  graphRepoLabels.get(repo) ??
+                  graphRepoLabel(rootAbs, repo),
+              ),
+            )}`
+          : undefined,
+        undeclared.length > 0
+          ? `undeclared repo graph MCP: ${reportList(
+              undeclared.map((repo) => graphRepoLabels.get(repo) ?? graphRepoLabel(rootAbs, repo)),
+            )}`
+          : undefined,
+        invalidGraphs.length > 0
+          ? `invalid workspace graph MCP: ${reportList(invalidGraphs)}`
+          : undefined,
+      ]
+        .filter((value): value is string => value !== undefined)
+        .join("; "),
+    };
+  }
+  return expectedScopes.expected.size > 0
+    ? { status: "OK", detail: "workspace graph MCP is scoped to declared repos" }
+    : { status: "OK", detail: "workspace MCP has no declared repo graph scope" };
 }
 
 function readConfigStatus(
