@@ -4,11 +4,11 @@ import { redactSecrets } from "../guardrails/redact.js";
 import type { CommandSpec, PlanContext } from "../internals/plan.js";
 import { digest, plan, probe } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
-import type { Check } from "../internals/verify.js";
 import {
   type Evidence,
   runVerificationPipeline,
   type Severity,
+  structuredVerificationRunToCheck,
   type VerificationInput,
   type VerificationPass,
   type VerificationPipelineRun,
@@ -416,18 +416,6 @@ function reportText(report: SessionGuardReport): string {
   );
 }
 
-function checkFromReport(report: SessionGuardReport): Check {
-  const failed = report.results.filter((entry) => entry.verdict === "fail");
-  return {
-    name: "session guardrails",
-    verdict: failed.length > 0 ? "fail" : "pass",
-    detail:
-      failed.length > 0
-        ? failed.map((entry) => `${entry.passName}: ${entry.message}`).join("; ")
-        : "no session guardrail findings",
-  };
-}
-
 async function sessionGuardPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
   const report = await runSessionGuardrails(
     {
@@ -440,7 +428,12 @@ async function sessionGuardPlan(ctx: PlanContext): Promise<ReturnType<typeof pla
   return plan(
     "session-guard",
     digest("session guardrails", reportText(report), report),
-    probe("session guardrails", () => checkFromReport(report)),
+    probe("session guardrails", () =>
+      structuredVerificationRunToCheck(report, {
+        name: "session guardrails",
+        passDetail: "no session guardrail findings",
+      }),
+    ),
   );
 }
 

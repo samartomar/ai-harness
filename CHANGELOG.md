@@ -8,6 +8,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Structured verification compatibility bridge**: new exported helpers convert
+  structured verification results and pipeline runs into the legacy
+  `VerificationReport`/probe contract, preserving legacy exit-code behavior while
+  EPIC 7 cleanup migrates callers onto the structured pipeline. (#222)
 - **Structured verification pipeline core**: new programmatic
   `src/verification` substrate for typed pass results, deterministic merge
   summaries, evidence aggregation, ordered pass selection, and duplicate-safe pass
