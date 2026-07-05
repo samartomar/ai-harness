@@ -486,6 +486,48 @@ describe("executePlan", () => {
     });
   });
 
+  it("rejects malformed structured sidecar enum fields without echoing raw values", async () => {
+    const secret = "SECRET_TOKEN=badverdictvalue123";
+    const p = plan(
+      "t",
+      structuredProbe("structured malformed gate", () => ({
+        results: [
+          {
+            passName: "structured.malformed",
+            verdict: secret,
+            severity: "medium",
+            confidence: "high",
+            evidence: [],
+            message: "malformed enum",
+            category: "security",
+          } as unknown as VerificationResult,
+        ],
+        summary: {
+          finalVerdict: "pass",
+          trustScore: 100,
+          aggregatedEvidence: [],
+          failedPasses: [],
+          warnings: [],
+        },
+        evidenceGraph: { nodes: [], edges: [] },
+      })),
+    );
+
+    let error: unknown;
+    try {
+      await executePlan(p, ctx({ verify: true }));
+    } catch (caught) {
+      error = caught;
+    }
+
+    expect(error).toBeInstanceOf(AihError);
+    expect((error as AihError).message).toBe(
+      "structured verification result at index 0 has invalid verdict",
+    );
+    expect((error as AihError).code).toBe("AIH_CONFIG");
+    expect((error as AihError).message).not.toContain(secret);
+  });
+
   it("truncates structured sidecar text without splitting surrogate pairs", async () => {
     const splitBoundaryDetail = `${"x".repeat(MAX_VERIFICATION_STRING_FIELD_LENGTH - 16)}😀${"y".repeat(20)}`;
     const p = plan(

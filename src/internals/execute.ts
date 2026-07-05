@@ -3,7 +3,13 @@ import { existsSync, lstatSync, readFileSync, realpathSync } from "node:fs";
 import { dirname, isAbsolute, relative, resolve } from "node:path";
 import { AihError, DirtyWorktreeError, PathContainmentError } from "../errors.js";
 import { redactSecrets } from "../guardrails/redact.js";
-import { MAX_VERIFICATION_STRING_FIELD_LENGTH } from "../verification/constants.js";
+import {
+  MAX_VERIFICATION_STRING_FIELD_LENGTH,
+  VERIFICATION_CATEGORIES,
+  VERIFICATION_CONFIDENCES,
+  VERIFICATION_SEVERITIES,
+  VERIFICATION_VERDICTS,
+} from "../verification/constants.js";
 import { buildEvidenceGraph } from "../verification/graph.js";
 import {
   type StructuredVerificationRunCheckOptions,
@@ -201,18 +207,36 @@ function sanitizedEvidence(evidence: Evidence, passName: string, index: number):
   };
 }
 
-function sanitizedVerificationResult(result: VerificationResult): VerificationResult {
+function verificationEnum<T extends string>(
+  value: unknown,
+  allowed: readonly T[],
+  field: string,
+  index: number,
+): T {
+  if (typeof value !== "string" || !allowed.includes(value as T)) {
+    throw new AihError(
+      `structured verification result at index ${index} has invalid ${field}`,
+      "AIH_CONFIG",
+    );
+  }
+  return value as T;
+}
+
+function sanitizedVerificationResult(
+  result: VerificationResult,
+  index: number,
+): VerificationResult {
   const passName = verificationText(result.passName, "structured verification");
   return {
     passName,
-    verdict: result.verdict,
-    severity: result.severity,
-    confidence: result.confidence,
+    verdict: verificationEnum(result.verdict, VERIFICATION_VERDICTS, "verdict", index),
+    severity: verificationEnum(result.severity, VERIFICATION_SEVERITIES, "severity", index),
+    confidence: verificationEnum(result.confidence, VERIFICATION_CONFIDENCES, "confidence", index),
     evidence: result.evidence.map((evidence, index) =>
       sanitizedEvidence(evidence, passName, index),
     ),
     message: verificationText(result.message, passName),
-    category: result.category,
+    category: verificationEnum(result.category, VERIFICATION_CATEGORIES, "category", index),
   };
 }
 
@@ -264,7 +288,9 @@ function verificationRunFromResults(
   results: readonly VerificationResult[],
 ): VerificationPipelineRun | undefined {
   if (results.length === 0) return undefined;
-  const uniqueResults = uniqueVerificationResults(results.map(sanitizedVerificationResult));
+  const uniqueResults = uniqueVerificationResults(
+    results.map((result, index) => sanitizedVerificationResult(result, index)),
+  );
   return {
     results: uniqueResults,
     summary: mergeVerificationResults(uniqueResults),
