@@ -195,14 +195,40 @@ function truncateWithHash(value: string, maxLength: number): string {
   return `${head}${suffix}`;
 }
 
+function toSlashPath(value: string): string {
+  return value.replaceAll("\\", "/");
+}
+
+function isControlCharacter(value: string): boolean {
+  const code = value.charCodeAt(0);
+  return code <= 0x1f || (code >= 0x7f && code <= 0x9f);
+}
+
+function isPathLabelCharacter(value: string): boolean {
+  const code = value.charCodeAt(0);
+  return (
+    (code >= 48 && code <= 57) ||
+    (code >= 65 && code <= 90) ||
+    (code >= 97 && code <= 122) ||
+    value === "." ||
+    value === "_" ||
+    value === "@" ||
+    value === "+" ||
+    value === "/" ||
+    value === " "
+  );
+}
+
 function sanitizePathLabel(value: string): string {
-  const sanitized = value
-    .replace(/\\/g, "/")
-    // biome-ignore lint/suspicious/noControlCharactersInRegex: report labels must not carry terminal controls
-    .replace(/[\u0000-\u001f\u007f-\u009f]/g, "-")
-    .replace(/[^A-Za-z0-9._@+/ -]+/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^-+|-+$/g, "");
+  const chars: string[] = [];
+  for (const char of toSlashPath(value)) {
+    const next =
+      isControlCharacter(char) || (!isPathLabelCharacter(char) && char !== "-") ? "-" : char;
+    if (next === "-" && (chars.length === 0 || chars[chars.length - 1] === "-")) continue;
+    chars.push(next);
+  }
+  while (chars.length > 0 && chars[chars.length - 1] === "-") chars.pop();
+  const sanitized = chars.join("");
   return truncateWithHash(sanitized.length > 0 ? sanitized : "path", MAX_PATH_LABEL_LENGTH);
 }
 
@@ -211,12 +237,13 @@ function hostilePathLabel(raw: string): string {
 }
 
 function normalizeRepoPath(raw: string): NormalizedPath {
-  const slash = raw.replace(/\\/g, "/");
+  const slash = toSlashPath(raw);
   const reasons: string[] = [];
 
   if (slash.length === 0) reasons.push("empty path rejected");
-  // biome-ignore lint/suspicious/noControlCharactersInRegex: path boundary validation rejects controls
-  if (/[\u0000-\u001f\u007f-\u009f]/.test(slash)) reasons.push("control character rejected");
+  if (Array.from(slash).some((char) => isControlCharacter(char))) {
+    reasons.push("control character rejected");
+  }
   if (slash.startsWith("/") || slash.startsWith("//") || /^[A-Za-z]:/.test(slash)) {
     reasons.push("absolute path rejected");
   }
@@ -248,7 +275,10 @@ function normalizeRepoPath(raw: string): NormalizedPath {
 }
 
 function normalizeContextDir(raw: string | undefined): string {
-  const candidate = (raw ?? DEFAULT_CONTEXT_DIR).trim().replace(/\\/g, "/").replace(/\/+$/g, "");
+  const slash = toSlashPath((raw ?? DEFAULT_CONTEXT_DIR).trim());
+  let end = slash.length;
+  while (end > 0 && slash[end - 1] === "/") end--;
+  const candidate = slash.slice(0, end);
   const normalized = normalizeRepoPath(candidate.length > 0 ? candidate : DEFAULT_CONTEXT_DIR);
   return normalized.hostile ? DEFAULT_CONTEXT_DIR : normalized.canonical;
 }

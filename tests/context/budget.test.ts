@@ -51,6 +51,10 @@ describe("context budget engine", () => {
       });
       expect(classifyContextFile(hostilePath).path).toMatch(/^hostile-path-[a-f0-9]{12}$/);
     }
+    expect(classifyContextFile("src/---dash---file.ts")).toMatchObject({
+      path: "src/-dash-file.ts",
+      classification: "conditional-include",
+    });
   });
 
   it("scores files by path type relevance and bounded token weight", () => {
@@ -148,7 +152,7 @@ describe("context budget engine", () => {
 
   it("selects a lazy task-relevant canon slice instead of loading the whole canon", () => {
     const files = selectLazyCanonFiles({
-      contextDir: ".ai-context/",
+      contextDir: ".ai-context////",
       taskKind: "implementation",
       touchedPaths: ["src/context/index.ts", "src/internals/fsxn.ts"],
     });
