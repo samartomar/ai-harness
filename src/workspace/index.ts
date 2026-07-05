@@ -38,7 +38,16 @@ import {
 function childScaffoldedProbe(repo: string, dir: string): Action {
   return probe(`child ${repo} scaffolded`, (ctx: PlanContext): Check => {
     const name = `child ${repo} scaffolded`;
-    const present = existsSync(join(ctx.root, repo, dir, "RULE_ROUTER.md"));
+    const repoRoot = join(ctx.root, repo);
+    if (!existsSync(repoRoot)) {
+      return {
+        name,
+        verdict: "skip",
+        detail:
+          "child repo path is missing — run `aih workspace hydrate --apply` or create the child repo",
+      };
+    }
+    const present = existsSync(join(repoRoot, dir, "RULE_ROUTER.md"));
     return present
       ? { name, verdict: "pass", detail: `${repo}/${dir}/ canon present` }
       : {
@@ -158,10 +167,19 @@ async function workspacePlan(ctx: PlanContext): Promise<Plan> {
   const normalizedRepos = useExistingRepos
     ? existing.repos
     : reposFromPathsWithExistingMetadata(repos, existing, posix.join(dir, "RULE_ROUTER.md"));
-  for (const repo of normalizedRepos) checkWorkspaceChildPath(ctx.root, repo.path);
+  const repoChecks = normalizedRepos.map((repo) => ({
+    repo,
+    check: checkWorkspaceChildPath(ctx.root, repo.path),
+  }));
   const repoPaths = normalizedRepos.map((repo) => repo.path);
+  const presentRepoPaths = repoChecks
+    .filter(({ check }) => check.exists)
+    .map(({ repo }) => repo.path);
+  const absentRepoPaths = repoChecks
+    .filter(({ check }) => !check.exists)
+    .map(({ repo }) => repo.path);
   const edges = existing?.edges ?? [];
-  const mcp = spanningMcp(repoPaths);
+  const mcp = spanningMcp(ctx.root, presentRepoPaths);
   const mcpKeys = Object.keys(mcp.mcpServers);
   const staleMcpKeys = staleManagedMcpServerKeys(ctx.root, mcpKeys);
 
@@ -234,6 +252,21 @@ async function workspacePlan(ctx: PlanContext): Promise<Plan> {
               "",
               "Re-run with an explicit allowlist, for example:",
               "aih workspace --repos <comma-separated-child-repos> --apply",
+            ].join("\n"),
+          ),
+        ]
+      : []),
+    ...(absentRepoPaths.length > 0
+      ? [
+          doc(
+            "workspace child repo absent",
+            [
+              "Declared child repo paths are missing, so aih skipped their workspace graph MCP scope.",
+              "",
+              "Missing children:",
+              ...absentRepoPaths.map((repo) => `- ${repo}/`),
+              "",
+              "Run `aih workspace hydrate --apply` to restore committed children, or create the child repo before relying on workspace MCP.",
             ].join("\n"),
           ),
         ]

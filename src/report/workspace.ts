@@ -1,5 +1,5 @@
 import { existsSync, readdirSync, statSync } from "node:fs";
-import { join, relative } from "node:path";
+import { isAbsolute, join, relative, resolve } from "node:path";
 import { readIfExists } from "../internals/fsxn.js";
 import { type DigestAction, digest, type PlanContext } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
@@ -165,6 +165,20 @@ function reportList(values: readonly string[]): string {
   return values.map(reportLabel).join(", ");
 }
 
+function isPathInside(root: string, path: string): boolean {
+  const rel = relative(root, path);
+  return rel.length === 0 || (!rel.startsWith("..") && !isAbsolute(rel));
+}
+
+function graphRepoKey(root: string, repo: string): string {
+  return resolve(root, repo);
+}
+
+function graphRepoLabel(root: string, repo: string): string {
+  const rel = relative(root, repo);
+  return isPathInside(root, repo) && rel.length > 0 ? rel.replace(/\\/g, "/") : repo;
+}
+
 function mcpFilesystemPackageSpec(server: unknown): string | undefined {
   if (typeof server !== "object" || server === null || Array.isArray(server)) return undefined;
   const args = (server as { args?: unknown }).args;
@@ -179,6 +193,7 @@ function workspaceMcpStatus(
   root: string,
   manifest: WorkspaceManifest,
 ): WorkspaceReportDigest["mcp"] {
+  const rootAbs = resolve(root);
   const text = readIfExists(join(root, ".mcp.json"));
   if (text === undefined) {
     return manifest.repos.length > 0
@@ -213,9 +228,11 @@ function workspaceMcpStatus(
           "Workspace MCP has a stale parent-root code-review-graph server. Re-run `aih workspace --apply` to scope graph servers per declared repo.",
       };
     }
-    const expectedRepos = new Set(manifest.repos.map((repo) => repo.path));
+    const expectedRepos = new Set(manifest.repos.map((repo) => graphRepoKey(rootAbs, repo.path)));
     const graphRepos = new Set<string>();
+    const graphRepoLabels = new Map<string, string>();
     const invalidGraphs: string[] = [];
+    const relativeGraphs: string[] = [];
     for (const [name, server] of Object.entries(servers)) {
       if (!name.startsWith("aih-workspace-graph-")) continue;
       const repo = aihWorkspaceGraphRepo(server);
@@ -223,18 +240,35 @@ function workspaceMcpStatus(
         invalidGraphs.push(name);
         continue;
       }
-      graphRepos.add(repo);
+      if (!isAbsolute(repo)) relativeGraphs.push(name);
+      const key = graphRepoKey(rootAbs, repo);
+      graphRepos.add(key);
+      graphRepoLabels.set(key, graphRepoLabel(rootAbs, key));
     }
     const missing = [...expectedRepos].filter((repo) => !graphRepos.has(repo));
     const extra = [...graphRepos].filter((repo) => !expectedRepos.has(repo));
-    if (missing.length > 0 || extra.length > 0 || invalidGraphs.length > 0) {
+    if (
+      missing.length > 0 ||
+      extra.length > 0 ||
+      invalidGraphs.length > 0 ||
+      relativeGraphs.length > 0
+    ) {
       return {
         status: "WARN",
         detail: [
-          missing.length > 0
-            ? `missing declared repo graph MCP: ${reportList(missing)}`
+          relativeGraphs.length > 0
+            ? `relative workspace graph MCP path: ${reportList(relativeGraphs)}; re-run \`aih workspace --apply\` to root-anchor child repo paths`
             : undefined,
-          extra.length > 0 ? `undeclared repo graph MCP: ${reportList(extra)}` : undefined,
+          missing.length > 0
+            ? `missing declared repo graph MCP: ${reportList(
+                missing.map((repo) => graphRepoLabel(rootAbs, repo)),
+              )}`
+            : undefined,
+          extra.length > 0
+            ? `undeclared repo graph MCP: ${reportList(
+                extra.map((repo) => graphRepoLabels.get(repo) ?? graphRepoLabel(rootAbs, repo)),
+              )}`
+            : undefined,
           invalidGraphs.length > 0
             ? `invalid workspace graph MCP: ${reportList(invalidGraphs)}`
             : undefined,

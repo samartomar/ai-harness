@@ -314,8 +314,8 @@ It writes, at the parent (it does **not** touch the child repos — run `aih ini
 - `<context-dir>/repo-discipline.md` — load a repo's own canon before editing it.
 - `CLAUDE.md` + `AGENTS.md` — thin workspace bootloaders pointing at the cross-repo canon.
 - `<name>.code-workspace` — opens every repo in one VS Code window.
-- `.mcp.json` — one **code-review graph MCP** per declared child repo, so an agent at the workspace
-  root can reason about cross-repo blast radius before editing a child repo.
+- `.mcp.json` — one **code-review graph MCP** per present declared child repo, using absolute
+  root-anchored child paths so MCP clients work from any launch directory.
 - `.aih-workspace.json` — marker that puts `aih doctor` into **workspace mode** (validates each child
   repo is scaffolded); object-form repos can retain optional `remote`/`ref` source metadata.
 - Child repos are an explicit allowlist: use `--repos` or an existing `.aih-workspace.json`. If child
@@ -327,6 +327,8 @@ It writes, at the parent (it does **not** touch the child repos — run `aih ini
 - `aih workspace hydrate --apply` restores a declared workspace from `.aih-workspace.json` plus the
   committed workspace lock: missing children are cloned from recorded remotes, present clean children
   are checked out to the recorded ref, and children with no recorded remote are skipped with a note.
+  Until a declared child exists, `aih workspace --apply` skips that child's graph MCP scope and emits
+  a hydrate note instead of wiring an empty path.
 
 ### Support tickets
 

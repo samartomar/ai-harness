@@ -407,7 +407,7 @@ describe("workspace.plan — generated artifacts", () => {
     if (absentDoc?.kind !== "doc") throw new Error("expected absent child doc");
     expect(absentDoc.text).toContain("- backend/");
     expect(absentDoc.text).toContain("aih workspace hydrate --apply");
-    await expect(absentProbe?.run(makeCtx())).resolves.toMatchObject({
+    expect(absentProbe?.run(makeCtx())).toMatchObject({
       verdict: "skip",
       detail:
         "child repo path is missing — run `aih workspace hydrate --apply` or create the child repo",

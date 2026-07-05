@@ -127,8 +127,8 @@ Run the CRISPY context-engineering stage machine (deterministic, gate-ordered).
 ## aih workspace
 
 Scaffold a **multi-repo** workspace (parent-only): cross-repo architecture map (write-once) +
-per-repo discipline, a VS Code `.code-workspace`, graph MCP scoped per declared child repo, and a
-`.aih-workspace.json` marker. Declare the scope with `--repos a,b` or an existing
+per-repo discipline, a VS Code `.code-workspace`, graph MCP scoped per present declared child repo
+with absolute root-anchored paths, and a `.aih-workspace.json` marker. Declare the scope with `--repos a,b` or an existing
 `.aih-workspace.json`; detected child Git repos are reported as candidates but are not auto-enrolled.
 With `--git`, the generated `.gitignore` defensively ignores all immediate child Git repos, including
 ones outside the declared workspace scope.
@@ -137,7 +137,8 @@ Nested helpers keep the parent bridge current: `aih workspace snapshot --lock --
 declared child repo branch/SHA/remotes, and `aih workspace hydrate [root]` restores from that
 metadata by planning clones for missing children and clean checkouts for present children that are at
 the wrong recorded ref. Hydrate never edits remote configuration; a child with no recorded remote is
-skipped with an operator note.
+skipped with an operator note. Until a declared child exists, `aih workspace --apply` emits a hydrate
+note and skips that child's graph MCP scope instead of wiring an empty path.
 
 **Skill governance & supply chain**
 
