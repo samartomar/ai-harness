@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -33,7 +33,10 @@ function ctx(posture: PlanContext["posture"] = "enterprise"): PlanContext {
   };
 }
 
-function writePolicy(allowedServers: string[]): void {
+function writePolicy(
+  allowedServers: string[],
+  approvedSources: Array<{ owner: string; repo: string; pinnedSha?: string }> = [],
+): void {
   writeFileSync(
     join(dir, "aih-org-policy.json"),
     JSON.stringify({
@@ -41,12 +44,35 @@ function writePolicy(allowedServers: string[]): void {
       minimumPosture: "enterprise",
       references: { repoContract: "ai-coding/project.json" },
       mcp: { allowedServers, allowManagedOnly: true },
+      trust: { approvedSources },
     }),
   );
 }
 
 function writeMcp(servers: Record<string, unknown>): void {
   writeFileSync(join(dir, ".mcp.json"), JSON.stringify({ mcpServers: servers }));
+}
+
+function writeMarketplaceSkill(source = "owner/repo@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"): void {
+  mkdirSync(join(dir, ".aih", "marketplace"), { recursive: true });
+  writeFileSync(
+    join(dir, ".aih", "marketplace", "marketplace.json"),
+    JSON.stringify({
+      schemaVersion: 1,
+      name: "acme-skills",
+      skills: [
+        {
+          name: "clean",
+          source,
+          commit: "a".repeat(40),
+          verdict: "GREEN",
+          card: "cards/clean.json",
+          evidence: "evidence/owner-repo-aaaaaaaa.json",
+          files: [{ path: "skills/clean/SKILL.md", sha256: "b".repeat(64), bytes: 10 }],
+        },
+      ],
+    }),
+  );
 }
 
 describe("enterprise baseline attestation", () => {
@@ -81,7 +107,9 @@ describe("enterprise baseline attestation", () => {
   });
 
   it("emits a positive attestation when every external surface is a registry member", () => {
-    writePolicy(["github", "context7"]);
+    writePolicy(["github", "context7"], [
+      { owner: "owner", repo: "repo", pinnedSha: "a".repeat(40) },
+    ]);
     writeMcp({
       github: {
         type: "http",
@@ -98,6 +126,7 @@ describe("enterprise baseline attestation", () => {
         supplyChain: "hosted-remote",
       },
     });
+    writeMarketplaceSkill();
 
     const check = enterpriseBaselineAttestationCheck(ctx());
 
@@ -106,6 +135,18 @@ describe("enterprise baseline attestation", () => {
     expect(check.detail).toContain("mcp:github");
     expect(check.detail).toContain("vendor-incumbent/oauth/hosted-remote");
     expect(check.detail).toContain("mcp:context7");
+    expect(check.detail).toContain("marketplace:owner/repo@aaaaaaaaaaaa");
+  });
+
+  it("flags marketplace skills whose source is not registered", () => {
+    writePolicy([]);
+    writeMarketplaceSkill("stranger/repo@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+
+    const check = enterpriseBaselineAttestationCheck(ctx());
+
+    expect(check.verdict).toBe("fail");
+    expect(check.code).toBe("baseline.undeclared-surface");
+    expect(check.detail).toContain("marketplace:stranger/repo@aaaaaaaaaaaa");
   });
 
   it("does not enforce the enterprise baseline outside enterprise posture", () => {
