@@ -13,6 +13,7 @@ import { command as guardrails } from "../guardrails/index.js";
 import { command as hardware } from "../hardware/index.js";
 import { command as heal } from "../heal/index.js";
 import { command as init } from "../init/index.js";
+import { capabilityPruneCommand, capabilityResolveCommand } from "../capability/index.js";
 import type { CommandSpec } from "../internals/plan.js";
 import { marketplaceBuildCommand } from "../marketplace/build.js";
 import { marketplacePublishCommand } from "../marketplace/publish.js";
@@ -111,6 +112,7 @@ export const ALL_COMMANDS: CommandSpec[] = [...CAPABILITIES, ...READONLY];
 /** Parent command groups registered below as bare commander groups (not CommandSpecs). */
 export const PARENT_GROUPS = [
   "workspace",
+  "capability",
   "trust",
   "skill",
   "pack",
@@ -121,6 +123,7 @@ export const PARENT_GROUPS = [
 
 export const GROUPED_COMMAND_SPECS = {
   workspace: [workspaceAddCommand, workspaceHydrate, workspaceSnapshot, workspacePlan],
+  capability: [capabilityResolveCommand, capabilityPruneCommand],
   trust: [
     trustAllowCommand,
     trustListCommand,
@@ -572,6 +575,23 @@ export function registerCommands(
   packInstall.action(async (_options: Record<string, unknown>, command: Command) => {
     process.exitCode = await runPackInstall(command);
   });
+
+  // `capability` is the local package-manager surface: read/resolve committed
+  // repo intent, then maintain the derived machine cache under ~/.aih.
+  const capability = program
+    .command("capability")
+    .description("Resolve and prune the derived machine capability cache");
+  for (const spec of [capabilityResolveCommand, capabilityPruneCommand]) {
+    const sub = capability.command(spec.name).description(spec.summary);
+    addSharedFlags(sub);
+    for (const o of spec.options ?? []) {
+      if (o.default !== undefined) sub.option(o.flags, o.description, o.default);
+      else sub.option(o.flags, o.description);
+    }
+    sub.action(async (_options: Record<string, unknown>, command: Command) => {
+      process.exitCode = await runCapability(spec, command, { positionalRoot: false });
+    });
+  }
 
   // `marketplace` mirrors the `pack` group: options-only subcommands (no
   // positional), `build` is the artifact writer, `validate` the read-only gate,

@@ -201,9 +201,9 @@ describe("aih capability prune", () => {
     mkdirSync(dirname(cachePath), { recursive: true });
     writeFileSync(cachePath, "{ not json", "utf8");
 
-    await expect(executePlan(await capabilityPruneCommand.plan(c), c)).rejects.toThrow(
-      /machine capability cache is not valid JSON/,
-    );
+    await expect(async () => {
+      await capabilityPruneCommand.plan(c);
+    }).rejects.toThrow(/machine capability cache is not valid JSON/);
     expect(readFileSync(cachePath, "utf8")).toBe("{ not json");
   });
 });
