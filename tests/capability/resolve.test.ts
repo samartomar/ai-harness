@@ -1,4 +1,12 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -174,6 +182,83 @@ describe("aih capability resolve", () => {
     );
   });
 
+  it("preserves committed audit context while appending generated evidence", async () => {
+    seedNodeRepo();
+    write(
+      AIH_CAPABILITIES_FILE,
+      JSON.stringify({
+        schemaVersion: 1,
+        requires: [
+          {
+            ...requirement("stack.node-typescript", "warn"),
+            reason: "manually reviewed TypeScript capability",
+          },
+        ],
+      }),
+    );
+    const c = ctx({ apply: true, posture: "vibe" });
+
+    await executePlan(await capabilityResolveCommand.plan(c), c);
+
+    const manifest = readJson<{
+      requires: Array<{ id: string; install: string; reason: string; evidence: unknown[] }>;
+    }>(join(workspace, AIH_CAPABILITIES_FILE));
+    const stack = manifest.requires.find((item) => item.id === "stack.node-typescript");
+    expect(stack).toMatchObject({
+      install: "warn",
+      reason: "manually reviewed TypeScript capability",
+    });
+    expect(stack?.evidence).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ detail: "stack.node-typescript evidence" }),
+        expect.objectContaining({ source: "profile.scanRepo.languages" }),
+      ]),
+    );
+  });
+
+  it("rejects duplicate committed capability ids instead of guessing intent", async () => {
+    write(
+      AIH_CAPABILITIES_FILE,
+      JSON.stringify({
+        schemaVersion: 1,
+        requires: [
+          requirement("common.security-review", "auto-add"),
+          requirement("common.security-review", "requires-approval"),
+        ],
+      }),
+    );
+
+    await expect(async () => {
+      await capabilityResolveCommand.plan(ctx());
+    }).rejects.toThrow(/contains entries aih cannot parse/);
+  });
+
+  it("refuses a non-regular committed manifest before reading capability intent", async () => {
+    mkdirSync(join(workspace, AIH_CAPABILITIES_FILE));
+
+    await expect(async () => {
+      await capabilityResolveCommand.plan(ctx());
+    }).rejects.toThrow(/must be a regular root file/);
+  });
+
+  it("refuses a symlinked committed manifest instead of following it", async () => {
+    const target = join(staleRepo, "outside-capabilities.json");
+    writeFileSync(
+      target,
+      JSON.stringify({ schemaVersion: 1, requires: [requirement("custom.manual")] }),
+      "utf8",
+    );
+    try {
+      symlinkSync(target, join(workspace, AIH_CAPABILITIES_FILE));
+    } catch {
+      return;
+    }
+
+    await expect(async () => {
+      await capabilityResolveCommand.plan(ctx());
+    }).rejects.toThrow(/must be a regular root file/);
+  });
+
   it("enterprise posture records needs as approval-required hints, not auto-adds", async () => {
     seedNodeRepo();
 
@@ -195,6 +280,33 @@ describe("aih capability resolve", () => {
         }),
       ]),
     );
+  });
+
+  it("normalizes enterprise posture case before selecting install mode", async () => {
+    seedNodeRepo();
+
+    const c = ctx({ posture: "Enterprise" as unknown as PlanContext["posture"] });
+    const result = await executePlan(await capabilityResolveCommand.plan(c), c);
+    const digest = result.digests.find((item) => item.describe === "capability resolve");
+    const data = digest?.data as {
+      decisions: Array<{ install: string }>;
+    };
+
+    expect(data.decisions.map((d) => d.install)).toEqual([
+      "requires-approval",
+      "requires-approval",
+      "requires-approval",
+    ]);
+  });
+
+  it("rejects unknown posture values instead of falling back to auto-add", async () => {
+    seedNodeRepo();
+
+    await expect(async () => {
+      await capabilityResolveCommand.plan(
+        ctx({ posture: "enterprsie" as unknown as PlanContext["posture"] }),
+      );
+    }).rejects.toThrow(/invalid posture/);
   });
 
   it("team posture records detected needs as warnings", async () => {

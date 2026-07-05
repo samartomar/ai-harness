@@ -1,9 +1,9 @@
 import { createHash } from "node:crypto";
-import { existsSync } from "node:fs";
+import { existsSync, lstatSync } from "node:fs";
 import { isAbsolute, join, parse } from "node:path";
 import { z } from "zod";
 import { AihError } from "../errors.js";
-import { readIfExists } from "../internals/fsxn.js";
+import { readIfExists, readRegularFile } from "../internals/fsxn.js";
 import {
   type CommandSpec,
   digest,
@@ -14,6 +14,7 @@ import {
 } from "../internals/plan.js";
 import { jsonFile, lines } from "../internals/render.js";
 import { type RepoStack, scanRepo } from "../profile/scan.js";
+import { VERSION } from "../version.js";
 
 export const AIH_CAPABILITIES_FILE = "aih-capabilities.json";
 
@@ -44,7 +45,19 @@ const CapabilityRequirementSchema = z
 const ProjectCapabilitiesFileSchema = z
   .object({
     schemaVersion: z.literal(1),
-    requires: z.array(CapabilityRequirementSchema),
+    requires: z.array(CapabilityRequirementSchema).superRefine((requirements, ctx) => {
+      const seen = new Set<string>();
+      for (const [index, requirement] of requirements.entries()) {
+        if (seen.has(requirement.id)) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: `duplicate capability requirement id: ${requirement.id}`,
+            path: [index, "id"],
+          });
+        }
+        seen.add(requirement.id);
+      }
+    }),
   })
   .strict();
 
@@ -170,6 +183,45 @@ function strictestInstall(a: CapabilityInstall, b: CapabilityInstall): Capabilit
   return INSTALL_RANK[a] >= INSTALL_RANK[b] ? a : b;
 }
 
+function parseSemver(version: string): [number, number, number] | undefined {
+  const match = /^(\d+)\.(\d+)\.(\d+)(?:[-+].*)?$/.exec(version);
+  if (match === null) return undefined;
+  return [Number(match[1]), Number(match[2]), Number(match[3])];
+}
+
+function compareSemver(a: [number, number, number], b: [number, number, number]): number {
+  const diffs = [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+  for (const diff of diffs) {
+    if (diff !== 0) return diff;
+  }
+  return 0;
+}
+
+function satisfiesAihEngine(range: string): boolean {
+  const current = parseSemver(VERSION);
+  if (current === undefined) return false;
+  const exact = parseSemver(range);
+  if (exact !== undefined) return compareSemver(current, exact) === 0;
+  const caret = /^\^(\d+)\.(\d+)\.(\d+)$/.exec(range);
+  if (caret === null) return false;
+  const minimum: [number, number, number] = [Number(caret[1]), Number(caret[2]), Number(caret[3])];
+  if (compareSemver(current, minimum) < 0) return false;
+  if (minimum[0] > 0) return current[0] === minimum[0];
+  if (minimum[1] > 0) return current[0] === 0 && current[1] === minimum[1];
+  return current[0] === 0 && current[1] === 0 && current[2] === minimum[2];
+}
+
+function capabilityPosture(ctx: PlanContext): "vibe" | "team" | "enterprise" {
+  const raw = ctx.posture ?? ctx.options.posture ?? "vibe";
+  if (typeof raw !== "string") {
+    throw new AihError("invalid posture: expected vibe, team, or enterprise", "AIH_CONFIG");
+  }
+  const posture = raw.toLowerCase();
+  if (posture === "vibe" || posture === "team" || posture === "enterprise") return posture;
+  if (posture === "community") return "vibe";
+  throw new AihError("invalid posture: expected vibe, team, or enterprise", "AIH_CONFIG");
+}
+
 function requireHome(ctx: PlanContext): string {
   const home = ctx.env.USERPROFILE || ctx.env.HOME;
   if (typeof home !== "string" || home.trim().length === 0) {
@@ -185,12 +237,36 @@ export function machineCapabilityCachePath(ctx: PlanContext): string {
   return join(requireHome(ctx), ".aih", "capabilities", "cache.json");
 }
 
-function parseExistingProjectManifest(root: string): ProjectCapabilitiesFile | undefined {
-  const raw = readIfExists(join(root, AIH_CAPABILITIES_FILE));
-  if (raw === undefined) return undefined;
+function readProjectManifest(
+  root: string,
+  failOnInvalid: boolean,
+): ProjectCapabilitiesFile | undefined {
+  const path = join(root, AIH_CAPABILITIES_FILE);
+  let info: ReturnType<typeof lstatSync>;
+  try {
+    info = lstatSync(path);
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === "ENOENT" || code === "ENOTDIR") return undefined;
+    if (!failOnInvalid) return undefined;
+    throw new AihError(`${AIH_CAPABILITIES_FILE} cannot be inspected as a root file`, "AIH_CONFIG");
+  }
+  if (info.isSymbolicLink() || !info.isFile()) {
+    if (!failOnInvalid) return undefined;
+    throw new AihError(
+      `${AIH_CAPABILITIES_FILE} must be a regular root file, not a symlink or directory`,
+      "AIH_CONFIG",
+    );
+  }
+  const raw = readRegularFile(path)?.toString("utf8");
+  if (raw === undefined) {
+    if (!failOnInvalid) return undefined;
+    throw new AihError(`${AIH_CAPABILITIES_FILE} cannot be read as a regular file`, "AIH_CONFIG");
+  }
   try {
     return ProjectCapabilitiesFileSchema.parse(JSON.parse(raw));
   } catch {
+    if (!failOnInvalid) return undefined;
     throw new AihError(
       `${AIH_CAPABILITIES_FILE} contains entries aih cannot parse — fix it by hand first (rewriting it would destroy what is there)`,
       "AIH_CONFIG",
@@ -222,8 +298,9 @@ function readMachineCapabilityCache(ctx: PlanContext): MachineCapabilityCache {
 }
 
 function installForPosture(ctx: PlanContext): CapabilityInstall {
-  if (ctx.posture === "enterprise") return "requires-approval";
-  if (ctx.posture === "team") return "warn";
+  const posture = capabilityPosture(ctx);
+  if (posture === "enterprise") return "requires-approval";
+  if (posture === "team") return "warn";
   return "auto-add";
 }
 
@@ -257,7 +334,11 @@ function decision(
 }
 
 function resolveDecisions(ctx: PlanContext, stack: RepoStack): CapabilityDecision[] {
-  const byId = new Map(COMMON_CATALOG.map((capability) => [capability.id, capability]));
+  const byId = new Map(
+    COMMON_CATALOG.filter((capability) => satisfiesAihEngine(capability.engines.aih)).map(
+      (capability) => [capability.id, capability],
+    ),
+  );
   const decisions: CapabilityDecision[] = [];
 
   const security = byId.get("common.security-review");
@@ -319,7 +400,11 @@ function mergedProjectManifest(
       next.id,
       current === undefined
         ? next
-        : { ...next, install: strictestInstall(current.install, next.install) },
+        : {
+            ...current,
+            install: strictestInstall(current.install, next.install),
+            evidence: mergeEvidence(current.evidence, next.evidence),
+          },
     );
   }
   return {
@@ -334,9 +419,24 @@ function projectReport(
 ): CapabilityResolveReport {
   return {
     schemaVersion: 1,
-    posture: ctx.posture ?? "vibe",
+    posture: capabilityPosture(ctx),
     decisions: manifest.requires.map(decisionFromRequirement),
   };
+}
+
+function mergeEvidence(
+  existing: CapabilityEvidence[],
+  generated: CapabilityEvidence[],
+): CapabilityEvidence[] {
+  const seen = new Set<string>();
+  const merged: CapabilityEvidence[] = [];
+  for (const item of [...existing, ...generated]) {
+    const key = JSON.stringify(item);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    merged.push(item);
+  }
+  return merged;
 }
 
 function cacheEntryFor(root: string, manifest: ProjectCapabilitiesFile): MachineCapabilityRepo {
@@ -405,7 +505,7 @@ function resolveText(report: CapabilityResolveReport): string {
 }
 
 function capabilityResolvePlan(ctx: PlanContext): Plan {
-  const existing = parseExistingProjectManifest(ctx.root);
+  const existing = readProjectManifest(ctx.root, true);
   const stack = scanRepo(ctx.root, { maxDepth: 8, contextDir: ctx.contextDir });
   const manifest = mergedProjectManifest(existing, resolveDecisions(ctx, stack));
   const report = projectReport(ctx, manifest);
@@ -433,18 +533,13 @@ function prunedCache(cache: MachineCapabilityCache): {
       pruned += 1;
       continue;
     }
-    const raw = readIfExists(join(repo.root, repo.manifestPath));
-    if (raw === undefined) {
+    const manifest = readProjectManifest(repo.root, false);
+    if (manifest === undefined) {
       pruned += 1;
       continue;
     }
     try {
-      const result = ProjectCapabilitiesFileSchema.safeParse(JSON.parse(raw));
-      if (!result.success) {
-        pruned += 1;
-        continue;
-      }
-      const next = cacheEntryFor(repo.root, result.data);
+      const next = cacheEntryFor(repo.root, manifest);
       if (!sameCacheEntry(next, repo)) {
         refreshed += 1;
       }
