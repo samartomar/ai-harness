@@ -432,6 +432,7 @@ async function sessionGuardPlan(ctx: PlanContext): Promise<ReturnType<typeof pla
       structuredVerificationRunToCheck(report, {
         name: "session guardrails",
         passDetail: "no session guardrail findings",
+        includeMetadata: false,
       }),
     ),
   );

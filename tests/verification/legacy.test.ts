@@ -173,13 +173,39 @@ describe("structured verification legacy compatibility", () => {
             source: "ai-coding/project.json",
           },
         ],
-        message: `leaked ${fakeSecret}\u001b[31m`,
+        message: `leaked ${fakeSecret}\u001b[31m\u009b31m\u202e`,
       }),
     );
 
     expect(check.detail).toBe("leaked [REDACTED]");
     expect(JSON.stringify(check)).not.toContain(fakeSecret);
     expect(check.fingerprint).toBeUndefined();
+  });
+
+  it("drops secret-shaped legacy locations", () => {
+    const fakeSecret = "sk-test-not-real-secret-123456";
+    const check = structuredVerificationResultToCheck(
+      result("security", {
+        verdict: "fail",
+        severity: "critical",
+        category: "security",
+        evidence: [
+          {
+            id: "security:config:secret",
+            type: "config-secret",
+            source: `${fakeSecret}.json`,
+          },
+        ],
+        message: "secret-shaped location source",
+      }),
+    );
+
+    expect(check).toEqual({
+      name: "security",
+      verdict: "fail",
+      detail: "secret-shaped location source",
+    });
+    expect(JSON.stringify(check)).not.toContain(fakeSecret);
   });
 
   it("drops unsafe legacy metadata from non-repo evidence", () => {

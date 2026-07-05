@@ -9,6 +9,7 @@ import type { Evidence, VerificationPipelineRun, VerificationResult } from "./ty
 
 export interface StructuredVerificationLegacyOptions {
   warnAs?: LegacyVerdict;
+  includeMetadata?: boolean;
 }
 
 export interface StructuredVerificationRunCheckOptions extends StructuredVerificationLegacyOptions {
@@ -33,10 +34,20 @@ function legacyVerdictFor(
   return legacyWarnVerdict(options);
 }
 
+function isUnsafeControlCode(code: number | undefined): boolean {
+  return (
+    code === undefined ||
+    code < 32 ||
+    code === 127 ||
+    (code >= 128 && code <= 159) ||
+    (code >= 0x202a && code <= 0x202e) ||
+    (code >= 0x2066 && code <= 0x2069)
+  );
+}
+
 function hasControlCharacter(value: string): boolean {
   for (const char of value) {
-    const code = char.codePointAt(0);
-    if (code === undefined || code < 32 || code === 127) return true;
+    if (isUnsafeControlCode(char.codePointAt(0))) return true;
   }
   return false;
 }
@@ -78,7 +89,9 @@ function safeLocation(evidence: Evidence): Check["location"] | undefined {
   if (rawPath === undefined || rawPath.length === 0 || hasControlCharacter(rawPath)) {
     return undefined;
   }
+  if (redactSecrets(rawPath) !== rawPath) return undefined;
   const uri = rawPath.replaceAll("\\", "/");
+  if (redactSecrets(uri) !== uri) return undefined;
   if (!looksPathLike(uri)) return undefined;
   if (
     uri.startsWith("/") ||
@@ -143,8 +156,18 @@ function normalizeDetailText(value: string): string {
       pendingSpace = true;
       continue;
     }
+    if (char.codePointAt(0) === 0x9b) {
+      index += 1;
+      while (index < chars.length) {
+        const code = chars[index]?.codePointAt(0);
+        if (code !== undefined && code >= 64 && code <= 126) break;
+        index += 1;
+      }
+      pendingSpace = true;
+      continue;
+    }
     const code = char.codePointAt(0);
-    if (code === undefined || code < 32 || code === 127) {
+    if (isUnsafeControlCode(code)) {
       pendingSpace = true;
       continue;
     }
@@ -177,10 +200,12 @@ export function structuredVerificationResultToCheck(
     verdict: legacyVerdictFor(result, options),
     detail: boundedDetail(result.message),
   };
-  const location = firstSafeLocation(result.evidence);
-  if (location !== undefined) check.location = location;
-  const fingerprint = firstSafeFingerprint(result.evidence);
-  if (fingerprint !== undefined) check.fingerprint = fingerprint;
+  if (options.includeMetadata !== false) {
+    const location = firstSafeLocation(result.evidence);
+    if (location !== undefined) check.location = location;
+    const fingerprint = firstSafeFingerprint(result.evidence);
+    if (fingerprint !== undefined) check.fingerprint = fingerprint;
+  }
   return check;
 }
 
