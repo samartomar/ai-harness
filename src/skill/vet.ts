@@ -2,7 +2,7 @@ import { isAbsolute, relative, resolve } from "node:path";
 import { AihError } from "../errors.js";
 import { writeArtifact } from "../internals/execute.js";
 import type { Action, CommandSpec, Plan, PlanContext } from "../internals/plan.js";
-import { dynamicDigest, plan, probe, probeMany } from "../internals/plan.js";
+import { dynamicDigest, plan, structuredChecksProbe } from "../internals/plan.js";
 import type { Check } from "../internals/verify.js";
 import { resolveInternalScopes } from "../trust/depnames.js";
 import {
@@ -214,7 +214,9 @@ export async function skillVetPlanForSource(
   const scanOptions = { internalScopes: resolveInternalScopes(ctx) };
   if (source.kind === "github") actions.push(trustFetchExec(source, ctx));
   actions.push(
-    probeMany("trust source origin", (probeCtx) => trustSourceOriginChecks(probeCtx, source)),
+    structuredChecksProbe("trust source origin", (probeCtx) =>
+      trustSourceOriginChecks(probeCtx, source),
+    ),
   );
   if (source.kind === "local") {
     const scan = await scanTrustTreeWithAnalyzers(
@@ -224,7 +226,9 @@ export async function skillVetPlanForSource(
     const shape = skillShape(source.root);
     const staticChecks = [...scan.checks, licenseCheck(source.root)];
     actions.push(
-      ...staticChecks.map((check) => probe(check.detail ?? check.name, () => check)),
+      ...staticChecks.map((check) =>
+        structuredChecksProbe(check.detail ?? check.name, () => [check]),
+      ),
       dynamicDigest("skill vet verdict", (digestCtx) => {
         const checks = [...trustSourceOriginChecks(digestCtx, source), ...staticChecks];
         const firstParty = isFirstPartySource(digestCtx.root, source);
@@ -263,7 +267,7 @@ export async function skillVetPlanForSource(
       return buildEvidence(source, source.pin?.toLowerCase(), undefined, checks, [], graded);
     };
     actions.push(
-      probeMany(`skill vet scan ${source.display}`, async (probeCtx) => {
+      structuredChecksProbe(`skill vet scan ${source.display}`, async (probeCtx) => {
         if (!probeCtx.apply) return [FETCH_BLOCKED_SKIP];
         const vetted = await scanGithubSource(probeCtx);
         return [...vetted.scan.checks, vetted.license];
