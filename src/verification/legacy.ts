@@ -139,9 +139,8 @@ function firstSafeFingerprint(evidence: readonly Evidence[]): string | undefined
   return undefined;
 }
 
-function normalizeDetailText(value: string): string {
-  const redacted = redactSecrets(value);
-  const chars = Array.from(redacted);
+function stripUnsafeDetailText(value: string, controlReplacement: "" | " "): string {
+  const chars = Array.from(value);
   let normalized = "";
   let pendingSpace = false;
   for (let index = 0; index < chars.length; index += 1) {
@@ -153,7 +152,7 @@ function normalizeDetailText(value: string): string {
         if (code !== undefined && code >= 64 && code <= 126) break;
         index += 1;
       }
-      pendingSpace = true;
+      pendingSpace = controlReplacement === " ";
       continue;
     }
     if (char.codePointAt(0) === 0x9b) {
@@ -163,12 +162,12 @@ function normalizeDetailText(value: string): string {
         if (code !== undefined && code >= 64 && code <= 126) break;
         index += 1;
       }
-      pendingSpace = true;
+      pendingSpace = controlReplacement === " ";
       continue;
     }
     const code = char.codePointAt(0);
     if (isUnsafeControlCode(code)) {
-      pendingSpace = true;
+      pendingSpace = controlReplacement === " ";
       continue;
     }
     if (pendingSpace && normalized.length > 0 && !normalized.endsWith(" ")) normalized += " ";
@@ -176,6 +175,13 @@ function normalizeDetailText(value: string): string {
     pendingSpace = false;
   }
   return normalized.trim();
+}
+
+function normalizeDetailText(value: string): string {
+  const compact = stripUnsafeDetailText(value, "");
+  const redactedCompact = redactSecrets(compact);
+  if (redactedCompact !== compact) return redactedCompact.trim();
+  return redactSecrets(stripUnsafeDetailText(value, " ")).trim();
 }
 
 function boundedDetail(value: string | undefined): string | undefined {

@@ -210,6 +210,7 @@ describe("structured verification legacy compatibility", () => {
 
   it("sanitizes legacy check names", () => {
     const fakeSecret = "sk-test-not-real-secret-123456";
+    const splitSecret = "sk-test-not-real-secret\u202e-123456";
     const check = structuredVerificationResultToCheck(
       result(`pass ${fakeSecret}\u009b31m`, {
         verdict: "fail",
@@ -221,10 +222,20 @@ describe("structured verification legacy compatibility", () => {
       name: `aggregate ${fakeSecret}\u202e`,
       passDetail: "all structured checks passed",
     });
+    const split = structuredVerificationResultToCheck(
+      result(`split ${splitSecret}`, {
+        verdict: "fail",
+        severity: "high",
+        message: `leaked ${splitSecret}`,
+      }),
+    );
 
     expect(check.name).toBe("pass [REDACTED]");
     expect(aggregate.name).toBe("aggregate [REDACTED]");
-    expect(JSON.stringify([check, aggregate])).not.toContain(fakeSecret);
+    expect(split.name).toBe("split [REDACTED]");
+    expect(split.detail).toBe("leaked [REDACTED]");
+    expect(JSON.stringify([check, aggregate, split])).not.toContain(fakeSecret);
+    expect(JSON.stringify(split)).not.toContain("sk-test-not-real-secret");
   });
 
   it("drops unsafe legacy metadata from non-repo evidence", () => {
