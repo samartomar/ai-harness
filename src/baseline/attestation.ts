@@ -51,12 +51,9 @@ function stringField(
 function mcpMetadata(rawServer: unknown): string {
   const raw = isRecord(rawServer) ? rawServer : {};
   const fallback = classifyIncomingMcp(rawServer);
-  const egress =
-    stringField(raw, "egress", EGRESS_VALUES) ?? fallback.egress;
-  const credentials =
-    stringField(raw, "credentials", CREDENTIAL_VALUES) ?? fallback.credentials;
-  const supplyChain =
-    stringField(raw, "supplyChain", SUPPLY_CHAIN_VALUES) ?? fallback.supplyChain;
+  const egress = stringField(raw, "egress", EGRESS_VALUES) ?? fallback.egress;
+  const credentials = stringField(raw, "credentials", CREDENTIAL_VALUES) ?? fallback.credentials;
+  const supplyChain = stringField(raw, "supplyChain", SUPPLY_CHAIN_VALUES) ?? fallback.supplyChain;
   return `${egress}/${credentials}/${supplyChain}`;
 }
 
@@ -113,10 +110,10 @@ function parseMcpSurfaces(root: string): { surfaces: CapabilitySurface[]; error?
   return { surfaces };
 }
 
-function parseSourceRef(source: string, commit: string): Pick<
-  CapabilitySurface,
-  "owner" | "repo" | "pinnedSha"
-> {
+function parseSourceRef(
+  source: string,
+  commit: string,
+): Pick<CapabilitySurface, "owner" | "repo" | "pinnedSha"> {
   const normalized = source.replace(/^github:/, "");
   const match = /^([^/\s@]+)\/([^@\s]+)(?:@([0-9a-f]{40}))?$/i.exec(normalized);
   if (!match?.[1] || !match[2]) return {};
@@ -231,10 +228,9 @@ export function enterpriseBaselineAttestationCheck(ctx: PlanContext): Check {
       name,
       verdict: "fail",
       code: "baseline.registry-missing",
-      detail:
-        `external capability surfaces are present (${collected.surfaces
-          .map((surface) => surface.label)
-          .join(", ")}) but ${AIH_ORG_POLICY_FILE} does not declare a registry`,
+      detail: `external capability surfaces are present (${collected.surfaces
+        .map((surface) => surface.label)
+        .join(", ")}) but ${AIH_ORG_POLICY_FILE} does not declare a registry`,
       location: { uri: AIH_ORG_POLICY_FILE },
       fingerprint: "baseline-registry-missing",
     };

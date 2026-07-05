@@ -445,6 +445,27 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     action:
       "`aih ready` found one or more blockers that stop an agent from starting here. Clear each named blocker with its own fix (see the readiness digest — e.g. `aih heal`, `aih contract --apply`, `aih secrets --apply`, `aih bootstrap-ai --apply`), then re-run `aih ready`.",
   },
+  "baseline.registry-missing": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "enterprise baseline registry missing",
+    action:
+      "Add the declared capability registry to `aih-org-policy.json` (`mcp.allowedServers` for MCP servers and `trust.approvedSources` for packaged marketplace skills), or remove the discovered surface before attesting the baseline.",
+  },
+  "baseline.registry-invalid": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "enterprise baseline registry input invalid",
+    action:
+      "Fix the invalid registry input named in the finding (`aih-org-policy.json`, `.mcp.json`, or the marketplace manifest), then re-run `aih doctor --posture enterprise`.",
+  },
+  "baseline.undeclared-surface": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "undeclared external capability surface detected",
+    action:
+      "Declare each named MCP server or marketplace skill source in `aih-org-policy.json`, or remove the residue if it is not part of the approved capability set. Re-run `aih doctor --posture enterprise` once the registry and discovered surfaces agree.",
+  },
   "trust.hidden-unicode": {
     audience: "developer",
     failSeverity: "blocking",

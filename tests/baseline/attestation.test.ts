@@ -53,7 +53,9 @@ function writeMcp(servers: Record<string, unknown>): void {
   writeFileSync(join(dir, ".mcp.json"), JSON.stringify({ mcpServers: servers }));
 }
 
-function writeMarketplaceSkill(source = "owner/repo@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"): void {
+function writeMarketplaceSkill(
+  source = "owner/repo@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+): void {
   mkdirSync(join(dir, ".aih", "marketplace"), { recursive: true });
   writeFileSync(
     join(dir, ".aih", "marketplace", "marketplace.json"),
@@ -107,9 +109,10 @@ describe("enterprise baseline attestation", () => {
   });
 
   it("emits a positive attestation when every external surface is a registry member", () => {
-    writePolicy(["github", "context7"], [
-      { owner: "owner", repo: "repo", pinnedSha: "a".repeat(40) },
-    ]);
+    writePolicy(
+      ["github", "context7"],
+      [{ owner: "owner", repo: "repo", pinnedSha: "a".repeat(40) }],
+    );
     writeMcp({
       github: {
         type: "http",
