@@ -24,6 +24,7 @@ import {
   probe,
   probeMany,
   remove,
+  structuredChecksProbe,
   structuredProbe,
   writeJson,
   writeText,
@@ -432,6 +433,51 @@ describe("executePlan", () => {
         snippet: "legacy [REDACTED]",
       },
     ]);
+  });
+
+  it("runs structured check probes once while preserving explicit legacy report checks", async () => {
+    let calls = 0;
+    const checks: Check[] = [
+      {
+        name: "trust.prompt-injection",
+        verdict: "fail",
+        detail: "prompt injection found",
+        code: "trust.prompt-injection",
+        location: { uri: "skills/evil/SKILL.md", startLine: 2 },
+        fingerprint: "trust:prompt:evil",
+      },
+      {
+        name: "trust.dependency-confusion",
+        verdict: "fail",
+        detail: "off-scope dependency found",
+        code: "trust.dependency-confusion",
+        location: { uri: "package.json", startLine: 8 },
+        fingerprint: "trust:dep:pkg",
+      },
+    ];
+    const p = plan(
+      "t",
+      structuredChecksProbe("paired trust checks", () => {
+        calls += 1;
+        return checks;
+      }),
+    );
+
+    const result = await executePlan(p, ctx({ verify: true }));
+
+    expect(calls).toBe(1);
+    expect(result.report?.checks).toEqual(checks);
+    expect(result.verification?.results.map((entry) => entry.passName)).toEqual([
+      "trust.prompt-injection",
+      "trust.dependency-confusion",
+    ]);
+    expect(result.verification?.evidenceGraph.nodes).toContainEqual(
+      expect.objectContaining({
+        kind: "source",
+        source: "skills/evil/SKILL.md#L2",
+        evidenceType: "legacy-check",
+      }),
+    );
   });
 
   it("bounds malformed legacy probe text in the structured sidecar without changing the legacy report", async () => {

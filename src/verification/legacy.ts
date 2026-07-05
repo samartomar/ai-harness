@@ -5,7 +5,10 @@ import {
   VerificationReport,
 } from "../internals/verify.js";
 import { MAX_VERIFICATION_STRING_FIELD_LENGTH } from "./constants.js";
+import { buildEvidenceGraph } from "./graph.js";
+import { mergeVerificationResults } from "./merge.js";
 import type { Evidence, VerificationPipelineRun, VerificationResult } from "./types.js";
+import { isWellFormedUtf16 } from "./validation.js";
 
 export interface StructuredVerificationLegacyOptions {
   warnAs?: LegacyVerdict;
@@ -16,6 +19,8 @@ export interface StructuredVerificationRunCheckOptions extends StructuredVerific
   name: string;
   passDetail?: string;
 }
+
+const VERIFICATION_TRUNCATION_SUFFIX = "... [truncated]";
 
 function legacyWarnVerdict(options: StructuredVerificationLegacyOptions): LegacyVerdict {
   const warnAs = options.warnAs ?? "pass";
@@ -32,6 +37,50 @@ function legacyVerdictFor(
   if (result.verdict === "pass") return "pass";
   if (result.verdict === "fail") return "fail";
   return legacyWarnVerdict(options);
+}
+
+function toWellFormedUtf16(value: string): string {
+  let text = "";
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    if (code >= 0xd800 && code <= 0xdbff) {
+      const next = value.charCodeAt(index + 1);
+      if (Number.isInteger(next) && next >= 0xdc00 && next <= 0xdfff) {
+        text += value[index] ?? "";
+        text += value[index + 1] ?? "";
+        index += 1;
+      } else {
+        text += "\uFFFD";
+      }
+      continue;
+    }
+    text += code >= 0xdc00 && code <= 0xdfff ? "\uFFFD" : (value[index] ?? "");
+  }
+  return text;
+}
+
+function truncateVerificationPrefix(value: string, maxLength: number): string {
+  if (value.length <= maxLength) return value;
+  let next = value.slice(0, maxLength);
+  if (!isWellFormedUtf16(next)) next = toWellFormedUtf16(next);
+  while (next.length > maxLength) next = next.slice(0, -1);
+  return next;
+}
+
+function verificationText(value: string | undefined, fallback: string): string {
+  let text = value ?? fallback;
+  if (!isWellFormedUtf16(text)) text = toWellFormedUtf16(text);
+  text = redactSecrets(text);
+  if (text.length === 0) text = fallback;
+  if (text.length <= MAX_VERIFICATION_STRING_FIELD_LENGTH) return text;
+  return `${truncateVerificationPrefix(
+    text,
+    MAX_VERIFICATION_STRING_FIELD_LENGTH - VERIFICATION_TRUNCATION_SUFFIX.length,
+  )}${VERIFICATION_TRUNCATION_SUFFIX}`;
+}
+
+function optionalVerificationText(value: string | undefined): string | undefined {
+  return value === undefined ? undefined : verificationText(value, "");
 }
 
 function isUnsafeControlCode(code: number | undefined): boolean {
@@ -122,6 +171,71 @@ function safeLocation(evidence: Evidence): Check["location"] | undefined {
   return { uri };
 }
 
+function isSafeLegacyLocationPart(value: string): boolean {
+  for (const char of value) {
+    const code = char.codePointAt(0);
+    const safe =
+      code !== undefined &&
+      ((code >= 48 && code <= 57) ||
+        (code >= 65 && code <= 90) ||
+        (code >= 97 && code <= 122) ||
+        char === "." ||
+        char === "_" ||
+        char === "@" ||
+        char === "+" ||
+        char === "-");
+    if (!safe) return false;
+  }
+  return true;
+}
+
+function safeLegacyLocationUri(uri: string): string | undefined {
+  if (uri.length === 0 || uri.trim() !== uri || hasControlCharacter(uri)) return undefined;
+  if (redactSecrets(uri) !== uri) return undefined;
+  const normalized = uri.replaceAll("\\", "/");
+  if (redactSecrets(normalized) !== normalized) return undefined;
+  if (
+    normalized.startsWith("/") ||
+    normalized.startsWith("~") ||
+    /^[A-Za-z]:/.test(normalized) ||
+    /^[A-Za-z][A-Za-z0-9+.-]*:/.test(normalized)
+  ) {
+    return undefined;
+  }
+  const parts = normalized.split("/");
+  if (parts.some((part) => part.length === 0 || part === "." || part === "..")) {
+    return undefined;
+  }
+  if (parts.some((part) => !isSafeLegacyLocationPart(part))) return undefined;
+  return normalized;
+}
+
+function legacyCheckSource(check: Check): string | undefined {
+  const location = check.location;
+  if (location === undefined) return undefined;
+  const uri = safeLegacyLocationUri(location.uri);
+  if (uri === undefined) return undefined;
+  const startLine = location.startLine;
+  if (startLine !== undefined && (!Number.isSafeInteger(startLine) || startLine < 1)) {
+    return undefined;
+  }
+  return startLine === undefined ? uri : `${uri}#L${startLine}`;
+}
+
+function legacyCheckEvidence(check: Check): Evidence[] {
+  const source = legacyCheckSource(check);
+  if (source === undefined) return [];
+  const id = check.fingerprint ?? check.code ?? `legacy:${source}`;
+  return [
+    {
+      id,
+      type: "legacy-check",
+      source,
+      ...(check.detail === undefined ? {} : { snippet: check.detail }),
+    },
+  ];
+}
+
 function firstSafeLocation(evidence: readonly Evidence[]): Check["location"] | undefined {
   for (const item of evidence) {
     const location = safeLocation(item);
@@ -194,6 +308,98 @@ function boundedDetail(value: string | undefined): string | undefined {
 
 function boundedName(value: string | undefined, fallback: string): string {
   return boundedDetail(value) ?? fallback;
+}
+
+function suffixedPassName(passName: string, suffix: number): string {
+  const suffixText = `#${suffix}`;
+  if (passName.length + suffixText.length <= MAX_VERIFICATION_STRING_FIELD_LENGTH) {
+    return `${passName}${suffixText}`;
+  }
+  return `${truncateVerificationPrefix(
+    passName,
+    MAX_VERIFICATION_STRING_FIELD_LENGTH - suffixText.length,
+  )}${suffixText}`;
+}
+
+function uniqueVerificationResults(results: readonly VerificationResult[]): VerificationResult[] {
+  const used = new Set<string>();
+  const nextSuffix = new Map<string, number>();
+  return results.map((result) => {
+    if (!used.has(result.passName)) {
+      used.add(result.passName);
+      return result;
+    }
+    let suffix = nextSuffix.get(result.passName) ?? 2;
+    let passName = suffixedPassName(result.passName, suffix);
+    while (used.has(passName)) {
+      suffix += 1;
+      passName = suffixedPassName(result.passName, suffix);
+    }
+    nextSuffix.set(result.passName, suffix + 1);
+    used.add(passName);
+    return { ...result, passName };
+  });
+}
+
+function maxEvidencePerResult(results: readonly VerificationResult[]): number {
+  return Math.max(1, ...results.map((result) => result.evidence.length));
+}
+
+function sanitizedEvidence(evidence: Evidence, passName: string, index: number): Evidence {
+  const snippet = optionalVerificationText(evidence.snippet);
+  return {
+    id: verificationText(evidence.id, `${passName}:evidence:${index}`),
+    type: verificationText(evidence.type, "evidence"),
+    source: verificationText(evidence.source, "unknown"),
+    ...(snippet === undefined ? {} : { snippet }),
+  };
+}
+
+function sanitizedLegacyVerificationResult(result: VerificationResult): VerificationResult {
+  const passName = verificationText(result.passName, "legacy check");
+  return {
+    passName,
+    verdict: result.verdict,
+    severity: result.severity,
+    confidence: result.confidence,
+    evidence: result.evidence.map((evidence, evidenceIndex) =>
+      sanitizedEvidence(evidence, passName, evidenceIndex),
+    ),
+    message: verificationText(result.message, passName),
+    category: result.category,
+  };
+}
+
+export function legacyCheckToVerificationResult(check: Check): VerificationResult {
+  const passName = verificationText(check.name, "legacy check");
+  return {
+    passName,
+    verdict: check.verdict === "skip" ? "warn" : check.verdict,
+    severity: check.verdict === "fail" ? "high" : "info",
+    confidence: "high",
+    evidence: legacyCheckEvidence(check),
+    message: verificationText(check.detail, passName),
+    category: "other",
+  };
+}
+
+export function legacyChecksToVerificationRun(
+  checks: readonly Check[],
+): VerificationPipelineRun | undefined {
+  if (checks.length === 0) return undefined;
+  const results = uniqueVerificationResults(
+    checks
+      .map((check) => legacyCheckToVerificationResult(check))
+      .map((result) => sanitizedLegacyVerificationResult(result)),
+  );
+  return {
+    results,
+    summary: mergeVerificationResults(results),
+    evidenceGraph: buildEvidenceGraph(results, {
+      maxResults: results.length,
+      maxEvidencePerResult: maxEvidencePerResult(results),
+    }),
+  };
 }
 
 function detailFromResults(results: readonly VerificationResult[]): string | undefined {

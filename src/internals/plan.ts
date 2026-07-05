@@ -1,6 +1,7 @@
 import type { Posture, PostureSource } from "../config/posture.js";
 import type { EnvShell, HostAdapter } from "../platform/base.js";
 import {
+  legacyChecksToVerificationRun,
   type StructuredVerificationRunCheckOptions,
   structuredVerificationRunToCheck,
 } from "../verification/legacy.js";
@@ -80,6 +81,11 @@ export interface DocAction {
 
 export type ProbeRun = (ctx: PlanContext) => Promise<Check> | Check;
 
+export interface StructuredLegacyProbeRun {
+  verification?: VerificationPipelineRun;
+  reportChecks: Check[];
+}
+
 export interface ProbeAction {
   kind: "probe";
   describe: string;
@@ -88,6 +94,10 @@ export interface ProbeAction {
   runMany?: (ctx: PlanContext) => Promise<Check[]> | Check[];
   /** Structured verification runs are adapted by the executor into the legacy report. */
   runStructured?: (ctx: PlanContext) => Promise<VerificationPipelineRun> | VerificationPipelineRun;
+  /** Structured verification paired with explicit legacy checks for compatibility. */
+  runStructuredLegacy?: (
+    ctx: PlanContext,
+  ) => Promise<StructuredLegacyProbeRun> | StructuredLegacyProbeRun;
   /** Legacy adaptation options for structured verification runs. */
   structured?: StructuredProbeOptions;
 }
@@ -430,6 +440,25 @@ export function probeMany(
     describe,
     run: () => ({ name: describe, verdict: "skip", detail: "multi-check probe" }),
     runMany,
+  };
+}
+
+export function structuredChecksProbe(
+  describe: string,
+  runMany: NonNullable<ProbeAction["runMany"]>,
+): ProbeAction {
+  return {
+    kind: "probe",
+    describe,
+    run: () => ({ name: describe, verdict: "skip", detail: "structured check probe" }),
+    runMany,
+    runStructuredLegacy: async (ctx) => {
+      const reportChecks = await runMany(ctx);
+      return {
+        verification: legacyChecksToVerificationRun(reportChecks),
+        reportChecks,
+      };
+    },
   };
 }
 

@@ -74,6 +74,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **Trust scan paired structured probes**: `trust scan` now routes static and
+  fetched-source verification checks through paired structured probes on the
+  existing `probe` action kind, preserving one-to-one legacy report checks while
+  adding structured sidecar results without double-running the scan. (#232)
 - **Executor structured-first verification cleanup**: executor verification now
   collects structured entries first and adapts the legacy `VerificationReport`
   from that shared pass data, preserving legacy coded checks, locations, and

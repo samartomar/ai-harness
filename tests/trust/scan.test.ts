@@ -1561,6 +1561,9 @@ describe("trustScanCommand", () => {
     expect(
       plan.actions.every((action) => action.kind === "probe" || action.kind === "digest"),
     ).toBe(true);
+    expect(
+      plan.actions.some((action) => action.kind === "probe" && "runStructuredLegacy" in action),
+    ).toBe(true);
 
     const result = await executePlan(plan, ctx({ target: dir }));
     expect(result.applied).toBe(false);
@@ -1569,6 +1572,9 @@ describe("trustScanCommand", () => {
     expect(result.report?.checks.some((check) => check.code === "trust.prompt-injection")).toBe(
       true,
     );
+    expect(
+      result.verification?.results.some((entry) => entry.passName === "trust.prompt-injection"),
+    ).toBe(true);
   });
 
   it("allows skipped-directory hard links through the command resolver path", async () => {
