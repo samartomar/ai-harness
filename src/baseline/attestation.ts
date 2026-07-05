@@ -26,6 +26,7 @@ interface CapabilitySurface {
 }
 
 const MCP_REGISTRY_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,79}$/;
+const OWNER_REPO_PART_RE = /^[A-Za-z0-9_.-]+$/;
 const EGRESS_VALUES = new Set<McpEgress>(["none", "local-only", "vendor-incumbent", "third-party"]);
 const CREDENTIAL_VALUES = new Set<McpCredentials>(["none", "oauth", "token"]);
 const SUPPLY_CHAIN_VALUES = new Set<McpSupplyChain>(["pinned", "unpinned", "hosted-remote"]);
@@ -190,6 +191,7 @@ function parseSourceRef(
   const normalized = source.replace(/^github:/, "");
   const match = /^([^/\s@]+)\/([^@\s]+)(?:@([0-9a-f]{40}))?$/i.exec(normalized);
   if (!match?.[1] || !match[2]) return {};
+  if (!OWNER_REPO_PART_RE.test(match[1]) || !OWNER_REPO_PART_RE.test(match[2])) return {};
   const commitSha = /^[0-9a-f]{40}$/i.test(commit) ? commit.toLowerCase() : undefined;
   return {
     owner: match[1],

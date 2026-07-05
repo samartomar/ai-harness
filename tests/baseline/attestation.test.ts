@@ -167,6 +167,18 @@ describe("enterprise baseline attestation", () => {
     expect(check.detail).toContain("marketplace:stranger/repo@aaaaaaaaaaaa");
   });
 
+  it("sanitizes unsafe marketplace source labels before reporting them", () => {
+    writePolicy([]);
+    writeMarketplaceSkill("owner/repo\u001b[31m@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+
+    const check = enterpriseBaselineAttestationCheck(ctx());
+
+    expect(check.verdict).toBe("fail");
+    expect(check.code).toBe("baseline.undeclared-surface");
+    expect(check.detail).toContain("marketplace:");
+    expect(check.detail).not.toContain("\u001b");
+  });
+
   it("fails closed on unsafe MCP names instead of matching their sanitized label", () => {
     writePolicy(["github"]);
     writeMcp({
