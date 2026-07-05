@@ -4,9 +4,24 @@ import { dirname, isAbsolute, relative, resolve } from "node:path";
 import { AihError, DirtyWorktreeError, PathContainmentError } from "../errors.js";
 import { redactSecrets } from "../guardrails/redact.js";
 import {
+  MAX_VERIFICATION_STRING_FIELD_LENGTH,
+  VERIFICATION_CATEGORIES,
+  VERIFICATION_CONFIDENCES,
+  VERIFICATION_SEVERITIES,
+  VERIFICATION_VERDICTS,
+} from "../verification/constants.js";
+import { buildEvidenceGraph } from "../verification/graph.js";
+import {
   type StructuredVerificationRunCheckOptions,
   structuredVerificationRunToCheck,
 } from "../verification/legacy.js";
+import { mergeVerificationResults } from "../verification/merge.js";
+import type {
+  Evidence,
+  VerificationPipelineRun,
+  VerificationResult,
+} from "../verification/types.js";
+import { isWellFormedUtf16 } from "../verification/validation.js";
 import { upsertManagedBlock } from "./envfile.js";
 import { FsTransaction, readIfExists } from "./fsxn.js";
 import { deepMerge, parseJsoncText } from "./merge.js";
@@ -22,6 +37,8 @@ import type {
 import { ensureTrailingNewline, indent, jsonFile, stripTrailingNewlines } from "./render.js";
 import { type Check, VerificationReport } from "./verify.js";
 import { dirtyRemoveTargets, dirtyWriteTargets, normalizeRel } from "./worktree-gate.js";
+
+const VERIFICATION_TRUNCATION_SUFFIX = "... [truncated]";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -136,6 +153,158 @@ function structuredProbeCheckOptions(action: ProbeAction): StructuredVerificatio
   return { ...options, name: options.name ?? action.describe };
 }
 
+function toWellFormedUtf16(value: string): string {
+  let text = "";
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    if (code >= 0xd800 && code <= 0xdbff) {
+      const next = value.charCodeAt(index + 1);
+      if (Number.isInteger(next) && next >= 0xdc00 && next <= 0xdfff) {
+        text += value[index] ?? "";
+        text += value[index + 1] ?? "";
+        index += 1;
+      } else {
+        text += "\uFFFD";
+      }
+      continue;
+    }
+    if (code >= 0xdc00 && code <= 0xdfff) {
+      text += "\uFFFD";
+      continue;
+    }
+    text += value[index] ?? "";
+  }
+  return text;
+}
+
+function truncateVerificationPrefix(value: string, maxLength: number): string {
+  return toWellFormedUtf16(value.slice(0, maxLength));
+}
+
+function verificationText(value: string | undefined, fallback: string): string {
+  let text = value ?? fallback;
+  if (!isWellFormedUtf16(text)) text = toWellFormedUtf16(text);
+  text = redactSecrets(text);
+  if (text.length === 0) text = fallback;
+  if (text.length <= MAX_VERIFICATION_STRING_FIELD_LENGTH) return text;
+  return `${truncateVerificationPrefix(
+    text,
+    MAX_VERIFICATION_STRING_FIELD_LENGTH - VERIFICATION_TRUNCATION_SUFFIX.length,
+  )}${VERIFICATION_TRUNCATION_SUFFIX}`;
+}
+
+function optionalVerificationText(value: string | undefined): string | undefined {
+  return value === undefined ? undefined : verificationText(value, "");
+}
+
+function sanitizedEvidence(evidence: Evidence, passName: string, index: number): Evidence {
+  const snippet = optionalVerificationText(evidence.snippet);
+  return {
+    id: verificationText(evidence.id, `${passName}:evidence:${index}`),
+    type: verificationText(evidence.type, "evidence"),
+    source: verificationText(evidence.source, "unknown"),
+    ...(snippet === undefined ? {} : { snippet }),
+  };
+}
+
+function verificationEnum<T extends string>(
+  value: unknown,
+  allowed: readonly T[],
+  field: string,
+  index: number,
+): T {
+  if (typeof value !== "string" || !allowed.includes(value as T)) {
+    throw new AihError(
+      `structured verification result at index ${index} has invalid ${field}`,
+      "AIH_CONFIG",
+    );
+  }
+  return value as T;
+}
+
+function sanitizedVerificationResult(
+  result: VerificationResult,
+  index: number,
+): VerificationResult {
+  const passName = verificationText(result.passName, "structured verification");
+  return {
+    passName,
+    verdict: verificationEnum(result.verdict, VERIFICATION_VERDICTS, "verdict", index),
+    severity: verificationEnum(result.severity, VERIFICATION_SEVERITIES, "severity", index),
+    confidence: verificationEnum(result.confidence, VERIFICATION_CONFIDENCES, "confidence", index),
+    evidence: result.evidence.map((evidence, index) =>
+      sanitizedEvidence(evidence, passName, index),
+    ),
+    message: verificationText(result.message, passName),
+    category: verificationEnum(result.category, VERIFICATION_CATEGORIES, "category", index),
+  };
+}
+
+function legacyCheckToVerificationResult(check: Check): VerificationResult {
+  const passName = verificationText(check.name, "legacy check");
+  return {
+    passName,
+    verdict: check.verdict === "skip" ? "warn" : check.verdict,
+    severity: check.verdict === "fail" ? "high" : "info",
+    confidence: "high",
+    evidence: [],
+    message: verificationText(check.detail, passName),
+    category: "other",
+  };
+}
+
+function suffixedPassName(passName: string, suffix: number): string {
+  const suffixText = `#${suffix}`;
+  if (passName.length + suffixText.length <= MAX_VERIFICATION_STRING_FIELD_LENGTH) {
+    return `${passName}${suffixText}`;
+  }
+  return `${truncateVerificationPrefix(
+    passName,
+    MAX_VERIFICATION_STRING_FIELD_LENGTH - suffixText.length,
+  )}${suffixText}`;
+}
+
+function uniqueVerificationResults(results: readonly VerificationResult[]): VerificationResult[] {
+  const used = new Set<string>();
+  const nextSuffix = new Map<string, number>();
+  return results.map((result) => {
+    if (!used.has(result.passName)) {
+      used.add(result.passName);
+      return result;
+    }
+    let suffix = nextSuffix.get(result.passName) ?? 2;
+    let passName = suffixedPassName(result.passName, suffix);
+    while (used.has(passName)) {
+      suffix += 1;
+      passName = suffixedPassName(result.passName, suffix);
+    }
+    nextSuffix.set(result.passName, suffix + 1);
+    used.add(passName);
+    return { ...result, passName };
+  });
+}
+
+function maxEvidencePerResult(results: readonly VerificationResult[]): number {
+  return Math.max(1, ...results.map((result) => result.evidence.length));
+}
+
+function verificationRunFromResults(
+  results: readonly VerificationResult[],
+): VerificationPipelineRun | undefined {
+  if (results.length === 0) return undefined;
+  const uniqueResults = uniqueVerificationResults(
+    results.map((result, index) => sanitizedVerificationResult(result, index)),
+  );
+  return {
+    results: uniqueResults,
+    summary: mergeVerificationResults(uniqueResults),
+    evidenceGraph: buildEvidenceGraph(uniqueResults, {
+      maxResults: uniqueResults.length,
+      maxEvidencePerResult: maxEvidencePerResult(uniqueResults),
+    }),
+  };
+}
+
 export interface WriteSummary {
   path: string;
   describe: string;
@@ -170,6 +339,8 @@ export interface PlanResult {
   /** Files aih removed (moved to `.aih/legacy/`) or would remove (dry-run). */
   removed: RemoveSummary[];
   report?: VerificationReport;
+  /** Structured verification sidecar; legacy `report` remains the CLI compatibility surface. */
+  verification?: VerificationPipelineRun;
 }
 
 /** Resolve an action path against the context root (absolute paths pass through). */
@@ -570,29 +741,39 @@ export async function executePlan(
   }
 
   let report: VerificationReport | undefined;
+  let verification: VerificationPipelineRun | undefined;
   if (ctx.verify) {
     report = new VerificationReport();
-    for (const check of execFailureChecks) report.add(check);
+    const verificationResults: VerificationResult[] = [];
+    for (const check of execFailureChecks) {
+      report.add(check);
+      verificationResults.push(legacyCheckToVerificationResult(check));
+    }
     if (!skipProbesAfterExecFailure) {
       for (const action of plan.actions) {
         if (action.kind === "probe") {
           if (action.runStructured) {
+            const structuredRun = await action.runStructured(ctx);
+            verificationResults.push(...structuredRun.results);
             report.add(
-              structuredVerificationRunToCheck(
-                await action.runStructured(ctx),
-                structuredProbeCheckOptions(action),
-              ),
+              structuredVerificationRunToCheck(structuredRun, structuredProbeCheckOptions(action)),
             );
           } else if (action.runMany) {
-            for (const check of await action.runMany(ctx)) report.add(check);
+            for (const check of await action.runMany(ctx)) {
+              report.add(check);
+              verificationResults.push(legacyCheckToVerificationResult(check));
+            }
           } else if (action.run) {
-            report.add(await action.run(ctx));
+            const check = await action.run(ctx);
+            report.add(check);
+            verificationResults.push(legacyCheckToVerificationResult(check));
           } else {
             throw new AihError(`probe action has no runner: ${action.describe}`, "AIH_CONFIG");
           }
         }
       }
     }
+    verification = verificationRunFromResults(verificationResults);
   }
 
   for (const action of digestActions) {
@@ -626,6 +807,7 @@ export async function executePlan(
     backups,
     removed: removes,
     report,
+    verification,
   };
 }
 

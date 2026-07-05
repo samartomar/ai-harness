@@ -22,6 +22,7 @@ import {
   type PlanContext,
   plan,
   probe,
+  probeMany,
   remove,
   structuredProbe,
   writeJson,
@@ -29,12 +30,14 @@ import {
 } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
+import { MAX_VERIFICATION_STRING_FIELD_LENGTH } from "../../src/verification/constants.js";
 import {
   buildEvidenceGraph,
   mergeVerificationResults,
   type VerificationPipelineRun,
   type VerificationResult,
 } from "../../src/verification/index.js";
+import { isWellFormedUtf16 } from "../../src/verification/validation.js";
 
 let dir: string;
 beforeEach(() => {
@@ -254,6 +257,371 @@ describe("executePlan", () => {
       },
     ]);
     expect(result.report?.exitCode()).toBe(0);
+  });
+
+  it("returns a structured verification run for legacy probes without changing the legacy report", async () => {
+    const p = plan(
+      "t",
+      probe("legacy gate", () => ({
+        name: "legacy gate",
+        verdict: "fail",
+        detail: "legacy failure",
+        code: "ready.blocked",
+      })),
+    );
+
+    const result = await executePlan(p, ctx({ verify: true }));
+
+    expect(result.report?.checks).toEqual([
+      {
+        name: "legacy gate",
+        verdict: "fail",
+        detail: "legacy failure",
+        code: "ready.blocked",
+      },
+    ]);
+    expect(result.report?.exitCode()).toBe(1);
+    expect(result.verification?.summary.finalVerdict).toBe("fail");
+    expect(result.verification?.results).toEqual([
+      expect.objectContaining({
+        passName: "legacy gate",
+        verdict: "fail",
+        severity: "high",
+        confidence: "high",
+        message: "legacy failure",
+        category: "other",
+      }),
+    ]);
+    expect(result.verification?.evidenceGraph.nodes).toEqual([
+      expect.objectContaining({ kind: "finding", passName: "legacy gate", verdict: "fail" }),
+    ]);
+  });
+
+  it("bounds malformed legacy probe text in the structured sidecar without changing the legacy report", async () => {
+    const malformedName = `legacy ${String.fromCharCode(0xd800)} gate`;
+    const longDetail = "x".repeat(MAX_VERIFICATION_STRING_FIELD_LENGTH + 20);
+    const p = plan(
+      "t",
+      probe(malformedName, () => ({
+        name: malformedName,
+        verdict: "pass",
+        detail: longDetail,
+      })),
+    );
+
+    const result = await executePlan(p, ctx({ verify: true }));
+    const entry = result.verification?.results[0];
+    const message = entry?.message ?? "";
+
+    expect(result.report?.checks).toEqual([
+      {
+        name: malformedName,
+        verdict: "pass",
+        detail: longDetail,
+      },
+    ]);
+    expect(result.report?.exitCode()).toBe(0);
+    expect(entry?.passName).toContain(String.fromCharCode(0xfffd));
+    expect(isWellFormedUtf16(entry?.passName ?? "")).toBe(true);
+    expect(message).toHaveLength(MAX_VERIFICATION_STRING_FIELD_LENGTH);
+    expect(message.endsWith("[truncated]")).toBe(true);
+    expect(result.verification?.evidenceGraph.nodes).toEqual([
+      expect.objectContaining({ kind: "finding", passName: entry?.passName, verdict: "pass" }),
+    ]);
+  });
+
+  it("preserves structured probe results in the executor verification run without double execution", async () => {
+    let calls = 0;
+    const p = plan(
+      "t",
+      structuredProbe(
+        "structured gate",
+        () => {
+          calls += 1;
+          return structuredRun([
+            {
+              passName: "structured.pass",
+              verdict: "pass",
+              severity: "info",
+              confidence: "high",
+              evidence: [],
+              message: "ok",
+              category: "policy",
+            },
+            {
+              passName: "structured.fail",
+              verdict: "fail",
+              severity: "high",
+              confidence: "high",
+              evidence: [],
+              message: "blocked",
+              category: "policy",
+            },
+          ]);
+        },
+        { includeMetadata: false },
+      ),
+    );
+
+    const result = await executePlan(p, ctx({ verify: true }));
+
+    expect(calls).toBe(1);
+    expect(result.report?.checks).toEqual([
+      {
+        name: "structured gate",
+        verdict: "fail",
+        detail: "structured.fail: blocked",
+      },
+    ]);
+    expect(result.verification?.results.map((entry) => entry.passName)).toEqual([
+      "structured.pass",
+      "structured.fail",
+    ]);
+    expect(result.verification?.summary.finalVerdict).toBe("fail");
+  });
+
+  it("keeps generated structured sidecar pass names unique when legacy names already include suffixes", async () => {
+    const p = plan(
+      "t",
+      probeMany("duplicate legacy gates", () => [
+        { name: "dup", verdict: "pass" },
+        { name: "dup", verdict: "pass" },
+        { name: "dup#2", verdict: "pass" },
+      ]),
+    );
+
+    const result = await executePlan(p, ctx({ verify: true }));
+    const passNames = result.verification?.results.map((entry) => entry.passName) ?? [];
+
+    expect(result.report?.checks.map((check) => check.name)).toEqual(["dup", "dup", "dup#2"]);
+    expect(new Set(passNames).size).toBe(passNames.length);
+    expect(result.verification?.evidenceGraph.nodes).toHaveLength(3);
+  });
+
+  it("does not cap the structured sidecar graph below legacy probeMany result count", async () => {
+    const p = plan(
+      "t",
+      probeMany("many legacy gates", () =>
+        Array.from({ length: 129 }, (_, index) => ({
+          name: `legacy.${index}`,
+          verdict: "pass",
+        })),
+      ),
+    );
+
+    const result = await executePlan(p, ctx({ verify: true }));
+
+    expect(result.report?.checks).toHaveLength(129);
+    expect(result.verification?.results).toHaveLength(129);
+    expect(result.verification?.evidenceGraph.nodes).toHaveLength(129);
+  });
+
+  it("does not cap the structured sidecar graph below structured evidence count", async () => {
+    const evidence = Array.from({ length: 1001 }, (_, index) => ({
+      id: `evidence.${index}`,
+      type: "log",
+      source: `logs/${index}.txt`,
+    }));
+    const p = plan(
+      "t",
+      structuredProbe("many evidence gate", () => ({
+        results: [
+          {
+            passName: "structured.many-evidence",
+            verdict: "pass",
+            severity: "info",
+            confidence: "high",
+            evidence,
+            message: "ok",
+            category: "other",
+          },
+        ],
+        summary: {
+          finalVerdict: "pass",
+          trustScore: 100,
+          aggregatedEvidence: evidence,
+          failedPasses: [],
+          warnings: [],
+        },
+        evidenceGraph: { nodes: [], edges: [] },
+      })),
+    );
+
+    const result = await executePlan(p, ctx({ verify: true }));
+
+    expect(result.report?.checks).toEqual([
+      { name: "many evidence gate", verdict: "pass", detail: undefined },
+    ]);
+    expect(result.verification?.results[0]?.evidence).toHaveLength(1001);
+    expect(result.verification?.evidenceGraph.edges).toHaveLength(1001);
+  });
+
+  it("redacts structured probe sidecar text before JSON serialization", async () => {
+    const secret = "SECRET_TOKEN=supersecretvalue123";
+    const p = plan(
+      "t",
+      structuredProbe("structured secret gate", () =>
+        structuredRun([
+          {
+            passName: "structured.secret",
+            verdict: "warn",
+            severity: "medium",
+            confidence: "high",
+            evidence: [
+              {
+                id: `evidence-${secret}`,
+                type: "log",
+                source: `logs/${secret}.txt`,
+                snippet: `raw ${secret}`,
+              },
+            ],
+            message: `message ${secret}`,
+            category: "security",
+          },
+        ]),
+      ),
+    );
+
+    const result = await executePlan(p, ctx({ verify: true }));
+    const payload = JSON.stringify(result.verification);
+
+    expect(payload).not.toContain(secret);
+    expect(result.verification?.results[0]?.message).toContain("[REDACTED]");
+    expect(result.verification?.summary.aggregatedEvidence[0]?.snippet).toContain("[REDACTED]");
+    expect(result.verification?.evidenceGraph.nodes).toContainEqual(
+      expect.objectContaining({ kind: "source", source: "logs/[REDACTED]" }),
+    );
+  });
+
+  it("drops unknown structured sidecar fields before JSON serialization", async () => {
+    const secret = "SECRET_TOKEN=rawsidecarvalue123";
+    const structuredWithExtra = {
+      passName: "structured.extra",
+      verdict: "warn",
+      severity: "medium",
+      confidence: "high",
+      evidence: [],
+      message: "known fields are clean",
+      category: "security",
+      rawLog: `raw ${secret}`,
+    } as VerificationResult & { rawLog: string };
+    const p = plan(
+      "t",
+      structuredProbe("structured extra gate", () => structuredRun([structuredWithExtra])),
+    );
+
+    const result = await executePlan(p, ctx({ verify: true }));
+    const payload = JSON.stringify(result.verification);
+
+    expect(payload).not.toContain("rawLog");
+    expect(payload).not.toContain(secret);
+    expect(result.verification?.results[0]).toEqual({
+      passName: "structured.extra",
+      verdict: "warn",
+      severity: "medium",
+      confidence: "high",
+      evidence: [],
+      message: "known fields are clean",
+      category: "security",
+    });
+  });
+
+  it("rejects malformed structured sidecar enum fields without echoing raw values", async () => {
+    const secret = "SECRET_TOKEN=badverdictvalue123";
+    const p = plan(
+      "t",
+      structuredProbe("structured malformed gate", () => ({
+        results: [
+          {
+            passName: "structured.malformed",
+            verdict: secret,
+            severity: "medium",
+            confidence: "high",
+            evidence: [],
+            message: "malformed enum",
+            category: "security",
+          } as unknown as VerificationResult,
+        ],
+        summary: {
+          finalVerdict: "pass",
+          trustScore: 100,
+          aggregatedEvidence: [],
+          failedPasses: [],
+          warnings: [],
+        },
+        evidenceGraph: { nodes: [], edges: [] },
+      })),
+    );
+
+    let error: unknown;
+    try {
+      await executePlan(p, ctx({ verify: true }));
+    } catch (caught) {
+      error = caught;
+    }
+
+    expect(error).toBeInstanceOf(AihError);
+    expect((error as AihError).message).toBe(
+      "structured verification result at index 0 has invalid verdict",
+    );
+    expect((error as AihError).code).toBe("AIH_CONFIG");
+    expect((error as AihError).message).not.toContain(secret);
+  });
+
+  it("truncates structured sidecar text without splitting surrogate pairs", async () => {
+    const splitBoundaryDetail = `${"x".repeat(MAX_VERIFICATION_STRING_FIELD_LENGTH - 16)}😀${"y".repeat(20)}`;
+    const p = plan(
+      "t",
+      structuredProbe("emoji detail", () => ({
+        results: [
+          {
+            passName: "structured.emoji",
+            verdict: "pass",
+            severity: "info",
+            confidence: "high",
+            evidence: [],
+            message: splitBoundaryDetail,
+            category: "other",
+          },
+        ],
+        summary: {
+          finalVerdict: "pass",
+          trustScore: 100,
+          aggregatedEvidence: [],
+          failedPasses: [],
+          warnings: [],
+        },
+        evidenceGraph: { nodes: [], edges: [] },
+      })),
+    );
+
+    const result = await executePlan(p, ctx({ verify: true }));
+    const message = result.verification?.results[0]?.message ?? "";
+
+    expect(message).toHaveLength(MAX_VERIFICATION_STRING_FIELD_LENGTH);
+    expect(isWellFormedUtf16(message)).toBe(true);
+    expect(message.endsWith("[truncated]")).toBe(true);
+  });
+
+  it("suffixes long duplicate sidecar pass names without splitting surrogate pairs", async () => {
+    const boundaryName = `${"x".repeat(MAX_VERIFICATION_STRING_FIELD_LENGTH - 3)}😀y`;
+    const p = plan(
+      "t",
+      probeMany("duplicate long gates", () => [
+        { name: boundaryName, verdict: "pass" },
+        { name: boundaryName, verdict: "pass" },
+      ]),
+    );
+
+    const result = await executePlan(p, ctx({ verify: true }));
+    const passNames = result.verification?.results.map((entry) => entry.passName) ?? [];
+
+    expect(passNames).toHaveLength(2);
+    expect(new Set(passNames).size).toBe(2);
+    expect(
+      passNames.every((passName) => passName.length <= MAX_VERIFICATION_STRING_FIELD_LENGTH),
+    ).toBe(true);
+    expect(passNames.every(isWellFormedUtf16)).toBe(true);
   });
 
   it("writes doc actions that carry a path", async () => {
