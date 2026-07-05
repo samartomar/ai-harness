@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AIH_CONFIG_FILE } from "../src/config/marker.js";
 import { command } from "../src/doctor.js";
+import { executePlan } from "../src/internals/execute.js";
 import type { Action, PlanContext, ProbeAction } from "../src/internals/plan.js";
 import { fakeRunner } from "../src/internals/proc.js";
 import { makeHostAdapter } from "../src/platform/detect.js";
@@ -319,6 +320,7 @@ describe("doctor — trust-lock local drift", () => {
   it("skips a fresh repo without a trust-lock", async () => {
     const c = rooted();
     const probe = findProbe((await command.plan(c)).actions, "trust-lock local drift");
+    expect(probe && "runStructuredLegacy" in probe).toBe(true);
     const res = await probe?.runMany?.(c);
 
     expect(res).toEqual([
@@ -368,6 +370,7 @@ describe("doctor — trust-lock local drift", () => {
     };
 
     const probe = findProbe((await command.plan(c)).actions, "trust-lock local drift");
+    expect(probe && "runStructuredLegacy" in probe).toBe(true);
     const res = await probe?.runMany?.(c);
 
     expect(gitCalls).toEqual([]);
@@ -380,6 +383,13 @@ describe("doctor — trust-lock local drift", () => {
         }),
       ]),
     );
+
+    const result = await executePlan(await command.plan(c), c);
+    expect(
+      result.verification?.results.some(
+        (entry) => entry.passName === "trust local drift" && entry.verdict === "fail",
+      ),
+    ).toBe(true);
   });
 });
 

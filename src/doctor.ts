@@ -13,7 +13,7 @@ import {
   type PlanContext,
   plan,
   probe,
-  probeMany,
+  structuredChecksProbe,
 } from "./internals/plan.js";
 import { canonLintCheck } from "./lint/run.js";
 import { mcpManagedAllowlistCheck } from "./mcp/allowlist.js";
@@ -230,7 +230,9 @@ export const command: CommandSpec = {
       probe("large-repo graph safety", () => scaleSafetyCheck(ctx)),
       probe("VDI compatibility matrix", () => vdiCompatibilityCheck(ctx)),
       probe("MCP managed allowlist", () => mcpManagedAllowlistCheck(ctx)),
-      probeMany("trust-lock local drift", (probeCtx) => trustLockLocalDriftChecks(probeCtx)),
+      structuredChecksProbe("trust-lock local drift", (probeCtx) =>
+        trustLockLocalDriftChecks(probeCtx),
+      ),
       ...orgPolicyIntegrityProbes({ ...ctx, contextDir }),
       ...orgPolicyDriftProbes({ ...ctx, contextDir }),
       probe("enterprise baseline attestation", () =>
