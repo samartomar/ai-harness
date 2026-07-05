@@ -1,9 +1,17 @@
+import {
+  DEFAULT_MAX_EVIDENCE_PER_PASS,
+  DEFAULT_VERIFICATION_PASS_TIMEOUT_MS,
+  MAX_VERIFICATION_PASSES,
+  MAX_VERIFICATION_STRING_FIELD_LENGTH,
+  VERIFICATION_CATEGORIES,
+  VERIFICATION_CONFIDENCES,
+  VERIFICATION_SEVERITIES,
+  VERIFICATION_VERDICTS,
+} from "./constants.js";
+import { buildEvidenceGraph } from "./graph.js";
 import { mergeVerificationResults } from "./merge.js";
 import type {
-  Confidence,
   Evidence,
-  Severity,
-  Verdict,
   VerificationCategory,
   VerificationInput,
   VerificationPass,
@@ -11,43 +19,23 @@ import type {
   VerificationPipelineRun,
   VerificationResult,
 } from "./types.js";
-
-const VERDICTS = ["pass", "fail", "warn"] as const satisfies readonly Verdict[];
-const SEVERITIES = [
-  "critical",
-  "high",
-  "medium",
-  "low",
-  "info",
-] as const satisfies readonly Severity[];
-const CONFIDENCES = ["high", "medium", "low"] as const satisfies readonly Confidence[];
-const CATEGORIES = [
-  "security",
-  "exec",
-  "policy",
-  "dependency",
-  "doc",
-  "other",
-] as const satisfies readonly VerificationCategory[];
-const MAX_PASSES = 128;
-const MAX_STRING_FIELD_LENGTH = 4_096;
-const DEFAULT_PASS_TIMEOUT_MS = 30_000;
-const DEFAULT_MAX_EVIDENCE_PER_PASS = 1_000;
+import { isWellFormedUtf16 } from "./validation.js";
 
 function assertPassName(name: string): void {
   if (name.trim() === "") throw new Error("verification pass name is required");
-  if (name.length > MAX_STRING_FIELD_LENGTH) {
+  if (name.length > MAX_VERIFICATION_STRING_FIELD_LENGTH) {
     throw new Error(
-      `verification pass name is too long: ${name.length}/${MAX_STRING_FIELD_LENGTH}`,
+      `verification pass name is too long: ${name.length}/${MAX_VERIFICATION_STRING_FIELD_LENGTH}`,
     );
   }
+  if (!isWellFormedUtf16(name)) throw new Error("verification pass name is malformed UTF-16");
 }
 
 function assertUniquePasses(passes: readonly VerificationPass[]): void {
   if (passes.length === 0) throw new Error("runVerificationPipeline requires at least one pass");
-  if (passes.length > MAX_PASSES) {
+  if (passes.length > MAX_VERIFICATION_PASSES) {
     throw new Error(
-      `runVerificationPipeline received too many passes: ${passes.length}/${MAX_PASSES}`,
+      `runVerificationPipeline received too many passes: ${passes.length}/${MAX_VERIFICATION_PASSES}`,
     );
   }
   const seen = new Set<string>();
@@ -71,10 +59,13 @@ function readStringValue(passName: string, field: string, value: unknown): strin
   if (typeof value !== "string") {
     throw new Error(`verification pass returned invalid ${field}: ${passName} -> ${String(value)}`);
   }
-  if (value.length > MAX_STRING_FIELD_LENGTH) {
+  if (value.length > MAX_VERIFICATION_STRING_FIELD_LENGTH) {
     throw new Error(
-      `verification pass returned ${field} that is too long: ${passName} -> ${value.length}/${MAX_STRING_FIELD_LENGTH}`,
+      `verification pass returned ${field} that is too long: ${passName} -> ${value.length}/${MAX_VERIFICATION_STRING_FIELD_LENGTH}`,
     );
+  }
+  if (!isWellFormedUtf16(value)) {
+    throw new Error(`verification pass returned malformed ${field}: ${passName}`);
   }
   return value;
 }
@@ -92,7 +83,9 @@ function readMember<T extends string>(
 }
 
 function isVerificationCategory(value: unknown): value is VerificationCategory {
-  return typeof value === "string" && CATEGORIES.includes(value as VerificationCategory);
+  return (
+    typeof value === "string" && VERIFICATION_CATEGORIES.includes(value as VerificationCategory)
+  );
 }
 
 function categoryFor(pass: VerificationPass): VerificationCategory {
@@ -110,10 +103,13 @@ function validateEvidence(passName: string, index: number, value: unknown): Evid
   if (snippet !== undefined && typeof snippet !== "string") {
     throw new Error(`verification pass returned invalid evidence.snippet: ${passName}[${index}]`);
   }
-  if (snippet !== undefined && snippet.length > MAX_STRING_FIELD_LENGTH) {
+  if (snippet !== undefined && snippet.length > MAX_VERIFICATION_STRING_FIELD_LENGTH) {
     throw new Error(
-      `verification pass returned evidence.snippet that is too long: ${passName}[${index}] -> ${snippet.length}/${MAX_STRING_FIELD_LENGTH}`,
+      `verification pass returned evidence.snippet that is too long: ${passName}[${index}] -> ${snippet.length}/${MAX_VERIFICATION_STRING_FIELD_LENGTH}`,
     );
+  }
+  if (snippet !== undefined && !isWellFormedUtf16(snippet)) {
+    throw new Error(`verification pass returned malformed evidence.snippet: ${passName}[${index}]`);
   }
   return snippet === undefined ? { id, type, source } : { id, type, source, snippet };
 }
@@ -155,7 +151,7 @@ function abortedResult(pass: VerificationPass): VerificationResult {
 }
 
 function timeoutFor(options: VerificationPipelineOptions): number {
-  const timeoutMs = options.timeoutMs ?? DEFAULT_PASS_TIMEOUT_MS;
+  const timeoutMs = options.timeoutMs ?? DEFAULT_VERIFICATION_PASS_TIMEOUT_MS;
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
     throw new Error(`verification pass timeout must be a positive number: ${String(timeoutMs)}`);
   }
@@ -195,16 +191,16 @@ function validateVerificationResult(
   }
   return {
     passName,
-    verdict: readMember(pass.name, "verdict", value.verdict, VERDICTS),
-    severity: readMember(pass.name, "severity", value.severity, SEVERITIES),
-    confidence: readMember(pass.name, "confidence", value.confidence, CONFIDENCES),
+    verdict: readMember(pass.name, "verdict", value.verdict, VERIFICATION_VERDICTS),
+    severity: readMember(pass.name, "severity", value.severity, VERIFICATION_SEVERITIES),
+    confidence: readMember(pass.name, "confidence", value.confidence, VERIFICATION_CONFIDENCES),
     evidence: evidenceValue.map((entry, index) => validateEvidence(pass.name, index, entry)),
     message: readStringField(pass.name, value, "message"),
     category: readMember(
       pass.name,
       "category",
       value.category === undefined ? categoryFor(pass) : value.category,
-      CATEGORIES,
+      VERIFICATION_CATEGORIES,
     ),
   };
 }
@@ -277,5 +273,6 @@ export async function runVerificationPipeline(
   return {
     results,
     summary: mergeVerificationResults(results),
+    evidenceGraph: buildEvidenceGraph(results, { maxEvidencePerResult: maxEvidencePerPass }),
   };
 }

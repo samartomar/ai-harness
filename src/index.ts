@@ -26,6 +26,7 @@ export * from "./platform/parse.js";
 export * from "./plugins/registry.js";
 export { buildProgram, buildProgramWithPlugins, VERSION } from "./program.js";
 export {
+  buildEvidenceGraph,
   type Confidence as VerificationConfidence,
   compareVerificationResults,
   type Evidence as VerificationEvidence,
@@ -34,6 +35,12 @@ export {
   type Severity as VerificationSeverity,
   type Verdict as VerificationVerdict,
   type VerificationCategory,
+  type VerificationEvidenceGraph,
+  type VerificationEvidenceGraphEdge,
+  type VerificationEvidenceGraphFindingNode,
+  type VerificationEvidenceGraphNode,
+  type VerificationEvidenceGraphOptions,
+  type VerificationEvidenceGraphSourceNode,
   type VerificationInput,
   type VerificationPass,
   type VerificationPipelineOptions,

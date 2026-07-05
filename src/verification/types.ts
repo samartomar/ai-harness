@@ -46,6 +46,7 @@ export interface VerificationPipelineOptions {
 export interface VerificationPipelineRun {
   results: VerificationResult[];
   summary: VerificationSummary;
+  evidenceGraph: VerificationEvidenceGraph;
 }
 
 export interface VerificationSummary {
@@ -62,4 +63,45 @@ export interface VerificationSummary {
   aggregatedEvidence: Evidence[];
   failedPasses: string[];
   warnings: string[];
+}
+
+export interface VerificationEvidenceGraph {
+  nodes: VerificationEvidenceGraphNode[];
+  edges: VerificationEvidenceGraphEdge[];
+}
+
+export interface VerificationEvidenceGraphOptions {
+  maxResults?: number;
+  maxEvidencePerResult?: number;
+}
+
+export type VerificationEvidenceGraphNode =
+  | VerificationEvidenceGraphFindingNode
+  | VerificationEvidenceGraphSourceNode;
+
+export interface VerificationEvidenceGraphFindingNode {
+  id: string;
+  kind: "finding";
+  passName: string;
+  verdict: Verdict;
+  severity: Severity;
+  category: VerificationCategory;
+  confidence: Confidence;
+  message: string;
+  evidenceCount: number;
+}
+
+export interface VerificationEvidenceGraphSourceNode {
+  id: string;
+  kind: "source";
+  evidenceType: string;
+  source: string;
+}
+
+export interface VerificationEvidenceGraphEdge {
+  id: string;
+  kind: "finding-source";
+  from: string;
+  to: string;
+  evidenceId: string;
 }
