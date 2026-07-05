@@ -3,6 +3,7 @@ import { existsSync, lstatSync, readFileSync, realpathSync } from "node:fs";
 import { dirname, isAbsolute, relative, resolve } from "node:path";
 import { AihError, DirtyWorktreeError, PathContainmentError } from "../errors.js";
 import { redactSecrets } from "../guardrails/redact.js";
+import { MAX_VERIFICATION_STRING_FIELD_LENGTH } from "../verification/constants.js";
 import { buildEvidenceGraph } from "../verification/graph.js";
 import {
   type StructuredVerificationRunCheckOptions,
@@ -10,6 +11,7 @@ import {
 } from "../verification/legacy.js";
 import { mergeVerificationResults } from "../verification/merge.js";
 import type { VerificationPipelineRun, VerificationResult } from "../verification/types.js";
+import { isWellFormedUtf16 } from "../verification/validation.js";
 import { upsertManagedBlock } from "./envfile.js";
 import { FsTransaction, readIfExists } from "./fsxn.js";
 import { deepMerge, parseJsoncText } from "./merge.js";
@@ -139,14 +141,48 @@ function structuredProbeCheckOptions(action: ProbeAction): StructuredVerificatio
   return { ...options, name: options.name ?? action.describe };
 }
 
+function toWellFormedUtf16(value: string): string {
+  let text = "";
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    if (code >= 0xd800 && code <= 0xdbff) {
+      const next = value.charCodeAt(index + 1);
+      if (Number.isInteger(next) && next >= 0xdc00 && next <= 0xdfff) {
+        text += value[index] ?? "";
+        text += value[index + 1] ?? "";
+        index += 1;
+      } else {
+        text += "\uFFFD";
+      }
+      continue;
+    }
+    if (code >= 0xdc00 && code <= 0xdfff) {
+      text += "\uFFFD";
+      continue;
+    }
+    text += value[index] ?? "";
+  }
+  return text;
+}
+
+function verificationText(value: string | undefined, fallback: string): string {
+  let text = value ?? fallback;
+  if (!isWellFormedUtf16(text)) text = toWellFormedUtf16(text);
+  text = redactSecrets(text);
+  if (text.length === 0) text = fallback;
+  if (text.length <= MAX_VERIFICATION_STRING_FIELD_LENGTH) return text;
+  return `${text.slice(0, MAX_VERIFICATION_STRING_FIELD_LENGTH - 15)}... [truncated]`;
+}
+
 function legacyCheckToVerificationResult(check: Check): VerificationResult {
+  const passName = verificationText(check.name, "legacy check");
   return {
-    passName: check.name,
+    passName,
     verdict: check.verdict === "skip" ? "warn" : check.verdict,
     severity: check.verdict === "fail" ? "high" : "info",
     confidence: "high",
     evidence: [],
-    message: check.detail ?? check.name,
+    message: verificationText(check.detail, passName),
     category: "other",
   };
 }

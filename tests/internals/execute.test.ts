@@ -29,12 +29,14 @@ import {
 } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
+import { MAX_VERIFICATION_STRING_FIELD_LENGTH } from "../../src/verification/constants.js";
 import {
   buildEvidenceGraph,
   mergeVerificationResults,
   type VerificationPipelineRun,
   type VerificationResult,
 } from "../../src/verification/index.js";
+import { isWellFormedUtf16 } from "../../src/verification/validation.js";
 
 let dir: string;
 beforeEach(() => {
@@ -291,6 +293,39 @@ describe("executePlan", () => {
     ]);
     expect(result.verification?.evidenceGraph.nodes).toEqual([
       expect.objectContaining({ kind: "finding", passName: "legacy gate", verdict: "fail" }),
+    ]);
+  });
+
+  it("bounds malformed legacy probe text in the structured sidecar without changing the legacy report", async () => {
+    const malformedName = `legacy ${String.fromCharCode(0xd800)} gate`;
+    const longDetail = "x".repeat(MAX_VERIFICATION_STRING_FIELD_LENGTH + 20);
+    const p = plan(
+      "t",
+      probe(malformedName, () => ({
+        name: malformedName,
+        verdict: "pass",
+        detail: longDetail,
+      })),
+    );
+
+    const result = await executePlan(p, ctx({ verify: true }));
+    const entry = result.verification?.results[0];
+    const message = entry?.message ?? "";
+
+    expect(result.report?.checks).toEqual([
+      {
+        name: malformedName,
+        verdict: "pass",
+        detail: longDetail,
+      },
+    ]);
+    expect(result.report?.exitCode()).toBe(0);
+    expect(entry?.passName).toContain(String.fromCharCode(0xfffd));
+    expect(isWellFormedUtf16(entry?.passName ?? "")).toBe(true);
+    expect(message).toHaveLength(MAX_VERIFICATION_STRING_FIELD_LENGTH);
+    expect(message.endsWith("[truncated]")).toBe(true);
+    expect(result.verification?.evidenceGraph.nodes).toEqual([
+      expect.objectContaining({ kind: "finding", passName: entry?.passName, verdict: "pass" }),
     ]);
   });
 
