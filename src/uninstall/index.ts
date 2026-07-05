@@ -1,6 +1,10 @@
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
+import { SHARED_MARKER, sharedCanonicalBlockBody } from "../bootstrap-ai/canon.js";
 import { AIH_CONFIG_FILE, readAihConfig } from "../config/marker.js";
+import { bootloadersFor, REGISTRY_IDS } from "../internals/cli-registry.js";
+import { readIfExists } from "../internals/fsxn.js";
+import { extractManagedBlock } from "../internals/markers.js";
 import {
   type Action,
   type CommandSpec,
@@ -16,7 +20,7 @@ type UninstallDisposition = "backup" | "advisory";
 
 interface UninstallArtifact {
   path: string;
-  kind: "context-dir" | "marker" | "mcp" | "cache";
+  kind: "context-dir" | "marker" | "mcp" | "cache" | "bootloader";
   disposition: UninstallDisposition;
   reason: string;
 }
@@ -47,19 +51,94 @@ function exists(ctx: PlanContext, relPath: string): boolean {
   return existsSync(join(ctx.root, relPath));
 }
 
+function read(ctx: PlanContext, relPath: string): string | undefined {
+  return readIfExists(join(ctx.root, relPath));
+}
+
+function canonicalExistingRel(ctx: PlanContext, relPath: string): string | undefined {
+  const parts = cleanRel(relPath).split("/");
+  const actual: string[] = [];
+  let current = ctx.root;
+  for (const part of parts) {
+    let entries: string[];
+    try {
+      entries = readdirSync(current);
+    } catch {
+      return undefined;
+    }
+    const entry =
+      entries.find((name) => name === part) ??
+      entries.find((name) => name.toLowerCase() === part.toLowerCase());
+    if (entry === undefined) return undefined;
+    actual.push(entry);
+    current = join(current, entry);
+  }
+  const rel = actual.join("/");
+  return exists(ctx, rel) ? rel : undefined;
+}
+
+function hasManagedContextEvidence(ctx: PlanContext, contextDir: string): boolean {
+  const shared = read(ctx, `${contextDir}/adapters/_shared-canonical-block.md`);
+  if (shared?.trim() !== sharedCanonicalBlockBody(contextDir).trim()) return false;
+  return (
+    read(ctx, `${contextDir}/RULE_ROUTER.md`) !== undefined &&
+    read(ctx, `${contextDir}/rules/agent-behavior-core.md`) !== undefined
+  );
+}
+
+function bootloaderAdvisories(ctx: PlanContext): UninstallArtifact[] {
+  return bootloadersFor(REGISTRY_IDS)
+    .filter((path, index, all) => all.indexOf(path) === index)
+    .flatMap((path): UninstallArtifact[] => {
+      const text = read(ctx, path);
+      if (text === undefined || extractManagedBlock(text, SHARED_MARKER) === undefined) return [];
+      return [
+        {
+          path,
+          kind: "bootloader",
+          disposition: "advisory",
+          reason: "co-owned bootloader still carries an aih managed block",
+        },
+      ];
+    });
+}
+
 function coreUninstallSet(ctx: PlanContext): UninstallSet {
   const marker = readAihConfig(ctx.root);
-  const contextDir = removableContextDir(marker?.contextDir ?? ctx.contextDir);
+  const markerContextDir = marker ? removableContextDir(marker.contextDir) : undefined;
   const artifacts: UninstallArtifact[] = [];
 
-  if (contextDir !== undefined && exists(ctx, contextDir)) {
-    artifacts.push({
-      path: contextDir,
-      kind: "context-dir",
-      disposition: "backup",
-      reason: "aih-managed canon/context tree",
-    });
+  if (markerContextDir !== undefined) {
+    const contextDir = canonicalExistingRel(ctx, markerContextDir);
+    if (contextDir !== undefined && hasManagedContextEvidence(ctx, contextDir)) {
+      artifacts.push({
+        path: contextDir,
+        kind: "context-dir",
+        disposition: "backup",
+        reason: "aih-managed canon/context tree with marker-backed ownership evidence",
+      });
+    } else if (contextDir !== undefined) {
+      artifacts.push({
+        path: contextDir,
+        kind: "context-dir",
+        disposition: "advisory",
+        reason: "valid marker points here, but generated canon evidence is missing",
+      });
+    }
+  } else {
+    const fallbackContextDir = removableContextDir(ctx.contextDir);
+    const contextDir =
+      fallbackContextDir !== undefined ? canonicalExistingRel(ctx, fallbackContextDir) : undefined;
+    if (contextDir !== undefined && hasManagedContextEvidence(ctx, contextDir)) {
+      artifacts.push({
+        path: contextDir,
+        kind: "context-dir",
+        disposition: "advisory",
+        reason: "aih-looking context tree found, but no valid root install marker proves ownership",
+      });
+    }
   }
+
   if (exists(ctx, AIH_CONFIG_FILE)) {
     artifacts.push({
       path: AIH_CONFIG_FILE,
@@ -76,12 +155,22 @@ function coreUninstallSet(ctx: PlanContext): UninstallSet {
       reason: "co-owned project MCP config; entries have no on-disk ownership marker",
     });
   }
-  if (exists(ctx, ".aih")) {
+  artifacts.push(...bootloaderAdvisories(ctx));
+
+  if (exists(ctx, ".aih") && marker !== undefined) {
     artifacts.push({
       path: ".aih",
       kind: "cache",
       disposition: "backup",
-      reason: "aih cache/output directory",
+      reason: "aih cache/output directory with marker-backed ownership evidence",
+    });
+  } else if (exists(ctx, ".aih")) {
+    artifacts.push({
+      path: ".aih",
+      kind: "cache",
+      disposition: "advisory",
+      reason:
+        "aih-looking cache/output directory found, but no valid root install marker proves ownership",
     });
   }
 

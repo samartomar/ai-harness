@@ -123,7 +123,7 @@ One honest line per command — the long-form behavior detail for every command 
 | [`aih contract`](docs/commands.md#aih-contract) | Synthesize the machine-readable repo contract (`project.json`) from the detected stack. |
 | [`aih adopt`](docs/commands.md#aih-adopt) | Converge an existing AI canon onto aih's managed model without overwriting your work (brownfield migration). |
 | [`aih prune`](docs/commands.md#aih-prune) | Remove the stale per-CLI artifacts left for CLIs the repo no longer targets (reversible by default). |
-| [`aih uninstall`](docs/commands.md#aih-uninstall) | Remove the core aih install footprint from a repo; `aih clean` is an alias. |
+| [`aih uninstall`](docs/commands.md#aih-uninstall) | Remove the marker-backed core aih install footprint from a repo; `aih clean` is an alias. |
 | [`aih ecc`](docs/commands.md#aih-ecc) | Install affaan-m/ECC (skills, instincts, memory) for the selected CLIs via ECC's own installer. |
 | [`aih superpowers`](docs/commands.md#aih-superpowers) | Install obra/Superpowers (brainstorm → plan → TDD → subagent-review skills) for the selected CLIs. |
 | [`aih crispy`](docs/commands.md#aih-crispy) | Run the CRISPY context-engineering stage machine (deterministic, gate-ordered). |

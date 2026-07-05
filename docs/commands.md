@@ -114,12 +114,13 @@ ignored by `prune`; the digest says so and keeps the diff anchored to committed 
 ## aih uninstall
 
 Remove the core aih install footprint from a repo; `aih clean` is the same command. Dry-run
-preview by default. Under `--apply`, aih-owned whole paths (`ai-coding/` or the committed
-context dir, `.aih-config.json`, and `.aih/`) move to reversible sibling `*.aih.bak` backups,
-which avoids archiving into `.aih/legacy/` while `.aih/` itself is being removed. Co-owned
-files such as root `.mcp.json` are surfaced as manual advisories instead of being edited or
-deleted, because aih's entries have no on-disk ownership marker there. Dirty/untracked removal
-targets refuse without `--force`.
+preview by default. Under `--apply`, marker-backed aih-owned whole paths (`ai-coding/` or the
+committed context dir, `.aih-config.json`, and `.aih/`) move to reversible sibling `*.aih.bak`
+backups, which avoids archiving into `.aih/legacy/` while `.aih/` itself is being removed. The
+context dir is only backed up when the root marker and generated canon evidence agree; otherwise
+it is advisory/no-op. Co-owned files such as root `.mcp.json` and root bootloaders that still
+carry an aih managed block are surfaced as manual advisories instead of being edited or deleted.
+Dirty/untracked removal targets refuse without `--force`.
 
 ## aih ecc
 

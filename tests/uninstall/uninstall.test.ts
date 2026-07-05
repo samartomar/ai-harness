@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -85,6 +85,40 @@ describe("aih uninstall", () => {
     expect(existsSync(join(tmp, ".aih"))).toBe(true);
   });
 
+  it("applies owned removals and surfaces co-owned bootloaders for manual cleanup", async () => {
+    await bootstrapFixture();
+
+    const ctx = makeCtx({}, { apply: true });
+    const result = await executePlan(await uninstallCommand.plan(ctx), ctx);
+    const removed = new Map(result.removed.map((r) => [r.path, r]));
+    const digest = result.digests.find((d) => d.describe.includes("core install footprint"));
+    const artifacts = digest?.data as
+      | { artifacts?: Array<{ path: string; disposition: string; kind: string }> }
+      | undefined;
+
+    expect(removed.get("ai-coding")?.effect).toBe("delete");
+    expect(removed.get(".aih-config.json")?.effect).toBe("delete");
+    expect(removed.get(".aih")?.effect).toBe("delete");
+
+    expect(existsSync(join(tmp, "ai-coding"))).toBe(false);
+    expect(existsSync(join(tmp, "ai-coding.aih.bak"))).toBe(true);
+    expect(existsSync(join(tmp, ".aih-config.json"))).toBe(false);
+    expect(existsSync(join(tmp, ".mcp.json"))).toBe(true);
+    expect(existsSync(join(tmp, "CLAUDE.md"))).toBe(true);
+    expect(readFileSync(join(tmp, "CLAUDE.md"), "utf8")).toContain(
+      "<!-- BEGIN ai-canonical:shared",
+    );
+    expect(artifacts?.artifacts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          path: "CLAUDE.md",
+          kind: "bootloader",
+          disposition: "advisory",
+        }),
+      ]),
+    );
+  });
+
   it("never treats the repo root as the removable context directory", async () => {
     put(
       ".aih-config.json",
@@ -96,5 +130,50 @@ describe("aih uninstall", () => {
 
     expect(result.removed.map((r) => r.path)).not.toContain(".");
     expect(result.removed.map((r) => r.path)).toContain(".aih-config.json");
+  });
+
+  it("does not remove an unmarked user-owned directory named like the default context dir", async () => {
+    put("ai-coding/notes.md", "user-owned notes\n");
+
+    const ctx = makeCtx();
+    const result = await executePlan(await uninstallCommand.plan(ctx), ctx);
+
+    expect(result.removed.map((r) => r.path)).not.toContain("ai-coding");
+    expect(existsSync(join(tmp, "ai-coding"))).toBe(true);
+  });
+
+  it("does not remove a marker target that lacks generated canon ownership evidence", async () => {
+    put(
+      ".aih-config.json",
+      JSON.stringify({ schemaVersion: 1, contextDir: "docs", targets: ["claude"] }),
+    );
+    put("docs/guide.md", "# User docs\n");
+
+    const ctx = makeCtx();
+    const result = await executePlan(await uninstallCommand.plan(ctx), ctx);
+    const digest = result.digests.find((d) => d.describe.includes("core install footprint"));
+    const artifacts = digest?.data as
+      | { artifacts?: Array<{ path: string; disposition: string }> }
+      | undefined;
+
+    expect(result.removed.map((r) => r.path)).not.toContain("docs");
+    expect(result.removed.map((r) => r.path)).toContain(".aih-config.json");
+    expect(artifacts?.artifacts).toEqual(
+      expect.arrayContaining([expect.objectContaining({ path: "docs", disposition: "advisory" })]),
+    );
+  });
+
+  it("uses the on-disk casing for removable context dirs", async () => {
+    await bootstrapFixture();
+    put(
+      ".aih-config.json",
+      JSON.stringify({ schemaVersion: 1, contextDir: "AI-CODING", targets: ["claude"] }),
+    );
+
+    const ctx = makeCtx();
+    const result = await executePlan(await uninstallCommand.plan(ctx), ctx);
+
+    expect(result.removed.map((r) => r.path)).toContain("ai-coding");
+    expect(result.removed.map((r) => r.path)).not.toContain("AI-CODING");
   });
 });
