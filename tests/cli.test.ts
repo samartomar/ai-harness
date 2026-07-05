@@ -20,9 +20,9 @@ describe("CLI program", () => {
     }
   });
 
-  it("declares 28 capabilities and 4 read-only commands", () => {
+  it("declares 28 capabilities and 5 read-only commands", () => {
     expect(CAPABILITIES).toHaveLength(28);
-    expect(READONLY).toHaveLength(4);
+    expect(READONLY).toHaveLength(5);
   });
 
   it("registers workspace acquisition, snapshot, and plan subcommands", () => {

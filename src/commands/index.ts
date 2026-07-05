@@ -40,6 +40,7 @@ import { command as report } from "../report/index.js";
 import { command as sandbox } from "../sandbox/index.js";
 import { command as scaffold } from "../scaffold/index.js";
 import { command as secrets } from "../secrets/index.js";
+import { command as sessionGuard } from "../session/index.js";
 import {
   skillApproveCommand,
   skillCardCommand,
@@ -105,7 +106,13 @@ export const CAPABILITIES: CommandSpec[] = [
 ];
 
 /** Read-only commands (always safe). */
-export const READONLY: CommandSpec[] = [doctor, status, verifyBundle, verifyReleaseCommand];
+export const READONLY: CommandSpec[] = [
+  doctor,
+  status,
+  verifyBundle,
+  verifyReleaseCommand,
+  sessionGuard,
+];
 
 export const ALL_COMMANDS: CommandSpec[] = [...CAPABILITIES, ...READONLY];
 

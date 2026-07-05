@@ -25,6 +25,9 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `.aih/fingerprint.json` to the existing init flow. Under `--apply`, root
   committed intent remains the source of truth while `.aih/` and `~/.aih/` stay
   rebuildable derived state. (#218)
+- **Session guardrails**: new read-only `aih session-guard --text <text>` plus
+  exported session guardrail APIs run bounded, offline checks for secret-like
+  session text and dangerous local actions without echoing detected values. (#220)
 - **Enterprise baseline attestation in `aih doctor`**: at Enterprise posture, `doctor`
   now compares MCP servers and packaged marketplace skills against the declared
   registry in `aih-org-policy.json`, emitting coded `baseline.*` findings for

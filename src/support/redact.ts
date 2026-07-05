@@ -14,8 +14,13 @@
 import { redactSecrets } from "../guardrails/redact.js";
 
 /** Flags whose following value (or `=value`) is sensitive and must be masked. */
-const SENSITIVE_FLAG = /^--?(token|password|passwd|pass|secret|api[-_]?key|apikey|auth|bearer)$/i;
+const SENSITIVE_FLAG_NAME = /^(token|password|passwd|pass|secret|api[-_]?key|apikey|auth|bearer)$/i;
 const REDACTED = "[REDACTED]";
+
+export interface RedactArgvOptions {
+  /** Additional command-specific flags whose values must never be logged. */
+  sensitiveFlags?: readonly string[];
+}
 
 function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -33,18 +38,33 @@ export function scrubHome(text: string, env: NodeJS.ProcessEnv): string {
   return pattern.length > 0 ? text.replace(new RegExp(pattern, "gi"), "<home>") : text;
 }
 
+function flagName(flag: string): string {
+  const match = flag.match(/^--?([\w-]+)/);
+  return (match?.[1] ?? "").toLowerCase();
+}
+
+function sensitiveFlagSet(opts: RedactArgvOptions | undefined): Set<string> {
+  return new Set((opts?.sensitiveFlags ?? []).map(flagName).filter((name) => name.length > 0));
+}
+
+function isSensitiveFlag(flag: string, extra: ReadonlySet<string>): boolean {
+  const name = flagName(flag);
+  return name.length > 0 && (SENSITIVE_FLAG_NAME.test(name) || extra.has(name));
+}
+
 /** Key-aware argv masking: `--token x` / `--token=x` → `--token [REDACTED]` / `--token=[REDACTED]`. */
-export function redactArgv(argv: readonly string[]): string[] {
+export function redactArgv(argv: readonly string[], opts?: RedactArgvOptions): string[] {
+  const extraSensitive = sensitiveFlagSet(opts);
   const out: string[] = [];
   for (let i = 0; i < argv.length; i++) {
     const tok = argv[i] ?? "";
     const eq = tok.match(/^(--?[\w-]+)=(.*)$/);
-    if (eq && SENSITIVE_FLAG.test(eq[1] ?? "")) {
+    if (eq && isSensitiveFlag(eq[1] ?? "", extraSensitive)) {
       out.push(`${eq[1]}=${REDACTED}`);
       continue;
     }
     out.push(tok);
-    if (SENSITIVE_FLAG.test(tok) && i + 1 < argv.length) {
+    if (isSensitiveFlag(tok, extraSensitive) && i + 1 < argv.length) {
       out.push(REDACTED);
       i++; // skip the now-masked value
     }

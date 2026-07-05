@@ -33,6 +33,19 @@ describe("redactArgv", () => {
       "--api-key=[REDACTED]",
     ]);
   });
+
+  it("masks command-specific sensitive flags", () => {
+    expect(
+      redactArgv(["session-guard", "--text", "Use sk-test-not-real-123456"], {
+        sensitiveFlags: ["--text"],
+      }),
+    ).toEqual(["session-guard", "--text", "[REDACTED]"]);
+    expect(
+      redactArgv(["session-guard", "--text=Use sk-test-not-real-123456"], {
+        sensitiveFlags: ["--text"],
+      }),
+    ).toEqual(["session-guard", "--text=[REDACTED]"]);
+  });
 });
 
 describe("redactText", () => {
@@ -40,5 +53,11 @@ describe("redactText", () => {
     expect(redactText("key sk-ant-ABCDEFGH12345678 at /home/sam/x", { HOME: "/home/sam" })).toBe(
       "key [REDACTED] at <home>/x",
     );
+  });
+
+  it("masks session guard token patterns", () => {
+    expect(
+      redactText("OPENAI_API_KEY: sk-test-not-real-123456 and github_pat_fake_token_12345", {}),
+    ).not.toMatch(/sk-test|github_pat/);
   });
 });

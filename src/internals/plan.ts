@@ -242,6 +242,8 @@ export interface CommandOption {
   flags: string;
   description: string;
   default?: string | boolean;
+  /** Mask this option's value before argv is written to logs/support artifacts. */
+  sensitive?: boolean;
 }
 
 export interface CommandPositional {

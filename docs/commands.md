@@ -35,6 +35,14 @@ loadability, contract, secret scan). Diagnoses by default (non-zero when blocked
 auto-fixable blocker (missing `rg`/`fd`/`jq`) installs under confirmation. Surfaces a `sec-ready`
 panel in `aih report --v9`.
 
+## aih session-guard
+
+Inspect session/action text with the EPIC 5 session guardrails. `--text <text>` runs a read-only,
+offline structured check for secret-like values and dangerous local actions such as destructive git/fs
+commands, remote pipe-to-shell patterns, privileged operations, and publish/release commands. Results
+reuse the verification pipeline shape, return bounded evidence, hash the input for correlation, and
+never echo detected secret values.
+
 ## aih hardware
 
 Profile CPU/RAM/GPU; compute memory/thread/parallel limits + quantization; emit tuned
