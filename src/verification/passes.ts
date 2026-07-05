@@ -38,12 +38,13 @@ const PROJECT_FILE = "project.md";
 const EVIDENCE_FIELD_MAX = 512;
 const REMOTE_FETCH_COMMAND = "(?:curl|wget|irm|iwr|invoke-restmethod|invoke-webrequest)";
 const REMOTE_EXEC_COMMAND = "(?:sh|bash|zsh|dash|ksh|fish|powershell|pwsh|iex|invoke-expression)";
+const EXEC_PATH_PREFIX = "(?:/(?:[A-Za-z0-9._-]+/)*)?";
 const REMOTE_PIPE_EXEC_RE = new RegExp(
   `\\b${REMOTE_FETCH_COMMAND}\\b[^\\r\\n;&]*\\|\\s*` +
-    "(?:(?:sudo|command)\\b\\s+(?:-[A-Za-z0-9-]+\\s+)*|" +
-    "(?:env)\\b\\s+(?:(?:-[A-Za-z0-9-]+|[A-Za-z_][A-Za-z0-9_]*=\\S+)\\s+)*|" +
-    "(?:xargs)\\b\\s+(?:-[A-Za-z0-9-]+\\s+)*)*" +
-    `(?:/(?:usr/)?bin/)?${REMOTE_EXEC_COMMAND}\\b`,
+    `(?:(?:${EXEC_PATH_PREFIX}(?:sudo|command))\\b\\s+(?:-[A-Za-z0-9-]+\\s+)*|` +
+    `(?:${EXEC_PATH_PREFIX}env)\\b\\s+(?:(?:-[A-Za-z0-9-]+|[A-Za-z_][A-Za-z0-9_]*=\\S+)\\s+)*|` +
+    `(?:${EXEC_PATH_PREFIX}xargs)\\b\\s+(?:-[A-Za-z0-9-]+\\s+)*)*` +
+    `${EXEC_PATH_PREFIX}${REMOTE_EXEC_COMMAND}\\b`,
   "i",
 );
 const REMOTE_PROCESS_SUBSTITUTION_RE = new RegExp(
@@ -75,6 +76,16 @@ function truncateWithHash(value: string, maxLength: number): string {
   return `${head}${suffix}`;
 }
 
+function appendHash(value: string, original: string, maxLength: number): string {
+  const suffix = `-${shortHash(original)}`;
+  if (value.length + suffix.length <= maxLength) return `${value}${suffix}`;
+  let head = Array.from(value)
+    .slice(0, maxLength - suffix.length)
+    .join("");
+  while (head.length + suffix.length > maxLength) head = head.slice(0, -1);
+  return `${head}${suffix}`;
+}
+
 function boundedMessage(value: string): string {
   return truncateWithHash(
     value
@@ -86,6 +97,7 @@ function boundedMessage(value: string): string {
 }
 
 function evidenceField(value: string): string {
+  const canonical = value.replace(/\\/g, "/");
   const normalized = value
     .replace(/\\/g, "/")
     // biome-ignore lint/suspicious/noControlCharactersInRegex: evidence IDs/sources must not carry terminal controls
@@ -93,10 +105,9 @@ function evidenceField(value: string): string {
     .replace(/[^A-Za-z0-9._:@/#-]+/g, "-")
     .replace(/-+/g, "-")
     .replace(/^-+|-+$/g, "");
-  return truncateWithHash(
-    normalized.length > 0 ? normalized : `value-${shortHash(value)}`,
-    EVIDENCE_FIELD_MAX,
-  );
+  const base = normalized.length > 0 ? normalized : "value";
+  if (normalized !== canonical) return appendHash(base, value, EVIDENCE_FIELD_MAX);
+  return truncateWithHash(base, EVIDENCE_FIELD_MAX);
 }
 
 function evidence(id: string, type: string, source: string): Evidence {

