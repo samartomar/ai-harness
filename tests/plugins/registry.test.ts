@@ -397,6 +397,16 @@ describe("loadExternalCommands — collisions (built-ins always win)", () => {
     expect(res.warnings[0]).toContain("old-demo");
   });
 
+  it("a plugin name colliding with a built-in's current alias is refused", async () => {
+    expect(builtins.has("clean")).toBe(true);
+
+    const res = await gate(validSpec("clean"));
+    expect(res.commands).toEqual([]);
+    expect(res.warnings).toHaveLength(1);
+    expect(res.warnings[0]).toContain("refusing to shadow");
+    expect(res.warnings[0]).toContain("clean");
+  });
+
   it("duplicate plugin names — the first registration wins", async () => {
     const first = { ...validSpec("zap"), summary: "first zap" };
     const second = { ...validSpec("zap"), summary: "second zap" };
@@ -435,6 +445,20 @@ describe("loadExternalCommands — ungated field strip", () => {
     expect(original.deprecatedAliases).toEqual(["old-zap"]);
     expect(res.warnings).toEqual([
       'plugin command "zap": deprecatedAliases is not honored for plugin commands (deprecation aliases are core-only); dropped',
+    ]);
+  });
+
+  it("strips aliases from the registered copy, warns, and never mutates the plugin's object", async () => {
+    const original = { ...validSpec("zap"), aliases: ["zap-clean"] };
+    const res = await loadExternalCommands(builtins, {
+      importer: moduleOf({ aihCommands: [original] }),
+    });
+    expect(res.commands).toHaveLength(1);
+    expect(res.commands[0]).not.toHaveProperty("aliases");
+    // Shallow clone: the plugin's own object is untouched.
+    expect(original.aliases).toEqual(["zap-clean"]);
+    expect(res.warnings).toEqual([
+      'plugin command "zap": aliases is not honored for plugin commands (aliases are core-only); dropped',
     ]);
   });
 

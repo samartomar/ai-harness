@@ -46,10 +46,10 @@ import type { CommandSpec } from "../internals/plan.js";
  *    commander's reserved `--help`/`-h`/`--version`/`-V`.
  *  - `skipWorktreeGate` is never honored for plugin commands — the field is
  *    stripped from the registered copy (see {@link stripWorktreeGateField}).
- *  - `deprecatedAliases` is never honored for plugin commands — aliases are
- *    the CORE rename machinery (STABILITY.md), and an alias is an extra
- *    dispatch name the collision rules above do not walk. The field is
- *    stripped from the registered copy with a warning (see
+ *  - `aliases` / `deprecatedAliases` are never honored for plugin commands —
+ *    aliases are core-owned invocation names, and an alias is an extra dispatch
+ *    name the collision rules above do not walk. The fields are stripped from
+ *    the registered copy with a warning (see {@link stripAliasesField} /
  *    {@link stripDeprecatedAliasesField}); built-in aliases stay reserved
  *    against plugin NAMES via builtinCommandNames.
  *  - Warnings render hostile input: every plugin-influenced string that lands
@@ -397,6 +397,21 @@ function stripWorktreeGateField(spec: CommandSpec, warnings: string[]): CommandS
 }
 
 /**
+ * Current aliases are CORE-owned extra invocation names. The registry's collision
+ * gate checks plugin spec NAMES only; honoring plugin aliases would let a plugin
+ * register a harmless-looking name while also claiming a built-in alias at
+ * commander registration time. Strip from a shallow clone.
+ */
+function stripAliasesField(spec: CommandSpec, warnings: string[]): CommandSpec {
+  if (!("aliases" in spec)) return spec;
+  warnings.push(
+    `plugin command "${sanitizeLabel(spec.name)}": aliases is not honored for plugin commands (aliases are core-only); dropped`,
+  );
+  const { aliases, ...cleaned } = spec;
+  return cleaned;
+}
+
+/**
  * Deprecated aliases are the CORE alias-before-removal machinery
  * (STABILITY.md): an alias is an extra invocation name commander dispatches
  * on, and the collision rules in {@link gateModule} check spec NAMES only —
@@ -453,7 +468,12 @@ function gateModule(mod: unknown, builtinNames: ReadonlySet<string>): PluginLoad
       continue;
     }
     taken.add(spec.name);
-    commands.push(stripWorktreeGateField(stripDeprecatedAliasesField(spec, warnings), warnings));
+    commands.push(
+      stripWorktreeGateField(
+        stripDeprecatedAliasesField(stripAliasesField(spec, warnings), warnings),
+        warnings,
+      ),
+    );
   }
   return { commands, warnings };
 }

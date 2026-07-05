@@ -34,7 +34,7 @@
 
   <!-- tag, top-right -->
   <g transform="translate(1136,74)" text-anchor="end">
-    <text x="0" y="0" font-size="14" fill="#6e7681" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">37 commands</text>
+    <text x="0" y="0" font-size="14" fill="#6e7681" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">38 commands</text>
     <text x="0" y="22" font-size="14" fill="#6e7681" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">TypeScript · Apache-2.0</text>
   </g>
 

@@ -111,6 +111,20 @@ still-targeted CLI whose binary is absent from `PATH` (loud warning; never the d
 Shared selection flags (`--cli`, `--all-tools`, `--detect`) are accepted by the command surface but
 ignored by `prune`; the digest says so and keeps the diff anchored to committed intent.
 
+## aih uninstall
+
+Remove the core aih install footprint from a repo; `aih clean` is the same command. Dry-run
+preview by default. Under `--apply`, marker-backed aih-owned whole paths (`ai-coding/` or the
+committed context dir, `.aih-config.json`, `.aih/`, and marker-owned Kiro extras such as
+`.kiro/steering/agent-tools.md` plus `.kiro/hooks/aih-*.kiro.hook`) move to reversible sibling
+`*.aih.bak` backups, which avoids archiving into `.aih/legacy/` while `.aih/` itself is being
+removed. The context dir and `.aih/` are only backed up when the root marker and generated canon
+evidence agree; Kiro extras require the generated Kiro bootloader marker too. Otherwise these
+paths are advisory/no-op. Co-owned files such as repo-scoped MCP configs from registered CLIs
+(`.mcp.json`, `.cursor/mcp.json`, `.vscode/mcp.json`, `opencode.json`, `.kiro/settings/mcp.json`)
+and root bootloaders that still carry an aih managed block are surfaced as manual advisories
+instead of being edited or deleted. Dirty/untracked removal targets refuse without `--force`.
+
 ## aih ecc
 
 Install [affaan-m/ECC](https://github.com/affaan-m/ECC) (skills, instincts, memory, security,

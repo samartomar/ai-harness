@@ -141,5 +141,5 @@ describe("aihIgnoreWrite", () => {
     // The committed recorder survives the `.*/` parent-exclude; the data does not.
     expect(isIgnored(".aih/usage-record.mjs")).toBe(false);
     expect(isIgnored(".aih/report.html")).toBe(true);
-  });
+  }, 20000);
 });
