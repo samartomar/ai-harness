@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { enterpriseBaselineAttestationCheck } from "../baseline/attestation.js";
@@ -9,6 +10,7 @@ import { AIH_ORG_POLICY_FILE } from "../org-policy/constants.js";
 import { readOrgPolicy } from "../org-policy/schema.js";
 import { makeHostAdapter } from "../platform/detect.js";
 import { scanConfigSecrets, scanSecrets } from "../secrets/scan.js";
+import { MAX_VERIFICATION_STRING_FIELD_LENGTH } from "./constants.js";
 import { VerificationRegistry } from "./registry.js";
 import type {
   Evidence,
@@ -31,9 +33,27 @@ export const STRUCTURED_VERIFICATION_PASS_NAMES = [
 type StructuredPassName = (typeof STRUCTURED_VERIFICATION_PASS_NAMES)[number];
 
 const PACKAGE_JSON = "package.json";
-const AI_CODING_RULE_ROUTER = "ai-coding/RULE_ROUTER.md";
-const AI_CODING_PROJECT = "ai-coding/project.md";
-const REMOTE_SCRIPT_RE = /\b(?:curl|wget)\b[^\r\n|;&]*\|\s*(?:sh|bash|zsh|powershell|pwsh)\b/i;
+const RULE_ROUTER_FILE = "RULE_ROUTER.md";
+const PROJECT_FILE = "project.md";
+const EVIDENCE_FIELD_MAX = 512;
+const REMOTE_FETCH_COMMAND = "(?:curl|wget|irm|iwr|invoke-restmethod|invoke-webrequest)";
+const REMOTE_EXEC_COMMAND = "(?:sh|bash|zsh|dash|ksh|fish|powershell|pwsh|iex|invoke-expression)";
+const REMOTE_PIPE_EXEC_RE = new RegExp(
+  `\\b${REMOTE_FETCH_COMMAND}\\b[^\\r\\n;&]*\\|\\s*` +
+    "(?:(?:sudo|command)\\b\\s+(?:-[A-Za-z0-9-]+\\s+)*|" +
+    "(?:env)\\b\\s+(?:(?:-[A-Za-z0-9-]+|[A-Za-z_][A-Za-z0-9_]*=\\S+)\\s+)*|" +
+    "(?:xargs)\\b\\s+(?:-[A-Za-z0-9-]+\\s+)*)*" +
+    `(?:/(?:usr/)?bin/)?${REMOTE_EXEC_COMMAND}\\b`,
+  "i",
+);
+const REMOTE_PROCESS_SUBSTITUTION_RE = new RegExp(
+  `\\b${REMOTE_EXEC_COMMAND}\\b[^\\r\\n;&|]*<\\(\\s*${REMOTE_FETCH_COMMAND}\\b`,
+  "i",
+);
+const POWERSHELL_REMOTE_INVOKE_RE = new RegExp(
+  `\\b(?:iex|invoke-expression)\\b[^\\r\\n;&|]*\\(\\s*${REMOTE_FETCH_COMMAND}\\b`,
+  "i",
+);
 const STRUCTURED_VERIFICATION_RUNNER: Runner = async () => ({
   code: 127,
   stdout: "",
@@ -41,8 +61,46 @@ const STRUCTURED_VERIFICATION_RUNNER: Runner = async () => ({
   spawnError: true,
 });
 
+function shortHash(value: string): string {
+  return createHash("sha256").update(value).digest("hex").slice(0, 12);
+}
+
+function truncateWithHash(value: string, maxLength: number): string {
+  if (value.length <= maxLength) return value;
+  const suffix = `-${shortHash(value)}`;
+  let head = Array.from(value)
+    .slice(0, maxLength - suffix.length)
+    .join("");
+  while (head.length + suffix.length > maxLength) head = head.slice(0, -1);
+  return `${head}${suffix}`;
+}
+
+function boundedMessage(value: string): string {
+  return truncateWithHash(
+    value
+      // biome-ignore lint/suspicious/noControlCharactersInRegex: verification messages must stay parser-safe
+      .replace(/[\u0000-\u001f\u007f-\u009f]/g, " ")
+      .trim(),
+    MAX_VERIFICATION_STRING_FIELD_LENGTH,
+  );
+}
+
+function evidenceField(value: string): string {
+  const normalized = value
+    .replace(/\\/g, "/")
+    // biome-ignore lint/suspicious/noControlCharactersInRegex: evidence IDs/sources must not carry terminal controls
+    .replace(/[\u0000-\u001f\u007f-\u009f]/g, "-")
+    .replace(/[^A-Za-z0-9._:@/#-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return truncateWithHash(
+    normalized.length > 0 ? normalized : `value-${shortHash(value)}`,
+    EVIDENCE_FIELD_MAX,
+  );
+}
+
 function evidence(id: string, type: string, source: string): Evidence {
-  return { id, type, source };
+  return { id: evidenceField(id), type: evidenceField(type), source: evidenceField(source) };
 }
 
 function result(
@@ -59,7 +117,7 @@ function result(
     severity,
     confidence: "high",
     evidence: foundEvidence,
-    message,
+    message: boundedMessage(message),
     category,
   };
 }
@@ -102,7 +160,26 @@ function postureFlagFromContext(input: VerificationInput): unknown {
 
 function contextDirFromContext(input: VerificationInput): string {
   const value = input.context?.contextDir;
-  return typeof value === "string" && value.trim().length > 0 ? value : "ai-coding";
+  if (typeof value !== "string") return "ai-coding";
+  const normalized = value
+    .trim()
+    .replace(/\\/g, "/")
+    .replace(/^\/+|\/+$/g, "");
+  if (
+    normalized === "" ||
+    normalized === "." ||
+    normalized === ".." ||
+    normalized.startsWith("../") ||
+    normalized.includes("/../") ||
+    /^[A-Za-z]:/.test(normalized)
+  ) {
+    return "ai-coding";
+  }
+  return normalized;
+}
+
+function contextDocPath(input: VerificationInput, file: string): string {
+  return `${contextDirFromContext(input)}/${file}`;
 }
 
 function policyPlanContext(
@@ -205,6 +282,14 @@ function riskyDependencySpec(spec: string): boolean {
   );
 }
 
+function pipesRemoteContentToShell(script: string): boolean {
+  return (
+    REMOTE_PIPE_EXEC_RE.test(script) ||
+    REMOTE_PROCESS_SUBSTITUTION_RE.test(script) ||
+    POWERSHELL_REMOTE_INVOKE_RE.test(script)
+  );
+}
+
 function execLocalityPass(): VerificationPass {
   return pass("exec-locality", "exec", (input) => {
     const pkg = readJsonFile(input.projectRoot, PACKAGE_JSON);
@@ -219,7 +304,7 @@ function execLocalityPass(): VerificationPass {
     }
     if (pkg.kind === "invalid") return invalidPackageResult("exec-locality", "exec");
     const hits = Object.entries(packageScripts(pkg.value))
-      .filter(([, script]) => REMOTE_SCRIPT_RE.test(script))
+      .filter(([, script]) => pipesRemoteContentToShell(script))
       .map(([name]) =>
         evidence(`exec-locality:script:${name}`, "package-script", `package.json#scripts.${name}`),
       );
@@ -241,24 +326,6 @@ function policyPass(): VerificationPass {
   return pass("policy", "policy", (input) => {
     const env = envFromContext(input);
     const postureFlag = postureFlagFromContext(input);
-    let policy: ReturnType<typeof readOrgPolicy>;
-    try {
-      policy = readOrgPolicy(input.projectRoot, env);
-    } catch {
-      return result("policy", "policy", "fail", "high", `${AIH_ORG_POLICY_FILE} is invalid`, [
-        evidence("policy:invalid", "file", AIH_ORG_POLICY_FILE),
-      ]);
-    }
-    if (policy === undefined) {
-      return result(
-        "policy",
-        "policy",
-        "pass",
-        "info",
-        `skipped: no ${AIH_ORG_POLICY_FILE} in this repo`,
-      );
-    }
-
     let resolved: ReturnType<typeof resolvePosture>;
     try {
       resolved = resolvePosture({
@@ -268,11 +335,26 @@ function policyPass(): VerificationPass {
         flagSource: postureFlag === undefined ? undefined : "cli",
       });
     } catch {
+      try {
+        readOrgPolicy(input.projectRoot, env);
+      } catch {
+        return result("policy", "policy", "fail", "high", `${AIH_ORG_POLICY_FILE} is invalid`, [
+          evidence("policy:invalid", "file", AIH_ORG_POLICY_FILE),
+        ]);
+      }
       return result("policy", "policy", "fail", "high", "policy posture could not be resolved", [
         evidence("policy:posture-invalid", "policy", AIH_ORG_POLICY_FILE),
       ]);
     }
 
+    let policy: ReturnType<typeof readOrgPolicy>;
+    try {
+      policy = readOrgPolicy(input.projectRoot, env);
+    } catch {
+      return result("policy", "policy", "fail", "high", `${AIH_ORG_POLICY_FILE} is invalid`, [
+        evidence("policy:invalid", "file", AIH_ORG_POLICY_FILE),
+      ]);
+    }
     if (resolved.posture === "enterprise") {
       try {
         const check = enterpriseBaselineAttestationCheck(
@@ -307,6 +389,16 @@ function policyPass(): VerificationPass {
           [evidence("policy:baseline-attestation-error", "policy", AIH_ORG_POLICY_FILE)],
         );
       }
+    }
+
+    if (policy === undefined) {
+      return result(
+        "policy",
+        "policy",
+        "pass",
+        "info",
+        `skipped: no ${AIH_ORG_POLICY_FILE} in this repo`,
+      );
     }
     return result(
       "policy",
@@ -382,23 +474,25 @@ function dependencyPass(): VerificationPass {
 
 function docConsistencyPass(): VerificationPass {
   return pass("doc-consistency", "doc", (input) => {
-    const hasRouter = fileExists(input.projectRoot, AI_CODING_RULE_ROUTER);
-    const hasProject = fileExists(input.projectRoot, AI_CODING_PROJECT);
+    const routerPath = contextDocPath(input, RULE_ROUTER_FILE);
+    const projectPath = contextDocPath(input, PROJECT_FILE);
+    const hasRouter = fileExists(input.projectRoot, routerPath);
+    const hasProject = fileExists(input.projectRoot, projectPath);
     if (!hasRouter && !hasProject) {
       return result(
         "doc-consistency",
         "doc",
         "pass",
         "info",
-        "skipped: no ai-coding documentation surface to inspect",
+        `skipped: no ${contextDirFromContext(input)} documentation surface to inspect`,
       );
     }
     const missing: Evidence[] = [];
     if (!hasRouter) {
-      missing.push(evidence("doc-consistency:missing:router", "file", AI_CODING_RULE_ROUTER));
+      missing.push(evidence("doc-consistency:missing:router", "file", routerPath));
     }
     if (!hasProject) {
-      missing.push(evidence("doc-consistency:missing:project", "file", AI_CODING_PROJECT));
+      missing.push(evidence("doc-consistency:missing:project", "file", projectPath));
     }
     if (missing.length > 0) {
       return result(
@@ -415,10 +509,10 @@ function docConsistencyPass(): VerificationPass {
       "doc",
       "pass",
       "info",
-      "ai-coding documentation artifacts are present",
+      `${contextDirFromContext(input)} documentation artifacts are present`,
       [
-        evidence("doc-consistency:router", "file", AI_CODING_RULE_ROUTER),
-        evidence("doc-consistency:project", "file", AI_CODING_PROJECT),
+        evidence("doc-consistency:router", "file", routerPath),
+        evidence("doc-consistency:project", "file", projectPath),
       ],
     );
   });

