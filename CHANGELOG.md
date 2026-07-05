@@ -8,6 +8,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Structured verification pipeline core**: new programmatic
+  `src/verification` substrate for typed pass results, deterministic merge
+  summaries, evidence aggregation, ordered pass selection, and duplicate-safe pass
+  registration. This is the Wave 1 / EPIC 0 foundation for parallel verification
+  and evidence graph work. (#210)
 - **Capability resolve/cache substrate**: new `aih capability resolve` and
   `aih capability prune` commands emit evidence-backed capability decisions,
   persist committed repo intent in `aih-capabilities.json`, and maintain a

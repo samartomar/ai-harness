@@ -25,3 +25,21 @@ export * from "./platform/detect.js";
 export * from "./platform/parse.js";
 export * from "./plugins/registry.js";
 export { buildProgram, buildProgramWithPlugins, VERSION } from "./program.js";
+export {
+  type Confidence as VerificationConfidence,
+  compareVerificationResults,
+  type Evidence as VerificationEvidence,
+  mergeVerificationResults,
+  runVerificationPipeline,
+  type Severity as VerificationSeverity,
+  type Verdict as VerificationVerdict,
+  type VerificationCategory,
+  type VerificationInput,
+  type VerificationPass,
+  type VerificationPipelineOptions,
+  type VerificationPipelineRun,
+  VerificationRegistry,
+  type VerificationRegistrySelection,
+  type VerificationResult,
+  type VerificationSummary,
+} from "./verification/index.js";
