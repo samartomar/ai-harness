@@ -11,7 +11,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Enterprise baseline attestation in `aih doctor`**: at Enterprise posture, `doctor`
   now compares MCP servers and packaged marketplace skills against the declared
   registry in `aih-org-policy.json`, emitting coded `baseline.*` findings for
-  undeclared external capability residue or invalid/missing registry inputs. (#189)
+  undeclared external capability residue or invalid/missing registry inputs. MCP
+  matches are bound to the generated catalog's command/URL shape across known
+  repo-scoped config files, and marketplace sources must carry a pinned commit
+  that matches the packaged artifact. (#189)
 - **Workspace manifest child source metadata**: object-form `.aih-workspace.json`
   repos may now carry optional `remote` and `ref` fields for future hydrate/source
   reconstruction. The parser validates them as safe printable strings and existing

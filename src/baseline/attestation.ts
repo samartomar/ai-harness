@@ -4,9 +4,11 @@ import { readIfExists } from "../internals/fsxn.js";
 import type { PlanContext } from "../internals/plan.js";
 import type { Check } from "../internals/verify.js";
 import { DEFAULT_MARKETPLACE_OUT, readMarketplaceManifest } from "../marketplace/manifest.js";
-import type { McpCredentials, McpEgress, McpSupplyChain } from "../mcp/servers.js";
+import { policyAwareMcpCatalog } from "../mcp/catalog.js";
+import type { McpServer } from "../mcp/servers.js";
 import { AIH_ORG_POLICY_FILE } from "../org-policy/constants.js";
 import { type OrgPolicy, readOrgPolicy } from "../org-policy/schema.js";
+import { MCP_CONFIG_FILES } from "../secrets/scan.js";
 import { classifyIncomingMcp } from "../trust/mcp-classify.js";
 import { checkWorkspaceChildPath } from "../workspace/detect.js";
 import { readWorkspaceManifest } from "../workspace/manifest.js";
@@ -20,6 +22,7 @@ interface CapabilitySurface {
   label: string;
   metadata: string;
   forceUndeclared?: boolean;
+  sourceUri?: string;
   owner?: string;
   repo?: string;
   pinnedSha?: string;
@@ -27,9 +30,6 @@ interface CapabilitySurface {
 
 const MCP_REGISTRY_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,79}$/;
 const OWNER_REPO_PART_RE = /^[A-Za-z0-9_.-]+$/;
-const EGRESS_VALUES = new Set<McpEgress>(["none", "local-only", "vendor-incumbent", "third-party"]);
-const CREDENTIAL_VALUES = new Set<McpCredentials>(["none", "oauth", "token"]);
-const SUPPLY_CHAIN_VALUES = new Set<McpSupplyChain>(["pinned", "unpinned", "hosted-remote"]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -45,22 +45,38 @@ function safeLabel(value: string): string {
   return rendered.length > 0 ? rendered.slice(0, 120) : "unnamed";
 }
 
-function stringField(
-  raw: Record<string, unknown>,
-  key: string,
-  allowed: ReadonlySet<string>,
-): string | undefined {
-  const value = raw[key];
-  return typeof value === "string" && allowed.has(value) ? value : undefined;
+function stable(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(stable);
+  if (!isRecord(value)) return value;
+  return Object.fromEntries(
+    Object.entries(value)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([key, child]) => [key, stable(child)]),
+  );
 }
 
-function mcpMetadata(rawServer: unknown): string {
-  const raw = isRecord(rawServer) ? rawServer : {};
-  const fallback = classifyIncomingMcp(rawServer);
-  const egress = stringField(raw, "egress", EGRESS_VALUES) ?? fallback.egress;
-  const credentials = stringField(raw, "credentials", CREDENTIAL_VALUES) ?? fallback.credentials;
-  const supplyChain = stringField(raw, "supplyChain", SUPPLY_CHAIN_VALUES) ?? fallback.supplyChain;
-  return `${egress}/${credentials}/${supplyChain}`;
+function mcpMetadata(server: McpServer): string {
+  return `${server.egress}/${server.credentials}/${server.supplyChain}`;
+}
+
+function operationalShape(server: McpServer): unknown {
+  return server.type === "stdio"
+    ? {
+        type: server.type,
+        command: server.command,
+        args: server.args,
+        env: server.env ?? {},
+      }
+    : {
+        type: server.type,
+        url: server.url,
+      };
+}
+
+function sameOperationalShape(a: McpServer, b: McpServer): boolean {
+  return (
+    JSON.stringify(stable(operationalShape(a))) === JSON.stringify(stable(operationalShape(b)))
+  );
 }
 
 function realOrResolved(path: string): string {
@@ -99,87 +115,175 @@ function isDeclaredWorkspaceGraphServer(root: string, contextDir: string, value:
   return declaredWorkspaceGraphRepos(rootAbs, contextDir).has(repoAbs);
 }
 
-function invalidMcpName(name: string): Check {
+function invalidMcpName(rel: string, name: string): Check {
   const label = safeLabel(name);
   return {
     name: "enterprise baseline attestation",
     verdict: "fail",
     code: "baseline.registry-invalid",
-    detail: `.mcp.json mcpServers.${label} is not a safe registry identity; MCP names must match ${MCP_REGISTRY_ID_RE.source}`,
-    location: { uri: `.mcp.json#mcpServers.${label}` },
-    fingerprint: `baseline-invalid:mcp-name:${label}`,
+    detail: `${rel} mcpServers.${label} is not a safe registry identity; MCP names must match ${MCP_REGISTRY_ID_RE.source}`,
+    location: { uri: `${rel}#mcpServers.${label}` },
+    fingerprint: `baseline-invalid:mcp-name:${rel}:${label}`,
   };
 }
 
-function parseMcpSurfaces(
+interface IncomingMcpServerMap {
+  key: "mcpServers" | "servers" | "mcp";
+  servers: Record<string, unknown>;
+}
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === "string" ? value : undefined;
+}
+
+function openCodeServer(server: unknown): unknown {
+  if (!isRecord(server)) return server;
+  if (server.type === "remote") {
+    return { ...server, url: stringValue(server.url) };
+  }
+  const command = Array.isArray(server.command) ? server.command : [];
+  const executable = command[0];
+  return {
+    ...server,
+    command: typeof executable === "string" ? executable : undefined,
+    args: command.slice(1).filter((item): item is string => typeof item === "string"),
+    env: server.environment ?? server.env,
+  };
+}
+
+function openCodeServers(servers: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(servers).map(([name, server]) => [name, openCodeServer(server)]),
+  );
+}
+
+function incomingServerMaps(parsed: unknown): IncomingMcpServerMap[] | undefined {
+  if (!isRecord(parsed)) return undefined;
+  const maps: IncomingMcpServerMap[] = [];
+  for (const key of ["mcpServers", "servers"] as const) {
+    if (!Object.hasOwn(parsed, key)) continue;
+    const value = parsed[key];
+    if (!isRecord(value)) return undefined;
+    maps.push({ key, servers: value });
+  }
+  if (Object.hasOwn(parsed, "mcp")) {
+    const value = parsed.mcp;
+    if (!isRecord(value)) return undefined;
+    maps.push({ key: "mcp", servers: openCodeServers(value) });
+  }
+  return maps;
+}
+
+function mcpShapeInvalid(rel: string): Check {
+  return {
+    name: "enterprise baseline attestation",
+    verdict: "fail",
+    code: "baseline.registry-invalid",
+    detail: `${rel} must contain object MCP server maps to attest registry membership`,
+    location: { uri: rel },
+    fingerprint: `baseline-invalid:mcp-shape:${rel}`,
+  };
+}
+
+function parseMcpConfig(
   root: string,
-  contextDir: string,
-): { surfaces: CapabilitySurface[]; error?: Check } {
-  const raw = readIfExists(join(root, ".mcp.json"));
-  if (raw === undefined) return { surfaces: [] };
+  rel: string,
+): { maps: IncomingMcpServerMap[]; error?: Check } {
+  const raw = readIfExists(join(root, rel));
+  if (raw === undefined) return { maps: [] };
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
   } catch {
     return {
-      surfaces: [],
+      maps: [],
       error: {
         name: "enterprise baseline attestation",
         verdict: "fail",
         code: "baseline.registry-invalid",
-        detail: ".mcp.json is not valid JSON, so the enterprise baseline cannot be attested",
-        location: { uri: ".mcp.json" },
-        fingerprint: "baseline-invalid:mcp-json",
+        detail: `${rel} is not valid JSON, so the enterprise baseline cannot be attested`,
+        location: { uri: rel },
+        fingerprint: `baseline-invalid:mcp-json:${rel}`,
       },
     };
   }
-  const servers = isRecord(parsed) ? parsed.mcpServers : undefined;
-  if (servers === undefined) return { surfaces: [] };
-  if (!isRecord(servers)) {
+  const maps = incomingServerMaps(parsed);
+  if (maps === undefined) return { maps: [], error: mcpShapeInvalid(rel) };
+  return { maps };
+}
+
+function catalogBoundServer(
+  catalog: Record<string, McpServer>,
+  name: string,
+  classified: McpServer,
+): { server: McpServer; declaredByCatalog: boolean } {
+  const expected = catalog[name];
+  if (expected !== undefined && sameOperationalShape(classified, expected)) {
+    return { server: expected, declaredByCatalog: true };
+  }
+  return { server: classified, declaredByCatalog: false };
+}
+
+function parseMcpSurfaces(ctx: PlanContext): { surfaces: CapabilitySurface[]; error?: Check } {
+  const catalogResult = policyAwareMcpCatalog(ctx, { scope: "project" });
+  if (catalogResult.error !== undefined && catalogResult.errorSource === "catalog") {
     return {
       surfaces: [],
       error: {
         name: "enterprise baseline attestation",
         verdict: "fail",
         code: "baseline.registry-invalid",
-        detail: ".mcp.json mcpServers must be an object to attest registry membership",
-        location: { uri: ".mcp.json" },
-        fingerprint: "baseline-invalid:mcp-shape",
+        detail: `MCP catalog cannot be built for baseline attestation: ${(catalogResult.error as Error).message}`,
+        fingerprint: "baseline-invalid:mcp-catalog",
       },
     };
   }
+  const catalog = catalogResult.servers ?? {};
   const surfaces: CapabilitySurface[] = [];
-  const labels = new Set<string>();
-  for (const [name, value] of Object.entries(servers).sort(([a], [b]) => a.localeCompare(b))) {
-    if (!MCP_REGISTRY_ID_RE.test(name)) return { surfaces: [], error: invalidMcpName(name) };
-    if (
-      name.startsWith("aih-workspace-graph-") &&
-      isDeclaredWorkspaceGraphServer(root, contextDir, value)
-    ) {
-      continue;
+  for (const rel of MCP_CONFIG_FILES) {
+    const read = parseMcpConfig(ctx.root, rel);
+    if (read.error) return { surfaces: [], error: read.error };
+    for (const map of read.maps) {
+      const labels = new Set<string>();
+      for (const [name, value] of Object.entries(map.servers).sort(([a], [b]) =>
+        a.localeCompare(b),
+      )) {
+        if (!MCP_REGISTRY_ID_RE.test(name))
+          return { surfaces: [], error: invalidMcpName(rel, name) };
+        if (
+          name.startsWith("aih-workspace-graph-") &&
+          isDeclaredWorkspaceGraphServer(ctx.root, ctx.contextDir, value)
+        ) {
+          continue;
+        }
+        const label = `mcp:${safeLabel(name)}`;
+        if (labels.has(label)) {
+          return {
+            surfaces: [],
+            error: {
+              name: "enterprise baseline attestation",
+              verdict: "fail",
+              code: "baseline.registry-invalid",
+              detail: `${rel} contains colliding MCP registry labels at ${label}`,
+              location: { uri: rel },
+              fingerprint: `baseline-invalid:mcp-label-collision:${rel}:${label}`,
+            },
+          };
+        }
+        labels.add(label);
+        const classified = classifyIncomingMcp(value);
+        const bound = catalogBoundServer(catalog, name, classified);
+        surfaces.push({
+          kind: "mcp",
+          id: name,
+          label,
+          metadata: mcpMetadata(bound.server),
+          sourceUri: rel,
+          forceUndeclared:
+            name.startsWith("aih-workspace-graph-") || !bound.declaredByCatalog ? true : undefined,
+        });
+      }
     }
-    const label = `mcp:${safeLabel(name)}`;
-    if (labels.has(label)) {
-      return {
-        surfaces: [],
-        error: {
-          name: "enterprise baseline attestation",
-          verdict: "fail",
-          code: "baseline.registry-invalid",
-          detail: `.mcp.json contains colliding MCP registry labels at ${label}`,
-          location: { uri: ".mcp.json" },
-          fingerprint: `baseline-invalid:mcp-label-collision:${label}`,
-        },
-      };
-    }
-    labels.add(label);
-    surfaces.push({
-      kind: "mcp",
-      id: name,
-      label,
-      metadata: mcpMetadata(value),
-      forceUndeclared: name.startsWith("aih-workspace-graph-") ? true : undefined,
-    });
   }
   return { surfaces };
 }
@@ -187,16 +291,28 @@ function parseMcpSurfaces(
 function parseSourceRef(
   source: string,
   commit: string,
-): Pick<CapabilitySurface, "owner" | "repo" | "pinnedSha"> {
+): { ref: Pick<CapabilitySurface, "owner" | "repo" | "pinnedSha">; error?: string } {
+  const commitSha = /^[0-9a-f]{40}$/i.test(commit) ? commit.toLowerCase() : undefined;
+  if (commitSha === undefined) {
+    return { ref: {}, error: "marketplace skill commit must be a 40-character Git SHA" };
+  }
   const normalized = source.replace(/^github:/, "");
   const match = /^([^/\s@]+)\/([^@\s]+)(?:@([0-9a-f]{40}))?$/i.exec(normalized);
-  if (!match?.[1] || !match[2]) return {};
-  if (!OWNER_REPO_PART_RE.test(match[1]) || !OWNER_REPO_PART_RE.test(match[2])) return {};
-  const commitSha = /^[0-9a-f]{40}$/i.test(commit) ? commit.toLowerCase() : undefined;
+  if (!match?.[1] || !match[2]) return { ref: {} };
+  if (!OWNER_REPO_PART_RE.test(match[1]) || !OWNER_REPO_PART_RE.test(match[2])) return { ref: {} };
+  const sourcePin = match[3]?.toLowerCase();
+  if (sourcePin !== undefined && sourcePin !== commitSha) {
+    return {
+      ref: {},
+      error: "marketplace skill source pin must match the packaged commit",
+    };
+  }
   return {
-    owner: match[1],
-    repo: match[2],
-    pinnedSha: (match[3] ?? commitSha)?.toLowerCase(),
+    ref: {
+      owner: match[1].toLowerCase(),
+      repo: match[2].toLowerCase(),
+      pinnedSha: commitSha,
+    },
   };
 }
 
@@ -219,35 +335,45 @@ function parseMarketplaceSurfaces(root: string): { surfaces: CapabilitySurface[]
       },
     };
   }
+  const surfaces: CapabilitySurface[] = [];
+  for (const skill of read.manifest.skills) {
+    const parsed = parseSourceRef(skill.source, skill.commit);
+    if (parsed.error) {
+      return {
+        surfaces: [],
+        error: {
+          name: "enterprise baseline attestation",
+          verdict: "fail",
+          code: "baseline.registry-invalid",
+          detail: `${skill.name}: ${parsed.error}`,
+          location: { uri: `${DEFAULT_MARKETPLACE_OUT}/marketplace.json` },
+          fingerprint: `baseline-invalid:marketplace-pin:${safeLabel(skill.name)}`,
+        },
+      };
+    }
+    const ref =
+      parsed.ref.owner && parsed.ref.repo
+        ? `${parsed.ref.owner}/${parsed.ref.repo}${
+            parsed.ref.pinnedSha ? `@${parsed.ref.pinnedSha.slice(0, 12)}` : ""
+          }`
+        : safeLabel(skill.source);
+    surfaces.push({
+      kind: "marketplace",
+      id: ref,
+      label: `marketplace:${ref}`,
+      metadata: `${skill.name}/${skill.verdict}`,
+      ...parsed.ref,
+    });
+  }
   return {
-    surfaces: read.manifest.skills
-      .map((skill) => {
-        const parsed = parseSourceRef(skill.source, skill.commit);
-        const ref =
-          parsed.owner && parsed.repo
-            ? `${parsed.owner}/${parsed.repo}${
-                parsed.pinnedSha ? `@${parsed.pinnedSha.slice(0, 12)}` : ""
-              }`
-            : safeLabel(skill.source);
-        return {
-          kind: "marketplace" as const,
-          id: ref,
-          label: `marketplace:${ref}`,
-          metadata: `${skill.name}/${skill.verdict}`,
-          ...parsed,
-        };
-      })
-      .sort((a, b) => a.label.localeCompare(b.label)),
+    surfaces: surfaces.sort((a, b) => a.label.localeCompare(b.label)),
   };
 }
 
-function collectSurfaces(
-  root: string,
-  contextDir: string,
-): { surfaces: CapabilitySurface[]; error?: Check } {
-  const mcp = parseMcpSurfaces(root, contextDir);
+function collectSurfaces(ctx: PlanContext): { surfaces: CapabilitySurface[]; error?: Check } {
+  const mcp = parseMcpSurfaces(ctx);
   if (mcp.error) return mcp;
-  const marketplace = parseMarketplaceSurfaces(root);
+  const marketplace = parseMarketplaceSurfaces(ctx.root);
   if (marketplace.error) return marketplace;
   return { surfaces: [...mcp.surfaces, ...marketplace.surfaces] };
 }
@@ -259,14 +385,21 @@ function isDeclared(surface: CapabilitySurface, policy: OrgPolicy): boolean {
     return allowed.has(surface.id) || allowed.has(surface.label);
   }
   if (!surface.owner || !surface.repo) return false;
+  if (!surface.pinnedSha) return false;
   return (policy.trust?.approvedSources ?? []).some((source) => {
-    if (source.owner !== surface.owner || source.repo !== surface.repo) return false;
-    return source.pinnedSha === undefined || source.pinnedSha.toLowerCase() === surface.pinnedSha;
+    if (
+      source.owner.toLowerCase() !== surface.owner ||
+      source.repo.toLowerCase() !== surface.repo
+    ) {
+      return false;
+    }
+    return source.pinnedSha?.toLowerCase() === surface.pinnedSha;
   });
 }
 
 function surfaceSummary(surface: CapabilitySurface): string {
-  return `${surface.label} (${surface.metadata})`;
+  const source = surface.sourceUri ? ` @ ${surface.sourceUri}` : "";
+  return `${surface.label}${source} (${surface.metadata})`;
 }
 
 export function enterpriseBaselineAttestationCheck(ctx: PlanContext): Check {
@@ -279,7 +412,7 @@ export function enterpriseBaselineAttestationCheck(ctx: PlanContext): Check {
     };
   }
 
-  const collected = collectSurfaces(ctx.root, ctx.contextDir);
+  const collected = collectSurfaces(ctx);
   if (collected.error) return collected.error;
   if (collected.surfaces.length === 0) {
     return {
@@ -336,6 +469,6 @@ export function enterpriseBaselineAttestationCheck(ctx: PlanContext): Check {
       "clean baseline attestation: " +
       `${collected.surfaces.length} external capability surface${
         collected.surfaces.length === 1 ? "" : "s"
-      } are declared registry members: ${collected.surfaces.map(surfaceSummary).join(", ")}`,
+      } ${collected.surfaces.length === 1 ? "is" : "are"} declared registry members: ${collected.surfaces.map(surfaceSummary).join(", ")}`,
   };
 }

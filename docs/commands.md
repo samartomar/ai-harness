@@ -356,11 +356,14 @@ Generate a devcontainer + managed sandbox settings (egress allowlist, `failIfUna
 Fail-closed verification of the workstation/repo configuration (+ workspace mode: validates each
 child repo). Includes a **canon markdown lint** (read-only) over the scaffolded `ai-coding/` tree.
 It remains read-only. `--posture enterprise` also runs the enterprise baseline attestation: MCP
-servers from `.mcp.json` and packaged marketplace skills from `.aih/marketplace/marketplace.json`
-must be declared in `aih-org-policy.json` (`mcp.allowedServers` / `trust.approvedSources`), or
-`doctor` emits coded `baseline.*` findings for a missing registry, invalid registry input, or
-undeclared residue. Workspace graph MCPs generated for declared child repos are treated as internal
-workspace plumbing; the full Package Graph schema remains the follow-on registry unification.
+servers from known repo-scoped MCP config files (`.mcp.json`, Cursor, Kiro, VS Code, and OpenCode)
+and packaged marketplace skills from `.aih/marketplace/marketplace.json` must be declared in
+`aih-org-policy.json` (`mcp.allowedServers` / `trust.approvedSources`), or `doctor` emits coded
+`baseline.*` findings for a missing registry, invalid registry input, or undeclared residue. MCP
+declarations are bound to the generated catalog's command/URL shape, and marketplace declarations
+must include the reviewed `pinnedSha` that matches the artifact's packaged commit. Workspace graph
+MCPs generated for declared child repos are treated as internal workspace plumbing; the full Package
+Graph schema remains the follow-on registry unification.
 
 ## aih status
 

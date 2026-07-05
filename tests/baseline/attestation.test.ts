@@ -1,6 +1,6 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { enterpriseBaselineAttestationCheck } from "../../src/baseline/attestation.js";
 import type { PlanContext } from "../../src/internals/plan.js";
@@ -9,6 +9,8 @@ import { makeHostAdapter } from "../../src/platform/detect.js";
 import { spanningMcp } from "../../src/workspace/templates.js";
 
 let dir: string;
+const A_SHA = "a".repeat(40);
+const B_SHA = "b".repeat(40);
 
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), "aih-baseline-attestation-"));
@@ -50,8 +52,24 @@ function writePolicy(
   );
 }
 
+function writeJson(rel: string, value: unknown): void {
+  const file = join(dir, rel);
+  mkdirSync(dirname(file), { recursive: true });
+  writeFileSync(file, JSON.stringify(value));
+}
+
+function writeText(rel: string, value: string): void {
+  const file = join(dir, rel);
+  mkdirSync(dirname(file), { recursive: true });
+  writeFileSync(file, value);
+}
+
 function writeMcp(servers: Record<string, unknown>): void {
-  writeFileSync(join(dir, ".mcp.json"), JSON.stringify({ mcpServers: servers }));
+  writeMcpConfig(".mcp.json", { mcpServers: servers });
+}
+
+function writeMcpConfig(rel: string, config: unknown): void {
+  writeJson(rel, config);
 }
 
 function writeWorkspaceManifest(repos: string[]): void {
@@ -68,9 +86,7 @@ function writeWorkspaceManifest(repos: string[]): void {
   );
 }
 
-function writeMarketplaceSkill(
-  source = "owner/repo@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-): void {
+function writeMarketplaceSkill(source = `owner/repo@${A_SHA}`, commit = A_SHA): void {
   mkdirSync(join(dir, ".aih", "marketplace"), { recursive: true });
   writeFileSync(
     join(dir, ".aih", "marketplace", "marketplace.json"),
@@ -81,7 +97,7 @@ function writeMarketplaceSkill(
         {
           name: "clean",
           source,
-          commit: "a".repeat(40),
+          commit,
           verdict: "GREEN",
           card: "cards/clean.json",
           evidence: "evidence/owner-repo-aaaaaaaa.json",
@@ -93,6 +109,48 @@ function writeMarketplaceSkill(
 }
 
 describe("enterprise baseline attestation", () => {
+  it("fails closed when external surfaces exist without a declared registry", () => {
+    writeMcp({
+      github: {
+        type: "http",
+        url: "https://api.githubcopilot.com/mcp/",
+      },
+    });
+
+    const check = enterpriseBaselineAttestationCheck(ctx());
+
+    expect(check).toMatchObject({
+      verdict: "fail",
+      code: "baseline.registry-missing",
+    });
+    expect(check.detail).toContain("mcp:github");
+    expect(check.detail).toContain("aih-org-policy.json");
+  });
+
+  it("fails closed when an MCP config is malformed JSON", () => {
+    writeText(".mcp.json", "{not-json");
+
+    const check = enterpriseBaselineAttestationCheck(ctx());
+
+    expect(check).toMatchObject({
+      verdict: "fail",
+      code: "baseline.registry-invalid",
+    });
+    expect(check.detail).toContain(".mcp.json is not valid JSON");
+  });
+
+  it("fails closed when the marketplace manifest is malformed", () => {
+    writeText(".aih/marketplace/marketplace.json", "{not-json");
+
+    const check = enterpriseBaselineAttestationCheck(ctx());
+
+    expect(check).toMatchObject({
+      verdict: "fail",
+      code: "baseline.registry-invalid",
+    });
+    expect(check.detail).toContain("marketplace artifact cannot be parsed");
+  });
+
   it("flags MCP servers that are not members of the declared registry", () => {
     writePolicy(["github"]);
     writeMcp({
@@ -123,11 +181,66 @@ describe("enterprise baseline attestation", () => {
     expect(check.detail).not.toContain("mcp:github is undeclared");
   });
 
+  it("attests MCP surfaces from non-root config files", () => {
+    writePolicy([]);
+    writeMcpConfig(".cursor/mcp.json", {
+      mcpServers: {
+        rogue: {
+          type: "http",
+          url: "https://rogue.example/mcp/",
+        },
+      },
+    });
+
+    const check = enterpriseBaselineAttestationCheck(ctx());
+
+    expect(check).toMatchObject({
+      verdict: "fail",
+      code: "baseline.undeclared-surface",
+    });
+    expect(check.detail).toContain("mcp:rogue @ .cursor/mcp.json");
+  });
+
+  it("rejects name-only MCP declarations when the configured endpoint drifts", () => {
+    writePolicy(["github"]);
+    writeMcp({
+      github: {
+        type: "http",
+        url: "https://evil.example/mcp/",
+      },
+    });
+
+    const check = enterpriseBaselineAttestationCheck(ctx());
+
+    expect(check).toMatchObject({
+      verdict: "fail",
+      code: "baseline.undeclared-surface",
+    });
+    expect(check.detail).toContain("mcp:github @ .mcp.json");
+  });
+
+  it("uses catalog authority instead of self-reported MCP risk metadata", () => {
+    writePolicy(["github"]);
+    writeMcp({
+      github: {
+        type: "http",
+        url: "https://api.githubcopilot.com/mcp/",
+        egress: "none",
+        credentials: "none",
+        supplyChain: "pinned",
+      },
+    });
+
+    const check = enterpriseBaselineAttestationCheck(ctx());
+
+    expect(check.verdict).toBe("pass");
+    expect(check.detail).toContain("mcp:github @ .mcp.json");
+    expect(check.detail).toContain("third-party/oauth/hosted-remote");
+    expect(check.detail).not.toContain("none/none/pinned");
+  });
+
   it("emits a positive attestation when every external surface is a registry member", () => {
-    writePolicy(
-      ["github", "context7"],
-      [{ owner: "owner", repo: "repo", pinnedSha: "a".repeat(40) }],
-    );
+    writePolicy(["github", "context7"], [{ owner: "owner", repo: "repo", pinnedSha: A_SHA }]);
     writeMcp({
       github: {
         type: "http",
@@ -151,14 +264,14 @@ describe("enterprise baseline attestation", () => {
     expect(check.verdict).toBe("pass");
     expect(check.detail).toContain("clean baseline attestation");
     expect(check.detail).toContain("mcp:github");
-    expect(check.detail).toContain("vendor-incumbent/oauth/hosted-remote");
+    expect(check.detail).toContain("third-party/oauth/hosted-remote");
     expect(check.detail).toContain("mcp:context7");
     expect(check.detail).toContain("marketplace:owner/repo@aaaaaaaaaaaa");
   });
 
   it("flags marketplace skills whose source is not registered", () => {
     writePolicy([]);
-    writeMarketplaceSkill("stranger/repo@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+    writeMarketplaceSkill(`stranger/repo@${A_SHA}`);
 
     const check = enterpriseBaselineAttestationCheck(ctx());
 
@@ -169,7 +282,7 @@ describe("enterprise baseline attestation", () => {
 
   it("sanitizes unsafe marketplace source labels before reporting them", () => {
     writePolicy([]);
-    writeMarketplaceSkill("owner/repo\u001b[31m@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+    writeMarketplaceSkill(`owner/repo\u001b[31m@${A_SHA}`);
 
     const check = enterpriseBaselineAttestationCheck(ctx());
 
@@ -177,6 +290,42 @@ describe("enterprise baseline attestation", () => {
     expect(check.code).toBe("baseline.undeclared-surface");
     expect(check.detail).toContain("marketplace:");
     expect(check.detail).not.toContain("\u001b");
+  });
+
+  it("fails closed when a marketplace source pin disagrees with the packaged commit", () => {
+    writePolicy([], [{ owner: "owner", repo: "repo", pinnedSha: B_SHA }]);
+    writeMarketplaceSkill(`owner/repo@${A_SHA}`, B_SHA);
+
+    const check = enterpriseBaselineAttestationCheck(ctx());
+
+    expect(check).toMatchObject({
+      verdict: "fail",
+      code: "baseline.registry-invalid",
+    });
+    expect(check.detail).toContain("source pin must match");
+  });
+
+  it("matches marketplace approved sources case-insensitively by owner and repo", () => {
+    writePolicy([], [{ owner: "Owner", repo: "Repo", pinnedSha: A_SHA }]);
+    writeMarketplaceSkill(`owner/repo@${A_SHA}`);
+
+    const check = enterpriseBaselineAttestationCheck(ctx());
+
+    expect(check.verdict).toBe("pass");
+    expect(check.detail).toContain("marketplace:owner/repo@aaaaaaaaaaaa");
+  });
+
+  it("does not treat unpinned marketplace approved sources as declared", () => {
+    writePolicy([], [{ owner: "owner", repo: "repo" }]);
+    writeMarketplaceSkill(`owner/repo@${A_SHA}`);
+
+    const check = enterpriseBaselineAttestationCheck(ctx());
+
+    expect(check).toMatchObject({
+      verdict: "fail",
+      code: "baseline.undeclared-surface",
+    });
+    expect(check.detail).toContain("marketplace:owner/repo@aaaaaaaaaaaa");
   });
 
   it("fails closed on unsafe MCP names instead of matching their sanitized label", () => {

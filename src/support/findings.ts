@@ -450,21 +450,21 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     failSeverity: "blocking",
     title: "enterprise baseline registry missing",
     action:
-      "Add the declared capability registry to `aih-org-policy.json` (`mcp.allowedServers` for MCP servers and `trust.approvedSources` for packaged marketplace skills), or remove the discovered surface before attesting the baseline.",
+      "Add the declared capability registry to `aih-org-policy.json` (`mcp.allowedServers` for catalog-bound MCP servers and pinned `trust.approvedSources` entries for packaged marketplace skills), or remove the discovered surface before attesting the baseline.",
   },
   "baseline.registry-invalid": {
     audience: "developer",
     failSeverity: "blocking",
     title: "enterprise baseline registry input invalid",
     action:
-      "Fix the invalid registry input named in the finding (`aih-org-policy.json`, `.mcp.json`, or the marketplace manifest), then re-run `aih doctor --posture enterprise`.",
+      "Fix the invalid registry input named in the finding (`aih-org-policy.json`, a repo-scoped MCP config, or the marketplace manifest), then re-run `aih doctor --posture enterprise`.",
   },
   "baseline.undeclared-surface": {
     audience: "developer",
     failSeverity: "blocking",
     title: "undeclared external capability surface detected",
     action:
-      "Declare each named MCP server or marketplace skill source in `aih-org-policy.json`, or remove the residue if it is not part of the approved capability set. Re-run `aih doctor --posture enterprise` once the registry and discovered surfaces agree.",
+      "Declare each named MCP server only when its configured command/URL matches the generated catalog, declare each marketplace skill source with a reviewed pinned SHA in `aih-org-policy.json`, or remove the residue if it is not part of the approved capability set. Re-run `aih doctor --posture enterprise` once the registry and discovered surfaces agree.",
   },
   "trust.hidden-unicode": {
     audience: "developer",
