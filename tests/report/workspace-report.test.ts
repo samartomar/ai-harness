@@ -47,7 +47,7 @@ function defaultGitRunner(): Runner {
     const tail = argv.slice(3).join(" ");
     if (tail === "rev-parse --is-inside-work-tree") return { stdout: "true\n" };
     if (tail === "rev-parse --abbrev-ref HEAD") return { stdout: "main\n" };
-    if (tail === "rev-parse --short HEAD") return { stdout: `${repo.slice(0, 6) || "abc123"}\n` };
+    if (tail === "rev-parse HEAD") return { stdout: `${repo.slice(0, 6) || "abc123"}\n` };
     if (tail === "status --porcelain") return { stdout: "" };
     if (tail === "rev-list --left-right --count HEAD...@{upstream}") {
       return { code: 1, stdout: "" };
@@ -536,7 +536,7 @@ describe("report workspace rollup", () => {
         return { code: 0, stdout: "true\n", stderr: "" };
       }
       if (tail === "rev-parse --abbrev-ref HEAD") return { code: 0, stdout: "main\n", stderr: "" };
-      if (tail === "rev-parse --short HEAD") {
+      if (tail === "rev-parse HEAD") {
         return { code: 0, stdout: `${repo ?? "abc123"}\n`, stderr: "" };
       }
       if (tail === "status --porcelain") return { code: 0, stdout: "", stderr: "" };
@@ -569,7 +569,7 @@ describe("report workspace rollup", () => {
         return { code: 0, stdout: "true\n", stderr: "" };
       }
       if (tail === "rev-parse --abbrev-ref HEAD") return { code: 0, stdout: "main\n", stderr: "" };
-      if (tail === "rev-parse --short HEAD") {
+      if (tail === "rev-parse HEAD") {
         return { code: 0, stdout: `${repo ?? "abc123"}\n`, stderr: "" };
       }
       if (tail === "status --porcelain") return { code: 0, stdout: "", stderr: "" };

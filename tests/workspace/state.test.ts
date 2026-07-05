@@ -81,7 +81,8 @@ describe("workspace state collection", () => {
       if (tail === "rev-parse --is-inside-work-tree")
         return { code: 0, stdout: "true\n", stderr: "" };
       if (tail === "rev-parse --abbrev-ref HEAD") return { code: 0, stdout: "main\n", stderr: "" };
-      if (tail === "rev-parse --short HEAD") return { code: 0, stdout: "abc123\n", stderr: "" };
+      if (tail === "rev-parse HEAD")
+        return { code: 0, stdout: "abcdef0123456789abcdef0123456789abcdef01\n", stderr: "" };
       if (tail === "status --porcelain") return { code: 0, stdout: "", stderr: "" };
       if (tail === "rev-list --left-right --count HEAD...@{upstream}") {
         return { code: 0, stdout: "1\t2\n", stderr: "" };
@@ -101,7 +102,8 @@ describe("workspace state collection", () => {
       if (tail === "rev-parse --is-inside-work-tree")
         return { code: 0, stdout: "true\n", stderr: "" };
       if (tail === "rev-parse --abbrev-ref HEAD") return { code: 0, stdout: "main\n", stderr: "" };
-      if (tail === "rev-parse --short HEAD") return { code: 0, stdout: "abc123\n", stderr: "" };
+      if (tail === "rev-parse HEAD")
+        return { code: 0, stdout: "abcdef0123456789abcdef0123456789abcdef01\n", stderr: "" };
       if (tail === "status --porcelain") return { code: 0, stdout: "", stderr: "" };
       if (tail === "config --local --get remote.origin.url") {
         return { code: 0, stdout: "https://github.com/acme/ui.git\n", stderr: "" };
@@ -113,7 +115,7 @@ describe("workspace state collection", () => {
       id: "ui",
       path: "ui",
       branch: "main",
-      sha: "abc123",
+      sha: "abcdef0123456789abcdef0123456789abcdef01",
       remote: "https://github.com/acme/ui.git",
       dirty: false,
       git: true,
@@ -126,7 +128,8 @@ describe("workspace state collection", () => {
       if (tail === "rev-parse --is-inside-work-tree")
         return { code: 0, stdout: "true\n", stderr: "" };
       if (tail === "rev-parse --abbrev-ref HEAD") return { code: 0, stdout: "main\n", stderr: "" };
-      if (tail === "rev-parse --short HEAD") return { code: 0, stdout: "abc123\n", stderr: "" };
+      if (tail === "rev-parse HEAD")
+        return { code: 0, stdout: "abcdef0123456789abcdef0123456789abcdef01\n", stderr: "" };
       if (tail === "status --porcelain") return { code: 0, stdout: "", stderr: "" };
       if (tail === "config --local --get remote.origin.url") {
         return { code: 1, stdout: "", stderr: "" };
@@ -145,7 +148,8 @@ describe("workspace state collection", () => {
       if (tail === "rev-parse --is-inside-work-tree")
         return { code: 0, stdout: "true\n", stderr: "" };
       if (tail === "rev-parse --abbrev-ref HEAD") return { code: 0, stdout: "main\n", stderr: "" };
-      if (tail === "rev-parse --short HEAD") return { code: 0, stdout: "abc123\n", stderr: "" };
+      if (tail === "rev-parse HEAD")
+        return { code: 0, stdout: "abcdef0123456789abcdef0123456789abcdef01\n", stderr: "" };
       if (tail === "status --porcelain") return { code: 0, stdout: "", stderr: "" };
       if (tail === "config --local --get remote.origin.url") {
         return { code: 0, stdout: "https://token@github.com/acme/ui.git\n", stderr: "" };
@@ -164,7 +168,8 @@ describe("workspace state collection", () => {
       if (tail === "rev-parse --is-inside-work-tree")
         return { code: 0, stdout: "true\n", stderr: "" };
       if (tail === "rev-parse --abbrev-ref HEAD") return { code: 0, stdout: "main\n", stderr: "" };
-      if (tail === "rev-parse --short HEAD") return { code: 0, stdout: "abc123\n", stderr: "" };
+      if (tail === "rev-parse HEAD")
+        return { code: 0, stdout: "abcdef0123456789abcdef0123456789abcdef01\n", stderr: "" };
       if (tail === "status --porcelain") return { code: 0, stdout: "", stderr: "" };
       if (tail === "config --local --get remote.origin.url") {
         return { code: 0, stdout: "git@github.com:acme/ui.git\n", stderr: "" };
@@ -185,7 +190,8 @@ describe("workspace state collection", () => {
       if (tail === "rev-parse --is-inside-work-tree")
         return { code: 0, stdout: "true\n", stderr: "" };
       if (tail === "rev-parse --abbrev-ref HEAD") return { code: 0, stdout: "main\n", stderr: "" };
-      if (tail === "rev-parse --short HEAD") return { code: 0, stdout: "abc123\n", stderr: "" };
+      if (tail === "rev-parse HEAD")
+        return { code: 0, stdout: "abcdef0123456789abcdef0123456789abcdef01\n", stderr: "" };
       if (tail === "status --porcelain") return { code: 0, stdout: "", stderr: "" };
       if (tail === "config --local --get remote.origin.url") {
         return { code: 1, stdout: "", stderr: "" };
@@ -240,7 +246,8 @@ describe("workspace state collection", () => {
       if (tail === "rev-parse --is-inside-work-tree")
         return { code: 0, stdout: "true\n", stderr: "" };
       if (tail === "rev-parse --abbrev-ref HEAD") return { code: 0, stdout: "main\n", stderr: "" };
-      if (tail === "rev-parse --short HEAD") return { code: 0, stdout: "abc123\n", stderr: "" };
+      if (tail === "rev-parse HEAD")
+        return { code: 0, stdout: "abcdef0123456789abcdef0123456789abcdef01\n", stderr: "" };
       if (tail === "status --porcelain") return { code: 0, stdout: "", stderr: "" };
       if (tail === "config --local --get remote.origin.url") {
         return { code: 0, stdout: "https://github.com/acme/observed.git\n", stderr: "" };
@@ -272,7 +279,8 @@ describe("workspace state collection", () => {
         return { code: 0, stdout: "true\n", stderr: "" };
       }
       if (tail === "rev-parse --abbrev-ref HEAD") return { code: 0, stdout: "main\n", stderr: "" };
-      if (tail === "rev-parse --short HEAD") return { code: 0, stdout: "abc123\n", stderr: "" };
+      if (tail === "rev-parse HEAD")
+        return { code: 0, stdout: "abcdef0123456789abcdef0123456789abcdef01\n", stderr: "" };
       if (tail === "status --porcelain") return { code: 0, stdout: "", stderr: "" };
       return { code: 1, stdout: "", stderr: "" };
     };
@@ -295,7 +303,8 @@ describe("workspace state collection", () => {
         return { code: 0, stdout: "true\n", stderr: "" };
       }
       if (tail === "rev-parse --abbrev-ref HEAD") return { code: 0, stdout: "main\n", stderr: "" };
-      if (tail === "rev-parse --short HEAD") return { code: 0, stdout: "abc123\n", stderr: "" };
+      if (tail === "rev-parse HEAD")
+        return { code: 0, stdout: "abcdef0123456789abcdef0123456789abcdef01\n", stderr: "" };
       if (tail === "status --porcelain") return { code: 0, stdout: "", stderr: "" };
       return { code: 1, stdout: "", stderr: "" };
     };
@@ -321,7 +330,8 @@ describe("workspace state collection", () => {
       if (tail === "rev-parse --is-inside-work-tree")
         return { code: 0, stdout: "true\n", stderr: "" };
       if (tail === "rev-parse --abbrev-ref HEAD") return { code: 0, stdout: "main\n", stderr: "" };
-      if (tail === "rev-parse --short HEAD") return { code: 0, stdout: "abc123\n", stderr: "" };
+      if (tail === "rev-parse HEAD")
+        return { code: 0, stdout: "abcdef0123456789abcdef0123456789abcdef01\n", stderr: "" };
       if (tail === "status --porcelain") return { code: 0, stdout: "", stderr: "" };
       if (tail === "config --local --get remote.origin.url") {
         return { code: 0, stdout: "https://github.com/acme/ui.git\n", stderr: "" };
@@ -339,7 +349,7 @@ describe("workspace state collection", () => {
         id: "ui",
         path: "ui",
         branch: "main",
-        sha: "abc123",
+        sha: "abcdef0123456789abcdef0123456789abcdef01",
         remote: "https://github.com/acme/ui.git",
         dirty: false,
         git: true,

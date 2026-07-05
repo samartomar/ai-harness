@@ -133,6 +133,12 @@ per-repo discipline, a VS Code `.code-workspace`, graph MCP scoped per declared 
 With `--git`, the generated `.gitignore` defensively ignores all immediate child Git repos, including
 ones outside the declared workspace scope.
 
+Nested helpers keep the parent bridge current: `aih workspace snapshot --lock --apply` records the
+declared child repo branch/SHA/remotes, and `aih workspace hydrate [root]` restores from that
+metadata by planning clones for missing children and clean checkouts for present children that are at
+the wrong recorded ref. Hydrate never edits remote configuration; a child with no recorded remote is
+skipped with an operator note.
+
 **Skill governance & supply chain**
 
 ## aih trust

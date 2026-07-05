@@ -516,7 +516,8 @@ describe("workspace snapshot command", () => {
       const tail = argv.slice(3).join(" ");
       if (tail === "rev-parse --is-inside-work-tree") return { stdout: "true\n" };
       if (tail === "rev-parse --abbrev-ref HEAD") return { stdout: "main\n" };
-      if (tail === "rev-parse --short HEAD") return { stdout: "abc123\n" };
+      if (tail === "rev-parse HEAD")
+        return { stdout: "abcdef0123456789abcdef0123456789abcdef01\n" };
       if (tail === "status --porcelain") return { stdout: "" };
       return undefined;
     });
@@ -532,7 +533,15 @@ describe("workspace snapshot command", () => {
     expect(snapshot?.json).toMatchObject({
       schemaVersion: 1,
       label: "known good",
-      repos: [{ id: "ui", path: "ui", branch: "main", sha: "abc123", dirty: false }],
+      repos: [
+        {
+          id: "ui",
+          path: "ui",
+          branch: "main",
+          sha: "abcdef0123456789abcdef0123456789abcdef01",
+          dirty: false,
+        },
+      ],
     });
     expect(writes.get(".gitignore")?.contents).toContain(".aih/");
   });

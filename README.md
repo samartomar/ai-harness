@@ -126,7 +126,7 @@ One honest line per command — the long-form behavior detail for every command 
 | [`aih ecc`](docs/commands.md#aih-ecc) | Install affaan-m/ECC (skills, instincts, memory) for the selected CLIs via ECC's own installer. |
 | [`aih superpowers`](docs/commands.md#aih-superpowers) | Install obra/Superpowers (brainstorm → plan → TDD → subagent-review skills) for the selected CLIs. |
 | [`aih crispy`](docs/commands.md#aih-crispy) | Run the CRISPY context-engineering stage machine (deterministic, gate-ordered). |
-| [`aih workspace`](docs/commands.md#aih-workspace) | Scaffold a multi-repo workspace at the parent folder: cross-repo map, declared-repo graph MCP, `.code-workspace`. |
+| [`aih workspace`](docs/commands.md#aih-workspace) | Scaffold and restore a multi-repo workspace at the parent folder: cross-repo map, declared-repo graph MCP, snapshots, hydrate. |
 
 ### Skill governance & supply chain
 
@@ -324,6 +324,9 @@ It writes, at the parent (it does **not** touch the child repos — run `aih ini
 - `aih workspace snapshot --lock --apply` also writes each child repo's local `origin` URL into
   `<context-dir>/workspace-lock.json` when present, so a lock captures both the commit and fetch
   location. It reads only child-local Git config and never fetches.
+- `aih workspace hydrate --apply` restores a declared workspace from `.aih-workspace.json` plus the
+  committed workspace lock: missing children are cloned from recorded remotes, present clean children
+  are checked out to the recorded ref, and children with no recorded remote are skipped with a note.
 
 ### Support tickets
 

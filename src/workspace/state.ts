@@ -78,7 +78,7 @@ export async function readWorkspaceRepoState(
   if (!inside) return { id: repo.id, path: repo.path, dirty: false, git: false };
   const [branch, sha, status, upstream, remote] = await Promise.all([
     gitChildRead(ctx, repo, ["rev-parse", "--abbrev-ref", "HEAD"]),
-    gitChildRead(ctx, repo, ["rev-parse", "--short", "HEAD"]),
+    gitChildRead(ctx, repo, ["rev-parse", "HEAD"]),
     gitChildRead(ctx, repo, ["status", "--porcelain"]),
     gitChildRead(ctx, repo, ["rev-list", "--left-right", "--count", "HEAD...@{upstream}"]),
     repo.remote === undefined ? readWorkspaceRepoRemote(ctx, repo) : Promise.resolve(repo.remote),
