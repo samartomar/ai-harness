@@ -80,7 +80,8 @@ async function writeZedThreadsDb(dbPath: string, fixture: ZedThreadFixture): Pro
   }
 }
 
-const zedSqliteDescribe = builtinModules.includes("node:sqlite") ? describe : describe.skip;
+const hasNodeSqlite = builtinModules.includes("node:sqlite") || builtinModules.includes("sqlite");
+const zedSqliteDescribe = hasNodeSqlite ? describe : describe.skip;
 
 const EVENTS: UsageEvent[] = [
   { tool: "git", kind: "commit", added: 10, removed: 3, files: 2 },
