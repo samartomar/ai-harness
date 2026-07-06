@@ -47,6 +47,7 @@ describe("CLI program", () => {
       "list",
       "pin",
       "scan",
+      "skillspector-pin",
       "verify",
     ]);
   });

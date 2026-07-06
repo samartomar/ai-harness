@@ -15,10 +15,17 @@ import { AIH_ORG_POLICY_FILE } from "../org-policy/constants.js";
 import { type OrgPolicy, readOrgPolicy } from "../org-policy/schema.js";
 import { isSafeGitRefName, localFileHash, scrubFetchEnv } from "./fetch.js";
 import { gradeTrustCheck } from "./grade.js";
+import {
+  SKILLSPECTOR_IMAGE,
+  SKILLSPECTOR_IMAGE_DIGEST,
+  SKILLSPECTOR_SOURCE_REVISION,
+} from "./images.js";
 import { readTrustLock, type TrustLockSource } from "./lock.js";
 
 const OWNER_REPO = /^([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)$/;
 const LOWER_FULL_SHA = /^[0-9a-f]{40}$/;
+const IMAGE_DIGEST = /^sha256:[0-9a-f]{64}$/;
+const SKILLSPECTOR_UPSTREAM_REPO = "NVIDIA/SkillSpector";
 
 export interface OwnerRepo {
   owner: string;
@@ -49,6 +56,51 @@ function optionPin(ctx: PlanContext, required = false): string | undefined {
     throw new AihError("--pin must be a lowercase 40-character Git commit SHA", "AIH_TRUST");
   }
   return pin;
+}
+
+function optionCandidateRevision(ctx: PlanContext): string | undefined {
+  const raw = ctx.options.candidateRevision;
+  if (raw === undefined) return undefined;
+  if (typeof raw !== "string" || raw.trim().length === 0) {
+    throw new AihError(
+      "--candidate-revision must be a lowercase 40-character Git commit SHA",
+      "AIH_TRUST",
+    );
+  }
+  const revision = raw.trim();
+  if (!LOWER_FULL_SHA.test(revision)) {
+    throw new AihError(
+      "--candidate-revision must be a lowercase 40-character Git commit SHA",
+      "AIH_TRUST",
+    );
+  }
+  return revision;
+}
+
+function optionCandidateTag(ctx: PlanContext): string | undefined {
+  const raw = ctx.options.candidateTag;
+  if (raw === undefined) return undefined;
+  if (typeof raw !== "string" || raw.trim().length === 0) {
+    throw new AihError("--candidate-tag must be a non-empty image tag", "AIH_TRUST");
+  }
+  const tag = raw.trim();
+  if (/\s/.test(tag)) {
+    throw new AihError("--candidate-tag must not contain whitespace", "AIH_TRUST");
+  }
+  return tag;
+}
+
+function optionCandidateDigest(ctx: PlanContext): string | undefined {
+  const raw = ctx.options.candidateDigest;
+  if (raw === undefined) return undefined;
+  if (typeof raw !== "string" || raw.trim().length === 0) {
+    throw new AihError("--candidate-digest must be sha256:<64 lowercase hex chars>", "AIH_TRUST");
+  }
+  const imageDigest = raw.trim();
+  if (!IMAGE_DIGEST.test(imageDigest)) {
+    throw new AihError("--candidate-digest must be sha256:<64 lowercase hex chars>", "AIH_TRUST");
+  }
+  return imageDigest;
 }
 
 function emptyPolicy(ctx: PlanContext): OrgPolicy {
@@ -155,6 +207,80 @@ function trustListText(ctx: PlanContext): string {
     "Local trust-lock evidence:",
     lock.sources.length > 0 ? lock.sources.map(trustLockLabel).join("\n") : "  (none)",
   ].join("\n");
+}
+
+function skillspectorCompareUrl(candidateRevision: string): string {
+  return `https://github.com/${SKILLSPECTOR_UPSTREAM_REPO}/compare/${SKILLSPECTOR_SOURCE_REVISION}...${candidateRevision}`;
+}
+
+function skillspectorPinText(ctx: PlanContext): string {
+  const candidateRevision = optionCandidateRevision(ctx);
+  const candidateTag = optionCandidateTag(ctx);
+  const candidateDigest = optionCandidateDigest(ctx);
+  const lines = [
+    "Pinned SkillSpector image:",
+    `  Image tag: ${SKILLSPECTOR_IMAGE}`,
+    `  Upstream commit: ${SKILLSPECTOR_SOURCE_REVISION}`,
+    `  Image digest: ${SKILLSPECTOR_IMAGE_DIGEST}`,
+  ];
+  if (
+    candidateRevision !== undefined ||
+    candidateTag !== undefined ||
+    candidateDigest !== undefined
+  ) {
+    lines.push("", "Candidate SkillSpector pin:");
+    if (candidateTag !== undefined) lines.push(`  Image tag: ${candidateTag}`);
+    if (candidateRevision !== undefined) lines.push(`  Upstream commit: ${candidateRevision}`);
+    if (candidateDigest !== undefined) lines.push(`  Image digest: ${candidateDigest}`);
+    if (candidateRevision !== undefined && candidateRevision !== SKILLSPECTOR_SOURCE_REVISION) {
+      lines.push(`  Upstream diff: ${skillspectorCompareUrl(candidateRevision)}`);
+    }
+  }
+  return lines.join("\n");
+}
+
+function skillspectorPinChecks(ctx: PlanContext): Check[] {
+  const candidateRevision = optionCandidateRevision(ctx);
+  const candidateTag = optionCandidateTag(ctx);
+  const candidateDigest = optionCandidateDigest(ctx);
+  const checks: Check[] = [
+    {
+      name: "trust skillspector pin",
+      verdict: "pass",
+      detail: `pinned ${SKILLSPECTOR_IMAGE} at ${SKILLSPECTOR_SOURCE_REVISION} (${SKILLSPECTOR_IMAGE_DIGEST})`,
+    },
+  ];
+
+  if (candidateRevision !== undefined && candidateRevision !== SKILLSPECTOR_SOURCE_REVISION) {
+    checks.push({
+      name: "trust skillspector upstream diff",
+      verdict: "fail",
+      code: "trust.source-drift",
+      detail: `candidate SkillSpector upstream commit ${candidateRevision} differs from pinned ${SKILLSPECTOR_SOURCE_REVISION}; review upstream diff before accepting pin bump: ${skillspectorCompareUrl(candidateRevision)}`,
+      fingerprint: `trust-skillspector-pin:bump:${candidateRevision.slice(0, 12)}`,
+    });
+  }
+
+  const existingTagReused = candidateTag === SKILLSPECTOR_IMAGE;
+  const revisionChanged =
+    candidateRevision !== undefined && candidateRevision !== SKILLSPECTOR_SOURCE_REVISION;
+  const digestChanged =
+    candidateDigest !== undefined && candidateDigest !== SKILLSPECTOR_IMAGE_DIGEST;
+  if (existingTagReused && (revisionChanged || digestChanged)) {
+    const changes = [
+      revisionChanged ? `upstream commit ${candidateRevision}` : undefined,
+      digestChanged ? `digest ${candidateDigest}` : undefined,
+    ].filter((change): change is string => change !== undefined);
+    checks.push({
+      name: "trust skillspector retag",
+      verdict: "fail",
+      code: "trust.source-changed",
+      detail: `retagging existing SkillSpector image tag ${SKILLSPECTOR_IMAGE} with ${changes.join(" and ")} is not accepted; use a new tag after reviewing the upstream diff`,
+      fingerprint: `trust-skillspector-pin:retag:${SKILLSPECTOR_IMAGE}`,
+    });
+  }
+
+  return checks;
 }
 
 function lockSourcesFor(ctx: PlanContext): TrustLockSource[] {
@@ -397,6 +523,33 @@ export const trustListCommand: CommandSpec = {
   name: "list",
   summary: "List committed trust policy sources and local trust-lock evidence",
   plan: (ctx) => plan("trust list", digest("trust sources", trustListText(ctx))),
+};
+
+export const trustSkillspectorPinCommand: CommandSpec = {
+  name: "skillspector-pin",
+  summary: "Report and review the pinned SkillSpector analyzer image",
+  options: [
+    {
+      flags: "--candidate-revision <sha>",
+      description:
+        "proposed upstream SkillSpector commit SHA to compare before accepting a pin bump",
+    },
+    {
+      flags: "--candidate-tag <tag>",
+      description: "proposed SkillSpector image tag",
+    },
+    {
+      flags: "--candidate-digest <digest>",
+      description: "proposed SkillSpector image digest as sha256:<64 lowercase hex chars>",
+    },
+  ],
+  plan: (ctx) =>
+    plan(
+      "trust skillspector-pin",
+      digest("skillspector pin", skillspectorPinText(ctx)),
+      structuredChecksProbe("trust skillspector pin", () => skillspectorPinChecks(ctx)),
+    ),
+  alwaysVerify: true,
 };
 
 export const trustVerifyCommand: CommandSpec = {
