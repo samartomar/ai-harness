@@ -466,14 +466,7 @@ function acceptedAcknowledgementFingerprints(report: VerificationReport | undefi
 function promotionBlockingChecks(checks: readonly Check[]): Check[] {
   return checks.flatMap((check) => {
     if (check.verdict === "fail") return [check];
-    if (check.code !== "trust.sandbox-smoke-unavailable") return [];
-    return [
-      {
-        ...check,
-        verdict: "fail" as const,
-        detail: `promotion blocked (${check.code}): ${check.detail ?? check.name}`,
-      },
-    ];
+    return [];
   });
 }
 

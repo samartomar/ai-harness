@@ -90,7 +90,11 @@ export function skillVerdict(
   ) {
     escalate("UNKNOWN", "sandbox smoke test failed; runtime evidence is insufficient");
   }
-  if (checks.some((check) => check.code === "trust.sandbox-smoke-unavailable")) {
+  if (
+    checks.some(
+      (check) => check.verdict === "fail" && check.code === "trust.sandbox-smoke-unavailable",
+    )
+  ) {
     escalate("UNKNOWN", "sandbox smoke test was unavailable; runtime evidence is insufficient");
   }
   if (!opts.pinned) {

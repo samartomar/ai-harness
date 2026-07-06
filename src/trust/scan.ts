@@ -653,10 +653,9 @@ export async function scanTrustTreeWithAnalyzers(
         })
       : { checks: [], analyzersRun: [] };
   const effectiveSandboxSmokeShape = sandboxSmokeShape ?? sandboxSmokeShapeForTrustScan(safeRoot);
-  const sandboxSmokeChecks =
-    effectiveSandboxSmokeShape === undefined
-      ? []
-      : [await sandboxSmokeCheck(safeRoot, effectiveSandboxSmokeShape, { env, platform, run })];
+  const sandboxSmokeChecks = [
+    await sandboxSmokeCheck(safeRoot, effectiveSandboxSmokeShape, { env, platform, run }),
+  ];
   const nonSmokeChecks = [...checks, ...detectorResult.checks, ...mcpDetectorResult.checks];
   const allChecks =
     nonSmokeChecks.length > 0
