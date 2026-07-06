@@ -1,5 +1,5 @@
-import type { McpServer } from "../mcp/servers.js";
 import { PROVIDER_TOKEN_PATTERNS } from "../guardrails/token-patterns.js";
+import type { McpServer } from "../mcp/servers.js";
 
 const TOKEN_PATTERNS: readonly RegExp[] = [
   /AKIA[0-9A-Z]{16}/,

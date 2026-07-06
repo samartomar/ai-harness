@@ -44,10 +44,7 @@ describe("redactSecrets() — secret fixtures", () => {
       ["Slack", `xoxb-${"a".repeat(12)}-${"b".repeat(12)}`],
       ["GCP", `AIza${"A".repeat(35)}`],
       ["Azure account key", `AccountKey=${"a".repeat(86)}==`],
-      [
-        "Azure SAS",
-        "SharedAccessSignature=sv=2024-01-01&sr=b&sig=abcDEF123%2B456%3D",
-      ],
+      ["Azure SAS", "SharedAccessSignature=sv=2024-01-01&sr=b&sig=abcDEF123%2B456%3D"],
       ["npm", `npm_${"a".repeat(36)}`],
     ] as const;
 
