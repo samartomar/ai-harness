@@ -19,6 +19,12 @@ import { aggregateUsage } from "./aggregate.js";
 import { gitPostCommitChainSnippet, gitPostCommitHook, usageRecorderScript } from "./capture.js";
 import { readUsage, USAGE_PATH, type UsageEvent } from "./events.js";
 import { usageHookActions } from "./hooks.js";
+import {
+  existingUsageLog,
+  readZedUsageEvents,
+  usageLogWithZedEvents,
+  zedThreadsDbPath,
+} from "./zed.js";
 
 const RECORDER_PATH = join(".aih", "usage-record.mjs");
 const GIT_HOOK_PATH = join(".git", "hooks", "post-commit");
@@ -40,7 +46,7 @@ const TOOL_HOOK: Partial<Record<string, string>> = {
   kimi: "`.kimi/config.toml` `[[hooks]]` → `PostToolUse`",
   kiro: "`.kiro/hooks/*.kiro.hook` Run Command (aih already generates these)",
   antigravity: "`.agents/hooks.json` → `PostToolUse`",
-  zed: "no hooks — parse `threads.db` SQLite (deferred)",
+  zed: "`threads.db` SQLite capture (no local hook surface)",
 };
 
 /** The recorder one-liner a per-tool hook calls to log a skill/MCP event. */
@@ -125,6 +131,8 @@ async function usagePlan(ctx: PlanContext): Promise<Plan> {
   if (roots.length > 0) return usageRollupPlan(ctx, roots);
 
   const { clis } = await resolveTargets(ctx);
+  const zedDbPath = clis.includes("zed") ? zedThreadsDbPath(ctx) : undefined;
+  const zedEvents = zedDbPath === undefined ? [] : await readZedUsageEvents(zedDbPath, ctx.root);
   const actions: Action[] = [
     writeText(
       RECORDER_PATH,
@@ -142,6 +150,15 @@ async function usagePlan(ctx: PlanContext): Promise<Plan> {
     ...usageHookActions(ctx, clis),
     coverageDoc(clis),
   ];
+  if (zedDbPath !== undefined && zedEvents.length > 0) {
+    actions.push(
+      writeText(
+        USAGE_PATH,
+        usageLogWithZedEvents(existingUsageLog(ctx), zedEvents) ?? "",
+        `Zed threads.db usage import — ${zedEvents.length} local event(s) from ${zedDbPath}`,
+      ),
+    );
+  }
 
   // A pre-existing post-commit hook is preserved (write-once above), so the capture
   // would otherwise never fire. Hand over a chainable snippet to add to it. (AIH-USAGE-001)
@@ -194,6 +211,10 @@ export const command: CommandSpec = {
       flags: "--rollup <dirs>",
       description:
         "read comma-separated repo dirs' .aih/usage.jsonl files and emit a local cross-project digest",
+    },
+    {
+      flags: "--zed-threads-db <path>",
+      description: "read a specific Zed threads.db SQLite file when capturing zed usage samples",
     },
   ],
   plan: usagePlan,

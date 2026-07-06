@@ -220,6 +220,34 @@ function usageActive(): DigestAction {
   });
 }
 
+function usageZedActive(): DigestAction {
+  return digest("Usage — 4 events · zed", "body", {
+    total: 4,
+    tools: [{ name: "zed", count: 4 }],
+    commits: { count: 0, added: 0, removed: 0, files: 0 },
+    tokens: {
+      input: 120,
+      output: 30,
+      cacheRead: 90,
+      cacheCreation: 10,
+      total: 250,
+      cacheEfficiencyPct: 43,
+    },
+    skills: {
+      top: [{ name: "planner", count: 1 }],
+      bySource: {
+        ecc: [{ name: "planner", count: 1 }],
+        canon: [],
+        user: [],
+      },
+    },
+    mcp: {
+      servers: [{ name: "context7", count: 1 }],
+      tools: [{ name: "resolve-library-id", count: 1 }],
+    },
+  });
+}
+
 function usageWithoutSkillSamples(): DigestAction {
   return digest("Usage — 2 events · 1 tool(s) · 0 skill calls", "body", {
     total: 2,
@@ -557,6 +585,17 @@ describe("buildAihDataV9 — panels + gating", () => {
     expect(html).toContain("Cache economy");
     expect(html).toContain("75% cache-served");
     expect(html).not.toContain("design intent until wired");
+  });
+
+  it("flips Zed usage and skill panels live from captured threads.db samples", () => {
+    const active = ALL.filter((d) => !d.describe.startsWith("Usage"));
+    const d = buildAihDataV9([...active, usageZedActive()]);
+    expect(d.gates["cap-usage"]).toBe("live");
+    expect(d.gates["sec-skills"]).toBe("live");
+    expect(d.activity?.usageByCli.map(([cli, pct, , calls]) => [cli, pct, calls])).toEqual([
+      ["zed", 100, 4],
+    ]);
+    expect(d.skills?.heavyLifters).toEqual([["planner · ecc", 1]]);
   });
 
   it("renders an honest v9 cache-economy stub when no local token samples exist", () => {
