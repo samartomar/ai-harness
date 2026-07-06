@@ -76,7 +76,7 @@ function syncTargets(ctx: PlanContext): SyncTarget[] {
 
 function relWithin(root: string, abs: string): string {
   const rel = relative(root, abs).replace(/\\/g, "/");
-  if (rel.length === 0 || rel === ".." || rel.startsWith("../")) {
+  if (rel.length === 0 || rel === ".." || rel.startsWith("../") || /^[A-Za-z]:\//.test(rel)) {
     throw refuse(`refusing skill file outside source root: ${abs}`);
   }
   return rel;
