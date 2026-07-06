@@ -25,6 +25,11 @@ import {
   snykAgentScanArgv,
 } from "../../src/trust/detectors.js";
 import {
+  SKILLSPECTOR_IMAGE,
+  SKILLSPECTOR_IMAGE_DIGEST,
+  SKILLSPECTOR_SOURCE_REVISION,
+} from "../../src/trust/images.js";
+import {
   scanTrustTree,
   scanTrustTreeWithAnalyzers,
   trustScanCommand,
@@ -72,8 +77,10 @@ function successfulSkillspector(argv: string[]): Partial<Awaited<ReturnType<Runn
   if (argv[1] === "image" && argv[2] === "inspect") {
     return {
       code: 0,
-      stdout:
-        '{"Id":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","Config":{"Labels":{"org.opencontainers.image.revision":"326a2b489411a20ed742ff13701be39ba00063c8"}}}\n',
+      stdout: JSON.stringify({
+        Id: SKILLSPECTOR_IMAGE_DIGEST,
+        RepoDigests: [`skillspector@${SKILLSPECTOR_IMAGE_DIGEST}`],
+      }),
     };
   }
   if (argv[1] === "run") return { code: 0, stdout: JSON.stringify(EMPTY_SARIF) };
@@ -877,6 +884,52 @@ describe("scanTrustTree", () => {
     );
   });
 
+  it("rejects a self-labeled SkillSpector image whose digest is not allowlisted", async () => {
+    skill("skills/clean", "# Clean\n");
+    const dockerRuns: string[][] = [];
+    const detector = fakeRunner((argv) => {
+      if (argv[0] !== "docker") return undefined;
+      if (argv[1] === "--version") return { code: 0, stdout: "Docker version 27\n" };
+      if (argv[1] === "image" && argv[2] === "inspect") {
+        return {
+          code: 0,
+          stdout: JSON.stringify({
+            Id: "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            Config: {
+              Labels: {
+                "org.opencontainers.image.revision": SKILLSPECTOR_SOURCE_REVISION,
+              },
+            },
+          }),
+        };
+      }
+      if (argv[1] === "run") {
+        dockerRuns.push(argv);
+        return { code: 0, stdout: JSON.stringify(EMPTY_SARIF) };
+      }
+      return undefined;
+    });
+
+    const result = await scanTrustTreeWithAnalyzers(dir, {
+      env: {},
+      platform: "linux",
+      posture: "vibe",
+      run: detector,
+    });
+
+    expect(result.analyzersRun).toEqual(["aih-native"]);
+    expect(result.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          verdict: "skip",
+          code: "trust.detector-unavailable",
+          detail: expect.stringContaining("could not verify expected image digest"),
+        }),
+      ]),
+    );
+    expect(dockerRuns).toEqual([]);
+  });
+
   it("maps stubbed SkillSpector SARIF rule IDs into trust checks", async () => {
     skill("skills/clean", "# Clean\n");
     const sarif = {
@@ -912,13 +965,15 @@ describe("scanTrustTree", () => {
         },
       ],
     };
+    const seenDockerRuns: string[][] = [];
     const detector = fakeRunner((argv) => {
       if (argv[0] !== "docker") return undefined;
       if (argv[1] === "--version") return { code: 0, stdout: "Docker version 27\n" };
-      if (argv[1] === "image" && argv[2] === "inspect") {
-        return { code: 0, stdout: "sha256:skillspector\n" };
+      if (argv[1] === "image" && argv[2] === "inspect") return successfulSkillspector(argv);
+      if (argv[1] === "run") {
+        seenDockerRuns.push(argv);
+        return { code: 0, stdout: JSON.stringify(sarif) };
       }
-      if (argv[1] === "run") return { code: 0, stdout: JSON.stringify(sarif) };
       return undefined;
     });
 
@@ -930,6 +985,9 @@ describe("scanTrustTree", () => {
     });
 
     expect(result.analyzersRun).toEqual(["aih-native", "skillspector@docker"]);
+    expect(seenDockerRuns).toHaveLength(1);
+    expect(seenDockerRuns[0]).toContain(SKILLSPECTOR_IMAGE_DIGEST);
+    expect(seenDockerRuns[0]).not.toContain(SKILLSPECTOR_IMAGE);
     expect(result.checks).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -973,9 +1031,7 @@ describe("scanTrustTree", () => {
     const detector = fakeRunner((argv) => {
       if (argv[0] !== "docker") return undefined;
       if (argv[1] === "--version") return { code: 0, stdout: "Docker version 27\n" };
-      if (argv[1] === "image" && argv[2] === "inspect") {
-        return { code: 0, stdout: "sha256:skillspector\n" };
-      }
+      if (argv[1] === "image" && argv[2] === "inspect") return successfulSkillspector(argv);
       if (argv[1] === "run") return { code: 0, stdout: JSON.stringify(sarif) };
       return undefined;
     });
@@ -1024,9 +1080,7 @@ describe("scanTrustTree", () => {
     const detector = fakeRunner((argv) => {
       if (argv[0] !== "docker") return undefined;
       if (argv[1] === "--version") return { code: 0, stdout: "Docker version 27\n" };
-      if (argv[1] === "image" && argv[2] === "inspect") {
-        return { code: 0, stdout: "sha256:skillspector\n" };
-      }
+      if (argv[1] === "image" && argv[2] === "inspect") return successfulSkillspector(argv);
       if (argv[1] === "run") return { code: 0, stdout: JSON.stringify(sarif) };
       return undefined;
     });
@@ -2193,7 +2247,9 @@ describe("scanTrustTree", () => {
   });
 
   it("invokes SkillSpector with a read-only, no-network Docker sandbox", () => {
-    expect(skillspectorDockerRunArgv("windows", "C:\\scan-root")).toEqual([
+    expect(
+      skillspectorDockerRunArgv("windows", "C:\\scan-root", SKILLSPECTOR_IMAGE_DIGEST),
+    ).toEqual([
       "docker",
       "run",
       "--rm",
@@ -2204,7 +2260,7 @@ describe("scanTrustTree", () => {
       "/tmp:rw,noexec,nosuid,size=64m",
       "--mount",
       "type=bind,source=C:\\scan-root,target=/scan,readonly",
-      "skillspector:aih-326a2b489411",
+      SKILLSPECTOR_IMAGE_DIGEST,
       "scan",
       "/scan",
       "--no-llm",
@@ -2369,7 +2425,7 @@ describe("trustScanCommand", () => {
       if (
         argv[0] === "docker" &&
         argv[1] === "run" &&
-        argv.includes("sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa") &&
+        argv.includes(SKILLSPECTOR_IMAGE_DIGEST) &&
         argv.some((arg) => arg.includes("aih sandbox smoke ok"))
       ) {
         seenSmoke.push(argv);
@@ -2460,9 +2516,7 @@ describe("trustScanCommand", () => {
       }
       if (argv[0] !== "docker") return undefined;
       if (argv[1] === "--version") return { code: 0, stdout: "Docker version 27\n" };
-      if (argv[1] === "image" && argv[2] === "inspect") {
-        return { code: 0, stdout: "sha256:skillspector\n" };
-      }
+      if (argv[1] === "image" && argv[2] === "inspect") return successfulSkillspector(argv);
       if (argv[1] === "run") return { code: 0, stdout: JSON.stringify({ runs: [] }) };
       return undefined;
     });

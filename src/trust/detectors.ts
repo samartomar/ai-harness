@@ -10,7 +10,7 @@ import { MCP_CONFIG_FILES } from "../secrets/scan.js";
 import { execArgv } from "../tools/install.js";
 import { scrubFetchEnv } from "./fetch.js";
 import { gradeTrustCheck } from "./grade.js";
-import { SKILLSPECTOR_IMAGE } from "./images.js";
+import { resolveVerifiedSkillspectorImage, SKILLSPECTOR_IMAGE } from "./images.js";
 import { collectFilesUnder, TRUST_SKIP_DIRS } from "./scan.js";
 
 // Detector names land here only when the adapter can at least surface an honest
@@ -373,7 +373,11 @@ export function scanNativeMaliciousCode(root: string): Check[] {
   return checks;
 }
 
-export function skillspectorDockerRunArgv(platform: Platform, tree: string): string[] {
+export function skillspectorDockerRunArgv(
+  platform: Platform,
+  tree: string,
+  image: string = SKILLSPECTOR_IMAGE,
+): string[] {
   // Native Windows Docker bind mounts can reject drive-letter paths; that fails safe to skip.
   return execArgv(platform, [
     "docker",
@@ -386,7 +390,7 @@ export function skillspectorDockerRunArgv(platform: Platform, tree: string): str
     "/tmp:rw,noexec,nosuid,size=64m",
     "--mount",
     `type=bind,source=${tree},target=/scan,readonly`,
-    SKILLSPECTOR_IMAGE,
+    image,
     "scan",
     "/scan",
     "--no-llm",
@@ -532,21 +536,6 @@ export function agentshieldScanArgv(
   ]);
 }
 
-function dockerVersionArgv(platform: Platform): string[] {
-  return execArgv(platform, ["docker", "--version"]);
-}
-
-function skillspectorImageInspectArgv(platform: Platform): string[] {
-  return execArgv(platform, [
-    "docker",
-    "image",
-    "inspect",
-    SKILLSPECTOR_IMAGE,
-    "--format",
-    "{{.Id}}",
-  ]);
-}
-
 function runFailureReason(result: RunResult, fallback: string): string | undefined {
   if (!result.spawnError && result.code === 0) return undefined;
   return result.stderr || result.stdout || fallback;
@@ -565,21 +554,8 @@ async function checkSkillspectorAvailable(
   platform: Platform,
   env: NodeJS.ProcessEnv,
 ): Promise<string | undefined> {
-  const version = await run(dockerVersionArgv(platform), {
-    env: scrubFetchEnv(env),
-    timeoutMs: 30_000,
-  });
-  const versionReason = runFailureReason(version, `docker exit ${version.code ?? "signal"}`);
-  if (versionReason !== undefined) return versionReason;
-
-  const image = await run(skillspectorImageInspectArgv(platform), {
-    env: scrubFetchEnv(env),
-    timeoutMs: 30_000,
-  });
-  const imageReason = runFailureReason(image, "skillspector Docker image not present locally");
-  if (imageReason !== undefined) return imageReason;
-  if (image.stdout.trim().length === 0) return "skillspector Docker image not present locally";
-  return undefined;
+  const image = await resolveVerifiedSkillspectorImage(run, platform, env, 30_000);
+  return "reason" in image ? image.reason : undefined;
 }
 
 async function runSkillspectorScan(
@@ -588,7 +564,9 @@ async function runSkillspectorScan(
   env: NodeJS.ProcessEnv,
   tree: string,
 ): Promise<string> {
-  const scan = await run(skillspectorDockerRunArgv(platform, tree), {
+  const image = await resolveVerifiedSkillspectorImage(run, platform, env, 30_000);
+  if ("reason" in image) throw new Error(image.reason);
+  const scan = await run(skillspectorDockerRunArgv(platform, tree, image.image), {
     env: scrubFetchEnv(env),
     timeoutMs: 120_000,
   });

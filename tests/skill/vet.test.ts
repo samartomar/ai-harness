@@ -17,6 +17,7 @@ import { makeHostAdapter } from "../../src/platform/detect.js";
 import type { SkillShape } from "../../src/skill/shape.js";
 import type { SkillVerdict } from "../../src/skill/verdict.js";
 import { skillVetCommand } from "../../src/skill/vet.js";
+import { SKILLSPECTOR_IMAGE_DIGEST } from "../../src/trust/images.js";
 
 interface VetDigestData {
   source: string;
@@ -97,8 +98,10 @@ function detectorRunner(
         return (
           options.imageInspect ?? {
             code: 0,
-            stdout:
-              '{"Id":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","Config":{"Labels":{"org.opencontainers.image.revision":"326a2b489411a20ed742ff13701be39ba00063c8"}}}\n',
+            stdout: JSON.stringify({
+              Id: SKILLSPECTOR_IMAGE_DIGEST,
+              RepoDigests: [`skillspector@${SKILLSPECTOR_IMAGE_DIGEST}`],
+            }),
           }
         );
       }
@@ -273,7 +276,17 @@ describe("skillVetCommand", () => {
       { source: sourceRoot },
       false,
       detectorRunner({
-        imageInspect: { code: 0, stdout: "sha256:mutable-local-tag\n" },
+        imageInspect: {
+          code: 0,
+          stdout: JSON.stringify({
+            Id: "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            Config: {
+              Labels: {
+                "org.opencontainers.image.revision": "326a2b489411a20ed742ff13701be39ba00063c8",
+              },
+            },
+          }),
+        },
         seenSmoke,
       }),
       { SNYK_TOKEN: "snyk-token-for-scanner" },

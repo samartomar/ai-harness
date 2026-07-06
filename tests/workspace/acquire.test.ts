@@ -18,6 +18,7 @@ import { fakeRunner, type Runner } from "../../src/internals/proc.js";
 import { VerificationReport } from "../../src/internals/verify.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 import { resolveTrustSource } from "../../src/trust/fetch.js";
+import { SKILLSPECTOR_IMAGE_DIGEST } from "../../src/trust/images.js";
 import {
   captureClearedWorkspaceAddTrustGate,
   runWorkspaceAdd,
@@ -152,8 +153,10 @@ function sandboxSmokeRunner(
       if (options.imageUnavailable?.()) return { code: 1, stderr: "image not found\n" };
       return {
         code: 0,
-        stdout:
-          '{"Id":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","Config":{"Labels":{"org.opencontainers.image.revision":"326a2b489411a20ed742ff13701be39ba00063c8"}}}\n',
+        stdout: JSON.stringify({
+          Id: SKILLSPECTOR_IMAGE_DIGEST,
+          RepoDigests: [`skillspector@${SKILLSPECTOR_IMAGE_DIGEST}`],
+        }),
       };
     }
     if (argv[1] === "run" && argv.some((arg) => arg.includes("aih sandbox smoke ok"))) {
@@ -363,9 +366,14 @@ describe("workspace add acquisition plans", () => {
     const run = fakeRunner((argv) => {
       if (argv[0] !== "docker") return undefined;
       if (argv[1] === "--version") return { code: 0, stdout: "Docker version 27\n" };
-      if (argv[1] === "image" && argv[2] === "inspect") {
-        return { code: 0, stdout: "sha256:skillspector\n" };
-      }
+      if (argv[1] === "image" && argv[2] === "inspect")
+        return {
+          code: 0,
+          stdout: JSON.stringify({
+            Id: SKILLSPECTOR_IMAGE_DIGEST,
+            RepoDigests: [`skillspector@${SKILLSPECTOR_IMAGE_DIGEST}`],
+          }),
+        };
       if (argv[1] === "run") return { code: 0, stdout: JSON.stringify({ runs: [] }) };
       return undefined;
     });

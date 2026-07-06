@@ -4,7 +4,12 @@ import type { Platform } from "../platform/base.js";
 import { MCP_CONFIG_FILES } from "../secrets/scan.js";
 import { execArgv } from "../tools/install.js";
 import { scrubFetchEnv } from "./fetch.js";
-import { SKILLSPECTOR_IMAGE, SKILLSPECTOR_SOURCE_REVISION } from "./images.js";
+import {
+  resolveVerifiedSkillspectorImage,
+  SKILLSPECTOR_IMAGE,
+  skillspectorDockerVersionArgv,
+  skillspectorImageInspectArgv,
+} from "./images.js";
 
 export interface SandboxSmokeShape {
   skillDirs: readonly string[];
@@ -23,11 +28,6 @@ const SANDBOX_SMOKE_NAME = "skill sandbox smoke test";
 const SANDBOX_SMOKE_MARKER = "aih sandbox smoke ok";
 const SANDBOX_SMOKE_TIMEOUT_MS = 60_000;
 const INCOMING_MCP_SMOKE_FILES = [...MCP_CONFIG_FILES, "mcp.json"];
-const REVISION_LABELS = [
-  "org.opencontainers.image.revision",
-  "org.label-schema.vcs-ref",
-  "aih.skillspector.revision",
-];
 
 function smokeReasons(shape: SandboxSmokeShape): string[] {
   if (shape.skillDirs.length === 0) return [];
@@ -101,18 +101,11 @@ function notApplicableCheck(shape: SandboxSmokeShape): Check {
 }
 
 export function sandboxSmokeDockerVersionArgv(platform: Platform): string[] {
-  return execArgv(platform, ["docker", "--version"]);
+  return skillspectorDockerVersionArgv(platform);
 }
 
 export function sandboxSmokeImageInspectArgv(platform: Platform): string[] {
-  return execArgv(platform, [
-    "docker",
-    "image",
-    "inspect",
-    SKILLSPECTOR_IMAGE,
-    "--format",
-    "{{json .}}",
-  ]);
+  return skillspectorImageInspectArgv(platform);
 }
 
 export function sandboxSmokeDockerRunArgv(
@@ -140,73 +133,6 @@ export function sandboxSmokeDockerRunArgv(
   ]);
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function parseImageInspect(stdout: string): Record<string, unknown> | undefined {
-  try {
-    const parsed = JSON.parse(stdout.trim());
-    return isRecord(parsed) ? parsed : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-function inspectLabels(inspect: Record<string, unknown>): Record<string, unknown> | undefined {
-  const config = inspect.Config;
-  if (isRecord(config) && isRecord(config.Labels)) return config.Labels;
-  if (isRecord(inspect.Labels)) return inspect.Labels;
-  return undefined;
-}
-
-function verifiedImageReference(stdout: string): string | undefined {
-  const inspect = parseImageInspect(stdout);
-  if (inspect === undefined) return undefined;
-  const id = inspect.Id;
-  if (typeof id !== "string" || !id.startsWith("sha256:")) return undefined;
-  const labels = inspectLabels(inspect);
-  if (labels === undefined) return undefined;
-  return REVISION_LABELS.some((label) => labels[label] === SKILLSPECTOR_SOURCE_REVISION)
-    ? id
-    : undefined;
-}
-
-async function sandboxAvailability(
-  run: Runner,
-  platform: Platform,
-  env: NodeJS.ProcessEnv,
-): Promise<{ image: string } | { reason: string }> {
-  const childEnv = scrubFetchEnv(env);
-  const docker = await run(sandboxSmokeDockerVersionArgv(platform), {
-    env: childEnv,
-    timeoutMs: 10_000,
-  });
-  if (docker.spawnError || docker.code === 127)
-    return { reason: `Docker is unavailable (${runSummary(docker)})` };
-  if (docker.code !== 0) return { reason: `docker --version failed (${runSummary(docker)})` };
-
-  const image = await run(sandboxSmokeImageInspectArgv(platform), {
-    env: childEnv,
-    timeoutMs: 10_000,
-  });
-  if (image.spawnError || image.code === 127) {
-    return { reason: `sandbox image ${SKILLSPECTOR_IMAGE} is unavailable (${runSummary(image)})` };
-  }
-  if (image.code !== 0 || image.stdout.trim().length === 0) {
-    return {
-      reason: `sandbox image ${SKILLSPECTOR_IMAGE} could not be inspected (${runSummary(image)})`,
-    };
-  }
-  const verifiedImage = verifiedImageReference(image.stdout);
-  if (verifiedImage === undefined) {
-    return {
-      reason: `sandbox image ${SKILLSPECTOR_IMAGE} could not verify expected source revision ${SKILLSPECTOR_SOURCE_REVISION}`,
-    };
-  }
-  return { image: verifiedImage };
-}
-
 export async function sandboxSmokeCheck(
   root: string,
   shape: SandboxSmokeShape,
@@ -218,7 +144,12 @@ export async function sandboxSmokeCheck(
     return unavailableCheck("detector runtime is missing (run/platform/env)");
   }
 
-  const availability = await sandboxAvailability(options.run, options.platform, options.env);
+  const availability = await resolveVerifiedSkillspectorImage(
+    options.run,
+    options.platform,
+    options.env,
+    10_000,
+  );
   if ("reason" in availability) return unavailableCheck(availability.reason);
 
   const smoke = await options.run(
