@@ -279,6 +279,34 @@ describe("aih pack install", () => {
     expect(output).toContain("[skipped-because-gate-failed]");
   });
 
+  it("includes phase-A blocking checks in JSON output", async () => {
+    seedTwoSourcePack();
+    writeFileSync(join(sourceB, "package.json"), JSON.stringify({ name: "beta-skill" }), "utf8");
+
+    const { code, output } = await runInstall(
+      { json: true },
+      sandboxSmokeRunner({ imageUnavailable: () => true }),
+    );
+    const payload = JSON.parse(output) as {
+      sources: Array<{
+        source: string;
+        blockingChecks?: Array<{ code?: string; verdict: string }>;
+      }>;
+    };
+
+    expect(code).toBe(1);
+    const beta = payload.sources.find((source) => source.source === realpathSync(sourceB));
+    expect(beta?.blockingChecks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "trust.sandbox-smoke-unavailable",
+          verdict: "fail",
+        }),
+      ]),
+    );
+    expect(existsSync(join(workspace, CONTEXT_DIR, "skills"))).toBe(false);
+  });
+
   it("refuses before any scan when a ref has no committed approval", async () => {
     localSkill(sourceA, "alpha", "# Alpha\n");
     const realA = realpathSync(sourceA);

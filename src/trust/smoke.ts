@@ -3,6 +3,7 @@ import type { Check } from "../internals/verify.js";
 import type { Platform } from "../platform/base.js";
 import { MCP_CONFIG_FILES } from "../secrets/scan.js";
 import { execArgv } from "../tools/install.js";
+import { dockerBindMountArg } from "./docker.js";
 import { scrubFetchEnv } from "./fetch.js";
 import {
   resolveVerifiedSkillspectorImage,
@@ -143,7 +144,7 @@ export function sandboxSmokeDockerRunArgv(
     "--tmpfs",
     "/tmp:rw,noexec,nosuid,size=16m",
     "--mount",
-    `type=bind,source=${tree},target=/scan,readonly`,
+    dockerBindMountArg(tree, "/scan"),
     "--entrypoint",
     "/bin/sh",
     image,
@@ -171,13 +172,17 @@ export async function sandboxSmokeCheck(
   );
   if ("reason" in availability) return unavailableCheck(availability.reason);
 
-  const smoke = await options.run(
-    sandboxSmokeDockerRunArgv(options.platform, root, shape, availability.image),
-    {
-      env: scrubFetchEnv(options.env),
-      timeoutMs: SANDBOX_SMOKE_TIMEOUT_MS,
-    },
-  );
+  let smokeArgv: string[];
+  try {
+    smokeArgv = sandboxSmokeDockerRunArgv(options.platform, root, shape, availability.image);
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    return unavailableCheck(reason);
+  }
+  const smoke = await options.run(smokeArgv, {
+    env: scrubFetchEnv(options.env),
+    timeoutMs: SANDBOX_SMOKE_TIMEOUT_MS,
+  });
   const reasonText = reasons.join("; ");
   if (!smoke.spawnError && smoke.code === 0 && smoke.stdout.includes(SANDBOX_SMOKE_MARKER)) {
     const output = runSummary(smoke);

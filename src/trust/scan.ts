@@ -272,9 +272,7 @@ function stringValue(value: unknown): string | undefined {
 }
 
 function collectIncomingMcpConfigFiles(root: string): string[] {
-  return collectFilesUnder(root, (abs) =>
-    INCOMING_MCP_CONFIG_FILES.has(toPosix(relative(root, abs))),
-  ).map((abs) => toPosix(relative(root, abs)));
+  return collectMcpConfigFileRels(root, collectSkillDirs(root));
 }
 
 function plaintextSecretChecks(root: string, posture: Posture): Check[] {

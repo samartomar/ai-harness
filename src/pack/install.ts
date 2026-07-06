@@ -639,6 +639,7 @@ export async function runPackInstall(
           kind: run.group.kind,
           skills: [...run.select].sort(),
           phase1: run.phase1,
+          blockingChecks: run.gate?.blockingChecks ?? [],
           phase2: run.phase2,
           failure: run.failure,
         })),

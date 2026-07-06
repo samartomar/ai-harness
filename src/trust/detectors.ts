@@ -1,5 +1,13 @@
 import { createHash } from "node:crypto";
-import { mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, extname, isAbsolute, join, relative } from "node:path";
 import type { Posture } from "../config/posture.js";
@@ -8,10 +16,13 @@ import type { Check, CheckCode } from "../internals/verify.js";
 import type { Platform } from "../platform/base.js";
 import { MCP_CONFIG_FILES } from "../secrets/scan.js";
 import { execArgv } from "../tools/install.js";
+import { dockerBindMountArg } from "./docker.js";
 import { scrubFetchEnv } from "./fetch.js";
 import { gradeTrustCheck } from "./grade.js";
 import { resolveVerifiedSkillspectorImage, SKILLSPECTOR_IMAGE } from "./images.js";
 import { collectFilesUnder, TRUST_SKIP_DIRS } from "./scan.js";
+
+const INCOMING_MCP_CONFIG_FILES = new Set([...MCP_CONFIG_FILES, "mcp.json"]);
 
 // Detector names land here only when the adapter can at least surface an honest
 // availability check. A required-but-unavailable detector fails closed at
@@ -389,7 +400,7 @@ export function skillspectorDockerRunArgv(
     "--tmpfs",
     "/tmp:rw,noexec,nosuid,size=64m",
     "--mount",
-    `type=bind,source=${tree},target=/scan,readonly`,
+    dockerBindMountArg(tree, "/scan"),
     image,
     "scan",
     "/scan",
@@ -740,9 +751,25 @@ async function runCiscoSkillScan(
   return JSON.stringify({ version: "2.1.0", runs });
 }
 
+function mcpConfigRoots(root: string): string[] {
+  const skillDirs = collectFilesUnder(
+    root,
+    (abs) => basename(abs) === "SKILL.md",
+    TRUST_SKIP_DIRS,
+  ).map((abs) => dirname(abs));
+  return [root, ...skillDirs];
+}
+
 function mcpConfigFiles(root: string): string[] {
-  const known = new Set(MCP_CONFIG_FILES);
-  return collectFilesUnder(root, (abs) => known.has(toPosix(relative(root, abs))), TRUST_SKIP_DIRS);
+  return [
+    ...new Set(
+      mcpConfigRoots(root).flatMap((dir) =>
+        [...INCOMING_MCP_CONFIG_FILES]
+          .filter((name) => existsSync(join(dir, name)))
+          .map((name) => join(dir, name)),
+      ),
+    ),
+  ];
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

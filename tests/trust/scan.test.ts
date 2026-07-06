@@ -34,6 +34,7 @@ import {
   scanTrustTreeWithAnalyzers,
   trustScanCommand,
 } from "../../src/trust/scan.js";
+import { sandboxSmokeDockerRunArgv } from "../../src/trust/smoke.js";
 
 let dir: string;
 
@@ -548,6 +549,34 @@ describe("scanTrustTree", () => {
     );
   });
 
+  it("grades hardcoded secrets inside nested skill MCP configs", async () => {
+    skill("skills/clean", "# Clean\n");
+    write(
+      "skills/clean/.mcp.json",
+      JSON.stringify({
+        mcpServers: {
+          gh: {
+            command: "node",
+            args: ["server.js"],
+            env: { GITHUB_TOKEN: `ghp_${"a".repeat(36)}` },
+          },
+        },
+      }),
+    );
+
+    const checks = await scanTrustTree(dir, { posture: "team" });
+
+    expect(checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          verdict: "fail",
+          code: "mcp.hardcoded-secret",
+          location: expect.objectContaining({ uri: "skills/clean/.mcp.json" }),
+        }),
+      ]),
+    );
+  });
+
   it("grades hardcoded secrets inside OpenCode MCP configs with the existing secrets control", async () => {
     write(
       "opencode.json",
@@ -636,6 +665,31 @@ describe("scanTrustTree", () => {
       .join("\n");
     expect(details).toContain("opencode.json \u2192 mcp.bundled: unpinned supply chain");
     expect(details).toContain("opencode.json \u2192 mcp.hosted: third-party egress");
+  });
+
+  it("denies nested skill OpenCode MCP entries during policy grading", async () => {
+    skill("skills/clean", "# Clean\n");
+    write(
+      "skills/clean/opencode.json",
+      JSON.stringify({
+        mcp: {
+          hosted: { type: "remote", url: "https://mcp.vendor.example/mcp", enabled: true },
+        },
+      }),
+    );
+
+    const enterprise = await scanTrustTree(dir, { posture: "enterprise" });
+
+    expect(enterprise).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          verdict: "fail",
+          code: "mcp.policy-denied",
+          detail: expect.stringContaining("skills/clean/opencode.json \u2192 mcp.hosted"),
+          location: expect.objectContaining({ uri: "skills/clean/opencode.json" }),
+        }),
+      ]),
+    );
   });
 
   it("grades incoming MCP policy warnings at vibe and denials at enterprise", async () => {
@@ -2267,6 +2321,25 @@ describe("scanTrustTree", () => {
       "--format",
       "sarif",
     ]);
+  });
+
+  it("rejects ambiguous Docker bind mount source paths", () => {
+    expect(() =>
+      skillspectorDockerRunArgv("linux", "/tmp/scan-root,readonly", SKILLSPECTOR_IMAGE_DIGEST),
+    ).toThrow(/unsupported.*bind mount source/i);
+    expect(() =>
+      sandboxSmokeDockerRunArgv(
+        "linux",
+        "/tmp/scan-root,readonly",
+        {
+          skillDirs: ["clean"],
+          installScripts: false,
+          mcpConfig: false,
+          packageManifests: ["package.json"],
+        },
+        SKILLSPECTOR_IMAGE_DIGEST,
+      ),
+    ).toThrow(/unsupported.*bind mount source/i);
   });
 
   it("invokes Cisco skill-scanner through offline uvx without network-enabling options", () => {
