@@ -365,7 +365,7 @@ describe("aih usage command", () => {
     ).actions.filter(
       (a) =>
         a.kind === "write" &&
-        [".claude/settings.json", ".antigravity/hooks.json"].includes(a.path.replace(/\\/g, "/")),
+        [".claude/settings.json", ".agents/hooks.json"].includes(a.path.replace(/\\/g, "/")),
     );
     expect(claudeDerived).toHaveLength(2);
     for (const write of claudeDerived) {

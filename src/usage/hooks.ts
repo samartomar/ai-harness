@@ -64,7 +64,35 @@ function commandOnlyHook(cli: Cli): Record<string, unknown> {
     command: hookCommand(cli),
     name: "aih-usage-metering",
     description: "Record local AI tool usage to .aih/usage.jsonl.",
-    timeout: 5000,
+    timeout: 5,
+  };
+}
+
+function cursorHooks(): unknown {
+  return {
+    version: 1,
+    hooks: { afterMCPExecution: [{ command: hookCommand("cursor"), timeout: 5 }] },
+  };
+}
+
+function copilotHooks(): unknown {
+  return {
+    version: 1,
+    hooks: { postToolUse: [{ type: "command", command: hookCommand("copilot"), timeoutSec: 5 }] },
+  };
+}
+
+function windsurfHooks(): unknown {
+  return {
+    hooks: { post_mcp_tool_use: [{ command: hookCommand("windsurf"), show_output: false }] },
+  };
+}
+
+function antigravityHooks(): unknown {
+  return {
+    "aih-usage-metering": {
+      PostToolUse: [hookGroup("antigravity", "*", { failOpen: true })],
+    },
   };
 }
 
@@ -153,7 +181,7 @@ export function usageHookActions(ctx: PlanContext, clis: Cli[]): Action[] {
     actions.push(
       writeJson(
         ".cursor/hooks.json",
-        { hooks: { afterMCPExecution: [commandOnlyHook("cursor")] } },
+        cursorHooks(),
         "Cursor MCP execution usage hook, merged into existing hooks.json",
         { merge: true },
       ),
@@ -162,9 +190,9 @@ export function usageHookActions(ctx: PlanContext, clis: Cli[]): Action[] {
   if (selected.has("antigravity")) {
     actions.push(
       writeJson(
-        ".antigravity/hooks.json",
-        { hooks: { PostToolUse: [hookGroup("antigravity", "*", { failOpen: true })] } },
-        "Antigravity PostToolUse usage hook, merged into existing hooks.json",
+        ".agents/hooks.json",
+        antigravityHooks(),
+        "Antigravity PostToolUse usage hook, merged into existing .agents/hooks.json",
         { merge: true },
       ),
     );
@@ -186,8 +214,8 @@ export function usageHookActions(ctx: PlanContext, clis: Cli[]): Action[] {
   if (selected.has("copilot")) {
     actions.push(
       writeJson(
-        ".copilot/hooks/aih-usage-metering.json",
-        { hooks: { postToolUse: [commandOnlyHook("copilot")] } },
+        ".github/hooks/aih-usage-metering.json",
+        copilotHooks(),
         "GitHub Copilot post-tool usage hook",
       ),
     );
@@ -196,7 +224,7 @@ export function usageHookActions(ctx: PlanContext, clis: Cli[]): Action[] {
     actions.push(
       writeJson(
         ".windsurf/hooks.json",
-        { hooks: { post_mcp_tool_use: [commandOnlyHook("windsurf")] } },
+        windsurfHooks(),
         "Windsurf post-MCP-tool usage hook, merged into existing hooks.json",
         { merge: true },
       ),
