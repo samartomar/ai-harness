@@ -12,7 +12,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { executePlan } from "../../src/internals/execute.js";
 import type { PlanContext } from "../../src/internals/plan.js";
-import { fakeRunner, type Runner } from "../../src/internals/proc.js";
+import { fakeRunner, type Runner, type RunResult } from "../../src/internals/proc.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 import type { SkillShape } from "../../src/skill/shape.js";
 import type { SkillVerdict } from "../../src/skill/verdict.js";
@@ -75,8 +75,11 @@ function license(): void {
 }
 
 /** Stubs the full optional detector ladder so no detector-unavailable skip degrades the verdict. */
-function detectorRunner(): Runner {
+function detectorRunner(options: { smoke?: Partial<RunResult> } = {}): Runner {
   return fakeRunner((argv) => {
+    if (argv[0] === "docker" && argv[1] === "run" && argv.some((arg) => arg.includes("aih sandbox smoke ok"))) {
+      return options.smoke ?? { code: 0, stdout: "aih sandbox smoke ok\n" };
+    }
     if (argv[0] === "docker") {
       if (argv[1] === "--version") return { code: 0, stdout: "Docker version 27\n" };
       if (argv[1] === "image" && argv[2] === "inspect") {
@@ -150,9 +153,77 @@ describe("skillVetCommand", () => {
       "snyk-agent-scan@uvx",
       "agentshield@local",
     ]);
+    expect(result.report?.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "skill sandbox smoke test",
+          verdict: "skip",
+          detail: expect.stringContaining("not applicable"),
+        }),
+      ]),
+    );
     expect(digest.text).toContain("Verdict: GREEN");
     expect(digest.text).toContain("Skill directories: clean");
     expect(existsSync(join(workspace, ".aih"))).toBe(false);
+  });
+
+  it("records a sandbox smoke pass for package-backed skill evidence", async () => {
+    skill("clean", "# Clean\n\nUse this skill for local documentation hygiene.\n");
+    write("package.json", JSON.stringify({ name: "clean-skill", version: "1.0.0" }));
+    license();
+    const c = ctx({ source: sourceRoot }, true, detectorRunner(), {
+      SNYK_TOKEN: "snyk-token-for-scanner",
+    });
+
+    const result = await executePlan(await skillVetCommand.plan(c), c);
+
+    expect(result.report?.ok).toBe(true);
+    const reports = readdirSync(join(workspace, ".aih", "skill-reports"));
+    const evidence = JSON.parse(
+      readFileSync(join(workspace, ".aih", "skill-reports", reports[0] ?? ""), "utf8"),
+    ) as {
+      checks: Array<{ name: string; verdict: string; code?: string; detail?: string }>;
+      verdict: string;
+    };
+    expect(evidence.verdict).toBe("YELLOW");
+    expect(evidence.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "skill sandbox smoke test",
+          verdict: "pass",
+          detail: expect.stringContaining("read-only/no-network"),
+        }),
+      ]),
+    );
+  });
+
+  it("maps sandbox smoke timeouts to explicit findings instead of passing silently", async () => {
+    skill("clean", "# Clean\n\nUse this skill for local documentation hygiene.\n");
+    write("package.json", JSON.stringify({ name: "clean-skill", version: "1.0.0" }));
+    license();
+    const c = ctx(
+      { source: sourceRoot },
+      false,
+      detectorRunner({ smoke: { code: null, stderr: "operation timed out" } }),
+      { SNYK_TOKEN: "snyk-token-for-scanner" },
+    );
+
+    const result = await executePlan(await skillVetCommand.plan(c), c);
+
+    expect(result.report?.ok).toBe(false);
+    expect(result.report?.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "skill sandbox smoke test",
+          verdict: "fail",
+          code: "trust.sandbox-smoke-failed",
+          detail: expect.stringContaining("timed out"),
+        }),
+      ]),
+    );
+    const digest = vetDigestOf(result);
+    expect(digest.data.verdict).toBe("UNKNOWN");
+    expect(digest.data.reasons).toEqual([expect.stringContaining("sandbox smoke test failed")]);
   });
 
   it("grades a first-party (in-repo) source GREEN on native coverage when the deep detectors are unavailable", async () => {
