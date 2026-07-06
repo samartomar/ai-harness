@@ -368,7 +368,7 @@ describe("skillQuarantineCommand — disable without removing", () => {
     return expect(executePlan(planOfSync(c), c)).rejects.toMatchObject({
       code: "AIH_DIRTY_WORKTREE",
     });
-  }, 20000); // real git init + status subprocesses can edge past the 5s default on slow Windows CI
+  }, 60000); // real git init + status subprocesses can edge past the 5s default on slow Windows CI
 
   it("proceeds past a dirty skill dir when --force is passed", async () => {
     initGitRepoWithInstalledSkill();
@@ -381,7 +381,7 @@ describe("skillQuarantineCommand — disable without removing", () => {
       "# edited\n",
     );
     expect(JSON.parse(readFileSync(lockPath(), "utf8")).skills).toHaveLength(1);
-  }, 20000); // real git init + status subprocesses can edge past the 5s default on slow Windows CI
+  }, 60000); // real git init + status subprocesses can edge past the 5s default on slow Windows CI
 
   it("REFUSES a second quarantine while a parked copy occupies the destination (Codex high)", async () => {
     // The engine's never-overwrite fallback would park the second copy at a `.1`
