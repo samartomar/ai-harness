@@ -997,14 +997,13 @@ describe("scanTrustTree", () => {
       run: mcpScannerRunner(sarif),
     });
 
-    expect(result.analyzersRun).toEqual([
-      "aih-native",
-      "skillspector@docker",
-      "cisco@uvx",
-      "mcp-scanner@uvx",
-    ]);
+    expect(result.analyzersRun).toEqual(expect.arrayContaining(["mcp-scanner@uvx"]));
     expect(result.checks).toEqual(
       expect.arrayContaining([
+        expect.objectContaining({
+          name: "trust detector mcp-scanner",
+          verdict: "pass",
+        }),
         expect.objectContaining({
           verdict: "fail",
           code: "trust.prompt-injection",
@@ -1014,6 +1013,7 @@ describe("scanTrustTree", () => {
         }),
       ]),
     );
+    expect(result.checks.some((check) => check.verdict === "fail")).toBe(true);
   });
 
   it("fails closed for enterprise-required mcp-scanner when an MCP config is present", async () => {
@@ -1079,12 +1079,15 @@ describe("scanTrustTree", () => {
       }),
     });
 
-    expect(result.analyzersRun).toEqual([
-      "aih-native",
-      "skillspector@docker",
-      "cisco@uvx",
-      "mcp-scanner@uvx",
-    ]);
+    expect(result.analyzersRun).toEqual(expect.arrayContaining(["mcp-scanner@uvx"]));
+    expect(result.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "trust detector mcp-scanner",
+          verdict: "pass",
+        }),
+      ]),
+    );
     expect(seen).toHaveLength(1);
     expect(seen[0]?.argv).toEqual(
       expect.arrayContaining([

@@ -560,11 +560,24 @@ describe("heal — invariant guard (D4)", () => {
       const cmd = argv[0] ?? "";
       const joined = argv.join(" ");
       expect(joined).not.toMatch(/\bhttps?:\/\//);
-      expect(joined).not.toContain("registry.npmjs.org");
+      expect(
+        argv.some(
+          (arg) =>
+            /(^|[/:@])registry[.-]/.test(arg) || /(^|[/:@])npm\.pkg\.github\.com([/:]|$)/.test(arg),
+        ),
+        `unexpected package registry reference in argv: ${e.argv.join(" ")}`,
+      ).toBe(false);
       expect(joined).not.toMatch(/\.tgz(?:\b|$)/);
-      expect(cmd).not.toBe("curl");
-      expect(cmd === "npm" && argv.includes("install")).toBe(false);
-      expect(argv.includes("install") && argv.includes("-g")).toBe(false);
+      expect(argv).not.toEqual(expect.arrayContaining(["curl"]));
+      expect(argv).not.toEqual(expect.arrayContaining(["curl.exe"]));
+      expect(
+        cmd === "npm" && argv.includes("install"),
+        `unexpected npm install in argv: ${e.argv.join(" ")}`,
+      ).toBe(false);
+      expect(
+        argv.includes("install") && argv.includes("-g"),
+        `unexpected global install in argv: ${e.argv.join(" ")}`,
+      ).toBe(false);
     }
   });
 });

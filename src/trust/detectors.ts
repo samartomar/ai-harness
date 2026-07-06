@@ -97,7 +97,6 @@ export const MCP_SCANNER_RULE_MAP: Record<string, CheckCode> = {
   "tool-poisoning": "trust.prompt-injection",
   tool_poisoning: "trust.prompt-injection",
   PROMPT_INJECTION_IGNORE_INSTRUCTIONS: "trust.prompt-injection",
-  YARA_command_injection_generic: "trust.malicious-code",
 };
 
 interface SarifArtifactLocation {
