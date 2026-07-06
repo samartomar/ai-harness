@@ -1,4 +1,13 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -8,7 +17,7 @@ import type { PlanContext } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 import { skillInventory } from "../../src/skill/inventory.js";
-import { skillSyncCommand } from "../../src/skill/sync.js";
+import { assertSkillSyncRelativePathForTest, skillSyncCommand } from "../../src/skill/sync.js";
 
 const PIN = "a".repeat(40);
 const CONTEXT_DIR = "ai-coding";
@@ -70,6 +79,39 @@ function writeLock(name: string): void {
   );
 }
 
+function sha256Text(body: string): string {
+  return createHash("sha256").update(Buffer.from(body, "utf8")).digest("hex");
+}
+
+function writeTrustLock(
+  id: string,
+  name: string,
+  files: Array<{ path: string; body: string }>,
+): void {
+  write(
+    ".aih/trust-lock.json",
+    JSON.stringify({
+      schemaVersion: 1,
+      sources: [
+        {
+          id,
+          kind: "github",
+          source: "owner/repo",
+          pinnedSha: PIN,
+          promotedAt: "2026-01-01T00:00:00.000Z",
+          promotedSkills: [name],
+          analyzersRun: ["aih-native"],
+          artifactHashes: files.map((file) => ({
+            path: `${name}/${file.path}`,
+            sha256: sha256Text(file.body),
+          })),
+          findings: [],
+        },
+      ],
+    }),
+  );
+}
+
 function validCard(name: string): Record<string, unknown> {
   return {
     schemaVersion: 1,
@@ -94,6 +136,10 @@ function installApproved(id: string, name: string): void {
   promoteSkill(id, name);
   write(`${CONTEXT_DIR}/skill-cards/${name}.json`, JSON.stringify(validCard(name)));
   writeLock(name);
+  writeTrustLock(id, name, [
+    { path: "SKILL.md", body: `# ${name}\n` },
+    { path: "README.md", body: `${name} docs\n` },
+  ]);
 }
 
 const codexSkill = (name: string, rel = "SKILL.md"): string =>
@@ -160,5 +206,35 @@ describe("skillSyncCommand", () => {
     const c = ctx({ name: "parent", cli: "codex" });
 
     expect(() => skillSyncCommand.plan(c)).toThrow(/contains nested skill/);
+  });
+
+  it("refuses when promoted skill bytes no longer match the approved trust-lock artifact hashes", () => {
+    installApproved("owner-repo", "clean");
+    write(
+      join(CONTEXT_DIR, "skills", "owner-repo", "clean", "SKILL.md"),
+      "# tampered after approval\n",
+    );
+    const c = ctx({ name: "clean", cli: "codex" });
+
+    expect(() => skillSyncCommand.plan(c)).toThrow(/promoted skill bytes changed after approval/);
+  });
+
+  it("refuses UNC-style escaped source paths", () => {
+    expect(() => assertSkillSyncRelativePathForTest("//server/share/file.md")).toThrow(
+      /outside source root/,
+    );
+  });
+
+  it("refuses syncing through a symlinked machine-root parent", () => {
+    installApproved("owner-repo", "clean");
+    const external = mkdtempSync(join(tmpdir(), "aih-skill-sync-external-"));
+    try {
+      symlinkSync(external, join(home, ".codex"), "junction");
+      const c = ctx({ name: "clean", cli: "codex" });
+
+      expect(() => skillSyncCommand.plan(c)).toThrow(/symlinked machine skill path/);
+    } finally {
+      rmSync(external, { recursive: true, force: true });
+    }
   });
 });

@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { lstatSync, readdirSync, realpathSync, statSync } from "node:fs";
 import { basename, extname, join, relative } from "node:path";
 import { AihError } from "../errors.js";
@@ -14,6 +15,7 @@ import {
   writeText,
 } from "../internals/plan.js";
 import { normalizeRel } from "../internals/worktree-gate.js";
+import { readTrustLock } from "../trust/lock.js";
 import { type SkillInventoryRow, skillInventory } from "./inventory.js";
 import { skillNameSchema } from "./lockfile.js";
 import {
@@ -26,9 +28,11 @@ import { nestedChildSkills } from "./remove.js";
 interface SyncFile {
   rel: string;
   contents: string;
+  sha256: string;
 }
 
 interface SyncTarget extends MachineSkillRoot {
+  home: string;
   skillDir: string;
 }
 
@@ -70,16 +74,25 @@ function syncTargets(ctx: PlanContext): SyncTarget[] {
         `${cli} does not have a machine skill-discovery path; supported: ${supportedMachineSkillCliList()}`,
       );
     }
-    return { ...root, skillDir: "" };
+    return { ...root, home, skillDir: "" };
   });
 }
 
-function relWithin(root: string, abs: string): string {
-  const rel = relative(root, abs).replace(/\\/g, "/");
-  if (rel.length === 0 || rel === ".." || rel.startsWith("../") || /^[A-Za-z]:\//.test(rel)) {
-    throw refuse(`refusing skill file outside source root: ${abs}`);
+export function assertSkillSyncRelativePathForTest(rel: string): string {
+  if (
+    rel.length === 0 ||
+    rel === ".." ||
+    rel.startsWith("../") ||
+    rel.startsWith("/") ||
+    /^[A-Za-z]:\//.test(rel)
+  ) {
+    throw refuse(`refusing skill file outside source root: ${rel}`);
   }
   return rel;
+}
+
+function relWithin(root: string, abs: string): string {
+  return assertSkillSyncRelativePathForTest(relative(root, abs).replace(/\\/g, "/"));
 }
 
 function isTextSkillFile(path: string): boolean {
@@ -105,7 +118,7 @@ function collectFiles(root: string): string[] {
   return out.sort((a, b) => relWithin(root, a).localeCompare(relWithin(root, b)));
 }
 
-function readSyncFile(sourceRoot: string, file: string): string {
+function readSyncFile(sourceRoot: string, file: string): Omit<SyncFile, "rel"> {
   const st = lstatSync(file);
   const readPath = st.isSymbolicLink() ? realpathSync(file) : file;
   if (st.isSymbolicLink()) relWithin(realpathSync(sourceRoot), readPath);
@@ -113,17 +126,65 @@ function readSyncFile(sourceRoot: string, file: string): string {
   if (bytes === undefined) {
     throw refuse(`refusing unreadable or non-regular skill file: ${file}`);
   }
-  return bytes.toString("utf8");
+  return {
+    contents: bytes.toString("utf8"),
+    sha256: createHash("sha256").update(bytes).digest("hex"),
+  };
 }
 
 function syncFiles(row: SkillInventoryRow): SyncFile[] {
   const files = collectFiles(row.abs)
     .filter(isTextSkillFile)
-    .map((file) => ({ rel: relWithin(row.abs, file), contents: readSyncFile(row.abs, file) }));
+    .map((file) => ({ rel: relWithin(row.abs, file), ...readSyncFile(row.abs, file) }));
   if (files.length === 0) {
     throw refuse(`approved promoted skill ${row.name} has no syncable text files`);
   }
   return files;
+}
+
+function promotedSourceId(ctx: PlanContext, row: SkillInventoryRow): string {
+  const promotedRoot = join(ctx.root, ctx.contextDir, "skills");
+  const rel = relWithin(promotedRoot, row.abs);
+  const sourceId = rel.split("/")[0];
+  if (sourceId === undefined || sourceId.length === 0) {
+    throw refuse(`approved promoted skill ${row.name} is not under a promoted source id`);
+  }
+  return sourceId;
+}
+
+function artifactPathCandidates(name: string, fileRel: string): string[] {
+  return [...new Set([fileRel, `${name}/${fileRel}`, `skills/${name}/${fileRel}`])];
+}
+
+function verifyApprovedArtifacts(
+  ctx: PlanContext,
+  row: SkillInventoryRow,
+  files: readonly SyncFile[],
+): void {
+  const sourceId = promotedSourceId(ctx, row);
+  const source = readTrustLock(ctx.root).sources.find(
+    (item) => item.id === sourceId && item.promotedSkills.includes(row.name),
+  );
+  if (source === undefined) {
+    throw refuse(
+      `approved promoted skill ${row.name} has no trust-lock artifact receipt for source ${sourceId}`,
+    );
+  }
+  const byPath = new Map(source.artifactHashes.map((item) => [item.path, item.sha256]));
+  for (const file of files) {
+    const expected = artifactPathCandidates(row.name, file.rel).flatMap((candidate) => {
+      const hash = byPath.get(candidate);
+      return hash === undefined ? [] : [hash];
+    });
+    if (expected.length === 0) {
+      throw refuse(
+        `approved promoted skill ${row.name} has no trust-lock artifact receipt for ${file.rel}`,
+      );
+    }
+    if (!expected.includes(file.sha256)) {
+      throw refuse(`promoted skill bytes changed after approval: ${file.rel}`);
+    }
+  }
 }
 
 function resolveApprovedPromotedSkill(ctx: PlanContext, name: string): SkillInventoryRow {
@@ -159,16 +220,44 @@ function plannedWrites(
   targets: readonly SyncTarget[],
 ): Action[] {
   return targets.flatMap((target) => {
-    const skillDir = join(target.abs, name);
     return files.map((file) =>
       writeText(
-        join(skillDir, file.rel),
+        safeTargetPath(target, name, file.rel),
         file.contents,
         `sync approved skill ${name} to ${target.cli} machine root: ${file.rel}`,
         { external: true },
       ),
     );
   });
+}
+
+function lstatIfExists(path: string): ReturnType<typeof lstatSync> | undefined {
+  try {
+    return lstatSync(path);
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === "ENOENT" || code === "ENOTDIR") return undefined;
+    throw err;
+  }
+}
+
+function safeTargetPath(target: SyncTarget, name: string, fileRel: string): string {
+  const targetPath = join(target.abs, name, fileRel);
+  relWithin(target.abs, targetPath);
+  const homeRel = relWithin(target.home, targetPath);
+  let current = target.home;
+  for (const segment of homeRel.split("/")) {
+    current = join(current, segment);
+    const st = lstatIfExists(current);
+    if (st === undefined) break;
+    if (st.isSymbolicLink()) {
+      throw refuse(`refusing symlinked machine skill path: ${current}`);
+    }
+    if (current !== targetPath && !st.isDirectory()) {
+      throw refuse(`refusing non-directory machine skill path ancestor: ${current}`);
+    }
+  }
+  return targetPath;
 }
 
 function syncText(input: {
@@ -194,6 +283,7 @@ function skillSyncPlan(ctx: PlanContext): Plan {
   const name = requiredSkillName(ctx);
   const row = resolveApprovedPromotedSkill(ctx, name);
   const files = syncFiles(row);
+  verifyApprovedArtifacts(ctx, row, files);
   const targets = syncTargets(ctx).map((target) => ({
     ...target,
     skillDir: join(target.abs, name),
