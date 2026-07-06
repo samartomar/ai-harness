@@ -44,6 +44,7 @@ Those four landed, so the "usages" + cross-project feedback loop the report arc 
 | Recorder `.aih/usage-record.mjs` (`node … <tool> skill <name> <ecc\|canon\|user>`) | `src/usage/capture.ts` | ✅ |
 | **Universal git floor** (`post-commit` hook → commit events for ANY tool) | `aih usage --apply` | ✅ |
 | Per-tool hook generators (`TOOL_HOOK`: claude PostToolUse, kiro `.kiro.hook`, codex, cursor, gemini, copilot, windsurf, opencode, kimi, antigravity) | `src/usage/hooks.ts` | ✅ |
+| Zed `threads.db` importer (read-only SQLite → `.aih/usage.jsonl`) | `src/usage/zed.ts` | ✅ |
 | Legacy report usage panel | `src/report/usage.ts` | ✅ |
 
 So the schema, reader, aggregator, recorder, and git floor were the base; the per-tool hooks and v9 panels (below) are now built on top.
@@ -68,7 +69,9 @@ node .aih/usage-record.mjs <tool> skill <name> <ecc|canon|user>
   `TOOL_HOOK` map; wire **only targeted/installed** CLIs (detection-gated), using each tool's
   repo-local hook surface (`.github/hooks/*.json` for Copilot, `.agents/hooks.json` for
   Antigravity, `.kimi/config.toml` for Kimi, etc.).
-- **zed** — no hooks (parse `threads.db`); deferred, documented.
+- **zed** — no hooks. `aih usage --apply --cli zed` reads local `threads.db` rows read-only
+  (auto-located or via `--zed-threads-db <path>`), maps token counters and derivable
+  `ToolUse` identities, and appends deterministic Zed `UsageEvent`s.
 
 Design choices:
 - **Idempotent + additive:** never clobber a user's existing hooks; merge our command in, marked.
@@ -160,7 +163,8 @@ Each phase shipped independently and left the report honest (PREVIEW where data 
 
 - ✅ Recorder gained a `--from <cli>` stdin mode and maps real hook payload shapes from Claude,
   Codex, Cursor, Gemini, Copilot, Windsurf, OpenCode, Kimi, Kiro, and Antigravity into local
-  `skill` / `mcp` / `tool` rows when the source payload exposes enough identity.
+  `skill` / `mcp` / `tool` rows when the source payload exposes enough identity. Zed has no
+  hook surface, so its usage path imports `threads.db` instead.
 - ✅ This slice — `aih usage --apply` generates the targeted per-tool hooks, v9 usage + skills
   panels go LIVE from real events, dormant = live ECC skills minus fired ECC skills, and
   `aih usage --rollup <dirs>` emits a scan-on-demand digest.
