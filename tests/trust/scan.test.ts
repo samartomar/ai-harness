@@ -376,7 +376,7 @@ function ctx(
 }
 
 describe("scanTrustTree", () => {
-  it("returns runnable SkillSpector repo digest references when verification matches RepoDigests", () => {
+  it("rejects SkillSpector repo digests when the local image id does not match", () => {
     const repoDigest = `skillspector@${SKILLSPECTOR_IMAGE_DIGEST}`;
 
     expect(
@@ -386,7 +386,7 @@ describe("scanTrustTree", () => {
           RepoDigests: [repoDigest],
         }),
       ),
-    ).toBe(repoDigest);
+    ).toBeUndefined();
     expect(
       verifiedSkillspectorImageReference(
         JSON.stringify({

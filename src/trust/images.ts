@@ -55,14 +55,7 @@ export function skillspectorImageInspectArgv(platform: Platform): string[] {
 export function verifiedSkillspectorImageReference(stdout: string): string | undefined {
   const inspect = parseImageInspect(stdout);
   if (inspect === undefined) return undefined;
-  const id = normalizedDigest(inspect.Id);
-  if (id !== undefined) return id;
-  const repoDigests = inspect.RepoDigests;
-  if (!Array.isArray(repoDigests)) return undefined;
-  return repoDigests.find(
-    (digest): digest is string =>
-      typeof digest === "string" && normalizedDigest(digest) !== undefined,
-  );
+  return normalizedDigest(inspect.Id);
 }
 
 export async function resolveVerifiedSkillspectorImage(
