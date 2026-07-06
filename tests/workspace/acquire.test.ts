@@ -318,6 +318,35 @@ describe("workspace add acquisition plans", () => {
     expect(seenSmoke[0]?.join("\n")).toContain("test -r '/scan/skills/clean/install'");
   });
 
+  it("phase 1 records sandbox smoke evidence for nested symlinked installers", async () => {
+    localSkill(sourceRoot, "clean", "# Clean\n");
+    const skillDir = join(sourceRoot, "skills", "clean");
+    writeFileSync(join(skillDir, "REAL"), "echo install\n", "utf8");
+    try {
+      symlinkSync("REAL", join(skillDir, "install.sh"));
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === "EPERM") return;
+      throw err;
+    }
+    const seenSmoke: string[][] = [];
+    const c = ctx(sourceRoot, true, true, {}, {}, sandboxSmokeRunner({ seenSmoke }));
+
+    const result = await executePlan(await workspaceAddPhase1Plan(c), c);
+
+    expect(result.report?.ok).toBe(true);
+    expect(result.report?.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "skill sandbox smoke test",
+          verdict: "pass",
+          detail: expect.stringContaining("install scripts"),
+        }),
+      ]),
+    );
+    expect(seenSmoke).toHaveLength(1);
+    expect(seenSmoke[0]?.join("\n")).toContain("test -r '/scan/skills/clean/install.sh'");
+  });
+
   it("phase 2 rechecks sandbox smoke before promotion", async () => {
     localSkill(sourceRoot, "clean", "# Clean\n");
     writeFileSync(

@@ -35,7 +35,8 @@ const NON_SCRIPT_EXTENSIONS = new Set([
   ".eot",
 ]);
 
-const SCRIPT_EXTENSIONS = new Set([
+const MALICIOUS_CODE_SCRIPT_EXTENSIONS = new Set([
+  "",
   ".bash",
   ".bat",
   ".cjs",
@@ -51,6 +52,15 @@ const SCRIPT_EXTENSIONS = new Set([
   ".zsh",
 ]);
 
+const EXECUTABLE_INSTALL_SCRIPT_EXTENSIONS = new Set([
+  ".bash",
+  ".bat",
+  ".cmd",
+  ".ps1",
+  ".sh",
+  ".zsh",
+]);
+
 const SCRIPT_LIKE_SUBSTRINGS = [
   "install",
   "setup",
@@ -63,11 +73,29 @@ const SCRIPT_LIKE_SUBSTRINGS = [
   "script",
 ];
 
-export function isScriptLikeFilePath(path: string): boolean {
-  const name = basename(path).toLowerCase();
-  if (name === "package.json" || name === "package-lock.json") return false;
-  const ext = extname(name);
-  if (SCRIPT_EXTENSIONS.has(ext)) return true;
-  if (NON_SCRIPT_EXTENSIONS.has(ext)) return false;
+function isIgnoredPackageManifest(name: string): boolean {
+  return name === "package.json" || name === "package-lock.json";
+}
+
+function hasScriptLikeName(name: string): boolean {
   return SCRIPT_LIKE_SUBSTRINGS.some((needle) => name.includes(needle));
+}
+
+export function isMaliciousCodeScanFilePath(path: string): boolean {
+  const name = basename(path).toLowerCase();
+  if (isIgnoredPackageManifest(name)) return false;
+  const ext = extname(name);
+  if (MALICIOUS_CODE_SCRIPT_EXTENSIONS.has(ext)) return true;
+  if (NON_SCRIPT_EXTENSIONS.has(ext)) return false;
+  return hasScriptLikeName(name);
+}
+
+export function isInstallScriptEvidenceFilePath(path: string): boolean {
+  const name = basename(path).toLowerCase();
+  if (isIgnoredPackageManifest(name)) return false;
+  const ext = extname(name);
+  if (NON_SCRIPT_EXTENSIONS.has(ext)) return false;
+  if (EXECUTABLE_INSTALL_SCRIPT_EXTENSIONS.has(ext)) return true;
+  if (ext === "") return hasScriptLikeName(name);
+  return MALICIOUS_CODE_SCRIPT_EXTENSIONS.has(ext) && hasScriptLikeName(name);
 }

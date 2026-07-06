@@ -5,6 +5,7 @@ import {
   readdirSync,
   readFileSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -531,6 +532,32 @@ describe("skillVetCommand", () => {
     expectSandboxSmokeEvidence(result.report?.checks ?? [], "install scripts");
     expect(seenSmoke).toHaveLength(1);
     expect(seenSmoke[0]?.join("\n")).toContain("/scan/setup");
+    const digest = vetDigestOf(result);
+    expect(digest.data.verdict).toBe("YELLOW");
+    expect(digest.data.reasons).toEqual([expect.stringContaining("install scripts")]);
+  });
+
+  it("grades symlinked installer script shape YELLOW with sandbox smoke evidence", async () => {
+    skill("clean", "# Clean\n");
+    license();
+    write("REAL", "echo install\n");
+    try {
+      symlinkSync("REAL", join(sourceRoot, "install.sh"));
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === "EPERM") return;
+      throw err;
+    }
+    const seenSmoke: string[][] = [];
+    const c = ctx({ source: sourceRoot }, false, detectorRunner({ seenSmoke }), {
+      SNYK_TOKEN: "snyk-token-for-scanner",
+    });
+
+    const result = await executePlan(await skillVetCommand.plan(c), c);
+
+    expect(result.report?.ok).toBe(true);
+    expectSandboxSmokeEvidence(result.report?.checks ?? [], "install scripts");
+    expect(seenSmoke).toHaveLength(1);
+    expect(seenSmoke[0]?.join("\n")).toContain("/scan/install.sh");
     const digest = vetDigestOf(result);
     expect(digest.data.verdict).toBe("YELLOW");
     expect(digest.data.reasons).toEqual([expect.stringContaining("install scripts")]);

@@ -49,7 +49,7 @@ import {
   trustScanPlanForSource,
   trustSourceOriginChecks,
 } from "../trust/scan.js";
-import { isScriptLikeFilePath } from "../trust/script-files.js";
+import { isInstallScriptEvidenceFilePath } from "../trust/script-files.js";
 import type { SandboxSmokeShape } from "../trust/smoke.js";
 
 interface WorkspaceAddDeps {
@@ -491,13 +491,21 @@ function hasInstallScriptHooks(root: string): boolean {
 }
 
 function isInstallScriptFile(name: string): boolean {
-  return isScriptLikeFilePath(name);
+  return isInstallScriptEvidenceFilePath(name);
 }
 
 function fileNames(dir: string): string[] {
   try {
     return readdirSync(dir, { withFileTypes: true })
-      .filter((entry) => entry.isFile())
+      .filter((entry) => {
+        if (entry.isFile()) return true;
+        if (!entry.isSymbolicLink()) return false;
+        try {
+          return statSync(join(dir, entry.name)).isFile();
+        } catch {
+          return false;
+        }
+      })
       .map((entry) => entry.name);
   } catch {
     return [];

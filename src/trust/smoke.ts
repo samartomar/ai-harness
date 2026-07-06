@@ -81,10 +81,7 @@ function sandboxSmokeScript(shape: SandboxSmokeShape): string {
     commands.push(readableAny(mcpConfigFiles.map(scanPath)));
   }
   if (shape.installScripts) {
-    const installEvidenceFiles = uniqueStrings([
-      ...(shape.installScriptFiles ?? []),
-      ...shape.packageManifests,
-    ]);
+    const installEvidenceFiles = uniqueStrings(shape.installScriptFiles ?? []);
     if (installEvidenceFiles.length > 0) {
       commands.push(readableAny(installEvidenceFiles.map(scanPath)));
     } else {

@@ -21,7 +21,7 @@ import { scrubFetchEnv } from "./fetch.js";
 import { gradeTrustCheck } from "./grade.js";
 import { resolveVerifiedSkillspectorImage, SKILLSPECTOR_IMAGE } from "./images.js";
 import { collectFilesUnder, TRUST_SKIP_DIRS } from "./scan.js";
-import { isScriptLikeFilePath } from "./script-files.js";
+import { isMaliciousCodeScanFilePath } from "./script-files.js";
 
 const INCOMING_MCP_CONFIG_FILES = new Set([...MCP_CONFIG_FILES, "mcp.json"]);
 
@@ -287,7 +287,7 @@ export function scanNativeMaliciousCode(root: string): Check[] {
     root,
     (abs) => {
       const rel = toPosix(relative(root, abs));
-      return isScriptLikeFilePath(rel) && statSync(abs).size <= MAX_SCRIPT_SCAN_BYTES;
+      return isMaliciousCodeScanFilePath(rel) && statSync(abs).size <= MAX_SCRIPT_SCAN_BYTES;
     },
     TRUST_SKIP_DIRS,
   );

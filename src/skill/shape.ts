@@ -1,7 +1,7 @@
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import { INCOMING_MCP_CONFIG_FILES } from "../trust/scan.js";
-import { isScriptLikeFilePath } from "../trust/script-files.js";
+import { isInstallScriptEvidenceFilePath } from "../trust/script-files.js";
 import { collectSkillDirs, promotedSkillRel } from "../workspace/acquire.js";
 
 /**
@@ -62,13 +62,21 @@ function hasInstallScriptHooks(root: string): boolean {
 }
 
 function isInstallScriptFile(name: string): boolean {
-  return isScriptLikeFilePath(name);
+  return isInstallScriptEvidenceFilePath(name);
 }
 
 function fileNames(dir: string): string[] {
   try {
     return readdirSync(dir, { withFileTypes: true })
-      .filter((entry) => entry.isFile())
+      .filter((entry) => {
+        if (entry.isFile()) return true;
+        if (!entry.isSymbolicLink()) return false;
+        try {
+          return statSync(join(dir, entry.name)).isFile();
+        } catch {
+          return false;
+        }
+      })
       .map((entry) => entry.name);
   } catch {
     return [];
