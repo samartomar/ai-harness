@@ -84,11 +84,10 @@ function sha256Text(body: string): string {
   return createHash("sha256").update(Buffer.from(body, "utf8")).digest("hex");
 }
 
-function writeTrustLock(
+function writeTrustLockArtifacts(
   id: string,
   name: string,
-  files: Array<{ path: string; body: string }>,
-  sourceSkillPath = name,
+  artifactHashes: Array<{ path: string; sha256: string }>,
 ): void {
   write(
     ".aih/trust-lock.json",
@@ -103,14 +102,27 @@ function writeTrustLock(
           promotedAt: "2026-01-01T00:00:00.000Z",
           promotedSkills: [name],
           analyzersRun: ["aih-native"],
-          artifactHashes: files.map((file) => ({
-            path: `${sourceSkillPath}/${file.path}`,
-            sha256: sha256Text(file.body),
-          })),
+          artifactHashes,
           findings: [],
         },
       ],
     }),
+  );
+}
+
+function writeTrustLock(
+  id: string,
+  name: string,
+  files: Array<{ path: string; body: string }>,
+  sourceSkillPath = name,
+): void {
+  writeTrustLockArtifacts(
+    id,
+    name,
+    files.map((file) => ({
+      path: `${sourceSkillPath}/${file.path}`,
+      sha256: sha256Text(file.body),
+    })),
   );
 }
 
@@ -240,6 +252,38 @@ describe("skillSyncCommand", () => {
       codexSkill("clean", "README.md"),
       codexSkill("clean", "SKILL.md"),
     ]);
+  });
+
+  it("does not overmatch direct skill receipts that contain skills path segments", async () => {
+    installApproved("owner-repo", "clean");
+    write(
+      join(CONTEXT_DIR, "skills", "owner-repo", "clean", "docs", "skills", "clean", "notes.md"),
+      "notes\n",
+    );
+    writeTrustLock("owner-repo", "clean", [
+      { path: "SKILL.md", body: "# clean\n" },
+      { path: "README.md", body: "clean docs\n" },
+      { path: "docs/skills/clean/notes.md", body: "notes\n" },
+    ]);
+    const c = ctx({ name: "clean", cli: "codex" });
+
+    const result = await executePlan(await skillSyncCommand.plan(c), c);
+
+    expect(result.writes.map((write) => write.path)).toContain(
+      codexSkill("clean", join("docs", "skills", "clean", "notes.md")),
+    );
+  });
+
+  it("refuses duplicate trust receipts for the same promoted file", () => {
+    installApproved("owner-repo", "clean");
+    writeTrustLockArtifacts("owner-repo", "clean", [
+      { path: "clean/SKILL.md", sha256: sha256Text("# clean\n") },
+      { path: "clean/SKILL.md", sha256: sha256Text("# tampered\n") },
+      { path: "clean/README.md", sha256: sha256Text("clean docs\n") },
+    ]);
+    const c = ctx({ name: "clean", cli: "codex" });
+
+    expect(() => skillSyncCommand.plan(c)).toThrow(/ambiguous trust-lock artifact receipts/);
   });
 
   it("refuses when an approved promoted skill file was deleted after approval", () => {

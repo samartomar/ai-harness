@@ -158,10 +158,10 @@ interface ExpectedArtifacts {
 }
 
 function artifactRelCandidates(name: string, sourcePath: string): string[] {
-  const candidates = new Set<string>();
   const directPrefix = `${name}/`;
-  if (sourcePath.startsWith(directPrefix)) candidates.add(sourcePath.slice(directPrefix.length));
+  if (sourcePath.startsWith(directPrefix)) return [sourcePath.slice(directPrefix.length)];
 
+  const candidates = new Set<string>();
   const parts = sourcePath.split("/");
   const nameParts = name.split("/");
   for (let index = 1; index <= parts.length - nameParts.length - 1; index += 1) {
@@ -184,7 +184,7 @@ function addExpectedArtifact(
     throw refuse(`approved promoted skill ${name} has an empty trust-lock artifact receipt`);
   }
   const origin = expected.origins.get(rel);
-  if (origin !== undefined && origin !== artifact.path) {
+  if (origin !== undefined) {
     throw refuse(
       `approved promoted skill ${name} has ambiguous trust-lock artifact receipts for ${rel}`,
     );
