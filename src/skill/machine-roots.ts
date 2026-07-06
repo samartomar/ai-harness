@@ -1,6 +1,6 @@
 import { join } from "node:path";
-import type { Cli } from "../internals/clis.js";
 import { entry, REGISTRY_IDS } from "../internals/cli-registry.js";
+import type { Cli } from "../internals/clis.js";
 
 export interface MachineSkillRoot {
   cli: Cli;

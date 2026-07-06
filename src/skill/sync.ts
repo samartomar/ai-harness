@@ -1,8 +1,8 @@
 import { lstatSync, readdirSync, realpathSync, statSync } from "node:fs";
 import { basename, extname, join, relative } from "node:path";
 import { AihError } from "../errors.js";
-import { type Cli, resolveClis } from "../internals/clis.js";
 import { homeDir } from "../internals/cli-detect.js";
+import { type Cli, resolveClis } from "../internals/clis.js";
 import { readRegularFile } from "../internals/fsxn.js";
 import {
   type Action,
@@ -14,14 +14,14 @@ import {
   writeText,
 } from "../internals/plan.js";
 import { normalizeRel } from "../internals/worktree-gate.js";
+import { type SkillInventoryRow, skillInventory } from "./inventory.js";
 import { skillNameSchema } from "./lockfile.js";
 import {
+  type MachineSkillRoot,
   machineSkillRootForCli,
   supportedMachineSkillCliList,
-  type MachineSkillRoot,
 } from "./machine-roots.js";
 import { nestedChildSkills } from "./remove.js";
-import { type SkillInventoryRow, skillInventory } from "./inventory.js";
 
 interface SyncFile {
   rel: string;
