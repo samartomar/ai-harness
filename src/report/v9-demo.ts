@@ -251,6 +251,7 @@ export const V9_DEMO: AihDataV9 = {
       ["learn · user", 14],
     ],
     totalInvocations: 263,
+    dormantAvailable: true,
     dormant: ["go-review", "php-review", "ruby-review", "swift-review", "kotlin-review"],
     tokensReclaimable: 2800,
   },

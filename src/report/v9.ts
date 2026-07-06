@@ -598,9 +598,31 @@ const USAGE_COLORS = [
 interface UsageData {
   total: number;
   usageByCli: V9Activity["usageByCli"];
+  cache?: V9Activity["cache"];
   skillTop: Array<{ name: string; count: number }>;
   skillSource: Map<string, string>;
   eccFired: Set<string>;
+}
+
+function buildUsageCache(tokens: unknown): V9Activity["cache"] | undefined {
+  if (!tokens || typeof tokens !== "object") return undefined;
+  const raw = tokens as Record<string, unknown>;
+  const input = numOr(raw.input, 0);
+  const output = numOr(raw.output, 0);
+  const cacheRead = numOr(raw.cacheRead, 0);
+  const cacheCreation = numOr(raw.cacheCreation, 0);
+  const total = numOr(raw.total, input + output + cacheRead + cacheCreation);
+  if (total <= 0) return undefined;
+  const fallbackPct =
+    cacheRead + input > 0 ? Math.round((cacheRead / (cacheRead + input)) * 100) : 0;
+  return {
+    input,
+    output,
+    cacheRead,
+    cacheCreation,
+    total,
+    cacheEfficiencyPct: numOr(raw.cacheEfficiencyPct, fallbackPct),
+  };
 }
 
 function buildUsage(digests: DigestAction[]): UsageData | undefined {
@@ -630,6 +652,7 @@ function buildUsage(digests: DigestAction[]): UsageData | undefined {
   return {
     total,
     usageByCli,
+    ...(buildUsageCache(u.tokens) ? { cache: buildUsageCache(u.tokens) } : {}),
     skillTop: countedRows(skills.top),
     skillSource,
     eccFired: new Set(countedRows(bySource.ecc).map((row) => row.name)),
@@ -641,16 +664,19 @@ function buildSkills(
   ecc: V9Quality["ecc"] | undefined,
 ): V9Skills | undefined {
   if (!usage || usage.total <= 0) return undefined;
+  const totalInvocations = usage.skillTop.reduce((n, row) => n + row.count, 0);
+  if (totalInvocations <= 0) return undefined;
   const eccNames = [...(ecc?.skillNames ?? [])].sort();
-  if (eccNames.length === 0) return undefined;
+  const dormantAvailable = eccNames.length > 0;
   const heavyLifters = usage.skillTop.map((row): [string, number] => {
     const source = usage.skillSource.get(row.name) ?? "user";
     return [`${row.name} · ${source}`, row.count];
   });
-  const dormant = eccNames.filter((name) => !usage.eccFired.has(name));
+  const dormant = dormantAvailable ? eccNames.filter((name) => !usage.eccFired.has(name)) : [];
   return {
     heavyLifters,
-    totalInvocations: usage.skillTop.reduce((n, row) => n + row.count, 0),
+    totalInvocations,
+    dormantAvailable,
     dormant,
   };
 }
@@ -837,7 +863,13 @@ export function buildAihDataV9(digests: DigestAction[]): AihDataV9 {
   const usage = buildUsage(digests);
   const baseActivity = buildActivity(digests);
   const activity =
-    baseActivity && usage ? { ...baseActivity, usageByCli: usage.usageByCli } : baseActivity;
+    baseActivity && usage
+      ? {
+          ...baseActivity,
+          usageByCli: usage.usageByCli,
+          ...(usage.cache ? { cache: usage.cache } : {}),
+        }
+      : baseActivity;
   let quality = buildQuality(digests);
   const mcp = buildMcp(digests);
   const adoption = buildAdoption(digests);
@@ -897,7 +929,7 @@ export function buildAihDataV9(digests: DigestAction[]): AihDataV9 {
   if (adoption) gates["sec-adoption"] = "live";
   if (support) gates["sec-support"] = "live";
   gates["sec-period"] = "live"; // trends sub-stub + outcome preview until wired
-  gates["sec-skills"] = skills ? "live" : "preview";
+  gates["sec-skills"] = skills ? "live" : "empty";
   gates["sec-skillgov"] = skillGov ? "live" : "empty"; // live from the inventory join
   // Capability sub-cards go live once their v9-only digest lands.
   gates["cap-ecc"] = ecc ? "live" : "preview";
@@ -1248,21 +1280,29 @@ export function assembleViewV9(data: AihDataV9, demo: AihDataV9): V9View {
     };
   }
 
-  // 09 Skills — live from usage + ECC inventory, else preview.
+  // 09 Skills — live from local usage samples, else an honest empty stub.
   {
-    const preview = !isLive(g, "sec-skills");
-    const skills = preview ? demo.skills : data.skills;
-    if (skills) {
+    const skills = data.skills;
+    if (skills && isLive(g, "sec-skills")) {
+      const hasDormant = skills.dormantAvailable;
       sections["sec-skills"] = {
-        state: preview ? "preview" : "live",
+        state: "live",
         container: ".grid",
-        title: preview ? "Heavy lifters vs dormant packs" : "Heavy lifters vs dormant ECC skills",
-        insight: preview
-          ? "Where skill investment pays off, and what to trim. Counts need usage hooks; dormant detection needs the ECC-inventory scan — shown as design intent until wired."
-          : "Where skill investment pays off, and what to trim. Counts are local activity only; dormant means installed ECC skills that did not fire in the usage log.",
+        title: hasDormant ? "Heavy lifters vs dormant ECC skills" : "Skill ledger — local usage",
+        insight: hasDormant
+          ? "Where skill investment pays off, and what to trim. Counts are local activity only; dormant means installed ECC skills that did not fire in the usage log."
+          : "Local skill-invocation samples are live. ECC inventory was not available on this run, so dormant trim candidates are not inferred.",
         count: "skill investment",
-        html: renderSkills(skills, preview),
+        html: renderSkills(skills, false),
       };
+    } else {
+      sections["sec-skills"] = emptySection(
+        "Skill ledger — no local usage samples",
+        "The local skill ledger reads the gitignored <code>.aih/usage.jsonl</code> sink. When it is empty, this report does not show demo skill rows as real activity.",
+        "skill investment",
+        "Skill ledger",
+        "No local skill-invocation samples were found in <code>.aih/usage.jsonl</code>. For org-level skill and cache analytics, run <code>aih report --org &lt;export.json&gt;</code>.",
+      );
     }
   }
 

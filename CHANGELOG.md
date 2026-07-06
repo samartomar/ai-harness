@@ -6,6 +6,13 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Local usage sink for cache and skill report panels**: `.aih/usage.jsonl`
+  now has an optional deterministic token/cache counter shape, `aggregateUsage`
+  rolls it up, and `aih report` renders the local cache/skill economy live when
+  samples exist while keeping empty stubs pointed at `aih report --org`. (#249)
+
 ## [2.0.0] - 2026-07-05
 
 This package release ships the completed v1.3.1, v1.4.0, v1.5.0,

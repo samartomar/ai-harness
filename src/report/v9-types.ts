@@ -132,6 +132,15 @@ export interface V9Activity {
   };
   /** Stacked usage bar: [cli, pct, cssColor, actions]. */
   usageByCli: Array<[string, number, string, number]>;
+  /** Local token/cache counters from `.aih/usage.jsonl`, when captured. */
+  cache?: {
+    input: number;
+    output: number;
+    cacheRead: number;
+    cacheCreation: number;
+    total: number;
+    cacheEfficiencyPct: number;
+  };
   /** 105 heat levels (0–4), most-recent last; absent → procedural fallback. */
   heatCells?: number[];
 }
@@ -231,6 +240,8 @@ export interface V9Skills {
   /** [skill label, calls]. */
   heavyLifters: Array<[string, number]>;
   totalInvocations: number;
+  /** True when ECC inventory was present, so dormant trim candidates are evidence-backed. */
+  dormantAvailable: boolean;
   dormant: string[];
   tokensReclaimable?: number;
 }

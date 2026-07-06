@@ -118,8 +118,9 @@ describe("reportHtmlV9 — DOM hydration", () => {
     const actions = doc.getElementById("sec-actions");
     expect(actions?.querySelectorAll(".anom-card").length ?? 0).toBeGreaterThan(0);
     expect(actions?.textContent).toContain("Wire guardrails");
-    // PREVIEW: the skill ledger carries the desaturated preview marker.
-    expect(doc.querySelector("#sec-skills .preview")).not.toBeNull();
+    // Empty local usage sink: the skill ledger shows an honest stub, not demo rows.
+    expect(doc.querySelector("#sec-skills .preview")).toBeNull();
+    expect(doc.querySelector("#sec-skills")?.textContent).toContain("aih report --org");
     // The coherence card (sec-drift, 2nd card) is previewed too.
     expect(doc.querySelector("#sec-drift .preview")).not.toBeNull();
     window.happyDOM.close();
