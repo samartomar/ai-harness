@@ -343,8 +343,13 @@ Install the **multi-tool usage-capture** layer → `.aih/usage.jsonl` (rendered 
 `aih report --v9`). The **universal floor** is a git `post-commit` hook that records commit
 activity for **any** tool (it keys off the commit, not the agent). The per-tool **skill/MCP** layer
 wires in via each CLI's verified local hook (Claude/Codex/Cursor/Gemini/Copilot/Windsurf/OpenCode/
-Kimi/Kiro/Antigravity). Zed has no hook surface, so `aih usage --apply --cli zed` imports local
-`threads.db` rows read-only instead; pass `--zed-threads-db <path>` to point at a specific database.
+Kimi/Kiro/Antigravity). Zed has no hook surface, so `aih usage --apply --cli zed` imports matching
+local `threads.db` rows read-only instead; pass `--zed-threads-db <path>` to point at a specific
+database. Zed rows without matching repo folder metadata are skipped, and continued threads refresh
+previous imported rows by stable local event id instead of duplicating old tool calls. The importer is
+best-effort: the active Node runtime must expose its built-in SQLite reader, and compressed Zed rows
+also need runtime zstd support; if either is unavailable, hook setup still succeeds and no Zed rows are
+imported.
 Skills aggregate by source (ECC/canon/user), and `--rollup <repo,repo>` aggregates local logs across
 repos on demand. Usage is local activity counts only — **no cost, no prompts, no arguments**,
 machine-local and gitignored. Session rows may include deterministic token/cache counters (`input`,

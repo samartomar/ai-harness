@@ -17,9 +17,9 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   payload shapes into `.aih/usage.jsonl`, and keeps v9 usage-by-CLI / heavy
   lifter panels live only when local samples exist. (#250)
 - **Zed usage capture**: `aih usage --apply --cli zed` can import local
-  `threads.db` samples into `.aih/usage.jsonl`, mapping token counters plus
-  derivable skill/MCP/tool attribution while keeping report panels live only
-  from real local rows. (#251)
+  `threads.db` samples into `.aih/usage.jsonl`, mapping cumulative/request token
+  counters plus derivable skill/MCP/tool attribution while keeping report panels
+  live only from matching local repo rows. (#251)
 
 ## [2.0.0] - 2026-07-05
 

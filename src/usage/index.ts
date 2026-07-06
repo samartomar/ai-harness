@@ -46,7 +46,7 @@ const TOOL_HOOK: Partial<Record<string, string>> = {
   kimi: "`.kimi/config.toml` `[[hooks]]` → `PostToolUse`",
   kiro: "`.kiro/hooks/*.kiro.hook` Run Command (aih already generates these)",
   antigravity: "`.agents/hooks.json` → `PostToolUse`",
-  zed: "`threads.db` SQLite capture (no local hook surface)",
+  zed: "`threads.db` SQLite capture via the current Node runtime (no local hook surface)",
 };
 
 /** The recorder one-liner a per-tool hook calls to log a skill/MCP event. */

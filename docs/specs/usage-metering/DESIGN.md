@@ -70,8 +70,10 @@ node .aih/usage-record.mjs <tool> skill <name> <ecc|canon|user>
   repo-local hook surface (`.github/hooks/*.json` for Copilot, `.agents/hooks.json` for
   Antigravity, `.kimi/config.toml` for Kimi, etc.).
 - **zed** — no hooks. `aih usage --apply --cli zed` reads local `threads.db` rows read-only
-  (auto-located or via `--zed-threads-db <path>`), maps token counters and derivable
-  `ToolUse` identities, and appends deterministic Zed `UsageEvent`s.
+  (auto-located or via `--zed-threads-db <path>`), maps cumulative/request token counters and
+  derivable `ToolUse` identities, skips rows without matching repo folder metadata, and upserts
+  deterministic Zed `UsageEvent`s by stable local event id. It is best-effort on the active Node
+  runtime: missing built-in SQLite or zstd support skips the import without failing hook setup.
 
 Design choices:
 - **Idempotent + additive:** never clobber a user's existing hooks; merge our command in, marked.
