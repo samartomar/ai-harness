@@ -6,6 +6,7 @@ import {
   readFileSync,
   rmSync,
   symlinkSync,
+  unlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -217,6 +218,14 @@ describe("skillSyncCommand", () => {
     const c = ctx({ name: "clean", cli: "codex" });
 
     expect(() => skillSyncCommand.plan(c)).toThrow(/promoted skill bytes changed after approval/);
+  });
+
+  it("refuses when an approved promoted skill file was deleted after approval", () => {
+    installApproved("owner-repo", "clean");
+    unlinkSync(join(workspace, CONTEXT_DIR, "skills", "owner-repo", "clean", "README.md"));
+    const c = ctx({ name: "clean", cli: "codex" });
+
+    expect(() => skillSyncCommand.plan(c)).toThrow(/approved promoted skill file is missing/);
   });
 
   it("refuses UNC-style escaped source paths", () => {

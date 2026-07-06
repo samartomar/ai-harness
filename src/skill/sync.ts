@@ -15,7 +15,7 @@ import {
   writeText,
 } from "../internals/plan.js";
 import { normalizeRel } from "../internals/worktree-gate.js";
-import { readTrustLock } from "../trust/lock.js";
+import { readTrustLock, type TrustLockSource } from "../trust/lock.js";
 import { type SkillInventoryRow, skillInventory } from "./inventory.js";
 import { skillNameSchema } from "./lockfile.js";
 import {
@@ -152,8 +152,22 @@ function promotedSourceId(ctx: PlanContext, row: SkillInventoryRow): string {
   return sourceId;
 }
 
-function artifactPathCandidates(name: string, fileRel: string): string[] {
-  return [...new Set([fileRel, `${name}/${fileRel}`, `skills/${name}/${fileRel}`])];
+function artifactRelFromSourcePath(name: string, sourcePath: string): string | undefined {
+  if (sourcePath === "SKILL.md" || !sourcePath.includes("/")) return sourcePath;
+  const directPrefix = `${name}/`;
+  if (sourcePath.startsWith(directPrefix)) return sourcePath.slice(directPrefix.length);
+  const skillsPrefix = `skills/${name}/`;
+  if (sourcePath.startsWith(skillsPrefix)) return sourcePath.slice(skillsPrefix.length);
+  return undefined;
+}
+
+function expectedArtifactHashes(name: string, source: TrustLockSource): Map<string, string> {
+  const expected = new Map<string, string>();
+  for (const artifact of source.artifactHashes) {
+    const rel = artifactRelFromSourcePath(name, artifact.path);
+    if (rel !== undefined) expected.set(rel, artifact.sha256);
+  }
+  return expected;
 }
 
 function verifyApprovedArtifacts(
@@ -170,19 +184,27 @@ function verifyApprovedArtifacts(
       `approved promoted skill ${row.name} has no trust-lock artifact receipt for source ${sourceId}`,
     );
   }
-  const byPath = new Map(source.artifactHashes.map((item) => [item.path, item.sha256]));
+  const expected = expectedArtifactHashes(row.name, source);
+  if (expected.size === 0) {
+    throw refuse(
+      `approved promoted skill ${row.name} has no trust-lock artifact receipt for source ${sourceId}`,
+    );
+  }
+  const current = new Map(files.map((file) => [file.rel, file]));
+  for (const [rel, hash] of expected) {
+    const file = current.get(rel);
+    if (file === undefined) {
+      throw refuse(`approved promoted skill file is missing after approval: ${rel}`);
+    }
+    if (file.sha256 !== hash) {
+      throw refuse(`promoted skill bytes changed after approval: ${rel}`);
+    }
+  }
   for (const file of files) {
-    const expected = artifactPathCandidates(row.name, file.rel).flatMap((candidate) => {
-      const hash = byPath.get(candidate);
-      return hash === undefined ? [] : [hash];
-    });
-    if (expected.length === 0) {
+    if (!expected.has(file.rel)) {
       throw refuse(
         `approved promoted skill ${row.name} has no trust-lock artifact receipt for ${file.rel}`,
       );
-    }
-    if (!expected.includes(file.sha256)) {
-      throw refuse(`promoted skill bytes changed after approval: ${file.rel}`);
     }
   }
 }
