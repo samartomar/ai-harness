@@ -73,6 +73,7 @@ export const defaultRunner: Runner = (argv, opts = {}) =>
             code: typeof errno === "number" ? errno : 1,
             stdout: stdout ?? "",
             stderr: stderrText.length > 0 ? `${stderrText}\n${timeoutDetail}` : timeoutDetail,
+            spawnError: true,
           });
           return;
         }

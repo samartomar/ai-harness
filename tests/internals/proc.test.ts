@@ -30,6 +30,7 @@ describe("proc runner seam", () => {
       timeoutMs: 5,
     });
 
+    expect(res.spawnError).toBe(true);
     expect(res.code).not.toBe(0);
     expect(res.stderr).toContain("timed out after 5ms");
   }, 15000);
