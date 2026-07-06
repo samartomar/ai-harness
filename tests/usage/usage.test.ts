@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { builtinModules } from "node:module";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -80,7 +80,17 @@ async function writeZedThreadsDb(dbPath: string, fixture: ZedThreadFixture): Pro
   }
 }
 
-const hasNodeSqlite = builtinModules.includes("node:sqlite") || builtinModules.includes("sqlite");
+const requireModule = createRequire(import.meta.url);
+function canLoadNodeSqlite(): boolean {
+  try {
+    requireModule("node:sqlite");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+const hasNodeSqlite = canLoadNodeSqlite();
 const zedSqliteDescribe = hasNodeSqlite ? describe : describe.skip;
 
 const EVENTS: UsageEvent[] = [
