@@ -649,15 +649,14 @@ export async function scanTrustTreeWithAnalyzers(
     effectiveSandboxSmokeShape === undefined
       ? []
       : [await sandboxSmokeCheck(safeRoot, effectiveSandboxSmokeShape, { env, platform, run })];
-  const allChecks = [
-    ...checks,
-    ...detectorResult.checks,
-    ...mcpDetectorResult.checks,
-    ...sandboxSmokeChecks,
-  ];
+  const nonSmokeChecks = [...checks, ...detectorResult.checks, ...mcpDetectorResult.checks];
+  const allChecks =
+    nonSmokeChecks.length > 0
+      ? [...nonSmokeChecks, ...sandboxSmokeChecks]
+      : [passCheck(safeRoot, docs.length), ...sandboxSmokeChecks];
   return {
     analyzersRun: ["aih-native", ...detectorResult.analyzersRun, ...mcpDetectorResult.analyzersRun],
-    checks: allChecks.length > 0 ? allChecks : [passCheck(safeRoot, docs.length)],
+    checks: allChecks,
   };
 }
 

@@ -480,6 +480,7 @@ describe("scanTrustTree", () => {
     const checks = await scanTrustTree(dir);
 
     expect(checks).toEqual([
+      expect.objectContaining({ name: "trust scan", verdict: "pass" }),
       expect.objectContaining({
         name: "skill sandbox smoke test",
         verdict: "skip",
@@ -492,6 +493,7 @@ describe("scanTrustTree", () => {
     skill("skills/clean", "# Clean\n\nUse this skill for local documentation hygiene.\n");
 
     expect(await scanTrustTree(dir)).toEqual([
+      expect.objectContaining({ name: "trust scan", verdict: "pass" }),
       expect.objectContaining({
         name: "skill sandbox smoke test",
         verdict: "skip",
@@ -1132,6 +1134,26 @@ describe("scanTrustTree", () => {
 
     expect(result.checks).toEqual(
       expect.arrayContaining([
+        expect.objectContaining({
+          name: "skill sandbox smoke test",
+          verdict: "skip",
+          detail: expect.stringContaining("no skill directories were found"),
+        }),
+      ]),
+    );
+  });
+
+  it("keeps trust scan pass evidence alongside not-applicable sandbox smoke skips", async () => {
+    const result = await scanTrustTreeWithAnalyzers(dir, {
+      posture: "vibe",
+    });
+
+    expect(result.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "trust scan",
+          verdict: "pass",
+        }),
         expect.objectContaining({
           name: "skill sandbox smoke test",
           verdict: "skip",
