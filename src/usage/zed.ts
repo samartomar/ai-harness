@@ -38,8 +38,9 @@ function counter(...values: unknown[]): number | undefined {
   return undefined;
 }
 
-function normalizePath(value: string): string {
-  return resolve(value).replace(/\\/g, "/").toLowerCase();
+function normalizePath(value: string, caseSensitive: boolean): string {
+  const normalized = resolve(value).replace(/\\/g, "/");
+  return caseSensitive ? normalized : normalized.toLowerCase();
 }
 
 function eventId(row: ZedThreadRow, kind: string, ordinal = 0): string | undefined {
@@ -86,21 +87,23 @@ async function loadSqlite(): Promise<SqliteModule | undefined> {
   }
 }
 
-function threadMatchesRepo(row: ZedThreadRow, repoRoot: string): boolean {
+function threadMatchesRepo(row: ZedThreadRow, repoRoot: string, caseSensitive: boolean): boolean {
   const folderPaths = str(row.folder_paths);
   if (folderPaths === undefined) return false;
-  const repo = normalizePath(repoRoot);
+  const repo = normalizePath(repoRoot, caseSensitive);
   try {
     const parsed = JSON.parse(folderPaths);
     if (Array.isArray(parsed)) {
-      return parsed.some((path) => typeof path === "string" && normalizePath(path) === repo);
+      return parsed.some(
+        (path) => typeof path === "string" && normalizePath(path, caseSensitive) === repo,
+      );
     }
   } catch {
     // Fall back to exact matching for older/plain string folder path storage.
   }
   return folderPaths
     .split(/\r?\n/)
-    .some((path) => path.trim().length > 0 && normalizePath(path.trim()) === repo);
+    .some((path) => path.trim().length > 0 && normalizePath(path.trim(), caseSensitive) === repo);
 }
 
 function decodeThreadData(row: ZedThreadRow): string | undefined {
@@ -306,7 +309,11 @@ function eventsFromThread(row: ZedThreadRow): UsageEvent[] {
   return out;
 }
 
-export async function readZedUsageEvents(dbPath: string, repoRoot: string): Promise<UsageEvent[]> {
+export async function readZedUsageEvents(
+  dbPath: string,
+  repoRoot: string,
+  options: { caseSensitivePaths: boolean },
+): Promise<UsageEvent[]> {
   const sqlite = await loadSqlite();
   if (sqlite === undefined) return [];
   let db: SqliteDatabase | undefined;
@@ -318,7 +325,7 @@ export async function readZedUsageEvents(dbPath: string, repoRoot: string): Prom
       )
       .all() as ZedThreadRow[];
     return rows
-      .filter((row) => threadMatchesRepo(row, repoRoot))
+      .filter((row) => threadMatchesRepo(row, repoRoot, options.caseSensitivePaths))
       .flatMap((row) => eventsFromThread(row));
   } catch {
     return [];

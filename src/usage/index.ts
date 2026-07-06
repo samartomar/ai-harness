@@ -132,7 +132,12 @@ async function usagePlan(ctx: PlanContext): Promise<Plan> {
 
   const { clis } = await resolveTargets(ctx);
   const zedDbPath = clis.includes("zed") ? zedThreadsDbPath(ctx) : undefined;
-  const zedEvents = zedDbPath === undefined ? [] : await readZedUsageEvents(zedDbPath, ctx.root);
+  const zedEvents =
+    zedDbPath === undefined
+      ? []
+      : await readZedUsageEvents(zedDbPath, ctx.root, {
+          caseSensitivePaths: ctx.host.platform === "linux",
+        });
   const actions: Action[] = [
     writeText(
       RECORDER_PATH,

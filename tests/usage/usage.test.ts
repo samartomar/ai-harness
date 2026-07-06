@@ -573,6 +573,24 @@ describe("aih usage command", () => {
       expect(existsSync(join(root, ".aih", "usage.jsonl"))).toBe(false);
     });
 
+    it("skips case-only Zed repo mismatches on Linux", async () => {
+      const dbPath = join(root, "threads.db");
+      await writeZedThreadsDb(dbPath, {
+        folderPaths: root.toUpperCase(),
+        data: {
+          cumulative_token_usage: {
+            input_tokens: 120,
+            output_tokens: 30,
+          },
+        },
+      });
+
+      const ctx = { ...makeCtx({ cli: "zed", zedThreadsDb: dbPath }), apply: true };
+      await executePlan(await command.plan(ctx), ctx);
+
+      expect(existsSync(join(root, ".aih", "usage.jsonl"))).toBe(false);
+    });
+
     it("captures legacy-style Zed token counters", async () => {
       const dbPath = join(root, "threads.db");
       await writeZedThreadsDb(dbPath, {
