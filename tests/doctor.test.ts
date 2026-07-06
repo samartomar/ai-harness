@@ -1097,8 +1097,11 @@ describe("doctor — reads the committed .aih-config.json marker", () => {
     expect(res?.detail).toContain("no .aih-config.json");
   });
 
-  it("config-marker probe warns when the marker is present but invalid", async () => {
-    writeFileSync(join(dir, AIH_CONFIG_FILE), "{ broken", "utf8");
+  it.each([
+    ["malformed JSON", "{ broken"],
+    ["schema-invalid JSON", JSON.stringify({ version: "bad" })],
+  ])("config-marker probe warns when the marker is present but invalid (%s)", async (_kind, body) => {
+    writeFileSync(join(dir, AIH_CONFIG_FILE), body, "utf8");
     const c = rooted("ai-coding");
     const probe = findProbe((await command.plan(c)).actions, "bootstrap config marker");
     const res = await probe?.run(c);

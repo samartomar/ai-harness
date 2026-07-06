@@ -329,13 +329,6 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     title: "Context directory not scaffolded",
     action: "Run `aih scaffold --apply` to scaffold the context directory.",
   },
-  "config.marker-invalid": {
-    audience: "developer",
-    failSeverity: "degraded",
-    title: ".aih-config.json is present but invalid",
-    action:
-      "Fix `.aih-config.json` by hand or regenerate it with the relevant bootstrap/init command, then re-run `aih doctor`.",
-  },
   "canon.lint-failed": {
     audience: "developer",
     failSeverity: "degraded",
@@ -355,6 +348,13 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     title: "CLI-native config holds content not in the canon",
     action:
       "Run `aih adopt` for the migration map; opt into `--migrate-cli` (content-verified) to fold it into the canon. aih never modifies CLI-native locations on its own.",
+  },
+  "config.marker-invalid": {
+    audience: "developer",
+    failSeverity: "degraded",
+    title: ".aih-config.json is present but invalid",
+    action:
+      "Fix `.aih-config.json` by hand or regenerate it with the relevant bootstrap/init command, then re-run `aih doctor`.",
   },
   "secrets.plaintext-detected": {
     audience: "security",

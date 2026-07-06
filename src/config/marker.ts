@@ -45,11 +45,10 @@ export const AihConfigSchema = z.object({
 
 export type AihConfig = z.infer<typeof AihConfigSchema>;
 
-export interface AihConfigReadDiagnostic {
-  config?: AihConfig;
-  invalid: boolean;
-  present: boolean;
-}
+export type AihConfigReadDiagnostic =
+  | { invalid: false; present: false }
+  | { invalid: true; present: true }
+  | { config: AihConfig; invalid: false; present: true };
 
 /**
  * Read the committed bootstrap intent, or `undefined` when the marker is absent,
@@ -59,7 +58,8 @@ export interface AihConfigReadDiagnostic {
  * `doctor.ts:workspaceRepos` (`readIfExists` + guarded parse).
  */
 export function readAihConfig(root: string): AihConfig | undefined {
-  return readAihConfigDiagnostic(root).config;
+  const diagnostic = readAihConfigDiagnostic(root);
+  return diagnostic.present && !diagnostic.invalid ? diagnostic.config : undefined;
 }
 
 /**
@@ -67,9 +67,9 @@ export function readAihConfig(root: string): AihConfig | undefined {
  * from "present but invalid" without changing the fail-soft public reader.
  */
 export function readAihConfigDiagnostic(root: string): AihConfigReadDiagnostic {
-  const raw = readIfExists(join(root, AIH_CONFIG_FILE));
-  if (raw === undefined) return { invalid: false, present: false };
   try {
+    const raw = readIfExists(join(root, AIH_CONFIG_FILE));
+    if (raw === undefined) return { invalid: false, present: false };
     return { config: AihConfigSchema.parse(JSON.parse(raw)), invalid: false, present: true };
   } catch {
     return { invalid: true, present: true };

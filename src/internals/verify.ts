@@ -44,10 +44,10 @@ export type CheckCode =
   | "canon.generated-missing"
   | "canon.generated-drift"
   | "canon.context-dir-missing"
-  | "config.marker-invalid"
   | "canon.lint-failed"
   | "canon.adoptable"
   | "canon.cli-native-unmigrated"
+  | "config.marker-invalid"
   // guardrails / secrets
   | "secrets.plaintext-detected"
   | "guardrails.gitleaks-missing"

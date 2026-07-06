@@ -67,7 +67,7 @@ export const command: CommandSpec = {
     // (the silent-wrong-path gap). `cfg?.contextDir ?? ctx.contextDir` keeps the
     // marker authoritative while falling back to the resolved setting when absent.
     const marker = readAihConfigDiagnostic(ctx.root);
-    const cfg = marker.config;
+    const cfg = marker.present && !marker.invalid ? marker.config : undefined;
     const contextDir = cfg?.contextDir ?? ctx.contextDir;
     const base: Action[] = [
       probe("node runtime >= 20", () => {
