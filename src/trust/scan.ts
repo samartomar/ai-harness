@@ -519,6 +519,8 @@ function missingDetectorRuntimeChecks(
   return requiredDetectors.map((detector) => ({
     name: `trust detector ${detector}`,
     verdict: posture === "enterprise" ? "fail" : "skip",
+    // The verdict controls blocking behavior; the code keeps one diagnostic
+    // identity for unavailable detectors across skip and fail postures.
     code: "trust.detector-unavailable",
     detail:
       posture === "enterprise"

@@ -738,6 +738,18 @@ describe("scanTrustTree", () => {
                 },
               ],
             },
+            {
+              ruleId: "skillspector.future-rule",
+              message: { text: "future SkillSpector finding" },
+              locations: [
+                {
+                  physicalLocation: {
+                    artifactLocation: { uri: "/scan/skills/clean/future.txt" },
+                    region: { startLine: 2 },
+                  },
+                },
+              ],
+            },
           ],
         },
       ],
@@ -767,6 +779,12 @@ describe("scanTrustTree", () => {
           code: "trust.prompt-injection",
           detail: expect.stringContaining("SkillSpector"),
           location: expect.objectContaining({ uri: "skills/clean/SKILL.md", startLine: 1 }),
+        }),
+        expect.objectContaining({
+          verdict: "fail",
+          code: "trust.detector-finding",
+          detail: expect.stringContaining("future SkillSpector finding"),
+          location: expect.objectContaining({ uri: "skills/clean/future.txt", startLine: 2 }),
         }),
       ]),
     );
