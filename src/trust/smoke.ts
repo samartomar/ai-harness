@@ -44,7 +44,12 @@ function smokeReasons(shape: SandboxSmokeShape): string[] {
 }
 
 function runSummary(result: RunResult): string {
-  const output = (result.stderr || result.stdout).trim();
+  const stdout = result.stdout.trim();
+  const stderr = result.stderr.trim();
+  const output =
+    stdout.length > 0 && stderr.length > 0
+      ? `stderr: ${stderr}\nstdout: ${stdout}`
+      : stderr || stdout;
   if (output.length > 0) return output.slice(0, 400);
   if (result.code === null) return "process ended without an exit code";
   return `exit ${result.code}`;

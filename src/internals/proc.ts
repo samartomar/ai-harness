@@ -66,11 +66,13 @@ export const defaultRunner: Runner = (argv, opts = {}) =>
           return;
         }
         const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-        if (err?.killed && (stderr ?? "").trim().length === 0) {
+        if (err?.killed) {
+          const timeoutDetail = `process timed out after ${timeoutMs}ms`;
+          const stderrText = (stderr ?? "").trim();
           resolve({
             code: typeof errno === "number" ? errno : 1,
             stdout: stdout ?? "",
-            stderr: `process timed out after ${timeoutMs}ms`,
+            stderr: stderrText.length > 0 ? `${stderrText}\n${timeoutDetail}` : timeoutDetail,
           });
           return;
         }

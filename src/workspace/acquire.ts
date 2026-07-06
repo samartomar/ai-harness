@@ -96,7 +96,19 @@ export interface ClearedWorkspaceAddTrustGate {
   report: VerificationReport;
   analyzersRun: string[];
   internalScopes: string[];
-  blockingChecks?: Check[];
+}
+
+export interface WorkspaceAddTrustGate extends ClearedWorkspaceAddTrustGate {
+  blockingChecks: Check[];
+}
+
+export class WorkspaceAddTrustGateBlockedError extends AihError {
+  readonly blockingChecks: Check[];
+
+  constructor(blockingChecks: Check[]) {
+    super("workspace add trust gate blocked; source was not promoted", "AIH_TRUST");
+    this.blockingChecks = blockingChecks;
+  }
 }
 
 const SKIP_DIRS = new Set([".git", ".hg", ".svn", ".aih", "coverage", "dist", "node_modules"]);
@@ -685,12 +697,12 @@ function sourceRootFor(source: TrustSource): string {
   return source.kind === "local" ? source.root : source.treePath;
 }
 
-export async function captureClearedWorkspaceAddTrustGate(
+export async function captureWorkspaceAddTrustGate(
   ctx: PlanContext,
   report: VerificationReport | undefined,
   resolvedSource?: TrustSource,
   selectSkills?: ReadonlySet<string>,
-): Promise<ClearedWorkspaceAddTrustGate> {
+): Promise<WorkspaceAddTrustGate> {
   if (!report) throw new AihError("workspace add phase 2 requires a phase 1 report", "AIH_TRUST");
   if (!report.ok) {
     throw new AihError("workspace add failed trust scan; source was not promoted", "AIH_TRUST");
@@ -711,9 +723,26 @@ export async function captureClearedWorkspaceAddTrustGate(
   };
 }
 
+export async function captureClearedWorkspaceAddTrustGate(
+  ctx: PlanContext,
+  report: VerificationReport | undefined,
+  resolvedSource?: TrustSource,
+  selectSkills?: ReadonlySet<string>,
+): Promise<ClearedWorkspaceAddTrustGate> {
+  const gate = await captureWorkspaceAddTrustGate(ctx, report, resolvedSource, selectSkills);
+  if (gate.blockingChecks.length > 0) {
+    throw new WorkspaceAddTrustGateBlockedError(gate.blockingChecks);
+  }
+  return gate;
+}
+
+function gateBlockingChecks(gate: ClearedWorkspaceAddTrustGate | WorkspaceAddTrustGate): Check[] {
+  return "blockingChecks" in gate ? gate.blockingChecks : [];
+}
+
 export async function workspaceAddPhase2Plan(
   ctx: PlanContext,
-  gate: ClearedWorkspaceAddTrustGate | undefined,
+  gate: ClearedWorkspaceAddTrustGate | WorkspaceAddTrustGate | undefined,
   resolvedSource?: TrustSource,
   selectSkills?: ReadonlySet<string>,
 ): Promise<Plan> {
@@ -729,8 +758,9 @@ export async function workspaceAddPhase2Plan(
       ]),
     );
   }
-  if ((gate.blockingChecks ?? []).length > 0) {
-    return plan("workspace add: promote", ...probesForChecks(gate.blockingChecks ?? []));
+  const blockingChecks = gateBlockingChecks(gate);
+  if (blockingChecks.length > 0) {
+    return plan("workspace add: promote", ...probesForChecks(blockingChecks));
   }
   const currentScan = await currentTrustScan(ctx, source, gate.internalScopes);
   const currentBlockingChecks = promotionBlockingChecks(currentScan.checks);

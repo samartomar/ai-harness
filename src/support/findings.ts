@@ -524,7 +524,7 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
   },
   "trust.sandbox-smoke-unavailable": {
     audience: "developer",
-    failSeverity: "degraded",
+    failSeverity: "blocking",
     title: "sandbox smoke test unavailable",
     action:
       "Install Docker and the pinned sandbox scanner image, or repeat the vetting on a host where the sandbox smoke test can run before promoting runtime-bearing skill sources.",

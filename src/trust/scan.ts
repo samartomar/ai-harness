@@ -226,9 +226,18 @@ function collectMcpConfigFileRels(root: string, skillDirs: readonly string[]): s
   );
 }
 
-function sandboxSmokeShapeForTrustScan(root: string): SandboxSmokeShape | undefined {
+function sandboxSmokeShapeForTrustScan(root: string): SandboxSmokeShape {
   const skillDirs = collectSkillDirs(root);
-  if (skillDirs.length === 0) return undefined;
+  if (skillDirs.length === 0) {
+    return {
+      skillDirs: [],
+      installScripts: false,
+      installScriptFiles: [],
+      mcpConfig: false,
+      mcpConfigFiles: [],
+      packageManifests: [],
+    };
+  }
   const installScriptFiles = collectInstallScriptFileRels(root, skillDirs);
   const mcpConfigFiles = collectMcpConfigFileRels(root, skillDirs);
   return {

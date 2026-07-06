@@ -1122,6 +1122,25 @@ describe("scanTrustTree", () => {
     expect(seenSmoke).toHaveLength(1);
   });
 
+  it("records an explicit sandbox smoke skip when direct analyzer scans find no skill dirs", async () => {
+    const result = await scanTrustTreeWithAnalyzers(dir, {
+      env: {},
+      platform: "linux",
+      posture: "vibe",
+      run: fakeRunner(successfulSkillspector),
+    });
+
+    expect(result.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "skill sandbox smoke test",
+          verdict: "skip",
+          detail: expect.stringContaining("no skill directories were found"),
+        }),
+      ]),
+    );
+  });
+
   it("runs sandbox smoke by default through trustScanProbes", async () => {
     skill("skills/clean", "# Clean\n");
     write("skills/clean/package.json", JSON.stringify({ name: "clean-skill" }));
@@ -1164,6 +1183,44 @@ describe("scanTrustTree", () => {
       ]),
     );
     expect(seenSmoke).toHaveLength(1);
+  });
+
+  it("keeps the sandbox smoke success marker in pass evidence when stderr has warnings", async () => {
+    skill("skills/clean", "# Clean\n");
+    write("skills/clean/package.json", JSON.stringify({ name: "clean-skill" }));
+    const run = fakeRunner((argv) => {
+      const skillspector = successfulSkillspector(argv);
+      if (
+        argv[0] === "docker" &&
+        argv[1] === "run" &&
+        argv.some((arg) => arg.includes("aih sandbox smoke ok"))
+      ) {
+        return {
+          code: 0,
+          stdout: "aih sandbox smoke ok\n",
+          stderr: "docker warning: using cached image\n",
+        };
+      }
+      if (skillspector !== undefined) return skillspector;
+      return undefined;
+    });
+
+    const result = await scanTrustTreeWithAnalyzers(dir, {
+      env: {},
+      platform: "linux",
+      posture: "vibe",
+      run,
+    });
+
+    expect(result.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "skill sandbox smoke test",
+          verdict: "pass",
+          detail: expect.stringContaining("aih sandbox smoke ok"),
+        }),
+      ]),
+    );
   });
 
   it("sanitizes unsafe SkillSpector SARIF artifact URIs before fingerprinting", async () => {

@@ -33,8 +33,8 @@ import { cleanupQuarantine, resolveTrustSource, type TrustSource } from "../trus
 import { readTrustLock } from "../trust/lock.js";
 import { TRUST_SKIP_DIRS } from "../trust/scan.js";
 import {
-  type ClearedWorkspaceAddTrustGate,
-  captureClearedWorkspaceAddTrustGate,
+  captureWorkspaceAddTrustGate,
+  type WorkspaceAddTrustGate,
   workspaceAddPhase1Plan,
   workspaceAddPhase2Plan,
 } from "../workspace/acquire.js";
@@ -101,7 +101,7 @@ interface SourceRun {
   /** The pack's refs for this source — the `selectSkills` promotion subset. */
   select: ReadonlySet<string>;
   phase1?: PlanResult;
-  gate?: ClearedWorkspaceAddTrustGate;
+  gate?: WorkspaceAddTrustGate;
   phase2?: PlanResult;
   /** Failure detail when this source's scan / gate / promotion failed. */
   failure?: string;
@@ -576,13 +576,8 @@ export async function runPackInstall(
           anyFailure = true;
           continue;
         }
-        run.gate = await captureClearedWorkspaceAddTrustGate(
-          ctx,
-          phase1.report,
-          run.source,
-          run.select,
-        );
-        const blockingChecks = run.gate.blockingChecks ?? [];
+        run.gate = await captureWorkspaceAddTrustGate(ctx, phase1.report, run.source, run.select);
+        const blockingChecks = run.gate.blockingChecks;
         if (blockingChecks.length > 0) {
           const codes = blockingChecks
             .map((check) => check.code ?? check.name)

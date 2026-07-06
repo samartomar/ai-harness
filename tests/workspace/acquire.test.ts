@@ -21,6 +21,7 @@ import { resolveTrustSource } from "../../src/trust/fetch.js";
 import { SKILLSPECTOR_IMAGE_DIGEST } from "../../src/trust/images.js";
 import {
   captureClearedWorkspaceAddTrustGate,
+  captureWorkspaceAddTrustGate,
   runWorkspaceAdd,
   workspaceAddPhase1Plan,
   workspaceAddPhase2Plan,
@@ -399,6 +400,37 @@ describe("workspace add acquisition plans", () => {
     );
   });
 
+  it("does not resolve a cleared gate when applicable sandbox smoke is unavailable", async () => {
+    localSkill(sourceRoot, "clean", "# Clean\n");
+    writeFileSync(
+      join(sourceRoot, "package.json"),
+      JSON.stringify({ name: "clean-skill" }),
+      "utf8",
+    );
+    const c = ctx(
+      sourceRoot,
+      true,
+      true,
+      {},
+      {},
+      sandboxSmokeRunner({ imageUnavailable: () => true }),
+    );
+    const phase1Result = await executePlan(await workspaceAddPhase1Plan(c), c);
+    expect(phase1Result.report?.ok).toBe(true);
+
+    await expect(captureClearedWorkspaceAddTrustGate(c, phase1Result.report)).rejects.toMatchObject(
+      {
+        code: "AIH_TRUST",
+        blockingChecks: expect.arrayContaining([
+          expect.objectContaining({
+            verdict: "fail",
+            code: "trust.sandbox-smoke-unavailable",
+          }),
+        ]),
+      },
+    );
+  });
+
   it("phase 2 rejects a source-binding mismatch through a paired structured probe", async () => {
     localSkill(sourceRoot, "clean", "# Clean\n");
     const c = ctx(sourceRoot, true, true);
@@ -587,7 +619,7 @@ describe("workspace add acquisition plans", () => {
       writePolicy({ approvedSources: [{ owner: "trusted", repo: "repo" }] });
 
       const c = ctx("owner/repo", true, true, {}, { posture: "enterprise" });
-      const gate = await captureClearedWorkspaceAddTrustGate(c, report, source);
+      const gate = await captureWorkspaceAddTrustGate(c, report, source);
       const result = await executePlan(await workspaceAddPhase2Plan(c, gate, source), c);
 
       expect(result.report?.exitCode()).toBe(1);
