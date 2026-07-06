@@ -44,6 +44,7 @@ function ctx(
   options: Record<string, unknown> = {},
   apply = false,
   run: Runner = fakeRunner(() => undefined),
+  env: NodeJS.ProcessEnv = {},
 ): PlanContext {
   return {
     root: workspace,
@@ -52,8 +53,8 @@ function ctx(
     verify: true,
     json: false,
     run,
-    host: makeHostAdapter({ platform: "linux", run, env: {} }),
-    env: {},
+    host: makeHostAdapter({ platform: "linux", run, env }),
+    env,
     posture: "vibe",
     options,
   };
@@ -91,11 +92,24 @@ function detectorRunner(): Runner {
         writeFileSync(out, JSON.stringify({ runs: [] }), "utf8");
         return { code: 0, stdout: `Report saved to: ${out}\n` };
       }
+      if (argv.includes("snyk-agent-scan")) {
+        if (argv.includes("help")) return { code: 0, stdout: "snyk-agent-scan help\n" };
+        if (argv.includes("scan")) return { code: 0, stdout: JSON.stringify({ findings: [] }) };
+      }
     }
     if (argv[0] === "semgrep") {
       if (argv.includes("--version")) return { code: 0, stdout: "1.125.0\n" };
       if (argv.includes("scan")) {
         return { code: 0, stdout: JSON.stringify({ version: "2.1.0", runs: [] }) };
+      }
+    }
+    if (argv[0] === "agentshield") {
+      if (argv.includes("--help")) return { code: 0, stdout: "agentshield scan help\n" };
+      if (argv.includes("scan")) {
+        const out = argv[argv.indexOf("--output") + 1];
+        if (out === undefined) return { code: 1, stderr: "missing --output" };
+        writeFileSync(out, JSON.stringify({ version: "2.1.0", runs: [] }), "utf8");
+        return { code: 0, stdout: `SARIF saved to ${out}\n` };
       }
     }
     return undefined;
@@ -115,7 +129,9 @@ describe("skillVetCommand", () => {
   it("grades a clean licensed local source GREEN and writes nothing in dry-run", async () => {
     skill("clean", "# Clean\n\nUse this skill for local documentation hygiene.\n");
     license();
-    const c = ctx({ source: sourceRoot }, false, detectorRunner());
+    const c = ctx({ source: sourceRoot }, false, detectorRunner(), {
+      SNYK_TOKEN: "snyk-token-for-scanner",
+    });
 
     const result = await executePlan(await skillVetCommand.plan(c), c);
 
@@ -131,6 +147,8 @@ describe("skillVetCommand", () => {
       "skillspector@docker",
       "cisco@uvx",
       "semgrep@local",
+      "snyk-agent-scan@uvx",
+      "agentshield@local",
     ]);
     expect(digest.text).toContain("Verdict: GREEN");
     expect(digest.text).toContain("Skill directories: clean");
@@ -174,7 +192,9 @@ describe("skillVetCommand", () => {
   it("writes the evidence artifact under --apply", async () => {
     skill("clean", "# Clean\n\nUse this skill for local documentation hygiene.\n");
     license();
-    const c = ctx({ source: sourceRoot }, true, detectorRunner());
+    const c = ctx({ source: sourceRoot }, true, detectorRunner(), {
+      SNYK_TOKEN: "snyk-token-for-scanner",
+    });
 
     const result = await executePlan(await skillVetCommand.plan(c), c);
 
@@ -202,6 +222,8 @@ describe("skillVetCommand", () => {
       "skillspector@docker",
       "cisco@uvx",
       "semgrep@local",
+      "snyk-agent-scan@uvx",
+      "agentshield@local",
     ]);
     expect(evidence.checks).toEqual(
       expect.arrayContaining([expect.objectContaining({ name: "skill license", verdict: "pass" })]),
@@ -244,7 +266,9 @@ describe("skillVetCommand", () => {
 
   it("grades a licence-less source UNKNOWN with a trust.license-missing check", async () => {
     skill("clean", "# Clean\n");
-    const c = ctx({ source: sourceRoot }, false, detectorRunner());
+    const c = ctx({ source: sourceRoot }, false, detectorRunner(), {
+      SNYK_TOKEN: "snyk-token-for-scanner",
+    });
 
     const result = await executePlan(await skillVetCommand.plan(c), c);
 
@@ -263,7 +287,9 @@ describe("skillVetCommand", () => {
     skill("clean", "# Clean\n");
     license();
     write("install.sh", "echo install\n");
-    const c = ctx({ source: sourceRoot }, false, detectorRunner());
+    const c = ctx({ source: sourceRoot }, false, detectorRunner(), {
+      SNYK_TOKEN: "snyk-token-for-scanner",
+    });
 
     const result = await executePlan(await skillVetCommand.plan(c), c);
 

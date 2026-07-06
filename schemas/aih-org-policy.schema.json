@@ -311,7 +311,9 @@
               "skillspector",
               "cisco",
               "mcp-scanner",
-              "semgrep"
+              "semgrep",
+              "snyk-agent-scan",
+              "agentshield"
             ]
           }
         },
