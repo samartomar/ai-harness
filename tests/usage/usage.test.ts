@@ -176,6 +176,79 @@ describe("capture artifacts", () => {
     ]);
   }, 15000);
 
+  it("maps real stdin hook payloads for the remaining hook-capable CLIs", () => {
+    const recorder = join(root, "usage-record.mjs");
+    writeFileSync(recorder, usageRecorderScript());
+    const cases = [
+      [
+        "cursor",
+        {
+          hook_event_name: "afterMCPExecution",
+          tool_name: "MCP:context7:resolve-library-id",
+          tool_input: '{"libraryName":"Vitest"}',
+          result_json: "{}",
+          duration: 123,
+        },
+      ],
+      [
+        "windsurf",
+        {
+          agent_action_name: "post_mcp_tool_use",
+          tool_info: {
+            mcp_server_name: "github",
+            mcp_tool_name: "list_commits",
+            mcp_tool_arguments: { owner: "samartomar", repo: "ai-harness" },
+            mcp_result: "{}",
+          },
+        },
+      ],
+      [
+        "copilot",
+        {
+          sessionId: "s1",
+          cwd: root,
+          toolName: "Agent",
+          toolArgs: { subagentType: "security-reviewer" },
+        },
+      ],
+      [
+        "kimi",
+        {
+          hook_event_name: "PostToolUse",
+          tool_name: "Shell",
+          tool_input: { command: "npm test" },
+        },
+      ],
+      [
+        "antigravity",
+        {
+          hook_event_name: "PostToolUse",
+          toolCall: {
+            name: "Task",
+            input: { subagent_type: "planner" },
+          },
+        },
+      ],
+    ] as const;
+    for (const [cli, payload] of cases) {
+      execFileSync(process.execPath, [recorder, "--from", cli], {
+        cwd: root,
+        input: JSON.stringify(payload),
+      });
+    }
+    const rows = readFileSync(join(root, ".aih", "usage.jsonl"), "utf8")
+      .trim()
+      .split(/\r?\n/)
+      .map((line) => JSON.parse(line) as UsageEvent);
+    expect(rows).toMatchObject([
+      { tool: "cursor", kind: "mcp", server: "context7", name: "resolve-library-id" },
+      { tool: "windsurf", kind: "mcp", server: "github", name: "list_commits" },
+      { tool: "copilot", kind: "skill", name: "security-reviewer" },
+      { tool: "kimi", kind: "tool", name: "Shell" },
+      { tool: "antigravity", kind: "skill", name: "planner" },
+    ]);
+  }, 15000);
+
   it("the git hook is best-effort and can never block a commit", () => {
     const hook = gitPostCommitHook();
     expect(hook).toContain("#!/bin/sh");
@@ -220,9 +293,9 @@ describe("aih usage command", () => {
       [".claude/settings.json", "--from claude"],
       [".codex/hooks.json", "--from codex"],
       [".cursor/hooks.json", "--from cursor"],
-      [".antigravity/hooks.json", "--from antigravity"],
+      [".agents/hooks.json", "--from antigravity"],
       [".gemini/settings.json", "--from gemini"],
-      [".copilot/hooks/aih-usage-metering.json", "--from copilot"],
+      [".github/hooks/aih-usage-metering.json", "--from copilot"],
       [".windsurf/hooks.json", "--from windsurf"],
       [".opencode/plugins/aih-usage-metering.js", "--from opencode"],
       [".kimi/config.toml", "--from kimi"],
@@ -237,6 +310,14 @@ describe("aih usage command", () => {
     expect(codex?.[1]).toContain("git rev-parse --show-toplevel");
     expect(codex?.[1]).toContain("commandWindows");
     expect(writes.some(([p]) => p === ".codex/hooks/hooks.json")).toBe(false);
+    expect(writes.some(([p]) => p === ".copilot/hooks/aih-usage-metering.json")).toBe(false);
+    expect(writes.some(([p]) => p === ".antigravity/hooks.json")).toBe(false);
+    const copilot = writes.find(([p]) => p === ".github/hooks/aih-usage-metering.json");
+    expect(copilot?.[1]).toContain('"version":1');
+    expect(copilot?.[1]).toContain('"postToolUse"');
+    const antigravity = writes.find(([p]) => p === ".agents/hooks.json");
+    expect(antigravity?.[1]).toContain('"aih-usage-metering"');
+    expect(antigravity?.[1]).toContain('"PostToolUse"');
     const gemini = writes.find(([p]) => p === ".gemini/settings.json");
     expect(gemini?.[1]).toContain('"AfterTool"');
     expect(gemini?.[1]).toContain('"sequential":false');
