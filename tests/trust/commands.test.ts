@@ -264,6 +264,33 @@ describe("trust skillspector-pin command", () => {
     );
   });
 
+  it("allows a new candidate tag when the upstream revision is unchanged", async () => {
+    const candidateTag = "skillspector:aih-same-source";
+    const result = await executePlan(
+      await trustSkillspectorPinCommand.plan(
+        ctx({
+          candidateRevision: SKILLSPECTOR_SOURCE_REVISION,
+          candidateTag,
+        }),
+      ),
+      ctx({
+        candidateRevision: SKILLSPECTOR_SOURCE_REVISION,
+        candidateTag,
+      }),
+    );
+
+    expect(result.report?.ok).toBe(true);
+    expect(result.digests[0]?.text).toContain(candidateTag);
+    expect(result.digests[0]?.text).not.toContain("Upstream diff:");
+    expect(result.report?.checks).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "trust.source-drift",
+        }),
+      ]),
+    );
+  });
+
   it("flags retagging a newer checkout onto the current SkillSpector tag", async () => {
     const candidateRevision = "c".repeat(40);
     const result = await executePlan(
@@ -313,6 +340,14 @@ describe("trust skillspector-pin command", () => {
           verdict: "fail",
           code: "trust.source-changed",
           detail: expect.stringContaining("retagging existing SkillSpector image tag"),
+        }),
+      ]),
+    );
+    expect(result.report?.checks).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "trust.source-drift",
+          fingerprint: "trust-skillspector-pin:bump:missing-revision",
         }),
       ]),
     );

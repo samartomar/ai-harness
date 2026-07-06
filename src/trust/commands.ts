@@ -246,6 +246,7 @@ function skillspectorPinChecks(ctx: PlanContext): Check[] {
   const tagChanged = candidateTag !== undefined && candidateTag !== SKILLSPECTOR_IMAGE;
   const digestChanged =
     candidateDigest !== undefined && candidateDigest !== SKILLSPECTOR_IMAGE_DIGEST;
+  const existingTagReused = candidateTag === SKILLSPECTOR_IMAGE;
   const checks: Check[] = [
     {
       name: "trust skillspector pin",
@@ -264,7 +265,7 @@ function skillspectorPinChecks(ctx: PlanContext): Check[] {
     });
   }
 
-  if (candidateRevision === undefined && (tagChanged || digestChanged)) {
+  if (candidateRevision === undefined && !existingTagReused && (tagChanged || digestChanged)) {
     checks.push({
       name: "trust skillspector upstream diff",
       verdict: "fail",
@@ -275,7 +276,6 @@ function skillspectorPinChecks(ctx: PlanContext): Check[] {
     });
   }
 
-  const existingTagReused = candidateTag === SKILLSPECTOR_IMAGE;
   const revisionChanged =
     candidateRevision !== undefined && candidateRevision !== SKILLSPECTOR_SOURCE_REVISION;
   if (existingTagReused && (revisionChanged || digestChanged)) {
