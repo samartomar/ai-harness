@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, extname, isAbsolute, join, relative } from "node:path";
 import type { Posture } from "../config/posture.js";
@@ -241,6 +241,14 @@ const MALICIOUS_PATTERNS: MaliciousPattern[] = [
 
 function toPosix(path: string): string {
   return path.replace(/\\/g, "/");
+}
+
+function realpathIfExists(path: string): string {
+  try {
+    return realpathSync(path);
+  } catch {
+    return path;
+  }
 }
 
 function sha8(raw: string): string {
@@ -852,7 +860,7 @@ function snykSafeSarifUri(raw: string, tree: string): string {
   const stripped = raw.replace(/^file:\/\//, "");
   const posix = toPosix(stripped);
   if (isAbsolute(stripped) || isAbsolute(posix) || /^[A-Za-z]:/.test(posix)) {
-    const relativeUri = toPosix(relative(tree, stripped));
+    const relativeUri = toPosix(relative(realpathIfExists(tree), realpathIfExists(stripped)));
     if (relativeUri.length === 0) return ".";
     return isSafeRelativeSarifUri(relativeUri) ? relativeUri : ".";
   }

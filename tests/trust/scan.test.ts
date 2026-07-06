@@ -1569,7 +1569,7 @@ describe("scanTrustTree", () => {
     );
     expect(seen).toHaveLength(1);
     expect(seen[0]?.argv).toEqual(expect.arrayContaining(["--format", "sarif"]));
-    expect(seen[0]?.argv).toEqual(expect.arrayContaining(["--path", dir]));
+    expect(seen[0]?.argv).toEqual(expect.arrayContaining(["--path", realpathSync(dir)]));
     expect(seen[0]?.argv).toEqual(expect.arrayContaining(["--min-severity", "info"]));
     expect(seen[0]?.argv).not.toEqual(expect.arrayContaining(["--fix"]));
     expect(seen[0]?.env).toHaveProperty("PATH", "bin");
