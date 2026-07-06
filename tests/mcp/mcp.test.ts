@@ -1693,7 +1693,7 @@ describe("aih mcp — enterprise posture (governance gate, opt-in)", () => {
     expect(check?.detail).not.toContain("code-review-graph");
   });
 
-  it("community posture (the default) adds NO governance doc and NO policy probe", async () => {
+  it("default vibe posture adds NO governance doc and NO policy probe", async () => {
     const p = await command.plan(makeCtx({ options: {} }));
     expect(p.actions.some((a) => a.kind === "doc")).toBe(false);
     expect(

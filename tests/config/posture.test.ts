@@ -32,13 +32,16 @@ function orgPolicy(minimumPosture: string, path = join(dir, "aih-org-policy.json
 }
 
 describe("asPosture", () => {
-  it("normalizes legacy community to vibe and accepts the three v2 postures", () => {
+  it("defaults absent posture to vibe and accepts the three v2 postures", () => {
     expect(asPosture(undefined)).toBe("vibe");
-    expect(asPosture("community")).toBe("vibe");
     expect(asPosture("vibe")).toBe("vibe");
     expect(asPosture("team")).toBe("team");
     expect(asPosture("enterprise")).toBe("enterprise");
-    expect(asPosture("nonsense")).toBe("vibe");
+  });
+
+  it("rejects explicit invalid posture values instead of downgrading to vibe", () => {
+    expect(() => asPosture("community")).toThrow(/invalid posture/);
+    expect(() => asPosture("nonsense")).toThrow(/invalid posture/);
   });
 });
 
@@ -90,6 +93,21 @@ describe("resolvePosture", () => {
       posture: "vibe",
       postureSource: "default",
     });
+  });
+
+  it("fails closed on legacy community posture from flag or env", () => {
+    expect(() =>
+      resolvePosture({
+        root: dir,
+        env: {},
+        flag: "community",
+        flagSource: "cli",
+      }),
+    ).toThrow(/invalid --posture/);
+
+    expect(() => resolvePosture({ root: dir, env: { AIH_POSTURE: "community" } })).toThrow(
+      /invalid AIH_POSTURE/,
+    );
   });
 
   it("clamps upward to the org minimum posture without lowering a stricter local choice", () => {

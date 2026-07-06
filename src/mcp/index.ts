@@ -797,8 +797,8 @@ async function planMcp(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
   }
 
   // Enterprise posture (opt-in): surface a governance verdict for every server and a
-  // probe that fails on a policy-denied one. The community default adds nothing here,
-  // so standard output stays byte-identical.
+  // probe that fails on a policy-denied one. The default vibe posture adds nothing
+  // here, so standard output stays byte-identical.
   if (posture === "enterprise") {
     const quarantined = [...quarantinedPolicies.values()];
     if (quarantined.length > 0) {
