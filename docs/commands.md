@@ -122,7 +122,13 @@ target refuses without `--force`. `--delete` hard-deletes to a gitignored `*.aih
 (never overwriting a prior backup) instead of archiving; `--unrunnable` also prunes a
 still-targeted CLI whose binary is absent from `PATH` (loud warning; never the default).
 Shared selection flags (`--cli`, `--all-tools`, `--detect`) are accepted by the command surface but
-ignored by `prune`; the digest says so and keeps the diff anchored to committed intent.
+ignored by `prune`; the digest says so and keeps the diff anchored to committed intent. When a
+dropped CLI is an ECC-supported target, prune also plans ECC's own install-state uninstall through
+`npx --yes --package ecc-universal ecc uninstall --target <cli>` under `--apply`, so ECC-owned
+files and merge records are removed by ECC's recorded footprint rather than by path guessing.
+When Codex is dropped, prune also subtracts the recorded ECC TOML footprint from
+`~/.codex/config.toml` and the fenced ECC Codex block that `aih ecc` merges into
+`~/.codex/AGENTS.md`, leaving unrelated user config and text outside that block intact.
 
 ## aih capability
 
@@ -154,8 +160,14 @@ instead of being edited or deleted. Dirty/untracked removal targets refuse witho
 ## aih ecc
 
 Install [affaan-m/ECC](https://github.com/affaan-m/ECC) (skills, instincts, memory, security,
-research-first) for the selected CLIs, scoped to the detected stack: Claude plugin path,
-`ecc-install` for codex/cursor/zed/opencode, `consult` advisor otherwise.
+research-first) for the selected CLIs, scoped to the detected stack: npm targets run
+`npx --yes --package ecc-universal ecc-install`, Kiro uses the pinned Git checkout path, and
+unsupported targets route to the `consult` advisor. For Codex, aih uses the pinned Git checkout
+path to install the selected ECC Codex skills/agents, plus ECC's add-only Codex TOML merge helpers
+and a fenced AGENTS merge for shared files; it preflights project/global MCP server-name transport
+collisions before those shared-config writes.
+Installed Codex skills are invoked on demand with `$<skill-name>` from
+`~/.codex/skills/<name>/SKILL.md`; they are not an auto-loaded `.agents/skills` surface.
 
 ## aih superpowers
 

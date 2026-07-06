@@ -219,7 +219,7 @@ auto-target the CLIs found on this machine; the default is `claude`. Supported:
 
 ```bash
 aih bootstrap-ai --cli claude       # writes CLAUDE.md (the default target, auto-loaded)
-aih ecc --cli claude,codex          # ECC for Claude (plugin) + Codex (ecc-install)
+aih ecc --cli claude,codex          # Claude via ecc-universal; Codex via safe add-only merge
 aih superpowers --cli antigravity   # agy plugin install … (runs under --apply)
 aih bootstrap-ai --cli kiro         # Kiro: .kiro/steering/00-canon.md (inclusion: always)
 aih bootstrap-ai --detect           # target only the CLIs installed here
@@ -269,10 +269,15 @@ aih init --context-dir my-canon   # → my-canon/    (any name; everything adapt
 aih init --context-dir .ai-context  # → hidden, the old default
 ```
 
-Shell-runnable installs (`ecc-install`, `agy`/`copilot plugin install`) execute under `--apply`;
+Shell-runnable installs (`ecc-universal`'s `ecc-install` bin, Codex's safe ECC merge path, `agy`/`copilot plugin install`) execute under `--apply`;
 in-tool slash-command installs (Claude/Codex/Kimi plugins) are emitted as exact commands to run
 inside the tool. ECC and Superpowers are complementary — ECC supplies stack-aware rules, agents,
 and memory; Superpowers supplies the disciplined agent loop that uses them.
+For Codex, installed ECC skills are consumed on demand by name, such as `$configure-ecc`, from the
+literal Codex skills path (`~/.codex/skills/<name>/SKILL.md`); they are not an ambient auto-loaded
+`.agents/skills/` surface. `aih ecc --cli codex` still installs the selected ECC Codex
+skills/agents from ECC's manifest, but uses add-only Codex TOML merge helpers and a fenced AGENTS
+merge rather than the upstream `ecc-install --target codex` copy mode for shared `~/.codex` files.
 
 ### Layered AI canon (`bootstrap-ai`)
 

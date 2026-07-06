@@ -26,6 +26,8 @@ jobs:
       - run: npm ci
       - name: Tracked artifact guard
         run: npm run check:artifacts
+      - name: ECC installer package check
+        run: npm run check:ecc-installer
       - name: Typecheck
         run: npx tsc --noEmit
       - name: Lint & format check

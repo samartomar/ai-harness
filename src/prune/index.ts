@@ -1,6 +1,13 @@
 import { join } from "node:path";
 import { SHARED_MARKER, sharedCanonicalBlockBody } from "../bootstrap-ai/canon.js";
 import { AIH_CONFIG_FILE } from "../config/marker.js";
+import {
+  codexAgentsBlockRemovalAction,
+  codexConfigRemovalAction,
+  codexInstallStateCleanupAction,
+} from "../ecc/codex.js";
+import { ECC_NPM_CLI_BIN, ECC_NPM_PACKAGE, isEccInstallTarget } from "../ecc/install.js";
+import type { Cli } from "../internals/clis.js";
 import { readIfExists } from "../internals/fsxn.js";
 import { aihIgnoreWrite } from "../internals/gitignore.js";
 import { extractManagedBlock, stripManagedBlock } from "../internals/markers.js";
@@ -8,6 +15,7 @@ import {
   type Action,
   type CommandSpec,
   digest,
+  exec,
   type Plan,
   type PlanContext,
   plan,
@@ -15,6 +23,7 @@ import {
   writeText,
 } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
+import { execArgv } from "../tools/install.js";
 import {
   type PruneArtifact,
   type StalePruneSet,
@@ -187,6 +196,22 @@ function actionFor(ctx: PlanContext, a: PruneArtifact, hardDelete: boolean): Act
   return undefined; // advisory → surfaced in the digest, never an auto-action
 }
 
+function eccUninstallAction(ctx: PlanContext, cli: Cli): Action {
+  return exec(
+    `Remove ECC-managed ${cli} footprint recorded in ECC install-state (under --apply)`,
+    execArgv(ctx.host.platform, [
+      "npx",
+      "--yes",
+      "--package",
+      ECC_NPM_PACKAGE,
+      ECC_NPM_CLI_BIN,
+      "uninstall",
+      "--target",
+      cli,
+    ]),
+  );
+}
+
 async function prunePlan(ctx: PlanContext): Promise<Plan> {
   // `--unrunnable` is the ONLY path that probes PATH (which/where, read-only,
   // plan-purity-allowlisted); a default or report-driven scan never does.
@@ -208,6 +233,20 @@ async function prunePlan(ctx: PlanContext): Promise<Plan> {
     actions.push(action);
     if (action.kind === "remove") moved += 1;
     else if (action.kind === "write") subtracted += 1;
+  }
+  for (const cli of set.dropped) {
+    if (isEccInstallTarget(cli)) actions.push(eccUninstallAction(ctx, cli));
+    if (cli === "codex") {
+      const codexConfig = codexConfigRemovalAction(ctx);
+      if (codexConfig) actions.push(codexConfig);
+      const codexBlock = codexAgentsBlockRemovalAction(ctx);
+      if (codexBlock) {
+        actions.push(codexBlock);
+        subtracted += 1;
+      }
+      const codexStateCleanup = codexInstallStateCleanupAction(ctx);
+      if (codexStateCleanup) actions.push(codexStateCleanup);
+    }
   }
   const headline =
     set.dropped.length > 0

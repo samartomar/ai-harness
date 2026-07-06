@@ -49,6 +49,7 @@ jobs:
       - name: Verify (typecheck · lint · test+coverage · build)
         run: |
           npm run check:artifacts
+          npm run check:ecc-installer
           npx tsc --noEmit
           npx biome ci src tests
           npx vitest run --coverage
