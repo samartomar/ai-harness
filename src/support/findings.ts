@@ -518,9 +518,9 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
   "trust.cisco-finding": {
     audience: "developer",
     failSeverity: "blocking",
-    title: "Cisco AI Defense skill-scanner finding",
+    title: "external trust detector finding",
     action:
-      "Review the Cisco AI Defense finding, map the rule to a specific trust check if it is a known-dangerous pattern, or reject the external source until the flagged content is removed.",
+      "Review the detector finding, map the rule to a specific trust check if it is a known-dangerous pattern, or reject the external source until the flagged content is removed.",
   },
   "trust.prompt-injection": {
     audience: "developer",
