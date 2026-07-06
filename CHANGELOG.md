@@ -20,6 +20,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `threads.db` samples into `.aih/usage.jsonl`, mapping cumulative/request token
   counters plus derivable skill/MCP/tool attribution while keeping report panels
   live only from matching local repo rows. (#251)
+- **Claude skill attribution**: Claude `Skill` hook payloads now map exposed
+  skill names into named skill usage rows, infer ECC provenance from installed
+  ECC skill paths, and keep unnamed Skill/Task/Agent calls as generic tool
+  activity instead of fake skill invocations. (#252)
 
 ## [2.0.0] - 2026-07-05
 
