@@ -73,24 +73,8 @@ function license(): void {
   write("LICENSE", "MIT License\n\nCopyright (c) Example\n");
 }
 
-function semgrepConfig(): void {
-  write(
-    ".semgrep.yml",
-    [
-      "rules:",
-      "  - id: semgrep.prompt-injection",
-      "    languages: [generic]",
-      "    message: prompt injection fixture",
-      "    severity: WARNING",
-      "    pattern: Ignore previous instructions",
-      "",
-    ].join("\n"),
-  );
-}
-
 /** Stubs the full optional detector ladder so no detector-unavailable skip degrades the verdict. */
 function detectorRunner(): Runner {
-  semgrepConfig();
   return fakeRunner((argv) => {
     if (argv[0] === "docker") {
       if (argv[1] === "--version") return { code: 0, stdout: "Docker version 27\n" };

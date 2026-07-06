@@ -481,18 +481,21 @@ export async function scanTrustTreeWithAnalyzers(
     ...incomingMcpChecks(safeRoot, mcpConfigFiles, posture, mcpPolicy),
     ...scanNativeMaliciousCode(safeRoot),
   ];
-  const detectorResult =
-    run !== undefined && platform !== undefined && env !== undefined
-      ? await runTrustDetectors(safeRoot, {
-          env,
-          platform,
-          posture,
-          requiredDetectors,
-          run,
-        })
-      : { checks: [], analyzersRun: [] };
+  const hasDetectorRuntime = run !== undefined && platform !== undefined && env !== undefined;
+  const detectorResult = hasDetectorRuntime
+    ? await runTrustDetectors(safeRoot, {
+        env,
+        platform,
+        posture,
+        requiredDetectors,
+        run,
+      })
+    : {
+        checks: missingDetectorRuntimeChecks(requiredDetectors ?? [], posture),
+        analyzersRun: [],
+      };
   const mcpDetectorResult =
-    mcpConfigFiles.length > 0 && run !== undefined && platform !== undefined && env !== undefined
+    mcpConfigFiles.length > 0 && hasDetectorRuntime
       ? await runMcpConfigDetectors(safeRoot, {
           env,
           platform,
@@ -506,6 +509,22 @@ export async function scanTrustTreeWithAnalyzers(
     analyzersRun: ["aih-native", ...detectorResult.analyzersRun, ...mcpDetectorResult.analyzersRun],
     checks: allChecks.length > 0 ? allChecks : [passCheck(safeRoot, docs.length)],
   };
+}
+
+function missingDetectorRuntimeChecks(
+  requiredDetectors: readonly TrustDetectorName[],
+  posture: Posture,
+): Check[] {
+  if (requiredDetectors.length === 0) return [];
+  return requiredDetectors.map((detector) => ({
+    name: `trust detector ${detector}`,
+    verdict: posture === "enterprise" ? "fail" : "skip",
+    code: "trust.detector-unavailable",
+    detail:
+      posture === "enterprise"
+        ? `required detector ${detector} unavailable: detector runtime is missing (run/platform/env).`
+        : `DEGRADED-COVERAGE: deep scan SKIPPED - ${detector} not available (detector runtime missing); coverage is GREEN-tier only. Analyzers run: aih-native.`,
+  }));
 }
 
 function acknowledgeChecks(checks: readonly Check[], ctx: PlanContext): Check[] {
