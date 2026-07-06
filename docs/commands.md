@@ -342,12 +342,13 @@ so history accumulates — e.g. Kiro's `metrics-on-stop` hook (`aih bootstrap-ai
 Install the **multi-tool usage-capture** layer → `.aih/usage.jsonl` (rendered by `aih report` and
 `aih report --v9`). The **universal floor** is a git `post-commit` hook that records commit
 activity for **any** tool (it keys off the commit, not the agent). The per-tool **skill/MCP** layer
-wires in via each CLI's verified local hook (Claude/Codex/Cursor/Gemini/Kiro/…); skills aggregate
-by source (ECC/canon/user), and `--rollup <repo,repo>` aggregates local logs across repos on
-demand. Usage is local activity counts only — **no cost, no prompts, no arguments**, machine-local
-and gitignored. Session rows may include deterministic token/cache counters (`input`, `output`,
-`cacheRead`, `cacheCreation`) so the local cache-economy panel can render live; empty local sinks
-stay honest and point at `aih report --org <export>`.
+wires in via each CLI's verified local hook (Claude/Codex/Cursor/Gemini/Copilot/Windsurf/OpenCode/
+Kimi/Kiro/Antigravity; Zed is deferred to the local `threads.db` reader); skills aggregate by source
+(ECC/canon/user), and `--rollup <repo,repo>` aggregates local logs across repos on demand. Usage is
+local activity counts only — **no cost, no prompts, no arguments**, machine-local and gitignored.
+Session rows may include deterministic token/cache counters (`input`, `output`, `cacheRead`,
+`cacheCreation`) so the local cache-economy panel can render live; empty local sinks stay honest and
+point at `aih report --org <export>`.
 
 ## aih telemetry
 

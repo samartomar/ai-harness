@@ -43,7 +43,7 @@ Those four landed, so the "usages" + cross-project feedback loop the report arc 
 | `aggregateUsage(events)` → tools / commits / token/cache counters / skills{top, bySource} / mcp{servers,tools} | `src/usage/aggregate.ts` | ✅ |
 | Recorder `.aih/usage-record.mjs` (`node … <tool> skill <name> <ecc\|canon\|user>`) | `src/usage/capture.ts` | ✅ |
 | **Universal git floor** (`post-commit` hook → commit events for ANY tool) | `aih usage --apply` | ✅ |
-| Per-tool hook **mechanisms documented** (`TOOL_HOOK`: claude PostToolUse, kiro `.kiro.hook`, codex, cursor, gemini, copilot, windsurf, opencode, kimi, antigravity) | `src/usage/index.ts` | 📄 doc only |
+| Per-tool hook generators (`TOOL_HOOK`: claude PostToolUse, kiro `.kiro.hook`, codex, cursor, gemini, copilot, windsurf, opencode, kimi, antigravity) | `src/usage/hooks.ts` | ✅ |
 | Legacy report usage panel | `src/report/usage.ts` | ✅ |
 
 So the schema, reader, aggregator, recorder, and git floor were the base; the per-tool hooks and v9 panels (below) are now built on top.
@@ -65,7 +65,9 @@ node .aih/usage-record.mjs <tool> skill <name> <ecc|canon|user>
 - **kiro** — `.kiro/hooks/*.kiro.hook` Run Command (aih already generates Kiro hooks elsewhere —
   reuse that path).
 - **codex / cursor / gemini / opencode / windsurf / copilot / kimi / antigravity** — per the
-  `TOOL_HOOK` map; wire **only targeted/installed** CLIs (detection-gated), claude + kiro first.
+  `TOOL_HOOK` map; wire **only targeted/installed** CLIs (detection-gated), using each tool's
+  repo-local hook surface (`.github/hooks/*.json` for Copilot, `.agents/hooks.json` for
+  Antigravity, `.kimi/config.toml` for Kimi, etc.).
 - **zed** — no hooks (parse `threads.db`); deferred, documented.
 
 Design choices:
@@ -156,13 +158,12 @@ Each phase shipped independently and left the report honest (PREVIEW where data 
 
 ## Current state
 
-- ✅ Recorder gained a `--from <cli>` stdin mode; **claude payload mapping is done**
-  (`mcp__server__tool`→mcp, `Task`→subagent, `Skill`→skill best-effort, else tool). Other CLIs return
-  `undefined` from `fromHookPayload` until wired.
-- ✅ This slice — `aih usage --apply` generates the targeted per-tool hooks, the recorder maps
-  representative codex/gemini/opencode payloads, v9 usage + skills panels go LIVE from real events,
-  dormant = live ECC skills minus fired ECC skills, and `aih usage --rollup <dirs>` emits a
-  scan-on-demand digest.
+- ✅ Recorder gained a `--from <cli>` stdin mode and maps real hook payload shapes from Claude,
+  Codex, Cursor, Gemini, Copilot, Windsurf, OpenCode, Kimi, Kiro, and Antigravity into local
+  `skill` / `mcp` / `tool` rows when the source payload exposes enough identity.
+- ✅ This slice — `aih usage --apply` generates the targeted per-tool hooks, v9 usage + skills
+  panels go LIVE from real events, dormant = live ECC skills minus fired ECC skills, and
+  `aih usage --rollup <dirs>` emits a scan-on-demand digest.
 - ✅ Post-implementation doc check — Gemini's project `.gemini/settings.json` `AfterTool` hook shape
   is current; Codex's project hook path stays `.codex/hooks.json` (plugin bundles may use
   `hooks/hooks.json`), resolves the recorder from the git root, and notes that project `.codex`
@@ -174,7 +175,7 @@ Each phase shipped independently and left the report honest (PREVIEW where data 
       (runs `node .aih/usage-record.mjs --from <cli>`); wire into `aih usage --apply` over
       `resolveTargets`, idempotent + additive (never clobber existing hooks), gated. Order: claude
       `.claude/settings.json` merge (recorder side done) → kiro (reuse `src/kiro/content.ts`) →
-      **verify codex/gemini/opencode schemas vs current docs before writing them**.
+      **verify per-CLI hook schemas vs current docs before writing them**.
 - [x] **P2** — `Usage by CLI` ← `aggregateUsage(readUsage(ctx)).tools`; `Heavy lifters` ←
       `.skills.top`. PREVIEW until ≥1 real event.
 - [x] **P3** — `Dormant` = live ECC skills (`~/.claude/skills/ecc/`, via `eccInventoryDigest`) −

@@ -59,6 +59,8 @@ export interface WriteAction {
   pruneJsonChildKeys?: Record<string, { exact?: readonly string[]; prefixes?: readonly string[] }>;
   /** Remove named top-level JSON keys after merge. */
   removeJsonTopLevelKeys?: readonly string[];
+  /** De-dupe matching hook arrays by command substring, keeping the latest generated item. */
+  dedupeJsonArrayCommands?: Record<string, readonly string[]>;
   /** POSIX file mode, e.g. 0o755 for hooks. */
   mode?: number;
   /** Write only if the file is absent; never overwrite (user-owned seed files). */
@@ -377,6 +379,7 @@ export function writeJson(
       { exact?: readonly string[]; prefixes?: readonly string[] }
     >;
     removeJsonTopLevelKeys?: readonly string[];
+    dedupeJsonArrayCommands?: Record<string, readonly string[]>;
   } = {},
 ): WriteAction {
   return {
@@ -391,6 +394,7 @@ export function writeJson(
     replaceJsonChildKeys: opts.replaceJsonChildKeys,
     pruneJsonChildKeys: opts.pruneJsonChildKeys,
     removeJsonTopLevelKeys: opts.removeJsonTopLevelKeys,
+    dedupeJsonArrayCommands: opts.dedupeJsonArrayCommands,
   };
 }
 

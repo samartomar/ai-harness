@@ -26,21 +26,20 @@ const GIT_HOOK_PATH = join(".git", "hooks", "post-commit");
 /**
  * Per-tool behavioral-capture mechanism (verified Jun 2026). The universal git
  * floor is installed for everyone; these are how the per-tool skill/MCP layer
- * wires in (the next slice auto-generates them — for now they're documented so the
- * wiring is exact, not invented). `undefined` = no local hook (parse a log instead).
+ * wires in. `undefined` = no local hook (parse a log instead).
  */
 const TOOL_HOOK: Partial<Record<string, string>> = {
   claude: "`.claude/settings.json` hooks → `PostToolUse` (captures Skill / mcp__ tool calls)",
   codex:
     "`.codex/hooks.json` → `PostToolUse`/`Stop`; project `.codex` must be trusted and command hooks reviewed via `/hooks`",
-  cursor: "`~/.cursor/hooks.json` → `afterMCPExecution` / `beforeSubmitPrompt` / `afterFileEdit`",
+  cursor: "`.cursor/hooks.json` → `afterMCPExecution` (MCP payloads)",
   gemini: "`.gemini/settings.json` project hooks → `AfterTool`",
-  copilot: "`~/.copilot/hooks/` → `postToolUse` (+ `events.jsonl`)",
-  windsurf: "Windsurf hooks `post_mcp_tool_use` + transcript JSONL",
+  copilot: "`.github/hooks/aih-usage-metering.json` → `postToolUse`",
+  windsurf: "`.windsurf/hooks.json` → `post_mcp_tool_use`",
   opencode: "OpenCode TS plugin (`tool.execute.after`) + storage JSON",
-  kimi: "`[[hooks]]` in `config.toml` → `PostToolUse` (+ `wire.jsonl`)",
+  kimi: "`.kimi/config.toml` `[[hooks]]` → `PostToolUse`",
   kiro: "`.kiro/hooks/*.kiro.hook` Run Command (aih already generates these)",
-  antigravity: "Antigravity `hooks.json` `PostToolUse`",
+  antigravity: "`.agents/hooks.json` → `PostToolUse`",
   zed: "no hooks — parse `threads.db` SQLite (deferred)",
 };
 

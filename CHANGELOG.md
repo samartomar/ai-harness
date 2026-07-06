@@ -12,6 +12,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   now has an optional deterministic token/cache counter shape, `aggregateUsage`
   rolls it up, and `aih report` renders the local cache/skill economy live when
   samples exist while keeping empty stubs pointed at `aih report --org`. (#249)
+- **Per-tool usage capture hooks**: `aih usage --apply` now emits working
+  recorder hooks for the remaining hook-capable CLIs, maps their real hook
+  payload shapes into `.aih/usage.jsonl`, and keeps v9 usage-by-CLI / heavy
+  lifter panels live only when local samples exist. (#250)
 
 ## [2.0.0] - 2026-07-05
 
