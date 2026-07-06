@@ -138,7 +138,14 @@ describe("OrgPolicySchema", () => {
                 reason: "reviewed source override",
               },
             ],
-            requiredDetectors: ["skillspector", "cisco", "mcp-scanner", "semgrep"],
+            requiredDetectors: [
+              "skillspector",
+              "cisco",
+              "mcp-scanner",
+              "semgrep",
+              "snyk-agent-scan",
+              "agentshield",
+            ],
           },
         }),
       ).trust,
@@ -152,7 +159,14 @@ describe("OrgPolicySchema", () => {
         },
       ],
       requireSignedSource: false,
-      requiredDetectors: ["skillspector", "cisco", "mcp-scanner", "semgrep"],
+      requiredDetectors: [
+        "skillspector",
+        "cisco",
+        "mcp-scanner",
+        "semgrep",
+        "snyk-agent-scan",
+        "agentshield",
+      ],
       internalScopes: [],
     });
   });
