@@ -160,10 +160,12 @@ describe("ecc install targets / argv (latest from npm)", () => {
     expect(ECC_INSTALL_TARGETS).toContain("zed");
   });
 
-  it("builds the npx ecc-install argv scoped only by profile", () => {
+  it("builds explicit npx --package ecc-universal argv scoped only by profile", () => {
     expect(eccInstallerArgv("cursor", "core")).toEqual([
       "npx",
       "--yes",
+      "--package",
+      "ecc-universal",
       "ecc-install",
       "--target",
       "cursor",
@@ -173,6 +175,8 @@ describe("ecc install targets / argv (latest from npm)", () => {
     expect(eccInstallerArgv("gemini", "full")).toEqual([
       "npx",
       "--yes",
+      "--package",
+      "ecc-universal",
       "ecc-install",
       "--target",
       "gemini",
@@ -183,13 +187,15 @@ describe("ecc install targets / argv (latest from npm)", () => {
 });
 
 describe("ecc.plan — runs ECC's own installer (latest)", () => {
-  it("default (claude) runs npx ecc-install --target claude under --apply", async () => {
+  it("default (claude) runs npx --package ecc-universal ecc-install --target claude under --apply", async () => {
     put("package.json", JSON.stringify({ name: "svc" }));
     put("tsconfig.json", "{}");
     const actions = (await command.plan(makeCtx())).actions;
     expect(execs(actions)[0]?.argv).toEqual([
       "npx",
       "--yes",
+      "--package",
+      "ecc-universal",
       "ecc-install",
       "--target",
       "claude",
@@ -224,6 +230,8 @@ describe("ecc.plan — runs ECC's own installer (latest)", () => {
     expect(execs(actions)[0]?.argv).toEqual([
       "npx",
       "--yes",
+      "--package",
+      "ecc-universal",
       "ecc-install",
       "--target",
       "gemini",
@@ -343,6 +351,7 @@ describe("ecc.plan — Windows Git Bash resolution + npx cmd shim", () => {
     const installer = execs(actions)[0];
     expect(installer?.argv.slice(0, 3)).toEqual(["cmd", "/c", "npx"]);
     // the real installer argv is preserved after the shim prefix
+    expect(installer?.argv).toContain("ecc-universal");
     expect(installer?.argv).toContain("ecc-install");
     expect(installer?.argv).toContain("--target");
   });
@@ -374,13 +383,15 @@ describe("ECC supply-chain pinning (AIH-SUPPLY-001 round 2)", () => {
     expect(eccInstallerArgv("claude", "core", "1.2.3")).toEqual([
       "npx",
       "--yes",
-      "ecc-install@1.2.3",
+      "--package",
+      "ecc-universal@1.2.3",
+      "ecc-install",
       "--target",
       "claude",
       "--profile",
       "core",
     ]);
-    expect(eccInstallerArgv("claude", "core")[2]).toBe("ecc-install");
+    expect(eccInstallerArgv("claude", "core")).toContain("ecc-universal");
   });
 
   it("emits a supply-chain advisory by default (unpinned latest)", async () => {
@@ -395,7 +406,7 @@ describe("ECC supply-chain pinning (AIH-SUPPLY-001 round 2)", () => {
     const ctx = { ...base, env: { ...base.env, AIH_ECC_INSTALL_VERSION: "1.2.3" } };
     const p = await command.plan(ctx);
     const installer = p.actions.find((a): a is ExecAction => a.kind === "exec");
-    expect(installer?.argv).toContain("ecc-install@1.2.3");
+    expect(installer?.argv).toContain("ecc-universal@1.2.3");
     expect(p.actions.some((a) => a.kind === "doc" && a.describe.includes("supply chain"))).toBe(
       false,
     );
@@ -409,5 +420,38 @@ describe("ECC supply-chain pinning (AIH-SUPPLY-001 round 2)", () => {
       (a): a is ExecAction => a.kind === "exec" && a.argv.includes("clone"),
     );
     expect(clone?.argv).toEqual(expect.arrayContaining(["--branch", "v2.1.0"]));
+  });
+});
+
+describe("ecc.plan — Codex MCP collision preflight", () => {
+  it("refuses the Codex installer when global and project config collide on transport", async () => {
+    put(
+      ".codex/config.toml",
+      '[mcp_servers.context7]\nurl = "https://mcp.context7.com/mcp"\n',
+    );
+    put(
+      "../.codex/config.toml",
+      '[mcp_servers.context7]\ncommand = "npx"\nargs = ["@upstash/context7-mcp"]\n',
+    );
+    const actions = (await command.plan(makeCtx({ cli: "codex" }))).actions;
+    expect(execBlob(actions)).not.toContain("ecc-install --target codex");
+    expect(
+      actions.some(
+        (a) =>
+          a.kind === "doc" &&
+          a.describe.includes("Codex MCP server name collision") &&
+          a.text.includes("context7"),
+      ),
+    ).toBe(true);
+    const probes = actions.filter((a): a is ProbeAction => a.kind === "probe");
+    const checks = await Promise.all(probes.map((p) => p.run(makeCtx({ cli: "codex" }))));
+    expect(checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          verdict: "fail",
+          code: "ecc.codex-mcp-collision",
+        }),
+      ]),
+    );
   });
 });
