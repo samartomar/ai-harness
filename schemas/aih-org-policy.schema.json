@@ -310,7 +310,8 @@
             "enum": [
               "skillspector",
               "cisco",
-              "mcp-scanner"
+              "mcp-scanner",
+              "semgrep"
             ]
           }
         },

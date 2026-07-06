@@ -451,6 +451,7 @@ describe("Check.code — invariants", () => {
       "baseline.undeclared-surface": true,
       "trust.fetch-blocked": true,
       "trust.detector-unavailable": true,
+      "trust.detector-finding": true,
       "trust.cisco-finding": true,
       "trust.hidden-unicode": true,
       "trust.prompt-injection": true,
