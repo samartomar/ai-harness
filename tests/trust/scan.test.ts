@@ -28,11 +28,13 @@ import {
   SKILLSPECTOR_IMAGE,
   SKILLSPECTOR_IMAGE_DIGEST,
   SKILLSPECTOR_SOURCE_REVISION,
+  verifiedSkillspectorImageReference,
 } from "../../src/trust/images.js";
 import {
   scanTrustTree,
   scanTrustTreeWithAnalyzers,
   trustScanCommand,
+  trustScanProbes,
 } from "../../src/trust/scan.js";
 import { sandboxSmokeDockerRunArgv } from "../../src/trust/smoke.js";
 
@@ -357,6 +359,27 @@ function ctx(
 }
 
 describe("scanTrustTree", () => {
+  it("returns runnable SkillSpector repo digest references when verification matches RepoDigests", () => {
+    const repoDigest = `skillspector@${SKILLSPECTOR_IMAGE_DIGEST}`;
+
+    expect(
+      verifiedSkillspectorImageReference(
+        JSON.stringify({
+          Id: "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          RepoDigests: [repoDigest],
+        }),
+      ),
+    ).toBe(repoDigest);
+    expect(
+      verifiedSkillspectorImageReference(
+        JSON.stringify({
+          Id: SKILLSPECTOR_IMAGE_DIGEST,
+          RepoDigests: [repoDigest],
+        }),
+      ),
+    ).toBe(SKILLSPECTOR_IMAGE_DIGEST);
+  });
+
   it("catches prompt injection inside a fenced code block in acquired skill docs", async () => {
     skill(
       "skills/evil",
@@ -458,8 +481,9 @@ describe("scanTrustTree", () => {
 
     expect(checks).toEqual([
       expect.objectContaining({
-        name: "trust scan",
-        verdict: "pass",
+        name: "skill sandbox smoke test",
+        verdict: "skip",
+        detail: expect.stringContaining("not applicable"),
       }),
     ]);
   });
@@ -469,8 +493,9 @@ describe("scanTrustTree", () => {
 
     expect(await scanTrustTree(dir)).toEqual([
       expect.objectContaining({
-        name: "trust scan",
-        verdict: "pass",
+        name: "skill sandbox smoke test",
+        verdict: "skip",
+        detail: expect.stringContaining("not applicable"),
       }),
     ]);
   });
@@ -1058,6 +1083,87 @@ describe("scanTrustTree", () => {
         }),
       ]),
     );
+  });
+
+  it("runs sandbox smoke by default for direct analyzer scans", async () => {
+    skill("skills/clean", "# Clean\n");
+    write("skills/clean/package.json", JSON.stringify({ name: "clean-skill" }));
+    const seenSmoke: string[][] = [];
+    const run = fakeRunner((argv) => {
+      const skillspector = successfulSkillspector(argv);
+      if (
+        argv[0] === "docker" &&
+        argv[1] === "run" &&
+        argv.some((arg) => arg.includes("aih sandbox smoke ok"))
+      ) {
+        seenSmoke.push(argv);
+        return { code: 0, stdout: "aih sandbox smoke ok\n" };
+      }
+      if (skillspector !== undefined) return skillspector;
+      return undefined;
+    });
+
+    const result = await scanTrustTreeWithAnalyzers(dir, {
+      env: {},
+      platform: "linux",
+      posture: "vibe",
+      run,
+    });
+
+    expect(result.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "skill sandbox smoke test",
+          verdict: "pass",
+          detail: expect.stringContaining("skills/clean/package.json"),
+        }),
+      ]),
+    );
+    expect(seenSmoke).toHaveLength(1);
+  });
+
+  it("runs sandbox smoke by default through trustScanProbes", async () => {
+    skill("skills/clean", "# Clean\n");
+    write("skills/clean/package.json", JSON.stringify({ name: "clean-skill" }));
+    const seenSmoke: string[][] = [];
+    const run = fakeRunner((argv) => {
+      const skillspector = successfulSkillspector(argv);
+      if (
+        argv[0] === "docker" &&
+        argv[1] === "run" &&
+        argv.some((arg) => arg.includes("aih sandbox smoke ok"))
+      ) {
+        seenSmoke.push(argv);
+        return { code: 0, stdout: "aih sandbox smoke ok\n" };
+      }
+      if (skillspector !== undefined) return skillspector;
+      return undefined;
+    });
+    const probeCtx = ctx({}, {}, "vibe", run);
+
+    const probes = await trustScanProbes(
+      {
+        kind: "local",
+        id: "local",
+        root: dir,
+        source: dir,
+        display: dir,
+      },
+      {},
+      probeCtx,
+    );
+    const result = await executePlan({ capability: "trust probes", actions: probes }, probeCtx);
+
+    expect(result.report?.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "skill sandbox smoke test",
+          verdict: "pass",
+          detail: expect.stringContaining("skills/clean/package.json"),
+        }),
+      ]),
+    );
+    expect(seenSmoke).toHaveLength(1);
   });
 
   it("sanitizes unsafe SkillSpector SARIF artifact URIs before fingerprinting", async () => {

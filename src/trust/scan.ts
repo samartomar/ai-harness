@@ -635,10 +635,11 @@ export async function scanTrustTreeWithAnalyzers(
           run,
         })
       : { checks: [], analyzersRun: [] };
+  const effectiveSandboxSmokeShape = sandboxSmokeShape ?? sandboxSmokeShapeForTrustScan(safeRoot);
   const sandboxSmokeChecks =
-    sandboxSmokeShape === undefined
+    effectiveSandboxSmokeShape === undefined
       ? []
-      : [await sandboxSmokeCheck(safeRoot, sandboxSmokeShape, { env, platform, run })];
+      : [await sandboxSmokeCheck(safeRoot, effectiveSandboxSmokeShape, { env, platform, run })];
   const allChecks = [
     ...checks,
     ...detectorResult.checks,

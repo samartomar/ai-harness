@@ -59,7 +59,10 @@ export function verifiedSkillspectorImageReference(stdout: string): string | und
   if (id !== undefined) return id;
   const repoDigests = inspect.RepoDigests;
   if (!Array.isArray(repoDigests)) return undefined;
-  return repoDigests.map(normalizedDigest).find((digest): digest is string => digest !== undefined);
+  return repoDigests.find(
+    (digest): digest is string =>
+      typeof digest === "string" && normalizedDigest(digest) !== undefined,
+  );
 }
 
 export async function resolveVerifiedSkillspectorImage(
