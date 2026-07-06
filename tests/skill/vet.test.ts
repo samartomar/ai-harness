@@ -73,8 +73,24 @@ function license(): void {
   write("LICENSE", "MIT License\n\nCopyright (c) Example\n");
 }
 
+function semgrepConfig(): void {
+  write(
+    ".semgrep.yml",
+    [
+      "rules:",
+      "  - id: semgrep.prompt-injection",
+      "    languages: [generic]",
+      "    message: prompt injection fixture",
+      "    severity: WARNING",
+      "    pattern: Ignore previous instructions",
+      "",
+    ].join("\n"),
+  );
+}
+
 /** Stubs the full optional detector ladder so no detector-unavailable skip degrades the verdict. */
 function detectorRunner(): Runner {
+  semgrepConfig();
   return fakeRunner((argv) => {
     if (argv[0] === "docker") {
       if (argv[1] === "--version") return { code: 0, stdout: "Docker version 27\n" };
@@ -91,6 +107,10 @@ function detectorRunner(): Runner {
         writeFileSync(out, JSON.stringify({ runs: [] }), "utf8");
         return { code: 0, stdout: `Report saved to: ${out}\n` };
       }
+    }
+    if (argv[0] === "semgrep") {
+      if (argv.includes("--version")) return { code: 0, stdout: "1.125.0\n" };
+      if (argv.includes("scan")) return { code: 0, stdout: JSON.stringify({ runs: [] }) };
     }
     return undefined;
   });
@@ -120,7 +140,12 @@ describe("skillVetCommand", () => {
     expect(digest.data.verdict).toBe("GREEN");
     expect(digest.data.reasons).toEqual([]);
     expect(digest.data.shape?.skillDirs).toEqual(["clean"]);
-    expect(digest.data.analyzersRun).toEqual(["aih-native", "skillspector@docker", "cisco@uvx"]);
+    expect(digest.data.analyzersRun).toEqual([
+      "aih-native",
+      "skillspector@docker",
+      "cisco@uvx",
+      "semgrep@local",
+    ]);
     expect(digest.text).toContain("Verdict: GREEN");
     expect(digest.text).toContain("Skill directories: clean");
     expect(existsSync(join(workspace, ".aih"))).toBe(false);
@@ -186,7 +211,12 @@ describe("skillVetCommand", () => {
     expect(evidence.verdict).toBe("GREEN");
     expect(evidence.reasons).toEqual([]);
     expect(evidence.shape.skillDirs).toEqual(["clean"]);
-    expect(evidence.analyzersRun).toEqual(["aih-native", "skillspector@docker", "cisco@uvx"]);
+    expect(evidence.analyzersRun).toEqual([
+      "aih-native",
+      "skillspector@docker",
+      "cisco@uvx",
+      "semgrep@local",
+    ]);
     expect(evidence.checks).toEqual(
       expect.arrayContaining([expect.objectContaining({ name: "skill license", verdict: "pass" })]),
     );
