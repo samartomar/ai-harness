@@ -96,6 +96,7 @@ export interface ClearedWorkspaceAddTrustGate {
   report: VerificationReport;
   analyzersRun: string[];
   internalScopes: string[];
+  blockingChecks?: Check[];
 }
 
 const SKIP_DIRS = new Set([".git", ".hg", ".svn", ".aih", "coverage", "dist", "node_modules"]);
@@ -449,6 +450,20 @@ function acceptedAcknowledgementFingerprints(report: VerificationReport | undefi
   );
 }
 
+function promotionBlockingChecks(checks: readonly Check[]): Check[] {
+  return checks.flatMap((check) => {
+    if (check.verdict === "fail") return [check];
+    if (check.code !== "trust.sandbox-smoke-unavailable") return [];
+    return [
+      {
+        ...check,
+        verdict: "fail" as const,
+        detail: `promotion blocked: ${check.detail ?? check.name}`,
+      },
+    ];
+  });
+}
+
 function hasInstallScriptHooks(root: string): boolean {
   const text = readIfExists(join(root, "package.json"));
   if (text === undefined) return false;
@@ -630,10 +645,9 @@ export async function captureClearedWorkspaceAddTrustGate(
   }
   const source = resolvedSource ?? sourceFromContext(ctx);
   const internalScopes = resolveInternalScopes(ctx);
+  const phase1BlockingChecks = promotionBlockingChecks(report.checks);
   const currentScan = await currentTrustScan(ctx, source, internalScopes);
-  if (currentScan.checks.some((check) => check.verdict === "fail")) {
-    throw new AihError("workspace add source changed after phase 1 scan", "AIH_TRUST");
-  }
+  const currentBlockingChecks = promotionBlockingChecks(currentScan.checks);
   const promotion = buildPromotion(ctx, source, selectSkills);
   return {
     source: sourceBinding(source),
@@ -641,6 +655,7 @@ export async function captureClearedWorkspaceAddTrustGate(
     report,
     analyzersRun: currentScan.analyzersRun,
     internalScopes,
+    blockingChecks: [...phase1BlockingChecks, ...currentBlockingChecks],
   };
 }
 
@@ -662,9 +677,13 @@ export async function workspaceAddPhase2Plan(
       ]),
     );
   }
+  if ((gate.blockingChecks ?? []).length > 0) {
+    return plan("workspace add: promote", ...probesForChecks(gate.blockingChecks ?? []));
+  }
   const currentScan = await currentTrustScan(ctx, source, gate.internalScopes);
-  if (currentScan.checks.some((check) => check.verdict === "fail")) {
-    return plan("workspace add: promote", ...probesForChecks(currentScan.checks));
+  const currentBlockingChecks = promotionBlockingChecks(currentScan.checks);
+  if (currentBlockingChecks.length > 0) {
+    return plan("workspace add: promote", ...probesForChecks(currentBlockingChecks));
   }
   const promotion = buildPromotion(ctx, source, selectSkills);
   const approvalChecks = unapprovedSkillChecks(ctx, source, promotion.promotedSkills);

@@ -111,7 +111,7 @@ export function sandboxSmokeImageInspectArgv(platform: Platform): string[] {
     "inspect",
     SKILLSPECTOR_IMAGE,
     "--format",
-    "{{json .Config.Labels}}",
+    "{{json .}}",
   ]);
 }
 
@@ -119,6 +119,7 @@ export function sandboxSmokeDockerRunArgv(
   platform: Platform,
   tree: string,
   shape: SandboxSmokeShape,
+  image: string = SKILLSPECTOR_IMAGE,
 ): string[] {
   return execArgv(platform, [
     "docker",
@@ -133,57 +134,77 @@ export function sandboxSmokeDockerRunArgv(
     `type=bind,source=${tree},target=/scan,readonly`,
     "--entrypoint",
     "/bin/sh",
-    SKILLSPECTOR_IMAGE,
+    image,
     "-c",
     sandboxSmokeScript(shape),
   ]);
 }
 
-function parseImageLabels(stdout: string): Record<string, unknown> | undefined {
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function parseImageInspect(stdout: string): Record<string, unknown> | undefined {
   try {
     const parsed = JSON.parse(stdout.trim());
-    return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
-      ? parsed
-      : undefined;
+    return isRecord(parsed) ? parsed : undefined;
   } catch {
     return undefined;
   }
 }
 
-function verifiedImageRevision(stdout: string): boolean {
-  const labels = parseImageLabels(stdout);
-  if (labels === undefined) return false;
-  return REVISION_LABELS.some((label) => labels[label] === SKILLSPECTOR_SOURCE_REVISION);
+function inspectLabels(inspect: Record<string, unknown>): Record<string, unknown> | undefined {
+  const config = inspect.Config;
+  if (isRecord(config) && isRecord(config.Labels)) return config.Labels;
+  if (isRecord(inspect.Labels)) return inspect.Labels;
+  return undefined;
 }
 
-async function sandboxUnavailable(
+function verifiedImageReference(stdout: string): string | undefined {
+  const inspect = parseImageInspect(stdout);
+  if (inspect === undefined) return undefined;
+  const id = inspect.Id;
+  if (typeof id !== "string" || !id.startsWith("sha256:")) return undefined;
+  const labels = inspectLabels(inspect);
+  if (labels === undefined) return undefined;
+  return REVISION_LABELS.some((label) => labels[label] === SKILLSPECTOR_SOURCE_REVISION)
+    ? id
+    : undefined;
+}
+
+async function sandboxAvailability(
   run: Runner,
   platform: Platform,
   env: NodeJS.ProcessEnv,
-): Promise<string | undefined> {
+): Promise<{ image: string } | { reason: string }> {
   const childEnv = scrubFetchEnv(env);
   const docker = await run(sandboxSmokeDockerVersionArgv(platform), {
     env: childEnv,
     timeoutMs: 10_000,
   });
   if (docker.spawnError || docker.code === 127)
-    return `Docker is unavailable (${runSummary(docker)})`;
-  if (docker.code !== 0) return `docker --version failed (${runSummary(docker)})`;
+    return { reason: `Docker is unavailable (${runSummary(docker)})` };
+  if (docker.code !== 0) return { reason: `docker --version failed (${runSummary(docker)})` };
 
   const image = await run(sandboxSmokeImageInspectArgv(platform), {
     env: childEnv,
     timeoutMs: 10_000,
   });
   if (image.spawnError || image.code === 127) {
-    return `sandbox image ${SKILLSPECTOR_IMAGE} is unavailable (${runSummary(image)})`;
+    return { reason: `sandbox image ${SKILLSPECTOR_IMAGE} is unavailable (${runSummary(image)})` };
   }
   if (image.code !== 0 || image.stdout.trim().length === 0) {
-    return `sandbox image ${SKILLSPECTOR_IMAGE} could not be inspected (${runSummary(image)})`;
+    return {
+      reason: `sandbox image ${SKILLSPECTOR_IMAGE} could not be inspected (${runSummary(image)})`,
+    };
   }
-  if (!verifiedImageRevision(image.stdout)) {
-    return `sandbox image ${SKILLSPECTOR_IMAGE} could not verify expected source revision ${SKILLSPECTOR_SOURCE_REVISION}`;
+  const verifiedImage = verifiedImageReference(image.stdout);
+  if (verifiedImage === undefined) {
+    return {
+      reason: `sandbox image ${SKILLSPECTOR_IMAGE} could not verify expected source revision ${SKILLSPECTOR_SOURCE_REVISION}`,
+    };
   }
-  return undefined;
+  return { image: verifiedImage };
 }
 
 export async function sandboxSmokeCheck(
@@ -197,13 +218,16 @@ export async function sandboxSmokeCheck(
     return unavailableCheck("detector runtime is missing (run/platform/env)");
   }
 
-  const unavailable = await sandboxUnavailable(options.run, options.platform, options.env);
-  if (unavailable !== undefined) return unavailableCheck(unavailable);
+  const availability = await sandboxAvailability(options.run, options.platform, options.env);
+  if ("reason" in availability) return unavailableCheck(availability.reason);
 
-  const smoke = await options.run(sandboxSmokeDockerRunArgv(options.platform, root, shape), {
-    env: scrubFetchEnv(options.env),
-    timeoutMs: SANDBOX_SMOKE_TIMEOUT_MS,
-  });
+  const smoke = await options.run(
+    sandboxSmokeDockerRunArgv(options.platform, root, shape, availability.image),
+    {
+      env: scrubFetchEnv(options.env),
+      timeoutMs: SANDBOX_SMOKE_TIMEOUT_MS,
+    },
+  );
   const reasonText = reasons.join("; ");
   if (!smoke.spawnError && smoke.code === 0 && smoke.stdout.includes(SANDBOX_SMOKE_MARKER)) {
     const output = runSummary(smoke);

@@ -70,7 +70,11 @@ function successfulSkillspector(argv: string[]): Partial<Awaited<ReturnType<Runn
   if (argv[0] !== "docker") return undefined;
   if (argv[1] === "--version") return { code: 0, stdout: "Docker version 27\n" };
   if (argv[1] === "image" && argv[2] === "inspect") {
-    return { code: 0, stdout: "sha256:skillspector\n" };
+    return {
+      code: 0,
+      stdout:
+        '{"Id":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","Config":{"Labels":{"org.opencontainers.image.revision":"326a2b489411a20ed742ff13701be39ba00063c8"}}}\n',
+    };
   }
   if (argv[1] === "run") return { code: 0, stdout: JSON.stringify(EMPTY_SARIF) };
   return undefined;
@@ -2355,6 +2359,72 @@ describe("trustScanCommand", () => {
       'permissions.deny: ["Bash(*)"]',
     );
     expect(plan.actions.some((action) => action.kind === "exec")).toBe(false);
+  });
+
+  it("runs sandbox smoke for package-backed skill sources", async () => {
+    skill("skills/clean", "# Clean\n");
+    write("package.json", JSON.stringify({ name: "clean-skill" }));
+    const seenSmoke: string[][] = [];
+    const run = fakeRunner((argv) => {
+      if (
+        argv[0] === "docker" &&
+        argv[1] === "run" &&
+        argv.includes("sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa") &&
+        argv.some((arg) => arg.includes("aih sandbox smoke ok"))
+      ) {
+        seenSmoke.push(argv);
+        return { code: 0, stdout: "aih sandbox smoke ok\n" };
+      }
+      const skillspector = successfulSkillspector(argv);
+      if (skillspector !== undefined) return skillspector;
+      return undefined;
+    });
+    const c = ctx({ target: dir }, {}, "vibe", run);
+
+    const result = await executePlan(await trustScanCommand.plan(c), c);
+
+    expect(result.report?.ok).toBe(true);
+    expect(result.report?.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "skill sandbox smoke test",
+          verdict: "pass",
+          detail: expect.stringContaining("package manifest(s): package.json"),
+        }),
+      ]),
+    );
+    expect(seenSmoke).toHaveLength(1);
+  });
+
+  it("runs sandbox smoke for incoming MCP config skill sources", async () => {
+    skill("skills/clean", "# Clean\n");
+    write(".mcp.json", JSON.stringify({ mcpServers: {} }));
+    const run = fakeRunner((argv) => {
+      const skillspector = successfulSkillspector(argv);
+      if (
+        argv[0] === "docker" &&
+        argv[1] === "run" &&
+        argv.some((arg) => arg.includes("aih sandbox smoke ok"))
+      ) {
+        return { code: 0, stdout: "aih sandbox smoke ok\n" };
+      }
+      if (skillspector !== undefined) return skillspector;
+      return undefined;
+    });
+    const c = ctx({ target: dir }, {}, "vibe", run);
+
+    const result = await executePlan(await trustScanCommand.plan(c), c);
+
+    expect(result.report?.ok).toBe(true);
+    expect(result.report?.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "skill sandbox smoke test",
+          verdict: "pass",
+          detail: expect.stringContaining("incoming MCP config"),
+        }),
+      ]),
+    );
   });
 
   it("reports GitHub-source detector coverage in the runtime advisory after apply fetch", async () => {

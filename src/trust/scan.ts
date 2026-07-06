@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
-import { lstatSync, readdirSync, readFileSync, statSync } from "node:fs";
-import { basename, extname, isAbsolute, join, relative, resolve } from "node:path";
+import { existsSync, lstatSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { basename, dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
 import { type Posture, postureFromContext } from "../config/posture.js";
 import { AihError } from "../errors.js";
 import type { Action, CommandSpec, PlanContext, ProbeAction } from "../internals/plan.js";
@@ -52,6 +52,14 @@ const HOSTED_MCP_ADVISORY =
   "hosted MCP server has no post-approval rug-pull protection; run a runtime MCP-scan with tool-pinning before first use.";
 const MCP_POLICY_RULE = "incoming MCP policy";
 const MCP_POLICY_DENIED = "mcp.policy-denied";
+const PACKAGE_MANIFESTS = [
+  "package.json",
+  "pyproject.toml",
+  "requirements.txt",
+  "Cargo.toml",
+  "go.mod",
+];
+const INSTALL_SCRIPT_HOOKS = ["preinstall", "postinstall", "install"];
 
 interface ScanTrustTreeOptions {
   env?: NodeJS.ProcessEnv;
@@ -76,7 +84,7 @@ interface IncomingMcpServerMap {
 
 interface TrustScanPlanOptions {
   cleanupQuarantine?: boolean;
-  sandboxSmokeShape?: (root: string) => SandboxSmokeShape;
+  sandboxSmokeShape?: (root: string) => SandboxSmokeShape | undefined;
 }
 
 function toPosix(path: string): string {
@@ -119,6 +127,71 @@ function shouldScanTrustDoc(root: string, absPath: string): boolean {
 
 function collectTrustDocs(root: string): string[] {
   return collectFilesUnder(root, (abs) => shouldScanTrustDoc(root, abs));
+}
+
+function collectSkillDirs(root: string): string[] {
+  return [
+    ...new Set(
+      collectFilesUnder(root, (abs) => basename(abs) === "SKILL.md").map((abs) => dirname(abs)),
+    ),
+  ].sort((a, b) => toPosix(relative(root, a)).localeCompare(toPosix(relative(root, b))));
+}
+
+function skillDirLabel(root: string, skillDir: string): string {
+  const rel = toPosix(relative(root, skillDir));
+  return rel.length === 0 ? basename(root) : rel;
+}
+
+function readTextSafe(path: string): string | undefined {
+  try {
+    return readFileSync(path, "utf8");
+  } catch {
+    return undefined;
+  }
+}
+
+function hasInstallScriptHooks(root: string): boolean {
+  const text = readTextSafe(join(root, "package.json"));
+  if (text === undefined) return false;
+  try {
+    const parsed = JSON.parse(text) as { scripts?: unknown };
+    const scripts = parsed.scripts;
+    if (typeof scripts !== "object" || scripts === null || Array.isArray(scripts)) return false;
+    return INSTALL_SCRIPT_HOOKS.some((hook) => Object.hasOwn(scripts, hook));
+  } catch {
+    return false;
+  }
+}
+
+function isInstallScriptFile(name: string): boolean {
+  const lower = name.toLowerCase();
+  return lower.endsWith(".sh") || lower.endsWith(".ps1") || lower.startsWith("install.");
+}
+
+function fileNames(dir: string): string[] {
+  try {
+    return readdirSync(dir, { withFileTypes: true })
+      .filter((entry) => entry.isFile())
+      .map((entry) => entry.name);
+  } catch {
+    return [];
+  }
+}
+
+function hasInstallScripts(root: string): boolean {
+  if (hasInstallScriptHooks(root)) return true;
+  return [root, join(root, "scripts")].some((dir) => fileNames(dir).some(isInstallScriptFile));
+}
+
+function sandboxSmokeShapeForTrustScan(root: string): SandboxSmokeShape | undefined {
+  const skillDirs = collectSkillDirs(root);
+  if (skillDirs.length === 0) return undefined;
+  return {
+    skillDirs: skillDirs.map((dir) => skillDirLabel(root, dir)),
+    installScripts: hasInstallScripts(root),
+    mcpConfig: collectIncomingMcpConfigFiles(root).length > 0,
+    packageManifests: PACKAGE_MANIFESTS.filter((name) => existsSync(join(root, name))),
+  };
 }
 
 function normalizeScanOptions(options: ScanTrustTreeOptions = {}): {
@@ -637,6 +710,7 @@ export async function trustScanPlanForSource(
   options: TrustScanPlanOptions = {},
 ): Promise<ReturnType<typeof plan>> {
   const actions: Action[] = [];
+  const sandboxSmokeShape = options.sandboxSmokeShape ?? sandboxSmokeShapeForTrustScan;
   const policy = requiredDetectorsFromPolicy(ctx);
   const scanOptions = {
     internalScopes: resolveInternalScopes(ctx),
@@ -657,7 +731,7 @@ export async function trustScanPlanForSource(
       source.root,
       scanOptionsFromContext(ctx, {
         ...scanOptions,
-        sandboxSmokeShape: options.sandboxSmokeShape?.(source.root),
+        sandboxSmokeShape: sandboxSmokeShape(source.root),
       }),
     );
     actions.push(
@@ -671,7 +745,7 @@ export async function trustScanPlanForSource(
         source.treePath,
         scanOptionsFromContext(probeCtx, {
           ...scanOptions,
-          sandboxSmokeShape: options.sandboxSmokeShape?.(source.treePath),
+          sandboxSmokeShape: sandboxSmokeShape(source.treePath),
         }),
       );
       return githubScan;

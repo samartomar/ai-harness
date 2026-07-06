@@ -98,7 +98,7 @@ function detectorRunner(
           options.imageInspect ?? {
             code: 0,
             stdout:
-              '{"org.opencontainers.image.revision":"326a2b489411a20ed742ff13701be39ba00063c8"}\n',
+              '{"Id":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","Config":{"Labels":{"org.opencontainers.image.revision":"326a2b489411a20ed742ff13701be39ba00063c8"}}}\n',
           }
         );
       }

@@ -138,17 +138,22 @@ function expectStructuredResult(
 }
 
 function sandboxSmokeRunner(
-  options: { failOnSmokeRun?: number; seenSmoke?: string[][] } = {},
+  options: {
+    failOnSmokeRun?: number;
+    imageUnavailable?: () => boolean;
+    seenSmoke?: string[][];
+  } = {},
 ): Runner {
   let smokeRuns = 0;
   return fakeRunner((argv) => {
     if (argv[0] !== "docker") return undefined;
     if (argv[1] === "--version") return { code: 0, stdout: "Docker version 27\n" };
     if (argv[1] === "image" && argv[2] === "inspect") {
+      if (options.imageUnavailable?.()) return { code: 1, stderr: "image not found\n" };
       return {
         code: 0,
         stdout:
-          '{"org.opencontainers.image.revision":"326a2b489411a20ed742ff13701be39ba00063c8"}\n',
+          '{"Id":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","Config":{"Labels":{"org.opencontainers.image.revision":"326a2b489411a20ed742ff13701be39ba00063c8"}}}\n',
       };
     }
     if (argv[1] === "run" && argv.some((arg) => arg.includes("aih sandbox smoke ok"))) {
@@ -295,6 +300,42 @@ describe("workspace add acquisition plans", () => {
       ]),
     );
     expect(seenSmoke).toHaveLength(3);
+  });
+
+  it("blocks promotion when applicable sandbox smoke is unavailable", async () => {
+    localSkill(sourceRoot, "clean", "# Clean\n");
+    writeFileSync(
+      join(sourceRoot, "package.json"),
+      JSON.stringify({ name: "clean-skill" }),
+      "utf8",
+    );
+    let imageUnavailable = false;
+    const c = ctx(
+      sourceRoot,
+      true,
+      true,
+      {},
+      {},
+      sandboxSmokeRunner({ imageUnavailable: () => imageUnavailable }),
+    );
+    const phase1Result = await executePlan(await workspaceAddPhase1Plan(c), c);
+    expect(phase1Result.report?.ok).toBe(true);
+    const gate = await captureClearedWorkspaceAddTrustGate(c, phase1Result.report);
+    imageUnavailable = true;
+
+    const result = await executePlan(await workspaceAddPhase2Plan(c, gate), c);
+
+    expect(result.report?.exitCode()).toBe(1);
+    expect(result.writes.some((write) => write.path.startsWith("ai-coding/skills/"))).toBe(false);
+    expect(result.report?.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "skill sandbox smoke test",
+          verdict: "fail",
+          code: "trust.sandbox-smoke-unavailable",
+        }),
+      ]),
+    );
   });
 
   it("phase 2 rejects a source-binding mismatch through a paired structured probe", async () => {
@@ -472,20 +513,26 @@ describe("workspace add acquisition plans", () => {
     expect(existsSync(join(workspace, "ai-coding", "skills"))).toBe(false);
   });
 
-  it("capture re-scan catches org-policy approvedSources tightened after phase 1", async () => {
+  it("capture re-scan preserves structured checks when approvedSources tighten after phase 1", async () => {
     const source = resolveTrustSource("owner/repo", { root: workspace });
     try {
       writeGithubQuarantine(source, "a".repeat(40));
       const report = new VerificationReport().pass("trust scan", "clean");
       writePolicy({ approvedSources: [{ owner: "trusted", repo: "repo" }] });
 
-      await expect(
-        captureClearedWorkspaceAddTrustGate(
-          ctx("owner/repo", true, true, {}, { posture: "enterprise" }),
-          report,
-          source,
-        ),
-      ).rejects.toThrow(/source changed after phase 1 scan/);
+      const c = ctx("owner/repo", true, true, {}, { posture: "enterprise" });
+      const gate = await captureClearedWorkspaceAddTrustGate(c, report, source);
+      const result = await executePlan(await workspaceAddPhase2Plan(c, gate, source), c);
+
+      expect(result.report?.exitCode()).toBe(1);
+      expect(result.report?.checks).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            verdict: "fail",
+            code: "trust.untrusted-publisher",
+          }),
+        ]),
+      );
     } finally {
       if (source.kind === "github") rmSync(source.quarantineRoot, { recursive: true, force: true });
     }
@@ -600,7 +647,7 @@ describe("workspace add acquisition plans", () => {
         env: {},
         now: () => new Date("2026-06-30T00:00:00.000Z"),
         newRunId: () => "run_test",
-        run: fakeRunner(() => undefined),
+        run: sandboxSmokeRunner(),
       }),
     ).toBe(0);
     expect(existsSync(join(workspace, ".aih", "trust-lock.json"))).toBe(true);
@@ -615,7 +662,7 @@ describe("workspace add acquisition plans", () => {
         env: { AIH_TRUST_INTERNAL_SCOPES: "@acme" },
         now: () => new Date("2026-06-30T00:00:00.000Z"),
         newRunId: () => "run_test",
-        run: fakeRunner(() => undefined),
+        run: sandboxSmokeRunner(),
       }),
     ).toBe(1);
     expect(withScope.join("")).toContain("trust.dependency-confusion");
