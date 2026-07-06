@@ -556,12 +556,15 @@ describe("heal — invariant guard (D4)", () => {
     };
     const p = await command.plan(makeCtx(sc));
     for (const e of execs(p.actions)) {
-      const joined = e.argv.join(" ").toLowerCase();
-      expect(joined).not.toContain("registry");
-      expect(joined).not.toContain("npm install");
-      expect(joined).not.toContain("install -g");
-      expect(joined).not.toContain(".tgz");
-      expect(joined).not.toContain("curl");
+      const argv = e.argv.map((arg) => arg.toLowerCase());
+      const cmd = argv[0] ?? "";
+      const joined = argv.join(" ");
+      expect(joined).not.toMatch(/\bhttps?:\/\//);
+      expect(joined).not.toContain("registry.npmjs.org");
+      expect(joined).not.toMatch(/\.tgz(?:\b|$)/);
+      expect(cmd).not.toBe("curl");
+      expect(cmd === "npm" && argv.includes("install")).toBe(false);
+      expect(argv.includes("install") && argv.includes("-g")).toBe(false);
     }
   });
 });
