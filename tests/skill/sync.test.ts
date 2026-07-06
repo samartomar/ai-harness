@@ -274,6 +274,42 @@ describe("skillSyncCommand", () => {
     );
   });
 
+  it("does not overmatch prefixed skill receipts that contain inner skills path segments", async () => {
+    installApproved("owner-repo", "clean");
+    write(
+      join(CONTEXT_DIR, "skills", "owner-repo", "clean", "docs", "skills", "clean", "notes.md"),
+      "notes\n",
+    );
+    writeTrustLock(
+      "owner-repo",
+      "clean",
+      [
+        { path: "SKILL.md", body: "# clean\n" },
+        { path: "README.md", body: "clean docs\n" },
+        { path: "docs/skills/clean/notes.md", body: "notes\n" },
+      ],
+      "packages/skills/clean",
+    );
+    const c = ctx({ name: "clean", cli: "codex" });
+
+    const result = await executePlan(await skillSyncCommand.plan(c), c);
+
+    expect(result.writes.map((write) => write.path)).toContain(
+      codexSkill("clean", join("docs", "skills", "clean", "notes.md")),
+    );
+  });
+
+  it("refuses mixed source prefixes for one approved promoted skill", () => {
+    installApproved("owner-repo", "clean");
+    writeTrustLockArtifacts("owner-repo", "clean", [
+      { path: "packages/a/skills/clean/SKILL.md", sha256: sha256Text("# clean\n") },
+      { path: "packages/b/skills/clean/README.md", sha256: sha256Text("clean docs\n") },
+    ]);
+    const c = ctx({ name: "clean", cli: "codex" });
+
+    expect(() => skillSyncCommand.plan(c)).toThrow(/multiple trust-lock source prefixes/);
+  });
+
   it("refuses duplicate trust receipts for the same promoted file", () => {
     installApproved("owner-repo", "clean");
     writeTrustLockArtifacts("owner-repo", "clean", [

@@ -157,21 +157,28 @@ interface ExpectedArtifacts {
   origins: Map<string, string>;
 }
 
-function artifactRelCandidates(name: string, sourcePath: string): string[] {
-  const directPrefix = `${name}/`;
-  if (sourcePath.startsWith(directPrefix)) return [sourcePath.slice(directPrefix.length)];
+interface SourceArtifactRel {
+  prefix: string;
+  rel: string;
+}
 
-  const candidates = new Set<string>();
+function artifactRelForSkillRoot(name: string, sourcePath: string): SourceArtifactRel | undefined {
+  const directPrefix = `${name}/`;
+  if (sourcePath.startsWith(directPrefix)) {
+    return { prefix: directPrefix, rel: sourcePath.slice(directPrefix.length) };
+  }
+
   const parts = sourcePath.split("/");
   const nameParts = name.split("/");
   for (let index = 1; index <= parts.length - nameParts.length - 1; index += 1) {
     if (parts[index - 1] !== "skills") continue;
     if (!nameParts.every((part, offset) => parts[index + offset] === part)) continue;
-    const rel = parts.slice(index + nameParts.length).join("/");
-    if (rel.length > 0) candidates.add(rel);
+    return {
+      prefix: `${parts.slice(0, index + nameParts.length).join("/")}/`,
+      rel: parts.slice(index + nameParts.length).join("/"),
+    };
   }
-
-  return [...candidates];
+  return undefined;
 }
 
 function addExpectedArtifact(
@@ -195,10 +202,15 @@ function addExpectedArtifact(
 
 function expectedArtifactHashes(name: string, source: TrustLockSource): Map<string, string> {
   const expected: ExpectedArtifacts = { hashes: new Map(), origins: new Map() };
+  let sourcePrefix: string | undefined;
   for (const artifact of source.artifactHashes) {
-    for (const rel of artifactRelCandidates(name, artifact.path)) {
-      addExpectedArtifact(name, expected, rel, artifact);
+    const resolved = artifactRelForSkillRoot(name, artifact.path);
+    if (resolved === undefined) continue;
+    if (sourcePrefix !== undefined && sourcePrefix !== resolved.prefix) {
+      throw refuse(`approved promoted skill ${name} has multiple trust-lock source prefixes`);
     }
+    sourcePrefix = resolved.prefix;
+    addExpectedArtifact(name, expected, resolved.rel, artifact);
   }
   if (expected.hashes.size > 0) return expected.hashes;
 
