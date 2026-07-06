@@ -247,6 +247,8 @@ function skillspectorPinChecks(ctx: PlanContext): Check[] {
   const digestChanged =
     candidateDigest !== undefined && candidateDigest !== SKILLSPECTOR_IMAGE_DIGEST;
   const existingTagReused = candidateTag === SKILLSPECTOR_IMAGE;
+  const revisionChanged =
+    candidateRevision !== undefined && candidateRevision !== SKILLSPECTOR_SOURCE_REVISION;
   const checks: Check[] = [
     {
       name: "trust skillspector pin",
@@ -255,7 +257,7 @@ function skillspectorPinChecks(ctx: PlanContext): Check[] {
     },
   ];
 
-  if (candidateRevision !== undefined && candidateRevision !== SKILLSPECTOR_SOURCE_REVISION) {
+  if (revisionChanged && !existingTagReused) {
     checks.push({
       name: "trust skillspector upstream diff",
       verdict: "fail",
@@ -276,18 +278,30 @@ function skillspectorPinChecks(ctx: PlanContext): Check[] {
     });
   }
 
-  const revisionChanged =
-    candidateRevision !== undefined && candidateRevision !== SKILLSPECTOR_SOURCE_REVISION;
+  if (!existingTagReused && digestChanged && candidateRevision !== undefined && !revisionChanged) {
+    checks.push({
+      name: "trust skillspector binary provenance",
+      verdict: "fail",
+      code: "trust.source-changed",
+      detail: `candidate SkillSpector digest ${candidateDigest} differs from the pinned image at the same upstream commit ${SKILLSPECTOR_SOURCE_REVISION}; inspect build provenance before accepting this pin bump`,
+      fingerprint: `trust-skillspector-pin:digest:${candidateDigest.slice("sha256:".length, "sha256:".length + 12)}`,
+    });
+  }
+
   if (existingTagReused && (revisionChanged || digestChanged)) {
     const changes = [
       revisionChanged ? `upstream commit ${candidateRevision}` : undefined,
       digestChanged ? `digest ${candidateDigest}` : undefined,
     ].filter((change): change is string => change !== undefined);
+    const reviewHint =
+      revisionChanged && candidateRevision !== undefined
+        ? ` after reviewing the upstream diff: ${skillspectorCompareUrl(candidateRevision)}`
+        : "";
     checks.push({
       name: "trust skillspector retag",
       verdict: "fail",
       code: "trust.source-changed",
-      detail: `retagging existing SkillSpector image tag ${SKILLSPECTOR_IMAGE} with ${changes.join(" and ")} is not accepted; use a new tag after reviewing the upstream diff`,
+      detail: `retagging existing SkillSpector image tag ${SKILLSPECTOR_IMAGE} with ${changes.join(" and ")} is not accepted; use a new tag${reviewHint}`,
       fingerprint: `trust-skillspector-pin:retag:${SKILLSPECTOR_IMAGE}`,
     });
   }

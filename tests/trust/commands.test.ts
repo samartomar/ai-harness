@@ -291,6 +291,36 @@ describe("trust skillspector-pin command", () => {
     );
   });
 
+  it("flags a new candidate tag with changed bytes at the same upstream revision", async () => {
+    const candidateDigest = `sha256:${"f".repeat(64)}`;
+    const candidateTag = "skillspector:aih-same-source-new-bytes";
+    const result = await executePlan(
+      await trustSkillspectorPinCommand.plan(
+        ctx({
+          candidateDigest,
+          candidateRevision: SKILLSPECTOR_SOURCE_REVISION,
+          candidateTag,
+        }),
+      ),
+      ctx({
+        candidateDigest,
+        candidateRevision: SKILLSPECTOR_SOURCE_REVISION,
+        candidateTag,
+      }),
+    );
+
+    expect(result.report?.exitCode()).toBe(1);
+    expect(result.report?.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          verdict: "fail",
+          code: "trust.source-changed",
+          detail: expect.stringContaining("same upstream commit"),
+        }),
+      ]),
+    );
+  });
+
   it("flags retagging a newer checkout onto the current SkillSpector tag", async () => {
     const candidateRevision = "c".repeat(40);
     const result = await executePlan(
@@ -313,6 +343,22 @@ describe("trust skillspector-pin command", () => {
           verdict: "fail",
           code: "trust.source-changed",
           detail: expect.stringContaining("retagging existing SkillSpector image tag"),
+        }),
+      ]),
+    );
+    expect(result.report?.checks).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "trust.source-drift",
+        }),
+      ]),
+    );
+    expect(result.report?.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          detail: expect.stringContaining(
+            `https://github.com/NVIDIA/SkillSpector/compare/${SKILLSPECTOR_SOURCE_REVISION}...${candidateRevision}`,
+          ),
         }),
       ]),
     );
