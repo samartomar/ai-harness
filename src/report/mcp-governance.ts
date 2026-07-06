@@ -63,7 +63,7 @@ export function mcpGovernanceSummary(
  * MCP governance panel — aih's curated server set (at project scope) judged under the
  * ENTERPRISE posture, the strict gate, so a reviewer sees at a glance what an
  * enterprise rollout would flag. Reuses the policy engine ({@link evaluateMcpPolicy}):
- * reads only the risk axes, contacts nothing. The community default blocks nothing —
+ * reads only the risk axes, contacts nothing. The default vibe posture blocks nothing —
  * aih REPORTS these verdicts, it never silently drops a server from `.mcp.json`. This
  * is the "would it survive enterprise friction?" answer in the local dashboard.
  *
@@ -74,7 +74,7 @@ export function mcpGovernanceDigest(ctx: PlanContext): DigestAction {
   const summary = mcpGovernanceSummary(ctx, "enterprise");
   const body = lines(
     "aih's curated MCP set, judged under the ENTERPRISE posture (the strict gate) so you",
-    "can see what an enterprise rollout would flag. The community default blocks nothing;",
+    "can see what an enterprise rollout would flag. The default vibe posture blocks nothing;",
     "aih reports these verdicts, it never silently drops a server from .mcp.json.",
     "",
     `  ${summary.counts.denied} denied · ${summary.counts.warned} warn · ${summary.counts.allowed} allowed`,

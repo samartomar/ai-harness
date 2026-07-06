@@ -333,6 +333,16 @@ describe("aih capability resolve", () => {
     }).rejects.toThrow(/invalid posture/);
   });
 
+  it("rejects legacy community posture instead of falling back to auto-add", async () => {
+    seedNodeRepo();
+
+    await expect(async () => {
+      await capabilityResolveCommand.plan(
+        ctx({ posture: "community" as unknown as PlanContext["posture"] }),
+      );
+    }).rejects.toThrow(/invalid posture/);
+  });
+
   it("team posture records detected needs as warnings", async () => {
     seedNodeRepo();
 

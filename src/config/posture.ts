@@ -42,16 +42,17 @@ interface ResolvePostureInput {
 
 const POSTURE_RANK: Record<Posture, number> = { vibe: 0, team: 1, enterprise: 2 };
 
-/** Coerce legacy/community input into the v2 three-valued posture dial. */
+/** Resolve the v2 three-valued posture dial, defaulting only when no value is supplied. */
 export function asPosture(value: unknown): Posture {
+  if (value === undefined) return "vibe";
   if (value === "enterprise") return "enterprise";
   if (value === "team") return "team";
-  return "vibe";
+  if (value === "vibe") return "vibe";
+  throw new SettingsError("invalid posture: expected vibe, team, or enterprise");
 }
 
 export function parsePostureInput(value: unknown, source: "--posture" | "AIH_POSTURE"): Posture {
   if (value === "enterprise" || value === "team" || value === "vibe") return value;
-  if (value === "community") return "vibe";
   throw new SettingsError(`invalid ${source}: expected vibe, team, or enterprise`);
 }
 

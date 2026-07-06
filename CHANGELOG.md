@@ -40,6 +40,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   targets while subtracting `aih`'s recorded Codex TOML footprint and fenced
   AGENTS merge block. (#283)
 
+### Changed
+
+- **Posture parsing**: explicit `community` posture values now fail closed with
+  the existing invalid-posture error instead of silently downgrading to `vibe`;
+  absent posture values still default to `vibe`. (#280)
+
 ## [2.0.0] - 2026-07-05
 
 This package release ships the completed v1.3.1, v1.4.0, v1.5.0,

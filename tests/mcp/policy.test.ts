@@ -177,12 +177,12 @@ describe("deniedServers / asPosture / mcpGovernanceDoc", () => {
     expect(deniedServers(policies).map((p) => p.name)).toEqual(["bad"]);
   });
 
-  it("asPosture coerces community and unknown values to vibe", () => {
+  it("asPosture defaults absent values to vibe and rejects explicit invalid values", () => {
     expect(asPosture("enterprise")).toBe("enterprise");
     expect(asPosture("team")).toBe("team");
-    expect(asPosture("community")).toBe("vibe");
     expect(asPosture(undefined)).toBe("vibe");
-    expect(asPosture("nonsense")).toBe("vibe");
+    expect(() => asPosture("community")).toThrow(/invalid posture/);
+    expect(() => asPosture("nonsense")).toThrow(/invalid posture/);
   });
 
   it("the governance doc groups verdicts, names the denied set with reasons, and cites CODEOWNERS", () => {

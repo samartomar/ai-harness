@@ -225,7 +225,6 @@ function capabilityPosture(ctx: PlanContext): "vibe" | "team" | "enterprise" {
   }
   const posture = raw.toLowerCase();
   if (posture === "vibe" || posture === "team" || posture === "enterprise") return posture;
-  if (posture === "community") return "vibe";
   throw new AihError("invalid posture: expected vibe, team, or enterprise", "AIH_CONFIG");
 }
 
