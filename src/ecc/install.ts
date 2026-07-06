@@ -14,9 +14,12 @@ import { execArgv } from "../tools/install.js";
  *
  * Source of truth: ECC's `SUPPORTED_INSTALL_TARGETS` in `scripts/install-apply.js`
  * (v2) — claude, claude-project, cursor, antigravity, codex, gemini, opencode,
- * qwen, zed. Intersected with the harness's own CLIs, the direct `--target`s are
- * the seven below. Kiro is NOT an `ecc-install` target (it ships only in the git
- * repo's `.kiro/`) — index.ts fetches the repo and runs ECC's `.kiro/install.sh`.
+ * qwen, zed. Intersected with the harness's own CLIs, the supported upstream
+ * targets are the seven below. Codex is special-cased in index.ts because the
+ * upstream target copies shared `~/.codex` files; aih routes it through ECC's
+ * add-only merge helpers instead. Kiro is NOT an `ecc-install` target (it ships
+ * only in the git repo's `.kiro/`) — index.ts fetches the repo and runs ECC's
+ * `.kiro/install.sh`.
  * copilot / windsurf / kimi are NOT ECC targets — they route through the `consult`
  * advisor rather than fabricating a `--target` ECC's installer would reject.
  */
@@ -54,6 +57,8 @@ export interface EccInstallInputs {
 
 export const ECC_NPM_PACKAGE = "ecc-universal";
 export const ECC_NPM_BIN = "ecc-install";
+export const ECC_NPM_CLI_BIN = "ecc";
+export const ECC_NPM_BINS = [ECC_NPM_BIN, ECC_NPM_CLI_BIN] as const;
 
 /** The npm package spec for ECC's installer package — pinned or bare latest. */
 function installerPackageSpec(version?: string): string {
@@ -143,7 +148,7 @@ export function eccSupplyChainDoc(): Action {
       "executes can change after review. For a governed/enterprise rollout, pin it:",
       "",
       "  AIH_ECC_INSTALL_VERSION=<x.y.z>   # pins `npx --package ecc-universal@<x.y.z> ecc-install`",
-      "  AIH_ECC_REF=<tag|sha>             # pins the Kiro git checkout to a tag/commit",
+      "  AIH_ECC_REF=<tag|sha>             # pins the Codex/Kiro git checkout to a tag/commit",
       "",
       "Or mirror `ecc-universal` and `code-review-graph` into your internal registries",
       "and point npm/uv at them. Unpinned `npx`/`git pull` execution is",

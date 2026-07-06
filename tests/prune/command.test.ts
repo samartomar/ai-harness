@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { SHARED_MARKER, sharedBlock } from "../../src/bootstrap-ai/canon.js";
+import { CODEX_AGENTS_BLOCK_MARKER, CODEX_INSTALL_STATE_FILE } from "../../src/ecc/codex.js";
 import { mergeManagedBlock } from "../../src/internals/markers.js";
 import type { Action, PlanContext } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
@@ -102,7 +103,7 @@ describe("aih prune command", () => {
     expect(text).toContain(".cursor/mcp.json");
   });
 
-  it("routes dropped ECC npm-target CLIs through ECC's install-state uninstall", async () => {
+  it("routes dropped ECC-supported CLIs through ECC's install-state uninstall", async () => {
     marker("claude");
     write("ai-coding/adapters/claude.md");
     write("ai-coding/adapters/codex.md");
@@ -121,6 +122,145 @@ describe("aih prune command", () => {
       "--target",
       "codex",
     ]);
+  });
+
+  it("subtracts the managed ECC Codex AGENTS block when codex is dropped", async () => {
+    const home = join(dir, "home");
+    marker("claude");
+    write("ai-coding/adapters/claude.md");
+    write("ai-coding/adapters/codex.md");
+    mkdirSync(join(home, ".codex"), { recursive: true });
+    writeFileSync(
+      join(home, ".codex", "AGENTS.md"),
+      mergeManagedBlock(
+        undefined,
+        {
+          marker: CODEX_AGENTS_BLOCK_MARKER,
+          note: "generated from affaan-m/ECC .codex/AGENTS.md",
+          body: "# ECC Codex guidance",
+        },
+        "# My Codex notes",
+      ),
+    );
+    const actions = await actionsOf({ env: { USERPROFILE: home, HOME: home } });
+    const subtract = actions.find(
+      (a): a is Extract<Action, { kind: "write" }> =>
+        a.kind === "write" && a.path.replace(/\\/g, "/").endsWith("/home/.codex/AGENTS.md"),
+    );
+    expect(subtract?.external).toBe(true);
+    expect(subtract?.contents).toBe("# My Codex notes\n");
+  });
+
+  it("subtracts the recorded ECC Codex TOML footprint when codex is dropped", async () => {
+    const home = join(dir, "home");
+    marker("claude");
+    write("ai-coding/adapters/claude.md");
+    write("ai-coding/adapters/codex.md");
+    mkdirSync(join(home, ".codex"), { recursive: true });
+    writeFileSync(
+      join(home, ".codex", CODEX_INSTALL_STATE_FILE),
+      JSON.stringify(
+        {
+          schemaVersion: 1,
+          managedBy: "aih",
+          codexToml: {
+            rootKeys: ["approval_policy"],
+            tables: ["features"],
+            tableKeys: {},
+            mcpServers: ["context7"],
+          },
+          agentsBlock: true,
+        },
+        null,
+        2,
+      ),
+    );
+    writeFileSync(
+      join(home, ".codex", "config.toml"),
+      [
+        'approval_policy = "on-request"',
+        'user_key = "keep"',
+        "",
+        "[features]",
+        "multi_agent = true",
+        "",
+        "[mcp_servers.context7]",
+        'command = "npx"',
+        'args = ["-y", "@upstash/context7-mcp@latest"]',
+        "",
+        "[mcp_servers.context7.env]",
+        'CONTEXT7_TOKEN = "remove"',
+        "",
+        "[mcp_servers.user]",
+        'url = "https://example.com/mcp"',
+        "",
+      ].join("\n"),
+    );
+
+    const actions = await actionsOf({ env: { USERPROFILE: home, HOME: home } });
+    const subtract = actions.find(
+      (a): a is Extract<Action, { kind: "write" }> =>
+        a.kind === "write" && a.path.replace(/\\/g, "/").endsWith("/home/.codex/config.toml"),
+    );
+    expect(subtract?.external).toBe(true);
+    expect(subtract?.contents).not.toContain("approval_policy");
+    expect(subtract?.contents).not.toContain("[features]");
+    expect(subtract?.contents).not.toContain("[mcp_servers.context7]");
+    expect(subtract?.contents).not.toContain("[mcp_servers.context7.env]");
+    expect(subtract?.contents).toContain('user_key = "keep"');
+    expect(subtract?.contents).toContain("[mcp_servers.user]");
+    expect(
+      actions.some(
+        (a) => a.kind === "exec" && a.argv.includes(join(home, ".codex", CODEX_INSTALL_STATE_FILE)),
+      ),
+    ).toBe(true);
+  });
+
+  it("subtracts recorded ECC Codex keys from inline TOML tables when codex is dropped", async () => {
+    const home = join(dir, "home");
+    marker("claude");
+    write("ai-coding/adapters/claude.md");
+    write("ai-coding/adapters/codex.md");
+    mkdirSync(join(home, ".codex"), { recursive: true });
+    writeFileSync(
+      join(home, ".codex", CODEX_INSTALL_STATE_FILE),
+      JSON.stringify(
+        {
+          schemaVersion: 1,
+          managedBy: "aih",
+          codexToml: {
+            rootKeys: [],
+            tables: [],
+            tableKeys: {
+              "profiles.strict": ["sandbox_mode", "web_search"],
+            },
+            mcpServers: [],
+          },
+          agentsBlock: true,
+        },
+        null,
+        2,
+      ),
+    );
+    writeFileSync(
+      join(home, ".codex", "config.toml"),
+      [
+        "[profiles]",
+        'strict = { approval_policy = "on-request", sandbox_mode = "read-only", web_search = "cached" }',
+        'yolo = { approval_policy = "never" }',
+        "",
+      ].join("\n"),
+    );
+
+    const actions = await actionsOf({ env: { USERPROFILE: home, HOME: home } });
+    const subtract = actions.find(
+      (a): a is Extract<Action, { kind: "write" }> =>
+        a.kind === "write" && a.path.replace(/\\/g, "/").endsWith("/home/.codex/config.toml"),
+    );
+    expect(subtract?.contents).toContain('strict = { approval_policy = "on-request" }');
+    expect(subtract?.contents).toContain('yolo = { approval_policy = "never" }');
+    expect(subtract?.contents).not.toContain("sandbox_mode");
+    expect(subtract?.contents).not.toContain("web_search");
   });
 
   it("skips a bootloader that carries no aih block (nothing to subtract)", async () => {

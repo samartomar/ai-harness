@@ -1,3 +1,4 @@
+import { Buffer } from "node:buffer";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -5,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { command } from "../../src/ecc/index.js";
 import {
   ECC_INSTALL_TARGETS,
+  ECC_NPM_BINS,
   eccInstallerArgv,
   isEccInstallTarget,
 } from "../../src/ecc/install.js";
@@ -15,6 +17,7 @@ import type {
   ExecAction,
   PlanContext,
   ProbeAction,
+  WriteAction,
 } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
@@ -104,6 +107,17 @@ const installTargets = (actions: Action[]): (string | undefined)[] =>
     .filter((e) => e.argv.includes("ecc-install") && e.argv.includes("--target"))
     .map((e) => e.argv[e.argv.indexOf("--target") + 1]);
 
+function codexInstallState(actions: Action[]): {
+  codexToml: { tables: string[]; tableKeys: Record<string, string[]> };
+} {
+  const install = execs(actions).find((e) => e.describe.includes("record prune state"));
+  const stateB64 = install?.argv.at(-1);
+  if (!stateB64) throw new Error("missing encoded Codex install state");
+  return JSON.parse(Buffer.from(stateB64, "base64").toString("utf8")) as {
+    codexToml: { tables: string[]; tableKeys: Record<string, string[]> };
+  };
+}
+
 describe("eccLanguages — map detected stack to ECC language packs", () => {
   it("maps a TypeScript repo to the typescript pack", () => {
     const sel = eccLanguages(stack({ languages: ["TypeScript/Node.js"], hasTypeScript: true }));
@@ -184,6 +198,10 @@ describe("ecc install targets / argv (latest from npm)", () => {
       "full",
     ]);
   });
+
+  it("tracks both ecc-universal bins used by install and prune drift checks", () => {
+    expect(ECC_NPM_BINS).toEqual(expect.arrayContaining(["ecc-install", "ecc"]));
+  });
 });
 
 describe("ecc.plan — runs ECC's own installer (latest)", () => {
@@ -218,11 +236,29 @@ describe("ecc.plan — runs ECC's own installer (latest)", () => {
     expect(text).toContain("npx ecc-agentshield scan");
   });
 
-  it("--cli codex installs via ecc-universal's ecc-install bin (npm v2 target)", async () => {
+  it("--cli codex uses ECC's add-only Codex merge helpers, not the destructive copy target", async () => {
     const actions = (await command.plan(makeCtx({ cli: "codex" }))).actions;
-    expect(installTargets(actions)).toContain("codex");
-    // the old native sync-script / clone path is gone.
-    expect(execBlob(actions)).not.toContain("sync-ecc-to-codex.sh");
+    const blob = execBlob(actions);
+    expect(installTargets(actions)).not.toContain("codex");
+    expect(blob).not.toContain("ecc-install --target codex");
+    expect(blob).toContain("scripts/codex/merge-codex-config.js");
+    expect(blob).toContain("scripts/codex/merge-mcp-config.js");
+    expect(blob).toContain("createManifestInstallPlan");
+    expect(blob).toContain("writeInstallState");
+    expect(blob.indexOf("fs.copyFileSync")).toBeLessThan(
+      blob.indexOf("writeInstallState(plan.installStatePath"),
+    );
+    expect(blob).toContain("Invoke them on demand as `$<skill-name>`");
+    expect(blob).toContain("On-demand `$<skill-name>` invocation");
+    expect(blob).toContain(".codex/config.toml");
+  });
+
+  it("--cli codex passes the requested profile into the managed Codex file install", async () => {
+    const install = execs(
+      (await command.plan(makeCtx({ cli: "codex", profile: "minimal" }))).actions,
+    ).find((e) => e.describe.includes("record prune state"));
+    expect(install?.argv).toContain("minimal");
+    expect(install?.argv.join(" ")).toContain("createManifestInstallPlan");
   });
 
   it("--cli gemini installs via ecc-universal's ecc-install bin, not consult", async () => {
@@ -273,34 +309,54 @@ describe("ecc.plan — runs ECC's own installer (latest)", () => {
     expect(blob).not.toContain("git clone");
   });
 
-  it("--all-tools: every npm target via ecc-universal, kiro via git checkout", async () => {
+  it("--all-tools: npm targets via ecc-universal, codex/kiro via safe git checkout paths", async () => {
     put("package.json", JSON.stringify({ name: "svc" }));
     const actions = (await command.plan(makeCtx({ allTools: true }))).actions;
     expect(installTargets(actions)).toEqual(
-      expect.arrayContaining([
-        "claude",
-        "codex",
-        "cursor",
-        "antigravity",
-        "gemini",
-        "opencode",
-        "zed",
-      ]),
+      expect.arrayContaining(["claude", "cursor", "antigravity", "gemini", "opencode", "zed"]),
     );
+    expect(installTargets(actions)).not.toContain("codex");
     expect(installTargets(actions)).not.toContain("kiro");
     expect(installTargets(actions)).not.toContain("copilot"); // not an ECC target → consult
     expect(installTargets(actions)).not.toContain("kimi"); // not an ECC target → consult
     const blob = execBlob(actions);
+    expect(blob).toContain("scripts/codex/merge-codex-config.js"); // codex add-only merge path
     expect(blob).toContain(".kiro/install.sh"); // kiro native installer
+    expect(blob).not.toContain("ecc-install --target codex");
     expect(blob).not.toContain("ecc-install --target kiro");
   });
 
-  it("BOUNDARY: only doc/exec actions (no remote/URL write targets)", async () => {
+  it("BOUNDARY: only doc/exec actions plus the external once-only Codex config seed", async () => {
     put("package.json", JSON.stringify({ name: "svc" }));
     const actions = (await command.plan(makeCtx({ allTools: true }))).actions;
     for (const a of actions) {
-      expect(["doc", "exec"]).toContain(a.kind);
+      expect(["doc", "exec", "write"]).toContain(a.kind);
+      if (a.kind === "write") {
+        const write = a as WriteAction;
+        expect(write.external).toBe(true);
+        const path = write.path.replace(/\\/g, "/");
+        expect(path).toMatch(/\/\.codex\/config\.toml$/);
+        expect(write.once).toBe(true);
+        expect(write.contents).toBe("");
+      }
     }
+    expect(execBlob(actions)).toContain("ecc-aih-install-state.json");
+  });
+
+  it("records inline Codex profile tables as existing config and tracks only added keys", async () => {
+    const home = join(tmp, "home");
+    mkdirSync(join(home, ".codex"), { recursive: true });
+    writeFileSync(
+      join(home, ".codex", "config.toml"),
+      '[profiles]\nstrict = { approval_policy = "on-request" }\n',
+    );
+    const base = makeCtx({ cli: "codex" });
+    const actions = (
+      await command.plan({ ...base, env: { ...base.env, HOME: home, USERPROFILE: home } })
+    ).actions;
+    const state = codexInstallState(actions);
+    expect(state.codexToml.tables).not.toContain("profiles.strict");
+    expect(state.codexToml.tableKeys["profiles.strict"]).toEqual(["sandbox_mode", "web_search"]);
   });
 });
 
@@ -421,9 +477,86 @@ describe("ECC supply-chain pinning (AIH-SUPPLY-001 round 2)", () => {
     );
     expect(clone?.argv).toEqual(expect.arrayContaining(["--branch", "v2.1.0"]));
   });
+
+  it("AIH_ECC_REF pins the Codex merge-helper checkout (clone --branch <ref>)", async () => {
+    const base = makeCtx({ cli: "codex" });
+    const ctx = { ...base, env: { ...base.env, AIH_ECC_REF: "v2.1.0" } };
+    const p = await command.plan(ctx);
+    const clone = p.actions.find(
+      (a): a is ExecAction => a.kind === "exec" && a.argv.includes("clone"),
+    );
+    expect(clone?.argv).toEqual(expect.arrayContaining(["--branch", "v2.1.0"]));
+    expect(execBlob(p.actions)).toContain("scripts/codex/merge-codex-config.js");
+  });
 });
 
 describe("ecc.plan — Codex MCP collision preflight", () => {
+  it("refuses Codex when existing global transport would collide with ECC's planned MCP addition", async () => {
+    const home = join(tmp, "home");
+    const root = join(tmp, "repo");
+    mkdirSync(join(root, ".codex"), { recursive: true });
+    mkdirSync(join(home, ".codex"), { recursive: true });
+    writeFileSync(
+      join(home, ".codex", "config.toml"),
+      '[mcp_servers.context7]\nurl = "https://mcp.context7.com/mcp"\n',
+    );
+    const base = makeCtx({ cli: "codex" });
+    const ctx = { ...base, root, env: { ...base.env, HOME: home, USERPROFILE: home } };
+    const actions = (await command.plan(ctx)).actions;
+    expect(execBlob(actions)).not.toContain("merge-mcp-config.js");
+    expect(
+      actions.some(
+        (a) =>
+          a.kind === "doc" &&
+          a.describe.includes("Codex MCP server name collision") &&
+          a.text.includes("context7"),
+      ),
+    ).toBe(true);
+    const probes = actions.filter((a): a is ProbeAction => a.kind === "probe");
+    const checks = await Promise.all(probes.map((p) => p.run(ctx)));
+    expect(checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          verdict: "fail",
+          code: "mcp.config-invalid",
+        }),
+      ]),
+    );
+  });
+
+  it("refuses Codex when ECC's planned global MCP additions would collide with project transport", async () => {
+    const home = join(tmp, "home");
+    const root = join(tmp, "repo");
+    mkdirSync(join(root, ".codex"), { recursive: true });
+    mkdirSync(join(home, ".codex"), { recursive: true });
+    writeFileSync(
+      join(root, ".codex", "config.toml"),
+      '[mcp_servers.context7]\nurl = "https://mcp.context7.com/mcp"\n',
+    );
+    const base = makeCtx({ cli: "codex" });
+    const ctx = { ...base, root, env: { ...base.env, HOME: home, USERPROFILE: home } };
+    const actions = (await command.plan(ctx)).actions;
+    expect(execBlob(actions)).not.toContain("merge-mcp-config.js");
+    expect(
+      actions.some(
+        (a) =>
+          a.kind === "doc" &&
+          a.describe.includes("Codex MCP server name collision") &&
+          a.text.includes("context7"),
+      ),
+    ).toBe(true);
+    const probes = actions.filter((a): a is ProbeAction => a.kind === "probe");
+    const checks = await Promise.all(probes.map((p) => p.run(ctx)));
+    expect(checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          verdict: "fail",
+          code: "mcp.config-invalid",
+        }),
+      ]),
+    );
+  });
+
   it("refuses the Codex installer when global and project config collide on transport", async () => {
     const home = join(tmp, "home");
     const root = join(tmp, "repo");

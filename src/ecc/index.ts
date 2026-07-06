@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { detectFallbackNotice, resolveTargets } from "../internals/cli-detect.js";
 import {
   type Action,
@@ -11,11 +11,19 @@ import {
   type PlanContext,
   plan,
   probe,
+  writeText,
 } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
 import type { RepoStack } from "../profile/scan.js";
 import { scanRepo } from "../profile/scan.js";
-import { codexMcpCollisionActions } from "./codex.js";
+import { execArgv } from "../tools/install.js";
+import {
+  CODEX_AGENTS_BLOCK_MARKER,
+  codexHomeDir,
+  codexInstallStateContents,
+  codexInstallStatePath,
+  codexMcpCollisionActions,
+} from "./codex.js";
 import {
   type EccInstallInputs,
   eccActionsForCli,
@@ -27,10 +35,71 @@ import { eccLanguages } from "./select.js";
 
 const ECC_REPO_URL = "https://github.com/affaan-m/ECC.git";
 
+interface EccRepoCheckout {
+  dir: string;
+  posix: string;
+  explicit: boolean;
+  hasCache: boolean;
+  ref?: string;
+}
+
 /** Cache dir for ECC's git checkout (Kiro isn't on npm, so it needs the repo). */
 function eccCacheDir(ctx: PlanContext): string {
   const home = ctx.env.USERPROFILE || ctx.env.HOME || homedir();
   return join(home, ".claude", "ecc");
+}
+
+function eccRepoCheckout(ctx: PlanContext): EccRepoCheckout {
+  const explicit = typeof ctx.options.eccPath === "string" ? ctx.options.eccPath.trim() : "";
+  const dir = explicit || eccCacheDir(ctx);
+  return {
+    dir,
+    posix: dir.replace(/\\/g, "/"),
+    explicit: explicit.length > 0,
+    hasCache: existsSync(join(dir, ".git")),
+    ref: (ctx.env.AIH_ECC_REF ?? "").trim() || undefined,
+  };
+}
+
+function eccRepoFetchActions(repo: EccRepoCheckout): Action[] {
+  if (repo.explicit) return [];
+  if (repo.ref) {
+    return repo.hasCache
+      ? [
+          exec(
+            `Fetch ECC ref ${repo.ref} — git -C ${repo.posix} fetch --depth 1 origin ${repo.ref} (under --apply)`,
+            ["git", "-C", repo.dir, "fetch", "--depth", "1", "origin", repo.ref],
+          ),
+          exec(
+            `Pin ECC to ${repo.ref} — git -C ${repo.posix} checkout --detach FETCH_HEAD (under --apply)`,
+            ["git", "-C", repo.dir, "checkout", "--detach", "FETCH_HEAD"],
+          ),
+        ]
+      : [
+          exec(`Clone ECC pinned to ${repo.ref} (shallow) into ${repo.posix} (under --apply)`, [
+            "git",
+            "clone",
+            "--depth",
+            "1",
+            "--branch",
+            repo.ref,
+            ECC_REPO_URL,
+            repo.dir,
+          ]),
+        ];
+  }
+  return [
+    repo.hasCache
+      ? exec(
+          `Update cached ECC to latest — git -C ${repo.posix} pull (under --apply)`,
+          ["git", "-C", repo.dir, "pull", "--ff-only"],
+          { allowFailure: true },
+        )
+      : exec(
+          `Clone ECC (latest, shallow) into ${repo.posix} — git clone --depth 1 (under --apply)`,
+          ["git", "clone", "--depth", "1", ECC_REPO_URL, repo.dir],
+        ),
+  ];
 }
 
 /**
@@ -79,8 +148,8 @@ function kiroInstallActions(ctx: PlanContext, dir: string, posix: string): Actio
           "install dirs directly, so this means it's genuinely absent.)",
           "",
           "Fix: install Git for Windows (https://git-scm.com/download/win), which bundles Git",
-          "Bash, then re-run `aih ecc --cli kiro --apply`. npm-target CLIs (claude/codex/…) do",
-          "not need Git Bash — only the Kiro installer does.",
+          "Bash, then re-run `aih ecc --cli kiro --apply`. Other ECC targets do not need",
+          "Git Bash — only the Kiro installer does.",
         ),
       ),
       probe("Kiro ECC install: Git Bash present (Windows)", () => ({
@@ -128,103 +197,155 @@ function kiroInstallActions(ctx: PlanContext, dir: string, posix: string): Actio
   ];
 }
 
-/**
- * ECC's Kiro path. Kiro content isn't on npm, so aih uses a git checkout of ECC
- * and runs its native `.kiro/install.sh` (which copies ECC's curated Kiro
- * agents/skills/steering/hooks/scripts/settings into the repo's `.kiro/`,
- * idempotent). To stay on the LATEST version with no pre-existing checkout: a
- * shallow `git clone` into a cache dir on first run, `git pull` to refresh on
- * later runs. `--ecc-path <dir>` overrides with an existing local checkout. Every
- * step is an `exec` that runs only under `--apply`; on Windows it uses Git Bash.
- */
-function kiroEccActions(ctx: PlanContext): Action[] {
-  const explicit = typeof ctx.options.eccPath === "string" ? ctx.options.eccPath.trim() : "";
-  const dir = explicit || eccCacheDir(ctx);
-  const posix = dir.replace(/\\/g, "/");
-  const installActions = kiroInstallActions(ctx, dir, posix);
-
-  if (explicit) {
+function kiroEccActions(ctx: PlanContext, repo: EccRepoCheckout): Action[] {
+  const installActions = kiroInstallActions(ctx, repo.dir, repo.posix);
+  if (repo.explicit) {
     return [
       ...installActions,
       doc(
         "ECC Kiro install (local checkout via --ecc-path)",
         lines(
-          `Using the ECC checkout at \`${posix}\`. \`.kiro/install.sh\` copies ECC's curated`,
+          `Using the ECC checkout at \`${repo.posix}\`. \`.kiro/install.sh\` copies ECC's curated`,
           "Kiro agents/skills/steering/hooks/scripts/settings into this repo's `.kiro/`",
           "(idempotent). On Windows it runs via Git Bash.",
         ),
       ),
     ];
   }
-
-  // Fresh machine: shallow-clone ECC into the cache on first run, refresh on later
-  // runs, then run the native installer. `AIH_ECC_REF` pins the checkout to a
-  // tag/branch (supply-chain control); unset tracks latest.
-  const hasCache = existsSync(join(dir, ".git"));
-  const ref = (ctx.env.AIH_ECC_REF ?? "").trim();
-  const fetchExecs: Action[] = [];
-  if (ref) {
-    if (hasCache) {
-      fetchExecs.push(
-        exec(
-          `Fetch ECC ref ${ref} — git -C ${posix} fetch --depth 1 origin ${ref} (under --apply)`,
-          ["git", "-C", dir, "fetch", "--depth", "1", "origin", ref],
-        ),
-        exec(`Pin ECC to ${ref} — git -C ${posix} checkout --detach FETCH_HEAD (under --apply)`, [
-          "git",
-          "-C",
-          dir,
-          "checkout",
-          "--detach",
-          "FETCH_HEAD",
-        ]),
-      );
-    } else {
-      fetchExecs.push(
-        exec(`Clone ECC pinned to ${ref} (shallow) into ${posix} (under --apply)`, [
-          "git",
-          "clone",
-          "--depth",
-          "1",
-          "--branch",
-          ref,
-          ECC_REPO_URL,
-          dir,
-        ]),
-      );
-    }
-  } else {
-    fetchExecs.push(
-      hasCache
-        ? exec(
-            `Update cached ECC to latest — git -C ${posix} pull (under --apply)`,
-            ["git", "-C", dir, "pull", "--ff-only"],
-            { allowFailure: true },
-          )
-        : exec(`Clone ECC (latest, shallow) into ${posix} — git clone --depth 1 (under --apply)`, [
-            "git",
-            "clone",
-            "--depth",
-            "1",
-            ECC_REPO_URL,
-            dir,
-          ]),
-    );
-  }
-
   return [
-    ...fetchExecs,
     ...installActions,
     doc(
       "ECC Kiro install (latest via cached git checkout)",
       lines(
         "Kiro content isn't on npm, so aih keeps a shallow git checkout of ECC at",
-        `\`${posix}\` — ${hasCache ? "refreshed to the latest with `git pull`" : "cloned with `git clone --depth 1`"}`,
+        `\`${repo.posix}\` — ${repo.hasCache ? "refreshed to the latest with `git pull`" : "cloned with `git clone --depth 1`"}`,
         "on this run — and runs ECC's native `.kiro/install.sh` to copy its curated Kiro",
         "agents, skills, steering, hooks, scripts, and settings into this repo's `.kiro/`",
         "(idempotent). Requires git on PATH plus Git for Windows (Git Bash) installed; aih",
         "resolves bash.exe from the standard install path. Point at an existing checkout",
         "instead with `--ecc-path <dir>`.",
+      ),
+    ),
+  ];
+}
+
+const CODEX_INSTALL_MERGE_SCRIPT = [
+  'const child = require("child_process");',
+  'const fs = require("fs");',
+  'const path = require("path");',
+  "const [repoRoot, profileId, homeDir, mergeCodexConfig, mergeMcpConfig, configPath, sourceAgents, targetAgents, statePath, stateB64] = process.argv.slice(1);",
+  'if (!repoRoot || !profileId || !homeDir || !mergeCodexConfig || !mergeMcpConfig || !configPath || !sourceAgents || !targetAgents || !statePath || !stateB64) { console.error("usage: codex-install-merge <repo-root> <profile> <home-dir> <merge-config> <merge-mcp> <config> <source-agents> <target-agents> <state-path> <state-b64>"); process.exit(1); }',
+  'const normalize = (value) => String(value || "").replace(/\\\\/g, "/");',
+  "function isSharedCodexOperation(operation) {",
+  "  const source = normalize(operation.sourceRelativePath);",
+  '  return source === "AGENTS.md" || source === ".codex/AGENTS.md" || source === ".codex/config.toml";',
+  "}",
+  "function installCodexManagedFiles() {",
+  '  const { createManifestInstallPlan } = require(path.join(repoRoot, "scripts", "lib", "install-executor.js"));',
+  '  const { writeInstallState } = require(path.join(repoRoot, "scripts", "lib", "install-state.js"));',
+  '  const plan = createManifestInstallPlan({ sourceRoot: repoRoot, target: "codex", profileId, homeDir });',
+  "  const operations = plan.operations.filter((operation) => !isSharedCodexOperation(operation));",
+  "  plan.operations = operations;",
+  "  plan.statePreview.operations = operations;",
+  "  for (const operation of operations) {",
+  '    if (operation.kind !== "copy-file") { console.error("unsupported Codex managed operation: " + operation.kind); process.exit(1); }',
+  "    fs.mkdirSync(path.dirname(operation.destinationPath), { recursive: true });",
+  "    fs.copyFileSync(operation.sourcePath, operation.destinationPath);",
+  "  }",
+  "  writeInstallState(plan.installStatePath, plan.statePreview);",
+  "}",
+  "function normalizeCodexAgentsSource(text) {",
+  '  const normalized = text.replace(/\\r\\n/g, "\\n");',
+  '  let next = normalized.replace(/## Skills Discovery[\\s\\S]*?\\n\\nAvailable skills:/, "## Skills Discovery\\n\\nECC installs selected Codex skills under `~/.codex/skills/`. Invoke them on demand as `$<skill-name>`; for example `$tdd-workflow` reads `~/.codex/skills/tdd-workflow/SKILL.md`. They are not auto-loaded from `.agents/skills/`.\\n\\nAvailable skills:");',
+  '  if (next === normalized) { throw new Error("ECC Codex AGENTS.md Skills Discovery section not recognized"); }',
+  '  next = next.replace("| Skills | Skills loaded via plugin | `.agents/skills/` directory |", "| Skills | On-demand `$<skill-name>` invocation | `~/.codex/skills/<name>/SKILL.md` |");',
+  "  return next;",
+  "}",
+  "for (const argv of [[process.execPath, mergeCodexConfig, configPath], [process.execPath, mergeMcpConfig, configPath]]) {",
+  '  const result = child.spawnSync(argv[0], argv.slice(1), { stdio: "inherit" });',
+  "  if (result.error) { console.error(result.error.message); process.exit(1); }",
+  "  if (result.status !== 0) process.exit(result.status || 1);",
+  "}",
+  'const source = normalizeCodexAgentsSource(fs.readFileSync(sourceAgents, "utf8")).replace(/\\s+$/, "");',
+  `const marker = ${JSON.stringify(CODEX_AGENTS_BLOCK_MARKER)};`,
+  'const begin = "<!-- BEGIN " + marker + " (generated from affaan-m/ECC .codex/AGENTS.md) -->";',
+  'const end = "<!-- END " + marker + " -->";',
+  'const rendered = begin + "\\n\\n" + source + "\\n\\n" + end;',
+  'const existing = fs.existsSync(targetAgents) ? fs.readFileSync(targetAgents, "utf8") : "";',
+  "const usesCrlf = /\\r\\n/.test(existing);",
+  'const normalized = existing.replace(/\\r\\n/g, "\\n");',
+  'const start = normalized.indexOf("<!-- BEGIN " + marker);',
+  "const stop = start >= 0 ? normalized.indexOf(end, start) : -1;",
+  "let next;",
+  "if (start >= 0 && stop >= 0) {",
+  "  next = normalized.slice(0, start) + rendered + normalized.slice(stop + end.length);",
+  "} else {",
+  '  const trimmed = normalized.replace(/\\n+$/, "");',
+  '  next = trimmed.length > 0 ? trimmed + "\\n\\n" + rendered + "\\n" : rendered + "\\n";',
+  "}",
+  'if (!next.endsWith("\\n")) next += "\\n";',
+  'if (usesCrlf) next = next.replace(/\\n/g, "\\r\\n");',
+  "fs.mkdirSync(path.dirname(targetAgents), { recursive: true });",
+  'fs.writeFileSync(targetAgents, next, "utf8");',
+  "fs.mkdirSync(path.dirname(statePath), { recursive: true });",
+  'fs.writeFileSync(statePath, Buffer.from(stateB64, "base64").toString("utf8"), "utf8");',
+  "installCodexManagedFiles();",
+].join("\n");
+
+function codexEccActions(ctx: PlanContext, repo: EccRepoCheckout, profile: string): Action[] {
+  const codexDir = codexHomeDir(ctx);
+  const codexConfig = join(codexDir, "config.toml");
+  const codexAgents = join(codexDir, "AGENTS.md");
+  const mergeCodexConfig = join(repo.dir, "scripts", "codex", "merge-codex-config.js");
+  const mergeMcpConfig = join(repo.dir, "scripts", "codex", "merge-mcp-config.js");
+  const sourceAgents = join(repo.dir, ".codex", "AGENTS.md");
+  const statePath = codexInstallStatePath(ctx);
+  const stateB64 = Buffer.from(codexInstallStateContents(ctx), "utf8").toString("base64");
+  return [
+    writeText(codexConfig, "", "seed Codex config.toml for ECC add-only merge", {
+      external: true,
+      once: true,
+    }),
+    exec(
+      `Install ECC Node dependencies for Codex merge helpers — npm install --omit=dev --ignore-scripts --package-lock=false in ${repo.posix} (under --apply)`,
+      execArgv(ctx.host.platform, [
+        "npm",
+        "install",
+        "--omit=dev",
+        "--ignore-scripts",
+        "--package-lock=false",
+        "--no-audit",
+        "--no-fund",
+      ]),
+      { cwd: repo.dir, timeoutMs: 120000 },
+    ),
+    exec(
+      `Install ECC for Codex — run safe merges and record prune state into ${statePath} (under --apply)`,
+      [
+        "node",
+        "-e",
+        CODEX_INSTALL_MERGE_SCRIPT,
+        repo.dir,
+        profile,
+        dirname(codexDir),
+        mergeCodexConfig,
+        mergeMcpConfig,
+        codexConfig,
+        sourceAgents,
+        codexAgents,
+        statePath,
+        stateB64,
+      ],
+      { cwd: repo.dir },
+    ),
+    doc(
+      "ECC Codex install (safe merge path)",
+      lines(
+        "Codex uses ECC's git checkout instead of `ecc-install --target codex` because",
+        "that upstream target copies shared `~/.codex/config.toml` and `AGENTS.md` files.",
+        "aih runs ECC's add-only Codex TOML merge helpers, merges ECC's Codex AGENTS",
+        "guidance into a fenced block, and installs the selected ECC Codex files while",
+        "leaving shared config and AGENTS content co-owned.",
       ),
     ),
   ];
@@ -253,6 +374,7 @@ function summaryDoc(clis: string[], inputs: EccInstallInputs, stack: RepoStack):
       "",
       "aih runs ECC's OWN installer at the LATEST version — it assembles nothing itself:",
       `  • npm targets → npx --package ecc-universal ecc-install --target <cli> --profile ${inputs.profile}  (no clone)`,
+      "  • Codex → cached git checkout of ECC + add-only config/MCP/AGENTS merge helpers",
       "  • Kiro → cached git checkout of ECC (clone/pull to latest) + native .kiro/install.sh",
       "",
       "Re-run after the stack changes to re-scope. For finer component control (specific",
@@ -268,8 +390,8 @@ function summaryDoc(clis: string[], inputs: EccInstallInputs, stack: RepoStack):
  *
  * aih never assembles ECC content: it runs ECC's own installer. npm-target CLIs
  * use `npx --package ecc-universal ecc-install --target <cli>` (latest from npm,
- * no checkout needed);
- * Kiro (not on npm) uses a cached git checkout + ECC's native `.kiro/install.sh`;
+ * no checkout needed); Codex uses ECC's add-only merge helpers from a cached git
+ * checkout; Kiro uses the same checkout + ECC's native `.kiro/install.sh`;
  * CLIs ECC has no direct installer for are routed through the `consult` advisor.
  * Every network/install step is an `exec` that runs only under `--apply`.
  */
@@ -287,26 +409,29 @@ async function eccPlan(ctx: PlanContext): Promise<Plan> {
   };
 
   const actions: Action[] = [];
+  const hasKiro = clis.includes("kiro");
+  const codexBlockers = clis.includes("codex") ? codexMcpCollisionActions(ctx) : [];
+  const codexInstallPlanned = clis.includes("codex") && codexBlockers.length === 0;
+  const needsEccRepo = hasKiro || codexInstallPlanned;
+  const repo = needsEccRepo ? eccRepoCheckout(ctx) : undefined;
+  if (repo) actions.push(...eccRepoFetchActions(repo));
+
   let npmInstallerPlanned = false;
   for (const cli of clis) {
-    if (cli === "kiro") actions.push(...kiroEccActions(ctx));
-    else if (cli === "codex") {
-      const blockers = codexMcpCollisionActions(ctx);
-      if (blockers.length > 0) actions.push(...blockers);
-      else {
-        npmInstallerPlanned = true;
-        actions.push(...eccActionsForCli(cli, inputs));
-      }
+    if (cli === "kiro") {
+      if (repo) actions.push(...kiroEccActions(ctx, repo));
+    } else if (cli === "codex") {
+      if (codexBlockers.length > 0) actions.push(...codexBlockers);
+      else if (repo) actions.push(...codexEccActions(ctx, repo, profile));
     } else {
       if (isEccInstallTarget(cli)) npmInstallerPlanned = true;
       actions.push(...eccActionsForCli(cli, inputs));
     }
   }
   // Surface the supply-chain advisory whenever an upstream surface runs unpinned:
-  // the npm installer (no install-version) or the Kiro git checkout (no ref).
-  const hasKiro = clis.includes("kiro");
+  // the npm installer (no install-version) or the Codex/Kiro git checkout (no ref).
   const npmUnpinned = npmInstallerPlanned && installVersion === undefined;
-  if (npmUnpinned || (hasKiro && eccRef === undefined)) {
+  if (npmUnpinned || ((hasKiro || codexInstallPlanned) && eccRef === undefined)) {
     actions.push(eccSupplyChainDoc());
   }
   actions.push(eccToolsDoc());
@@ -320,7 +445,7 @@ async function eccPlan(ctx: PlanContext): Promise<Plan> {
 export const command: CommandSpec = {
   name: "ecc",
   summary:
-    "Install affaan-m/ECC (latest) for the selected CLIs via ECC's own installer — npx --package ecc-universal ecc-install, or a cached git checkout for Kiro",
+    "Install affaan-m/ECC (latest) for the selected CLIs via ECC's own installer — npx --package ecc-universal ecc-install, or a cached git checkout for Codex/Kiro",
   options: [
     {
       flags: "--profile <profile>",

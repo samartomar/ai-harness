@@ -33,9 +33,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `docs/README.md`. (#272)
 - **ECC installer resolution**: `aih ecc` now invokes ECC through
   `ecc-universal`'s `ecc-install` bin instead of the nonexistent `ecc-install`
-  package, checks that npm metadata in CI, blocks known Codex MCP transport
-  collisions before install, and lets `aih prune` call ECC's install-state
-  uninstall for dropped ECC npm targets. (#283)
+  package, checks that npm metadata in CI, routes Codex through ECC's manifest
+  file install plus safe add-only shared-file merges instead of the upstream
+  copy target, blocks Codex MCP transport collisions before install, and lets
+  `aih prune` call ECC's install-state uninstall for dropped ECC-supported
+  targets while subtracting `aih`'s recorded Codex TOML footprint and fenced
+  AGENTS merge block. (#283)
 
 ## [2.0.0] - 2026-07-05
 

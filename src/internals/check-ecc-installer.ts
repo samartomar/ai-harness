@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { ECC_NPM_BIN, ECC_NPM_PACKAGE } from "../ecc/install.js";
+import { ECC_NPM_BINS, ECC_NPM_PACKAGE } from "../ecc/install.js";
 
 const argv = ["view", ECC_NPM_PACKAGE, "bin", "--json"];
 const command = process.platform === "win32" ? "cmd.exe" : "npm";
@@ -27,13 +27,16 @@ try {
   process.exit(1);
 }
 
-if (
-  typeof bin !== "object" ||
-  bin === null ||
-  typeof (bin as Record<string, unknown>)[ECC_NPM_BIN] !== "string"
-) {
-  console.error(`${ECC_NPM_PACKAGE} does not expose the required ${ECC_NPM_BIN} bin`);
+if (typeof bin !== "object" || bin === null) {
+  console.error(`${ECC_NPM_PACKAGE} bin metadata is not an object`);
   process.exit(1);
 }
 
-console.log(`${ECC_NPM_PACKAGE} exposes ${ECC_NPM_BIN}.`);
+const binRecord = bin as Record<string, unknown>;
+const missing = ECC_NPM_BINS.filter((name) => typeof binRecord[name] !== "string");
+if (missing.length > 0) {
+  console.error(`${ECC_NPM_PACKAGE} does not expose required bin(s): ${missing.join(", ")}`);
+  process.exit(1);
+}
+
+console.log(`${ECC_NPM_PACKAGE} exposes ${ECC_NPM_BINS.join(", ")}.`);

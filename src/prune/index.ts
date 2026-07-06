@@ -1,7 +1,12 @@
 import { join } from "node:path";
 import { SHARED_MARKER, sharedCanonicalBlockBody } from "../bootstrap-ai/canon.js";
 import { AIH_CONFIG_FILE } from "../config/marker.js";
-import { ECC_NPM_PACKAGE, isEccInstallTarget } from "../ecc/install.js";
+import {
+  codexAgentsBlockRemovalAction,
+  codexConfigRemovalAction,
+  codexInstallStateCleanupAction,
+} from "../ecc/codex.js";
+import { ECC_NPM_CLI_BIN, ECC_NPM_PACKAGE, isEccInstallTarget } from "../ecc/install.js";
 import type { Cli } from "../internals/clis.js";
 import { readIfExists } from "../internals/fsxn.js";
 import { aihIgnoreWrite } from "../internals/gitignore.js";
@@ -199,7 +204,7 @@ function eccUninstallAction(ctx: PlanContext, cli: Cli): Action {
       "--yes",
       "--package",
       ECC_NPM_PACKAGE,
-      "ecc",
+      ECC_NPM_CLI_BIN,
       "uninstall",
       "--target",
       cli,
@@ -231,6 +236,17 @@ async function prunePlan(ctx: PlanContext): Promise<Plan> {
   }
   for (const cli of set.dropped) {
     if (isEccInstallTarget(cli)) actions.push(eccUninstallAction(ctx, cli));
+    if (cli === "codex") {
+      const codexConfig = codexConfigRemovalAction(ctx);
+      if (codexConfig) actions.push(codexConfig);
+      const codexBlock = codexAgentsBlockRemovalAction(ctx);
+      if (codexBlock) {
+        actions.push(codexBlock);
+        subtracted += 1;
+      }
+      const codexStateCleanup = codexInstallStateCleanupAction(ctx);
+      if (codexStateCleanup) actions.push(codexStateCleanup);
+    }
   }
   const headline =
     set.dropped.length > 0
