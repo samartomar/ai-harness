@@ -353,6 +353,49 @@ describe("skillSyncCommand", () => {
     expect(() => skillSyncCommand.plan(c)).toThrow(/ambiguous trust-lock artifact receipts/);
   });
 
+  it("refuses duplicate trust-lock source receipts for the same promoted skill", () => {
+    installApproved("owner-repo", "clean");
+    write(
+      ".aih/trust-lock.json",
+      JSON.stringify({
+        schemaVersion: 1,
+        sources: [
+          {
+            id: "owner-repo",
+            kind: "github",
+            source: "owner/repo",
+            pinnedSha: PIN,
+            promotedAt: "2026-01-01T00:00:00.000Z",
+            promotedSkills: ["clean"],
+            analyzersRun: ["aih-native"],
+            artifactHashes: [
+              { path: "clean/SKILL.md", sha256: sha256Text("# tampered\n") },
+              { path: "clean/README.md", sha256: sha256Text("clean docs\n") },
+            ],
+            findings: [],
+          },
+          {
+            id: "owner-repo",
+            kind: "github",
+            source: "owner/repo",
+            pinnedSha: PIN,
+            promotedAt: "2026-01-01T00:00:00.000Z",
+            promotedSkills: ["clean"],
+            analyzersRun: ["aih-native"],
+            artifactHashes: [
+              { path: "clean/SKILL.md", sha256: sha256Text("# clean\n") },
+              { path: "clean/README.md", sha256: sha256Text("clean docs\n") },
+            ],
+            findings: [],
+          },
+        ],
+      }),
+    );
+    const c = ctx({ name: "clean", cli: "codex" });
+
+    expect(() => skillSyncCommand.plan(c)).toThrow(/ambiguous trust-lock source receipts/);
+  });
+
   it("refuses when an approved promoted skill file was deleted after approval", () => {
     installApproved("owner-repo", "clean");
     unlinkSync(join(workspace, CONTEXT_DIR, "skills", "owner-repo", "clean", "README.md"));

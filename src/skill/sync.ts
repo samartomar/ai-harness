@@ -260,9 +260,20 @@ function verifyApprovedArtifacts(
   files: readonly SyncFile[],
 ): void {
   const sourceId = promotedSourceId(ctx, row);
-  const source = readTrustLock(ctx.root).sources.find(
+  const sources = readTrustLock(ctx.root).sources.filter(
     (item) => item.id === sourceId && item.promotedSkills.includes(row.name),
   );
+  if (sources.length === 0) {
+    throw refuse(
+      `approved promoted skill ${row.name} has no trust-lock artifact receipt for source ${sourceId}`,
+    );
+  }
+  if (sources.length > 1) {
+    throw refuse(
+      `approved promoted skill ${row.name} has ambiguous trust-lock source receipts for source ${sourceId}`,
+    );
+  }
+  const source = sources[0];
   if (source === undefined) {
     throw refuse(
       `approved promoted skill ${row.name} has no trust-lock artifact receipt for source ${sourceId}`,
