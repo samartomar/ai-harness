@@ -128,7 +128,10 @@ describe("skillSyncCommand", () => {
       .skills.filter((row) => row.name === "clean" && row.root === "machine")
       .map((row) => row.abs)
       .sort();
-    expect(machineRows).toEqual([join(home, ".claude", "skills", "clean"), join(home, ".codex", "skills", "clean")]);
+    expect(machineRows).toEqual([
+      join(home, ".claude", "skills", "clean"),
+      join(home, ".codex", "skills", "clean"),
+    ]);
   });
 
   it("refuses to sync an unapproved promoted skill", () => {

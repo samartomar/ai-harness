@@ -7,6 +7,7 @@ import { readTrustLock, type TrustLockSource } from "../trust/lock.js";
 import { collectSkillDirs, promotedSkillRel } from "../workspace/acquire.js";
 import { readSkillCard } from "./card.js";
 import { readSkillsLock, type SkillLockEntry } from "./lockfile.js";
+import { machineSkillRoots } from "./machine-roots.js";
 
 /**
  * `aih skill inventory` — slice 3 of the skill lifecycle: the READ-ONLY join that
@@ -75,7 +76,7 @@ interface DiscoveredSkill {
 /**
  * The roots we scan for skills, in report order: the PROMOTED root (external skills
  * acquired via `workspace add`, under `<ctx>/skills`), the repo-committed per-CLI
- * skill dirs (`.claude`/`.kiro`), the MACHINE `~/.claude/skills` install, and the
+ * skill dirs (`.claude`/`.kiro`), known MACHINE skill installs, and the
  * QUARANTINE archive (`.aih/quarantine/`, where `skill quarantine` parks a disabled
  * skill under its original repo-relative layout). Only
  * those that exist on disk are scanned (a missing root is `present: false`, never an
@@ -86,7 +87,7 @@ function inventoryRoots(ctx: PlanContext): SkillInventoryRoot[] {
     { label: "promoted", abs: join(ctx.root, ctx.contextDir, "skills") },
     { label: "repo", abs: join(ctx.root, ".claude", "skills") },
     { label: "repo", abs: join(ctx.root, ".kiro", "skills") },
-    { label: "machine", abs: join(homeDir(ctx), ".claude", "skills") },
+    ...machineSkillRoots(homeDir(ctx)).map((root) => ({ label: "machine", abs: root.abs })),
     { label: "quarantined", abs: join(ctx.root, ".aih", "quarantine") },
   ];
   return specs.map((spec) => ({ ...spec, present: existsSync(spec.abs) }));
