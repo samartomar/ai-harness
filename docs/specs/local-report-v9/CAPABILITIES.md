@@ -14,7 +14,7 @@ live in `v9.ts` (buildV9Data).
 ## §1 ECC-inventory scan  →  Guardrails+ECC card (03) and Skill ledger dormant (09)
 
 **Goal:** know what an ECC install actually put on disk, so the report can show "what came
-along" and detect **dormant** skills (installed but never invoked).
+along" and detect **dormant** skills (stack-relevant installed skills that were never invoked).
 
 **Inputs (file-presence scan, like the adoption checks):** count ECC-managed content under the
 known locations for the targeted CLIs — e.g. `.claude/agents/`, `.claude/skills/`,
@@ -26,14 +26,16 @@ packs come from `eccLanguages(stack)`.
 **Output digest** (`describe` "ECC harness"): `{ agents, skills, rules, hooks, packs: string[],
 profile?: string }`. Counts are file counts (state honestly: "scanned from .claude/.kiro").
 
-**Dormant set (for §09):** `dormant = installedSkills − invokedSkills`, where `invokedSkills`
-comes from `aggregateUsage.skills` (`src/usage/aggregate.ts`). Requires the usage hooks for the
-invoked side; until those are wired, the dormant card stays PREVIEW. Output: `{ dormant:
-string[], tokensReclaimable?: number }`. Real example to preserve: ECC ships go/php/ruby/swift/
-kotlin review packs that never fire in a TS repo → trim candidates.
+**Dormant set (for §09):** `dormant = stackRelevantInstalledSkills − invokedSkills`, where
+`stackRelevantInstalledSkills` is scoped by detected ECC packs and `invokedSkills` comes from
+`aggregateUsage.skills` (`src/usage/aggregate.ts`). Requires the usage hooks for the invoked side;
+until those are wired, the dormant card stays PREVIEW. Output: `{ dormant: string[],
+tokensReclaimable?: number }`. Real example to preserve: broad ECC installs include content,
+investor, media, and unrelated language skills; a TypeScript/web repo should show only
+TypeScript/web/common trim candidates.
 
-**Tests:** given a temp repo with N agent/skill files, the scan reports N; dormant = installed
-minus a supplied invoked set; empty repo → undefined (panel omits).
+**Tests:** given a temp repo with N agent/skill files, the scan reports N; dormant =
+stack-relevant installed minus a supplied invoked set; empty repo → undefined (panel omits).
 
 ---
 

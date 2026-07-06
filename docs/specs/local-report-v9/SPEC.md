@@ -55,7 +55,7 @@ string (read via the `bag(digests, prefix)` helper from `v4.ts`). State: 🟢 LI
 | 06 | Adoption + tooling | 🟢 | `bag("Configuration")` (checks) + `bag("Tools installed")` (shell tools) + `bag("Machine tooling")` (runnable vs config-only CLIs) |
 | 07 | Enterprise support — escalation tickets | 🟢 | support pipeline (`src/support/`): findings split self-fix/improvement/escalation; render the **redacted** copyable IT ticket. |
 | 08 | Over the period — trends + outcome deltas | 🟡 / 🔵 | trends sparklines from history (`src/report/history.ts`, 🟡 needs `aih track`); **outcome deltas** (lead time, rework, time-to-green/MTTR) 🔵 PREVIEW until CAPABILITIES §3 |
-| 09 | Skill ledger — heavy lifters + dormant | 🟡 / 🔵 | heavy lifters from `aggregateUsage.skills` (🟡 hook-gated); **dormant** 🔵 PREVIEW until the ECC-inventory scan can diff installed-minus-invoked (CAPABILITIES §1) |
+| 09 | Skill ledger — heavy lifters + dormant | 🟡 / 🔵 | heavy lifters from `aggregateUsage.skills` (🟡 hook-gated); **dormant** 🔵 PREVIEW until the ECC-inventory scan can diff stack-relevant installed-minus-invoked (CAPABILITIES §1) |
 | — | Footer methodology line | 🟢 | static: why cost/forecast omitted; velocity = activity not score; PREVIEW meaning; maturity = wiring |
 
 ## 4. Security / sharing (review-council asks — fold in)

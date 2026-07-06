@@ -654,7 +654,7 @@ describe("buildAihDataV9 — Phase B capability flips", () => {
     expect(html).not.toContain("what came along"); // old mislabel removed
   });
 
-  it("flips the skill ledger live: heavy lifters from usage, dormant from ECC minus fired", () => {
+  it("flips the skill ledger live: heavy lifters from usage, dormant from stack-relevant ECC minus fired", () => {
     const active = ALL.filter((d) => !d.describe.startsWith("Usage"));
     const d = buildAihDataV9([...active, usageActive(), ecc()]);
     expect(d.gates["sec-skills"]).toBe("live");
@@ -663,7 +663,7 @@ describe("buildAihDataV9 — Phase B capability flips", () => {
       ["tdd · ecc", 2],
       ["planner · user", 1],
     ]);
-    expect(d.skills?.dormant).toEqual(["go-review", "security-review"]);
+    expect(d.skills?.dormant).toEqual(["security-review"]);
     const view = assembleViewV9(d, V9_DEMO);
     const html = view.sections["sec-skills"]?.html ?? "";
     expect(html).not.toContain("preview");
@@ -691,11 +691,22 @@ describe("buildAihDataV9 — Phase B capability flips", () => {
 
     const d = buildAihDataV9([...active, usageActive(), stackEcc]);
 
-    expect(d.skills?.dormant).toEqual([
-      "frontend-patterns",
-      "nextjs-turbopack",
-      "security-review",
-    ]);
+    expect(d.skills?.dormant).toEqual(["frontend-patterns", "nextjs-turbopack", "security-review"]);
+  });
+
+  it("keeps all dormant ECC skills in scope when detected packs are unmapped", () => {
+    const active = ALL.filter((d) => !d.describe.startsWith("Usage"));
+    const stackEcc = digest("ECC harness — machine 1a/2s, repo 0a/0s, 0 dup", "body", {
+      machine: { agents: 1, skills: 2, rules: 1 },
+      repo: { agents: 0, skills: 0, rules: 0, hooks: 0 },
+      dup: 0,
+      packs: ["future-stack"],
+      skillNames: ["future-review", "security-review", "tdd"],
+    });
+
+    const d = buildAihDataV9([...active, usageActive(), stackEcc]);
+
+    expect(d.skills?.dormant).toEqual(["future-review", "security-review"]);
   });
 
   it("keeps dormant skill claims unavailable when skill samples exist without ECC inventory", () => {

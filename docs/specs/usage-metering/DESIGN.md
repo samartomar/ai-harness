@@ -103,12 +103,14 @@ the current `~/.claude/ecc/.agents/skills/` layout) in the ECC panel. Dormant
 trim-candidates =
 
 ```
-dormant = ECC-installed skills  −  skills that fired (summary.skills.bySource.ecc)  (over window)
+dormant = stack-relevant ECC-installed skills  −  skills that fired (summary.skills.bySource.ecc)  (over window)
 ```
 
-i.e. "of the ECC skills you carry, only a handful fired in 30d; **the rest are dormant** — candidates to trim from the
-rolling install." This is the first panel that needs *both* the ECC inventory (done) and usage
-(Gaps 1–2). Same idea for agents.
+i.e. "of the stack-relevant ECC skills you carry, only a handful fired in 30d; **the rest are
+dormant** — candidates to trim from the rolling install." The initial all-ECC-minus-fired set was
+too noisy for broad ECC installs, so v9 scopes dormant candidates through the detected ECC stack
+packs before subtracting fired skills. This is the first panel that needs *both* the ECC inventory
+(done) and usage (Gaps 1–2). Same idea for agents.
 
 ## P5 — cross-project rollup
 
@@ -185,8 +187,8 @@ Each phase shipped independently and left the report honest (PREVIEW where data 
       **verify per-CLI hook schemas vs current docs before writing them**.
 - [x] **P2** — `Usage by CLI` ← `aggregateUsage(readUsage(ctx)).tools`; `Heavy lifters` ←
       `.skills.top`. PREVIEW until ≥1 real event.
-- [x] **P3** — `Dormant` = live ECC skills (`~/.claude/skills/ecc/` and
-      `~/.claude/ecc/.agents/skills/`, via `eccInventoryDigest`) − fired
+- [x] **P3** — `Dormant` = stack-relevant live ECC skills (`~/.claude/skills/ecc/` and
+      `~/.claude/ecc/.agents/skills/`, via `eccInventoryDigest` + detected ECC packs) − fired
       (`.skills.bySource.ecc`) over the window. 0 ECC or 0 usage → PREVIEW, not a false 0.
 - [x] **P5** — `aih usage --rollup <dir…>` (or extend `aih report --org`) → aggregate the union of
       repos' `.aih/usage.jsonl`, tagged by repo.
