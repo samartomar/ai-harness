@@ -426,6 +426,7 @@ describe("Check.code — invariants", () => {
       "canon.generated-missing": true,
       "canon.generated-drift": true,
       "canon.context-dir-missing": true,
+      "config.marker-invalid": true,
       "canon.lint-failed": true,
       "canon.adoptable": true,
       "canon.cli-native-unmigrated": true,

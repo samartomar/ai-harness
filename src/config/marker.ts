@@ -45,6 +45,12 @@ export const AihConfigSchema = z.object({
 
 export type AihConfig = z.infer<typeof AihConfigSchema>;
 
+export interface AihConfigReadDiagnostic {
+  config?: AihConfig;
+  invalid: boolean;
+  present: boolean;
+}
+
 /**
  * Read the committed bootstrap intent, or `undefined` when the marker is absent,
  * unreadable, or fails validation. Fail-SOFT by design (unlike {@link loadSettings},
@@ -53,12 +59,20 @@ export type AihConfig = z.infer<typeof AihConfigSchema>;
  * `doctor.ts:workspaceRepos` (`readIfExists` + guarded parse).
  */
 export function readAihConfig(root: string): AihConfig | undefined {
+  return readAihConfigDiagnostic(root).config;
+}
+
+/**
+ * Read the marker with enough state for advisory surfaces to distinguish "absent"
+ * from "present but invalid" without changing the fail-soft public reader.
+ */
+export function readAihConfigDiagnostic(root: string): AihConfigReadDiagnostic {
   const raw = readIfExists(join(root, AIH_CONFIG_FILE));
-  if (raw === undefined) return undefined;
+  if (raw === undefined) return { invalid: false, present: false };
   try {
-    return AihConfigSchema.parse(JSON.parse(raw));
+    return { config: AihConfigSchema.parse(JSON.parse(raw)), invalid: false, present: true };
   } catch {
-    return undefined;
+    return { invalid: true, present: true };
   }
 }
 
