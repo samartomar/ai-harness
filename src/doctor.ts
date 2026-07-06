@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { classifyCanon, isAdoptable } from "./adopt/classify.js";
 import { enterpriseBaselineAttestationCheck } from "./baseline/attestation.js";
-import { readAihConfig } from "./config/marker.js";
+import { readAihConfigDiagnostic } from "./config/marker.js";
 import { contractTruthCheck } from "./contract/check.js";
 import { detectInstall } from "./internals/cli-detect.js";
 import { readIfExists } from "./internals/fsxn.js";
@@ -66,7 +66,8 @@ export const command: CommandSpec = {
     // against THAT dir, not the `ai-coding` default doctor would otherwise re-derive
     // (the silent-wrong-path gap). `cfg?.contextDir ?? ctx.contextDir` keeps the
     // marker authoritative while falling back to the resolved setting when absent.
-    const cfg = readAihConfig(ctx.root);
+    const marker = readAihConfigDiagnostic(ctx.root);
+    const cfg = marker.present && !marker.invalid ? marker.config : undefined;
     const contextDir = cfg?.contextDir ?? ctx.contextDir;
     const base: Action[] = [
       probe("node runtime >= 20", () => {
@@ -110,6 +111,15 @@ export const command: CommandSpec = {
             };
       }),
       probe("bootstrap config marker", () => {
+        if (marker.invalid) {
+          return {
+            name: "config-marker",
+            verdict: "skip",
+            detail:
+              "invalid .aih-config.json — context dir derived from flags/env/default; fix or regenerate the marker",
+            code: "config.marker-invalid",
+          };
+        }
         if (!cfg) {
           return {
             name: "config-marker",

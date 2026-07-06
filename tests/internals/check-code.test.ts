@@ -429,6 +429,7 @@ describe("Check.code — invariants", () => {
       "canon.lint-failed": true,
       "canon.adoptable": true,
       "canon.cli-native-unmigrated": true,
+      "config.marker-invalid": true,
       "secrets.plaintext-detected": true,
       "guardrails.gitleaks-missing": true,
       "usage.no-data": true,

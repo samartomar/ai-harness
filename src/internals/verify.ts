@@ -47,6 +47,7 @@ export type CheckCode =
   | "canon.lint-failed"
   | "canon.adoptable"
   | "canon.cli-native-unmigrated"
+  | "config.marker-invalid"
   // guardrails / secrets
   | "secrets.plaintext-detected"
   | "guardrails.gitleaks-missing"

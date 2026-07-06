@@ -1096,6 +1096,21 @@ describe("doctor — reads the committed .aih-config.json marker", () => {
     expect(res?.verdict).toBe("skip");
     expect(res?.detail).toContain("no .aih-config.json");
   });
+
+  it.each([
+    ["malformed JSON", "{ broken"],
+    ["schema-invalid JSON", JSON.stringify({ version: "bad" })],
+  ])("config-marker probe warns when the marker is present but invalid (%s)", async (_kind, body) => {
+    writeFileSync(join(dir, AIH_CONFIG_FILE), body, "utf8");
+    const c = rooted("ai-coding");
+    const probe = findProbe((await command.plan(c)).actions, "bootstrap config marker");
+    const res = await probe?.run(c);
+
+    expect(res?.verdict).toBe("skip");
+    expect(res?.code).toBe("config.marker-invalid");
+    expect(res?.detail).toContain("invalid .aih-config.json");
+    expect(res?.detail).toContain("context dir derived from flags/env/default");
+  });
 });
 
 describe("doctor — usage-capture hook health probes", () => {

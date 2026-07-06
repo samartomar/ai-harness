@@ -1,13 +1,15 @@
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   AIH_CONFIG_FILE,
   aihConfigJson,
   readAihConfig,
   readAihConfigBaseline,
+  readAihConfigDiagnostic,
 } from "../../src/config/marker.js";
+import * as fsxn from "../../src/internals/fsxn.js";
 import { aihIgnoreWrite } from "../../src/internals/gitignore.js";
 
 let dir: string;
@@ -65,6 +67,23 @@ describe("readAihConfig", () => {
   it("returns undefined on a context dir that traverses parents (reuses settings constraints)", () => {
     writeMarker({ schemaVersion: 1, contextDir: "../escape" });
     expect(readAihConfig(dir)).toBeUndefined();
+  });
+
+  it("diagnoses schema violations as present but invalid", () => {
+    writeMarker({ schemaVersion: 2, contextDir: "ai-coding" });
+    expect(readAihConfigDiagnostic(dir)).toEqual({ invalid: true, present: true });
+  });
+
+  it("stays fail-soft when the marker exists but cannot be read", () => {
+    const spy = vi.spyOn(fsxn, "readIfExists").mockImplementation(() => {
+      throw new Error("locked");
+    });
+    try {
+      expect(readAihConfigDiagnostic(dir)).toEqual({ invalid: true, present: true });
+      expect(readAihConfig(dir)).toBeUndefined();
+    } finally {
+      spy.mockRestore();
+    }
   });
 });
 
