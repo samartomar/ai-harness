@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, extname, isAbsolute, join, relative } from "node:path";
 import type { Posture } from "../config/posture.js";
@@ -12,10 +12,10 @@ import { scrubFetchEnv } from "./fetch.js";
 import { gradeTrustCheck } from "./grade.js";
 import { collectFilesUnder, TRUST_SKIP_DIRS } from "./scan.js";
 
-// semgrep is future work: add detector names here only when the adapter can at
-// least surface an honest availability check. A required-but-unavailable detector
-// fails closed at enterprise posture rather than silently passing.
-export type TrustDetectorName = "skillspector" | "cisco" | "mcp-scanner";
+// Detector names land here only when the adapter can at least surface an honest
+// availability check. A required-but-unavailable detector fails closed at
+// enterprise posture rather than silently passing.
+export type TrustDetectorName = "skillspector" | "cisco" | "mcp-scanner" | "semgrep";
 
 export interface TrustDetector {
   name: TrustDetectorName;
@@ -51,6 +51,7 @@ const DETECTOR_UNAVAILABLE = "trust.detector-unavailable";
 const CISCO_SKILL_SCANNER_PACKAGE = "cisco-ai-skill-scanner";
 const CISCO_MCP_SCANNER_PACKAGE = "cisco-ai-mcp-scanner";
 const SKILLSPECTOR_IMAGE = "skillspector:aih-326a2b489411";
+const SEMGREP_CONFIG_FILES = [".semgrep.yml", ".semgrep.yaml", "semgrep.yml", "semgrep.yaml"];
 const MAX_SCRIPT_SCAN_BYTES = 512 * 1024;
 const SCRIPT_EXTENSIONS = new Set([
   "",
@@ -97,6 +98,21 @@ export const MCP_SCANNER_RULE_MAP: Record<string, CheckCode> = {
   "tool-poisoning": "trust.prompt-injection",
   tool_poisoning: "trust.prompt-injection",
   PROMPT_INJECTION_IGNORE_INSTRUCTIONS: "trust.prompt-injection",
+};
+
+export const SEMGREP_RULE_MAP: Record<string, CheckCode> = {
+  "auto-exec": "trust.auto-exec-hook",
+  "dependency-confusion": "trust.dependency-confusion",
+  "hidden-unicode": "trust.hidden-unicode",
+  "malicious-code": "trust.malicious-code",
+  "prompt-injection": "trust.prompt-injection",
+  "semgrep.auto-exec": "trust.auto-exec-hook",
+  "semgrep.dependency-confusion": "trust.dependency-confusion",
+  "semgrep.hidden-unicode": "trust.hidden-unicode",
+  "semgrep.malicious-code": "trust.malicious-code",
+  "semgrep.prompt-injection": "trust.prompt-injection",
+  "semgrep.typosquat": "trust.typosquat",
+  typosquat: "trust.typosquat",
 };
 
 interface SarifArtifactLocation {
@@ -331,6 +347,10 @@ function mcpScannerHelpArgv(platform: Platform): string[] {
   return execArgv(platform, [...mcpScannerBaseArgv(), "--help"]);
 }
 
+function semgrepVersionArgv(platform: Platform): string[] {
+  return execArgv(platform, ["semgrep", "--version"]);
+}
+
 export function ciscoSkillScannerRunArgv(
   platform: Platform,
   tree: string,
@@ -365,6 +385,19 @@ export function mcpScannerStaticArgv(
     outputSarif,
     "--analyzers",
     "yara,prompt-injection,tool-poisoning,secrets",
+  ]);
+}
+
+export function semgrepScanArgv(platform: Platform, tree: string, config: string): string[] {
+  return execArgv(platform, [
+    "semgrep",
+    "scan",
+    "--config",
+    config,
+    "--sarif",
+    "--metrics=off",
+    "--disable-version-check",
+    tree,
   ]);
 }
 
@@ -455,6 +488,31 @@ async function checkMcpScannerAvailable(
   if (reason !== undefined) return reason;
   if (`${help.stdout}${help.stderr}`.trim().length === 0) {
     return "mcp-scanner help check emitted no output";
+  }
+  return undefined;
+}
+
+async function checkSemgrepAvailable(
+  run: Runner,
+  platform: Platform,
+  env: NodeJS.ProcessEnv,
+): Promise<string | undefined> {
+  const version = await run(semgrepVersionArgv(platform), {
+    env: scrubFetchEnv(env),
+    timeoutMs: 30_000,
+  });
+  const reason = runFailureReason(version, `semgrep exit ${version.code ?? "signal"}`);
+  if (reason !== undefined) return reason;
+  if (`${version.stdout}${version.stderr}`.trim().length === 0) {
+    return "semgrep version check emitted no output";
+  }
+  return undefined;
+}
+
+function semgrepConfigPath(root: string): string | undefined {
+  for (const file of SEMGREP_CONFIG_FILES) {
+    const config = join(root, file);
+    if (existsSync(config)) return config;
   }
   return undefined;
 }
@@ -614,6 +672,26 @@ async function runMcpScannerScan(
   }
 }
 
+async function runSemgrepScan(
+  run: Runner,
+  platform: Platform,
+  env: NodeJS.ProcessEnv,
+  tree: string,
+): Promise<string> {
+  const config = semgrepConfigPath(tree);
+  if (config === undefined) {
+    throw new Error(`no Semgrep config found (${SEMGREP_CONFIG_FILES.join(", ")})`);
+  }
+  const scan = await run(semgrepScanArgv(platform, tree, config), {
+    env: scrubFetchEnv(env),
+    timeoutMs: 120_000,
+  });
+  const reason = runFailureReason(scan, `detector exit ${scan.code ?? "signal"}`);
+  if (reason !== undefined) throw new Error(reason);
+  if (scan.stdout.trim().length === 0) throw new Error("semgrep scan emitted no SARIF");
+  return scan.stdout;
+}
+
 function unavailableDetail(detector: TrustDetectorName, reason: string): string {
   const runbook =
     detector === "skillspector"
@@ -659,17 +737,15 @@ function resultRuleId(result: SarifResult): string | undefined {
 function ruleCode(result: SarifResult, detector: TrustDetector): CheckCode | undefined {
   const raw = resultRuleId(result);
   if (raw === undefined) return undefined;
-  return (
-    detector.ruleMap[raw] ??
-    (detector.name === "cisco" || detector.name === "mcp-scanner"
-      ? "trust.cisco-finding"
-      : undefined)
-  );
+  const hasGenericExternalFallback =
+    detector.name === "cisco" || detector.name === "mcp-scanner" || detector.name === "semgrep";
+  return detector.ruleMap[raw] ?? (hasGenericExternalFallback ? "trust.cisco-finding" : undefined);
 }
 
 function detectorFindingLabel(detector: TrustDetector): string {
   if (detector.name === "skillspector") return "SkillSpector";
   if (detector.name === "mcp-scanner") return "Cisco AI Defense mcp-scanner";
+  if (detector.name === "semgrep") return "Semgrep";
   return "Cisco AI Defense skill-scanner";
 }
 
@@ -773,6 +849,13 @@ function analyzerPassCheck(detector: TrustDetector, analyzersRun: readonly strin
       detail: `Cisco AI Defense mcp-scanner static scan completed through uvx --offline defaults-only. No findings != safe. Analyzers run: ${analyzersRun.join(", ")}`,
     };
   }
+  if (detector.name === "semgrep") {
+    return {
+      name: "trust detector semgrep",
+      verdict: "pass",
+      detail: `Semgrep static scan completed with a local config, SARIF output, --metrics=off, and --disable-version-check. No findings != safe. Analyzers run: ${analyzersRun.join(", ")}`,
+    };
+  }
   return {
     name: "trust detector cisco",
     verdict: "pass",
@@ -801,6 +884,13 @@ const SKILL_TRUST_DETECTORS: TrustDetector[] = [
     checkAvailable: checkCiscoAvailable,
     runScan: runCiscoSkillScan,
     ruleMap: CISCO_RULE_MAP,
+  },
+  {
+    name: "semgrep",
+    analyzerLabel: "semgrep@local",
+    checkAvailable: checkSemgrepAvailable,
+    runScan: runSemgrepScan,
+    ruleMap: SEMGREP_RULE_MAP,
   },
 ];
 

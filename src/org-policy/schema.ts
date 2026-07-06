@@ -165,8 +165,9 @@ export const OrgPolicySchema = z
       .object({
         approvedSources: z.array(TrustApprovedSourceSchema).optional(),
         requireSignedSource: z.boolean().default(false),
-        // semgrep is future work: add names only when a detector adapter exists.
-        requiredDetectors: z.array(z.enum(["skillspector", "cisco", "mcp-scanner"])).optional(),
+        requiredDetectors: z
+          .array(z.enum(["skillspector", "cisco", "mcp-scanner", "semgrep"]))
+          .optional(),
         /**
          * Named checks `aih skill approve` must see satisfied in the vet evidence
          * before it approves: "license", "pin", "no-exec", "no-mcp", or a detector
