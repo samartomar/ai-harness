@@ -243,6 +243,9 @@ function skillspectorPinChecks(ctx: PlanContext): Check[] {
   const candidateRevision = optionCandidateRevision(ctx);
   const candidateTag = optionCandidateTag(ctx);
   const candidateDigest = optionCandidateDigest(ctx);
+  const tagChanged = candidateTag !== undefined && candidateTag !== SKILLSPECTOR_IMAGE;
+  const digestChanged =
+    candidateDigest !== undefined && candidateDigest !== SKILLSPECTOR_IMAGE_DIGEST;
   const checks: Check[] = [
     {
       name: "trust skillspector pin",
@@ -261,11 +264,20 @@ function skillspectorPinChecks(ctx: PlanContext): Check[] {
     });
   }
 
+  if (candidateRevision === undefined && (tagChanged || digestChanged)) {
+    checks.push({
+      name: "trust skillspector upstream diff",
+      verdict: "fail",
+      code: "trust.source-drift",
+      detail:
+        "candidate SkillSpector tag or digest differs from the pinned image; --candidate-revision is required to surface the upstream diff before accepting a pin bump",
+      fingerprint: "trust-skillspector-pin:bump:missing-revision",
+    });
+  }
+
   const existingTagReused = candidateTag === SKILLSPECTOR_IMAGE;
   const revisionChanged =
     candidateRevision !== undefined && candidateRevision !== SKILLSPECTOR_SOURCE_REVISION;
-  const digestChanged =
-    candidateDigest !== undefined && candidateDigest !== SKILLSPECTOR_IMAGE_DIGEST;
   if (existingTagReused && (revisionChanged || digestChanged)) {
     const changes = [
       revisionChanged ? `upstream commit ${candidateRevision}` : undefined,

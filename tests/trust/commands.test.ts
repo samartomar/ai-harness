@@ -238,6 +238,32 @@ describe("trust skillspector-pin command", () => {
     );
   });
 
+  it("fails candidate pin bumps that omit the upstream revision", async () => {
+    const result = await executePlan(
+      await trustSkillspectorPinCommand.plan(
+        ctx({
+          candidateDigest: `sha256:${"e".repeat(64)}`,
+          candidateTag: "skillspector:aih-eeeeeeeeee",
+        }),
+      ),
+      ctx({
+        candidateDigest: `sha256:${"e".repeat(64)}`,
+        candidateTag: "skillspector:aih-eeeeeeeeee",
+      }),
+    );
+
+    expect(result.report?.exitCode()).toBe(1);
+    expect(result.report?.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          verdict: "fail",
+          code: "trust.source-drift",
+          detail: expect.stringContaining("--candidate-revision is required"),
+        }),
+      ]),
+    );
+  });
+
   it("flags retagging a newer checkout onto the current SkillSpector tag", async () => {
     const candidateRevision = "c".repeat(40);
     const result = await executePlan(
