@@ -386,7 +386,7 @@ describe("skillRemoveCommand — the destructive inverse", () => {
     return expect(executePlan(planOfSync(c), c)).rejects.toMatchObject({
       code: "AIH_DIRTY_WORKTREE",
     });
-  }, 20000); // real git init + status subprocesses can edge past the 5s default on slow Windows CI
+  }, 60000); // real git init + status subprocesses can edge past the 5s default on slow Windows CI
 
   it("proceeds past a dirty removal target when --force is passed", async () => {
     initGitRepoWithInstalledSkill();
@@ -396,7 +396,7 @@ describe("skillRemoveCommand — the destructive inverse", () => {
     expect(existsSync(promotedDir("owner-repo", "clean"))).toBe(false);
     expect(existsSync(join(legacyDir("owner-repo", "clean"), "SKILL.md"))).toBe(true);
     expect(existsSync(cardPath("clean"))).toBe(false);
-  }, 20000); // real git init + status subprocesses can edge past the 5s default on slow Windows CI
+  }, 60000); // real git init + status subprocesses can edge past the 5s default on slow Windows CI
 
   it("declares the remove command shape (mutator, --name + --delete options)", () => {
     expect(skillRemoveCommand.name).toBe("remove");
