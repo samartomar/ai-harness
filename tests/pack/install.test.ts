@@ -13,9 +13,10 @@ import type { Command } from "commander";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { executePlan } from "../../src/internals/execute.js";
 import type { PlanContext } from "../../src/internals/plan.js";
-import { fakeRunner } from "../../src/internals/proc.js";
+import { fakeRunner, type Runner } from "../../src/internals/proc.js";
 import { packPlanCommand, runPackInstall } from "../../src/pack/install.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
+import { SKILLSPECTOR_IMAGE_DIGEST } from "../../src/trust/images.js";
 
 const CONTEXT_DIR = "ai-coding";
 
@@ -91,6 +92,7 @@ function fakeCommand(opts: Record<string, unknown>): Command {
 
 async function runInstall(
   opts: Record<string, unknown> = {},
+  run: Runner = fakeRunner(() => undefined),
 ): Promise<{ code: number; output: string }> {
   const chunks: string[] = [];
   const code = await runPackInstall(
@@ -101,7 +103,7 @@ async function runInstall(
       env: { USERPROFILE: home, HOME: home },
       now: () => new Date("2026-07-01T00:00:00.000Z"),
       newRunId: () => "run_test",
-      run: fakeRunner(() => undefined),
+      run,
     },
   );
   return { code, output: chunks.join("") };
@@ -155,6 +157,28 @@ function seedTwoSourcePack(betaBody = "# Beta\n"): { realA: string; realB: strin
     },
   ]);
   return { realA, realB };
+}
+
+function sandboxSmokeRunner(options: { imageUnavailable?: () => boolean } = {}): Runner {
+  return fakeRunner((argv) => {
+    if (argv[0] !== "docker") return undefined;
+    if (argv[1] === "--version") return { code: 0, stdout: "Docker version 27\n" };
+    if (argv[1] === "image" && argv[2] === "inspect") {
+      if (options.imageUnavailable?.()) return { code: 1, stderr: "image not found\n" };
+      return {
+        code: 0,
+        stdout: JSON.stringify({
+          Id: SKILLSPECTOR_IMAGE_DIGEST,
+          RepoDigests: [`skillspector@${SKILLSPECTOR_IMAGE_DIGEST}`],
+        }),
+      };
+    }
+    if (argv[1] === "run" && argv.some((arg) => arg.includes("aih sandbox smoke ok"))) {
+      return { code: 0, stdout: "aih sandbox smoke ok\n" };
+    }
+    if (argv[1] === "run") return { code: 0, stdout: JSON.stringify({ runs: [] }) };
+    return undefined;
+  });
 }
 
 describe("aih pack plan", () => {
@@ -234,6 +258,23 @@ describe("aih pack install", () => {
     expect(existsSync(join(workspace, CONTEXT_DIR, "skills"))).toBe(false);
     expect(existsSync(join(workspace, ".aih", "trust-lock.json"))).toBe(false);
     expect(output).toContain("trust.prompt-injection");
+    expect(output).toContain("[failed-scan]");
+    expect(output).toContain("[skipped-because-gate-failed]");
+  });
+
+  it("gate-all: a later sandbox smoke blocker prevents every source promotion", async () => {
+    seedTwoSourcePack();
+    writeFileSync(join(sourceB, "package.json"), JSON.stringify({ name: "beta-skill" }), "utf8");
+
+    const { code, output } = await runInstall(
+      {},
+      sandboxSmokeRunner({ imageUnavailable: () => true }),
+    );
+
+    expect(code).toBe(1);
+    expect(existsSync(join(workspace, CONTEXT_DIR, "skills"))).toBe(false);
+    expect(existsSync(join(workspace, ".aih", "trust-lock.json"))).toBe(false);
+    expect(output).toContain("trust.sandbox-smoke-unavailable");
     expect(output).toContain("[failed-scan]");
     expect(output).toContain("[skipped-because-gate-failed]");
   });

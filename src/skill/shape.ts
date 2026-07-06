@@ -1,5 +1,5 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import { INCOMING_MCP_CONFIG_FILES } from "../trust/scan.js";
 import { collectSkillDirs, promotedSkillRel } from "../workspace/acquire.js";
 
@@ -13,9 +13,13 @@ export interface SkillShape {
   skillDirs: string[];
   /** Install lifecycle hooks in package.json, or shell/install scripts at root or root/scripts. */
   installScripts: boolean;
+  /** Exact source-relative files that made installScripts applicable, when known. */
+  installScriptFiles?: string[];
   /** An incoming MCP config file is present in the tree. */
   mcpConfig: boolean;
-  /** Package manifests found at the tree root. */
+  /** Exact source-relative incoming MCP config files, when known. */
+  mcpConfigFiles?: string[];
+  /** Package manifests found at the tree root or inside skill directories. */
   packageManifests: string[];
   /** Skill docs advertise scanning/analyzing the whole repository. */
   fullCodebaseAnalysis: boolean;
@@ -76,8 +80,55 @@ function hasInstallScripts(root: string): boolean {
   return [root, join(root, "scripts")].some((dir) => fileNames(dir).some(isInstallScriptFile));
 }
 
-function hasIncomingMcpConfig(root: string): boolean {
-  return [...INCOMING_MCP_CONFIG_FILES].some((rel) => existsSync(join(root, rel)));
+function toPosix(path: string): string {
+  return path.replace(/\\/g, "/");
+}
+
+function rel(root: string, path: string): string {
+  return toPosix(relative(root, path));
+}
+
+function uniqueValues(values: readonly string[]): string[] {
+  return [...new Set(values)];
+}
+
+function runtimeShapeRoots(root: string, skillDirs: readonly string[]): string[] {
+  return [root, ...skillDirs];
+}
+
+function collectPackageManifestRels(root: string, skillDirs: readonly string[]): string[] {
+  return uniqueValues(
+    runtimeShapeRoots(root, skillDirs).flatMap((dir) =>
+      PACKAGE_MANIFESTS.filter((name) => existsSync(join(dir, name))).map((name) =>
+        rel(root, join(dir, name)),
+      ),
+    ),
+  );
+}
+
+function collectInstallScriptFileRels(root: string, skillDirs: readonly string[]): string[] {
+  return uniqueValues(
+    runtimeShapeRoots(root, skillDirs).flatMap((dir) => {
+      const packageJson = join(dir, "package.json");
+      const hookFiles = hasInstallScriptHooks(dir) ? [rel(root, packageJson)] : [];
+      const scriptFiles = [dir, join(dir, "scripts")].flatMap((scriptDir) =>
+        fileNames(scriptDir)
+          .filter(isInstallScriptFile)
+          .map((name) => rel(root, join(scriptDir, name))),
+      );
+      return [...hookFiles, ...scriptFiles];
+    }),
+  );
+}
+
+function collectMcpConfigFileRels(root: string, skillDirs: readonly string[]): string[] {
+  return uniqueValues(
+    runtimeShapeRoots(root, skillDirs).flatMap((dir) =>
+      [...INCOMING_MCP_CONFIG_FILES]
+        .filter((name) => existsSync(join(dir, name)))
+        .map((name) => rel(root, join(dir, name))),
+    ),
+  );
 }
 
 function mentionsFullCodebaseAnalysis(root: string, skillDirs: readonly string[]): boolean {
@@ -91,11 +142,16 @@ function mentionsFullCodebaseAnalysis(root: string, skillDirs: readonly string[]
 /** Compute the pure-fs skill shape of a trust source tree (no spawns, no writes). */
 export function skillShape(root: string): SkillShape {
   const dirs = collectSkillDirs(root);
+  const installScriptFiles = collectInstallScriptFileRels(root, dirs);
+  const mcpConfigFiles = collectMcpConfigFileRels(root, dirs);
+  const packageManifests = collectPackageManifestRels(root, dirs);
   return {
     skillDirs: dirs.map((dir) => promotedSkillRel(root, dir)),
-    installScripts: hasInstallScripts(root),
-    mcpConfig: hasIncomingMcpConfig(root),
-    packageManifests: PACKAGE_MANIFESTS.filter((name) => existsSync(join(root, name))),
+    installScripts: installScriptFiles.length > 0 || hasInstallScripts(root),
+    ...(installScriptFiles.length > 0 ? { installScriptFiles } : {}),
+    mcpConfig: mcpConfigFiles.length > 0,
+    ...(mcpConfigFiles.length > 0 ? { mcpConfigFiles } : {}),
+    packageManifests,
     fullCodebaseAnalysis: mentionsFullCodebaseAnalysis(root, dirs),
   };
 }

@@ -269,6 +269,32 @@ describe("workspace add acquisition plans", () => {
     expect(seenSmoke[0]?.join("\n")).toContain("test -r '/scan/package.json'");
   });
 
+  it("phase 1 records sandbox smoke evidence for nested package-backed skill dirs", async () => {
+    localSkill(sourceRoot, "clean", "# Clean\n");
+    writeFileSync(
+      join(sourceRoot, "skills", "clean", "package.json"),
+      JSON.stringify({ name: "clean-skill" }),
+      "utf8",
+    );
+    const seenSmoke: string[][] = [];
+    const c = ctx(sourceRoot, true, true, {}, {}, sandboxSmokeRunner({ seenSmoke }));
+
+    const result = await executePlan(await workspaceAddPhase1Plan(c), c);
+
+    expect(result.report?.ok).toBe(true);
+    expect(result.report?.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "skill sandbox smoke test",
+          verdict: "pass",
+          detail: expect.stringContaining("package manifest(s): skills/clean/package.json"),
+        }),
+      ]),
+    );
+    expect(seenSmoke).toHaveLength(1);
+    expect(seenSmoke[0]?.join("\n")).toContain("test -r '/scan/skills/clean/package.json'");
+  });
+
   it("phase 2 rechecks sandbox smoke before promotion", async () => {
     localSkill(sourceRoot, "clean", "# Clean\n");
     writeFileSync(
@@ -303,6 +329,38 @@ describe("workspace add acquisition plans", () => {
       ]),
     );
     expect(seenSmoke).toHaveLength(3);
+  });
+
+  it("blocks promotion when nested install-script smoke is unavailable", async () => {
+    localSkill(sourceRoot, "clean", "# Clean\n");
+    writeFileSync(join(sourceRoot, "skills", "clean", "install.sh"), "echo install\n", "utf8");
+    let imageUnavailable = false;
+    const c = ctx(
+      sourceRoot,
+      true,
+      true,
+      {},
+      {},
+      sandboxSmokeRunner({ imageUnavailable: () => imageUnavailable }),
+    );
+    const phase1Result = await executePlan(await workspaceAddPhase1Plan(c), c);
+    expect(phase1Result.report?.ok).toBe(true);
+    const gate = await captureClearedWorkspaceAddTrustGate(c, phase1Result.report);
+    imageUnavailable = true;
+
+    const result = await executePlan(await workspaceAddPhase2Plan(c, gate), c);
+
+    expect(result.report?.exitCode()).toBe(1);
+    expect(result.writes.some((write) => write.path.startsWith("ai-coding/skills/"))).toBe(false);
+    expect(result.report?.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "skill sandbox smoke test",
+          verdict: "fail",
+          code: "trust.sandbox-smoke-unavailable",
+        }),
+      ]),
+    );
   });
 
   it("blocks promotion when applicable sandbox smoke is unavailable", async () => {

@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { existsSync, lstatSync, readdirSync, realpathSync, statSync } from "node:fs";
-import { basename, extname, join, posix, resolve } from "node:path";
+import { basename, extname, join, posix, relative, resolve } from "node:path";
 import type { Command } from "commander";
 import { readAihConfig } from "../config/marker.js";
 import { postureFromContext, resolvePosture } from "../config/posture.js";
@@ -497,13 +497,65 @@ function hasInstallScripts(root: string): boolean {
   return [root, join(root, "scripts")].some((dir) => fileNames(dir).some(isInstallScriptFile));
 }
 
+function toSourceRel(root: string, path: string): string {
+  return relative(root, path).replace(/\\/g, "/");
+}
+
+function uniqueValues(values: readonly string[]): string[] {
+  return [...new Set(values)];
+}
+
+function runtimeShapeRoots(root: string, skillDirs: readonly string[]): string[] {
+  return [root, ...skillDirs];
+}
+
+function collectPackageManifestRels(root: string, skillDirs: readonly string[]): string[] {
+  return uniqueValues(
+    runtimeShapeRoots(root, skillDirs).flatMap((dir) =>
+      PACKAGE_MANIFESTS.filter((name) => existsSync(join(dir, name))).map((name) =>
+        toSourceRel(root, join(dir, name)),
+      ),
+    ),
+  );
+}
+
+function collectInstallScriptFileRels(root: string, skillDirs: readonly string[]): string[] {
+  return uniqueValues(
+    runtimeShapeRoots(root, skillDirs).flatMap((dir) => {
+      const packageJson = join(dir, "package.json");
+      const hookFiles = hasInstallScriptHooks(dir) ? [toSourceRel(root, packageJson)] : [];
+      const scriptFiles = [dir, join(dir, "scripts")].flatMap((scriptDir) =>
+        fileNames(scriptDir)
+          .filter(isInstallScriptFile)
+          .map((name) => toSourceRel(root, join(scriptDir, name))),
+      );
+      return [...hookFiles, ...scriptFiles];
+    }),
+  );
+}
+
+function collectMcpConfigFileRels(root: string, skillDirs: readonly string[]): string[] {
+  const names = [...MCP_CONFIG_FILES, "mcp.json"];
+  return uniqueValues(
+    runtimeShapeRoots(root, skillDirs).flatMap((dir) =>
+      names
+        .filter((name) => existsSync(join(dir, name)))
+        .map((name) => toSourceRel(root, join(dir, name))),
+    ),
+  );
+}
+
 function sandboxSmokeShapeForSourceRoot(root: string): SandboxSmokeShape {
   const skillDirs = collectSkillDirs(root);
+  const installScriptFiles = collectInstallScriptFileRels(root, skillDirs);
+  const mcpConfigFiles = collectMcpConfigFileRels(root, skillDirs);
   return {
     skillDirs: skillDirs.map((dir) => promotedSkillRel(root, dir)),
-    installScripts: hasInstallScripts(root),
-    mcpConfig: [...MCP_CONFIG_FILES, "mcp.json"].some((rel) => existsSync(join(root, rel))),
-    packageManifests: PACKAGE_MANIFESTS.filter((name) => existsSync(join(root, name))),
+    installScripts: installScriptFiles.length > 0 || hasInstallScripts(root),
+    installScriptFiles,
+    mcpConfig: mcpConfigFiles.length > 0,
+    mcpConfigFiles,
+    packageManifests: collectPackageManifestRels(root, skillDirs),
   };
 }
 

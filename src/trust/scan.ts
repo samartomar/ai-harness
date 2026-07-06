@@ -183,14 +183,61 @@ function hasInstallScripts(root: string): boolean {
   return [root, join(root, "scripts")].some((dir) => fileNames(dir).some(isInstallScriptFile));
 }
 
+function uniqueValues(values: readonly string[]): string[] {
+  return [...new Set(values)];
+}
+
+function runtimeShapeRoots(root: string, skillDirs: readonly string[]): string[] {
+  return [root, ...skillDirs];
+}
+
+function collectPackageManifestRels(root: string, skillDirs: readonly string[]): string[] {
+  return uniqueValues(
+    runtimeShapeRoots(root, skillDirs).flatMap((dir) =>
+      PACKAGE_MANIFESTS.filter((name) => existsSync(join(dir, name))).map((name) =>
+        toPosix(relative(root, join(dir, name))),
+      ),
+    ),
+  );
+}
+
+function collectInstallScriptFileRels(root: string, skillDirs: readonly string[]): string[] {
+  return uniqueValues(
+    runtimeShapeRoots(root, skillDirs).flatMap((dir) => {
+      const packageJson = join(dir, "package.json");
+      const hookFiles = hasInstallScriptHooks(dir) ? [toPosix(relative(root, packageJson))] : [];
+      const scriptFiles = [dir, join(dir, "scripts")].flatMap((scriptDir) =>
+        fileNames(scriptDir)
+          .filter(isInstallScriptFile)
+          .map((name) => toPosix(relative(root, join(scriptDir, name)))),
+      );
+      return [...hookFiles, ...scriptFiles];
+    }),
+  );
+}
+
+function collectMcpConfigFileRels(root: string, skillDirs: readonly string[]): string[] {
+  return uniqueValues(
+    runtimeShapeRoots(root, skillDirs).flatMap((dir) =>
+      [...INCOMING_MCP_CONFIG_FILES]
+        .filter((name) => existsSync(join(dir, name)))
+        .map((name) => toPosix(relative(root, join(dir, name)))),
+    ),
+  );
+}
+
 function sandboxSmokeShapeForTrustScan(root: string): SandboxSmokeShape | undefined {
   const skillDirs = collectSkillDirs(root);
   if (skillDirs.length === 0) return undefined;
+  const installScriptFiles = collectInstallScriptFileRels(root, skillDirs);
+  const mcpConfigFiles = collectMcpConfigFileRels(root, skillDirs);
   return {
     skillDirs: skillDirs.map((dir) => skillDirLabel(root, dir)),
-    installScripts: hasInstallScripts(root),
-    mcpConfig: collectIncomingMcpConfigFiles(root).length > 0,
-    packageManifests: PACKAGE_MANIFESTS.filter((name) => existsSync(join(root, name))),
+    installScripts: installScriptFiles.length > 0 || hasInstallScripts(root),
+    installScriptFiles,
+    mcpConfig: mcpConfigFiles.length > 0,
+    mcpConfigFiles,
+    packageManifests: collectPackageManifestRels(root, skillDirs),
   };
 }
 

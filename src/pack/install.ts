@@ -582,6 +582,15 @@ export async function runPackInstall(
           run.source,
           run.select,
         );
+        const blockingChecks = run.gate.blockingChecks ?? [];
+        if (blockingChecks.length > 0) {
+          const codes = blockingChecks
+            .map((check) => check.code ?? check.name)
+            .filter((code, index, all) => all.indexOf(code) === index)
+            .join(", ");
+          run.failure = `trust gate blocked ${run.group.source}: ${codes}`;
+          anyFailure = true;
+        }
       } catch (err) {
         run.failure = err instanceof Error ? err.message : String(err);
         anyFailure = true;
@@ -652,6 +661,7 @@ export async function runPackInstall(
     write(outcomeText(pack.name, rows));
     const allChecks = runs.flatMap((run) => [
       ...(run.phase1?.report?.checks ?? []),
+      ...(run.gate?.blockingChecks ?? []),
       ...(run.phase2?.report?.checks ?? []),
     ]);
     saveSupport(ctx, allChecks, opts, env, write, runId, startedAt.toISOString());

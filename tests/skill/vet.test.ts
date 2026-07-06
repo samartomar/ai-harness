@@ -509,7 +509,7 @@ describe("skillVetCommand", () => {
     expect(result.report?.ok).toBe(true);
     expectSandboxSmokeEvidence(result.report?.checks ?? [], "install scripts");
     expect(seenSmoke).toHaveLength(1);
-    expect(seenSmoke[0]?.join("\n")).toContain("/scan/install.*");
+    expect(seenSmoke[0]?.join("\n")).toContain("/scan/install.sh");
     const digest = vetDigestOf(result);
     expect(digest.data.verdict).toBe("YELLOW");
     expect(digest.data.reasons).toEqual([expect.stringContaining("install scripts")]);

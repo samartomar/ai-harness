@@ -14,7 +14,9 @@ import {
 export interface SandboxSmokeShape {
   skillDirs: readonly string[];
   installScripts: boolean;
+  installScriptFiles?: readonly string[];
   mcpConfig: boolean;
+  mcpConfigFiles?: readonly string[];
   packageManifests: readonly string[];
 }
 
@@ -55,25 +57,42 @@ function readableAny(paths: readonly string[]): string {
   return `( ${paths.map((path) => `test -r ${shellQuote(path)}`).join(" || ")} )`;
 }
 
+function scanPath(rel: string): string {
+  return `/scan/${rel.replace(/\\/g, "/")}`;
+}
+
+function uniqueStrings(values: readonly string[]): string[] {
+  return [...new Set(values)];
+}
+
 function sandboxSmokeScript(shape: SandboxSmokeShape): string {
   const commands = ["set -eu", "test -r /scan"];
   if (shape.packageManifests.length > 0) {
-    commands.push(readableAny(shape.packageManifests.map((name) => `/scan/${name}`)));
+    commands.push(readableAny(shape.packageManifests.map(scanPath)));
   }
   if (shape.mcpConfig) {
-    commands.push(readableAny(INCOMING_MCP_SMOKE_FILES.map((name) => `/scan/${name}`)));
+    const mcpConfigFiles = shape.mcpConfigFiles ?? INCOMING_MCP_SMOKE_FILES;
+    commands.push(readableAny(mcpConfigFiles.map(scanPath)));
   }
   if (shape.installScripts) {
-    commands.push(
-      [
-        "install_hit=0",
-        "test -f /scan/package.json && install_hit=1",
-        "for file in /scan/install.* /scan/scripts/install.* /scan/*.sh /scan/*.ps1 /scan/scripts/*.sh /scan/scripts/*.ps1; do",
-        '  test -f "$file" && install_hit=1',
-        "done",
-        'test "$install_hit" -eq 1',
-      ].join("\n"),
-    );
+    const installEvidenceFiles = uniqueStrings([
+      ...(shape.installScriptFiles ?? []),
+      ...shape.packageManifests,
+    ]);
+    if (installEvidenceFiles.length > 0) {
+      commands.push(readableAny(installEvidenceFiles.map(scanPath)));
+    } else {
+      commands.push(
+        [
+          "install_hit=0",
+          "test -f /scan/package.json && install_hit=1",
+          "for file in /scan/install.* /scan/scripts/install.* /scan/*.sh /scan/*.ps1 /scan/scripts/*.sh /scan/scripts/*.ps1; do",
+          '  test -f "$file" && install_hit=1',
+          "done",
+          'test "$install_hit" -eq 1',
+        ].join("\n"),
+      );
+    }
   }
   commands.push(`printf ${shellQuote(`${SANDBOX_SMOKE_MARKER}\n`)}`);
   return commands.join("\n");
