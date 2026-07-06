@@ -470,7 +470,7 @@ function promotionBlockingChecks(checks: readonly Check[]): Check[] {
       {
         ...check,
         verdict: "fail" as const,
-        detail: `promotion blocked: ${check.detail ?? check.name}`,
+        detail: `promotion blocked (${check.code}): ${check.detail ?? check.name}`,
       },
     ];
   });
@@ -935,7 +935,7 @@ export async function runWorkspaceAdd(
     }
     await persistAcknowledgeLedger(ctx, source, phase1Result.report);
 
-    const gate = await captureClearedWorkspaceAddTrustGate(ctx, phase1Result.report, source);
+    const gate = await captureWorkspaceAddTrustGate(ctx, phase1Result.report, source);
     const phase2 = await workspaceAddPhase2Plan(ctx, gate, source);
     const phase2Result = await executePlan(phase2, ctx);
     const execFailed = hasFailedExec(phase1Result) || hasFailedExec(phase2Result);

@@ -877,6 +877,31 @@ describe("workspace add acquisition plans", () => {
     expect(existsSync(join(workspace, ".aih", "trust-lock.json"))).toBe(true);
   });
 
+  it("runWorkspaceAdd reports structured sandbox smoke blockers for a local source", async () => {
+    localSkill(sourceRoot, "clean", "# Clean\n");
+    writeFileSync(
+      join(sourceRoot, "package.json"),
+      JSON.stringify({ name: "clean-skill" }),
+      "utf8",
+    );
+    const output: string[] = [];
+
+    const code = await runWorkspaceAdd(fakeCommand(sourceRoot), {
+      write: (text) => output.push(text),
+      env: {},
+      now: () => new Date("2026-06-30T00:00:00.000Z"),
+      newRunId: () => "run_test",
+      run: sandboxSmokeRunner({ imageUnavailable: () => true }),
+    });
+
+    const text = output.join("");
+    expect(code).toBe(1);
+    expect(text).toContain("trust.sandbox-smoke-unavailable");
+    expect(text).toContain("promotion blocked");
+    expect(text).not.toContain("error [AIH_TRUST]");
+    expect(existsSync(join(workspace, "ai-coding", "skills"))).toBe(false);
+  });
+
   it("runWorkspaceAdd treats a corrupt trust lock as empty and promotes a clean source", async () => {
     localSkill(sourceRoot, "clean", "# Clean\n");
     mkdirSync(join(workspace, ".aih"), { recursive: true });

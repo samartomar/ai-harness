@@ -1223,6 +1223,44 @@ describe("scanTrustTree", () => {
     );
   });
 
+  it("keeps the sandbox smoke success marker in pass evidence when stderr is truncated", async () => {
+    skill("skills/clean", "# Clean\n");
+    write("skills/clean/package.json", JSON.stringify({ name: "clean-skill" }));
+    const run = fakeRunner((argv) => {
+      const skillspector = successfulSkillspector(argv);
+      if (
+        argv[0] === "docker" &&
+        argv[1] === "run" &&
+        argv.some((arg) => arg.includes("aih sandbox smoke ok"))
+      ) {
+        return {
+          code: 0,
+          stdout: "aih sandbox smoke ok\n",
+          stderr: `${"docker warning ".repeat(80)}\n`,
+        };
+      }
+      if (skillspector !== undefined) return skillspector;
+      return undefined;
+    });
+
+    const result = await scanTrustTreeWithAnalyzers(dir, {
+      env: {},
+      platform: "linux",
+      posture: "vibe",
+      run,
+    });
+
+    expect(result.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "skill sandbox smoke test",
+          verdict: "pass",
+          detail: expect.stringContaining("aih sandbox smoke ok"),
+        }),
+      ]),
+    );
+  });
+
   it("sanitizes unsafe SkillSpector SARIF artifact URIs before fingerprinting", async () => {
     skill("skills/clean", "# Clean\n");
     const sarif = {

@@ -194,7 +194,7 @@ export async function sandboxSmokeCheck(
     return {
       name: SANDBOX_SMOKE_NAME,
       verdict: "pass",
-      detail: `Docker read-only/no-network sandbox smoke completed for ${reasonText}; evidence: ${output}`,
+      detail: `Docker read-only/no-network sandbox smoke completed for ${reasonText}; marker: ${SANDBOX_SMOKE_MARKER}; evidence: ${output}`,
     };
   }
   return {

@@ -758,7 +758,13 @@ export function findingsFrom(checks: readonly Check[], capability: string): Supp
       byCode.set(finding.code, finding);
       continue;
     }
-    for (const d of finding.details) if (!existing.details.includes(d)) existing.details.push(d);
+    const details = [...existing.details];
+    for (const d of finding.details) if (!details.includes(d)) details.push(d);
+    if (SEVERITY_RANK[finding.severity] < SEVERITY_RANK[existing.severity]) {
+      byCode.set(finding.code, { ...finding, details });
+      continue;
+    }
+    existing.details = details;
   }
   return [...byCode.values()].sort(
     (a, b) => SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity] || a.code.localeCompare(b.code),
