@@ -275,7 +275,10 @@ describe("capture artifacts", () => {
     execFileSync(process.execPath, [recorder, "--from", "claude"], {
       cwd: root,
       env: { ...process.env, HOME: root, USERPROFILE: root },
-      input: JSON.stringify({ tool_name: "Skill", tool_input: { skill_name: "../security-review" } }),
+      input: JSON.stringify({
+        tool_name: "Skill",
+        tool_input: { skill_name: "../security-review" },
+      }),
     });
 
     const rows = readFileSync(join(root, ".aih", "usage.jsonl"), "utf8")
