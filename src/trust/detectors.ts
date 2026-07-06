@@ -142,6 +142,7 @@ export const AGENTSHIELD_RULE_MAP: Record<string, CheckCode> = {
   "agentshield.malicious-code": "trust.malicious-code",
   "agentshield.prompt-injection": "trust.prompt-injection",
   "hidden-unicode": "trust.hidden-unicode",
+  "malicious-code": "trust.malicious-code",
   "prompt-injection": "trust.prompt-injection",
 };
 
@@ -648,7 +649,7 @@ async function checkSnykAgentScanAvailable(
     return "SNYK_TOKEN is not set";
   }
   const help = await run(snykAgentScanHelpArgv(platform), {
-    env: snykAgentScanEnv(env),
+    env: scrubFetchEnv(env),
     timeoutMs: 30_000,
   });
   const reason = runFailureReason(help, `uvx exit ${help.code ?? "signal"}`);
@@ -798,14 +799,17 @@ function snykScanPathIssueUri(
   return firstString(pathResult, ["path"]) ?? scanPath;
 }
 
-function snykFindingArray(report: SnykAgentReport): SnykAgentFinding[] | undefined {
+function snykFindingArray(report: unknown): SnykAgentFinding[] | undefined {
+  if (Array.isArray(report)) return report.filter(isRecord) as SnykAgentFinding[];
+  if (!isRecord(report)) return undefined;
+  const typedReport = report as SnykAgentReport;
   for (const key of ["findings", "issues", "results", "vulnerabilities"] as const) {
-    const value = report[key];
+    const value = typedReport[key];
     if (Array.isArray(value)) return value.filter(isRecord) as SnykAgentFinding[];
   }
   const pathFindings: SnykAgentFinding[] = [];
   let sawScanPathResult = false;
-  for (const [scanPath, rawPathResult] of Object.entries(report)) {
+  for (const [scanPath, rawPathResult] of Object.entries(typedReport)) {
     if (!isRecord(rawPathResult)) continue;
     const pathResult = rawPathResult as SnykAgentScanPathResult;
     if (!Array.isArray(pathResult.issues)) continue;
@@ -819,7 +823,7 @@ function snykFindingArray(report: SnykAgentReport): SnykAgentFinding[] | undefin
       });
     }
   }
-  if (sawScanPathResult || Object.keys(report).length === 0) return pathFindings;
+  if (sawScanPathResult || Object.keys(typedReport).length === 0) return pathFindings;
   return undefined;
 }
 
@@ -844,12 +848,25 @@ function snykFindingMessage(finding: SnykAgentFinding): string {
   return title ?? description ?? "Snyk Agent Scan finding";
 }
 
-function snykFindingUri(finding: SnykAgentFinding): string {
+function snykSafeSarifUri(raw: string, tree: string): string {
+  const stripped = raw.replace(/^file:\/\//, "");
+  const posix = toPosix(stripped);
+  if (isAbsolute(stripped) || isAbsolute(posix) || /^[A-Za-z]:/.test(posix)) {
+    const relativeUri = toPosix(relative(tree, stripped));
+    if (relativeUri.length === 0) return ".";
+    return isSafeRelativeSarifUri(relativeUri) ? relativeUri : ".";
+  }
+  return isSafeRelativeSarifUri(posix) ? posix : ".";
+}
+
+function snykFindingUri(finding: SnykAgentFinding, tree: string): string {
+  let raw: string | undefined;
   if (isRecord(finding.location)) {
     const locationFile = firstString(finding.location, ["file", "path"]);
-    if (locationFile !== undefined) return locationFile;
+    if (locationFile !== undefined) raw = locationFile;
   }
-  return firstString(finding, ["file", "path"]) ?? "snyk-agent-scan.json";
+  raw ??= firstString(finding, ["file", "path"]);
+  return raw === undefined ? "." : snykSafeSarifUri(raw, tree);
 }
 
 function snykFindingLine(finding: SnykAgentFinding): number {
@@ -857,10 +874,10 @@ function snykFindingLine(finding: SnykAgentFinding): number {
   return typeof raw === "number" && Number.isInteger(raw) && raw > 0 ? raw : 1;
 }
 
-function snykAgentScanSarif(raw: string): SarifLog {
-  let parsed: SnykAgentReport;
+function snykAgentScanSarif(raw: string, tree: string): SarifLog {
+  let parsed: unknown;
   try {
-    parsed = JSON.parse(raw) as SnykAgentReport;
+    parsed = JSON.parse(raw);
   } catch {
     throw new Error("snyk-agent-scan did not emit parseable JSON");
   }
@@ -876,7 +893,7 @@ function snykAgentScanSarif(raw: string): SarifLog {
       locations: [
         {
           physicalLocation: {
-            artifactLocation: { uri: snykFindingUri(typed) },
+            artifactLocation: { uri: snykFindingUri(typed, tree) },
             region: { startLine: snykFindingLine(typed) },
           },
         },
@@ -1002,7 +1019,7 @@ async function runSnykAgentScan(
   if (scan.code !== 0 && scan.code !== 1) {
     throw new Error(scan.stderr || scan.stdout || `detector exit ${scan.code ?? "signal"}`);
   }
-  const sarif = snykAgentScanSarif(scan.stdout);
+  const sarif = snykAgentScanSarif(scan.stdout, tree);
   if (scan.code === 1 && !sarif.runs?.some((run) => (run.results ?? []).length > 0)) {
     throw new Error(scan.stderr || "snyk-agent-scan exited 1 without findings");
   }
@@ -1025,7 +1042,12 @@ async function runAgentShieldScan(
     if (scan.spawnError || (scan.code !== 0 && scan.code !== 2)) {
       throw new Error(scan.stderr || scan.stdout || `detector exit ${scan.code ?? "signal"}`);
     }
-    return readFileSync(output, "utf8");
+    try {
+      return readFileSync(output, "utf8");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`agentshield did not write SARIF to ${output}: ${message}`);
+    }
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }

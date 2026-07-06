@@ -156,6 +156,17 @@ function snykAgentScanRunner(
   report: unknown,
   onScan?: (argv: string[], opts?: RunOptions) => void,
 ): Runner {
+  return snykAgentScanRunnerWithHooks(report, { onScan });
+}
+
+function snykAgentScanRunnerWithHooks(
+  report: unknown,
+  options: {
+    onHelp?: (argv: string[], opts?: RunOptions) => void;
+    onScan?: (argv: string[], opts?: RunOptions) => void;
+    scanCode?: number;
+  } = {},
+): Runner {
   return fakeRunner((argv, opts) => {
     const skillspector = successfulSkillspector(argv);
     if (skillspector !== undefined) return skillspector;
@@ -182,10 +193,13 @@ function snykAgentScanRunner(
       }
     }
     if (argv[0] === "uvx" && argv.includes("snyk-agent-scan")) {
-      if (argv.includes("help")) return { code: 0, stdout: "snyk-agent-scan help\n" };
+      if (argv.includes("help")) {
+        options.onHelp?.(argv, opts);
+        return { code: 0, stdout: "snyk-agent-scan help\n" };
+      }
       if (argv.includes("scan")) {
-        onScan?.(argv, opts);
-        return { code: 1, stdout: JSON.stringify(report) };
+        options.onScan?.(argv, opts);
+        return { code: options.scanCode ?? 1, stdout: JSON.stringify(report) };
       }
     }
     return undefined;
@@ -225,6 +239,35 @@ function agentshieldRunner(
         writeFileSync(out, JSON.stringify(sarif), "utf8");
         return { code: sarifHasResults(sarif) ? 2 : 0, stdout: `SARIF saved to ${out}\n` };
       }
+    }
+    return undefined;
+  });
+}
+
+function agentshieldMissingOutputRunner(): Runner {
+  return fakeRunner((argv) => {
+    const skillspector = successfulSkillspector(argv);
+    if (skillspector !== undefined) return skillspector;
+    if (argv[0] === "uvx" && argv.includes("skill-scanner")) {
+      if (argv.includes("--version")) return { code: 0, stdout: "skill-scanner 2.0.12\n" };
+      if (argv.includes("scan")) {
+        const out = argv[argv.indexOf("--output-sarif") + 1];
+        if (out === undefined) return { code: 1, stderr: "missing --output-sarif" };
+        writeFileSync(out, JSON.stringify(EMPTY_SARIF), "utf8");
+        return { code: 0, stdout: `Report saved to: ${out}\n` };
+      }
+    }
+    if (argv[0] === "semgrep") {
+      if (argv.includes("--version")) return { code: 0, stdout: "1.125.0\n" };
+      if (argv.includes("scan")) return { code: 0, stdout: JSON.stringify(EMPTY_SARIF) };
+    }
+    if (argv[0] === "uvx" && argv.includes("snyk-agent-scan")) {
+      if (argv.includes("help")) return { code: 0, stdout: "snyk-agent-scan help\n" };
+      if (argv.includes("scan")) return { code: 0, stdout: JSON.stringify({ findings: [] }) };
+    }
+    if (argv[0] === "agentshield") {
+      if (argv.includes("--help")) return { code: 0, stdout: "agentshield scan help\n" };
+      if (argv.includes("scan")) return { code: 0, stdout: "scan completed\n" };
     }
     return undefined;
   });
@@ -1289,7 +1332,7 @@ describe("scanTrustTree", () => {
         servers: [
           {
             name: "clean",
-            server: { path: "skills/clean/SKILL.md", type: "skill" },
+            server: { path: join(dir, "skills", "clean", "SKILL.md"), type: "skill" },
           },
         ],
       },
@@ -1339,6 +1382,90 @@ describe("scanTrustTree", () => {
     expect(seen[0]?.env).not.toHaveProperty("GITHUB_TOKEN");
   });
 
+  it("does not forward SNYK_TOKEN to the Snyk Agent Scan help probe", async () => {
+    skill("skills/clean", "# Clean\n");
+    const helpCalls: Array<{ argv: string[]; env?: NodeJS.ProcessEnv }> = [];
+    const scanCalls: Array<{ argv: string[]; env?: NodeJS.ProcessEnv }> = [];
+
+    await scanTrustTreeWithAnalyzers(dir, {
+      env: { PATH: "bin", SNYK_TOKEN: "snyk-token-for-scanner" },
+      platform: "linux",
+      posture: "enterprise",
+      run: snykAgentScanRunnerWithHooks(
+        { findings: [] },
+        {
+          onHelp: (argv, opts) => helpCalls.push({ argv, env: opts?.env }),
+          onScan: (argv, opts) => scanCalls.push({ argv, env: opts?.env }),
+          scanCode: 0,
+        },
+      ),
+    });
+
+    expect(helpCalls).toHaveLength(1);
+    expect(scanCalls).toHaveLength(1);
+    expect(helpCalls[0]?.env).toHaveProperty("PATH", "bin");
+    expect(helpCalls[0]?.env).not.toHaveProperty("SNYK_TOKEN");
+    expect(scanCalls[0]?.env).toHaveProperty("SNYK_TOKEN", "snyk-token-for-scanner");
+  });
+
+  it("maps top-level Snyk Agent Scan JSON arrays defensively", async () => {
+    skill("skills/clean", "# Clean\n");
+
+    const result = await scanTrustTreeWithAnalyzers(dir, {
+      env: { SNYK_TOKEN: "snyk-token-for-scanner" },
+      platform: "linux",
+      posture: "enterprise",
+      run: snykAgentScanRunner([
+        {
+          code: "E001",
+          message: "Prompt injection in tool description",
+          file: "skills/clean/SKILL.md",
+          line: 1,
+        },
+      ]),
+    });
+
+    expect(result.analyzersRun).toEqual(expect.arrayContaining(["snyk-agent-scan@uvx"]));
+    expect(result.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          verdict: "fail",
+          code: "trust.prompt-injection",
+          location: expect.objectContaining({ uri: "skills/clean/SKILL.md", startLine: 1 }),
+        }),
+      ]),
+    );
+  });
+
+  it("passes a clean Snyk Agent Scan exit 0 with no findings", async () => {
+    skill("skills/clean", "# Clean\n");
+
+    const result = await scanTrustTreeWithAnalyzers(dir, {
+      env: { SNYK_TOKEN: "snyk-token-for-scanner" },
+      platform: "linux",
+      posture: "enterprise",
+      run: snykAgentScanRunnerWithHooks({ findings: [] }, { scanCode: 0 }),
+    });
+
+    expect(result.analyzersRun).toEqual(expect.arrayContaining(["snyk-agent-scan@uvx"]));
+    expect(result.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "trust detector snyk-agent-scan",
+          verdict: "pass",
+        }),
+      ]),
+    );
+    expect(result.checks).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "trust detector snyk-agent-scan",
+          code: "trust.detector-unavailable",
+        }),
+      ]),
+    );
+  });
+
   it("treats Snyk Agent Scan exit 1 without findings as unavailable", async () => {
     skill("skills/clean", "# Clean\n");
 
@@ -1373,7 +1500,7 @@ describe("scanTrustTree", () => {
         {
           results: [
             {
-              ruleId: "agentshield.permissions.wildcard-bash",
+              ruleId: "malicious-code",
               message: { text: "Overly permissive allow rule: Bash(*)" },
               locations: [
                 {
@@ -1405,7 +1532,7 @@ describe("scanTrustTree", () => {
         }),
         expect.objectContaining({
           verdict: "fail",
-          code: "trust.detector-finding",
+          code: "trust.malicious-code",
           detail: expect.stringContaining("AgentShield"),
           location: expect.objectContaining({ uri: ".claude/settings.json", startLine: 1 }),
           fingerprint: expect.stringContaining(":agentshield:.claude/settings.json:1:"),
@@ -1419,6 +1546,30 @@ describe("scanTrustTree", () => {
     expect(seen[0]?.argv).not.toEqual(expect.arrayContaining(["--fix"]));
     expect(seen[0]?.env).toHaveProperty("PATH", "bin");
     expect(seen[0]?.env).not.toHaveProperty("ANTHROPIC_API_KEY");
+  });
+
+  it("reports a contextual AgentShield unavailable check when SARIF is not written", async () => {
+    skill("skills/clean", "# Clean\n");
+
+    const result = await scanTrustTreeWithAnalyzers(dir, {
+      env: {},
+      platform: "linux",
+      posture: "enterprise",
+      requiredDetectors: ["agentshield"],
+      run: agentshieldMissingOutputRunner(),
+    });
+
+    expect(result.analyzersRun).not.toEqual(expect.arrayContaining(["agentshield@local"]));
+    expect(result.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "trust detector agentshield",
+          verdict: "fail",
+          code: "trust.detector-unavailable",
+          detail: expect.stringContaining("agentshield did not write SARIF"),
+        }),
+      ]),
+    );
   });
 
   it("fails closed for enterprise-required Snyk Agent Scan and AgentShield when unavailable", async () => {
