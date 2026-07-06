@@ -27,6 +27,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Stack-scoped dormant skills**: v9 dormant ECC skill candidates now use the
   detected ECC stack packs to filter unrelated installed skills before
   subtracting fired skill rows, reducing noisy trim candidates. (#253)
+- **As-built design docs**: added the missing docs for public positioning,
+  workspace report rollups, workspace contracts/snapshots, skill card schema,
+  approved skills lockfile, and external skill packs, and indexed them from
+  `docs/README.md`. (#272)
 
 ## [2.0.0] - 2026-07-05
 

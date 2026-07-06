@@ -27,7 +27,7 @@ docs/
     docs-placement.md
 ```
 
-Additional planned/proposed docs (not yet placed):
+Additional docs placed after this note was first written:
 
 ```text
 docs/
@@ -42,6 +42,10 @@ docs/
   research/
     external-skill-packs.md
 ```
+
+These docs now exist and are indexed from `docs/README.md`; they should be read
+as as-built docs where their status line says shipped, not as the earlier
+unplaced placeholders.
 
 ## Placement mapping
 
@@ -126,8 +130,15 @@ Create:
 docs/README.md
 ```
 
-Group entries by area: Product, Workspace, Security and governance, Roadmap. Mark
-planned/proposed docs that are not yet placed so the index does not imply shipped content.
+Group entries by area: Product, Workspace, Security and governance, Research,
+and Roadmap. Keep each entry's status line honest so the index does not imply
+shipped content for historical or directional notes.
+
+## Historical issue-draft notes
+
+The draft issue text below records the proposal state that originally produced
+this docs placement map. Do not treat these bullets as current acceptance
+criteria when they conflict with shipped docs or command references.
 
 ## Suggested issue labels
 
@@ -193,14 +204,18 @@ Acceptance:
 ### Issue: Enterprise pack install
 
 ```md
-Add `aih pack list|plan|install`.
+Historical proposal: add `aih pack list|plan|install`.
 
 Acceptance:
 - Dry-run by default.
 - Install requires `--apply`.
 - Installs only approved skills.
-- Supports built-in packs: enterprise-core, workspace-intel, product-ui, docs-quality, content-video, founder-product, skill-governance.
-- Updates approved-skills lockfile and report inventory.
+- Superseded proposal: built-in packs such as enterprise-core, workspace-intel,
+  product-ui, docs-quality, content-video, founder-product, skill-governance.
+- Superseded proposal: updates approved-skills lockfile and report inventory.
+
+Shipped behavior: `aih-packs.json` curates repo-defined packs, and
+`aih-skills.lock.json` remains the approval authority.
 ```
 
 ## Final docs rule

@@ -23,6 +23,8 @@ that carry their own status line.
 
 ## Product
 
+- [product/finalized-positioning.md](product/finalized-positioning.md) — shipped
+  public positioning, claim boundaries, and wording guardrails for `aih`.
 - [product/pack-manifest.md](product/pack-manifest.md) — the committed `aih-packs.json`
   curation manifest: schema, worked example, and the bump-pin → re-vet → re-approve →
   install flow. Shipped.
@@ -32,11 +34,20 @@ that carry their own status line.
 
 ## Workspace
 
+- [workspace/workspace-report-rollup.md](workspace/workspace-report-rollup.md) —
+  shipped parent-level workspace report digest, inputs, status vocabulary, and MCP
+  scope checks.
+- [workspace/workspace-contracts-and-snapshots.md](workspace/workspace-contracts-and-snapshots.md) —
+  shipped `.aih-workspace.json` contract-edge and workspace snapshot behavior.
 - [workspace/federated-bridge.md](workspace/federated-bridge.md) — federated bridge
   across disconnected repos. Design/proposed.
 
 ## Security and governance
 
+- [security/skill-card-schema.md](security/skill-card-schema.md) — shipped committed
+  skill-card schema and card/approve lifecycle.
+- [security/approved-skills-lockfile.md](security/approved-skills-lockfile.md) —
+  shipped `aih-skills.lock.json` approval authority and downstream enforcement model.
 - [security/skill-trust-gate.md](security/skill-trust-gate.md) — vet, pin, and approve
   skills under policy. Design/proposed; the shipped surface is `aih trust` / `aih skill`
   in the root README.
@@ -60,10 +71,15 @@ Each carries its own status note.
   §10 records as-built deviations.
 - [analytics-report-plan.md](analytics-report-plan.md) — the `aih report` analytics
   dashboard plan. Shipped.
-- [research/cli-coverage-matrix-plan.md](research/cli-coverage-matrix-plan.md) —
-  plan for the per-CLI coverage matrix + loadability validation.
 - [coverage/language-coverage.md](coverage/language-coverage.md) — language coverage
   matrix, generated from deterministic local fixtures.
+
+## Research and design records
+
+- [research/cli-coverage-matrix-plan.md](research/cli-coverage-matrix-plan.md) —
+  implemented plan for the per-CLI coverage matrix + loadability validation.
+- [research/external-skill-packs.md](research/external-skill-packs.md) — shipped
+  as-built design note for external skill packs and `aih-packs.json` behavior.
 
 ## Roadmap
 
