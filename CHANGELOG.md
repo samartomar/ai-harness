@@ -24,6 +24,9 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   skill names into named skill usage rows, infer ECC provenance from installed
   ECC skill paths, and keep unnamed Skill/Task/Agent calls as generic tool
   activity instead of fake skill invocations. (#252)
+- **Stack-scoped dormant skills**: v9 dormant ECC skill candidates now use the
+  detected ECC stack packs to filter unrelated installed skills before
+  subtracting fired skill rows, reducing noisy trim candidates. (#253)
 
 ## [2.0.0] - 2026-07-05
 

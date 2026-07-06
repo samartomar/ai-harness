@@ -252,7 +252,7 @@ export const V9_DEMO: AihDataV9 = {
     ],
     totalInvocations: 263,
     dormantAvailable: true,
-    dormant: ["go-review", "php-review", "ruby-review", "swift-review", "kotlin-review"],
+    dormant: ["frontend-patterns", "nextjs-turbopack", "security-review", "e2e-testing"],
     tokensReclaimable: 2800,
   },
 

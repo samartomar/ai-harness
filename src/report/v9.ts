@@ -1,3 +1,4 @@
+import type { EccLanguagePack } from "../ecc/select.js";
 import { SUPPORTED_CLIS } from "../internals/clis.js";
 import type { DigestAction } from "../internals/plan.js";
 import { redactText } from "../support/redact.js";
@@ -668,17 +669,71 @@ function buildSkills(
   if (totalInvocations <= 0) return undefined;
   const eccNames = [...(ecc?.skillNames ?? [])].sort();
   const dormantAvailable = eccNames.length > 0;
+  const dormantCandidates = stackRelevantDormantSkills(eccNames, ecc?.packs ?? []);
   const heavyLifters = usage.skillTop.map((row): [string, number] => {
     const source = usage.skillSource.get(row.name) ?? "user";
     return [`${row.name} · ${source}`, row.count];
   });
-  const dormant = dormantAvailable ? eccNames.filter((name) => !usage.eccFired.has(name)) : [];
+  const dormant = dormantAvailable
+    ? dormantCandidates.filter((name) => !usage.eccFired.has(name))
+    : [];
   return {
     heavyLifters,
     totalInvocations,
     dormantAvailable,
     dormant,
   };
+}
+
+const COMMON_DORMANT_SKILLS = new Set([
+  "agent-sort",
+  "api-design",
+  "backend-patterns",
+  "coding-standards",
+  "documentation-lookup",
+  "e2e-testing",
+  "eval-harness",
+  "mcp-server-patterns",
+  "security-review",
+  "strategic-compact",
+  "tdd",
+  "tdd-workflow",
+  "verification-loop",
+]);
+
+const PACK_DORMANT_KEYWORDS: Record<EccLanguagePack, string[]> = {
+  angular: ["angular"],
+  arkts: ["arkts"],
+  golang: ["go-", "golang"],
+  nuxt: ["nuxt"],
+  php: ["php"],
+  python: ["django", "mle", "python", "pytorch"],
+  ruby: ["ruby"],
+  swift: ["swift"],
+  typescript: ["bun", "javascript", "nextjs", "node", "react", "typescript"],
+  vue: ["vue"],
+  web: ["frontend", "nextjs", "react", "svelte", "web"],
+};
+
+function stackRelevantDormantSkills(skillNames: string[], packs: readonly string[]): string[] {
+  if (packs.length === 0) return skillNames;
+  const mappedKeywords: string[][] = [];
+  for (const pack of packs) {
+    const keywords = dormantKeywordsForPack(pack);
+    if (!keywords) return skillNames;
+    mappedKeywords.push(keywords);
+  }
+  const keywords = mappedKeywords.flat();
+  if (keywords.length === 0) return skillNames;
+  return skillNames.filter((name) => {
+    if (COMMON_DORMANT_SKILLS.has(name)) return true;
+    return keywords.some((keyword) => name.includes(keyword));
+  });
+}
+
+function dormantKeywordsForPack(pack: string): string[] | undefined {
+  if (!Object.hasOwn(PACK_DORMANT_KEYWORDS, pack)) return undefined;
+  return PACK_DORMANT_KEYWORDS[pack as EccLanguagePack];
 }
 
 /** §2 cross-CLI coherence (from the v9-only "Coherence" digest), else undefined. */
@@ -1290,7 +1345,7 @@ export function assembleViewV9(data: AihDataV9, demo: AihDataV9): V9View {
         container: ".grid",
         title: hasDormant ? "Heavy lifters vs dormant ECC skills" : "Skill ledger — local usage",
         insight: hasDormant
-          ? "Where skill investment pays off, and what to trim. Counts are local activity only; dormant means installed ECC skills that did not fire in the usage log."
+          ? "Where skill investment pays off, and what to trim. Counts are local activity only; dormant means stack-relevant installed ECC skills that did not fire in the usage log."
           : "Local skill-invocation samples are live. ECC inventory was not available on this run, so dormant trim candidates are not inferred.",
         count: "skill investment",
         html: renderSkills(skills, false),
