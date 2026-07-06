@@ -89,6 +89,17 @@ export const CISCO_RULE_MAP: Record<string, CheckCode> = {
   YARA_command_injection_generic: "trust.malicious-code",
 };
 
+export const MCP_SCANNER_RULE_MAP: Record<string, CheckCode> = {
+  "mcp.tool-poisoning": "trust.prompt-injection",
+  "mcp.tool_poisoning": "trust.prompt-injection",
+  "prompt-injection": "trust.prompt-injection",
+  prompt_injection: "trust.prompt-injection",
+  "tool-poisoning": "trust.prompt-injection",
+  tool_poisoning: "trust.prompt-injection",
+  PROMPT_INJECTION_IGNORE_INSTRUCTIONS: "trust.prompt-injection",
+  YARA_command_injection_generic: "trust.malicious-code",
+};
+
 interface SarifArtifactLocation {
   uri?: unknown;
 }
@@ -437,9 +448,6 @@ async function checkMcpScannerAvailable(
   platform: Platform,
   env: NodeJS.ProcessEnv,
 ): Promise<string | undefined> {
-  if (env.AIH_ENABLE_MCP_SCANNER !== "1") {
-    return "mcp-scanner detector is wired but intentionally skipped until a real local static scan is verified; set AIH_ENABLE_MCP_SCANNER=1 to opt in";
-  }
   const help = await run(mcpScannerHelpArgv(platform), {
     env: scrubFetchEnv(env),
     timeoutMs: 30_000,
@@ -803,7 +811,7 @@ const MCP_CONFIG_DETECTORS: TrustDetector[] = [
     analyzerLabel: "mcp-scanner@uvx",
     checkAvailable: checkMcpScannerAvailable,
     runScan: runMcpScannerScan,
-    ruleMap: {},
+    ruleMap: MCP_SCANNER_RULE_MAP,
   },
 ];
 
