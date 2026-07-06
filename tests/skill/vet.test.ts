@@ -516,6 +516,26 @@ describe("skillVetCommand", () => {
     expect(digest.text).toContain("Action: manual approval required");
   });
 
+  it("grades extensionless setup-script shape YELLOW with sandbox smoke evidence", async () => {
+    skill("clean", "# Clean\n");
+    license();
+    write("setup", "echo setup\n");
+    const seenSmoke: string[][] = [];
+    const c = ctx({ source: sourceRoot }, false, detectorRunner({ seenSmoke }), {
+      SNYK_TOKEN: "snyk-token-for-scanner",
+    });
+
+    const result = await executePlan(await skillVetCommand.plan(c), c);
+
+    expect(result.report?.ok).toBe(true);
+    expectSandboxSmokeEvidence(result.report?.checks ?? [], "install scripts");
+    expect(seenSmoke).toHaveLength(1);
+    expect(seenSmoke[0]?.join("\n")).toContain("/scan/setup");
+    const digest = vetDigestOf(result);
+    expect(digest.data.verdict).toBe("YELLOW");
+    expect(digest.data.reasons).toEqual([expect.stringContaining("install scripts")]);
+  });
+
   it("records a sandbox smoke pass for incoming MCP config skill evidence", async () => {
     skill("clean", "# Clean\n");
     license();

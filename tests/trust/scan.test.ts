@@ -1141,6 +1141,44 @@ describe("scanTrustTree", () => {
     expect(seenSmoke).toHaveLength(1);
   });
 
+  it("runs sandbox smoke for extensionless installer scripts", async () => {
+    skill("skills/clean", "# Clean\n");
+    write("install", "echo install\n");
+    const seenSmoke: string[][] = [];
+    const run = fakeRunner((argv) => {
+      const skillspector = successfulSkillspector(argv);
+      if (
+        argv[0] === "docker" &&
+        argv[1] === "run" &&
+        argv.some((arg) => arg.includes("aih sandbox smoke ok"))
+      ) {
+        seenSmoke.push(argv);
+        return { code: 0, stdout: "aih sandbox smoke ok\n" };
+      }
+      if (skillspector !== undefined) return skillspector;
+      return undefined;
+    });
+
+    const result = await scanTrustTreeWithAnalyzers(dir, {
+      env: {},
+      platform: "linux",
+      posture: "vibe",
+      run,
+    });
+
+    expect(result.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "skill sandbox smoke test",
+          verdict: "pass",
+          detail: expect.stringContaining("install scripts"),
+        }),
+      ]),
+    );
+    expect(seenSmoke).toHaveLength(1);
+    expect(seenSmoke[0]?.join("\n")).toContain("test -r '/scan/install'");
+  });
+
   it("fails applicable sandbox smoke when detector runtime is missing", async () => {
     skill("skills/clean", "# Clean\n");
     write("skills/clean/package.json", JSON.stringify({ name: "clean-skill" }));

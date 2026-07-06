@@ -92,7 +92,7 @@ function sandboxSmokeScript(shape: SandboxSmokeShape): string {
         [
           "install_hit=0",
           "test -f /scan/package.json && install_hit=1",
-          "for file in /scan/install.* /scan/scripts/install.* /scan/*.sh /scan/*.ps1 /scan/scripts/*.sh /scan/scripts/*.ps1; do",
+          "for file in /scan/install /scan/setup /scan/scripts/install /scan/scripts/setup /scan/install.* /scan/setup.* /scan/scripts/install.* /scan/scripts/setup.* /scan/*.sh /scan/*.ps1 /scan/scripts/*.sh /scan/scripts/*.ps1; do",
           '  test -f "$file" && install_hit=1',
           "done",
           'test "$install_hit" -eq 1',

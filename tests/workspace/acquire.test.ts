@@ -296,6 +296,28 @@ describe("workspace add acquisition plans", () => {
     expect(seenSmoke[0]?.join("\n")).toContain("test -r '/scan/skills/clean/package.json'");
   });
 
+  it("phase 1 records sandbox smoke evidence for nested extensionless installers", async () => {
+    localSkill(sourceRoot, "clean", "# Clean\n");
+    writeFileSync(join(sourceRoot, "skills", "clean", "install"), "echo install\n", "utf8");
+    const seenSmoke: string[][] = [];
+    const c = ctx(sourceRoot, true, true, {}, {}, sandboxSmokeRunner({ seenSmoke }));
+
+    const result = await executePlan(await workspaceAddPhase1Plan(c), c);
+
+    expect(result.report?.ok).toBe(true);
+    expect(result.report?.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "skill sandbox smoke test",
+          verdict: "pass",
+          detail: expect.stringContaining("install scripts"),
+        }),
+      ]),
+    );
+    expect(seenSmoke).toHaveLength(1);
+    expect(seenSmoke[0]?.join("\n")).toContain("test -r '/scan/skills/clean/install'");
+  });
+
   it("phase 2 rechecks sandbox smoke before promotion", async () => {
     localSkill(sourceRoot, "clean", "# Clean\n");
     writeFileSync(

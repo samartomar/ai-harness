@@ -34,6 +34,7 @@ import { gradeTrustCheck } from "./grade.js";
 import { scanTrustDocument } from "./lint.js";
 import { scanTrustManifests } from "./manifest.js";
 import { classifyIncomingMcp } from "./mcp-classify.js";
+import { isScriptLikeFilePath } from "./script-files.js";
 import { type SandboxSmokeShape, sandboxSmokeCheck } from "./smoke.js";
 
 export const TRUST_SKIP_DIRS = new Set([
@@ -164,8 +165,7 @@ function hasInstallScriptHooks(root: string): boolean {
 }
 
 function isInstallScriptFile(name: string): boolean {
-  const lower = name.toLowerCase();
-  return lower.endsWith(".sh") || lower.endsWith(".ps1") || lower.startsWith("install.");
+  return isScriptLikeFilePath(name);
 }
 
 function fileNames(dir: string): string[] {

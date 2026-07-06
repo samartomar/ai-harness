@@ -49,6 +49,7 @@ import {
   trustScanPlanForSource,
   trustSourceOriginChecks,
 } from "../trust/scan.js";
+import { isScriptLikeFilePath } from "../trust/script-files.js";
 import type { SandboxSmokeShape } from "../trust/smoke.js";
 
 interface WorkspaceAddDeps {
@@ -490,8 +491,7 @@ function hasInstallScriptHooks(root: string): boolean {
 }
 
 function isInstallScriptFile(name: string): boolean {
-  const lower = name.toLowerCase();
-  return lower.endsWith(".sh") || lower.endsWith(".ps1") || lower.startsWith("install.");
+  return isScriptLikeFilePath(name);
 }
 
 function fileNames(dir: string): string[] {

@@ -1,6 +1,7 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { INCOMING_MCP_CONFIG_FILES } from "../trust/scan.js";
+import { isScriptLikeFilePath } from "../trust/script-files.js";
 import { collectSkillDirs, promotedSkillRel } from "../workspace/acquire.js";
 
 /**
@@ -61,8 +62,7 @@ function hasInstallScriptHooks(root: string): boolean {
 }
 
 function isInstallScriptFile(name: string): boolean {
-  const lower = name.toLowerCase();
-  return lower.endsWith(".sh") || lower.endsWith(".ps1") || lower.startsWith("install.");
+  return isScriptLikeFilePath(name);
 }
 
 function fileNames(dir: string): string[] {

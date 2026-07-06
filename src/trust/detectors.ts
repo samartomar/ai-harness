@@ -9,7 +9,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, dirname, extname, isAbsolute, join, relative } from "node:path";
+import { basename, dirname, isAbsolute, join, relative } from "node:path";
 import type { Posture } from "../config/posture.js";
 import type { Runner, RunResult } from "../internals/proc.js";
 import type { Check, CheckCode } from "../internals/verify.js";
@@ -21,6 +21,7 @@ import { scrubFetchEnv } from "./fetch.js";
 import { gradeTrustCheck } from "./grade.js";
 import { resolveVerifiedSkillspectorImage, SKILLSPECTOR_IMAGE } from "./images.js";
 import { collectFilesUnder, TRUST_SKIP_DIRS } from "./scan.js";
+import { isScriptLikeFilePath } from "./script-files.js";
 
 const INCOMING_MCP_CONFIG_FILES = new Set([...MCP_CONFIG_FILES, "mcp.json"]);
 
@@ -87,22 +88,6 @@ const SEMGREP_RULES_YAML = [
   "",
 ].join("\n");
 const MAX_SCRIPT_SCAN_BYTES = 512 * 1024;
-const SCRIPT_EXTENSIONS = new Set([
-  "",
-  ".bash",
-  ".bat",
-  ".cjs",
-  ".cmd",
-  ".js",
-  ".mjs",
-  ".pl",
-  ".ps1",
-  ".py",
-  ".rb",
-  ".sh",
-  ".ts",
-  ".zsh",
-]);
 
 const SKILLSPECTOR_RULE_MAP: Record<string, CheckCode> = {
   "auto-exec": "trust.auto-exec-hook",
@@ -273,68 +258,6 @@ function normalizeShellWhitespace(line: string): string {
   return line.replace(/\$\{IFS[^}]*\}|\$IFS\b/g, " ");
 }
 
-// Extensions that are never a shell/interpreter script — used to exclude
-// install/script-NAMED media/archive assets (e.g. `install-notes.png`) from the
-// text scan while still covering extensionless installers (`install`, `setup`).
-const NON_SCRIPT_EXTENSIONS = new Set([
-  ".png",
-  ".jpg",
-  ".jpeg",
-  ".gif",
-  ".svg",
-  ".webp",
-  ".ico",
-  ".bmp",
-  ".pdf",
-  ".mp4",
-  ".mov",
-  ".avi",
-  ".webm",
-  ".mp3",
-  ".wav",
-  ".ogg",
-  ".zip",
-  ".tar",
-  ".gz",
-  ".tgz",
-  ".bz2",
-  ".xz",
-  ".7z",
-  ".rar",
-  ".woff",
-  ".woff2",
-  ".ttf",
-  ".otf",
-  ".eot",
-]);
-
-// Filenames that are conventionally executable setup scripts even without a
-// script extension (a reverse shell in a bundled `install`/`setup` is the exact
-// risk this layer exists to catch).
-const SCRIPT_LIKE_SUBSTRINGS = [
-  "install",
-  "setup",
-  "configure",
-  "bootstrap",
-  "entrypoint",
-  "postinstall",
-  "preinstall",
-  "build",
-  "script",
-];
-
-function isScriptLike(rel: string): boolean {
-  const name = basename(rel).toLowerCase();
-  if (name === "package.json" || name === "package-lock.json") return false;
-  const ext = extname(name);
-  if (SCRIPT_EXTENSIONS.has(ext)) return true;
-  // A media/archive asset that merely happens to be install-named is not a script.
-  if (NON_SCRIPT_EXTENSIONS.has(ext)) return false;
-  // Otherwise, scan setup-script-named files (incl. extensionless `install`/`setup`)
-  // so a reverse shell in a conventionally-named installer is not silently skipped.
-  return SCRIPT_LIKE_SUBSTRINGS.some((needle) => name.includes(needle));
-}
-
 function contentLine(path: string, line: number): string {
   const text = readFileSync(path, "utf8");
   return text.split(/\r?\n/)[line - 1] ?? "";
@@ -364,7 +287,7 @@ export function scanNativeMaliciousCode(root: string): Check[] {
     root,
     (abs) => {
       const rel = toPosix(relative(root, abs));
-      return isScriptLike(rel) && statSync(abs).size <= MAX_SCRIPT_SCAN_BYTES;
+      return isScriptLikeFilePath(rel) && statSync(abs).size <= MAX_SCRIPT_SCAN_BYTES;
     },
     TRUST_SKIP_DIRS,
   );
