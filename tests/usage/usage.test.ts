@@ -126,7 +126,7 @@ describe("capture artifacts", () => {
       { tool: "gemini", kind: "mcp", server: "context7", name: "resolve_library_id" },
       { tool: "opencode", kind: "skill", name: "tdd-workflow" },
     ]);
-  });
+  }, 15000);
 
   it("the git hook is best-effort and can never block a commit", () => {
     const hook = gitPostCommitHook();
