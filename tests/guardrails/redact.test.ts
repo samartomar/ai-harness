@@ -38,6 +38,25 @@ describe("redactSecrets() — secret fixtures", () => {
     expect(redactSecrets("API_KEY=xyz123")).toBe("[REDACTED]");
     expect(redactSecrets("MY_SECRET=hunter2")).toBe("[REDACTED]");
   });
+
+  it("redacts provider token shapes shared with the detector layer", () => {
+    const cases = [
+      ["Slack", `xoxb-${"a".repeat(12)}-${"b".repeat(12)}`],
+      ["GCP", `AIza${"A".repeat(35)}`],
+      ["Azure account key", `AccountKey=${"a".repeat(86)}==`],
+      [
+        "Azure SAS",
+        "SharedAccessSignature=sv=2024-01-01&sr=b&sig=abcDEF123%2B456%3D",
+      ],
+      ["npm", `npm_${"a".repeat(36)}`],
+    ] as const;
+
+    for (const [provider, token] of cases) {
+      const out = redactSecrets(`leaked ${provider} token: ${token}`);
+      expect(out, provider).not.toContain(token);
+      expect(out, provider).toContain("[REDACTED]");
+    }
+  });
 });
 
 describe("redactSecrets() — benign text untouched", () => {
