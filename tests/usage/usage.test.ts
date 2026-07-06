@@ -415,6 +415,65 @@ describe("aih usage command", () => {
     );
   });
 
+  it("merges remaining repo hook configs additively and idempotently", async () => {
+    mkdirSync(join(root, ".cursor"), { recursive: true });
+    writeFileSync(
+      join(root, ".cursor", "hooks.json"),
+      JSON.stringify({ version: 1, hooks: { afterMCPExecution: [{ command: "node team.mjs" }] } }),
+    );
+    mkdirSync(join(root, ".windsurf"), { recursive: true });
+    writeFileSync(
+      join(root, ".windsurf", "hooks.json"),
+      JSON.stringify({ hooks: { post_mcp_tool_use: [{ command: "python team.py" }] } }),
+    );
+    mkdirSync(join(root, ".agents"), { recursive: true });
+    writeFileSync(
+      join(root, ".agents", "hooks.json"),
+      JSON.stringify({ "team-policy": { Stop: [{ command: "python done.py" }] } }),
+    );
+    mkdirSync(join(root, ".kimi"), { recursive: true });
+    writeFileSync(join(root, ".kimi", "config.toml"), 'theme = "dark"\n');
+
+    const ctx = { ...makeCtx({ cli: "cursor,windsurf,antigravity,kimi" }), apply: true };
+    await executePlan(await command.plan(ctx), ctx);
+    await executePlan(await command.plan(ctx), ctx);
+
+    const cursor = JSON.parse(readFileSync(join(root, ".cursor", "hooks.json"), "utf8")) as {
+      hooks: { afterMCPExecution: Array<{ command?: string }> };
+    };
+    const cursorCommands = cursor.hooks.afterMCPExecution.map((hook) => hook.command);
+    expect(cursorCommands).toContain("node team.mjs");
+    expect(
+      cursorCommands.filter((cmd) => cmd?.includes("usage-record.mjs --from cursor")),
+    ).toHaveLength(1);
+
+    const windsurf = JSON.parse(readFileSync(join(root, ".windsurf", "hooks.json"), "utf8")) as {
+      hooks: { post_mcp_tool_use: Array<{ command?: string }> };
+    };
+    const windsurfCommands = windsurf.hooks.post_mcp_tool_use.map((hook) => hook.command);
+    expect(windsurfCommands).toContain("python team.py");
+    expect(
+      windsurfCommands.filter((cmd) => cmd?.includes("usage-record.mjs --from windsurf")),
+    ).toHaveLength(1);
+
+    const antigravity = JSON.parse(readFileSync(join(root, ".agents", "hooks.json"), "utf8")) as {
+      "team-policy"?: unknown;
+      "aih-usage-metering"?: { PostToolUse?: Array<{ hooks?: Array<{ command?: string }> }> };
+    };
+    expect(antigravity["team-policy"]).toBeDefined();
+    const agyCommands = (antigravity["aih-usage-metering"]?.PostToolUse ?? []).flatMap((group) =>
+      (group.hooks ?? []).map((hook) => hook.command),
+    );
+    expect(
+      agyCommands.filter((cmd) => cmd?.includes("usage-record.mjs --from antigravity")),
+    ).toHaveLength(1);
+
+    const kimi = readFileSync(join(root, ".kimi", "config.toml"), "utf8");
+    expect(kimi).toContain('theme = "dark"');
+    expect(kimi.match(/aih managed \(usage-metering\)/g)).toHaveLength(2);
+    expect(kimi.match(/usage-record\.mjs --from kimi/g)).toHaveLength(1);
+  });
+
   it("is read-only/local — only write/doc/probe actions, never exec or call out", async () => {
     const actions = (await command.plan(makeCtx())).actions;
     for (const a of actions) expect(["write", "doc", "probe"]).toContain(a.kind);

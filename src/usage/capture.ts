@@ -140,7 +140,7 @@ export function usageRecorderScript(): string {
     "  if (explicitServer && explicitName) return { server: explicitServer, name: explicitName };",
     "  if (!tool) return undefined;",
     '  if (tool.startsWith("MCP:")) {',
-    '    const m = /^MCP:([^:/.]+)[:/.](.+)$/.exec(tool);',
+    "    const m = /^MCP:([^:/.]+)[:/.](.+)$/.exec(tool);",
     "    if (m) return { server: m[1], name: m[2] };",
     "  }",
     '  if (tool.startsWith("mcp__")) {',
