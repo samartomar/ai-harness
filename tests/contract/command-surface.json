@@ -3419,6 +3419,9 @@
         },
         {
           "flags": "--yes"
+        },
+        {
+          "flags": "--zed-threads-db <path>"
         }
       ],
       "commands": []

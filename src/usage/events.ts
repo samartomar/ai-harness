@@ -22,6 +22,8 @@ export interface UsageTokens {
 
 /** A single recorded usage event. `kind` says what happened; the rest is optional. */
 export interface UsageEvent {
+  /** Stable local event id, when an importer can derive one without storing content. */
+  id?: string;
   /** ISO timestamp the event was recorded (runtime wall-clock from the hook). */
   ts?: string;
   /** Which tool produced it: "git" (universal floor), or a CLI name (claude, …). */
@@ -91,6 +93,7 @@ function parseUsageEvent(value: unknown): UsageEvent | undefined {
   }
   const event: UsageEvent = { tool: raw.tool, kind: raw.kind as UsageEvent["kind"] };
 
+  const id = optionalString(raw.id);
   const name = optionalString(raw.name);
   const server = optionalString(raw.server);
   const ts = optionalString(raw.ts);
@@ -101,6 +104,7 @@ function parseUsageEvent(value: unknown): UsageEvent | undefined {
   const files = optionalCounter(raw.files);
   const tokens = parseTokens(raw.tokens);
   if (
+    id === null ||
     name === null ||
     server === null ||
     ts === null ||
@@ -119,6 +123,7 @@ function parseUsageEvent(value: unknown): UsageEvent | undefined {
     if (typeof source !== "string" || !SOURCES.has(source as UsageSource)) return undefined;
     event.source = source as UsageSource;
   }
+  if (id !== undefined) event.id = id;
   if (name !== undefined) event.name = name;
   if (server !== undefined) event.server = server;
   if (ts !== undefined) event.ts = ts;
