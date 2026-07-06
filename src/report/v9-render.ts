@@ -348,8 +348,11 @@ export function renderActivity(a: V9Activity, usagePreview: boolean): string {
   const usageNote = usagePreview
     ? "Per-CLI attribution needs the usage recorder + per-tool hooks. Shown as design intent until wired — not real activity."
     : "Share of recorded AI activity by CLI (commits + tool/skill/MCP calls). Needs per-tool hooks for non-commit attribution.";
-  const usage = `<div class="${cardClass("span-12", usagePreview)}"><div class="card-head"><h3>Usage by CLI · this week</h3>${usageBadge}</div><div class="card-body"><div class="cost-stack"><div class="cost-stack-bar">${segs}</div><div class="cost-legend">${legend}</div></div><div style="margin-top:.5rem;font-size:.72rem;color:var(--dim)">${usageNote}</div></div></div>`;
-  return heat + loc + usage;
+  const usage = `<div class="${cardClass("span-7", usagePreview)}"><div class="card-head"><h3>Usage by CLI · this week</h3>${usageBadge}</div><div class="card-body"><div class="cost-stack"><div class="cost-stack-bar">${segs}</div><div class="cost-legend">${legend}</div></div><div style="margin-top:.5rem;font-size:.72rem;color:var(--dim)">${usageNote}</div></div></div>`;
+  const cache = a.cache
+    ? `<div class="card span-5"><div class="card-head"><h3>Cache economy</h3><span class="badge ok">${a.cache.cacheEfficiencyPct}% cache-served</span></div><div class="card-body"><div class="mat"><div class="mat-row"><div class="mat-bar-wrap"><span class="mat-label">input</span><span class="mat-track"><span class="mat-fill" style="width:100%"></span></span></div><span class="mat-val">${thousands(a.cache.input)}</span></div><div class="mat-row"><div class="mat-bar-wrap"><span class="mat-label">output</span><span class="mat-track"><span class="mat-fill" style="width:100%"></span></span></div><span class="mat-val">${thousands(a.cache.output)}</span></div><div class="mat-row"><div class="mat-bar-wrap"><span class="mat-label">cache read</span><span class="mat-track"><span class="mat-fill ok" style="width:100%"></span></span></div><span class="mat-val">${thousands(a.cache.cacheRead)}</span></div><div class="mat-row"><div class="mat-bar-wrap"><span class="mat-label">cache write</span><span class="mat-track"><span class="mat-fill warn" style="width:100%"></span></span></div><span class="mat-val">${thousands(a.cache.cacheCreation)}</span></div></div><div class="method" style="margin-top:.6rem">Local token/cache counters only — no dollar cost, prompts, or arguments.</div></div></div>`
+    : '<div class="card span-5"><div class="card-head"><h3>Cache economy</h3><span class="badge muted">no local samples</span></div><div class="card-body"><div class="method">No local token/cache counters were found in <code>.aih/usage.jsonl</code>. For org-level skill and cache analytics, run <code>aih report --org &lt;export.json&gt;</code>.</div></div></div>';
+  return heat + loc + usage + cache;
 }
 
 // ── 03 Guardrails + ECC ───────────────────────────────────────────────────────
@@ -573,6 +576,10 @@ export function renderSkills(s: V9Skills, preview: boolean): string {
     `<span class="badge mcp">${s.totalInvocations} calls</span>`,
   );
   const heavy = `<div class="${cardClass("span-7", preview)}"><div class="card-head"><h3>Heavy lifters · 30d</h3>${heavyBadge}</div><div class="card-body"><ul class="bars">${bars}</ul></div></div>`;
+  if (!s.dormantAvailable) {
+    const dormantUnavailable = `<div class="${cardClass("span-5", preview)}"><div class="card-head"><h3>Dormant — ECC inventory unavailable</h3><span class="badge muted">not inferred</span></div><div class="card-body"><div class="method">No ECC inventory digest was present, so this report does not infer dormant trim candidates from local usage alone.</div></div></div>`;
+    return heavy + dormantUnavailable;
+  }
   const pills = s.dormant
     .map((d) => `<span class="tool off" title="never invoked">${escHtml(d)}</span>`)
     .join("");

@@ -4,6 +4,8 @@ import { lines } from "../internals/render.js";
 import { orgPolicyIntegrityDigest } from "../org-policy/drift.js";
 import { scaleSafetyDigest } from "../scale-safety.js";
 import { inventory } from "../status.js";
+import { aggregateUsage } from "../usage/aggregate.js";
+import { readUsage, USAGE_PATH } from "../usage/events.js";
 import { vdiCompatibilityDigest } from "../vdi/index.js";
 import { cliCoverageDigest } from "./cli-coverage.js";
 import { contractTruthDigest } from "./contract.js";
@@ -95,20 +97,61 @@ export async function machineToolingPanel(ctx: PlanContext): Promise<DigestActio
   );
 }
 
-/** Honest stub: the cache/skill economy needs an on-box data source that doesn't exist yet. */
-export function economyPanel(): DigestAction {
+function thousands(n: number): string {
+  return Math.round(n)
+    .toString()
+    .replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+}
+
+/** Local cache/skill economy from the gitignored on-box usage sink; honest stub when empty. */
+export function economyPanel(ctx: PlanContext): DigestAction {
+  const summary = aggregateUsage(readUsage(ctx));
+  const skillCalls = summary.skills.top.reduce((n, row) => n + row.count, 0);
+  const hasCacheSamples = summary.tokens.total > 0;
+  const hasSkillSamples = skillCalls > 0;
+  if (hasCacheSamples || hasSkillSamples) {
+    const cacheLines = hasCacheSamples
+      ? [
+          `  ${summary.tokens.cacheEfficiencyPct}% cache-served`,
+          `  input         ${thousands(summary.tokens.input)}`,
+          `  output        ${thousands(summary.tokens.output)}`,
+          `  cache read    ${thousands(summary.tokens.cacheRead)}`,
+          `  cache write   ${thousands(summary.tokens.cacheCreation)}`,
+        ]
+      : ["  no local token/cache samples captured yet"];
+    const skillLines =
+      summary.skills.top.length > 0
+        ? summary.skills.top.map((row) => `  ${row.name}  -  ${row.count}`)
+        : ["  no local skill-invocation samples captured yet"];
+    const body = lines(
+      `Local cache and skill economy from ${USAGE_PATH}:`,
+      "",
+      "Cache economy:",
+      ...cacheLines,
+      "",
+      "Skill ledger:",
+      ...skillLines,
+      "",
+      "Rendered output intentionally omits event timestamps; this is a deterministic rollup.",
+      "For org-level skill + cache data, run `aih report --org <export>`.",
+    );
+    return digest(`Local cache & skill economy — LIVE from ${USAGE_PATH}`, body, {
+      available: true,
+      source: USAGE_PATH,
+      tokens: summary.tokens,
+      skills: summary.skills,
+    });
+  }
   const body = lines(
-    "Per-developer cache multiplier and skill ledger need an on-box data source",
-    "that does not exist yet:",
+    `Per-developer cache multiplier and skill ledger need local samples in ${USAGE_PATH}.`,
+    "No local cache/token or skill-invocation rows were found yet:",
     "",
-    "  • Cache / token economy — your OTEL stream exports to the collector → backend,",
-    "    not a local file. A local sink (or an Admin-API self-query) would unlock it.",
-    "  • Skill ledger — needs local skill-invocation logs (ECC's recorder is unwired,",
-    "    Superpowers records nothing, Kiro meters commit cadence only).",
+    "  - Cache / token economy - waiting for a local session row with token counters.",
+    "  - Skill ledger - waiting for a local skill-invocation row.",
     "",
     "  Org-level skill + cache data is available now via `aih report --org <export>`.",
   );
-  return digest("Local cache & skill economy — no local data source yet", body, {
+  return digest("Local cache & skill economy — no local samples yet", body, {
     available: false,
   });
 }
@@ -140,7 +183,7 @@ export async function localPanels(ctx: PlanContext): Promise<DigestAction[]> {
     mcpGovernanceDigest(ctx), // HARNESS ADOPTION: MCP enterprise-policy verdict (reuses the policy engine)
     configPanel(ctx),
     await machineToolingPanel(ctx), // HARNESS ADOPTION: which CLIs are runnable vs config-only
-    economyPanel(),
+    economyPanel(ctx),
   ];
   return panels.filter((d): d is DigestAction => d !== undefined);
 }

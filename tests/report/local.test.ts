@@ -106,10 +106,48 @@ describe("machineToolingPanel", () => {
 
 describe("economyPanel", () => {
   it("is an explicit no-data stub that points at the org digest", () => {
-    const d = economyPanel();
-    expect(d.describe).toContain("no local data source yet");
+    const d = economyPanel(ctx());
+    expect(d.describe).toContain("no local samples yet");
     expect(d.text).toContain("aih report --org");
     expect(d.data).toEqual({ available: false });
+  });
+
+  it("renders local cache economy and skill ledger live from .aih/usage.jsonl samples", () => {
+    mkdirSync(join(dir, ".aih"), { recursive: true });
+    writeFileSync(
+      join(dir, ".aih", "usage.jsonl"),
+      `${[
+        JSON.stringify({
+          ts: "2026-07-06T12:00:00Z",
+          tool: "claude",
+          kind: "session",
+          tokens: { input: 100, output: 20, cacheRead: 300, cacheCreation: 40 },
+        }),
+        JSON.stringify({ tool: "claude", kind: "skill", name: "tdd-workflow", source: "ecc" }),
+      ].join("\n")}\n`,
+    );
+
+    const d = economyPanel(ctx());
+
+    expect(d.describe).toContain("LIVE");
+    expect(d.text).toContain("Cache economy");
+    expect(d.text).toContain("75% cache-served");
+    expect(d.text).toContain("Skill ledger");
+    expect(d.text).toContain("tdd-workflow");
+    expect(d.text).not.toContain("2026-07-06");
+    expect(d.data).toMatchObject({
+      available: true,
+      source: ".aih/usage.jsonl",
+      tokens: {
+        input: 100,
+        output: 20,
+        cacheRead: 300,
+        cacheCreation: 40,
+        total: 460,
+        cacheEfficiencyPct: 75,
+      },
+      skills: { top: [{ name: "tdd-workflow", count: 1 }] },
+    });
   });
 });
 
@@ -164,7 +202,7 @@ describe("report local scope — composed panels", () => {
     expect(describes.some((s) => s.startsWith("AI CLI wiring"))).toBe(true);
     expect(describes.some((s) => s.startsWith("Configuration"))).toBe(true);
     expect(describes.some((s) => s.startsWith("Machine tooling"))).toBe(true);
-    expect(describes.some((s) => s.includes("no local data source"))).toBe(true);
+    expect(describes.some((s) => s.includes("no local samples"))).toBe(true);
   });
 
   it("localPanels returns the always-on panels; git/usage-gated panels omit off-repo", async () => {

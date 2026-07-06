@@ -345,7 +345,9 @@ activity for **any** tool (it keys off the commit, not the agent). The per-tool 
 wires in via each CLI's verified local hook (Claude/Codex/Cursor/Gemini/Kiro/…); skills aggregate
 by source (ECC/canon/user), and `--rollup <repo,repo>` aggregates local logs across repos on
 demand. Usage is local activity counts only — **no cost, no prompts, no arguments**, machine-local
-and gitignored.
+and gitignored. Session rows may include deterministic token/cache counters (`input`, `output`,
+`cacheRead`, `cacheCreation`) so the local cache-economy panel can render live; empty local sinks
+stay honest and point at `aih report --org <export>`.
 
 ## aih telemetry
 

@@ -60,10 +60,36 @@ describe("readUsage", () => {
       JSON.stringify({ tool: "x", kind: "bogus" }), // invalid kind → dropped
       JSON.stringify({ kind: "skill" }), // missing tool → dropped
       JSON.stringify({ tool: "claude", kind: "skill", name: "tdd" }),
+      JSON.stringify({
+        tool: "claude",
+        kind: "session",
+        tokens: { input: 100, output: 20, cacheRead: 300, cacheCreation: 40 },
+      }),
     );
     const ev = readUsage(makeCtx());
-    expect(ev).toHaveLength(2);
-    expect(ev.map((e) => e.kind)).toEqual(["commit", "skill"]);
+    expect(ev).toHaveLength(3);
+    expect(ev.map((e) => e.kind)).toEqual(["commit", "skill", "session"]);
+    expect(ev[2]?.tokens).toEqual({ input: 100, output: 20, cacheRead: 300, cacheCreation: 40 });
+  });
+
+  it("rejects malformed schema rows and strips unknown fields", () => {
+    writeUsage(
+      JSON.stringify({ tool: "claude", kind: "skill", name: "bad", source: "external" }),
+      JSON.stringify({ tool: "claude", kind: "session", tokens: { input: -1 } }),
+      JSON.stringify({ tool: "git", kind: "commit", added: "1" }),
+      JSON.stringify({
+        tool: "claude",
+        kind: "skill",
+        name: "safe",
+        source: "ecc",
+        prompt: "do not retain",
+      }),
+    );
+
+    const ev = readUsage(makeCtx());
+
+    expect(ev).toEqual([{ tool: "claude", kind: "skill", name: "safe", source: "ecc" }]);
+    expect((ev[0] as unknown as Record<string, unknown>).prompt).toBeUndefined();
   });
 
   it("returns [] when there is no log", () => {
@@ -73,14 +99,36 @@ describe("readUsage", () => {
 
 describe("aggregateUsage", () => {
   it("folds events into tool / commit / skills-by-source / mcp summaries", () => {
-    const s = aggregateUsage(EVENTS);
-    expect(s.total).toBe(6);
+    const s = aggregateUsage([
+      ...EVENTS,
+      {
+        tool: "claude",
+        kind: "session",
+        tokens: { input: 100, output: 20, cacheRead: 300, cacheCreation: 40 },
+      },
+      {
+        tool: "codex",
+        kind: "tool",
+        name: "shell_command",
+        tokens: { input: 20, cacheRead: 80 },
+      },
+    ]);
+    expect(s.total).toBe(8);
     expect(s.tools).toEqual([
-      { name: "claude", count: 3 },
+      { name: "claude", count: 4 },
       { name: "git", count: 2 },
+      { name: "codex", count: 1 },
       { name: "cursor", count: 1 },
     ]);
     expect(s.commits).toEqual({ count: 2, added: 15, removed: 3, files: 3 });
+    expect(s.tokens).toEqual({
+      input: 120,
+      output: 20,
+      cacheRead: 380,
+      cacheCreation: 40,
+      total: 560,
+      cacheEfficiencyPct: 76,
+    });
     expect(s.skills.top).toEqual([
       { name: "tdd", count: 2 },
       { name: "crispy", count: 1 },
@@ -153,6 +201,8 @@ describe("aih usage command", () => {
       .join("\n");
     expect(docText).toContain("usage-record.mjs"); // shows the recorder one-liner
     expect(docText).toContain("cursor"); // tailored to the selected CLIs
+    expect(docText).toContain("token/cache counters");
+    expect(docText).not.toContain("never prompt content, args, secrets, tokens, or cost");
   });
 
   it("generates per-tool usage hooks for every targeted hook-capable CLI", async () => {

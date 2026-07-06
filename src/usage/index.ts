@@ -63,7 +63,8 @@ function coverageDoc(clis: string[]): Action {
       "",
       ...rows,
       "",
-      "Usage records activity counts only — never prompt content, args, secrets, tokens, or cost.",
+      "Usage records activity counts and optional token/cache counters only — never prompt",
+      "content, args, secrets, or dollar cost.",
       "`aih report` aggregates whatever `.aih/usage.jsonl` holds, with a per-tool coverage note.",
     ),
   );

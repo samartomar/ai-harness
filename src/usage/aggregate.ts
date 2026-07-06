@@ -19,6 +19,15 @@ export interface UsageSummary {
   tools: Counted[];
   /** Commit activity from the universal git floor. */
   commits: { count: number; added: number; removed: number; files: number };
+  /** Local token/cache counters from on-box usage samples. */
+  tokens: {
+    input: number;
+    output: number;
+    cacheRead: number;
+    cacheCreation: number;
+    total: number;
+    cacheEfficiencyPct: number;
+  };
   /** Top skills, overall and split by source. */
   skills: { top: Counted[]; bySource: SkillsBySource };
   /** Top MCP servers + tools. */
@@ -37,6 +46,10 @@ function bump(map: Map<string, number>, key: string | undefined, by = 1): void {
   map.set(key, (map.get(key) ?? 0) + by);
 }
 
+function counter(v: unknown): number {
+  return typeof v === "number" && Number.isFinite(v) && v >= 0 ? v : 0;
+}
+
 /** Fold a usage-event list into a {@link UsageSummary} (pure, deterministic). */
 export function aggregateUsage(events: UsageEvent[]): UsageSummary {
   const tools = new Map<string, number>();
@@ -50,9 +63,14 @@ export function aggregateUsage(events: UsageEvent[]): UsageSummary {
   const mcpServers = new Map<string, number>();
   const mcpTools = new Map<string, number>();
   const commits = { count: 0, added: 0, removed: 0, files: 0 };
+  const tokens = { input: 0, output: 0, cacheRead: 0, cacheCreation: 0 };
 
   for (const e of events) {
     bump(tools, e.tool);
+    tokens.input += counter(e.tokens?.input);
+    tokens.output += counter(e.tokens?.output);
+    tokens.cacheRead += counter(e.tokens?.cacheRead);
+    tokens.cacheCreation += counter(e.tokens?.cacheCreation);
     if (e.kind === "commit") {
       commits.count += 1;
       commits.added += e.added ?? 0;
@@ -70,11 +88,18 @@ export function aggregateUsage(events: UsageEvent[]): UsageSummary {
   bySource.ecc = top(skillSrc.ecc);
   bySource.canon = top(skillSrc.canon);
   bySource.user = top(skillSrc.user);
+  const tokenTotal = tokens.input + tokens.output + tokens.cacheRead + tokens.cacheCreation;
+  const cacheDenom = tokens.cacheRead + tokens.input;
 
   return {
     total: events.length,
     tools: top(tools),
     commits,
+    tokens: {
+      ...tokens,
+      total: tokenTotal,
+      cacheEfficiencyPct: cacheDenom > 0 ? Math.round((tokens.cacheRead / cacheDenom) * 100) : 0,
+    },
     skills: { top: top(skillAll), bySource },
     mcp: { servers: top(mcpServers), tools: top(mcpTools) },
   };

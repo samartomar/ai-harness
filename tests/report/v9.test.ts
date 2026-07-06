@@ -197,6 +197,14 @@ function usageActive(): DigestAction {
       { name: "codex", count: 1 },
     ],
     commits: { count: 0, added: 0, removed: 0, files: 0 },
+    tokens: {
+      input: 100,
+      output: 20,
+      cacheRead: 300,
+      cacheCreation: 40,
+      total: 460,
+      cacheEfficiencyPct: 75,
+    },
     skills: {
       top: [
         { name: "tdd", count: 2 },
@@ -207,6 +215,19 @@ function usageActive(): DigestAction {
         canon: [],
         user: [{ name: "planner", count: 1 }],
       },
+    },
+    mcp: { servers: [], tools: [] },
+  });
+}
+
+function usageWithoutSkillSamples(): DigestAction {
+  return digest("Usage — 2 events · 1 tool(s) · 0 skill calls", "body", {
+    total: 2,
+    tools: [{ name: "claude", count: 2 }],
+    commits: { count: 0, added: 0, removed: 0, files: 0 },
+    skills: {
+      top: [],
+      bySource: { ecc: [], canon: [], user: [] },
     },
     mcp: { servers: [], tools: [] },
   });
@@ -507,7 +528,7 @@ describe("buildAihDataV9 — panels + gating", () => {
   it("gates capabilities not wired yet as preview, wins empty", () => {
     const g = buildAihDataV9(ALL).gates;
     expect(g["sec-wins"]).toBe("empty");
-    expect(g["sec-skills"]).toBe("preview");
+    expect(g["sec-skills"]).toBe("empty");
     expect(g["cap-ecc"]).toBe("preview");
     expect(g["cap-coherence"]).toBe("preview");
     expect(g["cap-outcome"]).toBe("preview");
@@ -522,10 +543,28 @@ describe("buildAihDataV9 — panels + gating", () => {
       ["claude", 80, 4],
       ["codex", 20, 1],
     ]);
+    expect(d.activity?.cache).toEqual({
+      input: 100,
+      output: 20,
+      cacheRead: 300,
+      cacheCreation: 40,
+      total: 460,
+      cacheEfficiencyPct: 75,
+    });
     const view = assembleViewV9(d, V9_DEMO);
     const html = view.sections["sec-activity"]?.html ?? "";
     expect(html).toContain("5 actions");
+    expect(html).toContain("Cache economy");
+    expect(html).toContain("75% cache-served");
     expect(html).not.toContain("design intent until wired");
+  });
+
+  it("renders an honest v9 cache-economy stub when no local token samples exist", () => {
+    const view = assembleViewV9(buildAihDataV9(ALL), V9_DEMO);
+    const html = view.sections["sec-activity"]?.html ?? "";
+    expect(html).toContain("Cache economy");
+    expect(html).toContain("No local token/cache counters");
+    expect(html).toContain("aih report --org");
   });
 });
 
@@ -593,11 +632,41 @@ describe("buildAihDataV9 — Phase B capability flips", () => {
     expect(html).not.toContain("frontend-design · canon");
   });
 
-  it("keeps the skill ledger preview when usage is absent, even if ECC inventory exists", () => {
+  it("keeps dormant skill claims unavailable when skill samples exist without ECC inventory", () => {
+    const active = ALL.filter((d) => !d.describe.startsWith("Usage"));
+    const d = buildAihDataV9([...active, usageActive()]);
+    expect(d.gates["sec-skills"]).toBe("live");
+    expect(d.skills?.heavyLifters).toEqual([
+      ["tdd · ecc", 2],
+      ["planner · user", 1],
+    ]);
+    expect(d.skills?.dormantAvailable).toBe(false);
+    expect(d.skills?.dormant).toEqual([]);
+    const html = assembleViewV9(d, V9_DEMO).sections["sec-skills"]?.html ?? "";
+    expect(html).toContain("ECC inventory unavailable");
+    expect(html).not.toContain("Dormant — trim candidates");
+    expect(html).not.toContain("unused");
+  });
+
+  it("keeps the skill ledger empty and points at org analytics when usage is absent", () => {
     const d = buildAihDataV9([...ALL, ecc()]);
     expect(d.gates["cap-ecc"]).toBe("live");
-    expect(d.gates["sec-skills"]).toBe("preview");
+    expect(d.gates["sec-skills"]).toBe("empty");
     expect(d.skills).toBeUndefined();
+    const html = assembleViewV9(d, V9_DEMO).sections["sec-skills"]?.html ?? "";
+    expect(html).toContain("aih report --org");
+    expect(html).not.toContain("frontend-design · canon");
+  });
+
+  it("keeps the skill ledger empty when usage exists without skill samples", () => {
+    const active = ALL.filter((d) => !d.describe.startsWith("Usage"));
+    const d = buildAihDataV9([...active, usageWithoutSkillSamples(), ecc()]);
+    expect(d.gates["cap-usage"]).toBe("live");
+    expect(d.gates["sec-skills"]).toBe("empty");
+    expect(d.skills).toBeUndefined();
+    const html = assembleViewV9(d, V9_DEMO).sections["sec-skills"]?.html ?? "";
+    expect(html).toContain("aih report --org");
+    expect(html).not.toContain("security-review");
   });
 
   it("flips the coherence matrix to live and attaches it to drift", () => {
@@ -714,7 +783,9 @@ describe("assembleViewV9 — honest rendering", () => {
     expect(view.sections["sec-quality"]?.html).toContain("span-4 preview"); // ecc
     expect(view.sections["sec-drift"]?.html).toContain("span-7 preview"); // coherence
     expect(view.sections["sec-period"]?.html).toContain("span-5 preview"); // outcome
-    expect(view.sections["sec-skills"]?.html).toContain("preview");
+    expect(view.sections["sec-skills"]?.state).toBe("empty");
+    expect(view.sections["sec-skills"]?.html).toContain("aih report --org");
+    expect(view.sections["sec-skills"]?.html).not.toContain("frontend-design · canon");
   });
 
   it("renders honest stubs (not demo) for empty panels off-canon", () => {
@@ -846,7 +917,7 @@ describe("v9-render — bar/badge fixes", () => {
     expect(html).not.toContain(">design<");
     const view = assembleViewV9(buildAihDataV9(ALL), V9_DEMO);
     const skills = view.sections["sec-skills"]?.html ?? "";
-    expect(skills).toContain("preview"); // .preview ribbon class
+    expect(skills).toContain("aih report --org"); // honest stub, not demo rows
     expect(skills).not.toContain(">design<");
   });
 

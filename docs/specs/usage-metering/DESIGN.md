@@ -27,9 +27,9 @@ Those four landed, so the "usages" + cross-project feedback loop the report arc 
 - Aggregate across a developer's repos for the **over-the-period, cross-project** view.
 
 **Non-goals**
-- **No cost / token economy.** Cost is the one uneven signal (real USD only from Claude; others
-  give tokens or lock it cloud-only). Usage = **activity counts**, never dollars. (Already the
-  documented stance in `src/usage/index.ts`.)
+- **No local dollar cost.** Cost is the uneven signal (real USD only from Claude; others give
+  tokens or lock it cloud-only). The local sink may carry optional token/cache counters for cache
+  economy, but usage still never claims dollars.
 - **No version pinning / no aih-managed ECC** — consistent with the ECC-panel decision: honor the
   live machine install, just observe.
 - No network. `.aih/usage.jsonl` is machine-local, gitignored, append-only.
@@ -40,7 +40,7 @@ Those four landed, so the "usages" + cross-project feedback loop the report arc 
 |---|---|---|
 | Event schema `UsageEvent` (`commit`/`skill`/`mcp`/`session`/`tool`, `source: ecc\|canon\|user`) | `src/usage/events.ts` | ✅ |
 | `readUsage(ctx)` | `src/usage/events.ts` | ✅ |
-| `aggregateUsage(events)` → tools / commits / skills{top, bySource} / mcp{servers,tools} | `src/usage/aggregate.ts` | ✅ |
+| `aggregateUsage(events)` → tools / commits / token/cache counters / skills{top, bySource} / mcp{servers,tools} | `src/usage/aggregate.ts` | ✅ |
 | Recorder `.aih/usage-record.mjs` (`node … <tool> skill <name> <ecc\|canon\|user>`) | `src/usage/capture.ts` | ✅ |
 | **Universal git floor** (`post-commit` hook → commit events for ANY tool) | `aih usage --apply` | ✅ |
 | Per-tool hook **mechanisms documented** (`TOOL_HOOK`: claude PostToolUse, kiro `.kiro.hook`, codex, cursor, gemini, copilot, windsurf, opencode, kimi, antigravity) | `src/usage/index.ts` | 📄 doc only |
@@ -80,10 +80,14 @@ Design choices:
 The v9 panels consume `aggregateUsage(readUsage(ctx))`:
 
 - **`Usage by CLI`** ← `summary.tools` (per-tool event share). Flips PREVIEW→LIVE once any event exists.
+- **`Cache economy`** ← `summary.tokens` when local token/cache samples exist; empty stays a stub
+  pointing at `aih report --org`.
 - **`Heavy lifters`** ← `summary.skills.top` (most-invoked skills/agents, 30d window).
 - **`Dormant`** ← **Gap 3**.
 
-Honesty: each panel stays PREVIEW until `readUsage` returns ≥1 real event (live-or-don't-render).
+Honesty: each panel stays empty/preview until the relevant local sample exists
+(cache/token counters for cache economy, skill rows for the skill ledger). Empty states point at
+`aih report --org` instead of showing demo data as real activity.
 
 ## P3 — dormant detection = ECC ∩ usage (the killer panel)
 
@@ -110,12 +114,13 @@ concat, aggregate." Per the **no-local-cache** decision, this is **scan-on-deman
 
 ## Privacy / determinism / honesty
 
-- `.aih/usage.jsonl` holds **counts + names only** — no prompt content, no args, no secrets;
-  machine-local; gitignored; never sent anywhere.
+- `.aih/usage.jsonl` holds **counts + names + optional token/cache counters only** — no prompt
+  content, no args, no secrets; machine-local; gitignored; never sent anywhere.
 - It's **live data**, not a byte-stable artifact (like `.aih/history.jsonl`) — excluded from the
   report's determinism guarantee by design.
 - Opt-in: hooks are written only when the operator runs `aih usage --apply`.
-- Panels render PREVIEW until real events exist; **cost stays out, permanently.**
+- Panels render only from real local events; empty stubs point at `aih report --org`. **Local
+  dollar cost stays out, permanently.**
 
 ## Phasing
 

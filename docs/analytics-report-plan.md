@@ -107,11 +107,11 @@ network, no org key. What's actually buildable today vs. blocked on a data sourc
 |---|---|---|
 | **Context-bloat tracker** | **Yes** | Size + token-estimate the agent context the repo loads: `CLAUDE.md`/`AGENTS.md`/`GEMINI.md`, the `--context-dir` tree, `.cursor/rules/*.mdc`. Warn past a budget. No external dep, no network. |
 | Path / VDI / SSL health | **Already exists** | `aih doctor` / `aih status` probes — **reuse, don't rebuild**; report points at them. |
-| Local token / cache economy | **Blocked** | Per-dev cache multiplier needs the dev's own usage data on-box; OTEL exports to the collector→backend, not a local file. Roadmap until a local sink exists. |
-| Skill execution ledger | **Blocked** | Needs local skill-invocation logs (ECC schema unwired, Superpowers none, Kiro commit-cadence only). Roadmap. |
+| Local token / cache economy | **Data-gated live** | Reads optional token/cache counters from the gitignored `.aih/usage.jsonl` sink. Empty sink stays an honest stub and points at `aih report --org <export>`. |
+| Skill execution ledger | **Data-gated live** | Reads local skill-invocation rows from `.aih/usage.jsonl`; v9 no longer shows demo skill rows when the sink is empty. |
 
-v1 personal view = **context-bloat (real) + health pointers**, with cache/skill panels rendered
-as explicit "no local data source yet" stubs. We do not fake data.
+v1 personal view = **context-bloat (real) + health pointers** plus data-gated local cache/skill
+panels. Empty local sinks render explicit stubs; we do not fake data.
 
 ## 6. Decisions (locked 2026-06-24)
 
@@ -152,7 +152,8 @@ as explicit "no local data source yet" stubs. We do not fake data.
 2. **Configuration + tooling ✅** — repo artifact presence (reuses `status`'s exported `inventory()`,
    no rebuild) + local AI-CLI saturation (reuses a new config-only `detectClisByConfig`). This also
    absorbs the tooling-saturation item deferred from Track E.
-3. **Cache/skill economy ✅** — explicit "no on-box data source yet" stub pointing at `aih report --org`.
+3. **Cache/skill economy ✅** — live from `.aih/usage.jsonl` when local token/cache or
+   skill-invocation samples exist; empty stubs point at `aih report --org`.
 
 The local `aih report` composes 4 digests (footprint + config + tooling + economy); the org scope
 stays one. Dogfooded end-to-end — the tooling panel detected 7/11 CLIs on the dev box.
