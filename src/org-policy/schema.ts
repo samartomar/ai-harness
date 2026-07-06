@@ -166,7 +166,16 @@ export const OrgPolicySchema = z
         approvedSources: z.array(TrustApprovedSourceSchema).optional(),
         requireSignedSource: z.boolean().default(false),
         requiredDetectors: z
-          .array(z.enum(["skillspector", "cisco", "mcp-scanner", "semgrep"]))
+          .array(
+            z.enum([
+              "skillspector",
+              "cisco",
+              "mcp-scanner",
+              "semgrep",
+              "snyk-agent-scan",
+              "agentshield",
+            ]),
+          )
           .optional(),
         /**
          * Named checks `aih skill approve` must see satisfied in the vet evidence

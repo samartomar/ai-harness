@@ -15,7 +15,13 @@ import { collectFilesUnder, TRUST_SKIP_DIRS } from "./scan.js";
 // Detector names land here only when the adapter can at least surface an honest
 // availability check. A required-but-unavailable detector fails closed at
 // enterprise posture rather than silently passing.
-export type TrustDetectorName = "skillspector" | "cisco" | "mcp-scanner" | "semgrep";
+export type TrustDetectorName =
+  | "skillspector"
+  | "cisco"
+  | "mcp-scanner"
+  | "semgrep"
+  | "snyk-agent-scan"
+  | "agentshield";
 
 export interface TrustDetector {
   name: TrustDetectorName;
@@ -50,6 +56,7 @@ export interface TrustDetectorResult {
 const DETECTOR_UNAVAILABLE = "trust.detector-unavailable";
 const CISCO_SKILL_SCANNER_PACKAGE = "cisco-ai-skill-scanner";
 const CISCO_MCP_SCANNER_PACKAGE = "cisco-ai-mcp-scanner";
+const SNYK_AGENT_SCAN_PACKAGE = "snyk-agent-scan";
 const SKILLSPECTOR_IMAGE = "skillspector:aih-326a2b489411";
 // These Semgrep rules are deliberately small harness-owned safety rules, not a
 // complete substitute for native trust checks. The regexes are line-oriented,
@@ -121,6 +128,23 @@ export const SEMGREP_RULE_MAP: Record<string, CheckCode> = {
   "semgrep.prompt-injection": "trust.prompt-injection",
 };
 
+export const SNYK_AGENT_SCAN_RULE_MAP: Record<string, CheckCode> = {
+  E001: "trust.prompt-injection",
+  E004: "trust.prompt-injection",
+  E005: "trust.malicious-code",
+  E006: "trust.malicious-code",
+  W001: "trust.prompt-injection",
+  W021: "trust.hidden-unicode",
+};
+
+export const AGENTSHIELD_RULE_MAP: Record<string, CheckCode> = {
+  "agentshield.hidden-unicode": "trust.hidden-unicode",
+  "agentshield.malicious-code": "trust.malicious-code",
+  "agentshield.prompt-injection": "trust.prompt-injection",
+  "hidden-unicode": "trust.hidden-unicode",
+  "prompt-injection": "trust.prompt-injection",
+};
+
 interface SarifArtifactLocation {
   uri?: unknown;
 }
@@ -152,6 +176,46 @@ interface SarifRun {
 interface SarifLog {
   runs?: SarifRun[];
   version?: string;
+}
+
+interface SnykAgentFindingLocation {
+  file?: unknown;
+  line?: unknown;
+  path?: unknown;
+}
+
+interface SnykAgentFinding {
+  code?: unknown;
+  description?: unknown;
+  file?: unknown;
+  id?: unknown;
+  issueCode?: unknown;
+  line?: unknown;
+  location?: SnykAgentFindingLocation;
+  message?: unknown;
+  path?: unknown;
+  reference?: unknown;
+  ruleId?: unknown;
+  severity?: unknown;
+  title?: unknown;
+}
+
+interface SnykAgentReport {
+  findings?: unknown;
+  issues?: unknown;
+  results?: unknown;
+  vulnerabilities?: unknown;
+}
+
+interface SnykAgentScanPathResult {
+  issues?: unknown;
+  path?: unknown;
+  servers?: unknown;
+}
+
+interface SnykAgentServerResult {
+  config_path?: unknown;
+  server?: unknown;
 }
 
 interface MaliciousPattern {
@@ -346,6 +410,18 @@ function mcpScannerBaseArgv(): string[] {
   ];
 }
 
+function snykAgentScanBaseArgv(): string[] {
+  return [
+    "uvx",
+    "--offline",
+    "--no-python-downloads",
+    "--no-env-file",
+    "--from",
+    SNYK_AGENT_SCAN_PACKAGE,
+    "snyk-agent-scan",
+  ];
+}
+
 function ciscoSkillScannerVersionArgv(platform: Platform): string[] {
   return execArgv(platform, [...ciscoSkillScannerBaseArgv(), "--version"]);
 }
@@ -356,6 +432,14 @@ function mcpScannerHelpArgv(platform: Platform): string[] {
 
 function semgrepVersionArgv(platform: Platform): string[] {
   return execArgv(platform, ["semgrep", "--version"]);
+}
+
+function snykAgentScanHelpArgv(platform: Platform): string[] {
+  return execArgv(platform, [...snykAgentScanBaseArgv(), "help"]);
+}
+
+function agentshieldHelpArgv(platform: Platform): string[] {
+  return execArgv(platform, ["agentshield", "scan", "--help"]);
 }
 
 export function ciscoSkillScannerRunArgv(
@@ -409,6 +493,36 @@ export function semgrepScanArgv(platform: Platform, tree: string, config: string
   ]);
 }
 
+export function snykAgentScanArgv(platform: Platform, tree: string): string[] {
+  return execArgv(platform, [
+    ...snykAgentScanBaseArgv(),
+    "scan",
+    tree,
+    "--json",
+    "--no-bootstrap",
+    "--suppress-mcpserver-io=true",
+  ]);
+}
+
+export function agentshieldScanArgv(
+  platform: Platform,
+  tree: string,
+  outputSarif: string,
+): string[] {
+  return execArgv(platform, [
+    "agentshield",
+    "scan",
+    "--path",
+    tree,
+    "--format",
+    "sarif",
+    "--output",
+    outputSarif,
+    "--min-severity",
+    "info",
+  ]);
+}
+
 function dockerVersionArgv(platform: Platform): string[] {
   return execArgv(platform, ["docker", "--version"]);
 }
@@ -427,6 +541,14 @@ function skillspectorImageInspectArgv(platform: Platform): string[] {
 function runFailureReason(result: RunResult, fallback: string): string | undefined {
   if (!result.spawnError && result.code === 0) return undefined;
   return result.stderr || result.stdout || fallback;
+}
+
+function snykAgentScanEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const out = scrubFetchEnv(env);
+  if (typeof env.SNYK_TOKEN === "string" && env.SNYK_TOKEN.trim().length > 0) {
+    out.SNYK_TOKEN = env.SNYK_TOKEN;
+  }
+  return out;
 }
 
 async function checkSkillspectorAvailable(
@@ -517,6 +639,43 @@ async function checkSemgrepAvailable(
   return undefined;
 }
 
+async function checkSnykAgentScanAvailable(
+  run: Runner,
+  platform: Platform,
+  env: NodeJS.ProcessEnv,
+): Promise<string | undefined> {
+  if (typeof env.SNYK_TOKEN !== "string" || env.SNYK_TOKEN.trim().length === 0) {
+    return "SNYK_TOKEN is not set";
+  }
+  const help = await run(snykAgentScanHelpArgv(platform), {
+    env: snykAgentScanEnv(env),
+    timeoutMs: 30_000,
+  });
+  const reason = runFailureReason(help, `uvx exit ${help.code ?? "signal"}`);
+  if (reason !== undefined) return reason;
+  if (`${help.stdout}${help.stderr}`.trim().length === 0) {
+    return "snyk-agent-scan help check emitted no output";
+  }
+  return undefined;
+}
+
+async function checkAgentShieldAvailable(
+  run: Runner,
+  platform: Platform,
+  env: NodeJS.ProcessEnv,
+): Promise<string | undefined> {
+  const help = await run(agentshieldHelpArgv(platform), {
+    env: scrubFetchEnv(env),
+    timeoutMs: 30_000,
+  });
+  const reason = runFailureReason(help, `agentshield exit ${help.code ?? "signal"}`);
+  if (reason !== undefined) return reason;
+  if (`${help.stdout}${help.stderr}`.trim().length === 0) {
+    return "agentshield help check emitted no output";
+  }
+  return undefined;
+}
+
 function collectCiscoSkillDirs(root: string): string[] {
   const skillFiles = collectFilesUnder(
     root,
@@ -601,6 +760,130 @@ function mcpConfigFiles(root: string): string[] {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function snykIssueReference(issue: SnykAgentFinding): number | undefined {
+  const reference = issue.reference;
+  if (!Array.isArray(reference)) return undefined;
+  const serverIndex = reference[0];
+  return typeof serverIndex === "number" && Number.isInteger(serverIndex) && serverIndex >= 0
+    ? serverIndex
+    : undefined;
+}
+
+function snykServerUri(server: SnykAgentServerResult): string | undefined {
+  const configPath = firstString(server, ["config_path", "configPath", "path"]);
+  if (configPath !== undefined) return configPath;
+  if (isRecord(server.server)) {
+    return firstString(server.server, ["path", "config_path", "configPath"]);
+  }
+  return undefined;
+}
+
+function snykScanPathIssueUri(
+  scanPath: string,
+  pathResult: SnykAgentScanPathResult,
+  issue: SnykAgentFinding,
+): string {
+  const direct = firstString(issue, ["file", "path"]);
+  if (direct !== undefined) return direct;
+  const reference = snykIssueReference(issue);
+  if (reference !== undefined && Array.isArray(pathResult.servers)) {
+    const server = pathResult.servers[reference];
+    if (isRecord(server)) {
+      const serverUri = snykServerUri(server);
+      if (serverUri !== undefined) return serverUri;
+    }
+  }
+  return firstString(pathResult, ["path"]) ?? scanPath;
+}
+
+function snykFindingArray(report: SnykAgentReport): SnykAgentFinding[] | undefined {
+  for (const key of ["findings", "issues", "results", "vulnerabilities"] as const) {
+    const value = report[key];
+    if (Array.isArray(value)) return value.filter(isRecord) as SnykAgentFinding[];
+  }
+  const pathFindings: SnykAgentFinding[] = [];
+  let sawScanPathResult = false;
+  for (const [scanPath, rawPathResult] of Object.entries(report)) {
+    if (!isRecord(rawPathResult)) continue;
+    const pathResult = rawPathResult as SnykAgentScanPathResult;
+    if (!Array.isArray(pathResult.issues)) continue;
+    sawScanPathResult = true;
+    for (const rawIssue of pathResult.issues) {
+      if (!isRecord(rawIssue)) continue;
+      const issue = rawIssue as SnykAgentFinding;
+      pathFindings.push({
+        ...issue,
+        path: snykScanPathIssueUri(scanPath, pathResult, issue),
+      });
+    }
+  }
+  if (sawScanPathResult || Object.keys(report).length === 0) return pathFindings;
+  return undefined;
+}
+
+function firstString(record: object, keys: readonly string[]): string | undefined {
+  for (const key of keys) {
+    const value = (record as Record<string, unknown>)[key];
+    if (typeof value === "string" && value.trim().length > 0) return value;
+  }
+  return undefined;
+}
+
+function snykFindingRuleId(finding: SnykAgentFinding): string {
+  return firstString(finding, ["id", "code", "issueCode", "ruleId"]) ?? "snyk-agent-scan.finding";
+}
+
+function snykFindingMessage(finding: SnykAgentFinding): string {
+  const title = firstString(finding, ["title", "message", "description"]);
+  const description = firstString(finding, ["description", "message"]);
+  if (title !== undefined && description !== undefined && title !== description) {
+    return `${title}: ${description}`;
+  }
+  return title ?? description ?? "Snyk Agent Scan finding";
+}
+
+function snykFindingUri(finding: SnykAgentFinding): string {
+  if (isRecord(finding.location)) {
+    const locationFile = firstString(finding.location, ["file", "path"]);
+    if (locationFile !== undefined) return locationFile;
+  }
+  return firstString(finding, ["file", "path"]) ?? "snyk-agent-scan.json";
+}
+
+function snykFindingLine(finding: SnykAgentFinding): number {
+  const raw = isRecord(finding.location) ? (finding.location.line ?? finding.line) : finding.line;
+  return typeof raw === "number" && Number.isInteger(raw) && raw > 0 ? raw : 1;
+}
+
+function snykAgentScanSarif(raw: string): SarifLog {
+  let parsed: SnykAgentReport;
+  try {
+    parsed = JSON.parse(raw) as SnykAgentReport;
+  } catch {
+    throw new Error("snyk-agent-scan did not emit parseable JSON");
+  }
+  const findings = snykFindingArray(parsed);
+  if (findings === undefined) {
+    throw new Error("snyk-agent-scan JSON did not include a findings array");
+  }
+  const results = findings.filter(isRecord).map((finding): SarifResult => {
+    const typed = finding as SnykAgentFinding;
+    return {
+      ruleId: snykFindingRuleId(typed),
+      message: { text: snykFindingMessage(typed) },
+      locations: [
+        {
+          physicalLocation: {
+            artifactLocation: { uri: snykFindingUri(typed) },
+            region: { startLine: snykFindingLine(typed) },
+          },
+        },
+      ],
+    };
+  });
+  return { version: "2.1.0", runs: [{ results }] };
 }
 
 function safeToolName(raw: string): string {
@@ -703,6 +986,51 @@ async function runSemgrepScan(
   }
 }
 
+async function runSnykAgentScan(
+  run: Runner,
+  platform: Platform,
+  env: NodeJS.ProcessEnv,
+  tree: string,
+): Promise<string> {
+  const scan = await run(snykAgentScanArgv(platform, tree), {
+    env: snykAgentScanEnv(env),
+    timeoutMs: 120_000,
+  });
+  if (scan.spawnError || scan.stdout.trim().length === 0) {
+    throw new Error(scan.stderr || scan.stdout || `detector exit ${scan.code ?? "signal"}`);
+  }
+  if (scan.code !== 0 && scan.code !== 1) {
+    throw new Error(scan.stderr || scan.stdout || `detector exit ${scan.code ?? "signal"}`);
+  }
+  const sarif = snykAgentScanSarif(scan.stdout);
+  if (scan.code === 1 && !sarif.runs?.some((run) => (run.results ?? []).length > 0)) {
+    throw new Error(scan.stderr || "snyk-agent-scan exited 1 without findings");
+  }
+  return JSON.stringify(sarif);
+}
+
+async function runAgentShieldScan(
+  run: Runner,
+  platform: Platform,
+  env: NodeJS.ProcessEnv,
+  tree: string,
+): Promise<string> {
+  const tmp = mkdtempSync(join(tmpdir(), "aih-agentshield-"));
+  const output = join(tmp, "results.sarif");
+  try {
+    const scan = await run(agentshieldScanArgv(platform, tree, output), {
+      env: scrubFetchEnv(env),
+      timeoutMs: 120_000,
+    });
+    if (scan.spawnError || (scan.code !== 0 && scan.code !== 2)) {
+      throw new Error(scan.stderr || scan.stdout || `detector exit ${scan.code ?? "signal"}`);
+    }
+    return readFileSync(output, "utf8");
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+}
+
 function unavailableDetail(detector: TrustDetectorName, reason: string): string {
   const runbook =
     detector === "skillspector"
@@ -750,7 +1078,12 @@ function ruleCode(result: SarifResult, detector: TrustDetector): CheckCode | und
   if (raw === undefined) return undefined;
   const mapped = detector.ruleMap[raw];
   if (mapped !== undefined) return mapped;
-  if (detector.name === "skillspector" || detector.name === "semgrep") {
+  if (
+    detector.name === "skillspector" ||
+    detector.name === "semgrep" ||
+    detector.name === "snyk-agent-scan" ||
+    detector.name === "agentshield"
+  ) {
     return "trust.detector-finding";
   }
   if (detector.name === "cisco" || detector.name === "mcp-scanner") return "trust.cisco-finding";
@@ -758,9 +1091,11 @@ function ruleCode(result: SarifResult, detector: TrustDetector): CheckCode | und
 }
 
 function detectorFindingLabel(detector: TrustDetector): string {
+  if (detector.name === "agentshield") return "AgentShield";
   if (detector.name === "skillspector") return "SkillSpector";
   if (detector.name === "mcp-scanner") return "Cisco AI Defense mcp-scanner";
   if (detector.name === "semgrep") return "Semgrep";
+  if (detector.name === "snyk-agent-scan") return "Snyk Agent Scan";
   return "Cisco AI Defense skill-scanner";
 }
 
@@ -871,6 +1206,20 @@ function analyzerPassCheck(detector: TrustDetector, analyzersRun: readonly strin
       detail: `Semgrep static scan completed with harness rules, SARIF output, --metrics=off, and --disable-version-check. No findings != safe. Analyzers run: ${analyzersRun.join(", ")}`,
     };
   }
+  if (detector.name === "snyk-agent-scan") {
+    return {
+      name: "trust detector snyk-agent-scan",
+      verdict: "pass",
+      detail: `Snyk Agent Scan completed with JSON output, --no-bootstrap, and no MCP auto-exec bypass. No findings != safe. Analyzers run: ${analyzersRun.join(", ")}`,
+    };
+  }
+  if (detector.name === "agentshield") {
+    return {
+      name: "trust detector agentshield",
+      verdict: "pass",
+      detail: `AgentShield configuration scan completed with SARIF output and no auto-fix/deep-analysis flags. No findings != safe. Analyzers run: ${analyzersRun.join(", ")}`,
+    };
+  }
   return {
     name: "trust detector cisco",
     verdict: "pass",
@@ -906,6 +1255,20 @@ const SKILL_TRUST_DETECTORS: TrustDetector[] = [
     checkAvailable: checkSemgrepAvailable,
     runScan: runSemgrepScan,
     ruleMap: SEMGREP_RULE_MAP,
+  },
+  {
+    name: "snyk-agent-scan",
+    analyzerLabel: "snyk-agent-scan@uvx",
+    checkAvailable: checkSnykAgentScanAvailable,
+    runScan: runSnykAgentScan,
+    ruleMap: SNYK_AGENT_SCAN_RULE_MAP,
+  },
+  {
+    name: "agentshield",
+    analyzerLabel: "agentshield@local",
+    checkAvailable: checkAgentShieldAvailable,
+    runScan: runAgentShieldScan,
+    ruleMap: AGENTSHIELD_RULE_MAP,
   },
 ];
 
