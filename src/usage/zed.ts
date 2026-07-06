@@ -98,7 +98,9 @@ function threadMatchesRepo(row: ZedThreadRow, repoRoot: string): boolean {
   } catch {
     // Fall back to exact matching for older/plain string folder path storage.
   }
-  return normalizePath(folderPaths) === repo;
+  return folderPaths
+    .split(/\r?\n/)
+    .some((path) => path.trim().length > 0 && normalizePath(path.trim()) === repo);
 }
 
 function decodeThreadData(row: ZedThreadRow): string | undefined {

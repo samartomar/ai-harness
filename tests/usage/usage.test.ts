@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { builtinModules } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -78,6 +79,8 @@ async function writeZedThreadsDb(dbPath: string, fixture: ZedThreadFixture): Pro
     db.close();
   }
 }
+
+const zedSqliteDescribe = builtinModules.includes("node:sqlite") ? describe : describe.skip;
 
 const EVENTS: UsageEvent[] = [
   { tool: "git", kind: "commit", added: 10, removed: 3, files: 2 },
@@ -314,259 +317,288 @@ describe("aih usage command", () => {
     expect(docText).not.toContain("never prompt content, args, secrets, tokens, or cost");
   });
 
-  it("captures Zed threads.db usage samples additively and idempotently", async () => {
-    const dbPath = join(root, "threads.db");
-    await writeZedThreadsDb(dbPath, {
-      data: {
-        cumulative_token_usage: {
-          input_tokens: 120,
-          output_tokens: 30,
-          cache_read_input_tokens: 90,
-          cache_creation_input_tokens: 10,
-        },
-        messages: [
-          {
-            Agent: {
-              content: [
-                {
-                  ToolUse: {
-                    name: "mcp__context7__resolve-library-id",
-                    input: { libraryName: "Vitest" },
-                  },
-                },
-                {
-                  ToolUse: {
-                    name: "Task",
-                    input: { subagent_type: "planner", source: "ecc" },
-                  },
-                },
-                {
-                  ToolUse: {
-                    name: "terminal",
-                    input: { command: "npm test" },
-                  },
-                },
-              ],
-            },
-          },
-        ],
-      },
-    });
-
-    const ctx = { ...makeCtx({ cli: "zed", zedThreadsDb: dbPath }), apply: true };
-    await executePlan(await command.plan(ctx), ctx);
-    await executePlan(await command.plan(ctx), ctx);
-
-    const rows = readFileSync(join(root, ".aih", "usage.jsonl"), "utf8")
-      .trim()
-      .split(/\r?\n/)
-      .map((line) => JSON.parse(line) as UsageEvent);
-    expect(rows).toMatchObject([
-      { ts: "2026-07-06T10:00:00.000Z", tool: "zed", kind: "session" },
-      {
-        ts: "2026-07-06T10:00:00.000Z",
-        tool: "zed",
-        kind: "mcp",
-        server: "context7",
-        name: "resolve-library-id",
-      },
-      {
-        ts: "2026-07-06T10:00:00.000Z",
-        tool: "zed",
-        kind: "skill",
-        name: "planner",
-        source: "ecc",
-      },
-      { ts: "2026-07-06T10:00:00.000Z", tool: "zed", kind: "tool", name: "terminal" },
-    ]);
-    expect(rows.every((row) => typeof row.id === "string" && row.id.startsWith("zed:"))).toBe(true);
-    expect(rows[0]?.tokens).toEqual({
-      input: 120,
-      output: 30,
-      cacheRead: 90,
-      cacheCreation: 10,
-    });
-    expect(rows.filter((row) => row.tool === "zed")).toHaveLength(4);
-  });
-
-  it("sums Zed request token usage maps when cumulative counters are absent", async () => {
-    const dbPath = join(root, "threads.db");
-    await writeZedThreadsDb(dbPath, {
-      data: {
-        request_token_usage: {
-          user_1: {
-            input_tokens: 100,
-            output_tokens: 25,
-            cache_read_input_tokens: 70,
-          },
-          user_2: {
-            input_tokens: 20,
-            output_tokens: 5,
+  zedSqliteDescribe("Zed threads.db usage import", () => {
+    it("captures Zed threads.db usage samples additively and idempotently", async () => {
+      const dbPath = join(root, "threads.db");
+      await writeZedThreadsDb(dbPath, {
+        data: {
+          cumulative_token_usage: {
+            input_tokens: 120,
+            output_tokens: 30,
+            cache_read_input_tokens: 90,
             cache_creation_input_tokens: 10,
           },
+          messages: [
+            {
+              Agent: {
+                content: [
+                  {
+                    ToolUse: {
+                      name: "mcp__context7__resolve-library-id",
+                      input: { libraryName: "Vitest" },
+                    },
+                  },
+                  {
+                    ToolUse: {
+                      name: "Task",
+                      input: { subagent_type: "planner", source: "ecc" },
+                    },
+                  },
+                  {
+                    ToolUse: {
+                      name: "terminal",
+                      input: { command: "npm test" },
+                    },
+                  },
+                ],
+              },
+            },
+          ],
         },
-      },
+      });
+
+      const ctx = { ...makeCtx({ cli: "zed", zedThreadsDb: dbPath }), apply: true };
+      await executePlan(await command.plan(ctx), ctx);
+      await executePlan(await command.plan(ctx), ctx);
+
+      const rows = readFileSync(join(root, ".aih", "usage.jsonl"), "utf8")
+        .trim()
+        .split(/\r?\n/)
+        .map((line) => JSON.parse(line) as UsageEvent);
+      expect(rows).toMatchObject([
+        { ts: "2026-07-06T10:00:00.000Z", tool: "zed", kind: "session" },
+        {
+          ts: "2026-07-06T10:00:00.000Z",
+          tool: "zed",
+          kind: "mcp",
+          server: "context7",
+          name: "resolve-library-id",
+        },
+        {
+          ts: "2026-07-06T10:00:00.000Z",
+          tool: "zed",
+          kind: "skill",
+          name: "planner",
+          source: "ecc",
+        },
+        { ts: "2026-07-06T10:00:00.000Z", tool: "zed", kind: "tool", name: "terminal" },
+      ]);
+      expect(rows.every((row) => typeof row.id === "string" && row.id.startsWith("zed:"))).toBe(
+        true,
+      );
+      expect(rows[0]?.tokens).toEqual({
+        input: 120,
+        output: 30,
+        cacheRead: 90,
+        cacheCreation: 10,
+      });
+      expect(rows.filter((row) => row.tool === "zed")).toHaveLength(4);
     });
 
-    const ctx = { ...makeCtx({ cli: "zed", zedThreadsDb: dbPath }), apply: true };
-    await executePlan(await command.plan(ctx), ctx);
-
-    const [row] = readFileSync(join(root, ".aih", "usage.jsonl"), "utf8")
-      .trim()
-      .split(/\r?\n/)
-      .map((line) => JSON.parse(line) as UsageEvent);
-    expect(row?.tokens).toEqual({ input: 120, output: 30, cacheRead: 70, cacheCreation: 10 });
-  });
-
-  it("updates imported Zed thread rows without duplicating old tool calls", async () => {
-    const dbPath = join(root, "threads.db");
-    await writeZedThreadsDb(dbPath, {
-      data: {
-        cumulative_token_usage: {
-          input_tokens: 120,
-          output_tokens: 30,
-        },
-        messages: [
-          {
-            Agent: {
-              content: [
-                {
-                  ToolUse: {
-                    name: "terminal",
-                    input: { command: "npm test" },
-                  },
-                },
-              ],
+    it("sums Zed request token usage maps when cumulative counters are absent", async () => {
+      const dbPath = join(root, "threads.db");
+      await writeZedThreadsDb(dbPath, {
+        data: {
+          request_token_usage: {
+            user_1: {
+              input_tokens: 100,
+              output_tokens: 25,
+              cache_read_input_tokens: 70,
+            },
+            user_2: {
+              input_tokens: 20,
+              output_tokens: 5,
+              cache_creation_input_tokens: 10,
             },
           },
-        ],
-      },
-    });
-    const ctx = { ...makeCtx({ cli: "zed", zedThreadsDb: dbPath }), apply: true };
-    await executePlan(await command.plan(ctx), ctx);
-
-    await writeZedThreadsDb(dbPath, {
-      updatedAt: "2026-07-06T10:05:00.000Z",
-      data: {
-        cumulative_token_usage: {
-          input_tokens: 150,
-          output_tokens: 40,
         },
-        messages: [
-          {
-            Agent: {
-              content: [
-                {
-                  ToolUse: {
-                    name: "terminal",
-                    input: { command: "npm test" },
-                  },
-                },
-                {
-                  ToolUse: {
-                    name: "mcp__github__get_issue",
-                    input: { issue: 251 },
-                  },
-                },
-              ],
-            },
+      });
+
+      const ctx = { ...makeCtx({ cli: "zed", zedThreadsDb: dbPath }), apply: true };
+      await executePlan(await command.plan(ctx), ctx);
+
+      const [row] = readFileSync(join(root, ".aih", "usage.jsonl"), "utf8")
+        .trim()
+        .split(/\r?\n/)
+        .map((line) => JSON.parse(line) as UsageEvent);
+      expect(row?.tokens).toEqual({ input: 120, output: 30, cacheRead: 70, cacheCreation: 10 });
+    });
+
+    it("updates imported Zed thread rows without duplicating old tool calls", async () => {
+      const dbPath = join(root, "threads.db");
+      await writeZedThreadsDb(dbPath, {
+        data: {
+          cumulative_token_usage: {
+            input_tokens: 120,
+            output_tokens: 30,
           },
-        ],
-      },
-    });
-    await executePlan(await command.plan(ctx), ctx);
-
-    const rows = readFileSync(join(root, ".aih", "usage.jsonl"), "utf8")
-      .trim()
-      .split(/\r?\n/)
-      .map((line) => JSON.parse(line) as UsageEvent);
-    expect(rows).toMatchObject([
-      {
-        ts: "2026-07-06T10:05:00.000Z",
-        tool: "zed",
-        kind: "session",
-        tokens: { input: 150, output: 40 },
-      },
-      { ts: "2026-07-06T10:05:00.000Z", tool: "zed", kind: "tool", name: "terminal" },
-      {
-        ts: "2026-07-06T10:05:00.000Z",
-        tool: "zed",
-        kind: "mcp",
-        server: "github",
-        name: "get_issue",
-      },
-    ]);
-    expect(rows.filter((row) => row.tool === "zed")).toHaveLength(3);
-  });
-
-  it("skips Zed rows without matching repo metadata", async () => {
-    const dbPath = join(root, "threads.db");
-    await writeZedThreadsDb(dbPath, {
-      folderPaths: null,
-      data: {
-        cumulative_token_usage: {
-          input_tokens: 120,
-          output_tokens: 30,
+          messages: [
+            {
+              Agent: {
+                content: [
+                  {
+                    ToolUse: {
+                      name: "terminal",
+                      input: { command: "npm test" },
+                    },
+                  },
+                ],
+              },
+            },
+          ],
         },
-      },
-    });
+      });
+      const ctx = { ...makeCtx({ cli: "zed", zedThreadsDb: dbPath }), apply: true };
+      await executePlan(await command.plan(ctx), ctx);
 
-    const ctx = { ...makeCtx({ cli: "zed", zedThreadsDb: dbPath }), apply: true };
-    await executePlan(await command.plan(ctx), ctx);
-
-    expect(existsSync(join(root, ".aih", "usage.jsonl"))).toBe(false);
-  });
-
-  it("skips unreadable Zed threads.db paths without failing the usage plan", async () => {
-    const ctx = { ...makeCtx({ cli: "zed", zedThreadsDb: join(root, "missing.db") }), apply: true };
-    await executePlan(await command.plan(ctx), ctx);
-
-    expect(existsSync(join(root, ".aih", "usage.jsonl"))).toBe(false);
-  });
-
-  it("skips non-matching Zed repo folder metadata", async () => {
-    const dbPath = join(root, "threads.db");
-    await writeZedThreadsDb(dbPath, {
-      folderPaths: JSON.stringify([join(root, "other-repo")]),
-      data: {
-        cumulative_token_usage: {
-          input_tokens: 120,
-          output_tokens: 30,
+      await writeZedThreadsDb(dbPath, {
+        updatedAt: "2026-07-06T10:05:00.000Z",
+        data: {
+          cumulative_token_usage: {
+            input_tokens: 150,
+            output_tokens: 40,
+          },
+          messages: [
+            {
+              Agent: {
+                content: [
+                  {
+                    ToolUse: {
+                      name: "terminal",
+                      input: { command: "npm test" },
+                    },
+                  },
+                  {
+                    ToolUse: {
+                      name: "mcp__github__get_issue",
+                      input: { issue: 251 },
+                    },
+                  },
+                ],
+              },
+            },
+          ],
         },
-      },
-    });
+      });
+      await executePlan(await command.plan(ctx), ctx);
 
-    const ctx = { ...makeCtx({ cli: "zed", zedThreadsDb: dbPath }), apply: true };
-    await executePlan(await command.plan(ctx), ctx);
-
-    expect(existsSync(join(root, ".aih", "usage.jsonl"))).toBe(false);
-  });
-
-  it("captures legacy-style Zed token counters", async () => {
-    const dbPath = join(root, "threads.db");
-    await writeZedThreadsDb(dbPath, {
-      data: {
-        token_usage: {
-          input_tokens: 120,
-          output_tokens: 30,
-          cache_read_tokens: 90,
-          cache_creation_tokens: 10,
+      const rows = readFileSync(join(root, ".aih", "usage.jsonl"), "utf8")
+        .trim()
+        .split(/\r?\n/)
+        .map((line) => JSON.parse(line) as UsageEvent);
+      expect(rows).toMatchObject([
+        {
+          ts: "2026-07-06T10:05:00.000Z",
+          tool: "zed",
+          kind: "session",
+          tokens: { input: 150, output: 40 },
         },
-      },
+        { ts: "2026-07-06T10:05:00.000Z", tool: "zed", kind: "tool", name: "terminal" },
+        {
+          ts: "2026-07-06T10:05:00.000Z",
+          tool: "zed",
+          kind: "mcp",
+          server: "github",
+          name: "get_issue",
+        },
+      ]);
+      expect(rows.filter((row) => row.tool === "zed")).toHaveLength(3);
     });
 
-    const ctx = { ...makeCtx({ cli: "zed", zedThreadsDb: dbPath }), apply: true };
-    await executePlan(await command.plan(ctx), ctx);
+    it("captures newline-delimited Zed folder metadata when one path matches the repo", async () => {
+      const dbPath = join(root, "threads.db");
+      await writeZedThreadsDb(dbPath, {
+        folderPaths: `${join(root, "other-repo")}\n${root}`,
+        data: {
+          cumulative_token_usage: {
+            input_tokens: 120,
+            output_tokens: 30,
+          },
+        },
+      });
 
-    const [row] = readFileSync(join(root, ".aih", "usage.jsonl"), "utf8")
-      .trim()
-      .split(/\r?\n/)
-      .map((line) => JSON.parse(line) as UsageEvent);
-    expect(row?.tokens).toEqual({
-      input: 120,
-      output: 30,
-      cacheRead: 90,
-      cacheCreation: 10,
+      const ctx = { ...makeCtx({ cli: "zed", zedThreadsDb: dbPath }), apply: true };
+      await executePlan(await command.plan(ctx), ctx);
+
+      const [row] = readFileSync(join(root, ".aih", "usage.jsonl"), "utf8")
+        .trim()
+        .split(/\r?\n/)
+        .map((line) => JSON.parse(line) as UsageEvent);
+      expect(row).toMatchObject({ tool: "zed", kind: "session" });
+    });
+
+    it("skips Zed rows without matching repo metadata", async () => {
+      const dbPath = join(root, "threads.db");
+      await writeZedThreadsDb(dbPath, {
+        folderPaths: null,
+        data: {
+          cumulative_token_usage: {
+            input_tokens: 120,
+            output_tokens: 30,
+          },
+        },
+      });
+
+      const ctx = { ...makeCtx({ cli: "zed", zedThreadsDb: dbPath }), apply: true };
+      await executePlan(await command.plan(ctx), ctx);
+
+      expect(existsSync(join(root, ".aih", "usage.jsonl"))).toBe(false);
+    });
+
+    it("skips unreadable Zed threads.db paths without failing the usage plan", async () => {
+      const ctx = {
+        ...makeCtx({ cli: "zed", zedThreadsDb: join(root, "missing.db") }),
+        apply: true,
+      };
+      await executePlan(await command.plan(ctx), ctx);
+
+      expect(existsSync(join(root, ".aih", "usage.jsonl"))).toBe(false);
+    });
+
+    it("skips non-matching Zed repo folder metadata", async () => {
+      const dbPath = join(root, "threads.db");
+      await writeZedThreadsDb(dbPath, {
+        folderPaths: JSON.stringify([join(root, "other-repo")]),
+        data: {
+          cumulative_token_usage: {
+            input_tokens: 120,
+            output_tokens: 30,
+          },
+        },
+      });
+
+      const ctx = { ...makeCtx({ cli: "zed", zedThreadsDb: dbPath }), apply: true };
+      await executePlan(await command.plan(ctx), ctx);
+
+      expect(existsSync(join(root, ".aih", "usage.jsonl"))).toBe(false);
+    });
+
+    it("captures legacy-style Zed token counters", async () => {
+      const dbPath = join(root, "threads.db");
+      await writeZedThreadsDb(dbPath, {
+        data: {
+          token_usage: {
+            input_tokens: 120,
+            output_tokens: 30,
+            cache_read_tokens: 90,
+            cache_creation_tokens: 10,
+          },
+        },
+      });
+
+      const ctx = { ...makeCtx({ cli: "zed", zedThreadsDb: dbPath }), apply: true };
+      await executePlan(await command.plan(ctx), ctx);
+
+      const [row] = readFileSync(join(root, ".aih", "usage.jsonl"), "utf8")
+        .trim()
+        .split(/\r?\n/)
+        .map((line) => JSON.parse(line) as UsageEvent);
+      expect(row?.tokens).toEqual({
+        input: 120,
+        output: 30,
+        cacheRead: 90,
+        cacheCreation: 10,
+      });
     });
   });
 
