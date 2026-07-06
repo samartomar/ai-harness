@@ -158,24 +158,56 @@ interface ExpectedArtifacts {
 }
 
 interface SourceArtifactRel {
+  name: string;
   prefix: string;
   rel: string;
 }
 
-function artifactRelForSkillRoot(name: string, sourcePath: string): SourceArtifactRel | undefined {
-  const directPrefix = `${name}/`;
-  if (sourcePath.startsWith(directPrefix)) {
-    return { prefix: directPrefix, rel: sourcePath.slice(directPrefix.length) };
-  }
+function sortedPromotedSkills(promotedSkills: readonly string[]): string[] {
+  return [...promotedSkills].sort((left, right) => {
+    const lengthDelta = right.split("/").length - left.split("/").length;
+    return lengthDelta === 0 ? right.length - left.length : lengthDelta;
+  });
+}
 
+function promotedSkillAt(
+  parts: readonly string[],
+  index: number,
+  promotedSkills: readonly string[],
+): string | undefined {
+  for (const skill of promotedSkills) {
+    const skillParts = skill.split("/");
+    if (index + skillParts.length >= parts.length) continue;
+    if (skillParts.every((part, offset) => parts[index + offset] === part)) return skill;
+  }
+  return undefined;
+}
+
+function artifactRelForPromotedSkill(
+  promotedSkills: readonly string[],
+  sourcePath: string,
+): SourceArtifactRel | undefined {
+  const sortedSkills = sortedPromotedSkills(promotedSkills);
+  for (const skill of sortedSkills) {
+    const directPrefix = `${skill}/`;
+    if (sourcePath.startsWith(directPrefix)) {
+      return {
+        name: skill,
+        prefix: directPrefix,
+        rel: sourcePath.slice(directPrefix.length),
+      };
+    }
+  }
   const parts = sourcePath.split("/");
-  const nameParts = name.split("/");
-  for (let index = 1; index <= parts.length - nameParts.length - 1; index += 1) {
+  for (let index = 1; index <= parts.length - 2; index += 1) {
     if (parts[index - 1] !== "skills") continue;
-    if (!nameParts.every((part, offset) => parts[index + offset] === part)) continue;
+    const skill = promotedSkillAt(parts, index, sortedSkills);
+    if (skill === undefined) continue;
+    const skillParts = skill.split("/");
     return {
-      prefix: `${parts.slice(0, index + nameParts.length).join("/")}/`,
-      rel: parts.slice(index + nameParts.length).join("/"),
+      name: skill,
+      prefix: `${parts.slice(0, index + skillParts.length).join("/")}/`,
+      rel: parts.slice(index + skillParts.length).join("/"),
     };
   }
   return undefined;
@@ -204,8 +236,8 @@ function expectedArtifactHashes(name: string, source: TrustLockSource): Map<stri
   const expected: ExpectedArtifacts = { hashes: new Map(), origins: new Map() };
   let sourcePrefix: string | undefined;
   for (const artifact of source.artifactHashes) {
-    const resolved = artifactRelForSkillRoot(name, artifact.path);
-    if (resolved === undefined) continue;
+    const resolved = artifactRelForPromotedSkill(source.promotedSkills, artifact.path);
+    if (resolved === undefined || resolved.name !== name) continue;
     if (sourcePrefix !== undefined && sourcePrefix !== resolved.prefix) {
       throw refuse(`approved promoted skill ${name} has multiple trust-lock source prefixes`);
     }

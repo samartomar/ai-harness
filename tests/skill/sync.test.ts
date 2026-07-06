@@ -88,6 +88,7 @@ function writeTrustLockArtifacts(
   id: string,
   name: string,
   artifactHashes: Array<{ path: string; sha256: string }>,
+  promotedSkills = [name],
 ): void {
   write(
     ".aih/trust-lock.json",
@@ -100,7 +101,7 @@ function writeTrustLockArtifacts(
           source: "owner/repo",
           pinnedSha: PIN,
           promotedAt: "2026-01-01T00:00:00.000Z",
-          promotedSkills: [name],
+          promotedSkills,
           analyzersRun: ["aih-native"],
           artifactHashes,
           findings: [],
@@ -308,6 +309,36 @@ describe("skillSyncCommand", () => {
     const c = ctx({ name: "clean", cli: "codex" });
 
     expect(() => skillSyncCommand.plan(c)).toThrow(/multiple trust-lock source prefixes/);
+  });
+
+  it("ignores other promoted skills whose files contain inner target skill paths", async () => {
+    installApproved("owner-repo", "clean");
+    promoteSkill("owner-repo", "other");
+    write(
+      join(CONTEXT_DIR, "skills", "owner-repo", "other", "docs", "skills", "clean", "notes.md"),
+      "other notes\n",
+    );
+    writeTrustLockArtifacts(
+      "owner-repo",
+      "clean",
+      [
+        { path: "packages/skills/clean/SKILL.md", sha256: sha256Text("# clean\n") },
+        { path: "packages/skills/clean/README.md", sha256: sha256Text("clean docs\n") },
+        {
+          path: "packages/skills/other/docs/skills/clean/notes.md",
+          sha256: sha256Text("other notes\n"),
+        },
+      ],
+      ["clean", "other"],
+    );
+    const c = ctx({ name: "clean", cli: "codex" });
+
+    const result = await executePlan(await skillSyncCommand.plan(c), c);
+
+    expect(result.writes.map((write) => write.path).sort()).toEqual([
+      codexSkill("clean", "README.md"),
+      codexSkill("clean", "SKILL.md"),
+    ]);
   });
 
   it("refuses duplicate trust receipts for the same promoted file", () => {
