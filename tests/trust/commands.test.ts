@@ -10,8 +10,14 @@ import {
   trustAllowCommand,
   trustListCommand,
   trustPinCommand,
+  trustSkillspectorPinCommand,
   trustVerifyCommand,
 } from "../../src/trust/commands.js";
+import {
+  SKILLSPECTOR_IMAGE,
+  SKILLSPECTOR_IMAGE_DIGEST,
+  SKILLSPECTOR_SOURCE_REVISION,
+} from "../../src/trust/images.js";
 
 let root: string;
 
@@ -189,6 +195,208 @@ describe("trust allow/list/pin commands", () => {
 
     expect(result.digests[0]?.text).toContain("Local trust-lock evidence");
     expect(result.digests[0]?.text).toContain("  (none)");
+  });
+});
+
+describe("trust skillspector-pin command", () => {
+  it("reports the pinned SkillSpector image tag, upstream commit, and digest", async () => {
+    const result = await executePlan(await trustSkillspectorPinCommand.plan(ctx({})), ctx({}));
+
+    expect(result.report?.ok).toBe(true);
+    expect(result.digests[0]?.text).toContain(SKILLSPECTOR_IMAGE);
+    expect(result.digests[0]?.text).toContain(SKILLSPECTOR_SOURCE_REVISION);
+    expect(result.digests[0]?.text).toContain(SKILLSPECTOR_IMAGE_DIGEST);
+  });
+
+  it("flags candidate pin bumps with the upstream diff URL before acceptance", async () => {
+    const candidateRevision = "b".repeat(40);
+    const result = await executePlan(
+      await trustSkillspectorPinCommand.plan(
+        ctx({
+          candidateRevision,
+          candidateTag: "skillspector:aih-bbbbbbbbbb",
+        }),
+      ),
+      ctx({
+        candidateRevision,
+        candidateTag: "skillspector:aih-bbbbbbbbbb",
+      }),
+    );
+
+    expect(result.report?.exitCode()).toBe(1);
+    expect(result.digests[0]?.text).toContain(
+      `https://github.com/NVIDIA/SkillSpector/compare/${SKILLSPECTOR_SOURCE_REVISION}...${candidateRevision}`,
+    );
+    expect(result.report?.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          verdict: "fail",
+          code: "trust.source-drift",
+          detail: expect.stringContaining("review upstream diff"),
+        }),
+      ]),
+    );
+  });
+
+  it("fails candidate pin bumps that omit the upstream revision", async () => {
+    const result = await executePlan(
+      await trustSkillspectorPinCommand.plan(
+        ctx({
+          candidateDigest: `sha256:${"e".repeat(64)}`,
+          candidateTag: "skillspector:aih-eeeeeeeeee",
+        }),
+      ),
+      ctx({
+        candidateDigest: `sha256:${"e".repeat(64)}`,
+        candidateTag: "skillspector:aih-eeeeeeeeee",
+      }),
+    );
+
+    expect(result.report?.exitCode()).toBe(1);
+    expect(result.report?.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          verdict: "fail",
+          code: "trust.source-drift",
+          detail: expect.stringContaining("--candidate-revision is required"),
+        }),
+      ]),
+    );
+  });
+
+  it("allows a new candidate tag when the upstream revision is unchanged", async () => {
+    const candidateTag = "skillspector:aih-same-source";
+    const result = await executePlan(
+      await trustSkillspectorPinCommand.plan(
+        ctx({
+          candidateRevision: SKILLSPECTOR_SOURCE_REVISION,
+          candidateTag,
+        }),
+      ),
+      ctx({
+        candidateRevision: SKILLSPECTOR_SOURCE_REVISION,
+        candidateTag,
+      }),
+    );
+
+    expect(result.report?.ok).toBe(true);
+    expect(result.digests[0]?.text).toContain(candidateTag);
+    expect(result.digests[0]?.text).not.toContain("Upstream diff:");
+    expect(result.report?.checks).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "trust.source-drift",
+        }),
+      ]),
+    );
+  });
+
+  it("flags a new candidate tag with changed bytes at the same upstream revision", async () => {
+    const candidateDigest = `sha256:${"f".repeat(64)}`;
+    const candidateTag = "skillspector:aih-same-source-new-bytes";
+    const result = await executePlan(
+      await trustSkillspectorPinCommand.plan(
+        ctx({
+          candidateDigest,
+          candidateRevision: SKILLSPECTOR_SOURCE_REVISION,
+          candidateTag,
+        }),
+      ),
+      ctx({
+        candidateDigest,
+        candidateRevision: SKILLSPECTOR_SOURCE_REVISION,
+        candidateTag,
+      }),
+    );
+
+    expect(result.report?.exitCode()).toBe(1);
+    expect(result.report?.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          verdict: "fail",
+          code: "trust.source-changed",
+          detail: expect.stringContaining("same upstream commit"),
+        }),
+      ]),
+    );
+  });
+
+  it("flags retagging a newer checkout onto the current SkillSpector tag", async () => {
+    const candidateRevision = "c".repeat(40);
+    const result = await executePlan(
+      await trustSkillspectorPinCommand.plan(
+        ctx({
+          candidateRevision,
+          candidateTag: SKILLSPECTOR_IMAGE,
+        }),
+      ),
+      ctx({
+        candidateRevision,
+        candidateTag: SKILLSPECTOR_IMAGE,
+      }),
+    );
+
+    expect(result.report?.exitCode()).toBe(1);
+    expect(result.report?.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          verdict: "fail",
+          code: "trust.source-changed",
+          detail: expect.stringContaining("retagging existing SkillSpector image tag"),
+        }),
+      ]),
+    );
+    expect(result.report?.checks).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "trust.source-drift",
+        }),
+      ]),
+    );
+    expect(result.report?.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          detail: expect.stringContaining(
+            `https://github.com/NVIDIA/SkillSpector/compare/${SKILLSPECTOR_SOURCE_REVISION}...${candidateRevision}`,
+          ),
+        }),
+      ]),
+    );
+  });
+
+  it("flags retagging different SkillSpector image bytes onto the current tag", async () => {
+    const candidateDigest = `sha256:${"d".repeat(64)}`;
+    const result = await executePlan(
+      await trustSkillspectorPinCommand.plan(
+        ctx({
+          candidateDigest,
+          candidateTag: SKILLSPECTOR_IMAGE,
+        }),
+      ),
+      ctx({
+        candidateDigest,
+        candidateTag: SKILLSPECTOR_IMAGE,
+      }),
+    );
+
+    expect(result.report?.exitCode()).toBe(1);
+    expect(result.report?.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          verdict: "fail",
+          code: "trust.source-changed",
+          detail: expect.stringContaining("retagging existing SkillSpector image tag"),
+        }),
+      ]),
+    );
+    expect(result.report?.checks).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "trust.source-drift",
+          fingerprint: "trust-skillspector-pin:bump:missing-revision",
+        }),
+      ]),
+    );
   });
 });
 

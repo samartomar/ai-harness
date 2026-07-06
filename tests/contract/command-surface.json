@@ -3193,6 +3193,64 @@
           "commands": []
         },
         {
+          "name": "skillspector-pin",
+          "hasDescription": true,
+          "arguments": [],
+          "options": [
+            {
+              "flags": "--all-tools"
+            },
+            {
+              "flags": "--apply"
+            },
+            {
+              "flags": "--candidate-digest <digest>"
+            },
+            {
+              "flags": "--candidate-revision <sha>"
+            },
+            {
+              "flags": "--candidate-tag <tag>"
+            },
+            {
+              "flags": "--cli <list>"
+            },
+            {
+              "flags": "--context-dir <dir>",
+              "defaultValue": "ai-coding"
+            },
+            {
+              "flags": "--detect"
+            },
+            {
+              "flags": "--force"
+            },
+            {
+              "flags": "--json"
+            },
+            {
+              "flags": "--no-log"
+            },
+            {
+              "flags": "--posture <posture>",
+              "defaultValue": "vibe"
+            },
+            {
+              "flags": "--root <dir>"
+            },
+            {
+              "flags": "--support-out <dir>"
+            },
+            {
+              "flags": "--verify"
+            },
+            {
+              "flags": "--yes"
+            }
+          ],
+          "commands": []
+        },
+        {
           "name": "verify",
           "hasDescription": true,
           "arguments": [

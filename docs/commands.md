@@ -189,7 +189,9 @@ note and skips that child's graph MCP scope instead of wiring an empty path.
 Vet, pin, and gate external GitHub repos and skills before an agent acquires them. `scan <target>`
 grades danger (auto-exec hooks, dependency-confusion, typosquat, incoming-MCP, secrets) and emits
 SARIF; `allow`/`pin` record reviewed sources + pinned SHAs in org policy; `list`/`verify` audit the
-committed policy and trust-lock evidence.
+committed policy and trust-lock evidence. `skillspector-pin` reports the pinned SkillSpector image
+tag, upstream commit, and digest; candidate inputs surface the upstream compare URL before accepting
+a pin bump and flag reuse of the current tag with different bytes or source revision.
 
 ## aih skill
 

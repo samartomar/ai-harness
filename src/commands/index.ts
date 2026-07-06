@@ -58,6 +58,7 @@ import {
   trustAllowCommand,
   trustListCommand,
   trustPinCommand,
+  trustSkillspectorPinCommand,
   trustVerifyCommand,
 } from "../trust/commands.js";
 import { trustScanCommand } from "../trust/scan.js";
@@ -136,6 +137,7 @@ export const GROUPED_COMMAND_SPECS = {
     trustListCommand,
     trustPinCommand,
     trustScanCommand,
+    trustSkillspectorPinCommand,
     trustVerifyCommand,
   ],
   skill: [
@@ -482,6 +484,20 @@ export function registerCommands(
     process.exitCode = await runCapability(trustPinCommand, command, {
       positionalRoot: false,
       optionOverrides: { source },
+    });
+  });
+
+  const skillspectorPin = trust
+    .command(trustSkillspectorPinCommand.name)
+    .description(trustSkillspectorPinCommand.summary);
+  addSharedFlags(skillspectorPin);
+  for (const o of trustSkillspectorPinCommand.options ?? []) {
+    if (o.default !== undefined) skillspectorPin.option(o.flags, o.description, o.default);
+    else skillspectorPin.option(o.flags, o.description);
+  }
+  skillspectorPin.action(async (_options: Record<string, unknown>, command: Command) => {
+    process.exitCode = await runCapability(trustSkillspectorPinCommand, command, {
+      positionalRoot: false,
     });
   });
 
