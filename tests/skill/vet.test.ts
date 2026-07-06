@@ -94,7 +94,9 @@ function detectorRunner(): Runner {
     }
     if (argv[0] === "semgrep") {
       if (argv.includes("--version")) return { code: 0, stdout: "1.125.0\n" };
-      if (argv.includes("scan")) return { code: 0, stdout: JSON.stringify({ runs: [] }) };
+      if (argv.includes("scan")) {
+        return { code: 0, stdout: JSON.stringify({ version: "2.1.0", runs: [] }) };
+      }
     }
     return undefined;
   });

@@ -52,7 +52,8 @@ const CISCO_SKILL_SCANNER_PACKAGE = "cisco-ai-skill-scanner";
 const CISCO_MCP_SCANNER_PACKAGE = "cisco-ai-mcp-scanner";
 const SKILLSPECTOR_IMAGE = "skillspector:aih-326a2b489411";
 // These Semgrep rules are deliberately small harness-owned safety rules, not a
-// complete substitute for native trust checks. The regexes are line-oriented.
+// complete substitute for native trust checks. The regexes are line-oriented,
+// including the download-and-execute rule.
 const SEMGREP_RULES_YAML = [
   "rules:",
   "  - id: semgrep.prompt-injection",
@@ -150,6 +151,7 @@ interface SarifRun {
 
 interface SarifLog {
   runs?: SarifRun[];
+  version?: unknown;
 }
 
 interface MaliciousPattern {
@@ -688,8 +690,9 @@ async function runSemgrepScan(
       throw new Error(scan.stderr || scan.stdout || `detector exit ${scan.code ?? "signal"}`);
     }
     if (scan.stdout.trim().length === 0) throw new Error("semgrep scan emitted no SARIF");
-    if (parseSarifLog(scan.stdout) === undefined) {
-      const detail = scan.stderr.trim().length > 0 ? `: ${scan.stderr.trim()}` : "";
+    const parsed = parseSarifLog(scan.stdout);
+    if (parsed === undefined || parsed.version !== "2.1.0") {
+      const detail = scan.stderr.trim().length > 0 ? `: ${scan.stderr.trim().slice(0, 200)}` : "";
       throw new Error(`semgrep scan did not emit valid SARIF${detail}`);
     }
     return scan.stdout;
@@ -743,15 +746,13 @@ function resultRuleId(result: SarifResult): string | undefined {
 function ruleCode(result: SarifResult, detector: TrustDetector): CheckCode | undefined {
   const raw = resultRuleId(result);
   if (raw === undefined) return undefined;
-  const hasGenericExternalFallback = detector.name === "cisco" || detector.name === "mcp-scanner";
-  return (
-    detector.ruleMap[raw] ??
-    (detector.name === "semgrep"
-      ? "trust.detector-finding"
-      : hasGenericExternalFallback
-        ? "trust.cisco-finding"
-        : undefined)
-  );
+  const mapped = detector.ruleMap[raw];
+  if (mapped !== undefined) return mapped;
+  if (detector.name === "semgrep") return "trust.detector-finding";
+  if (detector.name === "cisco" || detector.name === "mcp-scanner") return "trust.cisco-finding";
+  // SkillSpector unmapped rules retain legacy behavior to avoid changing
+  // existing evidence semantics outside the Semgrep detector addition.
+  return undefined;
 }
 
 function detectorFindingLabel(detector: TrustDetector): string {

@@ -1023,6 +1023,7 @@ describe("scanTrustTree", () => {
     write(".semgrep.yml", "rules: []\n");
     const seen: Array<{ argv: string[]; env?: NodeJS.ProcessEnv }> = [];
     const sarif = {
+      version: "2.1.0",
       runs: [
         {
           results: [
@@ -1109,6 +1110,7 @@ describe("scanTrustTree", () => {
     expect(seen[0]?.argv).toEqual(expect.arrayContaining(["--disable-version-check"]));
     expect(seen[0]?.argv).not.toEqual(expect.arrayContaining(["auto"]));
     const configArg = seen[0]?.argv[(seen[0]?.argv.indexOf("--config") ?? -2) + 1];
+    expect(configArg?.startsWith(tmpdir())).toBe(true);
     expect(configArg?.startsWith(dir)).toBe(false);
     expect(seen[0]?.env).toBeDefined();
     expect(seen[0]?.env).toHaveProperty("PATH", "bin");
