@@ -138,7 +138,7 @@ describe("OrgPolicySchema", () => {
                 reason: "reviewed source override",
               },
             ],
-            requiredDetectors: ["skillspector", "cisco", "mcp-scanner"],
+            requiredDetectors: ["skillspector", "cisco", "mcp-scanner", "semgrep"],
           },
         }),
       ).trust,
@@ -152,7 +152,7 @@ describe("OrgPolicySchema", () => {
         },
       ],
       requireSignedSource: false,
-      requiredDetectors: ["skillspector", "cisco", "mcp-scanner"],
+      requiredDetectors: ["skillspector", "cisco", "mcp-scanner", "semgrep"],
       internalScopes: [],
     });
   });
@@ -182,7 +182,7 @@ describe("OrgPolicySchema", () => {
   });
 
   it("rejects detector names without a real scanner implementation", () => {
-    expect(() => parseOrgPolicy(policy({ trust: { requiredDetectors: ["semgrep"] } }))).toThrow(
+    expect(() => parseOrgPolicy(policy({ trust: { requiredDetectors: ["unknown"] } }))).toThrow(
       /org-policy/,
     );
   });
