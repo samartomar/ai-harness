@@ -14,7 +14,11 @@ export interface SkillVerdictResult {
 const VERDICT_RANK: Record<SkillVerdict, number> = { GREEN: 0, YELLOW: 1, UNKNOWN: 2, RED: 3 };
 
 /** Codes rules 1–2 already attribute — excluded from the rule-3 "any other FAIL" sweep. */
-const ATTRIBUTED_CODES = new Set<string>(["trust.fetch-blocked", "trust.license-missing"]);
+const ATTRIBUTED_CODES = new Set<string>([
+  "trust.fetch-blocked",
+  "trust.license-missing",
+  "trust.sandbox-smoke-failed",
+]);
 
 function isDangerFail(check: Check): boolean {
   return check.verdict === "fail" && check.code !== undefined && TRUST_DANGER_CODES.has(check.code);
@@ -79,6 +83,19 @@ export function skillVerdict(
   }
   if (checks.some((check) => check.verdict === "fail" && check.code === "trust.license-missing")) {
     escalate("UNKNOWN", "no license was found at the source root");
+  }
+  if (
+    checks.some((check) => check.verdict === "fail" && check.code === "trust.sandbox-smoke-failed")
+  ) {
+    escalate("UNKNOWN", "sandbox smoke test failed; runtime evidence is insufficient");
+  }
+  if (
+    !opts.firstParty &&
+    checks.some(
+      (check) => check.verdict === "skip" && check.code === "trust.sandbox-smoke-unavailable",
+    )
+  ) {
+    escalate("UNKNOWN", "sandbox smoke test was unavailable; runtime evidence is insufficient");
   }
   if (!opts.pinned) {
     escalate("UNKNOWN", "source is not pinned to a reviewed commit");

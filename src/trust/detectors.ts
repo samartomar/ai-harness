@@ -10,6 +10,7 @@ import { MCP_CONFIG_FILES } from "../secrets/scan.js";
 import { execArgv } from "../tools/install.js";
 import { scrubFetchEnv } from "./fetch.js";
 import { gradeTrustCheck } from "./grade.js";
+import { SKILLSPECTOR_IMAGE } from "./images.js";
 import { collectFilesUnder, TRUST_SKIP_DIRS } from "./scan.js";
 
 // Detector names land here only when the adapter can at least surface an honest
@@ -57,7 +58,6 @@ const DETECTOR_UNAVAILABLE = "trust.detector-unavailable";
 const CISCO_SKILL_SCANNER_PACKAGE = "cisco-ai-skill-scanner";
 const CISCO_MCP_SCANNER_PACKAGE = "cisco-ai-mcp-scanner";
 const SNYK_AGENT_SCAN_PACKAGE = "snyk-agent-scan";
-const SKILLSPECTOR_IMAGE = "skillspector:aih-326a2b489411";
 // These Semgrep rules are deliberately small harness-owned safety rules, not a
 // complete substitute for native trust checks. The regexes are line-oriented,
 // including the download-and-execute rule, so a pass is same-line coverage only.

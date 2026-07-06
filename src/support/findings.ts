@@ -522,6 +522,20 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     action:
       "Review the detector finding, map the rule to a specific trust check if it is a known-dangerous pattern, or reject the external source until the flagged content is removed.",
   },
+  "trust.sandbox-smoke-unavailable": {
+    audience: "developer",
+    failSeverity: "degraded",
+    title: "sandbox smoke test unavailable",
+    action:
+      "Install Docker and the pinned sandbox scanner image, or repeat the vetting on a host where the sandbox smoke test can run before promoting runtime-bearing skill sources.",
+  },
+  "trust.sandbox-smoke-failed": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "sandbox smoke test failed",
+    action:
+      "Do not promote the external source until the sandbox smoke test completes in a read-only, no-network container. Inspect the failure detail, fix the sandbox/tooling problem, and re-run the skill vet.",
+  },
   "trust.cisco-finding": {
     audience: "developer",
     failSeverity: "blocking",

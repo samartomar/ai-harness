@@ -75,9 +75,16 @@ function license(): void {
 }
 
 /** Stubs the full optional detector ladder so no detector-unavailable skip degrades the verdict. */
-function detectorRunner(options: { smoke?: Partial<RunResult> } = {}): Runner {
+function detectorRunner(
+  options: { seenSmoke?: string[][]; smoke?: Partial<RunResult> } = {},
+): Runner {
   return fakeRunner((argv) => {
-    if (argv[0] === "docker" && argv[1] === "run" && argv.some((arg) => arg.includes("aih sandbox smoke ok"))) {
+    if (
+      argv[0] === "docker" &&
+      argv[1] === "run" &&
+      argv.some((arg) => arg.includes("aih sandbox smoke ok"))
+    ) {
+      options.seenSmoke?.push(argv);
       return options.smoke ?? { code: 0, stdout: "aih sandbox smoke ok\n" };
     }
     if (argv[0] === "docker") {
@@ -171,7 +178,8 @@ describe("skillVetCommand", () => {
     skill("clean", "# Clean\n\nUse this skill for local documentation hygiene.\n");
     write("package.json", JSON.stringify({ name: "clean-skill", version: "1.0.0" }));
     license();
-    const c = ctx({ source: sourceRoot }, true, detectorRunner(), {
+    const seenSmoke: string[][] = [];
+    const c = ctx({ source: sourceRoot }, true, detectorRunner({ seenSmoke }), {
       SNYK_TOKEN: "snyk-token-for-scanner",
     });
 
@@ -185,7 +193,7 @@ describe("skillVetCommand", () => {
       checks: Array<{ name: string; verdict: string; code?: string; detail?: string }>;
       verdict: string;
     };
-    expect(evidence.verdict).toBe("YELLOW");
+    expect(evidence.verdict).toBe("GREEN");
     expect(evidence.checks).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -194,6 +202,11 @@ describe("skillVetCommand", () => {
           detail: expect.stringContaining("read-only/no-network"),
         }),
       ]),
+    );
+    expect(seenSmoke).toHaveLength(1);
+    expect(seenSmoke[0]).toEqual(expect.arrayContaining(["--network", "none", "--read-only"]));
+    expect(seenSmoke[0]).toEqual(
+      expect.arrayContaining([expect.stringContaining("target=/scan,readonly")]),
     );
   });
 

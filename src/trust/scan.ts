@@ -34,6 +34,7 @@ import { gradeTrustCheck } from "./grade.js";
 import { scanTrustDocument } from "./lint.js";
 import { scanTrustManifests } from "./manifest.js";
 import { classifyIncomingMcp } from "./mcp-classify.js";
+import { type SandboxSmokeShape, sandboxSmokeCheck } from "./smoke.js";
 
 export const TRUST_SKIP_DIRS = new Set([
   ".git",
@@ -60,6 +61,7 @@ interface ScanTrustTreeOptions {
   mcpPolicy?: OrgPolicy["mcp"];
   requiredDetectors?: readonly TrustDetectorName[];
   run?: Runner;
+  sandboxSmokeShape?: SandboxSmokeShape;
 }
 
 export interface TrustScanResult {
@@ -126,6 +128,7 @@ function normalizeScanOptions(options: ScanTrustTreeOptions = {}): {
   posture: Posture;
   requiredDetectors: readonly TrustDetectorName[];
   run?: Runner;
+  sandboxSmokeShape?: SandboxSmokeShape;
 } {
   return {
     env: options.env,
@@ -135,6 +138,7 @@ function normalizeScanOptions(options: ScanTrustTreeOptions = {}): {
     posture: options.posture ?? "vibe",
     requiredDetectors: options.requiredDetectors ?? [],
     run: options.run,
+    sandboxSmokeShape: options.sandboxSmokeShape,
   };
 }
 
@@ -466,8 +470,16 @@ export async function scanTrustTreeWithAnalyzers(
   options: ScanTrustTreeOptions = {},
 ): Promise<TrustScanResult> {
   const safeRoot = assertTrustTreeSafe(root, { skipDirs: TRUST_SKIP_DIRS });
-  const { env, internalScopes, mcpPolicy, platform, posture, requiredDetectors, run } =
-    normalizeScanOptions(options);
+  const {
+    env,
+    internalScopes,
+    mcpPolicy,
+    platform,
+    posture,
+    requiredDetectors,
+    run,
+    sandboxSmokeShape,
+  } = normalizeScanOptions(options);
   const docs = collectTrustDocs(safeRoot);
   const mcpConfigFiles = collectIncomingMcpConfigFiles(safeRoot);
   const checks = [
@@ -504,7 +516,16 @@ export async function scanTrustTreeWithAnalyzers(
           run,
         })
       : { checks: [], analyzersRun: [] };
-  const allChecks = [...checks, ...detectorResult.checks, ...mcpDetectorResult.checks];
+  const sandboxSmokeChecks =
+    sandboxSmokeShape === undefined
+      ? []
+      : [await sandboxSmokeCheck(safeRoot, sandboxSmokeShape, { env, platform, run })];
+  const allChecks = [
+    ...checks,
+    ...detectorResult.checks,
+    ...mcpDetectorResult.checks,
+    ...sandboxSmokeChecks,
+  ];
   return {
     analyzersRun: ["aih-native", ...detectorResult.analyzersRun, ...mcpDetectorResult.analyzersRun],
     checks: allChecks.length > 0 ? allChecks : [passCheck(safeRoot, docs.length)],
