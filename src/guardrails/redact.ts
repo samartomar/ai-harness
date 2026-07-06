@@ -11,7 +11,7 @@
  */
 
 import { AWS_KEY_REGEX, PRIVATE_KEY_REGEX } from "./gitleaks.js";
-import { PROVIDER_TOKEN_PATTERNS } from "./token-patterns.js";
+import { PROVIDER_TOKEN_REDACTION_PATTERNS } from "./token-patterns.js";
 
 const REDACTED = "[REDACTED]";
 
@@ -37,7 +37,7 @@ function globalPattern(re: RegExp): RegExp {
 const PATTERNS: RegExp[] = [
   fromGitleaks(AWS_KEY_REGEX), // AKIA… / A3T… access-key ids
   fromGitleaks(PRIVATE_KEY_REGEX), // -----BEGIN … PRIVATE KEY-----
-  ...PROVIDER_TOKEN_PATTERNS.map((pattern) => globalPattern(pattern.re)),
+  ...PROVIDER_TOKEN_REDACTION_PATTERNS.map((pattern) => globalPattern(pattern.re)),
   /bearer\s+[A-Za-z0-9._-]+/gi, // Authorization: Bearer <token>
   /\b[A-Z][A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|PASSWD|API_KEY|ACCESS_KEY)[A-Z0-9_]*\s*[:=]\s*["']?[^\s"']{8,}/gi,
   /\b[A-Z_]*(?:TOKEN|SECRET|PASSWORD|API_KEY)\s*=\s*\S+/g, // FOO_TOKEN=…, API_KEY=…

@@ -137,6 +137,16 @@ describe("classifyIncomingMcp", () => {
     ).toBe("none");
   });
 
+  it("does not classify short GitHub-like strings as literal tokens", () => {
+    expect(
+      classifyIncomingMcp({
+        command: "node",
+        args: ["server.js", "--label", `ghp_${"a".repeat(10)}`],
+        env: { LABEL: `github_pat_${"b".repeat(12)}` },
+      }).credentials,
+    ).toBe("none");
+  });
+
   it("fails closed on garbage server shapes without throwing", () => {
     expect(() => classifyIncomingMcp(true)).not.toThrow();
     expect(classifyIncomingMcp(true)).toMatchObject({

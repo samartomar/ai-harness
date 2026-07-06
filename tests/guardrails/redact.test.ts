@@ -25,6 +25,11 @@ describe("redactSecrets() — secret fixtures", () => {
     expect(out).toContain("[REDACTED]");
   });
 
+  it("continues to redact short sk-ant-shaped output", () => {
+    const token = `sk-ant-${"x".repeat(8)}`;
+    expect(redactSecrets(`key: ${token}`)).not.toContain(token);
+  });
+
   it("redacts a GitHub ghp_ token", () => {
     const token = `ghp_${"a".repeat(36)}`;
     expect(redactSecrets(`token ${token}`)).not.toContain(token);
