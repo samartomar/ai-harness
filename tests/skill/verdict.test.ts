@@ -40,6 +40,18 @@ const DETECTOR_SKIP: Check = {
   code: "trust.detector-unavailable",
   detail: "DEGRADED-COVERAGE",
 };
+const SANDBOX_SMOKE_SKIP: Check = {
+  name: "skill sandbox smoke test",
+  verdict: "skip",
+  code: "trust.sandbox-smoke-unavailable",
+  detail: "sandbox smoke test skipped: Docker is unavailable",
+};
+const SANDBOX_SMOKE_FAIL: Check = {
+  name: "skill sandbox smoke test",
+  verdict: "fail",
+  code: "trust.sandbox-smoke-failed",
+  detail: "sandbox smoke test failed: operation timed out",
+};
 const OTHER_FAIL: Check = {
   name: "incoming MCP policy",
   verdict: "fail",
@@ -84,6 +96,30 @@ describe("skillVerdict", () => {
 
   it("exempts a first-party source from the detector-unavailable UNKNOWN and grades GREEN", () => {
     const graded = skillVerdict([PASS, LICENSE_PASS, DETECTOR_SKIP], cleanShape(), FIRST_PARTY);
+
+    expect(graded).toEqual({ verdict: "GREEN", reasons: [] });
+  });
+
+  it("grades UNKNOWN on a sandbox smoke failure without duplicating it as YELLOW", () => {
+    const graded = skillVerdict([PASS, LICENSE_PASS, SANDBOX_SMOKE_FAIL], cleanShape(), CLEARED);
+
+    expect(graded.verdict).toBe("UNKNOWN");
+    expect(graded.reasons).toEqual([expect.stringContaining("sandbox smoke test failed")]);
+  });
+
+  it("grades UNKNOWN on a sandbox smoke unavailable skip for a non-first-party source", () => {
+    const graded = skillVerdict([PASS, LICENSE_PASS, SANDBOX_SMOKE_SKIP], cleanShape(), CLEARED);
+
+    expect(graded.verdict).toBe("UNKNOWN");
+    expect(graded.reasons).toEqual([expect.stringContaining("sandbox smoke test was unavailable")]);
+  });
+
+  it("exempts a first-party source from sandbox smoke unavailable UNKNOWN and grades GREEN", () => {
+    const graded = skillVerdict(
+      [PASS, LICENSE_PASS, SANDBOX_SMOKE_SKIP],
+      cleanShape(),
+      FIRST_PARTY,
+    );
 
     expect(graded).toEqual({ verdict: "GREEN", reasons: [] });
   });
