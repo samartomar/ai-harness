@@ -547,7 +547,7 @@ function runFailureReason(result: RunResult, fallback: string): string | undefin
 function snykAgentScanEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const out = scrubFetchEnv(env);
   if (typeof env.SNYK_TOKEN === "string" && env.SNYK_TOKEN.trim().length > 0) {
-    out.SNYK_TOKEN = env.SNYK_TOKEN;
+    out.SNYK_TOKEN = env.SNYK_TOKEN.trim();
   }
   return out;
 }
@@ -1013,14 +1013,20 @@ async function runSnykAgentScan(
     env: snykAgentScanEnv(env),
     timeoutMs: 120_000,
   });
-  if (scan.spawnError || scan.stdout.trim().length === 0) {
+  if (scan.spawnError) {
     throw new Error(scan.stderr || scan.stdout || `detector exit ${scan.code ?? "signal"}`);
   }
+  if (scan.stdout.trim().length === 0) {
+    throw new Error(scan.stderr || "snyk-agent-scan emitted no JSON on stdout");
+  }
+  // Snyk Agent Scan documents --ci as the mode that exits non-zero for findings,
+  // but we avoid --ci because it requires --dangerously-run-mcp-servers. Accept
+  // exit 1 only when the JSON payload contains findings.
   if (scan.code !== 0 && scan.code !== 1) {
     throw new Error(scan.stderr || scan.stdout || `detector exit ${scan.code ?? "signal"}`);
   }
   const sarif = snykAgentScanSarif(scan.stdout, tree);
-  if (scan.code === 1 && !sarif.runs?.some((run) => (run.results ?? []).length > 0)) {
+  if (scan.code === 1 && !sarif.runs?.some((sarifRun) => (sarifRun.results ?? []).length > 0)) {
     throw new Error(scan.stderr || "snyk-agent-scan exited 1 without findings");
   }
   return JSON.stringify(sarif);

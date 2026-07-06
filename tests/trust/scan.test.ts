@@ -165,6 +165,7 @@ function snykAgentScanRunnerWithHooks(
     onHelp?: (argv: string[], opts?: RunOptions) => void;
     onScan?: (argv: string[], opts?: RunOptions) => void;
     scanCode?: number;
+    scanStdout?: string;
   } = {},
 ): Runner {
   return fakeRunner((argv, opts) => {
@@ -199,7 +200,10 @@ function snykAgentScanRunnerWithHooks(
       }
       if (argv.includes("scan")) {
         options.onScan?.(argv, opts);
-        return { code: options.scanCode ?? 1, stdout: JSON.stringify(report) };
+        return {
+          code: options.scanCode ?? 1,
+          stdout: options.scanStdout ?? JSON.stringify(report),
+        };
       }
     }
     return undefined;
@@ -1388,7 +1392,7 @@ describe("scanTrustTree", () => {
     const scanCalls: Array<{ argv: string[]; env?: NodeJS.ProcessEnv }> = [];
 
     await scanTrustTreeWithAnalyzers(dir, {
-      env: { PATH: "bin", SNYK_TOKEN: "snyk-token-for-scanner" },
+      env: { PATH: "bin", SNYK_TOKEN: "  snyk-token-for-scanner  " },
       platform: "linux",
       posture: "enterprise",
       run: snykAgentScanRunnerWithHooks(
@@ -1461,6 +1465,30 @@ describe("scanTrustTree", () => {
         expect.objectContaining({
           name: "trust detector snyk-agent-scan",
           code: "trust.detector-unavailable",
+        }),
+      ]),
+    );
+  });
+
+  it("treats Snyk Agent Scan empty stdout as unavailable", async () => {
+    skill("skills/clean", "# Clean\n");
+
+    const result = await scanTrustTreeWithAnalyzers(dir, {
+      env: { SNYK_TOKEN: "snyk-token-for-scanner" },
+      platform: "linux",
+      posture: "enterprise",
+      requiredDetectors: ["snyk-agent-scan"],
+      run: snykAgentScanRunnerWithHooks({ findings: [] }, { scanCode: 0, scanStdout: "" }),
+    });
+
+    expect(result.analyzersRun).not.toEqual(expect.arrayContaining(["snyk-agent-scan@uvx"]));
+    expect(result.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "trust detector snyk-agent-scan",
+          verdict: "fail",
+          code: "trust.detector-unavailable",
+          detail: expect.stringContaining("snyk-agent-scan emitted no JSON on stdout"),
         }),
       ]),
     );
@@ -1552,7 +1580,7 @@ describe("scanTrustTree", () => {
     skill("skills/clean", "# Clean\n");
 
     const result = await scanTrustTreeWithAnalyzers(dir, {
-      env: {},
+      env: { SNYK_TOKEN: "snyk-token-for-scanner" },
       platform: "linux",
       posture: "enterprise",
       requiredDetectors: ["agentshield"],
