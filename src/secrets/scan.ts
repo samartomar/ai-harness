@@ -1,5 +1,6 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
+import { PROVIDER_TOKEN_PATTERNS } from "../guardrails/token-patterns.js";
 
 /** What a repository scan turned up: plaintext secret files + a `secrets/` dir. */
 export interface SecretScan {
@@ -112,12 +113,8 @@ export const MCP_CONFIG_FILES: readonly string[] = [
 
 /** High-confidence provider credential shapes — a match is a secret regardless of key. */
 const TOKEN_PATTERNS: ReadonlyArray<{ kind: string; re: RegExp }> = [
-  { kind: "github personal access token", re: /ghp_[A-Za-z0-9]{36}/ },
-  { kind: "github fine-grained PAT", re: /github_pat_[A-Za-z0-9_]{40,}/ },
-  { kind: "openai/anthropic-style key", re: /sk-[A-Za-z0-9_-]{20,}/ },
   { kind: "aws access key id", re: /AKIA[0-9A-Z]{16}/ },
-  { kind: "slack token", re: /xox[abprs]-[A-Za-z0-9-]{10,}/ },
-  { kind: "google api key", re: /AIza[0-9A-Za-z_-]{35}/ },
+  ...PROVIDER_TOKEN_PATTERNS,
 ];
 
 /** Keys whose literal (non-placeholder) value is almost certainly a credential. */

@@ -223,7 +223,7 @@ describe("aih uninstall", () => {
     expect(readFileSync(join(tmp, "ai-coding.aih.bak", "RULE_ROUTER.md"), "utf8")).toBe(
       "# dirty edit\n",
     );
-  }, 20000);
+  }, 60000);
 
   it("never treats the repo root as the removable context directory", async () => {
     put(

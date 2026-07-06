@@ -1,0 +1,32 @@
+/**
+ * High-confidence provider credential shapes reused anywhere aih needs to
+ * identify literal tokens in config or MCP surfaces.
+ *
+ * Keep AWS/private-key regexes in gitleaks.ts; those patterns are rendered into
+ * the managed gitleaks config and redaction imports them from that source.
+ */
+export interface ProviderTokenPattern {
+  kind: string;
+  re: RegExp;
+}
+
+export const PROVIDER_TOKEN_PATTERNS: readonly ProviderTokenPattern[] = [
+  { kind: "github personal access token", re: /\bghp_[A-Za-z0-9]{36,}\b/ },
+  { kind: "github fine-grained PAT", re: /\bgithub_pat_[A-Za-z0-9_]{40,}\b/ },
+  { kind: "openai/anthropic-style key", re: /\bsk-[A-Za-z0-9_-]{20,}/ },
+  { kind: "slack token", re: /\bxox[abprsoe]-[A-Za-z0-9-]{10,}\b/ },
+  { kind: "google api key", re: /AIza[0-9A-Za-z_-]{35}/ },
+  { kind: "azure storage account key", re: /\bAccountKey=[A-Za-z0-9+/]{40,}={0,2}/i },
+  {
+    kind: "azure storage shared access signature",
+    re: /\bSharedAccessSignature=(?=[^\s"']*\bsig=)[^\s"']*\bsig=[A-Za-z0-9%+/=_-]{8,}[^\s"']*/i,
+  },
+  { kind: "npm access token", re: /\bnpm_[A-Za-z0-9]{36}\b/ },
+];
+
+export const PROVIDER_TOKEN_REDACTION_PATTERNS: readonly ProviderTokenPattern[] = [
+  ...PROVIDER_TOKEN_PATTERNS,
+  { kind: "github token prefix", re: /\b(?:ghp|gho|ghu|ghs)_[A-Za-z0-9_]{10,}\b/ },
+  { kind: "github fine-grained PAT prefix", re: /\bgithub_pat_[A-Za-z0-9_]{10,}\b/ },
+  { kind: "openai/anthropic-style output key", re: /\bsk-[A-Za-z0-9_-]{12,}/ },
+];

@@ -25,9 +25,24 @@ describe("redactSecrets() — secret fixtures", () => {
     expect(out).toContain("[REDACTED]");
   });
 
+  it("continues to redact short sk-ant-shaped output", () => {
+    const token = `sk-ant-${"x".repeat(8)}`;
+    expect(redactSecrets(`key: ${token}`)).not.toContain(token);
+  });
+
   it("redacts a GitHub ghp_ token", () => {
     const token = `ghp_${"a".repeat(36)}`;
     expect(redactSecrets(`token ${token}`)).not.toContain(token);
+  });
+
+  it("continues to redact existing GitHub token prefixes", () => {
+    for (const token of [
+      `gho_${"a".repeat(12)}`,
+      `ghu_${"b".repeat(12)}`,
+      `ghs_${"c".repeat(12)}`,
+    ]) {
+      expect(redactSecrets(`token ${token}`), token).not.toContain(token);
+    }
   });
 
   it("redacts a bearer token (case-insensitive)", () => {
@@ -37,6 +52,22 @@ describe("redactSecrets() — secret fixtures", () => {
   it("redacts an UPPERCASE KEY=VALUE secret assignment", () => {
     expect(redactSecrets("API_KEY=xyz123")).toBe("[REDACTED]");
     expect(redactSecrets("MY_SECRET=hunter2")).toBe("[REDACTED]");
+  });
+
+  it("redacts provider token shapes shared with the detector layer", () => {
+    const cases = [
+      ["Slack", `xoxb-${"a".repeat(12)}-${"b".repeat(12)}`],
+      ["GCP", `AIza${"A".repeat(35)}`],
+      ["Azure account key", `AccountKey=${"a".repeat(86)}==`],
+      ["Azure SAS", "SharedAccessSignature=sv=2024-01-01&sr=b&sig=abcDEF123%2B456%3D"],
+      ["npm", `npm_${"a".repeat(36)}`],
+    ] as const;
+
+    for (const [provider, token] of cases) {
+      const out = redactSecrets(`leaked ${provider} token: ${token}`);
+      expect(out, provider).not.toContain(token);
+      expect(out, provider).toContain("[REDACTED]");
+    }
   });
 });
 

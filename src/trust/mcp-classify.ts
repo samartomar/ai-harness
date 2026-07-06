@@ -1,12 +1,9 @@
+import { PROVIDER_TOKEN_PATTERNS } from "../guardrails/token-patterns.js";
 import type { McpServer } from "../mcp/servers.js";
 
 const TOKEN_PATTERNS: readonly RegExp[] = [
-  /ghp_[A-Za-z0-9]{36}/,
-  /github_pat_[A-Za-z0-9_]{40,}/,
-  /sk-[A-Za-z0-9_-]{20,}/,
   /AKIA[0-9A-Z]{16}/,
-  /xox[abprs]-[A-Za-z0-9-]{10,}/,
-  /AIza[0-9A-Za-z_-]{35}/,
+  ...PROVIDER_TOKEN_PATTERNS.map((pattern) => pattern.re),
 ];
 
 const SECRET_KEY_RE =

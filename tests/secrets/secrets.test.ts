@@ -126,6 +126,24 @@ describe("scanConfigSecrets", () => {
     expect(hits[0]?.kind).toContain("github");
   });
 
+  it("does not flag short GitHub-like strings as provider tokens", () => {
+    writeFileSync(
+      join(dir, ".mcp.json"),
+      JSON.stringify({
+        mcpServers: {
+          labels: {
+            env: {
+              SHORT_CLASSIC: `ghp_${"a".repeat(10)}`,
+              SHORT_FINE_GRAINED: `github_pat_${"b".repeat(12)}`,
+            },
+          },
+        },
+      }),
+    );
+
+    expect(scanConfigSecrets(dir)).toEqual([]);
+  });
+
   it("does NOT flag an env-var placeholder (the sanctioned form)", () => {
     writeFileSync(
       join(dir, ".mcp.json"),

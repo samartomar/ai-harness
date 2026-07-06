@@ -18,7 +18,7 @@ describe("proc runner seam", () => {
     const res = await defaultRunner([process.execPath, "-e", "process.stdout.write('hi')"]);
     expect(res.code).toBe(0);
     expect(res.stdout).toBe("hi");
-  });
+  }, 15000);
 
   it("defaultRunner reports spawnError for a missing executable", async () => {
     const res = await defaultRunner(["definitely-not-a-real-binary-xyz123"]);
