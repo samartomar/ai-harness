@@ -671,6 +671,33 @@ describe("buildAihDataV9 — Phase B capability flips", () => {
     expect(html).not.toContain("frontend-design · canon");
   });
 
+  it("scopes dormant ECC skills to the detected stack packs before subtracting fired skills", () => {
+    const active = ALL.filter((d) => !d.describe.startsWith("Usage"));
+    const stackEcc = digest("ECC harness — machine 1a/7s, repo 0a/0s, 0 dup", "body", {
+      machine: { agents: 1, skills: 7, rules: 1 },
+      repo: { agents: 0, skills: 0, rules: 0, hooks: 0 },
+      dup: 0,
+      packs: ["typescript", "web"],
+      skillNames: [
+        "article-writing",
+        "frontend-patterns",
+        "go-review",
+        "nextjs-turbopack",
+        "security-review",
+        "tdd",
+        "video-editing",
+      ],
+    });
+
+    const d = buildAihDataV9([...active, usageActive(), stackEcc]);
+
+    expect(d.skills?.dormant).toEqual([
+      "frontend-patterns",
+      "nextjs-turbopack",
+      "security-review",
+    ]);
+  });
+
   it("keeps dormant skill claims unavailable when skill samples exist without ECC inventory", () => {
     const active = ALL.filter((d) => !d.describe.startsWith("Usage"));
     const d = buildAihDataV9([...active, usageActive()]);
