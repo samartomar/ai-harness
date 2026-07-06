@@ -1,16 +1,29 @@
 import { createHash } from "node:crypto";
-import { mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, dirname, extname, isAbsolute, join, relative } from "node:path";
+import { basename, dirname, isAbsolute, join, relative } from "node:path";
 import type { Posture } from "../config/posture.js";
 import type { Runner, RunResult } from "../internals/proc.js";
 import type { Check, CheckCode } from "../internals/verify.js";
 import type { Platform } from "../platform/base.js";
 import { MCP_CONFIG_FILES } from "../secrets/scan.js";
 import { execArgv } from "../tools/install.js";
+import { dockerBindMountArg } from "./docker.js";
 import { scrubFetchEnv } from "./fetch.js";
 import { gradeTrustCheck } from "./grade.js";
+import { resolveVerifiedSkillspectorImage, SKILLSPECTOR_IMAGE } from "./images.js";
 import { collectFilesUnder, TRUST_SKIP_DIRS } from "./scan.js";
+import { isMaliciousCodeScanFilePath } from "./script-files.js";
+
+const INCOMING_MCP_CONFIG_FILES = new Set([...MCP_CONFIG_FILES, "mcp.json"]);
 
 // Detector names land here only when the adapter can at least surface an honest
 // availability check. A required-but-unavailable detector fails closed at
@@ -57,7 +70,6 @@ const DETECTOR_UNAVAILABLE = "trust.detector-unavailable";
 const CISCO_SKILL_SCANNER_PACKAGE = "cisco-ai-skill-scanner";
 const CISCO_MCP_SCANNER_PACKAGE = "cisco-ai-mcp-scanner";
 const SNYK_AGENT_SCAN_PACKAGE = "snyk-agent-scan";
-const SKILLSPECTOR_IMAGE = "skillspector:aih-326a2b489411";
 // These Semgrep rules are deliberately small harness-owned safety rules, not a
 // complete substitute for native trust checks. The regexes are line-oriented,
 // including the download-and-execute rule, so a pass is same-line coverage only.
@@ -76,22 +88,6 @@ const SEMGREP_RULES_YAML = [
   "",
 ].join("\n");
 const MAX_SCRIPT_SCAN_BYTES = 512 * 1024;
-const SCRIPT_EXTENSIONS = new Set([
-  "",
-  ".bash",
-  ".bat",
-  ".cjs",
-  ".cmd",
-  ".js",
-  ".mjs",
-  ".pl",
-  ".ps1",
-  ".py",
-  ".rb",
-  ".sh",
-  ".ts",
-  ".zsh",
-]);
 
 const SKILLSPECTOR_RULE_MAP: Record<string, CheckCode> = {
   "auto-exec": "trust.auto-exec-hook",
@@ -262,68 +258,6 @@ function normalizeShellWhitespace(line: string): string {
   return line.replace(/\$\{IFS[^}]*\}|\$IFS\b/g, " ");
 }
 
-// Extensions that are never a shell/interpreter script — used to exclude
-// install/script-NAMED media/archive assets (e.g. `install-notes.png`) from the
-// text scan while still covering extensionless installers (`install`, `setup`).
-const NON_SCRIPT_EXTENSIONS = new Set([
-  ".png",
-  ".jpg",
-  ".jpeg",
-  ".gif",
-  ".svg",
-  ".webp",
-  ".ico",
-  ".bmp",
-  ".pdf",
-  ".mp4",
-  ".mov",
-  ".avi",
-  ".webm",
-  ".mp3",
-  ".wav",
-  ".ogg",
-  ".zip",
-  ".tar",
-  ".gz",
-  ".tgz",
-  ".bz2",
-  ".xz",
-  ".7z",
-  ".rar",
-  ".woff",
-  ".woff2",
-  ".ttf",
-  ".otf",
-  ".eot",
-]);
-
-// Filenames that are conventionally executable setup scripts even without a
-// script extension (a reverse shell in a bundled `install`/`setup` is the exact
-// risk this layer exists to catch).
-const SCRIPT_LIKE_SUBSTRINGS = [
-  "install",
-  "setup",
-  "configure",
-  "bootstrap",
-  "entrypoint",
-  "postinstall",
-  "preinstall",
-  "build",
-  "script",
-];
-
-function isScriptLike(rel: string): boolean {
-  const name = basename(rel).toLowerCase();
-  if (name === "package.json" || name === "package-lock.json") return false;
-  const ext = extname(name);
-  if (SCRIPT_EXTENSIONS.has(ext)) return true;
-  // A media/archive asset that merely happens to be install-named is not a script.
-  if (NON_SCRIPT_EXTENSIONS.has(ext)) return false;
-  // Otherwise, scan setup-script-named files (incl. extensionless `install`/`setup`)
-  // so a reverse shell in a conventionally-named installer is not silently skipped.
-  return SCRIPT_LIKE_SUBSTRINGS.some((needle) => name.includes(needle));
-}
-
 function contentLine(path: string, line: number): string {
   const text = readFileSync(path, "utf8");
   return text.split(/\r?\n/)[line - 1] ?? "";
@@ -353,7 +287,7 @@ export function scanNativeMaliciousCode(root: string): Check[] {
     root,
     (abs) => {
       const rel = toPosix(relative(root, abs));
-      return isScriptLike(rel) && statSync(abs).size <= MAX_SCRIPT_SCAN_BYTES;
+      return isMaliciousCodeScanFilePath(rel) && statSync(abs).size <= MAX_SCRIPT_SCAN_BYTES;
     },
     TRUST_SKIP_DIRS,
   );
@@ -373,7 +307,11 @@ export function scanNativeMaliciousCode(root: string): Check[] {
   return checks;
 }
 
-export function skillspectorDockerRunArgv(platform: Platform, tree: string): string[] {
+export function skillspectorDockerRunArgv(
+  platform: Platform,
+  tree: string,
+  image: string = SKILLSPECTOR_IMAGE,
+): string[] {
   // Native Windows Docker bind mounts can reject drive-letter paths; that fails safe to skip.
   return execArgv(platform, [
     "docker",
@@ -385,8 +323,8 @@ export function skillspectorDockerRunArgv(platform: Platform, tree: string): str
     "--tmpfs",
     "/tmp:rw,noexec,nosuid,size=64m",
     "--mount",
-    `type=bind,source=${tree},target=/scan,readonly`,
-    SKILLSPECTOR_IMAGE,
+    dockerBindMountArg(tree, "/scan"),
+    image,
     "scan",
     "/scan",
     "--no-llm",
@@ -532,21 +470,6 @@ export function agentshieldScanArgv(
   ]);
 }
 
-function dockerVersionArgv(platform: Platform): string[] {
-  return execArgv(platform, ["docker", "--version"]);
-}
-
-function skillspectorImageInspectArgv(platform: Platform): string[] {
-  return execArgv(platform, [
-    "docker",
-    "image",
-    "inspect",
-    SKILLSPECTOR_IMAGE,
-    "--format",
-    "{{.Id}}",
-  ]);
-}
-
 function runFailureReason(result: RunResult, fallback: string): string | undefined {
   if (!result.spawnError && result.code === 0) return undefined;
   return result.stderr || result.stdout || fallback;
@@ -565,21 +488,8 @@ async function checkSkillspectorAvailable(
   platform: Platform,
   env: NodeJS.ProcessEnv,
 ): Promise<string | undefined> {
-  const version = await run(dockerVersionArgv(platform), {
-    env: scrubFetchEnv(env),
-    timeoutMs: 30_000,
-  });
-  const versionReason = runFailureReason(version, `docker exit ${version.code ?? "signal"}`);
-  if (versionReason !== undefined) return versionReason;
-
-  const image = await run(skillspectorImageInspectArgv(platform), {
-    env: scrubFetchEnv(env),
-    timeoutMs: 30_000,
-  });
-  const imageReason = runFailureReason(image, "skillspector Docker image not present locally");
-  if (imageReason !== undefined) return imageReason;
-  if (image.stdout.trim().length === 0) return "skillspector Docker image not present locally";
-  return undefined;
+  const image = await resolveVerifiedSkillspectorImage(run, platform, env, 30_000);
+  return "reason" in image ? image.reason : undefined;
 }
 
 async function runSkillspectorScan(
@@ -588,7 +498,9 @@ async function runSkillspectorScan(
   env: NodeJS.ProcessEnv,
   tree: string,
 ): Promise<string> {
-  const scan = await run(skillspectorDockerRunArgv(platform, tree), {
+  const image = await resolveVerifiedSkillspectorImage(run, platform, env, 30_000);
+  if ("reason" in image) throw new Error(image.reason);
+  const scan = await run(skillspectorDockerRunArgv(platform, tree, image.image), {
     env: scrubFetchEnv(env),
     timeoutMs: 120_000,
   });
@@ -762,9 +674,25 @@ async function runCiscoSkillScan(
   return JSON.stringify({ version: "2.1.0", runs });
 }
 
+function mcpConfigRoots(root: string): string[] {
+  const skillDirs = collectFilesUnder(
+    root,
+    (abs) => basename(abs) === "SKILL.md",
+    TRUST_SKIP_DIRS,
+  ).map((abs) => dirname(abs));
+  return [root, ...skillDirs];
+}
+
 function mcpConfigFiles(root: string): string[] {
-  const known = new Set(MCP_CONFIG_FILES);
-  return collectFilesUnder(root, (abs) => known.has(toPosix(relative(root, abs))), TRUST_SKIP_DIRS);
+  return [
+    ...new Set(
+      mcpConfigRoots(root).flatMap((dir) =>
+        [...INCOMING_MCP_CONFIG_FILES]
+          .filter((name) => existsSync(join(dir, name)))
+          .map((name) => join(dir, name)),
+      ),
+    ),
+  ];
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

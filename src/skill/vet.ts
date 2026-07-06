@@ -219,11 +219,11 @@ export async function skillVetPlanForSource(
     ),
   );
   if (source.kind === "local") {
+    const shape = skillShape(source.root);
     const scan = await scanTrustTreeWithAnalyzers(
       source.root,
-      scanOptionsFromContext(ctx, scanOptions),
+      scanOptionsFromContext(ctx, { ...scanOptions, sandboxSmokeShape: shape }),
     );
-    const shape = skillShape(source.root);
     const staticChecks = [...scan.checks, licenseCheck(source.root)];
     actions.push(
       ...staticChecks.map((check) =>
@@ -244,13 +244,14 @@ export async function skillVetPlanForSource(
     let githubScan: Promise<GithubVetScan> | undefined;
     const scanGithubSource = (probeCtx: PlanContext): Promise<GithubVetScan> => {
       githubScan ??= (async () => {
+        const shape = skillShape(source.treePath);
         const scan = await scanTrustTreeWithAnalyzers(
           source.treePath,
-          scanOptionsFromContext(probeCtx, scanOptions),
+          scanOptionsFromContext(probeCtx, { ...scanOptions, sandboxSmokeShape: shape }),
         );
         return {
           scan,
-          shape: skillShape(source.treePath),
+          shape,
           license: licenseCheck(source.treePath),
           pinnedSha: fetchedPinnedSha(source),
         };

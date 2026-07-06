@@ -24,4 +24,29 @@ describe("proc runner seam", () => {
     const res = await defaultRunner(["definitely-not-a-real-binary-xyz123"]);
     expect(res.spawnError).toBe(true);
   });
+
+  it("defaultRunner preserves timeout evidence", async () => {
+    const res = await defaultRunner([process.execPath, "-e", "setTimeout(() => {}, 1000)"], {
+      timeoutMs: 5,
+    });
+
+    expect(res.spawnError).toBe(true);
+    expect(res.code).not.toBe(0);
+    expect(res.stderr).toContain("timed out after 5ms");
+  }, 15000);
+
+  it("defaultRunner preserves timeout evidence alongside captured stderr", async () => {
+    const res = await defaultRunner(
+      [
+        process.execPath,
+        "-e",
+        "process.stderr.write('started\\n', () => setTimeout(() => {}, 1000))",
+      ],
+      { timeoutMs: 500 },
+    );
+
+    expect(res.code).not.toBe(0);
+    expect(res.stderr).toContain("started");
+    expect(res.stderr).toContain("timed out after 500ms");
+  }, 15000);
 });

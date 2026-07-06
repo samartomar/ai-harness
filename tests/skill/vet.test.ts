@@ -5,6 +5,7 @@ import {
   readdirSync,
   readFileSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -12,11 +13,12 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { executePlan } from "../../src/internals/execute.js";
 import type { PlanContext } from "../../src/internals/plan.js";
-import { fakeRunner, type Runner } from "../../src/internals/proc.js";
+import { fakeRunner, type Runner, type RunResult } from "../../src/internals/proc.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 import type { SkillShape } from "../../src/skill/shape.js";
 import type { SkillVerdict } from "../../src/skill/verdict.js";
 import { skillVetCommand } from "../../src/skill/vet.js";
+import { SKILLSPECTOR_IMAGE_DIGEST } from "../../src/trust/images.js";
 
 interface VetDigestData {
   source: string;
@@ -75,12 +77,34 @@ function license(): void {
 }
 
 /** Stubs the full optional detector ladder so no detector-unavailable skip degrades the verdict. */
-function detectorRunner(): Runner {
+function detectorRunner(
+  options: {
+    imageInspect?: Partial<RunResult>;
+    seenSmoke?: string[][];
+    smoke?: Partial<RunResult>;
+  } = {},
+): Runner {
   return fakeRunner((argv) => {
+    if (
+      argv[0] === "docker" &&
+      argv[1] === "run" &&
+      argv.some((arg) => arg.includes("aih sandbox smoke ok"))
+    ) {
+      options.seenSmoke?.push(argv);
+      return options.smoke ?? { code: 0, stdout: "aih sandbox smoke ok\n" };
+    }
     if (argv[0] === "docker") {
       if (argv[1] === "--version") return { code: 0, stdout: "Docker version 27\n" };
       if (argv[1] === "image" && argv[2] === "inspect") {
-        return { code: 0, stdout: "sha256:skillspector\n" };
+        return (
+          options.imageInspect ?? {
+            code: 0,
+            stdout: JSON.stringify({
+              Id: SKILLSPECTOR_IMAGE_DIGEST,
+              RepoDigests: [`skillspector@${SKILLSPECTOR_IMAGE_DIGEST}`],
+            }),
+          }
+        );
       }
       if (argv[1] === "run") return { code: 0, stdout: JSON.stringify({ runs: [] }) };
     }
@@ -125,6 +149,21 @@ function vetDigestOf(result: Awaited<ReturnType<typeof executePlan>>): {
   return { text: digest.text, data: digest.data as VetDigestData };
 }
 
+function expectSandboxSmokeEvidence(
+  checks: Array<{ name: string; verdict: string; code?: string; detail?: string }>,
+  detail: string,
+): void {
+  expect(checks).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        name: "skill sandbox smoke test",
+        verdict: "pass",
+        detail: expect.stringContaining(detail),
+      }),
+    ]),
+  );
+}
+
 describe("skillVetCommand", () => {
   it("grades a clean licensed local source GREEN and writes nothing in dry-run", async () => {
     skill("clean", "# Clean\n\nUse this skill for local documentation hygiene.\n");
@@ -150,9 +189,152 @@ describe("skillVetCommand", () => {
       "snyk-agent-scan@uvx",
       "agentshield@local",
     ]);
+    expect(result.report?.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "skill sandbox smoke test",
+          verdict: "skip",
+          detail: expect.stringContaining("not applicable"),
+        }),
+      ]),
+    );
     expect(digest.text).toContain("Verdict: GREEN");
     expect(digest.text).toContain("Skill directories: clean");
     expect(existsSync(join(workspace, ".aih"))).toBe(false);
+  });
+
+  it("records a sandbox smoke pass for package-backed skill evidence", async () => {
+    skill("clean", "# Clean\n\nUse this skill for local documentation hygiene.\n");
+    write("package.json", JSON.stringify({ name: "clean-skill", version: "1.0.0" }));
+    license();
+    const seenSmoke: string[][] = [];
+    const c = ctx({ source: sourceRoot }, true, detectorRunner({ seenSmoke }), {
+      SNYK_TOKEN: "snyk-token-for-scanner",
+    });
+
+    const result = await executePlan(await skillVetCommand.plan(c), c);
+
+    expect(result.report?.ok).toBe(true);
+    const reports = readdirSync(join(workspace, ".aih", "skill-reports"));
+    const evidence = JSON.parse(
+      readFileSync(join(workspace, ".aih", "skill-reports", reports[0] ?? ""), "utf8"),
+    ) as {
+      checks: Array<{ name: string; verdict: string; code?: string; detail?: string }>;
+      verdict: string;
+    };
+    expect(evidence.verdict).toBe("GREEN");
+    expect(evidence.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "skill sandbox smoke test",
+          verdict: "pass",
+          detail: expect.stringContaining("read-only/no-network"),
+        }),
+      ]),
+    );
+    expect(seenSmoke).toHaveLength(1);
+    expect(seenSmoke[0]).toEqual(expect.arrayContaining(["--network", "none", "--read-only"]));
+    expect(seenSmoke[0]).not.toEqual(expect.arrayContaining(["--workdir", "/scan"]));
+    expect(seenSmoke[0]).toEqual(expect.arrayContaining(["--entrypoint", "/bin/sh"]));
+    expect(seenSmoke[0]).toEqual(
+      expect.arrayContaining([expect.stringContaining("target=/scan,readonly")]),
+    );
+    expect(seenSmoke[0]?.join("\n")).toContain("test -r '/scan/package.json'");
+  });
+
+  it("does not pass sandbox smoke unless the expected marker is emitted", async () => {
+    skill("clean", "# Clean\n\nUse this skill for local documentation hygiene.\n");
+    write("package.json", JSON.stringify({ name: "clean-skill", version: "1.0.0" }));
+    license();
+    const c = ctx(
+      { source: sourceRoot },
+      false,
+      detectorRunner({ smoke: { code: 0, stdout: "" } }),
+      { SNYK_TOKEN: "snyk-token-for-scanner" },
+    );
+
+    const result = await executePlan(await skillVetCommand.plan(c), c);
+
+    expect(result.report?.ok).toBe(false);
+    expect(result.report?.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "skill sandbox smoke test",
+          verdict: "fail",
+          code: "trust.sandbox-smoke-failed",
+          detail: expect.stringContaining("exit 0"),
+        }),
+      ]),
+    );
+  });
+
+  it("does not run sandbox smoke when the local image identity is unverified", async () => {
+    skill("clean", "# Clean\n\nUse this skill for local documentation hygiene.\n");
+    write("package.json", JSON.stringify({ name: "clean-skill", version: "1.0.0" }));
+    license();
+    const seenSmoke: string[][] = [];
+    const c = ctx(
+      { source: sourceRoot },
+      false,
+      detectorRunner({
+        imageInspect: {
+          code: 0,
+          stdout: JSON.stringify({
+            Id: "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            Config: {
+              Labels: {
+                "org.opencontainers.image.revision": "326a2b489411a20ed742ff13701be39ba00063c8",
+              },
+            },
+          }),
+        },
+        seenSmoke,
+      }),
+      { SNYK_TOKEN: "snyk-token-for-scanner" },
+    );
+
+    const result = await executePlan(await skillVetCommand.plan(c), c);
+
+    expect(result.report?.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "skill sandbox smoke test",
+          verdict: "fail",
+          code: "trust.sandbox-smoke-unavailable",
+          detail: expect.stringContaining("could not verify"),
+        }),
+      ]),
+    );
+    expect(seenSmoke).toHaveLength(0);
+  });
+
+  it("maps sandbox smoke timeouts to explicit findings instead of passing silently", async () => {
+    skill("clean", "# Clean\n\nUse this skill for local documentation hygiene.\n");
+    write("package.json", JSON.stringify({ name: "clean-skill", version: "1.0.0" }));
+    license();
+    const c = ctx(
+      { source: sourceRoot },
+      false,
+      detectorRunner({ smoke: { code: null, stderr: "operation timed out" } }),
+      { SNYK_TOKEN: "snyk-token-for-scanner" },
+    );
+
+    const result = await executePlan(await skillVetCommand.plan(c), c);
+
+    expect(result.report?.ok).toBe(false);
+    expect(result.report?.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "skill sandbox smoke test",
+          verdict: "fail",
+          code: "trust.sandbox-smoke-failed",
+          detail: expect.stringContaining("timed out"),
+        }),
+      ]),
+    );
+    const digest = vetDigestOf(result);
+    expect(digest.data.verdict).toBe("UNKNOWN");
+    expect(digest.data.reasons).toEqual([expect.stringContaining("sandbox smoke test failed")]);
   });
 
   it("grades a first-party (in-repo) source GREEN on native coverage when the deep detectors are unavailable", async () => {
@@ -174,6 +356,37 @@ describe("skillVetCommand", () => {
     const digest = vetDigestOf(result);
     expect(digest.data.verdict).toBe("GREEN");
     expect(digest.data.reasons).toEqual([]);
+  });
+
+  it("fails a first-party package-backed source when sandbox smoke is unavailable", async () => {
+    const dir = join(workspace, "packs", "clean");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(
+      join(dir, "SKILL.md"),
+      "# Clean\n\nUse this skill for local documentation hygiene.\n",
+      "utf8",
+    );
+    writeFileSync(join(dir, "LICENSE"), "MIT License\n\nCopyright (c) Example\n", "utf8");
+    writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "clean-skill" }), "utf8");
+    const c = ctx({ source: dir });
+
+    const result = await executePlan(await skillVetCommand.plan(c), c);
+
+    expect(result.report?.ok).toBe(false);
+    const digest = vetDigestOf(result);
+    expect(digest.data.verdict).toBe("UNKNOWN");
+    expect(digest.data.reasons).toEqual([
+      expect.stringContaining("sandbox smoke test was unavailable"),
+    ]);
+    expect(result.report?.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "skill sandbox smoke test",
+          verdict: "fail",
+          code: "trust.sandbox-smoke-unavailable",
+        }),
+      ]),
+    );
   });
 
   it("grades an out-of-repo local source UNKNOWN when a detector is unavailable (exemption is first-party-only)", async () => {
@@ -287,17 +500,84 @@ describe("skillVetCommand", () => {
     skill("clean", "# Clean\n");
     license();
     write("install.sh", "echo install\n");
-    const c = ctx({ source: sourceRoot }, false, detectorRunner(), {
+    const seenSmoke: string[][] = [];
+    const c = ctx({ source: sourceRoot }, false, detectorRunner({ seenSmoke }), {
       SNYK_TOKEN: "snyk-token-for-scanner",
     });
 
     const result = await executePlan(await skillVetCommand.plan(c), c);
 
     expect(result.report?.ok).toBe(true);
+    expectSandboxSmokeEvidence(result.report?.checks ?? [], "install scripts");
+    expect(seenSmoke).toHaveLength(1);
+    expect(seenSmoke[0]?.join("\n")).toContain("/scan/install.sh");
     const digest = vetDigestOf(result);
     expect(digest.data.verdict).toBe("YELLOW");
     expect(digest.data.reasons).toEqual([expect.stringContaining("install scripts")]);
     expect(digest.text).toContain("Action: manual approval required");
+  });
+
+  it("grades extensionless setup-script shape YELLOW with sandbox smoke evidence", async () => {
+    skill("clean", "# Clean\n");
+    license();
+    write("setup", "echo setup\n");
+    const seenSmoke: string[][] = [];
+    const c = ctx({ source: sourceRoot }, false, detectorRunner({ seenSmoke }), {
+      SNYK_TOKEN: "snyk-token-for-scanner",
+    });
+
+    const result = await executePlan(await skillVetCommand.plan(c), c);
+
+    expect(result.report?.ok).toBe(true);
+    expectSandboxSmokeEvidence(result.report?.checks ?? [], "install scripts");
+    expect(seenSmoke).toHaveLength(1);
+    expect(seenSmoke[0]?.join("\n")).toContain("/scan/setup");
+    const digest = vetDigestOf(result);
+    expect(digest.data.verdict).toBe("YELLOW");
+    expect(digest.data.reasons).toEqual([expect.stringContaining("install scripts")]);
+  });
+
+  it("grades symlinked installer script shape YELLOW with sandbox smoke evidence", async () => {
+    skill("clean", "# Clean\n");
+    license();
+    write("REAL", "echo install\n");
+    try {
+      symlinkSync("REAL", join(sourceRoot, "install.sh"));
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === "EPERM") return;
+      throw err;
+    }
+    const seenSmoke: string[][] = [];
+    const c = ctx({ source: sourceRoot }, false, detectorRunner({ seenSmoke }), {
+      SNYK_TOKEN: "snyk-token-for-scanner",
+    });
+
+    const result = await executePlan(await skillVetCommand.plan(c), c);
+
+    expect(result.report?.ok).toBe(true);
+    expectSandboxSmokeEvidence(result.report?.checks ?? [], "install scripts");
+    expect(seenSmoke).toHaveLength(1);
+    expect(seenSmoke[0]?.join("\n")).toContain("/scan/install.sh");
+    const digest = vetDigestOf(result);
+    expect(digest.data.verdict).toBe("YELLOW");
+    expect(digest.data.reasons).toEqual([expect.stringContaining("install scripts")]);
+  });
+
+  it("records a sandbox smoke pass for incoming MCP config skill evidence", async () => {
+    skill("clean", "# Clean\n");
+    license();
+    write(".mcp.json", JSON.stringify({ mcpServers: {} }));
+    const seenSmoke: string[][] = [];
+    const c = ctx({ source: sourceRoot }, false, detectorRunner({ seenSmoke }), {
+      SNYK_TOKEN: "snyk-token-for-scanner",
+    });
+
+    const result = await executePlan(await skillVetCommand.plan(c), c);
+
+    expect(result.report?.ok).toBe(true);
+    expectSandboxSmokeEvidence(result.report?.checks ?? [], "incoming MCP config");
+    expect(seenSmoke).toHaveLength(1);
+    expect(seenSmoke[0]?.join("\n")).toContain("test -r '/scan/.mcp.json'");
   });
 
   it("keeps a GitHub source UNKNOWN in dry-run without fetching", async () => {

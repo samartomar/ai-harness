@@ -57,6 +57,51 @@ describe("buildSupport", () => {
       withChecks([certCheck]).templates[0]?.body,
     );
   });
+
+  it("routes failed sandbox smoke availability as a blocking developer finding", () => {
+    const b = withChecks([
+      {
+        name: "skill sandbox smoke test",
+        verdict: "fail",
+        code: "trust.sandbox-smoke-unavailable",
+        detail: "promotion blocked: sandbox smoke test skipped: Docker is unavailable",
+      },
+    ]);
+
+    expect(b.findings[0]).toMatchObject({
+      code: "trust.sandbox-smoke-unavailable",
+      audience: "developer",
+      severity: "blocking",
+      kind: "self-fix",
+    });
+  });
+
+  it("upgrades duplicate sandbox smoke availability skips when a later gate blocks promotion", () => {
+    const b = withChecks([
+      {
+        name: "skill sandbox smoke test",
+        verdict: "skip",
+        code: "trust.sandbox-smoke-unavailable",
+        detail: "sandbox smoke test skipped: Docker is unavailable",
+      },
+      {
+        name: "skill sandbox smoke test",
+        verdict: "fail",
+        code: "trust.sandbox-smoke-unavailable",
+        detail: "promotion blocked: sandbox smoke test skipped: Docker is unavailable",
+      },
+    ]);
+
+    expect(b.findings[0]).toMatchObject({
+      code: "trust.sandbox-smoke-unavailable",
+      severity: "blocking",
+      kind: "self-fix",
+    });
+    expect(b.findings[0]?.details).toEqual([
+      "sandbox smoke test skipped: Docker is unavailable",
+      "promotion blocked: sandbox smoke test skipped: Docker is unavailable",
+    ]);
+  });
 });
 
 describe("supportSummary", () => {

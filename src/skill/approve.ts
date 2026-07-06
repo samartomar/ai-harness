@@ -50,7 +50,9 @@ export const EVIDENCE_DIR = ".aih/skill-reports";
 const EvidenceShapeSchema = z.object({
   skillDirs: z.array(z.string()),
   installScripts: z.boolean(),
+  installScriptFiles: z.array(z.string()).optional(),
   mcpConfig: z.boolean(),
+  mcpConfigFiles: z.array(z.string()).optional(),
   packageManifests: z.array(z.string()),
   fullCodebaseAnalysis: z.boolean(),
 });

@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { existsSync, lstatSync, readdirSync, realpathSync, statSync } from "node:fs";
-import { basename, extname, join, posix, resolve } from "node:path";
+import { basename, extname, join, posix, relative, resolve } from "node:path";
 import type { Command } from "commander";
 import { readAihConfig } from "../config/marker.js";
 import { postureFromContext, resolvePosture } from "../config/posture.js";
@@ -21,6 +21,7 @@ import { defaultRunner, type Runner } from "../internals/proc.js";
 import type { Check, VerificationReport } from "../internals/verify.js";
 import { AIH_ORG_POLICY_FILE } from "../org-policy/constants.js";
 import { makeHostAdapter } from "../platform/detect.js";
+import { MCP_CONFIG_FILES } from "../secrets/scan.js";
 import { readSkillsLock } from "../skill/lockfile.js";
 import { buildSupport, supportSummary } from "../support/integrate.js";
 import {
@@ -48,6 +49,8 @@ import {
   trustScanPlanForSource,
   trustSourceOriginChecks,
 } from "../trust/scan.js";
+import { isInstallScriptEvidenceFilePath } from "../trust/script-files.js";
+import type { SandboxSmokeShape } from "../trust/smoke.js";
 
 interface WorkspaceAddDeps {
   run?: Runner;
@@ -79,12 +82,34 @@ interface TrustSourceBinding {
   pinnedSha?: string;
 }
 
+const PACKAGE_MANIFESTS = [
+  "package.json",
+  "pyproject.toml",
+  "requirements.txt",
+  "Cargo.toml",
+  "go.mod",
+];
+const INSTALL_SCRIPT_HOOKS = ["preinstall", "postinstall", "install"];
+
 export interface ClearedWorkspaceAddTrustGate {
   source: TrustSourceBinding;
   artifactHashes: Array<{ path: string; sha256: string }>;
   report: VerificationReport;
   analyzersRun: string[];
   internalScopes: string[];
+}
+
+export interface WorkspaceAddTrustGate extends ClearedWorkspaceAddTrustGate {
+  blockingChecks: Check[];
+}
+
+export class WorkspaceAddTrustGateBlockedError extends AihError {
+  readonly blockingChecks: Check[];
+
+  constructor(blockingChecks: Check[]) {
+    super("workspace add trust gate blocked; source was not promoted", "AIH_TRUST");
+    this.blockingChecks = blockingChecks;
+  }
 }
 
 const SKIP_DIRS = new Set([".git", ".hg", ".svn", ".aih", "coverage", "dist", "node_modules"]);
@@ -134,7 +159,9 @@ export async function workspaceAddPhase1Plan(
   resolvedSource?: TrustSource,
 ): Promise<Plan> {
   const source = resolvedSource ?? sourceFromContext(ctx);
-  const scan = await trustScanPlanForSource(ctx, source);
+  const scan = await trustScanPlanForSource(ctx, source, {
+    sandboxSmokeShape: sandboxSmokeShapeForSourceRoot,
+  });
   return plan("workspace add: fetch + scan", aihIgnoreWrite(ctx.root), ...scan.actions);
 }
 
@@ -436,6 +463,115 @@ function acceptedAcknowledgementFingerprints(report: VerificationReport | undefi
   );
 }
 
+function promotionBlockingChecks(checks: readonly Check[]): Check[] {
+  return checks.flatMap((check) => {
+    if (check.verdict === "fail") return [check];
+    return [];
+  });
+}
+
+function hasInstallScriptHooks(root: string): boolean {
+  const text = readIfExists(join(root, "package.json"));
+  if (text === undefined) return false;
+  try {
+    const parsed = JSON.parse(text) as { scripts?: unknown };
+    const scripts = parsed.scripts;
+    if (typeof scripts !== "object" || scripts === null || Array.isArray(scripts)) return false;
+    return INSTALL_SCRIPT_HOOKS.some((hook) => Object.hasOwn(scripts, hook));
+  } catch {
+    return false;
+  }
+}
+
+function isInstallScriptFile(name: string): boolean {
+  return isInstallScriptEvidenceFilePath(name);
+}
+
+function fileNames(dir: string): string[] {
+  try {
+    return readdirSync(dir, { withFileTypes: true })
+      .filter((entry) => {
+        if (entry.isFile()) return true;
+        if (!entry.isSymbolicLink()) return false;
+        try {
+          return statSync(join(dir, entry.name)).isFile();
+        } catch {
+          return false;
+        }
+      })
+      .map((entry) => entry.name);
+  } catch {
+    return [];
+  }
+}
+
+function hasInstallScripts(root: string): boolean {
+  if (hasInstallScriptHooks(root)) return true;
+  return [root, join(root, "scripts")].some((dir) => fileNames(dir).some(isInstallScriptFile));
+}
+
+function toSourceRel(root: string, path: string): string {
+  return relative(root, path).replace(/\\/g, "/");
+}
+
+function uniqueValues(values: readonly string[]): string[] {
+  return [...new Set(values)];
+}
+
+function runtimeShapeRoots(root: string, skillDirs: readonly string[]): string[] {
+  return [root, ...skillDirs];
+}
+
+function collectPackageManifestRels(root: string, skillDirs: readonly string[]): string[] {
+  return uniqueValues(
+    runtimeShapeRoots(root, skillDirs).flatMap((dir) =>
+      PACKAGE_MANIFESTS.filter((name) => existsSync(join(dir, name))).map((name) =>
+        toSourceRel(root, join(dir, name)),
+      ),
+    ),
+  );
+}
+
+function collectInstallScriptFileRels(root: string, skillDirs: readonly string[]): string[] {
+  return uniqueValues(
+    runtimeShapeRoots(root, skillDirs).flatMap((dir) => {
+      const packageJson = join(dir, "package.json");
+      const hookFiles = hasInstallScriptHooks(dir) ? [toSourceRel(root, packageJson)] : [];
+      const scriptFiles = [dir, join(dir, "scripts")].flatMap((scriptDir) =>
+        fileNames(scriptDir)
+          .filter(isInstallScriptFile)
+          .map((name) => toSourceRel(root, join(scriptDir, name))),
+      );
+      return [...hookFiles, ...scriptFiles];
+    }),
+  );
+}
+
+function collectMcpConfigFileRels(root: string, skillDirs: readonly string[]): string[] {
+  const names = [...MCP_CONFIG_FILES, "mcp.json"];
+  return uniqueValues(
+    runtimeShapeRoots(root, skillDirs).flatMap((dir) =>
+      names
+        .filter((name) => existsSync(join(dir, name)))
+        .map((name) => toSourceRel(root, join(dir, name))),
+    ),
+  );
+}
+
+function sandboxSmokeShapeForSourceRoot(root: string): SandboxSmokeShape {
+  const skillDirs = collectSkillDirs(root);
+  const installScriptFiles = collectInstallScriptFileRels(root, skillDirs);
+  const mcpConfigFiles = collectMcpConfigFileRels(root, skillDirs);
+  return {
+    skillDirs: skillDirs.map((dir) => promotedSkillRel(root, dir)),
+    installScripts: installScriptFiles.length > 0 || hasInstallScripts(root),
+    installScriptFiles,
+    mcpConfig: mcpConfigFiles.length > 0,
+    mcpConfigFiles,
+    packageManifests: collectPackageManifestRels(root, skillDirs),
+  };
+}
+
 async function persistAcknowledgeLedger(
   ctx: PlanContext,
   source: TrustSource,
@@ -468,10 +604,12 @@ async function currentTrustScan(
   source: TrustSource,
   internalScopes: readonly string[],
 ): Promise<TrustScanResult> {
-  const scan = await scanTrustTreeWithAnalyzers(sourceRootFor(source), {
+  const sourceRoot = sourceRootFor(source);
+  const scan = await scanTrustTreeWithAnalyzers(sourceRoot, {
     ...scanOptionsFromContext(ctx),
     internalScopes,
     posture: postureFromContext(ctx),
+    sandboxSmokeShape: sandboxSmokeShapeForSourceRoot(sourceRoot),
   });
   const checks = [...trustSourceOriginChecks(ctx, source), ...scan.checks];
   return {
@@ -560,22 +698,21 @@ function sourceRootFor(source: TrustSource): string {
   return source.kind === "local" ? source.root : source.treePath;
 }
 
-export async function captureClearedWorkspaceAddTrustGate(
+export async function captureWorkspaceAddTrustGate(
   ctx: PlanContext,
   report: VerificationReport | undefined,
   resolvedSource?: TrustSource,
   selectSkills?: ReadonlySet<string>,
-): Promise<ClearedWorkspaceAddTrustGate> {
+): Promise<WorkspaceAddTrustGate> {
   if (!report) throw new AihError("workspace add phase 2 requires a phase 1 report", "AIH_TRUST");
   if (!report.ok) {
     throw new AihError("workspace add failed trust scan; source was not promoted", "AIH_TRUST");
   }
   const source = resolvedSource ?? sourceFromContext(ctx);
   const internalScopes = resolveInternalScopes(ctx);
+  const phase1BlockingChecks = promotionBlockingChecks(report.checks);
   const currentScan = await currentTrustScan(ctx, source, internalScopes);
-  if (currentScan.checks.some((check) => check.verdict === "fail")) {
-    throw new AihError("workspace add source changed after phase 1 scan", "AIH_TRUST");
-  }
+  const currentBlockingChecks = promotionBlockingChecks(currentScan.checks);
   const promotion = buildPromotion(ctx, source, selectSkills);
   return {
     source: sourceBinding(source),
@@ -583,12 +720,30 @@ export async function captureClearedWorkspaceAddTrustGate(
     report,
     analyzersRun: currentScan.analyzersRun,
     internalScopes,
+    blockingChecks: [...phase1BlockingChecks, ...currentBlockingChecks],
   };
+}
+
+export async function captureClearedWorkspaceAddTrustGate(
+  ctx: PlanContext,
+  report: VerificationReport | undefined,
+  resolvedSource?: TrustSource,
+  selectSkills?: ReadonlySet<string>,
+): Promise<ClearedWorkspaceAddTrustGate> {
+  const gate = await captureWorkspaceAddTrustGate(ctx, report, resolvedSource, selectSkills);
+  if (gate.blockingChecks.length > 0) {
+    throw new WorkspaceAddTrustGateBlockedError(gate.blockingChecks);
+  }
+  return gate;
+}
+
+function gateBlockingChecks(gate: ClearedWorkspaceAddTrustGate | WorkspaceAddTrustGate): Check[] {
+  return "blockingChecks" in gate ? gate.blockingChecks : [];
 }
 
 export async function workspaceAddPhase2Plan(
   ctx: PlanContext,
-  gate: ClearedWorkspaceAddTrustGate | undefined,
+  gate: ClearedWorkspaceAddTrustGate | WorkspaceAddTrustGate | undefined,
   resolvedSource?: TrustSource,
   selectSkills?: ReadonlySet<string>,
 ): Promise<Plan> {
@@ -604,9 +759,14 @@ export async function workspaceAddPhase2Plan(
       ]),
     );
   }
+  const blockingChecks = gateBlockingChecks(gate);
+  if (blockingChecks.length > 0) {
+    return plan("workspace add: promote", ...probesForChecks(blockingChecks));
+  }
   const currentScan = await currentTrustScan(ctx, source, gate.internalScopes);
-  if (currentScan.checks.some((check) => check.verdict === "fail")) {
-    return plan("workspace add: promote", ...probesForChecks(currentScan.checks));
+  const currentBlockingChecks = promotionBlockingChecks(currentScan.checks);
+  if (currentBlockingChecks.length > 0) {
+    return plan("workspace add: promote", ...probesForChecks(currentBlockingChecks));
   }
   const promotion = buildPromotion(ctx, source, selectSkills);
   const approvalChecks = unapprovedSkillChecks(ctx, source, promotion.promotedSkills);
@@ -776,7 +936,7 @@ export async function runWorkspaceAdd(
     }
     await persistAcknowledgeLedger(ctx, source, phase1Result.report);
 
-    const gate = await captureClearedWorkspaceAddTrustGate(ctx, phase1Result.report, source);
+    const gate = await captureWorkspaceAddTrustGate(ctx, phase1Result.report, source);
     const phase2 = await workspaceAddPhase2Plan(ctx, gate, source);
     const phase2Result = await executePlan(phase2, ctx);
     const execFailed = hasFailedExec(phase1Result) || hasFailedExec(phase2Result);

@@ -33,8 +33,8 @@ import { cleanupQuarantine, resolveTrustSource, type TrustSource } from "../trus
 import { readTrustLock } from "../trust/lock.js";
 import { TRUST_SKIP_DIRS } from "../trust/scan.js";
 import {
-  type ClearedWorkspaceAddTrustGate,
-  captureClearedWorkspaceAddTrustGate,
+  captureWorkspaceAddTrustGate,
+  type WorkspaceAddTrustGate,
   workspaceAddPhase1Plan,
   workspaceAddPhase2Plan,
 } from "../workspace/acquire.js";
@@ -101,7 +101,7 @@ interface SourceRun {
   /** The pack's refs for this source — the `selectSkills` promotion subset. */
   select: ReadonlySet<string>;
   phase1?: PlanResult;
-  gate?: ClearedWorkspaceAddTrustGate;
+  gate?: WorkspaceAddTrustGate;
   phase2?: PlanResult;
   /** Failure detail when this source's scan / gate / promotion failed. */
   failure?: string;
@@ -576,12 +576,16 @@ export async function runPackInstall(
           anyFailure = true;
           continue;
         }
-        run.gate = await captureClearedWorkspaceAddTrustGate(
-          ctx,
-          phase1.report,
-          run.source,
-          run.select,
-        );
+        run.gate = await captureWorkspaceAddTrustGate(ctx, phase1.report, run.source, run.select);
+        const blockingChecks = run.gate.blockingChecks;
+        if (blockingChecks.length > 0) {
+          const codes = blockingChecks
+            .map((check) => check.code ?? check.name)
+            .filter((code, index, all) => all.indexOf(code) === index)
+            .join(", ");
+          run.failure = `trust gate blocked ${run.group.source}: ${codes}`;
+          anyFailure = true;
+        }
       } catch (err) {
         run.failure = err instanceof Error ? err.message : String(err);
         anyFailure = true;
@@ -630,6 +634,7 @@ export async function runPackInstall(
           kind: run.group.kind,
           skills: [...run.select].sort(),
           phase1: run.phase1,
+          blockingChecks: run.gate?.blockingChecks ?? [],
           phase2: run.phase2,
           failure: run.failure,
         })),
@@ -652,6 +657,7 @@ export async function runPackInstall(
     write(outcomeText(pack.name, rows));
     const allChecks = runs.flatMap((run) => [
       ...(run.phase1?.report?.checks ?? []),
+      ...(run.gate?.blockingChecks ?? []),
       ...(run.phase2?.report?.checks ?? []),
     ]);
     saveSupport(ctx, allChecks, opts, env, write, runId, startedAt.toISOString());

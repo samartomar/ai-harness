@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
-import { lstatSync, readdirSync, readFileSync, statSync } from "node:fs";
-import { basename, extname, isAbsolute, join, relative, resolve } from "node:path";
+import { existsSync, lstatSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { basename, dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
 import { type Posture, postureFromContext } from "../config/posture.js";
 import { AihError } from "../errors.js";
 import type { Action, CommandSpec, PlanContext, ProbeAction } from "../internals/plan.js";
@@ -34,6 +34,8 @@ import { gradeTrustCheck } from "./grade.js";
 import { scanTrustDocument } from "./lint.js";
 import { scanTrustManifests } from "./manifest.js";
 import { classifyIncomingMcp } from "./mcp-classify.js";
+import { isInstallScriptEvidenceFilePath } from "./script-files.js";
+import { type SandboxSmokeShape, sandboxSmokeCheck } from "./smoke.js";
 
 export const TRUST_SKIP_DIRS = new Set([
   ".git",
@@ -51,6 +53,14 @@ const HOSTED_MCP_ADVISORY =
   "hosted MCP server has no post-approval rug-pull protection; run a runtime MCP-scan with tool-pinning before first use.";
 const MCP_POLICY_RULE = "incoming MCP policy";
 const MCP_POLICY_DENIED = "mcp.policy-denied";
+const PACKAGE_MANIFESTS = [
+  "package.json",
+  "pyproject.toml",
+  "requirements.txt",
+  "Cargo.toml",
+  "go.mod",
+];
+const INSTALL_SCRIPT_HOOKS = ["preinstall", "postinstall", "install"];
 
 interface ScanTrustTreeOptions {
   env?: NodeJS.ProcessEnv;
@@ -60,6 +70,7 @@ interface ScanTrustTreeOptions {
   mcpPolicy?: OrgPolicy["mcp"];
   requiredDetectors?: readonly TrustDetectorName[];
   run?: Runner;
+  sandboxSmokeShape?: SandboxSmokeShape;
 }
 
 export interface TrustScanResult {
@@ -74,6 +85,7 @@ interface IncomingMcpServerMap {
 
 interface TrustScanPlanOptions {
   cleanupQuarantine?: boolean;
+  sandboxSmokeShape?: (root: string) => SandboxSmokeShape | undefined;
 }
 
 function toPosix(path: string): string {
@@ -118,6 +130,134 @@ function collectTrustDocs(root: string): string[] {
   return collectFilesUnder(root, (abs) => shouldScanTrustDoc(root, abs));
 }
 
+function collectSkillDirs(root: string): string[] {
+  return [
+    ...new Set(
+      collectFilesUnder(root, (abs) => basename(abs) === "SKILL.md").map((abs) => dirname(abs)),
+    ),
+  ].sort((a, b) => toPosix(relative(root, a)).localeCompare(toPosix(relative(root, b))));
+}
+
+function skillDirLabel(root: string, skillDir: string): string {
+  const rel = toPosix(relative(root, skillDir));
+  return rel.length === 0 ? basename(root) : rel;
+}
+
+function readTextSafe(path: string): string | undefined {
+  try {
+    return readFileSync(path, "utf8");
+  } catch {
+    return undefined;
+  }
+}
+
+function hasInstallScriptHooks(root: string): boolean {
+  const text = readTextSafe(join(root, "package.json"));
+  if (text === undefined) return false;
+  try {
+    const parsed = JSON.parse(text) as { scripts?: unknown };
+    const scripts = parsed.scripts;
+    if (typeof scripts !== "object" || scripts === null || Array.isArray(scripts)) return false;
+    return INSTALL_SCRIPT_HOOKS.some((hook) => Object.hasOwn(scripts, hook));
+  } catch {
+    return false;
+  }
+}
+
+function isInstallScriptFile(name: string): boolean {
+  return isInstallScriptEvidenceFilePath(name);
+}
+
+function fileNames(dir: string): string[] {
+  try {
+    return readdirSync(dir, { withFileTypes: true })
+      .filter((entry) => {
+        if (entry.isFile()) return true;
+        if (!entry.isSymbolicLink()) return false;
+        try {
+          return statSync(join(dir, entry.name)).isFile();
+        } catch {
+          return false;
+        }
+      })
+      .map((entry) => entry.name);
+  } catch {
+    return [];
+  }
+}
+
+function hasInstallScripts(root: string): boolean {
+  if (hasInstallScriptHooks(root)) return true;
+  return [root, join(root, "scripts")].some((dir) => fileNames(dir).some(isInstallScriptFile));
+}
+
+function uniqueValues(values: readonly string[]): string[] {
+  return [...new Set(values)];
+}
+
+function runtimeShapeRoots(root: string, skillDirs: readonly string[]): string[] {
+  return [root, ...skillDirs];
+}
+
+function collectPackageManifestRels(root: string, skillDirs: readonly string[]): string[] {
+  return uniqueValues(
+    runtimeShapeRoots(root, skillDirs).flatMap((dir) =>
+      PACKAGE_MANIFESTS.filter((name) => existsSync(join(dir, name))).map((name) =>
+        toPosix(relative(root, join(dir, name))),
+      ),
+    ),
+  );
+}
+
+function collectInstallScriptFileRels(root: string, skillDirs: readonly string[]): string[] {
+  return uniqueValues(
+    runtimeShapeRoots(root, skillDirs).flatMap((dir) => {
+      const packageJson = join(dir, "package.json");
+      const hookFiles = hasInstallScriptHooks(dir) ? [toPosix(relative(root, packageJson))] : [];
+      const scriptFiles = [dir, join(dir, "scripts")].flatMap((scriptDir) =>
+        fileNames(scriptDir)
+          .filter(isInstallScriptFile)
+          .map((name) => toPosix(relative(root, join(scriptDir, name)))),
+      );
+      return [...hookFiles, ...scriptFiles];
+    }),
+  );
+}
+
+function collectMcpConfigFileRels(root: string, skillDirs: readonly string[]): string[] {
+  return uniqueValues(
+    runtimeShapeRoots(root, skillDirs).flatMap((dir) =>
+      [...INCOMING_MCP_CONFIG_FILES]
+        .filter((name) => existsSync(join(dir, name)))
+        .map((name) => toPosix(relative(root, join(dir, name)))),
+    ),
+  );
+}
+
+function sandboxSmokeShapeForTrustScan(root: string): SandboxSmokeShape {
+  const skillDirs = collectSkillDirs(root);
+  if (skillDirs.length === 0) {
+    return {
+      skillDirs: [],
+      installScripts: false,
+      installScriptFiles: [],
+      mcpConfig: false,
+      mcpConfigFiles: [],
+      packageManifests: [],
+    };
+  }
+  const installScriptFiles = collectInstallScriptFileRels(root, skillDirs);
+  const mcpConfigFiles = collectMcpConfigFileRels(root, skillDirs);
+  return {
+    skillDirs: skillDirs.map((dir) => skillDirLabel(root, dir)),
+    installScripts: installScriptFiles.length > 0 || hasInstallScripts(root),
+    installScriptFiles,
+    mcpConfig: mcpConfigFiles.length > 0,
+    mcpConfigFiles,
+    packageManifests: collectPackageManifestRels(root, skillDirs),
+  };
+}
+
 function normalizeScanOptions(options: ScanTrustTreeOptions = {}): {
   env?: NodeJS.ProcessEnv;
   internalScopes: readonly string[];
@@ -126,6 +266,7 @@ function normalizeScanOptions(options: ScanTrustTreeOptions = {}): {
   posture: Posture;
   requiredDetectors: readonly TrustDetectorName[];
   run?: Runner;
+  sandboxSmokeShape?: SandboxSmokeShape;
 } {
   return {
     env: options.env,
@@ -135,6 +276,7 @@ function normalizeScanOptions(options: ScanTrustTreeOptions = {}): {
     posture: options.posture ?? "vibe",
     requiredDetectors: options.requiredDetectors ?? [],
     run: options.run,
+    sandboxSmokeShape: options.sandboxSmokeShape,
   };
 }
 
@@ -147,9 +289,7 @@ function stringValue(value: unknown): string | undefined {
 }
 
 function collectIncomingMcpConfigFiles(root: string): string[] {
-  return collectFilesUnder(root, (abs) =>
-    INCOMING_MCP_CONFIG_FILES.has(toPosix(relative(root, abs))),
-  ).map((abs) => toPosix(relative(root, abs)));
+  return collectMcpConfigFileRels(root, collectSkillDirs(root));
 }
 
 function plaintextSecretChecks(root: string, posture: Posture): Check[] {
@@ -466,8 +606,16 @@ export async function scanTrustTreeWithAnalyzers(
   options: ScanTrustTreeOptions = {},
 ): Promise<TrustScanResult> {
   const safeRoot = assertTrustTreeSafe(root, { skipDirs: TRUST_SKIP_DIRS });
-  const { env, internalScopes, mcpPolicy, platform, posture, requiredDetectors, run } =
-    normalizeScanOptions(options);
+  const {
+    env,
+    internalScopes,
+    mcpPolicy,
+    platform,
+    posture,
+    requiredDetectors,
+    run,
+    sandboxSmokeShape,
+  } = normalizeScanOptions(options);
   const docs = collectTrustDocs(safeRoot);
   const mcpConfigFiles = collectIncomingMcpConfigFiles(safeRoot);
   const checks = [
@@ -504,10 +652,18 @@ export async function scanTrustTreeWithAnalyzers(
           run,
         })
       : { checks: [], analyzersRun: [] };
-  const allChecks = [...checks, ...detectorResult.checks, ...mcpDetectorResult.checks];
+  const effectiveSandboxSmokeShape = sandboxSmokeShape ?? sandboxSmokeShapeForTrustScan(safeRoot);
+  const sandboxSmokeChecks = [
+    await sandboxSmokeCheck(safeRoot, effectiveSandboxSmokeShape, { env, platform, run }),
+  ];
+  const nonSmokeChecks = [...checks, ...detectorResult.checks, ...mcpDetectorResult.checks];
+  const allChecks =
+    nonSmokeChecks.length > 0
+      ? [...nonSmokeChecks, ...sandboxSmokeChecks]
+      : [passCheck(safeRoot, docs.length), ...sandboxSmokeChecks];
   return {
     analyzersRun: ["aih-native", ...detectorResult.analyzersRun, ...mcpDetectorResult.analyzersRun],
-    checks: allChecks.length > 0 ? allChecks : [passCheck(safeRoot, docs.length)],
+    checks: allChecks,
   };
 }
 
@@ -615,6 +771,7 @@ export async function trustScanPlanForSource(
   options: TrustScanPlanOptions = {},
 ): Promise<ReturnType<typeof plan>> {
   const actions: Action[] = [];
+  const sandboxSmokeShape = options.sandboxSmokeShape ?? sandboxSmokeShapeForTrustScan;
   const policy = requiredDetectorsFromPolicy(ctx);
   const scanOptions = {
     internalScopes: resolveInternalScopes(ctx),
@@ -633,7 +790,10 @@ export async function trustScanPlanForSource(
   if (source.kind === "local") {
     const scan = await scanTrustTreeWithAnalyzers(
       source.root,
-      scanOptionsFromContext(ctx, scanOptions),
+      scanOptionsFromContext(ctx, {
+        ...scanOptions,
+        sandboxSmokeShape: sandboxSmokeShape(source.root),
+      }),
     );
     actions.push(
       ...probesForStaticChecks(acknowledgeChecks(scan.checks, ctx)),
@@ -644,7 +804,10 @@ export async function trustScanPlanForSource(
     const scanGithubSource = (probeCtx: PlanContext): Promise<TrustScanResult> => {
       githubScan ??= scanTrustTreeWithAnalyzers(
         source.treePath,
-        scanOptionsFromContext(probeCtx, scanOptions),
+        scanOptionsFromContext(probeCtx, {
+          ...scanOptions,
+          sandboxSmokeShape: sandboxSmokeShape(source.treePath),
+        }),
       );
       return githubScan;
     };

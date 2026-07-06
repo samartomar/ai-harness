@@ -18,8 +18,10 @@ import { fakeRunner, type Runner } from "../../src/internals/proc.js";
 import { VerificationReport } from "../../src/internals/verify.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 import { resolveTrustSource } from "../../src/trust/fetch.js";
+import { SKILLSPECTOR_IMAGE_DIGEST } from "../../src/trust/images.js";
 import {
   captureClearedWorkspaceAddTrustGate,
+  captureWorkspaceAddTrustGate,
   runWorkspaceAdd,
   workspaceAddPhase1Plan,
   workspaceAddPhase2Plan,
@@ -137,6 +139,40 @@ function expectStructuredResult(
   ).toBe(true);
 }
 
+function sandboxSmokeRunner(
+  options: {
+    failOnSmokeRun?: number;
+    imageUnavailable?: () => boolean;
+    seenSmoke?: string[][];
+  } = {},
+): Runner {
+  let smokeRuns = 0;
+  return fakeRunner((argv) => {
+    if (argv[0] !== "docker") return undefined;
+    if (argv[1] === "--version") return { code: 0, stdout: "Docker version 27\n" };
+    if (argv[1] === "image" && argv[2] === "inspect") {
+      if (options.imageUnavailable?.()) return { code: 1, stderr: "image not found\n" };
+      return {
+        code: 0,
+        stdout: JSON.stringify({
+          Id: SKILLSPECTOR_IMAGE_DIGEST,
+          RepoDigests: [`skillspector@${SKILLSPECTOR_IMAGE_DIGEST}`],
+        }),
+      };
+    }
+    if (argv[1] === "run" && argv.some((arg) => arg.includes("aih sandbox smoke ok"))) {
+      smokeRuns += 1;
+      options.seenSmoke?.push(argv);
+      if (options.failOnSmokeRun !== undefined && smokeRuns >= options.failOnSmokeRun) {
+        return { code: 0, stdout: "" };
+      }
+      return { code: 0, stdout: "aih sandbox smoke ok\n" };
+    }
+    if (argv[1] === "run") return { code: 0, stdout: JSON.stringify({ runs: [] }) };
+    return undefined;
+  });
+}
+
 describe("workspace add acquisition plans", () => {
   it("phase 1 scans before promotion and leaves a bad source unpromoted", async () => {
     localSkill(
@@ -208,6 +244,240 @@ describe("workspace add acquisition plans", () => {
     });
   });
 
+  it("phase 1 records sandbox smoke evidence for package-backed skill sources", async () => {
+    localSkill(sourceRoot, "clean", "# Clean\n");
+    writeFileSync(
+      join(sourceRoot, "package.json"),
+      JSON.stringify({ name: "clean-skill" }),
+      "utf8",
+    );
+    const seenSmoke: string[][] = [];
+    const c = ctx(sourceRoot, true, true, {}, {}, sandboxSmokeRunner({ seenSmoke }));
+
+    const result = await executePlan(await workspaceAddPhase1Plan(c), c);
+
+    expect(result.report?.ok).toBe(true);
+    expect(result.report?.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "skill sandbox smoke test",
+          verdict: "pass",
+          detail: expect.stringContaining("package manifest(s): package.json"),
+        }),
+      ]),
+    );
+    expect(seenSmoke).toHaveLength(1);
+    expect(seenSmoke[0]?.join("\n")).toContain("test -r '/scan/package.json'");
+  });
+
+  it("phase 1 records sandbox smoke evidence for nested package-backed skill dirs", async () => {
+    localSkill(sourceRoot, "clean", "# Clean\n");
+    writeFileSync(
+      join(sourceRoot, "skills", "clean", "package.json"),
+      JSON.stringify({ name: "clean-skill" }),
+      "utf8",
+    );
+    const seenSmoke: string[][] = [];
+    const c = ctx(sourceRoot, true, true, {}, {}, sandboxSmokeRunner({ seenSmoke }));
+
+    const result = await executePlan(await workspaceAddPhase1Plan(c), c);
+
+    expect(result.report?.ok).toBe(true);
+    expect(result.report?.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "skill sandbox smoke test",
+          verdict: "pass",
+          detail: expect.stringContaining("package manifest(s): skills/clean/package.json"),
+        }),
+      ]),
+    );
+    expect(seenSmoke).toHaveLength(1);
+    expect(seenSmoke[0]?.join("\n")).toContain("test -r '/scan/skills/clean/package.json'");
+  });
+
+  it("phase 1 records sandbox smoke evidence for nested extensionless installers", async () => {
+    localSkill(sourceRoot, "clean", "# Clean\n");
+    writeFileSync(join(sourceRoot, "skills", "clean", "install"), "echo install\n", "utf8");
+    const seenSmoke: string[][] = [];
+    const c = ctx(sourceRoot, true, true, {}, {}, sandboxSmokeRunner({ seenSmoke }));
+
+    const result = await executePlan(await workspaceAddPhase1Plan(c), c);
+
+    expect(result.report?.ok).toBe(true);
+    expect(result.report?.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "skill sandbox smoke test",
+          verdict: "pass",
+          detail: expect.stringContaining("install scripts"),
+        }),
+      ]),
+    );
+    expect(seenSmoke).toHaveLength(1);
+    expect(seenSmoke[0]?.join("\n")).toContain("test -r '/scan/skills/clean/install'");
+  });
+
+  it("phase 1 records sandbox smoke evidence for nested symlinked installers", async () => {
+    localSkill(sourceRoot, "clean", "# Clean\n");
+    const skillDir = join(sourceRoot, "skills", "clean");
+    writeFileSync(join(skillDir, "REAL"), "echo install\n", "utf8");
+    try {
+      symlinkSync("REAL", join(skillDir, "install.sh"));
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === "EPERM") return;
+      throw err;
+    }
+    const seenSmoke: string[][] = [];
+    const c = ctx(sourceRoot, true, true, {}, {}, sandboxSmokeRunner({ seenSmoke }));
+
+    const result = await executePlan(await workspaceAddPhase1Plan(c), c);
+
+    expect(result.report?.ok).toBe(true);
+    expect(result.report?.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "skill sandbox smoke test",
+          verdict: "pass",
+          detail: expect.stringContaining("install scripts"),
+        }),
+      ]),
+    );
+    expect(seenSmoke).toHaveLength(1);
+    expect(seenSmoke[0]?.join("\n")).toContain("test -r '/scan/skills/clean/install.sh'");
+  });
+
+  it("phase 2 rechecks sandbox smoke before promotion", async () => {
+    localSkill(sourceRoot, "clean", "# Clean\n");
+    writeFileSync(
+      join(sourceRoot, "package.json"),
+      JSON.stringify({ name: "clean-skill" }),
+      "utf8",
+    );
+    const seenSmoke: string[][] = [];
+    const c = ctx(
+      sourceRoot,
+      true,
+      true,
+      {},
+      {},
+      sandboxSmokeRunner({ failOnSmokeRun: 3, seenSmoke }),
+    );
+    const phase1Result = await executePlan(await workspaceAddPhase1Plan(c), c);
+    expect(phase1Result.report?.ok).toBe(true);
+    const gate = await captureClearedWorkspaceAddTrustGate(c, phase1Result.report);
+
+    const result = await executePlan(await workspaceAddPhase2Plan(c, gate), c);
+
+    expect(result.report?.exitCode()).toBe(1);
+    expect(result.writes.some((write) => write.path.startsWith("ai-coding/skills/"))).toBe(false);
+    expect(result.report?.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "skill sandbox smoke test",
+          verdict: "fail",
+          code: "trust.sandbox-smoke-failed",
+        }),
+      ]),
+    );
+    expect(seenSmoke).toHaveLength(3);
+  });
+
+  it("blocks promotion when nested install-script smoke is unavailable", async () => {
+    localSkill(sourceRoot, "clean", "# Clean\n");
+    writeFileSync(join(sourceRoot, "skills", "clean", "install.sh"), "echo install\n", "utf8");
+    let imageUnavailable = false;
+    const c = ctx(
+      sourceRoot,
+      true,
+      true,
+      {},
+      {},
+      sandboxSmokeRunner({ imageUnavailable: () => imageUnavailable }),
+    );
+    const phase1Result = await executePlan(await workspaceAddPhase1Plan(c), c);
+    expect(phase1Result.report?.ok).toBe(true);
+    const gate = await captureClearedWorkspaceAddTrustGate(c, phase1Result.report);
+    imageUnavailable = true;
+
+    const result = await executePlan(await workspaceAddPhase2Plan(c, gate), c);
+
+    expect(result.report?.exitCode()).toBe(1);
+    expect(result.writes.some((write) => write.path.startsWith("ai-coding/skills/"))).toBe(false);
+    expect(result.report?.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "skill sandbox smoke test",
+          verdict: "fail",
+          code: "trust.sandbox-smoke-unavailable",
+        }),
+      ]),
+    );
+  });
+
+  it("blocks promotion when applicable sandbox smoke is unavailable", async () => {
+    localSkill(sourceRoot, "clean", "# Clean\n");
+    writeFileSync(
+      join(sourceRoot, "package.json"),
+      JSON.stringify({ name: "clean-skill" }),
+      "utf8",
+    );
+    let imageUnavailable = false;
+    const c = ctx(
+      sourceRoot,
+      true,
+      true,
+      {},
+      {},
+      sandboxSmokeRunner({ imageUnavailable: () => imageUnavailable }),
+    );
+    const phase1Result = await executePlan(await workspaceAddPhase1Plan(c), c);
+    expect(phase1Result.report?.ok).toBe(true);
+    const gate = await captureClearedWorkspaceAddTrustGate(c, phase1Result.report);
+    imageUnavailable = true;
+
+    const result = await executePlan(await workspaceAddPhase2Plan(c, gate), c);
+
+    expect(result.report?.exitCode()).toBe(1);
+    expect(result.writes.some((write) => write.path.startsWith("ai-coding/skills/"))).toBe(false);
+    expect(result.report?.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "skill sandbox smoke test",
+          verdict: "fail",
+          code: "trust.sandbox-smoke-unavailable",
+        }),
+      ]),
+    );
+  });
+
+  it("fails phase 1 when applicable sandbox smoke is unavailable", async () => {
+    localSkill(sourceRoot, "clean", "# Clean\n");
+    writeFileSync(
+      join(sourceRoot, "package.json"),
+      JSON.stringify({ name: "clean-skill" }),
+      "utf8",
+    );
+    const c = ctx(
+      sourceRoot,
+      true,
+      true,
+      {},
+      {},
+      sandboxSmokeRunner({ imageUnavailable: () => true }),
+    );
+    const phase1Result = await executePlan(await workspaceAddPhase1Plan(c), c);
+    expect(phase1Result.report?.ok).toBe(false);
+    expect(phase1Result.report?.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          verdict: "fail",
+          code: "trust.sandbox-smoke-unavailable",
+        }),
+      ]),
+    );
+  });
+
   it("phase 2 rejects a source-binding mismatch through a paired structured probe", async () => {
     localSkill(sourceRoot, "clean", "# Clean\n");
     const c = ctx(sourceRoot, true, true);
@@ -233,9 +503,14 @@ describe("workspace add acquisition plans", () => {
     const run = fakeRunner((argv) => {
       if (argv[0] !== "docker") return undefined;
       if (argv[1] === "--version") return { code: 0, stdout: "Docker version 27\n" };
-      if (argv[1] === "image" && argv[2] === "inspect") {
-        return { code: 0, stdout: "sha256:skillspector\n" };
-      }
+      if (argv[1] === "image" && argv[2] === "inspect")
+        return {
+          code: 0,
+          stdout: JSON.stringify({
+            Id: SKILLSPECTOR_IMAGE_DIGEST,
+            RepoDigests: [`skillspector@${SKILLSPECTOR_IMAGE_DIGEST}`],
+          }),
+        };
       if (argv[1] === "run") return { code: 0, stdout: JSON.stringify({ runs: [] }) };
       return undefined;
     });
@@ -383,20 +658,26 @@ describe("workspace add acquisition plans", () => {
     expect(existsSync(join(workspace, "ai-coding", "skills"))).toBe(false);
   });
 
-  it("capture re-scan catches org-policy approvedSources tightened after phase 1", async () => {
+  it("capture re-scan preserves structured checks when approvedSources tighten after phase 1", async () => {
     const source = resolveTrustSource("owner/repo", { root: workspace });
     try {
       writeGithubQuarantine(source, "a".repeat(40));
       const report = new VerificationReport().pass("trust scan", "clean");
       writePolicy({ approvedSources: [{ owner: "trusted", repo: "repo" }] });
 
-      await expect(
-        captureClearedWorkspaceAddTrustGate(
-          ctx("owner/repo", true, true, {}, { posture: "enterprise" }),
-          report,
-          source,
-        ),
-      ).rejects.toThrow(/source changed after phase 1 scan/);
+      const c = ctx("owner/repo", true, true, {}, { posture: "enterprise" });
+      const gate = await captureWorkspaceAddTrustGate(c, report, source);
+      const result = await executePlan(await workspaceAddPhase2Plan(c, gate, source), c);
+
+      expect(result.report?.exitCode()).toBe(1);
+      expect(result.report?.checks).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            verdict: "fail",
+            code: "trust.untrusted-publisher",
+          }),
+        ]),
+      );
     } finally {
       if (source.kind === "github") rmSync(source.quarantineRoot, { recursive: true, force: true });
     }
@@ -511,7 +792,7 @@ describe("workspace add acquisition plans", () => {
         env: {},
         now: () => new Date("2026-06-30T00:00:00.000Z"),
         newRunId: () => "run_test",
-        run: fakeRunner(() => undefined),
+        run: sandboxSmokeRunner(),
       }),
     ).toBe(0);
     expect(existsSync(join(workspace, ".aih", "trust-lock.json"))).toBe(true);
@@ -526,7 +807,7 @@ describe("workspace add acquisition plans", () => {
         env: { AIH_TRUST_INTERNAL_SCOPES: "@acme" },
         now: () => new Date("2026-06-30T00:00:00.000Z"),
         newRunId: () => "run_test",
-        run: fakeRunner(() => undefined),
+        run: sandboxSmokeRunner(),
       }),
     ).toBe(1);
     expect(withScope.join("")).toContain("trust.dependency-confusion");
@@ -641,6 +922,31 @@ describe("workspace add acquisition plans", () => {
       true,
     );
     expect(existsSync(join(workspace, ".aih", "trust-lock.json"))).toBe(true);
+  });
+
+  it("runWorkspaceAdd reports structured sandbox smoke blockers for a local source", async () => {
+    localSkill(sourceRoot, "clean", "# Clean\n");
+    writeFileSync(
+      join(sourceRoot, "package.json"),
+      JSON.stringify({ name: "clean-skill" }),
+      "utf8",
+    );
+    const output: string[] = [];
+
+    const code = await runWorkspaceAdd(fakeCommand(sourceRoot), {
+      write: (text) => output.push(text),
+      env: {},
+      now: () => new Date("2026-06-30T00:00:00.000Z"),
+      newRunId: () => "run_test",
+      run: sandboxSmokeRunner({ imageUnavailable: () => true }),
+    });
+
+    const text = output.join("");
+    expect(code).toBe(1);
+    expect(text).toContain("trust.sandbox-smoke-unavailable");
+    expect(text).toContain("sandbox smoke test unavailable");
+    expect(text).not.toContain("error [AIH_TRUST]");
+    expect(existsSync(join(workspace, "ai-coding", "skills"))).toBe(false);
   });
 
   it("runWorkspaceAdd treats a corrupt trust lock as empty and promotes a clean source", async () => {

@@ -24,7 +24,9 @@ export interface RunOptions {
 export type Runner = (argv: string[], opts?: RunOptions) => Promise<RunResult>;
 
 /** Error shape that node's exec callbacks actually produce at runtime. */
-type ProcError = (Error & { code?: number | string }) | null;
+type ProcError =
+  | (Error & { code?: number | string; killed?: boolean; signal?: string | null })
+  | null;
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 const MAX_BUFFER = 64 * 1024 * 1024;
@@ -59,6 +61,18 @@ export const defaultRunner: Runner = (argv, opts = {}) =>
             code: 127,
             stdout: "",
             stderr: String(err?.message ?? "not found"),
+            spawnError: true,
+          });
+          return;
+        }
+        const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+        if (err?.killed) {
+          const timeoutDetail = `process timed out after ${timeoutMs}ms`;
+          const stderrText = (stderr ?? "").trim();
+          resolve({
+            code: typeof errno === "number" ? errno : 1,
+            stdout: stdout ?? "",
+            stderr: stderrText.length > 0 ? `${stderrText}\n${timeoutDetail}` : timeoutDetail,
             spawnError: true,
           });
           return;
