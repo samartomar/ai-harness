@@ -25,7 +25,7 @@ import type {
 import { isWellFormedUtf16 } from "../verification/validation.js";
 import { upsertManagedBlock } from "./envfile.js";
 import { FsTransaction, readIfExists } from "./fsxn.js";
-import { deepMerge, parseJsoncText } from "./merge.js";
+import { deepMerge, isPlainObject, parseJsoncText } from "./merge.js";
 import type {
   DigestAction,
   EnvBlockAction,
@@ -433,6 +433,52 @@ function realpathSafe(p: string): string {
   }
 }
 
+function dedupeCommandArrayByNeedle(
+  items: readonly unknown[],
+  needles: readonly string[],
+): unknown[] {
+  const seen = new Set<string>();
+  const kept: unknown[] = [];
+  for (let i = items.length - 1; i >= 0; i -= 1) {
+    const item = items[i];
+    const command = isPlainObject(item) && typeof item.command === "string" ? item.command : "";
+    const needle = needles.find((n) => command.includes(n));
+    if (needle !== undefined) {
+      if (seen.has(needle)) continue;
+      seen.add(needle);
+    }
+    kept.push(item);
+  }
+  return kept.reverse();
+}
+
+function updateJsonPath(
+  value: unknown,
+  path: readonly string[],
+  update: (items: readonly unknown[]) => unknown[],
+): unknown {
+  if (path.length === 0) return Array.isArray(value) ? update(value) : value;
+  if (!isPlainObject(value)) return value;
+  const [head, ...rest] = path;
+  if (head === undefined || !(head in value)) return value;
+  const next = updateJsonPath(value[head], rest, update);
+  return next === value[head] ? value : { ...value, [head]: next };
+}
+
+function dedupeJsonArrayCommands(
+  value: unknown,
+  specs: Record<string, readonly string[]> | undefined,
+): unknown {
+  if (specs === undefined) return value;
+  let out = value;
+  for (const [path, needles] of Object.entries(specs)) {
+    out = updateJsonPath(out, path.split("."), (items) =>
+      dedupeCommandArrayByNeedle(items, needles),
+    );
+  }
+  return out;
+}
+
 /**
  * Fail closed if a repo-scoped action path escapes the target root. Resolves the
  * deepest EXISTING ancestor through realpath first, so a symlinked/junctioned
@@ -494,6 +540,7 @@ export function resolveContents(action: WriteAction, absPath: string): string {
       value = replaceJsonKeys(value, action.json, action.replaceJsonKeys);
       value = replaceJsonChildKeys(value, action.json, action.replaceJsonChildKeys);
       value = pruneJsonChildKeys(value, action.json, action.pruneJsonChildKeys);
+      value = dedupeJsonArrayCommands(value, action.dedupeJsonArrayCommands);
     }
     value = removeJsonKeys(value, action.removeJsonKeys);
     value = removeJsonTopLevelKeys(value, action.removeJsonTopLevelKeys);

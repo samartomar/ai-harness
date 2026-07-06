@@ -75,6 +75,22 @@ describe("usageRecorderCheck", () => {
     expect(c.detail).toContain(".aih/usage-record.mjs");
   });
 
+  it("checks the current Copilot and Antigravity hook hosts", async () => {
+    write(
+      ".github/hooks/aih-usage-metering.json",
+      '{"hooks":{"postToolUse":[{"command":"node .aih/usage-record.mjs --from copilot"}]}}',
+    );
+    write(
+      ".agents/hooks.json",
+      '{"aih-usage-metering":{"PostToolUse":[{"hooks":[{"command":"node .aih/usage-record.mjs --from antigravity; exit 0"}]}]}}',
+    );
+    const c = await usageRecorderCheck(makeCtx());
+    expect(c.verdict).toBe("fail");
+    expect(c.code).toBe("usage.recorder-missing");
+    expect(c.detail).toContain(".github/hooks/aih-usage-metering.json");
+    expect(c.detail).toContain(".agents/hooks.json");
+  });
+
   it("passes once the recorder is present, not ignored, AND git-tracked", async () => {
     write(
       ".kiro/hooks/aih-usage-metering.kiro.hook",

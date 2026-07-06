@@ -419,12 +419,39 @@ describe("aih usage command", () => {
     mkdirSync(join(root, ".cursor"), { recursive: true });
     writeFileSync(
       join(root, ".cursor", "hooks.json"),
-      JSON.stringify({ version: 1, hooks: { afterMCPExecution: [{ command: "node team.mjs" }] } }),
+      JSON.stringify({
+        version: 1,
+        hooks: {
+          afterMCPExecution: [
+            { command: "node team.mjs" },
+            {
+              type: "command",
+              command: "node .aih/usage-record.mjs --from cursor",
+              name: "aih-usage-metering",
+              description: "Record local AI tool usage to .aih/usage.jsonl.",
+              timeout: 5000,
+            },
+          ],
+        },
+      }),
     );
     mkdirSync(join(root, ".windsurf"), { recursive: true });
     writeFileSync(
       join(root, ".windsurf", "hooks.json"),
-      JSON.stringify({ hooks: { post_mcp_tool_use: [{ command: "python team.py" }] } }),
+      JSON.stringify({
+        hooks: {
+          post_mcp_tool_use: [
+            { command: "python team.py" },
+            {
+              type: "command",
+              command: "node .aih/usage-record.mjs --from windsurf",
+              name: "aih-usage-metering",
+              description: "Record local AI tool usage to .aih/usage.jsonl.",
+              timeout: 5000,
+            },
+          ],
+        },
+      }),
     );
     mkdirSync(join(root, ".agents"), { recursive: true });
     writeFileSync(

@@ -11,6 +11,14 @@ function hookCommand(cli: Cli): string {
   return `node .aih/usage-record.mjs --from ${cli}`;
 }
 
+function hookCommandNeedle(cli: Cli): string {
+  return `usage-record.mjs --from ${cli}`;
+}
+
+function dedupeHookArray(path: string, cli: Cli): Record<string, readonly string[]> {
+  return { [path]: [hookCommandNeedle(cli)] };
+}
+
 /**
  * Fail-open variant for the Claude-Code-derived hosts (Claude and Antigravity). Both
  * run shell-form PostToolUse hooks via `sh -c` (macOS/Linux), Git Bash, or PowerShell
@@ -64,7 +72,7 @@ function commandOnlyHook(cli: Cli): Record<string, unknown> {
     command: hookCommand(cli),
     name: "aih-usage-metering",
     description: "Record local AI tool usage to .aih/usage.jsonl.",
-    timeout: 5,
+    timeout: 5000,
   };
 }
 
@@ -183,7 +191,10 @@ export function usageHookActions(ctx: PlanContext, clis: Cli[]): Action[] {
         ".cursor/hooks.json",
         cursorHooks(),
         "Cursor MCP execution usage hook, merged into existing hooks.json",
-        { merge: true },
+        {
+          merge: true,
+          dedupeJsonArrayCommands: dedupeHookArray("hooks.afterMCPExecution", "cursor"),
+        },
       ),
     );
   }
@@ -226,7 +237,10 @@ export function usageHookActions(ctx: PlanContext, clis: Cli[]): Action[] {
         ".windsurf/hooks.json",
         windsurfHooks(),
         "Windsurf post-MCP-tool usage hook, merged into existing hooks.json",
-        { merge: true },
+        {
+          merge: true,
+          dedupeJsonArrayCommands: dedupeHookArray("hooks.post_mcp_tool_use", "windsurf"),
+        },
       ),
     );
   }
