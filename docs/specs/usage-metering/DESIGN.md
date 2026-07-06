@@ -149,7 +149,7 @@ Each phase shipped independently and left the report honest (PREVIEW where data 
 - Hook generators: written config is valid + idempotent (re-run = no dup) + calls the recorder with
   the right args; existing user hooks preserved.
 - Panels: LIVE only with ≥1 event; PREVIEW otherwise; demo never renders as real.
-- Dormant: `ECC − fired` math correct over the window; 0 ECC or 0 usage → PREVIEW, not a false 0.
+- Dormant: `stack-relevant ECC − fired` math correct over the window; 0 ECC or 0 usage → PREVIEW, not a false 0.
 - Determinism: report stays byte-stable for a fixed event log; usage log itself is excluded.
 - Gate: typecheck / biome ci / full vitest / build, as with every slice.
 
@@ -159,8 +159,8 @@ Each phase shipped independently and left the report honest (PREVIEW where data 
    (the `resolveTargets` set), gated + idempotent. (Not claude+kiro-only.)
 2. **Attribution depth** — ship at **mcp + subagent + tool** granularity (solid); **skill identity
    best-effort** (named when the hook payload exposes it, else counted as a tool).
-3. **Dormant baseline** *(deferred to P3)* — default = **all** ECC-installed skills minus fired;
-   revisit "stack-relevant only" if the all-set proves noisy.
+3. **Dormant baseline** *(resolved in P3/#253)* — broad installs made **all** ECC-installed skills
+   minus fired too noisy, so dormant trim candidates use stack-relevant ECC skills minus fired.
 4. **Cross-project scope** *(deferred to P5)* — **scan-on-demand** over a passed list of repo dirs
    (honors the no-cache decision); no registry/daemon.
 
@@ -171,8 +171,8 @@ Each phase shipped independently and left the report honest (PREVIEW where data 
   `skill` / `mcp` / `tool` rows when the source payload exposes enough identity. Zed has no
   hook surface, so its usage path imports `threads.db` instead.
 - ✅ This slice — `aih usage --apply` generates the targeted per-tool hooks, v9 usage + skills
-  panels go LIVE from real events, dormant = live ECC skills minus fired ECC skills, and
-  `aih usage --rollup <dirs>` emits a scan-on-demand digest.
+  panels go LIVE from real events, dormant = stack-relevant live ECC skills minus fired ECC skills,
+  and `aih usage --rollup <dirs>` emits a scan-on-demand digest.
 - ✅ Post-implementation doc check — Gemini's project `.gemini/settings.json` `AfterTool` hook shape
   is current; Codex's project hook path stays `.codex/hooks.json` (plugin bundles may use
   `hooks/hooks.json`), resolves the recorder from the git root, and notes that project `.codex`

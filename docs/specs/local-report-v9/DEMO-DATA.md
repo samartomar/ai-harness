@@ -105,7 +105,7 @@ deterministic (no random/clock). Shapes must match `AihDataV9` (SPEC §3).
     "heavyLifters": [["tdd · ecc",84],["code-review · ecc",61],["plan · canon",44],
                      ["security-scan · ecc",38],["frontend-design · canon",22],["learn · user",14]],
     "totalInvocations": 263,
-    "dormant": ["go-review","php-review","ruby-review","swift-review","kotlin-review"],  // data-gated: LIVE (ECC ∩ usage); always shown in --demo
+    "dormant": ["frontend-patterns","nextjs-turbopack","security-review","e2e-testing"],  // data-gated: LIVE (stack-relevant ECC ∩ usage); always shown in --demo
     "tokensReclaimable": 2800
   },
 

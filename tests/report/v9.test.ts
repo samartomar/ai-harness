@@ -694,6 +694,21 @@ describe("buildAihDataV9 — Phase B capability flips", () => {
     expect(d.skills?.dormant).toEqual(["frontend-patterns", "nextjs-turbopack", "security-review"]);
   });
 
+  it("keeps all dormant ECC skills in scope when detected packs are empty", () => {
+    const active = ALL.filter((d) => !d.describe.startsWith("Usage"));
+    const stackEcc = digest("ECC harness — machine 1a/3s, repo 0a/0s, 0 dup", "body", {
+      machine: { agents: 1, skills: 3, rules: 1 },
+      repo: { agents: 0, skills: 0, rules: 0, hooks: 0 },
+      dup: 0,
+      packs: [],
+      skillNames: ["article-writing", "security-review", "tdd"],
+    });
+
+    const d = buildAihDataV9([...active, usageActive(), stackEcc]);
+
+    expect(d.skills?.dormant).toEqual(["article-writing", "security-review"]);
+  });
+
   it("keeps all dormant ECC skills in scope when detected packs are unmapped", () => {
     const active = ALL.filter((d) => !d.describe.startsWith("Usage"));
     const stackEcc = digest("ECC harness — machine 1a/2s, repo 0a/0s, 0 dup", "body", {
@@ -707,6 +722,32 @@ describe("buildAihDataV9 — Phase B capability flips", () => {
     const d = buildAihDataV9([...active, usageActive(), stackEcc]);
 
     expect(d.skills?.dormant).toEqual(["future-review", "security-review"]);
+  });
+
+  it("keeps all dormant ECC skills in scope when any detected pack is unmapped", () => {
+    const active = ALL.filter((d) => !d.describe.startsWith("Usage"));
+    const stackEcc = digest("ECC harness — machine 1a/4s, repo 0a/0s, 0 dup", "body", {
+      machine: { agents: 1, skills: 4, rules: 1 },
+      repo: { agents: 0, skills: 0, rules: 0, hooks: 0 },
+      dup: 0,
+      packs: ["typescript", "future-stack"],
+      skillNames: [
+        "article-writing",
+        "frontend-patterns",
+        "future-review",
+        "security-review",
+        "tdd",
+      ],
+    });
+
+    const d = buildAihDataV9([...active, usageActive(), stackEcc]);
+
+    expect(d.skills?.dormant).toEqual([
+      "article-writing",
+      "frontend-patterns",
+      "future-review",
+      "security-review",
+    ]);
   });
 
   it("keeps dormant skill claims unavailable when skill samples exist without ECC inventory", () => {

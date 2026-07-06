@@ -1,3 +1,4 @@
+import type { EccLanguagePack } from "../ecc/select.js";
 import { SUPPORTED_CLIS } from "../internals/clis.js";
 import type { DigestAction } from "../internals/plan.js";
 import { redactText } from "../support/redact.js";
@@ -700,7 +701,7 @@ const COMMON_DORMANT_SKILLS = new Set([
   "verification-loop",
 ]);
 
-const PACK_DORMANT_KEYWORDS: Record<string, string[]> = {
+const PACK_DORMANT_KEYWORDS: Record<EccLanguagePack, string[]> = {
   angular: ["angular"],
   arkts: ["arkts"],
   golang: ["go-", "golang"],
@@ -716,12 +717,23 @@ const PACK_DORMANT_KEYWORDS: Record<string, string[]> = {
 
 function stackRelevantDormantSkills(skillNames: string[], packs: readonly string[]): string[] {
   if (packs.length === 0) return skillNames;
-  const keywords = packs.flatMap((pack) => PACK_DORMANT_KEYWORDS[pack] ?? []);
+  const mappedKeywords: string[][] = [];
+  for (const pack of packs) {
+    const keywords = dormantKeywordsForPack(pack);
+    if (!keywords) return skillNames;
+    mappedKeywords.push(keywords);
+  }
+  const keywords = mappedKeywords.flat();
   if (keywords.length === 0) return skillNames;
   return skillNames.filter((name) => {
     if (COMMON_DORMANT_SKILLS.has(name)) return true;
     return keywords.some((keyword) => name.includes(keyword));
   });
+}
+
+function dormantKeywordsForPack(pack: string): string[] | undefined {
+  if (!Object.hasOwn(PACK_DORMANT_KEYWORDS, pack)) return undefined;
+  return PACK_DORMANT_KEYWORDS[pack as EccLanguagePack];
 }
 
 /** §2 cross-CLI coherence (from the v9-only "Coherence" digest), else undefined. */
