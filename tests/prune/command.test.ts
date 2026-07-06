@@ -102,6 +102,27 @@ describe("aih prune command", () => {
     expect(text).toContain(".cursor/mcp.json");
   });
 
+  it("routes dropped ECC npm-target CLIs through ECC's install-state uninstall", async () => {
+    marker("claude");
+    write("ai-coding/adapters/claude.md");
+    write("ai-coding/adapters/codex.md");
+    const actions = await actionsOf();
+    const ecc = actions.find(
+      (a): a is Extract<Action, { kind: "exec" }> =>
+        a.kind === "exec" && a.describe.includes("ECC-managed codex footprint"),
+    );
+    expect(ecc?.argv).toEqual([
+      "npx",
+      "--yes",
+      "--package",
+      "ecc-universal",
+      "ecc",
+      "uninstall",
+      "--target",
+      "codex",
+    ]);
+  });
+
   it("skips a bootloader that carries no aih block (nothing to subtract)", async () => {
     marker("claude");
     write("ai-coding/adapters/claude.md");

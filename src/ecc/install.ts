@@ -92,7 +92,7 @@ function claudePluginDoc(): Action {
   return doc(
     "ECC for Claude Code — marketplace plugin (optional alternative)",
     lines(
-      "The shell install above (`npx ecc-install --target claude`) is the reliable path and",
+      "The shell install above (`npx --package ecc-universal ecc-install --target claude`) is the reliable path and",
       "runs under `--apply`. If you prefer the marketplace plugin instead, run these INSIDE",
       "Claude Code — do NOT combine the two (that double-installs the same content):",
       "",
@@ -142,7 +142,7 @@ export function eccSupplyChainDoc(): Action {
       "By design aih runs ECC's own installer at its LATEST published version, so what",
       "executes can change after review. For a governed/enterprise rollout, pin it:",
       "",
-      "  AIH_ECC_INSTALL_VERSION=<x.y.z>   # pins `npx ecc-install@<x.y.z>` (npm targets)",
+      "  AIH_ECC_INSTALL_VERSION=<x.y.z>   # pins `npx --package ecc-universal@<x.y.z> ecc-install`",
       "  AIH_ECC_REF=<tag|sha>             # pins the Kiro git checkout to a tag/commit",
       "",
       "Or mirror `ecc-universal` and `code-review-graph` into your internal registries",

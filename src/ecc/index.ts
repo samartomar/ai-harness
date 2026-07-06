@@ -15,13 +15,14 @@ import {
 import { lines } from "../internals/render.js";
 import type { RepoStack } from "../profile/scan.js";
 import { scanRepo } from "../profile/scan.js";
+import { codexMcpCollisionActions } from "./codex.js";
 import {
   type EccInstallInputs,
   eccActionsForCli,
   eccSupplyChainDoc,
   eccToolsDoc,
+  isEccInstallTarget,
 } from "./install.js";
-import { codexMcpCollisionActions } from "./codex.js";
 import { eccLanguages } from "./select.js";
 
 const ECC_REPO_URL = "https://github.com/affaan-m/ECC.git";
@@ -251,7 +252,7 @@ function summaryDoc(clis: string[], inputs: EccInstallInputs, stack: RepoStack):
       `Target CLIs: ${clis.join(", ")}.  Profile: ${inputs.profile}.  Detected ${scope}.`,
       "",
       "aih runs ECC's OWN installer at the LATEST version — it assembles nothing itself:",
-      `  • npm targets → npx ecc-install --target <cli> --profile ${inputs.profile}  (no clone)`,
+      `  • npm targets → npx --package ecc-universal ecc-install --target <cli> --profile ${inputs.profile}  (no clone)`,
       "  • Kiro → cached git checkout of ECC (clone/pull to latest) + native .kiro/install.sh",
       "",
       "Re-run after the stack changes to re-scope. For finer component control (specific",
@@ -266,7 +267,8 @@ function summaryDoc(clis: string[], inputs: EccInstallInputs, stack: RepoStack):
  * LATEST published version, scoped by `--profile`.
  *
  * aih never assembles ECC content: it runs ECC's own installer. npm-target CLIs
- * use `npx ecc-install --target <cli>` (latest from npm, no checkout needed);
+ * use `npx --package ecc-universal ecc-install --target <cli>` (latest from npm,
+ * no checkout needed);
  * Kiro (not on npm) uses a cached git checkout + ECC's native `.kiro/install.sh`;
  * CLIs ECC has no direct installer for are routed through the `consult` advisor.
  * Every network/install step is an `exec` that runs only under `--apply`.
@@ -285,18 +287,25 @@ async function eccPlan(ctx: PlanContext): Promise<Plan> {
   };
 
   const actions: Action[] = [];
+  let npmInstallerPlanned = false;
   for (const cli of clis) {
     if (cli === "kiro") actions.push(...kiroEccActions(ctx));
     else if (cli === "codex") {
       const blockers = codexMcpCollisionActions(ctx);
       if (blockers.length > 0) actions.push(...blockers);
-      else actions.push(...eccActionsForCli(cli, inputs));
-    } else actions.push(...eccActionsForCli(cli, inputs));
+      else {
+        npmInstallerPlanned = true;
+        actions.push(...eccActionsForCli(cli, inputs));
+      }
+    } else {
+      if (isEccInstallTarget(cli)) npmInstallerPlanned = true;
+      actions.push(...eccActionsForCli(cli, inputs));
+    }
   }
   // Surface the supply-chain advisory whenever an upstream surface runs unpinned:
   // the npm installer (no install-version) or the Kiro git checkout (no ref).
   const hasKiro = clis.includes("kiro");
-  const npmUnpinned = clis.some((c) => c !== "kiro") && installVersion === undefined;
+  const npmUnpinned = npmInstallerPlanned && installVersion === undefined;
   if (npmUnpinned || (hasKiro && eccRef === undefined)) {
     actions.push(eccSupplyChainDoc());
   }
@@ -311,7 +320,7 @@ async function eccPlan(ctx: PlanContext): Promise<Plan> {
 export const command: CommandSpec = {
   name: "ecc",
   summary:
-    "Install affaan-m/ECC (latest) for the selected CLIs via ECC's own installer — npx ecc-install, or a cached git checkout for Kiro",
+    "Install affaan-m/ECC (latest) for the selected CLIs via ECC's own installer — npx --package ecc-universal ecc-install, or a cached git checkout for Kiro",
   options: [
     {
       flags: "--profile <profile>",

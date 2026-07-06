@@ -31,6 +31,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   workspace report rollups, workspace contracts/snapshots, skill card schema,
   approved skills lockfile, and external skill packs, and indexed them from
   `docs/README.md`. (#272)
+- **ECC installer resolution**: `aih ecc` now invokes ECC through
+  `ecc-universal`'s `ecc-install` bin instead of the nonexistent `ecc-install`
+  package, checks that npm metadata in CI, blocks known Codex MCP transport
+  collisions before install, and lets `aih prune` call ECC's install-state
+  uninstall for dropped ECC npm targets. (#283)
 
 ## [2.0.0] - 2026-07-05
 

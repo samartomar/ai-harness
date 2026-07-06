@@ -1,7 +1,7 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { readIfExists } from "../internals/fsxn.js";
-import { type Action, doc, probe, type PlanContext } from "../internals/plan.js";
+import { type Action, doc, type PlanContext, probe } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
 
 type CodexMcpTransport = "stdio" | "http" | "mixed" | "unknown";
@@ -95,7 +95,7 @@ export function codexMcpCollisionActions(ctx: PlanContext): Action[] {
     probe("Codex MCP server name collision", () => ({
       name: "Codex MCP server name collision",
       verdict: "fail",
-      code: "ecc.codex-mcp-collision",
+      code: "mcp.config-invalid",
       detail: summary,
     })),
   ];

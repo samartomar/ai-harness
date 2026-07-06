@@ -218,14 +218,14 @@ describe("ecc.plan — runs ECC's own installer (latest)", () => {
     expect(text).toContain("npx ecc-agentshield scan");
   });
 
-  it("--cli codex now installs via npx ecc-install --target codex (npm v2 target)", async () => {
+  it("--cli codex installs via ecc-universal's ecc-install bin (npm v2 target)", async () => {
     const actions = (await command.plan(makeCtx({ cli: "codex" }))).actions;
     expect(installTargets(actions)).toContain("codex");
     // the old native sync-script / clone path is gone.
     expect(execBlob(actions)).not.toContain("sync-ecc-to-codex.sh");
   });
 
-  it("--cli gemini installs via npx ecc-install (a real v2 target now, not consult)", async () => {
+  it("--cli gemini installs via ecc-universal's ecc-install bin, not consult", async () => {
     const actions = (await command.plan(makeCtx({ cli: "gemini" }))).actions;
     expect(execs(actions)[0]?.argv).toEqual([
       "npx",
@@ -273,7 +273,7 @@ describe("ecc.plan — runs ECC's own installer (latest)", () => {
     expect(blob).not.toContain("git clone");
   });
 
-  it("--all-tools: every npm target via ecc-install, kiro via git checkout", async () => {
+  it("--all-tools: every npm target via ecc-universal, kiro via git checkout", async () => {
     put("package.json", JSON.stringify({ name: "svc" }));
     const actions = (await command.plan(makeCtx({ allTools: true }))).actions;
     expect(installTargets(actions)).toEqual(
@@ -455,7 +455,7 @@ describe("ecc.plan — Codex MCP collision preflight", () => {
       expect.arrayContaining([
         expect.objectContaining({
           verdict: "fail",
-          code: "ecc.codex-mcp-collision",
+          code: "mcp.config-invalid",
         }),
       ]),
     );
