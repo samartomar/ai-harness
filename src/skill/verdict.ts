@@ -18,6 +18,7 @@ const ATTRIBUTED_CODES = new Set<string>([
   "trust.fetch-blocked",
   "trust.license-missing",
   "trust.sandbox-smoke-failed",
+  "trust.sandbox-smoke-unavailable",
 ]);
 
 function isDangerFail(check: Check): boolean {
@@ -89,11 +90,7 @@ export function skillVerdict(
   ) {
     escalate("UNKNOWN", "sandbox smoke test failed; runtime evidence is insufficient");
   }
-  if (
-    checks.some(
-      (check) => check.verdict === "skip" && check.code === "trust.sandbox-smoke-unavailable",
-    )
-  ) {
+  if (checks.some((check) => check.code === "trust.sandbox-smoke-unavailable")) {
     escalate("UNKNOWN", "sandbox smoke test was unavailable; runtime evidence is insufficient");
   }
   if (!opts.pinned) {

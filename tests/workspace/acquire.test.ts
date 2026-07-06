@@ -400,7 +400,7 @@ describe("workspace add acquisition plans", () => {
     );
   });
 
-  it("does not resolve a cleared gate when applicable sandbox smoke is unavailable", async () => {
+  it("fails phase 1 when applicable sandbox smoke is unavailable", async () => {
     localSkill(sourceRoot, "clean", "# Clean\n");
     writeFileSync(
       join(sourceRoot, "package.json"),
@@ -416,18 +416,14 @@ describe("workspace add acquisition plans", () => {
       sandboxSmokeRunner({ imageUnavailable: () => true }),
     );
     const phase1Result = await executePlan(await workspaceAddPhase1Plan(c), c);
-    expect(phase1Result.report?.ok).toBe(true);
-
-    await expect(captureClearedWorkspaceAddTrustGate(c, phase1Result.report)).rejects.toMatchObject(
-      {
-        code: "AIH_TRUST",
-        blockingChecks: expect.arrayContaining([
-          expect.objectContaining({
-            verdict: "fail",
-            code: "trust.sandbox-smoke-unavailable",
-          }),
-        ]),
-      },
+    expect(phase1Result.report?.ok).toBe(false);
+    expect(phase1Result.report?.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          verdict: "fail",
+          code: "trust.sandbox-smoke-unavailable",
+        }),
+      ]),
     );
   });
 
@@ -897,7 +893,7 @@ describe("workspace add acquisition plans", () => {
     const text = output.join("");
     expect(code).toBe(1);
     expect(text).toContain("trust.sandbox-smoke-unavailable");
-    expect(text).toContain("promotion blocked");
+    expect(text).toContain("sandbox smoke test unavailable");
     expect(text).not.toContain("error [AIH_TRUST]");
     expect(existsSync(join(workspace, "ai-coding", "skills"))).toBe(false);
   });

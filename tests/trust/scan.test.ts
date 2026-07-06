@@ -90,6 +90,23 @@ function successfulSkillspector(argv: string[]): Partial<Awaited<ReturnType<Runn
   return undefined;
 }
 
+function successfulSmokeAndSkillspector(
+  argv: string[],
+): Partial<Awaited<ReturnType<Runner>>> | undefined {
+  if (
+    argv[0] === "docker" &&
+    argv[1] === "run" &&
+    argv.some((arg) => arg.includes("aih sandbox smoke ok"))
+  ) {
+    return { code: 0, stdout: "aih sandbox smoke ok\n" };
+  }
+  return successfulSkillspector(argv);
+}
+
+function successfulSmokeRunner(): Runner {
+  return fakeRunner(successfulSmokeAndSkillspector);
+}
+
 function ciscoRunner(sarif: unknown, onScan?: (argv: string[]) => void): Runner {
   return fakeRunner((argv) => {
     const skillspector = successfulSkillspector(argv);
@@ -1122,6 +1139,26 @@ describe("scanTrustTree", () => {
       ]),
     );
     expect(seenSmoke).toHaveLength(1);
+  });
+
+  it("fails applicable sandbox smoke when detector runtime is missing", async () => {
+    skill("skills/clean", "# Clean\n");
+    write("skills/clean/package.json", JSON.stringify({ name: "clean-skill" }));
+
+    const result = await scanTrustTreeWithAnalyzers(dir, {
+      posture: "vibe",
+    });
+
+    expect(result.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "skill sandbox smoke test",
+          verdict: "fail",
+          code: "trust.sandbox-smoke-unavailable",
+          detail: expect.stringContaining("detector runtime is missing"),
+        }),
+      ]),
+    );
   });
 
   it("records an explicit sandbox smoke skip when direct analyzer scans find no skill dirs", async () => {
@@ -2875,15 +2912,19 @@ describe("trustScanCommand", () => {
       "utf8",
     );
 
-    const p = await trustScanCommand.plan(ctx({ target: dir }, { AIH_TRUST_INTERNAL_SCOPES: "" }));
-    const clean = await executePlan(p, ctx({ target: dir }, { AIH_TRUST_INTERNAL_SCOPES: "" }));
+    const cleanCtx = ctx(
+      { target: dir },
+      { AIH_TRUST_INTERNAL_SCOPES: "" },
+      "vibe",
+      successfulSmokeRunner(),
+    );
+    const p = await trustScanCommand.plan(cleanCtx);
+    const clean = await executePlan(p, cleanCtx);
     expect(clean.report?.ok).toBe(true);
 
     const env = { AIH_TRUST_INTERNAL_SCOPES: "@acme" };
-    const blocked = await executePlan(
-      await trustScanCommand.plan(ctx({ target: dir }, env)),
-      ctx({ target: dir }, env),
-    );
+    const blockedCtx = ctx({ target: dir }, env, "vibe", successfulSmokeRunner());
+    const blocked = await executePlan(await trustScanCommand.plan(blockedCtx), blockedCtx);
     expect(blocked.report?.exitCode()).toBe(1);
     expect(
       blocked.report?.checks.some((check) => check.code === "trust.dependency-confusion"),
@@ -3148,36 +3189,26 @@ describe("trustScanCommand", () => {
     skill("skills/dep", "# Dependency\n");
     write("package.json", JSON.stringify({ dependencies: { react: "^18.0.0" } }));
     write("package-lock.json", JSON.stringify({ lockfileVersion: 3, packages: {} }));
-    const initial = await executePlan(
-      await trustScanCommand.plan(ctx({ target: dir }, {}, "enterprise")),
-      ctx({ target: dir }, {}, "enterprise"),
-    );
+    const initialCtx = ctx({ target: dir }, {}, "enterprise", successfulSmokeRunner());
+    const initial = await executePlan(await trustScanCommand.plan(initialCtx), initialCtx);
     const fingerprint = initial.report?.checks.find(
       (check) => check.code === "trust.unpinned-dependency",
     )?.fingerprint;
     if (!fingerprint) throw new Error("expected unpinned dependency fingerprint");
 
+    const acknowledgedCtx = ctx(
+      {
+        target: dir,
+        acknowledge: fingerprint,
+        reason: "temporary source review exception",
+      },
+      {},
+      "enterprise",
+      successfulSmokeRunner(),
+    );
     const acknowledged = await executePlan(
-      await trustScanCommand.plan(
-        ctx(
-          {
-            target: dir,
-            acknowledge: fingerprint,
-            reason: "temporary source review exception",
-          },
-          {},
-          "enterprise",
-        ),
-      ),
-      ctx(
-        {
-          target: dir,
-          acknowledge: fingerprint,
-          reason: "temporary source review exception",
-        },
-        {},
-        "enterprise",
-      ),
+      await trustScanCommand.plan(acknowledgedCtx),
+      acknowledgedCtx,
     );
     expect(acknowledged.report?.ok).toBe(true);
     expect(acknowledged.report?.checks).toEqual(
@@ -3190,28 +3221,17 @@ describe("trustScanCommand", () => {
     );
 
     write("package.json", JSON.stringify({ dependencies: { react: "^18.1.0" } }));
-    const changed = await executePlan(
-      await trustScanCommand.plan(
-        ctx(
-          {
-            target: dir,
-            acknowledge: fingerprint,
-            reason: "temporary source review exception",
-          },
-          {},
-          "enterprise",
-        ),
-      ),
-      ctx(
-        {
-          target: dir,
-          acknowledge: fingerprint,
-          reason: "temporary source review exception",
-        },
-        {},
-        "enterprise",
-      ),
+    const changedCtx = ctx(
+      {
+        target: dir,
+        acknowledge: fingerprint,
+        reason: "temporary source review exception",
+      },
+      {},
+      "enterprise",
+      successfulSmokeRunner(),
     );
+    const changed = await executePlan(await trustScanCommand.plan(changedCtx), changedCtx);
     expect(changed.report?.exitCode()).toBe(1);
     expect(changed.report?.checks).toEqual(
       expect.arrayContaining([
@@ -3229,36 +3249,26 @@ describe("trustScanCommand", () => {
       ".mcp.json",
       JSON.stringify({ mcpServers: { hosted: { url: "https://mcp.vendor.example/mcp" } } }),
     );
-    const initial = await executePlan(
-      await trustScanCommand.plan(ctx({ target: dir }, {}, "enterprise")),
-      ctx({ target: dir }, {}, "enterprise"),
-    );
+    const initialCtx = ctx({ target: dir }, {}, "enterprise", successfulSmokeRunner());
+    const initial = await executePlan(await trustScanCommand.plan(initialCtx), initialCtx);
     const fingerprint = initial.report?.checks.find(
       (check) => check.code === "mcp.policy-denied",
     )?.fingerprint;
     if (!fingerprint) throw new Error("expected mcp policy fingerprint");
 
+    const acknowledgedCtx = ctx(
+      {
+        target: dir,
+        acknowledge: fingerprint,
+        reason: "reviewed hosted MCP server",
+      },
+      {},
+      "enterprise",
+      successfulSmokeRunner(),
+    );
     const acknowledged = await executePlan(
-      await trustScanCommand.plan(
-        ctx(
-          {
-            target: dir,
-            acknowledge: fingerprint,
-            reason: "reviewed hosted MCP server",
-          },
-          {},
-          "enterprise",
-        ),
-      ),
-      ctx(
-        {
-          target: dir,
-          acknowledge: fingerprint,
-          reason: "reviewed hosted MCP server",
-        },
-        {},
-        "enterprise",
-      ),
+      await trustScanCommand.plan(acknowledgedCtx),
+      acknowledgedCtx,
     );
     expect(acknowledged.report?.ok).toBe(true);
     expect(acknowledged.report?.checks).toEqual(
@@ -3274,28 +3284,17 @@ describe("trustScanCommand", () => {
       ".mcp.json",
       JSON.stringify({ mcpServers: { hosted: { url: "https://mcp.other.example/mcp" } } }),
     );
-    const changed = await executePlan(
-      await trustScanCommand.plan(
-        ctx(
-          {
-            target: dir,
-            acknowledge: fingerprint,
-            reason: "reviewed hosted MCP server",
-          },
-          {},
-          "enterprise",
-        ),
-      ),
-      ctx(
-        {
-          target: dir,
-          acknowledge: fingerprint,
-          reason: "reviewed hosted MCP server",
-        },
-        {},
-        "enterprise",
-      ),
+    const changedCtx = ctx(
+      {
+        target: dir,
+        acknowledge: fingerprint,
+        reason: "reviewed hosted MCP server",
+      },
+      {},
+      "enterprise",
+      successfulSmokeRunner(),
     );
+    const changed = await executePlan(await trustScanCommand.plan(changedCtx), changedCtx);
     const changedFingerprint = changed.report?.checks.find(
       (check) => check.code === "mcp.policy-denied",
     )?.fingerprint;

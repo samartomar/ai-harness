@@ -291,12 +291,13 @@ describe("aih pack install", () => {
       sources: Array<{
         source: string;
         blockingChecks?: Array<{ code?: string; verdict: string }>;
+        phase1?: { report?: { checks?: Array<{ code?: string; verdict: string }> } };
       }>;
     };
 
     expect(code).toBe(1);
     const beta = payload.sources.find((source) => source.source === realpathSync(sourceB));
-    expect(beta?.blockingChecks).toEqual(
+    expect(beta?.phase1?.report?.checks).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           code: "trust.sandbox-smoke-unavailable",

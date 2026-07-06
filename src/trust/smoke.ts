@@ -107,9 +107,9 @@ function sandboxSmokeScript(shape: SandboxSmokeShape): string {
 function unavailableCheck(reason: string): Check {
   return {
     name: SANDBOX_SMOKE_NAME,
-    verdict: "skip",
+    verdict: "fail",
     code: "trust.sandbox-smoke-unavailable",
-    detail: `sandbox smoke test skipped: ${reason}`,
+    detail: `sandbox smoke test unavailable (trust.sandbox-smoke-unavailable): ${reason}`,
   };
 }
 
