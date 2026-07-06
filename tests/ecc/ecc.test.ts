@@ -425,15 +425,21 @@ describe("ECC supply-chain pinning (AIH-SUPPLY-001 round 2)", () => {
 
 describe("ecc.plan — Codex MCP collision preflight", () => {
   it("refuses the Codex installer when global and project config collide on transport", async () => {
-    put(
-      ".codex/config.toml",
+    const home = join(tmp, "home");
+    const root = join(tmp, "repo");
+    mkdirSync(join(root, ".codex"), { recursive: true });
+    mkdirSync(join(home, ".codex"), { recursive: true });
+    writeFileSync(
+      join(root, ".codex", "config.toml"),
       '[mcp_servers.context7]\nurl = "https://mcp.context7.com/mcp"\n',
     );
-    put(
-      "../.codex/config.toml",
+    writeFileSync(
+      join(home, ".codex", "config.toml"),
       '[mcp_servers.context7]\ncommand = "npx"\nargs = ["@upstash/context7-mcp"]\n',
     );
-    const actions = (await command.plan(makeCtx({ cli: "codex" }))).actions;
+    const base = makeCtx({ cli: "codex" });
+    const ctx = { ...base, root, env: { ...base.env, HOME: home, USERPROFILE: home } };
+    const actions = (await command.plan(ctx)).actions;
     expect(execBlob(actions)).not.toContain("ecc-install --target codex");
     expect(
       actions.some(
@@ -444,7 +450,7 @@ describe("ecc.plan — Codex MCP collision preflight", () => {
       ),
     ).toBe(true);
     const probes = actions.filter((a): a is ProbeAction => a.kind === "probe");
-    const checks = await Promise.all(probes.map((p) => p.run(makeCtx({ cli: "codex" }))));
+    const checks = await Promise.all(probes.map((p) => p.run(ctx)));
     expect(checks).toEqual(
       expect.arrayContaining([
         expect.objectContaining({

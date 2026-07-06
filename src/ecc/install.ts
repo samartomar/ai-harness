@@ -6,10 +6,11 @@ import { execArgv } from "../tools/install.js";
 
 /**
  * ECC is installed by running ECC's OWN published installer — aih assembles no ECC
- * content itself. `npx --yes ecc-install` fetches the LATEST `ecc-universal` from
- * npm and installs it for the target CLI, so a fresh machine with no ECC checkout
- * and no user setup still gets the current version. aih only passes the target +
- * profile (the selection); ECC's installer does the rest.
+ * content itself. `npx --yes --package ecc-universal ecc-install` fetches the
+ * LATEST `ecc-universal` from npm and runs its `ecc-install` bin for the target
+ * CLI, so a fresh machine with no ECC checkout and no user setup still gets the
+ * current version. aih only passes the target + profile (the selection); ECC's
+ * installer does the rest.
  *
  * Source of truth: ECC's `SUPPORTED_INSTALL_TARGETS` in `scripts/install-apply.js`
  * (v2) — claude, claude-project, cursor, antigravity, codex, gemini, opencode,
@@ -44,28 +45,42 @@ export interface EccInstallInputs {
    */
   platform: Platform;
   /**
-   * Optional pin for `npx ecc-install@<version>` (enterprise supply-chain control,
-   * from `AIH_ECC_INSTALL_VERSION`). Unset → latest from npm.
+   * Optional pin for `npx --package ecc-universal@<version> ecc-install`
+   * (enterprise supply-chain control, from `AIH_ECC_INSTALL_VERSION`). Unset →
+   * latest from npm.
    */
   installVersion?: string;
 }
 
-/** The npm spec for the ECC installer — pinned `ecc-install@<ver>` or bare (latest). */
-function installerSpec(version?: string): string {
-  return version && version.length > 0 ? `ecc-install@${version}` : "ecc-install";
+export const ECC_NPM_PACKAGE = "ecc-universal";
+export const ECC_NPM_BIN = "ecc-install";
+
+/** The npm package spec for ECC's installer package — pinned or bare latest. */
+function installerPackageSpec(version?: string): string {
+  return version && version.length > 0 ? `${ECC_NPM_PACKAGE}@${version}` : ECC_NPM_PACKAGE;
 }
 
-/** The `npx ecc-install` argv for a target CLI — version-pinnable, scoped by profile. */
+/** The `npx --package ecc-universal ecc-install` argv for a target CLI. */
 export function eccInstallerArgv(cli: Cli, profile: string, version?: string): string[] {
-  return ["npx", "--yes", installerSpec(version), "--target", cli, "--profile", profile];
+  return [
+    "npx",
+    "--yes",
+    "--package",
+    installerPackageSpec(version),
+    ECC_NPM_BIN,
+    "--target",
+    cli,
+    "--profile",
+    profile,
+  ];
 }
 
 /** Run ECC's real installer for a supported CLI, under --apply (pinned if requested). */
 function installerExec(cli: Cli, profile: string, platform: Platform, version?: string): Action {
-  const spec = installerSpec(version);
+  const spec = installerPackageSpec(version);
   const tag = version ? `pinned ${spec}` : "latest from npm";
   return exec(
-    `Install ECC for ${cli} — npx ${spec} --target ${cli} --profile ${profile} (${tag}, under --apply)`,
+    `Install ECC for ${cli} — npx --package ${spec} ${ECC_NPM_BIN} --target ${cli} --profile ${profile} (${tag}, under --apply)`,
     // Windows execFile can't spawn the `npx` .cmd shim directly (no .exe) — route it
     // through `cmd /c`, the same shim fix the rest of the harness uses (tools/install.ts).
     execArgv(platform, eccInstallerArgv(cli, profile, version)),
@@ -130,7 +145,7 @@ export function eccSupplyChainDoc(): Action {
       "  AIH_ECC_INSTALL_VERSION=<x.y.z>   # pins `npx ecc-install@<x.y.z>` (npm targets)",
       "  AIH_ECC_REF=<tag|sha>             # pins the Kiro git checkout to a tag/commit",
       "",
-      "Or mirror `ecc-install` and `code-review-graph` into your internal registries",
+      "Or mirror `ecc-universal` and `code-review-graph` into your internal registries",
       "and point npm/uv at them. Unpinned `npx`/`git pull` execution is",
       "the residual supply-chain risk — pin or mirror before an air-gapped/audited deploy.",
     ),

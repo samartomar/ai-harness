@@ -21,6 +21,7 @@ import {
   eccSupplyChainDoc,
   eccToolsDoc,
 } from "./install.js";
+import { codexMcpCollisionActions } from "./codex.js";
 import { eccLanguages } from "./select.js";
 
 const ECC_REPO_URL = "https://github.com/affaan-m/ECC.git";
@@ -286,7 +287,11 @@ async function eccPlan(ctx: PlanContext): Promise<Plan> {
   const actions: Action[] = [];
   for (const cli of clis) {
     if (cli === "kiro") actions.push(...kiroEccActions(ctx));
-    else actions.push(...eccActionsForCli(cli, inputs));
+    else if (cli === "codex") {
+      const blockers = codexMcpCollisionActions(ctx);
+      if (blockers.length > 0) actions.push(...blockers);
+      else actions.push(...eccActionsForCli(cli, inputs));
+    } else actions.push(...eccActionsForCli(cli, inputs));
   }
   // Surface the supply-chain advisory whenever an upstream surface runs unpinned:
   // the npm installer (no install-version) or the Kiro git checkout (no ref).
