@@ -21,6 +21,7 @@ import { defaultRunner, type Runner } from "../internals/proc.js";
 import type { Check, VerificationReport } from "../internals/verify.js";
 import { AIH_ORG_POLICY_FILE } from "../org-policy/constants.js";
 import { makeHostAdapter } from "../platform/detect.js";
+import { MCP_CONFIG_FILES } from "../secrets/scan.js";
 import { readSkillsLock } from "../skill/lockfile.js";
 import { buildSupport, supportSummary } from "../support/integrate.js";
 import {
@@ -48,6 +49,7 @@ import {
   trustScanPlanForSource,
   trustSourceOriginChecks,
 } from "../trust/scan.js";
+import type { SandboxSmokeShape } from "../trust/smoke.js";
 
 interface WorkspaceAddDeps {
   run?: Runner;
@@ -78,6 +80,15 @@ interface TrustSourceBinding {
   ref?: string;
   pinnedSha?: string;
 }
+
+const PACKAGE_MANIFESTS = [
+  "package.json",
+  "pyproject.toml",
+  "requirements.txt",
+  "Cargo.toml",
+  "go.mod",
+];
+const INSTALL_SCRIPT_HOOKS = ["preinstall", "postinstall", "install"];
 
 export interface ClearedWorkspaceAddTrustGate {
   source: TrustSourceBinding;
@@ -134,7 +145,9 @@ export async function workspaceAddPhase1Plan(
   resolvedSource?: TrustSource,
 ): Promise<Plan> {
   const source = resolvedSource ?? sourceFromContext(ctx);
-  const scan = await trustScanPlanForSource(ctx, source);
+  const scan = await trustScanPlanForSource(ctx, source, {
+    sandboxSmokeShape: sandboxSmokeShapeForSourceRoot,
+  });
   return plan("workspace add: fetch + scan", aihIgnoreWrite(ctx.root), ...scan.actions);
 }
 
@@ -436,6 +449,49 @@ function acceptedAcknowledgementFingerprints(report: VerificationReport | undefi
   );
 }
 
+function hasInstallScriptHooks(root: string): boolean {
+  const text = readIfExists(join(root, "package.json"));
+  if (text === undefined) return false;
+  try {
+    const parsed = JSON.parse(text) as { scripts?: unknown };
+    const scripts = parsed.scripts;
+    if (typeof scripts !== "object" || scripts === null || Array.isArray(scripts)) return false;
+    return INSTALL_SCRIPT_HOOKS.some((hook) => Object.hasOwn(scripts, hook));
+  } catch {
+    return false;
+  }
+}
+
+function isInstallScriptFile(name: string): boolean {
+  const lower = name.toLowerCase();
+  return lower.endsWith(".sh") || lower.endsWith(".ps1") || lower.startsWith("install.");
+}
+
+function fileNames(dir: string): string[] {
+  try {
+    return readdirSync(dir, { withFileTypes: true })
+      .filter((entry) => entry.isFile())
+      .map((entry) => entry.name);
+  } catch {
+    return [];
+  }
+}
+
+function hasInstallScripts(root: string): boolean {
+  if (hasInstallScriptHooks(root)) return true;
+  return [root, join(root, "scripts")].some((dir) => fileNames(dir).some(isInstallScriptFile));
+}
+
+function sandboxSmokeShapeForSourceRoot(root: string): SandboxSmokeShape {
+  const skillDirs = collectSkillDirs(root);
+  return {
+    skillDirs: skillDirs.map((dir) => promotedSkillRel(root, dir)),
+    installScripts: hasInstallScripts(root),
+    mcpConfig: [...MCP_CONFIG_FILES, "mcp.json"].some((rel) => existsSync(join(root, rel))),
+    packageManifests: PACKAGE_MANIFESTS.filter((name) => existsSync(join(root, name))),
+  };
+}
+
 async function persistAcknowledgeLedger(
   ctx: PlanContext,
   source: TrustSource,
@@ -468,10 +524,12 @@ async function currentTrustScan(
   source: TrustSource,
   internalScopes: readonly string[],
 ): Promise<TrustScanResult> {
-  const scan = await scanTrustTreeWithAnalyzers(sourceRootFor(source), {
+  const sourceRoot = sourceRootFor(source);
+  const scan = await scanTrustTreeWithAnalyzers(sourceRoot, {
     ...scanOptionsFromContext(ctx),
     internalScopes,
     posture: postureFromContext(ctx),
+    sandboxSmokeShape: sandboxSmokeShapeForSourceRoot(sourceRoot),
   });
   const checks = [...trustSourceOriginChecks(ctx, source), ...scan.checks];
   return {

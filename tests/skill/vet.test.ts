@@ -76,7 +76,11 @@ function license(): void {
 
 /** Stubs the full optional detector ladder so no detector-unavailable skip degrades the verdict. */
 function detectorRunner(
-  options: { seenSmoke?: string[][]; smoke?: Partial<RunResult> } = {},
+  options: {
+    imageInspect?: Partial<RunResult>;
+    seenSmoke?: string[][];
+    smoke?: Partial<RunResult>;
+  } = {},
 ): Runner {
   return fakeRunner((argv) => {
     if (
@@ -90,7 +94,13 @@ function detectorRunner(
     if (argv[0] === "docker") {
       if (argv[1] === "--version") return { code: 0, stdout: "Docker version 27\n" };
       if (argv[1] === "image" && argv[2] === "inspect") {
-        return { code: 0, stdout: "sha256:skillspector\n" };
+        return (
+          options.imageInspect ?? {
+            code: 0,
+            stdout:
+              '{"org.opencontainers.image.revision":"326a2b489411a20ed742ff13701be39ba00063c8"}\n',
+          }
+        );
       }
       if (argv[1] === "run") return { code: 0, stdout: JSON.stringify({ runs: [] }) };
     }
@@ -133,6 +143,21 @@ function vetDigestOf(result: Awaited<ReturnType<typeof executePlan>>): {
   const digest = result.digests.find((item) => item.describe === "skill vet verdict");
   if (!digest) throw new Error("expected a skill vet verdict digest");
   return { text: digest.text, data: digest.data as VetDigestData };
+}
+
+function expectSandboxSmokeEvidence(
+  checks: Array<{ name: string; verdict: string; code?: string; detail?: string }>,
+  detail: string,
+): void {
+  expect(checks).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        name: "skill sandbox smoke test",
+        verdict: "pass",
+        detail: expect.stringContaining(detail),
+      }),
+    ]),
+  );
 }
 
 describe("skillVetCommand", () => {
@@ -237,6 +262,36 @@ describe("skillVetCommand", () => {
         }),
       ]),
     );
+  });
+
+  it("does not run sandbox smoke when the local image identity is unverified", async () => {
+    skill("clean", "# Clean\n\nUse this skill for local documentation hygiene.\n");
+    write("package.json", JSON.stringify({ name: "clean-skill", version: "1.0.0" }));
+    license();
+    const seenSmoke: string[][] = [];
+    const c = ctx(
+      { source: sourceRoot },
+      false,
+      detectorRunner({
+        imageInspect: { code: 0, stdout: "sha256:mutable-local-tag\n" },
+        seenSmoke,
+      }),
+      { SNYK_TOKEN: "snyk-token-for-scanner" },
+    );
+
+    const result = await executePlan(await skillVetCommand.plan(c), c);
+
+    expect(result.report?.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "skill sandbox smoke test",
+          verdict: "skip",
+          code: "trust.sandbox-smoke-unavailable",
+          detail: expect.stringContaining("could not verify"),
+        }),
+      ]),
+    );
+    expect(seenSmoke).toHaveLength(0);
   });
 
   it("maps sandbox smoke timeouts to explicit findings instead of passing silently", async () => {
@@ -431,17 +486,38 @@ describe("skillVetCommand", () => {
     skill("clean", "# Clean\n");
     license();
     write("install.sh", "echo install\n");
-    const c = ctx({ source: sourceRoot }, false, detectorRunner(), {
+    const seenSmoke: string[][] = [];
+    const c = ctx({ source: sourceRoot }, false, detectorRunner({ seenSmoke }), {
       SNYK_TOKEN: "snyk-token-for-scanner",
     });
 
     const result = await executePlan(await skillVetCommand.plan(c), c);
 
     expect(result.report?.ok).toBe(true);
+    expectSandboxSmokeEvidence(result.report?.checks ?? [], "install scripts");
+    expect(seenSmoke).toHaveLength(1);
+    expect(seenSmoke[0]?.join("\n")).toContain("/scan/install.*");
     const digest = vetDigestOf(result);
     expect(digest.data.verdict).toBe("YELLOW");
     expect(digest.data.reasons).toEqual([expect.stringContaining("install scripts")]);
     expect(digest.text).toContain("Action: manual approval required");
+  });
+
+  it("records a sandbox smoke pass for incoming MCP config skill evidence", async () => {
+    skill("clean", "# Clean\n");
+    license();
+    write(".mcp.json", JSON.stringify({ mcpServers: {} }));
+    const seenSmoke: string[][] = [];
+    const c = ctx({ source: sourceRoot }, false, detectorRunner({ seenSmoke }), {
+      SNYK_TOKEN: "snyk-token-for-scanner",
+    });
+
+    const result = await executePlan(await skillVetCommand.plan(c), c);
+
+    expect(result.report?.ok).toBe(true);
+    expectSandboxSmokeEvidence(result.report?.checks ?? [], "incoming MCP config");
+    expect(seenSmoke).toHaveLength(1);
+    expect(seenSmoke[0]?.join("\n")).toContain("test -r '/scan/.mcp.json'");
   });
 
   it("keeps a GitHub source UNKNOWN in dry-run without fetching", async () => {

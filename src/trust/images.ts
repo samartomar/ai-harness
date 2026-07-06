@@ -1,1 +1,2 @@
 export const SKILLSPECTOR_IMAGE = "skillspector:aih-326a2b489411";
+export const SKILLSPECTOR_SOURCE_REVISION = "326a2b489411a20ed742ff13701be39ba00063c8";

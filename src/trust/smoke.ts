@@ -4,7 +4,7 @@ import type { Platform } from "../platform/base.js";
 import { MCP_CONFIG_FILES } from "../secrets/scan.js";
 import { execArgv } from "../tools/install.js";
 import { scrubFetchEnv } from "./fetch.js";
-import { SKILLSPECTOR_IMAGE } from "./images.js";
+import { SKILLSPECTOR_IMAGE, SKILLSPECTOR_SOURCE_REVISION } from "./images.js";
 
 export interface SandboxSmokeShape {
   skillDirs: readonly string[];
@@ -23,6 +23,11 @@ const SANDBOX_SMOKE_NAME = "skill sandbox smoke test";
 const SANDBOX_SMOKE_MARKER = "aih sandbox smoke ok";
 const SANDBOX_SMOKE_TIMEOUT_MS = 60_000;
 const INCOMING_MCP_SMOKE_FILES = [...MCP_CONFIG_FILES, "mcp.json"];
+const REVISION_LABELS = [
+  "org.opencontainers.image.revision",
+  "org.label-schema.vcs-ref",
+  "aih.skillspector.revision",
+];
 
 function smokeReasons(shape: SandboxSmokeShape): string[] {
   if (shape.skillDirs.length === 0) return [];
@@ -100,7 +105,14 @@ export function sandboxSmokeDockerVersionArgv(platform: Platform): string[] {
 }
 
 export function sandboxSmokeImageInspectArgv(platform: Platform): string[] {
-  return execArgv(platform, ["docker", "image", "inspect", SKILLSPECTOR_IMAGE]);
+  return execArgv(platform, [
+    "docker",
+    "image",
+    "inspect",
+    SKILLSPECTOR_IMAGE,
+    "--format",
+    "{{json .Config.Labels}}",
+  ]);
 }
 
 export function sandboxSmokeDockerRunArgv(
@@ -127,6 +139,23 @@ export function sandboxSmokeDockerRunArgv(
   ]);
 }
 
+function parseImageLabels(stdout: string): Record<string, unknown> | undefined {
+  try {
+    const parsed = JSON.parse(stdout.trim());
+    return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
+      ? parsed
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function verifiedImageRevision(stdout: string): boolean {
+  const labels = parseImageLabels(stdout);
+  if (labels === undefined) return false;
+  return REVISION_LABELS.some((label) => labels[label] === SKILLSPECTOR_SOURCE_REVISION);
+}
+
 async function sandboxUnavailable(
   run: Runner,
   platform: Platform,
@@ -150,6 +179,9 @@ async function sandboxUnavailable(
   }
   if (image.code !== 0 || image.stdout.trim().length === 0) {
     return `sandbox image ${SKILLSPECTOR_IMAGE} could not be inspected (${runSummary(image)})`;
+  }
+  if (!verifiedImageRevision(image.stdout)) {
+    return `sandbox image ${SKILLSPECTOR_IMAGE} could not verify expected source revision ${SKILLSPECTOR_SOURCE_REVISION}`;
   }
   return undefined;
 }

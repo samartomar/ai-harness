@@ -76,6 +76,7 @@ interface IncomingMcpServerMap {
 
 interface TrustScanPlanOptions {
   cleanupQuarantine?: boolean;
+  sandboxSmokeShape?: (root: string) => SandboxSmokeShape;
 }
 
 function toPosix(path: string): string {
@@ -654,7 +655,10 @@ export async function trustScanPlanForSource(
   if (source.kind === "local") {
     const scan = await scanTrustTreeWithAnalyzers(
       source.root,
-      scanOptionsFromContext(ctx, scanOptions),
+      scanOptionsFromContext(ctx, {
+        ...scanOptions,
+        sandboxSmokeShape: options.sandboxSmokeShape?.(source.root),
+      }),
     );
     actions.push(
       ...probesForStaticChecks(acknowledgeChecks(scan.checks, ctx)),
@@ -665,7 +669,10 @@ export async function trustScanPlanForSource(
     const scanGithubSource = (probeCtx: PlanContext): Promise<TrustScanResult> => {
       githubScan ??= scanTrustTreeWithAnalyzers(
         source.treePath,
-        scanOptionsFromContext(probeCtx, scanOptions),
+        scanOptionsFromContext(probeCtx, {
+          ...scanOptions,
+          sandboxSmokeShape: options.sandboxSmokeShape?.(source.treePath),
+        }),
       );
       return githubScan;
     };
