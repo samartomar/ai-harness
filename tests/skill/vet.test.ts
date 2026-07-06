@@ -205,8 +205,37 @@ describe("skillVetCommand", () => {
     );
     expect(seenSmoke).toHaveLength(1);
     expect(seenSmoke[0]).toEqual(expect.arrayContaining(["--network", "none", "--read-only"]));
+    expect(seenSmoke[0]).not.toEqual(expect.arrayContaining(["--workdir", "/scan"]));
+    expect(seenSmoke[0]).toEqual(expect.arrayContaining(["--entrypoint", "/bin/sh"]));
     expect(seenSmoke[0]).toEqual(
       expect.arrayContaining([expect.stringContaining("target=/scan,readonly")]),
+    );
+    expect(seenSmoke[0]?.join("\n")).toContain("test -r '/scan/package.json'");
+  });
+
+  it("does not pass sandbox smoke unless the expected marker is emitted", async () => {
+    skill("clean", "# Clean\n\nUse this skill for local documentation hygiene.\n");
+    write("package.json", JSON.stringify({ name: "clean-skill", version: "1.0.0" }));
+    license();
+    const c = ctx(
+      { source: sourceRoot },
+      false,
+      detectorRunner({ smoke: { code: 0, stdout: "" } }),
+      { SNYK_TOKEN: "snyk-token-for-scanner" },
+    );
+
+    const result = await executePlan(await skillVetCommand.plan(c), c);
+
+    expect(result.report?.ok).toBe(false);
+    expect(result.report?.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "skill sandbox smoke test",
+          verdict: "fail",
+          code: "trust.sandbox-smoke-failed",
+          detail: expect.stringContaining("exit 0"),
+        }),
+      ]),
     );
   });
 
@@ -258,6 +287,37 @@ describe("skillVetCommand", () => {
     const digest = vetDigestOf(result);
     expect(digest.data.verdict).toBe("GREEN");
     expect(digest.data.reasons).toEqual([]);
+  });
+
+  it("grades a first-party package-backed source UNKNOWN when sandbox smoke is unavailable", async () => {
+    const dir = join(workspace, "packs", "clean");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(
+      join(dir, "SKILL.md"),
+      "# Clean\n\nUse this skill for local documentation hygiene.\n",
+      "utf8",
+    );
+    writeFileSync(join(dir, "LICENSE"), "MIT License\n\nCopyright (c) Example\n", "utf8");
+    writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "clean-skill" }), "utf8");
+    const c = ctx({ source: dir });
+
+    const result = await executePlan(await skillVetCommand.plan(c), c);
+
+    expect(result.report?.ok).toBe(true);
+    const digest = vetDigestOf(result);
+    expect(digest.data.verdict).toBe("UNKNOWN");
+    expect(digest.data.reasons).toEqual([
+      expect.stringContaining("sandbox smoke test was unavailable"),
+    ]);
+    expect(result.report?.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "skill sandbox smoke test",
+          verdict: "skip",
+          code: "trust.sandbox-smoke-unavailable",
+        }),
+      ]),
+    );
   });
 
   it("grades an out-of-repo local source UNKNOWN when a detector is unavailable (exemption is first-party-only)", async () => {

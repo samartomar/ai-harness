@@ -1,6 +1,7 @@
 import type { Runner, RunResult } from "../internals/proc.js";
 import type { Check } from "../internals/verify.js";
 import type { Platform } from "../platform/base.js";
+import { MCP_CONFIG_FILES } from "../secrets/scan.js";
 import { execArgv } from "../tools/install.js";
 import { scrubFetchEnv } from "./fetch.js";
 import { SKILLSPECTOR_IMAGE } from "./images.js";
@@ -19,7 +20,9 @@ export interface SandboxSmokeOptions {
 }
 
 const SANDBOX_SMOKE_NAME = "skill sandbox smoke test";
+const SANDBOX_SMOKE_MARKER = "aih sandbox smoke ok";
 const SANDBOX_SMOKE_TIMEOUT_MS = 60_000;
+const INCOMING_MCP_SMOKE_FILES = [...MCP_CONFIG_FILES, "mcp.json"];
 
 function smokeReasons(shape: SandboxSmokeShape): string[] {
   if (shape.skillDirs.length === 0) return [];
@@ -37,6 +40,38 @@ function runSummary(result: RunResult): string {
   if (output.length > 0) return output.slice(0, 400);
   if (result.code === null) return "process ended without an exit code";
   return `exit ${result.code}`;
+}
+
+function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, "'\\''")}'`;
+}
+
+function readableAny(paths: readonly string[]): string {
+  return `( ${paths.map((path) => `test -r ${shellQuote(path)}`).join(" || ")} )`;
+}
+
+function sandboxSmokeScript(shape: SandboxSmokeShape): string {
+  const commands = ["set -eu", "test -r /scan"];
+  if (shape.packageManifests.length > 0) {
+    commands.push(readableAny(shape.packageManifests.map((name) => `/scan/${name}`)));
+  }
+  if (shape.mcpConfig) {
+    commands.push(readableAny(INCOMING_MCP_SMOKE_FILES.map((name) => `/scan/${name}`)));
+  }
+  if (shape.installScripts) {
+    commands.push(
+      [
+        "install_hit=0",
+        "test -f /scan/package.json && install_hit=1",
+        "for file in /scan/install.* /scan/scripts/install.* /scan/*.sh /scan/*.ps1 /scan/scripts/*.sh /scan/scripts/*.ps1; do",
+        '  test -f "$file" && install_hit=1',
+        "done",
+        'test "$install_hit" -eq 1',
+      ].join("\n"),
+    );
+  }
+  commands.push(`printf ${shellQuote(`${SANDBOX_SMOKE_MARKER}\n`)}`);
+  return commands.join("\n");
 }
 
 function unavailableCheck(reason: string): Check {
@@ -68,7 +103,11 @@ export function sandboxSmokeImageInspectArgv(platform: Platform): string[] {
   return execArgv(platform, ["docker", "image", "inspect", SKILLSPECTOR_IMAGE]);
 }
 
-export function sandboxSmokeDockerRunArgv(platform: Platform, tree: string): string[] {
+export function sandboxSmokeDockerRunArgv(
+  platform: Platform,
+  tree: string,
+  shape: SandboxSmokeShape,
+): string[] {
   return execArgv(platform, [
     "docker",
     "run",
@@ -80,13 +119,11 @@ export function sandboxSmokeDockerRunArgv(platform: Platform, tree: string): str
     "/tmp:rw,noexec,nosuid,size=16m",
     "--mount",
     `type=bind,source=${tree},target=/scan,readonly`,
-    "--workdir",
-    "/scan",
     "--entrypoint",
-    "sh",
+    "/bin/sh",
     SKILLSPECTOR_IMAGE,
     "-c",
-    "test -r /scan && printf 'aih sandbox smoke ok\\n'",
+    sandboxSmokeScript(shape),
   ]);
 }
 
@@ -131,12 +168,12 @@ export async function sandboxSmokeCheck(
   const unavailable = await sandboxUnavailable(options.run, options.platform, options.env);
   if (unavailable !== undefined) return unavailableCheck(unavailable);
 
-  const smoke = await options.run(sandboxSmokeDockerRunArgv(options.platform, root), {
+  const smoke = await options.run(sandboxSmokeDockerRunArgv(options.platform, root, shape), {
     env: scrubFetchEnv(options.env),
     timeoutMs: SANDBOX_SMOKE_TIMEOUT_MS,
   });
   const reasonText = reasons.join("; ");
-  if (!smoke.spawnError && smoke.code === 0) {
+  if (!smoke.spawnError && smoke.code === 0 && smoke.stdout.includes(SANDBOX_SMOKE_MARKER)) {
     const output = runSummary(smoke);
     return {
       name: SANDBOX_SMOKE_NAME,

@@ -114,14 +114,15 @@ describe("skillVerdict", () => {
     expect(graded.reasons).toEqual([expect.stringContaining("sandbox smoke test was unavailable")]);
   });
 
-  it("exempts a first-party source from sandbox smoke unavailable UNKNOWN and grades GREEN", () => {
+  it("grades UNKNOWN on sandbox smoke unavailable even for a first-party source", () => {
     const graded = skillVerdict(
       [PASS, LICENSE_PASS, SANDBOX_SMOKE_SKIP],
       cleanShape(),
       FIRST_PARTY,
     );
 
-    expect(graded).toEqual({ verdict: "GREEN", reasons: [] });
+    expect(graded.verdict).toBe("UNKNOWN");
+    expect(graded.reasons).toEqual([expect.stringContaining("sandbox smoke test was unavailable")]);
   });
 
   it("still grades a first-party source RED on a danger finding when a detector is unavailable", () => {
