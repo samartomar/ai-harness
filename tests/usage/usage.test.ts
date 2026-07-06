@@ -226,6 +226,69 @@ describe("capture artifacts", () => {
     ]);
   }, 15000);
 
+  it("maps Claude Skill tool metadata to named skills and keeps unnamed Skill calls generic", () => {
+    mkdirSync(join(root, ".claude", "ecc", ".agents", "skills", "security-review"), {
+      recursive: true,
+    });
+    writeFileSync(
+      join(root, ".claude", "ecc", ".agents", "skills", "security-review", "SKILL.md"),
+      "# Security Review\n",
+    );
+    const recorder = join(root, "usage-record.mjs");
+    writeFileSync(recorder, usageRecorderScript());
+    const cases = [
+      { tool_name: "Skill", tool_input: { skill_name: "security-review" } },
+      { tool_name: "Skill", tool_input: {} },
+    ] as const;
+    for (const payload of cases) {
+      execFileSync(process.execPath, [recorder, "--from", "claude"], {
+        cwd: root,
+        env: { ...process.env, HOME: root, USERPROFILE: root },
+        input: JSON.stringify(payload),
+      });
+    }
+
+    const rows = readFileSync(join(root, ".aih", "usage.jsonl"), "utf8")
+      .trim()
+      .split(/\r?\n/)
+      .map((line) => JSON.parse(line) as UsageEvent);
+    expect(rows).toMatchObject([
+      { tool: "claude", kind: "skill", name: "security-review", source: "ecc" },
+      { tool: "claude", kind: "tool", name: "Skill" },
+    ]);
+    const summary = aggregateUsage(rows);
+    expect(summary.skills.bySource.ecc).toEqual([{ name: "security-review", count: 1 }]);
+    expect(summary.skills.top).toEqual([{ name: "security-review", count: 1 }]);
+  }, 15000);
+
+  it("does not infer skill identity or ECC source from path-like Claude skill names", () => {
+    mkdirSync(join(root, ".claude", "ecc", ".agents", "skills", "security-review"), {
+      recursive: true,
+    });
+    writeFileSync(
+      join(root, ".claude", "ecc", ".agents", "skills", "security-review", "SKILL.md"),
+      "# Security Review\n",
+    );
+    const recorder = join(root, "usage-record.mjs");
+    writeFileSync(recorder, usageRecorderScript());
+
+    execFileSync(process.execPath, [recorder, "--from", "claude"], {
+      cwd: root,
+      env: { ...process.env, HOME: root, USERPROFILE: root },
+      input: JSON.stringify({
+        tool_name: "Skill",
+        tool_input: { skill_name: "../security-review" },
+      }),
+    });
+
+    const rows = readFileSync(join(root, ".aih", "usage.jsonl"), "utf8")
+      .trim()
+      .split(/\r?\n/)
+      .map((line) => JSON.parse(line) as UsageEvent);
+    expect(rows).toMatchObject([{ tool: "claude", kind: "tool", name: "Skill" }]);
+    expect(aggregateUsage(rows).skills.top).toEqual([]);
+  }, 15000);
+
   it("maps real stdin hook payloads for the remaining hook-capable CLIs", () => {
     const recorder = join(root, "usage-record.mjs");
     writeFileSync(recorder, usageRecorderScript());

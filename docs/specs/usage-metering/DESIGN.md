@@ -98,8 +98,9 @@ Honesty: each panel stays empty/preview until the relevant local sample exists
 
 ## P3 — dormant detection = ECC ∩ usage (the killer panel)
 
-We read the **live ECC skill set** (the `~/.claude/skills/ecc/` namespace)
-in the ECC panel. Dormant trim-candidates =
+We read the **live ECC skill set** (the `~/.claude/skills/ecc/` namespace and
+the current `~/.claude/ecc/.agents/skills/` layout) in the ECC panel. Dormant
+trim-candidates =
 
 ```
 dormant = ECC-installed skills  −  skills that fired (summary.skills.bySource.ecc)  (over window)
@@ -184,8 +185,9 @@ Each phase shipped independently and left the report honest (PREVIEW where data 
       **verify per-CLI hook schemas vs current docs before writing them**.
 - [x] **P2** — `Usage by CLI` ← `aggregateUsage(readUsage(ctx)).tools`; `Heavy lifters` ←
       `.skills.top`. PREVIEW until ≥1 real event.
-- [x] **P3** — `Dormant` = live ECC skills (`~/.claude/skills/ecc/`, via `eccInventoryDigest`) −
-      fired (`.skills.bySource.ecc`) over the window. 0 ECC or 0 usage → PREVIEW, not a false 0.
+- [x] **P3** — `Dormant` = live ECC skills (`~/.claude/skills/ecc/` and
+      `~/.claude/ecc/.agents/skills/`, via `eccInventoryDigest`) − fired
+      (`.skills.bySource.ecc`) over the window. 0 ECC or 0 usage → PREVIEW, not a false 0.
 - [x] **P5** — `aih usage --rollup <dir…>` (or extend `aih report --org`) → aggregate the union of
       repos' `.aih/usage.jsonl`, tagged by repo.
 - [x] Gate green each phase (lint/biome ci/typecheck/vitest/build); **no cost**; `usage.jsonl`

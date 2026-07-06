@@ -302,11 +302,27 @@ function eccNamespaced(base: string, opts: { ext?: string; dirsOnly?: boolean })
   return existsSync(ns) ? listNames(ns, opts) : listNames(base, opts);
 }
 
+function uniqueNames(...groups: string[][]): string[] {
+  return [...new Set(groups.flat())];
+}
+
+function machineEccSkillNames(mClaude: string): string[] {
+  const legacyBase = join(mClaude, "skills");
+  const legacyNamespaced = listNames(join(legacyBase, "ecc"), { dirsOnly: true });
+  const currentNames = uniqueNames(
+    listNames(join(mClaude, "ecc", ".agents", "skills"), { dirsOnly: true }),
+    listNames(join(mClaude, "ecc", "skills"), { dirsOnly: true }),
+  );
+  const namespaced = uniqueNames(legacyNamespaced, currentNames);
+  return namespaced.length > 0 ? namespaced : listNames(legacyBase, { dirsOnly: true });
+}
+
 /**
  * §1 ECC inventory — ECC is a SYSTEM-WIDE, rolling install, so the source of truth is what's
  * installed NOW at the machine level (~/.claude). ECC namespaces its content under `ecc/`
- * (`skills/ecc/`, `rules/ecc/`); we count there when present (else flat, for older installs) so
- * plugin skills sitting flat in `skills/` are never miscounted as ECC. Agents are flat. The
+ * (`skills/ecc/`, `ecc/.agents/skills/`, `rules/ecc/`); we count there when present (else flat,
+ * for older installs) so plugin skills sitting flat in `skills/` are never miscounted as ECC.
+ * Agents are flat. The
  * version/commit come from ECC's install manifest (metadata only — its counts are a stale
  * snapshot). Repo `.claude/.kiro` content is reported as TEAM OVERRIDES (never relabelled "ECC");
  * a repo item whose name is an ECC one is a fork to retire; packs = ECC packs for this stack
@@ -319,7 +335,7 @@ export function eccInventoryDigest(ctx: PlanContext): DigestAction | undefined {
   const meta = readEccMeta(homeDir(ctx));
   // Current machine ECC — count the live ecc/ namespace (skills, rules) + flat agents.
   const eccAgentNames = eccNamespaced(join(mClaude, "agents"), { ext: ".md" });
-  const eccSkillNames = eccNamespaced(join(mClaude, "skills"), { dirsOnly: true });
+  const eccSkillNames = machineEccSkillNames(mClaude);
   const rulesBase = join(mClaude, "rules");
   const machine = {
     agents: eccAgentNames.length,

@@ -328,6 +328,25 @@ describe("eccInventoryDigest", () => {
     expect(data.skillNames).toEqual(["python-patterns", "react-testing", "security-review"]);
     expect(data.dup).toBe(1); // repo code-reviewer is an ECC agent (name match)
   });
+
+  it("counts the current ECC repo layout under ~/.claude/ecc/.agents/skills", () => {
+    putHome(
+      ".claude/ecc/install-state.json",
+      JSON.stringify({
+        source: { repoVersion: "2.0.0", repoCommit: "68e926bf77dd00" },
+        request: { profile: "developer" },
+      }),
+    );
+    putHome(".claude/ecc/.agents/skills/security-review/SKILL.md", "x");
+    putHome(".claude/ecc/.agents/skills/tdd-workflow/SKILL.md", "x");
+    putHome(".claude/ecc/.agents/skills/agent-sort/SKILL.md", "x");
+    putHome(".claude/skills/cloudflare/SKILL.md", "x");
+
+    const data = eccInventoryDigest(ctx())?.data as EccData;
+
+    expect(data.machine.skills).toBe(3);
+    expect(data.skillNames).toEqual(["agent-sort", "security-review", "tdd-workflow"]);
+  });
 });
 
 interface CoherenceData {
