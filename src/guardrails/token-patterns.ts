@@ -11,7 +11,7 @@ export interface ProviderTokenPattern {
 }
 
 export const PROVIDER_TOKEN_PATTERNS: readonly ProviderTokenPattern[] = [
-  { kind: "github personal access token", re: /ghp_[A-Za-z0-9]{36,}/ },
+  { kind: "github token", re: /\b(?:ghp|gho|ghu|ghs)_[A-Za-z0-9_]{10,}\b/ },
   { kind: "github fine-grained PAT", re: /github_pat_[A-Za-z0-9_]{10,}/ },
   { kind: "openai/anthropic-style key", re: /sk-[A-Za-z0-9_-]{20,}/ },
   { kind: "slack token", re: /xox[abprsoe]-[A-Za-z0-9-]{10,}/ },

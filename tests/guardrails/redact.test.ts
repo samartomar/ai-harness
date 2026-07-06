@@ -30,6 +30,16 @@ describe("redactSecrets() — secret fixtures", () => {
     expect(redactSecrets(`token ${token}`)).not.toContain(token);
   });
 
+  it("continues to redact existing GitHub token prefixes", () => {
+    for (const token of [
+      `gho_${"a".repeat(12)}`,
+      `ghu_${"b".repeat(12)}`,
+      `ghs_${"c".repeat(12)}`,
+    ]) {
+      expect(redactSecrets(`token ${token}`), token).not.toContain(token);
+    }
+  });
+
   it("redacts a bearer token (case-insensitive)", () => {
     expect(redactSecrets("Authorization: Bearer abc.def-123")).not.toContain("abc.def-123");
   });
