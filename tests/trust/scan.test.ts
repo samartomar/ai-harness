@@ -722,6 +722,7 @@ describe("scanTrustTree", () => {
   it("maps stubbed SkillSpector SARIF rule IDs into trust checks", async () => {
     skill("skills/clean", "# Clean\n");
     const sarif = {
+      version: "2.1.0",
       runs: [
         {
           results: [
@@ -998,6 +999,27 @@ describe("scanTrustTree", () => {
     );
   });
 
+  it("fails closed for enterprise-required cisco when detector runtime is missing", async () => {
+    skill("skills/clean", "# Clean\n");
+
+    const result = await scanTrustTreeWithAnalyzers(dir, {
+      posture: "enterprise",
+      requiredDetectors: ["cisco"],
+    });
+
+    expect(result.analyzersRun).toEqual(["aih-native"]);
+    expect(result.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "trust detector cisco",
+          verdict: "fail",
+          code: "trust.detector-unavailable",
+          detail: expect.stringContaining("required detector cisco"),
+        }),
+      ]),
+    );
+  });
+
   it("degrades for required semgrep when detector runtime is missing below enterprise", async () => {
     skill("skills/clean", "# Clean\n");
 
@@ -1172,6 +1194,7 @@ describe("scanTrustTree", () => {
       }),
     );
     const sarif = {
+      version: "2.1.0",
       runs: [
         {
           results: [
@@ -1216,6 +1239,30 @@ describe("scanTrustTree", () => {
       ]),
     );
     expect(result.checks.some((check) => check.verdict === "fail")).toBe(true);
+  });
+
+  it("reports semgrep SARIF version mismatches explicitly", async () => {
+    skill("skills/clean", "# Clean\n");
+
+    const result = await scanTrustTreeWithAnalyzers(dir, {
+      env: {},
+      platform: "linux",
+      posture: "enterprise",
+      requiredDetectors: ["semgrep"],
+      run: semgrepRunner({ version: "2.0.0", runs: [] }),
+    });
+
+    expect(result.analyzersRun).not.toEqual(expect.arrayContaining(["semgrep@local"]));
+    expect(result.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "trust detector semgrep",
+          verdict: "fail",
+          code: "trust.detector-unavailable",
+          detail: expect.stringContaining("semgrep returned SARIF version 2.0.0"),
+        }),
+      ]),
+    );
   });
 
   it("fails closed for enterprise-required mcp-scanner when an MCP config is present", async () => {

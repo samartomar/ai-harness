@@ -691,9 +691,11 @@ async function runSemgrepScan(
     }
     if (scan.stdout.trim().length === 0) throw new Error("semgrep scan emitted no SARIF");
     const parsed = parseSarifLog(scan.stdout);
-    if (parsed === undefined || parsed.version !== "2.1.0") {
-      const detail = scan.stderr.trim().length > 0 ? `: ${scan.stderr.trim().slice(0, 200)}` : "";
-      throw new Error(`semgrep scan did not emit valid SARIF${detail}`);
+    const detail = scan.stderr.trim().length > 0 ? `: ${scan.stderr.trim().slice(0, 200)}` : "";
+    if (parsed === undefined) throw new Error(`semgrep scan emitted no parseable SARIF${detail}`);
+    if (parsed.version !== "2.1.0") {
+      const version = typeof parsed.version === "string" ? parsed.version : "missing";
+      throw new Error(`semgrep returned SARIF version ${version}, expected 2.1.0${detail}`);
     }
     return scan.stdout;
   } finally {
