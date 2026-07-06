@@ -51,6 +51,8 @@ const DETECTOR_UNAVAILABLE = "trust.detector-unavailable";
 const CISCO_SKILL_SCANNER_PACKAGE = "cisco-ai-skill-scanner";
 const CISCO_MCP_SCANNER_PACKAGE = "cisco-ai-mcp-scanner";
 const SKILLSPECTOR_IMAGE = "skillspector:aih-326a2b489411";
+// These Semgrep rules are deliberately small harness-owned safety rules, not a
+// complete substitute for native trust checks. The regexes are line-oriented.
 const SEMGREP_RULES_YAML = [
   "rules:",
   "  - id: semgrep.prompt-injection",
@@ -687,7 +689,8 @@ async function runSemgrepScan(
     }
     if (scan.stdout.trim().length === 0) throw new Error("semgrep scan emitted no SARIF");
     if (parseSarifLog(scan.stdout) === undefined) {
-      throw new Error("semgrep scan did not emit valid SARIF");
+      const detail = scan.stderr.trim().length > 0 ? `: ${scan.stderr.trim()}` : "";
+      throw new Error(`semgrep scan did not emit valid SARIF${detail}`);
     }
     return scan.stdout;
   } finally {
