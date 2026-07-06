@@ -152,22 +152,62 @@ function promotedSourceId(ctx: PlanContext, row: SkillInventoryRow): string {
   return sourceId;
 }
 
-function artifactRelFromSourcePath(name: string, sourcePath: string): string | undefined {
-  if (sourcePath === "SKILL.md" || !sourcePath.includes("/")) return sourcePath;
+interface ExpectedArtifacts {
+  hashes: Map<string, string>;
+  origins: Map<string, string>;
+}
+
+function artifactRelCandidates(name: string, sourcePath: string): string[] {
+  const candidates = new Set<string>();
   const directPrefix = `${name}/`;
-  if (sourcePath.startsWith(directPrefix)) return sourcePath.slice(directPrefix.length);
-  const skillsPrefix = `skills/${name}/`;
-  if (sourcePath.startsWith(skillsPrefix)) return sourcePath.slice(skillsPrefix.length);
-  return undefined;
+  if (sourcePath.startsWith(directPrefix)) candidates.add(sourcePath.slice(directPrefix.length));
+
+  const parts = sourcePath.split("/");
+  const nameParts = name.split("/");
+  for (let index = 1; index <= parts.length - nameParts.length - 1; index += 1) {
+    if (parts[index - 1] !== "skills") continue;
+    if (!nameParts.every((part, offset) => parts[index + offset] === part)) continue;
+    const rel = parts.slice(index + nameParts.length).join("/");
+    if (rel.length > 0) candidates.add(rel);
+  }
+
+  return [...candidates];
+}
+
+function addExpectedArtifact(
+  name: string,
+  expected: ExpectedArtifacts,
+  rel: string,
+  artifact: TrustLockSource["artifactHashes"][number],
+): void {
+  if (rel.length === 0) {
+    throw refuse(`approved promoted skill ${name} has an empty trust-lock artifact receipt`);
+  }
+  const origin = expected.origins.get(rel);
+  if (origin !== undefined && origin !== artifact.path) {
+    throw refuse(
+      `approved promoted skill ${name} has ambiguous trust-lock artifact receipts for ${rel}`,
+    );
+  }
+  expected.hashes.set(rel, artifact.sha256);
+  expected.origins.set(rel, artifact.path);
 }
 
 function expectedArtifactHashes(name: string, source: TrustLockSource): Map<string, string> {
-  const expected = new Map<string, string>();
+  const expected: ExpectedArtifacts = { hashes: new Map(), origins: new Map() };
   for (const artifact of source.artifactHashes) {
-    const rel = artifactRelFromSourcePath(name, artifact.path);
-    if (rel !== undefined) expected.set(rel, artifact.sha256);
+    for (const rel of artifactRelCandidates(name, artifact.path)) {
+      addExpectedArtifact(name, expected, rel, artifact);
+    }
   }
-  return expected;
+  if (expected.hashes.size > 0) return expected.hashes;
+
+  if (source.promotedSkills.length === 1 && source.promotedSkills[0] === name) {
+    for (const artifact of source.artifactHashes) {
+      addExpectedArtifact(name, expected, artifact.path, artifact);
+    }
+  }
+  return expected.hashes;
 }
 
 function verifyApprovedArtifacts(

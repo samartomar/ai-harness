@@ -88,6 +88,7 @@ function writeTrustLock(
   id: string,
   name: string,
   files: Array<{ path: string; body: string }>,
+  sourceSkillPath = name,
 ): void {
   write(
     ".aih/trust-lock.json",
@@ -103,7 +104,7 @@ function writeTrustLock(
           promotedSkills: [name],
           analyzersRun: ["aih-native"],
           artifactHashes: files.map((file) => ({
-            path: `${name}/${file.path}`,
+            path: `${sourceSkillPath}/${file.path}`,
             sha256: sha256Text(file.body),
           })),
           findings: [],
@@ -218,6 +219,27 @@ describe("skillSyncCommand", () => {
     const c = ctx({ name: "clean", cli: "codex" });
 
     expect(() => skillSyncCommand.plan(c)).toThrow(/promoted skill bytes changed after approval/);
+  });
+
+  it("accepts trust receipts from prefixed source skill paths", async () => {
+    installApproved("owner-repo", "clean");
+    writeTrustLock(
+      "owner-repo",
+      "clean",
+      [
+        { path: "SKILL.md", body: "# clean\n" },
+        { path: "README.md", body: "clean docs\n" },
+      ],
+      "packages/skills/clean",
+    );
+    const c = ctx({ name: "clean", cli: "codex" });
+
+    const result = await executePlan(await skillSyncCommand.plan(c), c);
+
+    expect(result.writes.map((write) => write.path).sort()).toEqual([
+      codexSkill("clean", "README.md"),
+      codexSkill("clean", "SKILL.md"),
+    ]);
   });
 
   it("refuses when an approved promoted skill file was deleted after approval", () => {
