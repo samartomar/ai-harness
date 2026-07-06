@@ -523,7 +523,7 @@ function missingDetectorRuntimeChecks(
     detail:
       posture === "enterprise"
         ? `required detector ${detector} unavailable: detector runtime is missing (run/platform/env).`
-        : `DEGRADED-COVERAGE: deep scan SKIPPED - ${detector} not available (detector runtime missing); coverage is GREEN-tier only. Analyzers run: aih-native.`,
+        : `DEGRADED-COVERAGE: deep scan SKIPPED - ${detector} not available (detector runtime missing); coverage is GREEN-tier only.`,
   }));
 }
 

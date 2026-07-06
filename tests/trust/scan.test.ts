@@ -1018,6 +1018,18 @@ describe("scanTrustTree", () => {
                 },
               ],
             },
+            {
+              ruleId: "semgrep.future-rule",
+              message: { text: "future Semgrep finding" },
+              locations: [
+                {
+                  physicalLocation: {
+                    artifactLocation: { uri: "skills/clean/future.txt" },
+                    region: { startLine: 2 },
+                  },
+                },
+              ],
+            },
           ],
         },
       ],
@@ -1043,6 +1055,13 @@ describe("scanTrustTree", () => {
           detail: expect.stringContaining("Semgrep"),
           location: expect.objectContaining({ uri: "skills/clean/SKILL.md", startLine: 1 }),
           fingerprint: expect.stringContaining(":semgrep:skills/clean/SKILL.md:1:"),
+        }),
+        expect.objectContaining({
+          verdict: "fail",
+          code: "trust.detector-finding",
+          detail: expect.stringContaining("future Semgrep finding"),
+          location: expect.objectContaining({ uri: "skills/clean/future.txt", startLine: 2 }),
+          fingerprint: expect.stringContaining(":semgrep:skills/clean/future.txt:2:"),
         }),
       ]),
     );

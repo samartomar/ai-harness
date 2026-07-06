@@ -114,18 +114,8 @@ export const MCP_SCANNER_RULE_MAP: Record<string, CheckCode> = {
 };
 
 export const SEMGREP_RULE_MAP: Record<string, CheckCode> = {
-  "auto-exec": "trust.auto-exec-hook",
-  "dependency-confusion": "trust.dependency-confusion",
-  "hidden-unicode": "trust.hidden-unicode",
-  "malicious-code": "trust.malicious-code",
-  "prompt-injection": "trust.prompt-injection",
-  "semgrep.auto-exec": "trust.auto-exec-hook",
-  "semgrep.dependency-confusion": "trust.dependency-confusion",
-  "semgrep.hidden-unicode": "trust.hidden-unicode",
   "semgrep.malicious-code": "trust.malicious-code",
   "semgrep.prompt-injection": "trust.prompt-injection",
-  "semgrep.typosquat": "trust.typosquat",
-  typosquat: "trust.typosquat",
 };
 
 interface SarifArtifactLocation {
@@ -696,6 +686,9 @@ async function runSemgrepScan(
       throw new Error(scan.stderr || scan.stdout || `detector exit ${scan.code ?? "signal"}`);
     }
     if (scan.stdout.trim().length === 0) throw new Error("semgrep scan emitted no SARIF");
+    if (parseSarifLog(scan.stdout) === undefined) {
+      throw new Error("semgrep scan did not emit valid SARIF");
+    }
     return scan.stdout;
   } finally {
     rmSync(tmp, { recursive: true, force: true });
@@ -748,7 +741,14 @@ function ruleCode(result: SarifResult, detector: TrustDetector): CheckCode | und
   const raw = resultRuleId(result);
   if (raw === undefined) return undefined;
   const hasGenericExternalFallback = detector.name === "cisco" || detector.name === "mcp-scanner";
-  return detector.ruleMap[raw] ?? (hasGenericExternalFallback ? "trust.cisco-finding" : undefined);
+  return (
+    detector.ruleMap[raw] ??
+    (detector.name === "semgrep"
+      ? "trust.detector-finding"
+      : hasGenericExternalFallback
+        ? "trust.cisco-finding"
+        : undefined)
+  );
 }
 
 function detectorFindingLabel(detector: TrustDetector): string {
