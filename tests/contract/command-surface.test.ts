@@ -163,7 +163,7 @@ describe("v1 contract — CLI command surface", () => {
 
   it("read-only top-level commands accept the posture flag without changing apply behavior", () => {
     const root = liveSurface();
-    for (const name of ["doctor", "status", "verify-bundle", "verify-release"]) {
+    for (const name of ["doctor", "docs-lint", "status", "verify-bundle", "verify-release"]) {
       const cmd = root.commands.find((c) => c.name === name);
       expect(cmd?.options.map((o) => o.flags)).toContain("--posture <posture>");
     }

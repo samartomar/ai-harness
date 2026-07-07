@@ -473,6 +473,34 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     action:
       "`aih report` found a non-portable path in the committed `project.json`. Re-run `aih contract --apply` to regenerate it from the live tree; verify with `aih doctor` (the `contract truth` probe).",
   },
+  "docs.banned-phrase": {
+    audience: "developer",
+    failSeverity: "degraded",
+    title: "documentation contains a BetterDoc banned phrase",
+    action:
+      "Replace the flagged phrase with the concrete claim, mechanism, consequence, or evidence the document needs.",
+  },
+  "docs.vague-absolute": {
+    audience: "developer",
+    failSeverity: "degraded",
+    title: "documentation contains a vague absolute claim",
+    action:
+      "Scope the absolute claim to the real invariant, version, audience, or evidence; otherwise remove or weaken it.",
+  },
+  "docs.unsupported-callout-claim": {
+    audience: "developer",
+    failSeverity: "degraded",
+    title: "documentation callout contains a high-risk unsupported claim",
+    action:
+      "Move the claim into sourced prose with explicit evidence/scope, or remove it from the callout.",
+  },
+  "docs.rules-missing": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "BetterDoc slop-lint rules could not be loaded",
+    action:
+      "Restore packs/docs-quality/betterdoc/references/slop-lint.md in the installed package or repo, then rerun docs-lint.",
+  },
   "ready.blocked": {
     audience: "developer",
     failSeverity: "blocking",

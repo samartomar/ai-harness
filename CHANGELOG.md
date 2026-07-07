@@ -8,6 +8,9 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- `aih docs-lint` now runs the BetterDoc slop-lint phrase and claim guidance as
+  a native read-only CLI check with coded findings for blocked documentation
+  prose and missing rules. (#262)
 - `aih pack scaffold --pack <name> --apply` now seeds bundled first-party packs
   into an external repo's `packs/` tree and `aih-packs.json` without inventing
   approvals; the npm package now includes `packs/` and `aih-packs.json` so the
