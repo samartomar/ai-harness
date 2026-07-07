@@ -17,6 +17,9 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Rust Cargo profiles now emit `cargo fmt --check` as a format command alongside
   `cargo clippy`, and the language coverage matrix tracks that rustfmt signal.
   (#265)
+- CLI loadability now embeds a router canary, tracks per-tool dry-run probe
+  support, and treats non-probeable tools as manual/unverified instead of
+  counting structural wiring as runtime proof. (#266)
 - `aih docs-lint` now runs the BetterDoc slop-lint phrase and claim guidance as
   a native read-only CLI check with coded findings for blocked documentation
   prose and missing rules. (#262)

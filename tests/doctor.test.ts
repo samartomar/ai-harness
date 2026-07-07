@@ -740,15 +740,15 @@ describe("doctor — git-enabled workspace roots", () => {
     expect(res?.detail).not.toContain("aih init ./api;echo-pwned --apply");
   });
 
-  it("passes CLI loadability for workspace bootloaders without repo-level RULE_ROUTER", async () => {
+  it("emits a manual loadability check for structurally valid workspace bootloaders", async () => {
     writeWorkspaceMarker();
     writeWorkspaceCanon();
     const c = rooted(true);
     const probe = findProbe((await command.plan(c)).actions, "CLI context loadability");
     const res = await probe?.run(c);
 
-    expect(res?.verdict).toBe("pass");
-    expect(res?.detail).toContain("claude");
+    expect(res?.verdict).toBe("skip");
+    expect(res?.detail).toContain("manual checks: claude");
   });
 });
 

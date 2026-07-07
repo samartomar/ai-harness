@@ -417,9 +417,15 @@ export function renderCliCoverage(model: CliCoverageModel): string {
   const targeted = model.rows.filter((r) => r.targeted);
   const other = model.rows.filter((r) => !r.targeted);
   const fixes = targeted.flatMap(gapsFor);
+  const manualLoadChecks = targeted
+    .filter(
+      (r) =>
+        r.load.verdict === "unverified" && r.load.checks.some((c) => c.name === "dry-run-probe"),
+    )
+    .map((r) => `  ◐ ${r.cli}: ${loadReason(r.load)}`);
   return lines(
     "Per-CLI wiring for the tools this repo targets — a present file is not proof",
-    "the CLI loads it; the loads column proves activation + the router chain resolve.",
+    "the CLI loads it; the loads column requires structural checks plus a dry-run canary.",
     `Target source: ${SOURCE_LABEL[model.targetSource]}.`,
     "",
     "  legend: ✓ wired  ✗ missing  ◐ manual (guidance only)  — n/a   ·   cols: boot · mcp · set · loads",
@@ -428,9 +434,11 @@ export function renderCliCoverage(model: CliCoverageModel): string {
     ...targeted.map(rowLine),
     ...(other.length > 0 ? ["", "  ALSO INSTALLED (not targeted)", ...other.map(rowLine)] : []),
     "",
-    ...(fixes.length > 0
-      ? remediationBlock("  To close the gaps — copy any line:", fixes)
-      : ["  All targeted tools configured and proven loadable."]),
+    ...remediationBlock("  To close the gaps — copy any line:", fixes),
+    ...(manualLoadChecks.length > 0 ? ["  Manual load checks:", ...manualLoadChecks] : []),
+    ...(fixes.length === 0 && manualLoadChecks.length === 0
+      ? ["  All targeted tools configured and runtime-proven loadable."]
+      : []),
   );
 }
 

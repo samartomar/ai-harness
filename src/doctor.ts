@@ -19,7 +19,7 @@ import { canonLintCheck } from "./lint/run.js";
 import { mcpManagedAllowlistCheck } from "./mcp/allowlist.js";
 import { orgPolicyDriftProbes, orgPolicyIntegrityProbes } from "./org-policy/drift.js";
 import { resolveTargetSet } from "./report/cli-coverage.js";
-import { loadabilityFor, loadReason } from "./report/cli-loadability.js";
+import { loadabilityForWithDryRun, loadReason } from "./report/cli-loadability.js";
 import { scaleSafetyCheck } from "./scale-safety.js";
 import { trustLockLocalDriftChecks } from "./trust/commands.js";
 import { metricsToolCheck, usageRecorderCheck } from "./usage/hook-health.js";
@@ -190,13 +190,14 @@ export const command: CommandSpec = {
               code: "cli.not-detected",
             };
       }),
-      // Present file ≠ loaded: fail closed when a targeted CLI's bootloader is on
-      // disk but won't auto-load (wrong activation frontmatter, broken router
-      // chain, BOM/frontmatter). `unverified` (no bootloader yet) never fails.
-      probe("CLI context loadability", () => {
+      // Present file != loaded: fail closed when a targeted CLI's bootloader is on
+      // disk but won't auto-load. Tier-2 dry-run probes prove runtime load only
+      // for CLIs with a registered non-interactive context dump; other tools stay
+      // manual/unverified rather than being counted as loaded.
+      probe("CLI context loadability", async () => {
         const probeCtx: PlanContext = { ...ctx, contextDir };
-        const results = resolveTargetSet(probeCtx).targeted.map((cli) =>
-          loadabilityFor(probeCtx, cli),
+        const results = await Promise.all(
+          resolveTargetSet(probeCtx).targeted.map((cli) => loadabilityForWithDryRun(probeCtx, cli)),
         );
         const broken = results.filter((r) => r.verdict === "wontLoad");
         if (broken.length > 0) {
@@ -211,6 +212,19 @@ export const command: CommandSpec = {
           };
         }
         const loads = results.filter((r) => r.verdict === "loads").map((r) => r.cli);
+        const runtimeUnverified = results.filter(
+          (r) => r.verdict === "unverified" && r.checks.some((c) => c.name === "dry-run-probe"),
+        );
+        if (runtimeUnverified.length > 0) {
+          const proven = loads.length > 0 ? `runtime-proven: ${loads.join(", ")}; ` : "";
+          return {
+            name: "cli-loadability",
+            verdict: "skip",
+            detail: `${proven}manual checks: ${runtimeUnverified
+              .map((r) => `${r.cli}: ${loadReason(r)}`)
+              .join("; ")}`,
+          };
+        }
         return loads.length > 0
           ? { name: "cli-loadability", verdict: "pass", detail: `loads: ${loads.join(", ")}` }
           : {

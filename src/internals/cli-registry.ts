@@ -56,6 +56,30 @@ const SettingsProfile = z.object({
   writable: z.boolean(),
 });
 
+const DryRunProbe = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("command"),
+    /** Local, non-interactive command that prints the resolved agent context. */
+    argv: z.array(z.string()).min(1),
+    /** Which stream carries the resolved-context dump. Defaults to combined output. */
+    output: z.enum(["stdout", "stderr", "combined"]).optional(),
+    /** Keep runtime canaries bounded; callers also impose a conservative default. */
+    timeoutMs: z.number().int().positive().optional(),
+  }),
+  z.object({
+    kind: z.literal("manual"),
+    /** One-line honest fallback when the CLI has no known context-dump mode. */
+    detail: z.string(),
+  }),
+]);
+
+function manualDryRunProbe(label: string): z.input<typeof DryRunProbe> {
+  return {
+    kind: "manual",
+    detail: `${label} has no registered non-interactive resolved-context dump; manually confirm the router loads before claiming runtime proof.`,
+  };
+}
+
 const CliEntry = z.object({
   id: z.string(),
   label: z.string(),
@@ -70,6 +94,12 @@ const CliEntry = z.object({
   mcp: McpProfile,
   /** Tool-native settings file aih manages, when the tool has one (else n/a). */
   settings: SettingsProfile.optional(),
+  /**
+   * Tier-2 loadability canary. `command` means aih can prove runtime loading by
+   * grepping a resolved-context dump for the router sentinel; `manual` means the
+   * tool is structurally checkable only, so reports must not claim runtime proof.
+   */
+  dryRunProbe: DryRunProbe,
   /**
    * Frontmatter a bootloader MUST carry to be ALWAYS-loaded (Cursor `.mdc` needs
    * `alwaysApply: true`; Kiro steering needs `inclusion: always`). Absent → the
@@ -107,6 +137,7 @@ const RAW: Record<string, z.input<typeof CliEntry>> = {
       configFormat: "json",
     },
     settings: { configPath: ".claude/settings.json", writable: true },
+    dryRunProbe: manualDryRunProbe("Claude Code"),
   },
   codex: {
     id: "codex",
@@ -123,6 +154,7 @@ const RAW: Record<string, z.input<typeof CliEntry>> = {
       configKey: "mcp_servers",
       configFormat: "toml",
     },
+    dryRunProbe: manualDryRunProbe("Codex CLI"),
   },
   cursor: {
     id: "cursor",
@@ -137,6 +169,7 @@ const RAW: Record<string, z.input<typeof CliEntry>> = {
       configFormat: "json",
     },
     activation: { key: "alwaysApply", value: "true" },
+    dryRunProbe: manualDryRunProbe("Cursor"),
   },
   antigravity: {
     id: "antigravity",
@@ -150,6 +183,7 @@ const RAW: Record<string, z.input<typeof CliEntry>> = {
       configKey: "mcpServers",
       configFormat: "json",
     },
+    dryRunProbe: manualDryRunProbe("Antigravity"),
   },
   gemini: {
     id: "gemini",
@@ -165,6 +199,7 @@ const RAW: Record<string, z.input<typeof CliEntry>> = {
       configKey: "mcpServers",
       configFormat: "json",
     },
+    dryRunProbe: manualDryRunProbe("Gemini CLI"),
   },
   copilot: {
     id: "copilot",
@@ -179,6 +214,7 @@ const RAW: Record<string, z.input<typeof CliEntry>> = {
       configKey: "servers",
       configFormat: "json",
     },
+    dryRunProbe: manualDryRunProbe("GitHub Copilot"),
   },
   windsurf: {
     id: "windsurf",
@@ -192,6 +228,7 @@ const RAW: Record<string, z.input<typeof CliEntry>> = {
       configKey: "mcpServers",
       configFormat: "json",
     },
+    dryRunProbe: manualDryRunProbe("Windsurf"),
   },
   opencode: {
     id: "opencode",
@@ -207,6 +244,7 @@ const RAW: Record<string, z.input<typeof CliEntry>> = {
       configKey: "mcp",
       configFormat: "json",
     },
+    dryRunProbe: manualDryRunProbe("OpenCode"),
   },
   zed: {
     id: "zed",
@@ -221,6 +259,7 @@ const RAW: Record<string, z.input<typeof CliEntry>> = {
       configKey: "context_servers",
       configFormat: "json",
     },
+    dryRunProbe: manualDryRunProbe("Zed"),
   },
   kimi: {
     id: "kimi",
@@ -234,6 +273,7 @@ const RAW: Record<string, z.input<typeof CliEntry>> = {
       configKey: "mcpServers",
       configFormat: "json",
     },
+    dryRunProbe: manualDryRunProbe("Kimi CLI"),
   },
   kiro: {
     id: "kiro",
@@ -248,6 +288,7 @@ const RAW: Record<string, z.input<typeof CliEntry>> = {
       configFormat: "json",
     },
     activation: { key: "inclusion", value: "always" },
+    dryRunProbe: manualDryRunProbe("Kiro"),
   },
 };
 

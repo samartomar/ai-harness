@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { entry } from "../internals/cli-registry.js";
 import type { Cli } from "../internals/clis.js";
 import { readIfExists } from "../internals/fsxn.js";
+import { LOADABILITY_SENTINEL } from "../internals/loadability-sentinel.js";
 import type { PlanContext } from "../internals/plan.js";
 
 /**
@@ -14,17 +15,17 @@ import type { PlanContext } from "../internals/plan.js";
  * BOM/unterminated frontmatter that won't parse, or a bootloader that points at a
  * `RULE_ROUTER.md` that isn't there.
  *
- * Honesty rule (D0): three verdicts, never collapsed. `loads` is proven structurally;
- * `wontLoad` is proven broken; `unverified` is "can't prove from a repo scan" (e.g.
- * the bootloader isn't on disk yet — the coverage `missing` cell already flags that,
- * so loadability does not double-count it). Only a `wontLoad` is a real new signal.
+ * Honesty rule (D0/D6): three verdicts, never collapsed. `loads` means the
+ * structural checks pass AND a registered Tier-2 dry-run probe printed the router
+ * sentinel. `wontLoad` is proven broken. `unverified` is "can't prove from a repo
+ * scan" (e.g. no bootloader yet, or no CLI context-dump probe is registered).
  */
 
 export type LoadVerdict = "loads" | "wontLoad" | "unverified";
 
 export interface LoadCheck {
-  name: "activation" | "frontmatter-hygiene" | "router-chain" | "context-cap";
-  /** true = pass, false = fail (→ wontLoad), undefined = not applicable to this tool. */
+  name: "activation" | "frontmatter-hygiene" | "router-chain" | "context-cap" | "dry-run-probe";
+  /** true = pass, false = fail (→ wontLoad), undefined = n/a or not runtime-proven. */
   ok: boolean | undefined;
   detail: string;
 }
@@ -175,12 +176,82 @@ function contextCapCheck(ctx: PlanContext, cli: Cli, present: string[]): LoadChe
       };
 }
 
+const DRY_RUN_PROBE_TIMEOUT_MS = 10_000;
+
+function dryRunProbeStaticCheck(cli: Cli): LoadCheck {
+  const probe = entry(cli).dryRunProbe;
+  if (probe.kind === "manual") {
+    return { name: "dry-run-probe", ok: undefined, detail: `manual check: ${probe.detail}` };
+  }
+  return {
+    name: "dry-run-probe",
+    ok: undefined,
+    detail: `dry-run probe registered (${probe.argv.join(" ")}) — run aih doctor --verify to grep ${LOADABILITY_SENTINEL}`,
+  };
+}
+
+function outputFor(
+  probe: Extract<ReturnType<typeof entry>["dryRunProbe"], { kind: "command" }>,
+  stdout: string,
+  stderr: string,
+): string {
+  if (probe.output === "stdout") return stdout;
+  if (probe.output === "stderr") return stderr;
+  return `${stdout}\n${stderr}`;
+}
+
+function withDryRunCheck(base: CliLoadability, check: LoadCheck): CliLoadability {
+  const checks = [...base.checks, check];
+  if (check.ok === true) return { cli: base.cli, verdict: "loads", checks };
+  if (check.ok === false) {
+    return {
+      cli: base.cli,
+      verdict: "wontLoad",
+      checks,
+      fix: base.fix ?? `aih bootstrap-ai --apply --cli ${base.cli}`,
+    };
+  }
+  return { cli: base.cli, verdict: "unverified", checks };
+}
+
+async function dryRunProbeCheck(ctx: PlanContext, cli: Cli): Promise<LoadCheck> {
+  const probe = entry(cli).dryRunProbe;
+  if (probe.kind === "manual") return dryRunProbeStaticCheck(cli);
+
+  const res = await ctx.run(probe.argv, {
+    cwd: ctx.root,
+    timeoutMs: probe.timeoutMs ?? DRY_RUN_PROBE_TIMEOUT_MS,
+  });
+  const cmd = probe.argv.join(" ");
+  if (res.spawnError || res.code !== 0) {
+    const status = res.spawnError ? "spawn failed or timed out" : `exit ${res.code ?? "signal"}`;
+    return {
+      name: "dry-run-probe",
+      ok: undefined,
+      detail: `dry-run probe could not run (${cmd}; ${status})`,
+    };
+  }
+  const output = outputFor(probe, res.stdout, res.stderr);
+  return output.includes(LOADABILITY_SENTINEL)
+    ? {
+        name: "dry-run-probe",
+        ok: true,
+        detail: `dry-run probe printed ${LOADABILITY_SENTINEL}`,
+      }
+    : {
+        name: "dry-run-probe",
+        ok: false,
+        detail: `dry-run probe ran (${cmd}) but did not print ${LOADABILITY_SENTINEL}`,
+      };
+}
+
 /**
- * The load verdict for one CLI. Runs only over the bootloader files actually on
- * disk: if none are present, the verdict is `unverified` (the coverage `missing`
- * cell owns that gap). Any failed check → `wontLoad`; all pass/na → `loads`.
+ * The structural load verdict for one CLI. Runs only over the bootloader files
+ * actually on disk: if none are present, the verdict is `unverified` (the coverage
+ * `missing` cell owns that gap). Any failed check -> `wontLoad`; all pass/na -> a
+ * candidate that still needs Tier-2 proof before it can be called `loads`.
  */
-export function loadabilityFor(ctx: PlanContext, cli: Cli): CliLoadability {
+function structuralLoadabilityFor(ctx: PlanContext, cli: Cli): CliLoadability {
   const present = entry(cli).bootloaders.filter((p) => existsSync(join(ctx.root, p)));
   if (present.length === 0) {
     return {
@@ -208,10 +279,35 @@ export function loadabilityFor(ctx: PlanContext, cli: Cli): CliLoadability {
     : { cli, verdict: "loads", checks };
 }
 
+/**
+ * Spawn-free loadability for reports/digests. Structural failures still fail
+ * closed, but a structural pass becomes `unverified` unless a dry-run probe is
+ * executed by {@link loadabilityForWithDryRun}.
+ */
+export function loadabilityFor(ctx: PlanContext, cli: Cli): CliLoadability {
+  const structural = structuralLoadabilityFor(ctx, cli);
+  if (structural.verdict !== "loads") return structural;
+  return withDryRunCheck(structural, dryRunProbeStaticCheck(cli));
+}
+
+/** Runtime Tier-2 loadability for doctor --verify; executes only registered local probes. */
+export async function loadabilityForWithDryRun(
+  ctx: PlanContext,
+  cli: Cli,
+): Promise<CliLoadability> {
+  const structural = structuralLoadabilityFor(ctx, cli);
+  if (structural.verdict !== "loads") return structural;
+  return withDryRunCheck(structural, await dryRunProbeCheck(ctx, cli));
+}
+
 /** Compact one-line reason for the matrix tooltip / terminal remediation. */
 export function loadReason(l: CliLoadability): string {
   const failed = l.checks.filter((c) => c.ok === false).map((c) => c.detail);
   if (failed.length > 0) return failed.join("; ");
-  if (l.verdict === "loads") return "loads: activation, hygiene, and router chain all pass";
-  return l.checks[0]?.detail ?? "unverified";
+  if (l.verdict === "loads") {
+    return "loads: activation, hygiene, router chain, and dry-run probe all pass";
+  }
+  return (
+    l.checks.find((c) => c.name === "dry-run-probe")?.detail ?? l.checks[0]?.detail ?? "unverified"
+  );
 }
