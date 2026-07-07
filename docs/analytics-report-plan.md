@@ -101,7 +101,9 @@ estimate ("$Y avoided at the uncached rate"), never as proven incurred-then-save
 ## 5c. Personal dev view (local) — honest scoping
 
 Same `aih report` command, **local scope** (default). Reads only this workstation/repo — no
-network, no org key. What's actually buildable today vs. blocked on a data source:
+network, no org key. The dev-velocity view is a **static digest** (`aih report`, especially the
+v9 HTML artifact), not a localhost console or long-running server; D6 below locks that decision.
+What's actually buildable today vs. blocked on a data source:
 
 | Panel | Buildable now? | Source |
 |---|---|---|
@@ -139,6 +141,14 @@ panels. Empty local sinks render explicit stubs; we do not fake data.
   `ActionKind` now enumerates 6 kinds; `aih report` emits a digest. Serves both the personal
   terminal view and the enterprise machine-readable feed. _(R1 — write to a `*.md` artifact — was
   the alternative; rejected: a read-only report shouldn't need `--apply` to show its table.)_
+- **D6 — Dev-velocity view → static digest, not a live server.** The personal view is a
+  point-in-time `aih report`/`aih report --v9` digest rendered from local files. It must not add a
+  `localhost` service, websocket, daemon, or `aih status --live`; `aih status` remains the static
+  presence inventory named in D1. "Live" panels are honestly gated snapshots: `.aih/usage.jsonl`
+  (written only after `aih usage --apply` hooks are installed) powers token/cache, skill-ledger,
+  and usage-by-CLI panels; `.aih/history.jsonl` (written by `aih track --apply`) powers trends and
+  deltas. Missing or empty sinks render explicit PREVIEW/empty stubs with setup commands, never
+  demo values, zeros-as-measured, or implied background collection.
 
 ## 7. Parallel build plan
 
