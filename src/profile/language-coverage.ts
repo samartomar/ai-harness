@@ -250,7 +250,7 @@ const FIXTURES: CoverageFixture[] = [
     id: "python-pyproject",
     ecosystem: "Python pyproject",
     role: "wave-2-target",
-    note: "Python primary-stack coverage now detects Poetry plus manifest-backed pytest/ruff when no root package.json exists; polyglot Python commands wait for per-workspace command routing.",
+    note: "Python primary-stack coverage detects Poetry plus manifest-backed pytest/ruff when no root package.json exists; polyglot Python commands are covered by the per-workspace fixture.",
     seed: seedPython,
     expected: {
       languages: ["Python"],
@@ -325,6 +325,7 @@ const FIXTURES: CoverageFixture[] = [
     seed: seedPolyglot,
     expected: {
       languages: ["TypeScript/Node.js", "Python", "Rust"],
+      frameworks: ["FastAPI"],
       test: ["npm test", "pytest", "cargo test"],
       build: ["npm run build", "cargo build"],
       lint: ["ruff check .", "cargo clippy"],
