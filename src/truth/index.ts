@@ -1,4 +1,5 @@
-import { existsSync, realpathSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, lstatSync, realpathSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { TextDecoder } from "node:util";
 import { controlMatrixClaimIds } from "../docs-lint/index.js";
@@ -22,6 +23,23 @@ const GIT_TIMEOUT_MS = 5_000;
 const HEAD_RE = /^[0-9a-f]{40}$/i;
 const ZERO_COMMIT = "0".repeat(40);
 const DECISION_ID_RE = /^decision\.[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
+const ACCEPTANCE_ID_RE = /^acceptance\.[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
+const EVIDENCE_ID_RE = /^evidence\.[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
+const ENV_NAME_RE = /^[A-Z_][A-Z0-9_]{0,127}$/;
+const VENDOR_TOKEN_RE = /^[a-z][a-z0-9-]{0,63}$/;
+const REPO_REL_SEGMENT_RE = /^[A-Za-z0-9._-]+$/;
+const MAX_EVIDENCE_NEEDLE_CHARS = 256;
+const SHA256_RE = /^[0-9a-f]{64}$/;
+const EVIDENCE_ALLOWED_ROOTS = new Set(["ai-coding", "docs", "src", "tests"]);
+const EVIDENCE_ALLOWED_TOP_FILES = new Set([
+  "agents.md",
+  "changelog.md",
+  "contributing.md",
+  "package.json",
+  "readme.md",
+  "security.md",
+  "stability.md",
+]);
 
 interface TruthPointer {
   schemaVersion: 1;
@@ -36,6 +54,32 @@ interface TruthDecision {
   supersededBy?: string;
 }
 
+type TruthAcceptanceAssertion =
+  | {
+      id: string;
+      kind: "required-env";
+      name: string;
+    }
+  | {
+      id: string;
+      kind: "vendor-specific";
+      vendor: string;
+      scope: "vendor-neutral";
+    };
+
+type TruthAgentEvidenceAssertion =
+  | {
+      id: string;
+      kind: "file-exists";
+      path: string;
+    }
+  | {
+      id: string;
+      kind: "file-contains";
+      path: string;
+      contains: string;
+    };
+
 interface TruthState {
   schemaVersion: 1;
   binding: {
@@ -45,6 +89,8 @@ interface TruthState {
     packageVersion?: string;
     claims: string[];
     decisions: TruthDecision[];
+    acceptance: TruthAcceptanceAssertion[];
+    agentEvidence: TruthAgentEvidenceAssertion[];
   };
   staging: {
     dir: string;
@@ -64,6 +110,10 @@ interface TruthPack {
     controlMatrixClaims: string[];
     decisionIds: string[];
     stagingDir: string;
+    assertionFingerprints: {
+      acceptance: string;
+      agentEvidence: string;
+    };
   };
 }
 
@@ -156,6 +206,79 @@ function asDecisionId(value: unknown): string | undefined {
   return text !== undefined && DECISION_ID_RE.test(text) ? text : undefined;
 }
 
+function asAcceptanceId(value: unknown): string | undefined {
+  const text = asString(value);
+  return text !== undefined && ACCEPTANCE_ID_RE.test(text) ? text : undefined;
+}
+
+function asEvidenceId(value: unknown): string | undefined {
+  const text = asString(value);
+  return text !== undefined && EVIDENCE_ID_RE.test(text) ? text : undefined;
+}
+
+function asEnvName(value: unknown): string | undefined {
+  const text = asString(value);
+  return text !== undefined && ENV_NAME_RE.test(text) ? text : undefined;
+}
+
+function asVendorToken(value: unknown): string | undefined {
+  const text = asString(value);
+  return text !== undefined && VENDOR_TOKEN_RE.test(text) ? text : undefined;
+}
+
+function asSha256(value: unknown): string | undefined {
+  const text = asString(value);
+  return text !== undefined && SHA256_RE.test(text) ? text : undefined;
+}
+
+function hasSensitiveEvidenceSegment(path: string): boolean {
+  return toPosix(path)
+    .split("/")
+    .some((segment) => {
+      const lower = segment.toLowerCase();
+      return lower.startsWith(".") || lower === "secrets" || lower === "admin";
+    });
+}
+
+function isAllowedEvidencePath(path: string): boolean {
+  const segments = toPosix(path).split("/");
+  if (segments.length === 1)
+    return EVIDENCE_ALLOWED_TOP_FILES.has(segments[0]?.toLowerCase() ?? "");
+  return EVIDENCE_ALLOWED_ROOTS.has(segments[0]?.toLowerCase() ?? "");
+}
+
+function asRepoRelativePath(value: unknown): string | undefined {
+  const text = asString(value);
+  if (text === undefined || text.includes("\0")) return undefined;
+  const relPath = toPosix(text);
+  if (relPath.length > 240 || relPath.startsWith("/") || /^[A-Za-z]:/.test(relPath)) {
+    return undefined;
+  }
+  const segments = relPath.split("/");
+  if (
+    segments.some(
+      (segment) =>
+        segment.length === 0 ||
+        segment === "." ||
+        segment === ".." ||
+        !REPO_REL_SEGMENT_RE.test(segment),
+    )
+  ) {
+    return undefined;
+  }
+  if (hasSensitiveEvidenceSegment(relPath)) return undefined;
+  if (!isAllowedEvidencePath(relPath)) return undefined;
+  return relPath;
+}
+
+function asEvidenceNeedle(value: unknown): string | undefined {
+  const text = typeof value === "string" && value.length > 0 ? value : undefined;
+  if (text === undefined || text.includes("\0") || text.length > MAX_EVIDENCE_NEEDLE_CHARS) {
+    return undefined;
+  }
+  return text;
+}
+
 function strictStringArray(value: unknown): string[] | undefined {
   if (!Array.isArray(value)) return undefined;
   const out: string[] = [];
@@ -180,6 +303,11 @@ function parsePointer(value: unknown): TruthPointer | undefined {
   return { schemaVersion: 1, path, binding: { boundToCommit } };
 }
 
+function hasOnlyKeys(record: Record<string, unknown>, allowed: readonly string[]): boolean {
+  const allowedSet = new Set(allowed);
+  return Object.keys(record).every((key) => allowedSet.has(key));
+}
+
 function parseDecisions(value: unknown): TruthDecision[] | undefined {
   if (!Array.isArray(value)) return undefined;
   const out: TruthDecision[] = [];
@@ -191,6 +319,59 @@ function parseDecisions(value: unknown): TruthDecision[] | undefined {
       item.supersededBy === undefined ? undefined : asDecisionId(item.supersededBy);
     if (item.supersededBy !== undefined && supersededBy === undefined) return undefined;
     out.push({ id, ...(supersededBy === undefined ? {} : { supersededBy }) });
+  }
+  return out;
+}
+
+function parseAcceptanceAssertions(value: unknown): TruthAcceptanceAssertion[] | undefined {
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) return undefined;
+  const out: TruthAcceptanceAssertion[] = [];
+  for (const item of value) {
+    if (!isRecord(item)) return undefined;
+    const id = asAcceptanceId(item.id);
+    if (id === undefined) return undefined;
+    if (item.kind === "required-env") {
+      if (!hasOnlyKeys(item, ["id", "kind", "name"])) return undefined;
+      const name = asEnvName(item.name);
+      if (name === undefined) return undefined;
+      out.push({ id, kind: "required-env", name });
+      continue;
+    }
+    if (item.kind === "vendor-specific") {
+      if (!hasOnlyKeys(item, ["id", "kind", "vendor", "scope"])) return undefined;
+      const vendor = asVendorToken(item.vendor);
+      if (vendor === undefined || item.scope !== "vendor-neutral") return undefined;
+      out.push({ id, kind: "vendor-specific", vendor, scope: "vendor-neutral" });
+      continue;
+    }
+    return undefined;
+  }
+  return out;
+}
+
+function parseAgentEvidenceAssertions(value: unknown): TruthAgentEvidenceAssertion[] | undefined {
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) return undefined;
+  const out: TruthAgentEvidenceAssertion[] = [];
+  for (const item of value) {
+    if (!isRecord(item)) return undefined;
+    const id = asEvidenceId(item.id);
+    const path = asRepoRelativePath(item.path);
+    if (id === undefined || path === undefined) return undefined;
+    if (item.kind === "file-exists") {
+      if (!hasOnlyKeys(item, ["id", "kind", "path"])) return undefined;
+      out.push({ id, kind: "file-exists", path });
+      continue;
+    }
+    if (item.kind === "file-contains") {
+      if (!hasOnlyKeys(item, ["id", "kind", "path", "contains"])) return undefined;
+      const contains = asEvidenceNeedle(item.contains);
+      if (contains === undefined) return undefined;
+      out.push({ id, kind: "file-contains", path, contains });
+      continue;
+    }
+    return undefined;
   }
   return out;
 }
@@ -212,7 +393,16 @@ function parseState(value: unknown): TruthState | undefined {
   if (assertions.packageVersion !== undefined && packageVersion === undefined) return undefined;
   const claims = strictStringArray(assertions.claims);
   const decisions = parseDecisions(assertions.decisions);
-  if (claims === undefined || decisions === undefined) return undefined;
+  const acceptance = parseAcceptanceAssertions(assertions.acceptance);
+  const agentEvidence = parseAgentEvidenceAssertions(assertions.agentEvidence);
+  if (
+    claims === undefined ||
+    decisions === undefined ||
+    acceptance === undefined ||
+    agentEvidence === undefined
+  ) {
+    return undefined;
+  }
   return {
     schemaVersion: 1,
     binding: { boundToCommit },
@@ -220,6 +410,8 @@ function parseState(value: unknown): TruthState | undefined {
       packageVersion,
       claims,
       decisions,
+      acceptance,
+      agentEvidence,
     },
     staging: { dir: stagingDir, promotionRequiresApply: true },
   };
@@ -274,6 +466,24 @@ function estimateTokens(text: string): number {
   return Math.max(1, Math.ceil(Buffer.byteLength(text, "utf8") / 4));
 }
 
+function sha256Json(value: unknown): string {
+  return createHash("sha256").update(jsonFile(value), "utf8").digest("hex");
+}
+
+function assertionFingerprintsFor(
+  acceptance: readonly TruthAcceptanceAssertion[],
+  agentEvidence: readonly TruthAgentEvidenceAssertion[],
+): TruthPack["facts"]["assertionFingerprints"] {
+  return {
+    acceptance: sha256Json(acceptance),
+    agentEvidence: sha256Json(agentEvidence),
+  };
+}
+
+function assertionFingerprints(state: TruthState): TruthPack["facts"]["assertionFingerprints"] {
+  return assertionFingerprintsFor(state.assertions.acceptance, state.assertions.agentEvidence);
+}
+
 function boundedMarkdown(linesIn: readonly string[], budget: number): string {
   const maxBytes = budget * 4;
   const text = ensureTrailingNewline(lines(...linesIn));
@@ -304,6 +514,7 @@ function packFromState(
   const budget = tokenBudget(ctx);
   const matrixClaims = controlMatrixClaimIds(ctx.root);
   const decisions = state.assertions.decisions;
+  const fingerprints = assertionFingerprints(state);
   const markdown = boundedMarkdown(
     [
       "# AIH Truth Pack",
@@ -313,6 +524,8 @@ function packFromState(
       `- packageVersion: ${packageVersion(ctx.root) ?? "unknown"}`,
       `- controlMatrixClaims: ${matrixClaims.length}`,
       `- decisions: ${decisions.length}`,
+      `- acceptanceAssertions: ${state.assertions.acceptance.length}`,
+      `- agentEvidenceAssertions: ${state.assertions.agentEvidence.length}`,
       `- sidecar: ${toPosix(sidecar)}`,
       `- staging: ${toPosix(state.staging.dir)}`,
     ],
@@ -332,6 +545,7 @@ function packFromState(
         controlMatrixClaims: matrixClaims,
         decisionIds: decisions.map((decision) => decision.id),
         stagingDir: state.staging.dir,
+        assertionFingerprints: fingerprints,
       },
     },
   };
@@ -351,6 +565,22 @@ function parsePack(value: unknown): TruthPack | undefined {
   const controlMatrixClaims = strictStringArray(facts?.controlMatrixClaims);
   const decisionIds = strictStringArray(facts?.decisionIds);
   const stagingDir = asString(facts?.stagingDir);
+  const hasAssertionFingerprints =
+    facts !== undefined && Object.hasOwn(facts, "assertionFingerprints");
+  const assertionFingerprints =
+    hasAssertionFingerprints && isRecord(facts.assertionFingerprints)
+      ? facts.assertionFingerprints
+      : undefined;
+  const defaultFingerprints =
+    hasAssertionFingerprints === false ? assertionFingerprintsFor([], []) : undefined;
+  const acceptanceFingerprint =
+    hasAssertionFingerprints === false
+      ? defaultFingerprints?.acceptance
+      : asSha256(assertionFingerprints?.acceptance);
+  const agentEvidenceFingerprint =
+    hasAssertionFingerprints === false
+      ? defaultFingerprints?.agentEvidence
+      : asSha256(assertionFingerprints?.agentEvidence);
   if (
     tokenBudget === undefined ||
     tokenEstimate === undefined ||
@@ -361,7 +591,9 @@ function parsePack(value: unknown): TruthPack | undefined {
     (facts?.packageVersion !== undefined && packageVersion === undefined) ||
     controlMatrixClaims === undefined ||
     decisionIds === undefined ||
-    stagingDir === undefined
+    stagingDir === undefined ||
+    acceptanceFingerprint === undefined ||
+    agentEvidenceFingerprint === undefined
   ) {
     return undefined;
   }
@@ -377,6 +609,10 @@ function parsePack(value: unknown): TruthPack | undefined {
       controlMatrixClaims,
       decisionIds,
       stagingDir,
+      assertionFingerprints: {
+        acceptance: acceptanceFingerprint,
+        agentEvidence: agentEvidenceFingerprint,
+      },
     },
   };
 }
@@ -389,6 +625,85 @@ function fail(code: CheckCode, detail: string): Check {
   return { name: "truth verify", verdict: "fail", code, detail };
 }
 
+function pass(name: string, detail: string): Check {
+  return { name, verdict: "pass", detail };
+}
+
+function repoFileContents(ctx: PlanContext, relPath: string): Buffer | undefined {
+  const abs = resolve(ctx.root, relPath);
+  if (!isPathInsideRoot(ctx.root, abs)) return undefined;
+  try {
+    if (lstatSync(abs).isSymbolicLink()) return undefined;
+  } catch {
+    return undefined;
+  }
+  const realRoot = realpathSafe(ctx.root);
+  const finalReal = finalRealPath(abs);
+  const finalRel = toPosix(relative(realRoot, finalReal));
+  if (
+    finalRel === "" ||
+    finalRel.startsWith("..") ||
+    isAbsolute(finalRel) ||
+    !isAllowedEvidencePath(finalRel) ||
+    hasSensitiveEvidenceSegment(finalRel)
+  ) {
+    return undefined;
+  }
+  return readRegularFile(abs);
+}
+
+function acceptanceChecks(ctx: PlanContext, state: TruthState): Check[] {
+  const checks: Check[] = [];
+  for (const assertion of state.assertions.acceptance) {
+    if (assertion.kind === "required-env") {
+      const value = ctx.env[assertion.name];
+      if (typeof value !== "string" || value.trim().length === 0) {
+        checks.push(
+          fail(
+            "truth.acceptance-blocked-environment",
+            "blocked:environment acceptance preflight requirement is unsatisfied",
+          ),
+        );
+      } else {
+        checks.push(pass("truth acceptance preflight", "environment requirement is satisfiable"));
+      }
+      continue;
+    }
+
+    checks.push(
+      fail(
+        "truth.acceptance-blocked-vendor-specific",
+        "blocked:vendor-specific acceptance preflight found vendor-specific work in vendor-neutral scope",
+      ),
+    );
+  }
+  return checks;
+}
+
+function agentEvidenceChecks(ctx: PlanContext, state: TruthState): Check[] {
+  const checks: Check[] = [];
+  for (const assertion of state.assertions.agentEvidence) {
+    const contents = repoFileContents(ctx, assertion.path);
+    const ok =
+      assertion.kind === "file-exists"
+        ? contents !== undefined
+        : contents?.toString("utf8").includes(assertion.contains) === true;
+    if (ok) {
+      checks.push(
+        pass("truth agent evidence", "agent evidence claim re-run by harness and recorded"),
+      );
+    } else {
+      checks.push(
+        fail(
+          "truth.agent-evidence-mismatch",
+          "agent evidence claim did not match the re-run harness result",
+        ),
+      );
+    }
+  }
+  return checks;
+}
+
 function truthPackIntegrityCheck(
   ctx: PlanContext,
   pack: TruthPack,
@@ -398,6 +713,7 @@ function truthPackIntegrityCheck(
   const actualVersion = packageVersion(ctx.root);
   const matrixClaims = controlMatrixClaimIds(ctx.root);
   const decisionIds = state.assertions.decisions.map((decision) => decision.id);
+  const fingerprints = assertionFingerprints(state);
   const versionMatches = (pack.facts.packageVersion ?? undefined) === actualVersion;
   if (
     pack.facts.boundToCommit !== state.binding.boundToCommit ||
@@ -405,7 +721,9 @@ function truthPackIntegrityCheck(
     !versionMatches ||
     !sameArray(pack.facts.controlMatrixClaims, matrixClaims) ||
     !sameArray(pack.facts.decisionIds, decisionIds) ||
-    pack.facts.stagingDir !== state.staging.dir
+    pack.facts.stagingDir !== state.staging.dir ||
+    pack.facts.assertionFingerprints.acceptance !== fingerprints.acceptance ||
+    pack.facts.assertionFingerprints.agentEvidence !== fingerprints.agentEvidence
   ) {
     return fail(
       "truth.pack-invalid",
@@ -486,11 +804,17 @@ export async function truthVerifyChecks(ctx: PlanContext): Promise<Check[]> {
   }
 
   if (checks.length > 0) return checks;
+
+  checks.push(...acceptanceChecks(ctx, state), ...agentEvidenceChecks(ctx, state));
+
+  if (checks.some((check) => check.verdict === "fail")) return checks;
   return [
+    ...checks,
     {
       name: "truth verify",
       verdict: "pass",
-      detail: "sidecar matches HEAD, package version, claims, and decisions",
+      detail:
+        "sidecar matches HEAD, package version, claims, decisions, preflight, and agent evidence",
     },
   ];
 }
@@ -516,6 +840,8 @@ export async function sidecarInitActions(ctx: PlanContext): Promise<Action[]> {
       packageVersion: packageVersion(ctx.root),
       claims: controlMatrixClaimIds(ctx.root),
       decisions: [],
+      acceptance: [],
+      agentEvidence: [],
     },
     staging: { dir: toPosix(TRUTH_STAGING_DIR), promotionRequiresApply: true },
   };
@@ -631,7 +957,7 @@ export const truthPackCommand: CommandSpec = {
 
 export const truthVerifyCommand: CommandSpec = {
   name: "verify",
-  summary: "Verify the sidecar binding, version, claim rows, and decision supersessions",
+  summary: "Verify sidecar binding, drift checks, preflight assertions, and agent evidence",
   options: [
     {
       flags: "--sidecar-path <dir>",
