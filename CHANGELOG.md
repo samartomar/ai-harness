@@ -12,6 +12,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   stable `CM-xx` control-matrix rows, each row must cite existing named tests,
   and changed feature files with no docs or matrix update are reported as drift
   while prose guidance remains advisory. (#325)
+- `aih init --sidecar`, `aih truth pack`, and `aih truth verify` now ship Phase A
+  project-truth sidecars: the sidecar records a commit binding, stages token-bounded
+  packs outside the repo, detects commit/version/claim/decision drift, fails closed
+  on invalid assertions, and lets evidence bundles include only verified hashed
+  truth-pack artifacts. (#326)
 - The language coverage matrix now grades the Node + Python + Rust polyglot
   fixture's framework coverage as good, reflecting the existing per-workspace
   command routing for secondary Python/Rust workspaces. (#263)

@@ -57,6 +57,12 @@ describe("findings — routing", () => {
       "docs.claim-matrix-row-missing",
       "docs.claim-test-missing",
       "docs.feature-ledger-drift",
+      "truth.sidecar-missing",
+      "truth.bound-commit-drift",
+      "truth.version-drift",
+      "truth.claim-matrix-row-missing",
+      "truth.decision-supersession-missing",
+      "truth.pack-invalid",
     ] as const) {
       const template = renderTemplate(mustFind(code, "fail", "detail"), CTX);
       expect(template.kind).toBe("self-fix");

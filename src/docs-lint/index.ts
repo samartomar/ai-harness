@@ -518,6 +518,10 @@ function parseControlMatrix(root: string): ControlMatrix {
   return { rows, findings };
 }
 
+export function controlMatrixClaimIds(root: string): string[] {
+  return [...parseControlMatrix(root).rows.keys()].sort((a, b) => a.localeCompare(b));
+}
+
 function validateMatrixProofs(root: string, matrix: ControlMatrix): DocsLintFinding[] {
   const findings: DocsLintFinding[] = [];
   const relativeMatrix = toPosix(CONTROL_MATRIX_REL);

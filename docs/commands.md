@@ -67,6 +67,10 @@ sandbox in one pass (one writer per file). `--baseline ecc|gstack|gsd` selects t
 baseline and records the choice in `.aih-config.json`; `ecc` remains the default. ECC is a separate
 gated network step — run `aih ecc` when ready (it points at ECC's own installer). For locked-down
 MCP rollout, `--mcp-mode offline|none` and `--mcp-compliant` are forwarded to the MCP phase.
+`--sidecar` adds an external project-truth sidecar (default sibling `<repo>-ai`) and records the
+current git commit binding; if `HEAD` cannot be resolved to a real commit, sidecar init fails closed.
+Use `--sidecar-path <dir>` to choose a different external sidecar directory; the path must resolve
+outside the repository root.
 `--v3` adds the structured bootstrap-intelligence lane: repo scan, gap analysis, capability install
 plan, and derived `.aih/fingerprint.json`. Under `--apply`, it also writes committed capability
 intent via `aih-capabilities.json` and refreshes the rebuildable `$HOME/.aih/capabilities/cache.json`.
@@ -306,8 +310,9 @@ bundle directory containing `files/aih-org-policy.json`; mismatches fail closed 
 ## aih evidence
 
 Package the **audit trail aih already emits** — approval lock, packs manifest, trust lock, skill
-cards, vet evidence, run logs, report/SARIF outputs — into one deterministic **evidence bundle**
-(`build`): the exact fleet-bundle layout (`files/<rel>` copies, `manifest.json`, `SHA256SUMS`,
+cards, vet evidence, run logs, report/SARIF outputs, and a verified staged truth pack when present — into
+one deterministic **evidence bundle** (`build`): the exact fleet-bundle layout (`files/<rel>`
+copies, `manifest.json`, `SHA256SUMS`,
 optional `--sign cosign|gh`) plus `evidence.json`, a typed kind index and harness provenance block
 (`aihVersion`, release tag, package name, checksum/signature asset refs, and verification command).
 Byte-identical across builds from identical inputs (no wall-clock); absent artifact kinds are
@@ -315,6 +320,18 @@ skipped silently. At enterprise posture, or with `--require-signature`, signing 
 signer, missing local signing tool, or failed signing exec emits coded `bundle.signature` evidence
 instead of being treated as best effort. Re-check any copy with
 `aih verify-bundle --bundle <out> --require-signature`.
+
+## aih truth
+
+Project-truth sidecar commands. `aih init --sidecar --apply` creates the external sidecar and root
+pointer. `aih truth pack` first runs the sidecar verification gate, then stages a token-bounded
+Markdown + JSON pack under the sidecar's `truth/staging/` directory; agent-proposed truth changes
+stage there first, and promotion back into repo-owned files still requires an explicit `--apply`
+flow. `aih truth verify` detects drift and fails closed when the sidecar's commit binding differs
+from `HEAD`, the asserted package version differs from `package.json`, a claimed `CM-xx` has no
+`docs/CONTROL_MATRIX.md` row, or a superseded decision points at a missing target. A verified pack
+can then be included by `aih evidence build` as the hashed `.aih/truth-pack.json` artifact; stale or
+malformed packs fail closed instead of being indexed. <!-- aih:claim CM-13 -->
 
 ## aih bundle
 

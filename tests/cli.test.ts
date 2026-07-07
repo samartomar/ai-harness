@@ -93,6 +93,11 @@ describe("CLI program", () => {
     expect(policy?.commands.map((c) => c.name()).sort()).toEqual(["validate", "verify"]);
   });
 
+  it("registers truth pack and verify as nested commands", () => {
+    const truth = buildProgram().commands.find((c) => c.name() === "truth");
+    expect(truth?.commands.map((c) => c.name()).sort()).toEqual(["pack", "verify"]);
+  });
+
   it("keeps the canonical CommandSpec registry complete for every registered built-in spec", () => {
     const bareParentGroups = new Set<string>(PARENT_GROUPS.filter((name) => name !== "workspace"));
     const registeredPaths = (program: Command): string[] =>

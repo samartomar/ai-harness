@@ -79,6 +79,13 @@ export type CheckCode =
   | "docs.claim-matrix-row-missing"
   | "docs.claim-test-missing"
   | "docs.feature-ledger-drift"
+  // project truth sidecar
+  | "truth.sidecar-missing"
+  | "truth.bound-commit-drift"
+  | "truth.version-drift"
+  | "truth.claim-matrix-row-missing"
+  | "truth.decision-supersession-missing"
+  | "truth.pack-invalid"
   // readiness gate (`aih ready`)
   | "ready.blocked"
   // enterprise baseline attestation

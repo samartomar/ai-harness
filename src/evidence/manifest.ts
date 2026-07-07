@@ -29,6 +29,7 @@ export const EVIDENCE_KINDS = [
   "packs",
   "report",
   "sarif",
+  "truth-pack",
 ] as const;
 
 export const EvidenceKindSchema = z.enum(EVIDENCE_KINDS);
