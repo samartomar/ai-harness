@@ -8,13 +8,15 @@ purpose: Use-case map for AI-Harness commands across developer, team, and enterp
 
 # AI-Harness Command Use-Case Guide
 
-Use this guide when the question is "which `aih` command applies to this situation?" The public `docs/commands.md` page and `aih <command> --help` remain the syntax authorities. This guide maps common workflows across the shipped command surface through `@aihq/harness@2.4.0`.
+Use this guide when the question is "which `aih` command applies to this situation?" The public `docs/commands.md` page and `aih <command> --help` remain the syntax authorities. This guide maps common workflows across the shipped command surface through `@aihq/harness@2.4.0`; it does not replace the command reference.
 
 ## Command Rule
 
 Start read-only, then apply deliberately.
 
 Most managed project commands preview by default and require `--apply` to write. Verification commands such as `doctor`, `ready`, `status`, `docs-lint`, `verify-release`, `verify-bundle`, `policy validate`, `pack status`, `pack validate`, `truth verify`, and `bootstrap-ai --verify` are the normal completion gates.
+
+Use tables here to choose a path, not to restate every flag or output. When a row needs deeper behavior, link to [docs/commands.md](../docs/commands.md) instead of copying the reference text into this guide.
 
 GitHub CLI (`gh`) is useful when it is installed and approved: it gives fast authenticated reads, PR/release helpers, and GitHub attestation commands. The portable baseline remains `git`, npm, browser URLs, and HTTP examples. Guides and runbooks should show that baseline first, then include a `gh` equivalent when it reduces friction.
 
@@ -69,8 +71,8 @@ Use `--ref <branch-or-tag>` only for exploration. Branches and tags can move; a 
 
 | Recipe | Primary command path | Use when |
 |---|---|---|
-| Min Configuration | `verify-release 2.4.0` -> `policy validate` -> `init --posture enterprise --mcp-mode offline --mcp-compliant --apply` -> `bootstrap-ai --all-tools --apply` -> `mcp --posture enterprise --mode offline --mcp-compliant --apply` -> `doctor --posture enterprise` | A governed repo needs the minimum AI-Harness canon, policy, generated MCP controls, and verification. |
-| Balanced | Min path -> `ecc --cli claude,codex --profile core --posture enterprise --apply` -> `pack install --pack docs-quality --posture enterprise --apply` -> `mcp approve figma --accept-egress ...` -> reviewed Figma MCP client config | The team needs ECC, BetterDoc, and one reviewed enterprise MCP example with policy approval. |
+| Min Configuration | `aih verify-release 2.4.0` -> `aih policy validate` -> `aih init . --posture enterprise --mcp-mode offline --mcp-compliant --apply` -> `aih bootstrap-ai --all-tools --apply` -> `aih mcp --posture enterprise --mode offline --mcp-compliant --apply` -> `aih doctor --posture enterprise` | A governed repo needs the minimum AI-Harness canon, policy, generated MCP controls, and verification. |
+| Balanced | Min path -> `aih ecc --cli claude,codex --profile core --posture enterprise --apply` -> `aih pack install --pack docs-quality --posture enterprise --apply` -> `aih mcp approve figma --accept-egress ...` -> reviewed Figma MCP client config | The team needs ECC, BetterDoc, and one reviewed enterprise MCP example with policy approval. |
 | Powerhouse Mode | Balanced path -> `aih superpowers --cli claude,codex --posture enterprise --apply` -> `aih usage --apply` -> `aih track --apply` -> `aih report --v9 --apply` -> `aih truth verify` -> selected `aih trust`/`aih skill` approvals -> reviewed Figma, Atlassian/Jira, and AWS MCP config | The organization has approved the optional local feature set and selected external surfaces. |
 
 Developer-side enterprise consumption starts by setting the policy override:
@@ -93,7 +95,7 @@ Use [CLI Lifecycle](cli-lifecycle-guide.md) when changing the repo's AI CLI targ
 | Move from Kiro to Claude | `aih bootstrap-ai --cli claude --apply` -> `aih bootstrap-ai --verify` -> `aih prune` -> `aih prune --apply` -> `aih doctor` | Claude is now the only intended CLI and Kiro artifacts should be removed conservatively. |
 | Enterprise developer adds Claude | `aih policy validate` -> `aih bootstrap-ai --cli claude --posture enterprise --apply` -> `aih mcp --cli claude --posture enterprise --mcp-compliant --apply` -> `aih doctor --posture enterprise` | The org policy already allows the Claude surface and enterprise posture is active. |
 | Remove stale CLI artifacts without `.aih/legacy/` archive | `aih prune --delete`, then `aih prune --delete --apply` after review | The normal reversible archive is not acceptable for the repo. The command still uses a sibling backup path; review the preview before applying. |
-| Prune a still-targeted CLI that is truly gone from the workstation | `aih prune --unrunnable`, then `aih prune --unrunnable --apply` after review | A CLI remains in committed intent but the team intentionally removed it from the machine. Do not use this for an unresolved PATH problem. |
+| Prune a still-targeted CLI that is no longer installed | `aih prune --unrunnable`, then `aih prune --unrunnable --apply` after review | A CLI remains in committed intent but the team intentionally removed it from the machine. Do not use this for an unresolved PATH problem. |
 
 Do not use `aih prune --cli claude --apply` as a retargeting command. `prune` ignores selection flags for intent and reads `.aih-config.json`.
 
@@ -237,8 +239,8 @@ Do not use `aih prune --cli claude --apply` as a retargeting command. `prune` ig
 |---|---|---|
 | Vibe developer | `doctor` -> `init` -> `bootstrap-ai --detect` -> `secrets --verify` -> `pack scaffold --pack docs-quality` when needed -> `pack install --pack docs-quality` | `ready`, `status`, `report --v9`, `docs-lint`, `bootstrap-ai --verify` |
 | Team | `init --posture team` -> `bootstrap-ai --all-tools` -> `guardrails` -> `capability resolve` -> `pack validate` | `doctor --posture team`, `secrets --verify`, `pack status`, `pack validate`, `docs-lint`, `report --team` |
-| Enterprise | `verify-release` -> `init --posture enterprise --mcp-mode offline --mcp-compliant` -> `policy validate` -> `doctor --posture enterprise` | `policy verify`, `truth verify`, `docs-lint`, `verify-bundle`, `marketplace validate --require-signature`, `evidence build --require-signature` |
-| Enterprise developer | set `AIH_ORG_POLICY` -> `policy validate` -> Min, Balanced, or Powerhouse path from [Enterprise Developer](enterprise-developer-guide.md) | `doctor --posture enterprise`, `mcp --posture enterprise --mcp-compliant --verify`, `pack status`, `skill inventory`, `report --v9` |
+| Enterprise | `aih verify-release` -> `aih init . --posture enterprise --mcp-mode offline --mcp-compliant` -> `aih policy validate` -> `aih doctor --posture enterprise` | `aih policy verify`, `aih truth verify`, `aih docs-lint`, `aih verify-bundle`, `aih marketplace validate --require-signature`, `aih evidence build --require-signature` |
+| Enterprise developer | set `AIH_ORG_POLICY` -> `aih policy validate` -> Min, Balanced, or Powerhouse path from [Enterprise Developer](enterprise-developer-guide.md) | `aih doctor --posture enterprise`, `aih mcp --posture enterprise --mcp-compliant --verify`, `aih pack status`, `aih skill inventory`, `aih report --v9` |
 
 ## Common Misrouting
 

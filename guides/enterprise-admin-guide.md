@@ -10,11 +10,15 @@ purpose: Admin guide for governed organizations and enterprise rollout of AI-Har
 
 Use this guide for enterprise admins, platform owners, security owners, fleet rollout, regulated teams, and organizations that need policy, evidence, approval paths, and developer handoff. For posture mechanics, read [Postures](postures.md). For the full command map, use [Command Use Cases](command-use-cases.md). Developers consuming an admin-authored policy should read [Enterprise Developer](enterprise-developer-guide.md).
 
+This guide owns admin-side material: policy authoring, approvals, source pins, signing choices, Docker/SkillSpector preparation, bundles, and evidence packaging. It should not become the place for developer-local OAuth, API token setup, or day-to-day client usage beyond handoff requirements.
+
 ## 1. Executive Summary / Mental Model
 
 For enterprise use, AI-Harness is a local enforcement reader plus a repeatable evidence surface. It does not move governance into an agent chat. It helps a team materialize approved repo canon, policy, MCP configuration, capability intent, skill approvals, packs, bundles, truth sidecars, and evidence in files that can be reviewed, pinned, signed, and verified.
 
 The `enterprise` posture emphasizes least privilege, approval, auditability, and fail-closed behavior where policy requires it. The CLI remains local-first. Public docs should describe implemented mechanisms and supported commands; label unshipped admin-plane concepts as future-facing or omit them from setup guidance.
+
+The enterprise examples in this public guide are intentionally limited to reviewed Figma, Jira/Atlassian, and AWS MCP paths. Additional service MCPs should follow the same policy and source-review pattern before appearing in public enterprise guidance.
 
 Current public release baseline: `@aihq/harness@2.4.0`, published on 2026-07-07. The scoped public security doc documents SLSA v1.2 Build L2 for release artifacts; no Build L3 or formal compliance claim is made.
 
@@ -197,9 +201,9 @@ Use a digest form such as `<registry>/<namespace>/skillspector@sha256:<digest>` 
 
 | Level | Admin intent | Command setup |
 |---|---|---|
-| Min Configuration | Install verified AI-Harness, enforce enterprise posture, generate only policy-allowed MCP, and keep evidence local. | `verify-release`, `policy validate`, `init --posture enterprise --mcp-mode offline --mcp-compliant`, `bootstrap-ai --all-tools`, `doctor --posture enterprise`, `secrets --verify` |
-| Balanced | Min plus ECC, BetterDoc, and one reviewed MCP example such as Figma for teams that need coding canon, docs quality, and approved design context. | Min commands plus `ecc --profile core`, `pack scaffold/install --pack docs-quality`, `mcp approve figma`, and reviewed `.mcp.json` for Figma. |
-| Powerhouse Mode | Balanced plus usage/reporting, Superpowers, truth sidecar, selected external skills, Figma, Atlassian/Jira, and selected AWS MCP. | Balanced commands plus `superpowers`, `usage`, `track`, `report --v9`, `truth verify`, `truth pack`, external `trust`/`skill` approvals, and explicit MCP approvals/config for Figma, Atlassian, and AWS. |
+| Min Configuration | Install verified AI-Harness, enforce enterprise posture, generate only policy-allowed MCP, and keep evidence local. | `aih verify-release 2.4.0`, `aih policy validate`, `aih init . --posture enterprise --mcp-mode offline --mcp-compliant`, `aih bootstrap-ai --all-tools --apply`, `aih doctor --posture enterprise`, `aih secrets --verify` |
+| Balanced | Min plus ECC, BetterDoc, and one reviewed MCP example such as Figma for teams that need coding canon, docs quality, and approved design context. | Min commands plus `aih ecc --cli claude,codex --profile core --posture enterprise --apply`, `aih pack scaffold --pack docs-quality --posture enterprise --apply`, `aih pack install --pack docs-quality --posture enterprise --apply`, `aih mcp approve figma --accept-egress ...`, and reviewed `.mcp.json` for Figma. |
+| Powerhouse Mode | Balanced plus usage/reporting, Superpowers, truth sidecar, selected external skills, Figma, Atlassian/Jira, and selected AWS MCP. | Balanced commands plus `aih superpowers`, `aih usage`, `aih track`, `aih report --v9`, `aih truth verify`, `aih truth pack`, external `aih trust`/`aih skill` approvals, and explicit MCP approvals/config for Figma, Atlassian, and AWS. |
 
 Most writing commands refuse a dirty worktree unless `--force` is supplied. In governed rollout, prefer one reviewed commit per stage. For a dedicated setup branch or disposable admin repo where the operator has reviewed the pending diff, `--force` can be added to chained authoring commands.
 

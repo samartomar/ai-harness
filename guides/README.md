@@ -29,6 +29,9 @@ Current guide baseline: public package `@aihq/harness@2.4.0`, released on 2026-0
 ## Maintenance Rules
 
 - Keep shipped behavior grounded in the command reference, CLI help, release notes, npm/GitHub evidence, or current source.
+- Keep `guides/` as workflow guidance, not a second command reference. A guide may show command order and reader-specific intent, but flag details and command behavior belong in `docs/commands.md` or `aih <command> --help`.
+- Keep enterprise examples limited to the reviewed public guide set: Figma, Jira/Atlassian, and selected AWS MCP. Other service examples need a separate source review before they become public guide material.
+- Preserve the admin/developer split. The admin guide owns policy, approvals, signing, Docker/SkillSpector, bundles, and evidence; the enterprise developer guide owns release verification, applying admin config, local auth, and approved MCP/skills consumption.
 - Validate guide updates across prior shipped releases when the guide predates the current command surface; do not check only the newest release note.
 - Use the BetterDoc rules from `packs/docs-quality/betterdoc`: preserve commands and paths, build a claim ledger mentally before polishing, and scope maturity/security/release claims to evidence.
 - Do not describe unshipped behavior as available. Label future-facing examples explicitly or omit them.

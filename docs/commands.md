@@ -482,8 +482,9 @@ Generate a devcontainer + managed sandbox settings (egress allowlist, `failIfUna
 ## aih docs-lint
 
 Read-only BetterDoc documentation lint. It scans the public-facing Markdown surface <!-- aih:claim CM-12 -->
-(`README.md`, `CONTRIBUTING.md`, `SECURITY.md`, and `docs/`, excluding internal report specs) using
-the phrase and claim guidance in `packs/docs-quality/betterdoc/references/slop-lint.md`. Prose
+(`README.md`, `CONTRIBUTING.md`, `SECURITY.md`, `docs/`, and `guides/`, excluding internal
+report specs under `docs/specs/`) using the phrase and claim guidance in
+`packs/docs-quality/betterdoc/references/slop-lint.md`. Prose
 guidance emits coded advisory findings (`docs.banned-phrase`, `docs.vague-absolute`,
 `docs.unsupported-callout-claim`) without failing the run. Hard claim-ledger orphans fail closed:
 `<!-- aih:claim CM-xx -->` markers must resolve to `docs/CONTROL_MATRIX.md`, each matrix row must

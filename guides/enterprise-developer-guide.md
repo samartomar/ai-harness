@@ -10,11 +10,13 @@ purpose: Developer guide for consuming admin-authored AI-Harness enterprise conf
 
 Use this guide when a developer is joining an organization that already has an AI-Harness admin policy, approved skills, and reviewed MCP choices. Platform owners should read [Enterprise Admin](enterprise-admin-guide.md). Individual non-governed setup belongs in [Vibe Developer](vibe-developer-guide.md).
 
+This guide owns developer-side consumption: install and release verification, applying the admin config, local authentication, approved MCP templates, approved skill packs, and local usage/reporting. It should not author org policy, approve new external sources, sign scanner images, or publish bundles.
+
 ## 1. Executive Summary / Mental Model
 
 The admin config controls policy, approvals, pins, and allowed surfaces. The developer still controls local authentication, selected AI clients, local usage capture, and whether optional MCP servers are connected for a specific repo.
 
-Do not commit secrets. It is safe to commit placeholders such as `${GITHUB_PERSONAL_ACCESS_TOKEN}` inside reviewed MCP templates when the CLI or client expects an env reference. It is not safe to commit actual GitHub, Jira, Figma, AWS, or other tokens.
+Do not commit secrets. It is safe to commit placeholders such as `${GITHUB_PERSONAL_ACCESS_TOKEN}` inside reviewed MCP templates when the CLI or client expects an env reference. It is not safe to commit actual GitHub, Jira, Figma, AWS, or other tokens. Real values stay in the local shell, browser OAuth flow, or the organization's secret manager.
 
 Current public release baseline: `@aihq/harness@2.4.0`, published on 2026-07-07.
 
