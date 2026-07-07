@@ -329,9 +329,14 @@ Markdown + JSON pack under the sidecar's `truth/staging/` directory; agent-propo
 stage there first, and promotion back into repo-owned files still requires an explicit `--apply`
 flow. `aih truth verify` detects drift and fails closed when the sidecar's commit binding differs
 from `HEAD`, the asserted package version differs from `package.json`, a claimed `CM-xx` has no
-`docs/CONTROL_MATRIX.md` row, or a superseded decision points at a missing target. A verified pack
-can then be included by `aih evidence build` as the hashed `.aih/truth-pack.json` artifact; stale or
-malformed packs fail closed instead of being indexed. <!-- aih:claim CM-13 -->
+`docs/CONTROL_MATRIX.md` row, or a superseded decision points at a missing target. Declarative
+acceptance assertions flag `blocked:environment` for absent local requirements and
+`blocked:vendor-specific` for vendor-specific requirements in vendor-neutral work. Declared
+agent-evidence file probes are limited to public project surfaces, re-run by the harness, and
+recorded in the verify report rather than accepted as prose. A verified pack can then be included by
+`aih evidence build` as the hashed
+`.aih/truth-pack.json` artifact; stale or malformed packs fail closed instead of being indexed.
+<!-- aih:claim CM-13 -->
 
 ## aih bundle
 

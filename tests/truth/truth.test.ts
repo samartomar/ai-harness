@@ -22,6 +22,7 @@ import {
   defaultSidecarPath,
   SIDECAR_POINTER_FILE,
   truthPackCommand,
+  truthPackEvidenceSource,
   truthVerifyCommand,
 } from "../../src/truth/index.js";
 
@@ -85,6 +86,8 @@ function seedSidecar(
     packageVersion?: string;
     claims?: string[];
     decisions?: Array<{ id: string; supersededBy?: string }>;
+    acceptance?: Array<Record<string, unknown>>;
+    agentEvidence?: Array<Record<string, unknown>>;
     promotionRequiresApply?: boolean;
     sidecarPath?: string;
     stagingDir?: string;
@@ -114,6 +117,8 @@ function seedSidecar(
         packageVersion: state.packageVersion ?? "1.2.3",
         claims: state.claims ?? ["CM-01"],
         decisions: state.decisions ?? [{ id: "decision.current" }],
+        acceptance: state.acceptance ?? [],
+        agentEvidence: state.agentEvidence ?? [],
       },
       staging: {
         dir: state.stagingDir ?? "truth/staging",
@@ -388,6 +393,303 @@ describe("truth sidecar Phase A", () => {
     expect(result.report?.checks.map((check) => check.code)).toContain("truth.sidecar-missing");
   });
 
+  it("truth verify fails closed on unsafe sidecar acceptance assertions", async () => {
+    seedSidecar({
+      acceptance: [
+        { id: "API_KEY=should-not-ship", kind: "required-env", name: "AIH_MISSING_TOKEN" },
+      ],
+    });
+
+    const c = ctx({ verify: true });
+    const result = await executePlan(await truthVerifyCommand.plan(c), c);
+
+    expect(result.report?.ok).toBe(false);
+    expect(result.report?.checks.map((check) => check.code)).toContain("truth.sidecar-missing");
+    expect(JSON.stringify(result.report?.checks)).not.toContain("API_KEY");
+  });
+
+  it("truth verify fails closed on unsafe agent evidence paths", async () => {
+    for (const path of [
+      "../.env",
+      ".env",
+      ".env.local",
+      "docs/.env.local",
+      ".npmrc",
+      "docs/.npmrc",
+      ".ssh/id_rsa",
+      "docs/.ssh/id_rsa",
+      "Secrets/prod.env",
+      "docs/Secrets/prod.env",
+      "admin/token.txt",
+      "docs/admin/token.txt",
+      ".git/config",
+      "docs/.git/config",
+      ".aih/log.json",
+      "docs/.aih/log.json",
+      "private/token.txt",
+    ]) {
+      seedSidecar({
+        agentEvidence: [{ id: "evidence.unsafe-path", kind: "file-exists", path }],
+      });
+
+      const c = ctx({ verify: true });
+      const result = await executePlan(await truthVerifyCommand.plan(c), c);
+
+      expect(result.report?.ok).toBe(false);
+      expect(result.report?.checks.map((check) => check.code)).toContain("truth.sidecar-missing");
+    }
+  });
+
+  it("truth verify fails closed when an agent evidence path resolves into a denied hidden directory", async () => {
+    seedSidecar({
+      agentEvidence: [
+        {
+          id: "evidence.linked-env",
+          kind: "file-contains",
+          path: "docs/allowed-env/secret.txt",
+          contains: "SECRET",
+        },
+      ],
+    });
+    write(".envdir/secret.txt", "SECRET=1\n");
+    const link = join(dir, "docs", "allowed-env");
+    try {
+      symlinkSync(join(dir, ".envdir"), link, process.platform === "win32" ? "junction" : "dir");
+    } catch (err) {
+      throw new Error(`directory link setup failed: ${(err as Error).message}`);
+    }
+
+    const c = ctx({ verify: true });
+    const result = await executePlan(await truthVerifyCommand.plan(c), c);
+
+    expect(result.report?.ok).toBe(false);
+    expect(result.report?.checks).toContainEqual(
+      expect.objectContaining({ code: "truth.agent-evidence-mismatch" }),
+    );
+  });
+
+  it("truth verify fails closed when an agent evidence path resolves into secrets", async () => {
+    seedSidecar({
+      agentEvidence: [
+        {
+          id: "evidence.linked-secrets",
+          kind: "file-contains",
+          path: "docs/allowed/token.txt",
+          contains: "SECRET",
+        },
+      ],
+    });
+    write("secrets/token.txt", "SECRET\n");
+    const link = join(dir, "docs", "allowed");
+    try {
+      symlinkSync(join(dir, "secrets"), link, process.platform === "win32" ? "junction" : "dir");
+    } catch (err) {
+      throw new Error(`junction setup failed: ${(err as Error).message}`);
+    }
+
+    const c = ctx({ verify: true });
+    const result = await executePlan(await truthVerifyCommand.plan(c), c);
+
+    expect(result.report?.ok).toBe(false);
+    expect(result.report?.checks).toContainEqual(
+      expect.objectContaining({ code: "truth.agent-evidence-mismatch" }),
+    );
+  });
+
+  it("truth verify fails closed when an agent evidence path resolves into admin", async () => {
+    seedSidecar({
+      agentEvidence: [
+        {
+          id: "evidence.linked-admin",
+          kind: "file-contains",
+          path: "docs/allowed-admin/token.txt",
+          contains: "SECRET",
+        },
+      ],
+    });
+    write("admin/token.txt", "SECRET\n");
+    const link = join(dir, "docs", "allowed-admin");
+    try {
+      symlinkSync(join(dir, "admin"), link, process.platform === "win32" ? "junction" : "dir");
+    } catch (err) {
+      throw new Error(`directory link setup failed: ${(err as Error).message}`);
+    }
+
+    const c = ctx({ verify: true });
+    const result = await executePlan(await truthVerifyCommand.plan(c), c);
+
+    expect(result.report?.ok).toBe(false);
+    expect(result.report?.checks).toContainEqual(
+      expect.objectContaining({ code: "truth.agent-evidence-mismatch" }),
+    );
+  });
+
+  it("truth verify fails closed when an agent evidence path resolves outside public roots", async () => {
+    seedSidecar({
+      agentEvidence: [
+        {
+          id: "evidence.linked-private",
+          kind: "file-contains",
+          path: "docs/allowed-private/token.txt",
+          contains: "SECRET",
+        },
+      ],
+    });
+    write("private/token.txt", "SECRET\n");
+    const link = join(dir, "docs", "allowed-private");
+    try {
+      symlinkSync(join(dir, "private"), link, process.platform === "win32" ? "junction" : "dir");
+    } catch (err) {
+      throw new Error(`directory link setup failed: ${(err as Error).message}`);
+    }
+
+    const c = ctx({ verify: true });
+    const result = await executePlan(await truthVerifyCommand.plan(c), c);
+
+    expect(result.report?.ok).toBe(false);
+    expect(result.report?.checks).toContainEqual(
+      expect.objectContaining({ code: "truth.agent-evidence-mismatch" }),
+    );
+  });
+
+  it("truth pack preflight flags absent credentials before writes", async () => {
+    const sidecar = seedSidecar({
+      acceptance: [
+        { id: "acceptance.credential", kind: "required-env", name: "AIH_MISSING_TOKEN" },
+      ],
+    });
+
+    const c = ctx({ apply: true, verify: true });
+    const plan = await truthPackCommand.plan(c);
+    const result = await executePlan(plan, c);
+
+    expect(writesOf(plan.actions)).toHaveLength(0);
+    expect(result.report?.ok).toBe(false);
+    expect(result.report?.checks).toContainEqual(
+      expect.objectContaining({
+        code: "truth.acceptance-blocked-environment",
+        detail: expect.stringContaining("blocked:environment"),
+      }),
+    );
+    expect(existsSync(join(sidecar, "truth", "staging", "pack.json"))).toBe(false);
+  });
+
+  it("truth verify flags vendor-specific requirements inside vendor-neutral work", async () => {
+    seedSidecar({
+      acceptance: [
+        {
+          id: "acceptance.vendor-neutral",
+          kind: "vendor-specific",
+          vendor: "openai",
+          scope: "vendor-neutral",
+        },
+      ],
+    });
+
+    const c = ctx({ verify: true });
+    const result = await executePlan(await truthVerifyCommand.plan(c), c);
+
+    expect(result.report?.ok).toBe(false);
+    expect(result.report?.checks).toContainEqual(
+      expect.objectContaining({
+        code: "truth.acceptance-blocked-vendor-specific",
+        detail: expect.stringContaining("blocked:vendor-specific"),
+      }),
+    );
+  });
+
+  it("truth verify re-runs and records agent evidence claims", async () => {
+    seedSidecar({
+      agentEvidence: [
+        {
+          id: "evidence.control-matrix",
+          kind: "file-contains",
+          path: "docs/CONTROL_MATRIX.md",
+          contains: "CM-01",
+        },
+      ],
+    });
+
+    const c = ctx({ verify: true });
+    const result = await executePlan(await truthVerifyCommand.plan(c), c);
+
+    expect(result.report?.ok).toBe(true);
+    expect(result.report?.checks).toContainEqual(
+      expect.objectContaining({
+        name: "truth agent evidence",
+        verdict: "pass",
+        detail: expect.stringContaining("re-run by harness"),
+      }),
+    );
+  });
+
+  it("truth verify fails closed when agent evidence no longer matches", async () => {
+    seedSidecar({
+      agentEvidence: [
+        {
+          id: "evidence.control-matrix",
+          kind: "file-contains",
+          path: "docs/CONTROL_MATRIX.md",
+          contains: "CM-DOES-NOT-EXIST",
+        },
+      ],
+    });
+
+    const c = ctx({ verify: true });
+    const result = await executePlan(await truthVerifyCommand.plan(c), c);
+
+    expect(result.report?.ok).toBe(false);
+    expect(result.report?.checks).toContainEqual(
+      expect.objectContaining({
+        code: "truth.agent-evidence-mismatch",
+        detail: expect.stringContaining("re-run"),
+      }),
+    );
+  });
+
+  it("truth verify preserves whitespace in agent evidence claims", async () => {
+    write("docs/evidence.txt", "token\n");
+    seedSidecar({
+      agentEvidence: [
+        {
+          id: "evidence.whitespace",
+          kind: "file-contains",
+          path: "docs/evidence.txt",
+          contains: " token ",
+        },
+      ],
+    });
+
+    const c = ctx({ verify: true });
+    const result = await executePlan(await truthVerifyCommand.plan(c), c);
+
+    expect(result.report?.ok).toBe(false);
+    expect(result.report?.checks).toContainEqual(
+      expect.objectContaining({
+        code: "truth.agent-evidence-mismatch",
+        detail: expect.stringContaining("re-run"),
+      }),
+    );
+  });
+
+  it("truth verify does not run agent evidence after foundational sidecar drift", async () => {
+    seedSidecar({
+      boundToCommit: "b".repeat(40),
+      agentEvidence: [
+        { id: "evidence.control-matrix", kind: "file-exists", path: "docs/CONTROL_MATRIX.md" },
+      ],
+    });
+
+    const c = ctx({ verify: true });
+    const result = await executePlan(await truthVerifyCommand.plan(c), c);
+
+    expect(result.report?.ok).toBe(false);
+    expect(result.report?.checks.map((check) => check.code)).toContain("truth.bound-commit-drift");
+    expect(result.report?.checks).not.toContainEqual(
+      expect.objectContaining({ name: "truth agent evidence" }),
+    );
+  });
+
   it("evidence build indexes a verified truth pack", async () => {
     const sidecar = seedSidecar();
     const packCtx = ctx({ apply: true, verify: true, options: { tokenBudget: "96" } });
@@ -426,6 +728,59 @@ describe("truth sidecar Phase A", () => {
     expect(JSON.parse(bundled)).not.toHaveProperty("secret");
   });
 
+  it("evidence source accepts legacy truth packs when no assertion fingerprints are needed", async () => {
+    const sidecar = seedSidecar();
+    writeFileSync(
+      join(sidecar, "truth", "staging", "pack.json"),
+      jsonFile({
+        schemaVersion: 1,
+        kind: "aih.truth.pack",
+        tokenBudget: 96,
+        tokenEstimate: 12,
+        facts: {
+          boundToCommit: HEAD,
+          head: HEAD,
+          packageVersion: "1.2.3",
+          controlMatrixClaims: ["CM-01"],
+          decisionIds: ["decision.current"],
+          stagingDir: "truth/staging",
+        },
+      }),
+    );
+
+    const result = await truthPackEvidenceSource(ctx());
+
+    expect(result.checks.some((check) => check.verdict === "fail")).toBe(false);
+    expect(result.source?.rel).toBe(".aih/truth-pack.json");
+  });
+
+  it("evidence source fails closed on malformed truth pack assertion fingerprints", async () => {
+    const sidecar = seedSidecar();
+    writeFileSync(
+      join(sidecar, "truth", "staging", "pack.json"),
+      jsonFile({
+        schemaVersion: 1,
+        kind: "aih.truth.pack",
+        tokenBudget: 96,
+        tokenEstimate: 12,
+        facts: {
+          boundToCommit: HEAD,
+          head: HEAD,
+          packageVersion: "1.2.3",
+          controlMatrixClaims: ["CM-01"],
+          decisionIds: ["decision.current"],
+          stagingDir: "truth/staging",
+          assertionFingerprints: "not-an-object",
+        },
+      }),
+    );
+
+    const result = await truthPackEvidenceSource(ctx());
+
+    expect(result.source).toBeUndefined();
+    expect(result.checks.map((check) => check.code)).toContain("truth.pack-invalid");
+  });
+
   it("evidence build fails closed on an unverified truth pack", async () => {
     const sidecar = seedSidecar({ boundToCommit: "b".repeat(40) });
     writeFileSync(
@@ -453,6 +808,34 @@ describe("truth sidecar Phase A", () => {
     expect(writesOf(plan.actions)).toHaveLength(0);
     expect(result.report?.ok).toBe(false);
     expect(result.report?.checks.map((check) => check.code)).toContain("truth.bound-commit-drift");
+  });
+
+  it("evidence build fails closed when truth assertions drift after packing", async () => {
+    const sidecar = seedSidecar();
+    const packCtx = ctx({ apply: true, verify: true, options: { tokenBudget: "96" } });
+    await executePlan(await truthPackCommand.plan(packCtx), packCtx);
+    const statePath = join(sidecar, "truth", "state.json");
+    const state = JSON.parse(readFileSync(statePath, "utf8")) as {
+      assertions: {
+        agentEvidence: Array<Record<string, unknown>>;
+      };
+    };
+    state.assertions.agentEvidence = [
+      {
+        id: "evidence.control-matrix",
+        kind: "file-exists",
+        path: "docs/CONTROL_MATRIX.md",
+      },
+    ];
+    writeFileSync(statePath, jsonFile(state));
+
+    const c = ctx({ verify: true });
+    const plan = await evidenceBuildCommand.plan(c);
+    const result = await executePlan(plan, c);
+
+    expect(writesOf(plan.actions)).toHaveLength(0);
+    expect(result.report?.ok).toBe(false);
+    expect(result.report?.checks.map((check) => check.code)).toContain("truth.pack-invalid");
   });
 
   it("evidence build fails closed on over-budget truth pack metadata", async () => {

@@ -564,6 +564,27 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     action:
       "Add the missing supersession target decision to the sidecar truth state, or remove the stale `supersededBy` reference.",
   },
+  "truth.acceptance-blocked-environment": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "acceptance preflight environment requirement is unsatisfied",
+    action:
+      "Provide the required local credential, API, sample, or tool named by the approved sidecar assertion, or mark the task blocked before starting execution.",
+  },
+  "truth.acceptance-blocked-vendor-specific": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "vendor-specific requirement conflicts with vendor-neutral scope",
+    action:
+      "Remove or re-scope the vendor-specific requirement, or make the task explicitly vendor-specific before proceeding.",
+  },
+  "truth.agent-evidence-mismatch": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "agent evidence claim did not match a harness re-run",
+    action:
+      "Update the sidecar evidence assertion or fix the repository state, then rerun `aih truth verify` so the harness records the result.",
+  },
   "truth.pack-invalid": {
     audience: "developer",
     failSeverity: "blocking",

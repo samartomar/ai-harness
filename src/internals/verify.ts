@@ -85,6 +85,9 @@ export type CheckCode =
   | "truth.version-drift"
   | "truth.claim-matrix-row-missing"
   | "truth.decision-supersession-missing"
+  | "truth.acceptance-blocked-environment"
+  | "truth.acceptance-blocked-vendor-specific"
+  | "truth.agent-evidence-mismatch"
   | "truth.pack-invalid"
   // readiness gate (`aih ready`)
   | "ready.blocked"

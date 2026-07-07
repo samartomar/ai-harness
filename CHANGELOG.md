@@ -17,6 +17,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   packs outside the repo, detects commit/version/claim/decision drift, fails closed
   on invalid assertions, and lets evidence bundles include only verified hashed
   truth-pack artifacts. (#326)
+- `aih truth verify` now runs acceptance-satisfiability preflight assertions and
+  harness-rerun agent evidence: absent local requirements emit `blocked:environment`,
+  vendor-specific requirements in vendor-neutral work emit `blocked:vendor-specific`,
+  and stale file evidence claims fail closed instead of relying on prose. (#327)
 - The language coverage matrix now grades the Node + Python + Rust polyglot
   fixture's framework coverage as good, reflecting the existing per-workspace
   command routing for secondary Python/Rust workspaces. (#263)
