@@ -199,10 +199,11 @@ const RAW: Record<string, z.input<typeof CliEntry>> = {
     configDirs: [".config/opencode", ".opencode"],
     binaries: ["opencode"],
     bootloaders: ["AGENTS.md"],
-    // OpenCode's opencode.json uses an `mcp` key: {type:"local", command:[cmd,...args], enabled}.
+    // OpenCode's global opencode.json uses an `mcp` key:
+    // {type:"local", command:[cmd,...args], enabled}. Preserve providers/models.
     mcp: {
       support: "native",
-      configPath: "opencode.json",
+      configPath: "~/.config/opencode/opencode.json",
       configKey: "mcp",
       configFormat: "json",
     },

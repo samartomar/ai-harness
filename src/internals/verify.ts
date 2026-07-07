@@ -34,6 +34,7 @@ export type CheckCode =
   | "mcp.compliant-stale-denied"
   | "mcp.hardcoded-secret"
   | "mcp.allowlist-drift"
+  | "mcp.version-drift"
   // CLI bootloaders / canon
   | "cli.not-detected"
   | "cli.config-only"

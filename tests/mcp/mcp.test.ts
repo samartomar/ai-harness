@@ -875,8 +875,7 @@ describe("aih mcp — MCP write hygiene", () => {
     );
     const opencode = p.actions.find(
       (a): a is WriteAction =>
-        a.kind === "write" &&
-        a.path.replace(/\\/g, "/").endsWith(".config/opencode/opencode.json"),
+        a.kind === "write" && a.path.replace(/\\/g, "/").endsWith(".config/opencode/opencode.json"),
     );
     const warning = p.actions.find(
       (a) => a.kind === "digest" && a.describe === "MCP server hygiene warnings",
@@ -924,16 +923,15 @@ describe("aih mcp — MCP write hygiene", () => {
     );
     const opencode = p.actions.find(
       (a): a is WriteAction =>
-        a.kind === "write" &&
-        a.path.replace(/\\/g, "/").endsWith(".config/opencode/opencode.json"),
+        a.kind === "write" && a.path.replace(/\\/g, "/").endsWith(".config/opencode/opencode.json"),
     );
     const warning = p.actions.find(
       (a) => a.kind === "digest" && a.describe === "MCP server hygiene warnings",
     );
 
-    expect((opencode?.json as { mcp: Record<string, { enabled?: boolean }> }).mcp.github?.enabled).toBe(
-      false,
-    );
+    expect(
+      (opencode?.json as { mcp: Record<string, { enabled?: boolean }> }).mcp.github?.enabled,
+    ).toBe(false);
     expect(warning?.kind === "digest" ? warning.text : "").toContain(
       "placeholder URL host github.internal.example",
     );
