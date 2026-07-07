@@ -65,6 +65,8 @@ const CliEntry = z.object({
   binaries: z.array(z.string()),
   /** Root bootloader file(s) the tool auto-loads as system context every turn. */
   bootloaders: z.array(z.string()),
+  /** Home-relative machine-level skill discovery dir, when the tool has one aih can sync. */
+  machineSkillDir: z.string().optional(),
   mcp: McpProfile,
   /** Tool-native settings file aih manages, when the tool has one (else n/a). */
   settings: SettingsProfile.optional(),
@@ -97,6 +99,7 @@ const RAW: Record<string, z.input<typeof CliEntry>> = {
     configDirs: [".claude"],
     binaries: ["claude"],
     bootloaders: ["CLAUDE.md"],
+    machineSkillDir: ".claude/skills",
     mcp: {
       support: "native",
       configPath: ".mcp.json",
@@ -111,6 +114,7 @@ const RAW: Record<string, z.input<typeof CliEntry>> = {
     configDirs: [".codex"],
     binaries: ["codex"],
     bootloaders: ["AGENTS.md"],
+    machineSkillDir: ".codex/skills",
     // Codex reads MCP servers from ~/.codex/config.toml as [mcp_servers.<name>] (TOML, global).
     // aih writes them as an aih-managed block (mcp/render.ts), preserving the rest of the file.
     mcp: {

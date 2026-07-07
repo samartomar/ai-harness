@@ -218,6 +218,12 @@ that source's pinned commit* at `team`/`enterprise` posture (advisory at `vibe`)
 skill from an unrelated source never inherits an approval, and stale approvals are refused.
 `inventory` joins on-disk skills against the approvals — approved / unapproved / stale-pin /
 quarantined, one row per physical install — and feeds a "Skill governance" panel in `report --v9`.
+`sync --name <skill> --cli <claude|codex>` materializes an **approved promoted** skill into the
+selected CLI's machine skill-discovery directory. It is dry-run by default; `--apply` writes the
+skill files to `~/.claude/skills/<skill>` and/or `~/.codex/skills/<skill>`, and the next
+`inventory` call shows those copies under the `machine` root. Existing destination files are backed
+up as `*.aih.bak` when overwritten; extra destination files are left in place, so `sync` is additive
+rather than a pruning mirror.
 `quarantine --name <skill>` **disables reversibly** (dir → `.aih/quarantine/`, approval kept; move
 it back to restore). `remove --name <skill>` retracts: archives the skill dir reversibly
 (`--delete` to hard-delete), drops the approval + card; refuses ambiguous duplicates, nested-skill

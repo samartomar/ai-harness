@@ -24,4 +24,5 @@ export {
 } from "./lockfile.js";
 export { skillQuarantineCommand } from "./quarantine.js";
 export { skillRemoveCommand } from "./remove.js";
+export { skillSyncCommand } from "./sync.js";
 export { type SkillVetEvidence, skillVetCommand } from "./vet.js";

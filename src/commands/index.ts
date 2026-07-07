@@ -47,6 +47,7 @@ import {
   skillInventoryCommand,
   skillQuarantineCommand,
   skillRemoveCommand,
+  skillSyncCommand,
   skillVetCommand,
 } from "../skill/index.js";
 import { command as status } from "../status.js";
@@ -147,6 +148,7 @@ export const GROUPED_COMMAND_SPECS = {
     skillInventoryCommand,
     skillRemoveCommand,
     skillQuarantineCommand,
+    skillSyncCommand,
   ],
   pack: [
     packAddCommand,
@@ -578,6 +580,15 @@ export function registerCommands(
   for (const o of skillQuarantineCommand.options ?? []) quarantine.option(o.flags, o.description);
   quarantine.action(async (_options: Record<string, unknown>, command: Command) => {
     process.exitCode = await runCapability(skillQuarantineCommand, command, {
+      positionalRoot: false,
+    });
+  });
+
+  const sync = skill.command("sync").description(skillSyncCommand.summary);
+  addSharedFlags(sync);
+  for (const o of skillSyncCommand.options ?? []) sync.option(o.flags, o.description);
+  sync.action(async (_options: Record<string, unknown>, command: Command) => {
+    process.exitCode = await runCapability(skillSyncCommand, command, {
       positionalRoot: false,
     });
   });

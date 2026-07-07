@@ -39,6 +39,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `aih prune` call ECC's install-state uninstall for dropped ECC-supported
   targets while subtracting `aih`'s recorded Codex TOML footprint and fenced
   AGENTS merge block. (#283)
+- **Approved skill machine sync**: `aih skill sync --name <skill> --cli claude,codex`
+  now previews or applies approved promoted skill files into the selected CLI
+  machine discovery roots (`~/.claude/skills`, `~/.codex/skills`), and
+  `skill inventory` scans both machine roots. (#282)
 
 ### Changed
 
