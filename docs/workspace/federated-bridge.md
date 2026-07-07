@@ -436,7 +436,7 @@ Requires explicit opt-in:
 ```bash
 aih workspace init --recursive --apply
 aih workspace report --refresh-children --apply
-aih pack install product-ui --repo ui --apply
+aih pack install --pack product-ui --apply   # run inside the target child repo
 ```
 
 ## Final workspace statement

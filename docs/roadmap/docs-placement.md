@@ -79,7 +79,7 @@ Add a small README section, not the full docs.
 
 Instead of installing community skills directly, teams can vet, pin, approve, package, install, and report them under policy.
 
-Recommended model:
+Historical example pack themes an org could curate in `aih-packs.json`:
 
 - `enterprise-core`: Superpowers + ECC + report/track/usage + guardrails.
 - `workspace-intel`: workspace router, report rollup, snapshots, contracts, codebase intelligence.
