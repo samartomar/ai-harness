@@ -32,8 +32,9 @@ aih heal [--scope certs,npm,path,mcp,all] [--ca-pattern <p>] [--apply] [--verify
 
 ## 2. The gap it closes
 
-`certs` propagates corporate trust to npm/pip/cargo/conda, then assumes the rest of the runtime is
-healthy. In a locked-down enterprise it usually is not, and the failures cascade:
+`certs` propagates corporate trust to package managers, Go, git, Docker, and JVM tools, then assumes
+the rest of the runtime is healthy. In a locked-down enterprise it usually is not, and the failures
+cascade:
 
 1. npm corrupted (`fs-minipass`, broken symlinks, version mismatch).
 2. npm's own TLS fails, so you can't `npm install` to fix npm.

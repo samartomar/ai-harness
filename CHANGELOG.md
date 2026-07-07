@@ -20,6 +20,9 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - CLI loadability now embeds a router canary, tracks per-tool dry-run probe
   support, and treats non-probeable tools as manual/unverified instead of
   counting structural wiring as runtime proof. (#266)
+- `aih certs` now documents its corporate-trust propagation for git, Go, Docker,
+  JVM tools, Gradle, and Maven alongside the existing npm, pip, cargo, and
+  conda coverage. (#267)
 - `aih docs-lint` now runs the BetterDoc slop-lint phrase and claim guidance as
   a native read-only CLI check with coded findings for blocked documentation
   prose and missing rules. (#262)

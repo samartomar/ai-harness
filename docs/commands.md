@@ -9,7 +9,7 @@ exact syntax.
 ## aih certs
 
 Extract the corporate root CA from the OS trust store, lock it down, and propagate trust to
-npm/pip/cargo/conda.
+npm, pip, cargo, conda, Go, git, Docker, JVM tools, Gradle, and Maven.
 
 ## aih heal
 

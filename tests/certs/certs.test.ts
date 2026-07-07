@@ -130,6 +130,10 @@ afterEach(() => {
 describe("certs command surface", () => {
   it("keeps the foundation CLI name and the two options", () => {
     expect(command.name).toBe("certs");
+    expect(command.summary).toContain("git");
+    expect(command.summary).toContain("Go");
+    expect(command.summary).toContain("Docker");
+    expect(command.summary).toContain("JVM tools");
     const flags = (command.options ?? []).map((o) => o.flags);
     expect(flags).toContain("--ca-pattern <pattern>");
     expect(flags).toContain("--out <dir>");

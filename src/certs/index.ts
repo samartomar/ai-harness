@@ -29,14 +29,15 @@ const DOCKER_REGISTRY_HOST = "registry-1.docker.io";
 /**
  * `aih certs` — extract the corporate root CA from the OS trust store and
  * propagate that trust to the runtimes that ignore the system store (Node, pip,
- * cargo, git, Docker, JVM/Gradle/Maven, Homebrew, conda).
+ * cargo, Go, git, Docker, JVM/Gradle/Maven, Homebrew, conda).
  *
  * The plan is a fixed pipeline: export a locked-down PEM bundle, export the trust
  * env vars into the shell profile, write the per-manager config files, and emit
  * doc steps for the managers that may be absent. Cloud/remote systems are never
- * touched — Homebrew and conda are guidance (`doc`), the PEM lockdown is the only
- * `exec` (local icacls/chmod), and the pypi reachability check is a read-only
- * `probe`. When no CA matches the pattern, the plan degrades to a single `doc`.
+ * touched — Homebrew is guidance (`doc`), the PEM lockdown is the only `exec`
+ * besides the optional local keytool import, and the pypi reachability check is a
+ * read-only `probe`. When no CA matches the pattern, the plan degrades to a single
+ * `doc`.
  */
 async function planCerts(ctx: PlanContext): Promise<Plan> {
   const pattern = String(ctx.options.caPattern ?? "Zscaler");
@@ -326,7 +327,8 @@ function firstLine(text: string): string {
 
 export const command: CommandSpec = {
   name: "certs",
-  summary: "Extract corporate root CA(s) and propagate trust to npm/pip/cargo/conda",
+  summary:
+    "Extract corporate root CA(s) and propagate trust to package managers, Go, git, Docker, and JVM tools",
   options: [
     {
       flags: "--ca-pattern <pattern>",
