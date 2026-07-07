@@ -1,5 +1,10 @@
+import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { classifyIncomingMcp } from "../../src/trust/mcp-classify.js";
+
+function sha256Text(body: string): string {
+  return `sha256:${createHash("sha256").update(body, "utf8").digest("hex")}`;
+}
 
 describe("classifyIncomingMcp", () => {
   it("carries the stdio env map so an env-only rug-pull invalidates a stale acknowledgement", () => {
@@ -55,6 +60,73 @@ describe("classifyIncomingMcp", () => {
       egress: "local-only",
       credentials: "none",
       supplyChain: "pinned",
+    });
+  });
+
+  it("recognizes pinned local FastMCP skills-over-MCP servers with manifest evidence", () => {
+    const manifest = JSON.stringify({ name: "clean", files: ["SKILL.md"] });
+    const server = classifyIncomingMcp({
+      command: "uvx",
+      args: ["fastmcp==3.2.4", "run", "locked_skills.py"],
+      provider: "SkillsDirectoryProvider",
+      resources: ["skill://clean/_manifest"],
+      _manifest: manifest,
+      reload: false,
+    });
+
+    expect(server).toMatchObject({
+      classification: "local",
+      egress: "none",
+      credentials: "none",
+      supplyChain: "pinned",
+      skillsProvider: {
+        provider: "SkillsDirectoryProvider",
+        serverVersion: "3.2.4",
+        manifestSha256: sha256Text(manifest),
+        hotReload: false,
+      },
+    });
+  });
+
+  it("treats skills-over-MCP hot reload as unpinned drift risk even with a pinned server", () => {
+    const server = classifyIncomingMcp({
+      command: "uvx",
+      args: ["fastmcp==3.2.4", "run", "locked_skills.py", "--reload"],
+      provider: "SkillProvider",
+      uri: "skill://clean/_manifest",
+      _manifest: "clean manifest",
+    });
+
+    expect(server).toMatchObject({
+      classification: "local",
+      egress: "none",
+      supplyChain: "unpinned",
+      skillsProvider: {
+        provider: "SkillProvider",
+        serverVersion: "3.2.4",
+        manifestSha256: sha256Text("clean manifest"),
+        hotReload: true,
+      },
+    });
+  });
+
+  it("recognizes the plural SkillsProvider spelling from the issue shape", () => {
+    const server = classifyIncomingMcp({
+      command: "uvx",
+      args: ["fastmcp==3.2.4", "run", "locked_skills.py"],
+      provider: "SkillsProvider",
+      _manifest: "plural provider manifest",
+    });
+
+    expect(server).toMatchObject({
+      egress: "none",
+      supplyChain: "pinned",
+      skillsProvider: {
+        provider: "SkillsProvider",
+        serverVersion: "3.2.4",
+        manifestSha256: sha256Text("plural provider manifest"),
+        hotReload: false,
+      },
     });
   });
 

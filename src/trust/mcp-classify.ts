@@ -1,5 +1,6 @@
+import { createHash } from "node:crypto";
 import { PROVIDER_TOKEN_PATTERNS } from "../guardrails/token-patterns.js";
-import type { McpServer } from "../mcp/servers.js";
+import type { McpServer, SkillsProviderEvidence } from "../mcp/servers.js";
 
 const TOKEN_PATTERNS: readonly RegExp[] = [
   /AKIA[0-9A-Z]{16}/,
@@ -11,6 +12,13 @@ const SECRET_KEY_RE =
 
 const EXACT_PACKAGE_RE =
   /^(?:@[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+|[A-Za-z0-9._-]+)@\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/;
+const EXACT_PY_PACKAGE_RE =
+  /^[A-Za-z0-9._-]+(?:\[[A-Za-z0-9._,-]+\])?==\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/;
+const FASTMCP_VERSION_RE =
+  /\bfastmcp(?:\[[A-Za-z0-9._,-]+\])?(?:==|@)(\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?)/i;
+const SHA256_RE = /^(?:sha256:)?([0-9a-f]{64})$/i;
+const SKILLS_PROVIDER_RE =
+  /\b(ClaudeSkillsProvider|SkillsDirectoryProvider|SkillsProvider|SkillProvider)\b/;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -92,7 +100,9 @@ function hasLiteralCredential(raw: unknown, args: readonly string[]): boolean {
 }
 
 function hasExactPackage(args: readonly string[]): boolean {
-  return args.some((arg) => EXACT_PACKAGE_RE.test(arg.trim()));
+  return args.some(
+    (arg) => EXACT_PACKAGE_RE.test(arg.trim()) || EXACT_PY_PACKAGE_RE.test(arg.trim()),
+  );
 }
 
 function hasFloatingLaunch(command: string | undefined, args: readonly string[]): boolean {
@@ -135,6 +145,118 @@ function flagged(description: string, credentials: McpServer["credentials"]): Mc
   };
 }
 
+function stable(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(stable);
+  if (!isRecord(value)) return value;
+  return Object.fromEntries(
+    Object.entries(value)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([key, item]) => [key, stable(item)]),
+  );
+}
+
+function collectStrings(value: unknown, depth = 0): string[] {
+  if (depth > 5) return [];
+  if (typeof value === "string") return [value];
+  if (Array.isArray(value)) return value.flatMap((item) => collectStrings(item, depth + 1));
+  if (!isRecord(value)) return [];
+  return Object.entries(value).flatMap(([key, item]) => [key, ...collectStrings(item, depth + 1)]);
+}
+
+function directStringField(
+  raw: Record<string, unknown>,
+  keys: readonly string[],
+): string | undefined {
+  for (const key of keys) {
+    const value = raw[key];
+    if (typeof value === "string" && value.trim().length > 0) return value.trim();
+  }
+  return undefined;
+}
+
+function normalizeSha256(value: string): string | undefined {
+  const match = SHA256_RE.exec(value.trim());
+  return match?.[1] === undefined ? undefined : `sha256:${match[1].toLowerCase()}`;
+}
+
+function sha256Bytes(value: string): string {
+  return `sha256:${createHash("sha256").update(value, "utf8").digest("hex")}`;
+}
+
+function manifestSha256(raw: Record<string, unknown>): string | undefined {
+  const recorded = directStringField(raw, [
+    "manifestSha256",
+    "manifest_sha256",
+    "_manifestSha256",
+    "_manifest_sha256",
+  ]);
+  if (recorded !== undefined) return normalizeSha256(recorded);
+
+  for (const key of ["_manifest", "manifest"]) {
+    if (!Object.hasOwn(raw, key)) continue;
+    const value = raw[key];
+    return typeof value === "string"
+      ? sha256Bytes(value)
+      : sha256Bytes(JSON.stringify(stable(value)));
+  }
+  return undefined;
+}
+
+function providerName(strings: readonly string[]): SkillsProviderEvidence["provider"] | undefined {
+  for (const value of strings) {
+    const match = SKILLS_PROVIDER_RE.exec(value);
+    if (match?.[1] === "ClaudeSkillsProvider") return "ClaudeSkillsProvider";
+    if (match?.[1] === "SkillsDirectoryProvider") return "SkillsDirectoryProvider";
+    if (match?.[1] === "SkillsProvider") return "SkillsProvider";
+    if (match?.[1] === "SkillProvider") return "SkillProvider";
+  }
+  return strings.some((value) => /skill:\/\//i.test(value)) ? "skills" : undefined;
+}
+
+function fastMcpVersion(
+  raw: Record<string, unknown>,
+  strings: readonly string[],
+): string | undefined {
+  const direct = directStringField(raw, ["fastmcpVersion", "serverVersion", "version"]);
+  if (direct !== undefined && /^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(direct)) return direct;
+  for (const value of strings) {
+    const match = FASTMCP_VERSION_RE.exec(value);
+    if (match?.[1] !== undefined) return match[1];
+  }
+  return undefined;
+}
+
+function hasReloadField(value: unknown, depth = 0): boolean {
+  if (depth > 5) return false;
+  if (Array.isArray(value)) return value.some((item) => hasReloadField(item, depth + 1));
+  if (!isRecord(value)) return false;
+  return Object.entries(value).some(([key, item]) => {
+    if (/^(?:hotReload|autoReload|reload)$/i.test(key) && item === true) return true;
+    return hasReloadField(item, depth + 1);
+  });
+}
+
+function hasHotReload(raw: Record<string, unknown>, args: readonly string[]): boolean {
+  if (hasReloadField(raw)) return true;
+  return args.some((arg) => arg === "--reload" || /^reload\s*=\s*true$/i.test(arg.trim()));
+}
+
+function skillsProviderEvidence(
+  raw: Record<string, unknown> | undefined,
+  args: readonly string[],
+): SkillsProviderEvidence | undefined {
+  if (raw === undefined) return undefined;
+  const strings = collectStrings(raw);
+  const provider = providerName(strings);
+  if (provider === undefined) return undefined;
+  return {
+    provider,
+    serverVersion: fastMcpVersion(raw, strings),
+    manifestSha256: manifestSha256(raw),
+    hotReload: hasHotReload(raw, args),
+  };
+}
+
 export function classifyIncomingMcp(rawServer: unknown): McpServer {
   const raw = isRecord(rawServer) ? rawServer : undefined;
   const command = raw ? stringValue(raw.command) : undefined;
@@ -147,12 +269,15 @@ export function classifyIncomingMcp(rawServer: unknown): McpServer {
   // Carry env onto the classified server so its content-bound acknowledgement
   // fingerprint (mcpServerConfigFingerprint) invalidates on an env-only rug-pull.
   const env = raw ? Object.fromEntries(envEntries(raw.env)) : {};
+  const skillsProvider = skillsProviderEvidence(raw, args);
 
   if (url !== undefined && /^https?:\/\//i.test(url.trim())) {
-    return hosted(url.trim(), description, credentials, headers);
+    const server = hosted(url.trim(), description, credentials, headers);
+    return skillsProvider === undefined ? server : { ...server, skillsProvider };
   }
   if (command === undefined || command.trim().length === 0) {
-    return flagged(description, credentials);
+    const server = flagged(description, credentials);
+    return skillsProvider === undefined ? server : { ...server, skillsProvider };
   }
 
   return {
@@ -162,12 +287,18 @@ export function classifyIncomingMcp(rawServer: unknown): McpServer {
     description,
     env,
     classification: "local",
-    egress: "local-only",
+    egress: skillsProvider === undefined ? "local-only" : "none",
     credentials,
-    supplyChain: hasFloatingLaunch(command, args)
-      ? "unpinned"
-      : hasExactPackage(args)
-        ? "pinned"
-        : "unpinned",
+    supplyChain:
+      skillsProvider !== undefined
+        ? skillsProvider.hotReload || skillsProvider.serverVersion === undefined
+          ? "unpinned"
+          : "pinned"
+        : hasFloatingLaunch(command, args)
+          ? "unpinned"
+          : hasExactPackage(args)
+            ? "pinned"
+            : "unpinned",
+    ...(skillsProvider === undefined ? {} : { skillsProvider }),
   };
 }

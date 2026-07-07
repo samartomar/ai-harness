@@ -369,8 +369,20 @@ function safeMcpName(name: string): string {
 function mcpServerConfigFingerprint(server: McpServer): string {
   const normalized =
     server.type === "stdio"
-      ? { command: server.command, args: server.args, url: null, env: server.env ?? {} }
-      : { command: null, args: [], url: server.url, env: {} };
+      ? {
+          command: server.command,
+          args: server.args,
+          url: null,
+          env: server.env ?? {},
+          skillsProvider: server.skillsProvider ?? null,
+        }
+      : {
+          command: null,
+          args: [],
+          url: server.url,
+          env: {},
+          skillsProvider: server.skillsProvider ?? null,
+        };
   return contentHash(normalized).slice(0, 8);
 }
 
@@ -402,7 +414,13 @@ function mcpPolicyChecks(
     const server = classified[policy.name];
     if (server === undefined || policy.verdict === "allow") return [];
     const advisory = server.supplyChain === "hosted-remote" ? ` ${HOSTED_MCP_ADVISORY}` : "";
-    const detail = `${rel} → ${mapKey}.${policy.name}: ${policy.reason}${advisory}`;
+    const skillsAdvisory =
+      server.skillsProvider === undefined || server.supplyChain !== "unpinned"
+        ? ""
+        : server.skillsProvider.hotReload
+          ? " skills-over-MCP hot-reload drift risk is treated like @latest; disable reload and restart after approval changes."
+          : " skills-over-MCP server version is unpinned; pin an exact FastMCP version.";
+    const detail = `${rel} → ${mapKey}.${policy.name}: ${policy.reason}${advisory}${skillsAdvisory}`;
     if (policy.verdict === "warn") {
       return [
         {
@@ -421,6 +439,41 @@ function mcpPolicyChecks(
       ),
     ];
   });
+}
+
+function skillsProviderEvidenceChecks(
+  rel: string,
+  mapKey: string,
+  name: string,
+  server: McpServer,
+): Check[] {
+  const evidence = server.skillsProvider;
+  if (evidence === undefined) return [];
+  const location = { uri: rel, startLine: 1 };
+  const label = `${rel} → ${mapKey}.${name}`;
+  if (evidence.manifestSha256 === undefined) {
+    return [
+      mcpPolicyFail(
+        rel,
+        `${label}: skills-over-MCP _manifest sha256 missing; record the _manifest SHA256 before promotion`,
+        `${mapKey}.${safeMcpName(name)}:${mcpServerConfigFingerprint(server)}:manifest-missing`,
+      ),
+    ];
+  }
+  return [
+    {
+      name: "skills-over-MCP evidence",
+      verdict: "pass",
+      detail: [
+        `${label}: skills-over-MCP provider=${evidence.provider}`,
+        `server=${evidence.serverVersion === undefined ? "unpinned" : `fastmcp==${evidence.serverVersion}`}`,
+        `egress=${server.egress}`,
+        `_manifest=${evidence.manifestSha256}`,
+        `reload=${evidence.hotReload ? "hot-reload drift risk" : "disabled"}`,
+      ].join("; "),
+      location,
+    },
+  ];
 }
 
 function incomingMcpChecks(
@@ -448,6 +501,9 @@ function incomingMcpChecks(
         a.localeCompare(b),
       )) {
         checks.push(...descriptionChecks(rel, map.key, name, rawServer));
+        checks.push(
+          ...skillsProviderEvidenceChecks(rel, map.key, name, classifyIncomingMcp(rawServer)),
+        );
       }
       checks.push(...mcpPolicyChecks(rel, map.key, map.servers, posture, mcpPolicy));
     }

@@ -35,6 +35,9 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The locked-skills MCP server now has a recorded framework/language decision:
   pinned Python FastMCP 3.x with `SkillsDirectoryProvider`, plus official-SDK
   alternatives and security-surface constraints. (#274)
+- The trust gate now recognizes skills-over-MCP shapes (`SkillsProvider` /
+  `skill://`), records FastMCP version, egress, and `_manifest` SHA-256 evidence,
+  and treats hot reload as supply-chain drift like `@latest`. (#275)
 - `aih certs` now documents its corporate-trust propagation for git, Go, JVM
   tools, Gradle, and Maven alongside Docker daemon guidance and the existing
   npm, pip, cargo, and conda coverage. (#267)
