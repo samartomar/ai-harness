@@ -40,7 +40,7 @@ that carry their own status line.
 - [workspace/workspace-contracts-and-snapshots.md](workspace/workspace-contracts-and-snapshots.md) —
   shipped `.aih-workspace.json` contract-edge and workspace snapshot behavior.
 - [workspace/federated-bridge.md](workspace/federated-bridge.md) — federated bridge
-  across disconnected repos. Design/proposed.
+  across disconnected repos, including parent-only defaults and recursive child-write opt-ins.
 
 ## Security and governance
 

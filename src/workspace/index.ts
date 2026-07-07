@@ -7,7 +7,7 @@ import { type Cli, resolveClis } from "../internals/clis.js";
 import { readRegularFile } from "../internals/fsxn.js";
 import { isPlainObject, parseJsoncText } from "../internals/merge.js";
 import type { Action, CommandSpec, Plan, PlanContext, WriteAction } from "../internals/plan.js";
-import { doc, plan, probe, writeJson, writeText } from "../internals/plan.js";
+import { doc, exec, plan, probe, writeJson, writeText } from "../internals/plan.js";
 import { frontmatter } from "../internals/render.js";
 import type { Check } from "../internals/verify.js";
 import { readMcpOrgPolicy } from "../mcp/catalog.js";
@@ -650,6 +650,188 @@ export const command: CommandSpec = {
     },
   ],
   plan: workspacePlan,
+};
+
+function currentAihArgv(args: readonly string[]): string[] {
+  const entry = process.argv[1];
+  if (entry !== undefined && /\.(?:js|ts)$/i.test(entry)) {
+    return [process.execPath, ...process.execArgv, entry, ...args];
+  }
+  return ["aih", ...args];
+}
+
+function declaredWorkspaceRepos(ctx: PlanContext): WorkspaceRepo[] {
+  const existing = readWorkspaceManifest(ctx.root, ctx.contextDir);
+  if (existing?.status === "ERROR") {
+    throw new AihError(
+      `workspace requires a valid .aih-workspace.json: ${existing.errors.join("; ")}`,
+      "AIH_WORKSPACE",
+    );
+  }
+  const explicitRepos = reposOption(ctx.options.repos);
+  if (explicitRepos.length > 0) {
+    const paths = detectChildRepos(ctx.root, explicitRepos);
+    return reposFromPathsWithExistingMetadata(
+      paths,
+      existing,
+      posix.join(ctx.contextDir, "RULE_ROUTER.md"),
+    );
+  }
+  if (existing !== undefined) return existing.repos;
+  return [];
+}
+
+function childWriteActions(
+  ctx: PlanContext,
+  repos: readonly WorkspaceRepo[],
+  commandName: "init" | "report",
+  args: readonly string[],
+): Action[] {
+  const actions: Action[] = [];
+  for (const repo of repos) {
+    const checked = checkWorkspaceChildPath(ctx.root, repo.path);
+    if (!checked.exists) {
+      actions.push(
+        doc(
+          `workspace child ${commandName} skipped`,
+          `${repo.path}: path missing — run \`aih workspace hydrate --apply\` or create the child repo first.`,
+        ),
+      );
+      continue;
+    }
+    if (!checked.git) {
+      actions.push(
+        doc(
+          `workspace child ${commandName} skipped`,
+          `${repo.path}: present but not a git repo; child writes are limited to declared child repos.`,
+        ),
+      );
+      continue;
+    }
+    actions.push(
+      exec(`workspace child ${repo.path} ${commandName}`, currentAihArgv(args), {
+        cwd: join(ctx.root, checked.path),
+        timeoutMs: 120_000,
+      }),
+    );
+  }
+  return actions;
+}
+
+function childInitArgs(ctx: PlanContext, contextDir: string): string[] {
+  const args = ["init", "--apply", "--context-dir", contextDir, "--no-log"];
+  const cli = ctx.options.cli;
+  if (typeof cli === "string" && cli.trim().length > 0) args.push("--cli", cli);
+  if (ctx.options.allTools === true) args.push("--all-tools");
+  if (ctx.options.force === true) args.push("--force");
+  return args;
+}
+
+async function workspaceInitPlan(ctx: PlanContext): Promise<Plan> {
+  const parent = await workspacePlan(ctx);
+  if (ctx.options.recursive !== true) {
+    return plan(
+      "workspace init",
+      ...parent.actions,
+      doc(
+        "workspace child init skipped (run aih workspace init --recursive --apply)",
+        "Child repo onboarding was not run. Re-run with `aih workspace init --recursive --apply` to write child repos.",
+      ),
+    );
+  }
+  const declared = declaredWorkspaceRepos(ctx);
+  return plan(
+    "workspace init",
+    ...parent.actions,
+    ...childWriteActions(ctx, declared, "init", childInitArgs(ctx, ctx.contextDir)),
+  );
+}
+
+export const workspaceInitCommand: CommandSpec = {
+  name: "init",
+  summary: "Scaffold the parent workspace; add --recursive to run child repo onboarding",
+  options: [
+    {
+      flags: "--repos <list>",
+      description: "explicit child repo allowlist (comma-separated)",
+    },
+    {
+      flags: "--git",
+      description:
+        "initialize a local git repo for workspace coordination files; remote setup remains user-owned",
+    },
+    {
+      flags: "--recursive",
+      description: "also run `aih init --apply` inside each declared child repo",
+    },
+  ],
+  plan: workspaceInitPlan,
+};
+
+function workspaceReportArgs(ctx: PlanContext): string[] {
+  const format = typeof ctx.options.format === "string" ? ctx.options.format : "html";
+  const args = ["report", "--workspace", "--format", format, "--apply", "--no-log"];
+  if (ctx.options.open === true) args.push("--open");
+  return args;
+}
+
+function childReportArgs(): string[] {
+  return ["report", "--format", "html", "--apply", "--no-log"];
+}
+
+async function workspaceReportPlan(ctx: PlanContext): Promise<Plan> {
+  const parentReport = exec("workspace parent report", currentAihArgv(workspaceReportArgs(ctx)), {
+    cwd: ctx.root,
+    timeoutMs: 120_000,
+  });
+  if (ctx.options.refreshChildren !== true) {
+    return plan(
+      "workspace report",
+      parentReport,
+      doc(
+        "workspace child reports skipped (run aih workspace report --refresh-children --apply)",
+        "Child report artifacts were not refreshed. Re-run with `aih workspace report --refresh-children --apply` to write child repos.",
+      ),
+    );
+  }
+  const declared = declaredWorkspaceRepos(ctx);
+  if (declared.length === 0) {
+    throw new AihError(
+      "workspace report --refresh-children requires declared child repos in .aih-workspace.json or --repos",
+      "AIH_WORKSPACE",
+    );
+  }
+  return plan(
+    "workspace report",
+    ...childWriteActions(ctx, declared, "report", childReportArgs()),
+    parentReport,
+  );
+}
+
+export const workspaceReportCommand: CommandSpec = {
+  name: "report",
+  summary: "Write the parent workspace report; add --refresh-children to refresh child reports",
+  skipWorktreeGate: true,
+  options: [
+    {
+      flags: "--repos <list>",
+      description: "explicit child repo allowlist for --refresh-children (comma-separated)",
+    },
+    {
+      flags: "--format <fmt>",
+      description: "parent workspace report artifact format: md | html | terminal",
+      default: "html",
+    },
+    {
+      flags: "--open",
+      description: "open the parent workspace report after writing it",
+    },
+    {
+      flags: "--refresh-children",
+      description: "also run child `aih report --format html --apply` in declared child repos",
+    },
+  ],
+  plan: workspaceReportPlan,
 };
 
 export { snapshotCommand, taskPlanCommand, workspaceHydrateCommand, workspaceLinkCommand };

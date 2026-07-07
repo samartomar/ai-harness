@@ -8,6 +8,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- `aih workspace init --recursive --apply` and
+  `aih workspace report --refresh-children --apply` now provide explicit
+  child-write opt-ins for workspace onboarding and child report refreshes, while
+  default workspace runs remain parent-only. (#259)
 - `aih workspace link <path>` now registers child repos and parent-owned contract
   edges in `.aih-workspace.json`, regenerating workspace router/contracts docs
   without writing child repo files. (#258)
