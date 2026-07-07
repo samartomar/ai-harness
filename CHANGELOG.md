@@ -8,6 +8,9 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Pack governance docs now consistently describe the shipped `aih-packs.json` /
+  `--pack <name>` curation model and mark the earlier built-in pack catalog as a
+  historical proposal rather than current command behavior. (#260)
 - `aih workspace init --recursive --apply` and
   `aih workspace report --refresh-children --apply` now provide explicit
   child-write opt-ins for workspace onboarding and child report refreshes, while

@@ -376,7 +376,7 @@ Files likely touched:
 src/pack/index.ts
 src/pack/manifest.ts
 src/pack/install.ts
-src/pack/builtin.ts
+src/pack/builtin.ts (superseded proposal; no shipped built-in catalog)
 src/cli.ts
 tests/pack-install.test.ts
 ```
@@ -384,10 +384,11 @@ tests/pack-install.test.ts
 Commands:
 
 ```bash
-aih pack list
-aih pack plan enterprise-core
-aih pack install enterprise-core --apply
-aih pack install product-ui --repo ui --apply
+# shipped manifest model
+aih pack status --pack docs-quality
+aih pack validate --pack docs-quality
+aih pack plan --pack docs-quality
+aih pack install --pack docs-quality --apply
 ```
 
 Acceptance criteria:
@@ -395,13 +396,13 @@ Acceptance criteria:
 ```text
 pack plan is dry-run by default
 pack install requires --apply
-pack install only installs approved/policy-allowed skills
-pack install can target repo/workspace/user scope
-pack install updates report inventory
-pack install has rollback path
+pack install only installs refs already approved in aih-skills.lock.json
+pack install cross-checks every manifest ref against the lock
+pack install gates all sources before promoting any pack member
+pack uninstall uses the same reversible removal path as skill remove
 ```
 
-Built-in packs:
+Superseded built-in pack names:
 
 ```text
 enterprise-core
@@ -492,7 +493,7 @@ aih report --open
 aih workspace init --repos ui,backend,infra --apply
 aih workspace report --open
 aih skill vet https://github.com/hardikpandya/stop-slop --policy enterprise
-aih pack plan product-ui --repo ui
+aih pack plan --pack product-ui
 ```
 
 Demo message:

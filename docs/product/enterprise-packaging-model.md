@@ -23,16 +23,20 @@ Route all skills through ai-harness pack governance.
 
 ## Pack command shape
 
+The original built-in catalog proposal used `pack list` and positional installs
+such as `pack install enterprise-core`; that shape was not shipped. The current
+product uses repo-defined packs from `aih-packs.json`:
+
 ```bash
-aih pack list
-aih pack plan enterprise-core
-aih pack install enterprise-core --apply
-aih pack install workspace-intel --apply
-aih pack install product-ui --repo ui --apply
-aih pack install content-video --repo marketing --policy media-restricted --apply
+aih pack status --pack <name>
+aih pack validate --pack <name>
+aih pack plan --pack <name>
+aih pack install --pack <name> --apply
 ```
 
-Every pack install is intended to:
+Each referenced skill must already be approved in `aih-skills.lock.json`.
+
+In the historical proposal, every pack install was intended to:
 
 1. Resolve exact source and commit.
 2. Run trust scan.
@@ -70,7 +74,8 @@ Risk:
 Recommended install:
 
 ```bash
-aih pack install enterprise-core --cli claude,codex,cursor --apply
+# if an org curates this pack in aih-packs.json
+aih pack install --pack enterprise-core --apply
 ```
 
 Purpose:
@@ -112,7 +117,8 @@ Recommended install:
 ```bash
 aih workspace init --apply
 aih workspace report --refresh-children --apply
-aih pack install workspace-intel --apply
+# if an org curates this pack in aih-packs.json
+aih pack install --pack workspace-intel --apply
 aih workspace report --open
 ```
 
@@ -162,8 +168,8 @@ Risk:
 Recommended install:
 
 ```bash
-aih pack install product-ui --repo ui --apply
-aih pack install product-ui --repo ui --with gstack --preset founder --apply
+# run inside the target UI repo after curating product-ui in aih-packs.json
+aih pack install --pack product-ui --apply
 ```
 
 Purpose:
@@ -207,7 +213,7 @@ Risk:
 Recommended install:
 
 ```bash
-aih pack install docs-quality --apply
+aih pack install --pack docs-quality --apply
 ```
 
 Purpose:
@@ -251,7 +257,8 @@ Risk:
 Recommended install:
 
 ```bash
-aih pack install content-video --repo marketing --policy media-restricted --apply
+# run inside the target media repo after curating content-video in aih-packs.json
+aih pack install --pack content-video --apply
 ```
 
 Purpose:
@@ -300,7 +307,8 @@ Risk:
 Recommended install:
 
 ```bash
-aih pack install founder-product --repo ui --apply
+# run inside the target UI repo after curating founder-product in aih-packs.json
+aih pack install --pack founder-product --apply
 ```
 
 Purpose:
@@ -350,7 +358,7 @@ Risk:
 Recommended install:
 
 ```bash
-aih pack install skill-governance --apply
+aih pack install --pack skill-governance --apply
 ```
 
 Purpose:
@@ -408,12 +416,12 @@ Wrong:
 aih init --install-all-skills --apply
 ```
 
-Right:
+Right shape, after curating each named pack in `aih-packs.json`:
 
 ```bash
-aih pack install enterprise-core --apply
-aih pack install product-ui --repo ui --apply
-aih pack install workspace-intel --workspace --apply
+aih pack install --pack enterprise-core --apply
+aih pack install --pack product-ui --apply
+aih pack install --pack workspace-intel --apply
 ```
 
 ## Source classification
