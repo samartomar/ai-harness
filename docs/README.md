@@ -83,6 +83,8 @@ Each carries its own status note.
 
 - [research/cli-coverage-matrix-plan.md](research/cli-coverage-matrix-plan.md) —
   implemented plan for the per-CLI coverage matrix + loadability validation.
+- [research/deferred-analytics-tiers.md](research/deferred-analytics-tiers.md) —
+  deferred Tier 2 shared-collector and Tier 3 hosted-SaaS analytics decision record.
 - [research/external-skill-packs.md](research/external-skill-packs.md) — shipped
   as-built design note for external skill packs and `aih-packs.json` behavior.
 

@@ -16,7 +16,9 @@ Build **`aih report`** (Tier 1). The Admin API *is* the published edition — `G
 /v1/organizations/analytics/skills` + `usage_report/claude_code` answer the entire stated ask
 (top skills, tokens, cost, cache savings, accept/reject, block-rate) from **one org admin key,
 zero per-dev opt-in**. That turns "build a SaaS" into "ship a command." Tier 2 (per-skill cost
-via a shared collector) and Tier 3 (hosted SaaS) stay deferred.
+via a shared collector) and Tier 3 (hosted SaaS) stay deferred; their aggregate-first scope,
+privacy constraints, and trigger conditions are tracked in
+[research/deferred-analytics-tiers.md](research/deferred-analytics-tiers.md).
 
 ## 2. Adopted from the PDF (the good parts)
 
