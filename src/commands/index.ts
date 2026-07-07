@@ -7,6 +7,7 @@ import { capabilityPruneCommand, capabilityResolveCommand } from "../capability/
 import { command as certs } from "../certs/index.js";
 import { command as contract } from "../contract/index.js";
 import { command as crispy } from "../crispy/index.js";
+import { command as docsLint } from "../docs-lint/index.js";
 import { command as doctor } from "../doctor.js";
 import { command as ecc } from "../ecc/index.js";
 import { evidenceBuildCommand } from "../evidence/build.js";
@@ -114,6 +115,7 @@ export const CAPABILITIES: CommandSpec[] = [
 /** Read-only commands (always safe). */
 export const READONLY: CommandSpec[] = [
   doctor,
+  docsLint,
   status,
   verifyBundle,
   verifyReleaseCommand,

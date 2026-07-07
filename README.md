@@ -187,10 +187,11 @@ not guess which names are private to your organization.
 
 | Command | What it does |
 | --- | --- |
+| [`aih docs-lint`](docs/commands.md#aih-docs-lint) | Run the read-only BetterDoc prose gate over public-facing Markdown and emit coded findings for blocked phrases or unsupported claims. |
 | [`aih doctor`](docs/commands.md#aih-doctor) | Verify the workstation/repo configuration fail-closed; workspace mode validates each child repo, and Enterprise posture attests declared capability surfaces. |
 | [`aih status`](docs/commands.md#aih-status) | Show a read-only inventory of what the harness has configured. |
 
-Shared flags: `--apply`, `--force`, `--verify`, `--json`, `--posture <vibe|team|enterprise>`, `--support-out <dir>`, `--no-log`, `--context-dir <dir>`, `--root <dir>`, `--cli <list>`, `--all-tools`, `--detect`, `--yes` (the read-only `doctor`/`status`/`verify-bundle`/`verify-release` take the relevant subset).
+Shared flags: `--apply`, `--force`, `--verify`, `--json`, `--posture <vibe|team|enterprise>`, `--support-out <dir>`, `--no-log`, `--context-dir <dir>`, `--root <dir>`, `--cli <list>`, `--all-tools`, `--detect`, `--yes` (read-only commands take the relevant subset).
 Settings also read from `AIH_*` env vars (`AIH_APPLY`, `AIH_CONTEXT_DIR`, `AIH_LOG`, …).
 
 ### Plugins

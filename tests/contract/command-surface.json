@@ -536,6 +536,35 @@
       "commands": []
     },
     {
+      "name": "docs-lint",
+      "hasDescription": true,
+      "arguments": [
+        {
+          "name": "root",
+          "required": false
+        }
+      ],
+      "options": [
+        {
+          "flags": "--json"
+        },
+        {
+          "flags": "--no-log"
+        },
+        {
+          "flags": "--posture <posture>",
+          "defaultValue": "vibe"
+        },
+        {
+          "flags": "--root <dir>"
+        },
+        {
+          "flags": "--support-out <dir>"
+        }
+      ],
+      "commands": []
+    },
+    {
       "name": "doctor",
       "hasDescription": true,
       "arguments": [

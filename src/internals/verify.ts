@@ -70,6 +70,11 @@ export type CheckCode =
   | "report.context-over-budget"
   | "report.low-adoption"
   | "report.contract-untrue"
+  // docs lint (BetterDoc slop-lint native check)
+  | "docs.banned-phrase"
+  | "docs.vague-absolute"
+  | "docs.unsupported-callout-claim"
+  | "docs.rules-missing"
   // readiness gate (`aih ready`)
   | "ready.blocked"
   // enterprise baseline attestation

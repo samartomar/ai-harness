@@ -443,6 +443,15 @@ Generate a devcontainer + managed sandbox settings (egress allowlist, `failIfUna
 
 **Verification**
 
+## aih docs-lint
+
+Read-only BetterDoc documentation lint. It scans the public-facing Markdown surface
+(`README.md`, `CONTRIBUTING.md`, `SECURITY.md`, and `docs/`, excluding internal report specs) using
+the phrase and claim guidance in
+`packs/docs-quality/betterdoc/references/slop-lint.md`. Blocked prose emits coded findings
+(`docs.banned-phrase`, `docs.vague-absolute`, `docs.unsupported-callout-claim`) and exits non-zero;
+a missing rules file emits `docs.rules-missing`.
+
 ## aih doctor
 
 Fail-closed verification of the workstation/repo configuration (+ workspace mode: validates each
