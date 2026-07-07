@@ -33,9 +33,9 @@
   their presence and writes deny rules instead.
 - Symlinks in extracted or fetched trees are contained by realpath checks. A
   symlink may exist only when the resolved target stays inside the trusted root.
-- Optional detectors such as SkillSpector, Cisco skill-scanner, and mcp-scanner
-  are advisory analyzers. Missing analyzers produce explicit skips unless policy
-  requires them.
+- Optional detectors such as SkillSpector, Cisco skill-scanner, Semgrep, Snyk
+  Agent Scan, AgentShield, and mcp-scanner are advisory analyzers. Missing
+  analyzers produce explicit skips unless policy requires them.
 - The core CLI has no default phone-home path and does not transmit telemetry by
   default. Network-capable behavior is limited to named operator-invoked surfaces:
   release verification, source acquisition/trust flows, signing/attestation,

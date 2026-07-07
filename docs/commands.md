@@ -227,6 +227,10 @@ a pin bump and flag reuse of the current tag with different bytes or source revi
 The **skill lifecycle** on top of `trust` — a complete governance loop for external agent skills.
 `vet <src>` runs the read-only gate pipeline (shape, license, trust scan) to a
 **GREEN/YELLOW/RED/UNKNOWN** verdict + a local evidence artifact (never installs).
+The deep-scan ladder records detector availability in evidence via `analyzersRun`: aih-native,
+SkillSpector, Cisco AI Defense skill-scanner, Semgrep, Snyk Agent Scan, AgentShield, and the
+MCP scanner when MCP config is present; detector findings escalate the verdict, while unavailable
+required detectors fail closed at enterprise posture.
 `card`/`approve --pin --owner` turn that evidence into committed governance: a skill card + a root
 **`aih-skills.lock.json`** entry, behind a fail-closed chain (pin → evidence → approvable verdict →
 license → owner; RED blocked, UNKNOWN refused, YELLOW = the manual review). The lockfile has

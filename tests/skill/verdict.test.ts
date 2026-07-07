@@ -64,6 +64,12 @@ const OTHER_FAIL: Check = {
   code: "mcp.policy-denied",
   detail: ".mcp.json → mcpServers.hosted: third-party egress",
 };
+const DETECTOR_FINDING: Check = {
+  name: "trust.detector-finding",
+  verdict: "fail",
+  code: "trust.detector-finding",
+  detail: "skills/clean/SKILL.md:1 — Semgrep: future detector finding",
+};
 
 const CLEARED = { pinned: true, fetched: true };
 const FIRST_PARTY = { pinned: true, fetched: true, firstParty: true };
@@ -205,6 +211,13 @@ describe("skillVerdict", () => {
 
     expect(graded.verdict).toBe("YELLOW");
     expect(graded.reasons).toEqual([expect.stringContaining("mcp.policy-denied")]);
+  });
+
+  it("grades YELLOW on a generic deep-detector finding", () => {
+    const graded = skillVerdict([PASS, LICENSE_PASS, DETECTOR_FINDING], cleanShape(), CLEARED);
+
+    expect(graded.verdict).toBe("YELLOW");
+    expect(graded.reasons).toEqual([expect.stringContaining("trust.detector-finding")]);
   });
 
   it("lets UNKNOWN outrank YELLOW but not RED", () => {
