@@ -20,6 +20,9 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - CLI loadability now embeds a router canary, tracks per-tool dry-run probe
   support, and treats non-probeable tools as manual/unverified instead of
   counting structural wiring as runtime proof. (#266)
+- The trust gate now documents its widened deep-scan detector ladder beyond
+  SkillSpector/Cisco, including Semgrep, Snyk Agent Scan, AgentShield, and their
+  vet evidence availability records. (#268)
 - `aih certs` now documents its corporate-trust propagation for git, Go, JVM
   tools, Gradle, and Maven alongside Docker daemon guidance and the existing
   npm, pip, cargo, and conda coverage. (#267)

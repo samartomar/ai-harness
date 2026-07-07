@@ -40,6 +40,12 @@ const DETECTOR_SKIP: Check = {
   code: "trust.detector-unavailable",
   detail: "DEGRADED-COVERAGE",
 };
+const REQUIRED_DETECTOR_FAIL: Check = {
+  name: "trust detector semgrep",
+  verdict: "fail",
+  code: "trust.detector-unavailable",
+  detail: "required detector semgrep is unavailable at enterprise posture",
+};
 const SANDBOX_SMOKE_UNAVAILABLE: Check = {
   name: "skill sandbox smoke test",
   verdict: "fail",
@@ -63,6 +69,12 @@ const OTHER_FAIL: Check = {
   verdict: "fail",
   code: "mcp.policy-denied",
   detail: ".mcp.json → mcpServers.hosted: third-party egress",
+};
+const DETECTOR_FINDING: Check = {
+  name: "trust.detector-finding",
+  verdict: "fail",
+  code: "trust.detector-finding",
+  detail: "skills/clean/SKILL.md:1 — Semgrep: future detector finding",
 };
 
 const CLEARED = { pinned: true, fetched: true };
@@ -95,6 +107,28 @@ describe("skillVerdict", () => {
 
   it("grades UNKNOWN on a detector-unavailable skip for a non-first-party source", () => {
     const graded = skillVerdict([PASS, LICENSE_PASS, DETECTOR_SKIP], cleanShape(), CLEARED);
+
+    expect(graded.verdict).toBe("UNKNOWN");
+    expect(graded.reasons).toEqual([expect.stringContaining("detector")]);
+  });
+
+  it("grades UNKNOWN on a required detector-unavailable fail", () => {
+    const graded = skillVerdict(
+      [PASS, LICENSE_PASS, REQUIRED_DETECTOR_FAIL],
+      cleanShape(),
+      CLEARED,
+    );
+
+    expect(graded.verdict).toBe("UNKNOWN");
+    expect(graded.reasons).toEqual([expect.stringContaining("detector")]);
+  });
+
+  it("does not let first-party exemption bypass required detector failures", () => {
+    const graded = skillVerdict(
+      [PASS, LICENSE_PASS, REQUIRED_DETECTOR_FAIL],
+      cleanShape(),
+      FIRST_PARTY,
+    );
 
     expect(graded.verdict).toBe("UNKNOWN");
     expect(graded.reasons).toEqual([expect.stringContaining("detector")]);
@@ -205,6 +239,13 @@ describe("skillVerdict", () => {
 
     expect(graded.verdict).toBe("YELLOW");
     expect(graded.reasons).toEqual([expect.stringContaining("mcp.policy-denied")]);
+  });
+
+  it("grades YELLOW on a generic deep-detector finding", () => {
+    const graded = skillVerdict([PASS, LICENSE_PASS, DETECTOR_FINDING], cleanShape(), CLEARED);
+
+    expect(graded.verdict).toBe("YELLOW");
+    expect(graded.reasons).toEqual([expect.stringContaining("trust.detector-finding")]);
   });
 
   it("lets UNKNOWN outrank YELLOW but not RED", () => {

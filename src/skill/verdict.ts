@@ -15,6 +15,7 @@ const VERDICT_RANK: Record<SkillVerdict, number> = { GREEN: 0, YELLOW: 1, UNKNOW
 
 /** Codes rules 1–2 already attribute — excluded from the rule-3 "any other FAIL" sweep. */
 const ATTRIBUTED_CODES = new Set<string>([
+  "trust.detector-unavailable",
   "trust.fetch-blocked",
   "trust.license-missing",
   "trust.sandbox-smoke-failed",
@@ -35,8 +36,9 @@ function isUnattributedFail(check: Check): boolean {
  * Pure verdict engine: fold checks + shape + acquisition facts into one
  * GREEN/YELLOW/RED/UNKNOWN verdict. Rules, in priority order:
  *   1. any proven-dangerous FAIL (TRUST_DANGER_CODES)          → RED
- *   2. not fetched / fetch-blocked, a detector-unavailable skip on a
- *      NON-first-party source, license missing, or an unpinned GitHub source → UNKNOWN
+ *   2. not fetched / fetch-blocked, detector-unavailable evidence gaps
+ *      (optional gaps on non-first-party sources; required FAILs on all sources),
+ *      license missing, or an unpinned GitHub source                 → UNKNOWN
  *   3. any other FAIL, or a shape trigger (install scripts /
  *      MCP config / full-codebase analysis)                    → YELLOW
  *   4. otherwise                                               → GREEN
@@ -48,7 +50,9 @@ function isUnattributedFail(check: Check): boolean {
  * aih-native coverage, so an unavailable third-party deep detector
  * (skillspector/cisco) does NOT force UNKNOWN — those scanners guard UNTRUSTED
  * REMOTE fetches, while a repo-relative path is operator-controlled content whose
- * approval anchor is the human PR review + git history. The exemption is scoped to
+ * approval anchor is the human PR review + git history. Explicit enterprise
+ * required-detector failures still force UNKNOWN on first-party sources; the
+ * exemption is only for optional detector skips. The exemption is scoped to
  * repo-relative sources on purpose: a local path OUTSIDE the repo is treated like
  * any other unvetted source (still UNKNOWN without the detectors). Native rules
  * always apply: a malicious-code finding is still RED, a shape trigger is still
@@ -76,10 +80,15 @@ export function skillVerdict(
   if (!opts.fetched || checks.some((check) => check.code === "trust.fetch-blocked")) {
     escalate("UNKNOWN", "source was not fetched; scan evidence is insufficient");
   }
-  if (
-    !opts.firstParty &&
-    checks.some((check) => check.verdict === "skip" && check.code === "trust.detector-unavailable")
-  ) {
+  const detectorUnavailable = checks.some(
+    (check) =>
+      (check.verdict === "skip" || check.verdict === "fail") &&
+      check.code === "trust.detector-unavailable",
+  );
+  const requiredDetectorUnavailable = checks.some(
+    (check) => check.verdict === "fail" && check.code === "trust.detector-unavailable",
+  );
+  if ((!opts.firstParty && detectorUnavailable) || requiredDetectorUnavailable) {
     escalate("UNKNOWN", "a trust detector was unavailable; scan coverage is degraded");
   }
   if (checks.some((check) => check.verdict === "fail" && check.code === "trust.license-missing")) {
