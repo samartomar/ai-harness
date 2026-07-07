@@ -45,9 +45,11 @@ Its threat model is built into the seven action kinds: `write`, `doc`, `probe`,
   (`.gitleaks.toml`) instead.
 - **Generated installer commands** (ECC/Superpowers/Kiro) are exactly the upstream
   projects' documented commands — review them, and prefer your org's internal mirror.
-- **Release provenance.** Releases publish npm provenance, GitHub artifact attestations,
-  an SPDX SBOM, checksums, and a keyless cosign bundle for `SHA256SUMS.txt`. This is
-  SLSA v1 build provenance material, but the project does not claim a SLSA level.
+- **Release provenance.** Tagged release artifacts produced by the release workflow
+  claim SLSA Build L2 under the SLSA v1.2 Build track. Releases publish npm
+  provenance, GitHub artifact attestations, an SPDX SBOM, checksums, and a
+  keyless cosign bundle for `SHA256SUMS.txt`; the scoped assessment and Build L3
+  gap are documented in [docs/security/release-slsa.md](docs/security/release-slsa.md).
 
 If you find a way for an `aih` command to mutate a remote system, run an unexpected
 command, or exfiltrate data, that is a security bug — please report it.

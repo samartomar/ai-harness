@@ -30,29 +30,47 @@ function imageAlt(markdown: string, assetPath: string): string {
   return md?.[1] ?? "";
 }
 
+function isCoveredByPackageFiles(assetPath: string, files: readonly string[]): boolean {
+  const normalizedAsset = assetPath.replace(/\\/gu, "/");
+  return files.some((entry) => {
+    const normalizedEntry = entry.replace(/\\/gu, "/").replace(/\/+$/u, "");
+    return (
+      normalizedEntry === normalizedAsset ||
+      normalizedEntry === `${normalizedAsset}/**` ||
+      normalizedAsset.startsWith(`${normalizedEntry}/`)
+    );
+  });
+}
+
 describe("README docs currency", () => {
   it("keeps README image metadata aligned with the current v2.4 assets", () => {
     const readme = read("README.md");
     const overview = read("docs/assets/aih-overview.svg");
+    const pkg = JSON.parse(read("package.json")) as { files?: string[] };
     const normalizedOverview = overview.replace(/\s+/g, " ");
+    const publishedAssets = ["docs/assets/aih-overview.svg", "docs/assets/aih-report-v9.png"];
 
-    expect(existsSync(join(root, "docs/assets/aih-overview.svg"))).toBe(true);
-    expect(existsSync(join(root, "docs/assets/aih-report-v9.png"))).toBe(true);
-    expect(overview).toContain("v2.4.0 release-candidate overview");
+    for (const assetPath of publishedAssets) {
+      expect(existsSync(join(root, assetPath))).toBe(true);
+      expect(isCoveredByPackageFiles(assetPath, pkg.files ?? [])).toBe(true);
+    }
+    expect(overview).toContain("v2.4.0 overview");
     expect(overview).toContain("Five governed-readiness pillars");
     expect(overview).toContain("42 commands");
     expect(normalizedOverview).toContain("aih truth pack · verify · docs-lint claim gate");
     expect(overview).toContain("Claim-ledger entries &amp; project-truth assertions");
     expect(overview).toContain("SHA-bound sidecar · staged pack · drift gate");
     expect(overview).not.toContain("staged &amp; signed");
-    expect(overview).not.toContain("AI-Canonical · now");
+    expect(overview).not.toContain("release-candidate");
+    expect(overview).not.toContain("pending release");
+    expect(overview).toContain("2.4 AI-Canonical · shipped");
 
     const overviewAlt = imageAlt(readme, "docs/assets/aih-overview.svg").toLowerCase();
     expect(overviewAlt).toContain("v2.4.0");
-    expect(overviewAlt).toContain("release-candidate");
     expect(overviewAlt).toContain("governed-readiness");
     expect(overviewAlt).toContain("truth verify");
     expect(overviewAlt).toContain("docs-lint claim gate");
+    expect(overviewAlt).not.toContain("release-candidate");
 
     const reportAlt = imageAlt(readme, "docs/assets/aih-report-v9.png").toLowerCase();
     expect(reportAlt).toContain("demo showcase data");

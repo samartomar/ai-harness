@@ -6,6 +6,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [2.4.0] - 2026-07-07
+
 ### Added
 
 - `aih docs-lint` now enforces the public claim ledger: claim markers must map to
@@ -23,8 +25,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and stale file evidence claims fail closed instead of relying on prose. (#327)
 - The v2.4.0 docs currency pass now uses the BetterDoc skill, refreshes the README
   image metadata, brings the README command surface back in line with command docs,
-  and scopes the overview SVG's project-truth wording to staged packs and drift
-  checks. (#328)
+  includes the README image assets in the npm package, and updates the overview
+  SVG from release-candidate copy to shipped v2.4.0 wording. (#328)
 - The language coverage matrix now grades the Node + Python + Rust polyglot
   fixture's framework coverage as good, reflecting the existing per-workspace
   command routing for secondary Python/Rust workspaces. (#263)
@@ -825,7 +827,8 @@ GitHub but **never published to npm**; the first published release is 0.2.0.
   (npm + github-actions), private vulnerability reporting, `@claude` workflow gated
   to trusted authors, and GitHub Actions pinned to commit SHAs.
 
-[Unreleased]: https://github.com/samartomar/ai-harness/compare/v2.1.0...HEAD
+[Unreleased]: https://github.com/samartomar/ai-harness/compare/v2.4.0...HEAD
+[2.4.0]: https://github.com/samartomar/ai-harness/compare/v2.1.0...v2.4.0
 [2.1.0]: https://github.com/samartomar/ai-harness/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/samartomar/ai-harness/compare/v1.3.0...v2.0.0
 [1.3.0]: https://github.com/samartomar/ai-harness/compare/v1.2.1...v1.3.0
