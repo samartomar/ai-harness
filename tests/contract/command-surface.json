@@ -3789,6 +3789,87 @@
           "commands": []
         },
         {
+          "name": "link",
+          "hasDescription": true,
+          "arguments": [
+            {
+              "name": "path",
+              "required": true
+            }
+          ],
+          "options": [
+            {
+              "flags": "--all-tools"
+            },
+            {
+              "flags": "--apply"
+            },
+            {
+              "flags": "--cli <list>"
+            },
+            {
+              "flags": "--consumer <path>"
+            },
+            {
+              "flags": "--context-dir <dir>",
+              "defaultValue": "ai-coding"
+            },
+            {
+              "flags": "--contract <path>"
+            },
+            {
+              "flags": "--detect"
+            },
+            {
+              "flags": "--force"
+            },
+            {
+              "flags": "--from <id>"
+            },
+            {
+              "flags": "--id <id>"
+            },
+            {
+              "flags": "--json"
+            },
+            {
+              "flags": "--kind <kind>"
+            },
+            {
+              "flags": "--no-log"
+            },
+            {
+              "flags": "--owner <team>"
+            },
+            {
+              "flags": "--posture <posture>",
+              "defaultValue": "vibe"
+            },
+            {
+              "flags": "--repo-kind <kind>"
+            },
+            {
+              "flags": "--root <dir>"
+            },
+            {
+              "flags": "--router <path>"
+            },
+            {
+              "flags": "--support-out <dir>"
+            },
+            {
+              "flags": "--to <id>"
+            },
+            {
+              "flags": "--verify"
+            },
+            {
+              "flags": "--yes"
+            }
+          ],
+          "commands": []
+        },
+        {
           "name": "plan",
           "hasDescription": true,
           "arguments": [

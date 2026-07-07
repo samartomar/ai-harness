@@ -8,6 +8,9 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- `aih workspace link <path>` now registers child repos and parent-owned contract
+  edges in `.aih-workspace.json`, regenerating workspace router/contracts docs
+  without writing child repo files. (#258)
 - `aih usage --apply` now chains `aih track --apply` into the universal post-commit
   hook, so `.aih/history.jsonl` accrues one deduped trend sample per commit outside
   Kiro's agent-stop hook as well. The hook installs into the active repo-local Git

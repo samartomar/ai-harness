@@ -70,6 +70,7 @@ import { runWorkspaceAdd, workspaceAddCommand } from "../workspace/acquire.js";
 import {
   command as workspace,
   workspaceHydrateCommand as workspaceHydrate,
+  workspaceLinkCommand as workspaceLink,
   taskPlanCommand as workspacePlan,
   snapshotCommand as workspaceSnapshot,
 } from "../workspace/index.js";
@@ -131,7 +132,13 @@ export const PARENT_GROUPS = [
 ] as const;
 
 export const GROUPED_COMMAND_SPECS = {
-  workspace: [workspaceAddCommand, workspaceHydrate, workspaceSnapshot, workspacePlan],
+  workspace: [
+    workspaceAddCommand,
+    workspaceHydrate,
+    workspaceLink,
+    workspaceSnapshot,
+    workspacePlan,
+  ],
   capability: [capabilityResolveCommand, capabilityPruneCommand],
   trust: [
     trustAllowCommand,
@@ -347,6 +354,22 @@ function registerSpec(program: Command, spec: CommandSpec): void {
     }
     add.action(async (_source: string, _options: Record<string, unknown>, command: Command) => {
       process.exitCode = await runWorkspaceAdd(command);
+    });
+
+    const link = cmd
+      .command(workspaceLink.name)
+      .description(workspaceLink.summary)
+      .argument("<path>", "child repo path relative to the workspace root");
+    addSharedFlags(link);
+    for (const o of workspaceLink.options ?? []) {
+      if (o.default !== undefined) link.option(o.flags, o.description, o.default);
+      else link.option(o.flags, o.description);
+    }
+    link.action(async (pathText: string, _options: Record<string, unknown>, command: Command) => {
+      process.exitCode = await runCapability(workspaceLink, command, {
+        positionalRoot: false,
+        optionOverrides: { path: pathText },
+      });
     });
 
     const snap = cmd
