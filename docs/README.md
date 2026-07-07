@@ -87,6 +87,9 @@ Each carries its own status note.
   deferred Tier 2 shared-collector and Tier 3 hosted-SaaS analytics decision record.
 - [research/external-skill-packs.md](research/external-skill-packs.md) — shipped
   as-built design note for external skill packs and `aih-packs.json` behavior.
+- [research/fastmcp-vs-mcp-skills-over-mcp.md](research/fastmcp-vs-mcp-skills-over-mcp.md) —
+  verified FastMCP 3.x vs official `mcp` SDK comparison for the skills-over-MCP
+  decision context.
 - [research/locked-skills-mcp-framework.md](research/locked-skills-mcp-framework.md) —
   framework/language decision for a future locked-skills MCP server.
 
