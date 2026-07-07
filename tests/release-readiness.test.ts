@@ -38,6 +38,23 @@ describe("release readiness metadata", () => {
     expect(release).not.toContain("NODE_AUTH_TOKEN");
   });
 
+  it("keeps the tag workflow on the same verify gate used by release PRs", () => {
+    const release = read(".github/workflows/release.yml");
+    const tagGateIndex = release.indexOf("Assert tag commit is current main");
+    const setupNodeIndex = release.indexOf("actions/setup-node");
+    const npmCiIndex = release.indexOf("npm ci");
+
+    expect(release).toContain(
+      "git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main",
+    );
+    expect(release).toContain('if [ "$GITHUB_SHA" != "$main_sha" ]; then');
+    expect(release).toContain("npm run verify");
+    expect(release).not.toContain("npx vitest run --coverage");
+    expect(tagGateIndex).toBeGreaterThan(-1);
+    expect(setupNodeIndex).toBeGreaterThan(tagGateIndex);
+    expect(npmCiIndex).toBeGreaterThan(tagGateIndex);
+  });
+
   it("documents the SLSA Build L2 release claim and the Build L3 gap", () => {
     const doc = read("docs/security/release-slsa.md");
     expect(doc).toContain("SLSA v1.2");
