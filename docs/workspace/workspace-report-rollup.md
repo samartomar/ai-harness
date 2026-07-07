@@ -91,6 +91,8 @@ writes workspace artifacts under `.aih/workspace-report.*`.
 ## Boundaries
 
 - The rollup reads child repos; it does not write them.
+- `aih workspace report --refresh-children --apply` is the explicit opt-in that
+  refreshes child `.aih/reports/` artifacts before regenerating the parent rollup.
 - Missing local telemetry is reported as not collected, not as a failed child.
 - A malformed manifest is reported without crashing the full report.
 - The parent report is a summary; child repos retain their own canon, history,

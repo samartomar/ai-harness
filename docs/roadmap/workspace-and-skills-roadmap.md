@@ -12,6 +12,7 @@
 > | 4 Contract edges | shipped — manifest `edges[]`, `workspace-contracts.md`, and `aih workspace link` | `src/workspace/manifest.ts`, `src/workspace/link.ts`, `templates.ts` |
 > | 5 Snapshots | shipped — `aih workspace snapshot` | `src/workspace/snapshot.ts` → `.aih/workspace-snapshots/` |
 > | 6 Task plans | shipped — `aih workspace plan "<task>"` | `src/workspace/task-plan.ts` → `.aih/workspace-plans/` |
+> | 6b Recursive child-write opt-ins | shipped — `aih workspace init --recursive`, `aih workspace report --refresh-children` | `src/workspace/index.ts`, `tests/workspace/recursive.test.ts` |
 > | 7 Skill vet | shipped (v0.4.0) | `src/skill/vet.ts`; GREEN/YELLOW/RED/UNKNOWN in `src/skill/verdict.ts` |
 > | 8 Card + approval lockfile | shipped (v0.4.0) — as committed `aih-skills.lock.json` + `<contextDir>/skill-cards/`, not `.aih/approved-skills.lock` | `src/skill/{card,approve,lockfile}.ts` |
 > | 9 Pack install | shipped (v0.5.0) — as `aih-packs.json` curation with `--pack <name>`; no built-in pack catalog | `src/pack/` |

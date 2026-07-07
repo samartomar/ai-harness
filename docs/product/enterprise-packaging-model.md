@@ -111,6 +111,7 @@ Recommended install:
 
 ```bash
 aih workspace init --apply
+aih workspace report --refresh-children --apply
 aih pack install workspace-intel --apply
 aih workspace report --open
 ```

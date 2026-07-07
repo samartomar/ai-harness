@@ -70,8 +70,10 @@ import { runWorkspaceAdd, workspaceAddCommand } from "../workspace/acquire.js";
 import {
   command as workspace,
   workspaceHydrateCommand as workspaceHydrate,
+  workspaceInitCommand as workspaceInit,
   workspaceLinkCommand as workspaceLink,
   taskPlanCommand as workspacePlan,
+  workspaceReportCommand as workspaceReport,
   snapshotCommand as workspaceSnapshot,
 } from "../workspace/index.js";
 import { runCapability } from "./run.js";
@@ -135,7 +137,9 @@ export const GROUPED_COMMAND_SPECS = {
   workspace: [
     workspaceAddCommand,
     workspaceHydrate,
+    workspaceInit,
     workspaceLink,
+    workspaceReport,
     workspaceSnapshot,
     workspacePlan,
   ],
@@ -399,6 +403,36 @@ function registerSpec(program: Command, spec: CommandSpec): void {
     hydrate.action(
       async (_rootArg: string | undefined, _options: Record<string, unknown>, command: Command) => {
         process.exitCode = await runCapability(workspaceHydrate, command);
+      },
+    );
+
+    const init = cmd
+      .command(workspaceInit.name)
+      .description(workspaceInit.summary)
+      .argument("[root]", "target workspace root (defaults to --root or cwd)");
+    addSharedFlags(init);
+    for (const o of workspaceInit.options ?? []) {
+      if (o.default !== undefined) init.option(o.flags, o.description, o.default);
+      else init.option(o.flags, o.description);
+    }
+    init.action(
+      async (_rootArg: string | undefined, _options: Record<string, unknown>, command: Command) => {
+        process.exitCode = await runCapability(workspaceInit, command);
+      },
+    );
+
+    const workspaceReportCmd = cmd
+      .command(workspaceReport.name)
+      .description(workspaceReport.summary)
+      .argument("[root]", "target workspace root (defaults to --root or cwd)");
+    addSharedFlags(workspaceReportCmd);
+    for (const o of workspaceReport.options ?? []) {
+      if (o.default !== undefined) workspaceReportCmd.option(o.flags, o.description, o.default);
+      else workspaceReportCmd.option(o.flags, o.description);
+    }
+    workspaceReportCmd.action(
+      async (_rootArg: string | undefined, _options: Record<string, unknown>, command: Command) => {
+        process.exitCode = await runCapability(workspaceReport, command);
       },
     );
 

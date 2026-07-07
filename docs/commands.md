@@ -188,16 +188,27 @@ with absolute root-anchored paths, and a `.aih-workspace.json` marker. Declare t
 With `--git`, the generated `.gitignore` defensively ignores all immediate child Git repos, including
 ones outside the declared workspace scope.
 
-Nested helpers keep the parent bridge current: `aih workspace link <path> --apply` registers a
-child repo (optional `--id`, `--repo-kind`, `--router`, `--owner`) and can author a parent-owned
-contract edge with `--from`, `--to`, `--kind`, `--contract`, and `--consumer`; missing edge repo IDs
-fail verification and the command writes only parent workspace files. `aih workspace snapshot
---lock --apply` records the declared child repo branch/SHA/remotes, and `aih workspace hydrate
-[root]` restores from that metadata by planning clones for missing children and clean checkouts for
-present children that are at the wrong recorded ref. Hydrate never edits remote configuration; a
-child with no recorded remote is skipped with an operator note. Until a declared child exists,
-`aih workspace --apply` emits a hydrate note and skips that child's graph MCP scope instead of
-wiring an empty path.
+Nested helpers keep the parent bridge current: `aih workspace init [root] --apply` is the nested
+parent scaffold; by default it writes only parent workspace files and explains that child onboarding
+is skipped. Add `--recursive` to run child `aih init --apply --context-dir <dir> --no-log` in each
+declared child repo after the parent scaffold. Missing or non-Git children are skipped with an
+operator note rather than being written through.
+
+`aih workspace link <path> --apply` registers a child repo (optional `--id`, `--repo-kind`,
+`--router`, `--owner`) and can author a parent-owned contract edge with `--from`, `--to`, `--kind`,
+`--contract`, and `--consumer`; missing edge repo IDs fail verification and the command writes only
+parent workspace files. `aih workspace snapshot --lock --apply` records the declared child repo
+branch/SHA/remotes, and `aih workspace hydrate [root]` restores from that metadata by planning clones
+for missing children and clean checkouts for present children that are at the wrong recorded ref.
+Hydrate never edits remote configuration; a child with no recorded remote is skipped with an
+operator note.
+
+`aih workspace report [root] --apply` refreshes the parent `.aih/workspace-report.html` artifact
+without writing child repos. Add `--refresh-children` to first run child
+`aih report --format html --apply --no-log` in declared child repos, then regenerate the parent
+rollup so the child report cells see the refreshed artifacts. Until a declared child exists,
+`aih workspace --apply` emits a hydrate note and skips that child's graph MCP scope instead of wiring
+an empty path.
 
 **Skill governance & supply chain**
 

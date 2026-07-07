@@ -11,7 +11,8 @@
 > with the honest status vocabulary below (plus a `NOT_COLLECTED` state). Trust-gated
 > skill acquisition is `aih workspace add` (`src/workspace/acquire.ts`). Child repo
 > registration and contract-edge authoring are `aih workspace link` (`src/workspace/link.ts`).
-> Not implemented: the recursive child-write opt-ins (`--recursive`, `--refresh-children`).
+> Recursive child-write opt-ins are implemented as `aih workspace init --recursive`
+> and `aih workspace report --refresh-children` (`src/workspace/index.ts`).
 > The body below is the original design record.
 
 ## One-line positioning
