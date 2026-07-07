@@ -127,9 +127,9 @@ export function workspaceRouterDoc(repos: readonly WorkspaceRepo[]): string {
     repos.length > 0
       ? repos.map(
           (repo) =>
-            `| ${repo.id} | ${repoDisplayPath(repo.path)} | ${repo.kind ?? ""} | ${childRouterPath(repo)} |`,
+            `| ${repo.id} | ${repoDisplayPath(repo.path)} | ${repo.kind ?? ""} | ${repo.owner ?? ""} | ${childRouterPath(repo)} |`,
         )
-      : ["| _none_ | _none_ |  | _run `aih workspace --repos ... --apply`_ |"];
+      : ["| _none_ | _none_ |  |  | _run `aih workspace --repos ... --apply`_ |"];
   return lines(
     "# Workspace Router",
     "",
@@ -137,8 +137,8 @@ export function workspaceRouterDoc(repos: readonly WorkspaceRepo[]): string {
     "",
     "## Repos",
     "",
-    "| Repo | Path | Role | Router |",
-    "|---|---|---|---|",
+    "| Repo | Path | Role | Owner | Router |",
+    "|---|---|---|---|---|",
     rows,
     "",
     "## Rule",

@@ -9,7 +9,7 @@
 > | 1 Workspace bootloader recognition | shipped | parent marker + bootloaders (`src/workspace/`); recognized by `src/report/workspace.ts` |
 > | 2 Manifest + report rollup | shipped | `src/workspace/manifest.ts`, `src/report/workspace.ts` |
 > | 3 Workspace router | shipped | `src/workspace/templates.ts` → `<contextDir>/workspace-router.md` |
-> | 4 Contract edges | shipped (manifest `edges[]` + `workspace-contracts.md`); the `aih workspace link` command was not implemented | `src/workspace/manifest.ts`, `templates.ts` |
+> | 4 Contract edges | shipped — manifest `edges[]`, `workspace-contracts.md`, and `aih workspace link` | `src/workspace/manifest.ts`, `src/workspace/link.ts`, `templates.ts` |
 > | 5 Snapshots | shipped — `aih workspace snapshot` | `src/workspace/snapshot.ts` → `.aih/workspace-snapshots/` |
 > | 6 Task plans | shipped — `aih workspace plan "<task>"` | `src/workspace/task-plan.ts` → `.aih/workspace-plans/` |
 > | 7 Skill vet | shipped (v0.4.0) | `src/skill/vet.ts`; GREEN/YELLOW/RED/UNKNOWN in `src/skill/verdict.ts` |
@@ -185,7 +185,7 @@ workspace-contracts.md generated/updated safely
 Suggested command:
 
 ```bash
-aih workspace link --from ui --to backend --kind api-contract --contract backend/openapi.yaml --consumer ui/src/api --apply
+aih workspace link backend --from ui --to backend --kind api-contract --contract backend/openapi.yaml --consumer ui/src/api --apply
 ```
 
 ## Step 5 — Workspace snapshots

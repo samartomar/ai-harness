@@ -30,6 +30,7 @@ describe("CLI program", () => {
     expect(workspace?.commands.map((c) => c.name()).sort()).toEqual([
       "add",
       "hydrate",
+      "link",
       "plan",
       "snapshot",
     ]);

@@ -28,6 +28,7 @@ import {
 } from "./detect.js";
 import { workspaceGitExecs, workspaceGitignoreWrite } from "./git.js";
 import { workspaceHydrateCommand } from "./hydrate.js";
+import { workspaceLinkCommand } from "./link.js";
 import {
   readWorkspaceManifest,
   type WorkspaceManifest,
@@ -385,9 +386,12 @@ function reposFromPathsWithExistingMetadata(
 }
 
 function repoMarkerEntry(repo: WorkspaceRepo): string | WorkspaceRepo {
-  return repo.kind !== undefined || repo.remote !== undefined || repo.ref !== undefined
-    ? repo
-    : repo.path;
+  const hasMetadata =
+    repo.kind !== undefined ||
+    repo.owner !== undefined ||
+    repo.remote !== undefined ||
+    repo.ref !== undefined;
+  return hasMetadata ? repo : repo.path;
 }
 
 function markerRepoEntries(
@@ -648,4 +652,4 @@ export const command: CommandSpec = {
   plan: workspacePlan,
 };
 
-export { snapshotCommand, taskPlanCommand, workspaceHydrateCommand };
+export { snapshotCommand, taskPlanCommand, workspaceHydrateCommand, workspaceLinkCommand };

@@ -24,7 +24,15 @@ describe("workspace manifest parser", () => {
       {
         schemaVersion: 1,
         contextDir: "canon",
-        repos: [{ id: "backend", path: "services/backend", kind: "api", extra: "kept" }],
+        repos: [
+          {
+            id: "backend",
+            path: "services/backend",
+            kind: "api",
+            owner: "platform",
+            extra: "kept",
+          },
+        ],
         edges: [
           {
             id: "ui-api",
@@ -48,6 +56,7 @@ describe("workspace manifest parser", () => {
         id: "backend",
         path: "services/backend",
         kind: "api",
+        owner: "platform",
         router: "ai-coding/RULE_ROUTER.md",
       },
     ]);

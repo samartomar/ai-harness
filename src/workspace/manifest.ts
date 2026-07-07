@@ -18,6 +18,7 @@ export interface WorkspaceRepo {
   id: string;
   path: string;
   kind?: string;
+  owner?: string;
   remote?: string;
   ref?: string;
   /** Path to the child repo's router, relative to the child repo root. */
@@ -94,6 +95,13 @@ function safeKind(raw: unknown): string | undefined {
   if (typeof raw !== "string" || raw.trim().length === 0) return undefined;
   const value = raw.trim();
   assertWorkspacePrintable(value, "workspace repo kind");
+  return value;
+}
+
+function safeOwner(raw: unknown): string | undefined {
+  if (typeof raw !== "string" || raw.trim().length === 0) return undefined;
+  const value = raw.trim();
+  assertWorkspacePrintable(value, "workspace repo owner");
   return value;
 }
 
@@ -202,12 +210,14 @@ function normalizeRepo(raw: unknown): WorkspaceRepo {
   const path = normalizeWorkspacePath(pathRaw, "workspace repo path");
   const id = typeof raw.id === "string" ? safeId(raw.id) : idFromPath(path);
   const kind = safeKind(raw.kind);
+  const owner = safeOwner(raw.owner);
   const remote = normalizeWorkspaceRemote(raw.remote);
   const ref = normalizeWorkspaceRef(raw.ref);
   return {
     id,
     path,
     ...(kind ? { kind } : {}),
+    ...(owner ? { owner } : {}),
     ...(remote ? { remote } : {}),
     ...(ref ? { ref } : {}),
     router: normalizeRouter(raw.router),

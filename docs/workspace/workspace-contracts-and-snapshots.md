@@ -45,6 +45,7 @@ or as an object:
       "id": "backend",
       "path": "services/backend",
       "kind": "api",
+      "owner": "platform",
       "remote": "https://github.com/acme/backend.git",
       "ref": "release/v1.5.0",
       "router": "ai-coding/RULE_ROUTER.md"
@@ -57,6 +58,8 @@ Implemented validation rejects parent traversal, absolute paths, Windows drive
 paths, duplicate repo ids, duplicate repo paths, dash-leading path segments, and
 Markdown/HTML/control syntax in printable fields. `remote` accepts safe HTTPS,
 SSH, `git+ssh`, and scp-like Git remotes; `ref` accepts safe Git ref syntax.
+Use `aih workspace link <path> --apply` to author repo entries without editing
+the JSON by hand; it writes only parent workspace files.
 
 ## Contract edges
 
@@ -97,6 +100,11 @@ The workspace report grades edges as:
 
 The edge check is an existence check, not semantic validation of an OpenAPI,
 GraphQL, protobuf, or other contract file.
+
+`aih workspace link <path> --from <repo-id> --to <repo-id> --kind <label>
+--contract <path> --consumer <path> --apply` authors these edges and regenerates
+the parent router/contracts docs. `--from` and `--to` must reference declared
+repo ids; missing ids fail verification and no child repo files are written.
 
 ## Snapshots
 

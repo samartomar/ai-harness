@@ -9,9 +9,10 @@
 > (`aih workspace plan` → `.aih/workspace-plans/`) shipped (`src/workspace/snapshot.ts`,
 > `task-plan.ts`). The parent report rollup is implemented in `src/report/workspace.ts`
 > with the honest status vocabulary below (plus a `NOT_COLLECTED` state). Trust-gated
-> skill acquisition is `aih workspace add` (`src/workspace/acquire.ts`). Not implemented:
-> an `aih workspace link` command and the recursive child-write opt-ins
-> (`--recursive`, `--refresh-children`). The body below is the original design record.
+> skill acquisition is `aih workspace add` (`src/workspace/acquire.ts`). Child repo
+> registration and contract-edge authoring are `aih workspace link` (`src/workspace/link.ts`).
+> Not implemented: the recursive child-write opt-ins (`--recursive`, `--refresh-children`).
+> The body below is the original design record.
 
 ## One-line positioning
 

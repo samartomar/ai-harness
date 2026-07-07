@@ -22,7 +22,12 @@ import {
   detectChildRepos,
 } from "../../src/workspace/detect.js";
 import { workspaceGitignorePatternForRepo } from "../../src/workspace/git.js";
-import { command, snapshotCommand, taskPlanCommand } from "../../src/workspace/index.js";
+import {
+  command,
+  snapshotCommand,
+  taskPlanCommand,
+  workspaceLinkCommand,
+} from "../../src/workspace/index.js";
 import { parseWorkspaceManifest } from "../../src/workspace/manifest.js";
 
 let parent: string;
@@ -551,8 +556,8 @@ describe("workspace.plan — generated artifacts", () => {
     const router = w.get("ai-coding/workspace-router.md")?.contents ?? "";
 
     expect(router).toContain("This is a federated workspace, not a monorepo.");
-    expect(router).toContain("| backend | backend/ |  | backend/ai-coding/RULE_ROUTER.md |");
-    expect(router).toContain("| ui | ui/ |  | ui/ai-coding/RULE_ROUTER.md |");
+    expect(router).toContain("| backend | backend/ |  |  | backend/ai-coding/RULE_ROUTER.md |");
+    expect(router).toContain("| ui | ui/ |  |  | ui/ai-coding/RULE_ROUTER.md |");
     expect(router).toContain("Before editing a child repo, read that child repo's router first.");
   });
 
@@ -1054,6 +1059,106 @@ describe("workspace.plan — generated artifacts", () => {
   });
 });
 
+describe("workspace link command", () => {
+  it("registers a child repo, preserves string repos, and authors a contract edge", async () => {
+    writeFileSync(
+      join(parent, ".aih-workspace.json"),
+      JSON.stringify(
+        {
+          contextDir: "ai-coding",
+          repos: ["ui"],
+          unknownFutureField: { keep: true },
+        },
+        null,
+        2,
+      ),
+    );
+
+    const actions = (
+      await workspaceLinkCommand.plan(
+        makeCtx({
+          path: "backend",
+          repoKind: "api",
+          owner: "platform",
+          from: "ui",
+          to: "backend",
+          kind: "api-contract",
+          contract: "backend/openapi.yaml",
+          consumer: "ui/src/api",
+        }),
+      )
+    ).actions;
+    const writes = writesByPath(actions);
+    const marker = writes.get(".aih-workspace.json")?.json as {
+      repos?: unknown[];
+      edges?: unknown[];
+      unknownFutureField?: unknown;
+    };
+    const router = writes.get("ai-coding/workspace-router.md")?.contents ?? "";
+    const contracts = writes.get("ai-coding/workspace-contracts.md")?.contents ?? "";
+
+    expect([...writes.keys()].sort()).toEqual([
+      ".aih-workspace.json",
+      "ai-coding/workspace-contracts.md",
+      "ai-coding/workspace-router.md",
+    ]);
+    expect(marker.unknownFutureField).toEqual({ keep: true });
+    expect(marker.repos).toEqual([
+      "ui",
+      {
+        id: "backend",
+        path: "backend",
+        kind: "api",
+        owner: "platform",
+        router: "ai-coding/RULE_ROUTER.md",
+      },
+    ]);
+    expect(marker.edges).toEqual([
+      {
+        id: "ui-backend-api-contract",
+        from: "ui",
+        to: "backend",
+        kind: "api-contract",
+        contractPath: "backend/openapi.yaml",
+        consumerPath: "ui/src/api",
+      },
+    ]);
+    expect(router).toContain(
+      "| backend | backend/ | api | platform | backend/ai-coding/RULE_ROUTER.md |",
+    );
+    expect(contracts).toContain(
+      "| ui-backend-api-contract | ui | backend | api-contract | backend/openapi.yaml | ui/src/api |",
+    );
+  });
+
+  it("fails verify without writing when an edge references a missing repo id", async () => {
+    writeFileSync(
+      join(parent, ".aih-workspace.json"),
+      JSON.stringify({ contextDir: "ai-coding", repos: ["ui"] }),
+    );
+
+    const actions = (
+      await workspaceLinkCommand.plan(
+        makeCtx({
+          path: "backend",
+          from: "ui",
+          to: "missing",
+          kind: "api-contract",
+        }),
+      )
+    ).actions;
+    const checks = await probeChecks(actions, makeCtx());
+
+    expect(writesByPath(actions).size).toBe(0);
+    expect(checks).toEqual([
+      expect.objectContaining({
+        verdict: "fail",
+        detail: expect.stringContaining("missing"),
+      }),
+    ]);
+  });
+});
+
 describe("workspace snapshot command", () => {
   it("writes a local snapshot of child branches, SHAs, and dirty state", async () => {
     child("ui");
@@ -1463,7 +1568,7 @@ describe("workspace — write-once executor behavior", () => {
         {
           contextDir: "ai-coding",
           repos: [
-            { id: "api", path: "api", kind: "backend" },
+            { id: "api", path: "api", kind: "backend", owner: "platform" },
             { id: "web", path: "web", kind: "frontend" },
           ],
           edges: [
@@ -1489,7 +1594,7 @@ describe("workspace — write-once executor behavior", () => {
     const parsed = parseWorkspaceManifest(raw, "ai-coding");
     expect(parsed.status).toBe("OK");
     expect(raw.repos).toEqual([
-      { id: "api", path: "api", kind: "backend" },
+      { id: "api", path: "api", kind: "backend", owner: "platform" },
       { id: "web", path: "web", kind: "frontend" },
       { id: "worker", path: "worker", router: "ai-coding/RULE_ROUTER.md" },
     ]);
