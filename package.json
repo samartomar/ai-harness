@@ -16,6 +16,8 @@
   },
   "files": [
     "dist",
+    "aih-packs.json",
+    "packs",
     "README.md",
     "NOTICE"
   ],

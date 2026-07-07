@@ -256,7 +256,10 @@ against the lock entry (`pack.pin-mismatch` blocks; a disagreeing manifest is ne
 the **CI gate** (coded findings: `pack.missing-approval`, `pack.pin-mismatch`,
 `pack.duplicate-name`). `add`/`remove-entry`/`init` author the manifest with refs **derived from
 the lock** (authoring never invents a pin; `init` seeds a pack from `skill approve --pack` tags; an
-emptied pack is dropped whole). `plan`/`install` drive the gated two-phase acquisition once per
+emptied pack is dropped whole). `scaffold` seeds a bundled first-party pack (for example
+`docs-quality`) into this repo's `packs/` tree and `aih-packs.json`, but it does not write
+`aih-skills.lock.json`; the repo still has to vet and approve the copied local source before the
+pack is ready. `plan`/`install` drive the gated two-phase acquisition once per
 source — **gate ALL sources before promoting ANY**, promote only the pack's refs (subset-exact),
 route drifted installs back through the gate, resume idempotently — fail-closed at every posture
 (clean approvals required even at `vibe`; `--acknowledge` refused, acknowledgements stay

@@ -76,6 +76,7 @@ describe("CLI program", () => {
       "install",
       "plan",
       "remove-entry",
+      "scaffold",
       "status",
       "uninstall",
       "validate",

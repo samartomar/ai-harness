@@ -15,7 +15,7 @@
 > | 6b Recursive child-write opt-ins | shipped — `aih workspace init --recursive`, `aih workspace report --refresh-children` | `src/workspace/index.ts`, `tests/workspace/recursive.test.ts` |
 > | 7 Skill vet | shipped (v0.4.0) | `src/skill/vet.ts`; GREEN/YELLOW/RED/UNKNOWN in `src/skill/verdict.ts` |
 > | 8 Card + approval lockfile | shipped (v0.4.0) — as committed `aih-skills.lock.json` + `<contextDir>/skill-cards/`, not `.aih/approved-skills.lock` | `src/skill/{card,approve,lockfile}.ts` |
-> | 9 Pack install | shipped (v0.5.0) — as `aih-packs.json` curation with `--pack <name>`; no built-in pack catalog | `src/pack/` |
+> | 9 Pack install | shipped (v0.5.0+) — as `aih-packs.json` curation with `--pack <name>` and `aih pack scaffold` for bundled first-party packs; no built-in pack catalog | `src/pack/` |
 > | 10 Internal marketplace | shipped (v0.6.0 slices on main) — build/validate/publish with signed SHA256SUMS | `src/marketplace/` |
 >
 > The body below is the original design record; the file names it predicted match the
