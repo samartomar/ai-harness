@@ -38,9 +38,12 @@ function commandLines(stack: RepoStack, prefix: string): string[] {
   if (stack.testRunner) out.push(`${prefix}Test: \`${stack.testRunner}\``);
   if (stack.buildCommand) out.push(`${prefix}Build: \`${stack.buildCommand}\``);
   if (stack.lintCommand) out.push(`${prefix}Lint: \`${stack.lintCommand}\``);
+  if (stack.formatCommand) out.push(`${prefix}Format: \`${stack.formatCommand}\``);
   if (stack.startCommand) out.push(`${prefix}Start: \`${stack.startCommand}\``);
   if (out.length === 0) {
-    out.push(`${prefix}No test/build/lint/start script is defined — add one before relying on it.`);
+    out.push(
+      `${prefix}No test/build/lint/format/start script is defined — add one before relying on it.`,
+    );
   }
   return out;
 }
@@ -48,7 +51,7 @@ function commandLines(stack: RepoStack, prefix: string): string[] {
 /** The primary Cursor rule: a stack summary plus the detected commands. */
 export function renderStackMdc(stack: RepoStack): string {
   const fm = frontmatter({
-    description: "Detected project stack and canonical build/test/lint commands.",
+    description: "Detected project stack and canonical build/test/lint/format commands.",
     globs: ["**/*"],
     alwaysApply: false,
   });

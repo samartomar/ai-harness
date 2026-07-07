@@ -12,6 +12,7 @@ export type CoverageDimension =
   | "test"
   | "build"
   | "lint"
+  | "format"
   | "db"
   | "packageManager"
   | "workspace";
@@ -27,6 +28,7 @@ export interface LanguageCoverageRow {
     test: string[];
     build: string[];
     lint: string[];
+    format: string[];
     db: string[];
     packageManager: string[];
     workspace?: string;
@@ -40,6 +42,7 @@ interface FixtureExpectation {
   test?: string[];
   build?: string[];
   lint?: string[];
+  format?: string[];
   db?: string[];
   packageManager?: string[];
   workspace?: string[];
@@ -80,7 +83,7 @@ function gradeWorkspace(stack: RepoStack, expected: readonly string[] = []): Cov
 
 function commandValues(
   stack: RepoStack,
-  field: "testRunner" | "buildCommand" | "lintCommand",
+  field: "testRunner" | "buildCommand" | "lintCommand" | "formatCommand",
 ): string[] {
   return dedupe([
     stack[field],
@@ -302,13 +305,14 @@ const FIXTURES: CoverageFixture[] = [
     id: "rust-cargo",
     ecosystem: "Rust Cargo",
     role: "wave-2-target",
-    note: "Cargo package manager plus test/build/clippy defaults should be visible; rustfmt remains outside the current single lint-command slot.",
+    note: "Cargo package manager plus test/build/clippy defaults and rustfmt format checks should be visible.",
     seed: seedRust,
     expected: {
       languages: ["Rust"],
       test: ["cargo test"],
       build: ["cargo build"],
       lint: ["cargo clippy"],
+      format: ["cargo fmt --check"],
       packageManager: ["cargo"],
     },
   },
@@ -367,7 +371,7 @@ const FIXTURES: CoverageFixture[] = [
     id: "node-python-rust-polyglot",
     ecosystem: "Node + Python + Rust polyglot",
     role: "wave-2-target",
-    note: "Secondary languages now keep root Node commands while exposing per-workspace commands and package managers for Python/Rust.",
+    note: "Secondary languages now keep root Node commands while exposing per-workspace commands, package managers, and Rust formatting for Python/Rust.",
     seed: seedPolyglot,
     expected: {
       languages: ["TypeScript/Node.js", "Python", "Rust"],
@@ -375,6 +379,7 @@ const FIXTURES: CoverageFixture[] = [
       test: ["npm test", "pytest", "cargo test"],
       build: ["npm run build", "cargo build"],
       lint: ["ruff check .", "cargo clippy"],
+      format: ["cargo fmt --check"],
       packageManager: ["npm", "poetry", "cargo"],
       workspace: ["polyglot"],
     },
@@ -389,6 +394,7 @@ function runFixture(fixture: CoverageFixture): LanguageCoverageRow {
     const tests = commandValues(stack, "testRunner");
     const builds = commandValues(stack, "buildCommand");
     const lints = commandValues(stack, "lintCommand");
+    const formats = commandValues(stack, "formatCommand");
     const managers = packageManagers(stack);
     return {
       id: fixture.id,
@@ -400,6 +406,7 @@ function runFixture(fixture: CoverageFixture): LanguageCoverageRow {
         test: gradeList(tests, fixture.expected.test),
         build: gradeList(builds, fixture.expected.build),
         lint: gradeList(lints, fixture.expected.lint),
+        format: gradeList(formats, fixture.expected.format),
         db: gradeList(stack.databases, fixture.expected.db),
         packageManager: gradeList(managers, fixture.expected.packageManager),
         workspace: gradeWorkspace(stack, fixture.expected.workspace),
@@ -410,6 +417,7 @@ function runFixture(fixture: CoverageFixture): LanguageCoverageRow {
         test: tests,
         build: builds,
         lint: lints,
+        format: formats,
         db: stack.databases,
         packageManager: managers,
         workspace: stack.workspaceTool,
@@ -432,6 +440,7 @@ function detectedSummary(row: LanguageCoverageRow): string {
     `test=${row.detected.test.join("+") || "none"}`,
     `build=${row.detected.build.join("+") || "none"}`,
     `lint=${row.detected.lint.join("+") || "none"}`,
+    `format=${row.detected.format.join("+") || "none"}`,
     `db=${row.detected.db.join("+") || "none"}`,
     `pm=${row.detected.packageManager.join("+") || "none"}`,
     `workspace=${row.detected.workspace ?? "none"}`,
@@ -451,8 +460,8 @@ export function renderLanguageCoverageMarkdown(rows: readonly LanguageCoverageRo
     "",
     "Wave-2 target order from this matrix: Python, then Rust, then polyglot coexistence with per-workspace commands. Node/TypeScript stays a lock baseline; CDK verbs ride as inferred deployment commands.",
     "",
-    "| Ecosystem | Role | Languages | Frameworks | Test | Build | Lint | DB | Package manager | Monorepo/workspace | Gap note |",
-    "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+    "| Ecosystem | Role | Languages | Frameworks | Test | Build | Lint | Format | DB | Package manager | Monorepo/workspace | Gap note |",
+    "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
   ];
   const table = rows.map((row) =>
     [
@@ -463,6 +472,7 @@ export function renderLanguageCoverageMarkdown(rows: readonly LanguageCoverageRo
       row.grades.test,
       row.grades.build,
       row.grades.lint,
+      row.grades.format,
       row.grades.db,
       row.grades.packageManager,
       row.grades.workspace,

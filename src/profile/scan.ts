@@ -23,6 +23,8 @@ export interface WorkspaceStack {
   buildCommand?: string;
   /** Workspace-local lint command, when derivable from that workspace's manifest. */
   lintCommand?: string;
+  /** Workspace-local format command, when derivable from that workspace's manifest. */
+  formatCommand?: string;
   /** Workspace-local start command, when declared by that workspace's manifest. */
   startCommand?: string;
   /** Workspace-local aggregate verification command, when declared by its manifest. */
@@ -64,6 +66,8 @@ export interface RepoStack {
   buildCommand?: string;
   /** How to lint, or undefined when the repo defines no lint command. */
   lintCommand?: string;
+  /** How to check formatting, or undefined when the repo defines no format command. */
+  formatCommand?: string;
   /** How to start the local app/server, or undefined when none is defined. */
   startCommand?: string;
   /** Aggregate quality gate, declared-only and never inferred. */
@@ -711,6 +715,7 @@ function synthesize(root: string, raw: Raw, opts: ScanOptions): RepoStack {
   let testRunner: string | undefined;
   let buildCommand: string | undefined;
   let lintCommand: string | undefined;
+  let formatCommand: string | undefined;
   let startCommand: string | undefined;
   let verifyCommand: string | undefined;
   let typecheckCommand: string | undefined;
@@ -758,6 +763,7 @@ function synthesize(root: string, raw: Raw, opts: ScanOptions): RepoStack {
       testRunner = "cargo test";
       buildCommand = "cargo build";
       lintCommand = "cargo clippy";
+      formatCommand = "cargo fmt --check";
     } else if (languages.includes("Python")) {
       testRunner = derivePythonTest(raw);
       lintCommand = derivePythonLint(raw);
@@ -829,6 +835,7 @@ function synthesize(root: string, raw: Raw, opts: ScanOptions): RepoStack {
     testRunner,
     buildCommand,
     lintCommand,
+    formatCommand,
     startCommand,
     verifyCommand,
     typecheckCommand,
@@ -875,6 +882,7 @@ function synthesizeWorkspaces(root: string, raw: Raw, opts: ScanOptions): Worksp
       ...(stack.testRunner ? { testRunner: stack.testRunner } : {}),
       ...(stack.buildCommand ? { buildCommand: stack.buildCommand } : {}),
       ...(stack.lintCommand ? { lintCommand: stack.lintCommand } : {}),
+      ...(stack.formatCommand ? { formatCommand: stack.formatCommand } : {}),
       ...(stack.startCommand ? { startCommand: stack.startCommand } : {}),
       ...(stack.verifyCommand ? { verifyCommand: stack.verifyCommand } : {}),
       ...(stack.typecheckCommand ? { typecheckCommand: stack.typecheckCommand } : {}),
@@ -901,6 +909,7 @@ function synthesizeRootSecondaryWorkspace(raw: Raw): WorkspaceStack | undefined 
       testRunner: "cargo test",
       buildCommand: "cargo build",
       lintCommand: "cargo clippy",
+      formatCommand: "cargo fmt --check",
     };
   }
   if (raw.rootToolchains.has("Go")) {
