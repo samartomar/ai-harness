@@ -8,7 +8,7 @@
 [![Node ≥20](https://img.shields.io/badge/node-%E2%89%A520-339933.svg)](package.json)
 
 <p align="center">
-  <img src="docs/assets/aih-overview.svg" alt="aih — extract corporate trust, self-heal the runtime, tune the workstation, bootstrap a governed repo, govern agent skills, and run AI-assisted coding in enterprise environments" width="100%">
+  <img src="docs/assets/aih-overview.svg" alt="aih v2.4.0 release-candidate governed-readiness overview showing Environment, Context, Policy, Execution, and Evidence pillars plus truth verify and the docs-lint claim gate" width="100%">
 </p>
 
 A cross-platform CLI that helps prepare developer workstations and repositories for
@@ -108,6 +108,7 @@ One honest line per command — the long-form behavior detail for every command 
 | [`aih heal`](docs/commands.md#aih-heal) | Diagnose and repair the broken runtime behind any TLS-intercepting proxy — corporate trust, npm, PATH, MCP pre-flight. |
 | [`aih tools`](docs/commands.md#aih-tools) | Install the agent shell tools the harness leans on (`rg`/`fd`/`jq`, `ast-grep`, `gh`, …) through the platform package manager. |
 | [`aih ready`](docs/commands.md#aih-ready) | Grade a blocker-aware readiness verdict: can a developer start work with an AI agent here, now? |
+| [`aih session-guard`](docs/commands.md#aih-session-guard) | Inspect session/action text offline for secret-like values and dangerous local actions. |
 | [`aih hardware`](docs/commands.md#aih-hardware) | Profile CPU/RAM/GPU and emit tuned Ollama/llama.cpp settings. |
 | [`aih vdi`](docs/commands.md#aih-vdi) | Detect VDI (Citrix/WorkSpaces/RES/RDP) and redirect caches + SQLite to local scratch. |
 | [`aih bootstrap`](docs/commands.md#aih-bootstrap) | Orchestrate the workstation 4-phase rollout (certs → hardware/vdi → telemetry). |
@@ -121,6 +122,7 @@ One honest line per command — the long-form behavior detail for every command 
 | [`aih scaffold`](docs/commands.md#aih-scaffold) | Scaffold repo hygiene — secret deny-list, pre-commit hook, `.gitignore` entries; `--canon legacy` adds the full context-doc family. |
 | [`aih bootstrap-ai`](docs/commands.md#aih-bootstrap-ai) | Emit and verify the repo's Layer-2 canon — `RULE_ROUTER.md`, per-CLI adapters, root bootloaders; `--verify` is the drift gate. |
 | [`aih contract`](docs/commands.md#aih-contract) | Synthesize the machine-readable repo contract (`project.json`) from the detected stack. |
+| [`aih capability`](docs/commands.md#aih-capability) | Resolve repo agent-capability needs into committed intent and a rebuildable machine cache. |
 | [`aih adopt`](docs/commands.md#aih-adopt) | Converge an existing AI canon onto aih's managed model without overwriting your work (brownfield migration). |
 | [`aih prune`](docs/commands.md#aih-prune) | Remove the stale per-CLI artifacts left for CLIs the repo no longer targets (reversible by default). |
 | [`aih uninstall`](docs/commands.md#aih-uninstall) | Remove the marker-backed core aih install footprint from a repo; `aih clean` is an alias. |
@@ -141,6 +143,7 @@ One honest line per command — the long-form behavior detail for every command 
 | [`aih evidence`](docs/commands.md#aih-evidence) | Package the audit trail aih already emits into one deterministic evidence bundle with a harness provenance block. |
 | [`aih truth`](docs/commands.md#aih-truth) | Create and verify an external project-truth sidecar; commit, version, claim, decision, acceptance-preflight, and agent-evidence assertions fail closed before a pack helps govern evidence. <!-- aih:claim CM-13 --> |
 | [`aih bundle`](docs/commands.md#aih-bundle) | Build a deterministic fleet bundle with checksums; `aih verify-bundle --require-signature` turns missing/unverifiable signatures into failures. |
+| [`aih verify-bundle`](docs/commands.md#aih-verify-bundle) | Re-check a fleet or evidence bundle's checksums and signature/provenance evidence. |
 | [`aih verify-release`](docs/commands.md#aih-verify-release) | Verify a published aih release: npm signatures, GitHub release cosign bundle, and tarball hash. |
 | [`aih secrets`](docs/commands.md#aih-secrets) | Scan for plaintext `.env*`/`secrets/` and write agent deny rules; `--verify` is the secret-scan CI gate. |
 | [`aih guardrails`](docs/commands.md#aih-guardrails) | Generate `.gitleaks.toml`, `.pre-commit-config.yaml`, and a CI license gate that blocks AGPL/strong-copyleft. |

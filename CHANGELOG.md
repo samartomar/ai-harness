@@ -21,6 +21,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   harness-rerun agent evidence: absent local requirements emit `blocked:environment`,
   vendor-specific requirements in vendor-neutral work emit `blocked:vendor-specific`,
   and stale file evidence claims fail closed instead of relying on prose. (#327)
+- The v2.4.0 docs currency pass now uses the BetterDoc skill, refreshes the README
+  image metadata, brings the README command surface back in line with command docs,
+  and scopes the overview SVG's project-truth wording to staged packs and drift
+  checks. (#328)
 - The language coverage matrix now grades the Node + Python + Rust polyglot
   fixture's framework coverage as good, reflecting the existing per-workspace
   command routing for secondary Python/Rust workspaces. (#263)
