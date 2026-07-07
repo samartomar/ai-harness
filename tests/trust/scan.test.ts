@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import {
   existsSync,
   linkSync,
@@ -58,6 +59,10 @@ function write(rel: string, body: string): void {
   const path = join(dir, rel);
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, body, "utf8");
+}
+
+function sha256Text(body: string): string {
+  return `sha256:${createHash("sha256").update(body, "utf8").digest("hex")}`;
 }
 
 function orgPolicy(trust: Record<string, unknown>): void {
@@ -866,6 +871,67 @@ describe("scanTrustTree", () => {
         }),
       ]),
     );
+  });
+
+  it("records skills-over-MCP version, egress, and _manifest sha evidence", async () => {
+    const manifest = JSON.stringify({ name: "clean", files: ["SKILL.md"] });
+    write(
+      ".mcp.json",
+      JSON.stringify({
+        mcpServers: {
+          skills: {
+            command: "uvx",
+            args: ["fastmcp==3.2.4", "run", "locked_skills.py"],
+            provider: "SkillsDirectoryProvider",
+            resources: ["skill://clean/_manifest"],
+            _manifest: manifest,
+            reload: false,
+          },
+        },
+      }),
+    );
+
+    const checks = await scanTrustTree(dir, { posture: "enterprise" });
+    const details = checks.map((check) => check.detail ?? "").join("\n");
+
+    expect(checks.every((check) => check.verdict !== "fail")).toBe(true);
+    expect(details).toContain("skills-over-MCP provider=SkillsDirectoryProvider");
+    expect(details).toContain("server=fastmcp==3.2.4");
+    expect(details).toContain("egress=none");
+    expect(details).toContain(`_manifest=${sha256Text(manifest)}`);
+    expect(details).toContain("reload=disabled");
+  });
+
+  it("flags skills-over-MCP hot reload as unpinned drift risk like @latest", async () => {
+    write(
+      ".mcp.json",
+      JSON.stringify({
+        mcpServers: {
+          skills: {
+            command: "uvx",
+            args: ["fastmcp==3.2.4", "run", "locked_skills.py", "--reload"],
+            provider: "SkillsDirectoryProvider",
+            resources: ["skill://clean/_manifest"],
+            _manifest: "clean manifest",
+          },
+        },
+      }),
+    );
+
+    const vibe = await scanTrustTree(dir, { posture: "vibe" });
+    const vibeDetails = vibe.map((check) => check.detail ?? "").join("\n");
+    expect(vibe.every((check) => check.verdict !== "fail")).toBe(true);
+    expect(vibeDetails).toContain("warning-only (vibe)");
+    expect(vibeDetails).toContain("skills-over-MCP hot-reload drift risk");
+
+    const enterprise = await scanTrustTree(dir, { posture: "enterprise" });
+    const denied = enterprise.find((check) => check.code === "mcp.policy-denied");
+    expect(denied).toMatchObject({
+      verdict: "fail",
+      code: "mcp.policy-denied",
+    });
+    expect(denied?.detail).toContain("unpinned supply chain");
+    expect(denied?.detail).toContain("skills-over-MCP hot-reload drift risk");
   });
 
   it("runs raw prompt-injection lint over incoming MCP descriptions at every posture", async () => {

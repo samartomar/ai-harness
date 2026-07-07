@@ -54,12 +54,26 @@ export type McpCredentials = "none" | "oauth" | "token";
  */
 export type McpSupplyChain = "pinned" | "unpinned" | "hosted-remote";
 
+/** Extra evidence for FastMCP skills-over-MCP servers exposing skill:// resources. */
+export interface SkillsProviderEvidence {
+  provider:
+    | "SkillProvider"
+    | "SkillsProvider"
+    | "SkillsDirectoryProvider"
+    | "ClaudeSkillsProvider"
+    | "skills";
+  serverVersion?: string;
+  manifestSha256?: string;
+  hotReload: boolean;
+}
+
 /** Risk axes every server entry carries (see the per-type docs above). */
 interface McpRisk {
   classification: McpClassification;
   egress: McpEgress;
   credentials: McpCredentials;
   supplyChain: McpSupplyChain;
+  skillsProvider?: SkillsProviderEvidence;
 }
 
 export interface StdioServer extends McpRisk {

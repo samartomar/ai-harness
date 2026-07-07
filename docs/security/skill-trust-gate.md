@@ -189,6 +189,26 @@ skills with MCP servers
 skills with generated code execution
 ```
 
+## Skills-over-MCP governance
+
+Incoming MCP configs that expose FastMCP skills resources (`SkillsProvider`,
+`SkillsDirectoryProvider`, `ClaudeSkillsProvider`, or `skill://` resources) are
+governed as part of the trust scan:
+
+- the FastMCP server version is read from exact pins such as
+  `fastmcp==3.2.4`;
+- local skills-over-MCP stdio servers are classified as zero-egress unless they
+  use a hosted URL;
+- the `_manifest` payload or recorded manifest hash is written into the scan
+  evidence as a SHA-256 value;
+- reload mode (`reload=true`, `--reload`, or equivalent hot reload fields) is
+  treated as supply-chain drift, the same policy path as a floating `@latest`
+  launch.
+
+Enterprise posture denies unpinned or reload-enabled skills-over-MCP servers.
+Vibe and team postures leave them warning-only so reviewers still see the drift
+risk before promotion.
+
 ## RED policy
 
 Block when:
