@@ -38,6 +38,9 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The trust gate now recognizes skills-over-MCP shapes (`SkillsProvider` /
   `skill://`), records FastMCP version, egress, and `_manifest` SHA-256 evidence,
   and treats hot reload as supply-chain drift like `@latest`. (#275)
+- The FastMCP 3.x vs official `mcp` SDK comparison for skills-over-MCP is now
+  captured as a design note, including the conclusion that framework choice is
+  orthogonal to the governance gap. (#276)
 - `aih certs` now documents its corporate-trust propagation for git, Go, JVM
   tools, Gradle, and Maven alongside Docker daemon guidance and the existing
   npm, pip, cargo, and conda coverage. (#267)
