@@ -7,12 +7,12 @@ Wave-2 target order from this matrix: Python, then Rust, then polyglot coexisten
 | Ecosystem | Role | Languages | Frameworks | Test | Build | Lint | DB | Package manager | Monorepo/workspace | Gap note |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | Node/TypeScript daily stack | lock | good | good | good | good | good | good | good | good | Covered baseline: npm, TS, Angular/Vue/React, Express, PostgreSQL, and AWS CDK labels stay good; do not enhance Node here. CDK verbs are emitted as inferred commands. |
-| Python pyproject | wave-2-target | good | good | good | good | good | good | good | good | Python primary-stack coverage now detects Poetry plus manifest-backed pytest/ruff when no root package.json exists; polyglot Python commands wait for per-workspace command routing. |
+| Python pyproject | wave-2-target | good | good | good | good | good | good | good | good | Python primary-stack coverage detects Poetry plus manifest-backed pytest/ruff when no root package.json exists; polyglot Python commands are covered by the per-workspace fixture. |
 | Rust Cargo | wave-2-target | good | good | good | good | good | good | good | good | Cargo package manager plus test/build/clippy defaults should be visible; rustfmt remains outside the current single lint-command slot. |
 | Go module | watch | good | good | good | good | none | good | none | good | Default test/build commands are present; framework, lint, DB, and workspace detail are thin. |
 | Java Maven | watch | good | good | good | good | none | good | none | good | Maven defaults are present; framework, lint, DB, and richer build-tool metadata are not. |
 | .NET | watch | good | good | good | good | none | good | none | good | .NET default test/build commands are present; framework, lint, DB, and solution detail are thin. |
-| Node + Python + Rust polyglot | wave-2-target | good | partial | good | good | good | good | good | good | Secondary languages now keep root Node commands while exposing per-workspace commands and package managers for Python/Rust. |
+| Node + Python + Rust polyglot | wave-2-target | good | good | good | good | good | good | good | good | Secondary languages now keep root Node commands while exposing per-workspace commands and package managers for Python/Rust. |
 
 ## Fixture Detection
 

@@ -8,6 +8,9 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- The language coverage matrix now grades the Node + Python + Rust polyglot
+  fixture's framework coverage as good, reflecting the existing per-workspace
+  command routing for secondary Python/Rust workspaces. (#263)
 - `aih docs-lint` now runs the BetterDoc slop-lint phrase and claim guidance as
   a native read-only CLI check with coded findings for blocked documentation
   prose and missing rules. (#262)

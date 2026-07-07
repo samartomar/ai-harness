@@ -73,6 +73,7 @@ describe("language coverage benchmark", () => {
     expect(rust.note).toContain("Cargo package manager");
 
     expect(polyglot.grades.languages).toBe("good");
+    expect(polyglot.grades.frameworks).toBe("good");
     expect(polyglot.grades.test).toBe("good");
     expect(polyglot.grades.build).toBe("good");
     expect(polyglot.grades.packageManager).toBe("good");
