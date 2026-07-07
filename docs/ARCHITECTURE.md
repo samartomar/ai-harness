@@ -70,7 +70,10 @@ operator's AI coding tool to use.
 ## Release Integrity
 
 Published releases use npm trusted publishing, GitHub release assets, SPDX SBOMs,
-checksums, and a keyless cosign bundle for `SHA256SUMS.txt`. This provides SLSA
-v1 provenance material, but the project does not claim a SLSA level. Operators
-can run `aih verify-release [version]` to verify npm signatures, the GitHub
-release cosign bundle, and the npm tarball hash.
+checksums, a keyless cosign bundle for `SHA256SUMS.txt`, and GitHub build
+provenance. Tagged release artifacts claim SLSA Build L2 under the SLSA v1.2
+Build track; the evidence map and the Build L3 gap are documented in
+[security/release-slsa.md](security/release-slsa.md). Operators can run
+`aih verify-release [version]` to verify npm signatures, the GitHub release
+cosign bundle, and the npm tarball hash, and can verify the release provenance
+attestation with `gh attestation verify`.

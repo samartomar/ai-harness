@@ -411,9 +411,10 @@ aih usage --rollup ../repo-a,../repo-b
 - **Supply chain** — every release publishes via npm **Trusted Publishing** with build
   **provenance** and ships an **SPDX SBOM**, a **SHA256 checksum**, its keyless **cosign
   signature bundle** (`SHA256SUMS.txt.sigstore.json`), and the Sigstore **build-provenance
-  bundle** on the GitHub Release. This is SLSA v1 provenance material, but the project does
-  not claim a SLSA level. Verify an install with `npm audit signatures` and
-  `aih verify-release [version]`.
+  bundle** on the GitHub Release. Tagged release artifacts claim
+  [SLSA Build L2](docs/security/release-slsa.md) under SLSA v1.2; no Build L3 claim is
+  made. Verify an install with `npm audit signatures`, `aih verify-release [version]`,
+  and provenance-aware policy such as `gh attestation verify`.
 - **Support** — [SUPPORT.md](SUPPORT.md) · **Security** — [SECURITY.md](SECURITY.md)
   (private reporting) · **Contributing** — [CONTRIBUTING.md](CONTRIBUTING.md).
 

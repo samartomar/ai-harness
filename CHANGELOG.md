@@ -26,6 +26,9 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The reserved `@aihq/enterprise` extension point now has a shipped capability
   spec plus probe-contract coverage for literal-name resolution and local-only
   fallback behavior. (#269)
+- Tagged release artifacts now carry a documented SLSA v1.2 Build L2 claim,
+  with the supporting release-workflow evidence and the remaining Build L3 gap
+  recorded in the security docs. (#270)
 - `aih certs` now documents its corporate-trust propagation for git, Go, JVM
   tools, Gradle, and Maven alongside Docker daemon guidance and the existing
   npm, pip, cargo, and conda coverage. (#267)

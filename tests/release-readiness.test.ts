@@ -38,6 +38,28 @@ describe("release readiness metadata", () => {
     expect(release).not.toContain("NODE_AUTH_TOKEN");
   });
 
+  it("documents the SLSA Build L2 release claim and the Build L3 gap", () => {
+    const doc = read("docs/security/release-slsa.md");
+    expect(doc).toContain("SLSA v1.2");
+    expect(doc).toContain("SLSA Build L2");
+    expect(doc).toContain("No Build L3 claim is made");
+    expect(doc).toContain(".github/workflows/release.yml");
+    expect(doc).toContain("actions/attest-build-provenance");
+    expect(doc).toContain("npm publish ./*.tgz --provenance --access public");
+    expect(doc).toContain("aih verify-release [version]");
+    expect(doc).toContain("gh attestation verify");
+  });
+
+  it("keeps top-level release docs aligned with the SLSA level claim", () => {
+    const readme = read("README.md");
+    const architecture = read("docs/ARCHITECTURE.md");
+    for (const text of [readme, architecture]) {
+      expect(text).toContain("SLSA Build L2");
+      expect(text).not.toContain("meets SLSA Build L3");
+      expect(text).not.toContain("SLSA v1 provenance material, but the project does not claim");
+    }
+  });
+
   it("ships basic repository governance files for controlled rollout", () => {
     expect(existsSync(join(root, ".github", "CODEOWNERS"))).toBe(true);
     expect(existsSync(join(root, "DCO.md"))).toBe(true);
