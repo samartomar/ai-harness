@@ -28,6 +28,9 @@ that carry their own status line.
 - [product/pack-manifest.md](product/pack-manifest.md) — the committed `aih-packs.json`
   curation manifest: schema, worked example, and the bump-pin → re-vet → re-approve →
   install flow. Shipped.
+- [product/enterprise-extension-point.md](product/enterprise-extension-point.md) —
+  shipped contract for the reserved `@aihq/enterprise` optional command-pack seam and
+  local-only fallback.
 - [product/enterprise-packaging-model.md](product/enterprise-packaging-model.md) —
   enterprise skill pack model; the earlier design exploration behind
   pack-manifest.md. Design/proposed.

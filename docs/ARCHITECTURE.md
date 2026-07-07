@@ -58,7 +58,10 @@ gateway, and observability-backend setup remains `doc` output for a human.
 
 The only optional peer package the open-source CLI probes for is
 `@aihq/enterprise`, by literal name from the install tree that loaded `aih`.
-It is a reserved extension point. Not installed means local-only behavior.
+It is a reserved extension point for additive enterprise `CommandSpec` commands;
+the contract and fallback are defined in
+[product/enterprise-extension-point.md](product/enterprise-extension-point.md).
+Not installed means local-only behavior.
 
 MCP configuration is generated per supported CLI. MCP servers are never loaded
 just-in-case by the CLI; they are emitted into tool-specific config for the

@@ -187,6 +187,33 @@ describe("loadExternalCommands — install-tree boundary", () => {
     }
   });
 
+  it("resolves and imports only the literal reserved package specifier", async () => {
+    const roots = allowedPluginRoots();
+    const first = roots[0];
+    if (first === undefined) throw new Error("test env resolved no allowed plugin roots");
+    const inside = mkdtempSync(join(first, "aih-literal-"));
+    const seen: string[] = [];
+    try {
+      const res = await loadExternalCommands(builtins, {
+        resolver: (specifier) => {
+          seen.push(`resolve:${specifier}`);
+          return inside;
+        },
+        importer: (specifier) => {
+          seen.push(`import:${specifier}`);
+          return Promise.resolve({ aihCommands: [validSpec("zap")] });
+        },
+        env: { AIH_ENTERPRISE_PACKAGE: "evil-package", AIH_NO_PLUGINS: "0" },
+      });
+
+      expect(seen).toEqual([`resolve:${PLUGIN_PACKAGE}`, `import:${PLUGIN_PACKAGE}`]);
+      expect(res.warnings).toEqual([]);
+      expect(res.commands.map((c) => c.name)).toEqual(["zap"]);
+    } finally {
+      rmSync(inside, { recursive: true, force: true });
+    }
+  });
+
   it("a resolver module-not-found naming the package is the silent unenrolled case", async () => {
     let calls = 0;
     const res = await loadExternalCommands(builtins, {
