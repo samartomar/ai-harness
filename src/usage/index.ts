@@ -1,6 +1,8 @@
 import { join, resolve } from "node:path";
 import { resolveTargets } from "../internals/cli-detect.js";
 import { readIfExists } from "../internals/fsxn.js";
+import { gitRead } from "../internals/git.js";
+import { repoLocalHookPath } from "../internals/git-hooks.js";
 import { aihIgnoreWrite } from "../internals/gitignore.js";
 import {
   type Action,
@@ -27,7 +29,17 @@ import {
 } from "./zed.js";
 
 const RECORDER_PATH = join(".aih", "usage-record.mjs");
-const GIT_HOOK_PATH = join(".git", "hooks", "post-commit");
+
+interface PostCommitTarget {
+  path?: string;
+  hooksPath?: string;
+}
+
+async function postCommitTarget(ctx: PlanContext): Promise<PostCommitTarget> {
+  const raw = await gitRead(ctx, ["config", "--get", "core.hooksPath"]);
+  const path = repoLocalHookPath(ctx.root, "post-commit", raw);
+  return path === undefined ? { hooksPath: raw } : { path, hooksPath: raw };
+}
 
 /**
  * Per-tool behavioral-capture mechanism (verified Jun 2026). The universal git
@@ -57,8 +69,9 @@ function coverageDoc(clis: string[]): Action {
   return doc(
     "Usage capture — coverage + how the per-tool skill/MCP layer wires in",
     lines(
-      "The UNIVERSAL git floor (installed above) records commit activity for EVERY tool —",
-      "it keys off the commit, not the agent, so it works for whatever CLI made the change.",
+      "The UNIVERSAL git floor (installed above) records commit activity for EVERY tool",
+      "and runs `aih track --apply` so report history accrues one sample per commit.",
+      "It keys off the commit, not the agent, so it works for whatever CLI made the change.",
       "It carries no skill/MCP attribution; that comes from per-tool hooks that call:",
       "",
       "  node .aih/usage-record.mjs <tool> skill <name> <ecc|canon|user>",
@@ -121,10 +134,11 @@ function usageRollupPlan(ctx: PlanContext, roots: string[]): Plan {
 
 /**
  * `aih usage` — install the multi-tool usage-capture layer. Writes the recorder +
- * a universal git `post-commit` hook (records commit activity for ANY tool, under
- * `--apply`), ensures `.aih/` is gitignored, and documents the per-tool skill/MCP
- * hook wiring. Read-only/local: it generates capture artifacts and never calls out.
- * Usage accrues in `.aih/usage.jsonl`, which `aih report` renders.
+ * a universal git `post-commit` hook (records commit activity for ANY tool and
+ * runs `aih track --apply`, under `--apply`), ensures `.aih/` is gitignored, and
+ * documents the per-tool skill/MCP hook wiring. Read-only/local: it generates
+ * capture artifacts and never calls out. Usage accrues in `.aih/usage.jsonl`, and
+ * history accrues in `.aih/history.jsonl`; `aih report` renders both.
  */
 async function usagePlan(ctx: PlanContext): Promise<Plan> {
   const roots = rollupRoots(ctx);
@@ -138,6 +152,7 @@ async function usagePlan(ctx: PlanContext): Promise<Plan> {
       : await readZedUsageEvents(zedDbPath, ctx.root, {
           caseSensitivePaths: ctx.host.platform === "linux",
         });
+  const hookTarget = await postCommitTarget(ctx);
   const actions: Action[] = [
     writeText(
       RECORDER_PATH,
@@ -145,16 +160,35 @@ async function usagePlan(ctx: PlanContext): Promise<Plan> {
       "usage recorder (.aih/usage-record.mjs) — appends one event per hook call",
       { mode: 0o755 },
     ),
-    writeText(
-      GIT_HOOK_PATH,
-      gitPostCommitHook(),
-      "universal git post-commit hook — records commit activity for any tool (best-effort)",
-      { mode: 0o755, once: true },
-    ),
     aihIgnoreWrite(ctx.root),
     ...usageHookActions(ctx, clis),
     coverageDoc(clis),
   ];
+  if (hookTarget.path !== undefined) {
+    actions.splice(
+      1,
+      0,
+      writeText(
+        hookTarget.path,
+        gitPostCommitHook(),
+        "universal git post-commit hook — records commit activity and track history for any tool (best-effort)",
+        { mode: 0o755, once: true },
+      ),
+    );
+  } else {
+    actions.push(
+      doc(
+        "active Git hook path is outside this repo — chain aih capture there",
+        lines(
+          "Git is configured to read hooks from a path aih cannot safely manage as",
+          "a repo-local hook, so aih did NOT write a repo file that Git would ignore.",
+          "Append this best-effort block to that active post-commit hook instead:",
+          "",
+          gitPostCommitChainSnippet(),
+        ),
+      ),
+    );
+  }
   if (zedDbPath !== undefined && zedEvents.length > 0) {
     actions.push(
       writeText(
@@ -167,16 +201,22 @@ async function usagePlan(ctx: PlanContext): Promise<Plan> {
 
   // A pre-existing post-commit hook is preserved (write-once above), so the capture
   // would otherwise never fire. Hand over a chainable snippet to add to it. (AIH-USAGE-001)
-  const existingHook = readIfExists(join(ctx.root, GIT_HOOK_PATH));
-  if (existingHook !== undefined && !existingHook.includes("usage-record.mjs")) {
+  const existingHook =
+    hookTarget.path === undefined ? undefined : readIfExists(join(ctx.root, hookTarget.path));
+  const needsUsageCapture =
+    existingHook !== undefined && !existingHook.includes("usage-record.mjs");
+  const needsTrackCapture =
+    existingHook !== undefined && !existingHook.includes("aih track --apply");
+  if (existingHook !== undefined && (needsUsageCapture || needsTrackCapture)) {
     actions.push(
       doc(
-        "existing post-commit hook detected — chain aih usage capture into it",
+        "existing post-commit hook detected — chain aih capture into it",
         lines(
-          "A `.git/hooks/post-commit` hook already exists, so aih did NOT overwrite it.",
-          "Append this best-effort block to that hook so commit activity is still captured:",
+          `A \`${hookTarget.path}\` hook already exists, so aih did NOT overwrite it.`,
+          "Append this best-effort block to that hook so commit activity and track",
+          "history are still captured:",
           "",
-          gitPostCommitChainSnippet(),
+          gitPostCommitChainSnippet({ usage: needsUsageCapture, track: needsTrackCapture }),
         ),
       ),
     );

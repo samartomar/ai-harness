@@ -352,23 +352,27 @@ network call.
 
 Record one metrics sample (commits 7d, LOC delta, adoption score, branch count, tracked files) to
 `.aih/history.jsonl` — the time-series behind `aih report` trends. Read-only git/filesystem;
-dry-run previews, `--apply` appends (idempotent per commit). Wire into a commit / agent-stop hook
-so history accumulates — e.g. Kiro's `metrics-on-stop` hook (`aih bootstrap-ai --cli kiro`) runs
-`aih track --apply` automatically.
+dry-run previews, `--apply` appends (idempotent per commit). `aih usage --apply` installs the
+universal post-commit hook that runs `aih track --apply` automatically when Git uses the default or
+a repo-local hooks path; external/global `core.hooksPath` configurations get chain guidance instead.
+Kiro's `metrics-on-stop` hook (`aih bootstrap-ai --cli kiro`) records on agent stop.
 
 ## aih usage
 
 Install the **multi-tool usage-capture** layer → `.aih/usage.jsonl` (rendered by `aih report` and
 `aih report --v9`). The **universal floor** is a git `post-commit` hook that records commit
-activity for **any** tool (it keys off the commit, not the agent). The per-tool **skill/MCP** layer
-wires in via each CLI's verified local hook (Claude/Codex/Cursor/Gemini/Copilot/Windsurf/OpenCode/
-Kimi/Kiro/Antigravity). Zed has no hook surface, so `aih usage --apply --cli zed` imports matching
-local `threads.db` rows read-only instead; pass `--zed-threads-db <path>` to point at a specific
-database. Zed rows without matching repo folder metadata are skipped, and continued threads refresh
-previous imported rows by stable local event id instead of duplicating old tool calls. The importer is
-best-effort: the active Node runtime must expose its built-in SQLite reader, and compressed Zed rows
-also need runtime zstd support; if either is unavailable, hook setup still succeeds and no Zed rows are
-imported.
+activity for **any** tool (it keys off the commit, not the agent) and runs `aih track --apply` so
+`.aih/history.jsonl` accumulates one deduped trend sample per commit. It writes the active
+repo-local hook path (`.git/hooks` by default, or e.g. `.githooks` when configured); external/global
+`core.hooksPath` values are left untouched and receive a chainable snippet. The per-tool
+**skill/MCP** layer wires in via each CLI's verified local hook (Claude/Codex/Cursor/Gemini/
+Copilot/Windsurf/OpenCode/Kimi/Kiro/Antigravity). Zed has no hook surface, so
+`aih usage --apply --cli zed` imports matching local `threads.db` rows read-only instead; pass
+`--zed-threads-db <path>` to point at a specific database. Zed rows without matching repo folder
+metadata are skipped, and continued threads refresh previous imported rows by stable local event id
+instead of duplicating old tool calls. The importer is best-effort: the active Node runtime must
+expose its built-in SQLite reader, and compressed Zed rows also need runtime zstd support; if either
+is unavailable, hook setup still succeeds and no Zed rows are imported.
 Skills aggregate by source (ECC/canon/user), and `--rollup <repo,repo>` aggregates local logs across
 repos on demand. Usage is local activity counts only — **no cost, no prompts, no arguments**,
 machine-local and gitignored. Session rows may include deterministic token/cache counters (`input`,

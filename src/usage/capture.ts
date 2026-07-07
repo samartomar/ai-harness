@@ -6,6 +6,10 @@ import { lines } from "../internals/render.js";
  * best-effort (a failure never blocks a commit or an agent turn).
  */
 
+function trackSnapshotCommand(): string {
+  return `node -e "try{require('node:child_process').execSync('aih track --apply',{stdio:'ignore',timeout:12000})}catch{}"`;
+}
+
 /**
  * `.aih/usage-record.mjs` — a tiny, dependency-free Node recorder. Hooks invoke it
  * as `node .aih/usage-record.mjs <tool> <kind> [name] [source|server]` and it
@@ -221,17 +225,20 @@ export function usageRecorderScript(): string {
 /**
  * `.git/hooks/post-commit` — the UNIVERSAL floor. Works for every AI tool (and
  * hand-written code) because it keys off the commit, not the agent. Records commit
- * activity (LOC/files) with no tool attribution. Never blocks the commit.
+ * activity (LOC/files) with no tool attribution and triggers the history snapshot
+ * behind report trends. Never blocks the commit.
  */
 export function gitPostCommitHook(): string {
   return lines(
     "#!/bin/sh",
-    "# aih-managed: record commit activity for `aih report` usage analytics.",
+    "# aih-managed: record commit activity + history for `aih report` analytics.",
     "# Universal (any tool), best-effort — exits 0 so it can never block a commit.",
     'root="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0',
+    'cd "$root" || exit 0',
     'if [ -f "$root/.aih/usage-record.mjs" ]; then',
     '  node "$root/.aih/usage-record.mjs" git commit >/dev/null 2>&1 || true',
     "fi",
+    `${trackSnapshotCommand()} >/dev/null 2>&1 || true`,
     "exit 0",
   );
 }
@@ -241,13 +248,26 @@ export function gitPostCommitHook(): string {
  * overwrites a user's hook). Namespaced var, no `exit`, `|| true` everywhere — so it
  * slots into the middle of someone else's hook without short-circuiting or failing it.
  */
-export function gitPostCommitChainSnippet(): string {
-  return lines(
-    "# --- aih usage capture (best-effort; never blocks the commit) ---",
-    'aih_root="$(git rev-parse --show-toplevel 2>/dev/null)"',
-    'if [ -n "$aih_root" ] && [ -f "$aih_root/.aih/usage-record.mjs" ]; then',
-    '  node "$aih_root/.aih/usage-record.mjs" git commit >/dev/null 2>&1 || true',
-    "fi",
-    "# --- end aih usage capture ---",
-  );
+export function gitPostCommitChainSnippet(
+  opts: { usage?: boolean; track?: boolean } = { usage: true, track: true },
+): string {
+  const body: string[] = ["# --- aih post-commit capture (best-effort; never blocks) ---"];
+  if (opts.usage !== false) {
+    body.push(
+      'aih_root="$(git rev-parse --show-toplevel 2>/dev/null)"',
+      'if [ -n "$aih_root" ] && [ -f "$aih_root/.aih/usage-record.mjs" ]; then',
+      '  (cd "$aih_root" && node "$aih_root/.aih/usage-record.mjs" git commit) >/dev/null 2>&1 || true',
+      "fi",
+    );
+  }
+  if (opts.track !== false) {
+    body.push(
+      'aih_root="$(git rev-parse --show-toplevel 2>/dev/null)"',
+      'if [ -n "$aih_root" ]; then',
+      `  (cd "$aih_root" && ${trackSnapshotCommand()}) >/dev/null 2>&1 || true`,
+      "fi",
+    );
+  }
+  body.push("# --- end aih post-commit capture ---");
+  return lines(...body);
 }
