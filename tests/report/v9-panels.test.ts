@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -18,7 +18,7 @@ import {
   supportDigest,
   winsDigest,
 } from "../../src/report/v9-panels.js";
-import { escHtml, renderSkillGovernance } from "../../src/report/v9-render.js";
+import { escHtml, renderSkillGovernance, renderWins } from "../../src/report/v9-render.js";
 import type { SupportTemplate } from "../../src/support/render.js";
 
 describe("escHtml — attribute-safe HTML escaping", () => {
@@ -430,16 +430,52 @@ describe("outcomeDeltasDigest", () => {
 });
 
 interface WinsData {
-  items: Array<{ name: string; scope: string; status: string; detail: string; when: string }>;
+  items: Array<{
+    name: string;
+    scope: string;
+    status: "fixed" | "broken" | "na";
+    detail: string;
+    when: string;
+  }>;
   cleared: number;
   runs: number;
+  since: string;
   openOverTime: number[];
+  ledger?: { runs: number; verificationFail: number; supportFindings: number };
 }
 
 describe("winsDigest", () => {
-  it("returns undefined when heal has never run", () => {
-    ledger({ capability: "report", status: "success", startedAt: "2026-06-01T00:00:00Z" });
+  it("returns undefined without any run history", () => {
     expect(winsDigest(ctx())).toBeUndefined();
+  });
+
+  it("surfaces run-ledger counts even before heal has populated remediation rows", () => {
+    ledger(
+      {
+        capability: "report",
+        status: "failed",
+        startedAt: "2026-06-01T00:00:00Z",
+        verification: { pass: 4, fail: 2, skip: 0 },
+        support: { findings: 3, templates: 1 },
+      },
+      {
+        capability: "report",
+        status: "failed",
+        startedAt: "2026-06-02T00:00:00Z",
+        verification: { fail: "9" },
+        support: { findings: "8" },
+      },
+    );
+    const d = winsDigest(ctx());
+    const data = d?.data as WinsData;
+    expect(d?.describe).toBe("Remediation — no heal history");
+    expect(d?.text).toContain("No heal history");
+    expect(d?.text).toContain("2 verification.fail · 3 support.findings");
+    expect(data.items).toEqual([]);
+    expect(data.ledger).toEqual({ runs: 2, verificationFail: 2, supportFindings: 3 });
+    expect(renderWins(data)).toContain("support.findings");
+    expect(renderWins(data)).toContain("ledger rows");
+    expect(renderWins(data)).not.toContain("Runtime is green");
   });
 
   it("summarizes the heal remediation ledger (cumulative + per-scope rows)", () => {
@@ -449,6 +485,13 @@ describe("winsDigest", () => {
         status: "failed",
         startedAt: "2026-06-01T00:00:00Z",
         verification: { pass: 2, fail: 2, skip: 0 },
+      },
+      {
+        capability: "report",
+        status: "failed",
+        startedAt: "2026-06-02T00:00:00Z",
+        verification: { pass: 3, fail: 1, skip: 0 },
+        support: { findings: 2, templates: 2 },
       },
       {
         capability: "heal",
@@ -463,6 +506,7 @@ describe("winsDigest", () => {
     expect(data.cleared).toBe(4);
     expect(data.runs).toBe(2);
     expect(data.openOverTime).toEqual([2, 0]);
+    expect(data.ledger).toEqual({ runs: 3, verificationFail: 3, supportFindings: 2 });
   });
 
   it("marks only the scopes the last heal probed (.aih/heal-last.json); others are na (§2b)", () => {
@@ -493,7 +537,20 @@ interface SkillGovData {
   approved: number;
   unapproved: number;
   stalePin: number;
-  rows: Array<{ name: string; status: string; source?: string; commit?: string }>;
+  rows: Array<{
+    name: string;
+    status: "approved" | "unapproved" | "stale-pin" | "quarantined";
+    source?: string;
+    commit?: string;
+  }>;
+  scanner?: {
+    reports: number;
+    newestAt?: string;
+    verdicts: { GREEN: number; YELLOW: number; RED: number; UNKNOWN: number };
+    analyzers: string[];
+    gaps: string[];
+  };
+  approvalVerdicts?: { GREEN: number; YELLOW: number };
 }
 
 describe("skillGovernanceDigest", () => {
@@ -536,6 +593,129 @@ describe("skillGovernanceDigest", () => {
     // On disk it's absent → installed 0, but the lock keeps the panel live to govern.
     const data = d?.data as SkillGovData;
     expect(data.installed).toBe(0);
+    expect(data.scanner?.gaps).toContain(
+      "no skill vet evidence artifacts found in .aih/skill-reports",
+    );
+  });
+
+  it("is live from scanner evidence alone so blocked attempts are not hidden", () => {
+    put(
+      ".aih/skill-reports/blocked.json",
+      JSON.stringify({
+        schemaVersion: 1,
+        source: "owner/blocked",
+        checks: [],
+        analyzersRun: ["aih-native"],
+        verdict: "RED",
+        reasons: ["blocked"],
+      }),
+    );
+
+    const d = skillGovernanceDigest(ctx());
+    const data = d?.data as SkillGovData;
+    expect(data.installed).toBe(0);
+    expect(data.scanner).toMatchObject({
+      reports: 1,
+      verdicts: { GREEN: 0, YELLOW: 0, RED: 1, UNKNOWN: 0 },
+      analyzers: ["aih-native"],
+      gaps: [],
+    });
+    const html = renderSkillGovernance({
+      installed: data.installed,
+      approved: data.approved,
+      unapproved: data.unapproved,
+      stalePin: data.stalePin,
+      quarantined: 0,
+      rows: data.rows,
+      scanner: data.scanner,
+      approvalVerdicts: data.approvalVerdicts,
+    });
+    expect(html).toContain("scanner age");
+    expect(html).toContain("RED 1");
+    expect(html).toContain("scanner, marketplace");
+  });
+
+  it("is live from unreadable scanner evidence alone so the gap is visible", () => {
+    put(".aih/skill-reports/broken.json", "{ not json");
+
+    const d = skillGovernanceDigest(ctx());
+    const data = d?.data as SkillGovData;
+    expect(data.scanner).toMatchObject({
+      reports: 0,
+      verdicts: { GREEN: 0, YELLOW: 0, RED: 0, UNKNOWN: 0 },
+      gaps: ["1 skill vet evidence artifact(s) could not be parsed"],
+    });
+    const html = renderSkillGovernance({
+      installed: data.installed,
+      approved: data.approved,
+      unapproved: data.unapproved,
+      stalePin: data.stalePin,
+      quarantined: 0,
+      rows: data.rows,
+      scanner: data.scanner,
+      approvalVerdicts: data.approvalVerdicts,
+    });
+    expect(html).toContain("could not be parsed");
+  });
+
+  it("surfaces scanner age plus RED/YELLOW/UNKNOWN evidence counts from skill reports", () => {
+    put(`${DIR}/skills/src/alpha/SKILL.md`, "# alpha\n");
+    put(
+      "aih-skills.lock.json",
+      JSON.stringify({
+        schemaVersion: 1,
+        skills: [lockEntry("alpha", "docs"), { ...lockEntry("review", "docs"), verdict: "YELLOW" }],
+      }),
+    );
+    const evidence = (verdict: string, analyzer: string): string =>
+      JSON.stringify({
+        schemaVersion: 1,
+        source: "owner/repo",
+        checks: [],
+        analyzersRun: [analyzer],
+        verdict,
+        reasons: [],
+      });
+    put(".aih/skill-reports/alpha.json", evidence("RED", "skillspector"));
+    put(".aih/skill-reports/beta.json", evidence("UNKNOWN", "aih-native"));
+    put(".aih/skill-reports/gamma.json", evidence("YELLOW", "skillspector"));
+    const newest = new Date("2026-07-02T12:00:00Z");
+    utimesSync(join(dir, ".aih/skill-reports/alpha.json"), newest, newest);
+    utimesSync(
+      join(dir, ".aih/skill-reports/beta.json"),
+      new Date("2026-07-01T12:00:00Z"),
+      new Date("2026-07-01T12:00:00Z"),
+    );
+    utimesSync(
+      join(dir, ".aih/skill-reports/gamma.json"),
+      new Date("2026-06-30T12:00:00Z"),
+      new Date("2026-06-30T12:00:00Z"),
+    );
+
+    const d = skillGovernanceDigest(ctx());
+    const data = d?.data as SkillGovData;
+    expect(data.scanner).toMatchObject({
+      reports: 3,
+      newestAt: "2026-07-02",
+      verdicts: { GREEN: 0, YELLOW: 1, RED: 1, UNKNOWN: 1 },
+      analyzers: ["aih-native", "skillspector"],
+      gaps: [],
+    });
+    expect(data.approvalVerdicts).toEqual({ GREEN: 1, YELLOW: 1 });
+    expect(d?.text).toContain("scanner verdicts: GREEN 0 · YELLOW 1 · RED 1 · UNKNOWN 1");
+    const html = renderSkillGovernance({
+      installed: data.installed,
+      approved: data.approved,
+      unapproved: data.unapproved,
+      stalePin: data.stalePin,
+      quarantined: 0,
+      rows: data.rows,
+      scanner: data.scanner,
+      approvalVerdicts: data.approvalVerdicts,
+    });
+    expect(html).toContain("newest scan 2026-07-02");
+    expect(html).toContain("RED 1 · UNKNOWN 1");
+    expect(html).toContain("GREEN 1 · YELLOW 1");
   });
 
   it("counts a quarantined skill in the title breakdown and NEVER as clean (review high)", () => {
@@ -761,15 +941,17 @@ describe("skillGovernanceDigest", () => {
     );
   });
 
-  it("keeps a pack-free repo's digest byte-identical (no by-pack section, no packs key)", () => {
+  it("keeps a pack-free repo's digest free of pack rollups", () => {
     put(`${DIR}/skills/src/clean/SKILL.md`, "# clean\n");
     put("aih-skills.lock.json", JSON.stringify({ schemaVersion: 1, skills: [lockEntry("clean")] }));
     const d = skillGovernanceDigest(ctx());
-    // Exact pre-pack strings — the rollup must not perturb a repo with no pack tags.
     expect(d?.describe).toBe("Skill governance — 1 installed (1 approved, 0 unapproved, 0 stale)");
-    expect(d?.text).toBe(
-      "1 external skill installed · 1 approved · 0 unapproved · 0 stale-pin · 0 quarantined.\n\n  All 1 installed skill is approved and in sync.\n",
+    expect(d?.text).toContain(
+      "1 external skill installed · 1 approved · 0 unapproved · 0 stale-pin · 0 quarantined.",
     );
+    expect(d?.text).toContain("All 1 installed skill is approved and in sync.");
+    expect(d?.text).toContain("scanner & verdict evidence:");
+    expect(d?.text).not.toContain("by pack:");
     expect(Object.keys(d?.data as Record<string, unknown>)).not.toContain("packs");
     // No marketplace artifact on disk → no key, no "distribution & audit" section.
     expect(Object.keys(d?.data as Record<string, unknown>)).not.toContain("marketplace");

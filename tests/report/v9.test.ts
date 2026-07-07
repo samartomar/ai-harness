@@ -306,6 +306,7 @@ function wins(): DigestAction {
     runs: 12,
     since: "Jun 1",
     openOverTime: [5, 4, 2, 0],
+    ledger: { runs: 12, verificationFail: 7, supportFindings: 3 },
   });
 }
 
@@ -326,6 +327,14 @@ function skillGov(): DigestAction {
       },
       { name: "loose", status: "unapproved" },
     ],
+    scanner: {
+      reports: 3,
+      newestAt: "2026-07-02",
+      verdicts: { GREEN: 1, YELLOW: 1, RED: 1, UNKNOWN: 0 },
+      analyzers: ["aih-native", "skillspector"],
+      gaps: [],
+    },
+    approvalVerdicts: { GREEN: 1, YELLOW: 0 },
     // v0.5 pack rollup (with a parked member — the #111 shape) + the v0.6
     // distribution/audit surfaces, so the mapping is exercised end to end.
     packs: [{ name: "docs", skills: 2, approved: 1, quarantined: 1 }],
@@ -809,9 +818,11 @@ describe("buildAihDataV9 — Phase B capability flips", () => {
     const d = buildAihDataV9([...ALL, wins()]);
     expect(d.gates["sec-wins"]).toBe("live");
     expect(d.wins?.cleared).toBe(4);
+    expect(d.wins?.ledger).toEqual({ runs: 12, verificationFail: 7, supportFindings: 3 });
     const view = assembleViewV9(d, V9_DEMO);
     expect(view.sections["sec-wins"]?.state).toBe("live");
     expect(view.sections["sec-wins"]?.html).toContain("Certificate trust chain");
+    expect(view.sections["sec-wins"]?.html).toContain("support.findings");
     expect(view.sections["sec-wins"]?.html).not.toContain("run <code>aih heal</code>");
   });
 
@@ -843,6 +854,12 @@ describe("buildAihDataV9 — Phase B capability flips", () => {
     ]);
     expect(live.skillGov?.marketplace).toEqual({ skills: 1, findings: 0, signed: true });
     expect(live.skillGov?.evidence).toEqual({ artifacts: 3, current: true, stale: true });
+    expect(live.skillGov?.scanner).toMatchObject({
+      reports: 3,
+      newestAt: "2026-07-02",
+      verdicts: { GREEN: 1, YELLOW: 1, RED: 1, UNKNOWN: 0 },
+    });
+    expect(live.skillGov?.approvalVerdicts).toEqual({ GREEN: 1, YELLOW: 0 });
     expect(live.skillGov?.orgPolicy).toEqual({
       present: true,
       valid: false,
@@ -853,6 +870,8 @@ describe("buildAihDataV9 — Phase B capability flips", () => {
     expect(html).toContain("marketplace artifact");
     expect(html).toContain("signature file present");
     expect(html).toContain("behind live skills lock");
+    expect(html).toContain("newest scan 2026-07-02");
+    expect(html).toContain("RED 1");
     expect(html).toContain("invalid — org-policy is invalid: bad posture");
   });
 

@@ -787,6 +787,15 @@ function buildWins(digests: DigestAction[]): V9Wins | undefined {
     runs: numOr(w.runs, 0),
     since: String(w.since ?? ""),
     openOverTime,
+    ...(w.ledger && typeof w.ledger === "object"
+      ? {
+          ledger: {
+            runs: numOr((w.ledger as Record<string, unknown>).runs, 0),
+            verificationFail: numOr((w.ledger as Record<string, unknown>).verificationFail, 0),
+            supportFindings: numOr((w.ledger as Record<string, unknown>).supportFindings, 0),
+          },
+        }
+      : {}),
   };
 }
 
@@ -805,6 +814,14 @@ interface GovPackRaw {
   quarantined?: unknown;
 }
 
+interface ScannerRaw {
+  reports?: unknown;
+  newestAt?: unknown;
+  verdicts?: unknown;
+  analyzers?: unknown;
+  gaps?: unknown;
+}
+
 /** Skill governance (from the v9-only "Skill governance" digest), else undefined. */
 function buildSkillGovernance(digests: DigestAction[]): V9SkillGovernance | undefined {
   const g = bag(digests, "Skill governance");
@@ -818,6 +835,34 @@ function buildSkillGovernance(digests: DigestAction[]): V9SkillGovernance | unde
     ...(typeof r.source === "string" ? { source: r.source } : {}),
     ...(typeof r.commit === "string" ? { commit: r.commit } : {}),
   }));
+  const scannerRaw = g.scanner as ScannerRaw | undefined;
+  const scannerVerdicts =
+    scannerRaw?.verdicts && typeof scannerRaw.verdicts === "object"
+      ? (scannerRaw.verdicts as Record<string, unknown>)
+      : {};
+  const scanner =
+    scannerRaw !== undefined && scannerRaw !== null && typeof scannerRaw === "object"
+      ? {
+          reports: numOr(scannerRaw.reports, 0),
+          ...(typeof scannerRaw.newestAt === "string" ? { newestAt: scannerRaw.newestAt } : {}),
+          verdicts: {
+            GREEN: numOr(scannerVerdicts.GREEN, 0),
+            YELLOW: numOr(scannerVerdicts.YELLOW, 0),
+            RED: numOr(scannerVerdicts.RED, 0),
+            UNKNOWN: numOr(scannerVerdicts.UNKNOWN, 0),
+          },
+          analyzers: strs(scannerRaw.analyzers),
+          gaps: strs(scannerRaw.gaps),
+        }
+      : undefined;
+  const approvals =
+    g.approvalVerdicts && typeof g.approvalVerdicts === "object"
+      ? (g.approvalVerdicts as Record<string, unknown>)
+      : undefined;
+  const approvalVerdicts =
+    approvals !== undefined
+      ? { GREEN: numOr(approvals.GREEN, 0), YELLOW: numOr(approvals.YELLOW, 0) }
+      : undefined;
   // Pack rollup — present only when the digest carried tags (pack-free stays absent).
   // `quarantined` rides through only when the digest emitted it (non-zero), so a
   // quarantine-free pack's view-model — and its render — stays byte-identical.
@@ -865,6 +910,8 @@ function buildSkillGovernance(digests: DigestAction[]): V9SkillGovernance | unde
     stalePin: numOr(g.stalePin, 0),
     quarantined: numOr(g.quarantined, 0),
     rows,
+    ...(scanner !== undefined ? { scanner } : {}),
+    ...(approvalVerdicts !== undefined ? { approvalVerdicts } : {}),
     ...(packs.length > 0 ? { packs } : {}),
     ...(marketplace !== undefined ? { marketplace } : {}),
     ...(evidence !== undefined ? { evidence } : {}),

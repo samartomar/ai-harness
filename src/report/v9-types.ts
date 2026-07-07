@@ -96,6 +96,8 @@ export interface V9Wins {
   since: string;
   /** "open blockers over time" sparkline series (oldest → newest). */
   openOverTime: number[];
+  /** Totals from `.aih/runs/*.jsonl` rows, across all logged capabilities. */
+  ledger?: { runs: number; verificationFail: number; supportFindings: number };
 }
 
 /** 01 — per-turn cost is the headline; full corpus is secondary. */
@@ -266,6 +268,16 @@ export interface V9SkillGovernance {
     source?: string;
     commit?: string;
   }>;
+  /** Scanner/vet evidence artifacts under `.aih/skill-reports`, if present. */
+  scanner?: {
+    reports: number;
+    newestAt?: string;
+    verdicts: { GREEN: number; YELLOW: number; RED: number; UNKNOWN: number };
+    analyzers: string[];
+    gaps: string[];
+  };
+  /** Approvable verdicts carried by committed `aih-skills.lock.json` entries. */
+  approvalVerdicts?: { GREEN: number; YELLOW: number };
   /**
    * Installed skills grouped by their lock entry's `pack` tag — the pack-level
    * rollup. Absent when no skill carries a tag (a pack-free repo's panel stays

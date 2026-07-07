@@ -239,8 +239,17 @@ export function renderActions(actions: V9Action[]): string {
 
 /** The ✓ remediation ledger (`.grid`); a stub when heal has never run. */
 export function renderWins(w: V9Wins | undefined): string {
-  if (!w || w.items.length === 0) {
+  if (!w) {
     return '<div class="card span-12"><div class="card-head"><h3>Remediation ledger · what aih fixed</h3><span class="badge muted">no heal runs</span></div><div class="card-body"><div class="method">No heal history on this box yet. Run <code>aih heal --scope all</code> — it diagnoses and repairs the host runtime (TLS / npm / PATH / MCP), and this panel fills in.</div></div></div>';
+  }
+  const ledgerTotals = w.ledger
+    ? `<div class="row"><span class="k">verification.fail</span><span class="v"${w.ledger.verificationFail > 0 ? ' style="color:var(--warn)"' : ""}>${w.ledger.verificationFail}</span></div><div class="row"><span class="k">support.findings</span><span class="v"${w.ledger.supportFindings > 0 ? ' style="color:var(--warn)"' : ""}>${w.ledger.supportFindings}</span></div>`
+    : "";
+  if (w.items.length === 0) {
+    const ledgerCard = w.ledger
+      ? `<div class="card span-4"><div class="card-head"><h3>Run ledger</h3><span class="badge muted">available</span></div><div class="card-body"><div style="display:flex;gap:1.2rem;flex-wrap:wrap;margin-bottom:.6rem"><div class="heatmap-stat"><b>${w.ledger.runs}</b><span>ledger rows</span></div></div><div class="donut-meta" style="margin-bottom:.55rem">${ledgerTotals}</div><div style="margin-top:.4rem;font-size:.72rem;color:var(--dim)">since first run · ${escHtml(w.since)}</div></div></div>`
+      : "";
+    return `<div class="card ${w.ledger ? "span-8" : "span-12"}"><div class="card-head"><h3>Remediation ledger · what aih fixed</h3><span class="badge muted">no heal runs</span></div><div class="card-body"><div class="method">No heal history on this box yet. Run <code>aih heal --scope all</code> — it diagnoses and repairs the host runtime (TLS / npm / PATH / MCP), and this panel fills in.</div></div></div>${ledgerCard}`;
   }
   const fixed = w.items.filter((i) => i.status === "fixed").length;
   const rows = w.items
@@ -256,7 +265,7 @@ export function renderWins(w: V9Wins | undefined): string {
     .join("");
   const spark = sparkline(w.openOverTime, "var(--ok)");
   const ledger = `<div class="card span-8"><div class="card-head"><h3>Remediation ledger · what aih fixed</h3><span class="badge ok">runtime green</span></div><div class="card-body"><div class="drift-status"><div class="dicon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6 9 17l-5-5"/></svg></div><div class="dtext"><b>Runtime is green — ${fixed} blocker${fixed === 1 ? "" : "s"} cleared</b><span>the environment certs / npm / PATH / MCP assume now works</span></div></div><div class="drift-files">${rows}</div><div class="method" style="margin-top:.5rem">Re-run anytime — <code>aih heal --scope all</code> diagnoses and repairs.</div></div></div>`;
-  const period = `<div class="card span-4"><div class="card-head"><h3>Over the period</h3><span class="badge muted">run ledger</span></div><div class="card-body"><div style="display:flex;gap:1.2rem;flex-wrap:wrap;margin-bottom:.6rem"><div class="heatmap-stat"><b>${w.cleared}</b><span>blockers cleared</span></div><div class="heatmap-stat"><b>${w.runs}</b><span>aih runs</span></div></div><div style="font-size:.66rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:600;margin-bottom:.2rem">Open blockers over time</div>${spark}<div style="margin-top:.4rem;font-size:.72rem;color:var(--dim)">since first run · ${escHtml(w.since)}</div></div></div>`;
+  const period = `<div class="card span-4"><div class="card-head"><h3>Over the period</h3><span class="badge muted">run ledger</span></div><div class="card-body"><div style="display:flex;gap:1.2rem;flex-wrap:wrap;margin-bottom:.6rem"><div class="heatmap-stat"><b>${w.cleared}</b><span>blockers cleared</span></div><div class="heatmap-stat"><b>${w.runs}</b><span>aih runs</span></div></div><div class="donut-meta" style="margin-bottom:.55rem">${ledgerTotals}</div><div style="font-size:.66rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:600;margin-bottom:.2rem">Open blockers over time</div>${spark}<div style="margin-top:.4rem;font-size:.72rem;color:var(--dim)">since first run · ${escHtml(w.since)}</div></div></div>`;
   return ledger + period;
 }
 
@@ -625,7 +634,10 @@ export function renderSkillGovernance(model: V9SkillGovernance): string {
     (model.marketplace?.findings ?? 0) > 0 ||
     model.evidence?.current === false ||
     model.evidence?.stale === true ||
-    model.orgPolicy?.valid === false;
+    model.orgPolicy?.valid === false ||
+    (model.scanner?.verdicts.RED ?? 0) > 0 ||
+    (model.scanner?.verdicts.UNKNOWN ?? 0) > 0 ||
+    (model.scanner?.gaps.length ?? 0) > 0;
   const clean = unattested === 0 && !artifactIssues;
   const warnBox = (headline: string, detail: string): string =>
     `<div class="drift-status" style="background:var(--warn-soft);border-color:color-mix(in oklab,var(--warn) 22%,transparent)"><div class="dicon" style="background:var(--warn)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg></div><div class="dtext"><b style="color:var(--warn)">${headline}</b><span>${detail}</span></div></div>`;
@@ -638,7 +650,7 @@ export function renderSkillGovernance(model: V9SkillGovernance): string {
         )
       : warnBox(
           "Governance artifacts need attention",
-          "installed skills are approved; a marketplace, evidence-bundle, or org-policy row below has findings",
+          "installed skills are approved; a scanner, marketplace, evidence-bundle, or org-policy row below has findings",
         );
   // escHtml stops executable injection; this additionally strips C0/C1 and bidi
   // formatting controls so a hostile lock/pack label cannot VISUALLY spoof a row
@@ -714,7 +726,18 @@ export function renderSkillGovernance(model: V9SkillGovernance): string {
   const orgPolicyRow = op
     ? `<div class="row"><span class="k">org policy</span><span class="v"${op.valid ? "" : ' style="color:var(--bad)"'}>${op.valid ? "valid (schema parse)" : `invalid — ${escHtml(plainLabel(op.error ?? "unreadable"))}`}</span></div>`
     : "";
-  const status = `<div class="card span-5"><div class="card-head"><h3>Approval status</h3>${badge}</div><div class="card-body">${statusBox}<div class="donut-meta" style="margin-top:.6rem"><div class="row"><span class="k">installed · approved</span><span class="v">${model.installed} · ${model.approved}</span></div><div class="row"><span class="k">unapproved · stale-pin</span><span class="v" style="color:${unattested > 0 ? "var(--warn)" : "var(--ok)"}">${model.unapproved} · ${model.stalePin}</span></div>${quarantinedRow}${packRows}${marketplaceRow}${evidenceRow}${orgPolicyRow}</div><div class="method" style="margin-top:.6rem">External skills acquired via <code>aih workspace add</code>, joined to the committed <code>aih-skills.lock.json</code> approvals.</div></div></div>`;
+  const scanner = model.scanner;
+  const scannerIssue =
+    scanner !== undefined &&
+    (scanner.verdicts.RED > 0 || scanner.verdicts.UNKNOWN > 0 || scanner.gaps.length > 0);
+  const scannerRow = scanner
+    ? `<div class="row"><span class="k">scanner age</span><span class="v"${scannerIssue ? ' style="color:var(--warn)"' : ""}>${scanner.reports} report${scanner.reports === 1 ? "" : "s"} · newest scan ${escHtml(scanner.newestAt ?? "missing")}</span></div><div class="row"><span class="k">scanner verdicts</span><span class="v"${scannerIssue ? ' style="color:var(--warn)"' : ""}>GREEN ${scanner.verdicts.GREEN} · YELLOW ${scanner.verdicts.YELLOW} · RED ${scanner.verdicts.RED} · UNKNOWN ${scanner.verdicts.UNKNOWN}</span></div><div class="row"><span class="k">scanner gaps</span><span class="v"${scanner.gaps.length > 0 ? ' style="color:var(--warn)"' : ""}>${scanner.gaps.length > 0 ? escHtml(scanner.gaps.join("; ")) : `analyzers ${scanner.analyzers.length > 0 ? scanner.analyzers.map((a) => escHtml(plainLabel(a))).join(", ") : "missing"}`}</span></div>`
+    : "";
+  const approvals = model.approvalVerdicts;
+  const approvalRow = approvals
+    ? `<div class="row"><span class="k">approval verdicts</span><span class="v"${approvals.YELLOW > 0 ? ' style="color:var(--warn)"' : ""}>GREEN ${approvals.GREEN} · YELLOW ${approvals.YELLOW}</span></div>`
+    : "";
+  const status = `<div class="card span-5"><div class="card-head"><h3>Approval status</h3>${badge}</div><div class="card-body">${statusBox}<div class="donut-meta" style="margin-top:.6rem"><div class="row"><span class="k">installed · approved</span><span class="v">${model.installed} · ${model.approved}</span></div><div class="row"><span class="k">unapproved · stale-pin</span><span class="v" style="color:${unattested > 0 ? "var(--warn)" : "var(--ok)"}">${model.unapproved} · ${model.stalePin}</span></div>${quarantinedRow}${approvalRow}${scannerRow}${packRows}${marketplaceRow}${evidenceRow}${orgPolicyRow}</div><div class="method" style="margin-top:.6rem">External skills acquired via <code>aih workspace add</code>, joined to the committed <code>aih-skills.lock.json</code> approvals.</div></div></div>`;
   const list = `<div class="card span-7"><div class="card-head"><h3>Installed skills</h3><span class="badge muted">${model.installed} on disk</span></div><div class="card-body"><div class="drift-files">${rows}</div></div></div>`;
   return status + list;
 }
