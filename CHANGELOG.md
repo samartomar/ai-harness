@@ -29,6 +29,9 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Tagged release artifacts now carry a documented SLSA v1.2 Build L2 claim,
   with the supporting release-workflow evidence and the remaining Build L3 gap
   recorded in the security docs. (#270)
+- Deferred analytics Tier 2 and Tier 3 now have a design note that scopes the
+  aggregate-first shared collector, preserves the no-remote-call D2 invariant,
+  and records hosted-SaaS trigger conditions. (#271)
 - `aih certs` now documents its corporate-trust propagation for git, Go, JVM
   tools, Gradle, and Maven alongside Docker daemon guidance and the existing
   npm, pip, cargo, and conda coverage. (#267)
