@@ -342,9 +342,15 @@ recorded in the verify report rather than accepted as prose. A verified pack can
 
 Build a deterministic **fleet bundle** — the repo contract, org policy, and managed config packaged
 with a checksum manifest (and optional `cosign` or `gh` signing) for distribution to a team or CI.
-`aih verify-bundle` always re-checks checksums; `--require-signature` turns a missing signature,
-missing verifier tool, missing GitHub `--repo`, or failed signature verification into a coded
-`bundle.signature` failure instead of an optional skip.
+
+## aih verify-bundle
+
+Read-only verification for a fleet or evidence bundle. It re-checks `SHA256SUMS` against the copied
+bundle files and probes signature/provenance evidence. Without `--require-signature`, missing local
+signature inputs skip honestly; verifier failures still fail the signature probe. With
+`--require-signature`, missing signatures, missing verifier tools, missing GitHub `--repo`, and failed
+verification are coded as `bundle.signature`. Use `--signer gh --repo <owner/repo>` for GitHub
+attestations.
 
 ## aih verify-release
 

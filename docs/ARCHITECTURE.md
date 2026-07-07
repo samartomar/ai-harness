@@ -17,6 +17,9 @@ and the executor is the only layer that performs filesystem or process effects.
   applies them transactionally.
 - **Repo canon** (`src/bootstrap-ai/`, `src/contract/`, `src/profile/`) detects
   the stack, writes tool bootloaders, and emits `ai-coding/project.json`.
+- **Project truth** (`src/truth/`) owns the opt-in external sidecar, token-bounded
+  truth packs, drift verification, acceptance preflight, and declarative
+  agent-evidence file probes.
 - **Trust and skill governance** (`src/trust/`, `src/skill/`, `src/pack/`,
   `src/marketplace/`) vets external skill sources, pins commits, records
   approvals, and blocks unapproved installs at team/enterprise posture.
@@ -34,6 +37,10 @@ and the executor is the only layer that performs filesystem or process effects.
 - `.aih/` is local diagnostics and generated output. The run ledger under
   `.aih/runs/YYYY-MM.jsonl` is gitignored and should be shared through
   `aih evidence build` when tamper evidence is needed.
+- Optional project-truth sidecars live outside the repository by default
+  (sibling `<repo>-ai`). The repo carries only the sidecar pointer and code
+  binding; staged truth packs stay outside committed source until a human
+  promotes any repo-owned change.
 - `~/.aih/capabilities/cache.json` is a machine-local derived cache of repo
   capability needs. It is rebuildable from committed repo manifests and policy;
   deleting it loses convenience state, not authority.
