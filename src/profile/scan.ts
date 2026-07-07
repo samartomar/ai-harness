@@ -586,19 +586,25 @@ function detectPythonManifest(path: string, name: string, raw: Raw): void {
 
 function detectGoManifest(path: string, raw: Raw): void {
   const body = safeRead(path).toLowerCase();
-  if (/github\.com\/gin-gonic\/gin\b/.test(body)) push(raw.frameworks, "Gin");
-  if (/github\.com\/labstack\/echo/.test(body)) push(raw.frameworks, "Echo");
-  if (/github\.com\/gofiber\/fiber/.test(body)) push(raw.frameworks, "Fiber");
-  if (/github\.com\/go-chi\/chi/.test(body)) push(raw.frameworks, "chi");
-  if (/github\.com\/lib\/pq\b|github\.com\/jackc\/pgx/.test(body)) {
+  if (hasGoModule(body, "github.com/gin-gonic/gin")) push(raw.frameworks, "Gin");
+  if (hasGoModule(body, "github.com/labstack/echo")) push(raw.frameworks, "Echo");
+  if (hasGoModule(body, "github.com/gofiber/fiber")) push(raw.frameworks, "Fiber");
+  if (hasGoModule(body, "github.com/go-chi/chi")) push(raw.frameworks, "chi");
+  if (hasGoModule(body, "github.com/lib/pq") || hasGoModule(body, "github.com/jackc/pgx")) {
     push(raw.databases, "PostgreSQL");
   }
-  if (/github\.com\/go-sql-driver\/mysql/.test(body)) push(raw.databases, "MySQL");
-  if (/go\.mongodb\.org\/mongo-driver/.test(body)) push(raw.databases, "MongoDB");
-  if (/github\.com\/redis\/go-redis/.test(body)) push(raw.databases, "Redis");
-  if (/github\.com\/mattn\/go-sqlite3|modernc\.org\/sqlite/.test(body)) {
+  if (hasGoModule(body, "github.com/go-sql-driver/mysql")) push(raw.databases, "MySQL");
+  if (hasGoModule(body, "go.mongodb.org/mongo-driver")) push(raw.databases, "MongoDB");
+  if (hasGoModule(body, "github.com/redis/go-redis")) push(raw.databases, "Redis");
+  if (hasGoModule(body, "github.com/mattn/go-sqlite3") || hasGoModule(body, "modernc.org/sqlite")) {
     push(raw.databases, "SQLite");
   }
+}
+
+function hasGoModule(body: string, modulePath: string): boolean {
+  return body
+    .split(/\s+/)
+    .some((token) => token === modulePath || token.startsWith(`${modulePath}/`));
 }
 
 function detectMavenPom(path: string, raw: Raw): void {
