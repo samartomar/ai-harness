@@ -22,6 +22,12 @@ import {
 } from "./enterprise.js";
 import { gatewayDoc, gatewayRbacConfig } from "./gateway.js";
 import {
+  applyMcpHygieneToEntries,
+  mcpHygieneDigest,
+  mcpHygieneIssues,
+  mcpPackagePinDriftProbe,
+} from "./hygiene.js";
+import {
   asPosture,
   deniedServers,
   evaluateMcpPolicy,
@@ -626,6 +632,7 @@ async function planMcp(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
     deniedGenerated.map(({ server: _server, ...policy }) => [policy.name, policy]),
   );
   const writeServers = mcpCompliant ? omitDeniedServers(servers, denied) : servers;
+  const hygieneIssues = mcpHygieneIssues(writeServers, ctx.env);
   const writeServerNames = Object.keys(writeServers);
   const tailored = writeServerNames
     .filter(
@@ -709,6 +716,11 @@ async function planMcp(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
         deniedGenerated.map((item) => [item.name, item.server]),
       );
       const generatedDeniedEntries = mcpCompliant ? mcpEntries(cli, deniedGeneratedServerMap) : {};
+      const renderedEntries = applyMcpHygieneToEntries(
+        cli,
+        mcpEntries(cli, writeServers),
+        hygieneIssues,
+      );
       const staleGeneratedNames = mcpCompliant
         ? matchingGeneratedJsonServerNames(abs, p.configKey, generatedDeniedEntries)
         : [];
@@ -726,13 +738,17 @@ async function planMcp(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
         });
       }
       actions.push(
-        writeJson(writePath, { [p.configKey]: mcpEntries(cli, writeServers) }, describe, {
+        writeJson(writePath, { [p.configKey]: renderedEntries }, describe, {
           merge: true,
           external,
           removeJsonKeys: serverConfigRemovals(catalog.policy, p.configKey, staleGeneratedNames),
         }),
       );
     }
+  }
+
+  if (hygieneIssues.length > 0) {
+    actions.push(digest("MCP server hygiene warnings", mcpHygieneDigest(hygieneIssues, clis)));
   }
 
   // Self-host changes + any secret placeholders the developer must supply out-of-band.
@@ -837,6 +853,13 @@ async function planMcp(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
   }
 
   actions.push(probe("uv present", probeUv));
+  if (ctx.verify) {
+    actions.push(
+      probe("MCP package pins match resolved versions", (probeCtx) =>
+        mcpPackagePinDriftProbe(writeServers, probeCtx),
+      ),
+    );
+  }
 
   return plan("mcp", ...actions);
 }

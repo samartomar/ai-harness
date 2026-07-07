@@ -6,6 +6,13 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- `aih mcp` now targets OpenCode's global `~/.config/opencode/opencode.json` MCP map, preserves
+  existing provider/model settings while merging, flags missing env placeholders and placeholder
+  remote hosts before writing, disables unsafe generated OpenCode entries with `enabled:false`, and
+  surfaces npm MCP package version-pin drift under `--verify`. (#279)
+
 ## [2.1.0] - 2026-07-07
 
 ### Added

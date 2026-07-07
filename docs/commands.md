@@ -153,7 +153,8 @@ committed context dir, `.aih-config.json`, `.aih/`, and marker-owned Kiro extras
 removed. The context dir and `.aih/` are only backed up when the root marker and generated canon
 evidence agree; Kiro extras require the generated Kiro bootloader marker too. Otherwise these
 paths are advisory/no-op. Co-owned files such as repo-scoped MCP configs from registered CLIs
-(`.mcp.json`, `.cursor/mcp.json`, `.vscode/mcp.json`, `opencode.json`, `.kiro/settings/mcp.json`)
+(`.mcp.json`, `.cursor/mcp.json`, `.vscode/mcp.json`, `.kiro/settings/mcp.json`; legacy
+`opencode.json` residues are advisory)
 and root bootloaders that still carry an aih managed block are surfaced as manual advisories
 instead of being edited or deleted. Dirty/untracked removal targets refuse without `--force`.
 
@@ -384,8 +385,9 @@ endpoints → `{ usage_report, skills }`).
 Generate the MCP server config **for the targeted CLIs** (`--cli`/`--all-tools`, default claude):
 Claude/Kimi share `.mcp.json`, Cursor uses `.cursor/mcp.json`, and Kiro uses
 `.kiro/settings/mcp.json`; Codex gets native TOML in `~/.codex/config.toml` (including
-`bearer_token_env_var` for token auth), and Copilot/OpenCode/Zed or global-config entries get their
-registry-specific native writes or guidance. Scopes:
+`bearer_token_env_var` for token auth), OpenCode gets its global
+`~/.config/opencode/opencode.json` `mcp` map, and Copilot/Zed or other global-config entries get
+their registry-specific native writes or guidance. Scopes:
 local/project/remote. For locked-down orgs,
 `--mode offline` (vendored local-command servers) or `--mode none` (no MCP + a CLI-tool fallback)
 plus a `managed-mcp.json` admin template. Enterprise org policy can also tune the hosted GitHub
@@ -407,6 +409,11 @@ app; use `--github-auth token` for clients that need a PAT-backed `Authorization
 value is never written into MCP config — the header references `${GITHUB_PERSONAL_ACCESS_TOKEN}`
 and `.env.example` documents only that placeholder. Token auth ignores ambient `GITHUB_HOST`;
 non-default hosted GitHub MCP endpoints must come from committed org policy and incumbent hosts.
+Before writing MCP client config, `aih mcp` surfaces hygiene warnings for entries that would
+retry-fail because an env placeholder is unset or a URL host is a placeholder such as `*.example`.
+For OpenCode, those unsafe generated entries are written with `enabled:false` so the client does not
+retry them on startup until the operator fixes the env or URL. Under `--verify`, npm-backed MCP
+package pins are compared with the configured registry response so version-pin drift is visible.
 
 ## aih sandbox
 
@@ -419,7 +426,8 @@ Generate a devcontainer + managed sandbox settings (egress allowlist, `failIfUna
 Fail-closed verification of the workstation/repo configuration (+ workspace mode: validates each
 child repo). Includes a **canon markdown lint** (read-only) over the scaffolded `ai-coding/` tree.
 It remains read-only. `--posture enterprise` also runs the enterprise baseline attestation: MCP
-servers from known repo-scoped MCP config files (`.mcp.json`, Cursor, Kiro, VS Code, and OpenCode)
+servers from known repo-scoped MCP config files (`.mcp.json`, Cursor, Kiro, VS Code, and legacy
+OpenCode residues)
 and packaged marketplace skills from `.aih/marketplace/marketplace.json` must be declared in
 `aih-org-policy.json` (`mcp.allowedServers` / `trust.approvedSources`), or `doctor` emits coded
 `baseline.*` findings for a missing registry, invalid registry input, or undeclared residue. MCP

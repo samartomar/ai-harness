@@ -848,6 +848,121 @@ describe("aih mcp — uv probe under --verify", () => {
   });
 });
 
+describe("aih mcp — MCP write hygiene", () => {
+  it("--cli opencode writes the global config, preserves existing provider settings, and disables missing-token servers", async () => {
+    const root = makeTmp();
+    const home = makeTmp();
+    const opencodeDir = join(home, ".config", "opencode");
+    mkdirSync(opencodeDir, { recursive: true });
+    const opencodePath = join(opencodeDir, "opencode.json");
+    writeFileSync(
+      opencodePath,
+      jsonFile({
+        provider: { openai: { keyRef: "$OPENAI_API_KEY" } },
+        model: "openai/gpt-5",
+        mcp: {
+          existing: { type: "local", command: ["custom-mcp"], enabled: true },
+        },
+      }),
+    );
+
+    const p = await command.plan(
+      makeCtx({
+        root,
+        env: { HOME: home, USERPROFILE: home },
+        options: { cli: "opencode", githubAuth: "token" },
+      }),
+    );
+    const opencode = p.actions.find(
+      (a): a is WriteAction =>
+        a.kind === "write" && a.path.replace(/\\/g, "/").endsWith(".config/opencode/opencode.json"),
+    );
+    const warning = p.actions.find(
+      (a) => a.kind === "digest" && a.describe === "MCP server hygiene warnings",
+    );
+
+    expect(opencode).toBeDefined();
+    expect(opencode?.external).toBe(true);
+    const merged = JSON.parse(resolveContents(opencode as WriteAction, opencodePath)) as {
+      provider: Record<string, unknown>;
+      model: string;
+      mcp: Record<string, { enabled?: boolean }>;
+    };
+    expect(merged.provider).toEqual({ openai: { keyRef: "$OPENAI_API_KEY" } });
+    expect(merged.model).toBe("openai/gpt-5");
+    expect(merged.mcp.existing).toEqual({ type: "local", command: ["custom-mcp"], enabled: true });
+    expect(merged.mcp.github?.enabled).toBe(false);
+    expect(warning?.kind === "digest" ? warning.text : "").toContain(
+      "GITHUB_PERSONAL_ACCESS_TOKEN",
+    );
+    expect(warning?.kind === "digest" ? warning.text : "").toContain("OpenCode enabled:false");
+  });
+
+  it("flags placeholder remote hosts before writing OpenCode config", async () => {
+    const root = makeTmp();
+    const home = makeTmp();
+    writeFileSync(
+      join(root, "aih-org-policy.json"),
+      jsonFile({
+        schemaVersion: 1,
+        minimumPosture: "enterprise",
+        references: { repoContract: "ai-coding/project.json" },
+        mcp: {
+          githubHost: "https://github.internal.example",
+          incumbentHosts: ["github.internal.example"],
+        },
+      }),
+    );
+
+    const p = await command.plan(
+      makeCtx({
+        root,
+        env: { HOME: home, USERPROFILE: home },
+        options: { cli: "opencode" },
+      }),
+    );
+    const opencode = p.actions.find(
+      (a): a is WriteAction =>
+        a.kind === "write" && a.path.replace(/\\/g, "/").endsWith(".config/opencode/opencode.json"),
+    );
+    const warning = p.actions.find(
+      (a) => a.kind === "digest" && a.describe === "MCP server hygiene warnings",
+    );
+
+    expect(
+      (opencode?.json as { mcp: Record<string, { enabled?: boolean }> }).mcp.github?.enabled,
+    ).toBe(false);
+    expect(warning?.kind === "digest" ? warning.text : "").toContain(
+      "placeholder URL host github.internal.example",
+    );
+  });
+
+  it("--verify surfaces npm MCP package version-pin drift from the configured registry", async () => {
+    const run = fakeRunner((argv) => {
+      if (argv[0] === "uv") return { code: 0, stdout: "uv 0.5.0\n" };
+      if (
+        argv.join(" ") ===
+        "npm view @modelcontextprotocol/server-sequential-thinking@2025.12.18 version"
+      ) {
+        return { code: 0, stdout: "2025.12.19\n" };
+      }
+      return undefined;
+    });
+    const ctx = makeCtx({ verify: true, run });
+    const p = await command.plan(ctx);
+    const probe = p.actions.find(
+      (a) => a.kind === "probe" && a.describe === "MCP package pins match resolved versions",
+    );
+    const check = probe?.kind === "probe" ? await probe.run(ctx) : undefined;
+
+    expect(check?.verdict).toBe("fail");
+    expect(check?.code).toBe("mcp.version-drift");
+    expect(check?.detail).toContain(
+      "@modelcontextprotocol/server-sequential-thinking pinned 2025.12.18 but registry resolved 2025.12.19",
+    );
+  });
+});
+
 describe("aih mcp — per-CLI config (honors --cli)", () => {
   it("--cli codex writes its TOML config (external), NOT a .mcp.json Codex never reads", async () => {
     const p = await command.plan(makeCtx({ options: { cli: "codex" } }));
@@ -1028,7 +1143,7 @@ describe("aih mcp — per-CLI config (honors --cli)", () => {
     // Repo-relative natives keep their own paths (claude/kimi dedupe to one .mcp.json).
     expect(paths).toContain(".mcp.json");
     expect(paths).toContain(".cursor/mcp.json");
-    expect(paths.some((pa) => pa.endsWith("opencode.json"))).toBe(true);
+    expect(paths.some((pa) => pa.endsWith(".config/opencode/opencode.json"))).toBe(true);
     expect(paths.some((pa) => pa.endsWith(".vscode/mcp.json"))).toBe(true);
     // Codex gets its TOML written (external), NOT a .mcp.json it cannot read.
     const codex = writes.find((w) => w.path.replace(/\\/g, "/").endsWith(".codex/config.toml"));

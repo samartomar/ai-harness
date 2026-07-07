@@ -272,6 +272,13 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     action:
       "Re-run `aih mcp --posture enterprise --apply` (or the org-policy projection) so `.claude/managed-settings.json` matches the committed `.mcp.json` fixed server set.",
   },
+  "mcp.version-drift": {
+    audience: "developer",
+    failSeverity: "degraded",
+    title: "MCP package pin resolved to a different version",
+    action:
+      "Review the named MCP package pin and the configured package registry/cache. Update the generated pin only if the served version is intentionally approved; otherwise fix the registry/cache alias before relying on the MCP server.",
+  },
   "cli.not-detected": {
     audience: "developer",
     failSeverity: "degraded",
