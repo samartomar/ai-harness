@@ -59,6 +59,11 @@ function requiredSkillName(ctx: PlanContext): string {
 }
 
 function selectedClis(ctx: PlanContext): Cli[] {
+  if (ctx.options.allTools === true) {
+    throw refuse(
+      `skill sync does not support --all-tools; pass --cli ${supportedMachineSkillCliList()}`,
+    );
+  }
   if (optionString(ctx, "cli") === undefined) {
     throw refuse("skill sync requires --cli <claude|codex>");
   }
@@ -393,6 +398,7 @@ function syncText(input: {
     ...targetLines,
     "",
     "Dry-run by default; rerun with --apply to write these files.",
+    "Existing destination files are backed up as *.aih.bak when overwritten; extra destination files are left in place.",
   ].join("\n");
 }
 

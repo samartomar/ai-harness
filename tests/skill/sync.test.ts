@@ -169,6 +169,7 @@ describe("skillSyncCommand", () => {
 
     const result = await executePlan(await skillSyncCommand.plan(c), c);
 
+    expect(result.digests[0]?.text).toContain("extra destination files are left in place");
     expect(result.writes.map((w) => w.path).sort()).toEqual([
       codexSkill("clean", "README.md"),
       codexSkill("clean", "SKILL.md"),
@@ -193,6 +194,28 @@ describe("skillSyncCommand", () => {
       join(home, ".claude", "skills", "clean"),
       join(home, ".codex", "skills", "clean"),
     ]);
+  });
+
+  it("--apply backs up overwritten machine files and leaves extra destination files", async () => {
+    installApproved("owner-repo", "clean");
+    mkdirSync(dirname(codexSkill("clean")), { recursive: true });
+    writeFileSync(codexSkill("clean"), "# local clean\n", "utf8");
+    writeFileSync(codexSkill("clean", "LOCAL.md"), "local notes\n", "utf8");
+    const c = ctx({ name: "clean", cli: "codex" }, true);
+
+    const result = await executePlan(await skillSyncCommand.plan(c), c);
+
+    expect(readFileSync(codexSkill("clean"), "utf8")).toBe("# clean\n");
+    expect(readFileSync(`${codexSkill("clean")}.aih.bak`, "utf8")).toBe("# local clean\n");
+    expect(readFileSync(codexSkill("clean", "LOCAL.md"), "utf8")).toBe("local notes\n");
+    expect(result.backups).toEqual([`${codexSkill("clean")}.aih.bak`]);
+  });
+
+  it("refuses combining --cli with --all-tools for machine-root sync", () => {
+    installApproved("owner-repo", "clean");
+    const c = ctx({ name: "clean", cli: "claude", allTools: true });
+
+    expect(() => skillSyncCommand.plan(c)).toThrow(/does not support --all-tools/);
   });
 
   it("refuses to sync an unapproved promoted skill", () => {
@@ -232,6 +255,18 @@ describe("skillSyncCommand", () => {
     const c = ctx({ name: "clean", cli: "codex" });
 
     expect(() => skillSyncCommand.plan(c)).toThrow(/promoted skill bytes changed after approval/);
+  });
+
+  it("refuses an approved promoted skill with no trust-lock artifact receipt", () => {
+    promoteSkill("owner-repo", "clean");
+    write(`${CONTEXT_DIR}/skill-cards/clean.json`, JSON.stringify(validCard("clean")));
+    writeLock("clean");
+    write(".aih/trust-lock.json", JSON.stringify({ schemaVersion: 1, sources: [] }));
+    const c = ctx({ name: "clean", cli: "codex" });
+
+    expect(() => skillSyncCommand.plan(c)).toThrow(
+      /no trust-lock artifact receipt for source owner-repo/,
+    );
   });
 
   it("accepts trust receipts from prefixed source skill paths", async () => {
