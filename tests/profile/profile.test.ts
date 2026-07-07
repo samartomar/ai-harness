@@ -244,7 +244,10 @@ describe("scanRepo — other stacks", () => {
     put("go.mod", "module example.com/x\n");
     const go = scanRepo(tmp, { maxDepth: 8 });
     expect(go.languages).toEqual(["Go"]);
+    expect(go.packageManager).toBe("go modules");
     expect(go.testRunner).toBe("go test ./...");
+    expect(go.buildCommand).toBe("go build ./...");
+    expect(go.lintCommand).toBeUndefined();
 
     rmSync(join(tmp, "go.mod"));
     put("Cargo.toml", "[package]\nname='x'\n");
@@ -259,7 +262,90 @@ describe("scanRepo — other stacks", () => {
     put("Api.csproj", "<Project></Project>");
     const net = scanRepo(tmp, { maxDepth: 8 });
     expect(net.languages).toEqual([".NET"]);
+    expect(net.packageManager).toBe("dotnet");
     expect(net.testRunner).toBe("dotnet test");
+    expect(net.buildCommand).toBe("dotnet build");
+    expect(net.lintCommand).toBe("dotnet format --verify-no-changes");
+  });
+
+  it("detects Go framework, DB, lint, and workspace signals", () => {
+    put(
+      "go.mod",
+      [
+        "module example.com/x",
+        "",
+        "require (",
+        "  github.com/gin-gonic/gin v1.9.0",
+        "  github.com/lib/pq v1.10.9",
+        "  github.com/redis/go-redis/v9 v9.5.1",
+        ")",
+        "",
+      ].join("\n"),
+    );
+    put(".golangci.yml", "run:\n  timeout: 5m\n");
+    put("go.work", "go 1.22\n\nuse ./services/worker\n");
+    put("services/worker/go.mod", "module example.com/worker\n");
+
+    const s = scanRepo(tmp, { maxDepth: 8 });
+
+    expect(s.frameworks).toContain("Gin");
+    expect(s.databases).toEqual(expect.arrayContaining(["PostgreSQL", "Redis"]));
+    expect(s.lintCommand).toBe("golangci-lint run");
+    expect(s.packageManager).toBe("go modules");
+    expect(s.workspaceTool).toBe("go workspace");
+  });
+
+  it("detects Maven framework, DB, lint, package manager, and reactor details", () => {
+    put(
+      "pom.xml",
+      [
+        "<project>",
+        "  <modules><module>api</module></modules>",
+        "  <dependencies>",
+        "    <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-web</artifactId></dependency>",
+        "    <dependency><groupId>org.postgresql</groupId><artifactId>postgresql</artifactId></dependency>",
+        "  </dependencies>",
+        "  <build><plugins>",
+        "    <plugin><artifactId>maven-checkstyle-plugin</artifactId></plugin>",
+        "  </plugins></build>",
+        "</project>",
+        "",
+      ].join("\n"),
+    );
+
+    const s = scanRepo(tmp, { maxDepth: 8 });
+
+    expect(s.frameworks).toContain("Spring Boot");
+    expect(s.databases).toContain("PostgreSQL");
+    expect(s.lintCommand).toBe("mvn checkstyle:check");
+    expect(s.packageManager).toBe("maven");
+    expect(s.workspaceTool).toBe("maven");
+  });
+
+  it("detects .NET framework, DB, lint, package manager, and solution details", () => {
+    put("App.sln", "Microsoft Visual Studio Solution File\n");
+    put(
+      "src/Api/Api.csproj",
+      [
+        '<Project Sdk="Microsoft.NET.Sdk.Web">',
+        "  <ItemGroup>",
+        '    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="8.0.0" />',
+        '    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="8.0.0" />',
+        '    <PackageReference Include="StackExchange.Redis" Version="2.7.0" />',
+        "  </ItemGroup>",
+        "</Project>",
+        "",
+      ].join("\n"),
+    );
+
+    const s = scanRepo(tmp, { maxDepth: 8 });
+
+    expect(s.frameworks).toEqual(expect.arrayContaining(["ASP.NET Core", "Entity Framework Core"]));
+    expect(s.databases).toEqual(expect.arrayContaining(["PostgreSQL", "Redis"]));
+    expect(s.lintCommand).toBe("dotnet format --verify-no-changes");
+    expect(s.packageManager).toBe("dotnet");
+    expect(s.workspaceTool).toBe("dotnet solution");
+    expect(s.workspaces?.["src/Api"]?.packageManager).toBe("dotnet");
   });
 
   it("detects Python Poetry projects with manifest-backed pytest + ruff", () => {

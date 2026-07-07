@@ -185,7 +185,7 @@ describe("PR 1B — project.md + setup.md", () => {
     expect(setup).toContain("`npm run lint`");
   });
 
-  it("renders safe install commands for Python package managers", async () => {
+  it("renders safe install commands for non-Node package managers", async () => {
     seedMindworksLike(dir);
     const base = await synth();
     expect(setupDoc("ai-coding", { ...base, packageManager: "poetry" })).toContain(
@@ -196,6 +196,18 @@ describe("PR 1B — project.md + setup.md", () => {
       "`python -m pip install -r requirements.txt`",
     );
     expect(setupDoc("ai-coding", { ...base, packageManager: "cargo" })).toContain("`cargo fetch`");
+    expect(setupDoc("ai-coding", { ...base, packageManager: "go modules" })).toContain(
+      "`go mod download`",
+    );
+    expect(setupDoc("ai-coding", { ...base, packageManager: "maven" })).toContain(
+      "`mvn dependency:go-offline`",
+    );
+    expect(setupDoc("ai-coding", { ...base, packageManager: "gradle" })).toContain(
+      "`gradle dependencies`",
+    );
+    expect(setupDoc("ai-coding", { ...base, packageManager: "dotnet" })).toContain(
+      "`dotnet restore`",
+    );
   });
 
   it("renders MCP/tooling setup with detected .mcp.json servers", async () => {

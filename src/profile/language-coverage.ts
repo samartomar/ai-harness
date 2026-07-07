@@ -167,7 +167,25 @@ function seedRust(root: string): void {
 }
 
 function seedGo(root: string): void {
-  put(root, "go.mod", "module example.com/app\n\ngo 1.22\n");
+  put(
+    root,
+    "go.mod",
+    [
+      "module example.com/app",
+      "",
+      "go 1.22",
+      "",
+      "require (",
+      "  github.com/gin-gonic/gin v1.9.0",
+      "  github.com/lib/pq v1.10.9",
+      "  github.com/redis/go-redis/v9 v9.5.1",
+      ")",
+      "",
+    ].join("\n"),
+  );
+  put(root, ".golangci.yml", "run:\n  timeout: 5m\n");
+  put(root, "go.work", "go 1.22\n\nuse ./services/worker\n");
+  put(root, "services/worker/go.mod", "module example.com/worker\n\ngo 1.22\n");
   put(root, "main.go", "package main\n\nfunc main() {}\n");
 }
 
@@ -181,6 +199,14 @@ function seedJava(root: string): void {
       "  <groupId>com.example</groupId>",
       "  <artifactId>app</artifactId>",
       "  <version>1.0.0</version>",
+      "  <modules><module>api</module></modules>",
+      "  <dependencies>",
+      "    <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-web</artifactId></dependency>",
+      "    <dependency><groupId>org.postgresql</groupId><artifactId>postgresql</artifactId></dependency>",
+      "  </dependencies>",
+      "  <build><plugins>",
+      "    <plugin><artifactId>maven-checkstyle-plugin</artifactId></plugin>",
+      "  </plugins></build>",
       "</project>",
       "",
     ].join("\n"),
@@ -188,10 +214,21 @@ function seedJava(root: string): void {
 }
 
 function seedDotnet(root: string): void {
+  put(root, "App.sln", "Microsoft Visual Studio Solution File\n");
   put(
     root,
-    "App.csproj",
-    '<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><TargetFramework>net8.0</TargetFramework></PropertyGroup></Project>\n',
+    "src/Api/Api.csproj",
+    [
+      '<Project Sdk="Microsoft.NET.Sdk.Web">',
+      "  <PropertyGroup><TargetFramework>net8.0</TargetFramework></PropertyGroup>",
+      "  <ItemGroup>",
+      '    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="8.0.0" />',
+      '    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="8.0.0" />',
+      '    <PackageReference Include="StackExchange.Redis" Version="2.7.0" />',
+      "  </ItemGroup>",
+      "</Project>",
+      "",
+    ].join("\n"),
   );
 }
 
@@ -279,42 +316,51 @@ const FIXTURES: CoverageFixture[] = [
     id: "go-module",
     ecosystem: "Go module",
     role: "watch",
-    note: "Default test/build commands are present; framework, lint, DB, and workspace detail are thin.",
+    note: "Go module coverage detects Gin, DB drivers, golangci-lint, go modules, and go.work workspace detail.",
     seed: seedGo,
     expected: {
       languages: ["Go"],
+      frameworks: ["Gin"],
       test: ["go test ./..."],
       build: ["go build ./..."],
-      lint: ["golangci-lint run", "go vet ./..."],
+      lint: ["golangci-lint run"],
+      db: ["PostgreSQL", "Redis"],
       packageManager: ["go modules"],
+      workspace: ["go workspace"],
     },
   },
   {
     id: "java-maven",
     ecosystem: "Java Maven",
     role: "watch",
-    note: "Maven defaults are present; framework, lint, DB, and richer build-tool metadata are not.",
+    note: "Maven coverage detects Spring Boot, DB drivers, checkstyle, package manager, and reactor workspace detail.",
     seed: seedJava,
     expected: {
       languages: ["Java/Maven"],
+      frameworks: ["Spring Boot"],
       test: ["mvn test"],
       build: ["mvn clean package"],
       lint: ["mvn checkstyle:check"],
+      db: ["PostgreSQL"],
       packageManager: ["maven"],
+      workspace: ["maven"],
     },
   },
   {
     id: "dotnet",
     ecosystem: ".NET",
     role: "watch",
-    note: ".NET default test/build commands are present; framework, lint, DB, and solution detail are thin.",
+    note: ".NET coverage detects ASP.NET Core, EF Core, DB providers, dotnet format, package manager, and solution detail.",
     seed: seedDotnet,
     expected: {
       languages: [".NET"],
+      frameworks: ["ASP.NET Core", "Entity Framework Core"],
       test: ["dotnet test"],
       build: ["dotnet build"],
       lint: ["dotnet format --verify-no-changes"],
+      db: ["PostgreSQL", "Redis"],
       packageManager: ["dotnet"],
+      workspace: ["dotnet solution"],
     },
   },
   {
