@@ -69,13 +69,17 @@ describe("language coverage benchmark", () => {
     expect(rust.grades.test).toBe("good");
     expect(rust.grades.build).toBe("good");
     expect(rust.grades.lint).toBe("good");
+    expect(rust.grades.format).toBe("good");
     expect(rust.grades.packageManager).toBe("good");
+    expect(rust.detected.format).toContain("cargo fmt --check");
     expect(rust.note).toContain("Cargo package manager");
 
     expect(polyglot.grades.languages).toBe("good");
     expect(polyglot.grades.frameworks).toBe("good");
     expect(polyglot.grades.test).toBe("good");
     expect(polyglot.grades.build).toBe("good");
+    expect(polyglot.grades.lint).toBe("good");
+    expect(polyglot.grades.format).toBe("good");
     expect(polyglot.grades.packageManager).toBe("good");
     expect(polyglot.grades.workspace).toBe("good");
     expect(polyglot.note).toContain("per-workspace commands");

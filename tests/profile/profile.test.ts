@@ -257,6 +257,7 @@ describe("scanRepo — other stacks", () => {
     expect(rust.testRunner).toBe("cargo test");
     expect(rust.buildCommand).toBe("cargo build");
     expect(rust.lintCommand).toBe("cargo clippy");
+    expect(rust.formatCommand).toBe("cargo fmt --check");
 
     rmSync(join(tmp, "Cargo.toml"));
     put("Api.csproj", "<Project></Project>");
@@ -266,6 +267,17 @@ describe("scanRepo — other stacks", () => {
     expect(net.testRunner).toBe("dotnet test");
     expect(net.buildCommand).toBe("dotnet build");
     expect(net.lintCommand).toBe("dotnet format --verify-no-changes");
+  });
+
+  it("emits rustfmt alongside clippy in the generated stack rule", async () => {
+    put("Cargo.toml", "[package]\nname='x'\n");
+
+    const stackMdc =
+      findWrite((await command.plan(makeCtx())).actions, ".cursor/rules/01-stack.mdc")?.contents ??
+      "";
+
+    expect(stackMdc).toContain("Lint: `cargo clippy`");
+    expect(stackMdc).toContain("Format: `cargo fmt --check`");
   });
 
   it("detects Go framework, DB, lint, and workspace signals", () => {
@@ -545,6 +557,7 @@ describe("scanRepo — monorepo / workspace detection", () => {
       testRunner: "cargo test",
       buildCommand: "cargo build",
       lintCommand: "cargo clippy",
+      formatCommand: "cargo fmt --check",
     });
   });
 
