@@ -99,7 +99,8 @@ export function nodeMissingDoc(): string {
 export function certFixDoc(caPattern: string, shellFlag: string): string {
   return lines(
     "Corporate TLS trust is not reaching the runtimes. Re-extract the CA from the OS",
-    "trust store and re-propagate it (npm/pip/cargo/conda + the shell profile):",
+    "trust store and re-propagate it (package managers, Go, git, JVM tools, shell profile),",
+    "then follow the emitted Docker daemon guidance if Docker registry trust is affected:",
     "",
     "  aih certs --apply",
     "",
