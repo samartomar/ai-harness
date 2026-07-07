@@ -110,6 +110,40 @@ describe("resolvePosture", () => {
     );
   });
 
+  it("fails closed instead of downgrading when the marker posture is coupled to an invalid baseline", () => {
+    writeFileSync(
+      join(dir, ".aih-config.json"),
+      JSON.stringify({
+        schemaVersion: 1,
+        contextDir: "ai-coding",
+        targets: [],
+        posture: "enterprise",
+        baseline: "missing",
+      }),
+    );
+
+    expect(() => resolvePosture({ root: dir, env: {} })).toThrow(/invalid \.aih-config\.json/);
+  });
+
+  it("does not let flag or env posture override an invalid persisted baseline", () => {
+    writeFileSync(
+      join(dir, ".aih-config.json"),
+      JSON.stringify({
+        schemaVersion: 1,
+        contextDir: "ai-coding",
+        targets: [],
+        baseline: "missing",
+      }),
+    );
+
+    expect(() =>
+      resolvePosture({ root: dir, env: {}, flag: "enterprise", flagSource: "cli" }),
+    ).toThrow(/invalid \.aih-config\.json/);
+    expect(() => resolvePosture({ root: dir, env: { AIH_POSTURE: "enterprise" } })).toThrow(
+      /invalid \.aih-config\.json/,
+    );
+  });
+
   it("clamps upward to the org minimum posture without lowering a stricter local choice", () => {
     orgPolicy("team");
     expect(

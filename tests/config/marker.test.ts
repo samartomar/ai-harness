@@ -55,12 +55,8 @@ describe("readAihConfig", () => {
 
   it("fails closed when a persisted baseline is invalid", () => {
     writeMarker({ schemaVersion: 1, contextDir: "ai-coding", baseline: "missing" });
-    expect(readAihConfig(dir)).toEqual({
-      schemaVersion: 1,
-      contextDir: "ai-coding",
-      targets: [],
-      baseline: undefined,
-    });
+    expect(readAihConfigDiagnostic(dir)).toEqual({ invalid: true, present: true });
+    expect(() => readAihConfig(dir)).toThrow(/invalid baseline/);
     expect(() => readAihConfigBaseline(dir)).toThrow(/invalid baseline/);
   });
 

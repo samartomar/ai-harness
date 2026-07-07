@@ -4,7 +4,7 @@ import { SettingsError } from "../errors.js";
 import type { PlanContext } from "../internals/plan.js";
 import { orgPolicyPath, readOrgPolicy } from "../org-policy/schema.js";
 import type { AihConfig } from "./marker.js";
-import { readAihConfig } from "./marker.js";
+import { AIH_CONFIG_FILE, readAihConfig, readAihConfigBaseline } from "./marker.js";
 
 export type Posture = "vibe" | "team" | "enterprise";
 export type PostureSource = "flag" | "marker" | "env" | "default" | "org-floor";
@@ -82,7 +82,19 @@ export function readOrgPolicyFloor(
   };
 }
 
+function assertMarkerBaselineValid(root: string): void {
+  try {
+    readAihConfigBaseline(root);
+  } catch (err) {
+    if (!(err instanceof SettingsError)) return;
+    throw new SettingsError(
+      `invalid ${AIH_CONFIG_FILE}; cannot resolve posture safely: ${(err as Error).message}`,
+    );
+  }
+}
+
 export function resolvePosture(input: ResolvePostureInput): ResolvedPosture {
+  if (input.marker === undefined) assertMarkerBaselineValid(input.root);
   const marker = input.marker ?? readAihConfig(input.root);
   let resolved: ResolvedPosture;
   if (input.flagSource === "cli") {

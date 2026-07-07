@@ -33,7 +33,7 @@ export const AihConfigSchema = z.object({
   schemaVersion: z.literal(1),
   contextDir: ContextDir,
   targets: z.array(z.string()).default([]),
-  baseline: BaselineSourceIdSchema.optional().catch(undefined),
+  baseline: BaselineSourceIdSchema.optional(),
   posture: z.enum(["vibe", "team", "enterprise"]).optional(),
   /**
    * `aih adopt`'s team decisions: CLI-native paths the team has acknowledged as
@@ -52,12 +52,17 @@ export type AihConfigReadDiagnostic =
 
 /**
  * Read the committed bootstrap intent, or `undefined` when the marker is absent,
- * unreadable, or fails validation. Fail-SOFT by design (unlike {@link loadSettings},
- * which is fail-closed): a malformed marker must never break a command — callers
- * fall back to flags/env/default. Mirrors the JSON-read shape of
- * `doctor.ts:workspaceRepos` (`readIfExists` + guarded parse).
+ * unreadable, or fails validation. Fail-SOFT by design for old/partial markers
+ * (unlike {@link loadSettings}, which is fail-closed): callers fall back to
+ * flags/env/default. The exception is `baseline`: a present invalid baseline is
+ * a governance control value and fails closed with a clear error.
  */
 export function readAihConfig(root: string): AihConfig | undefined {
+  try {
+    readAihConfigBaseline(root);
+  } catch (err) {
+    if (err instanceof SettingsError) throw err;
+  }
   const diagnostic = readAihConfigDiagnostic(root);
   return diagnostic.present && !diagnostic.invalid ? diagnostic.config : undefined;
 }
@@ -77,10 +82,10 @@ export function readAihConfigDiagnostic(root: string): AihConfigReadDiagnostic {
 }
 
 /**
- * Strictly read only the persisted baseline choice. The full marker reader is
- * intentionally fail-soft for old/partial markers, but `baseline` controls canon
- * semantics; when present and invalid, commands must fail closed rather than
- * silently falling back to the default.
+ * Strictly read only the persisted baseline choice. Most marker fields are
+ * fail-soft for old/partial markers, but `baseline` controls canon semantics;
+ * when present and invalid, commands must fail closed rather than silently
+ * falling back to the default.
  */
 export function readAihConfigBaseline(root: string): BaselineSourceId | undefined {
   const raw = readIfExists(join(root, AIH_CONFIG_FILE));

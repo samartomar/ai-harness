@@ -1100,6 +1100,15 @@ describe("doctor — reads the committed .aih-config.json marker", () => {
   it.each([
     ["malformed JSON", "{ broken"],
     ["schema-invalid JSON", JSON.stringify({ version: "bad" })],
+    [
+      "invalid baseline",
+      JSON.stringify({
+        schemaVersion: 1,
+        contextDir: "custom-canon",
+        targets: ["claude"],
+        baseline: "missing",
+      }),
+    ],
   ])("config-marker probe warns when the marker is present but invalid (%s)", async (_kind, body) => {
     writeFileSync(join(dir, AIH_CONFIG_FILE), body, "utf8");
     const c = rooted("ai-coding");
