@@ -216,9 +216,9 @@ describe("existingMcpTomlNames — collision avoidance (no duplicate [mcp_server
 describe("path helpers", () => {
   it("isExternalMcp flags ~/home and absolute paths, not repo-relative", () => {
     expect(isExternalMcp("~/.codex/config.toml")).toBe(true);
+    expect(isExternalMcp("~/.config/opencode/opencode.json")).toBe(true);
     expect(isExternalMcp("/etc/x")).toBe(true);
     expect(isExternalMcp(".vscode/mcp.json")).toBe(false);
-    expect(isExternalMcp("opencode.json")).toBe(false);
   });
 
   it("mcpConfigAbs expands a leading ~ against the given home", () => {
