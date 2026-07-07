@@ -75,6 +75,10 @@ export type CheckCode =
   | "docs.vague-absolute"
   | "docs.unsupported-callout-claim"
   | "docs.rules-missing"
+  | "docs.claim-mapping-missing"
+  | "docs.claim-matrix-row-missing"
+  | "docs.claim-test-missing"
+  | "docs.feature-ledger-drift"
   // readiness gate (`aih ready`)
   | "ready.blocked"
   // enterprise baseline attestation

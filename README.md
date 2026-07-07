@@ -40,7 +40,7 @@ and security fixes land on the latest and the previous minor. The full policy:
 
 ## Design posture
 
-- **Dry-run by default for managed project changes.** `aih <cmd>` computes and
+- **Dry-run by default for managed project changes.** `aih <cmd>` computes and <!-- aih:claim CM-01 -->
   prints a plan; repo/workstation mutations wait for `--apply`. Named output
   files (`--sarif`, `--support-out`, report outputs), browser launch flags
   (`--open`, `--refresh`, `--demo`), the local run ledger, and `AIH_APPLY=1`
@@ -52,7 +52,7 @@ and security fixes land on the latest and the previous minor. The full policy:
   `team`/`enterprise` and stays advisory at `vibe`; pack installs are fail-closed
   at every posture. Once a repo is initialised, every run is recorded in the
   local [run ledger](#run-ledger).
-- **No remote mutation except explicit signing flows.** Normal work is local:
+- **No remote mutation except explicit signing flows.** Normal work is local: <!-- aih:claim CM-02 -->
   `write`, `remove`, `exec`, `envblock`, `digest`, read-only `probe`, or `doc`
   instructions for humans to run. The exceptions are opt-in provenance paths:
   GitHub attestations can write to GitHub's attestation store, and keyless
@@ -187,7 +187,7 @@ not guess which names are private to your organization.
 
 | Command | What it does |
 | --- | --- |
-| [`aih docs-lint`](docs/commands.md#aih-docs-lint) | Run the read-only BetterDoc prose gate over public-facing Markdown and emit coded findings for blocked phrases or unsupported claims. |
+| [`aih docs-lint`](docs/commands.md#aih-docs-lint) | Run the read-only BetterDoc prose check and claim-ledger gate over public Markdown; hard claim orphans fail closed, while prose guidance is advisory. <!-- aih:claim CM-12 --> |
 | [`aih doctor`](docs/commands.md#aih-doctor) | Verify the workstation/repo configuration fail-closed; workspace mode validates each child repo, and Enterprise posture attests declared capability surfaces. |
 | [`aih status`](docs/commands.md#aih-status) | Show a read-only inventory of what the harness has configured. |
 

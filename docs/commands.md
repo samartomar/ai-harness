@@ -450,12 +450,15 @@ Generate a devcontainer + managed sandbox settings (egress allowlist, `failIfUna
 
 ## aih docs-lint
 
-Read-only BetterDoc documentation lint. It scans the public-facing Markdown surface
+Read-only BetterDoc documentation lint. It scans the public-facing Markdown surface <!-- aih:claim CM-12 -->
 (`README.md`, `CONTRIBUTING.md`, `SECURITY.md`, and `docs/`, excluding internal report specs) using
-the phrase and claim guidance in
-`packs/docs-quality/betterdoc/references/slop-lint.md`. Blocked prose emits coded findings
-(`docs.banned-phrase`, `docs.vague-absolute`, `docs.unsupported-callout-claim`) and exits non-zero;
-a missing rules file emits `docs.rules-missing`.
+the phrase and claim guidance in `packs/docs-quality/betterdoc/references/slop-lint.md`. Prose
+guidance emits coded advisory findings (`docs.banned-phrase`, `docs.vague-absolute`,
+`docs.unsupported-callout-claim`) without failing the run. Hard claim-ledger orphans fail closed:
+`<!-- aih:claim CM-xx -->` markers must resolve to `docs/CONTROL_MATRIX.md`, each matrix row must
+cite at least one named regression test that exists, and changed feature files need a docs or
+control-matrix update so public claims can detect drift. A missing rules file emits
+`docs.rules-missing`.
 
 ## aih doctor
 
