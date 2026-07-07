@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { command } from "../../src/bootstrap-ai/index.js";
 import { executePlan } from "../../src/internals/execute.js";
+import { LOADABILITY_SENTINEL } from "../../src/internals/loadability-sentinel.js";
 import type { Action, PlanContext, ProbeAction, WriteAction } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
@@ -71,6 +72,7 @@ describe("bootstrap-ai — canon files", () => {
     expect(w.has(".ai-context/adapters/other-tools.md")).toBe(true);
     expect(w.has(".ai-context/REGENERATION.md")).toBe(true);
     expect(w.has(".ai-context/harness-update.md")).toBe(true);
+    expect(w.get(".ai-context/RULE_ROUTER.md")?.contents).toContain(LOADABILITY_SENTINEL);
   });
 
   it("the harness-update doc explains managed vs user-owned files + the update path", async () => {
@@ -161,6 +163,7 @@ describe("bootstrap-ai — compact canon (default)", () => {
     expect(w.has(".ai-context/adapters/other-tools.md")).toBe(false);
     // The router + adapter route at the contract, not INDEX/architecture.
     const router = w.get(".ai-context/RULE_ROUTER.md")?.contents ?? "";
+    expect(router).toContain(LOADABILITY_SENTINEL);
     expect(router).toContain("project.md");
     expect(router).toContain("project.json");
     expect(router).not.toContain("INDEX.md");

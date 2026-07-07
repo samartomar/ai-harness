@@ -7,6 +7,7 @@ import {
 import type { CanonMode } from "../internals/canon-mode.js";
 import { bootloadersFor, entry as registryEntry } from "../internals/cli-registry.js";
 import { type Cli, SUPPORTED_CLIS } from "../internals/clis.js";
+import { LOADABILITY_SENTINEL } from "../internals/loadability-sentinel.js";
 import type { ManagedBlock } from "../internals/markers.js";
 import { frontmatter, lines } from "../internals/render.js";
 import type { RepoStack } from "../profile/scan.js";
@@ -273,6 +274,7 @@ function ruleRouterLegacy(
   }
   return lines(
     `# ${repoName} — AI Rule Router`,
+    `<!-- aih-loadability-sentinel: ${LOADABILITY_SENTINEL} -->`,
     "",
     "Committed rule entry point for every AI coding tool in this repo. Load the",
     "smallest rule set that matches the task, then verify against repo evidence",
@@ -366,6 +368,7 @@ function ruleRouterCompact(
   }
   return lines(
     `# ${repoName} — AI Rule Router`,
+    `<!-- aih-loadability-sentinel: ${LOADABILITY_SENTINEL} -->`,
     "",
     "Committed rule entry point for every AI coding tool in this repo. Load the",
     "smallest rule set that matches the task, then verify against repo evidence",

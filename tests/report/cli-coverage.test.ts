@@ -10,6 +10,7 @@ import { makeHostAdapter } from "../../src/platform/detect.js";
 import {
   type CliCoverageModel,
   cliCoverageDigest,
+  renderCliCoverage,
   scanCliCoverage,
 } from "../../src/report/cli-coverage.js";
 
@@ -178,9 +179,9 @@ describe("bootloader cell", () => {
     expect(r.bootloader.state).toBe("wired");
     expect(r.bootloader.detail).toContain("workspace");
     expect(r.settings.state).toBe("na");
-    expect(r.load.verdict).toBe("loads");
+    expect(r.load.verdict).toBe("unverified");
     expect(m.structurallyConfigured).toBe(1);
-    expect(m.provenLoadable).toBe(1);
+    expect(m.provenLoadable).toBe(0);
   });
 });
 
@@ -257,7 +258,7 @@ describe("loadability in the coverage model (Phase 1.5)", () => {
     expect(m.provenLoadable).toBe(0); // but not proven loadable — the silent gap
   });
 
-  it("a fully wired + activated tool is both configured and proven loadable", () => {
+  it("a fully wired tool is configured but not proven loadable without a dry-run canary", () => {
     marker("claude");
     scaffoldCanon();
     writeWiredBootloader("CLAUDE.md"); // CLAUDE.md is inherently always-on
@@ -265,9 +266,10 @@ describe("loadability in the coverage model (Phase 1.5)", () => {
     mkdirSync(join(dir, ".claude"), { recursive: true });
     writeFileSync(join(dir, ".claude", "settings.json"), "{}");
     const m = scanCliCoverage(ctx());
-    expect(row(m, "claude").load.verdict).toBe("loads");
+    expect(row(m, "claude").load.verdict).toBe("unverified");
     expect(m.structurallyConfigured).toBe(1);
-    expect(m.provenLoadable).toBe(1);
+    expect(m.provenLoadable).toBe(0);
+    expect(renderCliCoverage(m)).toContain("Manual load checks:");
   });
 });
 

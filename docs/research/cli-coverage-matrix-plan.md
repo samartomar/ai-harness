@@ -6,7 +6,9 @@ _Generated 2026-06-26. Grounded in the live source: the coverage surfaces, the C
 >
 > **Reviewed 2026-06-26** (external review, code-grounded). Verdict: proceed — this fixes a product trust gap, not scope creep. The review endorsed the defaults for D0/D1/D3/D4/D5/D6/D7/D8 and added three deltas now folded in: a **target-source** field (§3), a **dual KPI** (structurally configured vs proven loadable, §5/D8), and a locked **Installed/Targeted/Wired vocabulary** (§2). D2 accepted (annotate). The review's "validate MCP content in Phase 1" note was already satisfied — the writable-MCP content check is Phase 1, not deferred.
 >
-> **✅ IMPLEMENTED 2026-06-26** — all phases shipped on branch `feat/cli-coverage-matrix` (4 commits; since merged to main — `src/report/cli-coverage.ts`, `src/report/cli-loadability.ts`). Phase 1: `cli-coverage.ts` matrix + dashboard + terminal. Phase 1.5: `cli-loadability.ts` (`loads`/`wontLoad`/`unverified`) + "Loads?" column + "proven loadable" KPI + fail-closed doctor probe. Phase 2: scorecard `harnessWiring` consumes the model (per-CLI, `wontLoad` fails). Phase 3: `status`/`configPanel` narrowed to repo-global. Tier-2 canary deferred per D6. Verified: typecheck + biome clean, 862 tests green (incl. new `cli-coverage`/`cli-loadability` suites + Phase-2 scorecard tests).
+> **✅ IMPLEMENTED 2026-06-26** — all phases shipped on branch `feat/cli-coverage-matrix` (4 commits; since merged to main — `src/report/cli-coverage.ts`, `src/report/cli-loadability.ts`). Phase 1: `cli-coverage.ts` matrix + dashboard + terminal. Phase 1.5: `cli-loadability.ts` (`loads`/`wontLoad`/`unverified`) + "Loads?" column + "proven loadable" KPI + fail-closed doctor probe. Phase 2: scorecard `harnessWiring` consumes the model (per-CLI, `wontLoad` fails). Phase 3: `status`/`configPanel` narrowed to repo-global. Verified: typecheck + biome clean, 862 tests green (incl. new `cli-coverage`/`cli-loadability` suites + Phase-2 scorecard tests).
+>
+> **✅ TIER-2 CANARY IMPLEMENTED 2026-07-07 (#266)** — `RULE_ROUTER.md` now embeds a loadability sentinel, the CLI registry carries per-entry `dryRunProbe` support, and non-probeable tools surface manual checks instead of being counted as runtime-proven loadable.
 
 ## Contents
 1. The problem — what "AI CLI coverage" checks today
@@ -168,9 +170,9 @@ Each failure carries the fix verbatim (`→ cursor: .mdc has alwaysApply:false �
 aih is **not** an agent runtime — it cannot generically run every CLI and observe what loaded. Two honest mechanisms:
 
 - **Registry freshness** — each entry carries `lastVerified` (date) + `verifiedVersion` (tool version the path/frontmatter was confirmed against). `doctor` warns when stale or when the installed tool's `--version` is newer than `verifiedVersion`. Turns silent drift (#6) into a visible "re-verify" warning — the only defense against convention drift.
-- **Canary probe** — embed a sentinel token in `RULE_ROUTER.md`; for CLIs that expose a non-interactive "print resolved context" / dry-run mode, run it via the `ctx.run` seam and grep for the sentinel → proof of actual load. Gated behind a per-entry `dryRunProbe?` flag. Most tools don't support it today, so those emit a one-line manual check instead.
+- **Canary probe** — embed a sentinel token in `RULE_ROUTER.md`; for CLIs that expose a non-interactive "print resolved context" / dry-run mode, run it via the `ctx.run` seam and grep for the sentinel → proof of actual load. Gated behind per-entry `dryRunProbe` metadata. Most tools don't support it today, so those emit a one-line manual check instead.
 
-**Honesty rule:** three load verdicts — `loads` (proven structurally), `wontLoad` (proven broken), `unverified` (can't prove from a repo scan). Never collapse `unverified` into `loads`. The validator must not itself silently claim success it cannot prove.
+**Honesty rule:** three load verdicts — `loads` (structural checks pass and a registered dry-run canary prints the sentinel), `wontLoad` (proven broken), `unverified` (can't prove from a repo scan or this CLI has no registered context-dump probe). Never collapse `unverified` into `loads`. The validator must not itself silently claim success it cannot prove.
 
 ---
 
@@ -253,7 +255,7 @@ The new **"Loads?"** column is the key visibility for your concern: a row can be
 - **Phase 1.5 (loadability):** `cli-loadability.ts` Tier-1 checks + `loadgroups` cap + doctor probes + registry `activation`/`contextCap`. Closes every structurally detectable silent miss.
 - **Phase 2 (scorecard + freshness):** scorecard consumes the model; Tier-2 `lastVerified`/`verifiedVersion` freshness warnings. Fixes the maturity false +/-, surfaces convention drift.
 - **Phase 3 (cleanup, optional):** de-dup `configPanel`/`inventory` to global-only so per-CLI lives in one place; flows into `aih status`.
-- **Deferred:** Tier-2 canary / dry-run probes (per-tool, low coverage today).
+- **Implemented in #266:** Tier-2 canary / dry-run probe plumbing, with manual checks for tools that still lack a registered context-dump mode.
 
 ---
 
