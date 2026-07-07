@@ -55,20 +55,40 @@ Four threads run through every release:
   fixes, the enterprise review pack, codebase-memory-mcp catalog wiring,
   `aih verify-release`, generated JSON Schemas, run-ledger schemaVersion 2, SIEM
   guidance, and mcp-scanner detector support.
+- **[v2.0.0](https://github.com/samartomar/ai-harness/releases/tag/v2.0.0)** —
+  the verified mainline release train for the completed v1.3.1, v1.4.0, v1.5.0,
+  v1.6.0, and v2.0.0 milestones. It shipped workspace federation hardening,
+  enterprise MCP approval/compliance paths, repo capability resolve/cache, init v3
+  bootstrap intelligence, session guardrails, and the structured verification
+  substrate/bridge work used by trust, skill, doctor, workspace, and report flows.
+- **[v2.1.0](https://github.com/samartomar/ai-harness/releases/tag/v2.1.0)** —
+  local usage and skill-economy reporting plus governance/docs hardening: the
+  `.aih/usage.jsonl` sink, per-tool usage capture hooks, Zed `threads.db` import,
+  Claude skill attribution, stack-scoped dormant ECC skills, as-built design docs,
+  ECC installer resolution, approved skill sync into CLI machine roots, and
+  fail-closed posture/baseline parsing.
 
 ## Now
 
-The v1.0.2, v1.1.0, and v1.2.0 milestones have no open issues. The next public roadmap
-milestone will be opened after the release package is published and any follow-up from
-the v1.2.0 rollout is triaged.
+The v2.1.0 release is published. Current GitHub milestone state on July 7, 2026:
 
-## Later — beyond 1.0
+- Of the remaining unreleased follow-up milestones, v2.3.0 and v2.4.0 have no
+  open issues.
+- v2.2.0 remains open only for
+  [#255](https://github.com/samartomar/ai-harness/issues/255), which requires a
+  real `fetch-analytics.mjs --run` Admin API sample. That item is blocked until
+  an operator manually fetches the sample in a secure environment with
+  `ANTHROPIC_ADMIN_KEY`; the sample must not be fabricated or captured in
+  automated CI.
+- The v2.3.0 and v2.4.0 issue work is merged on `main`, but release packaging stays
+  gated by the older v2.2.0 live-sample confirmation.
+
+## Later
 
 Directional. Nothing here is committed to a release yet.
 
-- Corporate-trust propagation across more runtimes (git, Go, Docker, JVM, Gradle, Maven).
-- Trust-gate deep-scan detectors beyond the first scanner.
-- Broader language command routing for polyglot repos.
+- Continue broadening enterprise trust evidence, release provenance, and multi-CLI
+  ergonomics through GitHub milestone issues.
 
 ## How to influence it
 
