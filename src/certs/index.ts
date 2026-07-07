@@ -15,7 +15,7 @@ import {
 import { stripTrailingNewlines } from "../internals/render.js";
 import type { Check } from "../internals/verify.js";
 import { upsertIniKey } from "./ini.js";
-import { homebrewDoc, noCertDoc } from "./templates.js";
+import { dockerTrustDoc, homebrewDoc, noCertDoc } from "./templates.js";
 
 const DEFAULT_OUT_DIR = "~/.config/enterprise-ca";
 const PEM_NAME = "corporate-root-ca.pem";
@@ -29,7 +29,8 @@ const DOCKER_REGISTRY_HOST = "registry-1.docker.io";
 /**
  * `aih certs` — extract the corporate root CA from the OS trust store and
  * propagate that trust to the runtimes that ignore the system store (Node, pip,
- * cargo, Go, git, Docker, JVM/Gradle/Maven, Homebrew, conda).
+ * cargo, Go, git, JVM/Gradle/Maven, Homebrew, conda) while emitting Docker
+ * daemon trust guidance.
  *
  * The plan is a fixed pipeline: export a locked-down PEM bundle, export the trust
  * env vars into the shell profile, write the per-manager config files, and emit
@@ -60,6 +61,8 @@ async function planCerts(ctx: PlanContext): Promise<Plan> {
 
   const profile = ctx.host.shellProfilePaths()[0] ?? join(home, ".profile");
   const envVars = trustEnvVars(pemPath, outDir, trustStorePath);
+  const gradlePath = join(home, ".gradle", "gradle.properties");
+  const mavenPath = mavenRcPath(home, ctx.host.platform);
 
   // `certs` is a HOST-level capability: every file it writes lives under the user's
   // home/system (PEM bundle + per-manager configs), not the repo root, so each write
@@ -118,24 +121,19 @@ async function planCerts(ctx: PlanContext): Promise<Plan> {
       "git: set [http] sslCAInfo to the corporate CA bundle",
       { external: true },
     ),
-    writeText(
-      join(home, ".docker", "certs.d", DOCKER_REGISTRY_HOST, "ca.crt"),
-      bundle,
-      `Docker: install corporate CA under certs.d for ${DOCKER_REGISTRY_HOST}`,
-      { external: true },
+    doc(
+      "Docker: install corporate CA in daemon trust store",
+      dockerTrustDoc(pemPath, DOCKER_REGISTRY_HOST),
     ),
     writeText(
-      join(home, ".gradle", "gradle.properties"),
-      gradleProperties(
-        readIfExists(join(home, ".gradle", "gradle.properties")) ?? "",
-        trustStorePath,
-      ),
+      gradlePath,
+      gradleProperties(readIfExists(gradlePath) ?? "", trustStorePath),
       "Gradle: set JVM SSL trustStore system properties",
       { external: true },
     ),
     writeText(
-      join(home, ".mavenrc"),
-      mavenRc(readIfExists(join(home, ".mavenrc")) ?? "", trustStorePath),
+      mavenPath,
+      mavenRc(readIfExists(mavenPath) ?? "", trustStorePath, ctx.host.platform),
       "Maven: export JVM SSL trustStore options",
       { external: true },
     ),
@@ -247,9 +245,22 @@ function upsertProperty(existing: string, key: string, value: string): string {
   return `${out.join("\n")}\n`;
 }
 
+function javaPropertiesPath(path: string): string {
+  return path.replace(/\\/g, "/");
+}
+
+function jvmTrustStoreOptions(trustStorePath: string): string {
+  const trustStore = javaPropertiesPath(trustStorePath);
+  return `-Djavax.net.ssl.trustStore=${trustStore} -Djavax.net.ssl.trustStorePassword=${TRUSTSTORE_PASSWORD}`;
+}
+
 /** Upsert Gradle JVM SSL properties pointing at the generated user truststore. */
 export function gradleProperties(existing: string, trustStorePath: string): string {
-  const withStore = upsertProperty(existing, "systemProp.javax.net.ssl.trustStore", trustStorePath);
+  const withStore = upsertProperty(
+    existing,
+    "systemProp.javax.net.ssl.trustStore",
+    javaPropertiesPath(trustStorePath),
+  );
   return upsertProperty(
     withStore,
     "systemProp.javax.net.ssl.trustStorePassword",
@@ -257,14 +268,22 @@ export function gradleProperties(existing: string, trustStorePath: string): stri
   );
 }
 
-/** Upsert a Maven shell block that appends the generated truststore to MAVEN_OPTS. */
-export function mavenRc(existing: string, trustStorePath: string): string {
-  const opts = `-Djavax.net.ssl.trustStore=${trustStorePath} -Djavax.net.ssl.trustStorePassword=${TRUSTSTORE_PASSWORD}`;
-  return upsertTextBlock(
-    existing,
-    "certs-maven",
-    `MAVEN_OPTS="\${MAVEN_OPTS:-} ${opts}"\nexport MAVEN_OPTS`,
-  );
+function mavenRcPath(home: string, platform: "windows" | "darwin" | "linux"): string {
+  return platform === "windows" ? join(home, "mavenrc_pre.cmd") : join(home, ".mavenrc");
+}
+
+/** Upsert a Maven rc block that appends the generated truststore to MAVEN_OPTS. */
+export function mavenRc(
+  existing: string,
+  trustStorePath: string,
+  platform: "windows" | "darwin" | "linux" = "linux",
+): string {
+  const opts = jvmTrustStoreOptions(trustStorePath);
+  const body =
+    platform === "windows"
+      ? `set "MAVEN_OPTS=%MAVEN_OPTS% ${opts}"`
+      : `MAVEN_OPTS="\${MAVEN_OPTS:-} ${opts}"\nexport MAVEN_OPTS`;
+  return upsertTextBlock(existing, "certs-maven", body);
 }
 
 /**
@@ -328,7 +347,7 @@ function firstLine(text: string): string {
 export const command: CommandSpec = {
   name: "certs",
   summary:
-    "Extract corporate root CA(s) and propagate trust to package managers, Go, git, Docker, and JVM tools",
+    "Extract corporate root CA(s), propagate trust to package managers, Go, git, and JVM tools, and guide Docker trust",
   options: [
     {
       flags: "--ca-pattern <pattern>",

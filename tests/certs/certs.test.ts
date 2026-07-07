@@ -289,13 +289,15 @@ describe("certs plan — per-manager config files carry the PEM path", () => {
     expect(git?.contents).toMatch(/sslCAInfo = .*corporate-root-ca\.pem/);
   });
 
-  it("Docker certs.d gets a CA bundle for the default registry", async () => {
+  it("Docker trust stays daemon guidance, not a misleading user-home write", async () => {
     const root = freshTmp();
     const home = join(root, "home");
     const p = await command.plan(makeCtx({ root, env: { HOME: home } }));
-    const docker = findWrite(p.actions, "/.docker/certs.d/registry-1.docker.io/ca.crt");
+    const docker = findDoc(p.actions, "Docker");
     expect(docker).toBeDefined();
-    expect(docker?.contents).toBe(PEM_ONE);
+    expect(docker?.text).toContain("/etc/docker/certs.d/registry-1.docker.io/ca.crt");
+    expect(docker?.text).toContain("Docker Desktop");
+    expect(findWrite(p.actions, "/.docker/certs.d/registry-1.docker.io/ca.crt")).toBeUndefined();
   });
 
   it("Gradle and Maven point at the generated JVM truststore", async () => {
@@ -308,6 +310,33 @@ describe("certs plan — per-manager config files carry the PEM path", () => {
     expect(gradle?.contents).toContain("corporate-cacerts.jks");
     expect(maven?.contents).toContain("MAVEN_OPTS=");
     expect(maven?.contents).toContain("corporate-cacerts.jks");
+  });
+
+  it("Gradle properties normalize Windows truststore paths to avoid Java escape parsing", () => {
+    const trustStore = "C:\\Users\\samar\\.config\\enterprise-ca\\corporate-cacerts.jks";
+    const out = gradleProperties("", trustStore);
+    expect(out).toContain(
+      "systemProp.javax.net.ssl.trustStore=C:/Users/samar/.config/enterprise-ca/corporate-cacerts.jks",
+    );
+    expect(out).not.toContain("\\Users");
+  });
+
+  it("Maven uses the Windows pre-rc file and batch syntax on Windows", async () => {
+    const root = freshTmp();
+    const home = join(root, "home");
+    const p = await command.plan(
+      makeCtx({
+        root,
+        platform: "windows",
+        env: { USERPROFILE: home, APPDATA: join(root, "AppData"), USERNAME: "samar" },
+      }),
+    );
+    const maven = findWrite(p.actions, "/mavenrc_pre.cmd");
+    expect(maven).toBeDefined();
+    expect(maven?.contents).toContain('set "MAVEN_OPTS=%MAVEN_OPTS%');
+    expect(maven?.contents).toContain("corporate-cacerts.jks");
+    expect(maven?.contents).not.toContain("export MAVEN_OPTS");
+    expect(findWrite(p.actions, "/.mavenrc")).toBeUndefined();
   });
 });
 
@@ -513,5 +542,8 @@ describe("ini helper", () => {
       gradleProperties("", trustStore),
     );
     expect(mavenRc(mavenRc("", trustStore), trustStore)).toBe(mavenRc("", trustStore));
+    expect(mavenRc(mavenRc("", trustStore, "windows"), trustStore, "windows")).toBe(
+      mavenRc("", trustStore, "windows"),
+    );
   });
 });

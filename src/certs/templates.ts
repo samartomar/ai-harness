@@ -1,6 +1,6 @@
 /**
  * Doc-action bodies for the `certs` capability — guidance the harness prints but
- * never runs. Homebrew and conda may be absent on a given workstation, so their
+ * never runs. Homebrew and Docker daemon trust may vary by workstation, so those
  * trust steps are emitted as exact, copy-pasteable commands rather than executed
  * (the boundary: local-only execs go through `exec`; everything advisory is a
  * `doc`). Commands are quoted verbatim from the blueprint's Package Manager
@@ -40,5 +40,22 @@ export function homebrewDoc(pemPath: string): string {
     `  cp ${pemPath} /usr/local/etc/openssl@3/certs/ && /usr/local/opt/openssl@3/bin/c_rehash`,
     "",
     "Verify:  brew doctor",
+  );
+}
+
+/** Docker daemon trust differs by OS/engine and may require elevated access. */
+export function dockerTrustDoc(pemPath: string, registryHost: string): string {
+  return lines(
+    "Docker registry trust is daemon/host-level, not a user-home config file.",
+    "Install the corporate CA where your Docker engine reads registry CAs:",
+    "",
+    "  # Linux Docker Engine (requires admin/root and daemon restart):",
+    `  sudo install -d -m 0755 /etc/docker/certs.d/${registryHost}`,
+    `  sudo install -m 0644 ${pemPath} /etc/docker/certs.d/${registryHost}/ca.crt`,
+    "  sudo systemctl restart docker",
+    "",
+    "Docker Desktop on macOS/Windows uses host/desktop trust plumbing; install the",
+    "corporate CA through the OS or Docker Desktop certificate workflow, then",
+    "restart Docker Desktop.",
   );
 }
