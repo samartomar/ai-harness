@@ -1,184 +1,148 @@
-<svg width="1200" height="720" viewBox="0 0 1200 720" xmlns="http://www.w3.org/2000/svg" font-family="ui-sans-serif, -apple-system, Segoe UI, Roboto, sans-serif">
+<svg width="1200" height="764" viewBox="0 0 1200 764" xmlns="http://www.w3.org/2000/svg" role="img" font-family="ui-sans-serif, -apple-system, Segoe UI, Roboto, sans-serif">
+  <title>aih — the governed readiness layer for AI-assisted software development (v2.4.0 overview)</title>
+  <desc>Five governed-readiness pillars (Environment, Context, Policy, Execution, Evidence), a v2.4 Verified layer, design posture, and the release journey to v2.4 AI-Canonical.</desc>
+  <!-- UPDATE PER RELEASE: (1) version badge below, (2) the last release-journey node. Both are marked inline. -->
   <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#0b0e14"/>
-      <stop offset="1" stop-color="#11161f"/>
-    </linearGradient>
-    <radialGradient id="glow" cx="0.5" cy="0.12" r="0.9">
-      <stop offset="0" stop-color="#1f6feb" stop-opacity="0.18"/>
-      <stop offset="1" stop-color="#1f6feb" stop-opacity="0"/>
-    </radialGradient>
-    <pattern id="dots" width="26" height="26" patternUnits="userSpaceOnUse">
-      <circle cx="1" cy="1" r="1" fill="#ffffff" fill-opacity="0.035"/>
-    </pattern>
-    <filter id="soft" x="-20%" y="-20%" width="140%" height="140%">
-      <feDropShadow dx="0" dy="6" stdDeviation="10" flood-color="#000000" flood-opacity="0.45"/>
-    </filter>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#0b0e14"/><stop offset="1" stop-color="#11161f"/></linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.1" r="0.9"><stop offset="0" stop-color="#1f6feb" stop-opacity="0.16"/><stop offset="1" stop-color="#1f6feb" stop-opacity="0"/></radialGradient>
+    <pattern id="dots" width="26" height="26" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r="1" fill="#ffffff" fill-opacity="0.035"/></pattern>
+    <filter id="soft" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="6" stdDeviation="10" flood-color="#000000" flood-opacity="0.45"/></filter>
   </defs>
 
-  <!-- backdrop -->
-  <rect width="1200" height="720" fill="url(#bg)"/>
-  <rect width="1200" height="720" fill="url(#dots)"/>
-  <rect width="1200" height="720" fill="url(#glow)"/>
-  <rect x="0.5" y="0.5" width="1199" height="719" rx="0" fill="none" stroke="#222a35" stroke-width="1"/>
+  <rect width="1200" height="764" fill="url(#bg)"/>
+  <rect width="1200" height="764" fill="url(#dots)"/>
+  <rect width="1200" height="764" fill="url(#glow)"/>
+  <rect x="0.5" y="0.5" width="1199" height="763" fill="none" stroke="#222a35" stroke-width="1"/>
 
   <!-- ===== header ===== -->
-  <text x="64" y="118" font-size="78" font-weight="800" fill="#e6edf3" letter-spacing="-2">aih</text>
-  <rect x="206" y="58" width="2" height="74" fill="#2b323c"/>
-  <text x="230" y="86" font-size="25" font-weight="700" fill="#e6edf3">Enterprise AI Bootstrapping Harness</text>
-  <g transform="translate(692,66)">
-    <rect width="172" height="27" rx="13.5" fill="#3fb950" fill-opacity="0.14" stroke="#3fb950" stroke-opacity="0.55"/>
-    <text x="86" y="18" font-size="13" font-weight="700" fill="#56d364" text-anchor="middle">v2.1.0 · stable contract</text>
+  <text x="64" y="110" font-size="72" font-weight="800" fill="#e6edf3" letter-spacing="-2">aih</text>
+  <rect x="196" y="52" width="2" height="70" fill="#2b323c"/>
+  <text x="220" y="80" font-size="24" font-weight="700" fill="#e6edf3">Enterprise AI Bootstrapping Harness</text>
+  <!-- UPDATE PER RELEASE: version badge -->
+  <g transform="translate(686,58)">
+    <rect width="178" height="26" rx="13" fill="#3fb950" fill-opacity="0.14" stroke="#3fb950" stroke-opacity="0.55"/>
+    <text x="89" y="17" font-size="12.5" font-weight="700" fill="#56d364" text-anchor="middle">v2.4.0 · stable 1.0 contract</text>
   </g>
-  <text x="230" y="118" font-size="17" fill="#8b949e">One cross-platform CLI · dry-run by default · never mutates a remote system</text>
-
-  <!-- tag, top-right -->
-  <g transform="translate(1136,74)" text-anchor="end">
-    <text x="0" y="0" font-size="14" fill="#6e7681" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">38 commands</text>
-    <text x="0" y="22" font-size="14" fill="#6e7681" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">TypeScript · Apache-2.0</text>
+  <text x="220" y="110" font-size="16" fill="#8b949e">The governed <tspan fill="#adbac7" font-weight="600">readiness</tspan> layer for AI-assisted software development</text>
+  <g transform="translate(1136,66)" text-anchor="end" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">
+    <text x="0" y="0" font-size="13.5" fill="#6e7681">42 commands</text>
+    <text x="0" y="21" font-size="13.5" fill="#6e7681">TypeScript · Apache-2.0</text>
   </g>
 
-  <text x="64" y="178" font-size="18" fill="#adbac7">Prepares developer workstations &amp; repos for <tspan fill="#e6edf3" font-weight="600">safe, governed AI-assisted coding in enterprise environments.</tspan></text>
+  <!-- research gap line -->
+  <text x="64" y="162" font-size="18" fill="#adbac7">AI access is high — governed readiness is low. <tspan fill="#e6edf3" font-weight="600">AIH gives the organization guardrails, context &amp; proof.</tspan></text>
 
-  <!-- ===== pipeline ===== -->
-  <!-- 5 cards: x = 49, 273, 497, 721, 945 ; width 206 ; y 224 ; h 212 -->
+  <text x="64" y="198" font-size="11" font-weight="700" fill="#6e7681" letter-spacing="2" font-family="ui-monospace, Menlo, monospace">GOVERNED READINESS · FIVE PILLARS</text>
+
+  <!-- ===== 5 pillar cards : x = 49,273,497,721,945 ; w 206 ; y 210 ; h 178 ===== -->
   <g filter="url(#soft)">
-    <!-- 1 · Proxy -->
-    <g transform="translate(49,224)">
-      <rect width="206" height="212" rx="14" fill="#151a22" stroke="#2b323c"/>
-      <rect width="206" height="4" rx="2" fill="#f85149"/>
-      <g transform="translate(22,30)" stroke="#f85149" stroke-width="2.4" fill="none" stroke-linejoin="round" stroke-linecap="round">
-        <path d="M0 0 H34 L24 16 V30 L10 36 V16 Z"/>
-      </g>
-      <text x="22" y="106" font-size="19" font-weight="700" fill="#e6edf3">Corporate proxy</text>
-      <text x="22" y="132" font-size="13" fill="#8b949e">TLS interception breaks</text>
-      <text x="22" y="151" font-size="13" fill="#8b949e">trust for every runtime</text>
-      <text x="22" y="186" font-size="12.5" fill="#6e7681" font-family="ui-monospace, Menlo, monospace">Zscaler · Netskope</text>
-      <text x="22" y="203" font-size="12.5" fill="#6e7681" font-family="ui-monospace, Menlo, monospace">Palo Alto · any MITM</text>
-    </g>
-
-    <!-- 2 · Trust (heal highlighted) -->
-    <g transform="translate(273,224)">
-      <rect width="206" height="212" rx="14" fill="#151a22" stroke="#3a4150"/>
+    <!-- 1 Environment -->
+    <g transform="translate(49,210)">
+      <rect width="206" height="178" rx="14" fill="#151a22" stroke="#2b323c"/>
       <rect width="206" height="4" rx="2" fill="#3fb950"/>
-      <g transform="translate(22,28)" stroke="#3fb950" stroke-width="2.4" fill="none" stroke-linecap="round">
-        <rect x="2" y="14" width="28" height="20" rx="3"/>
-        <path d="M8 14 V9 a8 8 0 0 1 16 0 V14"/>
+      <g transform="translate(22,26)" stroke="#3fb950" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M16 1 L30 7 V17 C30 26 24 31 16 34 C8 31 2 26 2 17 V7 Z"/><path d="M10 17 l4 4 l8 -9"/>
       </g>
-      <text x="22" y="106" font-size="19" font-weight="700" fill="#e6edf3">Trust</text>
-      <text x="22" y="132" font-size="13" fill="#8b949e">Extract the corporate CA;</text>
-      <text x="22" y="151" font-size="13" fill="#8b949e">propagate &amp; self-heal it</text>
-      <g transform="translate(22,172)">
-        <text x="0" y="14" font-size="13" fill="#adbac7" font-family="ui-monospace, Menlo, monospace">aih certs</text>
-        <text x="0" y="33" font-size="13" fill="#adbac7" font-family="ui-monospace, Menlo, monospace">aih heal</text>
-      </g>
+      <text x="22" y="92" font-size="18" font-weight="700" fill="#e6edf3">Environment</text>
+      <text x="22" y="115" font-size="12.5" fill="#8b949e">Known-good workstation</text>
+      <text x="22" y="145" font-size="12.5" fill="#adbac7" font-family="ui-monospace, Menlo, monospace">certs · heal · ready</text>
+      <text x="22" y="164" font-size="12.5" fill="#6e7681" font-family="ui-monospace, Menlo, monospace">hardware · vdi</text>
     </g>
-
-    <!-- 3 · Tune -->
-    <g transform="translate(497,224)">
-      <rect width="206" height="212" rx="14" fill="#151a22" stroke="#2b323c"/>
+    <!-- 2 Context -->
+    <g transform="translate(273,210)">
+      <rect width="206" height="178" rx="14" fill="#151a22" stroke="#2b323c"/>
       <rect width="206" height="4" rx="2" fill="#58a6ff"/>
-      <g transform="translate(22,30)" stroke="#58a6ff" stroke-width="2.4" fill="none" stroke-linecap="round">
-        <path d="M2 6 H32 M2 18 H32 M2 30 H32"/>
-        <circle cx="11" cy="6" r="4" fill="#151a22"/>
-        <circle cx="24" cy="18" r="4" fill="#151a22"/>
-        <circle cx="9" cy="30" r="4" fill="#151a22"/>
+      <g transform="translate(22,26)" stroke="#58a6ff" stroke-width="2.4" fill="none" stroke-linejoin="round" stroke-linecap="round">
+        <path d="M16 2 L31 9 L16 16 L1 9 Z"/><path d="M1 16 L16 23 L31 16"/><path d="M1 23 L16 30 L31 23"/>
       </g>
-      <text x="22" y="106" font-size="19" font-weight="700" fill="#e6edf3">Tune</text>
-      <text x="22" y="132" font-size="13" fill="#8b949e">Profile CPU/RAM/GPU;</text>
-      <text x="22" y="151" font-size="13" fill="#8b949e">redirect VDI scratch</text>
-      <text x="22" y="186" font-size="12.5" fill="#6e7681" font-family="ui-monospace, Menlo, monospace">hardware · vdi</text>
+      <text x="22" y="92" font-size="18" font-weight="700" fill="#e6edf3">Context</text>
+      <text x="22" y="115" font-size="12.5" fill="#8b949e">Repo-aware agent canon</text>
+      <text x="22" y="145" font-size="12.5" fill="#adbac7" font-family="ui-monospace, Menlo, monospace">profile · contract</text>
+      <text x="22" y="164" font-size="12.5" fill="#6e7681" font-family="ui-monospace, Menlo, monospace">bootstrap-ai · scaffold</text>
     </g>
-
-    <!-- 4 · Bootstrap -->
-    <g transform="translate(721,224)">
-      <rect width="206" height="212" rx="14" fill="#151a22" stroke="#2b323c"/>
-      <rect width="206" height="4" rx="2" fill="#3fb950"/>
-      <g transform="translate(22,28)" stroke="#3fb950" stroke-width="2.4" fill="none" stroke-linejoin="round">
-        <path d="M16 4 L32 12 L16 20 L0 12 Z"/>
-        <path d="M0 20 L16 28 L32 20"/>
-        <path d="M0 28 L16 36 L32 28"/>
-      </g>
-      <text x="22" y="106" font-size="19" font-weight="700" fill="#e6edf3">Bootstrap</text>
-      <text x="22" y="132" font-size="13" fill="#8b949e">Lay the governed repo</text>
-      <text x="22" y="151" font-size="13" fill="#8b949e">canon — one writer/file</text>
-      <text x="22" y="184" font-size="11.5" fill="#6e7681" font-family="ui-monospace, Menlo, monospace">profile · scaffold</text>
-      <text x="22" y="201" font-size="11.5" fill="#6e7681" font-family="ui-monospace, Menlo, monospace">guardrails · mcp · sandbox</text>
-    </g>
-
-    <!-- 5 · Governed AI (v0.6: skill trust gate + marketplace + policy/evidence seams) -->
-    <g transform="translate(945,224)">
-      <rect width="206" height="212" rx="14" fill="#151a22" stroke="#3a4150"/>
+    <!-- 3 Policy -->
+    <g transform="translate(497,210)">
+      <rect width="206" height="178" rx="14" fill="#151a22" stroke="#2b323c"/>
       <rect width="206" height="4" rx="2" fill="#bc8cff"/>
-      <g transform="translate(22,28)" fill="#bc8cff">
-        <path d="M16 0 L20 12 L32 16 L20 20 L16 32 L12 20 L0 16 L12 12 Z"/>
+      <g transform="translate(22,26)" stroke="#bc8cff" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3" y="15" width="26" height="18" rx="3"/><path d="M9 15 V10 a7 7 0 0 1 14 0 V15"/>
       </g>
-      <text x="22" y="106" font-size="19" font-weight="700" fill="#e6edf3">Governed AI</text>
-      <text x="22" y="132" font-size="13" fill="#8b949e">Skill trust gate, packs,</text>
-      <text x="22" y="151" font-size="13" fill="#8b949e">marketplace &amp; evidence</text>
-      <g transform="translate(22,172)">
-        <text x="0" y="14" font-size="13" fill="#adbac7" font-family="ui-monospace, Menlo, monospace">aih skill vet</text>
-        <text x="0" y="33" font-size="13" fill="#adbac7" font-family="ui-monospace, Menlo, monospace">aih marketplace</text>
+      <text x="22" y="92" font-size="18" font-weight="700" fill="#e6edf3">Policy</text>
+      <text x="22" y="115" font-size="12.5" fill="#8b949e">Machine-readable, enforced</text>
+      <text x="22" y="145" font-size="12.5" fill="#adbac7" font-family="ui-monospace, Menlo, monospace">policy · guardrails</text>
+      <text x="22" y="164" font-size="12.5" fill="#6e7681" font-family="ui-monospace, Menlo, monospace">mcp · secrets</text>
+    </g>
+    <!-- 4 Execution -->
+    <g transform="translate(721,210)">
+      <rect width="206" height="178" rx="14" fill="#151a22" stroke="#2b323c"/>
+      <rect width="206" height="4" rx="2" fill="#d29922"/>
+      <g transform="translate(22,26)" stroke="#e3b341" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M4 4 l12 10 l-12 10"/><path d="M20 26 h10"/>
       </g>
+      <text x="22" y="92" font-size="18" font-weight="700" fill="#e6edf3">Execution</text>
+      <text x="22" y="115" font-size="12.5" fill="#8b949e">Dry-run, gated, local</text>
+      <text x="22" y="145" font-size="12.5" fill="#adbac7" font-family="ui-monospace, Menlo, monospace">--apply gate · sandbox</text>
+      <text x="22" y="164" font-size="12.5" fill="#6e7681" font-family="ui-monospace, Menlo, monospace">posture · run-ledger</text>
+    </g>
+    <!-- 5 Evidence -->
+    <g transform="translate(945,210)">
+      <rect width="206" height="178" rx="14" fill="#151a22" stroke="#2b323c"/>
+      <rect width="206" height="4" rx="2" fill="#2ea043"/>
+      <g transform="translate(22,25)" stroke="#3fb950" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M16 2 l4 4 l6 -1 l-1 6 l4 4 l-4 4 l1 6 l-6 -1 l-4 4 l-4 -4 l-6 1 l1 -6 l-4 -4 l4 -4 l-1 -6 l6 1 Z"/><path d="M11 16 l4 4 l7 -8"/>
+      </g>
+      <text x="22" y="92" font-size="18" font-weight="700" fill="#e6edf3">Evidence</text>
+      <text x="22" y="115" font-size="12.5" fill="#8b949e">Reviewable, provable</text>
+      <text x="22" y="145" font-size="12.5" fill="#adbac7" font-family="ui-monospace, Menlo, monospace">evidence · bundle</text>
+      <text x="22" y="164" font-size="12.5" fill="#6e7681" font-family="ui-monospace, Menlo, monospace">verify-release · report</text>
     </g>
   </g>
 
-  <!-- arrows between cards (gaps centered at x=264, 488, 712, 936 ; y=330) -->
-  <g stroke="#4b5563" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M260 330 h10 m-5 -5 l5 5 l-5 5"/>
-    <path d="M484 330 h10 m-5 -5 l5 5 l-5 5"/>
-    <path d="M708 330 h10 m-5 -5 l5 5 l-5 5"/>
-    <path d="M932 330 h10 m-5 -5 l5 5 l-5 5"/>
+  <!-- ===== Verified capstone band (new in v2.4) ===== -->
+  <g transform="translate(49,406)">
+    <rect width="1102" height="62" rx="14" fill="#bc8cff" fill-opacity="0.07" stroke="#bc8cff" stroke-opacity="0.4"/>
+    <g transform="translate(24,20)" fill="#bc8cff"><path d="M11 0 L14 8 L22 11 L14 14 L11 22 L8 14 L0 11 L8 8 Z"/></g>
+    <text x="62" y="27" font-size="18" font-weight="700" fill="#e6edf3">Verified</text>
+    <g transform="translate(140,14)"><rect width="118" height="22" rx="11" fill="#bc8cff" fill-opacity="0.16" stroke="#bc8cff" stroke-opacity="0.5"/><text x="59" y="15" font-size="11.5" font-weight="700" fill="#d2b3ff" text-anchor="middle">new in v2.4.0</text></g>
+    <text x="286" y="27" font-size="14" fill="#adbac7">Public claims &amp; project truth <tspan fill="#e6edf3" font-weight="600">fail closed when they drift from reality.</tspan></text>
+    <text x="1078" y="47" font-size="12.5" fill="#6e7681" text-anchor="end" font-family="ui-monospace, Menlo, monospace">aih truth pack · verify   ·   docs-lint claim gate</text>
+    <text x="62" y="47" font-size="12.5" fill="#8b949e">SHA-bound sidecar · staged &amp; signed · drift gate</text>
   </g>
 
   <!-- ===== posture chips ===== -->
-  <g transform="translate(64,486)" font-size="13.5" font-weight="600">
-    <g>
-      <rect width="186" height="34" rx="17" fill="#161b22" stroke="#2b323c"/>
-      <circle cx="20" cy="17" r="4" fill="#3fb950"/>
-      <text x="34" y="22" fill="#adbac7">Dry-run by default</text>
-    </g>
-    <g transform="translate(202,0)">
-      <rect width="214" height="34" rx="17" fill="#161b22" stroke="#2b323c"/>
-      <circle cx="20" cy="17" r="4" fill="#3fb950"/>
-      <text x="34" y="22" fill="#adbac7">Never mutates a remote</text>
-    </g>
-    <g transform="translate(432,0)">
-      <rect width="226" height="34" rx="17" fill="#161b22" stroke="#2b323c"/>
-      <circle cx="20" cy="17" r="4" fill="#3fb950"/>
-      <text x="34" y="22" fill="#adbac7">Idempotent + transactional</text>
-    </g>
-    <g transform="translate(674,0)">
-      <rect width="248" height="34" rx="17" fill="#161b22" stroke="#2b323c"/>
-      <circle cx="20" cy="17" r="4" fill="#58a6ff"/>
-      <text x="34" y="22" fill="#adbac7">Windows · Linux · macOS</text>
-    </g>
+  <g transform="translate(64,498)" font-size="13" font-weight="600">
+    <g><rect width="176" height="32" rx="16" fill="#161b22" stroke="#2b323c"/><circle cx="19" cy="16" r="3.5" fill="#3fb950"/><text x="32" y="21" fill="#adbac7">Dry-run by default</text></g>
+    <g transform="translate(190,0)"><rect width="204" height="32" rx="16" fill="#161b22" stroke="#2b323c"/><circle cx="19" cy="16" r="3.5" fill="#3fb950"/><text x="32" y="21" fill="#adbac7">Never mutates a remote</text></g>
+    <g transform="translate(408,0)"><rect width="214" height="32" rx="16" fill="#161b22" stroke="#2b323c"/><circle cx="19" cy="16" r="3.5" fill="#3fb950"/><text x="32" y="21" fill="#adbac7">Idempotent + transactional</text></g>
+    <g transform="translate(636,0)"><rect width="150" height="32" rx="16" fill="#161b22" stroke="#2b323c"/><circle cx="19" cy="16" r="3.5" fill="#58a6ff"/><text x="32" y="21" fill="#adbac7">Local-first</text></g>
+    <g transform="translate(800,0)"><rect width="238" height="32" rx="16" fill="#161b22" stroke="#2b323c"/><circle cx="19" cy="16" r="3.5" fill="#58a6ff"/><text x="32" y="21" fill="#adbac7">Windows · Linux · macOS</text></g>
   </g>
 
   <!-- ===== release journey ===== -->
   <g>
-    <text x="64" y="552" font-size="11" font-weight="700" fill="#6e7681" letter-spacing="2" font-family="ui-monospace, Menlo, monospace">RELEASE JOURNEY</text>
-    <line x1="64" y1="574" x2="1136" y2="574" stroke="#2b323c" stroke-width="1.6"/>
-    <g fill="#8b949e">
-      <circle cx="70" cy="574" r="4" fill="#58a6ff"/>
-      <circle cx="300" cy="574" r="4" fill="#58a6ff"/>
-      <circle cx="560" cy="574" r="5.5" fill="#3fb950"/>
-      <circle cx="820" cy="574" r="5.5" fill="#3fb950"/>
-      <circle cx="1120" cy="574" r="6" fill="#151a22" stroke="#bc8cff" stroke-width="2.4"/>
+    <text x="64" y="566" font-size="11" font-weight="700" fill="#6e7681" letter-spacing="2" font-family="ui-monospace, Menlo, monospace">RELEASE JOURNEY</text>
+    <line x1="64" y1="588" x2="1136" y2="588" stroke="#2b323c" stroke-width="1.6"/>
+    <g>
+      <circle cx="70" cy="588" r="4" fill="#58a6ff"/>
+      <circle cx="320" cy="588" r="4" fill="#58a6ff"/>
+      <circle cx="580" cy="588" r="5.5" fill="#3fb950"/>
+      <circle cx="830" cy="588" r="4" fill="#3fb950"/>
+      <!-- UPDATE PER RELEASE: last node = current release -->
+      <circle cx="1120" cy="588" r="7" fill="#3fb950"/><circle cx="1120" cy="588" r="12" fill="none" stroke="#3fb950" stroke-opacity="0.35" stroke-width="2"/>
     </g>
     <g font-size="12" fill="#8b949e" font-family="ui-monospace, Menlo, monospace">
-      <text x="64" y="596">0.2 foundation</text>
-      <text x="300" y="596" text-anchor="middle">0.4 skill trust gate</text>
-      <text x="560" y="596" text-anchor="middle" fill="#56d364" font-weight="700">1.0 frozen contract</text>
-      <text x="820" y="596" text-anchor="middle" fill="#56d364" font-weight="700">2.1 current</text>
-      <text x="1136" y="596" text-anchor="end" fill="#bc8cff" font-weight="700">2.4 AI-Canonical · next</text>
+      <text x="64" y="610">0.2 foundation</text>
+      <text x="320" y="610" text-anchor="middle">0.4 trust gate</text>
+      <text x="580" y="610" text-anchor="middle" fill="#56d364" font-weight="700">1.0 frozen contract</text>
+      <text x="830" y="610" text-anchor="middle">2.1 stable</text>
+      <text x="1136" y="610" text-anchor="end" fill="#56d364" font-weight="700">2.4 AI-Canonical · now</text>
     </g>
-    <text x="64" y="622" font-size="13" fill="#adbac7">v1.0 froze the CLI · JSON · SARIF · exit-code contract (<tspan fill="#e6edf3" font-weight="600">snapshot-tested in CI</tspan>). v2.4.0 <tspan fill="#e6edf3" font-weight="600">roadmap</tspan>: verified public claims &amp; project-truth drift checks that fail closed.</text>
+    <text x="64" y="636" font-size="13" fill="#adbac7">v1.0 froze the CLI · JSON · SARIF · exit-code contract (<tspan fill="#e6edf3" font-weight="600">snapshot-tested in CI</tspan>). v2.4 adds verified public claims &amp; project-truth drift checks that fail closed.</text>
   </g>
 
   <!-- footer -->
-  <line x1="64" y1="646" x2="1136" y2="646" stroke="#1d242e"/>
-  <text x="64" y="672" font-size="13" fill="#6e7681" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">$ aih init . --apply&#160;&#160;&#160;#  profile · superpowers · bootstrap-ai · scaffold · secrets · guardrails · mcp · sandbox</text>
-  <text x="64" y="694" font-size="13" fill="#6e7681" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">$ aih skill vet · approve&#160;&#160;·&#160;&#160;pack install&#160;&#160;·&#160;&#160;marketplace build&#160;&#160;·&#160;&#160;policy validate&#160;&#160;·&#160;&#160;evidence build</text>
-  <text x="1136" y="672" font-size="13" fill="#6e7681" text-anchor="end" font-family="ui-monospace, Menlo, monospace">github.com/samartomar/ai-harness</text>
+  <line x1="64" y1="662" x2="1136" y2="662" stroke="#1d242e"/>
+  <text x="64" y="688" font-size="12.5" fill="#6e7681" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">$ aih init . --apply&#160;&#160;&#160;#  profile · bootstrap-ai · scaffold · secrets · guardrails · mcp · sandbox</text>
+  <text x="64" y="710" font-size="12.5" fill="#6e7681" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">$ aih truth verify&#160;&#160;·&#160;&#160;docs-lint&#160;&#160;·&#160;&#160;skill vet&#160;&#160;·&#160;&#160;pack install&#160;&#160;·&#160;&#160;policy validate&#160;&#160;·&#160;&#160;evidence build</text>
+  <text x="1136" y="688" font-size="12.5" fill="#6e7681" text-anchor="end" font-family="ui-monospace, Menlo, monospace">github.com/samartomar/ai-harness</text>
 </svg>
