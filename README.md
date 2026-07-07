@@ -156,7 +156,9 @@ Draft pack names such as `enterprise-core`, `workspace-intel`, `product-ui`, and
 `skill-governance` are patterns an org can encode in `aih-packs.json`, not shipped built-ins.
 This repo currently carries `docs-quality` as a first-party local pack. A governed team builds
 an enterprise baseline by vetting and approving each skill first, curating the approved refs into
-a pack, and keeping `aih-skills.lock.json` as the single pin authority.
+a pack, and keeping `aih-skills.lock.json` as the single pin authority. To seed the bundled
+first-party pack into another repo, run `aih pack scaffold --pack docs-quality --apply`, then vet
+and approve the copied local source in that repo before installing it.
 
 Skill verdicts are policy decisions at a pinned source, not permanent safety labels. `GREEN`
 means the configured checks passed for the recorded policy and commit and the evidence was

@@ -48,13 +48,17 @@ cannot faithfully round-trip, so a hand-mangled sibling pack is never silently d
 ## Worked example
 
 ```console
-# 1. Approve the skills (per-skill lifecycle — vet evidence → committed approval).
-aih skill vet owner/docs-skills --pin <sha> --apply
-aih skill approve owner/docs-skills --pin <sha> --owner docs-platform --pack docs-quality --apply
+# Optional: seed a bundled first-party pack into a fresh repo. This copies the
+# local skill bytes and curates aih-packs.json, but does not create approvals.
+aih pack scaffold --pack docs-quality --apply
 
-# 2. Curate. `init` seeds a pack from every lock entry tagged pack=docs-quality;
-#    `add` curates one-by-one (the ref is DERIVED from the lock entry).
-aih pack init --pack docs-quality --description "Docs writing + review set" --apply
+# 1. Approve the copied local source (per-skill lifecycle — vet evidence → committed approval).
+aih skill vet packs/docs-quality/betterdoc --apply
+aih skill approve packs/docs-quality/betterdoc --owner docs-platform --pack docs-quality --apply
+
+# 2. Optionally curate additional approved skills one-by-one. Scaffold already
+#    wrote the docs-quality pack entry; `add` derives new refs from the lock.
+# aih pack add --pack docs-quality --skill style-guide --apply
 
 # 3. Gate in CI — coded findings, non-zero exit when blocked.
 aih pack validate

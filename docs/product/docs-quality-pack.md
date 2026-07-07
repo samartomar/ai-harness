@@ -2,8 +2,9 @@
 
 > Status: shipped as the first first-party pack (#166). Content lives at
 > `packs/docs-quality/betterdoc/`; curation is committed in `aih-packs.json`; the
-> approval is committed in `aih-skills.lock.json`. Installs through the existing
-> `aih pack install` path.
+> approval is committed in `aih-skills.lock.json`. External repos can seed those
+> first-party bytes with `aih pack scaffold --pack docs-quality --apply`, then
+> run their own vet/approve/install loop.
 
 `docs-quality` is aih's own documentation pack. Its single skill, **BetterDoc**, is a
 claim-first, evidence-grounded documentation skill: it edits, reviews, and creates
@@ -69,16 +70,20 @@ committed BetterDoc approval, the vet evidence was regenerated on a scanner-equi
 SkillSpector and Cisco `skill-scanner` passing, and the lockfile pins that evidence hash.
 
 > Owner decisions (F3, resolved): the first-party approval model is the **native tier scoped to
-> repo-relative sources** (this PR), with a first-party marker on the approval for auditability.
-> Packaging: the pack is **not shipped in the npm tarball** — `packs/` stays
-> out of the package `files` because the CLI never reads its own `packs/` at runtime; revisit only if
-> a scaffold is added to seed packs into external repos. `aih marketplace build` **excludes
-> first-party (`commit:"local"`) skills** and reports them — a bundled first-party skill is delivered
-> by the repo, not the hostable marketplace artifact.
+> repo-relative sources**, with a first-party marker on the approval for auditability.
+> Packaging has been revisited now that `aih pack scaffold` reads bundled pack assets:
+> the npm package includes `packs/` and the root `aih-packs.json` so external repos can
+> seed first-party local sources without a network fetch. `aih marketplace build` still
+> **excludes first-party (`commit:"local"`) skills** and reports them — a bundled
+> first-party skill is delivered by the repo or scaffolded package bytes, not the
+> hostable marketplace artifact.
 
 ## Install and verify
 
 ```console
+# Seed into a different repo first, if the pack is not already committed there.
+aih pack scaffold --pack docs-quality --apply
+
 # Preview (read-only) — resolves the local source and shows what install would promote.
 aih pack plan --pack docs-quality
 

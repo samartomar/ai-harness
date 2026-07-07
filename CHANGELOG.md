@@ -8,6 +8,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- `aih pack scaffold --pack <name> --apply` now seeds bundled first-party packs
+  into an external repo's `packs/` tree and `aih-packs.json` without inventing
+  approvals; the npm package now includes `packs/` and `aih-packs.json` so the
+  scaffold has local source bytes to copy. (#261)
 - Pack governance docs now consistently describe the shipped `aih-packs.json` /
   `--pack <name>` curation model and mark the earlier built-in pack catalog as a
   historical proposal rather than current command behavior. (#260)

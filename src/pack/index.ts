@@ -18,6 +18,7 @@ export {
   readPacksFile,
   readPacksFileStrictForWrite,
 } from "./manifest.js";
+export { packScaffoldCommand } from "./scaffold.js";
 export {
   type PackFinding,
   type PackRefApproval,
