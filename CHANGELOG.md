@@ -6,6 +6,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-07-07
+
 ### Added
 
 - **Local usage sink for cache and skill report panels**: `.aih/usage.jsonl`
@@ -43,12 +45,20 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   now previews or applies approved promoted skill files into the selected CLI
   machine discovery roots (`~/.claude/skills`, `~/.codex/skills`), and
   `skill inventory` scans both machine roots. (#282)
+- **README governance and safety wording**: the README now explains enterprise
+  packs using the shipped `aih-packs.json` / `--pack <name>` model, states that
+  draft pack names are org-curated patterns rather than shipped built-ins, adds
+  the pinned-commit trust verdict safety disclaimer, and describes `aih workspace`
+  as a federated bridge rather than a monorepo replacement. (#273)
 
 ### Changed
 
 - **Posture parsing**: explicit `community` posture values now fail closed with
   the existing invalid-posture error instead of silently downgrading to `vibe`;
   absent posture values still default to `vibe`. (#280)
+- **Config baseline parsing**: a present invalid `.aih-config.json` `baseline`
+  now fails closed instead of being discarded, and posture resolution refuses to
+  continue when the persisted baseline is malformed. (#281)
 
 ## [2.0.0] - 2026-07-05
 
@@ -733,7 +743,8 @@ GitHub but **never published to npm**; the first published release is 0.2.0.
   (npm + github-actions), private vulnerability reporting, `@claude` workflow gated
   to trusted authors, and GitHub Actions pinned to commit SHAs.
 
-[Unreleased]: https://github.com/samartomar/ai-harness/compare/v2.0.0...HEAD
+[Unreleased]: https://github.com/samartomar/ai-harness/compare/v2.1.0...HEAD
+[2.1.0]: https://github.com/samartomar/ai-harness/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/samartomar/ai-harness/compare/v1.3.0...v2.0.0
 [1.3.0]: https://github.com/samartomar/ai-harness/compare/v1.2.1...v1.3.0
 [1.2.1]: https://github.com/samartomar/ai-harness/compare/v1.2.0...v1.2.1
