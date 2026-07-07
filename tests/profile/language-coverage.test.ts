@@ -81,9 +81,14 @@ describe("language coverage benchmark", () => {
     expect(polyglot.note).toContain("per-workspace commands");
   });
 
-  it("does not mark missing non-Node package/build metadata as covered", () => {
-    expect(rowById("go-module").grades.packageManager).toBe("none");
-    expect(rowById("java-maven").grades.packageManager).toBe("none");
-    expect(rowById("dotnet").grades.packageManager).toBe("none");
+  it("tracks Go, Java, and .NET framework, lint, DB, package, and workspace coverage", () => {
+    for (const id of ["go-module", "java-maven", "dotnet"]) {
+      const row = rowById(id);
+      expect(row.grades.frameworks).toBe("good");
+      expect(row.grades.lint).toBe("good");
+      expect(row.grades.db).toBe("good");
+      expect(row.grades.packageManager).toBe("good");
+      expect(row.grades.workspace).toBe("good");
+    }
   });
 });

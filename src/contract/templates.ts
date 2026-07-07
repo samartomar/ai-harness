@@ -106,6 +106,10 @@ function installCommand(packageManager: string | undefined): string | undefined 
     pip: "python -m pip install -r requirements.txt",
     pipenv: "pipenv install --dev",
     cargo: "cargo fetch",
+    "go modules": "go mod download",
+    maven: "mvn dependency:go-offline",
+    gradle: "gradle dependencies",
+    dotnet: "dotnet restore",
   };
   return commands[packageManager] ?? `${packageManager} install`;
 }

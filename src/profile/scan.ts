@@ -239,6 +239,8 @@ interface Raw {
   /** Python package/tooling signals from manifests, lockfiles, and config files. */
   pythonManagers: Set<string>;
   pythonTools: Set<"pytest" | "ruff" | "black" | "mypy">;
+  goTools: Set<"golangci-lint">;
+  javaTools: Set<"checkstyle" | "spotless">;
 }
 
 /**
@@ -269,6 +271,8 @@ export function scanRepo(root: string, opts: ScanOptions): RepoStack {
     virtualEnvPaths: [],
     pythonManagers: new Set(),
     pythonTools: new Set(),
+    goTools: new Set(),
+    javaTools: new Set(),
   };
   // Exclude the configured context dir (top path segment) alongside the static
   // set, so re-scans never walk the canon aih itself generated (the default is
@@ -389,6 +393,10 @@ function inspectFile(root: string, dir: string, name: string, raw: Raw): void {
       push(raw.languages, "Go");
       rememberWorkspaceRoot(root, dir, raw);
       rememberRootToolchain(root, dir, raw, "Go");
+      detectGoManifest(join(dir, name), raw);
+      return;
+    case "go.work":
+      raw.workspaceSignals.add("go workspace");
       return;
     case "Cargo.toml":
       push(raw.languages, "Rust");
@@ -416,7 +424,7 @@ function inspectFile(root: string, dir: string, name: string, raw: Raw): void {
       rememberWorkspaceRoot(root, dir, raw);
       rememberRootToolchain(root, dir, raw, "Java/Maven");
       // A <modules> reactor makes this a Maven multi-module monorepo.
-      if (/<modules>/.test(safeRead(join(dir, name)))) raw.workspaceSignals.add("maven");
+      detectMavenPom(join(dir, name), raw);
       return;
     case "build.gradle":
     case "build.gradle.kts":
@@ -505,6 +513,18 @@ function detectMisc(root: string, dir: string, name: string, lower: string, raw:
     push(raw.languages, ".NET");
     rememberWorkspaceRoot(root, dir, raw);
     rememberRootToolchain(root, dir, raw, ".NET");
+    if (matches(lower, ".slnx") || matches(lower, ".sln"))
+      raw.workspaceSignals.add("dotnet solution");
+    if (matches(lower, ".csproj")) detectDotnetProject(join(dir, name), raw);
+    return;
+  }
+  if (/^\.golangci\.(yml|yaml|toml|json)$/.test(lower)) {
+    raw.goTools.add("golangci-lint");
+    return;
+  }
+  if (lower === "checkstyle.xml") {
+    raw.javaTools.add("checkstyle");
+    return;
   }
 }
 
@@ -562,6 +582,54 @@ function detectPythonManifest(path: string, name: string, raw: Raw): void {
   if (/\bruff\b|\[tool\.ruff\b/.test(body)) raw.pythonTools.add("ruff");
   if (/\bblack\b|\[tool\.black\b/.test(body)) raw.pythonTools.add("black");
   if (/\bmypy\b|\[tool\.mypy\b/.test(body)) raw.pythonTools.add("mypy");
+}
+
+function detectGoManifest(path: string, raw: Raw): void {
+  const body = safeRead(path).toLowerCase();
+  if (/github\.com\/gin-gonic\/gin\b/.test(body)) push(raw.frameworks, "Gin");
+  if (/github\.com\/labstack\/echo/.test(body)) push(raw.frameworks, "Echo");
+  if (/github\.com\/gofiber\/fiber/.test(body)) push(raw.frameworks, "Fiber");
+  if (/github\.com\/go-chi\/chi/.test(body)) push(raw.frameworks, "chi");
+  if (/github\.com\/lib\/pq\b|github\.com\/jackc\/pgx/.test(body)) {
+    push(raw.databases, "PostgreSQL");
+  }
+  if (/github\.com\/go-sql-driver\/mysql/.test(body)) push(raw.databases, "MySQL");
+  if (/go\.mongodb\.org\/mongo-driver/.test(body)) push(raw.databases, "MongoDB");
+  if (/github\.com\/redis\/go-redis/.test(body)) push(raw.databases, "Redis");
+  if (/github\.com\/mattn\/go-sqlite3|modernc\.org\/sqlite/.test(body)) {
+    push(raw.databases, "SQLite");
+  }
+}
+
+function detectMavenPom(path: string, raw: Raw): void {
+  const body = safeRead(path).toLowerCase();
+  if (/<modules>/.test(body)) raw.workspaceSignals.add("maven");
+  if (/spring-boot-starter|spring-boot-maven-plugin/.test(body))
+    push(raw.frameworks, "Spring Boot");
+  if (/quarkus-/.test(body)) push(raw.frameworks, "Quarkus");
+  if (/micronaut-/.test(body)) push(raw.frameworks, "Micronaut");
+  if (/org\.postgresql|<artifactid>postgresql<\/artifactid>/.test(body)) {
+    push(raw.databases, "PostgreSQL");
+  }
+  if (/mysql-connector|mariadb-java-client/.test(body)) push(raw.databases, "MySQL");
+  if (/mongodb-driver/.test(body)) push(raw.databases, "MongoDB");
+  if (/<artifactid>(jedis|lettuce-core)<\/artifactid>/.test(body)) push(raw.databases, "Redis");
+  if (/<artifactid>h2<\/artifactid>/.test(body)) push(raw.databases, "H2");
+  if (/maven-checkstyle-plugin/.test(body)) raw.javaTools.add("checkstyle");
+  if (/spotless-maven-plugin/.test(body)) raw.javaTools.add("spotless");
+}
+
+function detectDotnetProject(path: string, raw: Raw): void {
+  const body = safeRead(path).toLowerCase();
+  if (/microsoft\.net\.sdk\.web|microsoft\.aspnetcore/.test(body)) {
+    push(raw.frameworks, "ASP.NET Core");
+  }
+  if (/microsoft\.entityframeworkcore/.test(body)) push(raw.frameworks, "Entity Framework Core");
+  if (/npgsql/.test(body)) push(raw.databases, "PostgreSQL");
+  if (/mysqlconnector|pomelo\.entityframeworkcore\.mysql/.test(body)) push(raw.databases, "MySQL");
+  if (/mongodb\.driver/.test(body)) push(raw.databases, "MongoDB");
+  if (/stackexchange\.redis/.test(body)) push(raw.databases, "Redis");
+  if (/microsoft\.data\.sqlite|sqlite/.test(body)) push(raw.databases, "SQLite");
 }
 
 function readPkg(path: string): PkgJson {
@@ -679,6 +747,7 @@ function synthesize(root: string, raw: Raw, opts: ScanOptions): RepoStack {
     if (languages.includes("Go")) {
       testRunner = "go test ./...";
       buildCommand = "go build ./...";
+      lintCommand = deriveGoLint(raw);
     } else if (languages.includes("Rust")) {
       testRunner = "cargo test";
       buildCommand = "cargo build";
@@ -691,6 +760,7 @@ function synthesize(root: string, raw: Raw, opts: ScanOptions): RepoStack {
       const mvn = raw.hasMvnw ? "./mvnw" : "mvn";
       testRunner = `${mvn} test`;
       buildCommand = `${mvn} clean package`;
+      lintCommand = deriveMavenLint(raw);
     } else if (languages.includes("Java/Gradle")) {
       const gradle = raw.hasGradlew ? "./gradlew" : "gradle";
       testRunner = `${gradle} test`;
@@ -698,6 +768,7 @@ function synthesize(root: string, raw: Raw, opts: ScanOptions): RepoStack {
     } else if (languages.includes(".NET")) {
       testRunner = "dotnet test";
       buildCommand = "dotnet build";
+      lintCommand = "dotnet format --verify-no-changes";
     }
   }
 
@@ -716,7 +787,12 @@ function synthesize(root: string, raw: Raw, opts: ScanOptions): RepoStack {
   );
   const packageManager = pkg
     ? raw.packageManager
-    : (raw.packageManager ?? rustPackageManager(languages) ?? pythonPackageManager(raw));
+    : (raw.packageManager ??
+      rustPackageManager(languages) ??
+      pythonPackageManager(raw) ??
+      goPackageManager(languages) ??
+      javaPackageManager(languages) ??
+      dotnetPackageManager(languages));
   const deploymentCommands = cdkDeploymentCommands(finalFrameworks);
   const explicitWorkspaceTool = resolveWorkspaceTool(raw.workspaceSignals);
   const workspaceTool =
@@ -848,6 +924,20 @@ function rustPackageManager(languages: readonly string[]): string | undefined {
   return languages.includes("Rust") ? "cargo" : undefined;
 }
 
+function goPackageManager(languages: readonly string[]): string | undefined {
+  return languages.includes("Go") ? "go modules" : undefined;
+}
+
+function javaPackageManager(languages: readonly string[]): string | undefined {
+  if (languages.includes("Java/Maven")) return "maven";
+  if (languages.includes("Java/Gradle")) return "gradle";
+  return undefined;
+}
+
+function dotnetPackageManager(languages: readonly string[]): string | undefined {
+  return languages.includes(".NET") ? "dotnet" : undefined;
+}
+
 function derivePythonTest(raw: Raw): string | undefined {
   return raw.pythonTools.has("pytest") ? "pytest" : undefined;
 }
@@ -856,6 +946,17 @@ function derivePythonLint(raw: Raw): string | undefined {
   if (raw.pythonTools.has("ruff")) return "ruff check .";
   if (raw.pythonTools.has("black")) return "black --check .";
   if (raw.pythonTools.has("mypy")) return "mypy .";
+  return undefined;
+}
+
+function deriveGoLint(raw: Raw): string | undefined {
+  return raw.goTools.has("golangci-lint") ? "golangci-lint run" : undefined;
+}
+
+function deriveMavenLint(raw: Raw): string | undefined {
+  const mvn = raw.hasMvnw ? "./mvnw" : "mvn";
+  if (raw.javaTools.has("checkstyle")) return `${mvn} checkstyle:check`;
+  if (raw.javaTools.has("spotless")) return `${mvn} spotless:check`;
   return undefined;
 }
 
@@ -911,8 +1012,10 @@ const WORKSPACE_PRECEDENCE = [
   "rush",
   "lerna",
   "bazel",
+  "go workspace",
   "maven",
   "gradle",
+  "dotnet solution",
   "npm/yarn workspaces",
 ] as const;
 
