@@ -144,6 +144,26 @@ One honest line per command — the long-form behavior detail for every command 
 | [`aih secrets`](docs/commands.md#aih-secrets) | Scan for plaintext `.env*`/`secrets/` and write agent deny rules; `--verify` is the secret-scan CI gate. |
 | [`aih guardrails`](docs/commands.md#aih-guardrails) | Generate `.gitleaks.toml`, `.pre-commit-config.yaml`, and a CI license gate that blocks AGPL/strong-copyleft. |
 
+### Enterprise packs, skill governance, and safety
+
+Packs are named entries in the committed root `aih-packs.json`; they are not a built-in catalog
+and they do not approve skills on their own. A pack groups skills that already have committed
+`aih-skills.lock.json` approvals, and every `{source, commit}` in the manifest is cross-checked
+against that lock. Inspect them with `aih pack status --pack <name>` or
+`aih pack validate --pack <name>`, then install with `aih pack install --pack <name> --apply`.
+
+Draft pack names such as `enterprise-core`, `workspace-intel`, `product-ui`, and
+`skill-governance` are patterns an org can encode in `aih-packs.json`, not shipped built-ins.
+This repo currently carries `docs-quality` as a first-party local pack. A governed team builds
+an enterprise baseline by vetting and approving each skill first, curating the approved refs into
+a pack, and keeping `aih-skills.lock.json` as the single pin authority.
+
+Skill verdicts are policy decisions at a pinned source, not permanent safety labels. `GREEN`
+means the configured checks passed for the recorded policy and commit and the evidence was
+written; it does not mean the skill, repo, or future upstream commits are safe forever. Pin
+bumps, policy changes, scanner failures, tamper, stale installs, or missing approvals send the
+source back through the vet/approve/install gates.
+
 ### Trust configuration notes
 
 `trust.internalScopes` is intentionally inert until an org configures internal package scopes in
@@ -308,7 +328,9 @@ Precedence: **Layer 2 wins** on conflict — repo canon overrides the generic ba
 
 Most orgs split a product across **separate repos** (a UI repo and a backend repo in one git org). An
 agent editing the UI then has no view into the backend — no cross-repo blast radius. `aih workspace`
-bridges that gap from the **parent folder** that holds the repos:
+is a federated bridge, not a monorepo replacement: the child repo owns truth, and the parent workspace
+owns routing, contract edges, snapshots, MCP wiring, and report rollups. It bridges that gap from the
+**parent folder** that holds the repos:
 
 ```bash
 aih workspace ./my-org --repos ui,backend --apply
