@@ -1,0 +1,114 @@
+<svg width="1200" height="680" viewBox="0 0 1200 680" xmlns="http://www.w3.org/2000/svg" role="img" font-family="ui-sans-serif, -apple-system, Segoe UI, Roboto, sans-serif">
+  <title>AI-Harness guide map for v2.4.0 public documentation</title>
+  <desc>Reader paths from the guide index to vibe developer, team, enterprise admin, and enterprise developer guides, with shared command, lifecycle, and posture references.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0b0e14"/>
+      <stop offset="1" stop-color="#11161f"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.45" cy="0.12" r="0.85">
+      <stop offset="0" stop-color="#1f6feb" stop-opacity="0.14"/>
+      <stop offset="1" stop-color="#1f6feb" stop-opacity="0"/>
+    </radialGradient>
+    <pattern id="dots" width="26" height="26" patternUnits="userSpaceOnUse">
+      <circle cx="1" cy="1" r="1" fill="#ffffff" fill-opacity="0.035"/>
+    </pattern>
+    <filter id="soft" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#000000" flood-opacity="0.42"/>
+    </filter>
+    <marker id="arrow" markerWidth="11" markerHeight="11" refX="9" refY="5.5" orient="auto" markerUnits="strokeWidth">
+      <path d="M0 0 L10 5.5 L0 11 Z" fill="#6e7681"/>
+    </marker>
+  </defs>
+
+  <rect width="1200" height="680" fill="url(#bg)"/>
+  <rect width="1200" height="680" fill="url(#dots)"/>
+  <rect width="1200" height="680" fill="url(#glow)"/>
+  <rect x="0.5" y="0.5" width="1199" height="679" fill="none" stroke="#222a35"/>
+
+  <text x="64" y="86" font-size="48" font-weight="800" fill="#e6edf3">AIH guide map</text>
+  <text x="64" y="120" font-size="17" fill="#adbac7">Start with the reader's job, then move into the guide that owns that workflow.</text>
+  <g transform="translate(942,58)">
+    <rect width="194" height="30" rx="15" fill="#3fb950" fill-opacity="0.14" stroke="#3fb950" stroke-opacity="0.55"/>
+    <text x="97" y="20" font-size="12.5" font-weight="700" fill="#56d364" text-anchor="middle">v2.4.0 public guide set</text>
+  </g>
+
+  <line x1="64" y1="154" x2="1136" y2="154" stroke="#1d242e"/>
+  <text x="64" y="184" font-size="11" font-weight="700" fill="#6e7681" letter-spacing="2" font-family="ui-monospace, Menlo, monospace">PRIMARY READER PATH</text>
+
+  <g filter="url(#soft)">
+    <g transform="translate(64,228)">
+      <rect width="208" height="128" rx="14" fill="#151a22" stroke="#2b323c"/>
+      <rect width="208" height="4" rx="2" fill="#58a6ff"/>
+      <text x="22" y="38" font-size="18" font-weight="750" fill="#e6edf3">Guide index</text>
+      <text x="22" y="66" font-size="13" fill="#8b949e">Start here when the</text>
+      <text x="22" y="84" font-size="13" fill="#8b949e">reader is not obvious.</text>
+      <text x="22" y="110" font-size="12.5" fill="#adbac7" font-family="ui-monospace, Menlo, monospace">guides/README.md</text>
+    </g>
+
+    <g transform="translate(334,210)">
+      <rect width="228" height="164" rx="14" fill="#151a22" stroke="#2b323c"/>
+      <rect width="228" height="4" rx="2" fill="#3fb950"/>
+      <text x="22" y="38" font-size="18" font-weight="750" fill="#e6edf3">Vibe developer</text>
+      <text x="22" y="67" font-size="13" fill="#8b949e">Evaluate locally and add</text>
+      <text x="22" y="85" font-size="13" fill="#8b949e">AI CLI surfaces without</text>
+      <text x="22" y="103" font-size="13" fill="#8b949e">enterprise policy.</text>
+      <text x="22" y="132" font-size="12.5" fill="#adbac7" font-family="ui-monospace, Menlo, monospace">vibe-developer-guide.md</text>
+    </g>
+
+    <g transform="translate(624,210)">
+      <rect width="228" height="164" rx="14" fill="#151a22" stroke="#2b323c"/>
+      <rect width="228" height="4" rx="2" fill="#d29922"/>
+      <text x="22" y="38" font-size="18" font-weight="750" fill="#e6edf3">Team guide</text>
+      <text x="22" y="67" font-size="13" fill="#8b949e">Standardize repo setup,</text>
+      <text x="22" y="85" font-size="13" fill="#8b949e">local reports, and shared</text>
+      <text x="22" y="103" font-size="13" fill="#8b949e">review defaults.</text>
+      <text x="22" y="132" font-size="12.5" fill="#adbac7" font-family="ui-monospace, Menlo, monospace">team-guide.md</text>
+    </g>
+
+    <g transform="translate(914,176)">
+      <rect width="222" height="154" rx="14" fill="#151a22" stroke="#2b323c"/>
+      <rect width="222" height="4" rx="2" fill="#bc8cff"/>
+      <text x="22" y="38" font-size="18" font-weight="750" fill="#e6edf3">Enterprise admin</text>
+      <text x="22" y="66" font-size="13" fill="#8b949e">Define posture, policy,</text>
+      <text x="22" y="84" font-size="13" fill="#8b949e">MCP approvals, evidence,</text>
+      <text x="22" y="102" font-size="13" fill="#8b949e">and signed artifacts.</text>
+      <text x="22" y="130" font-size="12.5" fill="#adbac7" font-family="ui-monospace, Menlo, monospace">enterprise-admin-guide.md</text>
+    </g>
+
+    <g transform="translate(914,374)">
+      <rect width="222" height="154" rx="14" fill="#151a22" stroke="#2b323c"/>
+      <rect width="222" height="4" rx="2" fill="#58a6ff"/>
+      <text x="22" y="38" font-size="18" font-weight="750" fill="#e6edf3">Enterprise developer</text>
+      <text x="22" y="66" font-size="13" fill="#8b949e">Install AIH, apply admin</text>
+      <text x="22" y="84" font-size="13" fill="#8b949e">config, and keep tokens</text>
+      <text x="22" y="102" font-size="13" fill="#8b949e">in local secret storage.</text>
+      <text x="22" y="130" font-size="12.5" fill="#adbac7" font-family="ui-monospace, Menlo, monospace">enterprise-developer-guide.md</text>
+    </g>
+  </g>
+
+  <g stroke="#6e7681" stroke-width="1.8" fill="none" marker-end="url(#arrow)">
+    <path d="M272 292 H326"/>
+    <path d="M562 292 H616"/>
+    <path d="M852 292 H906"/>
+    <path d="M1025 330 V366"/>
+  </g>
+
+  <g transform="translate(936,342)">
+    <rect width="178" height="24" rx="12" fill="#bc8cff" fill-opacity="0.12" stroke="#bc8cff" stroke-opacity="0.45"/>
+    <text x="89" y="16" font-size="11.5" font-weight="700" fill="#d2b3ff" text-anchor="middle">admin-approved config</text>
+  </g>
+
+  <g transform="translate(64,560)">
+    <rect width="1072" height="76" rx="14" fill="#161b22" stroke="#2b323c"/>
+    <text x="24" y="31" font-size="13" font-weight="700" fill="#e6edf3">Shared references</text>
+    <text x="176" y="31" font-size="12.5" fill="#adbac7" font-family="ui-monospace, Menlo, monospace">command-use-cases.md</text>
+    <text x="430" y="31" font-size="12.5" fill="#6e7681">Pick the right command for a job.</text>
+    <text x="176" y="55" font-size="12.5" fill="#adbac7" font-family="ui-monospace, Menlo, monospace">cli-lifecycle-guide.md</text>
+    <text x="430" y="55" font-size="12.5" fill="#6e7681">Add, switch, and prune AI CLI surfaces.</text>
+    <text x="760" y="31" font-size="12.5" fill="#adbac7" font-family="ui-monospace, Menlo, monospace">postures.md</text>
+    <text x="880" y="31" font-size="12.5" fill="#6e7681">vibe | team | enterprise</text>
+  </g>
+
+  <text x="64" y="654" font-size="12" fill="#6e7681">Enterprise examples should stay limited to approved MCP surfaces such as Jira, AWS MCP, and Figma.</text>
+</svg>

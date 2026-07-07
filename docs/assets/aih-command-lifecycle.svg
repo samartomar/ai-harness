@@ -1,0 +1,106 @@
+<svg width="1200" height="680" viewBox="0 0 1200 680" xmlns="http://www.w3.org/2000/svg" role="img" font-family="ui-sans-serif, -apple-system, Segoe UI, Roboto, sans-serif">
+  <title>AI-Harness command lifecycle for v2.4.0 public documentation</title>
+  <desc>Lifecycle from dry-run planning to local apply, release and policy verification, evidence building, and managed AI CLI surface changes.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0b0e14"/>
+      <stop offset="1" stop-color="#11161f"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.1" r="0.9">
+      <stop offset="0" stop-color="#3fb950" stop-opacity="0.13"/>
+      <stop offset="1" stop-color="#3fb950" stop-opacity="0"/>
+    </radialGradient>
+    <pattern id="dots" width="26" height="26" patternUnits="userSpaceOnUse">
+      <circle cx="1" cy="1" r="1" fill="#ffffff" fill-opacity="0.035"/>
+    </pattern>
+    <filter id="soft" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#000000" flood-opacity="0.42"/>
+    </filter>
+    <marker id="arrow" markerWidth="11" markerHeight="11" refX="9" refY="5.5" orient="auto" markerUnits="strokeWidth">
+      <path d="M0 0 L10 5.5 L0 11 Z" fill="#6e7681"/>
+    </marker>
+  </defs>
+
+  <rect width="1200" height="680" fill="url(#bg)"/>
+  <rect width="1200" height="680" fill="url(#dots)"/>
+  <rect width="1200" height="680" fill="url(#glow)"/>
+  <rect x="0.5" y="0.5" width="1199" height="679" fill="none" stroke="#222a35"/>
+
+  <text x="64" y="86" font-size="48" font-weight="800" fill="#e6edf3">AIH command lifecycle</text>
+  <text x="64" y="120" font-size="17" fill="#adbac7">Commands move from reviewable plans to local changes, then to verification and evidence.</text>
+  <g transform="translate(926,58)">
+    <rect width="210" height="30" rx="15" fill="#58a6ff" fill-opacity="0.14" stroke="#58a6ff" stroke-opacity="0.55"/>
+    <text x="105" y="20" font-size="12.5" font-weight="700" fill="#79c0ff" text-anchor="middle">dry-run | apply | verify | evidence</text>
+  </g>
+
+  <line x1="64" y1="154" x2="1136" y2="154" stroke="#1d242e"/>
+  <text x="64" y="184" font-size="11" font-weight="700" fill="#6e7681" letter-spacing="2" font-family="ui-monospace, Menlo, monospace">MAIN OPERATION FLOW</text>
+
+  <g filter="url(#soft)">
+    <g transform="translate(64,224)">
+      <rect width="238" height="168" rx="14" fill="#151a22" stroke="#2b323c"/>
+      <rect width="238" height="4" rx="2" fill="#58a6ff"/>
+      <text x="22" y="39" font-size="18" font-weight="750" fill="#e6edf3">1. Plan</text>
+      <text x="22" y="68" font-size="13" fill="#8b949e">Inspect the repo and print</text>
+      <text x="22" y="86" font-size="13" fill="#8b949e">the intended changes first.</text>
+      <text x="22" y="120" font-size="12.5" fill="#adbac7" font-family="ui-monospace, Menlo, monospace">aih init .</text>
+      <text x="22" y="142" font-size="12.5" fill="#adbac7" font-family="ui-monospace, Menlo, monospace">aih bootstrap-ai --verify</text>
+    </g>
+
+    <g transform="translate(342,224)">
+      <rect width="238" height="168" rx="14" fill="#151a22" stroke="#2b323c"/>
+      <rect width="238" height="4" rx="2" fill="#d29922"/>
+      <text x="22" y="39" font-size="18" font-weight="750" fill="#e6edf3">2. Apply locally</text>
+      <text x="22" y="68" font-size="13" fill="#8b949e">Writes require explicit</text>
+      <text x="22" y="86" font-size="13" fill="#8b949e">operator intent.</text>
+      <text x="22" y="120" font-size="12.5" fill="#adbac7" font-family="ui-monospace, Menlo, monospace">--apply</text>
+      <text x="22" y="142" font-size="12.5" fill="#adbac7" font-family="ui-monospace, Menlo, monospace">transactional local writes</text>
+    </g>
+
+    <g transform="translate(620,224)">
+      <rect width="238" height="168" rx="14" fill="#151a22" stroke="#2b323c"/>
+      <rect width="238" height="4" rx="2" fill="#bc8cff"/>
+      <text x="22" y="39" font-size="18" font-weight="750" fill="#e6edf3">3. Verify</text>
+      <text x="22" y="68" font-size="13" fill="#8b949e">Check release, posture,</text>
+      <text x="22" y="86" font-size="13" fill="#8b949e">policy, and approved inputs.</text>
+      <text x="22" y="120" font-size="12.5" fill="#adbac7" font-family="ui-monospace, Menlo, monospace">aih verify-release 2.4.0</text>
+      <text x="22" y="142" font-size="12.5" fill="#adbac7" font-family="ui-monospace, Menlo, monospace">aih policy validate</text>
+    </g>
+
+    <g transform="translate(898,224)">
+      <rect width="238" height="168" rx="14" fill="#151a22" stroke="#2b323c"/>
+      <rect width="238" height="4" rx="2" fill="#3fb950"/>
+      <text x="22" y="39" font-size="18" font-weight="750" fill="#e6edf3">4. Prove</text>
+      <text x="22" y="68" font-size="13" fill="#8b949e">Build reviewable outputs</text>
+      <text x="22" y="86" font-size="13" fill="#8b949e">for handoff and audit.</text>
+      <text x="22" y="120" font-size="12.5" fill="#adbac7" font-family="ui-monospace, Menlo, monospace">aih truth verify</text>
+      <text x="22" y="142" font-size="12.5" fill="#adbac7" font-family="ui-monospace, Menlo, monospace">aih evidence build</text>
+    </g>
+  </g>
+
+  <g stroke="#6e7681" stroke-width="1.8" fill="none" marker-end="url(#arrow)">
+    <path d="M302 308 H334"/>
+    <path d="M580 308 H612"/>
+    <path d="M858 308 H890"/>
+  </g>
+
+  <g transform="translate(64,432)">
+    <rect width="1072" height="112" rx="14" fill="#161b22" stroke="#2b323c"/>
+    <text x="24" y="35" font-size="13" font-weight="700" fill="#e6edf3">AI CLI surface lifecycle</text>
+    <g font-family="ui-monospace, Menlo, monospace" font-size="12.5">
+      <text x="24" y="68" fill="#adbac7">aih bootstrap-ai --cli codex,claude,kiro --apply</text>
+      <text x="408" y="68" fill="#6e7681">records selected targets in</text>
+      <text x="610" y="68" fill="#adbac7">.aih-config.json</text>
+      <text x="24" y="92" fill="#adbac7">aih prune</text>
+      <text x="106" y="92" fill="#6e7681">uses that config to remove stale or unapproved surfaces from the repo.</text>
+    </g>
+  </g>
+
+  <g transform="translate(64,572)">
+    <rect width="1072" height="56" rx="14" fill="#bc8cff" fill-opacity="0.07" stroke="#bc8cff" stroke-opacity="0.4"/>
+    <text x="24" y="34" font-size="13" font-weight="700" fill="#e6edf3">Enterprise extension</text>
+    <text x="184" y="34" font-size="12.5" fill="#adbac7">Vet third-party skills and MCP sources, pin or mirror approved versions, sign scanner images, and keep Jira/Figma/Git tokens outside the repo.</text>
+  </g>
+
+  <text x="64" y="654" font-size="12" fill="#6e7681">Network-capable behavior should be named and operator-invoked; this diagram does not claim every command is offline-only.</text>
+</svg>

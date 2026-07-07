@@ -28,10 +28,11 @@ the claim -> implementation -> test proof map.
 > support obligation, SLA, indemnity, consulting, or professional advice is provided. `aih`
 > is dry-run by default — review the plan before running `--apply`. See [DISCLAIMER.md](DISCLAIMER.md).
 
-## The 1.0 contract
+## The stable command contract
 
-Pin `@aihq/harness@^1` and automate against it. Every command, flag, and deprecated
-alias is snapshot-tested in CI against a committed fixture, the `--json` envelope is
+For the current v2 line, pin `@aihq/harness@^2` unless your organization pins an
+exact release for reproducible rollout. Every command, flag, and deprecated alias is
+snapshot-tested in CI against a committed fixture, the `--json` envelope is
 schema-pinned, and exit-code semantics are pinned — a surface change fails the build
 until it ships as a reviewed contract decision. Renames ship as deprecated aliases
 (the old name keeps working, with a one-line warning) before a major removes them,
@@ -94,6 +95,23 @@ aih doctor              # read-only: is the workstation ready for AI coding?
 aih init .              # preview the full repo bootstrap (dry-run — nothing is written)
 aih init . --apply      # apply it
 ```
+
+## Guides by workflow
+
+Use the command reference for exact CLI behavior; use the guides when you need the
+right workflow for a reader or rollout stage.
+
+![AI-Harness guide map showing reader paths for vibe developers, teams, enterprise admins, enterprise developers, and shared command references](docs/assets/aih-guide-map.svg)
+
+| Reader need | Start here |
+| --- | --- |
+| Pick the right command for a task | [Command Use Cases](guides/command-use-cases.md) |
+| Add, switch, or prune AI CLI surfaces | [CLI Lifecycle](guides/cli-lifecycle-guide.md) |
+| Understand posture behavior and boundaries | [Postures](guides/postures.md) |
+| Individual developer or evaluator | [Vibe Developer](guides/vibe-developer-guide.md) |
+| Shared repository or platform team | [Team Guide](guides/team-guide.md) |
+| Governed organization or enterprise rollout | [Enterprise Admin](guides/enterprise-admin-guide.md) |
+| Developer consuming an admin-approved config | [Enterprise Developer](guides/enterprise-developer-guide.md) |
 
 ## Command surface
 
@@ -234,11 +252,11 @@ data never reads as real. When the report derives findings (see [Support tickets
 a **Suggested actions** section leads with copy-to-clipboard tickets. Add `--demo` for showcase data,
 or `--refresh <sec>` to keep it live.
 
-![aih report --v9 developer-console dashboard rendered with --demo showcase data, showing the harness-wiring score, ranked fix actions, and the remediation ledger](docs/assets/aih-report-v9.png)
+![aih report --v9 developer-console dashboard rendered with demo showcase data and local diagnostics, showing the harness-wiring score, ranked fix actions, and the remediation ledger](docs/assets/aih-report-v9.png)
 
 *The `--v9` developer console with `--demo` showcase data: harness-wiring score, ranked
-fix actions, and the remediation ledger. `aih report --demo --v9` opens the same dashboard
-locally.*
+fix actions, and the remediation ledger. This image uses demo/local data, not customer
+telemetry. `aih report --demo --v9` opens the same dashboard locally.*
 
 ### Targeting CLIs
 
@@ -438,7 +456,7 @@ levels so coverage only ratchets up; CI and releases fail on regression. See
 
 ### Stability
 
-The tests behind [The 1.0 contract](#the-10-contract) live in
+The tests behind [the stable command contract](#the-stable-command-contract) live in
 [tests/contract/](tests/contract/): every command and option is snapshotted against a
 committed fixture ([command-surface.json](tests/contract/command-surface.json)), the
 `--json` envelope is schema-pinned, and exit-code semantics are pinned. Additive changes
