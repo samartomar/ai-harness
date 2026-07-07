@@ -252,7 +252,7 @@ data never reads as real. When the report derives findings (see [Support tickets
 a **Suggested actions** section leads with copy-to-clipboard tickets. Add `--demo` for showcase data,
 or `--refresh <sec>` to keep it live.
 
-![aih report --v9 developer-console dashboard rendered with demo/local showcase data, showing the harness-wiring score, ranked fix actions, and the remediation ledger](docs/assets/aih-report-v9.png)
+![aih report --v9 developer-console dashboard rendered with demo showcase data and local diagnostics, showing the harness-wiring score, ranked fix actions, and the remediation ledger](docs/assets/aih-report-v9.png)
 
 *The `--v9` developer console with `--demo` showcase data: harness-wiring score, ranked
 fix actions, and the remediation ledger. This image uses demo/local data, not customer
