@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { executePlan } from "../../src/internals/execute.js";
 import type { PlanContext } from "../../src/internals/plan.js";
@@ -10,7 +10,11 @@ import { fakeRunner, type Runner } from "../../src/internals/proc.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 import { usagePanel } from "../../src/report/usage.js";
 import { aggregateUsage } from "../../src/usage/aggregate.js";
-import { gitPostCommitHook, usageRecorderScript } from "../../src/usage/capture.js";
+import {
+  gitPostCommitChainSnippet,
+  gitPostCommitHook,
+  usageRecorderScript,
+} from "../../src/usage/capture.js";
 import { readUsage, type UsageEvent } from "../../src/usage/events.js";
 import { command } from "../../src/usage/index.js";
 
@@ -37,6 +41,15 @@ function makeCtx(
     env: {},
     options,
   };
+}
+
+function gitConfigRunner(hooksPath: string): Runner {
+  return fakeRunner((argv) => {
+    if (argv[0] === "git" && argv.slice(3).join(" ") === "config --get core.hooksPath") {
+      return { stdout: hooksPath };
+    }
+    return undefined;
+  });
 }
 
 function writeUsage(...lines: string[]): void {
@@ -366,8 +379,17 @@ describe("capture artifacts", () => {
     const hook = gitPostCommitHook();
     expect(hook).toContain("#!/bin/sh");
     expect(hook).toContain("usage-record.mjs"); // invokes the recorder
+    expect(hook).toContain("aih track --apply"); // records one history sample per commit
+    expect(hook).toContain("timeout:12000"); // bounds a stuck published aih binary
     expect(hook).toContain("exit 0"); // never blocks the commit
     expect(hook).toContain("|| true"); // best-effort
+  });
+
+  it("the chain snippet is safe when an existing hook uses `set -u`", () => {
+    const snippet = gitPostCommitChainSnippet({ usage: false, track: true });
+    expect(snippet).toContain('aih_root="$(git rev-parse --show-toplevel 2>/dev/null)"');
+    expect(snippet).not.toContain('[ -z "$aih_root" ]');
+    expect(snippet).toContain("aih track --apply");
   });
 });
 
@@ -386,9 +408,77 @@ describe("aih usage command", () => {
       .map((a) => (a.kind === "doc" ? a.text : ""))
       .join("\n");
     expect(docText).toContain("usage-record.mjs"); // shows the recorder one-liner
+    expect(docText).toContain("aih track --apply"); // shows history capture in the git floor
     expect(docText).toContain("cursor"); // tailored to the selected CLIs
     expect(docText).toContain("token/cache counters");
     expect(docText).not.toContain("never prompt content, args, secrets, tokens, or cost");
+  });
+
+  it("installs the universal git hook into a repo-local active hooksPath", async () => {
+    const actions = (await command.plan(makeCtx({ cli: "claude" }, gitConfigRunner(".githooks"))))
+      .actions;
+    const writes = actions.filter((a) => a.kind === "write").map((a) => a.path.replace(/\\/g, "/"));
+
+    expect(writes).toContain(".githooks/post-commit");
+    expect(writes).not.toContain(".git/hooks/post-commit");
+  });
+
+  it("installs the universal git hook into an absolute repo-local active hooksPath", async () => {
+    const actions = (
+      await command.plan(makeCtx({ cli: "claude" }, gitConfigRunner(join(root, ".githooks"))))
+    ).actions;
+    const writes = actions.filter((a) => a.kind === "write").map((a) => a.path.replace(/\\/g, "/"));
+
+    expect(writes).toContain(".githooks/post-commit");
+    expect(writes).not.toContain(".git/hooks/post-commit");
+  });
+
+  it("does not write to an external active hooksPath and gives chain guidance", async () => {
+    const actions = (
+      await command.plan(
+        makeCtx({ cli: "claude" }, gitConfigRunner(resolve(root, "..", "git-hooks"))),
+      )
+    ).actions;
+    const writes = actions.filter((a) => a.kind === "write").map((a) => a.path.replace(/\\/g, "/"));
+    const docs = actions
+      .filter((a) => a.kind === "doc")
+      .map((a) => (a.kind === "doc" ? `${a.describe}\n${a.text}` : ""))
+      .join("\n");
+
+    expect(writes).not.toContain(".git/hooks/post-commit");
+    expect(docs).toContain("active Git hook path is outside this repo");
+    expect(docs).toContain("usage-record.mjs");
+    expect(docs).toContain("aih track --apply");
+  });
+
+  it("treats a filesystem-root hooksPath as external", async () => {
+    const actions = (await command.plan(makeCtx({ cli: "claude" }, gitConfigRunner("/")))).actions;
+    const writes = actions.filter((a) => a.kind === "write").map((a) => a.path.replace(/\\/g, "/"));
+    const docs = actions
+      .filter((a) => a.kind === "doc")
+      .map((a) => (a.kind === "doc" ? `${a.describe}\n${a.text}` : ""))
+      .join("\n");
+
+    expect(writes).not.toContain(".git/hooks/post-commit");
+    expect(docs).toContain("active Git hook path is outside this repo");
+    expect(docs).toContain("usage-record.mjs");
+    expect(docs).toContain("aih track --apply");
+  });
+
+  it("does not write into .git/hooks when .git is a gitdir file", async () => {
+    writeFileSync(join(root, ".git"), "gitdir: ../real-git-dir\n");
+
+    const actions = (await command.plan(makeCtx({ cli: "claude" }))).actions;
+    const writes = actions.filter((a) => a.kind === "write").map((a) => a.path.replace(/\\/g, "/"));
+    const docs = actions
+      .filter((a) => a.kind === "doc")
+      .map((a) => (a.kind === "doc" ? `${a.describe}\n${a.text}` : ""))
+      .join("\n");
+
+    expect(writes).not.toContain(".git/hooks/post-commit");
+    expect(docs).toContain("active Git hook path is outside this repo");
+    expect(docs).toContain("usage-record.mjs");
+    expect(docs).toContain("aih track --apply");
   });
 
   zedSqliteDescribe("Zed threads.db usage import", () => {
@@ -935,6 +1025,23 @@ describe("aih usage command", () => {
       (a) => a.kind === "doc" && a.describe.includes("existing post-commit"),
     );
     expect(chainDoc?.kind === "doc" && chainDoc.text).toContain("usage-record.mjs");
+    expect(chainDoc?.kind === "doc" && chainDoc.text).toContain("aih track --apply");
+  });
+
+  it("offers only the missing track snippet when an old aih usage hook is already installed", async () => {
+    mkdirSync(join(root, ".git", "hooks"), { recursive: true });
+    writeFileSync(
+      join(root, ".git", "hooks", "post-commit"),
+      "#!/bin/sh\nnode .aih/usage-record.mjs git commit >/dev/null 2>&1 || true\n",
+    );
+
+    const actions = (await command.plan(makeCtx())).actions;
+    const chainDoc = actions.find(
+      (a) => a.kind === "doc" && a.describe.includes("existing post-commit"),
+    );
+
+    expect(chainDoc?.kind === "doc" && chainDoc.text).toContain("aih track --apply");
+    expect(chainDoc?.kind === "doc" && chainDoc.text).not.toContain("usage-record.mjs");
   });
 
   it("emits a read-only cross-project rollup digest from passed repo roots", async () => {

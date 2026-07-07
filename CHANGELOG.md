@@ -8,6 +8,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- `aih usage --apply` now chains `aih track --apply` into the universal post-commit
+  hook, so `.aih/history.jsonl` accrues one deduped trend sample per commit outside
+  Kiro's agent-stop hook as well. The hook installs into the active repo-local Git
+  hooks path and emits chain guidance instead of writing to external/global
+  `core.hooksPath` targets. (#254)
 - `aih mcp` now targets OpenCode's global `~/.config/opencode/opencode.json` MCP map, preserves
   existing provider/model settings while merging, flags missing env placeholders and placeholder
   remote hosts before writing, disables unsafe generated OpenCode entries with `enabled:false`, and

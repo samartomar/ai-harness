@@ -162,6 +162,63 @@ describe("usagePanel", () => {
     expect(d.text).toContain("waiting for the first real event");
     expect(d.data).toMatchObject({ events: 0, installed: true });
   });
+
+  it("counts usage capture installed through the active .githooks path", () => {
+    mkdirSync(join(dir, ".aih"), { recursive: true });
+    mkdirSync(join(dir, ".git"), { recursive: true });
+    mkdirSync(join(dir, ".githooks"), { recursive: true });
+    writeFileSync(join(dir, ".aih", "usage-record.mjs"), "x\n");
+    writeFileSync(join(dir, ".git", "config"), "[core]\n\thooksPath = .githooks\n");
+    writeFileSync(join(dir, ".githooks", "post-commit"), "node .aih/usage-record.mjs\n");
+
+    const d = usagePanel(ctx());
+
+    expect(d.describe).toContain("capture installed");
+    expect(d.data).toMatchObject({ events: 0, installed: true });
+  });
+
+  it("counts usage capture installed through a custom repo-local hooksPath", () => {
+    mkdirSync(join(dir, ".aih"), { recursive: true });
+    mkdirSync(join(dir, ".git"), { recursive: true });
+    mkdirSync(join(dir, "hooks"), { recursive: true });
+    writeFileSync(join(dir, ".aih", "usage-record.mjs"), "x\n");
+    writeFileSync(join(dir, ".git", "config"), "[core]\n\thooksPath = hooks\n");
+    writeFileSync(join(dir, "hooks", "post-commit"), "node .aih/usage-record.mjs\n");
+
+    const d = usagePanel(ctx());
+
+    expect(d.describe).toContain("capture installed");
+    expect(d.data).toMatchObject({ events: 0, installed: true });
+  });
+
+  it("does not count an inactive default hook when hooksPath is external", () => {
+    mkdirSync(join(dir, ".aih"), { recursive: true });
+    mkdirSync(join(dir, ".git", "hooks"), { recursive: true });
+    const externalHooks = join(dir, "..", "external-hooks");
+    writeFileSync(join(dir, ".aih", "usage-record.mjs"), "x\n");
+    writeFileSync(join(dir, ".git", "config"), `[core]\n\thooksPath = ${externalHooks}\n`);
+    writeFileSync(join(dir, ".git", "hooks", "post-commit"), "node .aih/usage-record.mjs\n");
+
+    const d = usagePanel(ctx());
+
+    expect(d.describe).toContain("no events captured yet");
+    expect(d.data).toMatchObject({ events: 0, installed: false });
+  });
+
+  it("does not count an inactive default hook when global hooksPath is external", () => {
+    mkdirSync(join(dir, ".aih"), { recursive: true });
+    mkdirSync(join(dir, ".git", "hooks"), { recursive: true });
+    mkdirSync(home, { recursive: true });
+    const externalHooks = join(home, "git-hooks");
+    writeFileSync(join(dir, ".aih", "usage-record.mjs"), "x\n");
+    writeFileSync(join(home, ".gitconfig"), `[core]\n\thooksPath = ${externalHooks}\n`);
+    writeFileSync(join(dir, ".git", "hooks", "post-commit"), "node .aih/usage-record.mjs\n");
+
+    const d = usagePanel(ctx());
+
+    expect(d.describe).toContain("no events captured yet");
+    expect(d.data).toMatchObject({ events: 0, installed: false });
+  });
 });
 
 describe("leakPreventionsDigest", () => {

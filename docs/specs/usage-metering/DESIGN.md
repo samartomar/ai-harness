@@ -42,7 +42,7 @@ Those four landed, so the "usages" + cross-project feedback loop the report arc 
 | `readUsage(ctx)` | `src/usage/events.ts` | ✅ |
 | `aggregateUsage(events)` → tools / commits / token/cache counters / skills{top, bySource} / mcp{servers,tools} | `src/usage/aggregate.ts` | ✅ |
 | Recorder `.aih/usage-record.mjs` (`node … <tool> skill <name> <ecc\|canon\|user>`) | `src/usage/capture.ts` | ✅ |
-| **Universal git floor** (`post-commit` hook → commit events for ANY tool) | `aih usage --apply` | ✅ |
+| **Universal git floor** (`post-commit` hook → commit events for ANY tool + `aih track --apply`) | `aih usage --apply` | ✅ |
 | Per-tool hook generators (`TOOL_HOOK`: claude PostToolUse, kiro `.kiro.hook`, codex, cursor, gemini, copilot, windsurf, opencode, kimi, antigravity) | `src/usage/hooks.ts` | ✅ |
 | Zed `threads.db` importer (read-only SQLite → `.aih/usage.jsonl`) | `src/usage/zed.ts` | ✅ |
 | Legacy report usage panel | `src/report/usage.ts` | ✅ |
@@ -51,7 +51,10 @@ So the schema, reader, aggregator, recorder, and git floor were the base; the pe
 
 ## P1 — generated per-tool skill/MCP hooks (the source)
 
-`aih usage --apply` writes the git floor and generates each targeted CLI's hook from `TOOL_HOOK`.
+`aih usage --apply` writes the git floor (commit usage + one deduped track sample per commit) to
+the active repo-local hooks path (`.git/hooks` by default, `.githooks` when configured) and
+generates each targeted CLI's hook from `TOOL_HOOK`. External/global `core.hooksPath` targets are
+not mutated; the plan emits a chainable post-commit snippet instead.
 
 Each generated hook calls the existing recorder:
 
