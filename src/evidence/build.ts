@@ -10,6 +10,7 @@ import {
   type PlanContext,
   plan,
   probe,
+  probeMany,
   writeJson,
   writeText,
 } from "../internals/plan.js";
@@ -22,6 +23,7 @@ import { EVIDENCE_DIR } from "../skill/approve.js";
 import { skillCardsDir } from "../skill/card.js";
 import { AIH_SKILLS_LOCK_FILE } from "../skill/lockfile.js";
 import { TRUST_LOCK_FILE } from "../trust/lock.js";
+import { truthPackEvidenceSource } from "../truth/index.js";
 import { PACKAGE_NAME, REPO, VERSION } from "../version.js";
 import {
   DEFAULT_EVIDENCE_OUT,
@@ -99,6 +101,7 @@ function listFiles(root: string, relDir: string): string[] {
 interface Candidate {
   kind: EvidenceKind;
   rel: string;
+  contents?: string;
 }
 
 /**
@@ -109,7 +112,10 @@ interface Candidate {
  * (`REPORTS_DIR` for `aih report --format md|html`; `--sarif <file>` is
  * operator-named, conventionally at the root or under `.aih/`).
  */
-function candidates(ctx: PlanContext): Candidate[] {
+function candidates(
+  ctx: PlanContext,
+  truthPack?: { contents: string; rel: ".aih/truth-pack.json" },
+): Candidate[] {
   const out: Candidate[] = [
     { kind: "skills-lock", rel: AIH_SKILLS_LOCK_FILE },
     { kind: "packs", rel: AIH_PACKS_FILE },
@@ -130,6 +136,9 @@ function candidates(ctx: PlanContext): Candidate[] {
   }
   for (const rel of [...listFiles(ctx.root, "."), ...listFiles(ctx.root, ".aih")]) {
     if (rel.endsWith(".sarif")) out.push({ kind: "sarif", rel });
+  }
+  if (truthPack !== undefined) {
+    out.push({ kind: "truth-pack", rel: truthPack.rel, contents: truthPack.contents });
   }
   return out;
 }
@@ -170,12 +179,16 @@ function artifactSchemaVersion(raw: string): number {
  * path is the swap window where a symlink planted after enumeration gets its
  * target's bytes laundered into the audit trail.
  */
-function discoverArtifacts(ctx: PlanContext): DiscoveredArtifact[] {
+function discoverArtifacts(
+  ctx: PlanContext,
+  truthPack?: { contents: string; rel: ".aih/truth-pack.json" },
+): DiscoveredArtifact[] {
   const found: DiscoveredArtifact[] = [];
-  for (const candidate of candidates(ctx)) {
-    const buf = readRegularFile(join(ctx.root, candidate.rel));
-    if (buf === undefined) continue; // absent kind → silently not indexed
-    const raw = buf.toString("utf8");
+  for (const candidate of candidates(ctx, truthPack)) {
+    const buf =
+      candidate.contents === undefined ? readRegularFile(join(ctx.root, candidate.rel)) : undefined;
+    if (buf === undefined && candidate.contents === undefined) continue; // absent kind → silently not indexed
+    const raw = candidate.contents ?? buf?.toString("utf8") ?? "";
     const contents = ensureTrailingNewline(raw);
     found.push({
       kind: candidate.kind,
@@ -246,10 +259,16 @@ function harnessBlock(ctx: PlanContext): EvidenceHarness {
   };
 }
 
-function evidenceBuildPlan(ctx: PlanContext): Plan {
+async function evidenceBuildPlan(ctx: PlanContext): Promise<Plan> {
   const out = optionString(ctx, "out") ?? DEFAULT_EVIDENCE_OUT;
   const external = isAbsolute(out);
-  const artifacts = discoverArtifacts(ctx);
+  const truthPack = await truthPackEvidenceSource(ctx);
+  const truthPackProbe =
+    truthPack.checks.length > 0 ? probeMany("truth verify", () => truthPack.checks) : undefined;
+  if (truthPack.checks.some((check) => check.verdict === "fail")) {
+    return plan("evidence build", ...(truthPackProbe === undefined ? [] : [truthPackProbe]));
+  }
+  const artifacts = discoverArtifacts(ctx, truthPack.source);
   const strictSignature = requireSignature(ctx);
 
   const index: EvidenceBundle = {
@@ -292,6 +311,7 @@ function evidenceBuildPlan(ctx: PlanContext): Plan {
   if (strictSignature && sign === undefined) {
     actions.push(probe("evidence bundle signature", () => missingSignatureCheck(out)));
   }
+  if (truthPackProbe !== undefined) actions.push(truthPackProbe);
   actions.push(
     digest("evidence build", buildText(out, artifacts), {
       out,

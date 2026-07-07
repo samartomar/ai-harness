@@ -12,6 +12,7 @@ import { deepMerge } from "../internals/merge.js";
 import type { Action, CommandSpec, PlanContext, WriteAction } from "../internals/plan.js";
 import { doc, plan, writeJson } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
+import { sidecarInitActions } from "../truth/index.js";
 import { INIT_PHASES } from "./phases.js";
 import { initV3Actions } from "./v3.js";
 
@@ -178,6 +179,8 @@ async function initPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
     ),
   );
 
+  actions.push(...(await sidecarInitActions(baseCtx)));
+
   if (ctx.options.v3 === true) {
     actions.push(...(await initV3Actions(baseCtx)));
   }
@@ -253,6 +256,14 @@ export const command: CommandSpec = {
   summary:
     "Initialize a target repo: profile + selected baseline + bootstrap-ai + scaffold + secrets + guardrails + mcp + sandbox",
   options: [
+    {
+      flags: "--sidecar",
+      description: "create an external sibling truth sidecar and bind it to the current commit",
+    },
+    {
+      flags: "--sidecar-path <dir>",
+      description: "external truth sidecar directory (defaults to sibling <repo>-ai)",
+    },
     {
       flags: "--mcp-mode <mode>",
       description:

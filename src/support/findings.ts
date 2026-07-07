@@ -529,6 +529,48 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     action:
       "Update the relevant public docs, `docs/CONTROL_MATRIX.md`, or `CHANGELOG.md` alongside the feature change so public claims can detect drift.",
   },
+  "truth.sidecar-missing": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "truth sidecar is missing or unreadable",
+    action:
+      "Run `aih init --sidecar --apply` to create the external sidecar and root pointer, or repair the existing `.aih-truth.json` and sidecar `truth/state.json` files.",
+  },
+  "truth.bound-commit-drift": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "truth sidecar is bound to a different commit",
+    action:
+      "Regenerate or rebind the sidecar against the current commit, then rerun `aih truth verify` before using the pack.",
+  },
+  "truth.version-drift": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "truth sidecar version assertion drifted",
+    action:
+      "Update the sidecar truth state so its asserted package version matches the repository package version, or fix the package metadata if the sidecar is correct.",
+  },
+  "truth.claim-matrix-row-missing": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "truth sidecar claim has no control-matrix row",
+    action:
+      "Add the missing `CM-xx` row to `docs/CONTROL_MATRIX.md`, or remove/update the sidecar claim assertion before packing truth.",
+  },
+  "truth.decision-supersession-missing": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "truth sidecar decision supersession target is missing",
+    action:
+      "Add the missing supersession target decision to the sidecar truth state, or remove the stale `supersededBy` reference.",
+  },
+  "truth.pack-invalid": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "truth pack is missing, malformed, or stale",
+    action:
+      "Run `aih truth verify`, repair the sidecar or repository metadata it names, then regenerate the pack with `aih truth pack --apply` before building evidence.",
+  },
   "ready.blocked": {
     audience: "developer",
     failSeverity: "blocking",

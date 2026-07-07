@@ -65,6 +65,7 @@ import {
   trustVerifyCommand,
 } from "../trust/commands.js";
 import { trustScanCommand } from "../trust/scan.js";
+import { truthPackCommand, truthVerifyCommand } from "../truth/index.js";
 import { command as uninstall } from "../uninstall/index.js";
 import { command as usage } from "../usage/index.js";
 import { command as vdi } from "../vdi/index.js";
@@ -134,6 +135,7 @@ export const PARENT_GROUPS = [
   "marketplace",
   "policy",
   "evidence",
+  "truth",
 ] as const;
 
 export const GROUPED_COMMAND_SPECS = {
@@ -178,6 +180,7 @@ export const GROUPED_COMMAND_SPECS = {
   marketplace: [marketplaceBuildCommand, marketplaceValidateCommand, marketplacePublishCommand],
   policy: [policyValidateCommand, policyVerifyCommand],
   evidence: [evidenceBuildCommand],
+  truth: [truthPackCommand, truthVerifyCommand],
 } as const satisfies Record<(typeof PARENT_GROUPS)[number], readonly CommandSpec[]>;
 
 /** Every built-in CommandSpec, including nested specs under parent groups. */
@@ -758,6 +761,21 @@ export function registerCommands(
     .description("Package aih's committed governance artifacts into a verifiable evidence bundle");
   for (const spec of [evidenceBuildCommand]) {
     const sub = evidence.command(spec.name).description(spec.summary);
+    addSharedFlags(sub);
+    for (const o of spec.options ?? []) {
+      if (o.default !== undefined) sub.option(o.flags, o.description, o.default);
+      else sub.option(o.flags, o.description);
+    }
+    sub.action(async (_options: Record<string, unknown>, command: Command) => {
+      process.exitCode = await runCapability(spec, command, { positionalRoot: false });
+    });
+  }
+
+  const truth = program
+    .command("truth")
+    .description("Assemble and verify the external project-truth sidecar");
+  for (const spec of [truthPackCommand, truthVerifyCommand]) {
+    const sub = truth.command(spec.name).description(spec.summary);
     addSharedFlags(sub);
     for (const o of spec.options ?? []) {
       if (o.default !== undefined) sub.option(o.flags, o.description, o.default);

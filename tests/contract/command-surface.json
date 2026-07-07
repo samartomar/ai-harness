@@ -963,6 +963,12 @@
           "flags": "--root <dir>"
         },
         {
+          "flags": "--sidecar"
+        },
+        {
+          "flags": "--sidecar-path <dir>"
+        },
+        {
           "flags": "--support-out <dir>"
         },
         {
@@ -3427,6 +3433,122 @@
             },
             {
               "flags": "--sarif <file>"
+            },
+            {
+              "flags": "--support-out <dir>"
+            },
+            {
+              "flags": "--verify"
+            },
+            {
+              "flags": "--yes"
+            }
+          ],
+          "commands": []
+        }
+      ]
+    },
+    {
+      "name": "truth",
+      "hasDescription": true,
+      "arguments": [],
+      "options": [],
+      "commands": [
+        {
+          "name": "pack",
+          "hasDescription": true,
+          "arguments": [],
+          "options": [
+            {
+              "flags": "--all-tools"
+            },
+            {
+              "flags": "--apply"
+            },
+            {
+              "flags": "--cli <list>"
+            },
+            {
+              "flags": "--context-dir <dir>",
+              "defaultValue": "ai-coding"
+            },
+            {
+              "flags": "--detect"
+            },
+            {
+              "flags": "--force"
+            },
+            {
+              "flags": "--json"
+            },
+            {
+              "flags": "--no-log"
+            },
+            {
+              "flags": "--posture <posture>",
+              "defaultValue": "vibe"
+            },
+            {
+              "flags": "--root <dir>"
+            },
+            {
+              "flags": "--sidecar-path <dir>"
+            },
+            {
+              "flags": "--support-out <dir>"
+            },
+            {
+              "flags": "--token-budget <tokens>",
+              "defaultValue": "2400"
+            },
+            {
+              "flags": "--verify"
+            },
+            {
+              "flags": "--yes"
+            }
+          ],
+          "commands": []
+        },
+        {
+          "name": "verify",
+          "hasDescription": true,
+          "arguments": [],
+          "options": [
+            {
+              "flags": "--all-tools"
+            },
+            {
+              "flags": "--apply"
+            },
+            {
+              "flags": "--cli <list>"
+            },
+            {
+              "flags": "--context-dir <dir>",
+              "defaultValue": "ai-coding"
+            },
+            {
+              "flags": "--detect"
+            },
+            {
+              "flags": "--force"
+            },
+            {
+              "flags": "--json"
+            },
+            {
+              "flags": "--no-log"
+            },
+            {
+              "flags": "--posture <posture>",
+              "defaultValue": "vibe"
+            },
+            {
+              "flags": "--root <dir>"
+            },
+            {
+              "flags": "--sidecar-path <dir>"
             },
             {
               "flags": "--support-out <dir>"
