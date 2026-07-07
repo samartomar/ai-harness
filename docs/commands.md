@@ -4,6 +4,9 @@ Long-form behavior detail for every `aih` command — the one-line surface lives
 [README](../README.md#command-surface), and `aih <command> --help` is authoritative for flags and
 exact syntax.
 
+For task-oriented command selection, use the workflow companion:
+[guides/command-use-cases.md](../guides/command-use-cases.md).
+
 **Workstation & runtime**
 
 ## aih certs
