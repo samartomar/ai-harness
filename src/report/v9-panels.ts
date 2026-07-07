@@ -11,7 +11,7 @@ import { eccLanguages } from "../ecc/select.js";
 import { DEFAULT_EVIDENCE_OUT, EVIDENCE_FILE, EvidenceBundleSchema } from "../evidence/manifest.js";
 import { homeDir } from "../internals/cli-detect.js";
 import { SUPPORTED_CLIS } from "../internals/clis.js";
-import { readIfExists } from "../internals/fsxn.js";
+import { readIfExists, readRegularFileWithStats } from "../internals/fsxn.js";
 import { gitRead } from "../internals/git.js";
 import { extractManagedBlock } from "../internals/markers.js";
 import { type DigestAction, digest, type PlanContext } from "../internals/plan.js";
@@ -487,6 +487,7 @@ interface LedgerRow {
   startedAt?: string;
   finishedAt?: string;
   verification?: { pass?: number; fail?: number; skip?: number };
+  support?: { findings?: number; templates?: number };
 }
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -519,6 +520,23 @@ function readLedger(root: string): LedgerRow[] {
   return out.sort((a, b) => String(a.startedAt ?? "").localeCompare(String(b.startedAt ?? "")));
 }
 
+function runLedgerCounts(ledger: LedgerRow[]): {
+  runs: number;
+  verificationFail: number;
+  supportFindings: number;
+} {
+  const count = (value: unknown): number =>
+    typeof value === "number" && Number.isFinite(value) ? value : 0;
+  return ledger.reduce(
+    (acc, row) => {
+      acc.verificationFail += count(row.verification?.fail);
+      acc.supportFindings += count(row.support?.findings);
+      return acc;
+    },
+    { runs: ledger.length, verificationFail: 0, supportFindings: 0 },
+  );
+}
+
 /** "Jun 1" for a ledger timestamp (absolute, deterministic from the data). */
 function sinceLabel(iso: string): string {
   const d = new Date(iso);
@@ -528,6 +546,10 @@ function sinceLabel(iso: string): string {
 
 function isFail(status: string | undefined): boolean {
   return status === "failed" || status === "error" || status === "partial";
+}
+
+function ledgerNumber(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
 
 /**
@@ -628,10 +650,27 @@ const HEAL_SCOPES = [
  * per-check detail needs heal to persist its result). Undefined when heal never ran.
  */
 export function winsDigest(ctx: PlanContext): DigestAction | undefined {
-  const heal = readLedger(ctx.root).filter((r) => r.capability === "heal");
-  if (heal.length === 0) return undefined;
+  const ledger = readLedger(ctx.root);
+  const heal = ledger.filter((r) => r.capability === "heal");
+  if (heal.length === 0) {
+    if (ledger.length === 0) return undefined;
+    const ledgerCounts = runLedgerCounts(ledger);
+    const since = sinceLabel(ledger[0]?.startedAt ?? ledger[0]?.finishedAt ?? "");
+    const body = lines(
+      "No heal history on this box yet; run `aih heal --scope all` to populate host-runtime remediation rows.",
+      `Run ledger totals — ${ledgerCounts.verificationFail} verification.fail · ${ledgerCounts.supportFindings} support.findings across ${ledgerCounts.runs} run(s).`,
+    );
+    return digest("Remediation — no heal history", body, {
+      items: [],
+      cleared: 0,
+      runs: 0,
+      since,
+      openOverTime: [],
+      ledger: ledgerCounts,
+    });
+  }
   const last = heal[heal.length - 1];
-  const allGreen = last?.status === "success" && (last?.verification?.fail ?? 0) === 0;
+  const allGreen = last?.status === "success" && ledgerNumber(last?.verification?.fail) === 0;
   // §2b — which scopes the last heal actually probed, from `.aih/heal-last.json` (written
   // by `aih heal`). When absent, fall back to assuming all four were probed (back-compat).
   const probed = (() => {
@@ -659,10 +698,12 @@ export function winsDigest(ctx: PlanContext): DigestAction | undefined {
     };
   });
   const cleared = items.filter((i) => i.status === "fixed").length;
-  const openOverTime = heal.map((r) => r.verification?.fail ?? 0);
+  const openOverTime = heal.map((r) => ledgerNumber(r.verification?.fail));
   const since = sinceLabel(heal[0]?.startedAt ?? "");
+  const ledgerCounts = runLedgerCounts(ledger);
   const body = lines(
     `Remediation ledger — ${cleared} blocker(s) cleared across ${heal.length} heal run(s) since ${since}.`,
+    `Run ledger totals — ${ledgerCounts.verificationFail} verification.fail · ${ledgerCounts.supportFindings} support.findings across ${ledgerCounts.runs} run(s).`,
     "",
     ...items.map((i) => `  ${i.status === "fixed" ? "✓" : "·"} ${i.name} (${i.status})`),
   );
@@ -672,6 +713,7 @@ export function winsDigest(ctx: PlanContext): DigestAction | undefined {
     runs: heal.length,
     since,
     openOverTime,
+    ledger: ledgerCounts,
   });
 }
 
@@ -802,6 +844,97 @@ function orgPolicyState(
   }
 }
 
+type SkillEvidenceVerdict = "GREEN" | "YELLOW" | "RED" | "UNKNOWN";
+
+interface SkillEvidenceSummary {
+  reports: number;
+  newestAt?: string;
+  verdicts: Record<SkillEvidenceVerdict, number>;
+  analyzers: string[];
+  gaps: string[];
+}
+
+function isSkillEvidenceVerdict(value: unknown): value is SkillEvidenceVerdict {
+  return value === "GREEN" || value === "YELLOW" || value === "RED" || value === "UNKNOWN";
+}
+
+function emptySkillEvidenceSummary(): SkillEvidenceSummary {
+  return {
+    reports: 0,
+    verdicts: { GREEN: 0, YELLOW: 0, RED: 0, UNKNOWN: 0 },
+    analyzers: [],
+    gaps: [],
+  };
+}
+
+function skillEvidenceSummary(ctx: PlanContext): SkillEvidenceSummary {
+  const out = emptySkillEvidenceSummary();
+  const evidenceDir = join(ctx.root, ".aih", "skill-reports");
+  let files: string[];
+  try {
+    files = readdirSync(evidenceDir)
+      .filter((file) => file.endsWith(".json"))
+      .sort();
+  } catch {
+    out.gaps.push("no skill vet evidence artifacts found in .aih/skill-reports");
+    return out;
+  }
+  if (files.length === 0) {
+    out.gaps.push("no skill vet evidence artifacts found in .aih/skill-reports");
+    return out;
+  }
+  const analyzers = new Set<string>();
+  let newestMs = 0;
+  let unreadable = 0;
+  for (const file of files) {
+    const abs = join(evidenceDir, file);
+    const evidence = readRegularFileWithStats(abs);
+    if (evidence === undefined) {
+      unreadable++;
+      continue;
+    }
+    try {
+      const parsed = JSON.parse(evidence.contents.toString("utf8")) as {
+        verdict?: unknown;
+        analyzersRun?: unknown;
+      };
+      if (isSkillEvidenceVerdict(parsed.verdict)) {
+        out.verdicts[parsed.verdict] += 1;
+      } else {
+        unreadable++;
+        continue;
+      }
+      if (Array.isArray(parsed.analyzersRun)) {
+        for (const analyzer of parsed.analyzersRun) {
+          if (typeof analyzer === "string" && analyzer.length > 0) analyzers.add(analyzer);
+        }
+      }
+      out.reports += 1;
+      newestMs = Math.max(newestMs, evidence.stats.mtimeMs);
+    } catch {
+      unreadable++;
+    }
+  }
+  if (newestMs > 0) out.newestAt = new Date(newestMs).toISOString().slice(0, 10);
+  out.analyzers = [...analyzers].sort();
+  if (unreadable > 0) {
+    out.gaps.push(`${unreadable} skill vet evidence artifact(s) could not be parsed`);
+  }
+  if (out.reports === 0 && out.gaps.length === 0) {
+    out.gaps.push("no readable skill vet evidence artifacts found");
+  }
+  return out;
+}
+
+function hasSkillEvidenceSignal(scanner: SkillEvidenceSummary): boolean {
+  return (
+    scanner.reports > 0 ||
+    scanner.gaps.some(
+      (gap) => gap !== "no skill vet evidence artifacts found in .aih/skill-reports",
+    )
+  );
+}
+
 /**
  * Skill governance — the read-only join over installed external skills and their
  * committed approvals (`skillInventory`), surfaced so the dashboard shows what is on
@@ -815,19 +948,26 @@ function orgPolicyState(
  */
 export function skillGovernanceDigest(ctx: PlanContext): DigestAction | undefined {
   const inv = skillInventory(ctx);
+  const lock = readSkillsLock(ctx.root);
   const marketplace = marketplaceState(ctx);
   const evidence = evidenceState(ctx);
   const orgPolicy = orgPolicyState(ctx);
+  const scanner = skillEvidenceSummary(ctx);
   if (
     inv.counts.installed === 0 &&
-    readSkillsLock(ctx.root).skills.length === 0 &&
+    lock.skills.length === 0 &&
     marketplace === undefined &&
     evidence === undefined &&
-    orgPolicy === undefined
+    orgPolicy === undefined &&
+    !hasSkillEvidenceSignal(scanner)
   ) {
     return undefined;
   }
   const { installed, approved, unapproved, stalePin, quarantined } = inv.counts;
+  const approvalVerdicts = {
+    GREEN: lock.skills.filter((entry) => entry.verdict === "GREEN").length,
+    YELLOW: lock.skills.filter((entry) => entry.verdict === "YELLOW").length,
+  };
   const notable = inv.skills.filter((s) => s.status !== "approved");
   const rows = inv.skills.map((s) => ({
     name: s.name,
@@ -922,6 +1062,13 @@ export function skillGovernanceDigest(ctx: PlanContext): DigestAction | undefine
           ),
         ]
       : []),
+    "",
+    "scanner & verdict evidence:",
+    `  vet evidence reports: ${scanner.reports} · newest scan: ${scanner.newestAt ?? "missing"}`,
+    `  scanner verdicts: GREEN ${scanner.verdicts.GREEN} · YELLOW ${scanner.verdicts.YELLOW} · RED ${scanner.verdicts.RED} · UNKNOWN ${scanner.verdicts.UNKNOWN}`,
+    `  approval verdicts: GREEN ${approvalVerdicts.GREEN} · YELLOW ${approvalVerdicts.YELLOW}`,
+    `  analyzers: ${scanner.analyzers.length > 0 ? scanner.analyzers.join(", ") : "missing"}`,
+    ...scanner.gaps.map((gap) => `  gap: ${gap}`),
     ...(artifactLines.length > 0 ? ["", "distribution & audit:", ...artifactLines] : []),
   );
   // The parenthetical breakdown must SUM to `installed` — quarantined rows count as
@@ -937,6 +1084,8 @@ export function skillGovernanceDigest(ctx: PlanContext): DigestAction | undefine
     stalePin,
     quarantined,
     rows,
+    scanner,
+    approvalVerdicts,
     ...(packs.length > 0 ? { packs } : {}),
     ...(marketplace !== undefined ? { marketplace } : {}),
     ...(evidence !== undefined ? { evidence } : {}),

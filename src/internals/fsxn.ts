@@ -349,7 +349,9 @@ const O_NOFOLLOW = (fsConstants as Record<string, number | undefined>).O_NOFOLLO
  * target's bytes laundered into an artifact (marketplace build, evidence
  * bundle, fleet bundle all package what they read).
  */
-export function readRegularFile(abs: string): Buffer | undefined {
+export function readRegularFileWithStats(
+  abs: string,
+): { contents: Buffer; stats: Stats } | undefined {
   let fd: number;
   try {
     fd = openSync(abs, fsConstants.O_RDONLY | O_NOFOLLOW);
@@ -357,9 +359,14 @@ export function readRegularFile(abs: string): Buffer | undefined {
     return undefined;
   }
   try {
-    if (!fstatSync(fd).isFile()) return undefined;
-    return readFileSync(fd);
+    const stats = fstatSync(fd);
+    if (!stats.isFile()) return undefined;
+    return { contents: readFileSync(fd), stats };
   } finally {
     closeSync(fd);
   }
+}
+
+export function readRegularFile(abs: string): Buffer | undefined {
+  return readRegularFileWithStats(abs)?.contents;
 }
