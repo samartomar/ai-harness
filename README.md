@@ -117,6 +117,7 @@ right workflow for a reader or rollout stage.
 
 One honest line per command — the long-form behavior detail for every command lives in
 [docs/commands.md](docs/commands.md), and `aih <command> --help` is authoritative for flags.
+Keep this table as a navigation index: do not add flag-level behavior or workflow recipes here.
 
 ### Workstation & runtime
 

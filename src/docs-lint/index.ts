@@ -9,7 +9,7 @@ import type { Check, CheckCode, Verdict } from "../internals/verify.js";
 const SLOP_LINT_REL = join("packs", "docs-quality", "betterdoc", "references", "slop-lint.md");
 const CONTROL_MATRIX_REL = join("docs", "CONTROL_MATRIX.md");
 const DEFAULT_ROOT_DOCS = ["README.md", "CONTRIBUTING.md", "SECURITY.md"];
-const DEFAULT_DOC_DIRS = ["docs"];
+const DEFAULT_DOC_DIRS = ["docs", "guides"];
 const SKIP_REL_DIRS = new Set([join("docs", "specs")]);
 const SKIP_DIRS = new Set([".git", ".aih", "node_modules", "dist", "coverage"]);
 const MAX_DOC_BYTES = 1_000_000;
@@ -17,7 +17,7 @@ const MAX_FINDINGS = 200;
 const CLAIM_ID_RE = /^CM-\d{2,}$/;
 const CLAIM_MARKER_RE = /<!--\s*aih:claim(?:\s+([A-Za-z0-9-]+))?\s*-->/gi;
 const FEATURE_SOURCE_RE = /^src\/(?!commands\/|internals\/).+\.ts$/;
-const DOCS_LEDGER_RE = /^(README\.md|CHANGELOG\.md|docs\/.*\.md)$/;
+const DOCS_LEDGER_RE = /^(README\.md|CHANGELOG\.md|docs\/.*\.md|guides\/.*\.md)$/;
 
 type DocsLintCode =
   | Extract<CheckCode, "docs.banned-phrase">

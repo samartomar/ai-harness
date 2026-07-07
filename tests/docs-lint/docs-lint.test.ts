@@ -197,6 +197,38 @@ describe("docs-lint", () => {
     );
   });
 
+  it("accepts a guide update as feature-ledger coverage", async () => {
+    const root = tempRoot();
+    write(root, "README.md", "Managed changes are dry-run first. <!-- aih:claim CM-01 -->\n");
+    write(root, "guides/command-use-cases.md", "Public command workflow guidance.\n");
+    write(
+      root,
+      "docs/CONTROL_MATRIX.md",
+      [
+        "# Control Matrix",
+        "",
+        "| ID | Public claim | Implementation seam | Regression proof |",
+        "| --- | --- | --- | --- |",
+        "| CM-01 | Managed changes are dry-run first. | `src/internals/execute.ts` | `tests/docs-lint/example.test.ts` (`covers the mapped claim`) |",
+      ].join("\n"),
+    );
+    write(root, "tests/docs-lint/example.test.ts", 'it("covers the mapped claim", () => {});\n');
+    const run = fakeRunner((argv) =>
+      argv[0] === "git" && argv.includes("diff")
+        ? { stdout: "src/trust/index.ts\nguides/command-use-cases.md\n" }
+        : undefined,
+    );
+
+    const checks = await docsLintChecks(ctx(root, { run }));
+
+    expect(checks).not.toContainEqual(
+      expect.objectContaining({
+        verdict: "fail",
+        code: "docs.feature-ledger-drift",
+      }),
+    );
+  });
+
   it("fails closed when changed path detection cannot run", async () => {
     const root = tempRoot();
     write(root, "README.md", "Managed changes are dry-run first. <!-- aih:claim CM-01 -->\n");
@@ -277,16 +309,18 @@ describe("docs-lint", () => {
     ]);
   });
 
-  it("scans docs but skips internal report specs by default", async () => {
+  it("scans docs and guides but skips internal report specs by default", async () => {
     const root = tempRoot();
     mkdirSync(join(root, "docs", "specs"), { recursive: true });
     writeFileSync(join(root, "README.md"), "Plain setup notes.\n");
     writeFileSync(join(root, "docs", "guide.md"), "This robust claim should be grounded.\n");
+    write(root, "guides/team-guide.md", "This robust guide should be grounded.\n");
     writeFileSync(join(root, "docs", "specs", "scratch.md"), "Clearly a draft spec.\n");
 
     const checks = await docsLintChecks(ctx(root));
 
     expect(checks.map((check) => check.location?.uri)).toContain("docs/guide.md");
+    expect(checks.map((check) => check.location?.uri)).toContain("guides/team-guide.md");
     expect(checks.map((check) => check.location?.uri)).not.toContain("docs/specs/scratch.md");
   });
 });
