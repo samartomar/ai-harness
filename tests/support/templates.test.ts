@@ -51,6 +51,19 @@ describe("findings — routing", () => {
     expect(toFinding(chk("mcp.uv-missing", "skip"), "mcp")?.kind).toBe("improvement");
   });
 
+  it("routes docs claim-ledger failures as developer self-fix notes", () => {
+    for (const code of [
+      "docs.claim-mapping-missing",
+      "docs.claim-matrix-row-missing",
+      "docs.claim-test-missing",
+      "docs.feature-ledger-drift",
+    ] as const) {
+      const template = renderTemplate(mustFind(code, "fail", "detail"), CTX);
+      expect(template.kind).toBe("self-fix");
+      expect(template.subject).toContain("aih:");
+    }
+  });
+
   it("dedupes by code, merges details, sorts most-urgent-first", () => {
     const findings = findingsFrom(
       [

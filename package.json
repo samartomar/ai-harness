@@ -32,12 +32,13 @@
     "test:cov": "vitest run --coverage",
     "check:artifacts": "tsx src/internals/check-tracked-artifacts.ts",
     "check:ecc-installer": "tsx src/internals/check-ecc-installer.ts",
+    "docs:lint": "tsx src/cli.ts docs-lint",
     "lint": "biome check src tests",
     "lint:fix": "biome check --write src tests",
     "lint:ci": "biome ci src tests",
     "format": "biome format --write src tests",
     "typecheck": "tsc --noEmit",
-    "verify": "npm run check:artifacts && npm run check:ecc-installer && npm run typecheck && npm run lint:ci && npm run test:cov && npm run build"
+    "verify": "npm run check:artifacts && npm run check:ecc-installer && npm run docs:lint && npm run typecheck && npm run lint:ci && npm run test:cov && npm run build"
   },
   "keywords": [
     "ai",

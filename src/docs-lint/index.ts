@@ -4,20 +4,29 @@ import { fileURLToPath } from "node:url";
 import { readRegularFileWithStats } from "../internals/fsxn.js";
 import type { CommandSpec, PlanContext } from "../internals/plan.js";
 import { plan, probeMany } from "../internals/plan.js";
-import type { Check, CheckCode } from "../internals/verify.js";
+import type { Check, CheckCode, Verdict } from "../internals/verify.js";
 
 const SLOP_LINT_REL = join("packs", "docs-quality", "betterdoc", "references", "slop-lint.md");
+const CONTROL_MATRIX_REL = join("docs", "CONTROL_MATRIX.md");
 const DEFAULT_ROOT_DOCS = ["README.md", "CONTRIBUTING.md", "SECURITY.md"];
 const DEFAULT_DOC_DIRS = ["docs"];
 const SKIP_REL_DIRS = new Set([join("docs", "specs")]);
 const SKIP_DIRS = new Set([".git", ".aih", "node_modules", "dist", "coverage"]);
 const MAX_DOC_BYTES = 1_000_000;
 const MAX_FINDINGS = 200;
+const CLAIM_ID_RE = /^CM-\d{2,}$/;
+const CLAIM_MARKER_RE = /<!--\s*aih:claim(?:\s+([A-Za-z0-9-]+))?\s*-->/gi;
+const FEATURE_SOURCE_RE = /^src\/(?!commands\/|internals\/).+\.ts$/;
+const DOCS_LEDGER_RE = /^(README\.md|CHANGELOG\.md|docs\/.*\.md)$/;
 
 type DocsLintCode =
   | Extract<CheckCode, "docs.banned-phrase">
   | Extract<CheckCode, "docs.vague-absolute">
-  | Extract<CheckCode, "docs.unsupported-callout-claim">;
+  | Extract<CheckCode, "docs.unsupported-callout-claim">
+  | Extract<CheckCode, "docs.claim-mapping-missing">
+  | Extract<CheckCode, "docs.claim-matrix-row-missing">
+  | Extract<CheckCode, "docs.claim-test-missing">
+  | Extract<CheckCode, "docs.feature-ledger-drift">;
 
 interface PhraseRuleSpec {
   heading: string;
@@ -38,10 +47,28 @@ interface DocsLintRules {
 
 interface DocsLintFinding {
   code: DocsLintCode;
+  verdict: Exclude<Verdict, "pass">;
   relative: string;
   line: number;
   detail: string;
   fingerprint: string;
+}
+
+interface MatrixTestRef {
+  path: string;
+  name: string;
+}
+
+interface MatrixRow {
+  id: string;
+  line: number;
+  proof: string;
+  refs: MatrixTestRef[];
+}
+
+interface ControlMatrix {
+  rows: Map<string, MatrixRow>;
+  findings: DocsLintFinding[];
 }
 
 const PHRASE_RULE_SPECS: PhraseRuleSpec[] = [
@@ -271,14 +298,26 @@ function finding(
   line: number,
   detail: string,
   key: string,
+  verdict: Exclude<Verdict, "pass"> = "skip",
 ): DocsLintFinding {
   return {
     code,
+    verdict,
     relative,
     line,
     detail,
     fingerprint: `${code}:${relative}:${line}:${slug(key)}`,
   };
+}
+
+function hardFinding(
+  code: DocsLintCode,
+  relative: string,
+  line: number,
+  detail: string,
+  key: string,
+): DocsLintFinding {
+  return finding(code, relative, line, detail, key, "fail");
 }
 
 function calloutStarts(line: string): boolean {
@@ -355,7 +394,7 @@ function lintMarkdown(relative: string, text: string, rules: DocsLintRules): Doc
 function checkFromFinding(f: DocsLintFinding): Check {
   return {
     name: "docs lint",
-    verdict: "fail",
+    verdict: f.verdict,
     code: f.code,
     detail: f.detail,
     location: { uri: f.relative, startLine: f.line },
@@ -363,7 +402,308 @@ function checkFromFinding(f: DocsLintFinding): Check {
   };
 }
 
-export function docsLintChecks(ctx: PlanContext): Check[] {
+function splitTableRow(line: string): string[] | undefined {
+  const trimmed = line.trim();
+  if (!trimmed.startsWith("|") || !trimmed.endsWith("|")) return undefined;
+  return trimmed
+    .slice(1, -1)
+    .split("|")
+    .map((cell) => cell.trim());
+}
+
+function isTableSeparator(cells: string[]): boolean {
+  return cells.every((cell) => /^:?-{3,}:?$/.test(cell));
+}
+
+function normalizeClaimId(value: string): string | undefined {
+  const text = value
+    .replace(/<a\s+id=["']?([^"'>\s]+)["']?\s*><\/a>/gi, " $1 ")
+    .replace(/<[^>]+>/g, " ");
+  const match = /\bCM-\d{2,}\b/i.exec(text);
+  return match?.[0].toUpperCase();
+}
+
+function extractTestRefs(proof: string): MatrixTestRef[] {
+  const refs: MatrixTestRef[] = [];
+  const files = [...proof.matchAll(/`(tests\/[^`]+\.test\.ts)`/g)];
+  for (const match of files) {
+    const path = match[1];
+    if (path === undefined) continue;
+    const segment = parenthesizedProofSegment(proof, (match.index ?? 0) + match[0].length);
+    const names = [...segment.matchAll(/`([^`]+)`/g)].flatMap((m) =>
+      m[1] === undefined ? [] : [m[1]],
+    );
+    for (const name of names) refs.push({ path, name });
+  }
+  return refs;
+}
+
+function parenthesizedProofSegment(proof: string, offset: number): string {
+  let cursor = offset;
+  while (cursor < proof.length && /\s/.test(proof[cursor] ?? "")) cursor++;
+  if (proof[cursor] !== "(") return "";
+  const start = cursor + 1;
+  let inBacktick = false;
+  for (cursor = start; cursor < proof.length; cursor++) {
+    const char = proof[cursor];
+    if (char === "`") inBacktick = !inBacktick;
+    if (!inBacktick && char === ")") return proof.slice(start, cursor);
+  }
+  return "";
+}
+
+function parseControlMatrix(root: string): ControlMatrix {
+  const relativeMatrix = toPosix(CONTROL_MATRIX_REL);
+  const text = readText(join(root, CONTROL_MATRIX_REL));
+  if (text === undefined) {
+    return {
+      rows: new Map(),
+      findings: [],
+    };
+  }
+
+  const rows = new Map<string, MatrixRow>();
+  const findings: DocsLintFinding[] = [];
+  let inClaimTable = false;
+  const lines = text.split(/\r?\n/);
+  for (let index = 0; index < lines.length; index++) {
+    const lineNo = index + 1;
+    const cells = splitTableRow(lines[index] ?? "");
+    if (cells === undefined) {
+      if (inClaimTable && (lines[index] ?? "").trim().startsWith("## ")) inClaimTable = false;
+      continue;
+    }
+    const header = cells.map((cell) => cell.toLowerCase());
+    if (
+      header.includes("id") &&
+      header.includes("public claim") &&
+      header.includes("implementation seam") &&
+      header.includes("regression proof")
+    ) {
+      inClaimTable = true;
+      continue;
+    }
+    if (!inClaimTable || isTableSeparator(cells)) continue;
+    if (cells.length < 4) continue;
+
+    const id = normalizeClaimId(cells[0] ?? "");
+    if (id === undefined) {
+      findings.push(
+        hardFinding(
+          "docs.claim-mapping-missing",
+          relativeMatrix,
+          lineNo,
+          "control matrix claim rows must declare a stable CM-xx ID",
+          `matrix-row-${lineNo}`,
+        ),
+      );
+      continue;
+    }
+    if (rows.has(id)) {
+      findings.push(
+        hardFinding(
+          "docs.claim-mapping-missing",
+          relativeMatrix,
+          lineNo,
+          `duplicate control matrix claim ID ${id}`,
+          `matrix-duplicate-${id}`,
+        ),
+      );
+      continue;
+    }
+    const proof = cells[3] ?? "";
+    rows.set(id, { id, line: lineNo, proof, refs: extractTestRefs(proof) });
+  }
+
+  return { rows, findings };
+}
+
+function validateMatrixProofs(root: string, matrix: ControlMatrix): DocsLintFinding[] {
+  const findings: DocsLintFinding[] = [];
+  const relativeMatrix = toPosix(CONTROL_MATRIX_REL);
+  for (const row of matrix.rows.values()) {
+    if (row.refs.length === 0) {
+      findings.push(
+        hardFinding(
+          "docs.claim-test-missing",
+          relativeMatrix,
+          row.line,
+          `${row.id} must cite at least one named regression test`,
+          `${row.id}-missing-test-ref`,
+        ),
+      );
+      continue;
+    }
+    for (const ref of row.refs) {
+      const absTest = join(root, ref.path);
+      if (!contained(root, absTest)) {
+        findings.push(
+          hardFinding(
+            "docs.claim-test-missing",
+            relativeMatrix,
+            row.line,
+            `${row.id} cites a test path outside the repo root: ${ref.path}`,
+            `${row.id}-${ref.path}`,
+          ),
+        );
+        continue;
+      }
+      const testText = readText(absTest);
+      if (testText === undefined) {
+        findings.push(
+          hardFinding(
+            "docs.claim-test-missing",
+            relativeMatrix,
+            row.line,
+            `${row.id} cites missing test file ${ref.path}`,
+            `${row.id}-${ref.path}`,
+          ),
+        );
+        continue;
+      }
+      if (!testText.includes(ref.name)) {
+        findings.push(
+          hardFinding(
+            "docs.claim-test-missing",
+            relativeMatrix,
+            row.line,
+            `${row.id} cites missing named test "${ref.name}" in ${ref.path}`,
+            `${row.id}-${ref.path}-${ref.name}`,
+          ),
+        );
+      }
+    }
+  }
+  return findings;
+}
+
+function validateClaimMarkers(
+  files: string[],
+  root: string,
+  matrixRows: Map<string, MatrixRow>,
+): DocsLintFinding[] {
+  const findings: DocsLintFinding[] = [];
+  for (const abs of files) {
+    if (!contained(root, abs)) continue;
+    const text = readText(abs);
+    if (text === undefined) continue;
+    const relativeFile = toPosix(relative(root, abs));
+    const lines = text.split(/\r?\n/);
+    let inFence = false;
+    for (let index = 0; index < lines.length; index++) {
+      const line = lines[index] ?? "";
+      if (/^\s*(```|~~~)/.test(line)) {
+        inFence = !inFence;
+        continue;
+      }
+      if (inFence) continue;
+      const scanLine = line.replace(/`[^`]*`/g, "");
+      CLAIM_MARKER_RE.lastIndex = 0;
+      for (const match of scanLine.matchAll(CLAIM_MARKER_RE)) {
+        const raw = match[1];
+        const id = raw?.toUpperCase();
+        const lineNo = index + 1;
+        if (id === undefined || !CLAIM_ID_RE.test(id)) {
+          findings.push(
+            hardFinding(
+              "docs.claim-mapping-missing",
+              relativeFile,
+              lineNo,
+              "public claim marker must name a CM-xx control matrix row",
+              `claim-marker-${relativeFile}-${lineNo}`,
+            ),
+          );
+          continue;
+        }
+        if (!matrixRows.has(id)) {
+          findings.push(
+            hardFinding(
+              "docs.claim-matrix-row-missing",
+              relativeFile,
+              lineNo,
+              `public claim marker references missing control matrix row ${id}`,
+              `claim-marker-${relativeFile}-${lineNo}-${id}`,
+            ),
+          );
+        }
+      }
+    }
+  }
+  return findings;
+}
+
+function lines(stdout: string): string[] {
+  return stdout
+    .split(/\r?\n/)
+    .map((line) => toPosix(line.trim()))
+    .filter((line) => line.length > 0);
+}
+
+async function changedPaths(ctx: PlanContext): Promise<string[] | undefined> {
+  const out = new Set<string>();
+  const worktree = await ctx.run(
+    ["git", "-C", ctx.root, "diff", "--name-only", "--diff-filter=ACMRTUXB", "HEAD", "--"],
+    { cwd: ctx.root, timeoutMs: 5_000 },
+  );
+  if (worktree.spawnError || worktree.code !== 0) return undefined;
+  for (const line of lines(worktree.stdout)) out.add(line);
+
+  const base = await ctx.run(["git", "-C", ctx.root, "merge-base", "HEAD", "origin/main"], {
+    cwd: ctx.root,
+    timeoutMs: 5_000,
+  });
+  if (base.spawnError || base.code !== 0) return undefined;
+  const mergeBase = base.stdout.trim();
+  if (mergeBase.length > 0) {
+    const committed = await ctx.run(
+      [
+        "git",
+        "-C",
+        ctx.root,
+        "diff",
+        "--name-only",
+        "--diff-filter=ACMRTUXB",
+        `${mergeBase}...HEAD`,
+        "--",
+      ],
+      { cwd: ctx.root, timeoutMs: 5_000 },
+    );
+    if (committed.spawnError || committed.code !== 0) return undefined;
+    for (const line of lines(committed.stdout)) out.add(line);
+  }
+
+  return [...out].sort();
+}
+
+async function featureLedgerFindings(ctx: PlanContext): Promise<DocsLintFinding[]> {
+  const changed = await changedPaths(ctx);
+  if (changed === undefined) {
+    return [
+      hardFinding(
+        "docs.feature-ledger-drift",
+        toPosix(CONTROL_MATRIX_REL),
+        1,
+        "could not determine changed paths; docs drift check failed closed",
+        "changed-paths-unavailable",
+      ),
+    ];
+  }
+  if (changed.length === 0) return [];
+  const featurePaths = changed.filter((path) => FEATURE_SOURCE_RE.test(path));
+  if (featurePaths.length === 0) return [];
+  if (changed.some((path) => DOCS_LEDGER_RE.test(path))) return [];
+  return [
+    hardFinding(
+      "docs.feature-ledger-drift",
+      toPosix(CONTROL_MATRIX_REL),
+      1,
+      `changed feature file(s) need a docs or control-matrix update: ${featurePaths.join(", ")}`,
+      featurePaths.join(","),
+    ),
+  ];
+}
+
+export async function docsLintChecks(ctx: PlanContext): Promise<Check[]> {
   const rules = loadDocsLintRules(ctx.root);
   if (rules === undefined) {
     return [
@@ -382,6 +722,11 @@ export function docsLintChecks(ctx: PlanContext): Check[] {
     if (text === undefined) return [];
     return lintMarkdown(toPosix(relative(ctx.root, abs)), text, rules);
   });
+  const matrix = parseControlMatrix(ctx.root);
+  findings.push(...matrix.findings);
+  findings.push(...validateMatrixProofs(ctx.root, matrix));
+  findings.push(...validateClaimMarkers(files, ctx.root, matrix.rows));
+  findings.push(...(await featureLedgerFindings(ctx)));
   if (findings.length === 0) {
     return [
       {

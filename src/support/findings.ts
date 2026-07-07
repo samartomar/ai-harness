@@ -501,6 +501,34 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     action:
       "Restore packs/docs-quality/betterdoc/references/slop-lint.md in the installed package or repo, then rerun docs-lint.",
   },
+  "docs.claim-mapping-missing": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "public claim marker has no control-matrix mapping",
+    action:
+      "Add a stable `CM-xx` mapping to the claim marker and a matching row in `docs/CONTROL_MATRIX.md`, or remove the claim marker if this is not an assurance claim.",
+  },
+  "docs.claim-matrix-row-missing": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "public claim marker references a missing control-matrix row",
+    action:
+      "Add the referenced `CM-xx` row to `docs/CONTROL_MATRIX.md`, or update the claim marker to point at the correct existing row.",
+  },
+  "docs.claim-test-missing": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "control-matrix row cites no existing named regression test",
+    action:
+      "Update the row's regression proof to cite an existing `tests/*.test.ts` file and a named test in backticks, or add the missing regression test.",
+  },
+  "docs.feature-ledger-drift": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "changed feature files have no docs or claim-ledger update",
+    action:
+      "Update the relevant public docs, `docs/CONTROL_MATRIX.md`, or `CHANGELOG.md` alongside the feature change so public claims can detect drift.",
+  },
   "ready.blocked": {
     audience: "developer",
     failSeverity: "blocking",

@@ -8,6 +8,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- `aih docs-lint` now enforces the public claim ledger: claim markers must map to
+  stable `CM-xx` control-matrix rows, each row must cite existing named tests,
+  and changed feature files with no docs or matrix update are reported as drift
+  while prose guidance remains advisory. (#325)
 - The language coverage matrix now grades the Node + Python + Rust polyglot
   fixture's framework coverage as good, reflecting the existing per-workspace
   command routing for secondary Python/Rust workspaces. (#263)
