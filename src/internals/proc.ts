@@ -44,6 +44,10 @@ export const defaultRunner: Runner = (argv, opts = {}) =>
       resolve({ code: 1, stdout: "", stderr: "empty argv", spawnError: true });
       return;
     }
+    let capturedStdout = "";
+    let capturedStderr = "";
+    const capture = (chunk: string | Buffer): string =>
+      typeof chunk === "string" ? chunk : chunk.toString("utf8");
     const child = execFile(
       cmd,
       args,
@@ -55,6 +59,8 @@ export const defaultRunner: Runner = (argv, opts = {}) =>
         windowsHide: true,
       },
       (err: ProcError, stdout, stderr) => {
+        const stdoutText = stdout && stdout.length > 0 ? stdout : capturedStdout;
+        const stderrText = stderr && stderr.length > 0 ? stderr : capturedStderr;
         const errno = err?.code;
         if (errno === "ENOENT") {
           resolve({
@@ -68,19 +74,25 @@ export const defaultRunner: Runner = (argv, opts = {}) =>
         const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
         if (err?.killed) {
           const timeoutDetail = `process timed out after ${timeoutMs}ms`;
-          const stderrText = (stderr ?? "").trim();
+          const trimmedStderr = stderrText.trim();
           resolve({
             code: typeof errno === "number" ? errno : 1,
-            stdout: stdout ?? "",
-            stderr: stderrText.length > 0 ? `${stderrText}\n${timeoutDetail}` : timeoutDetail,
+            stdout: stdoutText,
+            stderr: trimmedStderr.length > 0 ? `${trimmedStderr}\n${timeoutDetail}` : timeoutDetail,
             spawnError: true,
           });
           return;
         }
         const code = typeof errno === "number" ? errno : err ? 1 : 0;
-        resolve({ code, stdout: stdout ?? "", stderr: stderr ?? "" });
+        resolve({ code, stdout: stdoutText, stderr: stderrText });
       },
     );
+    child.stdout?.on("data", (chunk: string | Buffer) => {
+      capturedStdout += capture(chunk);
+    });
+    child.stderr?.on("data", (chunk: string | Buffer) => {
+      capturedStderr += capture(chunk);
+    });
     if (opts.input !== undefined && child.stdin) {
       child.stdin.end(opts.input);
     }
