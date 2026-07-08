@@ -14,6 +14,7 @@ import {
   FsTransaction,
   readIfExists,
   readRegularFile,
+  readRegularFileWithStats,
   retryTransient,
 } from "../../src/internals/fsxn.js";
 
@@ -293,6 +294,20 @@ describe("readRegularFile — the fd-guarded read for scan-discovered paths", ()
     expect(readRegularFile(join(dir, "a.json"))?.toString("utf8")).toBe('{"ok":true}\n');
   });
 
+  it("returns bytes and descriptor stats from one opened regular file", () => {
+    writeFileSync(join(dir, "stats.json"), '{"stats":true}\n', "utf8");
+    const file = readRegularFileWithStats(join(dir, "stats.json"));
+    expect(file?.contents.toString("utf8")).toBe('{"stats":true}\n');
+    expect(file?.stats.isFile()).toBe(true);
+  });
+
+  it("keeps the no-O_NOFOLLOW identity fallback on exact BigInt stats", () => {
+    const source = readFileSync(join(process.cwd(), "src", "internals", "fsxn.ts"), "utf8");
+    expect(source).toContain("fstatSync(fd, { bigint: true })");
+    expect(source).toContain("lstatSync(path, { bigint: true })");
+    expect(source).toContain("a.ino === 0n");
+  });
+
   it("returns undefined for a missing path", () => {
     expect(readRegularFile(join(dir, "absent.json"))).toBeUndefined();
   });
@@ -302,17 +317,13 @@ describe("readRegularFile — the fd-guarded read for scan-discovered paths", ()
     expect(readRegularFile(join(dir, "sub"))).toBeUndefined();
   });
 
-  it("refuses a symlink instead of following it (POSIX O_NOFOLLOW)", () => {
+  it("refuses a symlink instead of following it", () => {
     writeFileSync(join(dir, "target.json"), "secret\n", "utf8");
     try {
       symlinkSync(join(dir, "target.json"), join(dir, "link.json"));
     } catch {
       return; // symlink creation needs privileges on Windows — skip
     }
-    // Windows has no O_NOFOLLOW at runtime; there the guarantee is the
-    // single-descriptor check-then-read, exercised by the cases above.
-    if (process.platform !== "win32") {
-      expect(readRegularFile(join(dir, "link.json"))).toBeUndefined();
-    }
+    expect(readRegularFile(join(dir, "link.json"))).toBeUndefined();
   });
 });

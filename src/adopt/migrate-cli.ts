@@ -1,9 +1,9 @@
-import { type Dirent, readdirSync } from "node:fs";
-import { join, posix } from "node:path";
-import { readIfExists } from "../internals/fsxn.js";
+import { join, posix, relative } from "node:path";
+import { AihError } from "../errors.js";
 import { type Action, writeText } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
 import type { CliArtifact, CliFootprint } from "./cli-footprint.js";
+import { safeReadText, safeWalkFiles } from "./source-files.js";
 
 /**
  * `aih adopt --migrate-cli` — the opt-in, content-verified migration of CLI-native
@@ -32,6 +32,14 @@ interface MigSpec {
   destSub: string;
   mode: MigMode;
 }
+
+const RULE_DIR_SOURCE_PREFIX: Record<string, string> = {
+  ".claude/rules": "from-claude",
+  ".cursor/rules": "from-cursor",
+  ".kiro/steering": "from-kiro",
+  ".windsurf/rules": "from-windsurf",
+  ".github/instructions": "from-copilot",
+};
 
 /** How each tool-native location migrates into the canon. Keyed by artifact path. */
 const MIGRATION: Record<string, MigSpec> = {
@@ -65,25 +73,33 @@ function ruleFileName(srcPath: string): string {
   return `from-${stem}.md`;
 }
 
-/** Recursive file walk (absolute paths) tolerant of Node 20.x. */
-function walkFiles(dir: string): string[] {
-  let ents: Dirent[];
-  try {
-    ents = readdirSync(dir, { withFileTypes: true });
-  } catch {
-    return [];
-  }
-  const out: string[] = [];
-  for (const e of ents) {
-    const full = join(dir, e.name);
-    if (e.isDirectory()) out.push(...walkFiles(full));
-    else if (e.isFile()) out.push(full);
-  }
-  return out;
-}
-
 function copyHeader(src: string): string {
   return `<!-- Migrated into the canon by \`aih adopt --migrate-cli\` from \`${src}\`. -->`;
+}
+
+function dirDestSub(a: CliArtifact, spec: MigSpec): string {
+  const sourcePrefix = RULE_DIR_SOURCE_PREFIX[a.path];
+  return sourcePrefix === undefined ? spec.destSub : posix.join(spec.destSub, sourcePrefix);
+}
+
+function canonicalActionPath(path: string): string {
+  return process.platform === "win32" ? path.toLowerCase() : path;
+}
+
+function assertUniqueWritePaths(actions: readonly Action[]): void {
+  const seen = new Map<string, string>();
+  for (const action of actions) {
+    if (action.kind !== "write") continue;
+    const key = canonicalActionPath(action.path.replace(/\\/g, "/"));
+    const prior = seen.get(key);
+    if (prior !== undefined) {
+      throw new AihError(
+        `adopt --migrate-cli would write multiple migrated sources to ${action.path} (also ${prior})`,
+        "AIH_CONFIG",
+      );
+    }
+    seen.set(key, action.path);
+  }
 }
 
 /** A thin pointer that replaces a migrated single rule file (its content is now in the canon). */
@@ -114,7 +130,7 @@ function migrateArtifact(root: string, dir: string, a: CliArtifact): Action[] {
 
   if (spec.mode === "rule-file") {
     const srcAbs = join(root, a.path);
-    const content = readIfExists(srcAbs);
+    const content = safeReadText(root, srcAbs);
     if (content === undefined) return [];
     if (isPointer(content, dir)) return []; // already migrated — idempotent no-op
     const canonRel = posix.join(dir, spec.destSub, ruleFileName(a.path));
@@ -132,11 +148,12 @@ function migrateArtifact(root: string, dir: string, a: CliArtifact): Action[] {
   // dir: copy each file into the canon, preserving the sub-path; leave the originals.
   const out: Action[] = [];
   const srcDirAbs = join(root, a.path);
-  for (const fileAbs of walkFiles(srcDirAbs)) {
-    const rel = fileAbs.slice(srcDirAbs.length).replace(/\\/g, "/").replace(/^\//, "");
-    const content = readIfExists(fileAbs);
+  const destSub = dirDestSub(a, spec);
+  for (const fileAbs of safeWalkFiles(root, srcDirAbs)) {
+    const rel = relative(srcDirAbs, fileAbs).replace(/\\/g, "/");
+    const content = safeReadText(root, fileAbs);
     if (content === undefined) continue;
-    const canonRel = posix.join(dir, spec.destSub, rel);
+    const canonRel = posix.join(dir, destSub, rel);
     out.push(
       writeText(
         canonRel,
@@ -163,6 +180,7 @@ export function migrateCliActions(
     if (a.disposition !== "import") continue;
     out.push(...migrateArtifact(root, contextDir, a));
   }
+  assertUniqueWritePaths(out);
   return out;
 }
 

@@ -103,14 +103,14 @@ describe("aih prune command", () => {
     expect(text).toContain(".cursor/mcp.json");
   });
 
-  it("routes dropped ECC-supported CLIs through ECC's install-state uninstall", async () => {
+  it("routes dropped direct ECC installer CLIs through ECC's install-state uninstall", async () => {
     marker("claude");
     write("ai-coding/adapters/claude.md");
-    write("ai-coding/adapters/codex.md");
+    write("ai-coding/adapters/cursor.md");
     const actions = await actionsOf();
     const ecc = actions.find(
       (a): a is Extract<Action, { kind: "exec" }> =>
-        a.kind === "exec" && a.describe.includes("ECC-managed codex footprint"),
+        a.kind === "exec" && a.describe.includes("ECC-managed cursor footprint"),
     );
     expect(ecc?.argv).toEqual([
       "npx",
@@ -120,8 +120,18 @@ describe("aih prune command", () => {
       "ecc",
       "uninstall",
       "--target",
-      "codex",
+      "cursor",
     ]);
+  });
+
+  it("does not call ECC's upstream codex uninstall path when codex is dropped", async () => {
+    marker("claude");
+    write("ai-coding/adapters/claude.md");
+    write("ai-coding/adapters/codex.md");
+    const actions = await actionsOf();
+    expect(
+      actions.some((a) => a.kind === "exec" && a.describe.includes("ECC-managed codex footprint")),
+    ).toBe(false);
   });
 
   it("subtracts the managed ECC Codex AGENTS block when codex is dropped", async () => {
@@ -246,7 +256,7 @@ describe("aih prune command", () => {
       join(home, ".codex", "config.toml"),
       [
         "[profiles]",
-        'strict = { approval_policy = "on-request", sandbox_mode = "read-only", web_search = "cached" }',
+        '"strict" = { "approval_policy" = "on-request", sandbox_mode = "read-only", web_search = "cached" }',
         'yolo = { approval_policy = "never" }',
         "",
       ].join("\n"),
@@ -257,7 +267,7 @@ describe("aih prune command", () => {
       (a): a is Extract<Action, { kind: "write" }> =>
         a.kind === "write" && a.path.replace(/\\/g, "/").endsWith("/home/.codex/config.toml"),
     );
-    expect(subtract?.contents).toContain('strict = { approval_policy = "on-request" }');
+    expect(subtract?.contents).toContain('"strict" = { "approval_policy" = "on-request" }');
     expect(subtract?.contents).toContain('yolo = { approval_policy = "never" }');
     expect(subtract?.contents).not.toContain("sandbox_mode");
     expect(subtract?.contents).not.toContain("web_search");

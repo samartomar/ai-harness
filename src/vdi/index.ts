@@ -200,6 +200,7 @@ function vdiPlan(ctx: PlanContext) {
 
   const crgLink = join(home, ".code-review-graph");
   const crgTarget = join(scratch, "code-review-graph");
+  if (ctx.host.platform === "windows") assertNoCmdInjection(crgLink, "USERPROFILE/HOME");
 
   // Create the junction TARGET (this also creates the scratch root, since mkdir makes
   // intermediate dirs): `mklink /J` and `ln -s` both link happily to a MISSING target,

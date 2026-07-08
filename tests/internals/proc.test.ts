@@ -49,4 +49,18 @@ describe("proc runner seam", () => {
     expect(res.stderr).toContain("started");
     expect(res.stderr).toContain("timed out after 500ms");
   }, 15000);
+
+  it("defaultRunner closes stdin when no input is supplied", async () => {
+    const res = await defaultRunner(
+      [
+        process.execPath,
+        "-e",
+        "process.stdin.on('end', () => process.stdout.write('ended')); process.stdin.resume();",
+      ],
+      { timeoutMs: 1000 },
+    );
+
+    expect(res.code).toBe(0);
+    expect(res.stdout).toBe("ended");
+  }, 15000);
 });

@@ -5,10 +5,11 @@ import { readRegularFileWithStats } from "../internals/fsxn.js";
 import type { CommandSpec, PlanContext } from "../internals/plan.js";
 import { plan, probeMany } from "../internals/plan.js";
 import type { Check, CheckCode, Verdict } from "../internals/verify.js";
+import { skipIntervals } from "../lint/rules.js";
 
 const SLOP_LINT_REL = join("packs", "docs-quality", "betterdoc", "references", "slop-lint.md");
 const CONTROL_MATRIX_REL = join("docs", "CONTROL_MATRIX.md");
-const DEFAULT_ROOT_DOCS = ["README.md", "CONTRIBUTING.md", "SECURITY.md"];
+const DEFAULT_ROOT_DOCS = ["README.md", "CHANGELOG.md", "CONTRIBUTING.md", "SECURITY.md"];
 const DEFAULT_DOC_DIRS = ["docs", "guides"];
 const SKIP_REL_DIRS = new Set([join("docs", "specs")]);
 const SKIP_DIRS = new Set([".git", ".aih", "node_modules", "dist", "coverage"]);
@@ -329,19 +330,23 @@ function highRiskCalloutClaim(line: string): string | undefined {
   return HIGH_RISK_CALLOUT_CLAIMS.find((claim) => lower.includes(claim));
 }
 
+function maskSkippedMarkdown(text: string): string {
+  const chars = text.split("");
+  for (const [start, end] of skipIntervals(text)) {
+    for (let index = start; index < end; index++) {
+      if (chars[index] !== "\n" && chars[index] !== "\r") chars[index] = " ";
+    }
+  }
+  return chars.join("");
+}
+
 function lintMarkdown(relative: string, text: string, rules: DocsLintRules): DocsLintFinding[] {
   const findings: DocsLintFinding[] = [];
-  let inFence = false;
   let inCallout = false;
-  const lines = text.split(/\r?\n/);
+  const lines = maskSkippedMarkdown(text).split(/\r?\n/);
   for (let index = 0; index < lines.length; index++) {
     const lineNo = index + 1;
     const line = lines[index] ?? "";
-    if (/^\s*(```|~~~)/.test(line)) {
-      inFence = !inFence;
-      continue;
-    }
-    if (inFence) continue;
     if (calloutStarts(line)) inCallout = true;
     else if (inCallout && line.trim().length > 0 && !line.trimStart().startsWith(">")) {
       inCallout = false;
@@ -450,6 +455,45 @@ function parenthesizedProofSegment(proof: string, offset: number): string {
     if (!inBacktick && char === ")") return proof.slice(start, cursor);
   }
   return "";
+}
+
+function isCodeOffset(source: string, offset: number): boolean {
+  const lineStart = source.lastIndexOf("\n", Math.max(0, offset - 1)) + 1;
+  let quote: string | undefined;
+  for (let cursor = lineStart; cursor < offset; cursor++) {
+    const char = source[cursor] ?? "";
+    const next = source[cursor + 1];
+    if (quote !== undefined) {
+      if (char === "\\") {
+        cursor += 1;
+        continue;
+      }
+      if (char === quote) quote = undefined;
+      continue;
+    }
+    if (char === "/" && (next === "/" || next === "*")) return false;
+    if (char === "'" || char === '"' || char === "`") quote = char;
+  }
+  return quote === undefined;
+}
+
+function hasNamedVitestTest(source: string, name: string): boolean {
+  const escaped = escapeRegExp(name);
+  const quote = "([\"'`])";
+  const modifiers = "(?:\\.(?:only|skip|fails|todo|concurrent|sequential))*";
+  const patterns = [
+    new RegExp(`\\b(?:it|test)${modifiers}\\s*\\(\\s*${quote}${escaped}\\1`, "gs"),
+    new RegExp(
+      `\\b(?:it|test)${modifiers}\\.each\\s*\\([\\s\\S]*?\\)\\s*\\(\\s*${quote}${escaped}\\1`,
+      "gs",
+    ),
+  ];
+  for (const pattern of patterns) {
+    for (const match of source.matchAll(pattern)) {
+      if (isCodeOffset(source, match.index ?? 0)) return true;
+    }
+  }
+  return false;
 }
 
 function parseControlMatrix(root: string): ControlMatrix {
@@ -565,7 +609,7 @@ function validateMatrixProofs(root: string, matrix: ControlMatrix): DocsLintFind
         );
         continue;
       }
-      if (!testText.includes(ref.name)) {
+      if (!hasNamedVitestTest(testText, ref.name)) {
         findings.push(
           hardFinding(
             "docs.claim-test-missing",

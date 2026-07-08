@@ -99,8 +99,8 @@ function mergeJsonWriteActions(first: WriteAction, next: WriteAction): WriteActi
 
 /**
  * Orchestrate a full repo bootstrap by COMPOSING the repo-scoped capabilities —
- * profile, superpowers, bootstrap-ai, scaffold, secrets, guardrails, mcp,
- * sandbox — in that order (ECC is a separate gated step; init points at it). Each phase's actions come straight from
+ * profile, superpowers, bootstrap-ai, scaffold, contract, secrets, guardrails,
+ * mcp, sandbox, usage — in that order (ECC is a separate gated step; init points at it). Each phase's actions come straight from
  * `command.plan(ctx)` (never re-implemented),
  * preceded by a `doc` headline so a dry-run reads as labelled sections. Because
  * every sub-capability is invoked with the same `ctx`, a custom `--context-dir`,
@@ -254,7 +254,7 @@ function baselineInstallDoc(baseline: ReturnType<typeof resolveBaselineSource>):
 export const command: CommandSpec = {
   name: "init",
   summary:
-    "Initialize a target repo: profile + selected baseline + bootstrap-ai + scaffold + secrets + guardrails + mcp + sandbox",
+    "Initialize a target repo: profile + selected baseline + bootstrap-ai + scaffold + contract + secrets + guardrails + mcp + sandbox + usage",
   options: [
     {
       flags: "--sidecar",

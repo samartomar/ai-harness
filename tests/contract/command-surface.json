@@ -546,6 +546,10 @@
       ],
       "options": [
         {
+          "flags": "--context-dir <dir>",
+          "defaultValue": "ai-coding"
+        },
+        {
           "flags": "--json"
         },
         {
@@ -574,6 +578,10 @@
         }
       ],
       "options": [
+        {
+          "flags": "--context-dir <dir>",
+          "defaultValue": "ai-coding"
+        },
         {
           "flags": "--json"
         },
@@ -1113,33 +1121,18 @@
           "arguments": [],
           "options": [
             {
-              "flags": "--all-tools"
-            },
-            {
-              "flags": "--apply"
-            },
-            {
               "flags": "--certificate-identity <identity>"
             },
             {
               "flags": "--certificate-oidc-issuer <issuer>"
             },
             {
-              "flags": "--cli <list>"
-            },
-            {
               "flags": "--context-dir <dir>",
               "defaultValue": "ai-coding"
             },
             {
-              "flags": "--detect"
-            },
-            {
               "flags": "--dir <dir>",
               "defaultValue": ".aih/marketplace"
-            },
-            {
-              "flags": "--force"
             },
             {
               "flags": "--json"
@@ -1171,12 +1164,6 @@
             },
             {
               "flags": "--support-out <dir>"
-            },
-            {
-              "flags": "--verify"
-            },
-            {
-              "flags": "--yes"
             }
           ],
           "commands": []
@@ -1502,23 +1489,8 @@
           "arguments": [],
           "options": [
             {
-              "flags": "--all-tools"
-            },
-            {
-              "flags": "--apply"
-            },
-            {
-              "flags": "--cli <list>"
-            },
-            {
               "flags": "--context-dir <dir>",
               "defaultValue": "ai-coding"
-            },
-            {
-              "flags": "--detect"
-            },
-            {
-              "flags": "--force"
             },
             {
               "flags": "--json"
@@ -1538,12 +1510,6 @@
             },
             {
               "flags": "--support-out <dir>"
-            },
-            {
-              "flags": "--verify"
-            },
-            {
-              "flags": "--yes"
             }
           ],
           "commands": []
@@ -1661,23 +1627,8 @@
           "arguments": [],
           "options": [
             {
-              "flags": "--all-tools"
-            },
-            {
-              "flags": "--apply"
-            },
-            {
-              "flags": "--cli <list>"
-            },
-            {
               "flags": "--context-dir <dir>",
               "defaultValue": "ai-coding"
-            },
-            {
-              "flags": "--detect"
-            },
-            {
-              "flags": "--force"
             },
             {
               "flags": "--json"
@@ -1697,12 +1648,6 @@
             },
             {
               "flags": "--support-out <dir>"
-            },
-            {
-              "flags": "--verify"
-            },
-            {
-              "flags": "--yes"
             }
           ],
           "commands": []
@@ -1768,23 +1713,8 @@
           "arguments": [],
           "options": [
             {
-              "flags": "--all-tools"
-            },
-            {
-              "flags": "--apply"
-            },
-            {
-              "flags": "--cli <list>"
-            },
-            {
               "flags": "--context-dir <dir>",
               "defaultValue": "ai-coding"
-            },
-            {
-              "flags": "--detect"
-            },
-            {
-              "flags": "--force"
             },
             {
               "flags": "--json"
@@ -1804,12 +1734,6 @@
             },
             {
               "flags": "--support-out <dir>"
-            },
-            {
-              "flags": "--verify"
-            },
-            {
-              "flags": "--yes"
             }
           ],
           "commands": []
@@ -1828,26 +1752,11 @@
           "arguments": [],
           "options": [
             {
-              "flags": "--all-tools"
-            },
-            {
-              "flags": "--apply"
-            },
-            {
               "flags": "--bundle <path>"
-            },
-            {
-              "flags": "--cli <list>"
             },
             {
               "flags": "--context-dir <dir>",
               "defaultValue": "ai-coding"
-            },
-            {
-              "flags": "--detect"
-            },
-            {
-              "flags": "--force"
             },
             {
               "flags": "--json"
@@ -1864,12 +1773,6 @@
             },
             {
               "flags": "--support-out <dir>"
-            },
-            {
-              "flags": "--verify"
-            },
-            {
-              "flags": "--yes"
             }
           ],
           "commands": []
@@ -1883,23 +1786,8 @@
               "flags": "--against <sha256|bundle>"
             },
             {
-              "flags": "--all-tools"
-            },
-            {
-              "flags": "--apply"
-            },
-            {
-              "flags": "--cli <list>"
-            },
-            {
               "flags": "--context-dir <dir>",
               "defaultValue": "ai-coding"
-            },
-            {
-              "flags": "--detect"
-            },
-            {
-              "flags": "--force"
             },
             {
               "flags": "--json"
@@ -1916,12 +1804,6 @@
             },
             {
               "flags": "--support-out <dir>"
-            },
-            {
-              "flags": "--verify"
-            },
-            {
-              "flags": "--yes"
             }
           ],
           "commands": []
@@ -2387,6 +2269,10 @@
       ],
       "options": [
         {
+          "flags": "--context-dir <dir>",
+          "defaultValue": "ai-coding"
+        },
+        {
           "flags": "--json"
         },
         {
@@ -2571,23 +2457,8 @@
           "arguments": [],
           "options": [
             {
-              "flags": "--all-tools"
-            },
-            {
-              "flags": "--apply"
-            },
-            {
-              "flags": "--cli <list>"
-            },
-            {
               "flags": "--context-dir <dir>",
               "defaultValue": "ai-coding"
-            },
-            {
-              "flags": "--detect"
-            },
-            {
-              "flags": "--force"
             },
             {
               "flags": "--json"
@@ -2604,12 +2475,6 @@
             },
             {
               "flags": "--support-out <dir>"
-            },
-            {
-              "flags": "--verify"
-            },
-            {
-              "flags": "--yes"
             }
           ],
           "commands": []
@@ -2845,6 +2710,10 @@
         }
       ],
       "options": [
+        {
+          "flags": "--context-dir <dir>",
+          "defaultValue": "ai-coding"
+        },
         {
           "flags": "--json"
         },
@@ -3753,6 +3622,10 @@
           "defaultValue": ".aih/fleet-bundle"
         },
         {
+          "flags": "--context-dir <dir>",
+          "defaultValue": "ai-coding"
+        },
+        {
           "flags": "--json"
         },
         {
@@ -3790,6 +3663,10 @@
         }
       ],
       "options": [
+        {
+          "flags": "--context-dir <dir>",
+          "defaultValue": "ai-coding"
+        },
         {
           "flags": "--json"
         },

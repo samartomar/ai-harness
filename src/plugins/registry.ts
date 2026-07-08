@@ -1,6 +1,7 @@
 import { existsSync, realpathSync } from "node:fs";
 import { basename, dirname, join, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { Option } from "commander";
 import type { CommandSpec } from "../internals/plan.js";
 
 /**
@@ -42,8 +43,9 @@ import type { CommandSpec } from "../internals/plan.js";
  *    command, a parent group, or commander's own `help`/`version` is refused
  *    ("refusing to shadow").
  *  - Shared + reserved flags are off-limits: a plugin option may not claim any
- *    token from {@link SHARED_FLAG_TOKENS} (the addSharedFlags surface) or
- *    commander's reserved `--help`/`-h`/`--version`/`-V`.
+ *    token from {@link SHARED_FLAG_TOKENS} (the addSharedFlags surface), the
+ *    same Commander option attribute by alternate spelling, or commander's
+ *    reserved `--help`/`-h`/`--version`/`-V`.
  *  - `skipWorktreeGate` is never honored for plugin commands — the field is
  *    stripped from the registered copy (see {@link stripWorktreeGateField}).
  *  - `aliases` / `deprecatedAliases` are never honored for plugin commands —
@@ -128,6 +130,10 @@ export const SHARED_FLAG_TOKENS: ReadonlySet<string> = new Set([
 /** Commander's own global surface — never claimable by a plugin option. */
 const RESERVED_FLAG_TOKENS: ReadonlySet<string> = new Set(["--help", "-h", "--version", "-V"]);
 
+const SHARED_OPTION_KEYS: ReadonlySet<string> = new Set(
+  [...SHARED_FLAG_TOKENS].map((flag) => new Option(flag).attributeName()),
+);
+
 /**
  * Default importer: the platform's dynamic import. The specifier only ever
  * reaches it as {@link PLUGIN_PACKAGE} — the parameter is not a configuration
@@ -147,12 +153,13 @@ const defaultResolver: PluginResolver = (specifier) =>
   fileURLToPath(import.meta.resolve(specifier));
 
 /**
- * C0 controls (U+0000–U+001F, incl. ESC), DEL (U+007F) and C1 controls
- * (U+0080–U+009F). Written as escape sequences so the source file itself
- * never contains a raw control byte.
+ * C0 controls (U+0000–U+001F, incl. ESC), DEL (U+007F), C1 controls
+ * (U+0080–U+009F), and bidi controls. Written as escape sequences so the source
+ * file itself never contains a raw control byte.
  */
 // biome-ignore lint/suspicious/noControlCharactersInRegex: stripping C0/C1 controls is this sanitizer's whole job
 const CONTROL_CHARS = /[\u0000-\u001f\u007f-\u009f]/g;
+const BIDI_CONTROLS = /[\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/g;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -174,7 +181,7 @@ function firstLine(err: unknown): string {
  */
 export function sanitizeLabel(value: string, max = 60): string {
   const collapsed = value.replace(/[\r\n]+/g, " ");
-  const stripped = collapsed.replace(CONTROL_CHARS, "");
+  const stripped = collapsed.replace(CONTROL_CHARS, "").replace(BIDI_CONTROLS, "");
   if (stripped.length <= max) return stripped;
   return `${stripped.slice(0, max - 1)}…`;
 }
@@ -357,12 +364,23 @@ function specGateFailure(raw: unknown): string | undefined {
       // commander's reserved globals. Tokens are parsed the way a human reads
       // the flags string: split on spaces, commas, pipes. A matched token is
       // by definition equal to one of our own trusted constants, so echoing it
-      // back verbatim is safe.
+      // back verbatim is safe. Also reject Commander attribute-name collisions
+      // so alternate spellings (`--contextDir`, `--supportOut`, `--allTools`,
+      // `--no-log`) cannot claim the same option keys the runner owns.
       for (const token of option.flags.split(/[ ,|]+/)) {
         if (RESERVED_FLAG_TOKENS.has(token)) return `option flag \`${token}\` is reserved`;
         if (SHARED_FLAG_TOKENS.has(token)) {
           return `option flag \`${token}\` collides with a shared aih flag`;
         }
+      }
+      let attr: string;
+      try {
+        attr = new Option(option.flags).attributeName();
+      } catch (err) {
+        return `option \`${sanitizeLabel(option.flags)}\` is not a valid Commander option (${sanitizeLabel(firstLine(err), 200)})`;
+      }
+      if (SHARED_OPTION_KEYS.has(attr)) {
+        return `option \`${sanitizeLabel(option.flags)}\` resolves to shared aih option key \`${attr}\``;
       }
     }
   }

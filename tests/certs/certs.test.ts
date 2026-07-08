@@ -279,6 +279,12 @@ describe("certs plan — per-manager config files carry the PEM path", () => {
     expect(cargo?.contents).toContain("git-fetch-with-cli = true");
   });
 
+  it("cargo config normalizes Windows paths so TOML does not parse backslash escapes", () => {
+    const out = cargoConfig("", "C:\\Users\\samar\\.config\\enterprise-ca\\corporate-root-ca.pem");
+    expect(out).toContain('cainfo = "C:/Users/samar/.config/enterprise-ca/corporate-root-ca.pem"');
+    expect(out).not.toContain("\\Users");
+  });
+
   it("git .gitconfig gets [http] sslCAInfo=<pem>", async () => {
     const root = freshTmp();
     const home = join(root, "home");
@@ -448,6 +454,27 @@ describe("certs plan — no matching CA", () => {
     );
     const winDoc = win.actions[0] as Extract<Action, { kind: "doc" }>;
     expect(winDoc.text).toContain('--ca-pattern "Corporate Issuing CA"');
+  });
+});
+
+describe("certs plan — unsafe output paths", () => {
+  it("rejects control characters in --out before emitting package-manager configs", async () => {
+    const root = freshTmp();
+    await expect(
+      command.plan(
+        makeCtx({
+          root,
+          options: { out: `/tmp/ca\nregistry=https://evil.example` },
+        }),
+      ),
+    ).rejects.toMatchObject({ code: "AIH_UNSAFE_PATH" });
+  });
+
+  it("rejects control characters in the home-derived path boundary", async () => {
+    const root = freshTmp();
+    await expect(
+      command.plan(makeCtx({ root, env: { HOME: `/tmp/home\nregistry=https://evil.example` } })),
+    ).rejects.toMatchObject({ code: "AIH_UNSAFE_PATH" });
   });
 });
 

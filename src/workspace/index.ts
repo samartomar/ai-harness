@@ -504,7 +504,6 @@ async function workspacePlan(ctx: PlanContext): Promise<Plan> {
   const explicitRepos = reposOption(ctx.options.repos);
   const discoveredRepos = explicitRepos.length === 0 ? discoverChildGitRepos(ctx.root) : [];
   const repos = detectChildRepos(ctx.root, explicitRepos);
-  const enableGit = ctx.options.git === true;
   const existing = readWorkspaceManifest(ctx.root, dir);
   if (existing?.status === "ERROR") {
     throw new AihError(
@@ -512,6 +511,7 @@ async function workspacePlan(ctx: PlanContext): Promise<Plan> {
       "AIH_WORKSPACE",
     );
   }
+  const enableGit = ctx.options.git === true || existing?.git === true;
   const useExistingRepos = explicitRepos.length === 0 && existing && existing.repos.length > 0;
   const normalizedRepos = useExistingRepos
     ? existing.repos

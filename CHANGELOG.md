@@ -6,10 +6,43 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [2.4.1] - 2026-07-08
+
 ### Changed
 
+- Added internal v2.4.1 release gates for AI/MCP runtime inventory, BUGBOUNTY
+  report summaries, and non-mutating nightly safety evidence. (#340, #342,
+  #345, #347)
+- PRs now carry explicit milestone, BB row/theme grouping, code-review-graph
+  evidence, and ECC specialized internal review evidence before high-risk release
+  work can be considered merge-ready. (#346)
+- Added a public-safe BUGBOUNTY v2.4.1 release report grouping the 134 fixed
+  findings by BB row and release theme. (#343)
+- Added the first-party `review-quality` pack with the `bugbounty-pr-scan`
+  skill so generated ECC, agent, skill, MCP, workflow, Codex, Claude, and
+  BUGBOUNTY runbook artifacts have a reusable PR scan lane. (#344, #346)
 - `aih docs-lint` now scans the published `guides/` Markdown surface and treats
   guide updates as docs-ledger coverage for feature-source changes.
+- `aih secrets --verify` documentation now scopes the gate to posture: plaintext
+  secret findings are warning-only at `vibe` and non-zero at `team`/`enterprise`.
+- `aih guardrails` command policy no longer allows broad shell readers or
+  `python -c *` by default; those commands require approval, with explicit
+  secret-path Bash deny patterns.
+- Generated guardrail CI now verifies the pinned gitleaks release tarball
+  checksum before extraction.
+- `aih mcp` now replaces generated same-name JSON server entries so stale
+  credential fields do not survive regeneration, warns when first-run target
+  detection selects global MCP config files, hardens the AWS `uvx` MCP launcher
+  with the no-fetch/no-env flags used by other local Python MCP servers, and
+  scopes `--mcp-compliant` docs/help to omitted generated entries.
+- `aih doctor`, `aih heal`, and `aih secrets --verify` now close MCP gaps:
+  malformed managed MCP policy/config fails closed, managed allowlist drift is
+  compared against org-policy narrowing, heal parses `.mcp.json` server commands
+  instead of raw text, and known global MCP config files are scanned for redacted
+  hardcoded credential findings.
+- MCP third-party egress approvals are now bound to a subject fingerprint over
+  the current server shape and risk axes; stale name-only approvals no longer
+  downgrade enterprise denials.
 
 ## [2.4.0] - 2026-07-07
 
@@ -832,7 +865,8 @@ GitHub but **never published to npm**; the first published release is 0.2.0.
   (npm + github-actions), private vulnerability reporting, `@claude` workflow gated
   to trusted authors, and GitHub Actions pinned to commit SHAs.
 
-[Unreleased]: https://github.com/samartomar/ai-harness/compare/v2.4.0...HEAD
+[Unreleased]: https://github.com/samartomar/ai-harness/compare/v2.4.1...HEAD
+[2.4.1]: https://github.com/samartomar/ai-harness/compare/v2.4.0...v2.4.1
 [2.4.0]: https://github.com/samartomar/ai-harness/compare/v2.1.0...v2.4.0
 [2.1.0]: https://github.com/samartomar/ai-harness/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/samartomar/ai-harness/compare/v1.3.0...v2.0.0

@@ -6,10 +6,12 @@ import { AIH_ORG_POLICY_FILE } from "./constants.js";
 
 const PostureSchema = z.enum(["vibe", "team", "enterprise"]);
 
-const CommandRuleSchema = z.object({
-  pattern: z.string().min(1),
-  reason: z.string().optional(),
-});
+const CommandRuleSchema = z
+  .object({
+    pattern: z.string().min(1),
+    reason: z.string().optional(),
+  })
+  .strict();
 
 const CommandDeltaSchema = z
   .object({
@@ -18,12 +20,14 @@ const CommandDeltaSchema = z
   })
   .strict();
 
-const RiskGateDeltaSchema = z.object({
-  name: z.string().min(1),
-  description: z.string().min(1),
-  pathPatterns: z.array(z.string()).default([]),
-  commandPatterns: z.array(z.string()).default([]),
-});
+const RiskGateDeltaSchema = z
+  .object({
+    name: z.string().min(1),
+    description: z.string().min(1),
+    pathPatterns: z.array(z.string()).default([]),
+    commandPatterns: z.array(z.string()).default([]),
+  })
+  .strict();
 
 const RiskGateOverrideSchema = z
   .object({
@@ -116,6 +120,7 @@ const SingleLinePolicyTextSchema = z
 const McpApprovalSchema = z
   .object({
     server: SingleLinePolicyTextSchema,
+    subject: SingleLinePolicyTextSchema.optional(),
     acceptEgress: z.literal(true),
     reason: SingleLinePolicyTextSchema,
     reviewer: SingleLinePolicyTextSchema.optional(),

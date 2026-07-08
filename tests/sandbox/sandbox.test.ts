@@ -40,9 +40,12 @@ function findWrite(actions: Action[], path: string): WriteAction {
 }
 
 describe("sandbox command surface", () => {
-  it("keeps the stub's name and a worktree option", () => {
+  it("keeps the stub's name and a fail-closed reserved worktree option", () => {
     expect(command.name).toBe("sandbox");
     expect(command.options?.some((o) => o.flags.includes("--worktree"))).toBe(true);
+    expect(command.options?.find((o) => o.flags.includes("--worktree"))?.description).toContain(
+      "fails closed",
+    );
   });
 });
 
@@ -251,14 +254,21 @@ describe("docker probe verdicts under --verify", () => {
 });
 
 describe("worktree guidance doc", () => {
-  it("documents the worktree path, the --worktree flag, and host projection", async () => {
+  it("documents the worktree path, host projection, and real network boundary", async () => {
     const p = await command.plan(ctx());
     const guidance = p.actions.find((a) => a.kind === "doc");
     if (guidance?.kind !== "doc") throw new Error("expected a doc action");
     expect(guidance.text).toContain(".claude/worktrees");
     expect(guidance.text).toContain("git worktree add");
-    expect(guidance.text).toContain("--worktree");
+    expect(guidance.text).toContain("from the worktree root");
+    expect(guidance.text).not.toContain("network-restricted");
     expect(guidance.text).toContain("devcontainer");
+  });
+
+  it("rejects --worktree instead of silently ignoring it", () => {
+    expect(() => command.plan(ctx({ options: { worktree: "feature-x" } }))).toThrow(
+      /--worktree is not implemented yet/,
+    );
   });
 });
 

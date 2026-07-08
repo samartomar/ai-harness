@@ -19,6 +19,7 @@ const builtins = builtinCommandNames();
 /** Matches any C0/C1 control byte or DEL — escape sequences only, no raw bytes in source. */
 // biome-ignore lint/suspicious/noControlCharactersInRegex: the assertion hunts for control bytes leaking into warnings
 const CONTROL_BYTES = /[\u0000-\u001f\u007f-\u009f]/;
+const BIDI_CONTROLS = /[\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/;
 
 /** Importer that resolves to the given module shape — never touches the real resolver. */
 const moduleOf =
@@ -309,6 +310,24 @@ describe("loadExternalCommands — structural gate", () => {
     ]);
   });
 
+  it("skips specs claiming shared runner option keys by alternate spelling", async () => {
+    for (const [flags, key] of [
+      ["--contextDir <dir>", "contextDir"],
+      ["--supportOut <dir>", "supportOut"],
+      ["--allTools", "allTools"],
+      ["--log", "log"],
+    ]) {
+      const res = await gate({
+        ...validSpec("zap"),
+        options: [{ flags, description: "hijack attempt" }],
+      });
+      expect(res.commands).toEqual([]);
+      expect(res.warnings).toEqual([
+        `skipping command "zap": option \`${flags}\` resolves to shared aih option key \`${key}\``,
+      ]);
+    }
+  });
+
   it("skips a spec claiming a RESERVED flag, naming the flag", async () => {
     const res = await gate({
       ...validSpec("zap"),
@@ -344,6 +363,14 @@ describe("loadExternalCommands — structural gate", () => {
     expect(warning).toContain("…"); // the 10k-char tail is truncated
     expect(warning).not.toMatch(CONTROL_BYTES); // zero control bytes escape into stderr
     expect(warning.length).toBeLessThan(200);
+  });
+
+  it("sanitizes bidi controls from warning labels", async () => {
+    const res = await gate({ ...validSpec("bad\u202ename"), summary: "" });
+    expect(res.commands).toEqual([]);
+    const warning = res.warnings[0] ?? "";
+    expect(warning).toContain("badname");
+    expect(warning).not.toMatch(BIDI_CONTROLS);
   });
 
   it("labels a non-object entry by its array position", async () => {
@@ -580,6 +607,44 @@ describe("plugin registration — the standard action path", () => {
     expect(seenLevel).toBe("9");
     expect(process.exitCode ?? 0).toBe(0);
   }, 20000); // full-program registration + parse can edge past 5s on slow Windows CI
+
+  it("plugin report-like option names do not imply apply mode", async () => {
+    let seenApply: boolean | undefined;
+    let seenDemo: unknown;
+    const spec: CommandSpec = {
+      ...validSpec("enterprise-preview", (ctx) => {
+        seenApply = ctx.apply;
+        seenDemo = ctx.options.demo;
+      }),
+      options: [{ flags: "--demo", description: "plugin-owned preview mode" }],
+    };
+    const res = await loadExternalCommands(builtins, {
+      importer: moduleOf({ aihCommands: [spec] }),
+    });
+    expect(res.warnings).toEqual([]);
+
+    const program = buildProgram(res.commands);
+    program.configureOutput({ writeOut: () => {}, writeErr: () => {} });
+    const root = mkdtempSync(join(tmpdir(), "aih-plugin-"));
+    try {
+      await program.parseAsync([
+        "node",
+        "aih",
+        "enterprise-preview",
+        "--json",
+        "--no-log",
+        "--root",
+        root,
+        "--demo",
+      ]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+
+    expect(seenApply).toBe(false);
+    expect(seenDemo).toBe(true);
+    expect(process.exitCode ?? 0).toBe(0);
+  }, 20000);
 
   it("buildProgramWithPlugins under the kill switch is the exact local-only surface", async () => {
     process.env.AIH_NO_PLUGINS = "1";

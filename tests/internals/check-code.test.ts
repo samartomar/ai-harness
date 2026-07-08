@@ -490,6 +490,7 @@ describe("Check.code — invariants", () => {
       "pack.pin-mismatch": true,
       "pack.missing-approval": true,
       "pack.unknown-manifest": true,
+      "pack.required-checks-unsupported": true,
       "marketplace.manifest-parse": true,
       "marketplace.path-traversal": true,
       "marketplace.missing-file": true,

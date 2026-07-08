@@ -1,4 +1,5 @@
 import { isAbsolute, join } from "node:path";
+import { AihError } from "../errors.js";
 import { type EnvVar, upsertTextBlock } from "../internals/envfile.js";
 import { readIfExists } from "../internals/fsxn.js";
 import {
@@ -42,6 +43,15 @@ const DOCKER_REGISTRY_HOST = "registry-1.docker.io";
  */
 async function planCerts(ctx: PlanContext): Promise<Plan> {
   const pattern = String(ctx.options.caPattern ?? "Zscaler");
+  const home = ctx.env.USERPROFILE || ctx.env.HOME || ctx.root;
+  assertSafePathText(home, "home directory");
+  const outDir = resolveOutDir(ctx.options.out, home);
+  const pemPath = join(outDir, PEM_NAME);
+  const trustStorePath = join(outDir, TRUSTSTORE_NAME);
+  assertSafePathText(outDir, "--out");
+  assertSafePathText(pemPath, "PEM path");
+  assertSafePathText(trustStorePath, "truststore path");
+
   const certs = await ctx.host.trustStoreCerts(pattern);
 
   const shell = ctx.host.envShell();
@@ -51,11 +61,6 @@ async function planCerts(ctx: PlanContext): Promise<Plan> {
       doc("no matching corporate CA found", noCertDoc(pattern, caPatternHint(shell))),
     );
   }
-
-  const home = ctx.env.USERPROFILE || ctx.env.HOME || ctx.root;
-  const outDir = resolveOutDir(ctx.options.out, home);
-  const pemPath = join(outDir, PEM_NAME);
-  const trustStorePath = join(outDir, TRUSTSTORE_NAME);
 
   const bundle = certs.map((c) => c.pem).join("");
 
@@ -171,12 +176,25 @@ function trustEnvVars(pemPath: string, outDir: string, trustStorePath: string): 
 /** Resolve the PEM output directory, expanding a leading `~` to the home dir. */
 function resolveOutDir(out: unknown, home: string): string {
   const raw = typeof out === "string" && out.length > 0 ? out : DEFAULT_OUT_DIR;
+  assertSafePathText(raw, "--out");
   if (raw === "~") return home;
   if (raw.startsWith("~/") || raw.startsWith("~\\")) {
     return join(home, raw.slice(2));
   }
   if (isAbsolute(raw)) return raw;
   return join(home, raw);
+}
+
+function assertSafePathText(value: string, label: string): void {
+  for (const char of value) {
+    const code = char.charCodeAt(0);
+    if (code <= 31 || code === 127) {
+      throw new AihError(
+        `${label} must not contain control characters before it is written to package-manager configs: ${JSON.stringify(value)}`,
+        "AIH_UNSAFE_PATH",
+      );
+    }
+  }
 }
 
 /**
@@ -211,7 +229,8 @@ export function pipConfig(existing: string, pemPath: string): string {
 
 /** Upsert cargo's `[http] cainfo = "<pem>"` and `[net] git-fetch-with-cli = true`. */
 export function cargoConfig(existing: string, pemPath: string): string {
-  const withCainfo = upsertIniKey(existing, "cainfo", `"${pemPath}"`, {
+  const tomlPath = pemPath.replace(/\\/g, "/");
+  const withCainfo = upsertIniKey(existing, "cainfo", JSON.stringify(tomlPath), {
     section: "http",
     separator: " = ",
   });

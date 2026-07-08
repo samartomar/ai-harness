@@ -174,7 +174,7 @@ Keep backward compatibility with the current string-array repo list, but support
       "contractPath": "infra/services/backend.md"
     }
   ],
-  "lastSnapshot": ".aih/workspace-snapshots/latest.json",
+  "lastSnapshot": ".aih/workspace-snapshots/20260701T000000Z-known-good.json",
   "generatedBy": "aih workspace"
 }
 ```
@@ -185,10 +185,11 @@ entries keep the required `path` plus stable `id`, optional role/source metadata
 metadata only here: `aih workspace` records and validates them without fetching or
 mutating any child repo.
 
-`aih workspace snapshot --lock --apply` also carries the child repo's local `origin`
-URL into `workspace-lock.json` when present. Snapshot collection reads only
-child-local Git config, so ambient/global Git config cannot inject a fetch
-location, and unavailable or unsafe values are omitted.
+`aih workspace snapshot --lock --apply` carries the recorded child remote into
+`workspace-lock.json` when present. A manifest-declared `remote` takes
+precedence; otherwise snapshot collection reads only child-local `origin` config,
+so ambient/global Git config cannot inject a fetch location, and unavailable or
+unsafe values are omitted.
 
 ## Workspace router
 
@@ -274,6 +275,7 @@ MISSING
 STALE
 NOT_ONBOARDED
 PARTIAL
+NOT_COLLECTED
 UNKNOWN
 ERROR
 ```
@@ -286,7 +288,7 @@ Path:
 
 ```text
 .aih/workspace-snapshots/<timestamp>.json
-.aih/workspace-snapshots/latest.json
+<contextDir>/workspace-lock.json  # only with --lock
 ```
 
 Command:
@@ -329,13 +331,18 @@ Snapshot example:
 }
 ```
 
-Report should show:
+Report should show the shipped status table form:
 
 ```text
-Changed since last snapshot:
-  ui: +2 commits
-  backend: unchanged
-  infra: dirty
+## Changed since snapshot
+
+Source: .aih/workspace-snapshots/20260701T000000Z-known-good.json (known-good-before-login-api-change)
+
+| Repo | Status | Before | After | Detail |
+|---|---|---|---|---|
+| ui | CHANGED | abc123 | fed456 | child repo HEAD changed |
+| backend | UNCHANGED | def456 | def456 | matches snapshot |
+| infra | DIRTY | 789aaa | 789aaa | child repo has uncommitted changes |
 ```
 
 ## Workspace task plan

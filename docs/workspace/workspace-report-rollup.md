@@ -68,7 +68,7 @@ capped at four child repos.
 
 The parent `.mcp.json` check is scoped to workspace safety:
 
-- broad filesystem MCP servers produce a warning;
+- MCP servers using the official filesystem package in argv produce a warning;
 - stale parent-root code-review-graph MCP config produces a warning;
 - generated `aih-workspace-graph-*` servers must be scoped to declared repos
   with absolute root-anchored paths;

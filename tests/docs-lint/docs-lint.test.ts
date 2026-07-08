@@ -141,6 +141,54 @@ describe("docs-lint", () => {
     );
   });
 
+  it("fails a matrix row whose named test only appears in a comment", async () => {
+    const root = tempRoot();
+    write(root, "README.md", "Managed changes are dry-run first. <!-- aih:claim CM-01 -->\n");
+    write(
+      root,
+      "docs/CONTROL_MATRIX.md",
+      [
+        "# Control Matrix",
+        "",
+        "| ID | Public claim | Implementation seam | Regression proof |",
+        "| --- | --- | --- | --- |",
+        "| CM-01 | Managed changes are dry-run first. | `src/internals/execute.ts` | `tests/docs-lint/example.test.ts` (`covers the mapped claim`) |",
+      ].join("\n"),
+    );
+    write(
+      root,
+      "tests/docs-lint/example.test.ts",
+      ['// it("covers the mapped claim", () => {});', 'it("covers another claim", () => {});'].join(
+        "\n",
+      ),
+    );
+
+    const checks = await docsLintChecks(ctx(root));
+
+    expect(checks).toContainEqual(
+      expect.objectContaining({
+        verdict: "fail",
+        code: "docs.claim-test-missing",
+        location: { uri: "docs/CONTROL_MATRIX.md", startLine: 5 },
+      }),
+    );
+  });
+
+  it("scans CHANGELOG claim markers as public docs", async () => {
+    const root = tempRoot();
+    write(root, "CHANGELOG.md", "Released a public claim. <!-- aih:claim -->\n");
+
+    const checks = await docsLintChecks(ctx(root));
+
+    expect(checks).toContainEqual(
+      expect.objectContaining({
+        verdict: "fail",
+        code: "docs.claim-mapping-missing",
+        location: { uri: "CHANGELOG.md", startLine: 1 },
+      }),
+    );
+  });
+
   it("fails a matrix row that cites a test path outside the repo root", async () => {
     const root = tempRoot();
     write(root, "README.md", "Managed changes are dry-run first. <!-- aih:claim CM-01 -->\n");
@@ -303,6 +351,22 @@ describe("docs-lint", () => {
   it("ignores literal claim-marker syntax in inline code examples", async () => {
     const root = tempRoot();
     write(root, "README.md", "Use `<!-- aih:claim CM-xx -->` next to public claims.\n");
+
+    expect(await docsLintChecks(ctx(root))).toEqual([
+      expect.objectContaining({ verdict: "pass", detail: expect.stringContaining("scanned 1") }),
+    ]);
+  });
+
+  it("ignores banned phrases in inline code and HTML comments", async () => {
+    const root = tempRoot();
+    write(
+      root,
+      "README.md",
+      [
+        "Use `robust` only when quoting disallowed wording.",
+        "<!-- Here's the thing: every team needs this. -->",
+      ].join("\n"),
+    );
 
     expect(await docsLintChecks(ctx(root))).toEqual([
       expect.objectContaining({ verdict: "pass", detail: expect.stringContaining("scanned 1") }),

@@ -14,6 +14,7 @@ import { skillRemoveCommand } from "../../src/skill/remove.js";
 
 const PIN = "a".repeat(40);
 const CONTEXT_DIR = "ai-coding";
+const TEST_PROCESS_TIMEOUT_MS = 10_000;
 
 let workspace: string;
 let home: string;
@@ -137,7 +138,10 @@ async function applyQuarantine(name: string): Promise<void> {
 }
 
 const git = (...args: string[]): void => {
-  execFileSync("git", ["-C", workspace, ...args], { stdio: "ignore" });
+  execFileSync("git", ["-C", workspace, ...args], {
+    stdio: "ignore",
+    timeout: TEST_PROCESS_TIMEOUT_MS,
+  });
 };
 
 /**

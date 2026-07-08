@@ -114,3 +114,16 @@ export function superpowersOverviewDoc(): Action {
     ),
   );
 }
+
+/** Advisory for shell-runnable Superpowers installs that fetch mutable remote plugin content. */
+export function superpowersSupplyChainDoc(): Action {
+  return doc(
+    "Superpowers supply chain — shell installs fetch remote plugin content",
+    lines(
+      "Antigravity and Copilot installs run shell commands under `--apply` that fetch",
+      "plugin content from the public Superpowers repository/marketplace. Review and",
+      "pin or mirror those sources in a governed rollout before applying on managed",
+      "developer machines.",
+    ),
+  );
+}

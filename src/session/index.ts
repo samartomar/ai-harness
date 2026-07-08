@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { AihError } from "../errors.js";
+import { commandPolicyMatchKind, commandPolicyTextMatches } from "../guardrails/command-policy.js";
 import { redactSecrets } from "../guardrails/redact.js";
 import type { CommandSpec, PlanContext } from "../internals/plan.js";
 import { digest, plan, structuredProbe } from "../internals/plan.js";
@@ -59,6 +60,7 @@ interface Finding {
   kind: string;
   index: number;
   offset: number;
+  end: number;
 }
 
 const DEFAULT_SESSION_SOURCE = "session";
@@ -194,7 +196,7 @@ function normalizeSessionGuardInput(input: SessionGuardInput): NormalizedSession
   return {
     text: inspected,
     source: sanitizeField(input.source ?? DEFAULT_SESSION_SOURCE, DEFAULT_SESSION_SOURCE),
-    sha256: sha256Hex(input.text),
+    sha256: sha256Hex(redactSecrets(input.text)),
     originalChars,
     inspectedChars,
     truncated: originalChars > inspectedChars,
@@ -248,9 +250,30 @@ function collectFindings(
   for (const { kind, pattern } of patterns) {
     pattern.lastIndex = 0;
     for (const match of text.matchAll(pattern)) {
-      findings.push({ kind, index: findings.length, offset: match.index ?? 0 });
+      const offset = match.index ?? 0;
+      findings.push({ kind, index: findings.length, offset, end: offset + match[0].length });
       if (findings.length >= MAX_FINDINGS_PER_SESSION_PASS) break;
     }
+    if (findings.length >= MAX_FINDINGS_PER_SESSION_PASS) break;
+  }
+  return findings.sort(byOffset).map((finding, index) => ({ ...finding, index }));
+}
+
+function overlaps(a: Finding, b: Finding): boolean {
+  return a.offset < b.end && b.offset < a.end;
+}
+
+function collectDangerousActionFindings(text: string): Finding[] {
+  const findings = collectFindings(text, DANGEROUS_ACTION_PATTERNS);
+  for (const match of commandPolicyTextMatches(text)) {
+    const finding = {
+      kind: commandPolicyMatchKind(match),
+      index: findings.length,
+      offset: match.offset,
+      end: match.end,
+    };
+    if (findings.some((existing) => overlaps(existing, finding))) continue;
+    findings.push(finding);
     if (findings.length >= MAX_FINDINGS_PER_SESSION_PASS) break;
   }
   return findings.sort(byOffset).map((finding, index) => ({ ...finding, index }));
@@ -330,7 +353,7 @@ function sessionDangerousActionPass(): VerificationPass {
     async run(input) {
       const session = readSessionGuardInput(input);
       if (session === undefined) return missingInputResult("session-dangerous-action");
-      const findings = collectFindings(session.text, DANGEROUS_ACTION_PATTERNS);
+      const findings = collectDangerousActionFindings(session.text);
       if (findings.length === 0) {
         return result(
           "session-dangerous-action",

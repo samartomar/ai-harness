@@ -212,6 +212,21 @@ describe("packUninstallCommand — pack closure", () => {
     expect(manifestBytes()).toBe(before);
   });
 
+  it("refuses to rewrite a malformed skills lockfile during uninstall", async () => {
+    seedInstalledPack();
+    writeFileSync(join(workspace, "aih-skills.lock.json"), "{ broken", "utf8");
+    const before = readFileSync(join(workspace, "aih-skills.lock.json"), "utf8");
+    const c = ctx({ apply: true, options: { pack: "docs" } });
+
+    await expect(planOf(c)).rejects.toThrow(
+      /cannot update aih-skills\.lock\.json: file is not valid JSON/,
+    );
+
+    expect(readFileSync(join(workspace, "aih-skills.lock.json"), "utf8")).toBe(before);
+    expect(existsSync(promotedDir("src-a", "alpha"))).toBe(true);
+    expect(existsSync(promotedDir("src-b", "beta"))).toBe(true);
+  });
+
   it("a member with a duplicate physical copy refuses the WHOLE plan; nothing removed", async () => {
     seedInstalledPack();
     // A second physical copy of alpha under the repo `.claude` root → ambiguous.

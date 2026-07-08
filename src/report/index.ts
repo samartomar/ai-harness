@@ -62,6 +62,12 @@ function usageEventsFrom(digests: DigestAction[]): number | undefined {
   return typeof n === "number" ? n : undefined;
 }
 
+/** Whether the Usage panel found the recorder plus the active post-commit hook. */
+function usageCaptureInstalledFrom(digests: DigestAction[]): boolean {
+  const d = digests.find((x) => x.describe.startsWith("Usage"));
+  return (d?.data as { installed?: unknown } | undefined)?.installed === true;
+}
+
 /** A string[] field off a digest's `data`, or [] when absent/malformed. */
 function strArrayFrom(digests: DigestAction[], startsWith: string, key: string): string[] {
   const d = digests.find((x) => x.describe.startsWith(startsWith));
@@ -227,9 +233,9 @@ async function buildReport(ctx: PlanContext): Promise<Built> {
     bloat,
     perTurn: model,
     usageEvents: usageEventsFrom(panels),
-    // Telemetry is "wired" once `aih usage --apply` wrote its recorder — even before
-    // an event lands. Drives dropping the "wire telemetry" step after it's done.
-    telemetryWired: existsSync(join(ctx.root, ".aih", "usage-record.mjs")),
+    // Usage capture is wired only when the recorder and active hook are both present.
+    // A committed recorder alone is necessary for fresh clones, but not sufficient.
+    telemetryWired: usageCaptureInstalledFrom(panels),
     toolsMissing: toolsMissingFrom(panels),
     scaleGraphMissing: scaleGraphMissingFrom(panels),
     // Runnable AI CLIs on this machine (Machine tooling `present`) that this repo
@@ -372,6 +378,7 @@ export const command: CommandSpec = {
   // ignore rule, which never clobber uncommitted work — so `aih report --open` must
   // not be blocked by a dirty worktree.
   skipWorktreeGate: true,
+  liveModeOptions: ["open", "demo", "refresh"],
   summary: "Analytics digest — local context footprint or org usage (--org); md/html via --format",
   options: [
     {

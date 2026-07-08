@@ -17,11 +17,21 @@ function firstLine(text: string): string {
 async function nodeCheck(ctx: PlanContext): Promise<Check> {
   const win = ctx.host.platform === "windows";
   const res = await ctx.run(versionArgv(ctx.host.platform, "node"));
-  if (classifyTool(res, win) === "absent") {
+  const state = classifyTool(res, win);
+  if (state === "absent") {
     return {
       name: "node: runtime",
       verdict: "fail",
       detail: "node not found on PATH",
+      code: "env.node-runtime",
+    };
+  }
+  if (state === "broken") {
+    const why = firstLine(res.stderr) || `exit ${res.code}`;
+    return {
+      name: "node: runtime",
+      verdict: "fail",
+      detail: `\`node --version\` failed: ${why}`,
       code: "env.node-runtime",
     };
   }

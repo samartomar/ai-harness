@@ -1,4 +1,4 @@
-import { join, resolve } from "node:path";
+import { isAbsolute, join, relative, resolve } from "node:path";
 import { resolveTargets } from "../internals/cli-detect.js";
 import { readIfExists } from "../internals/fsxn.js";
 import { gitRead } from "../internals/git.js";
@@ -132,6 +132,12 @@ function usageRollupPlan(ctx: PlanContext, roots: string[]): Plan {
   );
 }
 
+function describeZedSource(dbPath: string, ctx: PlanContext): string {
+  const rel = relative(ctx.root, dbPath);
+  if (rel.length > 0 && !rel.startsWith("..") && !isAbsolute(rel)) return rel.replace(/\\/g, "/");
+  return "configured Zed threads.db";
+}
+
 /**
  * `aih usage` — install the multi-tool usage-capture layer. Writes the recorder +
  * a universal git `post-commit` hook (records commit activity for ANY tool and
@@ -194,7 +200,10 @@ async function usagePlan(ctx: PlanContext): Promise<Plan> {
       writeText(
         USAGE_PATH,
         usageLogWithZedEvents(existingUsageLog(ctx), zedEvents) ?? "",
-        `Zed threads.db usage import — ${zedEvents.length} local event(s) from ${zedDbPath}`,
+        `Zed threads.db usage import — ${zedEvents.length} local event(s) from ${describeZedSource(
+          zedDbPath,
+          ctx,
+        )}`,
       ),
     );
   }

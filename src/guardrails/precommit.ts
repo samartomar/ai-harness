@@ -17,6 +17,9 @@ export const GITLEAKS_ARGS = ["--verbose", "--config=.gitleaks.toml"];
 /** The aih-ownership marker in the generated config header (user files lack it). */
 export const PRECOMMIT_MARKER = "managed by aih guardrails";
 
+/** Exact first line required before aih treats an existing pre-commit config as generated. */
+export const PRECOMMIT_HEADER = `# .pre-commit-config.yaml — local commit gate (${PRECOMMIT_MARKER})`;
+
 /** The gitleaks `repos:` list item (2-space indent), reused by the config + merge doc. */
 export function gitleaksRepoBlock(): string[] {
   const args = GITLEAKS_ARGS.map((a) => JSON.stringify(a)).join(", ");
@@ -32,7 +35,7 @@ export function gitleaksRepoBlock(): string[] {
 /** Render `.pre-commit-config.yaml` — gitleaks always, lint hook only if real. */
 export function preCommitConfigYaml(stack?: RepoStack): string {
   const out = [
-    `# .pre-commit-config.yaml — local commit gate (${PRECOMMIT_MARKER})`,
+    PRECOMMIT_HEADER,
     "# Policy intent: block secrets before they ever reach history. Runs the same",
     "# gitleaks config CI uses, so local and pipeline verdicts agree.",
     "repos:",

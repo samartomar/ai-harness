@@ -17,6 +17,7 @@ import { fakeRunner, type Runner } from "../../src/internals/proc.js";
 import { packPlanCommand, runPackInstall } from "../../src/pack/install.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 import { SKILLSPECTOR_IMAGE_DIGEST } from "../../src/trust/images.js";
+import { PlanResultEnvelopeSchema } from "../contract/envelope-schema.js";
 
 const CONTEXT_DIR = "ai-coding";
 
@@ -67,7 +68,11 @@ function writeLock(entries: Array<{ name: string; source: string; commit?: strin
 }
 
 function writePacks(
-  packs: Array<{ name: string; skills: Array<{ name: string; source: string; commit: string }> }>,
+  packs: Array<{
+    name: string;
+    requiredChecks?: string[];
+    skills: Array<{ name: string; source: string; commit: string }>;
+  }>,
 ): void {
   writeFileSync(
     join(workspace, "aih-packs.json"),
@@ -227,6 +232,19 @@ describe("aih pack install", () => {
     expect(existsSync(join(workspace, CONTEXT_DIR))).toBe(false);
   });
 
+  it("without --apply emits the standard JSON envelope directly", async () => {
+    seedTwoSourcePack();
+
+    const { code, output } = await runInstall({ apply: false, json: true });
+    const payload = PlanResultEnvelopeSchema.parse(JSON.parse(output));
+
+    expect(code).toBe(0);
+    expect(payload.capability).toBe("pack install");
+    expect(payload.applied).toBe(false);
+    expect("plan" in JSON.parse(output)).toBe(false);
+    expect(existsSync(join(workspace, CONTEXT_DIR))).toBe(false);
+  });
+
   it("--apply promotes exactly the pack's refs across both sources (extra skill left behind)", async () => {
     const { realA, realB } = seedTwoSourcePack();
 
@@ -287,7 +305,10 @@ describe("aih pack install", () => {
       { json: true },
       sandboxSmokeRunner({ imageUnavailable: () => true }),
     );
+    PlanResultEnvelopeSchema.parse(JSON.parse(output));
     const payload = JSON.parse(output) as {
+      capability: string;
+      applied: boolean;
       sources: Array<{
         source: string;
         blockingChecks?: Array<{ code?: string; verdict: string }>;
@@ -296,6 +317,8 @@ describe("aih pack install", () => {
     };
 
     expect(code).toBe(1);
+    expect(payload.capability).toBe("pack install");
+    expect(payload.applied).toBe(true);
     const beta = payload.sources.find((source) => source.source === realpathSync(sourceB));
     expect(beta?.phase1?.report?.checks).toEqual(
       expect.arrayContaining([
@@ -320,6 +343,27 @@ describe("aih pack install", () => {
     expect(output).toContain("blocked");
     expect(output).toContain("missing-approval");
     expect(output).not.toContain("fetch + scan"); // no phase 1 ran
+    expect(existsSync(join(workspace, CONTEXT_DIR))).toBe(false);
+  });
+
+  it("refuses before any scan when pack-level requiredChecks are declared", async () => {
+    localSkill(sourceA, "alpha", "# Alpha\n");
+    const realA = realpathSync(sourceA);
+    writeLock([{ name: "alpha", source: realA }]);
+    writePacks([
+      {
+        name: "docs",
+        requiredChecks: ["no-exec"],
+        skills: [{ name: "alpha", source: realA, commit: "local" }],
+      },
+    ]);
+
+    const { code, output } = await runInstall();
+
+    expect(code).toBe(1);
+    expect(output).toContain("requiredChecks are declared");
+    expect(output).toContain("pack.required-checks-unsupported");
+    expect(output).not.toContain("fetch + scan");
     expect(existsSync(join(workspace, CONTEXT_DIR))).toBe(false);
   });
 

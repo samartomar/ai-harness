@@ -1,5 +1,5 @@
 import { join, resolve } from "node:path";
-import { readIfExists } from "./internals/fsxn.js";
+import { readRegularFileWithStats } from "./internals/fsxn.js";
 import { gitRead } from "./internals/git.js";
 import { type DigestAction, digest, type PlanContext } from "./internals/plan.js";
 import { lines } from "./internals/render.js";
@@ -23,8 +23,8 @@ export async function trackedFileCount(ctx: PlanContext): Promise<number | undef
 }
 
 function readMcpServers(root: string): Record<string, unknown> | undefined {
-  const raw = readIfExists(join(root, ".mcp.json"));
-  if (!raw) return undefined;
+  const raw = readRegularFileWithStats(join(root, ".mcp.json"))?.contents.toString("utf8");
+  if (raw === undefined || raw.length === 0) return undefined;
   try {
     const parsed = JSON.parse(raw) as { mcpServers?: Record<string, unknown> };
     return parsed.mcpServers;
@@ -219,57 +219,84 @@ export interface ScaleSafetyCheckOptions {
   repoRoot?: string;
 }
 
-export async function scaleSafetyCheck(
+interface ScaleSafetyEvaluation {
+  check: Check;
+  emitDigest: boolean;
+}
+
+async function evaluateScaleSafety(
   ctx: PlanContext,
   options: ScaleSafetyCheckOptions = {},
-): Promise<Check> {
+): Promise<ScaleSafetyEvaluation> {
   const repoRoot = options.repoRoot ?? ctx.root;
   const files = await trackedFileCount({ ...ctx, root: repoRoot });
   const name = options.name ?? "large-repo graph safety";
   const detailPrefix = options.detailPrefix ? `${options.detailPrefix}: ` : "";
   if (files === undefined) {
-    return { name, verdict: "skip", detail: `${detailPrefix}not a git repo or git unavailable` };
+    return {
+      check: { name, verdict: "skip", detail: `${detailPrefix}not a git repo or git unavailable` },
+      emitDigest: false,
+    };
   }
   if (files < LARGE_REPO_FILE_THRESHOLD && !options.requireGraph) {
     return {
-      name,
-      verdict: "pass",
-      detail: `${detailPrefix}${files} tracked files < ${LARGE_REPO_FILE_THRESHOLD}; bounded rg/fd reconnaissance is acceptable`,
+      check: {
+        name,
+        verdict: "pass",
+        detail: `${detailPrefix}${files} tracked files < ${LARGE_REPO_FILE_THRESHOLD}; bounded rg/fd reconnaissance is acceptable`,
+      },
+      emitDigest: false,
     };
   }
   const graph = await codeReviewGraphAvailabilityFor(ctx, repoRoot, options.mcpRoot ?? repoRoot);
   if (graph.available) {
     return {
-      name,
-      verdict: "pass",
-      detail: `${detailPrefix}${files} tracked files; ${graph.detail}`,
+      check: {
+        name,
+        verdict: "pass",
+        detail: `${detailPrefix}${files} tracked files; ${graph.detail}`,
+      },
+      emitDigest: true,
     };
   }
   if (files < LARGE_REPO_FILE_THRESHOLD) {
     return {
-      name,
-      verdict: "skip",
-      code: "scale.code-review-graph-missing",
-      detail:
-        `${detailPrefix}${files} tracked files < ${LARGE_REPO_FILE_THRESHOLD}, but workspace graph coverage is unverified; ${graph.detail}. ` +
-        "Re-run `aih workspace --apply` to emit per-child graph MCP servers, or use bounded rg/fd reads only.",
+      check: {
+        name,
+        verdict: "skip",
+        code: "scale.code-review-graph-missing",
+        detail:
+          `${detailPrefix}${files} tracked files < ${LARGE_REPO_FILE_THRESHOLD}, but workspace graph coverage is unverified; ${graph.detail}. ` +
+          "Re-run `aih workspace --apply` to emit per-child graph MCP servers, or use bounded rg/fd reads only.",
+      },
+      emitDigest: false,
     };
   }
   return {
-    name,
-    verdict: "fail",
-    code: "scale.code-review-graph-missing",
-    detail:
-      `${detailPrefix}${files} tracked files >= ${LARGE_REPO_FILE_THRESHOLD}; ${graph.detail}. ` +
-      "Install/enable code-review-graph before broad analysis: `aih mcp --apply` and `aih tools --apply`. " +
-      "Until then, use bounded rg/fd reads only.",
+    check: {
+      name,
+      verdict: "fail",
+      code: "scale.code-review-graph-missing",
+      detail:
+        `${detailPrefix}${files} tracked files >= ${LARGE_REPO_FILE_THRESHOLD}; ${graph.detail}. ` +
+        "Install/enable code-review-graph before broad analysis: `aih mcp --apply` and `aih tools --apply`. " +
+        "Until then, use bounded rg/fd reads only.",
+    },
+    emitDigest: true,
   };
 }
 
+export async function scaleSafetyCheck(
+  ctx: PlanContext,
+  options: ScaleSafetyCheckOptions = {},
+): Promise<Check> {
+  return (await evaluateScaleSafety(ctx, options)).check;
+}
+
 export async function scaleSafetyDigest(ctx: PlanContext): Promise<DigestAction | undefined> {
-  const check = await scaleSafetyCheck(ctx);
-  if (check.detail?.includes(` < ${LARGE_REPO_FILE_THRESHOLD}`)) return undefined;
-  if (check.verdict === "skip") return undefined;
+  const evaluation = await evaluateScaleSafety(ctx);
+  if (!evaluation.emitDigest) return undefined;
+  const check = evaluation.check;
   const ok = check.verdict === "pass";
   return digest(
     ok

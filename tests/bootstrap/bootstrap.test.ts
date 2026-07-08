@@ -276,12 +276,11 @@ describe("bootstrap plan — --phase narrows to a single phase", () => {
     expect(sso?.text).toContain("agentgateway login --check");
   });
 
-  it("an unknown --phase value falls back to running all four phases", async () => {
+  it("an unknown --phase value fails closed instead of silently running every phase", async () => {
     const root = freshTmp();
-    const home = join(root, "home");
-    const p = await command.plan(makeCtx({ root, env: { HOME: home }, options: { phase: "9" } }));
-    const headers = p.actions.filter((a) => a.kind === "doc" && /^Phase \d:/.test(a.describe));
-    expect(headers).toHaveLength(4);
+    await expect(command.plan(makeCtx({ root, options: { phase: "9" } }))).rejects.toThrow(
+      /--phase must be one of 1, 2, 3, or 4/,
+    );
   });
 });
 

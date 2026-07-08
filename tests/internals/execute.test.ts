@@ -192,6 +192,39 @@ describe("executePlan", () => {
     expect(existsSync(outside)).toBe(false);
   });
 
+  it("refuses repo writes through a symlinked parent even when it resolves inside the repo", async () => {
+    const realDir = join(dir, "real");
+    mkdirSync(realDir, { recursive: true });
+    try {
+      symlinkSync(realDir, join(dir, "link"), "dir");
+    } catch {
+      return; // symlink creation not permitted on this host
+    }
+
+    await expect(
+      executePlan(
+        plan("t", writeText("link/a.txt", "new", "write via link")),
+        ctx({ apply: true }),
+      ),
+    ).rejects.toBeInstanceOf(PathContainmentError);
+    expect(existsSync(join(realDir, "a.txt"))).toBe(false);
+  });
+
+  it("refuses doc-file writes through a symlinked parent", async () => {
+    const realDir = join(dir, "real-docs");
+    mkdirSync(realDir, { recursive: true });
+    try {
+      symlinkSync(realDir, join(dir, "docs"), "dir");
+    } catch {
+      return; // symlink creation not permitted on this host
+    }
+
+    await expect(
+      executePlan(plan("t", doc("guidance", "do X", "docs/guide.md")), ctx({ apply: true })),
+    ).rejects.toBeInstanceOf(PathContainmentError);
+    expect(existsSync(join(realDir, "guide.md"))).toBe(false);
+  });
+
   it("path containment: an external write is allowed outside the root (host files)", async () => {
     const ext = mkdtempSync(join(tmpdir(), "aih-ext-"));
     try {
@@ -214,6 +247,10 @@ describe("executePlan", () => {
     );
     expect(res.writes[0]?.effect).toBe("merge");
     expect(JSON.parse(readFileSync(join(dir, "c.json"), "utf8"))).toEqual({ user: 1, aih: 2 });
+  });
+
+  it("refuses undefined JSON writes instead of creating a blank file", () => {
+    expect(() => writeJson("c.json", undefined, "bad json")).toThrow(AihError);
   });
 
   it("runs probe actions only under verify", async () => {
@@ -912,6 +949,39 @@ describe("executePlan", () => {
       }),
     ]);
   });
+
+  it("blocks follow-on probes after failed exec even without a failureCheck", async () => {
+    const run = fakeRunner(() => ({ code: 1, stderr: "network down" }));
+    const p = plan(
+      "t",
+      exec("fetch", ["node", "fetch.mjs"], { blockProbesOnFailure: true }),
+      probe("should not run", () => {
+        throw new Error("probe should have been blocked");
+      }),
+    );
+
+    const result = await executePlan(p, ctx({ apply: true, verify: true, run }));
+
+    expect(result.report?.checks).toEqual([]);
+  });
+
+  it("formats exec argv with quoting for runnable summaries", async () => {
+    const result = await executePlan(
+      plan("t", exec("inline script", ["node", "-e", "console.log('a b')"])),
+      ctx({ apply: false }),
+    );
+
+    expect(summarizeResult(result)).toContain(`[exec] node -e "console.log('a b')"`);
+  });
+
+  it("refuses unknown plan action kinds instead of treating them as probes", async () => {
+    await expect(
+      executePlan(
+        plan("t", { kind: "bogus", describe: "bad action" } as never),
+        ctx({ verify: true }),
+      ),
+    ).rejects.toMatchObject({ code: "AIH_CONFIG" });
+  });
 });
 
 describe("executePlan — exec apply-time content pins (expect)", () => {
@@ -1207,6 +1277,22 @@ describe("executePlan — digest actions", () => {
     expect(summary).toContain("line two");
   });
 
+  it("keeps doc action bodies in both JSON-shaped results and human summaries", async () => {
+    const res = await executePlan(
+      plan("docs", doc("operator guidance", "line one\nline two")),
+      ctx({ apply: false }),
+    );
+
+    expect(res.docs[0]).toMatchObject({
+      describe: "operator guidance",
+      text: "line one\nline two",
+    });
+    const summary = summarizeResult(res);
+    expect(summary).toContain("[doc] — operator guidance");
+    expect(summary).toContain("line one");
+    expect(summary).toContain("line two");
+  });
+
   it("routes a digest to digests, never to probes (no run, no verification)", async () => {
     const res = await executePlan(plan("t", digest("d", "body")), ctx({ verify: true }));
     expect(res.digests).toHaveLength(1);
@@ -1221,6 +1307,27 @@ describe("executePlan — digest actions", () => {
     expect(res.applied).toBe(true);
     expect(summary).not.toContain("Applied prune");
     expect(summary).toContain("prune: nothing to apply");
+  });
+
+  it("does not claim 'Applied' when an --apply run has only unchanged writes", async () => {
+    const p = plan("scaffold", writeText("out.txt", "hi", "a file"));
+    await executePlan(p, ctx({ apply: true }));
+
+    const res = await executePlan(p, ctx({ apply: true }));
+
+    expect(res.writes[0]?.effect).toBe("unchanged");
+    expect(summarizeResult(res)).not.toContain("Applied scaffold");
+    expect(summarizeResult(res)).toContain("scaffold: nothing to apply");
+  });
+
+  it("claims 'Applied' when an --apply run writes a doc file", async () => {
+    const res = await executePlan(
+      plan("docs", doc("guidance", "do X", "docs/guide.md")),
+      ctx({ apply: true }),
+    );
+
+    expect(res.docs[0]?.effect).toBe("create");
+    expect(summarizeResult(res)).toContain("Applied docs");
   });
 
   it("still reports 'Applied' when an --apply run actually writes a file", async () => {

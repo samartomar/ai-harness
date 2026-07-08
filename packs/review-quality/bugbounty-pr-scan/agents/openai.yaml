@@ -1,0 +1,4 @@
+interface:
+  display_name: "BUGBOUNTY PR Scan"
+  short_description: "Scan generated agent and ECC PR artifacts against repo canon."
+  default_prompt: "Use the BUGBOUNTY PR scan skill to inspect an open PR for generated agent, skill, MCP, workflow, and review-coverage risks before accepting it."

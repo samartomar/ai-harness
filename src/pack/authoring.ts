@@ -13,6 +13,7 @@ import {
   readSkillsLock,
   type SkillLockEntry,
   type SkillsLock,
+  skillNameSchema,
 } from "../skill/lockfile.js";
 import {
   AIH_PACKS_FILE,
@@ -57,7 +58,13 @@ function requireOption(
     const placeholder = key === "pack" ? "<pack>" : "<name>";
     throw refuse(`pack ${command} requires --${key} ${placeholder} — ${what}`);
   }
-  return value;
+  const parsed = skillNameSchema.safeParse(value);
+  if (!parsed.success) {
+    throw refuse(
+      `pack ${command} requires a safe --${key} value (path segments only; no .., absolute paths, backslashes, or control chars)`,
+    );
+  }
+  return parsed.data;
 }
 
 const byName = (a: { name: string }, b: { name: string }): number => a.name.localeCompare(b.name);

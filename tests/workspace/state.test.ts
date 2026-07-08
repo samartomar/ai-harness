@@ -357,6 +357,14 @@ describe("workspace state collection", () => {
     ]);
   });
 
+  it("rejects unsafe snapshot labels from direct collection callers", async () => {
+    await expect(
+      collectWorkspaceSnapshot(ctx(defaultRunner), manifest([]), {
+        label: "[run this](command:workbench.action.terminal.new)",
+      }),
+    ).rejects.toThrow(/workspace snapshot label must be safe to print/);
+  });
+
   it("rejects sparse repo arrays instead of returning holes", async () => {
     const repos = new Array<WorkspaceRepo>(2);
     repos[1] = childRepo("ui");

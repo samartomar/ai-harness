@@ -126,6 +126,18 @@ export function defaultSidecarPath(root: string): string {
   return join(dirname(abs), `${basename(abs)}-ai`);
 }
 
+function isRemoteSidecarPath(path: string): boolean {
+  return /^[/\\]{2}[^/\\]/.test(path.trim());
+}
+
+function assertLocalSidecarPath(path: string): void {
+  if (!isRemoteSidecarPath(path)) return;
+  throw new AihError(
+    "truth sidecar path must be a local filesystem path; UNC/network paths are not supported",
+    "AIH_CONFIG",
+  );
+}
+
 function optionString(ctx: PlanContext, key: string): string | undefined {
   const raw = ctx.options[key];
   return typeof raw === "string" && raw.trim().length > 0 ? raw.trim() : undefined;
@@ -138,6 +150,7 @@ function optionBoolean(ctx: PlanContext, key: string): boolean {
 function configuredSidecarPath(ctx: PlanContext): string {
   const raw = optionString(ctx, "sidecarPath");
   if (raw === undefined) return defaultSidecarPath(ctx.root);
+  assertLocalSidecarPath(raw);
   return isAbsolute(raw) ? raw : resolve(ctx.root, raw);
 }
 
@@ -441,8 +454,18 @@ function commandPointer(ctx: PlanContext): TruthPointer | undefined {
   };
 }
 
-function pointerSidecarPath(root: string, pointer: TruthPointer): string {
+function pointerSidecarPath(root: string, pointer: TruthPointer): string | undefined {
+  if (isRemoteSidecarPath(pointer.path)) return undefined;
   return isAbsolute(pointer.path) ? pointer.path : resolve(root, pointer.path);
+}
+
+function pointerPathFor(root: string, sidecar: string): string {
+  const rel = relative(root, sidecar);
+  if (rel.length > 0 && !isAbsolute(rel) && !isRemoteSidecarPath(rel)) return toPosix(rel);
+  throw new AihError(
+    "truth sidecar path must be representable as a local relative pointer from the repository root",
+    "AIH_CONFIG",
+  );
 }
 
 function readState(sidecar: string): TruthState | undefined {
@@ -456,9 +479,20 @@ function packageVersion(root: string): string | undefined {
 
 function tokenBudget(ctx: PlanContext): number {
   const raw = ctx.options.tokenBudget;
-  const parsed =
-    typeof raw === "number" ? raw : typeof raw === "string" ? Number.parseInt(raw, 10) : undefined;
-  if (parsed === undefined || !Number.isFinite(parsed)) return DEFAULT_TOKEN_BUDGET;
+  let parsed: number | undefined;
+  if (raw === undefined) {
+    parsed = undefined;
+  } else if (typeof raw === "number" && Number.isInteger(raw) && raw >= 1) {
+    parsed = raw;
+  } else if (typeof raw === "string" && /^[1-9][0-9]*$/.test(raw.trim())) {
+    parsed = Number(raw.trim());
+  } else {
+    throw new AihError("--token-budget must be a positive integer", "AIH_CONFIG");
+  }
+  if (parsed === undefined) return DEFAULT_TOKEN_BUDGET;
+  if (!Number.isSafeInteger(parsed)) {
+    throw new AihError("--token-budget must be a positive safe integer", "AIH_CONFIG");
+  }
   return Math.max(MIN_TOKEN_BUDGET, Math.floor(parsed));
 }
 
@@ -510,8 +544,8 @@ function packFromState(
   sidecar: string,
   state: TruthState,
   head: string,
+  budget: number,
 ): { pack: TruthPack; markdown: string } {
-  const budget = tokenBudget(ctx);
   const matrixClaims = controlMatrixClaimIds(ctx.root);
   const decisions = state.assertions.decisions;
   const fingerprints = assertionFingerprints(state);
@@ -739,6 +773,9 @@ export async function truthVerifyChecks(ctx: PlanContext): Promise<Check[]> {
     return [fail("truth.sidecar-missing", `${SIDECAR_POINTER_FILE} is missing or invalid`)];
   }
   const sidecar = pointerSidecarPath(ctx.root, pointer);
+  if (sidecar === undefined) {
+    return [fail("truth.sidecar-missing", "truth sidecar path must be a local filesystem path")];
+  }
   if (!isExternalSidecarPath(ctx.root, sidecar)) {
     return [
       fail("truth.sidecar-missing", "truth sidecar path must resolve outside repository root"),
@@ -847,7 +884,7 @@ export async function sidecarInitActions(ctx: PlanContext): Promise<Action[]> {
   };
   const pointer: TruthPointer = {
     schemaVersion: 1,
-    path: sidecar,
+    path: pointerPathFor(ctx.root, sidecar),
     binding: { boundToCommit },
   };
   return [
@@ -874,6 +911,7 @@ export async function sidecarInitActions(ctx: PlanContext): Promise<Action[]> {
 }
 
 async function truthPackPlan(ctx: PlanContext) {
+  const budget = tokenBudget(ctx);
   const checks = await truthVerifyChecks(ctx);
   const verifyProbe = probeMany("truth verify", () => checks);
   if (checks.some((check) => check.verdict === "fail")) return plan("truth pack", verifyProbe);
@@ -881,12 +919,13 @@ async function truthPackPlan(ctx: PlanContext) {
   const pointer = commandPointer(ctx);
   if (pointer === undefined) return plan("truth pack", verifyProbe);
   const sidecar = pointerSidecarPath(ctx.root, pointer);
+  if (sidecar === undefined) return plan("truth pack", verifyProbe);
   const state = readState(sidecar);
   const head = await currentHead(ctx);
   if (state === undefined || head === undefined) {
     return plan("truth pack", verifyProbe);
   }
-  const { pack, markdown } = packFromState(ctx, sidecar, state, head);
+  const { pack, markdown } = packFromState(ctx, sidecar, state, head, budget);
   return plan(
     "truth pack",
     verifyProbe,
@@ -913,6 +952,11 @@ export async function truthPackEvidenceSource(ctx: PlanContext): Promise<{
   const pointer = readPointer(ctx.root);
   if (pointer === undefined) return { checks: [] };
   const sidecar = pointerSidecarPath(ctx.root, pointer);
+  if (sidecar === undefined) {
+    return {
+      checks: [fail("truth.sidecar-missing", "truth sidecar path must be a local filesystem path")],
+    };
+  }
   if (!isExternalSidecarPath(ctx.root, sidecar)) {
     return {
       checks: [

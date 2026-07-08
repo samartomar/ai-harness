@@ -5,10 +5,13 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { command } from "../../src/ecc/index.js";
 import {
+  AIH_DIRECT_ECC_INSTALL_TARGETS,
   ECC_INSTALL_TARGETS,
   ECC_NPM_BINS,
   eccInstallerArgv,
+  isAihDirectEccInstallTarget,
   isEccInstallTarget,
+  normalizeEccInstallVersion,
 } from "../../src/ecc/install.js";
 import { eccLanguages } from "../../src/ecc/select.js";
 import type {
@@ -172,9 +175,13 @@ describe("ecc install targets / argv (latest from npm)", () => {
     expect(isEccInstallTarget("windsurf")).toBe(false);
     expect(isEccInstallTarget("kimi")).toBe(false);
     expect(ECC_INSTALL_TARGETS).toContain("zed");
+    expect(ECC_INSTALL_TARGETS).toContain("codex");
+    expect(isAihDirectEccInstallTarget("codex")).toBe(false);
+    expect(AIH_DIRECT_ECC_INSTALL_TARGETS).not.toContain("codex");
+    expect(isAihDirectEccInstallTarget("claude")).toBe(true);
   });
 
-  it("builds explicit npx --package ecc-universal argv scoped only by profile", () => {
+  it("builds explicit npx --package ecc-universal argv scoped by profile and packs", () => {
     expect(eccInstallerArgv("cursor", "core")).toEqual([
       "npx",
       "--yes",
@@ -196,6 +203,19 @@ describe("ecc install targets / argv (latest from npm)", () => {
       "gemini",
       "--profile",
       "full",
+    ]);
+    expect(eccInstallerArgv("cursor", "core", undefined, ["typescript", "web"])).toEqual([
+      "npx",
+      "--yes",
+      "--package",
+      "ecc-universal",
+      "ecc-install",
+      "--target",
+      "cursor",
+      "--profile",
+      "core",
+      "typescript",
+      "web",
     ]);
   });
 
@@ -219,6 +239,7 @@ describe("ecc.plan — runs ECC's own installer (latest)", () => {
       "claude",
       "--profile",
       "core",
+      "typescript",
     ]);
     // the marketplace plugin is still offered as a doc alternative
     expect(
@@ -243,6 +264,8 @@ describe("ecc.plan — runs ECC's own installer (latest)", () => {
     expect(blob).not.toContain("ecc-install --target codex");
     expect(blob).toContain("scripts/codex/merge-codex-config.js");
     expect(blob).toContain("scripts/codex/merge-mcp-config.js");
+    expect(blob).toContain("npm ci --omit=dev --ignore-scripts");
+    expect(blob).not.toContain("--package-lock=false");
     expect(blob).toContain("createManifestInstallPlan");
     expect(blob).toContain("writeInstallState");
     expect(blob.indexOf("fs.copyFileSync")).toBeLessThan(
@@ -273,6 +296,25 @@ describe("ecc.plan — runs ECC's own installer (latest)", () => {
       "gemini",
       "--profile",
       "core",
+    ]);
+  });
+
+  it("passes detected stack packs through to ECC's installer", async () => {
+    put("package.json", JSON.stringify({ name: "web", dependencies: { next: "^15.0.0" } }));
+    put("tsconfig.json", "{}");
+    const actions = (await command.plan(makeCtx({ cli: "cursor" }))).actions;
+    expect(execs(actions)[0]?.argv).toEqual([
+      "npx",
+      "--yes",
+      "--package",
+      "ecc-universal",
+      "ecc-install",
+      "--target",
+      "cursor",
+      "--profile",
+      "core",
+      "typescript",
+      "web",
     ]);
   });
 
@@ -348,7 +390,7 @@ describe("ecc.plan — runs ECC's own installer (latest)", () => {
     mkdirSync(join(home, ".codex"), { recursive: true });
     writeFileSync(
       join(home, ".codex", "config.toml"),
-      '[profiles]\nstrict = { approval_policy = "on-request" }\n',
+      '[profiles]\n"strict" = { "approval_policy" = "on-request" }\n',
     );
     const base = makeCtx({ cli: "codex" });
     const actions = (
@@ -412,6 +454,23 @@ describe("ecc.plan — Windows Git Bash resolution + npx cmd shim", () => {
     expect(installer?.argv).toContain("--target");
   });
 
+  it("rejects unsafe Windows ECC profile arguments before the npx cmd shim", async () => {
+    await expect(
+      command.plan(makeWinCtx({ options: { cli: "claude", profile: "core & calc" } })),
+    ).rejects.toThrow(/unsafe for a Windows cmd launcher/);
+  });
+
+  it("rejects unsafe Windows ECC installer version pins before the npx cmd shim", async () => {
+    await expect(
+      command.plan(
+        makeWinCtx({
+          env: { AIH_ECC_INSTALL_VERSION: "1.2.3 & calc" },
+          options: { cli: "claude" },
+        }),
+      ),
+    ).rejects.toThrow(/exact semver/);
+  });
+
   it("codes the Kiro install failure as git-bash-missing only on a spawn error, not a generic exit", async () => {
     const pf = join(tmp, "pf");
     mkdirSync(join(pf, "Git", "bin"), { recursive: true });
@@ -448,6 +507,13 @@ describe("ECC supply-chain pinning (AIH-SUPPLY-001 round 2)", () => {
       "core",
     ]);
     expect(eccInstallerArgv("claude", "core")).toContain("ecc-universal");
+  });
+
+  it("rejects mutable tags and ranges as installer pins", () => {
+    expect(normalizeEccInstallVersion("1.2.3")).toBe("1.2.3");
+    expect(normalizeEccInstallVersion("1.2.3-beta.1")).toBe("1.2.3-beta.1");
+    expect(() => normalizeEccInstallVersion("latest")).toThrow(/exact semver/);
+    expect(() => normalizeEccInstallVersion("^1.2.3")).toThrow(/exact semver/);
   });
 
   it("emits a supply-chain advisory by default (unpinned latest)", async () => {
@@ -487,6 +553,9 @@ describe("ECC supply-chain pinning (AIH-SUPPLY-001 round 2)", () => {
     );
     expect(clone?.argv).toEqual(expect.arrayContaining(["--branch", "v2.1.0"]));
     expect(execBlob(p.actions)).toContain("scripts/codex/merge-codex-config.js");
+    expect(p.actions.some((a) => a.kind === "doc" && a.describe.includes("supply chain"))).toBe(
+      true,
+    );
   });
 });
 

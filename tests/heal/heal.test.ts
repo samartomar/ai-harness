@@ -1,10 +1,11 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { classifyTool, versionArgv } from "../../src/heal/common.js";
 import { command } from "../../src/heal/index.js";
 import { parseScope } from "../../src/heal/phases.js";
+import { pathFixDoc } from "../../src/heal/templates.js";
 import { executePlan } from "../../src/internals/execute.js";
 import type { Action, PlanContext } from "../../src/internals/plan.js";
 import { fakeRunner, type RunResult } from "../../src/internals/proc.js";
@@ -411,6 +412,16 @@ describe("heal — npm ladder", () => {
     expect(findCheck(p.actions, "npm: runtime")?.verdict).toBe("skip");
     expect(findDigest(p.actions, "install Node.js")).toBeDefined();
   });
+
+  it("L3: broken node is a visible node failure, not a healthy runtime", async () => {
+    const p = await command.plan(makeCtx({ root: freshTmp(), ca: "valid", node: "fail" }));
+    const node = findCheck(p.actions, "node: runtime");
+    expect(node?.verdict).toBe("fail");
+    expect(node?.code).toBe("env.node-runtime");
+    expect(node?.detail).toContain("node --version");
+    expect(findCheck(p.actions, "npm: runtime")?.verdict).toBe("skip");
+    expect(findDigest(p.actions, "install Node.js")).toBeDefined();
+  });
 });
 
 describe("heal — path step", () => {
@@ -464,6 +475,15 @@ describe("heal — path step", () => {
     expect(text).toContain("reg query HKCU\\Environment");
     expect(text).toContain('setx Path "<current-user-path>');
   });
+
+  it("quotes legal-but-hostile path characters in copy-paste PATH guidance", () => {
+    const posix = pathFixDoc('/tmp/tool "bin"/$USER', "posix");
+    expect(posix).toContain('export PATH="/tmp/tool \\"bin\\"/\\$USER":$PATH');
+
+    const windows = pathFixDoc("C:\\Users\\O'Hara\\bin%1", "powershell");
+    expect(windows).toContain("'C:\\Users\\O''Hara\\bin%1'");
+    expect(windows).toContain('setx Path "C:\\Users\\O\'Hara\\bin%%1"');
+  });
 });
 
 describe("heal — mcp pre-flight", () => {
@@ -495,12 +515,35 @@ describe("heal — mcp pre-flight", () => {
     expect(findCheck(p.actions, "mcp: npx launcher")?.verdict).toBe("pass");
   });
 
+  it("malformed .mcp.json text mentioning npx does not count as a launcher", async () => {
+    const p = await command.plan(
+      makeCtx({
+        root: freshTmp(),
+        ca: "valid",
+        mcpJson: '{ "description": "npx should not be detected from prose"',
+        npx: "absent",
+      }),
+    );
+    expect(findCheck(p.actions, "mcp: npx launcher")?.verdict).toBe("skip");
+  });
+
+  it("does not follow a symlinked .mcp.json while checking for npx launchers", async () => {
+    const root = freshTmp();
+    const outside = join(freshTmp(), "outside-mcp.json");
+    writeFileSync(outside, '{"mcpServers":{"x":{"command":"npx"}}}');
+    symlinkSync(outside, join(root, ".mcp.json"), "file");
+
+    const p = await command.plan(makeCtx({ root, ca: "valid", mcpJson: false, npx: "absent" }));
+
+    expect(findCheck(p.actions, "mcp: npx launcher")?.verdict).toBe("skip");
+  });
+
   it("broken npx + failing registry → chains the cause to certs/TLS", async () => {
     const p = await command.plan(
       makeCtx({
         root: freshTmp(),
         ca: "valid",
-        mcpJson: '{"x":{"command":"npx"}}',
+        mcpJson: '{"mcpServers":{"x":{"command":"npx"}}}',
         npx: "absent",
         registry: "fail",
       }),
@@ -515,7 +558,7 @@ describe("heal — mcp pre-flight", () => {
       makeCtx({
         root: freshTmp(),
         ca: "valid",
-        mcpJson: '{"x":{"command":"npx"}}',
+        mcpJson: '{"mcpServers":{"x":{"command":"npx"}}}',
         npx: "absent",
         registry: "ok",
       }),

@@ -8,7 +8,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, relative } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { evidenceBuildCommand } from "../../src/evidence/build.js";
 import { EvidenceBundleSchema } from "../../src/evidence/manifest.js";
@@ -160,7 +160,7 @@ describe("truth sidecar Phase A", () => {
       staging: { promotionRequiresApply: boolean };
     };
 
-    expect(pointer.path).toBe(sidecar);
+    expect(pointer.path).toBe(relative(dir, sidecar).replace(/\\/g, "/"));
     expect(pointer.binding.boundToCommit).toBe(HEAD);
     expect(state.binding.boundToCommit).toBe(HEAD);
     expect(state.staging.promotionRequiresApply).toBe(true);
@@ -202,6 +202,13 @@ describe("truth sidecar Phase A", () => {
     }
   });
 
+  it("init --sidecar rejects UNC/network sidecar paths", async () => {
+    seedRepo();
+    const c = ctx({ options: { sidecar: true, sidecarPath: "\\\\server\\share\\truth" } });
+
+    await expect(initCommand.plan(c)).rejects.toThrow(/UNC\/network paths are not supported/);
+  });
+
   it("truth pack writes Markdown and JSON under the token budget", async () => {
     const sidecar = seedSidecar();
     const c = ctx({ apply: true, options: { tokenBudget: "96" } });
@@ -229,6 +236,20 @@ describe("truth sidecar Phase A", () => {
     expect(readFileSync(join(sidecar, "truth", "staging", "pack.md"), "utf8")).toContain(
       "# AIH Truth Pack",
     );
+  });
+
+  it("truth pack rejects malformed token budgets instead of prefix-parsing them", async () => {
+    seedSidecar();
+    const c = ctx({ apply: true, options: { tokenBudget: "96junk" } });
+
+    await expect(truthPackCommand.plan(c)).rejects.toThrow(/--token-budget/);
+  });
+
+  it("truth pack rejects overflowing token budgets instead of defaulting", async () => {
+    seedSidecar();
+    const c = ctx({ apply: true, options: { tokenBudget: "9".repeat(400) } });
+
+    await expect(truthPackCommand.plan(c)).rejects.toThrow(/--token-budget/);
   });
 
   it("truth pack keeps non-ASCII truncated Markdown under the token budget", async () => {
@@ -288,6 +309,35 @@ describe("truth sidecar Phase A", () => {
     expect(result.report?.ok).toBe(false);
     expect(result.report?.checks.map((check) => check.code)).toContain("truth.sidecar-missing");
     expect(existsSync(join(sidecar, "truth", "staging", "pack.json"))).toBe(false);
+  });
+
+  it("truth verify fails closed when the sidecar pointer names a UNC/network path", async () => {
+    seedRepo();
+    write(
+      SIDECAR_POINTER_FILE,
+      JSON.stringify(
+        {
+          schemaVersion: 1,
+          path: "\\\\server\\share\\truth",
+          binding: { boundToCommit: HEAD },
+        },
+        null,
+        2,
+      ),
+    );
+
+    const c = ctx({ verify: true });
+    const result = await executePlan(await truthVerifyCommand.plan(c), c);
+
+    expect(result.report?.ok).toBe(false);
+    expect(result.report?.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "truth.sidecar-missing",
+          detail: expect.stringContaining("local filesystem path"),
+        }),
+      ]),
+    );
   });
 
   it("truth pack can target an explicit sidecar path", async () => {

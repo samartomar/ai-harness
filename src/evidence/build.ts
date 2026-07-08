@@ -14,7 +14,7 @@ import {
   writeJson,
   writeText,
 } from "../internals/plan.js";
-import { ensureTrailingNewline, lines } from "../internals/render.js";
+import { ensureTrailingNewline, jsonFile, lines } from "../internals/render.js";
 import type { Check } from "../internals/verify.js";
 import { RUNS_DIR } from "../logging/run-log.js";
 import { AIH_PACKS_FILE } from "../pack/manifest.js";
@@ -234,6 +234,10 @@ function missingSignatureCheck(out: string): Check {
   };
 }
 
+function checksumLine(path: string, contents: string): string {
+  return `${sha256Hex(contents)}  ${path}`;
+}
+
 function releaseUrl(version: string): string {
   return `https://github.com/${REPO}/releases/download/v${version}`;
 }
@@ -289,7 +293,13 @@ async function evidenceBuildPlan(ctx: PlanContext): Promise<Plan> {
       sha256: artifact.sha256,
     })),
   };
-  const sums = `${artifacts.map((a) => `${a.sha256}  files/${a.rel}`).join("\n")}\n`;
+  const manifestContents = jsonFile(manifest);
+  const indexContents = jsonFile(index);
+  const sums = `${[
+    ...artifacts.map((a) => `${a.sha256}  files/${a.rel}`),
+    checksumLine(MANIFEST_FILE, manifestContents),
+    checksumLine(EVIDENCE_FILE, indexContents),
+  ].join("\n")}\n`;
 
   const actions: Action[] = artifacts.map((artifact) =>
     writeText(
@@ -306,6 +316,7 @@ async function evidenceBuildPlan(ctx: PlanContext): Promise<Plan> {
   );
   const sign = signAction(out, ctx.options.sign, "evidence bundle", {
     allowFailure: !strictSignature,
+    sumsSha256: sha256Hex(sums),
   });
   if (sign) actions.push(sign);
   if (strictSignature && sign === undefined) {

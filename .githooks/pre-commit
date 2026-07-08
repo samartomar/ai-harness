@@ -17,6 +17,6 @@ fi
 
 # Prefer the repo's package scripts; skip gracefully if a script is absent.
 if [ -f package.json ]; then
-  if npm run --silent | grep -qE "^  lint"; then npm run --silent lint; fi
-  if npm run --silent | grep -qE "^  test"; then npm test --silent; fi
+  if node -e "process.exit(require(\"./package.json\").scripts?.lint ? 0 : 1)"; then npm run --silent lint; fi
+  if node -e "process.exit(require(\"./package.json\").scripts?.test ? 0 : 1)"; then npm test --silent; fi
 fi

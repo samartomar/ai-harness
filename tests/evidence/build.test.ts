@@ -180,9 +180,13 @@ describe("evidence build — bundle-standard layout", () => {
     expect(sums).toContain(
       `${sha256Hex('{"schemaVersion":1,"skills":[]}\n')}  files/aih-skills.lock.json`,
     );
-    // every non-empty line is `<hex64>  files/<rel>`
+    expect(sums).toContain(`${sha256Hex(jsonFile(manifest))}  manifest.json`);
+    expect(sums).toContain(
+      `${sha256Hex(jsonFile(out[".aih/evidence-bundle/evidence.json"]?.json))}  evidence.json`,
+    );
+    // every non-empty line is `<hex64>  files/<rel>` or generated bundle metadata
     for (const line of sums.split("\n").filter((l) => l.trim().length > 0)) {
-      expect(line).toMatch(/^[0-9a-f]{64} {2}files\/.+$/);
+      expect(line).toMatch(/^[0-9a-f]{64} {2}(files\/.+|manifest\.json|evidence\.json)$/);
     }
   });
 
@@ -225,6 +229,14 @@ describe("evidence build — signing and digest", () => {
     expect(exec?.argv[0]).toBe("cosign");
     expect(exec?.allowFailure).toBe(true);
     expect(exec?.argv).toContain(".aih/evidence-bundle/SHA256SUMS");
+    const signedSums =
+      signed.actions.find(
+        (a): a is WriteAction => a.kind === "write" && a.path.endsWith("SHA256SUMS"),
+      )?.contents ?? "";
+    expect(exec?.expect).toEqual({
+      path: ".aih/evidence-bundle/SHA256SUMS",
+      sha256: sha256Hex(signedSums),
+    });
 
     const gh = await evidenceBuildCommand.plan(ctx({ options: { sign: "gh" } }));
     const ghExec = gh.actions.find((a): a is ExecAction => a.kind === "exec");

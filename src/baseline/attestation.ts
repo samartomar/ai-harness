@@ -1,8 +1,13 @@
-import { join } from "node:path";
-import { readIfExists } from "../internals/fsxn.js";
+import { inspectContainedRelativePath } from "../internals/contained-path.js";
+import { readRegularFile } from "../internals/fsxn.js";
 import type { PlanContext } from "../internals/plan.js";
 import type { Check } from "../internals/verify.js";
-import { DEFAULT_MARKETPLACE_OUT, readMarketplaceManifest } from "../marketplace/manifest.js";
+import {
+  AIH_MARKETPLACE_FILE,
+  DEFAULT_MARKETPLACE_OUT,
+  type MarketplaceManifest,
+  MarketplaceManifestSchema,
+} from "../marketplace/manifest.js";
 import { policyAwareMcpCatalog } from "../mcp/catalog.js";
 import type { McpServer } from "../mcp/servers.js";
 import { AIH_ORG_POLICY_FILE } from "../org-policy/constants.js";
@@ -175,15 +180,37 @@ function mcpShapeInvalid(rel: string): Check {
   };
 }
 
+function unsafeConfigRead(rel: string, reason: string): Check {
+  return {
+    name: "enterprise baseline attestation",
+    verdict: "fail",
+    code: "baseline.registry-invalid",
+    detail: `${rel} must be a contained regular file for baseline attestation: ${reason}`,
+    location: { uri: rel },
+    fingerprint: `baseline-invalid:unsafe-config:${rel}`,
+  };
+}
+
+function readContainedConfig(root: string, rel: string): { raw?: string; error?: Check } {
+  const inspected = inspectContainedRelativePath(root, rel);
+  if (inspected.state === "absent") return {};
+  if (inspected.state === "unsafe") return { error: unsafeConfigRead(rel, inspected.reason) };
+  if (inspected.kind !== "file") return { error: unsafeConfigRead(rel, `found ${inspected.kind}`) };
+  const raw = readRegularFile(inspected.realPath);
+  if (raw === undefined) return { error: unsafeConfigRead(rel, "could not read regular file") };
+  return { raw: raw.toString("utf8") };
+}
+
 function parseMcpConfig(
   root: string,
   rel: string,
 ): { maps: IncomingMcpServerMap[]; error?: Check } {
-  const raw = readIfExists(join(root, rel));
-  if (raw === undefined) return { maps: [] };
+  const read = readContainedConfig(root, rel);
+  if (read.error) return { maps: [], error: read.error };
+  if (read.raw === undefined) return { maps: [] };
   let parsed: unknown;
   try {
-    parsed = JSON.parse(raw);
+    parsed = JSON.parse(read.raw);
   } catch {
     return {
       maps: [],
@@ -340,26 +367,48 @@ function parseSourceRef(
 }
 
 function parseMarketplaceSurfaces(root: string): { surfaces: CapabilitySurface[]; error?: Check } {
-  const marketplaceDir = join(root, DEFAULT_MARKETPLACE_OUT);
-  if (readIfExists(join(marketplaceDir, "marketplace.json")) === undefined) {
+  const manifestRel = `${DEFAULT_MARKETPLACE_OUT}/${AIH_MARKETPLACE_FILE}`;
+  const read = readContainedConfig(root, manifestRel);
+  if (read.error) return { surfaces: [], error: read.error };
+  if (read.raw === undefined) {
     return { surfaces: [] };
   }
-  const read = readMarketplaceManifest(marketplaceDir);
-  if (!read.ok) {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(read.raw);
+  } catch {
     return {
       surfaces: [],
       error: {
         name: "enterprise baseline attestation",
         verdict: "fail",
         code: "baseline.registry-invalid",
-        detail: `marketplace artifact cannot be parsed for baseline attestation: ${read.reason}`,
-        location: { uri: `${DEFAULT_MARKETPLACE_OUT}/marketplace.json` },
+        detail: `marketplace artifact cannot be parsed for baseline attestation: ${AIH_MARKETPLACE_FILE} is not valid JSON`,
+        location: { uri: manifestRel },
         fingerprint: "baseline-invalid:marketplace",
       },
     };
   }
+  const result = MarketplaceManifestSchema.safeParse(parsed);
+  if (!result.success) {
+    const issue = result.error.issues[0];
+    const where =
+      issue === undefined ? "" : `: ${issue.path.join(".") || "(root)"} — ${issue.message}`;
+    return {
+      surfaces: [],
+      error: {
+        name: "enterprise baseline attestation",
+        verdict: "fail",
+        code: "baseline.registry-invalid",
+        detail: `marketplace artifact cannot be parsed for baseline attestation: ${AIH_MARKETPLACE_FILE} failed schema validation${where}`,
+        location: { uri: manifestRel },
+        fingerprint: "baseline-invalid:marketplace",
+      },
+    };
+  }
+  const manifest: MarketplaceManifest = result.data;
   const surfaces: CapabilitySurface[] = [];
-  for (const skill of read.manifest.skills) {
+  for (const skill of manifest.skills) {
     const parsed = parseSourceRef(skill.source, skill.commit);
     if (parsed.error) {
       return {

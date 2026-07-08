@@ -8,6 +8,7 @@ import {
   type WorkspaceManifest,
   type WorkspaceRepo,
 } from "./manifest.js";
+import { normalizeWorkspaceDisplayText } from "./text.js";
 
 export interface WorkspaceRepoState {
   id: string;
@@ -131,10 +132,11 @@ export async function collectWorkspaceSnapshot(
   const repos = await mapWorkspaceRepos(manifest.repos, (repo) =>
     readWorkspaceRepoState(ctx, repo),
   );
+  const label = normalizeWorkspaceDisplayText(opts.label, "workspace snapshot label");
   return {
     schemaVersion: 1,
     createdAt: opts.createdAt ?? new Date().toISOString(),
-    ...(opts.label ? { label: opts.label } : {}),
+    ...(label ? { label } : {}),
     repos,
   };
 }

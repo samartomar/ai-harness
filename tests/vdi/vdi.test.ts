@@ -322,6 +322,18 @@ describe("VDI host (windows)", () => {
       join(winScratch(), "code-review-graph"),
     ]);
   });
+
+  it("rejects unsafe HOME/USERPROFILE values before emitting mklink through cmd", () => {
+    expect(() =>
+      command.plan(
+        ctx({
+          platform: "windows",
+          vdi: VDI_ON,
+          env: { ...env, USERPROFILE: "C:\\Users\\bob & calc" },
+        }),
+      ),
+    ).toThrow(/unsafe for a Windows cmd launcher/);
+  });
 });
 
 describe("custom --scratch override", () => {

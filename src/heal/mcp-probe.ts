@@ -1,5 +1,6 @@
 import { join } from "node:path";
-import { readIfExists } from "../internals/fsxn.js";
+import { readRegularFile } from "../internals/fsxn.js";
+import { parseJsoncText } from "../internals/merge.js";
 import type { Action, PlanContext } from "../internals/plan.js";
 import type { Check } from "../internals/verify.js";
 import { captured, classifyTool, type HealShared, type HealStep, versionArgv } from "./common.js";
@@ -8,9 +9,26 @@ const CHECK = "mcp: npx launcher";
 
 /** Does this repo configure MCP servers that shell out to `npx`? */
 function mcpNeedsNpx(ctx: PlanContext): { configured: boolean; usesNpx: boolean } {
-  const raw = readIfExists(join(ctx.root, ".mcp.json"));
+  const raw = readRegularFile(join(ctx.root, ".mcp.json"))?.toString("utf8");
   if (raw === undefined) return { configured: false, usesNpx: false };
-  return { configured: true, usesNpx: raw.includes("npx") };
+  try {
+    const parsed = parseJsoncText(raw) as { mcpServers?: unknown };
+    const servers = parsed.mcpServers;
+    if (servers === null || typeof servers !== "object" || Array.isArray(servers)) {
+      return { configured: true, usesNpx: false };
+    }
+    return {
+      configured: true,
+      usesNpx: Object.values(servers).some(
+        (server) =>
+          server !== null &&
+          typeof server === "object" &&
+          (server as { command?: unknown }).command === "npx",
+      ),
+    };
+  } catch {
+    return { configured: true, usesNpx: false };
+  }
 }
 
 /**

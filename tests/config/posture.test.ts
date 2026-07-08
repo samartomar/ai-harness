@@ -144,6 +144,25 @@ describe("resolvePosture", () => {
     );
   });
 
+  it("does not let flag or env posture override an invalid persisted posture", () => {
+    writeFileSync(
+      join(dir, ".aih-config.json"),
+      JSON.stringify({
+        schemaVersion: 1,
+        contextDir: "ai-coding",
+        targets: [],
+        posture: "community",
+      }),
+    );
+
+    expect(() =>
+      resolvePosture({ root: dir, env: {}, flag: "enterprise", flagSource: "cli" }),
+    ).toThrow(/invalid posture/);
+    expect(() => resolvePosture({ root: dir, env: { AIH_POSTURE: "enterprise" } })).toThrow(
+      /invalid posture/,
+    );
+  });
+
   it("clamps upward to the org minimum posture without lowering a stricter local choice", () => {
     orgPolicy("team");
     expect(

@@ -68,6 +68,18 @@ export interface OtelLoggingOptions {
   logToolDetails?: boolean;
 }
 
+export function normalizeOtelEndpoint(
+  endpoint: string,
+  fallback = "http://127.0.0.1:4317",
+): string {
+  try {
+    const url = new URL(endpoint);
+    return url.protocol === "http:" || url.protocol === "https:" ? endpoint : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 /**
  * OpenTelemetry environment for Claude Code, exported into the shell profile.
  * Faithful to the blueprint: gRPC OTLP transport to `endpoint`, the metrics and
@@ -98,7 +110,7 @@ export function otelEnvVars(endpoint: string, logging: OtelLoggingOptions = {}):
  */
 function exporterEndpoint(endpoint: string): string {
   try {
-    const url = new URL(endpoint);
+    const url = new URL(normalizeOtelEndpoint(endpoint));
     url.port = "4318";
     return `${url.protocol}//${url.host}`;
   } catch {

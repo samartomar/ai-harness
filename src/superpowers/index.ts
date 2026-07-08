@@ -10,7 +10,11 @@ import {
 } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
 import { methodologySteering } from "../kiro/content.js";
-import { superpowersActionsForCli, superpowersOverviewDoc } from "./install.js";
+import {
+  superpowersActionsForCli,
+  superpowersOverviewDoc,
+  superpowersSupplyChainDoc,
+} from "./install.js";
 
 function summaryDoc(clis: string[]): Action {
   return doc(
@@ -35,6 +39,9 @@ async function superpowersPlan(ctx: PlanContext): Promise<Plan> {
   const { clis, detectFellBack } = await resolveTargets(ctx);
   const actions: Action[] = [];
   for (const cli of clis) actions.push(...superpowersActionsForCli(cli));
+  if (clis.includes("antigravity") || clis.includes("copilot")) {
+    actions.push(superpowersSupplyChainDoc());
+  }
   // Kiro can't read ~/.claude/superpowers — drop a native always-on steering bridge.
   if (clis.includes("kiro")) {
     actions.push(

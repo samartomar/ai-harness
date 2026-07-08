@@ -40,15 +40,18 @@ describe("kiroHooks — aih-metrics-on-stop (fail-open)", () => {
     expect(metrics.then.type).toBe("runCommand");
   });
 
-  it("wraps `aih track --apply` in a dependency-free, fail-open node one-shot", () => {
+  it("wraps `aih track --apply` in a fail-open node one-shot without shell execution", () => {
     const cmd = hookByName("aih-metrics-on-stop").then.command ?? "";
     // Still runs the real snapshot command...
-    expect(cmd).toContain("aih track --apply");
-    // ...but via `node -e` (a real cross-platform exe; resolves the `.cmd` shim through
-    // cmd.exe /c on Windows) with a try/catch that swallows a missing/failing `aih`.
+    expect(cmd).toContain("['track','--apply']");
+    // ...but via `node -e` with execFileSync(shell:false), a filtered PATH, and a
+    // catch that warns without failing the turn when `aih` is missing/failing.
     expect(cmd.startsWith("node -e ")).toBe(true);
-    expect(cmd).toContain("execSync");
+    expect(cmd).toContain("execFileSync");
+    expect(cmd).toContain("shell:false");
+    expect(cmd).toContain("path.relative");
     expect(cmd).toContain("catch");
+    expect(cmd).toContain("console.warn");
     // An inner timeout bounds a stuck `aih` even if the host ignores the hook timeout.
     expect(cmd).toMatch(/timeout:\s*\d+/);
     // Not the bare command that fails every turn when `aih` isn't on PATH.

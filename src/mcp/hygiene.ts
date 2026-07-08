@@ -1,6 +1,7 @@
 import type { Cli } from "../internals/clis.js";
 import type { PlanContext } from "../internals/plan.js";
 import type { Check } from "../internals/verify.js";
+import { execArgv } from "../tools/install.js";
 import type { McpEntry } from "./render.js";
 import type { McpServer } from "./servers.js";
 
@@ -156,7 +157,9 @@ export async function mcpPackagePinDriftProbe(
   const drift: string[] = [];
   const unresolved: string[] = [];
   for (const pin of pins) {
-    const res = await ctx.run(["npm", "view", pin.spec, "version"], { timeoutMs: 15_000 });
+    const res = await ctx.run(execArgv(ctx.host.platform, ["npm", "view", pin.spec, "version"]), {
+      timeoutMs: 15_000,
+    });
     if (res.spawnError) {
       return { name, verdict: "skip", detail: "npm not found on PATH" };
     }

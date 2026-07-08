@@ -17,8 +17,8 @@
 - Tightened evidence guidance for indirect evidence, PII/data protection, supply chain, performance, scalability, multi-tenancy, and best-effort subsystems.
 - Refined anti-slop rules for passive voice, technical qualifiers, calibrated hedging, lists/tables/prose, and callouts.
 - Aligned the quick invocation text across `SKILL.md`, `README.md`, and invocation examples.
+- Documented the shipped Apache-2.0 license file in the pack README.
 
 ### Not Added
 
-- No license file was added because the source did not define one.
 - No strict/pragmatic mode split was added; the skill now uses explicit claim status labels instead.

@@ -12,6 +12,7 @@ import {
   collectorYaml,
   EVENT_TYPES,
   fetchAnalyticsScript,
+  normalizeOtelEndpoint,
   otelEnvVars,
   SKILLS_ENDPOINT,
 } from "../../src/telemetry/templates.js";
@@ -156,6 +157,18 @@ describe("telemetry plan — OTel env block", () => {
     const body = await renderProfile(makeCtx({ options: { endpoint } }));
     expect(body).toContain(endpoint);
     expect(body).not.toContain("127.0.0.1");
+  });
+
+  it("normalizes invalid endpoint input before generating env and collector output", async () => {
+    expect(normalizeOtelEndpoint("not-a-url")).toBe("http://127.0.0.1:4317");
+    const p = await command.plan(makeCtx({ options: { endpoint: "not-a-url" } }));
+    const byKey = Object.fromEntries(
+      (profileEnvBlock(p.actions)?.vars ?? []).map((v) => [v.key, v.value]),
+    );
+    expect(byKey.OTEL_EXPORTER_OTLP_ENDPOINT).toBe("http://127.0.0.1:4317");
+    const collector = writeEndingWith(p.actions, ".ai-context/telemetry/collector.yaml");
+    expect(collector?.contents).toContain("endpoint: http://127.0.0.1:4318");
+    expect(collector?.contents).not.toContain("not-a-url");
   });
 
   it("emits PowerShell exports when the host shell is PowerShell", async () => {

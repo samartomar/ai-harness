@@ -13,6 +13,7 @@ import {
   type WorkspaceRepo,
 } from "./manifest.js";
 import { mapWorkspaceRepos, type WorkspaceRepoState, type WorkspaceSnapshot } from "./state.js";
+import { normalizeWorkspaceDisplayText } from "./text.js";
 
 interface HydrateSource {
   remote?: string;
@@ -109,29 +110,30 @@ function parseWorkspaceSnapshotRepo(raw: unknown, label: string): WorkspaceRepoS
   };
 }
 
-function parseWorkspaceSnapshot(raw: unknown, label: string): WorkspaceSnapshot {
+function parseWorkspaceSnapshot(raw: unknown, sourceLabel: string): WorkspaceSnapshot {
   if (
     !isRecord(raw) ||
     raw.schemaVersion !== 1 ||
     typeof raw.createdAt !== "string" ||
     !Array.isArray(raw.repos)
   ) {
-    throw new AihError(`workspace hydrate requires a valid ${label}`, "AIH_WORKSPACE");
+    throw new AihError(`workspace hydrate requires a valid ${sourceLabel}`, "AIH_WORKSPACE");
   }
   const repos: WorkspaceRepoState[] = [];
   for (let index = 0; index < raw.repos.length; index += 1) {
     if (!(index in raw.repos)) {
       throw new AihError(
-        `workspace hydrate requires dense repo entries in ${label}`,
+        `workspace hydrate requires dense repo entries in ${sourceLabel}`,
         "AIH_WORKSPACE",
       );
     }
-    repos.push(parseWorkspaceSnapshotRepo(raw.repos[index], label));
+    repos.push(parseWorkspaceSnapshotRepo(raw.repos[index], sourceLabel));
   }
+  const snapshotLabel = normalizeWorkspaceDisplayText(raw.label, `${sourceLabel} snapshot label`);
   return {
     schemaVersion: 1,
     createdAt: raw.createdAt,
-    ...(typeof raw.label === "string" ? { label: raw.label } : {}),
+    ...(snapshotLabel ? { label: snapshotLabel } : {}),
     repos,
   };
 }

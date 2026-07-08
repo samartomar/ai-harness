@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
 import { enterpriseBaselineAttestationCheck } from "../baseline/attestation.js";
 import { type Posture, resolvePosture } from "../config/posture.js";
+import { inspectContainedRelativePath } from "../internals/contained-path.js";
+import { readRegularFile } from "../internals/fsxn.js";
 import type { PlanContext } from "../internals/plan.js";
 import type { Runner } from "../internals/proc.js";
 import type { Check } from "../internals/verify.js";
@@ -223,7 +223,8 @@ function policyCheckEvidence(check: Check): Evidence[] {
 }
 
 function fileExists(root: string, rel: string): boolean {
-  return existsSync(join(root, rel));
+  const info = inspectContainedRelativePath(root, rel);
+  return info.state === "present" && info.kind === "file";
 }
 
 function readJsonFile(
@@ -231,15 +232,19 @@ function readJsonFile(
   rel: string,
 ):
   | { kind: "absent" }
+  | { kind: "unsafe" }
   | { kind: "invalid" }
   | {
       kind: "present";
       value: unknown;
     } {
-  const abs = join(root, rel);
-  if (!existsSync(abs)) return { kind: "absent" };
+  const info = inspectContainedRelativePath(root, rel);
+  if (info.state === "absent") return { kind: "absent" };
+  if (info.state !== "present" || info.kind !== "file") return { kind: "unsafe" };
+  const contents = readRegularFile(info.realPath);
+  if (contents === undefined) return { kind: "unsafe" };
   try {
-    return { kind: "present", value: JSON.parse(readFileSync(abs, "utf8")) };
+    return { kind: "present", value: JSON.parse(contents.toString("utf8")) };
   } catch {
     return { kind: "invalid" };
   }
@@ -252,6 +257,20 @@ function invalidPackageResult(
   return result(passName, category, "fail", "high", "package.json is not valid JSON", [
     evidence(`${passName}:package-json-invalid`, "file", PACKAGE_JSON),
   ]);
+}
+
+function unsafePackageResult(
+  passName: StructuredPassName,
+  category: VerificationCategory,
+): VerificationResult {
+  return result(
+    passName,
+    category,
+    "fail",
+    "high",
+    "package.json is not a contained regular file",
+    [evidence(`${passName}:package-json-unsafe`, "file", PACKAGE_JSON)],
+  );
 }
 
 function packageScripts(manifest: unknown): Record<string, string> {
@@ -313,6 +332,7 @@ function execLocalityPass(): VerificationPass {
         "skipped: no package.json surface to inspect",
       );
     }
+    if (pkg.kind === "unsafe") return unsafePackageResult("exec-locality", "exec");
     if (pkg.kind === "invalid") return invalidPackageResult("exec-locality", "exec");
     const hits = Object.entries(packageScripts(pkg.value))
       .filter(([, script]) => pipesRemoteContentToShell(script))
@@ -457,6 +477,7 @@ function dependencyPass(): VerificationPass {
         "skipped: no package.json dependency surface to inspect",
       );
     }
+    if (pkg.kind === "unsafe") return unsafePackageResult("dependency", "dependency");
     if (pkg.kind === "invalid") return invalidPackageResult("dependency", "dependency");
     const hits = dependencySections(pkg.value).flatMap(([section, entries]) =>
       Object.entries(entries)

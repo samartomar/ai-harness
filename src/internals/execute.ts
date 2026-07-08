@@ -378,7 +378,12 @@ export interface PlanResult {
   capability: string;
   applied: boolean;
   writes: WriteSummary[];
-  docs: { describe: string; path?: string }[];
+  docs: {
+    describe: string;
+    text: string;
+    path?: string;
+    effect?: "create" | "overwrite" | "unchanged";
+  }[];
   probes: { describe: string }[];
   execs: { describe: string; argv: string[]; ran: boolean; code?: number | null; ok?: boolean }[];
   /** Read-only computed reports surfaced verbatim (text) + machine-readable (`data`). */
@@ -416,7 +421,7 @@ function assertNoSymlinkParents(root: string, absPath: string, displayPath: stri
     if (info === undefined) return;
     if (info.isSymlink) {
       throw new PathContainmentError(
-        `refusing to remove through a symlinked parent: ${displayPath} (parent ${normalizeRel(
+        `refusing to write or remove through a symlinked parent: ${displayPath} (parent ${normalizeRel(
           relative(root, current),
         )})`,
       );
@@ -522,6 +527,7 @@ function assertContained(root: string, absPath: string): void {
 export function writeArtifact(ctx: PlanContext, relPath: string, contents: string): string[] {
   const absPath = resolvePath(ctx, relPath);
   assertContained(ctx.root, absPath);
+  assertNoSymlinkParents(ctx.root, absPath, relPath);
   const next = ensureTrailingNewline(contents);
   if (readIfExists(absPath) === next) return [];
   const txn = new FsTransaction();
@@ -572,6 +578,14 @@ function changedDirtyTargets(plan: Plan, ctx: PlanContext, dirty: Set<string>): 
     if (p === undefined) continue;
     const abs = resolvePath(ctx, p);
     if (!dirty.has(normalizeRel(relative(ctx.root, abs)))) continue;
+    if (a.kind === "write" && a.external !== true) {
+      assertContained(ctx.root, abs);
+      assertNoSymlinkParents(ctx.root, abs, a.path);
+    }
+    if (a.kind === "doc" && typeof a.path === "string") {
+      assertContained(ctx.root, abs);
+      assertNoSymlinkParents(ctx.root, abs, a.path);
+    }
     const existing = readIfExists(abs);
     if (
       a.kind === "write" &&
@@ -644,7 +658,10 @@ export async function executePlan(
   for (const action of plan.actions) {
     if (action.kind === "write") {
       const absPath = resolvePath(ctx, action.path);
-      if (!action.external) assertContained(ctx.root, absPath);
+      if (!action.external) {
+        assertContained(ctx.root, absPath);
+        assertNoSymlinkParents(ctx.root, absPath, action.path);
+      }
       const existing = readIfExists(absPath);
       if (action.once && existing !== undefined) {
         // Write-once seed file already present — preserve the user's content.
@@ -681,15 +698,21 @@ export async function executePlan(
         // BEFORE the readIfExists below follows the path — so a symlinked/escaping doc
         // path can neither leak an out-of-repo read nor redirect the write.
         assertContained(ctx.root, absPath);
+        assertNoSymlinkParents(ctx.root, absPath, action.path);
+        const existing = readIfExists(absPath);
         const contents = ensureTrailingNewline(action.text);
         // Same idempotency contract as write actions: skip a doc-file write whose
         // rendered content already matches disk, so re-running never rewrites it or
         // churns a `.aih.bak`. (The guardrails taxonomy doc was re-backed-up every run.)
-        if (ctx.apply && readIfExists(absPath) !== contents) {
+        const effect: NonNullable<PlanResult["docs"][number]["effect"]> =
+          existing === undefined ? "create" : existing === contents ? "unchanged" : "overwrite";
+        if (ctx.apply && effect !== "unchanged") {
           txn.stage(absPath, contents);
         }
+        docs.push({ describe: action.describe, text: action.text, path: action.path, effect });
+      } else {
+        docs.push({ describe: action.describe, text: action.text });
       }
-      docs.push({ describe: action.describe, path: action.path });
     } else if (action.kind === "exec") {
       execActions.push(action);
     } else if (action.kind === "envblock") {
@@ -736,8 +759,14 @@ export async function executePlan(
           to: destRel,
         });
       }
-    } else {
+    } else if (action.kind === "probe") {
       probes.push({ describe: action.describe });
+    } else {
+      const unknown = action as { kind?: unknown; describe?: unknown };
+      throw new AihError(
+        `unknown plan action kind: ${String(unknown.kind)} (${String(unknown.describe ?? "")})`,
+        "AIH_CONFIG",
+      );
     }
   }
 
@@ -798,9 +827,12 @@ export async function executePlan(
         // the apply BEFORE the command runs — nothing is spawned over content
         // the plan never graded.
         let live: string | undefined;
+        const expectPath = isAbsolute(a.expect.path)
+          ? a.expect.path
+          : resolvePath(ctx, a.expect.path);
         try {
           live = createHash("sha256")
-            .update(readFileSync(a.expect.path, "utf8"), "utf8")
+            .update(readFileSync(expectPath, "utf8"), "utf8")
             .digest("hex");
         } catch {
           live = undefined;
@@ -824,10 +856,12 @@ export async function executePlan(
         code: res.code,
         ok,
       });
-      if (!ok && a.failureCheck) {
-        execFailureChecks.push(
-          typeof a.failureCheck === "function" ? a.failureCheck(res) : a.failureCheck,
-        );
+      if (!ok) {
+        if (a.failureCheck) {
+          execFailureChecks.push(
+            typeof a.failureCheck === "function" ? a.failureCheck(res) : a.failureCheck,
+          );
+        }
         if (a.blockProbesOnFailure) skipProbesAfterExecFailure = true;
       }
     } else {
@@ -912,7 +946,8 @@ export function summarizeResult(result: PlanResult): string {
   // every mutating outcome.
   const removedAny = result.removed.some((r) => r.effect !== "absent");
   const mutated =
-    result.writes.length > 0 ||
+    result.writes.some((w) => w.effect !== "unchanged" && w.effect !== "kept") ||
+    result.docs.some((d) => d.effect !== undefined && d.effect !== "unchanged") ||
     result.execs.some((e) => e.ran) ||
     result.backups.length > 0 ||
     removedAny;
@@ -936,6 +971,7 @@ export function summarizeResult(result: PlanResult): string {
   }
   for (const d of result.docs) {
     out.push(`  [doc]${d.path ? ` ${d.path}` : ""} — ${d.describe}`);
+    out.push(indent(stripTrailingNewlines(d.text), 2));
   }
   for (const dg of result.digests) {
     out.push(`  [digest] — ${dg.describe}`);
@@ -945,7 +981,7 @@ export function summarizeResult(result: PlanResult): string {
   }
   for (const e of result.execs) {
     const status = e.ran ? ` (exit ${e.code})` : " (run with --apply)";
-    out.push(`  [exec] ${e.argv.join(" ")} — ${e.describe}${status}`);
+    out.push(`  [exec] ${formatArgv(e.argv)} — ${e.describe}${status}`);
   }
   // Only list probes when there's no report to supersede them; otherwise the
   // Verification section below already shows each check with its verdict + detail
@@ -966,4 +1002,12 @@ export function summarizeResult(result: PlanResult): string {
     out.push(`  backups: ${result.backups.length} file(s) saved as *.aih.bak`);
   }
   return out.join("\n");
+}
+
+function formatArgv(argv: readonly string[]): string {
+  return argv.map(formatArg).join(" ");
+}
+
+function formatArg(arg: string): string {
+  return /^[A-Za-z0-9_./:=@%+-]+$/.test(arg) ? arg : JSON.stringify(arg);
 }

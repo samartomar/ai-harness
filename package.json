@@ -1,6 +1,6 @@
 {
   "name": "@aihq/harness",
-  "version": "2.4.0",
+  "version": "2.4.1",
   "description": "Enterprise AI Bootstrapping Harness — governed AI-assisted coding for enterprise workstations and repos: TLS trust, repo canon, skill supply chain, evidence",
   "repository": {
     "type": "git",
@@ -11,6 +11,15 @@
     "url": "https://github.com/samartomar/ai-harness/issues"
   },
   "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
   "bin": {
     "aih": "dist/cli.js"
   },
@@ -18,6 +27,8 @@
     "dist",
     "aih-packs.json",
     "packs",
+    "!packs/**/__pycache__",
+    "!packs/**/*.py[cod]",
     "guides",
     "docs/assets",
     "README.md",
@@ -33,14 +44,18 @@
     "test:watch": "vitest",
     "test:cov": "vitest run --coverage",
     "check:artifacts": "tsx src/internals/check-tracked-artifacts.ts",
+    "check:ai-runtime": "tsx src/internals/ai-runtime-inventory.ts --root .",
+    "check:bugbounty-report": "tsx src/internals/bugbounty-report.ts --source .internal/defects/BUGBOUNTY.md",
     "check:ecc-installer": "tsx src/internals/check-ecc-installer.ts",
+    "check:published-bin": "node dist/cli.js --version && node dist/cli.js --help",
+    "check:published-library": "node -e \"import('@aihq/harness').then((m)=>{ if (typeof m.runSessionGuardrails !== 'function') throw new Error('missing library export'); })\"",
     "docs:lint": "tsx src/cli.ts docs-lint",
     "lint": "biome check src tests",
     "lint:fix": "biome check --write src tests",
     "lint:ci": "biome ci src tests",
     "format": "biome format --write src tests",
     "typecheck": "tsc --noEmit",
-    "verify": "npm run check:artifacts && npm run check:ecc-installer && npm run docs:lint && npm run typecheck && npm run lint:ci && npm run test:cov && npm run build"
+    "verify": "npm run check:artifacts && npm run check:ecc-installer && npm run check:ai-runtime && npm run check:bugbounty-report && npm run docs:lint && npm run typecheck && npm run lint:ci && npm run test:cov && npm run build && npm run check:published-bin && npm run check:published-library"
   },
   "keywords": [
     "ai",

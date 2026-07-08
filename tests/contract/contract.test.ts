@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -225,6 +225,46 @@ describe("PR 1B — project.md + setup.md", () => {
     expect(setup).toContain("code-review-graph");
     expect(setup).toContain("codebase-memory");
     expect(setup).toContain("aih init --apply");
+  });
+
+  it("reads JSONC .mcp.json when synthesizing MCP server labels", async () => {
+    seedMindworksLike(dir);
+    writeFileSync(
+      join(dir, ".mcp.json"),
+      [
+        "{",
+        "  // Codex and local review graph servers are configured by hand.",
+        '  "mcpServers": {',
+        '    "code-review-graph": {},',
+        '    "codebase-memory": {},',
+        "  },",
+        "}",
+        "",
+      ].join("\n"),
+    );
+
+    expect((await synth()).mcpServers).toEqual(["code-review-graph", "codebase-memory"]);
+  });
+
+  it("does not read MCP server labels from a symlinked .mcp.json", async () => {
+    seedMindworksLike(dir);
+    const external = mkdtempSync(join(tmpdir(), "aih-contract-mcp-"));
+    try {
+      writeFileSync(
+        join(external, "mcp.json"),
+        JSON.stringify({ mcpServers: { "external-server": {} } }),
+        "utf8",
+      );
+      try {
+        symlinkSync(join(external, "mcp.json"), join(dir, ".mcp.json"), "file");
+      } catch {
+        return;
+      }
+
+      expect((await synth()).mcpServers).toEqual([]);
+    } finally {
+      rmSync(external, { recursive: true, force: true });
+    }
   });
 
   it("sanitizes .mcp.json server names before rendering agent-read Markdown", async () => {

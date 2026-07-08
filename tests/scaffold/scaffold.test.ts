@@ -1,12 +1,15 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { delimiter, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { executePlan } from "../../src/internals/execute.js";
 import type { Action, PlanContext, WriteAction } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 import { command } from "../../src/scaffold/index.js";
+
+const TEST_PROCESS_TIMEOUT_MS = 10_000;
 
 let dir: string;
 beforeEach(() => {
@@ -228,6 +231,58 @@ describe("local guardrails", () => {
       "git config core.hooksPath .githooks",
     );
   });
+
+  it("generated pre-commit hook runs lint and test scripts when package.json defines them", async () => {
+    const hook = writesByPath((await command.plan(ctx())).actions).get(".githooks/pre-commit");
+    if (!hook?.contents) throw new Error("expected generated hook");
+    expect(hook.contents).toContain("scripts?.lint ? 0 : 1");
+    expect(hook.contents).toContain("scripts?.test ? 0 : 1");
+
+    const shellProbe = spawnSync("sh", ["-c", "true"], {
+      encoding: "utf8",
+      timeout: TEST_PROCESS_TIMEOUT_MS,
+    });
+    if (shellProbe.error) return;
+
+    mkdirSync(join(dir, ".githooks"), { recursive: true });
+    mkdirSync(join(dir, "bin"), { recursive: true });
+    writeFileSync(join(dir, ".githooks", "pre-commit"), hook.contents);
+    chmodSync(join(dir, ".githooks", "pre-commit"), 0o755);
+    writeFileSync(
+      join(dir, "bin", "npm"),
+      [
+        "#!/bin/sh",
+        'case "$*" in',
+        '  "run --silent lint") printf 1 > lint-ran ;;',
+        '  "test --silent") printf 1 > test-ran ;;',
+        '  *) echo "unexpected npm $*" >&2; exit 64 ;;',
+        "esac",
+        "",
+      ].join("\n"),
+    );
+    chmodSync(join(dir, "bin", "npm"), 0o755);
+    writeFileSync(
+      join(dir, "package.json"),
+      JSON.stringify({
+        scripts: {
+          lint: "node -e \"require('fs').writeFileSync('lint-ran','1')\"",
+          test: "node -e \"require('fs').writeFileSync('test-ran','1')\"",
+        },
+      }),
+    );
+    const existingPath = process.env.PATH ?? process.env.Path ?? "";
+    const pathValue = `${join(dir, "bin")}${delimiter}${existingPath}`;
+
+    const result = spawnSync("sh", [join(dir, ".githooks", "pre-commit")], {
+      cwd: dir,
+      encoding: "utf8",
+      env: { ...process.env, PATH: pathValue, Path: pathValue },
+      timeout: TEST_PROCESS_TIMEOUT_MS,
+    });
+    expect(result.status, result.stderr || result.stdout).toBe(0);
+    expect(readFileSync(join(dir, "lint-ran"), "utf8")).toBe("1");
+    expect(readFileSync(join(dir, "test-ran"), "utf8")).toBe("1");
+  }, 20_000);
 });
 
 describe("apply (executor integration)", () => {

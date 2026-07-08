@@ -1,4 +1,5 @@
 import { command as certs } from "../certs/index.js";
+import { AihError } from "../errors.js";
 import { command as hardware } from "../hardware/index.js";
 import {
   type Action,
@@ -68,7 +69,8 @@ function selectedPhases(options: Record<string, unknown>): readonly PhaseMeta[] 
   if (raw === undefined || raw === null || raw === "") return PHASES;
   const want = String(raw).trim();
   const match = PHASES.find((p) => p.id === want);
-  return match ? [match] : PHASES;
+  if (match) return [match];
+  throw new AihError("--phase must be one of 1, 2, 3, or 4", "AIH_CONFIG");
 }
 
 async function bootstrapPlan(ctx: PlanContext): Promise<Plan> {

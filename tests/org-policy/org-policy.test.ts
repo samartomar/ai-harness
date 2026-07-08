@@ -69,6 +69,31 @@ describe("OrgPolicySchema", () => {
     });
   });
 
+  it("rejects unsupported fields in command and risk-gate add items", () => {
+    expect(() =>
+      parseOrgPolicy(
+        policy({
+          command: { deny: { add: [{ pattern: "danger*", severity: "critical" }] } },
+        }),
+      ),
+    ).toThrow(/org-policy is invalid/);
+    expect(() =>
+      parseOrgPolicy(
+        policy({
+          riskGates: {
+            add: [
+              {
+                name: "critical_gate",
+                description: "critical gate",
+                behavior: "deny",
+              },
+            ],
+          },
+        }),
+      ),
+    ).toThrow(/org-policy is invalid/);
+  });
+
   it("parses MCP host incumbency, GitHub host, and disabled server policy", () => {
     expect(
       parseOrgPolicy(

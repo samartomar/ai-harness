@@ -122,6 +122,11 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+function tomlKeyPattern(key: string): string {
+  const escaped = escapeRegExp(key);
+  return `(?:${escaped}|"${escaped}"|'${escaped}')`;
+}
+
 function tableRange(
   lines: readonly string[],
   tablePath: string,
@@ -160,7 +165,7 @@ function inlineTableLineIndex(lines: readonly string[], tablePath: string): numb
   if (!parts) return undefined;
   const range = tableRange(lines, parts.parentPath);
   if (!range) return undefined;
-  const inlinePattern = new RegExp(`^[ \\t]*${escapeRegExp(parts.key)}\\s*=\\s*\\{`);
+  const inlinePattern = new RegExp(`^[ \\t]*${tomlKeyPattern(parts.key)}\\s*=\\s*\\{`);
   for (let index = range.start; index < range.end; index += 1) {
     if (inlinePattern.test(lines[index] ?? "")) return index;
   }
@@ -179,7 +184,8 @@ function inlineTableBody(line: string): string | undefined {
 }
 
 function inlineEntryKey(entry: string): string | undefined {
-  return entry.match(/^\s*([A-Za-z0-9_-]+)\s*=/)?.[1];
+  const match = entry.match(/^\s*(?:([A-Za-z0-9_-]+)|"([^"\\]*(?:\\.[^"\\]*)*)"|'([^']*)')\s*=/);
+  return match?.[1] ?? match?.[2] ?? match?.[3];
 }
 
 function splitInlineTableEntries(body: string): string[] {
@@ -225,7 +231,7 @@ function inlineTableKeyExists(raw: string, tablePath: string, key: string): bool
 }
 
 function rootKeyExists(raw: string, key: string): boolean {
-  const pattern = new RegExp(`^[ \\t]*${escapeRegExp(key)}\\s*=`);
+  const pattern = new RegExp(`^[ \\t]*${tomlKeyPattern(key)}\\s*=`);
   for (const line of raw.replace(/\r\n/g, "\n").split("\n")) {
     if (/^[ \t]*\[/.test(line)) return false;
     if (pattern.test(line)) return true;
@@ -236,7 +242,7 @@ function rootKeyExists(raw: string, key: string): boolean {
 function tableKeyExists(raw: string, tablePath: string, key: string): boolean {
   const lines = raw.replace(/\r\n/g, "\n").split("\n");
   const header = tableHeaderPattern(tablePath);
-  const tableKeyPattern = new RegExp(`^[ \\t]*${escapeRegExp(key)}\\s*=`);
+  const tableKeyPattern = new RegExp(`^[ \\t]*${tomlKeyPattern(key)}\\s*=`);
   let inTable = false;
   for (const line of lines) {
     if (header.test(line)) {

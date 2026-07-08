@@ -1,4 +1,5 @@
-import { join } from "node:path";
+import { realpathSync } from "node:fs";
+import { join, resolve } from "node:path";
 import { z } from "zod";
 import { AihError } from "../errors.js";
 import { readIfExists } from "../internals/fsxn.js";
@@ -24,8 +25,9 @@ import {
 } from "./card.js";
 import {
   AIH_SKILLS_LOCK_FILE,
-  readSkillsLock,
+  readSkillsLockStrictForWrite,
   type SkillLockEntry,
+  skillNameSchema,
   upsertSkillLockEntry,
 } from "./lockfile.js";
 import type { SkillShape } from "./shape.js";
@@ -114,6 +116,18 @@ function optionString(ctx: PlanContext, key: string): string | undefined {
   return typeof raw === "string" && raw.trim().length > 0 ? raw.trim() : undefined;
 }
 
+function optionPathSafeName(ctx: PlanContext, key: string, label: string): string | undefined {
+  const value = optionString(ctx, key);
+  if (value === undefined) return undefined;
+  const result = skillNameSchema.safeParse(value);
+  if (!result.success) {
+    throw refuse(
+      `--${key} must be a safe ${label} name (path segments only; no .., absolute paths, backslashes, or control chars)`,
+    );
+  }
+  return result.data;
+}
+
 function resolveSource(ctx: PlanContext, command: string): { source: TrustSource; raw: string } {
   const raw = optionString(ctx, "source");
   if (raw === undefined) {
@@ -170,6 +184,29 @@ function readEvidenceOrRefuse(
   // Hash the evidence BYTES so the committed lockfile entry pins the exact
   // local evidence content this approval was granted against.
   return { rel, evidence, sha256: localFileHash(abs) };
+}
+
+function assertLocalEvidenceSourceMatches(
+  ctx: PlanContext,
+  source: TrustSource,
+  raw: string,
+  rel: string,
+  evidence: VetEvidence,
+): void {
+  if (source.kind !== "local") return;
+  try {
+    const evidenceRoot = realpathSync(resolve(ctx.root, evidence.source));
+    const requestedRoot = realpathSync(source.root);
+    if (evidenceRoot === requestedRoot) return;
+  } catch {
+    // Fall through to the fail-closed error below.
+  }
+  throw refuse(
+    `vet evidence at ${rel} records source ${evidence.source}, not ${raw}; ${vetHint(
+      source,
+      raw,
+    )} to regenerate it`,
+  );
 }
 
 function hasLicenseMissing(evidence: VetEvidence): boolean {
@@ -231,6 +268,7 @@ function skillApprovalGate(ctx: PlanContext, command: string): SkillApprovalGate
   }
   // Rule 2 — no approval without a matching vet evidence artifact.
   const { rel, evidence, sha256 } = readEvidenceOrRefuse(ctx, source, raw);
+  assertLocalEvidenceSourceMatches(ctx, source, raw, rel, evidence);
   // Rule 3 — RED is blocked outright; UNKNOWN means the evidence is insufficient.
   if (evidence.verdict === "RED") {
     throw refuse(
@@ -268,7 +306,7 @@ function skillApprovalGate(ctx: PlanContext, command: string): SkillApprovalGate
     firstParty: isFirstPartySource(ctx.root, source),
     flags: {
       owner: optionString(ctx, "owner"),
-      pack: optionString(ctx, "pack"),
+      pack: optionPathSafeName(ctx, "pack", "pack"),
       intendedUse: optionString(ctx, "intendedUse"),
       mode: optionString(ctx, "mode"),
     },
@@ -404,7 +442,7 @@ function skillApprovePlan(ctx: PlanContext): Plan {
     writeJson(cardRel, card, `committed skill card for ${gate.name} (approval recorded)`),
     writeJson(
       AIH_SKILLS_LOCK_FILE,
-      upsertSkillLockEntry(readSkillsLock(ctx.root), entry),
+      upsertSkillLockEntry(readSkillsLockStrictForWrite(ctx.root), entry),
       `record ${gate.name} in the committed skill approval lockfile`,
     ),
   ];

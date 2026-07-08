@@ -71,4 +71,24 @@ describe("status — enforcement read-back (P1-F sliver)", () => {
     expect(check?.verdict).toBe("pass");
     expect(check?.detail).toContain("hook installed — active");
   });
+
+  it("does not mark a regular file as the context directory", async () => {
+    put(".ai-context", "not a directory\n");
+
+    const res = await executePlan(await command.plan(makeCtx()), makeCtx());
+    const check = res.report?.checks.find((c) => c.name === "context-dir");
+
+    expect(check?.verdict).toBe("skip");
+    expect(check?.detail).toContain("not a contained directory");
+  });
+
+  it("does not mark a directory as a generated config file", async () => {
+    mkdirSync(join(tmp, ".gitleaks.toml"));
+
+    const res = await executePlan(await command.plan(makeCtx()), makeCtx());
+    const check = res.report?.checks.find((c) => c.name === "gitleaks");
+
+    expect(check?.verdict).toBe("skip");
+    expect(check?.detail).toContain("not a contained file");
+  });
 });

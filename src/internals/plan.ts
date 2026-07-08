@@ -1,4 +1,5 @@
 import type { Posture, PostureSource } from "../config/posture.js";
+import { AihError } from "../errors.js";
 import type { EnvShell, HostAdapter } from "../platform/base.js";
 import {
   legacyChecksToVerificationRun,
@@ -322,6 +323,12 @@ export interface CommandSpec {
    */
   honorReadOnlyPostureFlag?: boolean;
   /**
+   * Skip org-policy floor loading during posture resolution. Use only for the
+   * org-policy validation gate itself, where malformed policy must surface as a
+   * coded verification finding instead of a pre-plan settings error.
+   */
+  skipOrgPolicyFloor?: boolean;
+  /**
    * Force `verify` on every run so the capability's probes always populate the
    * verification report — i.e. it DIAGNOSES by default (like `doctor`) yet still
    * mutates under `--apply` (unlike `readOnly`). `heal` uses this so a bare
@@ -335,6 +342,12 @@ export interface CommandSpec {
    * blocking the report on a dirty tree is wrong.
    */
   skipWorktreeGate?: boolean;
+  /**
+   * Option names that intentionally imply apply/open/live behavior. Keep this
+   * opt-in so unrelated plugin options named `open`, `demo`, or `refresh` stay
+   * ordinary capability options.
+   */
+  liveModeOptions?: readonly ("open" | "demo" | "refresh")[];
   /**
    * Wire an interactive prompter for this command in a TTY even without `--detect`,
    * so a bare run can offer a confirmation (e.g. `aih ready` asking to install the
@@ -382,6 +395,12 @@ export function writeJson(
     dedupeJsonArrayCommands?: Record<string, readonly string[]>;
   } = {},
 ): WriteAction {
+  if (value === undefined) {
+    throw new AihError(
+      `writeJson requires a defined JSON value for ${path}; use writeText for text files`,
+      "AIH_CONFIG",
+    );
+  }
   return {
     kind: "write",
     path,

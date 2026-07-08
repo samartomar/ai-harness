@@ -38,10 +38,14 @@ export function frontmatter(fields: Record<string, string | boolean | number | s
   const body = Object.entries(fields)
     .map(([k, v]) => {
       if (Array.isArray(v)) return `${k}: [${v.map((x) => JSON.stringify(x)).join(", ")}]`;
-      return `${k}: ${v}`;
+      return `${k}: ${typeof v === "string" && needsQuotedYamlScalar(v) ? JSON.stringify(v) : v}`;
     })
     .join("\n");
   return `---\n${body}\n---`;
+}
+
+function needsQuotedYamlScalar(value: string): boolean {
+  return value.length === 0 || /^\s|\s$/.test(value) || /:\s|[\n\r]/.test(value);
 }
 
 /** Stable 2-space JSON with a trailing newline (insertion order preserved). */

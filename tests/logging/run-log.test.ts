@@ -47,7 +47,7 @@ describe("buildRunEntry", () => {
           { path: "b", describe: "", merged: false, effect: "unchanged" },
           { path: "c", describe: "", merged: false, effect: "create" },
         ],
-        docs: [{ describe: "d" }],
+        docs: [{ describe: "d", text: "body" }],
         probes: [],
         execs: [],
         digests: [{ describe: "x", text: "t" }],

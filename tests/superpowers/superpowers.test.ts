@@ -89,6 +89,20 @@ describe("superpowers.plan", () => {
     expect(flat).toContain("copilot");
   });
 
+  it("warns when selected targets use shell installs that fetch mutable remote content", async () => {
+    const actions = (await command.plan(makeCtx({ cli: "antigravity,copilot" }))).actions;
+    const text = docs(actions)
+      .map((d) => `${d.describe}\n${d.text}`)
+      .join("\n");
+    expect(text).toContain("Superpowers supply chain");
+    expect(text).toContain("pin or mirror");
+  });
+
+  it("does not show the shell-install supply-chain advisory for doc-only targets", async () => {
+    const actions = (await command.plan(makeCtx({ cli: "claude,codex" }))).actions;
+    expect(docs(actions).some((d) => d.describe.includes("Superpowers supply chain"))).toBe(false);
+  });
+
   it("BOUNDARY: only doc/exec/write actions (write = Kiro methodology steering)", async () => {
     const actions = (await command.plan(makeCtx({ allTools: true }))).actions;
     for (const a of actions) expect(["doc", "exec", "write"]).toContain(a.kind);

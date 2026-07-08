@@ -5,6 +5,7 @@ import type { CommandSpec, PlanContext } from "../internals/plan.js";
 import { plan, writeJson } from "../internals/plan.js";
 import { readWorkspaceManifest } from "./manifest.js";
 import { collectWorkspaceSnapshot } from "./state.js";
+import { normalizeWorkspaceDisplayText } from "./text.js";
 
 function slugify(raw: string): string {
   const slug = raw
@@ -32,7 +33,7 @@ async function workspaceSnapshotPlan(ctx: PlanContext): Promise<ReturnType<typeo
       "AIH_WORKSPACE",
     );
   }
-  const label = typeof ctx.options.label === "string" ? ctx.options.label.trim() : "";
+  const label = normalizeWorkspaceDisplayText(ctx.options.label, "workspace snapshot label") ?? "";
   const snapshot = await collectWorkspaceSnapshot(ctx, manifest, {
     ...(label.length > 0 ? { label } : {}),
   });

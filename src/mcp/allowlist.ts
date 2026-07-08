@@ -2,6 +2,7 @@ import { join } from "node:path";
 import { readIfExists } from "../internals/fsxn.js";
 import type { PlanContext } from "../internals/plan.js";
 import type { Check } from "../internals/verify.js";
+import { type OrgPolicy, readOrgPolicy } from "../org-policy/schema.js";
 import type { McpServer, StdioServer } from "./servers.js";
 
 export interface ManagedMcpServerCommand {
@@ -37,23 +38,42 @@ export function managedMcpAllowlistSettings(
   };
 }
 
-function parseJson(path: string): unknown | undefined {
+type JsonRead =
+  | { kind: "missing" }
+  | { kind: "invalid"; path: string; message: string }
+  | { kind: "valid"; value: unknown };
+
+function parseJson(path: string): JsonRead {
   const raw = readIfExists(path);
-  if (raw === undefined) return undefined;
+  if (raw === undefined) return { kind: "missing" };
   try {
-    return JSON.parse(raw) as unknown;
-  } catch {
-    return undefined;
+    return { kind: "valid", value: JSON.parse(raw) as unknown };
+  } catch (err) {
+    return { kind: "invalid", path, message: (err as Error).message };
   }
 }
 
-function mcpCommands(root: string): string[][] | undefined {
-  const parsed = parseJson(join(root, ".mcp.json")) as
-    | { mcpServers?: Record<string, Partial<StdioServer>> }
-    | undefined;
-  if (parsed?.mcpServers === undefined) return undefined;
+type McpCommands =
+  | { kind: "missing" | "no-servers" }
+  | { kind: "invalid"; path: string; message: string }
+  | { kind: "commands"; commands: string[][] };
+
+function policyAllowsManagedServer(name: string, policy: OrgPolicy | undefined): boolean {
+  const disabled = new Set(policy?.mcp?.disabledServers ?? []);
+  if (disabled.has(name)) return false;
+  const allowed = policy?.mcp?.allowedServers ?? [];
+  if (policy?.mcp?.allowManagedOnly !== true || allowed.length === 0) return true;
+  return allowed.includes(name);
+}
+
+function mcpCommands(root: string, policy: OrgPolicy | undefined): McpCommands {
+  const parsed = parseJson(join(root, ".mcp.json"));
+  if (parsed.kind !== "valid") return parsed;
+  const value = parsed.value as { mcpServers?: Record<string, Partial<StdioServer>> };
+  if (value.mcpServers === undefined) return { kind: "no-servers" };
   const commands: string[][] = [];
-  for (const server of Object.values(parsed.mcpServers)) {
+  for (const [name, server] of Object.entries(value.mcpServers)) {
+    if (!policyAllowsManagedServer(name, policy)) continue;
     if (
       server.type === "stdio" &&
       typeof server.command === "string" &&
@@ -63,54 +83,82 @@ function mcpCommands(root: string): string[][] | undefined {
       commands.push([server.command, ...server.args]);
     }
   }
-  return sortedCommands(commands);
+  return { kind: "commands", commands: sortedCommands(commands) };
 }
 
-function managedCommands(root: string): string[][] | undefined {
-  const parsed = parseJson(join(root, ".claude", "managed-settings.json")) as
-    | { allowManagedMcpServersOnly?: unknown; allowedMcpServers?: unknown }
-    | undefined;
-  if (parsed?.allowManagedMcpServersOnly !== true) return undefined;
-  if (!Array.isArray(parsed.allowedMcpServers)) return [];
-  return sortedCommands(
-    parsed.allowedMcpServers
-      .map((entry) =>
-        entry &&
-        typeof entry === "object" &&
-        Array.isArray((entry as { serverCommand?: unknown }).serverCommand)
-          ? (entry as { serverCommand: unknown[] }).serverCommand.filter(
-              (arg): arg is string => typeof arg === "string",
-            )
-          : [],
-      )
-      .filter((command) => command.length > 0),
-  );
+type ManagedCommands =
+  | { kind: "missing" | "not-enforced" }
+  | { kind: "invalid"; path: string; message: string }
+  | { kind: "commands"; commands: string[][] };
+
+function managedCommands(root: string): ManagedCommands {
+  const parsed = parseJson(join(root, ".claude", "managed-settings.json"));
+  if (parsed.kind !== "valid") return parsed;
+  const value = parsed.value as {
+    allowManagedMcpServersOnly?: unknown;
+    allowedMcpServers?: unknown;
+  };
+  if (value.allowManagedMcpServersOnly !== true) return { kind: "not-enforced" };
+  if (!Array.isArray(value.allowedMcpServers)) return { kind: "commands", commands: [] };
+  return {
+    kind: "commands",
+    commands: sortedCommands(
+      value.allowedMcpServers
+        .map((entry) =>
+          entry &&
+          typeof entry === "object" &&
+          Array.isArray((entry as { serverCommand?: unknown }).serverCommand)
+            ? (entry as { serverCommand: unknown[] }).serverCommand.filter(
+                (arg): arg is string => typeof arg === "string",
+              )
+            : [],
+        )
+        .filter((command) => command.length > 0),
+    ),
+  };
 }
 
 export function mcpManagedAllowlistCheck(ctx: PlanContext): Check {
   const name = "MCP managed allowlist";
   try {
-    const desired = mcpCommands(ctx.root);
     const actual = managedCommands(ctx.root);
-    if (actual === undefined) {
+    if (actual.kind === "invalid") {
+      return {
+        name,
+        verdict: "fail",
+        detail: `invalid .claude/managed-settings.json: ${actual.message}`,
+        code: "mcp.allowlist-drift",
+      };
+    }
+    if (actual.kind !== "commands") {
       return {
         name,
         verdict: "skip",
         detail: "no managed MCP allowlist is enforced in .claude/managed-settings.json",
       };
     }
-    if (desired === undefined) {
+    const policy = readOrgPolicy(ctx.root, ctx.env);
+    const desired = mcpCommands(ctx.root, policy);
+    if (desired.kind === "invalid") {
+      return {
+        name,
+        verdict: "fail",
+        detail: `invalid .mcp.json: ${desired.message}`,
+        code: "mcp.allowlist-drift",
+      };
+    }
+    if (desired.kind !== "commands") {
       return { name, verdict: "skip", detail: "no .mcp.json stdio servers to compare" };
     }
-    const desiredKeys = desired.map(commandKey);
-    const actualKeys = actual.map(commandKey);
+    const desiredKeys = desired.commands.map(commandKey);
+    const actualKeys = actual.commands.map(commandKey);
     const missing = desiredKeys.filter((key) => !actualKeys.includes(key));
     const extra = actualKeys.filter((key) => !desiredKeys.includes(key));
     if (missing.length === 0 && extra.length === 0) {
       return {
         name,
         verdict: "pass",
-        detail: `${actual.length} managed MCP command${actual.length === 1 ? "" : "s"} match .mcp.json`,
+        detail: `${actual.commands.length} managed MCP command${actual.commands.length === 1 ? "" : "s"} match .mcp.json`,
       };
     }
     return {

@@ -388,6 +388,54 @@ describe("skillApproveCommand", () => {
     }
   });
 
+  it("refuses local evidence recorded for a different same-named source", () => {
+    const approvedParent = mkdtempSync(join(tmpdir(), "aih-skill-approve-approved-"));
+    const candidateParent = mkdtempSync(join(tmpdir(), "aih-skill-approve-candidate-"));
+    const approvedRoot = join(approvedParent, "clean-skill");
+    const candidateRoot = join(candidateParent, "clean-skill");
+    mkdirSync(approvedRoot, { recursive: true });
+    mkdirSync(candidateRoot, { recursive: true });
+    writeFileSync(join(approvedRoot, "SKILL.md"), "# Approved\n", "utf8");
+    writeFileSync(join(candidateRoot, "SKILL.md"), "# Candidate\n", "utf8");
+    try {
+      writeEvidence(
+        evidence({ source: approvedRoot, pinnedSha: undefined }),
+        ".aih/skill-reports/clean-skill-local.json",
+      );
+
+      expect(() =>
+        skillApproveCommand.plan(ctx({ source: candidateRoot, owner: "docs-platform" }, true)),
+      ).toThrow(/records source .* not .*clean-skill/);
+    } finally {
+      rmSync(approvedParent, { recursive: true, force: true });
+      rmSync(candidateParent, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses to overwrite a malformed skills lockfile during approval", () => {
+    writeEvidence(evidence());
+    write("aih-skills.lock.json", "{ broken");
+    const before = readFileSync(join(workspace, "aih-skills.lock.json"), "utf8");
+
+    expect(() => skillApproveCommand.plan(ctx(approveOptions(), true))).toThrow(
+      /cannot update aih-skills\.lock\.json: file is not valid JSON/,
+    );
+
+    expect(readFileSync(join(workspace, "aih-skills.lock.json"), "utf8")).toBe(before);
+    expect(existsSync(join(workspace, CARD_REL))).toBe(false);
+  });
+
+  it("refuses unsafe pack tags before writing approval state", () => {
+    writeEvidence(evidence());
+
+    expect(() => skillApproveCommand.plan(ctx(approveOptions({ pack: "../x" }), true))).toThrow(
+      /--pack must be a safe pack name/,
+    );
+
+    expect(existsSync(join(workspace, "aih-skills.lock.json"))).toBe(false);
+    expect(existsSync(join(workspace, CARD_REL))).toBe(false);
+  });
+
   it("dry-run writes nothing and keeps the digest byte-stable with no clock", async () => {
     writeEvidence(evidence());
     const c = ctx(approveOptions());

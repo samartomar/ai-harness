@@ -16,12 +16,12 @@ import type {
   VerificationEvidenceGraphOptions,
   VerificationResult,
 } from "./types.js";
-import { isWellFormedUtf16 } from "./validation.js";
+import { diagnosticValue, isWellFormedUtf16 } from "./validation.js";
 
 function assertString(value: unknown, field: string, index: number): string {
   if (typeof value !== "string") {
     throw new Error(
-      `buildEvidenceGraph received invalid ${field} at result ${index}: ${String(value)}`,
+      `buildEvidenceGraph received invalid ${field} at result ${index}: ${diagnosticValue(value)}`,
     );
   }
   if (value.length > MAX_VERIFICATION_STRING_FIELD_LENGTH) {
@@ -43,7 +43,7 @@ function assertMember<T extends string>(
 ): T {
   if (typeof value !== "string" || !allowed.includes(value as T)) {
     throw new Error(
-      `buildEvidenceGraph received invalid ${field} at result ${index}: ${String(value)}`,
+      `buildEvidenceGraph received invalid ${field} at result ${index}: ${diagnosticValue(value)}`,
     );
   }
   return value as T;
@@ -62,7 +62,7 @@ function assertEvidence(evidence: unknown, resultIndex: number, evidenceIndex: n
   const snippet = record.snippet;
   if (snippet !== undefined && typeof snippet !== "string") {
     throw new Error(
-      `buildEvidenceGraph received invalid evidence.snippet at result ${resultIndex}[${evidenceIndex}]: ${String(snippet)}`,
+      `buildEvidenceGraph received invalid evidence.snippet at result ${resultIndex}[${evidenceIndex}]: ${diagnosticValue(snippet)}`,
     );
   }
   if (snippet !== undefined && snippet.length > MAX_VERIFICATION_STRING_FIELD_LENGTH) {
@@ -142,7 +142,7 @@ function maxResultsFor(options: VerificationEvidenceGraphOptions): number {
   const maxResults = options.maxResults ?? MAX_VERIFICATION_PASSES;
   if (!Number.isSafeInteger(maxResults) || maxResults < 1) {
     throw new Error(
-      `verification graph max results must be a positive integer: ${String(maxResults)}`,
+      `verification graph max results must be a positive integer: ${diagnosticValue(maxResults)}`,
     );
   }
   return maxResults;
@@ -152,7 +152,7 @@ function maxEvidenceFor(options: VerificationEvidenceGraphOptions): number {
   const maxEvidencePerResult = options.maxEvidencePerResult ?? DEFAULT_MAX_EVIDENCE_PER_PASS;
   if (!Number.isSafeInteger(maxEvidencePerResult) || maxEvidencePerResult < 1) {
     throw new Error(
-      `verification graph max evidence per result must be a positive integer: ${String(maxEvidencePerResult)}`,
+      `verification graph max evidence per result must be a positive integer: ${diagnosticValue(maxEvidencePerResult)}`,
     );
   }
   return maxEvidencePerResult;

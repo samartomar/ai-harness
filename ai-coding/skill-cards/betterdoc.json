@@ -9,15 +9,15 @@
   "firstParty": true,
   "intendedUse": "claim-first, evidence-grounded documentation editing and review",
   "installScope": "repo",
-  "riskClass": "green",
+  "riskClass": "yellow",
   "requiresMcp": false,
   "requiresShell": false,
   "scanEvidence": [
     ".aih/skill-reports/betterdoc-local.json"
   ],
   "approval": {
-    "verdict": "GREEN",
+    "verdict": "YELLOW",
     "approvedBy": "aih-maintainers",
-    "approvedAt": "2026-07-04T03:46:47.410Z"
+    "approvedAt": "2026-07-08T14:00:13.086Z"
   }
 }

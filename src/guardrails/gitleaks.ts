@@ -16,8 +16,8 @@ export const AWS_KEY_REGEX = "(?i)(A3T[A-Z0-9]{16}|AKIA[0-9A-Z]{16})";
 /** Any PEM private-key block header (RSA/EC/OPENSSH/DSA/…). */
 export const PRIVATE_KEY_REGEX = "-----BEGIN [A-Z]+ PRIVATE KEY-----";
 
-/** Local, non-synced scratch roots exempted from scanning (never source dirs). */
-export const SCRATCH_ALLOWLIST = [".var/", ".aih-scratch/"];
+/** Local, non-synced scratch roots exempted from scanning (root-anchored regexes, never source dirs). */
+export const SCRATCH_ALLOWLIST = ["^\\.var/", "^\\.aih-scratch/"];
 
 /** Render `.gitleaks.toml` — default rules + enterprise regex + scratch allowlist. */
 export function gitleaksToml(): string {

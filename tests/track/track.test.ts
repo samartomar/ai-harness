@@ -74,4 +74,30 @@ describe("aih track", () => {
     const d = actions.find((a) => a.kind === "digest");
     expect(d?.kind === "digest" && d.describe).toContain("not a git repository");
   });
+
+  it("does not plan history writes for an empty repository with no commits", async () => {
+    const actions = (
+      await command.plan(
+        makeCtx(
+          gitFake({
+            "rev-parse --is-inside-work-tree": "true",
+            "log -1 --pretty=format:%cI%n%h": "",
+            "rev-parse --abbrev-ref HEAD": "HEAD",
+            "for-each-ref --format=%(refname:short) refs/heads": "",
+            "rev-list --count --since=7 days ago HEAD": "",
+            "log --since=7 days ago --numstat": "",
+            "ls-files": "",
+          }),
+        ),
+      )
+    ).actions;
+
+    expect(actions.some((a) => a.kind === "write")).toBe(false);
+    const d = actions.find((a) => a.kind === "digest");
+    expect(d?.kind === "digest" && d.describe).toContain("no commits to sample");
+    expect(d?.kind === "digest" ? d.data : undefined).toMatchObject({
+      recorded: false,
+      reason: "no-commits",
+    });
+  });
 });

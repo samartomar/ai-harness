@@ -31,6 +31,11 @@ function str(...values: unknown[]): string | undefined {
   return undefined;
 }
 
+function skillId(...values: unknown[]): string | undefined {
+  const id = str(...values);
+  return id && /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(id) ? id : undefined;
+}
+
 function counter(...values: unknown[]): number | undefined {
   for (const value of values) {
     if (typeof value === "number" && Number.isFinite(value) && value >= 0) return value;
@@ -263,22 +268,23 @@ function eventFromToolUse(
   };
 
   if (name === "Task" || name === "task" || name === "Agent" || name === "agent") {
-    const skill = str(
+    const skill = skillId(
       input.subagent_type,
       input.subagentType,
       input.agent_name,
       input.agentName,
       input.agent,
       input.name,
-      "subagent",
     );
+    if (skill === undefined) return { ...base, kind: "tool", name };
     const source = str(input.source, input.provenance);
     const event: UsageEvent = { ...base, kind: "skill", name: skill };
     if (source === "ecc" || source === "canon" || source === "user") event.source = source;
     return event;
   }
   if (name === "Skill" || name === "skill") {
-    const skill = str(input.command, input.skill, input.name, input.id, "skill");
+    const skill = skillId(input.command, input.skill, input.name, input.id);
+    if (skill === undefined) return { ...base, kind: "tool", name };
     const source = str(input.source, input.provenance);
     const event: UsageEvent = { ...base, kind: "skill", name: skill };
     if (source === "ecc" || source === "canon" || source === "user") event.source = source;

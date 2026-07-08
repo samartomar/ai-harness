@@ -1,5 +1,6 @@
 import { join } from "node:path";
 import { z } from "zod";
+import { AihError } from "../errors.js";
 import { readIfExists } from "../internals/fsxn.js";
 
 /**
@@ -38,7 +39,7 @@ export const SkillLockEntrySchema = z.object({
   source: z.string().min(1),
   commit: z.string().min(1),
   verdict: z.enum(["GREEN", "YELLOW"]),
-  pack: z.string().min(1).optional(),
+  pack: skillNameSchema.optional(),
   /** True when the approval is a first-party (repo-relative local) skill. */
   firstParty: z.boolean().optional(),
   scope: z.string().min(1),
@@ -56,6 +57,10 @@ export interface SkillsLock {
   schemaVersion: 1;
   skills: SkillLockEntry[];
 }
+
+const SkillsLockSchema = z
+  .object({ schemaVersion: z.literal(1), skills: z.array(SkillLockEntrySchema) })
+  .strict();
 
 /**
  * Read the committed skills lockfile. Fail-SOFT per entry (mirrors
@@ -86,6 +91,38 @@ export function readSkillsLock(root: string): SkillsLock {
   } catch {
     return { schemaVersion: 1, skills: [] };
   }
+}
+
+export function readSkillsLockStrictForWrite(root: string): SkillsLock {
+  const raw = readIfExists(join(root, AIH_SKILLS_LOCK_FILE));
+  if (raw === undefined) return { schemaVersion: 1, skills: [] };
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new AihError(
+      `cannot update ${AIH_SKILLS_LOCK_FILE}: file is not valid JSON`,
+      "AIH_TRUST",
+    );
+  }
+  const result = SkillsLockSchema.safeParse(parsed);
+  if (!result.success) {
+    const issue = result.error.issues[0];
+    const where =
+      issue === undefined ? "" : ` at ${issue.path.join(".") || "(root)"}: ${issue.message}`;
+    throw new AihError(`cannot update ${AIH_SKILLS_LOCK_FILE}${where}`, "AIH_TRUST");
+  }
+  const seen = new Set<string>();
+  for (const entry of result.data.skills) {
+    if (seen.has(entry.name)) {
+      throw new AihError(
+        `cannot update ${AIH_SKILLS_LOCK_FILE}: duplicate skill entry ${entry.name}`,
+        "AIH_TRUST",
+      );
+    }
+    seen.add(entry.name);
+  }
+  return result.data;
 }
 
 /** Replace-or-append `entry` by skill name — immutable, name-sorted for stable committed diffs. */

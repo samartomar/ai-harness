@@ -167,6 +167,27 @@ function duplicateFindings(packs: readonly Pack[]): PackFinding[] {
   return findings;
 }
 
+function requiredChecksFinding(pack: Pack): PackFinding | undefined {
+  if ((pack.requiredChecks ?? []).length === 0) return undefined;
+  return {
+    pack: pack.name,
+    check: {
+      name: "pack required checks unsupported",
+      verdict: "fail",
+      code: "pack.required-checks-unsupported",
+      detail:
+        `pack ${pack.name}: requiredChecks are declared (${pack.requiredChecks?.join(", ")}) ` +
+        "but pack-level check enforcement is not implemented yet; remove the field or enforce it before install",
+      location: { uri: AIH_PACKS_FILE },
+      fingerprint: `pack-required-checks-unsupported:${pack.name}`,
+    },
+  };
+}
+
+function packBlocked(pack: Pack, skills: readonly PackSkillStatus[]): boolean {
+  return skills.some((s) => s.approval !== "approved") || (pack.requiredChecks ?? []).length > 0;
+}
+
 /**
  * The pure join: manifest × committed approvals × on-disk inventory. Per pack,
  * per ref, two orthogonal axes (approval, install) plus coded findings for
@@ -203,6 +224,8 @@ export function packStatus(ctx: PlanContext, packName?: string): PackStatusRepor
   }
 
   const packs: PackStatus[] = selected.map((pack) => {
+    const requiredFinding = requiredChecksFinding(pack);
+    if (requiredFinding !== undefined) findings.push(requiredFinding);
     const skills: PackSkillStatus[] = pack.skills.map((ref) => {
       const entry = lockByName.get(ref.name);
       const approval = refApproval(ref, entry);
@@ -220,7 +243,7 @@ export function packStatus(ctx: PlanContext, packName?: string): PackStatusRepor
       name: pack.name,
       ...(pack.description !== undefined ? { description: pack.description } : {}),
       ...(pack.requiredChecks !== undefined ? { requiredChecks: pack.requiredChecks } : {}),
-      rollup: skills.every((s) => s.approval === "approved") ? ("ready" as const) : "blocked",
+      rollup: packBlocked(pack, skills) ? "blocked" : "ready",
       counts: {
         skills: skills.length,
         approved: skills.filter((s) => s.approval === "approved").length,

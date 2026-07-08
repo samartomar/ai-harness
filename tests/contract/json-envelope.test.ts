@@ -60,11 +60,15 @@ function command(argv: string[]): Command {
 }
 
 /** Run a spec through the real pipeline, capturing stdout and the exit code. */
-async function run(spec: CommandSpec, argv: string[]): Promise<{ code: number; out: string }> {
+async function run(
+  spec: CommandSpec,
+  argv: string[],
+  env: NodeJS.ProcessEnv = {},
+): Promise<{ code: number; out: string }> {
   let out = "";
   const code = await runCapability(spec, command(argv), {
     run: fakeRunner(() => undefined),
-    env: {},
+    env,
     write: (t) => {
       out += t;
     },
@@ -151,6 +155,17 @@ describe("v1 contract — --json error envelope (refusal path)", () => {
     const payload = ErrorEnvelopeSchema.parse(JSON.parse(out));
     expect(payload.error.code).toBe("AIH_DIRTY_WORKTREE");
     expect(payload.error.message).toContain("refusing to overwrite");
+  });
+
+  it("honors AIH_JSON for early settings failures before loadSettings completes", async () => {
+    const { code, out } = await run(refusingSpec, ["--root", dir], {
+      AIH_JSON: "1",
+      AIH_POSTURE: "enterprsie",
+    });
+    expect(code).toBe(1);
+    const payload = ErrorEnvelopeSchema.parse(JSON.parse(out));
+    expect(payload.error.code).toBe("AIH_SETTINGS");
+    expect(payload.error.message).toContain("invalid AIH_POSTURE");
   });
 });
 

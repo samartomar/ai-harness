@@ -80,6 +80,10 @@ export function blockedLicensesFound(
   return blocked.filter((spdx) => sbomText.includes(`"${spdx}"`));
 }
 
+/** SHA-256 for gitleaks_8.24.2_linux_x64.tar.gz from the upstream release asset. */
+export const GITLEAKS_LINUX_X64_TAR_SHA256 =
+  "fa0500f6b7e41d28791ebc680f5dd9899cd42b58629218a5f041efa899151a8e";
+
 function matrixComment(): string[] {
   const rows = LICENSE_MATRIX.map(
     (t) => `#   ${t.category.padEnd(16)} -> ${t.disposition.padEnd(12)} (${t.spdx.join(", ")})`,
@@ -121,8 +125,11 @@ export function scaWorkflowYaml(): string {
     "        shell: bash",
     "        run: |",
     "          set -euo pipefail",
-    `          curl -sSfL https://github.com/gitleaks/gitleaks/releases/download/${GITLEAKS_REV}/gitleaks_${gv}_linux_x64.tar.gz \\`,
-    "            | tar -xz -C /usr/local/bin gitleaks",
+    "          tmp=$(mktemp -d)",
+    `          curl -sSfL -o "$tmp/gitleaks.tar.gz" https://github.com/gitleaks/gitleaks/releases/download/${GITLEAKS_REV}/gitleaks_${gv}_linux_x64.tar.gz`,
+    `          echo "${GITLEAKS_LINUX_X64_TAR_SHA256}  $tmp/gitleaks.tar.gz" | sha256sum -c -`,
+    '          tar -xzf "$tmp/gitleaks.tar.gz" -C /usr/local/bin gitleaks',
+    '          rm -rf "$tmp"',
     "      - name: Scan for committed secrets",
     "        run: gitleaks detect --config .gitleaks.toml --redact --no-banner --exit-code 1",
     "  license-gate:",

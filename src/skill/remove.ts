@@ -19,6 +19,7 @@ import { type SkillInventoryRow, skillInventory } from "./inventory.js";
 import {
   AIH_SKILLS_LOCK_FILE,
   readSkillsLock,
+  readSkillsLockStrictForWrite,
   removeSkillLockEntry,
   type SkillsLock,
 } from "./lockfile.js";
@@ -249,7 +250,7 @@ export function skillRemovalActions(
   ctx: PlanContext,
   name: string,
   hardDelete: boolean,
-  lock: SkillsLock = readSkillsLock(ctx.root),
+  lock: SkillsLock = readSkillsLockStrictForWrite(ctx.root),
 ): SkillRemoval {
   const row = resolveTarget(ctx, name);
   // Card removal keys on the CANONICAL card path's existence — never the lockfile

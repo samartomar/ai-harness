@@ -217,7 +217,8 @@ Generated files:
 
 ```text
 .aih/workspace-snapshots/<timestamp>.json
-.aih/workspace-snapshots/latest.json
+.aih/workspace-snapshots/<timestamp>-<label>.json
+<contextDir>/workspace-lock.json  # only with --lock
 ```
 
 Acceptance criteria:
@@ -225,8 +226,9 @@ Acceptance criteria:
 ```text
 records child repo path, branch, sha, dirty state
 records timestamp and label
-updates latest.json
-report shows changes since latest snapshot
+writes a timestamped local snapshot
+writes workspace-lock.json only when --lock is requested
+report shows changes since the newest readable snapshot or workspace lock
 handles missing child repo gracefully
 handles dirty repo honestly
 ```

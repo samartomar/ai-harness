@@ -46,10 +46,10 @@ aih skill vet https://github.com/remotion-dev/skills --policy media-restricted
 
 aih skill card <repo-or-path>
 aih skill approve <repo-or-path> --policy enterprise --pin <sha>
-aih skill install <repo-or-path> --pin <sha> --apply
+aih workspace add <repo-or-path> --pin <sha> --apply
 aih skill inventory
-aih skill quarantine <skill-name>
-aih skill remove <skill-name> --apply
+aih skill quarantine --name <skill-name> --apply
+aih skill remove --name <skill-name> --apply
 ```
 
 ## Verdict states

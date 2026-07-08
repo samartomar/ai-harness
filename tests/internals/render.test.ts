@@ -55,6 +55,12 @@ describe("render helpers", () => {
     );
   });
 
+  it("frontmatter quotes strings that contain YAML syntax", () => {
+    expect(frontmatter({ description: "ship: safely" })).toBe(
+      '---\ndescription: "ship: safely"\n---',
+    );
+  });
+
   it("jsonFile is 2-space with a trailing newline", () => {
     expect(jsonFile({ a: 1 })).toBe('{\n  "a": 1\n}\n');
   });

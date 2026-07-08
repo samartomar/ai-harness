@@ -43,5 +43,5 @@ Before publishing docs, scan for accidental private content:
 
 ```bash
 grep -RInE "tenant|org id|customer|admin key|api key|secret|token|GTM|pricing|competitor|support ticket|private repo|memory vault|session handoff" \
-  docs README.md SECURITY.md SUPPORT.md .github package.json || true
+  docs guides README.md SECURITY.md SUPPORT.md PUBLIC_DOCS_POLICY.md .github package.json || true
 ```

@@ -8,13 +8,21 @@ export function parseFirstInt(stdout: string): number | undefined {
 
 /** Parse `nvidia-smi --query-gpu=memory.total,name --format=csv,noheader,nounits`. */
 export function parseNvidiaSmi(stdout: string): GpuInfo {
-  const line = stdout.split(/\r?\n/).find((l) => l.trim().length > 0);
-  if (!line) return { vendor: "none", backend: "cpu", vramGb: 0 };
-  const [memRaw, ...nameParts] = line.split(",");
-  const mib = Number.parseInt((memRaw ?? "").trim(), 10);
-  const vramGb = Number.isFinite(mib) ? Math.round(mib / 1024) : 0;
-  const name = nameParts.join(",").trim() || undefined;
-  return { vendor: "nvidia", backend: "cuda", vramGb, name };
+  let best: GpuInfo | undefined;
+  for (const line of stdout.split(/\r?\n/)) {
+    if (line.trim().length === 0) continue;
+    const [memRaw, ...nameParts] = line.split(",");
+    const mib = Number.parseInt((memRaw ?? "").trim(), 10);
+    if (!Number.isFinite(mib) || mib <= 0) continue;
+    const gpu = {
+      vendor: "nvidia" as const,
+      backend: "cuda" as const,
+      vramGb: Math.round(mib / 1024),
+      name: nameParts.join(",").trim() || undefined,
+    };
+    if (best === undefined || gpu.vramGb > best.vramGb) best = gpu;
+  }
+  return best ?? { vendor: "none", backend: "cpu", vramGb: 0 };
 }
 
 /** Parse tab-separated `base64<TAB>subject` lines (Windows cert export). */

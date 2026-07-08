@@ -1,5 +1,7 @@
 import { postureFromContext } from "../config/posture.js";
-import { isTargeted } from "../internals/cli-detect.js";
+import { homeDir, isTargeted } from "../internals/cli-detect.js";
+import { entry } from "../internals/cli-registry.js";
+import { SUPPORTED_CLIS } from "../internals/clis.js";
 import {
   type Action,
   type CommandSpec,
@@ -10,8 +12,14 @@ import {
   writeText,
 } from "../internals/plan.js";
 import { acceptChanged, changedSince } from "../internals/scan-allowlist.js";
+import { isExternalMcp, mcpConfigAbs } from "../mcp/render.js";
 import { mcpConfigSecretProbes, secretProbes } from "./probes.js";
-import { scanConfigSecrets, scanSecrets } from "./scan.js";
+import {
+  type ExternalMcpConfigFile,
+  scanConfigSecrets,
+  scanExternalConfigSecrets,
+  scanSecrets,
+} from "./scan.js";
 import {
   claudeIgnore,
   configExposureWarning,
@@ -19,6 +27,23 @@ import {
   settingsDenyPatch,
   vaultGuidance,
 } from "./templates.js";
+
+function globalMcpConfigFiles(ctx: PlanContext): ExternalMcpConfigFile[] {
+  const home = homeDir(ctx);
+  const seen = new Set<string>();
+  const files: ExternalMcpConfigFile[] = [];
+  for (const cli of SUPPORTED_CLIS) {
+    if (!isTargeted(ctx, cli)) continue;
+    const mcp = entry(cli).mcp;
+    if (mcp.support !== "native" || mcp.configPath === undefined) continue;
+    if (!isExternalMcp(mcp.configPath)) continue;
+    const absPath = mcpConfigAbs(home, mcp.configPath);
+    if (seen.has(absPath)) continue;
+    seen.add(absPath);
+    files.push({ file: mcp.configPath, absPath });
+  }
+  return files;
+}
 
 /**
  * Secrets redirection + plaintext-exposure prevention.
@@ -84,16 +109,20 @@ async function planSecrets(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
   }
 
   // Content scan: a credential pasted INTO an MCP config (.mcp.json et al.) is a leak
-  // the filename-based scan above cannot see. Same gate shape — a warning doc for the
-  // default run, plus one `--verify` fail probe per hit for the CI gate / SARIF.
-  const configSecrets = scanConfigSecrets(ctx.root);
-  if (configSecrets.length > 0) {
+  // the filename-based scan above cannot see. Unsafe config paths also fail closed.
+  // Same gate shape — a warning doc for the default run, plus one `--verify` fail
+  // probe per hit for the CI gate / SARIF.
+  const configFindings = [
+    ...scanConfigSecrets(ctx.root),
+    ...scanExternalConfigSecrets(globalMcpConfigFiles(ctx)),
+  ];
+  if (configFindings.length > 0) {
     actions.push(
       doc(
-        `Hardcoded secrets in MCP config (${configSecrets.length}) — move to env references`,
-        configExposureWarning(configSecrets),
+        `MCP config secret-scan findings (${configFindings.length}) — fix literals or unsafe paths`,
+        configExposureWarning(configFindings),
       ),
-      ...mcpConfigSecretProbes(configSecrets, posture),
+      ...mcpConfigSecretProbes(configFindings, posture),
     );
   }
 

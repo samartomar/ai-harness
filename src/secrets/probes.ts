@@ -1,7 +1,7 @@
 import { postureGradeCheck } from "../config/governance.js";
 import type { Posture } from "../config/posture.js";
 import { type ProbeAction, probe } from "../internals/plan.js";
-import type { Check } from "../internals/verify.js";
+import type { Check, CheckCode } from "../internals/verify.js";
 import type { ConfigSecretHit, SecretScan } from "./scan.js";
 
 /**
@@ -49,15 +49,26 @@ export function secretProbes(scan: SecretScan, posture: Posture): ProbeAction[] 
 /** Stable SARIF rule id for hardcoded-secret-in-config findings (one rule, many results). */
 export const MCP_SECRET_RULE = "mcp-hardcoded-secret";
 
+function mcpConfigCode(
+  hit: ConfigSecretHit,
+): Extract<CheckCode, "mcp.config-invalid" | "mcp.hardcoded-secret"> {
+  return hit.code ?? "mcp.hardcoded-secret";
+}
+
 export function mcpConfigSecretCheck(hit: ConfigSecretHit, posture: Posture): Check {
+  const code = mcpConfigCode(hit);
+  const detail =
+    code === "mcp.config-invalid"
+      ? `${hit.file} could not be safely inspected: ${hit.kind}`
+      : `${hit.file}${hit.key ? ` → "${hit.key}"` : ""} holds a ${hit.kind} — move it to an env var referenced as \${ENV_VAR} and rotate the exposed value`;
   return postureGradeCheck(
     {
-      name: MCP_SECRET_RULE,
+      name: code === "mcp.config-invalid" ? "mcp-config-invalid" : MCP_SECRET_RULE,
       verdict: "fail",
-      detail: `${hit.file}${hit.key ? ` → "${hit.key}"` : ""} holds a ${hit.kind} — move it to an env var referenced as \${ENV_VAR} and rotate the exposed value`,
-      code: "mcp.hardcoded-secret",
+      detail,
+      code,
       location: { uri: hit.file, startLine: 1 },
-      fingerprint: `${MCP_SECRET_RULE}:${hit.file}:${hit.key}`,
+      fingerprint: `${code}:${hit.file}:${hit.key}`,
     },
     "secrets",
     posture,
@@ -65,16 +76,15 @@ export function mcpConfigSecretCheck(hit: ConfigSecretHit, posture: Posture): Ch
 }
 
 /**
- * One read-only probe per hardcoded secret found in an MCP config file. Like
- * {@link secretProbes}, the scan ran at plan-build time so each probe just carries
- * its posture-graded verdict — no spawn, no remote, no mutation. The detail names
- * the FILE + KEY + match kind, never the secret value, so no plaintext material is
- * emitted.
+ * One read-only probe per MCP config finding. Like {@link secretProbes}, the scan
+ * ran at plan-build time so each probe just carries its posture-graded verdict —
+ * no spawn, no remote, no mutation. The detail names the FILE + KEY + match kind,
+ * never the secret value, so no plaintext material is emitted.
  */
 export function mcpConfigSecretProbes(hits: ConfigSecretHit[], posture: Posture): ProbeAction[] {
   return hits.map((h) =>
     probe(
-      `hardcoded secret: ${h.file}${h.key ? ` (${h.key})` : ""}`,
+      `MCP config finding: ${h.file}${h.key ? ` (${h.key})` : ""}`,
       (): Check => mcpConfigSecretCheck(h, posture),
     ),
   );

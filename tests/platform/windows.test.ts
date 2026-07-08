@@ -55,6 +55,26 @@ describe("WindowsAdapter", () => {
     expect(await a.totalRamGb()).toBe(32);
   });
 
+  it("falls back to Windows PowerShell for physical RAM when pwsh is absent", async () => {
+    const a = adapter((argv) => {
+      const s = argv.join(" ");
+      if (argv[0] === "pwsh" && s.includes("Capacity")) return { spawnError: true, code: 127 };
+      if (argv[0] === "powershell.exe" && s.includes("Capacity")) return { stdout: "64\n" };
+      return undefined;
+    });
+    expect(await a.totalRamGb()).toBe(64);
+  });
+
+  it("never reports zero RAM when the Windows RAM probe cannot run", async () => {
+    const a = adapter((argv) => {
+      if (argv[0] === "pwsh" || argv[0] === "powershell.exe") {
+        return { spawnError: true, code: 127 };
+      }
+      return undefined;
+    });
+    expect(await a.totalRamGb()).toBeGreaterThan(0);
+  });
+
   it("detects an NVIDIA GPU via nvidia-smi", async () => {
     const a = adapter((argv) =>
       argv[0] === "nvidia-smi" ? { stdout: "12288, RTX 4070\n" } : undefined,

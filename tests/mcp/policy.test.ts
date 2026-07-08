@@ -4,6 +4,7 @@ import {
   asPosture,
   deniedServers,
   evaluateMcpPolicy,
+  mcpApprovalSubject,
   mcpGovernanceDoc,
   type ServerPolicy,
 } from "../../src/mcp/policy.js";
@@ -34,6 +35,15 @@ function only(servers: Record<string, McpServer>, posture: Posture): ServerPolic
   return p;
 }
 
+function approved(server: string, subjectServer: McpServer, reason = "vendor risk reviewed") {
+  return {
+    server,
+    subject: mcpApprovalSubject(subjectServer),
+    acceptEgress: true as const,
+    reason,
+  };
+}
+
 describe("evaluateMcpPolicy — enterprise posture (the gate)", () => {
   it("DENIES third-party egress — self-host or remove", () => {
     const p = only({ a: srv("third-party", "hosted-remote") }, "enterprise");
@@ -51,11 +61,11 @@ describe("evaluateMcpPolicy — enterprise posture (the gate)", () => {
       {
         allowedServers: ["context7"],
         approvals: [
-          {
-            server: "context7",
-            acceptEgress: true,
-            reason: "vendor risk reviewed for docs lookup",
-          },
+          approved(
+            "context7",
+            srv("third-party", "hosted-remote"),
+            "vendor risk reviewed for docs lookup",
+          ),
         ],
       },
     );
@@ -65,6 +75,29 @@ describe("evaluateMcpPolicy — enterprise posture (the gate)", () => {
       reason: expect.stringContaining("vendor risk reviewed"),
     });
     expect(deniedServers(policies).map((p) => p.name)).toEqual(["unapproved"]);
+  });
+
+  it("DENIES when a third-party approval subject no longer matches the server shape", () => {
+    const oldServer = {
+      type: "http",
+      url: "https://old.example/mcp",
+      description: "old",
+      classification: "third-party-hosted",
+      egress: "third-party",
+      credentials: "none",
+      supplyChain: "hosted-remote",
+    } satisfies McpServer;
+    const nextServer = { ...oldServer, url: "https://new.example/mcp" } satisfies McpServer;
+
+    const policies = evaluateMcpPolicy({ context7: nextServer }, "enterprise", {
+      allowedServers: ["context7"],
+      approvals: [approved("context7", oldServer, "vendor risk reviewed for old endpoint")],
+    });
+
+    expect(policies[0]).toMatchObject({
+      verdict: "deny",
+      reason: expect.stringContaining("third-party egress"),
+    });
   });
 
   it("DENIES third-party egress when allowedServers has no matching approval evidence", () => {
@@ -92,11 +125,11 @@ describe("evaluateMcpPolicy — enterprise posture (the gate)", () => {
     const policies = evaluateMcpPolicy({ context7: srv("third-party", "unpinned") }, "enterprise", {
       allowedServers: ["context7"],
       approvals: [
-        {
-          server: "context7",
-          acceptEgress: true,
-          reason: "vendor risk reviewed for docs lookup",
-        },
+        approved(
+          "context7",
+          srv("third-party", "unpinned"),
+          "vendor risk reviewed for docs lookup",
+        ),
       ],
     });
 
@@ -113,11 +146,11 @@ describe("evaluateMcpPolicy — enterprise posture (the gate)", () => {
       {
         allowedServers: ["context7"],
         approvals: [
-          {
-            server: "context7",
-            acceptEgress: true,
-            reason: "vendor risk reviewed for docs lookup",
-          },
+          approved(
+            "context7",
+            srv("third-party", "hosted-remote"),
+            "vendor risk reviewed for docs lookup",
+          ),
         ],
         disabledServers: ["context7", "local"],
       },

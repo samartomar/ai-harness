@@ -1,3 +1,4 @@
+import { AihError } from "../errors.js";
 import { isTargeted } from "../internals/cli-detect.js";
 import {
   type Action,
@@ -34,6 +35,12 @@ async function dockerAvailable(ctx: PlanContext): Promise<Check> {
 }
 
 function sandboxPlan(ctx: PlanContext) {
+  if (typeof ctx.options.worktree === "string" && ctx.options.worktree.trim().length > 0) {
+    throw new AihError(
+      "--worktree is not implemented yet; run sandbox from the target worktree root instead",
+      "AIH_CONFIG",
+    );
+  }
   const stack = scanRepo(ctx.root, { maxDepth: 8, contextDir: ctx.contextDir });
   const actions: Action[] = [
     // The devcontainer is tool-agnostic (it provisions the toolchain for any agent),
@@ -75,7 +82,7 @@ export const command: CommandSpec = {
   options: [
     {
       flags: "--worktree <name>",
-      description: "scope the sandbox to a single git worktree under .claude/worktrees",
+      description: "reserved; currently fails closed, run from the target worktree root instead",
     },
   ],
   plan: sandboxPlan,

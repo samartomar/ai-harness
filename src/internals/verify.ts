@@ -120,6 +120,7 @@ export type CheckCode =
   | "pack.pin-mismatch"
   | "pack.missing-approval"
   | "pack.unknown-manifest"
+  | "pack.required-checks-unsupported"
   // marketplace artifact (hostable distribution directory built from the approval lock)
   | "marketplace.manifest-parse"
   | "marketplace.path-traversal"

@@ -17,7 +17,7 @@ import type { RepoStack } from "../profile/scan.js";
 import { scanRepo } from "../profile/scan.js";
 import { claudeBashPermissions, commandPolicyDoc, sandboxExecPolicy } from "./command-policy.js";
 import { gitleaksToml } from "./gitleaks.js";
-import { gitleaksMergeSnippet, PRECOMMIT_MARKER, preCommitConfigYaml } from "./precommit.js";
+import { gitleaksMergeSnippet, PRECOMMIT_HEADER, preCommitConfigYaml } from "./precommit.js";
 import { riskGatesDoc, riskGatesJson } from "./risk-gates.js";
 import { blockingLicenses, scaWorkflowYaml } from "./sca.js";
 import { taxonomyDoc } from "./taxonomy.js";
@@ -73,7 +73,8 @@ function ciNote(): string {
  */
 function preCommitActions(ctx: PlanContext, stack: RepoStack): Action[] {
   const existing = readIfExists(join(ctx.root, PRECOMMIT_PATH));
-  const userAuthored = existing !== undefined && !existing.includes(PRECOMMIT_MARKER);
+  const firstLine = existing?.split(/\r?\n/, 1)[0];
+  const userAuthored = existing !== undefined && firstLine !== PRECOMMIT_HEADER;
   if (!userAuthored) {
     return [
       writeText(

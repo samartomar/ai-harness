@@ -46,9 +46,14 @@ describe("README docs currency", () => {
   it("keeps README image metadata aligned with the current v2.4 assets", () => {
     const readme = read("README.md");
     const overview = read("docs/assets/aih-overview.svg");
+    const enterprisePacks = read("docs/assets/aih-enterprise-packs.svg");
     const pkg = JSON.parse(read("package.json")) as { files?: string[] };
     const normalizedOverview = overview.replace(/\s+/g, " ");
-    const publishedAssets = ["docs/assets/aih-overview.svg", "docs/assets/aih-report-v9.png"];
+    const publishedAssets = [
+      "docs/assets/aih-overview.svg",
+      "docs/assets/aih-report-v9.png",
+      "docs/assets/aih-enterprise-packs.svg",
+    ];
 
     for (const assetPath of publishedAssets) {
       expect(existsSync(join(root, assetPath))).toBe(true);
@@ -76,6 +81,9 @@ describe("README docs currency", () => {
     expect(reportAlt).toContain("demo showcase data");
     expect(reportAlt).toContain("harness-wiring score");
     expect(reportAlt).toContain("remediation ledger");
+
+    expect(enterprisePacks).toContain("GREEN or reviewed YELLOW verdict scope");
+    expect(enterprisePacks).not.toContain("GREEN verdict scope,");
   });
 
   it("keeps the README and command docs aligned with the contract command surface", () => {
@@ -96,5 +104,15 @@ describe("README docs currency", () => {
     expect(readmeRows.every(([label, anchor]) => label === anchor)).toBe(true);
     expect([...new Set(readmeCommands)].sort()).toEqual(expected);
     expect([...new Set(docSections)].sort()).toEqual(expected);
+  });
+
+  it("keeps BetterDoc pack docs aligned with shipped files", () => {
+    const readme = read("packs/docs-quality/betterdoc/README.md");
+    const changelog = read("packs/docs-quality/betterdoc/CHANGELOG.md");
+
+    expect(readme).toContain("packs/docs-quality/betterdoc/");
+    expect(readme).not.toContain("betterdoc-common/");
+    expect(existsSync(join(root, "packs/docs-quality/betterdoc/LICENSE"))).toBe(true);
+    expect(changelog).not.toContain("No license file was added");
   });
 });
