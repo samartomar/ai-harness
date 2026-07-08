@@ -1,4 +1,5 @@
 import {
+  type BigIntStats,
   chmodSync,
   closeSync,
   copyFileSync,
@@ -335,13 +336,16 @@ export function readIfExists(path: string): string | undefined {
 
 /** `O_NOFOLLOW` where the platform has it (absent at runtime on Windows despite the typings). */
 const O_NOFOLLOW = (fsConstants as Record<string, number | undefined>).O_NOFOLLOW ?? 0;
+const HAS_O_NOFOLLOW = O_NOFOLLOW !== 0;
 
 /**
  * Open-then-read on ONE file descriptor: the regular-file check (`fstat` on the
- * open fd, never a second path lookup) and the read cannot be raced apart, and
- * a symlink swapped in after directory enumeration is refused at open where
- * `O_NOFOLLOW` exists rather than silently followed. Returns undefined for
- * anything that is not a readable regular file.
+ * open fd, never a second path lookup) and the read cannot be raced apart.
+ * Where the platform exposes `O_NOFOLLOW`, a symlink swapped in after directory
+ * enumeration is refused at open rather than silently followed. Where it does
+ * not, the fallback verifies after opening that the path still names the same
+ * non-symlink regular file as the descriptor before reading. Returns undefined
+ * for anything that is not a readable regular file.
  *
  * Use this — not {@link readIfExists} — for any path DISCOVERED by a directory
  * scan: a plain exists-then-read pair on a scanned path is a swap window where
@@ -354,8 +358,6 @@ export function readRegularFileWithStats(
 ): { contents: Buffer; stats: Stats } | undefined {
   let fd: number;
   try {
-    const pathStats = lstatSync(abs);
-    if (pathStats.isSymbolicLink()) return undefined;
     fd = openSync(abs, fsConstants.O_RDONLY | O_NOFOLLOW);
   } catch {
     return undefined;
@@ -363,10 +365,33 @@ export function readRegularFileWithStats(
   try {
     const stats = fstatSync(fd);
     if (!stats.isFile()) return undefined;
+    if (!HAS_O_NOFOLLOW && !openedPathStillNamesFile(abs, fd)) return undefined;
     return { contents: readFileSync(fd), stats };
   } finally {
     closeSync(fd);
   }
+}
+
+function openedPathStillNamesFile(path: string, fd: number): boolean {
+  let opened: BigIntStats;
+  let current: BigIntStats;
+  try {
+    opened = fstatSync(fd, { bigint: true });
+    current = lstatSync(path, { bigint: true });
+  } catch {
+    return false;
+  }
+  if (!opened.isFile() || current.isSymbolicLink() || !current.isFile()) return false;
+  return sameBigIntFileIdentity(opened, current);
+}
+
+function sameBigIntFileIdentity(
+  a: Pick<BigIntStats, "dev" | "ino">,
+  b: Pick<BigIntStats, "dev" | "ino">,
+): boolean {
+  if (a.dev !== b.dev) return false;
+  if (a.ino === 0n || b.ino === 0n) return false;
+  return a.ino === b.ino;
 }
 
 export function readRegularFile(abs: string): Buffer | undefined {

@@ -14,6 +14,7 @@ import {
   FsTransaction,
   readIfExists,
   readRegularFile,
+  readRegularFileWithStats,
   retryTransient,
 } from "../../src/internals/fsxn.js";
 
@@ -291,6 +292,20 @@ describe("readRegularFile — the fd-guarded read for scan-discovered paths", ()
   it("returns the exact bytes of a regular file", () => {
     writeFileSync(join(dir, "a.json"), '{"ok":true}\n', "utf8");
     expect(readRegularFile(join(dir, "a.json"))?.toString("utf8")).toBe('{"ok":true}\n');
+  });
+
+  it("returns bytes and descriptor stats from one opened regular file", () => {
+    writeFileSync(join(dir, "stats.json"), '{"stats":true}\n', "utf8");
+    const file = readRegularFileWithStats(join(dir, "stats.json"));
+    expect(file?.contents.toString("utf8")).toBe('{"stats":true}\n');
+    expect(file?.stats.isFile()).toBe(true);
+  });
+
+  it("keeps the no-O_NOFOLLOW identity fallback on exact BigInt stats", () => {
+    const source = readFileSync(join(process.cwd(), "src", "internals", "fsxn.ts"), "utf8");
+    expect(source).toContain("fstatSync(fd, { bigint: true })");
+    expect(source).toContain("lstatSync(path, { bigint: true })");
+    expect(source).toContain("a.ino === 0n");
   });
 
   it("returns undefined for a missing path", () => {
