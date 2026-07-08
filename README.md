@@ -41,30 +41,9 @@ and security fixes land on the latest and the previous minor. The full policy:
 
 ## Design posture
 
-- **Dry-run by default for managed project changes.** `aih <cmd>` computes and <!-- aih:claim CM-01 -->
-  prints a plan; repo/workstation mutations wait for `--apply`. Named output
-  files (`--sarif`, `--support-out`, report outputs), browser launch flags
-  (`--open`, `--refresh`, `--demo`), the local run ledger, and `AIH_APPLY=1`
-  are explicit opt-ins rather than silent writes. Add `--verify` to run
-  read-only checks.
-- **Gated writes.** `--apply` refuses a dirty git worktree unless you add
-  `--force`. Commands resolve a governance posture (`--posture vibe|team|enterprise`,
-  default `vibe`): the skill-install gate refuses unapproved skills at
-  `team`/`enterprise` and stays advisory at `vibe`; pack installs are fail-closed
-  at every posture. Once a repo is initialised, every run is recorded in the
-  local [run ledger](#run-ledger).
-- **No remote mutation except explicit signing flows.** Normal work is local: <!-- aih:claim CM-02 -->
-  `write`, `remove`, `exec`, `envblock`, `digest`, read-only `probe`, or `doc`
-  instructions for humans to run. The exceptions are opt-in provenance paths:
-  GitHub attestations can write to GitHub's attestation store, and keyless
-  cosign signing can append to Rekor.
-- **Idempotent & non-destructive.** Shell-profile edits live in marked managed
-  blocks; JSON configs are deep-merged (your keys survive); every overwrite is
-  backed up to `*.aih.bak` and rolls back as a transaction on failure.
-- **Cross-platform.** Windows and Linux are verified on real metal (Windows:
-  PowerShell/icacls/junctions; Linux: real `/proc`, `/etc/ssl/certs`, `chmod`,
-  `ln -sfn`, smoke-tested in a Hyper-V Ubuntu VM). macOS is implemented and
-  fixture-tested. All OS calls go through an injectable runner.
+<p align="center">
+  <img src="docs/assets/aih-design-posture.svg" alt="aih design posture summary covering dry-run/apply behavior, explicit output and browser opt-ins, posture gates, local execution boundaries, provenance signing exceptions, backups, rollback, and cross-platform runner behavior" width="100%">
+</p>
 
 ## Install
 
@@ -169,25 +148,9 @@ Keep this table as a navigation index: do not add flag-level behavior or workflo
 
 ### Enterprise packs, skill governance, and safety
 
-Packs are named entries in the committed root `aih-packs.json`; they are not a built-in catalog
-and they do not approve skills on their own. A pack groups skills that already have committed
-`aih-skills.lock.json` approvals, and every `{source, commit}` in the manifest is cross-checked
-against that lock. Inspect them with `aih pack status --pack <name>` or
-`aih pack validate --pack <name>`, then install with `aih pack install --pack <name> --apply`.
-
-Draft pack names such as `enterprise-core`, `workspace-intel`, `product-ui`, and
-`skill-governance` are patterns an org can encode in `aih-packs.json`, not shipped built-ins.
-This repo currently carries `docs-quality` as a first-party local pack. A governed team builds
-an enterprise baseline by vetting and approving each skill first, curating the approved refs into
-a pack, and keeping `aih-skills.lock.json` as the single pin authority. To seed the bundled
-first-party pack into another repo, run `aih pack scaffold --pack docs-quality --apply`, then vet
-and approve the copied local source in that repo before installing it.
-
-Skill verdicts are policy decisions at a pinned source, not permanent safety labels. `GREEN`
-means the configured checks passed for the recorded policy and commit and the evidence was
-written; it does not mean the skill, repo, or future upstream commits are safe forever. Pin
-bumps, policy changes, scanner failures, tamper, stale installs, or missing approvals send the
-source back through the vet/approve/install gates.
+<p align="center">
+  <img src="docs/assets/aih-enterprise-packs.svg" alt="aih enterprise packs, skill governance, and safety summary covering committed pack curation, approval locks, fail-closed install gates, first-party docs-quality scaffolding, GREEN verdict scope, and re-validation triggers" width="100%">
+</p>
 
 ### Trust configuration notes
 

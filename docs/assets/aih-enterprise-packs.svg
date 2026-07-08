@@ -1,0 +1,203 @@
+<svg width="1200" height="1120" viewBox="0 0 1200 1120" xmlns="http://www.w3.org/2000/svg" role="img" font-family="ui-sans-serif, -apple-system, Segoe UI, Roboto, sans-serif">
+  <title>Enterprise packs, skill governance, and safety</title>
+  <desc>Full visual summary of aih enterprise packs: committed pack curation in aih-packs.json, no built-in catalog or self-approval, aih-skills.lock.json as the single approval and pin authority, manifest source and commit cross-checks, status and validate inspection, fail-closed pack install gates, first-party docs-quality scaffolding, GREEN verdict scope, and re-validation triggers.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#07101c"/>
+      <stop offset="1" stop-color="#101827"/>
+    </linearGradient>
+    <linearGradient id="edge" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#39d9ff"/>
+      <stop offset="1" stop-color="#7cff91"/>
+    </linearGradient>
+    <pattern id="grid" width="44" height="44" patternUnits="userSpaceOnUse">
+      <path d="M 44 0 H 0 V 44" fill="none" stroke="#58d7ff" stroke-opacity="0.07" stroke-width="1"/>
+    </pattern>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="10" stdDeviation="14" flood-color="#000000" flood-opacity="0.45"/>
+    </filter>
+    <style>
+      .panel { fill: #101a25; stroke: #3b4653; stroke-width: 1.4; }
+      .panel-strong { fill: #101a25; stroke: url(#edge); stroke-width: 2.2; }
+      .title { font-size: 35px; font-weight: 850; fill: #31dff4; }
+      .subtitle { font-size: 23px; font-weight: 750; fill: #b6cadb; }
+      .card-title { font-size: 24px; font-weight: 850; fill: #31dff4; }
+      .card-title-green { font-size: 24px; font-weight: 850; fill: #77ff8c; }
+      .body { font-size: 16px; font-weight: 680; fill: #f0f6fc; }
+      .body-dim { font-size: 15.5px; font-weight: 680; fill: #a7d9e8; }
+      .warn { fill: #f5cf77; }
+      .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 14px; font-weight: 850; fill: #f0f6fc; }
+      .chip { fill: #202b38; stroke: #5b6877; stroke-width: 1; }
+      .chip-blue { fill: #103344; stroke: #39d9ff; stroke-width: 1; }
+      .chip-green { fill: #183520; stroke: #77ff8c; stroke-width: 1; }
+      .chip-gold { fill: #3c3020; stroke: #f5cf77; stroke-width: 1; }
+      .chip-text { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; font-weight: 850; fill: #f0f6fc; }
+      .icon { fill: none; stroke: #39d9ff; stroke-width: 5; stroke-linecap: round; stroke-linejoin: round; }
+      .icon-green { fill: none; stroke: #77ff8c; stroke-width: 5; stroke-linecap: round; stroke-linejoin: round; }
+      .rule { stroke: #314052; stroke-width: 1.2; }
+      .arrow { fill: none; stroke: #39d9ff; stroke-width: 5; stroke-linecap: round; stroke-linejoin: round; }
+      .footer { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 16px; fill: #9addeb; letter-spacing: 2px; }
+    </style>
+  </defs>
+
+  <rect width="1200" height="1120" fill="url(#bg)"/>
+  <rect width="1200" height="1120" fill="url(#grid)"/>
+  <path d="M790 -80 L1240 370 L1240 1120 L1030 1120 L620 300 Z" fill="#1f6feb" fill-opacity="0.10"/>
+  <path d="M980 -40 L1240 220 L1240 430 L820 10 Z" fill="#3fb950" fill-opacity="0.10"/>
+  <rect x="0.5" y="0.5" width="1199" height="1119" fill="none" stroke="#27313b"/>
+
+  <g filter="url(#shadow)">
+    <rect x="36" y="30" width="1128" height="118" rx="16" class="panel-strong"/>
+    <g transform="translate(72,52)">
+      <path d="M36 4 L70 18 V43 C70 66 53 80 36 88 C19 80 2 66 2 43 V18 Z" class="icon"/>
+      <path d="M36 6 v80 M4 43 h64" stroke="#39d9ff" stroke-width="3" opacity="0.55"/>
+    </g>
+    <text x="154" y="78" class="title">Enterprise Packs, Skill Governance</text>
+    <text x="154" y="116" class="subtitle">and Safety - curated packs over pinned approvals</text>
+    <g transform="translate(922,50)">
+      <rect width="64" height="42" rx="10" class="chip-blue"/><text x="32" y="18" class="chip-text" text-anchor="middle">CLI</text><text x="32" y="34" class="chip-text" text-anchor="middle">TOOL</text>
+      <rect x="76" width="90" height="42" rx="10" class="chip-gold"/><text x="121" y="18" class="chip-text" text-anchor="middle">PINNED</text><text x="121" y="34" class="chip-text" text-anchor="middle">LOCKS</text>
+      <rect x="178" width="86" height="42" rx="10" class="chip-green"/><text x="221" y="18" class="chip-text" text-anchor="middle">GATED</text><text x="221" y="34" class="chip-text" text-anchor="middle">INSTALL</text>
+    </g>
+  </g>
+
+  <g filter="url(#shadow)">
+    <text x="600" y="172" text-anchor="middle" class="body warn">GOVERNANCE FLOW FROM CURATION TO INSTALL</text>
+
+    <g transform="translate(56,224)">
+      <rect width="314" height="174" rx="14" class="panel-strong"/>
+      <g transform="translate(118,-60)">
+        <rect x="22" y="28" width="70" height="58" rx="18" fill="#16283a"/>
+        <path d="M35 44 l34 -15 l34 15 v37 l-34 15 l-34 -15 Z" class="icon"/>
+        <path d="M35 44 l34 15 l34 -15 M69 59 v37" class="icon"/>
+      </g>
+      <text x="157" y="62" text-anchor="middle" class="card-title">aih-packs.json</text>
+      <text x="157" y="94" text-anchor="middle" class="body">Named entries in the committed root</text>
+      <rect x="64" y="112" width="186" height="26" rx="6" class="chip"/><text x="157" y="130" text-anchor="middle" class="chip-text">not a built-in catalog</text>
+      <text x="157" y="158" text-anchor="middle" class="body-dim">does not approve skills on its own</text>
+    </g>
+
+    <path d="M386 312 H436" class="arrow"/><path d="M436 312 l-18 -14 M436 312 l-18 14" class="arrow"/>
+
+    <g transform="translate(464,224)">
+      <rect width="314" height="174" rx="14" class="panel-strong"/>
+      <g transform="translate(128,-50)">
+        <rect x="18" y="40" width="54" height="44" rx="9" fill="#39d9ff"/>
+        <path d="M27 40 v-14 a18 18 0 0 1 36 0 v14" class="icon"/>
+        <path d="M45 56 v14" stroke="#101a25" stroke-width="6" stroke-linecap="round"/>
+      </g>
+      <text x="157" y="64" text-anchor="middle" class="card-title">aih-skills.lock.json</text>
+      <text x="157" y="96" text-anchor="middle" class="body">Single pin and approval authority</text>
+      <rect x="68" y="114" width="178" height="26" rx="6" class="chip"/><text x="157" y="132" text-anchor="middle" class="chip-text">{source, commit}</text>
+      <text x="157" y="160" text-anchor="middle" class="body-dim">every pack ref is cross-checked</text>
+    </g>
+
+    <path d="M794 312 H844" class="arrow"/><path d="M844 312 l-18 -14 M844 312 l-18 14" class="arrow"/>
+
+    <g transform="translate(872,224)">
+      <rect width="272" height="174" rx="14" class="panel-strong"/>
+      <g transform="translate(100,-60)">
+        <rect x="20" y="28" width="74" height="62" rx="20" fill="#16283a"/>
+        <path d="M57 8 L88 21 V42 C88 62 73 75 57 82 C41 75 26 62 26 42 V21 Z" class="icon-green"/>
+        <path d="M44 44 l10 10 l20 -25" class="icon-green"/>
+      </g>
+      <text x="136" y="62" text-anchor="middle" class="card-title-green">Install gate</text>
+      <text x="136" y="94" text-anchor="middle" class="body">Policy checks and evidence written</text>
+      <text x="136" y="120" text-anchor="middle" class="body">GREEN verdict required</text>
+      <rect x="40" y="136" width="192" height="38" rx="6" class="chip-green"/>
+      <text x="136" y="152" text-anchor="middle" class="chip-text">aih pack install</text>
+      <text x="136" y="166" text-anchor="middle" class="chip-text">--pack &lt;name&gt; --apply</text>
+    </g>
+  </g>
+
+  <line x1="54" y1="430" x2="1146" y2="430" stroke="#39d9ff" stroke-width="2" stroke-dasharray="2 6" opacity="0.8"/>
+
+  <g filter="url(#shadow)">
+    <g transform="translate(54,462)">
+      <rect width="340" height="388" rx="14" class="panel"/>
+      <g transform="translate(26,28)">
+        <path d="M8 18 l34 -15 l34 15 v38 l-34 15 l-34 -15 Z" class="icon"/>
+        <path d="M8 18 l34 15 l34 -15 M42 33 v38" class="icon"/>
+      </g>
+      <text x="116" y="56" class="card-title">What is a pack?</text>
+      <text x="32" y="104" class="body">- Named entry in <tspan class="mono">aih-packs.json</tspan>.</text>
+      <text x="32" y="134" class="body">- Groups skills already approved in</text>
+      <text x="48" y="160" class="body"><tspan class="mono">aih-skills.lock.json</tspan>.</text>
+      <text x="32" y="190" class="body">- Not a catalog; no inherent approval.</text>
+      <text x="32" y="220" class="body">- Manifest refs repeat <tspan class="mono">{source, commit}</tspan>.</text>
+      <text x="32" y="250" class="body">- Each ref is checked against the lock.</text>
+      <text x="32" y="294" class="body-dim">Inspect:</text>
+      <text x="48" y="320" class="mono">aih pack status --pack &lt;name&gt;</text>
+      <text x="32" y="350" class="body-dim">Validate:</text>
+      <text x="48" y="376" class="mono">aih pack validate --pack &lt;name&gt;</text>
+    </g>
+
+    <g transform="translate(430,462)">
+      <rect width="340" height="388" rx="14" class="panel"/>
+      <g transform="translate(28,26)">
+        <path d="M34 3 L64 16 V39 C64 58 50 71 34 78 C18 71 4 58 4 39 V16 Z" class="icon"/>
+        <rect x="22" y="38" width="24" height="22" rx="4" class="icon-green"/>
+        <path d="M28 38 v-8 a8 8 0 0 1 16 0 v8" class="icon-green"/>
+      </g>
+      <text x="110" y="56" class="card-title">Governance model</text>
+      <text x="32" y="100" class="body">- Governed team vets and approves</text>
+      <text x="48" y="126" class="body">each skill first.</text>
+      <text x="32" y="154" class="body">- Baseline = curated approved refs.</text>
+      <text x="32" y="182" class="body">- Lock remains the single pin authority.</text>
+      <text x="32" y="218" class="body-dim">This repo carries one first-party local pack:</text>
+      <rect x="48" y="230" width="104" height="24" rx="6" class="chip-green"/>
+      <text x="100" y="247" text-anchor="middle" class="chip-text">docs-quality</text>
+      <text x="32" y="280" class="body-dim">Seed into another repo:</text>
+      <text x="48" y="306" class="mono">aih pack scaffold --pack docs-quality</text>
+      <text x="48" y="330" class="mono">--apply</text>
+      <text x="32" y="362" class="body-dim">Then vet and approve copied local source</text>
+      <text x="32" y="384" class="body-dim">before installing it.</text>
+    </g>
+
+    <g transform="translate(806,462)">
+      <rect width="340" height="388" rx="14" class="panel"/>
+      <g transform="translate(28,24)">
+        <path d="M34 4 L64 17 V40 C64 59 50 72 34 79 C18 72 4 59 4 40 V17 Z" class="icon-green"/>
+        <path d="M22 42 l9 9 l18 -23" class="icon-green"/>
+      </g>
+      <text x="112" y="48" class="card-title-green">Skill verdicts</text>
+      <text x="112" y="74" class="body-dim">and safety boundaries</text>
+      <rect x="32" y="92" width="276" height="52" rx="8" class="chip-green"/>
+      <text x="52" y="114" class="body">GREEN = configured checks passed</text>
+      <text x="52" y="134" class="body">for recorded policy and commit</text>
+      <text x="32" y="174" class="body">- Evidence is written for the pinned source.</text>
+      <text x="32" y="204" class="body">- Verdicts are policy decisions at a pin.</text>
+      <text x="32" y="234" class="body">- Not a permanent safety label.</text>
+      <text x="32" y="270" class="body-dim">Does not mean the skill, repo, or future</text>
+      <text x="32" y="294" class="body-dim">upstream commits are safe forever.</text>
+      <text x="32" y="334" class="body-dim">Any trigger returns source to:</text>
+      <text x="32" y="360" class="body-dim">vet -> approve -> install gates.</text>
+    </g>
+  </g>
+
+  <g filter="url(#shadow)">
+    <g transform="translate(54,884)">
+      <rect width="540" height="122" rx="12" class="panel"/>
+      <text x="26" y="34" class="body warn">Draft pack names are org patterns, not shipped built-ins:</text>
+      <rect x="26" y="52" width="118" height="24" rx="6" class="chip"/><text x="85" y="69" text-anchor="middle" class="chip-text">enterprise-core</text>
+      <rect x="154" y="52" width="120" height="24" rx="6" class="chip"/><text x="214" y="69" text-anchor="middle" class="chip-text">workspace-intel</text>
+      <rect x="284" y="52" width="92" height="24" rx="6" class="chip"/><text x="330" y="69" text-anchor="middle" class="chip-text">product-ui</text>
+      <rect x="386" y="52" width="130" height="24" rx="6" class="chip"/><text x="451" y="69" text-anchor="middle" class="chip-text">skill-governance</text>
+      <text x="26" y="100" class="body-dim">Org encodes them in <tspan class="mono">aih-packs.json</tspan>;</text>
+      <text x="26" y="116" class="body-dim">aih ships no built-in approvals.</text>
+    </g>
+
+    <g transform="translate(626,884)">
+      <rect width="520" height="122" rx="12" class="panel"/>
+      <text x="26" y="34" class="body warn">Re-validation triggers:</text>
+      <text x="26" y="60" class="body">pin bump - policy change - scanner failure - tamper</text>
+      <text x="26" y="82" class="body">stale install - missing approvals</text>
+      <text x="26" y="108" class="body-dim">Triggers send the source back through vet -> approve -> install.</text>
+    </g>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="36" y="1054" width="1128" height="30" rx="14" fill="none" stroke="#39d9ff" stroke-width="2"/>
+    <text x="600" y="1074" text-anchor="middle" class="footer">Pinned = truth | approvals required | evidence driven | packs curate, locks approve</text>
+  </g>
+</svg>

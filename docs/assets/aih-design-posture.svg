@@ -1,0 +1,165 @@
+<svg width="1200" height="1040" viewBox="0 0 1200 1040" xmlns="http://www.w3.org/2000/svg" role="img" font-family="ui-sans-serif, -apple-system, Segoe UI, Roboto, sans-serif">
+  <title>aih design posture</title>
+  <desc>Full visual summary of the aih CLI design posture: dry-run plans before apply, explicit output and browser opt-ins, gated posture behavior, local instruction boundaries, provenance-only remote exceptions, non-destructive writes, backups, rollback, cross-platform verification, and injectable OS runner behavior.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#080c12"/>
+      <stop offset="1" stop-color="#111821"/>
+    </linearGradient>
+    <linearGradient id="edge" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#58d7ff"/>
+      <stop offset="1" stop-color="#7dff91"/>
+    </linearGradient>
+    <pattern id="grid" width="46" height="46" patternUnits="userSpaceOnUse" patternTransform="rotate(35)">
+      <path d="M 46 0 H 0 V 46" fill="none" stroke="#58d7ff" stroke-opacity="0.075" stroke-width="1"/>
+    </pattern>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="10" stdDeviation="14" flood-color="#000000" flood-opacity="0.45"/>
+    </filter>
+    <style>
+      .panel { fill: #10161d; stroke: #3b4653; stroke-width: 1.4; }
+      .panel-strong { fill: #10161d; stroke: url(#edge); stroke-width: 2.2; }
+      .title { font-size: 58px; font-weight: 800; fill: #42d9ff; }
+      .subtitle { font-size: 24px; font-weight: 700; fill: #a6dcf5; }
+      .eyebrow { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; font-weight: 800; fill: #7dff91; letter-spacing: 2px; }
+      .card-title { font-size: 24px; font-weight: 800; fill: #79ff8a; }
+      .card-title-blue { font-size: 24px; font-weight: 800; fill: #42d9ff; }
+      .body { font-size: 16px; font-weight: 650; fill: #f0f6fc; }
+      .body-dim { font-size: 16px; font-weight: 650; fill: #a6dcf5; }
+      .small { font-size: 14px; font-weight: 650; fill: #d7dee7; }
+      .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 14px; fill: #f0f6fc; font-weight: 800; }
+      .footer { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 15px; fill: #86d7e9; letter-spacing: 2.4px; }
+      .icon { fill: none; stroke: #58d7ff; stroke-width: 5; stroke-linecap: round; stroke-linejoin: round; }
+      .icon-green { fill: none; stroke: #79ff8a; stroke-width: 5; stroke-linecap: round; stroke-linejoin: round; }
+      .chip { fill: #202832; stroke: #56616d; stroke-width: 1; }
+      .chip-green { fill: #17261d; stroke: #57d36b; stroke-width: 1; }
+      .chip-text { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; font-weight: 800; fill: #f0f6fc; }
+      .rule { stroke: #2f3a45; stroke-width: 1; }
+    </style>
+  </defs>
+
+  <rect width="1200" height="1040" fill="url(#bg)"/>
+  <rect width="1200" height="1040" fill="url(#grid)"/>
+  <path d="M720 -60 L1230 450 L1230 1040 L1040 1040 L570 375 Z" fill="#1f6feb" fill-opacity="0.10"/>
+  <path d="M940 -60 L1230 230 L1230 450 L830 50 Z" fill="#3fb950" fill-opacity="0.10"/>
+  <rect x="0.5" y="0.5" width="1199" height="1039" fill="none" stroke="#27313b"/>
+
+  <g filter="url(#shadow)">
+    <rect x="36" y="32" width="1128" height="118" rx="16" class="panel-strong"/>
+    <g transform="translate(78,56)">
+      <path d="M32 4 L62 16 V38 C62 58 48 70 32 78 C16 70 2 58 2 38 V16 Z" class="icon"/>
+      <path d="M20 39 l9 9 l19 -24" class="icon-green"/>
+    </g>
+    <text x="152" y="105" class="title">Design Posture</text>
+    <line x1="626" y1="54" x2="626" y2="128" class="rule"/>
+    <text x="652" y="82" class="subtitle">Key principles for the aih CLI</text>
+    <text x="652" y="119" class="subtitle">dry-run, explicit, local-first, recoverable</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <g transform="translate(36,182)">
+      <rect width="550" height="258" rx="12" class="panel"/>
+      <g transform="translate(30,26)">
+        <path d="M5 28 C20 5 47 5 62 28 C47 51 20 51 5 28 Z" class="icon"/>
+        <circle cx="34" cy="28" r="11" class="icon-green"/>
+        <path d="M44 12 l22 13 l-22 13 Z" class="icon"/>
+      </g>
+      <text x="110" y="50" class="card-title">Dry-run by default</text>
+      <text x="110" y="78" class="body-dim">for managed project changes</text>
+      <text x="54" y="110" class="body">- <tspan class="mono">aih &lt;cmd&gt;</tspan> computes and prints a plan first.</text>
+      <text x="54" y="138" class="body">- Repo/workstation mutations wait for <tspan class="mono">--apply</tspan>.</text>
+      <text x="54" y="166" class="body">- Named outputs are explicit opt-ins:</text>
+      <rect x="76" y="178" width="62" height="22" rx="5" class="chip"/><text x="86" y="194" class="chip-text">--sarif</text>
+      <rect x="146" y="178" width="100" height="22" rx="5" class="chip"/><text x="156" y="194" class="chip-text">--support-out</text>
+      <rect x="254" y="178" width="108" height="22" rx="5" class="chip"/><text x="264" y="194" class="chip-text">report output</text>
+      <text x="54" y="216" class="body">- Browser flags and env apply are opt-in:</text>
+      <rect x="76" y="228" width="62" height="22" rx="5" class="chip"/><text x="86" y="244" class="chip-text">--open</text>
+      <rect x="146" y="228" width="78" height="22" rx="5" class="chip"/><text x="156" y="244" class="chip-text">--refresh</text>
+      <rect x="232" y="228" width="66" height="22" rx="5" class="chip"/><text x="242" y="244" class="chip-text">--demo</text>
+      <rect x="306" y="228" width="92" height="22" rx="5" class="chip-green"/><text x="316" y="244" class="chip-text">AIH_APPLY=1</text>
+      <rect x="406" y="228" width="76" height="22" rx="5" class="chip-green"/><text x="416" y="244" class="chip-text">--verify</text>
+    </g>
+
+    <g transform="translate(614,182)">
+      <rect width="550" height="258" rx="12" class="panel"/>
+      <g transform="translate(34,24)">
+        <path d="M10 16 h54" class="icon"/>
+        <path d="M24 16 l-11 42 h45 l-11 -42" class="icon"/>
+        <path d="M37 4 v64" class="icon"/>
+        <path d="M4 58 h66" class="icon"/>
+      </g>
+      <text x="112" y="50" class="card-title-blue">Gated writes</text>
+      <text x="112" y="78" class="body-dim">and governance posture</text>
+      <text x="54" y="98" class="body">- <tspan class="mono">--apply</tspan> refuses a dirty git worktree unless <tspan class="mono">--force</tspan> is set.</text>
+      <text x="54" y="126" class="body">- Commands resolve posture at runtime:</text>
+      <rect x="76" y="140" width="248" height="22" rx="5" class="chip"/><text x="86" y="156" class="chip-text">--posture vibe | team | enterprise</text>
+      <rect x="334" y="140" width="100" height="22" rx="5" class="chip-green"/><text x="344" y="156" class="chip-text">default: vibe</text>
+      <text x="54" y="192" class="body">- Skill-install refuses unapproved skills at <tspan class="mono">team</tspan>/<tspan class="mono">enterprise</tspan>.</text>
+      <text x="54" y="220" class="body">- At <tspan class="mono">vibe</tspan> it is advisory; pack installs fail-closed at every posture.</text>
+      <text x="54" y="248" class="body-dim">- Initialised repos record every run in the local run ledger.</text>
+    </g>
+
+    <g transform="translate(36,468)">
+      <rect width="550" height="258" rx="12" class="panel"/>
+      <g transform="translate(34,26)">
+        <path d="M16 50 C5 48 0 40 0 31 C0 20 9 12 20 13 C25 3 39 -1 50 5 C61 11 65 25 61 36" class="icon"/>
+        <path d="M35 8 L18 58" class="icon"/>
+        <rect x="48" y="38" width="25" height="24" rx="4" class="icon-green"/>
+        <path d="M54 38 v-7 a7 7 0 0 1 14 0 v7" class="icon-green"/>
+      </g>
+      <text x="112" y="50" class="card-title">No remote mutation</text>
+      <text x="112" y="78" class="body-dim">except explicit signing flows</text>
+      <text x="54" y="108" class="body">- Normal work is local plan output:</text>
+      <rect x="76" y="112" width="54" height="22" rx="5" class="chip"/><text x="86" y="128" class="chip-text">write</text>
+      <rect x="138" y="112" width="64" height="22" rx="5" class="chip"/><text x="148" y="128" class="chip-text">remove</text>
+      <rect x="210" y="112" width="50" height="22" rx="5" class="chip"/><text x="220" y="128" class="chip-text">exec</text>
+      <rect x="268" y="112" width="76" height="22" rx="5" class="chip"/><text x="278" y="128" class="chip-text">envblock</text>
+      <rect x="352" y="112" width="66" height="22" rx="5" class="chip"/><text x="362" y="128" class="chip-text">digest</text>
+      <rect x="426" y="112" width="56" height="22" rx="5" class="chip"/><text x="436" y="128" class="chip-text">probe</text>
+      <rect x="76" y="144" width="46" height="22" rx="5" class="chip"/><text x="86" y="160" class="chip-text">doc</text>
+      <text x="132" y="160" class="body-dim">instructions are for humans to run.</text>
+      <text x="54" y="200" class="body">- Remote exceptions are opt-in provenance paths only:</text>
+      <text x="76" y="228" class="body-dim">GitHub attestations can write to GitHub's attestation store.</text>
+      <text x="76" y="252" class="body-dim">Keyless cosign signing can append to Rekor.</text>
+    </g>
+
+    <g transform="translate(614,468)">
+      <rect width="550" height="258" rx="12" class="panel"/>
+      <g transform="translate(34,28)">
+        <path d="M35 5 a30 30 0 1 0 28 41" class="icon"/>
+        <path d="M63 24 v22 h-22" class="icon"/>
+        <path d="M22 32 l9 9 l20 -24" class="icon-green"/>
+      </g>
+      <text x="112" y="58" class="card-title-blue">Idempotent and non-destructive</text>
+      <text x="54" y="98" class="body">- Shell-profile edits live in marked managed blocks.</text>
+      <text x="54" y="126" class="body">- JSON configs are deep-merged; user keys survive.</text>
+      <text x="54" y="154" class="body">- Every overwrite is backed up before replacement.</text>
+      <rect x="76" y="168" width="92" height="22" rx="5" class="chip-green"/><text x="86" y="184" class="chip-text">*.aih.bak</text>
+      <text x="178" y="184" class="body-dim">backup files</text>
+      <text x="54" y="220" class="body">- Apply rolls back as a transaction on failure.</text>
+      <text x="54" y="248" class="body-dim">Goal: repeatable writes without silent clobbering.</text>
+    </g>
+
+    <g transform="translate(36,754)">
+      <rect width="1128" height="178" rx="16" class="panel-strong"/>
+      <g transform="translate(48,34)">
+        <rect x="2" y="8" width="76" height="50" rx="5" class="icon"/>
+        <path d="M28 76 h24 M40 58 v18" class="icon"/>
+        <path d="M18 23 h12 M18 36 h29 M18 49 h20" class="icon-green"/>
+      </g>
+      <text x="150" y="58" class="card-title">Cross-platform behavior and injectable runner</text>
+      <text x="150" y="96" class="body">- Windows and Linux are verified on real metal.</text>
+      <text x="150" y="126" class="body-dim">Windows: <tspan class="mono">PowerShell</tspan>, <tspan class="mono">icacls</tspan>, junctions.</text>
+      <text x="150" y="156" class="body-dim">Linux: real <tspan class="mono">/proc</tspan>, <tspan class="mono">/etc/ssl/certs</tspan>, <tspan class="mono">chmod</tspan>, <tspan class="mono">ln -sfn</tspan>; Hyper-V Ubuntu smoke test.</text>
+      <line x1="698" y1="36" x2="698" y2="146" class="rule"/>
+      <text x="732" y="96" class="body">- macOS is implemented and fixture-tested.</text>
+      <text x="732" y="126" class="body">- All OS calls go through an injectable runner.</text>
+      <text x="732" y="156" class="body-dim">Deterministic, testable execution boundary.</text>
+    </g>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="36" y="958" width="1128" height="50" rx="14" class="panel-strong"/>
+    <text x="600" y="990" class="footer" text-anchor="middle">aih | explicit by design | dry-run by default | local by default | recoverable writes</text>
+  </g>
+</svg>
