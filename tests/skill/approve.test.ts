@@ -7,13 +7,13 @@ import { executePlan } from "../../src/internals/execute.js";
 import type { PlanContext } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
-import { skillApproveCommand, skillCardCommand } from "../../src/skill/approve.js";
+import { EVIDENCE_DIR, skillApproveCommand, skillCardCommand } from "../../src/skill/approve.js";
 import { readSkillCard, type SkillCard } from "../../src/skill/card.js";
 import type { SkillsLock } from "../../src/skill/lockfile.js";
 import { type SkillVetEvidence, skillVetCommand } from "../../src/skill/vet.js";
 
 const PIN = "a".repeat(40);
-const EVIDENCE_REL = `.aih/skill-reports/owner-repo-${PIN.slice(0, 8)}.json`;
+const EVIDENCE_REL = `${EVIDENCE_DIR}/owner-repo-${PIN.slice(0, 8)}.json`;
 const CARD_REL = "ai-coding/skill-cards/clean.json";
 const ISO_TIMESTAMP = /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/;
 
@@ -67,6 +67,10 @@ function evidence(overrides: Partial<SkillVetEvidence> = {}): SkillVetEvidence {
     reasons: [],
     ...overrides,
   };
+}
+
+function scopedEvidenceRel(name: string): string {
+  return `${EVIDENCE_DIR}/owner-repo-${PIN.slice(0, 8)}/${name}.json`;
 }
 
 function writeEvidence(body: SkillVetEvidence, rel = EVIDENCE_REL): void {
@@ -323,9 +327,7 @@ describe("skillApproveCommand", () => {
     );
   });
 
-  it("refuses a --name override that matches no skill in the evidence (Codex medium)", () => {
-    // An arbitrary override would commit an approval no promotion can ever match —
-    // workspace add binds enforcement to the PROMOTED skill name.
+  it("refuses --name when the matching scoped evidence artifact is absent", () => {
     writeEvidence(
       evidence({
         shape: {
@@ -337,16 +339,38 @@ describe("skillApproveCommand", () => {
         },
       }),
     );
-    expect(() => skillApproveCommand.plan(ctx(approveOptions({ name: "ghost" })))).toThrow(
-      /--name ghost does not match a skill .* evidence records: clean, extra/,
+    expect(() => skillApproveCommand.plan(ctx(approveOptions({ name: "clean" })))).toThrow(
+      `no vet evidence at ${scopedEvidenceRel("clean")} for owner/repo@${PIN} --name clean; run \`aih skill vet owner/repo --pin ${PIN} --name clean --apply\` first`,
     );
   });
 
-  it("approves a multi-skill source when --name picks one", async () => {
+  it("refuses scoped evidence whose recorded skill does not match --name", () => {
     writeEvidence(
       evidence({
+        skillName: "extra",
         shape: {
-          skillDirs: ["clean", "extra"],
+          skillDirs: ["extra"],
+          installScripts: false,
+          mcpConfig: false,
+          packageManifests: [],
+          fullCodebaseAnalysis: false,
+        },
+      }),
+      scopedEvidenceRel("clean"),
+    );
+
+    expect(() => skillApproveCommand.plan(ctx(approveOptions({ name: "clean" })))).toThrow(
+      /scoped to --name extra, not --name clean/,
+    );
+  });
+
+  it("approves scoped evidence even when source-wide evidence is RED for another skill", async () => {
+    writeEvidence(
+      evidence({
+        verdict: "RED",
+        reasons: ["proven-dangerous finding trust.prompt-injection: bad sibling"],
+        shape: {
+          skillDirs: ["clean", "bad"],
           installScripts: false,
           mcpConfig: false,
           packageManifests: [],
@@ -354,13 +378,28 @@ describe("skillApproveCommand", () => {
         },
       }),
     );
-    const c = ctx(approveOptions({ name: "extra" }), true);
+    writeEvidence(
+      evidence({
+        skillName: "clean",
+        shape: {
+          skillDirs: ["clean"],
+          installScripts: false,
+          mcpConfig: false,
+          packageManifests: [],
+          fullCodebaseAnalysis: false,
+        },
+      }),
+      scopedEvidenceRel("clean"),
+    );
+    const c = ctx(approveOptions({ name: "clean" }), true);
 
     const result = await executePlan(await skillApproveCommand.plan(c), c);
 
     expect(result.report?.ok).toBe(true);
-    expect(readJson<SkillCard>("ai-coding/skill-cards/extra.json").name).toBe("extra");
-    expect(readJson<SkillsLock>("aih-skills.lock.json").skills[0]?.name).toBe("extra");
+    const card = readJson<SkillCard>(CARD_REL);
+    expect(card.name).toBe("clean");
+    expect(card.scanEvidence).toEqual([scopedEvidenceRel("clean")]);
+    expect(readJson<SkillsLock>("aih-skills.lock.json").skills[0]?.name).toBe("clean");
   });
 
   it("approves a local source with commit 'local' and no org-policy write", async () => {

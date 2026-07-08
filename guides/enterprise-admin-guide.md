@@ -20,7 +20,7 @@ The `enterprise` posture emphasizes least privilege, approval, auditability, and
 
 The enterprise examples in this public guide are intentionally limited to reviewed Figma, Jira/Atlassian, and AWS MCP paths. Additional service MCPs should follow the same policy and source-review pattern before appearing in public enterprise guidance.
 
-Current public release baseline: `@aihq/harness@2.4.0`, published on 2026-07-07. The scoped public security doc documents SLSA v1.2 Build L2 for release artifacts; no Build L3 or formal compliance claim is made.
+Current public release baseline: `@aihq/harness@2.4.2`, published on 2026-07-08. The scoped public security doc documents SLSA v1.2 Build L2 for release artifacts; no Build L3 or formal compliance claim is made.
 
 ## 2. Quickstart / Implementation Blueprint
 
@@ -52,8 +52,12 @@ Verify the release before rollout:
 ```console
 npm install -g @aihq/harness
 npm audit signatures
-aih verify-release 2.4.0
+aih verify-release 2.4.2
 ```
+
+Use `npm install -g @aihq/harness@latest` for major-version upgrades; `npm update -g`
+may stay within the current major. Use `--force` only when replacing a broken global
+install after reviewing the npm prefix and approved package source.
 
 Bootstrap a governed repo with an enterprise posture:
 
@@ -178,14 +182,28 @@ Use AI-Harness to report the currently pinned analyzer image metadata before cha
 aih trust skillspector-pin
 ```
 
-When reviewing a proposed analyzer pin bump, use the candidate fields from the reviewed upstream/image metadata:
+If the local image ID differs from the controlled digest reported by `aih trust skillspector-pin`, record an explicit reviewed local digest before requiring `skillspector` in enterprise policy:
+
+```powershell
+$SkillSpectorDigest = docker image inspect skillspector:aih-326a2b489411 --format "{{.Id}}"
+aih trust skillspector-pin `
+  --candidate-revision 326a2b489411a20ed742ff13701be39ba00063c8 `
+  --candidate-tag skillspector:aih-326a2b489411 `
+  --candidate-digest $SkillSpectorDigest `
+  --approve-local-digest `
+  --reason "Reviewed local Docker build from pinned SkillSpector source." `
+  --reviewer security-platform `
+  --apply
+aih policy validate
+```
+
+For a proposed analyzer source pin bump, use candidate fields from the reviewed upstream/image metadata to surface the compare URL before changing code or policy:
 
 ```powershell
 aih trust skillspector-pin --candidate-revision <40-char-sha> --candidate-tag <image-tag> --candidate-digest sha256:<64-char-hex>
-aih trust skillspector-pin --candidate-revision <40-char-sha> --candidate-tag <image-tag> --candidate-digest sha256:<64-char-hex> --apply
 ```
 
-Record the image ID and the source commit in the admin review notes. The source commit pin is the review anchor; the image ID verifies the local build output. If the image will be shared beyond the admin machine, tag it into the approved registry and sign the registry reference or immutable digest according to the organization's signing policy:
+The source commit pin is the review anchor; the image ID verifies the local build output. If the image will be shared beyond the admin machine, tag it into the approved registry and sign the registry reference or immutable digest according to the organization's signing policy:
 
 ```powershell
 $ImageRef = "<registry>/<namespace>/skillspector:aih-326a2b489411"
@@ -201,7 +219,7 @@ Use a digest form such as `<registry>/<namespace>/skillspector@sha256:<digest>` 
 
 | Level | Admin intent | Command setup |
 |---|---|---|
-| Min Configuration | Install verified AI-Harness, enforce enterprise posture, generate only policy-allowed MCP, and keep evidence local. | `aih verify-release 2.4.0`, `aih policy validate`, `aih init . --posture enterprise --mcp-mode offline --mcp-compliant`, `aih bootstrap-ai --all-tools --apply`, `aih doctor --posture enterprise`, `aih secrets --verify` |
+| Min Configuration | Install verified AI-Harness, enforce enterprise posture, generate only policy-allowed MCP, and keep evidence local. | `aih verify-release 2.4.2`, `aih policy validate`, `aih init . --posture enterprise --mcp-mode offline --mcp-compliant`, `aih bootstrap-ai --all-tools --apply`, `aih doctor --posture enterprise`, `aih secrets --verify` |
 | Balanced | Min plus ECC, BetterDoc, and one reviewed MCP example such as Figma for teams that need coding canon, docs quality, and approved design context. | Min commands plus `aih ecc --cli claude,codex --profile core --posture enterprise --apply`, `aih pack scaffold --pack docs-quality --posture enterprise --apply`, `aih pack install --pack docs-quality --posture enterprise --apply`, `aih mcp approve figma --accept-egress ...`, and reviewed `.mcp.json` for Figma. |
 | Powerhouse Mode | Balanced plus usage/reporting, Superpowers, truth sidecar, selected external skills, Figma, Atlassian/Jira, and selected AWS MCP. | Balanced commands plus `aih superpowers`, `aih usage`, `aih track`, `aih report --v9`, `aih truth verify`, `aih truth pack`, external `aih trust`/`aih skill` approvals, and explicit MCP approvals/config for Figma, Atlassian, and AWS. |
 
@@ -212,7 +230,7 @@ Min Configuration:
 ```powershell
 npm install -g @aihq/harness
 npm audit signatures
-aih verify-release 2.4.0
+aih verify-release 2.4.2
 aih policy validate
 aih init . --posture enterprise --mcp-mode offline --mcp-compliant
 aih init . --posture enterprise --mcp-mode offline --mcp-compliant --apply
@@ -223,6 +241,19 @@ aih mcp --posture enterprise --mode offline --mcp-compliant --verify
 aih doctor --posture enterprise
 aih secrets --verify
 ```
+
+Warm pinned `uvx` MCP packages before relying on offline startup in managed images
+or disconnected workstations:
+
+```powershell
+uvx code-review-graph@2.3.6 --version
+uvx codebase-memory-mcp@0.8.1 --help
+uvx awslabs.core-mcp-server@1.0.27 --help
+uvx --offline --no-python-downloads --no-env-file code-review-graph@2.3.6 --version
+```
+
+If `uvx` is missing, `aih heal --scope path` diagnoses the PATH gap and emits
+reviewed shell/profile instructions. It does not silently edit shell profiles.
 
 Balanced:
 
@@ -277,9 +308,14 @@ $SelectedAnthropicSkills = @(
 git ls-remote https://github.com/anthropics/skills.git HEAD
 aih trust scan anthropics/skills --pin $AnthropicSkillsPin --posture enterprise --apply
 aih trust allow anthropics/skills --pin $AnthropicSkillsPin --posture enterprise --apply
-aih skill vet anthropics/skills --pin $AnthropicSkillsPin --posture enterprise --apply
 
 foreach ($Skill in $SelectedAnthropicSkills) {
+  aih skill vet anthropics/skills `
+    --pin $AnthropicSkillsPin `
+    --name $Skill `
+    --posture enterprise `
+    --apply
+
   aih skill approve anthropics/skills `
     --pin $AnthropicSkillsPin `
     --name $Skill `
@@ -295,6 +331,10 @@ aih pack init --pack enterprise-skills --description "Reviewed enterprise skill 
 aih pack validate --pack enterprise-skills
 ```
 
+For multi-skill sources, vet every selected skill with `--name <skill>` before approving it.
+A source-wide `aih skill vet` remains useful for broad triage, but it does not satisfy a named
+`aih skill approve --name <skill>` gate.
+
 For Anthropic document skills such as `docx`, `pdf`, `pptx`, and `xlsx`, verify the license terms and distribution path before approval. The upstream repo distinguishes open source examples from source-available document capability references.
 
 UI/UX Pro Max authoring example:
@@ -304,7 +344,7 @@ $UiUxPin = "12b486b22e67f5d887962ef8351c1ac863bfaeb9"
 git ls-remote https://github.com/nextlevelbuilder/ui-ux-pro-max-skill.git HEAD
 aih trust scan nextlevelbuilder/ui-ux-pro-max-skill --pin $UiUxPin --posture enterprise --apply
 aih trust allow nextlevelbuilder/ui-ux-pro-max-skill --pin $UiUxPin --posture enterprise --apply
-aih skill vet nextlevelbuilder/ui-ux-pro-max-skill --pin $UiUxPin --posture enterprise --apply
+aih skill vet nextlevelbuilder/ui-ux-pro-max-skill --pin $UiUxPin --name ui-ux-pro-max --posture enterprise --apply
 aih skill approve nextlevelbuilder/ui-ux-pro-max-skill `
   --pin $UiUxPin `
   --name ui-ux-pro-max `
@@ -322,7 +362,7 @@ If the organization chooses the upstream CLI installer path, pin and review the 
 
 ### MCP Control Examples
 
-`aih mcp approve` records server-name approval and egress acceptance in policy. It does not by itself write custom third-party MCP client config for servers outside the generated AI-Harness catalog. For Figma, Atlassian/Jira, and selected AWS MCP servers, keep a reviewed config template beside the policy and let developers apply it only after policy approval.
+`aih mcp approve` records server-name approval, the current server-shape `subject`, egress acceptance, review reason, reviewer, and `approvedAt` in repo-local policy. It does not by itself write custom third-party MCP client config for servers outside the generated AI-Harness catalog. For Figma, Atlassian/Jira, and selected AWS MCP servers, keep a reviewed config template beside the policy and let developers apply it only after policy approval.
 
 | Service | Server key to approve | Reviewed endpoint or source | Developer auth boundary |
 |---|---|---|---|
@@ -340,6 +380,31 @@ aih mcp approve atlassian --accept-egress --reason "Approved Atlassian Rovo MCP 
 aih mcp approve aws-knowledge-mcp-server --accept-egress --reason "Approved AWS-hosted Knowledge MCP for AWS docs and regional availability lookup." --reviewer cloud-platform --posture enterprise --apply
 aih mcp approve awslabs.aws-documentation-mcp-server --accept-egress --reason "Approved local AWS documentation MCP package from reviewed awslabs/mcp source." --reviewer cloud-platform --posture enterprise --apply
 aih mcp approve awslabs.aws-iac-mcp-server --accept-egress --reason "Approved local AWS IaC MCP package from reviewed awslabs/mcp source." --reviewer cloud-platform --posture enterprise --apply
+```
+
+Use `aih mcp approve --apply` for repo-local policy because it computes the current `subject` and `approvedAt`. If `AIH_ORG_POLICY` is active, update the distributed policy directly; local approval writes are refused because the distributed policy wins. Hand-authored `mcp.approvals[]` entries need `server`, `subject`, `acceptEgress: true`, `reason`, and ISO-8601 `approvedAt`; `reviewer` is optional. Example shape:
+
+```json
+{
+  "schemaVersion": 1,
+  "minimumPosture": "enterprise",
+  "references": {
+    "repoContract": "ai-coding/project.json"
+  },
+  "mcp": {
+    "allowedServers": ["figma"],
+    "approvals": [
+      {
+        "server": "figma",
+        "subject": "mcp-server-sha256:0000000000000000000000000000000000000000000000000000000000000000",
+        "acceptEgress": true,
+        "reason": "Approved Figma remote MCP for reviewed design-context workflows.",
+        "reviewer": "design-platform",
+        "approvedAt": "2026-07-08T00:00:00.000Z"
+      }
+    ]
+  }
+}
 ```
 
 Reviewed MCP config template:
@@ -382,12 +447,22 @@ For clients that require `mcp-remote` for Atlassian, keep that as a client-speci
 
 Replace the placeholder with an approved version or internal mirror. Do not publish copy-paste enterprise examples that depend on floating `@latest` packages.
 
+For generated local Python MCP servers, AI-Harness starts pinned packages through
+`uvx --offline --no-python-downloads --no-env-file`. Warm those packages on each
+managed image before expecting MCP clients to start offline:
+
+```powershell
+uvx code-review-graph@2.3.6 --version
+uvx codebase-memory-mcp@0.8.1 --help
+uvx awslabs.core-mcp-server@1.0.27 --help
+```
+
 ### Admin Finalization Checklist
 
 Before handing configuration to developers, verify the admin package from the same repo or distribution location developers will use:
 
 ```powershell
-aih verify-release 2.4.0
+aih verify-release 2.4.2
 aih policy validate
 aih policy verify --against <trusted-policy-sha-or-bundle>
 aih pack validate --pack docs-quality
@@ -439,7 +514,7 @@ Use enterprise posture to expose residue. `aih doctor --posture enterprise` shou
 
 Keep capability cache derived. `enterprise` posture may record approval-required capability hints, but `$HOME/.aih/capabilities/cache.json` is not a policy authority and can be rebuilt from committed manifests.
 
-Use `docs-lint` as a release-quality gate for public claims. In v2.4.0, hard claim-ledger orphans fail closed; banned-phrase and vague-absolute findings remain advisory unless a local policy treats them as blockers.
+Use `docs-lint` as a release-quality gate for public claims. Current behavior fails closed on hard claim-ledger orphans; banned-phrase and vague-absolute findings remain advisory unless a local policy treats them as blockers.
 
 Use truth sidecars as staged evidence inputs. The sidecar is external and commit-bound. A verified truth pack can be included in evidence bundles as a hashed artifact, but stale or malformed packs fail closed instead of being indexed.
 

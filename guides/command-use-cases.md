@@ -8,7 +8,7 @@ purpose: Use-case map for AI-Harness commands across developer, team, and enterp
 
 # AI-Harness Command Use-Case Guide
 
-Use this guide when the question is "which `aih` command applies to this situation?" The public `docs/commands.md` page and `aih <command> --help` remain the syntax authorities. This guide maps common workflows across the shipped command surface through `@aihq/harness@2.4.0`; it does not replace the command reference.
+Use this guide when the question is "which `aih` command applies to this situation?" The public `docs/commands.md` page and `aih <command> --help` remain the syntax authorities. This guide maps common workflows across the shipped command surface through `@aihq/harness@2.4.2`; it does not replace the command reference.
 
 ## Command Rule
 
@@ -71,7 +71,7 @@ Use `--ref <branch-or-tag>` only for exploration. Branches and tags can move; a 
 
 | Recipe | Primary command path | Use when |
 |---|---|---|
-| Min Configuration | `aih verify-release 2.4.0` -> `aih policy validate` -> `aih init . --posture enterprise --mcp-mode offline --mcp-compliant --apply` -> `aih bootstrap-ai --all-tools --apply` -> `aih mcp --posture enterprise --mode offline --mcp-compliant --apply` -> `aih doctor --posture enterprise` | A governed repo needs the minimum AI-Harness canon, policy, generated MCP controls, and verification. |
+| Min Configuration | `aih verify-release 2.4.2` -> `aih policy validate` -> `aih init . --posture enterprise --mcp-mode offline --mcp-compliant --apply` -> `aih bootstrap-ai --all-tools --apply` -> `aih mcp --posture enterprise --mode offline --mcp-compliant --apply` -> `aih doctor --posture enterprise` | A governed repo needs the minimum AI-Harness canon, policy, generated MCP controls, and verification. |
 | Balanced | Min path -> `aih ecc --cli claude,codex --profile core --posture enterprise --apply` -> `aih pack install --pack docs-quality --posture enterprise --apply` -> `aih mcp approve figma --accept-egress ...` -> reviewed Figma MCP client config | The team needs ECC, BetterDoc, and one reviewed enterprise MCP example with policy approval. |
 | Powerhouse Mode | Balanced path -> `aih superpowers --cli claude,codex --posture enterprise --apply` -> `aih usage --apply` -> `aih track --apply` -> `aih report --v9 --apply` -> `aih truth verify` -> selected `aih trust`/`aih skill` approvals -> reviewed Figma, Atlassian/Jira, and AWS MCP config | The organization has approved the optional local feature set and selected external surfaces. |
 
@@ -106,7 +106,7 @@ Do not use `aih prune --cli claude --apply` as a retargeting command. `prune` ig
 | Check whether a developer can start | `aih ready`, `aih doctor` | First run, onboarding, or a broken local setup. |
 | Inspect configured state | `aih status` | Quick local inventory without mutation. |
 | Install missing shell tools | `aih tools`, then `aih ready` | Shell helpers such as `rg`, `fd`, `jq`, `ast-grep`, `gh`, or graph tools are missing. In enterprise, review the dry-run against the approved tool catalog. |
-| Fix corporate TLS/runtime problems | `aih heal`, `aih certs` | npm, pip, MCP, Go, git, JVM, Gradle, Maven, Docker, or HTTPS checks fail behind a TLS-intercepting proxy. |
+| Fix corporate TLS/runtime problems | `aih heal`, `aih certs` | npm, pip, MCP, Go, git, JVM, Gradle, Maven, Docker, or HTTPS checks fail behind a TLS-intercepting proxy. `aih heal` emits reviewed npm/PATH repair instructions rather than silently editing shell profiles. |
 | Tune local inference | `aih hardware` | A developer runs local models and needs CPU/RAM/GPU settings. |
 | Handle VDI constraints | `aih vdi` | Citrix, WorkSpaces, RDP, or similar environments need local scratch/cache routing. |
 | Run the whole workstation setup path | `aih bootstrap` | Platform/onboarding flow across certs, hardware, VDI, and telemetry assets. |
@@ -128,7 +128,7 @@ Do not use `aih prune --cli claude --apply` as a retargeting command. `prune` ig
 | Install Superpowers | `aih superpowers --cli <list> --apply` | The selected CLIs should receive the Superpowers skill set through its own install path. |
 | Run CRISPY context engineering | `aih crispy` | A deterministic, gate-ordered context-engineering stage machine is the target. |
 | Add repo hygiene | `aih scaffold --apply`, `aih secrets --verify`, `aih guardrails --apply` | Secret deny rules, pre-commit, `.gitignore`, and license/secret gates are needed. |
-| Configure MCP | `aih mcp --apply` | Supported tools need MCP config. Use `--mode offline` or `--mode none` for constrained environments. |
+| Configure MCP | `aih mcp --apply` | Supported tools need MCP config. Use `--mode offline` or `--mode none` for constrained environments; warm pinned `uvx` packages such as `code-review-graph@2.3.6` before relying on offline startup. |
 | Apply policy-filtered MCP | `aih mcp --posture enterprise --mcp-compliant --apply`, then `aih mcp --posture enterprise --mcp-compliant --verify` | Generated MCP entries should include only policy-approved servers and fail if denied generated entries remain. |
 | Add sandbox defaults | `aih sandbox --apply` | Devcontainer or sandbox allowlist/fail-if-unavailable settings are needed. |
 | Adopt an existing AI setup | `aih adopt` | A brownfield repo already has AI docs or tool-native files. Preview first. |
@@ -156,8 +156,8 @@ Do not use `aih prune --cli claude --apply` as a retargeting command. `prune` ig
 | Evaluate a GitHub source | `aih trust scan <owner/repo> --pin <40-char-sha> --apply` | Before approving a hosted source; get the pin with portable `git ls-remote`; use a `gh` equivalent only when approved. |
 | Record trust decisions | `aih trust allow <source> --apply`, `aih trust pin <source> --pin <40-char-sha> --apply`, `aih trust verify` | A reviewed external source needs committed trust evidence. |
 | Inspect trust policy and lock evidence | `aih trust list`, then `aih trust verify` | Admins need to see committed approved sources and local trust-lock evidence before changing approvals or publishing a bundle. |
-| Review SkillSpector analyzer pin | `aih trust skillspector-pin` | Enterprise policy requires the SkillSpector detector, or an admin is reviewing a proposed analyzer image/revision bump. Use candidate flags only for an explicit pin review. |
-| Vet a skill | `aih skill vet <source> --apply` | Before approving or installing an external skill. |
+| Review SkillSpector analyzer pin | `aih trust skillspector-pin` or `aih trust skillspector-pin --candidate-revision <sha> --candidate-digest sha256:<digest> --approve-local-digest --reason "<review>" --apply` | Enterprise policy requires the SkillSpector detector, or an admin is reviewing a proposed analyzer image/revision bump. Use `--approve-local-digest` only for a reviewed local build of the pinned source revision. |
+| Vet a skill | `aih skill vet <source> --apply` or `aih skill vet <source> --name <skill> --apply` | Before approving or installing an external skill. Use `--name` when the source contains several skills and only one selected skill should produce approval evidence. |
 | Render a skill card without approving yet | `aih skill card <source> --pin <40-char-sha> --owner <team> --name <skill> --apply` | A reviewer wants the committed governance card drafted after vetting, but approval should remain a separate decision. |
 | Approve a skill | `aih skill approve <source> --owner <owner> --pack <pack> --apply` | A vetted skill should become committed team-governed input. |
 | See installed/approved state | `aih skill inventory` | Review duplicates, stale pins, unapproved installs, quarantined skills, or machine-synced skills. |
@@ -178,10 +178,10 @@ Do not use `aih prune --cli claude --apply` as a retargeting command. `prune` ig
 
 | Source | Pin checked on 2026-07-07 | Example commands |
 |---|---|---|
-| [anthropics/skills](https://github.com/anthropics/skills/tree/main/skills) | `9d2f1ae187231d8199c64b5b762e1bdf2244733d` | `aih trust scan anthropics/skills --pin <pin> --posture enterprise --apply`, then `aih skill vet anthropics/skills --pin <pin> --posture enterprise --apply`, then approve selected names such as `frontend-design`, `webapp-testing`, `mcp-builder`, or `skill-creator` with `aih skill approve anthropics/skills --pin <pin> --name <skill> --owner platform-ai --pack enterprise-skills --posture enterprise --apply`. |
-| [nextlevelbuilder/ui-ux-pro-max-skill](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill) | `12b486b22e67f5d887962ef8351c1ac863bfaeb9` | `aih trust scan nextlevelbuilder/ui-ux-pro-max-skill --pin <pin> --posture enterprise --apply`, `aih skill vet nextlevelbuilder/ui-ux-pro-max-skill --pin <pin> --posture enterprise --apply`, then `aih skill approve nextlevelbuilder/ui-ux-pro-max-skill --pin <pin> --name ui-ux-pro-max --owner design-platform --pack powerhouse-skills --mode design-assist --posture enterprise --apply`. |
+| [anthropics/skills](https://github.com/anthropics/skills/tree/main/skills) | `9d2f1ae187231d8199c64b5b762e1bdf2244733d` | `aih trust scan anthropics/skills --pin <pin> --posture enterprise --apply`, then vet and approve each selected name such as `frontend-design`, `webapp-testing`, `mcp-builder`, or `skill-creator` with `aih skill vet anthropics/skills --pin <pin> --name <skill> --posture enterprise --apply` and `aih skill approve anthropics/skills --pin <pin> --name <skill> --owner platform-ai --pack enterprise-skills --posture enterprise --apply`. |
+| [nextlevelbuilder/ui-ux-pro-max-skill](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill) | `12b486b22e67f5d887962ef8351c1ac863bfaeb9` | `aih trust scan nextlevelbuilder/ui-ux-pro-max-skill --pin <pin> --posture enterprise --apply`, `aih skill vet nextlevelbuilder/ui-ux-pro-max-skill --pin <pin> --name ui-ux-pro-max --posture enterprise --apply`, then `aih skill approve nextlevelbuilder/ui-ux-pro-max-skill --pin <pin> --name ui-ux-pro-max --owner design-platform --pack powerhouse-skills --mode design-assist --posture enterprise --apply`. |
 
-`aih skill vet` evaluates the source and never installs it. `aih skill approve --name <skill>` records which skill in a multi-skill source is approved.
+`aih skill vet` evaluates the source and never installs it. For multi-skill sources, `aih skill vet --name <skill> --apply` writes per-skill evidence, and `aih skill approve --name <skill>` records which reviewed skill is approved.
 
 ### Reviewed Third-Party MCP Examples
 
@@ -191,6 +191,8 @@ Do not use `aih prune --cli claude --apply` as a retargeting command. `prune` ig
 | Jira / Atlassian | `aih mcp approve atlassian --accept-egress --reason "<review reason>" --reviewer delivery-platform --posture enterprise --apply` | Atlassian Rovo MCP at `https://mcp.atlassian.com/v1/mcp/authv2`; OAuth 2.1 preferred, API token only if admin enables it. |
 | AWS generated core | Include `awslabs.core-mcp-server` in policy or approve it when surfaced. | Generated by `aih mcp` for AWS repos as `uvx awslabs.core-mcp-server@1.0.27`. |
 | AWS Knowledge / awslabs selected servers | `aih mcp approve aws-knowledge-mcp-server ...`; approve `awslabs.aws-documentation-mcp-server` or `awslabs.aws-iac-mcp-server` only after source/package review. | AWS Knowledge HTTP endpoint is `https://knowledge-mcp.global.api.aws`; broader [awslabs/mcp](https://github.com/awslabs/mcp) source was pinned at `0e96fa1d3a6c5bbf84fcd89ab02ff70a34d061a5` for review on 2026-07-07. |
+
+For hand-authored distributed policy, each `mcp.approvals[]` entry needs `server`, current `subject`, `acceptEgress: true`, `reason`, and ISO-8601 `approvedAt`; `reviewer` is optional. Prefer `aih mcp approve --apply` when writing repo-local policy.
 
 ### MCP Mode And Auth Choices
 

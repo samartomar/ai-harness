@@ -2671,6 +2671,9 @@
               "flags": "--json"
             },
             {
+              "flags": "--name <skill>"
+            },
+            {
               "flags": "--no-log"
             },
             {
@@ -3212,6 +3215,9 @@
               "flags": "--apply"
             },
             {
+              "flags": "--approve-local-digest"
+            },
+            {
               "flags": "--candidate-digest <digest>"
             },
             {
@@ -3242,6 +3248,12 @@
             {
               "flags": "--posture <posture>",
               "defaultValue": "vibe"
+            },
+            {
+              "flags": "--reason <text>"
+            },
+            {
+              "flags": "--reviewer <name>"
             },
             {
               "flags": "--root <dir>"

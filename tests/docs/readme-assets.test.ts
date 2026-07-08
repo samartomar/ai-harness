@@ -47,7 +47,7 @@ describe("README docs currency", () => {
     const readme = read("README.md");
     const overview = read("docs/assets/aih-overview.svg");
     const enterprisePacks = read("docs/assets/aih-enterprise-packs.svg");
-    const pkg = JSON.parse(read("package.json")) as { files?: string[] };
+    const pkg = JSON.parse(read("package.json")) as { files?: string[]; version: string };
     const normalizedOverview = overview.replace(/\s+/g, " ");
     const publishedAssets = [
       "docs/assets/aih-overview.svg",
@@ -59,7 +59,7 @@ describe("README docs currency", () => {
       expect(existsSync(join(root, assetPath))).toBe(true);
       expect(isCoveredByPackageFiles(assetPath, pkg.files ?? [])).toBe(true);
     }
-    expect(overview).toContain("v2.4.0 overview");
+    expect(overview).toContain(`v${pkg.version} overview`);
     expect(overview).toContain("Five governed-readiness pillars");
     expect(overview).toContain("42 commands");
     expect(normalizedOverview).toContain("aih truth pack · verify · docs-lint claim gate");
@@ -71,7 +71,7 @@ describe("README docs currency", () => {
     expect(overview).toContain("2.4 AI-Canonical · shipped");
 
     const overviewAlt = imageAlt(readme, "docs/assets/aih-overview.svg").toLowerCase();
-    expect(overviewAlt).toContain("v2.4.0");
+    expect(overviewAlt).toContain(`v${pkg.version}`);
     expect(overviewAlt).toContain("governed-readiness");
     expect(overviewAlt).toContain("truth verify");
     expect(overviewAlt).toContain("docs-lint claim gate");

@@ -1,4 +1,4 @@
-import { isAbsolute, relative, resolve } from "node:path";
+import { basename, isAbsolute, relative, resolve } from "node:path";
 import { AihError } from "../errors.js";
 import { writeArtifact } from "../internals/execute.js";
 import type { Action, CommandSpec, Plan, PlanContext } from "../internals/plan.js";
@@ -20,7 +20,9 @@ import {
   type TrustScanResult,
   trustSourceOriginChecks,
 } from "../trust/scan.js";
+import { collectSkillDirs, promotedSkillRel } from "../workspace/acquire.js";
 import { licenseCheck } from "./license.js";
+import { skillNameSchema } from "./lockfile.js";
 import { type SkillShape, skillShape } from "./shape.js";
 import { type SkillVerdict, type SkillVerdictResult, skillVerdict } from "./verdict.js";
 
@@ -34,6 +36,7 @@ import { type SkillVerdict, type SkillVerdictResult, skillVerdict } from "./verd
 
 interface SkillVetPlanOptions {
   cleanupQuarantine?: boolean;
+  skillName?: string;
 }
 
 /** Evidence artifact schema written to `.aih/skill-reports/` under --apply. */
@@ -41,6 +44,8 @@ export interface SkillVetEvidence {
   schemaVersion: 1;
   source: string;
   pinnedSha?: string;
+  /** Present when the evidence was scoped to one logical skill via `--name`. */
+  skillName?: string;
   /** Absent when the remote source was not fetched (dry-run / fetch failure). */
   shape?: SkillShape;
   checks: Array<{
@@ -59,6 +64,13 @@ interface GithubVetScan {
   shape: SkillShape;
   license: Check;
   pinnedSha?: string;
+}
+
+interface SkillVetTarget {
+  scanRoot: string;
+  smokeShape: SkillShape;
+  evidenceShape: SkillShape;
+  skillName?: string;
 }
 
 const FETCH_BLOCKED_SKIP: Check = {
@@ -106,9 +118,96 @@ function fetchedPinnedSha(source: TrustSource): string | undefined {
   }
 }
 
-function evidenceRelPath(source: TrustSource, pinnedSha: string | undefined): string {
+function optionSkillName(ctx: PlanContext): string | undefined {
+  const raw = ctx.options.name;
+  if (raw === undefined) return undefined;
+  if (typeof raw !== "string" || raw.trim().length === 0) {
+    throw new AihError(
+      "--name must be a safe skill name (path segments only; no .., absolute paths, backslashes, or control chars)",
+      "AIH_TRUST",
+    );
+  }
+  const result = skillNameSchema.safeParse(raw.trim());
+  if (!result.success) {
+    throw new AihError(
+      "--name must be a safe skill name (path segments only; no .., absolute paths, backslashes, or control chars)",
+      "AIH_TRUST",
+    );
+  }
+  return result.data;
+}
+
+function evidenceRelPath(
+  source: TrustSource,
+  pinnedSha: string | undefined,
+  skillName?: string,
+): string {
   const tag = source.kind === "local" ? "local" : (pinnedSha?.slice(0, 8) ?? "unfetched");
-  return `.aih/skill-reports/${source.id}-${tag}.json`;
+  const base = `.aih/skill-reports/${source.id}-${tag}`;
+  return skillName === undefined ? `${base}.json` : `${base}/${skillName}.json`;
+}
+
+function prefixRel(prefix: string, rel: string): string {
+  if (prefix.length === 0) return rel;
+  if (rel.length === 0) return prefix;
+  return `${prefix}/${rel}`;
+}
+
+function scopedEvidenceShape(
+  sourceRoot: string,
+  selectedRoot: string,
+  skillName: string,
+  scopedShape: SkillShape,
+): SkillShape {
+  const selectedRel = toPosix(relative(sourceRoot, selectedRoot));
+  const rootLabel = basename(selectedRoot);
+  const scopedSkillDirs = scopedShape.skillDirs.map((dir) =>
+    dir === rootLabel ? skillName : prefixRel(skillName, dir),
+  );
+  return {
+    skillDirs: scopedSkillDirs,
+    installScripts: scopedShape.installScripts,
+    ...(scopedShape.installScriptFiles !== undefined
+      ? {
+          installScriptFiles: scopedShape.installScriptFiles.map((rel) =>
+            prefixRel(selectedRel, rel),
+          ),
+        }
+      : {}),
+    mcpConfig: scopedShape.mcpConfig,
+    ...(scopedShape.mcpConfigFiles !== undefined
+      ? { mcpConfigFiles: scopedShape.mcpConfigFiles.map((rel) => prefixRel(selectedRel, rel)) }
+      : {}),
+    packageManifests: scopedShape.packageManifests.map((rel) => prefixRel(selectedRel, rel)),
+    fullCodebaseAnalysis: scopedShape.fullCodebaseAnalysis,
+  };
+}
+
+function skillVetTarget(sourceRoot: string, skillName: string | undefined): SkillVetTarget {
+  if (skillName === undefined) {
+    const shape = skillShape(sourceRoot);
+    return { scanRoot: sourceRoot, smokeShape: shape, evidenceShape: shape };
+  }
+  const skills = collectSkillDirs(sourceRoot).map((dir) => ({
+    dir,
+    name: promotedSkillRel(sourceRoot, dir),
+  }));
+  const selected = skills.find((skill) => skill.name === skillName);
+  if (selected === undefined) {
+    throw new AihError(
+      `--name ${skillName} does not match a skill in the source — available skills: ${
+        skills.map((skill) => skill.name).join(", ") || "(none)"
+      }`,
+      "AIH_TRUST",
+    );
+  }
+  const smokeShape = skillShape(selected.dir);
+  return {
+    scanRoot: selected.dir,
+    smokeShape,
+    evidenceShape: scopedEvidenceShape(sourceRoot, selected.dir, skillName, smokeShape),
+    skillName,
+  };
 }
 
 function buildEvidence(
@@ -118,11 +217,13 @@ function buildEvidence(
   checks: readonly Check[],
   analyzersRun: readonly string[],
   graded: SkillVerdictResult,
+  skillName?: string,
 ): SkillVetEvidence {
   return {
     schemaVersion: 1,
     source: source.display,
     pinnedSha,
+    ...(skillName !== undefined ? { skillName } : {}),
     shape,
     checks: checks.map((check) => ({
       name: check.name,
@@ -140,6 +241,7 @@ function digestData(evidence: SkillVetEvidence): unknown {
   return {
     source: evidence.source,
     pinnedSha: evidence.pinnedSha,
+    skillName: evidence.skillName,
     shape: evidence.shape,
     verdict: evidence.verdict,
     reasons: evidence.reasons,
@@ -179,6 +281,7 @@ function renderVetDigest(
   const lines = [
     `Source: ${evidence.source}`,
     `Commit: ${commit}`,
+    ...(evidence.skillName !== undefined ? [`Skill: ${evidence.skillName}`] : []),
     ...shapeLines(evidence.shape),
     `Checks: ${checkCounts(evidence.checks)}`,
     `Verdict: ${evidence.verdict}`,
@@ -200,7 +303,7 @@ function vetDigestResult(
   if (!ctx.apply || evidence.shape === undefined) {
     return { text: renderVetDigest(source, evidence), data: digestData(evidence) };
   }
-  const rel = evidenceRelPath(source, evidence.pinnedSha);
+  const rel = evidenceRelPath(source, evidence.pinnedSha, evidence.skillName);
   writeArtifact(ctx, rel, JSON.stringify(evidence, null, 2));
   return { text: renderVetDigest(source, evidence, rel), data: digestData(evidence) };
 }
@@ -219,10 +322,10 @@ export async function skillVetPlanForSource(
     ),
   );
   if (source.kind === "local") {
-    const shape = skillShape(source.root);
+    const target = skillVetTarget(source.root, options.skillName);
     const scan = await scanTrustTreeWithAnalyzers(
-      source.root,
-      scanOptionsFromContext(ctx, { ...scanOptions, sandboxSmokeShape: shape }),
+      target.scanRoot,
+      scanOptionsFromContext(ctx, { ...scanOptions, sandboxSmokeShape: target.smokeShape }),
     );
     const staticChecks = [...scan.checks, licenseCheck(source.root)];
     actions.push(
@@ -232,11 +335,23 @@ export async function skillVetPlanForSource(
       dynamicDigest("skill vet verdict", (digestCtx) => {
         const checks = [...trustSourceOriginChecks(digestCtx, source), ...staticChecks];
         const firstParty = isFirstPartySource(digestCtx.root, source);
-        const graded = skillVerdict(checks, shape, { pinned: true, fetched: true, firstParty });
+        const graded = skillVerdict(checks, target.evidenceShape, {
+          pinned: true,
+          fetched: true,
+          firstParty,
+        });
         return vetDigestResult(
           digestCtx,
           source,
-          buildEvidence(source, undefined, shape, checks, scan.analyzersRun, graded),
+          buildEvidence(
+            source,
+            undefined,
+            target.evidenceShape,
+            checks,
+            scan.analyzersRun,
+            graded,
+            target.skillName,
+          ),
         );
       }),
     );
@@ -244,14 +359,17 @@ export async function skillVetPlanForSource(
     let githubScan: Promise<GithubVetScan> | undefined;
     const scanGithubSource = (probeCtx: PlanContext): Promise<GithubVetScan> => {
       githubScan ??= (async () => {
-        const shape = skillShape(source.treePath);
+        const target = skillVetTarget(source.treePath, options.skillName);
         const scan = await scanTrustTreeWithAnalyzers(
-          source.treePath,
-          scanOptionsFromContext(probeCtx, { ...scanOptions, sandboxSmokeShape: shape }),
+          target.scanRoot,
+          scanOptionsFromContext(probeCtx, {
+            ...scanOptions,
+            sandboxSmokeShape: target.smokeShape,
+          }),
         );
         return {
           scan,
-          shape,
+          shape: target.evidenceShape,
           license: licenseCheck(source.treePath),
           pinnedSha: fetchedPinnedSha(source),
         };
@@ -265,7 +383,15 @@ export async function skillVetPlanForSource(
         fetched: false,
         firstParty: false,
       });
-      return buildEvidence(source, source.pin?.toLowerCase(), undefined, checks, [], graded);
+      return buildEvidence(
+        source,
+        source.pin?.toLowerCase(),
+        undefined,
+        checks,
+        [],
+        graded,
+        options.skillName,
+      );
     };
     actions.push(
       structuredChecksProbe(`skill vet scan ${source.display}`, async (probeCtx) => {
@@ -299,6 +425,7 @@ export async function skillVetPlanForSource(
               checks,
               vetted.scan.analyzersRun,
               graded,
+              options.skillName,
             ),
           );
         } catch {
@@ -325,13 +452,21 @@ async function skillVetPlan(ctx: PlanContext): Promise<Plan> {
     pin: typeof ctx.options.pin === "string" ? ctx.options.pin : undefined,
     skipDirs: TRUST_SKIP_DIRS,
   });
+  const skillName = optionSkillName(ctx);
   if (source.kind === "local" && !isAbsolute(raw)) {
-    return skillVetPlanForSource(ctx, {
-      ...source,
-      display: toPosix(relative(ctx.root, resolve(ctx.root, raw))) || source.display,
-    });
+    return skillVetPlanForSource(
+      ctx,
+      {
+        ...source,
+        display: toPosix(relative(ctx.root, resolve(ctx.root, raw))) || source.display,
+      },
+      { skillName },
+    );
   }
-  return skillVetPlanForSource(ctx, source, { cleanupQuarantine: source.kind === "github" });
+  return skillVetPlanForSource(ctx, source, {
+    cleanupQuarantine: source.kind === "github",
+    skillName,
+  });
 }
 
 export const skillVetCommand: CommandSpec = {
@@ -344,6 +479,10 @@ export const skillVetCommand: CommandSpec = {
       description: "fetch exactly this Git commit SHA for owner/repo sources",
     },
     { flags: "--ref <ref>", description: "GitHub ref to resolve before downloading the tarball" },
+    {
+      flags: "--name <skill>",
+      description: "scope vet evidence to one skill in a multi-skill source",
+    },
   ],
   plan: skillVetPlan,
   alwaysVerify: true,

@@ -117,6 +117,23 @@ const SingleLinePolicyTextSchema = z
   .max(500)
   .regex(SingleLinePolicyTextPattern, "must be a single line with visible text");
 
+const ImageDigestSchema = z
+  .string()
+  .regex(/^sha256:[0-9a-f]{64}$/, "imageDigest must be sha256:<64 lowercase hex chars>");
+
+const SkillSpectorDigestApprovalSchema = z
+  .object({
+    imageTag: SingleLinePolicyTextSchema,
+    imageDigest: ImageDigestSchema,
+    sourceRevision: z
+      .string()
+      .regex(/^[0-9a-f]{40}$/, "sourceRevision must be a lowercase 40-character Git SHA"),
+    reason: SingleLinePolicyTextSchema,
+    reviewer: SingleLinePolicyTextSchema.optional(),
+    approvedAt: z.string().regex(/^\d{4}-\d{2}-\d{2}T/, "approvedAt must be an ISO-8601 timestamp"),
+  })
+  .strict();
+
 const McpApprovalSchema = z
   .object({
     server: SingleLinePolicyTextSchema,
@@ -190,6 +207,12 @@ export const OrgPolicySchema = z
          */
         requiredChecks: z.array(z.string().min(1)).optional(),
         internalScopes: z.array(z.string()).default([]),
+        skillspector: z
+          .object({
+            approvedDigests: z.array(SkillSpectorDigestApprovalSchema).default([]),
+          })
+          .strict()
+          .optional(),
       })
       .strict()
       .optional(),

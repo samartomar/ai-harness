@@ -6,6 +6,23 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [2.4.2] - 2026-07-08
+
+### Changed
+
+- `aih skill vet --name <skill>` now writes per-skill evidence for multi-skill
+  sources, and `skill card --name` / `skill approve --name` require that matching
+  scoped evidence instead of a source-wide report. (#349)
+- `aih trust skillspector-pin --approve-local-digest` now records reviewed local
+  SkillSpector image digests in org policy, and trust scans accept only the
+  built-in controlled digest or those reviewed policy digests. (#350)
+- Enterprise MCP docs now spell out the required hand-authored
+  `mcp.approvals[]` fields, including subject-bound approval and ISO-8601
+  `approvedAt`, plus the `AIH_ORG_POLICY` distributed-policy edit path. (#351)
+- Setup and heal guidance now covers npm major-version upgrades, reviewed
+  `--force` use for broken global installs, common `uvx` PATH locations, and
+  pinned `uvx` MCP cache warmup before offline startup. (#352)
+
 ## [2.4.1] - 2026-07-08
 
 ### Changed
@@ -865,7 +882,8 @@ GitHub but **never published to npm**; the first published release is 0.2.0.
   (npm + github-actions), private vulnerability reporting, `@claude` workflow gated
   to trusted authors, and GitHub Actions pinned to commit SHAs.
 
-[Unreleased]: https://github.com/samartomar/ai-harness/compare/v2.4.1...HEAD
+[Unreleased]: https://github.com/samartomar/ai-harness/compare/v2.4.2...HEAD
+[2.4.2]: https://github.com/samartomar/ai-harness/compare/v2.4.1...v2.4.2
 [2.4.1]: https://github.com/samartomar/ai-harness/compare/v2.4.0...v2.4.1
 [2.4.0]: https://github.com/samartomar/ai-harness/compare/v2.1.0...v2.4.0
 [2.1.0]: https://github.com/samartomar/ai-harness/compare/v2.0.0...v2.1.0

@@ -8,7 +8,13 @@ export const SKILLSPECTOR_SOURCE_REVISION = "326a2b489411a20ed742ff13701be39ba00
 export const SKILLSPECTOR_IMAGE_DIGEST =
   "sha256:e82fd471e156ca5f431d5a1be18d37bc6bdf11f23b0f12f99c8899c12283fdfb";
 
-const SKILLSPECTOR_IMAGE_DIGESTS = new Set([SKILLSPECTOR_IMAGE_DIGEST]);
+const IMAGE_DIGEST = /^sha256:[0-9a-f]{64}$/;
+
+export interface SkillSpectorImageApproval {
+  imageTag: string;
+  imageDigest: string;
+  sourceRevision: string;
+}
 
 function runSummary(result: RunResult): string {
   const output = (result.stderr || result.stdout).trim();
@@ -30,11 +36,31 @@ function parseImageInspect(stdout: string): Record<string, unknown> | undefined 
   }
 }
 
-function normalizedDigest(value: unknown): string | undefined {
+function approvedSkillspectorImageDigests(
+  approvedImages: readonly SkillSpectorImageApproval[] = [],
+): Set<string> {
+  return new Set([
+    SKILLSPECTOR_IMAGE_DIGEST,
+    ...approvedImages
+      .filter(
+        (approval) =>
+          approval.imageTag === SKILLSPECTOR_IMAGE &&
+          approval.sourceRevision === SKILLSPECTOR_SOURCE_REVISION &&
+          IMAGE_DIGEST.test(approval.imageDigest),
+      )
+      .map((approval) => approval.imageDigest),
+  ]);
+}
+
+function normalizedDigest(
+  value: unknown,
+  approvedImages: readonly SkillSpectorImageApproval[] = [],
+): string | undefined {
   if (typeof value !== "string") return undefined;
-  if (SKILLSPECTOR_IMAGE_DIGESTS.has(value)) return value;
+  const allowed = approvedSkillspectorImageDigests(approvedImages);
+  if (allowed.has(value)) return value;
   const suffix = value.split("@").at(-1);
-  return suffix !== undefined && SKILLSPECTOR_IMAGE_DIGESTS.has(suffix) ? suffix : undefined;
+  return suffix !== undefined && allowed.has(suffix) ? suffix : undefined;
 }
 
 export function skillspectorDockerVersionArgv(platform: Platform): string[] {
@@ -52,10 +78,13 @@ export function skillspectorImageInspectArgv(platform: Platform): string[] {
   ]);
 }
 
-export function verifiedSkillspectorImageReference(stdout: string): string | undefined {
+export function verifiedSkillspectorImageReference(
+  stdout: string,
+  approvedImages: readonly SkillSpectorImageApproval[] = [],
+): string | undefined {
   const inspect = parseImageInspect(stdout);
   if (inspect === undefined) return undefined;
-  return normalizedDigest(inspect.Id);
+  return normalizedDigest(inspect.Id, approvedImages);
 }
 
 export async function resolveVerifiedSkillspectorImage(
@@ -63,6 +92,7 @@ export async function resolveVerifiedSkillspectorImage(
   platform: Platform,
   env: NodeJS.ProcessEnv,
   timeoutMs: number,
+  approvedImages: readonly SkillSpectorImageApproval[] = [],
 ): Promise<{ image: string } | { reason: string }> {
   const childEnv = scrubFetchEnv(env);
   const docker = await run(skillspectorDockerVersionArgv(platform), {
@@ -86,10 +116,11 @@ export async function resolveVerifiedSkillspectorImage(
       reason: `sandbox image ${SKILLSPECTOR_IMAGE} could not be inspected (${runSummary(image)})`,
     };
   }
-  const verifiedImage = verifiedSkillspectorImageReference(image.stdout);
+  const verifiedImage = verifiedSkillspectorImageReference(image.stdout, approvedImages);
   if (verifiedImage === undefined) {
+    const approved = approvedImages.length > 0 ? " or an org-policy approved local digest" : "";
     return {
-      reason: `sandbox image ${SKILLSPECTOR_IMAGE} could not verify expected image digest ${SKILLSPECTOR_IMAGE_DIGEST}`,
+      reason: `sandbox image ${SKILLSPECTOR_IMAGE} could not verify expected image digest ${SKILLSPECTOR_IMAGE_DIGEST}${approved}`,
     };
   }
   return { image: verifiedImage };

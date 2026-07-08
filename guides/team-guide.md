@@ -104,7 +104,7 @@ Treat skills as supply-chain inputs. The lifecycle is vet, approve, inventory, p
 
 Use packs for team adoption. A developer should install "the docs-quality pack" or another named pack, not manually assemble a different skill set on each machine.
 
-Use `docs-lint` as a public-claim gate, not only a prose cleaner. In v2.4.0, claim markers must resolve to control-matrix rows and named tests; prose guidance remains advisory.
+Use `docs-lint` as a public-claim gate, not only a prose cleaner. Current behavior requires claim markers to resolve to control-matrix rows and named tests; prose guidance remains advisory.
 
 Use truth sidecars for staged project-truth work only when the team wants that workflow. The sidecar is external by default and commit-bound; promotion back into repo-owned docs remains an explicit reviewed change.
 

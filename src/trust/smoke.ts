@@ -8,6 +8,7 @@ import { scrubFetchEnv } from "./fetch.js";
 import {
   resolveVerifiedSkillspectorImage,
   SKILLSPECTOR_IMAGE,
+  type SkillSpectorImageApproval,
   skillspectorDockerVersionArgv,
   skillspectorImageInspectArgv,
 } from "./images.js";
@@ -25,6 +26,7 @@ export interface SandboxSmokeOptions {
   env?: NodeJS.ProcessEnv;
   platform?: Platform;
   run?: Runner;
+  skillspectorImageApprovals?: readonly SkillSpectorImageApproval[];
 }
 
 const SANDBOX_SMOKE_NAME = "skill sandbox smoke test";
@@ -171,6 +173,7 @@ export async function sandboxSmokeCheck(
     options.platform,
     options.env,
     10_000,
+    options.skillspectorImageApprovals,
   );
   if ("reason" in availability) return unavailableCheck(availability.reason);
 
