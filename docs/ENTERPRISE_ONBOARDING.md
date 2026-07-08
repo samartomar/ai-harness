@@ -8,6 +8,7 @@
 1. Install from npm or an internal mirror and verify the release:
 
    ```bash
+   npm install -g @aihq/harness@latest
    npm audit signatures
    aih verify-release
    ```
@@ -18,6 +19,10 @@
    `cosign` is missing, the command reports an explicit skip for that leg rather
    than a pass; install the missing verifier before treating the release as fully
    verified.
+   Use `npm install -g @aihq/harness@latest` for major-version upgrades; `npm update -g`
+   may stay within the existing major. If a broken global install blocks replacement,
+   rerun the install with `--force` only after reviewing the global npm prefix and
+   confirming the package source is approved.
 
 2. Run workstation readiness and repair:
 
@@ -25,6 +30,14 @@
    aih doctor --json
    aih heal --scope all
    ```
+
+   `aih heal` diagnoses npm and PATH problems and emits reviewed repair instructions
+   for the operator; it does not silently edit shell profiles or reinstall npm. If
+   `uvx` is missing after installing Python tooling, check common user script
+   locations such as `$HOME/.local/bin`, `$HOME/Library/Python/<python-version>/bin`,
+   `$(python3 -m site --user-base)/bin`, `%USERPROFILE%\.local\bin`, or
+   `%APPDATA%\Python\Python3x\Scripts`, then add the actual directory to PATH through
+   your approved shell/profile management path.
 
 3. Initialize a pilot repo in dry-run, then apply after review:
 
@@ -193,9 +206,38 @@ managed stdio command allowlist. Use
 policy-approved generated servers, omit denied generated entries from targeted
 MCP client configs, and list the omitted servers in quarantined guidance. Run
 `aih mcp approve <server> --accept-egress --reason "<why this egress is accepted>" --apply`
-to write the local `aih-org-policy.json` entry. If `AIH_ORG_POLICY` points at a
-distributed policy, update that source instead; org policy wins over local approval
-files.
+to write the local `aih-org-policy.json` entry; this is the safest path when the
+repo-local policy is active. If `AIH_ORG_POLICY` points at a distributed policy,
+update that source directly because org policy wins over local approval files and
+local approval writes are refused.
+
+Hand-authored distributed-policy approvals must include `server`, `subject`,
+`acceptEgress: true`, `reason`, and ISO-8601 `approvedAt`; `reviewer` is optional.
+The `subject` must be the current server-shape fingerprint that `aih mcp approve`
+would write for the same server. This JSON shape passes `aih policy validate`:
+
+```json
+{
+  "schemaVersion": 1,
+  "minimumPosture": "enterprise",
+  "references": {
+    "repoContract": "ai-coding/project.json"
+  },
+  "mcp": {
+    "allowedServers": ["figma"],
+    "approvals": [
+      {
+        "server": "figma",
+        "subject": "mcp-server-sha256:0000000000000000000000000000000000000000000000000000000000000000",
+        "acceptEgress": true,
+        "reason": "Approved Figma remote MCP for reviewed design-context workflows.",
+        "reviewer": "design-platform",
+        "approvedAt": "2026-07-08T00:00:00.000Z"
+      }
+    ]
+  }
+}
+```
 
 `mcp-scanner` is intentionally opt-in until your team has verified the local static
 scanner path on managed workstations. If you keep it in `requiredDetectors`, set

@@ -76,6 +76,7 @@ const SkillVetEvidenceSchema = z.object({
   schemaVersion: z.literal(1),
   source: z.string(),
   pinnedSha: z.string().optional(),
+  skillName: skillNameSchema.optional(),
   shape: EvidenceShapeSchema.optional(),
   checks: z.array(EvidenceCheckSchema),
   analyzersRun: z.array(z.string()),
@@ -145,14 +146,16 @@ function resolveSource(ctx: PlanContext, command: string): { source: TrustSource
 }
 
 /** Mirrors vet.ts's private `evidenceRelPath` for an already-pinned/local source. */
-function evidenceRelFor(source: TrustSource): string {
+function evidenceRelFor(source: TrustSource, skillName?: string): string {
   const tag = source.kind === "local" ? "local" : (source.pin ?? "").slice(0, 8);
-  return `${EVIDENCE_DIR}/${source.id}-${tag}.json`;
+  const base = `${EVIDENCE_DIR}/${source.id}-${tag}`;
+  return skillName === undefined ? `${base}.json` : `${base}/${skillName}.json`;
 }
 
-function vetHint(source: TrustSource, raw: string): string {
+function vetHint(source: TrustSource, raw: string, skillName?: string): string {
   const pin = source.kind === "github" && source.pin !== undefined ? ` --pin ${source.pin}` : "";
-  return `run \`aih skill vet ${raw}${pin} --apply\` first`;
+  const scoped = skillName !== undefined ? ` --name ${skillName}` : "";
+  return `run \`aih skill vet ${raw}${pin}${scoped} --apply\` first`;
 }
 
 function reasonLines(reasons: readonly string[]): string {
@@ -163,22 +166,42 @@ function readEvidenceOrRefuse(
   ctx: PlanContext,
   source: TrustSource,
   raw: string,
+  skillName?: string,
 ): { rel: string; evidence: VetEvidence; sha256: string } {
-  const rel = evidenceRelFor(source);
+  const rel = evidenceRelFor(source, skillName);
   const abs = join(ctx.root, rel);
   const text = readIfExists(abs);
   if (text === undefined) {
-    throw refuse(`no vet evidence at ${rel} for ${source.display}; ${vetHint(source, raw)}`);
+    const subject =
+      skillName === undefined ? source.display : `${source.display} --name ${skillName}`;
+    throw refuse(`no vet evidence at ${rel} for ${subject}; ${vetHint(source, raw, skillName)}`);
   }
   let evidence: VetEvidence;
   try {
     evidence = SkillVetEvidenceSchema.parse(JSON.parse(text));
   } catch {
-    throw refuse(`vet evidence at ${rel} is unreadable; ${vetHint(source, raw)} to regenerate it`);
+    throw refuse(
+      `vet evidence at ${rel} is unreadable; ${vetHint(source, raw, skillName)} to regenerate it`,
+    );
   }
   if (source.kind === "github" && evidence.pinnedSha?.toLowerCase() !== source.pin) {
     throw refuse(
-      `vet evidence at ${rel} records commit ${evidence.pinnedSha ?? "(none)"}, not --pin ${source.pin}; ${vetHint(source, raw)}`,
+      `vet evidence at ${rel} records commit ${evidence.pinnedSha ?? "(none)"}, not --pin ${source.pin}; ${vetHint(source, raw, skillName)}`,
+    );
+  }
+  if (skillName !== undefined && evidence.skillName !== skillName) {
+    throw refuse(
+      `vet evidence at ${rel} is ${
+        evidence.skillName === undefined ? "source-wide" : `scoped to --name ${evidence.skillName}`
+      }, not --name ${skillName}; ${vetHint(source, raw, skillName)}`,
+    );
+  }
+  if (skillName === undefined && evidence.skillName !== undefined) {
+    throw refuse(
+      `vet evidence at ${rel} is scoped to --name ${evidence.skillName}; ${vetHint(
+        source,
+        raw,
+      )} for source-wide evidence`,
     );
   }
   // Hash the evidence BYTES so the committed lockfile entry pins the exact
@@ -256,6 +279,7 @@ function skillNameFrom(shape: SkillShape, override: string | undefined, display:
  */
 function skillApprovalGate(ctx: PlanContext, command: string): SkillApprovalGate {
   const { source, raw } = resolveSource(ctx, command);
+  const selectedName = optionPathSafeName(ctx, "name", "skill");
   // Rule 1 — no approval without a pinned commit for remote sources.
   let commit = "local";
   if (source.kind === "github") {
@@ -267,7 +291,7 @@ function skillApprovalGate(ctx: PlanContext, command: string): SkillApprovalGate
     commit = source.pin;
   }
   // Rule 2 — no approval without a matching vet evidence artifact.
-  const { rel, evidence, sha256 } = readEvidenceOrRefuse(ctx, source, raw);
+  const { rel, evidence, sha256 } = readEvidenceOrRefuse(ctx, source, raw, selectedName);
   assertLocalEvidenceSourceMatches(ctx, source, raw, rel, evidence);
   // Rule 3 — RED is blocked outright; UNKNOWN means the evidence is insufficient.
   if (evidence.verdict === "RED") {
@@ -292,7 +316,7 @@ function skillApprovalGate(ctx: PlanContext, command: string): SkillApprovalGate
       `no license recorded in vet evidence for ${source.display}; a license is required before a card or approval`,
     );
   }
-  const name = skillNameFrom(shape, optionString(ctx, "name"), source.display);
+  const name = skillNameFrom(shape, selectedName, source.display);
   return {
     source,
     evidenceRel: rel,

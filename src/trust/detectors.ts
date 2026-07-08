@@ -19,7 +19,11 @@ import { execArgv } from "../tools/install.js";
 import { dockerBindMountArg } from "./docker.js";
 import { scrubFetchEnv } from "./fetch.js";
 import { gradeTrustCheck } from "./grade.js";
-import { resolveVerifiedSkillspectorImage, SKILLSPECTOR_IMAGE } from "./images.js";
+import {
+  resolveVerifiedSkillspectorImage,
+  SKILLSPECTOR_IMAGE,
+  type SkillSpectorImageApproval,
+} from "./images.js";
 import { collectFilesUnder, TRUST_SKIP_DIRS } from "./scan.js";
 import { isMaliciousCodeScanFilePath } from "./script-files.js";
 
@@ -43,14 +47,20 @@ export interface TrustDetector {
     run: Runner,
     platform: Platform,
     env: NodeJS.ProcessEnv,
+    runtimeOptions?: TrustDetectorRuntimeOptions,
   ) => Promise<string | undefined>;
   runScan: (
     run: Runner,
     platform: Platform,
     env: NodeJS.ProcessEnv,
     tree: string,
+    runtimeOptions?: TrustDetectorRuntimeOptions,
   ) => Promise<string>;
   ruleMap: Record<string, CheckCode>;
+}
+
+interface TrustDetectorRuntimeOptions {
+  skillspectorImageApprovals?: readonly SkillSpectorImageApproval[];
 }
 
 export interface TrustDetectorOptions {
@@ -59,6 +69,7 @@ export interface TrustDetectorOptions {
   posture: Posture;
   requiredDetectors?: readonly TrustDetectorName[];
   run: Runner;
+  skillspectorImageApprovals?: readonly SkillSpectorImageApproval[];
 }
 
 export interface TrustDetectorResult {
@@ -487,8 +498,15 @@ async function checkSkillspectorAvailable(
   run: Runner,
   platform: Platform,
   env: NodeJS.ProcessEnv,
+  runtimeOptions: TrustDetectorRuntimeOptions = {},
 ): Promise<string | undefined> {
-  const image = await resolveVerifiedSkillspectorImage(run, platform, env, 30_000);
+  const image = await resolveVerifiedSkillspectorImage(
+    run,
+    platform,
+    env,
+    30_000,
+    runtimeOptions.skillspectorImageApprovals,
+  );
   return "reason" in image ? image.reason : undefined;
 }
 
@@ -497,8 +515,15 @@ async function runSkillspectorScan(
   platform: Platform,
   env: NodeJS.ProcessEnv,
   tree: string,
+  runtimeOptions: TrustDetectorRuntimeOptions = {},
 ): Promise<string> {
-  const image = await resolveVerifiedSkillspectorImage(run, platform, env, 30_000);
+  const image = await resolveVerifiedSkillspectorImage(
+    run,
+    platform,
+    env,
+    30_000,
+    runtimeOptions.skillspectorImageApprovals,
+  );
   if ("reason" in image) throw new Error(image.reason);
   const scan = await run(skillspectorDockerRunArgv(platform, tree, image.image), {
     env: scrubFetchEnv(env),
@@ -1256,9 +1281,17 @@ async function runDetectorList(
   const required = options.requiredDetectors ?? [];
   const checks: Check[] = [];
   const analyzersRun: string[] = [];
+  const runtimeOptions: TrustDetectorRuntimeOptions = {
+    skillspectorImageApprovals: options.skillspectorImageApprovals ?? [],
+  };
 
   for (const detector of detectors) {
-    const unavailable = await detector.checkAvailable(options.run, options.platform, options.env);
+    const unavailable = await detector.checkAvailable(
+      options.run,
+      options.platform,
+      options.env,
+      runtimeOptions,
+    );
     if (unavailable !== undefined) {
       checks.push(
         unavailableCheck(
@@ -1273,7 +1306,13 @@ async function runDetectorList(
 
     let sarifText: string;
     try {
-      sarifText = await detector.runScan(options.run, options.platform, options.env, root);
+      sarifText = await detector.runScan(
+        options.run,
+        options.platform,
+        options.env,
+        root,
+        runtimeOptions,
+      );
     } catch (error) {
       checks.push(
         unavailableCheck(

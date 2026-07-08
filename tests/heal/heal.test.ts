@@ -474,11 +474,15 @@ describe("heal — path step", () => {
     // never the combined %Path% that setx would truncate at 1024 chars.
     expect(text).toContain("reg query HKCU\\Environment");
     expect(text).toContain('setx Path "<current-user-path>');
+    expect(text).toContain("%USERPROFILE%\\.local\\bin");
+    expect(text).toContain("%APPDATA%\\Python\\Python3x\\Scripts");
   });
 
   it("quotes legal-but-hostile path characters in copy-paste PATH guidance", () => {
     const posix = pathFixDoc('/tmp/tool "bin"/$USER', "posix");
     expect(posix).toContain('export PATH="/tmp/tool \\"bin\\"/\\$USER":$PATH');
+    expect(posix).toContain("$HOME/Library/Python/<python-version>/bin");
+    expect(posix).toContain("$(python3 -m site --user-base)/bin");
 
     const windows = pathFixDoc("C:\\Users\\O'Hara\\bin%1", "powershell");
     expect(windows).toContain("'C:\\Users\\O''Hara\\bin%1'");

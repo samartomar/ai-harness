@@ -28,6 +28,7 @@ const OWNER_REPO = /^([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)$/;
 const LOWER_FULL_SHA = /^[0-9a-f]{40}$/;
 const IMAGE_DIGEST = /^sha256:[0-9a-f]{64}$/;
 const SKILLSPECTOR_UPSTREAM_REPO = "NVIDIA/SkillSpector";
+const APPROVED_AT_PLACEHOLDER = "(set at apply)";
 
 export interface OwnerRepo {
   owner: string;
@@ -36,6 +37,9 @@ export interface OwnerRepo {
 
 export type ApprovedSource = NonNullable<
   NonNullable<OrgPolicy["trust"]>["approvedSources"]
+>[number];
+type SkillSpectorDigestApproval = NonNullable<
+  NonNullable<NonNullable<OrgPolicy["trust"]>["skillspector"]>["approvedDigests"]
 >[number];
 
 function parseOwnerRepo(raw: unknown): OwnerRepo {
@@ -105,6 +109,27 @@ function optionCandidateDigest(ctx: PlanContext): string | undefined {
   return imageDigest;
 }
 
+function optionApproveLocalDigest(ctx: PlanContext): boolean {
+  return ctx.options.approveLocalDigest === true;
+}
+
+function hasControlCharacter(value: string): boolean {
+  for (let index = 0; index < value.length; index++) {
+    const code = value.charCodeAt(index);
+    if (code <= 0x1f || code === 0x7f) return true;
+  }
+  return false;
+}
+
+function optionSingleLine(ctx: PlanContext, key: string, label: string): string | undefined {
+  const raw = ctx.options[key];
+  if (raw === undefined) return undefined;
+  if (typeof raw !== "string" || raw.trim().length === 0 || hasControlCharacter(raw)) {
+    throw new AihError(`--${key} must be a single-line ${label}`, "AIH_TRUST");
+  }
+  return raw.trim();
+}
+
 function emptyPolicy(ctx: PlanContext): OrgPolicy {
   return {
     schemaVersion: 1,
@@ -114,6 +139,13 @@ function emptyPolicy(ctx: PlanContext): OrgPolicy {
 }
 
 function policyForWrite(ctx: PlanContext): OrgPolicy {
+  const override = ctx.env.AIH_ORG_POLICY?.trim();
+  if (override !== undefined && override.length > 0) {
+    throw new AihError(
+      "AIH_ORG_POLICY is active; org policy wins over local approvals, so update that policy instead of writing a repo-local approval",
+      "AIH_TRUST",
+    );
+  }
   try {
     return readOrgPolicy(ctx.root, ctx.env) ?? emptyPolicy(ctx);
   } catch (err) {
@@ -151,6 +183,7 @@ function upsertApprovedSource(
       internalScopes: policy.trust?.internalScopes ?? [],
       requiredDetectors: policy.trust?.requiredDetectors,
       requiredChecks: policy.trust?.requiredChecks,
+      skillspector: policy.trust?.skillspector,
       approvedSources: [
         ...existing.filter((approved) => !sameApprovedSource(source, approved)),
         nextEntry,
@@ -159,6 +192,32 @@ function upsertApprovedSource(
           a.owner.toLowerCase().localeCompare(b.owner.toLowerCase()) ||
           a.repo.toLowerCase().localeCompare(b.repo.toLowerCase()),
       ),
+    },
+  };
+}
+
+function upsertSkillspectorDigestApproval(
+  policy: OrgPolicy,
+  approval: SkillSpectorDigestApproval,
+): OrgPolicy {
+  const existing = policy.trust?.skillspector?.approvedDigests ?? [];
+  const approvedDigests = [
+    ...existing.filter(
+      (entry) => entry.imageTag !== approval.imageTag || entry.imageDigest !== approval.imageDigest,
+    ),
+    approval,
+  ].sort(
+    (a, b) => a.imageTag.localeCompare(b.imageTag) || a.imageDigest.localeCompare(b.imageDigest),
+  );
+  return {
+    ...policy,
+    trust: {
+      approvedSources: policy.trust?.approvedSources,
+      requireSignedSource: policy.trust?.requireSignedSource ?? false,
+      requiredDetectors: policy.trust?.requiredDetectors,
+      requiredChecks: policy.trust?.requiredChecks,
+      internalScopes: policy.trust?.internalScopes ?? [],
+      skillspector: { approvedDigests },
     },
   };
 }
@@ -219,6 +278,7 @@ function skillspectorPinText(ctx: PlanContext): string {
   const candidateRevision = optionCandidateRevision(ctx);
   const candidateTag = optionCandidateTag(ctx);
   const candidateDigest = optionCandidateDigest(ctx);
+  const approveLocalDigest = optionApproveLocalDigest(ctx);
   const lines = [
     "Pinned SkillSpector image:",
     `  Image tag: ${SKILLSPECTOR_IMAGE}`,
@@ -237,11 +297,48 @@ function skillspectorPinText(ctx: PlanContext): string {
     if (candidateRevision !== undefined && candidateRevision !== SKILLSPECTOR_SOURCE_REVISION) {
       lines.push(`  Upstream diff: ${skillspectorCompareUrl(candidateRevision)}`);
     }
+    if (approveLocalDigest) {
+      lines.push("  Approval mode: record admin-reviewed local digest in org policy");
+    }
   }
   return lines.join("\n");
 }
 
-function skillspectorPinChecks(ctx: PlanContext): Check[] {
+function skillspectorLocalDigestApproval(ctx: PlanContext): SkillSpectorDigestApproval | undefined {
+  if (!optionApproveLocalDigest(ctx)) return undefined;
+  const candidateDigest = optionCandidateDigest(ctx);
+  if (candidateDigest === undefined) {
+    throw new AihError("--approve-local-digest requires --candidate-digest", "AIH_TRUST");
+  }
+  const candidateRevision = optionCandidateRevision(ctx);
+  if (candidateRevision === undefined) {
+    throw new AihError("--approve-local-digest requires --candidate-revision", "AIH_TRUST");
+  }
+  if (candidateRevision !== SKILLSPECTOR_SOURCE_REVISION) {
+    throw new AihError(
+      `--approve-local-digest only accepts local builds of the pinned SkillSpector commit ${SKILLSPECTOR_SOURCE_REVISION}; review a source pin bump separately`,
+      "AIH_TRUST",
+    );
+  }
+  const reason = optionSingleLine(ctx, "reason", "review reason");
+  if (reason === undefined) {
+    throw new AihError("--approve-local-digest requires --reason <review reason>", "AIH_TRUST");
+  }
+  const reviewer = optionSingleLine(ctx, "reviewer", "reviewer");
+  return {
+    imageTag: optionCandidateTag(ctx) ?? SKILLSPECTOR_IMAGE,
+    imageDigest: candidateDigest,
+    sourceRevision: candidateRevision,
+    reason,
+    ...(reviewer !== undefined ? { reviewer } : {}),
+    approvedAt: ctx.apply ? new Date().toISOString() : APPROVED_AT_PLACEHOLDER,
+  };
+}
+
+function skillspectorPinChecks(
+  ctx: PlanContext,
+  localDigestApproval?: SkillSpectorDigestApproval,
+): Check[] {
   const candidateRevision = optionCandidateRevision(ctx);
   const candidateTag = optionCandidateTag(ctx);
   const candidateDigest = optionCandidateDigest(ctx);
@@ -280,7 +377,13 @@ function skillspectorPinChecks(ctx: PlanContext): Check[] {
     });
   }
 
-  if (!existingTagReused && digestChanged && candidateRevision !== undefined && !revisionChanged) {
+  if (
+    localDigestApproval === undefined &&
+    !existingTagReused &&
+    digestChanged &&
+    candidateRevision !== undefined &&
+    !revisionChanged
+  ) {
     checks.push({
       name: "trust skillspector binary provenance",
       verdict: "fail",
@@ -290,7 +393,11 @@ function skillspectorPinChecks(ctx: PlanContext): Check[] {
     });
   }
 
-  if (existingTagReused && (revisionChanged || digestChanged)) {
+  if (
+    localDigestApproval === undefined &&
+    existingTagReused &&
+    (revisionChanged || digestChanged)
+  ) {
     const changes = [
       revisionChanged ? `upstream commit ${candidateRevision}` : undefined,
       digestChanged ? `digest ${candidateDigest}` : undefined,
@@ -305,6 +412,14 @@ function skillspectorPinChecks(ctx: PlanContext): Check[] {
       code: "trust.source-changed",
       detail: `retagging existing SkillSpector image tag ${SKILLSPECTOR_IMAGE} with ${changes.join(" and ")} is not accepted; use a new tag${reviewHint}`,
       fingerprint: `trust-skillspector-pin:retag:${SKILLSPECTOR_IMAGE}`,
+    });
+  }
+
+  if (localDigestApproval !== undefined) {
+    checks.push({
+      name: "trust skillspector local digest approval",
+      verdict: "pass",
+      detail: `admin-reviewed local SkillSpector digest ${localDigestApproval.imageDigest} for ${localDigestApproval.imageTag} at ${localDigestApproval.sourceRevision}`,
     });
   }
 
@@ -573,13 +688,39 @@ export const trustSkillspectorPinCommand: CommandSpec = {
       flags: "--candidate-digest <digest>",
       description: "proposed SkillSpector image digest as sha256:<64 lowercase hex chars>",
     },
+    {
+      flags: "--approve-local-digest",
+      description:
+        "record the candidate digest as an admin-reviewed local build of the pinned source revision",
+    },
+    {
+      flags: "--reason <text>",
+      description: "single-line review reason required with --approve-local-digest",
+    },
+    {
+      flags: "--reviewer <name>",
+      description: "optional reviewer recorded with --approve-local-digest",
+    },
   ],
-  plan: (ctx) =>
-    plan(
+  plan: (ctx) => {
+    const localDigestApproval = skillspectorLocalDigestApproval(ctx);
+    return plan(
       "trust skillspector-pin",
+      ...(localDigestApproval !== undefined
+        ? [
+            writeJson(
+              AIH_ORG_POLICY_FILE,
+              upsertSkillspectorDigestApproval(policyForWrite(ctx), localDigestApproval),
+              "record reviewed SkillSpector local digest in committed org-policy",
+            ),
+          ]
+        : []),
       digest("skillspector pin", skillspectorPinText(ctx)),
-      structuredChecksProbe("trust skillspector pin", () => skillspectorPinChecks(ctx)),
-    ),
+      structuredChecksProbe("trust skillspector pin", () =>
+        skillspectorPinChecks(ctx, localDigestApproval),
+      ),
+    );
+  },
   alwaysVerify: true,
 };
 

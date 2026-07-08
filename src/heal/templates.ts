@@ -156,6 +156,12 @@ export function pathFixDoc(binDir: string, shell: "posix" | "powershell"): strin
       "",
       `(If that reg query reports no value your user Path is empty — then just: setx Path ${cmdBinDir})`,
       "",
+      "If `uvx` is still not found, check the installer-specific user script dir",
+      "and add that directory instead. Common locations are:",
+      "",
+      "  %USERPROFILE%\\.local\\bin",
+      "  %APPDATA%\\Python\\Python3x\\Scripts",
+      "",
       "Then open a new terminal (and relaunch GUI apps) for it to take effect.",
     );
   }
@@ -165,6 +171,13 @@ export function pathFixDoc(binDir: string, shell: "posix" | "powershell"): strin
     "profile (e.g. ~/.bashrc or ~/.zshrc):",
     "",
     `  export PATH=${posixBinDir}:$PATH`,
+    "",
+    "If `uvx` is still not found, check the installer-specific user script dir",
+    "and add that directory instead. Common locations are:",
+    "",
+    "  $HOME/.local/bin",
+    "  $HOME/Library/Python/<python-version>/bin",
+    "  $(python3 -m site --user-base)/bin",
     "",
     "Then reopen your shell (or `source` the profile) for it to take effect.",
   );

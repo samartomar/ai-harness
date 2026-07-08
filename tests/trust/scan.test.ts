@@ -383,6 +383,8 @@ function ctx(
 describe("scanTrustTree", () => {
   it("rejects SkillSpector repo digests when the local image id does not match", () => {
     const repoDigest = `skillspector@${SKILLSPECTOR_IMAGE_DIGEST}`;
+    const approvedLocalDigest =
+      "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 
     expect(
       verifiedSkillspectorImageReference(
@@ -400,6 +402,21 @@ describe("scanTrustTree", () => {
         }),
       ),
     ).toBe(SKILLSPECTOR_IMAGE_DIGEST);
+    expect(
+      verifiedSkillspectorImageReference(
+        JSON.stringify({
+          Id: approvedLocalDigest,
+          RepoDigests: [repoDigest],
+        }),
+        [
+          {
+            imageTag: SKILLSPECTOR_IMAGE,
+            imageDigest: approvedLocalDigest,
+            sourceRevision: SKILLSPECTOR_SOURCE_REVISION,
+          },
+        ],
+      ),
+    ).toBe(approvedLocalDigest);
   });
 
   it("catches prompt injection inside a fenced code block in acquired skill docs", async () => {
@@ -1093,6 +1110,109 @@ describe("scanTrustTree", () => {
       ]),
     );
     expect(dockerRuns).toEqual([]);
+  });
+
+  it("accepts an org-policy approved local SkillSpector digest", async () => {
+    skill("skills/clean", "# Clean\n");
+    const approvedLocalDigest =
+      "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+    orgPolicy({
+      requiredDetectors: ["skillspector"],
+      skillspector: {
+        approvedDigests: [
+          {
+            imageTag: SKILLSPECTOR_IMAGE,
+            imageDigest: approvedLocalDigest,
+            sourceRevision: SKILLSPECTOR_SOURCE_REVISION,
+            reason: "reviewed local Docker build from pinned SkillSpector source",
+            approvedAt: "2026-07-08T00:00:00.000Z",
+          },
+        ],
+      },
+    });
+    const dockerRuns: string[][] = [];
+    const detector = fakeRunner((argv) => {
+      if (argv[0] !== "docker") return undefined;
+      if (argv[1] === "--version") return { code: 0, stdout: "Docker version 27\n" };
+      if (argv[1] === "image" && argv[2] === "inspect") {
+        return {
+          code: 0,
+          stdout: JSON.stringify({
+            Id: approvedLocalDigest,
+            Config: {
+              Labels: {
+                "org.opencontainers.image.revision": SKILLSPECTOR_SOURCE_REVISION,
+              },
+            },
+          }),
+        };
+      }
+      if (argv[1] === "run") {
+        dockerRuns.push(argv);
+        return { code: 0, stdout: JSON.stringify(EMPTY_SARIF) };
+      }
+      return undefined;
+    });
+    const c = ctx({ target: dir }, {}, "enterprise", detector);
+
+    const result = await executePlan(await trustScanCommand.plan(c), c);
+
+    expect(result.report?.ok).toBe(true);
+    expect(dockerRuns).toHaveLength(1);
+    expect(dockerRuns[0]).toContain(approvedLocalDigest);
+  });
+
+  it("rejects an org-policy approved local SkillSpector digest for another source revision", async () => {
+    skill("skills/clean", "# Clean\n");
+    const approvedLocalDigest =
+      "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+    orgPolicy({
+      requiredDetectors: ["skillspector"],
+      skillspector: {
+        approvedDigests: [
+          {
+            imageTag: SKILLSPECTOR_IMAGE,
+            imageDigest: approvedLocalDigest,
+            sourceRevision: "a".repeat(40),
+            reason: "reviewed local Docker build from a different SkillSpector source",
+            approvedAt: "2026-07-08T00:00:00.000Z",
+          },
+        ],
+      },
+    });
+    const dockerRuns: string[][] = [];
+    const detector = fakeRunner((argv) => {
+      if (argv[0] !== "docker") return undefined;
+      if (argv[1] === "--version") return { code: 0, stdout: "Docker version 27\n" };
+      if (argv[1] === "image" && argv[2] === "inspect") {
+        return {
+          code: 0,
+          stdout: JSON.stringify({
+            Id: approvedLocalDigest,
+          }),
+        };
+      }
+      if (argv[1] === "run") {
+        dockerRuns.push(argv);
+        return { code: 0, stdout: JSON.stringify(EMPTY_SARIF) };
+      }
+      return undefined;
+    });
+    const c = ctx({ target: dir }, {}, "enterprise", detector);
+
+    const result = await executePlan(await trustScanCommand.plan(c), c);
+
+    expect(result.report?.exitCode()).toBe(1);
+    expect(dockerRuns).toEqual([]);
+    expect(result.report?.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          verdict: "fail",
+          code: "trust.detector-unavailable",
+          detail: expect.stringContaining("could not verify expected image digest"),
+        }),
+      ]),
+    );
   });
 
   it("maps stubbed SkillSpector SARIF rule IDs into trust checks", async () => {

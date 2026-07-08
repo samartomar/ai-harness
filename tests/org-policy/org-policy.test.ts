@@ -196,6 +196,39 @@ describe("OrgPolicySchema", () => {
     });
   });
 
+  it("parses reviewed SkillSpector local digest approvals", () => {
+    expect(
+      parseOrgPolicy(
+        policy({
+          trust: {
+            skillspector: {
+              approvedDigests: [
+                {
+                  imageTag: "skillspector:aih-326a2b489411",
+                  imageDigest:
+                    "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                  sourceRevision: "326a2b489411a20ed742ff13701be39ba00063c8",
+                  reason: "reviewed local Docker build from pinned source",
+                  reviewer: "security-platform",
+                  approvedAt: "2026-07-08T00:00:00.000Z",
+                },
+              ],
+            },
+          },
+        }),
+      ).trust?.skillspector?.approvedDigests,
+    ).toEqual([
+      {
+        imageTag: "skillspector:aih-326a2b489411",
+        imageDigest: "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        sourceRevision: "326a2b489411a20ed742ff13701be39ba00063c8",
+        reason: "reviewed local Docker build from pinned source",
+        reviewer: "security-platform",
+        approvedAt: "2026-07-08T00:00:00.000Z",
+      },
+    ]);
+  });
+
   it("rejects redefinitions; command policy changes must be deltas", () => {
     expect(() => parseOrgPolicy(policy({ command: { deny: ["kubectl delete*"] } }))).toThrow(
       /org-policy/,
@@ -224,6 +257,28 @@ describe("OrgPolicySchema", () => {
     expect(() => parseOrgPolicy(policy({ trust: { requiredDetectors: ["unknown"] } }))).toThrow(
       /org-policy/,
     );
+  });
+
+  it("rejects malformed SkillSpector local digest approvals", () => {
+    expect(() =>
+      parseOrgPolicy(
+        policy({
+          trust: {
+            skillspector: {
+              approvedDigests: [
+                {
+                  imageTag: "skillspector:aih-local",
+                  imageDigest: "sha256:ABC",
+                  sourceRevision: "326a2b489411a20ed742ff13701be39ba00063c8",
+                  reason: "reviewed local Docker build",
+                  approvedAt: "2026-07-08T00:00:00.000Z",
+                },
+              ],
+            },
+          },
+        }),
+      ),
+    ).toThrow(/org-policy/);
   });
 
   it("readOrgPolicy fails closed on malformed committed policy JSON", () => {

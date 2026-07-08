@@ -22,7 +22,10 @@ and MCP pre-flight — generically for any TLS-intercepting proxy (`--ca-pattern
 never hardcoded). Diagnoses by default (exits non-zero when broken) and repairs under `--apply`;
 the npm self-heal is emitted as an operator-run script (never executed) and the only mutation is a
 local Windows registry write to persist the CA for GUI-launched apps (Claude/Kiro), so the harness
-never contacts a remote. `--scope certs,npm,path,mcp,all`.
+never contacts a remote. PATH fixes are emitted as reviewed shell/profile instructions rather than
+silently editing shell profiles. For major AI-Harness upgrades, prefer
+`npm install -g @aihq/harness@latest`; add `--force` only when replacing a broken global install
+after reviewing the current workstation state. `--scope certs,npm,path,mcp,all`.
 
 ## aih tools
 
@@ -229,13 +232,18 @@ grades danger (auto-exec hooks, dependency-confusion, typosquat, incoming-MCP, s
 SARIF; `allow`/`pin` record reviewed sources + pinned SHAs in org policy; `list`/`verify` audit the
 committed policy and trust-lock evidence. `skillspector-pin` reports the pinned SkillSpector image
 tag, upstream commit, and digest; candidate inputs surface the upstream compare URL before accepting
-a pin bump and flag reuse of the current tag with different bytes or source revision.
+a pin bump and flag reuse of the current tag with different bytes or source revision. With
+`--approve-local-digest`, it can record a reviewed local SkillSpector image digest in
+`trust.skillspector.approvedDigests[]` for the pinned source revision.
 
 ## aih skill
 
 The **skill lifecycle** on top of `trust` — a complete governance loop for external agent skills.
 `vet <src>` runs the read-only gate pipeline (shape, license, trust scan) to a
 **GREEN/YELLOW/RED/UNKNOWN** verdict + a local evidence artifact (never installs).
+For multi-skill sources, `vet <src> --name <skill> --apply` writes scoped evidence for
+one logical skill; `card --name <skill>` and `approve --name <skill>` require that matching
+scoped evidence rather than a source-wide report.
 The deep-scan ladder records detector availability in evidence via `analyzersRun`: aih-native,
 SkillSpector, Cisco AI Defense skill-scanner, Semgrep, Snyk Agent Scan, AgentShield, and the
 MCP scanner when MCP config is present; detector findings escalate the verdict, while unavailable
@@ -473,8 +481,10 @@ the enterprise gate. `GITHUB_HOST` may supply the same https origin when no poli
 For vetted third-party MCP, add the server to `mcp.allowedServers` and keep reviewer evidence in
 `mcp.approvals`; `aih mcp approve <server> --accept-egress --reason "<why>" --apply` writes that
 local policy entry with a subject fingerprint for the current server shape. Without `--apply`, it
-previews the change. When `AIH_ORG_POLICY` is set, edit
-the distributed org policy instead because it wins over local files. `allowedServers` narrows the
+previews the change. Hand-authored `mcp.approvals[]` entries must include `server`, `subject`,
+`acceptEgress: true`, `reason`, and ISO-8601 `approvedAt`; `reviewer` is optional. When
+`AIH_ORG_POLICY` is set, edit the distributed org policy directly because it wins over local files
+and `aih mcp approve --apply` refuses repo-local approval writes. `allowedServers` narrows the
 managed stdio allowlist only when `mcp.allowManagedOnly` is true. At Enterprise posture, a normal
 apply keeps the full generated server set but warns when policy denies any server; add
 `--mcp-compliant` to omit denied generated servers from MCP client configs and list them with reasons

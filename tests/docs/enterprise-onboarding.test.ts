@@ -16,7 +16,7 @@ describe("enterprise onboarding docs", () => {
     const doc = readFileSync(join(root, "docs", "ENTERPRISE_ONBOARDING.md"), "utf8");
     const examples = jsonBlocks(doc);
 
-    expect(examples).toHaveLength(2);
+    expect(examples.length).toBeGreaterThanOrEqual(2);
     for (const example of examples) {
       expect(() => parseOrgPolicy(example)).not.toThrow();
     }

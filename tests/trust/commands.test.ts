@@ -122,6 +122,56 @@ describe("trust allow/list/pin commands", () => {
     ).toBe(true);
   });
 
+  it("preserves reviewed SkillSpector digest approvals when upserting trust sources", async () => {
+    const candidateDigest = `sha256:${"f".repeat(64)}`;
+    write(
+      "aih-org-policy.json",
+      JSON.stringify({
+        schemaVersion: 1,
+        minimumPosture: "team",
+        references: { repoContract: "ai-coding/project.json" },
+        trust: {
+          skillspector: {
+            approvedDigests: [
+              {
+                imageTag: SKILLSPECTOR_IMAGE,
+                imageDigest: candidateDigest,
+                sourceRevision: SKILLSPECTOR_SOURCE_REVISION,
+                reason: "reviewed local Docker build from pinned SkillSpector source",
+                approvedAt: "2026-07-08T00:00:00.000Z",
+              },
+            ],
+          },
+        },
+      }),
+    );
+
+    const c = ctx({ source: "owner/repo", pin: "a".repeat(40) }, true);
+    await executePlan(await trustAllowCommand.plan(c), c);
+
+    expect(readPolicy()).toMatchObject({
+      trust: {
+        approvedSources: [{ owner: "owner", repo: "repo", pinnedSha: "a".repeat(40) }],
+        skillspector: {
+          approvedDigests: [
+            {
+              imageTag: SKILLSPECTOR_IMAGE,
+              imageDigest: candidateDigest,
+              sourceRevision: SKILLSPECTOR_SOURCE_REVISION,
+            },
+          ],
+        },
+      },
+    });
+  });
+
+  it("refuses local trust approval writes while AIH_ORG_POLICY is active", () => {
+    const c = ctx({ source: "owner/repo", pin: "a".repeat(40) });
+    c.env.AIH_ORG_POLICY = "operator-policy.json";
+
+    expect(() => trustAllowCommand.plan(c)).toThrow(/AIH_ORG_POLICY is active/);
+  });
+
   it("surfaces malformed policy writes as AIH_TRUST errors", () => {
     write("aih-org-policy.json", "{ broken");
 
@@ -327,6 +377,70 @@ describe("trust skillspector-pin command", () => {
         }),
       ]),
     );
+  });
+
+  it("records an admin-reviewed local digest approval when explicitly requested", async () => {
+    const candidateDigest = `sha256:${"f".repeat(64)}`;
+    const c = ctx(
+      {
+        approveLocalDigest: true,
+        candidateDigest,
+        candidateRevision: SKILLSPECTOR_SOURCE_REVISION,
+        reason: "reviewed local Docker build from pinned SkillSpector source",
+        reviewer: "security-platform",
+      },
+      true,
+    );
+
+    const result = await executePlan(await trustSkillspectorPinCommand.plan(c), c);
+
+    expect(result.report?.ok).toBe(true);
+    expect(readPolicy()).toMatchObject({
+      trust: {
+        skillspector: {
+          approvedDigests: [
+            {
+              imageTag: SKILLSPECTOR_IMAGE,
+              imageDigest: candidateDigest,
+              sourceRevision: SKILLSPECTOR_SOURCE_REVISION,
+              reason: "reviewed local Docker build from pinned SkillSpector source",
+              reviewer: "security-platform",
+            },
+          ],
+        },
+      },
+    });
+    const approvedAt = (
+      readPolicy().trust as {
+        skillspector?: { approvedDigests?: Array<{ approvedAt?: string }> };
+      }
+    ).skillspector?.approvedDigests?.[0]?.approvedAt;
+    expect(approvedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+  });
+
+  it("refuses local SkillSpector digest approvals while AIH_ORG_POLICY is active", () => {
+    const c = ctx({
+      approveLocalDigest: true,
+      candidateDigest: `sha256:${"f".repeat(64)}`,
+      candidateRevision: SKILLSPECTOR_SOURCE_REVISION,
+      reason: "reviewed local Docker build",
+    });
+    c.env.AIH_ORG_POLICY = "operator-policy.json";
+
+    expect(() => trustSkillspectorPinCommand.plan(c)).toThrow(/AIH_ORG_POLICY is active/);
+  });
+
+  it("refuses local digest approval for a changed upstream revision", () => {
+    expect(() =>
+      trustSkillspectorPinCommand.plan(
+        ctx({
+          approveLocalDigest: true,
+          candidateDigest: `sha256:${"f".repeat(64)}`,
+          candidateRevision: "b".repeat(40),
+          reason: "reviewed local Docker build",
+        }),
+      ),
+    ).toThrow(/only accepts local builds of the pinned SkillSpector commit/);
   });
 
   it("flags retagging a newer checkout onto the current SkillSpector tag", async () => {

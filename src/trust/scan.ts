@@ -31,6 +31,7 @@ import {
   trustFetchExec,
 } from "./fetch.js";
 import { gradeTrustCheck } from "./grade.js";
+import type { SkillSpectorImageApproval } from "./images.js";
 import { scanTrustDocument } from "./lint.js";
 import { scanTrustManifests } from "./manifest.js";
 import { classifyIncomingMcp } from "./mcp-classify.js";
@@ -71,6 +72,7 @@ interface ScanTrustTreeOptions {
   requiredDetectors?: readonly TrustDetectorName[];
   run?: Runner;
   sandboxSmokeShape?: SandboxSmokeShape;
+  skillspectorImageApprovals?: readonly SkillSpectorImageApproval[];
 }
 
 export interface TrustScanResult {
@@ -267,6 +269,7 @@ function normalizeScanOptions(options: ScanTrustTreeOptions = {}): {
   requiredDetectors: readonly TrustDetectorName[];
   run?: Runner;
   sandboxSmokeShape?: SandboxSmokeShape;
+  skillspectorImageApprovals: readonly SkillSpectorImageApproval[];
 } {
   return {
     env: options.env,
@@ -277,6 +280,7 @@ function normalizeScanOptions(options: ScanTrustTreeOptions = {}): {
     requiredDetectors: options.requiredDetectors ?? [],
     run: options.run,
     sandboxSmokeShape: options.sandboxSmokeShape,
+    skillspectorImageApprovals: options.skillspectorImageApprovals ?? [],
   };
 }
 
@@ -671,6 +675,7 @@ export async function scanTrustTreeWithAnalyzers(
     requiredDetectors,
     run,
     sandboxSmokeShape,
+    skillspectorImageApprovals,
   } = normalizeScanOptions(options);
   const docs = collectTrustDocs(safeRoot);
   const mcpConfigFiles = collectIncomingMcpConfigFiles(safeRoot);
@@ -693,6 +698,7 @@ export async function scanTrustTreeWithAnalyzers(
         posture,
         requiredDetectors,
         run,
+        skillspectorImageApprovals,
       })
     : {
         checks: missingDetectorRuntimeChecks(requiredDetectors ?? [], posture),
@@ -706,11 +712,17 @@ export async function scanTrustTreeWithAnalyzers(
           posture,
           requiredDetectors,
           run,
+          skillspectorImageApprovals,
         })
       : { checks: [], analyzersRun: [] };
   const effectiveSandboxSmokeShape = sandboxSmokeShape ?? sandboxSmokeShapeForTrustScan(safeRoot);
   const sandboxSmokeChecks = [
-    await sandboxSmokeCheck(safeRoot, effectiveSandboxSmokeShape, { env, platform, run }),
+    await sandboxSmokeCheck(safeRoot, effectiveSandboxSmokeShape, {
+      env,
+      platform,
+      run,
+      skillspectorImageApprovals,
+    }),
   ];
   const nonSmokeChecks = [...checks, ...detectorResult.checks, ...mcpDetectorResult.checks];
   const allChecks =
@@ -756,6 +768,7 @@ function orgPolicyTrustChecks(error: unknown): Check[] {
 
 function requiredDetectorsFromPolicy(ctx: PlanContext): {
   requiredDetectors: readonly TrustDetectorName[];
+  skillspectorImageApprovals: readonly SkillSpectorImageApproval[];
   mcpPolicy?: OrgPolicy["mcp"];
   checks: Check[];
 } {
@@ -763,11 +776,16 @@ function requiredDetectorsFromPolicy(ctx: PlanContext): {
     const policy = readOrgPolicy(ctx.root, ctx.env);
     return {
       requiredDetectors: policy?.trust?.requiredDetectors ?? [],
+      skillspectorImageApprovals: policy?.trust?.skillspector?.approvedDigests ?? [],
       mcpPolicy: policy?.mcp,
       checks: [],
     };
   } catch (error) {
-    return { requiredDetectors: [], checks: orgPolicyTrustChecks(error) };
+    return {
+      requiredDetectors: [],
+      skillspectorImageApprovals: [],
+      checks: orgPolicyTrustChecks(error),
+    };
   }
 }
 
@@ -784,6 +802,10 @@ export function scanOptionsFromContext(
     mcpPolicy: base.mcpPolicy ?? policy.mcpPolicy,
     requiredDetectors: policy.requiredDetectors,
     run: ctx.run,
+    skillspectorImageApprovals: [
+      ...policy.skillspectorImageApprovals,
+      ...(base.skillspectorImageApprovals ?? []),
+    ],
   };
 }
 

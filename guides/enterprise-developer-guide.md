@@ -18,7 +18,7 @@ The admin config controls policy, approvals, pins, and allowed surfaces. The dev
 
 Do not commit secrets. It is safe to commit placeholders such as `${GITHUB_PERSONAL_ACCESS_TOKEN}` inside reviewed MCP templates when the CLI or client expects an env reference. It is not safe to commit actual GitHub, Jira, Figma, AWS, or other tokens. Real values stay in the local shell, browser OAuth flow, or the organization's secret manager.
 
-Current public release baseline: `@aihq/harness@2.4.0`, published on 2026-07-07.
+Current public release baseline: `@aihq/harness@2.4.2`, published on 2026-07-08.
 
 ## 2. Quickstart / Implementation Blueprint
 
@@ -27,8 +27,12 @@ Verify the installed release first:
 ```powershell
 npm install -g @aihq/harness
 npm audit signatures
-aih verify-release 2.4.0
+aih verify-release 2.4.2
 ```
+
+Use `npm install -g @aihq/harness@latest` for major-version upgrades; `npm update -g`
+may stay within the current major. Use `--force` only to replace a broken global
+install after reviewing the npm prefix and package source.
 
 Clone the admin configuration repo and point AI-Harness at the policy:
 
@@ -69,6 +73,18 @@ aih mcp --posture enterprise --mode offline --mcp-compliant --verify
 aih doctor --posture enterprise
 aih secrets --verify
 ```
+
+Before relying on offline MCP startup, warm the pinned `uvx` package cache on the
+workstation or base image:
+
+```powershell
+uvx code-review-graph@2.3.6 --version
+uvx codebase-memory-mcp@0.8.1 --help
+uvx --offline --no-python-downloads --no-env-file code-review-graph@2.3.6 --version
+```
+
+If `uvx` is not found, run `aih heal --scope path` and add the reported user-bin
+directory through the approved shell/profile path.
 
 ### Balanced
 
