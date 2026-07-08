@@ -5,6 +5,8 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { aihIgnoreWrite } from "../../src/internals/gitignore.js";
 
+const TEST_PROCESS_TIMEOUT_MS = 10_000;
+
 let root: string;
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), "aih-gi-"));
@@ -19,6 +21,7 @@ describe("aihIgnoreWrite", () => {
     expect(w.path).toBe(".gitignore");
     expect(w.contents).toContain("*.aih.bak");
     expect(w.contents).toContain("*.aih.tmp");
+    expect(w.contents).toContain(".aih-truth.json");
   });
 
   it("appends the patterns while preserving existing content", () => {
@@ -27,12 +30,13 @@ describe("aihIgnoreWrite", () => {
     expect(w.contents).toContain("node_modules/");
     expect(w.contents).toContain("dist/");
     expect(w.contents).toContain("*.aih.bak");
+    expect(w.contents).toContain(".aih-truth.json");
   });
 
   it("is a no-op when the current block is already present (byte-identical)", () => {
     const original =
       "node_modules/\n\n# aih-managed (backup, temp, and generated reports)\n" +
-      "*.aih.bak\n*.aih.tmp\n!.aih/\n.aih/*\n!.aih/usage-record.mjs\n";
+      "*.aih.bak\n*.aih.tmp\n.aih-truth.json\n!.aih/\n.aih/*\n!.aih/usage-record.mjs\n";
     writeFileSync(join(root, ".gitignore"), original);
     expect(aihIgnoreWrite(root).contents).toBe(original);
   });
@@ -42,6 +46,7 @@ describe("aihIgnoreWrite", () => {
     const lines = c.split(/\r?\n/);
     expect(lines).toContain("!.aih/"); // re-include the dir past an earlier `.*/`-style exclude
     expect(c).toContain(".aih/*"); // ignore the data dir contents
+    expect(c).toContain(".aih-truth.json"); // machine-local truth sidecar pointer
     expect(c).toContain("!.aih/usage-record.mjs"); // but re-include the recorder tool
     // The three ordered so later rules win: `!.aih/` (dir) → `.aih/*` (data) → recorder.
     expect(lines.indexOf("!.aih/")).toBeLessThan(lines.indexOf(".aih/*"));
@@ -78,7 +83,7 @@ describe("aihIgnoreWrite", () => {
   it("preserves CRLF EOL and stays byte-identical when the block is already correct", () => {
     const crlf =
       "node_modules/\r\n\r\n# aih-managed (backup, temp, and generated reports)\r\n" +
-      "*.aih.bak\r\n*.aih.tmp\r\n!.aih/\r\n.aih/*\r\n!.aih/usage-record.mjs\r\n";
+      "*.aih.bak\r\n*.aih.tmp\r\n.aih-truth.json\r\n!.aih/\r\n.aih/*\r\n!.aih/usage-record.mjs\r\n";
     writeFileSync(join(root, ".gitignore"), crlf);
     const out = aihIgnoreWrite(root).contents ?? "";
     expect(out).toBe(crlf); // no LF rewrite, no noisy diff on Windows
@@ -96,6 +101,7 @@ describe("aihIgnoreWrite", () => {
     // Legacy line stripped; each managed pattern appears exactly once.
     expect(lines).not.toContain(".aih/");
     expect(lines.filter((l) => l === "*.aih.bak")).toHaveLength(1);
+    expect(lines.filter((l) => l === ".aih-truth.json")).toHaveLength(1);
     expect(lines.filter((l) => l === ".aih/*")).toHaveLength(1);
     expect(lines.filter((l) => l === "!.aih/usage-record.mjs")).toHaveLength(1);
     // Only one managed header survives the migration.
@@ -112,7 +118,11 @@ describe("aihIgnoreWrite", () => {
     // the `!.aih/usage-record.mjs` negation can actually re-include the recorder. This
     // is verified against the real git rule engine, not an approximate JS matcher.
     const git = (...args: string[]): string =>
-      execFileSync("git", args, { cwd: root, encoding: "utf8" }).trim();
+      execFileSync("git", args, {
+        cwd: root,
+        encoding: "utf8",
+        timeout: TEST_PROCESS_TIMEOUT_MS,
+      }).trim();
     // A real git repo with git-managed line endings deterministic across platforms.
     git("init", "-q");
     git("config", "core.autocrlf", "false");
@@ -131,7 +141,10 @@ describe("aihIgnoreWrite", () => {
     // `git check-ignore -q <path>` exits 0 iff the path IS ignored, 1 if it is NOT.
     const isIgnored = (rel: string): boolean => {
       try {
-        execFileSync("git", ["check-ignore", "-q", rel], { cwd: root });
+        execFileSync("git", ["check-ignore", "-q", rel], {
+          cwd: root,
+          timeout: TEST_PROCESS_TIMEOUT_MS,
+        });
         return true; // exit 0 → ignored
       } catch {
         return false; // exit 1 → not ignored

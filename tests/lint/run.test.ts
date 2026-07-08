@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -109,6 +109,26 @@ describe("canonLintCheck (doctor surface)", () => {
     const res = canonLintCheck(tmp, "ai-coding");
     expect(res.verdict).toBe("skip");
     expect(res.detail).toContain("skeleton");
+  });
+
+  it("does not follow linked canon directories outside the repo", () => {
+    const outside = mkdtempSync(join(tmpdir(), "aih-lint-run-outside-"));
+    try {
+      put(
+        "ai-coding/RULE_ROUTER.md",
+        "# Router\n\nRead `ai-coding/rules/agent-behavior-core.md`.\n",
+      );
+      put("ai-coding/rules/agent-behavior-core.md", "# Core\n\nValidate repo evidence.\n");
+      writeFileSync(join(outside, "claude.md"), "Load #[[file:GHOST.md]].\n", "utf8");
+      symlinkSync(outside, join(tmp, "ai-coding", "adapters"), "junction");
+
+      const res = canonLintCheck(tmp, "ai-coding");
+
+      expect(res.verdict).toBe("pass");
+      expect(res.detail).not.toContain("GHOST.md");
+    } finally {
+      rmSync(outside, { recursive: true, force: true });
+    }
   });
 });
 

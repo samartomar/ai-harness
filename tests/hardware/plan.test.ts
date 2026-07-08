@@ -2,6 +2,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { SettingsError } from "../../src/errors.js";
 import { command } from "../../src/hardware/index.js";
 import { executePlan } from "../../src/internals/execute.js";
 import type { Action, DocAction, Plan, PlanContext } from "../../src/internals/plan.js";
@@ -163,6 +164,15 @@ describe("generated OLLAMA_* env block (rendered by the executor)", () => {
     // 12GB model on a 25GB server -> floor(25 / 14.4)=1.
     const body = await renderProfile(makeCtx({ env: winTmpEnv(), options: { modelSizeGb: "12" } }));
     expect(body).toContain('$env:OLLAMA_NUM_PARALLEL = "1"');
+  });
+
+  it("rejects malformed or non-positive --model-size-gb instead of using the default", async () => {
+    await expect(command.plan(makeCtx({ options: { modelSizeGb: "bogus" } }))).rejects.toThrow(
+      SettingsError,
+    );
+    await expect(command.plan(makeCtx({ options: { modelSizeGb: "-1" } }))).rejects.toThrow(
+      "--model-size-gb must be a positive number",
+    );
   });
 
   it("exposes the static vars and shell on the envblock action, rendering posix on linux", async () => {

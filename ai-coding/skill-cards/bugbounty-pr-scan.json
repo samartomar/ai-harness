@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "name": "bugbounty-pr-scan",
+  "source": "packs/review-quality/bugbounty-pr-scan",
+  "commit": "local",
+  "license": "Apache-2.0",
+  "owner": "aih-maintainers",
+  "pack": "review-quality",
+  "firstParty": true,
+  "intendedUse": "High-coverage PR scanning for generated ECC, agent, skill, MCP, workflow, and BUGBOUNTY runbook artifacts.",
+  "installScope": "repo",
+  "riskClass": "yellow",
+  "mode": "review-only",
+  "requiresMcp": false,
+  "requiresShell": false,
+  "scanEvidence": [
+    ".aih/skill-reports/bugbounty-pr-scan-local.json"
+  ],
+  "approval": {
+    "verdict": "YELLOW",
+    "approvedBy": "aih-maintainers",
+    "approvedAt": "2026-07-08T08:21:02.403Z"
+  }
+}

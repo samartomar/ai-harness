@@ -354,6 +354,8 @@ export function readRegularFileWithStats(
 ): { contents: Buffer; stats: Stats } | undefined {
   let fd: number;
   try {
+    const pathStats = lstatSync(abs);
+    if (pathStats.isSymbolicLink()) return undefined;
     fd = openSync(abs, fsConstants.O_RDONLY | O_NOFOLLOW);
   } catch {
     return undefined;

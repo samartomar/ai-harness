@@ -28,18 +28,14 @@ function sourceGlobs(stack: RepoStack): string[] {
 }
 
 /**
- * Fail-open command for the agentStop metrics snapshot. `aih` is a `.cmd` shim on the
- * npm-global bin — not guaranteed on PATH, and not spawnable without a shell — so
- * running `aih track --apply` bare fails (or, on Kiro, warns) every turn on a
- * PATH-restricted or shell-less host. Wrapping it in a one-shot `node -e` makes the
- * hook depend only on `node` (a real cross-platform executable, always present):
- * `execSync` runs the command via `cmd.exe /c` on Windows (resolving the `.cmd` shim
- * through PATHEXT) or `/bin/sh -c` on POSIX, the `try/catch` swallows a missing,
- * failing, or hung `aih`, and node exits 0 — so the turn is never failed. The inner
- * `timeout` bounds a stuck `aih` even if the hook host ignores its own `timeout`.
+ * Fail-open command for the agentStop metrics snapshot. The hook is still a `node -e`
+ * one-shot so it depends only on Node, but the actual `aih track --apply` call uses
+ * `execFileSync(..., shell:false)` with this workspace removed from PATH. A missing,
+ * failing, or hung global `aih` warns and exits 0 — so the turn is never failed.
+ * The inner timeout bounds a stuck `aih` even if the hook host ignores its timeout.
  */
 function metricsCommand(): string {
-  return `node -e "try{require('node:child_process').execSync('aih track --apply',{stdio:'ignore',timeout:12000})}catch{}"`;
+  return `node -e "const cp=require('node:child_process'),path=require('node:path');const cwd=process.cwd();const clean=(process.env.PATH||'').split(path.delimiter).filter(p=>{const r=path.relative(cwd,path.resolve(p));return r.startsWith('..')||path.isAbsolute(r)}).join(path.delimiter);try{cp.execFileSync('aih',['track','--apply'],{stdio:'ignore',timeout:12000,shell:false,env:{...process.env,PATH:clean}})}catch(e){console.warn('aih metrics snapshot skipped: '+(e&&e.message?e.message:e))}"`;
 }
 
 /** A single Kiro hook in the real `.kiro.hook` schema. */
@@ -101,7 +97,7 @@ export function kiroHooks(stack: RepoStack): KiroHook[] {
       enabled: true,
       name: "aih-metrics-on-stop",
       description:
-        "Record a metrics sample to .aih/history.jsonl when the agent finishes a turn (powers `aih report` trends). Fail-open: silently skips the snapshot when `aih` is not on PATH.",
+        "Record a metrics sample to .aih/history.jsonl when the agent finishes a turn (powers `aih report` trends). Fail-open: warns and skips the snapshot when `aih` is not on PATH.",
       when: { type: "agentStop" },
       // Kiro hook `timeout` is in SECONDS (default 60). agentStop is non-blocking, but a
       // stuck `aih` would still stall the turn until the default fires — cap it.

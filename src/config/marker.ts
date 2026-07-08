@@ -23,6 +23,7 @@ import { ContextDir } from "./settings.js";
  * design, so the `paths`/`pathAliases`/`artifactRoot` map is deliberately dropped.
  */
 export const AIH_CONFIG_FILE = ".aih-config.json";
+const AihConfigPostureSchema = z.enum(["vibe", "team", "enterprise"]);
 
 /**
  * Persisted bootstrap intent. `contextDir` reuses the SAME {@link ContextDir}
@@ -34,7 +35,7 @@ export const AihConfigSchema = z.object({
   contextDir: ContextDir,
   targets: z.array(z.string()).default([]),
   baseline: BaselineSourceIdSchema.optional(),
-  posture: z.enum(["vibe", "team", "enterprise"]).optional(),
+  posture: AihConfigPostureSchema.optional(),
   /**
    * `aih adopt`'s team decisions: CLI-native paths the team has acknowledged as
    * intentionally tool-native (so re-runs stop flagging them as import candidates —
@@ -60,6 +61,7 @@ export type AihConfigReadDiagnostic =
 export function readAihConfig(root: string): AihConfig | undefined {
   try {
     readAihConfigBaseline(root);
+    readAihConfigPosture(root);
   } catch (err) {
     if (err instanceof SettingsError) throw err;
   }
@@ -104,6 +106,29 @@ export function readAihConfigBaseline(root: string): BaselineSourceId | undefine
   if (isBaselineSourceId(baseline)) return baseline;
   throw new SettingsError(
     `invalid baseline in ${AIH_CONFIG_FILE}: expected one of ${baselineSourceIds().join("|")}`,
+  );
+}
+
+export function readAihConfigPosture(
+  root: string,
+): z.infer<typeof AihConfigPostureSchema> | undefined {
+  const raw = readIfExists(join(root, AIH_CONFIG_FILE));
+  if (raw === undefined) return undefined;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return undefined;
+  }
+  if (parsed === null || typeof parsed !== "object" || !("posture" in parsed)) {
+    return undefined;
+  }
+  const posture = (parsed as { posture?: unknown }).posture;
+  if (posture === undefined) return undefined;
+  const result = AihConfigPostureSchema.safeParse(posture);
+  if (result.success) return result.data;
+  throw new SettingsError(
+    `invalid posture in ${AIH_CONFIG_FILE}: expected vibe, team, or enterprise`,
   );
 }
 

@@ -38,6 +38,7 @@ interface ResolvePostureInput {
   flag?: unknown;
   flagSource?: string;
   marker?: AihConfig;
+  skipOrgPolicyFloor?: boolean;
 }
 
 const POSTURE_RANK: Record<Posture, number> = { vibe: 0, team: 1, enterprise: 2 };
@@ -110,7 +111,7 @@ export function resolvePosture(input: ResolvePostureInput): ResolvedPosture {
     resolved = { posture: "vibe", postureSource: "default" };
   }
 
-  const floor = readOrgPolicyFloor(input.root, input.env);
+  const floor = input.skipOrgPolicyFloor ? undefined : readOrgPolicyFloor(input.root, input.env);
   if (floor !== undefined) {
     const clamped = stronger(resolved.posture, floor.minimumPosture);
     if (POSTURE_RANK[floor.minimumPosture] >= POSTURE_RANK[resolved.posture]) {

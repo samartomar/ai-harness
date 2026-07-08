@@ -14,7 +14,7 @@ import { findingsFrom, type SupportFinding } from "./findings.js";
 import { redactText } from "./redact.js";
 import { renderTemplate, type SupportTemplate } from "./render.js";
 import { parseSupportGuidance } from "./setup.js";
-import type { SupportContext } from "./templates.js";
+import { isExternalFinding, isToolNeutral, type SupportContext } from "./templates.js";
 
 export interface SupportInputs {
   capability: string;
@@ -40,11 +40,59 @@ export interface SupportBundle {
   corporateGuidance?: string;
 }
 
+function neutralizeToolText(text: string): string {
+  return text
+    .replace(/\bAI Harness\b/gi, "the setup check")
+    .replace(/\bai-harness\b/gi, "the setup check")
+    .replace(/\baih(?:\s+[A-Za-z0-9._:/=@+-]+)*/gi, "the setup check");
+}
+
+function neutralProjectName(name: string): string {
+  return isToolNeutral(name) ? name : "this project";
+}
+
+function neutralizeExternalFinding(finding: SupportFinding): SupportFinding {
+  if (!isExternalFinding(finding)) return finding;
+  return {
+    ...finding,
+    title: neutralizeToolText(finding.title),
+    recommendedAction: neutralizeToolText(finding.recommendedAction),
+    details: finding.details.map(neutralizeToolText),
+    evidence: finding.evidence === undefined ? undefined : neutralizeToolText(finding.evidence),
+    affectedArea:
+      finding.affectedArea === undefined ? undefined : neutralizeToolText(finding.affectedArea),
+    acceptance: finding.acceptance?.map(neutralizeToolText),
+  };
+}
+
+function renderCheckedTemplate(finding: SupportFinding, ctx: SupportContext): SupportTemplate {
+  const template = renderTemplate(finding, ctx);
+  if (
+    isExternalFinding(finding) &&
+    (!isToolNeutral(template.subject) || !isToolNeutral(template.body))
+  ) {
+    throw new Error(`external support template is not tool-neutral for ${finding.code}`);
+  }
+  return template;
+}
+
 /** Build redacted, rendered support templates from a verification run. */
 export function buildSupport(input: SupportInputs): SupportBundle {
   const guidance = input.setupText ? parseSupportGuidance(input.setupText) : {};
+  const projectContext =
+    guidance.projectContext === undefined
+      ? undefined
+      : neutralizeToolText(redactText(guidance.projectContext, input.env));
+  const routing =
+    guidance.routing === undefined
+      ? undefined
+      : neutralizeToolText(redactText(guidance.routing, input.env));
+  const corporateGuidance =
+    guidance.corporateGuidance === undefined
+      ? undefined
+      : neutralizeToolText(redactText(guidance.corporateGuidance, input.env));
   const ctx: SupportContext = {
-    projectName: input.projectName,
+    projectName: neutralProjectName(input.projectName),
     root: redactText(input.root, input.env),
     command: redactText(input.command, input.env),
     contextDir: input.contextDir,
@@ -52,18 +100,18 @@ export function buildSupport(input: SupportInputs): SupportBundle {
     platform: input.platform,
     runId: input.runId,
     timestamp: input.timestamp,
-    projectContext: guidance.projectContext,
-    routing: guidance.routing,
-    corporateGuidance: guidance.corporateGuidance,
+    projectContext,
+    routing,
+    corporateGuidance,
   };
   const checks = input.checks.map((c) =>
     c.detail ? { ...c, detail: redactText(c.detail, input.env) } : c,
   );
-  const findings = findingsFrom(checks, input.capability);
+  const findings = findingsFrom(checks, input.capability).map(neutralizeExternalFinding);
   return {
     findings,
-    templates: findings.map((f) => renderTemplate(f, ctx)),
-    corporateGuidance: guidance.corporateGuidance,
+    templates: findings.map((f) => renderCheckedTemplate(f, ctx)),
+    corporateGuidance,
   };
 }
 

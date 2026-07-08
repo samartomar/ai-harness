@@ -40,9 +40,12 @@ Its threat model is built into the seven action kinds: `write`, `doc`, `probe`,
   commands only (for example `npx ecc-install`, `bash .kiro/install.sh`, `git config`,
   or quarantined read-only fetches). The dry-run plan shows every command before you
   apply it.
-- **Secrets.** The harness never reads or emits plaintext secrets; it generates
+- **Secrets.** The harness does not read `.env*` or root `secrets/**` contents
+  during secret checks. It does inspect known MCP config files for hardcoded
+  credential shapes and secret-looking key literals, but findings report only the
+  file, key, and match kind — never the detected value. It also generates
   deny-lists (`.claudeignore`, `.claude/settings.json`) and secret-scanning config
-  (`.gitleaks.toml`) instead.
+  (`.gitleaks.toml`).
 - **Generated installer commands** (ECC/Superpowers/Kiro) are exactly the upstream
   projects' documented commands — review them, and prefer your org's internal mirror.
 - **Release provenance.** Tagged release artifacts produced by the release workflow

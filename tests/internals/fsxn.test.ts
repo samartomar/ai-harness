@@ -302,17 +302,13 @@ describe("readRegularFile — the fd-guarded read for scan-discovered paths", ()
     expect(readRegularFile(join(dir, "sub"))).toBeUndefined();
   });
 
-  it("refuses a symlink instead of following it (POSIX O_NOFOLLOW)", () => {
+  it("refuses a symlink instead of following it", () => {
     writeFileSync(join(dir, "target.json"), "secret\n", "utf8");
     try {
       symlinkSync(join(dir, "target.json"), join(dir, "link.json"));
     } catch {
       return; // symlink creation needs privileges on Windows — skip
     }
-    // Windows has no O_NOFOLLOW at runtime; there the guarantee is the
-    // single-descriptor check-then-read, exercised by the cases above.
-    if (process.platform !== "win32") {
-      expect(readRegularFile(join(dir, "link.json"))).toBeUndefined();
-    }
+    expect(readRegularFile(join(dir, "link.json"))).toBeUndefined();
   });
 });

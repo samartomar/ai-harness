@@ -11,6 +11,17 @@
           "commit": "local"
         }
       ]
+    },
+    {
+      "name": "review-quality",
+      "description": "First-party review-quality skills for high-coverage BUGBOUNTY, generated-agent, skill, MCP, workflow, and evidence review.",
+      "skills": [
+        {
+          "name": "bugbounty-pr-scan",
+          "source": "packs/review-quality/bugbounty-pr-scan",
+          "commit": "local"
+        }
+      ]
     }
   ]
 }

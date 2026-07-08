@@ -262,6 +262,32 @@ export function addSharedFlags(cmd: Command): Command {
     );
 }
 
+function addReadOnlyFlags(cmd: Command): Command {
+  return cmd
+    .option("--json", "emit machine-readable JSON")
+    .option("--posture <posture>", "governance posture: vibe | team | enterprise", "vibe")
+    .option("--root <dir>", "target root")
+    .option("--support-out <dir>", "write IT/support tickets for failed checks to <dir>")
+    .option("--no-log", "do not append a row to the local run ledger (.aih/runs/)")
+    .option(
+      "--context-dir <dir>",
+      "canonical context directory name (any name works)",
+      "ai-coding",
+    );
+}
+
+function addFlagsForSpec(cmd: Command, spec: CommandSpec): Command {
+  return spec.readOnly ? addReadOnlyFlags(cmd) : addSharedFlags(cmd);
+}
+
+function addOptionsForSpec(cmd: Command, spec: CommandSpec): Command {
+  for (const o of spec.options ?? []) {
+    if (o.default !== undefined) cmd.option(o.flags, o.description, o.default);
+    else cmd.option(o.flags, o.description);
+  }
+  return cmd;
+}
+
 /**
  * The deprecated alias this invocation was actually typed with, if any.
  * Commander offers no "which alias matched" API, but the parent keeps
@@ -326,18 +352,8 @@ function registerSpec(program: Command, spec: CommandSpec): void {
   } else {
     cmd.argument("[root]", "target repository/workstation root (defaults to --root or cwd)");
   }
-  if (!spec.readOnly) addSharedFlags(cmd);
-  else
-    cmd
-      .option("--json", "emit machine-readable JSON")
-      .option("--posture <posture>", "governance posture: vibe | team | enterprise", "vibe")
-      .option("--root <dir>", "target root")
-      .option("--support-out <dir>", "write IT/support tickets for failed checks to <dir>")
-      .option("--no-log", "do not append a row to the local run ledger (.aih/runs/)");
-  for (const o of spec.options ?? []) {
-    if (o.default !== undefined) cmd.option(o.flags, o.description, o.default);
-    else cmd.option(o.flags, o.description);
-  }
+  addFlagsForSpec(cmd, spec);
+  addOptionsForSpec(cmd, spec);
   cmd.action(
     async (_rootArg: string | undefined, _options: Record<string, unknown>, command: Command) => {
       warnIfDeprecatedAlias(spec, command);
@@ -358,11 +374,8 @@ function registerSpec(program: Command, spec: CommandSpec): void {
       .command(workspaceAddCommand.name)
       .description(workspaceAddCommand.summary)
       .argument("<source>", "local path or GitHub owner/repo trust source");
-    addSharedFlags(add);
-    for (const o of workspaceAddCommand.options ?? []) {
-      if (o.default !== undefined) add.option(o.flags, o.description, o.default);
-      else add.option(o.flags, o.description);
-    }
+    addFlagsForSpec(add, workspaceAddCommand);
+    addOptionsForSpec(add, workspaceAddCommand);
     add.action(async (_source: string, _options: Record<string, unknown>, command: Command) => {
       process.exitCode = await runWorkspaceAdd(command);
     });
@@ -371,11 +384,8 @@ function registerSpec(program: Command, spec: CommandSpec): void {
       .command(workspaceLink.name)
       .description(workspaceLink.summary)
       .argument("<path>", "child repo path relative to the workspace root");
-    addSharedFlags(link);
-    for (const o of workspaceLink.options ?? []) {
-      if (o.default !== undefined) link.option(o.flags, o.description, o.default);
-      else link.option(o.flags, o.description);
-    }
+    addFlagsForSpec(link, workspaceLink);
+    addOptionsForSpec(link, workspaceLink);
     link.action(async (pathText: string, _options: Record<string, unknown>, command: Command) => {
       process.exitCode = await runCapability(workspaceLink, command, {
         positionalRoot: false,
@@ -387,11 +397,8 @@ function registerSpec(program: Command, spec: CommandSpec): void {
       .command(workspaceSnapshot.name)
       .description(workspaceSnapshot.summary)
       .argument("[root]", "target workspace root (defaults to --root or cwd)");
-    addSharedFlags(snap);
-    for (const o of workspaceSnapshot.options ?? []) {
-      if (o.default !== undefined) snap.option(o.flags, o.description, o.default);
-      else snap.option(o.flags, o.description);
-    }
+    addFlagsForSpec(snap, workspaceSnapshot);
+    addOptionsForSpec(snap, workspaceSnapshot);
     snap.action(
       async (_rootArg: string | undefined, _options: Record<string, unknown>, command: Command) => {
         process.exitCode = await runCapability(workspaceSnapshot, command);
@@ -402,11 +409,8 @@ function registerSpec(program: Command, spec: CommandSpec): void {
       .command(workspaceHydrate.name)
       .description(workspaceHydrate.summary)
       .argument("[root]", "target workspace root (defaults to --root or cwd)");
-    addSharedFlags(hydrate);
-    for (const o of workspaceHydrate.options ?? []) {
-      if (o.default !== undefined) hydrate.option(o.flags, o.description, o.default);
-      else hydrate.option(o.flags, o.description);
-    }
+    addFlagsForSpec(hydrate, workspaceHydrate);
+    addOptionsForSpec(hydrate, workspaceHydrate);
     hydrate.action(
       async (_rootArg: string | undefined, _options: Record<string, unknown>, command: Command) => {
         process.exitCode = await runCapability(workspaceHydrate, command);
@@ -417,11 +421,8 @@ function registerSpec(program: Command, spec: CommandSpec): void {
       .command(workspaceInit.name)
       .description(workspaceInit.summary)
       .argument("[root]", "target workspace root (defaults to --root or cwd)");
-    addSharedFlags(init);
-    for (const o of workspaceInit.options ?? []) {
-      if (o.default !== undefined) init.option(o.flags, o.description, o.default);
-      else init.option(o.flags, o.description);
-    }
+    addFlagsForSpec(init, workspaceInit);
+    addOptionsForSpec(init, workspaceInit);
     init.action(
       async (_rootArg: string | undefined, _options: Record<string, unknown>, command: Command) => {
         process.exitCode = await runCapability(workspaceInit, command);
@@ -432,11 +433,8 @@ function registerSpec(program: Command, spec: CommandSpec): void {
       .command(workspaceReport.name)
       .description(workspaceReport.summary)
       .argument("[root]", "target workspace root (defaults to --root or cwd)");
-    addSharedFlags(workspaceReportCmd);
-    for (const o of workspaceReport.options ?? []) {
-      if (o.default !== undefined) workspaceReportCmd.option(o.flags, o.description, o.default);
-      else workspaceReportCmd.option(o.flags, o.description);
-    }
+    addFlagsForSpec(workspaceReportCmd, workspaceReport);
+    addOptionsForSpec(workspaceReportCmd, workspaceReport);
     workspaceReportCmd.action(
       async (_rootArg: string | undefined, _options: Record<string, unknown>, command: Command) => {
         process.exitCode = await runCapability(workspaceReport, command);
@@ -447,11 +445,8 @@ function registerSpec(program: Command, spec: CommandSpec): void {
       .command(workspacePlan.name)
       .description(workspacePlan.summary)
       .argument("<task>", "workspace task description");
-    addSharedFlags(task);
-    for (const o of workspacePlan.options ?? []) {
-      if (o.default !== undefined) task.option(o.flags, o.description, o.default);
-      else task.option(o.flags, o.description);
-    }
+    addFlagsForSpec(task, workspacePlan);
+    addOptionsForSpec(task, workspacePlan);
     task.action(async (taskText: string, _options: Record<string, unknown>, command: Command) => {
       process.exitCode = await runCapability(workspacePlan, command, {
         positionalRoot: false,
@@ -464,11 +459,8 @@ function registerSpec(program: Command, spec: CommandSpec): void {
       .command(mcpApproveCommand.name)
       .description(mcpApproveCommand.summary)
       .argument("<server>", "MCP server name to approve");
-    addSharedFlags(approve);
-    for (const o of mcpApproveCommand.options ?? []) {
-      if (o.default !== undefined) approve.option(o.flags, o.description, o.default);
-      else approve.option(o.flags, o.description);
-    }
+    addFlagsForSpec(approve, mcpApproveCommand);
+    addOptionsForSpec(approve, mcpApproveCommand);
     approve.action(async (server: string, _options: Record<string, unknown>, command: Command) => {
       process.exitCode = await runCapability(mcpApproveCommand, command, {
         positionalRoot: false,
@@ -515,11 +507,8 @@ export function registerCommands(
     .command(trustAllowCommand.name)
     .description(trustAllowCommand.summary)
     .argument("<source>", "GitHub owner/repo trust source");
-  addSharedFlags(allow);
-  for (const o of trustAllowCommand.options ?? []) {
-    if (o.default !== undefined) allow.option(o.flags, o.description, o.default);
-    else allow.option(o.flags, o.description);
-  }
+  addFlagsForSpec(allow, trustAllowCommand);
+  addOptionsForSpec(allow, trustAllowCommand);
   allow.action(async (source: string, _options: Record<string, unknown>, command: Command) => {
     process.exitCode = await runCapability(trustAllowCommand, command, {
       positionalRoot: false,
@@ -528,11 +517,8 @@ export function registerCommands(
   });
 
   const list = trust.command(trustListCommand.name).description(trustListCommand.summary);
-  addSharedFlags(list);
-  for (const o of trustListCommand.options ?? []) {
-    if (o.default !== undefined) list.option(o.flags, o.description, o.default);
-    else list.option(o.flags, o.description);
-  }
+  addFlagsForSpec(list, trustListCommand);
+  addOptionsForSpec(list, trustListCommand);
   list.action(async (_options: Record<string, unknown>, command: Command) => {
     process.exitCode = await runCapability(trustListCommand, command, { positionalRoot: false });
   });
@@ -541,11 +527,8 @@ export function registerCommands(
     .command(trustPinCommand.name)
     .description(trustPinCommand.summary)
     .argument("<source>", "GitHub owner/repo trust source");
-  addSharedFlags(pin);
-  for (const o of trustPinCommand.options ?? []) {
-    if (o.default !== undefined) pin.option(o.flags, o.description, o.default);
-    else pin.option(o.flags, o.description);
-  }
+  addFlagsForSpec(pin, trustPinCommand);
+  addOptionsForSpec(pin, trustPinCommand);
   pin.action(async (source: string, _options: Record<string, unknown>, command: Command) => {
     process.exitCode = await runCapability(trustPinCommand, command, {
       positionalRoot: false,
@@ -556,11 +539,8 @@ export function registerCommands(
   const skillspectorPin = trust
     .command(trustSkillspectorPinCommand.name)
     .description(trustSkillspectorPinCommand.summary);
-  addSharedFlags(skillspectorPin);
-  for (const o of trustSkillspectorPinCommand.options ?? []) {
-    if (o.default !== undefined) skillspectorPin.option(o.flags, o.description, o.default);
-    else skillspectorPin.option(o.flags, o.description);
-  }
+  addFlagsForSpec(skillspectorPin, trustSkillspectorPinCommand);
+  addOptionsForSpec(skillspectorPin, trustSkillspectorPinCommand);
   skillspectorPin.action(async (_options: Record<string, unknown>, command: Command) => {
     process.exitCode = await runCapability(trustSkillspectorPinCommand, command, {
       positionalRoot: false,
@@ -571,11 +551,8 @@ export function registerCommands(
     .command(trustScanCommand.name)
     .description(trustScanCommand.summary)
     .argument("<target>", "local path or GitHub owner/repo trust source");
-  addSharedFlags(scan);
-  for (const o of trustScanCommand.options ?? []) {
-    if (o.default !== undefined) scan.option(o.flags, o.description, o.default);
-    else scan.option(o.flags, o.description);
-  }
+  addFlagsForSpec(scan, trustScanCommand);
+  addOptionsForSpec(scan, trustScanCommand);
   scan.action(async (target: string, _options: Record<string, unknown>, command: Command) => {
     process.exitCode = await runCapability(trustScanCommand, command, {
       positionalRoot: false,
@@ -587,11 +564,8 @@ export function registerCommands(
     .command(trustVerifyCommand.name)
     .description(trustVerifyCommand.summary)
     .argument("[id]", "optional trust-lock source id to verify");
-  addSharedFlags(verify);
-  for (const o of trustVerifyCommand.options ?? []) {
-    if (o.default !== undefined) verify.option(o.flags, o.description, o.default);
-    else verify.option(o.flags, o.description);
-  }
+  addFlagsForSpec(verify, trustVerifyCommand);
+  addOptionsForSpec(verify, trustVerifyCommand);
   verify.action(
     async (id: string | undefined, _options: Record<string, unknown>, command: Command) => {
       process.exitCode = await runCapability(trustVerifyCommand, command, {
@@ -609,11 +583,8 @@ export function registerCommands(
       .command(spec.name)
       .description(spec.summary)
       .argument("<source>", "local path or GitHub owner/repo skill source");
-    addSharedFlags(sub);
-    for (const o of spec.options ?? []) {
-      if (o.default !== undefined) sub.option(o.flags, o.description, o.default);
-      else sub.option(o.flags, o.description);
-    }
+    addFlagsForSpec(sub, spec);
+    addOptionsForSpec(sub, spec);
     sub.action(async (source: string, _options: Record<string, unknown>, command: Command) => {
       process.exitCode = await runCapability(spec, command, {
         positionalRoot: false,
@@ -624,7 +595,8 @@ export function registerCommands(
   // `inventory` takes no <source> — register it outside the vet/card/approve loop
   // (which forces a required positional), modeled on `trust list`.
   const inv = skill.command("inventory").description(skillInventoryCommand.summary);
-  addSharedFlags(inv);
+  addFlagsForSpec(inv, skillInventoryCommand);
+  addOptionsForSpec(inv, skillInventoryCommand);
   inv.action(async (_options: Record<string, unknown>, command: Command) => {
     process.exitCode = await runCapability(skillInventoryCommand, command, {
       positionalRoot: false,
@@ -633,15 +605,15 @@ export function registerCommands(
   // `remove` takes no <source> either (targets an installed skill via `--name`), so
   // register it like `inventory` — separate from the source-forcing vet/card/approve loop.
   const rm = skill.command("remove").description(skillRemoveCommand.summary);
-  addSharedFlags(rm);
-  for (const o of skillRemoveCommand.options ?? []) rm.option(o.flags, o.description);
+  addFlagsForSpec(rm, skillRemoveCommand);
+  addOptionsForSpec(rm, skillRemoveCommand);
   rm.action(async (_options: Record<string, unknown>, command: Command) => {
     process.exitCode = await runCapability(skillRemoveCommand, command, { positionalRoot: false });
   });
   // `quarantine` mirrors `remove`'s registration (no <source>, targets via `--name`).
   const quarantine = skill.command("quarantine").description(skillQuarantineCommand.summary);
-  addSharedFlags(quarantine);
-  for (const o of skillQuarantineCommand.options ?? []) quarantine.option(o.flags, o.description);
+  addFlagsForSpec(quarantine, skillQuarantineCommand);
+  addOptionsForSpec(quarantine, skillQuarantineCommand);
   quarantine.action(async (_options: Record<string, unknown>, command: Command) => {
     process.exitCode = await runCapability(skillQuarantineCommand, command, {
       positionalRoot: false,
@@ -649,8 +621,8 @@ export function registerCommands(
   });
 
   const sync = skill.command("sync").description(skillSyncCommand.summary);
-  addSharedFlags(sync);
-  for (const o of skillSyncCommand.options ?? []) sync.option(o.flags, o.description);
+  addFlagsForSpec(sync, skillSyncCommand);
+  addOptionsForSpec(sync, skillSyncCommand);
   sync.action(async (_options: Record<string, unknown>, command: Command) => {
     process.exitCode = await runCapability(skillSyncCommand, command, {
       positionalRoot: false,
@@ -675,11 +647,8 @@ export function registerCommands(
     packValidateCommand,
   ]) {
     const sub = pack.command(spec.name).description(spec.summary);
-    addSharedFlags(sub);
-    for (const o of spec.options ?? []) {
-      if (o.default !== undefined) sub.option(o.flags, o.description, o.default);
-      else sub.option(o.flags, o.description);
-    }
+    addFlagsForSpec(sub, spec);
+    addOptionsForSpec(sub, spec);
     sub.action(async (_options: Record<string, unknown>, command: Command) => {
       process.exitCode = await runCapability(spec, command, { positionalRoot: false });
     });
@@ -688,8 +657,8 @@ export function registerCommands(
   // pack source), so it gets a dedicated runner like `workspace add` instead of
   // the single-plan runCapability path.
   const packInstall = pack.command(packInstallCommand.name).description(packInstallCommand.summary);
-  addSharedFlags(packInstall);
-  for (const o of packInstallCommand.options ?? []) packInstall.option(o.flags, o.description);
+  addFlagsForSpec(packInstall, packInstallCommand);
+  addOptionsForSpec(packInstall, packInstallCommand);
   packInstall.action(async (_options: Record<string, unknown>, command: Command) => {
     process.exitCode = await runPackInstall(command);
   });
@@ -701,11 +670,8 @@ export function registerCommands(
     .description("Resolve and prune the derived machine capability cache");
   for (const spec of [capabilityResolveCommand, capabilityPruneCommand]) {
     const sub = capability.command(spec.name).description(spec.summary);
-    addSharedFlags(sub);
-    for (const o of spec.options ?? []) {
-      if (o.default !== undefined) sub.option(o.flags, o.description, o.default);
-      else sub.option(o.flags, o.description);
-    }
+    addFlagsForSpec(sub, spec);
+    addOptionsForSpec(sub, spec);
     sub.action(async (_options: Record<string, unknown>, command: Command) => {
       process.exitCode = await runCapability(spec, command, { positionalRoot: false });
     });
@@ -725,11 +691,8 @@ export function registerCommands(
     marketplacePublishCommand,
   ]) {
     const sub = marketplace.command(spec.name).description(spec.summary);
-    addSharedFlags(sub);
-    for (const o of spec.options ?? []) {
-      if (o.default !== undefined) sub.option(o.flags, o.description, o.default);
-      else sub.option(o.flags, o.description);
-    }
+    addFlagsForSpec(sub, spec);
+    addOptionsForSpec(sub, spec);
     sub.action(async (_options: Record<string, unknown>, command: Command) => {
       process.exitCode = await runCapability(spec, command, { positionalRoot: false });
     });
@@ -743,11 +706,8 @@ export function registerCommands(
     .description("Validate the org policy — the local aih-org-policy.json or a policy-bundle");
   for (const spec of [policyValidateCommand, policyVerifyCommand]) {
     const sub = policy.command(spec.name).description(spec.summary);
-    addSharedFlags(sub);
-    for (const o of spec.options ?? []) {
-      if (o.default !== undefined) sub.option(o.flags, o.description, o.default);
-      else sub.option(o.flags, o.description);
-    }
+    addFlagsForSpec(sub, spec);
+    addOptionsForSpec(sub, spec);
     sub.action(async (_options: Record<string, unknown>, command: Command) => {
       process.exitCode = await runCapability(spec, command, { positionalRoot: false });
     });
@@ -761,11 +721,8 @@ export function registerCommands(
     .description("Package aih's committed governance artifacts into a verifiable evidence bundle");
   for (const spec of [evidenceBuildCommand]) {
     const sub = evidence.command(spec.name).description(spec.summary);
-    addSharedFlags(sub);
-    for (const o of spec.options ?? []) {
-      if (o.default !== undefined) sub.option(o.flags, o.description, o.default);
-      else sub.option(o.flags, o.description);
-    }
+    addFlagsForSpec(sub, spec);
+    addOptionsForSpec(sub, spec);
     sub.action(async (_options: Record<string, unknown>, command: Command) => {
       process.exitCode = await runCapability(spec, command, { positionalRoot: false });
     });
@@ -776,11 +733,8 @@ export function registerCommands(
     .description("Assemble and verify the external project-truth sidecar");
   for (const spec of [truthPackCommand, truthVerifyCommand]) {
     const sub = truth.command(spec.name).description(spec.summary);
-    addSharedFlags(sub);
-    for (const o of spec.options ?? []) {
-      if (o.default !== undefined) sub.option(o.flags, o.description, o.default);
-      else sub.option(o.flags, o.description);
-    }
+    addFlagsForSpec(sub, spec);
+    addOptionsForSpec(sub, spec);
     sub.action(async (_options: Record<string, unknown>, command: Command) => {
       process.exitCode = await runCapability(spec, command, { positionalRoot: false });
     });

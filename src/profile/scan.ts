@@ -1,5 +1,6 @@
-import { type Dirent, existsSync, readdirSync, readFileSync } from "node:fs";
+import { type Dirent, existsSync, readdirSync } from "node:fs";
 import { join, relative } from "node:path";
+import { readRegularFile } from "../internals/fsxn.js";
 
 /**
  * The synthesized profile of a repository: languages, frameworks, cloud/deploy
@@ -278,14 +279,20 @@ export function scanRepo(root: string, opts: ScanOptions): RepoStack {
     goTools: new Set(),
     javaTools: new Set(),
   };
-  // Exclude the configured context dir (top path segment) alongside the static
-  // set, so re-scans never walk the canon aih itself generated (the default is
-  // now the VISIBLE `ai-coding`, which EXCLUDED_DIRS does not cover).
   const excluded = new Set<string>(EXCLUDED_DIRS);
-  const ctxTop = opts.contextDir?.split(/[/\\]/).find((s) => s.length > 0);
-  if (ctxTop) excluded.add(ctxTop);
-  walk(root, root, 0, Math.max(0, opts.maxDepth), raw, excluded);
+  const contextDir = normalizeContextDir(opts.contextDir);
+  walk(root, root, 0, Math.max(0, opts.maxDepth), raw, excluded, contextDir);
   return synthesize(root, raw, opts);
+}
+
+function normalizeContextDir(contextDir: string | undefined): string | undefined {
+  const normalized = contextDir
+    ?.replace(/\\/g, "/")
+    .replace(/\/+/g, "/")
+    .replace(/^\.\//, "")
+    .replace(/\/$/, "");
+  if (normalized === undefined || normalized.length === 0 || normalized === ".") return undefined;
+  return normalized;
 }
 
 function walk(
@@ -295,6 +302,7 @@ function walk(
   maxDepth: number,
   raw: Raw,
   excluded: ReadonlySet<string>,
+  contextDir: string | undefined,
 ): void {
   let entries: Dirent[];
   try {
@@ -310,16 +318,28 @@ function walk(
         push(raw.virtualEnvPaths, relative(root, join(dir, entry.name)).replace(/\\/g, "/"));
         continue;
       }
-      if (!excluded.has(entry.name)) subdirs.push(entry.name);
+      if (!shouldSkipDir(root, dir, entry.name, excluded, contextDir)) subdirs.push(entry.name);
       continue;
     }
-    if (entry.isFile() || entry.isSymbolicLink()) inspectFile(root, dir, entry.name, raw);
+    if (entry.isFile()) inspectFile(root, dir, entry.name, raw);
   }
 
   if (depth >= maxDepth) return;
   for (const name of subdirs) {
-    walk(root, join(dir, name), depth + 1, maxDepth, raw, excluded);
+    walk(root, join(dir, name), depth + 1, maxDepth, raw, excluded, contextDir);
   }
+}
+
+function shouldSkipDir(
+  root: string,
+  parent: string,
+  name: string,
+  excluded: ReadonlySet<string>,
+  contextDir: string | undefined,
+): boolean {
+  if (excluded.has(name)) return true;
+  if (contextDir === undefined) return false;
+  return relative(root, join(parent, name)).replace(/\\/g, "/") === contextDir;
 }
 
 function isPythonVirtualEnvDir(parent: string, name: string): boolean {
@@ -646,7 +666,9 @@ function readPkg(path: string): PkgJson {
   const pkg: PkgJson = { binEntries: [], scripts: {}, deps: new Set(), hasWorkspaces: false };
   let parsed: unknown;
   try {
-    parsed = JSON.parse(readFileSync(path, "utf8"));
+    const body = safeRead(path);
+    if (body.length === 0) return pkg;
+    parsed = JSON.parse(body);
   } catch {
     return pkg;
   }
@@ -1052,11 +1074,7 @@ function dedupe(values: string[]): string[] {
   return [...new Set(values)];
 }
 function safeRead(path: string): string {
-  try {
-    return readFileSync(path, "utf8");
-  } catch {
-    return "";
-  }
+  return readRegularFile(path)?.toString("utf8") ?? "";
 }
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);

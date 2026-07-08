@@ -123,14 +123,28 @@ export function guiCaNote(): string {
   );
 }
 
+function psSingleQuoted(value: string): string {
+  return `'${value.replace(/'/g, "''")}'`;
+}
+
+function cmdDoubleQuoted(value: string): string {
+  return `"${value.replace(/"/g, '""').replace(/%/g, "%%")}"`;
+}
+
+function posixDoubleQuoted(value: string): string {
+  return `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\$/g, "\\$").replace(/`/g, "\\`")}"`;
+}
+
 /** PATH fix guidance, per shell (advisory: PATH edits are left for the operator). */
 export function pathFixDoc(binDir: string, shell: "posix" | "powershell"): string {
   if (shell === "powershell") {
+    const psBinDir = psSingleQuoted(binDir);
+    const cmdBinDir = cmdDoubleQuoted(binDir);
     return lines(
       `Tools are installed in ${binDir} but it is not on PATH. Add it for your user`,
       "(GUI apps included) — this appends without clobbering the existing value:",
       "",
-      `  [Environment]::SetEnvironmentVariable('Path', [Environment]::GetEnvironmentVariable('Path','User') + ';${binDir}', 'User')`,
+      `  [Environment]::SetEnvironmentVariable('Path', [Environment]::GetEnvironmentVariable('Path','User') + ';' + ${psBinDir}, 'User')`,
       "",
       "On cmd.exe, or a locked-down box without PowerShell 7 (or under Constrained",
       "Language Mode, where the [Environment] call above is blocked), use setx. Read",
@@ -138,18 +152,19 @@ export function pathFixDoc(binDir: string, shell: "posix" | "powershell"): strin
       "in the machine Path and can truncate the value at setx's 1024-char limit:",
       "",
       "  reg query HKCU\\Environment /v Path",
-      `  setx Path "<current-user-path>;${binDir}"`,
+      `  setx Path "<current-user-path>;${binDir.replace(/"/g, '""').replace(/%/g, "%%")}"`,
       "",
-      `(If that reg query reports no value your user Path is empty — then just: setx Path "${binDir}")`,
+      `(If that reg query reports no value your user Path is empty — then just: setx Path ${cmdBinDir})`,
       "",
       "Then open a new terminal (and relaunch GUI apps) for it to take effect.",
     );
   }
+  const posixBinDir = posixDoubleQuoted(binDir);
   return lines(
     `Tools are installed in ${binDir} but it is not on PATH. Add it to your shell`,
     "profile (e.g. ~/.bashrc or ~/.zshrc):",
     "",
-    `  export PATH="${binDir}:$PATH"`,
+    `  export PATH=${posixBinDir}:$PATH`,
     "",
     "Then reopen your shell (or `source` the profile) for it to take effect.",
   );

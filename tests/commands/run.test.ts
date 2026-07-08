@@ -3,9 +3,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Command } from "commander";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { runCapability } from "../../src/commands/run.js";
+import { flagKey, runCapability } from "../../src/commands/run.js";
 import { type CommandSpec, digest, plan, probe } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
+import { policyValidateCommand } from "../../src/org-policy/validate.js";
 
 let dir: string;
 beforeEach(() => {
@@ -57,7 +58,11 @@ function command(argv: string[]): Command {
     // Mirror heal/certs: a commander DEFAULT of "Zscaler" so opts.caPattern is never
     // undefined — the exact condition run.ts must not let masquerade as an override.
     .option("--ca-pattern <pattern>", "", "Zscaler")
-    .option("--sarif <file>");
+    .option("--sarif <file>")
+    .option("--open")
+    .option("--demo")
+    .option("--refresh <sec>")
+    .option("--no-cache");
   cmd.parse(argv, { from: "user" });
   return cmd;
 }
@@ -95,6 +100,25 @@ const caEchoSpec: CommandSpec = {
   name: "ca-echo",
   summary: "echo the resolved ca pattern",
   plan: (ctx) => plan("ca-echo", digest("ca-pattern", String(ctx.options.caPattern))),
+};
+
+const cacheSpec: CommandSpec = {
+  name: "cache",
+  summary: "echo negatable custom option",
+  options: [{ flags: "--no-cache", description: "disable cache" }],
+  plan: (ctx) => plan("cache", digest("cache", String(ctx.options.cache))),
+};
+
+const liveSpec: CommandSpec = {
+  name: "live",
+  summary: "test report-style live options",
+  liveModeOptions: ["open", "demo", "refresh"],
+  options: [
+    { flags: "--open", description: "open" },
+    { flags: "--demo", description: "demo" },
+    { flags: "--refresh <sec>", description: "refresh" },
+  ],
+  plan: (ctx) => plan("live", digest("apply", String(ctx.apply))),
 };
 
 /** Resolve the CA pattern runCapability lands on for the given argv + env. */
@@ -287,6 +311,32 @@ describe("runCapability — posture precedence ladder (org floor > flag > marker
     expect(code).toBe(1);
     expect(out).toContain("invalid AIH_POSTURE");
   });
+
+  it("lets policy validate report malformed org policy as a coded verification finding", async () => {
+    writeFileSync(
+      join(dir, "aih-org-policy.json"),
+      JSON.stringify({ schemaVersion: 1, minimumPosture: "wild", references: {} }),
+    );
+
+    let out = "";
+    const code = await runCapability(policyValidateCommand, command(["--json", "--root", dir]), {
+      run: fakeRunner(() => undefined),
+      env: {},
+      write: (t) => {
+        out += t;
+      },
+    });
+
+    expect(code).toBe(1);
+    const payload = JSON.parse(out) as {
+      error?: unknown;
+      report?: { checks: Array<{ name: string; verdict: string; code?: string; detail?: string }> };
+    };
+    expect(payload.error).toBeUndefined();
+    const check = payload.report?.checks.find((c) => c.name === "org policy schema");
+    expect(check).toMatchObject({ verdict: "fail", code: "org-policy.invalid" });
+    expect(check?.detail).toContain("org-policy is invalid");
+  });
 });
 
 describe("runCapability — ca-pattern env fallback (flag > env > default)", () => {
@@ -310,6 +360,31 @@ describe("runCapability — ca-pattern env fallback (flag > env > default)", () 
   it("falls back to the Zscaler default when neither flag nor env is set", async () => {
     const out = await resolvedCaPattern(["--root", dir], {});
     expect(out).toContain("Zscaler");
+  });
+});
+
+describe("runCapability — custom option extraction", () => {
+  it("uses Commander attribute names for negatable custom options", async () => {
+    expect(flagKey("--no-cache")).toBe("cache");
+    const { out } = await run(["--no-cache", "--root", dir], cacheSpec);
+    expect(out).toContain("cache");
+    expect(out).toContain("false");
+  });
+});
+
+describe("runCapability — live report options", () => {
+  it("rejects --refresh with --json before emitting a mixed JSON/live stream", async () => {
+    const { code, out } = await run(["--json", "--refresh", "1", "--root", dir], liveSpec);
+    expect(code).toBe(1);
+    const payload = JSON.parse(out) as { error: { code: string; message: string } };
+    expect(payload.error.code).toBe("AIH_CONFIG");
+    expect(payload.error.message).toContain("--refresh cannot be combined with --json");
+  });
+
+  it("rejects fractional or zero refresh intervals", async () => {
+    const { code, out } = await run(["--refresh", "0.1", "--root", dir], liveSpec);
+    expect(code).toBe(1);
+    expect(out).toContain("--refresh must be an integer >= 1");
   });
 });
 

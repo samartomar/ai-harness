@@ -6,7 +6,7 @@ import {
   codexConfigRemovalAction,
   codexInstallStateCleanupAction,
 } from "../ecc/codex.js";
-import { ECC_NPM_CLI_BIN, ECC_NPM_PACKAGE, isEccInstallTarget } from "../ecc/install.js";
+import { ECC_NPM_CLI_BIN, ECC_NPM_PACKAGE, isAihDirectEccInstallTarget } from "../ecc/install.js";
 import type { Cli } from "../internals/clis.js";
 import { readIfExists } from "../internals/fsxn.js";
 import { aihIgnoreWrite } from "../internals/gitignore.js";
@@ -235,7 +235,7 @@ async function prunePlan(ctx: PlanContext): Promise<Plan> {
     else if (action.kind === "write") subtracted += 1;
   }
   for (const cli of set.dropped) {
-    if (isEccInstallTarget(cli)) actions.push(eccUninstallAction(ctx, cli));
+    if (isAihDirectEccInstallTarget(cli)) actions.push(eccUninstallAction(ctx, cli));
     if (cli === "codex") {
       const codexConfig = codexConfigRemovalAction(ctx);
       if (codexConfig) actions.push(codexConfig);

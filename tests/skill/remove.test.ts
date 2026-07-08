@@ -14,6 +14,7 @@ import { skillRemoveCommand } from "../../src/skill/remove.js";
 
 const PIN = "a".repeat(40);
 const CONTEXT_DIR = "ai-coding";
+const TEST_PROCESS_TIMEOUT_MS = 10_000;
 
 let workspace: string;
 let home: string;
@@ -136,7 +137,10 @@ const planOf = (c: PlanContext) => Promise.resolve(skillRemoveCommand.plan(c));
 const planOfSync = (c: PlanContext) => skillRemoveCommand.plan(c) as Plan;
 
 const git = (...args: string[]): void => {
-  execFileSync("git", ["-C", workspace, ...args], { stdio: "ignore" });
+  execFileSync("git", ["-C", workspace, ...args], {
+    stdio: "ignore",
+    timeout: TEST_PROCESS_TIMEOUT_MS,
+  });
 };
 
 /**
@@ -187,6 +191,21 @@ describe("skillRemoveCommand — the destructive inverse", () => {
     expect(existsSync(cardPath("clean"))).toBe(false);
     const lock = JSON.parse(readFileSync(join(workspace, "aih-skills.lock.json"), "utf8"));
     expect(lock.skills).toEqual([]);
+  });
+
+  it("refuses to rewrite a malformed skills lockfile during removal", () => {
+    installApproved("owner-repo", "clean");
+    writeFileSync(join(workspace, "aih-skills.lock.json"), "{ broken", "utf8");
+    const before = readFileSync(join(workspace, "aih-skills.lock.json"), "utf8");
+    const c = ctx({ apply: true, options: { name: "clean" } });
+
+    expect(() => skillRemoveCommand.plan(c)).toThrow(
+      /cannot update aih-skills\.lock\.json: file is not valid JSON/,
+    );
+
+    expect(readFileSync(join(workspace, "aih-skills.lock.json"), "utf8")).toBe(before);
+    expect(existsSync(promotedDir("owner-repo", "clean"))).toBe(true);
+    expect(existsSync(cardPath("clean"))).toBe(true);
   });
 
   it("--delete renames the dir to <dir>.aih.bak instead of .aih/legacy/", async () => {

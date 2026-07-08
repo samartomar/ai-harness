@@ -3,7 +3,8 @@ import { join } from "node:path";
 import { classifyCanon, isAdoptable } from "../adopt/classify.js";
 import { cliFootprint } from "../adopt/cli-footprint.js";
 import { readAihConfig } from "../config/marker.js";
-import { readIfExists } from "../internals/fsxn.js";
+import { readRegularFile } from "../internals/fsxn.js";
+import { isPlainObject, parseJsoncText } from "../internals/merge.js";
 import type { PlanContext } from "../internals/plan.js";
 import { gitCommittedSet } from "../internals/scan-allowlist.js";
 import type { RepoStack } from "../profile/scan.js";
@@ -97,11 +98,11 @@ function contractWorkspaces(stack: RepoStack): ProjectContract["workspaces"] | u
 }
 
 function readMcpServers(root: string): string[] {
-  const raw = readIfExists(join(root, ".mcp.json"));
+  const raw = readRegularFile(join(root, ".mcp.json"))?.toString("utf8");
   if (raw === undefined) return [];
   try {
-    const parsed = JSON.parse(raw) as { mcpServers?: unknown };
-    if (typeof parsed.mcpServers !== "object" || parsed.mcpServers === null) return [];
+    const parsed = parseJsoncText(raw);
+    if (!isPlainObject(parsed) || !isPlainObject(parsed.mcpServers)) return [];
     return [...new Set(Object.keys(parsed.mcpServers).map(safeMcpServerLabel))].sort((a, b) =>
       a.localeCompare(b),
     );

@@ -29,7 +29,8 @@ import {
   eccActionsForCli,
   eccSupplyChainDoc,
   eccToolsDoc,
-  isEccInstallTarget,
+  isAihDirectEccInstallTarget,
+  normalizeEccInstallVersion,
 } from "./install.js";
 import { eccLanguages } from "./select.js";
 
@@ -212,13 +213,18 @@ function kiroEccActions(ctx: PlanContext, repo: EccRepoCheckout): Action[] {
       ),
     ];
   }
+  const checkoutStatus = repo.ref
+    ? `pinned to \`${repo.ref}\` via shallow fetch/clone`
+    : repo.hasCache
+      ? "existing cached checkout; `git pull --ff-only` is attempted under `--apply` and any failure is reported by that exec action"
+      : "cloned with `git clone --depth 1`";
   return [
     ...installActions,
     doc(
-      "ECC Kiro install (latest via cached git checkout)",
+      "ECC Kiro install (cached git checkout)",
       lines(
         "Kiro content isn't on npm, so aih keeps a shallow git checkout of ECC at",
-        `\`${repo.posix}\` — ${repo.hasCache ? "refreshed to the latest with `git pull`" : "cloned with `git clone --depth 1`"}`,
+        `\`${repo.posix}\` — ${checkoutStatus}`,
         "on this run — and runs ECC's native `.kiro/install.sh` to copy its curated Kiro",
         "agents, skills, steering, hooks, scripts, and settings into this repo's `.kiro/`",
         "(idempotent). Requires git on PATH plus Git for Windows (Git Bash) installed; aih",
@@ -307,13 +313,12 @@ function codexEccActions(ctx: PlanContext, repo: EccRepoCheckout, profile: strin
       once: true,
     }),
     exec(
-      `Install ECC Node dependencies for Codex merge helpers — npm install --omit=dev --ignore-scripts --package-lock=false in ${repo.posix} (under --apply)`,
+      `Install ECC Node dependencies for Codex merge helpers — npm ci --omit=dev --ignore-scripts in ${repo.posix} (lockfile-based, under --apply)`,
       execArgv(ctx.host.platform, [
         "npm",
-        "install",
+        "ci",
         "--omit=dev",
         "--ignore-scripts",
-        "--package-lock=false",
         "--no-audit",
         "--no-fund",
       ]),
@@ -399,13 +404,15 @@ async function eccPlan(ctx: PlanContext): Promise<Plan> {
   const { clis, detectFellBack } = await resolveTargets(ctx);
   const stack = scanRepo(ctx.root, { maxDepth: 8, contextDir: ctx.contextDir });
   const profile = String(ctx.options.profile ?? "core");
-  const installVersion = (ctx.env.AIH_ECC_INSTALL_VERSION ?? "").trim() || undefined;
+  const languageSelection = eccLanguages(stack);
+  const installVersion = normalizeEccInstallVersion(ctx.env.AIH_ECC_INSTALL_VERSION);
   const eccRef = (ctx.env.AIH_ECC_REF ?? "").trim() || undefined;
   const inputs: EccInstallInputs = {
     profile,
     stackSummary: stackSummary(stack),
     platform: ctx.host.platform,
     installVersion,
+    packs: languageSelection.packs,
   };
 
   const actions: Action[] = [];
@@ -424,14 +431,16 @@ async function eccPlan(ctx: PlanContext): Promise<Plan> {
       if (codexBlockers.length > 0) actions.push(...codexBlockers);
       else if (repo) actions.push(...codexEccActions(ctx, repo, profile));
     } else {
-      if (isEccInstallTarget(cli)) npmInstallerPlanned = true;
+      if (isAihDirectEccInstallTarget(cli)) npmInstallerPlanned = true;
       actions.push(...eccActionsForCli(cli, inputs));
     }
   }
   // Surface the supply-chain advisory whenever an upstream surface runs unpinned:
-  // the npm installer (no install-version) or the Codex/Kiro git checkout (no ref).
+  // the npm installer (no install-version), the Codex/Kiro git checkout (no ref),
+  // or the Codex merge-helper dependency install (npm ci still consumes upstream
+  // registry bytes unless the operator mirrors the registry).
   const npmUnpinned = npmInstallerPlanned && installVersion === undefined;
-  if (npmUnpinned || ((hasKiro || codexInstallPlanned) && eccRef === undefined)) {
+  if (npmUnpinned || (hasKiro && eccRef === undefined) || codexInstallPlanned) {
     actions.push(eccSupplyChainDoc());
   }
   actions.push(eccToolsDoc());

@@ -26,6 +26,19 @@ async function trackPlan(ctx: PlanContext) {
       ),
     );
   }
+  if (snap.sha.length === 0 || snap.ts.length === 0) {
+    return plan(
+      "track",
+      digest(
+        "track — no commits to sample",
+        lines(
+          "`aih track` samples the latest commit, but this repository has no commits yet.",
+          "Create the first commit before recording metrics history.",
+        ),
+        { recorded: false, reason: "no-commits" },
+      ),
+    );
+  }
   const preview = lines(
     `commit ${snap.sha} (${snap.ts})`,
     `  branch ${snap.branch} · ${snap.branches} local branch(es) · ${snap.sourceFiles} tracked files`,

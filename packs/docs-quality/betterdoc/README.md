@@ -18,7 +18,7 @@ It does not assume a particular product, repo, brand, maturity level, architectu
 ## Files
 
 ```text
-betterdoc-common/
+packs/docs-quality/betterdoc/
 ├── SKILL.md
 ├── README.md
 ├── CHANGELOG.md

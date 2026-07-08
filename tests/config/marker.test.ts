@@ -8,6 +8,7 @@ import {
   readAihConfig,
   readAihConfigBaseline,
   readAihConfigDiagnostic,
+  readAihConfigPosture,
 } from "../../src/config/marker.js";
 import * as fsxn from "../../src/internals/fsxn.js";
 import { aihIgnoreWrite } from "../../src/internals/gitignore.js";
@@ -58,6 +59,13 @@ describe("readAihConfig", () => {
     expect(readAihConfigDiagnostic(dir)).toEqual({ invalid: true, present: true });
     expect(() => readAihConfig(dir)).toThrow(/invalid baseline/);
     expect(() => readAihConfigBaseline(dir)).toThrow(/invalid baseline/);
+  });
+
+  it("fails closed when a persisted posture is invalid", () => {
+    writeMarker({ schemaVersion: 1, contextDir: "ai-coding", posture: "community" });
+    expect(readAihConfigDiagnostic(dir)).toEqual({ invalid: true, present: true });
+    expect(() => readAihConfig(dir)).toThrow(/invalid posture/);
+    expect(() => readAihConfigPosture(dir)).toThrow(/invalid posture/);
   });
 
   it("returns undefined on a context dir that traverses parents (reuses settings constraints)", () => {

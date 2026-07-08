@@ -1,3 +1,4 @@
+import { SettingsError } from "../errors.js";
 import {
   type CommandSpec,
   doc,
@@ -25,8 +26,12 @@ const DEFAULT_MODEL_SIZE_GB = 5;
 /** Parse the `--model-size-gb` option (a CLI string) into a positive number. */
 function modelSizeGb(options: Record<string, unknown>): number {
   const raw = options.modelSizeGb;
-  const n = typeof raw === "number" ? raw : Number.parseFloat(String(raw ?? ""));
-  return Number.isFinite(n) && n > 0 ? n : DEFAULT_MODEL_SIZE_GB;
+  if (raw === undefined || raw === null || raw === "") return DEFAULT_MODEL_SIZE_GB;
+  const n = typeof raw === "number" ? raw : Number.parseFloat(String(raw));
+  if (!Number.isFinite(n) || n <= 0) {
+    throw new SettingsError("--model-size-gb must be a positive number");
+  }
+  return n;
 }
 
 async function buildPlan(ctx: PlanContext) {

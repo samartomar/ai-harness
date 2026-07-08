@@ -39,6 +39,15 @@ function verificationPass(
   };
 }
 
+function thrownMessage(fn: () => unknown): string {
+  try {
+    fn();
+  } catch (err) {
+    return (err as Error).message;
+  }
+  throw new Error("expected function to throw");
+}
+
 describe("verification pipeline core", () => {
   it("registers, filters, and selects passes in a deterministic order", () => {
     const registry = new VerificationRegistry();
@@ -451,6 +460,31 @@ describe("verification pipeline core", () => {
     ).rejects.toThrow(/verification pass returned invalid verdict: bad -> skip/);
   });
 
+  it("redacts and bounds invalid pipeline enum diagnostics", async () => {
+    const token = `ghp_${"a".repeat(36)}`;
+    const badPass: VerificationPass = {
+      name: "leaky",
+      async run() {
+        return {
+          ...result("leaky"),
+          verdict: `bad-${token}-${"x".repeat(500)}`,
+        } as unknown as VerificationResult;
+      },
+    };
+
+    let message = "";
+    await runVerificationPipeline({ projectRoot: "D:/repo" }, { passes: [badPass] }).catch(
+      (err: Error) => {
+        message = err.message;
+      },
+    );
+
+    expect(message).toContain("verification pass returned invalid verdict: leaky ->");
+    expect(message).toContain("[REDACTED]");
+    expect(message).not.toContain(token);
+    expect(message.length).toBeLessThan(260);
+  });
+
   it("fails closed when a pass returns a null category", async () => {
     const badPass: VerificationPass = {
       name: "bad-category",
@@ -677,5 +711,24 @@ describe("verification pipeline core", () => {
         }),
       ]).aggregatedEvidence.map((evidence) => evidence.source),
     ).toEqual(["README.md", "policy.json"]);
+  });
+
+  it("redacts invalid graph and merge enum diagnostics", () => {
+    const token = `ghp_${"b".repeat(36)}`;
+    const graphMessage = thrownMessage(() =>
+      buildEvidenceGraph([
+        { ...result("bad-graph"), verdict: `bad-${token}` } as unknown as VerificationResult,
+      ]),
+    );
+    const mergeMessage = thrownMessage(() =>
+      mergeVerificationResults([
+        { ...result("bad-merge"), category: `bad-${token}` } as unknown as VerificationResult,
+      ]),
+    );
+
+    expect(graphMessage).toContain("[REDACTED]");
+    expect(graphMessage).not.toContain(token);
+    expect(mergeMessage).toContain("[REDACTED]");
+    expect(mergeMessage).not.toContain(token);
   });
 });

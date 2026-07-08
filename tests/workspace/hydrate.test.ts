@@ -218,6 +218,33 @@ describe("workspace hydrate", () => {
     await expect(workspaceHydrateCommand.plan(ctx())).rejects.toThrow(/snapshot sha/);
   });
 
+  it("rejects unsafe labels in the committed workspace lock", async () => {
+    mkdirSync(join(parent, "ai-coding"), { recursive: true });
+    writeManifest(["ui"]);
+    writeFileSync(
+      join(parent, "ai-coding", "workspace-lock.json"),
+      JSON.stringify({
+        schemaVersion: 1,
+        createdAt: "2026-07-04T00:00:00.000Z",
+        label: "<img src=x onerror=alert(1)>",
+        repos: [
+          {
+            id: "ui",
+            path: "ui",
+            remote: "https://github.com/acme/ui.git",
+            sha: "abcdef0123456789abcdef0123456789abcdef01",
+            dirty: false,
+            git: true,
+          },
+        ],
+      }),
+    );
+
+    await expect(workspaceHydrateCommand.plan(ctx())).rejects.toThrow(
+      /workspace-lock\.json snapshot label must be safe to print/,
+    );
+  });
+
   it("does not use gitignored local workspace snapshots as hydrate source metadata", async () => {
     mkdirSync(join(parent, ".aih", "workspace-snapshots"), { recursive: true });
     writeManifest(["ui"]);

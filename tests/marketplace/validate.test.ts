@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -230,6 +230,37 @@ describe("marketplace validate — coded findings", () => {
     writeFileSync(artifact("SHA256SUMS"), `${sums}${"0".repeat(64)}  ../escape\n`, "utf8");
     const report = await validate();
     expect(report.checks.map((c) => c.code)).toContain("marketplace.path-traversal");
+    expect(report.exitCode()).toBe(1);
+  });
+
+  it("fails closed when a declared artifact file is a symlink outside the artifact", async () => {
+    seedApproved(["alpha"]);
+    await buildArtifact();
+    const outside = join(workspace, "outside-secret.txt");
+    writeFileSync(outside, "outside bytes\n", "utf8");
+    rmSync(artifact("skills/alpha/SKILL.md"));
+    symlinkSync(outside, artifact("skills/alpha/SKILL.md"), "file");
+
+    const report = await validate();
+
+    const finding = report.checks.find((c) => c.code === "marketplace.path-traversal");
+    expect(finding?.detail).toContain("skills/alpha/SKILL.md");
+    expect(finding?.detail).toContain("symlink");
+    expect(report.exitCode()).toBe(1);
+  });
+
+  it("fails closed when an undeclared artifact entry is a symlink", async () => {
+    seedApproved(["alpha"]);
+    await buildArtifact();
+    const outside = join(workspace, "outside-secret.txt");
+    writeFileSync(outside, "outside bytes\n", "utf8");
+    symlinkSync(outside, artifact("stray-link.txt"), "file");
+
+    const report = await validate();
+
+    const finding = report.checks.find((c) => c.code === "marketplace.path-traversal");
+    expect(finding?.detail).toContain("stray-link.txt");
+    expect(finding?.detail).toContain("symlink");
     expect(report.exitCode()).toBe(1);
   });
 

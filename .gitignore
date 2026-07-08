@@ -2,6 +2,8 @@ node_modules/
 dist/
 coverage/
 *.tsbuildinfo
+__pycache__/
+*.py[cod]
 
 # aih runtime artifacts
 .aih-scratch/
@@ -34,6 +36,7 @@ ai-coding/skills/
 # aih-managed (backup, temp, and generated reports)
 *.aih.bak
 *.aih.tmp
+.aih-truth.json
 !.aih/
 .aih/*
 !.aih/usage-record.mjs

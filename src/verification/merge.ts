@@ -6,6 +6,7 @@ import type {
   VerificationResult,
   VerificationSummary,
 } from "./types.js";
+import { diagnosticValue } from "./validation.js";
 
 const VERDICT_RANK: Record<Verdict, number> = { fail: 0, warn: 1, pass: 2 };
 const CATEGORY_RANK: Record<VerificationCategory, number> = {
@@ -39,17 +40,17 @@ function hasKey<T extends string>(record: Record<T, number>, value: unknown): va
 function assertKnownResult(result: VerificationResult, index: number): void {
   if (!hasKey(VERDICT_RANK, result.verdict)) {
     throw new Error(
-      `mergeVerificationResults received invalid verdict at result ${index}: ${String(result.verdict)}`,
+      `mergeVerificationResults received invalid verdict at result ${index}: ${diagnosticValue(result.verdict)}`,
     );
   }
   if (!hasKey(SEVERITY_RANK, result.severity)) {
     throw new Error(
-      `mergeVerificationResults received invalid severity at result ${index}: ${String(result.severity)}`,
+      `mergeVerificationResults received invalid severity at result ${index}: ${diagnosticValue(result.severity)}`,
     );
   }
   if (!hasKey(CATEGORY_RANK, result.category)) {
     throw new Error(
-      `mergeVerificationResults received invalid category at result ${index}: ${String(result.category)}`,
+      `mergeVerificationResults received invalid category at result ${index}: ${diagnosticValue(result.category)}`,
     );
   }
 }

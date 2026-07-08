@@ -9,7 +9,7 @@
  * flips the verify exit code; an info-tier finding is `skip` (report-only).
  */
 
-import { existsSync, readdirSync, statSync } from "node:fs";
+import { existsSync, lstatSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { readIfExists } from "../internals/fsxn.js";
 import { type Action, type PlanContext, probe } from "../internals/plan.js";
@@ -105,14 +105,16 @@ function markdownUnder(root: string, absDir: string, out: string[]): void {
   }
   for (const entry of entries) {
     const abs = join(absDir, entry);
-    let isDir = false;
+    let stat: ReturnType<typeof lstatSync>;
     try {
-      isDir = statSync(abs).isDirectory();
+      stat = lstatSync(abs);
     } catch {
       continue;
     }
-    if (isDir) markdownUnder(root, abs, out);
-    else if (entry.endsWith(".md")) out.push(abs.slice(root.length + 1).replace(/\\/g, "/"));
+    if (stat.isSymbolicLink()) continue;
+    if (stat.isDirectory()) markdownUnder(root, abs, out);
+    else if (stat.isFile() && entry.endsWith(".md"))
+      out.push(abs.slice(root.length + 1).replace(/\\/g, "/"));
   }
 }
 

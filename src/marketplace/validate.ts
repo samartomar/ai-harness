@@ -1,14 +1,15 @@
-import { existsSync, lstatSync, readdirSync } from "node:fs";
+import { existsSync, lstatSync, readdirSync, realpathSync } from "node:fs";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { sha256Hex } from "../bundle/index.js";
-import { readIfExists } from "../internals/fsxn.js";
+import { readRegularFile } from "../internals/fsxn.js";
 import { type CommandSpec, type Plan, type PlanContext, plan, probe } from "../internals/plan.js";
 import type { Check } from "../internals/verify.js";
 import {
   AIH_MARKETPLACE_FILE,
   DEFAULT_MARKETPLACE_OUT,
+  type MarketplaceManifest,
+  MarketplaceManifestSchema,
   marketplaceRelPathSchema,
-  readMarketplaceManifest,
 } from "./manifest.js";
 
 /**
@@ -94,6 +95,17 @@ function missingFinding(rel: string, where: string): Check {
   };
 }
 
+function unsafeArtifactFinding(rel: string, where: string, reason: string): Check {
+  return {
+    name: "marketplace path traversal",
+    verdict: "fail",
+    code: "marketplace.path-traversal",
+    detail: `${where} references ${rel}, but ${reason} — refusing to read it as marketplace artifact content`,
+    location: { uri: relLabel(rel) },
+    fingerprint: `marketplace-unsafe-file:${rel}:${reason}`,
+  };
+}
+
 function mismatchFinding(rel: string, expected: string, actual: string, where: string): Check {
   return {
     name: "marketplace checksum mismatch",
@@ -171,21 +183,111 @@ function parseChecksum(line: string): { hash: string; path: string } | undefined
   return { hash: match[1].toLowerCase(), path: match[2].replace(/\\/g, "/") };
 }
 
-/** Every regular file under `dir` (artifact-relative, POSIX, sorted); symlinks skipped. */
-function collectArtifactFiles(dir: string): string[] {
-  const out: string[] = [];
+type ArtifactTextRead = { ok: true; contents: string } | { ok: false; finding: Check };
+
+function readArtifactText(dir: string, rel: string, where: string): ArtifactTextRead {
+  const target = safeArtifactFile(dir, rel);
+  if (target === undefined) return { ok: false, finding: traversalFinding(rel, where) };
+  try {
+    const stats = lstatSync(target);
+    if (stats.isSymbolicLink()) {
+      return { ok: false, finding: unsafeArtifactFinding(rel, where, "it is a symlink") };
+    }
+    if (!stats.isFile()) {
+      return { ok: false, finding: unsafeArtifactFinding(rel, where, "it is not a regular file") };
+    }
+    const rootReal = realpathSync(dir);
+    const targetReal = realpathSync(target);
+    const contained = relative(rootReal, targetReal);
+    if (contained.length === 0 || contained.startsWith("..") || isAbsolute(contained)) {
+      return {
+        ok: false,
+        finding: unsafeArtifactFinding(rel, where, "its real path escapes the artifact root"),
+      };
+    }
+    const contents = readRegularFile(target);
+    if (contents === undefined) {
+      return {
+        ok: false,
+        finding: unsafeArtifactFinding(rel, where, "it is not readable as a regular file"),
+      };
+    }
+    return { ok: true, contents: contents.toString("utf8") };
+  } catch {
+    return { ok: false, finding: missingFinding(rel, where) };
+  }
+}
+
+type MarketplaceManifestRead =
+  | { ok: true; manifest: MarketplaceManifest; raw: string }
+  | { ok: false; reason: string; raw?: string; finding?: Check };
+
+function readManifest(dir: string): MarketplaceManifestRead {
+  const read = readArtifactText(dir, AIH_MARKETPLACE_FILE, AIH_MARKETPLACE_FILE);
+  if (!read.ok) {
+    if (read.finding.code === "marketplace.missing-file") {
+      return { ok: false, reason: `${AIH_MARKETPLACE_FILE} is missing`, finding: read.finding };
+    }
+    return {
+      ok: false,
+      reason: read.finding.detail ?? `${AIH_MARKETPLACE_FILE} is not readable`,
+      finding: read.finding,
+    };
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(read.contents);
+  } catch {
+    return { ok: false, reason: `${AIH_MARKETPLACE_FILE} is not valid JSON`, raw: read.contents };
+  }
+  const result = MarketplaceManifestSchema.safeParse(parsed);
+  if (!result.success) {
+    const issue = result.error.issues[0];
+    const where =
+      issue === undefined ? "" : `: ${issue.path.join(".") || "(root)"} — ${issue.message}`;
+    return {
+      ok: false,
+      reason: `${AIH_MARKETPLACE_FILE} failed schema validation${where}`,
+      raw: read.contents,
+    };
+  }
+  return { ok: true, manifest: result.data, raw: read.contents };
+}
+
+interface ArtifactTree {
+  files: string[];
+  findings: Check[];
+}
+
+/** Every regular file under `dir` (artifact-relative, POSIX, sorted); symlinks fail closed. */
+function collectArtifactTree(dir: string): ArtifactTree {
+  const files: string[] = [];
+  const findings: Check[] = [];
   const root = resolve(dir);
   const visit = (abs: string): void => {
-    const st = lstatSync(abs);
-    if (st.isSymbolicLink()) return;
+    let st: ReturnType<typeof lstatSync>;
+    try {
+      st = lstatSync(abs);
+    } catch {
+      return;
+    }
+    const rel = relative(root, abs).replace(/\\/g, "/") || ".";
+    if (st.isSymbolicLink()) {
+      findings.push(unsafeArtifactFinding(rel, CHECKSUMS_FILE, "it is a symlink"));
+      return;
+    }
     if (st.isDirectory()) {
       for (const entry of readdirSync(abs)) visit(join(abs, entry));
       return;
     }
-    if (st.isFile()) out.push(relative(root, abs).replace(/\\/g, "/"));
+    if (st.isFile()) {
+      files.push(rel);
+      return;
+    }
+    findings.push(unsafeArtifactFinding(rel, CHECKSUMS_FILE, "it is not a regular file"));
   };
   visit(root);
-  return out.sort((a, b) => a.localeCompare(b));
+  return { files: files.sort((a, b) => a.localeCompare(b)), findings };
 }
 
 /**
@@ -194,41 +296,39 @@ function collectArtifactFiles(dir: string): string[] {
  * checked before any read (unsafe → traversal finding, no fs access).
  */
 function manifestFindings(dir: string): Check[] {
-  const read = readMarketplaceManifest(dir);
+  const read = readManifest(dir);
   if (!read.ok) {
-    return [
-      {
-        name: "marketplace manifest",
-        verdict: "fail",
-        code: "marketplace.manifest-parse",
-        detail: read.reason,
-        location: { uri: AIH_MARKETPLACE_FILE },
-        fingerprint: "marketplace-manifest-parse",
-      },
-    ];
+    const parseFinding: Check = {
+      name: "marketplace manifest",
+      verdict: "fail",
+      code: "marketplace.manifest-parse",
+      detail: read.reason,
+      location: { uri: AIH_MARKETPLACE_FILE },
+      fingerprint: "marketplace-manifest-parse",
+    };
+    return read.finding === undefined
+      ? [parseFinding]
+      : [
+          read.finding,
+          {
+            ...parseFinding,
+            fingerprint: `${parseFinding.fingerprint}:${read.finding.fingerprint ?? "read"}`,
+          },
+        ];
   }
   const findings: Check[] = [];
   for (const skill of read.manifest.skills) {
     for (const rel of [skill.card, skill.evidence]) {
-      const target = safeArtifactFile(dir, rel);
-      if (target === undefined) {
-        findings.push(traversalFinding(rel, AIH_MARKETPLACE_FILE));
-      } else if (!existsSync(target)) {
-        findings.push(missingFinding(rel, AIH_MARKETPLACE_FILE));
-      }
+      const readRef = readArtifactText(dir, rel, AIH_MARKETPLACE_FILE);
+      if (!readRef.ok) findings.push(readRef.finding);
     }
     for (const file of skill.files) {
-      const target = safeArtifactFile(dir, file.path);
-      if (target === undefined) {
-        findings.push(traversalFinding(file.path, AIH_MARKETPLACE_FILE));
+      const readFile = readArtifactText(dir, file.path, AIH_MARKETPLACE_FILE);
+      if (!readFile.ok) {
+        findings.push(readFile.finding);
         continue;
       }
-      const contents = readIfExists(target);
-      if (contents === undefined) {
-        findings.push(missingFinding(file.path, AIH_MARKETPLACE_FILE));
-        continue;
-      }
-      const actual = sha256Hex(contents);
+      const actual = sha256Hex(readFile.contents);
       if (actual !== file.sha256) {
         findings.push(mismatchFinding(file.path, file.sha256, actual, AIH_MARKETPLACE_FILE));
       }
@@ -248,22 +348,24 @@ function manifestFindings(dir: string): Check[] {
  * itself, each skill's card/evidence, and every `files[]` path).
  */
 function sumsFindings(dir: string): Check[] {
-  const raw = readIfExists(join(dir, CHECKSUMS_FILE));
-  if (raw === undefined) {
-    return [
-      {
-        name: "marketplace sums coverage",
-        verdict: "fail",
-        code: "marketplace.sums-coverage",
-        detail: `${CHECKSUMS_FILE} is missing — nothing attests the artifact tree`,
-        location: { uri: CHECKSUMS_FILE },
-        fingerprint: "marketplace-sums-missing",
-      },
-    ];
+  const raw = readArtifactText(dir, CHECKSUMS_FILE, CHECKSUMS_FILE);
+  if (!raw.ok) {
+    return raw.finding.code === "marketplace.missing-file"
+      ? [
+          {
+            name: "marketplace sums coverage",
+            verdict: "fail",
+            code: "marketplace.sums-coverage",
+            detail: `${CHECKSUMS_FILE} is missing — nothing attests the artifact tree`,
+            location: { uri: CHECKSUMS_FILE },
+            fingerprint: "marketplace-sums-missing",
+          },
+        ]
+      : [raw.finding];
   }
   const findings: Check[] = [];
   const covered = new Set<string>();
-  for (const line of raw.split("\n")) {
+  for (const line of raw.contents.split("\n")) {
     if (line.trim().length === 0) continue;
     const parsed = parseChecksum(line);
     if (parsed === undefined) {
@@ -278,17 +380,12 @@ function sumsFindings(dir: string): Check[] {
       continue;
     }
     covered.add(parsed.path);
-    const target = safeArtifactFile(dir, parsed.path);
-    if (target === undefined) {
-      findings.push(traversalFinding(parsed.path, CHECKSUMS_FILE));
+    const readFile = readArtifactText(dir, parsed.path, CHECKSUMS_FILE);
+    if (!readFile.ok) {
+      findings.push(readFile.finding);
       continue;
     }
-    const contents = readIfExists(target);
-    if (contents === undefined) {
-      findings.push(missingFinding(parsed.path, CHECKSUMS_FILE));
-      continue;
-    }
-    const actual = sha256Hex(contents);
+    const actual = sha256Hex(readFile.contents);
     if (actual !== parsed.hash) {
       findings.push(mismatchFinding(parsed.path, parsed.hash, actual, CHECKSUMS_FILE));
     }
@@ -297,7 +394,7 @@ function sumsFindings(dir: string): Check[] {
   // itself plus each skill's card, evidence, and files[] paths. Computable only
   // when the manifest parses; when it does not, `manifest-parse` already fails
   // the report, so the declared check is skipped rather than double-reported.
-  const manifest = readMarketplaceManifest(dir);
+  const manifest = readManifest(dir);
   const declared = manifest.ok
     ? new Set<string>([
         AIH_MARKETPLACE_FILE,
@@ -308,7 +405,9 @@ function sumsFindings(dir: string): Check[] {
         ]),
       ])
     : undefined;
-  for (const rel of collectArtifactFiles(dir)) {
+  const tree = collectArtifactTree(dir);
+  findings.push(...tree.findings);
+  for (const rel of tree.files) {
     // The detached signature is signed OVER the sums, so the sums cannot attest
     // it — like SHA256SUMS itself, it is exempt from coverage; the signature
     // probe (not the coverage sweep) is what holds it to account.
@@ -343,7 +442,8 @@ function sumsFindings(dir: string): Check[] {
 
 /** The pure join over one artifact directory: coded findings, or green passes. */
 export function marketplaceReport(dir: string): MarketplaceReport {
-  const rawManifest = readIfExists(join(dir, AIH_MARKETPLACE_FILE));
+  const manifestRead = readManifest(dir);
+  const rawManifest = manifestRead.raw;
   const findings: Check[] = [];
 
   // Raw-string defenses FIRST (schema-independent): traversal + verdict probes
@@ -379,11 +479,10 @@ export function marketplaceReport(dir: string): MarketplaceReport {
   ];
   if (deduped.length > 0) return { findings: deduped, passes: [] };
 
-  const read = readMarketplaceManifest(dir);
-  const skills = read.ok ? read.manifest.skills.length : 0;
+  const skills = manifestRead.ok ? manifestRead.manifest.skills.length : 0;
   // Attested payload count: everything except the sums and their detached
   // signature (neither can be covered by the sums themselves).
-  const attested = collectArtifactFiles(dir).filter(
+  const attested = collectArtifactTree(dir).files.filter(
     (rel) => rel !== CHECKSUMS_FILE && rel !== SIGNATURE_FILE,
   ).length;
   return {
@@ -442,7 +541,8 @@ async function signatureCheck(ctx: PlanContext, dir: string): Promise<Check> {
   const hint = ctx.options.signer;
   const sums = join(dir, CHECKSUMS_FILE);
   const sig = join(dir, SIGNATURE_FILE);
-  const sigExists = readIfExists(sig) !== undefined;
+  const sigRead = readArtifactText(dir, SIGNATURE_FILE, SIGNATURE_FILE);
+  const sigExists = sigRead.ok;
 
   // Unverifiable (as opposed to failed): tolerated skip, or a fail under the gate.
   const unverifiable = (detail: string): Check => ({
@@ -476,6 +576,9 @@ async function signatureCheck(ctx: PlanContext, dir: string): Promise<Check> {
   );
   if (dashLeading.length > 0) {
     return failed(`refusing to pass a value that parses as a flag: ${dashLeading.join(", ")}`);
+  }
+  if (!sigRead.ok && sigRead.finding.code !== "marketplace.missing-file") {
+    return failed(sigRead.finding.detail ?? `${SIGNATURE_FILE} is not a regular artifact file`);
   }
 
   // Inference precedence: valid explicit --signer → explicit --repo (gh) →

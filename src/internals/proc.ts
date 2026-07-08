@@ -93,9 +93,7 @@ export const defaultRunner: Runner = (argv, opts = {}) =>
     child.stderr?.on("data", (chunk: string | Buffer) => {
       capturedStderr += capture(chunk);
     });
-    if (opts.input !== undefined && child.stdin) {
-      child.stdin.end(opts.input);
-    }
+    child.stdin?.end(opts.input);
   });
 
 /**

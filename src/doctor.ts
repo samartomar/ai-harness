@@ -102,7 +102,7 @@ export const command: CommandSpec = {
       probe("canonical context dir", () => {
         const dir = join(ctx.root, contextDir);
         return existsSync(dir)
-          ? { name: "context-dir", verdict: "pass", detail: dir }
+          ? { name: "context-dir", verdict: "pass", detail: `${contextDir} present` }
           : {
               name: "context-dir",
               verdict: "skip",

@@ -11,6 +11,7 @@ import {
 import {
   blockedLicensesFound,
   blockingLicenses,
+  GITLEAKS_LINUX_X64_TAR_SHA256,
   LICENSE_MATRIX,
 } from "../../src/guardrails/sca.js";
 import { executePlan } from "../../src/internals/execute.js";
@@ -203,9 +204,14 @@ describe("guardrails command", () => {
     const p = await command.plan(ctx());
     const toml = writeAt(p.actions, ".gitleaks.toml")?.contents ?? "";
     expect(toml).toContain("[allowlist]");
-    expect(toml).toContain(".var/");
-    expect(toml).toContain(".aih-scratch/");
+    expect(toml).toContain("^\\.var/");
+    expect(toml).toContain("^\\.aih-scratch/");
     expect(toml).not.toContain("src/");
+    const varScratch = /^\.var\//;
+    const aihScratch = /^\.aih-scratch\//;
+    expect(varScratch.test(".var/cache.txt")).toBe(true);
+    expect(aihScratch.test(".aih-scratch/cache.txt")).toBe(true);
+    expect(varScratch.test("src/avar/token.txt")).toBe(false);
   });
 
   it("pre-commit config wires the gitleaks repo with the pinned rev and args", async () => {
@@ -234,6 +240,19 @@ describe("guardrails command", () => {
       (a) => a.kind === "doc" && a.describe.includes("gitleaks hook"),
     );
     expect(mergeDoc?.kind === "doc" && mergeDoc.text).toContain("gitleaks/gitleaks");
+  });
+
+  it("preserves user-authored pre-commit config even if a comment mentions the marker", async () => {
+    writeFileSync(
+      join(dir, ".pre-commit-config.yaml"),
+      "repos:\n  # managed by aih guardrails in a team note, not generated\n  - repo: local\n",
+    );
+    const p = await command.plan(ctx());
+    const pre = writeAt(p.actions, ".pre-commit-config.yaml");
+    expect(pre?.once).toBe(true);
+    expect(p.actions.some((a) => a.kind === "doc" && a.describe.includes("gitleaks hook"))).toBe(
+      true,
+    );
   });
 
   it("re-owns (normal rewrite, not once) a pre-commit config aih itself generated", async () => {
@@ -352,6 +371,15 @@ describe("guardrails command", () => {
     expect(yaml).toContain("gitleaks detect --config .gitleaks.toml");
     // CI uses the SAME pinned gitleaks version as the local pre-commit hook.
     expect(yaml).toContain(GITLEAKS_REV.replace(/^v/, ""));
+  });
+
+  it("sca workflow verifies the pinned gitleaks tarball before extraction", async () => {
+    const p = await command.plan(ctx());
+    const yaml = writeAt(p.actions, ".github/workflows/sca.yml")?.contents ?? "";
+    expect(yaml).toContain(GITLEAKS_LINUX_X64_TAR_SHA256);
+    expect(yaml).toContain("sha256sum -c -");
+    expect(yaml).toContain("tar -xzf");
+    expect(yaml).not.toMatch(/curl[\s\S]*\|\s*tar/);
   });
 
   it("writes the taxonomy doc under the context dir as a doc action (no exec/cloud)", async () => {

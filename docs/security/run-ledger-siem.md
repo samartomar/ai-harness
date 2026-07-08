@@ -1,7 +1,9 @@
 # Run Ledger v2 SIEM Recipe
 
 > Status: shipped local diagnostics schema. The ledger is not committed; package
-> it with `aih evidence build` for tamper-evident sharing.
+> it with `aih evidence build` for a checksummed bundle. Use
+> `aih evidence build --sign <signer> --require-signature` when the bundle crosses
+> a sharing boundary that requires tamper evidence.
 
 Each initialized repo appends runs to `.aih/runs/YYYY-MM.jsonl`. Version 2 entries
 include host and repo identifiers as hashes so teams can correlate activity

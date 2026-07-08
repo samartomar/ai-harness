@@ -146,9 +146,11 @@ Snapshot files have:
 }
 ```
 
-`remote`, `branch`, `sha`, `ahead`, and `behind` are present only when Git can
-provide them. A missing or non-Git child still appears with `git: false` and
-`dirty: false`.
+`remote`, `branch`, `sha`, `ahead`, and `behind` are present only when the
+workspace manifest or child Git state can provide them. A manifest-declared
+`remote` takes precedence; otherwise snapshot collection reads only the
+child-local `origin` URL. A missing or non-Git child still appears with
+`git: false` and `dirty: false`.
 
 ## Changed-since-snapshot report
 

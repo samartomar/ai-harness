@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
-import { type Dirent, readdirSync, statSync } from "node:fs";
-import { isAbsolute, join, posix, resolve, sep } from "node:path";
+import { type Dirent, readdirSync, realpathSync, statSync } from "node:fs";
+import { dirname, isAbsolute, join, posix, relative, resolve, sep } from "node:path";
 import { readIfExists, readRegularFile } from "../internals/fsxn.js";
 import {
   type Action,
@@ -13,6 +13,7 @@ import {
   writeJson,
   writeText,
 } from "../internals/plan.js";
+import { jsonFile } from "../internals/render.js";
 import type { Check } from "../internals/verify.js";
 import { AIH_PACKS_FILE } from "../pack/manifest.js";
 import { skillCardsDir } from "../skill/card.js";
@@ -22,6 +23,7 @@ const DEFAULT_OUT = ".aih/fleet-bundle";
 const CHECKSUMS_FILE = "SHA256SUMS";
 const SIGNATURE_FILE = "SHA256SUMS.sig";
 const MANIFEST_FILE = "manifest.json";
+const EVIDENCE_FILE = "evidence.json";
 
 interface BundleFile {
   path: string;
@@ -37,6 +39,13 @@ interface BundleManifest {
     bytes: number;
     sha256: string;
   }>;
+}
+
+interface BundleMetadataFile {
+  path: string;
+  contents: string;
+  bytes: number;
+  sha256: string;
 }
 
 export function sha256Hex(input: string): string {
@@ -169,8 +178,20 @@ function manifest(files: BundleFile[]): BundleManifest {
   };
 }
 
-function sha256Sums(files: BundleFile[]): string {
-  return `${files.map((file) => `${file.sha256}  files/${file.path}`).join("\n")}\n`;
+function metadataFile(path: string, contents: string): BundleMetadataFile {
+  return {
+    path,
+    contents,
+    bytes: Buffer.byteLength(contents, "utf8"),
+    sha256: sha256Hex(contents),
+  };
+}
+
+function sha256Sums(files: BundleFile[], metadata: BundleMetadataFile[] = []): string {
+  return `${[
+    ...files.map((file) => `${file.sha256}  files/${file.path}`),
+    ...metadata.map((file) => `${file.sha256}  ${file.path}`),
+  ].join("\n")}\n`;
 }
 
 function signatureFailureCheck(
@@ -198,11 +219,13 @@ export function signAction(
   out: string,
   signer: unknown,
   what = "fleet bundle",
-  opts: { allowFailure?: boolean } = {},
+  opts: { allowFailure?: boolean; sumsSha256?: string } = {},
 ): Action | undefined {
   const sums = bundlePath(out, CHECKSUMS_FILE);
   const sig = bundlePath(out, SIGNATURE_FILE);
   const allowFailure = opts.allowFailure ?? true;
+  const expect =
+    opts.sumsSha256 === undefined ? undefined : { path: sums, sha256: opts.sumsSha256 };
   if (signer === "cosign") {
     return exec(
       `sign ${what} checksums with cosign`,
@@ -210,6 +233,7 @@ export function signAction(
       {
         allowFailure,
         failureCheck: signatureFailureCheck(what, "cosign"),
+        expect,
       },
     );
   }
@@ -220,6 +244,7 @@ export function signAction(
       {
         allowFailure,
         failureCheck: signatureFailureCheck(what, "gh attestation sign"),
+        expect,
       },
     );
   }
@@ -230,20 +255,23 @@ function bundlePlan(ctx: PlanContext) {
   const out = bundleOut(ctx);
   const external = writeExternal(out);
   const files = readBundleFiles(ctx);
+  const bundleManifest = manifest(files);
+  const manifestContents = jsonFile(bundleManifest);
+  const sums = sha256Sums(files, [metadataFile(MANIFEST_FILE, manifestContents)]);
   const actions: Action[] = files.map((file) =>
     writeText(bundlePath(out, "files", file.path), file.contents, `bundle artifact: ${file.path}`, {
       external,
     }),
   );
   actions.push(
-    writeJson(bundlePath(out, MANIFEST_FILE), manifest(files), "fleet bundle manifest", {
+    writeJson(bundlePath(out, MANIFEST_FILE), bundleManifest, "fleet bundle manifest", {
       external,
     }),
-    writeText(bundlePath(out, CHECKSUMS_FILE), sha256Sums(files), "fleet bundle SHA256SUMS", {
+    writeText(bundlePath(out, CHECKSUMS_FILE), sums, "fleet bundle SHA256SUMS", {
       external,
     }),
   );
-  const sign = signAction(out, ctx.options.sign);
+  const sign = signAction(out, ctx.options.sign, "fleet bundle", { sumsSha256: sha256Hex(sums) });
   if (sign) actions.push(sign);
   return plan("bundle", ...actions);
 }
@@ -259,12 +287,128 @@ function safeBundleFile(bundleRoot: string, rel: string): string | undefined {
   const root = resolve(bundleRoot);
   const target = resolve(root, rel);
   if (target !== root && !target.startsWith(`${root}${sep}`)) return undefined;
+  let rootReal: string;
+  try {
+    rootReal = realpathSync(root);
+  } catch {
+    return undefined;
+  }
+  try {
+    const parentReal = realpathSync(dirname(target));
+    const relToParent = relative(rootReal, parentReal);
+    if (relToParent !== "" && (relToParent.startsWith("..") || isAbsolute(relToParent))) {
+      return undefined;
+    }
+  } catch {
+    // Missing parents are reported by the later regular-file read as missing.
+  }
   return target;
 }
 
+function readBundleText(bundleRoot: string, rel: string): { text?: string; escaped: boolean } {
+  const target = safeBundleFile(bundleRoot, rel);
+  if (target === undefined) return { escaped: true };
+  const contents = readRegularFile(target);
+  return contents === undefined
+    ? { escaped: false }
+    : { text: contents.toString("utf8"), escaped: false };
+}
+
+function safeManifestPath(path: unknown): string | undefined {
+  if (typeof path !== "string" || path.length === 0) return undefined;
+  if (path !== posixPath(path) || isAbsolute(path) || path.split("/").includes("..")) {
+    return undefined;
+  }
+  return path;
+}
+
+function parseBundleManifest(raw: string): { manifest?: BundleManifest; failures: string[] } {
+  const failures: string[] = [];
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return { failures: [`${MANIFEST_FILE} is not valid JSON`] };
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return { failures: [`${MANIFEST_FILE} is not an object`] };
+  }
+  const record = parsed as Record<string, unknown>;
+  if (record.schemaVersion !== 1) failures.push(`${MANIFEST_FILE} schemaVersion must be 1`);
+  if (!Array.isArray(record.files)) failures.push(`${MANIFEST_FILE} files must be an array`);
+  const files: BundleManifest["files"] = [];
+  const seen = new Set<string>();
+  for (const [index, item] of Array.isArray(record.files) ? record.files.entries() : []) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) {
+      failures.push(`${MANIFEST_FILE} files[${index}] is not an object`);
+      continue;
+    }
+    const file = item as Record<string, unknown>;
+    const path = safeManifestPath(file.path);
+    if (path === undefined) {
+      failures.push(`${MANIFEST_FILE} files[${index}].path is invalid`);
+      continue;
+    }
+    if (seen.has(path)) failures.push(`${MANIFEST_FILE} duplicates ${path}`);
+    seen.add(path);
+    const bytes = file.bytes;
+    const sha256 = file.sha256;
+    if (typeof bytes !== "number" || !Number.isInteger(bytes) || bytes < 0) {
+      failures.push(`${MANIFEST_FILE} ${path} has invalid byte count`);
+      continue;
+    }
+    if (typeof sha256 !== "string" || !/^[0-9a-f]{64}$/.test(sha256)) {
+      failures.push(`${MANIFEST_FILE} ${path} has invalid sha256`);
+      continue;
+    }
+    files.push({ path, bytes, sha256 });
+  }
+  return failures.length > 0 ? { failures } : { manifest: { schemaVersion: 1, files }, failures };
+}
+
+function evidenceIndexFailures(raw: string, manifest: BundleManifest): string[] {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return [`${EVIDENCE_FILE} is not valid JSON`];
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return [`${EVIDENCE_FILE} is not an object`];
+  }
+  const artifacts = (parsed as { artifacts?: unknown }).artifacts;
+  if (!Array.isArray(artifacts)) return [`${EVIDENCE_FILE} artifacts must be an array`];
+  const expected = new Map(manifest.files.map((file) => [file.path, file.sha256]));
+  const seen = new Set<string>();
+  const failures: string[] = [];
+  for (const [index, item] of artifacts.entries()) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) {
+      failures.push(`${EVIDENCE_FILE} artifacts[${index}] is not an object`);
+      continue;
+    }
+    const artifact = item as Record<string, unknown>;
+    const path = safeManifestPath(artifact.path);
+    const sha256 = artifact.sha256;
+    if (path === undefined || typeof sha256 !== "string") {
+      failures.push(`${EVIDENCE_FILE} artifacts[${index}] has invalid path or sha256`);
+      continue;
+    }
+    seen.add(path);
+    if (expected.get(path) !== sha256)
+      failures.push(`${EVIDENCE_FILE} ${path} mismatches manifest`);
+  }
+  for (const path of expected.keys()) {
+    if (!seen.has(path)) failures.push(`${EVIDENCE_FILE} missing ${path}`);
+  }
+  for (const path of seen) {
+    if (!expected.has(path)) failures.push(`${EVIDENCE_FILE} has unexpected ${path}`);
+  }
+  return failures;
+}
+
 export function verifyBundleChecksums(bundleRoot: string): Check {
-  const raw = readIfExists(join(bundleRoot, CHECKSUMS_FILE));
-  if (raw === undefined) {
+  const raw = readBundleText(bundleRoot, CHECKSUMS_FILE);
+  if (raw.text === undefined) {
     return {
       name: "fleet bundle checksums",
       verdict: "fail",
@@ -272,26 +416,70 @@ export function verifyBundleChecksums(bundleRoot: string): Check {
     };
   }
   const failures: string[] = [];
-  for (const line of raw.split("\n")) {
+  const entries = new Map<string, string>();
+  for (const line of raw.text.split("\n")) {
     if (line.trim().length === 0) continue;
     const parsed = parseChecksum(line);
     if (parsed === undefined) {
       failures.push(`malformed line: ${line}`);
       continue;
     }
-    const target = safeBundleFile(bundleRoot, parsed.path);
-    if (target === undefined) {
-      failures.push(`${parsed.path} escapes bundle root`);
+    if (entries.has(parsed.path)) failures.push(`${parsed.path} has duplicate checksum entries`);
+    entries.set(parsed.path, parsed.hash);
+  }
+  if (entries.size === 0) failures.push(`${CHECKSUMS_FILE} has no entries`);
+
+  const manifestRead = readBundleText(bundleRoot, MANIFEST_FILE);
+  if (manifestRead.escaped) failures.push(`${MANIFEST_FILE} escapes bundle root`);
+  if (manifestRead.text === undefined) failures.push(`${MANIFEST_FILE} is missing`);
+  const parsedManifest =
+    manifestRead.text === undefined ? { failures: [] } : parseBundleManifest(manifestRead.text);
+  failures.push(...parsedManifest.failures);
+  const expected = new Map<string, { sha256: string; bytes?: number }>();
+  if (parsedManifest.manifest !== undefined) {
+    for (const file of parsedManifest.manifest.files) {
+      expected.set(`files/${file.path}`, { sha256: file.sha256, bytes: file.bytes });
+    }
+    expected.set(MANIFEST_FILE, { sha256: sha256Hex(manifestRead.text ?? "") });
+  }
+  const evidenceRead = readBundleText(bundleRoot, EVIDENCE_FILE);
+  if (evidenceRead.escaped) failures.push(`${EVIDENCE_FILE} escapes bundle root`);
+  if (evidenceRead.text !== undefined) {
+    expected.set(EVIDENCE_FILE, { sha256: sha256Hex(evidenceRead.text) });
+    if (parsedManifest.manifest !== undefined) {
+      failures.push(...evidenceIndexFailures(evidenceRead.text, parsedManifest.manifest));
+    }
+  }
+  for (const path of entries.keys()) {
+    if (!expected.has(path)) failures.push(`${path} is not listed in ${MANIFEST_FILE}`);
+  }
+  for (const path of expected.keys()) {
+    if (!entries.has(path)) failures.push(`${path} missing from ${CHECKSUMS_FILE}`);
+  }
+
+  for (const [path, expectedFile] of expected.entries()) {
+    const listedHash = entries.get(path);
+    if (listedHash === undefined) continue;
+    if (listedHash !== expectedFile.sha256) {
+      failures.push(`${path} checksum entry does not match ${MANIFEST_FILE}`);
+    }
+    const target = readBundleText(bundleRoot, path);
+    if (target.escaped) {
+      failures.push(`${path} escapes bundle root`);
       continue;
     }
-    const contents = readIfExists(target);
-    if (contents === undefined) {
-      failures.push(`${parsed.path} missing`);
+    if (target.text === undefined) {
+      failures.push(`${path} missing or not a regular file`);
       continue;
     }
-    const actual = sha256Hex(contents);
-    if (actual !== parsed.hash)
-      failures.push(`${parsed.path} expected ${parsed.hash}, got ${actual}`);
+    const actual = sha256Hex(target.text);
+    if (actual !== listedHash) failures.push(`${path} expected ${listedHash}, got ${actual}`);
+    if (
+      expectedFile.bytes !== undefined &&
+      Buffer.byteLength(target.text, "utf8") !== expectedFile.bytes
+    ) {
+      failures.push(`${path} byte count does not match ${MANIFEST_FILE}`);
+    }
   }
   if (failures.length > 0) {
     return { name: "fleet bundle checksums", verdict: "fail", detail: failures.join("; ") };

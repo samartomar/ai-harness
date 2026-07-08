@@ -5,6 +5,7 @@ import { basename, dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 const tmps: string[] = [];
+const TEST_PROCESS_TIMEOUT_MS = 25_000;
 
 function fresh(prefix: string): string {
   const dir = mkdtempSync(join(tmpdir(), prefix));
@@ -37,6 +38,7 @@ function runAih(args: string[]) {
       PATH: detectorFreePath,
     },
     encoding: "utf8",
+    timeout: TEST_PROCESS_TIMEOUT_MS,
   });
 }
 

@@ -5,6 +5,7 @@ import type { CommandSpec, PlanContext } from "../internals/plan.js";
 import { plan, writeText } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
 import { readWorkspaceManifest, type WorkspaceEdge, type WorkspaceRepo } from "./manifest.js";
+import { normalizeWorkspaceDisplayText } from "./text.js";
 
 const KIND_ORDER: Record<string, number> = {
   api: 10,
@@ -31,13 +32,6 @@ function timestampSlug(date = new Date()): string {
     .toISOString()
     .replace(/[-:]/g, "")
     .replace(/\.\d{3}Z$/, "Z");
-}
-
-function printableTask(raw: string): string {
-  return raw
-    .replace(/[\r\n\t|]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
 }
 
 function repoOrder(repo: WorkspaceRepo): number {
@@ -122,11 +116,7 @@ async function workspaceTaskPlan(ctx: PlanContext): Promise<ReturnType<typeof pl
       "AIH_WORKSPACE",
     );
   }
-  const taskRaw =
-    typeof ctx.options.task === "string" && ctx.options.task.trim().length > 0
-      ? ctx.options.task.trim()
-      : undefined;
-  const task = taskRaw ? printableTask(taskRaw) : undefined;
+  const task = normalizeWorkspaceDisplayText(ctx.options.task, "workspace task description");
   if (!task) throw new AihError("workspace plan requires a task description", "AIH_WORKSPACE");
   const file = posix.join(".aih", "workspace-plans", `${timestampSlug()}-${slugify(task)}.md`);
   return plan(

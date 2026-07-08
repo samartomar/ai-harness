@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { basename, join, resolve } from "node:path";
-import type { Command } from "commander";
+import { type Command, Option } from "commander";
 import { readAihConfig } from "../config/marker.js";
 import { parsePostureInput, resolvePosture } from "../config/posture.js";
 import { loadSettings } from "../config/settings.js";
@@ -55,27 +55,45 @@ function readSetupText(root: string): string | undefined {
   return undefined;
 }
 
+function commandPath(cmd: Command, fallback: string): string[] {
+  const names: string[] = [];
+  let current: Command | undefined = cmd;
+  while (current !== undefined) {
+    const name = current.name();
+    if (name.length > 0) names.unshift(name);
+    current = current.parent ?? undefined;
+  }
+  if (names[0] === "aih") names.shift();
+  return names.length > 0 ? names : [fallback];
+}
+
+function supportCommand(spec: CommandSpec, cmd: Command, ctx: PlanContext): string {
+  return redactArgv([
+    "aih",
+    ...commandPath(cmd, spec.name),
+    ...(ctx.verify ? ["--verify"] : []),
+    ...(ctx.apply ? ["--apply"] : []),
+  ]).join(" ");
+}
+
 /** A positive integer from CLI input, else undefined (used for `--refresh <sec>`). */
-function positiveInt(v: unknown): number | undefined {
-  const n = Number(v);
-  return Number.isFinite(n) && n > 0 ? Math.floor(n) : undefined;
+function refreshInterval(v: unknown): number | undefined {
+  if (v === undefined) return undefined;
+  const text = String(v).trim();
+  if (!/^[1-9]\d*$/.test(text)) {
+    throw new AihError("--refresh must be an integer >= 1", "AIH_CONFIG");
+  }
+  return Number(text);
+}
+
+function earlyJsonMode(raw: string | undefined): boolean {
+  if (raw === undefined) return false;
+  return ["1", "true", "yes", "on"].includes(raw.trim().toLowerCase());
 }
 
 /** Convert a commander option flag spec into its camelCase opts key. */
 export function flagKey(flags: string): string {
-  const long = flags.split(/[,\s]+/).find((tok) => tok.startsWith("--"));
-  const stripped = (long ?? flags).replace(/^--/, "");
-  // Cut at the value placeholder ("<dir>" / "[value]") by index scan, not a
-  // backtracking regex: plugin option flags reach this function, so it must
-  // stay linear on hostile input (polynomial ReDoS).
-  const angle = stripped.indexOf("<");
-  const bracket = stripped.indexOf("[");
-  const cut = Math.min(
-    angle === -1 ? stripped.length : angle,
-    bracket === -1 ? stripped.length : bracket,
-  );
-  const name = stripped.slice(0, cut).trim();
-  return name.replace(/-([a-z])/g, (_, c: string) => c.toUpperCase());
+  return new Option(flags).attributeName();
 }
 
 function extractOptions(spec: CommandSpec, opts: Record<string, unknown>): Record<string, unknown> {
@@ -142,7 +160,7 @@ export async function runCapability(
       appendRunLog(resolvedRoot, buildRunEntry(entry), startedAt);
   };
 
-  let json = opts.json === true;
+  let json = opts.json === true || earlyJsonMode(env.AIH_JSON);
   try {
     // Context-dir precedence ladder: explicit `--context-dir` flag > committed
     // `.aih-config.json` marker > `AIH_CONTEXT_DIR` env > `ai-coding` default.
@@ -174,6 +192,7 @@ export async function runCapability(
       flag: opts.posture,
       flagSource: postureFlagSource,
       marker,
+      skipOrgPolicyFloor: spec.skipOrgPolicyFloor === true,
     });
     const settings = loadSettings(env, {
       apply: opts.apply as boolean | undefined,
@@ -197,11 +216,19 @@ export async function runCapability(
     const prompter =
       deps.prompter ?? (wantConfirm && isInteractive(env) ? makeReadlinePrompter() : undefined);
     // `--refresh <sec>` (report) keeps the dashboard live: open once, then regenerate
-    // the artifact every <sec> seconds (the page's meta-refresh reloads it). It
-    // implies --open + --apply; the loop runs until Ctrl+C.
-    const watchSec = positiveInt(opts.refresh);
-    // `--open`, `--refresh`, and `--demo` all imply build-and-open (so --apply too).
-    const liveOpen = opts.open === true || opts.demo === true || watchSec !== undefined;
+    // the artifact every <sec> seconds (the page's meta-refresh reloads it). Live-mode
+    // implications are spec-owned so plugin options with the same names stay ordinary
+    // options and cannot force apply/open behavior.
+    const liveOptions = new Set(spec.liveModeOptions ?? []);
+    const watchSec = liveOptions.has("refresh") ? refreshInterval(opts.refresh) : undefined;
+    if (watchSec !== undefined && settings.json) {
+      throw new AihError("--refresh cannot be combined with --json", "AIH_CONFIG");
+    }
+    // `--open`, `--refresh`, and `--demo` imply build-and-open only for specs that opt in.
+    const liveOpen =
+      (liveOptions.has("open") && opts.open === true) ||
+      (liveOptions.has("demo") && opts.demo === true) ||
+      watchSec !== undefined;
     const ctx: PlanContext = {
       root: settings.root,
       contextDir: settings.contextDir,
@@ -257,12 +284,7 @@ export async function runCapability(
             checks: result.report.checks,
             projectName: basename(settings.root) || "this project",
             root: settings.root,
-            command: redactArgv([
-              "aih",
-              spec.name,
-              ...(ctx.verify ? ["--verify"] : []),
-              ...(ctx.apply ? ["--apply"] : []),
-            ]).join(" "),
+            command: supportCommand(spec, command, ctx),
             contextDir: settings.contextDir,
             targets: (readAihConfig(settings.root)?.targets ?? []).join(", ") || "none",
             platform: host.platform,

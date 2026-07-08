@@ -255,6 +255,19 @@ describe("pack add", () => {
       /pack add requires --skill/,
     );
   });
+
+  it("refuses unsafe pack and skill names before writing", () => {
+    writeLock([{ name: "clean" }]);
+    expectRefusal(
+      () => packAddCommand.plan(ctx({ options: { pack: "../x", skill: "clean" } })),
+      /pack add requires a safe --pack value/,
+    );
+    expectRefusal(
+      () => packAddCommand.plan(ctx({ options: { pack: "docs", skill: "../x" } })),
+      /pack add requires a safe --skill value/,
+    );
+    expect(existsSync(manifestPath())).toBe(false);
+  });
 });
 
 describe("pack remove-entry", () => {
@@ -301,6 +314,13 @@ describe("pack remove-entry", () => {
 });
 
 describe("pack init", () => {
+  it("refuses unsafe pack names before reading approvals", () => {
+    expectRefusal(
+      () => packInitCommand.plan(ctx({ options: { pack: "../x" } })),
+      /pack init requires a safe --pack value/,
+    );
+  });
+
   it("seeds a pack from every lock entry tagged pack=<pack>, name-sorted", async () => {
     writeLock([
       { name: "zulu", pack: "docs" },

@@ -1,10 +1,12 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { ProjectContract } from "../../src/contract/schema.js";
 import type { PlanContext } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
+import { mcpApprovalSubject } from "../../src/mcp/policy.js";
+import type { McpServer } from "../../src/mcp/servers.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 import { governanceRollupDigest } from "../../src/report/governance.js";
 import { mcpGovernanceSummary } from "../../src/report/mcp-governance.js";
@@ -33,6 +35,18 @@ function ctx(over: Partial<PlanContext> = {}): PlanContext {
     options: {},
     ...over,
   };
+}
+
+function context7ApprovalSubject(): string {
+  return mcpApprovalSubject({
+    type: "http",
+    url: "https://mcp.context7.com/mcp",
+    description: "context7",
+    classification: "third-party-hosted",
+    egress: "third-party",
+    credentials: "none",
+    supplyChain: "hosted-remote",
+  } satisfies McpServer);
 }
 
 const CONTRACT: ProjectContract = {
@@ -83,6 +97,28 @@ describe("governanceRollupDigest", () => {
     expect(byControl["path-portability"]).toBe("deny");
     expect(d.text).toContain("team");
     expect(d.text).toContain("plaintext");
+  });
+
+  it("counts unsafe MCP config paths separately from hardcoded MCP secrets", () => {
+    const outside = join(mkdtempSync(join(tmpdir(), "aih-governance-mcp-outside-")), "mcp.json");
+    try {
+      writeFileSync(
+        outside,
+        JSON.stringify({ mcpServers: { gh: { env: { GITHUB_TOKEN: `ghp_${"a".repeat(36)}` } } } }),
+      );
+      symlinkSync(outside, join(dir, ".mcp.json"), "file");
+    } catch {
+      rmSync(dirname(outside), { recursive: true, force: true });
+      return;
+    }
+
+    const d = governanceRollupDigest(ctx({ posture: "team" }));
+    rmSync(dirname(outside), { recursive: true, force: true });
+    const secrets = controls(d).find((c) => c.control === "secrets");
+
+    expect(secrets?.verdict).toBe("deny");
+    expect(secrets?.detail).toContain("0 hardcoded MCP secret(s)");
+    expect(secrets?.detail).toContain("1 unsafe MCP config path(s)");
   });
 
   it("marks CA trust as enterprise-deny until a trust env var is present", () => {
@@ -163,6 +199,7 @@ describe("governanceRollupDigest", () => {
           approvals: [
             {
               server: "context7",
+              subject: context7ApprovalSubject(),
               acceptEgress: true,
               reason: "legal approved hosted docs lookup",
               reviewer: "security-platform",

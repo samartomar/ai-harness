@@ -94,5 +94,14 @@ export function acceptChanged(
 ): (rel: string) => boolean {
   const inAllow = acceptIn(allow);
   if (!changed) return inAllow;
-  return (rel) => inAllow(rel) && changed.has(norm(rel));
+  return (rel) => {
+    if (!inAllow(rel)) return false;
+    const normalized = norm(rel);
+    if (changed.has(normalized)) return true;
+    const childPrefix = `${normalized}/`;
+    for (const path of changed) {
+      if (norm(path).startsWith(childPrefix)) return true;
+    }
+    return false;
+  };
 }

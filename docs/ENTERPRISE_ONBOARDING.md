@@ -31,8 +31,11 @@
    ```bash
    aih init . --posture team
    aih init . --posture team --apply
-   npm run dev -- contract --apply --force
+   npm run dev -- contract --apply
    ```
+
+   Use `--force` only after reviewing the dirty setup branch or generated
+   contract changes that the worktree gate reports.
 
 4. Add org policy and validate it:
 
@@ -88,15 +91,7 @@
       "context7",
       "github"
     ],
-    "approvals": [
-      {
-        "server": "context7",
-        "acceptEgress": true,
-        "reason": "Docs lookup endpoint accepted for team use.",
-        "reviewer": "dev-platform",
-        "approvedAt": "2026-07-05T00:00:00.000Z"
-      }
-    ],
+    "approvals": [],
     "allowManagedOnly": true,
     "incumbentHosts": [
       "api.githubcopilot.com"
@@ -157,15 +152,7 @@
       "github",
       "sequential-thinking"
     ],
-    "approvals": [
-      {
-        "server": "context7",
-        "acceptEgress": true,
-        "reason": "Approved docs lookup endpoint; no source code or secrets.",
-        "reviewer": "security-platform",
-        "approvedAt": "2026-07-05T00:00:00.000Z"
-      }
-    ],
+    "approvals": [],
     "allowManagedOnly": true,
     "githubHost": "https://github.internal.example",
     "incumbentHosts": [
@@ -197,12 +184,14 @@
 
 For vetted third-party MCP under Enterprise posture, `mcp.allowedServers` names
 servers eligible for egress approval and managed allowlist projection, while
-`mcp.approvals[]` records the accepted egress review evidence. It is not a
-blanket block of zero-egress local servers; use `mcp.disabledServers` to remove
-a server. When `mcp.allowManagedOnly` is true, `allowedServers` also narrows the
+`mcp.approvals[]` records the accepted egress review evidence plus the current
+server subject fingerprint written by `aih mcp approve`. It is not a blanket
+block of zero-egress local servers; use `mcp.disabledServers` to remove a
+server. When `mcp.allowManagedOnly` is true, `allowedServers` also narrows the
 managed stdio command allowlist. Use
 `aih mcp --posture enterprise --mcp-compliant --apply` to write only
-policy-approved generated servers and quarantine denied ones. Run
+policy-approved generated servers, omit denied generated entries from targeted
+MCP client configs, and list the omitted servers in quarantined guidance. Run
 `aih mcp approve <server> --accept-egress --reason "<why this egress is accepted>" --apply`
 to write the local `aih-org-policy.json` entry. If `AIH_ORG_POLICY` points at a
 distributed policy, update that source instead; org policy wins over local approval

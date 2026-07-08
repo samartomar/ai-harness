@@ -27,6 +27,7 @@ import {
   aihWorkspaceGraphRepo,
   isAihLegacyCodeReviewGraphMcpServer,
 } from "../workspace/templates.js";
+import { normalizeWorkspaceDisplayText } from "../workspace/text.js";
 
 const FRESH_DAYS = 7;
 export interface WorkspaceEvidenceCell {
@@ -515,7 +516,11 @@ function readSnapshot(path: string): SnapshotFile | undefined {
   const text = readIfExists(path);
   if (text === undefined) return undefined;
   try {
-    return JSON.parse(text) as SnapshotFile;
+    const parsed = JSON.parse(text) as SnapshotFile;
+    const label = normalizeWorkspaceDisplayText(parsed.label, "workspace snapshot label");
+    const snapshot = { ...parsed };
+    delete snapshot.label;
+    return { ...snapshot, ...(label ? { label } : {}) };
   } catch {
     return undefined;
   }

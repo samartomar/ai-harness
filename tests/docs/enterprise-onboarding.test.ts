@@ -21,4 +21,14 @@ describe("enterprise onboarding docs", () => {
       expect(() => parseOrgPolicy(example)).not.toThrow();
     }
   });
+
+  it("does not put --force in default setup command blocks", () => {
+    const doc = readFileSync(join(root, "docs", "ENTERPRISE_ONBOARDING.md"), "utf8");
+    const fencedLines = [...doc.matchAll(/^\s*```bash\n([\s\S]*?)^\s*```/gmu)].flatMap((match) =>
+      (match[1] ?? "").split(/\r?\n/u).map((line) => line.trim()),
+    );
+
+    expect(fencedLines.filter((line) => line.includes("--force"))).toEqual([]);
+    expect(doc).toContain("Use `--force` only after reviewing the dirty setup branch");
+  });
 });

@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -10,6 +10,7 @@ import {
 } from "../../src/bundle/index.js";
 import type { PlanContext, WriteAction } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
+import { jsonFile } from "../../src/internals/render.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 
 let dir: string;
@@ -73,6 +74,7 @@ describe("bundle command", () => {
       }),
     );
     expect(out[".aih/fleet-bundle/SHA256SUMS"]?.contents).toContain("files/ai-coding/project.json");
+    expect(out[".aih/fleet-bundle/SHA256SUMS"]?.contents).toContain("manifest.json");
   });
 
   it("honors --include and emits signing as a thin cosign exec", async () => {
@@ -98,6 +100,11 @@ describe("bundle command", () => {
     const sign = p.actions.find((a) => a.kind === "exec");
     expect(sign?.kind === "exec" ? sign.argv[0] : "").toBe("cosign");
     expect(sign?.kind === "exec" ? sign.allowFailure : false).toBe(true);
+    const sums = writes(p.actions).find((w) => w.path.endsWith("SHA256SUMS"))?.contents ?? "";
+    expect(sign?.kind === "exec" ? sign.expect : undefined).toEqual({
+      path: ".aih/fleet-bundle/SHA256SUMS",
+      sha256: sha256Hex(sums),
+    });
   });
 
   it("bundles the skill governance set: skills lock, packs manifest, and expanded skill cards", async () => {
@@ -174,14 +181,100 @@ describe("verify-bundle command", () => {
   it("passes when SHA256SUMS matches and fails when a bundled file drifts", () => {
     const root = join(dir, "bundle");
     mkdirSync(join(root, "files"), { recursive: true });
+    const manifest = jsonFile({
+      schemaVersion: 1,
+      files: [{ path: "a.txt", bytes: 3, sha256: sha256Hex("ok\n") }],
+    });
     writeFileSync(join(root, "files", "a.txt"), "ok\n");
-    writeFileSync(join(root, "SHA256SUMS"), `${sha256Hex("ok\n")}  files/a.txt\n`);
+    writeFileSync(join(root, "manifest.json"), manifest);
+    writeFileSync(
+      join(root, "SHA256SUMS"),
+      `${sha256Hex("ok\n")}  files/a.txt\n${sha256Hex(manifest)}  manifest.json\n`,
+    );
 
     expect(verifyBundleChecksums(root).verdict).toBe("pass");
     writeFileSync(join(root, "files", "a.txt"), "tampered\n");
     const res = verifyBundleChecksums(root);
     expect(res.verdict).toBe("fail");
     expect(res.detail).toContain("a.txt");
+  });
+
+  it("fails when SHA256SUMS is empty or diverges from manifest.json", () => {
+    const root = join(dir, "bundle-metadata");
+    mkdirSync(root, { recursive: true });
+    writeFileSync(join(root, "SHA256SUMS"), "\n");
+    expect(verifyBundleChecksums(root)).toMatchObject({
+      verdict: "fail",
+      detail: expect.stringContaining("has no entries"),
+    });
+
+    mkdirSync(join(root, "files"), { recursive: true });
+    const manifest = jsonFile({
+      schemaVersion: 1,
+      files: [{ path: "a.txt", bytes: 3, sha256: sha256Hex("ok\n") }],
+    });
+    writeFileSync(join(root, "files", "a.txt"), "ok\n");
+    writeFileSync(join(root, "manifest.json"), manifest);
+    writeFileSync(join(root, "SHA256SUMS"), `${sha256Hex("ok\n")}  files/a.txt\n`);
+
+    const missingManifest = verifyBundleChecksums(root);
+    expect(missingManifest.verdict).toBe("fail");
+    expect(missingManifest.detail).toContain("manifest.json missing from SHA256SUMS");
+
+    writeFileSync(
+      join(root, "SHA256SUMS"),
+      `${sha256Hex("ok\n")}  files/a.txt\n${sha256Hex(manifest)}  manifest.json\n${sha256Hex(
+        "extra\n",
+      )}  files/extra.txt\n`,
+    );
+    const unexpected = verifyBundleChecksums(root);
+    expect(unexpected.verdict).toBe("fail");
+    expect(unexpected.detail).toContain("files/extra.txt is not listed in manifest.json");
+  });
+
+  it("returns a failed check instead of throwing when a listed target is not a regular file", () => {
+    const root = join(dir, "bundle-directory-target");
+    mkdirSync(join(root, "files", "a.txt"), { recursive: true });
+    const manifest = jsonFile({
+      schemaVersion: 1,
+      files: [{ path: "a.txt", bytes: 3, sha256: sha256Hex("ok\n") }],
+    });
+    writeFileSync(join(root, "manifest.json"), manifest);
+    writeFileSync(
+      join(root, "SHA256SUMS"),
+      `${sha256Hex("ok\n")}  files/a.txt\n${sha256Hex(manifest)}  manifest.json\n`,
+    );
+
+    const check = verifyBundleChecksums(root);
+
+    expect(check.verdict).toBe("fail");
+    expect(check.detail).toContain("files/a.txt missing or not a regular file");
+  });
+
+  it("rejects symlinked listed files when the host allows symlink creation", () => {
+    const root = join(dir, "bundle-symlink-target");
+    const outside = join(dir, "outside.txt");
+    mkdirSync(join(root, "files"), { recursive: true });
+    writeFileSync(outside, "ok\n");
+    try {
+      symlinkSync(outside, join(root, "files", "a.txt"), "file");
+    } catch {
+      return;
+    }
+    const manifest = jsonFile({
+      schemaVersion: 1,
+      files: [{ path: "a.txt", bytes: 3, sha256: sha256Hex("ok\n") }],
+    });
+    writeFileSync(join(root, "manifest.json"), manifest);
+    writeFileSync(
+      join(root, "SHA256SUMS"),
+      `${sha256Hex("ok\n")}  files/a.txt\n${sha256Hex(manifest)}  manifest.json\n`,
+    );
+
+    const check = verifyBundleChecksums(root);
+
+    expect(check.verdict).toBe("fail");
+    expect(check.detail).toContain("files/a.txt missing or not a regular file");
   });
 
   it("plans checksum and signature probes", async () => {

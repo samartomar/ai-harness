@@ -29,6 +29,7 @@ const MANAGED_HEADER = "# aih-managed (backup, temp, and generated reports)";
 const AIH_PATTERNS = [
   "*.aih.bak",
   "*.aih.tmp",
+  ".aih-truth.json",
   "!.aih/",
   ".aih/*",
   "!.aih/usage-record.mjs",

@@ -166,6 +166,27 @@ describe("v1 contract — CLI command surface", () => {
     for (const name of ["doctor", "docs-lint", "status", "verify-bundle", "verify-release"]) {
       const cmd = root.commands.find((c) => c.name === name);
       expect(cmd?.options.map((o) => o.flags)).toContain("--posture <posture>");
+      expect(cmd?.options.map((o) => o.flags)).toContain("--context-dir <dir>");
+    }
+  });
+
+  it("read-only nested commands do not expose ignored mutating flags", () => {
+    const root = liveSurface();
+    for (const [parentName, childName] of [
+      ["skill", "inventory"],
+      ["pack", "plan"],
+      ["pack", "status"],
+      ["pack", "validate"],
+      ["marketplace", "validate"],
+      ["policy", "validate"],
+      ["policy", "verify"],
+    ]) {
+      const parent = root.commands.find((c) => c.name === parentName);
+      const child = parent?.commands.find((c) => c.name === childName);
+      const flags = child?.options.map((o) => o.flags) ?? [];
+      expect(flags).not.toContain("--apply");
+      expect(flags).not.toContain("--force");
+      expect(flags).toContain("--context-dir <dir>");
     }
   });
 

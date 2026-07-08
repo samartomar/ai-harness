@@ -632,9 +632,8 @@ function safeSkillLabel(name: string): string {
  * never-vetted source must not inherit another source's approval): a GitHub
  * promotion matches only an entry whose `commit` equals the fetched pinned SHA —
  * which also rejects a STALE approval (approved at X, installing Y — re-vet and
- * re-approve); a local promotion matches only a `commit: "local"` entry (local
- * approvals are name-scoped by design — a developer-loop convenience whose recorded
- * path string is not stable across invocation contexts).
+ * re-approve); a local promotion matches only a `commit: "local"` entry whose
+ * recorded source resolves to the promoted local tree.
  *
  * A missing approval emits a `trust.unapproved-skill` check — ADVISORY at `vibe`
  * (pass with the standard warning-only detail), a promotion-blocking FAIL at
@@ -654,13 +653,21 @@ function unapprovedSkillChecks(
   const entries = readSkillsLock(ctx.root).skills;
   const pinned =
     source.kind === "github" ? metadataFor(source)?.pinnedSha?.toLowerCase() : undefined;
+  const localSourceMatches = (entrySource: string): boolean => {
+    if (source.kind !== "local") return false;
+    try {
+      return realpathSync(resolve(ctx.root, entrySource)) === realpathSync(source.root);
+    } catch {
+      return false;
+    }
+  };
   const isApproved = (name: string): boolean =>
     entries.some(
       (entry) =>
         entry.name === name &&
         (source.kind === "github"
           ? pinned !== undefined && entry.commit.toLowerCase() === pinned
-          : entry.commit === "local"),
+          : entry.commit === "local" && localSourceMatches(entry.source)),
     );
   const posture = postureFromContext(ctx);
   const at = source.kind === "github" ? ` at commit ${(pinned ?? "unknown").slice(0, 12)}` : "";

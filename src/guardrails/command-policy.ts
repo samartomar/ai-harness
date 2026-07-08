@@ -1,9 +1,10 @@
 /**
  * Machine-readable command-classification lexicon + its projections.
  *
- * Data ported verbatim from LeanHarness `.lh/policies/commands.yml` (MIT,
+ * Data adapted from LeanHarness `.lh/policies/commands.yml` (MIT,
  * Copyright (c) 2026 LeanHarness contributors) — every `pattern` and `reason`
- * string is preserved exactly. The Claude `permissions` mapping convention
+ * string keeps the source intent, with aih-specific hardening for secret-read and
+ * inline-code execution paths. The Claude `permissions` mapping convention
  * (deny → `permissions.deny`, ask → `permissions.ask`, safe_* → `permissions.allow`,
  * each wrapped `Bash(<pattern>)`) is adapted from LeanHarness `.lh/policies/claude-code.yml`
  * (MIT). The aih plan/render integration, the enforce-vs-document table, and the
@@ -29,9 +30,18 @@ export interface CommandRule {
   reason?: string;
 }
 
+export interface CommandPolicyTextMatch {
+  tier: Extract<PolicyTier, "deny" | "ask">;
+  pattern: string;
+  reason?: string;
+  offset: number;
+  end: number;
+}
+
 /**
- * The 4-tier command classification lexicon. Ported verbatim from
- * `.lh/policies/commands.yml` (LeanHarness, MIT) — pattern + reason preserved.
+ * The 4-tier command classification lexicon. Adapted from
+ * `.lh/policies/commands.yml` (LeanHarness, MIT), with repo-specific hardening
+ * for shell readers that can bypass native file-read deny rules.
  */
 export const COMMAND_LEXICON: Record<PolicyTier, CommandRule[]> = {
   deny: [
@@ -52,6 +62,23 @@ export const COMMAND_LEXICON: Record<PolicyTier, CommandRule[]> = {
     { pattern: "*DROP TABLE*", reason: "Destructive database command." },
     { pattern: "*drop table*", reason: "Destructive database command." },
     { pattern: "cat .env*", reason: "Refuses to expose secrets." },
+    { pattern: "cat secrets/*", reason: "Refuses to expose secrets." },
+    { pattern: "cat secrets/**", reason: "Refuses to expose secrets." },
+    { pattern: "grep* .env*", reason: "Refuses to expose secrets." },
+    { pattern: "grep* secrets/*", reason: "Refuses to expose secrets." },
+    { pattern: "grep* secrets/**", reason: "Refuses to expose secrets." },
+    { pattern: "rg* .env*", reason: "Refuses to expose secrets." },
+    { pattern: "rg* secrets/*", reason: "Refuses to expose secrets." },
+    { pattern: "rg* secrets/**", reason: "Refuses to expose secrets." },
+    { pattern: "sed -n* .env*", reason: "Refuses to expose secrets." },
+    { pattern: "sed -n* secrets/*", reason: "Refuses to expose secrets." },
+    { pattern: "sed -n* secrets/**", reason: "Refuses to expose secrets." },
+    { pattern: "head .env*", reason: "Refuses to expose secrets." },
+    { pattern: "head secrets/*", reason: "Refuses to expose secrets." },
+    { pattern: "head secrets/**", reason: "Refuses to expose secrets." },
+    { pattern: "tail .env*", reason: "Refuses to expose secrets." },
+    { pattern: "tail secrets/*", reason: "Refuses to expose secrets." },
+    { pattern: "tail secrets/**", reason: "Refuses to expose secrets." },
     { pattern: "printenv*", reason: "Refuses to expose environment secrets." },
     { pattern: "env", reason: "Refuses to expose environment secrets." },
     { pattern: "*> /dev/sd*", reason: "Refuses to write directly to block devices." },
@@ -80,6 +107,12 @@ export const COMMAND_LEXICON: Record<PolicyTier, CommandRule[]> = {
     { pattern: "*db reset*", reason: "Database reset requires approval." },
     { pattern: "*deploy*", reason: "Deployment requires approval." },
     { pattern: "*curl*|*sh*", reason: "Piping remote scripts requires approval." },
+    { pattern: "grep*", reason: "Broad shell reads require approval." },
+    { pattern: "rg*", reason: "Broad shell reads require approval." },
+    { pattern: "sed -n*", reason: "Broad shell reads require approval." },
+    { pattern: "head *", reason: "Broad shell reads require approval." },
+    { pattern: "tail *", reason: "Broad shell reads require approval." },
+    { pattern: "python -c *", reason: "Inline code execution requires approval." },
     { pattern: "rm -r*", reason: "Recursive deletion requires approval." },
   ],
   safe_read_only: [
@@ -91,13 +124,8 @@ export const COMMAND_LEXICON: Record<PolicyTier, CommandRule[]> = {
     { pattern: "git blame*" },
     { pattern: "ls*" },
     { pattern: "find*" },
-    { pattern: "grep*" },
-    { pattern: "rg*" },
     { pattern: "cat README.md" },
-    { pattern: "sed -n*" },
     { pattern: "wc *" },
-    { pattern: "head *" },
-    { pattern: "tail *" },
   ],
   safe_verification: [
     { pattern: "npm test*" },
@@ -117,9 +145,81 @@ export const COMMAND_LEXICON: Record<PolicyTier, CommandRule[]> = {
     { pattern: "cargo test*" },
     { pattern: "node --check*" },
     { pattern: "python -m json.tool*" },
-    { pattern: "python -c *" },
   ],
 };
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[\\^$+?.()|[\]{}]/g, "\\$&");
+}
+
+function patternSlug(pattern: string): string {
+  return pattern
+    .toLowerCase()
+    .replace(/\*/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+export function commandPolicyMatchKind(match: CommandPolicyTextMatch): string {
+  return `command-policy-${match.tier}:${patternSlug(match.pattern)}`;
+}
+
+function commandPatternRegex(pattern: string): RegExp {
+  let source = "";
+  for (let index = 0; index < pattern.length; index++) {
+    const char = pattern[index] ?? "";
+    if (char === "*") {
+      source += "[^,\\r\\n;&]*";
+      continue;
+    }
+    if (/\s/.test(char)) {
+      while (/\s/.test(pattern[index + 1] ?? "")) index += 1;
+      source += "\\s+";
+      continue;
+    }
+    source += escapeRegExp(char);
+  }
+  const first = pattern[0];
+  const last = pattern[pattern.length - 1];
+  const prefix = first !== "*" && /[A-Za-z0-9_]/.test(first ?? "") ? "\\b" : "";
+  const suffix = last !== "*" && /[A-Za-z0-9_]/.test(last ?? "") ? "\\b" : "";
+  return new RegExp(`${prefix}${source}${suffix}`, "gi");
+}
+
+function overlaps(a: { offset: number; end: number }, b: { offset: number; end: number }): boolean {
+  return a.offset < b.end && b.offset < a.end;
+}
+
+export function commandPolicyTextMatches(text: string): CommandPolicyTextMatch[] {
+  const matches: CommandPolicyTextMatch[] = [];
+  for (const tier of ["deny", "ask"] as const) {
+    for (const rule of COMMAND_LEXICON[tier]) {
+      const re = commandPatternRegex(rule.pattern);
+      for (const match of text.matchAll(re)) {
+        const offset = match.index ?? 0;
+        const candidate = {
+          tier,
+          pattern: rule.pattern,
+          reason: rule.reason,
+          offset,
+          end: offset + match[0].length,
+        };
+        if (
+          tier === "ask" &&
+          matches.some((existing) => existing.tier === "deny" && overlaps(existing, candidate))
+        ) {
+          continue;
+        }
+        matches.push(candidate);
+      }
+    }
+  }
+  return matches.sort((a, b) => {
+    const offset = a.offset - b.offset;
+    if (offset !== 0) return offset;
+    return a.pattern.localeCompare(b.pattern);
+  });
+}
 
 /** Registry CLI ids aih can project the lexicon into a NATIVE permission seam for. */
 const ENFORCED_CLIS = new Set<string>(["claude"]);
@@ -181,7 +281,7 @@ export function commandPolicyDoc(): string {
   return lines(
     "# Command Policy: deny / ask / safe lexicon",
     "",
-    "> Generated by `aih guardrails`. Data ported from LeanHarness",
+    "> Generated by `aih guardrails`. Data adapted from LeanHarness",
     "> `.lh/policies/commands.yml` (MIT). A machine-readable classification of shell",
     "> commands for the AI coding tools in this repo.",
     "",

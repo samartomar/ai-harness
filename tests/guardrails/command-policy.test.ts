@@ -28,6 +28,12 @@ describe("COMMAND_LEXICON deny tier", () => {
     expect(deny).toContain("*DROP DATABASE*");
     expect(deny).toContain("*DROP TABLE*");
     expect(deny).toContain("cat .env*");
+    expect(deny).toContain("cat secrets/**");
+    expect(deny).toContain("grep* .env*");
+    expect(deny).toContain("rg* secrets/**");
+    expect(deny).toContain("sed -n* secrets/**");
+    expect(deny).toContain("head .env*");
+    expect(deny).toContain("tail secrets/**");
     expect(deny).toContain("printenv*");
     expect(deny).toContain("*> /dev/sd*");
     expect(deny).toContain("dd if=*");
@@ -57,6 +63,12 @@ describe("COMMAND_LEXICON ask tier", () => {
       "*db reset*",
       "*deploy*",
       "*curl*|*sh*",
+      "grep*",
+      "rg*",
+      "sed -n*",
+      "head *",
+      "tail *",
+      "python -c *",
       "rm -r*",
     ]) {
       expect(ask).toContain(p);
@@ -77,8 +89,12 @@ describe("COMMAND_LEXICON safe tiers", () => {
     expect(safe).toContain("git diff*");
     expect(safe).toContain("git log*");
     expect(safe).toContain("ls*");
-    expect(safe).toContain("grep*");
-    expect(safe).toContain("rg*");
+    expect(safe).toContain("cat README.md");
+    expect(safe).not.toContain("grep*");
+    expect(safe).not.toContain("rg*");
+    expect(safe).not.toContain("sed -n*");
+    expect(safe).not.toContain("head *");
+    expect(safe).not.toContain("tail *");
   });
 
   it("safe_verification carries the test/lint/typecheck runners across ecosystems", () => {
@@ -89,6 +105,7 @@ describe("COMMAND_LEXICON safe tiers", () => {
     expect(safe).toContain("go test*");
     expect(safe).toContain("cargo test*");
     expect(safe).toContain("node --check*");
+    expect(safe).not.toContain("python -c *");
   });
 });
 
@@ -107,6 +124,14 @@ describe("claudeBashPermissions() — pure 1:1 projection", () => {
     );
     expect(perms.allow[0]).toBe("Bash(git status*)");
     expect(perms.allow).toContain("Bash(npm test*)");
+    expect(perms.allow).not.toContain("Bash(grep*)");
+    expect(perms.allow).not.toContain("Bash(rg*)");
+    expect(perms.allow).not.toContain("Bash(sed -n*)");
+    expect(perms.allow).not.toContain("Bash(python -c *)");
+    expect(perms.ask).toContain("Bash(grep*)");
+    expect(perms.ask).toContain("Bash(rg*)");
+    expect(perms.ask).toContain("Bash(python -c *)");
+    expect(perms.deny).toContain("Bash(rg* secrets/**)");
   });
 
   it("includes the canonical Bash(rm -rf /) deny rule", () => {

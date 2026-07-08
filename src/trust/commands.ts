@@ -1,7 +1,9 @@
+import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { basename, join } from "node:path";
 import { postureFromContext } from "../config/posture.js";
 import { AihError } from "../errors.js";
+import { readRegularFile } from "../internals/fsxn.js";
 import {
   type CommandSpec,
   digest,
@@ -13,14 +15,14 @@ import {
 import type { Check } from "../internals/verify.js";
 import { AIH_ORG_POLICY_FILE } from "../org-policy/constants.js";
 import { type OrgPolicy, readOrgPolicy } from "../org-policy/schema.js";
-import { isSafeGitRefName, localFileHash, scrubFetchEnv } from "./fetch.js";
+import { isSafeGitRefName, scrubFetchEnv } from "./fetch.js";
 import { gradeTrustCheck } from "./grade.js";
 import {
   SKILLSPECTOR_IMAGE,
   SKILLSPECTOR_IMAGE_DIGEST,
   SKILLSPECTOR_SOURCE_REVISION,
 } from "./images.js";
-import { readTrustLock, type TrustLockSource } from "./lock.js";
+import { readTrustLock, type TrustLockSource, trustLockValidationFindings } from "./lock.js";
 
 const OWNER_REPO = /^([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)$/;
 const LOWER_FULL_SHA = /^[0-9a-f]{40}$/;
@@ -339,17 +341,18 @@ function artifactTarget(ctx: PlanContext, source: TrustLockSource, artifactPath:
 export function localDriftChecks(ctx: PlanContext, source: TrustLockSource): Check[] {
   return source.artifactHashes.map((artifact) => {
     const target = artifactTarget(ctx, source, artifact.path);
-    if (!existsSync(target)) {
+    const contents = readRegularFile(target);
+    if (contents === undefined) {
       return {
         name: "trust local drift",
         verdict: "fail",
         code: "trust.source-changed",
-        detail: `${source.id}: local drift — promoted artifact missing at ${artifact.path}`,
+        detail: `${source.id}: local drift — promoted artifact missing or not a regular file at ${artifact.path}`,
         location: { uri: artifact.path },
         fingerprint: `trust-local-drift:${source.id}:${artifact.path}`,
       };
     }
-    const current = localFileHash(target);
+    const current = createHash("sha256").update(contents).digest("hex");
     if (current === artifact.sha256) {
       return {
         name: "trust local drift",
@@ -379,8 +382,10 @@ export function trustLockLocalDriftChecks(ctx: PlanContext): Check[] {
       },
     ];
   }
+  const validation = trustLockValidationFindings(ctx.root);
   const sources = readTrustLock(ctx.root).sources;
   if (sources.length === 0) {
+    if (validation.length > 0) return validation;
     return [
       {
         name: "trust local drift",
@@ -389,7 +394,7 @@ export function trustLockLocalDriftChecks(ctx: PlanContext): Check[] {
       },
     ];
   }
-  const checks = sources.flatMap((source) => localDriftChecks(ctx, source));
+  const checks = [...validation, ...sources.flatMap((source) => localDriftChecks(ctx, source))];
   return checks.length > 0
     ? checks
     : [
@@ -589,7 +594,10 @@ export const trustVerifyCommand: CommandSpec = {
   ],
   plan: (ctx) => {
     const sources = lockSourcesFor(ctx);
-    const checks = sources.flatMap((source) => localDriftChecks(ctx, source));
+    const checks = [
+      ...trustLockValidationFindings(ctx.root),
+      ...sources.flatMap((source) => localDriftChecks(ctx, source)),
+    ];
     return plan(
       "trust verify",
       ...checks.map((check) => structuredChecksProbe(check.detail ?? check.name, () => [check])),

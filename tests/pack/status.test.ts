@@ -181,6 +181,24 @@ describe("packStatus — the pure join", () => {
     expect(report.findings[0]?.check.code).toBe("pack.pin-mismatch");
   });
 
+  it("fails closed when pack-level requiredChecks are declared but not enforced", () => {
+    writeLock([{ name: "clean" }]);
+    writePacks([{ name: "docs", requiredChecks: ["no-exec"], skills: [matchingRef("clean")] }]);
+    const report = packStatus(ctx());
+    expect(report.packs[0]?.rollup).toBe("blocked");
+    expect(report.findings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          pack: "docs",
+          check: expect.objectContaining({
+            code: "pack.required-checks-unsupported",
+            detail: expect.stringContaining("requiredChecks are declared"),
+          }),
+        }),
+      ]),
+    );
+  });
+
   it("flags BOTH packs when two packs list the same skill name", () => {
     writeLock([{ name: "clean" }]);
     writePacks([

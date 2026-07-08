@@ -70,6 +70,39 @@ describe("committed JSON Schemas", () => {
     });
   });
 
+  it("rejects contextDir values that runtime settings reject", () => {
+    for (const contextDir of ["../escape", "docs/../ai-coding", "/abs"]) {
+      rejectCommittedSchema("schemas/aih-config.schema.json", {
+        schemaVersion: 1,
+        contextDir,
+      });
+    }
+  });
+
+  it("rejects unsupported fields in org-policy add-item schemas", () => {
+    const base = {
+      schemaVersion: 1,
+      minimumPosture: "enterprise",
+      references: { repoContract: "ai-coding/project.json" },
+    };
+    rejectCommittedSchema("schemas/aih-org-policy.schema.json", {
+      ...base,
+      command: { deny: { add: [{ pattern: "danger*", severity: "critical" }] } },
+    });
+    rejectCommittedSchema("schemas/aih-org-policy.schema.json", {
+      ...base,
+      riskGates: {
+        add: [
+          {
+            name: "critical_gate",
+            description: "critical gate",
+            behavior: "deny",
+          },
+        ],
+      },
+    });
+  });
+
   it("rejects githubHost values that are not bare https origins", () => {
     const base = {
       schemaVersion: 1,

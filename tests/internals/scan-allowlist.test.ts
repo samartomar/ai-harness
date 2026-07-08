@@ -72,6 +72,13 @@ describe("acceptIn / acceptChanged predicates", () => {
     expect(acceptChanged(allow, undefined)("a.md")).toBe(true);
     expect(acceptChanged(allow, undefined)("z.md")).toBe(false);
   });
+
+  it("acceptChanged treats a directory as changed when one of its children changed", () => {
+    const changed = new Set(["secrets/token.txt"]);
+    const accept = acceptChanged(undefined, changed);
+    expect(accept("secrets")).toBe(true);
+    expect(accept("src/secrets")).toBe(false);
+  });
 });
 
 describe("changedSince", () => {

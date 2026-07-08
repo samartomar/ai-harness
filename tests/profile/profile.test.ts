@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -101,6 +101,51 @@ describe("scanRepo — excludes its own generated context dir", () => {
     put("package.json", pkg({ scripts: {} }));
     put(".ai-context/nested/go.mod", "module x\n");
     expect(scanRepo(tmp, { maxDepth: 8 }).languages).not.toContain("Go");
+  });
+
+  it("only excludes the configured nested context dir subtree", () => {
+    put("package.json", pkg({ scripts: {} }));
+    put("docs/app/go.mod", "module example.com/app\n");
+    put("docs/ai-coding/nested/Cargo.toml", "[package]\nname='generated'\n");
+
+    const s = scanRepo(tmp, { maxDepth: 8, contextDir: "docs/ai-coding" });
+
+    expect(s.languages).toContain("JavaScript/Node.js");
+    expect(s.languages).toContain("Go");
+    expect(s.languages).not.toContain("Rust");
+  });
+});
+
+describe("scanRepo — ignores symlinked scan inputs", () => {
+  it("does not follow symlinked manifests or config files", () => {
+    const external = mkdtempSync(join(tmpdir(), "aih-profile-external-"));
+    try {
+      writeFileSync(
+        join(external, "package.json"),
+        pkg({ deps: { express: "^4.18.0" }, scripts: { test: "vitest run" } }),
+        "utf8",
+      );
+      writeFileSync(
+        join(external, "serverless.yml"),
+        ["service: injected", "provider:", "  name: aws", ""].join("\n"),
+        "utf8",
+      );
+      try {
+        symlinkSync(join(external, "package.json"), join(tmp, "package.json"), "file");
+        symlinkSync(join(external, "serverless.yml"), join(tmp, "serverless.yml"), "file");
+      } catch {
+        return;
+      }
+
+      const s = scanRepo(tmp, { maxDepth: 8 });
+
+      expect(s.languages).toEqual([]);
+      expect(s.frameworks).not.toContain("Express");
+      expect(s.frameworks).not.toContain("Serverless Framework");
+      expect(s.cloud).not.toContain("AWS");
+    } finally {
+      rmSync(external, { recursive: true, force: true });
+    }
   });
 });
 

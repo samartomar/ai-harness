@@ -11,7 +11,7 @@ import {
 } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
 import { skillInventory } from "../skill/inventory.js";
-import { AIH_SKILLS_LOCK_FILE, readSkillsLock } from "../skill/lockfile.js";
+import { AIH_SKILLS_LOCK_FILE, readSkillsLockStrictForWrite } from "../skill/lockfile.js";
 import { advisoryTail, type SkillRemovalSummary, skillRemovalActions } from "../skill/remove.js";
 import { AIH_PACKS_FILE, readPacksFile } from "./manifest.js";
 import { packStatus } from "./status.js";
@@ -167,7 +167,7 @@ function packUninstallPlan(ctx: PlanContext): Plan {
   // (any root — a machine-only or quarantined-only member must still reach the
   // per-member guard, not be skipped) and the lock decides "orphaned approval?".
   const inventory = skillInventory(ctx);
-  let lock = readSkillsLock(ctx.root);
+  let lock = readSkillsLockStrictForWrite(ctx.root);
 
   const actions: Action[] = [];
   const members: PackMemberRow[] = [];

@@ -50,13 +50,16 @@ export interface WorkspaceManifest {
 }
 
 const ID_RE = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
-const UNSAFE_PRINTABLE_FIELD_RE = /[\r\n\t|<>[\]`]/;
+const UNSAFE_PRINTABLE_MARKUP_CHARS = new Set(["|", "<", ">", "[", "]", "`"]);
 const SAFE_GIT_REF_CHARS_RE = /^[A-Za-z0-9._/-]+$/;
 const SAFE_SCP_REMOTE_RE = /^[A-Za-z0-9._-]+@[A-Za-z0-9.-]+:[A-Za-z0-9._~/-]+$/;
 
 export function assertWorkspacePrintable(value: string, label: string): void {
-  if (UNSAFE_PRINTABLE_FIELD_RE.test(value)) {
-    throw new Error(`${label} must be safe to print in workspace reports`);
+  for (const char of value) {
+    const code = char.charCodeAt(0);
+    if (code <= 31 || code === 127 || UNSAFE_PRINTABLE_MARKUP_CHARS.has(char)) {
+      throw new Error(`${label} must be safe to print in workspace reports`);
+    }
   }
 }
 

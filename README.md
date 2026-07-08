@@ -51,7 +51,8 @@ and security fixes land on the latest and the previous minor. The full policy:
 npm install -g @aihq/harness      # then run: aih --help
 ```
 
-Verify the install's origin — every release is published with build provenance:
+Verify the install's origin. Current releases publish npm provenance plus
+GitHub release checksums and a keyless cosign bundle:
 
 ```bash
 npm audit signatures
@@ -115,7 +116,7 @@ Keep this table as a navigation index: do not add flag-level behavior or workflo
 
 | Command | What it does |
 | --- | --- |
-| [`aih init`](docs/commands.md#aih-init) | Initialize a repo in one pass: profile + superpowers + bootstrap-ai + scaffold + secrets + guardrails + mcp + sandbox. |
+| [`aih init`](docs/commands.md#aih-init) | Initialize a repo in one pass: profile + superpowers + bootstrap-ai + scaffold + contract + secrets + guardrails + mcp + sandbox + usage. |
 | [`aih profile`](docs/commands.md#aih-profile) | Detect the repo's stack recursively and synthesize Cursor stack rules (`.cursor/rules/*.mdc`). |
 | [`aih scaffold`](docs/commands.md#aih-scaffold) | Scaffold repo hygiene — secret deny-list, pre-commit hook, `.gitignore` entries; `--canon legacy` adds the full context-doc family. |
 | [`aih bootstrap-ai`](docs/commands.md#aih-bootstrap-ai) | Emit and verify the repo's Layer-2 canon — `RULE_ROUTER.md`, per-CLI adapters, root bootloaders; `--verify` is the drift gate. |
@@ -136,20 +137,20 @@ Keep this table as a navigation index: do not add flag-level behavior or workflo
 | [`aih trust`](docs/commands.md#aih-trust) | Vet, pin, and gate external GitHub repos and skills before an agent acquires them. |
 | [`aih skill`](docs/commands.md#aih-skill) | Govern the skill lifecycle — vet → approve → inventory → quarantine → remove — anchored in `aih-skills.lock.json`. |
 | [`aih pack`](docs/commands.md#aih-pack) | Curate committed sets of approved skills (`aih-packs.json`); every ref is cross-checked against the lock, fail-closed. |
-| [`aih marketplace`](docs/commands.md#aih-marketplace) | Build, validate, and publish a reproducible, verifiable distribution artifact from the approval lock — never a registry. |
-| [`aih policy`](docs/commands.md#aih-policy) | Validate the committed org policy or verify the active policy against a pinned hash/bundle. |
+| [`aih marketplace`](docs/commands.md#aih-marketplace) | Build, validate, and publish a reproducible, verifiable distribution artifact for hostable approved skills — never a registry. |
+| [`aih policy`](docs/commands.md#aih-policy) | Validate the active local org policy source or verify it against a pinned hash/bundle. |
 | [`aih evidence`](docs/commands.md#aih-evidence) | Package the audit trail aih already emits into one deterministic evidence bundle with a harness provenance block. |
 | [`aih truth`](docs/commands.md#aih-truth) | Create and verify an external project-truth sidecar; commit, version, claim, decision, acceptance-preflight, and agent-evidence assertions fail closed before a pack helps govern evidence. <!-- aih:claim CM-13 --> |
 | [`aih bundle`](docs/commands.md#aih-bundle) | Build a deterministic fleet bundle with checksums; `aih verify-bundle --require-signature` turns missing/unverifiable signatures into failures. |
 | [`aih verify-bundle`](docs/commands.md#aih-verify-bundle) | Re-check a fleet or evidence bundle's checksums and signature/provenance evidence. |
 | [`aih verify-release`](docs/commands.md#aih-verify-release) | Verify a published aih release: npm signatures, GitHub release cosign bundle, and tarball hash. |
-| [`aih secrets`](docs/commands.md#aih-secrets) | Scan for plaintext `.env*`/`secrets/` and write agent deny rules; `--verify` is the secret-scan CI gate. |
-| [`aih guardrails`](docs/commands.md#aih-guardrails) | Generate `.gitleaks.toml`, `.pre-commit-config.yaml`, and a CI license gate that blocks AGPL/strong-copyleft. |
+| [`aih secrets`](docs/commands.md#aih-secrets) | Scan for plaintext secret paths and hardcoded MCP config credentials without emitting values; `--verify` is warning-only at `vibe` and non-zero at `team`/`enterprise`. <!-- aih:claim CM-16 --> |
+| [`aih guardrails`](docs/commands.md#aih-guardrails) | Generate local gitleaks/pre-commit policy files and a CI license/secret workflow; enforcement requires installing tools and wiring Git hooks or required CI checks. <!-- aih:claim CM-17 --> |
 
 ### Enterprise packs, skill governance, and safety
 
 <p align="center">
-  <img src="docs/assets/aih-enterprise-packs.svg" alt="aih enterprise packs, skill governance, and safety summary covering committed pack curation, approval locks, fail-closed install gates, first-party docs-quality scaffolding, GREEN verdict scope, and re-validation triggers" width="100%">
+  <img src="docs/assets/aih-enterprise-packs.svg" alt="aih enterprise packs, skill governance, and safety summary covering committed pack curation, approval locks, fail-closed install gates, first-party docs-quality scaffolding, GREEN or reviewed YELLOW verdict scope, and re-validation triggers" width="100%">
 </p>
 
 ### Trust configuration notes
@@ -166,7 +167,7 @@ not guess which names are private to your organization.
 | [`aih track`](docs/commands.md#aih-track) | Record one metrics sample (commits, LOC delta, adoption) to `.aih/history.jsonl` — the time-series behind `aih report` trends. |
 | [`aih usage`](docs/commands.md#aih-usage) | Install the multi-tool usage-capture layer → `.aih/usage.jsonl` — local activity counts only, no cost, no prompts. |
 | [`aih telemetry`](docs/commands.md#aih-telemetry) | Inject OpenTelemetry env, a redacting Bindplane collector, and an analytics fetcher. |
-| [`aih mcp`](docs/commands.md#aih-mcp) | Generate the MCP server config for the targeted CLIs; per-tool guidance where a generated file would be wrong. |
+| [`aih mcp`](docs/commands.md#aih-mcp) | Generate MCP config for targeted CLIs, warn when first-run detection selects global config targets, and use `--mcp-compliant` to omit denied generated servers from targeted configs. <!-- aih:claim CM-18 --> |
 | [`aih sandbox`](docs/commands.md#aih-sandbox) | Generate a devcontainer + managed sandbox settings (egress allowlist, `failIfUnavailable`). |
 
 ### Verification
@@ -298,8 +299,9 @@ The harness models the same two-layer setup used in the reference repos (eicp / 
 - **Layer 1 — user baseline:** selectable with `--baseline ecc|gstack|gsd` (default `ecc`,
   ECC + Superpowers installed per CLI by `aih ecc` / `aih superpowers`).
 - **Layer 2 — repo canon:** the committed `ai-coding/` (or `--context-dir`) tree — `RULE_ROUTER.md`
-  (stack-aware routing entry point), `adapters/<cli>.md` (per-tool wiring notes), `REGENERATION.md`,
-  and the root **bootloaders** (`CLAUDE.md`, `AGENTS.md`, `GEMINI.md`, Cursor/Windsurf/Copilot).
+  (stack-aware routing entry point), the contract files `project.json`, `project.md`, and `setup.md`,
+  `adapters/<cli>.md` (per-tool wiring notes), and the root **bootloaders** (`CLAUDE.md`, `AGENTS.md`,
+  `GEMINI.md`, Cursor/Windsurf/Copilot). `REGENERATION.md` is emitted only for `--canon legacy`.
 
 `aih bootstrap-ai` generates and verifies Layer 2. Each bootloader is hand-editable tool-specific
 content **plus one marker-delimited shared block** that `bootstrap-ai` regenerates idempotently —
@@ -314,7 +316,7 @@ aih bootstrap-ai --verify              # CI drift gate (no writes; exit 1 on dri
 ```
 
 Precedence: **Layer 2 wins** on conflict — repo canon overrides the generic baseline. Run
-`aih scaffold` for the context dir (`INDEX/architecture/conventions`) the router points at.
+`aih contract` to refresh the contract files the compact router points at.
 
 ### Multi-repo workspaces
 
@@ -344,9 +346,10 @@ It writes, at the parent (it does **not** touch the child repos — run `aih ini
 - Child repos are an explicit allowlist: use `--repos` or an existing `.aih-workspace.json`. If child
   Git repos are present without an allowlist, `aih workspace` reports candidates but does not add them
   to `.aih-workspace.json` or workspace MCP scope.
-- `aih workspace snapshot --lock --apply` also writes each child repo's local `origin` URL into
+- `aih workspace snapshot --lock --apply` writes the recorded child remote into
   `<context-dir>/workspace-lock.json` when present, so a lock captures both the commit and fetch
-  location. It reads only child-local Git config and never fetches.
+  location. A manifest-declared `remote` takes precedence; otherwise snapshot collection reads only
+  child-local `origin` config and never fetches.
 - `aih workspace hydrate --apply` restores a declared workspace from `.aih-workspace.json` plus the
   committed workspace lock: missing children are cloned from recorded remotes, present clean children
   are checked out to the recorded ref, and children with no recorded remote are skipped with a note.
@@ -370,7 +373,9 @@ host hash, repo remote hash, write tally, and verification + support counts. It'
 `.aih/history.jsonl` (the per-commit metrics behind `aih report` trends). Logging is **on only after the
 repo is initialised** (a committed `.aih-config.json` marker exists) and never fails a command; opt out
 with **`--no-log`** or **`AIH_LOG=0`**. Like all of `.aih/`, the ledger is gitignored local diagnostics
-— never committed. For tamper-evident sharing, package it with `aih evidence build`.
+— never committed. `aih evidence build` packages it into a checksummed bundle; use
+`aih evidence build --sign <signer> --require-signature` when the bundle crosses a
+sharing boundary that requires tamper evidence.
 
 ### Examples
 
@@ -394,10 +399,11 @@ aih usage --rollup ../repo-a,../repo-b
   [Releases](https://github.com/samartomar/ai-harness/releases).
 - **Versioning & support** — [VERSIONING.md](VERSIONING.md). SemVer; from 1.0, security
   fixes land on the latest **and the previous minor** (N-1) of the current major.
-- **Supply chain** — every release publishes via npm **Trusted Publishing** with build
+- **Supply chain** — the current release workflow publishes via npm **Trusted Publishing** with build
   **provenance** and ships an **SPDX SBOM**, a **SHA256 checksum**, its keyless **cosign
   signature bundle** (`SHA256SUMS.txt.sigstore.json`), and the Sigstore **build-provenance
-  bundle** on the GitHub Release. Tagged release artifacts claim
+  bundle** on the GitHub Release. Releases from `v0.6.0` onward include the sigstore/provenance
+  assets; earlier historical tags have a narrower asset set. Tagged release artifacts claim
   [SLSA Build L2](docs/security/release-slsa.md) under SLSA v1.2; no Build L3 claim is
   made. Verify an install with `npm audit signatures`, `aih verify-release [version]`,
   and provenance-aware policy such as `gh attestation verify`.

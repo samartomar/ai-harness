@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -108,6 +109,11 @@ describe("session guardrails", () => {
       ]),
     );
     expect(JSON.stringify(report)).not.toContain(fakeValue);
+    expect(JSON.stringify(report)).not.toContain(
+      createHash("sha256")
+        .update(`Set EXAMPLE_API_KEY=${fakeValue} before running tests.`, "utf8")
+        .digest("hex"),
+    );
   });
 
   it("redacts secret-like source labels before report and evidence output", async () => {
@@ -150,6 +156,30 @@ describe("session guardrails", () => {
         }),
       ]),
     );
+  });
+
+  it("detects command-policy deny and ask actions in session text", async () => {
+    const report = await runSessionGuardrails(
+      {
+        text: "Run git push --force origin main, then cat .env.local, then npm install left-pad.",
+        source: "draft",
+      },
+      { projectRoot: dir },
+    );
+
+    expect(report.summary.finalVerdict).toBe("fail");
+    expect(report.results).toContainEqual(
+      expect.objectContaining({
+        passName: "session-dangerous-action",
+        verdict: "fail",
+        message: "3 dangerous session action(s) require explicit human review",
+      }),
+    );
+    expect(report.summary.aggregatedEvidence.map((item) => item.id)).toEqual([
+      "session-dangerous-action:command-policy-deny:git-push-force:0",
+      "session-dangerous-action:command-policy-deny:cat-env:1",
+      "session-dangerous-action:command-policy-ask:npm-install:2",
+    ]);
   });
 
   it("detects PowerShell and GNU destructive remove forms", async () => {

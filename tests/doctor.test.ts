@@ -164,6 +164,35 @@ describe("doctor — large-repo graph safety", () => {
     expect(res?.detail).toContain("repo MCP code-review-graph configured");
   });
 
+  it("does not trust a symlinked repo MCP config for large-repo graph readiness", async () => {
+    const outside = mkdtempSync(join(tmpdir(), "aih-doctor-scale-mcp-"));
+    try {
+      writeFileSync(
+        join(outside, ".mcp.json"),
+        JSON.stringify({
+          mcpServers: {
+            "code-review-graph": {
+              type: "stdio",
+              command: "uvx",
+              args: ["code-review-graph@2.3.6", "serve"],
+            },
+          },
+        }),
+      );
+      symlinkSync(join(outside, ".mcp.json"), join(dir, ".mcp.json"), "file");
+      const c = scaleCtx(1000, ["uvx"]);
+
+      const probe = findProbe((await command.plan(c)).actions, "large-repo graph safety");
+      const res = await probe?.run(c);
+
+      expect(res?.verdict).toBe("fail");
+      expect(res?.code).toBe("scale.code-review-graph-missing");
+      expect(res?.detail).toContain("no code-review-graph binary and no repo MCP");
+    } finally {
+      rmSync(outside, { recursive: true, force: true });
+    }
+  });
+
   it("uses uv tool run when uvx is unavailable but uv is available", async () => {
     writeGraphMcp();
     const calls: string[][] = [];
@@ -352,7 +381,7 @@ describe("doctor — trust-lock local drift", () => {
             promotedAt: "2026-06-30T00:00:00.000Z",
             promotedSkills: ["clean"],
             analyzersRun: ["aih-native"],
-            artifactHashes: [{ path: "skills/clean/SKILL.md", sha256: "not-current" }],
+            artifactHashes: [{ path: "skills/clean/SKILL.md", sha256: "0".repeat(64) }],
             findings: [],
           },
         ],
@@ -862,7 +891,7 @@ describe("doctor — MCP managed allowlist drift", () => {
     expect(res?.detail).toContain("code-review-graph@2.3.6");
   });
 
-  it("skips malformed managed-settings JSON as no enforceable allowlist", async () => {
+  it("fails closed on malformed managed-settings JSON", async () => {
     writeMcp();
     mkdirSync(join(dir, ".claude"), { recursive: true });
     writeFileSync(join(dir, ".claude", "managed-settings.json"), "{ broken");
@@ -870,19 +899,56 @@ describe("doctor — MCP managed allowlist drift", () => {
     const probe = findProbe((await command.plan(c)).actions, "MCP managed allowlist");
     const res = await probe?.run(c);
 
-    expect(res?.verdict).toBe("skip");
-    expect(res?.detail).toContain("no managed MCP allowlist");
+    expect(res?.verdict).toBe("fail");
+    expect(res?.code).toBe("mcp.allowlist-drift");
+    expect(res?.detail).toContain("invalid .claude/managed-settings.json");
   });
 
-  it("skips malformed .mcp.json as no comparable stdio servers", async () => {
+  it("fails closed on malformed .mcp.json when a managed allowlist is enforced", async () => {
     writeFileSync(join(dir, ".mcp.json"), "{ broken");
     writeAllowlist(["uvx", "code-review-graph@2.3.6", "serve"]);
     const c = rooted();
     const probe = findProbe((await command.plan(c)).actions, "MCP managed allowlist");
     const res = await probe?.run(c);
 
-    expect(res?.verdict).toBe("skip");
-    expect(res?.detail).toContain("no .mcp.json stdio servers");
+    expect(res?.verdict).toBe("fail");
+    expect(res?.code).toBe("mcp.allowlist-drift");
+    expect(res?.detail).toContain("invalid .mcp.json");
+  });
+
+  it("passes when the managed allowlist matches org-policy narrowed MCP servers", async () => {
+    writeFileSync(
+      join(dir, ".mcp.json"),
+      JSON.stringify({
+        mcpServers: {
+          "code-review-graph": {
+            type: "stdio",
+            command: "uvx",
+            args: ["code-review-graph@2.3.6", "serve"],
+          },
+          "sequential-thinking": {
+            type: "stdio",
+            command: "npx",
+            args: ["server-sequential-thinking@2025.12.18"],
+          },
+        },
+      }),
+    );
+    writeFileSync(
+      join(dir, "aih-org-policy.json"),
+      JSON.stringify({
+        schemaVersion: 1,
+        minimumPosture: "enterprise",
+        references: { repoContract: "ai-coding/project.json" },
+        mcp: { allowedServers: ["code-review-graph"], allowManagedOnly: true },
+      }),
+    );
+    writeAllowlist(["uvx", "code-review-graph@2.3.6", "serve"]);
+    const c = rooted();
+    const probe = findProbe((await command.plan(c)).actions, "MCP managed allowlist");
+    const res = await probe?.run(c);
+
+    expect(res?.verdict).toBe("pass");
   });
 });
 
@@ -1067,6 +1133,7 @@ describe("doctor — reads the committed .aih-config.json marker", () => {
     const res = await probe?.run(c);
     expect(res?.verdict).toBe("pass");
     expect(res?.detail).toContain("custom-canon");
+    expect(res?.detail).not.toContain(dir);
   });
 
   it("config-marker probe PASSES when the marker matches the checked dir", async () => {

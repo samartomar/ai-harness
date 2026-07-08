@@ -7,6 +7,7 @@ import { sha256Hex } from "../../src/bundle/index.js";
 import { mergeManagedBlock } from "../../src/internals/markers.js";
 import type { PlanContext } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
+import { jsonFile } from "../../src/internals/render.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 import {
   coherenceDigest,
@@ -1032,26 +1033,42 @@ describe("skillGovernanceDigest", () => {
 
   /**
    * A minimal evidence bundle under `.aih/evidence-bundle` in `evidence build`'s
-   * exact layout: `files/<rel>` copy of the skills lock, SHA256SUMS over it, and
-   * the `evidence.json` kind index.
+   * exact layout: `files/<rel>` copy of the skills lock plus generated metadata,
+   * all covered by SHA256SUMS.
    */
   const putEvidenceBundle = (lockBody: string): void => {
     const bundled = `${lockBody}\n`; // evidence build normalizes to one trailing newline
+    const manifest = {
+      schemaVersion: 1,
+      files: [
+        {
+          path: "aih-skills.lock.json",
+          bytes: Buffer.byteLength(bundled, "utf8"),
+          sha256: sha256Hex(bundled),
+        },
+      ],
+    };
+    const evidence = {
+      schemaVersion: 1,
+      artifacts: [
+        {
+          kind: "skills-lock",
+          path: "aih-skills.lock.json",
+          sha256: sha256Hex(bundled),
+          schemaVersion: 1,
+        },
+      ],
+    };
+    const manifestBody = jsonFile(manifest);
+    const evidenceBody = jsonFile(evidence);
     put(".aih/evidence-bundle/files/aih-skills.lock.json", bundled);
-    put(".aih/evidence-bundle/SHA256SUMS", `${sha256Hex(bundled)}  files/aih-skills.lock.json\n`);
+    put(".aih/evidence-bundle/manifest.json", manifestBody);
+    put(".aih/evidence-bundle/evidence.json", evidenceBody);
     put(
-      ".aih/evidence-bundle/evidence.json",
-      JSON.stringify({
-        schemaVersion: 1,
-        artifacts: [
-          {
-            kind: "skills-lock",
-            path: "aih-skills.lock.json",
-            sha256: sha256Hex(bundled),
-            schemaVersion: 1,
-          },
-        ],
-      }),
+      ".aih/evidence-bundle/SHA256SUMS",
+      `${sha256Hex(bundled)}  files/aih-skills.lock.json\n` +
+        `${sha256Hex(manifestBody)}  manifest.json\n` +
+        `${sha256Hex(evidenceBody)}  evidence.json\n`,
     );
   };
 

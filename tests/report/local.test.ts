@@ -1,6 +1,6 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { PlanContext } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
@@ -246,6 +246,34 @@ describe("leakPreventionsDigest", () => {
       codes: ["secrets.plaintext-detected", "mcp.hardcoded-secret"],
     });
   });
+
+  it("separates unsafe MCP config paths from hardcoded MCP secret findings", () => {
+    const outside = join(mkdtempSync(join(tmpdir(), "aih-report-mcp-outside-")), "mcp.json");
+    try {
+      writeFileSync(
+        outside,
+        JSON.stringify({ mcpServers: { gh: { env: { GITHUB_TOKEN: `ghp_${"a".repeat(36)}` } } } }),
+      );
+      symlinkSync(outside, join(dir, ".mcp.json"), "file");
+    } catch {
+      rmSync(dirname(outside), { recursive: true, force: true });
+      return;
+    }
+
+    const d = leakPreventionsDigest(ctx());
+    rmSync(dirname(outside), { recursive: true, force: true });
+    if (d === undefined) throw new Error("expected leak-preventions digest");
+
+    expect(d.text).toContain("MCP config findings (1)");
+    expect(d.text).toContain("mcp.config-invalid");
+    expect(d.text).not.toContain("github");
+    expect(d.data).toMatchObject({
+      total: 1,
+      mcpHardcoded: 0,
+      mcpConfigInvalid: 1,
+      codes: ["mcp.config-invalid"],
+    });
+  });
 });
 
 describe("report local scope — composed panels", () => {
@@ -317,6 +345,17 @@ describe("toolsInstalledDigest — core vs optional", () => {
 });
 
 describe("scaleSafetyDigest", () => {
+  const smallRepoRunner = () =>
+    fakeRunner((argv) => {
+      if (argv[0] === "git" && argv.slice(3).join(" ") === "ls-files") {
+        return {
+          code: 0,
+          stdout: Array.from({ length: 12 }, (_, i) => `src/file-${i}.ts`).join("\n"),
+        };
+      }
+      return undefined;
+    });
+
   const largeRepoRunner = (...bins: string[]) =>
     fakeRunner((argv) => {
       if (argv[0] === "git" && argv.slice(3).join(" ") === "ls-files") {
@@ -328,6 +367,10 @@ describe("scaleSafetyDigest", () => {
       const name = argv[0] === "which" || argv[0] === "where" ? argv[1] : undefined;
       return name && bins.includes(name) ? { code: 0, stdout: `/usr/bin/${name}` } : undefined;
     });
+
+  it("omits the report panel for small repos without probing graph availability", async () => {
+    await expect(scaleSafetyDigest(ctx({ run: smallRepoRunner() }))).resolves.toBeUndefined();
+  });
 
   it("emits a large-repo risk panel when code-review-graph is unavailable", async () => {
     const d = await scaleSafetyDigest(ctx({ run: largeRepoRunner() }));

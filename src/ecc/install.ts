@@ -1,8 +1,10 @@
+import { AihError } from "../errors.js";
 import type { Cli } from "../internals/clis.js";
 import { type Action, doc, exec } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
 import type { Platform } from "../platform/base.js";
 import { execArgv } from "../tools/install.js";
+import type { EccLanguagePack } from "./select.js";
 
 /**
  * ECC is installed by running ECC's OWN published installer — aih assembles no ECC
@@ -33,8 +35,16 @@ export const ECC_INSTALL_TARGETS: readonly Cli[] = [
   "zed",
 ];
 
+export const AIH_DIRECT_ECC_INSTALL_TARGETS: readonly Cli[] = ECC_INSTALL_TARGETS.filter(
+  (cli) => cli !== "codex",
+);
+
 export function isEccInstallTarget(cli: Cli): boolean {
   return ECC_INSTALL_TARGETS.includes(cli);
+}
+
+export function isAihDirectEccInstallTarget(cli: Cli): boolean {
+  return AIH_DIRECT_ECC_INSTALL_TARGETS.includes(cli);
 }
 
 export interface EccInstallInputs {
@@ -53,6 +63,8 @@ export interface EccInstallInputs {
    * latest from npm.
    */
   installVersion?: string;
+  /** Stack-specific ECC language packs appended after --profile. */
+  packs?: readonly EccLanguagePack[];
 }
 
 export const ECC_NPM_PACKAGE = "ecc-universal";
@@ -65,8 +77,29 @@ function installerPackageSpec(version?: string): string {
   return version && version.length > 0 ? `${ECC_NPM_PACKAGE}@${version}` : ECC_NPM_PACKAGE;
 }
 
+export function normalizeEccInstallVersion(raw: string | undefined): string | undefined {
+  const version = (raw ?? "").trim();
+  if (version.length === 0) return undefined;
+  if (
+    /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/.test(
+      version,
+    )
+  ) {
+    return version;
+  }
+  throw new AihError(
+    "AIH_ECC_INSTALL_VERSION must be an exact semver version like 1.2.3; tags and ranges such as `latest` are not accepted",
+    "AIH_CONFIG",
+  );
+}
+
 /** The `npx --package ecc-universal ecc-install` argv for a target CLI. */
-export function eccInstallerArgv(cli: Cli, profile: string, version?: string): string[] {
+export function eccInstallerArgv(
+  cli: Cli,
+  profile: string,
+  version?: string,
+  packs: readonly EccLanguagePack[] = [],
+): string[] {
   return [
     "npx",
     "--yes",
@@ -77,18 +110,26 @@ export function eccInstallerArgv(cli: Cli, profile: string, version?: string): s
     cli,
     "--profile",
     profile,
+    ...packs,
   ];
 }
 
 /** Run ECC's real installer for a supported CLI, under --apply (pinned if requested). */
-function installerExec(cli: Cli, profile: string, platform: Platform, version?: string): Action {
+function installerExec(
+  cli: Cli,
+  profile: string,
+  platform: Platform,
+  version?: string,
+  packs: readonly EccLanguagePack[] = [],
+): Action {
   const spec = installerPackageSpec(version);
   const tag = version ? `pinned ${spec}` : "latest from npm";
+  const packSuffix = packs.length > 0 ? ` ${packs.join(" ")}` : "";
   return exec(
-    `Install ECC for ${cli} — npx --package ${spec} ${ECC_NPM_BIN} --target ${cli} --profile ${profile} (${tag}, under --apply)`,
+    `Install ECC for ${cli} — npx --package ${spec} ${ECC_NPM_BIN} --target ${cli} --profile ${profile}${packSuffix} (${tag}, under --apply)`,
     // Windows execFile can't spawn the `npx` .cmd shim directly (no .exe) — route it
     // through `cmd /c`, the same shim fix the rest of the harness uses (tools/install.ts).
-    execArgv(platform, eccInstallerArgv(cli, profile, version)),
+    execArgv(platform, eccInstallerArgv(cli, profile, version, packs)),
   );
 }
 
@@ -125,9 +166,15 @@ function consultDoc(cli: Cli, inputs: EccInstallInputs): Action {
 
 /** Build the ECC install action(s) for one CLI (Kiro is handled in index.ts). */
 export function eccActionsForCli(cli: Cli, inputs: EccInstallInputs): Action[] {
-  if (isEccInstallTarget(cli)) {
+  if (isAihDirectEccInstallTarget(cli)) {
     const actions: Action[] = [
-      installerExec(cli, inputs.profile, inputs.platform, inputs.installVersion),
+      installerExec(
+        cli,
+        inputs.profile,
+        inputs.platform,
+        inputs.installVersion,
+        inputs.packs ?? [],
+      ),
     ];
     if (cli === "claude") actions.push(claudePluginDoc());
     return actions;

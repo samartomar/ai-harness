@@ -1,5 +1,6 @@
 import type { PlanContext } from "../internals/plan.js";
 import { type Action, doc, exec } from "../internals/plan.js";
+import { assertNoCmdInjection } from "../internals/shell-safety.js";
 import type { Check } from "../internals/verify.js";
 import type { Platform } from "../platform/base.js";
 
@@ -227,9 +228,11 @@ export function chooseOption(t: ToolSpec, pms: ReadonlySet<string>): PmOption | 
  */
 export const WIN_CMD_SHIMS = new Set(["npm", "npx", "pnpm", "scoop", "yarn"]);
 export function execArgv(platform: Platform, argv: string[]): string[] {
-  return platform === "windows" && argv[0] !== undefined && WIN_CMD_SHIMS.has(argv[0])
-    ? ["cmd", "/c", ...argv]
-    : argv;
+  if (platform !== "windows" || argv[0] === undefined || !WIN_CMD_SHIMS.has(argv[0])) return argv;
+  for (const [index, arg] of argv.entries()) {
+    assertNoCmdInjection(arg, `Windows ${argv[0]} shim argv[${index}]`);
+  }
+  return ["cmd", "/c", ...argv];
 }
 
 /**

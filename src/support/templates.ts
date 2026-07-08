@@ -185,7 +185,7 @@ export function selfFixBody(finding: SupportFinding, ctx: SupportContext): strin
  * anything is written. Returns true when `text` is safe to send externally.
  */
 export function isToolNeutral(text: string): boolean {
-  return !/\baih\b|AI Harness/i.test(text);
+  return !/\baih\b|\bai-harness\b|AI Harness/i.test(text);
 }
 
 /** Which findings render as tool-neutral external messages (vs internal self-fix). */

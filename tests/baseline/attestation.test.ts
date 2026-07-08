@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -162,6 +162,29 @@ describe("enterprise baseline attestation", () => {
     expect(check.detail).toContain("marketplace artifact cannot be parsed");
   });
 
+  it("fails closed when marketplace attestation would read through a linked path", () => {
+    const outside = mkdtempSync(join(tmpdir(), "aih-baseline-marketplace-outside-"));
+    try {
+      mkdirSync(join(dir, ".aih"), { recursive: true });
+      symlinkSync(
+        outside,
+        join(dir, ".aih", "marketplace"),
+        process.platform === "win32" ? "junction" : "dir",
+      );
+      writeFileSync(join(outside, "marketplace.json"), JSON.stringify({ schemaVersion: 1 }));
+
+      const check = enterpriseBaselineAttestationCheck(ctx());
+
+      expect(check).toMatchObject({
+        verdict: "fail",
+        code: "baseline.registry-invalid",
+      });
+      expect(check.detail).toContain("contained regular file");
+    } finally {
+      rmSync(outside, { recursive: true, force: true });
+    }
+  });
+
   it("fails closed when the declared registry cannot be read", () => {
     writeText("aih-org-policy.json", "{not-json");
     writeMcp({
@@ -228,6 +251,27 @@ describe("enterprise baseline attestation", () => {
       code: "baseline.undeclared-surface",
     });
     expect(check.detail).toContain("mcp:rogue @ .cursor/mcp.json");
+  });
+
+  it("fails closed when MCP attestation would read through a linked config path", () => {
+    const outside = mkdtempSync(join(tmpdir(), "aih-baseline-mcp-outside-"));
+    try {
+      symlinkSync(outside, join(dir, ".cursor"), process.platform === "win32" ? "junction" : "dir");
+      writeFileSync(
+        join(outside, "mcp.json"),
+        JSON.stringify({ mcpServers: { rogue: { type: "http", url: "https://rogue.example" } } }),
+      );
+
+      const check = enterpriseBaselineAttestationCheck(ctx());
+
+      expect(check).toMatchObject({
+        verdict: "fail",
+        code: "baseline.registry-invalid",
+      });
+      expect(check.detail).toContain(".cursor/mcp.json must be a contained regular file");
+    } finally {
+      rmSync(outside, { recursive: true, force: true });
+    }
   });
 
   it("attests OpenCode MCP maps by their normalized command and remote shapes", () => {

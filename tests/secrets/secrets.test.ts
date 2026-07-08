@@ -1,11 +1,20 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { executePlan } from "../../src/internals/execute.js";
 import type { Action, PlanContext, WriteAction } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
 import { reportToSarif } from "../../src/internals/sarif.js";
+import { acceptChanged } from "../../src/internals/scan-allowlist.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 import { command } from "../../src/secrets/index.js";
 import { SECRET_RULE } from "../../src/secrets/probes.js";
@@ -20,6 +29,7 @@ afterEach(() => {
 });
 
 function ctx(over: Partial<PlanContext> = {}): PlanContext {
+  const env = { HOME: dir, USERPROFILE: dir, ...(over.env ?? {}) };
   const run = fakeRunner(() => undefined);
   return {
     root: dir,
@@ -28,8 +38,8 @@ function ctx(over: Partial<PlanContext> = {}): PlanContext {
     verify: false,
     json: false,
     run,
-    host: makeHostAdapter({ platform: "linux", run, env: {} }),
-    env: {},
+    host: makeHostAdapter({ platform: "linux", run, env }),
+    env,
     options: {},
     ...over,
   };
@@ -110,6 +120,35 @@ describe("scanSecrets", () => {
     expect(scan.envFiles).toEqual(["secrets/.env"]);
     expect(scan.matches).toEqual(["secrets", "secrets/.env"]);
   });
+
+  it("--since-style scans flag root secrets/ when Git reports a changed child", () => {
+    mkdirSync(join(dir, "secrets"), { recursive: true });
+    writeFileSync(join(dir, "secrets", "token.txt"), "token\n");
+    const scan = scanSecrets(dir, {
+      accept: acceptChanged(undefined, new Set(["secrets/token.txt"])),
+    });
+    expect(scan.secretDirs).toEqual(["secrets"]);
+    expect(scan.matches).toEqual(["secrets"]);
+  });
+
+  it("does not follow symlinked first-level directories outside the repo", () => {
+    const outside = mkdtempSync(join(tmpdir(), "aih-secrets-outside-"));
+    try {
+      writeFileSync(join(outside, ".env"), "TOKEN=outside\n");
+      symlinkSync(outside, join(dir, "linked"), process.platform === "win32" ? "junction" : "dir");
+      symlinkSync(outside, join(dir, "secrets"), process.platform === "win32" ? "junction" : "dir");
+    } catch {
+      rmSync(outside, { recursive: true, force: true });
+      return;
+    }
+
+    const scan = scanSecrets(dir);
+    rmSync(outside, { recursive: true, force: true });
+
+    expect(scan.envFiles).not.toContain("linked/.env");
+    expect(scan.secretDirs).toEqual([]);
+    expect(scan.matches).toEqual([]);
+  });
 });
 
 describe("scanConfigSecrets", () => {
@@ -163,6 +202,51 @@ describe("scanConfigSecrets", () => {
     expect(hits[0]?.key).toBe("API_KEY");
   });
 
+  it("flags a literal value under a secret-looking key in JSONC MCP config", () => {
+    writeFileSync(
+      join(dir, ".mcp.json"),
+      '{\n  // supported JSONC\n  "mcpServers": { "db": { "env": { "API_KEY": "abcd1234efgh5678", }, }, }\n}\n',
+    );
+    const hits = scanConfigSecrets(dir);
+    expect(hits).toHaveLength(1);
+    expect(hits[0]?.key).toBe("API_KEY");
+  });
+
+  it("flags a literal value under a secret-looking key in malformed MCP JSON", () => {
+    writeFileSync(
+      join(dir, ".mcp.json"),
+      '{"mcpServers":{"db":{"env":{"API_KEY":"abcd1234efgh5678"',
+    );
+    const hits = scanConfigSecrets(dir);
+    expect(hits).toHaveLength(1);
+    expect(hits[0]?.key).toBe("API_KEY");
+    expect(JSON.stringify(hits)).not.toContain("abcd1234efgh5678");
+  });
+
+  it("does not follow symlinked MCP config paths outside the repo", () => {
+    const outside = join(mkdtempSync(join(tmpdir(), "aih-mcp-outside-")), "mcp.json");
+    try {
+      writeFileSync(
+        outside,
+        JSON.stringify({ mcpServers: { gh: { env: { GITHUB_TOKEN: `ghp_${"a".repeat(36)}` } } } }),
+      );
+      symlinkSync(outside, join(dir, ".mcp.json"), "file");
+    } catch {
+      rmSync(dirname(outside), { recursive: true, force: true });
+      return;
+    }
+    const hits = scanConfigSecrets(dir);
+    rmSync(dirname(outside), { recursive: true, force: true });
+
+    expect(hits).toHaveLength(1);
+    expect(hits[0]).toMatchObject({
+      file: ".mcp.json",
+      key: "",
+      code: "mcp.config-invalid",
+    });
+    expect(JSON.stringify(hits)).not.toContain("github");
+  });
+
   it("flags a literal Authorization bearer header", () => {
     const literal = "Bearer pasted-token-value";
     writeFileSync(
@@ -206,6 +290,19 @@ describe("scanConfigSecrets", () => {
     expect(hits[0]?.file).toBe(".kiro/settings/mcp.json");
     expect(hits[0]?.kind).toContain("authorization bearer");
     expect(JSON.stringify(hits)).not.toContain("pasted-token-value");
+  });
+
+  it("scans known global MCP configs for redacted secret literals", async () => {
+    mkdirSync(join(dir, ".codex"), { recursive: true });
+    writeFileSync(join(dir, ".codex", "config.toml"), 'api_key = "abcd1234efgh5678"\n');
+
+    const p = await command.plan(ctx());
+    const warning = p.actions.find(
+      (a) => a.kind === "doc" && a.describe.startsWith("MCP config secret-scan findings"),
+    );
+
+    expect(warning?.kind === "doc" ? warning.text : "").toContain("~/.codex/config.toml");
+    expect(JSON.stringify(p.actions)).not.toContain("abcd1234efgh5678");
   });
 
   it("allows Kiro MCP Authorization bearer env placeholders", () => {
@@ -354,6 +451,35 @@ describe("secrets command", () => {
     } else {
       throw new Error("expected vault guidance doc");
     }
+  });
+
+  it("labels unsafe MCP config paths as config-scan findings, not hardcoded secrets", async () => {
+    const outside = join(mkdtempSync(join(tmpdir(), "aih-mcp-outside-")), "mcp.json");
+    try {
+      writeFileSync(
+        outside,
+        JSON.stringify({ mcpServers: { gh: { env: { GITHUB_TOKEN: `ghp_${"a".repeat(36)}` } } } }),
+      );
+      symlinkSync(outside, join(dir, ".mcp.json"), "file");
+    } catch {
+      rmSync(dirname(outside), { recursive: true, force: true });
+      return;
+    }
+
+    const p = await command.plan(ctx({ verify: true, posture: "team" }));
+    rmSync(dirname(outside), { recursive: true, force: true });
+    const warning = p.actions.find(
+      (a) => a.kind === "doc" && a.describe.startsWith("MCP config secret-scan findings"),
+    );
+    const probes = p.actions.filter((a) => a.kind === "probe");
+
+    expect(warning?.kind).toBe("doc");
+    if (warning?.kind === "doc") {
+      expect(warning.text).toContain("mcp.config-invalid");
+      expect(warning.text).toContain("unsafe config paths");
+      expect(warning.text).not.toContain("github");
+    }
+    expect(probes.map((probe) => probe.describe)).toContain("MCP config finding: .mcp.json");
   });
 
   it("adds an exposure-warning doc listing detected plaintext files", async () => {

@@ -1,4 +1,12 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -420,7 +428,7 @@ describe("trust verify command", () => {
             artifactHashes: [
               {
                 path: "skills/clean/SKILL.md",
-                sha256: "not-the-current-hash",
+                sha256: "0".repeat(64),
               },
             ],
             findings: [],
@@ -535,7 +543,7 @@ describe("trust verify command", () => {
     ).toBe(true);
   });
 
-  it("drops malformed legacy trust-lock entries instead of throwing during verify", async () => {
+  it("fails closed on malformed legacy trust-lock entries during verify", async () => {
     write(
       ".aih/trust-lock.json",
       JSON.stringify({
@@ -557,7 +565,71 @@ describe("trust verify command", () => {
     const c = ctx({}, true);
     const result = await executePlan(await trustVerifyCommand.plan(c), c);
 
-    expect(result.report?.checks).toEqual([]);
+    expect(result.report?.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          verdict: "fail",
+          code: "trust.source-changed",
+          detail: expect.stringContaining("sources[0] is malformed or unsafe"),
+        }),
+      ]),
+    );
+  });
+
+  it("fails closed on unsafe trust-lock artifact paths before hashing", async () => {
+    write(
+      ".aih/trust-lock.json",
+      JSON.stringify({
+        schemaVersion: 1,
+        sources: [
+          {
+            id: "owner-repo",
+            kind: "github",
+            source: "owner/repo",
+            ref: "main",
+            pinnedSha: "a".repeat(40),
+            promotedAt: "2026-06-30T00:00:00.000Z",
+            promotedSkills: ["clean"],
+            analyzersRun: ["aih-native"],
+            artifactHashes: [{ path: "../outside.txt", sha256: "0".repeat(64) }],
+            findings: [],
+          },
+        ],
+      }),
+    );
+
+    const result = await executePlan(await trustVerifyCommand.plan(ctx({}, true)), ctx({}, true));
+
+    expect(result.report?.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          verdict: "fail",
+          code: "trust.source-changed",
+          detail: expect.stringContaining("sources[0] is malformed or unsafe"),
+        }),
+      ]),
+    );
+  });
+
+  it("fails closed when a promoted artifact is a symlink", async () => {
+    writePromotedLock();
+    const promoted = join(root, "ai-coding", "skills", "owner-repo", "clean", "SKILL.md");
+    const outside = join(root, "outside.txt");
+    writeFileSync(outside, "outside bytes\n", "utf8");
+    rmSync(promoted);
+    symlinkSync(outside, promoted, "file");
+
+    const result = await executePlan(await trustVerifyCommand.plan(ctx({}, true)), ctx({}, true));
+
+    expect(result.report?.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          verdict: "fail",
+          code: "trust.source-changed",
+          detail: expect.stringContaining("missing or not a regular file"),
+        }),
+      ]),
+    );
   });
 
   it("skips unsafe stored refs before invoking git ls-remote", async () => {

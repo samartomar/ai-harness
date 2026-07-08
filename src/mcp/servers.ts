@@ -184,8 +184,15 @@ export function mcpServers(
     servers["awslabs.core-mcp-server"] = {
       type: "stdio",
       command: "uvx",
-      // Pinned (not @latest) for reproducible installs; bump deliberately.
-      args: ["awslabs.core-mcp-server@1.0.27"],
+      // Pinned and launched through the same hardened uvx flags as other local
+      // Python MCP servers: no project .env reads and no interpreter/package fetch
+      // while starting in a locked-down sandbox.
+      args: [
+        "--offline",
+        "--no-python-downloads",
+        "--no-env-file",
+        "awslabs.core-mcp-server@1.0.27",
+      ],
       description:
         "AWS Labs core MCP server (AWS docs, service guidance). Added because the repo targets AWS.",
       classification: "local",

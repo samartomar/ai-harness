@@ -450,7 +450,7 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     failSeverity: "blocking",
     title: "org policy file does not parse",
     action:
-      "Fix aih-org-policy.json until it passes the schema — `aih policy validate` lists the failing paths. A committed policy that does not parse enforces nothing (drift probes and posture floors all no-op).",
+      "Fix aih-org-policy.json until it passes the schema — `aih policy validate` lists the failing paths. Commands that consume an invalid policy fail closed instead of applying posture floors or projections.",
   },
   "org-policy.bundle-invalid": {
     audience: "developer",
@@ -780,6 +780,13 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     title: "pack manifest contains no valid packs",
     action:
       "Fix aih-packs.json: schemaVersion 1 with a `packs` array where each pack has a name and at least one {name, source, commit} skill ref. Malformed entries are dropped on read, so a file that yields zero packs is unreadable curation.",
+  },
+  "pack.required-checks-unsupported": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "pack declares required checks that are not enforced",
+    action:
+      "Remove `requiredChecks` from the pack manifest, or implement and verify pack-level enforcement before installing from this pack. A declared but unenforced check must not be treated as a governance control.",
   },
   "marketplace.manifest-parse": {
     audience: "developer",

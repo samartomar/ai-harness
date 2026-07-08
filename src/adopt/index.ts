@@ -1,5 +1,6 @@
-import { basename, resolve } from "node:path";
+import { basename, posix, resolve } from "node:path";
 import { AIH_CONFIG_FILE, aihConfigJson, readAihConfig } from "../config/marker.js";
+import { SettingsError } from "../errors.js";
 import {
   type Action,
   type CommandSpec,
@@ -183,31 +184,83 @@ function adoptableProbe(cls: CanonClassification): Check {
   return { name, verdict: "pass", detail: "no foreign canon to adopt" };
 }
 
-/** Parse a comma/space-separated option value into a trimmed, non-empty list. */
-function parseList(value: unknown): string[] {
+function normalizeAckPath(raw: string): string {
+  const value = raw.trim().replace(/\\/g, "/");
+  if (value.length === 0) throw new SettingsError("--ack path must not be empty");
+  if ([...value].some((char) => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127))
+    throw new SettingsError("--ack path must be a single safe path");
+  if (/^[A-Za-z]:($|\/)/.test(value)) throw new SettingsError("--ack path must be repo-relative");
+  const normalized = posix.normalize(value).replace(/^\.\//, "").replace(/\/+$/, "");
+  if (
+    normalized.length === 0 ||
+    normalized === "." ||
+    normalized === ".." ||
+    normalized.startsWith("../") ||
+    normalized.startsWith("/")
+  ) {
+    throw new SettingsError("--ack path must be a repo-relative CLI-native artifact path");
+  }
+  return normalized;
+}
+
+/** Parse a comma/space-separated option value into normalized, unique paths. */
+function parseAckList(value: unknown): string[] {
   if (typeof value !== "string") return [];
-  return value
-    .split(/[,\s]+/)
-    .map((s) => s.trim())
-    .filter((s) => s.length > 0);
+  const out: string[] = [];
+  for (const part of value.split(/[,\s]+/)) {
+    if (part.trim().length === 0) continue;
+    const normalized = normalizeAckPath(part);
+    if (!out.includes(normalized)) out.push(normalized);
+  }
+  return out;
+}
+
+function normalizeStoredAckPaths(paths: readonly string[] = []): string[] {
+  const out: string[] = [];
+  for (const path of paths) {
+    try {
+      const normalized = normalizeAckPath(path);
+      if (!out.includes(normalized)) out.push(normalized);
+    } catch {
+      // Ignore legacy malformed config values; new --ack input is validated below.
+    }
+  }
+  return out;
+}
+
+function validateAckPaths(paths: readonly string[], fp: CliFootprint): void {
+  if (paths.length === 0) return;
+  const known = new Set(fp.artifacts.map((a) => a.path));
+  const unknown = paths.filter((p) => !known.has(p));
+  if (unknown.length === 0) return;
+  const expected = [...known].sort();
+  const suffix = expected.length > 0 ? ` Expected one of: ${expected.join(", ")}.` : "";
+  throw new SettingsError(
+    `--ack path is not a detected CLI-native artifact: ${unknown.join(", ")}.${suffix}`,
+  );
 }
 
 /** Digest note for `--migrate-cli`: what folds into the canon, what is left. */
-function migrateReport(fp: CliFootprint): string {
-  const importing = fp.artifacts.filter((a) => a.disposition === "import").map((a) => a.path);
-  const skipped = migrateSkips(fp);
-  if (importing.length === 0) {
+function migrateReport(fp: CliFootprint, contextDir: string): string {
+  const skipped = new Set(migrateSkips(fp));
+  const importing = fp.artifacts
+    .filter((a) => a.disposition === "import" && !skipped.has(a.path))
+    .map((a) => a.path);
+  if (importing.length === 0 && skipped.size === 0) {
     return lines("--migrate-cli: no import candidates to migrate.");
   }
-  const body = [
-    "--migrate-cli (opt-in): folding committed tool-native content INTO the canon —",
-    "rule files become thin pointers (backed up to *.aih.bak); content dirs are copied",
-    "and the originals left for you to retire. Run with `--apply` to perform it.",
-    ...importing.map((p) => `  [migrate] ${p} → ${"ai-coding"}/`),
-  ];
-  if (skipped.length > 0) {
+  const body =
+    importing.length > 0
+      ? [
+          "--migrate-cli (opt-in): folding committed tool-native content INTO the canon —",
+          "rule files become thin pointers (backed up to *.aih.bak); content dirs are copied",
+          "and the originals left for you to retire. Run with `--apply` to perform it.",
+          ...importing.map((p) => `  [migrate] ${p} → ${contextDir}/`),
+        ]
+      : ["--migrate-cli: no migratable import candidates to migrate."];
+  if (skipped.size > 0) {
     body.push(
-      `Left untouched (review manually): ${skipped.join(", ")} — memory stays yours; tool config isn't canon.`,
+      `Left untouched (review manually): ${[...skipped].join(", ")} — memory stays yours; tool config isn't canon.`,
     );
   }
   return lines(...body);
@@ -240,13 +293,15 @@ async function adoptPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
   // `--ack <paths>` adds to the committed acknowledge list (§13.6). Fold the new
   // paths into the set used for THIS run's footprint too, so the digest immediately
   // shows them as `[kept]` rather than `[import]`.
-  const ackPaths = parseList(ctx.options.ack);
-  const acknowledged = new Set([...(cfg?.adopt?.acknowledged ?? []), ...ackPaths]);
+  const ackPaths = parseAckList(ctx.options.ack);
+  const storedAckPaths = normalizeStoredAckPaths(cfg?.adopt?.acknowledged ?? []);
+  const acknowledged = new Set([...storedAckPaths, ...ackPaths]);
   const fp = cliFootprint(ctx.root, contextDir, { committed, acknowledged });
+  validateAckPaths(ackPaths, fp);
 
   const migrateCli = ctx.options.migrateCli === true;
   let text = `${migrationReport(cls, repo, contextDir)}\n\n${footprintReport(fp)}`;
-  if (migrateCli) text += `\n\n${migrateReport(fp)}`;
+  if (migrateCli) text += `\n\n${migrateReport(fp, contextDir)}`;
   if (ackPaths.length > 0)
     text += `\n\nAcknowledged (now [kept], not flagged): ${ackPaths.join(", ")}.`;
 

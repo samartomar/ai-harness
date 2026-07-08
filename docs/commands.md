@@ -65,11 +65,13 @@ Orchestrate the workstation 4-phase rollout (certs → hardware/vdi → telemetr
 
 ## aih init
 
-Initialize a repo: profile + selected baseline + bootstrap-ai + scaffold + secrets + guardrails + mcp +
-sandbox in one pass (one writer per file). `--baseline ecc|gstack|gsd` selects the Layer-1 canon
+Initialize a repo: profile + selected baseline + bootstrap-ai + scaffold + contract + secrets +
+guardrails + mcp + sandbox + usage in one pass (one writer per file). `--baseline ecc|gstack|gsd` selects the Layer-1 canon
 baseline and records the choice in `.aih-config.json`; `ecc` remains the default. ECC is a separate
 gated network step — run `aih ecc` when ready (it points at ECC's own installer). For locked-down
 MCP rollout, `--mcp-mode offline|none` and `--mcp-compliant` are forwarded to the MCP phase.
+Under `--apply`, the usage phase writes `.aih/usage-record.mjs` and the git hook chain needed to
+record local activity after the repo setup files have landed.
 `--sidecar` adds an external project-truth sidecar (default sibling `<repo>-ai`) and records the
 current git commit binding; if `HEAD` cannot be resolved to a real commit, sidecar init fails closed.
 Use `--sidecar-path <dir>` to choose a different external sidecar directory; the path must resolve
@@ -282,13 +284,15 @@ stays. Installed skills' pack tags roll up in the report's Skill-governance pane
 
 ## aih marketplace
 
-Package the approved skill set into a **reproducible, verifiable distribution artifact** — a
+Package approved, hostable skills into a **reproducible, verifiable distribution artifact** — a
 directory a team can host anywhere (git repo or static host), never a registry/server. `build`
-reads `aih-skills.lock.json` (the **approval authority**) and emits the exact vetted skill bytes
-(trust-lock hash cross-checked), the committed skill cards, the content-addressed vet evidence, a
-`marketplace.json` manifest, and `SHA256SUMS` — byte-identical across builds from identical inputs
-(no wall-clock; `--stamp` is operator-supplied), and **fail-closed whole**: an approved skill that
-is uninstalled, drifted, ambiguous, or missing its card/evidence refuses the entire build.
+reads `aih-skills.lock.json` (the **approval authority**) and, for non-local approvals, emits the
+exact vetted skill bytes (trust-lock hash cross-checked), the committed skill cards, the
+content-addressed vet evidence, a `marketplace.json` manifest, and `SHA256SUMS` — byte-identical
+across builds from identical inputs (no wall-clock; `--stamp` is operator-supplied), and
+**fail-closed whole**: an approved non-local skill that is uninstalled, drifted, ambiguous, or
+missing its card/evidence refuses the entire build. First-party approvals with `commit: "local"`
+stay in the repo and are reported as excluded rather than packaged into marketplace bytes.
 `validate` is the **read-only CI gate** over a built or fetched artifact (coded findings:
 `marketplace.manifest-parse`, `marketplace.path-traversal`, `marketplace.missing-file`,
 `marketplace.checksum-mismatch`, `marketplace.sums-coverage`, `marketplace.unapproved-verdict`,
@@ -301,8 +305,9 @@ publish without a signer is refused; that's just a build); `validate --require-s
 ## aih policy
 
 Schema and trusted-channel gates for the org policy. `validate` is the **read-only CI gate** over
-the committed `aih-org-policy.json` — a missing file is a friendly skip (vibe repos carry no org
-policy), a parse/schema failure is a coded finding (`org-policy.invalid`) — or, under
+the active local org policy source: the default committed `aih-org-policy.json`, or an explicit
+`AIH_ORG_POLICY` override. A missing default repo file is a friendly skip (vibe repos carry no org
+policy), and a parse/schema failure is a coded finding (`org-policy.invalid`) — or, under
 `--bundle <path>`, over a distributable **policy-bundle envelope**
 (`org-policy.bundle-invalid`, naming which layer failed: the envelope or the embedded policy).
 `verify --against <sha256|bundle>` compares the active policy (including an explicit
@@ -368,14 +373,21 @@ honest skips instead of false passes.
 
 ## aih secrets
 
-Scan for plaintext `.env*`/`secrets/` and write agent deny rules + vault-injection guidance.
-`--verify` is the **secret-scan CI gate** (exit 1 when plaintext secrets exist); `--sarif <file>`
-emits one error-level result per path for GitHub code-scanning.
+Scan for plaintext `.env*`/root `secrets/` paths, inspect known MCP config files for hardcoded
+credential shapes or secret-looking key literals, and write agent deny rules + vault-injection
+guidance. Findings report file/key/kind only, never detected values. `--verify` is posture-graded:
+at `vibe` plaintext secret findings are warning-only, while `team` and `enterprise` return a
+non-zero exit for plaintext paths, unsafe MCP config paths, or hardcoded MCP credentials. CI should
+run with `--posture team`, `--posture enterprise`, or an org-policy posture floor. `--sarif <file>`
+emits one result per finding for GitHub code-scanning. <!-- aih:claim CM-16 -->
 
 ## aih guardrails
 
-Generate `.gitleaks.toml`, `.pre-commit-config.yaml`, and a CI license gate that blocks
-AGPL/strong-copyleft.
+Generate `.gitleaks.toml`, `.pre-commit-config.yaml`, and a GitHub Actions workflow for CI secret
+scanning plus strong/network-copyleft license blocking. Generation is not activation: local
+pre-commit enforcement requires `gitleaks`, `pre-commit`, and `git config core.hooksPath .githooks`;
+CI enforcement requires committing the generated workflow and making the relevant jobs required
+checks on protected branches. <!-- aih:claim CM-17 -->
 
 **Analytics & operations**
 
@@ -440,12 +452,16 @@ endpoints → `{ usage_report, skills }`).
 
 ## aih mcp
 
-Generate the MCP server config **for the targeted CLIs** (`--cli`/`--all-tools`, default claude):
+Generate the MCP server config **for the targeted CLIs** (`--cli`/`--all-tools`; otherwise the
+committed `.aih-config.json` targets, then runnable installed CLIs on a first run, falling back to
+Claude when nothing runnable is detected):
 Claude/Kimi share `.mcp.json`, Cursor uses `.cursor/mcp.json`, and Kiro uses
 `.kiro/settings/mcp.json`; Codex gets native TOML in `~/.codex/config.toml` (including
 `bearer_token_env_var` for token auth), OpenCode gets its global
 `~/.config/opencode/opencode.json` `mcp` map, and Copilot/Zed or other global-config entries get
-their registry-specific native writes or guidance. Scopes:
+their registry-specific native writes or guidance. If first-run detection selects global config
+targets, the plan emits an MCP target-selection digest because `--apply` can affect that CLI across
+all projects. Scopes:
 local/project/remote. For locked-down orgs,
 `--mode offline` (vendored local-command servers) or `--mode none` (no MCP + a CLI-tool fallback)
 plus a `managed-mcp.json` admin template. Enterprise org policy can also tune the hosted GitHub
@@ -456,12 +472,14 @@ unchanged; with committed org policy, the GitHub host must be declared incumbent
 the enterprise gate. `GITHUB_HOST` may supply the same https origin when no policy host is set.
 For vetted third-party MCP, add the server to `mcp.allowedServers` and keep reviewer evidence in
 `mcp.approvals`; `aih mcp approve <server> --accept-egress --reason "<why>" --apply` writes that
-local policy entry. Without `--apply`, it previews the change. When `AIH_ORG_POLICY` is set, edit
+local policy entry with a subject fingerprint for the current server shape. Without `--apply`, it
+previews the change. When `AIH_ORG_POLICY` is set, edit
 the distributed org policy instead because it wins over local files. `allowedServers` narrows the
 managed stdio allowlist only when `mcp.allowManagedOnly` is true. At Enterprise posture, a normal
 apply keeps the full generated server set but warns when policy denies any server; add
 `--mcp-compliant` to omit denied generated servers from MCP client configs and list them with reasons
 in the governance guidance. Use the same flag on `--verify` to verify the compliant plan.
+<!-- aih:claim CM-18 -->
 GitHub auth defaults to `--github-auth oauth`, which works for clients with a registered OAuth
 app; use `--github-auth token` for clients that need a PAT-backed `Authorization` header. The token
 value is never written into MCP config — the header references `${GITHUB_PERSONAL_ACCESS_TOKEN}`

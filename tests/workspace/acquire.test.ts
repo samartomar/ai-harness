@@ -1000,14 +1000,14 @@ describe("workspace add acquisition plans", () => {
 
 describe("posture-gated install enforcement (trust.unapproved-skill, #102)", () => {
   const SHA64 = "a".repeat(64);
-  function writeSkillsLock(names: string[]): void {
+  function writeSkillsLock(names: string[], source = sourceRoot): void {
     writeFileSync(
       join(workspace, "aih-skills.lock.json"),
       JSON.stringify({
         schemaVersion: 1,
         skills: names.map((name) => ({
           name,
-          source: "acme/tools",
+          source,
           commit: "local", // the enforcement binds local promotions to commit:"local" entries
           verdict: "GREEN",
           scope: "repo",
@@ -1058,6 +1058,21 @@ describe("posture-gated install enforcement (trust.unapproved-skill, #102)", () 
     expect(existsSync(join(workspace, "ai-coding", "skills", sourceId, "clean"))).toBe(true);
   });
 
+  it("accepts a repo-relative local approval when it resolves to the promoted source", async () => {
+    const relSource = join("packs", "approved-source");
+    const approvedSource = join(workspace, relSource);
+    localSkill(approvedSource, "clean", "# Clean\n");
+    writeSkillsLock(["clean"], relSource);
+    const c = ctx(approvedSource, true, true, {}, { posture: "enterprise" });
+    const phase1 = await executePlan(await workspaceAddPhase1Plan(c), c);
+    expect(phase1.report?.ok).toBe(true);
+    const gate = await captureClearedWorkspaceAddTrustGate(c, phase1.report as VerificationReport);
+    const result = await executePlan(await workspaceAddPhase2Plan(c, gate), c);
+    expect(result.report?.ok).toBe(true);
+    const sourceId = basename(approvedSource).toLowerCase();
+    expect(existsSync(join(workspace, "ai-coding", "skills", sourceId, "clean"))).toBe(true);
+  });
+
   it("stays ADVISORY at vibe posture — promotes, with a warning-only check in the plan", async () => {
     localSkill(sourceRoot, "clean", "# Clean\n");
     const { c, report } = await clearedPhase1("vibe");
@@ -1105,6 +1120,20 @@ describe("posture-gated install enforcement (trust.unapproved-skill, #102)", () 
     const result = await executePlan(await workspaceAddPhase2Plan(c, gate), c);
     expect(result.report?.exitCode()).toBe(1);
     expect(result.writes).toHaveLength(0);
+    expect(existsSync(join(workspace, "ai-coding", "skills"))).toBe(false);
+  });
+
+  it("does NOT let a same-named local approval from another local source satisfy the gate", async () => {
+    const approvedSource = join(workspace, "packs", "approved-source");
+    localSkill(approvedSource, "clean", "# Approved clean\n");
+    localSkill(sourceRoot, "clean", "# Different clean\n");
+    writeSkillsLock(["clean"], join("packs", "approved-source"));
+    const { c, report } = await clearedPhase1("team");
+    const gate = await captureClearedWorkspaceAddTrustGate(c, report);
+    const result = await executePlan(await workspaceAddPhase2Plan(c, gate), c);
+    expect(result.report?.exitCode()).toBe(1);
+    expect(result.writes).toHaveLength(0);
+    expectStructuredResult(result, "trust.unapproved-skill clean", "fail");
     expect(existsSync(join(workspace, "ai-coding", "skills"))).toBe(false);
   });
 

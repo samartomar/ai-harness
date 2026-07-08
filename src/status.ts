@@ -1,5 +1,5 @@
-import { existsSync } from "node:fs";
-import { join } from "node:path";
+import type { ContainedPathKind } from "./internals/contained-path.js";
+import { inspectContainedRelativePath } from "./internals/contained-path.js";
 import { GITHOOKS_PATH_COMMAND, preCommitHookActive } from "./internals/git-hooks.js";
 import { type CommandSpec, plan, probe } from "./internals/plan.js";
 import type { Check } from "./internals/verify.js";
@@ -12,11 +12,11 @@ import type { Check } from "./internals/verify.js";
  * under the old Claude-shaped global check — so `status`/`configPanel` stay global
  * and the matrix owns per-tool truth.
  */
-const ARTIFACTS: Array<[name: string, rel: string]> = [
-  ["context-dir", ""], // resolved against ctx.contextDir below
-  ["gitleaks", ".gitleaks.toml"],
-  ["pre-commit", ".pre-commit-config.yaml"],
-  ["devcontainer", ".devcontainer/devcontainer.json"],
+const ARTIFACTS: Array<{ name: string; rel: string; kind: ContainedPathKind }> = [
+  { name: "context-dir", rel: "", kind: "directory" }, // resolved against ctx.contextDir below
+  { name: "gitleaks", rel: ".gitleaks.toml", kind: "file" },
+  { name: "pre-commit", rel: ".pre-commit-config.yaml", kind: "file" },
+  { name: "devcontainer", rel: ".devcontainer/devcontainer.json", kind: "file" },
 ];
 
 export interface ArtifactPresence {
@@ -24,6 +24,7 @@ export interface ArtifactPresence {
   /** Repo-relative path checked (the context-dir name for the "context-dir" entry). */
   relative: string;
   present: boolean;
+  detail: string;
 }
 
 /**
@@ -32,9 +33,16 @@ export interface ArtifactPresence {
  * configuration panel — so the inventory never drifts between the two.
  */
 export function inventory(root: string, contextDir: string): ArtifactPresence[] {
-  return ARTIFACTS.map(([name, rel]) => {
+  return ARTIFACTS.map(({ name, rel, kind }) => {
     const relative = name === "context-dir" ? contextDir : rel;
-    return { name, relative, present: existsSync(join(root, relative)) };
+    const info = inspectContainedRelativePath(root, relative);
+    const present = info.state === "present" && info.kind === kind;
+    const detail = present
+      ? relative
+      : info.state === "absent"
+        ? `${relative} not present`
+        : `${relative} is not a contained ${kind}`;
+    return { name, relative, present, detail };
   });
 }
 
@@ -79,7 +87,7 @@ export const command: CommandSpec = {
                   verdict: "pass",
                   detail: enforcementDetail(a.name, ctx.root, a.relative),
                 }
-              : { name: a.name, verdict: "skip", detail: `${a.relative} not present` },
+              : { name: a.name, verdict: "skip", detail: a.detail },
         ),
       ),
     ),

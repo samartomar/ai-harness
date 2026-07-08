@@ -183,6 +183,38 @@ describe("report command", () => {
     expect(summary).toContain("[digest]");
     expect(summary).toContain("CLAUDE.md");
   });
+
+  it("keeps the usage setup step when only the committed recorder exists", async () => {
+    writeFileSync(
+      join(dir, ".aih-config.json"),
+      JSON.stringify({ schemaVersion: 1, contextDir: "ai-coding", targets: ["claude"] }),
+    );
+    mkdirSync(join(dir, ".aih"), { recursive: true });
+    writeFileSync(join(dir, ".aih", "usage-record.mjs"), "x\n");
+
+    const next = (await command.plan(ctx())).actions.find(
+      (a) => a.kind === "digest" && a.describe.startsWith("Next steps"),
+    );
+
+    expect(next?.kind === "digest" && next.text).toContain("aih usage --apply");
+  });
+
+  it("drops the usage setup step only when the active hook is installed", async () => {
+    writeFileSync(
+      join(dir, ".aih-config.json"),
+      JSON.stringify({ schemaVersion: 1, contextDir: "ai-coding", targets: ["claude"] }),
+    );
+    mkdirSync(join(dir, ".aih"), { recursive: true });
+    mkdirSync(join(dir, ".git", "hooks"), { recursive: true });
+    writeFileSync(join(dir, ".aih", "usage-record.mjs"), "x\n");
+    writeFileSync(join(dir, ".git", "hooks", "post-commit"), "node .aih/usage-record.mjs\n");
+
+    const next = (await command.plan(ctx())).actions.find(
+      (a) => a.kind === "digest" && a.describe.startsWith("Next steps"),
+    );
+
+    expect(next?.kind === "digest" && next.text).not.toContain("aih usage --apply");
+  });
 });
 
 describe("report --format (file artifact)", () => {

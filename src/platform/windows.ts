@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { cpus } from "node:os";
+import { cpus, totalmem } from "node:os";
 import { dirname, join } from "node:path";
 import type { Runner } from "../internals/proc.js";
 import {
@@ -67,22 +67,22 @@ export class WindowsAdapter implements HostAdapter {
   }
 
   async cpuPhysicalCores(): Promise<number> {
-    const res = await this.run(
-      pwsh("(Get-CimInstance Win32_Processor | Measure-Object -Property NumberOfCores -Sum).Sum"),
-    );
+    const script =
+      "(Get-CimInstance Win32_Processor | Measure-Object -Property NumberOfCores -Sum).Sum";
+    let res = await this.run(pwsh(script));
+    if (res.spawnError) res = await this.run(winPowershell(script));
     const n = parseFirstInt(res.stdout);
     if (n && n > 0) return n;
     return Math.max(1, Math.floor(cpus().length / 2));
   }
 
   async totalRamGb(): Promise<number> {
-    const res = await this.run(
-      pwsh(
-        "[math]::Round((Get-CimInstance Win32_PhysicalMemory | Measure-Object -Property Capacity -Sum).Sum/1GB)",
-      ),
-    );
+    const script =
+      "[math]::Round((Get-CimInstance Win32_PhysicalMemory | Measure-Object -Property Capacity -Sum).Sum/1GB)";
+    let res = await this.run(pwsh(script));
+    if (res.spawnError) res = await this.run(winPowershell(script));
     const n = parseFirstInt(res.stdout);
-    return n && n > 0 ? n : 0;
+    return n && n > 0 ? n : Math.max(1, Math.round(totalmem() / 1024 / 1024 / 1024));
   }
 
   async gpu(): Promise<GpuInfo> {

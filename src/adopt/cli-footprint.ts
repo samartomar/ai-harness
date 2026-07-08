@@ -1,7 +1,6 @@
-import { type Dirent, existsSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { SHARED_MARKER } from "../bootstrap-ai/canon.js";
-import { readIfExists } from "../internals/fsxn.js";
+import { safePathExists, safeReadText, safeWalkFiles } from "./source-files.js";
 
 /**
  * Read-only inventory of config a team already keeps at **CLI-native locations**
@@ -116,31 +115,6 @@ function referencesCanon(text: string, contextDir: string): boolean {
   );
 }
 
-/** Recursive file walk that tolerates Node 20.x (no reliance on Dirent.parentPath). */
-function walkFiles(dir: string): string[] {
-  let ents: Dirent[];
-  try {
-    ents = readdirSync(dir, { withFileTypes: true });
-  } catch {
-    return [];
-  }
-  const out: string[] = [];
-  for (const e of ents) {
-    const full = join(dir, e.name);
-    if (e.isDirectory()) out.push(...walkFiles(full));
-    else if (e.isFile()) out.push(full);
-  }
-  return out;
-}
-
-function isFile(p: string): boolean {
-  try {
-    return statSync(p).isFile();
-  } catch {
-    return false;
-  }
-}
-
 /** Internal scan context: the inputs every classifier needs. */
 interface Fp {
   root: string;
@@ -169,8 +143,8 @@ function disposeToolOwned(path: string, relPaths: string[], fp: Fp): CliDisposit
 
 /** Classify one rule FILE: pointer when it references the canon, else content. */
 function classifyRuleFile(loc: Loc, full: string, fp: Fp): CliArtifact | undefined {
-  if (!isFile(full)) return undefined;
-  const text = readIfExists(full) ?? "";
+  const text = safeReadText(fp.root, full);
+  if (text === undefined) return undefined;
   if (referencesCanon(text, fp.contextDir)) {
     return {
       cli: loc.cli,
@@ -191,10 +165,11 @@ function classifyRuleFile(loc: Loc, full: string, fp: Fp): CliArtifact | undefin
 
 /** Classify a rule DIR: pointer only if EVERY rule file references the canon. */
 function classifyRuleDir(loc: Loc, full: string, fp: Fp): CliArtifact | undefined {
-  if (!existsSync(full)) return undefined;
-  const files = walkFiles(full);
+  const files = safeWalkFiles(fp.root, full);
   if (files.length === 0) return undefined;
-  const wired = files.filter((f) => referencesCanon(readIfExists(f) ?? "", fp.contextDir)).length;
+  const wired = files.filter((f) =>
+    referencesCanon(safeReadText(fp.root, f) ?? "", fp.contextDir),
+  ).length;
   if (wired === files.length) {
     return {
       cli: loc.cli,
@@ -218,8 +193,7 @@ function classifyRuleDir(loc: Loc, full: string, fp: Fp): CliArtifact | undefine
 }
 
 function classifyContentDir(loc: Loc, full: string, fp: Fp): CliArtifact | undefined {
-  if (!existsSync(full)) return undefined;
-  const files = walkFiles(full);
+  const files = safeWalkFiles(fp.root, full);
   if (files.length === 0) return undefined;
   return {
     cli: loc.cli,
@@ -234,8 +208,8 @@ function classifyContentDir(loc: Loc, full: string, fp: Fp): CliArtifact | undef
   };
 }
 
-function classifyRuntime(loc: Loc, full: string): CliArtifact | undefined {
-  if (!isFile(full) && !existsSync(full)) return undefined;
+function classifyRuntime(loc: Loc, full: string, fp: Fp): CliArtifact | undefined {
+  if (!safePathExists(fp.root, full)) return undefined;
   return {
     cli: loc.cli,
     path: loc.rel,
@@ -265,7 +239,7 @@ export function cliFootprint(
     if (loc.kind === "rule-file") a = classifyRuleFile(loc, full, fp);
     else if (loc.kind === "rule-dir") a = classifyRuleDir(loc, full, fp);
     else if (loc.kind === "content-dir") a = classifyContentDir(loc, full, fp);
-    else a = classifyRuntime(loc, full);
+    else a = classifyRuntime(loc, full, fp);
     if (a) artifacts.push(a);
   }
   const importCandidates = artifacts.filter((a) => a.disposition === "import").length;

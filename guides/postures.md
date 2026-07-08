@@ -111,7 +111,7 @@ Use this posture for governed environments, fleet rollout, regulated teams, or o
 
 Behavior rules:
 
-- The machine should materialize only the admin-pinned approved set. Surfaces outside policy should remain hints or approval requests instead of materialized files.
+- Admin-pinned surfaces should materialize only the policy-approved set when a command has an explicit compliant/enforcement mode, such as `aih mcp --posture enterprise --mcp-compliant`. Without that mode, enterprise posture reports denials and verification failures instead of silently rewriting generated config.
 - Adds become hints, approval requests, or hard stops unless policy already permits them.
 - Required detectors and required checks fail closed when configured and absent.
 - Hosted or mutable supply-chain surfaces should deny when they cannot be pinned or verified to the enterprise policy standard.

@@ -8,6 +8,7 @@ import { type CommandSpec, plan, probe } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
 import type { Check } from "../../src/internals/verify.js";
 import { buildSupport, supportSummary } from "../../src/support/integrate.js";
+import { isToolNeutral } from "../../src/support/templates.js";
 
 const BASE = {
   capability: "heal",
@@ -50,6 +51,72 @@ describe("buildSupport", () => {
     const b = withChecks([certCheck], setup);
     expect(b.templates[0]?.body).toContain("acme is PCI-regulated.");
     expect(b.corporateGuidance).toBe("Use British English.");
+  });
+
+  it("redacts SETUP-derived guidance before rendering tickets and summaries", () => {
+    const setup = [
+      "<!-- support:why -->",
+      "Workspace /home/sam/acme uses token sk-test-not-real-123456.",
+      "<!-- /support:why -->",
+      "<!-- support:routing -->",
+      "Route /home/sam/acme to sk-test-not-real-654321.",
+      "<!-- /support:routing -->",
+      "<!-- support:language -->",
+      "Mention /home/sam/acme but not sk-test-not-real-abcdef.",
+      "<!-- /support:language -->",
+    ].join("\n");
+
+    const b = withChecks([certCheck], setup);
+    const body = b.templates[0]?.body ?? "";
+    const summary = supportSummary(b);
+
+    expect(body).toContain("Workspace <home>/acme uses token [REDACTED].");
+    expect(body).toContain("Route <home>/acme to [REDACTED].");
+    expect(body).not.toContain("/home/sam");
+    expect(body).not.toContain("sk-test-not-real");
+    expect(b.corporateGuidance).toBe("Mention <home>/acme but not [REDACTED].");
+    expect(summary).toContain("Mention <home>/acme but not [REDACTED].");
+    expect(summary).not.toContain("/home/sam");
+    expect(summary).not.toContain("sk-test-not-real");
+  });
+
+  it("neutralizes external live details and SETUP text before rendering tickets", () => {
+    const setup = [
+      "<!-- support:why -->",
+      "AI Harness found this while running aih heal --verify.",
+      "<!-- /support:why -->",
+      "<!-- support:routing -->",
+      "Route aih certs --apply evidence to platform.",
+      "<!-- /support:routing -->",
+    ].join("\n");
+
+    const b = withChecks(
+      [
+        {
+          ...certCheck,
+          detail: "NODE_EXTRA_CA_CERTS is too long; run: aih certs --apply",
+        },
+      ],
+      setup,
+    );
+    const body = b.templates[0]?.body ?? "";
+
+    expect(isToolNeutral(body)).toBe(true);
+    expect(body).toContain("the setup check");
+    expect(body).not.toContain("aih certs --apply");
+    expect(body).not.toContain("AI Harness");
+    expect(b.findings[0]?.details[0]).toContain("the setup check");
+  });
+
+  it("neutralizes the harness repository slug in external project names", () => {
+    const b = buildSupport({ ...BASE, projectName: "ai-harness", checks: [certCheck] });
+    const template = b.templates[0];
+
+    expect(template?.subject).toContain("[this project]");
+    expect(template?.body).toContain("this project");
+    expect(template?.subject).not.toContain("ai-harness");
+    expect(template?.body).not.toContain("ai-harness");
+    expect(isToolNeutral(`${template?.subject}\n${template?.body}`)).toBe(true);
   });
 
   it("is deterministic for fixed runId/timestamp", () => {
@@ -154,6 +221,22 @@ const diagSpec: CommandSpec = {
     ),
 };
 
+const nestedSelfFixSpec: CommandSpec = {
+  name: "verify",
+  summary: "test nested self-fix command",
+  alwaysVerify: true,
+  plan: () =>
+    plan(
+      "verify",
+      probe("mcp", () => ({
+        name: "mcp",
+        verdict: "fail",
+        detail: ".mcp.json missing",
+        code: "mcp.config-missing",
+      })),
+    ),
+};
+
 function command(argv: string[]): Command {
   const cmd = new Command("diag");
   cmd.exitOverride();
@@ -182,6 +265,35 @@ async function run(argv: string[]): Promise<{ code: number; out: string }> {
       out += t;
     },
   });
+  return { code, out };
+}
+
+async function runNested(argv: string[]): Promise<{ code: number; out: string }> {
+  let out = "";
+  let code = 0;
+  const root = new Command("aih");
+  root.exitOverride();
+  root.configureOutput({ writeOut: () => {}, writeErr: () => {} });
+  const truth = root.command("truth");
+  const verify = truth.command("verify");
+  verify
+    .option("--apply")
+    .option("--verify")
+    .option("--json")
+    .option("--root <dir>")
+    .option("--context-dir <dir>", "", "ai-coding")
+    .action(async (_options: Record<string, unknown>, command: Command) => {
+      code = await runCapability(nestedSelfFixSpec, command, {
+        run: fakeRunner(() => undefined),
+        env: {},
+        now: () => new Date("2026-06-26T12:00:00Z"),
+        newRunId: () => "run_test01",
+        write: (t) => {
+          out += t;
+        },
+      });
+    });
+  await root.parseAsync(argv, { from: "user" });
   return { code, out };
 }
 
@@ -227,5 +339,14 @@ describe("runCapability — support templates", () => {
     const { out } = await run(["--json", "--root", dir]);
     const parsed = JSON.parse(out) as { support?: { templates: Array<{ body: string }> } };
     expect(parsed.support?.templates[0]?.body).toContain("acme is PCI-regulated.");
+  });
+
+  it("uses the full nested command path in internal self-fix support output", async () => {
+    const { out } = await runNested(["truth", "verify", "--json", "--root", dir]);
+    const parsed = JSON.parse(out) as { support?: { templates: Array<{ body: string }> } };
+    const body = parsed.support?.templates[0]?.body ?? "";
+
+    expect(body).toContain("Detected by `aih truth verify --verify`.");
+    expect(body).not.toContain("Detected by `aih verify --verify`.");
   });
 });

@@ -10,8 +10,10 @@ import type { PlanContext, WriteAction } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
 import { jsonFile } from "../../src/internals/render.js";
 import { command, mcpApproveCommand } from "../../src/mcp/index.js";
+import { mcpApprovalSubject } from "../../src/mcp/policy.js";
 import { existingMcpTomlNames, removeMcpTomlServers } from "../../src/mcp/render.js";
 import type { McpServer } from "../../src/mcp/servers.js";
+import type { Platform } from "../../src/platform/base.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 
 const tmpDirs: string[] = [];
@@ -28,6 +30,18 @@ function pick(servers: Record<string, McpServer>, name: string): McpServer {
   return server;
 }
 
+function context7ApprovalSubject(): string {
+  return mcpApprovalSubject({
+    type: "http",
+    url: "https://mcp.context7.com/mcp",
+    description: "context7",
+    classification: "third-party-hosted",
+    egress: "third-party",
+    credentials: "none",
+    supplyChain: "hosted-remote",
+  });
+}
+
 function makeTmp(): string {
   const dir = mkdtempSync(join(tmpdir(), "aih-mcp-"));
   tmpDirs.push(dir);
@@ -41,12 +55,13 @@ interface CtxOverrides {
   options?: Record<string, unknown>;
   env?: NodeJS.ProcessEnv;
   run?: PlanContext["run"];
+  platform?: Platform;
 }
 
 function makeCtx(over: CtxOverrides = {}): PlanContext {
   const run = over.run ?? fakeRunner(() => undefined);
   const env = over.env ?? {};
-  const host = makeHostAdapter({ platform: "linux", run, env });
+  const host = makeHostAdapter({ platform: over.platform ?? "linux", run, env });
   return {
     root: over.root ?? makeTmp(),
     contextDir: over.contextDir ?? ".ai-context",
@@ -302,9 +317,36 @@ describe("aih mcp — generated mcpServers blueprint", () => {
     const aws = pick(servers, "awslabs.core-mcp-server");
     const pw = pick(servers, "playwright");
     if (aws.type !== "stdio" || pw.type !== "stdio") throw new Error("expected stdio servers");
-    expect(aws.args).toEqual(["awslabs.core-mcp-server@1.0.27"]);
+    expect(aws.args).toEqual([
+      "--offline",
+      "--no-python-downloads",
+      "--no-env-file",
+      "awslabs.core-mcp-server@1.0.27",
+    ]);
     expect(pw.args).toEqual(["@playwright/mcp@0.0.76"]);
     expect(`${aws.args.join(" ")} ${pw.args.join(" ")}`).not.toContain("@latest");
+  });
+
+  it("hardens every generated uvx MCP launcher against startup fetches and .env reads", async () => {
+    const root = makeTmp();
+    writeFileSync(
+      join(root, "package.json"),
+      JSON.stringify({ name: "app", dependencies: { "aws-sdk": "^2" } }),
+    );
+    const w = (await command.plan(makeCtx({ root }))).actions.find(
+      (a) => a.kind === "write",
+    ) as WriteAction;
+    const uvxServers = Object.values(serversOf(w)).filter(
+      (server) => server.type === "stdio" && server.command === "uvx",
+    );
+
+    expect(uvxServers.length).toBeGreaterThan(0);
+    for (const server of uvxServers) {
+      if (server.type !== "stdio") throw new Error("expected stdio server");
+      expect(server.args).toEqual(
+        expect.arrayContaining(["--offline", "--no-python-downloads", "--no-env-file"]),
+      );
+    }
   });
 
   it("suggests a database MCP server (doc) when a datastore is detected, without pinning one", async () => {
@@ -961,6 +1003,37 @@ describe("aih mcp — MCP write hygiene", () => {
       "@modelcontextprotocol/server-sequential-thinking pinned 2025.12.18 but registry resolved 2025.12.19",
     );
   });
+
+  it("--verify routes npm MCP package pin probes through cmd on Windows", async () => {
+    const calls: string[][] = [];
+    const run = fakeRunner((argv) => {
+      calls.push(argv);
+      if (argv[0] === "uv") return { code: 0, stdout: "uv 0.5.0\n" };
+      if (
+        argv.join(" ") ===
+        "cmd /c npm view @modelcontextprotocol/server-sequential-thinking@2025.12.18 version"
+      ) {
+        return { code: 0, stdout: "2025.12.18\n" };
+      }
+      return undefined;
+    });
+    const ctx = makeCtx({ verify: true, run, platform: "windows" });
+    const p = await command.plan(ctx);
+    const probe = p.actions.find(
+      (a) => a.kind === "probe" && a.describe === "MCP package pins match resolved versions",
+    );
+    const check = probe?.kind === "probe" ? await probe.run(ctx) : undefined;
+
+    expect(check?.verdict).toBe("pass");
+    expect(calls).toContainEqual([
+      "cmd",
+      "/c",
+      "npm",
+      "view",
+      "@modelcontextprotocol/server-sequential-thinking@2025.12.18",
+      "version",
+    ]);
+  });
 });
 
 describe("aih mcp — per-CLI config (honors --cli)", () => {
@@ -1136,6 +1209,64 @@ describe("aih mcp — per-CLI config (honors --cli)", () => {
     expect(dotMcp).toHaveLength(1);
   });
 
+  it("replaces generated JSON server entries so stale auth fields do not survive", async () => {
+    const root = makeTmp();
+    writeFileSync(
+      join(root, ".mcp.json"),
+      jsonFile({
+        mcpServers: {
+          github: {
+            type: "http",
+            url: "https://api.githubcopilot.com/mcp/",
+            headers: { Authorization: "Bearer pasted-token-value" },
+          },
+          userLocal: { type: "stdio", command: "local-mcp", args: [] },
+        },
+      }),
+    );
+
+    const p = await command.plan(makeCtx({ root, options: { cli: "claude" } }));
+    const dotMcp = p.actions.find(
+      (a): a is WriteAction => a.kind === "write" && a.path === ".mcp.json",
+    );
+    if (dotMcp === undefined) throw new Error("expected .mcp.json write");
+    const merged = JSON.parse(resolveContents(dotMcp, join(root, ".mcp.json"))) as {
+      mcpServers: Record<string, { headers?: unknown }>;
+    };
+
+    expect(merged.mcpServers.github?.headers).toBeUndefined();
+    expect(merged.mcpServers.userLocal).toBeDefined();
+  });
+
+  it("warns when first-run default targeting selects global MCP config files", async () => {
+    const root = makeTmp();
+    const home = makeTmp();
+    const run = fakeRunner((argv) =>
+      argv[0] === "which" && ["codex", "gemini"].includes(argv[1] ?? "")
+        ? { code: 0, stdout: `/usr/bin/${argv[1]}\n` }
+        : { code: 1 },
+    );
+
+    const p = await command.plan(makeCtx({ root, env: { HOME: home, USERPROFILE: home }, run }));
+    const writes = p.actions.filter((a): a is WriteAction => a.kind === "write");
+    const targetNotice = p.actions.find(
+      (a) => a.kind === "digest" && a.describe === "MCP target selection",
+    );
+
+    expect(writes.some((w) => w.path.replace(/\\/g, "/").endsWith(".codex/config.toml"))).toBe(
+      true,
+    );
+    expect(writes.some((w) => w.path.replace(/\\/g, "/").endsWith(".gemini/settings.json"))).toBe(
+      true,
+    );
+    expect(targetNotice?.kind === "digest" ? targetNotice.text : "").toContain(
+      "global MCP config files",
+    );
+    expect(targetNotice?.kind === "digest" ? targetNotice.text : "").toContain(
+      "~/.codex/config.toml",
+    );
+  });
+
   it("--all-tools writes each tool's OWN MCP config — never Claude's .mcp.json for a TOML/global tool", async () => {
     const p = await command.plan(makeCtx({ options: { allTools: true } }));
     const writes = p.actions.filter((a): a is WriteAction => a.kind === "write");
@@ -1268,6 +1399,7 @@ describe("aih mcp — enterprise posture (governance gate, opt-in)", () => {
           approvals: [
             {
               server: "context7",
+              subject: context7ApprovalSubject(),
               acceptEgress: true,
               reason: "approved docs lookup",
               reviewer: "security",
@@ -1651,6 +1783,7 @@ describe("aih mcp — enterprise posture (governance gate, opt-in)", () => {
           approvals: [
             {
               server: "context7",
+              subject: context7ApprovalSubject(),
               acceptEgress: true,
               reason: "legal approved hosted docs lookup",
               reviewer: "security-platform",
@@ -1691,6 +1824,7 @@ describe("aih mcp — enterprise posture (governance gate, opt-in)", () => {
           approvals: [
             {
               server: "context7",
+              subject: context7ApprovalSubject(),
               acceptEgress: true,
               reason: "local repo approval should not win over fleet policy",
               approvedAt: "2026-07-05T00:00:00.000Z",
@@ -1755,6 +1889,7 @@ describe("aih mcp — enterprise posture (governance gate, opt-in)", () => {
         approvals: [
           {
             server: "context7",
+            subject: context7ApprovalSubject(),
             acceptEgress: true,
             reason: "vendor risk accepted for docs lookup",
             reviewer: "security-platform",
@@ -1762,9 +1897,11 @@ describe("aih mcp — enterprise posture (governance gate, opt-in)", () => {
         ],
       },
     });
-    const approval = (write?.json as { mcp?: { approvals?: Array<{ approvedAt?: string }> } }).mcp
-      ?.approvals?.[0];
+    const approval = (
+      write?.json as { mcp?: { approvals?: Array<{ approvedAt?: string; subject?: string }> } }
+    ).mcp?.approvals?.[0];
     expect(approval?.approvedAt).toBe("0000-00-00T00:00:00.000Z");
+    expect(approval?.subject).toBe(context7ApprovalSubject());
     expect(write?.describe).toContain("Preview creating local org policy");
     expect(write?.describe).toContain("approvedAt is set when rerun with --apply");
   });
@@ -1782,6 +1919,20 @@ describe("aih mcp — enterprise posture (governance gate, opt-in)", () => {
         }),
       ),
     ).toThrow(/AIH_ORG_POLICY is active/);
+  });
+
+  it("refuses mcp approve when the server is not in the current catalog", () => {
+    expect(() =>
+      mcpApproveCommand.plan(
+        makeCtx({
+          options: {
+            server: "not-a-catalog-server",
+            acceptEgress: true,
+            reason: "vendor risk accepted for docs lookup",
+          },
+        }),
+      ),
+    ).toThrow(/not in the current MCP catalog/);
   });
 
   it("still writes .mcp.json with the FULL catalog — governance REPORTS, it never drops a server", async () => {

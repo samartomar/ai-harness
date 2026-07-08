@@ -51,8 +51,10 @@ export function worktreeGuidance(): string {
     "  devcontainer exec --workspace-folder . <command>",
     "",
     "Combine the two: open the worktree directory in its devcontainer to get a",
-    "throwaway, network-restricted environment whose changes still land on the host",
-    "branch you created above. Pass --worktree to scope an agent run to one worktree.",
+    "throwaway environment whose changes still land on the host branch you created",
+    "above. Claude egress policy is enforced by `.claude/managed-settings.json`; the",
+    "devcontainer itself does not claim an outbound network block. Run `aih sandbox`",
+    "from the worktree root to scope generated files to that worktree.",
   ].join("\n");
 }
 

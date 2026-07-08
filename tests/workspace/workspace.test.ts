@@ -14,6 +14,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { runCapability } from "../../src/commands/run.js";
 import { executePlan } from "../../src/internals/execute.js";
 import type { Action, PlanContext, ProbeAction, WriteAction } from "../../src/internals/plan.js";
+import { writeText } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
 import type { Check } from "../../src/internals/verify.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
@@ -21,7 +22,7 @@ import {
   assertDiscoverableChildGitRepoName,
   detectChildRepos,
 } from "../../src/workspace/detect.js";
-import { workspaceGitignorePatternForRepo } from "../../src/workspace/git.js";
+import { workspaceGitExecs, workspaceGitignorePatternForRepo } from "../../src/workspace/git.js";
 import {
   command,
   snapshotCommand,
@@ -252,8 +253,55 @@ describe("workspace.plan — generated artifacts", () => {
     expect(ignore).toContain("*.aih.tmp");
     expect(actions.filter((a) => a.kind === "exec").map((a) => a.describe)).toEqual([
       "initialize git repository at workspace root",
-      "stage changed workspace git baseline files",
-      "commit changed workspace git baseline files",
+      "stage workspace git baseline files",
+      "commit workspace git baseline files",
+    ]);
+  });
+
+  it("uses an existing git-enabled marker as the workspace git source of truth", async () => {
+    child("service-api");
+    writeFileSync(
+      join(parent, ".aih-workspace.json"),
+      JSON.stringify({ contextDir: "ai-coding", repos: ["service-api"], git: true }),
+    );
+
+    const actions = (await command.plan(makeCtx())).actions;
+    const w = writesByPath(actions);
+    const marker = w.get(".aih-workspace.json")?.json as { git?: boolean };
+
+    expect(marker.git).toBe(true);
+    expect(w.get(".gitignore")?.contents).toContain("/service-api/");
+    expect(actions.filter((a) => a.kind === "exec").map((a) => a.describe)).toEqual([
+      "initialize git repository at workspace root",
+      "stage workspace git baseline files",
+      "commit workspace git baseline files",
+    ]);
+  });
+
+  it("stages an existing baseline when initializing a missing workspace git repo", async () => {
+    mkdirSync(join(parent, "ai-coding"), { recursive: true });
+    writeFileSync(join(parent, "ai-coding", "workspace-router.md"), "# Existing\n", "utf8");
+    const run = fakeRunner((argv) => {
+      if (argv[0] === "git" && argv.includes("rev-parse")) return { code: 1 };
+      return undefined;
+    });
+
+    const actions = await workspaceGitExecs(makeCtx({}, false, run), [
+      writeText("ai-coding/workspace-router.md", "# Existing\n", "workspace router"),
+    ]);
+
+    expect(actions.map((a) => a.describe)).toEqual([
+      "initialize git repository at workspace root",
+      "stage workspace git baseline files",
+      "commit workspace git baseline files",
+    ]);
+    expect(actions[1]?.argv).toEqual([
+      "git",
+      "-C",
+      parent,
+      "add",
+      "--",
+      "ai-coding/workspace-router.md",
     ]);
   });
 
@@ -1212,6 +1260,25 @@ describe("workspace snapshot command", () => {
     expect(writesByPath(actions).has("ai-coding/workspace-lock.json")).toBe(true);
   });
 
+  it("rejects unsafe snapshot labels before writing local or shared snapshots", async () => {
+    child("ui");
+    writeFileSync(
+      join(parent, ".aih-workspace.json"),
+      JSON.stringify({ repos: ["ui"], contextDir: "ai-coding" }),
+    );
+
+    for (const label of [
+      "known\n## Injected",
+      "<img src=x onerror=alert(1)>",
+      "[run this](command:workbench.action.terminal.new)",
+      "`aih workspace hydrate --apply`",
+    ]) {
+      await expect(snapshotCommand.plan(makeCtx({ label, lock: true }))).rejects.toThrow(
+        /workspace snapshot label must be safe to print/,
+      );
+    }
+  });
+
   it("fails closed when the workspace manifest has validation errors", async () => {
     child("ui");
     writeFileSync(
@@ -1295,22 +1362,42 @@ describe("workspace plan command", () => {
     );
   });
 
-  it("keeps task text on one printable line in generated Markdown", async () => {
+  it("rejects unsafe task text before generating Markdown", async () => {
     child("ui");
     writeFileSync(
       join(parent, ".aih-workspace.json"),
       JSON.stringify({ repos: ["ui"], contextDir: "ai-coding" }),
     );
 
-    const actions = (
-      await taskPlanCommand.plan(makeCtx({ task: "ship fix\n## Injected\n| bad | table |" }))
-    ).actions;
-    const text =
-      actions.find((action): action is WriteAction => action.kind === "write")?.contents ?? "";
+    for (const task of [
+      "ship fix\n## Injected",
+      "<img src=x onerror=alert(1)>",
+      "[run this](command:workbench.action.terminal.new)",
+      "`aih workspace hydrate --apply`",
+    ]) {
+      await expect(taskPlanCommand.plan(makeCtx({ task }))).rejects.toThrow(
+        /workspace task description must be safe to print/,
+      );
+    }
+  });
+});
 
-    expect(text).toContain("Task: ship fix ## Injected bad table");
-    expect(text).not.toContain("\n## Injected");
-    expect(text).not.toContain("| bad | table |");
+describe("workspace docs/source alignment", () => {
+  it("does not document unimplemented latest snapshots or commit-count deltas", () => {
+    const bridge = readFileSync(
+      join(process.cwd(), "docs", "workspace", "federated-bridge.md"),
+      "utf8",
+    );
+    const roadmap = readFileSync(
+      join(process.cwd(), "docs", "roadmap", "workspace-and-skills-roadmap.md"),
+      "utf8",
+    );
+
+    expect(bridge).not.toContain(".aih/workspace-snapshots/latest.json");
+    expect(bridge).not.toMatch(/\+\d+ commits/);
+    expect(roadmap).not.toContain(".aih/workspace-snapshots/latest.json");
+    expect(roadmap).not.toContain("updates latest.json");
+    expect(roadmap).toContain("<contextDir>/workspace-lock.json");
   });
 });
 

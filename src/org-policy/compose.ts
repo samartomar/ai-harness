@@ -17,6 +17,7 @@ export interface ComposedOrgPolicy {
     allowedServers: string[];
     approvals: Array<{
       server: string;
+      subject?: string;
       acceptEgress: true;
       reason: string;
       reviewer?: string;

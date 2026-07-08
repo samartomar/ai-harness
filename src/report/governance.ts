@@ -14,6 +14,10 @@ interface GovernanceRow {
   count?: number;
 }
 
+function configSecretCode(hit: { code?: "mcp.config-invalid" | "mcp.hardcoded-secret" }) {
+  return hit.code ?? "mcp.hardcoded-secret";
+}
+
 const TRUST_ENV_KEYS = [
   "NODE_EXTRA_CA_CERTS",
   "PIP_CERT",
@@ -41,15 +45,19 @@ function verdictCounts(rows: readonly GovernanceRow[]): Record<PolicyVerdict, nu
 
 function secretsRow(ctx: PlanContext, posture: Posture): GovernanceRow {
   const plaintext = scanSecrets(ctx.root).matches.length;
-  const mcpHardcoded = scanConfigSecrets(ctx.root).length;
-  const total = plaintext + mcpHardcoded;
+  const mcpConfigFindings = scanConfigSecrets(ctx.root);
+  const mcpHardcoded = mcpConfigFindings.filter(
+    (hit) => configSecretCode(hit) === "mcp.hardcoded-secret",
+  ).length;
+  const mcpConfigInvalid = mcpConfigFindings.length - mcpHardcoded;
+  const total = plaintext + mcpConfigFindings.length;
   return {
     control: "secrets",
     verdict: total > 0 ? gradeVerdict("warn", "secrets", posture) : "allow",
     detail:
       total > 0
-        ? `${total} finding(s): ${plaintext} plaintext path(s), ${mcpHardcoded} hardcoded MCP secret(s)`
-        : "no plaintext secret paths or hardcoded MCP config secrets found",
+        ? `${total} finding(s): ${plaintext} plaintext path(s), ${mcpHardcoded} hardcoded MCP secret(s), ${mcpConfigInvalid} unsafe MCP config path(s)`
+        : "no plaintext secret paths, hardcoded MCP config secrets, or unsafe MCP config paths found",
     count: total,
   };
 }

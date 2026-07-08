@@ -289,6 +289,27 @@ describe("report workspace rollup", () => {
     ]);
   });
 
+  it("does not render unsafe labels from workspace snapshots", async () => {
+    writeWorkspaceManifest({ repos: ["ui"], contextDir: "ai-coding" });
+    child("ui");
+    mkdirSync(join(root, ".aih", "workspace-snapshots"), { recursive: true });
+    writeFileSync(
+      join(root, ".aih", "workspace-snapshots", "20260630T000000Z-known-good.json"),
+      json({
+        schemaVersion: 1,
+        createdAt: "2026-06-30T00:00:00.000Z",
+        label: "<img src=x onerror=alert(1)>",
+        repos: [{ id: "ui", path: "ui", branch: "main", sha: "old123", dirty: false }],
+      }),
+    );
+
+    const d = await workspaceDigest();
+    const data = d.data as WorkspaceReportDigest;
+
+    expect(d.text).not.toContain("<img");
+    expect(data.snapshot).toBeUndefined();
+  });
+
   it("warns when declared workspace repos have no parent graph MCP config", async () => {
     writeWorkspaceManifest({ repos: ["ui"], contextDir: "ai-coding" });
     child("ui");

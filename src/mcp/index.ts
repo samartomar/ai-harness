@@ -1,7 +1,9 @@
 import { join, posix } from "node:path";
+import { readAihConfig } from "../config/marker.js";
 import { SettingsError } from "../errors.js";
 import { homeDir, resolveTargets } from "../internals/cli-detect.js";
 import { type CliEntry, entry } from "../internals/cli-registry.js";
+import type { Cli } from "../internals/clis.js";
 import { upsertTextBlock } from "../internals/envfile.js";
 import { readIfExists } from "../internals/fsxn.js";
 import { isPlainObject, parseJsoncText } from "../internals/merge.js";
@@ -32,6 +34,7 @@ import {
   deniedServers,
   evaluateMcpPolicy,
   type McpPosture,
+  mcpApprovalSubject,
   mcpGovernanceDoc,
   mcpPolicyOptionsFromConfig,
   type ServerPolicy,
@@ -401,8 +404,17 @@ function approveMcpPlan(ctx: PlanContext): ReturnType<typeof plan> {
       `${server} is listed in mcp.disabledServers; remove that org-policy denial before approving it`,
     );
   }
+  const catalog = policyAwareMcpCatalog(ctx, { scope: "project" });
+  if (catalog.error !== undefined || catalog.servers === undefined) {
+    throw mcpCatalogError(catalog);
+  }
+  const approvedServer = catalog.servers[server];
+  if (approvedServer === undefined) {
+    throw new SettingsError(`${server} is not in the current MCP catalog; cannot bind approval`);
+  }
   const approval = {
     server,
+    subject: mcpApprovalSubject(approvedServer),
     acceptEgress: true as const,
     reason,
     reviewer,
@@ -583,15 +595,46 @@ function mcpGuidanceDoc(e: CliEntry, serverNames: string[]): string {
   ].join("\n");
 }
 
+function hasExplicitTargetSelection(ctx: PlanContext): boolean {
+  return (
+    ctx.targets !== undefined ||
+    (typeof ctx.options.cli === "string" && ctx.options.cli.trim().length > 0) ||
+    ctx.options.allTools === true ||
+    ctx.options.detect === true
+  );
+}
+
+function defaultTargetSelectionNotice(ctx: PlanContext, clis: readonly Cli[]): string | undefined {
+  if (hasExplicitTargetSelection(ctx)) return undefined;
+  const marker = readAihConfig(ctx.root);
+  if (marker !== undefined && marker.targets.length > 0) return undefined;
+  const globalTargets = clis
+    .map((cli) => entry(cli))
+    .filter((e) => {
+      const path = e.mcp.configPath;
+      return e.mcp.support === "native" && path !== undefined && isExternalMcp(path);
+    })
+    .map((e) => `  - ${e.label}: ${e.mcp.configPath}`);
+  if (globalTargets.length === 0) return undefined;
+  return [
+    "No --cli, --all-tools, --detect, or committed .aih-config.json targets were provided.",
+    "For a first run, aih mcp targets runnable installed AI CLIs. These selected targets use global MCP config files, so --apply can affect that CLI in every project:",
+    ...globalTargets,
+    "",
+    "Pass --cli <list> to narrow the target set, or commit .aih-config.json through aih init/bootstrap-ai so later runs use the repo's recorded targets.",
+  ].join("\n");
+}
+
 async function planMcp(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
   const githubAuth = githubAuthOption(ctx.options.githubAuth);
   const mode = String(ctx.options.mode ?? "standard");
   if (mode === "none") return planMcpNone(ctx);
   if (mode === "offline") return planMcpOffline(ctx);
 
-  // Honor --cli/--all-tools/--detect (default: claude). Previously mcp ignored the
-  // selection and wrote Claude's `.mcp.json` for every tool — a real bug for Codex
-  // (config.toml), Copilot (.vscode/mcp.json), OpenCode, Zed, etc.
+  // Honor --cli/--all-tools/--detect, a committed marker, or the first-run
+  // runnable-CLI default. Previously mcp ignored the selection and wrote Claude's
+  // `.mcp.json` for every tool — a real bug for Codex (config.toml), Copilot
+  // (.vscode/mcp.json), OpenCode, Zed, etc.
   const { clis } = await resolveTargets(ctx);
   const scope = String(ctx.options.scope ?? "project");
   const selfHost = ctx.options.selfHost === true;
@@ -648,6 +691,10 @@ async function planMcp(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
   const writtenPaths = new Set<string>();
   const compliantConfigChecks: CompliantConfigCheck[] = [];
   const quarantinedPolicies = new Map<string, ServerPolicy>(denied.map((p) => [p.name, p]));
+  const targetSelectionNotice = defaultTargetSelectionNotice(ctx, clis);
+  if (targetSelectionNotice !== undefined) {
+    actions.push(digest("MCP target selection", targetSelectionNotice));
+  }
   for (const cli of clis) {
     const e = entry(cli);
     const p = e.mcp;
@@ -741,6 +788,7 @@ async function planMcp(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
         writeJson(writePath, { [p.configKey]: renderedEntries }, describe, {
           merge: true,
           external,
+          replaceJsonChildKeys: { [p.configKey]: Object.keys(renderedEntries) },
           removeJsonKeys: serverConfigRemovals(catalog.policy, p.configKey, staleGeneratedNames),
         }),
       );
@@ -894,7 +942,7 @@ export const command: CommandSpec = {
     {
       flags: "--mcp-compliant",
       description:
-        "under Enterprise posture, write only policy-allowed MCP servers and quarantine denied ones",
+        "under Enterprise posture, omit denied generated MCP servers from targeted configs and list them in quarantined guidance",
     },
   ],
   plan: planMcp,

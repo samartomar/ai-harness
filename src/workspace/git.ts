@@ -69,6 +69,10 @@ function writeWouldChange(ctx: PlanContext, action: WriteAction): boolean {
   return resolveContents(action, abs) !== existing;
 }
 
+function writeActionPath(action: WriteAction): string {
+  return action.path.replace(/\\/g, "/");
+}
+
 async function gitConfigValue(ctx: PlanContext, key: "user.email" | "user.name"): Promise<string> {
   const res = await ctx.run(["git", "-C", ctx.root, "config", "--get", key]);
   return res.code === 0 && !res.spawnError ? res.stdout.trim() : "";
@@ -100,7 +104,9 @@ export async function workspaceGitExecs(
   const insideGit = (await gitRead(ctx, ["rev-parse", "--is-inside-work-tree"])) === "true";
   const changedPaths = baselineWrites
     .filter((action) => writeWouldChange(ctx, action))
-    .map((action) => action.path.replace(/\\/g, "/"));
+    .map(writeActionPath);
+  const baselinePaths = [...new Set(baselineWrites.map(writeActionPath))];
+  const pathsToCommit = insideGit ? changedPaths : baselinePaths;
 
   const actions: ExecAction[] = [];
   if (!insideGit) {
@@ -108,18 +114,18 @@ export async function workspaceGitExecs(
       exec("initialize git repository at workspace root", ["git", "-C", ctx.root, "init"]),
     );
   }
-  if (changedPaths.length > 0) {
+  if (pathsToCommit.length > 0) {
     if (ctx.apply) await assertGitIdentity(ctx);
     actions.push(
-      exec("stage changed workspace git baseline files", [
+      exec("stage workspace git baseline files", [
         "git",
         "-C",
         ctx.root,
         "add",
         "--",
-        ...changedPaths,
+        ...pathsToCommit,
       ]),
-      exec("commit changed workspace git baseline files", [
+      exec("commit workspace git baseline files", [
         "git",
         "-C",
         ctx.root,
@@ -127,7 +133,7 @@ export async function workspaceGitExecs(
         "-m",
         BASELINE_COMMIT_MESSAGE,
         "--",
-        ...changedPaths,
+        ...pathsToCommit,
       ]),
     );
   }

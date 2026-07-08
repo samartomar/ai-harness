@@ -177,6 +177,23 @@ function gatedPackStatus(ctx: PlanContext, command: string): PackStatus {
         "`aih skill vet <source> --apply` then `aih skill approve <source> --pin <sha> --owner <team> --apply`",
     );
   }
+  const unsupportedRequired = report.findings.filter(
+    (finding) =>
+      finding.pack === packName && finding.check.code === "pack.required-checks-unsupported",
+  );
+  if (unsupportedRequired.length > 0) {
+    const listing = unsupportedRequired
+      .map(
+        (finding) =>
+          `  - ${finding.check.code ?? finding.check.name}: ${finding.check.detail ?? finding.check.name}`,
+      )
+      .join("\n");
+    throw refuse(
+      `pack ${packName} is blocked — requiredChecks are declared but not enforced:\n` +
+        `${listing}\n` +
+        `run \`aih pack validate --pack ${packName}\` for the coded findings`,
+    );
+  }
   return pack;
 }
 
@@ -501,6 +518,54 @@ function outcomeText(packName: string, rows: PackSkillOutcomeRow[]): string {
   );
 }
 
+function packInstallJsonEnvelope(
+  packName: string,
+  runs: readonly SourceRun[],
+  rows: readonly PackSkillOutcomeRow[],
+  exitCode: number,
+): PlanResult & {
+  pack: string;
+  sources: unknown[];
+  skills: readonly PackSkillOutcomeRow[];
+  exitCode: number;
+} {
+  const phaseResults = runs.flatMap((run) =>
+    [run.phase1, run.phase2].filter((result): result is PlanResult => result !== undefined),
+  );
+  const sourceRows = runs.map((run) => ({
+    source: run.group.source,
+    commit: run.group.commit,
+    kind: run.group.kind,
+    skills: [...run.select].sort(),
+    phase1: run.phase1,
+    blockingChecks: run.gate?.blockingChecks ?? [],
+    phase2: run.phase2,
+    failure: run.failure,
+  }));
+  return {
+    capability: "pack install",
+    applied: phaseResults.some((result) => result.applied),
+    writes: phaseResults.flatMap((result) => result.writes),
+    docs: phaseResults.flatMap((result) => result.docs),
+    probes: phaseResults.flatMap((result) => result.probes),
+    execs: phaseResults.flatMap((result) => result.execs),
+    digests: [
+      ...phaseResults.flatMap((result) => result.digests),
+      {
+        describe: "pack install outcome",
+        text: outcomeText(packName, [...rows]),
+        data: { pack: packName, sources: sourceRows, skills: rows, exitCode },
+      },
+    ],
+    backups: phaseResults.flatMap((result) => result.backups),
+    removed: phaseResults.flatMap((result) => result.removed),
+    pack: packName,
+    sources: sourceRows,
+    skills: rows,
+    exitCode,
+  };
+}
+
 /**
  * The install runner — mirrors `runWorkspaceAdd`'s shape (context → phase 1 →
  * gate → phase 2 → summaries + support), looped per source with the gate-all
@@ -530,7 +595,7 @@ export async function runPackInstall(
     // the friendly idempotent no-op either way (exit 0, nothing re-promoted).
     if (!ctx.apply || pendingCount === 0) {
       const result = await executePlan(previewPlan(ctx, pack), ctx);
-      if (json) write(`${JSON.stringify({ plan: result }, null, 2)}\n`);
+      if (json) write(`${JSON.stringify(result, null, 2)}\n`);
       else write(`${summarizeResult(result)}\n`);
       return 0;
     }
@@ -626,21 +691,7 @@ export async function runPackInstall(
     const exitCode = anyFailure ? 1 : 0;
 
     if (json) {
-      const payload = {
-        pack: pack.name,
-        sources: runs.map((run) => ({
-          source: run.group.source,
-          commit: run.group.commit,
-          kind: run.group.kind,
-          skills: [...run.select].sort(),
-          phase1: run.phase1,
-          blockingChecks: run.gate?.blockingChecks ?? [],
-          phase2: run.phase2,
-          failure: run.failure,
-        })),
-        skills: rows,
-        exitCode,
-      };
+      const payload = packInstallJsonEnvelope(pack.name, runs, rows, exitCode);
       write(`${JSON.stringify(payload, null, 2)}\n`);
       return exitCode;
     }

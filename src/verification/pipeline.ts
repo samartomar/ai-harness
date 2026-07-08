@@ -19,7 +19,7 @@ import type {
   VerificationPipelineRun,
   VerificationResult,
 } from "./types.js";
-import { isWellFormedUtf16 } from "./validation.js";
+import { diagnosticValue, isWellFormedUtf16 } from "./validation.js";
 
 function assertPassName(name: string): void {
   if (name.trim() === "") throw new Error("verification pass name is required");
@@ -57,7 +57,9 @@ function readStringField(passName: string, record: Record<string, unknown>, fiel
 
 function readStringValue(passName: string, field: string, value: unknown): string {
   if (typeof value !== "string") {
-    throw new Error(`verification pass returned invalid ${field}: ${passName} -> ${String(value)}`);
+    throw new Error(
+      `verification pass returned invalid ${field}: ${passName} -> ${diagnosticValue(value)}`,
+    );
   }
   if (value.length > MAX_VERIFICATION_STRING_FIELD_LENGTH) {
     throw new Error(
@@ -77,7 +79,9 @@ function readMember<T extends string>(
   allowed: readonly T[],
 ): T {
   if (typeof value !== "string" || !allowed.includes(value as T)) {
-    throw new Error(`verification pass returned invalid ${field}: ${passName} -> ${String(value)}`);
+    throw new Error(
+      `verification pass returned invalid ${field}: ${passName} -> ${diagnosticValue(value)}`,
+    );
   }
   return value as T;
 }
@@ -153,7 +157,9 @@ function abortedResult(pass: VerificationPass): VerificationResult {
 function timeoutFor(options: VerificationPipelineOptions): number {
   const timeoutMs = options.timeoutMs ?? DEFAULT_VERIFICATION_PASS_TIMEOUT_MS;
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
-    throw new Error(`verification pass timeout must be a positive number: ${String(timeoutMs)}`);
+    throw new Error(
+      `verification pass timeout must be a positive number: ${diagnosticValue(timeoutMs)}`,
+    );
   }
   return timeoutMs;
 }
@@ -162,7 +168,7 @@ function maxEvidenceFor(options: VerificationPipelineOptions): number {
   const maxEvidencePerPass = options.maxEvidencePerPass ?? DEFAULT_MAX_EVIDENCE_PER_PASS;
   if (!Number.isSafeInteger(maxEvidencePerPass) || maxEvidencePerPass < 1) {
     throw new Error(
-      `verification max evidence per pass must be a positive integer: ${String(maxEvidencePerPass)}`,
+      `verification max evidence per pass must be a positive integer: ${diagnosticValue(maxEvidencePerPass)}`,
     );
   }
   return maxEvidencePerPass;

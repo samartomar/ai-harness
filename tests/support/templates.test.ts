@@ -103,6 +103,10 @@ describe("templates — external ticket (escalation)", () => {
     }
   });
 
+  it("treats the repo/tool slug as non-neutral", () => {
+    expect(isToolNeutral("ai-harness")).toBe(false);
+  });
+
   it("carries the full ticket structure with canned + live evidence", () => {
     for (const section of [
       "Impact",

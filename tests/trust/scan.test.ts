@@ -474,6 +474,7 @@ describe("scanTrustTree", () => {
 
     const checks = await scanTrustTree(dir);
 
+    expect(checks.length).toBeGreaterThan(0);
     expect(checks.every((check) => check.verdict !== "fail")).toBe(true);
   });
 

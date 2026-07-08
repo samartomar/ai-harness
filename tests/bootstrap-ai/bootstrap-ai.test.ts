@@ -254,9 +254,11 @@ describe("bootstrap-ai — CLI-aware bootloaders", () => {
       then: { command: string };
     };
     expect(metrics.when.type).toBe("agentStop");
-    expect(metrics.then.command).toContain("aih track --apply");
-    expect(metrics.then.command.startsWith("node -e ")).toBe(true); // dependency-free wrapper
-    expect(metrics.then.command).toContain("catch"); // swallows missing/failing aih
+    expect(metrics.then.command).toContain("['track','--apply']");
+    expect(metrics.then.command.startsWith("node -e ")).toBe(true);
+    expect(metrics.then.command).toContain("execFileSync");
+    expect(metrics.then.command).toContain("shell:false");
+    expect(metrics.then.command).toContain("catch"); // warns on missing/failing aih
     expect(metrics.timeout).toBeGreaterThan(0); // caps a stuck aih (Kiro timeout is seconds)
   });
 
@@ -446,20 +448,23 @@ describe("bootstrap-ai — hygiene & detect notice", () => {
 
   it("--detect with no CLIs present emits the fallback notice", async () => {
     const emptyHome = mkdtempSync(join(tmpdir(), "aih-eh-"));
-    const run = fakeRunner((argv) =>
-      argv[0] === "which" || argv[0] === "where" ? { code: 1, spawnError: true } : undefined,
-    );
-    const ctx: PlanContext = {
-      ...makeCtx({ detect: true }),
-      env: { HOME: emptyHome, USERPROFILE: emptyHome },
-      run,
-      host: makeHostAdapter({ platform: "linux", run, env: {} }),
-    };
-    const hasNotice = (await command.plan(ctx)).actions.some(
-      (a) => a.kind === "doc" && a.describe.includes("no AI CLIs detected"),
-    );
-    rmSync(emptyHome, { recursive: true, force: true });
-    expect(hasNotice).toBe(true);
+    try {
+      const run = fakeRunner((argv) =>
+        argv[0] === "which" || argv[0] === "where" ? { code: 1, spawnError: true } : undefined,
+      );
+      const ctx: PlanContext = {
+        ...makeCtx({ detect: true }),
+        env: { HOME: emptyHome, USERPROFILE: emptyHome },
+        run,
+        host: makeHostAdapter({ platform: "linux", run, env: {} }),
+      };
+      const hasNotice = (await command.plan(ctx)).actions.some(
+        (a) => a.kind === "doc" && a.describe.includes("no AI CLIs detected"),
+      );
+      expect(hasNotice).toBe(true);
+    } finally {
+      rmSync(emptyHome, { recursive: true, force: true });
+    }
   });
 });
 

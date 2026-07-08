@@ -10,7 +10,7 @@ import {
 import type { Check } from "../internals/verify.js";
 import { telemetryDoc } from "./docs.js";
 import { buildProfileWrite } from "./env.js";
-import { collectorYaml, fetchAnalyticsScript } from "./templates.js";
+import { collectorYaml, fetchAnalyticsScript, normalizeOtelEndpoint } from "./templates.js";
 
 const DEFAULT_ENDPOINT = "http://127.0.0.1:4317";
 
@@ -25,7 +25,10 @@ const DEFAULT_ENDPOINT = "http://127.0.0.1:4317";
  * single probe is a read-only collector-presence check.
  */
 function telemetryPlan(ctx: PlanContext) {
-  const endpoint = String(ctx.options.endpoint ?? DEFAULT_ENDPOINT);
+  const endpoint = normalizeOtelEndpoint(
+    String(ctx.options.endpoint ?? DEFAULT_ENDPOINT),
+    DEFAULT_ENDPOINT,
+  );
   // Prompt + tool-detail logging are off unless explicitly opted into — these
   // streams carry source, customer data, and secrets the collector can't fully
   // scrub. See OtelLoggingOptions.

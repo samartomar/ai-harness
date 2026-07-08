@@ -22,6 +22,11 @@ describe("platform parsers", () => {
     });
   });
 
+  it("parseNvidiaSmi selects the highest-VRAM GPU from multi-GPU output", () => {
+    const g = parseNvidiaSmi("8192, RTX 3070\n24576, RTX 4090\n12288, RTX 4070\n");
+    expect(g).toMatchObject({ vendor: "nvidia", backend: "cuda", vramGb: 24, name: "RTX 4090" });
+  });
+
   it("parseNvidiaSmi returns none for empty output", () => {
     expect(parseNvidiaSmi("")).toMatchObject({ vendor: "none", backend: "cpu", vramGb: 0 });
   });

@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { asPosture, type PolicyVerdict, type Posture } from "../config/posture.js";
 import { lines } from "../internals/render.js";
 import type { McpServer } from "./servers.js";
@@ -31,6 +32,7 @@ export interface ServerPolicy {
 
 export interface McpApproval {
   server: string;
+  subject?: string;
   acceptEgress: true;
   reason: string;
   reviewer?: string;
@@ -55,9 +57,57 @@ export function mcpPolicyOptionsFromConfig(
   };
 }
 
-function approvalFor(name: string, opts: McpPolicyOptions | undefined): McpApproval | undefined {
+function stableJson(value: unknown): string {
+  if (value === undefined) return "null";
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
+  if (value !== null && typeof value === "object") {
+    return `{${Object.entries(value)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([key, child]) => `${JSON.stringify(key)}:${stableJson(child)}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function stableRecord(value: Readonly<Record<string, string>> | undefined): Record<string, string> {
+  return Object.fromEntries(Object.entries(value ?? {}).sort(([a], [b]) => a.localeCompare(b)));
+}
+
+export function mcpApprovalSubject(server: McpServer): string {
+  const shape =
+    server.type === "stdio"
+      ? {
+          type: server.type,
+          command: server.command,
+          args: server.args,
+          env: stableRecord(server.env),
+        }
+      : {
+          type: server.type,
+          url: server.url,
+          headers: stableRecord(server.headers),
+        };
+  const risk = {
+    classification: server.classification,
+    egress: server.egress,
+    credentials: server.credentials,
+    supplyChain: server.supplyChain,
+    skillsProvider: server.skillsProvider,
+  };
+  const digest = createHash("sha256").update(stableJson({ shape, risk }), "utf8").digest("hex");
+  return `mcp-server-sha256:${digest}`;
+}
+
+function approvalFor(
+  name: string,
+  server: McpServer,
+  opts: McpPolicyOptions | undefined,
+): McpApproval | undefined {
   if (!(opts?.allowedServers ?? []).includes(name)) return undefined;
-  return opts?.approvals?.find((approval) => approval.server === name && approval.acceptEgress);
+  const subject = mcpApprovalSubject(server);
+  return opts?.approvals?.find(
+    (approval) => approval.server === name && approval.acceptEgress && approval.subject === subject,
+  );
 }
 
 function approvedEgressReason(approval: McpApproval): string {
@@ -87,7 +137,7 @@ function evaluateOne(
       };
     }
     if (s.egress === "third-party") {
-      const approval = approvalFor(name, opts);
+      const approval = approvalFor(name, s, opts);
       if (approval !== undefined) {
         return {
           verdict: "warn",

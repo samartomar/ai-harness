@@ -115,6 +115,12 @@ describe("install.ts pure helpers", () => {
 });
 
 describe("aih tools — plan", () => {
+  it("rejects unsafe Windows cmd-shim arguments before wrapping with cmd /c", () => {
+    expect(() => execArgv("windows", ["npx", "--package", "pkg@1.0.0 & calc"])).toThrow(
+      /unsafe for a Windows cmd launcher/,
+    );
+  });
+
   it("all tools present → nothing to install, no execs", async () => {
     const allBins = TOOLS.map((t) => t.bin);
     const actions = (await command.plan(ctx(allBins))).actions;
