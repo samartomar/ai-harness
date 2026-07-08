@@ -81,9 +81,6 @@ Each carries its own status note.
 
 ## Research and design records
 
-- [research/enterprise-ai-readiness-evidence.md](research/enterprise-ai-readiness-evidence.md) —
-  public source/date/population/caveat register for AI readiness statistics used
-  in README, articles, and leadership decks.
 - [research/cli-coverage-matrix-plan.md](research/cli-coverage-matrix-plan.md) —
   implemented plan for the per-CLI coverage matrix + loadability validation.
 - [research/deferred-analytics-tiers.md](research/deferred-analytics-tiers.md) —

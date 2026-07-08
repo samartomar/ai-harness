@@ -1,4 +1,4 @@
-# aih — governed readiness for AI-assisted software development
+# aih — Enterprise AI Bootstrapping Harness
 
 [![CI](https://github.com/samartomar/ai-harness/actions/workflows/ci.yml/badge.svg)](https://github.com/samartomar/ai-harness/actions/workflows/ci.yml)
 [![CodeQL](https://github.com/samartomar/ai-harness/actions/workflows/codeql.yml/badge.svg)](https://github.com/samartomar/ai-harness/actions/workflows/codeql.yml)
@@ -7,17 +7,18 @@
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Node ≥20](https://img.shields.io/badge/node-%E2%89%A520-339933.svg)](package.json)
 
-> Your developers already have AI. `aih` gives the organization guardrails,
-> context, and proof.
+<p align="center">
+  <img src="docs/assets/aih-overview.svg" alt="aih v2.4.0 governed-readiness overview showing Environment, Context, Policy, Execution, and Evidence pillars plus truth verify and the docs-lint claim gate" width="100%">
+</p>
 
-`aih` is a cross-platform CLI that helps prepare developer workstations and
-repositories for **reviewable, governed AI-assisted coding**. It turns setup,
-repo context, policy checks, execution boundaries, and evidence capture into
-plans that can be reviewed before local changes are applied.
-
-It does not replace Claude, Cursor, Copilot, Codex, Gemini, AppSec, DLP, GRC, or
-human review. It sits before and around those tools so the approved path is
-easier to use and easier to verify.
+A cross-platform CLI that helps prepare developer workstations and repositories for
+**reviewable, governed AI-assisted coding in enterprise environments** — from
+locked-down, TLS-intercepted networks to open ones. It extracts corporate trust,
+tunes local inference, adds repo guardrails, wires up MCP / observability /
+sandboxing, and lays down a tool-agnostic context architecture — all from one
+command surface. On top of that setup it runs a governance loop for external
+agent skills — vet → approve → pack → marketplace → evidence — anchored in a
+committed approval lock (`aih-skills.lock.json`).
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the shipped architecture and
 current trust boundaries, and [docs/CONTROL_MATRIX.md](docs/CONTROL_MATRIX.md) for
@@ -26,42 +27,6 @@ the claim -> implementation -> test proof map.
 > **Provided as open-source software under Apache-2.0 on an "AS IS" basis.** No warranty,
 > support obligation, SLA, indemnity, consulting, or professional advice is provided. `aih`
 > is dry-run by default — review the plan before running `--apply`. See [DISCLAIMER.md](DISCLAIMER.md).
-
-## Why this exists
-
-AI access is no longer the hard part. Governed readiness is.
-
-![Enterprise AI adoption is high, but governed readiness lags; AIH maps access to context, policy, execution, and proof.](docs/assets/aih-research-to-readiness.svg)
-
-Recent public research points to the same operating gap:
-
-| Signal | Why it matters | Source |
-| --- | --- | --- |
-| **88%** report regular AI use in at least one business function. | Access is broad, but McKinsey reports only about one-third have begun scaling AI programs. | McKinsey, 2025 |
-| **85%** agree AI shifted the bottleneck from writing code to review and validation. | Faster code creation can increase review load unless context, checks, and proof move earlier. | GitLab, 2026 |
-| **42%** of GenAI DLP violation categories were source code. | AI-assisted development is now part of the data-protection surface. | Netskope, 2026 |
-
-The research explains the problem; it does not prove `aih` behavior. Product
-claims are scoped to repository evidence, especially the
-[control matrix](docs/CONTROL_MATRIX.md) and regression tests. The source/date/
-population/caveat trail is in
-[docs/research/enterprise-ai-readiness-evidence.md](docs/research/enterprise-ai-readiness-evidence.md).
-
-## What aih makes visible
-
-![AIH governed readiness flow: ready workspace, load context, apply policy, gate execution, package proof.](docs/assets/aih-governed-readiness-flow.svg)
-
-| Readiness layer | What `aih` makes concrete | Example surfaces |
-| --- | --- | --- |
-| Environment | Workstation and repo checks before AI work begins. | `aih doctor`, `aih ready`, `aih certs`, `aih tools` |
-| Context | Repo canon, bootloaders, project truth, and workspace maps. | `aih init`, `aih bootstrap-ai`, `aih workspace`, `aih truth` |
-| Policy | Posture-aware org/repo rules and approval boundaries. | `aih policy`, `aih trust`, `aih skill`, `aih pack` |
-| Execution | Dry-run first, gated local actions, explicit apply. | `--apply`, `--verify`, dirty-worktree gates, local action model |
-| Evidence | Deterministic proof bundles and release/bundle verification. | `aih evidence`, `aih bundle`, `aih verify-bundle`, `aih verify-release` |
-
-<p align="center">
-  <img src="docs/assets/aih-overview.svg" alt="aih v2.4.0 governed-readiness overview showing Environment, Context, Policy, Execution, and Evidence pillars plus truth verify and the docs-lint claim gate" width="100%">
-</p>
 
 ## The stable command contract
 
