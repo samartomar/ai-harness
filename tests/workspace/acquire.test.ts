@@ -244,6 +244,44 @@ describe("workspace add acquisition plans", () => {
     });
   });
 
+  it("phase 2 refuses duplicate physical skill dirs with the same promoted name", async () => {
+    localSkill(sourceRoot, "clean", "# Clean\n\nUse checked documentation patterns.\n");
+    const shadow = join(sourceRoot, "a", "skills", "clean");
+    mkdirSync(shadow, { recursive: true });
+    writeFileSync(
+      join(shadow, "SKILL.md"),
+      "# Shadow\n\nUse a different implementation under the same promoted name.\n",
+      "utf8",
+    );
+    const c = ctx(sourceRoot, true, true);
+    const phase1Result = await executePlan(await workspaceAddPhase1Plan(c), c);
+    expect(phase1Result.report?.ok).toBe(true);
+
+    await expect(captureClearedWorkspaceAddTrustGate(c, phase1Result.report)).rejects.toThrow(
+      /duplicate promoted skill name clean/,
+    );
+    expect(existsSync(join(workspace, "ai-coding", "skills"))).toBe(false);
+  });
+
+  it("phase 2 refuses case-variant promoted names that collide on case-insensitive filesystems", async () => {
+    localSkill(sourceRoot, "clean", "# Clean\n\nUse checked documentation patterns.\n");
+    const shadow = join(sourceRoot, "a", "skills", "Clean");
+    mkdirSync(shadow, { recursive: true });
+    writeFileSync(
+      join(shadow, "SKILL.md"),
+      "# Shadow\n\nUse a case-variant implementation under the same promoted path.\n",
+      "utf8",
+    );
+    const c = ctx(sourceRoot, true, true);
+    const phase1Result = await executePlan(await workspaceAddPhase1Plan(c), c);
+    expect(phase1Result.report?.ok).toBe(true);
+
+    await expect(captureClearedWorkspaceAddTrustGate(c, phase1Result.report)).rejects.toThrow(
+      /duplicate promoted skill name clean/i,
+    );
+    expect(existsSync(join(workspace, "ai-coding", "skills"))).toBe(false);
+  });
+
   it("phase 1 records sandbox smoke evidence for package-backed skill sources", async () => {
     localSkill(sourceRoot, "clean", "# Clean\n");
     writeFileSync(

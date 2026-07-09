@@ -210,6 +210,44 @@ export function promotedSkillRel(sourceRoot: string, skillDir: string): string {
   return logical.length > 0 ? logical.join("/") : basename(skillDir);
 }
 
+function skillDirLabel(sourceRoot: string, skillDir: string): string {
+  return skillDir === sourceRoot ? "." : safeSourceRelative(sourceRoot, skillDir);
+}
+
+function promotedSkillKey(name: string): string {
+  return name.toLowerCase();
+}
+
+export function assertUniquePromotedSkillNames(
+  sourceRoot: string,
+  skillDirs: readonly string[],
+  selectedNames?: ReadonlySet<string>,
+): void {
+  const selectedKeys =
+    selectedNames === undefined
+      ? undefined
+      : new Set([...selectedNames].map((name) => promotedSkillKey(name)));
+  const byKey = new Map<string, Array<{ dir: string; name: string }>>();
+  for (const skillDir of skillDirs) {
+    const name = promotedSkillRel(sourceRoot, skillDir);
+    const key = promotedSkillKey(name);
+    if (selectedKeys !== undefined && !selectedKeys.has(key)) continue;
+    const dirs = byKey.get(key) ?? [];
+    dirs.push({ dir: skillDir, name });
+    byKey.set(key, dirs);
+  }
+  const duplicate = [...byKey.entries()]
+    .filter(([, dirs]) => dirs.length > 1)
+    .sort(([left], [right]) => left.localeCompare(right))[0];
+  if (duplicate === undefined) return;
+  const [key, dirs] = duplicate;
+  throw new AihError(
+    `duplicate promoted skill name ${key}; physical skill directories resolve to the same case-insensitive promoted path:\n` +
+      dirs.map(({ dir, name }) => `  - ${skillDirLabel(sourceRoot, dir)} -> ${name}`).join("\n"),
+    "AIH_TRUST",
+  );
+}
+
 function isTextPromotionFile(path: string): boolean {
   const ext = extname(path).toLowerCase();
   return ext === "" || [".md", ".txt", ".json", ".yaml", ".yml", ".toml"].includes(ext);
@@ -253,6 +291,7 @@ function buildPromotion(
   if (discovered.length === 0) {
     throw new AihError(`no SKILL.md files found in trust source: ${source.display}`, "AIH_TRUST");
   }
+  assertUniquePromotedSkillNames(sourceRoot, discovered, selectSkills);
   if (selectSkills !== undefined) {
     const available = new Set(discovered.map((skillDir) => promotedSkillRel(sourceRoot, skillDir)));
     const missing = [...selectSkills].filter((name) => !available.has(name)).sort();

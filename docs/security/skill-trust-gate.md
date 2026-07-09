@@ -356,6 +356,26 @@ No scan evidence without a pinned source.
 No pinned source without source/license/owner.
 ```
 
+## Scoped multi-skill evidence
+
+`aih skill vet <source> --name <skill>` scopes the reviewed artifact to the
+selected skill folder. License evidence is resolved from that selected folder
+first, then from the source root. The evidence records the exact `SKILL.md`,
+`LICENSE`, `LICENSE.md`, `LICENSE.txt`, `COPYING`, or `package.json` path used.
+
+Sibling skill folders do not contribute license evidence to the selected skill.
+If neither the selected skill folder nor the source root contains license
+evidence, `trust.license-missing` still fails closed under the normal skill vet
+verdict rules. Fetched GitHub archives are unpacked into quarantine with archive
+symlink entries refused, so selected-artifact evidence cannot be materialized
+from a sibling path during fetch.
+
+When two physical skill directories resolve to the same promoted skill name or
+case-insensitive promotion path, `aih skill vet --name <skill>` and workspace
+promotion refuse the source. This keeps selected evidence bound to a single
+physical artifact and avoids approval inheritance across ambiguous same-name
+directories.
+
 ## Report integration
 
 `aih report` is intended to show:

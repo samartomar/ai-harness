@@ -494,12 +494,6 @@ function ensureContained(root, target) {
   fail("refusing tar path escape: " + target);
 }
 
-function ensureSafeLinkTarget(linkName) {
-  if (!linkName || linkName.includes("\\") || path.isAbsolute(linkName)) {
-    fail("refusing unsafe tar symlink target: " + linkName);
-  }
-}
-
 function prepareQuarantine(root, treePath, metadataPath) {
   const resolvedRoot = path.resolve(root);
   let st;
@@ -527,7 +521,6 @@ function isTarMetadata(type) {
 
 function extractTar(buffer, outRoot) {
   let offset = 0;
-  const pendingSymlinks = [];
   while (offset + 512 <= buffer.length) {
     const header = buffer.subarray(offset, offset + 512);
     if (header.every((byte) => byte === 0)) break;
@@ -556,27 +549,11 @@ function extractTar(buffer, outRoot) {
       mkdirOwner(path.dirname(target));
       writeFileOwner(target, buffer.subarray(offset, offset + size));
     } else if (type === "2") {
-      pendingSymlinks.push({ fullName, rel, linkName, target });
+      fail("refusing tar symlink entry: " + fullName + " -> " + linkName);
     } else {
       fail("refusing non-regular tar entry: " + fullName);
     }
     offset += Math.ceil(size / 512) * 512;
-  }
-  for (const link of pendingSymlinks) {
-    ensureSafeLinkTarget(link.linkName);
-    const resolved = path.resolve(path.dirname(link.target), link.linkName);
-    ensureContained(outRoot, resolved);
-    mkdirOwner(path.dirname(link.target));
-    let targetInfo;
-    try {
-      targetInfo = fs.statSync(resolved);
-    } catch {
-      fail("refusing dangling tar symlink: " + link.fullName + " -> " + link.linkName);
-    }
-    if (!targetInfo.isFile()) {
-      fail("refusing non-file tar symlink target: " + link.fullName + " -> " + link.linkName);
-    }
-    writeFileOwner(link.target, fs.readFileSync(resolved));
   }
 }
 
