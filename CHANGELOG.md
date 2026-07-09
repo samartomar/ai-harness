@@ -6,6 +6,17 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- `aih skill vet --name <skill>` now resolves license evidence from the selected
+  skill folder before falling back to source-root evidence, and reports the
+  exact selected-artifact path used without applying sibling skill licenses.
+  (#373)
+- Skill vet and workspace promotion now fail closed when multiple physical skill
+  directories resolve to the same promoted skill name or case-insensitive
+  promotion path, so selected evidence cannot bind to one implementation while
+  promotion installs another. (#373)
+
 ## [2.4.3] - 2026-07-09
 
 ### Fixed

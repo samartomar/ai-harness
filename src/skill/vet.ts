@@ -20,7 +20,11 @@ import {
   type TrustScanResult,
   trustSourceOriginChecks,
 } from "../trust/scan.js";
-import { collectSkillDirs, promotedSkillRel } from "../workspace/acquire.js";
+import {
+  assertUniquePromotedSkillNames,
+  collectSkillDirs,
+  promotedSkillRel,
+} from "../workspace/acquire.js";
 import { licenseCheck } from "./license.js";
 import { skillNameSchema } from "./lockfile.js";
 import { type SkillShape, skillShape } from "./shape.js";
@@ -71,6 +75,7 @@ interface SkillVetTarget {
   smokeShape: SkillShape;
   evidenceShape: SkillShape;
   skillName?: string;
+  skillRoot?: string;
 }
 
 const FETCH_BLOCKED_SKIP: Check = {
@@ -192,6 +197,11 @@ function skillVetTarget(sourceRoot: string, skillName: string | undefined): Skil
     dir,
     name: promotedSkillRel(sourceRoot, dir),
   }));
+  assertUniquePromotedSkillNames(
+    sourceRoot,
+    skills.map((skill) => skill.dir),
+    new Set([skillName]),
+  );
   const selected = skills.find((skill) => skill.name === skillName);
   if (selected === undefined) {
     throw new AihError(
@@ -207,6 +217,7 @@ function skillVetTarget(sourceRoot: string, skillName: string | undefined): Skil
     smokeShape,
     evidenceShape: scopedEvidenceShape(sourceRoot, selected.dir, skillName, smokeShape),
     skillName,
+    skillRoot: selected.dir,
   };
 }
 
@@ -327,7 +338,10 @@ export async function skillVetPlanForSource(
       target.scanRoot,
       scanOptionsFromContext(ctx, { ...scanOptions, sandboxSmokeShape: target.smokeShape }),
     );
-    const staticChecks = [...scan.checks, licenseCheck(source.root)];
+    const staticChecks = [
+      ...scan.checks,
+      licenseCheck(source.root, { skillRoot: target.skillRoot }),
+    ];
     actions.push(
       ...staticChecks.map((check) =>
         structuredChecksProbe(check.detail ?? check.name, () => [check]),
@@ -370,7 +384,7 @@ export async function skillVetPlanForSource(
         return {
           scan,
           shape: target.evidenceShape,
-          license: licenseCheck(source.treePath),
+          license: licenseCheck(source.treePath, { skillRoot: target.skillRoot }),
           pinnedSha: fetchedPinnedSha(source),
         };
       })();

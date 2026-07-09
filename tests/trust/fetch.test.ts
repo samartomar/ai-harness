@@ -1,4 +1,5 @@
 import {
+  existsSync,
   lstatSync,
   mkdirSync,
   mkdtempSync,
@@ -67,6 +68,7 @@ function githubFetchScript(): string {
 async function runFetchScriptHelpers<T>(body: string, env: NodeJS.ProcessEnv = {}): Promise<T> {
   const script = githubFetchScript();
   const helpers = script.slice(0, script.indexOf("(async () => {"));
+  const stderr: string[] = [];
   const sandbox = {
     Buffer,
     URL,
@@ -76,10 +78,15 @@ async function runFetchScriptHelpers<T>(body: string, env: NodeJS.ProcessEnv = {
       argv: ["node", "{}"],
       env: { ...env },
       exit: (code: number) => {
-        throw new Error(`script exited ${code}`);
+        throw new Error(`script exited ${code}: ${stderr.join("")}`);
       },
       nextTick: process.nextTick.bind(process),
-      stderr: { write: (text: string) => text.length },
+      stderr: {
+        write: (text: string) => {
+          stderr.push(text);
+          return text.length;
+        },
+      },
     },
     require: (name: string) =>
       name === "node:tls"
@@ -94,6 +101,35 @@ async function runFetchScriptHelpers<T>(body: string, env: NodeJS.ProcessEnv = {
   } as Record<string, unknown>;
   runInNewContext(`${helpers}\nglobalThis.__result = (async () => {\n${body}\n})();`, sandbox);
   return (await sandbox.__result) as T;
+}
+
+function tarHeader(name: string, type: string, linkName = "", size = 0): Buffer {
+  const header = Buffer.alloc(512);
+  const write = (value: string, offset: number, length: number): void => {
+    if (Buffer.byteLength(value) > length) throw new Error(`tar field too long: ${value}`);
+    header.write(value, offset, length, "utf8");
+  };
+  write(name, 0, 100);
+  write("0000644\0", 100, 8);
+  write("0000000\0", 108, 8);
+  write("0000000\0", 116, 8);
+  write(`${size.toString(8).padStart(11, "0")}\0`, 124, 12);
+  write("00000000000\0", 136, 12);
+  write("        ", 148, 8);
+  write(type, 156, 1);
+  write(linkName, 157, 100);
+  write("ustar\0", 257, 6);
+  let checksum = 0;
+  for (const byte of header) checksum += byte;
+  write(`${checksum.toString(8).padStart(6, "0")}\0 `, 148, 8);
+  return header;
+}
+
+function tarWithSymlinkEntry(): Buffer {
+  return Buffer.concat([
+    tarHeader("repo-aaaaaaaa/skills/clean/LICENSE", "2", "skills/sibling/LICENSE"),
+    Buffer.alloc(1024),
+  ]);
 }
 
 describe("trust fetch source resolution", () => {
@@ -194,18 +230,33 @@ describe("trust fetch source resolution", () => {
     }
   });
 
-  it("keeps the quarantined tar extractor on the symlink materialization path", () => {
+  it("refuses quarantined tar symlink entries instead of materializing target bytes", () => {
     const source = resolveTrustSource("Owner/Repo", { root: dir, pin: "a".repeat(40) });
     if (source.kind !== "github") throw new Error("expected GitHub source");
     try {
       const script = trustFetchExec(source, ctx()).argv[2] ?? "";
 
       expect(script).toContain('type === "2"');
-      expect(script).toContain("refusing dangling tar symlink");
-      expect(script).toContain("writeFileOwner(link.target, fs.readFileSync(resolved))");
+      expect(script).toContain("refusing tar symlink entry");
+      expect(script).not.toContain("writeFileOwner(link.target, fs.readFileSync(resolved))");
     } finally {
       rmSync(source.quarantineRoot, { recursive: true, force: true });
     }
+  });
+
+  it("fails closed when executing the quarantined tar extractor on a symlink entry", async () => {
+    const outRoot = join(dir, "tree");
+    await expect(
+      runFetchScriptHelpers<void>(
+        [
+          `const tarball = Buffer.from(${JSON.stringify(tarWithSymlinkEntry().toString("base64"))}, "base64");`,
+          `extractTar(tarball, ${JSON.stringify(outRoot)});`,
+        ].join("\n"),
+      ),
+    ).rejects.toThrow(
+      /script exited 1: refusing tar symlink entry: repo-aaaaaaaa\/skills\/clean\/LICENSE -> skills\/sibling\/LICENSE/,
+    );
+    expect(existsSync(outRoot)).toBe(false);
   });
 
   it("honors NO_PROXY in the quarantined fetch helper", async () => {
