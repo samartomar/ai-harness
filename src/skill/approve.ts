@@ -1,5 +1,5 @@
 import { realpathSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
 import { z } from "zod";
 import { AihError } from "../errors.js";
 import { readIfExists } from "../internals/fsxn.js";
@@ -21,6 +21,7 @@ import {
   SKILL_INSTALL_SCOPE,
   type SkillCard,
   type SkillCardApproval,
+  type SkillSourceScope,
   skillCardRelPath,
 } from "./card.js";
 import {
@@ -28,6 +29,7 @@ import {
   readSkillsLockStrictForWrite,
   type SkillLockEntry,
   skillNameSchema,
+  sourceScopePathSchema,
   upsertSkillLockEntry,
 } from "./lockfile.js";
 import type { SkillShape } from "./shape.js";
@@ -66,6 +68,12 @@ const EvidenceCheckSchema = z.object({
   detail: z.string().optional(),
 });
 
+const SourceScopeSchema = z.object({
+  selectedSkillNames: z.array(skillNameSchema).nonempty(),
+  includedPaths: z.array(sourceScopePathSchema).nonempty(),
+  excludedSkillPaths: z.array(sourceScopePathSchema),
+});
+
 /**
  * Runtime mirror of vet.ts's `SkillVetEvidence` artifact, validated on read.
  * Deliberately WIDER on `checks[].code` (any string, not the closed CheckCode
@@ -77,6 +85,7 @@ const SkillVetEvidenceSchema = z.object({
   source: z.string(),
   pinnedSha: z.string().optional(),
   skillName: skillNameSchema.optional(),
+  sourceScope: SourceScopeSchema.optional(),
   shape: EvidenceShapeSchema.optional(),
   checks: z.array(EvidenceCheckSchema),
   analyzersRun: z.array(z.string()),
@@ -104,6 +113,7 @@ interface SkillApprovalGate {
   name: string;
   commit: string;
   license: string;
+  sourceScope?: SkillSourceScope;
   firstParty: boolean;
   flags: SkillFlagInputs;
 }
@@ -272,6 +282,127 @@ function skillNameFrom(shape: SkillShape, override: string | undefined, display:
   );
 }
 
+function normalizedScopePath(path: string): string {
+  const normalized = path.replace(/\\/g, "/").replace(/\/+$/, "");
+  return normalized.length === 0 ? "." : normalized;
+}
+
+function sourceScopePathContains(parent: string, child: string): boolean {
+  const parentPath = normalizedScopePath(parent);
+  const childPath = normalizedScopePath(child);
+  return parentPath === "." || parentPath === childPath || childPath.startsWith(`${parentPath}/`);
+}
+
+function sourceScopePathsOverlap(left: string, right: string): boolean {
+  return sourceScopePathContains(left, right) || sourceScopePathContains(right, left);
+}
+
+function sourceScopeCheckDetail(scope: SkillSourceScope): string {
+  const excluded =
+    scope.excludedSkillPaths.length > 0 ? scope.excludedSkillPaths.join(", ") : "(none)";
+  return [
+    `selected skills: ${scope.selectedSkillNames.join(", ")}`,
+    `included paths: ${scope.includedPaths.join(", ")}`,
+    `excluded sibling skill paths: ${excluded}`,
+  ].join("; ");
+}
+
+function promotedNameFromScopePath(scopePath: string, source: TrustSource): string | undefined {
+  const normalized = normalizedScopePath(scopePath);
+  if (normalized === ".") {
+    return basename(source.kind === "local" ? source.root : source.treePath);
+  }
+  const parts = normalized.split("/");
+  const skillIndex = parts.indexOf("skills");
+  const logical = skillIndex >= 0 ? parts.slice(skillIndex + 1) : parts;
+  return logical.length > 0 ? logical.join("/") : parts.at(-1);
+}
+
+function assertSourceScopeCheckMatches(
+  evidence: VetEvidence,
+  scope: SkillSourceScope,
+  name: string,
+  rel: string,
+  raw: string,
+  source: TrustSource,
+): void {
+  const expectedDetail = sourceScopeCheckDetail(scope);
+  const matches = evidence.checks.some(
+    (check) =>
+      check.name === "skill source scope" &&
+      check.verdict === "pass" &&
+      check.detail === expectedDetail,
+  );
+  if (!matches) {
+    throw refuse(
+      `scoped vet evidence at ${rel} has no matching skill source scope check; ${vetHint(
+        source,
+        raw,
+        name,
+      )}`,
+    );
+  }
+}
+
+function assertSourceScopeMatches(
+  evidence: VetEvidence,
+  name: string,
+  selectedName: string | undefined,
+  rel: string,
+  raw: string,
+  source: TrustSource,
+): void {
+  const scope = evidence.sourceScope;
+  if (selectedName === undefined) {
+    if (scope !== undefined) {
+      throw refuse(
+        `source-wide vet evidence at ${rel} must not include sourceScope; ${vetHint(
+          source,
+          raw,
+        )} for source-wide evidence`,
+      );
+    }
+    return;
+  }
+  if (scope === undefined) {
+    throw refuse(`scoped vet evidence at ${rel} has no sourceScope; ${vetHint(source, raw, name)}`);
+  }
+  if (scope.selectedSkillNames.length !== 1 || scope.selectedSkillNames[0] !== name) {
+    throw refuse(
+      `vet evidence at ${rel} sourceScope must select exactly ${name}; recorded ${
+        scope.selectedSkillNames.join(", ") || "(none)"
+      }; ${vetHint(source, raw, name)}`,
+    );
+  }
+  if (scope.includedPaths.length !== 1) {
+    throw refuse(`vet evidence at ${rel} sourceScope must record exactly one included path`);
+  }
+  const includedPath = scope.includedPaths[0] ?? "";
+  const includedName = promotedNameFromScopePath(includedPath, source);
+  if (includedName !== name) {
+    throw refuse(
+      `vet evidence at ${rel} sourceScope included path ${includedPath} promotes to ${
+        includedName ?? "(none)"
+      }, not ${name}; ${vetHint(source, raw, name)}`,
+    );
+  }
+  const overlap = scope.includedPaths.find((included) =>
+    scope.excludedSkillPaths.some((excluded) => sourceScopePathsOverlap(included, excluded)),
+  );
+  if (overlap !== undefined) {
+    throw refuse(`vet evidence at ${rel} sourceScope includedPaths and excludedSkillPaths overlap`);
+  }
+  const selectedExcluded = scope.excludedSkillPaths.find(
+    (excluded) => promotedNameFromScopePath(excluded, source) === name,
+  );
+  if (selectedExcluded !== undefined) {
+    throw refuse(
+      `vet evidence at ${rel} sourceScope excluded path ${selectedExcluded} also promotes to ${name}`,
+    );
+  }
+  assertSourceScopeCheckMatches(evidence, scope, name, rel, raw, source);
+}
+
 /**
  * Enforce the evidence chain ("no approval without …") and resolve the shared
  * card/approve inputs. Throws `AIH_TRUST` on any broken link; `approve` layers
@@ -317,6 +448,7 @@ function skillApprovalGate(ctx: PlanContext, command: string): SkillApprovalGate
     );
   }
   const name = skillNameFrom(shape, selectedName, source.display);
+  assertSourceScopeMatches(evidence, name, selectedName, rel, raw, source);
   return {
     source,
     evidenceRel: rel,
@@ -327,6 +459,7 @@ function skillApprovalGate(ctx: PlanContext, command: string): SkillApprovalGate
     name,
     commit,
     license,
+    sourceScope: evidence.sourceScope,
     firstParty: isFirstPartySource(ctx.root, source),
     flags: {
       owner: optionString(ctx, "owner"),
@@ -380,6 +513,7 @@ function cardFor(gate: SkillApprovalGate, approval?: SkillCardApproval): SkillCa
     requiresMcp: gate.shape.mcpConfig,
     requiresShell: gate.shape.installScripts,
     scanEvidence: [gate.evidenceRel],
+    sourceScope: gate.sourceScope,
     firstParty: gate.firstParty || undefined,
     owner: gate.flags.owner,
     pack: gate.flags.pack,
@@ -459,6 +593,7 @@ function skillApprovePlan(ctx: PlanContext): Plan {
     scope: SKILL_INSTALL_SCOPE,
     card: cardRel,
     evidenceSha256: gate.evidenceSha256,
+    ...(gate.sourceScope !== undefined ? { sourceScope: gate.sourceScope } : {}),
     approvedBy: owner,
     approvedAt,
   };
@@ -501,6 +636,7 @@ function skillApprovePlan(ctx: PlanContext): Plan {
       lockfile: AIH_SKILLS_LOCK_FILE,
       evidence: gate.evidenceRel,
       evidenceSha256: gate.evidenceSha256,
+      sourceScope: gate.sourceScope,
       requiredChecks: [...required],
     }),
   );

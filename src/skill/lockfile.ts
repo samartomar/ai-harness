@@ -34,6 +34,20 @@ export const skillNameSchema = z
     { message: "unsafe skill name (path segments only; no .., absolute paths, or control chars)" },
   );
 
+export const sourceScopePathSchema = z
+  .string()
+  .min(1)
+  .refine(
+    (path) => {
+      // biome-ignore lint/suspicious/noControlCharactersInRegex: rejecting them is the point
+      if (/[\u0000-\u001f\u007f\\]/.test(path)) return false;
+      if (path.startsWith("/") || path.startsWith("//") || /^[A-Za-z]:/.test(path)) return false;
+      if (path === ".") return true;
+      return path.split("/").every((seg) => seg.length > 0 && seg !== "." && seg !== "..");
+    },
+    { message: "unsafe source scope path (relative POSIX path only; no .. or absolute paths)" },
+  );
+
 export const SkillLockEntrySchema = z.object({
   name: skillNameSchema,
   source: z.string().min(1),
@@ -47,6 +61,14 @@ export const SkillLockEntrySchema = z.object({
   card: z.string().min(1),
   /** sha256 of the local vet evidence file the approval was granted against. */
   evidenceSha256: z.string().regex(/^[0-9a-f]{64}$/),
+  /** Curated artifact boundary when approval came from scoped `skill vet --name`. */
+  sourceScope: z
+    .object({
+      selectedSkillNames: z.array(skillNameSchema).nonempty(),
+      includedPaths: z.array(sourceScopePathSchema).nonempty(),
+      excludedSkillPaths: z.array(sourceScopePathSchema),
+    })
+    .optional(),
   approvedBy: z.string().min(1).optional(),
   approvedAt: z.string().min(1),
 });
