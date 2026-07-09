@@ -142,4 +142,29 @@ describe("BUGBOUNTY reporting", () => {
     expect(summary.fixedFindings).toBe(5);
     expect(summary.focusedChecks).toBe(2);
   });
+
+  it("uses the current run ledger for active status counts after a close-out report", () => {
+    const summary = parseHistoricalBugbountySummary(`
+## Current Run Ledger
+
+| id | area | lane | status | owner | started | last_update | outcome | test_status | evidence | next_action |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| BB-019 | \`src/docs-lint/\` | Functionality | \`Available\` | agent | 2026-07-08 | 2026-07-08 | \`Fixed locally\` | \`Passed\` | done | next |
+| BB-020 | \`.github/workflows/\` | Security | \`Running\` | agent | 2026-07-09 | 2026-07-09 | \`Not started\` | \`Skipped\` | claimed | await lanes |
+| BB-021 | \`src/trust/\` | Security | \`Blocked\` | agent | 2026-07-09 | 2026-07-09 | \`Not started\` | \`Skipped\` | explicit blocker | await owner |
+
+## Final Campaign Report - 2026-07-08
+
+- Focused checks completed: 19.
+- Outcomes at close: 19 \`Fixed locally\`, 0 \`No finding\`, 0 \`Deferred\`.
+- Active statuses at close: 19 \`Available\`, 0 \`Running\`, 0 \`Blocked\`.
+- Fixed findings recorded: 134 top-level independent ECC-agent findings fixed
+  locally.
+`);
+
+    expect(summary.focusedChecks).toBe(19);
+    expect(summary.fixedLocallyRows).toBe(1);
+    expect(summary.runningRows).toBe(1);
+    expect(summary.blockedRows).toBe(1);
+  });
 });

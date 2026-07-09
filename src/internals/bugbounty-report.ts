@@ -75,6 +75,12 @@ function emptyHistoricalSummary(): HistoricalBountySummary {
   };
 }
 
+interface CurrentLedgerSummary {
+  fixedLocallyRows: number;
+  runningRows: number;
+  blockedRows: number;
+}
+
 function numberFrom(pattern: RegExp, markdown: string): number | undefined {
   const raw = markdown.match(pattern)?.[1];
   if (raw === undefined) return undefined;
@@ -100,20 +106,61 @@ function parseHistoricalRows(markdown: string): HistoricalBountyRow[] {
   return rows;
 }
 
+function normalizeTableCell(value: string | undefined): string {
+  return (value ?? "").replace(/`/g, "").trim();
+}
+
+function parseCurrentLedgerSummary(markdown: string): CurrentLedgerSummary | undefined {
+  const sectionStart = markdown.search(/^##\s+Current Run Ledger\s*$/im);
+  if (sectionStart < 0) return undefined;
+  const afterHeading = markdown.slice(sectionStart).replace(/^##\s+Current Run Ledger\s*$/im, "");
+  const nextHeading = afterHeading.search(/^#{2,3}\s+/m);
+  const section = nextHeading >= 0 ? afterHeading.slice(0, nextHeading) : afterHeading;
+  let rowCount = 0;
+  let fixedLocallyRows = 0;
+  let runningRows = 0;
+  let blockedRows = 0;
+  for (const line of section.split(/\r?\n/)) {
+    const cells = line
+      .trim()
+      .split("|")
+      .slice(1, -1)
+      .map((cell) => cell.trim());
+    if (cells.length < 8 || !/^BB-\d{3}$/.test(cells[0] ?? "")) continue;
+    rowCount += 1;
+    const status = normalizeTableCell(cells[3]);
+    const outcome = normalizeTableCell(cells[7]);
+    if (status === "Running") runningRows += 1;
+    if (status === "Blocked") blockedRows += 1;
+    if (outcome === "Fixed locally") fixedLocallyRows += 1;
+  }
+  return rowCount > 0 ? { fixedLocallyRows, runningRows, blockedRows } : undefined;
+}
+
 export function parseHistoricalBugbountySummary(markdown: string): HistoricalBountySummary {
   const withoutFencedExamples = markdown.replace(/```[\s\S]*?```/g, "");
   const rows = parseHistoricalRows(withoutFencedExamples);
+  const currentLedger = parseCurrentLedgerSummary(withoutFencedExamples);
   const rowFixedFindings = rows.reduce((sum, row) => sum + row.fixedFindings, 0);
-  const fixedLocallyRows = numberFrom(
-    /Outcomes at close:\s*(\d+)\s+`Fixed locally`/i,
-    withoutFencedExamples,
-  );
+  const fixedLocallyRows =
+    currentLedger?.fixedLocallyRows ??
+    numberFrom(/Outcomes at close:\s*(\d+)\s+`Fixed locally`/i, withoutFencedExamples);
   const runningRows =
+    currentLedger?.runningRows ??
     numberFrom(/Active rows at close:\s*(\d+)\s+Running/i, withoutFencedExamples) ??
+    numberFrom(
+      /Active statuses at close:\s*\d+\s+`Available`,\s*(\d+)\s+`Running`/i,
+      withoutFencedExamples,
+    ) ??
     numberFrom(/Open blockers at campaign close\s*\|\s*(\d+)\s+Running/i, withoutFencedExamples);
   const blockedRows =
+    currentLedger?.blockedRows ??
     numberFrom(
       /Active rows at close:\s*\d+\s+Running,\s*(\d+)\s+Blocked/i,
+      withoutFencedExamples,
+    ) ??
+    numberFrom(
+      /Active statuses at close:\s*\d+\s+`Available`,\s*\d+\s+`Running`,\s*(\d+)\s+`Blocked`/i,
       withoutFencedExamples,
     ) ??
     numberFrom(

@@ -1,6 +1,6 @@
 version: 2
 updates:
-  # Keep npm dependencies patched; group dev deps to reduce PR noise.
+  # Keep npm dependencies patched; group runtime and dev deps to reduce PR noise.
   - package-ecosystem: npm
     directory: "/"
     schedule:
