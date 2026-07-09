@@ -150,7 +150,7 @@
     "ask": {
       "add": [
         {
-          "pattern": "gh attestation *",
+          "pattern": "gh attestation sign *",
           "reason": "Attestation writes to a remote provenance store."
         }
       ],

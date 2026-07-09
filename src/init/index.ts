@@ -7,11 +7,13 @@ import {
   resolveBaselineSource,
 } from "../internals/baseline-sources.js";
 import { CANON_OPTION } from "../internals/canon-mode.js";
-import { detectFallbackNotice, resolveTargets } from "../internals/cli-detect.js";
+import { detectFallbackNotice, isTargeted, resolveTargets } from "../internals/cli-detect.js";
 import { deepMerge } from "../internals/merge.js";
 import type { Action, CommandSpec, PlanContext, WriteAction } from "../internals/plan.js";
 import { doc, plan, writeJson } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
+import { orgPolicyProjectionActions } from "../org-policy/project.js";
+import { readOrgPolicy } from "../org-policy/schema.js";
 import { sidecarInitActions } from "../truth/index.js";
 import { INIT_PHASES } from "./phases.js";
 import { initV3Actions } from "./v3.js";
@@ -152,6 +154,17 @@ async function initPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
     const sub = await phase.command.plan(phaseCtx);
     actions.push(doc(`init: ${phase.command.name}`, phase.headline));
     actions.push(...sub.actions);
+  }
+
+  const policy = readOrgPolicy(baseCtx.root, baseCtx.env);
+  if (policy !== undefined && isTargeted(baseCtx, "claude")) {
+    actions.push(
+      doc(
+        "init: org-policy",
+        "org-policy — project the active aih-org-policy.json into managed settings for doctor-compatible regeneration",
+      ),
+      ...orgPolicyProjectionActions(baseCtx, policy),
+    );
   }
 
   // ECC is not a phase: its installer runs the network (`npx ecc-install` / a git

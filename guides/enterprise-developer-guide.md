@@ -1,7 +1,7 @@
 ---
 status: guide
 owner: AI-Harness maintainers
-last_verified: 2026-07-07
+last_verified: 2026-07-09
 truth_home: true
 purpose: Developer guide for consuming admin-authored AI-Harness enterprise configuration.
 ---
@@ -18,7 +18,7 @@ The admin config controls policy, approvals, pins, and allowed surfaces. The dev
 
 Do not commit secrets. It is safe to commit placeholders such as `${GITHUB_PERSONAL_ACCESS_TOKEN}` inside reviewed MCP templates when the CLI or client expects an env reference. It is not safe to commit actual GitHub, Jira, Figma, AWS, or other tokens. Real values stay in the local shell, browser OAuth flow, or the organization's secret manager.
 
-Current public release baseline: `@aihq/harness@2.4.2`, published on 2026-07-08.
+Release baseline covered by this guide: `@aihq/harness@2.4.3`.
 
 ## 2. Quickstart / Implementation Blueprint
 
@@ -27,7 +27,7 @@ Verify the installed release first:
 ```powershell
 npm install -g @aihq/harness
 npm audit signatures
-aih verify-release 2.4.2
+aih verify-release 2.4.3
 ```
 
 Use `npm install -g @aihq/harness@latest` for major-version upgrades; `npm update -g`

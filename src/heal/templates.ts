@@ -123,6 +123,79 @@ export function guiCaNote(): string {
   );
 }
 
+export function mcpTlsInterceptionDoc(
+  platform: string,
+  endpoints: readonly string[],
+  runtimes: { node: boolean; python: boolean },
+): string {
+  const targets = endpoints.map((endpoint) => {
+    const url = new URL(endpoint);
+    const hostname = url.hostname.replace(/^\[(.*)\]$/, "$1");
+    const connectHost = hostname.includes(":") ? `[${hostname}]` : hostname;
+    return {
+      display: url.host,
+      connect: `${connectHost}:${url.port || "443"}`,
+      servername: hostname,
+    };
+  });
+  const hosts = targets.map((target) => target.display);
+  const firstTarget = targets[0] ?? {
+    display: "api.github.com",
+    connect: "api.github.com:443",
+    servername: "api.github.com",
+  };
+  const ca =
+    platform === "windows"
+      ? "C:\\Users\\<you>\\.config\\enterprise-ca\\combined-ca-bundle.pem"
+      : "~/.config/enterprise-ca/combined-ca-bundle.pem";
+  const exportGuidance =
+    platform === "darwin"
+      ? [
+          "macOS: export candidate enterprise roots from the System Keychain, where curl may already trust them:",
+          "",
+          '  security find-certificate -c "<corporate-ca-subject>" -a -p /Library/Keychains/System.keychain > /tmp/corporate-certs.pem',
+          `  cat /etc/ssl/cert.pem /tmp/corporate-certs.pem > ${ca}`,
+        ]
+      : platform === "windows"
+        ? [
+            "Windows: export the enterprise root/intermediate from CurrentUser or LocalMachine Root, then build a PEM bundle for runtimes that use OpenSSL/certifi trust inputs:",
+            "",
+            "  # PowerShell: export the reviewed certificate from Cert:\\CurrentUser\\Root or Cert:\\LocalMachine\\Root as Base64 CER, then convert/store it as PEM",
+            "  # Use an absolute expanded path when persisting env vars for GUI apps; do not rely on %USERPROFILE% expansion inside NODE_EXTRA_CA_CERTS or SSL_CERT_FILE.",
+          ]
+        : [
+            "Linux: combine the distro CA bundle with the reviewed corporate root/intermediate PEM:",
+            "",
+            `  cat /etc/ssl/certs/ca-certificates.crt /path/to/corporate-root.pem > ${ca}`,
+          ];
+  return lines(
+    "MCP endpoint TLS can fail even when curl works: GUI apps, Node.js, and Python",
+    "often do not read the same trust store. Diagnose the endpoint actually used by",
+    "the configured MCP servers, then point each runtime at the rebuilt PEM bundle.",
+    "",
+    `Derived endpoint host(s): ${hosts.join(", ")}`,
+    "",
+    "Inspect the served certificate chain:",
+    "",
+    `  openssl s_client -connect ${firstTarget.connect} -servername ${firstTarget.servername} -showcerts < /dev/null`,
+    "",
+    "Inspect the currently configured runtime bundle:",
+    "",
+    "  openssl x509 -in <current-ca-bundle.pem> -noout -subject -issuer",
+    "",
+    ...exportGuidance,
+    "",
+    ...(runtimes.node
+      ? ["Node-based MCP servers should receive:", "", `  NODE_EXTRA_CA_CERTS=${ca}`, ""]
+      : []),
+    ...(runtimes.python
+      ? ["Python-based MCP servers should receive:", "", `  SSL_CERT_FILE=${ca}`, ""]
+      : []),
+    "Keep tokens out of MCP config and logs. Only add certificate paths or reviewed",
+    "non-secret environment variables to generated snippets.",
+  );
+}
+
 function psSingleQuoted(value: string): string {
   return `'${value.replace(/'/g, "''")}'`;
 }

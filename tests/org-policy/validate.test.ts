@@ -115,6 +115,20 @@ describe("policy validate — local aih-org-policy.json", () => {
     expect(check?.detail).toContain("could not be read");
   });
 
+  it("rejects module-style policy files with JSON-only guidance", async () => {
+    write(
+      "policy.js",
+      `export default ${validPolicy().trim()};
+`,
+    );
+    const [check] = await checks(ctx({ env: { AIH_ORG_POLICY: "policy.js" } }));
+
+    expect(check?.verdict).toBe("fail");
+    expect(check?.code).toBe("org-policy.invalid");
+    expect(check?.detail).toContain("JSON-only");
+    expect(check?.detail).toContain("JavaScript/module policy files are not executed");
+  });
+
   it("fails coded with the zod issue list on a schema violation", async () => {
     write(
       "aih-org-policy.json",

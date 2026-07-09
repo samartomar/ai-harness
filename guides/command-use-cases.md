@@ -8,7 +8,7 @@ purpose: Use-case map for AI-Harness commands across developer, team, and enterp
 
 # AI-Harness Command Use-Case Guide
 
-Use this guide when the question is "which `aih` command applies to this situation?" The public `docs/commands.md` page and `aih <command> --help` remain the syntax authorities. This guide maps common workflows across the shipped command surface through `@aihq/harness@2.4.2`; it does not replace the command reference.
+Use this guide when the question is "which `aih` command applies to this situation?" The public `docs/commands.md` page and `aih <command> --help` remain the syntax authorities. This guide maps common workflows across the shipped command surface through `@aihq/harness@2.4.3`; it does not replace the command reference.
 
 ## Command Rule
 
@@ -18,7 +18,7 @@ Most managed project commands preview by default and require `--apply` to write.
 
 Use tables here to choose a path, not to restate every flag or output. When a row needs deeper behavior, link to [docs/commands.md](../docs/commands.md) instead of copying the reference text into this guide.
 
-GitHub CLI (`gh`) is useful when it is installed and approved: it gives fast authenticated reads, PR/release helpers, and GitHub attestation commands. The portable baseline remains `git`, npm, browser URLs, and HTTP examples. Guides and runbooks should show that baseline first, then include a `gh` equivalent when it reduces friction.
+GitHub CLI (`gh`) is useful when it is installed and approved: it gives fast authenticated reads, PR/release helpers, and local GitHub attestation verification where the installed `gh` exposes it. GitHub attestation signing for releases belongs in GitHub Actions/OIDC unless an operator explicitly selects and verifies a local signing path. The portable baseline remains `git`, npm, browser URLs, and HTTP examples. Guides and runbooks should show that baseline first, then include a `gh` equivalent when it reduces friction.
 
 ## Portable GitHub Grounding And Pins
 
@@ -65,13 +65,13 @@ Use `--ref <branch-or-tag>` only for exploration. Branches and tags can move; a 
 | Resolve a commit pin | `git ls-remote https://github.com/OWNER/REPO.git refs/heads/main` | `gh api repos/OWNER/REPO/commits/main --jq .sha` |
 | Check latest release | GitHub release page or `https://api.github.com/repos/OWNER/REPO/releases/latest` | `gh release list --repo OWNER/REPO --limit 20` |
 | Check open issues or PRs | GitHub issue/PR search URLs or REST API URLs | `gh issue list ...`, `gh pr list ...` |
-| Sign or verify GitHub attestations | Approved signer path such as cosign when policy selects it | `gh attestation sign`, `gh attestation verify` |
+| Verify GitHub attestations | Browser/API release evidence, npm provenance, or `aih verify-release` | `gh attestation verify` when the installed `gh` supports it |
 
 ## Enterprise Configuration Recipes
 
 | Recipe | Primary command path | Use when |
 |---|---|---|
-| Min Configuration | `aih verify-release 2.4.2` -> `aih policy validate` -> `aih init . --posture enterprise --mcp-mode offline --mcp-compliant --apply` -> `aih bootstrap-ai --all-tools --apply` -> `aih mcp --posture enterprise --mode offline --mcp-compliant --apply` -> `aih doctor --posture enterprise` | A governed repo needs the minimum AI-Harness canon, policy, generated MCP controls, and verification. |
+| Min Configuration | `aih verify-release 2.4.3` -> `aih policy validate` -> `aih init . --posture enterprise --mcp-mode offline --mcp-compliant --apply` -> `aih bootstrap-ai --all-tools --apply` -> `aih mcp --posture enterprise --mode offline --mcp-compliant --apply` -> `aih doctor --posture enterprise` | A governed repo needs the minimum AI-Harness canon, policy, generated MCP controls, and verification. |
 | Balanced | Min path -> `aih ecc --cli claude,codex --profile core --posture enterprise --apply` -> `aih pack install --pack docs-quality --posture enterprise --apply` -> `aih mcp approve figma --accept-egress ...` -> reviewed Figma MCP client config | The team needs ECC, BetterDoc, and one reviewed enterprise MCP example with policy approval. |
 | Powerhouse Mode | Balanced path -> `aih superpowers --cli claude,codex --posture enterprise --apply` -> `aih usage --apply` -> `aih track --apply` -> `aih report --v9 --apply` -> `aih truth verify` -> selected `aih trust`/`aih skill` approvals -> reviewed Figma, Atlassian/Jira, and AWS MCP config | The organization has approved the optional local feature set and selected external surfaces. |
 

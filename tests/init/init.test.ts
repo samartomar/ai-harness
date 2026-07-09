@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { SHARED_MARKER, sharedCanonicalBlockBody } from "../../src/bootstrap-ai/canon.js";
 import { AIH_CAPABILITIES_FILE, machineCapabilityCachePath } from "../../src/capability/index.js";
+import { command as doctorCommand } from "../../src/doctor.js";
 import { claudeBashPermissions } from "../../src/guardrails/command-policy.js";
 import { command as guardrails } from "../../src/guardrails/index.js";
 import { command } from "../../src/init/index.js";
@@ -52,6 +53,18 @@ function seedNodeRepo(): void {
     }),
   );
   writeFileSync(join(dir, "tsconfig.json"), "{}");
+}
+
+function seedOrgPolicy(): void {
+  writeFileSync(
+    join(dir, "aih-org-policy.json"),
+    JSON.stringify({
+      schemaVersion: 1,
+      minimumPosture: "team",
+      references: { repoContract: ".ai-context/project.json" },
+      mcp: { allowedServers: ["code-review-graph"], allowManagedOnly: true },
+    }),
+  );
 }
 
 function initV3Ctx(over: Partial<PlanContext> = {}): PlanContext {
@@ -154,6 +167,35 @@ describe("aih init — command surface", () => {
     expect(merged.sandbox).toMatchObject({ keep: true });
     expect(allowlist).toContain("code-review-graph@2.3.6");
     expect(allowlist).not.toContain("stale-denied-mcp");
+  });
+
+  it("projects active org-policy into init managed settings so doctor drift passes", async () => {
+    seedOrgPolicy();
+
+    const c = ctx({ apply: true, posture: "team", postureSource: "flag" });
+    const p = await command.plan(c);
+    const managed = p.actions.find(
+      (a): a is WriteAction => a.kind === "write" && a.path === ".claude/managed-settings.json",
+    );
+
+    expect(managed?.json).toMatchObject({
+      organizationPolicy: {
+        minimumPosture: "team",
+        references: { repoContract: ".ai-context/project.json" },
+      },
+    });
+
+    await executePlan(p, c);
+    const doctorCtx = ctx({ posture: "team", postureSource: "flag" });
+    const doctor = await doctorCommand.plan(doctorCtx);
+    const driftProbe = doctor.actions.find(
+      (a) => a.kind === "probe" && a.describe === "org-policy drift: .claude/managed-settings.json",
+    );
+    if (driftProbe?.kind !== "probe") throw new Error("expected managed-settings drift probe");
+    const check = await driftProbe.run(doctorCtx);
+
+    expect(check.verdict).toBe("pass");
+    expect(check.detail).toContain(".claude/managed-settings.json matches");
   });
 });
 
@@ -465,6 +507,30 @@ describe("aih init — target-gated tool artifacts (.cursor on cursor, .claude o
     expect(p).toContain(".cursor/rules/00-canon.mdc"); // bootstrap-ai → companion canon
     expect(p.some((x) => x.startsWith(".claude/"))).toBe(false);
     expect(p).not.toContain(".claudeignore");
+  });
+
+  it("--cli kiro with active org-policy still writes no Claude managed settings", async () => {
+    seedOrgPolicy();
+    const p = await paths({
+      posture: "team",
+      postureSource: "flag",
+      options: { cli: "kiro" },
+    });
+
+    expect(p.some((x) => x.startsWith(".claude/"))).toBe(false);
+    expect(p).toContain(".kiro/steering/00-canon.md");
+  });
+
+  it("--cli cursor with active org-policy still writes no Claude managed settings", async () => {
+    seedOrgPolicy();
+    const p = await paths({
+      posture: "team",
+      postureSource: "flag",
+      options: { cli: "cursor" },
+    });
+
+    expect(p.some((x) => x.startsWith(".claude/"))).toBe(false);
+    expect(p).toContain(".cursor/rules/00-canon.mdc");
   });
 
   it("--all-tools: writes both .cursor/* and .claude/*", async () => {
