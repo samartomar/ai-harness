@@ -370,6 +370,15 @@ verdict rules. Fetched GitHub archives are unpacked into quarantine with archive
 symlink entries refused, so selected-artifact evidence cannot be materialized
 from a sibling path during fetch.
 
+Scoped evidence also records a `sourceScope` block with selected skill names,
+included paths, and excluded sibling skill paths. The excluded paths stay visible
+as source-level context, but their findings are not folded into the selected
+artifact verdict. `aih skill approve --name <skill>` carries the same scope into
+the committed skill card and `aih-skills.lock.json`; approving an excluded
+sibling still requires its own scoped vet evidence file. Nested skill boundaries
+are refused because a selected parent or child cannot be truthfully represented
+as both included and excluded in one scoped artifact.
+
 When two physical skill directories resolve to the same promoted skill name or
 case-insensitive promotion path, `aih skill vet --name <skill>` and workspace
 promotion refuse the source. This keeps selected evidence bound to a single

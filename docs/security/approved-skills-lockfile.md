@@ -44,6 +44,17 @@ Downstream surfaces use the lockfile as authority:
       "scope": "repo",
       "card": "ai-coding/skill-cards/clean.json",
       "evidenceSha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "sourceScope": {
+        "selectedSkillNames": [
+          "clean"
+        ],
+        "includedPaths": [
+          "skills/clean"
+        ],
+        "excludedSkillPaths": [
+          "skills/bad"
+        ]
+      },
       "approvedBy": "docs-platform",
       "approvedAt": "2026-07-01T00:00:00.000Z"
     }
@@ -64,8 +75,17 @@ Downstream surfaces use the lockfile as authority:
 | `scope` | Yes | Currently `repo`. |
 | `card` | Yes | Repo-relative committed skill-card path. |
 | `evidenceSha256` | Yes | SHA-256 of the vet evidence bytes approved. |
+| `sourceScope` | No | Present when approval came from scoped `skill vet --name`; records selected skill names, included paths, and excluded sibling skill paths. |
 | `approvedBy` | No | Owner/team that approved. `approve` requires `--owner`. |
 | `approvedAt` | Yes | Approval timestamp; dry-run previews use a placeholder. |
+
+The optional `sourceScope` block has:
+
+| Field | Required | Notes |
+| --- | --- | --- |
+| `selectedSkillNames` | Yes | Non-empty array of validated skill names. Scoped approval records exactly one selected skill. |
+| `includedPaths` | Yes | Non-empty array of relative POSIX source paths included in the scoped artifact. Scoped approval records exactly one included path. |
+| `excludedSkillPaths` | Yes | Relative POSIX source paths for sibling skill roots that were outside the scoped artifact. Empty means no sibling skill root was recorded. |
 
 ## Read and write behavior
 
@@ -109,6 +129,8 @@ commit}` as a fail-closed cross-check against the lock entry:
 
 - The lockfile records approval for a specific source and commit. A same-named
   skill from another source does not inherit approval.
+- Scoped approval records the curated source boundary; an excluded sibling skill
+  path does not inherit the selected skill's approval.
 - RED and UNKNOWN vet verdicts are not approvable.
 - The lockfile does not embed evidence content; it records the evidence hash and
   card path.

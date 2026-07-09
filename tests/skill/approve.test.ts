@@ -87,6 +87,24 @@ function approveOptions(extra: Record<string, unknown> = {}): Record<string, unk
   return { source: "owner/repo", pin: PIN, owner: "docs-platform", ...extra };
 }
 
+function sourceScopeCheck(
+  sourceScope: NonNullable<SkillVetEvidence["sourceScope"]>,
+): SkillVetEvidence["checks"][number] {
+  const excluded =
+    sourceScope.excludedSkillPaths.length > 0
+      ? sourceScope.excludedSkillPaths.join(", ")
+      : "(none)";
+  return {
+    name: "skill source scope",
+    verdict: "pass",
+    detail: [
+      `selected skills: ${sourceScope.selectedSkillNames.join(", ")}`,
+      `included paths: ${sourceScope.includedPaths.join(", ")}`,
+      `excluded sibling skill paths: ${excluded}`,
+    ].join("; "),
+  };
+}
+
 function readJson<T>(rel: string): T {
   return JSON.parse(readFileSync(join(workspace, rel), "utf8")) as T;
 }
@@ -327,6 +345,22 @@ describe("skillApproveCommand", () => {
     );
   });
 
+  it("refuses source-wide evidence that carries scoped sourceScope", () => {
+    writeEvidence(
+      evidence({
+        sourceScope: {
+          selectedSkillNames: ["clean"],
+          includedPaths: ["skills/clean"],
+          excludedSkillPaths: [],
+        },
+      }),
+    );
+
+    expect(() => skillApproveCommand.plan(ctx(approveOptions()))).toThrow(
+      /source-wide vet evidence .* must not include sourceScope/,
+    );
+  });
+
   it("refuses --name when the matching scoped evidence artifact is absent", () => {
     writeEvidence(
       evidence({
@@ -364,7 +398,168 @@ describe("skillApproveCommand", () => {
     );
   });
 
+  it("refuses hand-edited scoped evidence whose sourceScope does not exactly match --name", () => {
+    writeEvidence(
+      evidence({
+        skillName: "clean",
+        sourceScope: {
+          selectedSkillNames: ["clean", "bad"],
+          includedPaths: ["skills/clean"],
+          excludedSkillPaths: ["skills/bad"],
+        },
+        shape: {
+          skillDirs: ["clean"],
+          installScripts: false,
+          mcpConfig: false,
+          packageManifests: [],
+          fullCodebaseAnalysis: false,
+        },
+      }),
+      scopedEvidenceRel("clean"),
+    );
+
+    expect(() => skillApproveCommand.plan(ctx(approveOptions({ name: "clean" })))).toThrow(
+      /sourceScope must select exactly clean/,
+    );
+  });
+
+  it("refuses hand-edited scoped evidence with overlapping included and excluded paths", () => {
+    writeEvidence(
+      evidence({
+        skillName: "clean",
+        sourceScope: {
+          selectedSkillNames: ["clean"],
+          includedPaths: ["skills/clean"],
+          excludedSkillPaths: ["skills/clean"],
+        },
+        shape: {
+          skillDirs: ["clean"],
+          installScripts: false,
+          mcpConfig: false,
+          packageManifests: [],
+          fullCodebaseAnalysis: false,
+        },
+      }),
+      scopedEvidenceRel("clean"),
+    );
+
+    expect(() => skillApproveCommand.plan(ctx(approveOptions({ name: "clean" })))).toThrow(
+      /sourceScope includedPaths and excludedSkillPaths overlap/,
+    );
+  });
+
+  it("refuses hand-edited scoped evidence whose included path does not promote to --name", () => {
+    const sourceScope = {
+      selectedSkillNames: ["clean"],
+      includedPaths: ["skills/other"],
+      excludedSkillPaths: ["skills/bad"],
+    };
+    writeEvidence(
+      evidence({
+        skillName: "clean",
+        sourceScope,
+        checks: [
+          { name: "skill license", verdict: "pass", detail: "LICENSE: MIT License" },
+          sourceScopeCheck(sourceScope),
+        ],
+        shape: {
+          skillDirs: ["clean"],
+          installScripts: false,
+          mcpConfig: false,
+          packageManifests: [],
+          fullCodebaseAnalysis: false,
+        },
+      }),
+      scopedEvidenceRel("clean"),
+    );
+
+    expect(() => skillApproveCommand.plan(ctx(approveOptions({ name: "clean" })))).toThrow(
+      /sourceScope included path skills\/other promotes to other, not clean/,
+    );
+  });
+
+  it("refuses hand-edited scoped evidence whose sourceScope check does not match", () => {
+    const sourceScope = {
+      selectedSkillNames: ["clean"],
+      includedPaths: ["skills/clean"],
+      excludedSkillPaths: ["skills/bad"],
+    };
+    writeEvidence(
+      evidence({
+        skillName: "clean",
+        sourceScope,
+        shape: {
+          skillDirs: ["clean"],
+          installScripts: false,
+          mcpConfig: false,
+          packageManifests: [],
+          fullCodebaseAnalysis: false,
+        },
+      }),
+      scopedEvidenceRel("clean"),
+    );
+
+    expect(() => skillApproveCommand.plan(ctx(approveOptions({ name: "clean" })))).toThrow(
+      /has no matching skill source scope check/,
+    );
+  });
+
+  it("refuses hand-edited scoped evidence without included paths at the schema boundary", () => {
+    writeEvidence(
+      evidence({
+        skillName: "clean",
+        sourceScope: {
+          selectedSkillNames: ["clean"],
+          includedPaths: [],
+          excludedSkillPaths: ["skills/bad"],
+        },
+        shape: {
+          skillDirs: ["clean"],
+          installScripts: false,
+          mcpConfig: false,
+          packageManifests: [],
+          fullCodebaseAnalysis: false,
+        },
+      }),
+      scopedEvidenceRel("clean"),
+    );
+
+    expect(() => skillApproveCommand.plan(ctx(approveOptions({ name: "clean" })))).toThrow(
+      /is unreadable/,
+    );
+  });
+
+  it("refuses hand-edited scoped evidence with unsafe sourceScope paths at the schema boundary", () => {
+    writeEvidence(
+      evidence({
+        skillName: "clean",
+        sourceScope: {
+          selectedSkillNames: ["clean"],
+          includedPaths: ["skills/clean/.."],
+          excludedSkillPaths: ["skills/bad"],
+        },
+        shape: {
+          skillDirs: ["clean"],
+          installScripts: false,
+          mcpConfig: false,
+          packageManifests: [],
+          fullCodebaseAnalysis: false,
+        },
+      }),
+      scopedEvidenceRel("clean"),
+    );
+
+    expect(() => skillApproveCommand.plan(ctx(approveOptions({ name: "clean" })))).toThrow(
+      /is unreadable/,
+    );
+  });
+
   it("approves scoped evidence even when source-wide evidence is RED for another skill", async () => {
+    const sourceScope = {
+      selectedSkillNames: ["clean"],
+      includedPaths: ["skills/clean"],
+      excludedSkillPaths: ["skills/bad"],
+    };
     writeEvidence(
       evidence({
         verdict: "RED",
@@ -381,6 +576,11 @@ describe("skillApproveCommand", () => {
     writeEvidence(
       evidence({
         skillName: "clean",
+        sourceScope,
+        checks: [
+          { name: "skill license", verdict: "pass", detail: "LICENSE: MIT License" },
+          sourceScopeCheck(sourceScope),
+        ],
         shape: {
           skillDirs: ["clean"],
           installScripts: false,
@@ -399,7 +599,55 @@ describe("skillApproveCommand", () => {
     const card = readJson<SkillCard>(CARD_REL);
     expect(card.name).toBe("clean");
     expect(card.scanEvidence).toEqual([scopedEvidenceRel("clean")]);
-    expect(readJson<SkillsLock>("aih-skills.lock.json").skills[0]?.name).toBe("clean");
+    expect(card.sourceScope).toEqual({
+      selectedSkillNames: ["clean"],
+      includedPaths: ["skills/clean"],
+      excludedSkillPaths: ["skills/bad"],
+    });
+    const lockEntry = readJson<SkillsLock>("aih-skills.lock.json").skills[0];
+    expect(lockEntry?.name).toBe("clean");
+    expect(lockEntry?.sourceScope).toEqual({
+      selectedSkillNames: ["clean"],
+      includedPaths: ["skills/clean"],
+      excludedSkillPaths: ["skills/bad"],
+    });
+    expect(() => skillApproveCommand.plan(ctx(approveOptions({ name: "bad" })))).toThrow(
+      `no vet evidence at ${scopedEvidenceRel("bad")} for owner/repo@${PIN} --name bad`,
+    );
+  });
+
+  it("approves scoped evidence for a skill directory named skills", async () => {
+    const sourceScope = {
+      selectedSkillNames: ["skills"],
+      includedPaths: ["skills"],
+      excludedSkillPaths: ["other"],
+    };
+    writeEvidence(
+      evidence({
+        skillName: "skills",
+        sourceScope,
+        checks: [
+          { name: "skill license", verdict: "pass", detail: "LICENSE: MIT License" },
+          sourceScopeCheck(sourceScope),
+        ],
+        shape: {
+          skillDirs: ["skills"],
+          installScripts: false,
+          mcpConfig: false,
+          packageManifests: [],
+          fullCodebaseAnalysis: false,
+        },
+      }),
+      scopedEvidenceRel("skills"),
+    );
+    const c = ctx(approveOptions({ name: "skills" }), true);
+
+    const result = await executePlan(await skillApproveCommand.plan(c), c);
+
+    expect(result.report?.ok).toBe(true);
+    expect(readJson<SkillsLock>("aih-skills.lock.json").skills[0]?.sourceScope).toEqual(
+      sourceScope,
+    );
   });
 
   it("approves a local source with commit 'local' and no org-policy write", async () => {

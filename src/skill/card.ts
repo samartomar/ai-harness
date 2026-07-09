@@ -2,6 +2,7 @@ import { join, posix } from "node:path";
 import { z } from "zod";
 import { AihError } from "../errors.js";
 import { readIfExists } from "../internals/fsxn.js";
+import { skillNameSchema, sourceScopePathSchema } from "./lockfile.js";
 
 /**
  * Committed skill card (docs/security/skill-trust-gate.md) — the one-page,
@@ -22,6 +23,14 @@ const SkillCardApprovalSchema = z.object({
   approvedAt: z.string().min(1),
 });
 
+const SkillSourceScopeSchema = z.object({
+  selectedSkillNames: z.array(skillNameSchema).nonempty(),
+  includedPaths: z.array(sourceScopePathSchema).nonempty(),
+  excludedSkillPaths: z.array(sourceScopePathSchema),
+});
+
+export type SkillSourceScope = z.infer<typeof SkillSourceScopeSchema>;
+
 export const SkillCardSchema = z.object({
   schemaVersion: z.literal(1),
   name: z.string().min(1),
@@ -40,6 +49,7 @@ export const SkillCardSchema = z.object({
   writesFiles: z.boolean().optional(),
   networkEgress: z.string().min(1).optional(),
   scanEvidence: z.array(z.string().min(1)),
+  sourceScope: SkillSourceScopeSchema.optional(),
   approval: SkillCardApprovalSchema.optional(),
 });
 
@@ -59,6 +69,7 @@ export interface BuildCardInput {
   requiresMcp: boolean;
   requiresShell: boolean;
   scanEvidence: string[];
+  sourceScope?: SkillSourceScope;
   owner?: string;
   pack?: string;
   firstParty?: boolean;
@@ -85,6 +96,7 @@ export function buildCard(input: BuildCardInput): SkillCard {
     requiresMcp: input.requiresMcp,
     requiresShell: input.requiresShell,
     scanEvidence: [...input.scanEvidence],
+    sourceScope: input.sourceScope,
     approval: input.approval,
   };
 }

@@ -524,9 +524,23 @@ describe("skillVetCommand", () => {
       readFileSync(join(reportsDir, sourceDirs[0] ?? "", "clean.json"), "utf8"),
     ) as SkillVetEvidence;
     expect(evidence.skillName).toBe("clean");
+    expect(evidence.sourceScope).toEqual({
+      selectedSkillNames: ["clean"],
+      includedPaths: ["skills/clean"],
+      excludedSkillPaths: ["skills/bad"],
+    });
     expect(evidence.verdict).toBe("GREEN");
     expect(evidence.shape?.skillDirs).toEqual(["clean"]);
-    expect(JSON.stringify(evidence.checks)).not.toContain("bad");
+    expect(evidence.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "skill source scope",
+          verdict: "pass",
+          detail: expect.stringContaining("excluded sibling skill paths: skills/bad"),
+        }),
+      ]),
+    );
+    expect(JSON.stringify(evidence.checks)).not.toContain("Ignore previous instructions");
     expect(evidence.checks.some((check) => check.code === "trust.prompt-injection")).toBe(false);
   });
 
@@ -550,6 +564,11 @@ describe("skillVetCommand", () => {
     const evidence = JSON.parse(
       readFileSync(join(reportsDir, sourceDirs[0] ?? "", "clean.json"), "utf8"),
     ) as SkillVetEvidence;
+    expect(evidence.sourceScope).toEqual({
+      selectedSkillNames: ["clean"],
+      includedPaths: ["skills/clean"],
+      excludedSkillPaths: ["skills/bad"],
+    });
     expect(evidence.checks).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -559,7 +578,7 @@ describe("skillVetCommand", () => {
         }),
       ]),
     );
-    expect(JSON.stringify(evidence.checks)).not.toContain("bad");
+    expect(JSON.stringify(evidence.checks)).not.toContain("Ignore previous instructions");
     expect(evidence.checks.some((check) => check.code === "trust.prompt-injection")).toBe(false);
   });
 
@@ -602,6 +621,32 @@ describe("skillVetCommand", () => {
     await expect(skillVetCommand.plan(ctx({ source: sourceRoot, name: "clean" }))).rejects.toThrow(
       /duplicate promoted skill name clean/i,
     );
+  });
+
+  it("refuses scoped vet evidence for nested skill boundaries", async () => {
+    skill("parent", "# Parent\n\nUse this skill for parent workflows.\n");
+    skill("parent/child", "# Child\n\nUse this skill for child workflows.\n");
+    license();
+
+    await expect(skillVetCommand.plan(ctx({ source: sourceRoot, name: "parent" }))).rejects.toThrow(
+      /nested skill boundary/,
+    );
+    await expect(
+      skillVetCommand.plan(ctx({ source: sourceRoot, name: "parent/child" })),
+    ).rejects.toThrow(/nested skill boundary/);
+  });
+
+  it("refuses scoped vet evidence for nested skill boundaries with dot-prefixed names", async () => {
+    skill("parent", "# Parent\n\nUse this skill for parent workflows.\n");
+    skill("parent/..child", "# Dot Child\n\nUse this skill for child workflows.\n");
+    license();
+
+    await expect(skillVetCommand.plan(ctx({ source: sourceRoot, name: "parent" }))).rejects.toThrow(
+      /nested skill boundary/,
+    );
+    await expect(
+      skillVetCommand.plan(ctx({ source: sourceRoot, name: "parent/..child" })),
+    ).rejects.toThrow(/nested skill boundary/);
   });
 
   it("grades a prompt-injection source RED and fails the run", async () => {
@@ -796,6 +841,11 @@ describe("skillVetCommand", () => {
         "utf8",
       ),
     ) as SkillVetEvidence;
+    expect(evidence.sourceScope).toEqual({
+      selectedSkillNames: ["clean"],
+      includedPaths: ["skills/clean"],
+      excludedSkillPaths: ["skills/bad"],
+    });
     expect(evidence.checks).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -805,7 +855,7 @@ describe("skillVetCommand", () => {
         }),
       ]),
     );
-    expect(JSON.stringify(evidence.checks)).not.toContain("bad");
+    expect(JSON.stringify(evidence.checks)).not.toContain("Ignore previous instructions");
     expect(evidence.checks.some((check) => check.code === "trust.prompt-injection")).toBe(false);
   });
 });

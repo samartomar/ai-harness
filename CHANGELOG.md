@@ -16,6 +16,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   directories resolve to the same promoted skill name or case-insensitive
   promotion path, so selected evidence cannot bind to one implementation while
   promotion installs another. (#373)
+- Scoped `aih skill vet --name <skill>` evidence now records selected skill
+  names, included paths, and excluded sibling skill paths, and `aih skill
+  approve` carries that scope into the committed card and lockfile evidence.
+  (#374)
 
 ## [2.4.3] - 2026-07-09
 

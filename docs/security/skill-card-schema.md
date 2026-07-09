@@ -55,7 +55,16 @@ writes the approval block and the root lockfile entry.
 | `writesFiles` | No | Optional card metadata. |
 | `networkEgress` | No | Optional card metadata. |
 | `scanEvidence` | Yes | Array of evidence artifact paths, usually under `.aih/skill-reports/`. |
+| `sourceScope` | No | Present for scoped `aih skill vet --name` evidence; records selected skill names, included paths, and excluded sibling skill paths. |
 | `approval` | No | Approval block written by `aih skill approve`. |
+
+The optional `sourceScope` block has:
+
+| Field | Required | Notes |
+| --- | --- | --- |
+| `selectedSkillNames` | Yes | Non-empty array of validated skill names. Scoped approval records exactly one selected skill. |
+| `includedPaths` | Yes | Non-empty array of relative POSIX source paths included in the scoped artifact. Scoped approval records exactly one included path. |
+| `excludedSkillPaths` | Yes | Relative POSIX source paths for sibling skill roots that were outside the scoped artifact. Empty means no sibling skill root was recorded. |
 
 The approval block has:
 
@@ -83,8 +92,19 @@ The approval block has:
   "requiresMcp": false,
   "requiresShell": false,
   "scanEvidence": [
-    ".aih/skill-reports/owner-repo-aaaaaaaa.json"
+    ".aih/skill-reports/owner-repo-aaaaaaaa/clean.json"
   ],
+  "sourceScope": {
+    "selectedSkillNames": [
+      "clean"
+    ],
+    "includedPaths": [
+      "skills/clean"
+    ],
+    "excludedSkillPaths": [
+      "skills/bad"
+    ]
+  },
   "approval": {
     "verdict": "GREEN",
     "approvedBy": "docs-platform",
@@ -103,7 +123,10 @@ Card/approve planning refuses when the evidence chain is broken:
 - verdict is `RED` or `UNKNOWN`;
 - license is missing;
 - a multi-skill source has no `--name`;
-- `--name` does not match a skill found in evidence.
+- `--name` does not match a skill found in evidence;
+- scoped evidence omits `sourceScope`, records an included path that does not
+  promote to `--name`, overlaps included and excluded paths, or lacks the
+  matching `skill source scope` pass-check from vet.
 
 Reading a card is fail-soft: a missing, unreadable, or schema-invalid card
 returns no card to callers instead of crashing the command.
