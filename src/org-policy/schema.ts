@@ -240,6 +240,23 @@ export function parseOrgPolicy(value: unknown): OrgPolicy {
   }
 }
 
+function modulePolicyFormatMessage(path: string, raw: string): string | undefined {
+  const trimmed = raw.trimStart();
+  if (
+    trimmed.startsWith("export default") ||
+    trimmed.startsWith("export const") ||
+    trimmed.startsWith("module.exports") ||
+    trimmed.startsWith("exports.")
+  ) {
+    return (
+      `aih-org-policy could not be read from ${path}: org-policy sources are JSON-only. ` +
+      `JavaScript/module policy files are not executed; write ${AIH_ORG_POLICY_FILE} or point ` +
+      `AIH_ORG_POLICY at a JSON policy file.`
+    );
+  }
+  return undefined;
+}
+
 export function orgPolicyPath(root: string, env: NodeJS.ProcessEnv): string {
   if (env.AIH_ORG_POLICY && env.AIH_ORG_POLICY.trim().length > 0) {
     return resolve(root, env.AIH_ORG_POLICY.trim());
@@ -255,6 +272,8 @@ export function readOrgPolicy(root: string, env: NodeJS.ProcessEnv): OrgPolicy |
     return parseOrgPolicy(JSON.parse(raw));
   } catch (err) {
     if (err instanceof OrgPolicyError) throw err;
+    const moduleMessage = modulePolicyFormatMessage(path, raw);
+    if (moduleMessage !== undefined) throw new OrgPolicyError(moduleMessage);
     throw new OrgPolicyError(
       `aih-org-policy could not be read from ${path}: ${(err as Error).message}`,
     );

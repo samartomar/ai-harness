@@ -187,6 +187,33 @@ describe("marketplace publish — the signing exec", () => {
     expect(sign.expect).toEqual(sumsPin());
   });
 
+  it("reports unsupported local gh attestation signing with CI guidance", async () => {
+    seedApproved(["alpha"]);
+    await buildArtifact();
+    const run = fakeRunner((argv) =>
+      argv[0] === "gh"
+        ? {
+            code: 1,
+            stderr:
+              '\u001b[31munknown command "sign" for "gh attestation"\nGH_TOKEN=ghp_1234567890abcdefghijklmnopqrstuvwx',
+          }
+        : undefined,
+    );
+    const c = ctx({ signer: "gh" }, { apply: true, verify: true, run });
+    const result = await executePlan(await planOf(c), c);
+    const check = result.report?.checks.find((item) => item.name === "marketplace signature");
+
+    expect(result.report?.ok).toBe(false);
+    expect(check?.verdict).toBe("fail");
+    expect(check?.code).toBe("bundle.signature");
+    expect(check?.detail).toContain("does not expose `gh attestation sign`");
+    expect(check?.detail).toContain("GitHub Actions OIDC");
+    expect(check?.detail).toContain("[REDACTED]");
+    expect(check?.detail).not.toContain("ghp_1234567890");
+    expect(check?.detail).not.toContain("\u001b");
+    expect(check?.detail).not.toContain("--sign cosign");
+  });
+
   it("threads --key into the cosign sign-blob argv (keyed signing)", async () => {
     seedApproved(["alpha"]);
     await buildArtifact();

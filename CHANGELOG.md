@@ -6,6 +6,26 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [2.4.3] - 2026-07-09
+
+### Fixed
+
+- `aih init` now projects active org policy into Claude managed settings only
+  when Claude is targeted, so doctor-compatible managed-settings regeneration
+  works without creating Claude state in Kiro/Cursor/Codex-only repos. (#360)
+- Local `gh attestation sign` failures now report GitHub Actions OIDC guidance
+  instead of treating unsupported local GitHub CLI signing as an unexplained
+  signature failure, and signer stderr/stdout is redacted before report output.
+  (#361)
+- Org-policy sources are JSON-only: JavaScript/module-shaped policy files fail
+  closed with explicit guidance instead of being treated as a supported policy
+  generation format. (#362)
+- `aih heal --scope mcp` now inventories derived MCP HTTPS origins and emits
+  enterprise TLS-interception diagnostics for Node/Python MCP servers; live
+  endpoint handshakes and CA-bundle comparisons require explicit
+  `--probe-mcp-endpoints` and run as verification probes rather than during
+  plan construction. (#363)
+
 ## [2.4.2] - 2026-07-08
 
 ### Changed
@@ -882,7 +902,8 @@ GitHub but **never published to npm**; the first published release is 0.2.0.
   (npm + github-actions), private vulnerability reporting, `@claude` workflow gated
   to trusted authors, and GitHub Actions pinned to commit SHAs.
 
-[Unreleased]: https://github.com/samartomar/ai-harness/compare/v2.4.2...HEAD
+[Unreleased]: https://github.com/samartomar/ai-harness/compare/v2.4.3...HEAD
+[2.4.3]: https://github.com/samartomar/ai-harness/compare/v2.4.2...v2.4.3
 [2.4.2]: https://github.com/samartomar/ai-harness/compare/v2.4.1...v2.4.2
 [2.4.1]: https://github.com/samartomar/ai-harness/compare/v2.4.0...v2.4.1
 [2.4.0]: https://github.com/samartomar/ai-harness/compare/v2.1.0...v2.4.0

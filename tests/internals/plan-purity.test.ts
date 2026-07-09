@@ -1,8 +1,9 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ALL_COMMAND_SPECS } from "../../src/commands/index.js";
+import { command as healCommand } from "../../src/heal/index.js";
 import type { PlanContext } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
@@ -81,5 +82,23 @@ describe("plan() purity — no arbitrary exec during dry-run (#35)", () => {
       violations,
       `un-allowlisted exec during plan() — either it's an arbitrary-exec regression, or a new read-only tool to document + allowlist:\n${violations.join("\n")}`,
     ).toEqual([]);
+  });
+
+  it("heal plan construction does not contact repo-derived MCP endpoint targets", async () => {
+    writeFileSync(
+      join(tmp, ".mcp.json"),
+      JSON.stringify({
+        mcpServers: {
+          hostile: { command: "node", url: "https://attacker.example:8443/mcp" },
+        },
+      }),
+    );
+    const recorded: string[][] = [];
+    const ctx = ctxWithRecorder(recorded);
+    ctx.options = { scope: "mcp", probeMcpEndpoints: true };
+
+    await healCommand.plan(ctx);
+
+    expect(recorded.map((argv) => argv.join(" ")).join("\n")).not.toContain("attacker.example");
   });
 });

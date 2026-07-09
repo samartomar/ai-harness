@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { type Dirent, readdirSync, realpathSync, statSync } from "node:fs";
 import { dirname, isAbsolute, join, posix, relative, resolve, sep } from "node:path";
+import { redactSecrets } from "../guardrails/redact.js";
 import { readIfExists, readRegularFile } from "../internals/fsxn.js";
 import {
   type Action,
@@ -194,20 +195,44 @@ function sha256Sums(files: BundleFile[], metadata: BundleMetadataFile[] = []): s
   ].join("\n")}\n`;
 }
 
-function signatureFailureCheck(
+function ghAttestationSignUnavailable(text: string): boolean {
+  const lower = text.toLowerCase();
+  return (
+    lower.includes("unknown command") &&
+    lower.includes("attestation") &&
+    (lower.includes("sign") || lower.includes('unknown command "attestation"'))
+  );
+}
+
+function sanitizeSignerOutput(text: string): string {
+  return redactSecrets(
+    text
+      // biome-ignore lint/suspicious/noControlCharactersInRegex: signer output is external text; strip terminal/control bytes before report serialization.
+      .replace(/[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim(),
+  ).slice(0, 800);
+}
+
+export function signatureFailureCheck(
   what: string,
   tool: string,
 ): NonNullable<ExecAction["failureCheck"]> {
-  return (result) => ({
-    name: `${what} signature`,
-    verdict: "fail",
-    code: "bundle.signature",
-    detail:
-      (result.stderr.trim() || result.stdout.trim() || `${tool} exited ${result.code}`).slice(
-        0,
-        800,
-      ) || `${tool} did not produce a verifiable signature`,
-  });
+  return (result) => {
+    const raw =
+      sanitizeSignerOutput(result.stderr || result.stdout || `${tool} exited ${result.code}`) ||
+      `${tool} did not produce a verifiable signature`;
+    const detail =
+      tool === "gh attestation sign" && ghAttestationSignUnavailable(raw)
+        ? `local GitHub CLI does not expose \`gh attestation sign\`; use release CI/GitHub Actions OIDC for GitHub attestation signing, or use cosign for local signing. Raw error: ${raw}`
+        : raw;
+    return {
+      name: `${what} signature`,
+      verdict: "fail",
+      code: "bundle.signature",
+      detail,
+    };
+  };
 }
 
 /**

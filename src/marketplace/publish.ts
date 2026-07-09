@@ -1,5 +1,5 @@
 import { isAbsolute, join, resolve } from "node:path";
-import { sha256Hex } from "../bundle/index.js";
+import { sha256Hex, signatureFailureCheck } from "../bundle/index.js";
 import { AihError } from "../errors.js";
 import { readIfExists } from "../internals/fsxn.js";
 import {
@@ -125,12 +125,20 @@ function marketplacePublishPlan(ctx: PlanContext): Plan {
           key !== undefined
             ? ["cosign", "sign-blob", "--yes", "--key", key, "--output-signature", sig, sums]
             : ["cosign", "sign-blob", "--yes", "--output-signature", sig, sums],
-          { allowFailure: false, expect },
+          {
+            allowFailure: false,
+            expect,
+            failureCheck: signatureFailureCheck("marketplace", "cosign"),
+          },
         )
       : exec(
           "sign marketplace SHA256SUMS with GitHub attestations",
           ["gh", "attestation", "sign", sums],
-          { allowFailure: false, expect },
+          {
+            allowFailure: false,
+            expect,
+            failureCheck: signatureFailureCheck("marketplace", "gh attestation sign"),
+          },
         );
 
   const verifies =

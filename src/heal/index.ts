@@ -78,6 +78,10 @@ export const command: CommandSpec = {
       description: "CA subject substring for the certs check (or set AIH_CA_PATTERN)",
       default: "Zscaler",
     },
+    {
+      flags: "--probe-mcp-endpoints",
+      description: "actively test TLS handshakes to derived MCP HTTPS endpoints",
+    },
   ],
   plan: healPlan,
 };

@@ -1,7 +1,7 @@
 ---
 status: guide
 owner: AI-Harness maintainers
-last_verified: 2026-07-07
+last_verified: 2026-07-09
 truth_home: true
 purpose: Admin guide for governed organizations and enterprise rollout of AI-Harness.
 ---
@@ -20,7 +20,7 @@ The `enterprise` posture emphasizes least privilege, approval, auditability, and
 
 The enterprise examples in this public guide are intentionally limited to reviewed Figma, Jira/Atlassian, and AWS MCP paths. Additional service MCPs should follow the same policy and source-review pattern before appearing in public enterprise guidance.
 
-Current public release baseline: `@aihq/harness@2.4.2`, published on 2026-07-08. The scoped public security doc documents SLSA v1.2 Build L2 for release artifacts; no Build L3 or formal compliance claim is made.
+Release baseline covered by this guide: `@aihq/harness@2.4.3`. The scoped public security doc documents SLSA v1.2 Build L2 for tagged release artifacts; no Build L3 or formal compliance claim is made.
 
 ## 2. Quickstart / Implementation Blueprint
 
@@ -52,7 +52,7 @@ Verify the release before rollout:
 ```console
 npm install -g @aihq/harness
 npm audit signatures
-aih verify-release 2.4.2
+aih verify-release 2.4.3
 ```
 
 Use `npm install -g @aihq/harness@latest` for major-version upgrades; `npm update -g`
@@ -219,7 +219,7 @@ Use a digest form such as `<registry>/<namespace>/skillspector@sha256:<digest>` 
 
 | Level | Admin intent | Command setup |
 |---|---|---|
-| Min Configuration | Install verified AI-Harness, enforce enterprise posture, generate only policy-allowed MCP, and keep evidence local. | `aih verify-release 2.4.2`, `aih policy validate`, `aih init . --posture enterprise --mcp-mode offline --mcp-compliant`, `aih bootstrap-ai --all-tools --apply`, `aih doctor --posture enterprise`, `aih secrets --verify` |
+| Min Configuration | Install verified AI-Harness, enforce enterprise posture, generate only policy-allowed MCP, and keep evidence local. | `aih verify-release 2.4.3`, `aih policy validate`, `aih init . --posture enterprise --mcp-mode offline --mcp-compliant`, `aih bootstrap-ai --all-tools --apply`, `aih doctor --posture enterprise`, `aih secrets --verify` |
 | Balanced | Min plus ECC, BetterDoc, and one reviewed MCP example such as Figma for teams that need coding canon, docs quality, and approved design context. | Min commands plus `aih ecc --cli claude,codex --profile core --posture enterprise --apply`, `aih pack scaffold --pack docs-quality --posture enterprise --apply`, `aih pack install --pack docs-quality --posture enterprise --apply`, `aih mcp approve figma --accept-egress ...`, and reviewed `.mcp.json` for Figma. |
 | Powerhouse Mode | Balanced plus usage/reporting, Superpowers, truth sidecar, selected external skills, Figma, Atlassian/Jira, and selected AWS MCP. | Balanced commands plus `aih superpowers`, `aih usage`, `aih track`, `aih report --v9`, `aih truth verify`, `aih truth pack`, external `aih trust`/`aih skill` approvals, and explicit MCP approvals/config for Figma, Atlassian, and AWS. |
 
@@ -230,7 +230,7 @@ Min Configuration:
 ```powershell
 npm install -g @aihq/harness
 npm audit signatures
-aih verify-release 2.4.2
+aih verify-release 2.4.3
 aih policy validate
 aih init . --posture enterprise --mcp-mode offline --mcp-compliant
 aih init . --posture enterprise --mcp-mode offline --mcp-compliant --apply
@@ -462,7 +462,7 @@ uvx awslabs.core-mcp-server@1.0.27 --help
 Before handing configuration to developers, verify the admin package from the same repo or distribution location developers will use:
 
 ```powershell
-aih verify-release 2.4.2
+aih verify-release 2.4.3
 aih policy validate
 aih policy verify --against <trusted-policy-sha-or-bundle>
 aih pack validate --pack docs-quality
@@ -478,7 +478,7 @@ aih verify-bundle --bundle <evidence-dir> --require-signature
 
 Then check the handoff material:
 
-- `aih-org-policy.json` is committed or bundled from the admin repo and contains only policy, pins, approvals, and references.
+- `aih-org-policy.json` is committed or bundled from the admin repo and contains only policy, pins, approvals, and references. Keep it as JSON; `aih` does not execute JavaScript/module policy files.
 - Required detectors are available, or the policy does not require them.
 - `aih trust skillspector-pin` has been reviewed when SkillSpector is a required detector or a detector pin changes.
 - Skill sources are pinned, vetted, approved, and included only through reviewed packs.

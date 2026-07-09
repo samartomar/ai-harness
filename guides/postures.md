@@ -10,7 +10,7 @@ purpose: Human-readable guide to posture behavior and positioning.
 
 This guide explains how to reason about `vibe (developer)`, `team`, and `enterprise` posture without turning posture into pricing language or mixing shipped behavior with unshipped plans.
 
-Current command baseline: shipped behavior through `@aihq/harness@2.4.2`, including capability intent/cache, workspace reconstruction, pack governance, BetterDoc/docs-lint, project-truth sidecars, and release verification.
+Current command baseline: shipped behavior through `@aihq/harness@2.4.3`, including capability intent/cache, workspace reconstruction, pack governance, BetterDoc/docs-lint, project-truth sidecars, and release verification.
 
 ## Read this as
 

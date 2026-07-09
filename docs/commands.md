@@ -23,7 +23,12 @@ never hardcoded). Diagnoses by default (exits non-zero when broken) and repairs 
 the npm self-heal is emitted as an operator-run script (never executed) and the only mutation is a
 local Windows registry write to persist the CA for GUI-launched apps (Claude/Kiro), so the harness
 never contacts a remote. PATH fixes are emitted as reviewed shell/profile instructions rather than
-silently editing shell profiles. For major AI-Harness upgrades, prefer
+silently editing shell profiles. The MCP scope also derives secret-safe endpoint origins from active
+MCP config where possible and emits chain-inspection guidance plus `NODE_EXTRA_CA_CERTS` /
+`SSL_CERT_FILE` remediation snippets for TLS-intercepting enterprise proxies. It does not contact
+repo-derived MCP endpoints during planning; live Node/Python endpoint TLS handshakes and CA-bundle
+comparisons require explicit `--probe-mcp-endpoints` and run as verification probes. For major
+AI-Harness upgrades, prefer
 `npm install -g @aihq/harness@latest`; add `--force` only when replacing a broken global install
 after reviewing the current workstation state. `--scope certs,npm,path,mcp,all`.
 
@@ -305,8 +310,9 @@ stay in the repo and are reported as excluded rather than packaged into marketpl
 `marketplace.manifest-parse`, `marketplace.path-traversal`, `marketplace.missing-file`,
 `marketplace.checksum-mismatch`, `marketplace.sums-coverage`, `marketplace.unapproved-verdict`,
 `marketplace.signature`), containment-checking every manifest/sums path **before** touching the
-filesystem with it. `publish` signs the artifact's `SHA256SUMS` (cosign or a GitHub attestation — a
-publish without a signer is refused; that's just a build); `validate --require-signature` then
+filesystem with it. `publish` signs the artifact's `SHA256SUMS` (cosign or a GitHub attestation when
+the local `gh` surface supports signing — a publish without a signer is refused; that's just a
+build); `validate --require-signature` then
 **fails rather than skips** when that signature can't be verified. Consumers stay on
 `aih workspace add` — the vet gate still runs at consume time.
 
@@ -314,8 +320,10 @@ publish without a signer is refused; that's just a build); `validate --require-s
 
 Schema and trusted-channel gates for the org policy. `validate` is the **read-only CI gate** over
 the active local org policy source: the default committed `aih-org-policy.json`, or an explicit
-`AIH_ORG_POLICY` override. A missing default repo file is a friendly skip (vibe repos carry no org
-policy), and a parse/schema failure is a coded finding (`org-policy.invalid`) — or, under
+`AIH_ORG_POLICY` override. The policy source is JSON only; JavaScript/module policy files are not
+executed and fail as `org-policy.invalid` with remediation guidance. A missing default repo file is
+a friendly skip (vibe repos carry no org policy), and a parse/schema failure is a coded finding
+(`org-policy.invalid`) — or, under
 `--bundle <path>`, over a distributable **policy-bundle envelope**
 (`org-policy.bundle-invalid`, naming which layer failed: the envelope or the embedded policy).
 `verify --against <sha256|bundle>` compares the active policy (including an explicit

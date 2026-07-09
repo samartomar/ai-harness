@@ -15,28 +15,37 @@ import { makeHostAdapter } from "../../src/platform/detect.js";
 
 const PEM = "-----BEGIN CERTIFICATE-----\nMIIBExampleCorporateRootCA\n-----END CERTIFICATE-----\n";
 
-type State = "ok" | "fail" | "absent";
+type State = "ok" | "fail" | "absent" | "timeout";
 
 interface Scenario {
   platform?: Platform;
   registry?: State;
   pypi?: State;
+  mcpNodeTls?: State;
+  mcpPythonTls?: State;
+  mcpNodeCaBundle?: State;
+  mcpPythonCaBundle?: State;
   node?: State;
   npm?: State;
   npx?: State;
   /** "valid" PEM on disk | "missing" path | "bad" non-PEM file | "unset" (no env) */
   ca?: "valid" | "missing" | "bad" | "unset";
+  /** Same states, but for Python's SSL_CERT_FILE bundle. */
+  pythonCa?: "valid" | "missing" | "bad" | "unset";
   binOnDisk?: boolean;
   binOnPath?: boolean;
   mcpJson?: string | false;
   npmCli?: string;
   scope?: string;
+  probeMcpEndpoints?: boolean;
   apply?: boolean;
   root: string;
 }
 
 function tlsResult(s: State): Partial<RunResult> {
   if (s === "absent") return { spawnError: true, code: 127 };
+  if (s === "timeout")
+    return { spawnError: true, code: 1, stderr: "process timed out after 25000ms" };
   if (s === "fail")
     return { code: 1, stderr: "SSL certificate problem: self signed certificate in chain" };
   return { code: 0 };
@@ -64,6 +73,18 @@ function runnerFor(sc: Scenario) {
     }
     // node/npm/npx run directly on POSIX, or via `cmd /c <tool> --version` on Windows.
     const tool = cmd === "cmd" ? (argv[2] ?? "") : cmd;
+    if (tool === "node" && argv.includes("-e")) return tlsResult(sc.mcpNodeTls ?? "ok");
+    if ((tool === "python3" || tool === "py") && argv.includes("-c"))
+      return tlsResult(sc.mcpPythonTls ?? "ok");
+    if (cmd === "openssl" && argv.includes("s_client")) {
+      const caIndex = argv.indexOf("-CAfile");
+      const caPath = caIndex >= 0 ? (argv[caIndex + 1] ?? "") : "";
+      return tlsResult(
+        caPath.includes("python-ca.pem")
+          ? (sc.mcpPythonCaBundle ?? "ok")
+          : (sc.mcpNodeCaBundle ?? "ok"),
+      );
+    }
     if (tool === "node") return toolResult(sc.node ?? "ok", "v20.11.0");
     if (tool === "npm") return toolResult(sc.npm ?? "ok", "10.9.2");
     if (tool === "npx") return toolResult(sc.npx ?? "ok", "10.9.2");
@@ -87,6 +108,17 @@ function envFor(sc: Scenario): NodeJS.ProcessEnv {
     writeFileSync(p, "not a certificate\n", "utf8");
     env.NODE_EXTRA_CA_CERTS = p;
   } // "unset" / undefined → leave absent
+  if (sc.pythonCa === "valid") {
+    const p = join(sc.root, "python-ca.pem");
+    writeFileSync(p, PEM, "utf8");
+    env.SSL_CERT_FILE = p;
+  } else if (sc.pythonCa === "missing") {
+    env.SSL_CERT_FILE = join(sc.root, "missing-python-ca.pem");
+  } else if (sc.pythonCa === "bad") {
+    const p = join(sc.root, "bad-python-ca.pem");
+    writeFileSync(p, "not a certificate\n", "utf8");
+    env.SSL_CERT_FILE = p;
+  }
   // PATH (with the user-bin dir present or not).
   const bin = join(home, ".local", "bin");
   if (sc.binOnDisk) mkdirSync(bin, { recursive: true });
@@ -117,6 +149,7 @@ function makeCtx(sc: Scenario): PlanContext {
   }
   const options: Record<string, unknown> = { caPattern: "Zscaler" };
   if (sc.scope !== undefined) options.scope = sc.scope;
+  if (sc.probeMcpEndpoints) options.probeMcpEndpoints = true;
   return {
     root: sc.root,
     contextDir: "ai-coding",
@@ -158,6 +191,19 @@ function findDigest(actions: Action[], part: string) {
       a.kind === "digest" && a.describe.includes(part),
   );
 }
+async function runCheck(
+  actions: Action[],
+  namePart: string,
+  c: PlanContext,
+): Promise<Check | undefined> {
+  for (const a of actions) {
+    if (a.kind === "probe") {
+      const check = await a.run(c);
+      if (check.name.includes(namePart)) return check;
+    }
+  }
+  return undefined;
+}
 function execs(actions: Action[]) {
   return actions.filter((a): a is Extract<Action, { kind: "exec" }> => a.kind === "exec");
 }
@@ -170,6 +216,7 @@ describe("heal — command surface", () => {
     const flags = (command.options ?? []).map((o) => o.flags);
     expect(flags).toContain("--scope <list>");
     expect(flags).toContain("--ca-pattern <pattern>");
+    expect(flags).toContain("--probe-mcp-endpoints");
   });
 });
 
@@ -517,6 +564,197 @@ describe("heal — mcp pre-flight", () => {
       }),
     );
     expect(findCheck(p.actions, "mcp: npx launcher")?.verdict).toBe("pass");
+  });
+
+  it("does not probe repo-derived MCP endpoints unless explicitly opted in", async () => {
+    const ctx = makeCtx({
+      root: freshTmp(),
+      ca: "valid",
+      scope: "mcp",
+      mcpJson: JSON.stringify({
+        mcpServers: {
+          hostile: { command: "node", url: "https://attacker.example:8443/mcp" },
+        },
+      }),
+    });
+    const calls: string[][] = [];
+    const base = ctx.run;
+    ctx.run = async (argv, opts) => {
+      calls.push([...argv]);
+      return base(argv, opts);
+    };
+
+    const p = await command.plan(ctx);
+
+    expect(findCheck(p.actions, "mcp: TLS endpoint inventory")?.detail).toContain(
+      "attacker.example:8443",
+    );
+    expect(findCheck(p.actions, "mcp: endpoint TLS probes")?.verdict).toBe("skip");
+    expect(calls.some((argv) => argv.join(" ").includes("attacker.example"))).toBe(false);
+    expect(calls.some((argv) => ["node", "python3", "openssl"].includes(argv[0] ?? ""))).toBe(
+      false,
+    );
+  });
+
+  it("formats non-default MCP endpoint ports correctly in OpenSSL guidance", async () => {
+    const p = await command.plan(
+      makeCtx({
+        root: freshTmp(),
+        ca: "valid",
+        mcpJson: JSON.stringify({
+          mcpServers: {
+            remote: { command: "node", url: "https://mcp.example.com:8443/mcp" },
+          },
+        }),
+      }),
+    );
+    const guide = findDigest(p.actions, "MCP TLS interception diagnostics");
+
+    expect(guide?.text).toContain("-connect mcp.example.com:8443");
+    expect(guide?.text).toContain("-servername mcp.example.com");
+    expect(guide?.text).not.toContain("mcp.example.com:8443:443");
+  });
+
+  it("does not infer public GitHub when a GitHub MCP server declares an explicit URL", async () => {
+    const p = await command.plan(
+      makeCtx({
+        root: freshTmp(),
+        ca: "valid",
+        mcpJson: JSON.stringify({
+          mcpServers: {
+            github: { command: "node", url: "https://github.enterprise.example/mcp" },
+          },
+        }),
+      }),
+    );
+    const inventory = findCheck(p.actions, "mcp: TLS endpoint inventory");
+
+    expect(inventory?.detail).toContain("github.enterprise.example");
+    expect(inventory?.detail).not.toContain("api.github.com");
+  });
+
+  it("derives Node MCP endpoints and diagnoses endpoint TLS CA failures", async () => {
+    const c = makeCtx({
+      root: freshTmp(),
+      ca: "valid",
+      probeMcpEndpoints: true,
+      mcpJson: JSON.stringify({
+        mcpServers: {
+          github: { command: "npx", args: ["-y", "@modelcontextprotocol/server-github"] },
+        },
+      }),
+      npx: "ok",
+      mcpNodeTls: "fail",
+    });
+    const p = await command.plan(c);
+    const inventory = findCheck(p.actions, "mcp: TLS endpoint inventory");
+    const nodeTls = await runCheck(p.actions, "mcp: Node TLS endpoints", c);
+    const guide = findDigest(p.actions, "MCP TLS interception diagnostics");
+
+    expect(inventory?.detail).toContain("api.github.com");
+    expect(nodeTls?.verdict).toBe("fail");
+    expect(nodeTls?.code).toBe("mcp.blocked");
+    expect(nodeTls?.detail).toContain("NODE_EXTRA_CA_CERTS");
+    expect(guide?.text).toContain("openssl s_client");
+    expect(guide?.text).toContain("api.github.com");
+  });
+
+  it("treats endpoint TLS timeouts as blocked instead of runtime-missing skips", async () => {
+    const c = makeCtx({
+      root: freshTmp(),
+      ca: "valid",
+      probeMcpEndpoints: true,
+      mcpJson: JSON.stringify({
+        mcpServers: {
+          github: { command: "npx", args: ["-y", "@modelcontextprotocol/server-github"] },
+        },
+      }),
+      npx: "ok",
+      mcpNodeTls: "timeout",
+    });
+    const p = await command.plan(c);
+    const nodeTls = await runCheck(p.actions, "mcp: Node TLS endpoints", c);
+
+    expect(nodeTls?.verdict).toBe("fail");
+    expect(nodeTls?.code).toBe("mcp.blocked");
+    expect(nodeTls?.detail).toContain("Node TLS failed");
+  });
+
+  it("compares served MCP chains against the configured Node CA bundle", async () => {
+    const c = makeCtx({
+      root: freshTmp(),
+      ca: "valid",
+      probeMcpEndpoints: true,
+      mcpJson: JSON.stringify({
+        mcpServers: {
+          github: { command: "npx", args: ["-y", "@modelcontextprotocol/server-github"] },
+        },
+      }),
+      npx: "ok",
+      mcpNodeTls: "ok",
+      mcpNodeCaBundle: "fail",
+    });
+    const p = await command.plan(c);
+    const caCheck = await runCheck(p.actions, "mcp: Node CA bundle verifies endpoints", c);
+
+    expect(caCheck?.verdict).toBe("fail");
+    expect(caCheck?.code).toBe("mcp.blocked");
+    expect(caCheck?.detail).toContain("NODE_EXTRA_CA_CERTS");
+    expect(caCheck?.detail).toContain("stale or incomplete");
+  });
+
+  it("derives Python MCP endpoints and emits SSL_CERT_FILE guidance", async () => {
+    const c = makeCtx({
+      root: freshTmp(),
+      ca: "valid",
+      probeMcpEndpoints: true,
+      mcpJson: JSON.stringify({
+        mcpServers: {
+          atlassian: {
+            command: "uvx",
+            args: ["mcp-atlassian"],
+            env: { JIRA_URL: "https://acme.atlassian.net" },
+          },
+        },
+      }),
+      mcpPythonTls: "fail",
+    });
+    const p = await command.plan(c);
+    const pythonTls = await runCheck(p.actions, "mcp: Python TLS endpoints", c);
+    const guide = findDigest(p.actions, "MCP TLS interception diagnostics");
+
+    expect(findCheck(p.actions, "mcp: npx launcher")?.verdict).toBe("skip");
+    expect(pythonTls?.verdict).toBe("fail");
+    expect(pythonTls?.detail).toContain("SSL_CERT_FILE");
+    expect(guide?.text).toContain("acme.atlassian.net");
+    expect(guide?.text).toContain("SSL_CERT_FILE");
+  });
+
+  it("compares served MCP chains against the configured Python CA bundle", async () => {
+    const c = makeCtx({
+      root: freshTmp(),
+      ca: "valid",
+      pythonCa: "valid",
+      probeMcpEndpoints: true,
+      mcpJson: JSON.stringify({
+        mcpServers: {
+          atlassian: {
+            command: "uvx",
+            args: ["mcp-atlassian"],
+            env: { JIRA_URL: "https://acme.atlassian.net" },
+          },
+        },
+      }),
+      mcpPythonTls: "ok",
+      mcpPythonCaBundle: "fail",
+    });
+    const p = await command.plan(c);
+    const caCheck = await runCheck(p.actions, "mcp: Python CA bundle verifies endpoints", c);
+
+    expect(caCheck?.verdict).toBe("fail");
+    expect(caCheck?.code).toBe("mcp.blocked");
+    expect(caCheck?.detail).toContain("SSL_CERT_FILE");
+    expect(caCheck?.detail).toContain("stale or incomplete");
   });
 
   it("malformed .mcp.json text mentioning npx does not count as a launcher", async () => {
