@@ -1,11 +1,40 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { parseDocument } from "yaml";
 
 const root = process.cwd();
 
 function read(path: string): string {
   return readFileSync(join(root, path), "utf8");
+}
+
+interface WorkflowStep {
+  name?: string;
+  uses?: string;
+  run?: string;
+  with?: Record<string, unknown>;
+}
+
+interface WorkflowDocument {
+  jobs: {
+    evidence: {
+      steps: WorkflowStep[];
+    };
+  };
+}
+
+function readYaml(path: string): WorkflowDocument {
+  const doc = parseDocument(read(path));
+  expect(doc.errors).toEqual([]);
+  return doc.toJSON() as WorkflowDocument;
+}
+
+function expectPinnedAction(value: string | undefined, action: string): void {
+  expect(value).toBeDefined();
+  expect(value).toMatch(
+    new RegExp(`^${action}@[a-f0-9]{40}(?:\\\\s+#\\\\s+v\\\\d+\\\\.\\\\d+\\\\.\\\\d+)?$`),
+  );
 }
 
 describe("release readiness metadata", () => {
@@ -84,5 +113,41 @@ describe("release readiness metadata", () => {
     // The contract tests' drift guidance points breaking changes at STABILITY.md —
     // the v1 stability contract must exist for those messages to mean anything.
     expect(existsSync(join(root, "STABILITY.md"))).toBe(true);
+  });
+
+  it("keeps nightly evidence uploads credential-minimized and visible to upload-artifact", () => {
+    const workflow = readYaml(".github/workflows/nightly-safety.yml");
+    const steps = workflow.jobs.evidence.steps;
+    const checkout = steps.find((step) => String(step.uses ?? "").startsWith("actions/checkout@"));
+    const upload = steps.find((step) => step.name === "Upload nightly evidence");
+    const runCommands = steps.map((step) => String(step.run ?? "")).join("\n");
+
+    expect(checkout?.with).toMatchObject({ "persist-credentials": false });
+    expect(runCommands).toContain("nightly-safety-evidence");
+    expect(runCommands).not.toContain(".aih/nightly-safety");
+    expect(upload?.with).toMatchObject({
+      path: "nightly-safety-evidence/",
+      "if-no-files-found": "error",
+      "retention-days": 5,
+    });
+    expect(upload?.with?.["include-hidden-files"]).toBeUndefined();
+  });
+
+  it("keeps nightly workflow actions pinned to immutable SHAs", () => {
+    const workflow = readYaml(".github/workflows/nightly-safety.yml");
+    const steps = workflow.jobs.evidence.steps;
+
+    expectPinnedAction(
+      steps.find((step) => String(step.uses ?? "").startsWith("actions/checkout@"))?.uses,
+      "actions/checkout",
+    );
+    expectPinnedAction(
+      steps.find((step) => String(step.uses ?? "").startsWith("actions/setup-node@"))?.uses,
+      "actions/setup-node",
+    );
+    expectPinnedAction(
+      steps.find((step) => String(step.uses ?? "").startsWith("actions/upload-artifact@"))?.uses,
+      "actions/upload-artifact",
+    );
   });
 });
