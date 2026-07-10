@@ -33,11 +33,33 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 describe("versioned surfaces", () => {
   it("docs/assets SVGs carry no version string other than VERSION", () => {
     const assetsDir = join(root, "docs", "assets");
+    // Two-segment forms (v2.4, "2.4 AI-Canonical") escaped the original three-segment
+    // pattern and shipped stale in the v2.6.0 tarball. Scan rendered text content only
+    // (attribute numerics like font-size="12.5" are not version claims); historical
+    // journey markers and the license id are the only tokens allowed besides VERSION.
+    const allowed = new Set([VERSION, `v${VERSION}`, "0.2", "0.4", "1.0", "v1.0", "2.1"]);
     for (const name of readdirSync(assetsDir).filter((f) => f.endsWith(".svg"))) {
-      const text = readFileSync(join(assetsDir, name), "utf8");
-      for (const match of text.match(/\d+\.\d+\.\d+/g) ?? []) {
-        expect(`${name}: ${match}`).toBe(`${name}: ${VERSION}`);
+      const text = readFileSync(join(assetsDir, name), "utf8").replace(
+        /<style[\s\S]*?<\/style>/g,
+        "",
+      );
+      for (const chunk of text.match(/>[^<>]+</g) ?? []) {
+        for (const match of chunk.matchAll(/\bv?\d+\.\d+(?:\.\d+|\.x)?\b/g)) {
+          const token = match[0];
+          if (chunk.startsWith("Apache-", (match.index ?? 0) - "Apache-".length)) continue;
+          if (allowed.has(token)) continue;
+          expect(`${name}: ${token}`).toBe(`${name}: ${VERSION}`);
+        }
       }
+    }
+  });
+
+  it("support-policy claims match VERSIONING.md (latest-minor-only)", () => {
+    for (const name of ["README.md", "SECURITY.md", "STABILITY.md"]) {
+      const text = readFileSync(join(root, name), "utf8");
+      expect(`${name} claims N-1 support: ${/previous minor|\(N-1\)/.test(text)}`).toBe(
+        `${name} claims N-1 support: false`,
+      );
     }
   });
 

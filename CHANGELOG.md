@@ -13,6 +13,16 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   has no populated graph, and resumes only after the graph is repaired and
   verified populated.
 
+### Fixed
+
+- Stale pre-2.5 narrative shipped in user-facing surfaces: the README overview
+  SVG's release journey now tips at the current version (was "2.4 AI-Canonical ·
+  shipped"), and README/SECURITY/STABILITY support-policy wording now matches
+  VERSIONING.md's latest-minor-only policy (the N-1 backport claim was stale).
+  The versioned-surface lock now catches two-segment version tokens (`v2.4`) in
+  SVG text and guards the support-policy claim, so this class fails
+  `npm run verify` before a tag exists.
+
 ## [2.6.0] - 2026-07-10
 
 ### Added

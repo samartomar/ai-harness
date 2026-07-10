@@ -43,7 +43,7 @@ function isCoveredByPackageFiles(assetPath: string, files: readonly string[]): b
 }
 
 describe("README docs currency", () => {
-  it("keeps README image metadata aligned with the current v2.4 assets", () => {
+  it("keeps README image metadata aligned with the current release assets", () => {
     const readme = read("README.md");
     const overview = read("docs/assets/aih-overview.svg");
     const enterprisePacks = read("docs/assets/aih-enterprise-packs.svg");
@@ -68,7 +68,9 @@ describe("README docs currency", () => {
     expect(overview).not.toContain("staged &amp; signed");
     expect(overview).not.toContain("release-candidate");
     expect(overview).not.toContain("pending release");
-    expect(overview).toContain("2.4 AI-Canonical · shipped");
+    // The release-journey tip must name the current release (stale "2.4 AI-Canonical"
+    // shipped in 2.5.x/2.6.0 tarballs because this assertion pinned the old string).
+    expect(overview).toContain(`v${pkg.version} · shipped`);
 
     const overviewAlt = imageAlt(readme, "docs/assets/aih-overview.svg").toLowerCase();
     expect(overviewAlt).toContain(`v${pkg.version}`);

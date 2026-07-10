@@ -36,8 +36,8 @@ snapshot-tested in CI against a committed fixture, the `--json` envelope is
 schema-pinned, and exit-code semantics are pinned — a surface change fails the build
 until it ships as a reviewed contract decision. Renames ship as deprecated aliases
 (the old name keeps working, with a one-line warning) before a major removes them,
-and security fixes land on the latest and the previous minor. The full policy:
-[STABILITY.md](STABILITY.md).
+and security fixes land on the latest minor — upgrading is the fix path. The full
+policy: [STABILITY.md](STABILITY.md).
 
 ## Design posture
 
@@ -397,8 +397,8 @@ aih usage --rollup ../repo-a,../repo-b
   [GitHub Milestones](https://github.com/samartomar/ai-harness/milestones).
 - **Changelog** — [CHANGELOG.md](CHANGELOG.md); tagged builds on
   [Releases](https://github.com/samartomar/ai-harness/releases).
-- **Versioning & support** — [VERSIONING.md](VERSIONING.md). SemVer; from 1.0, security
-  fixes land on the latest **and the previous minor** (N-1) of the current major.
+- **Versioning & support** — [VERSIONING.md](VERSIONING.md). SemVer; security fixes
+  land on the **latest minor** — upgrade to the latest release line to stay fixed.
 - **Supply chain** — the current release workflow publishes via npm **Trusted Publishing** with build
   **provenance** and ships an **SPDX SBOM**, a **SHA256 checksum**, its keyless **cosign
   signature bundle** (`SHA256SUMS.txt.sigstore.json`), and the Sigstore **build-provenance

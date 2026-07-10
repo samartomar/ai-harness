@@ -66,12 +66,13 @@ only the next major removes it. Announce/grace/remove lifecycle:
 aliases — the registry strips the field, and a built-in's old name stays reserved
 against plugin names for its whole grace window.
 
-## Security backports (N-1)
+## Security fixes (latest minor)
 
-From 1.0, a security fix lands on both the latest minor and the previous minor of
-the current major. The support-window policy lives in
-[VERSIONING.md](VERSIONING.md#supported-versions); reporting is in
-[SECURITY.md](SECURITY.md).
+A security fix lands on the latest minor of the current major; the fix path for
+older lines is upgrading. An N-1 backport lane is a future commitment that requires
+a maintenance-release mechanism to exist first — the policy in
+[VERSIONING.md](VERSIONING.md#supported-versions) is re-amended before any such
+promise. Reporting is in [SECURITY.md](SECURITY.md).
 
 ## Enforcement
 
