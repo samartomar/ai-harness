@@ -47,6 +47,7 @@
     "check:ai-runtime": "tsx src/internals/ai-runtime-inventory.ts --root .",
     "check:bugbounty-report": "tsx src/internals/bugbounty-report.ts --source .internal/defects/BUGBOUNTY.md",
     "check:ecc-installer": "tsx src/internals/check-ecc-installer.ts",
+    "release:preflight": "tsx src/internals/release-preflight.ts",
     "check:published-bin": "node dist/cli.js --version && node dist/cli.js --help",
     "check:published-library": "node -e \"import('@aihq/harness').then((m)=>{ if (typeof m.runSessionGuardrails !== 'function') throw new Error('missing library export'); })\"",
     "docs:lint": "tsx src/cli.ts docs-lint",
