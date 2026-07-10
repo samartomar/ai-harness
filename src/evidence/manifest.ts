@@ -22,6 +22,7 @@ export const DEFAULT_EVIDENCE_OUT = ".aih/evidence-bundle";
 /** The closed set of artifact kinds aih emits today (all schemaVersion 1 on disk). */
 export const EVIDENCE_KINDS = [
   "run-log",
+  "baseline-evidence",
   "skill-evidence",
   "skill-card",
   "skills-lock",

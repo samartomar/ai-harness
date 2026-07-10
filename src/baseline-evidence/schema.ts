@@ -6,6 +6,8 @@ const SAFE_REPO_PART = /^[A-Za-z0-9_.-]+$/;
 const SHA256 = /^[0-9a-f]{64}$/;
 const GIT_SHA = /^[0-9a-f]{40}$/;
 
+export const BASELINE_REPORTS_DIR = ".aih/baseline-reports";
+
 function isSafeRelativePath(value: string): boolean {
   if (value.length === 0 || value.startsWith("/") || value.startsWith("./")) return false;
   if (value.includes("\\") || value.endsWith("/") || value.includes("//")) return false;

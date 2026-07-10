@@ -186,4 +186,27 @@ describe("committed JSON Schemas", () => {
       });
     }
   });
+
+  it("validates attributable baseline override evidence in the org policy editor schema", () => {
+    validateCommittedSchema("schemas/aih-org-policy.schema.json", {
+      schemaVersion: 1,
+      minimumPosture: "team",
+      references: { repoContract: "ai-coding/project.json" },
+      trust: {
+        baselineOverrides: [
+          {
+            catalog: "ecc",
+            owner: "affaan-m",
+            repo: "ECC",
+            pinnedSha: "a".repeat(40),
+            bundle: ".aih/org-evidence/ecc",
+            signingRepository: "acme/engineering-governance",
+            reason: "Reviewed newer ECC baseline",
+            reviewer: "security@example.com",
+            approvedAt: "2026-07-10T12:00:00.000Z",
+          },
+        ],
+      },
+    });
+  });
 });

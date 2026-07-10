@@ -145,6 +145,36 @@ const McpApprovalSchema = z
   })
   .strict();
 
+const BaselineOverrideBundleSchema = z
+  .string()
+  .min(1)
+  .refine(
+    (value) =>
+      !value.startsWith("/") &&
+      !value.startsWith("./") &&
+      !value.includes("\\") &&
+      !value.includes("//") &&
+      value.split("/").every((part) => part.length > 0 && part !== "." && part !== ".."),
+    "bundle must be a safe repo-relative POSIX path",
+  );
+
+const BaselineOverrideSchema = z
+  .object({
+    catalog: z.enum(["ecc", "superpowers"]),
+    owner: z.string().regex(/^[A-Za-z0-9_.-]+$/),
+    repo: z.string().regex(/^[A-Za-z0-9_.-]+$/),
+    pinnedSha: z.string().regex(/^[0-9a-f]{40}$/),
+    bundle: BaselineOverrideBundleSchema,
+    signingRepository: z.string().regex(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/),
+    reason: SingleLinePolicyTextSchema,
+    reviewer: SingleLinePolicyTextSchema,
+    approvedAt: z.string().refine((value) => {
+      if (!/^\d{4}-\d{2}-\d{2}T/.test(value)) return false;
+      return Number.isFinite(Date.parse(value));
+    }, "approvedAt must be an ISO-8601 timestamp"),
+  })
+  .strict();
+
 export const OrgPolicySchema = z
   .object({
     schemaVersion: z.literal(1),
@@ -206,6 +236,7 @@ export const OrgPolicySchema = z
          * Absent → approve adds no extra constraints beyond the evidence chain.
          */
         requiredChecks: z.array(z.string().min(1)).optional(),
+        baselineOverrides: z.array(BaselineOverrideSchema).optional(),
         internalScopes: z.array(z.string()).default([]),
         skillspector: z
           .object({

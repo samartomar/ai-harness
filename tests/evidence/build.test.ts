@@ -173,7 +173,7 @@ describe("evidence build — bundle-standard layout", () => {
       files: Array<{ path: string; bytes: number; sha256: string }>;
     };
     expect(manifest.schemaVersion).toBe(1);
-    expect(manifest.files).toHaveLength(11);
+    expect(manifest.files).toHaveLength(12);
     const lockRow = manifest.files.find((f) => f.path === "aih-skills.lock.json");
     expect(lockRow?.sha256).toBe(sha256Hex('{"schemaVersion":1,"skills":[]}\n'));
     expect(lockRow?.bytes).toBe(Buffer.byteLength('{"schemaVersion":1,"skills":[]}\n', "utf8"));
@@ -299,7 +299,8 @@ describe("evidence build — signing and digest", () => {
     seedAllKinds();
     const p = await evidenceBuildCommand.plan(ctx());
     const d = p.actions.find((a): a is DigestAction => a.kind === "digest");
-    expect(d?.text).toContain("11 artifact(s)");
+    expect(d?.text).toContain("12 artifact(s)");
+    expect(d?.text).toContain("- baseline-evidence  1 file(s)");
     expect(d?.text).toContain("- skill-card  2 file(s)");
     expect(d?.text).toContain("- report  2 file(s)");
     expect(d?.text).toContain("aih verify-bundle --bundle .aih/evidence-bundle");
