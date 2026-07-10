@@ -24,14 +24,21 @@ the public-safe half.
   existing label taxonomy (never invent a label), body Problem → Fix → Acceptance
   → Source, closed only with evidence. Filing needs the owner's go.
 - **Backlog, resume state, handoffs** → the private companion repo.
+- **Writing into the private companion repo** binds the session to that repo's
+  own contract, regardless of which repo the session is anchored in: read its
+  root `AGENTS.md` before the first write, and leave its docs validation green.
+  Rules live in the repos — never keep a private per-agent copy of one.
 - **Never hand-edit a generated or byte-locked doc** — edit its renderer;
   generated `ai-coding/` output is fixed generator-side or a re-init discards the
   edit.
 
 ## Working with the owner
 
-- **Merge and publish only on an explicit ask this turn.** A background session
-  stops at a pushed branch + PR — it never marks ready or merges on its own.
+- **Publish only on an explicit ask — always** (the maintainer contract's two
+  human gates). **Merge on an explicit ask this turn, or under a standing
+  pre-authorization granted by the private maintainer contract** (CI-green,
+  reviewed-ready work). A background session without one stops at a pushed
+  branch + PR — it never marks ready or merges on its own.
 - **One wave, not N chips** — batch small same-theme fixes into a single
   branch/PR. Its counterweight: keep each PR tightly scoped with an explicit
   out-of-scope list; don't fold a deferred sibling in because adjacent code
