@@ -147,4 +147,24 @@ describe("verifiedEccInstallPlan", () => {
     expect(digest?.text).toContain("vendor");
     expect(digest?.text).toContain("runtime:ecc-installer");
   });
+
+  it("preserves consult-only guidance alongside verified mutating targets", () => {
+    const built = verifiedEccInstallPlan(
+      ctx(),
+      join(root, "tree"),
+      {
+        clis: ["claude", "windsurf"],
+        profile: "core",
+        packs: [],
+        stackSummary: "TypeScript using React",
+      },
+      [authorization()],
+    );
+
+    const guidance = built.actions
+      .filter((action) => action.kind === "doc")
+      .map((action) => action.text)
+      .join("\n");
+    expect(guidance).toContain('npx ecc consult "TypeScript using React" --target windsurf');
+  });
 });
