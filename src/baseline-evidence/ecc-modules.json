@@ -5,7 +5,21 @@
       "id": "rules-core",
       "paths": [
         "rules"
-      ]
+      ],
+      "targets": [
+        "claude",
+        "claude-project",
+        "cursor",
+        "antigravity",
+        "codebuddy",
+        "joycode",
+        "qwen",
+        "zed",
+        "hermes",
+        "openclaw",
+        "kimi"
+      ],
+      "dependencies": []
     },
     {
       "id": "agents-core",
@@ -13,7 +27,22 @@
         ".agents",
         "agents",
         "AGENTS.md"
-      ]
+      ],
+      "targets": [
+        "claude",
+        "claude-project",
+        "cursor",
+        "antigravity",
+        "codex",
+        "codebuddy",
+        "joycode",
+        "qwen",
+        "zed",
+        "hermes",
+        "openclaw",
+        "kimi"
+      ],
+      "dependencies": []
     },
     {
       "id": "commands-core",
@@ -21,7 +50,22 @@
         "commands",
         "scripts/harness-audit.js",
         "scripts/skills-health.js"
-      ]
+      ],
+      "targets": [
+        "claude",
+        "claude-project",
+        "cursor",
+        "antigravity",
+        "opencode",
+        "codebuddy",
+        "joycode",
+        "qwen",
+        "zed",
+        "hermes",
+        "openclaw",
+        "kimi"
+      ],
+      "dependencies": []
     },
     {
       "id": "hooks-runtime",
@@ -29,7 +73,15 @@
         "hooks",
         "scripts/hooks",
         "scripts/lib"
-      ]
+      ],
+      "targets": [
+        "claude",
+        "claude-project",
+        "cursor",
+        "opencode",
+        "codebuddy"
+      ],
+      "dependencies": []
     },
     {
       "id": "platform-configs",
@@ -47,7 +99,24 @@
         ".hermes",
         ".openclaw",
         ".kimi"
-      ]
+      ],
+      "targets": [
+        "claude",
+        "claude-project",
+        "cursor",
+        "antigravity",
+        "codex",
+        "gemini",
+        "opencode",
+        "codebuddy",
+        "joycode",
+        "qwen",
+        "zed",
+        "hermes",
+        "openclaw",
+        "kimi"
+      ],
+      "dependencies": []
     },
     {
       "id": "framework-language",
@@ -104,6 +173,24 @@
         "skills/springboot-verification",
         "skills/ui-to-vue",
         "skills/vue-patterns"
+      ],
+      "targets": [
+        "claude",
+        "claude-project",
+        "cursor",
+        "antigravity",
+        "codex",
+        "opencode",
+        "codebuddy",
+        "joycode",
+        "qwen",
+        "zed"
+      ],
+      "dependencies": [
+        "rules-core",
+        "agents-core",
+        "commands-core",
+        "platform-configs"
       ]
     },
     {
@@ -115,6 +202,21 @@
         "skills/mysql-patterns",
         "skills/postgres-patterns",
         "skills/prisma-patterns"
+      ],
+      "targets": [
+        "claude",
+        "claude-project",
+        "cursor",
+        "antigravity",
+        "codex",
+        "opencode",
+        "codebuddy",
+        "joycode",
+        "qwen",
+        "zed"
+      ],
+      "dependencies": [
+        "platform-configs"
       ]
     },
     {
@@ -141,6 +243,24 @@
         "skills/tdd-workflow",
         "skills/verification-loop",
         "skills/windows-desktop-e2e"
+      ],
+      "targets": [
+        "claude",
+        "claude-project",
+        "cursor",
+        "antigravity",
+        "codex",
+        "opencode",
+        "codebuddy",
+        "joycode",
+        "qwen",
+        "zed",
+        "hermes",
+        "openclaw",
+        "kimi"
+      ],
+      "dependencies": [
+        "platform-configs"
       ]
     },
     {
@@ -151,6 +271,22 @@
         "skills/latency-critical-systems",
         "skills/parallel-execution-optimizer",
         "skills/recursive-decision-ledger"
+      ],
+      "targets": [
+        "claude",
+        "claude-project",
+        "cursor",
+        "antigravity",
+        "codex",
+        "opencode",
+        "codebuddy",
+        "joycode",
+        "qwen",
+        "zed"
+      ],
+      "dependencies": [
+        "workflow-quality",
+        "operator-workflows"
       ]
     },
     {
@@ -171,6 +307,21 @@
         "skills/springboot-security",
         "skills/evm-token-decimals",
         "the-security-guide.md"
+      ],
+      "targets": [
+        "claude",
+        "claude-project",
+        "cursor",
+        "antigravity",
+        "codex",
+        "opencode",
+        "codebuddy",
+        "joycode",
+        "qwen",
+        "zed"
+      ],
+      "dependencies": [
+        "workflow-quality"
       ]
     },
     {
@@ -184,6 +335,21 @@
         "skills/scientific-pkg-gget",
         "skills/scientific-thinking-literature-review",
         "skills/scientific-thinking-scholar-evaluation"
+      ],
+      "targets": [
+        "claude",
+        "claude-project",
+        "cursor",
+        "antigravity",
+        "codex",
+        "opencode",
+        "codebuddy",
+        "joycode",
+        "qwen",
+        "zed"
+      ],
+      "dependencies": [
+        "platform-configs"
       ]
     },
     {
@@ -199,6 +365,21 @@
         "skills/social-graph-ranker",
         "skills/seo",
         "skills/market-research"
+      ],
+      "targets": [
+        "claude",
+        "claude-project",
+        "cursor",
+        "antigravity",
+        "codex",
+        "opencode",
+        "codebuddy",
+        "joycode",
+        "qwen",
+        "zed"
+      ],
+      "dependencies": [
+        "platform-configs"
       ]
     },
     {
@@ -222,6 +403,21 @@
         "skills/terminal-ops",
         "skills/unified-notifications-ops",
         "skills/workspace-surface-audit"
+      ],
+      "targets": [
+        "claude",
+        "claude-project",
+        "cursor",
+        "antigravity",
+        "codex",
+        "opencode",
+        "codebuddy",
+        "joycode",
+        "qwen",
+        "zed"
+      ],
+      "dependencies": [
+        "platform-configs"
       ]
     },
     {
@@ -233,6 +429,23 @@
         "skills/ito-trade-planner",
         "skills/prediction-market-oracle-research",
         "skills/prediction-market-risk-review"
+      ],
+      "targets": [
+        "claude",
+        "claude-project",
+        "cursor",
+        "antigravity",
+        "codex",
+        "opencode",
+        "codebuddy",
+        "joycode",
+        "qwen",
+        "zed"
+      ],
+      "dependencies": [
+        "research-apis",
+        "business-content",
+        "security"
       ]
     },
     {
@@ -240,6 +453,21 @@
       "paths": [
         "skills/crosspost",
         "skills/x-api"
+      ],
+      "targets": [
+        "claude",
+        "claude-project",
+        "cursor",
+        "antigravity",
+        "codex",
+        "opencode",
+        "codebuddy",
+        "joycode",
+        "qwen",
+        "zed"
+      ],
+      "dependencies": [
+        "business-content"
       ]
     },
     {
@@ -252,6 +480,20 @@
         "skills/ui-demo",
         "skills/video-editing",
         "skills/videodb"
+      ],
+      "targets": [
+        "claude",
+        "claude-project",
+        "cursor",
+        "codex",
+        "opencode",
+        "codebuddy",
+        "joycode",
+        "qwen",
+        "zed"
+      ],
+      "dependencies": [
+        "platform-configs"
       ]
     },
     {
@@ -263,6 +505,16 @@
         "scripts/orchestrate-worktrees.js",
         "scripts/orchestration-status.js",
         "skills/dmux-workflows"
+      ],
+      "targets": [
+        "claude",
+        "claude-project",
+        "codex",
+        "opencode"
+      ],
+      "dependencies": [
+        "commands-core",
+        "platform-configs"
       ]
     },
     {
@@ -274,6 +526,21 @@
         "skills/swift-concurrency-6-2",
         "skills/swift-protocol-di-testing",
         "skills/swiftui-patterns"
+      ],
+      "targets": [
+        "claude",
+        "claude-project",
+        "cursor",
+        "antigravity",
+        "codex",
+        "opencode",
+        "codebuddy",
+        "joycode",
+        "qwen",
+        "zed"
+      ],
+      "dependencies": [
+        "platform-configs"
       ]
     },
     {
@@ -302,6 +569,21 @@
         "skills/team-agent-orchestration",
         "skills/token-budget-advisor",
         "skills/team-builder"
+      ],
+      "targets": [
+        "claude",
+        "claude-project",
+        "cursor",
+        "antigravity",
+        "codex",
+        "opencode",
+        "codebuddy",
+        "joycode",
+        "qwen",
+        "zed"
+      ],
+      "dependencies": [
+        "platform-configs"
       ]
     },
     {
@@ -316,12 +598,46 @@
         "skills/network-bgp-diagnostics",
         "skills/network-config-validation",
         "skills/network-interface-health"
+      ],
+      "targets": [
+        "claude",
+        "claude-project",
+        "cursor",
+        "antigravity",
+        "codex",
+        "opencode",
+        "codebuddy",
+        "joycode",
+        "qwen",
+        "zed"
+      ],
+      "dependencies": [
+        "platform-configs"
       ]
     },
     {
       "id": "machine-learning",
       "paths": [
         "skills/mle-workflow"
+      ],
+      "targets": [
+        "claude",
+        "claude-project",
+        "cursor",
+        "antigravity",
+        "codex",
+        "opencode",
+        "codebuddy",
+        "joycode",
+        "qwen",
+        "zed"
+      ],
+      "dependencies": [
+        "framework-language",
+        "workflow-quality",
+        "database",
+        "devops-infra",
+        "security"
       ]
     },
     {
@@ -335,6 +651,21 @@
         "skills/production-scheduling",
         "skills/quality-nonconformance",
         "skills/returns-reverse-logistics"
+      ],
+      "targets": [
+        "claude",
+        "claude-project",
+        "cursor",
+        "antigravity",
+        "codex",
+        "opencode",
+        "codebuddy",
+        "joycode",
+        "qwen",
+        "zed"
+      ],
+      "dependencies": [
+        "platform-configs"
       ]
     },
     {
@@ -342,61 +673,121 @@
       "paths": [
         "skills/nutrient-document-processing",
         "skills/visa-doc-translate"
+      ],
+      "targets": [
+        "claude",
+        "claude-project",
+        "cursor",
+        "antigravity",
+        "codex",
+        "opencode",
+        "codebuddy",
+        "joycode",
+        "qwen",
+        "zed"
+      ],
+      "dependencies": [
+        "platform-configs"
       ]
     },
     {
       "id": "docs-ja-jp",
       "paths": [
         "docs/ja-JP"
-      ]
+      ],
+      "targets": [
+        "claude",
+        "claude-project"
+      ],
+      "dependencies": []
     },
     {
       "id": "docs-zh-cn",
       "paths": [
         "docs/zh-CN"
-      ]
+      ],
+      "targets": [
+        "claude",
+        "claude-project"
+      ],
+      "dependencies": []
     },
     {
       "id": "docs-ko-kr",
       "paths": [
         "docs/ko-KR"
-      ]
+      ],
+      "targets": [
+        "claude",
+        "claude-project"
+      ],
+      "dependencies": []
     },
     {
       "id": "docs-pt-br",
       "paths": [
         "docs/pt-BR"
-      ]
+      ],
+      "targets": [
+        "claude",
+        "claude-project"
+      ],
+      "dependencies": []
     },
     {
       "id": "docs-ru",
       "paths": [
         "docs/ru"
-      ]
+      ],
+      "targets": [
+        "claude",
+        "claude-project"
+      ],
+      "dependencies": []
     },
     {
       "id": "docs-tr",
       "paths": [
         "docs/tr"
-      ]
+      ],
+      "targets": [
+        "claude",
+        "claude-project"
+      ],
+      "dependencies": []
     },
     {
       "id": "docs-vi-vn",
       "paths": [
         "docs/vi-VN"
-      ]
+      ],
+      "targets": [
+        "claude",
+        "claude-project"
+      ],
+      "dependencies": []
     },
     {
       "id": "docs-zh-tw",
       "paths": [
         "docs/zh-TW"
-      ]
+      ],
+      "targets": [
+        "claude",
+        "claude-project"
+      ],
+      "dependencies": []
     },
     {
       "id": "docs-de-de",
       "paths": [
         "docs/de-DE"
-      ]
+      ],
+      "targets": [
+        "claude",
+        "claude-project"
+      ],
+      "dependencies": []
     }
   ]
 }

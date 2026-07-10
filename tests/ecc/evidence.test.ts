@@ -22,8 +22,8 @@ describe("ECC evidence component selection", () => {
       "module:commands-core",
       "module:hooks-runtime",
       "module:platform-configs",
-      "module:workflow-quality",
       "module:framework-language",
+      "module:workflow-quality",
     ]);
   });
 
