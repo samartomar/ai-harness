@@ -143,9 +143,9 @@ describe("eccLanguages — map detected stack to ECC language packs", () => {
     expect(eccLanguages(stack({ languages: ["Go"] })).packs).toEqual(["golang"]);
   });
 
-  it("signals installEverything when no stack is detectable (empty repo)", () => {
+  it("keeps an empty repo scoped so declarations can supply its intended stack", () => {
     const sel = eccLanguages(stack());
-    expect(sel.installEverything).toBe(true);
+    expect(sel.installEverything).toBe(false);
     expect(sel.packs).toEqual([]);
   });
 

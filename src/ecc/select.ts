@@ -25,9 +25,8 @@ export interface EccLanguageSelection {
   /** ECC language packs to install for the detected stack (deterministic order). */
   packs: EccLanguagePack[];
   /**
-   * True when nothing about the stack was detectable (empty/new repo). The
-   * installer then takes the FULL profile (everything) and the user re-runs
-   * `aih ecc` once there is code to scope it down.
+   * Reserved for explicit full selection. Detection never turns this on: an
+   * empty/new repo stays scoped and may declare its intended components.
    */
   installEverything: boolean;
 }
@@ -59,16 +58,15 @@ function frameworkPack(framework: string): EccLanguagePack | undefined {
 /**
  * Choose the ECC language packs for a repo from the detected stack. With a
  * detectable stack, select the packs that match its languages/frameworks. With
- * NO detectable stack (empty/new repo), signal `installEverything` so the
- * installer takes the full profile; the user re-runs once there is code and the
- * selection scopes down to exactly what applies.
+ * NO detectable stack (empty/new repo), keep the language-pack set empty so the
+ * common baseline and any advance declarations remain the complete scope.
  */
 export function eccLanguages(stack: RepoStack): EccLanguageSelection {
   const detectedAnything =
     stack.languages.length > 0 || stack.frameworks.length > 0 || stack.deployment.length > 0;
 
   if (!detectedAnything) {
-    return { packs: [], installEverything: true };
+    return { packs: [], installEverything: false };
   }
 
   const wanted = new Set<EccLanguagePack>();
