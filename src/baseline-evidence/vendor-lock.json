@@ -54,6 +54,46 @@
           ]
         },
         {
+          "id": "runtime:ecc-kiro",
+          "paths": [
+            ".kiro"
+          ],
+          "treeSha256": "2b41926169ea8aed04b9c90a965bd4ad685c35b40c545cee114c9adb82d183aa",
+          "verdict": "blocked",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.7.0"
+            }
+          ],
+          "findings": [
+            {
+              "code": "trust.hidden-unicode",
+              "count": 80,
+              "detail": "80 findings; first: agents/build-error-resolver.md:12 — trust.hidden-unicode: document contains 14 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
+            },
+            {
+              "code": "trust.visible-unicode",
+              "count": 4,
+              "detail": "4 findings; first: docs/longform-guide.md:5 — trust.visible-unicode: document contains 36 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "count": 5,
+              "detail": "5 findings; first: docs/security-guide.md:173 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL"
+            },
+            {
+              "code": "trust.auto-exec-hook",
+              "detail": "skills/rust-patterns/SKILL.md:421 — SKILL body contains a leading ! auto-run line",
+              "fingerprint": "trust-auto-exec-hook:skills/rust-patterns/SKILL.md:421:3eea9178"
+            },
+            {
+              "code": "trust.sandbox-smoke-unavailable",
+              "detail": "sandbox smoke test unavailable (trust.sandbox-smoke-unavailable): detector runtime is missing (run/platform/env)"
+            }
+          ]
+        },
+        {
           "id": "module:rules-core",
           "paths": [
             "rules"

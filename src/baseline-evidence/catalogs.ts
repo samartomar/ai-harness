@@ -60,6 +60,7 @@ const ECC_COMPONENTS: readonly BaselineCatalogComponent[] = [
       "scripts/lib/path-safety.js",
     ],
   },
+  { id: "runtime:ecc-kiro", paths: [".kiro"] },
   ...eccModules.modules.map((module) => ({ id: `module:${module.id}`, paths: module.paths })),
   { id: "skill:tdd-workflow", paths: ["skills/tdd-workflow"] },
   { id: "skill:verification-loop", paths: ["skills/verification-loop"] },
