@@ -542,6 +542,186 @@ describe("scanTrustTree", () => {
     ]);
   });
 
+  it("allows visible Unicode documentation findings to be acknowledged with a reason", async () => {
+    skill("skills/designer", "# Designer\n");
+    write("skills/designer/docs/design.md", "Design copy uses an arrow → and checkmark ✅.\n");
+    const vibe = await scanTrustTree(dir, { posture: "vibe" });
+    expect(vibe).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "trust.visible-unicode",
+          verdict: "pass",
+          code: undefined,
+          detail: expect.stringContaining("warning-only (vibe posture)"),
+        }),
+      ]),
+    );
+
+    const initialCtx = ctx({ target: dir }, {}, "enterprise", successfulSmokeRunner());
+    const initial = await executePlan(await trustScanCommand.plan(initialCtx), initialCtx);
+    const visibleUnicode = initial.report?.checks.find(
+      (check) => check.code === "trust.visible-unicode",
+    );
+    expect(visibleUnicode).toEqual(
+      expect.objectContaining({
+        verdict: "fail",
+        detail: expect.stringContaining("character category: visible-typography"),
+        location: expect.objectContaining({ uri: "skills/designer/docs/design.md" }),
+      }),
+    );
+    if (!visibleUnicode?.fingerprint) throw new Error("expected visible Unicode fingerprint");
+
+    const acknowledgedCtx = ctx(
+      {
+        target: dir,
+        acknowledge: visibleUnicode.fingerprint,
+        reason: "reviewed design typography in docs",
+      },
+      {},
+      "enterprise",
+      successfulSmokeRunner(),
+    );
+    const acknowledged = await executePlan(
+      await trustScanCommand.plan(acknowledgedCtx),
+      acknowledgedCtx,
+    );
+
+    expect(acknowledged.report?.ok).toBe(true);
+    expect(acknowledged.report?.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          verdict: "skip",
+          code: "trust.visible-unicode",
+          detail: expect.stringContaining("acknowledged by"),
+        }),
+      ]),
+    );
+  });
+
+  it("refuses to acknowledge visible Unicode on instruction surfaces", async () => {
+    skill("skills/designer", "Use visible typography → here.\n");
+    const initial = await scanTrustTree(dir, { posture: "enterprise" });
+    const fingerprint = initial.find((check) => check.code === "trust.hidden-unicode")?.fingerprint;
+    if (!fingerprint) throw new Error("expected hidden Unicode fingerprint");
+
+    await expect(
+      trustScanCommand.plan(
+        ctx(
+          {
+            target: dir,
+            acknowledge: fingerprint,
+            reason: "not acceptable for instruction surfaces",
+          },
+          {},
+          "enterprise",
+          successfulSmokeRunner(),
+        ),
+      ),
+    ).rejects.toThrow(/cannot acknowledge trust.hidden-unicode/);
+  });
+
+  it("scans config and executable surfaces for blocking visible Unicode", async () => {
+    skill("skills/designer", "# Designer\n");
+    const typography = "Use visible typography → here.\n";
+    write("scripts/install.sh", typography);
+    write("scripts/run-all", typography);
+    write("skills/designer/docs/component.jsx", typography);
+    write("skills/designer/docs/component.tsx", typography);
+    write("skills/designer/docs/example.go", typography);
+    write("skills/designer/docs/example.rs", typography);
+    write("skills/designer/settings.json", JSON.stringify({ label: typography }));
+    write(
+      ".mcp.json",
+      JSON.stringify({
+        mcpServers: {
+          local: {
+            command: "node",
+            args: ["server.js"],
+            description: typography,
+          },
+        },
+      }),
+    );
+
+    const checks = await scanTrustTree(dir, { posture: "enterprise" });
+
+    expect(checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          verdict: "fail",
+          code: "trust.hidden-unicode",
+          detail: expect.stringContaining("scripts/install.sh"),
+          location: expect.objectContaining({ uri: "scripts/install.sh" }),
+        }),
+        expect.objectContaining({
+          verdict: "fail",
+          code: "trust.hidden-unicode",
+          detail: expect.stringContaining("scripts/run-all"),
+          location: expect.objectContaining({ uri: "scripts/run-all" }),
+        }),
+        expect.objectContaining({
+          verdict: "fail",
+          code: "trust.hidden-unicode",
+          detail: expect.stringContaining("skills/designer/docs/component.jsx"),
+          location: expect.objectContaining({ uri: "skills/designer/docs/component.jsx" }),
+        }),
+        expect.objectContaining({
+          verdict: "fail",
+          code: "trust.hidden-unicode",
+          detail: expect.stringContaining("skills/designer/docs/component.tsx"),
+          location: expect.objectContaining({ uri: "skills/designer/docs/component.tsx" }),
+        }),
+        expect.objectContaining({
+          verdict: "fail",
+          code: "trust.hidden-unicode",
+          detail: expect.stringContaining("skills/designer/docs/example.go"),
+          location: expect.objectContaining({ uri: "skills/designer/docs/example.go" }),
+        }),
+        expect.objectContaining({
+          verdict: "fail",
+          code: "trust.hidden-unicode",
+          detail: expect.stringContaining("skills/designer/docs/example.rs"),
+          location: expect.objectContaining({ uri: "skills/designer/docs/example.rs" }),
+        }),
+        expect.objectContaining({
+          verdict: "fail",
+          code: "trust.hidden-unicode",
+          detail: expect.stringContaining("skills/designer/settings.json"),
+          location: expect.objectContaining({ uri: "skills/designer/settings.json" }),
+        }),
+        expect.objectContaining({
+          verdict: "fail",
+          code: "trust.hidden-unicode",
+          detail: expect.stringContaining(".mcp.json"),
+          location: expect.objectContaining({ uri: ".mcp.json" }),
+        }),
+      ]),
+    );
+  });
+
+  it("scans root documentation and reference markdown for Unicode trust findings", async () => {
+    write("SKILL.md", "# Root Skill\n");
+    write("docs/reference.md", "Reference copy uses an arrow →.\n");
+    write("docs/hidden.md", "Hidden marker:\u200b\n");
+
+    const checks = await scanTrustTree(dir, { posture: "enterprise" });
+
+    expect(checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          verdict: "fail",
+          code: "trust.visible-unicode",
+          location: expect.objectContaining({ uri: "docs/reference.md" }),
+        }),
+        expect.objectContaining({
+          verdict: "fail",
+          code: "trust.hidden-unicode",
+          location: expect.objectContaining({ uri: "docs/hidden.md" }),
+        }),
+      ]),
+    );
+  });
+
   it("aggregates auto-exec manifest checks", async () => {
     skill("skills/install", "# Install\n");
     writeFileSync(
@@ -1288,6 +1468,297 @@ describe("scanTrustTree", () => {
           location: expect.objectContaining({ uri: "skills/clean/future.txt", startLine: 2 }),
         }),
       ]),
+    );
+  });
+
+  it("remaps SkillSpector hidden-unicode SARIF to visible Unicode only for design docs", async () => {
+    skill("skills/designer", "# Designer\n");
+    write("skills/designer/docs/design.md", "Design tokens use arrows -> → and checkmarks ✅.\n");
+    const sarif = {
+      version: "2.1.0",
+      runs: [
+        {
+          results: [
+            {
+              ruleId: "skillspector.hidden-unicode",
+              message: { text: "visible Unicode count detected by SkillSpector" },
+              locations: [
+                {
+                  physicalLocation: {
+                    artifactLocation: { uri: "/scan/skills/designer/docs/design.md" },
+                    region: { startLine: 1 },
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    const detector = fakeRunner((argv) => {
+      if (argv[0] !== "docker") return undefined;
+      if (argv[1] === "--version") return { code: 0, stdout: "Docker version 27\n" };
+      if (argv[1] === "image" && argv[2] === "inspect") return successfulSkillspector(argv);
+      if (argv[1] === "run") return { code: 0, stdout: JSON.stringify(sarif) };
+      return undefined;
+    });
+
+    const result = await scanTrustTreeWithAnalyzers(dir, {
+      env: {},
+      platform: "linux",
+      posture: "enterprise",
+      run: detector,
+    });
+
+    expect(result.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          verdict: "fail",
+          code: "trust.visible-unicode",
+          detail: expect.stringContaining("SkillSpector"),
+          location: expect.objectContaining({
+            uri: "skills/designer/docs/design.md",
+            startLine: 1,
+          }),
+        }),
+      ]),
+    );
+    expect(
+      result.checks.find(
+        (check) => check.code === "trust.visible-unicode" && check.detail?.includes("SkillSpector"),
+      )?.detail,
+    ).toContain(
+      "character category: visible-typography; reason: ordinary visible Unicode in documentation",
+    );
+  });
+
+  it("binds remapped SkillSpector visible-Unicode fingerprints to full file content", async () => {
+    skill("skills/designer", "# Designer\n");
+    write("skills/designer/docs/design.md", "Design tokens use arrows -> →.\nPlain line.\n");
+    const sarif = {
+      version: "2.1.0",
+      runs: [
+        {
+          results: [
+            {
+              ruleId: "skillspector.hidden-unicode",
+              message: { text: "visible Unicode count detected by SkillSpector" },
+              locations: [
+                {
+                  physicalLocation: {
+                    artifactLocation: { uri: "/scan/skills/designer/docs/design.md" },
+                    region: { startLine: 1 },
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    const detector = fakeRunner((argv) => {
+      if (argv[0] !== "docker") return undefined;
+      if (argv[1] === "--version") return { code: 0, stdout: "Docker version 27\n" };
+      if (argv[1] === "image" && argv[2] === "inspect") return successfulSkillspector(argv);
+      if (argv[1] === "run") return { code: 0, stdout: JSON.stringify(sarif) };
+      return undefined;
+    });
+
+    const first = await scanTrustTreeWithAnalyzers(dir, {
+      env: {},
+      platform: "linux",
+      posture: "enterprise",
+      run: detector,
+    });
+    write("skills/designer/docs/design.md", "Design tokens use arrows -> →.\nChanged line.\n");
+    const second = await scanTrustTreeWithAnalyzers(dir, {
+      env: {},
+      platform: "linux",
+      posture: "enterprise",
+      run: detector,
+    });
+
+    const firstFingerprint = first.checks.find(
+      (check) => check.code === "trust.visible-unicode" && check.detail?.includes("SkillSpector"),
+    )?.fingerprint;
+    const secondFingerprint = second.checks.find(
+      (check) => check.code === "trust.visible-unicode" && check.detail?.includes("SkillSpector"),
+    )?.fingerprint;
+
+    expect(firstFingerprint).toEqual(expect.any(String));
+    expect(secondFingerprint).toEqual(expect.any(String));
+    expect(secondFingerprint).not.toBe(firstFingerprint);
+  });
+
+  it("keeps opaque detector hidden-unicode SARIF findings blocking in docs", async () => {
+    skill("skills/designer", "# Designer\n");
+    write("skills/designer/docs/design.md", "Design tokens use arrows -> →.\n");
+    const sarif = {
+      version: "2.1.0",
+      runs: [
+        {
+          results: [
+            {
+              ruleId: "skillspector.hidden-unicode",
+              message: { text: "hidden Unicode detected by SkillSpector" },
+              locations: [
+                {
+                  physicalLocation: {
+                    artifactLocation: { uri: "/scan/skills/designer/docs/design.md" },
+                    region: { startLine: 1 },
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    const detector = fakeRunner((argv) => {
+      if (argv[0] !== "docker") return undefined;
+      if (argv[1] === "--version") return { code: 0, stdout: "Docker version 27\n" };
+      if (argv[1] === "image" && argv[2] === "inspect") return successfulSkillspector(argv);
+      if (argv[1] === "run") return { code: 0, stdout: JSON.stringify(sarif) };
+      return undefined;
+    });
+
+    const result = await scanTrustTreeWithAnalyzers(dir, {
+      env: {},
+      platform: "linux",
+      posture: "enterprise",
+      run: detector,
+    });
+
+    expect(result.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          verdict: "fail",
+          code: "trust.hidden-unicode",
+          detail: expect.stringContaining("detector-reported-hidden-unicode"),
+          location: expect.objectContaining({
+            uri: "skills/designer/docs/design.md",
+            startLine: 1,
+          }),
+        }),
+      ]),
+    );
+  });
+
+  it("keeps SkillSpector hidden-unicode SARIF blocking on instruction surfaces", async () => {
+    skill("skills/designer", "Use visible typography → here.\n");
+    const sarif = {
+      version: "2.1.0",
+      runs: [
+        {
+          results: [
+            {
+              ruleId: "skillspector.hidden-unicode",
+              message: { text: "visible Unicode count detected by SkillSpector" },
+              locations: [
+                {
+                  physicalLocation: {
+                    artifactLocation: { uri: "/scan/skills/designer/SKILL.md" },
+                    region: { startLine: 1 },
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    const detector = fakeRunner((argv) => {
+      if (argv[0] !== "docker") return undefined;
+      if (argv[1] === "--version") return { code: 0, stdout: "Docker version 27\n" };
+      if (argv[1] === "image" && argv[2] === "inspect") return successfulSkillspector(argv);
+      if (argv[1] === "run") return { code: 0, stdout: JSON.stringify(sarif) };
+      return undefined;
+    });
+
+    const result = await scanTrustTreeWithAnalyzers(dir, {
+      env: {},
+      platform: "linux",
+      posture: "enterprise",
+      run: detector,
+    });
+
+    expect(result.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          verdict: "fail",
+          code: "trust.hidden-unicode",
+          detail: expect.stringContaining("SkillSpector"),
+          location: expect.objectContaining({ uri: "skills/designer/SKILL.md", startLine: 1 }),
+        }),
+      ]),
+    );
+    expect(
+      result.checks.find(
+        (check) => check.code === "trust.hidden-unicode" && check.detail?.includes("SkillSpector"),
+      )?.detail,
+    ).toContain(
+      "character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+    );
+  });
+
+  it("keeps SkillSpector visible-Unicode SARIF blocking on source files under docs", async () => {
+    skill("skills/designer", "# Designer\n");
+    write("skills/designer/docs/component.tsx", "export const label = '→';\n");
+    const sarif = {
+      version: "2.1.0",
+      runs: [
+        {
+          results: [
+            {
+              ruleId: "skillspector.hidden-unicode",
+              message: { text: "visible Unicode count detected by SkillSpector" },
+              locations: [
+                {
+                  physicalLocation: {
+                    artifactLocation: { uri: "/scan/skills/designer/docs/component.tsx" },
+                    region: { startLine: 1 },
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    const detector = fakeRunner((argv) => {
+      if (argv[0] !== "docker") return undefined;
+      if (argv[1] === "--version") return { code: 0, stdout: "Docker version 27\n" };
+      if (argv[1] === "image" && argv[2] === "inspect") return successfulSkillspector(argv);
+      if (argv[1] === "run") return { code: 0, stdout: JSON.stringify(sarif) };
+      return undefined;
+    });
+
+    const result = await scanTrustTreeWithAnalyzers(dir, {
+      env: {},
+      platform: "linux",
+      posture: "enterprise",
+      run: detector,
+    });
+
+    expect(result.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          verdict: "fail",
+          code: "trust.hidden-unicode",
+          detail: expect.stringContaining("SkillSpector"),
+          location: expect.objectContaining({
+            uri: "skills/designer/docs/component.tsx",
+            startLine: 1,
+          }),
+        }),
+      ]),
+    );
+    expect(
+      result.checks.find(
+        (check) => check.code === "trust.hidden-unicode" && check.detail?.includes("SkillSpector"),
+      )?.detail,
+    ).toContain(
+      "character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
     );
   });
 
@@ -2101,6 +2572,42 @@ describe("scanTrustTree", () => {
           verdict: "fail",
           code: "trust.prompt-injection",
           location: expect.objectContaining({ uri: "skills/clean/SKILL.md", startLine: 1 }),
+        }),
+      ]),
+    );
+  });
+
+  it("keeps non-SkillSpector hidden-unicode detector findings blocking in docs", async () => {
+    skill("skills/designer", "# Designer\n");
+    write("skills/designer/docs/design.md", "Design tokens use arrows -> →.\n");
+
+    const result = await scanTrustTreeWithAnalyzers(dir, {
+      env: { PATH: "bin", SNYK_TOKEN: "snyk-token-for-scanner" },
+      platform: "linux",
+      posture: "enterprise",
+      run: snykAgentScanRunner({
+        findings: [
+          {
+            code: "W021",
+            message: "hidden unicode in documentation",
+            file: "skills/designer/docs/design.md",
+            line: 1,
+          },
+        ],
+      }),
+    });
+
+    expect(result.analyzersRun).toEqual(expect.arrayContaining(["snyk-agent-scan@uvx"]));
+    expect(result.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          verdict: "fail",
+          code: "trust.hidden-unicode",
+          detail: expect.stringContaining("detector-reported-hidden-unicode"),
+          location: expect.objectContaining({
+            uri: "skills/designer/docs/design.md",
+            startLine: 1,
+          }),
         }),
       ]),
     );

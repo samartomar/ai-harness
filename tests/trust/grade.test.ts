@@ -43,6 +43,7 @@ describe("gradeTrustCheck", () => {
       "trust.unpinned-dependency",
       "trust.unsigned-source",
       "trust.untrusted-publisher",
+      "trust.visible-unicode",
     ]);
   });
 
