@@ -18,6 +18,7 @@ describe("production baseline catalogs", () => {
     expect(ids).toEqual(
       expect.arrayContaining([
         "runtime:ecc-installer",
+        "runtime:ecc-kiro",
         "module:rules-core",
         "module:agents-core",
         "module:commands-core",
