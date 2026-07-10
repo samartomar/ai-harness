@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -22,5 +22,29 @@ describe("version coherence", () => {
   it("package-lock root version matches package.json version", () => {
     expect(lock.version).toBe(pkg.version);
     expect(lock.packages?.[""]?.version).toBe(pkg.version);
+  });
+});
+
+const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+
+// Versioned marketing surfaces ship in the npm tarball (`docs/assets` is in package.json
+// `files`). Stale v2.4.3 SVG wording shipped inside the v2.5.0 tarball; this lock makes
+// surface drift fail `npm run verify` before any tag exists (RELEASING.md step 5).
+describe("versioned surfaces", () => {
+  it("docs/assets SVGs carry no version string other than VERSION", () => {
+    const assetsDir = join(root, "docs", "assets");
+    for (const name of readdirSync(assetsDir).filter((f) => f.endsWith(".svg"))) {
+      const text = readFileSync(join(assetsDir, name), "utf8");
+      for (const match of text.match(/\d+\.\d+\.\d+/g) ?? []) {
+        expect(`${name}: ${match}`).toBe(`${name}: ${VERSION}`);
+      }
+    }
+  });
+
+  it("README 'aih vX.Y.Z' claims match VERSION", () => {
+    const readme = readFileSync(join(root, "README.md"), "utf8");
+    for (const match of readme.match(/\baih v\d+\.\d+\.\d+/g) ?? []) {
+      expect(match).toBe(`aih v${VERSION}`);
+    }
   });
 });
