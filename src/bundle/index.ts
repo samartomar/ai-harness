@@ -14,6 +14,7 @@ import {
   writeJson,
   writeText,
 } from "../internals/plan.js";
+import type { Runner } from "../internals/proc.js";
 import { jsonFile } from "../internals/render.js";
 import type { Check } from "../internals/verify.js";
 import { AIH_PACKS_FILE } from "../pack/manifest.js";
@@ -525,6 +526,30 @@ function signatureCheck(verdict: Check["verdict"], detail: string, require: bool
   };
 }
 
+export async function verifyGithubBundleAttestation(
+  bundleRoot: string,
+  repo: string,
+  run: Runner,
+): Promise<Check> {
+  if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo)) {
+    return signatureCheck(
+      "fail",
+      "gh attestation verification requires an exact owner/repo identity",
+      true,
+    );
+  }
+  const sums = join(bundleRoot, CHECKSUMS_FILE);
+  const res = await run(["gh", "attestation", "verify", sums, "--repo", repo]);
+  if (res.spawnError) return signatureCheck("fail", "gh not found", true);
+  if (res.code === 0) {
+    return signatureCheck("pass", `GitHub attestation verified SHA256SUMS for ${repo}`, true);
+  }
+  const detail =
+    sanitizeSignerOutput(res.stderr || res.stdout || `gh attestation verify exited ${res.code}`) ||
+    `gh attestation verify exited ${res.code}`;
+  return signatureCheck("fail", detail, true);
+}
+
 async function verifyBundleSignature(ctx: PlanContext, bundleRoot: string): Promise<Check> {
   const sums = join(bundleRoot, CHECKSUMS_FILE);
   const strict = requireSignature(ctx);
@@ -537,18 +562,7 @@ async function verifyBundleSignature(ctx: PlanContext, bundleRoot: string): Prom
         strict,
       );
     }
-    const res = await ctx.run(["gh", "attestation", "verify", sums, "--repo", repo]);
-    if (res.spawnError) {
-      return signatureCheck(strict ? "fail" : "skip", "gh not found", strict);
-    }
-    if (res.code === 0) {
-      return signatureCheck("pass", "GitHub attestation verified SHA256SUMS", strict);
-    }
-    return signatureCheck(
-      "fail",
-      res.stderr.trim() || `gh attestation verify exited ${res.code}`,
-      strict,
-    );
+    return verifyGithubBundleAttestation(bundleRoot, repo, ctx.run);
   }
 
   const sig = join(bundleRoot, SIGNATURE_FILE);
