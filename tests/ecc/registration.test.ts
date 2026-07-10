@@ -11,6 +11,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { BaselineAuthorization } from "../../src/baseline-evidence/verify.js";
+import type { EccComponentId } from "../../src/ecc/components.js";
 import {
   emptyRegistrationLedger,
   machineRegistrationUnion,
@@ -50,11 +51,11 @@ function authorization(componentId = "module:rules-core"): BaselineAuthorization
   };
 }
 
-function target(componentIds: string[]) {
+function target(componentIds: EccComponentId[]) {
   return {
     target: "codex" as const,
     components: componentIds.map((id) => ({ id, authorization: authorization() })),
-    mcps: ["mcp:sequential-thinking"],
+    mcps: ["mcp:sequential-thinking" as const],
   };
 }
 
@@ -97,11 +98,9 @@ describe("ECC registration ledger", () => {
       }),
     ]);
 
-    const repeated = mergeRegistrationLedger(
-      second,
-      second.projects[1]!,
-      second.targets,
-    );
+    const project = second.projects.at(1);
+    if (project === undefined) throw new Error("missing second project registration");
+    const repeated = mergeRegistrationLedger(second, project, second.targets);
     expect(serializeRegistrationLedger(repeated)).toBe(serializeRegistrationLedger(second));
   });
 
@@ -141,6 +140,26 @@ describe("ECC registration ledger", () => {
     ).toThrow(/duplicate component/i);
   });
 
+  it("rejects relative project roots instead of resolving them against process cwd", () => {
+    expect(() =>
+      mergeRegistrationLedger(
+        emptyRegistrationLedger(),
+        { root: "relative/project", scope: "scoped", components: [], mcps: [] },
+        [],
+      ),
+    ).toThrow(/project root must be absolute/i);
+  });
+
+  it("ignores stale partial files but fails closed on malformed primary bytes", () => {
+    const directory = join(home, ".aih", "ecc");
+    mkdirSync(directory, { recursive: true });
+    writeFileSync(join(directory, ".registration-ledger.stale.tmp"), "partial", "utf8");
+    expect(readRegistrationLedger(home)).toEqual(emptyRegistrationLedger());
+
+    writeFileSync(registrationLedgerPath(home), "not-json", "utf8");
+    expect(() => readRegistrationLedger(home)).toThrow(/invalid ECC registration ledger/i);
+  });
+
   it("writes owner-only JSON atomically and reads it back", () => {
     const ledger = mergeRegistrationLedger(
       emptyRegistrationLedger(),
@@ -154,6 +173,18 @@ describe("ECC registration ledger", () => {
     expect(readRegistrationLedger(home)).toEqual(ledger);
     expect(readFileSync(path, "utf8")).toBe(serializeRegistrationLedger(ledger));
     if (process.platform !== "win32") expect(lstatSync(path).mode & 0o077).toBe(0);
+  });
+
+  it("keeps the primary registration readable after a project is deleted", () => {
+    const ledger = mergeRegistrationLedger(
+      emptyRegistrationLedger(),
+      { root: projectA, scope: "scoped", components: ["baseline:rules"], mcps: [] },
+      [target(["baseline:rules"])],
+    );
+    writeRegistrationLedgerAtomic(home, ledger);
+    rmSync(projectA, { recursive: true, force: true });
+
+    expect(readRegistrationLedger(home)).toEqual(ledger);
   });
 
   it("preserves the previous valid ledger when final rename fails", () => {
