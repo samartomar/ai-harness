@@ -11,7 +11,13 @@ import {
   registrationLedgerPath,
 } from "../../src/ecc/registration.js";
 import { verifiedEccInstallPlan } from "../../src/ecc/verified.js";
-import type { Action, DigestAction, ExecAction, PlanContext } from "../../src/internals/plan.js";
+import type {
+  Action,
+  DigestAction,
+  ExecAction,
+  PlanContext,
+  WriteAction,
+} from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 
@@ -55,6 +61,8 @@ function authorization(componentId = "runtime:ecc-installer"): BaselineAuthoriza
 
 const execs = (actions: Action[]): ExecAction[] =>
   actions.filter((action): action is ExecAction => action.kind === "exec");
+const writes = (actions: Action[]): WriteAction[] =>
+  actions.filter((action): action is WriteAction => action.kind === "write");
 
 function driverSteps(actions: Action[]): Array<{
   argv: string[];
@@ -115,6 +123,8 @@ describe("verifiedEccInstallPlan", () => {
     ]);
     expect(steps[0]?.cwd).toBe(sourceRoot);
     expect(steps[1]?.argv.slice(0, 2)).toEqual([process.execPath, "-e"]);
+    expect(steps[1]?.argv[2]).toContain('replace(/\\\\/g, "/")');
+    expect(steps[1]?.argv[2]).not.toContain('replace(/\\\\\\\\/g, "/")');
     const encoded = steps[1]?.argv.at(-1);
     if (encoded === undefined) throw new Error("missing materialization payload");
     const payload = JSON.parse(Buffer.from(encoded, "base64").toString("utf8")) as {
@@ -173,21 +183,61 @@ describe("verifiedEccInstallPlan", () => {
     ).toBe(true);
   });
 
-  it("runs Kiro's script only from the verified checkout", () => {
+  it("registers only the current project's validated MCPs in project-local config", () => {
+    const selected = selection();
+    selected.mcps = ["mcp:sequential-thinking", "mcp:github"];
+    const built = verifiedEccInstallPlan(
+      ctx(),
+      join(root, "quarantine", "tree"),
+      {
+        clis: ["claude"],
+        profile: "core",
+        packs: [],
+        selection: selected,
+        project: {
+          root,
+          scope: "scoped",
+          components: [...selected.components],
+          mcps: ["mcp:sequential-thinking"],
+        },
+      },
+      [authorization()],
+    );
+
+    const mcp = writes(built.actions).find((action) => action.path === ".mcp.json");
+    expect(mcp).toMatchObject({
+      merge: true,
+      json: {
+        mcpServers: {
+          "sequential-thinking": {
+            type: "stdio",
+            command: "npx",
+            args: ["-y", "@modelcontextprotocol/server-sequential-thinking@2025.12.18"],
+          },
+        },
+      },
+    });
+    expect(JSON.stringify(mcp)).not.toContain("github");
+    expect(JSON.stringify(mcp)).not.toContain("context7");
+    expect(JSON.stringify(mcp)).not.toContain("exa");
+    expect(JSON.stringify(mcp)).not.toContain("chrome-devtools");
+  });
+
+  it("degrades scoped Kiro registration to guidance instead of installing the whole surface", () => {
     const sourceRoot = join(root, "quarantine", "tree");
-    const plan = verifiedEccInstallPlan(
+    const built = verifiedEccInstallPlan(
       ctx(),
       sourceRoot,
-      { clis: ["kiro"], profile: "core", packs: [] },
+      { clis: ["kiro"], profile: "core", packs: [], selection: selection() },
       [authorization("runtime:ecc-kiro")],
     );
-    const steps = driverSteps(plan.actions);
-    expect(steps).toEqual([
-      {
-        argv: ["bash", join(sourceRoot, ".kiro", "install.sh"), root],
-        cwd: sourceRoot,
-      },
-    ]);
+    expect(execs(built.actions)).toEqual([]);
+    expect(
+      built.actions
+        .filter((action) => action.kind === "doc")
+        .map((action) => action.text)
+        .join("\n"),
+    ).toContain('npx ecc consult "this repository" --target kiro');
   });
 
   it("emits machine-readable evidence authorization receipts", () => {
