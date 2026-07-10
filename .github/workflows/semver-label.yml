@@ -33,10 +33,13 @@ jobs:
           count=${#labels[@]}
 
           if [ "$count" -eq 0 ]; then
-            echo "::error::No semver:* label. Add exactly one of semver:patch, semver:minor, or semver:major."
-            echo "Guidance: patch = fixes/hardening with no observable behavior change;"
-            echo "          minor = new capability, or any gate/verdict/exit-code/artifact change (even in a fix: commit);"
-            echo "          major = breaking CLI, config, schema, or evidence format."
+            # Applying a label needs triage permission, which contributors from a fork do
+            # not have. This check is addressed to whoever merges, not to the author.
+            echo "::error::No semver:* label yet. External contributors: no action needed — a maintainer applies the label before merge, and this check re-runs automatically."
+            echo "Maintainers: add exactly one of semver:patch, semver:minor, or semver:major."
+            echo "  patch = fixes/hardening with no observable behavior change;"
+            echo "  minor = new capability, or any gate/verdict/exit-code/artifact change (even in a fix: commit);"
+            echo "  major = breaking CLI, config, schema, or evidence format."
             echo "See VERSIONING.md."
             exit 1
           fi

@@ -55,6 +55,13 @@ Keep diffs scoped. Add tests for new behavior. Reference the capability and the
 boundary in your description. For AI-delegated work, comment `@claude <task>` on
 an issue (see the Claude workflow).
 
+**Labels are a maintainer's job.** The `semver-label` check requires exactly one
+`semver:patch|minor|major` label, because the release cut computes the version from
+the labels on merged PRs ([VERSIONING.md](VERSIONING.md)). Applying labels needs repo
+triage permission, so if you contribute from a fork this check stays red until a
+maintainer labels your PR — that is expected, and no action is needed from you. Say in
+the PR description how you'd classify the change if you have a view.
+
 Before a PR is marked ready for review or merged, run the required review
 skills/agents for the change: at minimum code review and security review, plus
 the relevant domain reviewer for the touched area. Record the reviewers used,
@@ -63,9 +70,9 @@ comment so the merge decision has durable evidence.
 
 A CLI-surface change (command/flag/positional) must regenerate
 `tests/contract/command-surface.json` in the same PR
-(`AIH_REGEN_CONTRACT=1 npx vitest run tests/contract/command-surface.test.ts`) and
-carry the `contract:additive` label; removals/renames are majors-only — see
-[STABILITY.md](STABILITY.md).
+(`AIH_REGEN_CONTRACT=1 npx vitest run tests/contract/command-surface.test.ts`) and be
+flagged in the PR description so a maintainer can apply the `contract:additive` label;
+removals/renames are majors-only — see [STABILITY.md](STABILITY.md).
 
 ## Contributor rules
 
