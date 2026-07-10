@@ -6,6 +6,26 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [2.6.0] - 2026-07-10
+
+### Added
+
+- `npm run release:preflight`: machine-checked release sweep emitting a cut
+  manifest — validates per-PR `semver:*` labels, milestone-vs-git drift in both
+  directions, open blockers, tracker presence, gate-bypassing commits, version
+  coherence, and revert-pair cancellation; exits non-zero on any named finding.
+  (#397)
+
+### Changed
+
+- Declarations are now emitted by `tsc -p tsconfig.dts.json` instead of tsup's
+  vendored `rollup-plugin-dts`; `dist` carries per-module declaration files with
+  the public entry unchanged at `dist/index.d.ts`. This unblocks TypeScript 7.
+  (#396)
+- Toolchain: TypeScript 7.0.2 and Biome 2.5.3 (#392); fast-check 4.9 (#393);
+  CodeQL actions bumped as one group so `init`/`analyze` stay version-matched.
+  (#391)
+
 ## [2.5.1] - 2026-07-10
 
 ### Fixed
@@ -960,7 +980,8 @@ GitHub but **never published to npm**; the first published release is 0.2.0.
   (npm + github-actions), private vulnerability reporting, `@claude` workflow gated
   to trusted authors, and GitHub Actions pinned to commit SHAs.
 
-[Unreleased]: https://github.com/samartomar/ai-harness/compare/v2.5.1...HEAD
+[Unreleased]: https://github.com/samartomar/ai-harness/compare/v2.6.0...HEAD
+[2.6.0]: https://github.com/samartomar/ai-harness/compare/v2.5.1...v2.6.0
 [2.5.1]: https://github.com/samartomar/ai-harness/compare/v2.5.0...v2.5.1
 [2.5.0]: https://github.com/samartomar/ai-harness/compare/v2.4.3...v2.5.0
 [2.4.3]: https://github.com/samartomar/ai-harness/compare/v2.4.2...v2.4.3
