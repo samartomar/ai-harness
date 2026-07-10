@@ -1,10 +1,16 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { BaselineAuthorization } from "../../src/baseline-evidence/verify.js";
 import type { EccComponentSelection } from "../../src/ecc/components.js";
 import { verifiedEccInstallPlan } from "../../src/ecc/verified.js";
+import {
+  emptyRegistrationLedger,
+  readRegistrationLedger,
+  registrationLedgerPath,
+} from "../../src/ecc/registration.js";
 import type { Action, DigestAction, ExecAction, PlanContext } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
@@ -191,6 +197,63 @@ describe("verifiedEccInstallPlan", () => {
     expect(digest?.data).toEqual({ authorizations: [receipt] });
     expect(digest?.text).toContain("vendor");
     expect(digest?.text).toContain("runtime:ecc-installer");
+  });
+
+  it("commits the ledger only after every install step succeeds", () => {
+    const sourceRoot = join(root, "quarantine", "tree");
+    const built = verifiedEccInstallPlan(
+      ctx(),
+      sourceRoot,
+      {
+        clis: ["claude"],
+        profile: "core",
+        packs: [],
+        selection: {
+          scope: "scoped",
+          components: ["baseline:rules"],
+          mcps: [],
+          recommendations: [],
+        },
+        project: {
+          root,
+          scope: "scoped",
+          components: ["baseline:rules"],
+          mcps: [],
+        },
+        ledger: emptyRegistrationLedger(),
+      },
+      [authorization(), authorization("module:rules-core")],
+    );
+    const driver = execs(built.actions).find((action) =>
+      action.describe.includes("verified ECC checkout"),
+    );
+    if (driver === undefined) throw new Error("missing verified ECC driver");
+    const steps = driverSteps(built.actions);
+    const ledgerStep = steps.at(-1);
+    expect(ledgerStep?.argv.join(" ")).toContain("registration-ledger");
+
+    const run = (firstExit: number) => {
+      const deterministic = steps.map((step, index) =>
+        index === steps.length - 1
+          ? step
+          : {
+              argv: [process.execPath, "-e", `process.exit(${index === 0 ? firstExit : 0})`],
+              cwd: root,
+            },
+      );
+      const encoded = Buffer.from(JSON.stringify(deterministic), "utf8").toString("base64");
+      return spawnSync(driver.argv[0], [...driver.argv.slice(1, -1), encoded], {
+        cwd: root,
+        encoding: "utf8",
+      });
+    };
+
+    expect(run(7).status).toBe(7);
+    expect(existsSync(registrationLedgerPath(root))).toBe(false);
+    expect(run(0).status).toBe(0);
+    expect(readRegistrationLedger(root).projects).toEqual([
+      expect.objectContaining({ root, components: ["baseline:rules"] }),
+    ]);
   });
 
   it("preserves consult-only guidance alongside verified mutating targets", () => {
