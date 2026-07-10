@@ -210,6 +210,45 @@ describe("verifiedEccInstallPlan", () => {
     ).toBe(true);
   });
 
+  it("does not treat its own scoped HTTP GitHub registration as a rerun collision", () => {
+    const home = join(root, "home");
+    mkdirSync(join(home, ".codex"), { recursive: true });
+    writeFileSync(
+      join(home, ".codex", "config.toml"),
+      [
+        "# >>> aih managed (mcp) >>>",
+        '[mcp_servers."github"]',
+        'url = "https://api.githubcopilot.com/mcp/"',
+        "# <<< aih managed (mcp) <<<",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+    const run = fakeRunner(() => undefined);
+    const context: PlanContext = {
+      ...ctx(),
+      env: { HOME: home },
+      host: makeHostAdapter({ platform: "linux", run, env: { HOME: home } }),
+      run,
+    };
+    const selected = selection();
+    selected.mcps = ["mcp:sequential-thinking", "mcp:github"];
+
+    const built = verifiedEccInstallPlan(
+      context,
+      join(root, "quarantine", "tree"),
+      { clis: ["codex"], profile: "core", packs: [], selection: selected },
+      [authorization()],
+    );
+
+    expect(driverSteps(built.actions)).not.toHaveLength(0);
+    expect(
+      built.actions.some(
+        (action) => action.kind === "doc" && action.describe.includes("MCP server name collision"),
+      ),
+    ).toBe(false);
+  });
+
   it("materializes selected Codex skills into the real on-demand skill directory", () => {
     const sourceRoot = join(root, "ecc-source");
     const home = join(root, "home");
@@ -283,8 +322,10 @@ describe("verifiedEccInstallPlan", () => {
     );
     const step = driverSteps(built.actions)[1];
     if (step === undefined) throw new Error("missing Codex install step");
+    const executable = step.argv[0];
+    if (executable === undefined) throw new Error("missing Codex install executable");
 
-    const result = spawnSync(step.argv[0], step.argv.slice(1), {
+    const result = spawnSync(executable, step.argv.slice(1), {
       cwd: step.cwd,
       env: { ...process.env, ...step.env, HOME: home, USERPROFILE: home },
       encoding: "utf8",
