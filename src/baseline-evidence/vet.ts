@@ -131,6 +131,10 @@ export async function vetBaselineCatalog(
   for (const component of catalog.components) {
     const tree = hashComponentTree(sourceRoot, component.paths);
     const scan = await scanComponent({ sourceRoot, component });
+    const afterScan = hashComponentTree(sourceRoot, component.paths);
+    if (afterScan.treeSha256 !== tree.treeSha256) {
+      throw new Error(`baseline component ${component.id} changed during vet scan`);
+    }
     const findings = blockingFindings(scan.checks);
     components.push({
       id: component.id,
