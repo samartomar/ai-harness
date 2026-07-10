@@ -107,9 +107,9 @@ describe("guardrails command", () => {
     const settings = writeAt(p.actions, ".claude/settings.json");
     expect(settings?.merge).toBe(true);
     const perms = (settings?.json as { permissions: { deny: string[]; ask: string[] } })
-      .permissions;
-    expect(perms.deny).toContain("Bash(rm -rf /)");
-    expect(perms.ask).toContain("Bash(git push*)");
+      ?.permissions;
+    expect(perms?.deny).toContain("Bash(rm -rf /)");
+    expect(perms?.ask).toContain("Bash(git push*)");
   });
 
   it("at vibe posture keeps command policy and risk gates advisory-only", async () => {
@@ -130,8 +130,8 @@ describe("guardrails command", () => {
     expect(JSON.stringify(managed?.json)).toContain("commandPolicy");
     const risk = writeAt(p.actions, ".ai-context/risk-gates.json");
     expect(risk?.json).toMatchObject({ ci: { checkName: "risk-gates", required: false } });
-    const gates = (risk?.json as { gates: Array<{ behavior: string }> }).gates;
-    expect(gates.every((g) => g.behavior === "ask")).toBe(true);
+    const gates = (risk?.json as { gates: Array<{ behavior: string }> })?.gates;
+    expect(gates?.every((g) => g.behavior === "ask")).toBe(true);
   });
 
   it("at enterprise emits system managed-settings example and marks risk-gates required", async () => {

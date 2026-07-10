@@ -552,7 +552,7 @@ describe("orgPolicyDriftProbes", () => {
     writeManagedSettings({
       ...(projected?.json as Record<string, unknown>),
       allowedMcpServers: [
-        ...((projected?.json as { allowedMcpServers?: unknown[] }).allowedMcpServers ?? []),
+        ...((projected?.json as { allowedMcpServers?: unknown[] })?.allowedMcpServers ?? []),
         { serverCommand: ["uvx", "code-review-graph@2.3.6", "serve"] },
       ],
     });
