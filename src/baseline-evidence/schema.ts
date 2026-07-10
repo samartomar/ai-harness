@@ -36,6 +36,7 @@ export const BaselineAnalyzerReceiptSchema = z
 export const BaselineEvidenceFindingSchema = z
   .object({
     code: z.string().trim().min(1).max(200),
+    count: z.number().int().min(2).optional(),
     detail: z.string().trim().min(1).max(2_000),
     fingerprint: z.string().trim().min(1).max(500).optional(),
   })

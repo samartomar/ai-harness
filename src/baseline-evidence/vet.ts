@@ -96,13 +96,28 @@ function analyzerReceipts(
 }
 
 function blockingFindings(checks: readonly Check[]): BaselineEvidenceFinding[] {
-  return checks
-    .filter((check) => check.verdict === "fail")
-    .map((check) => ({
-      code: check.code ?? "trust.detector-finding",
-      detail: check.detail?.trim() || check.name,
-      ...(check.fingerprint !== undefined ? { fingerprint: check.fingerprint } : {}),
-    }));
+  const groups = new Map<string, Check[]>();
+  for (const check of checks) {
+    if (check.verdict !== "fail") continue;
+    const code = check.code ?? "trust.detector-finding";
+    const group = groups.get(code) ?? [];
+    group.push(check);
+    groups.set(code, group);
+  }
+  return [...groups.entries()].map(([code, group]) => {
+    const first = group[0];
+    const firstDetail = first?.detail?.trim() || first?.name || code;
+    const detail =
+      group.length === 1 ? firstDetail : `${group.length} findings; first: ${firstDetail}`;
+    return {
+      code,
+      ...(group.length > 1 ? { count: group.length } : {}),
+      detail: detail.slice(0, 2_000),
+      ...(group.length === 1 && first?.fingerprint !== undefined
+        ? { fingerprint: first.fingerprint }
+        : {}),
+    };
+  });
 }
 
 export async function vetBaselineCatalog(
