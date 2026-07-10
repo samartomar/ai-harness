@@ -286,7 +286,7 @@ describe("skillInventoryCommand", () => {
     const digest = result.digests.find((d) => d.describe === "skill inventory");
     expect(digest?.text).toContain("0 installed · 0 approved · 0 unapproved · 0 stale");
     expect(digest?.text).toContain("No skills installed");
-    expect((digest?.data as SkillInventory).counts.installed).toBe(0);
+    expect((digest?.data as SkillInventory)?.counts.installed).toBe(0);
   });
 });
 

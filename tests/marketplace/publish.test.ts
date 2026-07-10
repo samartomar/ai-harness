@@ -286,7 +286,7 @@ describe("marketplace publish — the digest", () => {
       verify:
         "aih marketplace validate --dir .aih/marketplace --require-signature --signer cosign --key <pub.key>",
     });
-    expect((report?.data as { verifies: string }).verifies).toContain("SHA256SUMS.sig");
+    expect((report?.data as { verifies: string })?.verifies).toContain("SHA256SUMS.sig");
   });
 
   it("points gh consumers at the attestation and the --signer gh --repo verify form", async () => {
@@ -294,8 +294,8 @@ describe("marketplace publish — the digest", () => {
     await buildArtifact();
     const plan = await planOf(ctx({ signer: "gh" }));
     const report = plan.actions.find((a): a is DigestAction => a.kind === "digest");
-    expect((report?.data as { verifies: string }).verifies).toContain("GitHub attestation");
-    expect((report?.data as { verify: string }).verify).toBe(
+    expect((report?.data as { verifies: string })?.verifies).toContain("GitHub attestation");
+    expect((report?.data as { verify: string })?.verify).toBe(
       "aih marketplace validate --dir .aih/marketplace --require-signature --signer gh --repo <owner/repo>",
     );
   });
