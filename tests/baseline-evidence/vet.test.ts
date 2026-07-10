@@ -110,6 +110,34 @@ describe("vetBaselineCatalog", () => {
     expect(evidence.components.every((component) => component.verdict === "blocked")).toBe(true);
   });
 
+  it("summarizes repeated findings by code for a bounded shipped lock", async () => {
+    const repeated: Check[] = [
+      {
+        name: "unicode one",
+        verdict: "fail",
+        code: "trust.hidden-unicode",
+        detail: "first hidden Unicode finding",
+      },
+      {
+        name: "unicode two",
+        verdict: "fail",
+        code: "trust.hidden-unicode",
+        detail: "second hidden Unicode finding",
+      },
+    ];
+    const evidence = await vetBaselineCatalog(root, catalog(), {
+      scanComponent: async () => ({ analyzersRun: ["aih-native"], checks: repeated }),
+      analyzerVersions: { "aih-native": "2.7.0" },
+    });
+    expect(evidence.components[0]?.findings).toEqual([
+      {
+        code: "trust.hidden-unicode",
+        count: 2,
+        detail: "2 findings; first: first hidden Unicode finding",
+      },
+    ]);
+  });
+
   it("fails closed when an analyzer ran without an attributable version receipt", async () => {
     await expect(
       vetBaselineCatalog(root, catalog(), {
