@@ -115,6 +115,19 @@ const VERIFIED_ECC_LEDGER_WRITER = `
 const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
+const transientLockCodes = new Set(["EBUSY", "EPERM", "EACCES"]);
+const retryTransient = (operation) => {
+  let delayMs = 1;
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return operation();
+    } catch (error) {
+      if (!transientLockCodes.has(error && error.code) || attempt >= 10) throw error;
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, delayMs);
+      delayMs = Math.min(delayMs * 2, 100);
+    }
+  }
+};
 const payload = JSON.parse(Buffer.from(process.argv[1], "base64").toString("utf8"));
 if (!payload || typeof payload.home !== "string" || !path.isAbsolute(payload.home) || typeof payload.contents !== "string") throw new Error("invalid ECC registration-ledger payload");
 const safe = (entry, kind) => {
@@ -138,7 +151,7 @@ const temporary = path.join(directory, ".registration-ledger." + process.pid + "
 try {
   fs.writeFileSync(temporary, payload.contents, { encoding: "utf8", flag: "wx", mode: 0o600 });
   fs.chmodSync(temporary, 0o600);
-  fs.renameSync(temporary, target);
+  retryTransient(() => fs.renameSync(temporary, target));
 } finally {
   fs.rmSync(temporary, { force: true });
 }
