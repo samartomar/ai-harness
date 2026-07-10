@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { Command } from "commander";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { flagKey, runCapability } from "../../src/commands/run.js";
+import { executePlan } from "../../src/internals/execute.js";
 import { type CommandSpec, digest, plan, probe } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
 import { policyValidateCommand } from "../../src/org-policy/validate.js";
@@ -389,15 +390,7 @@ describe("runCapability — custom execution", () => {
       write: () => {},
       execute: async (ctx) => {
         observedRoot = ctx.root;
-        return {
-          capability: "custom-execution",
-          writes: [],
-          removes: [],
-          execs: [],
-          docs: [],
-          digests: [],
-          backups: [],
-        };
+        return executePlan(plan("custom-execution", digest("custom execution", "ok")), ctx);
       },
     });
 
