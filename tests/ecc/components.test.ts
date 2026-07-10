@@ -1,8 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  COMMON_ECC_COMPONENTS,
-  selectEccComponents,
-} from "../../src/ecc/components.js";
+import { COMMON_ECC_COMPONENTS, selectEccComponents } from "../../src/ecc/components.js";
 import type { RepoStack } from "../../src/profile/scan.js";
 
 function stack(overrides: Partial<RepoStack> = {}): RepoStack {
@@ -115,6 +112,35 @@ describe("selectEccComponents", () => {
     expect(selected.components).toEqual([...COMMON]);
   });
 
+  it("keeps detected PHP and Vue-family identities distinct", () => {
+    const selected = selectEccComponents({
+      stack: stack({ languages: ["PHP"], frameworks: ["Nuxt"] }),
+      posture: "vibe",
+      profile: "core",
+    });
+
+    expect(selected.components).toEqual([
+      ...COMMON,
+      "lang:php",
+      "agent:php-reviewer",
+      "framework:nuxt",
+      "agent:e2e-runner",
+      "agent:a11y-architect",
+    ]);
+    expect(selected.components).not.toContain("framework:nextjs");
+  });
+
+  it("normalizes unqualified leaf declarations without duplicating common leaves", () => {
+    const selected = selectEccComponents({
+      stack: stack(),
+      posture: "vibe",
+      profile: "core",
+      declarations: ["tdd-workflow", "security-review"],
+    });
+
+    expect(selected.components).toEqual([...COMMON, "skill:security-review"]);
+  });
+
   it("modulates security content and GitHub MCP by posture without defaulting egress", () => {
     const team = selectEccComponents({
       stack: stack(),
@@ -144,9 +170,9 @@ describe("selectEccComponents", () => {
   });
 
   it("uses full only when explicitly requested", () => {
-    expect(
-      selectEccComponents({ stack: stack(), posture: "vibe", profile: "full" }).scope,
-    ).toBe("full");
+    expect(selectEccComponents({ stack: stack(), posture: "vibe", profile: "full" }).scope).toBe(
+      "full",
+    );
     expect(
       selectEccComponents({ stack: stack(), posture: "enterprise", profile: "core" }).scope,
     ).toBe("scoped");
