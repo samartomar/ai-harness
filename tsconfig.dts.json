@@ -1,0 +1,16 @@
+{
+  // Declaration-only emit for the published types. tsup's vendored rollup-plugin-dts
+  // breaks against the TypeScript 7 compiler API (#365); plain `tsc` emits cleanly on
+  // both TS 6 and TS 7, so declarations come from the compiler itself. `rootDir: src`
+  // keeps the public entry landing exactly at dist/index.d.ts (package.json "types").
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "emitDeclarationOnly": true,
+    "declaration": true,
+    "sourceMap": false,
+    "rootDir": "src",
+    "outDir": "dist"
+  },
+  "include": ["src"]
+}
