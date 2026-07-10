@@ -620,6 +620,27 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     action:
       "Declare each named MCP server only when its configured command/args/env or URL/headers shape matches the generated catalog, declare each marketplace skill source with a reviewed pinned SHA in `aih-org-policy.json`, or remove the residue if it is not part of the approved capability set. Re-run `aih doctor --posture enterprise` once the registry and discovered surfaces agree.",
   },
+  "baseline.evidence-missing": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "baseline component has no signed evidence",
+    action:
+      "Use the vendor-pinned baseline, or vet the newer component and activate its GitHub-attested org evidence bundle before installing at team or enterprise posture.",
+  },
+  "baseline.evidence-mismatch": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "baseline component bytes do not match signed evidence",
+    action:
+      "Do not install the changed bytes. Restore the exact pinned component or re-vet the new content and issue a signed org evidence bundle.",
+  },
+  "baseline.evidence-blocked": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "signed baseline evidence records a blocking trust verdict",
+    action:
+      "Do not install this component. Fix the recorded trust-danger or required-coverage findings at the source and vet a new pin; org evidence cannot waive a blocked danger verdict.",
+  },
   "trust.hidden-unicode": {
     audience: "developer",
     failSeverity: "blocking",

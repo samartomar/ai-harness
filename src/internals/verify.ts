@@ -95,6 +95,9 @@ export type CheckCode =
   | "baseline.registry-missing"
   | "baseline.registry-invalid"
   | "baseline.undeclared-surface"
+  | "baseline.evidence-missing"
+  | "baseline.evidence-mismatch"
+  | "baseline.evidence-blocked"
   // trust gate (external repos / skills)
   | "trust.fetch-blocked"
   | "trust.detector-unavailable"
