@@ -465,6 +465,11 @@ export const command: CommandSpec = {
       default: "core",
     },
     {
+      flags: "--with <component>",
+      description: "add an ECC component declaration (repeatable)",
+      repeatable: true,
+    },
+    {
       flags: "--ecc-path <dir>",
       description: "use an existing local ECC checkout for --cli kiro (instead of clone/pull)",
     },
