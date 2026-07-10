@@ -39,10 +39,11 @@ describe("versioned surfaces", () => {
     // journey markers and the license id are the only tokens allowed besides VERSION.
     const allowed = new Set([VERSION, `v${VERSION}`, "0.2", "0.4", "1.0", "v1.0", "2.1"]);
     for (const name of readdirSync(assetsDir).filter((f) => f.endsWith(".svg"))) {
-      const text = readFileSync(join(assetsDir, name), "utf8").replace(
-        /<style[\s\S]*?<\/style>/g,
-        "",
-      );
+      let text = readFileSync(join(assetsDir, name), "utf8");
+      for (let prev = ""; prev !== text; ) {
+        prev = text;
+        text = text.replace(/<style[\s\S]*?<\/style>/g, "");
+      }
       for (const chunk of text.match(/>[^<>]+</g) ?? []) {
         for (const match of chunk.matchAll(/\bv?\d+\.\d+(?:\.\d+|\.x)?\b/g)) {
           const token = match[0];
