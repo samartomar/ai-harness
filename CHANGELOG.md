@@ -6,6 +6,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [2.5.0] - 2026-07-10
+
 ### Fixed
 
 - `aih skill vet --name <skill>` now resolves license evidence from the selected
@@ -922,7 +924,8 @@ GitHub but **never published to npm**; the first published release is 0.2.0.
   (npm + github-actions), private vulnerability reporting, `@claude` workflow gated
   to trusted authors, and GitHub Actions pinned to commit SHAs.
 
-[Unreleased]: https://github.com/samartomar/ai-harness/compare/v2.4.3...HEAD
+[Unreleased]: https://github.com/samartomar/ai-harness/compare/v2.5.0...HEAD
+[2.5.0]: https://github.com/samartomar/ai-harness/compare/v2.4.3...v2.5.0
 [2.4.3]: https://github.com/samartomar/ai-harness/compare/v2.4.2...v2.4.3
 [2.4.2]: https://github.com/samartomar/ai-harness/compare/v2.4.1...v2.4.2
 [2.4.1]: https://github.com/samartomar/ai-harness/compare/v2.4.0...v2.4.1

@@ -37,17 +37,13 @@ describe("proc runner seam", () => {
 
   it("defaultRunner preserves timeout evidence alongside captured stderr", async () => {
     const res = await defaultRunner(
-      [
-        process.execPath,
-        "-e",
-        "process.stderr.write('started\\n', () => setTimeout(() => {}, 1000))",
-      ],
-      { timeoutMs: 500 },
+      [process.execPath, "-e", "process.stderr.write('started\\n'); setTimeout(() => {}, 5000)"],
+      { timeoutMs: 2000 },
     );
 
     expect(res.code).not.toBe(0);
     expect(res.stderr).toContain("started");
-    expect(res.stderr).toContain("timed out after 500ms");
+    expect(res.stderr).toContain("timed out after 2000ms");
   }, 15000);
 
   it("defaultRunner closes stdin when no input is supplied", async () => {
