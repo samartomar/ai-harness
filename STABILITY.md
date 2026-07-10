@@ -37,7 +37,9 @@ The contract is not prose — every covered surface is pinned by a committed tes
   `aih-capabilities.json`; the `.aih/` output dir (`runs/` ledger, `legacy/` and
   `quarantine/` archives, fleet/evidence/marketplace bundle outputs); the
   derived machine cache `~/.aih/capabilities/cache.json`; and the marketplace
-  artifact + evidence-bundle manifests. The structured families carry
+  artifact + evidence-bundle manifests. The ECC project/target registration ledger
+  `~/.aih/ecc/registration-ledger.json` is a primary machine store (unlike the
+  derived capability cache) and carries `schemaVersion: 1`. The structured families carry
   `schemaVersion: 1` — changing one incompatibly means bumping that version,
   which is a major.
 

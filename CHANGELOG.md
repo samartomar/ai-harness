@@ -8,6 +8,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- `aih ecc` now registers a scoped component surface by default: the locked common baseline,
+  detected or repeatably declared (`--with`) stack riders, posture-selected security, and the
+  validated MCP set. Successful installs update an additive per-project/target ledger under
+  `~/.aih/ecc/`; `--profile full` remains the explicit full-surface opt-in. (#408)
 - Two-tier per-component baseline evidence now gates ECC and Superpowers setup:
   release-shipped vendor evidence verifies exact-pin hashes, org-signed overrides
   admit reviewed newer or net-new components without weakening danger-class floors,

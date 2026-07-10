@@ -74,6 +74,15 @@ MCP configuration is generated per supported CLI. MCP servers are never loaded
 just-in-case by the CLI; they are emitted into tool-specific config for the
 operator's AI coding tool to use.
 
+ECC registration is component-scoped even though upstream installation is module-shaped.
+`scanRepo` and repeatable `--with` declarations contribute project intent; aih resolves those
+components to verified module paths, filters generated operations at leaf granularity, and installs
+the additive machine union. `~/.aih/ecc/registration-ledger.json` is the single carved-out primary
+machine store because a deleted project cannot report its former contribution; installed capability
+content remains derived and recomputable. Project-local MCP files receive the current project's set,
+while global target files receive the machine union. The ledger is committed after the sequential
+install driver, never before it.
+
 ## Release Integrity
 
 Published releases use npm trusted publishing, GitHub release assets, SPDX SBOMs,

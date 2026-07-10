@@ -593,7 +593,7 @@ export const command: CommandSpec = {
     },
     {
       flags: "--ecc-path <dir>",
-      description: "use an existing local ECC checkout for --cli kiro (instead of clone/pull)",
+      description: "use an existing exact local ECC checkout as the evidence-gated source",
     },
   ],
   plan: eccPlan,
