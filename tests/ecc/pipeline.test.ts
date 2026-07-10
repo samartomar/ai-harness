@@ -6,7 +6,7 @@ import { defineBaselineCatalog } from "../../src/baseline-evidence/catalog.js";
 import { hashComponentTree } from "../../src/baseline-evidence/hash.js";
 import { parseBaselineEvidenceLock } from "../../src/baseline-evidence/schema.js";
 import { executeEccEvidencePipeline } from "../../src/ecc/pipeline.js";
-import { doc, plan, type PlanContext } from "../../src/internals/plan.js";
+import { doc, type PlanContext, plan } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 import { resolveTrustSource } from "../../src/trust/fetch.js";
@@ -68,9 +68,7 @@ function vendorLock(verdict: "pass" | "blocked" = "pass") {
             verdict,
             analyzers: [{ name: "aih-native", version: "2.7.0" }],
             findings:
-              verdict === "blocked"
-                ? [{ code: "prompt-injection", severity: "danger", detail: "blocked" }]
-                : [],
+              verdict === "blocked" ? [{ code: "prompt-injection", detail: "blocked" }] : [],
           },
         ],
       },
@@ -156,6 +154,57 @@ describe("ECC baseline evidence pipeline", () => {
       expect.objectContaining({ ran: false, argv: expect.arrayContaining(["-e"]) }),
     ]);
     expect(buildInstallPlan).not.toHaveBeenCalled();
+    expect(existsSync(source.quarantineRoot)).toBe(false);
+  });
+
+  it("rejects fetched metadata that does not bind the catalog pin", async () => {
+    const buildInstallPlan = vi.fn(() => plan("must not build"));
+    const source = resolveTrustSource("affaan-m/ECC", {
+      root,
+      pin: "a".repeat(40),
+    });
+    if (source.kind !== "github") throw new Error("expected GitHub source");
+    const run = fakeRunner((argv) => {
+      if (argv[0] !== process.execPath || argv[1] !== "-e") return undefined;
+      const input = JSON.parse(argv[3] ?? "{}") as {
+        metadataPath: string;
+        owner: string;
+        ref: string;
+        repo: string;
+        treePath: string;
+      };
+      mkdirSync(input.treePath, { recursive: true });
+      writeFileSync(join(input.treePath, "install.sh"), "echo fetched\n");
+      writeFileSync(
+        input.metadataPath,
+        JSON.stringify({
+          kind: "github",
+          owner: input.owner,
+          repo: input.repo,
+          ref: input.ref,
+          pinnedSha: "b".repeat(40),
+          source: `${input.owner}/${input.repo}`,
+          treePath: input.treePath,
+        }),
+      );
+      return { code: 0 };
+    });
+    const context = ctx();
+    context.run = run;
+    context.host = makeHostAdapter({ platform: "linux", run, env: {} });
+
+    const result = await executeEccEvidencePipeline(context, request, {
+      catalog: catalog(),
+      source,
+      vendorLock: vendorLock(),
+      vendorLockSha256: "f".repeat(64),
+      buildInstallPlan,
+    });
+
+    expect(buildInstallPlan).not.toHaveBeenCalled();
+    expect(result.report?.checks).toEqual([
+      expect.objectContaining({ verdict: "fail", code: "baseline.evidence-mismatch" }),
+    ]);
     expect(existsSync(source.quarantineRoot)).toBe(false);
   });
 });
