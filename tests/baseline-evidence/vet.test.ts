@@ -149,4 +149,18 @@ describe("vetBaselineCatalog", () => {
       }),
     ).rejects.toThrow(/skillspector.*version/i);
   });
+
+  it("fails closed when component bytes change during analyzer execution", async () => {
+    await expect(
+      vetBaselineCatalog(root, catalog(), {
+        scanComponent: async ({ component }) => {
+          if (component.id === "skill:clean") {
+            writeFileSync(join(root, "skills", "clean", "SKILL.md"), "# Swapped during scan\n");
+          }
+          return { analyzersRun: ["aih-native"], checks: [pass(component.id)] };
+        },
+        analyzerVersions: { "aih-native": "2.7.0" },
+      }),
+    ).rejects.toThrow(/changed during.*vet/i);
+  });
 });
