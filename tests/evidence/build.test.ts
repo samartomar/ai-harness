@@ -55,6 +55,7 @@ function seedAllKinds(): void {
   write("ai-coding/skill-cards/alpha.json", '{"schemaVersion":1,"name":"alpha"}\n');
   write("ai-coding/skill-cards/beta.json", '{"schemaVersion":3,"name":"beta"}\n');
   write(".aih/skill-reports/local-src-vet.json", '{"schemaVersion":1,"verdict":"GREEN"}\n');
+  write(".aih/baseline-reports/ecc-deadbeef.json", '{"schemaVersion":1,"sources":[]}\n');
   write(".aih/runs/2026-07.jsonl", '{"schemaVersion":1,"capability":"doctor"}\n');
   write(".aih/reports/repo-report.md", "# report\n");
   write(".aih/reports/local-report.html", "<html></html>\n");
@@ -95,12 +96,13 @@ describe("evidence build — kind index", () => {
     expect(byPath.get(".aih/trust-lock.json")?.kind).toBe("trust-lock");
     expect(byPath.get("ai-coding/skill-cards/alpha.json")?.kind).toBe("skill-card");
     expect(byPath.get(".aih/skill-reports/local-src-vet.json")?.kind).toBe("skill-evidence");
+    expect(byPath.get(".aih/baseline-reports/ecc-deadbeef.json")?.kind).toBe("baseline-evidence");
     expect(byPath.get(".aih/runs/2026-07.jsonl")?.kind).toBe("run-log");
     expect(byPath.get(".aih/reports/repo-report.md")?.kind).toBe("report");
     expect(byPath.get(".aih/reports/local-report.html")?.kind).toBe("report");
     expect(byPath.get("results.sarif")?.kind).toBe("sarif");
     expect(byPath.get(".aih/drift.sarif")?.kind).toBe("sarif");
-    expect(index.artifacts).toHaveLength(11);
+    expect(index.artifacts).toHaveLength(12);
 
     // name-sorted by path
     const paths = index.artifacts.map((a) => a.path);
