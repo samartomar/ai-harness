@@ -1,0 +1,2635 @@
+{
+  "schemaVersion": 1,
+  "sources": [
+    {
+      "id": "ecc",
+      "owner": "affaan-m",
+      "repo": "ECC",
+      "pinnedSha": "4130457d674d2180c5af2c5f634f3cae4cbc6c4f",
+      "components": [
+        {
+          "id": "runtime:ecc-installer",
+          "paths": [
+            "package.json",
+            "package-lock.json",
+            "manifests",
+            "scripts/install-apply.js",
+            "scripts/lib/install",
+            "scripts/lib/install-manifests.js",
+            "scripts/lib/install-executor.js",
+            "scripts/lib/install-state.js",
+            "scripts/lib/install-targets",
+            "scripts/lib/cursor-agent-names.js",
+            "scripts/lib/mcp-config.js",
+            "scripts/lib/path-safety.js"
+          ],
+          "treeSha256": "9b61c3ee820c1cb1b4c9eb4d15fa2a1a317b3207fcd6817605fcd36c56a6f5c9",
+          "verdict": "blocked",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.7.0"
+            }
+          ],
+          "findings": [
+            {
+              "code": "trust.auto-exec-hook",
+              "detail": "package.json:332 — package.json lifecycle script postinstall can execute during install/publish",
+              "fingerprint": "trust-auto-exec-hook:package.json:332:4e6eebd8"
+            },
+            {
+              "code": "trust.unpinned-dependency",
+              "detail": "package.json:368 — direct dependency @eslint/js uses unpinned version spec \"^9.39.2\"",
+              "fingerprint": "trust-unpinned-dependency:package.json:368:1e10a553"
+            },
+            {
+              "code": "trust.unpinned-dependency",
+              "detail": "package.json:363 — direct dependency @iarna/toml uses unpinned version spec \"^2.2.5\"",
+              "fingerprint": "trust-unpinned-dependency:package.json:363:73bf4362"
+            },
+            {
+              "code": "trust.unpinned-dependency",
+              "detail": "package.json:369 — direct dependency @opencode-ai/plugin uses unpinned version spec \"^1.16.2\"",
+              "fingerprint": "trust-unpinned-dependency:package.json:369:a3bc290f"
+            },
+            {
+              "code": "trust.unpinned-dependency",
+              "detail": "package.json:364 — direct dependency ajv uses unpinned version spec \"^8.20.0\"",
+              "fingerprint": "trust-unpinned-dependency:package.json:364:660ae676"
+            },
+            {
+              "code": "trust.unpinned-dependency",
+              "detail": "package.json:371 — direct dependency c8 uses unpinned version spec \"^11.0.0\"",
+              "fingerprint": "trust-unpinned-dependency:package.json:371:de3d3a10"
+            },
+            {
+              "code": "trust.unpinned-dependency",
+              "detail": "package.json:372 — direct dependency eslint uses unpinned version spec \"^10.6.0\"",
+              "fingerprint": "trust-unpinned-dependency:package.json:372:569ae909"
+            },
+            {
+              "code": "trust.unpinned-dependency",
+              "detail": "package.json:373 — direct dependency globals uses unpinned version spec \"^17.4.0\"",
+              "fingerprint": "trust-unpinned-dependency:package.json:373:b58b47d8"
+            },
+            {
+              "code": "trust.unpinned-dependency",
+              "detail": "package.json:374 — direct dependency markdownlint-cli uses unpinned version spec \"^0.48.0\"",
+              "fingerprint": "trust-unpinned-dependency:package.json:374:545e11c5"
+            },
+            {
+              "code": "trust.unpinned-dependency",
+              "detail": "package.json:365 — direct dependency sql.js uses unpinned version spec \"^1.14.1\"",
+              "fingerprint": "trust-unpinned-dependency:package.json:365:376cf000"
+            },
+            {
+              "code": "trust.unpinned-dependency",
+              "detail": "package.json:375 — direct dependency typescript uses unpinned version spec \"^6.0.3\"",
+              "fingerprint": "trust-unpinned-dependency:package.json:375:56173295"
+            },
+            {
+              "code": "trust.sandbox-smoke-unavailable",
+              "detail": "sandbox smoke test unavailable (trust.sandbox-smoke-unavailable): detector runtime is missing (run/platform/env)"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "install-components.json:192 — trust.hidden-unicode: document contains 2 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:install-components.json:192:b74cc850"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "install-modules.json:491 — trust.hidden-unicode: document contains 2 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:install-modules.json:491:be3f9783"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "link-rewrite.js:162 — trust.hidden-unicode: document contains 2 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:link-rewrite.js:162:45c1a5b3"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "install-executor.js:698 — trust.hidden-unicode: document contains 2 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:install-executor.js:698:a9c2142c"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "path-safety.js:13 — trust.hidden-unicode: document contains 1 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:path-safety.js:13:149c92b1"
+            }
+          ]
+        },
+        {
+          "id": "module:rules-core",
+          "paths": [
+            "rules"
+          ],
+          "treeSha256": "682bcacfa9a0250a781751982ee200a3db08030ef619b8b01b304bc86a70c064",
+          "verdict": "blocked",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.7.0"
+            }
+          ],
+          "findings": [
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "angular/coding-style.md:18 — trust.hidden-unicode: document contains 9 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:angular/coding-style.md:18:07ff77e5"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "angular/patterns.md:15 — trust.hidden-unicode: document contains 13 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:angular/patterns.md:15:dfe58846"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "angular/security.md:17 — trust.hidden-unicode: document contains 10 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:angular/security.md:17:95aa0628"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "angular/testing.md:136 — trust.hidden-unicode: document contains 2 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:angular/testing.md:136:db8e50e1"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "common/coding-style.md:9 — trust.hidden-unicode: document contains 2 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:common/coding-style.md:9:f16be091"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "detail": "common/security.md:13 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:common/security.md:13:c8f5c7bc"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "cpp/coding-style.md:24 — trust.hidden-unicode: document contains 2 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:cpp/coding-style.md:24:3d25db0d"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "cpp/hooks.md:35 — trust.hidden-unicode: document contains 5 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:cpp/hooks.md:35:51c511ea"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "cpp/security.md:17 — trust.hidden-unicode: document contains 4 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:cpp/security.md:17:16ca6526"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "dart/coding-style.md:13 — trust.hidden-unicode: document contains 15 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:dart/coding-style.md:13:acf278be"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "dart/patterns.md:62 — trust.hidden-unicode: document contains 46 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:dart/patterns.md:62:6fc60f9f"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "dart/security.md:15 — trust.hidden-unicode: document contains 18 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:dart/security.md:15:79457240"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "dart/testing.md:13 — trust.hidden-unicode: document contains 49 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:dart/testing.md:13:b2d645c8"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "golang/coding-style.md:13 — trust.hidden-unicode: document contains 1 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:golang/coding-style.md:13:c32f6a27"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "java/coding-style.md:19 — trust.hidden-unicode: document contains 8 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:java/coding-style.md:19:4ce94d84"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "java/patterns.md:49 — trust.hidden-unicode: document contains 3 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:java/patterns.md:49:11f26e27"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "java/security.md:20 — trust.hidden-unicode: document contains 8 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:java/security.md:20:e13c649b"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "java/testing.md:127 — trust.hidden-unicode: document contains 1 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:java/testing.md:127:0af52504"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "kotlin/coding-style.md:17 — trust.hidden-unicode: document contains 11 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:kotlin/coding-style.md:17:63c86f8b"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "kotlin/patterns.md:15 — trust.hidden-unicode: document contains 2 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:kotlin/patterns.md:15:1c043217"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "kotlin/security.md:21 — trust.hidden-unicode: document contains 9 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:kotlin/security.md:21:f2cb2185"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "kotlin/testing.md:12 — trust.hidden-unicode: document contains 14 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:kotlin/testing.md:12:441d3586"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "perl/coding-style.md:16 — trust.hidden-unicode: document contains 2 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:perl/coding-style.md:16:4f134e0d"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "perl/hooks.md:22 — trust.hidden-unicode: document contains 1 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:perl/hooks.md:22:a71f48f8"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "perl/patterns.md:58 — trust.hidden-unicode: document contains 1 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:perl/patterns.md:58:55a86b5b"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "perl/security.md:20 — trust.hidden-unicode: document contains 4 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:perl/security.md:20:c3d0311c"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "perl/testing.md:36 — trust.hidden-unicode: document contains 3 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:perl/testing.md:36:4e837792"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "react-native/accessibility.md:14 — trust.hidden-unicode: document contains 5 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:react-native/accessibility.md:14:7cd8adb2"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "react-native/coding-style.md:35 — trust.hidden-unicode: document contains 2 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:react-native/coding-style.md:35:121c3c1d"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "react-native/hooks.md:14 — trust.hidden-unicode: document contains 4 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:react-native/hooks.md:14:b9b2d1a7"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "react-native/patterns.md:9 — trust.hidden-unicode: document contains 4 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:react-native/patterns.md:9:61ecf097"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "react-native/performance.md:13 — trust.hidden-unicode: document contains 5 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:react-native/performance.md:13:66b87fce"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "react-native/production-readiness.md:9 — trust.hidden-unicode: document contains 3 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:react-native/production-readiness.md:9:e4afb1ec"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "react-native/security.md:21 — trust.hidden-unicode: document contains 2 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:react-native/security.md:21:92819918"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "react-native/testing.md:22 — trust.hidden-unicode: document contains 1 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:react-native/testing.md:22:989d2103"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "react/coding-style.md:19 — trust.hidden-unicode: document contains 11 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:react/coding-style.md:19:f7996848"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "react/hooks.md:12 — trust.hidden-unicode: document contains 19 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:react/hooks.md:12:64154bbb"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "react/patterns.md:16 — trust.hidden-unicode: document contains 21 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:react/patterns.md:16:36071a93"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "react/security.md:15 — trust.hidden-unicode: document contains 10 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:react/security.md:15:52bf239b"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "react/testing.md:16 — trust.hidden-unicode: document contains 32 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:react/testing.md:16:ae5d05b9"
+            },
+            {
+              "code": "trust.visible-unicode",
+              "detail": "README.md:9 — trust.visible-unicode: document contains 79 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation",
+              "fingerprint": "trust-visible-unicode:README.md:9:587f99c9"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "rust/coding-style.md:11 — trust.hidden-unicode: document contains 59 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:rust/coding-style.md:11:01c056be"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "rust/patterns.md:64 — trust.hidden-unicode: document contains 2 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:rust/patterns.md:64:08a09f7c"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "rust/security.md:20 — trust.hidden-unicode: document contains 12 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:rust/security.md:20:09c52258"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "rust/testing.md:21 — trust.hidden-unicode: document contains 51 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:rust/testing.md:21:54987d85"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "swift/coding-style.md:17 — trust.hidden-unicode: document contains 2 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:swift/coding-style.md:17:187d4405"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "swift/hooks.md:20 — trust.hidden-unicode: document contains 1 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:swift/hooks.md:20:654da388"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "swift/patterns.md:51 — trust.hidden-unicode: document contains 1 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:swift/patterns.md:51:4381cb9f"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "swift/security.md:12 — trust.hidden-unicode: document contains 3 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:swift/security.md:12:345a4712"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "swift/testing.md:25 — trust.hidden-unicode: document contains 1 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:swift/testing.md:25:9a44133b"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "vue/coding-style.md:54 — trust.hidden-unicode: document contains 2 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:vue/coding-style.md:54:c5b8b306"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "vue/hooks.md:45 — trust.hidden-unicode: document contains 2 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:vue/hooks.md:45:f73294ea"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "vue/patterns.md:56 — trust.hidden-unicode: document contains 3 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:vue/patterns.md:56:57ab7971"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "vue/security.md:46 — trust.hidden-unicode: document contains 2 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:vue/security.md:46:4f2abdce"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "vue/testing.md:53 — trust.hidden-unicode: document contains 2 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:vue/testing.md:53:b02edf47"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "web/coding-style.md:23 — trust.hidden-unicode: document contains 91 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:web/coding-style.md:23:a1ff8885"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "web/hooks.md:59 — trust.hidden-unicode: document contains 1 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:web/hooks.md:59:fc6bc015"
+            }
+          ]
+        },
+        {
+          "id": "module:agents-core",
+          "paths": [
+            ".agents",
+            "agents",
+            "AGENTS.md"
+          ],
+          "treeSha256": "9114a5ff4fb04100235d9939edb2484599f874bf74ac725c3558041897a95cd0",
+          "verdict": "blocked",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.7.0"
+            }
+          ],
+          "findings": [
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "skills/agent-introspection-debugging/SKILL.md:70 — trust.hidden-unicode: document contains 8 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:skills/agent-introspection-debugging/SKILL.md:70:1c2125c9"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "skills/api-design/SKILL.md:75 — trust.hidden-unicode: document contains 14 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:skills/api-design/SKILL.md:75:7a0ca9c3"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "skills/benchmark-methodology/SKILL.md:7 — trust.hidden-unicode: document contains 64 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:skills/benchmark-methodology/SKILL.md:7:a4ac2323"
+            },
+            {
+              "code": "trust.visible-unicode",
+              "detail": "skills/brand-discovery/references/10_purpose-why.md:1 — trust.visible-unicode: document contains 5 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation",
+              "fingerprint": "trust-visible-unicode:skills/brand-discovery/references/10_purpose-why.md:1:d70beb1d"
+            },
+            {
+              "code": "trust.visible-unicode",
+              "detail": "skills/brand-discovery/references/20_positioning.md:1 — trust.visible-unicode: document contains 4 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation",
+              "fingerprint": "trust-visible-unicode:skills/brand-discovery/references/20_positioning.md:1:50e2c71b"
+            },
+            {
+              "code": "trust.visible-unicode",
+              "detail": "skills/brand-discovery/references/30_audience-niche.md:1 — trust.visible-unicode: document contains 5 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation",
+              "fingerprint": "trust-visible-unicode:skills/brand-discovery/references/30_audience-niche.md:1:189e8d41"
+            },
+            {
+              "code": "trust.visible-unicode",
+              "detail": "skills/brand-discovery/references/40_personality-archetype.md:1 — trust.visible-unicode: document contains 16 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation",
+              "fingerprint": "trust-visible-unicode:skills/brand-discovery/references/40_personality-archetype.md:1:58b04b09"
+            },
+            {
+              "code": "trust.visible-unicode",
+              "detail": "skills/brand-discovery/references/50_voice-tone.md:1 — trust.visible-unicode: document contains 16 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation",
+              "fingerprint": "trust-visible-unicode:skills/brand-discovery/references/50_voice-tone.md:1:cf69dc95"
+            },
+            {
+              "code": "trust.visible-unicode",
+              "detail": "skills/brand-discovery/references/60_narrative-story.md:1 — trust.visible-unicode: document contains 10 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation",
+              "fingerprint": "trust-visible-unicode:skills/brand-discovery/references/60_narrative-story.md:1:46a6184f"
+            },
+            {
+              "code": "trust.visible-unicode",
+              "detail": "skills/brand-discovery/references/70_founder-tension.md:1 — trust.visible-unicode: document contains 13 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation",
+              "fingerprint": "trust-visible-unicode:skills/brand-discovery/references/70_founder-tension.md:1:88e7149f"
+            },
+            {
+              "code": "trust.visible-unicode",
+              "detail": "skills/brand-discovery/references/90_SYNTHESIS.md:1 — trust.visible-unicode: document contains 6 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation",
+              "fingerprint": "trust-visible-unicode:skills/brand-discovery/references/90_SYNTHESIS.md:1:04d0215b"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "skills/brand-discovery/SKILL.md:14 — trust.hidden-unicode: document contains 15 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:skills/brand-discovery/SKILL.md:14:0c6ef1b7"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "skills/coding-standards/SKILL.md:338 — trust.hidden-unicode: document contains 54 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:skills/coding-standards/SKILL.md:338:924693e7"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "skills/competitive-platform-analysis/SKILL.md:4 — trust.hidden-unicode: document contains 71 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:skills/competitive-platform-analysis/SKILL.md:4:060f5051"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "skills/competitive-report-structure/SKILL.md:16 — trust.hidden-unicode: document contains 38 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:skills/competitive-report-structure/SKILL.md:16:fe3ad1b5"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "skills/deep-research/SKILL.md:21 — trust.hidden-unicode: document contains 5 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:skills/deep-research/SKILL.md:21:5692b149"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "skills/dmux-workflows/SKILL.md:109 — trust.hidden-unicode: document contains 1 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:skills/dmux-workflows/SKILL.md:109:09d10da3"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "skills/e2e-testing/SKILL.md:14 — trust.hidden-unicode: document contains 64 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:skills/e2e-testing/SKILL.md:14:7e8fe727"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "skills/everything-claude-code/SKILL.md:75 — trust.hidden-unicode: document contains 3 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:skills/everything-claude-code/SKILL.md:75:de9cfb14"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "skills/exa-search/SKILL.md:168 — trust.hidden-unicode: document contains 2 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:skills/exa-search/SKILL.md:168:6802dcc7"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "skills/fal-ai-media/SKILL.md:3 — trust.hidden-unicode: document contains 14 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:skills/fal-ai-media/SKILL.md:3:2420f083"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "detail": "skills/fal-ai-media/SKILL.md:214 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:skills/fal-ai-media/SKILL.md:214:7ddc0f08"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "skills/mcp-server-patterns/SKILL.md:3 — trust.hidden-unicode: document contains 4 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:skills/mcp-server-patterns/SKILL.md:3:6f95756b"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "skills/nextjs-turbopack/SKILL.md:3 — trust.hidden-unicode: document contains 2 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:skills/nextjs-turbopack/SKILL.md:3:e35a6a04"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "detail": "skills/security-review/SKILL.md:239 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:skills/security-review/SKILL.md:239:3dd6844c"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "skills/strategic-compact/SKILL.md:13 — trust.hidden-unicode: document contains 26 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:skills/strategic-compact/SKILL.md:13:c347b3c6"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "skills/tdd-workflow/SKILL.md:63 — trust.hidden-unicode: document contains 68 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:skills/tdd-workflow/SKILL.md:63:5a886841"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "skills/video-editing/SKILL.md:27 — trust.hidden-unicode: document contains 8 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:skills/video-editing/SKILL.md:27:1523f52a"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "detail": "skills/video-editing/SKILL.md:178 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:skills/video-editing/SKILL.md:178:7ddc0f08"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "skills/x-api/SKILL.md:51 — trust.hidden-unicode: document contains 6 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:skills/x-api/SKILL.md:51:dfa8ab9d"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "detail": "skills/x-api/SKILL.md:17 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:skills/x-api/SKILL.md:17:91e8314d"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "detail": "skills/x-api/SKILL.md:74 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:skills/x-api/SKILL.md:74:0b646bdb"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "detail": "skills/x-api/SKILL.md:95 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:skills/x-api/SKILL.md:95:ff0bfd82"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "detail": "skills/x-api/SKILL.md:154 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:skills/x-api/SKILL.md:154:6ecde6c4"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "detail": "skills/x-api/SKILL.md:161 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:skills/x-api/SKILL.md:161:bc0f9608"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "detail": "skills/x-api/SKILL.md:193 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:skills/x-api/SKILL.md:193:0a56d732"
+            },
+            {
+              "code": "trust.auto-exec-hook",
+              "detail": "skills/eval-harness/SKILL.md:4 — frontmatter allowed-tools grants unsafe Bash access",
+              "fingerprint": "trust-auto-exec-hook:skills/eval-harness/SKILL.md:4:9a32c2ec"
+            },
+            {
+              "code": "trust.auto-exec-hook",
+              "detail": "skills/mle-workflow/SKILL.md:4 — frontmatter allowed-tools grants unsafe Bash access",
+              "fingerprint": "trust-auto-exec-hook:skills/mle-workflow/SKILL.md:4:9a32c2ec"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "detail": "a11y-architect.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:a11y-architect.md:11:17a8c724"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "agent-evaluator.md:15 — trust.hidden-unicode: document contains 106 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:agent-evaluator.md:15:d40e62af"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "detail": "architect.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:architect.md:11:17a8c724"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "build-error-resolver.md:19 — trust.hidden-unicode: document contains 14 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:build-error-resolver.md:19:57e8d92b"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "detail": "build-error-resolver.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:build-error-resolver.md:11:17a8c724"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "chief-of-staff.md:17 — trust.hidden-unicode: document contains 23 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:chief-of-staff.md:17:914cc720"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "detail": "chief-of-staff.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:chief-of-staff.md:11:17a8c724"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "detail": "code-architect.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:code-architect.md:11:17a8c724"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "detail": "code-explorer.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:code-explorer.md:11:17a8c724"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "code-reviewer.md:23 — trust.hidden-unicode: document contains 50 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:code-reviewer.md:23:07447dbe"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "detail": "code-reviewer.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:code-reviewer.md:11:17a8c724"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "detail": "code-simplifier.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:code-simplifier.md:11:17a8c724"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "detail": "comment-analyzer.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:comment-analyzer.md:11:17a8c724"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "detail": "conversation-analyzer.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:conversation-analyzer.md:11:17a8c724"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "detail": "cpp-build-resolver.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:cpp-build-resolver.md:11:17a8c724"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "detail": "cpp-reviewer.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:cpp-reviewer.md:11:17a8c724"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "csharp-reviewer.md:27 — trust.hidden-unicode: document contains 25 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:csharp-reviewer.md:27:7976699e"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "detail": "csharp-reviewer.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:csharp-reviewer.md:11:17a8c724"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "dart-build-resolver.md:66 — trust.hidden-unicode: document contains 7 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:dart-build-resolver.md:66:0b1c593a"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "detail": "dart-build-resolver.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:dart-build-resolver.md:11:17a8c724"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "database-reviewer.md:23 — trust.hidden-unicode: document contains 16 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:database-reviewer.md:23:c6920080"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "detail": "database-reviewer.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:database-reviewer.md:11:17a8c724"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "django-build-resolver.md:21 — trust.hidden-unicode: document contains 4 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:django-build-resolver.md:21:5a0e6ceb"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "detail": "django-build-resolver.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:django-build-resolver.md:11:17a8c724"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "django-reviewer.md:30 — trust.hidden-unicode: document contains 14 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:django-reviewer.md:30:0a9e5f90"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "detail": "django-reviewer.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:django-reviewer.md:11:17a8c724"
+            },
+            {
+              "code": "trust.visible-unicode",
+              "detail": "doc-updater.md:23 — trust.visible-unicode: document contains 31 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation",
+              "fingerprint": "trust-visible-unicode:doc-updater.md:23:c2799a9b"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "detail": "doc-updater.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:doc-updater.md:11:17a8c724"
+            },
+            {
+              "code": "trust.visible-unicode",
+              "detail": "docs-lookup.md:29 — trust.visible-unicode: document contains 1 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation",
+              "fingerprint": "trust-visible-unicode:docs-lookup.md:29:e27b1c2c"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "detail": "docs-lookup.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:docs-lookup.md:11:17a8c724"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "e2e-runner.md:23 — trust.hidden-unicode: document contains 7 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:e2e-runner.md:23:47b40630"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "detail": "e2e-runner.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:e2e-runner.md:11:17a8c724"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "detail": "fastapi-reviewer.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:fastapi-reviewer.md:11:17a8c724"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "flutter-reviewer.md:3 — trust.hidden-unicode: document contains 108 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:flutter-reviewer.md:3:6a412e72"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "detail": "flutter-reviewer.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:flutter-reviewer.md:11:17a8c724"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "detail": "fsharp-reviewer.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:fsharp-reviewer.md:11:17a8c724"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "gan-evaluator.md:3 — trust.hidden-unicode: document contains 19 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:gan-evaluator.md:3:b3c31adf"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "detail": "gan-evaluator.md:12 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:gan-evaluator.md:12:17a8c724"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "gan-generator.md:3 — trust.hidden-unicode: document contains 12 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:gan-generator.md:3:61852503"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "detail": "gan-generator.md:12 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:gan-generator.md:12:17a8c724"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "gan-planner.md:3 — trust.hidden-unicode: document contains 10 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:gan-planner.md:3:36ee6352"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "detail": "gan-planner.md:12 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:gan-planner.md:12:17a8c724"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "detail": "go-build-resolver.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:go-build-resolver.md:11:17a8c724"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "detail": "go-reviewer.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:go-reviewer.md:11:17a8c724"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "detail": "harmonyos-app-resolver.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:harmonyos-app-resolver.md:11:17a8c724"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "detail": "harness-optimizer.md:12 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:harness-optimizer.md:12:17a8c724"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "healthcare-reviewer.md:17 — trust.hidden-unicode: document contains 8 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:healthcare-reviewer.md:17:627c860b"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "detail": "healthcare-reviewer.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:healthcare-reviewer.md:11:17a8c724"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "detail": "homelab-architect.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:homelab-architect.md:11:17a8c724"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "java-build-resolver.md:21 — trust.hidden-unicode: document contains 10 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:java-build-resolver.md:21:22bb998d"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "detail": "java-build-resolver.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:java-build-resolver.md:11:17a8c724"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "java-reviewer.md:28 — trust.hidden-unicode: document contains 38 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:java-reviewer.md:28:4392ff4e"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "detail": "java-reviewer.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:java-reviewer.md:11:17a8c724"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "detail": "kotlin-build-resolver.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:kotlin-build-resolver.md:11:17a8c724"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "kotlin-reviewer.md:25 — trust.hidden-unicode: document contains 42 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:kotlin-reviewer.md:25:1463ca12"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "detail": "kotlin-reviewer.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:kotlin-reviewer.md:11:17a8c724"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "detail": "loop-operator.md:12 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:loop-operator.md:12:17a8c724"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "marketing-agent.md:22 — trust.hidden-unicode: document contains 31 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:marketing-agent.md:22:298b719d"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "detail": "marketing-agent.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:marketing-agent.md:11:17a8c724"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "detail": "mle-reviewer.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:mle-reviewer.md:11:17a8c724"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "detail": "network-architect.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:network-architect.md:11:17a8c724"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "detail": "network-config-reviewer.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:network-config-reviewer.md:11:17a8c724"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "detail": "network-troubleshooter.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:network-troubleshooter.md:11:17a8c724"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "opensource-forker.md:90 — trust.hidden-unicode: document contains 8 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:opensource-forker.md:90:d44774dd"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "detail": "opensource-forker.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:opensource-forker.md:11:17a8c724"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "opensource-packager.md:19 — trust.hidden-unicode: document contains 11 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:opensource-packager.md:19:9e17f122"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "detail": "opensource-packager.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:opensource-packager.md:11:17a8c724"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "opensource-sanitizer.md:19 — trust.hidden-unicode: document contains 13 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:opensource-sanitizer.md:19:7d03ca32"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "detail": "opensource-sanitizer.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:opensource-sanitizer.md:11:17a8c724"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "performance-optimizer.md:23 — trust.hidden-unicode: document contains 10 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:performance-optimizer.md:23:a877b0ae"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "detail": "performance-optimizer.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:performance-optimizer.md:11:17a8c724"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "php-reviewer.md:27 — trust.hidden-unicode: document contains 15 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:php-reviewer.md:27:83b85b76"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "detail": "php-reviewer.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:php-reviewer.md:11:17a8c724"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "planner.md:129 — trust.hidden-unicode: document contains 10 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:planner.md:129:2c53525c"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "detail": "planner.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:planner.md:11:17a8c724"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "detail": "pr-test-analyzer.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:pr-test-analyzer.md:11:17a8c724"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "python-reviewer.md:27 — trust.hidden-unicode: document contains 18 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:python-reviewer.md:27:ffe00e20"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "detail": "python-reviewer.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:python-reviewer.md:11:17a8c724"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "detail": "pytorch-build-resolver.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:pytorch-build-resolver.md:11:17a8c724"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "react-build-resolver.md:53 — trust.hidden-unicode: document contains 9 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:react-build-resolver.md:53:44dd166b"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "detail": "react-build-resolver.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:react-build-resolver.md:11:17a8c724"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "react-reviewer.md:17 — trust.hidden-unicode: document contains 6 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:react-reviewer.md:17:3a0d9740"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "detail": "react-reviewer.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:react-reviewer.md:11:17a8c724"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "detail": "refactor-cleaner.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:refactor-cleaner.md:11:17a8c724"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "rust-build-resolver.md:99 — trust.hidden-unicode: document contains 5 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:rust-build-resolver.md:99:82a4f68b"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "detail": "rust-build-resolver.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:rust-build-resolver.md:11:17a8c724"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "rust-reviewer.md:20 — trust.hidden-unicode: document contains 13 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:rust-reviewer.md:20:24a57af1"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "detail": "rust-reviewer.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:rust-reviewer.md:11:17a8c724"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "security-reviewer.md:23 — trust.hidden-unicode: document contains 21 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:security-reviewer.md:23:46d310c1"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "detail": "security-reviewer.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:security-reviewer.md:11:17a8c724"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "detail": "seo-specialist.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:seo-specialist.md:11:17a8c724"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "detail": "silent-failure-hunter.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:silent-failure-hunter.md:11:17a8c724"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "spec-miner.md:3 — trust.hidden-unicode: document contains 27 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:spec-miner.md:3:f774e6e1"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "detail": "spec-miner.md:17 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:spec-miner.md:17:17a8c724"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "detail": "swift-build-resolver.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:swift-build-resolver.md:11:17a8c724"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "detail": "swift-reviewer.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:swift-reviewer.md:11:17a8c724"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "detail": "tdd-guide.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:tdd-guide.md:11:17a8c724"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "detail": "type-design-analyzer.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:type-design-analyzer.md:11:17a8c724"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "typescript-reviewer.md:29 — trust.hidden-unicode: document contains 22 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:typescript-reviewer.md:29:fcb0a9fa"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "detail": "typescript-reviewer.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:typescript-reviewer.md:11:17a8c724"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "vue-reviewer.md:17 — trust.hidden-unicode: document contains 32 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:vue-reviewer.md:17:cfe852f6"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "detail": "vue-reviewer.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:vue-reviewer.md:11:17a8c724"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "AGENTS.md:1 — trust.hidden-unicode: document contains 48 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:AGENTS.md:1:07487637"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "detail": "AGENTS.md:75 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:AGENTS.md:75:17a2c7dd"
+            },
+            {
+              "code": "trust.sandbox-smoke-unavailable",
+              "detail": "sandbox smoke test unavailable (trust.sandbox-smoke-unavailable): detector runtime is missing (run/platform/env)"
+            }
+          ]
+        },
+        {
+          "id": "module:commands-core",
+          "paths": [
+            "commands",
+            "scripts/harness-audit.js",
+            "scripts/skills-health.js"
+          ],
+          "treeSha256": "cf7a222bc0f9712855e82e35c7afbd16c7623227ddeca903fc10c8a1cc68dcda",
+          "verdict": "blocked",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.7.0"
+            }
+          ],
+          "findings": [
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "aside.md:7 — trust.hidden-unicode: document contains 15 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:aside.md:7:828d2739"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "build-fix.md:34 — trust.hidden-unicode: document contains 5 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:build-fix.md:34:2620e3b8"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "code-review.md:2 — trust.hidden-unicode: document contains 26 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:code-review.md:2:20f4b8fc"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "cpp-review.md:77 — trust.hidden-unicode: document contains 2 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:cpp-review.md:77:58a0e058"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "cpp-test.md:30 — trust.hidden-unicode: document contains 7 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:cpp-test.md:30:6bd5d550"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "evolve.md:37 — trust.hidden-unicode: document contains 6 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:evolve.md:37:c8f94e2d"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "flutter-build.md:57 — trust.hidden-unicode: document contains 16 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:flutter-build.md:57:589c1840"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "flutter-review.md:20 — trust.hidden-unicode: document contains 11 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:flutter-review.md:20:63114233"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "flutter-test.md:81 — trust.hidden-unicode: document contains 5 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:flutter-test.md:81:22d547f9"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "gan-build.md:6 — trust.hidden-unicode: document contains 9 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:gan-build.md:6:b3c4b47a"
+            },
+            {
+              "code": "trust.visible-unicode",
+              "detail": "gan-design.md:6 — trust.visible-unicode: document contains 5 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation",
+              "fingerprint": "trust-visible-unicode:gan-design.md:6:0f0d80a1"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "go-review.md:82 — trust.hidden-unicode: document contains 2 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:go-review.md:82:73a29ec6"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "go-test.md:30 — trust.hidden-unicode: document contains 7 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:go-test.md:30:4e091753"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "gradle-build.md:33 — trust.hidden-unicode: document contains 5 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:gradle-build.md:33:c2aa0861"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "instinct-import.md:56 — trust.hidden-unicode: document contains 5 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:instinct-import.md:56:30514ada"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "instinct-status.md:15 — trust.hidden-unicode: document contains 25 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:instinct-status.md:15:4c6dfbea"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "jira.md:7 — trust.hidden-unicode: document contains 10 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:jira.md:7:0503ced8"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "kotlin-review.md:81 — trust.hidden-unicode: document contains 2 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:kotlin-review.md:81:3b18cb5e"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "kotlin-test.md:154 — trust.hidden-unicode: document contains 3 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:kotlin-test.md:154:4c6dd961"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "learn-eval.md:13 — trust.hidden-unicode: document contains 13 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:learn-eval.md:13:c0faddbf"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "marketing-campaign.md:21 — trust.hidden-unicode: document contains 39 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:marketing-campaign.md:21:38535a13"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "multi-backend.md:7 — trust.hidden-unicode: document contains 18 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:multi-backend.md:7:38512263"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "multi-execute.md:7 — trust.hidden-unicode: document contains 11 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:multi-execute.md:7:b7699381"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "multi-frontend.md:7 — trust.hidden-unicode: document contains 18 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:multi-frontend.md:7:9f3dbfa2"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "multi-plan.md:7 — trust.hidden-unicode: document contains 8 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:multi-plan.md:7:dae00cd5"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "multi-workflow.md:7 — trust.hidden-unicode: document contains 22 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:multi-workflow.md:7:08439d73"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "orch-add-feature.md:2 — trust.hidden-unicode: document contains 9 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:orch-add-feature.md:2:e46c1d23"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "orch-build-mvp.md:2 — trust.hidden-unicode: document contains 4 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:orch-build-mvp.md:2:2180c006"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "orch-change-feature.md:2 — trust.hidden-unicode: document contains 4 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:orch-change-feature.md:2:9315a445"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "orch-fix-defect.md:2 — trust.hidden-unicode: document contains 3 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:orch-fix-defect.md:2:9f1269a9"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "orch-refine-code.md:2 — trust.hidden-unicode: document contains 5 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:orch-refine-code.md:2:2f282b49"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "orch-review.md:8 — trust.hidden-unicode: document contains 12 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:orch-review.md:8:c22fe6fb"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "plan-prd.md:8 — trust.hidden-unicode: document contains 28 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:plan-prd.md:8:61cf11dd"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "pm2.md:41 — trust.hidden-unicode: document contains 53 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:pm2.md:41:daef0378"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "pr.md:2 — trust.hidden-unicode: document contains 21 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:pr.md:2:52405eef"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "prp-commit.md:2 — trust.hidden-unicode: document contains 18 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:prp-commit.md:2:b0714d5d"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "prp-implement.md:10 — trust.hidden-unicode: document contains 28 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:prp-implement.md:10:c7b2715c"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "prp-plan.md:12 — trust.hidden-unicode: document contains 165 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:prp-plan.md:12:d7dfc277"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "prp-pr.md:2 — trust.hidden-unicode: document contains 19 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:prp-pr.md:2:1813771b"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "prp-prd.md:30 — trust.hidden-unicode: document contains 853 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:prp-prd.md:30:ccd0082c"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "python-review.md:90 — trust.hidden-unicode: document contains 3 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:python-review.md:90:7982b50c"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "react-build.md:2 — trust.hidden-unicode: document contains 14 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:react-build.md:2:940f084f"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "react-review.md:7 — trust.hidden-unicode: document contains 2 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:react-review.md:7:e2a41010"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "react-test.md:12 — trust.hidden-unicode: document contains 14 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:react-test.md:12:1c87ad41"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "refactor-clean.md:41 — trust.hidden-unicode: document contains 72 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:refactor-clean.md:41:be911e40"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "resume-session.md:60 — trust.hidden-unicode: document contains 207 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:resume-session.md:60:73983070"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "rust-build.md:70 — trust.hidden-unicode: document contains 3 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:rust-build.md:70:94f2eba2"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "rust-review.md:11 — trust.hidden-unicode: document contains 1 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:rust-review.md:11:19e9eb0c"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "rust-test.md:124 — trust.hidden-unicode: document contains 4 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:rust-test.md:124:1c73649d"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "santa-loop.md:2 — trust.hidden-unicode: document contains 15 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:santa-loop.md:2:c0e5d72a"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "save-session.md:7 — trust.hidden-unicode: document contains 23 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:save-session.md:7:a9488a88"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "sessions.md:45 — trust.hidden-unicode: document contains 154 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:sessions.md:45:87d9eccf"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "skill-health.md:51 — trust.hidden-unicode: document contains 4 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:skill-health.md:51:952342b9"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "test-coverage.md:34 — trust.hidden-unicode: document contains 69 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:test-coverage.md:34:f492c2da"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "update-codemaps.md:22 — trust.hidden-unicode: document contains 8 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:update-codemaps.md:22:dee7709a"
+            },
+            {
+              "code": "trust.visible-unicode",
+              "detail": "update-docs.md:75 — trust.visible-unicode: document contains 60 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation",
+              "fingerprint": "trust-visible-unicode:update-docs.md:75:f0f4645d"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "vue-review.md:7 — trust.hidden-unicode: document contains 2 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:vue-review.md:7:bd9fe40b"
+            }
+          ]
+        },
+        {
+          "id": "module:platform-configs",
+          "paths": [
+            ".claude-plugin",
+            ".codex",
+            ".cursor",
+            ".gemini",
+            ".opencode",
+            ".qwen",
+            ".zed",
+            "mcp-configs",
+            "scripts/auto-update.js",
+            "scripts/setup-package-manager.js",
+            ".hermes",
+            ".openclaw",
+            ".kimi"
+          ],
+          "treeSha256": "9a9091ba2fd9dada0d10f486a02d52404e427a60813faa0006ab66793b5291af",
+          "verdict": "blocked",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.7.0"
+            }
+          ],
+          "findings": [
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "AGENTS.md:17 — trust.hidden-unicode: document contains 36 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:AGENTS.md:17:1f86c90e"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "config.toml:3 — trust.hidden-unicode: document contains 2 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:config.toml:3:8b77a782"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "rules/common-coding-style.md:13 — trust.hidden-unicode: document contains 2 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:rules/common-coding-style.md:13:e98cdf58"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "detail": "rules/common-security.md:17 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:rules/common-security.md:17:c8f5c7bc"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "skills/mcp-server-patterns/SKILL.md:3 — trust.hidden-unicode: document contains 4 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:skills/mcp-server-patterns/SKILL.md:3:8da7edb0"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "skills/nextjs-turbopack/SKILL.md:3 — trust.hidden-unicode: document contains 2 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:skills/nextjs-turbopack/SKILL.md:3:f65da15a"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "hooks/before-shell-execution-block-no-verify.js:44 — trust.hidden-unicode: document contains 2 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:hooks/before-shell-execution-block-no-verify.js:44:d684fdcf"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "commands/checkpoint.md:56 — trust.hidden-unicode: document contains 6 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:commands/checkpoint.md:56:cb8f6096"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "commands/eval.md:51 — trust.hidden-unicode: document contains 2 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:commands/eval.md:51:586ffc66"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "commands/go-test.md:122 — trust.hidden-unicode: document contains 16 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:commands/go-test.md:122:95ca672c"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "commands/instinct-import.md:58 — trust.hidden-unicode: document contains 1 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:commands/instinct-import.md:58:8e6bd199"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "commands/instinct-status.md:13 — trust.hidden-unicode: document contains 4 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:commands/instinct-status.md:13:2f1e7b65"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "commands/orchestrate.md:40 — trust.hidden-unicode: document contains 24 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:commands/orchestrate.md:40:f7a51363"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "commands/refactor-clean.md:94 — trust.hidden-unicode: document contains 1 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:commands/refactor-clean.md:94:ae2c8c56"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "commands/rust-test.md:92 — trust.hidden-unicode: document contains 18 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:commands/rust-test.md:92:74629362"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "commands/tdd.md:14 — trust.hidden-unicode: document contains 3 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:commands/tdd.md:14:5c8d0b92"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "detail": "instructions/INSTRUCTIONS.md:17 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:instructions/INSTRUCTIONS.md:17:c8f5c7bc"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "MIGRATION.md:97 — trust.hidden-unicode: document contains 67 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:MIGRATION.md:97:45be41d0"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "plugins/ecc-hooks.ts:9 — trust.hidden-unicode: document contains 5 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:plugins/ecc-hooks.ts:9:e438603c"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "prompts/agents/doc-updater.txt:37 — trust.hidden-unicode: document contains 18 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:prompts/agents/doc-updater.txt:37:da36290d"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "prompts/agents/go-build-resolver.txt:267 — trust.hidden-unicode: document contains 11 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:prompts/agents/go-build-resolver.txt:267:03aa65ab"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "prompts/agents/java-build-resolver.txt:3 — trust.hidden-unicode: document contains 3 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:prompts/agents/java-build-resolver.txt:3:9159c058"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "prompts/agents/java-reviewer.txt:9 — trust.hidden-unicode: document contains 12 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:prompts/agents/java-reviewer.txt:9:a1830782"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "prompts/agents/kotlin-reviewer.txt:9 — trust.hidden-unicode: document contains 34 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:prompts/agents/kotlin-reviewer.txt:9:7fd03b93"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "prompts/agents/php-reviewer.txt:11 — trust.hidden-unicode: document contains 15 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:prompts/agents/php-reviewer.txt:11:72c0f6b3"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "prompts/agents/python-reviewer.txt:11 — trust.hidden-unicode: document contains 18 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:prompts/agents/python-reviewer.txt:11:ee638aa3"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "prompts/agents/rust-build-resolver.txt:69 — trust.hidden-unicode: document contains 3 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:prompts/agents/rust-build-resolver.txt:69:9478c39d"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "prompts/agents/rust-reviewer.txt:4 — trust.hidden-unicode: document contains 2 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:prompts/agents/rust-reviewer.txt:4:4fdb658a"
+            },
+            {
+              "code": "trust.auto-exec-hook",
+              "detail": "package.json:33 — package.json lifecycle script prepublishOnly can execute during install/publish",
+              "fingerprint": "trust-auto-exec-hook:package.json:33:1d4b509d"
+            },
+            {
+              "code": "trust.unpinned-dependency",
+              "detail": "package.json:60 — direct dependency @opencode-ai/plugin uses unpinned version spec \"^1.4.3\"",
+              "fingerprint": "trust-unpinned-dependency:package.json:60:5fd748eb"
+            },
+            {
+              "code": "trust.unpinned-dependency",
+              "detail": "package.json:60 — direct dependency @opencode-ai/plugin uses unpinned version spec \">=1.0.0\"",
+              "fingerprint": "trust-unpinned-dependency:package.json:60:997224a5"
+            },
+            {
+              "code": "trust.unpinned-dependency",
+              "detail": "package.json:64 — direct dependency @types/node uses unpinned version spec \"^20.0.0\"",
+              "fingerprint": "trust-unpinned-dependency:package.json:64:10b54fa8"
+            },
+            {
+              "code": "trust.unpinned-dependency",
+              "detail": "package.json:65 — direct dependency typescript uses unpinned version spec \"^5.3.0\"",
+              "fingerprint": "trust-unpinned-dependency:package.json:65:40d0d3a2"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "mcp-servers.json:16 — trust.hidden-unicode: document contains 14 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:mcp-servers.json:16:8afbb03e"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "auto-update.js:125 — trust.hidden-unicode: document contains 1 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:auto-update.js:125:60394dd3"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "setup-package-manager.js:82 — trust.hidden-unicode: document contains 4 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:setup-package-manager.js:82:499f38ef"
+            },
+            {
+              "code": "trust.visible-unicode",
+              "detail": "README.md:7 — trust.visible-unicode: document contains 4 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation",
+              "fingerprint": "trust-visible-unicode:README.md:7:c4e468ff"
+            },
+            {
+              "code": "trust.visible-unicode",
+              "detail": "README.md:7 — trust.visible-unicode: document contains 4 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation",
+              "fingerprint": "trust-visible-unicode:README.md:7:ef6e5f46"
+            },
+            {
+              "code": "trust.visible-unicode",
+              "detail": "README.md:7 — trust.visible-unicode: document contains 4 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation",
+              "fingerprint": "trust-visible-unicode:README.md:7:26966136"
+            }
+          ]
+        },
+        {
+          "id": "skill:tdd-workflow",
+          "paths": [
+            "skills/tdd-workflow"
+          ],
+          "treeSha256": "2201b478c7613a21ca72687726317efdf9098f66216d77c4f007cfefa76e1d6a",
+          "verdict": "blocked",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.7.0"
+            }
+          ],
+          "findings": [
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "SKILL.md:100 — trust.hidden-unicode: document contains 68 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:SKILL.md:100:e3a0051a"
+            }
+          ]
+        },
+        {
+          "id": "skill:verification-loop",
+          "paths": [
+            "skills/verification-loop"
+          ],
+          "treeSha256": "f09dfc3bf93c522ef06fe6ebcea9b9386f99568f90c614a36ffa54ab53b28d50",
+          "verdict": "pass",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.7.0"
+            }
+          ],
+          "findings": []
+        },
+        {
+          "id": "skill:strategic-compact",
+          "paths": [
+            "skills/strategic-compact"
+          ],
+          "treeSha256": "3020b18f797ec5ea46021a1b232aa39dccd2bd433ee18fb739c52b535c90b9c3",
+          "verdict": "blocked",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.7.0"
+            }
+          ],
+          "findings": [
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "SKILL.md:15 — trust.hidden-unicode: document contains 34 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:SKILL.md:15:cc3f115e"
+            }
+          ]
+        },
+        {
+          "id": "skill:coding-standards",
+          "paths": [
+            "skills/coding-standards"
+          ],
+          "treeSha256": "b9da558fd8e342161f0a778cc546b00b29e22742377fd23c505ebf3c1b1e2071",
+          "verdict": "blocked",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.7.0"
+            }
+          ],
+          "findings": [
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "SKILL.md:340 — trust.hidden-unicode: document contains 54 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:SKILL.md:340:f8a05b67"
+            }
+          ]
+        },
+        {
+          "id": "agent:code-reviewer",
+          "paths": [
+            "agents/code-reviewer.md"
+          ],
+          "treeSha256": "1999cb3d4c9adc2146be864235cffafa5157c467173cf6a0214c898a326df44f",
+          "verdict": "blocked",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.7.0"
+            }
+          ],
+          "findings": [
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "code-reviewer.md:23 — trust.hidden-unicode: document contains 50 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:code-reviewer.md:23:07447dbe"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "detail": "code-reviewer.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:code-reviewer.md:11:17a8c724"
+            }
+          ]
+        },
+        {
+          "id": "agent:code-architect",
+          "paths": [
+            "agents/code-architect.md"
+          ],
+          "treeSha256": "d3d36d08a63697680fc1632fa41820d44e8db33cc2d3757077ee9b78924d9991",
+          "verdict": "blocked",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.7.0"
+            }
+          ],
+          "findings": [
+            {
+              "code": "trust.prompt-injection",
+              "detail": "code-architect.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:code-architect.md:11:17a8c724"
+            }
+          ]
+        },
+        {
+          "id": "agent:architect",
+          "paths": [
+            "agents/architect.md"
+          ],
+          "treeSha256": "7ab4ef54313bf7495a3b50ca69212111b0b3f6cdce6f63f4889ac7b02b99e7bd",
+          "verdict": "blocked",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.7.0"
+            }
+          ],
+          "findings": [
+            {
+              "code": "trust.prompt-injection",
+              "detail": "architect.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:architect.md:11:17a8c724"
+            }
+          ]
+        },
+        {
+          "id": "agent:planner",
+          "paths": [
+            "agents/planner.md"
+          ],
+          "treeSha256": "b7586738b19b0c0003072e4575753b4d2359a935ed33ef44cb4a831cc7e497d3",
+          "verdict": "blocked",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.7.0"
+            }
+          ],
+          "findings": [
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "planner.md:129 — trust.hidden-unicode: document contains 10 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:planner.md:129:2c53525c"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "detail": "planner.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:planner.md:11:17a8c724"
+            }
+          ]
+        },
+        {
+          "id": "agent:tdd-guide",
+          "paths": [
+            "agents/tdd-guide.md"
+          ],
+          "treeSha256": "5973a9221b3d89a4c1ecb5ed7ab54f17f5116fa53f72f41c81199592a4f3dfde",
+          "verdict": "blocked",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.7.0"
+            }
+          ],
+          "findings": [
+            {
+              "code": "trust.prompt-injection",
+              "detail": "tdd-guide.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:tdd-guide.md:11:17a8c724"
+            }
+          ]
+        },
+        {
+          "id": "agent:build-error-resolver",
+          "paths": [
+            "agents/build-error-resolver.md"
+          ],
+          "treeSha256": "aedf020f4d178b610f005045029a898f56d45351b5653247fba3d36b15bd42d8",
+          "verdict": "blocked",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.7.0"
+            }
+          ],
+          "findings": [
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "build-error-resolver.md:19 — trust.hidden-unicode: document contains 14 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:build-error-resolver.md:19:57e8d92b"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "detail": "build-error-resolver.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:build-error-resolver.md:11:17a8c724"
+            }
+          ]
+        },
+        {
+          "id": "agent:refactor-cleaner",
+          "paths": [
+            "agents/refactor-cleaner.md"
+          ],
+          "treeSha256": "222a581103db015f2e5b0489df69b5eff37c24295464bf93e7cdb84e04dcd09a",
+          "verdict": "blocked",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.7.0"
+            }
+          ],
+          "findings": [
+            {
+              "code": "trust.prompt-injection",
+              "detail": "refactor-cleaner.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:refactor-cleaner.md:11:17a8c724"
+            }
+          ]
+        },
+        {
+          "id": "agent:code-simplifier",
+          "paths": [
+            "agents/code-simplifier.md"
+          ],
+          "treeSha256": "5ba26a75e3eb98de06d2c048500b94a1995b88cb58209fedd0ce30f8cd2c8a48",
+          "verdict": "blocked",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.7.0"
+            }
+          ],
+          "findings": [
+            {
+              "code": "trust.prompt-injection",
+              "detail": "code-simplifier.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:code-simplifier.md:11:17a8c724"
+            }
+          ]
+        },
+        {
+          "id": "agent:silent-failure-hunter",
+          "paths": [
+            "agents/silent-failure-hunter.md"
+          ],
+          "treeSha256": "caa607a62eb91a807ecbd6bbd60a5f88df01365a9f5f07b3e12a168196ea8820",
+          "verdict": "blocked",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.7.0"
+            }
+          ],
+          "findings": [
+            {
+              "code": "trust.prompt-injection",
+              "detail": "silent-failure-hunter.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:silent-failure-hunter.md:11:17a8c724"
+            }
+          ]
+        },
+        {
+          "id": "agent:pr-test-analyzer",
+          "paths": [
+            "agents/pr-test-analyzer.md"
+          ],
+          "treeSha256": "9682fc8a4db5b2edfbafc4fc2bc053b74c64cfe173d617502a943a935450d7b4",
+          "verdict": "blocked",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.7.0"
+            }
+          ],
+          "findings": [
+            {
+              "code": "trust.prompt-injection",
+              "detail": "pr-test-analyzer.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:pr-test-analyzer.md:11:17a8c724"
+            }
+          ]
+        },
+        {
+          "id": "agent:doc-updater",
+          "paths": [
+            "agents/doc-updater.md"
+          ],
+          "treeSha256": "28b3695c1c4be573c63807e2a5bdb79178d4bb975059c502899e487da46afb70",
+          "verdict": "blocked",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.7.0"
+            }
+          ],
+          "findings": [
+            {
+              "code": "trust.visible-unicode",
+              "detail": "doc-updater.md:23 — trust.visible-unicode: document contains 31 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation",
+              "fingerprint": "trust-visible-unicode:doc-updater.md:23:c2799a9b"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "detail": "doc-updater.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:doc-updater.md:11:17a8c724"
+            }
+          ]
+        },
+        {
+          "id": "agent:docs-lookup",
+          "paths": [
+            "agents/docs-lookup.md"
+          ],
+          "treeSha256": "713fee387729abcadefc936553d866f18553aa73a96b56ac2a58671e5050dd5e",
+          "verdict": "blocked",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.7.0"
+            }
+          ],
+          "findings": [
+            {
+              "code": "trust.visible-unicode",
+              "detail": "docs-lookup.md:29 — trust.visible-unicode: document contains 1 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation",
+              "fingerprint": "trust-visible-unicode:docs-lookup.md:29:e27b1c2c"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "detail": "docs-lookup.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:docs-lookup.md:11:17a8c724"
+            }
+          ]
+        },
+        {
+          "id": "agent:code-explorer",
+          "paths": [
+            "agents/code-explorer.md"
+          ],
+          "treeSha256": "6e1035efe44e6d762d34e020e85f1bc2ed78764ca85f6efc31a0558c69cab475",
+          "verdict": "blocked",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.7.0"
+            }
+          ],
+          "findings": [
+            {
+              "code": "trust.prompt-injection",
+              "detail": "code-explorer.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:code-explorer.md:11:17a8c724"
+            }
+          ]
+        },
+        {
+          "id": "agent:security-reviewer",
+          "paths": [
+            "agents/security-reviewer.md"
+          ],
+          "treeSha256": "ae56b99ea1cc8f38acc57646109deaabb0b6217d1f9e7746c0e3517f192b6868",
+          "verdict": "blocked",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.7.0"
+            }
+          ],
+          "findings": [
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "security-reviewer.md:23 — trust.hidden-unicode: document contains 21 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:security-reviewer.md:23:46d310c1"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "detail": "security-reviewer.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:security-reviewer.md:11:17a8c724"
+            }
+          ]
+        },
+        {
+          "id": "agent:type-design-analyzer",
+          "paths": [
+            "agents/type-design-analyzer.md"
+          ],
+          "treeSha256": "db7188feb08ae6abfcf941b65229eac38c237d6970f41f023d63322dba57aa45",
+          "verdict": "blocked",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.7.0"
+            }
+          ],
+          "findings": [
+            {
+              "code": "trust.prompt-injection",
+              "detail": "type-design-analyzer.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:type-design-analyzer.md:11:17a8c724"
+            }
+          ]
+        },
+        {
+          "id": "agent:performance-optimizer",
+          "paths": [
+            "agents/performance-optimizer.md"
+          ],
+          "treeSha256": "82f31dff8a635d63aef033d2f06e7f5d319c023e859572b085a073b553913259",
+          "verdict": "blocked",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.7.0"
+            }
+          ],
+          "findings": [
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "performance-optimizer.md:23 — trust.hidden-unicode: document contains 10 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:performance-optimizer.md:23:a877b0ae"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "detail": "performance-optimizer.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:performance-optimizer.md:11:17a8c724"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "superpowers",
+      "owner": "obra",
+      "repo": "Superpowers",
+      "pinnedSha": "d884ae04edebef577e82ff7c4e143debd0bbec99",
+      "components": [
+        {
+          "id": "runtime:superpowers-plugin",
+          "paths": [
+            ".claude-plugin",
+            ".codex-plugin",
+            ".cursor-plugin",
+            ".kimi-plugin",
+            ".opencode",
+            ".pi",
+            "gemini-extension.json",
+            "hooks",
+            "package.json",
+            "scripts"
+          ],
+          "treeSha256": "59ffc8af8508bf91c5a9021d30e808f906ecdb706d2781691aa4e1be685af840",
+          "verdict": "blocked",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.7.0"
+            }
+          ],
+          "findings": [
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "INSTALL.md:103 — trust.hidden-unicode: document contains 8 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:INSTALL.md:103:c6cd33dc"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "plugins/superpowers.js:78 — trust.hidden-unicode: document contains 9 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:plugins/superpowers.js:78:a5c5e1db"
+            },
+            {
+              "code": "trust.sandbox-smoke-unavailable",
+              "detail": "sandbox smoke test unavailable (trust.sandbox-smoke-unavailable): detector runtime is missing (run/platform/env)"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "session-start:45 — trust.hidden-unicode: document contains 1 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:session-start:45:88a06027"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "bump-version.sh:3 — trust.hidden-unicode: document contains 3 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:bump-version.sh:3:5d38c45c"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "sync-to-codex-plugin.sh:5 — trust.hidden-unicode: document contains 14 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:sync-to-codex-plugin.sh:5:0797332e"
+            }
+          ]
+        },
+        {
+          "id": "skill:brainstorming",
+          "paths": [
+            "skills/brainstorming"
+          ],
+          "treeSha256": "4a21bc67d48f1086a5a0ea19759ed8acde3937cbba1309774ab11af8fbf5c7e0",
+          "verdict": "blocked",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.7.0"
+            }
+          ],
+          "findings": [
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "SKILL.md:18 — trust.hidden-unicode: document contains 21 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:SKILL.md:18:e1491460"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "spec-document-reviewer-prompt.md:24 — trust.hidden-unicode: document contains 2 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:spec-document-reviewer-prompt.md:24:95a0a195"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "visual-companion.md:11 — trust.hidden-unicode: document contains 40 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:visual-companion.md:11:3321a044"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "scripts/helper.js:51 — trust.hidden-unicode: document contains 4 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:scripts/helper.js:51:43c6d699"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "scripts/server.cjs:118 — trust.hidden-unicode: document contains 5 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:scripts/server.cjs:118:2d2961ea"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "scripts/start-server.sh:109 — trust.hidden-unicode: document contains 2 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:scripts/start-server.sh:109:a4e5ae84"
+            },
+            {
+              "code": "trust.sandbox-smoke-unavailable",
+              "detail": "sandbox smoke test unavailable (trust.sandbox-smoke-unavailable): detector runtime is missing (run/platform/env)"
+            }
+          ]
+        },
+        {
+          "id": "skill:dispatching-parallel-agents",
+          "paths": [
+            "skills/dispatching-parallel-agents"
+          ],
+          "treeSha256": "1ef481dcf8c29aed46bf1c9036fca7c2028e3bec95f5663a92ba768d619fd2cc",
+          "verdict": "blocked",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.7.0"
+            }
+          ],
+          "findings": [
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "SKILL.md:10 — trust.hidden-unicode: document contains 13 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:SKILL.md:10:f0df13f5"
+            }
+          ]
+        },
+        {
+          "id": "skill:executing-plans",
+          "paths": [
+            "skills/executing-plans"
+          ],
+          "treeSha256": "e04bbec497d2b5d3169f9332dbe91f7615a83d7482ac55b57c7b2c542470b844",
+          "verdict": "pass",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.7.0"
+            }
+          ],
+          "findings": []
+        },
+        {
+          "id": "skill:finishing-a-development-branch",
+          "paths": [
+            "skills/finishing-a-development-branch"
+          ],
+          "treeSha256": "5062a8ea21412a9f5ffb4ead970693719e37d2e14081c27412a6d7c35a4ab67f",
+          "verdict": "blocked",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.7.0"
+            }
+          ],
+          "findings": [
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "SKILL.md:12 — trust.hidden-unicode: document contains 9 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:SKILL.md:12:e6d4a812"
+            }
+          ]
+        },
+        {
+          "id": "skill:receiving-code-review",
+          "paths": [
+            "skills/receiving-code-review"
+          ],
+          "treeSha256": "9e1e735844f90f28eb51f3c81e9fffeba45952c0540da8b965ecb58c916cc3e2",
+          "verdict": "blocked",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.7.0"
+            }
+          ],
+          "findings": [
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "SKILL.md:55 — trust.hidden-unicode: document contains 19 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:SKILL.md:55:647036bb"
+            }
+          ]
+        },
+        {
+          "id": "skill:requesting-code-review",
+          "paths": [
+            "skills/requesting-code-review"
+          ],
+          "treeSha256": "9e1de98f360e96a050f85acb626c24e244fd0a660ee758328371391bad09eecf",
+          "verdict": "blocked",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.7.0"
+            }
+          ],
+          "findings": [
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "code-reviewer.md:35 — trust.hidden-unicode: document contains 6 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:code-reviewer.md:35:b2f2ec75"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "SKILL.md:8 — trust.hidden-unicode: document contains 1 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:SKILL.md:8:1017ccdd"
+            }
+          ]
+        },
+        {
+          "id": "skill:subagent-driven-development",
+          "paths": [
+            "skills/subagent-driven-development"
+          ],
+          "treeSha256": "4698861a0f06b4d41868b302d1bcca82861f9d74a1883fcd2d4603939f357bc6",
+          "verdict": "blocked",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.7.0"
+            }
+          ],
+          "findings": [
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "implementer-prompt.md:8 — trust.hidden-unicode: document contains 5 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:implementer-prompt.md:8:49018b28"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "SKILL.md:150 — trust.hidden-unicode: character category: zero-width; reason: invisible/control Unicode can smuggle model-readable instructions; code point U+FE0F",
+              "fingerprint": "trust-hidden-unicode:SKILL.md:150:581f85f3"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "SKILL.md:152 — trust.hidden-unicode: character category: zero-width; reason: invisible/control Unicode can smuggle model-readable instructions; code point U+FE0F",
+              "fingerprint": "trust-hidden-unicode:SKILL.md:152:af854588"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "SKILL.md:10 — trust.hidden-unicode: document contains 52 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:SKILL.md:10:41ab239a"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "task-reviewer-prompt.md:90 — trust.hidden-unicode: character category: zero-width; reason: invisible/control Unicode can smuggle model-readable instructions; code point U+FE0F",
+              "fingerprint": "trust-hidden-unicode:task-reviewer-prompt.md:90:2657f7e9"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "task-reviewer-prompt.md:145 — trust.hidden-unicode: character category: zero-width; reason: invisible/control Unicode can smuggle model-readable instructions; code point U+FE0F",
+              "fingerprint": "trust-hidden-unicode:task-reviewer-prompt.md:145:a82780bd"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "task-reviewer-prompt.md:184 — trust.hidden-unicode: character category: zero-width; reason: invisible/control Unicode can smuggle model-readable instructions; code point U+FE0F",
+              "fingerprint": "trust-hidden-unicode:task-reviewer-prompt.md:184:5af201eb"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "task-reviewer-prompt.md:13 — trust.hidden-unicode: document contains 31 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:task-reviewer-prompt.md:13:2eb9d543"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "scripts/sdd-workspace:7 — trust.hidden-unicode: document contains 1 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:scripts/sdd-workspace:7:9430befa"
+            }
+          ]
+        },
+        {
+          "id": "skill:systematic-debugging",
+          "paths": [
+            "skills/systematic-debugging"
+          ],
+          "treeSha256": "887d19d7ef06cfbbbbb16a6bf6ab439b1e77965590a5e51be49cbd60e9c431b8",
+          "verdict": "blocked",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.7.0"
+            }
+          ],
+          "findings": [
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "condition-based-waiting.md:37 — trust.hidden-unicode: document contains 9 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:condition-based-waiting.md:37:e89fec84"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "CREATION-LOG.md:8 — trust.hidden-unicode: document contains 12 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:CREATION-LOG.md:8:c24733a5"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "defense-in-depth.md:101 — trust.hidden-unicode: document contains 1 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:defense-in-depth.md:101:1e175fb8"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "root-cause-tracing.md:48 — trust.hidden-unicode: document contains 4 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:root-cause-tracing.md:48:6b062226"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "SKILL.md:64 — trust.hidden-unicode: document contains 12 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:SKILL.md:64:3b20719e"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "test-pressure-1.md:24 — trust.hidden-unicode: document contains 1 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:test-pressure-1.md:24:0b6a915d"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "condition-based-waiting-example.ts:158 — trust.hidden-unicode: document contains 1 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:condition-based-waiting-example.ts:158:40ae5ebe"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "find-polluter.sh:34 — trust.hidden-unicode: character category: zero-width; reason: invisible/control Unicode can smuggle model-readable instructions; code point U+FE0F",
+              "fingerprint": "trust-hidden-unicode:find-polluter.sh:34:be031daf"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "find-polluter.sh:17 — trust.hidden-unicode: document contains 4 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:find-polluter.sh:17:6462747e"
+            },
+            {
+              "code": "trust.sandbox-smoke-unavailable",
+              "detail": "sandbox smoke test unavailable (trust.sandbox-smoke-unavailable): detector runtime is missing (run/platform/env)"
+            }
+          ]
+        },
+        {
+          "id": "skill:test-driven-development",
+          "paths": [
+            "skills/test-driven-development"
+          ],
+          "treeSha256": "e79010bd13d849eacbc144f1c3f08bd69ce33460d6a81008d5475ccefa572bbb",
+          "verdict": "blocked",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.7.0"
+            }
+          ],
+          "findings": [
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "SKILL.md:224 — trust.hidden-unicode: document contains 5 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:SKILL.md:224:b5b4717b"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "testing-anti-patterns.md:25 — trust.hidden-unicode: document contains 15 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:testing-anti-patterns.md:25:bde453bc"
+            }
+          ]
+        },
+        {
+          "id": "skill:using-git-worktrees",
+          "paths": [
+            "skills/using-git-worktrees"
+          ],
+          "treeSha256": "1d7b34e92c10bde4d29ebee76bca9048d12457261c79bc894ed9c7b2a76bb60a",
+          "verdict": "blocked",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.7.0"
+            }
+          ],
+          "findings": [
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "SKILL.md:29 — trust.hidden-unicode: document contains 3 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:SKILL.md:29:e2c3ec14"
+            }
+          ]
+        },
+        {
+          "id": "skill:using-superpowers",
+          "paths": [
+            "skills/using-superpowers"
+          ],
+          "treeSha256": "cffcb1600cebd101c59605edb2fc457b43fbd98f9e57aec935bfcb2528b3f713",
+          "verdict": "blocked",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.7.0"
+            }
+          ],
+          "findings": [
+            {
+              "code": "trust.visible-unicode",
+              "detail": "references/antigravity-tools.md:7 — trust.visible-unicode: document contains 5 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation",
+              "fingerprint": "trust-visible-unicode:references/antigravity-tools.md:7:d0bcfa94"
+            },
+            {
+              "code": "trust.visible-unicode",
+              "detail": "references/codex-tools.md:23 — trust.visible-unicode: document contains 4 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation",
+              "fingerprint": "trust-visible-unicode:references/codex-tools.md:23:9310bb23"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "SKILL.md:20 — trust.hidden-unicode: document contains 6 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:SKILL.md:20:55379fe7"
+            }
+          ]
+        },
+        {
+          "id": "skill:verification-before-completion",
+          "paths": [
+            "skills/verification-before-completion"
+          ],
+          "treeSha256": "95b05bf661e13ad944ba4300d082281f0feb8efd1ff51684d05cd8edc397f33b",
+          "verdict": "blocked",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.7.0"
+            }
+          ],
+          "findings": [
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "SKILL.md:68 — trust.hidden-unicode: document contains 26 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:SKILL.md:68:ea52d15a"
+            }
+          ]
+        },
+        {
+          "id": "skill:writing-plans",
+          "paths": [
+            "skills/writing-plans"
+          ],
+          "treeSha256": "68418ad69bb750feaa8cc644f48d510925b43581eb008ee0f2eebb80f066130a",
+          "verdict": "blocked",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.7.0"
+            }
+          ],
+          "findings": [
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "plan-document-reviewer-prompt.md:33 — trust.hidden-unicode: document contains 1 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:plan-document-reviewer-prompt.md:33:aa728b96"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "SKILL.md:23 — trust.hidden-unicode: document contains 11 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:SKILL.md:23:272e1af3"
+            }
+          ]
+        },
+        {
+          "id": "skill:writing-skills",
+          "paths": [
+            "skills/writing-skills"
+          ],
+          "treeSha256": "d803346370e64ea0fbe3396f32f012236d59cc6e5fd92d204aad5976f007ad70",
+          "verdict": "blocked",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.7.0"
+            }
+          ],
+          "findings": [
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "anthropic-best-practices.md:259 — trust.hidden-unicode: document contains 71 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:anthropic-best-practices.md:259:217629b3"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "persuasion-principles.md:7 — trust.hidden-unicode: document contains 13 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:persuasion-principles.md:7:a51bc9bf"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "SKILL.md:43 — trust.hidden-unicode: document contains 51 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:SKILL.md:43:6b8d08fe"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "testing-skills-with-subagents.md:334 — trust.hidden-unicode: document contains 13 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:testing-skills-with-subagents.md:334:c7113468"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
