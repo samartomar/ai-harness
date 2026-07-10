@@ -40,45 +40,78 @@ is ever stored; after the bootstrap, publish is OIDC-only.
 
 ## Cut a release
 
-1. **Land all scope.** The milestone for this version should have no open blockers
-   ([Milestones](https://github.com/samartomar/ai-harness/milestones)).
-2. **Set the version** — use `npm version X.Y.Z --no-git-tag-version` so
+1. **Soft-lock and sweep.** Comment `cut in progress from <full-main-SHA>` on the
+   release tracker issue (parallel sessions hold merges and cuts until done). The cut
+   set is the merged PRs reachable from `main` since the previous tag — open, deferred,
+   or partial work never affects the version. Reconcile the open `next-release` train
+   milestone ([Milestones](https://github.com/samartomar/ai-harness/milestones)) to that
+   git truth: every merged PR since the last tag is in it and carries exactly one
+   `semver:*` label (issueless Dependabot/docs PRs are labeled directly); every
+   still-open issue is moved to the successor with a reason, or carries `blocked:*`.
+   Nothing is skipped silently. Corollary: **merged means ships** — WIP stays in draft
+   PRs or behind flags, and regrets are reverted before the cut, not deferred.
+2. **Compute the bump and roll the train — atomically.** The bump is the highest
+   `semver:*` class among the merged PRs (a merged revert pair cancels out; label
+   semantics in [VERSIONING.md](VERSIONING.md)). Then in one motion: rename the train
+   milestone to `vX.Y.Z`, create the successor `next-release`, and move all open items
+   across — no trainless window. Milestones are theme-named until this rename; a
+   version number never appears on a milestone earlier than this.
+3. **Set the version** — use `npm version X.Y.Z --no-git-tag-version` so
    `package.json` and `package-lock.json` stay coherent, then bump the hardcoded CLI
    constant. These places must match; see the check below:
    - `package.json` `version`
    - `package-lock.json` root/package version
    - `src/version.ts` `VERSION`
-   Choose the bump per [VERSIONING.md](VERSIONING.md).
-3. **Update the CHANGELOG.** Move `[Unreleased]` items into a new `## [X.Y.Z] - YYYY-MM-DD`
+4. **Update the CHANGELOG.** Move `[Unreleased]` items into a new `## [X.Y.Z] - YYYY-MM-DD`
    section under the right headings (Added / Changed / Deprecated / Removed / Fixed /
    Security). Update the compare links at the bottom (add the new version's link and
    repoint `[Unreleased]`).
-4. **Update user-facing docs.** If the release adds or changes any command or flag, update
-   the README command reference and any affected `docs/` page **in this same release PR** —
-   the CHANGELOG records the change, it does not document the feature. (The v0.3.0→v0.3.1
-   `aih prune` gap is why this step exists.)
-5. **Verify locally:** `npm run verify` (typecheck · lint · test+coverage · build). Green
+5. **Refresh versioned surfaces and user-facing docs.** Version wording in the README
+   (including image alt text) and in `docs/assets/*.svg` must be updated to `X.Y.Z` —
+   the version-coherence test fails `npm run verify` on stale strings. If the release
+   adds or changes any command or flag, update the README command reference and any
+   affected `docs/` page **in this same release PR** — the CHANGELOG records the change,
+   it does not document the feature. (The v0.3.0→v0.3.1 `aih prune` gap and stale SVG
+   wording shipped in an earlier tarball are why this step exists.)
+6. **Verify locally:** `npm run verify` (typecheck · lint · test+coverage · build). Green
    only.
-6. **Confirm versions agree:** `aih --version` (from `npm run build` output) must equal the
+7. **Confirm versions agree:** `aih --version` (from `npm run build` output) must equal the
    `package.json` version and the tag you are about to push.
-7. **Open a release PR** (`release/vX.Y.Z`), get it green in CI, and merge to `main`.
-8. **Tag and push:**
+8. **Open the release tracker issue** as the last open item in the `vX.Y.Z` milestone.
+   Its checklist records: included PRs + labels, previous tag + candidate SHA, local/CI
+   verification, the publication authorization, tag/workflow, GitHub Release, npm
+   publication, `aih verify-release`, and companion-docs reconciliation.
+9. **Open a release PR** (`release/vX.Y.Z`) that says `Refs #<tracker>` — never
+   `Closes` — get it green in CI, and merge to `main`.
+10. **Obtain SHA-bound publication approval.** Publishing requires the maintainer's
+    explicit
+    `Authorize publishing vX.Y.Z from <full-main-SHA> using the swept vX.Y.Z milestone.`
+    Merging the release PR is **not** permission to push the tag.
+11. **Tag and push** (scope is frozen from here — anything further is the next train's):
    ```bash
    git checkout main && git pull
    git tag vX.Y.Z
    git push origin vX.Y.Z
    ```
-9. **Watch the workflow.** The `release` run publishes to npm and creates the GitHub Release.
+12. **Watch the workflow.** The `release` run publishes to npm and creates the GitHub Release.
    If the `npm-publish` environment has a required reviewer, approve it.
-10. **Verify the published package:**
+13. **Verify the published package:**
    ```bash
    npm view @aihq/harness@X.Y.Z
    npm audit signatures        # provenance + integrity
+   aih verify-release X.Y.Z
    ```
-11. **Close the milestone** and move any spillover to the next one.
-12. **Sync project tracking.** Update the roadmap/progress notes and record any notable
-    decision in memory, so the next session resumes from an accurate state (not just the
-    code). This closes the loop the CHANGELOG and milestone don't cover.
+14. **Close on evidence — not at tag.** Only after the workflow succeeded, the GitHub
+    Release exists, npm serves the exact version, and `aih verify-release X.Y.Z` passes:
+    complete the tracker checklist, close the tracker, then close the `vX.Y.Z`
+    milestone. If publication fails permanently, never re-tag — fix forward to
+    `X.Y.Z+1`, close the milestone as superseded-not-released with a note, and re-board
+    its content on the successor train.
+15. **Sync project tracking.** Reconcile the private companion repo's truth homes
+    (release history, feature-by-release mapping, current state, pipeline) and run its
+    docs validation to green; record any notable decision in memory, so the next session
+    resumes from an accurate state (not just the code). This closes the loop the
+    CHANGELOG and milestone don't cover.
 
 ## Pre-releases and dist-tags
 
