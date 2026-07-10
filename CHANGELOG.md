@@ -6,6 +6,13 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Two-tier per-component baseline evidence now gates ECC and Superpowers setup:
+  release-shipped vendor evidence verifies exact-pin hashes, org-signed overrides
+  admit reviewed newer or net-new components without weakening danger-class floors,
+  and `aih evidence vet-baseline` generates analyzer-backed lock entries. (#407)
+
 ## [2.7.0] - 2026-07-10
 
 ### Changed
