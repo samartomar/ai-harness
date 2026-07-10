@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { BaselineAuthorization } from "../../src/baseline-evidence/verify.js";
+import type { EccComponentSelection } from "../../src/ecc/components.js";
 import { verifiedEccInstallPlan } from "../../src/ecc/verified.js";
 import type { Action, DigestAction, ExecAction, PlanContext } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
@@ -49,7 +50,11 @@ function authorization(componentId = "runtime:ecc-installer"): BaselineAuthoriza
 const execs = (actions: Action[]): ExecAction[] =>
   actions.filter((action): action is ExecAction => action.kind === "exec");
 
-function driverSteps(actions: Action[]): Array<{ argv: string[]; cwd: string }> {
+function driverSteps(actions: Action[]): Array<{
+  argv: string[];
+  cwd: string;
+  env?: Record<string, string>;
+}> {
   const driver = execs(actions).find((action) => action.describe.includes("verified ECC checkout"));
   expect(driver).toBeDefined();
   const encoded = driver?.argv.at(-1);
@@ -57,16 +62,39 @@ function driverSteps(actions: Action[]): Array<{ argv: string[]; cwd: string }> 
   return JSON.parse(Buffer.from(encoded, "base64").toString("utf8")) as Array<{
     argv: string[];
     cwd: string;
+    env?: Record<string, string>;
   }>;
 }
 
+function selection(): EccComponentSelection {
+  return {
+    scope: "scoped",
+    components: [
+      "baseline:rules",
+      "baseline:agents",
+      "baseline:platform",
+      "baseline:commands",
+      "skill:tdd-workflow",
+      "agent:code-reviewer",
+      "lang:typescript",
+    ],
+    mcps: ["mcp:sequential-thinking"],
+    recommendations: [],
+  };
+}
+
 describe("verifiedEccInstallPlan", () => {
-  it("uses one sequential driver over the verified checkout and never npx", () => {
+  it("uses one sequential driver with a filtered manifest payload and never npx", () => {
     const sourceRoot = join(root, "quarantine", "tree");
     const plan = verifiedEccInstallPlan(
       ctx(),
       sourceRoot,
-      { clis: ["claude"], profile: "core", packs: ["typescript"] },
+      {
+        clis: ["claude"],
+        profile: "core",
+        packs: ["typescript"],
+        selection: selection(),
+      },
       [authorization()],
     );
     expect(execs(plan.actions)).toHaveLength(1);
@@ -80,18 +108,35 @@ describe("verifiedEccInstallPlan", () => {
       "--no-fund",
     ]);
     expect(steps[0]?.cwd).toBe(sourceRoot);
-    expect(steps[1]?.argv).toEqual([
-      process.execPath,
-      join(sourceRoot, "scripts", "install-apply.js"),
-      "--target",
-      "claude",
-      "--profile",
-      "core",
-      "typescript",
-    ]);
+    expect(steps[1]?.argv.slice(0, 2)).toEqual([process.execPath, "-e"]);
+    const encoded = steps[1]?.argv.at(-1);
+    if (encoded === undefined) throw new Error("missing materialization payload");
+    const payload = JSON.parse(Buffer.from(encoded, "base64").toString("utf8")) as {
+      target: string;
+      scope: string;
+      moduleIds: string[];
+      skills: string[];
+      agents: string[];
+    };
+    expect(payload).toMatchObject({
+      target: "claude",
+      scope: "scoped",
+      moduleIds: [
+        "rules-core",
+        "agents-core",
+        "platform-configs",
+        "commands-core",
+        "workflow-quality",
+        "framework-language",
+      ],
+      skills: expect.arrayContaining(["tdd-workflow", "api-design"]),
+      agents: ["code-reviewer"],
+    });
+    expect(steps[1]?.env?.ECC_DISABLED_MCPS).toBe("context7,exa,github,memory,playwright,supabase");
     expect(steps[1]?.cwd).toBe(root);
     expect(JSON.stringify(steps)).not.toContain("npx");
     expect(JSON.stringify(steps)).not.toContain("https://");
+    expect(JSON.stringify(steps)).not.toContain("install-apply.js");
   });
 
   it("keeps Codex on the add-only merge path inside the same sequential driver", () => {
