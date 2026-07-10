@@ -36,7 +36,7 @@ import { eccLanguages } from "./select.js";
 
 const ECC_REPO_URL = "https://github.com/affaan-m/ECC.git";
 
-interface EccRepoCheckout {
+export interface EccRepoCheckout {
   dir: string;
   posix: string;
   explicit: boolean;
@@ -198,7 +198,7 @@ function kiroInstallActions(ctx: PlanContext, dir: string, posix: string): Actio
   ];
 }
 
-function kiroEccActions(ctx: PlanContext, repo: EccRepoCheckout): Action[] {
+export function kiroEccActions(ctx: PlanContext, repo: EccRepoCheckout): Action[] {
   const installActions = kiroInstallActions(ctx, repo.dir, repo.posix);
   if (repo.explicit) {
     return [
@@ -298,7 +298,11 @@ const CODEX_INSTALL_MERGE_SCRIPT = [
   "installCodexManagedFiles();",
 ].join("\n");
 
-function codexEccActions(ctx: PlanContext, repo: EccRepoCheckout, profile: string): Action[] {
+export function codexEccActions(
+  ctx: PlanContext,
+  repo: EccRepoCheckout,
+  profile: string,
+): Action[] {
   const codexDir = codexHomeDir(ctx);
   const codexConfig = join(codexDir, "config.toml");
   const codexAgents = join(codexDir, "AGENTS.md");
