@@ -2,15 +2,20 @@ import type { Posture } from "../config/posture.js";
 import type { Check } from "../internals/verify.js";
 import { type BaselineCatalog, resolveCatalogComponents } from "./catalog.js";
 import { hashComponentTree } from "./hash.js";
-import type { BaselineEvidenceLock } from "./schema.js";
+import type { OrgBaselineEvidence } from "./org.js";
+import type {
+  BaselineComponentEvidence,
+  BaselineEvidenceLock,
+  BaselineSourceEvidence,
+} from "./schema.js";
 
 export interface BaselineAuthorization {
   componentId: string;
   source: string;
   pinnedSha: string;
   treeSha256: string;
-  tier: "vendor";
-  issuer: "@aihq/harness release";
+  tier: "vendor" | "org";
+  issuer: string;
   evidenceSha256: string;
 }
 
@@ -21,6 +26,7 @@ export interface VerifyBaselineComponentsInput {
   posture: Posture;
   vendorLock: BaselineEvidenceLock;
   vendorLockSha256: string;
+  orgEvidence?: OrgBaselineEvidence;
 }
 
 export interface BaselineVerificationResult {
@@ -44,82 +50,120 @@ function warningOrFailure(
   return { name, verdict: "fail", code, detail };
 }
 
+function sourceEvidence(
+  lock: BaselineEvidenceLock,
+  catalog: BaselineCatalog,
+): BaselineSourceEvidence | undefined {
+  return lock.sources.find(
+    (source) =>
+      source.id === catalog.id &&
+      source.owner === catalog.owner &&
+      source.repo === catalog.repo &&
+      source.pinnedSha === catalog.pinnedSha,
+  );
+}
+
+function exactComponent(
+  source: BaselineSourceEvidence | undefined,
+  componentId: string,
+  paths: readonly string[],
+  actualHash: string,
+): BaselineComponentEvidence | undefined {
+  const evidence = source?.components.find((candidate) => candidate.id === componentId);
+  return evidence !== undefined &&
+    sameStrings(evidence.paths, paths) &&
+    evidence.treeSha256 === actualHash
+    ? evidence
+    : undefined;
+}
+
+function blockedCheck(name: string, evidence: BaselineComponentEvidence): Check {
+  const codes = [...new Set(evidence.findings.map((finding) => finding.code))].join(", ");
+  return {
+    name,
+    verdict: "fail",
+    code: "baseline.evidence-blocked",
+    detail: `${evidence.id} is blocked by signed evidence (${codes || "trust finding"}); fix and vet a new pin — org evidence cannot waive this verdict`,
+  };
+}
+
+function authorization(
+  input: VerifyBaselineComponentsInput,
+  componentId: string,
+  actualHash: string,
+  tier: "vendor" | "org",
+): BaselineAuthorization {
+  return {
+    componentId,
+    source: `${input.catalog.owner}/${input.catalog.repo}`,
+    pinnedSha: input.catalog.pinnedSha,
+    treeSha256: actualHash,
+    tier,
+    issuer: tier === "vendor" ? "@aihq/harness release" : (input.orgEvidence?.issuer ?? "org"),
+    evidenceSha256:
+      tier === "vendor" ? input.vendorLockSha256 : (input.orgEvidence?.evidenceSha256 ?? ""),
+  };
+}
+
 export function verifyBaselineComponents(
   input: VerifyBaselineComponentsInput,
 ): BaselineVerificationResult {
   const components = resolveCatalogComponents(input.catalog, input.componentIds);
   const sourceName = `${input.catalog.owner}/${input.catalog.repo}`;
-  const sourceEvidence = input.vendorLock.sources.find(
-    (source) =>
-      source.id === input.catalog.id &&
-      source.owner === input.catalog.owner &&
-      source.repo === input.catalog.repo &&
-      source.pinnedSha === input.catalog.pinnedSha,
-  );
+  const vendorSource = sourceEvidence(input.vendorLock, input.catalog);
+  const orgSource =
+    input.orgEvidence === undefined
+      ? undefined
+      : sourceEvidence(input.orgEvidence.lock, input.catalog);
   const checks: Check[] = [];
   const authorizations: BaselineAuthorization[] = [];
 
   for (const component of components) {
     const name = `baseline evidence ${component.id}`;
-    const evidence = sourceEvidence?.components.find((candidate) => candidate.id === component.id);
-    if (evidence === undefined) {
-      checks.push(
-        warningOrFailure(
-          input.posture,
-          name,
-          `${sourceName}@${input.catalog.pinnedSha.slice(0, 12)} component ${component.id} is not covered by the shipped vendor lock`,
-          "baseline.evidence-missing",
-        ),
-      );
-      continue;
-    }
-    if (!sameStrings(evidence.paths, component.paths)) {
-      checks.push(
-        warningOrFailure(
-          input.posture,
-          name,
-          `${component.id} catalog paths differ from the signed vendor entry`,
-          "baseline.evidence-mismatch",
-        ),
-      );
-      continue;
-    }
     const actual = hashComponentTree(input.sourceRoot, component.paths).treeSha256;
-    if (actual !== evidence.treeSha256) {
-      checks.push(
-        warningOrFailure(
-          input.posture,
-          name,
-          `${component.id} content hash ${actual} does not match signed ${evidence.treeSha256}`,
-          "baseline.evidence-mismatch",
-        ),
-      );
+    const vendorEntry = vendorSource?.components.find((candidate) => candidate.id === component.id);
+    const exactVendor = exactComponent(vendorSource, component.id, component.paths, actual);
+    if (exactVendor?.verdict === "blocked") {
+      checks.push(blockedCheck(name, exactVendor));
       continue;
     }
-    if (evidence.verdict === "blocked") {
-      const codes = [...new Set(evidence.findings.map((finding) => finding.code))].join(", ");
+    if (exactVendor?.verdict === "pass") {
       checks.push({
         name,
-        verdict: "fail",
-        code: "baseline.evidence-blocked",
-        detail: `${component.id} is blocked by signed vendor evidence (${codes || "trust finding"}); fix and vet a new pin — org evidence cannot waive this verdict`,
+        verdict: "pass",
+        detail: `${component.id} matches signed vendor evidence; user-side analyzer runtime not required`,
       });
+      authorizations.push(authorization(input, component.id, actual, "vendor"));
       continue;
     }
-    checks.push({
-      name,
-      verdict: "pass",
-      detail: `${component.id} matches signed vendor evidence; user-side analyzer runtime not required`,
-    });
-    authorizations.push({
-      componentId: component.id,
-      source: sourceName,
-      pinnedSha: input.catalog.pinnedSha,
-      treeSha256: actual,
-      tier: "vendor",
-      issuer: "@aihq/harness release",
-      evidenceSha256: input.vendorLockSha256,
-    });
+
+    const orgEntry = orgSource?.components.find((candidate) => candidate.id === component.id);
+    const exactOrg = exactComponent(orgSource, component.id, component.paths, actual);
+    if (exactOrg?.verdict === "blocked") {
+      checks.push(blockedCheck(name, exactOrg));
+      continue;
+    }
+    if (exactOrg?.verdict === "pass") {
+      checks.push({
+        name,
+        verdict: "pass",
+        detail: `${component.id} matches signed org evidence from ${input.orgEvidence?.issuer}; user-side analyzer runtime not required`,
+      });
+      authorizations.push(authorization(input, component.id, actual, "org"));
+      continue;
+    }
+
+    const mismatched = vendorEntry !== undefined || orgEntry !== undefined;
+    checks.push(
+      warningOrFailure(
+        input.posture,
+        name,
+        mismatched
+          ? `${component.id} content hash or catalog paths do not match the available signed evidence`
+          : `${sourceName}@${input.catalog.pinnedSha.slice(0, 12)} component ${component.id} is not covered by vendor or org evidence`,
+        mismatched ? "baseline.evidence-mismatch" : "baseline.evidence-missing",
+      ),
+    );
   }
 
   return { checks, authorizations };
