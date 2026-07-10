@@ -18,6 +18,12 @@ version is the contract between the CLI and the repos and workstations it manage
 | **MINOR** | New commands, flags, or artifacts. Backward compatible for existing use. |
 | **MAJOR** | A change that can break an existing invocation, script, or generated file. |
 
+At release time the bump is not chosen by hand: each issue carries exactly one
+`semver:patch|minor|major` label at merge, and the release cut takes the highest class
+aboard the release milestone. When labeling, apply the surface definition above — a
+change to verdicts, exit codes, or generated-artifact content is a surface change
+(**MINOR** at least), even when the commit is typed `fix:`.
+
 ### Pre-1.0 (0.x)
 
 While the major version is `0`, the surface is still settling. A **minor** bump

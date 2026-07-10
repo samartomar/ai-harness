@@ -40,15 +40,21 @@ is ever stored; after the bootstrap, publish is OIDC-only.
 
 ## Cut a release
 
-1. **Land all scope.** The milestone for this version should have no open blockers
-   ([Milestones](https://github.com/samartomar/ai-harness/milestones)).
+1. **Sweep the train.** Releases cut from the open `next-release` train milestone
+   ([Milestones](https://github.com/samartomar/ai-harness/milestones)): every issue
+   closed since the last tag is in it, and every still-open issue is explicitly marked
+   ride / defer (with a reason, to the next train) / `blocked:*`. Nothing is skipped
+   silently, and no open blockers remain aboard. Milestones are theme-named until this
+   point — a version number only ever appears as the rename in step 2.
 2. **Set the version** — use `npm version X.Y.Z --no-git-tag-version` so
    `package.json` and `package-lock.json` stay coherent, then bump the hardcoded CLI
    constant. These places must match; see the check below:
    - `package.json` `version`
    - `package-lock.json` root/package version
    - `src/version.ts` `VERSION`
-   Choose the bump per [VERSIONING.md](VERSIONING.md).
+   The bump is computed from the `semver:*` labels aboard the train — highest class
+   wins (label semantics in [VERSIONING.md](VERSIONING.md)). Rename the train milestone
+   to `vX.Y.Z` now that the number exists.
 3. **Update the CHANGELOG.** Move `[Unreleased]` items into a new `## [X.Y.Z] - YYYY-MM-DD`
    section under the right headings (Added / Changed / Deprecated / Removed / Fixed /
    Security). Update the compare links at the bottom (add the new version's link and
@@ -75,7 +81,8 @@ is ever stored; after the bootstrap, publish is OIDC-only.
    npm view @aihq/harness@X.Y.Z
    npm audit signatures        # provenance + integrity
    ```
-11. **Close the milestone** and move any spillover to the next one.
+11. **Close the milestone** (renamed to this version in step 2) and open the next
+    `next-release` train in the same motion; deferred issues board it.
 12. **Sync project tracking.** Update the roadmap/progress notes and record any notable
     decision in memory, so the next session resumes from an accurate state (not just the
     code). This closes the loop the CHANGELOG and milestone don't cover.
