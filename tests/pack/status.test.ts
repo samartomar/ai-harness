@@ -306,7 +306,7 @@ describe("packStatusCommand", () => {
     const result = await executePlan(await packStatusCommand.plan(c), c);
     const digest = result.digests.find((d) => d.describe === "pack status");
     expect(digest?.text).toContain("no packs defined — create aih-packs.json");
-    expect((digest?.data as PackStatusReport).manifestPresent).toBe(false);
+    expect((digest?.data as PackStatusReport)?.manifestPresent).toBe(false);
   });
 
   it("--pack narrows the digest to the named pack", async () => {
@@ -320,6 +320,6 @@ describe("packStatusCommand", () => {
     const digest = result.digests.find((d) => d.describe === "pack status");
     expect(digest?.text).toContain("a — ready");
     expect(digest?.text).not.toContain("b — ");
-    expect((digest?.data as PackStatusReport).packs).toHaveLength(1);
+    expect((digest?.data as PackStatusReport)?.packs).toHaveLength(1);
   });
 });

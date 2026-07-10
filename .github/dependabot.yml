@@ -1,8 +1,12 @@
 version: 2
 updates:
-  # Keep npm dependencies patched; group runtime and dev deps to reduce PR noise.
-  # `semver:patch` satisfies the semver-label gate by default (the release cut needs
-  # exactly one class per merged PR); re-label by hand if a bump changes our surface.
+  # Keep npm dependencies patched. `semver:patch` satisfies the semver-label gate by
+  # default (the release cut needs exactly one class per merged PR); re-label by hand
+  # if a bump changes our surface.
+  #
+  # Two groups, deliberately: a single "*" group let one high-risk toolchain bump
+  # (Biome's new lint rules, TypeScript's declaration-build break) block every routine
+  # update riding with it. The toolchain lands on its own PR and can be triaged alone.
   - package-ecosystem: npm
     directory: "/"
     schedule:
@@ -12,9 +16,18 @@ updates:
       - dependencies
       - "semver:patch"
     groups:
+      toolchain:
+        patterns:
+          - "@biomejs/biome"
+          - "typescript"
+          - "tsup"
       dependencies:
         patterns:
           - "*"
+        exclude-patterns:
+          - "@biomejs/biome"
+          - "typescript"
+          - "tsup"
   # Keep GitHub Actions pinned versions current (supply-chain hygiene).
   - package-ecosystem: github-actions
     directory: "/"

@@ -125,7 +125,7 @@ describe("mcp enterprise modes", () => {
     expect(paths).toContain(".ai-context/mcp-fallback.md");
     // The admin template DISABLES MCP (empty server map).
     const managed = writes.find((w) => w.path === "managed-mcp.json.example");
-    expect((managed?.json as { mcpServers: object }).mcpServers).toEqual({});
+    expect((managed?.json as { mcpServers: object })?.mcpServers).toEqual({});
     // The fallback steers to CLI tools.
     const fallback = writes.find((w) => w.path.replace(/\\/g, "/").endsWith("mcp-fallback.md"));
     expect(fallback?.contents).toContain("rg");
@@ -170,7 +170,7 @@ describe("mcp enterprise modes", () => {
     expect(managed).toBeDefined();
     expect(Object.keys(mcp ? serversOf(mcp) : {})).not.toContain("code-review-graph");
     expect(
-      Object.keys((managed?.json as { mcpServers: Record<string, unknown> }).mcpServers),
+      Object.keys((managed?.json as { mcpServers: Record<string, unknown> })?.mcpServers ?? {}),
     ).not.toContain("code-review-graph");
   });
 
@@ -812,8 +812,8 @@ describe("aih mcp — remote scope emits SSO gateway doc (cloud is doc, not writ
     );
     expect(rbac).toBeDefined();
     const roles = (rbac?.json as { roles: Array<{ idpGroup: string; allowedServers: string[] }> })
-      .roles;
-    const orgDefault = roles.find((role) => role.idpGroup === "mcp-org-default");
+      ?.roles;
+    const orgDefault = roles?.find((role) => role.idpGroup === "mcp-org-default");
     expect(orgDefault?.allowedServers).toEqual(["better-email", "code-review-graph"]);
     expect(JSON.stringify(rbac?.json)).toContain("missing-server");
   });
@@ -972,7 +972,7 @@ describe("aih mcp — MCP write hygiene", () => {
     );
 
     expect(
-      (opencode?.json as { mcp: Record<string, { enabled?: boolean }> }).mcp.github?.enabled,
+      (opencode?.json as { mcp: Record<string, { enabled?: boolean }> })?.mcp.github?.enabled,
     ).toBe(false);
     expect(warning?.kind === "digest" ? warning.text : "").toContain(
       "placeholder URL host github.internal.example",
@@ -1899,7 +1899,7 @@ describe("aih mcp — enterprise posture (governance gate, opt-in)", () => {
     });
     const approval = (
       write?.json as { mcp?: { approvals?: Array<{ approvedAt?: string; subject?: string }> } }
-    ).mcp?.approvals?.[0];
+    )?.mcp?.approvals?.[0];
     expect(approval?.approvedAt).toBe("0000-00-00T00:00:00.000Z");
     expect(approval?.subject).toBe(context7ApprovalSubject());
     expect(write?.describe).toContain("Preview creating local org policy");
