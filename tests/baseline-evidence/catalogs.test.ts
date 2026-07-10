@@ -21,7 +21,13 @@ describe("production baseline catalogs", () => {
         "module:rules-core",
         "module:agents-core",
         "module:commands-core",
+        "module:hooks-runtime",
         "module:platform-configs",
+        "module:workflow-quality",
+        "module:framework-language",
+        "module:security",
+        "module:orchestration",
+        "module:document-processing",
         "skill:tdd-workflow",
         "skill:verification-loop",
         "skill:strategic-compact",
@@ -44,6 +50,7 @@ describe("production baseline catalogs", () => {
         "agent:performance-optimizer",
       ]),
     );
+    expect(ids.filter((id) => id.startsWith("module:"))).toHaveLength(32);
     expect(new Set(ids).size).toBe(ids.length);
   });
 
