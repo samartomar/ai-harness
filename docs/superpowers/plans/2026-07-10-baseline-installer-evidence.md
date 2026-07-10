@@ -269,7 +269,8 @@ GitHub attestations.
    - the same fixture at team (refuses before writes),
    - a post-clearance mutation (refuses), and
    - a signed org fixture plus a wrong-repository signature fixture.
-4. Run `npm audit`, `npm run check:fast`, and finally `npm run verify`.
+4. Run `npm audit`, `npm run typecheck`, `npm run lint:ci`, and finally
+   `npm run verify`.
 5. Review `git diff --check`, `git diff --stat`, full diff, generated schemas,
    vendor-lock provenance, package contents, and DCO signoffs.
 6. Obtain two independent high-risk review lenses (security/trust and
@@ -277,4 +278,3 @@ GitHub attestations.
    PR. Address all actionable findings with new RED tests.
 7. Push the branch and open the PR linked to #407. Stop for Samar’s required
    merge click; do not tag or publish.
-

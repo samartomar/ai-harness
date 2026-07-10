@@ -100,7 +100,9 @@ describe("baseline evidence lock schema", () => {
 
   it("rejects duplicate source and component identities", () => {
     const source = (lock().sources as unknown[])[0];
-    expect(() => parseBaselineEvidenceLock(lock({ sources: [source, source] }))).toThrow(/duplicate/i);
+    expect(() => parseBaselineEvidenceLock(lock({ sources: [source, source] }))).toThrow(
+      /duplicate/i,
+    );
 
     const duplicateComponent = lock({
       sources: [
