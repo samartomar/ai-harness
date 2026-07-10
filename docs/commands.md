@@ -37,7 +37,9 @@ after reviewing the current workstation state. `--scope certs,npm,path,mcp,all`.
 Install the agent shell tools the harness leans on — `rg`/`fd`/`jq` plus
 `ast-grep`/`comby`/`tree`/`gh`/`code-review-graph` — through the platform package manager. Dry-run
 previews; `--apply` installs. A blocked install on a locked-down box is escalated as an IT ticket
-rather than failing silently.
+rather than failing silently. On large repositories, the generated agent canon treats
+`code-review-graph` as a fail-closed prerequisite: if it is unavailable, errors, or has no populated
+graph, repository work stops until the graph is repaired and verified populated.
 
 ## aih ready
 

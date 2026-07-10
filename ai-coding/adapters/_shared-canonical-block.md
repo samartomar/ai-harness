@@ -21,7 +21,7 @@ any non-trivial change; the essentials are inline below.
 - Handle errors explicitly; no silent failures.
 - No secrets in code, config, fixtures, logs, or error text.
 - Do not open `.env*` or `secrets/**`; validate secret presence with `aih secrets --verify`.
-- On large repos, use code-review-graph for impact discovery; if it is unavailable, use bounded `rg`/`fd` reads only and report the gap.
+- On large repos, code-review-graph is a hard prerequisite for repository work. If it is unavailable, errors, or has no populated graph, stop; repair it and verify a populated graph before continuing.
 
 ## External action boundary
 

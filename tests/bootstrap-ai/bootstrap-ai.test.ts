@@ -130,7 +130,8 @@ describe("bootstrap-ai — canon files", () => {
     const w = writesByPath((await command.plan(makeCtx({ cli: "codex,gemini,kiro" }))).actions);
     const shared = w.get(".ai-context/adapters/_shared-canonical-block.md")?.contents ?? "";
     expect(shared).toContain("aih secrets --verify");
-    expect(shared).toContain("bounded `rg`/`fd` reads");
+    expect(shared).toContain("code-review-graph is a hard prerequisite");
+    expect(shared).toContain("stop; repair it and verify a populated graph before continuing");
   });
 
   it("the router is stack-aware (names the detected language)", async () => {

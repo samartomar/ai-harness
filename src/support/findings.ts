@@ -408,7 +408,7 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     failSeverity: "blocking",
     title: "code-review-graph unavailable for large repo",
     action:
-      "Enable the local graph before broad analysis: run `aih mcp --apply` and `aih tools --apply`, then re-check with `aih doctor`. Until it is available, use bounded rg/fd reads only.",
+      "Stop repository work. Enable the local graph with `aih mcp --apply` and `aih tools --apply`, then continue only after `aih doctor` verifies a populated graph.",
   },
   "report.context-over-budget": {
     audience: "developer",

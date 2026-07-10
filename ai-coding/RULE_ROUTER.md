@@ -1,4 +1,5 @@
 # ai-harness — AI Rule Router
+<!-- aih-loadability-sentinel: AIH_LOADABILITY_SENTINEL_v1 -->
 
 Committed rule entry point for every AI coding tool in this repo. Load the
 smallest rule set that matches the task, then verify against repo evidence
@@ -24,9 +25,9 @@ smallest rule set that matches the task, then verify against repo evidence
 ## Always read first
 
 - `ai-coding/rules/agent-behavior-core.md` — working discipline (think → simplify → surgical → goal-driven)
-- `ai-coding/rules/project-canon-extension.md` — repo-specific rules, as a load-on-demand map; read a rule file only when your task hits its trigger
 - `ai-coding/project.md` — the repo contract: stack, commands, scale, sensitive paths, known gaps (machine-readable in `ai-coding/project.json`)
 - The ECC `common` rules (Layer 1) before any non-trivial change
+- `ai-coding/rules/project-canon-extension.md` — project-specific canon (carved from this repo's prior bootloader by `aih adopt`; aih never regenerates it)
 
 Read depth: for read-only validation you may identify these files and confirm
 routing without opening each. For implementation, review, or security work, read
@@ -60,7 +61,9 @@ how it loads rules, boundaries).
 ## Tooling failure recovery
 
 If a tool, MCP server, graph, or memory store fails, state the failure briefly,
-fall back to committed repo evidence, and never invent results. Don't cite a
+fall back to committed repo evidence, and never invent results. Exception: on
+large repos, code-review-graph failure is fail-closed and work must stop until
+the graph is repaired and verified populated. Don't cite a
 command, path, or API you haven't verified exists. Regenerate this canon with
 `aih bootstrap-ai` (router + bootloaders) and `aih contract` (project.json /
 project.md) — idempotent; `aih bootstrap-ai --verify` fails if a bootloader drifted.
