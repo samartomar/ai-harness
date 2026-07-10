@@ -461,7 +461,7 @@ describe("verifiedEccInstallPlan", () => {
     const ledgerStep = steps.at(-1);
     expect(ledgerStep?.argv.join(" ")).toContain("registration-ledger");
 
-    const run = (firstExit: number) => {
+    const run = (firstExit: number, env: NodeJS.ProcessEnv = {}) => {
       const deterministic = steps.map((step, index) =>
         index === steps.length - 1
           ? step
@@ -473,13 +473,33 @@ describe("verifiedEccInstallPlan", () => {
       const encoded = Buffer.from(JSON.stringify(deterministic), "utf8").toString("base64");
       return spawnSync(executable, [...driver.argv.slice(1, -1), encoded], {
         cwd: root,
+        env: { ...process.env, ...env },
         encoding: "utf8",
       });
     };
 
     expect(run(7).status).toBe(7);
     expect(existsSync(registrationLedgerPath(root))).toBe(false);
-    expect(run(0).status).toBe(0);
+    const preload = join(root, "transient-rename.cjs");
+    writeFileSync(
+      preload,
+      [
+        'const fs = require("node:fs");',
+        "const rename = fs.renameSync;",
+        "let calls = 0;",
+        "fs.renameSync = (...args) => {",
+        "  if (calls++ === 0) {",
+        '    const error = new Error("injected transient rename failure");',
+        '    error.code = "EPERM";',
+        "    throw error;",
+        "  }",
+        "  return rename(...args);",
+        "};",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+    expect(run(0, { NODE_OPTIONS: `--require=${preload}` }).status).toBe(0);
     expect(readRegistrationLedger(root).projects).toEqual([
       expect.objectContaining({ root, components: ["baseline:rules"] }),
     ]);
