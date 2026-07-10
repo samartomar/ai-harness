@@ -18,11 +18,13 @@ version is the contract between the CLI and the repos and workstations it manage
 | **MINOR** | New commands, flags, or artifacts. Backward compatible for existing use. |
 | **MAJOR** | A change that can break an existing invocation, script, or generated file. |
 
-At release time the bump is not chosen by hand: each issue carries exactly one
-`semver:patch|minor|major` label at merge, and the release cut takes the highest class
-aboard the release milestone. When labeling, apply the surface definition above — a
-change to verdicts, exit codes, or generated-artifact content is a surface change
-(**MINOR** at least), even when the commit is typed `fix:`.
+At release time the bump is not chosen by hand: each **merged PR** carries exactly one
+`semver:patch|minor|major` label (authoritative — issue-level labels are advisory
+planning hints, and issueless PRs such as dependency or docs updates are labeled
+directly), and the release cut takes the highest class among the PRs merged since the
+previous tag. When labeling, apply the surface definition above — a change to verdicts,
+exit codes, or generated-artifact content is a surface change (**MINOR** at least),
+even when the commit is typed `fix:`.
 
 ### Pre-1.0 (0.x)
 
@@ -38,19 +40,20 @@ A **patch** (`0.2.0 → 0.2.1`) never breaks.
 - the CLI surface and generated-artifact shape are stable enough to pin against —
   the enforced contract (surfaces, tests, what each bump may change) is
   [STABILITY.md](STABILITY.md);
-- N-1 security backports begin (see below);
+- a maintenance-release lane exists, if N-1 support is committed at that point (see below);
 - the deprecation policy below is in force.
 
 ## Supported versions
 
 | Phase | Supported |
 |---|---|
-| **Pre-1.0 (now)** | Only the **latest minor** receives fixes. Upgrade to the latest `0.x` to get security and bug fixes. |
-| **1.0 onward** | The **latest minor** plus the **previous minor** (N-1) receive security backports. |
+| **All phases (current policy)** | Only the **latest minor** receives fixes. Upgrade to the latest release line to get security and bug fixes. |
 
-From 1.0, a security fix lands on **both** the latest minor and the previous minor
-of the current major — as a patch on each line. Non-security bug fixes land on the
-latest minor only. Security reporting is in [SECURITY.md](SECURITY.md).
+Support is latest-minor-only: security and bug fixes land on the latest minor, and the
+fix path is upgrading to it. An N-1 backport commitment requires a maintenance-release
+lane (releases cut from the previous tag's line) that does not exist yet; if that lane
+is built, this policy will be re-amended **first** — the promise follows the mechanism,
+never the other way around. Security reporting is in [SECURITY.md](SECURITY.md).
 
 ## Deprecation policy
 
