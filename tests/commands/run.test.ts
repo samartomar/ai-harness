@@ -372,6 +372,40 @@ describe("runCapability — custom option extraction", () => {
   });
 });
 
+describe("runCapability — custom execution", () => {
+  it("uses an injected executor with the resolved context", async () => {
+    let observedRoot = "";
+    const spec: CommandSpec = {
+      name: "custom-execution",
+      summary: "exercise the custom executor seam",
+      plan: () => {
+        throw new Error("the ordinary plan must not be built");
+      },
+    };
+
+    const code = await runCapability(spec, command(["--root", dir, "--apply"]), {
+      env: {},
+      run: fakeRunner(() => undefined),
+      write: () => {},
+      execute: async (ctx) => {
+        observedRoot = ctx.root;
+        return {
+          capability: "custom-execution",
+          writes: [],
+          removes: [],
+          execs: [],
+          docs: [],
+          digests: [],
+          backups: [],
+        };
+      },
+    });
+
+    expect(code).toBe(0);
+    expect(observedRoot).toBe(dir);
+  });
+});
+
 describe("runCapability — live report options", () => {
   it("rejects --refresh with --json before emitting a mixed JSON/live stream", async () => {
     const { code, out } = await run(["--json", "--refresh", "1", "--root", dir], liveSpec);
