@@ -13,6 +13,7 @@ import { executePlan } from "../../src/internals/execute.js";
 import type { PlanContext } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
+import { buildProgram } from "../../src/program.js";
 import { resolveTrustSource } from "../../src/trust/fetch.js";
 
 let root: string;
@@ -30,9 +31,7 @@ afterEach(() => {
 });
 
 function ctx(apply: boolean, head = "a".repeat(40)): PlanContext {
-  const run = fakeRunner((argv) =>
-    argv[0] === "git" ? { stdout: `${head}\n` } : undefined,
-  );
+  const run = fakeRunner((argv) => (argv[0] === "git" ? { stdout: `${head}\n` } : undefined));
   return {
     root,
     contextDir: "ai-coding",
@@ -77,6 +76,17 @@ function evidence() {
 }
 
 describe("baseline vet command plan", () => {
+  it("is registered under the real evidence command group", () => {
+    const program = buildProgram();
+    const evidence = program.commands.find((entry) => entry.name() === "evidence");
+    const vet = evidence?.commands.find((entry) => entry.name() === "vet-baseline");
+    expect(vet).toBeDefined();
+    expect(vet?.registeredArguments[0]?.required).toBe(true);
+    expect(vet?.options.map((option) => option.long)).toEqual(
+      expect.arrayContaining(["--pin", "--catalog", "--components"]),
+    );
+  });
+
   it("writes one typed baseline report after an exact local checkout is vetted", async () => {
     const vetCatalog = vi.fn(async () => evidence());
     const source = resolveTrustSource(sourceRoot, { root });
