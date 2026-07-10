@@ -6,6 +6,42 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [2.5.1] - 2026-07-10
+
+### Fixed
+
+- `docs/assets` SVGs shipped inside the v2.5.0 tarball still carried v2.4.3
+  wording; refreshed, and versioned surfaces (README `aih vX.Y.Z` claims and
+  every `docs/assets/*.svg`) are now locked to the package version by a test
+  that fails `npm run verify` on drift. (#383)
+- Resolved all 22 `lint/correctness/noUnsafeOptionalChaining` test-suite
+  findings that blocked the Biome 2.5.3 upgrade. (#387)
+
+### Added
+
+- `semver-label` CI check: every PR must carry exactly one
+  `semver:patch|minor|major` label — the release cut computes the version bump
+  from the labels on merged PRs. Dependabot PRs are auto-labeled; external
+  contributors need no action (a maintainer labels before merge). (#384, #386)
+- Property-based fuzz coverage (`fast-check`) for the platform parsers,
+  asserting `parsePemBlocks` invariants across generated multi-block
+  certificate inputs. (#389)
+
+### Changed
+
+- `RELEASING.md` and `VERSIONING.md` now document the release-train flow:
+  releases cut from a rolling `next-release` milestone, the bump computed from
+  merged-PR labels, atomic train rollover at cut, SHA-bound publication
+  approval, and milestones closed on publish evidence rather than at tag.
+  Support policy amended to latest-minor-only until a maintenance lane exists.
+  (#381)
+- Dependabot now splits the npm toolchain (`@biomejs/biome`, `typescript`,
+  `tsup`) into its own update group so a blocked toolchain bump cannot wedge
+  routine updates, and groups the CodeQL actions so `init`/`analyze` always
+  move together. (#388, #390)
+- Dev dependencies: `@types/node` 26.1.1, `vitest`/`@vitest/coverage-v8`
+  4.1.10, `tsx` 4.23.0 (#388); `anthropics/claude-code-action` 1.0.170 (#385).
+
 ## [2.5.0] - 2026-07-10
 
 ### Fixed
@@ -924,7 +960,8 @@ GitHub but **never published to npm**; the first published release is 0.2.0.
   (npm + github-actions), private vulnerability reporting, `@claude` workflow gated
   to trusted authors, and GitHub Actions pinned to commit SHAs.
 
-[Unreleased]: https://github.com/samartomar/ai-harness/compare/v2.5.0...HEAD
+[Unreleased]: https://github.com/samartomar/ai-harness/compare/v2.5.1...HEAD
+[2.5.1]: https://github.com/samartomar/ai-harness/compare/v2.5.0...v2.5.1
 [2.5.0]: https://github.com/samartomar/ai-harness/compare/v2.4.3...v2.5.0
 [2.4.3]: https://github.com/samartomar/ai-harness/compare/v2.4.2...v2.4.3
 [2.4.2]: https://github.com/samartomar/ai-harness/compare/v2.4.1...v2.4.2
