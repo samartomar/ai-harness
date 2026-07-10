@@ -3,6 +3,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -82,7 +83,10 @@ describe("ECC registration ledger", () => {
       [target(["baseline:rules", "framework:react", "lang:cpp"])],
     );
 
-    expect(second.projects.map((project) => project.root)).toEqual([projectA, projectB]);
+    expect(second.projects.map((project) => project.root)).toEqual([
+      realpathSync(projectA),
+      realpathSync(projectB),
+    ]);
     expect(machineRegistrationUnion(second)).toEqual({
       components: ["baseline:rules", "framework:react", "lang:cpp"],
       mcps: ["mcp:code-review-graph", "mcp:sequential-thinking"],
