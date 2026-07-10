@@ -157,10 +157,12 @@ describe("verifiedEccInstallPlan", () => {
 
   it("keeps Codex on the add-only merge path inside the same sequential driver", () => {
     const sourceRoot = join(root, "quarantine", "tree");
+    const selected = selection();
+    selected.mcps = ["mcp:sequential-thinking", "mcp:github"];
     const plan = verifiedEccInstallPlan(
       ctx(),
       sourceRoot,
-      { clis: ["codex"], profile: "core", packs: [], selection: selection() },
+      { clis: ["codex"], profile: "core", packs: [], selection: selected },
       [authorization()],
     );
     expect(execs(plan.actions)).toHaveLength(1);
@@ -168,14 +170,32 @@ describe("verifiedEccInstallPlan", () => {
     expect(steps[0]?.argv[0]).toBe("npm");
     expect(steps[1]?.argv.slice(0, 2)).toEqual(["node", "-e"]);
     expect(steps[1]?.argv).toContain(join(sourceRoot, "scripts", "codex", "merge-codex-config.js"));
-    const specB64 = steps[1]?.argv.at(-1);
+    const specB64 = steps[1]?.argv.at(-2);
     if (specB64 === undefined) throw new Error("missing Codex materialization spec");
     expect(JSON.parse(Buffer.from(specB64, "base64").toString("utf8"))).toMatchObject({
       scope: "scoped",
       moduleIds: expect.arrayContaining(["agents-core", "platform-configs"]),
       agents: ["code-reviewer"],
     });
-    expect(steps[1]?.env?.ECC_DISABLED_MCPS).toBe("context7,exa,github,memory,playwright,supabase");
+    const mcpB64 = steps[1]?.argv.at(-1);
+    if (mcpB64 === undefined) throw new Error("missing Codex MCP registration spec");
+    expect(JSON.parse(Buffer.from(mcpB64, "base64").toString("utf8"))).toMatchObject({
+      servers: {
+        "sequential-thinking": {
+          type: "stdio",
+          command: "npx",
+          args: ["-y", "@modelcontextprotocol/server-sequential-thinking@2025.12.18"],
+        },
+        github: {
+          type: "http",
+          url: "https://api.githubcopilot.com/mcp/",
+        },
+      },
+    });
+    expect(steps[1]?.env?.ECC_DISABLED_MCPS).toBe(
+      "chrome-devtools,context7,exa,memory,playwright,supabase",
+    );
+    expect(steps[1]?.argv[2]).toContain("if (!mcpSpec)");
     expect(
       plan.actions.some(
         (action) => action.kind === "write" && action.describe.includes("Codex config.toml"),
