@@ -29,6 +29,11 @@ updates:
           - "typescript"
           - "tsup"
   # Keep GitHub Actions pinned versions current (supply-chain hygiene).
+  #
+  # Group the CodeQL actions: `github/codeql-action/init` and `.../analyze` run together
+  # in one workflow and their bundle versions must match — split PRs failed with
+  # "Loaded a configuration file for version 'X', but running version 'Y'" (#368). One
+  # grouped PR moves the paired steps together.
   - package-ecosystem: github-actions
     directory: "/"
     schedule:
@@ -38,3 +43,12 @@ updates:
       - dependencies
       - github_actions
       - "semver:patch"
+    groups:
+      codeql:
+        patterns:
+          - "github/codeql-action*"
+      actions:
+        patterns:
+          - "*"
+        exclude-patterns:
+          - "github/codeql-action*"
