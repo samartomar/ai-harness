@@ -93,10 +93,10 @@ describe("velocityDigests", () => {
     });
     const [commits, loc] = await velocityDigests(ctx(run));
     expect(commits?.describe).toContain("23 in 7d");
-    expect((commits?.data as { commits: { total: number } }).commits.total).toBe(1420);
+    expect((commits?.data as { commits: { total: number } })?.commits.total).toBe(1420);
     // gap-filled daily series spans 2026-06-22..24 (3 buckets: 1,0,2)
-    expect((commits?.data as { daily: unknown[] }).daily).toHaveLength(3);
-    expect((loc?.data as { loc: { net: number } }).loc.net).toBe(4530 - 1890);
+    expect((commits?.data as { daily: unknown[] })?.daily).toHaveLength(3);
+    expect((loc?.data as { loc: { net: number } })?.loc.net).toBe(4530 - 1890);
   });
 });
 
@@ -126,8 +126,8 @@ describe("repoInfoDigest", () => {
     });
     const d = await repoInfoDigest(ctx(run));
     expect(d?.data).toMatchObject({ files: 5, size: "3.40 MiB" });
-    const types = (d?.data as { types: { name: string; count: number }[] }).types;
-    expect(types[0]).toEqual({ name: "ts", count: 2 }); // most common ext first
+    const types = (d?.data as { types: { name: string; count: number }[] })?.types;
+    expect(types?.[0]).toEqual({ name: "ts", count: 2 }); // most common ext first
   });
 });
 
@@ -303,7 +303,7 @@ describe("graphDigests (Phase 2 — gated)", () => {
     );
     const ds = await graphDigests(ctx(fakeRunner(() => undefined)));
     expect(ds[0]?.describe).toContain("342 nodes");
-    expect((ds[0]?.data as { edges: number }).edges).toBe(891);
+    expect((ds[0]?.data as { edges: number })?.edges).toBe(891);
     expect(ds.some((d) => d.describe.startsWith("Build & analysis"))).toBe(true);
   });
 
@@ -360,9 +360,9 @@ describe("graphDigests (Phase 2 — gated)", () => {
       JSON.stringify({ nodes: 8, edges: 16, filesIndexed: 4, buildTimeMs: 2500 }),
     );
     const ds = await graphDigests(ctx(fakeRunner(() => undefined)));
-    expect((ds[0]?.data as { files: number }).files).toBe(4);
+    expect((ds[0]?.data as { files: number })?.files).toBe(4);
     const build = ds.find((d) => d.describe.startsWith("Build & analysis"));
-    expect((build?.data as { buildMs: number }).buildMs).toBe(2500);
+    expect((build?.data as { buildMs: number })?.buildMs).toBe(2500);
   });
 
   it("nodes-only graph → no derived density, no build panel", async () => {
@@ -370,7 +370,7 @@ describe("graphDigests (Phase 2 — gated)", () => {
     writeFileSync(join(root, ".aih", "graph.json"), JSON.stringify({ nodes: 5 }));
     const ds = await graphDigests(ctx(fakeRunner(() => undefined)));
     expect(ds).toHaveLength(1); // health only — no edges/files/buildMs to show
-    expect((ds[0]?.data as { density?: number }).density).toBeUndefined();
+    expect((ds[0]?.data as { density?: number })?.density).toBeUndefined();
   });
 });
 
