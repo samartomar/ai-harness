@@ -55,6 +55,7 @@ import {
 } from "../skill/index.js";
 import { command as status } from "../status.js";
 import { command as superpowers } from "../superpowers/index.js";
+import { executeSuperpowersCommand } from "../superpowers/pipeline.js";
 import { command as telemetry } from "../telemetry/index.js";
 import { command as tools } from "../tools/index.js";
 import { command as track } from "../track/index.js";
@@ -364,6 +365,7 @@ function registerSpec(program: Command, spec: CommandSpec): void {
         deps.optionOverrides = { [spec.positional.optionName]: _rootArg };
       }
       if (spec === ecc) deps.execute = executeEccCommand;
+      if (spec === superpowers) deps.execute = executeSuperpowersCommand;
       process.exitCode = await runCapability(spec, command, deps);
     },
   );

@@ -63,7 +63,8 @@ async function superpowersPlan(ctx: PlanContext): Promise<Plan> {
 export const command: CommandSpec = {
   name: "superpowers",
   summary:
-    "Install obra/Superpowers (brainstorm -> plan -> TDD -> review skills) for the selected CLIs",
+    "Verify exact-pinned obra/Superpowers components and emit evidence-bound target guidance",
   options: [],
   plan: superpowersPlan,
+  alwaysVerify: true,
 };
