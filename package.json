@@ -38,7 +38,7 @@
     "node": ">=20"
   },
   "scripts": {
-    "build": "tsup",
+    "build": "tsup && tsc -p tsconfig.dts.json",
     "dev": "tsx src/cli.ts",
     "test": "vitest run",
     "test:watch": "vitest",
