@@ -5,7 +5,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { defineBaselineCatalog } from "../../src/baseline-evidence/catalog.js";
 import { hashComponentTree } from "../../src/baseline-evidence/hash.js";
 import { parseBaselineEvidenceLock } from "../../src/baseline-evidence/schema.js";
-import { executeEccEvidencePipeline } from "../../src/ecc/pipeline.js";
+import {
+  buildEccRegistrationRequest,
+  executeEccEvidencePipeline,
+} from "../../src/ecc/pipeline.js";
+import {
+  emptyRegistrationLedger,
+  mergeRegistrationLedger,
+  writeRegistrationLedgerAtomic,
+} from "../../src/ecc/registration.js";
 import { doc, type PlanContext, plan } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
@@ -79,6 +87,71 @@ function vendorLock(verdict: "pass" | "blocked" = "pass") {
 const request = { clis: ["kiro" as const], profile: "core", packs: [] };
 
 describe("ECC baseline evidence pipeline", () => {
+  it("builds the additive machine union from scan, declarations, MCP defaults, and prior projects", () => {
+    const home = join(root, "home");
+    const cpp = join(root, "cpp-project");
+    mkdirSync(home, { recursive: true });
+    mkdirSync(cpp, { recursive: true });
+    writeFileSync(
+      join(root, "package.json"),
+      JSON.stringify({ dependencies: { react: "19.0.0" }, devDependencies: { typescript: "5.0.0" } }),
+    );
+    writeFileSync(join(root, "tsconfig.json"), "{}\n");
+    writeFileSync(
+      join(root, ".mcp.json"),
+      JSON.stringify({
+        mcpServers: {
+          "code-review-graph": { type: "stdio", command: "uvx", args: [] },
+          context7: { type: "stdio", command: "npx", args: [] },
+        },
+      }),
+    );
+    const prior = mergeRegistrationLedger(
+      emptyRegistrationLedger(),
+      {
+        root: cpp,
+        scope: "scoped",
+        components: ["lang:cpp", "agent:cpp-reviewer", "agent:cpp-build-resolver"],
+        mcps: ["mcp:sequential-thinking"],
+      },
+      [],
+    );
+    writeRegistrationLedgerAtomic(home, prior);
+    const context = ctx(false);
+    context.posture = "team";
+    context.env = { HOME: home };
+    context.host = makeHostAdapter({ platform: "linux", run: context.run, env: context.env });
+    context.options = { profile: "core", with: ["security-review"] };
+
+    const request = buildEccRegistrationRequest(context, ["claude"]);
+
+    expect(request.project.components).toEqual(
+      expect.arrayContaining([
+        "lang:typescript",
+        "framework:react",
+        "skill:security-review",
+      ]),
+    );
+    expect(request.project.components).not.toContain("lang:cpp");
+    expect(request.selection.components).toEqual(
+      expect.arrayContaining([
+        "lang:typescript",
+        "framework:react",
+        "skill:security-review",
+        "lang:cpp",
+        "agent:cpp-reviewer",
+        "agent:cpp-build-resolver",
+      ]),
+    );
+    expect(request.selection.mcps).toEqual([
+      "mcp:code-review-graph",
+      "mcp:github",
+      "mcp:sequential-thinking",
+    ]);
+    expect(request.selection.mcps).not.toContain("mcp:context7");
+    expect(request.ledger.projects).toHaveLength(1);
+  });
+
   it("constructs install actions only after exact evidence clears", async () => {
     const buildInstallPlan = vi.fn(() => plan("verified install", doc("install", "verified")));
     const result = await executeEccEvidencePipeline(ctx(), request, {
