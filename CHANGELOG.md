@@ -6,6 +6,13 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- Large-repository agent canon now treats `code-review-graph` as a fail-closed
+  prerequisite: repository work stops when the tool is unavailable, errors, or
+  has no populated graph, and resumes only after the graph is repaired and
+  verified populated.
+
 ## [2.6.0] - 2026-07-10
 
 ### Added

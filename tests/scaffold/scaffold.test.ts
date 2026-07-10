@@ -122,7 +122,8 @@ describe("scaffold plan (dry-run shape)", () => {
     expect(tasks).toContain("Do not open `.env*` or `secrets/**`");
     expect(tasks).toContain("aih secrets --verify");
     expect(tasks).toContain("large-repo graph safety");
-    expect(tasks).toContain("bounded to targeted `rg`/`fd`");
+    expect(tasks).toContain("fails, stop; repair code-review-graph");
+    expect(tasks).toContain("verify a populated graph before continuing");
     expect(tasks).toContain("Do not edit `.ai-context/VALIDATION.md`");
     // Author-owned canon is write-once (the agent's edits survive re-runs).
     expect(w.get(".ai-context/INDEX.md")?.once).toBe(true);

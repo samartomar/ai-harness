@@ -280,7 +280,7 @@ async function evaluateScaleSafety(
       detail:
         `${detailPrefix}${files} tracked files >= ${LARGE_REPO_FILE_THRESHOLD}; ${graph.detail}. ` +
         "Install/enable code-review-graph before broad analysis: `aih mcp --apply` and `aih tools --apply`. " +
-        "Until then, use bounded rg/fd reads only.",
+        "Stop repository work until `aih doctor` verifies a populated graph.",
     },
     emitDigest: true,
   };

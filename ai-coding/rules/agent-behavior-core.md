@@ -42,7 +42,7 @@ Define success criteria, then loop until verified.
 - Explicit error handling; no silent failures.
 - No secrets in code, prompts, fixtures, logs, or error text.
 - Do not open `.env*` or `secrets/**`; validate secret presence with `aih secrets --verify`.
-- On large repos, use code-review-graph for impact discovery; if it is unavailable, use bounded `rg`/`fd` reads only and report the gap.
+- On large repos, code-review-graph is a hard prerequisite for repository work. If it is unavailable, errors, or has no populated graph, stop; repair it and verify a populated graph before continuing.
 - Repo evidence (source, tests, schemas, CI) is the truth, not model memory. Don't
   invent commands, paths, or APIs; verify a path exists before citing it.
 
