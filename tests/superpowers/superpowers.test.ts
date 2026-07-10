@@ -44,17 +44,16 @@ describe("superpowersActionsForCli — per-CLI install", () => {
     expect(text).toContain("/plugin install superpowers@claude-plugins-official");
   });
 
-  it("antigravity: shell-runnable `agy plugin install` exec", () => {
-    const argv = execs(superpowersActionsForCli("antigravity"))[0]?.argv;
-    expect(argv).toEqual(["agy", "plugin", "install", "https://github.com/obra/superpowers"]);
+  it("antigravity: emits evidence-bound guidance without a mutable remote exec", () => {
+    const actions = superpowersActionsForCli("antigravity", "a".repeat(40));
+    expect(execs(actions)).toHaveLength(0);
+    expect(docs(actions)[0]?.text).toContain("a".repeat(40));
   });
 
-  it("copilot: marketplace add + install execs", () => {
-    const argvs = execs(superpowersActionsForCli("copilot")).map((e) => e.argv);
-    expect(argvs).toEqual([
-      ["copilot", "plugin", "marketplace", "add", "obra/superpowers-marketplace"],
-      ["copilot", "plugin", "install", "superpowers@superpowers-marketplace"],
-    ]);
+  it("copilot: never claims a mutable marketplace selection is evidence-covered", () => {
+    const actions = superpowersActionsForCli("copilot", "a".repeat(40));
+    expect(execs(actions)).toHaveLength(0);
+    expect(docs(actions)[0]?.text).toContain("not evidence-covered");
   });
 
   it("codex: documents the /plugins TUI flow (not shell-runnable)", () => {
@@ -82,11 +81,9 @@ describe("superpowers.plan", () => {
     ).toContain("superpowers@claude-plugins-official");
   });
 
-  it("--cli antigravity,copilot emits the shell installs", async () => {
+  it("--cli antigravity,copilot emits no mutable shell installs", async () => {
     const actions = (await command.plan(makeCtx({ cli: "antigravity,copilot" }))).actions;
-    const flat = execs(actions).map((e) => e.argv[0]);
-    expect(flat).toContain("agy");
-    expect(flat).toContain("copilot");
+    expect(execs(actions)).toHaveLength(0);
   });
 
   it("warns when selected targets use shell installs that fetch mutable remote content", async () => {
