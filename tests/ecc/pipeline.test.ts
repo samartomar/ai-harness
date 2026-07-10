@@ -5,10 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { defineBaselineCatalog } from "../../src/baseline-evidence/catalog.js";
 import { hashComponentTree } from "../../src/baseline-evidence/hash.js";
 import { parseBaselineEvidenceLock } from "../../src/baseline-evidence/schema.js";
-import {
-  buildEccRegistrationRequest,
-  executeEccEvidencePipeline,
-} from "../../src/ecc/pipeline.js";
+import { buildEccRegistrationRequest, executeEccEvidencePipeline } from "../../src/ecc/pipeline.js";
 import {
   emptyRegistrationLedger,
   mergeRegistrationLedger,
@@ -94,9 +91,14 @@ describe("ECC baseline evidence pipeline", () => {
     mkdirSync(cpp, { recursive: true });
     writeFileSync(
       join(root, "package.json"),
-      JSON.stringify({ dependencies: { react: "19.0.0" }, devDependencies: { typescript: "5.0.0" } }),
+      JSON.stringify({
+        dependencies: { react: "19.0.0" },
+        devDependencies: { typescript: "5.0.0" },
+      }),
     );
     writeFileSync(join(root, "tsconfig.json"), "{}\n");
+    mkdirSync(join(root, "src"), { recursive: true });
+    writeFileSync(join(root, "src", "index.ts"), "export const value = 1;\n");
     writeFileSync(
       join(root, ".mcp.json"),
       JSON.stringify({
@@ -126,11 +128,7 @@ describe("ECC baseline evidence pipeline", () => {
     const request = buildEccRegistrationRequest(context, ["claude"]);
 
     expect(request.project.components).toEqual(
-      expect.arrayContaining([
-        "lang:typescript",
-        "framework:react",
-        "skill:security-review",
-      ]),
+      expect.arrayContaining(["lang:typescript", "framework:react", "skill:security-review"]),
     );
     expect(request.project.components).not.toContain("lang:cpp");
     expect(request.selection.components).toEqual(

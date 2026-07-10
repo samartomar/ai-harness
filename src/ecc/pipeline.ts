@@ -1,3 +1,6 @@
+import { readFileSync, realpathSync } from "node:fs";
+import { homedir } from "node:os";
+import { type ParseError, parse } from "jsonc-parser";
 import type { BaselineCatalog } from "../baseline-evidence/catalog.js";
 import { baselineCatalogById } from "../baseline-evidence/catalogs.js";
 import type {
@@ -9,15 +12,27 @@ import {
   executeBaselineEvidencePipeline,
 } from "../baseline-evidence/pipeline.js";
 import type { BaselineEvidenceLock } from "../baseline-evidence/schema.js";
+import { postureFromContext } from "../config/posture.js";
 import { AihError } from "../errors.js";
 import { detectFallbackNotice, resolveTargets } from "../internals/cli-detect.js";
+import type { Cli } from "../internals/clis.js";
+import { inspectContainedRelativePath } from "../internals/contained-path.js";
 import { executePlan, type PlanResult } from "../internals/execute.js";
 import { doc, type PlanContext, plan } from "../internals/plan.js";
 import type { RepoStack } from "../profile/scan.js";
 import { scanRepo } from "../profile/scan.js";
 import { resolveTrustSource, type TrustSource } from "../trust/fetch.js";
-import { eccEvidenceComponentIds } from "./evidence.js";
+import type { EccComponentId, EccComponentSelection, EccMcpComponentId } from "./components.js";
+import { selectEccComponents } from "./components.js";
+import { eccEvidenceComponentIds, eccEvidenceComponentIdsForSelection } from "./evidence.js";
 import { eccActionsForCli, eccToolsDoc, isAihDirectEccInstallTarget } from "./install.js";
+import {
+  machineRegistrationUnion,
+  mergeRegistrationLedger,
+  type ProjectRegistration,
+  type RegistrationLedger,
+  readRegistrationLedger,
+} from "./registration.js";
 import { eccLanguages } from "./select.js";
 import { type VerifiedEccRequest, verifiedEccInstallPlan } from "./verified.js";
 
@@ -58,7 +73,10 @@ function componentIds(request: VerifiedEccRequest): string[] {
   const selected = new Set<string>();
   for (const cli of request.clis) {
     if (isAihDirectEccInstallTarget(cli) || cli === "codex") {
-      for (const id of eccEvidenceComponentIds(request.profile, cli, request.packs)) {
+      const ids = request.selection
+        ? eccEvidenceComponentIdsForSelection(cli, request.selection)
+        : eccEvidenceComponentIds(request.profile, cli, request.packs);
+      for (const id of ids) {
         selected.add(id);
       }
     } else if (cli === "kiro") {
@@ -66,6 +84,83 @@ function componentIds(request: VerifiedEccRequest): string[] {
     }
   }
   return [...selected];
+}
+
+function objectRecord(value: unknown): Record<string, unknown> | undefined {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+function declaredMcpNames(root: string): string[] {
+  const inspected = inspectContainedRelativePath(root, ".mcp.json");
+  if (inspected.state === "absent") return [];
+  if (inspected.state === "unsafe" || inspected.kind !== "file") {
+    throw new AihError("refusing unsafe .mcp.json while selecting ECC MCP defaults", "AIH_CONFIG");
+  }
+  const errors: ParseError[] = [];
+  const parsed = parse(readFileSync(inspected.realPath, "utf8"), errors, {
+    allowTrailingComma: true,
+    disallowComments: false,
+  });
+  if (errors.length > 0) {
+    throw new AihError("invalid .mcp.json while selecting ECC MCP defaults", "AIH_CONFIG");
+  }
+  const servers = objectRecord(objectRecord(parsed)?.mcpServers);
+  return servers ? Object.keys(servers) : [];
+}
+
+function declarations(options: Record<string, unknown>): string[] {
+  const raw = options.with;
+  if (Array.isArray(raw) && raw.every((entry): entry is string => typeof entry === "string")) {
+    return raw;
+  }
+  if (typeof raw === "string") return [raw];
+  if (raw === undefined) return [];
+  throw new AihError("--with declarations must be strings", "AIH_CONFIG");
+}
+
+export interface EccRegistrationRequest extends VerifiedEccRequest {
+  selection: EccComponentSelection;
+  project: ProjectRegistration;
+  ledger: RegistrationLedger;
+}
+
+export function buildEccRegistrationRequest(ctx: PlanContext, clis: Cli[]): EccRegistrationRequest {
+  const stack = scanRepo(ctx.root, { maxDepth: 8, contextDir: ctx.contextDir });
+  const language = eccLanguages(stack);
+  const profile = String(ctx.options.profile ?? "core");
+  const selected = selectEccComponents({
+    stack,
+    posture: postureFromContext(ctx),
+    profile,
+    declarations: declarations(ctx.options),
+    declaredMcps: declaredMcpNames(ctx.root),
+  });
+  const home = ctx.env.HOME || ctx.env.USERPROFILE || homedir();
+  const ledger = readRegistrationLedger(home);
+  const project: ProjectRegistration = {
+    root: realpathSync(ctx.root),
+    scope: selected.scope,
+    components: [...selected.components],
+    mcps: [...selected.mcps],
+  };
+  const preview = mergeRegistrationLedger(ledger, project, []);
+  const union = machineRegistrationUnion(preview);
+  return {
+    clis,
+    profile,
+    packs: language.packs,
+    stackSummary: repoStackSummary(stack),
+    selection: {
+      scope: preview.projects.some((entry) => entry.scope === "full") ? "full" : "scoped",
+      components: union.components as EccComponentId[],
+      mcps: union.mcps as EccMcpComponentId[],
+      recommendations: [...selected.recommendations],
+    },
+    project,
+    ledger,
+  };
 }
 
 function repoStackSummary(stack: RepoStack): string {
@@ -77,7 +172,7 @@ function repoStackSummary(stack: RepoStack): string {
 }
 
 function isMutatingEccTarget(cli: VerifiedEccRequest["clis"][number]): boolean {
-  return isAihDirectEccInstallTarget(cli) || cli === "codex" || cli === "kiro";
+  return isAihDirectEccInstallTarget(cli) || cli === "codex";
 }
 
 /**
@@ -108,24 +203,15 @@ export async function executeEccEvidencePipeline(
 /** Resolve the ordinary ECC command inputs once, then route mutating targets through evidence. */
 export async function executeEccCommand(ctx: PlanContext): Promise<PlanResult> {
   const { clis, detectFellBack } = await resolveTargets(ctx);
-  const stack = scanRepo(ctx.root, { maxDepth: 8, contextDir: ctx.contextDir });
-  const language = eccLanguages(stack);
-  const profile = String(ctx.options.profile ?? "core");
-  const stackSummary = repoStackSummary(stack);
-  const request: VerifiedEccRequest = {
-    clis,
-    profile,
-    packs: language.packs,
-    stackSummary,
-  };
+  const request = buildEccRegistrationRequest(ctx, clis);
   if (clis.some(isMutatingEccTarget)) return executeEccEvidencePipeline(ctx, request);
 
   const actions = clis.flatMap((cli) =>
     eccActionsForCli(cli, {
-      profile,
-      stackSummary,
+      profile: request.profile,
+      stackSummary: request.stackSummary ?? "this repository",
       platform: ctx.host.platform,
-      packs: language.packs,
+      packs: request.packs,
     }),
   );
   actions.push(eccToolsDoc());

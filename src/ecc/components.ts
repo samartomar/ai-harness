@@ -34,6 +34,8 @@ export const COMMON_ECC_COMPONENTS = [
 const LANGUAGE_COMPONENTS: Readonly<Record<string, readonly EccComponentId[]>> = {
   "TypeScript/Node.js": ["lang:typescript", "agent:typescript-reviewer"],
   "JavaScript/Node.js": ["lang:typescript", "agent:typescript-reviewer"],
+  TypeScript: ["lang:typescript", "agent:typescript-reviewer"],
+  JavaScript: ["lang:typescript", "agent:typescript-reviewer"],
   Python: ["lang:python", "agent:python-reviewer"],
   Go: ["lang:go", "agent:go-reviewer", "agent:go-build-resolver"],
   Java: ["lang:java", "agent:java-reviewer", "agent:java-build-resolver"],

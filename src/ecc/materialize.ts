@@ -21,6 +21,15 @@ export interface EccManifestPlan<Operation extends EccManifestOperation = EccMan
   statePreview: { operations: Operation[] };
 }
 
+export interface EccMaterializationSpec {
+  scope: "scoped" | "full";
+  moduleIds: string[];
+  wholeModules: string[];
+  skills: string[];
+  agents: string[];
+  agentScaffolding: boolean;
+}
+
 const WHOLE_MODULE_COMPONENTS: Readonly<Record<string, string>> = {
   "baseline:rules": "rules-core",
   "baseline:commands": "commands-core",
@@ -262,6 +271,26 @@ function selectedInstallSurface(selection: EccComponentSelection): {
     if (descriptor.agentScaffolding === true) agentScaffolding = true;
   }
   return { wholeModules, skills, agents, agentScaffolding };
+}
+
+export function eccMaterializationSpec(selection: EccComponentSelection): EccMaterializationSpec {
+  const surface = selectedInstallSurface(selection);
+  const moduleIds: string[] = [];
+  const seen = new Set<string>();
+  for (const componentId of [...selection.components, ...selection.mcps]) {
+    const moduleId = eccComponentInstallDescriptor(componentId).containingModuleId;
+    if (seen.has(moduleId)) continue;
+    seen.add(moduleId);
+    moduleIds.push(moduleId);
+  }
+  return {
+    scope: selection.scope,
+    moduleIds,
+    wholeModules: [...surface.wholeModules],
+    skills: [...surface.skills],
+    agents: [...surface.agents],
+    agentScaffolding: surface.agentScaffolding,
+  };
 }
 
 function selectedOperation(
