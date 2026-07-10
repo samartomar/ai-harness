@@ -1,5 +1,6 @@
 import type { Command } from "commander";
 import { command as adopt } from "../adopt/index.js";
+import { vetBaselineCommand } from "../baseline-evidence/commands.js";
 import { command as bootstrap } from "../bootstrap/index.js";
 import { command as bootstrapAi } from "../bootstrap-ai/index.js";
 import { command as bundle, verifyCommand as verifyBundle } from "../bundle/index.js";
@@ -181,7 +182,7 @@ export const GROUPED_COMMAND_SPECS = {
   ],
   marketplace: [marketplaceBuildCommand, marketplaceValidateCommand, marketplacePublishCommand],
   policy: [policyValidateCommand, policyVerifyCommand],
-  evidence: [evidenceBuildCommand],
+  evidence: [evidenceBuildCommand, vetBaselineCommand],
   truth: [truthPackCommand, truthVerifyCommand],
 } as const satisfies Record<(typeof PARENT_GROUPS)[number], readonly CommandSpec[]>;
 
@@ -718,7 +719,7 @@ export function registerCommands(
   // directory (re-checked by `aih verify-bundle`).
   const evidence = program
     .command("evidence")
-    .description("Package aih's committed governance artifacts into a verifiable evidence bundle");
+    .description("Vet and package governance artifacts into verifiable evidence bundles");
   for (const spec of [evidenceBuildCommand]) {
     const sub = evidence.command(spec.name).description(spec.summary);
     addFlagsForSpec(sub, spec);
@@ -727,6 +728,20 @@ export function registerCommands(
       process.exitCode = await runCapability(spec, command, { positionalRoot: false });
     });
   }
+  const vetBaseline = evidence
+    .command(vetBaselineCommand.name)
+    .description(vetBaselineCommand.summary)
+    .argument("<source>", "local checkout or GitHub owner/repo");
+  addFlagsForSpec(vetBaseline, vetBaselineCommand);
+  addOptionsForSpec(vetBaseline, vetBaselineCommand);
+  vetBaseline.action(
+    async (source: string, _options: Record<string, unknown>, command: Command) => {
+      process.exitCode = await runCapability(vetBaselineCommand, command, {
+        positionalRoot: false,
+        optionOverrides: { source },
+      });
+    },
+  );
 
   const truth = program
     .command("truth")
