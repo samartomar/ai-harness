@@ -1,16 +1,16 @@
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { spawnSync } from "node:child_process";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { BaselineAuthorization } from "../../src/baseline-evidence/verify.js";
 import type { EccComponentSelection } from "../../src/ecc/components.js";
-import { verifiedEccInstallPlan } from "../../src/ecc/verified.js";
 import {
   emptyRegistrationLedger,
   readRegistrationLedger,
   registrationLedgerPath,
 } from "../../src/ecc/registration.js";
+import { verifiedEccInstallPlan } from "../../src/ecc/verified.js";
 import type { Action, DigestAction, ExecAction, PlanContext } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
@@ -150,7 +150,7 @@ describe("verifiedEccInstallPlan", () => {
     const plan = verifiedEccInstallPlan(
       ctx(),
       sourceRoot,
-      { clis: ["codex"], profile: "core", packs: [] },
+      { clis: ["codex"], profile: "core", packs: [], selection: selection() },
       [authorization()],
     );
     expect(execs(plan.actions)).toHaveLength(1);
@@ -158,6 +158,14 @@ describe("verifiedEccInstallPlan", () => {
     expect(steps[0]?.argv[0]).toBe("npm");
     expect(steps[1]?.argv.slice(0, 2)).toEqual(["node", "-e"]);
     expect(steps[1]?.argv).toContain(join(sourceRoot, "scripts", "codex", "merge-codex-config.js"));
+    const specB64 = steps[1]?.argv.at(-1);
+    if (specB64 === undefined) throw new Error("missing Codex materialization spec");
+    expect(JSON.parse(Buffer.from(specB64, "base64").toString("utf8"))).toMatchObject({
+      scope: "scoped",
+      moduleIds: expect.arrayContaining(["agents-core", "platform-configs"]),
+      agents: ["code-reviewer"],
+    });
+    expect(steps[1]?.env?.ECC_DISABLED_MCPS).toBe("context7,exa,github,memory,playwright,supabase");
     expect(
       plan.actions.some(
         (action) => action.kind === "write" && action.describe.includes("Codex config.toml"),
@@ -228,6 +236,8 @@ describe("verifiedEccInstallPlan", () => {
       action.describe.includes("verified ECC checkout"),
     );
     if (driver === undefined) throw new Error("missing verified ECC driver");
+    const executable = driver.argv[0];
+    if (executable === undefined) throw new Error("missing verified ECC driver executable");
     const steps = driverSteps(built.actions);
     const ledgerStep = steps.at(-1);
     expect(ledgerStep?.argv.join(" ")).toContain("registration-ledger");
@@ -242,7 +252,7 @@ describe("verifiedEccInstallPlan", () => {
             },
       );
       const encoded = Buffer.from(JSON.stringify(deterministic), "utf8").toString("base64");
-      return spawnSync(driver.argv[0], [...driver.argv.slice(1, -1), encoded], {
+      return spawnSync(executable, [...driver.argv.slice(1, -1), encoded], {
         cwd: root,
         encoding: "utf8",
       });
