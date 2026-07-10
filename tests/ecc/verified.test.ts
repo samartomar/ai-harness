@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -97,6 +97,11 @@ function selection(): EccComponentSelection {
   };
 }
 
+function put(path: string, contents: string): void {
+  mkdirSync(join(path, ".."), { recursive: true });
+  writeFileSync(path, contents, "utf8");
+}
+
 describe("verifiedEccInstallPlan", () => {
   it("uses one sequential driver with a filtered manifest payload and never npx", () => {
     const sourceRoot = join(root, "quarantine", "tree");
@@ -148,7 +153,9 @@ describe("verifiedEccInstallPlan", () => {
       skills: expect.arrayContaining(["tdd-workflow", "api-design"]),
       agents: ["code-reviewer"],
     });
-    expect(steps[1]?.env?.ECC_DISABLED_MCPS).toBe("context7,exa,github,memory,playwright,supabase");
+    expect(steps[1]?.env?.ECC_DISABLED_MCPS).toBe(
+      "chrome-devtools,context7,exa,github,memory,playwright,supabase",
+    );
     expect(steps[1]?.cwd).toBe(root);
     expect(JSON.stringify(steps)).not.toContain("npx");
     expect(JSON.stringify(steps)).not.toContain("https://");
@@ -201,6 +208,98 @@ describe("verifiedEccInstallPlan", () => {
         (action) => action.kind === "write" && action.describe.includes("Codex config.toml"),
       ),
     ).toBe(true);
+  });
+
+  it("materializes selected Codex skills into the real on-demand skill directory", () => {
+    const sourceRoot = join(root, "ecc-source");
+    const home = join(root, "home");
+    mkdirSync(join(home, ".codex"), { recursive: true });
+    writeFileSync(join(home, ".codex", "config.toml"), "", "utf8");
+    put(
+      join(sourceRoot, "scripts", "lib", "install-executor.js"),
+      `exports.createManifestInstallPlan = ({ homeDir }) => ({
+        operations: [],
+        statePreview: {
+          schemaVersion: 1,
+          request: {},
+          resolution: { selectedModules: [], skippedModules: [] },
+          source: { manifestVersion: 1 },
+          operations: [],
+        },
+        installStatePath: require("node:path").join(homeDir, ".codex", "ecc-install-state.json"),
+      });\n`,
+    );
+    put(
+      join(sourceRoot, "scripts", "lib", "install-state.js"),
+      'exports.writeInstallState = (path, state) => require("node:fs").writeFileSync(path, JSON.stringify(state), "utf8");\n',
+    );
+    for (const name of ["merge-codex-config.js", "merge-mcp-config.js"]) {
+      put(join(sourceRoot, "scripts", "codex", name), "process.exit(0);\n");
+    }
+    put(
+      join(sourceRoot, ".codex", "AGENTS.md"),
+      [
+        "## Skills Discovery",
+        "",
+        "old guidance",
+        "",
+        "Available skills:",
+        "- coding-standards — test",
+        "",
+        "## MCP Servers",
+        "",
+        "old MCP guidance",
+        "",
+        "## External Action Boundaries",
+        "",
+        "boundary",
+        "",
+        "| Skills | Skills loaded via plugin | `.agents/skills/` directory |",
+        "",
+      ].join("\n"),
+    );
+    put(join(sourceRoot, "skills", "coding-standards", "SKILL.md"), "# Coding standards\n");
+
+    const selected: EccComponentSelection = {
+      scope: "scoped",
+      components: ["skill:coding-standards"],
+      mcps: ["mcp:sequential-thinking"],
+      recommendations: [],
+    };
+    const context = {
+      ...ctx(),
+      env: { HOME: home },
+      host: makeHostAdapter({
+        platform: "linux",
+        run: fakeRunner(() => undefined),
+        env: { HOME: home },
+      }),
+    };
+    const built = verifiedEccInstallPlan(
+      context,
+      sourceRoot,
+      { clis: ["codex"], profile: "core", packs: [], selection: selected },
+      [authorization()],
+    );
+    const step = driverSteps(built.actions)[1];
+    if (step === undefined) throw new Error("missing Codex install step");
+
+    const result = spawnSync(step.argv[0], step.argv.slice(1), {
+      cwd: step.cwd,
+      env: { ...process.env, ...step.env, HOME: home, USERPROFILE: home },
+      encoding: "utf8",
+    });
+
+    expect(result.status, result.stderr).toBe(0);
+    expect(
+      readFileSync(join(home, ".codex", "skills", "coding-standards", "SKILL.md"), "utf8"),
+    ).toBe("# Coding standards\n");
+    const state = JSON.parse(
+      readFileSync(join(home, ".codex", "ecc-install-state.json"), "utf8"),
+    ) as { operations: Array<{ destinationPath: string }> };
+    expect(state.operations.map((operation) => operation.destinationPath)).toContain(
+      join(home, ".codex", "skills", "coding-standards", "SKILL.md"),
+    );
   });
 
   it("registers only the current project's validated MCPs in project-local config", () => {
