@@ -24,7 +24,9 @@ planning hints, and issueless PRs such as dependency or docs updates are labeled
 directly), and the release cut takes the highest class among the PRs merged since the
 previous tag. When labeling, apply the surface definition above — a change to verdicts,
 exit codes, or generated-artifact content is a surface change (**MINOR** at least),
-even when the commit is typed `fix:`.
+even when the commit is typed `fix:`. The `semver-label` check enforces exactly one
+class per PR before merge; Dependabot PRs are labeled `semver:patch` automatically and
+re-labeled by hand when a bump changes our surface.
 
 ### Pre-1.0 (0.x)
 

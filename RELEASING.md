@@ -87,7 +87,9 @@ is ever stored; after the bootstrap, publish is OIDC-only.
     explicit
     `Authorize publishing vX.Y.Z from <full-main-SHA> using the swept vX.Y.Z milestone.`
     Merging the release PR is **not** permission to push the tag.
-11. **Tag and push** (scope is frozen from here — anything further is the next train's):
+11. **Tag and push** (scope is frozen from here — anything further is the next train's).
+    The `release-tags` ruleset restricts creating, updating, and deleting `v*` tags to
+    repository admins, so a tag push is a deliberate maintainer act:
    ```bash
    git checkout main && git pull
    git tag vX.Y.Z
