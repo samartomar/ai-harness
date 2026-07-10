@@ -16,13 +16,14 @@ import { lines } from "../internals/render.js";
 import { execArgv } from "../tools/install.js";
 import { codexMcpCollisionActions } from "./codex.js";
 import { codexEccActions, type EccRepoCheckout, kiroEccActions } from "./index.js";
-import { isAihDirectEccInstallTarget } from "./install.js";
+import { eccActionsForCli, eccToolsDoc, isAihDirectEccInstallTarget } from "./install.js";
 import type { EccLanguagePack } from "./select.js";
 
 export interface VerifiedEccRequest {
   clis: Cli[];
   profile: string;
   packs: EccLanguagePack[];
+  stackSummary?: string;
 }
 
 interface VerifiedInstallStep {
@@ -158,8 +159,19 @@ export function verifiedEccInstallPlan(
         else if (action.kind === "doc" || action.kind === "digest") post.push(action);
         else pre.push(action);
       }
+      continue;
     }
+    post.push(
+      ...eccActionsForCli(cli, {
+        profile: request.profile,
+        stackSummary: request.stackSummary ?? "this repository",
+        platform: ctx.host.platform,
+        packs: request.packs,
+      }),
+    );
   }
+
+  post.push(eccToolsDoc());
 
   return plan(
     "ecc: verified install",

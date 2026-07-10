@@ -10,6 +10,7 @@ import { command as crispy } from "../crispy/index.js";
 import { command as docsLint } from "../docs-lint/index.js";
 import { command as doctor } from "../doctor.js";
 import { command as ecc } from "../ecc/index.js";
+import { executeEccCommand } from "../ecc/pipeline.js";
 import { evidenceBuildCommand } from "../evidence/build.js";
 import { command as guardrails } from "../guardrails/index.js";
 import { command as hardware } from "../hardware/index.js";
@@ -79,7 +80,7 @@ import {
   workspaceReportCommand as workspaceReport,
   snapshotCommand as workspaceSnapshot,
 } from "../workspace/index.js";
-import { runCapability } from "./run.js";
+import { type RunDeps, runCapability } from "./run.js";
 
 /** Capability commands (repo/workstation mutators), dry-run by default. */
 export const CAPABILITIES: CommandSpec[] = [
@@ -357,16 +358,13 @@ function registerSpec(program: Command, spec: CommandSpec): void {
   cmd.action(
     async (_rootArg: string | undefined, _options: Record<string, unknown>, command: Command) => {
       warnIfDeprecatedAlias(spec, command);
-      process.exitCode = await runCapability(
-        spec,
-        command,
-        spec.positional?.optionName
-          ? {
-              positionalRoot: false,
-              optionOverrides: { [spec.positional.optionName]: _rootArg },
-            }
-          : undefined,
-      );
+      const deps: RunDeps = {};
+      if (spec.positional?.optionName) {
+        deps.positionalRoot = false;
+        deps.optionOverrides = { [spec.positional.optionName]: _rootArg };
+      }
+      if (spec === ecc) deps.execute = executeEccCommand;
+      process.exitCode = await runCapability(spec, command, deps);
     },
   );
   if (spec.name === "workspace") {

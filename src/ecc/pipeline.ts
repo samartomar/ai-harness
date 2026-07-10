@@ -13,10 +13,19 @@ import {
 import type { BaselineEvidenceLock } from "../baseline-evidence/schema.js";
 import { readVendorBaselineLock, vendorBaselineLockSha256 } from "../baseline-evidence/vendor.js";
 import { AihError } from "../errors.js";
+import { detectFallbackNotice, resolveTargets } from "../internals/cli-detect.js";
 import { executePlan, type PlanResult } from "../internals/execute.js";
-import { type Plan, type PlanContext, plan, structuredChecksProbe } from "../internals/plan.js";
+import {
+  doc,
+  type Plan,
+  type PlanContext,
+  plan,
+  structuredChecksProbe,
+} from "../internals/plan.js";
 import type { Check } from "../internals/verify.js";
 import { readOrgPolicy } from "../org-policy/schema.js";
+import type { RepoStack } from "../profile/scan.js";
+import { scanRepo } from "../profile/scan.js";
 import {
   assertTrustTreeSafe,
   cleanupQuarantine,
@@ -26,7 +35,8 @@ import {
   trustFetchExec,
 } from "../trust/fetch.js";
 import { eccEvidenceComponentIds } from "./evidence.js";
-import { isAihDirectEccInstallTarget } from "./install.js";
+import { eccActionsForCli, eccToolsDoc, isAihDirectEccInstallTarget } from "./install.js";
+import { eccLanguages } from "./select.js";
 import { type VerifiedEccRequest, verifiedEccInstallPlan } from "./verified.js";
 
 const FULL_SHA = /^[a-f0-9]{40}$/;
@@ -74,6 +84,18 @@ function componentIds(request: VerifiedEccRequest): string[] {
     }
   }
   return [...selected];
+}
+
+function repoStackSummary(stack: RepoStack): string {
+  const parts: string[] = [];
+  if (stack.languages.length > 0) parts.push(stack.languages.join(" + "));
+  if (stack.frameworks.length > 0) parts.push(`using ${stack.frameworks.join(", ")}`);
+  if (stack.cloud.length > 0) parts.push(`on ${stack.cloud.join("/")}`);
+  return parts.length > 0 ? parts.join(" ") : "a new repository with no detected stack yet";
+}
+
+function isMutatingEccTarget(cli: VerifiedEccRequest["clis"][number]): boolean {
+  return isAihDirectEccInstallTarget(cli) || cli === "codex" || cli === "kiro";
 }
 
 function failed(checks: readonly Check[]): boolean {
@@ -203,4 +225,34 @@ export async function executeEccEvidencePipeline(
   } finally {
     cleanupQuarantine(source);
   }
+}
+
+/** Resolve the ordinary ECC command inputs once, then route mutating targets through evidence. */
+export async function executeEccCommand(ctx: PlanContext): Promise<PlanResult> {
+  const { clis, detectFellBack } = await resolveTargets(ctx);
+  const stack = scanRepo(ctx.root, { maxDepth: 8, contextDir: ctx.contextDir });
+  const language = eccLanguages(stack);
+  const profile = String(ctx.options.profile ?? "core");
+  const stackSummary = repoStackSummary(stack);
+  const request: VerifiedEccRequest = {
+    clis,
+    profile,
+    packs: language.packs,
+    stackSummary,
+  };
+  if (clis.some(isMutatingEccTarget)) return executeEccEvidencePipeline(ctx, request);
+
+  const actions = clis.flatMap((cli) =>
+    eccActionsForCli(cli, {
+      profile,
+      stackSummary,
+      platform: ctx.host.platform,
+      packs: language.packs,
+    }),
+  );
+  actions.push(eccToolsDoc());
+  if (detectFellBack) {
+    actions.push(doc("no AI CLIs detected — defaulted to claude", detectFallbackNotice()));
+  }
+  return executePlan(plan("ecc: consult-only targets", ...actions), ctx);
 }

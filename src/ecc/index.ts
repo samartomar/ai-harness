@@ -457,8 +457,7 @@ async function eccPlan(ctx: PlanContext): Promise<Plan> {
 
 export const command: CommandSpec = {
   name: "ecc",
-  summary:
-    "Install affaan-m/ECC (latest) for the selected CLIs via ECC's own installer — npx --package ecc-universal ecc-install, or a cached git checkout for Codex/Kiro",
+  summary: "Install affaan-m/ECC from an evidence-verified exact source pin for the selected CLIs",
   options: [
     {
       flags: "--profile <profile>",
@@ -471,4 +470,5 @@ export const command: CommandSpec = {
     },
   ],
   plan: eccPlan,
+  alwaysVerify: true,
 };
