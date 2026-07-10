@@ -181,19 +181,31 @@ instead of being edited or deleted. Dirty/untracked removal targets refuse witho
 ## aih ecc
 
 Install [affaan-m/ECC](https://github.com/affaan-m/ECC) (skills, instincts, memory, security,
-research-first) for the selected CLIs, scoped to the detected stack: npm targets run
-`npx --yes --package ecc-universal ecc-install`, Kiro uses the pinned Git checkout path, and
-unsupported targets route to the `consult` advisor. For Codex, aih uses the pinned Git checkout
-path to install the selected ECC Codex skills/agents, plus ECC's add-only Codex TOML merge helpers
-and a fenced AGENTS merge for shared files; it preflights project/global MCP server-name transport
-collisions before those shared-config writes.
+research-first) for the selected CLIs, scoped to the detected stack. aih fetches the catalog's exact
+commit into quarantine, verifies signed evidence for the installer runtime and selected components,
+re-hashes the same tree, then runs that checkout's `scripts/install-apply.js`. Dependency preparation
+uses `npm ci --omit=dev --ignore-scripts` only after clearance. Kiro runs the verified checkout's
+native `.kiro/install.sh`; unsupported targets remain consult-only guidance.
+
+For Codex, aih installs selected skills/agents from the verified checkout with ECC's add-only TOML
+merge helpers and a fenced AGENTS merge for shared files; it preflights project/global MCP
+server-name transport collisions before those shared-config writes. `--ecc-path <dir>` uses a local
+checkout, and `AIH_ECC_REF` requests a different commit; either must match exact vendor or attributed
+org evidence for that pin. Non-SHA refs are refused.
 Installed Codex skills are invoked on demand with `$<skill-name>` from
 `~/.codex/skills/<name>/SKILL.md`; they are not an auto-loaded `.agents/skills` surface.
+See [Baseline Component Evidence](security/baseline-evidence.md) for posture behavior and org
+overrides.
 
 ## aih superpowers
 
-Install [obra/Superpowers](https://github.com/obra/Superpowers) (brainstorm → plan → TDD →
-subagent-review skills) for the selected CLIs.
+Verify [obra/Superpowers](https://github.com/obra/Superpowers) (brainstorm → plan → TDD →
+subagent-review skills) at the catalog's exact commit. The current marketplace/plugin-picker
+adapters cannot prove that installed bytes came from the verified checkout, so aih does not execute
+Antigravity, Copilot, marketplace, or TUI installs. It emits pin-aware manual guidance and explicitly
+marks those selections as not evidence-covered. The Kiro methodology steering bridge is AIH-owned
+first-party content, not mislabeled Superpowers vendor evidence. `AIH_SUPERPOWERS_REF` accepts only
+an exact commit with matching vendor or org evidence.
 
 ## aih crispy
 
@@ -335,7 +347,20 @@ bundle directory containing `files/aih-org-policy.json`; mismatches fail closed 
 
 ## aih evidence
 
-Package the **audit trail aih already emits** — approval lock, packs manifest, trust lock, skill
+`vet-baseline <source>` runs the shared component vetter over an exact local checkout or quarantined
+GitHub source and writes a typed report below `.aih/baseline-reports/` under `--apply`. It installs
+nothing. Required flags are `--pin <40-character-sha>` and `--catalog ecc|superpowers`; optional
+`--components <csv>` narrows the declared catalog. A local checkout's `HEAD` and a fetched source's
+metadata must match the declared pin.
+
+```bash
+aih evidence vet-baseline affaan-m/ECC \
+  --pin <sha> --catalog ecc \
+  --components runtime:ecc-installer,module:optimization-workflows \
+  --apply
+```
+
+`build` packages the **audit trail aih already emits** — approval lock, packs manifest, trust lock, skill
 cards, vet evidence, run logs, report/SARIF outputs, and a verified staged truth pack when present — into
 one deterministic **evidence bundle** (`build`): the exact fleet-bundle layout (`files/<rel>`
 copies, `manifest.json`, `SHA256SUMS`,
@@ -346,6 +371,9 @@ skipped silently. At enterprise posture, or with `--require-signature`, signing 
 signer, missing local signing tool, or failed signing exec emits coded `bundle.signature` evidence
 instead of being treated as best effort. Re-check any copy with
 `aih verify-bundle --bundle <out> --require-signature`.
+Baseline reports are indexed as `baseline-evidence`; `build --sign gh --require-signature --apply`
+produces the attributable bundle consumed by `trust.baselineOverrides[]`. See
+[Baseline Component Evidence](security/baseline-evidence.md).
 
 ## aih truth
 

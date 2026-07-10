@@ -125,8 +125,8 @@ Keep this table as a navigation index: do not add flag-level behavior or workflo
 | [`aih adopt`](docs/commands.md#aih-adopt) | Converge an existing AI canon onto aih's managed model without overwriting your work (brownfield migration). |
 | [`aih prune`](docs/commands.md#aih-prune) | Remove the stale per-CLI artifacts left for CLIs the repo no longer targets (reversible by default). |
 | [`aih uninstall`](docs/commands.md#aih-uninstall) | Remove the marker-backed core aih install footprint from a repo; `aih clean` is an alias. |
-| [`aih ecc`](docs/commands.md#aih-ecc) | Install affaan-m/ECC (skills, instincts, memory) for the selected CLIs via ECC's own installer. |
-| [`aih superpowers`](docs/commands.md#aih-superpowers) | Install obra/Superpowers (brainstorm → plan → TDD → subagent-review skills) for the selected CLIs. |
+| [`aih ecc`](docs/commands.md#aih-ecc) | Install selected ECC components only from an evidence-verified exact source pin. |
+| [`aih superpowers`](docs/commands.md#aih-superpowers) | Verify exact-pinned Superpowers components and emit evidence-bound target guidance. |
 | [`aih crispy`](docs/commands.md#aih-crispy) | Run the CRISPY context-engineering stage machine (deterministic, gate-ordered). |
 | [`aih workspace`](docs/commands.md#aih-workspace) | Scaffold and restore a multi-repo workspace at the parent folder: cross-repo map, declared-repo graph MCP, snapshots, hydrate. |
 
@@ -139,7 +139,7 @@ Keep this table as a navigation index: do not add flag-level behavior or workflo
 | [`aih pack`](docs/commands.md#aih-pack) | Curate committed sets of approved skills (`aih-packs.json`); every ref is cross-checked against the lock, fail-closed. |
 | [`aih marketplace`](docs/commands.md#aih-marketplace) | Build, validate, and publish a reproducible, verifiable distribution artifact for hostable approved skills — never a registry. |
 | [`aih policy`](docs/commands.md#aih-policy) | Validate the active local org policy source or verify it against a pinned hash/bundle. |
-| [`aih evidence`](docs/commands.md#aih-evidence) | Package the audit trail aih already emits into one deterministic evidence bundle with a harness provenance block. |
+| [`aih evidence`](docs/commands.md#aih-evidence) | Vet exact-pinned baseline components and package local audit artifacts into deterministic signed evidence bundles. |
 | [`aih truth`](docs/commands.md#aih-truth) | Create and verify an external project-truth sidecar; commit, version, claim, decision, acceptance-preflight, and agent-evidence assertions fail closed before a pack helps govern evidence. <!-- aih:claim CM-13 --> |
 | [`aih bundle`](docs/commands.md#aih-bundle) | Build a deterministic fleet bundle with checksums; `aih verify-bundle --require-signature` turns missing/unverifiable signatures into failures. |
 | [`aih verify-bundle`](docs/commands.md#aih-verify-bundle) | Re-check a fleet or evidence bundle's checksums and signature/provenance evidence. |
@@ -158,6 +158,16 @@ Keep this table as a navigation index: do not add flag-level behavior or workflo
 `trust.internalScopes` is intentionally inert until an org configures internal package scopes in
 policy. Without that scope list, dependency-confusion checks still report general package risk but do
 not guess which names are private to your organization.
+
+### Baseline component evidence
+
+`aih ecc` and `aih superpowers` acquire only exact Git commits into quarantine. Selected component
+paths must match the vendor lock shipped in the npm release or an attributable GitHub-attested org
+bundle. Covered user seats verify hashes and signatures; they do not rerun the release analyzers.
+Missing/mismatched coverage warns without an authorization receipt at `vibe` and denies at
+`team`/`enterprise`. A signed `blocked` verdict denies at every posture and cannot be waived by org
+evidence for the same bytes. See [Baseline Component Evidence](docs/security/baseline-evidence.md)
+for the vet/sign/policy flow. <!-- aih:claim CM-20 -->
 
 ### Analytics & operations
 
@@ -232,8 +242,8 @@ auto-target the CLIs found on this machine; the default is `claude`. Supported:
 
 ```bash
 aih bootstrap-ai --cli claude       # writes CLAUDE.md (the default target, auto-loaded)
-aih ecc --cli claude,codex          # Claude via ecc-universal; Codex via safe add-only merge
-aih superpowers --cli antigravity   # agy plugin install … (runs under --apply)
+aih ecc --cli claude,codex          # exact-pinned checkout; Codex keeps safe add-only merge
+aih superpowers --cli antigravity   # verify exact pin; guidance only (no mutable plugin exec)
 aih bootstrap-ai --cli kiro         # Kiro: .kiro/steering/00-canon.md (inclusion: always)
 aih bootstrap-ai --detect           # target only the CLIs installed here
 aih init . --all-tools              # bootstrap a repo for every CLI at once
@@ -254,9 +264,8 @@ real `.kiro/` tree):
 - `aih bootstrap-ai --cli kiro` → `.kiro/steering/agent-tools.md` (stack-aware CLI usage) +
   stack-aware `.kiro/hooks/*.kiro.hook` files (`aih-secret-scan-on-create`, `aih-tests-on-edit`,
   `aih-quality-gate` running the repo's real lint/test) in Kiro's real hook schema.
-- `aih ecc --cli kiro` → runs ECC's **native** `.kiro/install.sh` (copies ECC's agents/skills/
-  steering/hooks into `.kiro/`) when a local ECC checkout is found (`--ecc-path <dir>`, or
-  `~/.claude/ecc`, `~/ECC`); otherwise documents the `git clone` + install.
+- `aih ecc --cli kiro` → fetches the catalog's exact ECC commit into quarantine, verifies the
+  `.kiro` component evidence, re-hashes it, then runs that checkout's native `.kiro/install.sh`.
 - `aih superpowers --cli kiro` → `.kiro/steering/superpowers-methodology.md` (the
   brainstorm → plan → TDD → review routing, since Kiro can't load `~/.claude/superpowers`).
 
@@ -282,10 +291,11 @@ aih init --context-dir my-canon   # → my-canon/    (any name; everything adapt
 aih init --context-dir .ai-context  # → hidden, the old default
 ```
 
-Shell-runnable installs (`ecc-universal`'s `ecc-install` bin, Codex's safe ECC merge path, `agy`/`copilot plugin install`) execute under `--apply`;
-in-tool slash-command installs (Claude/Codex/Kimi plugins) are emitted as exact commands to run
-inside the tool. ECC and Superpowers are complementary — ECC supplies stack-aware rules, agents,
-and memory; Superpowers supplies the disciplined agent loop that uses them.
+ECC install actions execute under `--apply` only after exact component evidence clears and the same
+quarantined tree re-hashes. Superpowers marketplace/TUI paths cannot bind installed bytes to that
+tree, so aih executes none of them; it emits pin-aware guidance and says those marketplace selections
+are not evidence-covered. ECC and Superpowers are complementary — ECC supplies stack-aware rules,
+agents, and memory; Superpowers supplies the disciplined agent loop that uses them.
 For Codex, installed ECC skills are consumed on demand by name, such as `$configure-ecc`, from the
 literal Codex skills path (`~/.codex/skills/<name>/SKILL.md`); they are not an ambient auto-loaded
 `.agents/skills/` surface. `aih ecc --cli codex` still installs the selected ECC Codex

@@ -78,6 +78,14 @@
    `bundle.signature` finding instead of a quiet skip. For cosign, use your key or
    OIDC identity material consistently at signing and verification time.
 
+   If the fleet needs ECC or Superpowers bytes newer than the vendor pin, vet the
+   exact commit with `aih evidence vet-baseline`, sign the resulting evidence
+   bundle with the governance repository's GitHub identity, and add an attributable
+   `trust.baselineOverrides[]` entry. Org evidence can authorize new exact bytes;
+   it cannot waive an exact vendor `blocked` verdict. Follow
+   [Baseline Component Evidence](security/baseline-evidence.md) for the posture
+   matrix, commands, and strict policy example.
+
 6. Before a PR is marked ready or merged, run and record the required review
    skills/agents: code review, security review, and the domain reviewer for the
    touched area.

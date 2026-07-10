@@ -8,6 +8,7 @@
 - Developer workstations and local repos.
 - Committed AI canon, policy, lock files, and generated bootloaders.
 - Skill approval evidence and marketplace artifacts.
+- Baseline component catalogs, vendor locks, and org-signed override bundles.
 - Local run ledgers and support bundles.
 - Release artifacts and checksums.
 - Secrets, tokens, private keys, and sensitive environment files.
@@ -49,6 +50,9 @@
 | Dependency confusion | `trust.internalScopes` lets orgs name private scopes; absent scopes stay inert instead of guessing. |
 | Path traversal or symlink escape in fetched sources | Quarantine extraction and trust-tree checks reject escaping paths and links. |
 | Unreviewed skill install | Team/enterprise posture blocks installs without committed approval and matching pin. |
+| Mutable or swapped ECC/Superpowers install bytes | Baseline commands fetch exact pins into quarantine, require per-component vendor/org hash evidence, and re-hash before constructing install actions. |
+| Forged or stale baseline override | Org evidence requires bundle checksums plus a GitHub attestation from the repository named in strict org policy; source, pin, paths, and hashes must all match. |
+| Attempt to waive dangerous baseline findings | Exact `blocked` evidence denies at every posture; org evidence cannot replace a vendor-blocked verdict for the same bytes. |
 | Remote mutation by automation | The action model is local-only except explicit signing/provenance flows. |
 | Secrets exposure | Secret paths are denied to agents and checked with `aih secrets --verify`. |
 | Supply-chain release drift | `aih verify-release` checks npm signatures, release checksums, cosign bundle, and tarball hash. |
@@ -64,4 +68,6 @@ Report privately if an `aih` command can:
 - mutate a remote system outside explicit signing/provenance;
 - read, log, or emit secrets from denied paths;
 - approve or install an unpinned/unapproved external source at team or enterprise posture;
+- execute ECC/Superpowers bytes that do not match exact component evidence, or accept an
+  unattributed org baseline override;
 - accept a path traversal, symlink escape, malformed policy, or malformed bundle.
