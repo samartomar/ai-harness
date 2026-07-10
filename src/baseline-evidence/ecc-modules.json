@@ -1,0 +1,402 @@
+{
+  "schemaVersion": 1,
+  "modules": [
+    {
+      "id": "rules-core",
+      "paths": [
+        "rules"
+      ]
+    },
+    {
+      "id": "agents-core",
+      "paths": [
+        ".agents",
+        "agents",
+        "AGENTS.md"
+      ]
+    },
+    {
+      "id": "commands-core",
+      "paths": [
+        "commands",
+        "scripts/harness-audit.js",
+        "scripts/skills-health.js"
+      ]
+    },
+    {
+      "id": "hooks-runtime",
+      "paths": [
+        "hooks",
+        "scripts/hooks",
+        "scripts/lib"
+      ]
+    },
+    {
+      "id": "platform-configs",
+      "paths": [
+        ".claude-plugin",
+        ".codex",
+        ".cursor",
+        ".gemini",
+        ".opencode",
+        ".qwen",
+        ".zed",
+        "mcp-configs",
+        "scripts/auto-update.js",
+        "scripts/setup-package-manager.js",
+        ".hermes",
+        ".openclaw",
+        ".kimi"
+      ]
+    },
+    {
+      "id": "framework-language",
+      "paths": [
+        "skills/android-clean-architecture",
+        "skills/angular-developer",
+        "skills/api-design",
+        "skills/backend-patterns",
+        "skills/coding-standards",
+        "skills/compose-multiplatform-patterns",
+        "skills/csharp-testing",
+        "skills/fsharp-testing",
+        "skills/cpp-coding-standards",
+        "skills/cpp-testing",
+        "skills/dart-flutter-patterns",
+        "skills/django-patterns",
+        "skills/django-tdd",
+        "skills/django-verification",
+        "skills/dotnet-patterns",
+        "skills/fastapi-patterns",
+        "skills/frontend-design-direction",
+        "skills/frontend-patterns",
+        "skills/frontend-slides",
+        "skills/make-interfaces-feel-better",
+        "skills/motion-ui",
+        "skills/golang-patterns",
+        "skills/golang-testing",
+        "skills/java-coding-standards",
+        "skills/kotlin-coroutines-flows",
+        "skills/kotlin-exposed-patterns",
+        "skills/kotlin-ktor-patterns",
+        "skills/kotlin-patterns",
+        "skills/kotlin-testing",
+        "skills/laravel-plugin-discovery",
+        "skills/laravel-patterns",
+        "skills/laravel-tdd",
+        "skills/laravel-verification",
+        "skills/mcp-server-patterns",
+        "skills/nestjs-patterns",
+        "skills/perl-patterns",
+        "skills/perl-testing",
+        "skills/python-patterns",
+        "skills/python-testing",
+        "skills/quarkus-patterns",
+        "skills/quarkus-tdd",
+        "skills/quarkus-verification",
+        "skills/react-patterns",
+        "skills/react-performance",
+        "skills/react-testing",
+        "skills/rust-patterns",
+        "skills/rust-testing",
+        "skills/springboot-patterns",
+        "skills/springboot-tdd",
+        "skills/springboot-verification",
+        "skills/ui-to-vue",
+        "skills/vue-patterns"
+      ]
+    },
+    {
+      "id": "database",
+      "paths": [
+        "skills/clickhouse-io",
+        "skills/database-migrations",
+        "skills/jpa-patterns",
+        "skills/mysql-patterns",
+        "skills/postgres-patterns",
+        "skills/prisma-patterns"
+      ]
+    },
+    {
+      "id": "workflow-quality",
+      "paths": [
+        "skills/agent-sort",
+        "skills/agent-introspection-debugging",
+        "skills/ai-regression-testing",
+        "skills/configure-ecc",
+        "skills/code-tour",
+        "skills/continuous-learning",
+        "skills/continuous-learning-v2",
+        "skills/council",
+        "skills/e2e-testing",
+        "skills/error-handling",
+        "skills/eval-harness",
+        "skills/hookify-rules",
+        "skills/iterative-retrieval",
+        "skills/plankton-code-quality",
+        "skills/production-audit",
+        "skills/skill-scout",
+        "skills/skill-stocktake",
+        "skills/strategic-compact",
+        "skills/tdd-workflow",
+        "skills/verification-loop",
+        "skills/windows-desktop-e2e"
+      ]
+    },
+    {
+      "id": "optimization-workflows",
+      "paths": [
+        "skills/benchmark-optimization-loop",
+        "skills/data-throughput-accelerator",
+        "skills/latency-critical-systems",
+        "skills/parallel-execution-optimizer",
+        "skills/recursive-decision-ledger"
+      ]
+    },
+    {
+      "id": "security",
+      "paths": [
+        "skills/defi-amm-security",
+        "skills/django-security",
+        "skills/healthcare-phi-compliance",
+        "skills/hipaa-compliance",
+        "skills/laravel-security",
+        "skills/llm-trading-agent-security",
+        "skills/nodejs-keccak256",
+        "skills/perl-security",
+        "skills/quarkus-security",
+        "skills/security-review",
+        "skills/security-scan",
+        "skills/security-bounty-hunter",
+        "skills/springboot-security",
+        "skills/evm-token-decimals",
+        "the-security-guide.md"
+      ]
+    },
+    {
+      "id": "research-apis",
+      "paths": [
+        "skills/deep-research",
+        "skills/exa-search",
+        "skills/research-ops",
+        "skills/scientific-db-pubmed-database",
+        "skills/scientific-db-uspto-database",
+        "skills/scientific-pkg-gget",
+        "skills/scientific-thinking-literature-review",
+        "skills/scientific-thinking-scholar-evaluation"
+      ]
+    },
+    {
+      "id": "business-content",
+      "paths": [
+        "skills/article-writing",
+        "skills/brand-voice",
+        "skills/content-engine",
+        "skills/investor-materials",
+        "skills/investor-outreach",
+        "skills/lead-intelligence",
+        "skills/product-capability",
+        "skills/social-graph-ranker",
+        "skills/seo",
+        "skills/market-research"
+      ]
+    },
+    {
+      "id": "operator-workflows",
+      "paths": [
+        "skills/automation-audit-ops",
+        "skills/api-connector-builder",
+        "skills/connections-optimizer",
+        "skills/cost-tracking",
+        "skills/customer-billing-ops",
+        "skills/dashboard-builder",
+        "skills/ecc-tools-cost-audit",
+        "skills/email-ops",
+        "skills/finance-billing-ops",
+        "skills/github-ops",
+        "skills/google-workspace-ops",
+        "skills/jira-integration",
+        "skills/knowledge-ops",
+        "skills/messages-ops",
+        "skills/project-flow-ops",
+        "skills/terminal-ops",
+        "skills/unified-notifications-ops",
+        "skills/workspace-surface-audit"
+      ]
+    },
+    {
+      "id": "prediction-market-skills",
+      "paths": [
+        "skills/ito-basket-compare",
+        "skills/ito-data-atlas-agent",
+        "skills/ito-market-intelligence",
+        "skills/ito-trade-planner",
+        "skills/prediction-market-oracle-research",
+        "skills/prediction-market-risk-review"
+      ]
+    },
+    {
+      "id": "social-distribution",
+      "paths": [
+        "skills/crosspost",
+        "skills/x-api"
+      ]
+    },
+    {
+      "id": "media-generation",
+      "paths": [
+        "skills/blender-motion-state-inspection",
+        "skills/fal-ai-media",
+        "skills/manim-video",
+        "skills/remotion-video-creation",
+        "skills/ui-demo",
+        "skills/video-editing",
+        "skills/videodb"
+      ]
+    },
+    {
+      "id": "orchestration",
+      "paths": [
+        "scripts/lib/orchestration-session.js",
+        "scripts/lib/tmux-worktree-orchestrator.js",
+        "scripts/orchestrate-codex-worker.sh",
+        "scripts/orchestrate-worktrees.js",
+        "scripts/orchestration-status.js",
+        "skills/dmux-workflows"
+      ]
+    },
+    {
+      "id": "swift-apple",
+      "paths": [
+        "skills/foundation-models-on-device",
+        "skills/liquid-glass-design",
+        "skills/swift-actor-persistence",
+        "skills/swift-concurrency-6-2",
+        "skills/swift-protocol-di-testing",
+        "skills/swiftui-patterns"
+      ]
+    },
+    {
+      "id": "agentic-patterns",
+      "paths": [
+        "scripts/claw.js",
+        "skills/agent-architecture-audit",
+        "skills/agent-harness-construction",
+        "skills/agentic-engineering",
+        "skills/agentic-os",
+        "skills/ai-first-engineering",
+        "skills/autonomous-loops",
+        "skills/blueprint",
+        "skills/claude-devfleet",
+        "skills/content-hash-cache-pattern",
+        "skills/continuous-agent-loop",
+        "skills/cost-aware-llm-pipeline",
+        "skills/data-scraper-agent",
+        "skills/dynamic-workflow-mode",
+        "skills/enterprise-agent-ops",
+        "skills/nanoclaw-repl",
+        "skills/prompt-optimizer",
+        "skills/ralphinho-rfc-pipeline",
+        "skills/regex-vs-llm-structured-text",
+        "skills/search-first",
+        "skills/team-agent-orchestration",
+        "skills/token-budget-advisor",
+        "skills/team-builder"
+      ]
+    },
+    {
+      "id": "devops-infra",
+      "paths": [
+        "skills/cisco-ios-patterns",
+        "skills/deployment-patterns",
+        "skills/docker-patterns",
+        "skills/homelab-network-readiness",
+        "skills/homelab-network-setup",
+        "skills/netmiko-ssh-automation",
+        "skills/network-bgp-diagnostics",
+        "skills/network-config-validation",
+        "skills/network-interface-health"
+      ]
+    },
+    {
+      "id": "machine-learning",
+      "paths": [
+        "skills/mle-workflow"
+      ]
+    },
+    {
+      "id": "supply-chain-domain",
+      "paths": [
+        "skills/carrier-relationship-management",
+        "skills/customs-trade-compliance",
+        "skills/energy-procurement",
+        "skills/inventory-demand-planning",
+        "skills/logistics-exception-management",
+        "skills/production-scheduling",
+        "skills/quality-nonconformance",
+        "skills/returns-reverse-logistics"
+      ]
+    },
+    {
+      "id": "document-processing",
+      "paths": [
+        "skills/nutrient-document-processing",
+        "skills/visa-doc-translate"
+      ]
+    },
+    {
+      "id": "docs-ja-jp",
+      "paths": [
+        "docs/ja-JP"
+      ]
+    },
+    {
+      "id": "docs-zh-cn",
+      "paths": [
+        "docs/zh-CN"
+      ]
+    },
+    {
+      "id": "docs-ko-kr",
+      "paths": [
+        "docs/ko-KR"
+      ]
+    },
+    {
+      "id": "docs-pt-br",
+      "paths": [
+        "docs/pt-BR"
+      ]
+    },
+    {
+      "id": "docs-ru",
+      "paths": [
+        "docs/ru"
+      ]
+    },
+    {
+      "id": "docs-tr",
+      "paths": [
+        "docs/tr"
+      ]
+    },
+    {
+      "id": "docs-vi-vn",
+      "paths": [
+        "docs/vi-VN"
+      ]
+    },
+    {
+      "id": "docs-zh-tw",
+      "paths": [
+        "docs/zh-TW"
+      ]
+    },
+    {
+      "id": "docs-de-de",
+      "paths": [
+        "docs/de-DE"
+      ]
+    }
+  ]
+}

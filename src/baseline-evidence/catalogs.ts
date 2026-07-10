@@ -4,6 +4,7 @@ import {
   type BaselineCatalogComponent,
   defineBaselineCatalog,
 } from "./catalog.js";
+import eccModules from "./ecc-modules.json";
 
 const ECC_COMMON_AGENTS = [
   "code-reviewer",
@@ -59,30 +60,7 @@ const ECC_COMPONENTS: readonly BaselineCatalogComponent[] = [
       "scripts/lib/path-safety.js",
     ],
   },
-  { id: "module:rules-core", paths: ["rules"] },
-  { id: "module:agents-core", paths: [".agents", "agents", "AGENTS.md"] },
-  {
-    id: "module:commands-core",
-    paths: ["commands", "scripts/harness-audit.js", "scripts/skills-health.js"],
-  },
-  {
-    id: "module:platform-configs",
-    paths: [
-      ".claude-plugin",
-      ".codex",
-      ".cursor",
-      ".gemini",
-      ".opencode",
-      ".qwen",
-      ".zed",
-      "mcp-configs",
-      "scripts/auto-update.js",
-      "scripts/setup-package-manager.js",
-      ".hermes",
-      ".openclaw",
-      ".kimi",
-    ],
-  },
+  ...eccModules.modules.map((module) => ({ id: `module:${module.id}`, paths: module.paths })),
   { id: "skill:tdd-workflow", paths: ["skills/tdd-workflow"] },
   { id: "skill:verification-loop", paths: ["skills/verification-loop"] },
   { id: "skill:strategic-compact", paths: ["skills/strategic-compact"] },
