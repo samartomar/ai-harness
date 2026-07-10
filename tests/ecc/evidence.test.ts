@@ -103,6 +103,19 @@ describe("ECC evidence component selection", () => {
     ]);
   });
 
+  it("maps declared Swift to the signed swift-apple module", () => {
+    const selection: EccComponentSelection = {
+      scope: "scoped",
+      components: ["lang:swift"],
+      mcps: [],
+      recommendations: [],
+    };
+    expect(eccEvidenceComponentIdsForSelection("codex", selection)).toEqual([
+      "runtime:ecc-installer",
+      "module:swift-apple",
+    ]);
+  });
+
   it("projects exact leaf and containing-module receipts into installed records", () => {
     const records = installedEccComponentRegistrations("codex", scopedSelection(), [
       authorization("module:agents-core"),

@@ -1,7 +1,11 @@
 import { z } from "zod";
 import eccModulesJson from "../baseline-evidence/ecc-modules.json";
 import eccProfilesJson from "../baseline-evidence/ecc-profiles.json";
+import type { BaselineAuthorization } from "../baseline-evidence/verify.js";
 import type { Cli } from "../internals/clis.js";
+import type { EccComponentId, EccComponentSelection } from "./components.js";
+import { eccComponentInstallDescriptor } from "./materialize.js";
+import type { InstalledComponentRegistration } from "./registration.js";
 import type { EccLanguagePack } from "./select.js";
 
 const ModulesSnapshotSchema = z
@@ -80,4 +84,51 @@ export function eccEvidenceComponentIds(
       .filter((module) => selected.has(module.id) && module.targets.includes(target))
       .map((module) => `module:${module.id}`),
   ];
+}
+
+function moduleSupportsTarget(moduleId: string, target: Cli): boolean {
+  const module = moduleById.get(moduleId);
+  if (module === undefined) throw new Error(`pinned ECC module snapshot is missing ${moduleId}`);
+  return module.targets.includes(target);
+}
+
+function scopedComponentIds(selection: EccComponentSelection): EccComponentId[] {
+  return [...selection.components, ...selection.mcps];
+}
+
+export function eccEvidenceComponentIdsForSelection(
+  target: Cli,
+  selection: EccComponentSelection,
+): string[] {
+  if (selection.scope === "full") return eccEvidenceComponentIds("full", target, []);
+  const selected = new Set<string>(["runtime:ecc-installer"]);
+  for (const componentId of scopedComponentIds(selection)) {
+    const descriptor = eccComponentInstallDescriptor(componentId);
+    if (!moduleSupportsTarget(descriptor.containingModuleId, target)) continue;
+    selected.add(descriptor.evidenceComponentId);
+  }
+  return [...selected];
+}
+
+export function installedEccComponentRegistrations(
+  target: Cli,
+  selection: EccComponentSelection,
+  authorizations: readonly BaselineAuthorization[],
+): InstalledComponentRegistration[] {
+  const authorizationById = new Map(
+    authorizations.map((authorization) => [authorization.componentId, authorization]),
+  );
+  const installed: InstalledComponentRegistration[] = [];
+  for (const componentId of scopedComponentIds(selection)) {
+    const descriptor = eccComponentInstallDescriptor(componentId);
+    if (!moduleSupportsTarget(descriptor.containingModuleId, target)) continue;
+    const exact = authorizationById.get(componentId);
+    const containing = authorizationById.get(`module:${descriptor.containingModuleId}`);
+    const authorization = exact ?? containing;
+    if (authorization === undefined) {
+      throw new Error(`missing ECC evidence authorization for ${componentId}`);
+    }
+    installed.push({ id: componentId, authorization });
+  }
+  return installed;
 }
