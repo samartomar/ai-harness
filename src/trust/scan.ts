@@ -32,10 +32,10 @@ import {
 } from "./fetch.js";
 import { gradeTrustCheck } from "./grade.js";
 import type { SkillSpectorImageApproval } from "./images.js";
-import { scanTrustDocument } from "./lint.js";
+import { isStrictUnicodeSurface, scanTrustDocument, scanTrustUnicodeDocument } from "./lint.js";
 import { scanTrustManifests } from "./manifest.js";
 import { classifyIncomingMcp } from "./mcp-classify.js";
-import { isInstallScriptEvidenceFilePath } from "./script-files.js";
+import { isInstallScriptEvidenceFilePath, isMaliciousCodeScanFilePath } from "./script-files.js";
 import { type SandboxSmokeShape, sandboxSmokeCheck } from "./smoke.js";
 
 export const TRUST_SKIP_DIRS = new Set([
@@ -124,12 +124,24 @@ function shouldScanTrustDoc(root: string, absPath: string): boolean {
   const name = parts.at(-1) ?? "";
   if (name === "SKILL.md") return true;
   if (parts.length === 1 && ROOT_TRUST_DOCS.has(name)) return true;
-  if (extname(name).toLowerCase() !== ".md") return false;
-  return parts.includes("skills") || parts.includes("agents") || parts.includes("commands");
+  return extname(name).toLowerCase() === ".md";
 }
 
 function collectTrustDocs(root: string): string[] {
   return collectFilesUnder(root, (abs) => shouldScanTrustDoc(root, abs));
+}
+
+function shouldScanStrictUnicodeSurface(root: string, absPath: string): boolean {
+  const rel = toPosix(relative(root, absPath));
+  return isStrictUnicodeSurface(rel) || isMaliciousCodeScanFilePath(rel);
+}
+
+function collectStrictUnicodeSurfaces(root: string, docs: readonly string[]): string[] {
+  const docSet = new Set(docs);
+  return collectFilesUnder(
+    root,
+    (abs) => !docSet.has(abs) && shouldScanStrictUnicodeSurface(root, abs),
+  );
 }
 
 function collectSkillDirs(root: string): string[] {
@@ -678,11 +690,18 @@ export async function scanTrustTreeWithAnalyzers(
     skillspectorImageApprovals,
   } = normalizeScanOptions(options);
   const docs = collectTrustDocs(safeRoot);
+  const strictUnicodeSurfaces = collectStrictUnicodeSurfaces(safeRoot, docs);
   const mcpConfigFiles = collectIncomingMcpConfigFiles(safeRoot);
-  const checks = [
+  const nativeLintChecks = [
     ...docs.flatMap((abs) =>
       scanTrustDocument(toPosix(relative(safeRoot, abs)), readFileSync(abs, "utf8")),
     ),
+    ...strictUnicodeSurfaces.flatMap((abs) =>
+      scanTrustUnicodeDocument(toPosix(relative(safeRoot, abs)), readFileSync(abs, "utf8")),
+    ),
+  ].map((check) => gradeTrustCheck(check, posture));
+  const checks = [
+    ...nativeLintChecks,
     ...scanTrustManifests(safeRoot),
     ...scanTrustDependencyNames(safeRoot, internalScopes, posture),
     ...plaintextSecretChecks(safeRoot, posture),

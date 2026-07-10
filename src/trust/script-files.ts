@@ -42,6 +42,7 @@ const MALICIOUS_CODE_SCRIPT_EXTENSIONS = new Set([
   ".cjs",
   ".cmd",
   ".js",
+  ".jsx",
   ".mjs",
   ".pl",
   ".ps1",
@@ -49,6 +50,7 @@ const MALICIOUS_CODE_SCRIPT_EXTENSIONS = new Set([
   ".rb",
   ".sh",
   ".ts",
+  ".tsx",
   ".zsh",
 ]);
 

@@ -474,6 +474,7 @@ describe("Check.code — invariants", () => {
       "trust.sandbox-smoke-failed": true,
       "trust.cisco-finding": true,
       "trust.hidden-unicode": true,
+      "trust.visible-unicode": true,
       "trust.prompt-injection": true,
       "trust.source-changed": true,
       "trust.auto-exec-hook": true,

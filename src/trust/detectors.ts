@@ -24,6 +24,11 @@ import {
   SKILLSPECTOR_IMAGE,
   type SkillSpectorImageApproval,
 } from "./images.js";
+import {
+  classifyUnicodeRisk,
+  detectorReportedHiddenUnicodeRisk,
+  type UnicodeRisk,
+} from "./lint.js";
 import { collectFilesUnder, TRUST_SKIP_DIRS } from "./scan.js";
 import { isMaliciousCodeScanFilePath } from "./script-files.js";
 
@@ -1062,11 +1067,65 @@ function resultRuleId(result: SarifResult): string | undefined {
   return typeof raw === "string" ? raw : undefined;
 }
 
-function ruleCode(result: SarifResult, detector: TrustDetector): CheckCode | undefined {
+function sourceTextForLocation(
+  root: string,
+  location: NonNullable<Check["location"]>,
+): string | undefined {
+  try {
+    return readFileSync(join(root, location.uri), "utf8");
+  } catch {
+    return undefined;
+  }
+}
+
+function unicodeRiskForLocation(
+  root: string,
+  location: NonNullable<Check["location"]>,
+): UnicodeRisk | undefined {
+  const source = sourceTextForLocation(root, location);
+  return source === undefined ? undefined : classifyUnicodeRisk(location.uri, source);
+}
+
+function isReviewableVisibleUnicodeDetectorResult(
+  result: SarifResult,
+  detector: TrustDetector,
+): boolean {
+  if (detector.name !== "skillspector") return false;
+  const message = resultMessage(result, detector).toLowerCase();
+  return (
+    /\bvisible\b.*\bunicode\b/.test(message) ||
+    /\bunicode\b.*\bvisible\b/.test(message) ||
+    /\bnon-ascii\b/.test(message) ||
+    /\bunicode\b.*\bcount\b/.test(message)
+  );
+}
+
+function hiddenUnicodeRiskForDetectorResult(
+  result: SarifResult,
+  detector: TrustDetector,
+  root: string,
+  location: NonNullable<Check["location"]>,
+): UnicodeRisk {
+  if (!isReviewableVisibleUnicodeDetectorResult(result, detector)) {
+    return detectorReportedHiddenUnicodeRisk();
+  }
+  return unicodeRiskForLocation(root, location) ?? detectorReportedHiddenUnicodeRisk();
+}
+
+function ruleCode(
+  result: SarifResult,
+  detector: TrustDetector,
+  root: string,
+  location: NonNullable<Check["location"]>,
+): CheckCode | undefined {
   const raw = resultRuleId(result);
   if (raw === undefined) return undefined;
   const mapped = detector.ruleMap[raw];
-  if (mapped !== undefined) return mapped;
+  if (mapped !== undefined) {
+    return mapped === "trust.hidden-unicode"
+      ? hiddenUnicodeRiskForDetectorResult(result, detector, root, location).code
+      : mapped;
+  }
   if (
     detector.name === "skillspector" ||
     detector.name === "semgrep" ||
@@ -1092,6 +1151,11 @@ function resultMessage(result: SarifResult, detector: TrustDetector): string {
   return typeof result.message?.text === "string" && result.message.text.length > 0
     ? result.message.text
     : `${detectorFindingLabel(detector)} SARIF finding`;
+}
+
+function unicodeResultMessage(message: string, risk: UnicodeRisk | undefined): string {
+  if (risk === undefined) return message;
+  return `${message}; character category: ${risk.category}; reason: ${risk.reason}`;
 }
 
 function normalizeSarifUri(raw: unknown, detector: TrustDetector): string {
@@ -1136,8 +1200,11 @@ function sarifFingerprint(
   detector: TrustDetector,
 ): string {
   const line = location.startLine ?? 1;
-  const sourceLine = fileLine(join(root, location.uri), line) ?? detail;
-  return `${code.replace(/\./g, "-")}:${detector.name}:${location.uri}:${line}:${sha8(sourceLine)}`;
+  const content =
+    code === "trust.visible-unicode"
+      ? (sourceTextForLocation(root, location) ?? detail)
+      : (fileLine(join(root, location.uri), line) ?? detail);
+  return `${code.replace(/\./g, "-")}:${detector.name}:${location.uri}:${line}:${sha8(content)}`;
 }
 
 function sarifChecks(
@@ -1151,10 +1218,14 @@ function sarifChecks(
   const checks: Check[] = [];
   for (const run of parsed.runs) {
     for (const result of run.results ?? []) {
-      const code = ruleCode(result, detector);
-      if (code === undefined) continue;
       const location = sarifLocation(result, detector);
-      const detail = resultMessage(result, detector);
+      const code = ruleCode(result, detector, root, location);
+      if (code === undefined) continue;
+      const risk =
+        code === "trust.hidden-unicode" || code === "trust.visible-unicode"
+          ? hiddenUnicodeRiskForDetectorResult(result, detector, root, location)
+          : undefined;
+      const detail = unicodeResultMessage(resultMessage(result, detector), risk);
       checks.push(
         gradeTrustCheck(
           {

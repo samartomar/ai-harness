@@ -103,6 +103,7 @@ export type CheckCode =
   | "trust.sandbox-smoke-failed"
   | "trust.cisco-finding"
   | "trust.hidden-unicode"
+  | "trust.visible-unicode"
   | "trust.prompt-injection"
   | "trust.source-changed"
   | "trust.auto-exec-hook"

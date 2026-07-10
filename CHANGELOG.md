@@ -20,6 +20,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   names, included paths, and excluded sibling skill paths, and `aih skill
   approve` carries that scope into the committed card and lockfile evidence.
   (#374)
+- Trust scan now separates ordinary visible Unicode typography in
+  docs/reference files into acknowledgeable `trust.visible-unicode` findings
+  while preserving `trust.hidden-unicode` blocking for zero-width, bidi, tag,
+  homoglyph-confusable, instruction, config, executable, and source-code
+  surfaces. (#375)
 
 ## [2.4.3] - 2026-07-09
 

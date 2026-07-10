@@ -385,6 +385,25 @@ promotion refuse the source. This keeps selected evidence bound to a single
 physical artifact and avoids approval inheritance across ambiguous same-name
 directories.
 
+## Unicode finding classes
+
+The trust scan classifies Unicode by character class before it considers the
+file path. Zero-width characters, bidi controls, Unicode tag characters, and
+homoglyph-confusable characters inside ASCII-like tokens stay
+`trust.hidden-unicode` and fail closed at every posture.
+
+Ordinary visible Unicode typography in documentation, design, or reference
+files is reported as `trust.visible-unicode`. That is a trust-origin finding:
+it is warning-only below enterprise posture, and at enterprise posture it must
+be fixed or acknowledged with an exact, file-content-bound fingerprint and a
+recorded `--reason`.
+
+Paths can only raise severity. Unicode in `SKILL.md`, agent or command
+instructions, MCP descriptions/config-derived text, package/config files, and
+script/executable/source-code surfaces is still treated as blocking
+`trust.hidden-unicode`; the documentation path rule is not an exclusion from
+scanning.
+
 ## Report integration
 
 `aih report` is intended to show:

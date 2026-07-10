@@ -7,6 +7,7 @@ export const TRUST_ORIGIN_CODES = new Set<CheckCode>([
   "trust.unpinned-dependency",
   "trust.untrusted-publisher",
   "trust.unsigned-source",
+  "trust.visible-unicode",
 ]);
 
 /**

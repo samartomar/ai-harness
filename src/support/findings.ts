@@ -627,6 +627,13 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     action:
       "Reject the external source until the hidden Unicode is removed or the source is replaced with a reviewed, clean commit.",
   },
+  "trust.visible-unicode": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "visible Unicode found in external skill documentation",
+    action:
+      "Review the documented visible Unicode characters, remove them if they obscure meaning, or acknowledge the exact finding with a recorded reason before promotion.",
+  },
   "trust.fetch-blocked": {
     audience: "developer",
     failSeverity: "blocking",
