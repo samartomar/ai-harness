@@ -260,6 +260,7 @@ describe("verifiedEccInstallPlan", () => {
         operations: [],
         statePreview: {
           schemaVersion: 1,
+          installedAt: process.hrtime.bigint().toString(),
           request: {},
           resolution: { selectedModules: [], skippedModules: [] },
           source: { manifestVersion: 1 },
@@ -335,12 +336,20 @@ describe("verifiedEccInstallPlan", () => {
     expect(
       readFileSync(join(home, ".codex", "skills", "coding-standards", "SKILL.md"), "utf8"),
     ).toBe("# Coding standards\n");
-    const state = JSON.parse(
-      readFileSync(join(home, ".codex", "ecc-install-state.json"), "utf8"),
-    ) as { operations: Array<{ destinationPath: string }> };
+    const statePath = join(home, ".codex", "ecc-install-state.json");
+    const firstState = readFileSync(statePath, "utf8");
+    const state = JSON.parse(firstState) as { operations: Array<{ destinationPath: string }> };
     expect(state.operations.map((operation) => operation.destinationPath)).toContain(
       join(home, ".codex", "skills", "coding-standards", "SKILL.md"),
     );
+
+    const rerun = spawnSync(executable, step.argv.slice(1), {
+      cwd: step.cwd,
+      env: { ...process.env, ...step.env, HOME: home, USERPROFILE: home },
+      encoding: "utf8",
+    });
+    expect(rerun.status, rerun.stderr).toBe(0);
+    expect(readFileSync(statePath, "utf8")).toBe(firstState);
   });
 
   it("registers only the current project's validated MCPs in project-local config", () => {
