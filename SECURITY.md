@@ -13,9 +13,9 @@ fix. We aim to acknowledge within a few days.
 
 ## Supported versions
 
-Which versions receive security fixes is set by the [versioning policy](VERSIONING.md).
-For the current supported major line, security backports extend to the previous minor (N-1).
-Fixes ship as a patch on the supported line(s), documented in the [CHANGELOG](CHANGELOG.md)
+Which versions receive security fixes is set by the [versioning policy](VERSIONING.md):
+only the latest minor receives fixes, and the fix path is upgrading to it.
+Fixes ship as a patch on that line, documented in the [CHANGELOG](CHANGELOG.md)
 under **Security**.
 
 ## Design — reviewable by default
