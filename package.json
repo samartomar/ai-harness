@@ -25,6 +25,7 @@
   },
   "files": [
     "dist",
+    "src/baseline-evidence/vendor-lock.json",
     "aih-packs.json",
     "packs",
     "!packs/**/__pycache__",
@@ -47,6 +48,8 @@
     "check:ai-runtime": "tsx src/internals/ai-runtime-inventory.ts --root .",
     "check:bugbounty-report": "tsx src/internals/bugbounty-report.ts --source .internal/defects/BUGBOUNTY.md",
     "check:ecc-installer": "tsx src/internals/check-ecc-installer.ts",
+    "baseline:vet": "tsx src/baseline-evidence/generate.ts",
+    "baseline:check": "tsx src/baseline-evidence/generate.ts --check",
     "release:preflight": "tsx src/internals/release-preflight.ts",
     "check:published-bin": "node dist/cli.js --version && node dist/cli.js --help",
     "check:published-library": "node -e \"import('@aihq/harness').then((m)=>{ if (typeof m.runSessionGuardrails !== 'function') throw new Error('missing library export'); })\"",

@@ -1,5 +1,6 @@
 import type { Command } from "commander";
 import { command as adopt } from "../adopt/index.js";
+import { vetBaselineCommand } from "../baseline-evidence/commands.js";
 import { command as bootstrap } from "../bootstrap/index.js";
 import { command as bootstrapAi } from "../bootstrap-ai/index.js";
 import { command as bundle, verifyCommand as verifyBundle } from "../bundle/index.js";
@@ -10,6 +11,7 @@ import { command as crispy } from "../crispy/index.js";
 import { command as docsLint } from "../docs-lint/index.js";
 import { command as doctor } from "../doctor.js";
 import { command as ecc } from "../ecc/index.js";
+import { executeEccCommand } from "../ecc/pipeline.js";
 import { evidenceBuildCommand } from "../evidence/build.js";
 import { command as guardrails } from "../guardrails/index.js";
 import { command as hardware } from "../hardware/index.js";
@@ -54,6 +56,7 @@ import {
 } from "../skill/index.js";
 import { command as status } from "../status.js";
 import { command as superpowers } from "../superpowers/index.js";
+import { executeSuperpowersCommand } from "../superpowers/pipeline.js";
 import { command as telemetry } from "../telemetry/index.js";
 import { command as tools } from "../tools/index.js";
 import { command as track } from "../track/index.js";
@@ -79,7 +82,7 @@ import {
   workspaceReportCommand as workspaceReport,
   snapshotCommand as workspaceSnapshot,
 } from "../workspace/index.js";
-import { runCapability } from "./run.js";
+import { type RunDeps, runCapability } from "./run.js";
 
 /** Capability commands (repo/workstation mutators), dry-run by default. */
 export const CAPABILITIES: CommandSpec[] = [
@@ -179,7 +182,7 @@ export const GROUPED_COMMAND_SPECS = {
   ],
   marketplace: [marketplaceBuildCommand, marketplaceValidateCommand, marketplacePublishCommand],
   policy: [policyValidateCommand, policyVerifyCommand],
-  evidence: [evidenceBuildCommand],
+  evidence: [evidenceBuildCommand, vetBaselineCommand],
   truth: [truthPackCommand, truthVerifyCommand],
 } as const satisfies Record<(typeof PARENT_GROUPS)[number], readonly CommandSpec[]>;
 
@@ -357,16 +360,14 @@ function registerSpec(program: Command, spec: CommandSpec): void {
   cmd.action(
     async (_rootArg: string | undefined, _options: Record<string, unknown>, command: Command) => {
       warnIfDeprecatedAlias(spec, command);
-      process.exitCode = await runCapability(
-        spec,
-        command,
-        spec.positional?.optionName
-          ? {
-              positionalRoot: false,
-              optionOverrides: { [spec.positional.optionName]: _rootArg },
-            }
-          : undefined,
-      );
+      const deps: RunDeps = {};
+      if (spec.positional?.optionName) {
+        deps.positionalRoot = false;
+        deps.optionOverrides = { [spec.positional.optionName]: _rootArg };
+      }
+      if (spec === ecc) deps.execute = executeEccCommand;
+      if (spec === superpowers) deps.execute = executeSuperpowersCommand;
+      process.exitCode = await runCapability(spec, command, deps);
     },
   );
   if (spec.name === "workspace") {
@@ -718,7 +719,7 @@ export function registerCommands(
   // directory (re-checked by `aih verify-bundle`).
   const evidence = program
     .command("evidence")
-    .description("Package aih's committed governance artifacts into a verifiable evidence bundle");
+    .description("Vet and package governance artifacts into verifiable evidence bundles");
   for (const spec of [evidenceBuildCommand]) {
     const sub = evidence.command(spec.name).description(spec.summary);
     addFlagsForSpec(sub, spec);
@@ -727,6 +728,20 @@ export function registerCommands(
       process.exitCode = await runCapability(spec, command, { positionalRoot: false });
     });
   }
+  const vetBaseline = evidence
+    .command(vetBaselineCommand.name)
+    .description(vetBaselineCommand.summary)
+    .argument("<source>", "local checkout or GitHub owner/repo");
+  addFlagsForSpec(vetBaseline, vetBaselineCommand);
+  addOptionsForSpec(vetBaseline, vetBaselineCommand);
+  vetBaseline.action(
+    async (source: string, _options: Record<string, unknown>, command: Command) => {
+      process.exitCode = await runCapability(vetBaselineCommand, command, {
+        positionalRoot: false,
+        optionOverrides: { source },
+      });
+    },
+  );
 
   const truth = program
     .command("truth")

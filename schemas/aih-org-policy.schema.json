@@ -333,6 +333,68 @@
             "minLength": 1
           }
         },
+        "baselineOverrides": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "catalog": {
+                "type": "string",
+                "enum": [
+                  "ecc",
+                  "superpowers"
+                ]
+              },
+              "owner": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9_.-]+$"
+              },
+              "repo": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9_.-]+$"
+              },
+              "pinnedSha": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{40}$"
+              },
+              "bundle": {
+                "type": "string",
+                "minLength": 1
+              },
+              "signingRepository": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9_.-]+\\/[A-Za-z0-9_.-]+$"
+              },
+              "reason": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 500,
+                "pattern": "^(?=.*\\S)[^\\u0000-\\u001F\\u007F]+$"
+              },
+              "reviewer": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 500,
+                "pattern": "^(?=.*\\S)[^\\u0000-\\u001F\\u007F]+$"
+              },
+              "approvedAt": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "catalog",
+              "owner",
+              "repo",
+              "pinnedSha",
+              "bundle",
+              "signingRepository",
+              "reason",
+              "reviewer",
+              "approvedAt"
+            ],
+            "additionalProperties": false
+          }
+        },
         "internalScopes": {
           "default": [],
           "type": "array",

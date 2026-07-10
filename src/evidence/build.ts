@@ -1,5 +1,6 @@
 import { type Dirent, readdirSync } from "node:fs";
 import { isAbsolute, join, posix } from "node:path";
+import { BASELINE_REPORTS_DIR } from "../baseline-evidence/schema.js";
 import { sha256Hex, signAction } from "../bundle/index.js";
 import { readRegularFile } from "../internals/fsxn.js";
 import {
@@ -126,6 +127,9 @@ function candidates(
   }
   for (const rel of listFiles(ctx.root, EVIDENCE_DIR)) {
     if (rel.endsWith(".json")) out.push({ kind: "skill-evidence", rel });
+  }
+  for (const rel of listFiles(ctx.root, BASELINE_REPORTS_DIR)) {
+    if (rel.endsWith(".json")) out.push({ kind: "baseline-evidence", rel });
   }
   for (const rel of listFiles(ctx.root, RUNS_DIR)) {
     if (rel.endsWith(".jsonl")) out.push({ kind: "run-log", rel });

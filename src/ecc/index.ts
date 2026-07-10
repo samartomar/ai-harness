@@ -36,7 +36,7 @@ import { eccLanguages } from "./select.js";
 
 const ECC_REPO_URL = "https://github.com/affaan-m/ECC.git";
 
-interface EccRepoCheckout {
+export interface EccRepoCheckout {
   dir: string;
   posix: string;
   explicit: boolean;
@@ -198,7 +198,7 @@ function kiroInstallActions(ctx: PlanContext, dir: string, posix: string): Actio
   ];
 }
 
-function kiroEccActions(ctx: PlanContext, repo: EccRepoCheckout): Action[] {
+export function kiroEccActions(ctx: PlanContext, repo: EccRepoCheckout): Action[] {
   const installActions = kiroInstallActions(ctx, repo.dir, repo.posix);
   if (repo.explicit) {
     return [
@@ -298,7 +298,11 @@ const CODEX_INSTALL_MERGE_SCRIPT = [
   "installCodexManagedFiles();",
 ].join("\n");
 
-function codexEccActions(ctx: PlanContext, repo: EccRepoCheckout, profile: string): Action[] {
+export function codexEccActions(
+  ctx: PlanContext,
+  repo: EccRepoCheckout,
+  profile: string,
+): Action[] {
   const codexDir = codexHomeDir(ctx);
   const codexConfig = join(codexDir, "config.toml");
   const codexAgents = join(codexDir, "AGENTS.md");
@@ -453,8 +457,7 @@ async function eccPlan(ctx: PlanContext): Promise<Plan> {
 
 export const command: CommandSpec = {
   name: "ecc",
-  summary:
-    "Install affaan-m/ECC (latest) for the selected CLIs via ECC's own installer — npx --package ecc-universal ecc-install, or a cached git checkout for Codex/Kiro",
+  summary: "Install affaan-m/ECC from an evidence-verified exact source pin for the selected CLIs",
   options: [
     {
       flags: "--profile <profile>",
@@ -467,4 +470,5 @@ export const command: CommandSpec = {
     },
   ],
   plan: eccPlan,
+  alwaysVerify: true,
 };

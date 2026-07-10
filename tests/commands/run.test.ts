@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { Command } from "commander";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { flagKey, runCapability } from "../../src/commands/run.js";
+import { executePlan } from "../../src/internals/execute.js";
 import { type CommandSpec, digest, plan, probe } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
 import { policyValidateCommand } from "../../src/org-policy/validate.js";
@@ -369,6 +370,32 @@ describe("runCapability — custom option extraction", () => {
     const { out } = await run(["--no-cache", "--root", dir], cacheSpec);
     expect(out).toContain("cache");
     expect(out).toContain("false");
+  });
+});
+
+describe("runCapability — custom execution", () => {
+  it("uses an injected executor with the resolved context", async () => {
+    let observedRoot = "";
+    const spec: CommandSpec = {
+      name: "custom-execution",
+      summary: "exercise the custom executor seam",
+      plan: () => {
+        throw new Error("the ordinary plan must not be built");
+      },
+    };
+
+    const code = await runCapability(spec, command(["--root", dir, "--apply"]), {
+      env: {},
+      run: fakeRunner(() => undefined),
+      write: () => {},
+      execute: async (ctx) => {
+        observedRoot = ctx.root;
+        return executePlan(plan("custom-execution", digest("custom execution", "ok")), ctx);
+      },
+    });
+
+    expect(code).toBe(0);
+    expect(observedRoot).toBe(dir);
   });
 });
 

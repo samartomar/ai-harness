@@ -6,7 +6,12 @@ import { parsePostureInput, resolvePosture } from "../config/posture.js";
 import { loadSettings } from "../config/settings.js";
 import { AihError } from "../errors.js";
 import { optionSource } from "../internals/commander-options.js";
-import { executePlan, summarizeResult, writeArtifact } from "../internals/execute.js";
+import {
+  executePlan,
+  type PlanResult,
+  summarizeResult,
+  writeArtifact,
+} from "../internals/execute.js";
 import { readIfExists } from "../internals/fsxn.js";
 import type { CommandSpec, PlanContext } from "../internals/plan.js";
 import { defaultRunner, type Runner } from "../internals/proc.js";
@@ -39,6 +44,8 @@ export interface RunDeps {
   optionOverrides?: Record<string, unknown>;
   /** Override the positional root; false disables positional root handling. */
   positionalRoot?: string | false;
+  /** Capability-owned multi-phase executor; preserves shared output, support, and logging. */
+  execute?: (ctx: PlanContext) => Promise<PlanResult>;
 }
 
 const delay = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
@@ -261,10 +268,11 @@ export async function runCapability(
       },
     };
 
-    const built = await spec.plan(ctx);
-    const result = await executePlan(built, ctx, {
-      skipWorktreeGate: spec.skipWorktreeGate === true,
-    });
+    const result = deps.execute
+      ? await deps.execute(ctx)
+      : await executePlan(await spec.plan(ctx), ctx, {
+          skipWorktreeGate: spec.skipWorktreeGate === true,
+        });
 
     // A failed non-allowFailure exec must surface as a non-zero exit (writes commit
     // before execs run, so a silent success would hide partial state); a failed probe
