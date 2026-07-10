@@ -1,11 +1,16 @@
 version: 2
 updates:
   # Keep npm dependencies patched; group runtime and dev deps to reduce PR noise.
+  # `semver:patch` satisfies the semver-label gate by default (the release cut needs
+  # exactly one class per merged PR); re-label by hand if a bump changes our surface.
   - package-ecosystem: npm
     directory: "/"
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - "semver:patch"
     groups:
       dependencies:
         patterns:
@@ -16,3 +21,7 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - github_actions
+      - "semver:patch"
