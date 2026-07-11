@@ -355,6 +355,7 @@ const HAS_O_NOFOLLOW = O_NOFOLLOW !== 0;
  */
 export function readRegularFileWithStats(
   abs: string,
+  options: { maxBytes?: number } = {},
 ): { contents: Buffer; stats: Stats } | undefined {
   let fd: number;
   try {
@@ -365,6 +366,7 @@ export function readRegularFileWithStats(
   try {
     const stats = fstatSync(fd);
     if (!stats.isFile()) return undefined;
+    if (options.maxBytes !== undefined && stats.size > options.maxBytes) return undefined;
     if (!HAS_O_NOFOLLOW && !openedPathStillNamesFile(abs, fd)) return undefined;
     return { contents: readFileSync(fd), stats };
   } finally {

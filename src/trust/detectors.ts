@@ -1,7 +1,6 @@
 import { createHash } from "node:crypto";
 import {
   existsSync,
-  lstatSync,
   mkdtempSync,
   readFileSync,
   realpathSync,
@@ -12,6 +11,7 @@ import {
 import { tmpdir } from "node:os";
 import { basename, dirname, extname, isAbsolute, join, relative } from "node:path";
 import type { Posture } from "../config/posture.js";
+import { readRegularFileWithStats } from "../internals/fsxn.js";
 import type { Runner, RunResult } from "../internals/proc.js";
 import type { Check, CheckCode } from "../internals/verify.js";
 import type { Platform } from "../platform/base.js";
@@ -316,7 +316,7 @@ function realpathIfExists(path: string): string {
   }
 }
 
-function sha8(raw: string): string {
+function sha8(raw: string | Buffer): string {
   return createHash("sha256").update(raw).digest("hex").slice(0, 8);
 }
 
@@ -1131,30 +1131,28 @@ function sourceTextForLocation(
   }
 }
 
-function isReviewableLegalTextLocation(
+function reviewableLegalTextContent(
   root: string,
   location: NonNullable<Check["location"]>,
-): boolean {
-  if (!LEGAL_TEXT_BASENAME.test(basename(location.uri))) return false;
-  if (isStrictUnicodeSurface(location.uri)) return false;
-  if (isInstallScriptEvidenceFilePath(location.uri)) return false;
-  if (NON_TEXT_LEGAL_EXTENSIONS.has(extname(location.uri).toLowerCase())) return false;
+): Buffer | undefined {
+  if (!LEGAL_TEXT_BASENAME.test(basename(location.uri))) return undefined;
+  if (isStrictUnicodeSurface(location.uri)) return undefined;
+  if (isInstallScriptEvidenceFilePath(location.uri)) return undefined;
+  if (NON_TEXT_LEGAL_EXTENSIONS.has(extname(location.uri).toLowerCase())) return undefined;
   try {
     const path = join(root, location.uri);
-    const metadata = lstatSync(path);
-    if (!metadata.isFile() || metadata.isSymbolicLink() || (metadata.mode & 0o111) !== 0) {
-      return false;
-    }
-    if (metadata.size > MAX_LEGAL_TEXT_BYTES) return false;
     const rootReal = realpathSync(root);
     const pathReal = realpathSync(path);
     const fromRoot = relative(rootReal, pathReal);
-    if (!isSafeRelativeSarifUri(toPosix(fromRoot))) return false;
-    const content = readFileSync(path);
-    if (content.includes(0)) return false;
-    return !content.subarray(0, 256).toString("utf8").startsWith("#!");
+    if (!isSafeRelativeSarifUri(toPosix(fromRoot))) return undefined;
+    const opened = readRegularFileWithStats(pathReal, { maxBytes: MAX_LEGAL_TEXT_BYTES });
+    if (opened === undefined || (opened.stats.mode & 0o111) !== 0) return undefined;
+    if (opened.contents.includes(0)) return undefined;
+    return opened.contents.subarray(0, 256).toString("utf8").startsWith("#!")
+      ? undefined
+      : opened.contents;
   } catch {
-    return false;
+    return undefined;
   }
 }
 
@@ -1192,34 +1190,43 @@ function hiddenUnicodeRiskForDetectorResult(
   return unicodeRiskForLocation(root, location) ?? detectorReportedHiddenUnicodeRisk();
 }
 
+interface DetectorRuleClassification {
+  code: CheckCode;
+  fingerprintContent?: Buffer;
+}
+
 function ruleCode(
   result: SarifResult,
   detector: TrustDetector,
   root: string,
   location: NonNullable<Check["location"]>,
-): CheckCode | undefined {
+): DetectorRuleClassification | undefined {
   const raw = resultRuleId(result);
   if (raw === undefined) return undefined;
   const mapped = detector.ruleMap[raw];
   if (mapped !== undefined) {
-    return mapped === "trust.hidden-unicode"
-      ? hiddenUnicodeRiskForDetectorResult(result, detector, root, location).code
-      : mapped;
+    return {
+      code:
+        mapped === "trust.hidden-unicode"
+          ? hiddenUnicodeRiskForDetectorResult(result, detector, root, location).code
+          : mapped,
+    };
   }
+  const legalText = reviewableLegalTextContent(root, location);
   if (
     detector.name === "skillspector" ||
     detector.name === "semgrep" ||
     detector.name === "snyk-agent-scan" ||
     detector.name === "agentshield"
   ) {
-    return isReviewableLegalTextLocation(root, location)
-      ? "trust.legal-text-detector-finding"
-      : "trust.detector-finding";
+    return legalText === undefined
+      ? { code: "trust.detector-finding" }
+      : { code: "trust.legal-text-detector-finding", fingerprintContent: legalText };
   }
   if (detector.name === "cisco" || detector.name === "mcp-scanner") {
-    return isReviewableLegalTextLocation(root, location)
-      ? "trust.legal-text-detector-finding"
-      : "trust.cisco-finding";
+    return legalText === undefined
+      ? { code: "trust.cisco-finding" }
+      : { code: "trust.legal-text-detector-finding", fingerprintContent: legalText };
   }
   return undefined;
 }
@@ -1289,12 +1296,14 @@ function sarifFingerprint(
   location: NonNullable<Check["location"]>,
   detail: string,
   detector: TrustDetector,
+  fingerprintContent?: Buffer,
 ): string {
   const line = location.startLine ?? 1;
   const content =
-    code === "trust.visible-unicode" || code === "trust.legal-text-detector-finding"
+    fingerprintContent ??
+    (code === "trust.visible-unicode"
       ? (sourceTextForLocation(root, location) ?? detail)
-      : (fileLine(join(root, location.uri), line) ?? detail);
+      : (fileLine(join(root, location.uri), line) ?? detail));
   return `${code.replace(/\./g, "-")}:${detector.name}:${location.uri}:${line}:${sha8(content)}`;
 }
 
@@ -1310,8 +1319,9 @@ function sarifChecks(
   for (const run of parsed.runs) {
     for (const result of run.results ?? []) {
       const location = sarifLocation(result, detector);
-      const code = ruleCode(result, detector, root, location);
-      if (code === undefined) continue;
+      const classification = ruleCode(result, detector, root, location);
+      if (classification === undefined) continue;
+      const { code } = classification;
       const risk =
         code === "trust.hidden-unicode" || code === "trust.visible-unicode"
           ? hiddenUnicodeRiskForDetectorResult(result, detector, root, location)
@@ -1328,7 +1338,14 @@ function sarifChecks(
             code,
             detail: `${location.uri}:${location.startLine ?? 1} — ${detectorFindingLabel(detector)}: ${detail}`,
             location,
-            fingerprint: sarifFingerprint(code, root, location, detail, detector),
+            fingerprint: sarifFingerprint(
+              code,
+              root,
+              location,
+              detail,
+              detector,
+              classification.fingerprintContent,
+            ),
           },
           posture,
         ),

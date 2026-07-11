@@ -301,6 +301,13 @@ describe("readRegularFile — the fd-guarded read for scan-discovered paths", ()
     expect(file?.stats.isFile()).toBe(true);
   });
 
+  it("refuses an oversized regular file before reading from the opened descriptor", () => {
+    writeFileSync(join(dir, "large.txt"), "oversized", "utf8");
+    expect(
+      readRegularFileWithStats(join(dir, "large.txt"), { maxBytes: "small".length }),
+    ).toBeUndefined();
+  });
+
   it("keeps the no-O_NOFOLLOW identity fallback on exact BigInt stats", () => {
     const source = readFileSync(join(process.cwd(), "src", "internals", "fsxn.ts"), "utf8");
     expect(source).toContain("fstatSync(fd, { bigint: true })");

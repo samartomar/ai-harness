@@ -1476,6 +1476,7 @@ describe("scanTrustTree", () => {
     write("skills/legal/LICENSE.txt", "License heading\nGeneric detector text\nUnrelated tail\n");
     write("skills/legal/LICENSE.sh", "generic detector script\n");
     write("skills/legal/NOTICE", "#!/bin/sh\necho generic detector script\n");
+    write("skills/legal/COPYING", "x".repeat(2 * 1024 * 1024 + 1));
     const sarif = {
       version: "2.1.0",
       runs: [
@@ -1524,6 +1525,30 @@ describe("scanTrustTree", () => {
                 {
                   physicalLocation: {
                     artifactLocation: { uri: "/scan/skills/legal/NOTICE" },
+                    region: { startLine: 1 },
+                  },
+                },
+              ],
+            },
+            {
+              ruleId: "skillspector.future-rule",
+              message: { text: "generic finding in oversized legal-looking file" },
+              locations: [
+                {
+                  physicalLocation: {
+                    artifactLocation: { uri: "/scan/skills/legal/COPYING" },
+                    region: { startLine: 1 },
+                  },
+                },
+              ],
+            },
+            {
+              ruleId: "skillspector.future-rule",
+              message: { text: "generic finding in absent legal-looking file" },
+              locations: [
+                {
+                  physicalLocation: {
+                    artifactLocation: { uri: "/scan/skills/legal/LICENSE-MISSING" },
                     region: { startLine: 1 },
                   },
                 },
@@ -1582,6 +1607,14 @@ describe("scanTrustTree", () => {
         expect.objectContaining({
           code: "trust.detector-finding",
           location: expect.objectContaining({ uri: "skills/legal/NOTICE" }),
+        }),
+        expect.objectContaining({
+          code: "trust.detector-finding",
+          location: expect.objectContaining({ uri: "skills/legal/COPYING" }),
+        }),
+        expect.objectContaining({
+          code: "trust.detector-finding",
+          location: expect.objectContaining({ uri: "skills/legal/LICENSE-MISSING" }),
         }),
         expect.objectContaining({
           code: "trust.prompt-injection",
