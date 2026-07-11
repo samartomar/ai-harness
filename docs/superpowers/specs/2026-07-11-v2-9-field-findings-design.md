@@ -1,6 +1,7 @@
 # v2.9.0 Field-Findings Remediation Design
 
-**Status:** Approved for implementation on 2026-07-10
+**Status:** Partially executed 2026-07-11. #418–#424 are merged and unreleased;
+#417 remains the open release blocker pending a remediated immutable ECC commit.
 
 **Issues:** #417, #418, #419, #420, #421, #422, #423, #424
 
@@ -14,6 +15,22 @@ ledger truthful, and make release escalation acknowledgement attributable.
 
 The expected cut is a semver-minor v2.9.0 release. Release policy still computes
 and assigns the version at cut time from merged-PR labels.
+
+## Execution record — 2026-07-11
+
+The dependency order was executed through the seven non-gate slices: #422 / PR
+#426, #419 / #427, #418 / #428, #420 / #429, #423 / #430, #424 / #431, and #421 /
+#432 are merged to `main`. Their checked behavior remains unreleased and contributes
+to the expected minor cut.
+
+#417 remains open and labels the train `release-blocker` plus
+`blocked:vendor-specific`. Candidate ECC
+`40927950c49f6e742d341e20ff7b9b7e1e7bfff5` failed enterprise installer evidence
+because of its lifecycle `postinstall`, floating dependencies, and strict-surface
+Unicode. Its preview-generation closure also reaches bare `ajv` outside the vetted
+runtime component. The danger-class floor and #421 fail-closed closure boundary are
+intentional; this design must resume only from an exact upstream commit with a
+passing runtime and a vetted/vendor-hashed dependency path.
 
 ## Non-goals
 

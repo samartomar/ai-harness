@@ -8,6 +8,15 @@
 
 **Tech Stack:** TypeScript 7, Node.js 22 filesystem/crypto/child-process APIs, Commander, Zod, Vitest, GitHub CLI/API, GitHub Actions, the existing `Plan`/`Check`/`VerificationReport` model, and signed baseline evidence v1.
 
+## Execution record — 2026-07-11
+
+| Plan task | Outcome |
+| --- | --- |
+| 1 / #417 RED gate | Complete; draft PR #425 preserves the frozen v2.8.0 failure and was rebased on current `main`. |
+| 2–8 / #422, #419, #418, #420, #423, #424, #421 | Complete and merged through PRs #426, #427, #428, #429, #430, #431, and #432. |
+| 9 / #417 GREEN gate | Blocked on upstream vendor remediation. Candidate ECC `40927950c49f6e742d341e20ff7b9b7e1e7bfff5` fails runtime vetting (`postinstall`, unpinned dependencies, strict-surface Unicode) and its preview closure imports bare `ajv` outside the vetted component. Do not weaken either gate; resume only with an exact passing upstream commit and a vetted/vendor-hashed dependency path. |
+| 10 / train reconciliation | Current public/private truth updated after the merged non-gate slices; cut remains blocked by #417. |
+
 ## Global Constraints
 
 - Never mutate the real development-seat HOME; use disposable fixture HOMEs and project roots.
