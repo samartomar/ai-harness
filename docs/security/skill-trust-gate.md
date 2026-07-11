@@ -106,6 +106,12 @@ This skill cannot attack you.
 15. Install only under `--apply` and only if policy allows.
 ```
 
+Sandbox-smoke unavailability is recorded as a `trust.sandbox-smoke-unavailable`
+skip at every posture because it describes a missing host capability, not the
+candidate content. The skip remains visible in trust evidence. When the sandbox
+is available and an executed smoke run fails, `trust.sandbox-smoke-failed`
+remains a blocking content finding.
+
 ## Recommended scanners
 
 Use a pluggable scanner interface. Do not hardcode only one vendor/tool.

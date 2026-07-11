@@ -280,7 +280,7 @@ describe("aih pack install", () => {
     expect(output).toContain("[skipped-because-gate-failed]");
   });
 
-  it("gate-all: a later sandbox smoke blocker prevents every source promotion", async () => {
+  it("gate-all: a later sandbox smoke skip does not prevent source promotion", async () => {
     seedTwoSourcePack();
     writeFileSync(join(sourceB, "package.json"), JSON.stringify({ name: "beta-skill" }), "utf8");
 
@@ -289,15 +289,14 @@ describe("aih pack install", () => {
       sandboxSmokeRunner({ imageUnavailable: () => true }),
     );
 
-    expect(code).toBe(1);
-    expect(existsSync(join(workspace, CONTEXT_DIR, "skills"))).toBe(false);
-    expect(existsSync(join(workspace, ".aih", "trust-lock.json"))).toBe(false);
+    expect(code).toBe(0);
+    expect(existsSync(join(workspace, CONTEXT_DIR, "skills"))).toBe(true);
+    expect(existsSync(join(workspace, ".aih", "trust-lock.json"))).toBe(true);
     expect(output).toContain("trust.sandbox-smoke-unavailable");
-    expect(output).toContain("[failed-scan]");
-    expect(output).toContain("[skipped-because-gate-failed]");
+    expect(output).toContain("[installed]");
   });
 
-  it("includes phase-A blocking checks in JSON output", async () => {
+  it("includes phase-A sandbox smoke skips in JSON output", async () => {
     seedTwoSourcePack();
     writeFileSync(join(sourceB, "package.json"), JSON.stringify({ name: "beta-skill" }), "utf8");
 
@@ -316,7 +315,7 @@ describe("aih pack install", () => {
       }>;
     };
 
-    expect(code).toBe(1);
+    expect(code).toBe(0);
     expect(payload.capability).toBe("pack install");
     expect(payload.applied).toBe(true);
     const beta = payload.sources.find((source) => source.source === realpathSync(sourceB));
@@ -324,11 +323,11 @@ describe("aih pack install", () => {
       expect.arrayContaining([
         expect.objectContaining({
           code: "trust.sandbox-smoke-unavailable",
-          verdict: "fail",
+          verdict: "skip",
         }),
       ]),
     );
-    expect(existsSync(join(workspace, CONTEXT_DIR, "skills"))).toBe(false);
+    expect(existsSync(join(workspace, CONTEXT_DIR, "skills"))).toBe(true);
   });
 
   it("refuses before any scan when a ref has no committed approval", async () => {
