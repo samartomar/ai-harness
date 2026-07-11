@@ -10,6 +10,11 @@ import {
   runPreflight,
 } from "../../src/internals/release-preflight.js";
 
+type IntentData = PreflightData & {
+  declaredIntent?: "patch" | "minor" | "major";
+  intentAcknowledgementSha?: string;
+};
+
 function pr(number: number, title: string, labels: string[] = ["semver:patch"]): MergedPr {
   return { number, title, semverLabels: labels, milestone: "next-release" };
 }
@@ -37,7 +42,7 @@ function mergedItem(p: MergedPr): MilestoneItem {
 }
 
 /** A clean two-PR cut: everything labeled, aboard, tracked, and version-coherent. */
-function cleanData(): PreflightData {
+function cleanData(): IntentData {
   const prs = [pr(1, "fix: a"), pr(2, "feat: b", ["semver:minor"])];
   return {
     previousTag: "v2.5.1",
@@ -48,6 +53,7 @@ function cleanData(): PreflightData {
     milestoneItems: [...prs.map(mergedItem), tracker()],
     packageVersion: "2.5.1",
     versionConstant: "2.5.1",
+    declaredIntent: "minor",
   };
 }
 
@@ -58,6 +64,75 @@ describe("runPreflight — clean cut", () => {
     expect(m.findings).toEqual([]);
     expect(m.computedBump).toBe("minor");
     expect(m.nextVersion).toBe("2.6.0");
+  });
+});
+
+describe("runPreflight — declared intent checkpoint", () => {
+  it("missing-intent: blocks when the cut has no declared bump intent", () => {
+    const d = cleanData();
+    delete d.declaredIntent;
+
+    const m = runPreflight(d);
+
+    expect(m.ok).toBe(false);
+    expect(m.findings.map((finding) => finding.code)).toContain("missing-intent");
+  });
+
+  it("intent-escalation: blocks when the computed bump exceeds declared intent", () => {
+    const d = cleanData();
+    d.declaredIntent = "patch";
+
+    const m = runPreflight(d);
+
+    expect(m.ok).toBe(false);
+    expect(m.findings).toContainEqual(expect.objectContaining({ code: "intent-escalation" }));
+    expect(m).toMatchObject({
+      declaredIntent: "patch",
+      computedBump: "minor",
+      intentEscalation: true,
+      intentAcknowledged: false,
+    });
+  });
+
+  it.each([
+    "minor",
+    "major",
+  ] as const)("passes without acknowledgement when declared intent is %s", (intent) => {
+    const d = cleanData();
+    d.declaredIntent = intent;
+
+    expect(runPreflight(d)).toMatchObject({
+      ok: true,
+      declaredIntent: intent,
+      intentEscalation: false,
+      intentAcknowledged: false,
+    });
+  });
+
+  it("accepts an upward escalation only when acknowledgement binds the candidate SHA", () => {
+    const d = cleanData();
+    d.declaredIntent = "patch";
+    d.intentAcknowledgementSha = d.candidateSha;
+
+    expect(runPreflight(d)).toMatchObject({
+      ok: true,
+      declaredIntent: "patch",
+      computedBump: "minor",
+      intentEscalation: true,
+      intentAcknowledged: true,
+    });
+  });
+
+  it("intent-escalation: rejects an acknowledgement bound to another candidate", () => {
+    const d = cleanData();
+    d.declaredIntent = "patch";
+    d.intentAcknowledgementSha = "b".repeat(40);
+
+    const m = runPreflight(d);
+
+    expect(m.ok).toBe(false);
+    expect(m.findings).toContainEqual(expect.objectContaining({ code: "intent-escalation" }));
+    expect(m).toMatchObject({ intentEscalation: true, intentAcknowledged: false });
   });
 });
 
