@@ -32,6 +32,8 @@ export interface RunDeps {
   run?: Runner;
   env?: NodeJS.ProcessEnv;
   write?: (text: string) => void;
+  /** Separate stderr writer for bounded progress and secondary cleanup diagnostics. */
+  writeError?: (text: string) => void;
   /** Inject a prompter (tests); production wires a readline prompter when interactive. */
   prompter?: Prompter;
   /** Clock seam — injected in tests so support timestamps + ledger rows are deterministic. */
@@ -131,7 +133,40 @@ export async function runCapability(
 ): Promise<number> {
   const env = deps.env ?? process.env;
   const write = deps.write ?? ((t: string) => process.stdout.write(t));
+  const writeError = deps.writeError ?? ((t: string) => process.stderr.write(t));
   const run = deps.run ?? defaultRunner;
+  const deferredCleanups: Array<() => void | Promise<void>> = [];
+  let cleanupPromise: Promise<void> | undefined;
+  const runDeferredCleanups = (): Promise<void> => {
+    cleanupPromise ??= (async () => {
+      for (const cleanup of [...deferredCleanups].reverse()) {
+        try {
+          await cleanup();
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          writeError(`cleanup warning: ${message}\n`);
+        }
+      }
+    })();
+    return cleanupPromise;
+  };
+  let terminating = false;
+  const removeSignalHandlers = (): void => {
+    process.off("SIGINT", onSigint);
+    process.off("SIGTERM", onSigterm);
+  };
+  const terminateAfterCleanup = (signal: NodeJS.Signals): void => {
+    if (terminating) return;
+    terminating = true;
+    void runDeferredCleanups().finally(() => {
+      removeSignalHandlers();
+      process.kill(process.pid, signal);
+    });
+  };
+  const onSigint = (): void => terminateAfterCleanup("SIGINT");
+  const onSigterm = (): void => terminateAfterCleanup("SIGTERM");
+  process.once("SIGINT", onSigint);
+  process.once("SIGTERM", onSigterm);
   const opts = command.optsWithGlobals() as Record<string, unknown>;
   // Optional positional target dir (e.g. `aih init .`) overrides --root.
   const defaultPositionalRoot = Array.isArray(command.processedArgs)
@@ -256,6 +291,8 @@ export async function runCapability(
       host,
       env,
       prompter,
+      progress: (message) => writeError(`${message}\n`),
+      deferCleanup: (cleanup) => deferredCleanups.push(cleanup),
       options: {
         ...extractOptions(spec, opts),
         ...(deps.optionOverrides ?? {}),
@@ -419,5 +456,11 @@ export async function runCapability(
       write(`error [${code}]: ${message}\n`);
     }
     return 1;
+  } finally {
+    try {
+      await runDeferredCleanups();
+    } finally {
+      removeSignalHandlers();
+    }
   }
 }

@@ -8,6 +8,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Long trust scans now report bounded progress on stderr while preserving clean JSON stdout, reuse
+  one path-only inventory, and remove command-owned quarantines on every exit unless
+  `trust scan --keep-quarantine` is explicit. Remote ECC dry-runs now render a deterministic,
+  pin-bound selected-component install preview marked contingent on evidence authorization. (#421)
 - Upward release-intent escalation now requires an authorized GitHub comment on the release
   tracker containing the exact SHA/declared-intent/computed-bump token. Preflight validates and
   records the immutable comment ID and URL, author authority, and timestamp in the cut manifest;

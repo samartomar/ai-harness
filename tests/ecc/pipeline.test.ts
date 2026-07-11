@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { defineBaselineCatalog } from "../../src/baseline-evidence/catalog.js";
 import { hashComponentTree } from "../../src/baseline-evidence/hash.js";
 import { parseBaselineEvidenceLock } from "../../src/baseline-evidence/schema.js";
+import type { EccInstallPreviewArtifact } from "../../src/ecc/install-preview.js";
 import { buildEccRegistrationRequest, executeEccEvidencePipeline } from "../../src/ecc/pipeline.js";
 import {
   emptyRegistrationLedger,
@@ -83,6 +84,51 @@ function vendorLock(verdict: "pass" | "blocked" = "pass") {
 }
 
 const request = { clis: ["kiro" as const], profile: "core", packs: [] };
+
+function installPreview(): EccInstallPreviewArtifact {
+  return {
+    schemaVersion: 1,
+    source: {
+      owner: "affaan-m",
+      repo: "ECC",
+      pinnedSha: "a".repeat(40),
+    },
+    operations: [
+      {
+        target: "claude",
+        kind: "copy-file",
+        source: "rules/common/security.md",
+        destination: "<home>/.claude/rules/ecc/common/security.md",
+        componentId: "baseline:rules",
+        contingentOn: "evidence-authorization",
+      },
+      {
+        target: "claude",
+        kind: "copy-file",
+        source: "hooks/hooks.json",
+        destination: "<home>/.claude/hooks/hooks.json",
+        componentId: "baseline:hooks",
+        contingentOn: "evidence-authorization",
+      },
+      {
+        target: "claude",
+        kind: "exec",
+        source: "scripts/install-apply.js",
+        destination: "<home>/.claude",
+        componentId: "runtime:ecc-installer",
+        contingentOn: "evidence-authorization",
+      },
+      {
+        target: "kiro",
+        kind: "exec",
+        source: "install.sh",
+        destination: "<project>/.kiro",
+        componentId: "runtime:ecc-kiro",
+        contingentOn: "evidence-authorization",
+      },
+    ],
+  };
+}
 
 function mixedCatalog() {
   return defineBaselineCatalog({
@@ -345,13 +391,73 @@ describe("ECC baseline evidence pipeline", () => {
       vendorLock: vendorLock(),
       vendorLockSha256: "f".repeat(64),
       buildInstallPlan,
+      installPreview: installPreview(),
     });
 
-    expect(result.execs).toEqual([
-      expect.objectContaining({ ran: false, argv: expect.arrayContaining(["-e"]) }),
+    expect(result.execs).toEqual([]);
+    expect(result.digests).toEqual([
+      expect.objectContaining({
+        describe: "contingent ECC install preview",
+        data: {
+          contingentOn: "evidence-authorization",
+          pinnedSha: "a".repeat(40),
+          operations: [
+            expect.objectContaining({
+              target: "kiro",
+              kind: "exec",
+              componentId: "runtime:ecc-kiro",
+            }),
+          ],
+        },
+      }),
     ]);
     expect(buildInstallPlan).not.toHaveBeenCalled();
     expect(existsSync(source.quarantineRoot)).toBe(false);
+  });
+
+  it("filters a user-home dry-run preview to selected components and the installer runtime", async () => {
+    const source = resolveTrustSource("affaan-m/ECC", { root, pin: "a".repeat(40) });
+    const buildInstallPlan = vi.fn(() => plan("must not build"));
+    const selectedRequest = {
+      clis: ["claude" as const],
+      profile: "core",
+      packs: [],
+      selection: {
+        scope: "scoped" as const,
+        components: ["baseline:rules" as const],
+        mcps: [],
+        recommendations: [],
+      },
+    };
+
+    const result = await executeEccEvidencePipeline(ctx(false), selectedRequest, {
+      catalog: catalog(),
+      source,
+      vendorLock: vendorLock(),
+      vendorLockSha256: "f".repeat(64),
+      buildInstallPlan,
+      installPreview: installPreview(),
+    });
+
+    const preview = result.digests[0]?.data as {
+      contingentOn: string;
+      operations: Array<{ componentId: string; destination: string }>;
+    };
+    expect(preview.contingentOn).toBe("evidence-authorization");
+    expect(preview.operations).toEqual([
+      expect.objectContaining({
+        componentId: "baseline:rules",
+        destination: "<home>/.claude/rules/ecc/common/security.md",
+      }),
+      expect.objectContaining({
+        componentId: "runtime:ecc-installer",
+        destination: "<home>/.claude",
+      }),
+    ]);
+    expect(preview.operations).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ componentId: "baseline:hooks" })]),
+    );
+    expect(buildInstallPlan).not.toHaveBeenCalled();
   });
 
   it("rejects fetched metadata that does not bind the catalog pin", async () => {

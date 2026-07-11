@@ -3248,6 +3248,9 @@
               "flags": "--json"
             },
             {
+              "flags": "--keep-quarantine"
+            },
+            {
               "flags": "--no-log"
             },
             {

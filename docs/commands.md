@@ -238,6 +238,10 @@ scoped fenced AGENTS supplement. It preflights genuine project/global MCP transp
 allowing its own idempotent reruns. `--ecc-path <dir>` supplies an exact local checkout to the same
 evidence gate, and `AIH_ECC_REF` requests a different exact commit; either must match vendor or
 attributed org evidence for that pin. Non-SHA refs are refused.
+For an exact remote pin, dry-run reads the shipped pin-bound install preview and prints the selected
+target's stable file/merge/exec operations without fetching, invoking the installer, or writing a
+target. Every row is marked `contingent on evidence authorization`: it previews what the authorized
+install phase would attempt and does not claim that evidence has passed.
 Installed Codex skills are invoked on demand with `$<skill-name>` from
 `~/.codex/skills/<name>/SKILL.md`; they are not an auto-loaded `.agents/skills` surface.
 See [Baseline Component Evidence](security/baseline-evidence.md) for posture behavior and org
@@ -300,6 +304,10 @@ tag, upstream commit, and digest; candidate inputs surface the upstream compare 
 a pin bump and flag reuse of the current tag with different bytes or source revision. With
 `--approve-local-digest`, it can record a reviewed local SkillSpector image digest in
 `trust.skillspector.approvedDigests[]` for the pinned source revision.
+Trust scans build one path-and-size inventory, stream bounded progress to stderr before and between
+external detector boundaries, and keep `--json` stdout as one parseable result. Command-owned
+GitHub quarantines are removed after success, block, or error; `trust scan --keep-quarantine` is the
+only retention path and prints the retained temporary path to stderr.
 
 ## aih skill
 

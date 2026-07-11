@@ -12,9 +12,16 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { Command } from "commander";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { runCapability } from "../../src/commands/run.js";
 import { executePlan } from "../../src/internals/execute.js";
-import type { PlanContext } from "../../src/internals/plan.js";
+import {
+  type CommandSpec,
+  type PlanContext,
+  plan,
+  structuredChecksProbe,
+} from "../../src/internals/plan.js";
 import { fakeRunner, type Runner, type RunOptions } from "../../src/internals/proc.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 import {
@@ -31,6 +38,7 @@ import {
   SKILLSPECTOR_SOURCE_REVISION,
   verifiedSkillspectorImageReference,
 } from "../../src/trust/images.js";
+import { buildTrustFileInventory } from "../../src/trust/inventory.js";
 import {
   scanTrustTree,
   scanTrustTreeWithAnalyzers,
@@ -4637,4 +4645,95 @@ describe("trustScanCommand", () => {
       ),
     ).rejects.toThrow(/cannot acknowledge trust.auto-exec-hook/);
   });
+
+  it("reports early progress for a large tree while reusing one bounded inventory", async () => {
+    for (let index = 0; index < 3_149; index++) {
+      write(`bulk/file-${String(index).padStart(4, "0")}.txt`, "safe\n");
+    }
+    let inventories = 0;
+    const progress: string[] = [];
+    let releaseScan: (() => void) | undefined;
+    let markScanStarted: (() => void) | undefined;
+    const scanStarted = new Promise<void>((resolve) => {
+      markScanStarted = resolve;
+    });
+    const release = new Promise<void>((resolve) => {
+      releaseScan = resolve;
+    });
+    const slowRunner: Runner = async (argv) => {
+      if (argv[0] === "semgrep" && argv.includes("--version")) {
+        return { code: 0, stdout: "1.125.0\n", stderr: "" };
+      }
+      if (argv[0] === "semgrep" && argv.includes("scan")) {
+        markScanStarted?.();
+        await release;
+        return { code: 0, stdout: JSON.stringify(EMPTY_SARIF), stderr: "" };
+      }
+      return { code: 127, stdout: "", stderr: "not found", spawnError: true };
+    };
+
+    const spec: CommandSpec = {
+      name: "large-trust-scan",
+      summary: "large trust scan fixture",
+      alwaysVerify: true,
+      plan: async (ctx) => {
+        const result = await scanTrustTreeWithAnalyzers(dir, {
+          env: {},
+          platform: "linux",
+          posture: "enterprise",
+          requiredDetectors: ["semgrep"],
+          run: slowRunner,
+          progress: ctx.progress,
+          inventoryFactory: (root, options) => {
+            inventories++;
+            return buildTrustFileInventory(root, options);
+          },
+        });
+        return plan(
+          "large-trust-scan",
+          structuredChecksProbe("large trust scan", () => result.checks),
+        );
+      },
+    };
+    const command = new Command("large-trust-scan")
+      .option("--json")
+      .option("--root <dir>")
+      .parse(["--json", "--root", dir], { from: "user" });
+    let stdout = "";
+    let stderr = "";
+    let completed = false;
+    const scan = runCapability(spec, command, {
+      env: {},
+      run: slowRunner,
+      write: (text) => {
+        stdout += text;
+      },
+      writeError: (text) => {
+        stderr += text;
+        progress.push(text.trim());
+      },
+    }).then((code) => {
+      completed = true;
+      return code;
+    });
+
+    await scanStarted;
+    expect(completed).toBe(false);
+    expect(progress).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining("inventory started"),
+        expect.stringContaining("3,000 files"),
+        expect.stringContaining("detector semgrep started"),
+      ]),
+    );
+    expect(inventories).toBe(1);
+    expect(stdout).toBe("");
+
+    releaseScan?.();
+    expect(await scan).toBe(1);
+    expect(completed).toBe(true);
+    expect(JSON.parse(stdout)).toMatchObject({ capability: "large-trust-scan" });
+    expect(stdout).not.toContain("inventory");
+    expect(stderr).toContain("detector semgrep started");
+  }, 30_000);
 });
