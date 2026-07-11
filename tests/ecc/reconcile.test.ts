@@ -157,6 +157,22 @@ describe("ECC registration reconciliation", () => {
     expect(result.ledger.targets[0]?.mcps).toEqual(["mcp:sequential-thinking"]);
   });
 
+  it("prunes an orphan from a partial target without inventing a held component", () => {
+    const input = ledger(
+      [project(reactRoot, ["baseline:rules", "baseline:hooks"], [])],
+      [target(["baseline:rules", "skill:coding-standards"], [], "codex")],
+    );
+
+    const result = reconcileEccRegistrationLedger(input, { projectStatus: () => "live" });
+
+    expect(result.removedComponents).toEqual([]);
+    expect(result.ledger.projects[0]?.components).toEqual(["baseline:hooks", "baseline:rules"]);
+    expect(result.ledger.targets[0]?.components.map(({ id }) => id)).toEqual(["baseline:rules"]);
+    expect(result.ledger.targets[0]?.components.map(({ id }) => id)).not.toContain(
+      "baseline:hooks",
+    );
+  });
+
   it("keeps shared components until their last live contributor is gone", () => {
     const input = ledger([
       project(reactRoot, ["baseline:rules", "skill:coding-standards", "framework:react"]),

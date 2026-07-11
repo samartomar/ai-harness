@@ -205,6 +205,15 @@ a second project grows the machine union without removing the first project's su
 the authoritative input for `aih prune`: missing project roots are retired and only orphaned,
 state-recorded aih-managed operations are removed in a rollback-safe ledger-last transaction.
 
+Evidence verdicts partition the request per component. Authorized components install; held
+components do not, and the report names each held component with its evidence code and reason. A
+mixed result is a successful partial install, not an all-or-nothing failure. The project entry keeps
+the requested intent so a later evidence refresh can satisfy it, while target entries record only
+the components and MCPs actually installed. Reconcile and prune operate on that partial target
+surface without inventing held components. Structural evidence failures that make the partition
+untrustworthy still fail the request, and aih refuses all installer execution unless
+`runtime:ecc-installer` itself has an authorization receipt.
+
 The validated MCP default is pinned local `sequential-thinking`, repo-declared
 `code-review-graph`/`codebase-memory-mcp`, and GitHub OAuth at team/enterprise. Context7, Exa, and
 other egress-bearing servers are never defaults. Project config receives that project's set; global
@@ -212,7 +221,7 @@ target config receives the machine union, with existing user-defined same-name s
 
 aih fetches the catalog's exact commit into quarantine, verifies signed evidence for the installer
 runtime and selected components, re-hashes the same tree, then filters ECC's manifest operations and
-state preview to the selected surface. Dependency preparation uses
+state preview to the authorized selected surface. Dependency preparation uses
 `npm ci --omit=dev --ignore-scripts` only after clearance.
 
 For Codex, aih copies selected skills to `~/.codex/skills/<name>/SKILL.md`, installs selected agents,

@@ -13,6 +13,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { BaselineAuthorization } from "../../src/baseline-evidence/verify.js";
 import type { EccComponentSelection } from "../../src/ecc/components.js";
+import { eccEvidenceComponentIdsForSelection } from "../../src/ecc/evidence.js";
 import {
   emptyRegistrationLedger,
   readRegistrationLedger,
@@ -105,14 +106,121 @@ function selection(): EccComponentSelection {
   };
 }
 
+function authorizationsForSelection(
+  target: "claude" | "codex",
+  selected: EccComponentSelection,
+): BaselineAuthorization[] {
+  return eccEvidenceComponentIdsForSelection(target, selected).map((componentId) =>
+    authorization(componentId),
+  );
+}
+
 function put(path: string, contents: string): void {
   mkdirSync(join(path, ".."), { recursive: true });
   writeFileSync(path, contents, "utf8");
 }
 
 describe("verifiedEccInstallPlan", () => {
+  it("refuses before runtime preparation when ecc-installer is not authorized", () => {
+    expect(() =>
+      verifiedEccInstallPlan(
+        ctx(),
+        join(root, "quarantine", "tree"),
+        {
+          clis: ["claude"],
+          profile: "core",
+          packs: [],
+          selection: {
+            scope: "scoped",
+            components: ["baseline:rules"],
+            mcps: [],
+            recommendations: [],
+          },
+        },
+        [authorization("module:rules-core")],
+      ),
+    ).toThrow(/unauthorized ECC runtime runtime:ecc-installer/);
+  });
+
+  it("refuses before runtime preparation when only the helper runtime is authorized", () => {
+    expect(() =>
+      verifiedEccInstallPlan(
+        ctx(),
+        join(root, "quarantine", "tree"),
+        {
+          clis: ["claude"],
+          profile: "core",
+          packs: [],
+          selection: {
+            scope: "scoped",
+            components: ["baseline:rules"],
+            mcps: [],
+            recommendations: [],
+          },
+        },
+        [authorization()],
+      ),
+    ).toThrow(/no selected ECC component has authorization/);
+  });
+
+  it("refuses an unscoped Kiro installer without its runtime authorization", () => {
+    expect(() =>
+      verifiedEccInstallPlan(
+        ctx(),
+        join(root, "quarantine", "tree"),
+        { clis: ["kiro"], profile: "core", packs: [] },
+        [authorization("runtime:ecc-installer")],
+      ),
+    ).toThrow(/unauthorized ECC runtime runtime:ecc-kiro/);
+  });
+
+  it("records only authorized installed components while retaining project intent", () => {
+    const selected: EccComponentSelection = {
+      scope: "scoped",
+      components: ["baseline:rules", "baseline:hooks"],
+      mcps: [],
+      recommendations: [],
+    };
+    const built = verifiedEccInstallPlan(
+      ctx(),
+      join(root, "quarantine", "tree"),
+      {
+        clis: ["claude"],
+        profile: "core",
+        packs: [],
+        selection: selected,
+        project: {
+          root,
+          scope: "scoped",
+          components: [...selected.components],
+          mcps: [],
+        },
+        ledger: emptyRegistrationLedger(),
+      },
+      [authorization(), authorization("module:rules-core")],
+    );
+    const steps = driverSteps(built.actions);
+    const materializationPayload = JSON.parse(
+      Buffer.from(steps[1]?.argv.at(-1) ?? "", "base64").toString("utf8"),
+    ) as { spec: { wholeModules: string[] } };
+    const ledgerPayload = JSON.parse(
+      Buffer.from(steps.at(-1)?.argv.at(-1) ?? "", "base64").toString("utf8"),
+    ) as { contents: string };
+    const ledger = JSON.parse(ledgerPayload.contents) as {
+      projects: Array<{ components: string[] }>;
+      targets: Array<{ components: Array<{ id: string }> }>;
+    };
+
+    expect(materializationPayload.spec.wholeModules).toEqual(["rules-core"]);
+    expect(ledger.projects[0]?.components).toEqual(["baseline:hooks", "baseline:rules"]);
+    expect(ledger.targets[0]?.components.map((component) => component.id)).toEqual([
+      "baseline:rules",
+    ]);
+  });
+
   it("uses one sequential driver with a filtered manifest payload and never npx", () => {
     const sourceRoot = join(root, "quarantine", "tree");
+    const selected = selection();
     const plan = verifiedEccInstallPlan(
       ctx(),
       sourceRoot,
@@ -120,9 +228,9 @@ describe("verifiedEccInstallPlan", () => {
         clis: ["claude"],
         profile: "core",
         packs: ["typescript"],
-        selection: selection(),
+        selection: selected,
       },
-      [authorization()],
+      authorizationsForSelection("claude", selected),
     );
     expect(execs(plan.actions)).toHaveLength(1);
     const steps = driverSteps(plan.actions);
@@ -178,7 +286,7 @@ describe("verifiedEccInstallPlan", () => {
       ctx(),
       sourceRoot,
       { clis: ["codex"], profile: "core", packs: [], selection: selected },
-      [authorization()],
+      authorizationsForSelection("codex", selected),
     );
     expect(execs(plan.actions)).toHaveLength(1);
     const steps = driverSteps(plan.actions);
@@ -246,7 +354,7 @@ describe("verifiedEccInstallPlan", () => {
       context,
       join(root, "quarantine", "tree"),
       { clis: ["codex"], profile: "core", packs: [], selection: selected },
-      [authorization()],
+      authorizationsForSelection("codex", selected),
     );
 
     expect(driverSteps(built.actions)).not.toHaveLength(0);
@@ -327,7 +435,7 @@ describe("verifiedEccInstallPlan", () => {
       context,
       sourceRoot,
       { clis: ["codex"], profile: "core", packs: [], selection: selected },
-      [authorization()],
+      authorizationsForSelection("codex", selected),
     );
     const step = driverSteps(built.actions)[1];
     if (step === undefined) throw new Error("missing Codex install step");
@@ -378,7 +486,7 @@ describe("verifiedEccInstallPlan", () => {
           mcps: ["mcp:sequential-thinking"],
         },
       },
-      [authorization()],
+      authorizationsForSelection("claude", selected),
     );
 
     const mcp = writes(built.actions).find((action) => action.path === ".mcp.json");

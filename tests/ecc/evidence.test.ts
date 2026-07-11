@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { BaselineAuthorization } from "../../src/baseline-evidence/verify.js";
 import type { EccComponentSelection } from "../../src/ecc/components.js";
 import {
+  authorizedEccSelection,
   eccEvidenceComponentIds,
   eccEvidenceComponentIdsForSelection,
   installedEccComponentRegistrations,
@@ -38,6 +39,47 @@ function scopedSelection(): EccComponentSelection {
 }
 
 describe("ECC evidence component selection", () => {
+  it("filters the requested surface to components covered by authorization receipts", () => {
+    const authorized = authorizedEccSelection(scopedSelection(), [
+      authorization("module:agents-core"),
+      authorization("module:platform-configs"),
+      authorization("skill:tdd-workflow"),
+    ]);
+
+    expect(authorized).toEqual({
+      scope: "scoped",
+      components: [
+        "baseline:agents",
+        "baseline:platform",
+        "skill:tdd-workflow",
+        "agent:typescript-reviewer",
+      ],
+      mcps: ["mcp:sequential-thinking"],
+      recommendations: [],
+    });
+  });
+
+  it("downgrades a partially authorized full request to a filtered scoped selection", () => {
+    const requested = scopedSelection();
+    requested.scope = "full";
+
+    const authorized = authorizedEccSelection(requested, [authorization("module:rules-core")]);
+
+    expect(authorized.scope).toBe("scoped");
+    expect(authorized.components).toEqual(["baseline:rules"]);
+    expect(authorized.mcps).toEqual([]);
+  });
+
+  it("preserves a fully authorized full request", () => {
+    const requested = scopedSelection();
+    requested.scope = "full";
+    const receipts = eccEvidenceComponentIdsForSelection("claude", requested).map(authorization);
+
+    const authorized = authorizedEccSelection(requested, receipts, ["claude"]);
+
+    expect(authorized).toEqual(requested);
+  });
+
   it("covers the complete existing core profile plus installer runtime", () => {
     expect(eccEvidenceComponentIds("core", "claude", [])).toEqual([
       "runtime:ecc-installer",

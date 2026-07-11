@@ -16,7 +16,7 @@ import { type ResolveOrgBaselineEvidenceResult, resolveOrgBaselineEvidence } fro
 import {
   BaselineEvidenceBlockedError,
   baselineInstallPhasePlan,
-  captureClearedBaselineGate,
+  captureBaselineGate,
 } from "./run.js";
 import type { BaselineEvidenceLock } from "./schema.js";
 import { readVendorBaselineLock, vendorBaselineLockSha256 } from "./vendor.js";
@@ -26,6 +26,7 @@ export interface BaselineEvidencePipelineInput {
   catalog: BaselineCatalog;
   source: TrustSource;
   componentIds: readonly string[];
+  allowPartial?: boolean;
   buildInstallPlan: (
     sourceRoot: string,
     authorizations: readonly BaselineAuthorization[],
@@ -147,10 +148,11 @@ export async function executeBaselineEvidencePipeline(
       );
     }
 
-    let gate: ReturnType<typeof captureClearedBaselineGate>;
+    let gate: ReturnType<typeof captureBaselineGate>;
     try {
-      gate = captureClearedBaselineGate({
+      gate = captureBaselineGate({
         ctx,
+        allowPartial: input.allowPartial,
         sourceRoot,
         catalog: input.catalog,
         componentIds: input.componentIds,
