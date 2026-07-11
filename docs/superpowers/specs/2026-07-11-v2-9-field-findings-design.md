@@ -33,9 +33,9 @@ passing runtime and a vetted/vendor-hashed dependency path.
 
 Fork-pin bridge active per the maintainer's locked decision: the ECC catalog now
 pins the remediated commit on the `samartomar/ECC` fork
-(`41d6756aad1479ec51875401c88ed80fbcb7ef00`, which clears the original four
-affaan-m/ECC#2502 blockers, the full-profile RP1 runtime findings, and invalid
-frontmatter on five translated skill surfaces) until the upstream PR to
+(`32cec153324c5435673f3490c6594ab293d5fcdc`, which clears the original four
+affaan-m/ECC#2502 blockers, the full-profile RP1 runtime findings, and malformed
+YAML frontmatter across the discovered English and translated skill surfaces) until the upstream PR to
 affaan-m/ECC merges, which is pending review. Release readiness still requires
 fresh native, SkillSpector, and applicable Cisco receipts at this exact fork
 head.

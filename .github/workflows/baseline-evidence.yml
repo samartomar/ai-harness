@@ -57,7 +57,7 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           repository: samartomar/ECC
-          ref: 41d6756aad1479ec51875401c88ed80fbcb7ef00
+          ref: 32cec153324c5435673f3490c6594ab293d5fcdc
           path: .baseline-sources/ecc
           persist-credentials: false
       - name: Check out exact Superpowers baseline
