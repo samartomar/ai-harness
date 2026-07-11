@@ -37,6 +37,7 @@ import {
   trustScanCommand,
   trustScanProbes,
 } from "../../src/trust/scan.js";
+import { buildTrustFileInventory } from "../../src/trust/inventory.js";
 import { sandboxSmokeDockerRunArgv } from "../../src/trust/smoke.js";
 
 let dir: string;
@@ -4637,4 +4638,63 @@ describe("trustScanCommand", () => {
       ),
     ).rejects.toThrow(/cannot acknowledge trust.auto-exec-hook/);
   });
+
+  it("reports early progress for a large tree while reusing one bounded inventory", async () => {
+    for (let index = 0; index < 3_149; index++) {
+      write(`bulk/file-${String(index).padStart(4, "0")}.txt`, "safe\n");
+    }
+    let inventories = 0;
+    const progress: string[] = [];
+    let releaseScan: (() => void) | undefined;
+    let markScanStarted: (() => void) | undefined;
+    const scanStarted = new Promise<void>((resolve) => {
+      markScanStarted = resolve;
+    });
+    const release = new Promise<void>((resolve) => {
+      releaseScan = resolve;
+    });
+    const slowRunner: Runner = async (argv) => {
+      if (argv[0] === "semgrep" && argv.includes("--version")) {
+        return { code: 0, stdout: "1.125.0\n", stderr: "" };
+      }
+      if (argv[0] === "semgrep" && argv.includes("scan")) {
+        markScanStarted?.();
+        await release;
+        return { code: 0, stdout: JSON.stringify(EMPTY_SARIF), stderr: "" };
+      }
+      return { code: 127, stdout: "", stderr: "not found", spawnError: true };
+    };
+
+    let completed = false;
+    const scan = scanTrustTreeWithAnalyzers(dir, {
+      env: {},
+      platform: "linux",
+      posture: "enterprise",
+      requiredDetectors: ["semgrep"],
+      run: slowRunner,
+      progress: (message) => progress.push(message),
+      inventoryFactory: (root, options) => {
+        inventories++;
+        return buildTrustFileInventory(root, options);
+      },
+    }).then((result) => {
+      completed = true;
+      return result;
+    });
+
+    await scanStarted;
+    expect(completed).toBe(false);
+    expect(progress).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining("inventory started"),
+        expect.stringContaining("3,000 files"),
+        expect.stringContaining("detector semgrep started"),
+      ]),
+    );
+    expect(inventories).toBe(1);
+
+    releaseScan?.();
+    const result = await scan;
+    expect(result.analyzersRun).toEqual(expect.arrayContaining(["aih-native", "semgrep@local"]));
+  }, 30_000);
 });

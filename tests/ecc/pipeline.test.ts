@@ -6,6 +6,7 @@ import { defineBaselineCatalog } from "../../src/baseline-evidence/catalog.js";
 import { hashComponentTree } from "../../src/baseline-evidence/hash.js";
 import { parseBaselineEvidenceLock } from "../../src/baseline-evidence/schema.js";
 import { buildEccRegistrationRequest, executeEccEvidencePipeline } from "../../src/ecc/pipeline.js";
+import type { EccInstallPreviewArtifact } from "../../src/ecc/install-preview.js";
 import {
   emptyRegistrationLedger,
   mergeRegistrationLedger,
@@ -83,6 +84,27 @@ function vendorLock(verdict: "pass" | "blocked" = "pass") {
 }
 
 const request = { clis: ["kiro" as const], profile: "core", packs: [] };
+
+function installPreview(): EccInstallPreviewArtifact {
+  return {
+    schemaVersion: 1,
+    source: {
+      owner: "affaan-m",
+      repo: "ECC",
+      pinnedSha: "a".repeat(40),
+    },
+    operations: [
+      {
+        target: "kiro",
+        kind: "exec",
+        source: "install.sh",
+        destination: "<project>/.kiro",
+        componentId: "runtime:ecc-kiro",
+        contingentOn: "evidence-authorization",
+      },
+    ],
+  };
+}
 
 function mixedCatalog() {
   return defineBaselineCatalog({
@@ -345,10 +367,25 @@ describe("ECC baseline evidence pipeline", () => {
       vendorLock: vendorLock(),
       vendorLockSha256: "f".repeat(64),
       buildInstallPlan,
+      installPreview: installPreview(),
     });
 
-    expect(result.execs).toEqual([
-      expect.objectContaining({ ran: false, argv: expect.arrayContaining(["-e"]) }),
+    expect(result.execs).toEqual([]);
+    expect(result.digests).toEqual([
+      expect.objectContaining({
+        describe: "contingent ECC install preview",
+        data: {
+          contingentOn: "evidence-authorization",
+          pinnedSha: "a".repeat(40),
+          operations: [
+            expect.objectContaining({
+              target: "kiro",
+              kind: "exec",
+              componentId: "runtime:ecc-kiro",
+            }),
+          ],
+        },
+      }),
     ]);
     expect(buildInstallPlan).not.toHaveBeenCalled();
     expect(existsSync(source.quarantineRoot)).toBe(false);
