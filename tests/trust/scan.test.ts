@@ -1403,7 +1403,7 @@ describe("scanTrustTree", () => {
     );
   });
 
-  it("maps stubbed SkillSpector SARIF rule IDs into trust checks", async () => {
+  it("accepts SkillSpector's finding exit and maps valid SARIF into trust checks", async () => {
     skill("skills/clean", "# Clean\n");
     const sarif = {
       version: "2.1.0",
@@ -1445,7 +1445,7 @@ describe("scanTrustTree", () => {
       if (argv[1] === "image" && argv[2] === "inspect") return successfulSkillspector(argv);
       if (argv[1] === "run") {
         seenDockerRuns.push(argv);
-        return { code: 0, stdout: JSON.stringify(sarif) };
+        return { code: 1, stdout: JSON.stringify(sarif) };
       }
       return undefined;
     });
@@ -2534,7 +2534,7 @@ describe("scanTrustTree", () => {
   it("keeps the intentional no-egress SC4 fallback visible without blocking a completed scan", async () => {
     write(
       "package.json",
-      JSON.stringify({ name: "clean-package", dependencies: { commander: "14.0.0" } }),
+      JSON.stringify({ name: "clean-package" }),
     );
     const sarif = {
       runs: [
@@ -2573,7 +2573,7 @@ describe("scanTrustTree", () => {
       }),
     });
 
-    expect(result.checks.some((check) => check.verdict === "fail")).toBe(false);
+    expect(result.checks.filter((check) => check.verdict === "fail")).toEqual([]);
     expect(result.checks).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
