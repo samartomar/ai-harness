@@ -1,6 +1,6 @@
 # v2.9.0 Field-Findings Remediation Design
 
-**Status:** Approved for implementation on 2026-07-11
+**Status:** Approved for implementation on 2026-07-10
 
 **Issues:** #417, #418, #419, #420, #421, #422, #423, #424
 
@@ -100,11 +100,13 @@ on a non-strict surface and only for the narrow role-assignment pattern. Classic
 instruction override, secret-exfiltration, and jailbreak patterns remain blocking.
 The field fixtures must pass while seeded malicious phrases still fail.
 
-Finding fingerprints become line/finding scoped and retain the complete 64-hex
-SHA-256 digest. The identity binds at least code, normalized safe path, line,
-detector/rule identity, and the exact finding text or line content. A change to the
-finding invalidates an old acknowledgement; an unrelated line edit does not.
-External SARIF adapters use the same identity builder after URI sanitization.
+Finding fingerprints become content-bound and retain the complete 64-hex SHA-256
+digest. The identity binds code, normalized safe path, detector/rule identity,
+exact finding text or line content, and a stable occurrence index when identical
+findings repeat in one file. Line number remains advisory display metadata and is
+not part of acknowledgement identity, so a change to the finding invalidates an
+old acknowledgement while an unrelated line insertion does not. External SARIF
+adapters use the same identity builder after URI sanitization.
 
 ## #420: partial component authorization and install
 
