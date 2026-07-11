@@ -247,6 +247,16 @@ export function parseEccInstallState(text: string, statePath: string): EccInstal
       if (operation.kind !== "copy-file" && operation.kind !== "merge-json") {
         throw new Error(`unsupported ECC install operation kind: ${operation.kind}`);
       }
+      if (
+        operation.kind === "merge-json" &&
+        (operation.mergePayload === null ||
+          typeof operation.mergePayload !== "object" ||
+          Array.isArray(operation.mergePayload))
+      ) {
+        throw new Error(
+          `merge-json operation lacks a managed JSON object: ${operation.destinationPath}`,
+        );
+      }
       const destination = resolve(operation.destinationPath);
       if (destinations.has(destination)) {
         throw new Error(`duplicate destination in ECC install state: ${operation.destinationPath}`);

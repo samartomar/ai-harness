@@ -322,5 +322,23 @@ describe("ECC install-state reconciliation", () => {
         statePath,
       ),
     ).toThrow(/unsupported ECC install operation kind/i);
+
+    expect(() =>
+      parseEccInstallState(
+        JSON.stringify(
+          installState([
+            {
+              ...managedOperation(
+                "settings.json",
+                join(home, ".codex", "settings.json"),
+                "merge-json",
+              ),
+              mergePayload: true,
+            },
+          ]),
+        ),
+        statePath,
+      ),
+    ).toThrow(/managed JSON object/i);
   });
 });

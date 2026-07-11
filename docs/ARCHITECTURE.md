@@ -86,7 +86,8 @@ following links, reduces the live union, and filters only operations claimed by 
 state. A local transaction driver revalidates planned hashes and contained regular-file paths,
 backs up every changed file, writes target states, and commits the primary ledger last; any earlier
 failure restores the prior bytes. User-owned config and components still shared by a live project
-remain outside the removal set.
+remain outside the removal set. Whole-target uninstall actions remain authoritative for dropped
+CLIs, and an uninstall failure blocks the dependent ledger transaction.
 
 ## Release Integrity
 

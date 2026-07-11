@@ -136,6 +136,8 @@ export interface ExecAction {
   failureCheck?: Check | ((result: RunResult) => Check);
   /** Skip follow-on probes when this command fails. */
   blockProbesOnFailure?: boolean;
+  /** Do not run this command when an earlier non-allowed exec failed. */
+  requiresPriorExecSuccess?: boolean;
   /** Continue the plan even if the command exits non-zero. */
   allowFailure?: boolean;
   /**
@@ -497,6 +499,7 @@ export function exec(
     timeoutMs?: number;
     failureCheck?: ExecAction["failureCheck"];
     blockProbesOnFailure?: boolean;
+    requiresPriorExecSuccess?: boolean;
     expect?: ExecAction["expect"];
   } = {},
 ): ExecAction {
@@ -509,6 +512,7 @@ export function exec(
     timeoutMs: opts.timeoutMs,
     failureCheck: opts.failureCheck,
     blockProbesOnFailure: opts.blockProbesOnFailure,
+    requiresPriorExecSuccess: opts.requiresPriorExecSuccess,
     allowFailure: opts.allowFailure,
     expect: opts.expect,
   };

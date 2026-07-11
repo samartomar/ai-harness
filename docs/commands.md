@@ -158,7 +158,8 @@ changing bytes. Under `--apply`, prune mutates only exact operations proven by s
 state (plus aih's fenced Codex records), verifies every planned input hash and path again, writes
 target state, and replaces the primary ledger last. Missing home-target state, malformed/drifted
 state or markers, symlinks, concurrent input changes, or partial writes fail closed and roll back;
-project-local state that never existed is not guessed.
+project-local state that never existed is not guessed. If an authoritative whole-target ECC
+uninstall fails, the later ledger transaction is not run and the prior target record remains.
 
 ## aih capability
 

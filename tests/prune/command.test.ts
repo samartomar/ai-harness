@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { SHARED_MARKER, sharedBlock } from "../../src/bootstrap-ai/canon.js";
 import { CODEX_AGENTS_BLOCK_MARKER, CODEX_INSTALL_STATE_FILE } from "../../src/ecc/codex.js";
 import { registrationLedgerPath } from "../../src/ecc/registration.js";
+import { executePlan } from "../../src/internals/execute.js";
 import { mergeManagedBlock } from "../../src/internals/markers.js";
 import type { Action, PlanContext } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
@@ -563,6 +564,37 @@ describe("aih prune ECC registration reconciliation", () => {
     await expect(actionsOf({ env: { HOME: home, USERPROFILE: home } })).rejects.toThrow(
       /missing ECC install state/i,
     );
+  });
+
+  it("does not commit the ledger when an authoritative whole-target uninstall fails", async () => {
+    const home = join(dir, "home");
+    const reactRoot = join(home, "projects", "react");
+    const cppRoot = join(home, "projects", "deleted-cpp");
+    mkdirSync(reactRoot, { recursive: true });
+    const ledgerPath = writeLedger(home, reactRoot, cppRoot);
+    const ledger = JSON.parse(readFileSync(ledgerPath, "utf8")) as {
+      targets: Array<{ target: string }>;
+    };
+    const target = ledger.targets[0];
+    if (target === undefined) throw new Error("missing ECC target fixture");
+    target.target = "cursor";
+    writeFileSync(ledgerPath, `${JSON.stringify(ledger, null, 2)}\n`, "utf8");
+    const before = readFileSync(ledgerPath);
+    marker("claude");
+    write("ai-coding/adapters/claude.md");
+    write("ai-coding/adapters/cursor.md");
+    const calls: string[][] = [];
+    const run = fakeRunner((argv) => {
+      calls.push(argv);
+      return argv[0] === "npx" ? { code: 1, stderr: "injected uninstall failure" } : undefined;
+    });
+    const apply = ctx({ apply: true, env: { HOME: home, USERPROFILE: home }, run });
+
+    const result = await executePlan(await command.plan(apply), apply);
+
+    expect(result.execs.find((entry) => entry.argv[0] === "npx")?.ok).toBe(false);
+    expect(calls.some((argv) => argv[0] === process.execPath)).toBe(false);
+    expect(readFileSync(ledgerPath)).toEqual(before);
   });
 });
 

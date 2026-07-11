@@ -108,7 +108,9 @@ const removeSubset = (current, subset, location) => {
     if (keys.length === 0) return current;
     const next = { ...current };
     for (const key of keys) {
-      if (!Object.prototype.hasOwnProperty.call(next, key)) continue;
+      if (!Object.prototype.hasOwnProperty.call(next, key)) {
+        throw new Error("managed JSON drift at " + location + "." + key);
+      }
       const value = removeSubset(next[key], subset[key], location + "." + key);
       if (value === REMOVE) delete next[key];
       else next[key] = value;
@@ -382,6 +384,7 @@ export function eccReconcileTransactionAction(
       cwd: ctx.root,
       timeoutMs: 120_000,
       blockProbesOnFailure: true,
+      requiresPriorExecSuccess: true,
       failureCheck: (result) => ({
         name: "ECC prune reconciliation",
         verdict: "fail",

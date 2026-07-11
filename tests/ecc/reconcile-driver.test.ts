@@ -182,6 +182,24 @@ describe("ECC reconciliation transaction driver", () => {
     expect(readFileSync(value.ledgerPath)).toEqual(value.before[value.ledgerPath]);
   });
 
+  it("fails before mutation when a recorded managed JSON subset has drifted", () => {
+    const value = fixture();
+    const drifted = `${JSON.stringify({ managed: { react: true }, user: "keep" }, null, 2)}\n`;
+    writeFileSync(value.jsonPath, drifted, "utf8");
+    value.payload.reads = value.payload.reads.map((read) =>
+      read.path === value.jsonPath ? { ...read, sha256: sha256(drifted) } : read,
+    );
+
+    const result = run(value.payload);
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("managed JSON drift");
+    expect(readFileSync(value.cppPath)).toEqual(value.before[value.cppPath]);
+    expect(readFileSync(value.statePath)).toEqual(value.before[value.statePath]);
+    expect(readFileSync(value.jsonPath, "utf8")).toBe(drifted);
+    expect(readFileSync(value.ledgerPath)).toEqual(value.before[value.ledgerPath]);
+  });
+
   it("rejects a symlink substituted for a managed destination", () => {
     if (process.platform === "win32") return;
     const value = fixture();
