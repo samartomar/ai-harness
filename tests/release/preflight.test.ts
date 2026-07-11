@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -291,24 +291,15 @@ describe("release:preflight CLI intent checkpoint", () => {
       const bin = join(dir, "bin");
       mkdirSync(bin);
       const candidateSha = "a".repeat(40);
-      const git = join(bin, "git");
-      writeFileSync(
-        git,
-        `#!/usr/bin/env node
+      const gitStub = `
 const args = process.argv.slice(2);
 if (args[0] === "describe") console.log("v2.8.0");
 else if (args[0] === "rev-parse") console.log("${candidateSha}");
 else if (args[0] === "log") console.log("feat: b (#2)");
 else process.exit(2);
-`,
-        "utf8",
-      );
-      chmodSync(git, 0o755);
+`;
 
-      const gh = join(bin, "gh");
-      writeFileSync(
-        gh,
-        `#!/usr/bin/env node
+      const ghStub = `
 const args = process.argv.slice(2).join(" ");
 if (args.startsWith("repo view ")) {
   console.log("samartomar/ai-harness");
@@ -341,10 +332,37 @@ if (args.startsWith("repo view ")) {
   console.error("unexpected gh invocation: " + args);
   process.exit(2);
 }
+`;
+
+      let nodeOptions = process.env.NODE_OPTIONS;
+      if (process.platform === "win32") {
+        const gitModule = join(bin, "git-stub.cjs");
+        const ghModule = join(bin, "gh-stub.cjs");
+        const preload = join(bin, "command-preload.cjs");
+        writeFileSync(gitModule, gitStub, "utf8");
+        writeFileSync(ghModule, ghStub, "utf8");
+        writeFileSync(
+          preload,
+          `const { basename } = require("node:path");
+const command = basename(process.execPath).toLowerCase();
+if (command === "git.exe") require("./git-stub.cjs");
+else if (command === "gh.exe") require("./gh-stub.cjs");
 `,
-        "utf8",
-      );
-      chmodSync(gh, 0o755);
+          "utf8",
+        );
+        copyFileSync(process.execPath, join(bin, "git.exe"));
+        copyFileSync(process.execPath, join(bin, "gh.exe"));
+        nodeOptions = [process.env.NODE_OPTIONS, `--require=${JSON.stringify(preload)}`]
+          .filter(Boolean)
+          .join(" ");
+      } else {
+        const git = join(bin, "git");
+        const gh = join(bin, "gh");
+        writeFileSync(git, `#!/usr/bin/env node${gitStub}`, "utf8");
+        writeFileSync(gh, `#!/usr/bin/env node${ghStub}`, "utf8");
+        chmodSync(git, 0o755);
+        chmodSync(gh, 0o755);
+      }
 
       const tsx = join(process.cwd(), "node_modules", "tsx", "dist", "cli.mjs");
       const script = join(process.cwd(), "src", "internals", "release-preflight.ts");
@@ -361,7 +379,11 @@ if (args.startsWith("repo view ")) {
         {
           cwd: process.cwd(),
           encoding: "utf8",
-          env: { ...process.env, PATH: `${bin}${delimiter}${process.env.PATH ?? ""}` },
+          env: {
+            ...process.env,
+            NODE_OPTIONS: nodeOptions,
+            PATH: `${bin}${delimiter}${process.env.PATH ?? ""}`,
+          },
         },
       );
 
