@@ -292,28 +292,32 @@ describe("release:preflight CLI intent checkpoint", () => {
       mkdirSync(bin);
       const candidateSha = "a".repeat(40);
       const gitStub = `
+const { writeSync } = require("node:fs");
+const out = (value) => writeSync(1, String(value) + "\\n");
 const args = process.argv.slice(2);
-if (args[0] === "describe") console.log("v2.8.0");
-else if (args[0] === "rev-parse") console.log("${candidateSha}");
-else if (args[0] === "log") console.log("feat: b (#2)");
+if (args[0] === "describe") out("v2.8.0");
+else if (args[0] === "rev-parse") out("${candidateSha}");
+else if (args[0] === "log") out("feat: b (#2)");
 else process.exit(2);
 `;
 
       const ghStub = `
+const { writeSync } = require("node:fs");
+const out = (value) => writeSync(1, String(value) + "\\n");
 const args = process.argv.slice(2).join(" ");
 if (args.startsWith("repo view ")) {
-  console.log("samartomar/ai-harness");
+  out("samartomar/ai-harness");
 } else if (args.startsWith("pr view 2 ")) {
-  console.log(JSON.stringify({
+  out(JSON.stringify({
     number: 2,
     title: "feat: b",
     labels: [{ name: "semver:minor" }],
     milestone: { title: "next-release" },
   }));
 } else if (args === "api repos/{owner}/{repo}/milestones?state=all&per_page=100") {
-  console.log(JSON.stringify([{ number: 1, title: "next-release" }]));
+  out(JSON.stringify([{ number: 1, title: "next-release" }]));
 } else if (args === "api repos/{owner}/{repo}/issues?milestone=1&state=all&per_page=100") {
-  console.log(JSON.stringify([
+  out(JSON.stringify([
     {
       number: 2,
       state: "closed",
@@ -329,7 +333,7 @@ if (args.startsWith("repo view ")) {
     },
   ]));
 } else {
-  console.error("unexpected gh invocation: " + args);
+  writeSync(2, "unexpected gh invocation: " + args + "\\n");
   process.exit(2);
 }
 `;
@@ -345,8 +349,13 @@ if (args.startsWith("repo view ")) {
           preload,
           `const { basename } = require("node:path");
 const command = basename(process.execPath).toLowerCase();
-if (command === "git.exe") require("./git-stub.cjs");
-else if (command === "gh.exe") require("./gh-stub.cjs");
+if (command === "git.exe") {
+  require("./git-stub.cjs");
+  process.exit(0);
+} else if (command === "gh.exe") {
+  require("./gh-stub.cjs");
+  process.exit(0);
+}
 `,
           "utf8",
         );
