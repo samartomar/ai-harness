@@ -4,9 +4,10 @@ import {
   REQUIRED_BASELINE_ANALYZERS,
   REQUIRED_BASELINE_DETECTORS,
 } from "../../src/baseline-evidence/analyzer-profile.js";
-import { generateBaselineArtifacts } from "../../src/baseline-evidence/generate.js";
 import type { BaselineCatalog } from "../../src/baseline-evidence/catalog.js";
+import { generateBaselineArtifacts } from "../../src/baseline-evidence/generate.js";
 import type { BaselineSourceEvidence } from "../../src/baseline-evidence/schema.js";
+import type { VetBaselineCatalogOptions } from "../../src/baseline-evidence/vet.js";
 import { fakeRunner } from "../../src/internals/proc.js";
 
 function evidence(catalog: BaselineCatalog): BaselineSourceEvidence {
@@ -33,8 +34,9 @@ function evidence(catalog: BaselineCatalog): BaselineSourceEvidence {
 describe("vendor baseline generator", () => {
   it("runs both exact source catalogs through the required analyzer runtime", async () => {
     const run = fakeRunner(() => undefined);
-    const vetCatalog = vi.fn(async (_root: string, catalog: BaselineCatalog) =>
-      evidence(catalog),
+    const vetCatalog = vi.fn(
+      async (_root: string, catalog: BaselineCatalog, _options?: VetBaselineCatalogOptions) =>
+        evidence(catalog),
     );
 
     await generateBaselineArtifacts(

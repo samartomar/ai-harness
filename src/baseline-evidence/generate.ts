@@ -1,18 +1,35 @@
 import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { defaultRunner, type Runner } from "../internals/proc.js";
+import type { Platform } from "../platform/base.js";
+import { resolvePlatform } from "../platform/detect.js";
+import { requiredBaselineVetOptions } from "./analyzer-profile.js";
+import type { BaselineCatalog } from "./catalog.js";
 import { baselineCatalogById } from "./catalogs.js";
 import { generateAuthorizedEccInstallPreview } from "./ecc-preview-boundary.js";
 import { parseBaselineEvidenceLock } from "./schema.js";
 import { vetBaselineCatalog } from "./vet.js";
 
-interface GenerateOptions {
-  eccRoot: string;
-  superpowersRoot: string;
+interface GenerateOptions extends GenerateBaselineOptions {
   out: string;
   check: boolean;
   previewOut: string;
+}
+
+export interface GenerateBaselineOptions {
+  eccRoot: string;
+  superpowersRoot: string;
+}
+
+export interface GenerateBaselineDependencies {
+  run?: Runner;
+  platform?: Platform;
+  env?: NodeJS.ProcessEnv;
+  vetCatalog?: typeof vetBaselineCatalog;
+  checkoutHead?: (root: string, catalog: BaselineCatalog) => string;
+  generatePreview?: (input: Parameters<typeof generateAuthorizedEccInstallPreview>[0]) => unknown;
 }
 
 function optionValue(argv: readonly string[], flag: string): string | undefined {
@@ -47,25 +64,42 @@ function checkoutHead(root: string): string {
   }).trim();
 }
 
-function assertCheckoutPin(root: string, pin: string, label: string): void {
-  const head = checkoutHead(root);
-  if (head !== pin) throw new Error(`${label} checkout is ${head}, expected pinned ${pin}`);
+function assertCheckoutPin(
+  root: string,
+  catalog: BaselineCatalog,
+  label: string,
+  readHead: NonNullable<GenerateBaselineDependencies["checkoutHead"]>,
+): void {
+  const head = readHead(root, catalog);
+  if (head !== catalog.pinnedSha) {
+    throw new Error(`${label} checkout is ${head}, expected pinned ${catalog.pinnedSha}`);
+  }
 }
 
-async function generate(opts: GenerateOptions): Promise<{ lock: string; preview: string }> {
+export async function generateBaselineArtifacts(
+  opts: GenerateBaselineOptions,
+  deps: GenerateBaselineDependencies = {},
+): Promise<{ lock: string; preview: string }> {
   const ecc = baselineCatalogById("ecc");
   const superpowers = baselineCatalogById("superpowers");
-  assertCheckoutPin(opts.eccRoot, ecc.pinnedSha, "ECC");
-  assertCheckoutPin(opts.superpowersRoot, superpowers.pinnedSha, "Superpowers");
-  const eccEvidence = await vetBaselineCatalog(opts.eccRoot, ecc);
-  const preview = generateAuthorizedEccInstallPreview({
+  const readHead = deps.checkoutHead ?? ((root: string) => checkoutHead(root));
+  assertCheckoutPin(opts.eccRoot, ecc, "ECC", readHead);
+  assertCheckoutPin(opts.superpowersRoot, superpowers, "Superpowers", readHead);
+  const run = deps.run ?? defaultRunner;
+  const env = deps.env ?? process.env;
+  const platform = deps.platform ?? resolvePlatform(env);
+  const vet = deps.vetCatalog ?? vetBaselineCatalog;
+  const vetOptions = requiredBaselineVetOptions({ run, platform, env });
+  const eccEvidence = await vet(opts.eccRoot, ecc, vetOptions);
+  const generatePreview = deps.generatePreview ?? generateAuthorizedEccInstallPreview;
+  const preview = generatePreview({
     eccRoot: opts.eccRoot,
     catalog: ecc,
     evidence: eccEvidence,
   });
   const lock = parseBaselineEvidenceLock({
     schemaVersion: 1,
-    sources: [eccEvidence, await vetBaselineCatalog(opts.superpowersRoot, superpowers)],
+    sources: [eccEvidence, await vet(opts.superpowersRoot, superpowers, vetOptions)],
   });
   return {
     lock: `${JSON.stringify(lock, null, 2)}\n`,
@@ -75,7 +109,7 @@ async function generate(opts: GenerateOptions): Promise<{ lock: string; preview:
 
 async function main(): Promise<void> {
   const opts = options(process.argv.slice(2));
-  const contents = await generate(opts);
+  const contents = await generateBaselineArtifacts(opts);
   if (opts.check) {
     const existing = readFileSync(opts.out, "utf8");
     if (existing !== contents.lock) throw new Error(`vendor baseline lock drifted: ${opts.out}`);
@@ -93,4 +127,7 @@ async function main(): Promise<void> {
   process.stdout.write(`wrote vendor baseline lock and ECC install preview\n`);
 }
 
-await main();
+const invokedPath = process.argv[1];
+if (invokedPath && import.meta.url === pathToFileURL(resolve(invokedPath)).href) {
+  await main();
+}

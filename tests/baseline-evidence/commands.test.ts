@@ -2,17 +2,17 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  baselineAnalyzerVersions,
+  REQUIRED_BASELINE_ANALYZERS,
+  REQUIRED_BASELINE_DETECTORS,
+} from "../../src/baseline-evidence/analyzer-profile.js";
 import { defineBaselineCatalog } from "../../src/baseline-evidence/catalog.js";
 import {
   baselineVetPlanForSource,
   vetBaselineCommand,
 } from "../../src/baseline-evidence/commands.js";
 import { hashComponentTree } from "../../src/baseline-evidence/hash.js";
-import {
-  baselineAnalyzerVersions,
-  REQUIRED_BASELINE_ANALYZERS,
-  REQUIRED_BASELINE_DETECTORS,
-} from "../../src/baseline-evidence/analyzer-profile.js";
 import { BaselineSourceEvidenceSchema } from "../../src/baseline-evidence/schema.js";
 import { executePlan } from "../../src/internals/execute.js";
 import type { PlanContext } from "../../src/internals/plan.js";
