@@ -47,7 +47,7 @@ describe("registered ECC command", () => {
     });
   });
 
-  it("previews only the exact-pinned evidence acquisition before apply", async () => {
+  it("previews exact-pin contingent install operations without acquisition before apply", async () => {
     const program = buildProgram();
     program.configureOutput({ writeOut: () => {}, writeErr: () => {} });
     await program.parseAsync([
@@ -65,10 +65,15 @@ describe("registered ECC command", () => {
     const raw = stdout.mock.calls.map((call: unknown[]) => String(call[0])).join("");
     const result = JSON.parse(raw) as {
       capability: string;
+      digests: Array<{ data?: { contingentOn?: string; pinnedSha?: string } }>;
       execs: Array<{ argv: string[]; ran: boolean }>;
     };
-    expect(result.capability).toBe("ecc: acquire exact baseline source");
-    expect(result.execs).toEqual([expect.objectContaining({ ran: false })]);
+    expect(result.capability).toBe("ecc: contingent install preview");
+    expect(result.execs).toEqual([]);
+    expect(result.digests[0]?.data).toMatchObject({
+      contingentOn: "evidence-authorization",
+      pinnedSha: baselineCatalogById("ecc").pinnedSha,
+    });
     expect(JSON.stringify(result)).toContain(baselineCatalogById("ecc").pinnedSha);
     expect(JSON.stringify(result)).not.toContain("npx");
     expect(process.exitCode ?? 0).toBe(0);

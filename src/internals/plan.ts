@@ -260,6 +260,10 @@ export interface PlanContext {
    * flow (e.g. `--detect`) in a TTY; undefined keeps the harness non-interactive.
    */
   prompter?: Prompter;
+  /** Bounded command progress; production writes this channel to stderr. */
+  progress?: (message: string) => void;
+  /** Register command-owned resources for reverse-order cleanup at the command boundary. */
+  deferCleanup?: (cleanup: () => void | Promise<void>) => void;
   /**
    * The resolved CLI target set, injected by an orchestrator (`aih init`) that
    * resolves `--detect`/`--cli` ONCE and threads the result into every phase. A

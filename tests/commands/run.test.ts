@@ -1,21 +1,16 @@
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { Command } from "commander";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { flagKey, runCapability } from "../../src/commands/run.js";
 import { executePlan } from "../../src/internals/execute.js";
-import {
-  type CommandSpec,
-  digest,
-  dynamicDigest,
-  plan,
-  probe,
-} from "../../src/internals/plan.js";
+import { type CommandSpec, digest, dynamicDigest, plan, probe } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
 import { policyValidateCommand } from "../../src/org-policy/validate.js";
-import { trustScanPlanForSource } from "../../src/trust/scan.js";
 import { resolveTrustSource } from "../../src/trust/fetch.js";
+import { trustScanPlanForSource } from "../../src/trust/scan.js";
 
 let dir: string;
 beforeEach(() => {
@@ -464,6 +459,102 @@ describe("runCapability — deferred command cleanup", () => {
     expect(existsSync(quarantine ?? "")).toBe(true);
     if (quarantine) rmSync(quarantine, { recursive: true, force: true });
   });
+
+  it("reports cleanup failure on stderr without masking the primary trust failure", async () => {
+    const spec: CommandSpec = {
+      name: "cleanup-failure",
+      summary: "exercise secondary cleanup diagnostics",
+      alwaysVerify: true,
+      plan: (ctx) => {
+        ctx.deferCleanup?.(() => {
+          throw new Error("quarantine remained locked");
+        });
+        return plan(
+          "cleanup-failure",
+          probe("primary trust block", () => ({
+            name: "primary trust block",
+            verdict: "fail",
+            code: "trust.malicious-code",
+          })),
+        );
+      },
+    };
+    let stdout = "";
+    let stderr = "";
+
+    const code = await runCapability(spec, command(["--json", "--root", dir]), {
+      run: fakeRunner(() => undefined),
+      env: {},
+      write: (text) => {
+        stdout += text;
+      },
+      writeError: (text) => {
+        stderr += text;
+      },
+    });
+
+    expect(code).toBe(1);
+    expect(JSON.parse(stdout).report.checks).toEqual([
+      expect.objectContaining({ name: "primary trust block", verdict: "fail" }),
+    ]);
+    expect(stderr).toBe("cleanup warning: quarantine remained locked\n");
+  });
+
+  it.skipIf(process.platform === "win32")(
+    "removes an owned quarantine before re-raising SIGINT in a real process",
+    async () => {
+      const script = join(dir, "interrupt.mjs");
+      const source = (rel: string): string =>
+        pathToFileURL(join(process.cwd(), rel)).href.replace(/\.ts$/, ".ts");
+      writeFileSync(
+        script,
+        [
+          `import { Command } from ${JSON.stringify(pathToFileURL(join(process.cwd(), "node_modules/commander/index.js")).href)};`,
+          `import { runCapability } from ${JSON.stringify(source("src/commands/run.ts"))};`,
+          `import { dynamicDigest, plan } from ${JSON.stringify(source("src/internals/plan.ts"))};`,
+          `import { resolveTrustSource } from ${JSON.stringify(source("src/trust/fetch.ts"))};`,
+          `import { trustScanPlanForSource } from ${JSON.stringify(source("src/trust/scan.ts"))};`,
+          "const command = new Command('interrupt').option('--root <dir>').parse(['--root', process.cwd()], { from: 'user' });",
+          "const spec = { name: 'interrupt', summary: 'signal cleanup fixture', alwaysVerify: true, plan: async (ctx) => {",
+          "  const source = resolveTrustSource('affaan-m/ECC', { root: ctx.root, pin: 'a'.repeat(40) });",
+          "  const scan = await trustScanPlanForSource(ctx, source);",
+          "  process.stdout.write(source.quarantineRoot + '\\n');",
+          "  return plan('interrupt', ...scan.actions, dynamicDigest('wait', () => new Promise(() => { setInterval(() => {}, 1000); })));",
+          "} };",
+          "await runCapability(spec, command, { env: {}, write: () => {}, writeError: (text) => process.stderr.write(text), run: async () => ({ code: 0, stdout: '', stderr: '' }) });",
+        ].join("\n"),
+        "utf8",
+      );
+      const child = spawn(process.execPath, ["--import", "tsx", script], {
+        cwd: process.cwd(),
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      let stderr = "";
+      child.stderr.setEncoding("utf8");
+      child.stderr.on("data", (chunk: string) => {
+        stderr += chunk;
+      });
+      const quarantine = await new Promise<string>((resolve, reject) => {
+        const timer = setTimeout(
+          () => reject(new Error(`child did not report quarantine: ${stderr}`)),
+          10_000,
+        );
+        child.stdout.setEncoding("utf8");
+        child.stdout.once("data", (chunk: string) => {
+          clearTimeout(timer);
+          resolve(chunk.trim());
+        });
+      });
+      expect(existsSync(quarantine)).toBe(true);
+
+      child.kill("SIGINT");
+      const [_code, signal] = (await once(child, "exit")) as [number | null, NodeJS.Signals | null];
+
+      expect(signal).toBe("SIGINT");
+      expect(existsSync(quarantine)).toBe(false);
+    },
+    20_000,
+  );
 });
 
 describe("runCapability — progress channel", () => {
@@ -606,3 +697,6 @@ describe("runCapability — --sarif wiring", () => {
     expect(out).toContain("[sarif] out.sarif");
   });
 });
+
+import { spawn } from "node:child_process";
+import { once } from "node:events";

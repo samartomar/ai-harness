@@ -108,13 +108,14 @@ function quarantineRoot(): string {
   return root;
 }
 
-export function cleanupQuarantine(source: TrustSource | undefined): void {
+export function cleanupQuarantine(source: TrustSource | undefined): Error | undefined {
   if (source?.kind !== "github") return;
-  // Swallow cleanup errors: a failed rmSync (e.g. a Windows AV lock) must never
-  // mask the real result/exception propagating from the surrounding try.
   try {
     rmSync(source.quarantineRoot, { recursive: true, force: true });
-  } catch {}
+    return undefined;
+  } catch (error) {
+    return error instanceof Error ? error : new Error(String(error));
+  }
 }
 
 function isSecretEnvKey(key: string): boolean {

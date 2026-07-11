@@ -21,11 +21,15 @@ import { executePlan, type PlanResult } from "../internals/execute.js";
 import { doc, type PlanContext, plan } from "../internals/plan.js";
 import type { RepoStack } from "../profile/scan.js";
 import { scanRepo } from "../profile/scan.js";
-import { resolveTrustSource, type TrustSource } from "../trust/fetch.js";
+import { cleanupQuarantine, resolveTrustSource, type TrustSource } from "../trust/fetch.js";
 import type { EccComponentId, EccComponentSelection, EccMcpComponentId } from "./components.js";
 import { selectEccComponents } from "./components.js";
 import { eccEvidenceComponentIds, eccEvidenceComponentIdsForSelection } from "./evidence.js";
 import { eccActionsForCli, eccToolsDoc, isAihDirectEccInstallTarget } from "./install.js";
+import {
+  contingentEccInstallPreviewPlan,
+  type EccInstallPreviewArtifact,
+} from "./install-preview.js";
 import {
   machineRegistrationUnion,
   mergeRegistrationLedger,
@@ -47,6 +51,7 @@ export interface EccEvidencePipelineDeps extends BaselineEvidencePipelineDeps {
   resolveOrgEvidence?: (
     input: Parameters<typeof resolveOrgBaselineEvidence>[0],
   ) => Promise<ResolveOrgBaselineEvidenceResult>;
+  installPreview?: EccInstallPreviewArtifact;
 }
 
 function requestedCatalog(ctx: PlanContext): BaselineCatalog {
@@ -84,6 +89,12 @@ function componentIds(request: VerifiedEccRequest): string[] {
     }
   }
   return [...selected];
+}
+
+function previewRuntimeComponentIds(request: VerifiedEccRequest): string[] {
+  return componentIds(request).filter(
+    (id) => id !== "runtime:ecc-kiro" || request.selection === undefined,
+  );
 }
 
 function objectRecord(value: unknown): Record<string, unknown> | undefined {
@@ -185,7 +196,35 @@ export async function executeEccEvidencePipeline(
   deps: EccEvidencePipelineDeps = {},
 ): Promise<PlanResult> {
   const catalog = deps.catalog ?? requestedCatalog(ctx);
+  if (!ctx.apply && deps.source === undefined && typeof ctx.options.eccPath !== "string") {
+    return executePlan(
+      contingentEccInstallPreviewPlan({
+        artifact: deps.installPreview,
+        catalog,
+        clis: request.clis,
+        selection: request.selection,
+        runtimeComponentIds: previewRuntimeComponentIds(request),
+      }),
+      ctx,
+    );
+  }
   const source = deps.source ?? requestedSource(ctx, catalog);
+  if (!ctx.apply && source.kind === "github") {
+    try {
+      return await executePlan(
+        contingentEccInstallPreviewPlan({
+          artifact: deps.installPreview,
+          catalog,
+          clis: request.clis,
+          selection: request.selection,
+          runtimeComponentIds: previewRuntimeComponentIds(request),
+        }),
+        ctx,
+      );
+    } finally {
+      cleanupQuarantine(source);
+    }
+  }
   const buildInstallPlan = deps.buildInstallPlan ?? verifiedEccInstallPlan;
   return executeBaselineEvidencePipeline(
     ctx,

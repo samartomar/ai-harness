@@ -12,9 +12,16 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { Command } from "commander";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { runCapability } from "../../src/commands/run.js";
 import { executePlan } from "../../src/internals/execute.js";
-import type { PlanContext } from "../../src/internals/plan.js";
+import {
+  type CommandSpec,
+  type PlanContext,
+  plan,
+  structuredChecksProbe,
+} from "../../src/internals/plan.js";
 import { fakeRunner, type Runner, type RunOptions } from "../../src/internals/proc.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 import {
@@ -31,13 +38,13 @@ import {
   SKILLSPECTOR_SOURCE_REVISION,
   verifiedSkillspectorImageReference,
 } from "../../src/trust/images.js";
+import { buildTrustFileInventory } from "../../src/trust/inventory.js";
 import {
   scanTrustTree,
   scanTrustTreeWithAnalyzers,
   trustScanCommand,
   trustScanProbes,
 } from "../../src/trust/scan.js";
-import { buildTrustFileInventory } from "../../src/trust/inventory.js";
 import { sandboxSmokeDockerRunArgv } from "../../src/trust/smoke.js";
 
 let dir: string;
@@ -4665,21 +4672,49 @@ describe("trustScanCommand", () => {
       return { code: 127, stdout: "", stderr: "not found", spawnError: true };
     };
 
-    let completed = false;
-    const scan = scanTrustTreeWithAnalyzers(dir, {
-      env: {},
-      platform: "linux",
-      posture: "enterprise",
-      requiredDetectors: ["semgrep"],
-      run: slowRunner,
-      progress: (message) => progress.push(message),
-      inventoryFactory: (root, options) => {
-        inventories++;
-        return buildTrustFileInventory(root, options);
+    const spec: CommandSpec = {
+      name: "large-trust-scan",
+      summary: "large trust scan fixture",
+      alwaysVerify: true,
+      plan: async (ctx) => {
+        const result = await scanTrustTreeWithAnalyzers(dir, {
+          env: {},
+          platform: "linux",
+          posture: "enterprise",
+          requiredDetectors: ["semgrep"],
+          run: slowRunner,
+          progress: ctx.progress,
+          inventoryFactory: (root, options) => {
+            inventories++;
+            return buildTrustFileInventory(root, options);
+          },
+        });
+        return plan(
+          "large-trust-scan",
+          structuredChecksProbe("large trust scan", () => result.checks),
+        );
       },
-    }).then((result) => {
+    };
+    const command = new Command("large-trust-scan")
+      .option("--json")
+      .option("--root <dir>")
+      .parse(["--json", "--root", dir], { from: "user" });
+    let stdout = "";
+    let stderr = "";
+    let completed = false;
+    const scan = runCapability(spec, command, {
+      env: {},
+      run: slowRunner,
+      write: (text) => {
+        stdout += text;
+      },
+      writeError: (text) => {
+        stderr += text;
+        progress.push(text.trim());
+      },
+    }).then((code) => {
       completed = true;
-      return result;
+      return code;
     });
 
     await scanStarted;
@@ -4692,9 +4727,13 @@ describe("trustScanCommand", () => {
       ]),
     );
     expect(inventories).toBe(1);
+    expect(stdout).toBe("");
 
     releaseScan?.();
-    const result = await scan;
-    expect(result.analyzersRun).toEqual(expect.arrayContaining(["aih-native", "semgrep@local"]));
+    expect(await scan).toBe(1);
+    expect(completed).toBe(true);
+    expect(JSON.parse(stdout)).toMatchObject({ capability: "large-trust-scan" });
+    expect(stdout).not.toContain("inventory");
+    expect(stderr).toContain("detector semgrep started");
   }, 30_000);
 });

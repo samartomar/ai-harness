@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { existsSync, lstatSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { basename, dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
 import { type Posture, postureFromContext } from "../config/posture.js";
 import { AihError } from "../errors.js";
@@ -32,22 +32,19 @@ import {
 } from "./fetch.js";
 import { gradeTrustCheck } from "./grade.js";
 import type { SkillSpectorImageApproval } from "./images.js";
+import {
+  buildTrustFileInventory,
+  DEFAULT_TRUST_SKIP_DIRS,
+  type TrustFileInventory,
+  type TrustInventoryBuildOptions,
+} from "./inventory.js";
 import { isStrictUnicodeSurface, scanTrustDocument, scanTrustUnicodeDocument } from "./lint.js";
 import { scanTrustManifests } from "./manifest.js";
 import { classifyIncomingMcp } from "./mcp-classify.js";
 import { isInstallScriptEvidenceFilePath, isMaliciousCodeScanFilePath } from "./script-files.js";
 import { type SandboxSmokeShape, sandboxSmokeCheck } from "./smoke.js";
 
-export const TRUST_SKIP_DIRS = new Set([
-  ".git",
-  ".hg",
-  ".svn",
-  ".aih",
-  "coverage",
-  "dist",
-  "node_modules",
-  "vendor",
-]);
+export const TRUST_SKIP_DIRS = DEFAULT_TRUST_SKIP_DIRS;
 const ROOT_TRUST_DOCS = new Set(["AGENTS.md", "CLAUDE.md", "GEMINI.md"]);
 export const INCOMING_MCP_CONFIG_FILES = new Set([...MCP_CONFIG_FILES, "mcp.json"]);
 const HOSTED_MCP_ADVISORY =
@@ -63,7 +60,7 @@ const PACKAGE_MANIFESTS = [
 ];
 const INSTALL_SCRIPT_HOOKS = ["preinstall", "postinstall", "install"];
 
-interface ScanTrustTreeOptions {
+export interface ScanTrustTreeOptions {
   env?: NodeJS.ProcessEnv;
   internalScopes?: readonly string[];
   platform?: Platform;
@@ -73,6 +70,8 @@ interface ScanTrustTreeOptions {
   run?: Runner;
   sandboxSmokeShape?: SandboxSmokeShape;
   skillspectorImageApprovals?: readonly SkillSpectorImageApproval[];
+  progress?: (message: string) => void;
+  inventoryFactory?: (root: string, options?: TrustInventoryBuildOptions) => TrustFileInventory;
 }
 
 export interface TrustScanResult {
@@ -99,23 +98,9 @@ export function collectFilesUnder(
   accept: (absolutePath: string) => boolean,
   skipDirs: ReadonlySet<string> = TRUST_SKIP_DIRS,
 ): string[] {
-  const out: string[] = [];
-  const visit = (abs: string): void => {
-    const st = lstatSync(abs);
-    if (st.isSymbolicLink()) {
-      const target = statSync(abs);
-      if (target.isFile() && accept(abs)) out.push(abs);
-      return;
-    }
-    if (st.isDirectory()) {
-      if (abs !== root && skipDirs.has(basename(abs))) return;
-      for (const entry of readdirSync(abs)) visit(join(abs, entry));
-      return;
-    }
-    if (st.isFile() && accept(abs)) out.push(abs);
-  };
-  visit(root);
-  return out.sort((a, b) => toPosix(relative(root, a)).localeCompare(toPosix(relative(root, b))));
+  return [
+    ...buildTrustFileInventory(root, { skipDirs }).matching((entry) => accept(entry.absolutePath)),
+  ].map((entry) => entry.absolutePath);
 }
 
 function shouldScanTrustDoc(root: string, absPath: string): boolean {
@@ -127,27 +112,20 @@ function shouldScanTrustDoc(root: string, absPath: string): boolean {
   return extname(name).toLowerCase() === ".md";
 }
 
-function collectTrustDocs(root: string): string[] {
-  return collectFilesUnder(root, (abs) => shouldScanTrustDoc(root, abs));
-}
-
 function shouldScanStrictUnicodeSurface(root: string, absPath: string): boolean {
   const rel = toPosix(relative(root, absPath));
   return isStrictUnicodeSurface(rel) || isMaliciousCodeScanFilePath(rel);
 }
 
-function collectStrictUnicodeSurfaces(root: string, docs: readonly string[]): string[] {
-  const docSet = new Set(docs);
-  return collectFilesUnder(
-    root,
-    (abs) => !docSet.has(abs) && shouldScanStrictUnicodeSurface(root, abs),
-  );
-}
-
-function collectSkillDirs(root: string): string[] {
+function collectSkillDirs(root: string, inventory?: TrustFileInventory): string[] {
   return [
     ...new Set(
-      collectFilesUnder(root, (abs) => basename(abs) === "SKILL.md").map((abs) => dirname(abs)),
+      (inventory
+        ? [...inventory.matching((entry) => basename(entry.absolutePath) === "SKILL.md")].map(
+            (entry) => entry.absolutePath,
+          )
+        : collectFilesUnder(root, (abs) => basename(abs) === "SKILL.md")
+      ).map((abs) => dirname(abs)),
     ),
   ].sort((a, b) => toPosix(relative(root, a)).localeCompare(toPosix(relative(root, b))));
 }
@@ -248,8 +226,11 @@ function collectMcpConfigFileRels(root: string, skillDirs: readonly string[]): s
   );
 }
 
-function sandboxSmokeShapeForTrustScan(root: string): SandboxSmokeShape {
-  const skillDirs = collectSkillDirs(root);
+function sandboxSmokeShapeForTrustScan(
+  root: string,
+  inventory?: TrustFileInventory,
+): SandboxSmokeShape {
+  const skillDirs = collectSkillDirs(root, inventory);
   if (skillDirs.length === 0) {
     return {
       skillDirs: [],
@@ -282,6 +263,8 @@ function normalizeScanOptions(options: ScanTrustTreeOptions = {}): {
   run?: Runner;
   sandboxSmokeShape?: SandboxSmokeShape;
   skillspectorImageApprovals: readonly SkillSpectorImageApproval[];
+  progress?: (message: string) => void;
+  inventoryFactory: NonNullable<ScanTrustTreeOptions["inventoryFactory"]>;
 } {
   return {
     env: options.env,
@@ -293,6 +276,8 @@ function normalizeScanOptions(options: ScanTrustTreeOptions = {}): {
     run: options.run,
     sandboxSmokeShape: options.sandboxSmokeShape,
     skillspectorImageApprovals: options.skillspectorImageApprovals ?? [],
+    progress: options.progress,
+    inventoryFactory: options.inventoryFactory ?? buildTrustFileInventory,
   };
 }
 
@@ -304,8 +289,8 @@ function stringValue(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
-function collectIncomingMcpConfigFiles(root: string): string[] {
-  return collectMcpConfigFileRels(root, collectSkillDirs(root));
+function collectIncomingMcpConfigFiles(root: string, inventory?: TrustFileInventory): string[] {
+  return collectMcpConfigFileRels(root, collectSkillDirs(root, inventory));
 }
 
 function plaintextSecretChecks(root: string, posture: Posture): Check[] {
@@ -688,26 +673,46 @@ export async function scanTrustTreeWithAnalyzers(
     run,
     sandboxSmokeShape,
     skillspectorImageApprovals,
+    progress,
+    inventoryFactory,
   } = normalizeScanOptions(options);
-  const docs = collectTrustDocs(safeRoot);
-  const strictUnicodeSurfaces = collectStrictUnicodeSurfaces(safeRoot, docs);
-  const mcpConfigFiles = collectIncomingMcpConfigFiles(safeRoot);
-  const nativeLintChecks = [
-    ...docs.flatMap((abs) =>
-      scanTrustDocument(toPosix(relative(safeRoot, abs)), readFileSync(abs, "utf8")),
-    ),
-    ...strictUnicodeSurfaces.flatMap((abs) =>
-      scanTrustUnicodeDocument(toPosix(relative(safeRoot, abs)), readFileSync(abs, "utf8")),
-    ),
-  ].map((check) => gradeTrustCheck(check, posture));
+  progress?.("trust scan: inventory started");
+  const inventory = inventoryFactory(safeRoot, {
+    skipDirs: TRUST_SKIP_DIRS,
+    onProgress: (processed) =>
+      progress?.(`trust scan: inventory ${processed.toLocaleString("en-US")} files`),
+  });
+  progress?.(
+    `trust scan: inventory complete (${inventory.files.length.toLocaleString("en-US")} files)`,
+  );
+  const mcpConfigFiles = collectIncomingMcpConfigFiles(safeRoot, inventory);
+  const nativeLintChecks: Check[] = [];
+  let trustDocumentCount = 0;
+  for (const entry of inventory.files) {
+    if (shouldScanTrustDoc(safeRoot, entry.absolutePath)) {
+      trustDocumentCount++;
+      nativeLintChecks.push(
+        ...scanTrustDocument(entry.relativePath, readFileSync(entry.absolutePath, "utf8")).map(
+          (check) => gradeTrustCheck(check, posture),
+        ),
+      );
+    } else if (shouldScanStrictUnicodeSurface(safeRoot, entry.absolutePath)) {
+      nativeLintChecks.push(
+        ...scanTrustUnicodeDocument(
+          entry.relativePath,
+          readFileSync(entry.absolutePath, "utf8"),
+        ).map((check) => gradeTrustCheck(check, posture)),
+      );
+    }
+  }
   const checks = [
     ...nativeLintChecks,
-    ...scanTrustManifests(safeRoot),
-    ...scanTrustDependencyNames(safeRoot, internalScopes, posture),
+    ...scanTrustManifests(safeRoot, inventory),
+    ...scanTrustDependencyNames(safeRoot, internalScopes, posture, inventory),
     ...plaintextSecretChecks(safeRoot, posture),
     ...mcpConfigSecretChecks(safeRoot, mcpConfigFiles, posture),
     ...incomingMcpChecks(safeRoot, mcpConfigFiles, posture, mcpPolicy),
-    ...scanNativeMaliciousCode(safeRoot),
+    ...scanNativeMaliciousCode(safeRoot, inventory),
   ];
   const hasDetectorRuntime = run !== undefined && platform !== undefined && env !== undefined;
   const detectorResult = hasDetectorRuntime
@@ -718,6 +723,8 @@ export async function scanTrustTreeWithAnalyzers(
         requiredDetectors,
         run,
         skillspectorImageApprovals,
+        inventory,
+        progress,
       })
     : {
         checks: missingDetectorRuntimeChecks(requiredDetectors ?? [], posture),
@@ -732,9 +739,12 @@ export async function scanTrustTreeWithAnalyzers(
           requiredDetectors,
           run,
           skillspectorImageApprovals,
+          inventory,
+          progress,
         })
       : { checks: [], analyzersRun: [] };
-  const effectiveSandboxSmokeShape = sandboxSmokeShape ?? sandboxSmokeShapeForTrustScan(safeRoot);
+  const effectiveSandboxSmokeShape =
+    sandboxSmokeShape ?? sandboxSmokeShapeForTrustScan(safeRoot, inventory);
   const sandboxSmokeChecks = [
     await sandboxSmokeCheck(safeRoot, effectiveSandboxSmokeShape, {
       env,
@@ -747,7 +757,7 @@ export async function scanTrustTreeWithAnalyzers(
   const allChecks =
     nonSmokeChecks.length > 0
       ? [...nonSmokeChecks, ...sandboxSmokeChecks]
-      : [passCheck(safeRoot, docs.length), ...sandboxSmokeChecks];
+      : [passCheck(safeRoot, trustDocumentCount), ...sandboxSmokeChecks];
   return {
     analyzersRun: ["aih-native", ...detectorResult.analyzersRun, ...mcpDetectorResult.analyzersRun],
     checks: allChecks,
@@ -821,6 +831,7 @@ export function scanOptionsFromContext(
     mcpPolicy: base.mcpPolicy ?? policy.mcpPolicy,
     requiredDetectors: policy.requiredDetectors,
     run: ctx.run,
+    progress: ctx.progress,
     skillspectorImageApprovals: [
       ...policy.skillspectorImageApprovals,
       ...(base.skillspectorImageApprovals ?? []),
@@ -868,6 +879,15 @@ export async function trustScanPlanForSource(
   options: TrustScanPlanOptions = {},
 ): Promise<ReturnType<typeof plan>> {
   const actions: Action[] = [];
+  const keepQuarantine = ctx.options.keepQuarantine === true;
+  if (source.kind === "github" && keepQuarantine) {
+    ctx.progress?.(`retained quarantine: ${source.quarantineRoot}`);
+  } else if (source.kind === "github" && ctx.deferCleanup !== undefined) {
+    ctx.deferCleanup(() => {
+      const error = cleanupQuarantine(source);
+      if (error !== undefined) throw error;
+    });
+  }
   const sandboxSmokeShape = options.sandboxSmokeShape ?? sandboxSmokeShapeForTrustScan;
   const policy = requiredDetectorsFromPolicy(ctx);
   const scanOptions = {
@@ -932,7 +952,9 @@ export async function trustScanPlanForSource(
         } catch {
           return trustRuntimeAdvisory(["aih-native"]);
         } finally {
-          if (options.cleanupQuarantine) cleanupQuarantine(source);
+          if (options.cleanupQuarantine && ctx.deferCleanup === undefined && !keepQuarantine) {
+            cleanupQuarantine(source);
+          }
         }
       }),
     );
@@ -969,6 +991,10 @@ export const trustScanCommand: CommandSpec = {
       description: "fetch exactly this Git commit SHA for owner/repo sources",
     },
     { flags: "--ref <ref>", description: "GitHub ref to resolve before downloading the tarball" },
+    {
+      flags: "--keep-quarantine",
+      description: "retain the owned GitHub quarantine and print its path to stderr",
+    },
     {
       flags: "--sarif <file>",
       description: "write verification results as SARIF (or - for stdout)",

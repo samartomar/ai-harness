@@ -6,6 +6,7 @@ import type { Check, CheckCode } from "../internals/verify.js";
 import { OrgPolicyError, readOrgPolicy } from "../org-policy/schema.js";
 import { contentFindingFingerprint } from "./fingerprint.js";
 import { gradeTrustCheck } from "./grade.js";
+import type { TrustFileInventory } from "./inventory.js";
 import { collectFilesUnder } from "./scan.js";
 
 type DependencyCheckCode = Extract<
@@ -127,12 +128,30 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function collectPackageJson(root: string): string[] {
-  return collectFilesUnder(root, (abs) => basename(abs) === "package.json");
+function packageJsonFiles(root: string, inventory?: TrustFileInventory): Iterable<string> {
+  if (inventory === undefined)
+    return collectFilesUnder(root, (abs) => basename(abs) === "package.json");
+  return {
+    *[Symbol.iterator]() {
+      for (const entry of inventory.matching(
+        (candidate) => basename(candidate.absolutePath) === "package.json",
+      )) {
+        yield entry.absolutePath;
+      }
+    },
+  };
 }
 
-function hasLockfile(root: string): boolean {
-  return collectFilesUnder(root, (abs) => LOCKFILE_NAMES.has(basename(abs))).length > 0;
+function hasLockfile(root: string, inventory?: TrustFileInventory): boolean {
+  if (inventory === undefined) {
+    return collectFilesUnder(root, (abs) => LOCKFILE_NAMES.has(basename(abs))).length > 0;
+  }
+  for (const _entry of inventory.matching((entry) =>
+    LOCKFILE_NAMES.has(basename(entry.absolutePath)),
+  )) {
+    return true;
+  }
+  return false;
 }
 
 function directDependencySpecs(pkg: Record<string, unknown>): DirectDependencySpec[] {
@@ -385,6 +404,7 @@ export function scanTrustDependencyNames(
   root: string,
   internalScopes: readonly string[],
   posture: Posture = "vibe",
+  inventory?: TrustFileInventory,
 ): Check[] {
   const scopes = new Set(
     internalScopes.map((scope) => normalizeScope(scope)).filter((scope) => scope !== undefined),
@@ -392,7 +412,7 @@ export function scanTrustDependencyNames(
   const checks: Check[] = [];
   const occurrences = new Map<string, number>();
   let firstPackageWithDependencies: { rel: string; source: string } | undefined;
-  for (const abs of collectPackageJson(root)) {
+  for (const abs of packageJsonFiles(root, inventory)) {
     const rel = toPosix(relative(root, abs));
     const source = readFileSync(abs, "utf8");
     const result = scanPackageJson(occurrences, rel, source, scopes, posture);
@@ -401,7 +421,7 @@ export function scanTrustDependencyNames(
       firstPackageWithDependencies = { rel, source };
     }
   }
-  if (firstPackageWithDependencies !== undefined && !hasLockfile(root)) {
+  if (firstPackageWithDependencies !== undefined && !hasLockfile(root, inventory)) {
     checks.push(
       missingLockfileCheck(
         occurrences,

@@ -25,6 +25,7 @@ import {
   SKILLSPECTOR_IMAGE,
   type SkillSpectorImageApproval,
 } from "./images.js";
+import type { TrustFileInventory } from "./inventory.js";
 import {
   classifyUnicodeRisk,
   detectorReportedHiddenUnicodeRisk,
@@ -68,6 +69,7 @@ export interface TrustDetector {
 
 interface TrustDetectorRuntimeOptions {
   skillspectorImageApprovals?: readonly SkillSpectorImageApproval[];
+  inventory?: TrustFileInventory;
 }
 
 export interface TrustDetectorOptions {
@@ -77,6 +79,8 @@ export interface TrustDetectorOptions {
   requiredDetectors?: readonly TrustDetectorName[];
   run: Runner;
   skillspectorImageApprovals?: readonly SkillSpectorImageApproval[];
+  inventory?: TrustFileInventory;
+  progress?: (message: string) => void;
 }
 
 export interface TrustDetectorResult {
@@ -365,15 +369,27 @@ function maliciousCodeCheck(
   };
 }
 
-export function scanNativeMaliciousCode(root: string): Check[] {
-  const files = collectFilesUnder(
-    root,
-    (abs) => {
-      const rel = toPosix(relative(root, abs));
-      return isMaliciousCodeScanFilePath(rel) && statSync(abs).size <= MAX_SCRIPT_SCAN_BYTES;
-    },
-    TRUST_SKIP_DIRS,
-  );
+export function scanNativeMaliciousCode(root: string, inventory?: TrustFileInventory): Check[] {
+  const files: Iterable<string> = inventory
+    ? {
+        *[Symbol.iterator]() {
+          for (const entry of inventory.matching(
+            (candidate) =>
+              isMaliciousCodeScanFilePath(candidate.relativePath) &&
+              candidate.size <= MAX_SCRIPT_SCAN_BYTES,
+          )) {
+            yield entry.absolutePath;
+          }
+        },
+      }
+    : collectFilesUnder(
+        root,
+        (abs) => {
+          const rel = toPosix(relative(root, abs));
+          return isMaliciousCodeScanFilePath(rel) && statSync(abs).size <= MAX_SCRIPT_SCAN_BYTES;
+        },
+        TRUST_SKIP_DIRS,
+      );
   const checks: Check[] = [];
   const occurrences = new Map<string, number>();
   for (const file of files) {
@@ -695,13 +711,21 @@ async function checkAgentShieldAvailable(
   return undefined;
 }
 
-function collectCiscoSkillDirs(root: string): string[] {
-  const skillFiles = collectFilesUnder(
-    root,
-    (abs) => basename(abs) === "SKILL.md",
-    TRUST_SKIP_DIRS,
-  );
-  return [...new Set(skillFiles.map((file) => dirname(file)))].sort((a, b) =>
+function collectCiscoSkillDirs(root: string, inventory?: TrustFileInventory): string[] {
+  const dirs = new Set<string>();
+  const skillFiles: Iterable<string> = inventory
+    ? {
+        *[Symbol.iterator]() {
+          for (const entry of inventory.matching(
+            (candidate) => basename(candidate.absolutePath) === "SKILL.md",
+          )) {
+            yield entry.absolutePath;
+          }
+        },
+      }
+    : collectFilesUnder(root, (abs) => basename(abs) === "SKILL.md", TRUST_SKIP_DIRS);
+  for (const file of skillFiles) dirs.add(dirname(file));
+  return [...dirs].sort((a, b) =>
     toPosix(relative(root, a)).localeCompare(toPosix(relative(root, b))),
   );
 }
@@ -749,8 +773,9 @@ async function runCiscoSkillScan(
   platform: Platform,
   env: NodeJS.ProcessEnv,
   tree: string,
+  runtimeOptions: TrustDetectorRuntimeOptions = {},
 ): Promise<string> {
-  const skillDirs = collectCiscoSkillDirs(tree);
+  const skillDirs = collectCiscoSkillDirs(tree, runtimeOptions.inventory);
   if (skillDirs.length === 0) throw new Error("no SKILL.md directories found for Cisco scan");
   const runs: SarifRun[] = [];
   for (const skillDir of skillDirs) {
@@ -772,19 +797,21 @@ async function runCiscoSkillScan(
   return JSON.stringify({ version: "2.1.0", runs });
 }
 
-function mcpConfigRoots(root: string): string[] {
-  const skillDirs = collectFilesUnder(
-    root,
-    (abs) => basename(abs) === "SKILL.md",
-    TRUST_SKIP_DIRS,
-  ).map((abs) => dirname(abs));
+function mcpConfigRoots(root: string, inventory?: TrustFileInventory): string[] {
+  const skillDirs = new Set<string>();
+  const skillFiles = inventory
+    ? inventory.matching((entry) => basename(entry.absolutePath) === "SKILL.md")
+    : collectFilesUnder(root, (abs) => basename(abs) === "SKILL.md", TRUST_SKIP_DIRS).map(
+        (absolutePath) => ({ absolutePath }),
+      );
+  for (const entry of skillFiles) skillDirs.add(dirname(entry.absolutePath));
   return [root, ...skillDirs];
 }
 
-function mcpConfigFiles(root: string): string[] {
+function mcpConfigFiles(root: string, inventory?: TrustFileInventory): string[] {
   return [
     ...new Set(
-      mcpConfigRoots(root).flatMap((dir) =>
+      mcpConfigRoots(root, inventory).flatMap((dir) =>
         [...INCOMING_MCP_CONFIG_FILES]
           .filter((name) => existsSync(join(dir, name)))
           .map((name) => join(dir, name)),
@@ -966,8 +993,11 @@ function mcpStaticToolsFromConfig(rel: string, parsed: unknown): Array<Record<st
   );
 }
 
-function mcpStaticTools(root: string): Array<Record<string, unknown>> {
-  return mcpConfigFiles(root).flatMap((abs) => {
+function mcpStaticTools(
+  root: string,
+  inventory?: TrustFileInventory,
+): Array<Record<string, unknown>> {
+  return mcpConfigFiles(root, inventory).flatMap((abs) => {
     const rel = toPosix(relative(root, abs));
     try {
       return mcpStaticToolsFromConfig(rel, JSON.parse(readFileSync(abs, "utf8")) as unknown);
@@ -988,12 +1018,17 @@ async function runMcpScannerScan(
   platform: Platform,
   env: NodeJS.ProcessEnv,
   tree: string,
+  runtimeOptions: TrustDetectorRuntimeOptions = {},
 ): Promise<string> {
   const tmp = mkdtempSync(join(tmpdir(), "aih-mcp-scanner-"));
   const input = join(tmp, "tools.json");
   const output = join(tmp, "results.sarif");
   try {
-    writeFileSync(input, `${JSON.stringify({ tools: mcpStaticTools(tree) }, null, 2)}\n`, "utf8");
+    writeFileSync(
+      input,
+      `${JSON.stringify({ tools: mcpStaticTools(tree, runtimeOptions.inventory) }, null, 2)}\n`,
+      "utf8",
+    );
     const scan = await run(mcpScannerStaticArgv(platform, input, output), {
       env: scrubFetchEnv(env),
       timeoutMs: 120_000,
@@ -1516,9 +1551,11 @@ async function runDetectorList(
   const analyzersRun: string[] = [];
   const runtimeOptions: TrustDetectorRuntimeOptions = {
     skillspectorImageApprovals: options.skillspectorImageApprovals ?? [],
+    inventory: options.inventory,
   };
 
   for (const detector of detectors) {
+    options.progress?.(`trust scan: detector ${detector.name} started`);
     const unavailable = await detector.checkAvailable(
       options.run,
       options.platform,
@@ -1574,6 +1611,7 @@ async function runDetectorList(
     analyzersRun.push(detector.analyzerLabel);
     const completedAnalyzers = ["aih-native", ...analyzersRun];
     checks.push(analyzerPassCheck(detector, completedAnalyzers), ...mapped);
+    options.progress?.(`trust scan: detector ${detector.name} complete`);
   }
 
   return { checks, analyzersRun };

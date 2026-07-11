@@ -1,9 +1,10 @@
-import { lstatSync, readdirSync, readFileSync } from "node:fs";
+import { lstatSync, readFileSync } from "node:fs";
 import { basename, extname, join, relative } from "node:path";
 import { parseDocument } from "yaml";
 import type { Check, CheckCode } from "../internals/verify.js";
 import { contentFindingFingerprint } from "./fingerprint.js";
-import { collectFilesUnder, TRUST_SKIP_DIRS } from "./scan.js";
+import type { TrustFileInventory } from "./inventory.js";
+import { collectFilesUnder } from "./scan.js";
 
 type AutoExecCode = Extract<CheckCode, "trust.auto-exec-hook">;
 
@@ -267,32 +268,26 @@ function isSettingsPath(rel: string): boolean {
   return rel === "settings.json" || rel === ".claude/settings.json";
 }
 
-function isClaudeHooksDir(rel: string): boolean {
-  return rel === ".claude/hooks";
-}
-
 function scanHookDirs(root: string): Check[] {
-  const checks: Check[] = [];
-  const visit = (abs: string): void => {
-    const st = lstatSync(abs);
-    if (!st.isDirectory()) return;
-    const rel = toPosix(relative(root, abs));
-    if (abs !== root && TRUST_SKIP_DIRS.has(basename(abs)) && !isClaudeHooksDir(rel)) return;
-    if (isClaudeHooksDir(rel)) {
-      checks.push(
-        autoExecCheck(rel, 1, rel, ".claude/hooks directory can auto-execute hook commands"),
-      );
-      return;
-    }
-    for (const entry of readdirSync(abs)) visit(join(abs, entry));
-  };
-  visit(root);
-  return checks;
+  const rel = ".claude/hooks";
+  try {
+    if (!lstatSync(join(root, rel)).isDirectory()) return [];
+    return [autoExecCheck(rel, 1, rel, ".claude/hooks directory can auto-execute hook commands")];
+  } catch {
+    return [];
+  }
 }
 
-export function scanTrustManifests(root: string): Check[] {
+export function scanTrustManifests(root: string, inventory?: TrustFileInventory): Check[] {
   const checks: Check[] = [...scanHookDirs(root)];
-  for (const abs of collectFilesUnder(root, () => true)) {
+  const files: Iterable<string> = inventory
+    ? {
+        *[Symbol.iterator]() {
+          for (const entry of inventory.files) yield entry.absolutePath;
+        },
+      }
+    : collectFilesUnder(root, () => true);
+  for (const abs of files) {
     const rel = toPosix(relative(root, abs));
     const name = basename(abs);
     const scansFrontmatter = isFrontmatterDoc(rel);
