@@ -164,10 +164,11 @@ existed is not guessed. If an upstream uninstall may have mutated before failing
 fails after an upstream uninstall succeeded—the command emits `ECC prune divergence` with the
 complete set of affected targets and paths, rolls back aih-owned changes, and never advances the
 ledger. The driver budgets the outer transaction above the bounded sequential uninstall budget;
-`SIGINT` and `SIGTERM` during an active uninstall use the same rollback and divergence path. It does
-not claim that upstream-owned bytes were restored. When a registration ledger predates a Codex
-target record, prune retains the state-file-based Codex cleanup path instead of treating the mere
-presence of a ledger as proof that Codex cleanup is coordinated.
+supported process interrupts during an active uninstall use the same rollback and divergence path
+(`SIGINT` cross-platform and catchable POSIX `SIGTERM`). It does not claim that upstream-owned bytes
+were restored. When a registration ledger predates a Codex target record, prune retains the
+state-file-based Codex cleanup path instead of treating the mere presence of a ledger as proof that
+Codex cleanup is coordinated.
 
 ## aih capability
 

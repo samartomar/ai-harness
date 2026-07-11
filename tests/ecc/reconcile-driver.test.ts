@@ -270,6 +270,7 @@ describe("ECC reconciliation transaction driver", () => {
 
   it("rolls back and reports the active target when interrupted during upstream uninstall", () => {
     const value = fixture();
+    const interruptSignal = process.platform === "win32" ? "SIGINT" : "SIGTERM";
     const upstreamPath = join(value.targetRoot, "interrupted-upstream-owned.txt");
     writeFileSync(upstreamPath, "upstream\n", "utf8");
     value.payload.uninstalls = [
@@ -281,7 +282,7 @@ describe("ECC reconciliation transaction driver", () => {
           [
             'const fs=require("node:fs");',
             "fs.rmSync(process.argv[1]);",
-            'process.kill(process.ppid, "SIGTERM");',
+            `process.kill(process.ppid, ${JSON.stringify(interruptSignal)});`,
           ].join(""),
           upstreamPath,
         ],
@@ -294,7 +295,7 @@ describe("ECC reconciliation transaction driver", () => {
     expect(result.status).not.toBe(0);
     expect(result.stderr).toContain("ECC prune divergence: target=claude");
     expect(result.stderr).toContain(upstreamPath);
-    expect(result.stderr).toContain("interrupted by SIGTERM");
+    expect(result.stderr).toContain(`interrupted by ${interruptSignal}`);
     expect(() => readFileSync(upstreamPath)).toThrow();
     for (const [path, contents] of Object.entries(value.before)) {
       expect(readFileSync(path)).toEqual(contents);
