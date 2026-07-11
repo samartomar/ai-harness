@@ -4,7 +4,17 @@ import {
   readVendorBaselineLock,
   vendorBaselineLockSha256,
 } from "../../src/baseline-evidence/vendor.js";
-import { VERSION } from "../../src/version.js";
+import {
+  baselineAnalyzerVersions,
+  REQUIRED_BASELINE_ANALYZERS,
+} from "../../src/baseline-evidence/analyzer-profile.js";
+
+function requiredAnalyzerReceipts(): Array<{ name: string; version: string }> {
+  const versions = baselineAnalyzerVersions();
+  return [...REQUIRED_BASELINE_ANALYZERS]
+    .sort((left, right) => left.localeCompare(right))
+    .map((name) => ({ name, version: versions[name] ?? "" }));
+}
 
 describe("shipped vendor baseline lock", () => {
   it("strictly parses and mirrors every pinned production catalog component", () => {
@@ -36,7 +46,7 @@ describe("shipped vendor baseline lock", () => {
       ecc?.components.find((component) => component.id === "skill:verification-loop"),
     ).toMatchObject({
       verdict: "pass",
-      analyzers: [{ name: "aih-native", version: VERSION }],
+      analyzers: requiredAnalyzerReceipts(),
       findings: [],
     });
     expect(
@@ -49,6 +59,14 @@ describe("shipped vendor baseline lock", () => {
       lock.sources
         .flatMap((source) => source.components)
         .every((component) => component.verdict === "pass" || component.findings.length > 0),
+    ).toBe(true);
+    expect(
+      lock.sources
+        .flatMap((source) => source.components)
+        .every(
+          (component) =>
+            JSON.stringify(component.analyzers) === JSON.stringify(requiredAnalyzerReceipts()),
+        ),
     ).toBe(true);
   });
 

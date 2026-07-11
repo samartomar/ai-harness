@@ -3,6 +3,14 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { baselineCatalogById } from "../../src/baseline-evidence/catalogs.js";
+import {
+  CISCO_SKILL_SCANNER_SPEC,
+  CISCO_SKILL_SCANNER_VERSION,
+} from "../../src/baseline-evidence/analyzer-profile.js";
+import {
+  SKILLSPECTOR_IMAGE_DIGEST,
+  SKILLSPECTOR_SOURCE_REVISION,
+} from "../../src/trust/images.js";
 
 const repo = process.cwd();
 
@@ -35,6 +43,8 @@ describe("baseline evidence release payload", () => {
     expect(scripts["baseline:vet"]).toContain("baseline-evidence/generate.ts");
     expect(scripts["baseline:check"]).toContain("baseline-evidence/generate.ts");
     expect(scripts["baseline:check"]).toContain("--check");
+    expect(scripts["check:baseline-analyzers"]).toContain("check-baseline-analyzers.ts");
+    expect(scripts.verify).toContain("check:baseline-analyzers");
   });
 
   it("runs a non-publishing vet-once workflow at both canonical source pins", () => {
@@ -44,8 +54,22 @@ describe("baseline evidence release payload", () => {
     expect(workflow).toContain(baselineCatalogById("ecc").pinnedSha);
     expect(workflow).toContain(baselineCatalogById("superpowers").pinnedSha);
     expect(workflow).toContain("npm run baseline:check");
+    expect(workflow).toContain("repository: NVIDIA/SkillSpector");
+    expect(workflow).toContain(`ref: ${SKILLSPECTOR_SOURCE_REVISION}`);
+    expect(workflow).toContain(SKILLSPECTOR_IMAGE_DIGEST);
+    expect(workflow).toContain("docker build");
+    expect(workflow).toContain(
+      "astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990",
+    );
+    expect(workflow).toContain(CISCO_SKILL_SCANNER_SPEC);
+    expect(workflow).toContain(`skill-scanner ${CISCO_SKILL_SCANNER_VERSION}`);
     expect(workflow).toContain("actions/upload-artifact@");
     expect(workflow).toContain("src/baseline-evidence/vendor-lock.json");
     expect(workflow).not.toMatch(/git\s+(commit|push)|npm\s+publish/);
+  });
+
+  it("checks analyzer-complete vendor receipts again before release packaging", () => {
+    const workflow = readFileSync(join(repo, ".github", "workflows", "release.yml"), "utf8");
+    expect(workflow).toContain("npm run check:baseline-analyzers");
   });
 });
