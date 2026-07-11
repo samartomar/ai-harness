@@ -1,3 +1,7 @@
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type {
   MergedPr,
@@ -48,6 +52,7 @@ function cleanData(): PreflightData {
     milestoneItems: [...prs.map(mergedItem), tracker()],
     packageVersion: "2.5.1",
     versionConstant: "2.5.1",
+    declaredIntent: "minor",
   };
 }
 
@@ -58,6 +63,146 @@ describe("runPreflight — clean cut", () => {
     expect(m.findings).toEqual([]);
     expect(m.computedBump).toBe("minor");
     expect(m.nextVersion).toBe("2.6.0");
+  });
+});
+
+describe("runPreflight — declared intent checkpoint", () => {
+  it("missing-intent: blocks when the cut has no declared bump intent", () => {
+    const d = cleanData();
+    delete d.declaredIntent;
+
+    const m = runPreflight(d);
+
+    expect(m.ok).toBe(false);
+    expect(m.findings.map((finding) => finding.code)).toContain("missing-intent");
+  });
+
+  it("invalid-intent: rejects a serialized intent outside patch|minor|major", () => {
+    const d = cleanData();
+    (d as unknown as { declaredIntent?: string }).declaredIntent = "huge";
+
+    const m = runPreflight(d);
+
+    expect(m.ok).toBe(false);
+    expect(m.findings.map((finding) => finding.code)).toContain("invalid-intent");
+    expect(m).toMatchObject({ intentEscalation: false, intentAcknowledged: false });
+  });
+
+  it("intent-escalation: blocks when the computed bump exceeds declared intent", () => {
+    const d = cleanData();
+    d.declaredIntent = "patch";
+
+    const m = runPreflight(d);
+
+    expect(m.ok).toBe(false);
+    expect(m.findings).toContainEqual(expect.objectContaining({ code: "intent-escalation" }));
+    expect(m).toMatchObject({
+      declaredIntent: "patch",
+      computedBump: "minor",
+      intentEscalation: true,
+      intentAcknowledged: false,
+    });
+  });
+
+  it.each([
+    "minor",
+    "major",
+  ] as const)("passes without acknowledgement when declared intent is %s", (intent) => {
+    const d = cleanData();
+    d.declaredIntent = intent;
+
+    expect(runPreflight(d)).toMatchObject({
+      ok: true,
+      declaredIntent: intent,
+      intentEscalation: false,
+      intentAcknowledged: false,
+    });
+  });
+
+  it("accepts escalation only when acknowledgement binds SHA, intent, and computed bump", () => {
+    const d = cleanData();
+    d.declaredIntent = "patch";
+    d.intentAcknowledgement = `${d.candidateSha}:patch:minor`;
+
+    expect(runPreflight(d)).toMatchObject({
+      ok: true,
+      declaredIntent: "patch",
+      computedBump: "minor",
+      intentEscalation: true,
+      intentAcknowledged: true,
+      requiredIntentAcknowledgement: `${d.candidateSha}:patch:minor`,
+    });
+  });
+
+  it("intent-escalation: rejects an acknowledgement bound to another candidate", () => {
+    const d = cleanData();
+    d.declaredIntent = "patch";
+    d.intentAcknowledgement = `${"b".repeat(40)}:patch:minor`;
+
+    const m = runPreflight(d);
+
+    expect(m.ok).toBe(false);
+    expect(m.findings).toContainEqual(expect.objectContaining({ code: "intent-escalation" }));
+    expect(m).toMatchObject({ intentEscalation: true, intentAcknowledged: false });
+  });
+
+  it("rejects acknowledgement for the same SHA but a different bump decision", () => {
+    const d = cleanData();
+    d.declaredIntent = "patch";
+    d.intentAcknowledgement = `${d.candidateSha}:patch:major`;
+
+    expect(runPreflight(d)).toMatchObject({
+      ok: false,
+      intentEscalation: true,
+      intentAcknowledged: false,
+      requiredIntentAcknowledgement: `${d.candidateSha}:patch:minor`,
+    });
+  });
+});
+
+describe("release:preflight CLI intent checkpoint", () => {
+  it("emits the manifest on blocked escalation and accepts only the candidate-bound ack", () => {
+    const dir = mkdtempSync(join(tmpdir(), "aih-release-intent-"));
+    try {
+      const fixture = cleanData();
+      delete fixture.declaredIntent;
+      const input = join(dir, "preflight.json");
+      writeFileSync(input, JSON.stringify(fixture), "utf8");
+      const tsx = join(process.cwd(), "node_modules", "tsx", "dist", "cli.mjs");
+      const script = join(process.cwd(), "src", "internals", "release-preflight.ts");
+      const run = (...args: string[]) =>
+        spawnSync(process.execPath, [tsx, script, "--input", input, ...args], {
+          cwd: process.cwd(),
+          encoding: "utf8",
+        });
+
+      const blocked = run("--intent", "patch");
+      expect(blocked.status).toBe(1);
+      expect(JSON.parse(blocked.stdout)).toMatchObject({
+        ok: false,
+        declaredIntent: "patch",
+        computedBump: "minor",
+        intentEscalation: true,
+        intentAcknowledged: false,
+        findings: [expect.objectContaining({ code: "intent-escalation" })],
+      });
+
+      const acknowledged = run(
+        "--intent",
+        "patch",
+        "--ack-intent-escalation",
+        `${fixture.candidateSha}:patch:minor`,
+      );
+      expect(acknowledged.status, acknowledged.stderr).toBe(0);
+      expect(JSON.parse(acknowledged.stdout)).toMatchObject({
+        ok: true,
+        intentEscalation: true,
+        intentAcknowledged: true,
+        requiredIntentAcknowledgement: `${fixture.candidateSha}:patch:minor`,
+      });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 

@@ -8,6 +8,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- `npm run release:preflight -- --intent <patch|minor|major>` now compares declared cut scope with
+  the label-derived bump. Upward escalation blocks before the release PR while still emitting the
+  manifest; an explicit acknowledgement token binds candidate SHA, declared intent, and computed
+  bump without changing the computed version. (#382)
 - `aih prune` now reconciles the scoped ECC registration ledger: missing project roots retire from
   the additive union, only unshared aih-managed component/MCP operations are removed, user-owned
   and still-required content is preserved, and target state plus the primary ledger commit in one

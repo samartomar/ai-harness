@@ -28,6 +28,13 @@ even when the commit is typed `fix:`. The `semver-label` check enforces exactly 
 class per PR before merge; Dependabot PRs are labeled `semver:patch` automatically and
 re-labeled by hand when a bump changes our surface.
 
+The cut also declares an intent class with
+`npm run release:preflight -- --intent <patch|minor|major>`. Computation remains authoritative:
+when the highest merged-PR class exceeds intent, preflight emits the full manifest and fails before
+the release PR opens. Proceeding requires the exact acknowledgement token emitted by the manifest;
+it binds candidate SHA, declared intent, and computed bump, records the scope decision, and never
+lowers or overrides the computed version.
+
 ### Pre-1.0 (0.x)
 
 While the major version is `0`, the surface is still settling. A **minor** bump
