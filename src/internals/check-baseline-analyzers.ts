@@ -5,6 +5,7 @@ import {
   REQUIRED_BASELINE_ANALYZERS,
   requiredBaselineAnalyzersForComponent,
 } from "../baseline-evidence/analyzer-profile.js";
+import { baselineCatalogById } from "../baseline-evidence/catalogs.js";
 import type { BaselineEvidenceLock } from "../baseline-evidence/schema.js";
 import { readVendorBaselineLock } from "../baseline-evidence/vendor.js";
 
@@ -24,9 +25,37 @@ export function checkBaselineAnalyzerReceipts(lock: BaselineEvidenceLock): Basel
   const findings: BaselineAnalyzerFinding[] = [];
 
   for (const source of lock.sources) {
+    let canonicalComponents: Map<
+      string,
+      ReturnType<typeof baselineCatalogById>["components"][number]
+    >;
+    try {
+      canonicalComponents = new Map(
+        baselineCatalogById(source.id, source.pinnedSha).components.map((component) => [
+          component.id,
+          component,
+        ]),
+      );
+    } catch (error) {
+      findings.push({
+        sourceId: source.id,
+        componentId: "<catalog>",
+        detail: error instanceof Error ? error.message : String(error),
+      });
+      continue;
+    }
     for (const component of source.components) {
+      const canonical = canonicalComponents.get(component.id);
+      if (canonical === undefined) {
+        findings.push({
+          sourceId: source.id,
+          componentId: component.id,
+          detail: "component is missing from the canonical baseline catalog",
+        });
+        continue;
+      }
       const actual = new Map(component.analyzers.map((receipt) => [receipt.name, receipt.version]));
-      for (const name of requiredBaselineAnalyzersForComponent(component)) {
+      for (const name of requiredBaselineAnalyzersForComponent(canonical)) {
         const expected = expectedVersions[name] ?? "";
         const found = actual.get(name);
         if (found === undefined) {

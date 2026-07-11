@@ -64,9 +64,9 @@ describe("production baseline catalogs", () => {
         skillContent: true,
       });
     }
-    expect(catalog.components.find((component) => component.id === "runtime:ecc-installer")).not.toHaveProperty(
-      "skillContent",
-    );
+    expect(
+      catalog.components.find((component) => component.id === "runtime:ecc-installer"),
+    ).not.toHaveProperty("skillContent");
   });
 
   it("binds Superpowers runtime and installable skills to its registry pin", () => {

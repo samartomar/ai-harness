@@ -42,6 +42,23 @@ const SUPERPOWERS_SKILLS = [
   "writing-skills",
 ] as const;
 
+const ECC_NESTED_SKILL_MODULES = new Set([
+  "agents-core",
+  "platform-configs",
+  "docs-ja-jp",
+  "docs-zh-cn",
+  "docs-ko-kr",
+  "docs-tr",
+  "docs-zh-tw",
+]);
+
+function moduleContainsSkillContent(module: { id: string; paths: readonly string[] }): boolean {
+  return (
+    ECC_NESTED_SKILL_MODULES.has(module.id) ||
+    module.paths.some((path) => path.split("/").includes("skills"))
+  );
+}
+
 const ECC_COMPONENTS: readonly BaselineCatalogComponent[] = [
   {
     id: "runtime:ecc-installer",
@@ -60,12 +77,20 @@ const ECC_COMPONENTS: readonly BaselineCatalogComponent[] = [
       "scripts/lib/path-safety.js",
     ],
   },
-  { id: "runtime:ecc-kiro", paths: [".kiro"] },
-  ...eccModules.modules.map((module) => ({ id: `module:${module.id}`, paths: module.paths })),
-  { id: "skill:tdd-workflow", paths: ["skills/tdd-workflow"] },
-  { id: "skill:verification-loop", paths: ["skills/verification-loop"] },
-  { id: "skill:strategic-compact", paths: ["skills/strategic-compact"] },
-  { id: "skill:coding-standards", paths: ["skills/coding-standards"] },
+  { id: "runtime:ecc-kiro", paths: [".kiro"], skillContent: true },
+  ...eccModules.modules.map((module) => ({
+    id: `module:${module.id}`,
+    paths: module.paths,
+    ...(moduleContainsSkillContent(module) ? { skillContent: true as const } : {}),
+  })),
+  { id: "skill:tdd-workflow", paths: ["skills/tdd-workflow"], skillContent: true },
+  {
+    id: "skill:verification-loop",
+    paths: ["skills/verification-loop"],
+    skillContent: true,
+  },
+  { id: "skill:strategic-compact", paths: ["skills/strategic-compact"], skillContent: true },
+  { id: "skill:coding-standards", paths: ["skills/coding-standards"], skillContent: true },
   ...ECC_COMMON_AGENTS.map((name) => ({
     id: `agent:${name}`,
     paths: [`agents/${name}.md`],
@@ -88,7 +113,11 @@ const SUPERPOWERS_COMPONENTS: readonly BaselineCatalogComponent[] = [
       "scripts",
     ],
   },
-  ...SUPERPOWERS_SKILLS.map((name) => ({ id: `skill:${name}`, paths: [`skills/${name}`] })),
+  ...SUPERPOWERS_SKILLS.map((name) => ({
+    id: `skill:${name}`,
+    paths: [`skills/${name}`],
+    skillContent: true as const,
+  })),
 ];
 
 function sourcePin(owner: string, repo: string): string {

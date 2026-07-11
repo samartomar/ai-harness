@@ -39,9 +39,10 @@ function treeContainsSkillFile(path: string): boolean {
 }
 
 function containsSkillContent(
-  component: Pick<BaselineCatalogComponent, "paths">,
+  component: Pick<BaselineCatalogComponent, "paths" | "skillContent">,
   sourceRoot?: string,
 ): boolean {
+  if (component.skillContent === true) return true;
   if (
     component.paths.some((path) =>
       path.split("/").some((segment) => segment === "skills" || segment === "SKILL.md"),
@@ -56,7 +57,7 @@ function containsSkillContent(
 }
 
 export function requiredBaselineAnalyzersForComponent(
-  component: Pick<BaselineCatalogComponent, "paths">,
+  component: Pick<BaselineCatalogComponent, "paths" | "skillContent">,
   sourceRoot?: string,
 ): readonly string[] {
   return containsSkillContent(component, sourceRoot)
@@ -65,7 +66,7 @@ export function requiredBaselineAnalyzersForComponent(
 }
 
 export function requiredBaselineDetectorsForComponent(
-  component: Pick<BaselineCatalogComponent, "paths">,
+  component: Pick<BaselineCatalogComponent, "paths" | "skillContent">,
   sourceRoot?: string,
 ): readonly TrustDetectorName[] {
   return containsSkillContent(component, sourceRoot)

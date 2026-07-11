@@ -5,6 +5,7 @@ export const BaselineCatalogComponentSchema = z
   .object({
     id: BaselineComponentIdSchema,
     paths: z.array(BaselineComponentPathSchema).min(1),
+    skillContent: z.literal(true).optional(),
   })
   .strict()
   .superRefine((component, ctx) => {
