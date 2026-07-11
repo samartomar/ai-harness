@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { defineBaselineCatalog } from "../../src/baseline-evidence/catalog.js";
 import { hashComponentTree } from "../../src/baseline-evidence/hash.js";
@@ -209,6 +209,7 @@ describe("vetBaselineCatalog", () => {
     const projections: string[] = [];
     const scanTree = vi.fn(async (projectionRoot: string) => {
       projections.push(projectionRoot);
+      expect(projectionRoot).toContain(join(dirname(root), ".aih-baseline-component-"));
       expect(existsSync(join(projectionRoot, "outside.txt"))).toBe(false);
       expect(
         existsSync(join(projectionRoot, "skills", "clean", "SKILL.md")) ||
