@@ -9,6 +9,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, extname, isAbsolute, join, relative } from "node:path";
+import { CISCO_SKILL_SCANNER_SPEC } from "../baseline-evidence/analyzer-profile.js";
 import type { Posture } from "../config/posture.js";
 import { readRegularFileWithStats } from "../internals/fsxn.js";
 import type { Runner, RunResult } from "../internals/proc.js";
@@ -89,7 +90,6 @@ export interface TrustDetectorResult {
 }
 
 const DETECTOR_UNAVAILABLE = "trust.detector-unavailable";
-const CISCO_SKILL_SCANNER_PACKAGE = "cisco-ai-skill-scanner";
 const CISCO_MCP_SCANNER_PACKAGE = "cisco-ai-mcp-scanner";
 const SNYK_AGENT_SCAN_PACKAGE = "snyk-agent-scan";
 // These Semgrep rules are deliberately small harness-owned safety rules, not a
@@ -440,7 +440,7 @@ function ciscoSkillScannerBaseArgv(): string[] {
     "--no-python-downloads",
     "--no-env-file",
     "--from",
-    CISCO_SKILL_SCANNER_PACKAGE,
+    CISCO_SKILL_SCANNER_SPEC,
     "skill-scanner",
   ];
 }

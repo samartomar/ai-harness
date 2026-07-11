@@ -27,6 +27,7 @@ export interface VetBaselineCatalogOptions {
   scanComponent?: BaselineComponentScanner;
   scanOptions?: ScanTrustTreeOptions;
   analyzerVersions?: Readonly<Record<string, string>>;
+  requiredAnalyzers?: readonly string[];
 }
 
 function checkKey(check: Check): string {
@@ -85,9 +86,18 @@ function defaultComponentScanner(scanOptions: ScanTrustTreeOptions): BaselineCom
 function analyzerReceipts(
   analyzersRun: readonly string[],
   versions: Readonly<Record<string, string>>,
+  requiredAnalyzers: readonly string[],
+  componentId: string,
 ): BaselineAnalyzerReceipt[] {
   const analyzers = [...new Set(analyzersRun)].sort((left, right) => left.localeCompare(right));
   if (analyzers.length === 0) throw new Error("baseline vet produced no analyzer receipt");
+  const completed = new Set(analyzers);
+  const missing = requiredAnalyzers.filter((name) => !completed.has(name));
+  if (missing.length > 0) {
+    throw new Error(
+      `baseline component ${componentId} missing required baseline analyzers: ${missing.join(", ")}`,
+    );
+  }
   return analyzers.map((name) => {
     const version = versions[name]?.trim();
     if (!version) throw new Error(`baseline analyzer ${name} ran without a version receipt`);
@@ -141,7 +151,12 @@ export async function vetBaselineCatalog(
       paths: [...component.paths],
       treeSha256: tree.treeSha256,
       verdict: findings.length > 0 ? ("blocked" as const) : ("pass" as const),
-      analyzers: analyzerReceipts(scan.analyzersRun, versions),
+      analyzers: analyzerReceipts(
+        scan.analyzersRun,
+        versions,
+        options.requiredAnalyzers ?? [],
+        component.id,
+      ),
       findings,
     });
   }
