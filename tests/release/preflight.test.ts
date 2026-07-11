@@ -350,9 +350,11 @@ if (args.startsWith("repo view ")) {
           `const { basename } = require("node:path");
 const command = basename(process.execPath).toLowerCase();
 if (command === "git.exe") {
+  process.argv.splice(1, 0, "git-stub.cjs");
   require("./git-stub.cjs");
   process.exit(0);
 } else if (command === "gh.exe") {
+  process.argv.splice(1, 0, "gh-stub.cjs");
   require("./gh-stub.cjs");
   process.exit(0);
 }
