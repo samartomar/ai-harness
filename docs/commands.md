@@ -180,22 +180,40 @@ instead of being edited or deleted. Dirty/untracked removal targets refuse witho
 
 ## aih ecc
 
-Install [affaan-m/ECC](https://github.com/affaan-m/ECC) (skills, instincts, memory, security,
-research-first) for the selected CLIs, scoped to the detected stack. aih fetches the catalog's exact
-commit into quarantine, verifies signed evidence for the installer runtime and selected components,
-re-hashes the same tree, then runs that checkout's `scripts/install-apply.js`. Dependency preparation
-uses `npm ci --omit=dev --ignore-scripts` only after clearance. Kiro runs the verified checkout's
-native `.kiro/install.sh`; unsupported targets remain consult-only guidance.
+Register [affaan-m/ECC](https://github.com/affaan-m/ECC) for the selected CLIs. The default is the
+additive union of the locked common baseline, components detected from every registered project,
+repeatable advance declarations (`--with lang:cpp --with framework:react`), posture-selected
+security, and validated MCPs. Use `--profile full` only for an explicit full-surface install.
+Unknown declarations fail closed. Kiro and unsupported targets remain consult-only guidance because
+their installers cannot yet materialize the scoped union safely.
 
-For Codex, aih installs selected skills/agents from the verified checkout with ECC's add-only TOML
-merge helpers and a fenced AGENTS merge for shared files; it preflights project/global MCP
-server-name transport collisions before those shared-config writes. `--ecc-path <dir>` uses a local
-checkout, and `AIH_ECC_REF` requests a different commit; either must match exact vendor or attributed
-org evidence for that pin. Non-SHA refs are refused.
+The primary registration ledger is `~/.aih/ecc/registration-ledger.json`. It records each project's
+component/MCP contribution and each target's installed union plus evidence provenance. The ledger is
+written atomically only after all selected target installs succeed. Re-running is idempotent; adding
+a second project grows the machine union without removing the first project's surface. The ledger is
+the authoritative input for component-level prune reconciliation; this registration slice does not
+remove components.
+
+The validated MCP default is pinned local `sequential-thinking`, repo-declared
+`code-review-graph`/`codebase-memory-mcp`, and GitHub OAuth at team/enterprise. Context7, Exa, and
+other egress-bearing servers are never defaults. Project config receives that project's set; global
+target config receives the machine union, with existing user-defined same-name servers preserved.
+
+aih fetches the catalog's exact commit into quarantine, verifies signed evidence for the installer
+runtime and selected components, re-hashes the same tree, then filters ECC's manifest operations and
+state preview to the selected surface. Dependency preparation uses
+`npm ci --omit=dev --ignore-scripts` only after clearance.
+
+For Codex, aih copies selected skills to `~/.codex/skills/<name>/SKILL.md`, installs selected agents,
+uses ECC's add-only TOML merge helper for non-MCP settings, owns a fenced MCP block, and merges a
+scoped fenced AGENTS supplement. It preflights genuine project/global MCP transport collisions while
+allowing its own idempotent reruns. `--ecc-path <dir>` supplies an exact local checkout to the same
+evidence gate, and `AIH_ECC_REF` requests a different exact commit; either must match vendor or
+attributed org evidence for that pin. Non-SHA refs are refused.
 Installed Codex skills are invoked on demand with `$<skill-name>` from
 `~/.codex/skills/<name>/SKILL.md`; they are not an auto-loaded `.agents/skills` surface.
 See [Baseline Component Evidence](security/baseline-evidence.md) for posture behavior and org
-overrides.
+overrides. <!-- aih:claim CM-21 -->
 
 ## aih superpowers
 

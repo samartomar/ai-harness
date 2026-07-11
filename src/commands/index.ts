@@ -285,7 +285,14 @@ function addFlagsForSpec(cmd: Command, spec: CommandSpec): Command {
 
 function addOptionsForSpec(cmd: Command, spec: CommandSpec): Command {
   for (const o of spec.options ?? []) {
-    if (o.default !== undefined) cmd.option(o.flags, o.description, o.default);
+    if (o.repeatable === true) {
+      cmd.option(
+        o.flags,
+        o.description,
+        (value: string, previous: string[]) => [...previous, value],
+        [],
+      );
+    } else if (o.default !== undefined) cmd.option(o.flags, o.description, o.default);
     else cmd.option(o.flags, o.description);
   }
   return cmd;

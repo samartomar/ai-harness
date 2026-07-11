@@ -26,6 +26,27 @@ afterEach(() => {
 });
 
 describe("registered ECC command", () => {
+  it("collects repeatable --with declarations without changing scalar options", () => {
+    const program = buildProgram();
+    const ecc = program.commands.find((candidate) => candidate.name() === "ecc");
+    expect(ecc).toBeDefined();
+
+    const parsed = ecc?.parseOptions([
+      "--profile",
+      "core",
+      "--with",
+      "tdd-workflow",
+      "--with",
+      "security-review",
+    ]);
+
+    expect(parsed?.unknown).toEqual([]);
+    expect(ecc?.opts()).toMatchObject({
+      profile: "core",
+      with: ["tdd-workflow", "security-review"],
+    });
+  });
+
   it("previews only the exact-pinned evidence acquisition before apply", async () => {
     const program = buildProgram();
     program.configureOutput({ writeOut: () => {}, writeErr: () => {} });

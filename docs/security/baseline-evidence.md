@@ -43,9 +43,17 @@ For a mutating baseline command, aih:
 If the tree changes after clearance, the second hash check fails and install
 actions are not constructed. ECC dependency preparation uses
 `npm ci --omit=dev --ignore-scripts` only after the installer runtime and selected
-components clear the gate. Direct targets run the verified checkout's
-`scripts/install-apply.js`; Codex keeps its add-only merge path; Kiro runs the
-verified checkout's `.kiro/install.sh`.
+components clear the gate. Scoped ECC targets construct ECC's manifest plan from the verified
+checkout, filter both operations and state preview to the selected component union, and reject
+unknown operation kinds. Codex keeps its add-only shared-config merge path and copies only selected
+skills/agents; scoped Kiro remains guidance-only because its native installer cannot enforce this
+component boundary.
+
+Selected validated MCP configuration is generated from aih's pinned catalog, not ECC's mutable
+defaults. Project-local config receives the current project's selection; global config receives the
+registered machine union. Context7, Exa, and other egress-bearing servers are never defaulted by
+this path. The component ledger, including evidence tier/issuer/hash provenance, is atomically
+committed only after all install steps succeed.
 
 Superpowers marketplace and plugin-picker flows cannot currently prove that the
 installed bytes came from a verified local checkout. aih therefore runs no

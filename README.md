@@ -125,7 +125,7 @@ Keep this table as a navigation index: do not add flag-level behavior or workflo
 | [`aih adopt`](docs/commands.md#aih-adopt) | Converge an existing AI canon onto aih's managed model without overwriting your work (brownfield migration). |
 | [`aih prune`](docs/commands.md#aih-prune) | Remove the stale per-CLI artifacts left for CLIs the repo no longer targets (reversible by default). |
 | [`aih uninstall`](docs/commands.md#aih-uninstall) | Remove the marker-backed core aih install footprint from a repo; `aih clean` is an alias. |
-| [`aih ecc`](docs/commands.md#aih-ecc) | Install selected ECC components only from an evidence-verified exact source pin. |
+| [`aih ecc`](docs/commands.md#aih-ecc) | Register the additive common + project-scoped ECC/MCP union from an evidence-verified exact pin. <!-- aih:claim CM-21 --> |
 | [`aih superpowers`](docs/commands.md#aih-superpowers) | Verify exact-pinned Superpowers components and emit evidence-bound target guidance. |
 | [`aih crispy`](docs/commands.md#aih-crispy) | Run the CRISPY context-engineering stage machine (deterministic, gate-ordered). |
 | [`aih workspace`](docs/commands.md#aih-workspace) | Scaffold and restore a multi-repo workspace at the parent folder: cross-repo map, declared-repo graph MCP, snapshots, hydrate. |
@@ -242,7 +242,8 @@ auto-target the CLIs found on this machine; the default is `claude`. Supported:
 
 ```bash
 aih bootstrap-ai --cli claude       # writes CLAUDE.md (the default target, auto-loaded)
-aih ecc --cli claude,codex          # exact-pinned checkout; Codex keeps safe add-only merge
+# repeatable declarations add to detection and the prior machine union
+aih ecc --cli claude,codex --with framework:react --with lang:typescript
 aih superpowers --cli antigravity   # verify exact pin; guidance only (no mutable plugin exec)
 aih bootstrap-ai --cli kiro         # Kiro: .kiro/steering/00-canon.md (inclusion: always)
 aih bootstrap-ai --detect           # target only the CLIs installed here
@@ -264,8 +265,8 @@ real `.kiro/` tree):
 - `aih bootstrap-ai --cli kiro` → `.kiro/steering/agent-tools.md` (stack-aware CLI usage) +
   stack-aware `.kiro/hooks/*.kiro.hook` files (`aih-secret-scan-on-create`, `aih-tests-on-edit`,
   `aih-quality-gate` running the repo's real lint/test) in Kiro's real hook schema.
-- `aih ecc --cli kiro` → fetches the catalog's exact ECC commit into quarantine, verifies the
-  `.kiro` component evidence, re-hashes it, then runs that checkout's native `.kiro/install.sh`.
+- `aih ecc --cli kiro` → emits scoped consult guidance; Kiro's native installer cannot yet
+  materialize the component union safely, so aih does not run it.
 - `aih superpowers --cli kiro` → `.kiro/steering/superpowers-methodology.md` (the
   brainstorm → plan → TDD → review routing, since Kiro can't load `~/.claude/superpowers`).
 
@@ -292,7 +293,11 @@ aih init --context-dir .ai-context  # → hidden, the old default
 ```
 
 ECC install actions execute under `--apply` only after exact component evidence clears and the same
-quarantined tree re-hashes. Superpowers marketplace/TUI paths cannot bind installed bytes to that
+quarantined tree re-hashes. By default, `aih ecc` materializes the additive union of its common
+baseline, detected or repeatably declared project riders, posture-selected security, and validated
+MCPs; `--profile full` is the explicit full-surface opt-in. The primary project/target contribution
+ledger lives at `~/.aih/ecc/registration-ledger.json` and commits only after every install step
+succeeds. Superpowers marketplace/TUI paths cannot bind installed bytes to that
 tree, so aih executes none of them; it emits pin-aware guidance and says those marketplace selections
 are not evidence-covered. ECC and Superpowers are complementary — ECC supplies stack-aware rules,
 agents, and memory; Superpowers supplies the disciplined agent loop that uses them.
@@ -301,6 +306,8 @@ literal Codex skills path (`~/.codex/skills/<name>/SKILL.md`); they are not an a
 `.agents/skills/` surface. `aih ecc --cli codex` still installs the selected ECC Codex
 skills/agents from ECC's manifest, but uses add-only Codex TOML merge helpers and a fenced AGENTS
 merge rather than the upstream `ecc-install --target codex` copy mode for shared `~/.codex` files.
+Its scoped MCP block contains pinned `sequential-thinking` plus GitHub at team/enterprise (and
+repo-declared local graph/memory servers); Context7 and Exa are never defaults.
 
 ### Layered AI canon (`bootstrap-ai`)
 

@@ -1,5 +1,41 @@
 import { describe, expect, it } from "vitest";
-import { eccEvidenceComponentIds } from "../../src/ecc/evidence.js";
+import type { BaselineAuthorization } from "../../src/baseline-evidence/verify.js";
+import type { EccComponentSelection } from "../../src/ecc/components.js";
+import {
+  eccEvidenceComponentIds,
+  eccEvidenceComponentIdsForSelection,
+  installedEccComponentRegistrations,
+} from "../../src/ecc/evidence.js";
+
+function authorization(componentId: string): BaselineAuthorization {
+  return {
+    componentId,
+    source: "affaan-m/ECC",
+    pinnedSha: "a".repeat(40),
+    treeSha256: "b".repeat(64),
+    tier: "vendor",
+    issuer: "@aihq/harness release",
+    evidenceSha256: "c".repeat(64),
+  };
+}
+
+function scopedSelection(): EccComponentSelection {
+  return {
+    scope: "scoped",
+    components: [
+      "baseline:rules",
+      "baseline:agents",
+      "baseline:platform",
+      "baseline:commands",
+      "skill:tdd-workflow",
+      "agent:code-reviewer",
+      "lang:typescript",
+      "agent:typescript-reviewer",
+    ],
+    mcps: ["mcp:sequential-thinking"],
+    recommendations: [],
+  };
+}
 
 describe("ECC evidence component selection", () => {
   it("covers the complete existing core profile plus installer runtime", () => {
@@ -44,5 +80,80 @@ describe("ECC evidence component selection", () => {
 
   it("rejects a profile absent from the pinned profile snapshot", () => {
     expect(() => eccEvidenceComponentIds("unknown", "claude", [])).toThrow(/profile/i);
+  });
+
+  it("requests precise scoped evidence and omits modules unsupported by the target", () => {
+    expect(eccEvidenceComponentIdsForSelection("codex", scopedSelection())).toEqual([
+      "runtime:ecc-installer",
+      "module:agents-core",
+      "module:platform-configs",
+      "skill:tdd-workflow",
+      "agent:code-reviewer",
+      "module:framework-language",
+    ]);
+    expect(eccEvidenceComponentIdsForSelection("claude", scopedSelection())).toEqual([
+      "runtime:ecc-installer",
+      "module:rules-core",
+      "module:agents-core",
+      "module:platform-configs",
+      "module:commands-core",
+      "skill:tdd-workflow",
+      "agent:code-reviewer",
+      "module:framework-language",
+    ]);
+  });
+
+  it("maps declared Swift to the signed swift-apple module", () => {
+    const selection: EccComponentSelection = {
+      scope: "scoped",
+      components: ["lang:swift"],
+      mcps: [],
+      recommendations: [],
+    };
+    expect(eccEvidenceComponentIdsForSelection("codex", selection)).toEqual([
+      "runtime:ecc-installer",
+      "module:swift-apple",
+    ]);
+  });
+
+  it("projects exact leaf and containing-module receipts into installed records", () => {
+    const records = installedEccComponentRegistrations("codex", scopedSelection(), [
+      authorization("module:agents-core"),
+      authorization("module:platform-configs"),
+      authorization("module:workflow-quality"),
+      authorization("module:framework-language"),
+    ]);
+
+    expect(records.map((record) => [record.id, record.authorization.componentId])).toEqual([
+      ["baseline:agents", "module:agents-core"],
+      ["baseline:platform", "module:platform-configs"],
+      ["skill:tdd-workflow", "module:workflow-quality"],
+      ["agent:code-reviewer", "module:agents-core"],
+      ["lang:typescript", "module:framework-language"],
+      ["agent:typescript-reviewer", "module:agents-core"],
+      ["mcp:sequential-thinking", "module:platform-configs"],
+    ]);
+  });
+
+  it("prefers exact leaf evidence over its containing module", () => {
+    const selection: EccComponentSelection = {
+      scope: "scoped",
+      components: ["skill:tdd-workflow"],
+      mcps: [],
+      recommendations: [],
+    };
+    const [record] = installedEccComponentRegistrations("codex", selection, [
+      authorization("module:workflow-quality"),
+      authorization("skill:tdd-workflow"),
+    ]);
+    expect(record?.authorization.componentId).toBe("skill:tdd-workflow");
+  });
+
+  it("fails closed when no exact or containing-module receipt covers a component", () => {
+    expect(() =>
+      installedEccComponentRegistrations("codex", scopedSelection(), [
+        authorization("module:security"),
+      ]),
+    ).toThrow(/missing ECC evidence authorization for baseline:agents/);
   });
 });

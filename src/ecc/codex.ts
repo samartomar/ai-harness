@@ -5,7 +5,7 @@ import { stripManagedBlock } from "../internals/markers.js";
 import { type Action, doc, exec, type PlanContext, probe, writeText } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
 
-type CodexMcpTransport = "stdio" | "http" | "mixed" | "unknown";
+export type CodexMcpTransport = "stdio" | "http" | "mixed" | "unknown";
 type CodexMcpScope = "project" | "global" | "planned ECC";
 
 export interface CodexMcpCollision {
@@ -332,7 +332,10 @@ function unionFootprint(
   };
 }
 
-function plannedCodexFootprint(raw: string): CodexTomlFootprint {
+function plannedCodexFootprint(
+  raw: string,
+  plannedMcpServers: readonly string[] = [...ECC_CODEX_MCP_TRANSPORTS.keys()],
+): CodexTomlFootprint {
   const footprint = emptyFootprint();
   footprint.rootKeys = CODEX_BASELINE_ROOT_KEYS.filter((key) => !rootKeyExists(raw, key));
   for (const [table, keys] of Object.entries(CODEX_BASELINE_TABLE_KEYS)) {
@@ -343,18 +346,19 @@ function plannedCodexFootprint(raw: string): CodexTomlFootprint {
     const missingKeys = keys.filter((key) => !tableKeyExists(raw, table, key));
     if (missingKeys.length > 0) footprint.tableKeys[table] = missingKeys;
   }
-  footprint.mcpServers = [...ECC_CODEX_MCP_TRANSPORTS.keys()].filter(
-    (name) => !mcpServerExists(raw, name),
-  );
+  footprint.mcpServers = plannedMcpServers.filter((name) => !mcpServerExists(raw, name));
   return footprint;
 }
 
-export function codexInstallStateContents(ctx: PlanContext): string {
+export function codexInstallStateContents(
+  ctx: PlanContext,
+  plannedMcpServers?: readonly string[],
+): string {
   const configRaw = readIfExists(join(codexHomeDir(ctx), "config.toml")) ?? "";
   const existing = readCodexInstallState(ctx);
   const codexToml = unionFootprint(
     existing?.codexToml ?? emptyFootprint(),
-    plannedCodexFootprint(configRaw),
+    plannedCodexFootprint(configRaw, plannedMcpServers),
   );
   const state: CodexInstallState = {
     schemaVersion: 1,
@@ -482,9 +486,13 @@ function stripCodexTomlFootprint(raw: string, footprint: CodexTomlFootprint): st
   return usesCrlf ? next.replace(/\n/g, "\r\n") : next;
 }
 
-export function codexMcpTransportCollisions(ctx: PlanContext): CodexMcpCollision[] {
+export function codexMcpTransportCollisions(
+  ctx: PlanContext,
+  scopedPlannedTransports?: ReadonlyMap<string, CodexMcpTransport>,
+): CodexMcpCollision[] {
   const project = codexMcpTransports(readIfExists(join(ctx.root, ".codex", "config.toml")) ?? "");
   const global = codexMcpTransports(readIfExists(join(codexHomeDir(ctx), "config.toml")) ?? "");
+  const plannedTransports = scopedPlannedTransports ?? ECC_CODEX_MCP_TRANSPORTS;
   const collisions: CodexMcpCollision[] = [];
   const pushCollision = (
     name: string,
@@ -514,16 +522,18 @@ export function codexMcpTransportCollisions(ctx: PlanContext): CodexMcpCollision
     if (globalTransport !== undefined) {
       pushCollision(name, "project", projectTransport, "global", globalTransport);
     } else {
-      const plannedTransport = ECC_CODEX_MCP_TRANSPORTS.get(name);
+      const plannedTransport = plannedTransports.get(name);
       if (plannedTransport !== undefined) {
         pushCollision(name, "project", projectTransport, "planned ECC", plannedTransport);
       }
     }
   }
-  for (const [name, globalTransport] of global) {
-    const plannedTransport = ECC_CODEX_MCP_TRANSPORTS.get(name);
-    if (plannedTransport !== undefined) {
-      pushCollision(name, "global", globalTransport, "planned ECC", plannedTransport);
+  if (scopedPlannedTransports === undefined) {
+    for (const [name, globalTransport] of global) {
+      const plannedTransport = plannedTransports.get(name);
+      if (plannedTransport !== undefined) {
+        pushCollision(name, "global", globalTransport, "planned ECC", plannedTransport);
+      }
     }
   }
   return collisions.sort((a, b) =>
@@ -534,8 +544,11 @@ export function codexMcpTransportCollisions(ctx: PlanContext): CodexMcpCollision
   );
 }
 
-export function codexMcpCollisionActions(ctx: PlanContext): Action[] {
-  const collisions = codexMcpTransportCollisions(ctx);
+export function codexMcpCollisionActions(
+  ctx: PlanContext,
+  scopedPlannedTransports?: ReadonlyMap<string, CodexMcpTransport>,
+): Action[] {
+  const collisions = codexMcpTransportCollisions(ctx, scopedPlannedTransports);
   if (collisions.length === 0) return [];
   const summary = collisions
     .map(

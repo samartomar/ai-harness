@@ -277,6 +277,8 @@ export interface CommandOption {
   flags: string;
   description: string;
   default?: string | boolean;
+  /** Collect every occurrence of a value option into an ordered string array. */
+  repeatable?: boolean;
   /** Mask this option's value before argv is written to logs/support artifacts. */
   sensitive?: boolean;
 }
