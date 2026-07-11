@@ -119,10 +119,10 @@ describe("runPreflight — declared intent checkpoint", () => {
     });
   });
 
-  it("accepts an upward escalation only when acknowledgement binds the candidate SHA", () => {
+  it("accepts escalation only when acknowledgement binds SHA, intent, and computed bump", () => {
     const d = cleanData();
     d.declaredIntent = "patch";
-    d.intentAcknowledgementSha = d.candidateSha;
+    d.intentAcknowledgement = `${d.candidateSha}:patch:minor`;
 
     expect(runPreflight(d)).toMatchObject({
       ok: true,
@@ -130,19 +130,33 @@ describe("runPreflight — declared intent checkpoint", () => {
       computedBump: "minor",
       intentEscalation: true,
       intentAcknowledged: true,
+      requiredIntentAcknowledgement: `${d.candidateSha}:patch:minor`,
     });
   });
 
   it("intent-escalation: rejects an acknowledgement bound to another candidate", () => {
     const d = cleanData();
     d.declaredIntent = "patch";
-    d.intentAcknowledgementSha = "b".repeat(40);
+    d.intentAcknowledgement = `${"b".repeat(40)}:patch:minor`;
 
     const m = runPreflight(d);
 
     expect(m.ok).toBe(false);
     expect(m.findings).toContainEqual(expect.objectContaining({ code: "intent-escalation" }));
     expect(m).toMatchObject({ intentEscalation: true, intentAcknowledged: false });
+  });
+
+  it("rejects acknowledgement for the same SHA but a different bump decision", () => {
+    const d = cleanData();
+    d.declaredIntent = "patch";
+    d.intentAcknowledgement = `${d.candidateSha}:patch:major`;
+
+    expect(runPreflight(d)).toMatchObject({
+      ok: false,
+      intentEscalation: true,
+      intentAcknowledged: false,
+      requiredIntentAcknowledgement: `${d.candidateSha}:patch:minor`,
+    });
   });
 });
 
@@ -177,14 +191,14 @@ describe("release:preflight CLI intent checkpoint", () => {
         "--intent",
         "patch",
         "--ack-intent-escalation",
-        fixture.candidateSha,
+        `${fixture.candidateSha}:patch:minor`,
       );
       expect(acknowledged.status, acknowledged.stderr).toBe(0);
       expect(JSON.parse(acknowledged.stdout)).toMatchObject({
         ok: true,
         intentEscalation: true,
         intentAcknowledged: true,
-        intentAcknowledgementSha: fixture.candidateSha,
+        requiredIntentAcknowledgement: `${fixture.candidateSha}:patch:minor`,
       });
     } finally {
       rmSync(dir, { recursive: true, force: true });

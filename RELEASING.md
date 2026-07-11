@@ -48,8 +48,9 @@ is ever stored; after the bootstrap, publish is OIDC-only.
    compares the declared scope with the computed bump, and emits the cut manifest
    to paste into the tracker. If the computed class exceeds intent, stop and record
    the maintainer's decision in the tracker; after explicit approval, rerun with
-   `--ack-intent-escalation <full-candidate-SHA>`. The SHA must match the manifest's
-   candidate, and acknowledgement never changes the label-derived bump. The cut set
+   `--ack-intent-escalation <token>` using the exact token emitted in the manifest.
+   The token binds candidate SHA, declared intent, and computed bump; acknowledgement
+   never changes the label-derived bump. The cut set
    is the merged PRs reachable from `main` since the previous tag —
    open, deferred, or partial work never affects the version. Reconcile the open `next-release` train
    milestone ([Milestones](https://github.com/samartomar/ai-harness/milestones)) to that

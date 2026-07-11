@@ -45,8 +45,8 @@ export interface PreflightData {
   versionConstant: string;
   /** Maintainer-declared scope for this cut; required before a release PR opens. */
   declaredIntent?: SemverClass;
-  /** Explicit escalation acknowledgement, bound to the full candidate SHA. */
-  intentAcknowledgementSha?: string;
+  /** Explicit escalation acknowledgement, bound to candidate SHA + intent + computed bump. */
+  intentAcknowledgement?: string;
 }
 
 export interface Finding {
@@ -64,7 +64,8 @@ export interface Manifest {
   computedBump: SemverClass | undefined;
   intentEscalation: boolean;
   intentAcknowledged: boolean;
-  intentAcknowledgementSha: string | undefined;
+  intentAcknowledgement: string | undefined;
+  requiredIntentAcknowledgement: string | undefined;
   nextVersion: string | undefined;
   findings: Finding[];
   ok: boolean;
@@ -84,6 +85,14 @@ export function nextVersionFrom(tag: string, bump: SemverClass): string | undefi
   if (bump === "major") return `${major + 1}.0.0`;
   if (bump === "minor") return `${major}.${minor + 1}.0`;
   return `${major}.${minor}.${patch + 1}`;
+}
+
+export function intentAcknowledgementToken(
+  candidateSha: string,
+  declaredIntent: SemverClass,
+  computedBump: SemverClass,
+): string {
+  return `${candidateSha}:${declaredIntent}:${computedBump}`;
 }
 
 /** `Revert "..."` pairs cancel: neither the revert nor its target counts toward the bump. */
@@ -200,8 +209,11 @@ export function runPreflight(data: PreflightData): Manifest {
     declaredIntent !== undefined &&
     computedBump !== undefined &&
     CLASSES.indexOf(computedBump) > CLASSES.indexOf(declaredIntent);
+  const requiredIntentAcknowledgement = intentEscalation
+    ? intentAcknowledgementToken(data.candidateSha, declaredIntent, computedBump)
+    : undefined;
   const intentAcknowledged =
-    intentEscalation && data.intentAcknowledgementSha === data.candidateSha;
+    intentEscalation && data.intentAcknowledgement === requiredIntentAcknowledgement;
   if (rawIntent === undefined) {
     findings.push({
       code: "missing-intent",
@@ -213,9 +225,9 @@ export function runPreflight(data: PreflightData): Manifest {
       detail: `declared intent must be patch, minor, or major (received: ${rawIntent})`,
     });
   } else if (intentEscalation && !intentAcknowledged) {
-    const acknowledgement = data.intentAcknowledgementSha
-      ? `; acknowledgement is bound to ${data.intentAcknowledgementSha}, not ${data.candidateSha}`
-      : `; acknowledge explicitly with --ack-intent-escalation ${data.candidateSha}`;
+    const acknowledgement = data.intentAcknowledgement
+      ? `; acknowledgement ${data.intentAcknowledgement} does not match ${requiredIntentAcknowledgement}`
+      : `; acknowledge explicitly with --ack-intent-escalation ${requiredIntentAcknowledgement}`;
     findings.push({
       code: "intent-escalation",
       detail: `computed ${computedBump} exceeds declared ${declaredIntent}${acknowledgement}`,
@@ -232,7 +244,8 @@ export function runPreflight(data: PreflightData): Manifest {
     computedBump,
     intentEscalation,
     intentAcknowledged,
-    intentAcknowledgementSha: data.intentAcknowledgementSha,
+    intentAcknowledgement: data.intentAcknowledgement,
+    requiredIntentAcknowledgement,
     nextVersion: computedBump ? nextVersionFrom(data.previousTag, computedBump) : undefined,
     findings,
     ok: findings.length === 0,
@@ -339,9 +352,9 @@ if (invokedDirectly) {
   const data: PreflightData = {
     ...baseData,
     declaredIntent: (rawIntent as SemverClass | undefined) ?? baseData.declaredIntent,
-    intentAcknowledgementSha:
+    intentAcknowledgement:
       (acknowledgementIdx > -1 ? process.argv[acknowledgementIdx + 1] : undefined) ??
-      baseData.intentAcknowledgementSha,
+      baseData.intentAcknowledgement,
   };
   const manifest = runPreflight(data);
   console.log(JSON.stringify(manifest, null, 2));
