@@ -8,6 +8,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Generic detector findings anchored in regular, non-executable `LICENSE*`, `COPYING*`, or
+  `NOTICE*` files are now fingerprint-bound reviewable trust-origin findings. `aih skill vet`
+  accepts exact acknowledgements with a required reason, while known danger rules and findings on
+  instruction, config, script, executable, or source-code surfaces remain blocking. (#398)
 - `npm run release:preflight -- --intent <patch|minor|major>` now compares declared cut scope with
   the label-derived bump. Upward escalation blocks before the release PR while still emitting the
   manifest; an explicit acknowledgement token binds candidate SHA, declared intent, and computed

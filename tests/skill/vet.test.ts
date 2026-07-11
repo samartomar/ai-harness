@@ -48,6 +48,7 @@ function ctx(
   apply = false,
   run: Runner = fakeRunner(() => undefined),
   env: NodeJS.ProcessEnv = {},
+  posture: PlanContext["posture"] = "vibe",
 ): PlanContext {
   return {
     root: workspace,
@@ -58,7 +59,7 @@ function ctx(
     run,
     host: makeHostAdapter({ platform: "linux", run, env }),
     env,
-    posture: "vibe",
+    posture,
     options,
   };
 }
@@ -131,6 +132,7 @@ function detectorRunner(
   options: {
     imageInspect?: Partial<RunResult>;
     seenSmoke?: string[][];
+    skillspectorSarif?: unknown;
     smoke?: Partial<RunResult>;
   } = {},
 ): Runner {
@@ -156,7 +158,9 @@ function detectorRunner(
           }
         );
       }
-      if (argv[1] === "run") return { code: 0, stdout: JSON.stringify({ runs: [] }) };
+      if (argv[1] === "run") {
+        return { code: 0, stdout: JSON.stringify(options.skillspectorSarif ?? { runs: [] }) };
+      }
     }
     if (argv[0] === "uvx") {
       if (argv.includes("--version")) return { code: 0, stdout: "skill-scanner 2.0.12\n" };
@@ -215,6 +219,81 @@ function expectSandboxSmokeEvidence(
 }
 
 describe("skillVetCommand", () => {
+  it("promotes a selected skill after acknowledging generic LICENSE.txt findings with a reason", async () => {
+    skill("brand-guidelines", "# Brand guidelines\n\nUse the approved visual language.\n");
+    write(
+      "skills/brand-guidelines/LICENSE.txt",
+      "License compatibility heuristic\nAttribution heuristic\n",
+    );
+    const sarif = {
+      version: "2.1.0",
+      runs: [
+        {
+          results: [1, 2].map((startLine) => ({
+            ruleId: `skillspector.legal-heuristic-${startLine}`,
+            message: { text: `generic legal-text heuristic ${startLine}` },
+            locations: [
+              {
+                physicalLocation: {
+                  artifactLocation: { uri: "/scan/LICENSE.txt" },
+                  region: { startLine },
+                },
+              },
+            ],
+          })),
+        },
+      ],
+    };
+    const run = detectorRunner({ skillspectorSarif: sarif });
+    const env = { SNYK_TOKEN: "snyk-token-for-scanner" };
+    const initialCtx = ctx(
+      { source: sourceRoot, name: "brand-guidelines" },
+      false,
+      run,
+      env,
+      "enterprise",
+    );
+    const initial = await executePlan(await skillVetCommand.plan(initialCtx), initialCtx);
+    const findings = initial.report?.checks.filter(
+      (check) => check.code === "trust.legal-text-detector-finding",
+    );
+
+    expect(initial.report?.exitCode()).toBe(1);
+    expect(vetDigestOf(initial).data.verdict).toBe("YELLOW");
+    expect(findings).toHaveLength(2);
+    const fingerprints = findings?.map((check) => check.fingerprint);
+    expect(fingerprints).toEqual([expect.any(String), expect.any(String)]);
+
+    const acknowledgedCtx = ctx(
+      {
+        source: sourceRoot,
+        name: "brand-guidelines",
+        acknowledge: fingerprints?.join(","),
+        reason: "reviewed upstream license text",
+      },
+      false,
+      run,
+      env,
+      "enterprise",
+    );
+    const acknowledged = await executePlan(
+      await skillVetCommand.plan(acknowledgedCtx),
+      acknowledgedCtx,
+    );
+
+    expect(acknowledged.report?.ok).toBe(true);
+    expect(vetDigestOf(acknowledged).data.verdict).toBe("GREEN");
+    expect(acknowledged.report?.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          verdict: "skip",
+          code: "trust.legal-text-detector-finding",
+          detail: expect.stringContaining("reason: reviewed upstream license text"),
+        }),
+      ]),
+    );
+  });
+
   it("grades a clean licensed local source GREEN and writes nothing in dry-run", async () => {
     skill("clean", "# Clean\n\nUse this skill for local documentation hygiene.\n");
     license();

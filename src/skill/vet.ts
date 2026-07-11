@@ -4,6 +4,7 @@ import { writeArtifact } from "../internals/execute.js";
 import type { Action, CommandSpec, Plan, PlanContext } from "../internals/plan.js";
 import { dynamicDigest, plan, structuredChecksProbe } from "../internals/plan.js";
 import type { Check } from "../internals/verify.js";
+import { applyTrustAcknowledgements } from "../trust/acknowledge.js";
 import { resolveInternalScopes } from "../trust/depnames.js";
 import {
   cleanupQuarantine,
@@ -405,8 +406,10 @@ export async function skillVetPlanForSource(
   const scanOptions = { internalScopes: resolveInternalScopes(ctx) };
   if (source.kind === "github") actions.push(trustFetchExec(source, ctx));
   actions.push(
-    structuredChecksProbe("trust source origin", (probeCtx) =>
-      trustSourceOriginChecks(probeCtx, source),
+    structuredChecksProbe(
+      "trust source origin",
+      (probeCtx) =>
+        applyTrustAcknowledgements(trustSourceOriginChecks(probeCtx, source), probeCtx).checks,
     ),
   );
   if (source.kind === "local") {
@@ -415,17 +418,20 @@ export async function skillVetPlanForSource(
       target.scanRoot,
       scanOptionsFromContext(ctx, { ...scanOptions, sandboxSmokeShape: target.smokeShape }),
     );
-    const staticChecks = [
+    const staticChecks: Check[] = [
       ...scan.checks,
       ...(target.sourceScope !== undefined ? [sourceScopeCheck(target.sourceScope)] : []),
       licenseCheck(source.root, { skillRoot: target.skillRoot }),
     ];
     actions.push(
-      ...staticChecks.map((check) =>
+      ...applyTrustAcknowledgements(staticChecks, ctx).checks.map((check) =>
         structuredChecksProbe(check.detail ?? check.name, () => [check]),
       ),
       dynamicDigest("skill vet verdict", (digestCtx) => {
-        const checks = [...trustSourceOriginChecks(digestCtx, source), ...staticChecks];
+        const checks = applyTrustAcknowledgements(
+          [...trustSourceOriginChecks(digestCtx, source), ...staticChecks],
+          digestCtx,
+        ).checks;
         const firstParty = isFirstPartySource(digestCtx.root, source);
         const graded = skillVerdict(checks, target.evidenceShape, {
           pinned: true,
@@ -491,11 +497,14 @@ export async function skillVetPlanForSource(
       structuredChecksProbe(`skill vet scan ${source.display}`, async (probeCtx) => {
         if (!probeCtx.apply) return [FETCH_BLOCKED_SKIP];
         const vetted = await scanGithubSource(probeCtx);
-        return [
-          ...vetted.scan.checks,
-          ...(vetted.sourceScope !== undefined ? [sourceScopeCheck(vetted.sourceScope)] : []),
-          vetted.license,
-        ];
+        return applyTrustAcknowledgements(
+          [
+            ...vetted.scan.checks,
+            ...(vetted.sourceScope !== undefined ? [sourceScopeCheck(vetted.sourceScope)] : []),
+            vetted.license,
+          ],
+          probeCtx,
+        ).checks;
       }),
       dynamicDigest("skill vet verdict", async (digestCtx) => {
         try {
@@ -503,12 +512,15 @@ export async function skillVetPlanForSource(
             return vetDigestResult(digestCtx, source, unfetchedEvidence(digestCtx));
           }
           const vetted = await scanGithubSource(digestCtx);
-          const checks = [
-            ...trustSourceOriginChecks(digestCtx, source),
-            ...vetted.scan.checks,
-            ...(vetted.sourceScope !== undefined ? [sourceScopeCheck(vetted.sourceScope)] : []),
-            vetted.license,
-          ];
+          const checks = applyTrustAcknowledgements(
+            [
+              ...trustSourceOriginChecks(digestCtx, source),
+              ...vetted.scan.checks,
+              ...(vetted.sourceScope !== undefined ? [sourceScopeCheck(vetted.sourceScope)] : []),
+              vetted.license,
+            ],
+            digestCtx,
+          ).checks;
           const graded = skillVerdict(checks, vetted.shape, {
             pinned: isPinned(source),
             fetched: true,
@@ -582,6 +594,18 @@ export const skillVetCommand: CommandSpec = {
     {
       flags: "--name <skill>",
       description: "scope vet evidence to one skill in a multi-skill source",
+    },
+    {
+      flags: "--acknowledge <fingerprints>",
+      description: "skip exact trust-origin fingerprint(s) for this invocation only",
+    },
+    {
+      flags: "--acknowledge-all",
+      description: "skip every acknowledgeable trust-origin finding for this invocation only",
+    },
+    {
+      flags: "--reason <reason>",
+      description: "required reason for a trust-origin acknowledgement",
     },
   ],
   plan: skillVetPlan,

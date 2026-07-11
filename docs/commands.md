@@ -296,6 +296,11 @@ The deep-scan ladder records detector availability in evidence via `analyzersRun
 SkillSpector, Cisco AI Defense skill-scanner, Semgrep, Snyk Agent Scan, AgentShield, and the
 MCP scanner when MCP config is present; detector findings escalate the verdict, while unavailable
 required detectors fail closed at enterprise posture.
+Generic detector findings in regular, non-executable `LICENSE*`, `COPYING*`, or `NOTICE*` files
+are reported as reviewable `trust.legal-text-detector-finding` checks. At enterprise posture,
+rerun `vet` with `--acknowledge <fingerprint[,fingerprint...]> --reason <reason>` to bind the
+review to the current full-file content. Known danger rules and findings on instruction, config,
+script, executable, or source-code surfaces remain blocking.
 `card`/`approve --pin --owner` turn that evidence into committed governance: a skill card + a root
 **`aih-skills.lock.json`** entry, behind a fail-closed chain (pin → evidence → approvable verdict →
 license → owner; RED blocked, UNKNOWN refused, YELLOW = the manual review). The lockfile has

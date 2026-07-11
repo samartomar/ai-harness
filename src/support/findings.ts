@@ -676,6 +676,13 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     action:
       "Review the detector finding, map the rule to a specific trust check if it is a known-dangerous pattern, or reject the external source until the flagged content is removed.",
   },
+  "trust.legal-text-detector-finding": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "external detector finding in legal text",
+    action:
+      "Review the complete LICENSE, COPYING, or NOTICE file. Remove the flagged text, or acknowledge the exact full-file fingerprint with a recorded reason before promotion.",
+  },
   "trust.sandbox-smoke-unavailable": {
     audience: "developer",
     failSeverity: "blocking",
