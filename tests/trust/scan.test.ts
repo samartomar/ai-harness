@@ -1594,6 +1594,29 @@ describe("scanTrustTree", () => {
         fingerprint: expect.any(String),
       }),
     );
+    if (legal?.fingerprint === undefined) {
+      throw new Error("expected legal-text finding fingerprint");
+    }
+    const teamCtx = ctx(
+      {
+        target: dir,
+        acknowledge: legal.fingerprint,
+        reason: "reviewed upstream legal text",
+      },
+      {},
+      "team",
+      detector,
+    );
+    const teamAcknowledged = await executePlan(await trustScanCommand.plan(teamCtx), teamCtx);
+    expect(teamAcknowledged.report?.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          verdict: "skip",
+          detail: expect.stringContaining("acknowledged by"),
+          location: { uri: "skills/legal/LICENSE.txt", startLine: 2 },
+        }),
+      ]),
+    );
     expect(first.checks).toEqual(
       expect.arrayContaining([
         expect.objectContaining({

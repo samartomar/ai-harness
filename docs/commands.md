@@ -297,7 +297,8 @@ SkillSpector, Cisco AI Defense skill-scanner, Semgrep, Snyk Agent Scan, AgentShi
 MCP scanner when MCP config is present; detector findings escalate the verdict, while unavailable
 required detectors fail closed at enterprise posture.
 Generic detector findings in regular, non-executable `LICENSE*`, `COPYING*`, or `NOTICE*` files
-are reported as reviewable `trust.legal-text-detector-finding` checks. At enterprise posture,
+are reported as reviewable `trust.legal-text-detector-finding` checks. They warn-pass only at vibe;
+at team and enterprise posture,
 rerun `vet` with `--acknowledge <fingerprint[,fingerprint...]> --reason <reason>` to bind the
 review to the current full-file content. Known danger rules and findings on instruction, config,
 script, executable, or source-code surfaces remain blocking.

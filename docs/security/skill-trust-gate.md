@@ -394,7 +394,8 @@ homoglyph-confusable characters inside ASCII-like tokens stay
 
 Ordinary visible Unicode typography in documentation, design, or reference
 files is reported as `trust.visible-unicode`. That is a trust-origin finding:
-it is warning-only below enterprise posture, and at enterprise posture it must
+it follows the general trust-origin posture policy and is warning-only below
+enterprise posture. At enterprise posture it must
 be fixed or acknowledged with an exact, file-content-bound fingerprint and a
 recorded `--reason`.
 
@@ -409,10 +410,10 @@ scanning.
 An otherwise-generic deep-detector finding anchored in a regular,
 non-executable `LICENSE*`, `COPYING*`, or `NOTICE*` file is reported as
 `trust.legal-text-detector-finding`. The report names the file class and explains
-that generic legal-text heuristics need human review. At enterprise posture the
-finding blocks until its exact fingerprint is acknowledged with a recorded
-reason; the fingerprint covers the whole legal-text file, so any edit requires a
-fresh review.
+that generic legal-text heuristics need human review. The finding warn-passes only
+at vibe posture. At team and enterprise posture it blocks until its exact
+fingerprint is acknowledged with a recorded reason; the fingerprint covers the
+whole legal-text file, so any edit requires a fresh review.
 
 This classification does not downgrade a detector's known danger rule.
 Prompt-injection, malicious-code, hidden-Unicode, auto-execution, dependency

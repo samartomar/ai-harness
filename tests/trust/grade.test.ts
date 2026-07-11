@@ -25,6 +25,17 @@ function originCheck(): Check {
   };
 }
 
+function legalTextCheck(): Check {
+  return {
+    name: "trust.legal-text-detector-finding",
+    verdict: "fail",
+    detail: "LICENSE:4 — generic legal-text heuristic",
+    code: "trust.legal-text-detector-finding",
+    location: { uri: "LICENSE", startLine: 4 },
+    fingerprint: `trust-legal-text-detector-finding:LICENSE:${"a".repeat(64)}`,
+  };
+}
+
 describe("gradeTrustDanger", () => {
   it("keeps danger findings failing at every posture", () => {
     for (const _posture of ["vibe", "team", "enterprise"] satisfies Posture[]) {
@@ -60,6 +71,20 @@ describe("gradeTrustCheck", () => {
     const enterprise = gradeTrustCheck(originCheck(), "enterprise");
     expect(enterprise.verdict).toBe("fail");
     expect(enterprise.code).toBe("trust.unpinned-dependency");
+  });
+
+  it.each([
+    ["vibe", "pass"],
+    ["team", "fail"],
+    ["enterprise", "fail"],
+  ] as const)("grades legal-text findings at %s as %s", (posture, verdict) => {
+    const graded = gradeTrustCheck(legalTextCheck(), posture);
+
+    expect(graded.verdict).toBe(verdict);
+    if (verdict === "fail") {
+      expect(graded.code).toBe("trust.legal-text-detector-finding");
+      expect(graded.fingerprint).toBe(legalTextCheck().fingerprint);
+    }
   });
 
   it("leaves danger findings failing at every posture", () => {

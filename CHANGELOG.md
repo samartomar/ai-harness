@@ -6,6 +6,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- Legal-text detector findings now warn-pass only at vibe posture; team and enterprise require an
+  exact fingerprint acknowledgement with a recorded reason, while danger-class findings remain
+  non-acknowledgeable. (#422)
+
 ## [2.8.0] - 2026-07-10
 
 ### Added
