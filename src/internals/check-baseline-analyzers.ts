@@ -5,7 +5,7 @@ import {
   REQUIRED_BASELINE_ANALYZERS,
   requiredBaselineAnalyzersForComponent,
 } from "../baseline-evidence/analyzer-profile.js";
-import { baselineCatalogById } from "../baseline-evidence/catalogs.js";
+import { BASELINE_CATALOG_IDS, baselineCatalogById } from "../baseline-evidence/catalogs.js";
 import type { BaselineEvidenceLock } from "../baseline-evidence/schema.js";
 import { readVendorBaselineLock } from "../baseline-evidence/vendor.js";
 
@@ -23,6 +23,17 @@ export interface BaselineAnalyzerReport {
 export function checkBaselineAnalyzerReceipts(lock: BaselineEvidenceLock): BaselineAnalyzerReport {
   const expectedVersions = baselineAnalyzerVersions();
   const findings: BaselineAnalyzerFinding[] = [];
+  const sourceIds = new Set(lock.sources.map((source) => source.id));
+
+  for (const sourceId of BASELINE_CATALOG_IDS) {
+    if (!sourceIds.has(sourceId)) {
+      findings.push({
+        sourceId,
+        componentId: "<catalog>",
+        detail: "source is missing from the vendor baseline lock",
+      });
+    }
+  }
 
   for (const source of lock.sources) {
     let canonicalComponents: Map<
@@ -44,6 +55,7 @@ export function checkBaselineAnalyzerReceipts(lock: BaselineEvidenceLock): Basel
       });
       continue;
     }
+    const componentIds = new Set(source.components.map((component) => component.id));
     for (const component of source.components) {
       const canonical = canonicalComponents.get(component.id);
       if (canonical === undefined) {
@@ -80,6 +92,15 @@ export function checkBaselineAnalyzerReceipts(lock: BaselineEvidenceLock): Basel
           sourceId: source.id,
           componentId: component.id,
           detail: `unexpected ${name}@${version}`,
+        });
+      }
+    }
+    for (const componentId of canonicalComponents.keys()) {
+      if (!componentIds.has(componentId)) {
+        findings.push({
+          sourceId: source.id,
+          componentId,
+          detail: "component is missing from the vendor baseline lock",
         });
       }
     }
