@@ -6,7 +6,9 @@ import type { BaselineAuthorization } from "../../src/baseline-evidence/verify.j
 import type { EccComponentId, EccMcpComponentId } from "../../src/ecc/components.js";
 import {
   eccInstallStateCandidates,
+  parseEccInstallState,
   reconcileEccRegistrationLedger,
+  reconcileEccInstallState,
 } from "../../src/ecc/reconcile.js";
 import type {
   ProjectRegistration,
@@ -70,6 +72,58 @@ function ledger(
   ],
 ): RegistrationLedger {
   return { schemaVersion: 1, projects, targets };
+}
+
+function installState(
+  operations: Array<Record<string, unknown>>,
+  overrides: Record<string, unknown> = {},
+): Record<string, unknown> {
+  const root = join(home, ".codex");
+  const installStatePath = join(root, "ecc-install-state.json");
+  return {
+    schemaVersion: "ecc.install.v1",
+    installedAt: "2026-07-10T00:00:00.000Z",
+    target: {
+      id: "codex-home",
+      target: "codex",
+      kind: "home",
+      root,
+      installStatePath,
+    },
+    request: {
+      profile: null,
+      modules: ["framework-language"],
+      includeComponents: [],
+      excludeComponents: [],
+      legacyLanguages: [],
+      legacyMode: false,
+    },
+    resolution: { selectedModules: ["framework-language"], skippedModules: [] },
+    source: {
+      repoVersion: "2.0.0",
+      repoCommit: "a".repeat(40),
+      manifestVersion: 1,
+    },
+    operations,
+    ...overrides,
+  };
+}
+
+function managedOperation(
+  sourceRelativePath: string,
+  destinationPath: string,
+  kind = "copy-file",
+): Record<string, unknown> {
+  return {
+    kind,
+    moduleId: "framework-language",
+    sourceRelativePath,
+    destinationPath,
+    strategy: kind === "merge-json" ? "merge-json" : "preserve-relative-path",
+    ownership: "managed",
+    scaffoldOnly: false,
+    sourcePath: join(home, "source", sourceRelativePath),
+  };
 }
 
 describe("ECC registration reconciliation", () => {
@@ -208,5 +262,65 @@ describe("ECC registration reconciliation", () => {
     expect(() =>
       reconcileEccRegistrationLedger(ledger([project(file, ["baseline:rules"])])),
     ).toThrow(/directory/i);
+  });
+});
+
+describe("ECC install-state reconciliation", () => {
+  it("filters orphan operations while preserving state metadata and selected operations", () => {
+    const statePath = join(home, ".codex", "ecc-install-state.json");
+    const reactDestination = join(home, ".codex", "skills", "react-patterns", "SKILL.md");
+    const cppDestination = join(home, ".codex", "skills", "cpp-testing", "SKILL.md");
+    const text = `${JSON.stringify(
+      installState([
+        managedOperation("skills/react-patterns/SKILL.md", reactDestination),
+        managedOperation("skills/cpp-testing/SKILL.md", cppDestination),
+      ]),
+      null,
+      2,
+    )}\n`;
+
+    const parsed = parseEccInstallState(text, statePath);
+    const result = reconcileEccInstallState(parsed, {
+      scope: "scoped",
+      components: ["framework:react"],
+      mcps: [],
+      recommendations: [],
+    });
+
+    expect(result.removed.map((operation) => operation.destinationPath)).toEqual([cppDestination]);
+    expect(result.kept.map((operation) => operation.destinationPath)).toEqual([reactDestination]);
+    expect(result.state.installedAt).toBe("2026-07-10T00:00:00.000Z");
+    expect(JSON.parse(result.nextText).operations).toHaveLength(1);
+  });
+
+  it("strictly rejects malformed states, duplicate destinations, and unsupported operations", () => {
+    const statePath = join(home, ".codex", "ecc-install-state.json");
+    expect(() => parseEccInstallState("not-json", statePath)).toThrow(/invalid ECC install state/i);
+    expect(() =>
+      parseEccInstallState(JSON.stringify({ ...installState([]), surprise: true }), statePath),
+    ).toThrow(/invalid ECC install state/i);
+
+    const duplicate = managedOperation(
+      "skills/react-patterns/SKILL.md",
+      join(home, ".codex", "skills", "same.md"),
+    );
+    expect(() =>
+      parseEccInstallState(JSON.stringify(installState([duplicate, duplicate])), statePath),
+    ).toThrow(/duplicate destination/i);
+
+    expect(() =>
+      parseEccInstallState(
+        JSON.stringify(
+          installState([
+            managedOperation(
+              "skills/react-patterns/SKILL.md",
+              join(home, ".codex", "bad"),
+              "remove",
+            ),
+          ]),
+        ),
+        statePath,
+      ),
+    ).toThrow(/unsupported ECC install operation kind/i);
   });
 });
