@@ -1,8 +1,10 @@
 import { lstatSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
+import { z } from "zod";
 import { AihError } from "../errors.js";
 import type { Cli } from "../internals/clis.js";
-import type { EccComponentId, EccMcpComponentId } from "./components.js";
+import type { EccComponentId, EccComponentSelection, EccMcpComponentId } from "./components.js";
+import { type EccManifestOperation, eccManifestOperationSelected } from "./materialize.js";
 import {
   machineRegistrationUnion,
   parseRegistrationLedger,
@@ -33,6 +35,67 @@ export interface EccInstallStateCandidate {
   root: string;
   statePath: string;
   projectRoot?: string;
+}
+
+const NonEmptyString = z.string().min(1);
+const StringArray = z.array(NonEmptyString);
+const EccInstallOperationSchema = z
+  .object({
+    kind: NonEmptyString,
+    moduleId: NonEmptyString,
+    sourceRelativePath: NonEmptyString,
+    destinationPath: NonEmptyString.refine(isAbsolute, "destination path must be absolute"),
+    strategy: NonEmptyString,
+    ownership: NonEmptyString,
+    scaffoldOnly: z.boolean(),
+  })
+  .passthrough();
+const EccInstallStateSchema = z
+  .object({
+    schemaVersion: z.literal("ecc.install.v1"),
+    installedAt: NonEmptyString,
+    lastValidatedAt: NonEmptyString.optional(),
+    target: z
+      .object({
+        id: NonEmptyString,
+        target: NonEmptyString.optional(),
+        kind: z.enum(["home", "project"]).optional(),
+        root: NonEmptyString.refine(isAbsolute, "target root must be absolute"),
+        installStatePath: NonEmptyString.refine(isAbsolute, "install-state path must be absolute"),
+      })
+      .strict(),
+    request: z
+      .object({
+        profile: z.string().nullable(),
+        modules: StringArray,
+        includeComponents: StringArray,
+        excludeComponents: StringArray,
+        legacyLanguages: StringArray,
+        legacyMode: z.boolean(),
+      })
+      .strict(),
+    resolution: z.object({ selectedModules: StringArray, skippedModules: StringArray }).strict(),
+    source: z
+      .object({
+        repoVersion: z.string().nullable(),
+        repoCommit: z.string().nullable(),
+        manifestVersion: z.number().int().min(1),
+      })
+      .strict(),
+    operations: z.array(EccInstallOperationSchema),
+  })
+  .strict();
+
+export type EccInstallOperation = z.infer<typeof EccInstallOperationSchema> & EccManifestOperation;
+export type EccInstallState = z.infer<typeof EccInstallStateSchema> & {
+  operations: EccInstallOperation[];
+};
+
+export interface EccInstallStateReconciliation {
+  state: EccInstallState;
+  kept: EccInstallOperation[];
+  removed: EccInstallOperation[];
+  nextText: string;
 }
 
 interface TargetLocation {
@@ -169,4 +232,56 @@ export function eccInstallStateCandidates(
       .join("\0")
       .localeCompare([right.target, right.projectRoot ?? "", right.statePath].join("\0")),
   );
+}
+
+export function parseEccInstallState(text: string, statePath: string): EccInstallState {
+  try {
+    const state = EccInstallStateSchema.parse(JSON.parse(text)) as EccInstallState;
+    if (resolve(state.target.installStatePath) !== resolve(statePath)) {
+      throw new Error(
+        `install-state path mismatch: recorded ${state.target.installStatePath}, expected ${statePath}`,
+      );
+    }
+    const destinations = new Set<string>();
+    for (const operation of state.operations) {
+      if (operation.kind !== "copy-file" && operation.kind !== "merge-json") {
+        throw new Error(`unsupported ECC install operation kind: ${operation.kind}`);
+      }
+      const destination = resolve(operation.destinationPath);
+      if (destinations.has(destination)) {
+        throw new Error(`duplicate destination in ECC install state: ${operation.destinationPath}`);
+      }
+      destinations.add(destination);
+    }
+    return state;
+  } catch (error) {
+    throw new Error(`invalid ECC install state (${statePath}): ${(error as Error).message}`);
+  }
+}
+
+export function reconcileEccInstallState(
+  state: EccInstallState,
+  selection: EccComponentSelection,
+): EccInstallStateReconciliation {
+  const kept: EccInstallOperation[] = [];
+  const removed: EccInstallOperation[] = [];
+  for (const operation of state.operations) {
+    if (eccManifestOperationSelected(operation, selection)) {
+      kept.push(operation);
+      continue;
+    }
+    if (operation.ownership !== "managed") {
+      throw new Error(
+        `refusing to remove non-managed ECC install operation: ${operation.destinationPath}`,
+      );
+    }
+    removed.push(operation);
+  }
+  const next = { ...state, operations: kept } as EccInstallState;
+  return {
+    state: next,
+    kept,
+    removed,
+    nextText: `${JSON.stringify(next, null, 2)}\n`,
+  };
 }

@@ -7,8 +7,8 @@ import type { EccComponentId, EccMcpComponentId } from "../../src/ecc/components
 import {
   eccInstallStateCandidates,
   parseEccInstallState,
-  reconcileEccRegistrationLedger,
   reconcileEccInstallState,
+  reconcileEccRegistrationLedger,
 } from "../../src/ecc/reconcile.js";
 import type {
   ProjectRegistration,
