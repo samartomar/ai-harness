@@ -1,17 +1,20 @@
 import { describe, expect, it } from "vitest";
+import {
+  baselineAnalyzerVersions,
+  requiredBaselineAnalyzersForComponent,
+} from "../../src/baseline-evidence/analyzer-profile.js";
 import { baselineCatalogById } from "../../src/baseline-evidence/catalogs.js";
+import type { BaselineComponentEvidence } from "../../src/baseline-evidence/schema.js";
 import {
   readVendorBaselineLock,
   vendorBaselineLockSha256,
 } from "../../src/baseline-evidence/vendor.js";
-import {
-  baselineAnalyzerVersions,
-  REQUIRED_BASELINE_ANALYZERS,
-} from "../../src/baseline-evidence/analyzer-profile.js";
 
-function requiredAnalyzerReceipts(): Array<{ name: string; version: string }> {
+function requiredAnalyzerReceipts(
+  component: BaselineComponentEvidence,
+): Array<{ name: string; version: string }> {
   const versions = baselineAnalyzerVersions();
-  return [...REQUIRED_BASELINE_ANALYZERS]
+  return [...requiredBaselineAnalyzersForComponent(component)]
     .sort((left, right) => left.localeCompare(right))
     .map((name) => ({ name, version: versions[name] ?? "" }));
 }
@@ -42,11 +45,14 @@ describe("shipped vendor baseline lock", () => {
   it("retains honest pass and blocked verdicts from the vet-once scan", () => {
     const lock = readVendorBaselineLock();
     const ecc = lock.sources.find((source) => source.id === "ecc");
-    expect(
-      ecc?.components.find((component) => component.id === "skill:verification-loop"),
-    ).toMatchObject({
+    const verificationLoop = ecc?.components.find(
+      (component) => component.id === "skill:verification-loop",
+    );
+    expect(verificationLoop).toBeDefined();
+    if (verificationLoop === undefined) throw new Error("verification-loop evidence is missing");
+    expect(verificationLoop).toMatchObject({
       verdict: "pass",
-      analyzers: requiredAnalyzerReceipts(),
+      analyzers: requiredAnalyzerReceipts(verificationLoop),
       findings: [],
     });
     expect(
@@ -65,7 +71,8 @@ describe("shipped vendor baseline lock", () => {
         .flatMap((source) => source.components)
         .every(
           (component) =>
-            JSON.stringify(component.analyzers) === JSON.stringify(requiredAnalyzerReceipts()),
+            JSON.stringify(component.analyzers) ===
+            JSON.stringify(requiredAnalyzerReceipts(component)),
         ),
     ).toBe(true);
   });

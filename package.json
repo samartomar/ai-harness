@@ -49,6 +49,7 @@
     "check:ai-runtime": "tsx src/internals/ai-runtime-inventory.ts --root .",
     "check:bugbounty-report": "tsx src/internals/bugbounty-report.ts --source .internal/defects/BUGBOUNTY.md",
     "check:ecc-installer": "tsx src/internals/check-ecc-installer.ts",
+    "check:baseline-analyzers": "tsx src/internals/check-baseline-analyzers.ts",
     "check:baseline-installable": "tsx src/internals/check-baseline-installable.ts",
     "baseline:vet": "tsx src/baseline-evidence/generate.ts",
     "baseline:check": "tsx src/baseline-evidence/generate.ts --check",
@@ -61,7 +62,7 @@
     "lint:ci": "biome ci src tests",
     "format": "biome format --write src tests",
     "typecheck": "tsc --noEmit",
-    "verify": "npm run check:artifacts && npm run check:ecc-installer && npm run check:baseline-installable && npm run check:ai-runtime && npm run check:bugbounty-report && npm run docs:lint && npm run typecheck && npm run lint:ci && npm run test:cov && npm run build && npm run check:published-bin && npm run check:published-library"
+    "verify": "npm run check:artifacts && npm run check:ecc-installer && npm run check:baseline-analyzers && npm run check:baseline-installable && npm run check:ai-runtime && npm run check:bugbounty-report && npm run docs:lint && npm run typecheck && npm run lint:ci && npm run test:cov && npm run build && npm run check:published-bin && npm run check:published-library"
   },
   "keywords": [
     "ai",

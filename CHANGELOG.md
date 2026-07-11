@@ -50,6 +50,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   vetting (lifecycle `postinstall`, unpinned dependencies, strict-surface Unicode, and a bare `ajv`
   import in the installer closure), transparently bridging until the upstream affaan-m/ECC PR
   merges. (#417)
+- Release-shipped baseline evidence now requires exact `aih-native` and reproducibly built
+  SkillSpector receipts for every component, plus pinned offline Cisco receipts for every
+  skill-bearing component. Generation preserves valid finding-bearing SkillSpector SARIF,
+  rejects missing or malformed analyzer runs transactionally, and release verification refuses
+  stale or partial receipt profiles before packaging. (#417)
 
 ## [2.8.0] - 2026-07-10
 

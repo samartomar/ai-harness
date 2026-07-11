@@ -23,8 +23,7 @@ The dependency order was executed through the seven non-gate slices: #422 / PR
 #432 are merged to `main`. Their checked behavior remains unreleased and contributes
 to the expected minor cut.
 
-#417 remains open and labels the train `release-blocker` plus
-`blocked:vendor-specific`. Candidate ECC
+#417 remains open and labels the train `release-blocker`. Candidate ECC
 `40927950c49f6e742d341e20ff7b9b7e1e7bfff5` failed enterprise installer evidence
 because of its lifecycle `postinstall`, floating dependencies, and strict-surface
 Unicode. Its preview-generation closure also reaches bare `ajv` outside the vetted
@@ -34,9 +33,11 @@ passing runtime and a vetted/vendor-hashed dependency path.
 
 Fork-pin bridge active per the maintainer's locked decision: the ECC catalog now
 pins the remediated commit on the `samartomar/ECC` fork
-(`fd3699d65c4767acceac59069847f04122417dcb`, which clears all four
-affaan-m/ECC#2502 blockers and vets green) until the upstream PR to affaan-m/ECC
-merges, which is pending review.
+(`983f8a0e2e4fd81a48165ef87830709a2b8b5b24`, which clears the original four
+affaan-m/ECC#2502 blockers plus the full-profile RP1 runtime findings) until the
+upstream PR to affaan-m/ECC merges, which is pending review. Release readiness
+still requires fresh native, SkillSpector, and applicable Cisco receipts at this
+exact fork head.
 
 ## Non-goals
 

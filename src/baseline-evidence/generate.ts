@@ -27,6 +27,7 @@ export interface GenerateBaselineDependencies {
   run?: Runner;
   platform?: Platform;
   env?: NodeJS.ProcessEnv;
+  progress?: (message: string) => void;
   vetCatalog?: typeof vetBaselineCatalog;
   checkoutHead?: (root: string, catalog: BaselineCatalog) => string;
   generatePreview?: (input: Parameters<typeof generateAuthorizedEccInstallPreview>[0]) => unknown;
@@ -88,8 +89,9 @@ export async function generateBaselineArtifacts(
   const run = deps.run ?? defaultRunner;
   const env = deps.env ?? process.env;
   const platform = deps.platform ?? resolvePlatform(env);
+  const progress = deps.progress ?? ((message: string) => process.stderr.write(`${message}\n`));
   const vet = deps.vetCatalog ?? vetBaselineCatalog;
-  const vetOptions = requiredBaselineVetOptions({ run, platform, env });
+  const vetOptions = requiredBaselineVetOptions({ run, platform, env, progress });
   const eccEvidence = await vet(opts.eccRoot, ecc, vetOptions);
   const generatePreview = deps.generatePreview ?? generateAuthorizedEccInstallPreview;
   const preview = generatePreview({

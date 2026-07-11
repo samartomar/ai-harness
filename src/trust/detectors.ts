@@ -18,7 +18,7 @@ import type { Platform } from "../platform/base.js";
 import { MCP_CONFIG_FILES } from "../secrets/scan.js";
 import { execArgv } from "../tools/install.js";
 import { dockerBindMountArg } from "./docker.js";
-import { scrubFetchEnv } from "./fetch.js";
+import { scrubDockerClientEnv, scrubFetchEnv } from "./fetch.js";
 import { contentFindingFingerprint } from "./fingerprint.js";
 import { gradeTrustCheck } from "./grade.js";
 import {
@@ -235,6 +235,7 @@ interface SarifLocation {
 interface SarifResult {
   ruleId?: unknown;
   rule?: { id?: unknown };
+  level?: unknown;
   message?: { text?: unknown };
   locations?: SarifLocation[];
 }
@@ -615,11 +616,22 @@ async function runSkillspectorScan(
   );
   if ("reason" in image) throw new Error(image.reason);
   const scan = await run(skillspectorDockerRunArgv(platform, tree, image.image), {
-    env: scrubFetchEnv(env),
+    env: scrubDockerClientEnv(env),
     timeoutMs: 120_000,
   });
-  const reason = runFailureReason(scan, `detector exit ${scan.code ?? "signal"}`);
-  if (reason !== undefined) throw new Error(reason);
+  const exitLabel = scan.code ?? "signal";
+  if (scan.spawnError) {
+    throw new Error(
+      runFailureReason(scan, `detector exit ${exitLabel}`) ?? `detector exit ${exitLabel}`,
+    );
+  }
+  if (scan.code !== 0 && scan.code !== 1) {
+    const output = (scan.stderr || scan.stdout).trim();
+    throw new Error(`detector exit ${exitLabel}${output.length > 0 ? `: ${output}` : ""}`);
+  }
+  if (scan.stdout.trim().length === 0) {
+    throw new Error(scan.stderr.trim() || `detector exit ${exitLabel} emitted no SARIF`);
+  }
   return scan.stdout;
 }
 
@@ -768,6 +780,36 @@ function prefixCiscoSarifUris(sarifText: string, root: string, skillRoot: string
   };
 }
 
+const CISCO_SCAN_CONCURRENCY = 4;
+
+async function mapConcurrentStable<T, R>(
+  items: readonly T[],
+  limit: number,
+  worker: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  const failures: Array<{ error: unknown; index: number }> = [];
+  let nextIndex = 0;
+  let stopped = false;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (!stopped && nextIndex < items.length) {
+      const index = nextIndex++;
+      const item = items[index];
+      if (item === undefined) throw new Error(`concurrent work item ${index} is missing`);
+      try {
+        results[index] = await worker(item);
+      } catch (error) {
+        failures.push({ error, index });
+        stopped = true;
+      }
+    }
+  });
+  await Promise.all(workers);
+  const firstFailure = failures.sort((left, right) => left.index - right.index)[0];
+  if (firstFailure !== undefined) throw firstFailure.error;
+  return results;
+}
+
 async function runCiscoSkillScan(
   run: Runner,
   platform: Platform,
@@ -777,24 +819,27 @@ async function runCiscoSkillScan(
 ): Promise<string> {
   const skillDirs = collectCiscoSkillDirs(tree, runtimeOptions.inventory);
   if (skillDirs.length === 0) throw new Error("no SKILL.md directories found for Cisco scan");
-  const runs: SarifRun[] = [];
-  for (const skillDir of skillDirs) {
-    const tmp = mkdtempSync(join(tmpdir(), "aih-cisco-sarif-"));
-    const output = join(tmp, "results.sarif");
-    try {
-      const scan = await run(ciscoSkillScannerRunArgv(platform, skillDir, output), {
-        env: scrubFetchEnv(env),
-        timeoutMs: 120_000,
-      });
-      const reason = runFailureReason(scan, `detector exit ${scan.code ?? "signal"}`);
-      if (reason !== undefined) throw new Error(reason);
-      const prefixed = prefixCiscoSarifUris(readFileSync(output, "utf8"), tree, skillDir);
-      runs.push(...(prefixed.runs ?? []));
-    } finally {
-      rmSync(tmp, { recursive: true, force: true });
-    }
-  }
-  return JSON.stringify({ version: "2.1.0", runs });
+  const runsBySkill = await mapConcurrentStable(
+    skillDirs,
+    CISCO_SCAN_CONCURRENCY,
+    async (skillDir): Promise<SarifRun[]> => {
+      const tmp = mkdtempSync(join(tmpdir(), "aih-cisco-sarif-"));
+      const output = join(tmp, "results.sarif");
+      try {
+        const scan = await run(ciscoSkillScannerRunArgv(platform, skillDir, output), {
+          env: scrubFetchEnv(env),
+          timeoutMs: 120_000,
+        });
+        const reason = runFailureReason(scan, `detector exit ${scan.code ?? "signal"}`);
+        if (reason !== undefined) throw new Error(reason);
+        const prefixed = prefixCiscoSarifUris(readFileSync(output, "utf8"), tree, skillDir);
+        return prefixed.runs ?? [];
+      } finally {
+        rmSync(tmp, { recursive: true, force: true });
+      }
+    },
+  );
+  return JSON.stringify({ version: "2.1.0", runs: runsBySkill.flat() });
 }
 
 function mcpConfigRoots(root: string, inventory?: TrustFileInventory): string[] {
@@ -1242,8 +1287,82 @@ function hiddenUnicodeRiskForDetectorResult(
   return unicodeRiskForLocation(root, location);
 }
 
-interface DetectorRuleClassification {
-  code: CheckCode;
+type DetectorRuleClassification =
+  | { code: CheckCode; advisory?: never }
+  | { advisory: string; code?: never };
+
+const SKILLSPECTOR_SC4_OFFLINE_FALLBACK =
+  /^🟡 SC4: OSV\.dev unreachable, using static fallback \([1-9][0-9]* packages\)\. Results may be incomplete\. Set SKILLSPECTOR_OSV_TIMEOUT to increase timeout or check network connectivity to api\.osv\.dev\.$/;
+const SKILLSPECTOR_YR4_METADATA_MESSAGE =
+  "YARA rule 'agent_skill_mcp_tool_poisoning_metadata': MCP/tool metadata poisoning indicators in tool schemas or skill manifests [agent_skills]";
+const COREPACK_PACKAGE_MANAGER_INTEGRITY = /^[A-Za-z0-9._-]+@[^+\s"]+\+sha512\.[a-f0-9]{128}$/i;
+const SKILLSPECTOR_YR4_HIDDEN_HTML =
+  /<!--[^>]{0,240}(?:SYSTEM|IGNORE|OVERRIDE|DEVELOPER|ASSISTANT)[^>]{0,240}-->/i;
+const SKILLSPECTOR_YR4_HIDDEN_MARKDOWN =
+  /\[\/\/\]:\s*#\s*\([^)]{0,240}(?:SYSTEM|IGNORE|OVERRIDE|DEVELOPER|ASSISTANT)[^)]{0,240}\)/i;
+const SKILLSPECTOR_YR4_DATA_URI = /data:text\/[a-zA-Z0-9.+-]+;base64,/i;
+const SKILLSPECTOR_YR4_LONG_OPAQUE = /[A-Za-z0-9+/]{120,}={0,2}/;
+const SKILLSPECTOR_YR4_PARAMETER_INJECTION =
+  /(?:parameter|argument|description).{0,160}(?:ignore previous|override safety|send to|transmit|exfiltrate|SYSTEM:)/i;
+const SKILLSPECTOR_YR4_DIRECTIONAL_CONTROL = /[\u200b-\u200d\u202d\u202e]/;
+
+function hasSkillspectorYr4PoisoningSignal(source: string): boolean {
+  return (
+    SKILLSPECTOR_YR4_HIDDEN_HTML.test(source) ||
+    SKILLSPECTOR_YR4_HIDDEN_MARKDOWN.test(source) ||
+    SKILLSPECTOR_YR4_DATA_URI.test(source) ||
+    SKILLSPECTOR_YR4_LONG_OPAQUE.test(source) ||
+    SKILLSPECTOR_YR4_PARAMETER_INJECTION.test(source) ||
+    SKILLSPECTOR_YR4_DIRECTIONAL_CONTROL.test(source)
+  );
+}
+
+function skillspectorAdvisory(
+  result: SarifResult,
+  detector: TrustDetector,
+  root: string,
+  location: NonNullable<Check["location"]>,
+): string | undefined {
+  if (detector.name !== "skillspector") return undefined;
+  const ruleId = resultRuleId(result);
+  const message = resultMessage(result, detector);
+  if (
+    ruleId === "SC4" &&
+    result.level === "note" &&
+    SKILLSPECTOR_SC4_OFFLINE_FALLBACK.test(message)
+  ) {
+    return `${message} This is the expected dependency-coverage mode for the locked no-egress baseline scan; static fallback coverage remains incomplete.`;
+  }
+  if (
+    ruleId !== "YR4" ||
+    message !== SKILLSPECTOR_YR4_METADATA_MESSAGE ||
+    basename(location.uri) !== "package.json"
+  ) {
+    return undefined;
+  }
+  const source = sourceTextForLocation(root, location);
+  if (source === undefined) return undefined;
+  let manifest: unknown;
+  try {
+    manifest = JSON.parse(source);
+  } catch {
+    return undefined;
+  }
+  if (typeof manifest !== "object" || manifest === null || Array.isArray(manifest)) {
+    return undefined;
+  }
+  const packageManager = (manifest as Record<string, unknown>).packageManager;
+  if (
+    typeof packageManager !== "string" ||
+    !COREPACK_PACKAGE_MANAGER_INTEGRITY.test(packageManager)
+  ) {
+    return undefined;
+  }
+  const encodedIntegrity = JSON.stringify(packageManager);
+  if (!source.includes(encodedIntegrity)) return undefined;
+  const withoutCorepackIntegrity = source.replace(encodedIntegrity, '""');
+  if (hasSkillspectorYr4PoisoningSignal(withoutCorepackIntegrity)) return undefined;
+  return `${message}; reviewed false positive: the only poisoning co-signal is the top-level Corepack packageManager integrity suffix, which remains pinned.`;
 }
 
 function ruleCode(
@@ -1254,6 +1373,8 @@ function ruleCode(
 ): DetectorRuleClassification | undefined {
   const raw = resultRuleId(result);
   if (raw === undefined) return undefined;
+  const advisory = skillspectorAdvisory(result, detector, root, location);
+  if (advisory !== undefined) return { advisory };
   const mapped = detector.ruleMap[raw];
   if (mapped !== undefined) {
     if (mapped === "trust.hidden-unicode") {
@@ -1400,6 +1521,15 @@ function sarifChecks(
       const location = sarifLocation(result, detector);
       const classification = ruleCode(result, detector, root, location);
       if (classification === undefined) continue;
+      if (classification.advisory !== undefined) {
+        checks.push({
+          name: `trust detector ${detector.name} advisory`,
+          verdict: "pass",
+          detail: `${location.uri}:${location.startLine ?? 1} — ${detectorFindingLabel(detector)}: ${classification.advisory}`,
+          location,
+        });
+        continue;
+      }
       const { code } = classification;
       if (
         code === "trust.prompt-injection" &&

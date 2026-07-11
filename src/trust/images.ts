@@ -1,12 +1,12 @@
 import type { Runner, RunResult } from "../internals/proc.js";
 import type { Platform } from "../platform/base.js";
 import { execArgv } from "../tools/install.js";
-import { scrubFetchEnv } from "./fetch.js";
+import { scrubDockerClientEnv } from "./fetch.js";
 
 export const SKILLSPECTOR_IMAGE = "skillspector:aih-326a2b489411";
 export const SKILLSPECTOR_SOURCE_REVISION = "326a2b489411a20ed742ff13701be39ba00063c8";
 export const SKILLSPECTOR_IMAGE_DIGEST =
-  "sha256:e82fd471e156ca5f431d5a1be18d37bc6bdf11f23b0f12f99c8899c12283fdfb";
+  "sha256:ee8a107dfd1c258e0afed303016a4220d174ba54bd1510bf73ed91f2825075ec";
 
 const IMAGE_DIGEST = /^sha256:[0-9a-f]{64}$/;
 
@@ -94,7 +94,7 @@ export async function resolveVerifiedSkillspectorImage(
   timeoutMs: number,
   approvedImages: readonly SkillSpectorImageApproval[] = [],
 ): Promise<{ image: string } | { reason: string }> {
-  const childEnv = scrubFetchEnv(env);
+  const childEnv = scrubDockerClientEnv(env);
   const docker = await run(skillspectorDockerVersionArgv(platform), {
     env: childEnv,
     timeoutMs,

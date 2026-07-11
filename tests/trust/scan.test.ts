@@ -2880,9 +2880,7 @@ describe("scanTrustTree", () => {
           code: skillspector.code ?? 0,
           stdout: skillspector.stdout ?? "",
           stderr: skillspector.stderr ?? "",
-          ...(skillspector.spawnError === undefined
-            ? {}
-            : { spawnError: skillspector.spawnError }),
+          ...(skillspector.spawnError === undefined ? {} : { spawnError: skillspector.spawnError }),
         };
       }
       if (argv[0] === "uvx" && argv.includes("--version")) {

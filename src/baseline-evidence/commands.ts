@@ -104,6 +104,7 @@ export async function baselineVetPlanForSource(
             run: digestCtx.run,
             platform: digestCtx.host.platform,
             env: digestCtx.env,
+            progress: (message) => process.stderr.write(`${message}\n`),
           }),
         );
         const lock = parseBaselineEvidenceLock({ schemaVersion: 1, sources: [evidence] });

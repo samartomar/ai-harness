@@ -1,5 +1,5 @@
-import { lstatSync } from "node:fs";
-import { basename, dirname, resolve } from "node:path";
+import { cpSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import type { Check } from "../internals/verify.js";
 import { scanTrustTreeWithAnalyzers, type TrustScanResult } from "../trust/scan.js";
 import { VERSION } from "../version.js";
@@ -23,63 +23,56 @@ export type BaselineComponentScanner = (
   input: BaselineComponentScanInput,
 ) => Promise<TrustScanResult>;
 
+export type BaselineTreeScanner = (
+  root: string,
+  options?: ScanTrustTreeOptions,
+) => Promise<TrustScanResult>;
+
 export interface VetBaselineCatalogOptions {
   scanComponent?: BaselineComponentScanner;
+  scanTree?: BaselineTreeScanner;
   scanOptions?: ScanTrustTreeOptions;
   analyzerVersions?: Readonly<Record<string, string>>;
-  requiredAnalyzers?: readonly string[];
+  requiredAnalyzers?:
+    | readonly string[]
+    | ((component: BaselineCatalogComponent, sourceRoot: string) => readonly string[]);
+  requiredDetectorsForComponent?: (
+    component: BaselineCatalogComponent,
+    sourceRoot: string,
+  ) => NonNullable<ScanTrustTreeOptions["requiredDetectors"]>;
 }
 
-function checkKey(check: Check): string {
-  return JSON.stringify([
-    check.name,
-    check.verdict,
-    check.code,
-    check.detail,
-    check.location?.uri,
-    check.location?.startLine,
-    check.fingerprint,
-  ]);
-}
-
-function dedupeChecks(checks: readonly Check[]): Check[] {
-  const seen = new Set<string>();
-  return checks.filter((check) => {
-    const key = checkKey(check);
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-}
-
-function checkBelongsToFile(check: Check, fileName: string): boolean {
-  const uri = check.location?.uri?.replace(/\\/g, "/");
-  return uri === undefined || uri === fileName;
-}
-
-function defaultComponentScanner(scanOptions: ScanTrustTreeOptions): BaselineComponentScanner {
+function defaultComponentScanner(
+  scanOptions: ScanTrustTreeOptions,
+  scanTree: BaselineTreeScanner,
+  requiredDetectorsForComponent?: VetBaselineCatalogOptions["requiredDetectorsForComponent"],
+): BaselineComponentScanner {
   return async ({ sourceRoot, component }) => {
-    const checks: Check[] = [];
-    const analyzers = new Set<string>();
-    for (const rel of component.paths) {
-      const target = resolve(sourceRoot, ...rel.split("/"));
-      const stat = lstatSync(target);
-      const scanRoot = stat.isDirectory() ? target : dirname(target);
-      const scan = await scanTrustTreeWithAnalyzers(scanRoot, {
+    const projectionRoot = mkdtempSync(
+      join(dirname(resolve(sourceRoot)), ".aih-baseline-component-"),
+    );
+    try {
+      for (const rel of component.paths) {
+        const source = resolve(sourceRoot, ...rel.split("/"));
+        const target = resolve(projectionRoot, ...rel.split("/"));
+        mkdirSync(dirname(target), { recursive: true });
+        cpSync(source, target, {
+          recursive: true,
+          errorOnExist: true,
+          force: false,
+          dereference: false,
+          preserveTimestamps: true,
+        });
+      }
+      return await scanTree(projectionRoot, {
         ...scanOptions,
         posture: "enterprise",
+        requiredDetectors:
+          requiredDetectorsForComponent?.(component, sourceRoot) ?? scanOptions.requiredDetectors,
       });
-      for (const analyzer of scan.analyzersRun) analyzers.add(analyzer);
-      checks.push(
-        ...(stat.isDirectory()
-          ? scan.checks
-          : scan.checks.filter((check) => checkBelongsToFile(check, basename(target)))),
-      );
+    } finally {
+      rmSync(projectionRoot, { recursive: true, force: true });
     }
-    return {
-      analyzersRun: [...analyzers].sort((left, right) => left.localeCompare(right)),
-      checks: dedupeChecks(checks),
-    };
   };
 }
 
@@ -135,7 +128,13 @@ export async function vetBaselineCatalog(
   catalog: BaselineCatalog,
   options: VetBaselineCatalogOptions = {},
 ): Promise<BaselineSourceEvidence> {
-  const scanComponent = options.scanComponent ?? defaultComponentScanner(options.scanOptions ?? {});
+  const scanComponent =
+    options.scanComponent ??
+    defaultComponentScanner(
+      options.scanOptions ?? {},
+      options.scanTree ?? scanTrustTreeWithAnalyzers,
+      options.requiredDetectorsForComponent,
+    );
   const versions = { "aih-native": VERSION, ...(options.analyzerVersions ?? {}) };
   const components = [];
   for (const component of catalog.components) {
@@ -146,17 +145,16 @@ export async function vetBaselineCatalog(
       throw new Error(`baseline component ${component.id} changed during vet scan`);
     }
     const findings = blockingFindings(scan.checks);
+    const requiredAnalyzers =
+      typeof options.requiredAnalyzers === "function"
+        ? options.requiredAnalyzers(component, sourceRoot)
+        : (options.requiredAnalyzers ?? []);
     components.push({
       id: component.id,
       paths: [...component.paths],
       treeSha256: tree.treeSha256,
       verdict: findings.length > 0 ? ("blocked" as const) : ("pass" as const),
-      analyzers: analyzerReceipts(
-        scan.analyzersRun,
-        versions,
-        options.requiredAnalyzers ?? [],
-        component.id,
-      ),
+      analyzers: analyzerReceipts(scan.analyzersRun, versions, requiredAnalyzers, component.id),
       findings,
     });
   }

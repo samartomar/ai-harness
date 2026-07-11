@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Make vendor and org baseline evidence fail closed unless the exact pinned source bytes are scanned by `aih-native`, pinned SkillSpector through Docker, and pinned Cisco skill-scanner through offline `uvx` before analyzer receipts can authorize scanner-free installs.
+**Goal:** Make vendor and org baseline evidence fail closed unless the exact pinned source bytes are scanned by `aih-native`, pinned SkillSpector through Docker, and pinned Cisco skill-scanner through offline `uvx` for every skill-bearing component before analyzer receipts can authorize scanner-free installs.
 
 **Architecture:** A canonical baseline analyzer profile owns required detector names and attributable versions. Both baseline entry points pass a real runner/platform/environment plus that profile into the existing trust scanner; the vetter rejects any component missing a required receipt. The expensive vet-once workflow reproducibly provisions both external analyzers and byte-compares regenerated evidence, while ordinary verification performs a pure shipped-receipt check and the existing fixture-HOME install gate.
 
@@ -11,7 +11,7 @@
 ## Global Constraints
 
 - Vendor baseline v1 requires exactly `aih-native`, `skillspector@docker`, and `cisco@uvx` for every component receipt.
-- Missing, unavailable, failed, malformed, or unversioned required analyzers block evidence generation and release.
+- Missing, unavailable, failed, malformed, or unversioned applicable analyzers block evidence generation and release.
 - SkillSpector runs the existing pinned image with `--network none`, `--read-only`, `--no-llm`, and the source mounted read-only.
 - Cisco runs from the exact `cisco-ai-skill-scanner==2.0.12` distribution through the existing `uvx --offline --no-python-downloads --no-env-file` path.
 - Analyzer provisioning may use network access; analyzer execution may not.
@@ -164,7 +164,7 @@ git commit -s -m "fix: run required analyzers during baseline vetting"
 
 - [ ] **Step 1: Add RED lock and workflow tests**
 
-Require every shipped component's analyzer names and versions to equal the canonical profile. Require `verify` and `release.yml` to run `check:baseline-analyzers`. Require `baseline-evidence.yml` to check out the pinned SkillSpector source, build the pinned image, assert its controlled digest, install `uv` with `astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990`, cache/install `cisco-ai-skill-scanner==2.0.12`, and run `baseline:check` only after both analyzers are healthy.
+Require every shipped component's analyzer names and versions to equal the canonical applicable profile: native plus SkillSpector everywhere, and Cisco where the declared component tree contains `SKILL.md`. Require `verify` and `release.yml` to run `check:baseline-analyzers`. Require `baseline-evidence.yml` to check out the pinned SkillSpector source, build the pinned image, assert its controlled digest, install `uv` with `astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990`, cache/install `cisco-ai-skill-scanner==2.0.12`, and run `baseline:check` only after both analyzers are healthy.
 
 - [ ] **Step 2: Run focused tests and witness RED**
 
@@ -206,21 +206,25 @@ git commit -s -m "ci: enforce reproducible baseline analyzer profile"
 - Modify only if authorization changes: `src/baseline-evidence/ecc-install-preview.json`
 
 **Interfaces:**
-- Consumes: `samartomar/ECC@fd3699d65c4767acceac59069847f04122417dcb` and `obra/Superpowers@d884ae04edebef577e82ff7c4e143debd0bbec99`.
+- Consumes: `samartomar/ECC@983f8a0e2e4fd81a48165ef87830709a2b8b5b24` and `obra/Superpowers@d884ae04edebef577e82ff7c4e143debd0bbec99`.
 - Produces: analyzer-complete component evidence at those exact source hashes.
 
 - [ ] **Step 1: Build and verify pinned SkillSpector**
 
 ```bash
 VET_ROOT="$(mktemp -d)"
+AIH_ROOT="$PWD"
 git clone https://github.com/NVIDIA/SkillSpector.git "$VET_ROOT/SkillSpector"
 git -C "$VET_ROOT/SkillSpector" checkout --detach \
   326a2b489411a20ed742ff13701be39ba00063c8
 docker build \
-  --label org.opencontainers.image.revision=326a2b489411a20ed742ff13701be39ba00063c8 \
-  -t skillspector:aih-326a2b489411 "$VET_ROOT/SkillSpector"
+  --provenance=false \
+  --build-arg SOURCE_DATE_EPOCH=1782883813 \
+  -f "$AIH_ROOT/tools/skillspector.Dockerfile" \
+  -t skillspector:aih-326a2b489411 \
+  "$VET_ROOT/SkillSpector"
 test "$(docker image inspect skillspector:aih-326a2b489411 --format '{{.Id}}')" = \
-  "sha256:e82fd471e156ca5f431d5a1be18d37bc6bdf11f23b0f12f99c8899c12283fdfb"
+  "sha256:ee8a107dfd1c258e0afed303016a4220d174ba54bd1510bf73ed91f2825075ec"
 ```
 
 Expected: the checked-out commit equals the pinned revision and the final digest assertion exits 0. A mismatch blocks the task rather than becoming an implicit local approval.
@@ -240,7 +244,7 @@ Expected: exit 0 and version `2.0.12`.
 ```bash
 git clone https://github.com/samartomar/ECC.git "$VET_ROOT/ECC"
 git -C "$VET_ROOT/ECC" checkout --detach \
-  fd3699d65c4767acceac59069847f04122417dcb
+  983f8a0e2e4fd81a48165ef87830709a2b8b5b24
 git clone https://github.com/obra/Superpowers.git "$VET_ROOT/Superpowers"
 git -C "$VET_ROOT/Superpowers" checkout --detach \
   d884ae04edebef577e82ff7c4e143debd0bbec99
@@ -249,7 +253,9 @@ npm run baseline:vet -- \
   --superpowers-root "$VET_ROOT/Superpowers"
 ```
 
-Expected: both sources scan every declared component with all three analyzers. Missing analyzer receipts fail before either artifact is written.
+Expected: both sources scan every declared component with native + SkillSpector,
+and every skill-bearing component with Cisco as well. Missing applicable analyzer
+receipts fail before either artifact is written.
 
 - [ ] **Step 4: Inspect evidence and installability**
 
@@ -277,7 +283,7 @@ Do not stage the preview when it is byte-identical.
 
 - [ ] **Step 1: Document the exact analyzer contract**
 
-State that covered seats skip scanning only because all three pinned analyzers ran during vet-once. Document that missing analyzers block generation, provisioning may download pinned tools, execution is offline/no-network, and “no findings” is not a security guarantee.
+State that covered seats skip scanning only because native plus SkillSpector, and Cisco for every skill-bearing component, ran during vet-once. Document that missing applicable analyzers block generation, provisioning may download pinned tools, execution is offline/no-network, and “no findings” is not a security guarantee.
 
 - [ ] **Step 2: Add one `[Unreleased]` CHANGELOG entry**
 
