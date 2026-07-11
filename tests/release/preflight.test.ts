@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { delimiter, join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { IntentAcknowledgementArtifact } from "../../src/internals/release-intent-artifact.js";
 import type {
@@ -193,8 +193,29 @@ describe("runPreflight — declared intent checkpoint", () => {
       ok: false,
       intentEscalation: true,
       intentAcknowledged: false,
+      intentAcknowledgementArtifact: undefined,
       requiredIntentAcknowledgement: `${d.candidateSha}:patch:minor`,
     });
+    expect(JSON.parse(JSON.stringify(runPreflight(d)))).not.toHaveProperty(
+      "intentAcknowledgementArtifact",
+    );
+  });
+
+  it("omits an irrelevant acknowledgement artifact when escalation is not required", () => {
+    const d = cleanData();
+    d.intentAcknowledgementArtifact = acknowledgementArtifact(d);
+
+    const manifest = runPreflight(d);
+
+    expect(manifest).toMatchObject({
+      ok: true,
+      intentEscalation: false,
+      intentAcknowledged: false,
+      intentAcknowledgementArtifact: undefined,
+    });
+    expect(JSON.parse(JSON.stringify(manifest))).not.toHaveProperty(
+      "intentAcknowledgementArtifact",
+    );
   });
 });
 
@@ -232,6 +253,9 @@ describe("release:preflight CLI intent checkpoint", () => {
         `${fixture.candidateSha}:patch:minor`,
       );
       expect(rawToken.status).toBe(1);
+      expect(rawToken.stderr).toMatch(
+        /--ack-intent-escalation is retired; use --ack-intent-escalation-comment/i,
+      );
 
       fixture.intentAcknowledgementArtifact = acknowledgementArtifact({
         ...fixture,
@@ -256,6 +280,100 @@ describe("release:preflight CLI intent checkpoint", () => {
         },
         requiredIntentAcknowledgement: `${fixture.candidateSha}:patch:minor`,
       });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("emits a blocked manifest when live acknowledgement URL validation fails", () => {
+    const dir = mkdtempSync(join(tmpdir(), "aih-release-live-intent-"));
+    try {
+      const bin = join(dir, "bin");
+      mkdirSync(bin);
+      const candidateSha = "a".repeat(40);
+      const git = join(bin, "git");
+      writeFileSync(
+        git,
+        `#!/usr/bin/env node
+const args = process.argv.slice(2);
+if (args[0] === "describe") console.log("v2.8.0");
+else if (args[0] === "rev-parse") console.log("${candidateSha}");
+else if (args[0] === "log") console.log("feat: b (#2)");
+else process.exit(2);
+`,
+        "utf8",
+      );
+      chmodSync(git, 0o755);
+
+      const gh = join(bin, "gh");
+      writeFileSync(
+        gh,
+        `#!/usr/bin/env node
+const args = process.argv.slice(2).join(" ");
+if (args.startsWith("repo view ")) {
+  console.log("samartomar/ai-harness");
+} else if (args.startsWith("pr view 2 ")) {
+  console.log(JSON.stringify({
+    number: 2,
+    title: "feat: b",
+    labels: [{ name: "semver:minor" }],
+    milestone: { title: "next-release" },
+  }));
+} else if (args === "api repos/{owner}/{repo}/milestones?state=all&per_page=100") {
+  console.log(JSON.stringify([{ number: 1, title: "next-release" }]));
+} else if (args === "api repos/{owner}/{repo}/issues?milestone=1&state=all&per_page=100") {
+  console.log(JSON.stringify([
+    {
+      number: 2,
+      state: "closed",
+      title: "feat: b",
+      labels: [],
+      pull_request: { merged_at: "2026-07-10T22:00:00Z" },
+    },
+    {
+      number: 900,
+      state: "open",
+      title: "release: vNEXT tracker",
+      labels: [{ name: "release-blocker" }],
+    },
+  ]));
+} else {
+  console.error("unexpected gh invocation: " + args);
+  process.exit(2);
+}
+`,
+        "utf8",
+      );
+      chmodSync(gh, 0o755);
+
+      const tsx = join(process.cwd(), "node_modules", "tsx", "dist", "cli.mjs");
+      const script = join(process.cwd(), "src", "internals", "release-preflight.ts");
+      const result = spawnSync(
+        process.execPath,
+        [
+          tsx,
+          script,
+          "--intent",
+          "patch",
+          "--ack-intent-escalation-comment",
+          "https://evil.example/comment/123456",
+        ],
+        {
+          cwd: process.cwd(),
+          encoding: "utf8",
+          env: { ...process.env, PATH: `${bin}${delimiter}${process.env.PATH ?? ""}` },
+        },
+      );
+
+      expect(result.status).toBe(1);
+      expect(JSON.parse(result.stdout)).toMatchObject({
+        ok: false,
+        intentEscalation: true,
+        intentAcknowledged: false,
+        findings: [expect.objectContaining({ code: "intent-acknowledgement" })],
+      });
+      expect(JSON.parse(result.stdout)).not.toHaveProperty("intentAcknowledgementArtifact");
+      expect(result.stderr).toContain("[intent-acknowledgement]");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
