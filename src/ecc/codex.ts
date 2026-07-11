@@ -32,7 +32,7 @@ const TOML_TABLE_HEADER = /^[ \t]*\[/;
 export const CODEX_AGENTS_BLOCK_MARKER = "ecc-codex:agents";
 export const CODEX_INSTALL_STATE_FILE = "ecc-aih-install-state.json";
 
-interface CodexTomlFootprint {
+export interface CodexTomlFootprint {
   rootKeys: string[];
   tables: string[];
   tableKeys: Record<string, string[]>;
@@ -113,9 +113,16 @@ function codexMcpTransports(raw: string): Map<string, CodexMcpTransport> {
   return transports;
 }
 
-function tableHeaderPattern(tablePath: string): RegExp {
-  const escaped = escapeRegExp(tablePath);
-  return new RegExp(`^[ \\t]*\\[${escaped}\\][ \\t]*(?:#.*)?$`);
+function tomlTablePathPattern(tablePath: string): string {
+  return tablePath
+    .split(".")
+    .map((segment) => tomlKeyPattern(segment))
+    .join("\\s*\\.\\s*");
+}
+
+function tableHeaderPattern(tablePath: string, includeDescendants = false): RegExp {
+  const suffix = includeDescendants ? "(?:\\s*\\..+)?" : "";
+  return new RegExp(`^[ \\t]*\\[${tomlTablePathPattern(tablePath)}${suffix}\\][ \\t]*(?:#.*)?$`);
 }
 
 function escapeRegExp(value: string): string {
@@ -427,17 +434,14 @@ function removeTables(
   tablePaths: readonly string[],
   options: { includeDescendants?: boolean } = {},
 ): string[] {
-  const remove = new Set(tablePaths);
+  const patterns = tablePaths.map((tablePath) =>
+    tableHeaderPattern(tablePath, options.includeDescendants === true),
+  );
   const out: string[] = [];
   let skipping = false;
   for (const line of raw.replace(/\r\n/g, "\n").split("\n")) {
-    const header = line.match(/^[ \t]*\[([^\]]+)\][ \t]*(?:#.*)?$/);
-    if (header) {
-      const table = header[1] ?? "";
-      skipping =
-        remove.has(table) ||
-        (options.includeDescendants === true &&
-          [...remove].some((parent) => table.startsWith(`${parent}.`)));
+    if (/^[ \t]*\[[^\]]+\][ \t]*(?:#.*)?$/.test(line)) {
+      skipping = patterns.some((pattern) => pattern.test(line));
       if (skipping) continue;
     }
     if (!skipping) out.push(line);
@@ -466,7 +470,7 @@ function removeInlineTableKeys(lines: string[], tablePath: string, keys: Set<str
   return lines.map((entry, entryIndex) => (entryIndex === index ? nextLine : entry));
 }
 
-function stripCodexTomlFootprint(raw: string, footprint: CodexTomlFootprint): string {
+export function stripCodexTomlFootprint(raw: string, footprint: CodexTomlFootprint): string {
   const usesCrlf = /\r\n/.test(raw);
   const mcpTables = footprint.mcpServers.map((name) => `mcp_servers.${name}`);
   let lines = removeTables(raw, footprint.tables);

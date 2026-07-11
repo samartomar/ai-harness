@@ -82,15 +82,17 @@ function fixture(): Fixture {
   const payload: EccReconcileTransactionPayload = {
     reads: Object.entries(before).map(([path, contents]) => ({ path, sha256: sha256(contents) })),
     mutations: [
-      { kind: "remove-file", path: cppPath, root: targetRoot },
+      { kind: "remove-file", phase: "owned-removal", path: cppPath, root: targetRoot },
       {
         kind: "remove-json-subset",
+        phase: "owned-removal",
         path: jsonPath,
         root: targetRoot,
         payloads: [{ managed: { cpp: true } }],
       },
       {
         kind: "write-file",
+        phase: "target-state",
         path: statePath,
         root: targetRoot,
         contents: '{"operations":["react"]}\n',
@@ -163,6 +165,218 @@ describe("ECC reconciliation transaction driver", () => {
     const result = run(value.payload, { NODE_OPTIONS: `--require=${hook}` });
 
     expect(result.status).not.toBe(0);
+    for (const [path, contents] of Object.entries(value.before)) {
+      expect(readFileSync(path)).toEqual(contents);
+    }
+  });
+
+  it("runs upstream uninstall between owned removals and target-state writes", () => {
+    const value = fixture();
+    const upstreamPath = join(value.targetRoot, "upstream-owned.txt");
+    writeFileSync(upstreamPath, "upstream\n", "utf8");
+    value.payload.uninstalls = [
+      {
+        target: "claude",
+        argv: [
+          process.execPath,
+          "-e",
+          [
+            'const fs=require("node:fs");',
+            'if (!fs.readFileSync(process.argv[1], "utf8").includes("cpp")) process.exit(2);',
+            "if (fs.existsSync(process.argv[2])) process.exit(3);",
+            "fs.rmSync(process.argv[3]);",
+          ].join(""),
+          value.statePath,
+          value.cppPath,
+          upstreamPath,
+        ],
+        paths: [upstreamPath],
+      },
+    ];
+
+    const result = run(value.payload);
+
+    expect(result.status, result.stderr).toBe(0);
+    expect(() => readFileSync(upstreamPath)).toThrow();
+    expect(readFileSync(value.statePath, "utf8")).toBe('{"operations":["react"]}\n');
+    expect(readFileSync(value.ledgerPath, "utf8")).toBe('{"projects":["react"]}\n');
+  });
+
+  it("rolls back aih-owned changes and reports target divergence when upstream mutates then fails", () => {
+    const value = fixture();
+    const upstreamPath = join(value.targetRoot, "upstream-owned.txt");
+    writeFileSync(upstreamPath, "upstream\n", "utf8");
+    const payload = {
+      ...value.payload,
+      uninstalls: [
+        {
+          target: "claude",
+          argv: [
+            process.execPath,
+            "-e",
+            'require("node:fs").rmSync(process.argv[1]); process.exit(1)',
+            upstreamPath,
+          ],
+          paths: [upstreamPath],
+        },
+      ],
+    } as EccReconcileTransactionPayload;
+
+    const result = run(payload);
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("ECC prune divergence: target=claude");
+    expect(result.stderr).toContain(upstreamPath);
+    expect(() => readFileSync(upstreamPath)).toThrow();
+    for (const [path, contents] of Object.entries(value.before)) {
+      expect(readFileSync(path)).toEqual(contents);
+    }
+  });
+
+  it("names every affected target after an earlier target uninstall already succeeded", () => {
+    const value = fixture();
+    const claudePath = join(value.targetRoot, "claude-owned.txt");
+    const codexPath = join(value.targetRoot, "codex-owned.txt");
+    writeFileSync(claudePath, "claude\n", "utf8");
+    writeFileSync(codexPath, "codex\n", "utf8");
+    const uninstall = (target: "claude" | "codex", path: string, exitCode: number) => ({
+      target,
+      argv: [
+        process.execPath,
+        "-e",
+        `require("node:fs").rmSync(process.argv[1]); process.exit(${exitCode})`,
+        path,
+      ],
+      paths: [path],
+    });
+    const payload = {
+      ...value.payload,
+      uninstalls: [uninstall("claude", claudePath, 0), uninstall("codex", codexPath, 1)],
+    } as EccReconcileTransactionPayload;
+
+    const result = run(payload);
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("target=claude");
+    expect(result.stderr).toContain(claudePath);
+    expect(result.stderr).toContain("ECC prune divergence: target=codex");
+    expect(result.stderr).toContain(codexPath);
+    expect(() => readFileSync(claudePath)).toThrow();
+    expect(() => readFileSync(codexPath)).toThrow();
+    for (const [path, contents] of Object.entries(value.before)) {
+      expect(readFileSync(path)).toEqual(contents);
+    }
+  });
+
+  it.skipIf(process.platform === "win32")(
+    "rolls back and reports the active target when interrupted by a POSIX signal",
+    () => {
+      const value = fixture();
+      const upstreamPath = join(value.targetRoot, "interrupted-upstream-owned.txt");
+      writeFileSync(upstreamPath, "upstream\n", "utf8");
+      value.payload.uninstalls = [
+        {
+          target: "claude",
+          argv: [
+            process.execPath,
+            "-e",
+            [
+              'const fs=require("node:fs");',
+              "fs.rmSync(process.argv[1]);",
+              'process.kill(process.ppid, "SIGTERM");',
+            ].join(""),
+            upstreamPath,
+          ],
+          paths: [upstreamPath],
+        },
+      ];
+
+      const result = run(value.payload);
+
+      expect(result.status).not.toBe(0);
+      expect(result.stderr).toContain("ECC prune divergence: target=claude");
+      expect(result.stderr).toContain(upstreamPath);
+      expect(result.stderr).toContain("interrupted by SIGTERM");
+      expect(() => readFileSync(upstreamPath)).toThrow();
+      for (const [path, contents] of Object.entries(value.before)) {
+        expect(readFileSync(path)).toEqual(contents);
+      }
+      expect(readdirSync(value.targetRoot).some((name) => name.includes(".aih-ecc-prune."))).toBe(
+        false,
+      );
+    },
+  );
+
+  it.skipIf(process.platform === "win32")(
+    "keeps rollback idempotent when a signal follows the failure rollback",
+    () => {
+      const value = fixture();
+      const upstreamPath = join(value.targetRoot, "double-rollback-upstream-owned.txt");
+      writeFileSync(upstreamPath, "upstream\n", "utf8");
+      value.payload.uninstalls = [
+        {
+          target: "claude",
+          argv: [
+            process.execPath,
+            "-e",
+            'require("node:fs").rmSync(process.argv[1]); process.exit(1)',
+            upstreamPath,
+          ],
+          paths: [upstreamPath],
+        },
+      ];
+      const hook = preload(
+        [
+          'const fs = require("node:fs");',
+          "const rename = fs.renameSync;",
+          "let queued = false;",
+          "fs.renameSync = (...args) => {",
+          "  const result = rename(...args);",
+          '  if (!queued && String(args[0]).endsWith(".bak")) {',
+          "    queued = true;",
+          '    const listener = process.listeners("SIGTERM")[0];',
+          "    if (listener) listener();",
+          "  }",
+          "  return result;",
+          "};",
+          "",
+        ].join("\n"),
+      );
+
+      const result = run(value.payload, { NODE_OPTIONS: `--require=${hook}` });
+
+      expect(result.status).not.toBe(0);
+      expect(result.stderr).toContain("ECC prune divergence: target=claude");
+      for (const [path, contents] of Object.entries(value.before)) {
+        expect(readFileSync(path)).toEqual(contents);
+      }
+      expect(readdirSync(value.targetRoot).some((name) => name.includes(".aih-ecc-prune."))).toBe(
+        false,
+      );
+    },
+  );
+
+  it("sizes the outer driver timeout above the sequential upstream uninstall budget", () => {
+    const value = fixture();
+    value.payload.uninstalls = ["claude", "cursor"].map((target) => ({
+      target: target as "claude" | "cursor",
+      argv: [process.execPath, "-e", "process.exit(0)"],
+      paths: [],
+    }));
+
+    const action = eccReconcileTransactionAction(ctx(), value.payload);
+
+    expect(action.timeoutMs).toBeGreaterThan(180_000);
+  });
+
+  it("rejects an unknown mutation phase before applying any change", () => {
+    const value = fixture();
+    (value.payload.mutations[0] as { phase?: string }).phase = "unexpected";
+
+    const result = run(value.payload);
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("invalid ECC reconciliation mutation phase");
     for (const [path, contents] of Object.entries(value.before)) {
       expect(readFileSync(path)).toEqual(contents);
     }

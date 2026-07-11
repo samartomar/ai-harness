@@ -1,4 +1,5 @@
 import process from "node:process";
+import type { Cli } from "../internals/clis.js";
 import { type ExecAction, exec, type PlanContext } from "../internals/plan.js";
 
 export interface EccReconcileExpectedRead {
@@ -8,12 +9,14 @@ export interface EccReconcileExpectedRead {
 
 export interface EccReconcileRemoveFileMutation {
   kind: "remove-file";
+  phase?: "owned-removal" | "target-state";
   path: string;
   root: string;
 }
 
 export interface EccReconcileWriteFileMutation {
   kind: "write-file";
+  phase?: "owned-removal" | "target-state";
   path: string;
   root: string;
   contents: string;
@@ -22,6 +25,7 @@ export interface EccReconcileWriteFileMutation {
 
 export interface EccReconcileRemoveJsonSubsetMutation {
   kind: "remove-json-subset";
+  phase?: "owned-removal" | "target-state";
   path: string;
   root: string;
   payloads: unknown[];
@@ -29,6 +33,7 @@ export interface EccReconcileRemoveJsonSubsetMutation {
 
 export interface EccReconcileFilterCodexMcpMutation {
   kind: "filter-codex-mcp-block";
+  phase?: "owned-removal" | "target-state";
   path: string;
   root: string;
   keepNames: string[];
@@ -36,6 +41,7 @@ export interface EccReconcileFilterCodexMcpMutation {
 
 export interface EccReconcileFilterCodexAgentsMutation {
   kind: "filter-codex-agents-block";
+  phase?: "owned-removal" | "target-state";
   path: string;
   root: string;
   keepSkills: string[];
@@ -59,17 +65,41 @@ export interface EccReconcileLedgerWrite {
 export interface EccReconcileTransactionPayload {
   reads: EccReconcileExpectedRead[];
   mutations: EccReconcileMutation[];
+  uninstalls?: EccReconcileUpstreamUninstall[];
   ledger: EccReconcileLedgerWrite;
 }
 
+export interface EccReconcileUpstreamUninstall {
+  target: Cli;
+  argv: string[];
+  cwd?: string;
+  paths: string[];
+}
+
+const ECC_UPSTREAM_UNINSTALL_TIMEOUT_MS = 90_000;
+const ECC_RECONCILE_DRIVER_GRACE_MS = 120_000;
+
 const ECC_RECONCILE_TRANSACTION_DRIVER = String.raw`
 const crypto = require("node:crypto");
+const childProcess = require("node:child_process");
 const fs = require("node:fs");
 const path = require("node:path");
 
 const payload = JSON.parse(Buffer.from(process.argv[1], "base64").toString("utf8"));
 if (!payload || !Array.isArray(payload.reads) || !Array.isArray(payload.mutations) || !payload.ledger) {
   throw new Error("invalid ECC reconciliation transaction payload");
+}
+const uninstalls = payload.uninstalls === undefined ? [] : payload.uninstalls;
+if (!Array.isArray(uninstalls)) throw new Error("invalid ECC reconciliation uninstalls");
+for (const uninstall of uninstalls) {
+  if (!uninstall || typeof uninstall.target !== "string"
+    || !Array.isArray(uninstall.argv) || uninstall.argv.length === 0
+    || !uninstall.argv.every((value) => typeof value === "string" && value.length > 0)
+    || !Array.isArray(uninstall.paths)
+    || !uninstall.paths.every((value) => typeof value === "string" && path.isAbsolute(value))
+    || (uninstall.cwd !== undefined && (typeof uninstall.cwd !== "string" || !path.isAbsolute(uninstall.cwd)))) {
+    throw new Error("invalid ECC reconciliation upstream uninstall");
+  }
 }
 
 const transientLockCodes = new Set(["EBUSY", "EPERM", "EACCES"]);
@@ -260,6 +290,11 @@ for (const mutation of payload.mutations) {
   if (!mutation || typeof mutation.path !== "string" || typeof mutation.root !== "string") {
     throw new Error("invalid ECC reconciliation mutation");
   }
+  if (mutation.phase !== undefined
+    && mutation.phase !== "owned-removal"
+    && mutation.phase !== "target-state") {
+    throw new Error("invalid ECC reconciliation mutation phase");
+  }
   assertSafeFile(mutation.root, mutation.path);
   if (!expected.has(mutation.path)) throw new Error("unbound ECC reconciliation mutation: " + mutation.path);
   if (mutationPaths.has(mutation.path)) throw new Error("duplicate ECC reconciliation mutation: " + mutation.path);
@@ -305,7 +340,13 @@ for (const mutation of payload.mutations) {
     throw new Error("unsupported ECC reconciliation mutation: " + mutation.kind);
   }
   if (next !== null && Buffer.compare(current, next) === 0) continue;
-  prepared.push({ path: mutation.path, root: mutation.root, next, mode: mutation.mode });
+  prepared.push({
+    path: mutation.path,
+    root: mutation.root,
+    next,
+    mode: mutation.mode,
+    phase: mutation.phase || "owned-removal",
+  });
 }
 
 const ledger = payload.ledger;
@@ -346,21 +387,138 @@ const applyChange = (change) => {
   }
 };
 
-try {
-  for (const change of prepared) applyChange(change);
-  if (ledgerChange) applyChange(ledgerChange);
-} catch (error) {
+const completedUninstalls = [];
+let activeUninstall = null;
+let activeChild = null;
+let divergence = null;
+let handlingSignal = false;
+let transactionCommitted = false;
+const rollbackApplied = () => {
   const rollbackErrors = [];
   for (const temporary of temporaryPaths) {
     try { fs.rmSync(temporary, { force: true }); } catch (rollbackError) { rollbackErrors.push(rollbackError); }
   }
   for (const record of [...applied].reverse()) {
+    if (!fs.existsSync(record.backup)) continue;
     try {
       fs.rmSync(record.path, { force: true });
-      if (fs.existsSync(record.backup)) retryTransient(() => fs.renameSync(record.backup, record.path));
+      retryTransient(() => fs.renameSync(record.backup, record.path));
     } catch (rollbackError) {
       rollbackErrors.push(rollbackError);
     }
+  }
+  return rollbackErrors;
+};
+const cleanupRecoveryMaterial = () => {
+  for (const temporary of temporaryPaths) fs.rmSync(temporary, { force: true });
+  for (const record of applied) fs.rmSync(record.backup, { force: true });
+};
+const affectedUninstalls = () => {
+  const candidates = [
+    ...(divergence ? [divergence] : activeUninstall ? [activeUninstall] : []),
+    ...completedUninstalls,
+  ];
+  const seen = new Set();
+  return candidates.filter((value) => {
+    const key = value.target + "\u0000" + value.paths.join("\u0000");
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+};
+const divergenceMessage = (affected, reason, rollbackErrors) => {
+  const evidence = affected
+    .map((value) => "target=" + value.target + "; paths=" + (value.paths.join(",") || "unknown"))
+    .join("; ");
+  const rollback = rollbackErrors.length > 0
+    ? "; ECC reconciliation rollback failed: "
+      + rollbackErrors.map((value) => value.message).join("; ")
+    : "";
+  return "ECC prune divergence: " + evidence + "; " + reason + rollback
+    + "; registration ledger not advanced";
+};
+const handleSignal = (signal) => {
+  if (handlingSignal) return;
+  handlingSignal = true;
+  if (transactionCommitted) {
+    cleanupRecoveryMaterial();
+    fs.writeSync(2, "ECC prune reconciliation interrupted by " + signal
+      + " after ledger commit; committed state retained\n");
+    process.exit(signal === "SIGINT" ? 130 : 143);
+  }
+  if (activeChild) activeChild.kill(signal);
+  const affected = affectedUninstalls();
+  const rollbackErrors = rollbackApplied();
+  const reason = "interrupted by " + signal;
+  const message = affected.length > 0
+    ? divergenceMessage(affected, reason, rollbackErrors)
+    : "ECC prune reconciliation " + reason
+      + (rollbackErrors.length > 0
+        ? "; ECC reconciliation rollback failed: "
+          + rollbackErrors.map((value) => value.message).join("; ")
+        : "")
+      + "; registration ledger not advanced";
+  fs.writeSync(2, message + "\n");
+  process.exit(signal === "SIGINT" ? 130 : 143);
+};
+process.on("SIGTERM", () => handleSignal("SIGTERM"));
+process.on("SIGINT", () => handleSignal("SIGINT"));
+const uninstallDeadline = Date.now() + Math.max(1, uninstalls.length) * ${ECC_UPSTREAM_UNINSTALL_TIMEOUT_MS};
+const runUpstreamUninstall = (uninstall, timeout) => new Promise((resolve) => {
+  let stdout = "";
+  let stderr = "";
+  let spawnError = null;
+  const tail = (current, chunk) => (current + chunk.toString("utf8")).slice(-500);
+  const child = childProcess.spawn(uninstall.argv[0], uninstall.argv.slice(1), {
+    cwd: uninstall.cwd,
+    stdio: ["ignore", "pipe", "pipe"],
+    timeout,
+    killSignal: "SIGTERM",
+    windowsHide: true,
+  });
+  activeChild = child;
+  child.stdout.on("data", (chunk) => { stdout = tail(stdout, chunk); });
+  child.stderr.on("data", (chunk) => { stderr = tail(stderr, chunk); });
+  child.once("error", (error) => { spawnError = error; });
+  child.once("close", (status, signal) => resolve({ error: spawnError, status, signal, stdout, stderr }));
+});
+const runTransaction = async () => {
+try {
+  for (const change of prepared.filter((value) => value.phase === "owned-removal")) {
+    applyChange(change);
+  }
+  for (const uninstall of uninstalls) {
+    activeUninstall = uninstall;
+    const remainingMs = Math.max(1, uninstallDeadline - Date.now());
+    const result = await runUpstreamUninstall(
+      uninstall,
+      Math.min(${ECC_UPSTREAM_UNINSTALL_TIMEOUT_MS}, remainingMs),
+    );
+    activeChild = null;
+    if (result.error || result.status !== 0) {
+      const baseReason = result.error
+        ? result.error.message
+        : "upstream uninstall exited " + (result.status === null ? "by signal" : result.status);
+      const diagnostic = (result.stderr || result.stdout || "").trim().slice(-500);
+      const reason = diagnostic.length > 0 ? baseReason + ": " + diagnostic : baseReason;
+      divergence = { ...uninstall, reason };
+      activeUninstall = null;
+      throw new Error(reason);
+    }
+    completedUninstalls.push(uninstall);
+    activeUninstall = null;
+  }
+  for (const change of prepared.filter((value) => value.phase === "target-state")) {
+    applyChange(change);
+  }
+  if (ledgerChange) applyChange(ledgerChange);
+  transactionCommitted = true;
+} catch (error) {
+  const rollbackErrors = rollbackApplied();
+  const affected = affectedUninstalls();
+  if (affected.length > 0) {
+    const reason = divergence ? divergence.reason : "failure after upstream uninstall: " + error.message;
+    throw new Error(divergenceMessage(affected, reason, rollbackErrors));
   }
   if (rollbackErrors.length > 0) {
     throw new Error(error.message + "; ECC reconciliation rollback failed: "
@@ -369,7 +527,12 @@ try {
   throw error;
 }
 
-for (const record of applied) fs.rmSync(record.backup, { force: true });
+cleanupRecoveryMaterial();
+};
+runTransaction().catch((error) => {
+  fs.writeSync(2, (error.stack || error.message || String(error)) + "\n");
+  process.exitCode = 1;
+});
 `;
 
 export function eccReconcileTransactionAction(
@@ -382,13 +545,17 @@ export function eccReconcileTransactionAction(
     [process.execPath, "-e", ECC_RECONCILE_TRANSACTION_DRIVER, encoded],
     {
       cwd: ctx.root,
-      timeoutMs: 120_000,
+      timeoutMs:
+        ECC_RECONCILE_DRIVER_GRACE_MS +
+        (payload.uninstalls?.length ?? 0) * ECC_UPSTREAM_UNINSTALL_TIMEOUT_MS,
       blockProbesOnFailure: true,
       requiresPriorExecSuccess: true,
       failureCheck: (result) => ({
         name: "ECC prune reconciliation",
         verdict: "fail",
-        detail: `ECC prune reconciliation failed (exit ${result.code ?? "signal"})`,
+        detail: `ECC prune reconciliation failed (exit ${result.code ?? "signal"})${
+          result.stderr.trim().length > 0 ? `: ${result.stderr.trim().slice(0, 2_000)}` : ""
+        }`,
       }),
     },
   );
