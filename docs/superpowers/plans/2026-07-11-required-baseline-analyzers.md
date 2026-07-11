@@ -15,6 +15,8 @@
 - SkillSpector runs the existing pinned image with `--network none`, `--read-only`, `--no-llm`, and the source mounted read-only.
 - Cisco runs from the exact `cisco-ai-skill-scanner==2.0.12` distribution through the existing `uvx --offline --no-python-downloads --no-env-file` path.
 - Analyzer provisioning may use network access; analyzer execution may not.
+- Cisco applicability is persisted in the canonical catalog and independently
+  checked against non-symlinked `SKILL.md` discovery at the exact source pin.
 - Exact ECC and Superpowers source pins, component hashes, danger-class floors, and fork-pin bridge semantics remain unchanged.
 - Vendor lock signing remains the npm tarball checksum/provenance/Sigstore envelope; do not invent an independent `vendor-lock.sigstore.json`.
 - `module:hooks-runtime` may remain blocked. The accepted lock must authorize `runtime:ecc-installer` and at least one useful common/project component at every posture.

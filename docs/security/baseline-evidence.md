@@ -46,6 +46,10 @@ no-egress: SkillSpector runs with Docker `--network none`, a read-only source
 mount and root filesystem, and `--no-llm`; Cisco runs with `uvx --offline
 --no-python-downloads --no-env-file`. The component scanner uses a path-preserving
 projection and does not follow symlinks when deciding whether Cisco is required.
+The canonical catalog persists that decision as `skillContent: true`, allowing
+the pure release gate to enforce Cisco receipts without a vendor checkout. Vet
+discovery and the catalog marker must agree: either a missing required receipt
+or an unexpected extra receipt fails verification.
 
 SkillSpector uses exit code 1 when a completed scan contains findings. aih accepts
 that exit only when stdout parses as SARIF, then records the receipt and preserves
