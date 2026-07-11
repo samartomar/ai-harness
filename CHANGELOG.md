@@ -6,6 +6,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- Legal-text detector findings now warn-pass only at vibe posture; team and enterprise require an
+  exact fingerprint acknowledgement with a recorded reason, while danger-class findings remain
+  non-acknowledgeable. (#422)
+
 ## [2.8.0] - 2026-07-10
 
 ### Added
@@ -120,7 +126,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   promotion installs another. (#373)
 - Scoped `aih skill vet --name <skill>` evidence now records selected skill
   names, included paths, and excluded sibling skill paths, and `aih skill
-  approve` carries that scope into the committed card and lockfile evidence.
+approve` carries that scope into the committed card and lockfile evidence.
   (#374)
 - Trust scan now separates ordinary visible Unicode typography in
   docs/reference files into acknowledgeable `trust.visible-unicode` findings
@@ -417,10 +423,10 @@ because the completed work landed as one verified mainline release train.
 - **MCP approval on-ramp**: org policy can now combine `mcp.allowedServers` with
   `mcp.approvals[]` reviewer evidence so vetted third-party MCP servers warn
   instead of deny under Enterprise posture. `aih mcp approve <server>
-  --accept-egress --reason <text> --apply` writes the repo-local approval entry while
+--accept-egress --reason <text> --apply` writes the repo-local approval entry while
   `AIH_ORG_POLICY` remains the winning policy source. (#178)
 - **Enterprise-compliant MCP apply**: `aih mcp --posture enterprise
-  --mcp-compliant --apply` now writes only policy-approved generated MCP servers,
+--mcp-compliant --apply` now writes only policy-approved generated MCP servers,
   quarantines denied generated entries with reasons, and pairs with
   `--mcp-compliant --verify` to fail if exact generated denied entries still remain
   in targeted client configs. Egress approvals in `mcp.allowedServers` no longer
@@ -472,7 +478,7 @@ because the completed work landed as one verified mainline release train.
 - **`docs-quality` pack (BetterDoc)**: the first first-party pack — a claim-first,
   evidence-grounded documentation skill shipped in-repo at
   `packs/docs-quality/betterdoc/` and installable via `aih pack install --pack
-  docs-quality --apply`. Documented in
+docs-quality --apply`. Documented in
   [docs/product/docs-quality-pack.md](docs/product/docs-quality-pack.md). (#166)
 - **CONTROL_MATRIX.md** maps public claims to implementation seams and regression
   tests, including posture grading and offline/no-default-phone-home boundaries.
@@ -488,7 +494,7 @@ because the completed work landed as one verified mainline release train.
 ### Changed
 
 - **First-party trust tier**: `aih skill vet` now grades a **first-party** source
-  (a local path under the repo root) on aih-native coverage — an *unavailable* deep
+  (a local path under the repo root) on aih-native coverage — an _unavailable_ deep
   detector (SkillSpector/Cisco) no longer forces UNKNOWN for a repo-relative path,
   so first-party skills are approvable without Docker. Remote and out-of-repo
   sources are unchanged, and native RED plus shape/license rules still apply. (#166)
@@ -733,12 +739,12 @@ slice passed two independent review lenses with all findings fixed before merge.
 - **`aih pack install` / `aih pack plan`** — the gated batch install: refs grouped by
   (source, commit), pins taken FROM the lock, **all sources gated before any promotion**
   (one poisoned source blocks everything), promotion limited to exactly the pack's refs
-  (an unselected skill in the same source — including a *nested* one — never rides
+  (an unselected skill in the same source — including a _nested_ one — never rides
   along), resume is idempotent **and drift-aware** (tampered promoted files are detected
   against trust-lock receipts and reinstalled through the gate). Fail-closed at every
   posture; `plan` never fetches. Per-source failures always land in the outcome report.
 - **`aih pack uninstall`** — retracts every installed member with the exact `skill
-  remove` semantics in ONE all-or-nothing plan (any member's guard refusal aborts before
+remove` semantics in ONE all-or-nothing plan (any member's guard refusal aborts before
   anything moves), behind an **ownership preflight**: a manifest ref whose source/commit
   disagrees with the lock cannot retract the real skill's approval, and duplicate-name
   refs are refused. The manifest itself is never touched.
@@ -772,7 +778,7 @@ finding fixed and regression-tested before merge**.
   committed `aih-skills.lock.json` approval **for this source** before promoting a
   skill: matching is content-addressed (a GitHub promotion matches only an entry
   whose commit equals the fetched pinned SHA — a same-named skill from an unrelated
-  source can never inherit an approval, and a *stale* approval is refused; local
+  source can never inherit an approval, and a _stale_ approval is refused; local
   promotions match `commit: "local"` entries). Advisory at `vibe` posture
   (warning-only, installs proceed); a promotion-blocking `trust.unapproved-skill`
   fail at `team`/`enterprise` — surfaced as a coded check through the normal
@@ -851,7 +857,7 @@ their official, supported introduction.)
   archive: renames the stale file to a gitignored `*.aih.bak` sibling instead of moving it
   under `.aih/legacy/`. An occupied backup slot is **never overwritten** — it falls back to
   `*.1.aih.bak`, `*.2.aih.bak`, … so a prior rescue is never destroyed.
-- **`aih prune --unrunnable`** — also prune per-CLI artifacts for a still-*targeted* CLI
+- **`aih prune --unrunnable`** — also prune per-CLI artifacts for a still-_targeted_ CLI
   whose binary is absent from `PATH` (probed with the readiness gate's `which`/`where`). A
   PATH problem looks identical to a dropped CLI, so it warns loudly, never rewrites the
   committed `.aih-config.json` marker, and never triggers on a default run or `aih report`.
@@ -956,7 +962,7 @@ First release **published to npm** as [`@aihq/harness`](https://www.npmjs.com/pa
   checklists, and expanded file-family index that had crept into the scaffold — the
   generated canon stays small so it sharpens an agent's first diff instead of reading
   as markdown sprawl. Executable safety stays: `.env`/secrets denial, `aih secrets
-  --verify`, large-repo graph-safety, and write-once author-owned canon.
+--verify`, large-repo graph-safety, and write-once author-owned canon.
 - **Cross-CLI coherence shows a neutral `global` glyph for machine-local MCP.** A
   wired-but-global MCP (codex `~/.codex`, gemini `~/.gemini`) is no longer an amber
   `warn` — it is a distinct neutral marker that counts toward agreement, so a repo

@@ -22,6 +22,9 @@ export function gradeTrustDanger(check: Check): Check {
 
 export function gradeTrustCheck(check: Check, posture: Posture): Check {
   if (check.verdict !== "fail" || check.code === undefined) return check;
+  if (check.code === "trust.legal-text-detector-finding") {
+    return posture === "vibe" ? postureGradeCheck(check, "trust-origin", posture) : check;
+  }
   if (TRUST_ORIGIN_CODES.has(check.code)) {
     return postureGradeCheck(check, "trust-origin", posture);
   }
