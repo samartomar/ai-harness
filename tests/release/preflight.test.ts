@@ -397,6 +397,7 @@ if (command === "git.exe") {
       );
 
       expect(result.status).toBe(1);
+      expect(result.stdout, result.stderr).not.toBe("");
       expect(JSON.parse(result.stdout)).toMatchObject({
         ok: false,
         intentEscalation: true,
