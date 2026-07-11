@@ -4,6 +4,7 @@ import {
   readVendorBaselineLock,
   vendorBaselineLockSha256,
 } from "../../src/baseline-evidence/vendor.js";
+import { VERSION } from "../../src/version.js";
 
 describe("shipped vendor baseline lock", () => {
   it("strictly parses and mirrors every pinned production catalog component", () => {
@@ -35,7 +36,7 @@ describe("shipped vendor baseline lock", () => {
       ecc?.components.find((component) => component.id === "skill:verification-loop"),
     ).toMatchObject({
       verdict: "pass",
-      analyzers: [{ name: "aih-native", version: "2.7.0" }],
+      analyzers: [{ name: "aih-native", version: VERSION }],
       findings: [],
     });
     expect(
