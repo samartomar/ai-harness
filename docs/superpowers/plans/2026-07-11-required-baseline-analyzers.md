@@ -255,9 +255,11 @@ npm run baseline:vet -- \
   --superpowers-root "$VET_ROOT/Superpowers"
 ```
 
-Expected: both sources scan every declared component with native + SkillSpector,
-and every skill-bearing component with Cisco as well. Missing applicable analyzer
-receipts fail before either artifact is written.
+Expected: both sources scan all 60 supported catalog components with native + SkillSpector,
+and every skill-bearing component with Cisco as well. ECC's 23 module components come from
+the pinned English `full` profile; the nine unselected locale modules remain vendor metadata
+and never appear in generated evidence. Missing applicable analyzer receipts fail before
+either artifact is written.
 
 - [ ] **Step 4: Inspect evidence and installability**
 

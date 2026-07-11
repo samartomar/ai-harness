@@ -20,6 +20,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- ECC baseline evidence now follows the pinned `full` install profile's 23 canonical English
+  modules instead of signing nine unselected `docs-*` locale modules merely because they exist
+  in the vendor snapshot. Every supported component retains the complete native,
+  SkillSpector, and applicable Cisco analyzer requirements; adding a locale later requires an
+  explicit install-and-evidence capability. (#417)
 - ECC baseline evidence now applies per component: authorized components install while held
   components are reported with their evidence codes and reasons. The target ledger records only
   the installed surface, and the installer runtime itself must be authorized before execution.

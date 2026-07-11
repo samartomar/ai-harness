@@ -28,8 +28,8 @@ to the expected minor cut.
 because of its lifecycle `postinstall`, floating dependencies, and strict-surface
 Unicode. Its preview-generation closure also reaches bare `ajv` outside the vetted
 runtime component. The danger-class floor and #421 fail-closed closure boundary are
-intentional; this design must resume only from an exact upstream commit with a
-passing runtime and a vetted/vendor-hashed dependency path.
+intentional; this design resumes only from an exact commit of the catalog's pinned
+source with a passing runtime and a vetted/vendor-hashed dependency path.
 
 Fork-pin bridge active per the maintainer's locked decision: the ECC catalog now
 pins the remediated commit on the `samartomar/ECC` fork
@@ -39,6 +39,13 @@ YAML frontmatter across the discovered English and translated skill surfaces) un
 affaan-m/ECC merges, which is pending review. Release readiness still requires
 fresh native, SkillSpector, and applicable Cisco receipts at this exact fork
 head.
+
+Maintainer scope ruling for the resumed release: ECC baseline v1 is English-only.
+The complete vendor module snapshot remains available as metadata, while the shipped
+evidence catalog follows the pinned `full` profile's 23 English modules and excludes all
+nine `docs-*` locale modules. This aligns signed evidence with both full and scoped install
+behavior; it does not waive any analyzer for supported components. A locale can enter only
+through a later explicit install-and-evidence capability.
 
 ## Non-goals
 
@@ -50,6 +57,7 @@ head.
 - Do not describe the release escalation artifact as automation-proof.
 - Do not allow a partially failed prune to advance the registration ledger.
 - Do not mutate the real development-seat HOME in tests or release validation.
+- Do not imply that translated ECC modules are supported or vetted in v2.9.0.
 - Do not combine the eight issue contracts into one implementation PR.
 
 ## Delivery shape and dependency order

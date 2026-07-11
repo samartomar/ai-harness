@@ -28,6 +28,19 @@ Org evidence is an extension, not a waiver. It cannot turn an exact vendor
 is useful signed evidence: it means “stop until the upstream bytes or pin change
 and vet cleanly.”
 
+## Supported ECC catalog
+
+The v2.9 baseline is English-only. The pinned ECC module snapshot retains all 32
+vendor-declared modules for dependency, target, and drift metadata, but the shipped evidence
+catalog follows the pinned `full` install profile's 23 canonical English modules. The nine
+`docs-*` locale modules are not selected by the supported full profile or scoped component
+descriptors, so they are not installed, authorized, or represented as vetted.
+
+This is a support boundary, not reduced scrutiny. Every catalog component still receives the
+complete analyzer profile below. A future locale must be introduced as an explicit selected
+capability whose install mapping and evidence cover the same bytes; new vendor translation
+directories never enter the signed baseline automatically.
+
 ## Release analyzer profile
 
 Scanner-free installation from the shipped vendor lock is allowed only because
