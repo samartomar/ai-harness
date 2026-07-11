@@ -2,6 +2,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import process from "node:process";
 import type { BaselineAuthorization } from "../baseline-evidence/verify.js";
+import { AihError } from "../errors.js";
 import type { Cli } from "../internals/clis.js";
 import {
   type Action,
@@ -17,7 +18,7 @@ import { lines } from "../internals/render.js";
 import { execArgv } from "../tools/install.js";
 import { codexMcpCollisionActions } from "./codex.js";
 import type { EccComponentSelection } from "./components.js";
-import { installedEccComponentRegistrations } from "./evidence.js";
+import { authorizedEccSelection, installedEccComponentRegistrations } from "./evidence.js";
 import { codexEccActions, type EccRepoCheckout, kiroEccActions } from "./index.js";
 import { eccActionsForCli, eccToolsDoc, isAihDirectEccInstallTarget } from "./install.js";
 import { eccMaterializationSpec } from "./materialize.js";
@@ -238,6 +239,15 @@ function evidenceDigest(authorizations: readonly BaselineAuthorization[]): Actio
   );
 }
 
+function requireAuthorizedRuntime(
+  authorizations: readonly BaselineAuthorization[],
+  componentId: "runtime:ecc-installer" | "runtime:ecc-kiro",
+): void {
+  if (!authorizations.some((authorization) => authorization.componentId === componentId)) {
+    throw new AihError(`refusing unauthorized ECC runtime ${componentId}`, "AIH_TRUST");
+  }
+}
+
 function driverAction(steps: readonly VerifiedInstallStep[]): Action {
   const encoded = Buffer.from(JSON.stringify(steps), "utf8").toString("base64");
   return exec(
@@ -262,6 +272,24 @@ export function verifiedEccInstallPlan(
 ): Plan {
   const pin = authorizations[0]?.pinnedSha;
   const repo = checkout(sourceRoot, pin);
+  const evidenceBoundTargets = request.clis.filter(
+    (cli) => isAihDirectEccInstallTarget(cli) || cli === "codex",
+  );
+  const selection =
+    request.selection === undefined
+      ? undefined
+      : authorizedEccSelection(request.selection, authorizations, evidenceBoundTargets);
+  if (
+    selection !== undefined &&
+    evidenceBoundTargets.length > 0 &&
+    selection.components.length === 0 &&
+    selection.mcps.length === 0
+  ) {
+    throw new AihError(
+      "refusing ECC install because no selected ECC component has authorization",
+      "AIH_TRUST",
+    );
+  }
   const pre: Action[] = [];
   const post: Action[] = [];
   const steps: VerifiedInstallStep[] = [];
@@ -270,6 +298,7 @@ export function verifiedEccInstallPlan(
     (cli) => isAihDirectEccInstallTarget(cli) || cli === "codex",
   );
   if (needsNodeRuntime) {
+    requireAuthorizedRuntime(authorizations, "runtime:ecc-installer");
     steps.push({
       argv: execArgv(ctx.host.platform, [
         "npm",
@@ -285,8 +314,8 @@ export function verifiedEccInstallPlan(
 
   for (const cli of request.clis) {
     if (isAihDirectEccInstallTarget(cli)) {
-      if (request.selection !== undefined) {
-        steps.push(materializeStep(ctx, sourceRoot, cli, request.selection));
+      if (selection !== undefined) {
+        steps.push(materializeStep(ctx, sourceRoot, cli, selection));
       } else {
         steps.push({
           argv: [
@@ -306,7 +335,7 @@ export function verifiedEccInstallPlan(
     }
     if (cli === "codex") {
       const scopedMcps =
-        request.selection === undefined ? undefined : selectedEccMcpServers(request.selection.mcps);
+        selection === undefined ? undefined : selectedEccMcpServers(selection.mcps);
       const plannedTransports =
         scopedMcps === undefined
           ? undefined
@@ -322,15 +351,15 @@ export function verifiedEccInstallPlan(
         ctx,
         repo,
         request.profile,
-        request.selection ? eccMaterializationSpec(request.selection) : undefined,
+        selection ? eccMaterializationSpec(selection) : undefined,
         scopedMcps,
       )) {
         if (action.kind === "exec") {
           if (!action.describe.includes("Node dependencies")) {
             const codexStep = step(action, sourceRoot);
-            if (request.selection !== undefined) {
+            if (selection !== undefined) {
               codexStep.env = {
-                ECC_DISABLED_MCPS: disabledUpstreamMcps(request.selection),
+                ECC_DISABLED_MCPS: disabledUpstreamMcps(selection),
               };
             }
             steps.push(codexStep);
@@ -342,7 +371,7 @@ export function verifiedEccInstallPlan(
       continue;
     }
     if (cli === "kiro") {
-      if (request.selection !== undefined) {
+      if (selection !== undefined) {
         post.push(
           ...eccActionsForCli(cli, {
             profile: request.profile,
@@ -353,6 +382,7 @@ export function verifiedEccInstallPlan(
         );
         continue;
       }
+      requireAuthorizedRuntime(authorizations, "runtime:ecc-kiro");
       for (const action of kiroEccActions(ctx, repo)) {
         if (action.kind === "exec") steps.push(step(action, sourceRoot));
         else if (action.kind === "doc" || action.kind === "digest") post.push(action);
@@ -371,7 +401,7 @@ export function verifiedEccInstallPlan(
     );
   }
 
-  const { selection, project, ledger: priorLedger } = request;
+  const { project, ledger: priorLedger } = request;
   if (selection !== undefined && installedClis.length > 0) {
     pre.push(...scopedEccMcpJsonActions(ctx, installedClis, selection, project));
   }

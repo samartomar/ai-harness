@@ -1,5 +1,5 @@
 import type { Posture } from "../config/posture.js";
-import type { Check } from "../internals/verify.js";
+import type { Check, CheckCode } from "../internals/verify.js";
 import { type BaselineCatalog, resolveCatalogComponents } from "./catalog.js";
 import { hashComponentTree } from "./hash.js";
 import type { OrgBaselineEvidence } from "./org.js";
@@ -19,6 +19,13 @@ export interface BaselineAuthorization {
   evidenceSha256: string;
 }
 
+export interface BaselineHeldComponent {
+  componentId: string;
+  routeCode: CheckCode;
+  codes: string[];
+  details: string[];
+}
+
 export interface VerifyBaselineComponentsInput {
   sourceRoot: string;
   catalog: BaselineCatalog;
@@ -32,6 +39,7 @@ export interface VerifyBaselineComponentsInput {
 export interface BaselineVerificationResult {
   checks: Check[];
   authorizations: BaselineAuthorization[];
+  held: BaselineHeldComponent[];
 }
 
 function sameStrings(left: readonly string[], right: readonly string[]): boolean {
@@ -117,6 +125,21 @@ export function verifyBaselineComponents(
       : sourceEvidence(input.orgEvidence.lock, input.catalog);
   const checks: Check[] = [];
   const authorizations: BaselineAuthorization[] = [];
+  const held: BaselineHeldComponent[] = [];
+
+  const hold = (
+    componentId: string,
+    check: Check,
+    routeCode: CheckCode,
+    codes: readonly string[] = [routeCode],
+  ): void => {
+    held.push({
+      componentId,
+      routeCode: check.code ?? routeCode,
+      codes: [...new Set(codes)],
+      details: [check.detail ?? check.name],
+    });
+  };
 
   for (const component of components) {
     const name = `baseline evidence ${component.id}`;
@@ -124,7 +147,14 @@ export function verifyBaselineComponents(
     const vendorEntry = vendorSource?.components.find((candidate) => candidate.id === component.id);
     const exactVendor = exactComponent(vendorSource, component.id, component.paths, actual);
     if (exactVendor?.verdict === "blocked") {
-      checks.push(blockedCheck(name, exactVendor));
+      const check = blockedCheck(name, exactVendor);
+      checks.push(check);
+      hold(
+        component.id,
+        check,
+        "baseline.evidence-blocked",
+        exactVendor.findings.map((finding) => finding.code),
+      );
       continue;
     }
     if (exactVendor?.verdict === "pass") {
@@ -140,7 +170,14 @@ export function verifyBaselineComponents(
     const orgEntry = orgSource?.components.find((candidate) => candidate.id === component.id);
     const exactOrg = exactComponent(orgSource, component.id, component.paths, actual);
     if (exactOrg?.verdict === "blocked") {
-      checks.push(blockedCheck(name, exactOrg));
+      const check = blockedCheck(name, exactOrg);
+      checks.push(check);
+      hold(
+        component.id,
+        check,
+        "baseline.evidence-blocked",
+        exactOrg.findings.map((finding) => finding.code),
+      );
       continue;
     }
     if (exactOrg?.verdict === "pass") {
@@ -154,17 +191,18 @@ export function verifyBaselineComponents(
     }
 
     const mismatched = vendorEntry !== undefined || orgEntry !== undefined;
-    checks.push(
-      warningOrFailure(
-        input.posture,
-        name,
-        mismatched
-          ? `${component.id} content hash or catalog paths do not match the available signed evidence`
-          : `${sourceName}@${input.catalog.pinnedSha.slice(0, 12)} component ${component.id} is not covered by vendor or org evidence`,
-        mismatched ? "baseline.evidence-mismatch" : "baseline.evidence-missing",
-      ),
+    const code = mismatched ? "baseline.evidence-mismatch" : "baseline.evidence-missing";
+    const check = warningOrFailure(
+      input.posture,
+      name,
+      mismatched
+        ? `${component.id} content hash or catalog paths do not match the available signed evidence`
+        : `${sourceName}@${input.catalog.pinnedSha.slice(0, 12)} component ${component.id} is not covered by vendor or org evidence`,
+      code,
     );
+    checks.push(check);
+    hold(component.id, check, code);
   }
 
-  return { checks, authorizations };
+  return { checks, authorizations, held };
 }

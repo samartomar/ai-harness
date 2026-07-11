@@ -94,6 +94,76 @@ describe("verifyBaselineComponents", () => {
     ]);
   });
 
+  it("partitions mixed signed verdicts into authorized and held components", () => {
+    mkdirSync(join(root, "skills", "held"), { recursive: true });
+    writeFileSync(join(root, "skills", "held", "SKILL.md"), "# Held\n");
+    const mixedCatalog = defineBaselineCatalog({
+      id: "ecc",
+      owner: "affaan-m",
+      repo: "ECC",
+      pinnedSha: "a".repeat(40),
+      components: [
+        { id: "skill:clean", paths: ["skills/clean"] },
+        { id: "skill:held", paths: ["skills/held"] },
+      ],
+    });
+    const mixedLock = parseBaselineEvidenceLock({
+      schemaVersion: 1,
+      sources: [
+        {
+          id: "ecc",
+          owner: "affaan-m",
+          repo: "ECC",
+          pinnedSha: "a".repeat(40),
+          components: [
+            {
+              id: "skill:clean",
+              paths: ["skills/clean"],
+              treeSha256: hashComponentTree(root, ["skills/clean"]).treeSha256,
+              verdict: "pass",
+              analyzers: [{ name: "aih-native", version: "2.8.0" }],
+              findings: [],
+            },
+            {
+              id: "skill:held",
+              paths: ["skills/held"],
+              treeSha256: hashComponentTree(root, ["skills/held"]).treeSha256,
+              verdict: "blocked",
+              analyzers: [{ name: "aih-native", version: "2.8.0" }],
+              findings: [
+                {
+                  code: "trust.auto-exec-hook",
+                  detail: "SKILL body contains a leading ! auto-run line",
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+
+    const result = verifyBaselineComponents({
+      sourceRoot: root,
+      catalog: mixedCatalog,
+      componentIds: ["skill:clean", "skill:held"],
+      posture: "enterprise",
+      vendorLock: mixedLock,
+      vendorLockSha256: "f".repeat(64),
+    });
+
+    expect(result.authorizations).toEqual([
+      expect.objectContaining({ componentId: "skill:clean", tier: "vendor" }),
+    ]);
+    expect(result.held).toEqual([
+      {
+        componentId: "skill:held",
+        routeCode: "baseline.evidence-blocked",
+        codes: ["trust.auto-exec-hook"],
+        details: [expect.stringContaining("trust.auto-exec-hook")],
+      },
+    ]);
+  });
+
   it.each([
     "team",
     "enterprise",

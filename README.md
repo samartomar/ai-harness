@@ -295,9 +295,13 @@ aih init --context-dir .ai-context  # → hidden, the old default
 ECC install actions execute under `--apply` only after exact component evidence clears and the same
 quarantined tree re-hashes. By default, `aih ecc` materializes the additive union of its common
 baseline, detected or repeatably declared project riders, posture-selected security, and validated
-MCPs; `--profile full` is the explicit full-surface opt-in. The primary project/target contribution
-ledger lives at `~/.aih/ecc/registration-ledger.json` and commits only after every install step
-succeeds. A bare `aih prune` also checks that ledger: missing project roots are retired, the live
+MCPs; `--profile full` is the explicit full-surface opt-in. Evidence verdicts apply per component:
+authorized components install, while held components are quarantined and reported with their exact
+codes and reasons. No install process starts unless ECC's installer runtime is also authorized.
+The project contribution keeps the requested intent, while each target record contains only the
+surface actually installed. The primary project/target contribution ledger lives at
+`~/.aih/ecc/registration-ledger.json` and commits only after every install step succeeds. A bare
+`aih prune` also checks that ledger: missing project roots are retired, the live
 component/MCP union is recomputed, and only state-recorded aih-managed operations no longer shared
 by a live project are removed. Dry-run reports the diff without mutation; `--apply` hash-binds all
 inputs, rolls back partial failure, and replaces target state before committing the ledger last.

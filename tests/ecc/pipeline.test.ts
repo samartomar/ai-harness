@@ -11,6 +11,7 @@ import {
   mergeRegistrationLedger,
   writeRegistrationLedgerAtomic,
 } from "../../src/ecc/registration.js";
+import type { VerifiedEccRequest } from "../../src/ecc/verified.js";
 import { doc, type PlanContext, plan } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
@@ -82,6 +83,69 @@ function vendorLock(verdict: "pass" | "blocked" = "pass") {
 }
 
 const request = { clis: ["kiro" as const], profile: "core", packs: [] };
+
+function mixedCatalog() {
+  return defineBaselineCatalog({
+    id: "ecc",
+    owner: "affaan-m",
+    repo: "ECC",
+    pinnedSha: "a".repeat(40),
+    components: [
+      { id: "runtime:ecc-installer", paths: ["install.sh"] },
+      { id: "module:rules-core", paths: ["rules-core"] },
+      { id: "module:hooks-runtime", paths: ["hooks-runtime"] },
+    ],
+  });
+}
+
+function mixedVendorLock() {
+  mkdirSync(join(sourceRoot, "rules-core"), { recursive: true });
+  mkdirSync(join(sourceRoot, "hooks-runtime"), { recursive: true });
+  writeFileSync(join(sourceRoot, "rules-core", "rule.md"), "# Rule\n");
+  writeFileSync(join(sourceRoot, "hooks-runtime", "hook.js"), "export {};\n");
+  return parseBaselineEvidenceLock({
+    schemaVersion: 1,
+    sources: [
+      {
+        id: "ecc",
+        owner: "affaan-m",
+        repo: "ECC",
+        pinnedSha: "a".repeat(40),
+        components: [
+          {
+            id: "runtime:ecc-installer",
+            paths: ["install.sh"],
+            treeSha256: hashComponentTree(sourceRoot, ["install.sh"]).treeSha256,
+            verdict: "pass",
+            analyzers: [{ name: "aih-native", version: "2.8.0" }],
+            findings: [],
+          },
+          {
+            id: "module:rules-core",
+            paths: ["rules-core"],
+            treeSha256: hashComponentTree(sourceRoot, ["rules-core"]).treeSha256,
+            verdict: "pass",
+            analyzers: [{ name: "aih-native", version: "2.8.0" }],
+            findings: [],
+          },
+          {
+            id: "module:hooks-runtime",
+            paths: ["hooks-runtime"],
+            treeSha256: hashComponentTree(sourceRoot, ["hooks-runtime"]).treeSha256,
+            verdict: "blocked",
+            analyzers: [{ name: "aih-native", version: "2.8.0" }],
+            findings: [
+              {
+                code: "trust.auto-exec-hook",
+                detail: "hook runtime auto-executes",
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  });
+}
 
 describe("ECC baseline evidence pipeline", () => {
   it("builds the additive machine union from scan, declarations, MCP defaults, and prior projects", () => {
@@ -163,6 +227,63 @@ describe("ECC baseline evidence pipeline", () => {
     expect(buildInstallPlan).toHaveBeenCalledOnce();
     expect(result.docs).toEqual([expect.objectContaining({ describe: "install" })]);
     expect(result.report?.exitCode()).toBe(0);
+  });
+
+  it("installs an authorized subset and reports held components without failing", async () => {
+    const partialRequest: VerifiedEccRequest = {
+      clis: ["claude" as const],
+      profile: "core",
+      packs: [],
+      selection: {
+        scope: "scoped" as const,
+        components: ["baseline:rules", "baseline:hooks"],
+        mcps: [],
+        recommendations: [],
+      },
+    };
+    const buildInstallPlan = vi.fn(() =>
+      plan("verified partial install", doc("install", "partial")),
+    );
+
+    const result = await executeEccEvidencePipeline(ctx(), partialRequest, {
+      catalog: mixedCatalog(),
+      source: resolveTrustSource(sourceRoot, { root }),
+      vendorLock: mixedVendorLock(),
+      vendorLockSha256: "f".repeat(64),
+      buildInstallPlan,
+    });
+
+    expect(buildInstallPlan).toHaveBeenCalledWith(expect.anything(), sourceRoot, partialRequest, [
+      expect.objectContaining({ componentId: "runtime:ecc-installer" }),
+      expect.objectContaining({ componentId: "module:rules-core" }),
+    ]);
+    expect(result.docs).toEqual([expect.objectContaining({ describe: "install" })]);
+    expect(result.report?.exitCode()).toBe(0);
+    expect(result.report?.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          verdict: "skip",
+          code: "baseline.evidence-blocked",
+          detail: expect.stringContaining("module:hooks-runtime"),
+        }),
+      ]),
+    );
+    expect(result.digests).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          describe: "held baseline components",
+          data: {
+            held: [
+              expect.objectContaining({
+                componentId: "module:hooks-runtime",
+                routeCode: "baseline.evidence-blocked",
+                codes: ["trust.auto-exec-hook"],
+              }),
+            ],
+          },
+        }),
+      ]),
+    );
   });
 
   it("never constructs install actions when signed evidence blocks", async () => {

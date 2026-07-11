@@ -193,6 +193,7 @@ export async function executeEccEvidencePipeline(
       catalog,
       source,
       componentIds: componentIds(request),
+      allowPartial: true,
       buildInstallPlan: (sourceRoot, authorizations) =>
         buildInstallPlan(ctx, sourceRoot, request, authorizations),
     },

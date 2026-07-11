@@ -96,6 +96,38 @@ function scopedComponentIds(selection: EccComponentSelection): EccComponentId[] 
   return [...selection.components, ...selection.mcps];
 }
 
+export function authorizedEccSelection(
+  selection: EccComponentSelection,
+  authorizations: readonly BaselineAuthorization[],
+  targets: readonly Cli[] = [],
+): EccComponentSelection {
+  const authorizedIds = new Set(authorizations.map((authorization) => authorization.componentId));
+  if (
+    selection.scope === "full" &&
+    targets.length > 0 &&
+    targets.every((target) =>
+      eccEvidenceComponentIdsForSelection(target, selection).every((componentId) =>
+        authorizedIds.has(componentId),
+      ),
+    )
+  ) {
+    return {
+      scope: "full",
+      components: [...selection.components],
+      mcps: [...selection.mcps],
+      recommendations: [...selection.recommendations],
+    };
+  }
+  const authorized = (componentId: EccComponentId | EccComponentSelection["mcps"][number]) =>
+    authorizedIds.has(eccComponentInstallDescriptor(componentId).evidenceComponentId);
+  return {
+    scope: "scoped",
+    components: selection.components.filter(authorized),
+    mcps: selection.mcps.filter(authorized),
+    recommendations: [...selection.recommendations],
+  };
+}
+
 export function eccEvidenceComponentIdsForSelection(
   target: Cli,
   selection: EccComponentSelection,

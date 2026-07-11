@@ -8,6 +8,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- ECC baseline evidence now applies per component: authorized components install while held
+  components are reported with their evidence codes and reasons. The target ledger records only
+  the installed surface, and the installer runtime itself must be authorized before execution.
+  (#420)
 - Trust detectors now allow decorative emoji, arrows, and box drawing only on reviewable
   documentation surfaces, suppress narrow agent-role false positives there, and use full-strength
   content-bound finding fingerprints whose identity does not depend on display line numbers. (#418)
