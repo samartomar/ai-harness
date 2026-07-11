@@ -13,7 +13,7 @@ function registryPin(owner: string, repo: string): string {
 describe("production baseline catalogs", () => {
   it("binds ECC components to the existing registry pin and locked common baseline", () => {
     const catalog = baselineCatalogById("ecc");
-    expect(catalog.pinnedSha).toBe(registryPin("affaan-m", "ECC"));
+    expect(catalog.pinnedSha).toBe(registryPin("samartomar", "ECC"));
     const ids = catalog.components.map((component) => component.id);
     expect(ids).toEqual(
       expect.arrayContaining([

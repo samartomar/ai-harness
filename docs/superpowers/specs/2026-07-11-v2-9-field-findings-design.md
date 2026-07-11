@@ -32,6 +32,12 @@ runtime component. The danger-class floor and #421 fail-closed closure boundary 
 intentional; this design must resume only from an exact upstream commit with a
 passing runtime and a vetted/vendor-hashed dependency path.
 
+Fork-pin bridge active per the maintainer's locked decision: the ECC catalog now
+pins the remediated commit on the `samartomar/ECC` fork
+(`fd3699d65c4767acceac59069847f04122417dcb`, which clears all four
+affaan-m/ECC#2502 blockers and vets green) until the upstream PR to affaan-m/ECC
+merges, which is pending review.
+
 ## Non-goals
 
 - Do not make every ECC component green. In particular, auto-executing hook
@@ -267,7 +273,7 @@ After the trust and partial-install slices land, the maintainer CI flow vets the
 selected exact ECC commit once, signs per-component evidence with the existing
 vendor-evidence mechanism, updates the source registry and vendor lock together,
 and verifies their hashes/signatures before committing either. Pin selection is
-evidence-driven: use the exact upstream commit vetted by the job, never a moving
+evidence-driven: use the exact commit of the catalog's pinned source vetted by the job, never a moving
 branch or tag.
 
 For each posture—vibe, team, and enterprise—the job creates a fresh fixture HOME,

@@ -58,6 +58,8 @@ jobs:
           echo "version $ver matches tag $GITHUB_REF_NAME"
       - name: Verify
         run: npm run verify
+      - name: Check installable baseline
+        run: npm run check:baseline-installable
       - name: Pack tarball + SHA256 checksum
         run: |
           set -euo pipefail

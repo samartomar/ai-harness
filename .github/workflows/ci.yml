@@ -52,3 +52,5 @@ jobs:
         run: npx vitest run
       - name: Build
         run: npx tsup
+      - name: Check installable baseline
+        run: npm run check:baseline-installable

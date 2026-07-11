@@ -3,9 +3,9 @@
   "sources": [
     {
       "id": "ecc",
-      "owner": "affaan-m",
+      "owner": "samartomar",
       "repo": "ECC",
-      "pinnedSha": "4130457d674d2180c5af2c5f634f3cae4cbc6c4f",
+      "pinnedSha": "fd3699d65c4767acceac59069847f04122417dcb",
       "components": [
         {
           "id": "runtime:ecc-installer",
@@ -23,31 +23,15 @@
             "scripts/lib/mcp-config.js",
             "scripts/lib/path-safety.js"
           ],
-          "treeSha256": "9b61c3ee820c1cb1b4c9eb4d15fa2a1a317b3207fcd6817605fcd36c56a6f5c9",
-          "verdict": "blocked",
+          "treeSha256": "d96c599cb08fab3738773dbdfe89aece6f863341f34d8fd9f09a4354e9bd047a",
+          "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
               "version": "2.8.0"
             }
           ],
-          "findings": [
-            {
-              "code": "trust.auto-exec-hook",
-              "detail": "package.json:332 — package.json lifecycle script postinstall can execute during install/publish",
-              "fingerprint": "trust-auto-exec-hook:package.json:3796c9a3b61f52ed98737fc97335b247fc294dbfd26a7251e2705e41d4b2acf9"
-            },
-            {
-              "code": "trust.unpinned-dependency",
-              "count": 10,
-              "detail": "10 findings; first: package.json:368 — direct dependency @eslint/js uses unpinned version spec \"^9.39.2\""
-            },
-            {
-              "code": "trust.hidden-unicode",
-              "count": 5,
-              "detail": "5 findings; first: install-components.json:192 — trust.hidden-unicode: document contains 2 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
-            }
-          ]
+          "findings": []
         },
         {
           "id": "runtime:ecc-kiro",
@@ -66,7 +50,7 @@
             {
               "code": "trust.hidden-unicode",
               "count": 80,
-              "detail": "80 findings; first: agents/build-error-resolver.md:12 — trust.hidden-unicode: document contains 14 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
+              "detail": "80 findings; first: agents/build-error-resolver.json:16 — trust.hidden-unicode: document contains 14 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
             },
             {
               "code": "trust.visible-unicode",
@@ -123,7 +107,7 @@
             "agents",
             "AGENTS.md"
           ],
-          "treeSha256": "9114a5ff4fb04100235d9939edb2484599f874bf74ac725c3558041897a95cd0",
+          "treeSha256": "157cd359682e47d503d560b0eb7a6f0ef9a461c38bca8d91c9bb0bd50a4e9dcc",
           "verdict": "blocked",
           "analyzers": [
             {
@@ -134,8 +118,8 @@
           "findings": [
             {
               "code": "trust.hidden-unicode",
-              "count": 54,
-              "detail": "54 findings; first: skills/agent-introspection-debugging/SKILL.md:70 — trust.hidden-unicode: document contains 8 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
+              "count": 55,
+              "detail": "55 findings; first: skills/agent-introspection-debugging/SKILL.md:70 — trust.hidden-unicode: document contains 8 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
             },
             {
               "code": "trust.visible-unicode",
@@ -161,7 +145,7 @@
             "scripts/harness-audit.js",
             "scripts/skills-health.js"
           ],
-          "treeSha256": "cf7a222bc0f9712855e82e35c7afbd16c7623227ddeca903fc10c8a1cc68dcda",
+          "treeSha256": "4acb4c623ce5e57ee862201b7ff6fd825d498b64628c590022422f09dc9be31b",
           "verdict": "blocked",
           "analyzers": [
             {
@@ -172,8 +156,8 @@
           "findings": [
             {
               "code": "trust.hidden-unicode",
-              "count": 55,
-              "detail": "55 findings; first: aside.md:7 — trust.hidden-unicode: document contains 15 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
+              "count": 56,
+              "detail": "56 findings; first: aside.md:7 — trust.hidden-unicode: document contains 15 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
             },
             {
               "code": "trust.visible-unicode",
@@ -189,7 +173,7 @@
             "scripts/hooks",
             "scripts/lib"
           ],
-          "treeSha256": "9ab2963bc31ec59b466c6fc13499d51601e4a3606432e5fb461694cbd4e20a3d",
+          "treeSha256": "d980faffb411e96cf62d82822abdecb4b2491a0239f18c40e0a546ab23b4c2d2",
           "verdict": "blocked",
           "analyzers": [
             {
@@ -199,14 +183,14 @@
           ],
           "findings": [
             {
+              "code": "trust.hidden-unicode",
+              "count": 64,
+              "detail": "64 findings; first: hooks.json:282 — trust.hidden-unicode: document contains 1 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
+            },
+            {
               "code": "trust.visible-unicode",
               "detail": "README.md:42 — trust.visible-unicode: document contains 10 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation",
               "fingerprint": "trust-visible-unicode:README.md:e26bfa5fd610d2c34a9155890b8cb023bfa6d50fefb2c3e6536711dfd9e544d1"
-            },
-            {
-              "code": "trust.hidden-unicode",
-              "count": 64,
-              "detail": "64 findings; first: hooks.json:271 — trust.hidden-unicode: document contains 1 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
             }
           ]
         },
@@ -227,7 +211,7 @@
             ".openclaw",
             ".kimi"
           ],
-          "treeSha256": "9a9091ba2fd9dada0d10f486a02d52404e427a60813faa0006ab66793b5291af",
+          "treeSha256": "493305d24edd53fc0c9a8b0fe9eadf8a1e359a188018312627d5d94ceab2b52e",
           "verdict": "blocked",
           "analyzers": [
             {
@@ -756,7 +740,7 @@
             "skills/token-budget-advisor",
             "skills/team-builder"
           ],
-          "treeSha256": "622d44c48c83e900cad9f1c25dc1e3343782373ccb89ace3a6d6f9efa79e86dc",
+          "treeSha256": "847f3a05e5fc204c54e5d51618ced063724b800b93675c7a668aff169683732b",
           "verdict": "blocked",
           "analyzers": [
             {
@@ -917,7 +901,7 @@
           "paths": [
             "docs/zh-CN"
           ],
-          "treeSha256": "4e9ee999273d5732a8445d04b35d65f7feee233665bd3cd44a3352751ad7fcbc",
+          "treeSha256": "432b53a3df069d504ff34d73c3ffc846a8dc8a74bfd94691c7c59304cde25dfa",
           "verdict": "blocked",
           "analyzers": [
             {
@@ -1484,7 +1468,7 @@
           "paths": [
             "agents/docs-lookup.md"
           ],
-          "treeSha256": "713fee387729abcadefc936553d866f18553aa73a96b56ac2a58671e5050dd5e",
+          "treeSha256": "d95025bc82a47b301f53d4be82073806ad1195f2d9d7e341df110a12d6ceec50",
           "verdict": "blocked",
           "analyzers": [
             {
@@ -1531,7 +1515,7 @@
           "paths": [
             "agents/security-reviewer.md"
           ],
-          "treeSha256": "ae56b99ea1cc8f38acc57646109deaabb0b6217d1f9e7746c0e3517f192b6868",
+          "treeSha256": "0979daf595794072c47a8ed822874ae582a5e578d0ad89ebfe2681a0dd03d5e1",
           "verdict": "blocked",
           "analyzers": [
             {
@@ -1654,7 +1638,7 @@
             {
               "code": "trust.hidden-unicode",
               "count": 6,
-              "detail": "6 findings; first: SKILL.md:18 — trust.hidden-unicode: document contains 21 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
+              "detail": "6 findings; first: scripts/helper.js:51 — trust.hidden-unicode: document contains 4 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
             }
           ]
         },
@@ -1795,7 +1779,7 @@
             {
               "code": "trust.hidden-unicode",
               "count": 9,
-              "detail": "9 findings; first: condition-based-waiting.md:37 — trust.hidden-unicode: document contains 9 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
+              "detail": "9 findings; first: condition-based-waiting-example.ts:158 — trust.hidden-unicode: document contains 1 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
             }
           ]
         },
