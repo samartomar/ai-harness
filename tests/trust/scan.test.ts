@@ -3925,7 +3925,7 @@ describe("scanTrustTree", () => {
       "--no-python-downloads",
       "--no-env-file",
       "--from",
-      "cisco-ai-skill-scanner",
+      "cisco-ai-skill-scanner==2.0.12",
       "skill-scanner",
       "scan",
       "/scan-root",

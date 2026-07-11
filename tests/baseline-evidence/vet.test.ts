@@ -150,6 +150,46 @@ describe("vetBaselineCatalog", () => {
     ).rejects.toThrow(/skillspector.*version/i);
   });
 
+  it("fails closed when a component is missing any required baseline analyzer", async () => {
+    await expect(
+      vetBaselineCatalog(root, catalog(), {
+        scanComponent: async () => ({
+          analyzersRun: ["aih-native"],
+          checks: [pass("scan")],
+        }),
+        requiredAnalyzers: ["aih-native", "skillspector@docker", "cisco@uvx"],
+        analyzerVersions: {
+          "aih-native": "2.7.0",
+          "skillspector@docker": "326a2b489411@sha256:e82fd471e156",
+          "cisco@uvx": "2.0.12",
+        },
+      }),
+    ).rejects.toThrow(
+      /missing required baseline analyzers: skillspector@docker, cisco@uvx/i,
+    );
+  });
+
+  it("records every required baseline analyzer with an attributable exact version", async () => {
+    const evidence = await vetBaselineCatalog(root, catalog(), {
+      scanComponent: async () => ({
+        analyzersRun: ["aih-native", "skillspector@docker", "cisco@uvx"],
+        checks: [pass("scan")],
+      }),
+      requiredAnalyzers: ["aih-native", "skillspector@docker", "cisco@uvx"],
+      analyzerVersions: {
+        "aih-native": "2.7.0",
+        "skillspector@docker": "326a2b489411@sha256:e82fd471e156",
+        "cisco@uvx": "2.0.12",
+      },
+    });
+
+    expect(evidence.components[0]?.analyzers).toEqual([
+      { name: "aih-native", version: "2.7.0" },
+      { name: "cisco@uvx", version: "2.0.12" },
+      { name: "skillspector@docker", version: "326a2b489411@sha256:e82fd471e156" },
+    ]);
+  });
+
   it("fails closed when component bytes change during analyzer execution", async () => {
     await expect(
       vetBaselineCatalog(root, catalog(), {
