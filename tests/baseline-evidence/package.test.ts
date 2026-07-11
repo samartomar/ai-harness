@@ -58,6 +58,8 @@ describe("baseline evidence release payload", () => {
     expect(workflow).toContain(`ref: ${SKILLSPECTOR_SOURCE_REVISION}`);
     expect(workflow).toContain(SKILLSPECTOR_IMAGE_DIGEST);
     expect(workflow).toContain("docker build");
+    expect(workflow).toContain("tools/skillspector.Dockerfile");
+    expect(workflow).toContain("SOURCE_DATE_EPOCH=1782883813");
     expect(workflow).toContain(
       "astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990",
     );
@@ -66,6 +68,19 @@ describe("baseline evidence release payload", () => {
     expect(workflow).toContain("actions/upload-artifact@");
     expect(workflow).toContain("src/baseline-evidence/vendor-lock.json");
     expect(workflow).not.toMatch(/git\s+(commit|push)|npm\s+publish/);
+  });
+
+  it("builds SkillSpector from its committed lock on a digest-pinned base", () => {
+    const path = join(repo, "tools", "skillspector.Dockerfile");
+    expect(existsSync(path)).toBe(true);
+    const dockerfile = readFileSync(path, "utf8");
+    expect(dockerfile).toContain(
+      "python:3.12-slim-bookworm@sha256:8a7e7cc04fd3e2bd787f7f24e22d5d119aa590d429b50c95dfe12b3abe52f48b",
+    );
+    expect(dockerfile).toContain("COPY pyproject.toml uv.lock README.md ./");
+    expect(dockerfile).toContain("uv sync --frozen --no-dev --no-editable");
+    expect(dockerfile).not.toContain("apt-get");
+    expect(dockerfile).not.toMatch(/pip\s+install\s+--no-cache-dir\s+\./);
   });
 
   it("checks analyzer-complete vendor receipts again before release packaging", () => {
