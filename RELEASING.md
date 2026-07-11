@@ -47,10 +47,18 @@ is ever stored; after the bootstrap, publish is OIDC-only.
    tracker presence, gate-bypassing commits, version coherence, revert pairs),
    compares the declared scope with the computed bump, and emits the cut manifest
    to paste into the tracker. If the computed class exceeds intent, stop and record
-   the maintainer's decision in the tracker; after explicit approval, rerun with
-   `--ack-intent-escalation <token>` using the exact token emitted in the manifest.
-   The token binds candidate SHA, declared intent, and computed bump; acknowledgement
-   never changes the label-derived bump. The cut set
+   the maintainer's decision in the tracker. An authorized repository owner, member,
+   or collaborator must post the exact token emitted in the manifest as a comment on
+   that release tracker, then rerun with
+   `--ack-intent-escalation-comment <GitHub-issue-comment-URL>`. Preflight resolves the
+   comment through GitHub and records its repository, tracker issue, immutable comment
+   ID and URL, author and repository authority, creation timestamp, and exact token in
+   the cut manifest. The token remains bound to candidate SHA, declared intent, and
+   computed bump; acknowledgement never changes the label-derived bump.
+
+   A fully credentialed runner can still post this comment itself. The control creates
+   public, timestamped, attributable evidence and removes an invisible
+   self-acknowledgement flag; it is not automation-proof authorization. The cut set
    is the merged PRs reachable from `main` since the previous tag —
    open, deferred, or partial work never affects the version. Reconcile the open `next-release` train
    milestone ([Milestones](https://github.com/samartomar/ai-harness/milestones)) to that

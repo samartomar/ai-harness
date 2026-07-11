@@ -6,6 +6,14 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Upward release-intent escalation now requires an authorized GitHub comment on the release
+  tracker containing the exact SHA/declared-intent/computed-bump token. Preflight validates and
+  records the immutable comment ID and URL, author authority, and timestamp in the cut manifest;
+  this creates public attributable evidence while explicitly remaining vulnerable to a fully
+  credentialed runner posting the comment itself. (#424)
+
 ### Changed
 
 - ECC baseline evidence now applies per component: authorized components install while held

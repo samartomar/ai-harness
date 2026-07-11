@@ -1,8 +1,9 @@
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { delimiter, join } from "node:path";
 import { describe, expect, it } from "vitest";
+import type { IntentAcknowledgementArtifact } from "../../src/internals/release-intent-artifact.js";
 import type {
   MergedPr,
   MilestoneItem,
@@ -44,6 +45,7 @@ function mergedItem(p: MergedPr): MilestoneItem {
 function cleanData(): PreflightData {
   const prs = [pr(1, "fix: a"), pr(2, "feat: b", ["semver:minor"])];
   return {
+    repository: "samartomar/ai-harness",
     previousTag: "v2.5.1",
     candidateSha: "a".repeat(40),
     commitSubjects: ["fix: a (#1)", "feat: b (#2)"],
@@ -53,6 +55,23 @@ function cleanData(): PreflightData {
     packageVersion: "2.5.1",
     versionConstant: "2.5.1",
     declaredIntent: "minor",
+  };
+}
+
+function acknowledgementArtifact(
+  data: PreflightData,
+  overrides: Partial<IntentAcknowledgementArtifact> = {},
+): IntentAcknowledgementArtifact {
+  return {
+    repository: data.repository,
+    issueNumber: 900,
+    commentId: 123456,
+    commentUrl: "https://github.com/samartomar/ai-harness/issues/900#issuecomment-123456",
+    author: "samartomar",
+    authorAssociation: "OWNER",
+    createdAt: "2026-07-10T23:00:00Z",
+    token: `${data.candidateSha}:patch:minor`,
+    ...overrides,
   };
 }
 
@@ -119,10 +138,26 @@ describe("runPreflight — declared intent checkpoint", () => {
     });
   });
 
-  it("accepts escalation only when acknowledgement binds SHA, intent, and computed bump", () => {
+  it("rejects a raw token without a resolved acknowledgement artifact", () => {
     const d = cleanData();
     d.declaredIntent = "patch";
-    d.intentAcknowledgement = `${d.candidateSha}:patch:minor`;
+    (d as unknown as { intentAcknowledgement: string }).intentAcknowledgement =
+      `${d.candidateSha}:patch:minor`;
+
+    expect(runPreflight(d)).toMatchObject({
+      ok: false,
+      declaredIntent: "patch",
+      computedBump: "minor",
+      intentEscalation: true,
+      intentAcknowledged: false,
+      requiredIntentAcknowledgement: `${d.candidateSha}:patch:minor`,
+    });
+  });
+
+  it("accepts escalation only with an attributable artifact bound to the tracker and inputs", () => {
+    const d = cleanData();
+    d.declaredIntent = "patch";
+    d.intentAcknowledgementArtifact = acknowledgementArtifact(d);
 
     expect(runPreflight(d)).toMatchObject({
       ok: true,
@@ -130,38 +165,62 @@ describe("runPreflight — declared intent checkpoint", () => {
       computedBump: "minor",
       intentEscalation: true,
       intentAcknowledged: true,
+      intentAcknowledgementArtifact: {
+        repository: "samartomar/ai-harness",
+        issueNumber: 900,
+        commentId: 123456,
+        commentUrl: "https://github.com/samartomar/ai-harness/issues/900#issuecomment-123456",
+        author: "samartomar",
+        authorAssociation: "OWNER",
+        createdAt: "2026-07-10T23:00:00Z",
+        token: `${d.candidateSha}:patch:minor`,
+      },
       requiredIntentAcknowledgement: `${d.candidateSha}:patch:minor`,
     });
   });
 
-  it("intent-escalation: rejects an acknowledgement bound to another candidate", () => {
+  it.each([
+    ["repository", { repository: "other/repo" }],
+    ["tracker issue", { issueNumber: 901 }],
+    ["token", { token: `${"b".repeat(40)}:patch:minor` }],
+    ["authority", { authorAssociation: "CONTRIBUTOR" as "OWNER" }],
+  ])("rejects an artifact with the wrong %s", (_name, overrides) => {
     const d = cleanData();
     d.declaredIntent = "patch";
-    d.intentAcknowledgement = `${"b".repeat(40)}:patch:minor`;
-
-    const m = runPreflight(d);
-
-    expect(m.ok).toBe(false);
-    expect(m.findings).toContainEqual(expect.objectContaining({ code: "intent-escalation" }));
-    expect(m).toMatchObject({ intentEscalation: true, intentAcknowledged: false });
-  });
-
-  it("rejects acknowledgement for the same SHA but a different bump decision", () => {
-    const d = cleanData();
-    d.declaredIntent = "patch";
-    d.intentAcknowledgement = `${d.candidateSha}:patch:major`;
+    d.intentAcknowledgementArtifact = acknowledgementArtifact(d, overrides);
 
     expect(runPreflight(d)).toMatchObject({
       ok: false,
       intentEscalation: true,
       intentAcknowledged: false,
+      intentAcknowledgementArtifact: undefined,
       requiredIntentAcknowledgement: `${d.candidateSha}:patch:minor`,
     });
+    expect(JSON.parse(JSON.stringify(runPreflight(d)))).not.toHaveProperty(
+      "intentAcknowledgementArtifact",
+    );
+  });
+
+  it("omits an irrelevant acknowledgement artifact when escalation is not required", () => {
+    const d = cleanData();
+    d.intentAcknowledgementArtifact = acknowledgementArtifact(d);
+
+    const manifest = runPreflight(d);
+
+    expect(manifest).toMatchObject({
+      ok: true,
+      intentEscalation: false,
+      intentAcknowledged: false,
+      intentAcknowledgementArtifact: undefined,
+    });
+    expect(JSON.parse(JSON.stringify(manifest))).not.toHaveProperty(
+      "intentAcknowledgementArtifact",
+    );
   });
 });
 
 describe("release:preflight CLI intent checkpoint", () => {
-  it("emits the manifest on blocked escalation and accepts only the candidate-bound ack", () => {
+  it("emits blocked evidence and accepts a resolved fixture artifact without a network call", () => {
     const dir = mkdtempSync(join(tmpdir(), "aih-release-intent-"));
     try {
       const fixture = cleanData();
@@ -187,19 +246,172 @@ describe("release:preflight CLI intent checkpoint", () => {
         findings: [expect.objectContaining({ code: "intent-escalation" })],
       });
 
-      const acknowledged = run(
+      const rawToken = run(
         "--intent",
         "patch",
         "--ack-intent-escalation",
         `${fixture.candidateSha}:patch:minor`,
       );
+      expect(rawToken.status).toBe(1);
+      expect(rawToken.stderr).toMatch(
+        /--ack-intent-escalation is retired; use --ack-intent-escalation-comment/i,
+      );
+
+      fixture.intentAcknowledgementArtifact = acknowledgementArtifact({
+        ...fixture,
+        declaredIntent: "patch",
+      });
+      writeFileSync(input, JSON.stringify(fixture), "utf8");
+      const acknowledged = run("--intent", "patch");
       expect(acknowledged.status, acknowledged.stderr).toBe(0);
       expect(JSON.parse(acknowledged.stdout)).toMatchObject({
         ok: true,
         intentEscalation: true,
         intentAcknowledged: true,
+        intentAcknowledgementArtifact: {
+          repository: "samartomar/ai-harness",
+          issueNumber: 900,
+          commentId: 123456,
+          commentUrl: "https://github.com/samartomar/ai-harness/issues/900#issuecomment-123456",
+          author: "samartomar",
+          authorAssociation: "OWNER",
+          createdAt: "2026-07-10T23:00:00Z",
+          token: `${fixture.candidateSha}:patch:minor`,
+        },
         requiredIntentAcknowledgement: `${fixture.candidateSha}:patch:minor`,
       });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("emits a blocked manifest when live acknowledgement URL validation fails", () => {
+    const dir = mkdtempSync(join(tmpdir(), "aih-release-live-intent-"));
+    try {
+      const bin = join(dir, "bin");
+      mkdirSync(bin);
+      const candidateSha = "a".repeat(40);
+      const gitStub = `
+const { writeSync } = require("node:fs");
+const out = (value) => writeSync(1, String(value) + "\\n");
+const args = process.argv.slice(2);
+if (args[0] === "describe") out("v2.8.0");
+else if (args[0] === "rev-parse") out("${candidateSha}");
+else if (args[0] === "log") out("feat: b (#2)");
+else process.exit(2);
+`;
+
+      const ghStub = `
+const { writeSync } = require("node:fs");
+const out = (value) => writeSync(1, String(value) + "\\n");
+const args = process.argv.slice(2).join(" ");
+if (args.startsWith("repo view ")) {
+  out("samartomar/ai-harness");
+} else if (args.startsWith("pr view 2 ")) {
+  out(JSON.stringify({
+    number: 2,
+    title: "feat: b",
+    labels: [{ name: "semver:minor" }],
+    milestone: { title: "next-release" },
+  }));
+} else if (args === "api repos/{owner}/{repo}/milestones?state=all&per_page=100") {
+  out(JSON.stringify([{ number: 1, title: "next-release" }]));
+} else if (args === "api repos/{owner}/{repo}/issues?milestone=1&state=all&per_page=100") {
+  out(JSON.stringify([
+    {
+      number: 2,
+      state: "closed",
+      title: "feat: b",
+      labels: [],
+      pull_request: { merged_at: "2026-07-10T22:00:00Z" },
+    },
+    {
+      number: 900,
+      state: "open",
+      title: "release: vNEXT tracker",
+      labels: [{ name: "release-blocker" }],
+    },
+  ]));
+} else {
+  writeSync(2, "unexpected gh invocation: " + args + "\\n");
+  process.exit(2);
+}
+`;
+
+      let nodeOptions = process.env.NODE_OPTIONS;
+      if (process.platform === "win32") {
+        const gitModule = join(bin, "git-stub.cjs");
+        const ghModule = join(bin, "gh-stub.cjs");
+        const preload = join(bin, "command-preload.cjs");
+        writeFileSync(gitModule, gitStub, "utf8");
+        writeFileSync(ghModule, ghStub, "utf8");
+        writeFileSync(
+          preload,
+          `const { basename } = require("node:path");
+const command = basename(process.execPath).toLowerCase();
+if (command === "git.exe") {
+  process.argv[1] = basename(process.argv[1] || "");
+  process.argv.splice(1, 0, "git-stub.cjs");
+  require("./git-stub.cjs");
+  process.exit(0);
+} else if (command === "gh.exe") {
+  process.argv[1] = basename(process.argv[1] || "");
+  process.argv.splice(1, 0, "gh-stub.cjs");
+  require("./gh-stub.cjs");
+  process.exit(0);
+}
+`,
+          "utf8",
+        );
+        copyFileSync(process.execPath, join(bin, "git.exe"));
+        copyFileSync(process.execPath, join(bin, "gh.exe"));
+        nodeOptions = [process.env.NODE_OPTIONS, `--require=${JSON.stringify(preload)}`]
+          .filter(Boolean)
+          .join(" ");
+      } else {
+        const git = join(bin, "git");
+        const gh = join(bin, "gh");
+        writeFileSync(git, `#!/usr/bin/env node${gitStub}`, "utf8");
+        writeFileSync(gh, `#!/usr/bin/env node${ghStub}`, "utf8");
+        chmodSync(git, 0o755);
+        chmodSync(gh, 0o755);
+      }
+
+      const tsx = join(process.cwd(), "node_modules", "tsx", "dist", "cli.mjs");
+      const script = join(process.cwd(), "src", "internals", "release-preflight.ts");
+      const result = spawnSync(
+        process.execPath,
+        [
+          tsx,
+          script,
+          "--intent",
+          "patch",
+          "--ack-intent-escalation-comment",
+          "https://evil.example/comment/123456",
+        ],
+        {
+          cwd: process.cwd(),
+          encoding: "utf8",
+          env: {
+            ...process.env,
+            NODE_OPTIONS: nodeOptions,
+            PATH: `${bin}${delimiter}${process.env.PATH ?? ""}`,
+          },
+        },
+      );
+
+      expect(result.status).toBe(1);
+      expect(result.stdout, result.stderr).not.toBe("");
+      expect(JSON.parse(result.stdout)).toMatchObject({
+        ok: false,
+        intentEscalation: true,
+        intentAcknowledged: false,
+        findings: expect.arrayContaining([
+          expect.objectContaining({ code: "intent-acknowledgement" }),
+        ]),
+      });
+      expect(JSON.parse(result.stdout)).not.toHaveProperty("intentAcknowledgementArtifact");
+      expect(result.stderr).toContain("[intent-acknowledgement]");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
