@@ -1,4 +1,5 @@
 import process from "node:process";
+import type { Cli } from "../internals/clis.js";
 import { type ExecAction, exec, type PlanContext } from "../internals/plan.js";
 
 export interface EccReconcileExpectedRead {
@@ -8,12 +9,14 @@ export interface EccReconcileExpectedRead {
 
 export interface EccReconcileRemoveFileMutation {
   kind: "remove-file";
+  phase?: "owned-removal" | "target-state";
   path: string;
   root: string;
 }
 
 export interface EccReconcileWriteFileMutation {
   kind: "write-file";
+  phase?: "owned-removal" | "target-state";
   path: string;
   root: string;
   contents: string;
@@ -22,6 +25,7 @@ export interface EccReconcileWriteFileMutation {
 
 export interface EccReconcileRemoveJsonSubsetMutation {
   kind: "remove-json-subset";
+  phase?: "owned-removal" | "target-state";
   path: string;
   root: string;
   payloads: unknown[];
@@ -29,6 +33,7 @@ export interface EccReconcileRemoveJsonSubsetMutation {
 
 export interface EccReconcileFilterCodexMcpMutation {
   kind: "filter-codex-mcp-block";
+  phase?: "owned-removal" | "target-state";
   path: string;
   root: string;
   keepNames: string[];
@@ -36,6 +41,7 @@ export interface EccReconcileFilterCodexMcpMutation {
 
 export interface EccReconcileFilterCodexAgentsMutation {
   kind: "filter-codex-agents-block";
+  phase?: "owned-removal" | "target-state";
   path: string;
   root: string;
   keepSkills: string[];
@@ -59,17 +65,38 @@ export interface EccReconcileLedgerWrite {
 export interface EccReconcileTransactionPayload {
   reads: EccReconcileExpectedRead[];
   mutations: EccReconcileMutation[];
+  uninstalls?: EccReconcileUpstreamUninstall[];
   ledger: EccReconcileLedgerWrite;
+}
+
+export interface EccReconcileUpstreamUninstall {
+  target: Cli;
+  argv: string[];
+  cwd?: string;
+  paths: string[];
 }
 
 const ECC_RECONCILE_TRANSACTION_DRIVER = String.raw`
 const crypto = require("node:crypto");
+const childProcess = require("node:child_process");
 const fs = require("node:fs");
 const path = require("node:path");
 
 const payload = JSON.parse(Buffer.from(process.argv[1], "base64").toString("utf8"));
 if (!payload || !Array.isArray(payload.reads) || !Array.isArray(payload.mutations) || !payload.ledger) {
   throw new Error("invalid ECC reconciliation transaction payload");
+}
+const uninstalls = payload.uninstalls === undefined ? [] : payload.uninstalls;
+if (!Array.isArray(uninstalls)) throw new Error("invalid ECC reconciliation uninstalls");
+for (const uninstall of uninstalls) {
+  if (!uninstall || typeof uninstall.target !== "string"
+    || !Array.isArray(uninstall.argv) || uninstall.argv.length === 0
+    || !uninstall.argv.every((value) => typeof value === "string" && value.length > 0)
+    || !Array.isArray(uninstall.paths)
+    || !uninstall.paths.every((value) => typeof value === "string" && path.isAbsolute(value))
+    || (uninstall.cwd !== undefined && (typeof uninstall.cwd !== "string" || !path.isAbsolute(uninstall.cwd)))) {
+    throw new Error("invalid ECC reconciliation upstream uninstall");
+  }
 }
 
 const transientLockCodes = new Set(["EBUSY", "EPERM", "EACCES"]);
@@ -305,7 +332,13 @@ for (const mutation of payload.mutations) {
     throw new Error("unsupported ECC reconciliation mutation: " + mutation.kind);
   }
   if (next !== null && Buffer.compare(current, next) === 0) continue;
-  prepared.push({ path: mutation.path, root: mutation.root, next, mode: mutation.mode });
+  prepared.push({
+    path: mutation.path,
+    root: mutation.root,
+    next,
+    mode: mutation.mode,
+    phase: mutation.phase === "target-state" ? "target-state" : "owned-removal",
+  });
 }
 
 const ledger = payload.ledger;
@@ -346,8 +379,32 @@ const applyChange = (change) => {
   }
 };
 
+let divergence = null;
+const completedUninstalls = [];
 try {
-  for (const change of prepared) applyChange(change);
+  for (const change of prepared.filter((value) => value.phase === "owned-removal")) {
+    applyChange(change);
+  }
+  for (const uninstall of uninstalls) {
+    const result = childProcess.spawnSync(uninstall.argv[0], uninstall.argv.slice(1), {
+      cwd: uninstall.cwd,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+      timeout: 90000,
+      killSignal: "SIGTERM",
+    });
+    if (result.error || result.status !== 0) {
+      const reason = result.error
+        ? result.error.message
+        : "upstream uninstall exited " + (result.status === null ? "by signal" : result.status);
+      divergence = { target: uninstall.target, paths: uninstall.paths, reason };
+      throw new Error(reason);
+    }
+    completedUninstalls.push(uninstall);
+  }
+  for (const change of prepared.filter((value) => value.phase === "target-state")) {
+    applyChange(change);
+  }
   if (ledgerChange) applyChange(ledgerChange);
 } catch (error) {
   const rollbackErrors = [];
@@ -361,6 +418,19 @@ try {
     } catch (rollbackError) {
       rollbackErrors.push(rollbackError);
     }
+  }
+  const affected = divergence || completedUninstalls[completedUninstalls.length - 1];
+  if (affected) {
+    const reason = divergence ? divergence.reason : "failure after upstream uninstall: " + error.message;
+    const rollback = rollbackErrors.length > 0
+      ? "; ECC reconciliation rollback failed: "
+        + rollbackErrors.map((value) => value.message).join("; ")
+      : "";
+    throw new Error(
+      "ECC prune divergence: target=" + affected.target
+      + "; paths=" + (affected.paths.join(",") || "unknown")
+      + "; " + reason + rollback + "; registration ledger not advanced",
+    );
   }
   if (rollbackErrors.length > 0) {
     throw new Error(error.message + "; ECC reconciliation rollback failed: "
@@ -388,7 +458,9 @@ export function eccReconcileTransactionAction(
       failureCheck: (result) => ({
         name: "ECC prune reconciliation",
         verdict: "fail",
-        detail: `ECC prune reconciliation failed (exit ${result.code ?? "signal"})`,
+        detail: `ECC prune reconciliation failed (exit ${result.code ?? "signal"})${
+          result.stderr.trim().length > 0 ? `: ${result.stderr.trim().slice(0, 2_000)}` : ""
+        }`,
       }),
     },
   );

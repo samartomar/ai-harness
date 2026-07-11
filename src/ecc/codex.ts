@@ -32,7 +32,7 @@ const TOML_TABLE_HEADER = /^[ \t]*\[/;
 export const CODEX_AGENTS_BLOCK_MARKER = "ecc-codex:agents";
 export const CODEX_INSTALL_STATE_FILE = "ecc-aih-install-state.json";
 
-interface CodexTomlFootprint {
+export interface CodexTomlFootprint {
   rootKeys: string[];
   tables: string[];
   tableKeys: Record<string, string[]>;
@@ -466,7 +466,7 @@ function removeInlineTableKeys(lines: string[], tablePath: string, keys: Set<str
   return lines.map((entry, entryIndex) => (entryIndex === index ? nextLine : entry));
 }
 
-function stripCodexTomlFootprint(raw: string, footprint: CodexTomlFootprint): string {
+export function stripCodexTomlFootprint(raw: string, footprint: CodexTomlFootprint): string {
   const usesCrlf = /\r\n/.test(raw);
   const mcpTables = footprint.mcpServers.map((name) => `mcp_servers.${name}`);
   let lines = removeTables(raw, footprint.tables);

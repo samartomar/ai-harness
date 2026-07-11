@@ -6,10 +6,18 @@ import { z } from "zod";
 import { AihError } from "../errors.js";
 import type { Cli } from "../internals/clis.js";
 import { readRegularFileWithStats } from "../internals/fsxn.js";
+import { stripManagedBlock } from "../internals/markers.js";
 import { type Action, digest, type PlanContext } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
-import { codexHomeDir, codexInstallStatePath } from "./codex.js";
+import { execArgv } from "../tools/install.js";
+import {
+  CODEX_AGENTS_BLOCK_MARKER,
+  codexHomeDir,
+  codexInstallStatePath,
+  stripCodexTomlFootprint,
+} from "./codex.js";
 import type { EccComponentSelection } from "./components.js";
+import { ECC_NPM_CLI_BIN, ECC_NPM_PACKAGE, isAihDirectEccInstallTarget } from "./install.js";
 import { eccMaterializationSpec } from "./materialize.js";
 import {
   eccInstallStateCandidates,
@@ -21,6 +29,7 @@ import {
   type EccReconcileExpectedRead,
   type EccReconcileMutation,
   type EccReconcileTransactionPayload,
+  type EccReconcileUpstreamUninstall,
   eccReconcileTransactionAction,
 } from "./reconcile-driver.js";
 import { readRegistrationLedgerSnapshot, serializeRegistrationLedger } from "./registration.js";
@@ -159,17 +168,18 @@ function codexMutations(
   if (reconciliation.full) return [];
   const prior = reconciliation.prior.targets.find((target) => target.target === "codex");
   const next = reconciliation.ledger.targets.find((target) => target.target === "codex");
-  if (prior === undefined || next === undefined) return [];
+  if (prior === undefined) return [];
+  const dropped = next === undefined;
   const statePath = codexInstallStatePath(ctx);
   const codexRoot = codexHomeDir(ctx);
-  const nextComponentIds = new Set(next.components.map((component) => component.id));
+  const nextComponentIds = new Set(next?.components.map((component) => component.id) ?? []);
   const componentsChanged = prior.components.some(
     (component) => !nextComponentIds.has(component.id),
   );
-  const nextMcpIds = new Set(next.mcps.map((mcp) => mcp.slice("mcp:".length)));
+  const nextMcpIds = new Set(next?.mcps.map((mcp) => mcp.slice("mcp:".length)) ?? []);
   const opened = safeRead(codexRoot, statePath);
   if (opened === undefined) {
-    if (componentsChanged || prior.mcps.some((mcp) => !next.mcps.includes(mcp))) {
+    if (componentsChanged || prior.mcps.some((mcp) => !next?.mcps.includes(mcp))) {
       fail(`missing aih ECC Codex install state: ${statePath}`);
     }
     return [];
@@ -178,13 +188,50 @@ function codexMutations(
   const state = parseCodexAihState(opened.contents, statePath);
   const keptMcpNames = state.codexToml.mcpServers.filter((name) => nextMcpIds.has(name));
   const mcpsChanged = keptMcpNames.length !== state.codexToml.mcpServers.length;
-  const removeAgentsBlock = next.components.length === 0;
+  const removeAgentsBlock = (next?.components.length ?? 0) === 0;
   const nextState: CodexAihState = {
     ...state,
     codexToml: { ...state.codexToml, mcpServers: keptMcpNames },
     agentsBlock: removeAgentsBlock ? false : state.agentsBlock,
   };
   const mutations: EccReconcileMutation[] = [];
+  if (dropped) {
+    const configPath = join(codexRoot, "config.toml");
+    const config = safeRead(codexRoot, configPath);
+    if (config !== undefined) {
+      addRead(reads, configPath, config.contents);
+      mutations.push({
+        kind: "write-file",
+        phase: "owned-removal",
+        path: configPath,
+        root: codexRoot,
+        contents: stripCodexTomlFootprint(config.contents.toString("utf8"), state.codexToml),
+        mode: config.mode,
+      });
+    }
+    if (state.agentsBlock) {
+      const agentsPath = join(codexRoot, "AGENTS.md");
+      const agents = safeRead(codexRoot, agentsPath);
+      if (agents === undefined)
+        fail(`missing Codex AGENTS file claimed by ECC state: ${agentsPath}`);
+      addRead(reads, agentsPath, agents.contents);
+      mutations.push({
+        kind: "write-file",
+        phase: "owned-removal",
+        path: agentsPath,
+        root: codexRoot,
+        contents: stripManagedBlock(agents.contents.toString("utf8"), CODEX_AGENTS_BLOCK_MARKER),
+        mode: agents.mode,
+      });
+    }
+    mutations.push({
+      kind: "remove-file",
+      phase: "target-state",
+      path: statePath,
+      root: codexRoot,
+    });
+    return mutations;
+  }
   if (mcpsChanged) {
     const configPath = join(codexRoot, "config.toml");
     const config = safeRead(codexRoot, configPath);
@@ -192,6 +239,7 @@ function codexMutations(
     addRead(reads, configPath, config.contents);
     mutations.push({
       kind: "filter-codex-mcp-block",
+      phase: "owned-removal",
       path: configPath,
       root: codexRoot,
       keepNames: keptMcpNames,
@@ -204,6 +252,7 @@ function codexMutations(
     addRead(reads, agentsPath, agents.contents);
     mutations.push({
       kind: "filter-codex-agents-block",
+      phase: "owned-removal",
       path: agentsPath,
       root: codexRoot,
       keepSkills: eccMaterializationSpec(targetSelection(reconciliation, "codex")).skills.sort(),
@@ -213,6 +262,7 @@ function codexMutations(
   if (mcpsChanged || (componentsChanged && state.agentsBlock)) {
     mutations.push({
       kind: "write-file",
+      phase: "target-state",
       path: statePath,
       root: codexRoot,
       contents: `${JSON.stringify(nextState, null, 2)}\n`,
@@ -220,6 +270,11 @@ function codexMutations(
     });
   }
   return mutations;
+}
+
+export function hasEccRegistrationLedger(ctx: PlanContext): boolean {
+  const home = resolve(ctx.env.HOME || ctx.env.USERPROFILE || homedir());
+  return readRegistrationLedgerSnapshot(home) !== undefined;
 }
 
 export function eccPruneReconciliationActions(
@@ -233,6 +288,29 @@ export function eccPruneReconciliationActions(
   const reads = new Map<string, EccReconcileExpectedRead>();
   addRead(reads, snapshot.path, snapshot.contents);
   const mutations: EccReconcileMutation[] = [];
+  const priorCandidates = eccInstallStateCandidates(
+    home,
+    reconcileEccRegistrationLedger(snapshot.ledger),
+  );
+  const uninstalls: EccReconcileUpstreamUninstall[] = droppedTargets
+    .filter(isAihDirectEccInstallTarget)
+    .map((target) => ({
+      target,
+      argv: execArgv(ctx.host.platform, [
+        "npx",
+        "--yes",
+        "--package",
+        ECC_NPM_PACKAGE,
+        ECC_NPM_CLI_BIN,
+        "uninstall",
+        "--target",
+        target,
+      ]),
+      cwd: ctx.root,
+      paths: priorCandidates
+        .filter((candidate) => candidate.target === target)
+        .map((candidate) => candidate.statePath),
+    }));
   const affectedStatePaths: string[] = [];
   const removedDestinations: string[] = [];
 
@@ -266,6 +344,7 @@ export function eccPruneReconciliationActions(
       if (operation.kind === "copy-file") {
         mutations.push({
           kind: "remove-file",
+          phase: "owned-removal",
           path: operation.destinationPath,
           root: candidate.root,
         });
@@ -276,6 +355,7 @@ export function eccPruneReconciliationActions(
         }
         mutations.push({
           kind: "remove-json-subset",
+          phase: "owned-removal",
           path: operation.destinationPath,
           root: candidate.root,
           payloads: [mergePayload],
@@ -284,6 +364,7 @@ export function eccPruneReconciliationActions(
     }
     mutations.push({
       kind: "write-file",
+      phase: "target-state",
       path: candidate.statePath,
       root: candidate.root,
       contents: stateReconciliation.nextText,
@@ -295,10 +376,11 @@ export function eccPruneReconciliationActions(
   mutations.push(...codexMutations(ctx, reconciliation, reads));
   const nextLedger = serializeRegistrationLedger(reconciliation.ledger);
   const ledgerChanged = Buffer.compare(snapshot.contents, Buffer.from(nextLedger, "utf8")) !== 0;
-  if (!ledgerChanged && mutations.length === 0) return [];
+  if (!ledgerChanged && mutations.length === 0 && uninstalls.length === 0) return [];
   const payload: EccReconcileTransactionPayload = {
     reads: [...reads.values()].sort((left, right) => left.path.localeCompare(right.path)),
     mutations,
+    uninstalls,
     ledger: { path: snapshot.path, root: home, contents: nextLedger, mode: 0o600 },
   };
   const detail = lines(

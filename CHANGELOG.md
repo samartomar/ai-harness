@@ -22,6 +22,13 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   exact fingerprint acknowledgement with a recorded reason, while danger-class findings remain
   non-acknowledgeable. (#422)
 
+### Fixed
+
+- `aih prune` now coordinates aih-owned ECC removals, unavoidable upstream target uninstalls,
+  target-state updates, and the registration ledger in one phased ledger-last driver. Failures
+  roll back aih-owned changes; an upstream uninstall that may already have mutated emits explicit
+  target-and-path divergence evidence without advancing the ledger. (#423)
+
 ## [2.8.0] - 2026-07-10
 
 ### Added

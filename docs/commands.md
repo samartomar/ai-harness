@@ -155,11 +155,15 @@ changed. Project registrations whose roots are missing retire from the machine u
 shared components and MCPs remain until their last live contributor disappears. The dry-run digest
 names retired roots, orphaned component/MCP IDs, target states, and managed destinations without
 changing bytes. Under `--apply`, prune mutates only exact operations proven by strict ECC install
-state (plus aih's fenced Codex records), verifies every planned input hash and path again, writes
-target state, and replaces the primary ledger last. Missing home-target state, malformed/drifted
-state or markers, symlinks, concurrent input changes, or partial writes fail closed and roll back;
-project-local state that never existed is not guessed. If an authoritative whole-target ECC
-uninstall fails, the later ledger transaction is not run and the prior target record remains.
+state (plus aih's fenced Codex records) and coordinates the unavoidable upstream uninstall inside
+the same driver. Apply re-verifies every planned input, prepares recovery material, performs
+aih-owned removals, runs the upstream uninstall, writes target state, and replaces the primary
+ledger last. Missing home-target state, malformed/drifted state or markers, symlinks, concurrent
+input changes, or partial aih-owned writes fail closed and roll back; project-local state that never
+existed is not guessed. If an upstream uninstall may have mutated before failing—or a later step
+fails after an upstream uninstall succeeded—the command emits `ECC prune divergence` with the
+affected target and paths, rolls back aih-owned changes, and never advances the ledger. It does not
+claim that upstream-owned bytes were restored.
 
 ## aih capability
 

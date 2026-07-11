@@ -499,11 +499,14 @@ describe("aih prune ECC registration reconciliation", () => {
     const payload = JSON.parse(Buffer.from(encoded, "base64").toString("utf8")) as {
       mutations: Array<{ kind: string; path: string }>;
     };
-    expect(payload.mutations).toContainEqual({
-      kind: "remove-file",
-      path: cppSkill,
-      root: join(home, ".codex"),
-    });
+    expect(payload.mutations).toContainEqual(
+      expect.objectContaining({
+        kind: "remove-file",
+        phase: "owned-removal",
+        path: cppSkill,
+        root: join(home, ".codex"),
+      }),
+    );
     expect(payload.mutations).toContainEqual(
       expect.objectContaining({ kind: "write-file", path: statePath }),
     );
@@ -566,7 +569,7 @@ describe("aih prune ECC registration reconciliation", () => {
     );
   });
 
-  it("does not commit the ledger when an authoritative whole-target uninstall fails", async () => {
+  it("coordinates a whole-target uninstall inside the ledger-last transaction", async () => {
     const home = join(dir, "home");
     const reactRoot = join(home, "projects", "react");
     const cppRoot = join(home, "projects", "deleted-cpp");
@@ -590,11 +593,84 @@ describe("aih prune ECC registration reconciliation", () => {
     });
     const apply = ctx({ apply: true, env: { HOME: home, USERPROFILE: home }, run });
 
-    const result = await executePlan(await command.plan(apply), apply);
+    const planned = await command.plan(apply);
+    const reconcile = planned.actions.find(
+      (action): action is Extract<Action, { kind: "exec" }> =>
+        action.kind === "exec" && action.describe.includes("atomic ledger-last transaction"),
+    );
+    if (reconcile === undefined) throw new Error("missing coordinated reconciliation action");
+    const encoded = reconcile.argv.at(-1);
+    if (encoded === undefined) throw new Error("missing coordinated reconciliation payload");
+    const payload = JSON.parse(Buffer.from(encoded, "base64").toString("utf8")) as {
+      uninstalls: Array<{ target: string; argv: string[]; paths: string[] }>;
+    };
+    expect(payload.uninstalls).toEqual([
+      expect.objectContaining({ target: "cursor", argv: expect.arrayContaining(["uninstall"]) }),
+    ]);
 
-    expect(result.execs.find((entry) => entry.argv[0] === "npx")?.ok).toBe(false);
-    expect(calls.some((argv) => argv[0] === process.execPath)).toBe(false);
+    const result = await executePlan(planned, apply);
+
+    expect(result.execs).toEqual([
+      expect.objectContaining({ argv: expect.arrayContaining([process.execPath]), ok: true }),
+    ]);
+    expect(calls.some((argv) => argv[0] === "npx")).toBe(false);
     expect(readFileSync(ledgerPath)).toEqual(before);
+  });
+
+  it("moves dropped Codex config, block, and state removals into the coordinated payload", async () => {
+    const home = join(dir, "home");
+    const reactRoot = join(home, "projects", "react");
+    const cppRoot = join(home, "projects", "deleted-cpp");
+    mkdirSync(reactRoot, { recursive: true });
+    writeLedger(home, reactRoot, cppRoot);
+    const cppSkill = join(home, ".codex", "skills", "cpp-testing", "SKILL.md");
+    const reactSkill = join(home, ".codex", "skills", "react-patterns", "SKILL.md");
+    writeCodexState(home, cppSkill, reactSkill);
+    writeCodexMergeState(home);
+    marker("claude");
+    write("ai-coding/adapters/claude.md");
+    write("ai-coding/adapters/codex.md");
+
+    const actions = await actionsOf({ env: { HOME: home, USERPROFILE: home } });
+    const reconcile = actions.find(
+      (action): action is Extract<Action, { kind: "exec" }> =>
+        action.kind === "exec" && action.describe.includes("atomic ledger-last transaction"),
+    );
+    if (reconcile === undefined) throw new Error("missing coordinated reconciliation action");
+    const encoded = reconcile.argv.at(-1);
+    if (encoded === undefined) throw new Error("missing coordinated reconciliation payload");
+    const payload = JSON.parse(Buffer.from(encoded, "base64").toString("utf8")) as {
+      mutations: Array<{ kind: string; phase?: string; path: string }>;
+      uninstalls: Array<{ target: string }>;
+    };
+
+    expect(payload.uninstalls).toEqual([]);
+    expect(payload.mutations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "write-file",
+          phase: "owned-removal",
+          path: join(home, ".codex", "config.toml"),
+        }),
+        expect.objectContaining({
+          kind: "write-file",
+          phase: "owned-removal",
+          path: join(home, ".codex", "AGENTS.md"),
+        }),
+        expect.objectContaining({
+          kind: "remove-file",
+          phase: "target-state",
+          path: join(home, ".codex", CODEX_INSTALL_STATE_FILE),
+        }),
+      ]),
+    );
+    expect(
+      actions.some(
+        (action) =>
+          action.kind === "write" &&
+          (action.path.endsWith("config.toml") || action.path.endsWith("AGENTS.md")),
+      ),
+    ).toBe(false);
   });
 });
 
