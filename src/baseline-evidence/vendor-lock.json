@@ -35,7 +35,7 @@
             {
               "code": "trust.auto-exec-hook",
               "detail": "package.json:332 — package.json lifecycle script postinstall can execute during install/publish",
-              "fingerprint": "trust-auto-exec-hook:package.json:332:4e6eebd8"
+              "fingerprint": "trust-auto-exec-hook:package.json:3796c9a3b61f52ed98737fc97335b247fc294dbfd26a7251e2705e41d4b2acf9"
             },
             {
               "code": "trust.unpinned-dependency",
@@ -70,8 +70,8 @@
             },
             {
               "code": "trust.visible-unicode",
-              "count": 4,
-              "detail": "4 findings; first: docs/longform-guide.md:5 — trust.visible-unicode: document contains 36 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation"
+              "count": 3,
+              "detail": "3 findings; first: docs/longform-guide.md:5 — trust.visible-unicode: document contains 1 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation"
             },
             {
               "code": "trust.prompt-injection",
@@ -81,7 +81,7 @@
             {
               "code": "trust.auto-exec-hook",
               "detail": "skills/rust-patterns/SKILL.md:421 — SKILL body contains a leading ! auto-run line",
-              "fingerprint": "trust-auto-exec-hook:skills/rust-patterns/SKILL.md:421:3eea9178"
+              "fingerprint": "trust-auto-exec-hook:skills/rust-patterns/SKILL.md:a31ed339cf1e5bb018d413ed04ea9cfee41276b8047ebac762f20766e8f41bdc"
             }
           ]
         },
@@ -107,12 +107,12 @@
             {
               "code": "trust.prompt-injection",
               "detail": "common/security.md:13 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
-              "fingerprint": "trust-prompt-injection:common/security.md:13:c8f5c7bc"
+              "fingerprint": "trust-prompt-injection:common/security.md:d6bf15afb109601c5e42614f7849a6f05268c3f18602d789fb38ddffce8dca34"
             },
             {
               "code": "trust.visible-unicode",
-              "detail": "README.md:9 — trust.visible-unicode: document contains 79 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation",
-              "fingerprint": "trust-visible-unicode:README.md:9:587f99c9"
+              "detail": "README.md:32 — trust.visible-unicode: document contains 8 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation",
+              "fingerprint": "trust-visible-unicode:README.md:d707c6db38f2e33cb2e823746a34290963438d65d04d2e79e886720bf4dd8a73"
             }
           ]
         },
@@ -177,8 +177,8 @@
             },
             {
               "code": "trust.visible-unicode",
-              "count": 2,
-              "detail": "2 findings; first: gan-design.md:6 — trust.visible-unicode: document contains 5 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation"
+              "detail": "gan-design.md:6 — trust.visible-unicode: document contains 5 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation",
+              "fingerprint": "trust-visible-unicode:gan-design.md:591281093a21feeaf5a4bfec6cc55ceea251713fd10018a5204f4e7773531cea"
             }
           ]
         },
@@ -200,13 +200,13 @@
           "findings": [
             {
               "code": "trust.visible-unicode",
-              "detail": "README.md:8 — trust.visible-unicode: document contains 14 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation",
-              "fingerprint": "trust-visible-unicode:README.md:8:914a2671"
+              "detail": "README.md:42 — trust.visible-unicode: document contains 10 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation",
+              "fingerprint": "trust-visible-unicode:README.md:e26bfa5fd610d2c34a9155890b8cb023bfa6d50fefb2c3e6536711dfd9e544d1"
             },
             {
               "code": "trust.hidden-unicode",
-              "count": 62,
-              "detail": "62 findings; first: hooks.json:271 — trust.hidden-unicode: document contains 1 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
+              "count": 64,
+              "detail": "64 findings; first: hooks.json:271 — trust.hidden-unicode: document contains 1 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
             }
           ]
         },
@@ -249,7 +249,7 @@
             {
               "code": "trust.auto-exec-hook",
               "detail": "package.json:33 — package.json lifecycle script prepublishOnly can execute during install/publish",
-              "fingerprint": "trust-auto-exec-hook:package.json:33:1d4b509d"
+              "fingerprint": "trust-auto-exec-hook:package.json:a7e62a918d4954cac18e564467c1e8bd99d1eaa0680c599389617215dd9f41cc"
             },
             {
               "code": "trust.unpinned-dependency",
@@ -258,8 +258,8 @@
             },
             {
               "code": "trust.visible-unicode",
-              "count": 3,
-              "detail": "3 findings; first: README.md:7 — trust.visible-unicode: document contains 4 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation"
+              "detail": "README.md:7 — trust.visible-unicode: document contains 4 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation",
+              "fingerprint": "trust-visible-unicode:README.md:be616b63177bc985133c3ecf098ae4df6a497070e1c977679481f59bf4123906"
             }
           ]
         },
@@ -336,7 +336,7 @@
             {
               "code": "trust.visible-unicode",
               "detail": "references/angular-aria.md:49 — trust.visible-unicode: document contains 2 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation",
-              "fingerprint": "trust-visible-unicode:references/angular-aria.md:49:96daed39"
+              "fingerprint": "trust-visible-unicode:references/angular-aria.md:9daabbe637b24653bbf1bc283711968ec6dfc34405c2850e8563890b32a64e98"
             },
             {
               "code": "trust.prompt-injection",
@@ -346,7 +346,7 @@
             {
               "code": "trust.auto-exec-hook",
               "detail": "SKILL.md:422 — SKILL body contains a leading ! auto-run line",
-              "fingerprint": "trust-auto-exec-hook:SKILL.md:422:3eea9178"
+              "fingerprint": "trust-auto-exec-hook:SKILL.md:50f23b369019217affc582f3caf7c8078f5f210a6e70c7090d8139a9220e7242"
             }
           ]
         },
@@ -477,7 +477,7 @@
             {
               "code": "trust.auto-exec-hook",
               "detail": "SKILL.md:132 — SKILL body contains a leading ! auto-run line",
-              "fingerprint": "trust-auto-exec-hook:SKILL.md:132:9d8724f4"
+              "fingerprint": "trust-auto-exec-hook:SKILL.md:7cba4c5291b9e5e78696b06a3704fa54ca3e2def9fab5175165b6f453cfb5228"
             }
           ]
         },
@@ -539,8 +539,8 @@
           "findings": [
             {
               "code": "trust.hidden-unicode",
-              "count": 9,
-              "detail": "9 findings; first: agents/enrichment-agent.md:25 — trust.hidden-unicode: document contains 6 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
+              "count": 10,
+              "detail": "10 findings; first: agents/enrichment-agent.md:25 — trust.hidden-unicode: document contains 6 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
             }
           ]
         },
@@ -583,7 +583,7 @@
             {
               "code": "trust.prompt-injection",
               "detail": "SKILL.md:113 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
-              "fingerprint": "trust-prompt-injection:SKILL.md:113:69fcd5e1"
+              "fingerprint": "trust-prompt-injection:SKILL.md:24abd44eabfa2b3a463415142026811448c449e9d6a686536916764bcc0a20ab"
             }
           ]
         },
@@ -631,7 +631,7 @@
             {
               "code": "trust.hidden-unicode",
               "detail": "SKILL.md:57 — trust.hidden-unicode: document contains 6 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
-              "fingerprint": "trust-hidden-unicode:SKILL.md:57:1316fb05"
+              "fingerprint": "trust-hidden-unicode:SKILL.md:ea1706200048e3d2bc269b786e2dd97459d2b745b8c80fe1a7b9f24f92c0c668"
             },
             {
               "code": "trust.prompt-injection",
@@ -672,8 +672,8 @@
             },
             {
               "code": "trust.visible-unicode",
-              "count": 7,
-              "detail": "7 findings; first: reference/api-reference.md:37 — trust.visible-unicode: document contains 3 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation"
+              "count": 6,
+              "detail": "6 findings; first: reference/api-reference.md:37 — trust.visible-unicode: document contains 3 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation"
             }
           ]
         },
@@ -797,7 +797,7 @@
             {
               "code": "trust.hidden-unicode",
               "detail": "SKILL.md:25 — trust.hidden-unicode: document contains 20 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
-              "fingerprint": "trust-hidden-unicode:SKILL.md:25:37c9c9f2"
+              "fingerprint": "trust-hidden-unicode:SKILL.md:edf6168923ff3d517e4bba4c7b8e45e6c34d54bf4b70ade1470f3053613ac3c1"
             }
           ]
         },
@@ -839,8 +839,8 @@
           "findings": [
             {
               "code": "trust.hidden-unicode",
-              "count": 13,
-              "detail": "13 findings; first: SKILL.md:24 — trust.hidden-unicode: document contains 48 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
+              "count": 15,
+              "detail": "15 findings; first: SKILL.md:24 — trust.hidden-unicode: document contains 48 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
             }
           ]
         },
@@ -867,12 +867,12 @@
             {
               "code": "trust.visible-unicode",
               "detail": "README.md:15 — trust.visible-unicode: document contains 24 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation",
-              "fingerprint": "trust-visible-unicode:README.md:15:34c2550b"
+              "fingerprint": "trust-visible-unicode:README.md:69ce173b7f49cb0eda05a927bce04ba52392d4924be3c6efe88fe1afe9928bfc"
             },
             {
               "code": "trust.hidden-unicode",
               "detail": "SKILL.md:50 — trust.hidden-unicode: document contains 24 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
-              "fingerprint": "trust-hidden-unicode:SKILL.md:50:9c429c2c"
+              "fingerprint": "trust-hidden-unicode:SKILL.md:5adfae5f8523ed6e43acade50e4aa8a568b5b7b6e4e256963f55bb78eb89fa34"
             }
           ]
         },
@@ -892,8 +892,8 @@
           "findings": [
             {
               "code": "trust.hidden-unicode",
-              "count": 2252,
-              "detail": "2252 findings; first: AGENTS.md:66 — trust.hidden-unicode: character category: homoglyph-confusable; reason: Unicode confusable appears inside an ASCII-like token; code point U+FF08"
+              "count": 2374,
+              "detail": "2374 findings; first: AGENTS.md:66 — trust.hidden-unicode: character category: homoglyph-confusable; reason: Unicode confusable appears inside an ASCII-like token; code point U+FF08"
             },
             {
               "code": "trust.prompt-injection",
@@ -903,7 +903,7 @@
             {
               "code": "trust.visible-unicode",
               "count": 17,
-              "detail": "17 findings; first: hooks/README.md:1 — trust.visible-unicode: document contains 2254 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation"
+              "detail": "17 findings; first: hooks/README.md:1 — trust.visible-unicode: document contains 2250 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation"
             },
             {
               "code": "trust.auto-exec-hook",
@@ -928,8 +928,8 @@
           "findings": [
             {
               "code": "trust.hidden-unicode",
-              "count": 3140,
-              "detail": "3140 findings; first: AGENTS.md:66 — trust.hidden-unicode: character category: homoglyph-confusable; reason: Unicode confusable appears inside an ASCII-like token; code point U+FF08"
+              "count": 3461,
+              "detail": "3461 findings; first: AGENTS.md:66 — trust.hidden-unicode: character category: homoglyph-confusable; reason: Unicode confusable appears inside an ASCII-like token; code point U+FF08"
             },
             {
               "code": "trust.prompt-injection",
@@ -939,7 +939,7 @@
             {
               "code": "trust.visible-unicode",
               "count": 15,
-              "detail": "15 findings; first: hooks/README.md:1 — trust.visible-unicode: document contains 980 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation"
+              "detail": "15 findings; first: hooks/README.md:1 — trust.visible-unicode: document contains 976 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation"
             },
             {
               "code": "trust.auto-exec-hook",
@@ -974,8 +974,8 @@
             },
             {
               "code": "trust.visible-unicode",
-              "detail": "README.md:1 — trust.visible-unicode: document contains 4152 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation",
-              "fingerprint": "trust-visible-unicode:README.md:1:3c66bf78"
+              "detail": "README.md:1 — trust.visible-unicode: document contains 4143 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation",
+              "fingerprint": "trust-visible-unicode:README.md:1e08c2c3bae4d1bb36c62ec578d41fa53ce63f8c9570f2a66ba6419c0ad5000b"
             }
           ]
         },
@@ -1005,8 +1005,8 @@
             },
             {
               "code": "trust.visible-unicode",
-              "detail": "README.md:1 — trust.visible-unicode: document contains 462 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation",
-              "fingerprint": "trust-visible-unicode:README.md:1:449be67d"
+              "detail": "README.md:1 — trust.visible-unicode: document contains 453 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation",
+              "fingerprint": "trust-visible-unicode:README.md:5a1e8edf427012314ac078680bac7a648e3dd9b988420ff92a39ffc2d6230627"
             }
           ]
         },
@@ -1031,8 +1031,8 @@
             },
             {
               "code": "trust.visible-unicode",
-              "detail": "README.md:1 — trust.visible-unicode: document contains 29332 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation",
-              "fingerprint": "trust-visible-unicode:README.md:1:ad06fb06"
+              "detail": "README.md:1 — trust.visible-unicode: document contains 29320 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation",
+              "fingerprint": "trust-visible-unicode:README.md:1f9ec53b3e7b8f56be9ce5a8bfa15888d5ba894cbf107b642945e8658af9f1e6"
             }
           ]
         },
@@ -1052,8 +1052,8 @@
           "findings": [
             {
               "code": "trust.hidden-unicode",
-              "count": 6182,
-              "detail": "6182 findings; first: AGENTS.md:1 — trust.hidden-unicode: character category: homoglyph-confusable; reason: Unicode confusable appears inside an ASCII-like token; code point U+131"
+              "count": 15776,
+              "detail": "15776 findings; first: AGENTS.md:1 — trust.hidden-unicode: character category: homoglyph-confusable; reason: Unicode confusable appears inside an ASCII-like token; code point U+131"
             },
             {
               "code": "trust.prompt-injection",
@@ -1089,7 +1089,7 @@
             {
               "code": "trust.visible-unicode",
               "detail": "README.md:1 — trust.visible-unicode: document contains 461 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation",
-              "fingerprint": "trust-visible-unicode:README.md:1:23c39c8f"
+              "fingerprint": "trust-visible-unicode:README.md:38ac5fac49eba0e41fa758674eb122362d0902f69e05c42ea5c1b82cf154f9d2"
             }
           ]
         },
@@ -1109,18 +1109,18 @@
           "findings": [
             {
               "code": "trust.hidden-unicode",
-              "count": 659,
-              "detail": "659 findings; first: agents/architect.md:103 — trust.hidden-unicode: character category: homoglyph-confusable; reason: Unicode confusable appears inside an ASCII-like token; code point U+FF1A"
+              "count": 668,
+              "detail": "668 findings; first: agents/architect.md:103 — trust.hidden-unicode: character category: homoglyph-confusable; reason: Unicode confusable appears inside an ASCII-like token; code point U+FF1A"
             },
             {
               "code": "trust.visible-unicode",
               "detail": "README.md:14 — trust.visible-unicode: document contains 2239 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation",
-              "fingerprint": "trust-visible-unicode:README.md:14:ac16ebab"
+              "fingerprint": "trust-visible-unicode:README.md:68c75629542d3b7cc55e61830a314bd0150bfcd40be5ccb74a94c9cbab643edb"
             },
             {
               "code": "trust.prompt-injection",
               "detail": "skills/security-review/SKILL.md:239 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
-              "fingerprint": "trust-prompt-injection:skills/security-review/SKILL.md:239:3dd6844c"
+              "fingerprint": "trust-prompt-injection:skills/security-review/SKILL.md:24219562ff98dfb4e9646ad1f26a1b2e421627f57215c85a3f90ae229a33ed52"
             }
           ]
         },
@@ -1141,12 +1141,12 @@
             {
               "code": "trust.hidden-unicode",
               "detail": "GLOSSARY.md:3 — trust.hidden-unicode: document contains 34 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
-              "fingerprint": "trust-hidden-unicode:GLOSSARY.md:3:789bf295"
+              "fingerprint": "trust-hidden-unicode:GLOSSARY.md:472208fd583e900d0802f61c862d3284abe6f0402853eb052ca2a4a5b5eaebec"
             },
             {
               "code": "trust.visible-unicode",
-              "detail": "README.md:1 — trust.visible-unicode: document contains 742 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation",
-              "fingerprint": "trust-visible-unicode:README.md:1:72fc0a82"
+              "detail": "README.md:1 — trust.visible-unicode: document contains 730 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation",
+              "fingerprint": "trust-visible-unicode:README.md:479b8a272a083b20a880c6f56e4cb70682c92a3b49cdac4d3741359449b46f25"
             }
           ]
         },
@@ -1167,7 +1167,7 @@
             {
               "code": "trust.hidden-unicode",
               "detail": "SKILL.md:100 — trust.hidden-unicode: document contains 68 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
-              "fingerprint": "trust-hidden-unicode:SKILL.md:100:e3a0051a"
+              "fingerprint": "trust-hidden-unicode:SKILL.md:43f0c08bf8fe87c8068631ad2f77bde5b42382828b7d7816b71fa219671041eb"
             }
           ]
         },
@@ -1203,7 +1203,7 @@
             {
               "code": "trust.hidden-unicode",
               "detail": "SKILL.md:15 — trust.hidden-unicode: document contains 34 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
-              "fingerprint": "trust-hidden-unicode:SKILL.md:15:cc3f115e"
+              "fingerprint": "trust-hidden-unicode:SKILL.md:c5c65338952ed0b8481e31e50795db284d613d2c800b0ff9b07cf25255af2564"
             }
           ]
         },
@@ -1224,7 +1224,7 @@
             {
               "code": "trust.hidden-unicode",
               "detail": "SKILL.md:340 — trust.hidden-unicode: document contains 54 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
-              "fingerprint": "trust-hidden-unicode:SKILL.md:340:f8a05b67"
+              "fingerprint": "trust-hidden-unicode:SKILL.md:ec52dc78daf52000dd7c2ee433e4ab5845bbac8857bbb3fcb61ffd44a85113ac"
             }
           ]
         },
@@ -1245,12 +1245,12 @@
             {
               "code": "trust.hidden-unicode",
               "detail": "code-reviewer.md:23 — trust.hidden-unicode: document contains 50 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
-              "fingerprint": "trust-hidden-unicode:code-reviewer.md:23:07447dbe"
+              "fingerprint": "trust-hidden-unicode:code-reviewer.md:fa3c9e7ca89b8c8284da21318ace382b060efa4e5ae036cc81c6529473e3360c"
             },
             {
               "code": "trust.prompt-injection",
               "detail": "code-reviewer.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
-              "fingerprint": "trust-prompt-injection:code-reviewer.md:11:17a8c724"
+              "fingerprint": "trust-prompt-injection:code-reviewer.md:9bf36d6d492eb8cb3b21f474aa8cbd4d6ae0d9f747aed655d93f5ba95344ac31"
             }
           ]
         },
@@ -1271,7 +1271,7 @@
             {
               "code": "trust.prompt-injection",
               "detail": "code-architect.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
-              "fingerprint": "trust-prompt-injection:code-architect.md:11:17a8c724"
+              "fingerprint": "trust-prompt-injection:code-architect.md:838042a535a0baca6d0b24bff638fda8f41670cb3c6e81de9b360102937cee3f"
             }
           ]
         },
@@ -1292,7 +1292,7 @@
             {
               "code": "trust.prompt-injection",
               "detail": "architect.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
-              "fingerprint": "trust-prompt-injection:architect.md:11:17a8c724"
+              "fingerprint": "trust-prompt-injection:architect.md:7cae9861835b761bf52bec068a2b7b7e218c7f84c19ac5f200c3289ea1bc1537"
             }
           ]
         },
@@ -1313,12 +1313,12 @@
             {
               "code": "trust.hidden-unicode",
               "detail": "planner.md:129 — trust.hidden-unicode: document contains 10 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
-              "fingerprint": "trust-hidden-unicode:planner.md:129:2c53525c"
+              "fingerprint": "trust-hidden-unicode:planner.md:fef2e1f4266c760cd6307b34804fb5aa57f8befd0f549bb987e238659557407d"
             },
             {
               "code": "trust.prompt-injection",
               "detail": "planner.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
-              "fingerprint": "trust-prompt-injection:planner.md:11:17a8c724"
+              "fingerprint": "trust-prompt-injection:planner.md:8e14939615b777c9254366aa8922fae6a8c22cee21dfaab0fc6530c843571b91"
             }
           ]
         },
@@ -1339,7 +1339,7 @@
             {
               "code": "trust.prompt-injection",
               "detail": "tdd-guide.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
-              "fingerprint": "trust-prompt-injection:tdd-guide.md:11:17a8c724"
+              "fingerprint": "trust-prompt-injection:tdd-guide.md:f09633bedd9d4744201e1f2b2274a18e2f8fee11307be0ab74ed39a51161ae99"
             }
           ]
         },
@@ -1360,12 +1360,12 @@
             {
               "code": "trust.hidden-unicode",
               "detail": "build-error-resolver.md:19 — trust.hidden-unicode: document contains 14 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
-              "fingerprint": "trust-hidden-unicode:build-error-resolver.md:19:57e8d92b"
+              "fingerprint": "trust-hidden-unicode:build-error-resolver.md:5c0c1b8d5a602d6df1f4ef068846e0682976888d4a05ccd221f3df80bb6493b5"
             },
             {
               "code": "trust.prompt-injection",
               "detail": "build-error-resolver.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
-              "fingerprint": "trust-prompt-injection:build-error-resolver.md:11:17a8c724"
+              "fingerprint": "trust-prompt-injection:build-error-resolver.md:60678897525665cda29a59cee94a5a19872bc3d450be9e037f9113ef8606b76d"
             }
           ]
         },
@@ -1386,7 +1386,7 @@
             {
               "code": "trust.prompt-injection",
               "detail": "refactor-cleaner.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
-              "fingerprint": "trust-prompt-injection:refactor-cleaner.md:11:17a8c724"
+              "fingerprint": "trust-prompt-injection:refactor-cleaner.md:444dbb9975f16882933f9e96f6862c4d86fc0f14cdd801ade01ffe002c37d80b"
             }
           ]
         },
@@ -1407,7 +1407,7 @@
             {
               "code": "trust.prompt-injection",
               "detail": "code-simplifier.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
-              "fingerprint": "trust-prompt-injection:code-simplifier.md:11:17a8c724"
+              "fingerprint": "trust-prompt-injection:code-simplifier.md:74ceab417c00e373a6a4fd4b8342c551d6c3ee3985c953ad714d7d9dc5c2036f"
             }
           ]
         },
@@ -1428,7 +1428,7 @@
             {
               "code": "trust.prompt-injection",
               "detail": "silent-failure-hunter.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
-              "fingerprint": "trust-prompt-injection:silent-failure-hunter.md:11:17a8c724"
+              "fingerprint": "trust-prompt-injection:silent-failure-hunter.md:bdf3d28cb8d4ba5d995e0bb5d9c94427d49f8fdae131ee640e492819db2d66ab"
             }
           ]
         },
@@ -1449,7 +1449,7 @@
             {
               "code": "trust.prompt-injection",
               "detail": "pr-test-analyzer.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
-              "fingerprint": "trust-prompt-injection:pr-test-analyzer.md:11:17a8c724"
+              "fingerprint": "trust-prompt-injection:pr-test-analyzer.md:cb5081ae56f8d73d639a6eabc425553591297e143126162e19e351bf7ccdda04"
             }
           ]
         },
@@ -1469,13 +1469,13 @@
           "findings": [
             {
               "code": "trust.visible-unicode",
-              "detail": "doc-updater.md:23 — trust.visible-unicode: document contains 31 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation",
-              "fingerprint": "trust-visible-unicode:doc-updater.md:23:c2799a9b"
+              "detail": "doc-updater.md:23 — trust.visible-unicode: document contains 13 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation",
+              "fingerprint": "trust-visible-unicode:doc-updater.md:b9df3937dbb9cff7d9d06534379f5e55620d3a05b71abf96e84858de79ec822c"
             },
             {
               "code": "trust.prompt-injection",
               "detail": "doc-updater.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
-              "fingerprint": "trust-prompt-injection:doc-updater.md:11:17a8c724"
+              "fingerprint": "trust-prompt-injection:doc-updater.md:c4f38266dd740589270557c48c8f89791d09deb3ecc69ea409134e52dc0aae68"
             }
           ]
         },
@@ -1496,12 +1496,12 @@
             {
               "code": "trust.visible-unicode",
               "detail": "docs-lookup.md:29 — trust.visible-unicode: document contains 1 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation",
-              "fingerprint": "trust-visible-unicode:docs-lookup.md:29:e27b1c2c"
+              "fingerprint": "trust-visible-unicode:docs-lookup.md:6b0ba9f719d11097819da57923ef128fdb37fe771ffe848a421247ebc6765444"
             },
             {
               "code": "trust.prompt-injection",
               "detail": "docs-lookup.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
-              "fingerprint": "trust-prompt-injection:docs-lookup.md:11:17a8c724"
+              "fingerprint": "trust-prompt-injection:docs-lookup.md:ea974640df65c8227ddbc5adf01963e417c1bdbd5ce872aa082d3d109d06a590"
             }
           ]
         },
@@ -1522,7 +1522,7 @@
             {
               "code": "trust.prompt-injection",
               "detail": "code-explorer.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
-              "fingerprint": "trust-prompt-injection:code-explorer.md:11:17a8c724"
+              "fingerprint": "trust-prompt-injection:code-explorer.md:10ba5ac35e32452af8e4e5fae2a850ae1129a20328226b8bcb0a12e4026506e1"
             }
           ]
         },
@@ -1543,12 +1543,12 @@
             {
               "code": "trust.hidden-unicode",
               "detail": "security-reviewer.md:23 — trust.hidden-unicode: document contains 21 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
-              "fingerprint": "trust-hidden-unicode:security-reviewer.md:23:46d310c1"
+              "fingerprint": "trust-hidden-unicode:security-reviewer.md:86c3d76b977ffd73179c88451045164b079bb64384bcc69e3adf6bcd1d62e687"
             },
             {
               "code": "trust.prompt-injection",
               "detail": "security-reviewer.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
-              "fingerprint": "trust-prompt-injection:security-reviewer.md:11:17a8c724"
+              "fingerprint": "trust-prompt-injection:security-reviewer.md:8d8faf9fb80ca632bc6deb5f1119fe4bb3e69ac5276cd26ea70e503999ce526a"
             }
           ]
         },
@@ -1569,7 +1569,7 @@
             {
               "code": "trust.prompt-injection",
               "detail": "type-design-analyzer.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
-              "fingerprint": "trust-prompt-injection:type-design-analyzer.md:11:17a8c724"
+              "fingerprint": "trust-prompt-injection:type-design-analyzer.md:c932115bb46ec5d2713614458bbf530b28441ca58a20b59781e8a84a0b756161"
             }
           ]
         },
@@ -1590,12 +1590,12 @@
             {
               "code": "trust.hidden-unicode",
               "detail": "performance-optimizer.md:23 — trust.hidden-unicode: document contains 10 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
-              "fingerprint": "trust-hidden-unicode:performance-optimizer.md:23:a877b0ae"
+              "fingerprint": "trust-hidden-unicode:performance-optimizer.md:91a4827fab8056b9067f3826d79626f60027761c113f31de6e735c0993bf58e9"
             },
             {
               "code": "trust.prompt-injection",
               "detail": "performance-optimizer.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
-              "fingerprint": "trust-prompt-injection:performance-optimizer.md:11:17a8c724"
+              "fingerprint": "trust-prompt-injection:performance-optimizer.md:139a803469449e48be3e576312149fe6d5d01bb4d1ec914fabb6304cab25883c"
             }
           ]
         }
@@ -1675,7 +1675,7 @@
             {
               "code": "trust.hidden-unicode",
               "detail": "SKILL.md:10 — trust.hidden-unicode: document contains 13 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
-              "fingerprint": "trust-hidden-unicode:SKILL.md:10:f0df13f5"
+              "fingerprint": "trust-hidden-unicode:SKILL.md:b5b02c9e4404e6ec8733cab9a79f96103590a274d69f36695589df415a2ea03b"
             }
           ]
         },
@@ -1711,7 +1711,7 @@
             {
               "code": "trust.hidden-unicode",
               "detail": "SKILL.md:12 — trust.hidden-unicode: document contains 9 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
-              "fingerprint": "trust-hidden-unicode:SKILL.md:12:e6d4a812"
+              "fingerprint": "trust-hidden-unicode:SKILL.md:83db1c5e9426fd02f5fb341a52252f54a7f2eae7ff7c46965c5cee8bbe6e3bcf"
             }
           ]
         },
@@ -1732,7 +1732,7 @@
             {
               "code": "trust.hidden-unicode",
               "detail": "SKILL.md:55 — trust.hidden-unicode: document contains 19 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
-              "fingerprint": "trust-hidden-unicode:SKILL.md:55:647036bb"
+              "fingerprint": "trust-hidden-unicode:SKILL.md:b24b16e3ec5caf53d51c204ebf459d0066a1a5e2cca965064ba1e7b52261c417"
             }
           ]
         },
@@ -1837,7 +1837,7 @@
             {
               "code": "trust.hidden-unicode",
               "detail": "SKILL.md:29 — trust.hidden-unicode: document contains 3 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
-              "fingerprint": "trust-hidden-unicode:SKILL.md:29:e2c3ec14"
+              "fingerprint": "trust-hidden-unicode:SKILL.md:65de40c627929ebd4bbe700b295d047bdef192c220f7b9acabe4380e2bb2f735"
             }
           ]
         },
@@ -1863,7 +1863,7 @@
             {
               "code": "trust.hidden-unicode",
               "detail": "SKILL.md:20 — trust.hidden-unicode: document contains 6 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
-              "fingerprint": "trust-hidden-unicode:SKILL.md:20:55379fe7"
+              "fingerprint": "trust-hidden-unicode:SKILL.md:797e360d72c8cf86b8aad0fa61c97dfb5361a904512f4027e183e1a173196743"
             }
           ]
         },
@@ -1884,7 +1884,7 @@
             {
               "code": "trust.hidden-unicode",
               "detail": "SKILL.md:68 — trust.hidden-unicode: document contains 26 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
-              "fingerprint": "trust-hidden-unicode:SKILL.md:68:ea52d15a"
+              "fingerprint": "trust-hidden-unicode:SKILL.md:31de3ccdb81362649901a54795fab2779659843cfddfa271cce23c70c9c8ffc7"
             }
           ]
         },

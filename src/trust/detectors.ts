@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import {
   existsSync,
   mkdtempSync,
@@ -19,6 +18,7 @@ import { MCP_CONFIG_FILES } from "../secrets/scan.js";
 import { execArgv } from "../tools/install.js";
 import { dockerBindMountArg } from "./docker.js";
 import { scrubFetchEnv } from "./fetch.js";
+import { contentFindingFingerprint } from "./fingerprint.js";
 import { gradeTrustCheck } from "./grade.js";
 import {
   resolveVerifiedSkillspectorImage,
@@ -316,10 +316,6 @@ function realpathIfExists(path: string): string {
   }
 }
 
-function sha8(raw: string | Buffer): string {
-  return createHash("sha256").update(raw).digest("hex").slice(0, 8);
-}
-
 function normalizeShellWhitespace(line: string): string {
   // Collapse any ${IFS...} parameter-expansion form (plain, #/% removal, :offset
   // substring, //pattern substitution) and bare $IFS to a space, so IFS-obfuscated
@@ -340,14 +336,32 @@ function fileLine(path: string, line: number): string | undefined {
   }
 }
 
-function maliciousCodeCheck(rel: string, line: number, text: string, label: string): Check {
+function maliciousCodeCheck(
+  occurrences: Map<string, number>,
+  rel: string,
+  line: number,
+  text: string,
+  label: string,
+): Check {
+  const ruleId = `native:${label}`;
+  const content = `${text}\0${label}`;
+  const key = JSON.stringify(["trust.malicious-code", rel, ruleId, content]);
+  const occurrence = occurrences.get(key) ?? 0;
+  occurrences.set(key, occurrence + 1);
   return {
     name: "trust.malicious-code",
     verdict: "fail",
     code: "trust.malicious-code",
     detail: `${rel}:${line} — bundled script matches ${label}; static trust gate rejects raw malicious-code shapes`,
     location: { uri: rel, startLine: line },
-    fingerprint: `trust-malicious-code:${rel}:${line}:${sha8(text)}`,
+    fingerprint: contentFindingFingerprint({
+      code: "trust.malicious-code",
+      path: rel,
+      ruleId,
+      content,
+      occurrence,
+      displayLine: line,
+    }),
   };
 }
 
@@ -361,6 +375,7 @@ export function scanNativeMaliciousCode(root: string): Check[] {
     TRUST_SKIP_DIRS,
   );
   const checks: Check[] = [];
+  const occurrences = new Map<string, number>();
   for (const file of files) {
     const rel = toPosix(relative(root, file));
     const lines = readFileSync(file, "utf8").split(/\r?\n/);
@@ -368,7 +383,7 @@ export function scanNativeMaliciousCode(root: string): Check[] {
       const normalizedLine = normalizeShellWhitespace(line);
       for (const rule of MALICIOUS_PATTERNS) {
         if (rule.pattern.test(normalizedLine)) {
-          checks.push(maliciousCodeCheck(rel, index + 1, line, rule.label));
+          checks.push(maliciousCodeCheck(occurrences, rel, index + 1, line, rule.label));
         }
       }
     });
@@ -1161,7 +1176,9 @@ function unicodeRiskForLocation(
   location: NonNullable<Check["location"]>,
 ): UnicodeRisk | undefined {
   const source = sourceTextForLocation(root, location);
-  return source === undefined ? undefined : classifyUnicodeRisk(location.uri, source);
+  return source === undefined
+    ? detectorReportedHiddenUnicodeRisk()
+    : classifyUnicodeRisk(location.uri, source);
 }
 
 function isReviewableVisibleUnicodeDetectorResult(
@@ -1183,16 +1200,15 @@ function hiddenUnicodeRiskForDetectorResult(
   detector: TrustDetector,
   root: string,
   location: NonNullable<Check["location"]>,
-): UnicodeRisk {
+): UnicodeRisk | undefined {
   if (!isReviewableVisibleUnicodeDetectorResult(result, detector)) {
     return detectorReportedHiddenUnicodeRisk();
   }
-  return unicodeRiskForLocation(root, location) ?? detectorReportedHiddenUnicodeRisk();
+  return unicodeRiskForLocation(root, location);
 }
 
 interface DetectorRuleClassification {
   code: CheckCode;
-  fingerprintContent?: Buffer;
 }
 
 function ruleCode(
@@ -1205,11 +1221,12 @@ function ruleCode(
   if (raw === undefined) return undefined;
   const mapped = detector.ruleMap[raw];
   if (mapped !== undefined) {
+    if (mapped === "trust.hidden-unicode") {
+      const risk = hiddenUnicodeRiskForDetectorResult(result, detector, root, location);
+      return risk === undefined ? undefined : { code: risk.code };
+    }
     return {
-      code:
-        mapped === "trust.hidden-unicode"
-          ? hiddenUnicodeRiskForDetectorResult(result, detector, root, location).code
-          : mapped,
+      code: mapped,
     };
   }
   const legalText = reviewableLegalTextContent(root, location);
@@ -1221,12 +1238,12 @@ function ruleCode(
   ) {
     return legalText === undefined
       ? { code: "trust.detector-finding" }
-      : { code: "trust.legal-text-detector-finding", fingerprintContent: legalText };
+      : { code: "trust.legal-text-detector-finding" };
   }
   if (detector.name === "cisco" || detector.name === "mcp-scanner") {
     return legalText === undefined
       ? { code: "trust.cisco-finding" }
-      : { code: "trust.legal-text-detector-finding", fingerprintContent: legalText };
+      : { code: "trust.legal-text-detector-finding" };
   }
   return undefined;
 }
@@ -1244,6 +1261,23 @@ function resultMessage(result: SarifResult, detector: TrustDetector): string {
   return typeof result.message?.text === "string" && result.message.text.length > 0
     ? result.message.text
     : `${detectorFindingLabel(detector)} SARIF finding`;
+}
+
+const ROLE_ASSIGNMENT =
+  /\b(?:act|behave|serve|work)\s+as\b|\byou\s+are\s+(?:an?|the)\b|\brole\s+(?:assignment|definition)\b/i;
+const DANGEROUS_ROLE_CONTEXT =
+  /\b(?:ignore|disregard|override|jailbreak|previous|prior|system\s+prompt|developer\s+instruction|api[_ -]?key|credential|password|secret|token|upload|send|post|leak|steal|exfiltrat\w*)\b|https?:\/\//i;
+
+function isNarrowReviewableRoleDefinition(
+  result: SarifResult,
+  detector: TrustDetector,
+  root: string,
+  location: NonNullable<Check["location"]>,
+): boolean {
+  if (isStrictUnicodeSurface(location.uri)) return false;
+  const line = fileLine(join(root, location.uri), location.startLine ?? 1) ?? "";
+  const evidence = [resultRuleId(result) ?? "", resultMessage(result, detector), line].join("\n");
+  return ROLE_ASSIGNMENT.test(evidence) && !DANGEROUS_ROLE_CONTEXT.test(evidence);
 }
 
 function unicodeResultMessage(message: string, risk: UnicodeRisk | undefined): string {
@@ -1291,20 +1325,29 @@ function sarifLocation(
 }
 
 function sarifFingerprint(
+  occurrences: Map<string, number>,
   code: CheckCode,
   root: string,
   location: NonNullable<Check["location"]>,
+  ruleId: string,
   detail: string,
   detector: TrustDetector,
-  fingerprintContent?: Buffer,
 ): string {
   const line = location.startLine ?? 1;
-  const content =
-    fingerprintContent ??
-    (code === "trust.visible-unicode"
-      ? (sourceTextForLocation(root, location) ?? detail)
-      : (fileLine(join(root, location.uri), line) ?? detail));
-  return `${code.replace(/\./g, "-")}:${detector.name}:${location.uri}:${line}:${sha8(content)}`;
+  const findingRule = `${detector.name}:${ruleId}`;
+  const lineContent = fileLine(join(root, location.uri), line) ?? detail;
+  const content = `${lineContent}\0${detail}`;
+  const key = JSON.stringify([code, location.uri, findingRule, content]);
+  const occurrence = occurrences.get(key) ?? 0;
+  occurrences.set(key, occurrence + 1);
+  return contentFindingFingerprint({
+    code,
+    path: location.uri,
+    ruleId: findingRule,
+    content,
+    occurrence,
+    displayLine: line,
+  });
 }
 
 function sarifChecks(
@@ -1316,12 +1359,19 @@ function sarifChecks(
   const parsed = parseSarifLog(stdout);
   if (parsed === undefined) return undefined;
   const checks: Check[] = [];
+  const occurrences = new Map<string, number>();
   for (const run of parsed.runs) {
     for (const result of run.results ?? []) {
       const location = sarifLocation(result, detector);
       const classification = ruleCode(result, detector, root, location);
       if (classification === undefined) continue;
       const { code } = classification;
+      if (
+        code === "trust.prompt-injection" &&
+        isNarrowReviewableRoleDefinition(result, detector, root, location)
+      ) {
+        continue;
+      }
       const risk =
         code === "trust.hidden-unicode" || code === "trust.visible-unicode"
           ? hiddenUnicodeRiskForDetectorResult(result, detector, root, location)
@@ -1339,12 +1389,13 @@ function sarifChecks(
             detail: `${location.uri}:${location.startLine ?? 1} — ${detectorFindingLabel(detector)}: ${detail}`,
             location,
             fingerprint: sarifFingerprint(
+              occurrences,
               code,
               root,
               location,
+              resultRuleId(result) ?? "unknown-rule",
               detail,
               detector,
-              classification.fingerprintContent,
             ),
           },
           posture,

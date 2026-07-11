@@ -1,8 +1,8 @@
-import { createHash } from "node:crypto";
 import { lstatSync, readdirSync, readFileSync } from "node:fs";
 import { basename, extname, join, relative } from "node:path";
 import { parseDocument } from "yaml";
 import type { Check, CheckCode } from "../internals/verify.js";
+import { contentFindingFingerprint } from "./fingerprint.js";
 import { collectFilesUnder, TRUST_SKIP_DIRS } from "./scan.js";
 
 type AutoExecCode = Extract<CheckCode, "trust.auto-exec-hook">;
@@ -21,14 +21,6 @@ function toPosix(path: string): string {
   return path.replace(/\\/g, "/");
 }
 
-function contentHash(value: string): string {
-  return createHash("sha256").update(value).digest("hex");
-}
-
-function fingerprint(code: AutoExecCode, path: string, line: number, content: string): string {
-  return `${code.replace(/\./g, "-")}:${path}:${line}:${contentHash(content).slice(0, 8)}`;
-}
-
 function linesOf(source: string): string[] {
   return source.split(/\r?\n/);
 }
@@ -43,15 +35,44 @@ function lineForNeedle(source: string, needle: string): number {
   return found >= 0 ? found + 1 : 1;
 }
 
-function autoExecCheck(path: string, line: number, lineTextValue: string, detail: string): Check {
+function autoExecCheck(path: string, line: number, _lineTextValue: string, detail: string): Check {
   return {
     name: AUTO_EXEC_CODE,
     verdict: "fail",
     detail: `${path}:${line} — ${detail}`,
     code: AUTO_EXEC_CODE,
     location: { uri: path, startLine: line },
-    fingerprint: fingerprint(AUTO_EXEC_CODE, path, line, lineTextValue),
   };
+}
+
+function fingerprintManifestChecks(root: string, checks: readonly Check[]): Check[] {
+  const occurrences = new Map<string, number>();
+  return checks.map((check) => {
+    const path = check.location?.uri ?? "untrusted-document";
+    const line = check.location?.startLine ?? 1;
+    const ruleId = check.detail?.split(" — ").at(-1) ?? AUTO_EXEC_CODE;
+    let lineContent = "";
+    try {
+      lineContent = lineText(readFileSync(join(root, path), "utf8"), line);
+    } catch {
+      lineContent = path;
+    }
+    const content = `${lineContent}\0${ruleId}`;
+    const key = JSON.stringify([AUTO_EXEC_CODE, path, ruleId, content]);
+    const occurrence = occurrences.get(key) ?? 0;
+    occurrences.set(key, occurrence + 1);
+    return {
+      ...check,
+      fingerprint: contentFindingFingerprint({
+        code: AUTO_EXEC_CODE,
+        path,
+        ruleId,
+        content,
+        occurrence,
+        displayLine: line,
+      }),
+    };
+  });
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -289,5 +310,5 @@ export function scanTrustManifests(root: string): Check[] {
     if (scansNpmrc) checks.push(...scanNpmrc(rel, source));
     if (scansSettings) checks.push(...scanSettingsHooks(rel, source));
   }
-  return checks;
+  return fingerprintManifestChecks(root, checks);
 }

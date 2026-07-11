@@ -1,6 +1,6 @@
-import { createHash } from "node:crypto";
 import type { Check, CheckCode } from "../internals/verify.js";
 import type { LintFinding, LintRule, LintRuleCtx } from "../lint/rules.js";
+import { contentFindingFingerprint } from "./fingerprint.js";
 
 type TrustLintCode = Extract<
   CheckCode,
@@ -46,6 +46,7 @@ const BIDI_CONTROLS = new Set([
   0x061c, 0x200e, 0x200f, 0x202a, 0x202b, 0x202c, 0x202d, 0x202e, 0x2066, 0x2067, 0x2068, 0x2069,
 ]);
 const DEFAULT_IGNORABLE = /\p{Default_Ignorable_Code_Point}/u;
+const EXTENDED_PICTOGRAPHIC = /\p{Extended_Pictographic}/u;
 const EXTRA_CONFUSABLES = new Set([
   0x0131, // latin small dotless i
   0x0142, // latin small l with stroke
@@ -108,15 +109,21 @@ function lineTextAt(source: string, index: number): string {
   return source.slice(start, end === -1 ? source.length : end);
 }
 
-function contentHash(value: string): string {
-  return createHash("sha256").update(value).digest("hex");
-}
-
-function fingerprint(code: TrustLintCode, path: string, line: number, content: string): string {
-  return `${code.replace(/\./g, "-")}:${path}:${line}:${contentHash(content).slice(0, 8)}`;
+function nextOccurrence(
+  occurrences: Map<string, number>,
+  code: TrustLintCode,
+  path: string,
+  ruleId: string,
+  content: string,
+): number {
+  const key = JSON.stringify([code, path, ruleId, content]);
+  const occurrence = occurrences.get(key) ?? 0;
+  occurrences.set(key, occurrence + 1);
+  return occurrence;
 }
 
 function finding(
+  occurrences: Map<string, number>,
   code: TrustLintCode,
   ruleId: string,
   path: string,
@@ -127,18 +134,34 @@ function finding(
 ): TrustLintFinding {
   const line = lineAt(source, index);
   const lineText = lineTextAt(source, index);
+  const content = fingerprintContent ?? `${lineText}\0${message}`;
   return {
     ruleId,
     severity: "fail",
     message,
     code,
     line,
-    fingerprint: fingerprint(code, path, line, fingerprintContent ?? lineText),
+    fingerprint: contentFindingFingerprint({
+      code,
+      path,
+      ruleId,
+      content,
+      occurrence: nextOccurrence(occurrences, code, path, ruleId, content),
+      displayLine: line,
+    }),
   };
 }
 
 function isTagCodePoint(cp: number): boolean {
   return cp >= 0xe0000 && cp <= 0xe007f;
+}
+
+function isDecorativeCodePoint(cp: number): boolean {
+  return (
+    (cp >= 0x2190 && cp <= 0x21ff) ||
+    (cp >= 0x2500 && cp <= 0x257f) ||
+    EXTENDED_PICTOGRAPHIC.test(String.fromCodePoint(cp))
+  );
 }
 
 function hiddenCategory(cp: number): UnicodeCategory | undefined {
@@ -258,6 +281,7 @@ function unicodeRiskForVisibleTypography(path: string): UnicodeRisk {
 
 export function classifyUnicodeRisk(path: string, source: string): UnicodeRisk | undefined {
   let visibleNonAscii = 0;
+  const allowDecorative = isReviewableDocumentationPath(path);
   for (let index = 0; index < source.length; ) {
     const cp = source.codePointAt(index);
     if (cp === undefined) break;
@@ -277,7 +301,13 @@ export function classifyUnicodeRisk(path: string, source: string): UnicodeRisk |
         reason: "Unicode confusable appears inside an ASCII-like token",
       };
     }
-    if (cp > 0x7f && !/\s/u.test(String.fromCodePoint(cp))) visibleNonAscii++;
+    if (
+      cp > 0x7f &&
+      !/\s/u.test(String.fromCodePoint(cp)) &&
+      (!allowDecorative || !isDecorativeCodePoint(cp))
+    ) {
+      visibleNonAscii++;
+    }
     index += width;
   }
   return visibleNonAscii > 0 ? unicodeRiskForVisibleTypography(path) : undefined;
@@ -285,6 +315,8 @@ export function classifyUnicodeRisk(path: string, source: string): UnicodeRisk |
 
 function hiddenUnicodeFindings(path: string, source: string): TrustLintFinding[] {
   const out: TrustLintFinding[] = [];
+  const occurrences = new Map<string, number>();
+  const allowDecorative = isReviewableDocumentationPath(path);
   let sparseNonAscii = 0;
   let sparseIndex = -1;
   for (let index = 0; index < source.length; ) {
@@ -295,6 +327,7 @@ function hiddenUnicodeFindings(path: string, source: string): TrustLintFinding[]
     if (hidden !== undefined) {
       out.push(
         finding(
+          occurrences,
           "trust.hidden-unicode",
           "trust.hidden-unicode",
           path,
@@ -306,6 +339,7 @@ function hiddenUnicodeFindings(path: string, source: string): TrustLintFinding[]
     } else if (isHomoglyphConfusable(cp) && hasAsciiWordNeighbor(source, index, width)) {
       out.push(
         finding(
+          occurrences,
           "trust.hidden-unicode",
           "trust.hidden-unicode",
           path,
@@ -314,7 +348,11 @@ function hiddenUnicodeFindings(path: string, source: string): TrustLintFinding[]
           `character category: homoglyph-confusable; reason: Unicode confusable appears inside an ASCII-like token; code point U+${cp.toString(16).toUpperCase()}`,
         ),
       );
-    } else if (cp > 0x7f && !/\s/u.test(String.fromCodePoint(cp))) {
+    } else if (
+      cp > 0x7f &&
+      !/\s/u.test(String.fromCodePoint(cp)) &&
+      (!allowDecorative || !isDecorativeCodePoint(cp))
+    ) {
       sparseNonAscii++;
       if (sparseIndex === -1) sparseIndex = index;
     }
@@ -324,13 +362,13 @@ function hiddenUnicodeFindings(path: string, source: string): TrustLintFinding[]
     const visibleRisk = unicodeRiskForVisibleTypography(path);
     out.push(
       finding(
+        occurrences,
         visibleRisk.code,
         visibleRisk.code,
         path,
         source,
         sparseIndex,
         `document contains ${sparseNonAscii} non-ASCII characters; character category: ${visibleRisk.category}; reason: ${visibleRisk.reason}`,
-        source,
       ),
     );
   }
@@ -339,10 +377,21 @@ function hiddenUnicodeFindings(path: string, source: string): TrustLintFinding[]
 
 function promptInjectionFindings(path: string, source: string): TrustLintFinding[] {
   const out: TrustLintFinding[] = [];
+  const occurrences = new Map<string, number>();
   for (const rule of PROMPT_INJECTION_PATTERNS) {
     const re = new RegExp(rule.pattern.source, rule.pattern.flags);
     for (let match = re.exec(source); match !== null; match = re.exec(source)) {
-      out.push(finding("trust.prompt-injection", rule.id, path, source, match.index, rule.message));
+      out.push(
+        finding(
+          occurrences,
+          "trust.prompt-injection",
+          rule.id,
+          path,
+          source,
+          match.index,
+          rule.message,
+        ),
+      );
       if (match.index === re.lastIndex) re.lastIndex++;
     }
   }

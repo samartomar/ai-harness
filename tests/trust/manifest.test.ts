@@ -71,7 +71,23 @@ describe("scanTrustManifests", () => {
       code: "trust.auto-exec-hook",
       location: expect.objectContaining({ uri: rel }),
     });
-    expect(check?.fingerprint).toMatch(/^trust-auto-exec-hook:/);
+    expect(check?.fingerprint).toMatch(/^trust-auto-exec-hook:.+:[0-9a-f]{64}$/);
+  });
+
+  it("keeps auto-exec identity stable when only its display line shifts", () => {
+    write("skills/bang/SKILL.md", "# Bang\n!npm install\n");
+    const first = scanTrustManifests(dir).find((check) =>
+      check.detail?.includes("leading ! auto-run line"),
+    );
+
+    write("skills/bang/SKILL.md", "# Bang\nUnrelated prose\n!npm install\n");
+    const shifted = scanTrustManifests(dir).find((check) =>
+      check.detail?.includes("leading ! auto-run line"),
+    );
+
+    expect(first?.location?.startLine).toBe(2);
+    expect(shifted?.location?.startLine).toBe(3);
+    expect(shifted?.fingerprint).toBe(first?.fingerprint);
   });
 
   it.each([
