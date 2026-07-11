@@ -4,8 +4,8 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   baselineAnalyzerVersions,
-  REQUIRED_BASELINE_ANALYZERS,
-  REQUIRED_BASELINE_DETECTORS,
+  requiredBaselineAnalyzersForComponent,
+  requiredBaselineDetectorsForComponent,
 } from "../../src/baseline-evidence/analyzer-profile.js";
 import { defineBaselineCatalog } from "../../src/baseline-evidence/catalog.js";
 import {
@@ -107,12 +107,12 @@ describe("baseline vet command plan", () => {
       catalog(),
       expect.objectContaining({
         analyzerVersions: baselineAnalyzerVersions(),
-        requiredAnalyzers: REQUIRED_BASELINE_ANALYZERS,
+        requiredAnalyzers: requiredBaselineAnalyzersForComponent,
+        requiredDetectorsForComponent: requiredBaselineDetectorsForComponent,
         scanOptions: expect.objectContaining({
           env: {},
           platform: "linux",
           progress: expect.any(Function),
-          requiredDetectors: REQUIRED_BASELINE_DETECTORS,
           run: expect.any(Function),
         }),
       }),

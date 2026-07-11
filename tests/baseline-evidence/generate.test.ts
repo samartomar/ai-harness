@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   baselineAnalyzerVersions,
-  REQUIRED_BASELINE_ANALYZERS,
-  REQUIRED_BASELINE_DETECTORS,
+  requiredBaselineAnalyzersForComponent,
+  requiredBaselineDetectorsForComponent,
 } from "../../src/baseline-evidence/analyzer-profile.js";
 import type { BaselineCatalog } from "../../src/baseline-evidence/catalog.js";
 import { generateBaselineArtifacts } from "../../src/baseline-evidence/generate.js";
@@ -58,12 +58,12 @@ describe("vendor baseline generator", () => {
       expect(call[2]).toEqual(
         expect.objectContaining({
           analyzerVersions: baselineAnalyzerVersions(),
-          requiredAnalyzers: REQUIRED_BASELINE_ANALYZERS,
+          requiredAnalyzers: requiredBaselineAnalyzersForComponent,
+          requiredDetectorsForComponent: requiredBaselineDetectorsForComponent,
           scanOptions: {
             env: {},
             platform: "linux",
             progress,
-            requiredDetectors: REQUIRED_BASELINE_DETECTORS,
             run,
           },
         }),

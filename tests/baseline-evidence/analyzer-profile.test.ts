@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { defineBaselineCatalog } from "../../src/baseline-evidence/catalog.js";
-import { requiredBaselineAnalyzersForComponent } from "../../src/baseline-evidence/analyzer-profile.js";
+import {
+  requiredBaselineAnalyzersForComponent,
+  requiredBaselineDetectorsForComponent,
+} from "../../src/baseline-evidence/analyzer-profile.js";
 
 function component(id: string, paths: string[]) {
   return defineBaselineCatalog({
@@ -25,6 +28,9 @@ describe("required baseline analyzer applicability", () => {
       includesCisco
         ? ["aih-native", "skillspector@docker", "cisco@uvx"]
         : ["aih-native", "skillspector@docker"],
+    );
+    expect(requiredBaselineDetectorsForComponent(component(id, paths))).toEqual(
+      includesCisco ? ["skillspector", "cisco"] : ["skillspector"],
     );
   });
 });
