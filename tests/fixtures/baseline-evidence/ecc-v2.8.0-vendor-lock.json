@@ -1,0 +1,1972 @@
+{
+  "schemaVersion": 1,
+  "sources": [
+    {
+      "id": "ecc",
+      "owner": "affaan-m",
+      "repo": "ECC",
+      "pinnedSha": "4130457d674d2180c5af2c5f634f3cae4cbc6c4f",
+      "components": [
+        {
+          "id": "runtime:ecc-installer",
+          "paths": [
+            "package.json",
+            "package-lock.json",
+            "manifests",
+            "scripts/install-apply.js",
+            "scripts/lib/install",
+            "scripts/lib/install-manifests.js",
+            "scripts/lib/install-executor.js",
+            "scripts/lib/install-state.js",
+            "scripts/lib/install-targets",
+            "scripts/lib/cursor-agent-names.js",
+            "scripts/lib/mcp-config.js",
+            "scripts/lib/path-safety.js"
+          ],
+          "treeSha256": "9b61c3ee820c1cb1b4c9eb4d15fa2a1a317b3207fcd6817605fcd36c56a6f5c9",
+          "verdict": "blocked",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.8.0"
+            }
+          ],
+          "findings": [
+            {
+              "code": "trust.auto-exec-hook",
+              "detail": "package.json:332 — package.json lifecycle script postinstall can execute during install/publish",
+              "fingerprint": "trust-auto-exec-hook:package.json:332:4e6eebd8"
+            },
+            {
+              "code": "trust.unpinned-dependency",
+              "count": 10,
+              "detail": "10 findings; first: package.json:368 — direct dependency @eslint/js uses unpinned version spec \"^9.39.2\""
+            },
+            {
+              "code": "trust.sandbox-smoke-unavailable",
+              "detail": "sandbox smoke test unavailable (trust.sandbox-smoke-unavailable): detector runtime is missing (run/platform/env)"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "count": 5,
+              "detail": "5 findings; first: install-components.json:192 — trust.hidden-unicode: document contains 2 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
+            }
+          ]
+        },
+        {
+          "id": "runtime:ecc-kiro",
+          "paths": [
+            ".kiro"
+          ],
+          "treeSha256": "2b41926169ea8aed04b9c90a965bd4ad685c35b40c545cee114c9adb82d183aa",
+          "verdict": "blocked",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.8.0"
+            }
+          ],
+          "findings": [
+            {
+              "code": "trust.hidden-unicode",
+              "count": 80,
+              "detail": "80 findings; first: agents/build-error-resolver.md:12 — trust.hidden-unicode: document contains 14 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
+            },
+            {
+              "code": "trust.visible-unicode",
+              "count": 4,
+              "detail": "4 findings; first: docs/longform-guide.md:5 — trust.visible-unicode: document contains 36 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "count": 5,
+              "detail": "5 findings; first: docs/security-guide.md:173 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL"
+            },
+            {
+              "code": "trust.auto-exec-hook",
+              "detail": "skills/rust-patterns/SKILL.md:421 — SKILL body contains a leading ! auto-run line",
+              "fingerprint": "trust-auto-exec-hook:skills/rust-patterns/SKILL.md:421:3eea9178"
+            },
+            {
+              "code": "trust.sandbox-smoke-unavailable",
+              "detail": "sandbox smoke test unavailable (trust.sandbox-smoke-unavailable): detector runtime is missing (run/platform/env)"
+            }
+          ]
+        },
+        {
+          "id": "module:rules-core",
+          "paths": [
+            "rules"
+          ],
+          "treeSha256": "682bcacfa9a0250a781751982ee200a3db08030ef619b8b01b304bc86a70c064",
+          "verdict": "blocked",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.8.0"
+            }
+          ],
+          "findings": [
+            {
+              "code": "trust.hidden-unicode",
+              "count": 55,
+              "detail": "55 findings; first: angular/coding-style.md:18 — trust.hidden-unicode: document contains 9 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "detail": "common/security.md:13 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:common/security.md:13:c8f5c7bc"
+            },
+            {
+              "code": "trust.visible-unicode",
+              "detail": "README.md:9 — trust.visible-unicode: document contains 79 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation",
+              "fingerprint": "trust-visible-unicode:README.md:9:587f99c9"
+            }
+          ]
+        },
+        {
+          "id": "module:agents-core",
+          "paths": [
+            ".agents",
+            "agents",
+            "AGENTS.md"
+          ],
+          "treeSha256": "9114a5ff4fb04100235d9939edb2484599f874bf74ac725c3558041897a95cd0",
+          "verdict": "blocked",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.8.0"
+            }
+          ],
+          "findings": [
+            {
+              "code": "trust.hidden-unicode",
+              "count": 54,
+              "detail": "54 findings; first: skills/agent-introspection-debugging/SKILL.md:70 — trust.hidden-unicode: document contains 8 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
+            },
+            {
+              "code": "trust.visible-unicode",
+              "count": 10,
+              "detail": "10 findings; first: skills/brand-discovery/references/10_purpose-why.md:1 — trust.visible-unicode: document contains 5 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "count": 76,
+              "detail": "76 findings; first: skills/fal-ai-media/SKILL.md:214 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL"
+            },
+            {
+              "code": "trust.auto-exec-hook",
+              "count": 2,
+              "detail": "2 findings; first: skills/eval-harness/SKILL.md:4 — frontmatter allowed-tools grants unsafe Bash access"
+            },
+            {
+              "code": "trust.sandbox-smoke-unavailable",
+              "detail": "sandbox smoke test unavailable (trust.sandbox-smoke-unavailable): detector runtime is missing (run/platform/env)"
+            }
+          ]
+        },
+        {
+          "id": "module:commands-core",
+          "paths": [
+            "commands",
+            "scripts/harness-audit.js",
+            "scripts/skills-health.js"
+          ],
+          "treeSha256": "cf7a222bc0f9712855e82e35c7afbd16c7623227ddeca903fc10c8a1cc68dcda",
+          "verdict": "blocked",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.8.0"
+            }
+          ],
+          "findings": [
+            {
+              "code": "trust.hidden-unicode",
+              "count": 55,
+              "detail": "55 findings; first: aside.md:7 — trust.hidden-unicode: document contains 15 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
+            },
+            {
+              "code": "trust.visible-unicode",
+              "count": 2,
+              "detail": "2 findings; first: gan-design.md:6 — trust.visible-unicode: document contains 5 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation"
+            }
+          ]
+        },
+        {
+          "id": "module:hooks-runtime",
+          "paths": [
+            "hooks",
+            "scripts/hooks",
+            "scripts/lib"
+          ],
+          "treeSha256": "9ab2963bc31ec59b466c6fc13499d51601e4a3606432e5fb461694cbd4e20a3d",
+          "verdict": "blocked",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.8.0"
+            }
+          ],
+          "findings": [
+            {
+              "code": "trust.visible-unicode",
+              "detail": "README.md:8 — trust.visible-unicode: document contains 14 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation",
+              "fingerprint": "trust-visible-unicode:README.md:8:914a2671"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "count": 62,
+              "detail": "62 findings; first: hooks.json:271 — trust.hidden-unicode: document contains 1 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
+            }
+          ]
+        },
+        {
+          "id": "module:platform-configs",
+          "paths": [
+            ".claude-plugin",
+            ".codex",
+            ".cursor",
+            ".gemini",
+            ".opencode",
+            ".qwen",
+            ".zed",
+            "mcp-configs",
+            "scripts/auto-update.js",
+            "scripts/setup-package-manager.js",
+            ".hermes",
+            ".openclaw",
+            ".kimi"
+          ],
+          "treeSha256": "9a9091ba2fd9dada0d10f486a02d52404e427a60813faa0006ab66793b5291af",
+          "verdict": "blocked",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.8.0"
+            }
+          ],
+          "findings": [
+            {
+              "code": "trust.hidden-unicode",
+              "count": 29,
+              "detail": "29 findings; first: AGENTS.md:17 — trust.hidden-unicode: document contains 36 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "count": 2,
+              "detail": "2 findings; first: rules/common-security.md:17 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL"
+            },
+            {
+              "code": "trust.auto-exec-hook",
+              "detail": "package.json:33 — package.json lifecycle script prepublishOnly can execute during install/publish",
+              "fingerprint": "trust-auto-exec-hook:package.json:33:1d4b509d"
+            },
+            {
+              "code": "trust.unpinned-dependency",
+              "count": 4,
+              "detail": "4 findings; first: package.json:60 — direct dependency @opencode-ai/plugin uses unpinned version spec \"^1.4.3\""
+            },
+            {
+              "code": "trust.visible-unicode",
+              "count": 3,
+              "detail": "3 findings; first: README.md:7 — trust.visible-unicode: document contains 4 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation"
+            }
+          ]
+        },
+        {
+          "id": "module:framework-language",
+          "paths": [
+            "skills/android-clean-architecture",
+            "skills/angular-developer",
+            "skills/api-design",
+            "skills/backend-patterns",
+            "skills/coding-standards",
+            "skills/compose-multiplatform-patterns",
+            "skills/csharp-testing",
+            "skills/fsharp-testing",
+            "skills/cpp-coding-standards",
+            "skills/cpp-testing",
+            "skills/dart-flutter-patterns",
+            "skills/django-patterns",
+            "skills/django-tdd",
+            "skills/django-verification",
+            "skills/dotnet-patterns",
+            "skills/fastapi-patterns",
+            "skills/frontend-design-direction",
+            "skills/frontend-patterns",
+            "skills/frontend-slides",
+            "skills/make-interfaces-feel-better",
+            "skills/motion-ui",
+            "skills/golang-patterns",
+            "skills/golang-testing",
+            "skills/java-coding-standards",
+            "skills/kotlin-coroutines-flows",
+            "skills/kotlin-exposed-patterns",
+            "skills/kotlin-ktor-patterns",
+            "skills/kotlin-patterns",
+            "skills/kotlin-testing",
+            "skills/laravel-plugin-discovery",
+            "skills/laravel-patterns",
+            "skills/laravel-tdd",
+            "skills/laravel-verification",
+            "skills/mcp-server-patterns",
+            "skills/nestjs-patterns",
+            "skills/perl-patterns",
+            "skills/perl-testing",
+            "skills/python-patterns",
+            "skills/python-testing",
+            "skills/quarkus-patterns",
+            "skills/quarkus-tdd",
+            "skills/quarkus-verification",
+            "skills/react-patterns",
+            "skills/react-performance",
+            "skills/react-testing",
+            "skills/rust-patterns",
+            "skills/rust-testing",
+            "skills/springboot-patterns",
+            "skills/springboot-tdd",
+            "skills/springboot-verification",
+            "skills/ui-to-vue",
+            "skills/vue-patterns"
+          ],
+          "treeSha256": "075f39ba0ffbb9d6fd16ace34354aad84ca58af4ebbc851c50231587e0c5b274",
+          "verdict": "blocked",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.8.0"
+            }
+          ],
+          "findings": [
+            {
+              "code": "trust.hidden-unicode",
+              "count": 41,
+              "detail": "41 findings; first: SKILL.md:3 — trust.hidden-unicode: document contains 44 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
+            },
+            {
+              "code": "trust.visible-unicode",
+              "detail": "references/angular-aria.md:49 — trust.visible-unicode: document contains 2 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation",
+              "fingerprint": "trust-visible-unicode:references/angular-aria.md:49:96daed39"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "count": 13,
+              "detail": "13 findings; first: SKILL.md:573 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL"
+            },
+            {
+              "code": "trust.sandbox-smoke-unavailable",
+              "detail": "sandbox smoke test unavailable (trust.sandbox-smoke-unavailable): detector runtime is missing (run/platform/env)"
+            },
+            {
+              "code": "trust.auto-exec-hook",
+              "detail": "SKILL.md:422 — SKILL body contains a leading ! auto-run line",
+              "fingerprint": "trust-auto-exec-hook:SKILL.md:422:3eea9178"
+            }
+          ]
+        },
+        {
+          "id": "module:database",
+          "paths": [
+            "skills/clickhouse-io",
+            "skills/database-migrations",
+            "skills/jpa-patterns",
+            "skills/mysql-patterns",
+            "skills/postgres-patterns",
+            "skills/prisma-patterns"
+          ],
+          "treeSha256": "baf25a5ec17e321aaeccf1916e26dd3fc6a09c8a3b6acd7e31b6ef87fe277302",
+          "verdict": "blocked",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.8.0"
+            }
+          ],
+          "findings": [
+            {
+              "code": "trust.hidden-unicode",
+              "count": 2,
+              "detail": "2 findings; first: SKILL.md:22 — trust.hidden-unicode: document contains 8 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
+            }
+          ]
+        },
+        {
+          "id": "module:workflow-quality",
+          "paths": [
+            "skills/agent-sort",
+            "skills/agent-introspection-debugging",
+            "skills/ai-regression-testing",
+            "skills/configure-ecc",
+            "skills/code-tour",
+            "skills/continuous-learning",
+            "skills/continuous-learning-v2",
+            "skills/council",
+            "skills/e2e-testing",
+            "skills/error-handling",
+            "skills/eval-harness",
+            "skills/hookify-rules",
+            "skills/iterative-retrieval",
+            "skills/plankton-code-quality",
+            "skills/production-audit",
+            "skills/skill-scout",
+            "skills/skill-stocktake",
+            "skills/strategic-compact",
+            "skills/tdd-workflow",
+            "skills/verification-loop",
+            "skills/windows-desktop-e2e"
+          ],
+          "treeSha256": "cd86d84a72d6edd2e1aaf056694153afd17150e814ae193657131b3a0b58fce1",
+          "verdict": "blocked",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.8.0"
+            }
+          ],
+          "findings": [
+            {
+              "code": "trust.hidden-unicode",
+              "count": 27,
+              "detail": "27 findings; first: SKILL.md:72 — trust.hidden-unicode: document contains 8 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
+            },
+            {
+              "code": "trust.sandbox-smoke-unavailable",
+              "detail": "sandbox smoke test unavailable (trust.sandbox-smoke-unavailable): detector runtime is missing (run/platform/env)"
+            }
+          ]
+        },
+        {
+          "id": "module:optimization-workflows",
+          "paths": [
+            "skills/benchmark-optimization-loop",
+            "skills/data-throughput-accelerator",
+            "skills/latency-critical-systems",
+            "skills/parallel-execution-optimizer",
+            "skills/recursive-decision-ledger"
+          ],
+          "treeSha256": "9748a21b9b18ee94566dd5ba1e8b569e1289579217f7113cecbb949ac923399b",
+          "verdict": "pass",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.8.0"
+            }
+          ],
+          "findings": []
+        },
+        {
+          "id": "module:security",
+          "paths": [
+            "skills/defi-amm-security",
+            "skills/django-security",
+            "skills/healthcare-phi-compliance",
+            "skills/hipaa-compliance",
+            "skills/laravel-security",
+            "skills/llm-trading-agent-security",
+            "skills/nodejs-keccak256",
+            "skills/perl-security",
+            "skills/quarkus-security",
+            "skills/security-review",
+            "skills/security-scan",
+            "skills/security-bounty-hunter",
+            "skills/springboot-security",
+            "skills/evm-token-decimals",
+            "the-security-guide.md"
+          ],
+          "treeSha256": "792948d77dc4222c9026d188916859cf23c19481ac5592069512a3ed37afe453",
+          "verdict": "blocked",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.8.0"
+            }
+          ],
+          "findings": [
+            {
+              "code": "trust.prompt-injection",
+              "count": 7,
+              "detail": "7 findings; first: SKILL.md:340 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "count": 7,
+              "detail": "7 findings; first: SKILL.md:5 — trust.hidden-unicode: document contains 7 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
+            },
+            {
+              "code": "trust.auto-exec-hook",
+              "detail": "SKILL.md:132 — SKILL body contains a leading ! auto-run line",
+              "fingerprint": "trust-auto-exec-hook:SKILL.md:132:9d8724f4"
+            },
+            {
+              "code": "trust.sandbox-smoke-unavailable",
+              "detail": "sandbox smoke test unavailable (trust.sandbox-smoke-unavailable): detector runtime is missing (run/platform/env)"
+            }
+          ]
+        },
+        {
+          "id": "module:research-apis",
+          "paths": [
+            "skills/deep-research",
+            "skills/exa-search",
+            "skills/research-ops",
+            "skills/scientific-db-pubmed-database",
+            "skills/scientific-db-uspto-database",
+            "skills/scientific-pkg-gget",
+            "skills/scientific-thinking-literature-review",
+            "skills/scientific-thinking-scholar-evaluation"
+          ],
+          "treeSha256": "fb4602c3655bc1807d808efa4e397ff4226546e03ef3e3f20b3a27fea5e918ad",
+          "verdict": "blocked",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.8.0"
+            }
+          ],
+          "findings": [
+            {
+              "code": "trust.hidden-unicode",
+              "count": 2,
+              "detail": "2 findings; first: SKILL.md:27 — trust.hidden-unicode: document contains 5 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "count": 2,
+              "detail": "2 findings; first: SKILL.md:54 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL"
+            }
+          ]
+        },
+        {
+          "id": "module:business-content",
+          "paths": [
+            "skills/article-writing",
+            "skills/brand-voice",
+            "skills/content-engine",
+            "skills/investor-materials",
+            "skills/investor-outreach",
+            "skills/lead-intelligence",
+            "skills/product-capability",
+            "skills/social-graph-ranker",
+            "skills/seo",
+            "skills/market-research"
+          ],
+          "treeSha256": "5637280af0143d2e15690a18f7aa680087ee3b2f3d40e0d53d8e6e6560edb5b1",
+          "verdict": "blocked",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.8.0"
+            }
+          ],
+          "findings": [
+            {
+              "code": "trust.hidden-unicode",
+              "count": 9,
+              "detail": "9 findings; first: agents/enrichment-agent.md:25 — trust.hidden-unicode: document contains 6 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
+            }
+          ]
+        },
+        {
+          "id": "module:operator-workflows",
+          "paths": [
+            "skills/automation-audit-ops",
+            "skills/api-connector-builder",
+            "skills/connections-optimizer",
+            "skills/cost-tracking",
+            "skills/customer-billing-ops",
+            "skills/dashboard-builder",
+            "skills/ecc-tools-cost-audit",
+            "skills/email-ops",
+            "skills/finance-billing-ops",
+            "skills/github-ops",
+            "skills/google-workspace-ops",
+            "skills/jira-integration",
+            "skills/knowledge-ops",
+            "skills/messages-ops",
+            "skills/project-flow-ops",
+            "skills/terminal-ops",
+            "skills/unified-notifications-ops",
+            "skills/workspace-surface-audit"
+          ],
+          "treeSha256": "5bcc1fab96fc749966c39280e9953c9758ec2697d4955f8c1b91cb4bdf526b17",
+          "verdict": "blocked",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.8.0"
+            }
+          ],
+          "findings": [
+            {
+              "code": "trust.hidden-unicode",
+              "count": 2,
+              "detail": "2 findings; first: SKILL.md:18 — trust.hidden-unicode: document contains 5 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "detail": "SKILL.md:113 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:SKILL.md:113:69fcd5e1"
+            }
+          ]
+        },
+        {
+          "id": "module:prediction-market-skills",
+          "paths": [
+            "skills/ito-basket-compare",
+            "skills/ito-data-atlas-agent",
+            "skills/ito-market-intelligence",
+            "skills/ito-trade-planner",
+            "skills/prediction-market-oracle-research",
+            "skills/prediction-market-risk-review"
+          ],
+          "treeSha256": "6b9ed5159fa93ba738773fc5462506ac184e6a1a962d20008ef8c75504eb6edd",
+          "verdict": "blocked",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.8.0"
+            }
+          ],
+          "findings": [
+            {
+              "code": "trust.hidden-unicode",
+              "count": 5,
+              "detail": "5 findings; first: SKILL.md:3 — trust.hidden-unicode: document contains 3 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
+            }
+          ]
+        },
+        {
+          "id": "module:social-distribution",
+          "paths": [
+            "skills/crosspost",
+            "skills/x-api"
+          ],
+          "treeSha256": "be4e518a6747ddc02335e5544f96d26240d7bac70dbeebd215a043992dd1ff6d",
+          "verdict": "blocked",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.8.0"
+            }
+          ],
+          "findings": [
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "SKILL.md:57 — trust.hidden-unicode: document contains 6 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:SKILL.md:57:1316fb05"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "count": 6,
+              "detail": "6 findings; first: SKILL.md:23 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL"
+            }
+          ]
+        },
+        {
+          "id": "module:media-generation",
+          "paths": [
+            "skills/blender-motion-state-inspection",
+            "skills/fal-ai-media",
+            "skills/manim-video",
+            "skills/remotion-video-creation",
+            "skills/ui-demo",
+            "skills/video-editing",
+            "skills/videodb"
+          ],
+          "treeSha256": "fc3fe47d658e3f1dc0f2d5b264760152a587e9a5641ef6496d051cab238a9711",
+          "verdict": "blocked",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.8.0"
+            }
+          ],
+          "findings": [
+            {
+              "code": "trust.hidden-unicode",
+              "count": 4,
+              "detail": "4 findings; first: SKILL.md:3 — trust.hidden-unicode: document contains 14 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "count": 5,
+              "detail": "5 findings; first: SKILL.md:220 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL"
+            },
+            {
+              "code": "trust.visible-unicode",
+              "count": 7,
+              "detail": "7 findings; first: reference/api-reference.md:37 — trust.visible-unicode: document contains 3 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation"
+            }
+          ]
+        },
+        {
+          "id": "module:orchestration",
+          "paths": [
+            "scripts/lib/orchestration-session.js",
+            "scripts/lib/tmux-worktree-orchestrator.js",
+            "scripts/orchestrate-codex-worker.sh",
+            "scripts/orchestrate-worktrees.js",
+            "scripts/orchestration-status.js",
+            "skills/dmux-workflows"
+          ],
+          "treeSha256": "79cefb6c5b54d23f4084dbf9fc2b3e4ed95cad885a03e62c641070b1f8077ead",
+          "verdict": "blocked",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.8.0"
+            }
+          ],
+          "findings": [
+            {
+              "code": "trust.hidden-unicode",
+              "count": 2,
+              "detail": "2 findings; first: tmux-worktree-orchestrator.js:203 — trust.hidden-unicode: document contains 1 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
+            }
+          ]
+        },
+        {
+          "id": "module:swift-apple",
+          "paths": [
+            "skills/foundation-models-on-device",
+            "skills/liquid-glass-design",
+            "skills/swift-actor-persistence",
+            "skills/swift-concurrency-6-2",
+            "skills/swift-protocol-di-testing",
+            "skills/swiftui-patterns"
+          ],
+          "treeSha256": "40da627b38823fb88d0e6e88824ccacdc013f06c8d17c409f941ebff88c5dfb3",
+          "verdict": "blocked",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.8.0"
+            }
+          ],
+          "findings": [
+            {
+              "code": "trust.hidden-unicode",
+              "count": 6,
+              "detail": "6 findings; first: SKILL.md:3 — trust.hidden-unicode: document contains 21 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
+            }
+          ]
+        },
+        {
+          "id": "module:agentic-patterns",
+          "paths": [
+            "scripts/claw.js",
+            "skills/agent-architecture-audit",
+            "skills/agent-harness-construction",
+            "skills/agentic-engineering",
+            "skills/agentic-os",
+            "skills/ai-first-engineering",
+            "skills/autonomous-loops",
+            "skills/blueprint",
+            "skills/claude-devfleet",
+            "skills/content-hash-cache-pattern",
+            "skills/continuous-agent-loop",
+            "skills/cost-aware-llm-pipeline",
+            "skills/data-scraper-agent",
+            "skills/dynamic-workflow-mode",
+            "skills/enterprise-agent-ops",
+            "skills/nanoclaw-repl",
+            "skills/prompt-optimizer",
+            "skills/ralphinho-rfc-pipeline",
+            "skills/regex-vs-llm-structured-text",
+            "skills/search-first",
+            "skills/team-agent-orchestration",
+            "skills/token-budget-advisor",
+            "skills/team-builder"
+          ],
+          "treeSha256": "622d44c48c83e900cad9f1c25dc1e3343782373ccb89ace3a6d6f9efa79e86dc",
+          "verdict": "blocked",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.8.0"
+            }
+          ],
+          "findings": [
+            {
+              "code": "trust.hidden-unicode",
+              "count": 20,
+              "detail": "20 findings; first: claw.js:3 — trust.hidden-unicode: document contains 2 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
+            }
+          ]
+        },
+        {
+          "id": "module:devops-infra",
+          "paths": [
+            "skills/cisco-ios-patterns",
+            "skills/deployment-patterns",
+            "skills/docker-patterns",
+            "skills/homelab-network-readiness",
+            "skills/homelab-network-setup",
+            "skills/netmiko-ssh-automation",
+            "skills/network-bgp-diagnostics",
+            "skills/network-config-validation",
+            "skills/network-interface-health"
+          ],
+          "treeSha256": "f63e532f2a9de63aa8db07987044f0f066aaa8fb3a2f97f9c72ba73419bc118b",
+          "verdict": "blocked",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.8.0"
+            }
+          ],
+          "findings": [
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "SKILL.md:25 — trust.hidden-unicode: document contains 20 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:SKILL.md:25:37c9c9f2"
+            }
+          ]
+        },
+        {
+          "id": "module:machine-learning",
+          "paths": [
+            "skills/mle-workflow"
+          ],
+          "treeSha256": "38728dbafb07e29470f85cb2ef69358c52c8b36978ef1dfa68becef65819c4c8",
+          "verdict": "pass",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.8.0"
+            }
+          ],
+          "findings": []
+        },
+        {
+          "id": "module:supply-chain-domain",
+          "paths": [
+            "skills/carrier-relationship-management",
+            "skills/customs-trade-compliance",
+            "skills/energy-procurement",
+            "skills/inventory-demand-planning",
+            "skills/logistics-exception-management",
+            "skills/production-scheduling",
+            "skills/quality-nonconformance",
+            "skills/returns-reverse-logistics"
+          ],
+          "treeSha256": "daa593d44d1f3bee8f83937cbef8119f331cb9ff09d1ba1c71dc793dc688925e",
+          "verdict": "blocked",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.8.0"
+            }
+          ],
+          "findings": [
+            {
+              "code": "trust.hidden-unicode",
+              "count": 13,
+              "detail": "13 findings; first: SKILL.md:24 — trust.hidden-unicode: document contains 48 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
+            }
+          ]
+        },
+        {
+          "id": "module:document-processing",
+          "paths": [
+            "skills/nutrient-document-processing",
+            "skills/visa-doc-translate"
+          ],
+          "treeSha256": "ccc26a1f713aa82cb00ee5be70bb6c507f889026bdaffc8e088f78c209bae1c4",
+          "verdict": "blocked",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.8.0"
+            }
+          ],
+          "findings": [
+            {
+              "code": "trust.prompt-injection",
+              "count": 11,
+              "detail": "11 findings; first: SKILL.md:22 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL"
+            },
+            {
+              "code": "trust.visible-unicode",
+              "detail": "README.md:15 — trust.visible-unicode: document contains 24 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation",
+              "fingerprint": "trust-visible-unicode:README.md:15:34c2550b"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "SKILL.md:50 — trust.hidden-unicode: document contains 24 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:SKILL.md:50:9c429c2c"
+            }
+          ]
+        },
+        {
+          "id": "module:docs-ja-jp",
+          "paths": [
+            "docs/ja-JP"
+          ],
+          "treeSha256": "703c13e1448aad20ac4bcdf903a500bff7f1bec98d64a521df92186b75a26f34",
+          "verdict": "blocked",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.8.0"
+            }
+          ],
+          "findings": [
+            {
+              "code": "trust.hidden-unicode",
+              "count": 2252,
+              "detail": "2252 findings; first: AGENTS.md:66 — trust.hidden-unicode: character category: homoglyph-confusable; reason: Unicode confusable appears inside an ASCII-like token; code point U+FF08"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "count": 37,
+              "detail": "37 findings; first: examples/django-api-CLAUDE.md:242 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL"
+            },
+            {
+              "code": "trust.visible-unicode",
+              "count": 17,
+              "detail": "17 findings; first: hooks/README.md:1 — trust.visible-unicode: document contains 2254 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation"
+            },
+            {
+              "code": "trust.auto-exec-hook",
+              "count": 8,
+              "detail": "8 findings; first: agents/go-reviewer.md:1 — unparseable YAML frontmatter in trust document"
+            }
+          ]
+        },
+        {
+          "id": "module:docs-zh-cn",
+          "paths": [
+            "docs/zh-CN"
+          ],
+          "treeSha256": "4e9ee999273d5732a8445d04b35d65f7feee233665bd3cd44a3352751ad7fcbc",
+          "verdict": "blocked",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.8.0"
+            }
+          ],
+          "findings": [
+            {
+              "code": "trust.hidden-unicode",
+              "count": 3140,
+              "detail": "3140 findings; first: AGENTS.md:66 — trust.hidden-unicode: character category: homoglyph-confusable; reason: Unicode confusable appears inside an ASCII-like token; code point U+FF08"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "count": 41,
+              "detail": "41 findings; first: CLAUDE.md:6 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL"
+            },
+            {
+              "code": "trust.visible-unicode",
+              "count": 15,
+              "detail": "15 findings; first: hooks/README.md:1 — trust.visible-unicode: document contains 980 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation"
+            },
+            {
+              "code": "trust.auto-exec-hook",
+              "count": 12,
+              "detail": "12 findings; first: skills/blueprint/SKILL.md:1 — unparseable YAML frontmatter in trust document"
+            }
+          ]
+        },
+        {
+          "id": "module:docs-ko-kr",
+          "paths": [
+            "docs/ko-KR"
+          ],
+          "treeSha256": "fef9d61fc9fcc882469fa2c0d80384bf4cec8cba10010cffd4fccb60ab0ac0ce",
+          "verdict": "blocked",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.8.0"
+            }
+          ],
+          "findings": [
+            {
+              "code": "trust.hidden-unicode",
+              "count": 62,
+              "detail": "62 findings; first: agents/architect.md:3 — trust.hidden-unicode: document contains 1292 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "count": 4,
+              "detail": "4 findings; first: examples/CLAUDE.md:6 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL"
+            },
+            {
+              "code": "trust.visible-unicode",
+              "detail": "README.md:1 — trust.visible-unicode: document contains 4152 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation",
+              "fingerprint": "trust-visible-unicode:README.md:1:3c66bf78"
+            }
+          ]
+        },
+        {
+          "id": "module:docs-pt-br",
+          "paths": [
+            "docs/pt-BR"
+          ],
+          "treeSha256": "d689cf572c6aee222684abc235943ce2fcd515bf4a42cecb66a81d2f5d740a43",
+          "verdict": "blocked",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.8.0"
+            }
+          ],
+          "findings": [
+            {
+              "code": "trust.hidden-unicode",
+              "count": 46,
+              "detail": "46 findings; first: agents/architect.md:3 — trust.hidden-unicode: document contains 67 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "count": 3,
+              "detail": "3 findings; first: examples/CLAUDE.md:6 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL"
+            },
+            {
+              "code": "trust.visible-unicode",
+              "detail": "README.md:1 — trust.visible-unicode: document contains 462 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation",
+              "fingerprint": "trust-visible-unicode:README.md:1:449be67d"
+            }
+          ]
+        },
+        {
+          "id": "module:docs-ru",
+          "paths": [
+            "docs/ru"
+          ],
+          "treeSha256": "fe864050bd7900cdd83e44d9636cc46c4b8225fcd74a6ca3681aeef5cb71d812",
+          "verdict": "blocked",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.8.0"
+            }
+          ],
+          "findings": [
+            {
+              "code": "trust.hidden-unicode",
+              "count": 2,
+              "detail": "2 findings; first: README.md:144 — trust.hidden-unicode: character category: homoglyph-confusable; reason: Unicode confusable appears inside an ASCII-like token; code point U+43E"
+            },
+            {
+              "code": "trust.visible-unicode",
+              "detail": "README.md:1 — trust.visible-unicode: document contains 29332 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation",
+              "fingerprint": "trust-visible-unicode:README.md:1:ad06fb06"
+            }
+          ]
+        },
+        {
+          "id": "module:docs-tr",
+          "paths": [
+            "docs/tr"
+          ],
+          "treeSha256": "ce74a60b497d02902ec9ce5a525441ca23479fa67cc331206acf8db7f37924c8",
+          "verdict": "blocked",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.8.0"
+            }
+          ],
+          "findings": [
+            {
+              "code": "trust.hidden-unicode",
+              "count": 6182,
+              "detail": "6182 findings; first: AGENTS.md:1 — trust.hidden-unicode: character category: homoglyph-confusable; reason: Unicode confusable appears inside an ASCII-like token; code point U+131"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "count": 7,
+              "detail": "7 findings; first: CLAUDE.md:6 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL"
+            },
+            {
+              "code": "trust.visible-unicode",
+              "count": 3,
+              "detail": "3 findings; first: examples/README.md:1 — trust.visible-unicode: document contains 68 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation"
+            },
+            {
+              "code": "trust.auto-exec-hook",
+              "count": 3,
+              "detail": "3 findings; first: skills/laravel-verification/SKILL.md:1 — unparseable YAML frontmatter in trust document"
+            }
+          ]
+        },
+        {
+          "id": "module:docs-vi-vn",
+          "paths": [
+            "docs/vi-VN"
+          ],
+          "treeSha256": "3da059bf435821352ff95b3ab5f7553a4aa9cfe8c07f9703980af32574b4627b",
+          "verdict": "blocked",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.8.0"
+            }
+          ],
+          "findings": [
+            {
+              "code": "trust.visible-unicode",
+              "detail": "README.md:1 — trust.visible-unicode: document contains 461 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation",
+              "fingerprint": "trust-visible-unicode:README.md:1:23c39c8f"
+            }
+          ]
+        },
+        {
+          "id": "module:docs-zh-tw",
+          "paths": [
+            "docs/zh-TW"
+          ],
+          "treeSha256": "efe1406582eada6436bcc2c4ed27a269aa98a2fbf2962560bea8beca085d224d",
+          "verdict": "blocked",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.8.0"
+            }
+          ],
+          "findings": [
+            {
+              "code": "trust.hidden-unicode",
+              "count": 659,
+              "detail": "659 findings; first: agents/architect.md:103 — trust.hidden-unicode: character category: homoglyph-confusable; reason: Unicode confusable appears inside an ASCII-like token; code point U+FF1A"
+            },
+            {
+              "code": "trust.visible-unicode",
+              "detail": "README.md:14 — trust.visible-unicode: document contains 2239 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation",
+              "fingerprint": "trust-visible-unicode:README.md:14:ac16ebab"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "detail": "skills/security-review/SKILL.md:239 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:skills/security-review/SKILL.md:239:3dd6844c"
+            }
+          ]
+        },
+        {
+          "id": "module:docs-de-de",
+          "paths": [
+            "docs/de-DE"
+          ],
+          "treeSha256": "ec98c56d5e89a60b0514c37fa19fd83917898f1b93f8eacb23e8f383be61ac68",
+          "verdict": "blocked",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.8.0"
+            }
+          ],
+          "findings": [
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "GLOSSARY.md:3 — trust.hidden-unicode: document contains 34 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:GLOSSARY.md:3:789bf295"
+            },
+            {
+              "code": "trust.visible-unicode",
+              "detail": "README.md:1 — trust.visible-unicode: document contains 742 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation",
+              "fingerprint": "trust-visible-unicode:README.md:1:72fc0a82"
+            }
+          ]
+        },
+        {
+          "id": "skill:tdd-workflow",
+          "paths": [
+            "skills/tdd-workflow"
+          ],
+          "treeSha256": "2201b478c7613a21ca72687726317efdf9098f66216d77c4f007cfefa76e1d6a",
+          "verdict": "blocked",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.8.0"
+            }
+          ],
+          "findings": [
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "SKILL.md:100 — trust.hidden-unicode: document contains 68 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:SKILL.md:100:e3a0051a"
+            }
+          ]
+        },
+        {
+          "id": "skill:verification-loop",
+          "paths": [
+            "skills/verification-loop"
+          ],
+          "treeSha256": "f09dfc3bf93c522ef06fe6ebcea9b9386f99568f90c614a36ffa54ab53b28d50",
+          "verdict": "pass",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.8.0"
+            }
+          ],
+          "findings": []
+        },
+        {
+          "id": "skill:strategic-compact",
+          "paths": [
+            "skills/strategic-compact"
+          ],
+          "treeSha256": "3020b18f797ec5ea46021a1b232aa39dccd2bd433ee18fb739c52b535c90b9c3",
+          "verdict": "blocked",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.8.0"
+            }
+          ],
+          "findings": [
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "SKILL.md:15 — trust.hidden-unicode: document contains 34 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:SKILL.md:15:cc3f115e"
+            }
+          ]
+        },
+        {
+          "id": "skill:coding-standards",
+          "paths": [
+            "skills/coding-standards"
+          ],
+          "treeSha256": "b9da558fd8e342161f0a778cc546b00b29e22742377fd23c505ebf3c1b1e2071",
+          "verdict": "blocked",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.8.0"
+            }
+          ],
+          "findings": [
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "SKILL.md:340 — trust.hidden-unicode: document contains 54 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:SKILL.md:340:f8a05b67"
+            }
+          ]
+        },
+        {
+          "id": "agent:code-reviewer",
+          "paths": [
+            "agents/code-reviewer.md"
+          ],
+          "treeSha256": "1999cb3d4c9adc2146be864235cffafa5157c467173cf6a0214c898a326df44f",
+          "verdict": "blocked",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.8.0"
+            }
+          ],
+          "findings": [
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "code-reviewer.md:23 — trust.hidden-unicode: document contains 50 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:code-reviewer.md:23:07447dbe"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "detail": "code-reviewer.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:code-reviewer.md:11:17a8c724"
+            }
+          ]
+        },
+        {
+          "id": "agent:code-architect",
+          "paths": [
+            "agents/code-architect.md"
+          ],
+          "treeSha256": "d3d36d08a63697680fc1632fa41820d44e8db33cc2d3757077ee9b78924d9991",
+          "verdict": "blocked",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.8.0"
+            }
+          ],
+          "findings": [
+            {
+              "code": "trust.prompt-injection",
+              "detail": "code-architect.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:code-architect.md:11:17a8c724"
+            }
+          ]
+        },
+        {
+          "id": "agent:architect",
+          "paths": [
+            "agents/architect.md"
+          ],
+          "treeSha256": "7ab4ef54313bf7495a3b50ca69212111b0b3f6cdce6f63f4889ac7b02b99e7bd",
+          "verdict": "blocked",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.8.0"
+            }
+          ],
+          "findings": [
+            {
+              "code": "trust.prompt-injection",
+              "detail": "architect.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:architect.md:11:17a8c724"
+            }
+          ]
+        },
+        {
+          "id": "agent:planner",
+          "paths": [
+            "agents/planner.md"
+          ],
+          "treeSha256": "b7586738b19b0c0003072e4575753b4d2359a935ed33ef44cb4a831cc7e497d3",
+          "verdict": "blocked",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.8.0"
+            }
+          ],
+          "findings": [
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "planner.md:129 — trust.hidden-unicode: document contains 10 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:planner.md:129:2c53525c"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "detail": "planner.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:planner.md:11:17a8c724"
+            }
+          ]
+        },
+        {
+          "id": "agent:tdd-guide",
+          "paths": [
+            "agents/tdd-guide.md"
+          ],
+          "treeSha256": "5973a9221b3d89a4c1ecb5ed7ab54f17f5116fa53f72f41c81199592a4f3dfde",
+          "verdict": "blocked",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.8.0"
+            }
+          ],
+          "findings": [
+            {
+              "code": "trust.prompt-injection",
+              "detail": "tdd-guide.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:tdd-guide.md:11:17a8c724"
+            }
+          ]
+        },
+        {
+          "id": "agent:build-error-resolver",
+          "paths": [
+            "agents/build-error-resolver.md"
+          ],
+          "treeSha256": "aedf020f4d178b610f005045029a898f56d45351b5653247fba3d36b15bd42d8",
+          "verdict": "blocked",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.8.0"
+            }
+          ],
+          "findings": [
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "build-error-resolver.md:19 — trust.hidden-unicode: document contains 14 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:build-error-resolver.md:19:57e8d92b"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "detail": "build-error-resolver.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:build-error-resolver.md:11:17a8c724"
+            }
+          ]
+        },
+        {
+          "id": "agent:refactor-cleaner",
+          "paths": [
+            "agents/refactor-cleaner.md"
+          ],
+          "treeSha256": "222a581103db015f2e5b0489df69b5eff37c24295464bf93e7cdb84e04dcd09a",
+          "verdict": "blocked",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.8.0"
+            }
+          ],
+          "findings": [
+            {
+              "code": "trust.prompt-injection",
+              "detail": "refactor-cleaner.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:refactor-cleaner.md:11:17a8c724"
+            }
+          ]
+        },
+        {
+          "id": "agent:code-simplifier",
+          "paths": [
+            "agents/code-simplifier.md"
+          ],
+          "treeSha256": "5ba26a75e3eb98de06d2c048500b94a1995b88cb58209fedd0ce30f8cd2c8a48",
+          "verdict": "blocked",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.8.0"
+            }
+          ],
+          "findings": [
+            {
+              "code": "trust.prompt-injection",
+              "detail": "code-simplifier.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:code-simplifier.md:11:17a8c724"
+            }
+          ]
+        },
+        {
+          "id": "agent:silent-failure-hunter",
+          "paths": [
+            "agents/silent-failure-hunter.md"
+          ],
+          "treeSha256": "caa607a62eb91a807ecbd6bbd60a5f88df01365a9f5f07b3e12a168196ea8820",
+          "verdict": "blocked",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.8.0"
+            }
+          ],
+          "findings": [
+            {
+              "code": "trust.prompt-injection",
+              "detail": "silent-failure-hunter.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:silent-failure-hunter.md:11:17a8c724"
+            }
+          ]
+        },
+        {
+          "id": "agent:pr-test-analyzer",
+          "paths": [
+            "agents/pr-test-analyzer.md"
+          ],
+          "treeSha256": "9682fc8a4db5b2edfbafc4fc2bc053b74c64cfe173d617502a943a935450d7b4",
+          "verdict": "blocked",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.8.0"
+            }
+          ],
+          "findings": [
+            {
+              "code": "trust.prompt-injection",
+              "detail": "pr-test-analyzer.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:pr-test-analyzer.md:11:17a8c724"
+            }
+          ]
+        },
+        {
+          "id": "agent:doc-updater",
+          "paths": [
+            "agents/doc-updater.md"
+          ],
+          "treeSha256": "28b3695c1c4be573c63807e2a5bdb79178d4bb975059c502899e487da46afb70",
+          "verdict": "blocked",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.8.0"
+            }
+          ],
+          "findings": [
+            {
+              "code": "trust.visible-unicode",
+              "detail": "doc-updater.md:23 — trust.visible-unicode: document contains 31 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation",
+              "fingerprint": "trust-visible-unicode:doc-updater.md:23:c2799a9b"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "detail": "doc-updater.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:doc-updater.md:11:17a8c724"
+            }
+          ]
+        },
+        {
+          "id": "agent:docs-lookup",
+          "paths": [
+            "agents/docs-lookup.md"
+          ],
+          "treeSha256": "713fee387729abcadefc936553d866f18553aa73a96b56ac2a58671e5050dd5e",
+          "verdict": "blocked",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.8.0"
+            }
+          ],
+          "findings": [
+            {
+              "code": "trust.visible-unicode",
+              "detail": "docs-lookup.md:29 — trust.visible-unicode: document contains 1 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation",
+              "fingerprint": "trust-visible-unicode:docs-lookup.md:29:e27b1c2c"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "detail": "docs-lookup.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:docs-lookup.md:11:17a8c724"
+            }
+          ]
+        },
+        {
+          "id": "agent:code-explorer",
+          "paths": [
+            "agents/code-explorer.md"
+          ],
+          "treeSha256": "6e1035efe44e6d762d34e020e85f1bc2ed78764ca85f6efc31a0558c69cab475",
+          "verdict": "blocked",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.8.0"
+            }
+          ],
+          "findings": [
+            {
+              "code": "trust.prompt-injection",
+              "detail": "code-explorer.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:code-explorer.md:11:17a8c724"
+            }
+          ]
+        },
+        {
+          "id": "agent:security-reviewer",
+          "paths": [
+            "agents/security-reviewer.md"
+          ],
+          "treeSha256": "ae56b99ea1cc8f38acc57646109deaabb0b6217d1f9e7746c0e3517f192b6868",
+          "verdict": "blocked",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.8.0"
+            }
+          ],
+          "findings": [
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "security-reviewer.md:23 — trust.hidden-unicode: document contains 21 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:security-reviewer.md:23:46d310c1"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "detail": "security-reviewer.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:security-reviewer.md:11:17a8c724"
+            }
+          ]
+        },
+        {
+          "id": "agent:type-design-analyzer",
+          "paths": [
+            "agents/type-design-analyzer.md"
+          ],
+          "treeSha256": "db7188feb08ae6abfcf941b65229eac38c237d6970f41f023d63322dba57aa45",
+          "verdict": "blocked",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.8.0"
+            }
+          ],
+          "findings": [
+            {
+              "code": "trust.prompt-injection",
+              "detail": "type-design-analyzer.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:type-design-analyzer.md:11:17a8c724"
+            }
+          ]
+        },
+        {
+          "id": "agent:performance-optimizer",
+          "paths": [
+            "agents/performance-optimizer.md"
+          ],
+          "treeSha256": "82f31dff8a635d63aef033d2f06e7f5d319c023e859572b085a073b553913259",
+          "verdict": "blocked",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.8.0"
+            }
+          ],
+          "findings": [
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "performance-optimizer.md:23 — trust.hidden-unicode: document contains 10 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:performance-optimizer.md:23:a877b0ae"
+            },
+            {
+              "code": "trust.prompt-injection",
+              "detail": "performance-optimizer.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:performance-optimizer.md:11:17a8c724"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "superpowers",
+      "owner": "obra",
+      "repo": "Superpowers",
+      "pinnedSha": "d884ae04edebef577e82ff7c4e143debd0bbec99",
+      "components": [
+        {
+          "id": "runtime:superpowers-plugin",
+          "paths": [
+            ".claude-plugin",
+            ".codex-plugin",
+            ".cursor-plugin",
+            ".kimi-plugin",
+            ".opencode",
+            ".pi",
+            "gemini-extension.json",
+            "hooks",
+            "package.json",
+            "scripts"
+          ],
+          "treeSha256": "59ffc8af8508bf91c5a9021d30e808f906ecdb706d2781691aa4e1be685af840",
+          "verdict": "blocked",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.8.0"
+            }
+          ],
+          "findings": [
+            {
+              "code": "trust.hidden-unicode",
+              "count": 5,
+              "detail": "5 findings; first: INSTALL.md:103 — trust.hidden-unicode: document contains 8 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
+            },
+            {
+              "code": "trust.sandbox-smoke-unavailable",
+              "detail": "sandbox smoke test unavailable (trust.sandbox-smoke-unavailable): detector runtime is missing (run/platform/env)"
+            }
+          ]
+        },
+        {
+          "id": "skill:brainstorming",
+          "paths": [
+            "skills/brainstorming"
+          ],
+          "treeSha256": "4a21bc67d48f1086a5a0ea19759ed8acde3937cbba1309774ab11af8fbf5c7e0",
+          "verdict": "blocked",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.8.0"
+            }
+          ],
+          "findings": [
+            {
+              "code": "trust.hidden-unicode",
+              "count": 6,
+              "detail": "6 findings; first: SKILL.md:18 — trust.hidden-unicode: document contains 21 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
+            },
+            {
+              "code": "trust.sandbox-smoke-unavailable",
+              "detail": "sandbox smoke test unavailable (trust.sandbox-smoke-unavailable): detector runtime is missing (run/platform/env)"
+            }
+          ]
+        },
+        {
+          "id": "skill:dispatching-parallel-agents",
+          "paths": [
+            "skills/dispatching-parallel-agents"
+          ],
+          "treeSha256": "1ef481dcf8c29aed46bf1c9036fca7c2028e3bec95f5663a92ba768d619fd2cc",
+          "verdict": "blocked",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.8.0"
+            }
+          ],
+          "findings": [
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "SKILL.md:10 — trust.hidden-unicode: document contains 13 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:SKILL.md:10:f0df13f5"
+            }
+          ]
+        },
+        {
+          "id": "skill:executing-plans",
+          "paths": [
+            "skills/executing-plans"
+          ],
+          "treeSha256": "e04bbec497d2b5d3169f9332dbe91f7615a83d7482ac55b57c7b2c542470b844",
+          "verdict": "pass",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.8.0"
+            }
+          ],
+          "findings": []
+        },
+        {
+          "id": "skill:finishing-a-development-branch",
+          "paths": [
+            "skills/finishing-a-development-branch"
+          ],
+          "treeSha256": "5062a8ea21412a9f5ffb4ead970693719e37d2e14081c27412a6d7c35a4ab67f",
+          "verdict": "blocked",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.8.0"
+            }
+          ],
+          "findings": [
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "SKILL.md:12 — trust.hidden-unicode: document contains 9 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:SKILL.md:12:e6d4a812"
+            }
+          ]
+        },
+        {
+          "id": "skill:receiving-code-review",
+          "paths": [
+            "skills/receiving-code-review"
+          ],
+          "treeSha256": "9e1e735844f90f28eb51f3c81e9fffeba45952c0540da8b965ecb58c916cc3e2",
+          "verdict": "blocked",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.8.0"
+            }
+          ],
+          "findings": [
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "SKILL.md:55 — trust.hidden-unicode: document contains 19 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:SKILL.md:55:647036bb"
+            }
+          ]
+        },
+        {
+          "id": "skill:requesting-code-review",
+          "paths": [
+            "skills/requesting-code-review"
+          ],
+          "treeSha256": "9e1de98f360e96a050f85acb626c24e244fd0a660ee758328371391bad09eecf",
+          "verdict": "blocked",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.8.0"
+            }
+          ],
+          "findings": [
+            {
+              "code": "trust.hidden-unicode",
+              "count": 2,
+              "detail": "2 findings; first: code-reviewer.md:35 — trust.hidden-unicode: document contains 6 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
+            }
+          ]
+        },
+        {
+          "id": "skill:subagent-driven-development",
+          "paths": [
+            "skills/subagent-driven-development"
+          ],
+          "treeSha256": "4698861a0f06b4d41868b302d1bcca82861f9d74a1883fcd2d4603939f357bc6",
+          "verdict": "blocked",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.8.0"
+            }
+          ],
+          "findings": [
+            {
+              "code": "trust.hidden-unicode",
+              "count": 9,
+              "detail": "9 findings; first: implementer-prompt.md:8 — trust.hidden-unicode: document contains 5 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
+            }
+          ]
+        },
+        {
+          "id": "skill:systematic-debugging",
+          "paths": [
+            "skills/systematic-debugging"
+          ],
+          "treeSha256": "887d19d7ef06cfbbbbb16a6bf6ab439b1e77965590a5e51be49cbd60e9c431b8",
+          "verdict": "blocked",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.8.0"
+            }
+          ],
+          "findings": [
+            {
+              "code": "trust.hidden-unicode",
+              "count": 9,
+              "detail": "9 findings; first: condition-based-waiting.md:37 — trust.hidden-unicode: document contains 9 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
+            },
+            {
+              "code": "trust.sandbox-smoke-unavailable",
+              "detail": "sandbox smoke test unavailable (trust.sandbox-smoke-unavailable): detector runtime is missing (run/platform/env)"
+            }
+          ]
+        },
+        {
+          "id": "skill:test-driven-development",
+          "paths": [
+            "skills/test-driven-development"
+          ],
+          "treeSha256": "e79010bd13d849eacbc144f1c3f08bd69ce33460d6a81008d5475ccefa572bbb",
+          "verdict": "blocked",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.8.0"
+            }
+          ],
+          "findings": [
+            {
+              "code": "trust.hidden-unicode",
+              "count": 2,
+              "detail": "2 findings; first: SKILL.md:224 — trust.hidden-unicode: document contains 5 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
+            }
+          ]
+        },
+        {
+          "id": "skill:using-git-worktrees",
+          "paths": [
+            "skills/using-git-worktrees"
+          ],
+          "treeSha256": "1d7b34e92c10bde4d29ebee76bca9048d12457261c79bc894ed9c7b2a76bb60a",
+          "verdict": "blocked",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.8.0"
+            }
+          ],
+          "findings": [
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "SKILL.md:29 — trust.hidden-unicode: document contains 3 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:SKILL.md:29:e2c3ec14"
+            }
+          ]
+        },
+        {
+          "id": "skill:using-superpowers",
+          "paths": [
+            "skills/using-superpowers"
+          ],
+          "treeSha256": "cffcb1600cebd101c59605edb2fc457b43fbd98f9e57aec935bfcb2528b3f713",
+          "verdict": "blocked",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.8.0"
+            }
+          ],
+          "findings": [
+            {
+              "code": "trust.visible-unicode",
+              "count": 2,
+              "detail": "2 findings; first: references/antigravity-tools.md:7 — trust.visible-unicode: document contains 5 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation"
+            },
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "SKILL.md:20 — trust.hidden-unicode: document contains 6 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:SKILL.md:20:55379fe7"
+            }
+          ]
+        },
+        {
+          "id": "skill:verification-before-completion",
+          "paths": [
+            "skills/verification-before-completion"
+          ],
+          "treeSha256": "95b05bf661e13ad944ba4300d082281f0feb8efd1ff51684d05cd8edc397f33b",
+          "verdict": "blocked",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.8.0"
+            }
+          ],
+          "findings": [
+            {
+              "code": "trust.hidden-unicode",
+              "detail": "SKILL.md:68 — trust.hidden-unicode: document contains 26 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:SKILL.md:68:ea52d15a"
+            }
+          ]
+        },
+        {
+          "id": "skill:writing-plans",
+          "paths": [
+            "skills/writing-plans"
+          ],
+          "treeSha256": "68418ad69bb750feaa8cc644f48d510925b43581eb008ee0f2eebb80f066130a",
+          "verdict": "blocked",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.8.0"
+            }
+          ],
+          "findings": [
+            {
+              "code": "trust.hidden-unicode",
+              "count": 2,
+              "detail": "2 findings; first: plan-document-reviewer-prompt.md:33 — trust.hidden-unicode: document contains 1 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
+            }
+          ]
+        },
+        {
+          "id": "skill:writing-skills",
+          "paths": [
+            "skills/writing-skills"
+          ],
+          "treeSha256": "d803346370e64ea0fbe3396f32f012236d59cc6e5fd92d204aad5976f007ad70",
+          "verdict": "blocked",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.8.0"
+            }
+          ],
+          "findings": [
+            {
+              "code": "trust.hidden-unicode",
+              "count": 4,
+              "detail": "4 findings; first: anthropic-best-practices.md:259 — trust.hidden-unicode: document contains 71 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
