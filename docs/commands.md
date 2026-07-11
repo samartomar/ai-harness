@@ -150,6 +150,16 @@ When Codex is dropped, prune also subtracts the recorded ECC TOML footprint from
 `~/.codex/config.toml` and the fenced ECC Codex block that `aih ecc` merges into
 `~/.codex/AGENTS.md`, leaving unrelated user config and text outside that block intact.
 
+A bare prune also reads `~/.aih/ecc/registration-ledger.json`, even when no committed CLI target
+changed. Project registrations whose roots are missing retire from the machine union; common or
+shared components and MCPs remain until their last live contributor disappears. The dry-run digest
+names retired roots, orphaned component/MCP IDs, target states, and managed destinations without
+changing bytes. Under `--apply`, prune mutates only exact operations proven by strict ECC install
+state (plus aih's fenced Codex records), verifies every planned input hash and path again, writes
+target state, and replaces the primary ledger last. Missing home-target state, malformed/drifted
+state or markers, symlinks, concurrent input changes, or partial writes fail closed and roll back;
+project-local state that never existed is not guessed.
+
 ## aih capability
 
 Resolve the repo's agent-capability needs into committed intent plus a derived machine cache.
@@ -191,8 +201,8 @@ The primary registration ledger is `~/.aih/ecc/registration-ledger.json`. It rec
 component/MCP contribution and each target's installed union plus evidence provenance. The ledger is
 written atomically only after all selected target installs succeed. Re-running is idempotent; adding
 a second project grows the machine union without removing the first project's surface. The ledger is
-the authoritative input for component-level prune reconciliation; this registration slice does not
-remove components.
+the authoritative input for `aih prune`: missing project roots are retired and only orphaned,
+state-recorded aih-managed operations are removed in a rollback-safe ledger-last transaction.
 
 The validated MCP default is pinned local `sequential-thinking`, repo-declared
 `code-review-graph`/`codebase-memory-mcp`, and GitHub OAuth at team/enterprise. Context7, Exa, and

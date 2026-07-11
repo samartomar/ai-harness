@@ -81,7 +81,12 @@ the additive machine union. `~/.aih/ecc/registration-ledger.json` is the single 
 machine store because a deleted project cannot report its former contribution; installed capability
 content remains derived and recomputable. Project-local MCP files receive the current project's set,
 while global target files receive the machine union. The ledger is committed after the sequential
-install driver, never before it.
+install driver, never before it. `aih prune` is the inverse: it classifies registered roots without
+following links, reduces the live union, and filters only operations claimed by strict target install
+state. A local transaction driver revalidates planned hashes and contained regular-file paths,
+backs up every changed file, writes target states, and commits the primary ledger last; any earlier
+failure restores the prior bytes. User-owned config and components still shared by a live project
+remain outside the removal set.
 
 ## Release Integrity
 

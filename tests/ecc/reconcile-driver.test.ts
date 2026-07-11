@@ -182,25 +182,23 @@ describe("ECC reconciliation transaction driver", () => {
     expect(readFileSync(value.ledgerPath)).toEqual(value.before[value.ledgerPath]);
   });
 
-  it.runIf(process.platform !== "win32")(
-    "rejects a symlink substituted for a managed destination",
-    () => {
-      const value = fixture();
-      const outside = join(root, "user-owned.md");
-      writeFileSync(outside, "cpp\n", "utf8");
-      rmSync(value.cppPath);
-      symlinkSync(outside, value.cppPath);
+  it("rejects a symlink substituted for a managed destination", () => {
+    if (process.platform === "win32") return;
+    const value = fixture();
+    const outside = join(root, "user-owned.md");
+    writeFileSync(outside, "cpp\n", "utf8");
+    rmSync(value.cppPath);
+    symlinkSync(outside, value.cppPath);
 
-      const result = run(value.payload);
+    const result = run(value.payload);
 
-      expect(result.status).not.toBe(0);
-      expect(result.stderr).toContain("refusing symlinked ECC reconciliation path");
-      expect(readFileSync(outside, "utf8")).toBe("cpp\n");
-      expect(readFileSync(value.statePath)).toEqual(value.before[value.statePath]);
-      expect(readFileSync(value.jsonPath)).toEqual(value.before[value.jsonPath]);
-      expect(readFileSync(value.ledgerPath)).toEqual(value.before[value.ledgerPath]);
-    },
-  );
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("refusing symlinked ECC reconciliation path");
+    expect(readFileSync(outside, "utf8")).toBe("cpp\n");
+    expect(readFileSync(value.statePath)).toEqual(value.before[value.statePath]);
+    expect(readFileSync(value.jsonPath)).toEqual(value.before[value.jsonPath]);
+    expect(readFileSync(value.ledgerPath)).toEqual(value.before[value.ledgerPath]);
+  });
 
   it("retries one transient rename and is byte-idempotent after replanning", () => {
     const value = fixture();
