@@ -399,9 +399,10 @@ const rollbackApplied = () => {
     try { fs.rmSync(temporary, { force: true }); } catch (rollbackError) { rollbackErrors.push(rollbackError); }
   }
   for (const record of [...applied].reverse()) {
+    if (!fs.existsSync(record.backup)) continue;
     try {
       fs.rmSync(record.path, { force: true });
-      if (fs.existsSync(record.backup)) retryTransient(() => fs.renameSync(record.backup, record.path));
+      retryTransient(() => fs.renameSync(record.backup, record.path));
     } catch (rollbackError) {
       rollbackErrors.push(rollbackError);
     }

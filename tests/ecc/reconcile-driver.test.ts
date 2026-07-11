@@ -307,6 +307,55 @@ describe("ECC reconciliation transaction driver", () => {
     },
   );
 
+  it.skipIf(process.platform === "win32")(
+    "keeps rollback idempotent when a signal follows the failure rollback",
+    () => {
+      const value = fixture();
+      const upstreamPath = join(value.targetRoot, "double-rollback-upstream-owned.txt");
+      writeFileSync(upstreamPath, "upstream\n", "utf8");
+      value.payload.uninstalls = [
+        {
+          target: "claude",
+          argv: [
+            process.execPath,
+            "-e",
+            'require("node:fs").rmSync(process.argv[1]); process.exit(1)',
+            upstreamPath,
+          ],
+          paths: [upstreamPath],
+        },
+      ];
+      const hook = preload(
+        [
+          'const fs = require("node:fs");',
+          "const rename = fs.renameSync;",
+          "let queued = false;",
+          "fs.renameSync = (...args) => {",
+          "  const result = rename(...args);",
+          '  if (!queued && String(args[0]).endsWith(".bak")) {',
+          "    queued = true;",
+          '    const listener = process.listeners("SIGTERM")[0];',
+          "    if (listener) listener();",
+          "  }",
+          "  return result;",
+          "};",
+          "",
+        ].join("\n"),
+      );
+
+      const result = run(value.payload, { NODE_OPTIONS: `--require=${hook}` });
+
+      expect(result.status).not.toBe(0);
+      expect(result.stderr).toContain("ECC prune divergence: target=claude");
+      for (const [path, contents] of Object.entries(value.before)) {
+        expect(readFileSync(path)).toEqual(contents);
+      }
+      expect(readdirSync(value.targetRoot).some((name) => name.includes(".aih-ecc-prune."))).toBe(
+        false,
+      );
+    },
+  );
+
   it("sizes the outer driver timeout above the sequential upstream uninstall budget", () => {
     const value = fixture();
     value.payload.uninstalls = ["claude", "cursor"].map((target) => ({
