@@ -473,6 +473,7 @@ describe("Check.code — invariants", () => {
       "trust.fetch-blocked": true,
       "trust.detector-unavailable": true,
       "trust.detector-finding": true,
+      "trust.legal-text-detector-finding": true,
       "trust.sandbox-smoke-unavailable": true,
       "trust.sandbox-smoke-failed": true,
       "trust.cisco-finding": true,

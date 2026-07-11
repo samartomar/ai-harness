@@ -2718,6 +2718,12 @@
           ],
           "options": [
             {
+              "flags": "--acknowledge <fingerprints>"
+            },
+            {
+              "flags": "--acknowledge-all"
+            },
+            {
               "flags": "--all-tools"
             },
             {
@@ -2751,6 +2757,9 @@
             {
               "flags": "--posture <posture>",
               "defaultValue": "vibe"
+            },
+            {
+              "flags": "--reason <reason>"
             },
             {
               "flags": "--ref <ref>"

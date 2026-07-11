@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import {
   existsSync,
+  lstatSync,
   mkdtempSync,
   readFileSync,
   realpathSync,
@@ -9,7 +10,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, dirname, isAbsolute, join, relative } from "node:path";
+import { basename, dirname, extname, isAbsolute, join, relative } from "node:path";
 import type { Posture } from "../config/posture.js";
 import type { Runner, RunResult } from "../internals/proc.js";
 import type { Check, CheckCode } from "../internals/verify.js";
@@ -27,10 +28,11 @@ import {
 import {
   classifyUnicodeRisk,
   detectorReportedHiddenUnicodeRisk,
+  isStrictUnicodeSurface,
   type UnicodeRisk,
 } from "./lint.js";
 import { collectFilesUnder, TRUST_SKIP_DIRS } from "./scan.js";
-import { isMaliciousCodeScanFilePath } from "./script-files.js";
+import { isInstallScriptEvidenceFilePath, isMaliciousCodeScanFilePath } from "./script-files.js";
 
 const INCOMING_MCP_CONFIG_FILES = new Set([...MCP_CONFIG_FILES, "mcp.json"]);
 
@@ -104,6 +106,57 @@ const SEMGREP_RULES_YAML = [
   "",
 ].join("\n");
 const MAX_SCRIPT_SCAN_BYTES = 512 * 1024;
+const MAX_LEGAL_TEXT_BYTES = 2 * 1024 * 1024;
+const LEGAL_TEXT_BASENAME = /^(?:LICENSE|COPYING|NOTICE)(?:$|[._-])/i;
+const NON_TEXT_LEGAL_EXTENSIONS = new Set([
+  ".bat",
+  ".bin",
+  ".c",
+  ".cc",
+  ".cfg",
+  ".cjs",
+  ".cmd",
+  ".com",
+  ".conf",
+  ".cpp",
+  ".cs",
+  ".dll",
+  ".dylib",
+  ".env",
+  ".exe",
+  ".fish",
+  ".go",
+  ".h",
+  ".hpp",
+  ".ini",
+  ".jar",
+  ".java",
+  ".js",
+  ".json",
+  ".jsonc",
+  ".jsx",
+  ".kt",
+  ".kts",
+  ".mjs",
+  ".php",
+  ".pl",
+  ".properties",
+  ".ps1",
+  ".py",
+  ".rb",
+  ".rs",
+  ".sh",
+  ".sql",
+  ".so",
+  ".toml",
+  ".ts",
+  ".tsx",
+  ".yaml",
+  ".yml",
+  ".wasm",
+  ".xml",
+  ".zsh",
+]);
 
 const SKILLSPECTOR_RULE_MAP: Record<string, CheckCode> = {
   "auto-exec": "trust.auto-exec-hook",
@@ -1078,6 +1131,33 @@ function sourceTextForLocation(
   }
 }
 
+function isReviewableLegalTextLocation(
+  root: string,
+  location: NonNullable<Check["location"]>,
+): boolean {
+  if (!LEGAL_TEXT_BASENAME.test(basename(location.uri))) return false;
+  if (isStrictUnicodeSurface(location.uri)) return false;
+  if (isInstallScriptEvidenceFilePath(location.uri)) return false;
+  if (NON_TEXT_LEGAL_EXTENSIONS.has(extname(location.uri).toLowerCase())) return false;
+  try {
+    const path = join(root, location.uri);
+    const metadata = lstatSync(path);
+    if (!metadata.isFile() || metadata.isSymbolicLink() || (metadata.mode & 0o111) !== 0) {
+      return false;
+    }
+    if (metadata.size > MAX_LEGAL_TEXT_BYTES) return false;
+    const rootReal = realpathSync(root);
+    const pathReal = realpathSync(path);
+    const fromRoot = relative(rootReal, pathReal);
+    if (!isSafeRelativeSarifUri(toPosix(fromRoot))) return false;
+    const content = readFileSync(path);
+    if (content.includes(0)) return false;
+    return !content.subarray(0, 256).toString("utf8").startsWith("#!");
+  } catch {
+    return false;
+  }
+}
+
 function unicodeRiskForLocation(
   root: string,
   location: NonNullable<Check["location"]>,
@@ -1132,9 +1212,15 @@ function ruleCode(
     detector.name === "snyk-agent-scan" ||
     detector.name === "agentshield"
   ) {
-    return "trust.detector-finding";
+    return isReviewableLegalTextLocation(root, location)
+      ? "trust.legal-text-detector-finding"
+      : "trust.detector-finding";
   }
-  if (detector.name === "cisco" || detector.name === "mcp-scanner") return "trust.cisco-finding";
+  if (detector.name === "cisco" || detector.name === "mcp-scanner") {
+    return isReviewableLegalTextLocation(root, location)
+      ? "trust.legal-text-detector-finding"
+      : "trust.cisco-finding";
+  }
   return undefined;
 }
 
@@ -1156,6 +1242,11 @@ function resultMessage(result: SarifResult, detector: TrustDetector): string {
 function unicodeResultMessage(message: string, risk: UnicodeRisk | undefined): string {
   if (risk === undefined) return message;
   return `${message}; character category: ${risk.category}; reason: ${risk.reason}`;
+}
+
+function legalTextResultMessage(message: string, code: CheckCode): string {
+  if (code !== "trust.legal-text-detector-finding") return message;
+  return `${message}; file class: non-executable legal text; severity: reviewable trust-origin because generic detector heuristics on LICENSE/COPYING/NOTICE require human review`;
 }
 
 function normalizeSarifUri(raw: unknown, detector: TrustDetector): string {
@@ -1201,7 +1292,7 @@ function sarifFingerprint(
 ): string {
   const line = location.startLine ?? 1;
   const content =
-    code === "trust.visible-unicode"
+    code === "trust.visible-unicode" || code === "trust.legal-text-detector-finding"
       ? (sourceTextForLocation(root, location) ?? detail)
       : (fileLine(join(root, location.uri), line) ?? detail);
   return `${code.replace(/\./g, "-")}:${detector.name}:${location.uri}:${line}:${sha8(content)}`;
@@ -1225,7 +1316,10 @@ function sarifChecks(
         code === "trust.hidden-unicode" || code === "trust.visible-unicode"
           ? hiddenUnicodeRiskForDetectorResult(result, detector, root, location)
           : undefined;
-      const detail = unicodeResultMessage(resultMessage(result, detector), risk);
+      const detail = legalTextResultMessage(
+        unicodeResultMessage(resultMessage(result, detector), risk),
+        code,
+      );
       checks.push(
         gradeTrustCheck(
           {

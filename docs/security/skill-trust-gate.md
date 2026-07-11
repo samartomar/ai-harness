@@ -404,6 +404,32 @@ script/executable/source-code surfaces is still treated as blocking
 `trust.hidden-unicode`; the documentation path rule is not an exclusion from
 scanning.
 
+## Detector finding file classes
+
+An otherwise-generic deep-detector finding anchored in a regular,
+non-executable `LICENSE*`, `COPYING*`, or `NOTICE*` file is reported as
+`trust.legal-text-detector-finding`. The report names the file class and explains
+that generic legal-text heuristics need human review. At enterprise posture the
+finding blocks until its exact fingerprint is acknowledged with a recorded
+reason; the fingerprint covers the whole legal-text file, so any edit requires a
+fresh review.
+
+This classification does not downgrade a detector's known danger rule.
+Prompt-injection, malicious-code, hidden-Unicode, auto-execution, dependency
+confusion, and typosquat findings remain blocking even when a detector anchors
+them in legal text. `SKILL.md`, agent/command instructions, configuration,
+scripts, executable files, and source code also remain outside the reviewable
+legal-text class. <!-- aih:claim CM-23 -->
+
+For a selected skill with reviewed legal-text findings, rerun the same vet with
+the reported comma-separated fingerprints and a reason:
+
+```bash
+aih skill vet <source> --name <skill> --posture enterprise \
+  --acknowledge <fingerprint-1>,<fingerprint-2> \
+  --reason "reviewed upstream license text"
+```
+
 ## Report integration
 
 `aih report` is intended to show:

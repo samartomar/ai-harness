@@ -102,6 +102,7 @@ export type CheckCode =
   | "trust.fetch-blocked"
   | "trust.detector-unavailable"
   | "trust.detector-finding"
+  | "trust.legal-text-detector-finding"
   | "trust.sandbox-smoke-unavailable"
   | "trust.sandbox-smoke-failed"
   | "trust.cisco-finding"
