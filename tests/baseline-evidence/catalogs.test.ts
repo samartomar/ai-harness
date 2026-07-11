@@ -53,6 +53,20 @@ describe("production baseline catalogs", () => {
     );
     expect(ids.filter((id) => id.startsWith("module:"))).toHaveLength(32);
     expect(new Set(ids).size).toBe(ids.length);
+    for (const id of [
+      "runtime:ecc-kiro",
+      "module:agents-core",
+      "module:platform-configs",
+      "module:docs-ja-jp",
+      "skill:tdd-workflow",
+    ]) {
+      expect(catalog.components.find((component) => component.id === id)).toMatchObject({
+        skillContent: true,
+      });
+    }
+    expect(catalog.components.find((component) => component.id === "runtime:ecc-installer")).not.toHaveProperty(
+      "skillContent",
+    );
   });
 
   it("binds Superpowers runtime and installable skills to its registry pin", () => {
