@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -463,7 +464,7 @@ describe("aih prune ECC registration reconciliation", () => {
     );
   }
 
-  it("plans a deterministic ledger-last component diff even without committed CLI intent", async () => {
+  it("plans and applies a deterministic ledger-last diff even without committed CLI intent", async () => {
     const home = join(dir, "home");
     const reactRoot = join(home, "projects", "react");
     const cppRoot = join(home, "projects", "deleted-cpp");
@@ -491,7 +492,8 @@ describe("aih prune ECC registration reconciliation", () => {
     expect(evidence?.text).toContain(cppRoot);
     expect(evidence?.text).toContain("lang:cpp");
     expect(evidence?.text).toContain(cppSkill);
-    const encoded = reconcile?.argv.at(-1);
+    if (reconcile === undefined) throw new Error("missing ECC reconciliation action");
+    const encoded = reconcile.argv.at(-1);
     if (encoded === undefined) throw new Error("missing ECC reconciliation payload");
     const payload = JSON.parse(Buffer.from(encoded, "base64").toString("utf8")) as {
       mutations: Array<{ kind: string; path: string }>;
@@ -505,6 +507,39 @@ describe("aih prune ECC registration reconciliation", () => {
       expect.objectContaining({ kind: "write-file", path: statePath }),
     );
     for (const [path, contents] of before) expect(readFileSync(path)).toEqual(contents);
+
+    const executable = reconcile.argv[0];
+    if (executable === undefined) throw new Error("missing ECC reconciliation executable");
+    const result = spawnSync(executable, reconcile.argv.slice(1), {
+      cwd: reconcile.cwd ?? dir,
+      env: process.env,
+      encoding: "utf8",
+    });
+    expect(result.status, result.stderr).toBe(0);
+    expect(() => readFileSync(cppSkill)).toThrow();
+    expect(readFileSync(reactSkill, "utf8")).toBe("react\n");
+    expect(readFileSync(statePath, "utf8")).not.toContain("cpp-testing");
+    const ledger = JSON.parse(readFileSync(ledgerPath, "utf8")) as {
+      projects: Array<{ root: string }>;
+      targets: Array<{ components: Array<{ id: string }>; mcps: string[] }>;
+    };
+    expect(ledger.projects.map((project) => project.root)).toEqual([reactRoot]);
+    expect(ledger.targets[0]?.components.map((component) => component.id)).toEqual([
+      "baseline:rules",
+      "framework:react",
+    ]);
+    expect(ledger.targets[0]?.mcps).toEqual(["mcp:sequential-thinking"]);
+    expect(readFileSync(join(home, ".codex", "config.toml"), "utf8")).not.toContain(
+      'mcp_servers."github"',
+    );
+    expect(readFileSync(join(home, ".codex", "AGENTS.md"), "utf8")).not.toContain("cpp-testing");
+    const replanned = await actionsOf({ env: { HOME: home, USERPROFILE: home } });
+    expect(
+      replanned.some(
+        (action) =>
+          action.kind === "exec" && action.describe.includes("atomic ledger-last transaction"),
+      ),
+    ).toBe(false);
   });
 
   it("fails closed on a malformed primary registration ledger", async () => {

@@ -1,6 +1,14 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -159,6 +167,40 @@ describe("ECC reconciliation transaction driver", () => {
       expect(readFileSync(path)).toEqual(contents);
     }
   });
+
+  it("fails before mutation when an input changes after planning", () => {
+    const value = fixture();
+    writeFileSync(value.cppPath, "changed after planning\n", "utf8");
+
+    const result = run(value.payload);
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("ECC prune input changed after planning");
+    expect(readFileSync(value.cppPath, "utf8")).toBe("changed after planning\n");
+    expect(readFileSync(value.statePath)).toEqual(value.before[value.statePath]);
+    expect(readFileSync(value.jsonPath)).toEqual(value.before[value.jsonPath]);
+    expect(readFileSync(value.ledgerPath)).toEqual(value.before[value.ledgerPath]);
+  });
+
+  it.runIf(process.platform !== "win32")(
+    "rejects a symlink substituted for a managed destination",
+    () => {
+      const value = fixture();
+      const outside = join(root, "user-owned.md");
+      writeFileSync(outside, "cpp\n", "utf8");
+      rmSync(value.cppPath);
+      symlinkSync(outside, value.cppPath);
+
+      const result = run(value.payload);
+
+      expect(result.status).not.toBe(0);
+      expect(result.stderr).toContain("refusing symlinked ECC reconciliation path");
+      expect(readFileSync(outside, "utf8")).toBe("cpp\n");
+      expect(readFileSync(value.statePath)).toEqual(value.before[value.statePath]);
+      expect(readFileSync(value.jsonPath)).toEqual(value.before[value.jsonPath]);
+      expect(readFileSync(value.ledgerPath)).toEqual(value.before[value.ledgerPath]);
+    },
+  );
 
   it("retries one transient rename and is byte-idempotent after replanning", () => {
     const value = fixture();
