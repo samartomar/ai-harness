@@ -8,6 +8,11 @@ import {
   vetBaselineCommand,
 } from "../../src/baseline-evidence/commands.js";
 import { hashComponentTree } from "../../src/baseline-evidence/hash.js";
+import {
+  baselineAnalyzerVersions,
+  REQUIRED_BASELINE_ANALYZERS,
+  REQUIRED_BASELINE_DETECTORS,
+} from "../../src/baseline-evidence/analyzer-profile.js";
 import { BaselineSourceEvidenceSchema } from "../../src/baseline-evidence/schema.js";
 import { executePlan } from "../../src/internals/execute.js";
 import type { PlanContext } from "../../src/internals/plan.js";
@@ -97,6 +102,20 @@ describe("baseline vet command plan", () => {
     const rel = `.aih/baseline-reports/ecc-${"a".repeat(12)}.json`;
 
     expect(vetCatalog).toHaveBeenCalledOnce();
+    expect(vetCatalog).toHaveBeenCalledWith(
+      sourceRoot,
+      catalog(),
+      expect.objectContaining({
+        analyzerVersions: baselineAnalyzerVersions(),
+        requiredAnalyzers: REQUIRED_BASELINE_ANALYZERS,
+        scanOptions: expect.objectContaining({
+          env: {},
+          platform: "linux",
+          requiredDetectors: REQUIRED_BASELINE_DETECTORS,
+          run: expect.any(Function),
+        }),
+      }),
+    );
     expect(existsSync(join(root, rel))).toBe(true);
     expect(JSON.parse(readFileSync(join(root, rel), "utf8"))).toEqual({
       schemaVersion: 1,
