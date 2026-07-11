@@ -277,6 +277,12 @@ export function hasEccRegistrationLedger(ctx: PlanContext): boolean {
   return readRegistrationLedgerSnapshot(home) !== undefined;
 }
 
+export function hasEccRegisteredTarget(ctx: PlanContext, target: Cli): boolean {
+  const home = resolve(ctx.env.HOME || ctx.env.USERPROFILE || homedir());
+  const snapshot = readRegistrationLedgerSnapshot(home);
+  return snapshot?.ledger.targets.some((entry) => entry.target === target) ?? false;
+}
+
 export function eccPruneReconciliationActions(
   ctx: PlanContext,
   droppedTargets: readonly Cli[] = [],

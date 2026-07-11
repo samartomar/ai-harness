@@ -76,6 +76,9 @@ export interface EccReconcileUpstreamUninstall {
   paths: string[];
 }
 
+const ECC_UPSTREAM_UNINSTALL_TIMEOUT_MS = 90_000;
+const ECC_RECONCILE_DRIVER_GRACE_MS = 120_000;
+
 const ECC_RECONCILE_TRANSACTION_DRIVER = String.raw`
 const crypto = require("node:crypto");
 const childProcess = require("node:child_process");
@@ -287,6 +290,11 @@ for (const mutation of payload.mutations) {
   if (!mutation || typeof mutation.path !== "string" || typeof mutation.root !== "string") {
     throw new Error("invalid ECC reconciliation mutation");
   }
+  if (mutation.phase !== undefined
+    && mutation.phase !== "owned-removal"
+    && mutation.phase !== "target-state") {
+    throw new Error("invalid ECC reconciliation mutation phase");
+  }
   assertSafeFile(mutation.root, mutation.path);
   if (!expected.has(mutation.path)) throw new Error("unbound ECC reconciliation mutation: " + mutation.path);
   if (mutationPaths.has(mutation.path)) throw new Error("duplicate ECC reconciliation mutation: " + mutation.path);
@@ -337,7 +345,7 @@ for (const mutation of payload.mutations) {
     root: mutation.root,
     next,
     mode: mutation.mode,
-    phase: mutation.phase === "target-state" ? "target-state" : "owned-removal",
+    phase: mutation.phase || "owned-removal",
   });
 }
 
@@ -379,34 +387,13 @@ const applyChange = (change) => {
   }
 };
 
-let divergence = null;
 const completedUninstalls = [];
-try {
-  for (const change of prepared.filter((value) => value.phase === "owned-removal")) {
-    applyChange(change);
-  }
-  for (const uninstall of uninstalls) {
-    const result = childProcess.spawnSync(uninstall.argv[0], uninstall.argv.slice(1), {
-      cwd: uninstall.cwd,
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "pipe"],
-      timeout: 90000,
-      killSignal: "SIGTERM",
-    });
-    if (result.error || result.status !== 0) {
-      const reason = result.error
-        ? result.error.message
-        : "upstream uninstall exited " + (result.status === null ? "by signal" : result.status);
-      divergence = { target: uninstall.target, paths: uninstall.paths, reason };
-      throw new Error(reason);
-    }
-    completedUninstalls.push(uninstall);
-  }
-  for (const change of prepared.filter((value) => value.phase === "target-state")) {
-    applyChange(change);
-  }
-  if (ledgerChange) applyChange(ledgerChange);
-} catch (error) {
+let activeUninstall = null;
+let activeChild = null;
+let divergence = null;
+let handlingSignal = false;
+let transactionCommitted = false;
+const rollbackApplied = () => {
   const rollbackErrors = [];
   for (const temporary of temporaryPaths) {
     try { fs.rmSync(temporary, { force: true }); } catch (rollbackError) { rollbackErrors.push(rollbackError); }
@@ -419,18 +406,118 @@ try {
       rollbackErrors.push(rollbackError);
     }
   }
-  const affected = divergence || completedUninstalls[completedUninstalls.length - 1];
-  if (affected) {
-    const reason = divergence ? divergence.reason : "failure after upstream uninstall: " + error.message;
-    const rollback = rollbackErrors.length > 0
-      ? "; ECC reconciliation rollback failed: "
-        + rollbackErrors.map((value) => value.message).join("; ")
-      : "";
-    throw new Error(
-      "ECC prune divergence: target=" + affected.target
-      + "; paths=" + (affected.paths.join(",") || "unknown")
-      + "; " + reason + rollback + "; registration ledger not advanced",
+  return rollbackErrors;
+};
+const cleanupRecoveryMaterial = () => {
+  for (const temporary of temporaryPaths) fs.rmSync(temporary, { force: true });
+  for (const record of applied) fs.rmSync(record.backup, { force: true });
+};
+const affectedUninstalls = () => {
+  const candidates = [
+    ...(divergence ? [divergence] : activeUninstall ? [activeUninstall] : []),
+    ...completedUninstalls,
+  ];
+  const seen = new Set();
+  return candidates.filter((value) => {
+    const key = value.target + "\u0000" + value.paths.join("\u0000");
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+};
+const divergenceMessage = (affected, reason, rollbackErrors) => {
+  const evidence = affected
+    .map((value) => "target=" + value.target + "; paths=" + (value.paths.join(",") || "unknown"))
+    .join("; ");
+  const rollback = rollbackErrors.length > 0
+    ? "; ECC reconciliation rollback failed: "
+      + rollbackErrors.map((value) => value.message).join("; ")
+    : "";
+  return "ECC prune divergence: " + evidence + "; " + reason + rollback
+    + "; registration ledger not advanced";
+};
+const handleSignal = (signal) => {
+  if (handlingSignal) return;
+  handlingSignal = true;
+  if (transactionCommitted) {
+    cleanupRecoveryMaterial();
+    fs.writeSync(2, "ECC prune reconciliation interrupted by " + signal
+      + " after ledger commit; committed state retained\n");
+    process.exit(signal === "SIGINT" ? 130 : 143);
+  }
+  if (activeChild) activeChild.kill(signal);
+  const affected = affectedUninstalls();
+  const rollbackErrors = rollbackApplied();
+  const reason = "interrupted by " + signal;
+  const message = affected.length > 0
+    ? divergenceMessage(affected, reason, rollbackErrors)
+    : "ECC prune reconciliation " + reason
+      + (rollbackErrors.length > 0
+        ? "; ECC reconciliation rollback failed: "
+          + rollbackErrors.map((value) => value.message).join("; ")
+        : "")
+      + "; registration ledger not advanced";
+  fs.writeSync(2, message + "\n");
+  process.exit(signal === "SIGINT" ? 130 : 143);
+};
+process.on("SIGTERM", () => handleSignal("SIGTERM"));
+process.on("SIGINT", () => handleSignal("SIGINT"));
+const uninstallDeadline = Date.now() + Math.max(1, uninstalls.length) * ${ECC_UPSTREAM_UNINSTALL_TIMEOUT_MS};
+const runUpstreamUninstall = (uninstall, timeout) => new Promise((resolve) => {
+  let stdout = "";
+  let stderr = "";
+  let spawnError = null;
+  const tail = (current, chunk) => (current + chunk.toString("utf8")).slice(-500);
+  const child = childProcess.spawn(uninstall.argv[0], uninstall.argv.slice(1), {
+    cwd: uninstall.cwd,
+    stdio: ["ignore", "pipe", "pipe"],
+    timeout,
+    killSignal: "SIGTERM",
+    windowsHide: true,
+  });
+  activeChild = child;
+  child.stdout.on("data", (chunk) => { stdout = tail(stdout, chunk); });
+  child.stderr.on("data", (chunk) => { stderr = tail(stderr, chunk); });
+  child.once("error", (error) => { spawnError = error; });
+  child.once("close", (status, signal) => resolve({ error: spawnError, status, signal, stdout, stderr }));
+});
+const runTransaction = async () => {
+try {
+  for (const change of prepared.filter((value) => value.phase === "owned-removal")) {
+    applyChange(change);
+  }
+  for (const uninstall of uninstalls) {
+    activeUninstall = uninstall;
+    const remainingMs = Math.max(1, uninstallDeadline - Date.now());
+    const result = await runUpstreamUninstall(
+      uninstall,
+      Math.min(${ECC_UPSTREAM_UNINSTALL_TIMEOUT_MS}, remainingMs),
     );
+    activeChild = null;
+    if (result.error || result.status !== 0) {
+      const baseReason = result.error
+        ? result.error.message
+        : "upstream uninstall exited " + (result.status === null ? "by signal" : result.status);
+      const diagnostic = (result.stderr || result.stdout || "").trim().slice(-500);
+      const reason = diagnostic.length > 0 ? baseReason + ": " + diagnostic : baseReason;
+      divergence = { ...uninstall, reason };
+      activeUninstall = null;
+      throw new Error(reason);
+    }
+    completedUninstalls.push(uninstall);
+    activeUninstall = null;
+  }
+  for (const change of prepared.filter((value) => value.phase === "target-state")) {
+    applyChange(change);
+  }
+  if (ledgerChange) applyChange(ledgerChange);
+  transactionCommitted = true;
+} catch (error) {
+  const rollbackErrors = rollbackApplied();
+  const affected = affectedUninstalls();
+  if (affected.length > 0) {
+    const reason = divergence ? divergence.reason : "failure after upstream uninstall: " + error.message;
+    throw new Error(divergenceMessage(affected, reason, rollbackErrors));
   }
   if (rollbackErrors.length > 0) {
     throw new Error(error.message + "; ECC reconciliation rollback failed: "
@@ -439,7 +526,12 @@ try {
   throw error;
 }
 
-for (const record of applied) fs.rmSync(record.backup, { force: true });
+cleanupRecoveryMaterial();
+};
+runTransaction().catch((error) => {
+  fs.writeSync(2, (error.stack || error.message || String(error)) + "\n");
+  process.exitCode = 1;
+});
 `;
 
 export function eccReconcileTransactionAction(
@@ -452,7 +544,9 @@ export function eccReconcileTransactionAction(
     [process.execPath, "-e", ECC_RECONCILE_TRANSACTION_DRIVER, encoded],
     {
       cwd: ctx.root,
-      timeoutMs: 120_000,
+      timeoutMs:
+        ECC_RECONCILE_DRIVER_GRACE_MS +
+        (payload.uninstalls?.length ?? 0) * ECC_UPSTREAM_UNINSTALL_TIMEOUT_MS,
       blockProbesOnFailure: true,
       requiresPriorExecSuccess: true,
       failureCheck: (result) => ({

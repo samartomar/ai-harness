@@ -672,6 +672,43 @@ describe("aih prune ECC registration reconciliation", () => {
       ),
     ).toBe(false);
   });
+
+  it("falls back to standalone Codex cleanup when the ledger has no Codex target record", async () => {
+    const home = join(dir, "home");
+    const reactRoot = join(home, "projects", "react");
+    const cppRoot = join(home, "projects", "deleted-cpp");
+    mkdirSync(reactRoot, { recursive: true });
+    const ledgerPath = writeLedger(home, reactRoot, cppRoot);
+    const ledger = JSON.parse(readFileSync(ledgerPath, "utf8")) as { targets: unknown[] };
+    ledger.targets = [];
+    writeFileSync(ledgerPath, `${JSON.stringify(ledger, null, 2)}\n`, "utf8");
+    mkdirSync(join(home, ".codex"), { recursive: true });
+    writeCodexMergeState(home);
+    marker("claude");
+    write("ai-coding/adapters/claude.md");
+    write("ai-coding/adapters/codex.md");
+
+    const actions = await actionsOf({ env: { HOME: home, USERPROFILE: home } });
+    const config = actions.find(
+      (action): action is Extract<Action, { kind: "write" }> =>
+        action.kind === "write" && action.path === join(home, ".codex", "config.toml"),
+    );
+    const agents = actions.find(
+      (action): action is Extract<Action, { kind: "write" }> =>
+        action.kind === "write" && action.path === join(home, ".codex", "AGENTS.md"),
+    );
+
+    expect(config).toBeDefined();
+    expect(config?.contents).not.toContain("mcp_servers");
+    expect(agents).toBeDefined();
+    expect(agents?.contents).not.toContain("BEGIN ecc-codex:agents");
+    expect(
+      actions.some(
+        (action) =>
+          action.kind === "exec" && action.describe.includes("remove aih ECC Codex install-state"),
+      ),
+    ).toBe(true);
+  });
 });
 
 describe("aih prune --delete / --unrunnable", () => {

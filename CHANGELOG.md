@@ -26,8 +26,9 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - `aih prune` now coordinates aih-owned ECC removals, unavoidable upstream target uninstalls,
   target-state updates, and the registration ledger in one phased ledger-last driver. Failures
-  roll back aih-owned changes; an upstream uninstall that may already have mutated emits explicit
-  target-and-path divergence evidence without advancing the ledger. (#423)
+  and interrupts roll back aih-owned changes; upstream uninstalls that may already have mutated
+  emit explicit evidence for every affected target and path without advancing the ledger. Dropped
+  Codex cleanup also remains compatible with pre-ledger target state. (#423)
 
 ## [2.8.0] - 2026-07-10
 
