@@ -11,10 +11,15 @@ import {
 } from "../../src/baseline-evidence/vendor.js";
 
 function requiredAnalyzerReceipts(
+  sourceId: string,
   component: BaselineComponentEvidence,
 ): Array<{ name: string; version: string }> {
   const versions = baselineAnalyzerVersions();
-  return [...requiredBaselineAnalyzersForComponent(component)]
+  const canonical = baselineCatalogById(sourceId).components.find(
+    (candidate) => candidate.id === component.id,
+  );
+  if (canonical === undefined) throw new Error(`missing canonical component ${component.id}`);
+  return [...requiredBaselineAnalyzersForComponent(canonical)]
     .sort((left, right) => left.localeCompare(right))
     .map((name) => ({ name, version: versions[name] ?? "" }));
 }
@@ -52,7 +57,7 @@ describe("shipped vendor baseline lock", () => {
     if (verificationLoop === undefined) throw new Error("verification-loop evidence is missing");
     expect(verificationLoop).toMatchObject({
       verdict: "pass",
-      analyzers: requiredAnalyzerReceipts(verificationLoop),
+      analyzers: requiredAnalyzerReceipts("ecc", verificationLoop),
       findings: [],
     });
     expect(
@@ -67,13 +72,13 @@ describe("shipped vendor baseline lock", () => {
         .every((component) => component.verdict === "pass" || component.findings.length > 0),
     ).toBe(true);
     expect(
-      lock.sources
-        .flatMap((source) => source.components)
-        .every(
+      lock.sources.every((source) =>
+        source.components.every(
           (component) =>
             JSON.stringify(component.analyzers) ===
-            JSON.stringify(requiredAnalyzerReceipts(component)),
+            JSON.stringify(requiredAnalyzerReceipts(source.id, component)),
         ),
+      ),
     ).toBe(true);
   });
 

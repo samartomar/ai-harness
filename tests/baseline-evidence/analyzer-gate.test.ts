@@ -57,4 +57,24 @@ describe("baseline analyzer receipt gate", () => {
       ],
     });
   });
+
+  it("rejects a missing canonical component or source", () => {
+    const missingComponent = structuredClone(readVendorBaselineLock());
+    const ecc = missingComponent.sources.find((source) => source.id === "ecc");
+    if (ecc === undefined) throw new Error("ECC evidence is missing");
+    ecc.components = ecc.components.filter((component) => component.id !== "runtime:ecc-kiro");
+    expect(checkBaselineAnalyzerReceipts(missingComponent).findings).toContainEqual({
+      sourceId: "ecc",
+      componentId: "runtime:ecc-kiro",
+      detail: "component is missing from the vendor baseline lock",
+    });
+
+    const missingSource = structuredClone(readVendorBaselineLock());
+    missingSource.sources = missingSource.sources.filter((source) => source.id !== "superpowers");
+    expect(checkBaselineAnalyzerReceipts(missingSource).findings).toContainEqual({
+      sourceId: "superpowers",
+      componentId: "<catalog>",
+      detail: "source is missing from the vendor baseline lock",
+    });
+  });
 });
