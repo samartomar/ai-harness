@@ -76,10 +76,11 @@ describe("ECC registration reconciliation", () => {
   it("retires only missing projects and filters targets to the live union", () => {
     const input = ledger([
       project(reactRoot, ["baseline:rules", "skill:coding-standards", "framework:react"]),
-      project(cppRoot, ["baseline:rules", "skill:coding-standards", "lang:cpp"], [
-        "mcp:sequential-thinking",
-        "mcp:github",
-      ]),
+      project(
+        cppRoot,
+        ["baseline:rules", "skill:coding-standards", "lang:cpp"],
+        ["mcp:sequential-thinking", "mcp:github"],
+      ),
     ]);
 
     const result = reconcileEccRegistrationLedger(input, {
@@ -129,7 +130,13 @@ describe("ECC registration reconciliation", () => {
     });
 
     expect(result.full).toBe(true);
-    expect(result.ledger.targets).toEqual(input.targets);
+    expect(result.ledger.targets[0]?.components.map(({ id }) => id)).toEqual([
+      "baseline:rules",
+      "framework:react",
+      "lang:cpp",
+      "skill:coding-standards",
+    ]);
+    expect(result.ledger.targets[0]?.mcps).toEqual(["mcp:github", "mcp:sequential-thinking"]);
     expect(result.removedComponents).toEqual([]);
     expect(result.removedMcps).toEqual([]);
   });
@@ -192,14 +199,14 @@ describe("ECC registration reconciliation", () => {
     mkdirSync(outside);
     const linked = join(home, "linked");
     symlinkSync(outside, linked, process.platform === "win32" ? "junction" : "dir");
-    expect(() => reconcileEccRegistrationLedger(ledger([project(linked, ["baseline:rules"])]))).toThrow(
-      /symlink/i,
-    );
+    expect(() =>
+      reconcileEccRegistrationLedger(ledger([project(linked, ["baseline:rules"])])),
+    ).toThrow(/symlink/i);
 
     const file = join(home, "not-a-directory");
     writeFileSync(file, "not a project\n", "utf8");
-    expect(() => reconcileEccRegistrationLedger(ledger([project(file, ["baseline:rules"])]))).toThrow(
-      /directory/i,
-    );
+    expect(() =>
+      reconcileEccRegistrationLedger(ledger([project(file, ["baseline:rules"])])),
+    ).toThrow(/directory/i);
   });
 });
