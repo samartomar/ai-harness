@@ -1947,6 +1947,56 @@ describe("scanTrustTree", () => {
     );
   });
 
+  it("fails closed when visible-Unicode SARIF points to unreadable content", async () => {
+    skill("skills/designer", "# Designer\n");
+    const sarif = {
+      version: "2.1.0",
+      runs: [
+        {
+          results: [
+            {
+              ruleId: "skillspector.hidden-unicode",
+              message: { text: "visible Unicode count detected by SkillSpector" },
+              locations: [
+                {
+                  physicalLocation: {
+                    artifactLocation: { uri: "/scan/docs/missing.md" },
+                    region: { startLine: 1 },
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    const detector = fakeRunner((argv) => {
+      if (argv[0] !== "docker") return undefined;
+      if (argv[1] === "--version") return { code: 0, stdout: "Docker version 27\n" };
+      if (argv[1] === "image" && argv[2] === "inspect") return successfulSkillspector(argv);
+      if (argv[1] === "run") return { code: 0, stdout: JSON.stringify(sarif) };
+      return undefined;
+    });
+
+    const result = await scanTrustTreeWithAnalyzers(dir, {
+      env: {},
+      platform: "linux",
+      posture: "enterprise",
+      run: detector,
+    });
+
+    expect(result.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          verdict: "fail",
+          code: "trust.hidden-unicode",
+          detail: expect.stringContaining("detector-reported-hidden-unicode"),
+          location: expect.objectContaining({ uri: "docs/missing.md", startLine: 1 }),
+        }),
+      ]),
+    );
+  });
+
   it("keeps SkillSpector hidden-unicode SARIF blocking on instruction surfaces", async () => {
     skill("skills/designer", "Use visible typography → here.\n");
     const sarif = {

@@ -7,6 +7,7 @@ export interface ContentFindingIdentity {
   ruleId: string;
   content: string | Buffer;
   occurrence: number;
+  // Display-only metadata is accepted for call-site clarity and deliberately not hashed.
   displayLine?: number;
 }
 

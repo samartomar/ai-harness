@@ -1176,7 +1176,9 @@ function unicodeRiskForLocation(
   location: NonNullable<Check["location"]>,
 ): UnicodeRisk | undefined {
   const source = sourceTextForLocation(root, location);
-  return source === undefined ? undefined : classifyUnicodeRisk(location.uri, source);
+  return source === undefined
+    ? detectorReportedHiddenUnicodeRisk()
+    : classifyUnicodeRisk(location.uri, source);
 }
 
 function isReviewableVisibleUnicodeDetectorResult(
