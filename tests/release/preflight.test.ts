@@ -1,3 +1,7 @@
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type {
   MergedPr,
@@ -9,11 +13,6 @@ import {
   nextVersionFrom,
   runPreflight,
 } from "../../src/internals/release-preflight.js";
-
-type IntentData = PreflightData & {
-  declaredIntent?: "patch" | "minor" | "major";
-  intentAcknowledgementSha?: string;
-};
 
 function pr(number: number, title: string, labels: string[] = ["semver:patch"]): MergedPr {
   return { number, title, semverLabels: labels, milestone: "next-release" };
@@ -42,7 +41,7 @@ function mergedItem(p: MergedPr): MilestoneItem {
 }
 
 /** A clean two-PR cut: everything labeled, aboard, tracked, and version-coherent. */
-function cleanData(): IntentData {
+function cleanData(): PreflightData {
   const prs = [pr(1, "fix: a"), pr(2, "feat: b", ["semver:minor"])];
   return {
     previousTag: "v2.5.1",
@@ -76,6 +75,17 @@ describe("runPreflight — declared intent checkpoint", () => {
 
     expect(m.ok).toBe(false);
     expect(m.findings.map((finding) => finding.code)).toContain("missing-intent");
+  });
+
+  it("invalid-intent: rejects a serialized intent outside patch|minor|major", () => {
+    const d = cleanData();
+    (d as unknown as { declaredIntent?: string }).declaredIntent = "huge";
+
+    const m = runPreflight(d);
+
+    expect(m.ok).toBe(false);
+    expect(m.findings.map((finding) => finding.code)).toContain("invalid-intent");
+    expect(m).toMatchObject({ intentEscalation: false, intentAcknowledged: false });
   });
 
   it("intent-escalation: blocks when the computed bump exceeds declared intent", () => {
@@ -133,6 +143,52 @@ describe("runPreflight — declared intent checkpoint", () => {
     expect(m.ok).toBe(false);
     expect(m.findings).toContainEqual(expect.objectContaining({ code: "intent-escalation" }));
     expect(m).toMatchObject({ intentEscalation: true, intentAcknowledged: false });
+  });
+});
+
+describe("release:preflight CLI intent checkpoint", () => {
+  it("emits the manifest on blocked escalation and accepts only the candidate-bound ack", () => {
+    const dir = mkdtempSync(join(tmpdir(), "aih-release-intent-"));
+    try {
+      const fixture = cleanData();
+      delete fixture.declaredIntent;
+      const input = join(dir, "preflight.json");
+      writeFileSync(input, JSON.stringify(fixture), "utf8");
+      const tsx = join(process.cwd(), "node_modules", "tsx", "dist", "cli.mjs");
+      const script = join(process.cwd(), "src", "internals", "release-preflight.ts");
+      const run = (...args: string[]) =>
+        spawnSync(process.execPath, [tsx, script, "--input", input, ...args], {
+          cwd: process.cwd(),
+          encoding: "utf8",
+        });
+
+      const blocked = run("--intent", "patch");
+      expect(blocked.status).toBe(1);
+      expect(JSON.parse(blocked.stdout)).toMatchObject({
+        ok: false,
+        declaredIntent: "patch",
+        computedBump: "minor",
+        intentEscalation: true,
+        intentAcknowledged: false,
+        findings: [expect.objectContaining({ code: "intent-escalation" })],
+      });
+
+      const acknowledged = run(
+        "--intent",
+        "patch",
+        "--ack-intent-escalation",
+        fixture.candidateSha,
+      );
+      expect(acknowledged.status, acknowledged.stderr).toBe(0);
+      expect(JSON.parse(acknowledged.stdout)).toMatchObject({
+        ok: true,
+        intentEscalation: true,
+        intentAcknowledged: true,
+        intentAcknowledgementSha: fixture.candidateSha,
+      });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 

@@ -42,10 +42,15 @@ is ever stored; after the bootstrap, publish is OIDC-only.
 
 1. **Soft-lock and sweep.** Comment `cut in progress from <full-main-SHA>` on the
    release tracker issue (parallel sessions hold merges and cuts until done). Then run
-   `npm run release:preflight` — it validates the sweep mechanically (labels, milestone
-   drift both directions, open blockers, tracker presence, gate-bypassing commits,
-   version coherence, revert pairs) and emits the cut manifest to paste into the
-   tracker. The cut set is the merged PRs reachable from `main` since the previous tag —
+   `npm run release:preflight -- --intent <patch|minor|major>` — it validates the
+   sweep mechanically (labels, milestone drift both directions, open blockers,
+   tracker presence, gate-bypassing commits, version coherence, revert pairs),
+   compares the declared scope with the computed bump, and emits the cut manifest
+   to paste into the tracker. If the computed class exceeds intent, stop and record
+   the maintainer's decision in the tracker; after explicit approval, rerun with
+   `--ack-intent-escalation <full-candidate-SHA>`. The SHA must match the manifest's
+   candidate, and acknowledgement never changes the label-derived bump. The cut set
+   is the merged PRs reachable from `main` since the previous tag —
    open, deferred, or partial work never affects the version. Reconcile the open `next-release` train
    milestone ([Milestones](https://github.com/samartomar/ai-harness/milestones)) to that
    git truth: every merged PR since the last tag is in it and carries exactly one
