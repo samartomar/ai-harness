@@ -8,6 +8,9 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Trust detectors now allow decorative emoji, arrows, and box drawing only on reviewable
+  documentation surfaces, suppress narrow agent-role false positives there, and use full-strength
+  content-bound finding fingerprints whose identity does not depend on display line numbers. (#418)
 - Sandbox-smoke unavailability is now recorded as an environment `skip` at every posture instead
   of blocking acquired content; an actual failed smoke run on a capable host remains blocking.
   (#419)

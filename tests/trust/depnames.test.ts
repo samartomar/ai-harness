@@ -79,9 +79,31 @@ describe("scanTrustDependencyNames", () => {
         verdict: "fail",
         code: "trust.dependency-confusion",
         location: expect.objectContaining({ uri: "package.json" }),
-        fingerprint: expect.stringMatching(/^trust-dependency-confusion:/),
+        fingerprint: expect.stringMatching(
+          /^trust-dependency-confusion:package\.json:[0-9a-f]{64}$/,
+        ),
       }),
     ]);
+  });
+
+  it("keeps dependency finding identity stable when only its display line shifts", () => {
+    const packageJson = [
+      "{",
+      '  "dependencies": {',
+      '    "@acme/widget": "1.0.0"',
+      "  }",
+      "}",
+    ].join("\n");
+    write("package.json", packageJson);
+    lockfile();
+    const first = scanTrustDependencyNames(dir, ["@acme"])[0];
+
+    write("package.json", `\n${packageJson}`);
+    const shifted = scanTrustDependencyNames(dir, ["@acme"])[0];
+
+    expect(first?.location?.startLine).toBe(3);
+    expect(shifted?.location?.startLine).toBe(4);
+    expect(shifted?.fingerprint).toBe(first?.fingerprint);
   });
 
   it("does not flag internal-looking scopes when env scopes are unset", () => {

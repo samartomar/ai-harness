@@ -1,10 +1,10 @@
-import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { basename, relative } from "node:path";
 import type { Posture } from "../config/posture.js";
 import type { PlanContext } from "../internals/plan.js";
 import type { Check, CheckCode } from "../internals/verify.js";
 import { OrgPolicyError, readOrgPolicy } from "../org-policy/schema.js";
+import { contentFindingFingerprint } from "./fingerprint.js";
 import { gradeTrustCheck } from "./grade.js";
 import { collectFilesUnder } from "./scan.js";
 
@@ -65,17 +65,24 @@ function toPosix(path: string): string {
   return path.replace(/\\/g, "/");
 }
 
-function contentHash(value: string): string {
-  return createHash("sha256").update(value).digest("hex");
-}
-
-function fingerprint(
+function dependencyFingerprint(
+  occurrences: Map<string, number>,
   code: DependencyCheckCode,
   path: string,
   line: number,
   content: string,
 ): string {
-  return `${code.replace(/\./g, "-")}:${path}:${line}:${contentHash(content).slice(0, 8)}`;
+  const key = JSON.stringify([code, path, content]);
+  const occurrence = occurrences.get(key) ?? 0;
+  occurrences.set(key, occurrence + 1);
+  return contentFindingFingerprint({
+    code,
+    path,
+    ruleId: code,
+    content,
+    occurrence,
+    displayLine: line,
+  });
 }
 
 function linesOf(source: string): string[] {
@@ -93,6 +100,7 @@ function lineForDependency(source: string, name: string): number {
 }
 
 function dependencyCheck(
+  occurrences: Map<string, number>,
   code: DependencyCheckCode,
   path: string,
   line: number,
@@ -105,7 +113,13 @@ function dependencyCheck(
     detail: `${path}:${line} — ${detail}`,
     code,
     location: { uri: path, startLine: line },
-    fingerprint: fingerprint(code, path, line, `${lineTextValue}:${detail}`),
+    fingerprint: dependencyFingerprint(
+      occurrences,
+      code,
+      path,
+      line,
+      `${lineTextValue}\0${detail}`,
+    ),
   };
 }
 
@@ -278,6 +292,7 @@ function unpinnedDependencyReason(name: string, spec: string): string | undefine
 }
 
 function unpinnedDependencyCheck(
+  occurrences: Map<string, number>,
   rel: string,
   line: number,
   lineTextValue: string,
@@ -285,12 +300,13 @@ function unpinnedDependencyCheck(
   posture: Posture,
 ): Check {
   return gradeTrustCheck(
-    dependencyCheck("trust.unpinned-dependency", rel, line, lineTextValue, detail),
+    dependencyCheck(occurrences, "trust.unpinned-dependency", rel, line, lineTextValue, detail),
     posture,
   );
 }
 
 function scanPackageJson(
+  occurrences: Map<string, number>,
   rel: string,
   source: string,
   internalScopes: ReadonlySet<string>,
@@ -311,7 +327,7 @@ function scanPackageJson(
     if (reason === undefined) continue;
     const line = lineForDependency(source, dependency.name);
     const text = lineText(source, line);
-    checks.push(unpinnedDependencyCheck(rel, line, text, reason, posture));
+    checks.push(unpinnedDependencyCheck(occurrences, rel, line, text, reason, posture));
   }
 
   for (const name of directDependencyNames(parsed)) {
@@ -321,6 +337,7 @@ function scanPackageJson(
     if (scope !== undefined && internalScopes.has(scope)) {
       checks.push(
         dependencyCheck(
+          occurrences,
           "trust.dependency-confusion",
           rel,
           line,
@@ -335,6 +352,7 @@ function scanPackageJson(
     if (target !== undefined) {
       checks.push(
         dependencyCheck(
+          occurrences,
           "trust.typosquat",
           rel,
           line,
@@ -347,8 +365,14 @@ function scanPackageJson(
   return { checks, declaresDependencies: dependencySpecs.length > 0 };
 }
 
-function missingLockfileCheck(rel: string, source: string, posture: Posture): Check {
+function missingLockfileCheck(
+  occurrences: Map<string, number>,
+  rel: string,
+  source: string,
+  posture: Posture,
+): Check {
   return unpinnedDependencyCheck(
+    occurrences,
     rel,
     1,
     lineText(source, 1),
@@ -366,11 +390,12 @@ export function scanTrustDependencyNames(
     internalScopes.map((scope) => normalizeScope(scope)).filter((scope) => scope !== undefined),
   );
   const checks: Check[] = [];
+  const occurrences = new Map<string, number>();
   let firstPackageWithDependencies: { rel: string; source: string } | undefined;
   for (const abs of collectPackageJson(root)) {
     const rel = toPosix(relative(root, abs));
     const source = readFileSync(abs, "utf8");
-    const result = scanPackageJson(rel, source, scopes, posture);
+    const result = scanPackageJson(occurrences, rel, source, scopes, posture);
     checks.push(...result.checks);
     if (result.declaresDependencies && firstPackageWithDependencies === undefined) {
       firstPackageWithDependencies = { rel, source };
@@ -379,6 +404,7 @@ export function scanTrustDependencyNames(
   if (firstPackageWithDependencies !== undefined && !hasLockfile(root)) {
     checks.push(
       missingLockfileCheck(
+        occurrences,
         firstPackageWithDependencies.rel,
         firstPackageWithDependencies.source,
         posture,

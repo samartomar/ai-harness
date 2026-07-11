@@ -398,18 +398,31 @@ file path. Zero-width characters, bidi controls, Unicode tag characters, and
 homoglyph-confusable characters inside ASCII-like tokens stay
 `trust.hidden-unicode` and fail closed at every posture.
 
-Ordinary visible Unicode typography in documentation, design, or reference
-files is reported as `trust.visible-unicode`. That is a trust-origin finding:
-it follows the general trust-origin posture policy and is warning-only below
-enterprise posture. At enterprise posture it must
-be fixed or acknowledged with an exact, file-content-bound fingerprint and a
-recorded `--reason`.
+Decorative emoji, arrows, and box drawing are allowed when they appear on a
+reviewable documentation, design, or reference surface. Other visible Unicode
+on those surfaces is reported as `trust.visible-unicode`. That is a
+trust-origin finding: it follows the general trust-origin posture policy and is
+warning-only below enterprise posture. At enterprise posture it must be fixed
+or acknowledged with an exact finding fingerprint and a recorded `--reason`.
 
 Paths can only raise severity. Unicode in `SKILL.md`, agent or command
 instructions, MCP descriptions/config-derived text, package/config files, and
 script/executable/source-code surfaces is still treated as blocking
 `trust.hidden-unicode`; the documentation path rule is not an exclusion from
 scanning.
+
+External prompt-injection adapters may suppress a narrow agent role-definition
+result only on those same reviewable surfaces. Role language on instruction,
+agent, command, config, or executable surfaces remains strict. Override,
+jailbreak, secret or credential, URL, upload/send, and exfiltration language is
+never covered by the role-definition exception.
+
+Content finding fingerprints bind the finding code, normalized safe path,
+detector or rule identity, exact finding text or line content, and a stable
+occurrence index for identical repeated findings. They retain the complete
+64-hex SHA-256 digest. The displayed line number is advisory metadata and is not
+part of acknowledgement identity: inserting an unrelated line does not churn
+an acknowledgement, while changing the finding content does.
 
 ## Detector finding file classes
 
@@ -418,8 +431,10 @@ non-executable `LICENSE*`, `COPYING*`, or `NOTICE*` file is reported as
 `trust.legal-text-detector-finding`. The report names the file class and explains
 that generic legal-text heuristics need human review. The finding warn-passes only
 at vibe posture. At team and enterprise posture it blocks until its exact
-fingerprint is acknowledged with a recorded reason; the fingerprint covers the
-whole legal-text file, so any edit requires a fresh review.
+fingerprint is acknowledged with a recorded reason. The fingerprint covers the
+detector rule and exact finding line/content rather than the whole legal-text
+file, so unrelated edits do not churn the acknowledgement while a changed
+finding requires fresh review.
 
 This classification does not downgrade a detector's known danger rule.
 Prompt-injection, malicious-code, hidden-Unicode, auto-execution, dependency
