@@ -7,6 +7,7 @@ import {
   codexInstallStateCleanupAction,
 } from "../ecc/codex.js";
 import { ECC_NPM_CLI_BIN, ECC_NPM_PACKAGE, isAihDirectEccInstallTarget } from "../ecc/install.js";
+import { eccPruneReconciliationActions } from "../ecc/prune-reconcile.js";
 import type { Cli } from "../internals/clis.js";
 import { readIfExists } from "../internals/fsxn.js";
 import { aihIgnoreWrite } from "../internals/gitignore.js";
@@ -248,6 +249,7 @@ async function prunePlan(ctx: PlanContext): Promise<Plan> {
       if (codexStateCleanup) actions.push(codexStateCleanup);
     }
   }
+  actions.push(...eccPruneReconciliationActions(ctx, set.dropped));
   const headline =
     set.dropped.length > 0
       ? `Stale artifacts — ${set.artifacts.length} for ${set.dropped.length} dropped CLI(s)`

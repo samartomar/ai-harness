@@ -130,6 +130,12 @@ export interface AtomicLedgerWriteDeps {
   rename?: (from: string, to: string) => void;
 }
 
+export interface RegistrationLedgerSnapshot {
+  path: string;
+  contents: Buffer;
+  ledger: RegistrationLedger;
+}
+
 function duplicateIssues(
   values: readonly string[],
   label: string,
@@ -254,16 +260,26 @@ function prepareLedgerDirectory(home: string): string {
   return current;
 }
 
-export function readRegistrationLedger(home: string): RegistrationLedger {
+export function readRegistrationLedgerSnapshot(
+  home: string,
+): RegistrationLedgerSnapshot | undefined {
   const path = registrationLedgerPath(home);
   assertExistingPathSafe(home, "directory");
   assertExistingPathSafe(join(home, ".aih"), "directory");
   assertExistingPathSafe(join(home, ".aih", "ecc"), "directory");
-  if (!existsSync(path)) return emptyRegistrationLedger();
+  if (!existsSync(path)) return undefined;
   assertExistingPathSafe(path, "file");
   const opened = readRegularFileWithStats(path);
   if (opened === undefined) throw new Error(`refusing unreadable ECC registration ledger: ${path}`);
-  return parseRegistrationLedger(opened.contents.toString("utf8"));
+  return {
+    path,
+    contents: opened.contents,
+    ledger: parseRegistrationLedger(opened.contents.toString("utf8")),
+  };
+}
+
+export function readRegistrationLedger(home: string): RegistrationLedger {
+  return readRegistrationLedgerSnapshot(home)?.ledger ?? emptyRegistrationLedger();
 }
 
 export function writeRegistrationLedgerAtomic(
