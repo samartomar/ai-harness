@@ -24,8 +24,8 @@ jobs:
       - name: Check out exact ECC baseline
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
-          repository: affaan-m/ECC
-          ref: 4130457d674d2180c5af2c5f634f3cae4cbc6c4f
+          repository: samartomar/ECC
+          ref: fd3699d65c4767acceac59069847f04122417dcb
           path: .baseline-sources/ecc
           persist-credentials: false
       - name: Check out exact Superpowers baseline

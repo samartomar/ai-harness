@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
   "source": {
-    "owner": "affaan-m",
+    "owner": "samartomar",
     "repo": "ECC",
-    "pinnedSha": "4130457d674d2180c5af2c5f634f3cae4cbc6c4f"
+    "pinnedSha": "fd3699d65c4767acceac59069847f04122417dcb"
   },
   "operations": [
     {
@@ -579,6 +579,14 @@
       "kind": "copy-file",
       "source": "commands/orch-review.md",
       "destination": "<project>/.agent/workflows/orch-review.md",
+      "componentId": "baseline:commands",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "antigravity",
+      "kind": "copy-file",
+      "source": "commands/plan-canvas.md",
+      "destination": "<project>/.agent/workflows/plan-canvas.md",
       "componentId": "baseline:commands",
       "contingentOn": "evidence-authorization"
     },
@@ -1849,6 +1857,62 @@
     {
       "target": "antigravity",
       "kind": "copy-file",
+      "source": "skills/agent-self-evaluation/examples/high-score-example.md",
+      "destination": "<project>/.agent/skills/agent-self-evaluation/examples/high-score-example.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "antigravity",
+      "kind": "copy-file",
+      "source": "skills/agent-self-evaluation/examples/low-score-example.md",
+      "destination": "<project>/.agent/skills/agent-self-evaluation/examples/low-score-example.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "antigravity",
+      "kind": "copy-file",
+      "source": "skills/agent-self-evaluation/references/evaluation-criteria.md",
+      "destination": "<project>/.agent/skills/agent-self-evaluation/references/evaluation-criteria.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "antigravity",
+      "kind": "copy-file",
+      "source": "skills/agent-self-evaluation/references/hook-integration.md",
+      "destination": "<project>/.agent/skills/agent-self-evaluation/references/hook-integration.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "antigravity",
+      "kind": "copy-file",
+      "source": "skills/agent-self-evaluation/scripts/evaluate.py",
+      "destination": "<project>/.agent/skills/agent-self-evaluation/scripts/evaluate.py",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "antigravity",
+      "kind": "copy-file",
+      "source": "skills/agent-self-evaluation/SKILL.md",
+      "destination": "<project>/.agent/skills/agent-self-evaluation/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "antigravity",
+      "kind": "copy-file",
+      "source": "skills/agent-self-evaluation/templates/evaluation-report.md",
+      "destination": "<project>/.agent/skills/agent-self-evaluation/templates/evaluation-report.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "antigravity",
+      "kind": "copy-file",
       "source": "skills/agent-sort/SKILL.md",
       "destination": "<project>/.agent/skills/agent-sort/SKILL.md",
       "componentId": "baseline:workflow",
@@ -1865,6 +1929,110 @@
     {
       "target": "antigravity",
       "kind": "copy-file",
+      "source": "skills/architecture-decision-records/SKILL.md",
+      "destination": "<project>/.agent/skills/architecture-decision-records/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "antigravity",
+      "kind": "copy-file",
+      "source": "skills/browser-qa/SKILL.md",
+      "destination": "<project>/.agent/skills/browser-qa/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "antigravity",
+      "kind": "copy-file",
+      "source": "skills/ck/commands/forget.mjs",
+      "destination": "<project>/.agent/skills/ck/commands/forget.mjs",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "antigravity",
+      "kind": "copy-file",
+      "source": "skills/ck/commands/info.mjs",
+      "destination": "<project>/.agent/skills/ck/commands/info.mjs",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "antigravity",
+      "kind": "copy-file",
+      "source": "skills/ck/commands/init.mjs",
+      "destination": "<project>/.agent/skills/ck/commands/init.mjs",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "antigravity",
+      "kind": "copy-file",
+      "source": "skills/ck/commands/list.mjs",
+      "destination": "<project>/.agent/skills/ck/commands/list.mjs",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "antigravity",
+      "kind": "copy-file",
+      "source": "skills/ck/commands/migrate.mjs",
+      "destination": "<project>/.agent/skills/ck/commands/migrate.mjs",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "antigravity",
+      "kind": "copy-file",
+      "source": "skills/ck/commands/resume.mjs",
+      "destination": "<project>/.agent/skills/ck/commands/resume.mjs",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "antigravity",
+      "kind": "copy-file",
+      "source": "skills/ck/commands/save.mjs",
+      "destination": "<project>/.agent/skills/ck/commands/save.mjs",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "antigravity",
+      "kind": "copy-file",
+      "source": "skills/ck/commands/shared.mjs",
+      "destination": "<project>/.agent/skills/ck/commands/shared.mjs",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "antigravity",
+      "kind": "copy-file",
+      "source": "skills/ck/hooks/session-start.mjs",
+      "destination": "<project>/.agent/skills/ck/hooks/session-start.mjs",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "antigravity",
+      "kind": "copy-file",
+      "source": "skills/ck/SKILL.md",
+      "destination": "<project>/.agent/skills/ck/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "antigravity",
+      "kind": "copy-file",
+      "source": "skills/click-path-audit/SKILL.md",
+      "destination": "<project>/.agent/skills/click-path-audit/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "antigravity",
+      "kind": "copy-file",
       "source": "skills/code-tour/SKILL.md",
       "destination": "<project>/.agent/skills/code-tour/SKILL.md",
       "componentId": "baseline:workflow",
@@ -1873,8 +2041,40 @@
     {
       "target": "antigravity",
       "kind": "copy-file",
+      "source": "skills/codebase-onboarding/SKILL.md",
+      "destination": "<project>/.agent/skills/codebase-onboarding/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "antigravity",
+      "kind": "copy-file",
+      "source": "skills/codehealth-mcp/SKILL.md",
+      "destination": "<project>/.agent/skills/codehealth-mcp/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "antigravity",
+      "kind": "copy-file",
+      "source": "skills/config-gc/SKILL.md",
+      "destination": "<project>/.agent/skills/config-gc/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "antigravity",
+      "kind": "copy-file",
       "source": "skills/configure-ecc/SKILL.md",
       "destination": "<project>/.agent/skills/configure-ecc/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "antigravity",
+      "kind": "copy-file",
+      "source": "skills/context-budget/SKILL.md",
+      "destination": "<project>/.agent/skills/context-budget/SKILL.md",
       "componentId": "baseline:workflow",
       "contingentOn": "evidence-authorization"
     },
@@ -2009,8 +2209,40 @@
     {
       "target": "antigravity",
       "kind": "copy-file",
+      "source": "skills/delivery-gate/hooks/quality-gate.py",
+      "destination": "<project>/.agent/skills/delivery-gate/hooks/quality-gate.py",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "antigravity",
+      "kind": "copy-file",
+      "source": "skills/delivery-gate/SKILL.md",
+      "destination": "<project>/.agent/skills/delivery-gate/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "antigravity",
+      "kind": "copy-file",
       "source": "skills/e2e-testing/SKILL.md",
       "destination": "<project>/.agent/skills/e2e-testing/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "antigravity",
+      "kind": "copy-file",
+      "source": "skills/ecc-guide/SKILL.md",
+      "destination": "<project>/.agent/skills/ecc-guide/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "antigravity",
+      "kind": "copy-file",
+      "source": "skills/ecc-recipes/SKILL.md",
+      "destination": "<project>/.agent/skills/ecc-recipes/SKILL.md",
       "componentId": "baseline:workflow",
       "contingentOn": "evidence-authorization"
     },
@@ -2033,8 +2265,40 @@
     {
       "target": "antigravity",
       "kind": "copy-file",
+      "source": "skills/git-workflow/SKILL.md",
+      "destination": "<project>/.agent/skills/git-workflow/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "antigravity",
+      "kind": "copy-file",
+      "source": "skills/growth-log/SKILL.md",
+      "destination": "<project>/.agent/skills/growth-log/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "antigravity",
+      "kind": "copy-file",
       "source": "skills/hookify-rules/SKILL.md",
       "destination": "<project>/.agent/skills/hookify-rules/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "antigravity",
+      "kind": "copy-file",
+      "source": "skills/inherit-legacy-style/SKILL.md",
+      "destination": "<project>/.agent/skills/inherit-legacy-style/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "antigravity",
+      "kind": "copy-file",
+      "source": "skills/intent-driven-development/SKILL.md",
+      "destination": "<project>/.agent/skills/intent-driven-development/SKILL.md",
       "componentId": "baseline:workflow",
       "contingentOn": "evidence-authorization"
     },
@@ -2049,6 +2313,22 @@
     {
       "target": "antigravity",
       "kind": "copy-file",
+      "source": "skills/loop-design-check/SKILL.md",
+      "destination": "<project>/.agent/skills/loop-design-check/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "antigravity",
+      "kind": "copy-file",
+      "source": "skills/plan-canvas/SKILL.md",
+      "destination": "<project>/.agent/skills/plan-canvas/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "antigravity",
+      "kind": "copy-file",
       "source": "skills/plankton-code-quality/SKILL.md",
       "destination": "<project>/.agent/skills/plankton-code-quality/SKILL.md",
       "componentId": "baseline:workflow",
@@ -2057,8 +2337,56 @@
     {
       "target": "antigravity",
       "kind": "copy-file",
+      "source": "skills/product-lens/SKILL.md",
+      "destination": "<project>/.agent/skills/product-lens/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "antigravity",
+      "kind": "copy-file",
       "source": "skills/production-audit/SKILL.md",
       "destination": "<project>/.agent/skills/production-audit/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "antigravity",
+      "kind": "copy-file",
+      "source": "skills/repo-scan/SKILL.md",
+      "destination": "<project>/.agent/skills/repo-scan/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "antigravity",
+      "kind": "copy-file",
+      "source": "skills/rules-distill/scripts/scan-rules.sh",
+      "destination": "<project>/.agent/skills/rules-distill/scripts/scan-rules.sh",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "antigravity",
+      "kind": "copy-file",
+      "source": "skills/rules-distill/scripts/scan-skills.sh",
+      "destination": "<project>/.agent/skills/rules-distill/scripts/scan-skills.sh",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "antigravity",
+      "kind": "copy-file",
+      "source": "skills/rules-distill/SKILL.md",
+      "destination": "<project>/.agent/skills/rules-distill/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "antigravity",
+      "kind": "copy-file",
+      "source": "skills/santa-method/SKILL.md",
+      "destination": "<project>/.agent/skills/santa-method/SKILL.md",
       "componentId": "baseline:workflow",
       "contingentOn": "evidence-authorization"
     },
@@ -2153,6 +2481,14 @@
     {
       "target": "antigravity",
       "kind": "copy-file",
+      "source": "skills/agent-payment-x402/SKILL.md",
+      "destination": "<project>/.agent/skills/agent-payment-x402/SKILL.md",
+      "componentId": "capability:agentic",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "antigravity",
+      "kind": "copy-file",
       "source": "skills/agentic-engineering/SKILL.md",
       "destination": "<project>/.agent/skills/agentic-engineering/SKILL.md",
       "componentId": "capability:agentic",
@@ -2171,6 +2507,14 @@
       "kind": "copy-file",
       "source": "skills/ai-first-engineering/SKILL.md",
       "destination": "<project>/.agent/skills/ai-first-engineering/SKILL.md",
+      "componentId": "capability:agentic",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "antigravity",
+      "kind": "copy-file",
+      "source": "skills/autonomous-agent-harness/SKILL.md",
+      "destination": "<project>/.agent/skills/autonomous-agent-harness/SKILL.md",
       "componentId": "capability:agentic",
       "contingentOn": "evidence-authorization"
     },
@@ -2249,8 +2593,160 @@
     {
       "target": "antigravity",
       "kind": "copy-file",
+      "source": "skills/gan-style-harness/SKILL.md",
+      "destination": "<project>/.agent/skills/gan-style-harness/SKILL.md",
+      "componentId": "capability:agentic",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "antigravity",
+      "kind": "copy-file",
+      "source": "skills/hermes-imports/SKILL.md",
+      "destination": "<project>/.agent/skills/hermes-imports/SKILL.md",
+      "componentId": "capability:agentic",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "antigravity",
+      "kind": "copy-file",
       "source": "skills/nanoclaw-repl/SKILL.md",
       "destination": "<project>/.agent/skills/nanoclaw-repl/SKILL.md",
+      "componentId": "capability:agentic",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "antigravity",
+      "kind": "copy-file",
+      "source": "skills/openclaw-persona-forge/gacha.py",
+      "destination": "<project>/.agent/skills/openclaw-persona-forge/gacha.py",
+      "componentId": "capability:agentic",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "antigravity",
+      "kind": "copy-file",
+      "source": "skills/openclaw-persona-forge/gacha.sh",
+      "destination": "<project>/.agent/skills/openclaw-persona-forge/gacha.sh",
+      "componentId": "capability:agentic",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "antigravity",
+      "kind": "copy-file",
+      "source": "skills/openclaw-persona-forge/references/avatar-style.md",
+      "destination": "<project>/.agent/skills/openclaw-persona-forge/references/avatar-style.md",
+      "componentId": "capability:agentic",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "antigravity",
+      "kind": "copy-file",
+      "source": "skills/openclaw-persona-forge/references/boundary-rules.md",
+      "destination": "<project>/.agent/skills/openclaw-persona-forge/references/boundary-rules.md",
+      "componentId": "capability:agentic",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "antigravity",
+      "kind": "copy-file",
+      "source": "skills/openclaw-persona-forge/references/error-handling.md",
+      "destination": "<project>/.agent/skills/openclaw-persona-forge/references/error-handling.md",
+      "componentId": "capability:agentic",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "antigravity",
+      "kind": "copy-file",
+      "source": "skills/openclaw-persona-forge/references/identity-tension.md",
+      "destination": "<project>/.agent/skills/openclaw-persona-forge/references/identity-tension.md",
+      "componentId": "capability:agentic",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "antigravity",
+      "kind": "copy-file",
+      "source": "skills/openclaw-persona-forge/references/naming-system.md",
+      "destination": "<project>/.agent/skills/openclaw-persona-forge/references/naming-system.md",
+      "componentId": "capability:agentic",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "antigravity",
+      "kind": "copy-file",
+      "source": "skills/openclaw-persona-forge/references/output-template.md",
+      "destination": "<project>/.agent/skills/openclaw-persona-forge/references/output-template.md",
+      "componentId": "capability:agentic",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "antigravity",
+      "kind": "copy-file",
+      "source": "skills/openclaw-persona-forge/SKILL.md",
+      "destination": "<project>/.agent/skills/openclaw-persona-forge/SKILL.md",
+      "componentId": "capability:agentic",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "antigravity",
+      "kind": "copy-file",
+      "source": "skills/opensource-pipeline/SKILL.md",
+      "destination": "<project>/.agent/skills/opensource-pipeline/SKILL.md",
+      "componentId": "capability:agentic",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "antigravity",
+      "kind": "copy-file",
+      "source": "skills/orch-add-feature/SKILL.md",
+      "destination": "<project>/.agent/skills/orch-add-feature/SKILL.md",
+      "componentId": "capability:agentic",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "antigravity",
+      "kind": "copy-file",
+      "source": "skills/orch-build-mvp/SKILL.md",
+      "destination": "<project>/.agent/skills/orch-build-mvp/SKILL.md",
+      "componentId": "capability:agentic",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "antigravity",
+      "kind": "copy-file",
+      "source": "skills/orch-change-feature/SKILL.md",
+      "destination": "<project>/.agent/skills/orch-change-feature/SKILL.md",
+      "componentId": "capability:agentic",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "antigravity",
+      "kind": "copy-file",
+      "source": "skills/orch-fix-defect/SKILL.md",
+      "destination": "<project>/.agent/skills/orch-fix-defect/SKILL.md",
+      "componentId": "capability:agentic",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "antigravity",
+      "kind": "copy-file",
+      "source": "skills/orch-pipeline/SKILL.md",
+      "destination": "<project>/.agent/skills/orch-pipeline/SKILL.md",
+      "componentId": "capability:agentic",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "antigravity",
+      "kind": "copy-file",
+      "source": "skills/orch-refine-code/SKILL.md",
+      "destination": "<project>/.agent/skills/orch-refine-code/SKILL.md",
+      "componentId": "capability:agentic",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "antigravity",
+      "kind": "copy-file",
+      "source": "skills/plan-orchestrate/SKILL.md",
+      "destination": "<project>/.agent/skills/plan-orchestrate/SKILL.md",
       "componentId": "capability:agentic",
       "contingentOn": "evidence-authorization"
     },
@@ -2321,6 +2817,78 @@
     {
       "target": "antigravity",
       "kind": "copy-file",
+      "source": "skills/brand-discovery/references/10_purpose-why.md",
+      "destination": "<project>/.agent/skills/brand-discovery/references/10_purpose-why.md",
+      "componentId": "capability:content",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "antigravity",
+      "kind": "copy-file",
+      "source": "skills/brand-discovery/references/20_positioning.md",
+      "destination": "<project>/.agent/skills/brand-discovery/references/20_positioning.md",
+      "componentId": "capability:content",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "antigravity",
+      "kind": "copy-file",
+      "source": "skills/brand-discovery/references/30_audience-niche.md",
+      "destination": "<project>/.agent/skills/brand-discovery/references/30_audience-niche.md",
+      "componentId": "capability:content",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "antigravity",
+      "kind": "copy-file",
+      "source": "skills/brand-discovery/references/40_personality-archetype.md",
+      "destination": "<project>/.agent/skills/brand-discovery/references/40_personality-archetype.md",
+      "componentId": "capability:content",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "antigravity",
+      "kind": "copy-file",
+      "source": "skills/brand-discovery/references/50_voice-tone.md",
+      "destination": "<project>/.agent/skills/brand-discovery/references/50_voice-tone.md",
+      "componentId": "capability:content",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "antigravity",
+      "kind": "copy-file",
+      "source": "skills/brand-discovery/references/60_narrative-story.md",
+      "destination": "<project>/.agent/skills/brand-discovery/references/60_narrative-story.md",
+      "componentId": "capability:content",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "antigravity",
+      "kind": "copy-file",
+      "source": "skills/brand-discovery/references/70_founder-tension.md",
+      "destination": "<project>/.agent/skills/brand-discovery/references/70_founder-tension.md",
+      "componentId": "capability:content",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "antigravity",
+      "kind": "copy-file",
+      "source": "skills/brand-discovery/references/90_SYNTHESIS.md",
+      "destination": "<project>/.agent/skills/brand-discovery/references/90_SYNTHESIS.md",
+      "componentId": "capability:content",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "antigravity",
+      "kind": "copy-file",
+      "source": "skills/brand-discovery/SKILL.md",
+      "destination": "<project>/.agent/skills/brand-discovery/SKILL.md",
+      "componentId": "capability:content",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "antigravity",
+      "kind": "copy-file",
       "source": "skills/brand-voice/references/voice-profile-schema.md",
       "destination": "<project>/.agent/skills/brand-voice/references/voice-profile-schema.md",
       "componentId": "capability:content",
@@ -2331,6 +2899,22 @@
       "kind": "copy-file",
       "source": "skills/brand-voice/SKILL.md",
       "destination": "<project>/.agent/skills/brand-voice/SKILL.md",
+      "componentId": "capability:content",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "antigravity",
+      "kind": "copy-file",
+      "source": "skills/competitive-platform-analysis/SKILL.md",
+      "destination": "<project>/.agent/skills/competitive-platform-analysis/SKILL.md",
+      "componentId": "capability:content",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "antigravity",
+      "kind": "copy-file",
+      "source": "skills/competitive-report-structure/SKILL.md",
+      "destination": "<project>/.agent/skills/competitive-report-structure/SKILL.md",
       "componentId": "capability:content",
       "contingentOn": "evidence-authorization"
     },
@@ -2409,6 +2993,14 @@
     {
       "target": "antigravity",
       "kind": "copy-file",
+      "source": "skills/marketing-campaign/SKILL.md",
+      "destination": "<project>/.agent/skills/marketing-campaign/SKILL.md",
+      "componentId": "capability:content",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "antigravity",
+      "kind": "copy-file",
       "source": "skills/product-capability/SKILL.md",
       "destination": "<project>/.agent/skills/product-capability/SKILL.md",
       "componentId": "capability:content",
@@ -2481,6 +3073,22 @@
     {
       "target": "antigravity",
       "kind": "copy-file",
+      "source": "skills/redis-patterns/SKILL.md",
+      "destination": "<project>/.agent/skills/redis-patterns/SKILL.md",
+      "componentId": "capability:database",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "antigravity",
+      "kind": "copy-file",
+      "source": "skills/canary-watch/SKILL.md",
+      "destination": "<project>/.agent/skills/canary-watch/SKILL.md",
+      "componentId": "capability:devops",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "antigravity",
+      "kind": "copy-file",
       "source": "skills/cisco-ios-patterns/SKILL.md",
       "destination": "<project>/.agent/skills/cisco-ios-patterns/SKILL.md",
       "componentId": "capability:devops",
@@ -2505,6 +3113,14 @@
     {
       "target": "antigravity",
       "kind": "copy-file",
+      "source": "skills/flox-environments/SKILL.md",
+      "destination": "<project>/.agent/skills/flox-environments/SKILL.md",
+      "componentId": "capability:devops",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "antigravity",
+      "kind": "copy-file",
       "source": "skills/homelab-network-readiness/SKILL.md",
       "destination": "<project>/.agent/skills/homelab-network-readiness/SKILL.md",
       "componentId": "capability:devops",
@@ -2515,6 +3131,38 @@
       "kind": "copy-file",
       "source": "skills/homelab-network-setup/SKILL.md",
       "destination": "<project>/.agent/skills/homelab-network-setup/SKILL.md",
+      "componentId": "capability:devops",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "antigravity",
+      "kind": "copy-file",
+      "source": "skills/homelab-pihole-dns/SKILL.md",
+      "destination": "<project>/.agent/skills/homelab-pihole-dns/SKILL.md",
+      "componentId": "capability:devops",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "antigravity",
+      "kind": "copy-file",
+      "source": "skills/homelab-vlan-segmentation/SKILL.md",
+      "destination": "<project>/.agent/skills/homelab-vlan-segmentation/SKILL.md",
+      "componentId": "capability:devops",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "antigravity",
+      "kind": "copy-file",
+      "source": "skills/homelab-wireguard-vpn/SKILL.md",
+      "destination": "<project>/.agent/skills/homelab-wireguard-vpn/SKILL.md",
+      "componentId": "capability:devops",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "antigravity",
+      "kind": "copy-file",
+      "source": "skills/kubernetes-patterns/SKILL.md",
+      "destination": "<project>/.agent/skills/kubernetes-patterns/SKILL.md",
       "componentId": "capability:devops",
       "contingentOn": "evidence-authorization"
     },
@@ -2553,6 +3201,14 @@
     {
       "target": "antigravity",
       "kind": "copy-file",
+      "source": "skills/uncloud/SKILL.md",
+      "destination": "<project>/.agent/skills/uncloud/SKILL.md",
+      "componentId": "capability:devops",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "antigravity",
+      "kind": "copy-file",
       "source": "skills/nutrient-document-processing/SKILL.md",
       "destination": "<project>/.agent/skills/nutrient-document-processing/SKILL.md",
       "componentId": "capability:documents",
@@ -2577,8 +3233,32 @@
     {
       "target": "antigravity",
       "kind": "copy-file",
+      "source": "skills/ml-adoption-playbook/SKILL.md",
+      "destination": "<project>/.agent/skills/ml-adoption-playbook/SKILL.md",
+      "componentId": "capability:machine-learning",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "antigravity",
+      "kind": "copy-file",
       "source": "skills/mle-workflow/SKILL.md",
       "destination": "<project>/.agent/skills/mle-workflow/SKILL.md",
+      "componentId": "capability:machine-learning",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "antigravity",
+      "kind": "copy-file",
+      "source": "skills/pytorch-patterns/SKILL.md",
+      "destination": "<project>/.agent/skills/pytorch-patterns/SKILL.md",
+      "componentId": "capability:machine-learning",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "antigravity",
+      "kind": "copy-file",
+      "source": "skills/recsys-pipeline-architect/SKILL.md",
+      "destination": "<project>/.agent/skills/recsys-pipeline-architect/SKILL.md",
       "componentId": "capability:machine-learning",
       "contingentOn": "evidence-authorization"
     },
@@ -2689,6 +3369,14 @@
     {
       "target": "antigravity",
       "kind": "copy-file",
+      "source": "skills/mailtrap-email-integration/SKILL.md",
+      "destination": "<project>/.agent/skills/mailtrap-email-integration/SKILL.md",
+      "componentId": "capability:operators",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "antigravity",
+      "kind": "copy-file",
       "source": "skills/messages-ops/SKILL.md",
       "destination": "<project>/.agent/skills/messages-ops/SKILL.md",
       "componentId": "capability:operators",
@@ -2729,8 +3417,32 @@
     {
       "target": "antigravity",
       "kind": "copy-file",
+      "source": "skills/agent-eval/SKILL.md",
+      "destination": "<project>/.agent/skills/agent-eval/SKILL.md",
+      "componentId": "capability:optimization",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "antigravity",
+      "kind": "copy-file",
+      "source": "skills/benchmark-methodology/SKILL.md",
+      "destination": "<project>/.agent/skills/benchmark-methodology/SKILL.md",
+      "componentId": "capability:optimization",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "antigravity",
+      "kind": "copy-file",
       "source": "skills/benchmark-optimization-loop/SKILL.md",
       "destination": "<project>/.agent/skills/benchmark-optimization-loop/SKILL.md",
+      "componentId": "capability:optimization",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "antigravity",
+      "kind": "copy-file",
+      "source": "skills/benchmark/SKILL.md",
+      "destination": "<project>/.agent/skills/benchmark/SKILL.md",
       "componentId": "capability:optimization",
       "contingentOn": "evidence-authorization"
     },
@@ -2825,6 +3537,14 @@
     {
       "target": "antigravity",
       "kind": "copy-file",
+      "source": "skills/documentation-lookup/SKILL.md",
+      "destination": "<project>/.agent/skills/documentation-lookup/SKILL.md",
+      "componentId": "capability:research",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "antigravity",
+      "kind": "copy-file",
       "source": "skills/exa-search/SKILL.md",
       "destination": "<project>/.agent/skills/exa-search/SKILL.md",
       "componentId": "capability:research",
@@ -2905,6 +3625,38 @@
     {
       "target": "antigravity",
       "kind": "copy-file",
+      "source": "skills/gateguard/SKILL.md",
+      "destination": "<project>/.agent/skills/gateguard/SKILL.md",
+      "componentId": "capability:security",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "antigravity",
+      "kind": "copy-file",
+      "source": "skills/healthcare-cdss-patterns/SKILL.md",
+      "destination": "<project>/.agent/skills/healthcare-cdss-patterns/SKILL.md",
+      "componentId": "capability:security",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "antigravity",
+      "kind": "copy-file",
+      "source": "skills/healthcare-emr-patterns/SKILL.md",
+      "destination": "<project>/.agent/skills/healthcare-emr-patterns/SKILL.md",
+      "componentId": "capability:security",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "antigravity",
+      "kind": "copy-file",
+      "source": "skills/healthcare-eval-harness/SKILL.md",
+      "destination": "<project>/.agent/skills/healthcare-eval-harness/SKILL.md",
+      "componentId": "capability:security",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "antigravity",
+      "kind": "copy-file",
       "source": "skills/healthcare-phi-compliance/SKILL.md",
       "destination": "<project>/.agent/skills/healthcare-phi-compliance/SKILL.md",
       "componentId": "capability:security",
@@ -2961,6 +3713,14 @@
     {
       "target": "antigravity",
       "kind": "copy-file",
+      "source": "skills/safety-guard/SKILL.md",
+      "destination": "<project>/.agent/skills/safety-guard/SKILL.md",
+      "componentId": "capability:security",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "antigravity",
+      "kind": "copy-file",
       "source": "skills/security-bounty-hunter/SKILL.md",
       "destination": "<project>/.agent/skills/security-bounty-hunter/SKILL.md",
       "componentId": "capability:security",
@@ -3003,6 +3763,14 @@
       "kind": "copy-file",
       "source": "skills/crosspost/SKILL.md",
       "destination": "<project>/.agent/skills/crosspost/SKILL.md",
+      "componentId": "capability:social",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "antigravity",
+      "kind": "copy-file",
+      "source": "skills/social-publisher/SKILL.md",
+      "destination": "<project>/.agent/skills/social-publisher/SKILL.md",
       "componentId": "capability:social",
       "contingentOn": "evidence-authorization"
     },
@@ -3483,6 +4251,14 @@
       "kind": "copy-file",
       "source": "skills/frontend-patterns/SKILL.md",
       "destination": "<project>/.agent/skills/frontend-patterns/SKILL.md",
+      "componentId": "framework:nextjs",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "antigravity",
+      "kind": "copy-file",
+      "source": "skills/nextjs-turbopack/SKILL.md",
+      "destination": "<project>/.agent/skills/nextjs-turbopack/SKILL.md",
       "componentId": "framework:nextjs",
       "contingentOn": "evidence-authorization"
     },
@@ -4723,6 +5499,14 @@
     {
       "target": "claude",
       "kind": "copy-file",
+      "source": "commands/plan-canvas.md",
+      "destination": "<home>/.claude/commands/plan-canvas.md",
+      "componentId": "baseline:commands",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
       "source": "commands/plan-prd.md",
       "destination": "<home>/.claude/commands/plan-prd.md",
       "componentId": "baseline:commands",
@@ -5213,6 +5997,14 @@
       "kind": "copy-file",
       "source": "scripts/hooks/observe-runner.js",
       "destination": "<home>/.claude/scripts/hooks/observe-runner.js",
+      "componentId": "baseline:hooks",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
+      "source": "scripts/hooks/plan-canvas-sessions.js",
+      "destination": "<home>/.claude/scripts/hooks/plan-canvas-sessions.js",
       "componentId": "baseline:hooks",
       "contingentOn": "evidence-authorization"
     },
@@ -5859,6 +6651,14 @@
     {
       "target": "claude",
       "kind": "copy-file",
+      "source": "scripts/lib/loopback-guard.js",
+      "destination": "<home>/.claude/scripts/lib/loopback-guard.js",
+      "componentId": "baseline:hooks",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
       "source": "scripts/lib/mcp-config.js",
       "destination": "<home>/.claude/scripts/lib/mcp-config.js",
       "componentId": "baseline:hooks",
@@ -5941,6 +6741,46 @@
       "kind": "copy-file",
       "source": "scripts/lib/path-safety.js",
       "destination": "<home>/.claude/scripts/lib/path-safety.js",
+      "componentId": "baseline:hooks",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
+      "source": "scripts/lib/plan-canvas/markdown.js",
+      "destination": "<home>/.claude/scripts/lib/plan-canvas/markdown.js",
+      "componentId": "baseline:hooks",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
+      "source": "scripts/lib/plan-canvas/sdk.js",
+      "destination": "<home>/.claude/scripts/lib/plan-canvas/sdk.js",
+      "componentId": "baseline:hooks",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
+      "source": "scripts/lib/plan-canvas/server.js",
+      "destination": "<home>/.claude/scripts/lib/plan-canvas/server.js",
+      "componentId": "baseline:hooks",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
+      "source": "scripts/lib/plan-canvas/sessions.js",
+      "destination": "<home>/.claude/scripts/lib/plan-canvas/sessions.js",
+      "componentId": "baseline:hooks",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
+      "source": "scripts/lib/plan-canvas/ui.js",
+      "destination": "<home>/.claude/scripts/lib/plan-canvas/ui.js",
       "componentId": "baseline:hooks",
       "contingentOn": "evidence-authorization"
     },
@@ -7275,6 +8115,62 @@
     {
       "target": "claude",
       "kind": "copy-file",
+      "source": "skills/agent-self-evaluation/examples/high-score-example.md",
+      "destination": "<home>/.claude/skills/ecc/agent-self-evaluation/examples/high-score-example.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
+      "source": "skills/agent-self-evaluation/examples/low-score-example.md",
+      "destination": "<home>/.claude/skills/ecc/agent-self-evaluation/examples/low-score-example.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
+      "source": "skills/agent-self-evaluation/references/evaluation-criteria.md",
+      "destination": "<home>/.claude/skills/ecc/agent-self-evaluation/references/evaluation-criteria.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
+      "source": "skills/agent-self-evaluation/references/hook-integration.md",
+      "destination": "<home>/.claude/skills/ecc/agent-self-evaluation/references/hook-integration.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
+      "source": "skills/agent-self-evaluation/scripts/evaluate.py",
+      "destination": "<home>/.claude/skills/ecc/agent-self-evaluation/scripts/evaluate.py",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
+      "source": "skills/agent-self-evaluation/SKILL.md",
+      "destination": "<home>/.claude/skills/ecc/agent-self-evaluation/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
+      "source": "skills/agent-self-evaluation/templates/evaluation-report.md",
+      "destination": "<home>/.claude/skills/ecc/agent-self-evaluation/templates/evaluation-report.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
       "source": "skills/agent-sort/SKILL.md",
       "destination": "<home>/.claude/skills/ecc/agent-sort/SKILL.md",
       "componentId": "baseline:workflow",
@@ -7291,6 +8187,110 @@
     {
       "target": "claude",
       "kind": "copy-file",
+      "source": "skills/architecture-decision-records/SKILL.md",
+      "destination": "<home>/.claude/skills/ecc/architecture-decision-records/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
+      "source": "skills/browser-qa/SKILL.md",
+      "destination": "<home>/.claude/skills/ecc/browser-qa/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
+      "source": "skills/ck/commands/forget.mjs",
+      "destination": "<home>/.claude/skills/ecc/ck/commands/forget.mjs",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
+      "source": "skills/ck/commands/info.mjs",
+      "destination": "<home>/.claude/skills/ecc/ck/commands/info.mjs",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
+      "source": "skills/ck/commands/init.mjs",
+      "destination": "<home>/.claude/skills/ecc/ck/commands/init.mjs",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
+      "source": "skills/ck/commands/list.mjs",
+      "destination": "<home>/.claude/skills/ecc/ck/commands/list.mjs",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
+      "source": "skills/ck/commands/migrate.mjs",
+      "destination": "<home>/.claude/skills/ecc/ck/commands/migrate.mjs",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
+      "source": "skills/ck/commands/resume.mjs",
+      "destination": "<home>/.claude/skills/ecc/ck/commands/resume.mjs",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
+      "source": "skills/ck/commands/save.mjs",
+      "destination": "<home>/.claude/skills/ecc/ck/commands/save.mjs",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
+      "source": "skills/ck/commands/shared.mjs",
+      "destination": "<home>/.claude/skills/ecc/ck/commands/shared.mjs",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
+      "source": "skills/ck/hooks/session-start.mjs",
+      "destination": "<home>/.claude/skills/ecc/ck/hooks/session-start.mjs",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
+      "source": "skills/ck/SKILL.md",
+      "destination": "<home>/.claude/skills/ecc/ck/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
+      "source": "skills/click-path-audit/SKILL.md",
+      "destination": "<home>/.claude/skills/ecc/click-path-audit/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
       "source": "skills/code-tour/SKILL.md",
       "destination": "<home>/.claude/skills/ecc/code-tour/SKILL.md",
       "componentId": "baseline:workflow",
@@ -7299,8 +8299,40 @@
     {
       "target": "claude",
       "kind": "copy-file",
+      "source": "skills/codebase-onboarding/SKILL.md",
+      "destination": "<home>/.claude/skills/ecc/codebase-onboarding/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
+      "source": "skills/codehealth-mcp/SKILL.md",
+      "destination": "<home>/.claude/skills/ecc/codehealth-mcp/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
+      "source": "skills/config-gc/SKILL.md",
+      "destination": "<home>/.claude/skills/ecc/config-gc/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
       "source": "skills/configure-ecc/SKILL.md",
       "destination": "<home>/.claude/skills/ecc/configure-ecc/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
+      "source": "skills/context-budget/SKILL.md",
+      "destination": "<home>/.claude/skills/ecc/context-budget/SKILL.md",
       "componentId": "baseline:workflow",
       "contingentOn": "evidence-authorization"
     },
@@ -7435,8 +8467,40 @@
     {
       "target": "claude",
       "kind": "copy-file",
+      "source": "skills/delivery-gate/hooks/quality-gate.py",
+      "destination": "<home>/.claude/skills/ecc/delivery-gate/hooks/quality-gate.py",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
+      "source": "skills/delivery-gate/SKILL.md",
+      "destination": "<home>/.claude/skills/ecc/delivery-gate/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
       "source": "skills/e2e-testing/SKILL.md",
       "destination": "<home>/.claude/skills/ecc/e2e-testing/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
+      "source": "skills/ecc-guide/SKILL.md",
+      "destination": "<home>/.claude/skills/ecc/ecc-guide/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
+      "source": "skills/ecc-recipes/SKILL.md",
+      "destination": "<home>/.claude/skills/ecc/ecc-recipes/SKILL.md",
       "componentId": "baseline:workflow",
       "contingentOn": "evidence-authorization"
     },
@@ -7459,8 +8523,40 @@
     {
       "target": "claude",
       "kind": "copy-file",
+      "source": "skills/git-workflow/SKILL.md",
+      "destination": "<home>/.claude/skills/ecc/git-workflow/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
+      "source": "skills/growth-log/SKILL.md",
+      "destination": "<home>/.claude/skills/ecc/growth-log/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
       "source": "skills/hookify-rules/SKILL.md",
       "destination": "<home>/.claude/skills/ecc/hookify-rules/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
+      "source": "skills/inherit-legacy-style/SKILL.md",
+      "destination": "<home>/.claude/skills/ecc/inherit-legacy-style/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
+      "source": "skills/intent-driven-development/SKILL.md",
+      "destination": "<home>/.claude/skills/ecc/intent-driven-development/SKILL.md",
       "componentId": "baseline:workflow",
       "contingentOn": "evidence-authorization"
     },
@@ -7475,6 +8571,22 @@
     {
       "target": "claude",
       "kind": "copy-file",
+      "source": "skills/loop-design-check/SKILL.md",
+      "destination": "<home>/.claude/skills/ecc/loop-design-check/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
+      "source": "skills/plan-canvas/SKILL.md",
+      "destination": "<home>/.claude/skills/ecc/plan-canvas/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
       "source": "skills/plankton-code-quality/SKILL.md",
       "destination": "<home>/.claude/skills/ecc/plankton-code-quality/SKILL.md",
       "componentId": "baseline:workflow",
@@ -7483,8 +8595,56 @@
     {
       "target": "claude",
       "kind": "copy-file",
+      "source": "skills/product-lens/SKILL.md",
+      "destination": "<home>/.claude/skills/ecc/product-lens/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
       "source": "skills/production-audit/SKILL.md",
       "destination": "<home>/.claude/skills/ecc/production-audit/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
+      "source": "skills/repo-scan/SKILL.md",
+      "destination": "<home>/.claude/skills/ecc/repo-scan/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
+      "source": "skills/rules-distill/scripts/scan-rules.sh",
+      "destination": "<home>/.claude/skills/ecc/rules-distill/scripts/scan-rules.sh",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
+      "source": "skills/rules-distill/scripts/scan-skills.sh",
+      "destination": "<home>/.claude/skills/ecc/rules-distill/scripts/scan-skills.sh",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
+      "source": "skills/rules-distill/SKILL.md",
+      "destination": "<home>/.claude/skills/ecc/rules-distill/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
+      "source": "skills/santa-method/SKILL.md",
+      "destination": "<home>/.claude/skills/ecc/santa-method/SKILL.md",
       "componentId": "baseline:workflow",
       "contingentOn": "evidence-authorization"
     },
@@ -7587,6 +8747,14 @@
     {
       "target": "claude",
       "kind": "copy-file",
+      "source": "skills/agent-payment-x402/SKILL.md",
+      "destination": "<home>/.claude/skills/ecc/agent-payment-x402/SKILL.md",
+      "componentId": "capability:agentic",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
       "source": "skills/agentic-engineering/SKILL.md",
       "destination": "<home>/.claude/skills/ecc/agentic-engineering/SKILL.md",
       "componentId": "capability:agentic",
@@ -7605,6 +8773,14 @@
       "kind": "copy-file",
       "source": "skills/ai-first-engineering/SKILL.md",
       "destination": "<home>/.claude/skills/ecc/ai-first-engineering/SKILL.md",
+      "componentId": "capability:agentic",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
+      "source": "skills/autonomous-agent-harness/SKILL.md",
+      "destination": "<home>/.claude/skills/ecc/autonomous-agent-harness/SKILL.md",
       "componentId": "capability:agentic",
       "contingentOn": "evidence-authorization"
     },
@@ -7683,8 +8859,160 @@
     {
       "target": "claude",
       "kind": "copy-file",
+      "source": "skills/gan-style-harness/SKILL.md",
+      "destination": "<home>/.claude/skills/ecc/gan-style-harness/SKILL.md",
+      "componentId": "capability:agentic",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
+      "source": "skills/hermes-imports/SKILL.md",
+      "destination": "<home>/.claude/skills/ecc/hermes-imports/SKILL.md",
+      "componentId": "capability:agentic",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
       "source": "skills/nanoclaw-repl/SKILL.md",
       "destination": "<home>/.claude/skills/ecc/nanoclaw-repl/SKILL.md",
+      "componentId": "capability:agentic",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
+      "source": "skills/openclaw-persona-forge/gacha.py",
+      "destination": "<home>/.claude/skills/ecc/openclaw-persona-forge/gacha.py",
+      "componentId": "capability:agentic",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
+      "source": "skills/openclaw-persona-forge/gacha.sh",
+      "destination": "<home>/.claude/skills/ecc/openclaw-persona-forge/gacha.sh",
+      "componentId": "capability:agentic",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
+      "source": "skills/openclaw-persona-forge/references/avatar-style.md",
+      "destination": "<home>/.claude/skills/ecc/openclaw-persona-forge/references/avatar-style.md",
+      "componentId": "capability:agentic",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
+      "source": "skills/openclaw-persona-forge/references/boundary-rules.md",
+      "destination": "<home>/.claude/skills/ecc/openclaw-persona-forge/references/boundary-rules.md",
+      "componentId": "capability:agentic",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
+      "source": "skills/openclaw-persona-forge/references/error-handling.md",
+      "destination": "<home>/.claude/skills/ecc/openclaw-persona-forge/references/error-handling.md",
+      "componentId": "capability:agentic",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
+      "source": "skills/openclaw-persona-forge/references/identity-tension.md",
+      "destination": "<home>/.claude/skills/ecc/openclaw-persona-forge/references/identity-tension.md",
+      "componentId": "capability:agentic",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
+      "source": "skills/openclaw-persona-forge/references/naming-system.md",
+      "destination": "<home>/.claude/skills/ecc/openclaw-persona-forge/references/naming-system.md",
+      "componentId": "capability:agentic",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
+      "source": "skills/openclaw-persona-forge/references/output-template.md",
+      "destination": "<home>/.claude/skills/ecc/openclaw-persona-forge/references/output-template.md",
+      "componentId": "capability:agentic",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
+      "source": "skills/openclaw-persona-forge/SKILL.md",
+      "destination": "<home>/.claude/skills/ecc/openclaw-persona-forge/SKILL.md",
+      "componentId": "capability:agentic",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
+      "source": "skills/opensource-pipeline/SKILL.md",
+      "destination": "<home>/.claude/skills/ecc/opensource-pipeline/SKILL.md",
+      "componentId": "capability:agentic",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
+      "source": "skills/orch-add-feature/SKILL.md",
+      "destination": "<home>/.claude/skills/ecc/orch-add-feature/SKILL.md",
+      "componentId": "capability:agentic",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
+      "source": "skills/orch-build-mvp/SKILL.md",
+      "destination": "<home>/.claude/skills/ecc/orch-build-mvp/SKILL.md",
+      "componentId": "capability:agentic",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
+      "source": "skills/orch-change-feature/SKILL.md",
+      "destination": "<home>/.claude/skills/ecc/orch-change-feature/SKILL.md",
+      "componentId": "capability:agentic",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
+      "source": "skills/orch-fix-defect/SKILL.md",
+      "destination": "<home>/.claude/skills/ecc/orch-fix-defect/SKILL.md",
+      "componentId": "capability:agentic",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
+      "source": "skills/orch-pipeline/SKILL.md",
+      "destination": "<home>/.claude/skills/ecc/orch-pipeline/SKILL.md",
+      "componentId": "capability:agentic",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
+      "source": "skills/orch-refine-code/SKILL.md",
+      "destination": "<home>/.claude/skills/ecc/orch-refine-code/SKILL.md",
+      "componentId": "capability:agentic",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
+      "source": "skills/plan-orchestrate/SKILL.md",
+      "destination": "<home>/.claude/skills/ecc/plan-orchestrate/SKILL.md",
       "componentId": "capability:agentic",
       "contingentOn": "evidence-authorization"
     },
@@ -7755,6 +9083,78 @@
     {
       "target": "claude",
       "kind": "copy-file",
+      "source": "skills/brand-discovery/references/10_purpose-why.md",
+      "destination": "<home>/.claude/skills/ecc/brand-discovery/references/10_purpose-why.md",
+      "componentId": "capability:content",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
+      "source": "skills/brand-discovery/references/20_positioning.md",
+      "destination": "<home>/.claude/skills/ecc/brand-discovery/references/20_positioning.md",
+      "componentId": "capability:content",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
+      "source": "skills/brand-discovery/references/30_audience-niche.md",
+      "destination": "<home>/.claude/skills/ecc/brand-discovery/references/30_audience-niche.md",
+      "componentId": "capability:content",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
+      "source": "skills/brand-discovery/references/40_personality-archetype.md",
+      "destination": "<home>/.claude/skills/ecc/brand-discovery/references/40_personality-archetype.md",
+      "componentId": "capability:content",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
+      "source": "skills/brand-discovery/references/50_voice-tone.md",
+      "destination": "<home>/.claude/skills/ecc/brand-discovery/references/50_voice-tone.md",
+      "componentId": "capability:content",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
+      "source": "skills/brand-discovery/references/60_narrative-story.md",
+      "destination": "<home>/.claude/skills/ecc/brand-discovery/references/60_narrative-story.md",
+      "componentId": "capability:content",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
+      "source": "skills/brand-discovery/references/70_founder-tension.md",
+      "destination": "<home>/.claude/skills/ecc/brand-discovery/references/70_founder-tension.md",
+      "componentId": "capability:content",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
+      "source": "skills/brand-discovery/references/90_SYNTHESIS.md",
+      "destination": "<home>/.claude/skills/ecc/brand-discovery/references/90_SYNTHESIS.md",
+      "componentId": "capability:content",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
+      "source": "skills/brand-discovery/SKILL.md",
+      "destination": "<home>/.claude/skills/ecc/brand-discovery/SKILL.md",
+      "componentId": "capability:content",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
       "source": "skills/brand-voice/references/voice-profile-schema.md",
       "destination": "<home>/.claude/skills/ecc/brand-voice/references/voice-profile-schema.md",
       "componentId": "capability:content",
@@ -7765,6 +9165,22 @@
       "kind": "copy-file",
       "source": "skills/brand-voice/SKILL.md",
       "destination": "<home>/.claude/skills/ecc/brand-voice/SKILL.md",
+      "componentId": "capability:content",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
+      "source": "skills/competitive-platform-analysis/SKILL.md",
+      "destination": "<home>/.claude/skills/ecc/competitive-platform-analysis/SKILL.md",
+      "componentId": "capability:content",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
+      "source": "skills/competitive-report-structure/SKILL.md",
+      "destination": "<home>/.claude/skills/ecc/competitive-report-structure/SKILL.md",
       "componentId": "capability:content",
       "contingentOn": "evidence-authorization"
     },
@@ -7843,6 +9259,14 @@
     {
       "target": "claude",
       "kind": "copy-file",
+      "source": "skills/marketing-campaign/SKILL.md",
+      "destination": "<home>/.claude/skills/ecc/marketing-campaign/SKILL.md",
+      "componentId": "capability:content",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
       "source": "skills/product-capability/SKILL.md",
       "destination": "<home>/.claude/skills/ecc/product-capability/SKILL.md",
       "componentId": "capability:content",
@@ -7915,6 +9339,22 @@
     {
       "target": "claude",
       "kind": "copy-file",
+      "source": "skills/redis-patterns/SKILL.md",
+      "destination": "<home>/.claude/skills/ecc/redis-patterns/SKILL.md",
+      "componentId": "capability:database",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
+      "source": "skills/canary-watch/SKILL.md",
+      "destination": "<home>/.claude/skills/ecc/canary-watch/SKILL.md",
+      "componentId": "capability:devops",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
       "source": "skills/cisco-ios-patterns/SKILL.md",
       "destination": "<home>/.claude/skills/ecc/cisco-ios-patterns/SKILL.md",
       "componentId": "capability:devops",
@@ -7939,6 +9379,14 @@
     {
       "target": "claude",
       "kind": "copy-file",
+      "source": "skills/flox-environments/SKILL.md",
+      "destination": "<home>/.claude/skills/ecc/flox-environments/SKILL.md",
+      "componentId": "capability:devops",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
       "source": "skills/homelab-network-readiness/SKILL.md",
       "destination": "<home>/.claude/skills/ecc/homelab-network-readiness/SKILL.md",
       "componentId": "capability:devops",
@@ -7949,6 +9397,38 @@
       "kind": "copy-file",
       "source": "skills/homelab-network-setup/SKILL.md",
       "destination": "<home>/.claude/skills/ecc/homelab-network-setup/SKILL.md",
+      "componentId": "capability:devops",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
+      "source": "skills/homelab-pihole-dns/SKILL.md",
+      "destination": "<home>/.claude/skills/ecc/homelab-pihole-dns/SKILL.md",
+      "componentId": "capability:devops",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
+      "source": "skills/homelab-vlan-segmentation/SKILL.md",
+      "destination": "<home>/.claude/skills/ecc/homelab-vlan-segmentation/SKILL.md",
+      "componentId": "capability:devops",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
+      "source": "skills/homelab-wireguard-vpn/SKILL.md",
+      "destination": "<home>/.claude/skills/ecc/homelab-wireguard-vpn/SKILL.md",
+      "componentId": "capability:devops",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
+      "source": "skills/kubernetes-patterns/SKILL.md",
+      "destination": "<home>/.claude/skills/ecc/kubernetes-patterns/SKILL.md",
       "componentId": "capability:devops",
       "contingentOn": "evidence-authorization"
     },
@@ -7987,6 +9467,14 @@
     {
       "target": "claude",
       "kind": "copy-file",
+      "source": "skills/uncloud/SKILL.md",
+      "destination": "<home>/.claude/skills/ecc/uncloud/SKILL.md",
+      "componentId": "capability:devops",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
       "source": "skills/nutrient-document-processing/SKILL.md",
       "destination": "<home>/.claude/skills/ecc/nutrient-document-processing/SKILL.md",
       "componentId": "capability:documents",
@@ -8011,8 +9499,32 @@
     {
       "target": "claude",
       "kind": "copy-file",
+      "source": "skills/ml-adoption-playbook/SKILL.md",
+      "destination": "<home>/.claude/skills/ecc/ml-adoption-playbook/SKILL.md",
+      "componentId": "capability:machine-learning",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
       "source": "skills/mle-workflow/SKILL.md",
       "destination": "<home>/.claude/skills/ecc/mle-workflow/SKILL.md",
+      "componentId": "capability:machine-learning",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
+      "source": "skills/pytorch-patterns/SKILL.md",
+      "destination": "<home>/.claude/skills/ecc/pytorch-patterns/SKILL.md",
+      "componentId": "capability:machine-learning",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
+      "source": "skills/recsys-pipeline-architect/SKILL.md",
+      "destination": "<home>/.claude/skills/ecc/recsys-pipeline-architect/SKILL.md",
       "componentId": "capability:machine-learning",
       "contingentOn": "evidence-authorization"
     },
@@ -8307,6 +9819,22 @@
     {
       "target": "claude",
       "kind": "copy-file",
+      "source": "skills/taste/references/genre-taxonomy.md",
+      "destination": "<home>/.claude/skills/ecc/taste/references/genre-taxonomy.md",
+      "componentId": "capability:media",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
+      "source": "skills/taste/SKILL.md",
+      "destination": "<home>/.claude/skills/ecc/taste/SKILL.md",
+      "componentId": "capability:media",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
       "source": "skills/ui-demo/SKILL.md",
       "destination": "<home>/.claude/skills/ecc/ui-demo/SKILL.md",
       "componentId": "capability:media",
@@ -8523,6 +10051,14 @@
     {
       "target": "claude",
       "kind": "copy-file",
+      "source": "skills/mailtrap-email-integration/SKILL.md",
+      "destination": "<home>/.claude/skills/ecc/mailtrap-email-integration/SKILL.md",
+      "componentId": "capability:operators",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
       "source": "skills/messages-ops/SKILL.md",
       "destination": "<home>/.claude/skills/ecc/messages-ops/SKILL.md",
       "componentId": "capability:operators",
@@ -8563,8 +10099,32 @@
     {
       "target": "claude",
       "kind": "copy-file",
+      "source": "skills/agent-eval/SKILL.md",
+      "destination": "<home>/.claude/skills/ecc/agent-eval/SKILL.md",
+      "componentId": "capability:optimization",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
+      "source": "skills/benchmark-methodology/SKILL.md",
+      "destination": "<home>/.claude/skills/ecc/benchmark-methodology/SKILL.md",
+      "componentId": "capability:optimization",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
       "source": "skills/benchmark-optimization-loop/SKILL.md",
       "destination": "<home>/.claude/skills/ecc/benchmark-optimization-loop/SKILL.md",
+      "componentId": "capability:optimization",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
+      "source": "skills/benchmark/SKILL.md",
+      "destination": "<home>/.claude/skills/ecc/benchmark/SKILL.md",
       "componentId": "capability:optimization",
       "contingentOn": "evidence-authorization"
     },
@@ -8707,6 +10267,14 @@
     {
       "target": "claude",
       "kind": "copy-file",
+      "source": "skills/documentation-lookup/SKILL.md",
+      "destination": "<home>/.claude/skills/ecc/documentation-lookup/SKILL.md",
+      "componentId": "capability:research",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
       "source": "skills/exa-search/SKILL.md",
       "destination": "<home>/.claude/skills/ecc/exa-search/SKILL.md",
       "componentId": "capability:research",
@@ -8787,6 +10355,38 @@
     {
       "target": "claude",
       "kind": "copy-file",
+      "source": "skills/gateguard/SKILL.md",
+      "destination": "<home>/.claude/skills/ecc/gateguard/SKILL.md",
+      "componentId": "capability:security",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
+      "source": "skills/healthcare-cdss-patterns/SKILL.md",
+      "destination": "<home>/.claude/skills/ecc/healthcare-cdss-patterns/SKILL.md",
+      "componentId": "capability:security",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
+      "source": "skills/healthcare-emr-patterns/SKILL.md",
+      "destination": "<home>/.claude/skills/ecc/healthcare-emr-patterns/SKILL.md",
+      "componentId": "capability:security",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
+      "source": "skills/healthcare-eval-harness/SKILL.md",
+      "destination": "<home>/.claude/skills/ecc/healthcare-eval-harness/SKILL.md",
+      "componentId": "capability:security",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
       "source": "skills/healthcare-phi-compliance/SKILL.md",
       "destination": "<home>/.claude/skills/ecc/healthcare-phi-compliance/SKILL.md",
       "componentId": "capability:security",
@@ -8843,6 +10443,14 @@
     {
       "target": "claude",
       "kind": "copy-file",
+      "source": "skills/safety-guard/SKILL.md",
+      "destination": "<home>/.claude/skills/ecc/safety-guard/SKILL.md",
+      "componentId": "capability:security",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
       "source": "skills/security-bounty-hunter/SKILL.md",
       "destination": "<home>/.claude/skills/ecc/security-bounty-hunter/SKILL.md",
       "componentId": "capability:security",
@@ -8893,6 +10501,14 @@
       "kind": "copy-file",
       "source": "skills/crosspost/SKILL.md",
       "destination": "<home>/.claude/skills/ecc/crosspost/SKILL.md",
+      "componentId": "capability:social",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
+      "source": "skills/social-publisher/SKILL.md",
+      "destination": "<home>/.claude/skills/ecc/social-publisher/SKILL.md",
       "componentId": "capability:social",
       "contingentOn": "evidence-authorization"
     },
@@ -9373,6 +10989,14 @@
       "kind": "copy-file",
       "source": "skills/frontend-patterns/SKILL.md",
       "destination": "<home>/.claude/skills/ecc/frontend-patterns/SKILL.md",
+      "componentId": "framework:nextjs",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "claude",
+      "kind": "copy-file",
+      "source": "skills/nextjs-turbopack/SKILL.md",
+      "destination": "<home>/.claude/skills/ecc/nextjs-turbopack/SKILL.md",
       "componentId": "framework:nextjs",
       "contingentOn": "evidence-authorization"
     },
@@ -10197,6 +11821,62 @@
     {
       "target": "codex",
       "kind": "copy-file",
+      "source": "skills/agent-self-evaluation/examples/high-score-example.md",
+      "destination": "<home>/.codex/skills/agent-self-evaluation/examples/high-score-example.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "codex",
+      "kind": "copy-file",
+      "source": "skills/agent-self-evaluation/examples/low-score-example.md",
+      "destination": "<home>/.codex/skills/agent-self-evaluation/examples/low-score-example.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "codex",
+      "kind": "copy-file",
+      "source": "skills/agent-self-evaluation/references/evaluation-criteria.md",
+      "destination": "<home>/.codex/skills/agent-self-evaluation/references/evaluation-criteria.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "codex",
+      "kind": "copy-file",
+      "source": "skills/agent-self-evaluation/references/hook-integration.md",
+      "destination": "<home>/.codex/skills/agent-self-evaluation/references/hook-integration.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "codex",
+      "kind": "copy-file",
+      "source": "skills/agent-self-evaluation/scripts/evaluate.py",
+      "destination": "<home>/.codex/skills/agent-self-evaluation/scripts/evaluate.py",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "codex",
+      "kind": "copy-file",
+      "source": "skills/agent-self-evaluation/SKILL.md",
+      "destination": "<home>/.codex/skills/agent-self-evaluation/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "codex",
+      "kind": "copy-file",
+      "source": "skills/agent-self-evaluation/templates/evaluation-report.md",
+      "destination": "<home>/.codex/skills/agent-self-evaluation/templates/evaluation-report.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "codex",
+      "kind": "copy-file",
       "source": "skills/agent-sort/SKILL.md",
       "destination": "<home>/.codex/skills/agent-sort/SKILL.md",
       "componentId": "baseline:workflow",
@@ -10213,6 +11893,110 @@
     {
       "target": "codex",
       "kind": "copy-file",
+      "source": "skills/architecture-decision-records/SKILL.md",
+      "destination": "<home>/.codex/skills/architecture-decision-records/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "codex",
+      "kind": "copy-file",
+      "source": "skills/browser-qa/SKILL.md",
+      "destination": "<home>/.codex/skills/browser-qa/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "codex",
+      "kind": "copy-file",
+      "source": "skills/ck/commands/forget.mjs",
+      "destination": "<home>/.codex/skills/ck/commands/forget.mjs",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "codex",
+      "kind": "copy-file",
+      "source": "skills/ck/commands/info.mjs",
+      "destination": "<home>/.codex/skills/ck/commands/info.mjs",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "codex",
+      "kind": "copy-file",
+      "source": "skills/ck/commands/init.mjs",
+      "destination": "<home>/.codex/skills/ck/commands/init.mjs",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "codex",
+      "kind": "copy-file",
+      "source": "skills/ck/commands/list.mjs",
+      "destination": "<home>/.codex/skills/ck/commands/list.mjs",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "codex",
+      "kind": "copy-file",
+      "source": "skills/ck/commands/migrate.mjs",
+      "destination": "<home>/.codex/skills/ck/commands/migrate.mjs",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "codex",
+      "kind": "copy-file",
+      "source": "skills/ck/commands/resume.mjs",
+      "destination": "<home>/.codex/skills/ck/commands/resume.mjs",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "codex",
+      "kind": "copy-file",
+      "source": "skills/ck/commands/save.mjs",
+      "destination": "<home>/.codex/skills/ck/commands/save.mjs",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "codex",
+      "kind": "copy-file",
+      "source": "skills/ck/commands/shared.mjs",
+      "destination": "<home>/.codex/skills/ck/commands/shared.mjs",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "codex",
+      "kind": "copy-file",
+      "source": "skills/ck/hooks/session-start.mjs",
+      "destination": "<home>/.codex/skills/ck/hooks/session-start.mjs",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "codex",
+      "kind": "copy-file",
+      "source": "skills/ck/SKILL.md",
+      "destination": "<home>/.codex/skills/ck/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "codex",
+      "kind": "copy-file",
+      "source": "skills/click-path-audit/SKILL.md",
+      "destination": "<home>/.codex/skills/click-path-audit/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "codex",
+      "kind": "copy-file",
       "source": "skills/code-tour/SKILL.md",
       "destination": "<home>/.codex/skills/code-tour/SKILL.md",
       "componentId": "baseline:workflow",
@@ -10221,8 +12005,40 @@
     {
       "target": "codex",
       "kind": "copy-file",
+      "source": "skills/codebase-onboarding/SKILL.md",
+      "destination": "<home>/.codex/skills/codebase-onboarding/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "codex",
+      "kind": "copy-file",
+      "source": "skills/codehealth-mcp/SKILL.md",
+      "destination": "<home>/.codex/skills/codehealth-mcp/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "codex",
+      "kind": "copy-file",
+      "source": "skills/config-gc/SKILL.md",
+      "destination": "<home>/.codex/skills/config-gc/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "codex",
+      "kind": "copy-file",
       "source": "skills/configure-ecc/SKILL.md",
       "destination": "<home>/.codex/skills/configure-ecc/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "codex",
+      "kind": "copy-file",
+      "source": "skills/context-budget/SKILL.md",
+      "destination": "<home>/.codex/skills/context-budget/SKILL.md",
       "componentId": "baseline:workflow",
       "contingentOn": "evidence-authorization"
     },
@@ -10357,8 +12173,40 @@
     {
       "target": "codex",
       "kind": "copy-file",
+      "source": "skills/delivery-gate/hooks/quality-gate.py",
+      "destination": "<home>/.codex/skills/delivery-gate/hooks/quality-gate.py",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "codex",
+      "kind": "copy-file",
+      "source": "skills/delivery-gate/SKILL.md",
+      "destination": "<home>/.codex/skills/delivery-gate/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "codex",
+      "kind": "copy-file",
       "source": "skills/e2e-testing/SKILL.md",
       "destination": "<home>/.codex/skills/e2e-testing/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "codex",
+      "kind": "copy-file",
+      "source": "skills/ecc-guide/SKILL.md",
+      "destination": "<home>/.codex/skills/ecc-guide/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "codex",
+      "kind": "copy-file",
+      "source": "skills/ecc-recipes/SKILL.md",
+      "destination": "<home>/.codex/skills/ecc-recipes/SKILL.md",
       "componentId": "baseline:workflow",
       "contingentOn": "evidence-authorization"
     },
@@ -10381,8 +12229,40 @@
     {
       "target": "codex",
       "kind": "copy-file",
+      "source": "skills/git-workflow/SKILL.md",
+      "destination": "<home>/.codex/skills/git-workflow/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "codex",
+      "kind": "copy-file",
+      "source": "skills/growth-log/SKILL.md",
+      "destination": "<home>/.codex/skills/growth-log/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "codex",
+      "kind": "copy-file",
       "source": "skills/hookify-rules/SKILL.md",
       "destination": "<home>/.codex/skills/hookify-rules/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "codex",
+      "kind": "copy-file",
+      "source": "skills/inherit-legacy-style/SKILL.md",
+      "destination": "<home>/.codex/skills/inherit-legacy-style/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "codex",
+      "kind": "copy-file",
+      "source": "skills/intent-driven-development/SKILL.md",
+      "destination": "<home>/.codex/skills/intent-driven-development/SKILL.md",
       "componentId": "baseline:workflow",
       "contingentOn": "evidence-authorization"
     },
@@ -10397,6 +12277,22 @@
     {
       "target": "codex",
       "kind": "copy-file",
+      "source": "skills/loop-design-check/SKILL.md",
+      "destination": "<home>/.codex/skills/loop-design-check/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "codex",
+      "kind": "copy-file",
+      "source": "skills/plan-canvas/SKILL.md",
+      "destination": "<home>/.codex/skills/plan-canvas/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "codex",
+      "kind": "copy-file",
       "source": "skills/plankton-code-quality/SKILL.md",
       "destination": "<home>/.codex/skills/plankton-code-quality/SKILL.md",
       "componentId": "baseline:workflow",
@@ -10405,8 +12301,56 @@
     {
       "target": "codex",
       "kind": "copy-file",
+      "source": "skills/product-lens/SKILL.md",
+      "destination": "<home>/.codex/skills/product-lens/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "codex",
+      "kind": "copy-file",
       "source": "skills/production-audit/SKILL.md",
       "destination": "<home>/.codex/skills/production-audit/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "codex",
+      "kind": "copy-file",
+      "source": "skills/repo-scan/SKILL.md",
+      "destination": "<home>/.codex/skills/repo-scan/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "codex",
+      "kind": "copy-file",
+      "source": "skills/rules-distill/scripts/scan-rules.sh",
+      "destination": "<home>/.codex/skills/rules-distill/scripts/scan-rules.sh",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "codex",
+      "kind": "copy-file",
+      "source": "skills/rules-distill/scripts/scan-skills.sh",
+      "destination": "<home>/.codex/skills/rules-distill/scripts/scan-skills.sh",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "codex",
+      "kind": "copy-file",
+      "source": "skills/rules-distill/SKILL.md",
+      "destination": "<home>/.codex/skills/rules-distill/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "codex",
+      "kind": "copy-file",
+      "source": "skills/santa-method/SKILL.md",
+      "destination": "<home>/.codex/skills/santa-method/SKILL.md",
       "componentId": "baseline:workflow",
       "contingentOn": "evidence-authorization"
     },
@@ -10509,6 +12453,14 @@
     {
       "target": "codex",
       "kind": "copy-file",
+      "source": "skills/agent-payment-x402/SKILL.md",
+      "destination": "<home>/.codex/skills/agent-payment-x402/SKILL.md",
+      "componentId": "capability:agentic",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "codex",
+      "kind": "copy-file",
       "source": "skills/agentic-engineering/SKILL.md",
       "destination": "<home>/.codex/skills/agentic-engineering/SKILL.md",
       "componentId": "capability:agentic",
@@ -10527,6 +12479,14 @@
       "kind": "copy-file",
       "source": "skills/ai-first-engineering/SKILL.md",
       "destination": "<home>/.codex/skills/ai-first-engineering/SKILL.md",
+      "componentId": "capability:agentic",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "codex",
+      "kind": "copy-file",
+      "source": "skills/autonomous-agent-harness/SKILL.md",
+      "destination": "<home>/.codex/skills/autonomous-agent-harness/SKILL.md",
       "componentId": "capability:agentic",
       "contingentOn": "evidence-authorization"
     },
@@ -10605,8 +12565,160 @@
     {
       "target": "codex",
       "kind": "copy-file",
+      "source": "skills/gan-style-harness/SKILL.md",
+      "destination": "<home>/.codex/skills/gan-style-harness/SKILL.md",
+      "componentId": "capability:agentic",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "codex",
+      "kind": "copy-file",
+      "source": "skills/hermes-imports/SKILL.md",
+      "destination": "<home>/.codex/skills/hermes-imports/SKILL.md",
+      "componentId": "capability:agentic",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "codex",
+      "kind": "copy-file",
       "source": "skills/nanoclaw-repl/SKILL.md",
       "destination": "<home>/.codex/skills/nanoclaw-repl/SKILL.md",
+      "componentId": "capability:agentic",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "codex",
+      "kind": "copy-file",
+      "source": "skills/openclaw-persona-forge/gacha.py",
+      "destination": "<home>/.codex/skills/openclaw-persona-forge/gacha.py",
+      "componentId": "capability:agentic",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "codex",
+      "kind": "copy-file",
+      "source": "skills/openclaw-persona-forge/gacha.sh",
+      "destination": "<home>/.codex/skills/openclaw-persona-forge/gacha.sh",
+      "componentId": "capability:agentic",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "codex",
+      "kind": "copy-file",
+      "source": "skills/openclaw-persona-forge/references/avatar-style.md",
+      "destination": "<home>/.codex/skills/openclaw-persona-forge/references/avatar-style.md",
+      "componentId": "capability:agentic",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "codex",
+      "kind": "copy-file",
+      "source": "skills/openclaw-persona-forge/references/boundary-rules.md",
+      "destination": "<home>/.codex/skills/openclaw-persona-forge/references/boundary-rules.md",
+      "componentId": "capability:agentic",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "codex",
+      "kind": "copy-file",
+      "source": "skills/openclaw-persona-forge/references/error-handling.md",
+      "destination": "<home>/.codex/skills/openclaw-persona-forge/references/error-handling.md",
+      "componentId": "capability:agentic",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "codex",
+      "kind": "copy-file",
+      "source": "skills/openclaw-persona-forge/references/identity-tension.md",
+      "destination": "<home>/.codex/skills/openclaw-persona-forge/references/identity-tension.md",
+      "componentId": "capability:agentic",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "codex",
+      "kind": "copy-file",
+      "source": "skills/openclaw-persona-forge/references/naming-system.md",
+      "destination": "<home>/.codex/skills/openclaw-persona-forge/references/naming-system.md",
+      "componentId": "capability:agentic",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "codex",
+      "kind": "copy-file",
+      "source": "skills/openclaw-persona-forge/references/output-template.md",
+      "destination": "<home>/.codex/skills/openclaw-persona-forge/references/output-template.md",
+      "componentId": "capability:agentic",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "codex",
+      "kind": "copy-file",
+      "source": "skills/openclaw-persona-forge/SKILL.md",
+      "destination": "<home>/.codex/skills/openclaw-persona-forge/SKILL.md",
+      "componentId": "capability:agentic",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "codex",
+      "kind": "copy-file",
+      "source": "skills/opensource-pipeline/SKILL.md",
+      "destination": "<home>/.codex/skills/opensource-pipeline/SKILL.md",
+      "componentId": "capability:agentic",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "codex",
+      "kind": "copy-file",
+      "source": "skills/orch-add-feature/SKILL.md",
+      "destination": "<home>/.codex/skills/orch-add-feature/SKILL.md",
+      "componentId": "capability:agentic",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "codex",
+      "kind": "copy-file",
+      "source": "skills/orch-build-mvp/SKILL.md",
+      "destination": "<home>/.codex/skills/orch-build-mvp/SKILL.md",
+      "componentId": "capability:agentic",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "codex",
+      "kind": "copy-file",
+      "source": "skills/orch-change-feature/SKILL.md",
+      "destination": "<home>/.codex/skills/orch-change-feature/SKILL.md",
+      "componentId": "capability:agentic",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "codex",
+      "kind": "copy-file",
+      "source": "skills/orch-fix-defect/SKILL.md",
+      "destination": "<home>/.codex/skills/orch-fix-defect/SKILL.md",
+      "componentId": "capability:agentic",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "codex",
+      "kind": "copy-file",
+      "source": "skills/orch-pipeline/SKILL.md",
+      "destination": "<home>/.codex/skills/orch-pipeline/SKILL.md",
+      "componentId": "capability:agentic",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "codex",
+      "kind": "copy-file",
+      "source": "skills/orch-refine-code/SKILL.md",
+      "destination": "<home>/.codex/skills/orch-refine-code/SKILL.md",
+      "componentId": "capability:agentic",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "codex",
+      "kind": "copy-file",
+      "source": "skills/plan-orchestrate/SKILL.md",
+      "destination": "<home>/.codex/skills/plan-orchestrate/SKILL.md",
       "componentId": "capability:agentic",
       "contingentOn": "evidence-authorization"
     },
@@ -10677,6 +12789,78 @@
     {
       "target": "codex",
       "kind": "copy-file",
+      "source": "skills/brand-discovery/references/10_purpose-why.md",
+      "destination": "<home>/.codex/skills/brand-discovery/references/10_purpose-why.md",
+      "componentId": "capability:content",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "codex",
+      "kind": "copy-file",
+      "source": "skills/brand-discovery/references/20_positioning.md",
+      "destination": "<home>/.codex/skills/brand-discovery/references/20_positioning.md",
+      "componentId": "capability:content",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "codex",
+      "kind": "copy-file",
+      "source": "skills/brand-discovery/references/30_audience-niche.md",
+      "destination": "<home>/.codex/skills/brand-discovery/references/30_audience-niche.md",
+      "componentId": "capability:content",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "codex",
+      "kind": "copy-file",
+      "source": "skills/brand-discovery/references/40_personality-archetype.md",
+      "destination": "<home>/.codex/skills/brand-discovery/references/40_personality-archetype.md",
+      "componentId": "capability:content",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "codex",
+      "kind": "copy-file",
+      "source": "skills/brand-discovery/references/50_voice-tone.md",
+      "destination": "<home>/.codex/skills/brand-discovery/references/50_voice-tone.md",
+      "componentId": "capability:content",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "codex",
+      "kind": "copy-file",
+      "source": "skills/brand-discovery/references/60_narrative-story.md",
+      "destination": "<home>/.codex/skills/brand-discovery/references/60_narrative-story.md",
+      "componentId": "capability:content",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "codex",
+      "kind": "copy-file",
+      "source": "skills/brand-discovery/references/70_founder-tension.md",
+      "destination": "<home>/.codex/skills/brand-discovery/references/70_founder-tension.md",
+      "componentId": "capability:content",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "codex",
+      "kind": "copy-file",
+      "source": "skills/brand-discovery/references/90_SYNTHESIS.md",
+      "destination": "<home>/.codex/skills/brand-discovery/references/90_SYNTHESIS.md",
+      "componentId": "capability:content",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "codex",
+      "kind": "copy-file",
+      "source": "skills/brand-discovery/SKILL.md",
+      "destination": "<home>/.codex/skills/brand-discovery/SKILL.md",
+      "componentId": "capability:content",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "codex",
+      "kind": "copy-file",
       "source": "skills/brand-voice/references/voice-profile-schema.md",
       "destination": "<home>/.codex/skills/brand-voice/references/voice-profile-schema.md",
       "componentId": "capability:content",
@@ -10687,6 +12871,22 @@
       "kind": "copy-file",
       "source": "skills/brand-voice/SKILL.md",
       "destination": "<home>/.codex/skills/brand-voice/SKILL.md",
+      "componentId": "capability:content",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "codex",
+      "kind": "copy-file",
+      "source": "skills/competitive-platform-analysis/SKILL.md",
+      "destination": "<home>/.codex/skills/competitive-platform-analysis/SKILL.md",
+      "componentId": "capability:content",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "codex",
+      "kind": "copy-file",
+      "source": "skills/competitive-report-structure/SKILL.md",
+      "destination": "<home>/.codex/skills/competitive-report-structure/SKILL.md",
       "componentId": "capability:content",
       "contingentOn": "evidence-authorization"
     },
@@ -10765,6 +12965,14 @@
     {
       "target": "codex",
       "kind": "copy-file",
+      "source": "skills/marketing-campaign/SKILL.md",
+      "destination": "<home>/.codex/skills/marketing-campaign/SKILL.md",
+      "componentId": "capability:content",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "codex",
+      "kind": "copy-file",
       "source": "skills/product-capability/SKILL.md",
       "destination": "<home>/.codex/skills/product-capability/SKILL.md",
       "componentId": "capability:content",
@@ -10837,6 +13045,22 @@
     {
       "target": "codex",
       "kind": "copy-file",
+      "source": "skills/redis-patterns/SKILL.md",
+      "destination": "<home>/.codex/skills/redis-patterns/SKILL.md",
+      "componentId": "capability:database",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "codex",
+      "kind": "copy-file",
+      "source": "skills/canary-watch/SKILL.md",
+      "destination": "<home>/.codex/skills/canary-watch/SKILL.md",
+      "componentId": "capability:devops",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "codex",
+      "kind": "copy-file",
       "source": "skills/cisco-ios-patterns/SKILL.md",
       "destination": "<home>/.codex/skills/cisco-ios-patterns/SKILL.md",
       "componentId": "capability:devops",
@@ -10861,6 +13085,14 @@
     {
       "target": "codex",
       "kind": "copy-file",
+      "source": "skills/flox-environments/SKILL.md",
+      "destination": "<home>/.codex/skills/flox-environments/SKILL.md",
+      "componentId": "capability:devops",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "codex",
+      "kind": "copy-file",
       "source": "skills/homelab-network-readiness/SKILL.md",
       "destination": "<home>/.codex/skills/homelab-network-readiness/SKILL.md",
       "componentId": "capability:devops",
@@ -10871,6 +13103,38 @@
       "kind": "copy-file",
       "source": "skills/homelab-network-setup/SKILL.md",
       "destination": "<home>/.codex/skills/homelab-network-setup/SKILL.md",
+      "componentId": "capability:devops",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "codex",
+      "kind": "copy-file",
+      "source": "skills/homelab-pihole-dns/SKILL.md",
+      "destination": "<home>/.codex/skills/homelab-pihole-dns/SKILL.md",
+      "componentId": "capability:devops",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "codex",
+      "kind": "copy-file",
+      "source": "skills/homelab-vlan-segmentation/SKILL.md",
+      "destination": "<home>/.codex/skills/homelab-vlan-segmentation/SKILL.md",
+      "componentId": "capability:devops",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "codex",
+      "kind": "copy-file",
+      "source": "skills/homelab-wireguard-vpn/SKILL.md",
+      "destination": "<home>/.codex/skills/homelab-wireguard-vpn/SKILL.md",
+      "componentId": "capability:devops",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "codex",
+      "kind": "copy-file",
+      "source": "skills/kubernetes-patterns/SKILL.md",
+      "destination": "<home>/.codex/skills/kubernetes-patterns/SKILL.md",
       "componentId": "capability:devops",
       "contingentOn": "evidence-authorization"
     },
@@ -10903,6 +13167,14 @@
       "kind": "copy-file",
       "source": "skills/network-interface-health/SKILL.md",
       "destination": "<home>/.codex/skills/network-interface-health/SKILL.md",
+      "componentId": "capability:devops",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "codex",
+      "kind": "copy-file",
+      "source": "skills/uncloud/SKILL.md",
+      "destination": "<home>/.codex/skills/uncloud/SKILL.md",
       "componentId": "capability:devops",
       "contingentOn": "evidence-authorization"
     },
@@ -11221,6 +13493,22 @@
     {
       "target": "codex",
       "kind": "copy-file",
+      "source": "skills/taste/references/genre-taxonomy.md",
+      "destination": "<home>/.codex/skills/taste/references/genre-taxonomy.md",
+      "componentId": "capability:media",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "codex",
+      "kind": "copy-file",
+      "source": "skills/taste/SKILL.md",
+      "destination": "<home>/.codex/skills/taste/SKILL.md",
+      "componentId": "capability:media",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "codex",
+      "kind": "copy-file",
       "source": "skills/ui-demo/SKILL.md",
       "destination": "<home>/.codex/skills/ui-demo/SKILL.md",
       "componentId": "capability:media",
@@ -11437,6 +13725,14 @@
     {
       "target": "codex",
       "kind": "copy-file",
+      "source": "skills/mailtrap-email-integration/SKILL.md",
+      "destination": "<home>/.codex/skills/mailtrap-email-integration/SKILL.md",
+      "componentId": "capability:operators",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "codex",
+      "kind": "copy-file",
       "source": "skills/messages-ops/SKILL.md",
       "destination": "<home>/.codex/skills/messages-ops/SKILL.md",
       "componentId": "capability:operators",
@@ -11477,8 +13773,32 @@
     {
       "target": "codex",
       "kind": "copy-file",
+      "source": "skills/agent-eval/SKILL.md",
+      "destination": "<home>/.codex/skills/agent-eval/SKILL.md",
+      "componentId": "capability:optimization",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "codex",
+      "kind": "copy-file",
+      "source": "skills/benchmark-methodology/SKILL.md",
+      "destination": "<home>/.codex/skills/benchmark-methodology/SKILL.md",
+      "componentId": "capability:optimization",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "codex",
+      "kind": "copy-file",
       "source": "skills/benchmark-optimization-loop/SKILL.md",
       "destination": "<home>/.codex/skills/benchmark-optimization-loop/SKILL.md",
+      "componentId": "capability:optimization",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "codex",
+      "kind": "copy-file",
+      "source": "skills/benchmark/SKILL.md",
+      "destination": "<home>/.codex/skills/benchmark/SKILL.md",
       "componentId": "capability:optimization",
       "contingentOn": "evidence-authorization"
     },
@@ -11573,6 +13893,14 @@
     {
       "target": "codex",
       "kind": "copy-file",
+      "source": "skills/documentation-lookup/SKILL.md",
+      "destination": "<home>/.codex/skills/documentation-lookup/SKILL.md",
+      "componentId": "capability:research",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "codex",
+      "kind": "copy-file",
       "source": "skills/exa-search/SKILL.md",
       "destination": "<home>/.codex/skills/exa-search/SKILL.md",
       "componentId": "capability:research",
@@ -11653,6 +13981,38 @@
     {
       "target": "codex",
       "kind": "copy-file",
+      "source": "skills/gateguard/SKILL.md",
+      "destination": "<home>/.codex/skills/gateguard/SKILL.md",
+      "componentId": "capability:security",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "codex",
+      "kind": "copy-file",
+      "source": "skills/healthcare-cdss-patterns/SKILL.md",
+      "destination": "<home>/.codex/skills/healthcare-cdss-patterns/SKILL.md",
+      "componentId": "capability:security",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "codex",
+      "kind": "copy-file",
+      "source": "skills/healthcare-emr-patterns/SKILL.md",
+      "destination": "<home>/.codex/skills/healthcare-emr-patterns/SKILL.md",
+      "componentId": "capability:security",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "codex",
+      "kind": "copy-file",
+      "source": "skills/healthcare-eval-harness/SKILL.md",
+      "destination": "<home>/.codex/skills/healthcare-eval-harness/SKILL.md",
+      "componentId": "capability:security",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "codex",
+      "kind": "copy-file",
       "source": "skills/healthcare-phi-compliance/SKILL.md",
       "destination": "<home>/.codex/skills/healthcare-phi-compliance/SKILL.md",
       "componentId": "capability:security",
@@ -11709,6 +14069,14 @@
     {
       "target": "codex",
       "kind": "copy-file",
+      "source": "skills/safety-guard/SKILL.md",
+      "destination": "<home>/.codex/skills/safety-guard/SKILL.md",
+      "componentId": "capability:security",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "codex",
+      "kind": "copy-file",
       "source": "skills/security-bounty-hunter/SKILL.md",
       "destination": "<home>/.codex/skills/security-bounty-hunter/SKILL.md",
       "componentId": "capability:security",
@@ -11759,6 +14127,14 @@
       "kind": "copy-file",
       "source": "skills/crosspost/SKILL.md",
       "destination": "<home>/.codex/skills/crosspost/SKILL.md",
+      "componentId": "capability:social",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "codex",
+      "kind": "copy-file",
+      "source": "skills/social-publisher/SKILL.md",
+      "destination": "<home>/.codex/skills/social-publisher/SKILL.md",
       "componentId": "capability:social",
       "contingentOn": "evidence-authorization"
     },
@@ -12567,6 +14943,14 @@
     {
       "target": "cursor",
       "kind": "copy-file",
+      "source": "commands/plan-canvas.md",
+      "destination": "<project>/.cursor/commands/plan-canvas.md",
+      "componentId": "baseline:commands",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
       "source": "commands/plan-prd.md",
       "destination": "<project>/.cursor/commands/plan-prd.md",
       "componentId": "baseline:commands",
@@ -13057,6 +15441,14 @@
       "kind": "copy-file",
       "source": "scripts/hooks/observe-runner.js",
       "destination": "<project>/.cursor/scripts/hooks/observe-runner.js",
+      "componentId": "baseline:hooks",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
+      "source": "scripts/hooks/plan-canvas-sessions.js",
+      "destination": "<project>/.cursor/scripts/hooks/plan-canvas-sessions.js",
       "componentId": "baseline:hooks",
       "contingentOn": "evidence-authorization"
     },
@@ -13703,6 +16095,14 @@
     {
       "target": "cursor",
       "kind": "copy-file",
+      "source": "scripts/lib/loopback-guard.js",
+      "destination": "<project>/.cursor/scripts/lib/loopback-guard.js",
+      "componentId": "baseline:hooks",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
       "source": "scripts/lib/mcp-config.js",
       "destination": "<project>/.cursor/scripts/lib/mcp-config.js",
       "componentId": "baseline:hooks",
@@ -13785,6 +16185,46 @@
       "kind": "copy-file",
       "source": "scripts/lib/path-safety.js",
       "destination": "<project>/.cursor/scripts/lib/path-safety.js",
+      "componentId": "baseline:hooks",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
+      "source": "scripts/lib/plan-canvas/markdown.js",
+      "destination": "<project>/.cursor/scripts/lib/plan-canvas/markdown.js",
+      "componentId": "baseline:hooks",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
+      "source": "scripts/lib/plan-canvas/sdk.js",
+      "destination": "<project>/.cursor/scripts/lib/plan-canvas/sdk.js",
+      "componentId": "baseline:hooks",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
+      "source": "scripts/lib/plan-canvas/server.js",
+      "destination": "<project>/.cursor/scripts/lib/plan-canvas/server.js",
+      "componentId": "baseline:hooks",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
+      "source": "scripts/lib/plan-canvas/sessions.js",
+      "destination": "<project>/.cursor/scripts/lib/plan-canvas/sessions.js",
+      "componentId": "baseline:hooks",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
+      "source": "scripts/lib/plan-canvas/ui.js",
+      "destination": "<project>/.cursor/scripts/lib/plan-canvas/ui.js",
       "componentId": "baseline:hooks",
       "contingentOn": "evidence-authorization"
     },
@@ -15631,6 +18071,62 @@
     {
       "target": "cursor",
       "kind": "copy-file",
+      "source": "skills/agent-self-evaluation/examples/high-score-example.md",
+      "destination": "<project>/.cursor/skills/agent-self-evaluation/examples/high-score-example.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
+      "source": "skills/agent-self-evaluation/examples/low-score-example.md",
+      "destination": "<project>/.cursor/skills/agent-self-evaluation/examples/low-score-example.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
+      "source": "skills/agent-self-evaluation/references/evaluation-criteria.md",
+      "destination": "<project>/.cursor/skills/agent-self-evaluation/references/evaluation-criteria.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
+      "source": "skills/agent-self-evaluation/references/hook-integration.md",
+      "destination": "<project>/.cursor/skills/agent-self-evaluation/references/hook-integration.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
+      "source": "skills/agent-self-evaluation/scripts/evaluate.py",
+      "destination": "<project>/.cursor/skills/agent-self-evaluation/scripts/evaluate.py",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
+      "source": "skills/agent-self-evaluation/SKILL.md",
+      "destination": "<project>/.cursor/skills/agent-self-evaluation/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
+      "source": "skills/agent-self-evaluation/templates/evaluation-report.md",
+      "destination": "<project>/.cursor/skills/agent-self-evaluation/templates/evaluation-report.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
       "source": "skills/agent-sort/SKILL.md",
       "destination": "<project>/.cursor/skills/agent-sort/SKILL.md",
       "componentId": "baseline:workflow",
@@ -15647,6 +18143,110 @@
     {
       "target": "cursor",
       "kind": "copy-file",
+      "source": "skills/architecture-decision-records/SKILL.md",
+      "destination": "<project>/.cursor/skills/architecture-decision-records/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
+      "source": "skills/browser-qa/SKILL.md",
+      "destination": "<project>/.cursor/skills/browser-qa/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
+      "source": "skills/ck/commands/forget.mjs",
+      "destination": "<project>/.cursor/skills/ck/commands/forget.mjs",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
+      "source": "skills/ck/commands/info.mjs",
+      "destination": "<project>/.cursor/skills/ck/commands/info.mjs",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
+      "source": "skills/ck/commands/init.mjs",
+      "destination": "<project>/.cursor/skills/ck/commands/init.mjs",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
+      "source": "skills/ck/commands/list.mjs",
+      "destination": "<project>/.cursor/skills/ck/commands/list.mjs",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
+      "source": "skills/ck/commands/migrate.mjs",
+      "destination": "<project>/.cursor/skills/ck/commands/migrate.mjs",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
+      "source": "skills/ck/commands/resume.mjs",
+      "destination": "<project>/.cursor/skills/ck/commands/resume.mjs",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
+      "source": "skills/ck/commands/save.mjs",
+      "destination": "<project>/.cursor/skills/ck/commands/save.mjs",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
+      "source": "skills/ck/commands/shared.mjs",
+      "destination": "<project>/.cursor/skills/ck/commands/shared.mjs",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
+      "source": "skills/ck/hooks/session-start.mjs",
+      "destination": "<project>/.cursor/skills/ck/hooks/session-start.mjs",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
+      "source": "skills/ck/SKILL.md",
+      "destination": "<project>/.cursor/skills/ck/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
+      "source": "skills/click-path-audit/SKILL.md",
+      "destination": "<project>/.cursor/skills/click-path-audit/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
       "source": "skills/code-tour/SKILL.md",
       "destination": "<project>/.cursor/skills/code-tour/SKILL.md",
       "componentId": "baseline:workflow",
@@ -15655,8 +18255,40 @@
     {
       "target": "cursor",
       "kind": "copy-file",
+      "source": "skills/codebase-onboarding/SKILL.md",
+      "destination": "<project>/.cursor/skills/codebase-onboarding/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
+      "source": "skills/codehealth-mcp/SKILL.md",
+      "destination": "<project>/.cursor/skills/codehealth-mcp/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
+      "source": "skills/config-gc/SKILL.md",
+      "destination": "<project>/.cursor/skills/config-gc/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
       "source": "skills/configure-ecc/SKILL.md",
       "destination": "<project>/.cursor/skills/configure-ecc/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
+      "source": "skills/context-budget/SKILL.md",
+      "destination": "<project>/.cursor/skills/context-budget/SKILL.md",
       "componentId": "baseline:workflow",
       "contingentOn": "evidence-authorization"
     },
@@ -15791,8 +18423,40 @@
     {
       "target": "cursor",
       "kind": "copy-file",
+      "source": "skills/delivery-gate/hooks/quality-gate.py",
+      "destination": "<project>/.cursor/skills/delivery-gate/hooks/quality-gate.py",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
+      "source": "skills/delivery-gate/SKILL.md",
+      "destination": "<project>/.cursor/skills/delivery-gate/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
       "source": "skills/e2e-testing/SKILL.md",
       "destination": "<project>/.cursor/skills/e2e-testing/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
+      "source": "skills/ecc-guide/SKILL.md",
+      "destination": "<project>/.cursor/skills/ecc-guide/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
+      "source": "skills/ecc-recipes/SKILL.md",
+      "destination": "<project>/.cursor/skills/ecc-recipes/SKILL.md",
       "componentId": "baseline:workflow",
       "contingentOn": "evidence-authorization"
     },
@@ -15815,8 +18479,40 @@
     {
       "target": "cursor",
       "kind": "copy-file",
+      "source": "skills/git-workflow/SKILL.md",
+      "destination": "<project>/.cursor/skills/git-workflow/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
+      "source": "skills/growth-log/SKILL.md",
+      "destination": "<project>/.cursor/skills/growth-log/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
       "source": "skills/hookify-rules/SKILL.md",
       "destination": "<project>/.cursor/skills/hookify-rules/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
+      "source": "skills/inherit-legacy-style/SKILL.md",
+      "destination": "<project>/.cursor/skills/inherit-legacy-style/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
+      "source": "skills/intent-driven-development/SKILL.md",
+      "destination": "<project>/.cursor/skills/intent-driven-development/SKILL.md",
       "componentId": "baseline:workflow",
       "contingentOn": "evidence-authorization"
     },
@@ -15831,6 +18527,22 @@
     {
       "target": "cursor",
       "kind": "copy-file",
+      "source": "skills/loop-design-check/SKILL.md",
+      "destination": "<project>/.cursor/skills/loop-design-check/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
+      "source": "skills/plan-canvas/SKILL.md",
+      "destination": "<project>/.cursor/skills/plan-canvas/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
       "source": "skills/plankton-code-quality/SKILL.md",
       "destination": "<project>/.cursor/skills/plankton-code-quality/SKILL.md",
       "componentId": "baseline:workflow",
@@ -15839,8 +18551,56 @@
     {
       "target": "cursor",
       "kind": "copy-file",
+      "source": "skills/product-lens/SKILL.md",
+      "destination": "<project>/.cursor/skills/product-lens/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
       "source": "skills/production-audit/SKILL.md",
       "destination": "<project>/.cursor/skills/production-audit/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
+      "source": "skills/repo-scan/SKILL.md",
+      "destination": "<project>/.cursor/skills/repo-scan/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
+      "source": "skills/rules-distill/scripts/scan-rules.sh",
+      "destination": "<project>/.cursor/skills/rules-distill/scripts/scan-rules.sh",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
+      "source": "skills/rules-distill/scripts/scan-skills.sh",
+      "destination": "<project>/.cursor/skills/rules-distill/scripts/scan-skills.sh",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
+      "source": "skills/rules-distill/SKILL.md",
+      "destination": "<project>/.cursor/skills/rules-distill/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
+      "source": "skills/santa-method/SKILL.md",
+      "destination": "<project>/.cursor/skills/santa-method/SKILL.md",
       "componentId": "baseline:workflow",
       "contingentOn": "evidence-authorization"
     },
@@ -15943,6 +18703,14 @@
     {
       "target": "cursor",
       "kind": "copy-file",
+      "source": "skills/agent-payment-x402/SKILL.md",
+      "destination": "<project>/.cursor/skills/agent-payment-x402/SKILL.md",
+      "componentId": "capability:agentic",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
       "source": "skills/agentic-engineering/SKILL.md",
       "destination": "<project>/.cursor/skills/agentic-engineering/SKILL.md",
       "componentId": "capability:agentic",
@@ -15961,6 +18729,14 @@
       "kind": "copy-file",
       "source": "skills/ai-first-engineering/SKILL.md",
       "destination": "<project>/.cursor/skills/ai-first-engineering/SKILL.md",
+      "componentId": "capability:agentic",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
+      "source": "skills/autonomous-agent-harness/SKILL.md",
+      "destination": "<project>/.cursor/skills/autonomous-agent-harness/SKILL.md",
       "componentId": "capability:agentic",
       "contingentOn": "evidence-authorization"
     },
@@ -16039,8 +18815,160 @@
     {
       "target": "cursor",
       "kind": "copy-file",
+      "source": "skills/gan-style-harness/SKILL.md",
+      "destination": "<project>/.cursor/skills/gan-style-harness/SKILL.md",
+      "componentId": "capability:agentic",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
+      "source": "skills/hermes-imports/SKILL.md",
+      "destination": "<project>/.cursor/skills/hermes-imports/SKILL.md",
+      "componentId": "capability:agentic",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
       "source": "skills/nanoclaw-repl/SKILL.md",
       "destination": "<project>/.cursor/skills/nanoclaw-repl/SKILL.md",
+      "componentId": "capability:agentic",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
+      "source": "skills/openclaw-persona-forge/gacha.py",
+      "destination": "<project>/.cursor/skills/openclaw-persona-forge/gacha.py",
+      "componentId": "capability:agentic",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
+      "source": "skills/openclaw-persona-forge/gacha.sh",
+      "destination": "<project>/.cursor/skills/openclaw-persona-forge/gacha.sh",
+      "componentId": "capability:agentic",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
+      "source": "skills/openclaw-persona-forge/references/avatar-style.md",
+      "destination": "<project>/.cursor/skills/openclaw-persona-forge/references/avatar-style.md",
+      "componentId": "capability:agentic",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
+      "source": "skills/openclaw-persona-forge/references/boundary-rules.md",
+      "destination": "<project>/.cursor/skills/openclaw-persona-forge/references/boundary-rules.md",
+      "componentId": "capability:agentic",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
+      "source": "skills/openclaw-persona-forge/references/error-handling.md",
+      "destination": "<project>/.cursor/skills/openclaw-persona-forge/references/error-handling.md",
+      "componentId": "capability:agentic",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
+      "source": "skills/openclaw-persona-forge/references/identity-tension.md",
+      "destination": "<project>/.cursor/skills/openclaw-persona-forge/references/identity-tension.md",
+      "componentId": "capability:agentic",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
+      "source": "skills/openclaw-persona-forge/references/naming-system.md",
+      "destination": "<project>/.cursor/skills/openclaw-persona-forge/references/naming-system.md",
+      "componentId": "capability:agentic",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
+      "source": "skills/openclaw-persona-forge/references/output-template.md",
+      "destination": "<project>/.cursor/skills/openclaw-persona-forge/references/output-template.md",
+      "componentId": "capability:agentic",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
+      "source": "skills/openclaw-persona-forge/SKILL.md",
+      "destination": "<project>/.cursor/skills/openclaw-persona-forge/SKILL.md",
+      "componentId": "capability:agentic",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
+      "source": "skills/opensource-pipeline/SKILL.md",
+      "destination": "<project>/.cursor/skills/opensource-pipeline/SKILL.md",
+      "componentId": "capability:agentic",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
+      "source": "skills/orch-add-feature/SKILL.md",
+      "destination": "<project>/.cursor/skills/orch-add-feature/SKILL.md",
+      "componentId": "capability:agentic",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
+      "source": "skills/orch-build-mvp/SKILL.md",
+      "destination": "<project>/.cursor/skills/orch-build-mvp/SKILL.md",
+      "componentId": "capability:agentic",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
+      "source": "skills/orch-change-feature/SKILL.md",
+      "destination": "<project>/.cursor/skills/orch-change-feature/SKILL.md",
+      "componentId": "capability:agentic",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
+      "source": "skills/orch-fix-defect/SKILL.md",
+      "destination": "<project>/.cursor/skills/orch-fix-defect/SKILL.md",
+      "componentId": "capability:agentic",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
+      "source": "skills/orch-pipeline/SKILL.md",
+      "destination": "<project>/.cursor/skills/orch-pipeline/SKILL.md",
+      "componentId": "capability:agentic",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
+      "source": "skills/orch-refine-code/SKILL.md",
+      "destination": "<project>/.cursor/skills/orch-refine-code/SKILL.md",
+      "componentId": "capability:agentic",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
+      "source": "skills/plan-orchestrate/SKILL.md",
+      "destination": "<project>/.cursor/skills/plan-orchestrate/SKILL.md",
       "componentId": "capability:agentic",
       "contingentOn": "evidence-authorization"
     },
@@ -16111,6 +19039,78 @@
     {
       "target": "cursor",
       "kind": "copy-file",
+      "source": "skills/brand-discovery/references/10_purpose-why.md",
+      "destination": "<project>/.cursor/skills/brand-discovery/references/10_purpose-why.md",
+      "componentId": "capability:content",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
+      "source": "skills/brand-discovery/references/20_positioning.md",
+      "destination": "<project>/.cursor/skills/brand-discovery/references/20_positioning.md",
+      "componentId": "capability:content",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
+      "source": "skills/brand-discovery/references/30_audience-niche.md",
+      "destination": "<project>/.cursor/skills/brand-discovery/references/30_audience-niche.md",
+      "componentId": "capability:content",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
+      "source": "skills/brand-discovery/references/40_personality-archetype.md",
+      "destination": "<project>/.cursor/skills/brand-discovery/references/40_personality-archetype.md",
+      "componentId": "capability:content",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
+      "source": "skills/brand-discovery/references/50_voice-tone.md",
+      "destination": "<project>/.cursor/skills/brand-discovery/references/50_voice-tone.md",
+      "componentId": "capability:content",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
+      "source": "skills/brand-discovery/references/60_narrative-story.md",
+      "destination": "<project>/.cursor/skills/brand-discovery/references/60_narrative-story.md",
+      "componentId": "capability:content",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
+      "source": "skills/brand-discovery/references/70_founder-tension.md",
+      "destination": "<project>/.cursor/skills/brand-discovery/references/70_founder-tension.md",
+      "componentId": "capability:content",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
+      "source": "skills/brand-discovery/references/90_SYNTHESIS.md",
+      "destination": "<project>/.cursor/skills/brand-discovery/references/90_SYNTHESIS.md",
+      "componentId": "capability:content",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
+      "source": "skills/brand-discovery/SKILL.md",
+      "destination": "<project>/.cursor/skills/brand-discovery/SKILL.md",
+      "componentId": "capability:content",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
       "source": "skills/brand-voice/references/voice-profile-schema.md",
       "destination": "<project>/.cursor/skills/brand-voice/references/voice-profile-schema.md",
       "componentId": "capability:content",
@@ -16121,6 +19121,22 @@
       "kind": "copy-file",
       "source": "skills/brand-voice/SKILL.md",
       "destination": "<project>/.cursor/skills/brand-voice/SKILL.md",
+      "componentId": "capability:content",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
+      "source": "skills/competitive-platform-analysis/SKILL.md",
+      "destination": "<project>/.cursor/skills/competitive-platform-analysis/SKILL.md",
+      "componentId": "capability:content",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
+      "source": "skills/competitive-report-structure/SKILL.md",
+      "destination": "<project>/.cursor/skills/competitive-report-structure/SKILL.md",
       "componentId": "capability:content",
       "contingentOn": "evidence-authorization"
     },
@@ -16199,6 +19215,14 @@
     {
       "target": "cursor",
       "kind": "copy-file",
+      "source": "skills/marketing-campaign/SKILL.md",
+      "destination": "<project>/.cursor/skills/marketing-campaign/SKILL.md",
+      "componentId": "capability:content",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
       "source": "skills/product-capability/SKILL.md",
       "destination": "<project>/.cursor/skills/product-capability/SKILL.md",
       "componentId": "capability:content",
@@ -16271,6 +19295,22 @@
     {
       "target": "cursor",
       "kind": "copy-file",
+      "source": "skills/redis-patterns/SKILL.md",
+      "destination": "<project>/.cursor/skills/redis-patterns/SKILL.md",
+      "componentId": "capability:database",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
+      "source": "skills/canary-watch/SKILL.md",
+      "destination": "<project>/.cursor/skills/canary-watch/SKILL.md",
+      "componentId": "capability:devops",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
       "source": "skills/cisco-ios-patterns/SKILL.md",
       "destination": "<project>/.cursor/skills/cisco-ios-patterns/SKILL.md",
       "componentId": "capability:devops",
@@ -16295,6 +19335,14 @@
     {
       "target": "cursor",
       "kind": "copy-file",
+      "source": "skills/flox-environments/SKILL.md",
+      "destination": "<project>/.cursor/skills/flox-environments/SKILL.md",
+      "componentId": "capability:devops",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
       "source": "skills/homelab-network-readiness/SKILL.md",
       "destination": "<project>/.cursor/skills/homelab-network-readiness/SKILL.md",
       "componentId": "capability:devops",
@@ -16305,6 +19353,38 @@
       "kind": "copy-file",
       "source": "skills/homelab-network-setup/SKILL.md",
       "destination": "<project>/.cursor/skills/homelab-network-setup/SKILL.md",
+      "componentId": "capability:devops",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
+      "source": "skills/homelab-pihole-dns/SKILL.md",
+      "destination": "<project>/.cursor/skills/homelab-pihole-dns/SKILL.md",
+      "componentId": "capability:devops",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
+      "source": "skills/homelab-vlan-segmentation/SKILL.md",
+      "destination": "<project>/.cursor/skills/homelab-vlan-segmentation/SKILL.md",
+      "componentId": "capability:devops",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
+      "source": "skills/homelab-wireguard-vpn/SKILL.md",
+      "destination": "<project>/.cursor/skills/homelab-wireguard-vpn/SKILL.md",
+      "componentId": "capability:devops",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
+      "source": "skills/kubernetes-patterns/SKILL.md",
+      "destination": "<project>/.cursor/skills/kubernetes-patterns/SKILL.md",
       "componentId": "capability:devops",
       "contingentOn": "evidence-authorization"
     },
@@ -16343,6 +19423,14 @@
     {
       "target": "cursor",
       "kind": "copy-file",
+      "source": "skills/uncloud/SKILL.md",
+      "destination": "<project>/.cursor/skills/uncloud/SKILL.md",
+      "componentId": "capability:devops",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
       "source": "skills/nutrient-document-processing/SKILL.md",
       "destination": "<project>/.cursor/skills/nutrient-document-processing/SKILL.md",
       "componentId": "capability:documents",
@@ -16367,8 +19455,32 @@
     {
       "target": "cursor",
       "kind": "copy-file",
+      "source": "skills/ml-adoption-playbook/SKILL.md",
+      "destination": "<project>/.cursor/skills/ml-adoption-playbook/SKILL.md",
+      "componentId": "capability:machine-learning",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
       "source": "skills/mle-workflow/SKILL.md",
       "destination": "<project>/.cursor/skills/mle-workflow/SKILL.md",
+      "componentId": "capability:machine-learning",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
+      "source": "skills/pytorch-patterns/SKILL.md",
+      "destination": "<project>/.cursor/skills/pytorch-patterns/SKILL.md",
+      "componentId": "capability:machine-learning",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
+      "source": "skills/recsys-pipeline-architect/SKILL.md",
+      "destination": "<project>/.cursor/skills/recsys-pipeline-architect/SKILL.md",
       "componentId": "capability:machine-learning",
       "contingentOn": "evidence-authorization"
     },
@@ -16663,6 +19775,22 @@
     {
       "target": "cursor",
       "kind": "copy-file",
+      "source": "skills/taste/references/genre-taxonomy.md",
+      "destination": "<project>/.cursor/skills/taste/references/genre-taxonomy.md",
+      "componentId": "capability:media",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
+      "source": "skills/taste/SKILL.md",
+      "destination": "<project>/.cursor/skills/taste/SKILL.md",
+      "componentId": "capability:media",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
       "source": "skills/ui-demo/SKILL.md",
       "destination": "<project>/.cursor/skills/ui-demo/SKILL.md",
       "componentId": "capability:media",
@@ -16879,6 +20007,14 @@
     {
       "target": "cursor",
       "kind": "copy-file",
+      "source": "skills/mailtrap-email-integration/SKILL.md",
+      "destination": "<project>/.cursor/skills/mailtrap-email-integration/SKILL.md",
+      "componentId": "capability:operators",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
       "source": "skills/messages-ops/SKILL.md",
       "destination": "<project>/.cursor/skills/messages-ops/SKILL.md",
       "componentId": "capability:operators",
@@ -16919,8 +20055,32 @@
     {
       "target": "cursor",
       "kind": "copy-file",
+      "source": "skills/agent-eval/SKILL.md",
+      "destination": "<project>/.cursor/skills/agent-eval/SKILL.md",
+      "componentId": "capability:optimization",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
+      "source": "skills/benchmark-methodology/SKILL.md",
+      "destination": "<project>/.cursor/skills/benchmark-methodology/SKILL.md",
+      "componentId": "capability:optimization",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
       "source": "skills/benchmark-optimization-loop/SKILL.md",
       "destination": "<project>/.cursor/skills/benchmark-optimization-loop/SKILL.md",
+      "componentId": "capability:optimization",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
+      "source": "skills/benchmark/SKILL.md",
+      "destination": "<project>/.cursor/skills/benchmark/SKILL.md",
       "componentId": "capability:optimization",
       "contingentOn": "evidence-authorization"
     },
@@ -17015,6 +20175,14 @@
     {
       "target": "cursor",
       "kind": "copy-file",
+      "source": "skills/documentation-lookup/SKILL.md",
+      "destination": "<project>/.cursor/skills/documentation-lookup/SKILL.md",
+      "componentId": "capability:research",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
       "source": "skills/exa-search/SKILL.md",
       "destination": "<project>/.cursor/skills/exa-search/SKILL.md",
       "componentId": "capability:research",
@@ -17095,6 +20263,38 @@
     {
       "target": "cursor",
       "kind": "copy-file",
+      "source": "skills/gateguard/SKILL.md",
+      "destination": "<project>/.cursor/skills/gateguard/SKILL.md",
+      "componentId": "capability:security",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
+      "source": "skills/healthcare-cdss-patterns/SKILL.md",
+      "destination": "<project>/.cursor/skills/healthcare-cdss-patterns/SKILL.md",
+      "componentId": "capability:security",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
+      "source": "skills/healthcare-emr-patterns/SKILL.md",
+      "destination": "<project>/.cursor/skills/healthcare-emr-patterns/SKILL.md",
+      "componentId": "capability:security",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
+      "source": "skills/healthcare-eval-harness/SKILL.md",
+      "destination": "<project>/.cursor/skills/healthcare-eval-harness/SKILL.md",
+      "componentId": "capability:security",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
       "source": "skills/healthcare-phi-compliance/SKILL.md",
       "destination": "<project>/.cursor/skills/healthcare-phi-compliance/SKILL.md",
       "componentId": "capability:security",
@@ -17151,6 +20351,14 @@
     {
       "target": "cursor",
       "kind": "copy-file",
+      "source": "skills/safety-guard/SKILL.md",
+      "destination": "<project>/.cursor/skills/safety-guard/SKILL.md",
+      "componentId": "capability:security",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
       "source": "skills/security-bounty-hunter/SKILL.md",
       "destination": "<project>/.cursor/skills/security-bounty-hunter/SKILL.md",
       "componentId": "capability:security",
@@ -17201,6 +20409,14 @@
       "kind": "copy-file",
       "source": "skills/crosspost/SKILL.md",
       "destination": "<project>/.cursor/skills/crosspost/SKILL.md",
+      "componentId": "capability:social",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
+      "source": "skills/social-publisher/SKILL.md",
+      "destination": "<project>/.cursor/skills/social-publisher/SKILL.md",
       "componentId": "capability:social",
       "contingentOn": "evidence-authorization"
     },
@@ -17681,6 +20897,14 @@
       "kind": "copy-file",
       "source": "skills/frontend-patterns/SKILL.md",
       "destination": "<project>/.cursor/skills/frontend-patterns/SKILL.md",
+      "componentId": "framework:nextjs",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "cursor",
+      "kind": "copy-file",
+      "source": "skills/nextjs-turbopack/SKILL.md",
+      "destination": "<project>/.cursor/skills/nextjs-turbopack/SKILL.md",
       "componentId": "framework:nextjs",
       "contingentOn": "evidence-authorization"
     },
@@ -19077,6 +22301,14 @@
     {
       "target": "zed",
       "kind": "copy-file",
+      "source": "commands/plan-canvas.md",
+      "destination": "<project>/.zed/commands/plan-canvas.md",
+      "componentId": "baseline:commands",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "zed",
+      "kind": "copy-file",
       "source": "commands/plan-prd.md",
       "destination": "<project>/.zed/commands/plan-prd.md",
       "componentId": "baseline:commands",
@@ -20389,6 +23621,62 @@
     {
       "target": "zed",
       "kind": "copy-file",
+      "source": "skills/agent-self-evaluation/examples/high-score-example.md",
+      "destination": "<project>/.zed/skills/agent-self-evaluation/examples/high-score-example.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "zed",
+      "kind": "copy-file",
+      "source": "skills/agent-self-evaluation/examples/low-score-example.md",
+      "destination": "<project>/.zed/skills/agent-self-evaluation/examples/low-score-example.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "zed",
+      "kind": "copy-file",
+      "source": "skills/agent-self-evaluation/references/evaluation-criteria.md",
+      "destination": "<project>/.zed/skills/agent-self-evaluation/references/evaluation-criteria.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "zed",
+      "kind": "copy-file",
+      "source": "skills/agent-self-evaluation/references/hook-integration.md",
+      "destination": "<project>/.zed/skills/agent-self-evaluation/references/hook-integration.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "zed",
+      "kind": "copy-file",
+      "source": "skills/agent-self-evaluation/scripts/evaluate.py",
+      "destination": "<project>/.zed/skills/agent-self-evaluation/scripts/evaluate.py",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "zed",
+      "kind": "copy-file",
+      "source": "skills/agent-self-evaluation/SKILL.md",
+      "destination": "<project>/.zed/skills/agent-self-evaluation/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "zed",
+      "kind": "copy-file",
+      "source": "skills/agent-self-evaluation/templates/evaluation-report.md",
+      "destination": "<project>/.zed/skills/agent-self-evaluation/templates/evaluation-report.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "zed",
+      "kind": "copy-file",
       "source": "skills/agent-sort/SKILL.md",
       "destination": "<project>/.zed/skills/agent-sort/SKILL.md",
       "componentId": "baseline:workflow",
@@ -20405,6 +23693,110 @@
     {
       "target": "zed",
       "kind": "copy-file",
+      "source": "skills/architecture-decision-records/SKILL.md",
+      "destination": "<project>/.zed/skills/architecture-decision-records/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "zed",
+      "kind": "copy-file",
+      "source": "skills/browser-qa/SKILL.md",
+      "destination": "<project>/.zed/skills/browser-qa/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "zed",
+      "kind": "copy-file",
+      "source": "skills/ck/commands/forget.mjs",
+      "destination": "<project>/.zed/skills/ck/commands/forget.mjs",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "zed",
+      "kind": "copy-file",
+      "source": "skills/ck/commands/info.mjs",
+      "destination": "<project>/.zed/skills/ck/commands/info.mjs",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "zed",
+      "kind": "copy-file",
+      "source": "skills/ck/commands/init.mjs",
+      "destination": "<project>/.zed/skills/ck/commands/init.mjs",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "zed",
+      "kind": "copy-file",
+      "source": "skills/ck/commands/list.mjs",
+      "destination": "<project>/.zed/skills/ck/commands/list.mjs",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "zed",
+      "kind": "copy-file",
+      "source": "skills/ck/commands/migrate.mjs",
+      "destination": "<project>/.zed/skills/ck/commands/migrate.mjs",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "zed",
+      "kind": "copy-file",
+      "source": "skills/ck/commands/resume.mjs",
+      "destination": "<project>/.zed/skills/ck/commands/resume.mjs",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "zed",
+      "kind": "copy-file",
+      "source": "skills/ck/commands/save.mjs",
+      "destination": "<project>/.zed/skills/ck/commands/save.mjs",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "zed",
+      "kind": "copy-file",
+      "source": "skills/ck/commands/shared.mjs",
+      "destination": "<project>/.zed/skills/ck/commands/shared.mjs",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "zed",
+      "kind": "copy-file",
+      "source": "skills/ck/hooks/session-start.mjs",
+      "destination": "<project>/.zed/skills/ck/hooks/session-start.mjs",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "zed",
+      "kind": "copy-file",
+      "source": "skills/ck/SKILL.md",
+      "destination": "<project>/.zed/skills/ck/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "zed",
+      "kind": "copy-file",
+      "source": "skills/click-path-audit/SKILL.md",
+      "destination": "<project>/.zed/skills/click-path-audit/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "zed",
+      "kind": "copy-file",
       "source": "skills/code-tour/SKILL.md",
       "destination": "<project>/.zed/skills/code-tour/SKILL.md",
       "componentId": "baseline:workflow",
@@ -20413,8 +23805,40 @@
     {
       "target": "zed",
       "kind": "copy-file",
+      "source": "skills/codebase-onboarding/SKILL.md",
+      "destination": "<project>/.zed/skills/codebase-onboarding/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "zed",
+      "kind": "copy-file",
+      "source": "skills/codehealth-mcp/SKILL.md",
+      "destination": "<project>/.zed/skills/codehealth-mcp/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "zed",
+      "kind": "copy-file",
+      "source": "skills/config-gc/SKILL.md",
+      "destination": "<project>/.zed/skills/config-gc/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "zed",
+      "kind": "copy-file",
       "source": "skills/configure-ecc/SKILL.md",
       "destination": "<project>/.zed/skills/configure-ecc/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "zed",
+      "kind": "copy-file",
+      "source": "skills/context-budget/SKILL.md",
+      "destination": "<project>/.zed/skills/context-budget/SKILL.md",
       "componentId": "baseline:workflow",
       "contingentOn": "evidence-authorization"
     },
@@ -20549,8 +23973,40 @@
     {
       "target": "zed",
       "kind": "copy-file",
+      "source": "skills/delivery-gate/hooks/quality-gate.py",
+      "destination": "<project>/.zed/skills/delivery-gate/hooks/quality-gate.py",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "zed",
+      "kind": "copy-file",
+      "source": "skills/delivery-gate/SKILL.md",
+      "destination": "<project>/.zed/skills/delivery-gate/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "zed",
+      "kind": "copy-file",
       "source": "skills/e2e-testing/SKILL.md",
       "destination": "<project>/.zed/skills/e2e-testing/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "zed",
+      "kind": "copy-file",
+      "source": "skills/ecc-guide/SKILL.md",
+      "destination": "<project>/.zed/skills/ecc-guide/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "zed",
+      "kind": "copy-file",
+      "source": "skills/ecc-recipes/SKILL.md",
+      "destination": "<project>/.zed/skills/ecc-recipes/SKILL.md",
       "componentId": "baseline:workflow",
       "contingentOn": "evidence-authorization"
     },
@@ -20573,8 +24029,40 @@
     {
       "target": "zed",
       "kind": "copy-file",
+      "source": "skills/git-workflow/SKILL.md",
+      "destination": "<project>/.zed/skills/git-workflow/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "zed",
+      "kind": "copy-file",
+      "source": "skills/growth-log/SKILL.md",
+      "destination": "<project>/.zed/skills/growth-log/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "zed",
+      "kind": "copy-file",
       "source": "skills/hookify-rules/SKILL.md",
       "destination": "<project>/.zed/skills/hookify-rules/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "zed",
+      "kind": "copy-file",
+      "source": "skills/inherit-legacy-style/SKILL.md",
+      "destination": "<project>/.zed/skills/inherit-legacy-style/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "zed",
+      "kind": "copy-file",
+      "source": "skills/intent-driven-development/SKILL.md",
+      "destination": "<project>/.zed/skills/intent-driven-development/SKILL.md",
       "componentId": "baseline:workflow",
       "contingentOn": "evidence-authorization"
     },
@@ -20589,6 +24077,22 @@
     {
       "target": "zed",
       "kind": "copy-file",
+      "source": "skills/loop-design-check/SKILL.md",
+      "destination": "<project>/.zed/skills/loop-design-check/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "zed",
+      "kind": "copy-file",
+      "source": "skills/plan-canvas/SKILL.md",
+      "destination": "<project>/.zed/skills/plan-canvas/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "zed",
+      "kind": "copy-file",
       "source": "skills/plankton-code-quality/SKILL.md",
       "destination": "<project>/.zed/skills/plankton-code-quality/SKILL.md",
       "componentId": "baseline:workflow",
@@ -20597,8 +24101,56 @@
     {
       "target": "zed",
       "kind": "copy-file",
+      "source": "skills/product-lens/SKILL.md",
+      "destination": "<project>/.zed/skills/product-lens/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "zed",
+      "kind": "copy-file",
       "source": "skills/production-audit/SKILL.md",
       "destination": "<project>/.zed/skills/production-audit/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "zed",
+      "kind": "copy-file",
+      "source": "skills/repo-scan/SKILL.md",
+      "destination": "<project>/.zed/skills/repo-scan/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "zed",
+      "kind": "copy-file",
+      "source": "skills/rules-distill/scripts/scan-rules.sh",
+      "destination": "<project>/.zed/skills/rules-distill/scripts/scan-rules.sh",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "zed",
+      "kind": "copy-file",
+      "source": "skills/rules-distill/scripts/scan-skills.sh",
+      "destination": "<project>/.zed/skills/rules-distill/scripts/scan-skills.sh",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "zed",
+      "kind": "copy-file",
+      "source": "skills/rules-distill/SKILL.md",
+      "destination": "<project>/.zed/skills/rules-distill/SKILL.md",
+      "componentId": "baseline:workflow",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "zed",
+      "kind": "copy-file",
+      "source": "skills/santa-method/SKILL.md",
+      "destination": "<project>/.zed/skills/santa-method/SKILL.md",
       "componentId": "baseline:workflow",
       "contingentOn": "evidence-authorization"
     },
@@ -20701,6 +24253,14 @@
     {
       "target": "zed",
       "kind": "copy-file",
+      "source": "skills/agent-payment-x402/SKILL.md",
+      "destination": "<project>/.zed/skills/agent-payment-x402/SKILL.md",
+      "componentId": "capability:agentic",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "zed",
+      "kind": "copy-file",
       "source": "skills/agentic-engineering/SKILL.md",
       "destination": "<project>/.zed/skills/agentic-engineering/SKILL.md",
       "componentId": "capability:agentic",
@@ -20719,6 +24279,14 @@
       "kind": "copy-file",
       "source": "skills/ai-first-engineering/SKILL.md",
       "destination": "<project>/.zed/skills/ai-first-engineering/SKILL.md",
+      "componentId": "capability:agentic",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "zed",
+      "kind": "copy-file",
+      "source": "skills/autonomous-agent-harness/SKILL.md",
+      "destination": "<project>/.zed/skills/autonomous-agent-harness/SKILL.md",
       "componentId": "capability:agentic",
       "contingentOn": "evidence-authorization"
     },
@@ -20797,8 +24365,160 @@
     {
       "target": "zed",
       "kind": "copy-file",
+      "source": "skills/gan-style-harness/SKILL.md",
+      "destination": "<project>/.zed/skills/gan-style-harness/SKILL.md",
+      "componentId": "capability:agentic",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "zed",
+      "kind": "copy-file",
+      "source": "skills/hermes-imports/SKILL.md",
+      "destination": "<project>/.zed/skills/hermes-imports/SKILL.md",
+      "componentId": "capability:agentic",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "zed",
+      "kind": "copy-file",
       "source": "skills/nanoclaw-repl/SKILL.md",
       "destination": "<project>/.zed/skills/nanoclaw-repl/SKILL.md",
+      "componentId": "capability:agentic",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "zed",
+      "kind": "copy-file",
+      "source": "skills/openclaw-persona-forge/gacha.py",
+      "destination": "<project>/.zed/skills/openclaw-persona-forge/gacha.py",
+      "componentId": "capability:agentic",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "zed",
+      "kind": "copy-file",
+      "source": "skills/openclaw-persona-forge/gacha.sh",
+      "destination": "<project>/.zed/skills/openclaw-persona-forge/gacha.sh",
+      "componentId": "capability:agentic",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "zed",
+      "kind": "copy-file",
+      "source": "skills/openclaw-persona-forge/references/avatar-style.md",
+      "destination": "<project>/.zed/skills/openclaw-persona-forge/references/avatar-style.md",
+      "componentId": "capability:agentic",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "zed",
+      "kind": "copy-file",
+      "source": "skills/openclaw-persona-forge/references/boundary-rules.md",
+      "destination": "<project>/.zed/skills/openclaw-persona-forge/references/boundary-rules.md",
+      "componentId": "capability:agentic",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "zed",
+      "kind": "copy-file",
+      "source": "skills/openclaw-persona-forge/references/error-handling.md",
+      "destination": "<project>/.zed/skills/openclaw-persona-forge/references/error-handling.md",
+      "componentId": "capability:agentic",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "zed",
+      "kind": "copy-file",
+      "source": "skills/openclaw-persona-forge/references/identity-tension.md",
+      "destination": "<project>/.zed/skills/openclaw-persona-forge/references/identity-tension.md",
+      "componentId": "capability:agentic",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "zed",
+      "kind": "copy-file",
+      "source": "skills/openclaw-persona-forge/references/naming-system.md",
+      "destination": "<project>/.zed/skills/openclaw-persona-forge/references/naming-system.md",
+      "componentId": "capability:agentic",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "zed",
+      "kind": "copy-file",
+      "source": "skills/openclaw-persona-forge/references/output-template.md",
+      "destination": "<project>/.zed/skills/openclaw-persona-forge/references/output-template.md",
+      "componentId": "capability:agentic",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "zed",
+      "kind": "copy-file",
+      "source": "skills/openclaw-persona-forge/SKILL.md",
+      "destination": "<project>/.zed/skills/openclaw-persona-forge/SKILL.md",
+      "componentId": "capability:agentic",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "zed",
+      "kind": "copy-file",
+      "source": "skills/opensource-pipeline/SKILL.md",
+      "destination": "<project>/.zed/skills/opensource-pipeline/SKILL.md",
+      "componentId": "capability:agentic",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "zed",
+      "kind": "copy-file",
+      "source": "skills/orch-add-feature/SKILL.md",
+      "destination": "<project>/.zed/skills/orch-add-feature/SKILL.md",
+      "componentId": "capability:agentic",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "zed",
+      "kind": "copy-file",
+      "source": "skills/orch-build-mvp/SKILL.md",
+      "destination": "<project>/.zed/skills/orch-build-mvp/SKILL.md",
+      "componentId": "capability:agentic",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "zed",
+      "kind": "copy-file",
+      "source": "skills/orch-change-feature/SKILL.md",
+      "destination": "<project>/.zed/skills/orch-change-feature/SKILL.md",
+      "componentId": "capability:agentic",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "zed",
+      "kind": "copy-file",
+      "source": "skills/orch-fix-defect/SKILL.md",
+      "destination": "<project>/.zed/skills/orch-fix-defect/SKILL.md",
+      "componentId": "capability:agentic",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "zed",
+      "kind": "copy-file",
+      "source": "skills/orch-pipeline/SKILL.md",
+      "destination": "<project>/.zed/skills/orch-pipeline/SKILL.md",
+      "componentId": "capability:agentic",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "zed",
+      "kind": "copy-file",
+      "source": "skills/orch-refine-code/SKILL.md",
+      "destination": "<project>/.zed/skills/orch-refine-code/SKILL.md",
+      "componentId": "capability:agentic",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "zed",
+      "kind": "copy-file",
+      "source": "skills/plan-orchestrate/SKILL.md",
+      "destination": "<project>/.zed/skills/plan-orchestrate/SKILL.md",
       "componentId": "capability:agentic",
       "contingentOn": "evidence-authorization"
     },
@@ -20869,6 +24589,78 @@
     {
       "target": "zed",
       "kind": "copy-file",
+      "source": "skills/brand-discovery/references/10_purpose-why.md",
+      "destination": "<project>/.zed/skills/brand-discovery/references/10_purpose-why.md",
+      "componentId": "capability:content",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "zed",
+      "kind": "copy-file",
+      "source": "skills/brand-discovery/references/20_positioning.md",
+      "destination": "<project>/.zed/skills/brand-discovery/references/20_positioning.md",
+      "componentId": "capability:content",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "zed",
+      "kind": "copy-file",
+      "source": "skills/brand-discovery/references/30_audience-niche.md",
+      "destination": "<project>/.zed/skills/brand-discovery/references/30_audience-niche.md",
+      "componentId": "capability:content",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "zed",
+      "kind": "copy-file",
+      "source": "skills/brand-discovery/references/40_personality-archetype.md",
+      "destination": "<project>/.zed/skills/brand-discovery/references/40_personality-archetype.md",
+      "componentId": "capability:content",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "zed",
+      "kind": "copy-file",
+      "source": "skills/brand-discovery/references/50_voice-tone.md",
+      "destination": "<project>/.zed/skills/brand-discovery/references/50_voice-tone.md",
+      "componentId": "capability:content",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "zed",
+      "kind": "copy-file",
+      "source": "skills/brand-discovery/references/60_narrative-story.md",
+      "destination": "<project>/.zed/skills/brand-discovery/references/60_narrative-story.md",
+      "componentId": "capability:content",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "zed",
+      "kind": "copy-file",
+      "source": "skills/brand-discovery/references/70_founder-tension.md",
+      "destination": "<project>/.zed/skills/brand-discovery/references/70_founder-tension.md",
+      "componentId": "capability:content",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "zed",
+      "kind": "copy-file",
+      "source": "skills/brand-discovery/references/90_SYNTHESIS.md",
+      "destination": "<project>/.zed/skills/brand-discovery/references/90_SYNTHESIS.md",
+      "componentId": "capability:content",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "zed",
+      "kind": "copy-file",
+      "source": "skills/brand-discovery/SKILL.md",
+      "destination": "<project>/.zed/skills/brand-discovery/SKILL.md",
+      "componentId": "capability:content",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "zed",
+      "kind": "copy-file",
       "source": "skills/brand-voice/references/voice-profile-schema.md",
       "destination": "<project>/.zed/skills/brand-voice/references/voice-profile-schema.md",
       "componentId": "capability:content",
@@ -20879,6 +24671,22 @@
       "kind": "copy-file",
       "source": "skills/brand-voice/SKILL.md",
       "destination": "<project>/.zed/skills/brand-voice/SKILL.md",
+      "componentId": "capability:content",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "zed",
+      "kind": "copy-file",
+      "source": "skills/competitive-platform-analysis/SKILL.md",
+      "destination": "<project>/.zed/skills/competitive-platform-analysis/SKILL.md",
+      "componentId": "capability:content",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "zed",
+      "kind": "copy-file",
+      "source": "skills/competitive-report-structure/SKILL.md",
+      "destination": "<project>/.zed/skills/competitive-report-structure/SKILL.md",
       "componentId": "capability:content",
       "contingentOn": "evidence-authorization"
     },
@@ -20957,6 +24765,14 @@
     {
       "target": "zed",
       "kind": "copy-file",
+      "source": "skills/marketing-campaign/SKILL.md",
+      "destination": "<project>/.zed/skills/marketing-campaign/SKILL.md",
+      "componentId": "capability:content",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "zed",
+      "kind": "copy-file",
       "source": "skills/product-capability/SKILL.md",
       "destination": "<project>/.zed/skills/product-capability/SKILL.md",
       "componentId": "capability:content",
@@ -21029,6 +24845,22 @@
     {
       "target": "zed",
       "kind": "copy-file",
+      "source": "skills/redis-patterns/SKILL.md",
+      "destination": "<project>/.zed/skills/redis-patterns/SKILL.md",
+      "componentId": "capability:database",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "zed",
+      "kind": "copy-file",
+      "source": "skills/canary-watch/SKILL.md",
+      "destination": "<project>/.zed/skills/canary-watch/SKILL.md",
+      "componentId": "capability:devops",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "zed",
+      "kind": "copy-file",
       "source": "skills/cisco-ios-patterns/SKILL.md",
       "destination": "<project>/.zed/skills/cisco-ios-patterns/SKILL.md",
       "componentId": "capability:devops",
@@ -21053,6 +24885,14 @@
     {
       "target": "zed",
       "kind": "copy-file",
+      "source": "skills/flox-environments/SKILL.md",
+      "destination": "<project>/.zed/skills/flox-environments/SKILL.md",
+      "componentId": "capability:devops",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "zed",
+      "kind": "copy-file",
       "source": "skills/homelab-network-readiness/SKILL.md",
       "destination": "<project>/.zed/skills/homelab-network-readiness/SKILL.md",
       "componentId": "capability:devops",
@@ -21063,6 +24903,38 @@
       "kind": "copy-file",
       "source": "skills/homelab-network-setup/SKILL.md",
       "destination": "<project>/.zed/skills/homelab-network-setup/SKILL.md",
+      "componentId": "capability:devops",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "zed",
+      "kind": "copy-file",
+      "source": "skills/homelab-pihole-dns/SKILL.md",
+      "destination": "<project>/.zed/skills/homelab-pihole-dns/SKILL.md",
+      "componentId": "capability:devops",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "zed",
+      "kind": "copy-file",
+      "source": "skills/homelab-vlan-segmentation/SKILL.md",
+      "destination": "<project>/.zed/skills/homelab-vlan-segmentation/SKILL.md",
+      "componentId": "capability:devops",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "zed",
+      "kind": "copy-file",
+      "source": "skills/homelab-wireguard-vpn/SKILL.md",
+      "destination": "<project>/.zed/skills/homelab-wireguard-vpn/SKILL.md",
+      "componentId": "capability:devops",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "zed",
+      "kind": "copy-file",
+      "source": "skills/kubernetes-patterns/SKILL.md",
+      "destination": "<project>/.zed/skills/kubernetes-patterns/SKILL.md",
       "componentId": "capability:devops",
       "contingentOn": "evidence-authorization"
     },
@@ -21101,6 +24973,14 @@
     {
       "target": "zed",
       "kind": "copy-file",
+      "source": "skills/uncloud/SKILL.md",
+      "destination": "<project>/.zed/skills/uncloud/SKILL.md",
+      "componentId": "capability:devops",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "zed",
+      "kind": "copy-file",
       "source": "skills/nutrient-document-processing/SKILL.md",
       "destination": "<project>/.zed/skills/nutrient-document-processing/SKILL.md",
       "componentId": "capability:documents",
@@ -21125,8 +25005,32 @@
     {
       "target": "zed",
       "kind": "copy-file",
+      "source": "skills/ml-adoption-playbook/SKILL.md",
+      "destination": "<project>/.zed/skills/ml-adoption-playbook/SKILL.md",
+      "componentId": "capability:machine-learning",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "zed",
+      "kind": "copy-file",
       "source": "skills/mle-workflow/SKILL.md",
       "destination": "<project>/.zed/skills/mle-workflow/SKILL.md",
+      "componentId": "capability:machine-learning",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "zed",
+      "kind": "copy-file",
+      "source": "skills/pytorch-patterns/SKILL.md",
+      "destination": "<project>/.zed/skills/pytorch-patterns/SKILL.md",
+      "componentId": "capability:machine-learning",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "zed",
+      "kind": "copy-file",
+      "source": "skills/recsys-pipeline-architect/SKILL.md",
+      "destination": "<project>/.zed/skills/recsys-pipeline-architect/SKILL.md",
       "componentId": "capability:machine-learning",
       "contingentOn": "evidence-authorization"
     },
@@ -21421,6 +25325,22 @@
     {
       "target": "zed",
       "kind": "copy-file",
+      "source": "skills/taste/references/genre-taxonomy.md",
+      "destination": "<project>/.zed/skills/taste/references/genre-taxonomy.md",
+      "componentId": "capability:media",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "zed",
+      "kind": "copy-file",
+      "source": "skills/taste/SKILL.md",
+      "destination": "<project>/.zed/skills/taste/SKILL.md",
+      "componentId": "capability:media",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "zed",
+      "kind": "copy-file",
       "source": "skills/ui-demo/SKILL.md",
       "destination": "<project>/.zed/skills/ui-demo/SKILL.md",
       "componentId": "capability:media",
@@ -21637,6 +25557,14 @@
     {
       "target": "zed",
       "kind": "copy-file",
+      "source": "skills/mailtrap-email-integration/SKILL.md",
+      "destination": "<project>/.zed/skills/mailtrap-email-integration/SKILL.md",
+      "componentId": "capability:operators",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "zed",
+      "kind": "copy-file",
       "source": "skills/messages-ops/SKILL.md",
       "destination": "<project>/.zed/skills/messages-ops/SKILL.md",
       "componentId": "capability:operators",
@@ -21677,8 +25605,32 @@
     {
       "target": "zed",
       "kind": "copy-file",
+      "source": "skills/agent-eval/SKILL.md",
+      "destination": "<project>/.zed/skills/agent-eval/SKILL.md",
+      "componentId": "capability:optimization",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "zed",
+      "kind": "copy-file",
+      "source": "skills/benchmark-methodology/SKILL.md",
+      "destination": "<project>/.zed/skills/benchmark-methodology/SKILL.md",
+      "componentId": "capability:optimization",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "zed",
+      "kind": "copy-file",
       "source": "skills/benchmark-optimization-loop/SKILL.md",
       "destination": "<project>/.zed/skills/benchmark-optimization-loop/SKILL.md",
+      "componentId": "capability:optimization",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "zed",
+      "kind": "copy-file",
+      "source": "skills/benchmark/SKILL.md",
+      "destination": "<project>/.zed/skills/benchmark/SKILL.md",
       "componentId": "capability:optimization",
       "contingentOn": "evidence-authorization"
     },
@@ -21773,6 +25725,14 @@
     {
       "target": "zed",
       "kind": "copy-file",
+      "source": "skills/documentation-lookup/SKILL.md",
+      "destination": "<project>/.zed/skills/documentation-lookup/SKILL.md",
+      "componentId": "capability:research",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "zed",
+      "kind": "copy-file",
       "source": "skills/exa-search/SKILL.md",
       "destination": "<project>/.zed/skills/exa-search/SKILL.md",
       "componentId": "capability:research",
@@ -21853,6 +25813,38 @@
     {
       "target": "zed",
       "kind": "copy-file",
+      "source": "skills/gateguard/SKILL.md",
+      "destination": "<project>/.zed/skills/gateguard/SKILL.md",
+      "componentId": "capability:security",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "zed",
+      "kind": "copy-file",
+      "source": "skills/healthcare-cdss-patterns/SKILL.md",
+      "destination": "<project>/.zed/skills/healthcare-cdss-patterns/SKILL.md",
+      "componentId": "capability:security",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "zed",
+      "kind": "copy-file",
+      "source": "skills/healthcare-emr-patterns/SKILL.md",
+      "destination": "<project>/.zed/skills/healthcare-emr-patterns/SKILL.md",
+      "componentId": "capability:security",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "zed",
+      "kind": "copy-file",
+      "source": "skills/healthcare-eval-harness/SKILL.md",
+      "destination": "<project>/.zed/skills/healthcare-eval-harness/SKILL.md",
+      "componentId": "capability:security",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "zed",
+      "kind": "copy-file",
       "source": "skills/healthcare-phi-compliance/SKILL.md",
       "destination": "<project>/.zed/skills/healthcare-phi-compliance/SKILL.md",
       "componentId": "capability:security",
@@ -21909,6 +25901,14 @@
     {
       "target": "zed",
       "kind": "copy-file",
+      "source": "skills/safety-guard/SKILL.md",
+      "destination": "<project>/.zed/skills/safety-guard/SKILL.md",
+      "componentId": "capability:security",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "zed",
+      "kind": "copy-file",
       "source": "skills/security-bounty-hunter/SKILL.md",
       "destination": "<project>/.zed/skills/security-bounty-hunter/SKILL.md",
       "componentId": "capability:security",
@@ -21959,6 +25959,14 @@
       "kind": "copy-file",
       "source": "skills/crosspost/SKILL.md",
       "destination": "<project>/.zed/skills/crosspost/SKILL.md",
+      "componentId": "capability:social",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "zed",
+      "kind": "copy-file",
+      "source": "skills/social-publisher/SKILL.md",
+      "destination": "<project>/.zed/skills/social-publisher/SKILL.md",
       "componentId": "capability:social",
       "contingentOn": "evidence-authorization"
     },
@@ -22439,6 +26447,14 @@
       "kind": "copy-file",
       "source": "skills/frontend-patterns/SKILL.md",
       "destination": "<project>/.zed/skills/frontend-patterns/SKILL.md",
+      "componentId": "framework:nextjs",
+      "contingentOn": "evidence-authorization"
+    },
+    {
+      "target": "zed",
+      "kind": "copy-file",
+      "source": "skills/nextjs-turbopack/SKILL.md",
+      "destination": "<project>/.zed/skills/nextjs-turbopack/SKILL.md",
       "componentId": "framework:nextjs",
       "contingentOn": "evidence-authorization"
     },

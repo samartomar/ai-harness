@@ -122,7 +122,7 @@ describe("baseline vet command plan", () => {
   it("previews a remote exact-pin fetch without network or report writes", async () => {
     const c = ctx(false);
     c.options = {
-      source: "affaan-m/ECC",
+      source: "samartomar/ECC",
       pin: "a".repeat(40),
       catalog: "ecc",
       components: "runtime:ecc-installer",

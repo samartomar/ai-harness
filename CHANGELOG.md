@@ -41,6 +41,15 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and supported interrupts roll back aih-owned changes; upstream uninstalls that may already have
   mutated emit explicit evidence for every affected target and path without advancing the ledger.
   Dropped Codex cleanup also remains compatible with pre-ledger target state. (#423)
+- The shipped default ECC baseline is now gated as installable at every posture from its own
+  signed evidence. A new `check:baseline-installable` release gate (wired into `verify`, the CI
+  matrix on all three OS, and the release workflow before packaging) proves the pinned vendor lock
+  installs at least one component at vibe, team, and enterprise into throwaway fixture HOMEs while
+  holding blocked auto-exec components, and rejects any install path that escapes the fixture. The
+  default pin now tracks a remediated `samartomar/ECC` fork commit that clears strict supply-chain
+  vetting (lifecycle `postinstall`, unpinned dependencies, strict-surface Unicode, and a bare `ajv`
+  import in the installer closure), transparently bridging until the upstream affaan-m/ECC PR
+  merges. (#417)
 
 ## [2.8.0] - 2026-07-10
 

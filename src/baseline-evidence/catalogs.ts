@@ -121,7 +121,7 @@ export const BASELINE_CATALOG_IDS = ["ecc", "superpowers"] as const;
 export type BaselineCatalogId = (typeof BASELINE_CATALOG_IDS)[number];
 
 export function baselineCatalogById(id: string, pin?: string): BaselineCatalog {
-  if (id === "ecc") return catalog("ecc", "affaan-m", "ECC", ECC_COMPONENTS, pin);
+  if (id === "ecc") return catalog("ecc", "samartomar", "ECC", ECC_COMPONENTS, pin);
   if (id === "superpowers") {
     return catalog("superpowers", "obra", "Superpowers", SUPERPOWERS_COMPONENTS, pin);
   }

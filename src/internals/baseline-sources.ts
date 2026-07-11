@@ -22,7 +22,7 @@ export const BASELINE_SOURCES = [
     id: "ecc",
     label: "ECC + Superpowers",
     sources: [
-      { owner: "affaan-m", repo: "ECC", pinnedSha: "4130457d674d2180c5af2c5f634f3cae4cbc6c4f" },
+      { owner: "samartomar", repo: "ECC", pinnedSha: "fd3699d65c4767acceac59069847f04122417dcb" },
       {
         owner: "obra",
         repo: "Superpowers",
