@@ -196,4 +196,132 @@ describe("ECC reconciliation transaction driver", () => {
       expect(readFileSync(path)).toEqual(contents);
     }
   });
+
+  it("filters only Codex managed MCP and skill entries while preserving user content", () => {
+    const codexRoot = join(root, ".codex");
+    const configPath = join(codexRoot, "config.toml");
+    const agentsPath = join(codexRoot, "AGENTS.md");
+    const ledgerPath = join(root, ".aih", "ecc", "registration-ledger.json");
+    mkdirSync(codexRoot, { recursive: true });
+    mkdirSync(join(ledgerPath, ".."), { recursive: true });
+    writeFileSync(
+      configPath,
+      [
+        '[mcp_servers."user-owned"]',
+        'url = "https://example.invalid"',
+        "",
+        "# >>> aih managed (mcp) >>>",
+        '[mcp_servers."sequential-thinking"]',
+        'command = "npx"',
+        "",
+        '[mcp_servers."github"]',
+        'url = "https://api.githubcopilot.com/mcp/"',
+        "# <<< aih managed (mcp) <<<",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+    writeFileSync(
+      agentsPath,
+      [
+        "user preamble",
+        "",
+        "<!-- BEGIN ecc-codex:agents (generated from affaan-m/ECC .codex/AGENTS.md) -->",
+        "## Skills Discovery",
+        "",
+        "Available skills:",
+        "- coding-standards",
+        "- cpp-testing",
+        "- react-testing",
+        "",
+        "## External Action Boundaries",
+        "",
+        "boundary",
+        "",
+        "<!-- END ecc-codex:agents -->",
+        "",
+        "user suffix",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+    writeFileSync(ledgerPath, '{"projects":["react","cpp"]}\n', "utf8");
+    const reads = [configPath, agentsPath, ledgerPath].map((path) => ({
+      path,
+      sha256: sha256(readFileSync(path)),
+    }));
+    const payload: EccReconcileTransactionPayload = {
+      reads,
+      mutations: [
+        {
+          kind: "filter-codex-mcp-block",
+          path: configPath,
+          root: codexRoot,
+          keepNames: ["sequential-thinking"],
+        },
+        {
+          kind: "filter-codex-agents-block",
+          path: agentsPath,
+          root: codexRoot,
+          keepSkills: ["coding-standards", "react-testing"],
+          removeBlock: false,
+        },
+      ],
+      ledger: {
+        path: ledgerPath,
+        root,
+        contents: '{"projects":["react"]}\n',
+        mode: 0o600,
+      },
+    };
+
+    const result = run(payload);
+
+    expect(result.status, result.stderr).toBe(0);
+    const config = readFileSync(configPath, "utf8");
+    expect(config).toContain('[mcp_servers."user-owned"]');
+    expect(config).toContain('[mcp_servers."sequential-thinking"]');
+    expect(config).not.toContain('[mcp_servers."github"]');
+    const agents = readFileSync(agentsPath, "utf8");
+    expect(agents).toContain("user preamble");
+    expect(agents).toContain("user suffix");
+    expect(agents).toContain("- coding-standards");
+    expect(agents).toContain("- react-testing");
+    expect(agents).not.toContain("- cpp-testing");
+  });
+
+  it("fails before mutation when a claimed Codex managed marker is malformed", () => {
+    const codexRoot = join(root, ".codex");
+    const configPath = join(codexRoot, "config.toml");
+    const ledgerPath = join(root, ".aih", "ecc", "registration-ledger.json");
+    mkdirSync(codexRoot, { recursive: true });
+    mkdirSync(join(ledgerPath, ".."), { recursive: true });
+    writeFileSync(configPath, "# >>> aih managed (mcp) >>>\nmissing end\n", "utf8");
+    writeFileSync(ledgerPath, '{"projects":["react","cpp"]}\n', "utf8");
+    const before = readFileSync(configPath);
+    const payload: EccReconcileTransactionPayload = {
+      reads: [configPath, ledgerPath].map((path) => ({
+        path,
+        sha256: sha256(readFileSync(path)),
+      })),
+      mutations: [
+        {
+          kind: "filter-codex-mcp-block",
+          path: configPath,
+          root: codexRoot,
+          keepNames: [],
+        },
+      ],
+      ledger: {
+        path: ledgerPath,
+        root,
+        contents: '{"projects":["react"]}\n',
+        mode: 0o600,
+      },
+    };
+
+    expect(run(payload).status).not.toBe(0);
+    expect(readFileSync(configPath)).toEqual(before);
+    expect(readFileSync(ledgerPath, "utf8")).toBe('{"projects":["react","cpp"]}\n');
+  });
 });
