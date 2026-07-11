@@ -305,8 +305,8 @@ script, executable, or source-code surfaces remain blocking.
 `card`/`approve --pin --owner` turn that evidence into committed governance: a skill card + a root
 **`aih-skills.lock.json`** entry, behind a fail-closed chain (pin → evidence → approvable verdict →
 license → owner; RED blocked, UNKNOWN refused, YELLOW = the manual review). The lockfile has
-**install-time teeth**: `workspace add` refuses promoting a skill with no committed approval _for
-that source's pinned commit_ at `team`/`enterprise` posture (advisory at `vibe`) — a same-named
+**install-time teeth**: `workspace add` refuses promoting a skill with no committed approval *for
+that source's pinned commit* at `team`/`enterprise` posture (advisory at `vibe`) — a same-named
 skill from an unrelated source never inherits an approval, and stale approvals are refused.
 `inventory` joins on-disk skills against the approvals — approved / unapproved / stale-pin /
 quarantined, one row per physical install — and feeds a "Skill governance" panel in `report --v9`.
@@ -563,7 +563,6 @@ apply keeps the full generated server set but warns when policy denies any serve
 `--mcp-compliant` to omit denied generated servers from MCP client configs and list them with reasons
 in the governance guidance. Use the same flag on `--verify` to verify the compliant plan.
 <!-- aih:claim CM-18 -->
-
 GitHub auth defaults to `--github-auth oauth`, which works for clients with a registered OAuth
 app; use `--github-auth token` for clients that need a PAT-backed `Authorization` header. The token
 value is never written into MCP config — the header references `${GITHUB_PERSONAL_ACCESS_TOKEN}`
@@ -643,7 +642,7 @@ top-level `support: { findings, templates }` key. Support output is **suppressed
 (`--sarif -`) so stdout stays a clean code-scanning artifact.
 
 **External tickets are tool-neutral by contract** — they never name aih or its commands; they describe
-the failed _internal configuration_ the recipient must fix at the system level. Each follows the
+the failed *internal configuration* the recipient must fix at the system level. Each follows the
 structure **Summary → Impact → Issue → Observed evidence → Environment → Requested fix → Acceptance
 criteria**, and every escalation ends with a security work-around guard (keep TLS verification and secret
 controls enabled; don't change project code). Evidence, affected area, and acceptance criteria are canned
@@ -653,7 +652,7 @@ scrubbed, secret-aware argv masking).
 **Project context (`SETUP.md`).** A project can shape the tickets with opt-in HTML-comment markers in
 `SETUP.md`, `docs/SETUP.md`, or `.aih/SETUP.md` (first found wins):
 
-- `<!-- support:why -->…<!-- /support:why -->` — _why a correct environment matters for this project_,
+- `<!-- support:why -->…<!-- /support:why -->` — *why a correct environment matters for this project*,
   woven into the ticket's Impact / "Why this helps" section. Falls back to the first paragraph under a
   `## Why` / `## Overview` / `## Purpose` / `## Background` / `## About` heading, so existing setup files
   contribute without edits.
