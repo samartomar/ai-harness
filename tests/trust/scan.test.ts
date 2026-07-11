@@ -2093,12 +2093,47 @@ describe("scanTrustTree", () => {
     expect(seenSmoke[0]?.join("\n")).toContain("test -r '/scan/install.sh'");
   });
 
-  it("fails applicable sandbox smoke when detector runtime is missing", async () => {
+  it.each([
+    "vibe",
+    "team",
+    "enterprise",
+  ] as const)("skips applicable sandbox smoke when detector runtime is missing at %s posture", async (posture) => {
     skill("skills/clean", "# Clean\n");
     write("skills/clean/package.json", JSON.stringify({ name: "clean-skill" }));
 
+    const result = await scanTrustTreeWithAnalyzers(dir, { posture });
+
+    expect(result.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "skill sandbox smoke test",
+          verdict: "skip",
+          code: "trust.sandbox-smoke-unavailable",
+          detail: expect.stringContaining("detector runtime is missing"),
+        }),
+      ]),
+    );
+  });
+
+  it("keeps a capable-host sandbox smoke failure blocking", async () => {
+    skill("skills/clean", "# Clean\n");
+    write("skills/clean/package.json", JSON.stringify({ name: "clean-skill" }));
+    const run = fakeRunner((argv) => {
+      if (
+        argv[0] === "docker" &&
+        argv[1] === "run" &&
+        argv.some((arg) => arg.includes("aih sandbox smoke ok"))
+      ) {
+        return { code: 23, stderr: "sandbox policy rejected execution" };
+      }
+      return successfulSkillspector(argv);
+    });
+
     const result = await scanTrustTreeWithAnalyzers(dir, {
-      posture: "vibe",
+      env: {},
+      platform: "linux",
+      posture: "enterprise",
+      run,
     });
 
     expect(result.checks).toEqual(
@@ -2106,8 +2141,8 @@ describe("scanTrustTree", () => {
         expect.objectContaining({
           name: "skill sandbox smoke test",
           verdict: "fail",
-          code: "trust.sandbox-smoke-unavailable",
-          detail: expect.stringContaining("detector runtime is missing"),
+          code: "trust.sandbox-smoke-failed",
+          detail: expect.stringContaining("sandbox policy rejected execution"),
         }),
       ]),
     );

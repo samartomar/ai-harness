@@ -428,7 +428,7 @@ describe("skillVetCommand", () => {
       expect.arrayContaining([
         expect.objectContaining({
           name: "skill sandbox smoke test",
-          verdict: "fail",
+          verdict: "skip",
           code: "trust.sandbox-smoke-unavailable",
           detail: expect.stringContaining("could not verify"),
         }),
@@ -487,7 +487,7 @@ describe("skillVetCommand", () => {
     expect(digest.data.reasons).toEqual([]);
   });
 
-  it("fails a first-party package-backed source when sandbox smoke is unavailable", async () => {
+  it("passes a first-party package-backed source with sandbox smoke skip evidence", async () => {
     const dir = join(workspace, "packs", "clean");
     mkdirSync(dir, { recursive: true });
     writeFileSync(
@@ -501,17 +501,15 @@ describe("skillVetCommand", () => {
 
     const result = await executePlan(await skillVetCommand.plan(c), c);
 
-    expect(result.report?.ok).toBe(false);
+    expect(result.report?.ok).toBe(true);
     const digest = vetDigestOf(result);
-    expect(digest.data.verdict).toBe("UNKNOWN");
-    expect(digest.data.reasons).toEqual([
-      expect.stringContaining("sandbox smoke test was unavailable"),
-    ]);
+    expect(digest.data.verdict).toBe("GREEN");
+    expect(digest.data.reasons).toEqual([]);
     expect(result.report?.checks).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           name: "skill sandbox smoke test",
-          verdict: "fail",
+          verdict: "skip",
           code: "trust.sandbox-smoke-unavailable",
         }),
       ]),

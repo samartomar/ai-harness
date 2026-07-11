@@ -71,6 +71,8 @@ Docker or the pinned image is absent, the detector reports an explicit skip. The
 sandbox smoke stage and SkillSpector detector additionally require the local
 image digest to match the built-in controlled digest or a reviewed
 `trust.skillspector.approvedDigests[]` policy entry before they will run.
+An unavailable sandbox-smoke capability is therefore recorded as a skip at every
+posture; a smoke run that starts and fails remains blocking.
 
 ## Review Expectations
 

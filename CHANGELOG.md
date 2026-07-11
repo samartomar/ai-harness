@@ -8,6 +8,9 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Sandbox-smoke unavailability is now recorded as an environment `skip` at every posture instead
+  of blocking acquired content; an actual failed smoke run on a capable host remains blocking.
+  (#419)
 - Legal-text detector findings now warn-pass only at vibe posture; team and enterprise require an
   exact fingerprint acknowledgement with a recorded reason, while danger-class findings remain
   non-acknowledgeable. (#422)

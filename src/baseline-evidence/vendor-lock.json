@@ -43,10 +43,6 @@
               "detail": "10 findings; first: package.json:368 — direct dependency @eslint/js uses unpinned version spec \"^9.39.2\""
             },
             {
-              "code": "trust.sandbox-smoke-unavailable",
-              "detail": "sandbox smoke test unavailable (trust.sandbox-smoke-unavailable): detector runtime is missing (run/platform/env)"
-            },
-            {
               "code": "trust.hidden-unicode",
               "count": 5,
               "detail": "5 findings; first: install-components.json:192 — trust.hidden-unicode: document contains 2 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
@@ -86,10 +82,6 @@
               "code": "trust.auto-exec-hook",
               "detail": "skills/rust-patterns/SKILL.md:421 — SKILL body contains a leading ! auto-run line",
               "fingerprint": "trust-auto-exec-hook:skills/rust-patterns/SKILL.md:421:3eea9178"
-            },
-            {
-              "code": "trust.sandbox-smoke-unavailable",
-              "detail": "sandbox smoke test unavailable (trust.sandbox-smoke-unavailable): detector runtime is missing (run/platform/env)"
             }
           ]
         },
@@ -159,10 +151,6 @@
               "code": "trust.auto-exec-hook",
               "count": 2,
               "detail": "2 findings; first: skills/eval-harness/SKILL.md:4 — frontmatter allowed-tools grants unsafe Bash access"
-            },
-            {
-              "code": "trust.sandbox-smoke-unavailable",
-              "detail": "sandbox smoke test unavailable (trust.sandbox-smoke-unavailable): detector runtime is missing (run/platform/env)"
             }
           ]
         },
@@ -356,10 +344,6 @@
               "detail": "13 findings; first: SKILL.md:573 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL"
             },
             {
-              "code": "trust.sandbox-smoke-unavailable",
-              "detail": "sandbox smoke test unavailable (trust.sandbox-smoke-unavailable): detector runtime is missing (run/platform/env)"
-            },
-            {
               "code": "trust.auto-exec-hook",
               "detail": "SKILL.md:422 — SKILL body contains a leading ! auto-run line",
               "fingerprint": "trust-auto-exec-hook:SKILL.md:422:3eea9178"
@@ -430,10 +414,6 @@
               "code": "trust.hidden-unicode",
               "count": 27,
               "detail": "27 findings; first: SKILL.md:72 — trust.hidden-unicode: document contains 8 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
-            },
-            {
-              "code": "trust.sandbox-smoke-unavailable",
-              "detail": "sandbox smoke test unavailable (trust.sandbox-smoke-unavailable): detector runtime is missing (run/platform/env)"
             }
           ]
         },
@@ -498,10 +478,6 @@
               "code": "trust.auto-exec-hook",
               "detail": "SKILL.md:132 — SKILL body contains a leading ! auto-run line",
               "fingerprint": "trust-auto-exec-hook:SKILL.md:132:9d8724f4"
-            },
-            {
-              "code": "trust.sandbox-smoke-unavailable",
-              "detail": "sandbox smoke test unavailable (trust.sandbox-smoke-unavailable): detector runtime is missing (run/platform/env)"
             }
           ]
         },
@@ -1658,10 +1634,6 @@
               "code": "trust.hidden-unicode",
               "count": 5,
               "detail": "5 findings; first: INSTALL.md:103 — trust.hidden-unicode: document contains 8 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
-            },
-            {
-              "code": "trust.sandbox-smoke-unavailable",
-              "detail": "sandbox smoke test unavailable (trust.sandbox-smoke-unavailable): detector runtime is missing (run/platform/env)"
             }
           ]
         },
@@ -1683,10 +1655,6 @@
               "code": "trust.hidden-unicode",
               "count": 6,
               "detail": "6 findings; first: SKILL.md:18 — trust.hidden-unicode: document contains 21 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
-            },
-            {
-              "code": "trust.sandbox-smoke-unavailable",
-              "detail": "sandbox smoke test unavailable (trust.sandbox-smoke-unavailable): detector runtime is missing (run/platform/env)"
             }
           ]
         },
@@ -1828,10 +1796,6 @@
               "code": "trust.hidden-unicode",
               "count": 9,
               "detail": "9 findings; first: condition-based-waiting.md:37 — trust.hidden-unicode: document contains 9 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
-            },
-            {
-              "code": "trust.sandbox-smoke-unavailable",
-              "detail": "sandbox smoke test unavailable (trust.sandbox-smoke-unavailable): detector runtime is missing (run/platform/env)"
             }
           ]
         },

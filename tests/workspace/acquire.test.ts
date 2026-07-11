@@ -421,7 +421,7 @@ describe("workspace add acquisition plans", () => {
     expect(seenSmoke).toHaveLength(3);
   });
 
-  it("blocks promotion when nested install-script smoke is unavailable", async () => {
+  it("promotes with skip evidence when nested install-script smoke is unavailable", async () => {
     localSkill(sourceRoot, "clean", "# Clean\n");
     writeFileSync(join(sourceRoot, "skills", "clean", "install.sh"), "echo install\n", "utf8");
     let imageUnavailable = false;
@@ -440,20 +440,11 @@ describe("workspace add acquisition plans", () => {
 
     const result = await executePlan(await workspaceAddPhase2Plan(c, gate), c);
 
-    expect(result.report?.exitCode()).toBe(1);
-    expect(result.writes.some((write) => write.path.startsWith("ai-coding/skills/"))).toBe(false);
-    expect(result.report?.checks).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          name: "skill sandbox smoke test",
-          verdict: "fail",
-          code: "trust.sandbox-smoke-unavailable",
-        }),
-      ]),
-    );
+    expect(result.report?.exitCode()).toBe(0);
+    expect(result.writes.some((write) => write.path.startsWith("ai-coding/skills/"))).toBe(true);
   });
 
-  it("blocks promotion when applicable sandbox smoke is unavailable", async () => {
+  it("promotes with skip evidence when applicable sandbox smoke is unavailable", async () => {
     localSkill(sourceRoot, "clean", "# Clean\n");
     writeFileSync(
       join(sourceRoot, "package.json"),
@@ -476,20 +467,11 @@ describe("workspace add acquisition plans", () => {
 
     const result = await executePlan(await workspaceAddPhase2Plan(c, gate), c);
 
-    expect(result.report?.exitCode()).toBe(1);
-    expect(result.writes.some((write) => write.path.startsWith("ai-coding/skills/"))).toBe(false);
-    expect(result.report?.checks).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          name: "skill sandbox smoke test",
-          verdict: "fail",
-          code: "trust.sandbox-smoke-unavailable",
-        }),
-      ]),
-    );
+    expect(result.report?.exitCode()).toBe(0);
+    expect(result.writes.some((write) => write.path.startsWith("ai-coding/skills/"))).toBe(true);
   });
 
-  it("fails phase 1 when applicable sandbox smoke is unavailable", async () => {
+  it("passes phase 1 with skip evidence when applicable sandbox smoke is unavailable", async () => {
     localSkill(sourceRoot, "clean", "# Clean\n");
     writeFileSync(
       join(sourceRoot, "package.json"),
@@ -505,11 +487,11 @@ describe("workspace add acquisition plans", () => {
       sandboxSmokeRunner({ imageUnavailable: () => true }),
     );
     const phase1Result = await executePlan(await workspaceAddPhase1Plan(c), c);
-    expect(phase1Result.report?.ok).toBe(false);
+    expect(phase1Result.report?.ok).toBe(true);
     expect(phase1Result.report?.checks).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          verdict: "fail",
+          verdict: "skip",
           code: "trust.sandbox-smoke-unavailable",
         }),
       ]),
@@ -962,7 +944,7 @@ describe("workspace add acquisition plans", () => {
     expect(existsSync(join(workspace, ".aih", "trust-lock.json"))).toBe(true);
   });
 
-  it("runWorkspaceAdd reports structured sandbox smoke blockers for a local source", async () => {
+  it("runWorkspaceAdd reports sandbox smoke skips while promoting a local source", async () => {
     localSkill(sourceRoot, "clean", "# Clean\n");
     writeFileSync(
       join(sourceRoot, "package.json"),
@@ -980,11 +962,11 @@ describe("workspace add acquisition plans", () => {
     });
 
     const text = output.join("");
-    expect(code).toBe(1);
+    expect(code).toBe(0);
     expect(text).toContain("trust.sandbox-smoke-unavailable");
     expect(text).toContain("sandbox smoke test unavailable");
     expect(text).not.toContain("error [AIH_TRUST]");
-    expect(existsSync(join(workspace, "ai-coding", "skills"))).toBe(false);
+    expect(existsSync(join(workspace, "ai-coding", "skills"))).toBe(true);
   });
 
   it("runWorkspaceAdd treats a corrupt trust lock as empty and promotes a clean source", async () => {
