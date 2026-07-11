@@ -14,6 +14,11 @@
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import {
+  type IntentAcknowledgementArtifact,
+  resolveIntentAcknowledgementComment,
+  validateIntentAcknowledgementArtifact,
+} from "./release-intent-artifact.js";
 
 export type SemverClass = "patch" | "minor" | "major";
 
@@ -34,6 +39,7 @@ export interface MilestoneItem {
 }
 
 export interface PreflightData {
+  repository: string;
   previousTag: string;
   candidateSha: string;
   /** Squash-merge subjects since previousTag, e.g. `fix: thing (#123)`. */
@@ -45,8 +51,8 @@ export interface PreflightData {
   versionConstant: string;
   /** Maintainer-declared scope for this cut; required before a release PR opens. */
   declaredIntent?: SemverClass;
-  /** Explicit escalation acknowledgement, bound to candidate SHA + intent + computed bump. */
-  intentAcknowledgement?: string;
+  /** Resolved public escalation acknowledgement, bound to the tracker and release inputs. */
+  intentAcknowledgementArtifact?: IntentAcknowledgementArtifact;
 }
 
 export interface Finding {
@@ -64,7 +70,7 @@ export interface Manifest {
   computedBump: SemverClass | undefined;
   intentEscalation: boolean;
   intentAcknowledged: boolean;
-  intentAcknowledgement: string | undefined;
+  intentAcknowledgementArtifact: IntentAcknowledgementArtifact | undefined;
   requiredIntentAcknowledgement: string | undefined;
   nextVersion: string | undefined;
   findings: Finding[];
@@ -110,10 +116,27 @@ export function cancelledReverts(prs: readonly MergedPr[]): Set<number> {
   return cancelled;
 }
 
+function isReleaseTracker(item: MilestoneItem): boolean {
+  return !item.isPr && item.state === "open" && /^release:/.test(item.title);
+}
+
+function computedBumpFrom(prs: readonly MergedPr[]): {
+  cancelled: Set<number>;
+  computedBump: SemverClass | undefined;
+} {
+  const cancelled = cancelledReverts(prs);
+  const active = prs.filter((pr) => !cancelled.has(pr.number));
+  const computedBump = active.reduce<SemverClass | undefined>((acc, pr) => {
+    const bump = bumpOf(pr.semverLabels);
+    if (bump === undefined) return acc;
+    if (acc === undefined) return bump;
+    return CLASSES.indexOf(bump) > CLASSES.indexOf(acc) ? bump : acc;
+  }, undefined);
+  return { cancelled, computedBump };
+}
+
 export function runPreflight(data: PreflightData): Manifest {
   const findings: Finding[] = [];
-  const isTracker = (i: MilestoneItem): boolean =>
-    !i.isPr && i.state === "open" && /^release:/.test(i.title);
 
   // 1. Every merged PR carries exactly one valid semver:* label.
   for (const pr of data.mergedPrs) {
@@ -159,7 +182,7 @@ export function runPreflight(data: PreflightData): Manifest {
 
   // 3. Open blockers aboard (anything open except the release tracker).
   for (const item of data.milestoneItems) {
-    if (item.state === "open" && !isTracker(item)) {
+    if (item.state === "open" && !isReleaseTracker(item)) {
       findings.push({
         code: "open-blocker",
         detail: `${item.isPr ? "PR" : "issue"} #${item.number} is still open in the cut milestone`,
@@ -168,7 +191,7 @@ export function runPreflight(data: PreflightData): Manifest {
   }
 
   // 4. The tracker itself must exist.
-  if (!data.milestoneItems.some(isTracker)) {
+  if (!data.milestoneItems.some(isReleaseTracker)) {
     findings.push({
       code: "missing-tracker",
       detail: `no open "release: ..." tracker issue in milestone "${data.cutMilestone}"`,
@@ -193,14 +216,7 @@ export function runPreflight(data: PreflightData): Manifest {
     });
   }
 
-  const cancelled = cancelledReverts(data.mergedPrs);
-  const active = data.mergedPrs.filter((p) => !cancelled.has(p.number));
-  const computedBump = active.reduce<SemverClass | undefined>((acc, pr) => {
-    const b = bumpOf(pr.semverLabels);
-    if (b === undefined) return acc;
-    if (acc === undefined) return b;
-    return CLASSES.indexOf(b) > CLASSES.indexOf(acc) ? b : acc;
-  }, undefined);
+  const { cancelled, computedBump } = computedBumpFrom(data.mergedPrs);
   const rawIntent = data.declaredIntent as string | undefined;
   const declaredIntent = CLASSES.includes(rawIntent as SemverClass)
     ? (rawIntent as SemverClass)
@@ -212,8 +228,31 @@ export function runPreflight(data: PreflightData): Manifest {
   const requiredIntentAcknowledgement = intentEscalation
     ? intentAcknowledgementToken(data.candidateSha, declaredIntent, computedBump)
     : undefined;
-  const intentAcknowledged =
-    intentEscalation && data.intentAcknowledgement === requiredIntentAcknowledgement;
+  const tracker = data.milestoneItems.find(isReleaseTracker);
+  let intentAcknowledged = false;
+  if (
+    intentEscalation &&
+    declaredIntent !== undefined &&
+    computedBump !== undefined &&
+    tracker !== undefined &&
+    data.intentAcknowledgementArtifact !== undefined
+  ) {
+    try {
+      validateIntentAcknowledgementArtifact(
+        {
+          repository: data.repository,
+          trackerIssueNumber: tracker.number,
+          candidateSha: data.candidateSha,
+          declaredIntent,
+          computedBump,
+        },
+        data.intentAcknowledgementArtifact,
+      );
+      intentAcknowledged = true;
+    } catch {
+      intentAcknowledged = false;
+    }
+  }
   if (rawIntent === undefined) {
     findings.push({
       code: "missing-intent",
@@ -225,9 +264,9 @@ export function runPreflight(data: PreflightData): Manifest {
       detail: `declared intent must be patch, minor, or major (received: ${rawIntent})`,
     });
   } else if (intentEscalation && !intentAcknowledged) {
-    const acknowledgement = data.intentAcknowledgement
-      ? `; acknowledgement ${data.intentAcknowledgement} does not match ${requiredIntentAcknowledgement}`
-      : `; acknowledge explicitly with --ack-intent-escalation ${requiredIntentAcknowledgement}`;
+    const acknowledgement = data.intentAcknowledgementArtifact
+      ? "; acknowledgement comment artifact does not match the repository, tracker, authority, or release inputs"
+      : `; post ${requiredIntentAcknowledgement} on the release tracker and pass its URL with --ack-intent-escalation-comment`;
     findings.push({
       code: "intent-escalation",
       detail: `computed ${computedBump} exceeds declared ${declaredIntent}${acknowledgement}`,
@@ -244,7 +283,7 @@ export function runPreflight(data: PreflightData): Manifest {
     computedBump,
     intentEscalation,
     intentAcknowledged,
-    intentAcknowledgement: data.intentAcknowledgement,
+    intentAcknowledgementArtifact: data.intentAcknowledgementArtifact,
     requiredIntentAcknowledgement,
     nextVersion: computedBump ? nextVersionFrom(data.previousTag, computedBump) : undefined,
     findings,
@@ -260,6 +299,14 @@ function sh(cmd: string, args: string[]): string {
 }
 
 function gatherLive(cutMilestone: string): PreflightData {
+  const repository = sh("gh", [
+    "repo",
+    "view",
+    "--json",
+    "nameWithOwner",
+    "--jq",
+    ".nameWithOwner",
+  ]);
   const previousTag = sh("git", ["describe", "--tags", "--abbrev=0"]);
   const candidateSha = sh("git", ["rev-parse", "HEAD"]);
   const subjects = sh("git", ["log", `${previousTag}..HEAD`, "--format=%s"])
@@ -322,6 +369,7 @@ function gatherLive(cutMilestone: string): PreflightData {
   )?.[1];
 
   return {
+    repository,
     previousTag,
     candidateSha,
     commitSubjects: subjects,
@@ -334,11 +382,11 @@ function gatherLive(cutMilestone: string): PreflightData {
 }
 
 const invokedDirectly = process.argv[1]?.replace(/\\/g, "/").endsWith("release-preflight.ts");
-if (invokedDirectly) {
+async function main(): Promise<void> {
   const inputIdx = process.argv.indexOf("--input");
   const milestoneIdx = process.argv.indexOf("--milestone");
   const intentIdx = process.argv.indexOf("--intent");
-  const acknowledgementIdx = process.argv.indexOf("--ack-intent-escalation");
+  const acknowledgementIdx = process.argv.indexOf("--ack-intent-escalation-comment");
   const rawIntent = intentIdx > -1 ? process.argv[intentIdx + 1] : undefined;
   if (rawIntent !== undefined && !CLASSES.includes(rawIntent as SemverClass)) {
     throw new Error(`--intent must be patch, minor, or major (received: ${rawIntent})`);
@@ -349,21 +397,54 @@ if (invokedDirectly) {
       : gatherLive(
           milestoneIdx > -1 ? (process.argv[milestoneIdx + 1] ?? "next-release") : "next-release",
         );
-  const data: PreflightData = {
+  let data: PreflightData = {
     ...baseData,
     declaredIntent: (rawIntent as SemverClass | undefined) ?? baseData.declaredIntent,
-    intentAcknowledgement:
-      (acknowledgementIdx > -1 ? process.argv[acknowledgementIdx + 1] : undefined) ??
-      baseData.intentAcknowledgement,
   };
+  if (inputIdx > -1 && acknowledgementIdx > -1) {
+    throw new Error(
+      "--input must carry a resolved intentAcknowledgementArtifact; comment resolution is live-mode only",
+    );
+  }
+  if (inputIdx === -1 && acknowledgementIdx > -1) {
+    const tracker = data.milestoneItems.find(isReleaseTracker);
+    const { computedBump } = computedBumpFrom(data.mergedPrs);
+    if (data.declaredIntent === undefined || computedBump === undefined || tracker === undefined) {
+      throw new Error(
+        "cannot resolve intent acknowledgement without declared intent, computed bump, and release tracker",
+      );
+    }
+    const commentUrl = process.argv[acknowledgementIdx + 1];
+    if (commentUrl === undefined) {
+      throw new Error("--ack-intent-escalation-comment requires a GitHub issue-comment URL");
+    }
+    data = {
+      ...data,
+      intentAcknowledgementArtifact: await resolveIntentAcknowledgementComment(commentUrl, {
+        repository: data.repository,
+        trackerIssueNumber: tracker.number,
+        candidateSha: data.candidateSha,
+        declaredIntent: data.declaredIntent,
+        computedBump,
+      }),
+    };
+  }
   const manifest = runPreflight(data);
   console.log(JSON.stringify(manifest, null, 2));
   if (!manifest.ok) {
     console.error(`release-preflight: ${manifest.findings.length} finding(s):`);
     for (const f of manifest.findings) console.error(`  [${f.code}] ${f.detail}`);
-    process.exit(1);
+    process.exitCode = 1;
+    return;
   }
   console.error(
     `release-preflight: clean — ${manifest.mergedPrs.length} PR(s), intent=${manifest.declaredIntent ?? "missing"}, bump=${manifest.computedBump ?? "none"}, acknowledged=${manifest.intentAcknowledged}, next=${manifest.nextVersion ?? "n/a"}`,
   );
+}
+
+if (invokedDirectly) {
+  void main().catch((error: unknown) => {
+    console.error(`release-preflight: ${error instanceof Error ? error.message : String(error)}`);
+    process.exitCode = 1;
+  });
 }

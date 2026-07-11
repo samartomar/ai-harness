@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import type { IntentAcknowledgementArtifact } from "../../src/internals/release-intent-artifact.js";
 import type {
   MergedPr,
   MilestoneItem,
@@ -44,6 +45,7 @@ function mergedItem(p: MergedPr): MilestoneItem {
 function cleanData(): PreflightData {
   const prs = [pr(1, "fix: a"), pr(2, "feat: b", ["semver:minor"])];
   return {
+    repository: "samartomar/ai-harness",
     previousTag: "v2.5.1",
     candidateSha: "a".repeat(40),
     commitSubjects: ["fix: a (#1)", "feat: b (#2)"],
@@ -53,6 +55,23 @@ function cleanData(): PreflightData {
     packageVersion: "2.5.1",
     versionConstant: "2.5.1",
     declaredIntent: "minor",
+  };
+}
+
+function acknowledgementArtifact(
+  data: PreflightData,
+  overrides: Partial<IntentAcknowledgementArtifact> = {},
+): IntentAcknowledgementArtifact {
+  return {
+    repository: data.repository,
+    issueNumber: 900,
+    commentId: 123456,
+    commentUrl: "https://github.com/samartomar/ai-harness/issues/900#issuecomment-123456",
+    author: "samartomar",
+    authorAssociation: "OWNER",
+    createdAt: "2026-07-10T23:00:00Z",
+    token: `${data.candidateSha}:patch:minor`,
+    ...overrides,
   };
 }
 
@@ -119,10 +138,26 @@ describe("runPreflight — declared intent checkpoint", () => {
     });
   });
 
-  it("accepts escalation only when acknowledgement binds SHA, intent, and computed bump", () => {
+  it("rejects a raw token without a resolved acknowledgement artifact", () => {
     const d = cleanData();
     d.declaredIntent = "patch";
-    d.intentAcknowledgement = `${d.candidateSha}:patch:minor`;
+    (d as unknown as { intentAcknowledgement: string }).intentAcknowledgement =
+      `${d.candidateSha}:patch:minor`;
+
+    expect(runPreflight(d)).toMatchObject({
+      ok: false,
+      declaredIntent: "patch",
+      computedBump: "minor",
+      intentEscalation: true,
+      intentAcknowledged: false,
+      requiredIntentAcknowledgement: `${d.candidateSha}:patch:minor`,
+    });
+  });
+
+  it("accepts escalation only with an attributable artifact bound to the tracker and inputs", () => {
+    const d = cleanData();
+    d.declaredIntent = "patch";
+    d.intentAcknowledgementArtifact = acknowledgementArtifact(d);
 
     expect(runPreflight(d)).toMatchObject({
       ok: true,
@@ -130,26 +165,29 @@ describe("runPreflight — declared intent checkpoint", () => {
       computedBump: "minor",
       intentEscalation: true,
       intentAcknowledged: true,
+      intentAcknowledgementArtifact: {
+        repository: "samartomar/ai-harness",
+        issueNumber: 900,
+        commentId: 123456,
+        commentUrl: "https://github.com/samartomar/ai-harness/issues/900#issuecomment-123456",
+        author: "samartomar",
+        authorAssociation: "OWNER",
+        createdAt: "2026-07-10T23:00:00Z",
+        token: `${d.candidateSha}:patch:minor`,
+      },
       requiredIntentAcknowledgement: `${d.candidateSha}:patch:minor`,
     });
   });
 
-  it("intent-escalation: rejects an acknowledgement bound to another candidate", () => {
+  it.each([
+    ["repository", { repository: "other/repo" }],
+    ["tracker issue", { issueNumber: 901 }],
+    ["token", { token: `${"b".repeat(40)}:patch:minor` }],
+    ["authority", { authorAssociation: "CONTRIBUTOR" as "OWNER" }],
+  ])("rejects an artifact with the wrong %s", (_name, overrides) => {
     const d = cleanData();
     d.declaredIntent = "patch";
-    d.intentAcknowledgement = `${"b".repeat(40)}:patch:minor`;
-
-    const m = runPreflight(d);
-
-    expect(m.ok).toBe(false);
-    expect(m.findings).toContainEqual(expect.objectContaining({ code: "intent-escalation" }));
-    expect(m).toMatchObject({ intentEscalation: true, intentAcknowledged: false });
-  });
-
-  it("rejects acknowledgement for the same SHA but a different bump decision", () => {
-    const d = cleanData();
-    d.declaredIntent = "patch";
-    d.intentAcknowledgement = `${d.candidateSha}:patch:major`;
+    d.intentAcknowledgementArtifact = acknowledgementArtifact(d, overrides);
 
     expect(runPreflight(d)).toMatchObject({
       ok: false,
@@ -161,7 +199,7 @@ describe("runPreflight — declared intent checkpoint", () => {
 });
 
 describe("release:preflight CLI intent checkpoint", () => {
-  it("emits the manifest on blocked escalation and accepts only the candidate-bound ack", () => {
+  it("emits blocked evidence and accepts a resolved fixture artifact without a network call", () => {
     const dir = mkdtempSync(join(tmpdir(), "aih-release-intent-"));
     try {
       const fixture = cleanData();
@@ -187,17 +225,35 @@ describe("release:preflight CLI intent checkpoint", () => {
         findings: [expect.objectContaining({ code: "intent-escalation" })],
       });
 
-      const acknowledged = run(
+      const rawToken = run(
         "--intent",
         "patch",
         "--ack-intent-escalation",
         `${fixture.candidateSha}:patch:minor`,
       );
+      expect(rawToken.status).toBe(1);
+
+      fixture.intentAcknowledgementArtifact = acknowledgementArtifact({
+        ...fixture,
+        declaredIntent: "patch",
+      });
+      writeFileSync(input, JSON.stringify(fixture), "utf8");
+      const acknowledged = run("--intent", "patch");
       expect(acknowledged.status, acknowledged.stderr).toBe(0);
       expect(JSON.parse(acknowledged.stdout)).toMatchObject({
         ok: true,
         intentEscalation: true,
         intentAcknowledged: true,
+        intentAcknowledgementArtifact: {
+          repository: "samartomar/ai-harness",
+          issueNumber: 900,
+          commentId: 123456,
+          commentUrl: "https://github.com/samartomar/ai-harness/issues/900#issuecomment-123456",
+          author: "samartomar",
+          authorAssociation: "OWNER",
+          createdAt: "2026-07-10T23:00:00Z",
+          token: `${fixture.candidateSha}:patch:minor`,
+        },
         requiredIntentAcknowledgement: `${fixture.candidateSha}:patch:minor`,
       });
     } finally {

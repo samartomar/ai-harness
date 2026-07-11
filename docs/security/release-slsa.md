@@ -53,6 +53,21 @@ The workflow is still intentionally hardened for an L2 claim:
 - release consumers get a local verification command and the raw provenance
   artifacts needed for stricter external policy.
 
+## Release escalation acknowledgement
+
+When the label-derived release bump exceeds the maintainer's declared intent,
+release preflight requires a public comment on the established release tracker.
+The comment must contain the exact candidate-SHA/declared-intent/computed-bump
+token and come from an author whose GitHub repository association is `OWNER`,
+`MEMBER`, or `COLLABORATOR`. Preflight validates the repository, tracker issue,
+immutable comment ID and URL, author and association, creation timestamp, and
+token through GitHub, then preserves that resolved artifact in the cut manifest.
+
+This is attributable audit evidence, not automation-proof authorization. A fully
+credentialed runner can still post the acknowledgement comment. The security gain
+is that the escalation leaves public, timestamped evidence tied to a GitHub
+identity instead of being accepted by an invisible local flag.
+
 ## Verification commands
 
 After a tag is released:
