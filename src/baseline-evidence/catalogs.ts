@@ -5,6 +5,7 @@ import {
   defineBaselineCatalog,
 } from "./catalog.js";
 import eccModules from "./ecc-modules.json";
+import eccProfiles from "./ecc-profiles.json";
 
 const ECC_COMMON_AGENTS = [
   "code-reviewer",
@@ -45,12 +46,29 @@ const SUPERPOWERS_SKILLS = [
 const ECC_NESTED_SKILL_MODULES = new Set([
   "agents-core",
   "platform-configs",
-  "docs-ja-jp",
-  "docs-zh-cn",
-  "docs-ko-kr",
-  "docs-tr",
-  "docs-zh-tw",
 ]);
+
+type EccModule = (typeof eccModules.modules)[number];
+
+function supportedEccModules(): EccModule[] {
+  const byId = new Map<string, EccModule>();
+  for (const module of eccModules.modules) {
+    if (byId.has(module.id)) throw new Error(`duplicate ECC module snapshot id ${module.id}`);
+    byId.set(module.id, module);
+  }
+  const selected: EccModule[] = [];
+  const seen = new Set<string>();
+  for (const id of eccProfiles.profiles.full.modules) {
+    if (seen.has(id)) throw new Error(`duplicate ECC full-profile module id ${id}`);
+    seen.add(id);
+    const module = byId.get(id);
+    if (module === undefined) throw new Error(`ECC full profile references unknown module ${id}`);
+    selected.push(module);
+  }
+  return selected;
+}
+
+const ECC_SUPPORTED_MODULES = supportedEccModules();
 
 function moduleContainsSkillContent(module: { id: string; paths: readonly string[] }): boolean {
   return (
@@ -78,7 +96,7 @@ const ECC_COMPONENTS: readonly BaselineCatalogComponent[] = [
     ],
   },
   { id: "runtime:ecc-kiro", paths: [".kiro"], skillContent: true },
-  ...eccModules.modules.map((module) => ({
+  ...ECC_SUPPORTED_MODULES.map((module) => ({
     id: `module:${module.id}`,
     paths: module.paths,
     ...(moduleContainsSkillContent(module) ? { skillContent: true as const } : {}),
