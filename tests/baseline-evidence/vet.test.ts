@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -202,5 +202,27 @@ describe("vetBaselineCatalog", () => {
         analyzerVersions: { "aih-native": "2.7.0" },
       }),
     ).rejects.toThrow(/changed during.*vet/i);
+  });
+
+  it("scans one path-preserving isolated projection per component and removes it", async () => {
+    writeFileSync(join(root, "outside.txt"), "must not enter a component scan\n");
+    const projections: string[] = [];
+    const scanTree = vi.fn(async (projectionRoot: string) => {
+      projections.push(projectionRoot);
+      expect(existsSync(join(projectionRoot, "outside.txt"))).toBe(false);
+      expect(
+        existsSync(join(projectionRoot, "skills", "clean", "SKILL.md")) ||
+          existsSync(join(projectionRoot, "skills", "blocked", "SKILL.md")),
+      ).toBe(true);
+      return { analyzersRun: ["aih-native"], checks: [pass("projected scan")] };
+    });
+
+    await vetBaselineCatalog(root, catalog(), {
+      scanTree,
+      analyzerVersions: { "aih-native": "2.7.0" },
+    });
+
+    expect(scanTree).toHaveBeenCalledTimes(2);
+    expect(projections.every((projection) => !existsSync(projection))).toBe(true);
   });
 });
