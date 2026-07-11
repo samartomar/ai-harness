@@ -340,6 +340,8 @@ describe("trust fetch source resolution", () => {
       scrubFetchEnv({
         PATH: "bin",
         HOME: "/home/me",
+        DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/flatpak/bus",
+        XDG_RUNTIME_DIR: "/run/user/1000",
         HTTPS_PROXY: "http://proxy.example:8443",
         HTTP_PROXY: "http://proxy.example:8080",
         NO_PROXY: "localhost,.corp.example",
@@ -351,6 +353,8 @@ describe("trust fetch source resolution", () => {
     ).toEqual({
       PATH: "bin",
       HOME: "/home/me",
+      DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/flatpak/bus",
+      XDG_RUNTIME_DIR: "/run/user/1000",
       HTTPS_PROXY: "http://proxy.example:8443",
       HTTP_PROXY: "http://proxy.example:8080",
       NO_PROXY: "localhost,.corp.example",
