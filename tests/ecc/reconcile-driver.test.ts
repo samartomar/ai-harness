@@ -100,7 +100,9 @@ function fixture(): Fixture {
 
 function run(payload: EccReconcileTransactionPayload, env: NodeJS.ProcessEnv = {}) {
   const action = eccReconcileTransactionAction(ctx(), payload);
-  return spawnSync(action.argv[0], action.argv.slice(1), {
+  const executable = action.argv[0];
+  if (executable === undefined) throw new Error("missing ECC reconciliation driver executable");
+  return spawnSync(executable, action.argv.slice(1), {
     cwd: action.cwd ?? root,
     env: { ...process.env, ...env },
     encoding: "utf8",
