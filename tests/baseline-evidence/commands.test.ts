@@ -111,6 +111,7 @@ describe("baseline vet command plan", () => {
         scanOptions: expect.objectContaining({
           env: {},
           platform: "linux",
+          progress: expect.any(Function),
           requiredDetectors: REQUIRED_BASELINE_DETECTORS,
           run: expect.any(Function),
         }),

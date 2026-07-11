@@ -34,6 +34,7 @@ function evidence(catalog: BaselineCatalog): BaselineSourceEvidence {
 describe("vendor baseline generator", () => {
   it("runs both exact source catalogs through the required analyzer runtime", async () => {
     const run = fakeRunner(() => undefined);
+    const progress = vi.fn();
     const vetCatalog = vi.fn(
       async (_root: string, catalog: BaselineCatalog, _options?: VetBaselineCatalogOptions) =>
         evidence(catalog),
@@ -45,6 +46,7 @@ describe("vendor baseline generator", () => {
         run,
         platform: "linux",
         env: {},
+        progress,
         vetCatalog,
         checkoutHead: (_root, catalog) => catalog.pinnedSha,
         generatePreview: () => ({ schemaVersion: 1, operations: [] }),
@@ -60,6 +62,7 @@ describe("vendor baseline generator", () => {
           scanOptions: {
             env: {},
             platform: "linux",
+            progress,
             requiredDetectors: REQUIRED_BASELINE_DETECTORS,
             run,
           },
