@@ -53,6 +53,8 @@ export interface PreflightData {
   declaredIntent?: SemverClass;
   /** Resolved public escalation acknowledgement, bound to the tracker and release inputs. */
   intentAcknowledgementArtifact?: IntentAcknowledgementArtifact;
+  /** Diagnostic from live acknowledgement resolution; never trusted as evidence. */
+  intentAcknowledgementFailure?: string;
 }
 
 export interface Finding {
@@ -229,7 +231,7 @@ export function runPreflight(data: PreflightData): Manifest {
     ? intentAcknowledgementToken(data.candidateSha, declaredIntent, computedBump)
     : undefined;
   const tracker = data.milestoneItems.find(isReleaseTracker);
-  let intentAcknowledged = false;
+  let acceptedIntentAcknowledgementArtifact: IntentAcknowledgementArtifact | undefined;
   if (
     intentEscalation &&
     declaredIntent !== undefined &&
@@ -238,7 +240,7 @@ export function runPreflight(data: PreflightData): Manifest {
     data.intentAcknowledgementArtifact !== undefined
   ) {
     try {
-      validateIntentAcknowledgementArtifact(
+      acceptedIntentAcknowledgementArtifact = validateIntentAcknowledgementArtifact(
         {
           repository: data.repository,
           trackerIssueNumber: tracker.number,
@@ -248,10 +250,16 @@ export function runPreflight(data: PreflightData): Manifest {
         },
         data.intentAcknowledgementArtifact,
       );
-      intentAcknowledged = true;
     } catch {
-      intentAcknowledged = false;
+      acceptedIntentAcknowledgementArtifact = undefined;
     }
+  }
+  const intentAcknowledged = acceptedIntentAcknowledgementArtifact !== undefined;
+  if (data.intentAcknowledgementFailure !== undefined) {
+    findings.push({
+      code: "intent-acknowledgement",
+      detail: data.intentAcknowledgementFailure,
+    });
   }
   if (rawIntent === undefined) {
     findings.push({
@@ -283,7 +291,7 @@ export function runPreflight(data: PreflightData): Manifest {
     computedBump,
     intentEscalation,
     intentAcknowledged,
-    intentAcknowledgementArtifact: data.intentAcknowledgementArtifact,
+    intentAcknowledgementArtifact: acceptedIntentAcknowledgementArtifact,
     requiredIntentAcknowledgement,
     nextVersion: computedBump ? nextVersionFrom(data.previousTag, computedBump) : undefined,
     findings,
@@ -387,6 +395,12 @@ async function main(): Promise<void> {
   const milestoneIdx = process.argv.indexOf("--milestone");
   const intentIdx = process.argv.indexOf("--intent");
   const acknowledgementIdx = process.argv.indexOf("--ack-intent-escalation-comment");
+  const retiredAcknowledgementIdx = process.argv.indexOf("--ack-intent-escalation");
+  if (retiredAcknowledgementIdx > -1) {
+    throw new Error(
+      "--ack-intent-escalation is retired; use --ack-intent-escalation-comment with a GitHub issue-comment URL",
+    );
+  }
   const rawIntent = intentIdx > -1 ? process.argv[intentIdx + 1] : undefined;
   if (rawIntent !== undefined && !CLASSES.includes(rawIntent as SemverClass)) {
     throw new Error(`--intent must be patch, minor, or major (received: ${rawIntent})`);
@@ -410,24 +424,36 @@ async function main(): Promise<void> {
     const tracker = data.milestoneItems.find(isReleaseTracker);
     const { computedBump } = computedBumpFrom(data.mergedPrs);
     if (data.declaredIntent === undefined || computedBump === undefined || tracker === undefined) {
-      throw new Error(
-        "cannot resolve intent acknowledgement without declared intent, computed bump, and release tracker",
-      );
+      data = {
+        ...data,
+        intentAcknowledgementArtifact: undefined,
+        intentAcknowledgementFailure:
+          "cannot resolve intent acknowledgement without declared intent, computed bump, and release tracker",
+      };
+    } else {
+      const commentUrl = process.argv[acknowledgementIdx + 1];
+      try {
+        if (commentUrl === undefined) {
+          throw new Error("--ack-intent-escalation-comment requires a GitHub issue-comment URL");
+        }
+        data = {
+          ...data,
+          intentAcknowledgementArtifact: await resolveIntentAcknowledgementComment(commentUrl, {
+            repository: data.repository,
+            trackerIssueNumber: tracker.number,
+            candidateSha: data.candidateSha,
+            declaredIntent: data.declaredIntent,
+            computedBump,
+          }),
+        };
+      } catch (error: unknown) {
+        data = {
+          ...data,
+          intentAcknowledgementArtifact: undefined,
+          intentAcknowledgementFailure: `intent acknowledgement rejected: ${error instanceof Error ? error.message : String(error)}`,
+        };
+      }
     }
-    const commentUrl = process.argv[acknowledgementIdx + 1];
-    if (commentUrl === undefined) {
-      throw new Error("--ack-intent-escalation-comment requires a GitHub issue-comment URL");
-    }
-    data = {
-      ...data,
-      intentAcknowledgementArtifact: await resolveIntentAcknowledgementComment(commentUrl, {
-        repository: data.repository,
-        trackerIssueNumber: tracker.number,
-        candidateSha: data.candidateSha,
-        declaredIntent: data.declaredIntent,
-        computedBump,
-      }),
-    };
   }
   const manifest = runPreflight(data);
   console.log(JSON.stringify(manifest, null, 2));

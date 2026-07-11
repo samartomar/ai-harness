@@ -370,7 +370,9 @@ if (args.startsWith("repo view ")) {
         ok: false,
         intentEscalation: true,
         intentAcknowledged: false,
-        findings: [expect.objectContaining({ code: "intent-acknowledgement" })],
+        findings: expect.arrayContaining([
+          expect.objectContaining({ code: "intent-acknowledgement" }),
+        ]),
       });
       expect(JSON.parse(result.stdout)).not.toHaveProperty("intentAcknowledgementArtifact");
       expect(result.stderr).toContain("[intent-acknowledgement]");
