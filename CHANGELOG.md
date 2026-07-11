@@ -6,6 +6,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [2.8.0] - 2026-07-10
+
 ### Added
 
 - Generic detector findings anchored in regular, non-executable `LICENSE*`, `COPYING*`, or
@@ -1022,7 +1024,8 @@ GitHub but **never published to npm**; the first published release is 0.2.0.
   (npm + github-actions), private vulnerability reporting, `@claude` workflow gated
   to trusted authors, and GitHub Actions pinned to commit SHAs.
 
-[Unreleased]: https://github.com/samartomar/ai-harness/compare/v2.7.0...HEAD
+[Unreleased]: https://github.com/samartomar/ai-harness/compare/v2.8.0...HEAD
+[2.8.0]: https://github.com/samartomar/ai-harness/compare/v2.7.0...v2.8.0
 [2.7.0]: https://github.com/samartomar/ai-harness/compare/v2.6.0...v2.7.0
 [2.6.0]: https://github.com/samartomar/ai-harness/compare/v2.5.1...v2.6.0
 [2.5.1]: https://github.com/samartomar/ai-harness/compare/v2.5.0...v2.5.1
