@@ -8,6 +8,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- `aih prune` now reconciles the scoped ECC registration ledger: missing project roots retire from
+  the additive union, only unshared aih-managed component/MCP operations are removed, user-owned
+  and still-required content is preserved, and target state plus the primary ledger commit in one
+  hash-bound rollback-safe transaction with the ledger last. (#409)
 - `aih ecc` now registers a scoped component surface by default: the locked common baseline,
   detected or repeatably declared (`--with`) stack riders, posture-selected security, and the
   validated MCP set. Successful installs update an additive per-project/target ledger under

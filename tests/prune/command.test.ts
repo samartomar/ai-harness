@@ -1,9 +1,12 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { SHARED_MARKER, sharedBlock } from "../../src/bootstrap-ai/canon.js";
 import { CODEX_AGENTS_BLOCK_MARKER, CODEX_INSTALL_STATE_FILE } from "../../src/ecc/codex.js";
+import { registrationLedgerPath } from "../../src/ecc/registration.js";
+import { executePlan } from "../../src/internals/execute.js";
 import { mergeManagedBlock } from "../../src/internals/markers.js";
 import type { Action, PlanContext } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
@@ -302,6 +305,296 @@ describe("aih prune command", () => {
     const actions = await actionsOf();
     // The look-alike/drifted block is left untouched (never blindly stripped).
     expect(actions.some((a) => a.kind === "write" && a.path === "AGENTS.md")).toBe(false);
+  });
+});
+
+describe("aih prune ECC registration reconciliation", () => {
+  function writeLedger(home: string, reactRoot: string, cppRoot: string): string {
+    const path = registrationLedgerPath(home);
+    mkdirSync(dirname(path), { recursive: true });
+    const authorization = {
+      componentId: "module:framework-language",
+      source: "affaan-m/ECC",
+      pinnedSha: "a".repeat(40),
+      treeSha256: "b".repeat(64),
+      tier: "vendor",
+      issuer: "@aihq/harness release",
+      evidenceSha256: "c".repeat(64),
+    };
+    writeFileSync(
+      path,
+      `${JSON.stringify(
+        {
+          schemaVersion: 1,
+          projects: [
+            {
+              root: reactRoot,
+              scope: "scoped",
+              components: ["baseline:rules", "framework:react"],
+              mcps: ["mcp:sequential-thinking"],
+            },
+            {
+              root: cppRoot,
+              scope: "scoped",
+              components: ["baseline:rules", "lang:cpp"],
+              mcps: ["mcp:sequential-thinking", "mcp:github"],
+            },
+          ],
+          targets: [
+            {
+              target: "codex",
+              components: ["baseline:rules", "framework:react", "lang:cpp"].map((id) => ({
+                id,
+                authorization,
+              })),
+              mcps: ["mcp:sequential-thinking", "mcp:github"],
+            },
+          ],
+        },
+        null,
+        2,
+      )}\n`,
+      "utf8",
+    );
+    return path;
+  }
+
+  function writeCodexState(home: string, cppSkill: string, reactSkill: string): string {
+    const codexRoot = join(home, ".codex");
+    const statePath = join(codexRoot, "ecc-install-state.json");
+    mkdirSync(dirname(cppSkill), { recursive: true });
+    mkdirSync(dirname(reactSkill), { recursive: true });
+    writeFileSync(cppSkill, "cpp\n", "utf8");
+    writeFileSync(reactSkill, "react\n", "utf8");
+    const operation = (sourceRelativePath: string, destinationPath: string) => ({
+      kind: "copy-file",
+      moduleId: "framework-language",
+      sourceRelativePath,
+      destinationPath,
+      strategy: "preserve-relative-path",
+      ownership: "managed",
+      scaffoldOnly: false,
+    });
+    writeFileSync(
+      statePath,
+      `${JSON.stringify(
+        {
+          schemaVersion: "ecc.install.v1",
+          installedAt: "2026-07-10T00:00:00.000Z",
+          target: {
+            id: "codex-home",
+            target: "codex",
+            kind: "home",
+            root: codexRoot,
+            installStatePath: statePath,
+          },
+          request: {
+            profile: null,
+            modules: ["framework-language"],
+            includeComponents: [],
+            excludeComponents: [],
+            legacyLanguages: [],
+            legacyMode: false,
+          },
+          resolution: { selectedModules: ["framework-language"], skippedModules: [] },
+          source: {
+            repoVersion: "2.0.0",
+            repoCommit: "a".repeat(40),
+            manifestVersion: 1,
+          },
+          operations: [
+            operation("skills/react-patterns/SKILL.md", reactSkill),
+            operation("skills/cpp-testing/SKILL.md", cppSkill),
+          ],
+        },
+        null,
+        2,
+      )}\n`,
+      "utf8",
+    );
+    return statePath;
+  }
+
+  function writeCodexMergeState(home: string): void {
+    const codexRoot = join(home, ".codex");
+    writeFileSync(
+      join(codexRoot, CODEX_INSTALL_STATE_FILE),
+      `${JSON.stringify(
+        {
+          schemaVersion: 1,
+          managedBy: "aih",
+          codexToml: {
+            rootKeys: [],
+            tables: [],
+            tableKeys: {},
+            mcpServers: ["sequential-thinking", "github"],
+          },
+          agentsBlock: true,
+        },
+        null,
+        2,
+      )}\n`,
+      "utf8",
+    );
+    writeFileSync(
+      join(codexRoot, "config.toml"),
+      [
+        "# >>> aih managed (mcp) >>>",
+        '[mcp_servers."sequential-thinking"]',
+        'command = "npx"',
+        "",
+        '[mcp_servers."github"]',
+        'url = "https://api.githubcopilot.com/mcp/"',
+        "# <<< aih managed (mcp) <<<",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+    writeFileSync(
+      join(codexRoot, "AGENTS.md"),
+      [
+        "<!-- BEGIN ecc-codex:agents (generated from affaan-m/ECC .codex/AGENTS.md) -->",
+        "Available skills:",
+        "- cpp-testing",
+        "- react-patterns",
+        "",
+        "<!-- END ecc-codex:agents -->",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+  }
+
+  it("plans and applies a deterministic ledger-last diff even without committed CLI intent", async () => {
+    const home = join(dir, "home");
+    const reactRoot = join(home, "projects", "react");
+    const cppRoot = join(home, "projects", "deleted-cpp");
+    mkdirSync(reactRoot, { recursive: true });
+    const ledgerPath = writeLedger(home, reactRoot, cppRoot);
+    const cppSkill = join(home, ".codex", "skills", "cpp-testing", "SKILL.md");
+    const reactSkill = join(home, ".codex", "skills", "react-patterns", "SKILL.md");
+    const statePath = writeCodexState(home, cppSkill, reactSkill);
+    writeCodexMergeState(home);
+    const before = new Map(
+      [ledgerPath, statePath, cppSkill, reactSkill].map((path) => [path, readFileSync(path)]),
+    );
+
+    const actions = await actionsOf({ env: { HOME: home, USERPROFILE: home } });
+    const reconcile = actions.find(
+      (action): action is Extract<Action, { kind: "exec" }> =>
+        action.kind === "exec" && action.describe.includes("atomic ledger-last transaction"),
+    );
+    const evidence = actions.find(
+      (action): action is Extract<Action, { kind: "digest" }> =>
+        action.kind === "digest" && action.describe === "ECC component registration reconciliation",
+    );
+
+    expect(reconcile).toBeDefined();
+    expect(evidence?.text).toContain(cppRoot);
+    expect(evidence?.text).toContain("lang:cpp");
+    expect(evidence?.text).toContain(cppSkill);
+    if (reconcile === undefined) throw new Error("missing ECC reconciliation action");
+    const encoded = reconcile.argv.at(-1);
+    if (encoded === undefined) throw new Error("missing ECC reconciliation payload");
+    const payload = JSON.parse(Buffer.from(encoded, "base64").toString("utf8")) as {
+      mutations: Array<{ kind: string; path: string }>;
+    };
+    expect(payload.mutations).toContainEqual({
+      kind: "remove-file",
+      path: cppSkill,
+      root: join(home, ".codex"),
+    });
+    expect(payload.mutations).toContainEqual(
+      expect.objectContaining({ kind: "write-file", path: statePath }),
+    );
+    for (const [path, contents] of before) expect(readFileSync(path)).toEqual(contents);
+
+    const executable = reconcile.argv[0];
+    if (executable === undefined) throw new Error("missing ECC reconciliation executable");
+    const result = spawnSync(executable, reconcile.argv.slice(1), {
+      cwd: reconcile.cwd ?? dir,
+      env: process.env,
+      encoding: "utf8",
+    });
+    expect(result.status, result.stderr).toBe(0);
+    expect(() => readFileSync(cppSkill)).toThrow();
+    expect(readFileSync(reactSkill, "utf8")).toBe("react\n");
+    expect(readFileSync(statePath, "utf8")).not.toContain("cpp-testing");
+    const ledger = JSON.parse(readFileSync(ledgerPath, "utf8")) as {
+      projects: Array<{ root: string }>;
+      targets: Array<{ components: Array<{ id: string }>; mcps: string[] }>;
+    };
+    expect(ledger.projects.map((project) => project.root)).toEqual([reactRoot]);
+    expect(ledger.targets[0]?.components.map((component) => component.id)).toEqual([
+      "baseline:rules",
+      "framework:react",
+    ]);
+    expect(ledger.targets[0]?.mcps).toEqual(["mcp:sequential-thinking"]);
+    expect(readFileSync(join(home, ".codex", "config.toml"), "utf8")).not.toContain(
+      'mcp_servers."github"',
+    );
+    expect(readFileSync(join(home, ".codex", "AGENTS.md"), "utf8")).not.toContain("cpp-testing");
+    const replanned = await actionsOf({ env: { HOME: home, USERPROFILE: home } });
+    expect(
+      replanned.some(
+        (action) =>
+          action.kind === "exec" && action.describe.includes("atomic ledger-last transaction"),
+      ),
+    ).toBe(false);
+  });
+
+  it("fails closed on a malformed primary registration ledger", async () => {
+    const home = join(dir, "home");
+    const path = registrationLedgerPath(home);
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, "not-json\n", "utf8");
+
+    await expect(actionsOf({ env: { HOME: home, USERPROFILE: home } })).rejects.toThrow(
+      /invalid ECC registration ledger/i,
+    );
+  });
+
+  it("fails closed when a shrinking home target has no authoritative install state", async () => {
+    const home = join(dir, "home");
+    const reactRoot = join(home, "projects", "react");
+    const cppRoot = join(home, "projects", "deleted-cpp");
+    mkdirSync(reactRoot, { recursive: true });
+    writeLedger(home, reactRoot, cppRoot);
+
+    await expect(actionsOf({ env: { HOME: home, USERPROFILE: home } })).rejects.toThrow(
+      /missing ECC install state/i,
+    );
+  });
+
+  it("does not commit the ledger when an authoritative whole-target uninstall fails", async () => {
+    const home = join(dir, "home");
+    const reactRoot = join(home, "projects", "react");
+    const cppRoot = join(home, "projects", "deleted-cpp");
+    mkdirSync(reactRoot, { recursive: true });
+    const ledgerPath = writeLedger(home, reactRoot, cppRoot);
+    const ledger = JSON.parse(readFileSync(ledgerPath, "utf8")) as {
+      targets: Array<{ target: string }>;
+    };
+    const target = ledger.targets[0];
+    if (target === undefined) throw new Error("missing ECC target fixture");
+    target.target = "cursor";
+    writeFileSync(ledgerPath, `${JSON.stringify(ledger, null, 2)}\n`, "utf8");
+    const before = readFileSync(ledgerPath);
+    marker("claude");
+    write("ai-coding/adapters/claude.md");
+    write("ai-coding/adapters/cursor.md");
+    const calls: string[][] = [];
+    const run = fakeRunner((argv) => {
+      calls.push(argv);
+      return argv[0] === "npx" ? { code: 1, stderr: "injected uninstall failure" } : undefined;
+    });
+    const apply = ctx({ apply: true, env: { HOME: home, USERPROFILE: home }, run });
+
+    const result = await executePlan(await command.plan(apply), apply);
+
+    expect(result.execs.find((entry) => entry.argv[0] === "npx")?.ok).toBe(false);
+    expect(calls.some((argv) => argv[0] === process.execPath)).toBe(false);
+    expect(readFileSync(ledgerPath)).toEqual(before);
   });
 });
 

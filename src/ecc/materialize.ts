@@ -311,14 +311,23 @@ function selectedOperation(
   return skill !== undefined && surface.skills.has(skill);
 }
 
+export function eccManifestOperationSelected(
+  operation: EccManifestOperation,
+  selection: EccComponentSelection,
+): boolean {
+  if (selection.scope === "full") return true;
+  return selectedOperation(operation, selectedInstallSurface(selection));
+}
+
 export function filterEccManifestPlan<Operation extends EccManifestOperation>(
   plan: EccManifestPlan<Operation>,
   selection: EccComponentSelection,
 ): void {
   assertPlanShape(plan);
   if (selection.scope === "full") return;
-  const surface = selectedInstallSurface(selection);
-  const operations = plan.operations.filter((operation) => selectedOperation(operation, surface));
+  const operations = plan.operations.filter((operation) =>
+    eccManifestOperationSelected(operation, selection),
+  );
   plan.operations = operations;
   plan.statePreview.operations = operations;
 }

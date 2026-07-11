@@ -55,6 +55,13 @@ registered machine union. Context7, Exa, and other egress-bearing servers are ne
 this path. The component ledger, including evidence tier/issuer/hash provenance, is atomically
 committed only after all install steps succeed.
 
+Prune consumes that provenance-bearing ledger as a primary machine store but never treats the
+ledger alone as permission to delete a path. A shrinking home target must also have strict ECC
+install state, and every mutation is limited to a state-recorded managed operation or an exact aih
+Codex managed block. Planning hashes the ledger, state, destinations, and shared config; apply
+revalidates those bytes and rejects links, path escapes, malformed ownership markers, and drift.
+Target state commits before the ledger, with rollback restoring all prior bytes if any step fails.
+
 Superpowers marketplace and plugin-picker flows cannot currently prove that the
 installed bytes came from a verified local checkout. aih therefore runs no
 mutable Antigravity, Copilot, marketplace, or TUI install. It emits guidance that

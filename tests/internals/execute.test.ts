@@ -965,6 +965,30 @@ describe("executePlan", () => {
     expect(result.report?.checks).toEqual([]);
   });
 
+  it("skips a dependent exec after failure while still attempting independent execs", async () => {
+    const calls: string[] = [];
+    const run = fakeRunner((argv) => {
+      calls.push(argv[1] ?? "");
+      return { code: argv[1] === "fail" ? 1 : 0 };
+    });
+    const result = await executePlan(
+      plan(
+        "t",
+        exec("first", ["node", "fail"]),
+        exec("independent", ["node", "independent"]),
+        exec("dependent", ["node", "dependent"], { requiresPriorExecSuccess: true }),
+      ),
+      ctx({ apply: true, run }),
+    );
+
+    expect(calls).toEqual(["fail", "independent"]);
+    expect(result.execs).toEqual([
+      expect.objectContaining({ describe: "first", ran: true, ok: false }),
+      expect.objectContaining({ describe: "independent", ran: true, ok: true }),
+      expect.objectContaining({ describe: "dependent", ran: false }),
+    ]);
+  });
+
   it("formats exec argv with quoting for runnable summaries", async () => {
     const result = await executePlan(
       plan("t", exec("inline script", ["node", "-e", "console.log('a b')"])),

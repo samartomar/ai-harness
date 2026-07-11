@@ -123,7 +123,7 @@ Keep this table as a navigation index: do not add flag-level behavior or workflo
 | [`aih contract`](docs/commands.md#aih-contract) | Synthesize the machine-readable repo contract (`project.json`) from the detected stack. |
 | [`aih capability`](docs/commands.md#aih-capability) | Resolve repo agent-capability needs into committed intent and a rebuildable machine cache. |
 | [`aih adopt`](docs/commands.md#aih-adopt) | Converge an existing AI canon onto aih's managed model without overwriting your work (brownfield migration). |
-| [`aih prune`](docs/commands.md#aih-prune) | Remove the stale per-CLI artifacts left for CLIs the repo no longer targets (reversible by default). |
+| [`aih prune`](docs/commands.md#aih-prune) | Remove stale per-CLI artifacts and reconcile orphaned aih-managed ECC components from the machine registration ledger. <!-- aih:claim CM-22 --> |
 | [`aih uninstall`](docs/commands.md#aih-uninstall) | Remove the marker-backed core aih install footprint from a repo; `aih clean` is an alias. |
 | [`aih ecc`](docs/commands.md#aih-ecc) | Register the additive common + project-scoped ECC/MCP union from an evidence-verified exact pin. <!-- aih:claim CM-21 --> |
 | [`aih superpowers`](docs/commands.md#aih-superpowers) | Verify exact-pinned Superpowers components and emit evidence-bound target guidance. |
@@ -297,7 +297,11 @@ quarantined tree re-hashes. By default, `aih ecc` materializes the additive unio
 baseline, detected or repeatably declared project riders, posture-selected security, and validated
 MCPs; `--profile full` is the explicit full-surface opt-in. The primary project/target contribution
 ledger lives at `~/.aih/ecc/registration-ledger.json` and commits only after every install step
-succeeds. Superpowers marketplace/TUI paths cannot bind installed bytes to that
+succeeds. A bare `aih prune` also checks that ledger: missing project roots are retired, the live
+component/MCP union is recomputed, and only state-recorded aih-managed operations no longer shared
+by a live project are removed. Dry-run reports the diff without mutation; `--apply` hash-binds all
+inputs, rolls back partial failure, and replaces target state before committing the ledger last.
+Superpowers marketplace/TUI paths cannot bind installed bytes to that
 tree, so aih executes none of them; it emits pin-aware guidance and says those marketplace selections
 are not evidence-covered. ECC and Superpowers are complementary — ECC supplies stack-aware rules,
 agents, and memory; Superpowers supplies the disciplined agent loop that uses them.

@@ -39,9 +39,11 @@ The contract is not prose — every covered surface is pinned by a committed tes
   derived machine cache `~/.aih/capabilities/cache.json`; and the marketplace
   artifact + evidence-bundle manifests. The ECC project/target registration ledger
   `~/.aih/ecc/registration-ledger.json` is a primary machine store (unlike the
-  derived capability cache) and carries `schemaVersion: 1`. The structured families carry
-  `schemaVersion: 1` — changing one incompatibly means bumping that version,
-  which is a major.
+  derived capability cache) and carries `schemaVersion: 1`. Scoped `aih prune` reconciliation may
+  replace that store only after its hash-bound, ownership-proven target mutations and state rewrites
+  succeed; failure rolls the transaction back and leaves the prior ledger authoritative. The
+  structured families carry `schemaVersion: 1` — changing one incompatibly means bumping that
+  version, which is a major.
 
 Not covered: human-oriented text — summaries, help prose, warning wording, the
 report dashboard HTML. Parse `--json`, not text.

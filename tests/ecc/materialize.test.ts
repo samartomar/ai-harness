@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { EccComponentSelection } from "../../src/ecc/components.js";
-import { filterEccManifestPlan } from "../../src/ecc/materialize.js";
+import { eccManifestOperationSelected, filterEccManifestPlan } from "../../src/ecc/materialize.js";
 
 interface FixtureOperation {
   kind: "copy-file" | "merge-json" | "remove-tree";
@@ -79,6 +79,34 @@ function scopedSelection(): EccComponentSelection {
 }
 
 describe("filterEccManifestPlan", () => {
+  it("exposes the same scoped operation predicate for prune reconciliation", () => {
+    const selected = scopedSelection();
+    expect(
+      eccManifestOperationSelected(
+        operation("skills/react-patterns/SKILL.md", "framework-language"),
+        selected,
+      ),
+    ).toBe(true);
+    expect(
+      eccManifestOperationSelected(
+        operation("skills/cpp-testing/SKILL.md", "framework-language"),
+        selected,
+      ),
+    ).toBe(false);
+    expect(
+      eccManifestOperationSelected(
+        operation("skills/react-testing/SKILL.md", "aih-scoped-skills"),
+        selected,
+      ),
+    ).toBe(true);
+    expect(
+      eccManifestOperationSelected(operation("anything", "anything"), {
+        ...selected,
+        scope: "full",
+      }),
+    ).toBe(true);
+  });
+
   it("keeps selected files and target scaffolding while filtering unrelated agents and skills", () => {
     const plan = fixturePlan();
 

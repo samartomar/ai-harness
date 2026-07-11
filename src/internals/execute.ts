@@ -818,8 +818,13 @@ export async function executePlan(
   const execs: PlanResult["execs"] = [];
   const execFailureChecks: Check[] = [];
   let skipProbesAfterExecFailure = false;
+  let priorExecFailed = false;
   for (const a of execActions) {
     if (ctx.apply) {
+      if (priorExecFailed && a.requiresPriorExecSuccess) {
+        execs.push({ describe: a.describe, argv: a.argv, ran: false });
+        continue;
+      }
       if (a.expect !== undefined) {
         // Apply-time content pin: the command must consume the exact bytes the
         // plan preflighted. ONE read (no stat-then-read window), hashed the same
@@ -857,6 +862,7 @@ export async function executePlan(
         ok,
       });
       if (!ok) {
+        priorExecFailed = true;
         if (a.failureCheck) {
           execFailureChecks.push(
             typeof a.failureCheck === "function" ? a.failureCheck(res) : a.failureCheck,
