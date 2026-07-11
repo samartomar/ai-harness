@@ -413,6 +413,56 @@ describe("aih prune ECC registration reconciliation", () => {
     return statePath;
   }
 
+  function writeCodexMergeState(home: string): void {
+    const codexRoot = join(home, ".codex");
+    writeFileSync(
+      join(codexRoot, CODEX_INSTALL_STATE_FILE),
+      `${JSON.stringify(
+        {
+          schemaVersion: 1,
+          managedBy: "aih",
+          codexToml: {
+            rootKeys: [],
+            tables: [],
+            tableKeys: {},
+            mcpServers: ["sequential-thinking", "github"],
+          },
+          agentsBlock: true,
+        },
+        null,
+        2,
+      )}\n`,
+      "utf8",
+    );
+    writeFileSync(
+      join(codexRoot, "config.toml"),
+      [
+        "# >>> aih managed (mcp) >>>",
+        '[mcp_servers."sequential-thinking"]',
+        'command = "npx"',
+        "",
+        '[mcp_servers."github"]',
+        'url = "https://api.githubcopilot.com/mcp/"',
+        "# <<< aih managed (mcp) <<<",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+    writeFileSync(
+      join(codexRoot, "AGENTS.md"),
+      [
+        "<!-- BEGIN ecc-codex:agents (generated from affaan-m/ECC .codex/AGENTS.md) -->",
+        "Available skills:",
+        "- cpp-testing",
+        "- react-patterns",
+        "",
+        "<!-- END ecc-codex:agents -->",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+  }
+
   it("plans a deterministic ledger-last component diff even without committed CLI intent", async () => {
     const home = join(dir, "home");
     const reactRoot = join(home, "projects", "react");
@@ -422,6 +472,7 @@ describe("aih prune ECC registration reconciliation", () => {
     const cppSkill = join(home, ".codex", "skills", "cpp-testing", "SKILL.md");
     const reactSkill = join(home, ".codex", "skills", "react-patterns", "SKILL.md");
     const statePath = writeCodexState(home, cppSkill, reactSkill);
+    writeCodexMergeState(home);
     const before = new Map(
       [ledgerPath, statePath, cppSkill, reactSkill].map((path) => [path, readFileSync(path)]),
     );
@@ -464,6 +515,18 @@ describe("aih prune ECC registration reconciliation", () => {
 
     await expect(actionsOf({ env: { HOME: home, USERPROFILE: home } })).rejects.toThrow(
       /invalid ECC registration ledger/i,
+    );
+  });
+
+  it("fails closed when a shrinking home target has no authoritative install state", async () => {
+    const home = join(dir, "home");
+    const reactRoot = join(home, "projects", "react");
+    const cppRoot = join(home, "projects", "deleted-cpp");
+    mkdirSync(reactRoot, { recursive: true });
+    writeLedger(home, reactRoot, cppRoot);
+
+    await expect(actionsOf({ env: { HOME: home, USERPROFILE: home } })).rejects.toThrow(
+      /missing ECC install state/i,
     );
   });
 });
