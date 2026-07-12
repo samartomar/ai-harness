@@ -60,12 +60,11 @@ describe("shipped vendor baseline lock", () => {
       analyzers: requiredAnalyzerReceipts("ecc", verificationLoop),
       findings: [],
     });
-    expect(
-      ecc?.components.find((component) => component.id === "skill:tdd-workflow"),
-    ).toMatchObject({
-      verdict: "blocked",
-      findings: [expect.objectContaining({ code: "trust.hidden-unicode" })],
-    });
+    const tddWorkflow = ecc?.components.find((component) => component.id === "skill:tdd-workflow");
+    expect(tddWorkflow).toMatchObject({ verdict: "blocked" });
+    expect(tddWorkflow?.findings).toEqual(
+      expect.arrayContaining([expect.objectContaining({ code: "trust.hidden-unicode" })]),
+    );
     expect(
       lock.sources
         .flatMap((source) => source.components)

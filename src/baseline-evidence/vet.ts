@@ -76,19 +76,34 @@ function defaultComponentScanner(
   };
 }
 
+// A missing required analyzer is almost always a detector that failed to run
+// (e.g. an offline uv cache that no longer resolves the pinned Cisco scanner).
+// Surface those underlying reasons so the fail-closed abort is actionable instead
+// of opaque.
+function detectorDiagnostics(checks: readonly Check[]): string[] {
+  return checks
+    .filter((check) => check.code === "trust.detector-unavailable" && check.verdict === "fail")
+    .map((check) => check.detail?.trim())
+    .filter((detail): detail is string => detail !== undefined && detail.length > 0);
+}
+
 function analyzerReceipts(
   analyzersRun: readonly string[],
   versions: Readonly<Record<string, string>>,
   requiredAnalyzers: readonly string[],
   componentId: string,
+  checks: readonly Check[],
 ): BaselineAnalyzerReceipt[] {
   const analyzers = [...new Set(analyzersRun)].sort((left, right) => left.localeCompare(right));
   if (analyzers.length === 0) throw new Error("baseline vet produced no analyzer receipt");
   const completed = new Set(analyzers);
   const missing = requiredAnalyzers.filter((name) => !completed.has(name));
   if (missing.length > 0) {
+    const diagnostics = detectorDiagnostics(checks);
+    const because =
+      diagnostics.length > 0 ? `; detector diagnostics: ${diagnostics.join(" | ")}` : "";
     throw new Error(
-      `baseline component ${componentId} missing required baseline analyzers: ${missing.join(", ")}`,
+      `baseline component ${componentId} missing required baseline analyzers: ${missing.join(", ")}${because}`,
     );
   }
   return analyzers.map((name) => {
@@ -154,7 +169,13 @@ export async function vetBaselineCatalog(
       paths: [...component.paths],
       treeSha256: tree.treeSha256,
       verdict: findings.length > 0 ? ("blocked" as const) : ("pass" as const),
-      analyzers: analyzerReceipts(scan.analyzersRun, versions, requiredAnalyzers, component.id),
+      analyzers: analyzerReceipts(
+        scan.analyzersRun,
+        versions,
+        requiredAnalyzers,
+        component.id,
+        scan.checks,
+      ),
       findings,
     });
   }

@@ -43,10 +43,7 @@ const SUPERPOWERS_SKILLS = [
   "writing-skills",
 ] as const;
 
-const ECC_NESTED_SKILL_MODULES = new Set([
-  "agents-core",
-  "platform-configs",
-]);
+const ECC_NESTED_SKILL_MODULES = new Set(["agents-core", "platform-configs"]);
 
 type EccModule = (typeof eccModules.modules)[number];
 

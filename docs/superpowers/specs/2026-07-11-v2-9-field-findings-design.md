@@ -33,7 +33,7 @@ source with a passing runtime and a vetted/vendor-hashed dependency path.
 
 Fork-pin bridge active per the maintainer's locked decision: the ECC catalog now
 pins the remediated commit on the `samartomar/ECC` fork
-(`32cec153324c5435673f3490c6594ab293d5fcdc`, which clears the original four
+(`16563d4a30f17d097cc4629f6d97e02adf823016`, which clears the original four
 affaan-m/ECC#2502 blockers, the full-profile RP1 runtime findings, and malformed
 YAML frontmatter across the discovered English and translated skill surfaces) until the upstream PR to
 affaan-m/ECC merges, which is pending review. Release readiness still requires

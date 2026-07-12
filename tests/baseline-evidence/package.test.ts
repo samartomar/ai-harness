@@ -2,15 +2,12 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { baselineCatalogById } from "../../src/baseline-evidence/catalogs.js";
 import {
   CISCO_SKILL_SCANNER_SPEC,
   CISCO_SKILL_SCANNER_VERSION,
 } from "../../src/baseline-evidence/analyzer-profile.js";
-import {
-  SKILLSPECTOR_IMAGE_DIGEST,
-  SKILLSPECTOR_SOURCE_REVISION,
-} from "../../src/trust/images.js";
+import { baselineCatalogById } from "../../src/baseline-evidence/catalogs.js";
+import { SKILLSPECTOR_IMAGE_DIGEST, SKILLSPECTOR_SOURCE_REVISION } from "../../src/trust/images.js";
 
 const repo = process.cwd();
 
@@ -60,9 +57,7 @@ describe("baseline evidence release payload", () => {
     expect(workflow).toContain("docker build");
     expect(workflow).toContain("tools/skillspector.Dockerfile");
     expect(workflow).toContain("SOURCE_DATE_EPOCH=1782883813");
-    expect(workflow).toContain(
-      "astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990",
-    );
+    expect(workflow).toContain("astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990");
     expect(workflow).toContain(CISCO_SKILL_SCANNER_SPEC);
     expect(workflow).toContain(`skill-scanner ${CISCO_SKILL_SCANNER_VERSION}`);
     expect(workflow).toContain("actions/upload-artifact@");

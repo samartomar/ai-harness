@@ -1671,6 +1671,58 @@ const MCP_CONFIG_DETECTORS: TrustDetector[] = [
   },
 ];
 
+const ALL_TRUST_DETECTORS: readonly TrustDetector[] = [
+  ...SKILL_TRUST_DETECTORS,
+  ...MCP_CONFIG_DETECTORS,
+];
+
+/** One requested detector that is NOT runnable, with the underlying reason. */
+export interface DetectorAvailabilityProbe {
+  name: TrustDetectorName;
+  analyzerLabel: string;
+  reason: string;
+}
+
+export interface DetectorAvailabilityOptions {
+  run: Runner;
+  platform: Platform;
+  env: NodeJS.ProcessEnv;
+  skillspectorImageApprovals?: readonly SkillSpectorImageApproval[];
+}
+
+/**
+ * Probe availability of specific detectors WITHOUT scanning. Returns one entry
+ * per requested detector that is not runnable, carrying the underlying reason
+ * (e.g. an offline uv cache miss). An empty array means every requested detector
+ * is ready. Used by the baseline preflight to fail fast with an actionable
+ * provisioning message instead of aborting mid-vet with an opaque
+ * missing-analyzer error. It never runs a scan, fabricates a receipt, or relaxes
+ * the required-detector floor.
+ */
+export async function checkDetectorsAvailable(
+  names: readonly TrustDetectorName[],
+  options: DetectorAvailabilityOptions,
+): Promise<DetectorAvailabilityProbe[]> {
+  const runtimeOptions: TrustDetectorRuntimeOptions = {
+    skillspectorImageApprovals: options.skillspectorImageApprovals ?? [],
+  };
+  const unavailable: DetectorAvailabilityProbe[] = [];
+  for (const name of names) {
+    const detector = ALL_TRUST_DETECTORS.find((candidate) => candidate.name === name);
+    if (detector === undefined) continue;
+    const reason = await detector.checkAvailable(
+      options.run,
+      options.platform,
+      options.env,
+      runtimeOptions,
+    );
+    if (reason !== undefined) {
+      unavailable.push({ name, analyzerLabel: detector.analyzerLabel, reason });
+    }
+  }
+  return unavailable;
+}
+
 async function runDetectorList(
   detectors: readonly TrustDetector[],
   root: string,

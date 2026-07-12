@@ -2,20 +2,25 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { defineBaselineCatalog } from "../../src/baseline-evidence/catalog.js";
 import {
+  preflightRequiredBaselineAnalyzers,
   requiredBaselineAnalyzersForComponent,
   requiredBaselineDetectorsForComponent,
 } from "../../src/baseline-evidence/analyzer-profile.js";
+import { defineBaselineCatalog } from "../../src/baseline-evidence/catalog.js";
+import { fakeRunner, missingToolRunner } from "../../src/internals/proc.js";
+import { checkDetectorsAvailable } from "../../src/trust/detectors.js";
 
 function component(id: string, paths: string[]) {
-  return defineBaselineCatalog({
+  const [first] = defineBaselineCatalog({
     id: "fixture",
     owner: "owner",
     repo: "repo",
     pinnedSha: "a".repeat(40),
     components: [{ id, paths }],
-  }).components[0]!;
+  }).components;
+  if (first === undefined) throw new Error("fixture catalog did not contain a component");
+  return first;
 }
 
 describe("required baseline analyzer applicability", () => {
@@ -55,9 +60,43 @@ describe("required baseline analyzer applicability", () => {
       "skillspector@docker",
       "cisco@uvx",
     ]);
-    expect(requiredBaselineDetectorsForComponent(nested, root)).toEqual([
-      "skillspector",
-      "cisco",
+    expect(requiredBaselineDetectorsForComponent(nested, root)).toEqual(["skillspector", "cisco"]);
+  });
+});
+
+describe("checkDetectorsAvailable", () => {
+  it("reports Cisco unavailable with the underlying offline uvx reason", async () => {
+    const run = fakeRunner((argv) =>
+      argv.includes("--version")
+        ? { code: 1, stderr: "cisco-ai-skill-scanner was not found in the cache" }
+        : undefined,
+    );
+    const probes = await checkDetectorsAvailable(["cisco"], { run, platform: "linux", env: {} });
+    expect(probes).toEqual([
+      {
+        name: "cisco",
+        analyzerLabel: "cisco@uvx",
+        reason: expect.stringContaining("not found in the cache"),
+      },
     ]);
+  });
+
+  it("returns no probe when Cisco resolves offline", async () => {
+    const run = fakeRunner((argv) =>
+      argv.includes("--version") ? { code: 0, stdout: "skill-scanner 2.0.12" } : undefined,
+    );
+    expect(await checkDetectorsAvailable(["cisco"], { run, platform: "linux", env: {} })).toEqual(
+      [],
+    );
+  });
+});
+
+describe("preflightRequiredBaselineAnalyzers", () => {
+  it("fails closed with an actionable provisioning hint when a required analyzer is unprovisioned", async () => {
+    await expect(
+      preflightRequiredBaselineAnalyzers({ run: missingToolRunner, platform: "linux", env: {} }),
+    ).rejects.toThrow(
+      /preflight: required analyzer\(s\) not provisioned.*cisco@uvx unavailable.*uv tool install cisco-ai-skill-scanner==2\.0\.12/is,
+    );
   });
 });

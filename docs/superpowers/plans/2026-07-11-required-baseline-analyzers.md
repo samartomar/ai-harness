@@ -208,7 +208,7 @@ git commit -s -m "ci: enforce reproducible baseline analyzer profile"
 - Modify only if authorization changes: `src/baseline-evidence/ecc-install-preview.json`
 
 **Interfaces:**
-- Consumes: `samartomar/ECC@32cec153324c5435673f3490c6594ab293d5fcdc` and `obra/Superpowers@d884ae04edebef577e82ff7c4e143debd0bbec99`.
+- Consumes: `samartomar/ECC@16563d4a30f17d097cc4629f6d97e02adf823016` and `obra/Superpowers@d884ae04edebef577e82ff7c4e143debd0bbec99`.
 - Produces: analyzer-complete component evidence at those exact source hashes.
 
 - [ ] **Step 1: Build and verify pinned SkillSpector**
@@ -246,7 +246,7 @@ Expected: exit 0 and version `2.0.12`.
 ```bash
 git clone https://github.com/samartomar/ECC.git "$VET_ROOT/ECC"
 git -C "$VET_ROOT/ECC" checkout --detach \
-  32cec153324c5435673f3490c6594ab293d5fcdc
+  16563d4a30f17d097cc4629f6d97e02adf823016
 git clone https://github.com/obra/Superpowers.git "$VET_ROOT/Superpowers"
 git -C "$VET_ROOT/Superpowers" checkout --detach \
   d884ae04edebef577e82ff7c4e143debd0bbec99

@@ -164,8 +164,32 @@ describe("vetBaselineCatalog", () => {
           "cisco@uvx": "2.0.12",
         },
       }),
+    ).rejects.toThrow(/missing required baseline analyzers: skillspector@docker, cisco@uvx/i);
+  });
+
+  it("surfaces the underlying detector reason when a required analyzer is missing", async () => {
+    const unavailable: Check = {
+      name: "trust detector cisco",
+      verdict: "fail",
+      code: "trust.detector-unavailable",
+      detail:
+        "required detector cisco is unavailable at enterprise posture. cisco not available (uvx --offline: cisco-ai-skill-scanner was not found in the cache)",
+    };
+    await expect(
+      vetBaselineCatalog(root, catalog(), {
+        scanComponent: async () => ({
+          analyzersRun: ["aih-native", "skillspector@docker"],
+          checks: [unavailable],
+        }),
+        requiredAnalyzers: ["aih-native", "skillspector@docker", "cisco@uvx"],
+        analyzerVersions: {
+          "aih-native": "2.7.0",
+          "skillspector@docker": "326a2b489411@sha256:e82fd471e156",
+          "cisco@uvx": "2.0.12",
+        },
+      }),
     ).rejects.toThrow(
-      /missing required baseline analyzers: skillspector@docker, cisco@uvx/i,
+      /missing required baseline analyzers: cisco@uvx; detector diagnostics:.*not found in the cache/is,
     );
   });
 

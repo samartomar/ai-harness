@@ -50,6 +50,7 @@ describe("vendor baseline generator", () => {
         vetCatalog,
         checkoutHead: (_root, catalog) => catalog.pinnedSha,
         generatePreview: () => ({ schemaVersion: 1, operations: [] }),
+        preflight: async () => {},
       },
     );
 
@@ -69,5 +70,38 @@ describe("vendor baseline generator", () => {
         }),
       );
     }
+  });
+
+  it("runs the analyzer preflight before vetting and aborts fail-closed when it fails", async () => {
+    const order: string[] = [];
+    const vetCatalog = vi.fn(async (_root: string, catalog: BaselineCatalog) => {
+      order.push("vet");
+      return evidence(catalog);
+    });
+    const preflight = vi.fn(async () => {
+      order.push("preflight");
+      throw new Error(
+        "baseline vet preflight: required analyzer(s) not provisioned — cisco@uvx unavailable (uv cache miss)",
+      );
+    });
+
+    await expect(
+      generateBaselineArtifacts(
+        { eccRoot: process.cwd(), superpowersRoot: process.cwd() },
+        {
+          run: fakeRunner(() => undefined),
+          platform: "linux",
+          env: {},
+          vetCatalog,
+          checkoutHead: (_root, catalog) => catalog.pinnedSha,
+          generatePreview: () => ({ schemaVersion: 1, operations: [] }),
+          preflight,
+        },
+      ),
+    ).rejects.toThrow(/preflight: required analyzer\(s\) not provisioned.*cisco@uvx/is);
+
+    expect(preflight).toHaveBeenCalledTimes(1);
+    expect(vetCatalog).not.toHaveBeenCalled();
+    expect(order).toEqual(["preflight"]);
   });
 });

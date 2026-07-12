@@ -54,7 +54,7 @@ vendor snapshot and the later explicit-locale extension path. Run public docs li
 - Modify if deterministic output changes: `src/baseline-evidence/ecc-install-preview.json`
 
 1. Run `npm run baseline:vet` against
-   `samartomar/ECC@32cec153324c5435673f3490c6594ab293d5fcdc` and
+   `samartomar/ECC@16563d4a30f17d097cc4629f6d97e02adf823016` and
    `obra/Superpowers@d884ae04edebef577e82ff7c4e143debd0bbec99`.
 2. Confirm the lock has 23 ECC module components, zero locale components, and complete
    analyzer receipts for every applicable supported component.

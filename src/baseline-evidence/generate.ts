@@ -5,7 +5,10 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { defaultRunner, type Runner } from "../internals/proc.js";
 import type { Platform } from "../platform/base.js";
 import { resolvePlatform } from "../platform/detect.js";
-import { requiredBaselineVetOptions } from "./analyzer-profile.js";
+import {
+  preflightRequiredBaselineAnalyzers,
+  requiredBaselineVetOptions,
+} from "./analyzer-profile.js";
 import type { BaselineCatalog } from "./catalog.js";
 import { baselineCatalogById } from "./catalogs.js";
 import { generateAuthorizedEccInstallPreview } from "./ecc-preview-boundary.js";
@@ -31,6 +34,11 @@ export interface GenerateBaselineDependencies {
   vetCatalog?: typeof vetBaselineCatalog;
   checkoutHead?: (root: string, catalog: BaselineCatalog) => string;
   generatePreview?: (input: Parameters<typeof generateAuthorizedEccInstallPreview>[0]) => unknown;
+  preflight?: (runtime: {
+    run: Runner;
+    platform: Platform;
+    env: NodeJS.ProcessEnv;
+  }) => Promise<void>;
 }
 
 function optionValue(argv: readonly string[], flag: string): string | undefined {
@@ -92,6 +100,11 @@ export async function generateBaselineArtifacts(
   const progress = deps.progress ?? ((message: string) => process.stderr.write(`${message}\n`));
   const vet = deps.vetCatalog ?? vetBaselineCatalog;
   const vetOptions = requiredBaselineVetOptions({ run, platform, env, progress });
+  // Fail fast, before a multi-minute vet, if a required analyzer is not runnable
+  // offline in this environment. Keeps fail-closed while making the reason
+  // actionable instead of aborting mid-vet with an opaque missing-analyzer error.
+  const preflight = deps.preflight ?? preflightRequiredBaselineAnalyzers;
+  await preflight({ run, platform, env });
   const eccEvidence = await vet(opts.eccRoot, ecc, vetOptions);
   const generatePreview = deps.generatePreview ?? generateAuthorizedEccInstallPreview;
   const preview = generatePreview({
