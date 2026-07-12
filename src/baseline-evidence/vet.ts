@@ -143,6 +143,9 @@ export async function vetBaselineCatalog(
   catalog: BaselineCatalog,
   options: VetBaselineCatalogOptions = {},
 ): Promise<BaselineSourceEvidence> {
+  if (options.requiredAnalyzers === undefined) {
+    throw new Error("vetBaselineCatalog requires an explicit requiredAnalyzers floor");
+  }
   const scanComponent =
     options.scanComponent ??
     defaultComponentScanner(

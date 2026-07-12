@@ -47,6 +47,7 @@ describe("vetBaselineCatalog", () => {
 
     const evidence = await vetBaselineCatalog(root, catalog(), {
       scanComponent,
+      requiredAnalyzers: ["aih-native"],
       analyzerVersions: { "aih-native": "2.7.0" },
     });
 
@@ -80,6 +81,7 @@ describe("vetBaselineCatalog", () => {
         analyzersRun: ["aih-native"],
         checks: component.id === "skill:blocked" ? [danger] : [pass(component.id)],
       }),
+      requiredAnalyzers: ["aih-native"],
       analyzerVersions: { "aih-native": "2.7.0" },
     });
 
@@ -105,6 +107,7 @@ describe("vetBaselineCatalog", () => {
     };
     const evidence = await vetBaselineCatalog(root, catalog(), {
       scanComponent: async () => ({ analyzersRun: ["aih-native"], checks: [unavailable] }),
+      requiredAnalyzers: ["aih-native"],
       analyzerVersions: { "aih-native": "2.7.0" },
     });
     expect(evidence.components.every((component) => component.verdict === "blocked")).toBe(true);
@@ -127,6 +130,7 @@ describe("vetBaselineCatalog", () => {
     ];
     const evidence = await vetBaselineCatalog(root, catalog(), {
       scanComponent: async () => ({ analyzersRun: ["aih-native"], checks: repeated }),
+      requiredAnalyzers: ["aih-native"],
       analyzerVersions: { "aih-native": "2.7.0" },
     });
     expect(evidence.components[0]?.findings).toEqual([
@@ -145,6 +149,7 @@ describe("vetBaselineCatalog", () => {
           analyzersRun: ["aih-native", "skillspector@docker"],
           checks: [pass("scan")],
         }),
+        requiredAnalyzers: ["aih-native"],
         analyzerVersions: { "aih-native": "2.7.0" },
       }),
     ).rejects.toThrow(/skillspector.*version/i);
@@ -214,6 +219,15 @@ describe("vetBaselineCatalog", () => {
     ]);
   });
 
+  it("throws at entry when requiredAnalyzers is omitted instead of vetting receipt-unenforced", async () => {
+    await expect(
+      vetBaselineCatalog(root, catalog(), {
+        scanComponent: async () => ({ analyzersRun: ["aih-native"], checks: [pass("scan")] }),
+        analyzerVersions: { "aih-native": "2.7.0" },
+      }),
+    ).rejects.toThrow(/requires an explicit requiredAnalyzers floor/i);
+  });
+
   it("fails closed when component bytes change during analyzer execution", async () => {
     await expect(
       vetBaselineCatalog(root, catalog(), {
@@ -223,6 +237,7 @@ describe("vetBaselineCatalog", () => {
           }
           return { analyzersRun: ["aih-native"], checks: [pass(component.id)] };
         },
+        requiredAnalyzers: ["aih-native"],
         analyzerVersions: { "aih-native": "2.7.0" },
       }),
     ).rejects.toThrow(/changed during.*vet/i);
@@ -244,6 +259,7 @@ describe("vetBaselineCatalog", () => {
 
     await vetBaselineCatalog(root, catalog(), {
       scanTree,
+      requiredAnalyzers: ["aih-native"],
       analyzerVersions: { "aih-native": "2.7.0" },
     });
 
