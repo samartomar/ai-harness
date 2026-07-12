@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { spliceReusedComponent } from "../../src/baseline-evidence/reuse.js";
 import { readVendorBaselineLock } from "../../src/baseline-evidence/vendor.js";
 import {
   checkInstallableBaseline,
@@ -227,5 +228,30 @@ describe("postureOkForCatalog preview-escape gating for non-installer catalogs (
 
   it("goes red for a non-installer catalog when a preview destination escapes the fixture", () => {
     expect(postureOkForCatalog({ ...nonInstallerInput, previewEscapeCount: 1 })).toBe(false);
+  });
+
+  it("installs identically from a lock whose ECC components were reuse-spliced (issue #444, bullet 6)", async () => {
+    const lock = readVendorBaselineLock();
+    const baseline = await checkInstallableBaseline({ lock, fixtureOnly: true });
+
+    const splicedLock = {
+      ...lock,
+      sources: lock.sources.map((source) =>
+        source.id === "ecc"
+          ? {
+              ...source,
+              components: source.components.map((component) => spliceReusedComponent(component)),
+            }
+          : source,
+      ),
+    };
+    const splicedReport = await checkInstallableBaseline({ lock: splicedLock, fixtureOnly: true });
+
+    expect(splicedReport.ok).toBe(baseline.ok);
+    for (const posture of ["vibe", "team", "enterprise"] as const) {
+      expect(splicedReport.catalogs.ecc.postures[posture].installedComponentIds).toEqual(
+        baseline.catalogs.ecc.postures[posture].installedComponentIds,
+      );
+    }
   });
 });

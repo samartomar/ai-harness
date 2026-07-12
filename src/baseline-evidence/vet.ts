@@ -6,8 +6,16 @@ import { VERSION } from "../version.js";
 import type { BaselineCatalog, BaselineCatalogComponent } from "./catalog.js";
 import { hashComponentTree } from "./hash.js";
 import {
+  type ComponentReuseRecord,
+  decideComponentReuse,
+  findPriorSource,
+  formatCatalogReuseSummary,
+  spliceReusedComponent,
+} from "./reuse.js";
+import {
   type BaselineAnalyzerReceipt,
   type BaselineEvidenceFinding,
+  type BaselineEvidenceLock,
   type BaselineSourceEvidence,
   BaselineSourceEvidenceSchema,
 } from "./schema.js";
@@ -40,6 +48,12 @@ export interface VetBaselineCatalogOptions {
     component: BaselineCatalogComponent,
     sourceRoot: string,
   ) => NonNullable<ScanTrustTreeOptions["requiredDetectors"]>;
+  /** Prior lock to splice unchanged, identity-matched receipts from (Decision 1/4).
+   * Absent ⟹ every component is treated as new and fully scanned. */
+  reuseFrom?: BaselineEvidenceLock;
+  /** Disable reuse outright and rescan every component (Decision 5's escape
+   * hatch and the migration tool) — takes priority over `reuseFrom`. */
+  full?: boolean;
 }
 
 // Vendor-authored symlinks must never survive into a component projection: a
@@ -166,19 +180,45 @@ export async function vetBaselineCatalog(
       options.requiredDetectorsForComponent,
     );
   const versions = { "aih-native": VERSION, ...(options.analyzerVersions ?? {}) };
+  const priorSource = findPriorSource(options.reuseFrom, catalog);
+  const full = options.full === true;
   const components = [];
+  const reuseRecords: ComponentReuseRecord[] = [];
   for (const component of catalog.components) {
     const tree = hashComponentTree(sourceRoot, component.paths);
+    const requiredAnalyzers =
+      typeof options.requiredAnalyzers === "function"
+        ? options.requiredAnalyzers(component, sourceRoot)
+        : (options.requiredAnalyzers ?? []);
+    const decision = decideComponentReuse({
+      priorSource,
+      component,
+      currentTreeSha256: tree.treeSha256,
+      requiredAnalyzers,
+      analyzerVersions: versions,
+      full,
+    });
+    const analyzerNames =
+      decision.reuse && decision.priorEntry !== undefined
+        ? decision.priorEntry.analyzers.map((receipt) => receipt.name)
+        : requiredAnalyzers;
+    reuseRecords.push({
+      componentId: component.id,
+      decision,
+      currentTreeSha256: tree.treeSha256,
+      priorTreeSha256: decision.priorEntry?.treeSha256,
+      analyzerNames,
+    });
+    if (decision.reuse && decision.priorEntry !== undefined) {
+      components.push(spliceReusedComponent(decision.priorEntry));
+      continue;
+    }
     const scan = await scanComponent({ sourceRoot, component });
     const afterScan = hashComponentTree(sourceRoot, component.paths);
     if (afterScan.treeSha256 !== tree.treeSha256) {
       throw new Error(`baseline component ${component.id} changed during vet scan`);
     }
     const findings = blockingFindings(scan.checks);
-    const requiredAnalyzers =
-      typeof options.requiredAnalyzers === "function"
-        ? options.requiredAnalyzers(component, sourceRoot)
-        : (options.requiredAnalyzers ?? []);
     components.push({
       id: component.id,
       paths: [...component.paths],
@@ -193,6 +233,10 @@ export async function vetBaselineCatalog(
       ),
       findings,
     });
+  }
+  const progress = options.scanOptions?.progress;
+  if (progress) {
+    for (const line of formatCatalogReuseSummary(catalog, reuseRecords)) progress(line);
   }
   return BaselineSourceEvidenceSchema.parse({
     id: catalog.id,

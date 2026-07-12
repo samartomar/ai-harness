@@ -8,8 +8,8 @@ import {
   SKILLSPECTOR_SOURCE_REVISION,
   type SkillSpectorImageApproval,
 } from "../trust/images.js";
-import { VERSION } from "../version.js";
 import type { BaselineCatalogComponent } from "./catalog.js";
+import { nativeAnalyzerIdentity } from "./native-identity.js";
 import type { VetBaselineCatalogOptions } from "./vet.js";
 
 export const CISCO_SKILL_SCANNER_VERSION = "2.0.12";
@@ -80,7 +80,11 @@ export function requiredBaselineDetectorsForComponent(
 
 export function baselineAnalyzerVersions(): Readonly<Record<string, string>> {
   return {
-    "aih-native": VERSION,
+    // A content digest, not the package VERSION (see native-identity.ts): the
+    // identity's job is behavioral discrimination, and a version prefix would
+    // invalidate all receipts at every release version bump even when no
+    // detector source changed, forcing a full re-vet in every release PR.
+    "aih-native": nativeAnalyzerIdentity(),
     "skillspector@docker": `${SKILLSPECTOR_SOURCE_REVISION}@${SKILLSPECTOR_IMAGE_DIGEST}`,
     "cisco@uvx": CISCO_SKILL_SCANNER_VERSION,
   };

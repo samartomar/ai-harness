@@ -1,0 +1,29 @@
+{
+  "sources": [
+    "src/config/posture.ts",
+    "src/mcp/policy.ts",
+    "src/secrets/index.ts",
+    "src/secrets/probes.ts",
+    "src/secrets/scan.ts",
+    "src/secrets/templates.ts",
+    "src/skill/license.ts",
+    "src/trust/acknowledge.ts",
+    "src/trust/commands.ts",
+    "src/trust/depnames.ts",
+    "src/trust/detectors.ts",
+    "src/trust/docker.ts",
+    "src/trust/fetch.ts",
+    "src/trust/fingerprint.ts",
+    "src/trust/grade.ts",
+    "src/trust/images.ts",
+    "src/trust/inventory.ts",
+    "src/trust/lint.ts",
+    "src/trust/lock.ts",
+    "src/trust/manifest.ts",
+    "src/trust/mcp-classify.ts",
+    "src/trust/scan.ts",
+    "src/trust/script-files.ts",
+    "src/trust/smoke.ts"
+  ],
+  "digest": "334c11bcdfd8"
+}

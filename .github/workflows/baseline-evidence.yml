@@ -65,10 +65,15 @@ jobs:
           path: .baseline-sources/superpowers
           persist-credentials: false
       - name: Re-vet exact pins and fail on evidence drift
+        # CI is always the from-scratch ground truth (issue #444): --full disables
+        # incremental receipt reuse so this run rescans every component, the same
+        # as before I1. Incremental reuse is the human-loop default (baseline:vet /
+        # baseline:check without --full), not the CI gate.
         run: >-
           npm run baseline:check --
           --ecc-root .baseline-sources/ecc
           --superpowers-root .baseline-sources/superpowers
+          --full
       - name: Upload baseline evidence report
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
