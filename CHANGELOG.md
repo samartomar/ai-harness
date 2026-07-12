@@ -6,6 +6,37 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [2.10.0] - 2026-07-12
+
+### Added
+
+- Baseline vet (`baseline:vet`/`baseline:check`) now defaults to incremental reuse, splicing a
+  component's prior receipt into the new lock verbatim when its content and every required
+  analyzer identity are unchanged, and fully rescanning anything else with all fail-closed paths
+  preserved. The `aih-native` analyzer identity is now a content-bound digest instead of the
+  package version, so an in-repo detector change invalidates reuse across a version bump that
+  touches no detector; `--full` remains an explicit escape hatch that disables reuse outright.
+  (#450)
+
+### Changed
+
+- Trust-detector precision: a conservative negation check now recognizes negated protective
+  guardrails (e.g. "do not ... leak credentials") as true negatives instead of flagging them as
+  `trust.prompt-injection`, with genuine exfiltration detection unchanged and no vendor text
+  modified. Cisco's missing-license metadata finding moves from the blocking `trust.cisco-finding`
+  bucket to a new acknowledgeable origin-class code: advisory at vibe/team, acknowledgeable (not
+  silently passing) at enterprise. (#447)
+
+### Fixed
+
+- CI now provisions the SkillSpector scanner image via a content-addressed GHCR pull-by-digest
+  instead of rebuilding it every run, verifying the binding via `RepoDigests` so the check holds
+  under any Docker image store instead of requiring the containerd snapshotter; this removes the
+  job's daemon.json/store mutation entirely. (#445)
+- The installable release gate (`check:baseline-installable`) now iterates every baseline catalog
+  instead of a hardcoded `ecc` catalog, so Superpowers is evaluated and gated alongside ECC even
+  though it has no installer runtime of its own. (#446)
+
 ## [2.9.0] - 2026-07-12
 
 ### Added
