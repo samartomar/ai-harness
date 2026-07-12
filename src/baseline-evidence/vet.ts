@@ -1,4 +1,4 @@
-import { cpSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { cpSync, lstatSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import type { Check } from "../internals/verify.js";
 import { scanTrustTreeWithAnalyzers, type TrustScanResult } from "../trust/scan.js";
@@ -42,7 +42,18 @@ export interface VetBaselineCatalogOptions {
   ) => NonNullable<ScanTrustTreeOptions["requiredDetectors"]>;
 }
 
-function defaultComponentScanner(
+// Vendor-authored symlinks must never survive into a component projection: a
+// projected symlink can point anywhere on the host (including outside the
+// source root entirely), and the host-side analyzers that scan the
+// projection would follow it, leaking file contents into SARIF/lock output
+// that was never part of the vetted component. cpSync's filter runs on every
+// copied entry, including the top-level declared path itself, so this alone
+// is sufficient to exclude both nested and top-level symlinked paths.
+function isNotSymlink(candidate: string): boolean {
+  return !lstatSync(candidate).isSymbolicLink();
+}
+
+export function defaultComponentScanner(
   scanOptions: ScanTrustTreeOptions,
   scanTree: BaselineTreeScanner,
   requiredDetectorsForComponent?: VetBaselineCatalogOptions["requiredDetectorsForComponent"],
@@ -62,6 +73,7 @@ function defaultComponentScanner(
           force: false,
           dereference: false,
           preserveTimestamps: true,
+          filter: isNotSymlink,
         });
       }
       return await scanTree(projectionRoot, {

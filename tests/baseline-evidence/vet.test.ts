@@ -1,10 +1,18 @@
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { defineBaselineCatalog } from "../../src/baseline-evidence/catalog.js";
 import { hashComponentTree } from "../../src/baseline-evidence/hash.js";
-import { vetBaselineCatalog } from "../../src/baseline-evidence/vet.js";
+import { defaultComponentScanner, vetBaselineCatalog } from "../../src/baseline-evidence/vet.js";
 import type { Check } from "../../src/internals/verify.js";
 
 let root: string;
@@ -265,5 +273,41 @@ describe("vetBaselineCatalog", () => {
 
     expect(scanTree).toHaveBeenCalledTimes(2);
     expect(projections.every((projection) => !existsSync(projection))).toBe(true);
+  });
+
+  it("prunes vendor-authored symlinks from the component projection instead of following them off-host", async (ctx) => {
+    // hashComponentTree already hard-refuses any symlink under a component's
+    // declared paths, so a symlinked entry can never reach vetBaselineCatalog's
+    // scan step through the public entry point. Exercise defaultComponentScanner
+    // (via the exported scanComponent it builds) directly so the cpSync
+    // projection's own symlink defense is verified independently of that
+    // earlier guard.
+    const outside = mkdtempSync(join(tmpdir(), "aih-baseline-outside-"));
+    try {
+      writeFileSync(join(outside, "SECRET.md"), "must never enter a component projection\n");
+      try {
+        symlinkSync(join(outside, "SECRET.md"), join(root, "skills", "clean", "LEAK.md"));
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code === "EPERM") ctx.skip();
+        throw err;
+      }
+
+      const [component] = catalog().components;
+      if (component === undefined) throw new Error("fixture catalog is missing a component");
+
+      const scanTree = vi.fn(async (projectionRoot: string) => {
+        expect(existsSync(join(projectionRoot, "skills", "clean", "SKILL.md"))).toBe(true);
+        expect(() => lstatSync(join(projectionRoot, "skills", "clean", "LEAK.md"))).toThrow();
+        return { analyzersRun: ["aih-native"], checks: [pass("projected scan")] };
+      });
+      const scanComponent = defaultComponentScanner({}, scanTree);
+
+      const scan = await scanComponent({ sourceRoot: root, component });
+
+      expect(scanTree).toHaveBeenCalledTimes(1);
+      expect(scan.analyzersRun).toEqual(["aih-native"]);
+    } finally {
+      rmSync(outside, { recursive: true, force: true });
+    }
   });
 });
