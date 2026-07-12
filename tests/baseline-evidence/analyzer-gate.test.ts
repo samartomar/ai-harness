@@ -4,6 +4,7 @@ import {
   requiredBaselineAnalyzersForComponent,
 } from "../../src/baseline-evidence/analyzer-profile.js";
 import { baselineCatalogById } from "../../src/baseline-evidence/catalogs.js";
+import { spliceReusedComponent } from "../../src/baseline-evidence/reuse.js";
 import type { BaselineComponentEvidence } from "../../src/baseline-evidence/schema.js";
 import { readVendorBaselineLock } from "../../src/baseline-evidence/vendor.js";
 import { checkBaselineAnalyzerReceipts } from "../../src/internals/check-baseline-analyzers.js";
@@ -80,6 +81,16 @@ describe("baseline analyzer receipt gate", () => {
 
   it("rejects a lock pinned to a source SHA that no longer matches the active catalog pin", () => {
     const lock = structuredClone(readVendorBaselineLock());
+    // Normalize every component's receipts to the CURRENT analyzer identities first
+    // (as the other tests in this file do) so this test isolates the one behavior
+    // it names — the stale-pin finding — instead of also depending on whether the
+    // committed vendor-lock.json has already been re-vetted under the current
+    // aih-native identity.
+    for (const normalizeSource of lock.sources) {
+      for (const component of normalizeSource.components) {
+        component.analyzers = analyzerReceipts(normalizeSource.id, component);
+      }
+    }
     const source = lock.sources.find((candidate) => candidate.id === "ecc");
     if (source === undefined) throw new Error("ECC evidence is missing");
     const activePin = baselineCatalogById(source.id).pinnedSha;
@@ -96,5 +107,30 @@ describe("baseline analyzer receipt gate", () => {
         },
       ],
     });
+  });
+
+  it("accepts a lock mixing reuse-spliced entries with freshly-rescanned ones (issue #444, bullet 6)", () => {
+    const lock = structuredClone(readVendorBaselineLock());
+    for (const source of lock.sources) {
+      for (const component of source.components) {
+        component.analyzers = analyzerReceipts(source.id, component);
+      }
+    }
+    // A reuse-regenerated lock splices some prior receipts verbatim and rescans
+    // the rest; splicing every OTHER component through spliceReusedComponent
+    // proves the gate cannot tell a spliced entry apart from a freshly-built one.
+    let index = 0;
+    let splicedCount = 0;
+    for (const source of lock.sources) {
+      source.components = source.components.map((component) => {
+        index += 1;
+        if (index % 2 !== 0) return component;
+        splicedCount += 1;
+        return spliceReusedComponent(component);
+      });
+    }
+    expect(splicedCount).toBeGreaterThan(0);
+
+    expect(checkBaselineAnalyzerReceipts(lock)).toEqual({ ok: true, findings: [] });
   });
 });

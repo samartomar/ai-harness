@@ -311,3 +311,411 @@ describe("vetBaselineCatalog", () => {
     }
   });
 });
+
+describe("vetBaselineCatalog incremental reuse (issue #444)", () => {
+  const analyzerVersions = { "aih-native": "native.aaaaaaaaaaaa" };
+
+  function scannerFor(
+    resultByComponent: Record<string, { analyzersRun: string[]; checks: Check[] }>,
+  ) {
+    return vi.fn(async ({ component }: { component: { id: string } }) => {
+      const result = resultByComponent[component.id];
+      if (!result) throw new Error(`unexpected scan of ${component.id}`);
+      return result;
+    });
+  }
+
+  it("reuses every component byte-identically when the tree and analyzer identities are unchanged (bullet 1)", async () => {
+    const scanComponent = scannerFor({
+      "skill:clean": { analyzersRun: ["aih-native"], checks: [pass("skill:clean")] },
+      "skill:blocked": {
+        analyzersRun: ["aih-native"],
+        checks: [
+          {
+            name: "trust.hidden-unicode",
+            verdict: "fail",
+            code: "trust.hidden-unicode",
+            detail: "blocked",
+          },
+        ],
+      },
+    });
+    const priorEvidence = await vetBaselineCatalog(root, catalog(), {
+      scanComponent,
+      requiredAnalyzers: ["aih-native"],
+      analyzerVersions,
+    });
+    expect(scanComponent).toHaveBeenCalledTimes(2);
+
+    const mustNotScan = vi.fn(async () => {
+      throw new Error("must not rescan when fully reusing");
+    });
+    const reusedEvidence = await vetBaselineCatalog(root, catalog(), {
+      scanComponent: mustNotScan,
+      requiredAnalyzers: ["aih-native"],
+      analyzerVersions,
+      reuseFrom: { schemaVersion: 1, sources: [priorEvidence] },
+    });
+
+    expect(mustNotScan).not.toHaveBeenCalled();
+    expect(JSON.stringify(reusedEvidence)).toBe(JSON.stringify(priorEvidence));
+  });
+
+  it("rescans exactly the one component whose content changed, reusing the rest (bullet 2)", async () => {
+    const scanComponent = scannerFor({
+      "skill:clean": { analyzersRun: ["aih-native"], checks: [pass("skill:clean")] },
+      "skill:blocked": { analyzersRun: ["aih-native"], checks: [pass("skill:blocked")] },
+    });
+    const priorEvidence = await vetBaselineCatalog(root, catalog(), {
+      scanComponent,
+      requiredAnalyzers: ["aih-native"],
+      analyzerVersions,
+    });
+
+    writeFileSync(join(root, "skills", "clean", "SKILL.md"), "# Clean, but edited\n");
+    const rescanOnly = vi.fn(async ({ component }: { component: { id: string } }) => {
+      if (component.id !== "skill:clean") throw new Error(`unexpected rescan of ${component.id}`);
+      return { analyzersRun: ["aih-native"], checks: [pass("skill:clean")] };
+    });
+    const evidence = await vetBaselineCatalog(root, catalog(), {
+      scanComponent: rescanOnly,
+      requiredAnalyzers: ["aih-native"],
+      analyzerVersions,
+      reuseFrom: { schemaVersion: 1, sources: [priorEvidence] },
+    });
+
+    expect(rescanOnly).toHaveBeenCalledTimes(1);
+    expect(evidence.components.find((c) => c.id === "skill:blocked")).toEqual(
+      priorEvidence.components.find((c) => c.id === "skill:blocked"),
+    );
+    expect(evidence.components.find((c) => c.id === "skill:clean")?.treeSha256).not.toBe(
+      priorEvidence.components.find((c) => c.id === "skill:clean")?.treeSha256,
+    );
+  });
+
+  it("reuses unchanged components across a pin rebind, since reuse keys on content not pin (bullet 2, Decision 4)", async () => {
+    const scanComponent = scannerFor({
+      "skill:clean": { analyzersRun: ["aih-native"], checks: [pass("skill:clean")] },
+      "skill:blocked": { analyzersRun: ["aih-native"], checks: [pass("skill:blocked")] },
+    });
+    const priorEvidence = await vetBaselineCatalog(root, catalog(), {
+      scanComponent,
+      requiredAnalyzers: ["aih-native"],
+      analyzerVersions,
+    });
+
+    const rebound = defineBaselineCatalog({ ...catalog(), pinnedSha: "e".repeat(40) });
+    const mustNotScan = vi.fn(async () => {
+      throw new Error("must not rescan across a pure pin rebind with unchanged content");
+    });
+    const evidence = await vetBaselineCatalog(root, rebound, {
+      scanComponent: mustNotScan,
+      requiredAnalyzers: ["aih-native"],
+      analyzerVersions,
+      reuseFrom: { schemaVersion: 1, sources: [priorEvidence] },
+    });
+
+    expect(mustNotScan).not.toHaveBeenCalled();
+    expect(evidence.pinnedSha).toBe("e".repeat(40));
+    expect(evidence.components).toEqual(priorEvidence.components);
+  });
+
+  it("rescans every component when a universally-required analyzer identity changes (bullet 3)", async () => {
+    const versionsR1 = {
+      "aih-native": "native.aaaaaaaaaaaa",
+      "skillspector@docker": "rev@sha256:r1",
+    };
+    const scanComponent = scannerFor({
+      "skill:clean": {
+        analyzersRun: ["aih-native", "skillspector@docker"],
+        checks: [pass("skill:clean")],
+      },
+      "skill:blocked": {
+        analyzersRun: ["aih-native", "skillspector@docker"],
+        checks: [pass("skill:blocked")],
+      },
+    });
+    const priorEvidence = await vetBaselineCatalog(root, catalog(), {
+      scanComponent,
+      requiredAnalyzers: ["aih-native", "skillspector@docker"],
+      analyzerVersions: versionsR1,
+    });
+
+    const versionsR2 = { ...versionsR1, "skillspector@docker": "rev@sha256:r2" };
+    const rescanBoth = vi.fn(async ({ component }: { component: { id: string } }) => ({
+      analyzersRun: ["aih-native", "skillspector@docker"],
+      checks: [pass(component.id)],
+    }));
+    const evidence = await vetBaselineCatalog(root, catalog(), {
+      scanComponent: rescanBoth,
+      requiredAnalyzers: ["aih-native", "skillspector@docker"],
+      analyzerVersions: versionsR2,
+      reuseFrom: { schemaVersion: 1, sources: [priorEvidence] },
+    });
+
+    expect(rescanBoth).toHaveBeenCalledTimes(2);
+    expect(
+      evidence.components.every((c) => c.analyzers.every((a) => a.version !== "rev@sha256:r1")),
+    ).toBe(true);
+  });
+
+  it("rescans only the components that require the changed analyzer, reusing the rest (bullet 3, cisco-only subset)", async () => {
+    const mixedCatalog = defineBaselineCatalog({
+      id: "ecc",
+      owner: "affaan-m",
+      repo: "ECC",
+      pinnedSha: "d".repeat(40),
+      components: [
+        { id: "skill:clean", paths: ["skills/clean"] },
+        { id: "skill:blocked", paths: ["skills/blocked"], skillContent: true },
+      ],
+    });
+    const requiredAnalyzers = (component: { id: string }) =>
+      component.id === "skill:blocked" ? ["aih-native", "cisco@uvx"] : ["aih-native"];
+    const versionsR1 = { "aih-native": "native.aaaaaaaaaaaa", "cisco@uvx": "2.0.12" };
+    const scanComponent = scannerFor({
+      "skill:clean": { analyzersRun: ["aih-native"], checks: [pass("skill:clean")] },
+      "skill:blocked": {
+        analyzersRun: ["aih-native", "cisco@uvx"],
+        checks: [pass("skill:blocked")],
+      },
+    });
+    const priorEvidence = await vetBaselineCatalog(root, mixedCatalog, {
+      scanComponent,
+      requiredAnalyzers,
+      analyzerVersions: versionsR1,
+    });
+
+    const versionsR2 = { ...versionsR1, "cisco@uvx": "2.0.13" };
+    const rescanCiscoOnly = vi.fn(async ({ component }: { component: { id: string } }) => {
+      if (component.id !== "skill:blocked") throw new Error(`unexpected rescan of ${component.id}`);
+      return { analyzersRun: ["aih-native", "cisco@uvx"], checks: [pass("skill:blocked")] };
+    });
+    const evidence = await vetBaselineCatalog(root, mixedCatalog, {
+      scanComponent: rescanCiscoOnly,
+      requiredAnalyzers,
+      analyzerVersions: versionsR2,
+      reuseFrom: { schemaVersion: 1, sources: [priorEvidence] },
+    });
+
+    expect(rescanCiscoOnly).toHaveBeenCalledTimes(1);
+    expect(evidence.components.find((c) => c.id === "skill:clean")).toEqual(
+      priorEvidence.components.find((c) => c.id === "skill:clean"),
+    );
+  });
+
+  it("invalidates every component's reuse when only the aih-native identity changes, even with the package VERSION unchanged (bullet 4)", async () => {
+    const scanComponent = scannerFor({
+      "skill:clean": { analyzersRun: ["aih-native"], checks: [pass("skill:clean")] },
+      "skill:blocked": { analyzersRun: ["aih-native"], checks: [pass("skill:blocked")] },
+    });
+    const priorEvidence = await vetBaselineCatalog(root, catalog(), {
+      scanComponent,
+      requiredAnalyzers: ["aih-native"],
+      analyzerVersions: { "aih-native": "native.old000000000a" },
+    });
+
+    const rescanAll = vi.fn(async ({ component }: { component: { id: string } }) => ({
+      analyzersRun: ["aih-native"],
+      checks: [pass(component.id)],
+    }));
+    const evidence = await vetBaselineCatalog(root, catalog(), {
+      scanComponent: rescanAll,
+      requiredAnalyzers: ["aih-native"],
+      analyzerVersions: { "aih-native": "native.new000000000b" },
+      reuseFrom: { schemaVersion: 1, sources: [priorEvidence] },
+    });
+
+    expect(rescanAll).toHaveBeenCalledTimes(2);
+    expect(
+      evidence.components.every((c) =>
+        c.analyzers.every((a) => a.version === "native.new000000000b"),
+      ),
+    ).toBe(true);
+    expect(
+      evidence.components.every((c) =>
+        c.analyzers.every((a) => a.version !== "native.old000000000a"),
+      ),
+    ).toBe(true);
+  });
+
+  it("preserves a blocked verdict and its findings byte-identically on reuse, never fabricating (bullet 5)", async () => {
+    const danger: Check = {
+      name: "trust.hidden-unicode",
+      verdict: "fail",
+      code: "trust.hidden-unicode",
+      detail: "instruction surface contains non-ASCII typography",
+      fingerprint: "trust-hidden-unicode:SKILL.md:1:abc123",
+    };
+    const scanComponent = scannerFor({
+      "skill:clean": { analyzersRun: ["aih-native"], checks: [pass("skill:clean")] },
+      "skill:blocked": { analyzersRun: ["aih-native"], checks: [danger] },
+    });
+    const priorEvidence = await vetBaselineCatalog(root, catalog(), {
+      scanComponent,
+      requiredAnalyzers: ["aih-native"],
+      analyzerVersions,
+    });
+    const blockedPrior = priorEvidence.components.find((c) => c.id === "skill:blocked");
+    expect(blockedPrior?.verdict).toBe("blocked");
+
+    const mustNotScan = vi.fn(async () => {
+      throw new Error("must not rescan on full reuse");
+    });
+    const evidence = await vetBaselineCatalog(root, catalog(), {
+      scanComponent: mustNotScan,
+      requiredAnalyzers: ["aih-native"],
+      analyzerVersions,
+      reuseFrom: { schemaVersion: 1, sources: [priorEvidence] },
+    });
+
+    const blocked = evidence.components.find((c) => c.id === "skill:blocked");
+    expect(blocked).toEqual(blockedPrior);
+    expect(blocked?.verdict).toBe("blocked");
+    expect(blocked?.findings).toEqual(blockedPrior?.findings);
+  });
+
+  it("never reuses a hand-crafted pass entry whose treeSha256 does not match the current tree", async () => {
+    const staleLock = {
+      schemaVersion: 1 as const,
+      sources: [
+        {
+          id: "ecc",
+          owner: "affaan-m",
+          repo: "ECC",
+          pinnedSha: "d".repeat(40),
+          components: [
+            {
+              id: "skill:clean",
+              paths: ["skills/clean"],
+              treeSha256: "0".repeat(64),
+              verdict: "pass" as const,
+              analyzers: [{ name: "aih-native", version: analyzerVersions["aih-native"] }],
+              findings: [],
+            },
+            {
+              id: "skill:blocked",
+              paths: ["skills/blocked"],
+              treeSha256: "1".repeat(64),
+              verdict: "pass" as const,
+              analyzers: [{ name: "aih-native", version: analyzerVersions["aih-native"] }],
+              findings: [],
+            },
+          ],
+        },
+      ],
+    };
+    const scanComponent = scannerFor({
+      "skill:clean": { analyzersRun: ["aih-native"], checks: [pass("skill:clean")] },
+      "skill:blocked": { analyzersRun: ["aih-native"], checks: [pass("skill:blocked")] },
+    });
+    const evidence = await vetBaselineCatalog(root, catalog(), {
+      scanComponent,
+      requiredAnalyzers: ["aih-native"],
+      analyzerVersions,
+      reuseFrom: staleLock,
+    });
+    expect(scanComponent).toHaveBeenCalledTimes(2);
+    expect(
+      evidence.components.every(
+        (c) => c.treeSha256 !== "0".repeat(64) && c.treeSha256 !== "1".repeat(64),
+      ),
+    ).toBe(true);
+  });
+
+  it("--full rescans every component even when a byte-identical prior lock exists", async () => {
+    const scanComponent = scannerFor({
+      "skill:clean": { analyzersRun: ["aih-native"], checks: [pass("skill:clean")] },
+      "skill:blocked": { analyzersRun: ["aih-native"], checks: [pass("skill:blocked")] },
+    });
+    const priorEvidence = await vetBaselineCatalog(root, catalog(), {
+      scanComponent,
+      requiredAnalyzers: ["aih-native"],
+      analyzerVersions,
+    });
+
+    const rescanAll = vi.fn(async ({ component }: { component: { id: string } }) => ({
+      analyzersRun: ["aih-native"],
+      checks: [pass(component.id)],
+    }));
+    await vetBaselineCatalog(root, catalog(), {
+      scanComponent: rescanAll,
+      requiredAnalyzers: ["aih-native"],
+      analyzerVersions,
+      reuseFrom: { schemaVersion: 1, sources: [priorEvidence] },
+      full: true,
+    });
+
+    expect(rescanAll).toHaveBeenCalledTimes(2);
+  });
+
+  it("emits a reuse summary through the progress hook naming reused and rescanned components (bullet 7)", async () => {
+    const scanComponent = scannerFor({
+      "skill:clean": { analyzersRun: ["aih-native"], checks: [pass("skill:clean")] },
+      "skill:blocked": { analyzersRun: ["aih-native"], checks: [pass("skill:blocked")] },
+    });
+    const priorEvidence = await vetBaselineCatalog(root, catalog(), {
+      scanComponent,
+      requiredAnalyzers: ["aih-native"],
+      analyzerVersions,
+    });
+
+    writeFileSync(join(root, "skills", "clean", "SKILL.md"), "# Clean, edited again\n");
+    const progress = vi.fn();
+    const mixedScan = vi.fn(async ({ component }: { component: { id: string } }) => ({
+      analyzersRun: ["aih-native"],
+      checks: [pass(component.id)],
+    }));
+    await vetBaselineCatalog(root, catalog(), {
+      scanComponent: mixedScan,
+      scanOptions: { progress },
+      requiredAnalyzers: ["aih-native"],
+      analyzerVersions,
+      reuseFrom: { schemaVersion: 1, sources: [priorEvidence] },
+    });
+
+    const lines = progress.mock.calls.map((call) => call[0] as string);
+    expect(lines[0]).toBe("baseline reuse [ecc @ dddddddddddd]: reused 1/2, rescanned 1/2");
+    expect(lines.some((line) => line.includes("reused") && line.includes("skill:blocked"))).toBe(
+      true,
+    );
+    expect(
+      lines.some(
+        (line) =>
+          line.includes("rescan") &&
+          line.includes("skill:clean") &&
+          line.includes("reason=content-changed"),
+      ),
+    ).toBe(true);
+  });
+
+  it("emits reason=full for every component and a 0-reused header under --full", async () => {
+    const scanComponent = scannerFor({
+      "skill:clean": { analyzersRun: ["aih-native"], checks: [pass("skill:clean")] },
+      "skill:blocked": { analyzersRun: ["aih-native"], checks: [pass("skill:blocked")] },
+    });
+    const priorEvidence = await vetBaselineCatalog(root, catalog(), {
+      scanComponent,
+      requiredAnalyzers: ["aih-native"],
+      analyzerVersions,
+    });
+
+    const progress = vi.fn();
+    const rescanAll = vi.fn(async ({ component }: { component: { id: string } }) => ({
+      analyzersRun: ["aih-native"],
+      checks: [pass(component.id)],
+    }));
+    await vetBaselineCatalog(root, catalog(), {
+      scanComponent: rescanAll,
+      scanOptions: { progress },
+      requiredAnalyzers: ["aih-native"],
+      analyzerVersions,
+      reuseFrom: { schemaVersion: 1, sources: [priorEvidence] },
+      full: true,
+    });
+
+    const lines = progress.mock.calls.map((call) => call[0] as string);
+    expect(lines[0]).toBe("baseline reuse [ecc @ dddddddddddd]: reused 0/2, rescanned 2/2");
+    expect(lines.every((line) => !line.includes("reason=unchanged"))).toBe(true);
+  });
+});

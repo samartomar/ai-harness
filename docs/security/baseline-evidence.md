@@ -46,8 +46,11 @@ directories never enter the signed baseline automatically.
 Scanner-free installation from the shipped vendor lock is allowed only because
 the release vet records exact analyzer receipts before the lock is written:
 
-- `aih-native@<release-version>` and pinned SkillSpector through Docker are
-  required for every declared component;
+- `aih-native@native.<12-hex-digest>` — a content digest over the declared
+  native-detector source closure, not the package release version, so a native
+  detector change always moves the identity even between release version bumps
+  (see `src/baseline-evidence/native-identity.ts`) — and pinned SkillSpector
+  through Docker are required for every declared component;
 - `cisco-ai-skill-scanner==2.0.12` through offline `uvx` is additionally required
   for every component whose declared bytes contain a regular `SKILL.md` file;
 - SkillSpector is bound to source revision
@@ -200,3 +203,17 @@ npm run baseline:check -- \
 Use `npm run baseline:vet -- ...` only when intentionally regenerating the lock
 for a reviewed pin change. A release or pin bump must review the resulting lock
 diff; a signed `blocked` entry is not a successful install baseline.
+
+### Incremental reuse and `--full`
+
+By default, `baseline:vet` and `baseline:check` reuse a component's prior receipt
+verbatim when its content hash and every required analyzer identity are
+unchanged from the lock currently on disk, and rescan only what changed. Every
+run prints a `baseline reuse [...]` summary naming what was reused and what was
+rescanned, and why. `--full` (`npm run baseline:vet -- --full` /
+`baseline:check -- --full`) disables reuse and rescans every component from
+scratch; CI's vet-once workflow always passes `--full`, so it remains the
+from-scratch ground truth that routine incremental reuse trades away for
+speed. Reuse never fabricates: a spliced receipt is byte-identical to the prior
+one, and a `blocked` verdict can never flip to `pass` without an actual
+rescan.

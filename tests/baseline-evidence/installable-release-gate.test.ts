@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { spliceReusedComponent } from "../../src/baseline-evidence/reuse.js";
 import { readVendorBaselineLock } from "../../src/baseline-evidence/vendor.js";
 import { checkInstallableBaseline } from "../../src/internals/check-baseline-installable.js";
 
@@ -41,5 +42,30 @@ describe("shipped ECC baseline installability", () => {
     );
     expect(heldHooks).toBeDefined();
     expect(heldHooks?.codes.length ?? 0).toBeGreaterThan(0);
+  });
+
+  it("installs identically from a lock whose ECC components were reuse-spliced (issue #444, bullet 6)", async () => {
+    const lock = readVendorBaselineLock();
+    const baseline = await checkInstallableBaseline({ lock, fixtureOnly: true });
+
+    const splicedLock = {
+      ...lock,
+      sources: lock.sources.map((source) =>
+        source.id === "ecc"
+          ? {
+              ...source,
+              components: source.components.map((component) => spliceReusedComponent(component)),
+            }
+          : source,
+      ),
+    };
+    const splicedReport = await checkInstallableBaseline({ lock: splicedLock, fixtureOnly: true });
+
+    expect(splicedReport.ok).toBe(baseline.ok);
+    for (const posture of ["vibe", "team", "enterprise"] as const) {
+      expect(splicedReport.postures[posture].installedComponentIds).toEqual(
+        baseline.postures[posture].installedComponentIds,
+      );
+    }
   });
 });
