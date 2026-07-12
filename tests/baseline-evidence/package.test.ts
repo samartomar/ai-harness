@@ -62,6 +62,14 @@ describe("baseline evidence release payload", () => {
     expect(workflow).toContain(`skill-scanner ${CISCO_SKILL_SCANNER_VERSION}`);
     expect(workflow).toContain("actions/upload-artifact@");
     expect(workflow).toContain("src/baseline-evidence/vendor-lock.json");
+    // The runner's Docker image store must be aligned to the containerd
+    // snapshotter so `docker image inspect .Id` yields the same manifest digest
+    // local (Docker >= 29) daemons produce; these guard that alignment step and
+    // its diagnostics against silent removal.
+    expect(workflow).toContain("/etc/docker/daemon.json");
+    expect(workflow).toContain('"containerd-snapshotter": true');
+    expect(workflow).toContain("systemctl restart docker");
+    expect(workflow).toContain("docker info");
     expect(workflow).not.toMatch(/git\s+(commit|push)|npm\s+publish/);
   });
 
