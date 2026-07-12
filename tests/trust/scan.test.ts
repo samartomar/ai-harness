@@ -26,6 +26,7 @@ import { fakeRunner, type Runner, type RunOptions } from "../../src/internals/pr
 import { makeHostAdapter } from "../../src/platform/detect.js";
 import {
   agentshieldScanArgv,
+  checkDetectorsAvailable,
   ciscoSkillScannerRunArgv,
   mcpScannerStaticArgv,
   semgrepScanArgv,
@@ -4311,6 +4312,15 @@ describe("scanTrustTree", () => {
     expect(argv).not.toEqual(expect.arrayContaining(["--fix"]));
     expect(argv).not.toEqual(expect.arrayContaining(["--opus"]));
     expect(argv).not.toEqual(expect.arrayContaining(["--deep"]));
+  });
+});
+
+describe("checkDetectorsAvailable", () => {
+  it("throws on an unknown detector name instead of silently treating it as available", async () => {
+    const run = fakeRunner(() => undefined);
+    await expect(
+      checkDetectorsAvailable(["bogus-detector" as never], { run, platform: "linux", env: {} }),
+    ).rejects.toThrow(/unknown trust detector: bogus-detector/);
   });
 });
 

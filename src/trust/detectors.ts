@@ -1709,7 +1709,7 @@ export async function checkDetectorsAvailable(
   const unavailable: DetectorAvailabilityProbe[] = [];
   for (const name of names) {
     const detector = ALL_TRUST_DETECTORS.find((candidate) => candidate.name === name);
-    if (detector === undefined) continue;
+    if (detector === undefined) throw new Error(`unknown trust detector: ${name}`);
     const reason = await detector.checkAvailable(
       options.run,
       options.platform,
