@@ -1296,6 +1296,17 @@ const SKILLSPECTOR_SC4_OFFLINE_FALLBACK =
 const SKILLSPECTOR_YR4_METADATA_MESSAGE =
   "YARA rule 'agent_skill_mcp_tool_poisoning_metadata': MCP/tool metadata poisoning indicators in tool schemas or skill manifests [agent_skills]";
 const COREPACK_PACKAGE_MANAGER_INTEGRITY = /^[A-Za-z0-9._-]+@[^+\s"]+\+sha512\.[a-f0-9]{128}$/i;
+// The Cisco skill-scanner's metadata-hygiene "missing license field" finding.
+// Its rule id is not in CISCO_RULE_MAP, so it otherwise falls through to the
+// block-at-every-posture trust.cisco-finding bucket. It is an evidence/metadata
+// gap (mirrors the native trust.license-missing UNKNOWN posture), not poisoning,
+// so it is reclassified to a graded, acknowledgeable trust-origin finding. The
+// match is anchored to the skill-scanner, the manifest surface (SKILL.md), and
+// the specific wording pinned to cisco-ai-skill-scanner==2.0.12; re-verify on a
+// scanner pin bump. Scope is deliberately narrow: only this metadata-hygiene
+// finding reclassifies — every other unmapped Cisco finding stays cisco-finding.
+const CISCO_MISSING_LICENSE_MESSAGE =
+  /\bskill manifest does not include a ['"‘’]?license['"‘’]?\s+field\b/i;
 // SkillSpector YR4 (`agent_skill_mcp_tool_poisoning_metadata`) fires when
 // `any of ($schema_*)` (ubiquitous manifest keys like `"description":`) is
 // present AND at least one Gate-B poisoning co-signal matches. The carve-out
@@ -1381,6 +1392,22 @@ function skillspectorAdvisory(
   return `${message}; reviewed false positive: the only poisoning co-signal is the top-level Corepack packageManager integrity suffix, which remains pinned.`;
 }
 
+// The Cisco skill-scanner's "missing license field" metadata-hygiene finding is
+// reclassified out of the generic cisco-finding block into an acknowledgeable
+// trust-origin finding. Only the Cisco skill-scanner, only the manifest surface,
+// only that exact wording — never the mcp-scanner or any other Cisco finding.
+function ciscoMetadataLicenseCode(
+  result: SarifResult,
+  detector: TrustDetector,
+  location: NonNullable<Check["location"]>,
+): CheckCode | undefined {
+  if (detector.name !== "cisco") return undefined;
+  if (basename(location.uri) !== "SKILL.md") return undefined;
+  return CISCO_MISSING_LICENSE_MESSAGE.test(resultMessage(result, detector))
+    ? "trust.skill-metadata-license"
+    : undefined;
+}
+
 function ruleCode(
   result: SarifResult,
   detector: TrustDetector,
@@ -1391,6 +1418,8 @@ function ruleCode(
   if (raw === undefined) return undefined;
   const advisory = skillspectorAdvisory(result, detector, root, location);
   if (advisory !== undefined) return { advisory };
+  const metadataLicense = ciscoMetadataLicenseCode(result, detector, location);
+  if (metadataLicense !== undefined) return { code: metadataLicense };
   const mapped = detector.ruleMap[raw];
   if (mapped !== undefined) {
     if (mapped === "trust.hidden-unicode") {

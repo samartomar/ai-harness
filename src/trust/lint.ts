@@ -84,6 +84,83 @@ const PROMPT_INJECTION_PATTERNS: readonly PatternRule[] = [
   },
 ];
 
+// Recognition of NEGATED-PROHIBITION guardrails for the secret-exfil rule only.
+// A vendor "Prompt Defense Baseline" line such as "Do not reveal confidential
+// data ... leak API keys, or expose credentials." is a prohibition, not an
+// exfiltration order, but the verb+credential heuristic still fires on it. This
+// recognizer suppresses ONLY that narrow shape: a single clause, governed by a
+// prohibition operator, whose scope contains no URL, no quote, no double
+// negation, and no re-introduced imperative. Everything else keeps blocking, so
+// the trust.prompt-injection danger floor is preserved for genuine findings.
+const EXFIL_URL_IN_CLAUSE = /https?:\/\//i;
+// Quotes signal a rule being *referenced/quoted* ("ignore the 'never exfiltrate'
+// rule") rather than an actual prohibition, so a quoted clause never suppresses.
+// A straight/curly apostrophe only counts as a quote at a token boundary; a
+// contraction apostrophe (letter on both sides, e.g. "don't", "can't") does not.
+const QUOTE_IN_CLAUSE = /["`‘“”]|(?:^|[^A-Za-z])['’]|['’](?:[^A-Za-z]|$)/;
+// Operators that can negate a following list of prohibited actions. Global: the
+// governing operator is the LAST one at or before the matched verb.
+const PROHIBITION_OPERATOR =
+  /\b(?:do(?:es)?\s+not|do(?:es)?n['’]?t|never|must\s+not|mustn['’]?t|may\s+not|might\s+not|shall\s+not|should\s+not|shouldn['’]?t|will\s+not|won['’]?t|cannot|can\s?not|can['’]?t|refrain\s+from|avoid)\b/gi;
+// Tokens after the operator that reintroduce a positive imperative, flip
+// polarity again (double negation), or reference/override a rule — any voids the
+// guardrail reading and keeps the finding blocking.
+const PROHIBITION_VOIDER =
+  /\b(?:unless|except|but|however|otherwise|then|instead|if|when|whenever|while|after|before|refus\w*|fail\w*|neglect\w*|hesitat\w*|declin\w*|forget\w*|ignore\w*|disregard\w*|override\w*|bypass\w*|circumvent\w*|skip|not|never|no|none|nor|n['’]?t)\b|->|→|&&/i;
+// The operator must sit close to the verb it governs, so a distant negation
+// cannot silence an unrelated later imperative in the same long clause.
+const NEGATION_WINDOW = 160;
+
+function isClauseTerminator(ch: string): boolean {
+  return (
+    ch === "." || ch === "!" || ch === "?" || ch === ";" || ch === ":" || ch === "\n" || ch === "\r"
+  );
+}
+
+function isNegatedProhibitionExfil(source: string, match: RegExpExecArray): boolean {
+  const matchText = match[0];
+  const matchStart = match.index;
+  const matchEnd = matchStart + matchText.length;
+  // (1) The verb -> credential span must not cross a clause boundary; a match
+  // that spans a terminator has its target in a different clause than its verb.
+  for (const ch of matchText) if (isClauseTerminator(ch)) return false;
+  // Clause bounds: the maximal terminator-free run containing the match.
+  let clauseStart = 0;
+  for (let i = matchStart - 1; i >= 0; i--) {
+    if (isClauseTerminator(source.charAt(i))) {
+      clauseStart = i + 1;
+      break;
+    }
+  }
+  let clauseEnd = source.length;
+  for (let i = matchEnd; i < source.length; i++) {
+    if (isClauseTerminator(source.charAt(i))) {
+      clauseEnd = i;
+      break;
+    }
+  }
+  const clause = source.slice(clauseStart, clauseEnd);
+  // (2) A URL target or a quoted rule reference anywhere in the clause voids it.
+  if (EXFIL_URL_IN_CLAUSE.test(clause) || QUOTE_IN_CLAUSE.test(clause)) return false;
+  // (3) A prohibition operator must govern the matched verb from a tight window.
+  const verbInClause = matchStart - clauseStart;
+  const before = clause.slice(0, verbInClause);
+  let operatorEnd = -1;
+  PROHIBITION_OPERATOR.lastIndex = 0;
+  for (
+    let op = PROHIBITION_OPERATOR.exec(before);
+    op !== null;
+    op = PROHIBITION_OPERATOR.exec(before)
+  ) {
+    operatorEnd = op.index + op[0].length;
+    if (op.index === PROHIBITION_OPERATOR.lastIndex) PROHIBITION_OPERATOR.lastIndex++;
+  }
+  if (operatorEnd < 0 || verbInClause - operatorEnd > NEGATION_WINDOW) return false;
+  // (4) Nothing from the operator to the clause end may reintroduce an
+  // imperative, flip polarity again, or reference/override a rule.
+  return !PROHIBITION_VOIDER.test(clause.slice(operatorEnd));
+}
+
 function safeUri(path: string): string {
   const normalized = path.replace(/\\/g, "/").replace(/^\.\//, "");
   if (
@@ -381,17 +458,21 @@ function promptInjectionFindings(path: string, source: string): TrustLintFinding
   for (const rule of PROMPT_INJECTION_PATTERNS) {
     const re = new RegExp(rule.pattern.source, rule.pattern.flags);
     for (let match = re.exec(source); match !== null; match = re.exec(source)) {
-      out.push(
-        finding(
-          occurrences,
-          "trust.prompt-injection",
-          rule.id,
-          path,
-          source,
-          match.index,
-          rule.message,
-        ),
-      );
+      const isRecognizedGuardrail =
+        rule.id === "prompt-injection.secret-exfil" && isNegatedProhibitionExfil(source, match);
+      if (!isRecognizedGuardrail) {
+        out.push(
+          finding(
+            occurrences,
+            "trust.prompt-injection",
+            rule.id,
+            path,
+            source,
+            match.index,
+            rule.message,
+          ),
+        );
+      }
       if (match.index === re.lastIndex) re.lastIndex++;
     }
   }
