@@ -249,8 +249,8 @@ describe("postureOkForCatalog preview-escape gating for non-installer catalogs (
 
     expect(splicedReport.ok).toBe(baseline.ok);
     for (const posture of ["vibe", "team", "enterprise"] as const) {
-      expect(splicedReport.postures[posture].installedComponentIds).toEqual(
-        baseline.postures[posture].installedComponentIds,
+      expect(splicedReport.catalogs.ecc.postures[posture].installedComponentIds).toEqual(
+        baseline.catalogs.ecc.postures[posture].installedComponentIds,
       );
     }
   });

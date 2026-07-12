@@ -1,4 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { nativeAnalyzerIdentity } from "../../src/baseline-evidence/native-identity.js";
 import type {
   BaselineComponentEvidence,
   BaselineEvidenceLock,
@@ -194,6 +199,87 @@ describe("assertIdentityOnlyLockMigration", () => {
     expect(report.ok).toBe(false);
   });
 
+  it("rejects when the top-level source count differs", () => {
+    const prior = lock();
+    const next: BaselineEvidenceLock = { ...prior, sources: [...prior.sources, eccSource(prior)] };
+
+    const report = assertIdentityOnlyLockMigration(prior, next, nextIdentity);
+    expect(report.ok).toBe(false);
+    // The count mismatch is a hard stop: the function returns immediately with exactly
+    // this one lock-level diff, before it ever inspects source ids or components.
+    expect(report.diffs).toEqual([
+      { sourceId: "<lock>", componentId: "<catalog>", detail: "source count 1 → 2" },
+    ]);
+  });
+
+  it("rejects when a source's id no longer matches at the same index", () => {
+    const prior = lock();
+    const next = withEccComponents(
+      prior,
+      eccSource(prior).components.map((component) => rewriteNative(component, nextIdentity)),
+      { id: "ecc-renamed" },
+    );
+
+    const report = assertIdentityOnlyLockMigration(prior, next, nextIdentity);
+    expect(report.ok).toBe(false);
+    expect(report.diffs.some((diff) => diff.detail.includes("source order/id mismatch"))).toBe(
+      true,
+    );
+  });
+
+  it("rejects when a source's owner or repo changes", () => {
+    const prior = lock();
+    const next = withEccComponents(
+      prior,
+      eccSource(prior).components.map((component) => rewriteNative(component, nextIdentity)),
+      { repo: "ECC-fork" },
+    );
+
+    const report = assertIdentityOnlyLockMigration(prior, next, nextIdentity);
+    expect(report.ok).toBe(false);
+    expect(report.diffs.some((diff) => diff.detail.includes("owner/repo"))).toBe(true);
+  });
+
+  it("rejects when two components are reordered/renamed while the count stays the same", () => {
+    const prior = lock();
+    const [first, second] = eccSource(prior).components;
+    if (first === undefined || second === undefined) {
+      throw new Error("fixture ecc source must have two components");
+    }
+    // Same two receipts, swapped positions: componentIndex 0 now holds "skill:blocked"
+    // where the prior lock had "skill:example" at that index.
+    const next = withEccComponents(prior, [
+      rewriteNative(second, nextIdentity),
+      rewriteNative(first, nextIdentity),
+    ]);
+
+    const report = assertIdentityOnlyLockMigration(prior, next, nextIdentity);
+    expect(report.ok).toBe(false);
+    expect(report.diffs.some((diff) => diff.detail.includes("component order/id mismatch"))).toBe(
+      true,
+    );
+  });
+
+  it("rejects when a component's paths change", () => {
+    const prior = lock();
+    const next = withEccComponents(
+      prior,
+      eccSource(prior).components.map((component) =>
+        rewriteNative(
+          {
+            ...component,
+            paths: component.id === "skill:example" ? ["skills/example-moved"] : component.paths,
+          },
+          nextIdentity,
+        ),
+      ),
+    );
+
+    const report = assertIdentityOnlyLockMigration(prior, next, nextIdentity);
+    expect(report.ok).toBe(false);
+    expect(report.diffs.some((diff) => diff.detail.includes("paths"))).toBe(true);
+  });
+
   it("defaults nextIdentity to the real nativeAnalyzerIdentity() when not supplied", () => {
     const prior = lock();
     const report = assertIdentityOnlyLockMigration(prior, prior);
@@ -201,5 +287,115 @@ describe("assertIdentityOnlyLockMigration", () => {
     // version already equals the live nativeAnalyzerIdentity(); here it does not
     // (fixture uses "2.9.0"), so this must report a diff rather than silently pass.
     expect(report.ok).toBe(false);
+  });
+});
+
+/**
+ * These exercise the actual CLI entry point (`optionValue`, `readLock`, `main`, and the
+ * `import.meta.url` self-invocation guard) — none of which are exported, so the only way
+ * to reach them with real behavior (not a re-implementation) is to reproduce how `tsx`
+ * would run this file: point `process.argv[1]` at the module's own resolved path, then
+ * dynamically re-import it after `vi.resetModules()` so the top-level guard re-evaluates
+ * and calls `main()` for real. `process.argv`/`process.exitCode` are snapshotted and
+ * restored in `afterEach` so this can't leak into other test files.
+ */
+describe("assert-identity-only-lock-migration CLI (main() via the process.argv guard)", () => {
+  const SCRIPT_PATH = fileURLToPath(
+    new URL("../../src/internals/assert-identity-only-lock-migration.ts", import.meta.url),
+  );
+  const originalArgv = process.argv;
+  const originalExitCode = process.exitCode;
+  const roots: string[] = [];
+
+  function fixtureDir(): string {
+    const dir = mkdtempSync(join(tmpdir(), "aih-lock-migration-cli-"));
+    roots.push(dir);
+    return dir;
+  }
+
+  function writeLockFixture(dir: string, name: string, value: BaselineEvidenceLock): string {
+    const path = join(dir, name);
+    writeFileSync(path, JSON.stringify(value), "utf8");
+    return path;
+  }
+
+  afterEach(() => {
+    process.argv = originalArgv;
+    process.exitCode = originalExitCode;
+    vi.restoreAllMocks();
+    vi.resetModules();
+    for (const dir of roots.splice(0)) rmSync(dir, { recursive: true, force: true });
+  });
+
+  async function runCli(args: string[]): Promise<void> {
+    process.argv = [originalArgv[0] ?? "node", SCRIPT_PATH, ...args];
+    vi.resetModules();
+    await import("../../src/internals/assert-identity-only-lock-migration.js");
+  }
+
+  it("throws the usage error when both --prior and --next are missing", async () => {
+    await expect(runCli([])).rejects.toThrow(
+      "usage: assert-identity-only-lock-migration --prior <file> --next <file>",
+    );
+  });
+
+  it("throws the usage error when only --prior is supplied", async () => {
+    const dir = fixtureDir();
+    const priorPath = writeLockFixture(dir, "prior.json", lock());
+
+    await expect(runCli(["--prior", priorPath])).rejects.toThrow(
+      "usage: assert-identity-only-lock-migration --prior <file> --next <file>",
+    );
+  });
+
+  it("accepts an identity-only migration end-to-end and prints the summary line to stdout", async () => {
+    const dir = fixtureDir();
+    const prior = lock();
+    const liveIdentity = nativeAnalyzerIdentity();
+    const next = withEccComponents(
+      prior,
+      eccSource(prior).components.map((component) => rewriteNative(component, liveIdentity)),
+    );
+    const priorPath = writeLockFixture(dir, "prior.json", prior);
+    const nextPath = writeLockFixture(dir, "next.json", next);
+
+    const stdoutSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    await runCli(["--prior", priorPath, "--next", nextPath]);
+
+    expect(process.exitCode).not.toBe(1);
+    const output = stdoutSpy.mock.calls.map((call) => String(call[0])).join("");
+    expect(output).toBe(
+      `${priorPath} -> ${nextPath}: identical except every aih-native receipt now reads ${liveIdentity}\n`,
+    );
+  });
+
+  it("rejects a real content change end-to-end: per-diff stderr lines and exitCode 1", async () => {
+    const dir = fixtureDir();
+    const prior = lock();
+    const liveIdentity = nativeAnalyzerIdentity();
+    const next = withEccComponents(
+      prior,
+      eccSource(prior).components.map((component) =>
+        rewriteNative(
+          {
+            ...component,
+            treeSha256: component.id === "skill:example" ? "c".repeat(64) : component.treeSha256,
+          },
+          liveIdentity,
+        ),
+      ),
+    );
+    const priorPath = writeLockFixture(dir, "prior.json", prior);
+    const nextPath = writeLockFixture(dir, "next.json", next);
+
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    await runCli(["--prior", priorPath, "--next", nextPath]);
+
+    expect(process.exitCode).toBe(1);
+    const output = stderrSpy.mock.calls.map((call) => String(call[0])).join("");
+    expect(output).toContain(`ecc/skill:example: treeSha256 ${"a".repeat(64)} → ${"c".repeat(64)}`);
+    expect(output).toContain(
+      "migration is not identity-only: 1 component(s)/source(s) changed beyond the aih-native identity rewrite",
+    );
   });
 });

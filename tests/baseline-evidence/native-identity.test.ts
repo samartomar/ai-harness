@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -59,6 +59,17 @@ describe("discoverNativeDetectorSourceFiles", () => {
     writeDeclaredFixture(root);
     writeFileSync(join(root, "src", "trust", "new-detector.ts"), "export const n = 1;\n");
     expect(discoverNativeDetectorSourceFiles(root)).toContain("src/trust/new-detector.ts");
+  });
+
+  it("excludes a symlink from the closure even when it points at a declared .ts file", () => {
+    const root = fixtureRoot();
+    writeDeclaredFixture(root);
+    const real = join(root, "src", "trust", "lint.ts");
+    const linked = join(root, "src", "trust", "linked.ts");
+    symlinkSync(real, linked);
+    const files = discoverNativeDetectorSourceFiles(root);
+    expect(files).toContain("src/trust/lint.ts");
+    expect(files).not.toContain("src/trust/linked.ts");
   });
 
   it("ignores non-.ts files and files outside the declared closure", () => {
