@@ -273,9 +273,10 @@ function previewPlanForCatalog(catalogId: BaselineCatalogId): CatalogPreviewPlan
  *   LEGAL, GREEN state — honestly-blocked evidence is a truthful report, not a gate failure. The
  *   gate only turns red when the fixture ledger disagrees with what evidence authorized, a held
  *   component is missing its codes, or a held component's code names missing/drifted evidence
- *   (`baseline.evidence-missing` / `baseline.evidence-mismatch`).
+ *   (`baseline.evidence-missing` / `baseline.evidence-mismatch`). Preview-escape findings gate
+ *   every catalog that ships a preview artifact, independent of the installer requirement.
  */
-function postureOkForCatalog(input: {
+export function postureOkForCatalog(input: {
   catalogId: BaselineCatalogId;
   authorizations: readonly BaselineAuthorization[];
   held: ReadonlyArray<{ componentId: string; codes: string[] }>;
@@ -304,7 +305,7 @@ function postureOkForCatalog(input: {
       !entry.codes.includes("baseline.evidence-missing") &&
       !entry.codes.includes("baseline.evidence-mismatch"),
   );
-  return ledgerMatches && heldAllCoded && noMissingOrDriftedEvidence;
+  return ledgerMatches && heldAllCoded && noMissingOrDriftedEvidence && previewEscapeCount === 0;
 }
 
 /**

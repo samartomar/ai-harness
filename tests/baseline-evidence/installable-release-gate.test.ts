@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { readVendorBaselineLock } from "../../src/baseline-evidence/vendor.js";
 import {
   checkInstallableBaseline,
+  postureOkForCatalog,
   samePaths,
 } from "../../src/internals/check-baseline-installable.js";
 
@@ -205,5 +206,26 @@ describe("ledger comparison logic (samePaths as used for ledger-vs-authorized-id
     const installedComponentIds = ["skill:brainstorming"].sort();
     const ledgerIds = ["skill:brainstorming", "skill:writing-plans"].sort();
     expect(samePaths(ledgerIds, installedComponentIds)).toBe(false);
+  });
+});
+
+describe("postureOkForCatalog preview-escape gating for non-installer catalogs (latent path)", () => {
+  // PREVIEW_ARTIFACT_BY_CATALOG is a module constant (not injectable) and no current non-installer
+  // catalog ships a preview artifact, so this path is unreachable end-to-end through
+  // checkInstallableBaseline today. Pin the criterion function directly instead: escape findings
+  // must gate every catalog that ships a preview, independent of the installer requirement.
+  const nonInstallerInput = {
+    catalogId: "superpowers" as const,
+    authorizations: [],
+    held: [{ componentId: "skill:brainstorming", codes: ["trust.hidden-unicode"] }],
+    ledgerMatches: true,
+  };
+
+  it("stays green for a non-installer catalog with zero preview escapes", () => {
+    expect(postureOkForCatalog({ ...nonInstallerInput, previewEscapeCount: 0 })).toBe(true);
+  });
+
+  it("goes red for a non-installer catalog when a preview destination escapes the fixture", () => {
+    expect(postureOkForCatalog({ ...nonInstallerInput, previewEscapeCount: 1 })).toBe(false);
   });
 });
