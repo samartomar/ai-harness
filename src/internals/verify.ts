@@ -106,6 +106,10 @@ export type CheckCode =
   | "trust.sandbox-smoke-unavailable"
   | "trust.sandbox-smoke-failed"
   | "trust.cisco-finding"
+  // Cisco metadata-hygiene "missing license field" finding, reclassified out of
+  // the generic cisco-finding block into a graded, acknowledgeable trust-origin
+  // finding (advisory at vibe/team, blocking-but-acknowledgeable at enterprise).
+  | "trust.skill-metadata-license"
   | "trust.hidden-unicode"
   | "trust.visible-unicode"
   | "trust.prompt-injection"

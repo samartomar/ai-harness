@@ -1296,6 +1296,20 @@ const SKILLSPECTOR_SC4_OFFLINE_FALLBACK =
 const SKILLSPECTOR_YR4_METADATA_MESSAGE =
   "YARA rule 'agent_skill_mcp_tool_poisoning_metadata': MCP/tool metadata poisoning indicators in tool schemas or skill manifests [agent_skills]";
 const COREPACK_PACKAGE_MANAGER_INTEGRITY = /^[A-Za-z0-9._-]+@[^+\s"]+\+sha512\.[a-f0-9]{128}$/i;
+// The Cisco skill-scanner's metadata-hygiene "missing license field" finding.
+// Its rule id (MANIFEST_MISSING_LICENSE, emitted by cisco-ai-skill-scanner
+// ==2.0.12) is not in CISCO_RULE_MAP, so it otherwise falls through to the
+// block-at-every-posture trust.cisco-finding bucket. It is an evidence/metadata
+// gap (mirrors the native trust.license-missing UNKNOWN posture), not poisoning,
+// so it is reclassified to a graded, acknowledgeable trust-origin finding. The
+// reclass is gated on that SPECIFIC benign rule id (never a danger-mapped one),
+// the skill-scanner, the manifest surface (SKILL.md), and the specific wording
+// pinned to that scanner version; re-verify the rule id and wording on a scanner
+// pin bump. Scope is deliberately narrow: only this metadata-hygiene finding
+// reclassifies — every other Cisco finding stays as mapped or cisco-finding.
+const CISCO_MISSING_LICENSE_RULE_ID = "MANIFEST_MISSING_LICENSE";
+const CISCO_MISSING_LICENSE_MESSAGE =
+  /\bskill manifest does not include a ['"‘’]?license['"‘’]?\s+field\b/i;
 // SkillSpector YR4 (`agent_skill_mcp_tool_poisoning_metadata`) fires when
 // `any of ($schema_*)` (ubiquitous manifest keys like `"description":`) is
 // present AND at least one Gate-B poisoning co-signal matches. The carve-out
@@ -1381,6 +1395,31 @@ function skillspectorAdvisory(
   return `${message}; reviewed false positive: the only poisoning co-signal is the top-level Corepack packageManager integrity suffix, which remains pinned.`;
 }
 
+// The Cisco skill-scanner's "missing license field" metadata-hygiene finding is
+// reclassified out of the generic cisco-finding block into an acknowledgeable
+// trust-origin finding. It is gated on the SPECIFIC benign SARIF rule id the
+// scanner emits for it (MANIFEST_MISSING_LICENSE) and NEVER reclassifies a rule
+// id that maps to a danger code — so a danger finding whose echoed message text
+// merely quotes the license phrase can never be relabelled. Only the Cisco
+// skill-scanner, only that rule id, only the manifest surface (SKILL.md), only
+// that exact wording — never the mcp-scanner or any other Cisco finding.
+function ciscoMetadataLicenseCode(
+  result: SarifResult,
+  detector: TrustDetector,
+  location: NonNullable<Check["location"]>,
+): CheckCode | undefined {
+  if (detector.name !== "cisco") return undefined;
+  const ruleId = resultRuleId(result);
+  if (ruleId !== CISCO_MISSING_LICENSE_RULE_ID) return undefined;
+  // A danger-mapped rule id is never eligible for the benign reclass, even if it
+  // somehow shared the benign rule id string.
+  if (detector.ruleMap[ruleId] !== undefined) return undefined;
+  if (basename(location.uri) !== "SKILL.md") return undefined;
+  return CISCO_MISSING_LICENSE_MESSAGE.test(resultMessage(result, detector))
+    ? "trust.skill-metadata-license"
+    : undefined;
+}
+
 function ruleCode(
   result: SarifResult,
   detector: TrustDetector,
@@ -1391,6 +1430,12 @@ function ruleCode(
   if (raw === undefined) return undefined;
   const advisory = skillspectorAdvisory(result, detector, root, location);
   if (advisory !== undefined) return { advisory };
+  // A rule id mapped by the detector always wins over any message-text
+  // reclassification below: a danger-mapped finding (e.g.
+  // PROMPT_INJECTION_IGNORE_INSTRUCTIONS -> trust.prompt-injection,
+  // YARA_command_injection_generic -> trust.malicious-code) must never be
+  // relabelled to an acknowledgeable trust-origin code by a substring match on
+  // echoed message content.
   const mapped = detector.ruleMap[raw];
   if (mapped !== undefined) {
     if (mapped === "trust.hidden-unicode") {
@@ -1401,6 +1446,9 @@ function ruleCode(
       code: mapped,
     };
   }
+  // Only an UNMAPPED Cisco rule id reaches the benign missing-license reclass.
+  const metadataLicense = ciscoMetadataLicenseCode(result, detector, location);
+  if (metadataLicense !== undefined) return { code: metadataLicense };
   const legalText = reviewableLegalTextContent(root, location);
   if (
     detector.name === "skillspector" ||

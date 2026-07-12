@@ -704,6 +704,13 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     action:
       "Review the Cisco AI Defense finding, map the rule to a specific trust check if it is a known-dangerous pattern, or reject the external source until the flagged content is removed.",
   },
+  "trust.skill-metadata-license": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "Cisco skill-scanner: skill manifest declares no license field",
+    action:
+      "Add a license to the skill manifest (SKILL.md license frontmatter, a LICENSE/COPYING file, or a package.json license field). Advisory at vibe/team posture; at enterprise, fix it or acknowledge the exact finding fingerprint with a recorded reason.",
+  },
   "trust.prompt-injection": {
     audience: "developer",
     failSeverity: "blocking",

@@ -85,9 +85,14 @@
               "detail": "112 findings; first: .kiro/README.md:240 — SkillSpector: MCP server referenced without pinned version: 'npx tsc'."
             },
             {
+              "code": "trust.skill-metadata-license",
+              "count": 43,
+              "detail": "43 findings; first: .kiro/skills/agentic-engineering/SKILL.md:1 — Cisco AI Defense skill-scanner: Skill manifest does not include a 'license' field. Specifying a license helps users understand usage terms."
+            },
+            {
               "code": "trust.cisco-finding",
-              "count": 46,
-              "detail": "46 findings; first: .kiro/skills/agentic-engineering/SKILL.md:1 — Cisco AI Defense skill-scanner: Skill manifest does not include a 'license' field. Specifying a license helps users understand usage terms."
+              "count": 3,
+              "detail": "3 findings; first: .kiro/skills/django-security/SKILL.md:533 — Cisco AI Defense skill-scanner: Pattern detected: post****"
             }
           ]
         },
@@ -167,8 +172,8 @@
             },
             {
               "code": "trust.prompt-injection",
-              "count": 76,
-              "detail": "76 findings; first: .agents/skills/fal-ai-media/SKILL.md:214 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL"
+              "count": 10,
+              "detail": "10 findings; first: .agents/skills/fal-ai-media/SKILL.md:214 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL"
             },
             {
               "code": "trust.auto-exec-hook",
@@ -181,7 +186,7 @@
               "detail": "95 findings; first: .agents/skills/e2e-testing/SKILL.md:157 — SkillSpector: MCP server referenced without pinned version: 'npx playwright'."
             },
             {
-              "code": "trust.cisco-finding",
+              "code": "trust.skill-metadata-license",
               "count": 38,
               "detail": "38 findings; first: .agents/skills/agent-introspection-debugging/SKILL.md:1 — Cisco AI Defense skill-scanner: Skill manifest does not include a 'license' field. Specifying a license helps users understand usage terms."
             }
@@ -321,7 +326,7 @@
               "detail": "110 findings; first: .hermes/README.md:21 — SkillSpector: MCP server referenced without pinned version: 'npx ecc'."
             },
             {
-              "code": "trust.cisco-finding",
+              "code": "trust.skill-metadata-license",
               "count": 10,
               "detail": "10 findings; first: .cursor/skills/article-writing/SKILL.md:1 — Cisco AI Defense skill-scanner: Skill manifest does not include a 'license' field. Specifying a license helps users understand usage terms."
             }
@@ -426,9 +431,14 @@
               "detail": "20 findings; first: skills/angular-developer/SKILL.md:41 — SkillSpector: MCP server referenced without pinned version: 'npx @angular/cli'."
             },
             {
+              "code": "trust.skill-metadata-license",
+              "count": 52,
+              "detail": "52 findings; first: skills/android-clean-architecture/SKILL.md:1 — Cisco AI Defense skill-scanner: Skill manifest does not include a 'license' field. Specifying a license helps users understand usage terms."
+            },
+            {
               "code": "trust.cisco-finding",
-              "count": 53,
-              "detail": "53 findings; first: skills/android-clean-architecture/SKILL.md:1 — Cisco AI Defense skill-scanner: Skill manifest does not include a 'license' field. Specifying a license helps users understand usage terms."
+              "detail": "skills/django-verification/SKILL.md:171 — Cisco AI Defense skill-scanner: Detects SQL injection attack patterns including keywords, tautologies, and database functions: SELECT table_name, index_name FROM information_schema",
+              "fingerprint": "trust-cisco-finding:skills/django-verification/SKILL.md:bb5979e360a184b382ea3f42574a816d6e8c8ce1fdf9f5168c3ba02cc2412f2f"
             }
           ]
         },
@@ -470,7 +480,7 @@
               "detail": "16 findings; first: skills/database-migrations/SKILL.md:134 — SkillSpector: MCP server referenced without pinned version: 'npx prisma'."
             },
             {
-              "code": "trust.cisco-finding",
+              "code": "trust.skill-metadata-license",
               "count": 6,
               "detail": "6 findings; first: skills/clickhouse-io/SKILL.md:1 — Cisco AI Defense skill-scanner: Skill manifest does not include a 'license' field. Specifying a license helps users understand usage terms."
             }
@@ -529,9 +539,14 @@
               "detail": "61 findings; first: skills/continuous-learning-v2/scripts/instinct-cli.py:257 — SkillSpector: subprocess module call"
             },
             {
+              "code": "trust.skill-metadata-license",
+              "count": 20,
+              "detail": "20 findings; first: skills/agent-introspection-debugging/SKILL.md:1 — Cisco AI Defense skill-scanner: Skill manifest does not include a 'license' field. Specifying a license helps users understand usage terms."
+            },
+            {
               "code": "trust.cisco-finding",
-              "count": 26,
-              "detail": "26 findings; first: skills/agent-introspection-debugging/SKILL.md:1 — Cisco AI Defense skill-scanner: Skill manifest does not include a 'license' field. Specifying a license helps users understand usage terms."
+              "count": 6,
+              "detail": "6 findings; first: cisco.sarif:1 — Cisco AI Defense skill-scanner: Skill code uses network libraries but doesn't declare network requirement"
             },
             {
               "code": "trust.prompt-injection",
@@ -578,8 +593,8 @@
           "findings": [
             {
               "code": "trust.prompt-injection",
-              "count": 7,
-              "detail": "7 findings; first: skills/django-security/SKILL.md:340 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL"
+              "count": 8,
+              "detail": "8 findings; first: skills/django-security/SKILL.md:340 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL"
             },
             {
               "code": "trust.hidden-unicode",
@@ -597,7 +612,7 @@
               "detail": "33 findings; first: skills/security-scan/SKILL.md:26 — SkillSpector: MCP server referenced without pinned version: 'npx supply'."
             },
             {
-              "code": "trust.cisco-finding",
+              "code": "trust.skill-metadata-license",
               "count": 14,
               "detail": "14 findings; first: skills/defi-amm-security/SKILL.md:1 — Cisco AI Defense skill-scanner: Skill manifest does not include a 'license' field. Specifying a license helps users understand usage terms."
             }
@@ -648,7 +663,7 @@
               "detail": "5 findings; first: skills/deep-research/SKILL.md:30 — SkillSpector: Agent Config Directory Access"
             },
             {
-              "code": "trust.cisco-finding",
+              "code": "trust.skill-metadata-license",
               "count": 8,
               "detail": "8 findings; first: skills/deep-research/SKILL.md:1 — Cisco AI Defense skill-scanner: Skill manifest does not include a 'license' field. Specifying a license helps users understand usage terms."
             }
@@ -696,7 +711,7 @@
               "fingerprint": "trust-detector-finding:skills/seo/SKILL.md:b6ec42a4f949cd2236c7d8249cd62af970c824142a692f8a684f2eda3384454a"
             },
             {
-              "code": "trust.cisco-finding",
+              "code": "trust.skill-metadata-license",
               "count": 10,
               "detail": "10 findings; first: skills/article-writing/SKILL.md:1 — Cisco AI Defense skill-scanner: Skill manifest does not include a 'license' field. Specifying a license helps users understand usage terms."
             }
@@ -757,7 +772,7 @@
               "detail": "5 findings; first: skills/jira-integration/SKILL.md:293 — SkillSpector: MCP server referenced without pinned version: 'uvx ENOENT'."
             },
             {
-              "code": "trust.cisco-finding",
+              "code": "trust.skill-metadata-license",
               "count": 18,
               "detail": "18 findings; first: skills/api-connector-builder/SKILL.md:1 — Cisco AI Defense skill-scanner: Skill manifest does not include a 'license' field. Specifying a license helps users understand usage terms."
             }
@@ -823,7 +838,7 @@
               "detail": "5 findings; first: skills/ito-basket-compare/SKILL.md:3 — trust.hidden-unicode: document contains 3 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
             },
             {
-              "code": "trust.cisco-finding",
+              "code": "trust.skill-metadata-license",
               "count": 6,
               "detail": "6 findings; first: skills/ito-basket-compare/SKILL.md:1 — Cisco AI Defense skill-scanner: Skill manifest does not include a 'license' field. Specifying a license helps users understand usage terms."
             }
@@ -868,7 +883,7 @@
               "detail": "5 findings; first: skills/x-api/SKILL.md:45 — SkillSpector: External Transmission"
             },
             {
-              "code": "trust.cisco-finding",
+              "code": "trust.skill-metadata-license",
               "count": 2,
               "detail": "2 findings; first: skills/crosspost/SKILL.md:1 — Cisco AI Defense skill-scanner: Skill manifest does not include a 'license' field. Specifying a license helps users understand usage terms."
             }
@@ -923,9 +938,14 @@
               "detail": "24 findings; first: skills/remotion-video-creation/rules/3d.md:19 — SkillSpector: MCP server referenced without pinned version: 'npx remotion'."
             },
             {
+              "code": "trust.skill-metadata-license",
+              "count": 7,
+              "detail": "7 findings; first: skills/blender-motion-state-inspection/SKILL.md:1 — Cisco AI Defense skill-scanner: Skill manifest does not include a 'license' field. Specifying a license helps users understand usage terms."
+            },
+            {
               "code": "trust.cisco-finding",
-              "count": 8,
-              "detail": "8 findings; first: skills/blender-motion-state-inspection/SKILL.md:1 — Cisco AI Defense skill-scanner: Skill manifest does not include a 'license' field. Specifying a license helps users understand usage terms."
+              "detail": "cisco.sarif:1 — Cisco AI Defense skill-scanner: Skill restricts tools to ['Read', 'Grep', 'Glob', 'Bash(python:*)'] but bundled scripts appear to write to the filesystem, which conflicts with a read-only tool declaration.",
+              "fingerprint": "trust-cisco-finding:cisco.sarif:c4ba6387aa3b2c7b9d3d49ba435fd2c78cfd4029673f8a602a88457df5fed5b0"
             }
           ]
         },
@@ -962,9 +982,9 @@
               "detail": "2 findings; first: scripts/lib/tmux-worktree-orchestrator.js:203 — trust.hidden-unicode: document contains 1 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
             },
             {
-              "code": "trust.cisco-finding",
+              "code": "trust.skill-metadata-license",
               "detail": "skills/dmux-workflows/SKILL.md:1 — Cisco AI Defense skill-scanner: Skill manifest does not include a 'license' field. Specifying a license helps users understand usage terms.",
-              "fingerprint": "trust-cisco-finding:skills/dmux-workflows/SKILL.md:dd260360d7d37f04ff1b08e0d882753ff51b543793695766bbbd7d15fc81176a"
+              "fingerprint": "trust-skill-metadata-license:skills/dmux-workflows/SKILL.md:0a7387bc5ba87ad9e8a8cc62de6b03ace19f4abd03abcea9798a7a4ab26fc8cf"
             }
           ]
         },
@@ -1006,7 +1026,7 @@
               "fingerprint": "trust-detector-finding:skills/foundation-models-on-device/SKILL.md:4e5255d77a875506f125e7a17550043d98a30ddb9bab8f267c5412630f8ef163"
             },
             {
-              "code": "trust.cisco-finding",
+              "code": "trust.skill-metadata-license",
               "count": 6,
               "detail": "6 findings; first: skills/foundation-models-on-device/SKILL.md:1 — Cisco AI Defense skill-scanner: Skill manifest does not include a 'license' field. Specifying a license helps users understand usage terms."
             }
@@ -1067,7 +1087,7 @@
               "detail": "37 findings; first: skills/agentic-os/SKILL.md:105 — SkillSpector: MCP Config Access"
             },
             {
-              "code": "trust.cisco-finding",
+              "code": "trust.skill-metadata-license",
               "count": 22,
               "detail": "22 findings; first: skills/agent-architecture-audit/SKILL.md:1 — Cisco AI Defense skill-scanner: Skill manifest does not include a 'license' field. Specifying a license helps users understand usage terms."
             }
@@ -1114,9 +1134,14 @@
               "detail": "8 findings; first: skills/deployment-patterns/SKILL.md:382 — SkillSpector: MCP server referenced without pinned version: 'npx prisma'."
             },
             {
+              "code": "trust.skill-metadata-license",
+              "count": 9,
+              "detail": "9 findings; first: skills/cisco-ios-patterns/SKILL.md:1 — Cisco AI Defense skill-scanner: Skill manifest does not include a 'license' field. Specifying a license helps users understand usage terms."
+            },
+            {
               "code": "trust.cisco-finding",
-              "count": 11,
-              "detail": "11 findings; first: skills/cisco-ios-patterns/SKILL.md:1 — Cisco AI Defense skill-scanner: Skill manifest does not include a 'license' field. Specifying a license helps users understand usage terms."
+              "count": 2,
+              "detail": "2 findings; first: skills/docker-patterns/SKILL.md:30 — Cisco AI Defense skill-scanner: Pattern detected: post****"
             }
           ]
         },
@@ -1228,7 +1253,7 @@
               "detail": "6 findings; first: skills/nutrient-document-processing/SKILL.md:37 — SkillSpector: External Transmission"
             },
             {
-              "code": "trust.cisco-finding",
+              "code": "trust.skill-metadata-license",
               "count": 2,
               "detail": "2 findings; first: skills/nutrient-document-processing/SKILL.md:1 — Cisco AI Defense skill-scanner: Skill manifest does not include a 'license' field. Specifying a license helps users understand usage terms."
             }
@@ -1262,9 +1287,14 @@
               "fingerprint": "trust-hidden-unicode:skills/tdd-workflow/SKILL.md:4778959dbfc47a06e9f645abcdbe97afd4be297cb7f9c773a13025b8f5a7c1cf"
             },
             {
+              "code": "trust.skill-metadata-license",
+              "detail": "skills/tdd-workflow/SKILL.md:1 — Cisco AI Defense skill-scanner: Skill manifest does not include a 'license' field. Specifying a license helps users understand usage terms.",
+              "fingerprint": "trust-skill-metadata-license:skills/tdd-workflow/SKILL.md:6b37e2e1e24889fd20057b1dff9be9539d763518e6bdf56f8ea35acdf221fa4b"
+            },
+            {
               "code": "trust.cisco-finding",
-              "count": 2,
-              "detail": "2 findings; first: skills/tdd-workflow/SKILL.md:1 — Cisco AI Defense skill-scanner: Skill manifest does not include a 'license' field. Specifying a license helps users understand usage terms."
+              "detail": "skills/tdd-workflow/SKILL.md:1 — Cisco AI Defense skill-scanner: Pipeline downloads data from the network and executes it: `curl ... | sh`. This is a remote code execution pattern.",
+              "fingerprint": "trust-cisco-finding:skills/tdd-workflow/SKILL.md:882f78f01cbdd4e6e95977dd39c5a3629c46edc73d93d1cac6c9c227d83ca3b8"
             },
             {
               "code": "trust.prompt-injection",
@@ -1329,9 +1359,9 @@
               "detail": "2 findings; first: skills/strategic-compact/SKILL.md:43 — SkillSpector: Agent Config Directory Access"
             },
             {
-              "code": "trust.cisco-finding",
+              "code": "trust.skill-metadata-license",
               "detail": "skills/strategic-compact/SKILL.md:1 — Cisco AI Defense skill-scanner: Skill manifest does not include a 'license' field. Specifying a license helps users understand usage terms.",
-              "fingerprint": "trust-cisco-finding:skills/strategic-compact/SKILL.md:fda86df427219df523fb1db6d85f2a3389b1940b18f9acca46555afae096e72c"
+              "fingerprint": "trust-skill-metadata-license:skills/strategic-compact/SKILL.md:d6d3804e2e3ae07a717ce0cf19305d8a5c82cd1925799ed8a92e70555c020479"
             }
           ]
         },
@@ -1368,9 +1398,9 @@
               "fingerprint": "trust-detector-finding:skills/coding-standards/SKILL.md:6d430aec8d7ea7c786056fc30b7b9a314cd9f2f1c80a15dd5367db988ee2b5a2"
             },
             {
-              "code": "trust.cisco-finding",
+              "code": "trust.skill-metadata-license",
               "detail": "skills/coding-standards/SKILL.md:1 — Cisco AI Defense skill-scanner: Skill manifest does not include a 'license' field. Specifying a license helps users understand usage terms.",
-              "fingerprint": "trust-cisco-finding:skills/coding-standards/SKILL.md:16b2ad4a75516b3b7eada51fae558909045a43f2936c0f8ecc43830d68203d37"
+              "fingerprint": "trust-skill-metadata-license:skills/coding-standards/SKILL.md:1d59ef402eb4828c21bbd13f4d7a2d2bdc77de7e1a35f6a9d03081dbba9852a8"
             }
           ]
         },
@@ -1398,11 +1428,6 @@
               "fingerprint": "trust-hidden-unicode:agents/code-reviewer.md:ec72ca2d5da22731921aa7d684a34a5e1430f1729abd449911a9d39f4332b4e3"
             },
             {
-              "code": "trust.prompt-injection",
-              "detail": "agents/code-reviewer.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
-              "fingerprint": "trust-prompt-injection:agents/code-reviewer.md:3c7eb9280fb2726003b143d53367cbbde5b4335a951d172f879d2ea87b2bd36c"
-            },
-            {
               "code": "trust.detector-finding",
               "detail": "agents/code-reviewer.md:220 — SkillSpector: Unbounded Resource Access",
               "fingerprint": "trust-detector-finding:agents/code-reviewer.md:776ec1d7c16589b02ed99a45348875502eff9c85f50bd4452cc69615197fb0d3"
@@ -1415,7 +1440,7 @@
             "agents/code-architect.md"
           ],
           "treeSha256": "d3d36d08a63697680fc1632fa41820d44e8db33cc2d3757077ee9b78924d9991",
-          "verdict": "blocked",
+          "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
@@ -1426,13 +1451,7 @@
               "version": "326a2b489411a20ed742ff13701be39ba00063c8@sha256:ee8a107dfd1c258e0afed303016a4220d174ba54bd1510bf73ed91f2825075ec"
             }
           ],
-          "findings": [
-            {
-              "code": "trust.prompt-injection",
-              "detail": "agents/code-architect.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
-              "fingerprint": "trust-prompt-injection:agents/code-architect.md:8acac01439a3a2212ab7afa0a23ebb22d32cef96c66aab8fd04bff99f872d1e6"
-            }
-          ]
+          "findings": []
         },
         {
           "id": "agent:architect",
@@ -1440,7 +1459,7 @@
             "agents/architect.md"
           ],
           "treeSha256": "7ab4ef54313bf7495a3b50ca69212111b0b3f6cdce6f63f4889ac7b02b99e7bd",
-          "verdict": "blocked",
+          "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
@@ -1451,13 +1470,7 @@
               "version": "326a2b489411a20ed742ff13701be39ba00063c8@sha256:ee8a107dfd1c258e0afed303016a4220d174ba54bd1510bf73ed91f2825075ec"
             }
           ],
-          "findings": [
-            {
-              "code": "trust.prompt-injection",
-              "detail": "agents/architect.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
-              "fingerprint": "trust-prompt-injection:agents/architect.md:790f165a00ab990a6420a69ca7fe9785f6647725061ca73a59e8664360f452ac"
-            }
-          ]
+          "findings": []
         },
         {
           "id": "agent:planner",
@@ -1481,11 +1494,6 @@
               "code": "trust.hidden-unicode",
               "detail": "agents/planner.md:129 — trust.hidden-unicode: document contains 10 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
               "fingerprint": "trust-hidden-unicode:agents/planner.md:45828a8c7607bfc1e722a0059bbb68463d904fc3f672e79a77f28a16c7618cee"
-            },
-            {
-              "code": "trust.prompt-injection",
-              "detail": "agents/planner.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
-              "fingerprint": "trust-prompt-injection:agents/planner.md:42b471a041c3af02aa9d730b6b2bb786a04a381ab42242b8404c550cb32e61ba"
             }
           ]
         },
@@ -1495,7 +1503,7 @@
             "agents/tdd-guide.md"
           ],
           "treeSha256": "5973a9221b3d89a4c1ecb5ed7ab54f17f5116fa53f72f41c81199592a4f3dfde",
-          "verdict": "blocked",
+          "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
@@ -1506,13 +1514,7 @@
               "version": "326a2b489411a20ed742ff13701be39ba00063c8@sha256:ee8a107dfd1c258e0afed303016a4220d174ba54bd1510bf73ed91f2825075ec"
             }
           ],
-          "findings": [
-            {
-              "code": "trust.prompt-injection",
-              "detail": "agents/tdd-guide.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
-              "fingerprint": "trust-prompt-injection:agents/tdd-guide.md:6ab44fe438e8d8b1ce18bd5379cda6922edc0b7f240f0d45db16e3a84b642c67"
-            }
-          ]
+          "findings": []
         },
         {
           "id": "agent:build-error-resolver",
@@ -1536,11 +1538,6 @@
               "code": "trust.hidden-unicode",
               "detail": "agents/build-error-resolver.md:19 — trust.hidden-unicode: document contains 14 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
               "fingerprint": "trust-hidden-unicode:agents/build-error-resolver.md:fc2e4cf421e91efeff1fc69f37b7554d8da14e65679221b242dbd09356bea8df"
-            },
-            {
-              "code": "trust.prompt-injection",
-              "detail": "agents/build-error-resolver.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
-              "fingerprint": "trust-prompt-injection:agents/build-error-resolver.md:7eecd68731f10916e5f2a49e32711598c0781679b341708c7629eb3f774625d5"
             },
             {
               "code": "trust.detector-finding",
@@ -1568,11 +1565,6 @@
           ],
           "findings": [
             {
-              "code": "trust.prompt-injection",
-              "detail": "agents/refactor-cleaner.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
-              "fingerprint": "trust-prompt-injection:agents/refactor-cleaner.md:ac0efd754c7f03178dfd8b9009e2110fd6ace7a866f78122a844c70fec44e1be"
-            },
-            {
               "code": "trust.detector-finding",
               "count": 4,
               "detail": "4 findings; first: agents/refactor-cleaner.md:31 — SkillSpector: MCP server referenced without pinned version: 'npx knip'."
@@ -1585,7 +1577,7 @@
             "agents/code-simplifier.md"
           ],
           "treeSha256": "5ba26a75e3eb98de06d2c048500b94a1995b88cb58209fedd0ce30f8cd2c8a48",
-          "verdict": "blocked",
+          "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
@@ -1596,13 +1588,7 @@
               "version": "326a2b489411a20ed742ff13701be39ba00063c8@sha256:ee8a107dfd1c258e0afed303016a4220d174ba54bd1510bf73ed91f2825075ec"
             }
           ],
-          "findings": [
-            {
-              "code": "trust.prompt-injection",
-              "detail": "agents/code-simplifier.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
-              "fingerprint": "trust-prompt-injection:agents/code-simplifier.md:f9943634e62f6d3e167bade5bc84525d37a4f91e35247ef5904f1121d447356a"
-            }
-          ]
+          "findings": []
         },
         {
           "id": "agent:silent-failure-hunter",
@@ -1610,7 +1596,7 @@
             "agents/silent-failure-hunter.md"
           ],
           "treeSha256": "caa607a62eb91a807ecbd6bbd60a5f88df01365a9f5f07b3e12a168196ea8820",
-          "verdict": "blocked",
+          "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
@@ -1621,13 +1607,7 @@
               "version": "326a2b489411a20ed742ff13701be39ba00063c8@sha256:ee8a107dfd1c258e0afed303016a4220d174ba54bd1510bf73ed91f2825075ec"
             }
           ],
-          "findings": [
-            {
-              "code": "trust.prompt-injection",
-              "detail": "agents/silent-failure-hunter.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
-              "fingerprint": "trust-prompt-injection:agents/silent-failure-hunter.md:958eee08bb6484f07d4b86d9392aa136f6ac6906cb0c4e703ae51a7ae707b084"
-            }
-          ]
+          "findings": []
         },
         {
           "id": "agent:pr-test-analyzer",
@@ -1635,7 +1615,7 @@
             "agents/pr-test-analyzer.md"
           ],
           "treeSha256": "9682fc8a4db5b2edfbafc4fc2bc053b74c64cfe173d617502a943a935450d7b4",
-          "verdict": "blocked",
+          "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
@@ -1646,13 +1626,7 @@
               "version": "326a2b489411a20ed742ff13701be39ba00063c8@sha256:ee8a107dfd1c258e0afed303016a4220d174ba54bd1510bf73ed91f2825075ec"
             }
           ],
-          "findings": [
-            {
-              "code": "trust.prompt-injection",
-              "detail": "agents/pr-test-analyzer.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
-              "fingerprint": "trust-prompt-injection:agents/pr-test-analyzer.md:3ef8a2182b928ec725ea987b287fc52b4fd5e482d49062aa329d4f0338bc2ccf"
-            }
-          ]
+          "findings": []
         },
         {
           "id": "agent:doc-updater",
@@ -1676,11 +1650,6 @@
               "code": "trust.hidden-unicode",
               "detail": "agents/doc-updater.md:23 — trust.hidden-unicode: document contains 31 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
               "fingerprint": "trust-hidden-unicode:agents/doc-updater.md:b70027dd48d95b5d775a354374110dc80d96ef0ad0eabecc5737350536be5a50"
-            },
-            {
-              "code": "trust.prompt-injection",
-              "detail": "agents/doc-updater.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
-              "fingerprint": "trust-prompt-injection:agents/doc-updater.md:4daa82a0699157fe98ae1ec101e80493f4b54e3281f543b48270bf645d8e6a6f"
             },
             {
               "code": "trust.detector-finding",
@@ -1711,11 +1680,6 @@
               "code": "trust.hidden-unicode",
               "detail": "agents/docs-lookup.md:29 — trust.hidden-unicode: document contains 1 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
               "fingerprint": "trust-hidden-unicode:agents/docs-lookup.md:959eef0e783d7b45ace2d8623c92099400a2ef823a6249c0242d9fa70d3ea6f6"
-            },
-            {
-              "code": "trust.prompt-injection",
-              "detail": "agents/docs-lookup.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
-              "fingerprint": "trust-prompt-injection:agents/docs-lookup.md:cb0abb9a31afc3611ce9b17f7545d0d3e4f7988231163976cc55e470b8664f65"
             }
           ]
         },
@@ -1725,7 +1689,7 @@
             "agents/code-explorer.md"
           ],
           "treeSha256": "6e1035efe44e6d762d34e020e85f1bc2ed78764ca85f6efc31a0558c69cab475",
-          "verdict": "blocked",
+          "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
@@ -1736,13 +1700,7 @@
               "version": "326a2b489411a20ed742ff13701be39ba00063c8@sha256:ee8a107dfd1c258e0afed303016a4220d174ba54bd1510bf73ed91f2825075ec"
             }
           ],
-          "findings": [
-            {
-              "code": "trust.prompt-injection",
-              "detail": "agents/code-explorer.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
-              "fingerprint": "trust-prompt-injection:agents/code-explorer.md:0d08d0621bb890f5126fba227428271db826e607ffe34b1729af616ebee20414"
-            }
-          ]
+          "findings": []
         },
         {
           "id": "agent:security-reviewer",
@@ -1768,11 +1726,6 @@
               "fingerprint": "trust-hidden-unicode:agents/security-reviewer.md:1581e2a4a5ea7f22f7c38eb4056435a8bf5afaeff75183746abb259c412692ef"
             },
             {
-              "code": "trust.prompt-injection",
-              "detail": "agents/security-reviewer.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
-              "fingerprint": "trust-prompt-injection:agents/security-reviewer.md:3a2ea3f8ac1d6507367ec7a1c0e12a94c2ae54a0b72ca4ce5c308bcaf19f9e5d"
-            },
-            {
               "code": "trust.detector-finding",
               "detail": "agents/security-reviewer.md:34 — SkillSpector: MCP server referenced without pinned version: 'npx eslint'.",
               "fingerprint": "trust-detector-finding:agents/security-reviewer.md:00766f40accdf39535c6f2d816718d4c8573e74e1d4347d8a9f5a00560bf6cda"
@@ -1785,7 +1738,7 @@
             "agents/type-design-analyzer.md"
           ],
           "treeSha256": "db7188feb08ae6abfcf941b65229eac38c237d6970f41f023d63322dba57aa45",
-          "verdict": "blocked",
+          "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
@@ -1796,13 +1749,7 @@
               "version": "326a2b489411a20ed742ff13701be39ba00063c8@sha256:ee8a107dfd1c258e0afed303016a4220d174ba54bd1510bf73ed91f2825075ec"
             }
           ],
-          "findings": [
-            {
-              "code": "trust.prompt-injection",
-              "detail": "agents/type-design-analyzer.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
-              "fingerprint": "trust-prompt-injection:agents/type-design-analyzer.md:b4971a236794d56be54171518923a5e484d057ce589bb44bfdce2cf0554c6042"
-            }
-          ]
+          "findings": []
         },
         {
           "id": "agent:performance-optimizer",
@@ -1826,11 +1773,6 @@
               "code": "trust.hidden-unicode",
               "detail": "agents/performance-optimizer.md:23 — trust.hidden-unicode: document contains 10 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
               "fingerprint": "trust-hidden-unicode:agents/performance-optimizer.md:4679dd4405702b18bca219bd8a7be3affd376c81a9e84ba2eea44be8d762ab7f"
-            },
-            {
-              "code": "trust.prompt-injection",
-              "detail": "agents/performance-optimizer.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
-              "fingerprint": "trust-prompt-injection:agents/performance-optimizer.md:35cdb9590ec69bac0b64855471eff877b59b938f24bf6094dd91225bd7a81208"
             },
             {
               "code": "trust.detector-finding",
@@ -1919,9 +1861,14 @@
               "detail": "11 findings; first: skills/brainstorming/scripts/server.cjs:293 — SkillSpector: Credential Access"
             },
             {
+              "code": "trust.skill-metadata-license",
+              "detail": "skills/brainstorming/SKILL.md:1 — Cisco AI Defense skill-scanner: Skill manifest does not include a 'license' field. Specifying a license helps users understand usage terms.",
+              "fingerprint": "trust-skill-metadata-license:skills/brainstorming/SKILL.md:d1b29d1a0ab2750237415310199e29ab9979af4395cdd56a167dc4045ed05781"
+            },
+            {
               "code": "trust.cisco-finding",
-              "count": 14,
-              "detail": "14 findings; first: skills/brainstorming/SKILL.md:1 — Cisco AI Defense skill-scanner: Skill manifest does not include a 'license' field. Specifying a license helps users understand usage terms."
+              "count": 13,
+              "detail": "13 findings; first: skills/brainstorming/scripts/server.cjs:93 — Cisco AI Defense skill-scanner: Pattern detected: fs.readFileSync("
             }
           ]
         },
@@ -1953,9 +1900,9 @@
               "fingerprint": "trust-hidden-unicode:skills/dispatching-parallel-agents/SKILL.md:e41b08695963621e4fa00e1468fc564d15c291b1184185d26b3f72fcc4d7e98b"
             },
             {
-              "code": "trust.cisco-finding",
+              "code": "trust.skill-metadata-license",
               "detail": "skills/dispatching-parallel-agents/SKILL.md:1 — Cisco AI Defense skill-scanner: Skill manifest does not include a 'license' field. Specifying a license helps users understand usage terms.",
-              "fingerprint": "trust-cisco-finding:skills/dispatching-parallel-agents/SKILL.md:93c2b7bfdba76fa8a4efde975d556c3de691cfb5a5c649374cdf2bb624328816"
+              "fingerprint": "trust-skill-metadata-license:skills/dispatching-parallel-agents/SKILL.md:9010b846400d9b2ff1d4cfbfc09f83fc98cf1e5ac915981a7b44c8cf1157a980"
             }
           ]
         },
@@ -1987,9 +1934,9 @@
               "fingerprint": "trust-detector-finding:skills/executing-plans/SKILL.md:450e9e8b1ae4f000dca463b5a714ddd2e0f383c17939e793926907a6e3634ed9"
             },
             {
-              "code": "trust.cisco-finding",
+              "code": "trust.skill-metadata-license",
               "detail": "skills/executing-plans/SKILL.md:1 — Cisco AI Defense skill-scanner: Skill manifest does not include a 'license' field. Specifying a license helps users understand usage terms.",
-              "fingerprint": "trust-cisco-finding:skills/executing-plans/SKILL.md:d907b1919cf661463955403e405f6ae316f7508cce5446a5f817ee8be6957fbe"
+              "fingerprint": "trust-skill-metadata-license:skills/executing-plans/SKILL.md:eb8fb01a0dda6677294605983886c16b58aa1434d21afaf8c879e47ae5be1f3c"
             }
           ]
         },
@@ -2026,9 +1973,9 @@
               "detail": "2 findings; first: skills/finishing-a-development-branch/SKILL.md:219 — SkillSpector: Autonomous Decision Making"
             },
             {
-              "code": "trust.cisco-finding",
+              "code": "trust.skill-metadata-license",
               "detail": "skills/finishing-a-development-branch/SKILL.md:1 — Cisco AI Defense skill-scanner: Skill manifest does not include a 'license' field. Specifying a license helps users understand usage terms.",
-              "fingerprint": "trust-cisco-finding:skills/finishing-a-development-branch/SKILL.md:def13bfc628483ba4b77594408fda9c18c30b2e7d661e5fcf9f47687b9019db0"
+              "fingerprint": "trust-skill-metadata-license:skills/finishing-a-development-branch/SKILL.md:e39ff7383a9c2ede5d3d597d906df88e3806c0515f44e77d35af7fa3a33152fa"
             }
           ]
         },
@@ -2060,9 +2007,9 @@
               "fingerprint": "trust-hidden-unicode:skills/receiving-code-review/SKILL.md:7ffaba74e1d7afb92b559b99d435fd7d7e6d599cd13d1b2b70683e6b46c2d23b"
             },
             {
-              "code": "trust.cisco-finding",
+              "code": "trust.skill-metadata-license",
               "detail": "skills/receiving-code-review/SKILL.md:1 — Cisco AI Defense skill-scanner: Skill manifest does not include a 'license' field. Specifying a license helps users understand usage terms.",
-              "fingerprint": "trust-cisco-finding:skills/receiving-code-review/SKILL.md:37d315a05bb043a38e30e9db733d2053979a719a4e242783b28a0db2cd017069"
+              "fingerprint": "trust-skill-metadata-license:skills/receiving-code-review/SKILL.md:f05df2a1ccc74fe5ea1c885998228ff4e638925c7ed2dbd89d2a5a593078049a"
             }
           ]
         },
@@ -2099,9 +2046,9 @@
               "fingerprint": "trust-detector-finding:skills/requesting-code-review/code-reviewer.md:5118dd70b2e42f74a7b589f5827eeedc3bc65b9eccf650d7089d0dfac45f7688"
             },
             {
-              "code": "trust.cisco-finding",
+              "code": "trust.skill-metadata-license",
               "detail": "skills/requesting-code-review/SKILL.md:1 — Cisco AI Defense skill-scanner: Skill manifest does not include a 'license' field. Specifying a license helps users understand usage terms.",
-              "fingerprint": "trust-cisco-finding:skills/requesting-code-review/SKILL.md:dea8fd36c93a23334ba8f458a8041eba97a914801d794637468056e0037dc1fc"
+              "fingerprint": "trust-skill-metadata-license:skills/requesting-code-review/SKILL.md:83ec03d530dfda85389011841f46b727f5051892329883e4f7fcd9a36ae3c9ca"
             }
           ]
         },
@@ -2138,9 +2085,9 @@
               "detail": "3 findings; first: skills/subagent-driven-development/SKILL.md:57 — SkillSpector: Session Persistence"
             },
             {
-              "code": "trust.cisco-finding",
+              "code": "trust.skill-metadata-license",
               "detail": "skills/subagent-driven-development/SKILL.md:1 — Cisco AI Defense skill-scanner: Skill manifest does not include a 'license' field. Specifying a license helps users understand usage terms.",
-              "fingerprint": "trust-cisco-finding:skills/subagent-driven-development/SKILL.md:da863401cb05598a29f2521fb53b05575c9eb46af6dc53f03b5c45e28b407261"
+              "fingerprint": "trust-skill-metadata-license:skills/subagent-driven-development/SKILL.md:6d478c0a9645e43b794b4420b5c3b862611664cb8f2ef653bd2da560875cbb94"
             }
           ]
         },
@@ -2177,9 +2124,9 @@
               "detail": "3 findings; first: skills/systematic-debugging/condition-based-waiting.md:89 — SkillSpector: Unbounded Resource Access"
             },
             {
-              "code": "trust.cisco-finding",
+              "code": "trust.skill-metadata-license",
               "detail": "skills/systematic-debugging/SKILL.md:1 — Cisco AI Defense skill-scanner: Skill manifest does not include a 'license' field. Specifying a license helps users understand usage terms.",
-              "fingerprint": "trust-cisco-finding:skills/systematic-debugging/SKILL.md:bda7cb0e6aeab67b1a936b74a5d8c24caca08eb179562a24a7300c43080e111f"
+              "fingerprint": "trust-skill-metadata-license:skills/systematic-debugging/SKILL.md:a4d6576f611e82c060c5fc1496e95c13d97005a072017f1a42d555e92aaef015"
             }
           ]
         },
@@ -2211,9 +2158,9 @@
               "detail": "2 findings; first: skills/test-driven-development/SKILL.md:224 — trust.hidden-unicode: document contains 5 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
             },
             {
-              "code": "trust.cisco-finding",
+              "code": "trust.skill-metadata-license",
               "detail": "skills/test-driven-development/SKILL.md:1 — Cisco AI Defense skill-scanner: Skill manifest does not include a 'license' field. Specifying a license helps users understand usage terms.",
-              "fingerprint": "trust-cisco-finding:skills/test-driven-development/SKILL.md:d8a253bfdddd75ffe1c941de880736f46f08de634bb717b7550ee6ee235e1367"
+              "fingerprint": "trust-skill-metadata-license:skills/test-driven-development/SKILL.md:ea6d41066d1595c250b98633ec87de7c21a603d729da81b29a66a5f5910378f4"
             }
           ]
         },
@@ -2250,9 +2197,9 @@
               "detail": "2 findings; first: skills/using-git-worktrees/SKILL.md:45 — SkillSpector: Autonomous Decision Making"
             },
             {
-              "code": "trust.cisco-finding",
+              "code": "trust.skill-metadata-license",
               "detail": "skills/using-git-worktrees/SKILL.md:1 — Cisco AI Defense skill-scanner: Skill manifest does not include a 'license' field. Specifying a license helps users understand usage terms.",
-              "fingerprint": "trust-cisco-finding:skills/using-git-worktrees/SKILL.md:f95d3529c70649a153c0dc3340964264bbeb14032599bcc67831bc5e28727f5a"
+              "fingerprint": "trust-skill-metadata-license:skills/using-git-worktrees/SKILL.md:eca763e709980905cb6b346d2e5289ab647d1dd8e80ff19de255424507a95743"
             }
           ]
         },
@@ -2289,9 +2236,9 @@
               "fingerprint": "trust-hidden-unicode:skills/using-superpowers/SKILL.md:c6654217bd4bb8aaf33fe686177f14633f0d36548122b5438323942a4cbb68a4"
             },
             {
-              "code": "trust.cisco-finding",
+              "code": "trust.skill-metadata-license",
               "detail": "skills/using-superpowers/SKILL.md:1 — Cisco AI Defense skill-scanner: Skill manifest does not include a 'license' field. Specifying a license helps users understand usage terms.",
-              "fingerprint": "trust-cisco-finding:skills/using-superpowers/SKILL.md:e361b06f70c0daa7fb705989f6316485439830373016df8d52db13cbc3e232fb"
+              "fingerprint": "trust-skill-metadata-license:skills/using-superpowers/SKILL.md:08c21dcfcf8b5e84854343b79fdacd5f89bd039606316d275f940099e596782c"
             }
           ]
         },
@@ -2328,9 +2275,9 @@
               "detail": "2 findings; first: skills/verification-before-completion/SKILL.md:10 — SkillSpector: Autonomous Decision Making"
             },
             {
-              "code": "trust.cisco-finding",
+              "code": "trust.skill-metadata-license",
               "detail": "skills/verification-before-completion/SKILL.md:1 — Cisco AI Defense skill-scanner: Skill manifest does not include a 'license' field. Specifying a license helps users understand usage terms.",
-              "fingerprint": "trust-cisco-finding:skills/verification-before-completion/SKILL.md:36d98d5e21f88cc7d76f3bf4e8448a3da0d0f9b7cf8b15732ec9ff17f4b791d9"
+              "fingerprint": "trust-skill-metadata-license:skills/verification-before-completion/SKILL.md:22a3e0f8d785b3cb652a1406585bc2d7120a4fceeaa8793b677ea9e3b05a8231"
             }
           ]
         },
@@ -2362,9 +2309,9 @@
               "detail": "2 findings; first: skills/writing-plans/plan-document-reviewer-prompt.md:33 — trust.hidden-unicode: document contains 1 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
             },
             {
-              "code": "trust.cisco-finding",
+              "code": "trust.skill-metadata-license",
               "detail": "skills/writing-plans/SKILL.md:1 — Cisco AI Defense skill-scanner: Skill manifest does not include a 'license' field. Specifying a license helps users understand usage terms.",
-              "fingerprint": "trust-cisco-finding:skills/writing-plans/SKILL.md:deef53b0f9aa118e557e89c7d17ae699fb14043bef82f35ac20aebd5288d6e2e"
+              "fingerprint": "trust-skill-metadata-license:skills/writing-plans/SKILL.md:0e9a558c683cc6492b2aab2683c20514c8e14ce29c2e54c0efad909d1dfd6603"
             }
           ]
         },
@@ -2401,9 +2348,14 @@
               "detail": "9 findings; first: skills/writing-skills/examples/CLAUDE_MD_TESTING.md:95 — SkillSpector: Agent Config Directory Access"
             },
             {
+              "code": "trust.skill-metadata-license",
+              "detail": "skills/writing-skills/SKILL.md:1 — Cisco AI Defense skill-scanner: Skill manifest does not include a 'license' field. Specifying a license helps users understand usage terms.",
+              "fingerprint": "trust-skill-metadata-license:skills/writing-skills/SKILL.md:00672d7f83e8a67161ec85e8903790f7c863f08dbf73bef45bf4e43caef42aeb"
+            },
+            {
               "code": "trust.cisco-finding",
-              "count": 8,
-              "detail": "8 findings; first: skills/writing-skills/SKILL.md:1 — Cisco AI Defense skill-scanner: Skill manifest does not include a 'license' field. Specifying a license helps users understand usage terms."
+              "count": 7,
+              "detail": "7 findings; first: skills/writing-skills/render-graphs.js:18 — Cisco AI Defense skill-scanner: Pattern detected: require('child_process')"
             }
           ]
         }
