@@ -1,5 +1,5 @@
-import { lstatSync } from "node:fs";
-import { basename, dirname, resolve } from "node:path";
+import { cpSync, lstatSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import type { Check } from "../internals/verify.js";
 import { scanTrustTreeWithAnalyzers, type TrustScanResult } from "../trust/scan.js";
 import { VERSION } from "../version.js";
@@ -23,71 +23,101 @@ export type BaselineComponentScanner = (
   input: BaselineComponentScanInput,
 ) => Promise<TrustScanResult>;
 
+export type BaselineTreeScanner = (
+  root: string,
+  options?: ScanTrustTreeOptions,
+) => Promise<TrustScanResult>;
+
 export interface VetBaselineCatalogOptions {
   scanComponent?: BaselineComponentScanner;
+  scanTree?: BaselineTreeScanner;
   scanOptions?: ScanTrustTreeOptions;
   analyzerVersions?: Readonly<Record<string, string>>;
+  requiredAnalyzers?:
+    | readonly string[]
+    | ((component: BaselineCatalogComponent, sourceRoot: string) => readonly string[]);
+  requiredDetectorsForComponent?: (
+    component: BaselineCatalogComponent,
+    sourceRoot: string,
+  ) => NonNullable<ScanTrustTreeOptions["requiredDetectors"]>;
 }
 
-function checkKey(check: Check): string {
-  return JSON.stringify([
-    check.name,
-    check.verdict,
-    check.code,
-    check.detail,
-    check.location?.uri,
-    check.location?.startLine,
-    check.fingerprint,
-  ]);
+// Vendor-authored symlinks must never survive into a component projection: a
+// projected symlink can point anywhere on the host (including outside the
+// source root entirely), and the host-side analyzers that scan the
+// projection would follow it, leaking file contents into SARIF/lock output
+// that was never part of the vetted component. cpSync's filter runs on every
+// copied entry, including the top-level declared path itself, so this alone
+// is sufficient to exclude both nested and top-level symlinked paths.
+function isNotSymlink(candidate: string): boolean {
+  return !lstatSync(candidate).isSymbolicLink();
 }
 
-function dedupeChecks(checks: readonly Check[]): Check[] {
-  const seen = new Set<string>();
-  return checks.filter((check) => {
-    const key = checkKey(check);
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-}
-
-function checkBelongsToFile(check: Check, fileName: string): boolean {
-  const uri = check.location?.uri?.replace(/\\/g, "/");
-  return uri === undefined || uri === fileName;
-}
-
-function defaultComponentScanner(scanOptions: ScanTrustTreeOptions): BaselineComponentScanner {
+export function defaultComponentScanner(
+  scanOptions: ScanTrustTreeOptions,
+  scanTree: BaselineTreeScanner,
+  requiredDetectorsForComponent?: VetBaselineCatalogOptions["requiredDetectorsForComponent"],
+): BaselineComponentScanner {
   return async ({ sourceRoot, component }) => {
-    const checks: Check[] = [];
-    const analyzers = new Set<string>();
-    for (const rel of component.paths) {
-      const target = resolve(sourceRoot, ...rel.split("/"));
-      const stat = lstatSync(target);
-      const scanRoot = stat.isDirectory() ? target : dirname(target);
-      const scan = await scanTrustTreeWithAnalyzers(scanRoot, {
+    const projectionRoot = mkdtempSync(
+      join(dirname(resolve(sourceRoot)), ".aih-baseline-component-"),
+    );
+    try {
+      for (const rel of component.paths) {
+        const source = resolve(sourceRoot, ...rel.split("/"));
+        const target = resolve(projectionRoot, ...rel.split("/"));
+        mkdirSync(dirname(target), { recursive: true });
+        cpSync(source, target, {
+          recursive: true,
+          errorOnExist: true,
+          force: false,
+          dereference: false,
+          preserveTimestamps: true,
+          filter: isNotSymlink,
+        });
+      }
+      return await scanTree(projectionRoot, {
         ...scanOptions,
         posture: "enterprise",
+        requiredDetectors:
+          requiredDetectorsForComponent?.(component, sourceRoot) ?? scanOptions.requiredDetectors,
       });
-      for (const analyzer of scan.analyzersRun) analyzers.add(analyzer);
-      checks.push(
-        ...(stat.isDirectory()
-          ? scan.checks
-          : scan.checks.filter((check) => checkBelongsToFile(check, basename(target)))),
-      );
+    } finally {
+      rmSync(projectionRoot, { recursive: true, force: true });
     }
-    return {
-      analyzersRun: [...analyzers].sort((left, right) => left.localeCompare(right)),
-      checks: dedupeChecks(checks),
-    };
   };
+}
+
+// A missing required analyzer is almost always a detector that failed to run
+// (e.g. an offline uv cache that no longer resolves the pinned Cisco scanner).
+// Surface those underlying reasons so the fail-closed abort is actionable instead
+// of opaque.
+function detectorDiagnostics(checks: readonly Check[]): string[] {
+  return checks
+    .filter((check) => check.code === "trust.detector-unavailable" && check.verdict === "fail")
+    .map((check) => check.detail?.trim())
+    .filter((detail): detail is string => detail !== undefined && detail.length > 0);
 }
 
 function analyzerReceipts(
   analyzersRun: readonly string[],
   versions: Readonly<Record<string, string>>,
+  requiredAnalyzers: readonly string[],
+  componentId: string,
+  checks: readonly Check[],
 ): BaselineAnalyzerReceipt[] {
   const analyzers = [...new Set(analyzersRun)].sort((left, right) => left.localeCompare(right));
   if (analyzers.length === 0) throw new Error("baseline vet produced no analyzer receipt");
+  const completed = new Set(analyzers);
+  const missing = requiredAnalyzers.filter((name) => !completed.has(name));
+  if (missing.length > 0) {
+    const diagnostics = detectorDiagnostics(checks);
+    const because =
+      diagnostics.length > 0 ? `; detector diagnostics: ${diagnostics.join(" | ")}` : "";
+    throw new Error(
+      `baseline component ${componentId} missing required baseline analyzers: ${missing.join(", ")}${because}`,
+    );
+  }
   return analyzers.map((name) => {
     const version = versions[name]?.trim();
     if (!version) throw new Error(`baseline analyzer ${name} ran without a version receipt`);
@@ -125,7 +155,16 @@ export async function vetBaselineCatalog(
   catalog: BaselineCatalog,
   options: VetBaselineCatalogOptions = {},
 ): Promise<BaselineSourceEvidence> {
-  const scanComponent = options.scanComponent ?? defaultComponentScanner(options.scanOptions ?? {});
+  if (options.requiredAnalyzers === undefined) {
+    throw new Error("vetBaselineCatalog requires an explicit requiredAnalyzers floor");
+  }
+  const scanComponent =
+    options.scanComponent ??
+    defaultComponentScanner(
+      options.scanOptions ?? {},
+      options.scanTree ?? scanTrustTreeWithAnalyzers,
+      options.requiredDetectorsForComponent,
+    );
   const versions = { "aih-native": VERSION, ...(options.analyzerVersions ?? {}) };
   const components = [];
   for (const component of catalog.components) {
@@ -136,12 +175,22 @@ export async function vetBaselineCatalog(
       throw new Error(`baseline component ${component.id} changed during vet scan`);
     }
     const findings = blockingFindings(scan.checks);
+    const requiredAnalyzers =
+      typeof options.requiredAnalyzers === "function"
+        ? options.requiredAnalyzers(component, sourceRoot)
+        : (options.requiredAnalyzers ?? []);
     components.push({
       id: component.id,
       paths: [...component.paths],
       treeSha256: tree.treeSha256,
       verdict: findings.length > 0 ? ("blocked" as const) : ("pass" as const),
-      analyzers: analyzerReceipts(scan.analyzersRun, versions),
+      analyzers: analyzerReceipts(
+        scan.analyzersRun,
+        versions,
+        requiredAnalyzers,
+        component.id,
+        scan.checks,
+      ),
       findings,
     });
   }

@@ -1,10 +1,18 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { defineBaselineCatalog } from "../../src/baseline-evidence/catalog.js";
 import { hashComponentTree } from "../../src/baseline-evidence/hash.js";
-import { vetBaselineCatalog } from "../../src/baseline-evidence/vet.js";
+import { defaultComponentScanner, vetBaselineCatalog } from "../../src/baseline-evidence/vet.js";
 import type { Check } from "../../src/internals/verify.js";
 
 let root: string;
@@ -47,6 +55,7 @@ describe("vetBaselineCatalog", () => {
 
     const evidence = await vetBaselineCatalog(root, catalog(), {
       scanComponent,
+      requiredAnalyzers: ["aih-native"],
       analyzerVersions: { "aih-native": "2.7.0" },
     });
 
@@ -80,6 +89,7 @@ describe("vetBaselineCatalog", () => {
         analyzersRun: ["aih-native"],
         checks: component.id === "skill:blocked" ? [danger] : [pass(component.id)],
       }),
+      requiredAnalyzers: ["aih-native"],
       analyzerVersions: { "aih-native": "2.7.0" },
     });
 
@@ -105,6 +115,7 @@ describe("vetBaselineCatalog", () => {
     };
     const evidence = await vetBaselineCatalog(root, catalog(), {
       scanComponent: async () => ({ analyzersRun: ["aih-native"], checks: [unavailable] }),
+      requiredAnalyzers: ["aih-native"],
       analyzerVersions: { "aih-native": "2.7.0" },
     });
     expect(evidence.components.every((component) => component.verdict === "blocked")).toBe(true);
@@ -127,6 +138,7 @@ describe("vetBaselineCatalog", () => {
     ];
     const evidence = await vetBaselineCatalog(root, catalog(), {
       scanComponent: async () => ({ analyzersRun: ["aih-native"], checks: repeated }),
+      requiredAnalyzers: ["aih-native"],
       analyzerVersions: { "aih-native": "2.7.0" },
     });
     expect(evidence.components[0]?.findings).toEqual([
@@ -145,9 +157,83 @@ describe("vetBaselineCatalog", () => {
           analyzersRun: ["aih-native", "skillspector@docker"],
           checks: [pass("scan")],
         }),
+        requiredAnalyzers: ["aih-native"],
         analyzerVersions: { "aih-native": "2.7.0" },
       }),
     ).rejects.toThrow(/skillspector.*version/i);
+  });
+
+  it("fails closed when a component is missing any required baseline analyzer", async () => {
+    await expect(
+      vetBaselineCatalog(root, catalog(), {
+        scanComponent: async () => ({
+          analyzersRun: ["aih-native"],
+          checks: [pass("scan")],
+        }),
+        requiredAnalyzers: ["aih-native", "skillspector@docker", "cisco@uvx"],
+        analyzerVersions: {
+          "aih-native": "2.7.0",
+          "skillspector@docker": "326a2b489411@sha256:e82fd471e156",
+          "cisco@uvx": "2.0.12",
+        },
+      }),
+    ).rejects.toThrow(/missing required baseline analyzers: skillspector@docker, cisco@uvx/i);
+  });
+
+  it("surfaces the underlying detector reason when a required analyzer is missing", async () => {
+    const unavailable: Check = {
+      name: "trust detector cisco",
+      verdict: "fail",
+      code: "trust.detector-unavailable",
+      detail:
+        "required detector cisco is unavailable at enterprise posture. cisco not available (uvx --offline: cisco-ai-skill-scanner was not found in the cache)",
+    };
+    await expect(
+      vetBaselineCatalog(root, catalog(), {
+        scanComponent: async () => ({
+          analyzersRun: ["aih-native", "skillspector@docker"],
+          checks: [unavailable],
+        }),
+        requiredAnalyzers: ["aih-native", "skillspector@docker", "cisco@uvx"],
+        analyzerVersions: {
+          "aih-native": "2.7.0",
+          "skillspector@docker": "326a2b489411@sha256:e82fd471e156",
+          "cisco@uvx": "2.0.12",
+        },
+      }),
+    ).rejects.toThrow(
+      /missing required baseline analyzers: cisco@uvx; detector diagnostics:.*not found in the cache/is,
+    );
+  });
+
+  it("records every required baseline analyzer with an attributable exact version", async () => {
+    const evidence = await vetBaselineCatalog(root, catalog(), {
+      scanComponent: async () => ({
+        analyzersRun: ["aih-native", "skillspector@docker", "cisco@uvx"],
+        checks: [pass("scan")],
+      }),
+      requiredAnalyzers: ["aih-native", "skillspector@docker", "cisco@uvx"],
+      analyzerVersions: {
+        "aih-native": "2.7.0",
+        "skillspector@docker": "326a2b489411@sha256:e82fd471e156",
+        "cisco@uvx": "2.0.12",
+      },
+    });
+
+    expect(evidence.components[0]?.analyzers).toEqual([
+      { name: "aih-native", version: "2.7.0" },
+      { name: "cisco@uvx", version: "2.0.12" },
+      { name: "skillspector@docker", version: "326a2b489411@sha256:e82fd471e156" },
+    ]);
+  });
+
+  it("throws at entry when requiredAnalyzers is omitted instead of vetting receipt-unenforced", async () => {
+    await expect(
+      vetBaselineCatalog(root, catalog(), {
+        scanComponent: async () => ({ analyzersRun: ["aih-native"], checks: [pass("scan")] }),
+        analyzerVersions: { "aih-native": "2.7.0" },
+      }),
+    ).rejects.toThrow(/requires an explicit requiredAnalyzers floor/i);
   });
 
   it("fails closed when component bytes change during analyzer execution", async () => {
@@ -159,8 +245,69 @@ describe("vetBaselineCatalog", () => {
           }
           return { analyzersRun: ["aih-native"], checks: [pass(component.id)] };
         },
+        requiredAnalyzers: ["aih-native"],
         analyzerVersions: { "aih-native": "2.7.0" },
       }),
     ).rejects.toThrow(/changed during.*vet/i);
+  });
+
+  it("scans one path-preserving isolated projection per component and removes it", async () => {
+    writeFileSync(join(root, "outside.txt"), "must not enter a component scan\n");
+    const projections: string[] = [];
+    const scanTree = vi.fn(async (projectionRoot: string) => {
+      projections.push(projectionRoot);
+      expect(projectionRoot).toContain(join(dirname(root), ".aih-baseline-component-"));
+      expect(existsSync(join(projectionRoot, "outside.txt"))).toBe(false);
+      expect(
+        existsSync(join(projectionRoot, "skills", "clean", "SKILL.md")) ||
+          existsSync(join(projectionRoot, "skills", "blocked", "SKILL.md")),
+      ).toBe(true);
+      return { analyzersRun: ["aih-native"], checks: [pass("projected scan")] };
+    });
+
+    await vetBaselineCatalog(root, catalog(), {
+      scanTree,
+      requiredAnalyzers: ["aih-native"],
+      analyzerVersions: { "aih-native": "2.7.0" },
+    });
+
+    expect(scanTree).toHaveBeenCalledTimes(2);
+    expect(projections.every((projection) => !existsSync(projection))).toBe(true);
+  });
+
+  it("prunes vendor-authored symlinks from the component projection instead of following them off-host", async (ctx) => {
+    // hashComponentTree already hard-refuses any symlink under a component's
+    // declared paths, so a symlinked entry can never reach vetBaselineCatalog's
+    // scan step through the public entry point. Exercise defaultComponentScanner
+    // (via the exported scanComponent it builds) directly so the cpSync
+    // projection's own symlink defense is verified independently of that
+    // earlier guard.
+    const outside = mkdtempSync(join(tmpdir(), "aih-baseline-outside-"));
+    try {
+      writeFileSync(join(outside, "SECRET.md"), "must never enter a component projection\n");
+      try {
+        symlinkSync(join(outside, "SECRET.md"), join(root, "skills", "clean", "LEAK.md"));
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code === "EPERM") ctx.skip();
+        throw err;
+      }
+
+      const [component] = catalog().components;
+      if (component === undefined) throw new Error("fixture catalog is missing a component");
+
+      const scanTree = vi.fn(async (projectionRoot: string) => {
+        expect(existsSync(join(projectionRoot, "skills", "clean", "SKILL.md"))).toBe(true);
+        expect(() => lstatSync(join(projectionRoot, "skills", "clean", "LEAK.md"))).toThrow();
+        return { analyzersRun: ["aih-native"], checks: [pass("projected scan")] };
+      });
+      const scanComponent = defaultComponentScanner({}, scanTree);
+
+      const scan = await scanComponent({ sourceRoot: root, component });
+
+      expect(scanTree).toHaveBeenCalledTimes(1);
+      expect(scan.analyzersRun).toEqual(["aih-native"]);
+    } finally {
+      rmSync(outside, { recursive: true, force: true });
+    }
   });
 });

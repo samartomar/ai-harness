@@ -4,7 +4,7 @@ import type { Platform } from "../platform/base.js";
 import { MCP_CONFIG_FILES } from "../secrets/scan.js";
 import { execArgv } from "../tools/install.js";
 import { dockerBindMountArg } from "./docker.js";
-import { scrubFetchEnv } from "./fetch.js";
+import { scrubDockerClientEnv } from "./fetch.js";
 import {
   resolveVerifiedSkillspectorImage,
   SKILLSPECTOR_IMAGE,
@@ -185,7 +185,7 @@ export async function sandboxSmokeCheck(
     return unavailableCheck(reason);
   }
   const smoke = await options.run(smokeArgv, {
-    env: scrubFetchEnv(options.env),
+    env: scrubDockerClientEnv(options.env),
     timeoutMs: SANDBOX_SMOKE_TIMEOUT_MS,
   });
   const reasonText = reasons.join("; ");

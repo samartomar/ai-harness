@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { baselineCatalogById } from "../../src/baseline-evidence/catalogs.js";
+import eccProfiles from "../../src/baseline-evidence/ecc-profiles.json";
 import { BASELINE_SOURCES } from "../../src/internals/baseline-sources.js";
 
 function registryPin(owner: string, repo: string): string {
@@ -51,8 +52,30 @@ describe("production baseline catalogs", () => {
         "agent:performance-optimizer",
       ]),
     );
-    expect(ids.filter((id) => id.startsWith("module:"))).toHaveLength(32);
+    expect(ids.filter((id) => id.startsWith("module:"))).toEqual(
+      eccProfiles.profiles.full.modules.map((id) => `module:${id}`),
+    );
+    expect(ids.filter((id) => id.startsWith("module:"))).toHaveLength(23);
+    expect(ids.some((id) => id.startsWith("module:docs-"))).toBe(false);
+    expect(
+      catalog.components.some((component) =>
+        component.paths.some((path) => path.startsWith("docs/")),
+      ),
+    ).toBe(false);
     expect(new Set(ids).size).toBe(ids.length);
+    for (const id of [
+      "runtime:ecc-kiro",
+      "module:agents-core",
+      "module:platform-configs",
+      "skill:tdd-workflow",
+    ]) {
+      expect(catalog.components.find((component) => component.id === id)).toMatchObject({
+        skillContent: true,
+      });
+    }
+    expect(
+      catalog.components.find((component) => component.id === "runtime:ecc-installer"),
+    ).not.toHaveProperty("skillContent");
   });
 
   it("binds Superpowers runtime and installable skills to its registry pin", () => {

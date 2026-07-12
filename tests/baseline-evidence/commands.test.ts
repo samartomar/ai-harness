@@ -1,7 +1,20 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  baselineAnalyzerVersions,
+  requiredBaselineAnalyzersForComponent,
+  requiredBaselineDetectorsForComponent,
+} from "../../src/baseline-evidence/analyzer-profile.js";
 import { defineBaselineCatalog } from "../../src/baseline-evidence/catalog.js";
 import {
   baselineVetPlanForSource,
@@ -20,7 +33,14 @@ let root: string;
 let sourceRoot: string;
 
 beforeEach(() => {
-  root = mkdtempSync(join(tmpdir(), "aih-baseline-command-"));
+  // realpathSync at creation so every derived expectation (sourceRoot, and the
+  // vetCatalog call assertion below) agrees with the canonical path the
+  // production code resolves internally (assertTrustTreeSafe / exactSourceRoot
+  // both realpath their input). Without this, mkdtemp's raw path can differ
+  // from its realpath on macOS (/var/folders/... vs /private/var/folders/...),
+  // failing the toHaveBeenCalledWith(sourceRoot, ...) assertion below even
+  // though the production code behaves correctly.
+  root = realpathSync(mkdtempSync(join(tmpdir(), "aih-baseline-command-")));
   sourceRoot = join(root, "source");
   mkdirSync(join(sourceRoot, "skills", "clean"), { recursive: true });
   writeFileSync(join(sourceRoot, "skills", "clean", "SKILL.md"), "# Clean\n");
@@ -97,6 +117,21 @@ describe("baseline vet command plan", () => {
     const rel = `.aih/baseline-reports/ecc-${"a".repeat(12)}.json`;
 
     expect(vetCatalog).toHaveBeenCalledOnce();
+    expect(vetCatalog).toHaveBeenCalledWith(
+      sourceRoot,
+      catalog(),
+      expect.objectContaining({
+        analyzerVersions: baselineAnalyzerVersions(),
+        requiredAnalyzers: requiredBaselineAnalyzersForComponent,
+        requiredDetectorsForComponent: requiredBaselineDetectorsForComponent,
+        scanOptions: expect.objectContaining({
+          env: {},
+          platform: "linux",
+          progress: expect.any(Function),
+          run: expect.any(Function),
+        }),
+      }),
+    );
     expect(existsSync(join(root, rel))).toBe(true);
     expect(JSON.parse(readFileSync(join(root, rel), "utf8"))).toEqual({
       schemaVersion: 1,

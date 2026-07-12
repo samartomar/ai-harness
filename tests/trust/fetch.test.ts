@@ -25,6 +25,7 @@ import {
   localFileHash,
   resolveTrustSource,
   safeSourceRelative,
+  scrubDockerClientEnv,
   scrubFetchEnv,
   trustFetchExec,
 } from "../../src/trust/fetch.js";
@@ -335,27 +336,38 @@ describe("trust fetch source resolution", () => {
     ).toThrow(/--ref must be a safe Git ref/i);
   });
 
-  it("scrubs secrets while preserving only fetch-safe environment keys", () => {
-    expect(
-      scrubFetchEnv({
-        PATH: "bin",
-        HOME: "/home/me",
-        HTTPS_PROXY: "http://proxy.example:8443",
-        HTTP_PROXY: "http://proxy.example:8080",
-        NO_PROXY: "localhost,.corp.example",
-        AWS_SECRET_ACCESS_KEY: "secret",
-        RANDOM_VAR: "drop-me",
-        SSL_CERT_FILE: "corp.pem",
-        UV_CACHE_DIR: "/cache/uv",
-      }),
-    ).toEqual({
+  it("limits DBus access and XDG_RUNTIME_DIR to Docker clients while preserving non-secret cache paths", () => {
+    const env = {
       PATH: "bin",
       HOME: "/home/me",
+      DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/flatpak/bus",
+      XDG_CACHE_HOME: "/home/me/.cache",
+      XDG_RUNTIME_DIR: "/run/user/1000",
+      HTTPS_PROXY: "http://proxy.example:8443",
+      HTTP_PROXY: "http://proxy.example:8080",
+      NO_PROXY: "localhost,.corp.example",
+      AWS_SECRET_ACCESS_KEY: "secret",
+      RANDOM_VAR: "drop-me",
+      SSL_CERT_FILE: "corp.pem",
+      UV_CACHE_DIR: "/cache/uv",
+    };
+    const scrubbed = {
+      PATH: "bin",
+      HOME: "/home/me",
+      XDG_CACHE_HOME: "/home/me/.cache",
       HTTPS_PROXY: "http://proxy.example:8443",
       HTTP_PROXY: "http://proxy.example:8080",
       NO_PROXY: "localhost,.corp.example",
       SSL_CERT_FILE: "corp.pem",
       UV_CACHE_DIR: "/cache/uv",
+    };
+
+    expect(scrubFetchEnv(env)).toEqual(scrubbed);
+    expect(scrubFetchEnv(env)).not.toHaveProperty("XDG_RUNTIME_DIR");
+    expect(scrubDockerClientEnv(env)).toEqual({
+      ...scrubbed,
+      DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/flatpak/bus",
+      XDG_RUNTIME_DIR: "/run/user/1000",
     });
   });
 

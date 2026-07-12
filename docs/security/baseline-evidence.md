@@ -28,6 +28,51 @@ Org evidence is an extension, not a waiver. It cannot turn an exact vendor
 is useful signed evidence: it means “stop until the upstream bytes or pin change
 and vet cleanly.”
 
+## Supported ECC catalog
+
+The v2.9 baseline is English-only. The pinned ECC module snapshot retains all 32
+vendor-declared modules for dependency, target, and drift metadata, but the shipped evidence
+catalog follows the pinned `full` install profile's 23 canonical English modules. The nine
+`docs-*` locale modules are not selected by the supported full profile or scoped component
+descriptors, so they are not installed, authorized, or represented as vetted.
+
+This is a support boundary, not reduced scrutiny. Every catalog component still receives the
+complete analyzer profile below. A future locale must be introduced as an explicit selected
+capability whose install mapping and evidence cover the same bytes; new vendor translation
+directories never enter the signed baseline automatically.
+
+## Release analyzer profile
+
+Scanner-free installation from the shipped vendor lock is allowed only because
+the release vet records exact analyzer receipts before the lock is written:
+
+- `aih-native@<release-version>` and pinned SkillSpector through Docker are
+  required for every declared component;
+- `cisco-ai-skill-scanner==2.0.12` through offline `uvx` is additionally required
+  for every component whose declared bytes contain a regular `SKILL.md` file;
+- SkillSpector is bound to source revision
+  `326a2b489411a20ed742ff13701be39ba00063c8` and controlled image digest
+  `sha256:ee8a107dfd1c258e0afed303016a4220d174ba54bd1510bf73ed91f2825075ec`.
+
+Analyzer provisioning may fetch those exact inputs. Analyzer execution is
+no-egress: SkillSpector runs with Docker `--network none`, a read-only source
+mount and root filesystem, and `--no-llm`; Cisco runs with `uvx --offline
+--no-python-downloads --no-env-file`. The component scanner uses a path-preserving
+projection and does not follow symlinks when deciding whether Cisco is required.
+The canonical catalog persists that decision as `skillContent: true`, allowing
+the pure release gate to enforce Cisco receipts without a vendor checkout. Vet
+discovery and the catalog marker must agree: either a missing required receipt
+or an unexpected extra receipt fails verification.
+
+SkillSpector uses exit code 1 when a completed scan contains findings. aih accepts
+that exit only when stdout parses as SARIF, then records the receipt and preserves
+the findings. Malformed output, missing output, spawn failure, timeout, another
+exit code, a missing analyzer, or a wrong analyzer version blocks lock generation.
+Because the Docker scan is intentionally networkless, the exact SC4 “OSV.dev
+unreachable, using static fallback” note remains visible as incomplete advisory
+coverage; actual vulnerable-dependency findings remain blocking. No findings is
+not a claim that content is safe.
+
 ## Install-time gate
 
 For a mutating baseline command, aih:
@@ -141,7 +186,10 @@ repo-relative POSIX paths. Use catalog `superpowers`, owner `obra`, and repo
 
 The vet-once workflow checks out both canonical upstream SHAs, runs the same
 vetter, and fails when component hashes, analyzer receipts, or verdicts drift. It
-never commits regenerated evidence.
+reproducibly builds the controlled SkillSpector image, proves the exact Cisco
+package can execute offline, and never commits regenerated evidence. The pure
+`check:baseline-analyzers` gate also runs in normal verification and before
+release packaging, so a stale or partial receipt set cannot reach a cut.
 
 ```bash
 npm run baseline:check -- \

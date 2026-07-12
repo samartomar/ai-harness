@@ -1,10 +1,28 @@
 import { describe, expect, it } from "vitest";
+import {
+  baselineAnalyzerVersions,
+  requiredBaselineAnalyzersForComponent,
+} from "../../src/baseline-evidence/analyzer-profile.js";
 import { baselineCatalogById } from "../../src/baseline-evidence/catalogs.js";
+import type { BaselineComponentEvidence } from "../../src/baseline-evidence/schema.js";
 import {
   readVendorBaselineLock,
   vendorBaselineLockSha256,
 } from "../../src/baseline-evidence/vendor.js";
-import { VERSION } from "../../src/version.js";
+
+function requiredAnalyzerReceipts(
+  sourceId: string,
+  component: BaselineComponentEvidence,
+): Array<{ name: string; version: string }> {
+  const versions = baselineAnalyzerVersions();
+  const canonical = baselineCatalogById(sourceId).components.find(
+    (candidate) => candidate.id === component.id,
+  );
+  if (canonical === undefined) throw new Error(`missing canonical component ${component.id}`);
+  return [...requiredBaselineAnalyzersForComponent(canonical)]
+    .sort((left, right) => left.localeCompare(right))
+    .map((name) => ({ name, version: versions[name] ?? "" }));
+}
 
 describe("shipped vendor baseline lock", () => {
   it("strictly parses and mirrors every pinned production catalog component", () => {
@@ -32,23 +50,34 @@ describe("shipped vendor baseline lock", () => {
   it("retains honest pass and blocked verdicts from the vet-once scan", () => {
     const lock = readVendorBaselineLock();
     const ecc = lock.sources.find((source) => source.id === "ecc");
-    expect(
-      ecc?.components.find((component) => component.id === "skill:verification-loop"),
-    ).toMatchObject({
+    const verificationLoop = ecc?.components.find(
+      (component) => component.id === "skill:verification-loop",
+    );
+    expect(verificationLoop).toBeDefined();
+    if (verificationLoop === undefined) throw new Error("verification-loop evidence is missing");
+    expect(verificationLoop).toMatchObject({
       verdict: "pass",
-      analyzers: [{ name: "aih-native", version: VERSION }],
+      analyzers: requiredAnalyzerReceipts("ecc", verificationLoop),
       findings: [],
     });
-    expect(
-      ecc?.components.find((component) => component.id === "skill:tdd-workflow"),
-    ).toMatchObject({
-      verdict: "blocked",
-      findings: [expect.objectContaining({ code: "trust.hidden-unicode" })],
-    });
+    const tddWorkflow = ecc?.components.find((component) => component.id === "skill:tdd-workflow");
+    expect(tddWorkflow).toMatchObject({ verdict: "blocked" });
+    expect(tddWorkflow?.findings).toEqual(
+      expect.arrayContaining([expect.objectContaining({ code: "trust.hidden-unicode" })]),
+    );
     expect(
       lock.sources
         .flatMap((source) => source.components)
         .every((component) => component.verdict === "pass" || component.findings.length > 0),
+    ).toBe(true);
+    expect(
+      lock.sources.every((source) =>
+        source.components.every(
+          (component) =>
+            JSON.stringify(component.analyzers) ===
+            JSON.stringify(requiredAnalyzerReceipts(source.id, component)),
+        ),
+      ),
     ).toBe(true);
   });
 

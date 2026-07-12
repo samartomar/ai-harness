@@ -5,7 +5,7 @@
       "id": "ecc",
       "owner": "samartomar",
       "repo": "ECC",
-      "pinnedSha": "fd3699d65c4767acceac59069847f04122417dcb",
+      "pinnedSha": "16563d4a30f17d097cc4629f6d97e02adf823016",
       "components": [
         {
           "id": "runtime:ecc-installer",
@@ -23,12 +23,16 @@
             "scripts/lib/mcp-config.js",
             "scripts/lib/path-safety.js"
           ],
-          "treeSha256": "d96c599cb08fab3738773dbdfe89aece6f863341f34d8fd9f09a4354e9bd047a",
+          "treeSha256": "a8033681fe5216af2e7f052190264fbf032c6a2d4e17265d6a507ff7c458e6ce",
           "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
               "version": "2.8.0"
+            },
+            {
+              "name": "skillspector@docker",
+              "version": "326a2b489411a20ed742ff13701be39ba00063c8@sha256:ee8a107dfd1c258e0afed303016a4220d174ba54bd1510bf73ed91f2825075ec"
             }
           ],
           "findings": []
@@ -44,28 +48,46 @@
             {
               "name": "aih-native",
               "version": "2.8.0"
+            },
+            {
+              "name": "cisco@uvx",
+              "version": "2.0.12"
+            },
+            {
+              "name": "skillspector@docker",
+              "version": "326a2b489411a20ed742ff13701be39ba00063c8@sha256:ee8a107dfd1c258e0afed303016a4220d174ba54bd1510bf73ed91f2825075ec"
             }
           ],
           "findings": [
             {
               "code": "trust.hidden-unicode",
               "count": 80,
-              "detail": "80 findings; first: agents/build-error-resolver.json:16 — trust.hidden-unicode: document contains 14 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
+              "detail": "80 findings; first: .kiro/agents/build-error-resolver.json:16 — trust.hidden-unicode: document contains 14 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
             },
             {
               "code": "trust.visible-unicode",
               "count": 3,
-              "detail": "3 findings; first: docs/longform-guide.md:5 — trust.visible-unicode: document contains 1 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation"
+              "detail": "3 findings; first: .kiro/docs/longform-guide.md:5 — trust.visible-unicode: document contains 1 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation"
             },
             {
               "code": "trust.prompt-injection",
               "count": 5,
-              "detail": "5 findings; first: docs/security-guide.md:173 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL"
+              "detail": "5 findings; first: .kiro/docs/security-guide.md:173 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL"
             },
             {
               "code": "trust.auto-exec-hook",
-              "detail": "skills/rust-patterns/SKILL.md:421 — SKILL body contains a leading ! auto-run line",
-              "fingerprint": "trust-auto-exec-hook:skills/rust-patterns/SKILL.md:a31ed339cf1e5bb018d413ed04ea9cfee41276b8047ebac762f20766e8f41bdc"
+              "detail": ".kiro/skills/rust-patterns/SKILL.md:421 — SKILL body contains a leading ! auto-run line",
+              "fingerprint": "trust-auto-exec-hook:.kiro/skills/rust-patterns/SKILL.md:e4deec99fa3d52a9ba30b5a4056b7d3ffa61cb13af988f763acd458543011631"
+            },
+            {
+              "code": "trust.detector-finding",
+              "count": 112,
+              "detail": "112 findings; first: .kiro/README.md:240 — SkillSpector: MCP server referenced without pinned version: 'npx tsc'."
+            },
+            {
+              "code": "trust.cisco-finding",
+              "count": 46,
+              "detail": "46 findings; first: .kiro/skills/agentic-engineering/SKILL.md:1 — Cisco AI Defense skill-scanner: Skill manifest does not include a 'license' field. Specifying a license helps users understand usage terms."
             }
           ]
         },
@@ -80,23 +102,32 @@
             {
               "name": "aih-native",
               "version": "2.8.0"
+            },
+            {
+              "name": "skillspector@docker",
+              "version": "326a2b489411a20ed742ff13701be39ba00063c8@sha256:ee8a107dfd1c258e0afed303016a4220d174ba54bd1510bf73ed91f2825075ec"
             }
           ],
           "findings": [
             {
               "code": "trust.hidden-unicode",
               "count": 55,
-              "detail": "55 findings; first: angular/coding-style.md:18 — trust.hidden-unicode: document contains 9 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
+              "detail": "55 findings; first: rules/angular/coding-style.md:18 — trust.hidden-unicode: document contains 9 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
             },
             {
               "code": "trust.prompt-injection",
-              "detail": "common/security.md:13 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
-              "fingerprint": "trust-prompt-injection:common/security.md:d6bf15afb109601c5e42614f7849a6f05268c3f18602d789fb38ddffce8dca34"
+              "detail": "rules/common/security.md:13 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:rules/common/security.md:144e3d55f04971ecf63d195a3714b0f7ba6cba09fdfc0782f6c8f2b7dab76ec1"
             },
             {
               "code": "trust.visible-unicode",
-              "detail": "README.md:32 — trust.visible-unicode: document contains 8 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation",
-              "fingerprint": "trust-visible-unicode:README.md:d707c6db38f2e33cb2e823746a34290963438d65d04d2e79e886720bf4dd8a73"
+              "detail": "rules/README.md:32 — trust.visible-unicode: document contains 8 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation",
+              "fingerprint": "trust-visible-unicode:rules/README.md:5827c536f9b7bca5535f4daac70fbc3870885614af37edbe363f89e85e031359"
+            },
+            {
+              "code": "trust.detector-finding",
+              "count": 35,
+              "detail": "35 findings; first: rules/react-native/hooks.md:15 — SkillSpector: MCP server referenced without pinned version: 'npx expo'."
             }
           ]
         },
@@ -113,28 +144,46 @@
             {
               "name": "aih-native",
               "version": "2.8.0"
+            },
+            {
+              "name": "cisco@uvx",
+              "version": "2.0.12"
+            },
+            {
+              "name": "skillspector@docker",
+              "version": "326a2b489411a20ed742ff13701be39ba00063c8@sha256:ee8a107dfd1c258e0afed303016a4220d174ba54bd1510bf73ed91f2825075ec"
             }
           ],
           "findings": [
             {
               "code": "trust.hidden-unicode",
-              "count": 55,
-              "detail": "55 findings; first: skills/agent-introspection-debugging/SKILL.md:70 — trust.hidden-unicode: document contains 8 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
+              "count": 57,
+              "detail": "57 findings; first: .agents/skills/agent-introspection-debugging/SKILL.md:70 — trust.hidden-unicode: document contains 8 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
             },
             {
               "code": "trust.visible-unicode",
-              "count": 10,
-              "detail": "10 findings; first: skills/brand-discovery/references/10_purpose-why.md:1 — trust.visible-unicode: document contains 5 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation"
+              "count": 8,
+              "detail": "8 findings; first: .agents/skills/brand-discovery/references/10_purpose-why.md:1 — trust.visible-unicode: document contains 5 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation"
             },
             {
               "code": "trust.prompt-injection",
               "count": 76,
-              "detail": "76 findings; first: skills/fal-ai-media/SKILL.md:214 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL"
+              "detail": "76 findings; first: .agents/skills/fal-ai-media/SKILL.md:214 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL"
             },
             {
               "code": "trust.auto-exec-hook",
               "count": 2,
-              "detail": "2 findings; first: skills/eval-harness/SKILL.md:4 — frontmatter allowed-tools grants unsafe Bash access"
+              "detail": "2 findings; first: .agents/skills/eval-harness/SKILL.md:4 — frontmatter allowed-tools grants unsafe Bash access"
+            },
+            {
+              "code": "trust.detector-finding",
+              "count": 95,
+              "detail": "95 findings; first: .agents/skills/e2e-testing/SKILL.md:157 — SkillSpector: MCP server referenced without pinned version: 'npx playwright'."
+            },
+            {
+              "code": "trust.cisco-finding",
+              "count": 38,
+              "detail": "38 findings; first: .agents/skills/agent-introspection-debugging/SKILL.md:1 — Cisco AI Defense skill-scanner: Skill manifest does not include a 'license' field. Specifying a license helps users understand usage terms."
             }
           ]
         },
@@ -151,18 +200,22 @@
             {
               "name": "aih-native",
               "version": "2.8.0"
+            },
+            {
+              "name": "skillspector@docker",
+              "version": "326a2b489411a20ed742ff13701be39ba00063c8@sha256:ee8a107dfd1c258e0afed303016a4220d174ba54bd1510bf73ed91f2825075ec"
             }
           ],
           "findings": [
             {
               "code": "trust.hidden-unicode",
-              "count": 56,
-              "detail": "56 findings; first: aside.md:7 — trust.hidden-unicode: document contains 15 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
+              "count": 58,
+              "detail": "58 findings; first: commands/aside.md:7 — trust.hidden-unicode: document contains 15 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
             },
             {
-              "code": "trust.visible-unicode",
-              "detail": "gan-design.md:6 — trust.visible-unicode: document contains 5 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation",
-              "fingerprint": "trust-visible-unicode:gan-design.md:591281093a21feeaf5a4bfec6cc55ceea251713fd10018a5204f4e7773531cea"
+              "code": "trust.detector-finding",
+              "count": 56,
+              "detail": "56 findings; first: commands/build-fix.md:16 — SkillSpector: MCP server referenced without pinned version: 'npx tsc'."
             }
           ]
         },
@@ -179,18 +232,27 @@
             {
               "name": "aih-native",
               "version": "2.8.0"
+            },
+            {
+              "name": "skillspector@docker",
+              "version": "326a2b489411a20ed742ff13701be39ba00063c8@sha256:ee8a107dfd1c258e0afed303016a4220d174ba54bd1510bf73ed91f2825075ec"
             }
           ],
           "findings": [
             {
               "code": "trust.hidden-unicode",
               "count": 64,
-              "detail": "64 findings; first: hooks.json:282 — trust.hidden-unicode: document contains 1 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
+              "detail": "64 findings; first: hooks/hooks.json:282 — trust.hidden-unicode: document contains 1 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
             },
             {
               "code": "trust.visible-unicode",
-              "detail": "README.md:42 — trust.visible-unicode: document contains 10 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation",
-              "fingerprint": "trust-visible-unicode:README.md:e26bfa5fd610d2c34a9155890b8cb023bfa6d50fefb2c3e6536711dfd9e544d1"
+              "detail": "hooks/README.md:42 — trust.visible-unicode: document contains 10 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation",
+              "fingerprint": "trust-visible-unicode:hooks/README.md:248c7f33ec73cdaf1c875ec3ee781d5bb10a240a3c2e65181014a620097fbba8"
+            },
+            {
+              "code": "trust.detector-finding",
+              "count": 67,
+              "detail": "67 findings; first: scripts/hooks/insaits-security-monitor.py:157 — SkillSpector: Dynamic attribute access via getattr()"
             }
           ]
         },
@@ -217,33 +279,51 @@
             {
               "name": "aih-native",
               "version": "2.8.0"
+            },
+            {
+              "name": "cisco@uvx",
+              "version": "2.0.12"
+            },
+            {
+              "name": "skillspector@docker",
+              "version": "326a2b489411a20ed742ff13701be39ba00063c8@sha256:ee8a107dfd1c258e0afed303016a4220d174ba54bd1510bf73ed91f2825075ec"
             }
           ],
           "findings": [
             {
               "code": "trust.hidden-unicode",
               "count": 29,
-              "detail": "29 findings; first: AGENTS.md:17 — trust.hidden-unicode: document contains 36 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
+              "detail": "29 findings; first: .codex/AGENTS.md:17 — trust.hidden-unicode: document contains 36 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
             },
             {
               "code": "trust.prompt-injection",
               "count": 2,
-              "detail": "2 findings; first: rules/common-security.md:17 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL"
+              "detail": "2 findings; first: .cursor/rules/common-security.md:17 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL"
+            },
+            {
+              "code": "trust.visible-unicode",
+              "count": 3,
+              "detail": "3 findings; first: .hermes/README.md:7 — trust.visible-unicode: document contains 4 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation"
             },
             {
               "code": "trust.auto-exec-hook",
-              "detail": "package.json:33 — package.json lifecycle script prepublishOnly can execute during install/publish",
-              "fingerprint": "trust-auto-exec-hook:package.json:a7e62a918d4954cac18e564467c1e8bd99d1eaa0680c599389617215dd9f41cc"
+              "detail": ".opencode/package.json:33 — package.json lifecycle script prepublishOnly can execute during install/publish",
+              "fingerprint": "trust-auto-exec-hook:.opencode/package.json:2e0d74bda0aa4be8aad1af08363adb2152883d07a0eecc61b26c90bf5771074e"
             },
             {
               "code": "trust.unpinned-dependency",
               "count": 4,
-              "detail": "4 findings; first: package.json:60 — direct dependency @opencode-ai/plugin uses unpinned version spec \"^1.4.3\""
+              "detail": "4 findings; first: .opencode/package.json:60 — direct dependency @opencode-ai/plugin uses unpinned version spec \"^1.4.3\""
             },
             {
-              "code": "trust.visible-unicode",
-              "detail": "README.md:7 — trust.visible-unicode: document contains 4 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation",
-              "fingerprint": "trust-visible-unicode:README.md:be616b63177bc985133c3ecf098ae4df6a497070e1c977679481f59bf4123906"
+              "code": "trust.detector-finding",
+              "count": 110,
+              "detail": "110 findings; first: .hermes/README.md:21 — SkillSpector: MCP server referenced without pinned version: 'npx ecc'."
+            },
+            {
+              "code": "trust.cisco-finding",
+              "count": 10,
+              "detail": "10 findings; first: .cursor/skills/article-writing/SKILL.md:1 — Cisco AI Defense skill-scanner: Skill manifest does not include a 'license' field. Specifying a license helps users understand usage terms."
             }
           ]
         },
@@ -309,28 +389,46 @@
             {
               "name": "aih-native",
               "version": "2.8.0"
+            },
+            {
+              "name": "cisco@uvx",
+              "version": "2.0.12"
+            },
+            {
+              "name": "skillspector@docker",
+              "version": "326a2b489411a20ed742ff13701be39ba00063c8@sha256:ee8a107dfd1c258e0afed303016a4220d174ba54bd1510bf73ed91f2825075ec"
             }
           ],
           "findings": [
             {
               "code": "trust.hidden-unicode",
               "count": 41,
-              "detail": "41 findings; first: SKILL.md:3 — trust.hidden-unicode: document contains 44 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
+              "detail": "41 findings; first: skills/android-clean-architecture/SKILL.md:3 — trust.hidden-unicode: document contains 44 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
             },
             {
               "code": "trust.visible-unicode",
-              "detail": "references/angular-aria.md:49 — trust.visible-unicode: document contains 2 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation",
-              "fingerprint": "trust-visible-unicode:references/angular-aria.md:9daabbe637b24653bbf1bc283711968ec6dfc34405c2850e8563890b32a64e98"
+              "detail": "skills/angular-developer/references/angular-aria.md:49 — trust.visible-unicode: document contains 2 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation",
+              "fingerprint": "trust-visible-unicode:skills/angular-developer/references/angular-aria.md:5b73b6d987ea99c8621ecc5bb3748b863088dfabc62cc2e3ab865e472394c038"
             },
             {
               "code": "trust.prompt-injection",
               "count": 13,
-              "detail": "13 findings; first: SKILL.md:573 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL"
+              "detail": "13 findings; first: skills/django-tdd/SKILL.md:573 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL"
             },
             {
               "code": "trust.auto-exec-hook",
-              "detail": "SKILL.md:422 — SKILL body contains a leading ! auto-run line",
-              "fingerprint": "trust-auto-exec-hook:SKILL.md:50f23b369019217affc582f3caf7c8078f5f210a6e70c7090d8139a9220e7242"
+              "detail": "skills/rust-patterns/SKILL.md:422 — SKILL body contains a leading ! auto-run line",
+              "fingerprint": "trust-auto-exec-hook:skills/rust-patterns/SKILL.md:a31ed339cf1e5bb018d413ed04ea9cfee41276b8047ebac762f20766e8f41bdc"
+            },
+            {
+              "code": "trust.detector-finding",
+              "count": 20,
+              "detail": "20 findings; first: skills/angular-developer/SKILL.md:41 — SkillSpector: MCP server referenced without pinned version: 'npx @angular/cli'."
+            },
+            {
+              "code": "trust.cisco-finding",
+              "count": 53,
+              "detail": "53 findings; first: skills/android-clean-architecture/SKILL.md:1 — Cisco AI Defense skill-scanner: Skill manifest does not include a 'license' field. Specifying a license helps users understand usage terms."
             }
           ]
         },
@@ -350,13 +448,31 @@
             {
               "name": "aih-native",
               "version": "2.8.0"
+            },
+            {
+              "name": "cisco@uvx",
+              "version": "2.0.12"
+            },
+            {
+              "name": "skillspector@docker",
+              "version": "326a2b489411a20ed742ff13701be39ba00063c8@sha256:ee8a107dfd1c258e0afed303016a4220d174ba54bd1510bf73ed91f2825075ec"
             }
           ],
           "findings": [
             {
               "code": "trust.hidden-unicode",
               "count": 2,
-              "detail": "2 findings; first: SKILL.md:22 — trust.hidden-unicode: document contains 8 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
+              "detail": "2 findings; first: skills/database-migrations/SKILL.md:22 — trust.hidden-unicode: document contains 8 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
+            },
+            {
+              "code": "trust.detector-finding",
+              "count": 16,
+              "detail": "16 findings; first: skills/database-migrations/SKILL.md:134 — SkillSpector: MCP server referenced without pinned version: 'npx prisma'."
+            },
+            {
+              "code": "trust.cisco-finding",
+              "count": 6,
+              "detail": "6 findings; first: skills/clickhouse-io/SKILL.md:1 — Cisco AI Defense skill-scanner: Skill manifest does not include a 'license' field. Specifying a license helps users understand usage terms."
             }
           ]
         },
@@ -385,40 +501,44 @@
             "skills/verification-loop",
             "skills/windows-desktop-e2e"
           ],
-          "treeSha256": "cd86d84a72d6edd2e1aaf056694153afd17150e814ae193657131b3a0b58fce1",
+          "treeSha256": "628b86b6de1c673218d0df977695f25db531a4da894697a769c223aeb6857033",
           "verdict": "blocked",
           "analyzers": [
             {
               "name": "aih-native",
               "version": "2.8.0"
+            },
+            {
+              "name": "cisco@uvx",
+              "version": "2.0.12"
+            },
+            {
+              "name": "skillspector@docker",
+              "version": "326a2b489411a20ed742ff13701be39ba00063c8@sha256:ee8a107dfd1c258e0afed303016a4220d174ba54bd1510bf73ed91f2825075ec"
             }
           ],
           "findings": [
             {
               "code": "trust.hidden-unicode",
               "count": 27,
-              "detail": "27 findings; first: SKILL.md:72 — trust.hidden-unicode: document contains 8 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
+              "detail": "27 findings; first: skills/agent-introspection-debugging/SKILL.md:72 — trust.hidden-unicode: document contains 8 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
+            },
+            {
+              "code": "trust.detector-finding",
+              "count": 61,
+              "detail": "61 findings; first: skills/continuous-learning-v2/scripts/instinct-cli.py:257 — SkillSpector: subprocess module call"
+            },
+            {
+              "code": "trust.cisco-finding",
+              "count": 26,
+              "detail": "26 findings; first: skills/agent-introspection-debugging/SKILL.md:1 — Cisco AI Defense skill-scanner: Skill manifest does not include a 'license' field. Specifying a license helps users understand usage terms."
+            },
+            {
+              "code": "trust.prompt-injection",
+              "detail": "skills/tdd-workflow/SKILL.md:16 — Cisco AI Defense skill-scanner: Pattern detected: ignore previous rules",
+              "fingerprint": "trust-prompt-injection:skills/tdd-workflow/SKILL.md:fcfb1f4211b5ce29307b9af6d628688294a53a4213529a3bac783c2f41046592"
             }
           ]
-        },
-        {
-          "id": "module:optimization-workflows",
-          "paths": [
-            "skills/benchmark-optimization-loop",
-            "skills/data-throughput-accelerator",
-            "skills/latency-critical-systems",
-            "skills/parallel-execution-optimizer",
-            "skills/recursive-decision-ledger"
-          ],
-          "treeSha256": "9748a21b9b18ee94566dd5ba1e8b569e1289579217f7113cecbb949ac923399b",
-          "verdict": "pass",
-          "analyzers": [
-            {
-              "name": "aih-native",
-              "version": "2.8.0"
-            }
-          ],
-          "findings": []
         },
         {
           "id": "module:security",
@@ -445,23 +565,41 @@
             {
               "name": "aih-native",
               "version": "2.8.0"
+            },
+            {
+              "name": "cisco@uvx",
+              "version": "2.0.12"
+            },
+            {
+              "name": "skillspector@docker",
+              "version": "326a2b489411a20ed742ff13701be39ba00063c8@sha256:ee8a107dfd1c258e0afed303016a4220d174ba54bd1510bf73ed91f2825075ec"
             }
           ],
           "findings": [
             {
               "code": "trust.prompt-injection",
               "count": 7,
-              "detail": "7 findings; first: SKILL.md:340 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL"
+              "detail": "7 findings; first: skills/django-security/SKILL.md:340 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL"
             },
             {
               "code": "trust.hidden-unicode",
               "count": 7,
-              "detail": "7 findings; first: SKILL.md:5 — trust.hidden-unicode: document contains 7 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
+              "detail": "7 findings; first: skills/healthcare-phi-compliance/SKILL.md:5 — trust.hidden-unicode: document contains 7 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
             },
             {
               "code": "trust.auto-exec-hook",
-              "detail": "SKILL.md:132 — SKILL body contains a leading ! auto-run line",
-              "fingerprint": "trust-auto-exec-hook:SKILL.md:7cba4c5291b9e5e78696b06a3704fa54ca3e2def9fab5175165b6f453cfb5228"
+              "detail": "skills/quarkus-security/SKILL.md:132 — SKILL body contains a leading ! auto-run line",
+              "fingerprint": "trust-auto-exec-hook:skills/quarkus-security/SKILL.md:a2d261b0f97c79f821d4354ca01f356d2f700594dfd07e932163c93a64b22380"
+            },
+            {
+              "code": "trust.detector-finding",
+              "count": 33,
+              "detail": "33 findings; first: skills/security-scan/SKILL.md:26 — SkillSpector: MCP server referenced without pinned version: 'npx supply'."
+            },
+            {
+              "code": "trust.cisco-finding",
+              "count": 14,
+              "detail": "14 findings; first: skills/defi-amm-security/SKILL.md:1 — Cisco AI Defense skill-scanner: Skill manifest does not include a 'license' field. Specifying a license helps users understand usage terms."
             }
           ]
         },
@@ -483,18 +621,36 @@
             {
               "name": "aih-native",
               "version": "2.8.0"
+            },
+            {
+              "name": "cisco@uvx",
+              "version": "2.0.12"
+            },
+            {
+              "name": "skillspector@docker",
+              "version": "326a2b489411a20ed742ff13701be39ba00063c8@sha256:ee8a107dfd1c258e0afed303016a4220d174ba54bd1510bf73ed91f2825075ec"
             }
           ],
           "findings": [
             {
               "code": "trust.hidden-unicode",
               "count": 2,
-              "detail": "2 findings; first: SKILL.md:27 — trust.hidden-unicode: document contains 5 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
+              "detail": "2 findings; first: skills/deep-research/SKILL.md:27 — trust.hidden-unicode: document contains 5 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
             },
             {
               "code": "trust.prompt-injection",
               "count": 2,
-              "detail": "2 findings; first: SKILL.md:54 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL"
+              "detail": "2 findings; first: skills/scientific-db-uspto-database/SKILL.md:54 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL"
+            },
+            {
+              "code": "trust.detector-finding",
+              "count": 5,
+              "detail": "5 findings; first: skills/deep-research/SKILL.md:30 — SkillSpector: Agent Config Directory Access"
+            },
+            {
+              "code": "trust.cisco-finding",
+              "count": 8,
+              "detail": "8 findings; first: skills/deep-research/SKILL.md:1 — Cisco AI Defense skill-scanner: Skill manifest does not include a 'license' field. Specifying a license helps users understand usage terms."
             }
           ]
         },
@@ -518,13 +674,31 @@
             {
               "name": "aih-native",
               "version": "2.8.0"
+            },
+            {
+              "name": "cisco@uvx",
+              "version": "2.0.12"
+            },
+            {
+              "name": "skillspector@docker",
+              "version": "326a2b489411a20ed742ff13701be39ba00063c8@sha256:ee8a107dfd1c258e0afed303016a4220d174ba54bd1510bf73ed91f2825075ec"
             }
           ],
           "findings": [
             {
               "code": "trust.hidden-unicode",
               "count": 10,
-              "detail": "10 findings; first: agents/enrichment-agent.md:25 — trust.hidden-unicode: document contains 6 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
+              "detail": "10 findings; first: skills/lead-intelligence/agents/enrichment-agent.md:25 — trust.hidden-unicode: document contains 6 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
+            },
+            {
+              "code": "trust.detector-finding",
+              "detail": "skills/seo/SKILL.md:147 — SkillSpector: Autonomous Decision Making",
+              "fingerprint": "trust-detector-finding:skills/seo/SKILL.md:b6ec42a4f949cd2236c7d8249cd62af970c824142a692f8a684f2eda3384454a"
+            },
+            {
+              "code": "trust.cisco-finding",
+              "count": 10,
+              "detail": "10 findings; first: skills/article-writing/SKILL.md:1 — Cisco AI Defense skill-scanner: Skill manifest does not include a 'license' field. Specifying a license helps users understand usage terms."
             }
           ]
         },
@@ -556,20 +730,65 @@
             {
               "name": "aih-native",
               "version": "2.8.0"
+            },
+            {
+              "name": "cisco@uvx",
+              "version": "2.0.12"
+            },
+            {
+              "name": "skillspector@docker",
+              "version": "326a2b489411a20ed742ff13701be39ba00063c8@sha256:ee8a107dfd1c258e0afed303016a4220d174ba54bd1510bf73ed91f2825075ec"
             }
           ],
           "findings": [
             {
               "code": "trust.hidden-unicode",
               "count": 2,
-              "detail": "2 findings; first: SKILL.md:18 — trust.hidden-unicode: document contains 5 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
+              "detail": "2 findings; first: skills/cost-tracking/SKILL.md:18 — trust.hidden-unicode: document contains 5 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
             },
             {
               "code": "trust.prompt-injection",
-              "detail": "SKILL.md:113 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
-              "fingerprint": "trust-prompt-injection:SKILL.md:24abd44eabfa2b3a463415142026811448c449e9d6a686536916764bcc0a20ab"
+              "detail": "skills/email-ops/SKILL.md:113 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:skills/email-ops/SKILL.md:5ed1557537a9a4f2cc51ac021bce12cc03ae4ba87962a945cd403feb9bedd0cd"
+            },
+            {
+              "code": "trust.detector-finding",
+              "count": 5,
+              "detail": "5 findings; first: skills/jira-integration/SKILL.md:293 — SkillSpector: MCP server referenced without pinned version: 'uvx ENOENT'."
+            },
+            {
+              "code": "trust.cisco-finding",
+              "count": 18,
+              "detail": "18 findings; first: skills/api-connector-builder/SKILL.md:1 — Cisco AI Defense skill-scanner: Skill manifest does not include a 'license' field. Specifying a license helps users understand usage terms."
             }
           ]
+        },
+        {
+          "id": "module:optimization-workflows",
+          "paths": [
+            "skills/benchmark-optimization-loop",
+            "skills/data-throughput-accelerator",
+            "skills/latency-critical-systems",
+            "skills/parallel-execution-optimizer",
+            "skills/recursive-decision-ledger"
+          ],
+          "treeSha256": "bfe98b54a2d1b97c2d2f60869de3d66d31ff1ad2b4685c9b4e5b0c76c3c5cc51",
+          "verdict": "pass",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "2.8.0"
+            },
+            {
+              "name": "cisco@uvx",
+              "version": "2.0.12"
+            },
+            {
+              "name": "skillspector@docker",
+              "version": "326a2b489411a20ed742ff13701be39ba00063c8@sha256:ee8a107dfd1c258e0afed303016a4220d174ba54bd1510bf73ed91f2825075ec"
+            }
+          ],
+          "findings": []
         },
         {
           "id": "module:prediction-market-skills",
@@ -587,13 +806,26 @@
             {
               "name": "aih-native",
               "version": "2.8.0"
+            },
+            {
+              "name": "cisco@uvx",
+              "version": "2.0.12"
+            },
+            {
+              "name": "skillspector@docker",
+              "version": "326a2b489411a20ed742ff13701be39ba00063c8@sha256:ee8a107dfd1c258e0afed303016a4220d174ba54bd1510bf73ed91f2825075ec"
             }
           ],
           "findings": [
             {
               "code": "trust.hidden-unicode",
               "count": 5,
-              "detail": "5 findings; first: SKILL.md:3 — trust.hidden-unicode: document contains 3 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
+              "detail": "5 findings; first: skills/ito-basket-compare/SKILL.md:3 — trust.hidden-unicode: document contains 3 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
+            },
+            {
+              "code": "trust.cisco-finding",
+              "count": 6,
+              "detail": "6 findings; first: skills/ito-basket-compare/SKILL.md:1 — Cisco AI Defense skill-scanner: Skill manifest does not include a 'license' field. Specifying a license helps users understand usage terms."
             }
           ]
         },
@@ -609,18 +841,36 @@
             {
               "name": "aih-native",
               "version": "2.8.0"
+            },
+            {
+              "name": "cisco@uvx",
+              "version": "2.0.12"
+            },
+            {
+              "name": "skillspector@docker",
+              "version": "326a2b489411a20ed742ff13701be39ba00063c8@sha256:ee8a107dfd1c258e0afed303016a4220d174ba54bd1510bf73ed91f2825075ec"
             }
           ],
           "findings": [
             {
               "code": "trust.hidden-unicode",
-              "detail": "SKILL.md:57 — trust.hidden-unicode: document contains 6 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
-              "fingerprint": "trust-hidden-unicode:SKILL.md:ea1706200048e3d2bc269b786e2dd97459d2b745b8c80fe1a7b9f24f92c0c668"
+              "detail": "skills/x-api/SKILL.md:57 — trust.hidden-unicode: document contains 6 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:skills/x-api/SKILL.md:2da32e1abff9a8fb6a5fc73bc3cac7a44ac89e28543d0c5c210859957fa09819"
             },
             {
               "code": "trust.prompt-injection",
               "count": 6,
-              "detail": "6 findings; first: SKILL.md:23 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL"
+              "detail": "6 findings; first: skills/x-api/SKILL.md:23 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL"
+            },
+            {
+              "code": "trust.detector-finding",
+              "count": 5,
+              "detail": "5 findings; first: skills/x-api/SKILL.md:45 — SkillSpector: External Transmission"
+            },
+            {
+              "code": "trust.cisco-finding",
+              "count": 2,
+              "detail": "2 findings; first: skills/crosspost/SKILL.md:1 — Cisco AI Defense skill-scanner: Skill manifest does not include a 'license' field. Specifying a license helps users understand usage terms."
             }
           ]
         },
@@ -641,23 +891,41 @@
             {
               "name": "aih-native",
               "version": "2.8.0"
+            },
+            {
+              "name": "cisco@uvx",
+              "version": "2.0.12"
+            },
+            {
+              "name": "skillspector@docker",
+              "version": "326a2b489411a20ed742ff13701be39ba00063c8@sha256:ee8a107dfd1c258e0afed303016a4220d174ba54bd1510bf73ed91f2825075ec"
             }
           ],
           "findings": [
             {
               "code": "trust.hidden-unicode",
               "count": 4,
-              "detail": "4 findings; first: SKILL.md:3 — trust.hidden-unicode: document contains 14 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
+              "detail": "4 findings; first: skills/fal-ai-media/SKILL.md:3 — trust.hidden-unicode: document contains 14 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
             },
             {
               "code": "trust.prompt-injection",
               "count": 5,
-              "detail": "5 findings; first: SKILL.md:220 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL"
+              "detail": "5 findings; first: skills/fal-ai-media/SKILL.md:220 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL"
             },
             {
               "code": "trust.visible-unicode",
               "count": 6,
-              "detail": "6 findings; first: reference/api-reference.md:37 — trust.visible-unicode: document contains 3 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation"
+              "detail": "6 findings; first: skills/videodb/reference/api-reference.md:37 — trust.visible-unicode: document contains 3 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation"
+            },
+            {
+              "code": "trust.detector-finding",
+              "count": 24,
+              "detail": "24 findings; first: skills/remotion-video-creation/rules/3d.md:19 — SkillSpector: MCP server referenced without pinned version: 'npx remotion'."
+            },
+            {
+              "code": "trust.cisco-finding",
+              "count": 8,
+              "detail": "8 findings; first: skills/blender-motion-state-inspection/SKILL.md:1 — Cisco AI Defense skill-scanner: Skill manifest does not include a 'license' field. Specifying a license helps users understand usage terms."
             }
           ]
         },
@@ -677,13 +945,26 @@
             {
               "name": "aih-native",
               "version": "2.8.0"
+            },
+            {
+              "name": "cisco@uvx",
+              "version": "2.0.12"
+            },
+            {
+              "name": "skillspector@docker",
+              "version": "326a2b489411a20ed742ff13701be39ba00063c8@sha256:ee8a107dfd1c258e0afed303016a4220d174ba54bd1510bf73ed91f2825075ec"
             }
           ],
           "findings": [
             {
               "code": "trust.hidden-unicode",
               "count": 2,
-              "detail": "2 findings; first: tmux-worktree-orchestrator.js:203 — trust.hidden-unicode: document contains 1 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
+              "detail": "2 findings; first: scripts/lib/tmux-worktree-orchestrator.js:203 — trust.hidden-unicode: document contains 1 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
+            },
+            {
+              "code": "trust.cisco-finding",
+              "detail": "skills/dmux-workflows/SKILL.md:1 — Cisco AI Defense skill-scanner: Skill manifest does not include a 'license' field. Specifying a license helps users understand usage terms.",
+              "fingerprint": "trust-cisco-finding:skills/dmux-workflows/SKILL.md:dd260360d7d37f04ff1b08e0d882753ff51b543793695766bbbd7d15fc81176a"
             }
           ]
         },
@@ -703,13 +984,31 @@
             {
               "name": "aih-native",
               "version": "2.8.0"
+            },
+            {
+              "name": "cisco@uvx",
+              "version": "2.0.12"
+            },
+            {
+              "name": "skillspector@docker",
+              "version": "326a2b489411a20ed742ff13701be39ba00063c8@sha256:ee8a107dfd1c258e0afed303016a4220d174ba54bd1510bf73ed91f2825075ec"
             }
           ],
           "findings": [
             {
               "code": "trust.hidden-unicode",
               "count": 6,
-              "detail": "6 findings; first: SKILL.md:3 — trust.hidden-unicode: document contains 21 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
+              "detail": "6 findings; first: skills/foundation-models-on-device/SKILL.md:3 — trust.hidden-unicode: document contains 21 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
+            },
+            {
+              "code": "trust.detector-finding",
+              "detail": "skills/foundation-models-on-device/SKILL.md:229 — SkillSpector: Autonomous Decision Making",
+              "fingerprint": "trust-detector-finding:skills/foundation-models-on-device/SKILL.md:4e5255d77a875506f125e7a17550043d98a30ddb9bab8f267c5412630f8ef163"
+            },
+            {
+              "code": "trust.cisco-finding",
+              "count": 6,
+              "detail": "6 findings; first: skills/foundation-models-on-device/SKILL.md:1 — Cisco AI Defense skill-scanner: Skill manifest does not include a 'license' field. Specifying a license helps users understand usage terms."
             }
           ]
         },
@@ -746,13 +1045,31 @@
             {
               "name": "aih-native",
               "version": "2.8.0"
+            },
+            {
+              "name": "cisco@uvx",
+              "version": "2.0.12"
+            },
+            {
+              "name": "skillspector@docker",
+              "version": "326a2b489411a20ed742ff13701be39ba00063c8@sha256:ee8a107dfd1c258e0afed303016a4220d174ba54bd1510bf73ed91f2825075ec"
             }
           ],
           "findings": [
             {
               "code": "trust.hidden-unicode",
               "count": 20,
-              "detail": "20 findings; first: claw.js:3 — trust.hidden-unicode: document contains 2 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
+              "detail": "20 findings; first: scripts/claw.js:3 — trust.hidden-unicode: document contains 2 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
+            },
+            {
+              "code": "trust.detector-finding",
+              "count": 37,
+              "detail": "37 findings; first: skills/agentic-os/SKILL.md:105 — SkillSpector: MCP Config Access"
+            },
+            {
+              "code": "trust.cisco-finding",
+              "count": 22,
+              "detail": "22 findings; first: skills/agent-architecture-audit/SKILL.md:1 — Cisco AI Defense skill-scanner: Skill manifest does not include a 'license' field. Specifying a license helps users understand usage terms."
             }
           ]
         },
@@ -775,13 +1092,31 @@
             {
               "name": "aih-native",
               "version": "2.8.0"
+            },
+            {
+              "name": "cisco@uvx",
+              "version": "2.0.12"
+            },
+            {
+              "name": "skillspector@docker",
+              "version": "326a2b489411a20ed742ff13701be39ba00063c8@sha256:ee8a107dfd1c258e0afed303016a4220d174ba54bd1510bf73ed91f2825075ec"
             }
           ],
           "findings": [
             {
               "code": "trust.hidden-unicode",
-              "detail": "SKILL.md:25 — trust.hidden-unicode: document contains 20 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
-              "fingerprint": "trust-hidden-unicode:SKILL.md:edf6168923ff3d517e4bba4c7b8e45e6c34d54bf4b70ade1470f3053613ac3c1"
+              "detail": "skills/deployment-patterns/SKILL.md:25 — trust.hidden-unicode: document contains 20 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:skills/deployment-patterns/SKILL.md:796f4b9165f54f28ffdb7291a6a861ea8c2498824ba37637052688abda1b0e22"
+            },
+            {
+              "code": "trust.detector-finding",
+              "count": 8,
+              "detail": "8 findings; first: skills/deployment-patterns/SKILL.md:382 — SkillSpector: MCP server referenced without pinned version: 'npx prisma'."
+            },
+            {
+              "code": "trust.cisco-finding",
+              "count": 11,
+              "detail": "11 findings; first: skills/cisco-ios-patterns/SKILL.md:1 — Cisco AI Defense skill-scanner: Skill manifest does not include a 'license' field. Specifying a license helps users understand usage terms."
             }
           ]
         },
@@ -790,12 +1125,20 @@
           "paths": [
             "skills/mle-workflow"
           ],
-          "treeSha256": "38728dbafb07e29470f85cb2ef69358c52c8b36978ef1dfa68becef65819c4c8",
+          "treeSha256": "c4c998167ffd10a392967bb973773960eaffefbd95ce22376aa2692729f8928e",
           "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
               "version": "2.8.0"
+            },
+            {
+              "name": "cisco@uvx",
+              "version": "2.0.12"
+            },
+            {
+              "name": "skillspector@docker",
+              "version": "326a2b489411a20ed742ff13701be39ba00063c8@sha256:ee8a107dfd1c258e0afed303016a4220d174ba54bd1510bf73ed91f2825075ec"
             }
           ],
           "findings": []
@@ -818,13 +1161,26 @@
             {
               "name": "aih-native",
               "version": "2.8.0"
+            },
+            {
+              "name": "cisco@uvx",
+              "version": "2.0.12"
+            },
+            {
+              "name": "skillspector@docker",
+              "version": "326a2b489411a20ed742ff13701be39ba00063c8@sha256:ee8a107dfd1c258e0afed303016a4220d174ba54bd1510bf73ed91f2825075ec"
             }
           ],
           "findings": [
             {
               "code": "trust.hidden-unicode",
               "count": 15,
-              "detail": "15 findings; first: SKILL.md:24 — trust.hidden-unicode: document contains 48 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
+              "detail": "15 findings; first: skills/carrier-relationship-management/SKILL.md:24 — trust.hidden-unicode: document contains 48 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
+            },
+            {
+              "code": "trust.detector-finding",
+              "detail": "skills/inventory-demand-planning/SKILL.md:183 — SkillSpector: Anti-Refusal Statement",
+              "fingerprint": "trust-detector-finding:skills/inventory-demand-planning/SKILL.md:2cd652532acb17a361412c824f1e412f17771760f9a0381b03d0f8afad47e778"
             }
           ]
         },
@@ -840,297 +1196,41 @@
             {
               "name": "aih-native",
               "version": "2.8.0"
+            },
+            {
+              "name": "cisco@uvx",
+              "version": "2.0.12"
+            },
+            {
+              "name": "skillspector@docker",
+              "version": "326a2b489411a20ed742ff13701be39ba00063c8@sha256:ee8a107dfd1c258e0afed303016a4220d174ba54bd1510bf73ed91f2825075ec"
             }
           ],
           "findings": [
             {
               "code": "trust.prompt-injection",
               "count": 11,
-              "detail": "11 findings; first: SKILL.md:22 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL"
+              "detail": "11 findings; first: skills/nutrient-document-processing/SKILL.md:22 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL"
             },
             {
               "code": "trust.visible-unicode",
-              "detail": "README.md:15 — trust.visible-unicode: document contains 24 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation",
-              "fingerprint": "trust-visible-unicode:README.md:69ce173b7f49cb0eda05a927bce04ba52392d4924be3c6efe88fe1afe9928bfc"
+              "detail": "skills/visa-doc-translate/README.md:15 — trust.visible-unicode: document contains 24 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation",
+              "fingerprint": "trust-visible-unicode:skills/visa-doc-translate/README.md:c4b876edbfd012f4516516cc8d9ae896e28a4975f50e2ded6570c45a55a52dd9"
             },
             {
               "code": "trust.hidden-unicode",
-              "detail": "SKILL.md:50 — trust.hidden-unicode: document contains 24 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
-              "fingerprint": "trust-hidden-unicode:SKILL.md:5adfae5f8523ed6e43acade50e4aa8a568b5b7b6e4e256963f55bb78eb89fa34"
-            }
-          ]
-        },
-        {
-          "id": "module:docs-ja-jp",
-          "paths": [
-            "docs/ja-JP"
-          ],
-          "treeSha256": "703c13e1448aad20ac4bcdf903a500bff7f1bec98d64a521df92186b75a26f34",
-          "verdict": "blocked",
-          "analyzers": [
-            {
-              "name": "aih-native",
-              "version": "2.8.0"
-            }
-          ],
-          "findings": [
-            {
-              "code": "trust.hidden-unicode",
-              "count": 2374,
-              "detail": "2374 findings; first: AGENTS.md:66 — trust.hidden-unicode: character category: homoglyph-confusable; reason: Unicode confusable appears inside an ASCII-like token; code point U+FF08"
+              "detail": "skills/visa-doc-translate/SKILL.md:50 — trust.hidden-unicode: document contains 24 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:skills/visa-doc-translate/SKILL.md:9e9554d29f89a86e5d5a183ee9c4878d8bbde82cca7da073135079422d41fc90"
             },
             {
-              "code": "trust.prompt-injection",
-              "count": 37,
-              "detail": "37 findings; first: examples/django-api-CLAUDE.md:242 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL"
+              "code": "trust.detector-finding",
+              "count": 6,
+              "detail": "6 findings; first: skills/nutrient-document-processing/SKILL.md:37 — SkillSpector: External Transmission"
             },
             {
-              "code": "trust.visible-unicode",
-              "count": 17,
-              "detail": "17 findings; first: hooks/README.md:1 — trust.visible-unicode: document contains 2250 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation"
-            },
-            {
-              "code": "trust.auto-exec-hook",
-              "count": 8,
-              "detail": "8 findings; first: agents/go-reviewer.md:1 — unparseable YAML frontmatter in trust document"
-            }
-          ]
-        },
-        {
-          "id": "module:docs-zh-cn",
-          "paths": [
-            "docs/zh-CN"
-          ],
-          "treeSha256": "432b53a3df069d504ff34d73c3ffc846a8dc8a74bfd94691c7c59304cde25dfa",
-          "verdict": "blocked",
-          "analyzers": [
-            {
-              "name": "aih-native",
-              "version": "2.8.0"
-            }
-          ],
-          "findings": [
-            {
-              "code": "trust.hidden-unicode",
-              "count": 3461,
-              "detail": "3461 findings; first: AGENTS.md:66 — trust.hidden-unicode: character category: homoglyph-confusable; reason: Unicode confusable appears inside an ASCII-like token; code point U+FF08"
-            },
-            {
-              "code": "trust.prompt-injection",
-              "count": 41,
-              "detail": "41 findings; first: CLAUDE.md:6 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL"
-            },
-            {
-              "code": "trust.visible-unicode",
-              "count": 15,
-              "detail": "15 findings; first: hooks/README.md:1 — trust.visible-unicode: document contains 976 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation"
-            },
-            {
-              "code": "trust.auto-exec-hook",
-              "count": 12,
-              "detail": "12 findings; first: skills/blueprint/SKILL.md:1 — unparseable YAML frontmatter in trust document"
-            }
-          ]
-        },
-        {
-          "id": "module:docs-ko-kr",
-          "paths": [
-            "docs/ko-KR"
-          ],
-          "treeSha256": "fef9d61fc9fcc882469fa2c0d80384bf4cec8cba10010cffd4fccb60ab0ac0ce",
-          "verdict": "blocked",
-          "analyzers": [
-            {
-              "name": "aih-native",
-              "version": "2.8.0"
-            }
-          ],
-          "findings": [
-            {
-              "code": "trust.hidden-unicode",
-              "count": 62,
-              "detail": "62 findings; first: agents/architect.md:3 — trust.hidden-unicode: document contains 1292 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
-            },
-            {
-              "code": "trust.prompt-injection",
-              "count": 4,
-              "detail": "4 findings; first: examples/CLAUDE.md:6 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL"
-            },
-            {
-              "code": "trust.visible-unicode",
-              "detail": "README.md:1 — trust.visible-unicode: document contains 4143 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation",
-              "fingerprint": "trust-visible-unicode:README.md:1e08c2c3bae4d1bb36c62ec578d41fa53ce63f8c9570f2a66ba6419c0ad5000b"
-            }
-          ]
-        },
-        {
-          "id": "module:docs-pt-br",
-          "paths": [
-            "docs/pt-BR"
-          ],
-          "treeSha256": "d689cf572c6aee222684abc235943ce2fcd515bf4a42cecb66a81d2f5d740a43",
-          "verdict": "blocked",
-          "analyzers": [
-            {
-              "name": "aih-native",
-              "version": "2.8.0"
-            }
-          ],
-          "findings": [
-            {
-              "code": "trust.hidden-unicode",
-              "count": 46,
-              "detail": "46 findings; first: agents/architect.md:3 — trust.hidden-unicode: document contains 67 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
-            },
-            {
-              "code": "trust.prompt-injection",
-              "count": 3,
-              "detail": "3 findings; first: examples/CLAUDE.md:6 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL"
-            },
-            {
-              "code": "trust.visible-unicode",
-              "detail": "README.md:1 — trust.visible-unicode: document contains 453 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation",
-              "fingerprint": "trust-visible-unicode:README.md:5a1e8edf427012314ac078680bac7a648e3dd9b988420ff92a39ffc2d6230627"
-            }
-          ]
-        },
-        {
-          "id": "module:docs-ru",
-          "paths": [
-            "docs/ru"
-          ],
-          "treeSha256": "fe864050bd7900cdd83e44d9636cc46c4b8225fcd74a6ca3681aeef5cb71d812",
-          "verdict": "blocked",
-          "analyzers": [
-            {
-              "name": "aih-native",
-              "version": "2.8.0"
-            }
-          ],
-          "findings": [
-            {
-              "code": "trust.hidden-unicode",
+              "code": "trust.cisco-finding",
               "count": 2,
-              "detail": "2 findings; first: README.md:144 — trust.hidden-unicode: character category: homoglyph-confusable; reason: Unicode confusable appears inside an ASCII-like token; code point U+43E"
-            },
-            {
-              "code": "trust.visible-unicode",
-              "detail": "README.md:1 — trust.visible-unicode: document contains 29320 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation",
-              "fingerprint": "trust-visible-unicode:README.md:1f9ec53b3e7b8f56be9ce5a8bfa15888d5ba894cbf107b642945e8658af9f1e6"
-            }
-          ]
-        },
-        {
-          "id": "module:docs-tr",
-          "paths": [
-            "docs/tr"
-          ],
-          "treeSha256": "ce74a60b497d02902ec9ce5a525441ca23479fa67cc331206acf8db7f37924c8",
-          "verdict": "blocked",
-          "analyzers": [
-            {
-              "name": "aih-native",
-              "version": "2.8.0"
-            }
-          ],
-          "findings": [
-            {
-              "code": "trust.hidden-unicode",
-              "count": 15776,
-              "detail": "15776 findings; first: AGENTS.md:1 — trust.hidden-unicode: character category: homoglyph-confusable; reason: Unicode confusable appears inside an ASCII-like token; code point U+131"
-            },
-            {
-              "code": "trust.prompt-injection",
-              "count": 7,
-              "detail": "7 findings; first: CLAUDE.md:6 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL"
-            },
-            {
-              "code": "trust.visible-unicode",
-              "count": 3,
-              "detail": "3 findings; first: examples/README.md:1 — trust.visible-unicode: document contains 68 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation"
-            },
-            {
-              "code": "trust.auto-exec-hook",
-              "count": 3,
-              "detail": "3 findings; first: skills/laravel-verification/SKILL.md:1 — unparseable YAML frontmatter in trust document"
-            }
-          ]
-        },
-        {
-          "id": "module:docs-vi-vn",
-          "paths": [
-            "docs/vi-VN"
-          ],
-          "treeSha256": "3da059bf435821352ff95b3ab5f7553a4aa9cfe8c07f9703980af32574b4627b",
-          "verdict": "blocked",
-          "analyzers": [
-            {
-              "name": "aih-native",
-              "version": "2.8.0"
-            }
-          ],
-          "findings": [
-            {
-              "code": "trust.visible-unicode",
-              "detail": "README.md:1 — trust.visible-unicode: document contains 461 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation",
-              "fingerprint": "trust-visible-unicode:README.md:38ac5fac49eba0e41fa758674eb122362d0902f69e05c42ea5c1b82cf154f9d2"
-            }
-          ]
-        },
-        {
-          "id": "module:docs-zh-tw",
-          "paths": [
-            "docs/zh-TW"
-          ],
-          "treeSha256": "efe1406582eada6436bcc2c4ed27a269aa98a2fbf2962560bea8beca085d224d",
-          "verdict": "blocked",
-          "analyzers": [
-            {
-              "name": "aih-native",
-              "version": "2.8.0"
-            }
-          ],
-          "findings": [
-            {
-              "code": "trust.hidden-unicode",
-              "count": 668,
-              "detail": "668 findings; first: agents/architect.md:103 — trust.hidden-unicode: character category: homoglyph-confusable; reason: Unicode confusable appears inside an ASCII-like token; code point U+FF1A"
-            },
-            {
-              "code": "trust.visible-unicode",
-              "detail": "README.md:14 — trust.visible-unicode: document contains 2239 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation",
-              "fingerprint": "trust-visible-unicode:README.md:68c75629542d3b7cc55e61830a314bd0150bfcd40be5ccb74a94c9cbab643edb"
-            },
-            {
-              "code": "trust.prompt-injection",
-              "detail": "skills/security-review/SKILL.md:239 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
-              "fingerprint": "trust-prompt-injection:skills/security-review/SKILL.md:24219562ff98dfb4e9646ad1f26a1b2e421627f57215c85a3f90ae229a33ed52"
-            }
-          ]
-        },
-        {
-          "id": "module:docs-de-de",
-          "paths": [
-            "docs/de-DE"
-          ],
-          "treeSha256": "ec98c56d5e89a60b0514c37fa19fd83917898f1b93f8eacb23e8f383be61ac68",
-          "verdict": "blocked",
-          "analyzers": [
-            {
-              "name": "aih-native",
-              "version": "2.8.0"
-            }
-          ],
-          "findings": [
-            {
-              "code": "trust.hidden-unicode",
-              "detail": "GLOSSARY.md:3 — trust.hidden-unicode: document contains 34 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
-              "fingerprint": "trust-hidden-unicode:GLOSSARY.md:472208fd583e900d0802f61c862d3284abe6f0402853eb052ca2a4a5b5eaebec"
-            },
-            {
-              "code": "trust.visible-unicode",
-              "detail": "README.md:1 — trust.visible-unicode: document contains 730 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation",
-              "fingerprint": "trust-visible-unicode:README.md:479b8a272a083b20a880c6f56e4cb70682c92a3b49cdac4d3741359449b46f25"
+              "detail": "2 findings; first: skills/nutrient-document-processing/SKILL.md:1 — Cisco AI Defense skill-scanner: Skill manifest does not include a 'license' field. Specifying a license helps users understand usage terms."
             }
           ]
         },
@@ -1145,13 +1245,31 @@
             {
               "name": "aih-native",
               "version": "2.8.0"
+            },
+            {
+              "name": "cisco@uvx",
+              "version": "2.0.12"
+            },
+            {
+              "name": "skillspector@docker",
+              "version": "326a2b489411a20ed742ff13701be39ba00063c8@sha256:ee8a107dfd1c258e0afed303016a4220d174ba54bd1510bf73ed91f2825075ec"
             }
           ],
           "findings": [
             {
               "code": "trust.hidden-unicode",
-              "detail": "SKILL.md:100 — trust.hidden-unicode: document contains 68 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
-              "fingerprint": "trust-hidden-unicode:SKILL.md:43f0c08bf8fe87c8068631ad2f77bde5b42382828b7d7816b71fa219671041eb"
+              "detail": "skills/tdd-workflow/SKILL.md:100 — trust.hidden-unicode: document contains 68 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:skills/tdd-workflow/SKILL.md:4778959dbfc47a06e9f645abcdbe97afd4be297cb7f9c773a13025b8f5a7c1cf"
+            },
+            {
+              "code": "trust.cisco-finding",
+              "count": 2,
+              "detail": "2 findings; first: skills/tdd-workflow/SKILL.md:1 — Cisco AI Defense skill-scanner: Skill manifest does not include a 'license' field. Specifying a license helps users understand usage terms."
+            },
+            {
+              "code": "trust.prompt-injection",
+              "detail": "skills/tdd-workflow/SKILL.md:16 — Cisco AI Defense skill-scanner: Pattern detected: ignore previous rules",
+              "fingerprint": "trust-prompt-injection:skills/tdd-workflow/SKILL.md:fcfb1f4211b5ce29307b9af6d628688294a53a4213529a3bac783c2f41046592"
             }
           ]
         },
@@ -1160,12 +1278,20 @@
           "paths": [
             "skills/verification-loop"
           ],
-          "treeSha256": "f09dfc3bf93c522ef06fe6ebcea9b9386f99568f90c614a36ffa54ab53b28d50",
+          "treeSha256": "0ed87819d177d08f475b9b032449e62871eb1d5766ba4ad4bdc995574920d7c3",
           "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
               "version": "2.8.0"
+            },
+            {
+              "name": "cisco@uvx",
+              "version": "2.0.12"
+            },
+            {
+              "name": "skillspector@docker",
+              "version": "326a2b489411a20ed742ff13701be39ba00063c8@sha256:ee8a107dfd1c258e0afed303016a4220d174ba54bd1510bf73ed91f2825075ec"
             }
           ],
           "findings": []
@@ -1181,13 +1307,31 @@
             {
               "name": "aih-native",
               "version": "2.8.0"
+            },
+            {
+              "name": "cisco@uvx",
+              "version": "2.0.12"
+            },
+            {
+              "name": "skillspector@docker",
+              "version": "326a2b489411a20ed742ff13701be39ba00063c8@sha256:ee8a107dfd1c258e0afed303016a4220d174ba54bd1510bf73ed91f2825075ec"
             }
           ],
           "findings": [
             {
               "code": "trust.hidden-unicode",
-              "detail": "SKILL.md:15 — trust.hidden-unicode: document contains 34 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
-              "fingerprint": "trust-hidden-unicode:SKILL.md:c5c65338952ed0b8481e31e50795db284d613d2c800b0ff9b07cf25255af2564"
+              "detail": "skills/strategic-compact/SKILL.md:15 — trust.hidden-unicode: document contains 34 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:skills/strategic-compact/SKILL.md:76769760614458a0ee6d754266271a27312dddb200f80123dfd534640c93f3e1"
+            },
+            {
+              "code": "trust.detector-finding",
+              "count": 2,
+              "detail": "2 findings; first: skills/strategic-compact/SKILL.md:43 — SkillSpector: Agent Config Directory Access"
+            },
+            {
+              "code": "trust.cisco-finding",
+              "detail": "skills/strategic-compact/SKILL.md:1 — Cisco AI Defense skill-scanner: Skill manifest does not include a 'license' field. Specifying a license helps users understand usage terms.",
+              "fingerprint": "trust-cisco-finding:skills/strategic-compact/SKILL.md:fda86df427219df523fb1db6d85f2a3389b1940b18f9acca46555afae096e72c"
             }
           ]
         },
@@ -1202,13 +1346,31 @@
             {
               "name": "aih-native",
               "version": "2.8.0"
+            },
+            {
+              "name": "cisco@uvx",
+              "version": "2.0.12"
+            },
+            {
+              "name": "skillspector@docker",
+              "version": "326a2b489411a20ed742ff13701be39ba00063c8@sha256:ee8a107dfd1c258e0afed303016a4220d174ba54bd1510bf73ed91f2825075ec"
             }
           ],
           "findings": [
             {
               "code": "trust.hidden-unicode",
-              "detail": "SKILL.md:340 — trust.hidden-unicode: document contains 54 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
-              "fingerprint": "trust-hidden-unicode:SKILL.md:ec52dc78daf52000dd7c2ee433e4ab5845bbac8857bbb3fcb61ffd44a85113ac"
+              "detail": "skills/coding-standards/SKILL.md:340 — trust.hidden-unicode: document contains 54 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:skills/coding-standards/SKILL.md:50e346cba380917876c93caea6a3735d7887435d2f112a53d47e22afb2b300de"
+            },
+            {
+              "code": "trust.detector-finding",
+              "detail": "skills/coding-standards/SKILL.md:268 — SkillSpector: Tool Parameter Abuse",
+              "fingerprint": "trust-detector-finding:skills/coding-standards/SKILL.md:6d430aec8d7ea7c786056fc30b7b9a314cd9f2f1c80a15dd5367db988ee2b5a2"
+            },
+            {
+              "code": "trust.cisco-finding",
+              "detail": "skills/coding-standards/SKILL.md:1 — Cisco AI Defense skill-scanner: Skill manifest does not include a 'license' field. Specifying a license helps users understand usage terms.",
+              "fingerprint": "trust-cisco-finding:skills/coding-standards/SKILL.md:16b2ad4a75516b3b7eada51fae558909045a43f2936c0f8ecc43830d68203d37"
             }
           ]
         },
@@ -1223,18 +1385,27 @@
             {
               "name": "aih-native",
               "version": "2.8.0"
+            },
+            {
+              "name": "skillspector@docker",
+              "version": "326a2b489411a20ed742ff13701be39ba00063c8@sha256:ee8a107dfd1c258e0afed303016a4220d174ba54bd1510bf73ed91f2825075ec"
             }
           ],
           "findings": [
             {
               "code": "trust.hidden-unicode",
-              "detail": "code-reviewer.md:23 — trust.hidden-unicode: document contains 50 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
-              "fingerprint": "trust-hidden-unicode:code-reviewer.md:fa3c9e7ca89b8c8284da21318ace382b060efa4e5ae036cc81c6529473e3360c"
+              "detail": "agents/code-reviewer.md:23 — trust.hidden-unicode: document contains 50 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:agents/code-reviewer.md:ec72ca2d5da22731921aa7d684a34a5e1430f1729abd449911a9d39f4332b4e3"
             },
             {
               "code": "trust.prompt-injection",
-              "detail": "code-reviewer.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
-              "fingerprint": "trust-prompt-injection:code-reviewer.md:9bf36d6d492eb8cb3b21f474aa8cbd4d6ae0d9f747aed655d93f5ba95344ac31"
+              "detail": "agents/code-reviewer.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:agents/code-reviewer.md:3c7eb9280fb2726003b143d53367cbbde5b4335a951d172f879d2ea87b2bd36c"
+            },
+            {
+              "code": "trust.detector-finding",
+              "detail": "agents/code-reviewer.md:220 — SkillSpector: Unbounded Resource Access",
+              "fingerprint": "trust-detector-finding:agents/code-reviewer.md:776ec1d7c16589b02ed99a45348875502eff9c85f50bd4452cc69615197fb0d3"
             }
           ]
         },
@@ -1249,13 +1420,17 @@
             {
               "name": "aih-native",
               "version": "2.8.0"
+            },
+            {
+              "name": "skillspector@docker",
+              "version": "326a2b489411a20ed742ff13701be39ba00063c8@sha256:ee8a107dfd1c258e0afed303016a4220d174ba54bd1510bf73ed91f2825075ec"
             }
           ],
           "findings": [
             {
               "code": "trust.prompt-injection",
-              "detail": "code-architect.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
-              "fingerprint": "trust-prompt-injection:code-architect.md:838042a535a0baca6d0b24bff638fda8f41670cb3c6e81de9b360102937cee3f"
+              "detail": "agents/code-architect.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:agents/code-architect.md:8acac01439a3a2212ab7afa0a23ebb22d32cef96c66aab8fd04bff99f872d1e6"
             }
           ]
         },
@@ -1270,13 +1445,17 @@
             {
               "name": "aih-native",
               "version": "2.8.0"
+            },
+            {
+              "name": "skillspector@docker",
+              "version": "326a2b489411a20ed742ff13701be39ba00063c8@sha256:ee8a107dfd1c258e0afed303016a4220d174ba54bd1510bf73ed91f2825075ec"
             }
           ],
           "findings": [
             {
               "code": "trust.prompt-injection",
-              "detail": "architect.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
-              "fingerprint": "trust-prompt-injection:architect.md:7cae9861835b761bf52bec068a2b7b7e218c7f84c19ac5f200c3289ea1bc1537"
+              "detail": "agents/architect.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:agents/architect.md:790f165a00ab990a6420a69ca7fe9785f6647725061ca73a59e8664360f452ac"
             }
           ]
         },
@@ -1291,18 +1470,22 @@
             {
               "name": "aih-native",
               "version": "2.8.0"
+            },
+            {
+              "name": "skillspector@docker",
+              "version": "326a2b489411a20ed742ff13701be39ba00063c8@sha256:ee8a107dfd1c258e0afed303016a4220d174ba54bd1510bf73ed91f2825075ec"
             }
           ],
           "findings": [
             {
               "code": "trust.hidden-unicode",
-              "detail": "planner.md:129 — trust.hidden-unicode: document contains 10 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
-              "fingerprint": "trust-hidden-unicode:planner.md:fef2e1f4266c760cd6307b34804fb5aa57f8befd0f549bb987e238659557407d"
+              "detail": "agents/planner.md:129 — trust.hidden-unicode: document contains 10 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:agents/planner.md:45828a8c7607bfc1e722a0059bbb68463d904fc3f672e79a77f28a16c7618cee"
             },
             {
               "code": "trust.prompt-injection",
-              "detail": "planner.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
-              "fingerprint": "trust-prompt-injection:planner.md:8e14939615b777c9254366aa8922fae6a8c22cee21dfaab0fc6530c843571b91"
+              "detail": "agents/planner.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:agents/planner.md:42b471a041c3af02aa9d730b6b2bb786a04a381ab42242b8404c550cb32e61ba"
             }
           ]
         },
@@ -1317,13 +1500,17 @@
             {
               "name": "aih-native",
               "version": "2.8.0"
+            },
+            {
+              "name": "skillspector@docker",
+              "version": "326a2b489411a20ed742ff13701be39ba00063c8@sha256:ee8a107dfd1c258e0afed303016a4220d174ba54bd1510bf73ed91f2825075ec"
             }
           ],
           "findings": [
             {
               "code": "trust.prompt-injection",
-              "detail": "tdd-guide.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
-              "fingerprint": "trust-prompt-injection:tdd-guide.md:f09633bedd9d4744201e1f2b2274a18e2f8fee11307be0ab74ed39a51161ae99"
+              "detail": "agents/tdd-guide.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:agents/tdd-guide.md:6ab44fe438e8d8b1ce18bd5379cda6922edc0b7f240f0d45db16e3a84b642c67"
             }
           ]
         },
@@ -1338,18 +1525,27 @@
             {
               "name": "aih-native",
               "version": "2.8.0"
+            },
+            {
+              "name": "skillspector@docker",
+              "version": "326a2b489411a20ed742ff13701be39ba00063c8@sha256:ee8a107dfd1c258e0afed303016a4220d174ba54bd1510bf73ed91f2825075ec"
             }
           ],
           "findings": [
             {
               "code": "trust.hidden-unicode",
-              "detail": "build-error-resolver.md:19 — trust.hidden-unicode: document contains 14 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
-              "fingerprint": "trust-hidden-unicode:build-error-resolver.md:5c0c1b8d5a602d6df1f4ef068846e0682976888d4a05ccd221f3df80bb6493b5"
+              "detail": "agents/build-error-resolver.md:19 — trust.hidden-unicode: document contains 14 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:agents/build-error-resolver.md:fc2e4cf421e91efeff1fc69f37b7554d8da14e65679221b242dbd09356bea8df"
             },
             {
               "code": "trust.prompt-injection",
-              "detail": "build-error-resolver.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
-              "fingerprint": "trust-prompt-injection:build-error-resolver.md:60678897525665cda29a59cee94a5a19872bc3d450be9e037f9113ef8606b76d"
+              "detail": "agents/build-error-resolver.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:agents/build-error-resolver.md:7eecd68731f10916e5f2a49e32711598c0781679b341708c7629eb3f774625d5"
+            },
+            {
+              "code": "trust.detector-finding",
+              "count": 6,
+              "detail": "6 findings; first: agents/build-error-resolver.md:33 — SkillSpector: MCP server referenced without pinned version: 'npx tsc'."
             }
           ]
         },
@@ -1364,13 +1560,22 @@
             {
               "name": "aih-native",
               "version": "2.8.0"
+            },
+            {
+              "name": "skillspector@docker",
+              "version": "326a2b489411a20ed742ff13701be39ba00063c8@sha256:ee8a107dfd1c258e0afed303016a4220d174ba54bd1510bf73ed91f2825075ec"
             }
           ],
           "findings": [
             {
               "code": "trust.prompt-injection",
-              "detail": "refactor-cleaner.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
-              "fingerprint": "trust-prompt-injection:refactor-cleaner.md:444dbb9975f16882933f9e96f6862c4d86fc0f14cdd801ade01ffe002c37d80b"
+              "detail": "agents/refactor-cleaner.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:agents/refactor-cleaner.md:ac0efd754c7f03178dfd8b9009e2110fd6ace7a866f78122a844c70fec44e1be"
+            },
+            {
+              "code": "trust.detector-finding",
+              "count": 4,
+              "detail": "4 findings; first: agents/refactor-cleaner.md:31 — SkillSpector: MCP server referenced without pinned version: 'npx knip'."
             }
           ]
         },
@@ -1385,13 +1590,17 @@
             {
               "name": "aih-native",
               "version": "2.8.0"
+            },
+            {
+              "name": "skillspector@docker",
+              "version": "326a2b489411a20ed742ff13701be39ba00063c8@sha256:ee8a107dfd1c258e0afed303016a4220d174ba54bd1510bf73ed91f2825075ec"
             }
           ],
           "findings": [
             {
               "code": "trust.prompt-injection",
-              "detail": "code-simplifier.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
-              "fingerprint": "trust-prompt-injection:code-simplifier.md:74ceab417c00e373a6a4fd4b8342c551d6c3ee3985c953ad714d7d9dc5c2036f"
+              "detail": "agents/code-simplifier.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:agents/code-simplifier.md:f9943634e62f6d3e167bade5bc84525d37a4f91e35247ef5904f1121d447356a"
             }
           ]
         },
@@ -1406,13 +1615,17 @@
             {
               "name": "aih-native",
               "version": "2.8.0"
+            },
+            {
+              "name": "skillspector@docker",
+              "version": "326a2b489411a20ed742ff13701be39ba00063c8@sha256:ee8a107dfd1c258e0afed303016a4220d174ba54bd1510bf73ed91f2825075ec"
             }
           ],
           "findings": [
             {
               "code": "trust.prompt-injection",
-              "detail": "silent-failure-hunter.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
-              "fingerprint": "trust-prompt-injection:silent-failure-hunter.md:bdf3d28cb8d4ba5d995e0bb5d9c94427d49f8fdae131ee640e492819db2d66ab"
+              "detail": "agents/silent-failure-hunter.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:agents/silent-failure-hunter.md:958eee08bb6484f07d4b86d9392aa136f6ac6906cb0c4e703ae51a7ae707b084"
             }
           ]
         },
@@ -1427,13 +1640,17 @@
             {
               "name": "aih-native",
               "version": "2.8.0"
+            },
+            {
+              "name": "skillspector@docker",
+              "version": "326a2b489411a20ed742ff13701be39ba00063c8@sha256:ee8a107dfd1c258e0afed303016a4220d174ba54bd1510bf73ed91f2825075ec"
             }
           ],
           "findings": [
             {
               "code": "trust.prompt-injection",
-              "detail": "pr-test-analyzer.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
-              "fingerprint": "trust-prompt-injection:pr-test-analyzer.md:cb5081ae56f8d73d639a6eabc425553591297e143126162e19e351bf7ccdda04"
+              "detail": "agents/pr-test-analyzer.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:agents/pr-test-analyzer.md:3ef8a2182b928ec725ea987b287fc52b4fd5e482d49062aa329d4f0338bc2ccf"
             }
           ]
         },
@@ -1448,18 +1665,27 @@
             {
               "name": "aih-native",
               "version": "2.8.0"
+            },
+            {
+              "name": "skillspector@docker",
+              "version": "326a2b489411a20ed742ff13701be39ba00063c8@sha256:ee8a107dfd1c258e0afed303016a4220d174ba54bd1510bf73ed91f2825075ec"
             }
           ],
           "findings": [
             {
-              "code": "trust.visible-unicode",
-              "detail": "doc-updater.md:23 — trust.visible-unicode: document contains 13 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation",
-              "fingerprint": "trust-visible-unicode:doc-updater.md:b9df3937dbb9cff7d9d06534379f5e55620d3a05b71abf96e84858de79ec822c"
+              "code": "trust.hidden-unicode",
+              "detail": "agents/doc-updater.md:23 — trust.hidden-unicode: document contains 31 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:agents/doc-updater.md:b70027dd48d95b5d775a354374110dc80d96ef0ad0eabecc5737350536be5a50"
             },
             {
               "code": "trust.prompt-injection",
-              "detail": "doc-updater.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
-              "fingerprint": "trust-prompt-injection:doc-updater.md:c4f38266dd740589270557c48c8f89791d09deb3ecc69ea409134e52dc0aae68"
+              "detail": "agents/doc-updater.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:agents/doc-updater.md:4daa82a0699157fe98ae1ec101e80493f4b54e3281f543b48270bf645d8e6a6f"
+            },
+            {
+              "code": "trust.detector-finding",
+              "count": 3,
+              "detail": "3 findings; first: agents/doc-updater.md:32 — SkillSpector: MCP server referenced without pinned version: 'npx tsx'."
             }
           ]
         },
@@ -1474,18 +1700,22 @@
             {
               "name": "aih-native",
               "version": "2.8.0"
+            },
+            {
+              "name": "skillspector@docker",
+              "version": "326a2b489411a20ed742ff13701be39ba00063c8@sha256:ee8a107dfd1c258e0afed303016a4220d174ba54bd1510bf73ed91f2825075ec"
             }
           ],
           "findings": [
             {
-              "code": "trust.visible-unicode",
-              "detail": "docs-lookup.md:29 — trust.visible-unicode: document contains 1 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation",
-              "fingerprint": "trust-visible-unicode:docs-lookup.md:6b0ba9f719d11097819da57923ef128fdb37fe771ffe848a421247ebc6765444"
+              "code": "trust.hidden-unicode",
+              "detail": "agents/docs-lookup.md:29 — trust.hidden-unicode: document contains 1 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:agents/docs-lookup.md:959eef0e783d7b45ace2d8623c92099400a2ef823a6249c0242d9fa70d3ea6f6"
             },
             {
               "code": "trust.prompt-injection",
-              "detail": "docs-lookup.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
-              "fingerprint": "trust-prompt-injection:docs-lookup.md:ea974640df65c8227ddbc5adf01963e417c1bdbd5ce872aa082d3d109d06a590"
+              "detail": "agents/docs-lookup.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:agents/docs-lookup.md:cb0abb9a31afc3611ce9b17f7545d0d3e4f7988231163976cc55e470b8664f65"
             }
           ]
         },
@@ -1500,13 +1730,17 @@
             {
               "name": "aih-native",
               "version": "2.8.0"
+            },
+            {
+              "name": "skillspector@docker",
+              "version": "326a2b489411a20ed742ff13701be39ba00063c8@sha256:ee8a107dfd1c258e0afed303016a4220d174ba54bd1510bf73ed91f2825075ec"
             }
           ],
           "findings": [
             {
               "code": "trust.prompt-injection",
-              "detail": "code-explorer.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
-              "fingerprint": "trust-prompt-injection:code-explorer.md:10ba5ac35e32452af8e4e5fae2a850ae1129a20328226b8bcb0a12e4026506e1"
+              "detail": "agents/code-explorer.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:agents/code-explorer.md:0d08d0621bb890f5126fba227428271db826e607ffe34b1729af616ebee20414"
             }
           ]
         },
@@ -1521,18 +1755,27 @@
             {
               "name": "aih-native",
               "version": "2.8.0"
+            },
+            {
+              "name": "skillspector@docker",
+              "version": "326a2b489411a20ed742ff13701be39ba00063c8@sha256:ee8a107dfd1c258e0afed303016a4220d174ba54bd1510bf73ed91f2825075ec"
             }
           ],
           "findings": [
             {
               "code": "trust.hidden-unicode",
-              "detail": "security-reviewer.md:23 — trust.hidden-unicode: document contains 21 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
-              "fingerprint": "trust-hidden-unicode:security-reviewer.md:86c3d76b977ffd73179c88451045164b079bb64384bcc69e3adf6bcd1d62e687"
+              "detail": "agents/security-reviewer.md:23 — trust.hidden-unicode: document contains 21 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:agents/security-reviewer.md:1581e2a4a5ea7f22f7c38eb4056435a8bf5afaeff75183746abb259c412692ef"
             },
             {
               "code": "trust.prompt-injection",
-              "detail": "security-reviewer.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
-              "fingerprint": "trust-prompt-injection:security-reviewer.md:8d8faf9fb80ca632bc6deb5f1119fe4bb3e69ac5276cd26ea70e503999ce526a"
+              "detail": "agents/security-reviewer.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:agents/security-reviewer.md:3a2ea3f8ac1d6507367ec7a1c0e12a94c2ae54a0b72ca4ce5c308bcaf19f9e5d"
+            },
+            {
+              "code": "trust.detector-finding",
+              "detail": "agents/security-reviewer.md:34 — SkillSpector: MCP server referenced without pinned version: 'npx eslint'.",
+              "fingerprint": "trust-detector-finding:agents/security-reviewer.md:00766f40accdf39535c6f2d816718d4c8573e74e1d4347d8a9f5a00560bf6cda"
             }
           ]
         },
@@ -1547,13 +1790,17 @@
             {
               "name": "aih-native",
               "version": "2.8.0"
+            },
+            {
+              "name": "skillspector@docker",
+              "version": "326a2b489411a20ed742ff13701be39ba00063c8@sha256:ee8a107dfd1c258e0afed303016a4220d174ba54bd1510bf73ed91f2825075ec"
             }
           ],
           "findings": [
             {
               "code": "trust.prompt-injection",
-              "detail": "type-design-analyzer.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
-              "fingerprint": "trust-prompt-injection:type-design-analyzer.md:c932115bb46ec5d2713614458bbf530b28441ca58a20b59781e8a84a0b756161"
+              "detail": "agents/type-design-analyzer.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:agents/type-design-analyzer.md:b4971a236794d56be54171518923a5e484d057ce589bb44bfdce2cf0554c6042"
             }
           ]
         },
@@ -1568,18 +1815,27 @@
             {
               "name": "aih-native",
               "version": "2.8.0"
+            },
+            {
+              "name": "skillspector@docker",
+              "version": "326a2b489411a20ed742ff13701be39ba00063c8@sha256:ee8a107dfd1c258e0afed303016a4220d174ba54bd1510bf73ed91f2825075ec"
             }
           ],
           "findings": [
             {
               "code": "trust.hidden-unicode",
-              "detail": "performance-optimizer.md:23 — trust.hidden-unicode: document contains 10 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
-              "fingerprint": "trust-hidden-unicode:performance-optimizer.md:91a4827fab8056b9067f3826d79626f60027761c113f31de6e735c0993bf58e9"
+              "detail": "agents/performance-optimizer.md:23 — trust.hidden-unicode: document contains 10 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:agents/performance-optimizer.md:4679dd4405702b18bca219bd8a7be3affd376c81a9e84ba2eea44be8d762ab7f"
             },
             {
               "code": "trust.prompt-injection",
-              "detail": "performance-optimizer.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
-              "fingerprint": "trust-prompt-injection:performance-optimizer.md:139a803469449e48be3e576312149fe6d5d01bb4d1ec914fabb6304cab25883c"
+              "detail": "agents/performance-optimizer.md:11 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL",
+              "fingerprint": "trust-prompt-injection:agents/performance-optimizer.md:35cdb9590ec69bac0b64855471eff877b59b938f24bf6094dd91225bd7a81208"
+            },
+            {
+              "code": "trust.detector-finding",
+              "count": 9,
+              "detail": "9 findings; first: agents/performance-optimizer.md:34 — SkillSpector: MCP server referenced without pinned version: 'npx bundle-analyzer'."
             }
           ]
         }
@@ -1611,13 +1867,22 @@
             {
               "name": "aih-native",
               "version": "2.8.0"
+            },
+            {
+              "name": "skillspector@docker",
+              "version": "326a2b489411a20ed742ff13701be39ba00063c8@sha256:ee8a107dfd1c258e0afed303016a4220d174ba54bd1510bf73ed91f2825075ec"
             }
           ],
           "findings": [
             {
               "code": "trust.hidden-unicode",
               "count": 5,
-              "detail": "5 findings; first: INSTALL.md:103 — trust.hidden-unicode: document contains 8 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
+              "detail": "5 findings; first: .opencode/INSTALL.md:103 — trust.hidden-unicode: document contains 8 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
+            },
+            {
+              "code": "trust.detector-finding",
+              "count": 2,
+              "detail": "2 findings; first: hooks/session-start:11 — SkillSpector: Skill Enumeration"
             }
           ]
         },
@@ -1632,13 +1897,31 @@
             {
               "name": "aih-native",
               "version": "2.8.0"
+            },
+            {
+              "name": "cisco@uvx",
+              "version": "2.0.12"
+            },
+            {
+              "name": "skillspector@docker",
+              "version": "326a2b489411a20ed742ff13701be39ba00063c8@sha256:ee8a107dfd1c258e0afed303016a4220d174ba54bd1510bf73ed91f2825075ec"
             }
           ],
           "findings": [
             {
               "code": "trust.hidden-unicode",
               "count": 6,
-              "detail": "6 findings; first: scripts/helper.js:51 — trust.hidden-unicode: document contains 4 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
+              "detail": "6 findings; first: skills/brainstorming/scripts/helper.js:51 — trust.hidden-unicode: document contains 4 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
+            },
+            {
+              "code": "trust.detector-finding",
+              "count": 11,
+              "detail": "11 findings; first: skills/brainstorming/scripts/server.cjs:293 — SkillSpector: Credential Access"
+            },
+            {
+              "code": "trust.cisco-finding",
+              "count": 14,
+              "detail": "14 findings; first: skills/brainstorming/SKILL.md:1 — Cisco AI Defense skill-scanner: Skill manifest does not include a 'license' field. Specifying a license helps users understand usage terms."
             }
           ]
         },
@@ -1653,13 +1936,26 @@
             {
               "name": "aih-native",
               "version": "2.8.0"
+            },
+            {
+              "name": "cisco@uvx",
+              "version": "2.0.12"
+            },
+            {
+              "name": "skillspector@docker",
+              "version": "326a2b489411a20ed742ff13701be39ba00063c8@sha256:ee8a107dfd1c258e0afed303016a4220d174ba54bd1510bf73ed91f2825075ec"
             }
           ],
           "findings": [
             {
               "code": "trust.hidden-unicode",
-              "detail": "SKILL.md:10 — trust.hidden-unicode: document contains 13 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
-              "fingerprint": "trust-hidden-unicode:SKILL.md:b5b02c9e4404e6ec8733cab9a79f96103590a274d69f36695589df415a2ea03b"
+              "detail": "skills/dispatching-parallel-agents/SKILL.md:10 — trust.hidden-unicode: document contains 13 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:skills/dispatching-parallel-agents/SKILL.md:e41b08695963621e4fa00e1468fc564d15c291b1184185d26b3f72fcc4d7e98b"
+            },
+            {
+              "code": "trust.cisco-finding",
+              "detail": "skills/dispatching-parallel-agents/SKILL.md:1 — Cisco AI Defense skill-scanner: Skill manifest does not include a 'license' field. Specifying a license helps users understand usage terms.",
+              "fingerprint": "trust-cisco-finding:skills/dispatching-parallel-agents/SKILL.md:93c2b7bfdba76fa8a4efde975d556c3de691cfb5a5c649374cdf2bb624328816"
             }
           ]
         },
@@ -1669,14 +1965,33 @@
             "skills/executing-plans"
           ],
           "treeSha256": "e04bbec497d2b5d3169f9332dbe91f7615a83d7482ac55b57c7b2c542470b844",
-          "verdict": "pass",
+          "verdict": "blocked",
           "analyzers": [
             {
               "name": "aih-native",
               "version": "2.8.0"
+            },
+            {
+              "name": "cisco@uvx",
+              "version": "2.0.12"
+            },
+            {
+              "name": "skillspector@docker",
+              "version": "326a2b489411a20ed742ff13701be39ba00063c8@sha256:ee8a107dfd1c258e0afed303016a4220d174ba54bd1510bf73ed91f2825075ec"
             }
           ],
-          "findings": []
+          "findings": [
+            {
+              "code": "trust.detector-finding",
+              "detail": "skills/executing-plans/SKILL.md:60 — SkillSpector: Autonomous Decision Making",
+              "fingerprint": "trust-detector-finding:skills/executing-plans/SKILL.md:450e9e8b1ae4f000dca463b5a714ddd2e0f383c17939e793926907a6e3634ed9"
+            },
+            {
+              "code": "trust.cisco-finding",
+              "detail": "skills/executing-plans/SKILL.md:1 — Cisco AI Defense skill-scanner: Skill manifest does not include a 'license' field. Specifying a license helps users understand usage terms.",
+              "fingerprint": "trust-cisco-finding:skills/executing-plans/SKILL.md:d907b1919cf661463955403e405f6ae316f7508cce5446a5f817ee8be6957fbe"
+            }
+          ]
         },
         {
           "id": "skill:finishing-a-development-branch",
@@ -1689,13 +2004,31 @@
             {
               "name": "aih-native",
               "version": "2.8.0"
+            },
+            {
+              "name": "cisco@uvx",
+              "version": "2.0.12"
+            },
+            {
+              "name": "skillspector@docker",
+              "version": "326a2b489411a20ed742ff13701be39ba00063c8@sha256:ee8a107dfd1c258e0afed303016a4220d174ba54bd1510bf73ed91f2825075ec"
             }
           ],
           "findings": [
             {
               "code": "trust.hidden-unicode",
-              "detail": "SKILL.md:12 — trust.hidden-unicode: document contains 9 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
-              "fingerprint": "trust-hidden-unicode:SKILL.md:83db1c5e9426fd02f5fb341a52252f54a7f2eae7ff7c46965c5cee8bbe6e3bcf"
+              "detail": "skills/finishing-a-development-branch/SKILL.md:12 — trust.hidden-unicode: document contains 9 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:skills/finishing-a-development-branch/SKILL.md:db20218bb90244b6942fb08615fea0ae2419ca28825dec73ada8399e47f0a097"
+            },
+            {
+              "code": "trust.detector-finding",
+              "count": 2,
+              "detail": "2 findings; first: skills/finishing-a-development-branch/SKILL.md:219 — SkillSpector: Autonomous Decision Making"
+            },
+            {
+              "code": "trust.cisco-finding",
+              "detail": "skills/finishing-a-development-branch/SKILL.md:1 — Cisco AI Defense skill-scanner: Skill manifest does not include a 'license' field. Specifying a license helps users understand usage terms.",
+              "fingerprint": "trust-cisco-finding:skills/finishing-a-development-branch/SKILL.md:def13bfc628483ba4b77594408fda9c18c30b2e7d661e5fcf9f47687b9019db0"
             }
           ]
         },
@@ -1710,13 +2043,26 @@
             {
               "name": "aih-native",
               "version": "2.8.0"
+            },
+            {
+              "name": "cisco@uvx",
+              "version": "2.0.12"
+            },
+            {
+              "name": "skillspector@docker",
+              "version": "326a2b489411a20ed742ff13701be39ba00063c8@sha256:ee8a107dfd1c258e0afed303016a4220d174ba54bd1510bf73ed91f2825075ec"
             }
           ],
           "findings": [
             {
               "code": "trust.hidden-unicode",
-              "detail": "SKILL.md:55 — trust.hidden-unicode: document contains 19 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
-              "fingerprint": "trust-hidden-unicode:SKILL.md:b24b16e3ec5caf53d51c204ebf459d0066a1a5e2cca965064ba1e7b52261c417"
+              "detail": "skills/receiving-code-review/SKILL.md:55 — trust.hidden-unicode: document contains 19 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:skills/receiving-code-review/SKILL.md:7ffaba74e1d7afb92b559b99d435fd7d7e6d599cd13d1b2b70683e6b46c2d23b"
+            },
+            {
+              "code": "trust.cisco-finding",
+              "detail": "skills/receiving-code-review/SKILL.md:1 — Cisco AI Defense skill-scanner: Skill manifest does not include a 'license' field. Specifying a license helps users understand usage terms.",
+              "fingerprint": "trust-cisco-finding:skills/receiving-code-review/SKILL.md:37d315a05bb043a38e30e9db733d2053979a719a4e242783b28a0db2cd017069"
             }
           ]
         },
@@ -1731,13 +2077,31 @@
             {
               "name": "aih-native",
               "version": "2.8.0"
+            },
+            {
+              "name": "cisco@uvx",
+              "version": "2.0.12"
+            },
+            {
+              "name": "skillspector@docker",
+              "version": "326a2b489411a20ed742ff13701be39ba00063c8@sha256:ee8a107dfd1c258e0afed303016a4220d174ba54bd1510bf73ed91f2825075ec"
             }
           ],
           "findings": [
             {
               "code": "trust.hidden-unicode",
               "count": 2,
-              "detail": "2 findings; first: code-reviewer.md:35 — trust.hidden-unicode: document contains 6 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
+              "detail": "2 findings; first: skills/requesting-code-review/code-reviewer.md:35 — trust.hidden-unicode: document contains 6 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
+            },
+            {
+              "code": "trust.detector-finding",
+              "detail": "skills/requesting-code-review/code-reviewer.md:121 — SkillSpector: Autonomous Decision Making",
+              "fingerprint": "trust-detector-finding:skills/requesting-code-review/code-reviewer.md:5118dd70b2e42f74a7b589f5827eeedc3bc65b9eccf650d7089d0dfac45f7688"
+            },
+            {
+              "code": "trust.cisco-finding",
+              "detail": "skills/requesting-code-review/SKILL.md:1 — Cisco AI Defense skill-scanner: Skill manifest does not include a 'license' field. Specifying a license helps users understand usage terms.",
+              "fingerprint": "trust-cisco-finding:skills/requesting-code-review/SKILL.md:dea8fd36c93a23334ba8f458a8041eba97a914801d794637468056e0037dc1fc"
             }
           ]
         },
@@ -1752,13 +2116,31 @@
             {
               "name": "aih-native",
               "version": "2.8.0"
+            },
+            {
+              "name": "cisco@uvx",
+              "version": "2.0.12"
+            },
+            {
+              "name": "skillspector@docker",
+              "version": "326a2b489411a20ed742ff13701be39ba00063c8@sha256:ee8a107dfd1c258e0afed303016a4220d174ba54bd1510bf73ed91f2825075ec"
             }
           ],
           "findings": [
             {
               "code": "trust.hidden-unicode",
               "count": 9,
-              "detail": "9 findings; first: implementer-prompt.md:8 — trust.hidden-unicode: document contains 5 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
+              "detail": "9 findings; first: skills/subagent-driven-development/implementer-prompt.md:8 — trust.hidden-unicode: document contains 5 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
+            },
+            {
+              "code": "trust.detector-finding",
+              "count": 3,
+              "detail": "3 findings; first: skills/subagent-driven-development/SKILL.md:57 — SkillSpector: Session Persistence"
+            },
+            {
+              "code": "trust.cisco-finding",
+              "detail": "skills/subagent-driven-development/SKILL.md:1 — Cisco AI Defense skill-scanner: Skill manifest does not include a 'license' field. Specifying a license helps users understand usage terms.",
+              "fingerprint": "trust-cisco-finding:skills/subagent-driven-development/SKILL.md:da863401cb05598a29f2521fb53b05575c9eb46af6dc53f03b5c45e28b407261"
             }
           ]
         },
@@ -1773,13 +2155,31 @@
             {
               "name": "aih-native",
               "version": "2.8.0"
+            },
+            {
+              "name": "cisco@uvx",
+              "version": "2.0.12"
+            },
+            {
+              "name": "skillspector@docker",
+              "version": "326a2b489411a20ed742ff13701be39ba00063c8@sha256:ee8a107dfd1c258e0afed303016a4220d174ba54bd1510bf73ed91f2825075ec"
             }
           ],
           "findings": [
             {
               "code": "trust.hidden-unicode",
               "count": 9,
-              "detail": "9 findings; first: condition-based-waiting-example.ts:158 — trust.hidden-unicode: document contains 1 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
+              "detail": "9 findings; first: skills/systematic-debugging/condition-based-waiting-example.ts:158 — trust.hidden-unicode: document contains 1 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
+            },
+            {
+              "code": "trust.detector-finding",
+              "count": 3,
+              "detail": "3 findings; first: skills/systematic-debugging/condition-based-waiting.md:89 — SkillSpector: Unbounded Resource Access"
+            },
+            {
+              "code": "trust.cisco-finding",
+              "detail": "skills/systematic-debugging/SKILL.md:1 — Cisco AI Defense skill-scanner: Skill manifest does not include a 'license' field. Specifying a license helps users understand usage terms.",
+              "fingerprint": "trust-cisco-finding:skills/systematic-debugging/SKILL.md:bda7cb0e6aeab67b1a936b74a5d8c24caca08eb179562a24a7300c43080e111f"
             }
           ]
         },
@@ -1794,13 +2194,26 @@
             {
               "name": "aih-native",
               "version": "2.8.0"
+            },
+            {
+              "name": "cisco@uvx",
+              "version": "2.0.12"
+            },
+            {
+              "name": "skillspector@docker",
+              "version": "326a2b489411a20ed742ff13701be39ba00063c8@sha256:ee8a107dfd1c258e0afed303016a4220d174ba54bd1510bf73ed91f2825075ec"
             }
           ],
           "findings": [
             {
               "code": "trust.hidden-unicode",
               "count": 2,
-              "detail": "2 findings; first: SKILL.md:224 — trust.hidden-unicode: document contains 5 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
+              "detail": "2 findings; first: skills/test-driven-development/SKILL.md:224 — trust.hidden-unicode: document contains 5 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
+            },
+            {
+              "code": "trust.cisco-finding",
+              "detail": "skills/test-driven-development/SKILL.md:1 — Cisco AI Defense skill-scanner: Skill manifest does not include a 'license' field. Specifying a license helps users understand usage terms.",
+              "fingerprint": "trust-cisco-finding:skills/test-driven-development/SKILL.md:d8a253bfdddd75ffe1c941de880736f46f08de634bb717b7550ee6ee235e1367"
             }
           ]
         },
@@ -1815,13 +2228,31 @@
             {
               "name": "aih-native",
               "version": "2.8.0"
+            },
+            {
+              "name": "cisco@uvx",
+              "version": "2.0.12"
+            },
+            {
+              "name": "skillspector@docker",
+              "version": "326a2b489411a20ed742ff13701be39ba00063c8@sha256:ee8a107dfd1c258e0afed303016a4220d174ba54bd1510bf73ed91f2825075ec"
             }
           ],
           "findings": [
             {
               "code": "trust.hidden-unicode",
-              "detail": "SKILL.md:29 — trust.hidden-unicode: document contains 3 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
-              "fingerprint": "trust-hidden-unicode:SKILL.md:65de40c627929ebd4bbe700b295d047bdef192c220f7b9acabe4380e2bb2f735"
+              "detail": "skills/using-git-worktrees/SKILL.md:29 — trust.hidden-unicode: document contains 3 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:skills/using-git-worktrees/SKILL.md:203d15701998ce45113b9d7af600ba79d8c97c22442e465f0a22e8cd0ee1b907"
+            },
+            {
+              "code": "trust.detector-finding",
+              "count": 2,
+              "detail": "2 findings; first: skills/using-git-worktrees/SKILL.md:45 — SkillSpector: Autonomous Decision Making"
+            },
+            {
+              "code": "trust.cisco-finding",
+              "detail": "skills/using-git-worktrees/SKILL.md:1 — Cisco AI Defense skill-scanner: Skill manifest does not include a 'license' field. Specifying a license helps users understand usage terms.",
+              "fingerprint": "trust-cisco-finding:skills/using-git-worktrees/SKILL.md:f95d3529c70649a153c0dc3340964264bbeb14032599bcc67831bc5e28727f5a"
             }
           ]
         },
@@ -1836,18 +2267,31 @@
             {
               "name": "aih-native",
               "version": "2.8.0"
+            },
+            {
+              "name": "cisco@uvx",
+              "version": "2.0.12"
+            },
+            {
+              "name": "skillspector@docker",
+              "version": "326a2b489411a20ed742ff13701be39ba00063c8@sha256:ee8a107dfd1c258e0afed303016a4220d174ba54bd1510bf73ed91f2825075ec"
             }
           ],
           "findings": [
             {
               "code": "trust.visible-unicode",
               "count": 2,
-              "detail": "2 findings; first: references/antigravity-tools.md:7 — trust.visible-unicode: document contains 5 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation"
+              "detail": "2 findings; first: skills/using-superpowers/references/antigravity-tools.md:7 — trust.visible-unicode: document contains 5 non-ASCII characters; character category: visible-typography; reason: ordinary visible Unicode in documentation"
             },
             {
               "code": "trust.hidden-unicode",
-              "detail": "SKILL.md:20 — trust.hidden-unicode: document contains 6 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
-              "fingerprint": "trust-hidden-unicode:SKILL.md:797e360d72c8cf86b8aad0fa61c97dfb5361a904512f4027e183e1a173196743"
+              "detail": "skills/using-superpowers/SKILL.md:20 — trust.hidden-unicode: document contains 6 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:skills/using-superpowers/SKILL.md:c6654217bd4bb8aaf33fe686177f14633f0d36548122b5438323942a4cbb68a4"
+            },
+            {
+              "code": "trust.cisco-finding",
+              "detail": "skills/using-superpowers/SKILL.md:1 — Cisco AI Defense skill-scanner: Skill manifest does not include a 'license' field. Specifying a license helps users understand usage terms.",
+              "fingerprint": "trust-cisco-finding:skills/using-superpowers/SKILL.md:e361b06f70c0daa7fb705989f6316485439830373016df8d52db13cbc3e232fb"
             }
           ]
         },
@@ -1862,13 +2306,31 @@
             {
               "name": "aih-native",
               "version": "2.8.0"
+            },
+            {
+              "name": "cisco@uvx",
+              "version": "2.0.12"
+            },
+            {
+              "name": "skillspector@docker",
+              "version": "326a2b489411a20ed742ff13701be39ba00063c8@sha256:ee8a107dfd1c258e0afed303016a4220d174ba54bd1510bf73ed91f2825075ec"
             }
           ],
           "findings": [
             {
               "code": "trust.hidden-unicode",
-              "detail": "SKILL.md:68 — trust.hidden-unicode: document contains 26 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
-              "fingerprint": "trust-hidden-unicode:SKILL.md:31de3ccdb81362649901a54795fab2779659843cfddfa271cce23c70c9c8ffc7"
+              "detail": "skills/verification-before-completion/SKILL.md:68 — trust.hidden-unicode: document contains 26 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface",
+              "fingerprint": "trust-hidden-unicode:skills/verification-before-completion/SKILL.md:97916a3c8f801f5bbeb76718dbf7b0feab75ff4ce7d264f2704c614624ccf1f6"
+            },
+            {
+              "code": "trust.detector-finding",
+              "count": 2,
+              "detail": "2 findings; first: skills/verification-before-completion/SKILL.md:10 — SkillSpector: Autonomous Decision Making"
+            },
+            {
+              "code": "trust.cisco-finding",
+              "detail": "skills/verification-before-completion/SKILL.md:1 — Cisco AI Defense skill-scanner: Skill manifest does not include a 'license' field. Specifying a license helps users understand usage terms.",
+              "fingerprint": "trust-cisco-finding:skills/verification-before-completion/SKILL.md:36d98d5e21f88cc7d76f3bf4e8448a3da0d0f9b7cf8b15732ec9ff17f4b791d9"
             }
           ]
         },
@@ -1883,13 +2345,26 @@
             {
               "name": "aih-native",
               "version": "2.8.0"
+            },
+            {
+              "name": "cisco@uvx",
+              "version": "2.0.12"
+            },
+            {
+              "name": "skillspector@docker",
+              "version": "326a2b489411a20ed742ff13701be39ba00063c8@sha256:ee8a107dfd1c258e0afed303016a4220d174ba54bd1510bf73ed91f2825075ec"
             }
           ],
           "findings": [
             {
               "code": "trust.hidden-unicode",
               "count": 2,
-              "detail": "2 findings; first: plan-document-reviewer-prompt.md:33 — trust.hidden-unicode: document contains 1 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
+              "detail": "2 findings; first: skills/writing-plans/plan-document-reviewer-prompt.md:33 — trust.hidden-unicode: document contains 1 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
+            },
+            {
+              "code": "trust.cisco-finding",
+              "detail": "skills/writing-plans/SKILL.md:1 — Cisco AI Defense skill-scanner: Skill manifest does not include a 'license' field. Specifying a license helps users understand usage terms.",
+              "fingerprint": "trust-cisco-finding:skills/writing-plans/SKILL.md:deef53b0f9aa118e557e89c7d17ae699fb14043bef82f35ac20aebd5288d6e2e"
             }
           ]
         },
@@ -1904,13 +2379,31 @@
             {
               "name": "aih-native",
               "version": "2.8.0"
+            },
+            {
+              "name": "cisco@uvx",
+              "version": "2.0.12"
+            },
+            {
+              "name": "skillspector@docker",
+              "version": "326a2b489411a20ed742ff13701be39ba00063c8@sha256:ee8a107dfd1c258e0afed303016a4220d174ba54bd1510bf73ed91f2825075ec"
             }
           ],
           "findings": [
             {
               "code": "trust.hidden-unicode",
               "count": 4,
-              "detail": "4 findings; first: anthropic-best-practices.md:259 — trust.hidden-unicode: document contains 71 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
+              "detail": "4 findings; first: skills/writing-skills/anthropic-best-practices.md:259 — trust.hidden-unicode: document contains 71 non-ASCII characters; character category: visible-typography; reason: Unicode appears on instruction/config/executable surface"
+            },
+            {
+              "code": "trust.detector-finding",
+              "count": 9,
+              "detail": "9 findings; first: skills/writing-skills/examples/CLAUDE_MD_TESTING.md:95 — SkillSpector: Agent Config Directory Access"
+            },
+            {
+              "code": "trust.cisco-finding",
+              "count": 8,
+              "detail": "8 findings; first: skills/writing-skills/SKILL.md:1 — Cisco AI Defense skill-scanner: Skill manifest does not include a 'license' field. Specifying a license helps users understand usage terms."
             }
           ]
         }

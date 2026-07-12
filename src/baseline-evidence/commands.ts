@@ -17,6 +17,7 @@ import {
   type TrustSource,
   trustFetchExec,
 } from "../trust/fetch.js";
+import { requiredBaselineVetOptions } from "./analyzer-profile.js";
 import { type BaselineCatalog, defineBaselineCatalog } from "./catalog.js";
 import { baselineCatalogById } from "./catalogs.js";
 import {
@@ -96,13 +97,16 @@ export async function baselineVetPlanForSource(
         }
         const sourceRoot = await exactSourceRoot(digestCtx, source, catalog);
         const vet = options.vetCatalog ?? vetBaselineCatalog;
-        const evidence: BaselineSourceEvidence = await vet(sourceRoot, catalog, {
-          scanOptions: {
+        const evidence: BaselineSourceEvidence = await vet(
+          sourceRoot,
+          catalog,
+          requiredBaselineVetOptions({
             run: digestCtx.run,
             platform: digestCtx.host.platform,
             env: digestCtx.env,
-          },
-        });
+            progress: (message) => process.stderr.write(`${message}\n`),
+          }),
+        );
         const lock = parseBaselineEvidenceLock({ schemaVersion: 1, sources: [evidence] });
         const rel = reportPath(catalog);
         writeArtifact(digestCtx, rel, `${JSON.stringify(lock, null, 2)}\n`);

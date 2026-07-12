@@ -20,6 +20,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- ECC baseline evidence now follows the pinned `full` install profile's 23 canonical English
+  modules instead of signing nine unselected `docs-*` locale modules merely because they exist
+  in the vendor snapshot. Every supported component retains the complete native,
+  SkillSpector, and applicable Cisco analyzer requirements; adding a locale later requires an
+  explicit install-and-evidence capability. (#417)
 - ECC baseline evidence now applies per component: authorized components install while held
   components are reported with their evidence codes and reasons. The target ledger records only
   the installed surface, and the installer runtime itself must be authorized before execution.
@@ -50,6 +55,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   vetting (lifecycle `postinstall`, unpinned dependencies, strict-surface Unicode, and a bare `ajv`
   import in the installer closure), transparently bridging until the upstream affaan-m/ECC PR
   merges. (#417)
+- Release-shipped baseline evidence now requires exact `aih-native` and reproducibly built
+  SkillSpector receipts for every component, plus pinned offline Cisco receipts for every
+  skill-bearing component. Generation preserves valid finding-bearing SkillSpector SARIF,
+  rejects missing or malformed analyzer runs transactionally, and release verification refuses
+  stale or partial receipt profiles before packaging. (#417)
 
 ## [2.8.0] - 2026-07-10
 

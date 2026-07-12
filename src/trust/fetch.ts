@@ -79,6 +79,7 @@ const SAFE_ENV_KEYS = new Set([
   "USERPROFILE",
   "UV_CACHE_DIR",
   "WINDIR",
+  "XDG_CACHE_HOME",
 ]);
 
 function slugify(raw: string): string {
@@ -138,6 +139,19 @@ export function scrubFetchEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   for (const [key, value] of Object.entries(env)) {
     if (value === undefined || isSecretEnvKey(key)) continue;
     if (SAFE_ENV_KEYS.has(key.toUpperCase())) out[key] = value;
+  }
+  return out;
+}
+
+export function scrubDockerClientEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const out = scrubFetchEnv(env);
+  const dbus = env.DBUS_SESSION_BUS_ADDRESS;
+  if (typeof dbus === "string" && dbus.length > 0) {
+    out.DBUS_SESSION_BUS_ADDRESS = dbus;
+  }
+  const xdgRuntimeDir = env.XDG_RUNTIME_DIR;
+  if (typeof xdgRuntimeDir === "string" && xdgRuntimeDir.length > 0) {
+    out.XDG_RUNTIME_DIR = xdgRuntimeDir;
   }
   return out;
 }
