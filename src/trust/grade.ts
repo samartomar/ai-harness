@@ -4,6 +4,7 @@ import type { Check, CheckCode } from "../internals/verify.js";
 
 export const TRUST_ORIGIN_CODES = new Set<CheckCode>([
   "trust.legal-text-detector-finding",
+  "trust.skill-metadata-license",
   "trust.source-drift",
   "trust.unpinned-dependency",
   "trust.untrusted-publisher",

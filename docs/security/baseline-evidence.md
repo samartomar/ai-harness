@@ -129,7 +129,10 @@ is labeled first-party rather than Superpowers vendor evidence.
 Danger-class findings remain a floor at every posture. In particular,
 auto-execution hooks, prompt injection, hidden Unicode, and secret findings are
 not made installable by selecting `vibe` or adding org evidence for the same
-blocked bytes.
+blocked bytes. Recognized negated-prohibition guardrail text is a true negative
+for the prompt-injection heuristic — it produces no finding at all rather than a
+downgraded one — so the danger floor continues to apply to every genuine
+prompt-injection finding.
 
 ## Vet and sign an org override
 

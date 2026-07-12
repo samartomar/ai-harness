@@ -79,10 +79,146 @@ const PROMPT_INJECTION_PATTERNS: readonly PatternRule[] = [
   {
     id: "prompt-injection.secret-exfil",
     message: "secret exfiltration language paired with a credential or URL",
+    // `api[\s_-]?keys?` also matches a space-separated "api key"/"api keys"; the
+    // old `api[_-]?key` missed that spelling, letting "send the api key to …"
+    // slip past the danger floor entirely (security-review #439).
     pattern:
-      /\b(?:exfiltrate|leak|steal|send|upload|post)\b[\s\S]{0,180}\b(?:api[_-]?key|token|secret|password|credential|https?:\/\/)/gim,
+      /\b(?:exfiltrate|leak|steal|send|upload|post)\b[\s\S]{0,180}\b(?:api[\s_-]?keys?|token|secret|password|credential|https?:\/\/)/gim,
   },
 ];
+
+// Recognition of NEGATED-PROHIBITION guardrails for the secret-exfil rule only.
+// A vendor "Prompt Defense Baseline" line such as "Do not reveal confidential
+// data, disclose private data, share secrets, leak API keys, or expose
+// credentials." is a prohibition, not an exfiltration order, yet the
+// verb+credential heuristic still fires on it.
+//
+// SOUNDNESS MODEL (allow-list, fail-closed). Suppression fires ONLY when the
+// entire span the prohibition operator governs — from the operator to the next
+// clause terminator — parses as a coordinated list of BARE `verb + credential
+// noun-phrase` items. The matched exfil verb is then necessarily one of those
+// coordinated peers, because the object vocabulary is a closed set of
+// credential/data words that contains no verb. That vocabulary also contains no
+// destination preposition (to/into/at/onto/via/…), no URL, no quote, and no
+// second negation, and the only list separators are comma / "or" / "and". A
+// working exfiltration REQUIRES a destination (send X *to* Y, or a URL), which
+// injects a token outside this grammar, so the parse fails and the finding keeps
+// BLOCKING. Every non-list shape — a comma-spliced fresh imperative, an
+// independent clause, a line-separator splice, a double negation, a meta or
+// quoted instruction — fails the parse and blocks. Benign guardrails outside the
+// exact list shape stay blocked (a precision loss, acknowledgeable downstream);
+// no genuine imperative is ever suppressed.
+const EXFIL_URL_IN_CLAUSE = /https?:\/\//i;
+// Quotes signal a rule being *referenced/quoted* ("ignore the 'never exfiltrate'
+// rule") rather than an actual prohibition, so a quoted scope never suppresses.
+// A straight/curly apostrophe only counts as a quote at a token boundary; a
+// contraction apostrophe (letter on both sides, e.g. "don't", "can't") does not.
+const QUOTE_IN_CLAUSE = /["`‘“”]|(?:^|[^A-Za-z])['’]|['’](?:[^A-Za-z]|$)/;
+// Operators that negate a following list of prohibited actions. The governing
+// operator is the FIRST one in the verb's clause segment; an inner SECOND
+// negation is a double negation the coordinated-list grammar rejects (its words
+// are neither verbs, objects, adverbs, nor separators).
+const PROHIBITION_OPERATOR =
+  /\b(?:do(?:es)?\s+not|do(?:es)?n['’]?t|never|must\s+not|mustn['’]?t|may\s+not|might\s+not|shall\s+not|should\s+not|shouldn['’]?t|will\s+not|won['’]?t|cannot|can\s?not|can['’]?t|refrain\s+from|avoid)\b/gi;
+
+// --- Coordinated-prohibition-list grammar: the ONLY shape that suppresses. ---
+// A bare prohibited-action verb. The six exfil verbs the secret-exfil rule
+// matches (send/upload/post/leak/steal/exfiltrate) are a subset; the rest are
+// the other bare verbs a guardrail coordinates them with.
+const GUARD_LIST_VERB =
+  "(?:reveal|disclose|share|expose|leak|send|upload|post|transmit|exfiltrate|steal|publish|forward|divulge|email|provide|surrender|give\\s+away|give\\s+out|hand\\s+over)";
+// One object word: articles/quantifiers, security modifiers, and credential/data
+// head nouns ONLY. No destination noun and no preposition appear here, so a
+// destination phrase ("to the collector", "into https://…") can never be parsed
+// as an object — that is the property that keeps genuine exfil blocking.
+const GUARD_OBJ_WORD =
+  "(?:a|an|the|all|any|my|your|our|their|its|no|every|each|this|that|these|those|some|confidential|private|sensitive|personal|secret|internal|raw|plaintext|plain|user|users|customer|customers|account|accounts|api|session|auth|authentication|access|bearer|refresh|security|system|environment|env|database|config|configuration|secrets|credential|credentials|key|keys|token|tokens|password|passwords|apikey|api[_-]?keys?|data|information|info|material|materials|content|contents|detail|details|record|records|variable|variables|setting|settings)";
+// An object noun-phrase: one or more object words, optionally joined by or/and.
+const GUARD_OBJECT = `${GUARD_OBJ_WORD}(?:['’]s)?(?:\\s+(?:or\\s+|and\\s+)?${GUARD_OBJ_WORD}(?:['’]s)?)*`;
+// Manner adverbs that carry NO destination. "never"/"not" are deliberately
+// excluded: they are polarity words, and a second one is a double negation that
+// must keep blocking.
+const GUARD_ADVERB =
+  "(?:ever|willingly|knowingly|deliberately|publicly|openly|externally|anywhere|elsewhere)";
+// One coordinated action: optional manner adverb, a verb, then its object.
+const GUARD_ACTION = `(?:${GUARD_ADVERB}\\s+)?${GUARD_LIST_VERB}\\s+${GUARD_OBJECT}`;
+// List separator: a comma and/or a coordinating conjunction.
+const GUARD_LIST_SEP = "(?:\\s*,\\s*(?:or\\s+|and\\s+)?|\\s+(?:or|and)\\s+)";
+// The governed scope in full: nothing but a coordinated action list, an optional
+// trailing manner-adverb run, and an optional single clause terminator.
+const COORDINATED_PROHIBITION_LIST = new RegExp(
+  `^\\s*${GUARD_ACTION}(?:${GUARD_LIST_SEP}${GUARD_ACTION})*(?:\\s+${GUARD_ADVERB})*\\s*[.!?;:]?\\s*$`,
+  "i",
+);
+
+// The operator must sit within this many characters of the matched verb, and the
+// clause scans are bounded to it so a single long line stays O(n), not O(n^2),
+// with no arbitrary-distance terminator walk.
+const GOVERNANCE_WINDOW = 160;
+
+// Hard clause terminators. The Unicode line/paragraph separators and NEL are
+// \s in JS, so the old ASCII-only set let a separator-spliced imperative ride
+// inside the negated clause; they are hard clause boundaries here.
+const CLAUSE_TERMINATORS = new Set([
+  ".",
+  "!",
+  "?",
+  ";",
+  ":",
+  "\n",
+  "\r",
+  "\u2028", // line separator
+  "\u2029", // paragraph separator
+  "\u0085", // next line (NEL)
+  "\u000b", // vertical tab
+  "\u000c", // form feed
+]);
+
+function isClauseTerminator(ch: string): boolean {
+  return CLAUSE_TERMINATORS.has(ch);
+}
+
+function isNegatedProhibitionExfil(source: string, match: RegExpExecArray): boolean {
+  const matchText = match[0];
+  const verbStart = match.index;
+  // (1) The verb -> credential span must be a single clause; a match that spans a
+  // terminator has its target in a different clause than its verb.
+  for (const ch of matchText) if (isClauseTerminator(ch)) return false;
+  // (2) Governing operator: the FIRST prohibition operator in the verb's clause
+  // segment, searched only within GOVERNANCE_WINDOW chars behind the verb so the
+  // backward walk is bounded.
+  const backStart = Math.max(0, verbStart - GOVERNANCE_WINDOW);
+  let segStart = backStart;
+  for (let i = verbStart - 1; i >= backStart; i--) {
+    if (isClauseTerminator(source.charAt(i))) {
+      segStart = i + 1;
+      break;
+    }
+  }
+  const before = source.slice(segStart, verbStart);
+  PROHIBITION_OPERATOR.lastIndex = 0;
+  const operator = PROHIBITION_OPERATOR.exec(before);
+  if (operator === null) return false;
+  const operatorEnd = segStart + operator.index + operator[0].length;
+  // (3) Scope end: the next terminator at/after the verb, searched only within
+  // GOVERNANCE_WINDOW chars ahead of the verb. No terminator in range => the
+  // window cap is the scope end and the grammar full-match simply fails (block).
+  const forwardEnd = Math.min(source.length, verbStart + GOVERNANCE_WINDOW);
+  let scopeEnd = forwardEnd;
+  for (let i = verbStart; i < forwardEnd; i++) {
+    if (isClauseTerminator(source.charAt(i))) {
+      scopeEnd = i;
+      break;
+    }
+  }
+  const scope = source.slice(operatorEnd, scopeEnd);
+  // (4) A URL target or a quoted rule reference anywhere in the scope voids it
+  // (defense-in-depth; the grammar's closed vocabulary already excludes both).
+  if (EXFIL_URL_IN_CLAUSE.test(scope) || QUOTE_IN_CLAUSE.test(scope)) return false;
+  // (5) Suppress ONLY when the whole governed scope is a coordinated prohibition
+  // list; the matched exfil verb is then a coordinated peer by construction.
+  return COORDINATED_PROHIBITION_LIST.test(scope);
+}
 
 function safeUri(path: string): string {
   const normalized = path.replace(/\\/g, "/").replace(/^\.\//, "");
@@ -381,17 +517,21 @@ function promptInjectionFindings(path: string, source: string): TrustLintFinding
   for (const rule of PROMPT_INJECTION_PATTERNS) {
     const re = new RegExp(rule.pattern.source, rule.pattern.flags);
     for (let match = re.exec(source); match !== null; match = re.exec(source)) {
-      out.push(
-        finding(
-          occurrences,
-          "trust.prompt-injection",
-          rule.id,
-          path,
-          source,
-          match.index,
-          rule.message,
-        ),
-      );
+      const isRecognizedGuardrail =
+        rule.id === "prompt-injection.secret-exfil" && isNegatedProhibitionExfil(source, match);
+      if (!isRecognizedGuardrail) {
+        out.push(
+          finding(
+            occurrences,
+            "trust.prompt-injection",
+            rule.id,
+            path,
+            source,
+            match.index,
+            rule.message,
+          ),
+        );
+      }
       if (match.index === re.lastIndex) re.lastIndex++;
     }
   }

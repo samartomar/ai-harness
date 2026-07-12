@@ -22,7 +22,37 @@ controlled build digest or an org-policy approved local digest:
 sha256:ee8a107dfd1c258e0afed303016a4220d174ba54bd1510bf73ed91f2825075ec
 ```
 
-## Build the Local Image
+## Acquire the Image
+
+The default acquisition path — used by the `vet-once` CI workflow
+(`.github/workflows/baseline-evidence.yml`) and recommended for local use — is
+a content-addressed pull from GHCR, re-tagged to the local runtime name `aih`
+expects:
+
+```bash
+docker pull ghcr.io/samartomar/skillspector@sha256:ee8a107dfd1c258e0afed303016a4220d174ba54bd1510bf73ed91f2825075ec
+docker tag ghcr.io/samartomar/skillspector@sha256:ee8a107dfd1c258e0afed303016a4220d174ba54bd1510bf73ed91f2825075ec \
+  skillspector:aih-326a2b489411
+```
+
+Pulling by digest is content-addressed, so verification does not depend on the
+local Docker image-store type (containerd snapshotter vs. legacy graphdriver):
+Docker records the pulled manifest digest in the image's `RepoDigests`
+regardless of store, and `aih` accepts either a `.Id` match or a matching
+`RepoDigests` entry (`src/trust/images.ts`).
+
+**Public-visibility posture.** The GHCR package above is public, so pulling it
+needs no `docker login` and no `packages:` workflow permission — the digest
+pin is the control, not registry access control. If the package's visibility
+ever changes to private, the pulling job additionally needs a `packages: read`
+permission and an authenticated `docker login` to GHCR.
+
+The local build below remains available as the audit path: it is how the
+controlled digest is derived and re-verified in the first place, and it is the
+fallback when your org mirrors the image or restricts pulls from public
+registries.
+
+## Build the Local Image (Audit Path)
 
 ```bash
 AIH_ROOT="$PWD"
@@ -73,6 +103,34 @@ The local approval is written to `aih-org-policy.json` under
 revision, reason, optional reviewer, and `approvedAt`. Do not retag a newer
 checkout to this name; changed upstream revisions must be reviewed as a source
 pin bump instead of a local digest approval.
+
+## Rotating the Pin
+
+Bumping `SKILLSPECTOR_SOURCE_REVISION` (`src/trust/images.ts`) to a new
+upstream commit is a reviewed, human-authorized change with four steps, in
+order:
+
+1. **Derive the new controlled digest.** Use the two-clean-builds recipe
+   above: build twice, cache-disabled, from the new commit, and confirm both
+   builds produce the same image ID before treating it as controlled.
+2. **Re-verify the [YR4 carve-out equivalence table](#yr4-corepack-advisory-carve-out)**
+   against the new commit's `src/skillspector/yara_rules/agent_skills.yar`. Any
+   changed or added Gate-B string must be mirrored in
+   `hasSkillspectorYr4PoisoningSignal` (`src/trust/detectors.ts`), with a
+   matching blocking-case regression added to `tests/trust/scan.test.ts`.
+3. **Publish the new image to GHCR** (`ghcr.io/samartomar/skillspector`) at
+   the new digest. Publishing is a deliberate, human-authorized release step —
+   `aih` and CI only ever pull and verify by digest; neither builds nor
+   publishes images.
+4. **Update the pinned constants together.** Move `SKILLSPECTOR_IMAGE_DIGEST`
+   and `SKILLSPECTOR_SOURCE_REVISION` in `src/trust/images.ts` in the same
+   change, so the source commit and the digest it produced are reviewed and
+   move as one unit.
+
+Only after all four steps land does the `vet-once` workflow's pull-by-digest
+step (and any local `docker pull`) resolve to the new, re-verified image. See
+[Acquire the Image](#acquire-the-image) for the public-visibility posture that
+governs how the pull is authenticated.
 
 ## How `aih` Uses It
 
