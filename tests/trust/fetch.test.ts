@@ -336,7 +336,7 @@ describe("trust fetch source resolution", () => {
     ).toThrow(/--ref must be a safe Git ref/i);
   });
 
-  it("limits DBus access to Docker clients while preserving non-secret cache paths", () => {
+  it("limits DBus access and XDG_RUNTIME_DIR to Docker clients while preserving non-secret cache paths", () => {
     const env = {
       PATH: "bin",
       HOME: "/home/me",
@@ -355,7 +355,6 @@ describe("trust fetch source resolution", () => {
       PATH: "bin",
       HOME: "/home/me",
       XDG_CACHE_HOME: "/home/me/.cache",
-      XDG_RUNTIME_DIR: "/run/user/1000",
       HTTPS_PROXY: "http://proxy.example:8443",
       HTTP_PROXY: "http://proxy.example:8080",
       NO_PROXY: "localhost,.corp.example",
@@ -364,9 +363,11 @@ describe("trust fetch source resolution", () => {
     };
 
     expect(scrubFetchEnv(env)).toEqual(scrubbed);
+    expect(scrubFetchEnv(env)).not.toHaveProperty("XDG_RUNTIME_DIR");
     expect(scrubDockerClientEnv(env)).toEqual({
       ...scrubbed,
       DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/flatpak/bus",
+      XDG_RUNTIME_DIR: "/run/user/1000",
     });
   });
 
