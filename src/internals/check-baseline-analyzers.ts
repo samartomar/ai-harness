@@ -55,6 +55,15 @@ export function checkBaselineAnalyzerReceipts(lock: BaselineEvidenceLock): Basel
       });
       continue;
     }
+    const activePin = baselineCatalogById(source.id).pinnedSha;
+    if (source.pinnedSha !== activePin) {
+      findings.push({
+        sourceId: source.id,
+        componentId: "<catalog>",
+        detail: `lock pinned ${source.pinnedSha} but active catalog pin is ${activePin}`,
+      });
+      continue;
+    }
     const componentIds = new Set(source.components.map((component) => component.id));
     for (const component of source.components) {
       const canonical = canonicalComponents.get(component.id);

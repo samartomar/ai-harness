@@ -77,4 +77,24 @@ describe("baseline analyzer receipt gate", () => {
       detail: "source is missing from the vendor baseline lock",
     });
   });
+
+  it("rejects a lock pinned to a source SHA that no longer matches the active catalog pin", () => {
+    const lock = structuredClone(readVendorBaselineLock());
+    const source = lock.sources.find((candidate) => candidate.id === "ecc");
+    if (source === undefined) throw new Error("ECC evidence is missing");
+    const activePin = baselineCatalogById(source.id).pinnedSha;
+    const stalePin = activePin === "f".repeat(40) ? "0".repeat(40) : "f".repeat(40);
+    source.pinnedSha = stalePin;
+
+    expect(checkBaselineAnalyzerReceipts(lock)).toEqual({
+      ok: false,
+      findings: [
+        {
+          sourceId: "ecc",
+          componentId: "<catalog>",
+          detail: `lock pinned ${stalePin} but active catalog pin is ${activePin}`,
+        },
+      ],
+    });
+  });
 });
