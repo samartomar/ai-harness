@@ -6,17 +6,19 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [2.9.0] - 2026-07-12
+
 ### Added
 
 - Long trust scans now report bounded progress on stderr while preserving clean JSON stdout, reuse
   one path-only inventory, and remove command-owned quarantines on every exit unless
   `trust scan --keep-quarantine` is explicit. Remote ECC dry-runs now render a deterministic,
-  pin-bound selected-component install preview marked contingent on evidence authorization. (#421)
+  pin-bound selected-component install preview marked contingent on evidence authorization. (#432)
 - Upward release-intent escalation now requires an authorized GitHub comment on the release
   tracker containing the exact SHA/declared-intent/computed-bump token. Preflight validates and
   records the immutable comment ID and URL, author authority, and timestamp in the cut manifest;
   this creates public attributable evidence while explicitly remaining vulnerable to a fully
-  credentialed runner posting the comment itself. (#424)
+  credentialed runner posting the comment itself. (#431)
 
 ### Changed
 
@@ -24,20 +26,20 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   modules instead of signing nine unselected `docs-*` locale modules merely because they exist
   in the vendor snapshot. Every supported component retains the complete native,
   SkillSpector, and applicable Cisco analyzer requirements; adding a locale later requires an
-  explicit install-and-evidence capability. (#417)
+  explicit install-and-evidence capability. (#437)
 - ECC baseline evidence now applies per component: authorized components install while held
   components are reported with their evidence codes and reasons. The target ledger records only
   the installed surface, and the installer runtime itself must be authorized before execution.
-  (#420)
+  (#429)
 - Trust detectors now allow decorative emoji, arrows, and box drawing only on reviewable
   documentation surfaces, suppress narrow agent-role false positives there, and use full-strength
-  content-bound finding fingerprints whose identity does not depend on display line numbers. (#418)
+  content-bound finding fingerprints whose identity does not depend on display line numbers. (#428)
 - Sandbox-smoke unavailability is now recorded as an environment `skip` at every posture instead
   of blocking acquired content; an actual failed smoke run on a capable host remains blocking.
-  (#419)
+  (#427)
 - Legal-text detector findings now warn-pass only at vibe posture; team and enterprise require an
   exact fingerprint acknowledgement with a recorded reason, while danger-class findings remain
-  non-acknowledgeable. (#422)
+  non-acknowledgeable. (#426)
 
 ### Fixed
 
@@ -45,21 +47,26 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   target-state updates, and the registration ledger in one phased ledger-last driver. Failures
   and supported interrupts roll back aih-owned changes; upstream uninstalls that may already have
   mutated emit explicit evidence for every affected target and path without advancing the ledger.
-  Dropped Codex cleanup also remains compatible with pre-ledger target state. (#423)
+  Dropped Codex cleanup also remains compatible with pre-ledger target state. (#430)
 - The shipped default ECC baseline is now gated as installable at every posture from its own
   signed evidence. A new `check:baseline-installable` release gate (wired into `verify`, the CI
   matrix on all three OS, and the release workflow before packaging) proves the pinned vendor lock
   installs at least one component at vibe, team, and enterprise into throwaway fixture HOMEs while
-  holding blocked auto-exec components, and rejects any install path that escapes the fixture. The
-  default pin now tracks a remediated `samartomar/ECC` fork commit that clears strict supply-chain
-  vetting (lifecycle `postinstall`, unpinned dependencies, strict-surface Unicode, and a bare `ajv`
-  import in the installer closure), transparently bridging until the upstream affaan-m/ECC PR
-  merges. (#417)
+  holding blocked auto-exec components, and rejects any install path that escapes the fixture. (#425)
 - Release-shipped baseline evidence now requires exact `aih-native` and reproducibly built
   SkillSpector receipts for every component, plus pinned offline Cisco receipts for every
   skill-bearing component. Generation preserves valid finding-bearing SkillSpector SARIF,
   rejects missing or malformed analyzer runs transactionally, and release verification refuses
-  stale or partial receipt profiles before packaging. (#417)
+  stale or partial receipt profiles before packaging. A fast offline preflight now reports an
+  unprovisioned required analyzer up front instead of aborting mid-vet. (#437)
+- `npm run release:preflight` now resolves a commit's issue reference to its closing merged PR
+  through GitHub timeline evidence (the issue's CLOSED_EVENT closer), so a cut whose commit subject
+  cites an issue instead of a PR number is swept correctly rather than aborting the sweep. (#441)
+
+### Docs
+
+- Recorded the v2.9 field-findings design and execution notes covering the trust, release, and
+  ECC-baseline hardening delivered in this release. (#433)
 
 ## [2.8.0] - 2026-07-10
 
@@ -1079,7 +1086,8 @@ GitHub but **never published to npm**; the first published release is 0.2.0.
   (npm + github-actions), private vulnerability reporting, `@claude` workflow gated
   to trusted authors, and GitHub Actions pinned to commit SHAs.
 
-[Unreleased]: https://github.com/samartomar/ai-harness/compare/v2.8.0...HEAD
+[Unreleased]: https://github.com/samartomar/ai-harness/compare/v2.9.0...HEAD
+[2.9.0]: https://github.com/samartomar/ai-harness/compare/v2.8.0...v2.9.0
 [2.8.0]: https://github.com/samartomar/ai-harness/compare/v2.7.0...v2.8.0
 [2.7.0]: https://github.com/samartomar/ai-harness/compare/v2.6.0...v2.7.0
 [2.6.0]: https://github.com/samartomar/ai-harness/compare/v2.5.1...v2.6.0
