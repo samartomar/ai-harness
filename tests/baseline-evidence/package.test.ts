@@ -7,7 +7,7 @@ import {
   CISCO_SKILL_SCANNER_VERSION,
 } from "../../src/baseline-evidence/analyzer-profile.js";
 import { baselineCatalogById } from "../../src/baseline-evidence/catalogs.js";
-import { SKILLSPECTOR_IMAGE_DIGEST, SKILLSPECTOR_SOURCE_REVISION } from "../../src/trust/images.js";
+import { SKILLSPECTOR_IMAGE, SKILLSPECTOR_IMAGE_DIGEST } from "../../src/trust/images.js";
 
 const repo = process.cwd();
 
@@ -51,25 +51,26 @@ describe("baseline evidence release payload", () => {
     expect(workflow).toContain(baselineCatalogById("ecc").pinnedSha);
     expect(workflow).toContain(baselineCatalogById("superpowers").pinnedSha);
     expect(workflow).toContain("npm run baseline:check");
-    expect(workflow).toContain("repository: NVIDIA/SkillSpector");
-    expect(workflow).toContain(`ref: ${SKILLSPECTOR_SOURCE_REVISION}`);
     expect(workflow).toContain(SKILLSPECTOR_IMAGE_DIGEST);
-    expect(workflow).toContain("docker build");
-    expect(workflow).toContain("tools/skillspector.Dockerfile");
-    expect(workflow).toContain("SOURCE_DATE_EPOCH=1782883813");
+    // The image is pulled content-addressed by digest from GHCR, then tagged to
+    // the local runtime name so SKILLSPECTOR_IMAGE selection (src/trust/images.ts)
+    // keeps working unmodified. Verification is store-agnostic: it checks the
+    // pulled image's RepoDigests rather than depending on the runner's Docker
+    // image-store type (containerd vs legacy graphdriver).
+    expect(workflow).toContain("docker pull");
+    expect(workflow).toContain(`ghcr.io/samartomar/skillspector@${SKILLSPECTOR_IMAGE_DIGEST}`);
+    expect(workflow).toContain("docker tag");
+    expect(workflow).toContain(SKILLSPECTOR_IMAGE);
+    expect(workflow).toContain("RepoDigests");
+    expect(workflow).not.toContain("/etc/docker/daemon.json");
+    expect(workflow).not.toContain("containerd-snapshotter");
+    expect(workflow).not.toContain("systemctl restart docker");
+    expect(workflow).not.toContain("docker build");
     expect(workflow).toContain("astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990");
     expect(workflow).toContain(CISCO_SKILL_SCANNER_SPEC);
     expect(workflow).toContain(`skill-scanner ${CISCO_SKILL_SCANNER_VERSION}`);
     expect(workflow).toContain("actions/upload-artifact@");
     expect(workflow).toContain("src/baseline-evidence/vendor-lock.json");
-    // The runner's Docker image store must be aligned to the containerd
-    // snapshotter so `docker image inspect .Id` yields the same manifest digest
-    // local (Docker >= 29) daemons produce; these guard that alignment step and
-    // its diagnostics against silent removal.
-    expect(workflow).toContain("/etc/docker/daemon.json");
-    expect(workflow).toContain('"containerd-snapshotter": true');
-    expect(workflow).toContain("systemctl restart docker");
-    expect(workflow).toContain("docker info");
     expect(workflow).not.toMatch(/git\s+(commit|push)|npm\s+publish/);
   });
 

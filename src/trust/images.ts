@@ -84,7 +84,24 @@ export function verifiedSkillspectorImageReference(
 ): string | undefined {
   const inspect = parseImageInspect(stdout);
   if (inspect === undefined) return undefined;
-  return normalizedDigest(inspect.Id, approvedImages);
+
+  // Prefer `.Id`: on image stores where it is the manifest digest (e.g. the
+  // containerd snapshotter, or any local build), this is the same identifier
+  // it has always been.
+  const idMatch = normalizedDigest(inspect.Id, approvedImages);
+  if (idMatch !== undefined) return idMatch;
+
+  // On other stores (e.g. the legacy graphdriver), `.Id` is a config hash, not
+  // the manifest digest — a pulled image still carries the manifest digest in
+  // `.RepoDigests`. Accept a match there too, but return the full entry
+  // (`repo@sha256:...`) rather than the bare digest, so the result stays a
+  // runnable, unambiguous content address for `docker run`.
+  const repoDigests = inspect.RepoDigests;
+  if (!Array.isArray(repoDigests)) return undefined;
+  return repoDigests.find(
+    (entry): entry is string =>
+      typeof entry === "string" && normalizedDigest(entry, approvedImages) !== undefined,
+  );
 }
 
 export async function resolveVerifiedSkillspectorImage(
