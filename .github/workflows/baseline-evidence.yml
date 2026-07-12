@@ -21,55 +21,22 @@ jobs:
           node-version: "22"
           cache: npm
       - run: npm ci
-      - name: Check out pinned SkillSpector analyzer
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-        with:
-          repository: NVIDIA/SkillSpector
-          ref: 326a2b489411a20ed742ff13701be39ba00063c8
-          path: .baseline-tools/skillspector
-          persist-credentials: false
-      - name: Align the Docker image store with the controlled digest
+      - name: Pull and verify pinned SkillSpector image by digest
         shell: bash
         run: |
           set -euo pipefail
-          # The controlled SkillSpector digest (sha256:ee8a107d...) is the image
-          # MANIFEST digest that `docker image inspect .Id` reports under Docker's
-          # containerd image store — the default since Docker Engine 29, which
-          # local builds use. This runner ships Docker 28.x, where the legacy
-          # graphdriver store is still the default and `.Id` is a different
-          # (legacy image-config) identifier. Enable the containerd snapshotter so
-          # CI computes the SAME identifier local daemons produce, without
-          # touching the pinned digest constant.
-          echo "::group::Docker image store (before)"
-          docker version --format 'client={{.Client.Version}} server={{.Server.Version}}'
-          docker info --format 'storage-driver={{.Driver}}'
-          docker info 2>/dev/null | grep -iE 'storage driver|driver-type|snapshotter' || true
-          echo "::endgroup::"
-          sudo mkdir -p /etc/docker
-          if [ -s /etc/docker/daemon.json ]; then existing="$(cat /etc/docker/daemon.json)"; else existing='{}'; fi
-          printf '%s' "$existing" \
-            | jq '.features = ((.features // {}) + {"containerd-snapshotter": true})' \
-            | sudo tee /etc/docker/daemon.json >/dev/null
-          sudo systemctl restart docker
-          # Wait for the daemon to accept connections again after the restart.
-          for _ in $(seq 1 30); do docker info >/dev/null 2>&1 && break; sleep 1; done
-          echo "::group::Docker image store (after)"
-          docker info --format 'storage-driver={{.Driver}}'
-          docker info 2>/dev/null | grep -iE 'storage driver|driver-type|snapshotter' || true
-          echo "::endgroup::"
-      - name: Build and verify pinned SkillSpector image
-        shell: bash
-        run: |
-          set -euo pipefail
-          docker build \
-            --provenance=false \
-            --build-arg SOURCE_DATE_EPOCH=1782883813 \
-            -f tools/skillspector.Dockerfile \
-            -t skillspector:aih-326a2b489411 \
-            .baseline-tools/skillspector
-          digest="$(docker image inspect skillspector:aih-326a2b489411 --format '{{.Id}}')"
-          echo "computed image id: ${digest}"
-          test "$digest" = "sha256:ee8a107dfd1c258e0afed303016a4220d174ba54bd1510bf73ed91f2825075ec"
+          # Content-addressed pull: the tag below is a public GHCR package, so no
+          # docker login or packages: permission is needed. Re-tag to the local
+          # runtime name so SKILLSPECTOR_IMAGE selection (src/trust/images.ts)
+          # keeps working unmodified. Verification checks RepoDigests rather than
+          # `.Id`, so it is correct regardless of the runner's Docker image-store
+          # type (containerd snapshotter vs legacy graphdriver).
+          image="ghcr.io/samartomar/skillspector@sha256:ee8a107dfd1c258e0afed303016a4220d174ba54bd1510bf73ed91f2825075ec"
+          docker pull "$image"
+          docker tag "$image" skillspector:aih-326a2b489411
+          digests="$(docker image inspect skillspector:aih-326a2b489411 --format '{{json .RepoDigests}}')"
+          echo "repo digests: ${digests}"
+          echo "$digests" | grep -q "sha256:ee8a107dfd1c258e0afed303016a4220d174ba54bd1510bf73ed91f2825075ec"
       - name: Set up pinned uv
         uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
         with:

@@ -389,45 +389,146 @@ function ctx(
   };
 }
 
-describe("scanTrustTree", () => {
-  it("rejects SkillSpector repo digests when the local image id does not match", () => {
-    const repoDigest = `skillspector@${SKILLSPECTOR_IMAGE_DIGEST}`;
-    const approvedLocalDigest =
-      "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+describe("verifiedSkillspectorImageReference", () => {
+  const unrelatedDigest = `sha256:${"b".repeat(64)}`;
+  const approvedLocalDigest = `sha256:${"c".repeat(64)}`;
+  const differentDigest = `sha256:${"d".repeat(64)}`;
+  const ghcrRepoDigest = `ghcr.io/samartomar/skillspector@${SKILLSPECTOR_IMAGE_DIGEST}`;
 
-    expect(
-      verifiedSkillspectorImageReference(
-        JSON.stringify({
-          Id: "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-          RepoDigests: [repoDigest],
-        }),
-      ),
-    ).toBeUndefined();
-    expect(
-      verifiedSkillspectorImageReference(
-        JSON.stringify({
-          Id: SKILLSPECTOR_IMAGE_DIGEST,
-          RepoDigests: [repoDigest],
-        }),
-      ),
-    ).toBe(SKILLSPECTOR_IMAGE_DIGEST);
-    expect(
-      verifiedSkillspectorImageReference(
-        JSON.stringify({
-          Id: approvedLocalDigest,
-          RepoDigests: [repoDigest],
-        }),
-        [
-          {
-            imageTag: SKILLSPECTOR_IMAGE,
-            imageDigest: approvedLocalDigest,
-            sourceRevision: SKILLSPECTOR_SOURCE_REVISION,
-          },
-        ],
-      ),
-    ).toBe(approvedLocalDigest);
+  it("accepts a pulled image whose RepoDigests carries the controlled digest even when .Id is a config hash", () => {
+    // Arrange: containerd/legacy-graphdriver pulled-image shape — `.Id` is not the manifest digest.
+    const stdout = JSON.stringify({
+      Id: unrelatedDigest,
+      RepoDigests: [ghcrRepoDigest],
+    });
+
+    // Act
+    const result = verifiedSkillspectorImageReference(stdout);
+
+    // Assert: returns the full repo@digest entry, not just the bare digest, so it stays runnable.
+    expect(result).toBe(ghcrRepoDigest);
   });
 
+  it("accepts a local build whose .Id matches the controlled digest with empty RepoDigests", () => {
+    // Arrange: existing local-build shape — pins prior behavior unchanged.
+    const stdout = JSON.stringify({
+      Id: SKILLSPECTOR_IMAGE_DIGEST,
+      RepoDigests: [],
+    });
+
+    // Act
+    const result = verifiedSkillspectorImageReference(stdout);
+
+    // Assert
+    expect(result).toBe(SKILLSPECTOR_IMAGE_DIGEST);
+  });
+
+  it("rejects fail-closed when neither .Id nor any RepoDigests entry match", () => {
+    // Arrange
+    const stdout = JSON.stringify({
+      Id: unrelatedDigest,
+      RepoDigests: [],
+    });
+
+    // Act
+    const result = verifiedSkillspectorImageReference(stdout);
+
+    // Assert
+    expect(result).toBeUndefined();
+  });
+
+  it("rejects a RepoDigests entry carrying a different digest than the controlled one", () => {
+    // Arrange
+    const stdout = JSON.stringify({
+      Id: unrelatedDigest,
+      RepoDigests: [`ghcr.io/samartomar/skillspector@${differentDigest}`],
+    });
+
+    // Act
+    const result = verifiedSkillspectorImageReference(stdout);
+
+    // Assert
+    expect(result).toBeUndefined();
+  });
+
+  it("accepts an org-approved digest found only in RepoDigests under the same tag/sourceRevision constraints", () => {
+    // Arrange
+    const approvedRepoDigest = `ghcr.io/samartomar/skillspector@${approvedLocalDigest}`;
+    const stdout = JSON.stringify({
+      Id: unrelatedDigest,
+      RepoDigests: [approvedRepoDigest],
+    });
+
+    // Act
+    const result = verifiedSkillspectorImageReference(stdout, [
+      {
+        imageTag: SKILLSPECTOR_IMAGE,
+        imageDigest: approvedLocalDigest,
+        sourceRevision: SKILLSPECTOR_SOURCE_REVISION,
+      },
+    ]);
+
+    // Assert: returns the full matching RepoDigests entry, unambiguous for `docker run`.
+    expect(result).toBe(approvedRepoDigest);
+  });
+
+  it("rejects an org-approved digest in RepoDigests when the approval's sourceRevision does not match", () => {
+    // Arrange: pins that the tag/sourceRevision constraint still gates the RepoDigests path.
+    const approvedRepoDigest = `ghcr.io/samartomar/skillspector@${approvedLocalDigest}`;
+    const stdout = JSON.stringify({
+      Id: unrelatedDigest,
+      RepoDigests: [approvedRepoDigest],
+    });
+
+    // Act
+    const result = verifiedSkillspectorImageReference(stdout, [
+      {
+        imageTag: SKILLSPECTOR_IMAGE,
+        imageDigest: approvedLocalDigest,
+        sourceRevision: "f".repeat(40),
+      },
+    ]);
+
+    // Assert
+    expect(result).toBeUndefined();
+  });
+
+  it("accepts a local build whose .Id matches an org-approved digest", () => {
+    // Arrange: preserves pre-widening coverage of the .Id + approvedImages path.
+    const stdout = JSON.stringify({
+      Id: approvedLocalDigest,
+      RepoDigests: [],
+    });
+
+    // Act
+    const result = verifiedSkillspectorImageReference(stdout, [
+      {
+        imageTag: SKILLSPECTOR_IMAGE,
+        imageDigest: approvedLocalDigest,
+        sourceRevision: SKILLSPECTOR_SOURCE_REVISION,
+      },
+    ]);
+
+    // Assert
+    expect(result).toBe(approvedLocalDigest);
+  });
+
+  it("prefers a direct .Id match over RepoDigests when both are present", () => {
+    // Arrange: retains today's precedence — `.Id` wins and is returned as-is.
+    const stdout = JSON.stringify({
+      Id: SKILLSPECTOR_IMAGE_DIGEST,
+      RepoDigests: [`skillspector@${SKILLSPECTOR_IMAGE_DIGEST}`],
+    });
+
+    // Act
+    const result = verifiedSkillspectorImageReference(stdout);
+
+    // Assert
+    expect(result).toBe(SKILLSPECTOR_IMAGE_DIGEST);
+  });
+});
+
+describe("scanTrustTree", () => {
   it("catches prompt injection inside a fenced code block in acquired skill docs", async () => {
     skill(
       "skills/evil",
