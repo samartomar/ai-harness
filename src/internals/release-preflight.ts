@@ -14,11 +14,16 @@
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { defaultRunner, type Runner } from "./proc.js";
 import {
   type IntentAcknowledgementArtifact,
   resolveIntentAcknowledgementComment,
   validateIntentAcknowledgementArtifact,
 } from "./release-intent-artifact.js";
+import {
+  ISSUE_REF_RESOLUTION_EVIDENCE,
+  resolveIssueRefToMergedPr,
+} from "./release-issue-ref-resolution.js";
 
 export type SemverClass = "patch" | "minor" | "major";
 
@@ -38,6 +43,14 @@ export interface MilestoneItem {
   labels: string[];
 }
 
+/** Audit record for a commit-subject `(#N)` ref that named an issue, not a PR, and
+ * was substituted with the issue's unique closing merged PR via GitHub evidence. */
+export interface ResolvedIssueRef {
+  issue: number;
+  pr: number;
+  evidence: string;
+}
+
 export interface PreflightData {
   repository: string;
   previousTag: string;
@@ -55,6 +68,12 @@ export interface PreflightData {
   intentAcknowledgementArtifact?: IntentAcknowledgementArtifact;
   /** Diagnostic from live acknowledgement resolution; never trusted as evidence. */
   intentAcknowledgementFailure?: string;
+  /** Commit-subject `(#N)` refs that named an issue, not a PR, resolved to their
+   * unique closing merged PR via GitHub evidence. Recorded for auditability. */
+  resolvedIssueRefs?: ResolvedIssueRef[];
+  /** Diagnostics for commit-subject `(#N)` refs that resolved as neither a PR nor a
+   * unique closing merged PR. Never trusted as evidence; always a named finding. */
+  unresolvedPrRefFindings?: string[];
 }
 
 export interface Finding {
@@ -68,6 +87,9 @@ export interface Manifest {
   cutMilestone: string;
   mergedPrs: MergedPr[];
   cancelledPrs: number[];
+  /** Issue-ref → merged-PR substitutions made during gathering, e.g. a squash title
+   * that cites the tracking issue instead of its own PR number (see #382, #424). */
+  resolvedIssueRefs: ResolvedIssueRef[];
   declaredIntent: SemverClass | undefined;
   computedBump: SemverClass | undefined;
   intentEscalation: boolean;
@@ -210,6 +232,14 @@ export function runPreflight(data: PreflightData): Manifest {
     }
   }
 
+  // 5b. Commit refs that resolved to neither a PR nor a unique closing merged PR.
+  // Gathering never guesses here (see release-issue-ref-resolution.ts) — it always
+  // names the failure instead, so this can never be the thing that turns an
+  // uncaught crash into a silently-empty manifest.
+  for (const detail of data.unresolvedPrRefFindings ?? []) {
+    findings.push({ code: "unresolved-pr-ref", detail });
+  }
+
   // 6. Version-file coherence (the four-way check's local half).
   if (data.packageVersion !== data.versionConstant) {
     findings.push({
@@ -287,6 +317,7 @@ export function runPreflight(data: PreflightData): Manifest {
     cutMilestone: data.cutMilestone,
     mergedPrs: data.mergedPrs,
     cancelledPrs: [...cancelled].sort((a, b) => a - b),
+    resolvedIssueRefs: data.resolvedIssueRefs ?? [],
     declaredIntent,
     computedBump,
     intentEscalation,
@@ -306,7 +337,81 @@ function sh(cmd: string, args: string[]): string {
   return execFileSync(cmd, args, { encoding: "utf8" }).trim();
 }
 
-function gatherLive(cutMilestone: string): PreflightData {
+/** Unit-separator delimiter between sha and subject in the `git log` format below —
+ * chosen because it cannot appear in a commit subject, unlike a space or `|`. */
+const SHA_SUBJECT_SEPARATOR = "\x1f";
+
+interface CommitRef {
+  sha: string;
+  number: string;
+}
+
+/**
+ * Resolves one trailing `(#N)` commit-subject reference to `MergedPr` data. `N` is
+ * almost always the ref's own PR number (`gh pr view` resolves it directly). When it
+ * isn't — a hand-edited squash title that cites an issue instead, as in #424 — falls
+ * back to the issue's unique closing merged PR via GitHub evidence and returns the
+ * substitution alongside the data so the caller can record it in the manifest.
+ *
+ * Never throws: an unresolvable ref (not a PR, and not uniquely closed by one) comes
+ * back as a `finding` string, not an exception — gatherLive must always finish and
+ * hand runPreflight a manifest, per this module's exit-1-still-emits-a-manifest
+ * contract (#382).
+ */
+async function resolveCommitRef(
+  ref: CommitRef,
+  run: Runner,
+): Promise<
+  | { kind: "pr"; pr: MergedPr }
+  | { kind: "resolved"; pr: MergedPr; resolved: ResolvedIssueRef }
+  | { kind: "unresolved"; finding: string }
+> {
+  try {
+    const raw = JSON.parse(
+      sh("gh", ["pr", "view", ref.number, "--json", "number,title,labels,milestone"]),
+    ) as {
+      number: number;
+      title: string;
+      labels: { name: string }[];
+      milestone?: { title?: string };
+    };
+    return {
+      kind: "pr",
+      pr: {
+        number: raw.number,
+        title: raw.title,
+        semverLabels: raw.labels.map((l) => l.name).filter((l) => l.startsWith("semver:")),
+        milestone: raw.milestone?.title,
+      },
+    };
+  } catch {
+    // Not resolvable as a PR outright (e.g. #424 names the tracking issue, not its
+    // own PR) — fall back to GitHub's own closing-reference evidence.
+  }
+  try {
+    const pr = await resolveIssueRefToMergedPr(Number(ref.number), run);
+    return {
+      kind: "resolved",
+      pr,
+      resolved: {
+        issue: Number(ref.number),
+        pr: pr.number,
+        evidence: ISSUE_REF_RESOLUTION_EVIDENCE,
+      },
+    };
+  } catch (error: unknown) {
+    const reason = error instanceof Error ? error.message : String(error);
+    return {
+      kind: "unresolved",
+      finding: `commit ${ref.sha} cites #${ref.number} which is not a pull request and ${reason}`,
+    };
+  }
+}
+
+async function gatherLive(
+  cutMilestone: string,
+  run: Runner = defaultRunner,
+): Promise<PreflightData> {
   const repository = sh("gh", [
     "repo",
     "view",
@@ -317,29 +422,37 @@ function gatherLive(cutMilestone: string): PreflightData {
   ]);
   const previousTag = sh("git", ["describe", "--tags", "--abbrev=0"]);
   const candidateSha = sh("git", ["rev-parse", "HEAD"]);
-  const subjects = sh("git", ["log", `${previousTag}..HEAD`, "--format=%s"])
+  const commits = sh("git", [
+    "log",
+    `${previousTag}..HEAD`,
+    `--format=%H${SHA_SUBJECT_SEPARATOR}%s`,
+  ])
     .split("\n")
-    .filter((s) => s.length > 0);
+    .filter((line) => line.length > 0)
+    .map((line) => {
+      const sep = line.indexOf(SHA_SUBJECT_SEPARATOR);
+      return sep === -1
+        ? { sha: line, subject: "" }
+        : { sha: line.slice(0, sep), subject: line.slice(sep + 1) };
+    });
+  const subjects = commits.map((c) => c.subject);
 
-  const prNumbers = subjects
-    .map((s) => /\(#(\d+)\)\s*$/.exec(s)?.[1])
-    .filter((n): n is string => n !== undefined);
-  const mergedPrs: MergedPr[] = prNumbers.map((n) => {
-    const raw = JSON.parse(
-      sh("gh", ["pr", "view", n, "--json", "number,title,labels,milestone"]),
-    ) as {
-      number: number;
-      title: string;
-      labels: { name: string }[];
-      milestone?: { title?: string };
-    };
-    return {
-      number: raw.number,
-      title: raw.title,
-      semverLabels: raw.labels.map((l) => l.name).filter((l) => l.startsWith("semver:")),
-      milestone: raw.milestone?.title,
-    };
-  });
+  const refs: CommitRef[] = commits
+    .map(({ sha, subject }) => ({ sha, number: /\(#(\d+)\)\s*$/.exec(subject)?.[1] }))
+    .filter((r): r is CommitRef => r.number !== undefined);
+
+  const mergedPrs: MergedPr[] = [];
+  const resolvedIssueRefs: ResolvedIssueRef[] = [];
+  const unresolvedPrRefFindings: string[] = [];
+  for (const ref of refs) {
+    const outcome = await resolveCommitRef(ref, run);
+    if (outcome.kind === "unresolved") {
+      unresolvedPrRefFindings.push(outcome.finding);
+      continue;
+    }
+    mergedPrs.push(outcome.pr);
+    if (outcome.kind === "resolved") resolvedIssueRefs.push(outcome.resolved);
+  }
 
   const milestones = JSON.parse(
     sh("gh", ["api", "repos/{owner}/{repo}/milestones?state=all&per_page=100"]),
@@ -386,6 +499,8 @@ function gatherLive(cutMilestone: string): PreflightData {
     milestoneItems: items,
     packageVersion: pkg.version,
     versionConstant: constant ?? "",
+    resolvedIssueRefs,
+    unresolvedPrRefFindings,
   };
 }
 
@@ -408,7 +523,7 @@ async function main(): Promise<void> {
   const baseData: PreflightData =
     inputIdx > -1
       ? (JSON.parse(readFileSync(process.argv[inputIdx + 1] ?? "", "utf8")) as PreflightData)
-      : gatherLive(
+      : await gatherLive(
           milestoneIdx > -1 ? (process.argv[milestoneIdx + 1] ?? "next-release") : "next-release",
         );
   let data: PreflightData = {
