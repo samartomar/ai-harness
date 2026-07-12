@@ -94,6 +94,55 @@ no-egress policy, the exact SC4 static-fallback note is retained as an advisory
 that dependency coverage may be incomplete. It does not suppress real SC4
 vulnerability findings or any other detector result.
 
+## YR4 Corepack Advisory Carve-Out
+
+SkillSpector's `agent_skill_mcp_tool_poisoning_metadata` rule (mapped to `YR4`)
+fires on almost every `package.json`: its schema anchor `any of ($schema_*)`
+matches ubiquitous keys such as `"description":`, and its `$long_base64`
+co-signal matches the 128-hex `sha512` in a Corepack `packageManager` integrity
+suffix. `aih` downgrades that specific false positive to a non-blocking advisory
+in `src/trust/detectors.ts` (`skillspectorAdvisory`) only when, after removing
+the pinned Corepack integrity string, no other poisoning co-signal remains
+(`hasSkillspectorYr4PoisoningSignal`).
+
+For that downgrade to stay fail-closed, the co-signal check MUST detect at least
+everything the rule's Gate-B branch detects — it may over-approximate toward
+blocking, but must never under-approximate. The rule fires when
+`any of ($schema_*)` **and** one of the Gate-B strings below match; each Gate-B
+string maps to one anchored constant:
+
+| Rule string (`agent_skills.yar`) | Indicator class | Co-signal constant | Relationship |
+| --- | --- | --- | --- |
+| `$hidden_html` | HTML comment hiding SYSTEM/IGNORE/OVERRIDE/DEVELOPER/ASSISTANT | `SKILLSPECTOR_YR4_HIDDEN_HTML` | identical |
+| `$hidden_markdown` | `[//]: #` markdown comment, same keywords | `SKILLSPECTOR_YR4_HIDDEN_MARKDOWN` | identical |
+| `$data_uri` | `data:text/…;base64,` URI | `SKILLSPECTOR_YR4_DATA_URI` | identical |
+| `$long_base64` | ≥120-char opaque base64 run (the Corepack hash trips this) | `SKILLSPECTOR_YR4_LONG_OPAQUE` | identical |
+| `$param_injection` | `(parameter\|argument\|description)` near an injection payload | `SKILLSPECTOR_YR4_PARAMETER_INJECTION` | superset (see note) |
+| `$zero_width_*` + `$rtl_*` (U+200B–U+200D, U+202D, U+202E) | zero-width / RTL-override controls | `SKILLSPECTOR_YR4_DIRECTIONAL_CONTROL` | identical (all five code points) |
+
+The `$schema_*` anchor is deliberately **not** modeled as a co-signal: it is the
+broad, benign half of the rule (it matches benign `"description":` / `"tools":`
+keys and is precisely why the rule false-positives), so treating it as a
+poisoning signal would make the carve-out reject legitimate manifests. The
+shipped ECC and Superpowers baseline manifests exercise this: both carry a
+benign `"description"` mentioning agents/MCP/tools, and ECC additionally carries
+the Corepack `sha512` suffix, so both remain advisory/installable.
+
+Note on `$param_injection`: YARA's `.` matches every byte except `\n`, so it
+spans a bare `\r` / U+2028 / U+2029; JavaScript's `.` does not. The constant
+therefore uses `[\s\S]{0,160}` so a payload separated from its anchor by a lone
+CR — legal `package.json` whitespace that still matches the pinned rule — cannot
+slip past the co-signal and win the advisory. Every other constant is the rule
+string byte-for-byte, with `nocase` expressed as the `i` flag.
+
+**Re-verify on pin bump.** This mapping is proven against SkillSpector revision
+`326a2b489411a20ed742ff13701be39ba00063c8`. Whenever `SKILLSPECTOR_SOURCE_REVISION`
+(`src/trust/images.ts`) changes, re-read
+`src/skillspector/yara_rules/agent_skills.yar` and re-derive this table: any new
+or altered Gate-B string in `agent_skill_mcp_tool_poisoning_metadata` must be
+mirrored in `hasSkillspectorYr4PoisoningSignal`, and `tests/trust/scan.test.ts`
+carries one blocking-case regression per indicator class.
+
 ## Review Expectations
 
 - Treat a missing SkillSpector run as a skip, not a pass.

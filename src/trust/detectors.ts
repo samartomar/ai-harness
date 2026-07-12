@@ -1296,14 +1296,30 @@ const SKILLSPECTOR_SC4_OFFLINE_FALLBACK =
 const SKILLSPECTOR_YR4_METADATA_MESSAGE =
   "YARA rule 'agent_skill_mcp_tool_poisoning_metadata': MCP/tool metadata poisoning indicators in tool schemas or skill manifests [agent_skills]";
 const COREPACK_PACKAGE_MANAGER_INTEGRITY = /^[A-Za-z0-9._-]+@[^+\s"]+\+sha512\.[a-f0-9]{128}$/i;
+// SkillSpector YR4 (`agent_skill_mcp_tool_poisoning_metadata`) fires when
+// `any of ($schema_*)` (ubiquitous manifest keys like `"description":`) is
+// present AND at least one Gate-B poisoning co-signal matches. The carve-out
+// below only downgrades the finding to advisory when the SOLE surviving Gate-B
+// signal is the pinned Corepack `packageManager` integrity blob (which trips the
+// rule's `$long_base64`). To stay fail-closed, `hasSkillspectorYr4PoisoningSignal`
+// MUST over-approximate every Gate-B string in the pinned rule: each constant
+// below mirrors exactly one rule string (five are byte-for-byte identical). The
+// full class-by-class equivalence table and the re-verify-on-pin-bump obligation
+// live in docs/security/skillspector.md \u2014 re-check it whenever
+// SKILLSPECTOR_SOURCE_REVISION changes.
 const SKILLSPECTOR_YR4_HIDDEN_HTML =
   /<!--[^>]{0,240}(?:SYSTEM|IGNORE|OVERRIDE|DEVELOPER|ASSISTANT)[^>]{0,240}-->/i;
 const SKILLSPECTOR_YR4_HIDDEN_MARKDOWN =
   /\[\/\/\]:\s*#\s*\([^)]{0,240}(?:SYSTEM|IGNORE|OVERRIDE|DEVELOPER|ASSISTANT)[^)]{0,240}\)/i;
 const SKILLSPECTOR_YR4_DATA_URI = /data:text\/[a-zA-Z0-9.+-]+;base64,/i;
 const SKILLSPECTOR_YR4_LONG_OPAQUE = /[A-Za-z0-9+/]{120,}={0,2}/;
+// `[\s\S]{0,160}` (not `.{0,160}`) mirrors YARA's newline-permissive `.`, which
+// matches CR / U+2028 / U+2029 that JavaScript's `.` skips. Without this, a
+// poisoning payload separated from its `(parameter|argument|description)` anchor
+// by a lone CR (legal JSON whitespace) matched the pinned rule but slipped past
+// this co-signal, wrongly earning the advisory carve-out.
 const SKILLSPECTOR_YR4_PARAMETER_INJECTION =
-  /(?:parameter|argument|description).{0,160}(?:ignore previous|override safety|send to|transmit|exfiltrate|SYSTEM:)/i;
+  /(?:parameter|argument|description)[\s\S]{0,160}(?:ignore previous|override safety|send to|transmit|exfiltrate|SYSTEM:)/i;
 const SKILLSPECTOR_YR4_DIRECTIONAL_CONTROL = /[\u200b-\u200d\u202d\u202e]/;
 
 function hasSkillspectorYr4PoisoningSignal(source: string): boolean {

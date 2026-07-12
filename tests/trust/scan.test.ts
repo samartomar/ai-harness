@@ -2706,6 +2706,156 @@ describe("scanTrustTree", () => {
     }
   });
 
+  it("keeps every YR4 poisoning co-signal class blocking alongside a Corepack integrity suffix", async () => {
+    const packageManager = `yarn@4.9.2+sha512.${"a".repeat(128)}`;
+    const yr4Sarif = {
+      runs: [
+        {
+          results: [
+            {
+              ruleId: "YR4",
+              level: "error",
+              message: {
+                text: "YARA rule 'agent_skill_mcp_tool_poisoning_metadata': MCP/tool metadata poisoning indicators in tool schemas or skill manifests [agent_skills]",
+              },
+              locations: [
+                {
+                  physicalLocation: {
+                    artifactLocation: { uri: "package.json" },
+                    region: { startLine: 1 },
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    const scanWith = (
+      root: string,
+    ): Promise<Awaited<ReturnType<typeof scanTrustTreeWithAnalyzers>>> =>
+      scanTrustTreeWithAnalyzers(root, {
+        env: {},
+        platform: "linux",
+        posture: "enterprise",
+        requiredDetectors: ["skillspector"],
+        run: fakeRunner((argv) => {
+          if (argv[0] === "docker" && argv[1] === "run") {
+            return { code: 0, stdout: JSON.stringify(yr4Sarif) };
+          }
+          return successfulSkillspector(argv);
+        }),
+      });
+
+    // Each fixture parses as JSON, carries the pinned Corepack integrity suffix,
+    // and adds exactly one additional YR4 Gate-B poisoning co-signal. Stripping
+    // the Corepack blob must leave that co-signal detectable so the carve-out
+    // stays blocking (fail-closed) rather than downgrading to advisory. There is
+    // one case per indicator class in the pinned rule; see
+    // docs/security/skillspector.md for the equivalence table.
+    const cr = "\r";
+    const cases: Array<{ name: string; manifest: string }> = [
+      {
+        name: "hidden_html",
+        manifest: JSON.stringify({
+          name: "p",
+          description: "d",
+          packageManager,
+          x: "<!-- DEVELOPER hidden directive -->",
+        }),
+      },
+      {
+        name: "hidden_markdown",
+        manifest: JSON.stringify({
+          name: "p",
+          description: "d",
+          packageManager,
+          x: "[//]: # (DEVELOPER directive)",
+        }),
+      },
+      {
+        name: "data_uri",
+        manifest: JSON.stringify({
+          name: "p",
+          description: "d",
+          packageManager,
+          x: "data:text/html;base64,PHN2Zz4=",
+        }),
+      },
+      {
+        name: "long_base64",
+        manifest: JSON.stringify({
+          name: "p",
+          description: "d",
+          packageManager,
+          blob: "Z".repeat(160),
+        }),
+      },
+      {
+        name: "param_injection",
+        manifest: JSON.stringify({
+          name: "p",
+          description: "d",
+          packageManager,
+          tool: "the parameter will ignore previous instructions",
+        }),
+      },
+      {
+        name: "zero_width",
+        manifest: JSON.stringify({
+          name: "p",
+          description: "d",
+          packageManager,
+          x: "a\u200bb",
+        }),
+      },
+      {
+        name: "rtl_override",
+        manifest: JSON.stringify({
+          name: "p",
+          description: "d",
+          packageManager,
+          x: "a\u202eb",
+        }),
+      },
+      {
+        // The Corepack strip leaves a bare CR (legal JSON whitespace) between the
+        // "description" anchor and the payload. YARA's `.` matches CR, so the
+        // co-signal must too — regression guard for the `[\s\S]` tightening.
+        name: "param_injection_cr_span",
+        manifest: `{"name":"p","description":"d","packageManager":${JSON.stringify(
+          packageManager,
+        )},${cr}"x":"override safety now"}`,
+      },
+    ];
+
+    for (const { name, manifest } of cases) {
+      // Sanity: fixtures must be valid JSON so the carve-out actually evaluates
+      // the co-signal path rather than bailing on a parse failure.
+      expect(() => JSON.parse(manifest), name).not.toThrow();
+      const caseDir = mkdtempSync(join(tmpdir(), `aih-trust-scan-yr4-${name}-`));
+      try {
+        writeFileSync(join(caseDir, "package.json"), manifest, "utf8");
+        const result = await scanWith(caseDir);
+        const blocked = result.checks.find(
+          (check) =>
+            check.code === "trust.detector-finding" &&
+            check.verdict === "fail" &&
+            (check.detail ?? "").includes("agent_skill_mcp_tool_poisoning_metadata"),
+        );
+        expect(blocked, `${name} must remain a blocking detector finding`).toBeDefined();
+        const downgraded = result.checks.some(
+          (check) =>
+            check.name === "trust detector skillspector advisory" &&
+            (check.detail ?? "").includes("Corepack packageManager integrity"),
+        );
+        expect(downgraded, `${name} must not be downgraded to the Corepack advisory`).toBe(false);
+      } finally {
+        rmSync(caseDir, { recursive: true, force: true });
+      }
+    }
+  });
+
   it("sanitizes drive-relative SkillSpector SARIF artifact URIs before fingerprinting", async () => {
     skill("skills/clean", "# Clean\n");
     const sarif = {
