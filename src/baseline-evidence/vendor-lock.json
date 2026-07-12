@@ -593,8 +593,8 @@
           "findings": [
             {
               "code": "trust.prompt-injection",
-              "count": 7,
-              "detail": "7 findings; first: skills/django-security/SKILL.md:340 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL"
+              "count": 8,
+              "detail": "8 findings; first: skills/django-security/SKILL.md:340 — prompt-injection.secret-exfil: secret exfiltration language paired with a credential or URL"
             },
             {
               "code": "trust.hidden-unicode",
