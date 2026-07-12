@@ -297,7 +297,7 @@ const out = (value) => writeSync(1, String(value) + "\\n");
 const args = process.argv.slice(2);
 if (args[0] === "describe") out("v2.8.0");
 else if (args[0] === "rev-parse") out("${candidateSha}");
-else if (args[0] === "log") out("feat: b (#2)");
+else if (args[0] === "log") out("${"b".repeat(40)}\\x1ffeat: b (#2)");
 else process.exit(2);
 `;
 
@@ -418,6 +418,282 @@ if (command === "git.exe") {
   });
 });
 
+describe("release:preflight CLI — issue-ref resolution (#424-class commit subjects)", () => {
+  /**
+   * Spawns the real CLI against stubbed `git`/`gh` binaries on PATH, mirroring the
+   * live gatherer's full call sequence: repo view, describe, rev-parse, log, then
+   * per-ref pr-view (with a graphql closing-PR fallback), milestones, and milestone
+   * issues. Same cross-platform approach as the intent-acknowledgement CLI test above
+   * (POSIX shebang scripts vs. a Windows node.exe + preload dispatch trick).
+   */
+  function runPreflightCliWithStubs(
+    dir: string,
+    gitStub: string,
+    ghStub: string,
+    args: string[],
+  ): { status: number | null; stdout: string; stderr: string } {
+    const bin = join(dir, "bin");
+    mkdirSync(bin);
+    let nodeOptions = process.env.NODE_OPTIONS;
+    if (process.platform === "win32") {
+      const gitModule = join(bin, "git-stub.cjs");
+      const ghModule = join(bin, "gh-stub.cjs");
+      const preload = join(bin, "command-preload.cjs");
+      writeFileSync(gitModule, gitStub, "utf8");
+      writeFileSync(ghModule, ghStub, "utf8");
+      writeFileSync(
+        preload,
+        `const { basename } = require("node:path");
+const command = basename(process.execPath).toLowerCase();
+if (command === "git.exe") {
+  process.argv[1] = basename(process.argv[1] || "");
+  process.argv.splice(1, 0, "git-stub.cjs");
+  require("./git-stub.cjs");
+  process.exit(0);
+} else if (command === "gh.exe") {
+  process.argv[1] = basename(process.argv[1] || "");
+  process.argv.splice(1, 0, "gh-stub.cjs");
+  require("./gh-stub.cjs");
+  process.exit(0);
+}
+`,
+        "utf8",
+      );
+      copyFileSync(process.execPath, join(bin, "git.exe"));
+      copyFileSync(process.execPath, join(bin, "gh.exe"));
+      nodeOptions = [process.env.NODE_OPTIONS, `--require=${JSON.stringify(preload)}`]
+        .filter(Boolean)
+        .join(" ");
+    } else {
+      const git = join(bin, "git");
+      const gh = join(bin, "gh");
+      writeFileSync(git, `#!/usr/bin/env node${gitStub}`, "utf8");
+      writeFileSync(gh, `#!/usr/bin/env node${ghStub}`, "utf8");
+      chmodSync(git, 0o755);
+      chmodSync(gh, 0o755);
+    }
+
+    const tsx = join(process.cwd(), "node_modules", "tsx", "dist", "cli.mjs");
+    const script = join(process.cwd(), "src", "internals", "release-preflight.ts");
+    return spawnSync(process.execPath, [tsx, script, ...args], {
+      cwd: process.cwd(),
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        NODE_OPTIONS: nodeOptions,
+        PATH: `${bin}${delimiter}${process.env.PATH ?? ""}`,
+      },
+    });
+  }
+
+  const REAL_PR_SHA = "4".repeat(40);
+  const ISSUE_REF_SHA = "5".repeat(40);
+
+  /** git stub shared by all three scenarios: only `log`'s payload differs. */
+  function gitStub(logLines: string[]): string {
+    const body = logLines.map((line) => `  out(${JSON.stringify(line)});`).join("\n");
+    return `
+const { writeSync } = require("node:fs");
+const out = (value) => writeSync(1, String(value) + "\\n");
+const args = process.argv.slice(2);
+if (args[0] === "describe") out("v2.8.0");
+else if (args[0] === "rev-parse") out("${"d".repeat(40)}");
+else if (args[0] === "log") {
+${body}
+}
+else process.exit(2);
+`;
+  }
+
+  const TRACKER_ITEM = `{
+      number: 900,
+      state: "open",
+      title: "release: vNEXT tracker",
+      labels: [{ name: "release-blocker" }],
+    }`;
+
+  it("(a)+(d) resolves an issue ref to its closing merged PR while a real PR ref resolves unchanged", () => {
+    const dir = mkdtempSync(join(tmpdir(), "aih-release-issue-ref-ok-"));
+    try {
+      const gLog = [
+        `${REAL_PR_SHA}\x1ffeat: real pr thing (#2)`,
+        `${ISSUE_REF_SHA}\x1ffeat: bind release escalation to GitHub evidence (#424)`,
+      ];
+      const gh = `
+const { writeSync } = require("node:fs");
+const out = (value) => writeSync(1, String(value) + "\\n");
+const args = process.argv.slice(2).join(" ");
+if (args.startsWith("repo view ")) {
+  out("samartomar/ai-harness");
+} else if (args.startsWith("pr view 2 ")) {
+  out(JSON.stringify({
+    number: 2,
+    title: "feat: real pr thing",
+    labels: [{ name: "semver:patch" }],
+    milestone: { title: "v2.9.0" },
+  }));
+} else if (args.startsWith("pr view 424 ")) {
+  writeSync(2, "GraphQL: Could not resolve to a PullRequest with the number of 424.\\n");
+  process.exit(1);
+} else if (args.startsWith("api graphql ")) {
+  out(JSON.stringify({
+    data: { repository: { issue: { timelineItems: { nodes: [
+      { closer: {
+          __typename: "PullRequest",
+          number: 431,
+          title: "feat(release): bind escalation acknowledgement to GitHub evidence",
+          merged: true,
+          labels: { nodes: [{ name: "semver:minor" }] },
+          milestone: { title: "v2.9.0" },
+      } },
+    ] } } } },
+  }));
+} else if (args === "api repos/{owner}/{repo}/milestones?state=all&per_page=100") {
+  out(JSON.stringify([{ number: 1, title: "v2.9.0" }]));
+} else if (args === "api repos/{owner}/{repo}/issues?milestone=1&state=all&per_page=100") {
+  out(JSON.stringify([
+    { number: 2, state: "closed", title: "feat: real pr thing", labels: [],
+      pull_request: { merged_at: "2026-07-11T09:00:00Z" } },
+    { number: 431, state: "closed", title: "feat(release): bind escalation acknowledgement to GitHub evidence", labels: [],
+      pull_request: { merged_at: "2026-07-11T09:16:13Z" } },
+    ${TRACKER_ITEM},
+  ]));
+} else {
+  writeSync(2, "unexpected gh invocation: " + args + "\\n");
+  process.exit(2);
+}
+`;
+
+      const result = runPreflightCliWithStubs(dir, gitStub(gLog), gh, [
+        "--milestone",
+        "v2.9.0",
+        "--intent",
+        "minor",
+      ]);
+
+      expect(result.stdout, result.stderr).not.toBe("");
+      const manifest = JSON.parse(result.stdout);
+      expect(result.status, JSON.stringify(manifest, null, 2)).toBe(0);
+      expect(manifest).toMatchObject({
+        ok: true,
+        computedBump: "minor",
+        resolvedIssueRefs: [
+          {
+            issue: 424,
+            pr: 431,
+            evidence: "gh api graphql: repository.issue.timelineItems(CLOSED_EVENT).closer",
+          },
+        ],
+      });
+      expect(manifest.mergedPrs.map((p: { number: number }) => p.number).sort()).toEqual([2, 431]);
+      expect(manifest.findings.map((f: { code: string }) => f.code)).not.toContain(
+        "unresolved-pr-ref",
+      );
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("(b) an issue ref with no closing merged PR becomes a named finding, not a crash", () => {
+    const dir = mkdtempSync(join(tmpdir(), "aih-release-issue-ref-none-"));
+    try {
+      const gLog = [`${ISSUE_REF_SHA}\x1ffeat: bind release escalation to GitHub evidence (#424)`];
+      const gh = `
+const { writeSync } = require("node:fs");
+const out = (value) => writeSync(1, String(value) + "\\n");
+const args = process.argv.slice(2).join(" ");
+if (args.startsWith("repo view ")) {
+  out("samartomar/ai-harness");
+} else if (args.startsWith("pr view 424 ")) {
+  writeSync(2, "GraphQL: Could not resolve to a PullRequest with the number of 424.\\n");
+  process.exit(1);
+} else if (args.startsWith("api graphql ")) {
+  out(JSON.stringify({
+    data: { repository: { issue: { timelineItems: { nodes: [] } } } },
+  }));
+} else if (args === "api repos/{owner}/{repo}/milestones?state=all&per_page=100") {
+  out(JSON.stringify([{ number: 1, title: "v2.9.0" }]));
+} else if (args === "api repos/{owner}/{repo}/issues?milestone=1&state=all&per_page=100") {
+  out(JSON.stringify([${TRACKER_ITEM}]));
+} else {
+  writeSync(2, "unexpected gh invocation: " + args + "\\n");
+  process.exit(2);
+}
+`;
+
+      const result = runPreflightCliWithStubs(dir, gitStub(gLog), gh, [
+        "--milestone",
+        "v2.9.0",
+        "--intent",
+        "minor",
+      ]);
+
+      expect(result.stdout, result.stderr).not.toBe("");
+      const manifest = JSON.parse(result.stdout);
+      expect(result.status).toBe(1);
+      expect(manifest.ok).toBe(false);
+      expect(manifest.findings).toContainEqual({
+        code: "unresolved-pr-ref",
+        detail: `commit ${ISSUE_REF_SHA} cites #424 which is not a pull request and has no unique closing merged PR`,
+      });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("(c) an issue ref with two candidate closing merged PRs becomes a named finding (ambiguous)", () => {
+    const dir = mkdtempSync(join(tmpdir(), "aih-release-issue-ref-ambiguous-"));
+    try {
+      const gLog = [`${ISSUE_REF_SHA}\x1ffeat: bind release escalation to GitHub evidence (#424)`];
+      const gh = `
+const { writeSync } = require("node:fs");
+const out = (value) => writeSync(1, String(value) + "\\n");
+const args = process.argv.slice(2).join(" ");
+if (args.startsWith("repo view ")) {
+  out("samartomar/ai-harness");
+} else if (args.startsWith("pr view 424 ")) {
+  writeSync(2, "GraphQL: Could not resolve to a PullRequest with the number of 424.\\n");
+  process.exit(1);
+} else if (args.startsWith("api graphql ")) {
+  out(JSON.stringify({
+    data: { repository: { issue: { timelineItems: { nodes: [
+      { closer: { __typename: "PullRequest", number: 431, title: "a", merged: true,
+          labels: { nodes: [] }, milestone: null } },
+      { closer: { __typename: "PullRequest", number: 500, title: "b", merged: true,
+          labels: { nodes: [] }, milestone: null } },
+    ] } } } },
+  }));
+} else if (args === "api repos/{owner}/{repo}/milestones?state=all&per_page=100") {
+  out(JSON.stringify([{ number: 1, title: "v2.9.0" }]));
+} else if (args === "api repos/{owner}/{repo}/issues?milestone=1&state=all&per_page=100") {
+  out(JSON.stringify([${TRACKER_ITEM}]));
+} else {
+  writeSync(2, "unexpected gh invocation: " + args + "\\n");
+  process.exit(2);
+}
+`;
+
+      const result = runPreflightCliWithStubs(dir, gitStub(gLog), gh, [
+        "--milestone",
+        "v2.9.0",
+        "--intent",
+        "minor",
+      ]);
+
+      expect(result.stdout, result.stderr).not.toBe("");
+      const manifest = JSON.parse(result.stdout);
+      expect(result.status).toBe(1);
+      expect(manifest.ok).toBe(false);
+      expect(manifest.findings).toContainEqual({
+        code: "unresolved-pr-ref",
+        detail: `commit ${ISSUE_REF_SHA} cites #424 which is not a pull request and has 2 candidate closing merged PRs (#431, #500) — ambiguous`,
+      });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("runPreflight — each failure mode exits with a named finding", () => {
   it("unlabeled-pr: a merged PR with zero semver labels", () => {
     const d = cleanData();
@@ -491,6 +767,57 @@ describe("runPreflight — each failure mode exits with a named finding", () => 
     const d = cleanData();
     d.versionConstant = "9.9.9";
     expect(runPreflight(d).findings.map((f) => f.code)).toContain("version-mismatch");
+  });
+
+  it("unresolved-pr-ref: a commit citing an issue with no unique closing merged PR", () => {
+    const d = cleanData();
+    d.unresolvedPrRefFindings = [
+      `commit ${"c".repeat(40)} cites #424 which is not a pull request and has no unique closing merged PR`,
+    ];
+    const m = runPreflight(d);
+    expect(m.ok).toBe(false);
+    expect(m.findings).toContainEqual({
+      code: "unresolved-pr-ref",
+      detail: `commit ${"c".repeat(40)} cites #424 which is not a pull request and has no unique closing merged PR`,
+    });
+  });
+
+  it("unresolved-pr-ref: surfaces one named finding per unresolvable ref", () => {
+    const d = cleanData();
+    d.unresolvedPrRefFindings = [
+      "commit aaa cites #424 which is not a pull request and has no unique closing merged PR",
+      "commit bbb cites #500 which is not a pull request and has 2 candidate closing merged PRs (#501, #502) — ambiguous",
+    ];
+    const codes = runPreflight(d).findings.filter((f) => f.code === "unresolved-pr-ref");
+    expect(codes).toHaveLength(2);
+  });
+});
+
+describe("runPreflight — resolved issue refs are recorded for auditability", () => {
+  it("passes a recorded issue→PR resolution mapping straight through to the manifest", () => {
+    const d = cleanData();
+    d.resolvedIssueRefs = [
+      {
+        issue: 424,
+        pr: 431,
+        evidence: "gh api graphql: repository.issue.timelineItems(CLOSED_EVENT).closer",
+      },
+    ];
+    const m = runPreflight(d);
+    expect(m.resolvedIssueRefs).toEqual([
+      {
+        issue: 424,
+        pr: 431,
+        evidence: "gh api graphql: repository.issue.timelineItems(CLOSED_EVENT).closer",
+      },
+    ]);
+    // Recording the mapping is not itself a finding.
+    expect(m.findings.map((f) => f.code)).not.toContain("unresolved-pr-ref");
+  });
+
+  it("defaults to an empty array when gathering resolved nothing", () => {
+    const m = runPreflight(cleanData());
+    expect(m.resolvedIssueRefs).toEqual([]);
   });
 });
 
