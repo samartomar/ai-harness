@@ -810,7 +810,7 @@ async function planMcp(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
       const generatedDeniedAlternates = applyMcpHygieneToEntries(
         cli,
         generatedDeniedEntries,
-        mcpHygieneIssues(deniedGeneratedServerMap, ctx.env),
+        mcpHygieneIssues(deniedGeneratedServerMap, {}),
       );
       const renderedEntries = applyMcpHygieneToEntries(
         cli,
