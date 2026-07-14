@@ -54,7 +54,12 @@ const plan = {
       profile: "quiet",
       event: "Stop",
     },
-    tokenSavior: { profile: "optimized", memory: false, shellHooks: false },
+    tokenSavior: {
+      profile: "optimized",
+      memory: false,
+      shellHooks: false,
+      excludePatterns: [".token-savior-cache.json"],
+    },
   },
   installRoot: "project-keyed user cache",
 };
@@ -210,6 +215,12 @@ function tokenSaviorMcp() {
     ...process.env,
     TOKEN_SAVIOR_CLIENT: client,
     TOKEN_SAVIOR_PROFILE: "optimized",
+    TOKEN_SAVIOR_EXCLUDE_PATTERNS: [
+      process.env.TOKEN_SAVIOR_EXCLUDE_PATTERNS,
+      plan.runtime.tokenSavior.excludePatterns.join(":"),
+    ]
+      .filter(Boolean)
+      .join(":"),
     TS_CAPTURE_DISABLED: "1",
     TS_MEMORY_DISABLE: "1",
     TS_NO_HINTS: "1",
