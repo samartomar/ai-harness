@@ -1,0 +1,7 @@
+[mcp_servers."serena"]
+command = "node"
+args = ["tools/repo-ai-tools.mjs", "serena-mcp"]
+
+[mcp_servers."token-savior"]
+command = "node"
+args = ["tools/repo-ai-tools.mjs", "token-savior-mcp"]

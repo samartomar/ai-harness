@@ -12,6 +12,7 @@ re-spelling it; verify against repo evidence before acting.
 | When you are… | Load |
 |---|---|
 | touching platform / shell / spawn / paths | `rules/environment.md` |
+| choosing code navigation, graph, semantic editing, or token tooling | `rules/repo-ai-tools.md` |
 | branching, committing, reading CI | `rules/git-ci-discipline.md` |
 | reviewing a PR, or acting on review/external feedback | `rules/review-protocol.md` |
 | editing `src/` engines, checks, plans, trust, writers | `rules/engine-invariants.md` |

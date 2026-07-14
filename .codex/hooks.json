@@ -13,6 +13,18 @@
           }
         ]
       }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node tools/repo-ai-tools.mjs token-optimizer-stop",
+            "timeout": 8,
+            "statusMessage": "Saving local token continuity"
+          }
+        ]
+      }
     ]
   }
 }
