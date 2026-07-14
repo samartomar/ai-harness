@@ -265,6 +265,13 @@ function uniqueDeniedGenerated(items: readonly DeniedGeneratedServer[]): DeniedG
 }
 
 function jsonStable(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(jsonStable).join(",")}]`;
+  if (isPlainObject(value)) {
+    return `{${Object.keys(value)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${jsonStable(value[key])}`)
+      .join(",")}}`;
+  }
   return JSON.stringify(value);
 }
 
@@ -280,7 +287,13 @@ function matchingGeneratedJsonServerNames(
   const servers = parsed[configKey];
   if (!isPlainObject(servers)) return [];
   return Object.entries(generatedEntries)
-    .filter(([name, generated]) => jsonStable(servers[name]) === jsonStable(generated))
+    .filter(([name, generated]) => {
+      const variants =
+        configKey === "mcp" && generated.enabled === true
+          ? [generated, { ...generated, enabled: false }]
+          : [generated];
+      return variants.some((variant) => jsonStable(servers[name]) === jsonStable(variant));
+    })
     .map(([name]) => name);
 }
 
@@ -763,7 +776,10 @@ async function planMcp(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
       // Codex TOML: fold the `[mcp_servers.*]` tables into an aih-managed region of
       // config.toml, preserving the user's other config. Read existing at plan time.
       const abs = external ? writePath : join(ctx.root, p.configPath);
-      const existing = removeMcpTomlServers(readIfExists(abs) ?? "", []);
+      const existing = removeMcpTomlServers(
+        readIfExists(abs) ?? "",
+        serverRemovalNames(undefined), // preserve operator-owned top-level tables
+      );
       if (mcpCompliant) {
         compliantConfigChecks.push({
           kind: "toml",
