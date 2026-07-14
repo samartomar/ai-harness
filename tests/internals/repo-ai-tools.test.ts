@@ -161,8 +161,11 @@ describe("ai-harness repo AI tooling", () => {
 
   it("keeps Token Savior from indexing or dirtying the worktree with its own cache", () => {
     const gitignore = readFileSync(resolve(root, ".gitignore"), "utf8");
+    const launcher = readFileSync(resolve(root, "tools/repo-ai-tools.mjs"), "utf8");
 
     expect(gitignore).toContain(".token-savior-cache.json");
+    expect(launcher).toContain("TOKEN_SAVIOR_EXCLUDE_PATTERNS:");
+    expect(launcher).toContain('plan.runtime.tokenSavior.excludePatterns.join(":")');
   });
 
   it("keeps this repo's generated canon in source sync without project-governance self-use", () => {
