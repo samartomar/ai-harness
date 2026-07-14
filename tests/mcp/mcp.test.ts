@@ -1086,18 +1086,17 @@ describe("aih mcp — per-CLI config (honors --cli)", () => {
       }),
     );
     writeMcpPolicy(root, { allowedServers: [], allowManagedOnly: true });
-    const p = await command.plan(
-      makeCtx({
-        root,
-        env,
-        options: {
-          allTools: true,
-          scope: "remote",
-          posture: "enterprise",
-          githubAuth: "token",
-        },
-      }),
-    );
+    const planCtx = makeCtx({
+      root,
+      env,
+      options: {
+        allTools: true,
+        scope: "remote",
+        posture: "enterprise",
+        githubAuth: "token",
+      },
+    });
+    const p = await command.plan(planCtx);
     const writes = p.actions.filter((a): a is WriteAction => a.kind === "write");
     const jsonClientWrites = writes.filter((write) => jsonConfigServerNames(write) !== undefined);
     const codex = writes.find((write) =>
@@ -1119,6 +1118,21 @@ describe("aih mcp — per-CLI config (honors --cli)", () => {
     expect(merged.mcp["code-review-graph"]).toBeUndefined();
     expect(merged.mcp.github).toBeUndefined();
     expect((merged.mcp.context7 as { url?: string }).url).toBe("https://context7.internal/mcp");
+    const operatorDisabled = {
+      ...(generated["code-review-graph"] as Record<string, unknown>),
+      enabled: false,
+    };
+    writeFileSync(opencodePath, jsonFile({ mcp: { "code-review-graph": operatorDisabled } }));
+    const preserved = (await command.plan(planCtx)).actions.find(
+      (a): a is WriteAction => a.kind === "write" && a.path === opencodePath,
+    ) as WriteAction;
+    expect(
+      (
+        JSON.parse(resolveContents(preserved, opencodePath)) as {
+          mcp: Record<string, unknown>;
+        }
+      ).mcp["code-review-graph"],
+    ).toEqual(operatorDisabled);
     const offlineWrites = (
       await command.plan(makeCtx({ root, options: { mode: "offline" } }))
     ).actions.filter((a): a is WriteAction => a.kind === "write" && a.json !== undefined);
