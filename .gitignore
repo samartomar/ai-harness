@@ -8,6 +8,7 @@ __pycache__/
 # aih runtime artifacts
 .aih-scratch/
 .aih-workflow/
+.token-savior-cache.json
 
 # logs / os
 *.log
