@@ -194,6 +194,47 @@ function mixedVendorLock() {
 }
 
 describe("ECC baseline evidence pipeline", () => {
+  it("applies the active managed-only allowlist to ECC MCP registration", () => {
+    const home = join(root, "home");
+    mkdirSync(home, { recursive: true });
+    writeFileSync(
+      join(root, ".mcp.json"),
+      JSON.stringify({
+        mcpServers: { "code-review-graph": { type: "stdio", command: "uvx", args: [] } },
+      }),
+    );
+    writeFileSync(
+      join(root, "aih-org-policy.json"),
+      JSON.stringify({
+        schemaVersion: 1,
+        minimumPosture: "enterprise",
+        references: { repoContract: "ai-coding/project.json" },
+        mcp: { allowedServers: ["code-review-graph"], allowManagedOnly: true },
+      }),
+    );
+    const context = ctx(false);
+    context.env = { HOME: home };
+    context.host = makeHostAdapter({ platform: "linux", run: context.run, env: context.env });
+
+    const restricted = buildEccRegistrationRequest(context, ["claude"]);
+    expect(restricted.project.mcps).toEqual(["mcp:code-review-graph"]);
+    expect(restricted.selection.mcps).toEqual(["mcp:code-review-graph"]);
+
+    writeFileSync(
+      join(root, "aih-org-policy.json"),
+      JSON.stringify({
+        schemaVersion: 1,
+        minimumPosture: "enterprise",
+        references: { repoContract: "ai-coding/project.json" },
+        mcp: { allowedServers: [], allowManagedOnly: false },
+      }),
+    );
+    const unrestricted = buildEccRegistrationRequest(context, ["claude"]);
+    expect(unrestricted.project.mcps).toEqual(
+      expect.arrayContaining(["mcp:code-review-graph", "mcp:github", "mcp:sequential-thinking"]),
+    );
+  });
+
   it("builds the additive machine union from scan, declarations, MCP defaults, and prior projects", () => {
     const home = join(root, "home");
     const cpp = join(root, "cpp-project");

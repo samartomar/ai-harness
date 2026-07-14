@@ -207,11 +207,15 @@ describe("aih init — command surface", () => {
     const managed = p.actions.find(
       (a): a is WriteAction => a.kind === "write" && a.path === ".claude/managed-settings.json",
     );
+    const marker = p.actions.find(
+      (a): a is WriteAction => a.kind === "write" && a.path === ".aih-config.json",
+    );
 
     expect(
       Object.keys((dotMcp?.json as { mcpServers?: Record<string, unknown> })?.mcpServers ?? {}),
     ).toEqual([]);
     expect((managed?.json as { allowedMcpServers?: unknown[] })?.allowedMcpServers).toEqual([]);
+    expect(marker?.json).toMatchObject({ managedMcpProjection: { state: "active" } });
   });
 });
 

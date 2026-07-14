@@ -1,9 +1,10 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { resolveContents } from "../../src/internals/execute.js";
+import { executePlan, resolveContents } from "../../src/internals/execute.js";
 import type { PlanContext, WriteAction } from "../../src/internals/plan.js";
+import { plan } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
 import { composeOrgPolicy } from "../../src/org-policy/compose.js";
 import {
@@ -487,6 +488,67 @@ describe("orgPolicyProjectionActions", () => {
     expect(merged.localOnly).toBe(true);
     expect(allowlist).toContain("server-sequential-thinking");
     expect(allowlist).not.toContain("code-review-graph");
+  });
+
+  it("deactivates only an exact AIH-owned managed-MCP projection", async () => {
+    const managedPath = join(dir, ".claude", "managed-settings.json");
+    const markerPath = join(dir, ".aih-config.json");
+    mkdirSync(join(dir, ".claude"), { recursive: true });
+    writeFileSync(managedPath, JSON.stringify({ operatorOnly: true }));
+    const activeCtx: PlanContext = { ...ctx(), posture: "enterprise", apply: true };
+    const activePolicy = parseOrgPolicy(
+      policy({
+        minimumPosture: "enterprise",
+        mcp: { allowedServers: ["code-review-graph"], allowManagedOnly: true },
+      }),
+    );
+
+    await executePlan(
+      plan("org-policy", ...orgPolicyProjectionActions(activeCtx, activePolicy)),
+      activeCtx,
+    );
+    expect(JSON.parse(readFileSync(markerPath, "utf8"))).toMatchObject({
+      managedMcpProjection: { state: "active" },
+    });
+
+    const inactivePolicy = parseOrgPolicy(
+      policy({
+        minimumPosture: "enterprise",
+        mcp: { allowedServers: ["code-review-graph"], allowManagedOnly: false },
+      }),
+    );
+    await executePlan(
+      plan("org-policy", ...orgPolicyProjectionActions(activeCtx, inactivePolicy)),
+      activeCtx,
+    );
+    expect(JSON.parse(readFileSync(managedPath, "utf8"))).toEqual(
+      expect.objectContaining({ operatorOnly: true }),
+    );
+    expect(JSON.parse(readFileSync(managedPath, "utf8"))).not.toHaveProperty(
+      "allowManagedMcpServersOnly",
+    );
+    expect(JSON.parse(readFileSync(markerPath, "utf8"))).not.toHaveProperty(
+      "managedMcpProjection",
+    );
+
+    await executePlan(
+      plan("org-policy", ...orgPolicyProjectionActions(activeCtx, activePolicy)),
+      activeCtx,
+    );
+    const operatorProjection = {
+      operatorOnly: true,
+      allowManagedMcpServersOnly: true,
+      allowedMcpServers: [{ serverCommand: ["operator-mcp", "serve"] }],
+    };
+    writeFileSync(managedPath, JSON.stringify(operatorProjection));
+    await executePlan(
+      plan("org-policy", ...orgPolicyProjectionActions(activeCtx, inactivePolicy)),
+      activeCtx,
+    );
+    expect(JSON.parse(readFileSync(managedPath, "utf8"))).toEqual(operatorProjection);
+    expect(JSON.parse(readFileSync(markerPath, "utf8"))).toMatchObject({
+      managedMcpProjection: { state: "revoked" },
+    });
   });
 });
 

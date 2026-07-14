@@ -1233,11 +1233,17 @@ describe("aih mcp — per-CLI config (honors --cli)", () => {
     const managed = writes.find((write) => write.path === ".claude/managed-settings.json");
     const gateway = writes.find((write) => write.path.endsWith("mcp-gateway-rbac.json"));
     const gatewayJson = gateway?.json as { catalog: Record<string, unknown> };
+    const allowlistWarning = p.actions.find(
+      (action) => action.kind === "digest" && action.describe === "MCP allowlist filtered all servers",
+    );
     expect(jsonClientWrites).toHaveLength(9);
     for (const write of jsonClientWrites) expect(jsonConfigServerNames(write)).toEqual([]);
     expect(codex?.contents).not.toContain("[mcp_servers.");
     expect((managed?.json as { allowedMcpServers?: unknown[] })?.allowedMcpServers).toEqual([]);
     expect(gatewayJson?.catalog).toEqual({});
+    expect(allowlistWarning?.kind === "digest" ? allowlistWarning.text : "").toContain(
+      "allowedServers",
+    );
     expect(writes.some((write) => write.path === ".env.example")).toBe(false);
     const opencode = writes.find((write) => write.path === opencodePath);
     const merged = JSON.parse(resolveContents(opencode as WriteAction, opencodePath)) as {
@@ -1293,11 +1299,85 @@ describe("aih mcp — per-CLI config (honors --cli)", () => {
       )?.contents,
     ).not.toContain("sequential-thinking");
     writeMcpPolicy(root, { allowedServers: [], allowManagedOnly: false });
-    const unrestricted = await command.plan(makeCtx({ root, options: { cli: "claude" } }));
-    const dotMcp = unrestricted.actions.find((a) => a.kind === "write") as WriteAction;
-    expect(Object.keys(serversOf(dotMcp as WriteAction))).toEqual(
-      expect.arrayContaining(["code-review-graph", "sequential-thinking"]),
+    const [unmanagedRoot, unmanagedHome] = [makeTmp(), makeTmp()];
+    writeMcpPolicy(unmanagedRoot, { allowedServers: [], allowManagedOnly: false });
+    const unrestricted = await command.plan(
+      makeCtx({
+        root: unmanagedRoot,
+        env: { HOME: unmanagedHome, USERPROFILE: unmanagedHome },
+        options: { allTools: true },
+      }),
     );
+    const unrestrictedWrites = unrestricted.actions.filter(
+      (action): action is WriteAction => action.kind === "write",
+    );
+    const jsonWriters = unrestrictedWrites.filter(
+      (write) => jsonConfigServerNames(write) !== undefined,
+    );
+    expect(jsonWriters.length).toBeGreaterThan(1);
+    for (const write of jsonWriters) {
+      expect(jsonConfigServerNames(write)).toEqual(
+        expect.arrayContaining(["code-review-graph", "sequential-thinking"]),
+      );
+    }
+    expect(
+      unrestrictedWrites.find((write) =>
+        write.path.replace(/\\/g, "/").endsWith(".codex/config.toml"),
+      )?.contents,
+    ).toContain('[mcp_servers."code-review-graph"]');
+  });
+
+  it("removes only an exact AIH-owned Claude managed-MCP projection after policy deactivation", async () => {
+    const root = makeTmp();
+    const managedPath = join(root, ".claude", "managed-settings.json");
+    mkdirSync(join(root, ".claude"), { recursive: true });
+    writeFileSync(managedPath, jsonFile({ operatorOnly: true }));
+    writeMcpPolicy(root, { allowedServers: ["code-review-graph"], allowManagedOnly: true });
+
+    const activeCtx = makeCtx({ root, options: { posture: "enterprise" } });
+    await executePlan(await command.plan(activeCtx), { ...activeCtx, apply: true });
+    const marker = JSON.parse(readFileSync(join(root, ".aih-config.json"), "utf8")) as {
+      managedMcpProjection?: { state?: unknown; expected?: unknown };
+    };
+    expect(marker.managedMcpProjection).toMatchObject({ state: "active" });
+
+    writeMcpPolicy(root, { allowedServers: ["code-review-graph"], allowManagedOnly: false });
+    const inactiveCtx = makeCtx({ root, options: { posture: "enterprise" } });
+    await executePlan(await command.plan(inactiveCtx), { ...inactiveCtx, apply: true });
+    expect(JSON.parse(readFileSync(managedPath, "utf8"))).toEqual({ operatorOnly: true });
+    expect(JSON.parse(readFileSync(join(root, ".aih-config.json"), "utf8"))).not.toHaveProperty(
+      "managedMcpProjection",
+    );
+
+    writeMcpPolicy(root, { allowedServers: ["code-review-graph"], allowManagedOnly: true });
+    await executePlan(await command.plan(activeCtx), { ...activeCtx, apply: true });
+    const operatorManaged = {
+      operatorOnly: true,
+      allowManagedMcpServersOnly: true,
+      allowedMcpServers: [{ serverCommand: ["operator-mcp", "serve"] }],
+    };
+    writeFileSync(managedPath, jsonFile(operatorManaged));
+    writeMcpPolicy(root, { allowedServers: ["code-review-graph"], allowManagedOnly: false });
+    await executePlan(await command.plan(inactiveCtx), { ...inactiveCtx, apply: true });
+    expect(JSON.parse(readFileSync(managedPath, "utf8"))).toEqual(operatorManaged);
+    expect(JSON.parse(readFileSync(join(root, ".aih-config.json"), "utf8"))).toMatchObject({
+      managedMcpProjection: { state: "revoked" },
+    });
+  });
+
+  it("refuses an enterprise apply from an AIH_ORG_POLICY override before it plans writes", async () => {
+    const root = makeTmp();
+    writeMcpPolicy(root, { allowedServers: ["code-review-graph"], allowManagedOnly: true });
+    const overrideCtx: PlanContext = {
+      ...makeCtx({
+        root,
+        env: { AIH_ORG_POLICY: "operator-policy.json" },
+        options: { posture: "enterprise", mode: "none" },
+      }),
+      apply: true,
+    };
+
+    await expect(command.plan(overrideCtx)).rejects.toThrow(/AIH_ORG_POLICY env override/);
   });
 
   it("--cli codex writes its TOML config (external), NOT a .mcp.json Codex never reads", async () => {

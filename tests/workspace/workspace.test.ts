@@ -205,6 +205,38 @@ describe("workspace.plan — generated artifacts", () => {
     expect(w.has(".mcp.json")).toBe(true);
   });
 
+  it("applies the active managed-only allowlist to generated workspace graph MCPs", async () => {
+    child("ui");
+    writeFileSync(
+      join(parent, "aih-org-policy.json"),
+      JSON.stringify({
+        schemaVersion: 1,
+        minimumPosture: "enterprise",
+        references: { repoContract: "ai-coding/project.json" },
+        mcp: { allowedServers: [], allowManagedOnly: true },
+      }),
+    );
+    const restrictedCtx: PlanContext = {
+      ...makeCtx({ repos: "ui" }),
+      posture: "enterprise",
+    };
+    const restricted = writesByPath((await command.plan(restrictedCtx)).actions).get(".mcp.json");
+    expect((restricted?.json as { mcpServers?: Record<string, unknown> }).mcpServers).toEqual({});
+
+    writeFileSync(
+      join(parent, "aih-org-policy.json"),
+      JSON.stringify({
+        schemaVersion: 1,
+        minimumPosture: "enterprise",
+        references: { repoContract: "ai-coding/project.json" },
+        mcp: { allowedServers: [], allowManagedOnly: false },
+      }),
+    );
+    const unrestricted = writesByPath((await command.plan(restrictedCtx)).actions).get(".mcp.json");
+    expect(Object.keys((unrestricted?.json as { mcpServers?: Record<string, unknown> }).mcpServers ?? {}))
+      .toEqual(["aih-workspace-graph-ui"]);
+  });
+
   it("writes workspace bootloaders for every targeted CLI", async () => {
     child("ui");
     const w = writesByPath(
