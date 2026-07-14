@@ -53,7 +53,7 @@ describe("baseline analyzer receipt gate", () => {
         {
           sourceId: source.id,
           componentId: component.id,
-          detail: "missing cisco@uvx@2.0.12",
+          detail: `missing cisco@uvx@${baselineAnalyzerVersions()["cisco@uvx"]}`,
         },
       ],
     });

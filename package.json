@@ -27,6 +27,7 @@
     "dist",
     "src/baseline-evidence/vendor-lock.json",
     "src/baseline-evidence/ecc-install-preview.json",
+    "tools/cisco-skill-scanner",
     "aih-packs.json",
     "packs",
     "!packs/**/__pycache__",

@@ -9,7 +9,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, extname, isAbsolute, join, relative } from "node:path";
-import { CISCO_SKILL_SCANNER_SPEC } from "../baseline-evidence/analyzer-profile.js";
+import { CISCO_SKILL_SCANNER_PROJECT } from "../baseline-evidence/analyzer-profile.js";
 import type { Posture } from "../config/posture.js";
 import { readRegularFileWithStats } from "../internals/fsxn.js";
 import type { Runner, RunResult } from "../internals/proc.js";
@@ -436,12 +436,15 @@ export function skillspectorDockerRunArgv(
 
 function ciscoSkillScannerBaseArgv(): string[] {
   return [
-    "uvx",
+    "uv",
+    "run",
+    "--project",
+    CISCO_SKILL_SCANNER_PROJECT,
+    "--locked",
+    "--isolated",
     "--offline",
     "--no-python-downloads",
     "--no-env-file",
-    "--from",
-    CISCO_SKILL_SCANNER_SPEC,
     "skill-scanner",
   ];
 }
@@ -827,6 +830,7 @@ async function runCiscoSkillScan(
       const output = join(tmp, "results.sarif");
       try {
         const scan = await run(ciscoSkillScannerRunArgv(platform, skillDir, output), {
+          cwd: skillDir,
           env: scrubFetchEnv(env),
           timeoutMs: 120_000,
         });
@@ -1674,7 +1678,7 @@ function analyzerPassCheck(detector: TrustDetector, analyzersRun: readonly strin
   return {
     name: "trust detector cisco",
     verdict: "pass",
-    detail: `Cisco AI Defense skill-scanner static scan completed through uvx --offline defaults-only. No findings != safe. Analyzers run: ${analyzersRun.join(", ")}`,
+    detail: `Cisco AI Defense skill-scanner static scan completed through the committed uv lock with offline defaults-only. No findings != safe. Analyzers run: ${analyzersRun.join(", ")}`,
   };
 }
 

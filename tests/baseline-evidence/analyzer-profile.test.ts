@@ -1,8 +1,12 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  baselineAnalyzerVersions,
+  CISCO_SKILL_SCANNER_LOCK,
+  CISCO_SKILL_SCANNER_VERSION,
   preflightRequiredBaselineAnalyzers,
   requiredBaselineAnalyzersForComponent,
   requiredBaselineDetectorsForComponent,
@@ -62,10 +66,20 @@ describe("required baseline analyzer applicability", () => {
     ]);
     expect(requiredBaselineDetectorsForComponent(nested, root)).toEqual(["skillspector", "cisco"]);
   });
+
+  it("binds the Cisco analyzer receipt identity to the committed uv lock", () => {
+    const digest = createHash("sha256")
+      .update(readFileSync(CISCO_SKILL_SCANNER_LOCK))
+      .digest("hex")
+      .slice(0, 12);
+    expect(baselineAnalyzerVersions()["cisco@uvx"]).toBe(
+      `${CISCO_SKILL_SCANNER_VERSION}+uvlock.${digest}`,
+    );
+  });
 });
 
 describe("checkDetectorsAvailable", () => {
-  it("reports Cisco unavailable with the underlying offline uvx reason", async () => {
+  it("reports Cisco unavailable with the underlying offline uv reason", async () => {
     const run = fakeRunner((argv) =>
       argv.includes("--version")
         ? { code: 1, stderr: "cisco-ai-skill-scanner was not found in the cache" }
@@ -96,7 +110,7 @@ describe("preflightRequiredBaselineAnalyzers", () => {
     await expect(
       preflightRequiredBaselineAnalyzers({ run: missingToolRunner, platform: "linux", env: {} }),
     ).rejects.toThrow(
-      /preflight: required analyzer\(s\) not provisioned.*cisco@uvx unavailable.*uv tool install cisco-ai-skill-scanner==2\.0\.12/is,
+      /preflight: required analyzer\(s\) not provisioned.*cisco@uvx unavailable.*uv run --project tools\/cisco-skill-scanner --locked/is,
     );
   });
 });

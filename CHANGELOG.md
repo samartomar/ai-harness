@@ -6,6 +6,14 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- The baseline `vet-once` CI job now resolves Cisco AI Defense from a committed, hash-pinned uv
+  lock, runs that exact environment offline from each skill directory, and uploads the freshly
+  generated evidence candidate before failing on drift. Analyzer receipts bind to the uv lock so
+  a transitive dependency change cannot reuse evidence from a different scanner environment.
+  (#449)
+
 ## [2.10.0] - 2026-07-12
 
 ### Added

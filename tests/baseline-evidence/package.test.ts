@@ -33,6 +33,8 @@ describe("baseline evidence release payload", () => {
     const packed = JSON.parse(output) as Array<{ files: Array<{ path: string }> }>;
     const files = packed[0]?.files.map((file) => file.path) ?? [];
     expect(files).toContain("src/baseline-evidence/vendor-lock.json");
+    expect(files).toContain("tools/cisco-skill-scanner/pyproject.toml");
+    expect(files).toContain("tools/cisco-skill-scanner/uv.lock");
   });
 
   it("exposes explicit write and check scripts for the same deterministic generator", () => {
@@ -50,7 +52,7 @@ describe("baseline evidence release payload", () => {
     const workflow = readFileSync(path, "utf8");
     expect(workflow).toContain(baselineCatalogById("ecc").pinnedSha);
     expect(workflow).toContain(baselineCatalogById("superpowers").pinnedSha);
-    expect(workflow).toContain("npm run baseline:check");
+    expect(workflow).toContain("npm run baseline:vet");
     expect(workflow).toContain(SKILLSPECTOR_IMAGE_DIGEST);
     // The image is pulled content-addressed by digest from GHCR, then tagged to
     // the local runtime name so SKILLSPECTOR_IMAGE selection (src/trust/images.ts)
@@ -67,11 +69,32 @@ describe("baseline evidence release payload", () => {
     expect(workflow).not.toContain("systemctl restart docker");
     expect(workflow).not.toContain("docker build");
     expect(workflow).toContain("astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990");
-    expect(workflow).toContain(CISCO_SKILL_SCANNER_SPEC);
     expect(workflow).toContain(`skill-scanner ${CISCO_SKILL_SCANNER_VERSION}`);
     expect(workflow).toContain("actions/upload-artifact@");
     expect(workflow).toContain("src/baseline-evidence/vendor-lock.json");
     expect(workflow).not.toMatch(/git\s+(commit|push)|npm\s+publish/);
+  });
+
+  it("provisions Cisco from a committed uv lock and uploads the generated evidence candidate", () => {
+    const runtimeRoot = join(repo, "tools", "cisco-skill-scanner");
+    const pyproject = join(runtimeRoot, "pyproject.toml");
+    const lock = join(runtimeRoot, "uv.lock");
+    expect(existsSync(pyproject)).toBe(true);
+    expect(existsSync(lock)).toBe(true);
+    expect(readFileSync(pyproject, "utf8")).toContain(CISCO_SKILL_SCANNER_SPEC);
+
+    const workflow = readFileSync(
+      join(repo, ".github", "workflows", "baseline-evidence.yml"),
+      "utf8",
+    );
+    expect(workflow).toContain("cache-dependency-glob: tools/cisco-skill-scanner/uv.lock");
+    expect(workflow).toContain("uv run");
+    expect(workflow).toContain("--project tools/cisco-skill-scanner");
+    expect(workflow).toContain("--locked");
+    expect(workflow).toContain("--offline");
+    expect(workflow).toContain("npm run baseline:vet");
+    expect(workflow).toContain("git diff --exit-code");
+    expect(workflow).not.toContain("npm run baseline:check");
   });
 
   it("builds SkillSpector from its committed lock on a digest-pinned base", () => {

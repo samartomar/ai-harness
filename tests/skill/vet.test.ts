@@ -162,14 +162,16 @@ function detectorRunner(
         return { code: 0, stdout: JSON.stringify(options.skillspectorSarif ?? { runs: [] }) };
       }
     }
-    if (argv[0] === "uvx") {
+    if (argv[0] === "uv" && argv[1] === "run" && argv.includes("skill-scanner")) {
       if (argv.includes("--version")) return { code: 0, stdout: "skill-scanner 2.0.12\n" };
-      if (argv.includes("skill-scanner") && argv.includes("scan")) {
+      if (argv.includes("scan")) {
         const out = argv[argv.indexOf("--output-sarif") + 1];
         if (out === undefined) return { code: 1, stderr: "missing --output-sarif" };
         writeFileSync(out, JSON.stringify({ runs: [] }), "utf8");
         return { code: 0, stdout: `Report saved to: ${out}\n` };
       }
+    }
+    if (argv[0] === "uvx") {
       if (argv.includes("snyk-agent-scan")) {
         if (argv.includes("help")) return { code: 0, stdout: "snyk-agent-scan help\n" };
         if (argv.includes("scan")) return { code: 0, stdout: JSON.stringify({ findings: [] }) };
