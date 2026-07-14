@@ -18,6 +18,7 @@ const installRoot = join(cacheRoot, "aih", "repo-ai-tools", repoKey);
 const uvToolRoot = join(installRoot, "uv");
 const binRoot = join(installRoot, "bin");
 const tokenOptimizerRoot = join(installRoot, "token-optimizer", "v5.11.44");
+const tokenOptimizerClaudeScope = join(installRoot, "token-optimizer", "claude-scope");
 const serenaOverridesPath = join(installRoot, "serena-security-overrides.txt");
 
 const plan = {
@@ -49,6 +50,7 @@ const plan = {
     tokenOptimizer: {
       actions: ["report", "coach"],
       clients: ["claude", "codex"],
+      codexClaudeSessionFallback: false,
       profile: "quiet",
       event: "Stop",
     },
@@ -263,10 +265,17 @@ function runTokenOptimizer(args, { quiet = false, timeout } = {}) {
     return;
   }
 
+  const runtime = tokenOptimizerRuntime();
+  const env = { ...process.env, TOKEN_OPTIMIZER_RUNTIME: runtime };
+  if (runtime === "codex") {
+    mkdirSync(tokenOptimizerClaudeScope, { recursive: true });
+    env.CLAUDE_CONFIG_DIR = tokenOptimizerClaudeScope;
+  }
+
   for (const [python, prefix] of tokenOptimizerPythonCandidates()) {
     const result = spawnSync(python, [...prefix, measure, ...args], {
       cwd: repoRoot,
-      env: { ...process.env, TOKEN_OPTIMIZER_RUNTIME: tokenOptimizerRuntime() },
+      env,
       stdio: quiet ? "ignore" : "inherit",
       timeout,
     });
