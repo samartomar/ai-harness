@@ -185,6 +185,7 @@ interface JsonCompliantConfigCheck {
   absPath: string;
   configKey: string;
   generatedEntries: Record<string, McpEntry>;
+  generatedAlternates: Record<string, McpEntry>;
 }
 
 interface TomlCompliantConfigCheck {
@@ -279,6 +280,7 @@ function matchingGeneratedJsonServerNames(
   absPath: string,
   configKey: string,
   generatedEntries: Record<string, McpEntry>,
+  generatedAlternates: Record<string, McpEntry> = {},
 ): string[] {
   const raw = readIfExists(absPath);
   if (raw === undefined || Object.keys(generatedEntries).length === 0) return [];
@@ -287,13 +289,11 @@ function matchingGeneratedJsonServerNames(
   const servers = parsed[configKey];
   if (!isPlainObject(servers)) return [];
   return Object.entries(generatedEntries)
-    .filter(([name, generated]) => {
-      const variants =
-        configKey === "mcp" && generated.enabled === true
-          ? [generated, { ...generated, enabled: false }]
-          : [generated];
-      return variants.some((variant) => jsonStable(servers[name]) === jsonStable(variant));
-    })
+    .filter(([name, generated]) =>
+      [generated, generatedAlternates[name]].some(
+        (variant) => variant !== undefined && jsonStable(servers[name]) === jsonStable(variant),
+      ),
+    )
     .map(([name]) => name);
 }
 
@@ -329,7 +329,12 @@ function compliantConfigProbe(
     for (const check of checks) {
       const names =
         check.kind === "json"
-          ? matchingGeneratedJsonServerNames(check.absPath, check.configKey, check.generatedEntries)
+          ? matchingGeneratedJsonServerNames(
+              check.absPath,
+              check.configKey,
+              check.generatedEntries,
+              check.generatedAlternates,
+            )
           : matchingManagedTomlServerNames(check.absPath, check.deniedNames);
       for (const server of names) {
         const detail = policiesByName.get(server)?.reason ?? "policy-denied generated server";
@@ -802,6 +807,11 @@ async function planMcp(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
         ...(mcpCompliant ? deniedGenerated.map((item) => [item.name, item.server] as const) : []),
       ]);
       const generatedDeniedEntries = mcpEntries(cli, deniedGeneratedServerMap);
+      const generatedDeniedAlternates = applyMcpHygieneToEntries(
+        cli,
+        generatedDeniedEntries,
+        mcpHygieneIssues(deniedGeneratedServerMap, ctx.env),
+      );
       const renderedEntries = applyMcpHygieneToEntries(
         cli,
         mcpEntries(cli, writeServers),
@@ -811,6 +821,7 @@ async function planMcp(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
         abs,
         p.configKey,
         generatedDeniedEntries,
+        generatedDeniedAlternates,
       );
       for (const name of staleGeneratedNames) {
         const policy = deniedGeneratedPoliciesByName.get(name);
@@ -823,6 +834,7 @@ async function planMcp(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
           absPath: abs,
           configKey: p.configKey,
           generatedEntries: generatedDeniedEntries,
+          generatedAlternates: generatedDeniedAlternates,
         });
       }
       actions.push(
