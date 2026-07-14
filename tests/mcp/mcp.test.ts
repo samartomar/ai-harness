@@ -1088,7 +1088,7 @@ describe("aih mcp — per-CLI config (honors --cli)", () => {
     writeMcpPolicy(root, { allowedServers: [], allowManagedOnly: true });
     const planCtx = makeCtx({
       root,
-      env,
+      env: { ...env, GITHUB_PERSONAL_ACCESS_TOKEN: "test-only-token" },
       options: {
         allTools: true,
         scope: "remote",
