@@ -197,6 +197,29 @@ describe("mcp enterprise modes", () => {
     ).not.toContain("code-review-graph");
   });
 
+  it("S1/S2 removes exact generated HTTP servers from offline deny-all merges", async () => {
+    const root = makeTmp();
+    const standard = (await command.plan(makeCtx({ root }))).actions.find(
+      (action): action is WriteAction => action.kind === "write" && action.path === ".mcp.json",
+    ) as WriteAction;
+    const context7 = pick(serversOf(standard), "context7");
+    const operator = { type: "http", url: "https://mcp.internal.example" };
+    writeFileSync(join(root, ".mcp.json"), jsonFile({ mcpServers: { context7, operator } }));
+    writeMcpPolicy(root, { allowedServers: [], allowManagedOnly: true });
+
+    const offline = (
+      await command.plan(makeCtx({ root, options: { mode: "offline" } }))
+    ).actions.find(
+      (action): action is WriteAction => action.kind === "write" && action.path === ".mcp.json",
+    ) as WriteAction;
+    const merged = JSON.parse(resolveContents(offline, join(root, ".mcp.json"))) as {
+      mcpServers: Record<string, unknown>;
+    };
+
+    expect(merged.mcpServers.context7).toBeUndefined();
+    expect(merged.mcpServers.operator).toEqual(operator);
+  });
+
   it("--mode offline: a verify probe FAILS on stdio servers that resolve at runtime (AIH-MCP-001)", async () => {
     const ctx = makeCtx({ options: { mode: "offline" }, verify: true });
     const p = await command.plan(ctx);
