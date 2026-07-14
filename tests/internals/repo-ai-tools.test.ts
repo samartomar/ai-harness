@@ -39,6 +39,7 @@ describe("ai-harness repo AI tooling", () => {
         tokenOptimizer: {
           actions: ["report", "coach"],
           clients: ["claude", "codex"],
+          codexClaudeSessionFallback: false,
           profile: "quiet",
           event: "Stop",
         },
@@ -99,5 +100,12 @@ describe("ai-harness repo AI tooling", () => {
     expect(routing).toContain("Token Optimizer");
     expect(routing).toContain("Claude and Codex");
     expect(routing).toContain("must not block product work");
+  });
+
+  it("keeps Serena runtime artifacts out of the product diff", () => {
+    const serenaIgnore = readFileSync(resolve(root, ".serena/.gitignore"), "utf8");
+
+    expect(serenaIgnore).toContain("/cache");
+    expect(serenaIgnore).toContain("/logs");
   });
 });
