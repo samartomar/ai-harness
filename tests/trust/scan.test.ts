@@ -14,6 +14,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
 import { Command } from "commander";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { CISCO_SKILL_SCANNER_PROJECT } from "../../src/baseline-evidence/analyzer-profile.js";
 import { runCapability } from "../../src/commands/run.js";
 import { executePlan } from "../../src/internals/execute.js";
 import {
@@ -122,11 +123,15 @@ function successfulSmokeRunner(): Runner {
   return fakeRunner(successfulSmokeAndSkillspector);
 }
 
+function isCiscoSkillScannerArgv(argv: readonly string[]): boolean {
+  return argv[0] === "uv" && argv[1] === "run" && argv.includes("skill-scanner");
+}
+
 function ciscoRunner(sarif: unknown, onScan?: (argv: string[]) => void): Runner {
   return fakeRunner((argv) => {
     const skillspector = successfulSkillspector(argv);
     if (skillspector !== undefined) return skillspector;
-    if (argv[0] !== "uvx") return undefined;
+    if (!isCiscoSkillScannerArgv(argv)) return undefined;
     if (argv.includes("--version")) return { code: 0, stdout: "skill-scanner 2.0.12\n" };
     if (argv.includes("skill-scanner") && argv.includes("scan")) {
       onScan?.(argv);
@@ -146,8 +151,7 @@ function mcpScannerRunner(
   return fakeRunner((argv, opts) => {
     const skillspector = successfulSkillspector(argv);
     if (skillspector !== undefined) return skillspector;
-    if (argv[0] !== "uvx") return undefined;
-    if (argv.includes("skill-scanner")) {
+    if (isCiscoSkillScannerArgv(argv)) {
       if (argv.includes("--version")) return { code: 0, stdout: "skill-scanner 2.0.12\n" };
       if (argv.includes("scan")) {
         const out = argv[argv.indexOf("--output-sarif") + 1];
@@ -156,6 +160,7 @@ function mcpScannerRunner(
         return { code: 0, stdout: `Report saved to: ${out}\n` };
       }
     }
+    if (argv[0] !== "uvx") return undefined;
     if (argv.includes("mcp-scanner")) {
       if (argv.includes("--help")) return { code: 0, stdout: "mcp-scanner help\n" };
       if (argv.includes("static")) {
@@ -217,7 +222,7 @@ function snykAgentScanRunnerWithHooks(
   return fakeRunner((argv, opts) => {
     const skillspector = successfulSkillspector(argv);
     if (skillspector !== undefined) return skillspector;
-    if (argv[0] === "uvx" && argv.includes("skill-scanner")) {
+    if (isCiscoSkillScannerArgv(argv)) {
       if (argv.includes("--version")) return { code: 0, stdout: "skill-scanner 2.0.12\n" };
       if (argv.includes("scan")) {
         const out = argv[argv.indexOf("--output-sarif") + 1];
@@ -263,7 +268,7 @@ function agentshieldRunner(
   return fakeRunner((argv, opts) => {
     const skillspector = successfulSkillspector(argv);
     if (skillspector !== undefined) return skillspector;
-    if (argv[0] === "uvx" && argv.includes("skill-scanner")) {
+    if (isCiscoSkillScannerArgv(argv)) {
       if (argv.includes("--version")) return { code: 0, stdout: "skill-scanner 2.0.12\n" };
       if (argv.includes("scan")) {
         const out = argv[argv.indexOf("--output-sarif") + 1];
@@ -298,7 +303,7 @@ function agentshieldMissingOutputRunner(): Runner {
   return fakeRunner((argv) => {
     const skillspector = successfulSkillspector(argv);
     if (skillspector !== undefined) return skillspector;
-    if (argv[0] === "uvx" && argv.includes("skill-scanner")) {
+    if (isCiscoSkillScannerArgv(argv)) {
       if (argv.includes("--version")) return { code: 0, stdout: "skill-scanner 2.0.12\n" };
       if (argv.includes("scan")) {
         const out = argv[argv.indexOf("--output-sarif") + 1];
@@ -327,7 +332,7 @@ function agentDetectorMissingRunner(): Runner {
   return fakeRunner((argv) => {
     const skillspector = successfulSkillspector(argv);
     if (skillspector !== undefined) return skillspector;
-    if (argv[0] === "uvx" && argv.includes("skill-scanner")) {
+    if (isCiscoSkillScannerArgv(argv)) {
       if (argv.includes("--version")) return { code: 0, stdout: "skill-scanner 2.0.12\n" };
       if (argv.includes("scan")) {
         const out = argv[argv.indexOf("--output-sarif") + 1];
@@ -365,7 +370,9 @@ function ciscoMissingRunner(): Runner {
   return fakeRunner((argv) => {
     const skillspector = successfulSkillspector(argv);
     if (skillspector !== undefined) return skillspector;
-    if (argv[0] === "uvx") return { code: 127, stderr: "uvx not found", spawnError: true };
+    if (isCiscoSkillScannerArgv(argv)) {
+      return { code: 127, stderr: "uv not found", spawnError: true };
+    }
     return undefined;
   });
 }
@@ -3042,7 +3049,7 @@ describe("scanTrustTree", () => {
     );
   });
 
-  it("runs Cisco AI Defense skill-scanner when the offline uvx tool is available", async () => {
+  it("runs Cisco AI Defense skill-scanner when the locked offline uv runtime is available", async () => {
     skill("skills/clean", "# Clean\n");
     const scanTargets: string[] = [];
 
@@ -3159,10 +3166,10 @@ describe("scanTrustTree", () => {
           ...(skillspector.spawnError === undefined ? {} : { spawnError: skillspector.spawnError }),
         };
       }
-      if (argv[0] === "uvx" && argv.includes("--version")) {
+      if (isCiscoSkillScannerArgv(argv) && argv.includes("--version")) {
         return { code: 0, stdout: "skill-scanner 2.0.12\n", stderr: "" };
       }
-      if (argv[0] === "uvx" && argv.includes("scan")) {
+      if (isCiscoSkillScannerArgv(argv) && argv.includes("scan")) {
         const target = argv[argv.indexOf("scan") + 1] ?? "";
         const output = argv[argv.indexOf("--output-sarif") + 1];
         if (output === undefined) return { code: 1, stdout: "", stderr: "missing SARIF path" };
@@ -3208,10 +3215,10 @@ describe("scanTrustTree", () => {
           ...(skillspector.spawnError === undefined ? {} : { spawnError: skillspector.spawnError }),
         };
       }
-      if (argv[0] === "uvx" && argv.includes("--version")) {
+      if (isCiscoSkillScannerArgv(argv) && argv.includes("--version")) {
         return { code: 0, stdout: "skill-scanner 2.0.12\n", stderr: "" };
       }
-      if (argv[0] === "uvx" && argv.includes("scan")) {
+      if (isCiscoSkillScannerArgv(argv) && argv.includes("scan")) {
         const target = argv[argv.indexOf("scan") + 1] ?? "";
         const output = argv[argv.indexOf("--output-sarif") + 1];
         if (output === undefined) return { code: 1, stdout: "", stderr: "missing SARIF path" };
@@ -3255,7 +3262,7 @@ describe("scanTrustTree", () => {
     expect(active).toBe(0);
   });
 
-  it("skips optional Cisco skill-scanner when offline uvx cannot run it", async () => {
+  it("skips optional Cisco skill-scanner when locked offline uv cannot run it", async () => {
     skill("skills/clean", "# Clean\n");
 
     const result = await scanTrustTreeWithAnalyzers(dir, {
@@ -4707,16 +4714,19 @@ describe("scanTrustTree", () => {
     expect(script).not.toContain("test -r '/scan/install.sh' || test -r '/scan/package.json'");
   });
 
-  it("invokes Cisco skill-scanner through offline uvx without network-enabling options", () => {
+  it("invokes Cisco skill-scanner from the committed uv lock without network-enabling options", () => {
     const argv = ciscoSkillScannerRunArgv("linux", "/scan-root", "/tmp/cisco.sarif");
 
     expect(argv).toEqual([
-      "uvx",
+      "uv",
+      "run",
+      "--project",
+      CISCO_SKILL_SCANNER_PROJECT,
+      "--locked",
+      "--isolated",
       "--offline",
       "--no-python-downloads",
       "--no-env-file",
-      "--from",
-      "cisco-ai-skill-scanner==2.0.12",
       "skill-scanner",
       "scan",
       "/scan-root",

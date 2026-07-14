@@ -41,14 +41,15 @@ jobs:
         uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
         with:
           version: "0.11.14"
+          cache-dependency-glob: tools/cisco-skill-scanner/uv.lock
       - name: Cache and verify pinned Cisco skill-scanner
         shell: bash
         run: |
           set -euo pipefail
-          uvx --no-python-downloads --no-env-file \
-            --from 'cisco-ai-skill-scanner==2.0.12' skill-scanner --version
-          version="$(uvx --offline --no-python-downloads --no-env-file \
-            --from 'cisco-ai-skill-scanner==2.0.12' skill-scanner --version)"
+          uv run --project tools/cisco-skill-scanner --locked --isolated \
+            --no-python-downloads --no-env-file skill-scanner --version
+          version="$(uv run --project tools/cisco-skill-scanner --locked --isolated \
+            --offline --no-python-downloads --no-env-file skill-scanner --version)"
           test "$version" = "skill-scanner 2.0.12"
       - name: Check out exact ECC baseline
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -69,15 +70,22 @@ jobs:
         # incremental receipt reuse so this run rescans every component, the same
         # as before I1. Incremental reuse is the human-loop default (baseline:vet /
         # baseline:check without --full), not the CI gate.
-        run: >-
-          npm run baseline:check --
-          --ecc-root .baseline-sources/ecc
-          --superpowers-root .baseline-sources/superpowers
-          --full
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm run baseline:vet -- \
+            --ecc-root .baseline-sources/ecc \
+            --superpowers-root .baseline-sources/superpowers \
+            --full
+          git diff --exit-code -- \
+            src/baseline-evidence/vendor-lock.json \
+            src/baseline-evidence/ecc-install-preview.json
       - name: Upload baseline evidence report
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: baseline-evidence-lock
-          path: src/baseline-evidence/vendor-lock.json
+          path: |
+            src/baseline-evidence/vendor-lock.json
+            src/baseline-evidence/ecc-install-preview.json
           if-no-files-found: error

@@ -1,5 +1,7 @@
-import { lstatSync, readdirSync, type Stats } from "node:fs";
-import { basename, join } from "node:path";
+import { createHash } from "node:crypto";
+import { existsSync, lstatSync, readdirSync, readFileSync, type Stats } from "node:fs";
+import { basename, dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { Runner } from "../internals/proc.js";
 import type { Platform } from "../platform/base.js";
 import { checkDetectorsAvailable, type TrustDetectorName } from "../trust/detectors.js";
@@ -14,6 +16,24 @@ import type { VetBaselineCatalogOptions } from "./vet.js";
 
 export const CISCO_SKILL_SCANNER_VERSION = "2.0.12";
 export const CISCO_SKILL_SCANNER_SPEC = `cisco-ai-skill-scanner==${CISCO_SKILL_SCANNER_VERSION}`;
+
+const moduleDir = dirname(fileURLToPath(import.meta.url));
+const ciscoProjectCandidates = [
+  resolve(moduleDir, "..", "tools", "cisco-skill-scanner"),
+  resolve(moduleDir, "..", "..", "tools", "cisco-skill-scanner"),
+];
+
+export const CISCO_SKILL_SCANNER_PROJECT =
+  ciscoProjectCandidates.find((candidate) => existsSync(join(candidate, "uv.lock"))) ??
+  resolve(moduleDir, "..", "tools", "cisco-skill-scanner");
+export const CISCO_SKILL_SCANNER_LOCK = join(CISCO_SKILL_SCANNER_PROJECT, "uv.lock");
+
+function ciscoSkillScannerIdentity(): string {
+  const lockDigest = createHash("sha256")
+    .update(readFileSync(CISCO_SKILL_SCANNER_LOCK))
+    .digest("hex");
+  return `${CISCO_SKILL_SCANNER_VERSION}+uvlock.${lockDigest.slice(0, 12)}`;
+}
 
 export const REQUIRED_BASELINE_DETECTORS = [
   "skillspector",
@@ -86,7 +106,7 @@ export function baselineAnalyzerVersions(): Readonly<Record<string, string>> {
     // detector source changed, forcing a full re-vet in every release PR.
     "aih-native": nativeAnalyzerIdentity(),
     "skillspector@docker": `${SKILLSPECTOR_SOURCE_REVISION}@${SKILLSPECTOR_IMAGE_DIGEST}`,
-    "cisco@uvx": CISCO_SKILL_SCANNER_VERSION,
+    "cisco@uvx": ciscoSkillScannerIdentity(),
   };
 }
 
@@ -118,7 +138,7 @@ export interface BaselinePreflightRuntime {
 
 function analyzerProvisioningHint(analyzerLabel: string): string {
   if (analyzerLabel === "cisco@uvx") {
-    return `warm the uv cache once online (\`uv tool install ${CISCO_SKILL_SCANNER_SPEC}\` or \`uvx --from ${CISCO_SKILL_SCANNER_SPEC} skill-scanner --version\`); the trust scan itself always runs --offline`;
+    return "warm the committed Cisco runtime once online (`uv run --project tools/cisco-skill-scanner --locked --isolated --no-env-file --no-python-downloads skill-scanner --version`); the trust scan itself always runs --offline";
   }
   if (analyzerLabel === "skillspector@docker") {
     return "build and load the pinned SkillSpector image per docs/security/skillspector.md";
