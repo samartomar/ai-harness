@@ -4,18 +4,34 @@ This is the repo-owned routing contract for AI tooling in `ai-harness`. It is
 available to Claude and Codex through their project configuration and overrides
 generic baseline advice when the two conflict.
 
-## Pick one tool for one job
+## Default decision path
 
-| Need | Tool | Boundary |
+Pick the first matching row. A known, local edit needs no helper: inspect the
+source and tests directly.
+
+| Question | First action | Stop condition |
 |---|---|---|
-| Blast radius, affected flows, compact reviewer context | `code-review-graph` | A blast-area and reviewer-context aid only; never correctness, security, test, or release proof. |
-| Symbol definitions, references, and semantic refactoring | Serena | Use its semantic tools when relationships cross symbols or files; keep its memory and duplicate file/shell tools disabled. |
-| Low-token structural navigation and targeted code outlines | Token Savior | Use the `optimized` profile; memory, capture, command rewriting, and shell hooks stay disabled. |
-| Session token measurement and continuity checkpointing | Token Optimizer | Project `Stop` hook only (`quiet` profile); on-demand report/coach commands are allowed, but no global hooks, daemon, status line, auto-update, or command rewriting. |
-| Durable decisions and architectural recall | `codebase-memory-mcp` | Store and retrieve ADR-level context; do not repeat structural or blast-radius queries here. |
+| Where does this unfamiliar behavior start, and what is its compact shape? | Use Token Savior read-only: start with `get_entry_points`, `search_codebase`, `find_symbol`, or `get_call_chain`; retrieve exact code only with `get_function_source` / `get_full_context`. | Stop when the likely files or symbols are known; confirm them in committed source. |
+| What could this broad or multi-file change affect? | Ask `code-review-graph` once for blast radius, affected flows, and likely tests before editing or reviewing. | Stop after one useful impact result. Validate every edge against source and tests. Skip it for an already-localized change. |
+| Which definitions and references must be inspected or changed exactly? | Use Serena: `get_symbols_overview` → `find_symbol` → `find_referencing_symbols` / `find_implementations`; use `rename_symbol`, `replace_symbol_body`, or insert tools only when editing was requested. | Stop when the exact edit set is known, then inspect the diff and run tests. |
+| Is prompt/tool overhead itself the assigned problem? | Use `node tools/repo-ai-tools.mjs token-optimizer-report`, then `token-optimizer-coach` only if recommendations are needed. | Stop after the requested measurement or recommendation. Do not run the report or coach on every task. |
+| Is this a durable architectural decision that future sessions must recall? | Store or retrieve it with `codebase-memory-mcp`. | Keep ADR-level decisions only; do not duplicate navigation or impact queries. |
 
-Do not fan the same question across these tools. Start with the narrowest row
-that matches the task, then fall back to committed source, tests, schemas, and CI.
+Token Savior is the low-token orientation lane, not the editing lane.
+Do not use `replace_symbol_source` or `add_field_to_model`; make semantic edits
+with Serena or normal source editing. Serena owns exact symbol/refactor work, so
+its memory, basic file, shell, and project-switching tools stay disabled.
+
+Do not fan the same question across helpers. Use at most one fallback, then
+continue from committed source, tests, schemas, and CI.
+
+## Normal work loop
+
+1. Localize cheaply with source search or Token Savior.
+2. For broad changes only, use one graph impact query to focus review.
+3. Use Serena only for exact cross-symbol inspection or semantic edits.
+4. Verify with repository evidence. Token Optimizer runs the quiet project
+   `Stop` checkpoint automatically; it is not a correctness or completion gate.
 
 ## Failure and evidence boundary
 
@@ -24,9 +40,10 @@ must not block product work, trigger a repair detour, or be presented as product
 evidence. State the warning once and continue from repository evidence. Repair a
 helper only when repairing that helper is the assigned task.
 
-This rule specifically narrows the generic large-repo graph rule for this repo:
-`code-review-graph` should be used when available to reduce blast-area review
-cost, but it is not a gate.
+This rule specifically overrides generic large-repo graph advice for this repo:
+`code-review-graph` is a blast-area and reviewer-context aid only. It reduces
+review cost, but it is never a start, correctness, security, test, merge, or
+release gate.
 
 ## Installation and licensing
 

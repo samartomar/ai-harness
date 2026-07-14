@@ -42,7 +42,7 @@ Define success criteria, then loop until verified.
 - Explicit error handling; no silent failures.
 - No secrets in code, prompts, fixtures, logs, or error text.
 - Do not open `.env*` or `secrets/**`; validate secret presence with `aih secrets --verify`.
-- On large repos, code-review-graph is a hard prerequisite for repository work. If it is unavailable, errors, or has no populated graph, stop; repair it and verify a populated graph before continuing.
+- On large repos, code-review-graph is advisory blast-area context, not evidence or a gate. If it fails or is stale, warn once and continue from source and tests. Repair it only when helper repair is the assigned task.
 - Repo evidence (source, tests, schemas, CI) is the truth, not model memory. Don't
   invent commands, paths, or APIs; verify a path exists before citing it.
 
@@ -51,8 +51,8 @@ Define success criteria, then loop until verified.
 Use the canonical tool this repo names; don't load MCP servers just-in-case; when two
 tools look alike, pick the one the canon names — and here the canon names the graph pair:
 
-- **code-review-graph** — change-time reasoning: impact radius, affected flows, review
-  context, refactor planning, architecture. Reach for it BEFORE editing (the impact rule above).
+- **code-review-graph** — advisory change-time impact radius, affected flows, and review
+  context. Use it once before broad edits or reviews, then verify its result in source and tests.
 - **codebase-memory-mcp** — retrieval + memory: semantic code search, trace a path between
   symbols, structural graph queries, and durable decision memory (ADRs).
 

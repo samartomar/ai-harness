@@ -38,8 +38,8 @@ the core + `ai-coding/project.md` first, then load only the task slice below.
 ### Implementation
 Load `ai-coding/project.md` for the commands, scale, and constraints; follow the ECC
 stack rules for TypeScript/Node.js. State the goal and the smallest viable change first.
-Honor the Invariants in `ai-coding/rules/agent-behavior-core.md` (large-repo graph safety,
-boundaries) before broad work.
+Honor the Invariants in `ai-coding/rules/agent-behavior-core.md` (boundaries and
+advisory tool routing) before broad work.
 
 ### Code review / PR
 Load `ai-coding/project.md`; review the diff, tests, and schemas against repo
@@ -61,9 +61,9 @@ how it loads rules, boundaries).
 ## Tooling failure recovery
 
 If a tool, MCP server, graph, or memory store fails, state the failure briefly,
-fall back to committed repo evidence, and never invent results. Exception: on
-large repos, code-review-graph failure is fail-closed and work must stop until
-the graph is repaired and verified populated. Don't cite a
+fall back to committed repo evidence, and never invent results. All helpers —
+including `code-review-graph` — are advisory: warn once and continue; repair
+one only when helper repair is the assigned task. Don't cite a
 command, path, or API you haven't verified exists. Regenerate this canon with
 `aih bootstrap-ai` (router + bootloaders) and `aih contract` (project.json /
 project.md) — idempotent; `aih bootstrap-ai --verify` fails if a bootloader drifted.

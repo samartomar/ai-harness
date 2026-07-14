@@ -2,6 +2,12 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+import {
+  agentBehaviorCoreDoc,
+  ruleRouterDoc,
+  sharedCanonicalBlockBody,
+} from "../../src/bootstrap-ai/canon.js";
+import type { RepoStack } from "../../src/profile/scan.js";
 
 const root = resolve(import.meta.dirname, "../..");
 
@@ -94,7 +100,7 @@ describe("ai-harness repo AI tooling", () => {
     const routing = readFileSync(resolve(root, "ai-coding/rules/repo-ai-tools.md"), "utf8");
 
     expect(extension).toContain("rules/repo-ai-tools.md");
-    expect(extension).toContain("Never run `aih` against the `ai-harness` checkout");
+    expect(extension).toContain("Never use AIH project-truth or project-governance surfaces");
     expect(routing).toContain("blast-area and reviewer-context aid");
     expect(routing).toContain("Serena");
     expect(routing).toContain("Token Savior");
@@ -126,7 +132,7 @@ describe("ai-harness repo AI tooling", () => {
     for (const file of ["AGENTS.md", "CLAUDE.md"]) {
       const content = readFileSync(resolve(root, file), "utf8");
       expect(content, file).toContain("ai-coding/rules/repo-ai-tools.md");
-      expect(content, file).toContain("Never run `aih` against this checkout");
+      expect(content, file).toContain("Never use AIH project-truth or project-governance commands");
       expect(content, file).toContain("warn once and continue");
     }
 
@@ -142,5 +148,52 @@ describe("ai-harness repo AI tooling", () => {
 
     expect(serenaIgnore).toContain("/cache");
     expect(serenaIgnore).toContain("/logs");
+  });
+
+  it("keeps this repo's generated canon in source sync without project-governance self-use", () => {
+    const project = JSON.parse(readFileSync(resolve(root, "ai-coding/project.json"), "utf8")) as {
+      description: string;
+      languages: string[];
+      frameworks: string[];
+      cloud: string[];
+      databases: string[];
+      deployment: string[];
+      packageManager: string;
+      entrypoints: string[];
+      commands: Record<string, { value: string }>;
+      scale: { isMonorepo: boolean };
+    };
+    const stack: RepoStack = {
+      languages: project.languages,
+      frameworks: project.frameworks,
+      cloud: project.cloud,
+      databases: project.databases,
+      deployment: project.deployment,
+      packageManager: project.packageManager,
+      hasTypeScript: project.languages.includes("TypeScript/Node.js"),
+      scripts: {},
+      description: project.description,
+      entryPoints: project.entrypoints,
+      testRunner: project.commands.test?.value,
+      buildCommand: project.commands.build?.value,
+      lintCommand: project.commands.lint?.value,
+      verifyCommand: project.commands.verify?.value,
+      typecheckCommand: project.commands.typecheck?.value,
+      browserTest: false,
+      isMonorepo: project.scale.isMonorepo,
+    };
+
+    expect(
+      readFileSync(resolve(root, "ai-coding/adapters/_shared-canonical-block.md"), "utf8"),
+    ).toBe(sharedCanonicalBlockBody("ai-coding"));
+    expect(readFileSync(resolve(root, "ai-coding/rules/agent-behavior-core.md"), "utf8")).toBe(
+      agentBehaviorCoreDoc("ai-coding"),
+    );
+    expect(readFileSync(resolve(root, "ai-coding/RULE_ROUTER.md"), "utf8")).toBe(
+      ruleRouterDoc("ai-coding", "ai-harness", stack, ["CLAUDE.md", "AGENTS.md"], {
+        projectExtension: true,
+        canon: "compact",
+      }),
+    );
   });
 });
