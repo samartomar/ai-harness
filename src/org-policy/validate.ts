@@ -1,12 +1,15 @@
 import { createHash } from "node:crypto";
 import { statSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
+import { AihError } from "../errors.js";
+import { isTargeted, resolveTargets } from "../internals/cli-detect.js";
 import { readIfExists } from "../internals/fsxn.js";
 import { type CommandSpec, type Plan, type PlanContext, plan, probe } from "../internals/plan.js";
 import type { Check } from "../internals/verify.js";
 import { parsePolicyBundle } from "./bundle.js";
 import { AIH_ORG_POLICY_FILE } from "./constants.js";
-import { sameJson } from "./drift.js";
+import { assertOrgPolicyMutationSource, sameJson } from "./drift.js";
+import { orgPolicyProjectionActions } from "./project.js";
 import { orgPolicyPath, readOrgPolicy } from "./schema.js";
 
 /**
@@ -285,6 +288,31 @@ function policyVerifyPlan(ctx: PlanContext): Plan {
     probe("org policy pin", (c) => policyVerifyCheck(c, against)),
   );
 }
+
+async function policyProjectPlan(ctx: PlanContext): Promise<Plan> {
+  const { clis } = await resolveTargets(ctx);
+  if (!isTargeted({ ...ctx, targets: clis }, "claude")) return plan("policy project");
+  // The projection writes only Claude artifacts. Record that exact ownership
+  // scope on a new marker; an existing marker's targets are merge-preserved.
+  const projectCtx: PlanContext = { ...ctx, targets: ["claude"] };
+
+  assertOrgPolicyMutationSource(projectCtx);
+  const policy = readOrgPolicy(projectCtx.root, projectCtx.env);
+  if (policy === undefined) {
+    throw new AihError(
+      `policy project requires a committed ${AIH_ORG_POLICY_FILE} in the target root`,
+      "AIH_ORG_POLICY",
+    );
+  }
+  return plan("policy project", ...orgPolicyProjectionActions(projectCtx, policy));
+}
+
+export const policyProjectCommand: CommandSpec = {
+  name: "project",
+  summary:
+    "Project the committed org policy into its generated settings without running full initialization",
+  plan: policyProjectPlan,
+};
 
 export const policyValidateCommand: CommandSpec = {
   name: "validate",

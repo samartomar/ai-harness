@@ -22,7 +22,11 @@ import { marketplaceBuildCommand } from "../marketplace/build.js";
 import { marketplacePublishCommand } from "../marketplace/publish.js";
 import { marketplaceValidateCommand } from "../marketplace/validate.js";
 import { command as mcp, mcpApproveCommand } from "../mcp/index.js";
-import { policyValidateCommand, policyVerifyCommand } from "../org-policy/validate.js";
+import {
+  policyProjectCommand,
+  policyValidateCommand,
+  policyVerifyCommand,
+} from "../org-policy/validate.js";
 import {
   packAddCommand,
   packInitCommand,
@@ -181,7 +185,7 @@ export const GROUPED_COMMAND_SPECS = {
     packInstallCommand,
   ],
   marketplace: [marketplaceBuildCommand, marketplaceValidateCommand, marketplacePublishCommand],
-  policy: [policyValidateCommand, policyVerifyCommand],
+  policy: [policyProjectCommand, policyValidateCommand, policyVerifyCommand],
   evidence: [evidenceBuildCommand, vetBaselineCommand],
   truth: [truthPackCommand, truthVerifyCommand],
 } as const satisfies Record<(typeof PARENT_GROUPS)[number], readonly CommandSpec[]>;
@@ -707,12 +711,13 @@ export function registerCommands(
   }
 
   // `policy` mirrors the `marketplace` group: options-only subcommands (no
-  // positional). `validate` is the read-only schema gate over the local
-  // aih-org-policy.json (or, under --bundle, a policy-bundle envelope).
+  // positional). `project` compiles the committed local policy only; `validate`
+  // is the read-only schema gate over that local policy (or, under --bundle, a
+  // policy-bundle envelope).
   const policy = program
     .command("policy")
-    .description("Validate the org policy — the local aih-org-policy.json or a policy-bundle");
-  for (const spec of [policyValidateCommand, policyVerifyCommand]) {
+    .description("Project, validate + verify the org policy and its generated settings");
+  for (const spec of [policyProjectCommand, policyValidateCommand, policyVerifyCommand]) {
     const sub = policy.command(spec.name).description(spec.summary);
     addFlagsForSpec(sub, spec);
     addOptionsForSpec(sub, spec);

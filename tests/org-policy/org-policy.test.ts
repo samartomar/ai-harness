@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -14,6 +14,7 @@ import {
 } from "../../src/org-policy/drift.js";
 import { orgPolicyProjectionActions } from "../../src/org-policy/project.js";
 import { parseOrgPolicy, readOrgPolicy } from "../../src/org-policy/schema.js";
+import { policyProjectCommand } from "../../src/org-policy/validate.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 
 let dir: string;
@@ -53,6 +54,95 @@ function policy(overrides: Record<string, unknown> = {}): Record<string, unknown
 function writes(actions: ReturnType<typeof orgPolicyProjectionActions>): WriteAction[] {
   return actions.filter((a): a is WriteAction => a.kind === "write");
 }
+
+describe("policy project", () => {
+  it("projects the committed policy without running init and preserves operator settings", async () => {
+    mkdirSync(join(dir, ".claude"), { recursive: true });
+    writeFileSync(
+      join(dir, ".claude", "managed-settings.json"),
+      JSON.stringify({ operatorOnly: true }),
+    );
+    writeFileSync(
+      join(dir, "aih-org-policy.json"),
+      JSON.stringify(policy({ command: { deny: { add: [{ pattern: "terraform destroy*" }] } } })),
+    );
+    const applied: PlanContext = { ...ctx(), apply: true, targets: ["claude", "cursor"] };
+
+    const planned = await policyProjectCommand.plan(applied);
+
+    expect(planned.capability).toBe("policy project");
+    expect(writes(planned.actions).map((action) => action.path)).toEqual([
+      ".claude/managed-settings.json",
+    ]);
+
+    await executePlan(planned, applied);
+
+    const managed = JSON.parse(
+      readFileSync(join(dir, ".claude", "managed-settings.json"), "utf8"),
+    ) as {
+      operatorOnly?: boolean;
+      sandbox?: { commandPolicy?: { deny?: unknown[] } };
+    };
+    expect(managed.operatorOnly).toBe(true);
+    expect(managed.sandbox?.commandPolicy?.deny).toEqual(
+      expect.arrayContaining([expect.objectContaining({ pattern: "terraform destroy*" })]),
+    );
+    expect(existsSync(join(dir, ".aih-config.json"))).toBe(false);
+  });
+
+  it("records managed-only MCP ownership for safe later deactivation", async () => {
+    writeFileSync(
+      join(dir, "aih-org-policy.json"),
+      JSON.stringify(policy({ mcp: { allowedServers: [], allowManagedOnly: true } })),
+    );
+    const applied: PlanContext = { ...ctx(), apply: true, targets: ["claude", "cursor"] };
+
+    const planned = await policyProjectCommand.plan(applied);
+
+    expect(writes(planned.actions).map((action) => action.path)).toEqual([
+      ".claude/managed-settings.json",
+      ".aih-config.json",
+    ]);
+    await executePlan(planned, applied);
+    expect(JSON.parse(readFileSync(join(dir, ".aih-config.json"), "utf8"))).toMatchObject({
+      targets: ["claude"],
+      managedMcpProjection: { state: "active" },
+    });
+  });
+
+  it("does not write Claude policy artifacts when Claude is not a selected target", async () => {
+    writeFileSync(join(dir, "aih-org-policy.json"), JSON.stringify(policy()));
+
+    const planned = await policyProjectCommand.plan({
+      ...ctx(),
+      apply: true,
+      targets: ["cursor"],
+    });
+
+    expect(planned.actions).toEqual([]);
+    expect(existsSync(join(dir, ".claude", "managed-settings.json"))).toBe(false);
+  });
+
+  it("refuses an AIH_ORG_POLICY override before it can plan a configuration mutation", async () => {
+    writeFileSync(join(dir, "aih-org-policy.json"), JSON.stringify(policy()));
+    writeFileSync(join(dir, "override.json"), JSON.stringify(policy()));
+    const applied: PlanContext = {
+      ...ctx(),
+      apply: true,
+      env: { AIH_ORG_POLICY: "override.json" },
+    };
+
+    await expect(policyProjectCommand.plan(applied)).rejects.toThrow(
+      /configuration mutation requires the committed default policy/,
+    );
+  });
+
+  it("requires a committed org policy instead of silently projecting nothing", async () => {
+    await expect(policyProjectCommand.plan({ ...ctx(), apply: true })).rejects.toThrow(
+      /policy project requires a committed aih-org-policy\.json/,
+    );
+  });
+});
 
 describe("OrgPolicySchema", () => {
   it("parses the separate org-owned policy shape", () => {

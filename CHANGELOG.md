@@ -6,6 +6,15 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- `aih policy project --apply` projects the committed `aih-org-policy.json` into
+  its generated managed settings without running the full `aih init` sequence.
+  Managed-only MCP projection also records its existing ownership provenance so
+  AIH can later remove only the exact settings it owns. It refuses an
+  `AIH_ORG_POLICY` override for configuration writes, preserving the existing
+  trusted mutation boundary.
+
 ### Fixed
 
 - Enterprise MCP policy now records provenance for the Claude managed allowlist,

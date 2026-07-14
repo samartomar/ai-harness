@@ -54,6 +54,7 @@
 
    ```bash
    npm run dev -- policy validate --root .
+   npm run dev -- policy project --root . --apply
    npm run dev -- policy verify --against <sha256-or-bundle> --root .
    ```
 
@@ -61,6 +62,12 @@
    reviewed in the repo or a signed/distributed bundle whose hash you pin out of
    band. `AIH_ORG_POLICY` is an emergency override, not a silent replacement:
    `aih doctor` and `aih report` surface it as policy-source integrity signal.
+   `policy project --apply` deliberately accepts only the committed default source
+   and updates policy-generated settings without rerunning the canon bootstrap.
+   It is a Claude projection, so use the default target (or explicitly include
+   Claude) when applying it.
+   Managed-only MCP policy also records AIH ownership provenance so later removal
+   preserves operator-owned configuration.
 
 5. Gate PRs with the repo checks:
 
