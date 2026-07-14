@@ -74,6 +74,25 @@ describe("baseline evidence release payload", () => {
     expect(workflow).not.toMatch(/git\s+(commit|push)|npm\s+publish/);
   });
 
+  it("provisions Cisco from a committed uv lock and uploads the generated evidence candidate", () => {
+    const runtimeRoot = join(repo, "tools", "cisco-skill-scanner");
+    const pyproject = join(runtimeRoot, "pyproject.toml");
+    const lock = join(runtimeRoot, "uv.lock");
+    expect(existsSync(pyproject)).toBe(true);
+    expect(existsSync(lock)).toBe(true);
+    expect(readFileSync(pyproject, "utf8")).toContain(CISCO_SKILL_SCANNER_SPEC);
+
+    const workflow = readFileSync(join(repo, ".github", "workflows", "baseline-evidence.yml"), "utf8");
+    expect(workflow).toContain("cache-dependency-glob: tools/cisco-skill-scanner/uv.lock");
+    expect(workflow).toContain("uv run");
+    expect(workflow).toContain("--project tools/cisco-skill-scanner");
+    expect(workflow).toContain("--locked");
+    expect(workflow).toContain("--offline");
+    expect(workflow).toContain("npm run baseline:vet");
+    expect(workflow).toContain("git diff --exit-code");
+    expect(workflow).not.toContain("npm run baseline:check");
+  });
+
   it("builds SkillSpector from its committed lock on a digest-pinned base", () => {
     const path = join(repo, "tools", "skillspector.Dockerfile");
     expect(existsSync(path)).toBe(true);

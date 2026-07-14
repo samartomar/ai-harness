@@ -11,7 +11,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, relative } from "node:path";
 import { Command } from "commander";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { runCapability } from "../../src/commands/run.js";
@@ -3066,6 +3066,78 @@ describe("scanTrustTree", () => {
         }),
       ]),
     );
+  });
+
+  it("anchors Cisco scans to each skill directory so evidence is projection-independent", async () => {
+    const projections = [
+      mkdtempSync(join(tmpdir(), "aih-cisco-projection-alpha-")),
+      mkdtempSync(join(tmpdir(), "aih-cisco-projection-beta-")),
+    ];
+    try {
+      const scanProjection = async (projectionRoot: string) => {
+        const skillRoot = join(projectionRoot, "skills", "clean");
+        mkdirSync(skillRoot, { recursive: true });
+        writeFileSync(join(skillRoot, "SKILL.md"), "# Clean\n", "utf8");
+        const observedCwds: Array<string | undefined> = [];
+        const run: Runner = fakeRunner((argv, opts) => {
+          const skillspector = successfulSkillspector(argv);
+          if (skillspector !== undefined) return skillspector;
+          if (!argv.includes("skill-scanner")) return undefined;
+          if (argv.includes("--version")) return { code: 0, stdout: "skill-scanner 2.0.12\n" };
+          if (!argv.includes("scan")) return undefined;
+          observedCwds.push(opts?.cwd);
+          const target = argv[argv.indexOf("scan") + 1];
+          const out = argv[argv.indexOf("--output-sarif") + 1];
+          if (target === undefined || out === undefined) {
+            return { code: 1, stderr: "missing Cisco scan path" };
+          }
+          writeFileSync(
+            out,
+            JSON.stringify({
+              runs: [
+                {
+                  results: [
+                    {
+                      ruleId: "CISCO_FIXTURE",
+                      message: { text: "stable finding" },
+                      locations: [
+                        {
+                          physicalLocation: {
+                            artifactLocation: {
+                              uri: relative(opts?.cwd ?? process.cwd(), join(target, "SKILL.md")),
+                            },
+                            region: { startLine: 1 },
+                          },
+                        },
+                      ],
+                    },
+                  ],
+                },
+              ],
+            }),
+            "utf8",
+          );
+          return { code: 0, stdout: `Report saved to: ${out}\n` };
+        });
+
+        const result = await scanTrustTreeWithAnalyzers(projectionRoot, {
+          env: {},
+          platform: "linux",
+          posture: "enterprise",
+          requiredDetectors: ["cisco"],
+          run,
+        });
+        const finding = result.checks.find((check) => check.code === "trust.cisco-finding");
+        expect(observedCwds).toEqual([realpathSync(skillRoot)]);
+        expect(finding?.location).toEqual({ uri: "skills/clean/SKILL.md", startLine: 1 });
+        return finding;
+      };
+
+      const [first, second] = await Promise.all(projections.map(scanProjection));
+      expect(second).toEqual(first);
+    } finally {
+      for (const projection of projections) rmSync(projection, { recursive: true, force: true });
+    }
   });
 
   it("bounds independent Cisco skill scans at four while preserving every target", async () => {
