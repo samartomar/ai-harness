@@ -1160,7 +1160,9 @@ describe("aih mcp — per-CLI config (honors --cli)", () => {
       if (names !== undefined) expect(names).toEqual(["code-review-graph"]);
     }
     expect(
-      restrictedWrites.find((write) => write.path.endsWith(".codex/config.toml"))?.contents,
+      restrictedWrites.find((write) =>
+        write.path.replace(/\\/g, "/").endsWith(".codex/config.toml"),
+      )?.contents,
     ).not.toContain("sequential-thinking");
     writeMcpPolicy(root, { allowedServers: [], allowManagedOnly: false });
     const unrestricted = await command.plan(makeCtx({ root, options: { cli: "claude" } }));
