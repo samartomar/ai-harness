@@ -67,6 +67,12 @@ export interface WriteAction {
   /** Write only if the file is absent; never overwrite (user-owned seed files). */
   once?: boolean;
   /**
+   * Apply-time content pin: refuse this write when its target changed after the
+   * plan was computed. `{ absent: true }` pins a missing target; otherwise the
+   * current bytes must hash to `sha256`.
+   */
+  expect?: { absent: true } | { sha256: string };
+  /**
    * Allow this write to land OUTSIDE the target root (home/system files: PEM
    * bundles, shell profiles, VDI redirects). Repo-scoped writes leave this unset
    * and the executor fails closed if their resolved path escapes the root.

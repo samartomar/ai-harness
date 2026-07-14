@@ -5,7 +5,7 @@ import { Command } from "commander";
 import { afterEach, describe, expect, it } from "vitest";
 import { runCapability } from "../../src/commands/run.js";
 import { upsertTextBlock } from "../../src/internals/envfile.js";
-import { resolveContents } from "../../src/internals/execute.js";
+import { executePlan, resolveContents } from "../../src/internals/execute.js";
 import type { PlanContext, WriteAction } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
 import { jsonFile } from "../../src/internals/render.js";
@@ -1095,6 +1095,62 @@ describe("aih mcp — MCP write hygiene", () => {
 });
 
 describe("aih mcp — per-CLI config (honors --cli)", () => {
+  it("refuses to apply an MCP plan after its managed JSON config changes", async () => {
+    const root = makeTmp();
+    const configPath = join(root, ".mcp.json");
+    writeFileSync(
+      configPath,
+      jsonFile({ mcpServers: { operator: { type: "http", url: "https://before.example/mcp" } } }),
+    );
+    const plannedCtx = makeCtx({ root, options: { cli: "claude" } });
+    const planned = await command.plan(plannedCtx);
+    const changed = jsonFile({
+      mcpServers: { operator: { type: "http", url: "https://after.example/mcp" } },
+    });
+    writeFileSync(configPath, changed);
+
+    await expect(executePlan(planned, { ...plannedCtx, apply: true })).rejects.toThrow(
+      /changed after the plan was computed/,
+    );
+    expect(readFileSync(configPath, "utf8")).toBe(changed);
+  });
+
+  it("refuses to create an MCP config that appeared after planning", async () => {
+    const root = makeTmp();
+    const configPath = join(root, ".mcp.json");
+    const plannedCtx = makeCtx({ root, options: { cli: "claude" } });
+    const planned = await command.plan(plannedCtx);
+    const operatorConfig = jsonFile({
+      mcpServers: { operator: { type: "http", url: "https://operator.example/mcp" } },
+    });
+    writeFileSync(configPath, operatorConfig);
+
+    await expect(executePlan(planned, { ...plannedCtx, apply: true })).rejects.toThrow(
+      /changed after the plan was computed/,
+    );
+    expect(readFileSync(configPath, "utf8")).toBe(operatorConfig);
+  });
+
+  it("refuses to apply an MCP plan after its external Codex TOML config changes", async () => {
+    const [root, home] = [makeTmp(), makeTmp()];
+    const configPath = join(home, ".codex", "config.toml");
+    mkdirSync(join(home, ".codex"), { recursive: true });
+    writeFileSync(configPath, 'model = "before"\n');
+    const plannedCtx = makeCtx({
+      root,
+      env: { HOME: home, USERPROFILE: home },
+      options: { cli: "codex" },
+    });
+    const planned = await command.plan(plannedCtx);
+    const changed = 'model = "after"\n';
+    writeFileSync(configPath, changed);
+
+    await expect(executePlan(planned, { ...plannedCtx, apply: true })).rejects.toThrow(
+      /changed after the plan was computed/,
+    );
+    expect(readFileSync(configPath, "utf8")).toBe(changed);
+  });
+
   it("S1/S2 treats an empty managed allowlist as deny-all across every MCP writer", async () => {
     const [root, home] = [makeTmp(), makeTmp()];
     const env = { HOME: home, USERPROFILE: home };
@@ -2080,6 +2136,32 @@ describe("aih mcp — enterprise posture (governance gate, opt-in)", () => {
     expect(approval?.subject).toBe(context7ApprovalSubject());
     expect(write?.describe).toContain("Preview creating local org policy");
     expect(write?.describe).toContain("approvedAt is set when rerun with --apply");
+  });
+
+  it("refuses to apply mcp approve after local org policy changes", async () => {
+    const root = makeTmp();
+    writeMcpPolicy(root, { allowedServers: [], allowManagedOnly: false });
+    const plannedCtx = makeCtx({
+      root,
+      options: {
+        server: "context7",
+        acceptEgress: true,
+        reason: "vendor risk accepted for docs lookup",
+      },
+    });
+    const planned = await mcpApproveCommand.plan(plannedCtx);
+    const changed = jsonFile({
+      schemaVersion: 1,
+      minimumPosture: "enterprise",
+      references: { repoContract: "ai-coding/project.json" },
+      mcp: { allowedServers: ["github"], allowManagedOnly: false },
+    });
+    writeFileSync(join(root, "aih-org-policy.json"), changed);
+
+    await expect(executePlan(planned, { ...plannedCtx, apply: true })).rejects.toThrow(
+      /changed after the plan was computed/,
+    );
+    expect(readFileSync(join(root, "aih-org-policy.json"), "utf8")).toBe(changed);
   });
 
   it("refuses mcp approve local writes while AIH_ORG_POLICY is active", () => {

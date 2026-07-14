@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { join, posix } from "node:path";
 import { readAihConfig } from "../config/marker.js";
 import { SettingsError } from "../errors.js";
@@ -7,7 +8,7 @@ import type { Cli } from "../internals/clis.js";
 import { upsertTextBlock } from "../internals/envfile.js";
 import { readIfExists } from "../internals/fsxn.js";
 import { isPlainObject, parseJsoncText } from "../internals/merge.js";
-import type { Action, CommandSpec, PlanContext } from "../internals/plan.js";
+import type { Action, CommandSpec, PlanContext, WriteAction } from "../internals/plan.js";
 import { digest, doc, plan, probe, writeJson, writeText } from "../internals/plan.js";
 import { beginMarker, endMarker } from "../internals/render.js";
 import type { Check } from "../internals/verify.js";
@@ -411,6 +412,24 @@ function uniquePreservingOrder(values: readonly string[]): string[] {
   return [...new Set(values)];
 }
 
+/** Bind each generated MCP write to the target bytes observed while planning. */
+function guardMcpWrites(ctx: PlanContext, actions: readonly Action[]): Action[] {
+  return actions.map((action) => {
+    if (action.kind !== "write") return action;
+    const absPath = action.external ? action.path : join(ctx.root, action.path);
+    const existing = readIfExists(absPath);
+    const expect: WriteAction["expect"] =
+      existing === undefined
+        ? { absent: true }
+        : { sha256: createHash("sha256").update(existing, "utf8").digest("hex") };
+    return { ...action, expect };
+  });
+}
+
+function guardMcpPlan(ctx: PlanContext, planned: ReturnType<typeof plan>): ReturnType<typeof plan> {
+  return { ...planned, actions: guardMcpWrites(ctx, planned.actions) };
+}
+
 function approveMcpPlan(ctx: PlanContext): ReturnType<typeof plan> {
   const server = approvalText(ctx.options.server, "server");
   if (ctx.options.acceptEgress !== true) {
@@ -459,18 +478,21 @@ function approveMcpPlan(ctx: PlanContext): ReturnType<typeof plan> {
       approvals: [...mcp.approvals.filter((entry) => entry.server !== server), approval],
     },
   };
-  return plan(
-    "mcp approve",
-    writeJson(
-      AIH_ORG_POLICY_FILE,
-      next,
-      ctx.apply
-        ? policyExists
-          ? `Record reviewed MCP egress approval for ${server} in local org policy`
-          : `Create local org policy and record reviewed MCP egress approval for ${server}`
-        : policyExists
-          ? `Preview reviewed MCP egress approval for ${server}; approvedAt is set when rerun with --apply`
-          : `Preview creating local org policy for ${server}; approvedAt is set when rerun with --apply`,
+  return guardMcpPlan(
+    ctx,
+    plan(
+      "mcp approve",
+      writeJson(
+        AIH_ORG_POLICY_FILE,
+        next,
+        ctx.apply
+          ? policyExists
+            ? `Record reviewed MCP egress approval for ${server} in local org policy`
+            : `Create local org policy and record reviewed MCP egress approval for ${server}`
+          : policyExists
+            ? `Preview reviewed MCP egress approval for ${server}; approvedAt is set when rerun with --apply`
+            : `Preview creating local org policy for ${server}; approvedAt is set when rerun with --apply`,
+      ),
     ),
   );
 }
@@ -964,6 +986,11 @@ async function planMcp(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
   return plan("mcp", ...actions);
 }
 
+async function planMcpWithWriteGuards(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
+  const planned = await planMcp(ctx);
+  return guardMcpPlan(ctx, planned);
+}
+
 export const command: CommandSpec = {
   name: "mcp",
   summary:
@@ -997,7 +1024,7 @@ export const command: CommandSpec = {
         "under Enterprise posture, omit denied generated MCP servers from targeted configs and list them in quarantined guidance",
     },
   ],
-  plan: planMcp,
+  plan: planMcpWithWriteGuards,
 };
 
 export const mcpApproveCommand: CommandSpec = {

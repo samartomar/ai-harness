@@ -663,6 +663,20 @@ export async function executePlan(
         assertNoSymlinkParents(ctx.root, absPath, action.path);
       }
       const existing = readIfExists(absPath);
+      if (ctx.apply && action.expect !== undefined) {
+        const live =
+          existing === undefined
+            ? undefined
+            : createHash("sha256").update(existing, "utf8").digest("hex");
+        const unchanged =
+          "absent" in action.expect ? existing === undefined : live === action.expect.sha256;
+        if (!unchanged) {
+          throw new AihError(
+            `refusing to write ${action.path} — it changed after the plan was computed; re-run the command`,
+            "AIH_TRUST",
+          );
+        }
+      }
       if (action.once && existing !== undefined) {
         // Write-once seed file already present — preserve the user's content.
         writes.push({
