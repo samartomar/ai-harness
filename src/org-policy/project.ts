@@ -19,14 +19,20 @@ function stdioAllowedServers(
   ctx: PlanContext,
   allowed: readonly string[],
   disabled: readonly string[],
+  enforceAllowlist: boolean,
 ): Record<string, StdioServer> {
   const stack = scanRepo(ctx.root, { maxDepth: 8, contextDir: ctx.contextDir });
   const catalog = mcpServers("project", stack);
-  const allowedSet = new Set(allowed.length > 0 ? allowed : Object.keys(catalog));
+  const allowedSet = new Set(allowed);
   const disabledSet = new Set(disabled);
   const out: Record<string, StdioServer> = {};
   for (const [name, server] of Object.entries(catalog)) {
-    if (disabledSet.has(name) || !allowedSet.has(name) || server.type !== "stdio") continue;
+    if (
+      disabledSet.has(name) ||
+      (enforceAllowlist && !allowedSet.has(name)) ||
+      server.type !== "stdio"
+    )
+      continue;
     out[name] = server;
   }
   return out;
@@ -41,7 +47,12 @@ function managedSettings(
   managedMcpEnabled: boolean;
 } {
   const composed = composeOrgPolicy(policy);
-  const stdio = stdioAllowedServers(ctx, composed.mcp.allowedServers, composed.mcp.disabledServers);
+  const stdio = stdioAllowedServers(
+    ctx,
+    composed.mcp.allowedServers,
+    composed.mcp.disabledServers,
+    composed.mcp.allowManagedOnly,
+  );
   const settings: Record<string, unknown> = {
     organizationPolicy: {
       minimumPosture: composed.minimumPosture,

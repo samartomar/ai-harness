@@ -864,14 +864,11 @@ describe("doctor — MCP managed allowlist drift", () => {
     );
   }
 
-  function writeAllowlist(...serverCommands: string[][]): void {
+  function writeAllowlist(serverCommand: string[]): void {
     mkdirSync(join(dir, ".claude"), { recursive: true });
     writeFileSync(
       join(dir, ".claude", "managed-settings.json"),
-      JSON.stringify({
-        allowManagedMcpServersOnly: true,
-        allowedMcpServers: serverCommands.map((serverCommand) => ({ serverCommand })),
-      }),
+      JSON.stringify({ allowManagedMcpServersOnly: true, allowedMcpServers: [{ serverCommand }] }),
     );
   }
 
@@ -966,7 +963,7 @@ describe("doctor — MCP managed allowlist drift", () => {
         mcp: { allowedServers: [], allowManagedOnly: true },
       }),
     );
-    writeAllowlist();
+    writeAllowlist([]);
     const c = rooted();
     const probe = findProbe((await command.plan(c)).actions, "MCP managed allowlist");
     const res = await probe?.run(c);

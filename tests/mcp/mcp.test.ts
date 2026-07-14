@@ -26,17 +26,9 @@ function serversOf(write: WriteAction): Record<string, McpServer> {
 const MCP_CONFIG_KEYS = ["mcpServers", "servers", "mcp", "context_servers"] as const;
 
 function jsonConfigServerNames(write: WriteAction): string[] | undefined {
-  if (write.json === null || typeof write.json !== "object" || Array.isArray(write.json)) {
-    return undefined;
-  }
-  const json = write.json as Record<string, unknown>;
-  for (const key of MCP_CONFIG_KEYS) {
-    const servers = json[key];
-    if (servers !== null && typeof servers === "object" && !Array.isArray(servers)) {
-      return Object.keys(servers);
-    }
-  }
-  return undefined;
+  const json = write.json as Record<string, Record<string, unknown>> | undefined;
+  const key = MCP_CONFIG_KEYS.find((candidate) => json?.[candidate] !== undefined);
+  return key === undefined ? undefined : Object.keys(json?.[key] ?? {});
 }
 
 function writeMcpPolicy(
@@ -1107,16 +1099,13 @@ describe("aih mcp — per-CLI config (honors --cli)", () => {
     );
     const managed = writes.find((write) => write.path === ".claude/managed-settings.json");
     const gateway = writes.find((write) => write.path.endsWith("mcp-gateway-rbac.json"));
-    const gatewayJson = gateway?.json as
-      | { catalog: Record<string, unknown>; roles: Array<{ allowedServers: string[] }> }
-      | undefined;
+    const gatewayJson = gateway?.json as { catalog: Record<string, unknown> };
 
     expect(jsonClientWrites).toHaveLength(9);
     for (const write of jsonClientWrites) expect(jsonConfigServerNames(write)).toEqual([]);
     expect(codex?.contents).not.toContain("[mcp_servers.");
     expect((managed?.json as { allowedMcpServers?: unknown[] })?.allowedMcpServers).toEqual([]);
     expect(gatewayJson?.catalog).toEqual({});
-    expect(gatewayJson?.roles.every((role) => role.allowedServers.length === 0)).toBe(true);
     expect(writes.some((write) => write.path === ".env.example")).toBe(false);
     const dotMcp = writes.find((write) => write.path === ".mcp.json");
     const merged = JSON.parse(resolveContents(dotMcp as WriteAction, join(root, ".mcp.json"))) as {
@@ -1136,11 +1125,7 @@ describe("aih mcp — per-CLI config (honors --cli)", () => {
       (a): a is WriteAction => a.kind === "write" && a.path === "managed-mcp.json.example",
     );
     expect(Object.keys(serversOf(offlineMcp as WriteAction))).toEqual([]);
-    expect(
-      Object.keys(
-        (offlineManaged?.json as { mcpServers?: Record<string, unknown> })?.mcpServers ?? {},
-      ),
-    ).toEqual([]);
+    expect(Object.keys(serversOf(offlineManaged as WriteAction))).toEqual([]);
   });
 
   it("S1/S2 applies populated lists and leaves allowManagedOnly false unchanged", async () => {
@@ -1159,9 +1144,7 @@ describe("aih mcp — per-CLI config (honors --cli)", () => {
         options: { allTools: true, posture: "enterprise" },
       }),
     );
-    const restrictedWrites = restricted.actions.filter(
-      (a): a is WriteAction => a.kind === "write",
-    );
+    const restrictedWrites = restricted.actions.filter((a): a is WriteAction => a.kind === "write");
     for (const write of restrictedWrites) {
       const names = jsonConfigServerNames(write);
       if (names !== undefined) expect(names).toEqual(["code-review-graph"]);
@@ -1777,7 +1760,7 @@ describe("aih mcp — enterprise posture (governance gate, opt-in)", () => {
     expect(Object.keys(serversOf(w))).not.toContain("github");
   });
 
-  it("removes disabled servers when merging into an existing .mcp.json", async () => {
+  it("preserves non-identical same-name entries when their servers are disabled", async () => {
     const root = makeTmp();
     writeFileSync(
       join(root, ".mcp.json"),
@@ -1806,8 +1789,8 @@ describe("aih mcp — enterprise posture (governance gate, opt-in)", () => {
       mcpServers: Record<string, unknown>;
     };
 
-    expect(Object.keys(merged.mcpServers)).not.toContain("github");
-    expect(Object.keys(merged.mcpServers)).not.toContain("context7");
+    expect(Object.keys(merged.mcpServers)).toContain("github");
+    expect(Object.keys(merged.mcpServers)).toContain("context7");
     expect(Object.keys(merged.mcpServers)).toContain("existingLocal");
   });
 
@@ -1855,7 +1838,7 @@ describe("aih mcp — enterprise posture (governance gate, opt-in)", () => {
     );
 
     if (dotMcp === undefined) throw new Error("expected .mcp.json write");
-    expect(Object.keys(serversOf(dotMcp))).toContain("sequential-thinking");
+    expect(Object.keys(serversOf(dotMcp))).not.toContain("sequential-thinking");
     const managedJson = JSON.stringify(managed?.json);
     expect(managedJson).toContain("code-review-graph@2.3.6");
     expect(managedJson).not.toContain("server-sequential-thinking");

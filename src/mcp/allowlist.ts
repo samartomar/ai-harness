@@ -62,7 +62,7 @@ function policyAllowsManagedServer(name: string, policy: OrgPolicy | undefined):
   const disabled = new Set(policy?.mcp?.disabledServers ?? []);
   if (disabled.has(name)) return false;
   const allowed = policy?.mcp?.allowedServers ?? [];
-  if (policy?.mcp?.allowManagedOnly !== true || allowed.length === 0) return true;
+  if (policy?.mcp?.allowManagedOnly !== true) return true;
   return allowed.includes(name);
 }
 

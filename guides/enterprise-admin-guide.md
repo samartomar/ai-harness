@@ -159,6 +159,9 @@ aih policy validate
 git add aih-org-policy.json
 git commit -m "seed enterprise ai-harness policy"
 ```
+Here, `allowedServers: []` plus `allowManagedOnly: true` intentionally generates no MCP servers.
+Populate the list to emit only listed, enabled servers, or set `allowManagedOnly` to `false` for the
+enabled catalog; unrelated operator-owned settings and customized same-name entries are preserved.
 
 Developers can consume this policy by setting `AIH_ORG_POLICY` to the cloned file path. Product repos may also commit their own `aih-org-policy.json` when policy is repo-local; the env override wins when set and should be visible in `aih doctor --posture enterprise`.
 

@@ -450,15 +450,8 @@ describe("orgPolicyProjectionActions", () => {
     );
     const out = Object.fromEntries(writes(actions).map((write) => [write.path, write]));
 
-    expect(
-      (out[".claude/managed-settings.json"]?.json as { allowedMcpServers?: unknown[] })
-        ?.allowedMcpServers,
-    ).toEqual([]);
-    expect(
-      (out["managed-mcp.json.example"]?.json as {
-        mcpServers?: Record<string, unknown>;
-      })?.mcpServers,
-    ).toEqual({});
+    expect(out[".claude/managed-settings.json"]?.json).toMatchObject({ allowedMcpServers: [] });
+    expect(out["managed-mcp.json.example"]?.json).toMatchObject({ mcpServers: {} });
   });
 
   it("replaces stale managed MCP allowlist entries when projecting onto existing settings", () => {

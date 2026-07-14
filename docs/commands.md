@@ -587,6 +587,9 @@ managed stdio allowlist only when `mcp.allowManagedOnly` is true. At Enterprise 
 apply keeps the full generated server set but warns when policy denies any server; add
 `--mcp-compliant` to omit denied generated servers from MCP client configs and list them with reasons
 in the governance guidance. Use the same flag on `--verify` to verify the compliant plan.
+With `allowManagedOnly: true`, an empty list is deny-all across direct, offline, init, and client
+writers; a populated list emits only listed, enabled servers. With `false`, the enabled catalog
+remains available, and cleanup preserves operator entries while replacing exact AIH output.
 <!-- aih:claim CM-18 -->
 GitHub auth defaults to `--github-auth oauth`, which works for clients with a registered OAuth
 app; use `--github-auth token` for clients that need a PAT-backed `Authorization` header. The token

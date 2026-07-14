@@ -163,11 +163,16 @@ function serverConfigRemovals(
 function orgAllowedServers(
   servers: Record<string, McpServer>,
   policy: OrgPolicy | undefined,
+  enforceAllowlist = true,
 ): Record<string, McpServer> {
+  const disabled = new Set(policy?.mcp?.disabledServers ?? []);
+  const enabled = Object.fromEntries(
+    Object.entries(servers).filter(([name]) => !disabled.has(name)),
+  );
   const allowed = policy?.mcp?.allowedServers ?? [];
-  if (policy?.mcp?.allowManagedOnly !== true || allowed.length === 0) return servers;
+  if (!enforceAllowlist || policy?.mcp?.allowManagedOnly !== true) return enabled;
   const allowedSet = new Set(allowed);
-  return Object.fromEntries(Object.entries(servers).filter(([name]) => allowedSet.has(name)));
+  return Object.fromEntries(Object.entries(enabled).filter(([name]) => allowedSet.has(name)));
 }
 
 interface DeniedGeneratedServer extends ServerPolicy {
@@ -544,18 +549,28 @@ function planMcpOffline(ctx: PlanContext): ReturnType<typeof plan> {
     scope,
     stack,
     includeHostedGitHub: false,
+    includeDisabledServers: true,
   });
   if (catalog.error !== undefined || catalog.servers === undefined) {
     throw mcpCatalogError(catalog);
   }
-  const stdio = stdioServers(catalog.servers);
+  const allowed = orgAllowedServers(catalog.servers, catalog.policy);
+  const stdio = stdioServers(allowed);
+  const denied = stdioServers(
+    Object.fromEntries(Object.entries(catalog.servers).filter(([name]) => !(name in allowed))),
+  );
+  const stale = matchingGeneratedJsonServerNames(
+    join(ctx.root, ".mcp.json"),
+    "mcpServers",
+    mcpEntries("claude", denied),
+  );
   return plan(
     "mcp",
     writeJson(
       ".mcp.json",
       { mcpServers: stdio },
       "local stdio MCP servers (offline) — mirror/vendor these; some still resolve packages at runtime until vendored (see the offline verify probe)",
-      { merge: true, removeJsonKeys: serverConfigRemovals(catalog.policy, "mcpServers") },
+      { merge: true, removeJsonKeys: serverConfigRemovals(undefined, "mcpServers", stale) },
     ),
     writeJson(
       "managed-mcp.json.example",
@@ -640,11 +655,17 @@ async function planMcp(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
   const selfHost = ctx.options.selfHost === true;
   const stack = scanRepo(ctx.root, { maxDepth: 8, contextDir: ctx.contextDir });
   const actions: Action[] = [];
-  const catalog = policyAwareMcpCatalog(ctx, { scope, selfHost, githubAuth, stack });
+  const catalog = policyAwareMcpCatalog(ctx, {
+    scope,
+    selfHost,
+    githubAuth,
+    stack,
+    includeDisabledServers: true,
+  });
   if (catalog.error !== undefined || catalog.servers === undefined) {
     throw mcpCatalogError(catalog);
   }
-  const servers = catalog.servers;
+  const servers = orgAllowedServers(catalog.servers, catalog.policy, false);
   const posture = ctx.posture ?? asPosture(ctx.options.posture);
   const policyOptions = mcpPolicyOptionsFromConfig(catalog.policy?.mcp);
   const policies =
@@ -674,7 +695,11 @@ async function planMcp(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
   const deniedGeneratedPoliciesByName = new Map<string, ServerPolicy>(
     deniedGenerated.map(({ server: _server, ...policy }) => [policy.name, policy]),
   );
-  const writeServers = mcpCompliant ? omitDeniedServers(servers, denied) : servers;
+  const orgAllowed = orgAllowedServers(catalog.servers, catalog.policy);
+  const orgDeniedGenerated = Object.fromEntries(
+    Object.entries(catalog.servers).filter(([name]) => !(name in orgAllowed)),
+  );
+  const writeServers = mcpCompliant ? omitDeniedServers(orgAllowed, denied) : orgAllowed;
   const hygieneIssues = mcpHygieneIssues(writeServers, ctx.env);
   const writeServerNames = Object.keys(writeServers);
   const tailored = writeServerNames
@@ -738,10 +763,7 @@ async function planMcp(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
       // Codex TOML: fold the `[mcp_servers.*]` tables into an aih-managed region of
       // config.toml, preserving the user's other config. Read existing at plan time.
       const abs = external ? writePath : join(ctx.root, p.configPath);
-      const existing = removeMcpTomlServers(
-        readIfExists(abs) ?? "",
-        serverRemovalNames(catalog.policy),
-      );
+      const existing = removeMcpTomlServers(readIfExists(abs) ?? "", []);
       if (mcpCompliant) {
         compliantConfigChecks.push({
           kind: "toml",
@@ -759,18 +781,21 @@ async function planMcp(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
       actions.push(writeText(writePath, merged, describe, { external }));
     } else {
       const abs = external ? writePath : join(ctx.root, p.configPath);
-      const deniedGeneratedServerMap = Object.fromEntries(
-        deniedGenerated.map((item) => [item.name, item.server]),
-      );
-      const generatedDeniedEntries = mcpCompliant ? mcpEntries(cli, deniedGeneratedServerMap) : {};
+      const deniedGeneratedServerMap = Object.fromEntries([
+        ...Object.entries(orgDeniedGenerated),
+        ...(mcpCompliant ? deniedGenerated.map((item) => [item.name, item.server] as const) : []),
+      ]);
+      const generatedDeniedEntries = mcpEntries(cli, deniedGeneratedServerMap);
       const renderedEntries = applyMcpHygieneToEntries(
         cli,
         mcpEntries(cli, writeServers),
         hygieneIssues,
       );
-      const staleGeneratedNames = mcpCompliant
-        ? matchingGeneratedJsonServerNames(abs, p.configKey, generatedDeniedEntries)
-        : [];
+      const staleGeneratedNames = matchingGeneratedJsonServerNames(
+        abs,
+        p.configKey,
+        generatedDeniedEntries,
+      );
       for (const name of staleGeneratedNames) {
         const policy = deniedGeneratedPoliciesByName.get(name);
         if (policy !== undefined) quarantinedPolicies.set(name, policy);
@@ -789,7 +814,7 @@ async function planMcp(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
           merge: true,
           external,
           replaceJsonChildKeys: { [p.configKey]: Object.keys(renderedEntries) },
-          removeJsonKeys: serverConfigRemovals(catalog.policy, p.configKey, staleGeneratedNames),
+          removeJsonKeys: serverConfigRemovals(undefined, p.configKey, staleGeneratedNames),
         }),
       );
     }

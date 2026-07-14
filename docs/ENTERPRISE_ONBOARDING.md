@@ -218,6 +218,9 @@ to write the local `aih-org-policy.json` entry; this is the safest path when the
 repo-local policy is active. If `AIH_ORG_POLICY` points at a distributed policy,
 update that source directly because org policy wins over local approval files and
 local approval writes are refused.
+An empty list with `allowManagedOnly: true` is deny-all for every AIH MCP projection; a populated
+list emits only listed, non-disabled servers. Setting it to `false` retains the enabled catalog,
+and AIH preserves unrelated or customized operator entries while reconciling its generated output.
 
 Hand-authored distributed-policy approvals must include `server`, `subject`,
 `acceptEgress: true`, `reason`, and ISO-8601 `approvedAt`; `reviewer` is optional.
