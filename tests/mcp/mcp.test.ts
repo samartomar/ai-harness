@@ -33,7 +33,12 @@ function jsonConfigServerNames(write: WriteAction): string[] | undefined {
 
 function writeMcpPolicy(
   root: string,
-  mcp: { allowedServers: string[]; allowManagedOnly: boolean; disabledServers?: string[] },
+  mcp: {
+    allowedServers: string[];
+    allowManagedOnly: boolean;
+    disabledServers?: string[];
+    githubHost?: string;
+  },
 ): void {
   writeFileSync(
     join(root, "aih-org-policy.json"),
@@ -199,13 +204,19 @@ describe("mcp enterprise modes", () => {
 
   it("S1/S2 removes exact generated HTTP servers from offline deny-all merges", async () => {
     const root = makeTmp();
+    const githubHost = "https://github.internal.example";
+    writeMcpPolicy(root, { allowedServers: [], allowManagedOnly: false, githubHost });
     const standard = (await command.plan(makeCtx({ root }))).actions.find(
       (action): action is WriteAction => action.kind === "write" && action.path === ".mcp.json",
     ) as WriteAction;
     const context7 = pick(serversOf(standard), "context7");
+    const github = pick(serversOf(standard), "github");
     const operator = { type: "http", url: "https://mcp.internal.example" };
-    writeFileSync(join(root, ".mcp.json"), jsonFile({ mcpServers: { context7, operator } }));
-    writeMcpPolicy(root, { allowedServers: [], allowManagedOnly: true });
+    writeFileSync(
+      join(root, ".mcp.json"),
+      jsonFile({ mcpServers: { context7, github, operator } }),
+    );
+    writeMcpPolicy(root, { allowedServers: [], allowManagedOnly: true, githubHost });
 
     const offline = (
       await command.plan(makeCtx({ root, options: { mode: "offline" } }))
@@ -217,6 +228,7 @@ describe("mcp enterprise modes", () => {
     };
 
     expect(merged.mcpServers.context7).toBeUndefined();
+    expect(merged.mcpServers.github).toBeUndefined();
     expect(merged.mcpServers.operator).toEqual(operator);
   });
 
