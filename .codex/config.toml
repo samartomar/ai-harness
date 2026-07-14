@@ -1,3 +1,7 @@
+[mcp_servers."code-review-graph"]
+command = "uvx"
+args = ["--offline", "--no-python-downloads", "--no-env-file", "code-review-graph@2.3.6", "serve"]
+
 [mcp_servers."serena"]
 command = "node"
 args = ["tools/repo-ai-tools.mjs", "serena-mcp"]

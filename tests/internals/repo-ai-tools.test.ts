@@ -78,8 +78,12 @@ describe("ai-harness repo AI tooling", () => {
     });
     expect(codexConfig).toContain('[mcp_servers."serena"]');
     expect(codexConfig).toContain('[mcp_servers."token-savior"]');
+    expect(codexConfig).toContain('[mcp_servers."code-review-graph"]');
     expect(codexConfig).toContain('args = ["tools/repo-ai-tools.mjs", "serena-mcp"]');
     expect(codexConfig).toContain('args = ["tools/repo-ai-tools.mjs", "token-savior-mcp"]');
+    expect(codexConfig).toContain(
+      'args = ["--offline", "--no-python-downloads", "--no-env-file", "code-review-graph@2.3.6", "serve"]',
+    );
 
     const stopCommands = (hooks.hooks.Stop ?? [])
       .flatMap((group) => group.hooks ?? [])
