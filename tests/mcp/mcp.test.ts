@@ -1063,27 +1063,35 @@ describe("aih mcp — per-CLI config (honors --cli)", () => {
   it("S1/S2 treats an empty managed allowlist as deny-all across every MCP writer", async () => {
     const root = makeTmp();
     const home = makeTmp();
-    const baseline = await command.plan(makeCtx({ root, options: { cli: "claude" } }));
-    const baselineMcp = baseline.actions.find(
-      (a): a is WriteAction => a.kind === "write" && a.path === ".mcp.json",
+    const env = { HOME: home, USERPROFILE: home };
+    const opencodePath = join(home, ".config", "opencode", "opencode.json");
+    const baseline = await command.plan(
+      makeCtx({ root, env, options: { cli: "opencode", githubAuth: "token" } }),
     );
+    const baselineOpenCode = baseline.actions.find(
+      (a): a is WriteAction => a.kind === "write" && a.path === opencodePath,
+    );
+    const generated = (baselineOpenCode?.json as { mcp: Record<string, unknown> }).mcp;
+    const reordered = Object.fromEntries(
+      Object.entries(generated["code-review-graph"] as Record<string, unknown>).reverse(),
+    );
+    mkdirSync(join(home, ".config", "opencode"), { recursive: true });
     writeFileSync(
-      join(root, ".mcp.json"),
+      opencodePath,
       jsonFile({
-        operatorSetting: { keep: true },
-        mcpServers: {
-          "code-review-graph": { type: "stdio", command: "operator-mcp", args: ["serve"] },
-          "sequential-thinking": serversOf(baselineMcp as WriteAction)["sequential-thinking"],
-          operator: { type: "stdio", command: "operator-only", args: [] },
+        provider: { keep: true },
+        mcp: {
+          "code-review-graph": reordered,
+          github: generated.github,
+          context7: { type: "remote", url: "https://context7.internal/mcp", enabled: true },
         },
       }),
     );
     writeMcpPolicy(root, { allowedServers: [], allowManagedOnly: true });
-
     const p = await command.plan(
       makeCtx({
         root,
-        env: { HOME: home, USERPROFILE: home },
+        env,
         options: {
           allTools: true,
           scope: "remote",
@@ -1107,25 +1115,24 @@ describe("aih mcp — per-CLI config (honors --cli)", () => {
     expect((managed?.json as { allowedMcpServers?: unknown[] })?.allowedMcpServers).toEqual([]);
     expect(gatewayJson?.catalog).toEqual({});
     expect(writes.some((write) => write.path === ".env.example")).toBe(false);
-    const dotMcp = writes.find((write) => write.path === ".mcp.json");
-    const merged = JSON.parse(resolveContents(dotMcp as WriteAction, join(root, ".mcp.json"))) as {
-      operatorSetting?: unknown;
-      mcpServers: Record<string, { command?: string }>;
+    const opencode = writes.find((write) => write.path === opencodePath);
+    const merged = JSON.parse(resolveContents(opencode as WriteAction, opencodePath)) as {
+      provider?: unknown;
+      mcp: Record<string, unknown>;
     };
-    expect(merged.operatorSetting).toEqual({ keep: true });
-    expect(merged.mcpServers["code-review-graph"]?.command).toBe("operator-mcp");
-    expect(merged.mcpServers.operator?.command).toBe("operator-only");
-    expect(merged.mcpServers["sequential-thinking"]).toBeUndefined();
+    expect(merged.provider).toEqual({ keep: true });
+    expect(merged.mcp["code-review-graph"]).toBeUndefined();
+    expect(merged.mcp.github).toBeUndefined();
+    expect(merged.mcp.context7).toEqual({
+      type: "remote",
+      url: "https://context7.internal/mcp",
+      enabled: true,
+    });
 
-    const offline = await command.plan(makeCtx({ root, options: { mode: "offline" } }));
-    const offlineMcp = offline.actions.find(
-      (a): a is WriteAction => a.kind === "write" && a.path === ".mcp.json",
-    );
-    const offlineManaged = offline.actions.find(
-      (a): a is WriteAction => a.kind === "write" && a.path === "managed-mcp.json.example",
-    );
-    expect(Object.keys(serversOf(offlineMcp as WriteAction))).toEqual([]);
-    expect(Object.keys(serversOf(offlineManaged as WriteAction))).toEqual([]);
+    const offlineWrites = (
+      await command.plan(makeCtx({ root, options: { mode: "offline" } }))
+    ).actions.filter((a): a is WriteAction => a.kind === "write" && a.json !== undefined);
+    expect(offlineWrites.map((write) => Object.keys(serversOf(write)))).toEqual([[], []]);
   });
 
   it("S1/S2 applies populated lists and leaves allowManagedOnly false unchanged", async () => {
@@ -1157,9 +1164,7 @@ describe("aih mcp — per-CLI config (honors --cli)", () => {
 
     writeMcpPolicy(root, { allowedServers: [], allowManagedOnly: false });
     const unrestricted = await command.plan(makeCtx({ root, options: { cli: "claude" } }));
-    const dotMcp = unrestricted.actions.find(
-      (a): a is WriteAction => a.kind === "write" && a.path === ".mcp.json",
-    );
+    const dotMcp = unrestricted.actions.find((a) => a.kind === "write") as WriteAction;
     expect(Object.keys(serversOf(dotMcp as WriteAction))).toEqual(
       expect.arrayContaining(["code-review-graph", "sequential-thinking"]),
     );
