@@ -94,6 +94,7 @@ describe("ai-harness repo AI tooling", () => {
     const routing = readFileSync(resolve(root, "ai-coding/rules/repo-ai-tools.md"), "utf8");
 
     expect(extension).toContain("rules/repo-ai-tools.md");
+    expect(extension).toContain("Never run `aih` against the `ai-harness` checkout");
     expect(routing).toContain("blast-area and reviewer-context aid");
     expect(routing).toContain("Serena");
     expect(routing).toContain("Token Savior");
@@ -122,15 +123,18 @@ describe("ai-harness repo AI tooling", () => {
       expect(content, file).not.toContain("work must stop until");
     }
 
-    for (const file of [
-      "AGENTS.md",
-      "CLAUDE.md",
-      "ai-coding/adapters/_shared-canonical-block.md",
-    ]) {
+    for (const file of ["AGENTS.md", "CLAUDE.md"]) {
       const content = readFileSync(resolve(root, file), "utf8");
       expect(content, file).toContain("ai-coding/rules/repo-ai-tools.md");
+      expect(content, file).toContain("Never run `aih` against this checkout");
       expect(content, file).toContain("warn once and continue");
     }
+
+    const shared = readFileSync(
+      resolve(root, "ai-coding/adapters/_shared-canonical-block.md"),
+      "utf8",
+    );
+    expect(shared).toContain("warn once and continue");
   });
 
   it("keeps Serena runtime artifacts out of the product diff", () => {
