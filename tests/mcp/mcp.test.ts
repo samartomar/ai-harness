@@ -23,6 +23,34 @@ function serversOf(write: WriteAction): Record<string, McpServer> {
   return (write.json as { mcpServers: Record<string, McpServer> }).mcpServers;
 }
 
+const MCP_CONFIG_KEYS = ["mcpServers", "servers", "mcp", "context_servers"] as const;
+
+function jsonConfigServerNames(write: WriteAction): string[] | undefined {
+  const json = write.json as Record<string, Record<string, unknown>> | undefined;
+  const key = MCP_CONFIG_KEYS.find((candidate) => json?.[candidate] !== undefined);
+  return key === undefined ? undefined : Object.keys(json?.[key] ?? {});
+}
+
+function writeMcpPolicy(
+  root: string,
+  mcp: {
+    allowedServers: string[];
+    allowManagedOnly: boolean;
+    disabledServers?: string[];
+    githubHost?: string;
+  },
+): void {
+  writeFileSync(
+    join(root, "aih-org-policy.json"),
+    jsonFile({
+      schemaVersion: 1,
+      minimumPosture: "enterprise",
+      references: { repoContract: "ai-coding/project.json" },
+      mcp,
+    }),
+  );
+}
+
 /** Assert a server is present and return it non-undefined (fails the test if missing). */
 function pick(servers: Record<string, McpServer>, name: string): McpServer {
   const server = servers[name];
@@ -172,6 +200,36 @@ describe("mcp enterprise modes", () => {
     expect(
       Object.keys((managed?.json as { mcpServers: Record<string, unknown> })?.mcpServers ?? {}),
     ).not.toContain("code-review-graph");
+  });
+
+  it("S1/S2 removes exact generated HTTP servers from offline deny-all merges", async () => {
+    const root = makeTmp();
+    const githubHost = "https://github.internal.example";
+    writeMcpPolicy(root, { allowedServers: [], allowManagedOnly: false, githubHost });
+    const standard = (await command.plan(makeCtx({ root }))).actions.find(
+      (action): action is WriteAction => action.kind === "write" && action.path === ".mcp.json",
+    ) as WriteAction;
+    const context7 = pick(serversOf(standard), "context7");
+    const github = pick(serversOf(standard), "github");
+    const operator = { type: "http", url: "https://mcp.internal.example" };
+    writeFileSync(
+      join(root, ".mcp.json"),
+      jsonFile({ mcpServers: { context7, github, operator } }),
+    );
+    writeMcpPolicy(root, { allowedServers: [], allowManagedOnly: true, githubHost });
+
+    const offline = (
+      await command.plan(makeCtx({ root, options: { mode: "offline" } }))
+    ).actions.find(
+      (action): action is WriteAction => action.kind === "write" && action.path === ".mcp.json",
+    ) as WriteAction;
+    const merged = JSON.parse(resolveContents(offline, join(root, ".mcp.json"))) as {
+      mcpServers: Record<string, unknown>;
+    };
+
+    expect(merged.mcpServers.context7).toBeUndefined();
+    expect(merged.mcpServers.github).toBeUndefined();
+    expect(merged.mcpServers.operator).toEqual(operator);
   });
 
   it("--mode offline: a verify probe FAILS on stdio servers that resolve at runtime (AIH-MCP-001)", async () => {
@@ -1037,6 +1095,118 @@ describe("aih mcp — MCP write hygiene", () => {
 });
 
 describe("aih mcp — per-CLI config (honors --cli)", () => {
+  it("S1/S2 treats an empty managed allowlist as deny-all across every MCP writer", async () => {
+    const [root, home] = [makeTmp(), makeTmp()];
+    const env = { HOME: home, USERPROFILE: home };
+    const opencodePath = join(home, ".config", "opencode", "opencode.json");
+    const baseline = await command.plan(
+      makeCtx({ root, env, options: { cli: "opencode", githubAuth: "token" } }),
+    );
+    const baselineOpenCode = baseline.actions.find(
+      (a): a is WriteAction => a.kind === "write" && a.path === opencodePath,
+    ) as WriteAction;
+    const generated = (baselineOpenCode.json as { mcp: Record<string, unknown> }).mcp;
+    const reordered = Object.fromEntries(
+      Object.entries(generated["code-review-graph"] as Record<string, unknown>).reverse(),
+    );
+    mkdirSync(join(home, ".config", "opencode"), { recursive: true });
+    writeFileSync(
+      opencodePath,
+      jsonFile({
+        mcp: {
+          "code-review-graph": reordered,
+          github: generated.github,
+          context7: { type: "remote", url: "https://context7.internal/mcp", enabled: true },
+        },
+      }),
+    );
+    writeMcpPolicy(root, { allowedServers: [], allowManagedOnly: true });
+    const planCtx = makeCtx({
+      root,
+      env: { ...env, GITHUB_PERSONAL_ACCESS_TOKEN: "test-only-token" },
+      options: {
+        allTools: true,
+        scope: "remote",
+        posture: "enterprise",
+        githubAuth: "token",
+      },
+    });
+    const p = await command.plan(planCtx);
+    const writes = p.actions.filter((a): a is WriteAction => a.kind === "write");
+    const jsonClientWrites = writes.filter((write) => jsonConfigServerNames(write) !== undefined);
+    const codex = writes.find((write) =>
+      write.path.replace(/\\/g, "/").endsWith(".codex/config.toml"),
+    );
+    const managed = writes.find((write) => write.path === ".claude/managed-settings.json");
+    const gateway = writes.find((write) => write.path.endsWith("mcp-gateway-rbac.json"));
+    const gatewayJson = gateway?.json as { catalog: Record<string, unknown> };
+    expect(jsonClientWrites).toHaveLength(9);
+    for (const write of jsonClientWrites) expect(jsonConfigServerNames(write)).toEqual([]);
+    expect(codex?.contents).not.toContain("[mcp_servers.");
+    expect((managed?.json as { allowedMcpServers?: unknown[] })?.allowedMcpServers).toEqual([]);
+    expect(gatewayJson?.catalog).toEqual({});
+    expect(writes.some((write) => write.path === ".env.example")).toBe(false);
+    const opencode = writes.find((write) => write.path === opencodePath);
+    const merged = JSON.parse(resolveContents(opencode as WriteAction, opencodePath)) as {
+      mcp: Record<string, unknown>;
+    };
+    expect(merged.mcp["code-review-graph"]).toBeUndefined();
+    expect(merged.mcp.github).toBeUndefined();
+    expect((merged.mcp.context7 as { url?: string }).url).toBe("https://context7.internal/mcp");
+    const operatorDisabled = {
+      ...(generated["code-review-graph"] as Record<string, unknown>),
+      enabled: false,
+    };
+    writeFileSync(opencodePath, jsonFile({ mcp: { "code-review-graph": operatorDisabled } }));
+    const preserved = (await command.plan(planCtx)).actions.find(
+      (a): a is WriteAction => a.kind === "write" && a.path === opencodePath,
+    ) as WriteAction;
+    expect(
+      (
+        JSON.parse(resolveContents(preserved, opencodePath)) as {
+          mcp: Record<string, unknown>;
+        }
+      ).mcp["code-review-graph"],
+    ).toEqual(operatorDisabled);
+    const offlineWrites = (
+      await command.plan(makeCtx({ root, options: { mode: "offline" } }))
+    ).actions.filter((a): a is WriteAction => a.kind === "write" && a.json !== undefined);
+    expect(offlineWrites.map((write) => Object.keys(serversOf(write)))).toEqual([[], []]);
+  });
+
+  it("S1/S2 applies populated lists and leaves allowManagedOnly false unchanged", async () => {
+    const [root, home] = [makeTmp(), makeTmp()];
+    writeMcpPolicy(root, {
+      allowedServers: ["code-review-graph", "sequential-thinking"],
+      allowManagedOnly: true,
+      disabledServers: ["sequential-thinking"],
+    });
+
+    const restricted = await command.plan(
+      makeCtx({
+        root,
+        env: { HOME: home, USERPROFILE: home },
+        options: { allTools: true, posture: "enterprise" },
+      }),
+    );
+    const restrictedWrites = restricted.actions.filter((a): a is WriteAction => a.kind === "write");
+    for (const write of restrictedWrites) {
+      const names = jsonConfigServerNames(write);
+      if (names !== undefined) expect(names).toEqual(["code-review-graph"]);
+    }
+    expect(
+      restrictedWrites.find((write) =>
+        write.path.replace(/\\/g, "/").endsWith(".codex/config.toml"),
+      )?.contents,
+    ).not.toContain("sequential-thinking");
+    writeMcpPolicy(root, { allowedServers: [], allowManagedOnly: false });
+    const unrestricted = await command.plan(makeCtx({ root, options: { cli: "claude" } }));
+    const dotMcp = unrestricted.actions.find((a) => a.kind === "write") as WriteAction;
+    expect(Object.keys(serversOf(dotMcp as WriteAction))).toEqual(
+      expect.arrayContaining(["code-review-graph", "sequential-thinking"]),
+    );
+  });
+
   it("--cli codex writes its TOML config (external), NOT a .mcp.json Codex never reads", async () => {
     const p = await command.plan(makeCtx({ options: { cli: "codex" } }));
     const writes = p.actions.filter((a): a is WriteAction => a.kind === "write");
@@ -1067,26 +1237,31 @@ describe("aih mcp — per-CLI config (honors --cli)", () => {
     expect(envExample?.contents).toContain("GITHUB_PERSONAL_ACCESS_TOKEN=");
   });
 
-  it("--cli codex removes disabled servers from existing top-level TOML entries", async () => {
+  it("S1/S2 preserves operator TOML while clearing the AIH-managed server block", async () => {
     const root = makeTmp();
     const home = makeTmp();
     const codexDir = join(home, ".codex");
     mkdirSync(codexDir, { recursive: true });
     writeFileSync(
       join(codexDir, "config.toml"),
-      'model = "gpt-5"\n\n[mcp_servers.github]\nurl = "https://api.githubcopilot.com/mcp/"\n',
+      [
+        'model = "gpt-5"',
+        "",
+        "[mcp_servers.github]",
+        'url = "https://github.internal.example/mcp/"',
+        "",
+        "# >>> aih managed (mcp) >>>",
+        "[mcp_servers.context7]",
+        'url = "https://mcp.context7.com/mcp"',
+        "# <<< aih managed (mcp) <<<",
+        "",
+      ].join("\n"),
     );
-    writeFileSync(
-      join(root, "aih-org-policy.json"),
-      jsonFile({
-        schemaVersion: 1,
-        minimumPosture: "enterprise",
-        references: { repoContract: "ai-coding/project.json" },
-        mcp: {
-          disabledServers: ["github"],
-        },
-      }),
-    );
+    writeMcpPolicy(root, {
+      allowedServers: [],
+      allowManagedOnly: true,
+      disabledServers: ["github"],
+    });
 
     const p = await command.plan(
       makeCtx({ root, env: { HOME: home, USERPROFILE: home }, options: { cli: "codex" } }),
@@ -1097,8 +1272,9 @@ describe("aih mcp — per-CLI config (honors --cli)", () => {
     );
 
     expect(codex?.contents).toContain('model = "gpt-5"');
-    expect(codex?.contents).not.toContain("[mcp_servers.github]");
-    expect(codex?.contents).not.toContain("api.githubcopilot.com");
+    expect(codex?.contents).toContain("[mcp_servers.github]");
+    expect(codex?.contents).toContain("https://github.internal.example/mcp/");
+    expect(codex?.contents).not.toContain("[mcp_servers.context7]");
   });
 
   it("preserves Codex managed TOML block markers while pruning the final disabled table", () => {
@@ -1626,7 +1802,7 @@ describe("aih mcp — enterprise posture (governance gate, opt-in)", () => {
     expect(Object.keys(serversOf(w))).not.toContain("github");
   });
 
-  it("removes disabled servers when merging into an existing .mcp.json", async () => {
+  it("preserves non-identical same-name entries when their servers are disabled", async () => {
     const root = makeTmp();
     writeFileSync(
       join(root, ".mcp.json"),
@@ -1655,8 +1831,8 @@ describe("aih mcp — enterprise posture (governance gate, opt-in)", () => {
       mcpServers: Record<string, unknown>;
     };
 
-    expect(Object.keys(merged.mcpServers)).not.toContain("github");
-    expect(Object.keys(merged.mcpServers)).not.toContain("context7");
+    expect(Object.keys(merged.mcpServers)).toContain("github");
+    expect(Object.keys(merged.mcpServers)).toContain("context7");
     expect(Object.keys(merged.mcpServers)).toContain("existingLocal");
   });
 
@@ -1704,7 +1880,7 @@ describe("aih mcp — enterprise posture (governance gate, opt-in)", () => {
     );
 
     if (dotMcp === undefined) throw new Error("expected .mcp.json write");
-    expect(Object.keys(serversOf(dotMcp))).toContain("sequential-thinking");
+    expect(Object.keys(serversOf(dotMcp))).not.toContain("sequential-thinking");
     const managedJson = JSON.stringify(managed?.json);
     expect(managedJson).toContain("code-review-graph@2.3.6");
     expect(managedJson).not.toContain("server-sequential-thinking");

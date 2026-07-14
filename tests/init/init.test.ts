@@ -55,14 +55,14 @@ function seedNodeRepo(): void {
   writeFileSync(join(dir, "tsconfig.json"), "{}");
 }
 
-function seedOrgPolicy(): void {
+function seedOrgPolicy(allowedServers = ["code-review-graph"]): void {
   writeFileSync(
     join(dir, "aih-org-policy.json"),
     JSON.stringify({
       schemaVersion: 1,
       minimumPosture: "team",
       references: { repoContract: ".ai-context/project.json" },
-      mcp: { allowedServers: ["code-review-graph"], allowManagedOnly: true },
+      mcp: { allowedServers, allowManagedOnly: true },
     }),
   );
 }
@@ -196,6 +196,22 @@ describe("aih init — command surface", () => {
 
     expect(check.verdict).toBe("pass");
     expect(check.detail).toContain(".claude/managed-settings.json matches");
+  });
+
+  it("S1/S2 makes an empty managed allowlist deny all init MCP projections", async () => {
+    seedOrgPolicy([]);
+    const p = await command.plan(ctx({ posture: "team", postureSource: "flag" }));
+    const dotMcp = p.actions.find(
+      (a): a is WriteAction => a.kind === "write" && a.path === ".mcp.json",
+    );
+    const managed = p.actions.find(
+      (a): a is WriteAction => a.kind === "write" && a.path === ".claude/managed-settings.json",
+    );
+
+    expect(
+      Object.keys((dotMcp?.json as { mcpServers?: Record<string, unknown> })?.mcpServers ?? {}),
+    ).toEqual([]);
+    expect((managed?.json as { allowedMcpServers?: unknown[] })?.allowedMcpServers).toEqual([]);
   });
 });
 
