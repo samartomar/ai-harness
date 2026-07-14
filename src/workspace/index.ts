@@ -18,6 +18,7 @@ import {
   mcpPolicyOptionsFromConfig,
 } from "../mcp/policy.js";
 import type { McpServer } from "../mcp/servers.js";
+import { assertOrgPolicyMutationSource } from "../org-policy/drift.js";
 import type { OrgPolicy } from "../org-policy/schema.js";
 import { classifyIncomingMcp } from "../trust/mcp-classify.js";
 import {
@@ -498,6 +499,7 @@ function workspaceBootloaderWrites(
 async function workspacePlan(ctx: PlanContext): Promise<Plan> {
   const dir = ctx.contextDir;
   const posture = ctx.posture ?? asPosture(ctx.options.posture);
+  assertOrgPolicyMutationSource({ ...ctx, posture });
   // resolve() first: basename(".") is "." which would plan a "..code-workspace"
   // write that the executor's containment guard rejects as a parent escape.
   const name = basename(resolve(ctx.root)) || "workspace";
@@ -528,15 +530,19 @@ async function workspacePlan(ctx: PlanContext): Promise<Plan> {
     .filter(({ check }) => !check.exists)
     .map(({ repo }) => repo.path);
   const edges = existing?.edges ?? [];
-  const mcp = spanningMcp(ctx.root, presentRepoPaths);
+  const policyResult = readMcpOrgPolicy(ctx);
+  if (policyResult.error !== undefined) throw invalidOrgPolicyError(policyResult.error);
+  const mcpPolicy = policyResult.policy?.mcp;
+  const allowWorkspaceGraph =
+    mcpPolicy?.allowManagedOnly !== true ||
+    (mcpPolicy.allowedServers.includes("code-review-graph") &&
+      !mcpPolicy.disabledServers.includes("code-review-graph"));
+  const mcp = allowWorkspaceGraph ? spanningMcp(ctx.root, presentRepoPaths) : { mcpServers: {} };
   const mcpKeys = Object.keys(mcp.mcpServers);
   const staleMcpKeys = staleManagedMcpServerKeys(ctx.root, mcpKeys);
   const clis = resolveClis(ctx.options, { strict: true });
   const bootloaders = bootloadersFor(clis);
   const bootloaderActivations = bootloaderActivationsFor(clis);
-  const policyResult = posture === "enterprise" ? readMcpOrgPolicy(ctx) : {};
-  if (policyResult.error !== undefined) throw invalidOrgPolicyError(policyResult.error);
-
   const writes: WriteAction[] = [
     writeJson(
       ".aih-workspace.json",

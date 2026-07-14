@@ -8,6 +8,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Enterprise MCP policy now records provenance for the Claude managed allowlist,
+  removes it only when its exact AIH-generated values remain on disk, and preserves
+  operator-owned settings. Active managed-only policy consistently filters generated
+  MCP registrations for primary clients, workspace graphs, and ECC; an untrusted
+  `AIH_ORG_POLICY` override cannot drive an enterprise apply. Empty non-matching
+  allowlists now explain why no generated server was written.
 - `aih mcp --apply` and `aih mcp approve --apply` now refuse generated configuration or policy
   writes when the target was created, deleted, or changed after planning, preserving the operator's
   current JSON, TOML, or policy configuration until they re-run the command.

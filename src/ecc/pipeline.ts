@@ -19,6 +19,8 @@ import type { Cli } from "../internals/clis.js";
 import { inspectContainedRelativePath } from "../internals/contained-path.js";
 import { executePlan, type PlanResult } from "../internals/execute.js";
 import { doc, type PlanContext, plan } from "../internals/plan.js";
+import { assertOrgPolicyMutationSource } from "../org-policy/drift.js";
+import { readOrgPolicy } from "../org-policy/schema.js";
 import type { RepoStack } from "../profile/scan.js";
 import { scanRepo } from "../profile/scan.js";
 import { cleanupQuarantine, resolveTrustSource, type TrustSource } from "../trust/fetch.js";
@@ -30,6 +32,7 @@ import {
   contingentEccInstallPreviewPlan,
   type EccInstallPreviewArtifact,
 } from "./install-preview.js";
+import { orgAllowedEccMcpComponents } from "./mcp.js";
 import {
   machineRegistrationUnion,
   mergeRegistrationLedger,
@@ -148,13 +151,15 @@ export function buildEccRegistrationRequest(ctx: PlanContext, clis: Cli[]): EccR
     declarations: declarations(ctx.options),
     declaredMcps: declaredMcpNames(ctx.root),
   });
+  const policy = readOrgPolicy(ctx.root, ctx.env);
+  const projectMcps = orgAllowedEccMcpComponents(selected.mcps, policy);
   const home = ctx.env.HOME || ctx.env.USERPROFILE || homedir();
   const ledger = readRegistrationLedger(home);
   const project: ProjectRegistration = {
     root: realpathSync(ctx.root),
     scope: selected.scope,
     components: [...selected.components],
-    mcps: [...selected.mcps],
+    mcps: projectMcps,
   };
   const preview = mergeRegistrationLedger(ledger, project, []);
   const union = machineRegistrationUnion(preview);
@@ -166,7 +171,7 @@ export function buildEccRegistrationRequest(ctx: PlanContext, clis: Cli[]): EccR
     selection: {
       scope: preview.projects.some((entry) => entry.scope === "full") ? "full" : "scoped",
       components: union.components as EccComponentId[],
-      mcps: union.mcps as EccMcpComponentId[],
+      mcps: orgAllowedEccMcpComponents(union.mcps as EccMcpComponentId[], policy),
       recommendations: [...selected.recommendations],
     },
     project,
@@ -242,6 +247,7 @@ export async function executeEccEvidencePipeline(
 
 /** Resolve the ordinary ECC command inputs once, then route mutating targets through evidence. */
 export async function executeEccCommand(ctx: PlanContext): Promise<PlanResult> {
+  assertOrgPolicyMutationSource({ ...ctx, posture: postureFromContext(ctx) });
   const { clis, detectFellBack } = await resolveTargets(ctx);
   const request = buildEccRegistrationRequest(ctx, clis);
   if (clis.some(isMutatingEccTarget)) return executeEccEvidencePipeline(ctx, request);

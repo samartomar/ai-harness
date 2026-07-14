@@ -34,6 +34,65 @@
         "enterprise"
       ]
     },
+    "managedMcpProjection": {
+      "type": "object",
+      "properties": {
+        "schemaVersion": {
+          "type": "number",
+          "const": 1
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "active",
+            "revoked"
+          ]
+        },
+        "expected": {
+          "type": "object",
+          "properties": {
+            "allowManagedMcpServersOnly": {
+              "type": "boolean",
+              "const": true
+            },
+            "allowedMcpServers": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "serverCommand": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "required": [
+                  "serverCommand"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": [
+            "allowManagedMcpServersOnly",
+            "allowedMcpServers"
+          ],
+          "additionalProperties": false
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "state",
+        "expected",
+        "sha256"
+      ],
+      "additionalProperties": false
+    },
     "adopt": {
       "type": "object",
       "properties": {

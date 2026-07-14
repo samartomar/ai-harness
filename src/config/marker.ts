@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { z } from "zod";
 import { SettingsError } from "../errors.js";
@@ -24,6 +25,32 @@ import { ContextDir } from "./settings.js";
  */
 export const AIH_CONFIG_FILE = ".aih-config.json";
 const AihConfigPostureSchema = z.enum(["vibe", "team", "enterprise"]);
+const ManagedMcpProjectionExpectedSchema = z
+  .object({
+    allowManagedMcpServersOnly: z.literal(true),
+    allowedMcpServers: z.array(z.object({ serverCommand: z.array(z.string()) }).strict()),
+  })
+  .strict();
+const ManagedMcpProjectionOwnershipSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    state: z.enum(["active", "revoked"]),
+    expected: ManagedMcpProjectionExpectedSchema,
+    sha256: z.string().regex(/^[a-f0-9]{64}$/),
+  })
+  .strict();
+
+export type ManagedMcpProjectionOwnership = z.infer<typeof ManagedMcpProjectionOwnershipSchema>;
+export type ActiveManagedMcpProjectionOwnership = ManagedMcpProjectionOwnership & {
+  state: "active";
+};
+
+function managedMcpProjectionSha256(
+  state: ManagedMcpProjectionOwnership["state"],
+  expected: ManagedMcpProjectionOwnership["expected"],
+): string {
+  return createHash("sha256").update(JSON.stringify({ state, expected }), "utf8").digest("hex");
+}
 
 /**
  * Persisted bootstrap intent. `contextDir` reuses the SAME {@link ContextDir}
@@ -36,6 +63,11 @@ export const AihConfigSchema = z.object({
   targets: z.array(z.string()).default([]),
   baseline: BaselineSourceIdSchema.optional(),
   posture: AihConfigPostureSchema.optional(),
+  /**
+   * Provenance for the two Claude managed-MCP settings. Missing provenance means
+   * legacy or operator-owned values are never treated as removable by aih.
+   */
+  managedMcpProjection: ManagedMcpProjectionOwnershipSchema.optional(),
   /**
    * `aih adopt`'s team decisions: CLI-native paths the team has acknowledged as
    * intentionally tool-native (so re-runs stop flagging them as import candidates —
@@ -146,4 +178,66 @@ export function aihConfigJson(
   const body: AihConfig = { schemaVersion: 1, contextDir, targets };
   if (baseline !== DEFAULT_BASELINE_SOURCE_ID) body.baseline = baseline;
   return body;
+}
+
+export function managedMcpProjectionOwnership(
+  expected: ManagedMcpProjectionOwnership["expected"],
+): ManagedMcpProjectionOwnership {
+  const state = "active";
+  return {
+    schemaVersion: 1,
+    state,
+    expected,
+    sha256: managedMcpProjectionSha256(state, expected),
+  };
+}
+
+export function isManagedMcpProjectionOwnership(
+  value: ManagedMcpProjectionOwnership | undefined,
+): value is ManagedMcpProjectionOwnership {
+  return (
+    value !== undefined && value.sha256 === managedMcpProjectionSha256(value.state, value.expected)
+  );
+}
+
+export function isActiveManagedMcpProjectionOwnership(
+  value: ManagedMcpProjectionOwnership | undefined,
+): value is ActiveManagedMcpProjectionOwnership {
+  return isManagedMcpProjectionOwnership(value) && value.state === "active";
+}
+
+export function revokedManagedMcpProjectionOwnership(
+  ownership: ManagedMcpProjectionOwnership,
+): ManagedMcpProjectionOwnership {
+  const state = "revoked";
+  return {
+    ...ownership,
+    state,
+    sha256: managedMcpProjectionSha256(state, ownership.expected),
+  };
+}
+
+/**
+ * Build a merge-safe marker update for managed-MCP provenance. A malformed
+ * existing marker is never repaired or used as ownership evidence.
+ */
+export function managedMcpProjectionConfigJson(
+  root: string,
+  contextDir: string,
+  targets: string[],
+  ownership: ManagedMcpProjectionOwnership,
+): Record<string, unknown> {
+  const diagnostic = readAihConfigDiagnostic(root);
+  if (diagnostic.invalid) {
+    throw new SettingsError(
+      `cannot record Claude managed-MCP provenance: ${AIH_CONFIG_FILE} is malformed; repair it before applying the restriction`,
+    );
+  }
+  if (diagnostic.present) return { managedMcpProjection: ownership };
+  return {
+    schemaVersion: 1,
+    contextDir,
+    targets,
+    managedMcpProjection: ownership,
+  };
 }

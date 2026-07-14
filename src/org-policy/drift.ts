@@ -17,7 +17,7 @@ import { ensureTrailingNewline } from "../internals/render.js";
 import type { Check } from "../internals/verify.js";
 import { AIH_ORG_POLICY_FILE } from "./constants.js";
 import { orgPolicyProjectionActions } from "./project.js";
-import { orgPolicyPath, readOrgPolicy } from "./schema.js";
+import { OrgPolicyError, orgPolicyPath, readOrgPolicy } from "./schema.js";
 
 const POSTURE_RANK: Record<Posture, number> = { vibe: 0, team: 1, enterprise: 2 };
 
@@ -260,6 +260,17 @@ function sourceCheck(ctx: PlanContext): Check {
     "verify",
     activePosture(ctx),
   );
+}
+
+/**
+ * A transient AIH_ORG_POLICY override is inspectable but not a trusted source
+ * for an enterprise mutation. Refuse before any plan can produce configuration
+ * writes; the committed default remains the only direct mutation source.
+ */
+export function assertOrgPolicyMutationSource(ctx: PlanContext): void {
+  if (!ctx.apply || activePosture(ctx) !== "enterprise") return;
+  const check = sourceCheck(ctx);
+  if (check.verdict === "fail") throw new OrgPolicyError(check.detail ?? check.name);
 }
 
 async function headDriftCheck(ctx: PlanContext): Promise<Check> {

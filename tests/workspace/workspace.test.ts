@@ -221,7 +221,8 @@ describe("workspace.plan — generated artifacts", () => {
       posture: "enterprise",
     };
     const restricted = writesByPath((await command.plan(restrictedCtx)).actions).get(".mcp.json");
-    expect((restricted?.json as { mcpServers?: Record<string, unknown> }).mcpServers).toEqual({});
+    if (restricted === undefined) throw new Error("expected workspace MCP write");
+    expect((restricted.json as { mcpServers?: Record<string, unknown> }).mcpServers).toEqual({});
 
     writeFileSync(
       join(parent, "aih-org-policy.json"),
@@ -233,8 +234,10 @@ describe("workspace.plan — generated artifacts", () => {
       }),
     );
     const unrestricted = writesByPath((await command.plan(restrictedCtx)).actions).get(".mcp.json");
-    expect(Object.keys((unrestricted?.json as { mcpServers?: Record<string, unknown> }).mcpServers ?? {}))
-      .toEqual(["aih-workspace-graph-ui"]);
+    if (unrestricted === undefined) throw new Error("expected workspace MCP write");
+    expect(
+      Object.keys((unrestricted.json as { mcpServers?: Record<string, unknown> }).mcpServers ?? {}),
+    ).toEqual(["aih-workspace-graph-ui"]);
   });
 
   it("writes workspace bootloaders for every targeted CLI", async () => {

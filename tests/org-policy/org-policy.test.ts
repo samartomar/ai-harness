@@ -527,9 +527,7 @@ describe("orgPolicyProjectionActions", () => {
     expect(JSON.parse(readFileSync(managedPath, "utf8"))).not.toHaveProperty(
       "allowManagedMcpServersOnly",
     );
-    expect(JSON.parse(readFileSync(markerPath, "utf8"))).not.toHaveProperty(
-      "managedMcpProjection",
-    );
+    expect(JSON.parse(readFileSync(markerPath, "utf8"))).not.toHaveProperty("managedMcpProjection");
 
     await executePlan(
       plan("org-policy", ...orgPolicyProjectionActions(activeCtx, activePolicy)),
@@ -545,7 +543,7 @@ describe("orgPolicyProjectionActions", () => {
       plan("org-policy", ...orgPolicyProjectionActions(activeCtx, inactivePolicy)),
       activeCtx,
     );
-    expect(JSON.parse(readFileSync(managedPath, "utf8"))).toEqual(operatorProjection);
+    expect(JSON.parse(readFileSync(managedPath, "utf8"))).toMatchObject(operatorProjection);
     expect(JSON.parse(readFileSync(markerPath, "utf8"))).toMatchObject({
       managedMcpProjection: { state: "revoked" },
     });

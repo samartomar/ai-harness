@@ -1234,7 +1234,8 @@ describe("aih mcp — per-CLI config (honors --cli)", () => {
     const gateway = writes.find((write) => write.path.endsWith("mcp-gateway-rbac.json"));
     const gatewayJson = gateway?.json as { catalog: Record<string, unknown> };
     const allowlistWarning = p.actions.find(
-      (action) => action.kind === "digest" && action.describe === "MCP allowlist filtered all servers",
+      (action) =>
+        action.kind === "digest" && action.describe === "MCP allowlist filtered all servers",
     );
     expect(jsonClientWrites).toHaveLength(9);
     for (const write of jsonClientWrites) expect(jsonConfigServerNames(write)).toEqual([]);
@@ -1776,7 +1777,7 @@ describe("aih mcp — enterprise posture (governance gate, opt-in)", () => {
     );
 
     expect(Object.keys(serversOf(dotMcp as WriteAction))).toContain("context7");
-    expect(JSON.stringify(managed?.json)).toContain("code-review-graph@2.3.6");
+    expect(managed).toBeUndefined();
     expect(governance?.kind === "doc" ? governance.text : "").toContain(
       "third-party egress accepted by org policy",
     );

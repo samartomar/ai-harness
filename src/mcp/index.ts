@@ -1,6 +1,14 @@
 import { createHash } from "node:crypto";
 import { join, posix } from "node:path";
-import { readAihConfig } from "../config/marker.js";
+import {
+  AIH_CONFIG_FILE,
+  isActiveManagedMcpProjectionOwnership,
+  type ManagedMcpProjectionOwnership,
+  managedMcpProjectionConfigJson,
+  managedMcpProjectionOwnership,
+  readAihConfig,
+  revokedManagedMcpProjectionOwnership,
+} from "../config/marker.js";
 import { SettingsError } from "../errors.js";
 import { homeDir, resolveTargets } from "../internals/cli-detect.js";
 import { type CliEntry, entry } from "../internals/cli-registry.js";
@@ -13,9 +21,10 @@ import { digest, doc, plan, probe, writeJson, writeText } from "../internals/pla
 import { beginMarker, endMarker } from "../internals/render.js";
 import type { Check } from "../internals/verify.js";
 import { AIH_ORG_POLICY_FILE } from "../org-policy/constants.js";
+import { assertOrgPolicyMutationSource } from "../org-policy/drift.js";
 import { type OrgPolicy, parseOrgPolicy } from "../org-policy/schema.js";
 import { scanRepo } from "../profile/scan.js";
-import { managedMcpAllowlistSettings } from "./allowlist.js";
+import { managedMcpAllowlistSettings, matchesManagedMcpProjectionOwnership } from "./allowlist.js";
 import { type PolicyAwareMcpCatalog, policyAwareMcpCatalog } from "./catalog.js";
 import {
   enterpriseMcpDoc,
@@ -176,6 +185,60 @@ function orgAllowedServers(
   return Object.fromEntries(Object.entries(enabled).filter(([name]) => allowedSet.has(name)));
 }
 
+function managedMcpProjectionOwnershipOnDisk(
+  absPath: string,
+  root: string,
+): { ownership: ManagedMcpProjectionOwnership; matches: boolean } | undefined {
+  const ownership = readAihConfig(root)?.managedMcpProjection;
+  if (!isActiveManagedMcpProjectionOwnership(ownership)) return undefined;
+  const raw = readIfExists(absPath);
+  if (raw === undefined) return { ownership, matches: false };
+  try {
+    return {
+      ownership,
+      matches: matchesManagedMcpProjectionOwnership(parseJsoncText(raw), ownership),
+    };
+  } catch {
+    return { ownership, matches: false };
+  }
+}
+
+function managedMcpProjectionOwnershipAction(
+  ctx: PlanContext,
+  targets: readonly Cli[],
+  generated: ReturnType<typeof managedMcpAllowlistSettings>,
+): Action {
+  return writeJson(
+    AIH_CONFIG_FILE,
+    managedMcpProjectionConfigJson(
+      ctx.root,
+      ctx.contextDir,
+      [...targets],
+      managedMcpProjectionOwnership(generated),
+    ),
+    "record Claude managed-MCP projection ownership",
+    { merge: true },
+  );
+}
+
+function clearManagedMcpProjectionOwnershipAction(): Action {
+  return writeJson(AIH_CONFIG_FILE, {}, "clear Claude managed-MCP projection ownership", {
+    merge: true,
+    removeJsonTopLevelKeys: ["managedMcpProjection"],
+  });
+}
+
+function revokeManagedMcpProjectionOwnershipAction(
+  ownership: ManagedMcpProjectionOwnership,
+): Action {
+  return writeJson(
+    AIH_CONFIG_FILE,
+    { managedMcpProjection: revokedManagedMcpProjectionOwnership(ownership) },
+    "revoke Claude managed-MCP projection ownership after operator change",
+    { merge: true },
+  );
+}
+
 interface DeniedGeneratedServer extends ServerPolicy {
   server: McpServer;
 }
@@ -233,6 +296,14 @@ function quarantinedMcpServersDoc(denied: readonly ServerPolicy[]): string {
     "",
     "Remediate by self-hosting, approving reviewed third-party egress in org policy, pinning supply-chain inputs, or leaving the server disabled.",
     "Verify the compliant plan with `aih mcp --posture enterprise --mcp-compliant --verify`.",
+  ].join("\n");
+}
+
+function emptyManagedAllowlistDoc(): string {
+  return [
+    "The active aih-org-policy.json sets mcp.allowManagedOnly: true, but its allowedServers list matches no generated MCP server.",
+    "",
+    "No generated MCP server will be written. Add a current catalog server name to allowedServers, or set allowManagedOnly: false to retain the normal catalog.",
   ].join("\n");
 }
 
@@ -706,6 +777,8 @@ function defaultTargetSelectionNotice(ctx: PlanContext, clis: readonly Cli[]): s
 }
 
 async function planMcp(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
+  const posture = ctx.posture ?? asPosture(ctx.options.posture);
+  assertOrgPolicyMutationSource({ ...ctx, posture });
   const githubAuth = githubAuthOption(ctx.options.githubAuth);
   const mode = String(ctx.options.mode ?? "standard");
   if (mode === "none") return planMcpNone(ctx);
@@ -731,7 +804,6 @@ async function planMcp(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
     throw mcpCatalogError(catalog);
   }
   const servers = orgAllowedServers(catalog.servers, catalog.policy, false);
-  const posture = ctx.posture ?? asPosture(ctx.options.posture);
   const policyOptions = mcpPolicyOptionsFromConfig(catalog.policy?.mcp);
   const policies =
     posture === "enterprise" ? evaluateMcpPolicy(servers, posture, policyOptions) : [];
@@ -782,6 +854,13 @@ async function planMcp(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
   const compliantConfigChecks: CompliantConfigCheck[] = [];
   const quarantinedPolicies = new Map<string, ServerPolicy>(denied.map((p) => [p.name, p]));
   const targetSelectionNotice = defaultTargetSelectionNotice(ctx, clis);
+  if (
+    catalog.policy?.mcp?.allowManagedOnly === true &&
+    Object.keys(servers).length > 0 &&
+    Object.keys(orgAllowed).length === 0
+  ) {
+    actions.push(digest("MCP allowlist filtered all servers", emptyManagedAllowlistDoc()));
+  }
   if (targetSelectionNotice !== undefined) {
     actions.push(digest("MCP target selection", targetSelectionNotice));
   }
@@ -985,14 +1064,47 @@ async function planMcp(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
       actions.push(digest(noticeTitle, noticeText), doc(noticeTitle, noticeText));
     }
     const policyProbeServers = mcpCompliant ? writeServers : servers;
-    const managedServers = orgAllowedServers(writeServers, catalog.policy);
+    const managedMcpActive =
+      catalog.policy === undefined || catalog.policy.mcp?.allowManagedOnly === true;
+    if (managedMcpActive) {
+      const generated = managedMcpAllowlistSettings(
+        orgAllowedServers(writeServers, catalog.policy),
+      );
+      actions.push(
+        writeJson(
+          ".claude/managed-settings.json",
+          generated,
+          "Enforce Claude managed MCP allowlist (fixed server commands from .mcp.json)",
+          {
+            merge: true,
+            replaceJsonKeys: ["allowManagedMcpServersOnly", "allowedMcpServers"],
+          },
+        ),
+        managedMcpProjectionOwnershipAction(ctx, clis, generated),
+      );
+    } else {
+      const onDisk = managedMcpProjectionOwnershipOnDisk(
+        join(ctx.root, ".claude", "managed-settings.json"),
+        ctx.root,
+      );
+      if (onDisk?.matches) {
+        actions.push(
+          writeJson(
+            ".claude/managed-settings.json",
+            {},
+            "Remove AIH-generated Claude managed MCP allowlist after policy deactivation",
+            {
+              merge: true,
+              removeJsonTopLevelKeys: ["allowManagedMcpServersOnly", "allowedMcpServers"],
+            },
+          ),
+          clearManagedMcpProjectionOwnershipAction(),
+        );
+      } else if (onDisk !== undefined) {
+        actions.push(revokeManagedMcpProjectionOwnershipAction(onDisk.ownership));
+      }
+    }
     actions.push(
-      writeJson(
-        ".claude/managed-settings.json",
-        managedMcpAllowlistSettings(managedServers),
-        "Enforce Claude managed MCP allowlist (fixed server commands from .mcp.json)",
-        { merge: true, replaceJsonKeys: ["allowedMcpServers"] },
-      ),
       doc(
         "MCP governance (enterprise posture) — per-server verdicts + skipped-with-reason",
         mcpGovernanceDoc(policies, posture, { compliantApply: mcpCompliant }),
