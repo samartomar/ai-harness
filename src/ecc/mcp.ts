@@ -7,6 +7,7 @@ import type { Action, PlanContext } from "../internals/plan.js";
 import { writeJson } from "../internals/plan.js";
 import { isExternalMcp, mcpConfigAbs, mcpEntries } from "../mcp/render.js";
 import { type McpServer, mcpServers } from "../mcp/servers.js";
+import type { OrgPolicy } from "../org-policy/schema.js";
 import type { RepoStack } from "../profile/scan.js";
 import type { EccComponentSelection, EccMcpComponentId } from "./components.js";
 import type { ProjectRegistration } from "./registration.js";
@@ -26,6 +27,20 @@ const EMPTY_STACK: RepoStack = {
 
 function mcpName(component: EccMcpComponentId): string {
   return component.slice("mcp:".length);
+}
+
+/** Apply the managed-only and disabled-server policy to ECC MCP registrations. */
+export function orgAllowedEccMcpComponents(
+  components: readonly EccMcpComponentId[],
+  policy: OrgPolicy | undefined,
+): EccMcpComponentId[] {
+  const disabled = new Set(policy?.mcp?.disabledServers ?? []);
+  const allowManagedOnly = policy?.mcp?.allowManagedOnly === true;
+  const allowed = new Set(policy?.mcp?.allowedServers ?? []);
+  return components.filter((component) => {
+    const name = mcpName(component);
+    return !disabled.has(name) && (!allowManagedOnly || allowed.has(name));
+  });
 }
 
 export function selectedEccMcpServers(

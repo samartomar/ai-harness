@@ -5,10 +5,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   AIH_CONFIG_FILE,
   aihConfigJson,
+  isActiveManagedMcpProjectionOwnership,
+  isManagedMcpProjectionOwnership,
+  managedMcpProjectionOwnership,
   readAihConfig,
   readAihConfigBaseline,
   readAihConfigDiagnostic,
   readAihConfigPosture,
+  revokedManagedMcpProjectionOwnership,
 } from "../../src/config/marker.js";
 import * as fsxn from "../../src/internals/fsxn.js";
 import { aihIgnoreWrite } from "../../src/internals/gitignore.js";
@@ -123,6 +127,21 @@ describe("aihConfigJson", () => {
     const body = aihConfigJson("custom-canon", ["claude", "cursor"]);
     writeMarker(body);
     expect(readAihConfig(dir)).toEqual(body);
+  });
+});
+
+describe("managed-MCP projection ownership", () => {
+  it("integrity-binds both lifecycle states and rejects a forged state flip", () => {
+    const active = managedMcpProjectionOwnership({
+      allowManagedMcpServersOnly: true,
+      allowedMcpServers: [{ serverCommand: ["aih-mcp", "serve"] }],
+    });
+    const revoked = revokedManagedMcpProjectionOwnership(active);
+
+    expect(isActiveManagedMcpProjectionOwnership(active)).toBe(true);
+    expect(isManagedMcpProjectionOwnership(revoked)).toBe(true);
+    expect(isActiveManagedMcpProjectionOwnership(revoked)).toBe(false);
+    expect(isManagedMcpProjectionOwnership({ ...revoked, state: "active" })).toBe(false);
   });
 });
 

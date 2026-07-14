@@ -1,4 +1,8 @@
 import { join } from "node:path";
+import {
+  isActiveManagedMcpProjectionOwnership,
+  type ManagedMcpProjectionOwnership,
+} from "../config/marker.js";
 import { readIfExists } from "../internals/fsxn.js";
 import type { PlanContext } from "../internals/plan.js";
 import type { Check } from "../internals/verify.js";
@@ -13,6 +17,8 @@ export interface ManagedMcpAllowlistSettings {
   allowManagedMcpServersOnly: true;
   allowedMcpServers: ManagedMcpServerCommand[];
 }
+
+const MANAGED_MCP_PROJECTION_KEYS = ["allowManagedMcpServersOnly", "allowedMcpServers"] as const;
 
 function stdioCommand(server: StdioServer): string[] {
   return [server.command, ...server.args];
@@ -36,6 +42,35 @@ export function managedMcpAllowlistSettings(
     allowManagedMcpServersOnly: true,
     allowedMcpServers: sortedCommands(commands).map((serverCommand) => ({ serverCommand })),
   };
+}
+
+/**
+ * Return the Claude managed-MCP fields only when their on-disk pair exactly
+ * matches an AIH projection. This excludes same-key operator configuration.
+ */
+export function matchingGeneratedManagedMcpProjectionKeys(
+  value: unknown,
+  generated: ManagedMcpAllowlistSettings,
+): readonly string[] {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return [];
+  const actual = value as Record<string, unknown>;
+  if (
+    actual.allowManagedMcpServersOnly !== generated.allowManagedMcpServersOnly ||
+    JSON.stringify(actual.allowedMcpServers) !== JSON.stringify(generated.allowedMcpServers)
+  ) {
+    return [];
+  }
+  return MANAGED_MCP_PROJECTION_KEYS;
+}
+
+export function matchesManagedMcpProjectionOwnership(
+  value: unknown,
+  ownership: ManagedMcpProjectionOwnership | undefined,
+): ownership is ManagedMcpProjectionOwnership {
+  return (
+    isActiveManagedMcpProjectionOwnership(ownership) &&
+    matchingGeneratedManagedMcpProjectionKeys(value, ownership.expected).length > 0
+  );
 }
 
 type JsonRead =

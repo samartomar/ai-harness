@@ -85,8 +85,18 @@ function mergePruneJsonChildKeys(
 }
 
 function mergeJsonWriteActions(first: WriteAction, next: WriteAction): WriteAction {
+  if (
+    first.expect !== undefined &&
+    next.expect !== undefined &&
+    JSON.stringify(first.expect) !== JSON.stringify(next.expect)
+  ) {
+    throw new Error(
+      `cannot compose guarded writes for ${first.path}: source changed while planning`,
+    );
+  }
   return {
     ...first,
+    expect: next.expect ?? first.expect,
     json: deepMerge(first.json, next.json),
     removeJsonKeys: mergeChildKeyMap(first.removeJsonKeys, next.removeJsonKeys),
     replaceJsonKeys: mergeStringList(first.replaceJsonKeys, next.replaceJsonKeys),

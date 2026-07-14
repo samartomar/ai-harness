@@ -205,6 +205,41 @@ describe("workspace.plan — generated artifacts", () => {
     expect(w.has(".mcp.json")).toBe(true);
   });
 
+  it("applies the active managed-only allowlist to generated workspace graph MCPs", async () => {
+    child("ui");
+    writeFileSync(
+      join(parent, "aih-org-policy.json"),
+      JSON.stringify({
+        schemaVersion: 1,
+        minimumPosture: "enterprise",
+        references: { repoContract: "ai-coding/project.json" },
+        mcp: { allowedServers: [], allowManagedOnly: true },
+      }),
+    );
+    const restrictedCtx: PlanContext = {
+      ...makeCtx({ repos: "ui" }),
+      posture: "enterprise",
+    };
+    const restricted = writesByPath((await command.plan(restrictedCtx)).actions).get(".mcp.json");
+    if (restricted === undefined) throw new Error("expected workspace MCP write");
+    expect((restricted.json as { mcpServers?: Record<string, unknown> }).mcpServers).toEqual({});
+
+    writeFileSync(
+      join(parent, "aih-org-policy.json"),
+      JSON.stringify({
+        schemaVersion: 1,
+        minimumPosture: "enterprise",
+        references: { repoContract: "ai-coding/project.json" },
+        mcp: { allowedServers: [], allowManagedOnly: false },
+      }),
+    );
+    const unrestricted = writesByPath((await command.plan(restrictedCtx)).actions).get(".mcp.json");
+    if (unrestricted === undefined) throw new Error("expected workspace MCP write");
+    expect(
+      Object.keys((unrestricted.json as { mcpServers?: Record<string, unknown> }).mcpServers ?? {}),
+    ).toEqual(["aih-workspace-graph-ui"]);
+  });
+
   it("writes workspace bootloaders for every targeted CLI", async () => {
     child("ui");
     const w = writesByPath(
@@ -1545,6 +1580,51 @@ describe("workspace — write-once executor behavior", () => {
       resolve(parent, "service-api"),
     ]);
     expect(mcp.mcpServers["user-owned"]).toEqual({ command: "node", args: ["server.js"] });
+  });
+
+  it("refuses workspace graph pruning when an operator changes a stale graph entry after planning", async () => {
+    child("ui");
+    writeFileSync(
+      join(parent, "aih-org-policy.json"),
+      JSON.stringify({
+        schemaVersion: 1,
+        minimumPosture: "enterprise",
+        references: { repoContract: "ai-coding/project.json" },
+        mcp: { allowedServers: [], allowManagedOnly: true },
+      }),
+    );
+    writeFileSync(
+      join(parent, ".mcp.json"),
+      JSON.stringify({
+        mcpServers: {
+          "aih-workspace-graph-ui": {
+            command: "uvx",
+            args: [
+              "--offline",
+              "--no-python-downloads",
+              "--no-env-file",
+              "code-review-graph@2.3.6",
+              "serve",
+              "--repo",
+              resolve(parent, "ui"),
+            ],
+          },
+        },
+      }),
+    );
+    const plannedCtx = makeCtx({ repos: "ui" });
+    const planned = await command.plan(plannedCtx);
+    const operatorContents = JSON.stringify({
+      mcpServers: {
+        "aih-workspace-graph-ui": { command: "node", args: ["operator-graph.js"] },
+      },
+    });
+    writeFileSync(join(parent, ".mcp.json"), operatorContents);
+
+    await expect(executePlan(planned, { ...plannedCtx, apply: true })).rejects.toThrow(
+      /changed after the plan was computed/,
+    );
+    expect(readFileSync(join(parent, ".mcp.json"), "utf8")).toBe(operatorContents);
   });
 
   it("preserves user-owned MCP servers that use formerly managed names", async () => {

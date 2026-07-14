@@ -207,11 +207,45 @@ describe("aih init — command surface", () => {
     const managed = p.actions.find(
       (a): a is WriteAction => a.kind === "write" && a.path === ".claude/managed-settings.json",
     );
+    const marker = p.actions.find(
+      (a): a is WriteAction => a.kind === "write" && a.path === ".aih-config.json",
+    );
 
     expect(
       Object.keys((dotMcp?.json as { mcpServers?: Record<string, unknown> })?.mcpServers ?? {}),
     ).toEqual([]);
     expect((managed?.json as { allowedMcpServers?: unknown[] })?.allowedMcpServers).toEqual([]);
+    expect(marker?.json).toMatchObject({ managedMcpProjection: { state: "active" } });
+  });
+
+  it("refuses init deactivation when an operator changes managed MCP settings after planning", async () => {
+    const managedPath = join(dir, ".claude", "managed-settings.json");
+    seedOrgPolicy(["code-review-graph"]);
+    const activeCtx = ctx({ posture: "team", postureSource: "flag" });
+    await executePlan(await command.plan(activeCtx), { ...activeCtx, apply: true });
+
+    writeFileSync(
+      join(dir, "aih-org-policy.json"),
+      JSON.stringify({
+        schemaVersion: 1,
+        minimumPosture: "team",
+        references: { repoContract: ".ai-context/project.json" },
+        mcp: { allowedServers: ["code-review-graph"], allowManagedOnly: false },
+      }),
+    );
+    const inactiveCtx = ctx({ posture: "team", postureSource: "flag" });
+    const planned = await command.plan(inactiveCtx);
+    const operatorProjection = JSON.stringify({
+      allowManagedMcpServersOnly: true,
+      allowedMcpServers: [{ serverCommand: ["operator-mcp", "serve"] }],
+      operatorOnly: true,
+    });
+    writeFileSync(managedPath, operatorProjection);
+
+    await expect(executePlan(planned, { ...inactiveCtx, apply: true })).rejects.toThrow(
+      /changed after the plan was computed/,
+    );
+    expect(readFileSync(managedPath, "utf8")).toBe(operatorProjection);
   });
 });
 

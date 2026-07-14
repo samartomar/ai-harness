@@ -1,5 +1,21 @@
-import { type Action, type PlanContext, writeJson } from "../internals/plan.js";
-import { managedMcpAllowlistSettings } from "../mcp/allowlist.js";
+import { createHash } from "node:crypto";
+import { join } from "node:path";
+import {
+  AIH_CONFIG_FILE,
+  AihConfigSchema,
+  isActiveManagedMcpProjectionOwnership,
+  type ManagedMcpProjectionOwnership,
+  managedMcpProjectionConfigJsonFromRaw,
+  managedMcpProjectionOwnership,
+  revokedManagedMcpProjectionOwnership,
+} from "../config/marker.js";
+import { readIfExists } from "../internals/fsxn.js";
+import { parseJsoncText } from "../internals/merge.js";
+import { type Action, type PlanContext, type WriteAction, writeJson } from "../internals/plan.js";
+import {
+  managedMcpAllowlistSettings,
+  matchesManagedMcpProjectionOwnership,
+} from "../mcp/allowlist.js";
 import { managedMcpExample } from "../mcp/enterprise.js";
 import { mcpServers, type StdioServer } from "../mcp/servers.js";
 import { scanRepo } from "../profile/scan.js";
@@ -45,6 +61,7 @@ function managedSettings(
   settings: Record<string, unknown>;
   managedMcp: Record<string, unknown>;
   managedMcpEnabled: boolean;
+  managedMcpSettings: ReturnType<typeof managedMcpAllowlistSettings>;
 } {
   const composed = composeOrgPolicy(policy);
   const stdio = stdioAllowedServers(
@@ -62,34 +79,147 @@ function managedSettings(
       commandPolicy: commandPolicyFor(composed),
     },
   };
-  if (composed.mcp.allowManagedOnly) {
-    Object.assign(settings, managedMcpAllowlistSettings(stdio));
-  }
+  const managedMcpSettings = managedMcpAllowlistSettings(stdio);
+  if (composed.mcp.allowManagedOnly) Object.assign(settings, managedMcpSettings);
   return {
     settings,
     managedMcp: managedMcpExample(stdio),
     managedMcpEnabled: composed.mcp.allowManagedOnly,
+    managedMcpSettings,
   };
+}
+
+function withExpectedContents(action: WriteAction, contents: string | undefined): WriteAction {
+  return {
+    ...action,
+    expect:
+      contents === undefined
+        ? { absent: true }
+        : { sha256: createHash("sha256").update(contents, "utf8").digest("hex") },
+  };
+}
+
+function managedMcpProjectionOwnershipOnDisk(ctx: PlanContext):
+  | {
+      ownership: ManagedMcpProjectionOwnership;
+      matches: boolean;
+      markerSource: string | undefined;
+      settingsSource: string | undefined;
+    }
+  | undefined {
+  const markerSource = readIfExists(join(ctx.root, AIH_CONFIG_FILE));
+  let ownership: ManagedMcpProjectionOwnership | undefined;
+  try {
+    ownership =
+      markerSource === undefined
+        ? undefined
+        : AihConfigSchema.parse(JSON.parse(markerSource)).managedMcpProjection;
+  } catch {
+    return undefined;
+  }
+  if (!isActiveManagedMcpProjectionOwnership(ownership)) return undefined;
+  const settingsSource = readIfExists(join(ctx.root, ".claude", "managed-settings.json"));
+  if (settingsSource === undefined) {
+    return { ownership, matches: false, markerSource, settingsSource };
+  }
+  try {
+    return {
+      ownership,
+      matches: matchesManagedMcpProjectionOwnership(parseJsoncText(settingsSource), ownership),
+      markerSource,
+      settingsSource,
+    };
+  } catch {
+    return { ownership, matches: false, markerSource, settingsSource };
+  }
+}
+
+function managedMcpProjectionOwnershipAction(
+  ctx: PlanContext,
+  generated: ReturnType<typeof managedMcpAllowlistSettings>,
+): Action {
+  const source = readIfExists(join(ctx.root, AIH_CONFIG_FILE));
+  return withExpectedContents(
+    writeJson(
+      AIH_CONFIG_FILE,
+      managedMcpProjectionConfigJsonFromRaw(
+        source,
+        ctx.contextDir,
+        ctx.targets ?? ["claude"],
+        managedMcpProjectionOwnership(generated),
+      ),
+      "record Claude managed-MCP projection ownership",
+      { merge: true },
+    ),
+    source,
+  );
+}
+
+function clearManagedMcpProjectionOwnershipAction(source: string | undefined): Action {
+  return withExpectedContents(
+    writeJson(AIH_CONFIG_FILE, {}, "clear Claude managed-MCP projection ownership", {
+      merge: true,
+      removeJsonTopLevelKeys: ["managedMcpProjection"],
+    }),
+    source,
+  );
+}
+
+function revokeManagedMcpProjectionOwnershipAction(
+  ownership: ManagedMcpProjectionOwnership,
+  source: string | undefined,
+): Action {
+  return withExpectedContents(
+    writeJson(
+      AIH_CONFIG_FILE,
+      { managedMcpProjection: revokedManagedMcpProjectionOwnership(ownership) },
+      "revoke Claude managed-MCP projection ownership after operator change",
+      { merge: true },
+    ),
+    source,
+  );
 }
 
 export function orgPolicyProjectionActions(ctx: PlanContext, policy: OrgPolicy): Action[] {
   const posture = ctx.posture ?? policy.minimumPosture;
   if (posture === "vibe") return [];
-  const { settings, managedMcp, managedMcpEnabled } = managedSettings(ctx, policy);
+  const { settings, managedMcp, managedMcpEnabled, managedMcpSettings } = managedSettings(
+    ctx,
+    policy,
+  );
+  const owned = managedMcpEnabled
+    ? managedMcpProjectionOwnershipAction(ctx, managedMcpSettings)
+    : undefined;
+  const onDisk = managedMcpEnabled ? undefined : managedMcpProjectionOwnershipOnDisk(ctx);
+  const settingsSource =
+    onDisk?.settingsSource ?? readIfExists(join(ctx.root, ".claude", "managed-settings.json"));
   const actions: Action[] = [
-    writeJson(
-      ".claude/managed-settings.json",
-      settings,
-      "project managed-settings compiled from aih-org-policy.json",
-      {
-        merge: true,
-        replaceJsonKeys: managedMcpEnabled ? ["allowedMcpServers"] : undefined,
-        removeJsonTopLevelKeys: managedMcpEnabled
-          ? undefined
-          : ["allowManagedMcpServersOnly", "allowedMcpServers"],
-      },
+    withExpectedContents(
+      writeJson(
+        ".claude/managed-settings.json",
+        settings,
+        "project managed-settings compiled from aih-org-policy.json",
+        {
+          merge: true,
+          replaceJsonKeys: managedMcpEnabled
+            ? ["allowManagedMcpServersOnly", "allowedMcpServers"]
+            : undefined,
+          removeJsonTopLevelKeys: onDisk?.matches
+            ? ["allowManagedMcpServersOnly", "allowedMcpServers"]
+            : undefined,
+        },
+      ),
+      settingsSource,
     ),
   ];
+  if (owned !== undefined) actions.push(owned);
+  else if (onDisk !== undefined) {
+    actions.push(
+      onDisk.matches
+        ? clearManagedMcpProjectionOwnershipAction(onDisk.markerSource)
+        : revokeManagedMcpProjectionOwnershipAction(onDisk.ownership, onDisk.markerSource),
+    );
+  }
   if (posture === "enterprise") {
     actions.push(
       writeJson(
