@@ -18,7 +18,15 @@ describe("ai-harness repo AI tooling", () => {
   it("pins the three requested tools and keeps their runtime scope narrow", () => {
     expect(toolingPlan()).toMatchObject({
       pins: {
-        serena: { package: "serena-agent==1.5.3", license: "MIT" },
+        serena: {
+          package: "serena-agent==1.5.3",
+          license: "MIT",
+          securityOverrides: [
+            "cryptography==49.0.0",
+            "python-multipart==0.0.32",
+            "starlette==1.3.1",
+          ],
+        },
         tokenOptimizer: {
           tag: "v5.11.44",
           commit: "bbe6c9a4bc2694be5c718b4ef77a729f3a8646dc",
@@ -64,9 +72,7 @@ describe("ai-harness repo AI tooling", () => {
     expect(codexConfig).toContain('[mcp_servers."serena"]');
     expect(codexConfig).toContain('[mcp_servers."token-savior"]');
     expect(codexConfig).toContain('args = ["tools/repo-ai-tools.mjs", "serena-mcp"]');
-    expect(codexConfig).toContain(
-      'args = ["tools/repo-ai-tools.mjs", "token-savior-mcp"]',
-    );
+    expect(codexConfig).toContain('args = ["tools/repo-ai-tools.mjs", "token-savior-mcp"]');
 
     const stopCommands = (hooks.hooks.Stop ?? [])
       .flatMap((group) => group.hooks ?? [])
@@ -76,9 +82,7 @@ describe("ai-harness repo AI tooling", () => {
     const claudeStopCommands = (claudeSettings.hooks.Stop ?? [])
       .flatMap((group) => group.hooks ?? [])
       .map((hook) => hook.command ?? "");
-    expect(claudeStopCommands).toContain(
-      "node tools/repo-ai-tools.mjs token-optimizer-stop",
-    );
+    expect(claudeStopCommands).toContain("node tools/repo-ai-tools.mjs token-optimizer-stop");
   });
 
   it("routes overlapping tools in the repo-owned canon", () => {
