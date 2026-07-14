@@ -8,6 +8,9 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- `aih mcp --apply` and `aih mcp approve --apply` now refuse generated configuration or policy
+  writes when the target was created, deleted, or changed after planning, preserving the operator's
+  current JSON, TOML, or policy configuration until they re-run the command.
 - Native trust scanning now indexes line locations once and caches full-line digests for oversized
   untrusted lines, preventing quadratic many-finding scans while preserving ordinary fingerprints
   and destination-sensitive danger finding identity. (#448)

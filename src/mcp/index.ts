@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { join, posix } from "node:path";
 import { readAihConfig } from "../config/marker.js";
 import { SettingsError } from "../errors.js";
@@ -7,7 +8,7 @@ import type { Cli } from "../internals/clis.js";
 import { upsertTextBlock } from "../internals/envfile.js";
 import { readIfExists } from "../internals/fsxn.js";
 import { isPlainObject, parseJsoncText } from "../internals/merge.js";
-import type { Action, CommandSpec, PlanContext } from "../internals/plan.js";
+import type { Action, CommandSpec, PlanContext, WriteAction } from "../internals/plan.js";
 import { digest, doc, plan, probe, writeJson, writeText } from "../internals/plan.js";
 import { beginMarker, endMarker } from "../internals/render.js";
 import type { Check } from "../internals/verify.js";
@@ -281,8 +282,8 @@ function matchingGeneratedJsonServerNames(
   configKey: string,
   generatedEntries: Record<string, McpEntry>,
   generatedAlternates: Record<string, McpEntry> = {},
+  raw = readIfExists(absPath),
 ): string[] {
-  const raw = readIfExists(absPath);
   if (raw === undefined || Object.keys(generatedEntries).length === 0) return [];
   const parsed = parseJsoncText(raw);
   if (!isPlainObject(parsed)) return [];
@@ -382,7 +383,11 @@ function hasControlCharacter(value: string): boolean {
   return false;
 }
 
-function readLocalOrgPolicyForApproval(ctx: PlanContext): { policy: OrgPolicy; exists: boolean } {
+function readLocalOrgPolicyForApproval(ctx: PlanContext): {
+  policy: OrgPolicy;
+  exists: boolean;
+  raw: string | undefined;
+} {
   const override = ctx.env.AIH_ORG_POLICY?.trim();
   if (override !== undefined && override.length > 0) {
     throw new SettingsError(
@@ -398,10 +403,11 @@ function readLocalOrgPolicyForApproval(ctx: PlanContext): { policy: OrgPolicy; e
         references: { repoContract: posix.join(ctx.contextDir, "project.json") },
       },
       exists: false,
+      raw: undefined,
     };
   }
   try {
-    return { policy: parseOrgPolicy(JSON.parse(raw)), exists: true };
+    return { policy: parseOrgPolicy(JSON.parse(raw)), exists: true, raw };
   } catch (error) {
     throw invalidOrgPolicyError(error);
   }
@@ -409,6 +415,35 @@ function readLocalOrgPolicyForApproval(ctx: PlanContext): { policy: OrgPolicy; e
 
 function uniquePreservingOrder(values: readonly string[]): string[] {
   return [...new Set(values)];
+}
+
+/** Bind each generated MCP write to the target bytes observed while planning. */
+function guardMcpWrites(ctx: PlanContext, actions: readonly Action[]): Action[] {
+  return actions.map((action) => {
+    if (action.kind !== "write") return action;
+    if (action.expect !== undefined) return action;
+    const absPath = action.external ? action.path : join(ctx.root, action.path);
+    const existing = readIfExists(absPath);
+    const expect: WriteAction["expect"] =
+      existing === undefined
+        ? { absent: true }
+        : { sha256: createHash("sha256").update(existing, "utf8").digest("hex") };
+    return { ...action, expect };
+  });
+}
+
+function withExpectedContents(action: WriteAction, contents: string | undefined): WriteAction {
+  return {
+    ...action,
+    expect:
+      contents === undefined
+        ? { absent: true }
+        : { sha256: createHash("sha256").update(contents, "utf8").digest("hex") },
+  };
+}
+
+function guardMcpPlan(ctx: PlanContext, planned: ReturnType<typeof plan>): ReturnType<typeof plan> {
+  return { ...planned, actions: guardMcpWrites(ctx, planned.actions) };
 }
 
 function approveMcpPlan(ctx: PlanContext): ReturnType<typeof plan> {
@@ -421,7 +456,7 @@ function approveMcpPlan(ctx: PlanContext): ReturnType<typeof plan> {
     typeof ctx.options.reviewer === "string" && ctx.options.reviewer.trim().length > 0
       ? approvalText(ctx.options.reviewer, "--reviewer")
       : "local-operator";
-  const { policy, exists: policyExists } = readLocalOrgPolicyForApproval(ctx);
+  const { policy, exists: policyExists, raw: policyRaw } = readLocalOrgPolicyForApproval(ctx);
   if ((policy.mcp?.disabledServers ?? []).includes(server)) {
     throw new SettingsError(
       `${server} is listed in mcp.disabledServers; remove that org-policy denial before approving it`,
@@ -459,18 +494,24 @@ function approveMcpPlan(ctx: PlanContext): ReturnType<typeof plan> {
       approvals: [...mcp.approvals.filter((entry) => entry.server !== server), approval],
     },
   };
-  return plan(
-    "mcp approve",
-    writeJson(
-      AIH_ORG_POLICY_FILE,
-      next,
-      ctx.apply
-        ? policyExists
-          ? `Record reviewed MCP egress approval for ${server} in local org policy`
-          : `Create local org policy and record reviewed MCP egress approval for ${server}`
-        : policyExists
-          ? `Preview reviewed MCP egress approval for ${server}; approvedAt is set when rerun with --apply`
-          : `Preview creating local org policy for ${server}; approvedAt is set when rerun with --apply`,
+  return guardMcpPlan(
+    ctx,
+    plan(
+      "mcp approve",
+      withExpectedContents(
+        writeJson(
+          AIH_ORG_POLICY_FILE,
+          next,
+          ctx.apply
+            ? policyExists
+              ? `Record reviewed MCP egress approval for ${server} in local org policy`
+              : `Create local org policy and record reviewed MCP egress approval for ${server}`
+            : policyExists
+              ? `Preview reviewed MCP egress approval for ${server}; approvedAt is set when rerun with --apply`
+              : `Preview creating local org policy for ${server}; approvedAt is set when rerun with --apply`,
+        ),
+        policyRaw,
+      ),
     ),
   );
 }
@@ -576,18 +617,25 @@ function planMcpOffline(ctx: PlanContext): ReturnType<typeof plan> {
   const denied = Object.fromEntries(
     Object.entries(catalog.servers).filter(([name]) => !(name in stdio)),
   );
+  const mcpPath = join(ctx.root, ".mcp.json");
+  const source = readIfExists(mcpPath);
   const stale = matchingGeneratedJsonServerNames(
-    join(ctx.root, ".mcp.json"),
+    mcpPath,
     "mcpServers",
     mcpEntries("claude", denied),
+    {},
+    source,
   );
   return plan(
     "mcp",
-    writeJson(
-      ".mcp.json",
-      { mcpServers: stdio },
-      "local stdio MCP servers (offline) — mirror/vendor these; some still resolve packages at runtime until vendored (see the offline verify probe)",
-      { merge: true, removeJsonKeys: serverConfigRemovals(undefined, "mcpServers", stale) },
+    withExpectedContents(
+      writeJson(
+        ".mcp.json",
+        { mcpServers: stdio },
+        "local stdio MCP servers (offline) — mirror/vendor these; some still resolve packages at runtime until vendored (see the offline verify probe)",
+        { merge: true, removeJsonKeys: serverConfigRemovals(undefined, "mcpServers", stale) },
+      ),
+      source,
     ),
     writeJson(
       "managed-mcp.json.example",
@@ -780,8 +828,9 @@ async function planMcp(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
       // Codex TOML: fold the `[mcp_servers.*]` tables into an aih-managed region of
       // config.toml, preserving the user's other config. Read existing at plan time.
       const abs = external ? writePath : join(ctx.root, p.configPath);
+      const source = readIfExists(abs);
       const existing = removeMcpTomlServers(
-        readIfExists(abs) ?? "",
+        source ?? "",
         serverRemovalNames(undefined), // preserve operator-owned top-level tables
       );
       if (mcpCompliant) {
@@ -798,9 +847,12 @@ async function planMcp(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
       const have = existingMcpTomlNames(existing, MCP_TOML_SCOPE);
       const fresh = Object.fromEntries(Object.entries(writeServers).filter(([n]) => !have.has(n)));
       const merged = upsertTextBlock(existing, MCP_TOML_SCOPE, mcpTomlBody(fresh));
-      actions.push(writeText(writePath, merged, describe, { external }));
+      actions.push(
+        withExpectedContents(writeText(writePath, merged, describe, { external }), source),
+      );
     } else {
       const abs = external ? writePath : join(ctx.root, p.configPath);
+      const source = readIfExists(abs);
       const deniedGeneratedServerMap = Object.fromEntries([
         ...Object.entries(orgDeniedGenerated),
         ...(mcpCompliant ? deniedGenerated.map((item) => [item.name, item.server] as const) : []),
@@ -821,6 +873,7 @@ async function planMcp(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
         p.configKey,
         generatedDeniedEntries,
         generatedDeniedAlternates,
+        source,
       );
       for (const name of staleGeneratedNames) {
         const policy = deniedGeneratedPoliciesByName.get(name);
@@ -837,12 +890,15 @@ async function planMcp(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
         });
       }
       actions.push(
-        writeJson(writePath, { [p.configKey]: renderedEntries }, describe, {
-          merge: true,
-          external,
-          replaceJsonChildKeys: { [p.configKey]: Object.keys(renderedEntries) },
-          removeJsonKeys: serverConfigRemovals(undefined, p.configKey, staleGeneratedNames),
-        }),
+        withExpectedContents(
+          writeJson(writePath, { [p.configKey]: renderedEntries }, describe, {
+            merge: true,
+            external,
+            replaceJsonChildKeys: { [p.configKey]: Object.keys(renderedEntries) },
+            removeJsonKeys: serverConfigRemovals(undefined, p.configKey, staleGeneratedNames),
+          }),
+          source,
+        ),
       );
     }
   }
@@ -863,16 +919,20 @@ async function planMcp(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
   const placeholders = envPlaceholders(writeServers);
   if (placeholders.length > 0) {
     const abs = join(ctx.root, ".env.example");
+    const source = readIfExists(abs);
     const body = [
       "# Secrets referenced by MCP servers (.mcp.json). Copy to .env (untracked) and fill",
       "# in real values — never commit them. aih manages only the block below.",
       ...placeholders.map((v) => `${v}=`),
     ].join("\n");
     actions.push(
-      writeText(
-        ".env.example",
-        upsertTextBlock(readIfExists(abs) ?? "", MCP_ENV_SCOPE, body),
-        `Document ${placeholders.length} MCP secret placeholder(s) (.env.example; real .env stays untracked)`,
+      withExpectedContents(
+        writeText(
+          ".env.example",
+          upsertTextBlock(source ?? "", MCP_ENV_SCOPE, body),
+          `Document ${placeholders.length} MCP secret placeholder(s) (.env.example; real .env stays untracked)`,
+        ),
+        source,
       ),
     );
   }
@@ -964,6 +1024,11 @@ async function planMcp(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
   return plan("mcp", ...actions);
 }
 
+async function planMcpWithWriteGuards(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
+  const planned = await planMcp(ctx);
+  return guardMcpPlan(ctx, planned);
+}
+
 export const command: CommandSpec = {
   name: "mcp",
   summary:
@@ -997,7 +1062,7 @@ export const command: CommandSpec = {
         "under Enterprise posture, omit denied generated MCP servers from targeted configs and list them in quarantined guidance",
     },
   ],
-  plan: planMcp,
+  plan: planMcpWithWriteGuards,
 };
 
 export const mcpApproveCommand: CommandSpec = {
