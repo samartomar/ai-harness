@@ -392,12 +392,21 @@ build); `validate --require-signature` then
 
 ## aih policy
 
-Schema and trusted-channel gates for the org policy. `validate` is the **read-only CI gate** over
-the active local org policy source: the default committed `aih-org-policy.json`, or an explicit
-`AIH_ORG_POLICY` override. The policy source is JSON only; JavaScript/module policy files are not
-executed and fail as `org-policy.invalid` with remediation guidance. A missing default repo file is
-a friendly skip (vibe repos carry no org policy), and a parse/schema failure is a coded finding
-(`org-policy.invalid`) — or, under
+Schema, projection, and trusted-channel gates for the org policy. `project --apply` compiles the
+committed `aih-org-policy.json` into only its generated policy artifacts —
+`.claude/managed-settings.json` and, at enterprise posture, the two system-path examples. It does
+not run `aih init`, regenerate the canon, or modify unrelated settings. This is a Claude projection:
+it writes only when Claude is selected (the default); `--cli cursor`, for example, produces no
+projection. When managed-only MCP is active, it records existing AIH ownership provenance in
+`.aih-config.json` so later deactivation can remove only the exact generated values. It refuses a
+configuration write when `AIH_ORG_POLICY` selects an override; previewing without `--apply` remains
+inspectable, but mutation requires the committed default policy source.
+
+`validate` is the **read-only CI gate** over the active local org policy source: the default
+committed `aih-org-policy.json`, or an explicit `AIH_ORG_POLICY` override. The policy source is
+JSON only; JavaScript/module policy files are not executed and fail as `org-policy.invalid` with
+remediation guidance. A missing default repo file is a friendly skip (vibe repos carry no org
+policy), and a parse/schema failure is a coded finding (`org-policy.invalid`) — or, under
 `--bundle <path>`, over a distributable **policy-bundle envelope**
 (`org-policy.bundle-invalid`, naming which layer failed: the envelope or the embedded policy).
 `verify --against <sha256|bundle>` compares the active policy (including an explicit

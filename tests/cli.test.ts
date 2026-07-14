@@ -88,9 +88,9 @@ describe("CLI program", () => {
     expect(capability?.commands.map((c) => c.name()).sort()).toEqual(["prune", "resolve"]);
   });
 
-  it("registers policy validation and pin verification as nested commands", () => {
+  it("registers policy projection, validation, and pin verification as nested commands", () => {
     const policy = buildProgram().commands.find((c) => c.name() === "policy");
-    expect(policy?.commands.map((c) => c.name()).sort()).toEqual(["validate", "verify"]);
+    expect(policy?.commands.map((c) => c.name()).sort()).toEqual(["project", "validate", "verify"]);
   });
 
   it("registers truth pack and verify as nested commands", () => {
