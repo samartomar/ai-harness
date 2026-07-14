@@ -100,6 +100,37 @@ describe("ai-harness repo AI tooling", () => {
     expect(routing).toContain("Token Optimizer");
     expect(routing).toContain("Claude and Codex");
     expect(routing).toContain("must not block product work");
+    expect(routing).toContain("## Default decision path");
+    expect(routing).toContain("`get_entry_points`");
+    expect(routing).toContain("`get_symbols_overview`");
+    expect(routing).toContain("Do not use `replace_symbol_source`");
+    expect(routing).toContain("Do not run the report or coach on every task");
+  });
+
+  it("makes graph use advisory and consistent in every session bootloader", () => {
+    const canonFiles = [
+      "AGENTS.md",
+      "CLAUDE.md",
+      "ai-coding/RULE_ROUTER.md",
+      "ai-coding/rules/agent-behavior-core.md",
+      "ai-coding/adapters/_shared-canonical-block.md",
+    ];
+
+    for (const file of canonFiles) {
+      const content = readFileSync(resolve(root, file), "utf8");
+      expect(content, file).not.toContain("code-review-graph is a hard prerequisite");
+      expect(content, file).not.toContain("work must stop until");
+    }
+
+    for (const file of [
+      "AGENTS.md",
+      "CLAUDE.md",
+      "ai-coding/adapters/_shared-canonical-block.md",
+    ]) {
+      const content = readFileSync(resolve(root, file), "utf8");
+      expect(content, file).toContain("ai-coding/rules/repo-ai-tools.md");
+      expect(content, file).toContain("warn once and continue");
+    }
   });
 
   it("keeps Serena runtime artifacts out of the product diff", () => {
