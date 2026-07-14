@@ -36,6 +36,8 @@ Enterprise AI Bootstrapping Harness — governed AI-assisted coding for enterpri
 - `context7`
 - `github`
 - `sequential-thinking`
+- `serena`
+- `token-savior`
 
 ## Sensitive paths
 

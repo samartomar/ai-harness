@@ -18,12 +18,17 @@
 ## 3. MCP and AI tooling
 
 - Review and apply the repo AI tooling surface: `aih init --apply`.
+- Install the repo-pinned Token Savior, Token Optimizer, and Serena tools:
+  `node tools/repo-ai-tools.mjs install`.
+- Verify the exact local pins: `node tools/repo-ai-tools.mjs verify`.
 - Detected root `.mcp.json` servers:
   - `code-review-graph`
   - `codebase-memory-mcp`
   - `context7`
   - `github`
   - `sequential-thinking`
+  - `serena`
+  - `token-savior`
 
 ## 4. Close the known gaps
 

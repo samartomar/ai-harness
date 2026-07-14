@@ -31,6 +31,32 @@
       "credentials": "none",
       "supplyChain": "pinned"
     },
+    "serena": {
+      "type": "stdio",
+      "command": "node",
+      "args": [
+        "tools/repo-ai-tools.mjs",
+        "serena-mcp"
+      ],
+      "description": "Repo-local Serena 1.5.3 semantic symbol navigation and refactoring, with memory and duplicate basic tools disabled.",
+      "classification": "local",
+      "egress": "none",
+      "credentials": "none",
+      "supplyChain": "serena-agent==1.5.3 with exact patched transitive overrides (repo-local uv tool)"
+    },
+    "token-savior": {
+      "type": "stdio",
+      "command": "node",
+      "args": [
+        "tools/repo-ai-tools.mjs",
+        "token-savior-mcp"
+      ],
+      "description": "Repo-local Token Savior 4.4.1 compact structural navigation using the optimized profile; memory and shell hooks are disabled.",
+      "classification": "local",
+      "egress": "none",
+      "credentials": "none",
+      "supplyChain": "token-savior-recall[mcp]==4.4.1 (repo-local uv tool)"
+    },
     "sequential-thinking": {
       "type": "stdio",
       "command": "npx",

@@ -6,6 +6,14 @@ Codex, Antigravity, OpenCode, Zed, and Kimi; canonical guidance lives in
 
 Per-tool notes: `ai-coding/adapters/`.
 
+Repo-specific tool routing: before non-trivial repository work, read
+`ai-coding/rules/repo-ai-tools.md`. It overrides generic tool-selection guidance
+in the generated block below.
+
+Never use AIH project-truth or project-governance commands to govern this
+checkout. Repository development checks may exercise the CLI; product behavior
+that changes project state must use temporary fixture roots in tests.
+
 <!-- BEGIN ai-canonical:shared (generated; source ai-coding/adapters/_shared-canonical-block.md - do not edit by hand) -->
 
 ## Start here
@@ -31,7 +39,7 @@ any non-trivial change; the essentials are inline below.
 - Handle errors explicitly; no silent failures.
 - No secrets in code, config, fixtures, logs, or error text.
 - Do not open `.env*` or `secrets/**`; validate secret presence with `aih secrets --verify`.
-- On large repos, code-review-graph is a hard prerequisite for repository work. If it is unavailable, errors, or has no populated graph, stop; repair it and verify a populated graph before continuing.
+- On large repos, code-review-graph is advisory blast-area context, not evidence or a gate. If it fails or is stale, warn once and continue from source and tests. Repair it only when helper repair is the assigned task.
 
 ## External action boundary
 

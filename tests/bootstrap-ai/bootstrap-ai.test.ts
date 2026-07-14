@@ -126,12 +126,15 @@ describe("bootstrap-ai — canon files", () => {
     expect(shared).toContain("no silent failures");
   });
 
-  it("the shared block carries the safety invariants (secrets + large-repo graph)", async () => {
+  it("the shared block carries secrets safety and advisory graph routing", async () => {
     const w = writesByPath((await command.plan(makeCtx({ cli: "codex,gemini,kiro" }))).actions);
     const shared = w.get(".ai-context/adapters/_shared-canonical-block.md")?.contents ?? "";
     expect(shared).toContain("aih secrets --verify");
-    expect(shared).toContain("code-review-graph is a hard prerequisite");
-    expect(shared).toContain("stop; repair it and verify a populated graph before continuing");
+    expect(shared).toContain("code-review-graph");
+    expect(shared).toContain("advisory blast-area context");
+    expect(shared).toContain("warn once and continue");
+    expect(shared).not.toContain("code-review-graph is a hard prerequisite");
+    expect(shared).not.toContain("stop; repair it and verify a populated graph before continuing");
   });
 
   it("the router is stack-aware (names the detected language)", async () => {
@@ -143,7 +146,8 @@ describe("bootstrap-ai — canon files", () => {
     expect(router).toContain("start `npm start`");
     expect(router).toContain("Layer 2 wins");
     expect(router).toContain("Do not open `.env*` or `secrets/**`");
-    expect(router).toContain("large-repo graph safety");
+    expect(router).toContain("including `code-review-graph` — are advisory");
+    expect(router).not.toContain("graph failure is fail-closed");
   });
 
   it("honors --context-dir for every canon path and reference", async () => {
