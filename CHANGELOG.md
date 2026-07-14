@@ -8,6 +8,9 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Native trust scanning now indexes line locations once and caches full-line digests for oversized
+  untrusted lines, preventing quadratic many-finding scans while preserving ordinary fingerprints
+  and destination-sensitive danger finding identity. (#448)
 - The baseline `vet-once` CI job now resolves Cisco AI Defense from a committed, hash-pinned uv
   lock, runs that exact environment offline from each skill directory, and uploads the freshly
   generated evidence candidate before failing on drift. Analyzer receipts bind to the uv lock so

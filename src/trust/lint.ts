@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { Check, CheckCode } from "../internals/verify.js";
 import type { LintFinding, LintRule, LintRuleCtx } from "../lint/rules.js";
 import { contentFindingFingerprint } from "./fingerprint.js";
@@ -233,16 +234,50 @@ function safeUri(path: string): string {
   return normalized;
 }
 
-function lineAt(source: string, index: number): number {
-  let line = 1;
-  for (let i = 0; i < index; i++) if (source.charCodeAt(i) === 10) line++;
-  return line;
+interface SourceLines {
+  source: string;
+  starts: number[];
+  textByIndex: Map<number, string>;
+  digestByIndex: Map<number, string>;
 }
 
-function lineTextAt(source: string, index: number): string {
-  const start = source.lastIndexOf("\n", Math.max(0, index - 1)) + 1;
-  const end = source.indexOf("\n", index);
-  return source.slice(start, end === -1 ? source.length : end);
+const MAX_FULL_LINE_FINGERPRINT_LENGTH = 4_096;
+
+function indexSourceLines(source: string): SourceLines {
+  const starts = [0];
+  for (let index = 0; index < source.length; index++) {
+    if (source.charCodeAt(index) === 10) starts.push(index + 1);
+  }
+  return { source, starts, textByIndex: new Map(), digestByIndex: new Map() };
+}
+
+function lineAt(lines: SourceLines, index: number): { line: number; text: string } {
+  let low = 0;
+  let high = lines.starts.length;
+  while (low + 1 < high) {
+    const middle = Math.floor((low + high) / 2);
+    if ((lines.starts[middle] ?? 0) <= index) low = middle;
+    else high = middle;
+  }
+
+  let text = lines.textByIndex.get(low);
+  if (text === undefined) {
+    const start = lines.starts[low] ?? 0;
+    const nextStart = lines.starts[low + 1];
+    text = lines.source.slice(start, nextStart === undefined ? lines.source.length : nextStart - 1);
+    lines.textByIndex.set(low, text);
+  }
+  return { line: low + 1, text };
+}
+
+function oversizedLineDigest(lines: SourceLines, line: number, lineText: string): string {
+  const lineIndex = line - 1;
+  let digest = lines.digestByIndex.get(lineIndex);
+  if (digest === undefined) {
+    digest = createHash("sha256").update(lineText).digest("hex");
+    lines.digestByIndex.set(lineIndex, digest);
+  }
+  return digest;
 }
 
 function nextOccurrence(
@@ -263,14 +298,15 @@ function finding(
   code: TrustLintCode,
   ruleId: string,
   path: string,
-  source: string,
+  lines: SourceLines,
   index: number,
   message: string,
-  fingerprintContent?: string,
 ): TrustLintFinding {
-  const line = lineAt(source, index);
-  const lineText = lineTextAt(source, index);
-  const content = fingerprintContent ?? `${lineText}\0${message}`;
+  const { line, text: lineText } = lineAt(lines, index);
+  const content =
+    lineText.length > MAX_FULL_LINE_FINGERPRINT_LENGTH
+      ? `oversized-line-sha256:${oversizedLineDigest(lines, line, lineText)}\0${message}`
+      : `${lineText}\0${message}`;
   return {
     ruleId,
     severity: "fail",
@@ -452,6 +488,7 @@ export function classifyUnicodeRisk(path: string, source: string): UnicodeRisk |
 function hiddenUnicodeFindings(path: string, source: string): TrustLintFinding[] {
   const out: TrustLintFinding[] = [];
   const occurrences = new Map<string, number>();
+  const lines = indexSourceLines(source);
   const allowDecorative = isReviewableDocumentationPath(path);
   let sparseNonAscii = 0;
   let sparseIndex = -1;
@@ -461,27 +498,29 @@ function hiddenUnicodeFindings(path: string, source: string): TrustLintFinding[]
     const width = cp > 0xffff ? 2 : 1;
     const hidden = hiddenCategory(cp);
     if (hidden !== undefined) {
+      const message = `character category: ${hidden}; reason: invisible/control Unicode can smuggle model-readable instructions; code point U+${cp.toString(16).toUpperCase()}`;
       out.push(
         finding(
           occurrences,
           "trust.hidden-unicode",
           "trust.hidden-unicode",
           path,
-          source,
+          lines,
           index,
-          `character category: ${hidden}; reason: invisible/control Unicode can smuggle model-readable instructions; code point U+${cp.toString(16).toUpperCase()}`,
+          message,
         ),
       );
     } else if (isHomoglyphConfusable(cp) && hasAsciiWordNeighbor(source, index, width)) {
+      const message = `character category: homoglyph-confusable; reason: Unicode confusable appears inside an ASCII-like token; code point U+${cp.toString(16).toUpperCase()}`;
       out.push(
         finding(
           occurrences,
           "trust.hidden-unicode",
           "trust.hidden-unicode",
           path,
-          source,
+          lines,
           index,
-          `character category: homoglyph-confusable; reason: Unicode confusable appears inside an ASCII-like token; code point U+${cp.toString(16).toUpperCase()}`,
+          message,
         ),
       );
     } else if (
@@ -502,7 +541,7 @@ function hiddenUnicodeFindings(path: string, source: string): TrustLintFinding[]
         visibleRisk.code,
         visibleRisk.code,
         path,
-        source,
+        lines,
         sparseIndex,
         `document contains ${sparseNonAscii} non-ASCII characters; character category: ${visibleRisk.category}; reason: ${visibleRisk.reason}`,
       ),
@@ -514,6 +553,7 @@ function hiddenUnicodeFindings(path: string, source: string): TrustLintFinding[]
 function promptInjectionFindings(path: string, source: string): TrustLintFinding[] {
   const out: TrustLintFinding[] = [];
   const occurrences = new Map<string, number>();
+  const lines = indexSourceLines(source);
   for (const rule of PROMPT_INJECTION_PATTERNS) {
     const re = new RegExp(rule.pattern.source, rule.pattern.flags);
     for (let match = re.exec(source); match !== null; match = re.exec(source)) {
@@ -526,7 +566,7 @@ function promptInjectionFindings(path: string, source: string): TrustLintFinding
             "trust.prompt-injection",
             rule.id,
             path,
-            source,
+            lines,
             match.index,
             rule.message,
           ),
