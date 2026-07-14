@@ -16,6 +16,7 @@ import {
   readRegularFile,
   readRegularFileWithStats,
   retryTransient,
+  rollbackAppliedWrites,
 } from "../../src/internals/fsxn.js";
 
 let dir: string;
@@ -55,6 +56,21 @@ describe("FsTransaction", () => {
     t.stage(join(fileAsDir, "child.txt"), "y");
     expect(() => t.commit()).toThrow();
     expect(existsSync(good)).toBe(false);
+  });
+
+  it("preserves an operator edit made before a later failure triggers rollback", () => {
+    const target = join(dir, "managed.txt");
+    const backup = `${target}.aih.bak`;
+    writeFileSync(target, "operator edit\n");
+    writeFileSync(backup, "before\n");
+
+    const preserved = rollbackAppliedWrites([
+      { path: target, contents: "generated\n", backup, created: false },
+    ]);
+
+    expect(preserved).toEqual([target]);
+    expect(readFileSync(target, "utf8")).toBe("operator edit\n");
+    expect(readFileSync(backup, "utf8")).toBe("before\n");
   });
 
   it("dedupes repeated writes to one target so rollback restores the ORIGINAL", () => {

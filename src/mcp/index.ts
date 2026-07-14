@@ -919,16 +919,20 @@ async function planMcp(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
   const placeholders = envPlaceholders(writeServers);
   if (placeholders.length > 0) {
     const abs = join(ctx.root, ".env.example");
+    const source = readIfExists(abs);
     const body = [
       "# Secrets referenced by MCP servers (.mcp.json). Copy to .env (untracked) and fill",
       "# in real values — never commit them. aih manages only the block below.",
       ...placeholders.map((v) => `${v}=`),
     ].join("\n");
     actions.push(
-      writeText(
-        ".env.example",
-        upsertTextBlock(readIfExists(abs) ?? "", MCP_ENV_SCOPE, body),
-        `Document ${placeholders.length} MCP secret placeholder(s) (.env.example; real .env stays untracked)`,
+      withExpectedContents(
+        writeText(
+          ".env.example",
+          upsertTextBlock(source ?? "", MCP_ENV_SCOPE, body),
+          `Document ${placeholders.length} MCP secret placeholder(s) (.env.example; real .env stays untracked)`,
+        ),
+        source,
       ),
     );
   }

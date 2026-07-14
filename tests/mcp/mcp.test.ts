@@ -748,6 +748,21 @@ describe("aih mcp — --self-host (GitHub via local Docker + .env.example)", () 
     expect(envExample?.contents).toContain("GITHUB_PERSONAL_ACCESS_TOKEN=");
   });
 
+  it("refuses a .env.example changed after planning", async () => {
+    const root = makeTmp();
+    const envExample = join(root, ".env.example");
+    writeFileSync(envExample, "OPERATOR_VALUE=before\n");
+    const plannedCtx = makeCtx({ root, options: { selfHost: true } });
+    const planned = await command.plan(plannedCtx);
+    const changed = "OPERATOR_VALUE=after\n";
+    writeFileSync(envExample, changed);
+
+    await expect(executePlan(planned, { ...plannedCtx, apply: true })).rejects.toThrow(
+      /changed after the plan was computed/,
+    );
+    expect(readFileSync(envExample, "utf8")).toBe(changed);
+  });
+
   it("default writes no .env.example (no secret placeholders)", async () => {
     const p = await command.plan(makeCtx());
     expect(p.actions.some((a) => a.kind === "write" && a.path === ".env.example")).toBe(false);
