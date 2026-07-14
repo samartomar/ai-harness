@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { Check, CheckCode } from "../internals/verify.js";
 import type { LintFinding, LintRule, LintRuleCtx } from "../lint/rules.js";
 import { contentFindingFingerprint } from "./fingerprint.js";
@@ -237,6 +238,7 @@ interface SourceLines {
   source: string;
   starts: number[];
   textByIndex: Map<number, string>;
+  digestByIndex: Map<number, string>;
 }
 
 const MAX_FULL_LINE_FINGERPRINT_LENGTH = 4_096;
@@ -246,7 +248,7 @@ function indexSourceLines(source: string): SourceLines {
   for (let index = 0; index < source.length; index++) {
     if (source.charCodeAt(index) === 10) starts.push(index + 1);
   }
-  return { source, starts, textByIndex: new Map() };
+  return { source, starts, textByIndex: new Map(), digestByIndex: new Map() };
 }
 
 function lineAt(lines: SourceLines, index: number): { line: number; text: string } {
@@ -266,6 +268,16 @@ function lineAt(lines: SourceLines, index: number): { line: number; text: string
     lines.textByIndex.set(low, text);
   }
   return { line: low + 1, text };
+}
+
+function oversizedLineDigest(lines: SourceLines, line: number, lineText: string): string {
+  const lineIndex = line - 1;
+  let digest = lines.digestByIndex.get(lineIndex);
+  if (digest === undefined) {
+    digest = createHash("sha256").update(lineText).digest("hex");
+    lines.digestByIndex.set(lineIndex, digest);
+  }
+  return digest;
 }
 
 function nextOccurrence(
@@ -289,13 +301,11 @@ function finding(
   lines: SourceLines,
   index: number,
   message: string,
-  oversizedLineFingerprintContent?: string,
 ): TrustLintFinding {
   const { line, text: lineText } = lineAt(lines, index);
   const content =
-    lineText.length > MAX_FULL_LINE_FINGERPRINT_LENGTH &&
-    oversizedLineFingerprintContent !== undefined
-      ? oversizedLineFingerprintContent
+    lineText.length > MAX_FULL_LINE_FINGERPRINT_LENGTH
+      ? `oversized-line-sha256:${oversizedLineDigest(lines, line, lineText)}\0${message}`
       : `${lineText}\0${message}`;
   return {
     ruleId,
@@ -498,7 +508,6 @@ function hiddenUnicodeFindings(path: string, source: string): TrustLintFinding[]
           lines,
           index,
           message,
-          `${String.fromCodePoint(cp)}\0${message}`,
         ),
       );
     } else if (isHomoglyphConfusable(cp) && hasAsciiWordNeighbor(source, index, width)) {
@@ -512,7 +521,6 @@ function hiddenUnicodeFindings(path: string, source: string): TrustLintFinding[]
           lines,
           index,
           message,
-          `${String.fromCodePoint(cp)}\0${message}`,
         ),
       );
     } else if (
@@ -561,7 +569,6 @@ function promptInjectionFindings(path: string, source: string): TrustLintFinding
             lines,
             match.index,
             rule.message,
-            `${match[0]}\0${rule.message}`,
           ),
         );
       }
