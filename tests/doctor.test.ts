@@ -864,11 +864,14 @@ describe("doctor — MCP managed allowlist drift", () => {
     );
   }
 
-  function writeAllowlist(serverCommand: string[]): void {
+  function writeAllowlist(...serverCommands: string[][]): void {
     mkdirSync(join(dir, ".claude"), { recursive: true });
     writeFileSync(
       join(dir, ".claude", "managed-settings.json"),
-      JSON.stringify({ allowManagedMcpServersOnly: true, allowedMcpServers: [{ serverCommand }] }),
+      JSON.stringify({
+        allowManagedMcpServersOnly: true,
+        allowedMcpServers: serverCommands.map((serverCommand) => ({ serverCommand })),
+      }),
     );
   }
 
@@ -945,6 +948,25 @@ describe("doctor — MCP managed allowlist drift", () => {
       }),
     );
     writeAllowlist(["uvx", "code-review-graph@2.3.6", "serve"]);
+    const c = rooted();
+    const probe = findProbe((await command.plan(c)).actions, "MCP managed allowlist");
+    const res = await probe?.run(c);
+
+    expect(res?.verdict).toBe("pass");
+  });
+
+  it("S1/S2 treats an empty managed allowlist as an empty desired command set", async () => {
+    writeMcp();
+    writeFileSync(
+      join(dir, "aih-org-policy.json"),
+      JSON.stringify({
+        schemaVersion: 1,
+        minimumPosture: "enterprise",
+        references: { repoContract: "ai-coding/project.json" },
+        mcp: { allowedServers: [], allowManagedOnly: true },
+      }),
+    );
+    writeAllowlist();
     const c = rooted();
     const probe = findProbe((await command.plan(c)).actions, "MCP managed allowlist");
     const res = await probe?.run(c);

@@ -438,6 +438,29 @@ describe("orgPolicyProjectionActions", () => {
     expect(blob).toContain("server-sequential-thinking");
   });
 
+  it("S1/S2 projects an empty managed allowlist as deny-all", () => {
+    const actions = orgPolicyProjectionActions(
+      { ...ctx(), posture: "enterprise" },
+      parseOrgPolicy(
+        policy({
+          minimumPosture: "enterprise",
+          mcp: { allowedServers: [], allowManagedOnly: true },
+        }),
+      ),
+    );
+    const out = Object.fromEntries(writes(actions).map((write) => [write.path, write]));
+
+    expect(
+      (out[".claude/managed-settings.json"]?.json as { allowedMcpServers?: unknown[] })
+        ?.allowedMcpServers,
+    ).toEqual([]);
+    expect(
+      (out["managed-mcp.json.example"]?.json as {
+        mcpServers?: Record<string, unknown>;
+      })?.mcpServers,
+    ).toEqual({});
+  });
+
   it("replaces stale managed MCP allowlist entries when projecting onto existing settings", () => {
     mkdirSync(join(dir, ".claude"), { recursive: true });
     writeFileSync(
