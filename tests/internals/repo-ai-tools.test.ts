@@ -28,7 +28,7 @@ describe("ai-harness repo AI tooling", () => {
       },
       runtime: {
         serena: { context: "ide", mode: "no-memories" },
-        tokenOptimizer: { profile: "quiet", event: "Stop" },
+        tokenOptimizer: { clients: ["claude", "codex"], profile: "quiet", event: "Stop" },
         tokenSavior: { profile: "optimized", memory: false, shellHooks: false },
       },
     });
@@ -41,6 +41,12 @@ describe("ai-harness repo AI tooling", () => {
     const hooks = JSON.parse(readFileSync(resolve(root, ".codex/hooks.json"), "utf8")) as {
       hooks: Record<string, Array<{ hooks?: Array<{ command?: string }> }>>;
     };
+    const codexConfig = readFileSync(resolve(root, ".codex/config.toml"), "utf8");
+    const claudeSettings = JSON.parse(
+      readFileSync(resolve(root, ".claude/settings.json"), "utf8"),
+    ) as {
+      hooks: Record<string, Array<{ hooks?: Array<{ command?: string }> }>>;
+    };
 
     expect(mcp.mcpServers.serena).toMatchObject({
       command: "node",
@@ -50,11 +56,24 @@ describe("ai-harness repo AI tooling", () => {
       command: "node",
       args: ["tools/repo-ai-tools.mjs", "token-savior-mcp"],
     });
+    expect(codexConfig).toContain('[mcp_servers."serena"]');
+    expect(codexConfig).toContain('[mcp_servers."token-savior"]');
+    expect(codexConfig).toContain('args = ["tools/repo-ai-tools.mjs", "serena-mcp"]');
+    expect(codexConfig).toContain(
+      'args = ["tools/repo-ai-tools.mjs", "token-savior-mcp"]',
+    );
 
     const stopCommands = (hooks.hooks.Stop ?? [])
       .flatMap((group) => group.hooks ?? [])
       .map((hook) => hook.command ?? "");
     expect(stopCommands).toContain("node tools/repo-ai-tools.mjs token-optimizer-stop");
+
+    const claudeStopCommands = (claudeSettings.hooks.Stop ?? [])
+      .flatMap((group) => group.hooks ?? [])
+      .map((hook) => hook.command ?? "");
+    expect(claudeStopCommands).toContain(
+      "node tools/repo-ai-tools.mjs token-optimizer-stop",
+    );
   });
 
   it("routes overlapping tools in the repo-owned canon", () => {
@@ -69,6 +88,7 @@ describe("ai-harness repo AI tooling", () => {
     expect(routing).toContain("Serena");
     expect(routing).toContain("Token Savior");
     expect(routing).toContain("Token Optimizer");
+    expect(routing).toContain("Claude and Codex");
     expect(routing).toContain("must not block product work");
   });
 });
