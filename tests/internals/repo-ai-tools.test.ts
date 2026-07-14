@@ -49,7 +49,12 @@ describe("ai-harness repo AI tooling", () => {
           profile: "quiet",
           event: "Stop",
         },
-        tokenSavior: { profile: "optimized", memory: false, shellHooks: false },
+        tokenSavior: {
+          profile: "optimized",
+          memory: false,
+          shellHooks: false,
+          excludePatterns: [".token-savior-cache.json"],
+        },
       },
     });
   });
@@ -152,6 +157,12 @@ describe("ai-harness repo AI tooling", () => {
 
     expect(serenaIgnore).toContain("/cache");
     expect(serenaIgnore).toContain("/logs");
+  });
+
+  it("keeps Token Savior from indexing or dirtying the worktree with its own cache", () => {
+    const gitignore = readFileSync(resolve(root, ".gitignore"), "utf8");
+
+    expect(gitignore).toContain(".token-savior-cache.json");
   });
 
   it("keeps this repo's generated canon in source sync without project-governance self-use", () => {
