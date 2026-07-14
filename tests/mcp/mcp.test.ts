@@ -1366,14 +1366,52 @@ describe("aih mcp — per-CLI config (honors --cli)", () => {
     });
   });
 
-  it("refuses an enterprise apply from an AIH_ORG_POLICY override before it plans writes", async () => {
+  it("refuses deactivation when an operator changes an owned managed-MCP projection after planning", async () => {
+    const root = makeTmp();
+    const managedPath = join(root, ".claude", "managed-settings.json");
+    mkdirSync(join(root, ".claude"), { recursive: true });
+    writeFileSync(managedPath, jsonFile({ operatorOnly: true }));
+    writeMcpPolicy(root, { allowedServers: ["code-review-graph"], allowManagedOnly: true });
+
+    const activeCtx = makeCtx({ root, options: { posture: "enterprise" } });
+    await executePlan(await command.plan(activeCtx), { ...activeCtx, apply: true });
+
+    writeMcpPolicy(root, { allowedServers: ["code-review-graph"], allowManagedOnly: false });
+    const inactiveCtx = makeCtx({ root, options: { posture: "enterprise" } });
+    const planned = await command.plan(inactiveCtx);
+    const operatorProjection = {
+      operatorOnly: true,
+      allowManagedMcpServersOnly: true,
+      allowedMcpServers: [{ serverCommand: ["operator-mcp", "serve"] }],
+    };
+    const operatorContents = jsonFile(operatorProjection);
+    writeFileSync(managedPath, operatorContents);
+
+    await expect(executePlan(planned, { ...inactiveCtx, apply: true })).rejects.toThrow(
+      /changed after the plan was computed/,
+    );
+    expect(readFileSync(managedPath, "utf8")).toBe(operatorContents);
+    expect(JSON.parse(readFileSync(join(root, ".aih-config.json"), "utf8"))).toMatchObject({
+      managedMcpProjection: { state: "active" },
+    });
+  });
+
+  it("refuses an apply from an AIH_ORG_POLICY override before it plans writes", async () => {
     const root = makeTmp();
     writeMcpPolicy(root, { allowedServers: ["code-review-graph"], allowManagedOnly: true });
+    writeFileSync(
+      join(root, "operator-policy.json"),
+      jsonFile({
+        schemaVersion: 1,
+        minimumPosture: "vibe",
+        references: { repoContract: "ai-coding/project.json" },
+      }),
+    );
     const overrideCtx: PlanContext = {
       ...makeCtx({
         root,
         env: { AIH_ORG_POLICY: "operator-policy.json" },
-        options: { posture: "enterprise", mode: "none" },
+        options: { mode: "none" },
       }),
       apply: true,
     };

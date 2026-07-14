@@ -2,11 +2,11 @@ import { createHash } from "node:crypto";
 import { join } from "node:path";
 import {
   AIH_CONFIG_FILE,
+  AihConfigSchema,
   isActiveManagedMcpProjectionOwnership,
   type ManagedMcpProjectionOwnership,
-  managedMcpProjectionConfigJson,
+  managedMcpProjectionConfigJsonFromRaw,
   managedMcpProjectionOwnership,
-  readAihConfig,
   revokedManagedMcpProjectionOwnership,
 } from "../config/marker.js";
 import { readIfExists } from "../internals/fsxn.js";
@@ -99,20 +99,38 @@ function withExpectedContents(action: WriteAction, contents: string | undefined)
   };
 }
 
-function managedMcpProjectionOwnershipOnDisk(
-  ctx: PlanContext,
-): { ownership: ManagedMcpProjectionOwnership; matches: boolean } | undefined {
-  const ownership = readAihConfig(ctx.root)?.managedMcpProjection;
+function managedMcpProjectionOwnershipOnDisk(ctx: PlanContext):
+  | {
+      ownership: ManagedMcpProjectionOwnership;
+      matches: boolean;
+      markerSource: string | undefined;
+      settingsSource: string | undefined;
+    }
+  | undefined {
+  const markerSource = readIfExists(join(ctx.root, AIH_CONFIG_FILE));
+  let ownership: ManagedMcpProjectionOwnership | undefined;
+  try {
+    ownership =
+      markerSource === undefined
+        ? undefined
+        : AihConfigSchema.parse(JSON.parse(markerSource)).managedMcpProjection;
+  } catch {
+    return undefined;
+  }
   if (!isActiveManagedMcpProjectionOwnership(ownership)) return undefined;
-  const raw = readIfExists(join(ctx.root, ".claude", "managed-settings.json"));
-  if (raw === undefined) return { ownership, matches: false };
+  const settingsSource = readIfExists(join(ctx.root, ".claude", "managed-settings.json"));
+  if (settingsSource === undefined) {
+    return { ownership, matches: false, markerSource, settingsSource };
+  }
   try {
     return {
       ownership,
-      matches: matchesManagedMcpProjectionOwnership(parseJsoncText(raw), ownership),
+      matches: matchesManagedMcpProjectionOwnership(parseJsoncText(settingsSource), ownership),
+      markerSource,
+      settingsSource,
     };
   } catch {
-    return { ownership, matches: false };
+    return { ownership, matches: false, markerSource, settingsSource };
   }
 }
 
@@ -124,8 +142,8 @@ function managedMcpProjectionOwnershipAction(
   return withExpectedContents(
     writeJson(
       AIH_CONFIG_FILE,
-      managedMcpProjectionConfigJson(
-        ctx.root,
+      managedMcpProjectionConfigJsonFromRaw(
+        source,
         ctx.contextDir,
         ctx.targets ?? ["claude"],
         managedMcpProjectionOwnership(generated),
@@ -137,19 +155,19 @@ function managedMcpProjectionOwnershipAction(
   );
 }
 
-function clearManagedMcpProjectionOwnershipAction(ctx: PlanContext): Action {
+function clearManagedMcpProjectionOwnershipAction(source: string | undefined): Action {
   return withExpectedContents(
     writeJson(AIH_CONFIG_FILE, {}, "clear Claude managed-MCP projection ownership", {
       merge: true,
       removeJsonTopLevelKeys: ["managedMcpProjection"],
     }),
-    readIfExists(join(ctx.root, AIH_CONFIG_FILE)),
+    source,
   );
 }
 
 function revokeManagedMcpProjectionOwnershipAction(
-  ctx: PlanContext,
   ownership: ManagedMcpProjectionOwnership,
+  source: string | undefined,
 ): Action {
   return withExpectedContents(
     writeJson(
@@ -158,7 +176,7 @@ function revokeManagedMcpProjectionOwnershipAction(
       "revoke Claude managed-MCP projection ownership after operator change",
       { merge: true },
     ),
-    readIfExists(join(ctx.root, AIH_CONFIG_FILE)),
+    source,
   );
 }
 
@@ -173,7 +191,8 @@ export function orgPolicyProjectionActions(ctx: PlanContext, policy: OrgPolicy):
     ? managedMcpProjectionOwnershipAction(ctx, managedMcpSettings)
     : undefined;
   const onDisk = managedMcpEnabled ? undefined : managedMcpProjectionOwnershipOnDisk(ctx);
-  const settingsSource = readIfExists(join(ctx.root, ".claude", "managed-settings.json"));
+  const settingsSource =
+    onDisk?.settingsSource ?? readIfExists(join(ctx.root, ".claude", "managed-settings.json"));
   const actions: Action[] = [
     withExpectedContents(
       writeJson(
@@ -197,8 +216,8 @@ export function orgPolicyProjectionActions(ctx: PlanContext, policy: OrgPolicy):
   else if (onDisk !== undefined) {
     actions.push(
       onDisk.matches
-        ? clearManagedMcpProjectionOwnershipAction(ctx)
-        : revokeManagedMcpProjectionOwnershipAction(ctx, onDisk.ownership),
+        ? clearManagedMcpProjectionOwnershipAction(onDisk.markerSource)
+        : revokeManagedMcpProjectionOwnershipAction(onDisk.ownership, onDisk.markerSource),
     );
   }
   if (posture === "enterprise") {

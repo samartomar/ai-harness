@@ -2,9 +2,10 @@ import { createHash } from "node:crypto";
 import { join, posix } from "node:path";
 import {
   AIH_CONFIG_FILE,
+  AihConfigSchema,
   isActiveManagedMcpProjectionOwnership,
   type ManagedMcpProjectionOwnership,
-  managedMcpProjectionConfigJson,
+  managedMcpProjectionConfigJsonFromRaw,
   managedMcpProjectionOwnership,
   readAihConfig,
   revokedManagedMcpProjectionOwnership,
@@ -188,18 +189,38 @@ function orgAllowedServers(
 function managedMcpProjectionOwnershipOnDisk(
   absPath: string,
   root: string,
-): { ownership: ManagedMcpProjectionOwnership; matches: boolean } | undefined {
-  const ownership = readAihConfig(root)?.managedMcpProjection;
+):
+  | {
+      ownership: ManagedMcpProjectionOwnership;
+      matches: boolean;
+      markerSource: string | undefined;
+      settingsSource: string | undefined;
+    }
+  | undefined {
+  const markerSource = readIfExists(join(root, AIH_CONFIG_FILE));
+  let ownership: ManagedMcpProjectionOwnership | undefined;
+  try {
+    ownership =
+      markerSource === undefined
+        ? undefined
+        : AihConfigSchema.parse(JSON.parse(markerSource)).managedMcpProjection;
+  } catch {
+    return undefined;
+  }
   if (!isActiveManagedMcpProjectionOwnership(ownership)) return undefined;
-  const raw = readIfExists(absPath);
-  if (raw === undefined) return { ownership, matches: false };
+  const settingsSource = readIfExists(absPath);
+  if (settingsSource === undefined) {
+    return { ownership, matches: false, markerSource, settingsSource };
+  }
   try {
     return {
       ownership,
-      matches: matchesManagedMcpProjectionOwnership(parseJsoncText(raw), ownership),
+      matches: matchesManagedMcpProjectionOwnership(parseJsoncText(settingsSource), ownership),
+      markerSource,
+      settingsSource,
     };
   } catch {
-    return { ownership, matches: false };
+    return { ownership, matches: false, markerSource, settingsSource };
   }
 }
 
@@ -208,34 +229,45 @@ function managedMcpProjectionOwnershipAction(
   targets: readonly Cli[],
   generated: ReturnType<typeof managedMcpAllowlistSettings>,
 ): Action {
-  return writeJson(
-    AIH_CONFIG_FILE,
-    managedMcpProjectionConfigJson(
-      ctx.root,
-      ctx.contextDir,
-      [...targets],
-      managedMcpProjectionOwnership(generated),
+  const source = readIfExists(join(ctx.root, AIH_CONFIG_FILE));
+  return withExpectedContents(
+    writeJson(
+      AIH_CONFIG_FILE,
+      managedMcpProjectionConfigJsonFromRaw(
+        source,
+        ctx.contextDir,
+        [...targets],
+        managedMcpProjectionOwnership(generated),
+      ),
+      "record Claude managed-MCP projection ownership",
+      { merge: true },
     ),
-    "record Claude managed-MCP projection ownership",
-    { merge: true },
+    source,
   );
 }
 
-function clearManagedMcpProjectionOwnershipAction(): Action {
-  return writeJson(AIH_CONFIG_FILE, {}, "clear Claude managed-MCP projection ownership", {
-    merge: true,
-    removeJsonTopLevelKeys: ["managedMcpProjection"],
-  });
+function clearManagedMcpProjectionOwnershipAction(source: string | undefined): Action {
+  return withExpectedContents(
+    writeJson(AIH_CONFIG_FILE, {}, "clear Claude managed-MCP projection ownership", {
+      merge: true,
+      removeJsonTopLevelKeys: ["managedMcpProjection"],
+    }),
+    source,
+  );
 }
 
 function revokeManagedMcpProjectionOwnershipAction(
   ownership: ManagedMcpProjectionOwnership,
+  source: string | undefined,
 ): Action {
-  return writeJson(
-    AIH_CONFIG_FILE,
-    { managedMcpProjection: revokedManagedMcpProjectionOwnership(ownership) },
-    "revoke Claude managed-MCP projection ownership after operator change",
-    { merge: true },
+  return withExpectedContents(
+    writeJson(
+      AIH_CONFIG_FILE,
+      { managedMcpProjection: revokedManagedMcpProjectionOwnership(ownership) },
+      "revoke Claude managed-MCP projection ownership after operator change",
+      { merge: true },
+    ),
+    source,
   );
 }
 
@@ -1089,19 +1121,24 @@ async function planMcp(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
       );
       if (onDisk?.matches) {
         actions.push(
-          writeJson(
-            ".claude/managed-settings.json",
-            {},
-            "Remove AIH-generated Claude managed MCP allowlist after policy deactivation",
-            {
-              merge: true,
-              removeJsonTopLevelKeys: ["allowManagedMcpServersOnly", "allowedMcpServers"],
-            },
+          withExpectedContents(
+            writeJson(
+              ".claude/managed-settings.json",
+              {},
+              "Remove AIH-generated Claude managed MCP allowlist after policy deactivation",
+              {
+                merge: true,
+                removeJsonTopLevelKeys: ["allowManagedMcpServersOnly", "allowedMcpServers"],
+              },
+            ),
+            onDisk.settingsSource,
           ),
-          clearManagedMcpProjectionOwnershipAction(),
+          clearManagedMcpProjectionOwnershipAction(onDisk.markerSource),
         );
       } else if (onDisk !== undefined) {
-        actions.push(revokeManagedMcpProjectionOwnershipAction(onDisk.ownership));
+        actions.push(
+          revokeManagedMcpProjectionOwnershipAction(onDisk.ownership, onDisk.markerSource),
+        );
       }
     }
     actions.push(

@@ -1582,6 +1582,51 @@ describe("workspace — write-once executor behavior", () => {
     expect(mcp.mcpServers["user-owned"]).toEqual({ command: "node", args: ["server.js"] });
   });
 
+  it("refuses workspace graph pruning when an operator changes a stale graph entry after planning", async () => {
+    child("ui");
+    writeFileSync(
+      join(parent, "aih-org-policy.json"),
+      JSON.stringify({
+        schemaVersion: 1,
+        minimumPosture: "enterprise",
+        references: { repoContract: "ai-coding/project.json" },
+        mcp: { allowedServers: [], allowManagedOnly: true },
+      }),
+    );
+    writeFileSync(
+      join(parent, ".mcp.json"),
+      JSON.stringify({
+        mcpServers: {
+          "aih-workspace-graph-ui": {
+            command: "uvx",
+            args: [
+              "--offline",
+              "--no-python-downloads",
+              "--no-env-file",
+              "code-review-graph@2.3.6",
+              "serve",
+              "--repo",
+              resolve(parent, "ui"),
+            ],
+          },
+        },
+      }),
+    );
+    const plannedCtx = makeCtx({ repos: "ui" });
+    const planned = await command.plan(plannedCtx);
+    const operatorContents = JSON.stringify({
+      mcpServers: {
+        "aih-workspace-graph-ui": { command: "node", args: ["operator-graph.js"] },
+      },
+    });
+    writeFileSync(join(parent, ".mcp.json"), operatorContents);
+
+    await expect(executePlan(planned, { ...plannedCtx, apply: true })).rejects.toThrow(
+      /changed after the plan was computed/,
+    );
+    expect(readFileSync(join(parent, ".mcp.json"), "utf8")).toBe(operatorContents);
+  });
+
   it("preserves user-owned MCP servers that use formerly managed names", async () => {
     child("service-api");
     writeFileSync(

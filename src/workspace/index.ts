@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { existsSync, lstatSync } from "node:fs";
 import { basename, join, posix, resolve } from "node:path";
 import { asPosture } from "../config/posture.js";
@@ -340,9 +341,12 @@ function workspaceMcpPolicyProbe(
   });
 }
 
-function staleManagedMcpServerKeys(root: string, incomingKeys: readonly string[]): string[] {
+function staleManagedMcpServerKeys(
+  root: string,
+  incomingKeys: readonly string[],
+): { source: string | undefined; keys: string[] } {
   const config = readWorkspaceMcpConfig(resolve(root, ".mcp.json"));
-  if (config.text === undefined) return [];
+  if (config.text === undefined) return { source: undefined, keys: [] };
   try {
     const parsed = JSON.parse(config.text) as { mcpServers?: unknown };
     if (
@@ -350,16 +354,29 @@ function staleManagedMcpServerKeys(root: string, incomingKeys: readonly string[]
       parsed.mcpServers === null ||
       Array.isArray(parsed.mcpServers)
     ) {
-      return [];
+      return { source: config.text, keys: [] };
     }
     const incoming = new Set(incomingKeys);
-    return Object.entries(parsed.mcpServers)
-      .filter(([name]) => !incoming.has(name))
-      .filter(([name, value]) => isLegacyAihWorkspaceMcpServer(name, value))
-      .map(([name]) => name);
+    return {
+      source: config.text,
+      keys: Object.entries(parsed.mcpServers)
+        .filter(([name]) => !incoming.has(name))
+        .filter(([name, value]) => isLegacyAihWorkspaceMcpServer(name, value))
+        .map(([name]) => name),
+    };
   } catch {
-    return [];
+    return { source: config.text, keys: [] };
   }
+}
+
+function withExpectedContents(action: WriteAction, contents: string | undefined): WriteAction {
+  return {
+    ...action,
+    expect:
+      contents === undefined
+        ? { absent: true }
+        : { sha256: createHash("sha256").update(contents, "utf8").digest("hex") },
+  };
 }
 
 function repoObjectEntriesByPath(manifest: WorkspaceManifest | undefined): Map<string, unknown> {
@@ -539,7 +556,7 @@ async function workspacePlan(ctx: PlanContext): Promise<Plan> {
       !mcpPolicy.disabledServers.includes("code-review-graph"));
   const mcp = allowWorkspaceGraph ? spanningMcp(ctx.root, presentRepoPaths) : { mcpServers: {} };
   const mcpKeys = Object.keys(mcp.mcpServers);
-  const staleMcpKeys = staleManagedMcpServerKeys(ctx.root, mcpKeys);
+  const staleMcp = staleManagedMcpServerKeys(ctx.root, mcpKeys);
   const clis = resolveClis(ctx.options, { strict: true });
   const bootloaders = bootloadersFor(clis);
   const bootloaderActivations = bootloaderActivationsFor(clis);
@@ -574,17 +591,20 @@ async function workspacePlan(ctx: PlanContext): Promise<Plan> {
       "per-repo discipline routing (read a repo's canon before editing it)",
     ),
     ...workspaceBootloaderWrites(bootloaders, bootloaderActivations, name, repoPaths, dir),
-    writeJson(
-      ".mcp.json",
-      mcp,
-      `workspace graph MCP scoped to ${repoPaths.length} declared child repo(s), merged into any existing .mcp.json`,
-      {
-        merge: true,
-        replaceJsonChildKeys: { mcpServers: mcpKeys },
-        ...(staleMcpKeys.length > 0
-          ? { pruneJsonChildKeys: { mcpServers: { exact: staleMcpKeys } } }
-          : {}),
-      },
+    withExpectedContents(
+      writeJson(
+        ".mcp.json",
+        mcp,
+        `workspace graph MCP scoped to ${repoPaths.length} declared child repo(s), merged into any existing .mcp.json`,
+        {
+          merge: true,
+          replaceJsonChildKeys: { mcpServers: mcpKeys },
+          ...(staleMcp.keys.length > 0
+            ? { pruneJsonChildKeys: { mcpServers: { exact: staleMcp.keys } } }
+            : {}),
+        },
+      ),
+      staleMcp.source,
     ),
   ];
   if (enableGit) writes.push(workspaceGitignoreWrite(ctx.root, repoPaths));

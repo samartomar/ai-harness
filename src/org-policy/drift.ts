@@ -264,13 +264,18 @@ function sourceCheck(ctx: PlanContext): Check {
 
 /**
  * A transient AIH_ORG_POLICY override is inspectable but not a trusted source
- * for an enterprise mutation. Refuse before any plan can produce configuration
- * writes; the committed default remains the only direct mutation source.
+ * for any configuration mutation. Refuse before any plan can produce writes;
+ * otherwise an override could self-declare a lower posture and mask a committed
+ * enterprise floor. The committed default remains the only direct mutation source.
  */
 export function assertOrgPolicyMutationSource(ctx: PlanContext): void {
-  if (!ctx.apply || activePosture(ctx) !== "enterprise") return;
-  const check = sourceCheck(ctx);
-  if (check.verdict === "fail") throw new OrgPolicyError(check.detail ?? check.name);
+  if (!ctx.apply) return;
+  const source = policySource(ctx);
+  if (source.kind === "repo-default") return;
+  throw new OrgPolicyError(
+    `policy source: AIH_ORG_POLICY env override (${source.display}); ` +
+      "configuration mutation requires the committed default policy or a trusted managed channel",
+  );
 }
 
 async function headDriftCheck(ctx: PlanContext): Promise<Check> {

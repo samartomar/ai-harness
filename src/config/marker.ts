@@ -227,13 +227,39 @@ export function managedMcpProjectionConfigJson(
   targets: string[],
   ownership: ManagedMcpProjectionOwnership,
 ): Record<string, unknown> {
-  const diagnostic = readAihConfigDiagnostic(root);
-  if (diagnostic.invalid) {
+  return managedMcpProjectionConfigJsonFromRaw(
+    readIfExists(join(root, AIH_CONFIG_FILE)),
+    contextDir,
+    targets,
+    ownership,
+  );
+}
+
+/**
+ * Render the managed-MCP ownership update from the exact marker bytes observed
+ * while planning, so callers can bind the write to that same snapshot.
+ */
+export function managedMcpProjectionConfigJsonFromRaw(
+  raw: string | undefined,
+  contextDir: string,
+  targets: string[],
+  ownership: ManagedMcpProjectionOwnership,
+): Record<string, unknown> {
+  if (raw !== undefined) {
+    const parsed = AihConfigSchema.safeParse(
+      (() => {
+        try {
+          return JSON.parse(raw);
+        } catch {
+          return undefined;
+        }
+      })(),
+    );
+    if (parsed.success) return { managedMcpProjection: ownership };
     throw new SettingsError(
       `cannot record Claude managed-MCP provenance: ${AIH_CONFIG_FILE} is malformed; repair it before applying the restriction`,
     );
   }
-  if (diagnostic.present) return { managedMcpProjection: ownership };
   return {
     schemaVersion: 1,
     contextDir,
