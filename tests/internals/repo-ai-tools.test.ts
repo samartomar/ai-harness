@@ -28,7 +28,12 @@ describe("ai-harness repo AI tooling", () => {
       },
       runtime: {
         serena: { context: "ide", mode: "no-memories" },
-        tokenOptimizer: { clients: ["claude", "codex"], profile: "quiet", event: "Stop" },
+        tokenOptimizer: {
+          actions: ["report", "coach"],
+          clients: ["claude", "codex"],
+          profile: "quiet",
+          event: "Stop",
+        },
         tokenSavior: { profile: "optimized", memory: false, shellHooks: false },
       },
     });
