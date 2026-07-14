@@ -566,7 +566,6 @@ function planMcpOffline(ctx: PlanContext): ReturnType<typeof plan> {
   const catalog = policyAwareMcpCatalog(ctx, {
     scope,
     stack,
-    includeHostedGitHub: false,
     includeDisabledServers: true,
   });
   if (catalog.error !== undefined || catalog.servers === undefined) {
