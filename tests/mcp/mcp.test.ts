@@ -232,6 +232,28 @@ describe("mcp enterprise modes", () => {
     expect(merged.mcpServers.operator).toEqual(operator);
   });
 
+  it("--mode offline refuses a config changed after planning", async () => {
+    const root = makeTmp();
+    const configPath = join(root, ".mcp.json");
+    writeFileSync(
+      configPath,
+      jsonFile({
+        mcpServers: { operator: { type: "http", url: "https://before.example/mcp" } },
+      }),
+    );
+    const plannedCtx = makeCtx({ root, options: { mode: "offline" } });
+    const planned = await command.plan(plannedCtx);
+    const changed = jsonFile({
+      mcpServers: { operator: { type: "http", url: "https://after.example/mcp" } },
+    });
+    writeFileSync(configPath, changed);
+
+    await expect(executePlan(planned, { ...plannedCtx, apply: true })).rejects.toThrow(
+      /changed after the plan was computed/,
+    );
+    expect(readFileSync(configPath, "utf8")).toBe(changed);
+  });
+
   it("--mode offline: a verify probe FAILS on stdio servers that resolve at runtime (AIH-MCP-001)", async () => {
     const ctx = makeCtx({ options: { mode: "offline" }, verify: true });
     const p = await command.plan(ctx);

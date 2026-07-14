@@ -697,7 +697,9 @@ export async function executePlan(
               : action.merge
                 ? "merge"
                 : "overwrite";
-        if (ctx.apply && effect !== "unchanged") txn.stage(absPath, contents, action.mode);
+        if (ctx.apply && effect !== "unchanged") {
+          txn.stage(absPath, contents, action.mode, action.expect);
+        }
         writes.push({
           path: action.path,
           describe: action.describe,

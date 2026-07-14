@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import {
   type BigIntStats,
   chmodSync,
@@ -66,6 +67,7 @@ interface StagedWrite {
   path: string;
   contents: string;
   mode?: number;
+  expect?: { absent: true } | { sha256: string };
 }
 
 interface AppliedWrite {
@@ -112,8 +114,13 @@ export class FsTransaction {
   private staged: StagedWrite[] = [];
   private stagedRemovals: StagedRemoval[] = [];
 
-  stage(path: string, contents: string, mode?: number): void {
-    this.staged.push({ path, contents, mode });
+  stage(
+    path: string,
+    contents: string,
+    mode?: number,
+    expect?: { absent: true } | { sha256: string },
+  ): void {
+    this.staged.push({ path, contents, mode, expect });
   }
 
   /**
@@ -159,6 +166,15 @@ export class FsTransaction {
         const info = lstatSafe(w.path);
         if (info?.isSymbolicLink()) {
           throw new Error(`refusing to write through a symlink: ${w.path}`);
+        }
+        if (w.expect !== undefined) {
+          const live = info === undefined ? undefined : readFileSync(w.path, "utf8");
+          const unchanged =
+            "absent" in w.expect
+              ? live === undefined
+              : live !== undefined &&
+                createHash("sha256").update(live, "utf8").digest("hex") === w.expect.sha256;
+          if (!unchanged) throw new FsTxnError(`write target changed before commit: ${w.path}`);
         }
         const existed = info !== undefined;
         const backupPath = `${w.path}.aih.bak`;
