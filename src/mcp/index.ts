@@ -574,8 +574,8 @@ function planMcpOffline(ctx: PlanContext): ReturnType<typeof plan> {
   }
   const allowed = orgAllowedServers(catalog.servers, catalog.policy);
   const stdio = stdioServers(allowed);
-  const denied = stdioServers(
-    Object.fromEntries(Object.entries(catalog.servers).filter(([name]) => !(name in allowed))),
+  const denied = Object.fromEntries(
+    Object.entries(catalog.servers).filter(([name]) => !(name in stdio)),
   );
   const stale = matchingGeneratedJsonServerNames(
     join(ctx.root, ".mcp.json"),
