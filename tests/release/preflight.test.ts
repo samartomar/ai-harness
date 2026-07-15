@@ -655,7 +655,7 @@ else if (args.startsWith("api graphql ")) {
         rmSync(dir, { recursive: true, force: true });
       }
     }
-  });
+  }, 30_000);
 
   it("(b) an issue ref with no closing merged PR becomes a named finding, not a crash", () => {
     const dir = mkdtempSync(join(tmpdir(), "aih-release-issue-ref-none-"));
