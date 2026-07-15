@@ -90,6 +90,9 @@ export interface TrustDetectorResult {
 }
 
 const DETECTOR_UNAVAILABLE = "trust.detector-unavailable";
+// Timings are diagnostic progress only. They deliberately never enter checks,
+// analyzer receipts, or baseline evidence, which must remain reproducible.
+const MAX_REPORTED_DETECTOR_DURATION_MS = 24 * 60 * 60 * 1_000;
 const CISCO_MCP_SCANNER_PACKAGE = "cisco-ai-mcp-scanner";
 const SNYK_AGENT_SCAN_PACKAGE = "snyk-agent-scan";
 // These Semgrep rules are deliberately small harness-owned safety rules, not a
@@ -1805,7 +1808,13 @@ async function runDetectorList(
   };
 
   for (const detector of detectors) {
+    const startedAt = performance.now();
     options.progress?.(`trust scan: detector ${detector.name} started`);
+    const finish = (outcome: string): void => {
+      const elapsed = Math.max(0, Math.round(performance.now() - startedAt));
+      const durationMs = Math.min(elapsed, MAX_REPORTED_DETECTOR_DURATION_MS);
+      options.progress?.(`trust scan: detector ${detector.name} ${outcome} in ${durationMs}ms`);
+    };
     const unavailable = await detector.checkAvailable(
       options.run,
       options.platform,
@@ -1821,6 +1830,7 @@ async function runDetectorList(
           isRequired(detector.name, required),
         ),
       );
+      finish("unavailable");
       continue;
     }
 
@@ -1842,6 +1852,7 @@ async function runDetectorList(
           isRequired(detector.name, required),
         ),
       );
+      finish("failed");
       continue;
     }
 
@@ -1855,13 +1866,14 @@ async function runDetectorList(
           isRequired(detector.name, required),
         ),
       );
+      finish("invalid-sarif");
       continue;
     }
 
     analyzersRun.push(detector.analyzerLabel);
     const completedAnalyzers = ["aih-native", ...analyzersRun];
     checks.push(analyzerPassCheck(detector, completedAnalyzers), ...mapped);
-    options.progress?.(`trust scan: detector ${detector.name} complete`);
+    finish("complete");
   }
 
   return { checks, analyzersRun };

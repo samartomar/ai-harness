@@ -1364,6 +1364,60 @@ describe("scanTrustTree", () => {
     );
   });
 
+  it("reports bounded terminal timing for successful, unavailable, and failed detector runs", async () => {
+    skill("skills/clean", "# Clean\n");
+    const successfulProgress: string[] = [];
+    await scanTrustTreeWithAnalyzers(dir, {
+      env: {},
+      platform: "linux",
+      posture: "enterprise",
+      requiredDetectors: ["semgrep"],
+      run: semgrepRunner({ version: "2.1.0", runs: [] }),
+      progress: (message) => successfulProgress.push(message),
+    });
+    expect(successfulProgress).toEqual(
+      expect.arrayContaining([
+        expect.stringMatching(/^trust scan: detector semgrep complete in \d+ms$/),
+      ]),
+    );
+
+    const unavailableProgress: string[] = [];
+    await scanTrustTreeWithAnalyzers(dir, {
+      env: {},
+      platform: "linux",
+      posture: "enterprise",
+      requiredDetectors: ["semgrep"],
+      run: semgrepMissingRunner(),
+      progress: (message) => unavailableProgress.push(message),
+    });
+    expect(unavailableProgress).toEqual(
+      expect.arrayContaining([
+        expect.stringMatching(/^trust scan: detector semgrep unavailable in \d+ms$/),
+      ]),
+    );
+
+    const failedProgress: string[] = [];
+    const failedRunner = fakeRunner((argv) => {
+      if (argv[0] !== "semgrep") return undefined;
+      if (argv.includes("--version")) return { code: 0, stdout: "1.125.0\n" };
+      if (argv.includes("scan")) return { code: 2, stderr: "scanner failed" };
+      return undefined;
+    });
+    await scanTrustTreeWithAnalyzers(dir, {
+      env: {},
+      platform: "linux",
+      posture: "enterprise",
+      requiredDetectors: ["semgrep"],
+      run: failedRunner,
+      progress: (message) => failedProgress.push(message),
+    });
+    expect(failedProgress).toEqual(
+      expect.arrayContaining([
+        expect.stringMatching(/^trust scan: detector semgrep failed in \d+ms$/),
+      ]),
+    );
+  });
+
   it("rejects a self-labeled SkillSpector image whose digest is not allowlisted", async () => {
     skill("skills/clean", "# Clean\n");
     const dockerRuns: string[][] = [];
