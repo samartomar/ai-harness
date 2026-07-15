@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -185,6 +185,29 @@ describe("aih tools — plan", () => {
     const check = await p?.run(c);
     expect(check?.verdict).toBe("skip");
     expect(check?.code).toBe("env.tool-install-blocked");
+  });
+
+  it("keeps Comby optional on Windows until AIH has a verified install path", async () => {
+    const c = ctx(["winget"], "windows");
+    const actions = (await command.plan(c)).actions;
+    expect(execs(actions).some((action) => action.describe.startsWith("install comby"))).toBe(
+      false,
+    );
+    expect(
+      actions.some(
+        (action) => action.kind === "doc" && action.describe.startsWith("install comby manually"),
+      ),
+    ).toBe(true);
+
+    const comby = probe(actions, "comby");
+    const check = await comby?.run(c);
+    expect(check?.verdict).toBe("skip");
+    expect(check?.code).toBe("env.tool-install-blocked");
+
+    const commands = readFileSync(join(process.cwd(), "docs/commands.md"), "utf8");
+    expect(commands).toMatch(
+      /Comby is optional; AIH\s+does not provide a Windows-native installer for it\./,
+    );
   });
 
   it("verify probe passes (uncoded) once the tool lands on PATH after install", async () => {
