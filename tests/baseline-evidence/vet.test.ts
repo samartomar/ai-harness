@@ -277,12 +277,19 @@ describe("vetBaselineCatalog", () => {
 
   it("reports bounded detector timing only as baseline-vet diagnostics", async () => {
     const progress = vi.fn();
+    const now = vi
+      .spyOn(performance, "now")
+      .mockReturnValueOnce(10)
+      .mockReturnValueOnce(15)
+      .mockReturnValueOnce(40)
+      .mockReturnValueOnce(50);
     const scanTree = async (
       _projectionRoot: string,
       options?: Parameters<typeof defaultComponentScanner>[0],
     ) => {
       if (options === undefined) throw new Error("expected scan options");
       options.progress?.("trust scan: detector skillspector started");
+      options.progress?.("trust scan: detector skillspector complete");
       options.progress?.("trust scan: detector cisco started");
       return {
         analyzersRun: ["aih-native", "skillspector@docker"],
@@ -306,13 +313,14 @@ describe("vetBaselineCatalog", () => {
     expect(lines).toEqual(
       expect.arrayContaining([
         expect.stringMatching(
-          /^baseline vet: component skill:clean, detector skillspector complete in \d+ms$/,
+          /^baseline vet: component skill:clean, detector skillspector complete in 5ms$/,
         ),
         expect.stringMatching(
           /^baseline vet: component skill:clean, detector cisco failed in \d+ms$/,
         ),
       ]),
     );
+    now.mockRestore();
   });
 
   it("prunes vendor-authored symlinks from the component projection instead of following them off-host", async (ctx) => {

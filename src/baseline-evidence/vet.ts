@@ -23,6 +23,7 @@ import {
 type ScanTrustTreeOptions = NonNullable<Parameters<typeof scanTrustTreeWithAnalyzers>[1]>;
 const MAX_REPORTED_DETECTOR_DURATION_MS = 24 * 60 * 60 * 1_000;
 const DETECTOR_STARTED = /^trust scan: detector ([a-z-]+) started$/;
+const DETECTOR_COMPLETED = /^trust scan: detector ([a-z-]+) complete$/;
 
 export interface BaselineComponentScanInput {
   sourceRoot: string;
@@ -75,12 +76,15 @@ function baselineDetectorTiming(
   };
   return {
     progress: (message) => {
-      const match = DETECTOR_STARTED.exec(message);
-      if (match?.[1] !== undefined) {
+      const started = DETECTOR_STARTED.exec(message);
+      const completed = DETECTOR_COMPLETED.exec(message);
+      if (started?.[1] !== undefined) {
         const now = performance.now();
         finishActive(now);
-        active = { name: match[1], startedAt: now };
+        active = { name: started[1], startedAt: now };
         timings.push(active);
+      } else if (completed?.[1] !== undefined && active?.name === completed[1]) {
+        finishActive(performance.now());
       }
       progress?.(message);
     },
