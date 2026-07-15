@@ -9,6 +9,7 @@ import {
   MarketplaceManifestSchema,
 } from "../marketplace/manifest.js";
 import { policyAwareMcpCatalog } from "../mcp/catalog.js";
+import { mcpPackageResolver } from "../mcp/pins.js";
 import type { McpServer } from "../mcp/servers.js";
 import { AIH_ORG_POLICY_FILE } from "../org-policy/constants.js";
 import { type OrgPolicy, readOrgPolicy } from "../org-policy/schema.js";
@@ -277,7 +278,12 @@ function catalogBoundServer(
   classified: McpServer,
 ): { server: McpServer; declaredByCatalog: boolean } {
   for (const expected of catalog[name] ?? []) {
-    if (sameOperationalShape(classified, expected)) {
+    const packageResolver =
+      classified.type === "stdio" && mcpPackageResolver(classified.command) !== undefined;
+    if (
+      (!packageResolver || classified.supplyChain === expected.supplyChain) &&
+      sameOperationalShape(classified, expected)
+    ) {
       return { server: expected, declaredByCatalog: true };
     }
   }

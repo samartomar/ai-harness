@@ -720,6 +720,33 @@ describe("workspace.plan — generated artifacts", () => {
     expect(denied?.detail).toContain("hosted-docs");
   });
 
+  it("under enterprise keeps malformed resolver environments unpinned", async () => {
+    scaffoldedChild("ui");
+    const ctx: PlanContext = { ...makeCtx({ repos: "ui" }), verify: true, posture: "enterprise" };
+
+    for (const env of [{ PATH: 7 }, "bad", null]) {
+      writeFileSync(
+        join(parent, "ui", ".mcp.json"),
+        JSON.stringify({
+          mcpServers: {
+            exact: {
+              command: "npx",
+              args: ["example-tool@1.2.3"],
+              env,
+            },
+          },
+        }),
+        "utf8",
+      );
+
+      const checks = await probeChecks((await command.plan(ctx)).actions, ctx);
+      const denied = checks.find((check) => check.code === "mcp.policy-denied");
+
+      expect(denied).toMatchObject({ verdict: "fail", code: "mcp.policy-denied" });
+      expect(denied?.detail).toContain("unpinned supply chain");
+    }
+  });
+
   it("under default posture emits no on-disk MCP policy probe", async () => {
     scaffoldedChild("ui");
     writeFileSync(
