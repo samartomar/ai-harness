@@ -21,6 +21,9 @@ import {
 } from "./schema.js";
 
 type ScanTrustTreeOptions = NonNullable<Parameters<typeof scanTrustTreeWithAnalyzers>[1]>;
+const MAX_REPORTED_DETECTOR_DURATION_MS = 24 * 60 * 60 * 1_000;
+const DETECTOR_STARTED = /^trust scan: detector ([a-z-]+) started$/;
+const DETECTOR_COMPLETED = /^trust scan: detector ([a-z-]+) complete$/;
 
 export interface BaselineComponentScanInput {
   sourceRoot: string;
@@ -35,6 +38,73 @@ export type BaselineTreeScanner = (
   root: string,
   options?: ScanTrustTreeOptions,
 ) => Promise<TrustScanResult>;
+
+interface DetectorTiming {
+  name: string;
+  startedAt: number;
+  endedAt?: number;
+}
+
+/**
+ * Emits baseline-only timing diagnostics from the existing detector start events.
+ * Timings never enter a check, receipt, or lock: those artifacts are intentionally
+ * reproducible and must not contain wall-clock data.
+ */
+function baselineDetectorTiming(
+  componentId: string,
+  progress: ScanTrustTreeOptions["progress"],
+): {
+  progress: ScanTrustTreeOptions["progress"];
+  complete: (scan: TrustScanResult) => void;
+  fail: () => void;
+} {
+  const timings: DetectorTiming[] = [];
+  let active: DetectorTiming | undefined;
+  const finishActive = (endedAt: number): void => {
+    if (active !== undefined && active.endedAt === undefined) active.endedAt = endedAt;
+  };
+  const report = (
+    timing: DetectorTiming,
+    outcome: "complete" | "failed",
+    endedAt: number,
+  ): void => {
+    const elapsed = Math.max(0, Math.round(endedAt - timing.startedAt));
+    const durationMs = Math.min(elapsed, MAX_REPORTED_DETECTOR_DURATION_MS);
+    progress?.(
+      `baseline vet: component ${componentId}, detector ${timing.name} ${outcome} in ${durationMs}ms`,
+    );
+  };
+  return {
+    progress: (message) => {
+      const started = DETECTOR_STARTED.exec(message);
+      const completed = DETECTOR_COMPLETED.exec(message);
+      if (started?.[1] !== undefined) {
+        const now = performance.now();
+        finishActive(now);
+        active = { name: started[1], startedAt: now };
+        timings.push(active);
+      } else if (completed?.[1] !== undefined && active?.name === completed[1]) {
+        finishActive(performance.now());
+      }
+      progress?.(message);
+    },
+    complete: (scan) => {
+      const endedAt = performance.now();
+      finishActive(endedAt);
+      for (const timing of timings) {
+        const completed = scan.checks.some(
+          (check) => check.name === `trust detector ${timing.name}` && check.verdict === "pass",
+        );
+        report(timing, completed ? "complete" : "failed", timing.endedAt ?? endedAt);
+      }
+    },
+    fail: () => {
+      const endedAt = performance.now();
+      finishActive(endedAt);
+      for (const timing of timings) report(timing, "failed", timing.endedAt ?? endedAt);
+    },
+  };
+}
 
 export interface VetBaselineCatalogOptions {
   scanComponent?: BaselineComponentScanner;
@@ -90,12 +160,21 @@ export function defaultComponentScanner(
           filter: isNotSymlink,
         });
       }
-      return await scanTree(projectionRoot, {
-        ...scanOptions,
-        posture: "enterprise",
-        requiredDetectors:
-          requiredDetectorsForComponent?.(component, sourceRoot) ?? scanOptions.requiredDetectors,
-      });
+      const timing = baselineDetectorTiming(component.id, scanOptions.progress);
+      try {
+        const scan = await scanTree(projectionRoot, {
+          ...scanOptions,
+          progress: timing.progress,
+          posture: "enterprise",
+          requiredDetectors:
+            requiredDetectorsForComponent?.(component, sourceRoot) ?? scanOptions.requiredDetectors,
+        });
+        timing.complete(scan);
+        return scan;
+      } catch (error) {
+        timing.fail();
+        throw error;
+      }
     } finally {
       rmSync(projectionRoot, { recursive: true, force: true });
     }

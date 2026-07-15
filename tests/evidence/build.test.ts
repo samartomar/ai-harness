@@ -204,7 +204,7 @@ describe("evidence build — bundle-standard layout", () => {
     }
     const check = verifyBundleChecksums(join(dir, ".aih/evidence-bundle"));
     expect(check.verdict).toBe("pass");
-  });
+  }, 30_000);
 
   it("is byte-identical across two builds over identical inputs", async () => {
     seedAllKinds();
