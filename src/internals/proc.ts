@@ -12,6 +12,8 @@ export interface RunResult {
   stderr: string;
   /** True when the executable could not be found / spawned (ENOENT, timeout). */
   spawnError?: boolean;
+  /** True when captured output exceeded the configured bound and is incomplete. */
+  truncated?: boolean;
 }
 
 export interface RunOptions {
@@ -19,6 +21,8 @@ export interface RunOptions {
   cwd?: string;
   env?: NodeJS.ProcessEnv;
   timeoutMs?: number;
+  /** Optional bounded-output seam for callers and focused tests. */
+  maxBufferBytes?: number;
 }
 
 export type Runner = (argv: string[], opts?: RunOptions) => Promise<RunResult>;
@@ -44,6 +48,7 @@ export const defaultRunner: Runner = (argv, opts = {}) =>
       resolve({ code: 1, stdout: "", stderr: "empty argv", spawnError: true });
       return;
     }
+    const maxBufferBytes = opts.maxBufferBytes ?? MAX_BUFFER;
     let capturedStdout = "";
     let capturedStderr = "";
     const capture = (chunk: string | Buffer): string =>
@@ -55,7 +60,7 @@ export const defaultRunner: Runner = (argv, opts = {}) =>
         cwd: opts.cwd,
         env: opts.env ?? process.env,
         timeout: opts.timeoutMs ?? DEFAULT_TIMEOUT_MS,
-        maxBuffer: MAX_BUFFER,
+        maxBuffer: maxBufferBytes,
         windowsHide: true,
       },
       (err: ProcError, stdout, stderr) => {
@@ -68,6 +73,17 @@ export const defaultRunner: Runner = (argv, opts = {}) =>
             stdout: "",
             stderr: String(err?.message ?? "not found"),
             spawnError: true,
+          });
+          return;
+        }
+        if (errno === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER") {
+          const outputDetail = `process output exceeded ${maxBufferBytes} bytes; captured output is incomplete`;
+          const trimmedStderr = stderrText.trim();
+          resolve({
+            code: typeof errno === "number" ? errno : 1,
+            stdout: stdoutText,
+            stderr: trimmedStderr.length > 0 ? `${trimmedStderr}\n${outputDetail}` : outputDetail,
+            truncated: true,
           });
           return;
         }

@@ -69,15 +69,22 @@ export async function changedSince(
   if (!inRepo) return undefined;
   const out = new Set<string>();
   const add = (s: string | undefined): void => {
-    for (const line of (s ?? "").split("\n")) {
-      const t = line.trim();
-      if (t) out.add(norm(t));
+    for (const path of (s ?? "").split("\0")) {
+      if (path) out.add(norm(path));
     }
   };
   // ref...HEAD committed (skip deletes), then working tree, then untracked.
-  add(await gitRead(ctx, ["diff", "--name-only", "--diff-filter=ACMR", `${ref}...HEAD`]));
-  add(await gitRead(ctx, ["diff", "--name-only", "--diff-filter=ACMR", "HEAD"]));
-  add(await gitRead(ctx, ["ls-files", "--others", "--exclude-standard"]));
+  add(
+    await gitRead(ctx, ["diff", "--name-only", "-z", "--diff-filter=ACMR", `${ref}...HEAD`], {
+      trim: false,
+    }),
+  );
+  add(
+    await gitRead(ctx, ["diff", "--name-only", "-z", "--diff-filter=ACMR", "HEAD"], {
+      trim: false,
+    }),
+  );
+  add(await gitRead(ctx, ["ls-files", "--others", "--exclude-standard", "-z"], { trim: false }));
   return out;
 }
 

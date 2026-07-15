@@ -20,6 +20,17 @@ describe("proc runner seam", () => {
     expect(res.stdout).toBe("hi");
   }, 15000);
 
+  it("marks bounded output as truncated instead of treating its partial bytes as complete", async () => {
+    const res = await defaultRunner(
+      [process.execPath, "-e", "process.stdout.write('x'.repeat(1024))"],
+      { maxBufferBytes: 64 },
+    );
+
+    expect(res.spawnError).toBeUndefined();
+    expect(res.truncated).toBe(true);
+    expect(res.stderr).toContain("output exceeded 64 bytes");
+  }, 15000);
+
   it("defaultRunner reports spawnError for a missing executable", async () => {
     const res = await defaultRunner(["definitely-not-a-real-binary-xyz123"]);
     expect(res.spawnError).toBe(true);

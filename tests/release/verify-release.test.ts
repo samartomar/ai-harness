@@ -131,6 +131,28 @@ describe("verify-release command", () => {
     );
   });
 
+  it("fails rather than skips an npm signature command with truncated output", async () => {
+    const run = fakeRunner((argv) => {
+      if (argv[0] === "npm" && argv[1] === "install") {
+        return {
+          code: 1,
+          stderr: "process output exceeded 64 bytes; captured output is incomplete",
+          truncated: true,
+        };
+      }
+      return undefined;
+    });
+    const c = ctx(run, { version: "1.0.1" });
+
+    const result = await executePlan(await verifyReleaseCommand.plan(c), c);
+    const signatures = result.report?.checks.find(
+      (check) => check.name === "release npm signatures",
+    );
+
+    expect(signatures).toMatchObject({ verdict: "fail" });
+    expect(signatures?.detail).toContain("captured output is incomplete");
+  });
+
   it("redacts secret-like environment values from release tool failures", async () => {
     const token = "super-secret-release-token";
     const run = fakeRunner((argv) => {

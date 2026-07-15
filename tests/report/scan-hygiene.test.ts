@@ -86,10 +86,11 @@ describe("report — gitignore-honoring footprint", () => {
     put("ai-coding/RULE_ROUTER.md", 400); // changed
     put("ai-coding/conventions.md", 800); // tracked but unchanged
     const git = (args: string[]) => {
-      if (args[0] === "ls-files" && args.includes("-z"))
+      if (args[0] === "ls-files" && args.includes("--cached"))
         return "ai-coding/RULE_ROUTER.md\0ai-coding/conventions.md\0"; // both tracked
+      if (args[0] === "ls-files" && args.includes("--others")) return "";
       if (args[0] === "rev-parse") return dir;
-      if (args.includes("main...HEAD")) return "ai-coding/RULE_ROUTER.md\n"; // only this changed
+      if (args.includes("main...HEAD")) return "ai-coding/RULE_ROUTER.md\0"; // only this changed
       return "";
     };
     const paths = (await bloatOf(ctx({ since: "main" }, git))).files.map((f) => f.path);

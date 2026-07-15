@@ -12,6 +12,7 @@ import type {
 import {
   cancelledReverts,
   nextVersionFrom,
+  parseGitLog,
   runPreflight,
 } from "../../src/internals/release-preflight.js";
 
@@ -593,6 +594,68 @@ if (args.startsWith("repo view ")) {
       rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  it("parses Git subjects without stripping meaningful trailing whitespace", () => {
+    expect(parseGitLog(`${REAL_PR_SHA}\x1ffix: preserve subject tail (#2)  \n`)).toEqual([
+      { sha: REAL_PR_SHA, subject: "fix: preserve subject tail (#2)  " },
+    ]);
+  });
+
+  it("rejects malformed or identity-mismatched direct PR metadata without resolving a fallback", () => {
+    const cases = [
+      {
+        name: "malformed labels",
+        response: { number: 2, title: "fix: malformed", labels: [{ name: 3 }], milestone: null },
+      },
+      {
+        name: "mismatched number",
+        response: { number: 3, title: "fix: mismatched", labels: [], milestone: null },
+      },
+      {
+        name: "missing milestone",
+        response: { number: 2, title: "fix: missing", labels: [] },
+      },
+    ];
+
+    for (const sample of cases) {
+      const dir = mkdtempSync(join(tmpdir(), "aih-release-untrusted-pr-"));
+      try {
+        const gh = `
+const { writeSync } = require("node:fs");
+const out = (value) => writeSync(1, String(value) + "\\n");
+const args = process.argv.slice(2).join(" ");
+if (args.startsWith("repo view ")) out("samartomar/ai-harness");
+else if (args.startsWith("pr view 2 ")) out(${JSON.stringify(JSON.stringify(sample.response))});
+else if (args.startsWith("api graphql ")) {
+  out(JSON.stringify({ data: { repository: { issue: { timelineItems: { nodes: [{ closer: {
+    __typename: "PullRequest", number: 2, title: "fallback must not be trusted", merged: true,
+    labels: { nodes: [{ name: "semver:patch" }] }, milestone: { title: "v2.9.0" },
+  } }] } } } } }));
+} else if (args === "api repos/{owner}/{repo}/milestones?state=all&per_page=100") {
+  out(JSON.stringify([{ number: 1, title: "v2.9.0" }]));
+} else if (args === "api repos/{owner}/{repo}/issues?milestone=1&state=all&per_page=100") {
+  out(JSON.stringify([${TRACKER_ITEM}]));
+} else { process.exit(2); }
+`;
+        const result = runPreflightCliWithStubs(
+          dir,
+          gitStub([`${REAL_PR_SHA}\x1ffix: trusted metadata (${"#2"})`]),
+          gh,
+          ["--milestone", "v2.9.0", "--intent", "patch"],
+        );
+
+        const manifest = JSON.parse(result.stdout);
+        expect(result.status, sample.name).toBe(1);
+        expect(manifest.mergedPrs, sample.name).toEqual([]);
+        expect(manifest.findings, sample.name).toContainEqual({
+          code: "unresolved-pr-ref",
+          detail: `commit ${REAL_PR_SHA} cites #2 but GitHub returned untrusted pull request metadata`,
+        });
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    }
+  }, 30_000);
 
   it("(b) an issue ref with no closing merged PR becomes a named finding, not a crash", () => {
     const dir = mkdtempSync(join(tmpdir(), "aih-release-issue-ref-none-"));

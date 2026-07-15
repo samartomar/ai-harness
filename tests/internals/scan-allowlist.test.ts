@@ -82,16 +82,25 @@ describe("acceptIn / acceptChanged predicates", () => {
 });
 
 describe("changedSince", () => {
-  it("unions committed, working-tree, and untracked changes", async () => {
+  it("unions NUL-delimited records without altering meaningful path whitespace", async () => {
+    const calls: string[][] = [];
     const c = ctx((args) => {
+      calls.push(args);
       if (args[0] === "rev-parse") return { code: 0, stdout: "/repo" };
-      if (args.includes("main...HEAD")) return { code: 0, stdout: "x.md\n" };
-      if (args[0] === "diff") return { code: 0, stdout: "y.md\n" }; // working tree
-      if (args[0] === "ls-files") return { code: 0, stdout: "z.md\n" }; // untracked
+      if (args.includes("main...HEAD")) return { code: 0, stdout: "x.md\0" };
+      if (args[0] === "diff") return { code: 0, stdout: "working space \0" }; // working tree
+      if (args[0] === "ls-files") return { code: 0, stdout: "untracked.md\0" }; // untracked
       return { code: 1, spawnError: true };
     });
     const changed = await changedSince(c, "main");
-    expect([...(changed ?? [])].sort()).toEqual(["x.md", "y.md", "z.md"]);
+    expect([...(changed ?? [])].sort()).toEqual(["untracked.md", "working space ", "x.md"]);
+    expect(calls.filter((args) => args[0] === "diff" || args[0] === "ls-files")).toEqual(
+      expect.arrayContaining([
+        expect.arrayContaining(["diff", "--name-only", "-z", "--diff-filter=ACMR", "main...HEAD"]),
+        expect.arrayContaining(["diff", "--name-only", "-z", "--diff-filter=ACMR", "HEAD"]),
+        expect.arrayContaining(["ls-files", "--others", "--exclude-standard", "-z"]),
+      ]),
+    );
   });
 
   it("returns undefined when not in a git repo (→ full scan upstream)", async () => {
