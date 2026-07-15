@@ -41,6 +41,10 @@ rather than failing silently. On large repositories, the generated agent canon t
 `code-review-graph` as a fail-closed prerequisite: if it is unavailable, errors, or has no populated
 graph, repository work stops until the graph is repaired and verified populated.
 
+Comby is optional; AIH does not provide a Windows-native installer for it. On Windows, when no
+user-managed compatible package manager provides Comby, `aih tools` emits manual guidance and its missing
+probe is an advisory skip — it does not block `aih tools` or `aih ready`.
+
 ## aih ready
 
 Readiness gate — one graded, blocker-aware verdict answering "can a developer start work with an AI
