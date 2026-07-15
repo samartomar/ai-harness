@@ -26,7 +26,7 @@ Verify a published release first:
 
 ```powershell
 npm install -g @aihq/harness@2.10.0
-aih verify-release
+aih verify-release 2.10.0
 ```
 
 Full release verification requires local `npm`, `gh`, and `cosign`; proceed only when all three legs
@@ -34,7 +34,7 @@ pass. A skipped leg is incomplete evidence, not a successful rollout gate.
 
 For a major-version upgrade, install the approved explicit version (currently
 `npm install -g @aihq/harness@2.10.0`); `npm update -g` may stay within the current major. Re-run
-`aih verify-release` after an upgrade. Use `--force` only
+`aih verify-release 2.10.0` after an upgrade. Use `--force` only
 to replace a broken global install after reviewing the npm prefix and package source.
 
 Clone the admin configuration repo and point AI-Harness at the policy:

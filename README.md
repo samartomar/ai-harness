@@ -52,7 +52,7 @@ checksums and a keyless cosign bundle:
 
 ```bash
 npm install -g @aihq/harness@2.10.0      # then run: aih --help
-aih verify-release          # checks available npm signatures, GitHub release sums, and cosign evidence
+aih verify-release 2.10.0   # checks npm signatures, GitHub release sums, and cosign evidence for 2.10.0
 ```
 
 Full release verification requires local `npm`, `gh`, and `cosign`; proceed only when all three legs

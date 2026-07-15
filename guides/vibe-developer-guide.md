@@ -33,7 +33,7 @@ Verify a published release when release integrity matters:
 
 ```console
 npm install -g @aihq/harness@2.10.0
-aih verify-release
+aih verify-release 2.10.0
 ```
 
 Full release verification requires local `npm`, `gh`, and `cosign`; proceed only when all three legs

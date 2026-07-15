@@ -51,7 +51,7 @@ Verify the release before rollout:
 
 ```console
 npm install -g @aihq/harness@2.10.0
-aih verify-release
+aih verify-release 2.10.0
 ```
 
 Full release verification requires local `npm`, `gh`, and `cosign`; proceed only when all three legs
@@ -59,7 +59,7 @@ pass. A skipped leg is incomplete evidence, not a successful rollout gate.
 
 For a major-version upgrade, install the approved explicit version (currently
 `npm install -g @aihq/harness@2.10.0`); `npm update -g` may stay within the current major. Re-run
-`aih verify-release` after an upgrade. Use `--force` only
+`aih verify-release 2.10.0` after an upgrade. Use `--force` only
 when replacing a broken global install after reviewing the npm prefix and approved package source.
 
 Bootstrap a governed repo with an enterprise posture:
@@ -235,7 +235,7 @@ Min Configuration:
 
 ```powershell
 npm install -g @aihq/harness@2.10.0
-aih verify-release
+aih verify-release 2.10.0
 aih policy validate
 aih init . --posture enterprise --mcp-mode offline --mcp-compliant
 aih init . --posture enterprise --mcp-mode offline --mcp-compliant --apply
@@ -467,7 +467,7 @@ uvx awslabs.core-mcp-server@1.0.27 --help
 Before handing configuration to developers, verify the admin package from the same repo or distribution location developers will use:
 
 ```powershell
-aih verify-release
+aih verify-release 2.10.0
 aih policy validate
 aih policy verify --against <trusted-policy-sha-or-bundle>
 aih pack validate --pack docs-quality
