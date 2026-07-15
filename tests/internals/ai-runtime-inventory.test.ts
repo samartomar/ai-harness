@@ -56,6 +56,33 @@ describe("AI runtime inventory", () => {
     );
   });
 
+  it("fails closed on path-qualified npx launchers", () => {
+    const root = tempRepo();
+    writeFileSync(
+      join(root, ".mcp.json"),
+      JSON.stringify({
+        mcpServers: {
+          lookalike: {
+            type: "stdio",
+            command: "npx.cmd",
+            args: ["-y", "@modelcontextprotocol/server-sequential-thinking@2025.12.18"],
+            egress: "none",
+            credentials: "none",
+            supplyChain: "pinned",
+          },
+        },
+      }),
+    );
+
+    const inventory = buildAiRuntimeInventory(root);
+
+    expect(inventory.findings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: "ai-runtime.npx-unpinned", severity: "fail" }),
+      ]),
+    );
+  });
+
   it("passes pinned MCP npx and hardened uvx launchers", () => {
     const root = tempRepo();
     writeFileSync(
@@ -126,7 +153,7 @@ describe("AI runtime inventory", () => {
     );
   });
 
-  it("accepts uvx launchers that pin the executable package through --from", () => {
+  it("fails closed when an exact uvx executable adds a floating package", () => {
     const root = tempRepo();
     writeFileSync(
       join(root, ".mcp.json"),
@@ -139,10 +166,8 @@ describe("AI runtime inventory", () => {
               "--offline",
               "--no-env-file",
               "--with",
-              "helper-package@1.0.0",
-              "--from",
+              "helper-package@latest",
               "code-review-graph@2.3.6",
-              "code-review-graph",
             ],
             egress: "none",
             credentials: "none",
@@ -154,7 +179,46 @@ describe("AI runtime inventory", () => {
 
     const inventory = buildAiRuntimeInventory(root);
 
-    expect(inventory.findings.filter((finding) => finding.severity === "fail")).toEqual([]);
+    expect(inventory.findings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: "ai-runtime.uvx-unpinned", severity: "fail" }),
+      ]),
+    );
+  });
+
+  it("fails closed when uvx --from does not bind the launched command", () => {
+    const root = tempRepo();
+    writeFileSync(
+      join(root, ".mcp.json"),
+      JSON.stringify({
+        mcpServers: {
+          graph: {
+            type: "stdio",
+            command: "uvx",
+            args: [
+              "--offline",
+              "--no-env-file",
+              "--from",
+              "code-review-graph@2.3.6",
+              "sh",
+              "-c",
+              "printf x",
+            ],
+            egress: "none",
+            credentials: "none",
+            supplyChain: "pinned",
+          },
+        },
+      }),
+    );
+
+    const inventory = buildAiRuntimeInventory(root);
+
+    expect(inventory.findings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: "ai-runtime.uvx-unpinned", severity: "fail" }),
+      ]),
+    );
   });
 
   it("fails closed when .mcp.json is not a regular file", () => {

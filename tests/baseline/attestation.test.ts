@@ -316,6 +316,55 @@ describe("enterprise baseline attestation", () => {
     expect(check.detail).toContain("mcp:github @ .mcp.json");
   });
 
+  it("attests an exact-looking non-resolver argument as unpinned", () => {
+    writePolicy(["local-tool"]);
+    writeMcp({
+      "local-tool": {
+        command: "node",
+        args: ["@scope/example-tool@1.2.3"],
+      },
+    });
+
+    const check = enterpriseBaselineAttestationCheck(ctx());
+
+    expect(check).toMatchObject({ verdict: "fail", code: "baseline.undeclared-surface" });
+    expect(check.detail).toContain("mcp:local-tool @ .mcp.json (local-only/none/unpinned)");
+  });
+
+  it("attests a malformed resolver environment as unpinned", () => {
+    writePolicy(["local-tool"]);
+    writeMcp({
+      "local-tool": {
+        command: "npx",
+        args: ["@scope/example-tool@1.2.3"],
+        env: { PATH: 7 },
+      },
+    });
+
+    const check = enterpriseBaselineAttestationCheck(ctx());
+
+    expect(check).toMatchObject({ verdict: "fail", code: "baseline.undeclared-surface" });
+    expect(check.detail).toContain("mcp:local-tool @ .mcp.json (local-only/none/unpinned)");
+  });
+
+  it("does not bind a malformed resolver environment to an allowlisted catalog server", () => {
+    writePolicy(["sequential-thinking"]);
+    writeMcp({
+      "sequential-thinking": {
+        command: "npx",
+        args: ["-y", "@modelcontextprotocol/server-sequential-thinking@2025.12.18"],
+        env: { PATH: 7 },
+      },
+    });
+
+    const check = enterpriseBaselineAttestationCheck(ctx());
+
+    expect(check).toMatchObject({ verdict: "fail", code: "baseline.undeclared-surface" });
+    expect(check.detail).toContain(
+      "mcp:sequential-thinking @ .mcp.json (local-only/none/unpinned)",
+    );
+  });
+
   it("uses catalog authority instead of self-reported MCP risk metadata", () => {
     writePolicy(["github"]);
     writeMcp({

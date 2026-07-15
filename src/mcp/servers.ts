@@ -1,4 +1,5 @@
 import type { RepoStack } from "../profile/scan.js";
+import { mcpResolverPinState } from "./pins.js";
 
 /**
  * The `.mcp.json` server set is assembled from the DETECTED stack, not a fixed
@@ -118,6 +119,18 @@ export interface McpServersOptions {
 function githubMcpUrl(host: string | undefined): string {
   if (host === undefined) return DEFAULT_GITHUB_MCP_URL;
   return `${host}/mcp/`;
+}
+
+function normalizeResolverSupplyChains(
+  servers: Record<string, McpServer>,
+): Record<string, McpServer> {
+  return Object.fromEntries(
+    Object.entries(servers).map(([name, server]) => {
+      if (server.type !== "stdio") return [name, server];
+      const pinState = mcpResolverPinState(server.command, server.args, server.env);
+      return [name, pinState === undefined ? server : { ...server, supplyChain: pinState }];
+    }),
+  );
 }
 
 /**
@@ -269,7 +282,7 @@ export function mcpServers(
   };
 
   if (scope === "remote") Object.assign(servers, hostedServers());
-  return servers;
+  return normalizeResolverSupplyChains(servers);
 }
 
 /**

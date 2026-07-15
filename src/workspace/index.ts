@@ -12,6 +12,7 @@ import { doc, exec, plan, probe, writeJson, writeText } from "../internals/plan.
 import { frontmatter } from "../internals/render.js";
 import type { Check } from "../internals/verify.js";
 import { readMcpOrgPolicy } from "../mcp/catalog.js";
+import { mcpResolverPinState } from "../mcp/pins.js";
 import {
   deniedServers,
   evaluateMcpPolicy,
@@ -75,19 +76,6 @@ function childScaffoldedProbe(repo: string, dir: string): Action {
         };
   });
 }
-
-const EXACT_PACKAGE_RE =
-  /^(?:@[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+|[A-Za-z0-9._-]+)@\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/;
-
-const PACKAGE_RESOLVERS = new Set(["npx", "uvx", "uv", "bunx", "pnpm", "yarn", "pipx"]);
-
-const RESOLVER_BOOLEAN_FLAGS = new Set([
-  "-y",
-  "--yes",
-  "--offline",
-  "--no-python-downloads",
-  "--no-env-file",
-]);
 
 const DOCKER_BOOLEAN_RUN_FLAGS = new Set(["--init", "--read-only", "--rm"]);
 
@@ -175,18 +163,6 @@ function commandName(command: string): string {
   return last.replace(/\.(?:cmd|exe)$/i, "").toLowerCase();
 }
 
-function resolverPackageArg(command: string, args: readonly string[]): string | undefined {
-  if (!PACKAGE_RESOLVERS.has(commandName(command))) return undefined;
-  for (const raw of args) {
-    const arg = raw.trim();
-    if (arg.length === 0) continue;
-    if (RESOLVER_BOOLEAN_FLAGS.has(arg)) continue;
-    if (arg.startsWith("-")) return undefined;
-    return arg;
-  }
-  return undefined;
-}
-
 function isDockerBooleanShortFlag(arg: string): boolean {
   return /^-[itd]+$/.test(arg);
 }
@@ -214,9 +190,10 @@ function workspaceStdioSupplyChain(
   current: McpServer["supplyChain"],
   command: string,
   args: readonly string[],
+  env: Readonly<Record<string, string>> | undefined,
 ): McpServer["supplyChain"] {
-  const packageArg = resolverPackageArg(command, args);
-  if (packageArg !== undefined) return EXACT_PACKAGE_RE.test(packageArg) ? "pinned" : "unpinned";
+  const resolverPin = mcpResolverPinState(command, args, env);
+  if (resolverPin !== undefined) return current === "unpinned" ? "unpinned" : resolverPin;
   const imageArg = dockerImageArg(command, args);
   if (imageArg !== undefined && PINNED_GITHUB_MCP_IMAGE_RE.test(imageArg)) return "pinned";
   return current === "hosted-remote" ? current : "unpinned";
@@ -231,6 +208,7 @@ function classifyWorkspaceMcpServer(raw: unknown): McpServer {
           classified.supplyChain,
           classified.command,
           classified.args,
+          classified.env,
         ),
       }
     : classified;

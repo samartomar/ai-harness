@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { PROVIDER_TOKEN_PATTERNS } from "../guardrails/token-patterns.js";
+import { mcpResolverPinState } from "../mcp/pins.js";
 import type { McpServer, SkillsProviderEvidence } from "../mcp/servers.js";
 
 const TOKEN_PATTERNS: readonly RegExp[] = [
@@ -10,10 +11,6 @@ const TOKEN_PATTERNS: readonly RegExp[] = [
 const SECRET_KEY_RE =
   /token|secret|password|passwd|api[_-]?key|apikey|access[_-]?key|client[_-]?secret|credential|\bpat\b/i;
 
-const EXACT_PACKAGE_RE =
-  /^(?:@[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+|[A-Za-z0-9._-]+)@\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/;
-const EXACT_PY_PACKAGE_RE =
-  /^[A-Za-z0-9._-]+(?:\[[A-Za-z0-9._,-]+\])?==\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/;
 const FASTMCP_VERSION_RE =
   /\bfastmcp(?:\[[A-Za-z0-9._,-]+\])?(?:==|@)(\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?)/i;
 const SHA256_RE = /^(?:sha256:)?([0-9a-f]{64})$/i;
@@ -32,11 +29,6 @@ function stringArray(value: unknown): string[] {
   return Array.isArray(value)
     ? value.filter((item): item is string => typeof item === "string")
     : [];
-}
-
-function commandName(command: string): string {
-  const last = command.split(/[\\/]/).at(-1) ?? command;
-  return last.replace(/\.(?:cmd|exe)$/i, "").toLowerCase();
 }
 
 function isPlaceholderOrEmpty(value: string): boolean {
@@ -97,21 +89,6 @@ function hasLiteralCredential(raw: unknown, args: readonly string[]): boolean {
     if (isPlaceholderOrEmpty(arg)) return false;
     return /(?:token|secret|password|api[_-]?key|apikey|credential|pat)[=:][^\s]{8,}/i.test(arg);
   });
-}
-
-function hasExactPackage(args: readonly string[]): boolean {
-  return args.some(
-    (arg) => EXACT_PACKAGE_RE.test(arg.trim()) || EXACT_PY_PACKAGE_RE.test(arg.trim()),
-  );
-}
-
-function hasFloatingLaunch(command: string | undefined, args: readonly string[]): boolean {
-  const cmd = command === undefined ? "" : commandName(command);
-  return (
-    cmd === "npx" ||
-    cmd === "uvx" ||
-    args.some((arg) => arg === "-y" || arg === "--yes" || /@latest(?:$|\b)/i.test(arg))
-  );
 }
 
 function hosted(
@@ -269,7 +246,11 @@ export function classifyIncomingMcp(rawServer: unknown): McpServer {
   // Carry env onto the classified server so its content-bound acknowledgement
   // fingerprint (mcpServerConfigFingerprint) invalidates on an env-only rug-pull.
   const env = raw ? Object.fromEntries(envEntries(raw.env)) : {};
+  const resolverEnv =
+    raw?.env === undefined ? undefined : isRecord(raw.env) ? raw.env : { invalid: raw.env };
   const skillsProvider = skillsProviderEvidence(raw, args);
+  const resolverPin =
+    command === undefined ? undefined : mcpResolverPinState(command, args, resolverEnv);
 
   if (url !== undefined && /^https?:\/\//i.test(url.trim())) {
     const server = hosted(url.trim(), description, credentials, headers);
@@ -291,14 +272,14 @@ export function classifyIncomingMcp(rawServer: unknown): McpServer {
     credentials,
     supplyChain:
       skillsProvider !== undefined
-        ? skillsProvider.hotReload || skillsProvider.serverVersion === undefined
+        ? skillsProvider.hotReload ||
+          skillsProvider.serverVersion === undefined ||
+          resolverPin !== "pinned"
           ? "unpinned"
           : "pinned"
-        : hasFloatingLaunch(command, args)
-          ? "unpinned"
-          : hasExactPackage(args)
-            ? "pinned"
-            : "unpinned",
+        : resolverPin === "pinned"
+          ? "pinned"
+          : "unpinned",
     ...(skillsProvider === undefined ? {} : { skillsProvider }),
   };
 }

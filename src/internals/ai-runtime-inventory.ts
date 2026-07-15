@@ -1,7 +1,10 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { basename } from "node:path";
 import { type ParseError, parse, printParseErrorCode } from "jsonc-parser";
+import { mcpResolverLike, mcpResolverPinState } from "../mcp/pins.js";
 import { inspectContainedRelativePath } from "./contained-path.js";
+
+export { hasExactPackagePin } from "../mcp/pins.js";
 
 export type RuntimeFindingSeverity = "fail" | "warn" | "info";
 
@@ -66,98 +69,6 @@ function stringArray(value: unknown): string[] {
     : [];
 }
 
-function packageSpecVersion(spec: string): string | undefined {
-  if (spec.startsWith("@")) {
-    const slash = spec.indexOf("/");
-    const at = spec.lastIndexOf("@");
-    return slash > 0 && at > slash ? spec.slice(at + 1) : undefined;
-  }
-  const at = spec.lastIndexOf("@");
-  return at > 0 ? spec.slice(at + 1) : undefined;
-}
-
-export function hasExactPackagePin(spec: string): boolean {
-  const version = packageSpecVersion(spec);
-  if (!version) return false;
-  if (/^(latest|next|canary|beta|alpha|rc)$/i.test(version)) return false;
-  if (/^[~^<>=*]/.test(version) || /[x*]/i.test(version)) return false;
-  return /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/.test(version);
-}
-
-function npxPackageSpecs(args: readonly string[]): string[] {
-  const specs: string[] = [];
-  for (let index = 0; index < args.length; index += 1) {
-    const arg = args[index];
-    if (arg === undefined) continue;
-    const next = args[index + 1];
-    if ((arg === "--package" || arg === "-p") && typeof next === "string") {
-      specs.push(next);
-      index += 1;
-      continue;
-    }
-    if (!arg.startsWith("-") && specs.length === 0) specs.push(arg);
-  }
-  return specs;
-}
-
-function optionValue(arg: string, option: string): string | undefined {
-  const prefix = `${option}=`;
-  return arg.startsWith(prefix) ? arg.slice(prefix.length) : undefined;
-}
-
-function uvxExecutablePackageSpecs(args: readonly string[]): string[] {
-  let fromSpec: string | undefined;
-  let firstCommandSpec: string | undefined;
-  const optionsWithValues = new Set([
-    "--config-setting",
-    "--config-settings-package",
-    "--default-index",
-    "--exclude-newer",
-    "--find-links",
-    "--index",
-    "--index-strategy",
-    "--index-url",
-    "--keyring-provider",
-    "--link-mode",
-    "--python",
-    "--python-platform",
-    "--refresh-package",
-    "--resolution",
-  ]);
-
-  for (let index = 0; index < args.length; index += 1) {
-    const arg = args[index];
-    if (arg === undefined) continue;
-
-    const fromValue = optionValue(arg, "--from");
-    if (fromValue !== undefined) {
-      fromSpec = fromValue;
-      continue;
-    }
-
-    if (arg === "--from") {
-      fromSpec = args[index + 1];
-      index += 1;
-      continue;
-    }
-
-    if (arg === "--with" || arg === "-w" || optionValue(arg, "--with") !== undefined) {
-      index += arg === "--with" || arg === "-w" ? 1 : 0;
-      continue;
-    }
-
-    if (optionsWithValues.has(arg)) {
-      index += 1;
-      continue;
-    }
-
-    if (arg.startsWith("-")) continue;
-    firstCommandSpec ??= arg;
-  }
-
-  return fromSpec ? [fromSpec] : firstCommandSpec ? [firstCommandSpec] : [];
-}
-
 function envValueLooksSafe(value: string): boolean {
   return /^([A-Za-z]+ )?\$\{[A-Za-z_][A-Za-z0-9_]*\}$/.test(value);
 }
@@ -198,6 +109,7 @@ function analyzeMcp(root: string, findings: RuntimeFinding[]): RuntimeInventory[
     const type = server?.type === "stdio" || server?.type === "http" ? server.type : "unknown";
     const command = typeof server?.command === "string" ? server.command : undefined;
     const args = stringArray(server?.args);
+    const env = objectRecord(server?.env);
     inventory.push({
       name,
       type,
@@ -207,9 +119,9 @@ function analyzeMcp(root: string, findings: RuntimeFinding[]): RuntimeInventory[
       supplyChain: typeof server?.supplyChain === "string" ? server.supplyChain : undefined,
     });
 
-    if (type === "stdio" && command === "npx") {
-      const specs = npxPackageSpecs(args);
-      if (specs.length === 0 || specs.some((spec) => !hasExactPackagePin(spec))) {
+    const resolver = command === undefined ? undefined : mcpResolverLike(command);
+    if (type === "stdio" && resolver === "npx" && command !== undefined) {
+      if (mcpResolverPinState(command, args, env) !== "pinned") {
         findings.push({
           code: "ai-runtime.npx-unpinned",
           severity: "fail",
@@ -219,8 +131,7 @@ function analyzeMcp(root: string, findings: RuntimeFinding[]): RuntimeInventory[
       }
     }
 
-    if (type === "stdio" && command === "uvx") {
-      const specs = uvxExecutablePackageSpecs(args);
+    if (type === "stdio" && resolver === "uvx" && command !== undefined) {
       if (!args.includes("--offline") || !args.includes("--no-env-file")) {
         findings.push({
           code: "ai-runtime.uvx-launcher-unhardened",
@@ -229,7 +140,7 @@ function analyzeMcp(root: string, findings: RuntimeFinding[]): RuntimeInventory[
           message: "MCP uvx launcher must use offline and no-env-file flags.",
         });
       }
-      if (specs.length === 0 || specs.some((spec) => !hasExactPackagePin(spec))) {
+      if (mcpResolverPinState(command, args, env) !== "pinned") {
         findings.push({
           code: "ai-runtime.uvx-unpinned",
           severity: "fail",
@@ -239,7 +150,6 @@ function analyzeMcp(root: string, findings: RuntimeFinding[]): RuntimeInventory[
       }
     }
 
-    const env = objectRecord(server?.env);
     for (const [key, value] of Object.entries(env ?? {})) {
       if (typeof value !== "string" || !envValueLooksSafe(value)) {
         findings.push({

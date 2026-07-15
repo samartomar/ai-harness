@@ -49,7 +49,7 @@ describe("classifyIncomingMcp", () => {
     });
   });
 
-  it("treats exact-version package launches as pinned when no floating launch tell is present", () => {
+  it("does not treat an exact-looking argument to a non-resolver as a package pin", () => {
     const server = classifyIncomingMcp({
       command: "node",
       args: ["@scope/example-tool@1.2.3"],
@@ -59,7 +59,56 @@ describe("classifyIncomingMcp", () => {
       classification: "local",
       egress: "local-only",
       credentials: "none",
-      supplyChain: "pinned",
+      supplyChain: "unpinned",
+    });
+  });
+
+  it("does not trust path-qualified resolver lookalikes as package pins", () => {
+    for (const command of ["./npx", "NPX"]) {
+      const server = classifyIncomingMcp({
+        command,
+        args: ["@scope/example-tool@1.2.3"],
+      });
+
+      expect(server).toMatchObject({
+        classification: "local",
+        egress: "local-only",
+        credentials: "none",
+        supplyChain: "unpinned",
+      });
+    }
+  });
+
+  it("does not trust source-changing uvx environment overrides", () => {
+    const server = classifyIncomingMcp({
+      command: "uvx",
+      args: ["--offline", "--no-env-file", "--no-python-downloads", "tool@1.2.3"],
+      env: {
+        UV_FIND_LINKS: "$" + "{WHEELS}",
+        UV_PYTHON: "$" + "{UV_PYTHON}",
+      },
+    });
+
+    expect(server).toMatchObject({
+      classification: "local",
+      egress: "local-only",
+      credentials: "none",
+      supplyChain: "unpinned",
+    });
+  });
+
+  it("fails closed when a resolver environment contains a non-string override", () => {
+    const server = classifyIncomingMcp({
+      command: "npx",
+      args: ["@scope/example-tool@1.2.3"],
+      env: { PATH: 7 },
+    });
+
+    expect(server).toMatchObject({
+      classification: "local",
+      egress: "local-only",
+      credentials: "none",
+      supplyChain: "unpinned",
     });
   });
 

@@ -2,6 +2,7 @@ import type { Cli } from "../internals/clis.js";
 import type { PlanContext } from "../internals/plan.js";
 import type { Check } from "../internals/verify.js";
 import { execArgv } from "../tools/install.js";
+import { mcpResolverPinState, npxLaunchPins } from "./pins.js";
 import type { McpEntry } from "./render.js";
 import type { McpServer } from "./servers.js";
 
@@ -21,9 +22,6 @@ interface NpmPackagePin {
 }
 
 const ENV_REF = /\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g;
-const NPM_SCOPED_SPEC = /^(@[^@\s/]+\/[^@\s]+)@([^@\s]+)$/;
-const NPM_UNSCOPED_SPEC = /^([^@\s/][^@\s]*)@([^@\s]+)$/;
-
 function envRefs(value: string): string[] {
   return [...value.matchAll(ENV_REF)].flatMap((match) => (match[1] ? [match[1]] : []));
 }
@@ -116,25 +114,26 @@ export function applyMcpHygieneToEntries(
   return next;
 }
 
-function parseNpmSpec(value: string): { packageName: string; version: string } | undefined {
-  const scoped = NPM_SCOPED_SPEC.exec(value);
-  if (scoped?.[1] && scoped[2]) return { packageName: scoped[1], version: scoped[2] };
-  const unscoped = NPM_UNSCOPED_SPEC.exec(value);
-  if (unscoped?.[1] && unscoped[2]) return { packageName: unscoped[1], version: unscoped[2] };
-  return undefined;
-}
-
 function npmPackagePins(servers: Record<string, McpServer>): NpmPackagePin[] {
   const pins: NpmPackagePin[] = [];
   for (const [server, config] of Object.entries(servers)) {
     if (config.type !== "stdio" || config.command !== "npx") continue;
-    for (const arg of config.args) {
-      const parsed = parseNpmSpec(arg);
-      if (parsed === undefined) continue;
-      pins.push({ server, spec: arg, ...parsed });
+    for (const pin of npxLaunchPins(config.args)) {
+      pins.push({ server, ...pin });
     }
   }
   return pins;
+}
+
+function unpinnedNpmLaunchers(servers: Record<string, McpServer>): string[] {
+  return Object.entries(servers)
+    .filter(
+      ([, server]) =>
+        server.type === "stdio" &&
+        server.command === "npx" &&
+        mcpResolverPinState(server.command, server.args, server.env) !== "pinned",
+    )
+    .map(([name]) => name);
 }
 
 function resolvedVersion(stdout: string): string | undefined {
@@ -150,6 +149,15 @@ export async function mcpPackagePinDriftProbe(
   ctx: PlanContext,
 ): Promise<Check> {
   const name = "MCP package pins match resolved versions";
+  const unpinned = unpinnedNpmLaunchers(servers);
+  if (unpinned.length > 0) {
+    return {
+      name,
+      verdict: "fail",
+      detail: `npx MCP launchers lack exact package pins: ${unpinned.join(", ")}`,
+      code: "mcp.version-drift",
+    };
+  }
   const pins = npmPackagePins(servers);
   if (pins.length === 0) {
     return { name, verdict: "skip", detail: "no npm-backed MCP package pins to resolve" };

@@ -9,7 +9,9 @@ import { executePlan, resolveContents } from "../../src/internals/execute.js";
 import type { PlanContext, WriteAction } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
 import { jsonFile } from "../../src/internals/render.js";
+import { mcpPackagePinDriftProbe } from "../../src/mcp/hygiene.js";
 import { command, mcpApproveCommand } from "../../src/mcp/index.js";
+import { mcpResolverPinState } from "../../src/mcp/pins.js";
 import { mcpApprovalSubject } from "../../src/mcp/policy.js";
 import { existingMcpTomlNames, removeMcpTomlServers } from "../../src/mcp/render.js";
 import type { McpServer } from "../../src/mcp/servers.js";
@@ -308,6 +310,69 @@ describe("aih mcp — plan shape", () => {
 });
 
 describe("aih mcp — generated mcpServers blueprint", () => {
+  it("fails closed on mutable resolver modes and recognizes npx's -- package operand", () => {
+    expect(mcpResolverPinState("uvx", ["--constraints", "constraints==1.2.3", "tool@latest"])).toBe(
+      "unpinned",
+    );
+    expect(mcpResolverPinState("uvx", ["--cache-dir", "tool@1.2.3", "other@latest"])).toBe(
+      "unpinned",
+    );
+    expect(
+      mcpResolverPinState("uvx", [
+        "--find-links",
+        "./evil-wheels",
+        "--from",
+        "tool==1.2.3",
+        "tool",
+      ]),
+    ).toBe("unpinned");
+    expect(mcpResolverPinState("uvx", ["--with-editable", "./evil", "tool@1.2.3"])).toBe(
+      "unpinned",
+    );
+    expect(mcpResolverPinState("uvx", ["--from", "tool==1.2.3", "sh", "-c", "printf x"])).toBe(
+      "unpinned",
+    );
+    expect(mcpResolverPinState("uvx", ["--python", "/tmp/python", "tool@1.2.3"])).toBe("unpinned");
+    expect(mcpResolverPinState("uvx", ["--resolution", "lowest", "tool@1.2.3"])).toBe("unpinned");
+    expect(
+      mcpResolverPinState(
+        "uvx",
+        ["--offline", "--no-env-file", "--no-python-downloads", "tool@1.2.3"],
+        { UV_FIND_LINKS: "$" + "{WHEELS}" },
+      ),
+    ).toBe("unpinned");
+    expect(
+      mcpResolverPinState(
+        "uvx",
+        ["--offline", "--no-env-file", "--no-python-downloads", "tool@1.2.3"],
+        { UV_SYSTEM_PYTHON: "1" },
+      ),
+    ).toBe("unpinned");
+    expect(
+      mcpResolverPinState("npx", ["--package", "safe-package@1.2.3", "--call", "sh -c whoami"]),
+    ).toBe("unpinned");
+    expect(
+      mcpResolverPinState("npx", ["tool@1.2.3"], { NPM_CONFIG_REGISTRY: "$" + "{REGISTRY}" }),
+    ).toBe("unpinned");
+    expect(mcpResolverPinState("npx", ["tool@1.2.3"], { PATH: "./attacker-bin" })).toBe("unpinned");
+    expect(
+      mcpResolverPinState("uvx", ["tool==1.2.3"], { NODE_OPTIONS: "--require ./evil.js" }),
+    ).toBe("unpinned");
+    expect(mcpResolverPinState("npx", ["--", "@scope/tool@1.2.3"])).toBe("pinned");
+  });
+
+  it("derives each generated package-resolver supply-chain label from its launch pin", async () => {
+    const p = await command.plan(makeCtx());
+    const write = p.actions.find((action): action is WriteAction => action.kind === "write");
+    if (write === undefined) throw new Error("expected generated MCP config");
+
+    for (const server of Object.values(serversOf(write))) {
+      if (server.type !== "stdio") continue;
+      const pinState = mcpResolverPinState(server.command, server.args);
+      if (pinState !== undefined) expect(server.supplyChain).toBe(pinState);
+    }
+  });
+
   it("models code-review-graph as a uvx stdio server", async () => {
     const p = await command.plan(makeCtx());
     const w = p.actions.find((a) => a.kind === "write") as WriteAction;
@@ -1072,6 +1137,56 @@ describe("aih mcp — MCP write hygiene", () => {
     expect(warning?.kind === "digest" ? warning.text : "").toContain(
       "placeholder URL host github.internal.example",
     );
+  });
+
+  it("does not verify an exact-looking npx argument after a floating launch", async () => {
+    const run = fakeRunner((argv) => {
+      if (argv.join(" ") === "npm view helper-package@1.2.3 version") {
+        return { code: 0, stdout: "1.2.3\n" };
+      }
+      return undefined;
+    });
+
+    const check = await mcpPackagePinDriftProbe(
+      {
+        floating: {
+          type: "stdio",
+          command: "npx",
+          args: ["-y", "example-tool@latest", "helper-package@1.2.3"],
+          description: "fixture",
+          classification: "local",
+          egress: "none",
+          credentials: "none",
+          supplyChain: "unpinned",
+        },
+      },
+      makeCtx({ run }),
+    );
+
+    expect(check).toMatchObject({ verdict: "fail", code: "mcp.version-drift" });
+    expect(check.detail).toContain("floating");
+  });
+
+  it("does not verify an exact npx pin with a configured registry override", async () => {
+    const check = await mcpPackagePinDriftProbe(
+      {
+        redirected: {
+          type: "stdio",
+          command: "npx",
+          args: ["-y", "example-tool@1.2.3"],
+          env: { NPM_CONFIG_REGISTRY: "$" + "{REGISTRY}" },
+          description: "fixture",
+          classification: "local",
+          egress: "none",
+          credentials: "none",
+          supplyChain: "unpinned",
+        },
+      },
+      makeCtx(),
+    );
+
+    expect(check).toMatchObject({ verdict: "fail", code: "mcp.version-drift" });
+    expect(check.detail).toContain("redirected");
   });
 
   it("--verify surfaces npm MCP package version-pin drift from the configured registry", async () => {
