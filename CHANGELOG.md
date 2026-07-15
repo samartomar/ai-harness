@@ -17,6 +17,9 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- GitHub trust-source fetches now reject redirects that leave the canonical HTTPS GitHub fetch
+  endpoints, carry credentials or custom ports, or exceed three hops before any redirected
+  connection is made.
 - `aih doctor` now accepts a populated `code-review-graph` binary for a workspace child when that
   child has no valid generated workspace graph MCP alias. Generated aliases remain the preferred
   exact, offline verification path; empty or failing graph status still does not satisfy graph safety.

@@ -372,9 +372,10 @@ first, then from the source root. The evidence records the exact `SKILL.md`,
 Sibling skill folders do not contribute license evidence to the selected skill.
 If neither the selected skill folder nor the source root contains license
 evidence, `trust.license-missing` still fails closed under the normal skill vet
-verdict rules. Fetched GitHub archives are unpacked into quarantine with archive
-symlink entries refused, so selected-artifact evidence cannot be materialized
-from a sibling path during fetch.
+verdict rules. Fetched GitHub archives follow at most three HTTPS redirects and
+only between the canonical GitHub API and codeload hosts before unpacking into
+quarantine. Archive symlink entries are refused, so selected-artifact evidence
+cannot be materialized from a sibling path during fetch.
 
 Scoped evidence also records a `sourceScope` block with selected skill names,
 included paths, and excluded sibling skill paths. The excluded paths stay visible

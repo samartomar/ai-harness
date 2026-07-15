@@ -328,6 +328,8 @@ const zlib = require("node:zlib");
 const input = JSON.parse(process.argv[1]);
 const OWNER_DIR_MODE = 0o700;
 const OWNER_FILE_MODE = 0o600;
+const TRUSTED_GITHUB_FETCH_HOSTS = new Set(["api.github.com", "codeload.github.com"]);
+const MAX_GITHUB_FETCH_REDIRECTS = 3;
 
 function fail(message) {
   process.stderr.write(message + "\n");
@@ -444,10 +446,32 @@ function connectThroughProxy(target, proxy) {
   });
 }
 
-function collectResponse(url, res, resolve, reject) {
+function trustedRedirectTarget(location, currentUrl, redirects) {
+  if (redirects >= MAX_GITHUB_FETCH_REDIRECTS) {
+    fail("refusing redirect chain longer than " + MAX_GITHUB_FETCH_REDIRECTS + " hops");
+  }
+  let target;
+  try {
+    target = new URL(location, currentUrl);
+  } catch {
+    fail("refusing malformed GitHub fetch redirect");
+  }
+  if (
+    target.protocol !== "https:" ||
+    target.port ||
+    target.username ||
+    target.password ||
+    !TRUSTED_GITHUB_FETCH_HOSTS.has(target.hostname.toLowerCase())
+  ) {
+    fail("refusing redirect outside trusted GitHub endpoints");
+  }
+  return target;
+}
+
+function collectResponse(url, res, resolve, reject, redirects) {
   if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
     res.resume();
-    requestBuffer(new URL(res.headers.location, url).toString()).then(resolve, reject);
+    requestBuffer(trustedRedirectTarget(res.headers.location, url, redirects).toString(), redirects + 1).then(resolve, reject);
     return;
   }
   if (res.statusCode !== 200) {
@@ -461,13 +485,13 @@ function collectResponse(url, res, resolve, reject) {
   res.on("end", () => resolve(Buffer.concat(chunks)));
 }
 
-function requestBuffer(url) {
+function requestBuffer(url, redirects = 0) {
   return new Promise((resolve, reject) => {
     const target = new URL(url);
     const headers = { "user-agent": "aih-trust-fetch", accept: "application/vnd.github+json" };
     const proxy = proxyFor(target);
     const start = (options) => {
-      const req = https.request(target, options, (res) => collectResponse(url, res, resolve, reject));
+      const req = https.request(target, options, (res) => collectResponse(url, res, resolve, reject, redirects));
       req.on("error", reject);
       req.setTimeout(30000, () => req.destroy(new Error("request timed out: " + url)));
       req.end();
