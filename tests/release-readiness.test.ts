@@ -121,13 +121,15 @@ describe("release readiness metadata", () => {
       ).filter((block) => block.includes("npm install -g @aihq/harness"));
       expect(installBlocks.length).toBeGreaterThan(0);
       for (const block of installBlocks) {
-        expect(block).toContain(`npm install -g @aihq/harness@${currentVersion}`);
-        expect(block).toContain(`aih verify-release ${currentVersion}`);
-        expect(block).toMatch(
-          new RegExp(
-            `npm install -g @aihq/harness@${currentVersion.replace(/\./gu, "\\.")}[^\\n]*\\n\\s*aih verify-release ${currentVersion.replace(/\./gu, "\\.")}(?:\\s|#)`,
-          ),
-        );
+        const installCommand = `npm install -g @aihq/harness@${currentVersion}`;
+        const verifyCommand = `aih verify-release ${currentVersion}`;
+        expect(block).toContain(installCommand);
+        expect(block).toContain(verifyCommand);
+        const lines = block.split(/\r?\n/gu);
+        const commands = lines.map((line) => line.split(" #", 1)[0]?.trim() ?? "");
+        const installLine = commands.indexOf(installCommand);
+        expect(installLine).toBeGreaterThanOrEqual(0);
+        expect(commands[installLine + 1]).toBe(verifyCommand);
         expect(block).not.toContain("npm audit signatures");
       }
       expect(text).toContain("Full release verification requires local `npm`, `gh`, and `cosign`");
