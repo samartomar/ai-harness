@@ -17,6 +17,9 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- `aih doctor` now accepts a populated `code-review-graph` binary for a workspace child when that
+  child has no valid generated workspace graph MCP alias. Generated aliases remain the preferred
+  exact, offline verification path; empty or failing graph status still does not satisfy graph safety.
 - Enterprise MCP policy now records provenance for the Claude managed allowlist,
   removes it only when its exact AIH-generated values remain on disk, and preserves
   operator-owned settings. Active managed-only policy consistently filters generated

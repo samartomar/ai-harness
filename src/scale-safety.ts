@@ -101,6 +101,7 @@ async function ensureCodeReviewGraphPopulated(
   ctx: PlanContext,
   detail: string,
   argvFor: (command: "status" | "build") => string[],
+  rebuildWhenEmpty = true,
 ): Promise<{ available: boolean; detail: string }> {
   const statusArgv = argvFor("status");
   const first = await ctx.run(statusArgv, { cwd: ctx.root, timeoutMs: 120_000 });
@@ -116,6 +117,13 @@ async function ensureCodeReviewGraphPopulated(
     return {
       available: true,
       detail: `${detail}; graph populated (${graphStatusSummary(firstStatus)})`,
+    };
+  }
+
+  if (!rebuildWhenEmpty) {
+    return {
+      available: false,
+      detail: `${detail}; graph status was empty (${graphStatusSummary(firstStatus)})`,
     };
   }
 
@@ -157,24 +165,32 @@ async function codeReviewGraphAvailabilityFor(
 }> {
   if (resolve(mcpRoot) !== resolve(repoRoot)) {
     const workspacePackage = workspaceMcpCodeReviewGraphPackage(mcpRoot, repoRoot);
-    if (workspacePackage === undefined) {
-      return {
-        available: false,
-        detail:
-          "workspace graph MCP server for this child is missing or stale; re-run `aih workspace --apply`",
-      };
+    if (workspacePackage !== undefined) {
+      if (!(await onPath(ctx, "uvx"))) {
+        return {
+          available: false,
+          detail: "workspace MCP code-review-graph scoped to child repo, but uvx is not on PATH",
+        };
+      }
+      return ensureCodeReviewGraphPopulated(
+        ctx,
+        "workspace MCP code-review-graph scoped to child repo and uvx is on PATH",
+        (command) => ["uvx", ...UVX_OFFLINE_FLAGS, workspacePackage, command, "--repo", repoRoot],
+      );
     }
-    if (!(await onPath(ctx, "uvx"))) {
-      return {
-        available: false,
-        detail: "workspace MCP code-review-graph scoped to child repo, but uvx is not on PATH",
-      };
+    if (await onPath(ctx, "code-review-graph")) {
+      return ensureCodeReviewGraphPopulated(
+        ctx,
+        "code-review-graph binary on PATH",
+        (command) => ["code-review-graph", command, "--repo", repoRoot],
+        false,
+      );
     }
-    return ensureCodeReviewGraphPopulated(
-      ctx,
-      "workspace MCP code-review-graph scoped to child repo and uvx is on PATH",
-      (command) => ["uvx", ...UVX_OFFLINE_FLAGS, workspacePackage, command, "--repo", repoRoot],
-    );
+    return {
+      available: false,
+      detail:
+        "workspace graph MCP server for this child is missing or stale; re-run `aih workspace --apply`",
+    };
   }
 
   if (await onPath(ctx, "code-review-graph")) {

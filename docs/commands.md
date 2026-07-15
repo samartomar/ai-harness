@@ -643,7 +643,10 @@ and packaged marketplace skills from `.aih/marketplace/marketplace.json` must be
 declarations are bound to the generated catalog's command/args/env or URL/headers shape, and
 marketplace declarations must include the reviewed `pinnedSha` that matches the artifact's packaged
 commit. Workspace graph MCPs generated for declared child repos are treated as internal workspace
-plumbing; the full Package Graph schema remains the follow-on registry unification.
+plumbing. When a child has no valid generated graph alias, a populated child-scoped
+`code-review-graph` binary also satisfies that child's graph-safety probe; generated aliases remain
+the preferred exact offline path. The full Package Graph schema remains the follow-on registry
+unification.
 
 ## aih status
 

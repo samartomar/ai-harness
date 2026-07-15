@@ -666,10 +666,12 @@ describe("doctor — git-enabled workspace roots", () => {
     expect(res?.detail).toContain("workspace graph coverage is unverified");
   });
 
-  it("does not accept a bare graph binary as workspace child MCP coverage", async () => {
+  it("accepts a populated graph binary as workspace child graph coverage", async () => {
     writeWorkspaceMarker();
     mkdirSync(join(dir, "service-api"), { recursive: true });
+    const calls: string[][] = [];
     const run = fakeRunner((argv) => {
+      calls.push(argv);
       if (
         argv[0] === "git" &&
         argv[2] === dir &&
@@ -703,9 +705,65 @@ describe("doctor — git-enabled workspace roots", () => {
     );
     const res = await probe?.run(c);
 
+    expect(res?.verdict).toBe("pass");
+    expect(res?.detail).toContain("code-review-graph binary on PATH");
+    expect(res?.detail).toContain("graph populated (388 files, 5454 nodes)");
+    expect(calls).toContainEqual([
+      "code-review-graph",
+      "status",
+      "--repo",
+      join(dir, "service-api"),
+    ]);
+  });
+
+  it("does not rebuild an empty workspace child graph through a PATH binary", async () => {
+    writeWorkspaceMarker();
+    mkdirSync(join(dir, "service-api"), { recursive: true });
+    const calls: string[][] = [];
+    const run = fakeRunner((argv) => {
+      calls.push(argv);
+      if (
+        argv[0] === "git" &&
+        argv[2] === dir &&
+        argv.slice(3).join(" ") === "rev-parse --is-inside-work-tree"
+      ) {
+        return { stdout: "true" };
+      }
+      if (argv[0] === "git" && argv[2] === join(dir, "service-api") && argv[3] === "ls-files") {
+        return { stdout: "src/index.ts\n" };
+      }
+      if (argv[0] === "git" && argv[2] === dir && argv[3] === "ls-files") {
+        return { stdout: ".aih-workspace.json\n.gitignore\n" };
+      }
+      if ((argv[0] === "which" || argv[0] === "where") && argv[1] === "code-review-graph") {
+        return { stdout: "/usr/bin/code-review-graph" };
+      }
+      if (argv[0] === "code-review-graph" && argv.includes("status")) {
+        return { stdout: ["Nodes: 0", "Edges: 0", "Files: 0"].join("\n") };
+      }
+      return { code: 1, spawnError: true };
+    });
+    const c: PlanContext = {
+      ...rooted(true),
+      run,
+      host: makeHostAdapter({ platform: "linux", run, env: {} }),
+    };
+
+    const probe = findProbe(
+      (await command.plan(c)).actions,
+      "workspace child service-api graph safety",
+    );
+    const res = await probe?.run(c);
+
     expect(res?.verdict).toBe("skip");
     expect(res?.code).toBe("scale.code-review-graph-missing");
-    expect(res?.detail).toContain("workspace graph MCP server for this child is missing");
+    expect(res?.detail).toContain("graph status was empty");
+    expect(calls).not.toContainEqual([
+      "code-review-graph",
+      "build",
+      "--repo",
+      join(dir, "service-api"),
+    ]);
   });
 
   it("fails closed before probing graph coverage for linked child repo paths", async () => {
