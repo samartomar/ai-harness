@@ -20,7 +20,7 @@ The `enterprise` posture emphasizes least privilege, approval, auditability, and
 
 The enterprise examples in this public guide are intentionally limited to reviewed Figma, Jira/Atlassian, and AWS MCP paths. Additional service MCPs should follow the same policy and source-review pattern before appearing in public enterprise guidance.
 
-Release baseline covered by this guide: `@aihq/harness@2.4.3`. The scoped public security doc documents SLSA v1.2 Build L2 for tagged release artifacts; no Build L3 or formal compliance claim is made.
+Release baseline covered by this guide: `@aihq/harness@2.10.0`. The scoped public security doc documents SLSA v1.2 Build L2 for tagged release artifacts; no Build L3 or formal compliance claim is made.
 
 ## 2. Quickstart / Implementation Blueprint
 
@@ -50,14 +50,17 @@ If Docker or cosign is not part of the organization's selected policy path, docu
 Verify the release before rollout:
 
 ```console
-npm install -g @aihq/harness
-npm audit signatures
-aih verify-release 2.4.3
+npm install -g @aihq/harness@2.10.0
+aih verify-release 2.10.0
 ```
 
-Use `npm install -g @aihq/harness@latest` for major-version upgrades; `npm update -g`
-may stay within the current major. Use `--force` only when replacing a broken global
-install after reviewing the npm prefix and approved package source.
+Full release verification requires local `npm`, `gh`, and `cosign`; proceed only when all three legs
+pass. A skipped leg is incomplete evidence, not a successful rollout gate.
+
+For a major-version upgrade, install the approved explicit version (currently
+`npm install -g @aihq/harness@2.10.0`); `npm update -g` may stay within the current major. Re-run
+`aih verify-release 2.10.0` after an upgrade. Use `--force` only
+when replacing a broken global install after reviewing the npm prefix and approved package source.
 
 Bootstrap a governed repo with an enterprise posture:
 
@@ -222,7 +225,7 @@ Use a digest form such as `<registry>/<namespace>/skillspector@sha256:<digest>` 
 
 | Level | Admin intent | Command setup |
 |---|---|---|
-| Min Configuration | Install verified AI-Harness, enforce enterprise posture, generate only policy-allowed MCP, and keep evidence local. | `aih verify-release 2.4.3`, `aih policy validate`, `aih init . --posture enterprise --mcp-mode offline --mcp-compliant`, `aih bootstrap-ai --all-tools --apply`, `aih doctor --posture enterprise`, `aih secrets --verify` |
+| Min Configuration | Install verified AI-Harness, enforce enterprise posture, generate only policy-allowed MCP, and keep evidence local. | `aih verify-release`, `aih policy validate`, `aih init . --posture enterprise --mcp-mode offline --mcp-compliant`, `aih bootstrap-ai --all-tools --apply`, `aih doctor --posture enterprise`, `aih secrets --verify` |
 | Balanced | Min plus ECC, BetterDoc, and one reviewed MCP example such as Figma for teams that need coding canon, docs quality, and approved design context. | Min commands plus `aih ecc --cli claude,codex --profile core --posture enterprise --apply`, `aih pack scaffold --pack docs-quality --posture enterprise --apply`, `aih pack install --pack docs-quality --posture enterprise --apply`, `aih mcp approve figma --accept-egress ...`, and reviewed `.mcp.json` for Figma. |
 | Powerhouse Mode | Balanced plus usage/reporting, Superpowers, truth sidecar, selected external skills, Figma, Atlassian/Jira, and selected AWS MCP. | Balanced commands plus `aih superpowers`, `aih usage`, `aih track`, `aih report --v9`, `aih truth verify`, `aih truth pack`, external `aih trust`/`aih skill` approvals, and explicit MCP approvals/config for Figma, Atlassian, and AWS. |
 
@@ -231,9 +234,8 @@ Most writing commands refuse a dirty worktree unless `--force` is supplied. In g
 Min Configuration:
 
 ```powershell
-npm install -g @aihq/harness
-npm audit signatures
-aih verify-release 2.4.3
+npm install -g @aihq/harness@2.10.0
+aih verify-release 2.10.0
 aih policy validate
 aih init . --posture enterprise --mcp-mode offline --mcp-compliant
 aih init . --posture enterprise --mcp-mode offline --mcp-compliant --apply
@@ -465,7 +467,7 @@ uvx awslabs.core-mcp-server@1.0.27 --help
 Before handing configuration to developers, verify the admin package from the same repo or distribution location developers will use:
 
 ```powershell
-aih verify-release 2.4.3
+aih verify-release 2.10.0
 aih policy validate
 aih policy verify --against <trusted-policy-sha-or-bundle>
 aih pack validate --pack docs-quality
@@ -494,7 +496,7 @@ Then check the handoff material:
 
 | Situation | Command path | Why |
 |---|---|---|
-| A release must be verified before rollout | `aih verify-release <version>` | Checks npm/GitHub/cosign/tarball evidence and reports honest skips. |
+| A release must be verified before rollout | `aih verify-release <version>` | Checks npm/GitHub/cosign/tarball evidence; rollout requires all three legs to pass, with no skips. |
 | Org policy may have drifted | `aih policy validate`, then `aih policy verify --against <sha-or-bundle>` | Separates schema validation from trusted-channel comparison. |
 | Enterprise MCP must be constrained | `aih mcp --posture enterprise --mode offline --mcp-compliant --apply` | Writes only policy-allowed generated MCP servers and emits governance guidance for denied ones. |
 | Enterprise baseline residue must be surfaced | `aih doctor --posture enterprise` | Attests declared MCP and packaged marketplace surfaces against org policy. |

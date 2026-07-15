@@ -47,17 +47,16 @@ policy: [STABILITY.md](STABILITY.md).
 
 ## Install
 
-```bash
-npm install -g @aihq/harness      # then run: aih --help
-```
-
-Verify the install's origin. Current releases publish npm provenance plus
-GitHub release checksums and a keyless cosign bundle:
+Install and verify a published release. Current releases publish npm provenance plus GitHub release
+checksums and a keyless cosign bundle:
 
 ```bash
-npm audit signatures
-aih verify-release          # also checks GitHub release sums + cosign bundle
+npm install -g @aihq/harness@2.10.0      # then run: aih --help
+aih verify-release 2.10.0   # checks npm signatures, GitHub release sums, and cosign evidence for 2.10.0
 ```
+
+Full release verification requires local `npm`, `gh`, and `cosign`; proceed only when all three legs
+pass. A skipped leg is incomplete evidence, not a successful rollout gate.
 
 <details><summary>From source (contributors)</summary>
 
@@ -430,8 +429,8 @@ aih usage --rollup ../repo-a,../repo-b
   bundle** on the GitHub Release. Releases from `v0.6.0` onward include the sigstore/provenance
   assets; earlier historical tags have a narrower asset set. Tagged release artifacts claim
   [SLSA Build L2](docs/security/release-slsa.md) under SLSA v1.2; no Build L3 claim is
-  made. Verify an install with `npm audit signatures`, `aih verify-release [version]`,
-  and provenance-aware policy such as `gh attestation verify`.
+  made. Verify a published release with `aih verify-release [version]`; a skipped verification leg
+  is incomplete evidence. Consumers with provenance-aware policy can also use `gh attestation verify`.
 - **Support** — [SUPPORT.md](SUPPORT.md) · **Security** — [SECURITY.md](SECURITY.md)
   (private reporting) · **Contributing** — [CONTRIBUTING.md](CONTRIBUTING.md).
 

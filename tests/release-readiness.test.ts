@@ -106,6 +106,50 @@ describe("release readiness metadata", () => {
     }
   });
 
+  it("directs global-install verification through the release verifier", () => {
+    const currentVersion = JSON.parse(read("package.json")).version;
+    const installDocs = [
+      "README.md",
+      "guides/vibe-developer-guide.md",
+      "guides/enterprise-developer-guide.md",
+      "guides/enterprise-admin-guide.md",
+    ];
+    for (const path of installDocs) {
+      const text = read(path);
+      const installBlocks = (
+        text.match(/```(?:bash|console|powershell)\n[\s\S]*?```/g) ?? []
+      ).filter((block) => block.includes("npm install -g @aihq/harness"));
+      expect(installBlocks.length).toBeGreaterThan(0);
+      for (const block of installBlocks) {
+        const installCommand = `npm install -g @aihq/harness@${currentVersion}`;
+        const verifyCommand = `aih verify-release ${currentVersion}`;
+        expect(block).toContain(installCommand);
+        expect(block).toContain(verifyCommand);
+        const lines = block.split(/\r?\n/gu);
+        const commands = lines.map((line) => line.split(" #", 1)[0]?.trim() ?? "");
+        const installLine = commands.indexOf(installCommand);
+        expect(installLine).toBeGreaterThanOrEqual(0);
+        expect(commands[installLine + 1]).toBe(verifyCommand);
+        expect(block).not.toContain("npm audit signatures");
+      }
+      expect(text).toContain("Full release verification requires local `npm`, `gh`, and `cosign`");
+      expect(text).toContain("all three legs");
+      expect(text).toContain("skipped leg is incomplete evidence");
+    }
+    for (const path of [
+      "guides/enterprise-developer-guide.md",
+      "guides/enterprise-admin-guide.md",
+    ]) {
+      const text = read(path);
+      expect(text).toContain(
+        `Release baseline covered by this guide: \`@aihq/harness@${currentVersion}\`.`,
+      );
+      expect(text).toContain(
+        `For a major-version upgrade, install the approved explicit version (currently\n\`npm install -g @aihq/harness@${currentVersion}\`); \`npm update -g\` may stay within the current major. Re-run\n\`aih verify-release ${currentVersion}\` after an upgrade.`,
+      );
+    }
+  });
+
   it("ships basic repository governance files for controlled rollout", () => {
     expect(existsSync(join(root, ".github", "CODEOWNERS"))).toBe(true);
     expect(existsSync(join(root, "DCO.md"))).toBe(true);

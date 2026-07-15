@@ -29,13 +29,15 @@ Think in six layers:
 
 ## 2. Quickstart / Implementation Blueprint
 
-Verify the installed package when release integrity matters:
+Verify a published release when release integrity matters:
 
 ```console
-npm install -g @aihq/harness
-npm audit signatures
-aih verify-release
+npm install -g @aihq/harness@2.10.0
+aih verify-release 2.10.0
 ```
+
+Full release verification requires local `npm`, `gh`, and `cosign`; proceed only when all three legs
+pass. A skipped leg is incomplete evidence, not a successful rollout gate.
 
 Start read-only:
 
