@@ -50,15 +50,16 @@ If Docker or cosign is not part of the organization's selected policy path, docu
 Verify the release before rollout:
 
 ```console
-npm install -g @aihq/harness@latest
+npm install -g @aihq/harness@2.10.0
 aih verify-release
 ```
 
 Full release verification requires local `npm`, `gh`, and `cosign`; proceed only when all three legs
 pass. A skipped leg is incomplete evidence, not a successful rollout gate.
 
-Use `npm install -g @aihq/harness@latest` for major-version upgrades; `npm update -g`
-may stay within the current major. Re-run `aih verify-release` after an upgrade. Use `--force` only
+For a major-version upgrade, install the approved explicit version (currently
+`npm install -g @aihq/harness@2.10.0`); `npm update -g` may stay within the current major. Re-run
+`aih verify-release` after an upgrade. Use `--force` only
 when replacing a broken global install after reviewing the npm prefix and approved package source.
 
 Bootstrap a governed repo with an enterprise posture:
@@ -233,7 +234,7 @@ Most writing commands refuse a dirty worktree unless `--force` is supplied. In g
 Min Configuration:
 
 ```powershell
-npm install -g @aihq/harness@latest
+npm install -g @aihq/harness@2.10.0
 aih verify-release
 aih policy validate
 aih init . --posture enterprise --mcp-mode offline --mcp-compliant

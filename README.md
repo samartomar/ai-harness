@@ -51,7 +51,7 @@ Install and verify a published release. Current releases publish npm provenance 
 checksums and a keyless cosign bundle:
 
 ```bash
-npm install -g @aihq/harness@latest      # then run: aih --help
+npm install -g @aihq/harness@2.10.0      # then run: aih --help
 aih verify-release          # checks available npm signatures, GitHub release sums, and cosign evidence
 ```
 

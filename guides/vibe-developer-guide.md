@@ -32,7 +32,7 @@ Think in six layers:
 Verify a published release when release integrity matters:
 
 ```console
-npm install -g @aihq/harness@latest
+npm install -g @aihq/harness@2.10.0
 aih verify-release
 ```
 

@@ -25,15 +25,16 @@ Release baseline covered by this guide: `@aihq/harness@2.10.0`.
 Verify a published release first:
 
 ```powershell
-npm install -g @aihq/harness@latest
+npm install -g @aihq/harness@2.10.0
 aih verify-release
 ```
 
 Full release verification requires local `npm`, `gh`, and `cosign`; proceed only when all three legs
 pass. A skipped leg is incomplete evidence, not a successful rollout gate.
 
-Use `npm install -g @aihq/harness@latest` for major-version upgrades; `npm update -g`
-may stay within the current major. Re-run `aih verify-release` after an upgrade. Use `--force` only
+For a major-version upgrade, install the approved explicit version (currently
+`npm install -g @aihq/harness@2.10.0`); `npm update -g` may stay within the current major. Re-run
+`aih verify-release` after an upgrade. Use `--force` only
 to replace a broken global install after reviewing the npm prefix and package source.
 
 Clone the admin configuration repo and point AI-Harness at the policy:

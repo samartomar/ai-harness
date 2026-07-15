@@ -121,10 +121,12 @@ describe("release readiness metadata", () => {
       ).filter((block) => block.includes("npm install -g @aihq/harness"));
       expect(installBlocks.length).toBeGreaterThan(0);
       for (const block of installBlocks) {
-        expect(block).toContain("npm install -g @aihq/harness@latest");
+        expect(block).toContain(`npm install -g @aihq/harness@${currentVersion}`);
         expect(block).toContain("aih verify-release");
         expect(block).toMatch(
-          /npm install -g @aihq\/harness@latest[^\n]*\n\s*aih verify-release(?:\s|#)/,
+          new RegExp(
+            `npm install -g @aihq/harness@${currentVersion.replace(/\./gu, "\\.")}[^\\n]*\\n\\s*aih verify-release(?:\\s|#)`,
+          ),
         );
         expect(block).not.toContain("npm audit signatures");
       }
@@ -140,8 +142,8 @@ describe("release readiness metadata", () => {
       expect(text).toContain(
         `Release baseline covered by this guide: \`@aihq/harness@${currentVersion}\`.`,
       );
-      expect(text).toMatch(
-        /Use `npm install -g @aihq\/harness@latest` for major-version upgrades; `npm update -g`\s+may stay within the current major\. Re-run `aih verify-release` after an upgrade\./,
+      expect(text).toContain(
+        `For a major-version upgrade, install the approved explicit version (currently\n\`npm install -g @aihq/harness@${currentVersion}\`); \`npm update -g\` may stay within the current major. Re-run\n\`aih verify-release\` after an upgrade.`,
       );
     }
   });
