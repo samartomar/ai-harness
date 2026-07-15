@@ -73,6 +73,9 @@ is ever stored; after the bootstrap, publish is OIDC-only.
    milestone to `vX.Y.Z`, create the successor `next-release`, and move all open items
    across — no trainless window. Milestones are theme-named until this rename; a
    version number never appears on a milestone earlier than this.
+   After the rollover, every later preflight must name the versioned cut milestone,
+   for example `npm run release:preflight -- --milestone vX.Y.Z --intent <patch|minor|major>`;
+   the new `next-release` milestone is the successor train and must not be swept into the cut.
 3. **Set the version** — use `npm version X.Y.Z --no-git-tag-version` so
    `package.json` and `package-lock.json` stay coherent, then bump the hardcoded CLI
    constant. These places must match; see the check below:
@@ -96,7 +99,7 @@ is ever stored; after the bootstrap, publish is OIDC-only.
    `package.json` version and the tag you are about to push.
 8. **Open the release tracker issue** as the last open item in the `vX.Y.Z` milestone.
    Its checklist records: included PRs + labels, previous tag + candidate SHA, local/CI
-   verification, the publication authorization, tag/workflow, GitHub Release, npm
+   verification (including `npm run release:preflight -- --milestone vX.Y.Z --intent <patch|minor|major>`), the publication authorization, tag/workflow, GitHub Release, npm
    publication, `aih verify-release`, and companion-docs reconciliation.
 9. **Open a release PR** (`release/vX.Y.Z`) that says `Refs #<tracker>` — never
    `Closes` — get it green in CI, and merge to `main`.

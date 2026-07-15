@@ -6,6 +6,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [2.11.0] - 2026-07-15
+
 ### Added
 
 - Baseline vet progress now reports a bounded elapsed duration for every detector terminal outcome
@@ -16,6 +18,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   AIH can later remove only the exact settings it owns. It refuses an
   `AIH_ORG_POLICY` override for configuration writes, preserving the existing
   trusted mutation boundary.
+- Repository-local AI tooling now provides isolated, on-demand Token Savior and
+  code-review-graph wiring with documented routing and no shared global tool state. (#454)
 
 ### Security
 
@@ -43,6 +47,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `aih mcp --apply` and `aih mcp approve --apply` now refuse generated configuration or policy
   writes when the target was created, deleted, or changed after planning, preserving the operator's
   current JSON, TOML, or policy configuration until they re-run the command.
+- Codex now receives the repository-scoped code-review-graph MCP entry, and Token Savior
+  excludes its own local cache from indexing. (#455, #456)
+- MCP resolver pin evidence is normalized consistently across generated catalog, hygiene,
+  baseline attestation, trust classification, and workspace graph checks. (#462)
 - Native trust scanning now indexes line locations once and caches full-line digests for oversized
   untrusted lines, preventing quadratic many-finding scans while preserving ordinary fingerprints
   and destination-sensitive danger finding identity. (#448)
@@ -1163,7 +1171,9 @@ GitHub but **never published to npm**; the first published release is 0.2.0.
   (npm + github-actions), private vulnerability reporting, `@claude` workflow gated
   to trusted authors, and GitHub Actions pinned to commit SHAs.
 
-[Unreleased]: https://github.com/samartomar/ai-harness/compare/v2.9.0...HEAD
+[Unreleased]: https://github.com/samartomar/ai-harness/compare/v2.11.0...HEAD
+[2.11.0]: https://github.com/samartomar/ai-harness/compare/v2.10.0...v2.11.0
+[2.10.0]: https://github.com/samartomar/ai-harness/compare/v2.9.0...v2.10.0
 [2.9.0]: https://github.com/samartomar/ai-harness/compare/v2.8.0...v2.9.0
 [2.8.0]: https://github.com/samartomar/ai-harness/compare/v2.7.0...v2.8.0
 [2.7.0]: https://github.com/samartomar/ai-harness/compare/v2.6.0...v2.7.0
