@@ -66,7 +66,11 @@ function githubFetchScript(): string {
   }
 }
 
-async function runFetchScriptHelpers<T>(body: string, env: NodeJS.ProcessEnv = {}): Promise<T> {
+async function runFetchScriptHelpers<T>(
+  body: string,
+  env: NodeJS.ProcessEnv = {},
+  requireOverrides: Record<string, unknown> = {},
+): Promise<T> {
   const script = githubFetchScript();
   const helpers = script.slice(0, script.indexOf("(async () => {"));
   const stderr: string[] = [];
@@ -90,14 +94,15 @@ async function runFetchScriptHelpers<T>(body: string, env: NodeJS.ProcessEnv = {
       },
     },
     require: (name: string) =>
-      name === "node:tls"
+      requireOverrides[name] ??
+      (name === "node:tls"
         ? {
             connect: ({ socket }: { socket: { emit: (event: string) => boolean } }) => {
               process.nextTick(() => socket.emit("secureConnect"));
               return socket;
             },
           }
-        : nodeRequire(name),
+        : nodeRequire(name)),
     setTimeout,
   } as Record<string, unknown>;
   runInNewContext(`${helpers}\nglobalThis.__result = (async () => {\n${body}\n})();`, sandbox);
@@ -319,6 +324,55 @@ describe("trust fetch source resolution", () => {
       for (const socket of sockets) socket.destroy();
       await new Promise<void>((resolve) => proxy.close(() => resolve()));
     }
+  });
+
+  it("rejects a redirect outside the trusted GitHub fetch endpoints before connecting", async () => {
+    await expect(
+      runFetchScriptHelpers<string>(
+        [
+          "return await new Promise((resolve) => {",
+          "  collectResponse('https://api.github.com/repos/owner/repo', {",
+          "    statusCode: 302,",
+          "    headers: { location: 'https://redirect.example/collect' },",
+          "    resume: () => undefined,",
+          "  }, () => resolve('redirect accepted'), (err) => resolve(err.message));",
+          "});",
+        ].join("\n"),
+        {},
+        {
+          "node:https": {
+            request: (target: URL) => {
+              throw new Error(`network attempt to ${target}`);
+            },
+          },
+        },
+      ),
+    ).rejects.toThrow(/refusing redirect outside trusted GitHub endpoints/);
+  });
+
+  it("permits only bounded HTTPS redirects on canonical GitHub fetch hosts", async () => {
+    const allowed = await runFetchScriptHelpers<string>(
+      "return trustedRedirectTarget('/owner/repo/tar.gz/sha', 'https://codeload.github.com/start', 0).toString();",
+    );
+    expect(allowed).toBe("https://codeload.github.com/owner/repo/tar.gz/sha");
+
+    for (const location of [
+      "http://api.github.com/repos/owner/repo",
+      "https://api.github.com:8443/repos/owner/repo",
+      "https://user@api.github.com/repos/owner/repo",
+    ]) {
+      await expect(
+        runFetchScriptHelpers<void>(
+          `trustedRedirectTarget(${JSON.stringify(location)}, 'https://api.github.com/start', 0);`,
+        ),
+      ).rejects.toThrow(/refusing redirect outside trusted GitHub endpoints/);
+    }
+
+    await expect(
+      runFetchScriptHelpers<void>(
+        "trustedRedirectTarget('/next', 'https://api.github.com/start', 3);",
+      ),
+    ).rejects.toThrow(/refusing redirect chain longer than 3 hops/);
   });
 
   it("rejects --pin values that are not full commit SHAs", () => {
