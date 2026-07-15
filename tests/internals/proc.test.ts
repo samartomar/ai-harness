@@ -26,8 +26,8 @@ describe("proc runner seam", () => {
       { maxBufferBytes: 64 },
     );
 
-    expect(res.spawnError).toBe(true);
-    expect((res as { truncated?: boolean }).truncated).toBe(true);
+    expect(res.spawnError).toBeUndefined();
+    expect(res.truncated).toBe(true);
     expect(res.stderr).toContain("output exceeded 64 bytes");
   }, 15000);
 

@@ -83,7 +83,6 @@ export const defaultRunner: Runner = (argv, opts = {}) =>
             code: typeof errno === "number" ? errno : 1,
             stdout: stdoutText,
             stderr: trimmedStderr.length > 0 ? `${trimmedStderr}\n${outputDetail}` : outputDetail,
-            spawnError: true,
             truncated: true,
           });
           return;
