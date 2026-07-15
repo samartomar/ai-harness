@@ -593,7 +593,7 @@ describe("ecc.plan — Codex MCP collision preflight", () => {
     );
   });
 
-  it("refuses Codex when ECC's planned global MCP additions would collide with project transport", async () => {
+  it("allows a project Context7 HTTP override while ECC plans the global stdio server", async () => {
     const home = join(tmp, "home");
     const root = join(tmp, "repo");
     mkdirSync(join(root, ".codex"), { recursive: true });
@@ -605,28 +605,15 @@ describe("ecc.plan — Codex MCP collision preflight", () => {
     const base = makeCtx({ cli: "codex" });
     const ctx = { ...base, root, env: { ...base.env, HOME: home, USERPROFILE: home } };
     const actions = (await command.plan(ctx)).actions;
-    expect(execBlob(actions)).not.toContain("merge-mcp-config.js");
-    expect(
-      actions.some(
-        (a) =>
-          a.kind === "doc" &&
-          a.describe.includes("Codex MCP server name collision") &&
-          a.text.includes("context7"),
-      ),
-    ).toBe(true);
+    expect(execBlob(actions)).toContain("merge-mcp-config.js");
     const probes = actions.filter((a): a is ProbeAction => a.kind === "probe");
     const checks = await Promise.all(probes.map((p) => p.run(ctx)));
-    expect(checks).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          verdict: "fail",
-          code: "mcp.config-invalid",
-        }),
-      ]),
+    expect(checks).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ code: "mcp.config-invalid" })]),
     );
   });
 
-  it("refuses the Codex installer when global and project config collide on transport", async () => {
+  it("allows a project Context7 HTTP override of an existing global stdio server", async () => {
     const home = join(tmp, "home");
     const root = join(tmp, "repo");
     mkdirSync(join(root, ".codex"), { recursive: true });
@@ -642,24 +629,11 @@ describe("ecc.plan — Codex MCP collision preflight", () => {
     const base = makeCtx({ cli: "codex" });
     const ctx = { ...base, root, env: { ...base.env, HOME: home, USERPROFILE: home } };
     const actions = (await command.plan(ctx)).actions;
-    expect(execBlob(actions)).not.toContain("ecc-install --target codex");
-    expect(
-      actions.some(
-        (a) =>
-          a.kind === "doc" &&
-          a.describe.includes("Codex MCP server name collision") &&
-          a.text.includes("context7"),
-      ),
-    ).toBe(true);
+    expect(execBlob(actions)).toContain("merge-mcp-config.js");
     const probes = actions.filter((a): a is ProbeAction => a.kind === "probe");
     const checks = await Promise.all(probes.map((p) => p.run(ctx)));
-    expect(checks).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          verdict: "fail",
-          code: "mcp.config-invalid",
-        }),
-      ]),
+    expect(checks).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ code: "mcp.config-invalid" })]),
     );
   });
 });

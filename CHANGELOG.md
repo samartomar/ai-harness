@@ -25,6 +25,9 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- ECC's Codex install now honors project-scoped configuration precedence: a project Context7 HTTP
+  override no longer blocks the global ECC stdio default, while conflicting global transports remain
+  fail-closed. (#466)
 - GitHub trust-source fetches now reject redirects that leave the canonical HTTPS GitHub fetch
   endpoints, carry credentials or custom ports, or exceed three hops before any redirected
   connection is made.

@@ -494,7 +494,6 @@ export function codexMcpTransportCollisions(
   ctx: PlanContext,
   scopedPlannedTransports?: ReadonlyMap<string, CodexMcpTransport>,
 ): CodexMcpCollision[] {
-  const project = codexMcpTransports(readIfExists(join(ctx.root, ".codex", "config.toml")) ?? "");
   const global = codexMcpTransports(readIfExists(join(codexHomeDir(ctx), "config.toml")) ?? "");
   const plannedTransports = scopedPlannedTransports ?? ECC_CODEX_MCP_TRANSPORTS;
   const collisions: CodexMcpCollision[] = [];
@@ -521,17 +520,10 @@ export function codexMcpTransportCollisions(
     });
   };
 
-  for (const [name, projectTransport] of project) {
-    const globalTransport = global.get(name);
-    if (globalTransport !== undefined) {
-      pushCollision(name, "project", projectTransport, "global", globalTransport);
-    } else {
-      const plannedTransport = plannedTransports.get(name);
-      if (plannedTransport !== undefined) {
-        pushCollision(name, "project", projectTransport, "planned ECC", plannedTransport);
-      }
-    }
-  }
+  // Codex applies a trusted project `.codex/config.toml` after the user-level
+  // config, so a project MCP declaration is an override rather than a second
+  // table in the global writer. Different transports across those scopes are
+  // valid; only planned additions to the same global config can conflict.
   if (scopedPlannedTransports === undefined) {
     for (const [name, globalTransport] of global) {
       const plannedTransport = plannedTransports.get(name);
@@ -565,10 +557,9 @@ export function codexMcpCollisionActions(
     doc(
       "Codex MCP server name collision — fix before running ECC",
       lines(
-        "The Codex project-local config and either the global config or ECC's planned",
-        "global MCP additions define the same server name with different transports.",
-        "Running ECC now could leave Codex with a combined config that has both stdio",
-        "and remote fields for one server name.",
+        "The Codex global config and ECC's planned global MCP additions define the same",
+        "server name with different transports. Running ECC now could leave the global",
+        "config with both stdio and remote fields for one server name.",
         "",
         `Collision(s): ${summary}.`,
         "",
