@@ -16,15 +16,9 @@ export interface CodexMcpCollision {
   conflictingTransport: CodexMcpTransport;
 }
 
-const ECC_CODEX_MCP_TRANSPORTS = new Map<string, CodexMcpTransport>([
-  ["supabase", "stdio"],
-  ["playwright", "stdio"],
-  ["context7", "stdio"],
-  ["exa", "http"],
-  ["github", "stdio"],
-  ["memory", "stdio"],
-  ["sequential-thinking", "stdio"],
-]);
+// Keep in sync with the exact vendor-locked `merge-mcp-config.js` default set.
+// Optional MCPs are registered through AIH's scoped writer, not this merge helper.
+const ECC_CODEX_MCP_TRANSPORTS = new Map<string, CodexMcpTransport>([["chrome-devtools", "stdio"]]);
 
 const TOML_SERVER_HEADER =
   /^[ \t]*\[mcp_servers\.(?:"([^"]+)"|'([^']+)'|([^.\]'"]+))\][ \t]*(?:#.*)?$/;

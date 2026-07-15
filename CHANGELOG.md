@@ -25,6 +25,9 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Codex ECC preflight now recognizes the pinned helper's current `chrome-devtools` default instead
+  of treating retired Context7 defaults as planned global writes. Existing conflicting Context7
+  settings remain fail-closed. (#466)
 - GitHub trust-source fetches now reject redirects that leave the canonical HTTPS GitHub fetch
   endpoints, carry credentials or custom ports, or exceed three hops before any redirected
   connection is made.
