@@ -15,6 +15,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `AIH_ORG_POLICY` override for configuration writes, preserving the existing
   trusted mutation boundary.
 
+### Security
+
+- Release preflight now preserves exact Git record bytes, treats GitHub pull-request
+  metadata as untrusted until its shape and identity match the commit reference, and
+  marks bounded child-process output as incomplete instead of accepting partial evidence. (#465)
+
 ### Fixed
 
 - GitHub trust-source fetches now reject redirects that leave the canonical HTTPS GitHub fetch

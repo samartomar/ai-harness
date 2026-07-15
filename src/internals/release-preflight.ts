@@ -334,7 +334,11 @@ export function runPreflight(data: PreflightData): Manifest {
 // Live gathering (not covered by unit tests — kept minimal; logic stays above).
 
 function sh(cmd: string, args: string[]): string {
-  return execFileSync(cmd, args, { encoding: "utf8" }).trim();
+  return execFileSync(cmd, args, { encoding: "utf8" });
+}
+
+function shTrimmed(cmd: string, args: string[]): string {
+  return sh(cmd, args).trim();
 }
 
 /** Unit-separator delimiter between sha and subject in the `git log` format below —
@@ -344,6 +348,59 @@ const SHA_SUBJECT_SEPARATOR = "\x1f";
 interface CommitRef {
   sha: string;
   number: string;
+}
+
+interface GitCommit {
+  sha: string;
+  subject: string;
+}
+
+/** Parse Git's exact newline-delimited `%H<US>%s` record format without trimming subjects. */
+export function parseGitLog(raw: string): GitCommit[] {
+  return raw
+    .split("\n")
+    .filter((line) => line.length > 0)
+    .map((line) => {
+      const sep = line.indexOf(SHA_SUBJECT_SEPARATOR);
+      return sep === -1
+        ? { sha: line, subject: "" }
+        : { sha: line.slice(0, sep), subject: line.slice(sep + 1) };
+    });
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** Accept only the exact metadata shape requested from `gh pr view`. */
+function trustedDirectPr(value: unknown, expectedNumber: string): MergedPr | undefined {
+  const number = Number(expectedNumber);
+  if (!Number.isSafeInteger(number) || number <= 0 || !isRecord(value)) return undefined;
+  if (value.number !== number || typeof value.title !== "string" || !Array.isArray(value.labels)) {
+    return undefined;
+  }
+  if (
+    !value.labels.every((label) => isRecord(label) && typeof label.name === "string") ||
+    !Object.hasOwn(value, "milestone")
+  ) {
+    return undefined;
+  }
+  const milestone = value.milestone;
+  if (milestone !== null && (!isRecord(milestone) || typeof milestone.title !== "string")) {
+    return undefined;
+  }
+  const milestoneTitle =
+    milestone !== null && isRecord(milestone) && typeof milestone.title === "string"
+      ? milestone.title
+      : undefined;
+  return {
+    number,
+    title: value.title,
+    semverLabels: value.labels
+      .map((label) => label.name)
+      .filter((label) => label.startsWith("semver:")),
+    milestone: milestoneTitle,
+  };
 }
 
 /**
@@ -366,27 +423,25 @@ async function resolveCommitRef(
   | { kind: "resolved"; pr: MergedPr; resolved: ResolvedIssueRef }
   | { kind: "unresolved"; finding: string }
 > {
+  let directOutput: string | undefined;
   try {
-    const raw = JSON.parse(
-      sh("gh", ["pr", "view", ref.number, "--json", "number,title,labels,milestone"]),
-    ) as {
-      number: number;
-      title: string;
-      labels: { name: string }[];
-      milestone?: { title?: string };
-    };
-    return {
-      kind: "pr",
-      pr: {
-        number: raw.number,
-        title: raw.title,
-        semverLabels: raw.labels.map((l) => l.name).filter((l) => l.startsWith("semver:")),
-        milestone: raw.milestone?.title,
-      },
-    };
+    directOutput = sh("gh", ["pr", "view", ref.number, "--json", "number,title,labels,milestone"]);
   } catch {
     // Not resolvable as a PR outright (e.g. #424 names the tracking issue, not its
     // own PR) — fall back to GitHub's own closing-reference evidence.
+  }
+  if (directOutput !== undefined) {
+    try {
+      const pr = trustedDirectPr(JSON.parse(directOutput) as unknown, ref.number);
+      if (pr) return { kind: "pr", pr };
+    } catch {
+      // A successful `gh pr view` response that cannot be parsed is untrusted input,
+      // not evidence that the commit named an issue instead of its own pull request.
+    }
+    return {
+      kind: "unresolved",
+      finding: `commit ${ref.sha} cites #${ref.number} but GitHub returned untrusted pull request metadata`,
+    };
   }
   try {
     const pr = await resolveIssueRefToMergedPr(Number(ref.number), run);
@@ -412,7 +467,7 @@ async function gatherLive(
   cutMilestone: string,
   run: Runner = defaultRunner,
 ): Promise<PreflightData> {
-  const repository = sh("gh", [
+  const repository = shTrimmed("gh", [
     "repo",
     "view",
     "--json",
@@ -420,21 +475,11 @@ async function gatherLive(
     "--jq",
     ".nameWithOwner",
   ]);
-  const previousTag = sh("git", ["describe", "--tags", "--abbrev=0"]);
-  const candidateSha = sh("git", ["rev-parse", "HEAD"]);
-  const commits = sh("git", [
-    "log",
-    `${previousTag}..HEAD`,
-    `--format=%H${SHA_SUBJECT_SEPARATOR}%s`,
-  ])
-    .split("\n")
-    .filter((line) => line.length > 0)
-    .map((line) => {
-      const sep = line.indexOf(SHA_SUBJECT_SEPARATOR);
-      return sep === -1
-        ? { sha: line, subject: "" }
-        : { sha: line.slice(0, sep), subject: line.slice(sep + 1) };
-    });
+  const previousTag = shTrimmed("git", ["describe", "--tags", "--abbrev=0"]);
+  const candidateSha = shTrimmed("git", ["rev-parse", "HEAD"]);
+  const commits = parseGitLog(
+    sh("git", ["log", `${previousTag}..HEAD`, `--format=%H${SHA_SUBJECT_SEPARATOR}%s`]),
+  );
   const subjects = commits.map((c) => c.subject);
 
   const refs: CommitRef[] = commits
