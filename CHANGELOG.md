@@ -8,8 +8,6 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
-- Trust-scan progress now reports a bounded elapsed duration for every detector terminal outcome
-  without putting volatile timing data into analyzer receipts or baseline evidence. (#467)
 - `aih policy project --apply` projects the committed `aih-org-policy.json` into
   its generated managed settings without running the full `aih init` sequence.
   Managed-only MCP projection also records its existing ownership provenance so
