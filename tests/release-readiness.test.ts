@@ -106,6 +106,46 @@ describe("release readiness metadata", () => {
     }
   });
 
+  it("directs global-install verification through the release verifier", () => {
+    const currentVersion = JSON.parse(read("package.json")).version;
+    const installDocs = [
+      "README.md",
+      "guides/vibe-developer-guide.md",
+      "guides/enterprise-developer-guide.md",
+      "guides/enterprise-admin-guide.md",
+    ];
+    for (const path of installDocs) {
+      const text = read(path);
+      const installBlocks = (
+        text.match(/```(?:bash|console|powershell)\n[\s\S]*?```/g) ?? []
+      ).filter((block) => block.includes("npm install -g @aihq/harness"));
+      expect(installBlocks.length).toBeGreaterThan(0);
+      for (const block of installBlocks) {
+        expect(block).toContain("npm install -g @aihq/harness@latest");
+        expect(block).toContain("aih verify-release");
+        expect(block).toMatch(
+          /npm install -g @aihq\/harness@latest[^\n]*\n\s*aih verify-release(?:\s|#)/,
+        );
+        expect(block).not.toContain("npm audit signatures");
+      }
+      expect(text).toContain("Full release verification requires local `npm`, `gh`, and `cosign`");
+      expect(text).toContain("all three legs");
+      expect(text).toContain("skipped leg is incomplete evidence");
+    }
+    for (const path of [
+      "guides/enterprise-developer-guide.md",
+      "guides/enterprise-admin-guide.md",
+    ]) {
+      const text = read(path);
+      expect(text).toContain(
+        `Release baseline covered by this guide: \`@aihq/harness@${currentVersion}\`.`,
+      );
+      expect(text).toMatch(
+        /Use `npm install -g @aihq\/harness@latest` for major-version upgrades; `npm update -g`\s+may stay within the current major\. Re-run `aih verify-release` after an upgrade\./,
+      );
+    }
+  });
+
   it("ships basic repository governance files for controlled rollout", () => {
     expect(existsSync(join(root, ".github", "CODEOWNERS"))).toBe(true);
     expect(existsSync(join(root, "DCO.md"))).toBe(true);
