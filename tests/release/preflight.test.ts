@@ -42,6 +42,15 @@ function mergedItem(p: MergedPr): MilestoneItem {
   };
 }
 
+function removeTempDir(dir: string): void {
+  rmSync(dir, {
+    recursive: true,
+    force: true,
+    maxRetries: process.platform === "win32" ? 5 : 0,
+    retryDelay: 100,
+  });
+}
+
 /** A clean two-PR cut: everything labeled, aboard, tracked, and version-coherent. */
 function cleanData(): PreflightData {
   const prs = [pr(1, "fix: a"), pr(2, "feat: b", ["semver:minor"])];
@@ -282,7 +291,7 @@ describe("release:preflight CLI intent checkpoint", () => {
         requiredIntentAcknowledgement: `${fixture.candidateSha}:patch:minor`,
       });
     } finally {
-      rmSync(dir, { recursive: true, force: true });
+      removeTempDir(dir);
     }
   });
 
@@ -414,7 +423,7 @@ if (command === "git.exe") {
       expect(JSON.parse(result.stdout)).not.toHaveProperty("intentAcknowledgementArtifact");
       expect(result.stderr).toContain("[intent-acknowledgement]");
     } finally {
-      rmSync(dir, { recursive: true, force: true });
+      removeTempDir(dir);
     }
   });
 });
@@ -591,7 +600,7 @@ if (args.startsWith("repo view ")) {
         "unresolved-pr-ref",
       );
     } finally {
-      rmSync(dir, { recursive: true, force: true });
+      removeTempDir(dir);
     }
   });
 
@@ -652,7 +661,7 @@ else if (args.startsWith("api graphql ")) {
           detail: `commit ${REAL_PR_SHA} cites #2 but GitHub returned untrusted pull request metadata`,
         });
       } finally {
-        rmSync(dir, { recursive: true, force: true });
+        removeTempDir(dir);
       }
     }
   }, 30_000);
@@ -700,7 +709,7 @@ if (args.startsWith("repo view ")) {
         detail: `commit ${ISSUE_REF_SHA} cites #424 which is not a pull request and has no unique closing merged PR`,
       });
     } finally {
-      rmSync(dir, { recursive: true, force: true });
+      removeTempDir(dir);
     }
   });
 
@@ -752,7 +761,7 @@ if (args.startsWith("repo view ")) {
         detail: `commit ${ISSUE_REF_SHA} cites #424 which is not a pull request and has 2 candidate closing merged PRs (#431, #500) — ambiguous`,
       });
     } finally {
-      rmSync(dir, { recursive: true, force: true });
+      removeTempDir(dir);
     }
   });
 });
