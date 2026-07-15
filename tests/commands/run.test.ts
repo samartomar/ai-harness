@@ -504,8 +504,7 @@ describe("runCapability — deferred command cleanup", () => {
     "removes an owned quarantine before re-raising SIGINT in a real process",
     async () => {
       const script = join(dir, "interrupt.mjs");
-      const source = (rel: string): string =>
-        pathToFileURL(join(process.cwd(), rel)).href.replace(/\.ts$/, ".ts");
+      const source = (rel: string): string => pathToFileURL(join(process.cwd(), rel)).href;
       writeFileSync(
         script,
         [
