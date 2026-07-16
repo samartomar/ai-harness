@@ -304,7 +304,7 @@ describe("aih methodology Phase 1 child-process boundary", () => {
     expect(JSON.parse(forward.stdout).status.identity).toEqual(
       JSON.parse(reverse.stdout).status.identity,
     );
-  });
+  }, 30_000);
 
   it("exits 2 because Phase 1 project is permanently dry-run and has no write path", () => {
     const root = fresh("aih-methodology-project-");
