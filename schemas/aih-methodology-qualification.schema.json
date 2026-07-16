@@ -1,0 +1,129 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/samartomar/ai-harness/schemas/aih-methodology-qualification.schema.json",
+  "title": "AIH methodology qualification proposal",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "provider", "host", "policyVersion"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "provider": { "$ref": "#/$defs/provider" },
+    "host": { "$ref": "#/$defs/host" },
+    "policyVersion": { "$ref": "#/$defs/safeText" },
+    "intent": { "$ref": "#/$defs/intent" }
+  },
+  "$defs": {
+    "safeText": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 500,
+      "pattern": "^[^\\u0000-\\u001f\\u007f]*\\S[^\\u0000-\\u001f\\u007f]*$"
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9:._-]*$"
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "repository", "root", "requestedRef", "resolvedCommit"],
+      "properties": {
+        "type": { "const": "local-git" },
+        "repository": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9][A-Za-z0-9_.-]*$"
+        },
+        "root": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500,
+          "pattern": "^(?:/|[A-Za-z]:[\\\\/])[^\\u0000-\\u001f\\u007f]+$"
+        },
+        "requestedRef": { "$ref": "#/$defs/safeText" },
+        "resolvedCommit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        }
+      }
+    },
+    "adapter": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "contractVersion", "implementationHash"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "contractVersion": { "type": "integer", "minimum": 1 },
+        "implementationHash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "provider": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "source", "adapter"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "kind": {
+          "enum": ["skill-pack", "host-plugin", "standalone-runtime", "hybrid-runtime"]
+        },
+        "source": { "$ref": "#/$defs/source" },
+        "adapter": { "$ref": "#/$defs/adapter" }
+      }
+    },
+    "host": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "version",
+        "build",
+        "contractVersion",
+        "coverage",
+        "scope",
+        "isolationMode",
+        "operatingSystem",
+        "operatingSystemVersion",
+        "architecture",
+        "runtimes"
+      ],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "version": { "$ref": "#/$defs/safeText" },
+        "build": { "$ref": "#/$defs/safeText" },
+        "contractVersion": { "$ref": "#/$defs/safeText" },
+        "coverage": { "enum": ["complete", "partial", "unknown"] },
+        "scope": { "enum": ["project", "profile", "machine"] },
+        "isolationMode": {
+          "enum": [
+            "project-native",
+            "profile-home",
+            "standalone",
+            "machine-exclusive",
+            "unknown"
+          ]
+        },
+        "operatingSystem": { "enum": ["windows", "linux", "macos"] },
+        "operatingSystemVersion": { "$ref": "#/$defs/safeText" },
+        "architecture": { "enum": ["x64", "arm64"] },
+        "runtimes": {
+          "type": "object",
+          "minProperties": 1,
+          "propertyNames": { "$ref": "#/$defs/id" },
+          "additionalProperties": { "$ref": "#/$defs/safeText" }
+        }
+      }
+    },
+    "intent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["selectedBy", "selectedAt", "reason"],
+      "properties": {
+        "selectedBy": { "$ref": "#/$defs/safeText" },
+        "selectedAt": { "type": "string", "format": "date-time" },
+        "reason": { "$ref": "#/$defs/safeText" }
+      }
+    }
+  }
+}
