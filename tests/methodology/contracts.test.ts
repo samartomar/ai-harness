@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
-  createHostLoadSurfaceContract,
-  hostLoadSurfaces,
-} from "../../src/methodology/contracts/host.js";
-import {
   resolveCompatibility,
   serializeCompatibilityKey,
 } from "../../src/methodology/contracts/compatibility.js";
+import {
+  createHostLoadSurfaceContract,
+  hostLoadSurfaces,
+} from "../../src/methodology/contracts/host.js";
 import type { ProviderQualificationAdapter } from "../../src/methodology/contracts/provider.js";
 
 function compatibilityKey() {
@@ -53,6 +53,32 @@ describe("methodology contracts", () => {
     expect(() =>
       createHostLoadSurfaceContract({ ...contract, surfaces: contract.surfaces.slice(1) }),
     ).toThrow(/missing/i);
+  });
+
+  it("fails coverage closed for unknown rows and duplicate surfaces", () => {
+    const rows = hostLoadSurfaces.map((surface) => ({
+      surface,
+      coverage: surface === "hooks" ? ("unknown" as const) : ("complete" as const),
+      evidence: ["docs"],
+      positiveProbe: "designed",
+      negativeProbe: "designed",
+    }));
+    expect(
+      createHostLoadSurfaceContract({
+        id: "codex-0.144.1-windows-x64-v1",
+        host: { id: "codex", version: "0.144.1", build: "cbacbb97" },
+        surfaces: rows,
+      }).coverage,
+    ).toBe("unknown");
+    const firstRow = rows.at(0);
+    if (firstRow === undefined) throw new Error("host load surface fixture must not be empty");
+    expect(() =>
+      createHostLoadSurfaceContract({
+        id: "codex-0.144.1-windows-x64-v1",
+        host: { id: "codex", version: "0.144.1", build: "cbacbb97" },
+        surfaces: [...rows, firstRow],
+      }),
+    ).toThrow(/unique/i);
   });
 
   it("serializes the exact compatibility tuple deterministically", () => {
