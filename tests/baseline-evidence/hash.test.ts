@@ -70,7 +70,7 @@ describe("hashSourceTree", () => {
     put(".git/HEAD", "ref: refs/heads/other");
     expect(hashSourceTree(root)).toEqual(first);
 
-    put("provider/manifest.json", "{\"changed\":true}");
+    put("provider/manifest.json", '{"changed":true}');
     expect(hashSourceTree(root).treeSha256).not.toBe(first.treeSha256);
   });
 });

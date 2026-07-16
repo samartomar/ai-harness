@@ -130,3 +130,29 @@ export function hashComponentTree(
     ),
   };
 }
+
+/** Hash every inert working-tree entry while deliberately excluding Git metadata. */
+export function hashSourceTree(sourceRoot: string): BaselineTreeHash {
+  let root: string;
+  try {
+    const rootStat = lstatSync(sourceRoot);
+    if (rootStat.isSymbolicLink() || !rootStat.isDirectory()) {
+      return refuse(`baseline source root must be a real directory: ${sourceRoot}`);
+    }
+    root = realpathSync(sourceRoot);
+  } catch (err) {
+    return refuse(`baseline source root is unavailable: ${sourceRoot} (${(err as Error).message})`);
+  }
+  let children: string[];
+  try {
+    children = readdirSync(root)
+      .filter((entry) => entry !== ".git")
+      .sort((left, right) => left.localeCompare(right));
+  } catch (err) {
+    return refuse(`baseline source root is unreadable: ${sourceRoot} (${(err as Error).message})`);
+  }
+  if (children.length === 0) {
+    return { treeSha256: createHash("sha256").update("[]", "utf8").digest("hex"), files: [] };
+  }
+  return hashComponentTree(root, children);
+}

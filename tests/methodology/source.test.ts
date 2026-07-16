@@ -46,4 +46,48 @@ describe("exact local methodology sources", () => {
       ),
     ).rejects.toMatchObject({ code: "PROVIDER_SOURCE_UNRESOLVED" });
   });
+
+  it("refuses unavailable roots and invalid Git output before hashing", async () => {
+    const resolvedCommit = "a".repeat(40);
+    const fileRoot = join(root, "not-a-directory");
+    writeFileSync(fileRoot, "inert", "utf8");
+    await expect(
+      resolveExactLocalSource(
+        { repository: "garrytan/gstack", root: join(root, "missing"), resolvedCommit },
+        fakeRunner(() => ({ stdout: `${resolvedCommit}\n` })),
+      ),
+    ).rejects.toMatchObject({ code: "PROVIDER_SOURCE_UNRESOLVED" });
+    await expect(
+      resolveExactLocalSource(
+        { repository: "garrytan/gstack", root, resolvedCommit },
+        fakeRunner(() => ({ stdout: "main\n" })),
+      ),
+    ).rejects.toMatchObject({ code: "PROVIDER_SOURCE_UNRESOLVED" });
+    await expect(
+      resolveExactLocalSource(
+        { repository: "garrytan/gstack", root: fileRoot, resolvedCommit },
+        fakeRunner(() => ({ stdout: `${resolvedCommit}\n` })),
+      ),
+    ).rejects.toMatchObject({ code: "PROVIDER_SOURCE_UNRESOLVED" });
+    await expect(
+      resolveExactLocalSource(
+        { repository: "garrytan/gstack", root, resolvedCommit: "deadbeef" },
+        fakeRunner(() => ({ stdout: `${resolvedCommit}\n` })),
+      ),
+    ).rejects.toMatchObject({ code: "PROVIDER_SOURCE_UNRESOLVED" });
+  });
+
+  it("refuses source mutation between inert tree reads", async () => {
+    const resolvedCommit = "a".repeat(40);
+    let reads = 0;
+    await expect(
+      resolveExactLocalSource(
+        { repository: "garrytan/gstack", root, resolvedCommit },
+        fakeRunner(() => {
+          reads += 1;
+          return { stdout: `${reads === 1 ? resolvedCommit : "b".repeat(40)}\n` };
+        }),
+      ),
+    ).rejects.toMatchObject({ code: "PROVIDER_SOURCE_UNRESOLVED" });
+  });
 });
