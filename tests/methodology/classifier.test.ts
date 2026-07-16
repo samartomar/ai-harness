@@ -1,22 +1,62 @@
 import { describe, expect, it } from "vitest";
 import {
   classifySyntheticMethodology,
+  SyntheticMethodologyClassificationSchema,
   SyntheticMethodologyInputSchema,
 } from "../../src/methodology/classifier.js";
 
+function digest(seed: string): string {
+  const encoded = [...seed]
+    .map((character) => character.codePointAt(0)?.toString(16).padStart(2, "0") ?? "00")
+    .join("");
+  return `sha256:${encoded.slice(0, 64).padEnd(64, "0")}`;
+}
+
 function artifact(id: string, overrides: Record<string, unknown> = {}) {
-  return {
+  const { evidence: evidenceOverrides, ...artifactOverrides } = overrides;
+  const path = `rules/${id}.md`;
+  const sourceIdentity = {
+    locator: `synthetic://fixture/${id}`,
+    digest: digest(`source-${id}`),
+  };
+  const content = {
+    classification: "passive",
+    digest: digest(`content-${id}`),
+  };
+  const overriddenArtifact = {
     id,
-    path: `rules/${id}.md`,
+    path,
     kind: "regular",
-    content: "passive",
+    content,
+    sourceIdentity,
+    dependencies: [],
+    ...artifactOverrides,
+  };
+  const overriddenEvidence = evidenceOverrides as
+    | {
+        target?: Record<string, unknown>;
+        source?: "exact" | "drifted";
+        trust?: "admitted" | "held";
+        license?: "allowed" | "unlicensed";
+      }
+    | undefined;
+  const { target: targetOverrides, ...evidenceFields } = overriddenEvidence ?? {};
+
+  return {
+    ...overriddenArtifact,
     evidence: {
+      target: {
+        artifact: overriddenArtifact.id,
+        path: overriddenArtifact.path,
+        sourceIdentity: overriddenArtifact.sourceIdentity,
+        contentDigest: overriddenArtifact.content.digest,
+        ...targetOverrides,
+      },
       source: "exact",
       trust: "admitted",
       license: "allowed",
+      ...evidenceFields,
     },
-    dependencies: [],
-    ...overrides,
   };
 }
 
@@ -54,24 +94,20 @@ describe("synthetic methodology classifier", () => {
   });
 
   it.each([
-    ["executable", { content: "executable" }, "METHODOLOGY_SYNTHETIC_EXECUTABLE"],
+    [
+      "executable",
+      { content: { classification: "executable", digest: digest("content-review-loop") } },
+      "METHODOLOGY_SYNTHETIC_EXECUTABLE",
+    ],
     ["linked", { kind: "symlink" }, "METHODOLOGY_SYNTHETIC_LINKED"],
-    ["ambiguous", { content: "ambiguous" }, "METHODOLOGY_SYNTHETIC_AMBIGUOUS"],
     [
-      "unlicensed",
-      { evidence: { source: "exact", trust: "admitted", license: "unlicensed" } },
-      "METHODOLOGY_SYNTHETIC_UNLICENSED",
+      "ambiguous",
+      { content: { classification: "ambiguous", digest: digest("content-review-loop") } },
+      "METHODOLOGY_SYNTHETIC_AMBIGUOUS",
     ],
-    [
-      "drifted",
-      { evidence: { source: "drifted", trust: "admitted", license: "allowed" } },
-      "METHODOLOGY_SYNTHETIC_DRIFTED",
-    ],
-    [
-      "held",
-      { evidence: { source: "exact", trust: "held", license: "allowed" } },
-      "METHODOLOGY_SYNTHETIC_HELD",
-    ],
+    ["unlicensed", { evidence: { license: "unlicensed" } }, "METHODOLOGY_SYNTHETIC_UNLICENSED"],
+    ["drifted", { evidence: { source: "drifted" } }, "METHODOLOGY_SYNTHETIC_DRIFTED"],
+    ["held", { evidence: { trust: "held" } }, "METHODOLOGY_SYNTHETIC_HELD"],
   ])("excludes a %s synthetic artifact with a fixed finding", (_name, overrides, code) => {
     const result = classifySyntheticMethodology(
       input({ artifacts: [artifact("review-loop", overrides)] }),
@@ -134,12 +170,174 @@ describe("synthetic methodology classifier", () => {
     });
   });
 
-  it("keeps the synthetic input closed and resource-bounded", () => {
+  it("excludes duplicate synthetic paths as ambiguous", () => {
+    const result = classifySyntheticMethodology(
+      input({
+        roots: ["review-loop", "method-routing"],
+        artifacts: [
+          artifact("review-loop", { path: "rules/shared.md" }),
+          artifact("method-routing", { path: "rules/shared.md" }),
+        ],
+      }),
+    );
+
+    expect(result).toEqual({
+      schemaVersion: 1,
+      disposition: "excluded",
+      admitted: [],
+      findings: [
+        {
+          code: "METHODOLOGY_SYNTHETIC_PATH_AMBIGUOUS",
+          disposition: "excluded",
+          artifact: "method-routing",
+        },
+        {
+          code: "METHODOLOGY_SYNTHETIC_PATH_AMBIGUOUS",
+          disposition: "excluded",
+          artifact: "review-loop",
+        },
+      ],
+    });
+  });
+
+  it("excludes evidence whose target is not bound to the synthetic artifact", () => {
+    const result = classifySyntheticMethodology(
+      input({
+        artifacts: [
+          artifact("review-loop", {
+            evidence: { target: { contentDigest: digest("another-content") } },
+          }),
+        ],
+      }),
+    );
+
+    expect(result).toEqual({
+      schemaVersion: 1,
+      disposition: "excluded",
+      admitted: [],
+      findings: [
+        {
+          code: "METHODOLOGY_SYNTHETIC_EVIDENCE_UNBOUND",
+          disposition: "excluded",
+          artifact: "review-loop",
+        },
+      ],
+    });
+  });
+
+  it("uses code-unit ordering even if ambient locale comparison changes", () => {
+    const originalLocaleCompare = String.prototype.localeCompare;
+    Object.defineProperty(String.prototype, "localeCompare", {
+      configurable: true,
+      value: () => 0,
+    });
+
+    try {
+      expect(
+        classifySyntheticMethodology(
+          input({
+            roots: ["ab", "a0", "a-"],
+            artifacts: [artifact("ab"), artifact("a0"), artifact("a-")],
+          }),
+        ),
+      ).toEqual({
+        schemaVersion: 1,
+        disposition: "admitted",
+        admitted: ["a-", "a0", "ab"],
+        findings: [],
+      });
+    } finally {
+      Object.defineProperty(String.prototype, "localeCompare", {
+        configurable: true,
+        value: originalLocaleCompare,
+      });
+    }
+  });
+
+  it("keeps the synthetic input closed and bounds every input collection", () => {
     expect(() => SyntheticMethodologyInputSchema.parse({ ...input(), unexpected: true })).toThrow();
     expect(() =>
       SyntheticMethodologyInputSchema.parse(
         input({ roots: Array.from({ length: 33 }, (_, index) => `component-${index}`) }),
       ),
+    ).toThrow();
+    expect(() =>
+      SyntheticMethodologyInputSchema.parse(
+        input({
+          artifacts: Array.from({ length: 65 }, (_, index) => artifact(`component-${index}`)),
+        }),
+      ),
+    ).toThrow();
+    expect(() =>
+      SyntheticMethodologyInputSchema.parse(
+        input({
+          artifacts: [
+            artifact("review-loop", {
+              dependencies: Array.from({ length: 33 }, (_, index) => `component-${index}`),
+            }),
+          ],
+        }),
+      ),
+    ).toThrow();
+  });
+
+  it("bounds a synthetic path before it can enter classification", () => {
+    expect(() =>
+      SyntheticMethodologyInputSchema.parse(
+        input({ artifacts: [artifact("review-loop", { path: "a".repeat(513) })] }),
+      ),
+    ).toThrow();
+  });
+
+  it("rejects contradictory, duplicate, and overlong classification records", () => {
+    const finding = {
+      code: "METHODOLOGY_SYNTHETIC_AMBIGUOUS",
+      disposition: "excluded" as const,
+      artifact: "review-loop",
+    };
+
+    expect(() =>
+      SyntheticMethodologyClassificationSchema.parse({
+        schemaVersion: 1,
+        disposition: "admitted",
+        admitted: ["review-loop"],
+        findings: [finding],
+      }),
+    ).toThrow();
+    expect(() =>
+      SyntheticMethodologyClassificationSchema.parse({
+        schemaVersion: 1,
+        disposition: "excluded",
+        admitted: ["review-loop"],
+        findings: [finding],
+      }),
+    ).toThrow();
+    expect(() =>
+      SyntheticMethodologyClassificationSchema.parse({
+        schemaVersion: 1,
+        disposition: "excluded",
+        admitted: [],
+        findings: [finding, finding],
+      }),
+    ).toThrow();
+    expect(() =>
+      SyntheticMethodologyClassificationSchema.parse({
+        schemaVersion: 1,
+        disposition: "admitted",
+        admitted: Array.from({ length: 33 }, (_, index) => `component-${index}`),
+        findings: [],
+      }),
+    ).toThrow();
+    expect(() =>
+      SyntheticMethodologyClassificationSchema.parse({
+        schemaVersion: 1,
+        disposition: "excluded",
+        admitted: [],
+        findings: Array.from({ length: 2529 }, (_, index) => ({
+          ...finding,
+          artifact: `component-${index}`,
+        })),
+      }),
     ).toThrow();
   });
 });
