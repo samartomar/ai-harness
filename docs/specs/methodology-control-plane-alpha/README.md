@@ -42,7 +42,10 @@ The intended product boundary is:
 7. [qualifications/ecc-ed387446052d.md](qualifications/ecc-ed387446052d.md)
    — Q7 real-inert ECC result for the operator-authorized official checkout. It is
    `QUALIFICATION_BLOCKED`; it is not install, activation, or Phase B evidence.
-8. [qualifications/ecc-4ba9cf058c19.md](qualifications/ecc-4ba9cf058c19.md)
+8. [qualifications/gstack-a3259400a366.md](qualifications/gstack-a3259400a366.md)
+   — Q8 real-inert gstack result for the operator-authorized official checkout. It is
+   `QUALIFICATION_BLOCKED`; it is not setup, activation, or Phase B evidence.
+9. [qualifications/ecc-4ba9cf058c19.md](qualifications/ecc-4ba9cf058c19.md)
    — prior Q7 real-inert result for a noncanonical fork. It remains a separate,
    non-inherited result.
 
