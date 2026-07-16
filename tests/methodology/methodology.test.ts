@@ -1,5 +1,13 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  linkSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { Command } from "commander";
@@ -310,6 +318,25 @@ describe("aih methodology Phase 1 child-process boundary", () => {
     writeIntent(root, "methodology.intent.json", malformed);
 
     const result = runAih(root, "inspect");
+
+    expect(result.status, result.stderr).toBe(3);
+    expect(JSON.parse(result.stdout)).toMatchObject({
+      outcome: "fail-closed",
+      status: {
+        state: "fail-closed",
+        findings: [expect.objectContaining({ code: "METHODOLOGY_INTENT_MALFORMED" })],
+      },
+    });
+    expect(existsSync(join(root, ".aih"))).toBe(false);
+  });
+
+  it("exits 3 fail-closed for an intent hard-linked from outside the project root", () => {
+    const root = fresh("aih-methodology-hard-link-root-");
+    const outside = fresh("aih-methodology-hard-link-outside-");
+    writeIntent(outside, "valid.json", intent());
+    linkSync(join(outside, "valid.json"), join(root, "hard-linked.json"));
+
+    const result = runAih(root, "inspect", "hard-linked.json");
 
     expect(result.status, result.stderr).toBe(3);
     expect(JSON.parse(result.stdout)).toMatchObject({
