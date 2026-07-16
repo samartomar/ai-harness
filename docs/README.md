@@ -67,6 +67,11 @@ that carry their own status line.
 
 Each carries its own status note.
 
+- [specs/methodology-control-plane-alpha/README.md](specs/methodology-control-plane-alpha/README.md) —
+  proposed qualification-first alpha and cold-start delivery package for evaluating
+  provider-native methodologies without executing provider code; includes critical
+  findings, provider taxonomy, a separately gated mutation-research design, and release
+  acceptance criteria.
 - [specs/local-report-v9/SPEC.md](specs/local-report-v9/SPEC.md) — architecture of the
   `aih report --v9` developer-console dashboard;
   [CAPABILITIES.md](specs/local-report-v9/CAPABILITIES.md) — the read-only data digests
