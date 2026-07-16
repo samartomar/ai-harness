@@ -12,13 +12,13 @@
 branch: alpha/2.12-methodology-control-plane
 base tag: v2.11.0
 base commit: eb8a1944cc37cf23a6104ea768abd4a27b2b3b26
-current delivery: documentation only
+current delivery: read-only Q9 command boundary and host feasibility evidence
 ```
 
-The branch is local and uncommitted under an explicit no-commit/no-push instruction.
-It is not durable or fetchable from another machine. Do not start cloud or Hyper-V
-implementation until a maintainer separately authorizes a docs-only commit and a
-reviewed transfer or push. Do not create a second manual copy of a changing plan.
+The branch is committed and pushed under explicit maintainer authorization. A new
+machine may fetch it for read-only verification, but a fresh host session or any
+provider execution still requires separate scoped authorization. Do not create a
+second manual copy of a changing plan.
 
 ### Phase A product boundary
 
@@ -448,6 +448,27 @@ does not authorize Phase B or release publication.
 **Rollback:** Remove additive commands before stable release if the qualification
 surface has no defensible product value.
 
+### Q9A — Claude Code host-contract feasibility spike
+
+**Prerequisite:** Q9 process exit semantics are unambiguous: completed read or
+qualification pass `0`, blocked `2`, failed closed `3`, and input/command failure `1`.
+
+**Tasks:**
+
+- Pin one exact locally installed Claude Code version, Windows build, architecture,
+  executable chain, and runtime.
+- Probe configuration precedence, project isolation, plugins, agents, skills, hooks,
+  MCP, caches, inherited state, and fresh-session behavior without provider execution.
+- Record `HOST_CONTRACT_COMPLETE` only when every load surface has reproducible
+  positive and negative evidence; otherwise record `HOST_CONTRACT_PARTIAL`.
+- If and only if the Claude contract is complete, qualify one exact ECC/Claude tuple,
+  then one exact gstack/Claude tuple, as inert source data. Never execute provider code.
+
+**Exit:** A local host-contract record and an explicit complete/partial decision.
+`HOST_CONTRACT_PARTIAL` stops both Claude-provider qualifications.
+
+**Rollback:** Evidence/documentation only; no provider or Claude configuration changes.
+
 ## 6. Separately authorized Phase B research
 
 Phase B is not part of Phase A implementation authority. It begins only after a new
@@ -560,6 +581,37 @@ Approved by:
 Maintainer direction to form the final delivery plan from council and external review.
 ```
 
+```text
+Date: 2026-07-15
+Step: Q9A / Claude Code host-contract feasibility spike
+Evidence:
+Maintainer directed a local Claude Code study after closing the shared methodology
+CLI exit-code contract. The exact host is @anthropic-ai/claude-code 2.1.183 on
+Windows 11 build 26200 x64. Presence-only inspection found populated user and project
+extension, MCP, instruction, and persistence surfaces. First-party documentation
+describes additional managed, command-line, and session sources, but no complete
+redacted resolved-surface inventory is available without a session.
+
+Decision:
+Record HOST_CONTRACT_PARTIAL. Do not run ECC/Claude or gstack/Claude qualification,
+and do not execute provider code. A fresh host session and all positive/negative
+surface probes require separately authorized disposable host research.
+
+Files/contract changed:
+host-contracts/claude-2.1.183-windows-x64.md, README.md, PROVIDERS.md, DELIVERY.md
+
+Acceptance impact:
+Claude cannot contribute to a mutation-research-eligible tuple until a complete
+Claude host contract is reproduced. The existing Codex-only qualification results
+remain unchanged.
+
+Rollback impact:
+Documentation-only. No host or provider configuration changed.
+
+Approved by:
+Maintainer direction in the active conversation.
+```
+
 ## 9. Handoff checklist
 
 Every session leaves durable repository evidence containing:
@@ -573,12 +625,14 @@ Every session leaves durable repository evidence containing:
 - no installation/activation claim from a qualification result;
 - no commit, push, PR, or publish without separate authorization.
 
-Before transfer to cloud/Hyper-V, verify:
+Before a cloud/Hyper-V fresh-session or provider-research experiment, verify:
 
 1. Documentation lint and local links pass.
-2. Maintainer explicitly authorizes a docs-only commit.
-3. The commit is made on this alpha branch without unrelated worktree changes.
-4. Maintainer separately authorizes push or names a reviewed transfer mechanism.
-5. The destination checks out the exact committed SHA and reruns docs lint.
+2. The destination checks out the exact committed SHA and reruns docs lint.
+3. Maintainer explicitly authorizes the bounded host or provider experiment and names
+   its exact compatibility tuple.
+4. The experiment uses the approved disposable environment and its own credentials.
+5. No provider code runs unless the authorization specifically permits it.
 
-Until those five conditions hold, development stays on this local worktree.
+Until those five conditions hold, the destination performs no fresh-session or
+provider execution research.

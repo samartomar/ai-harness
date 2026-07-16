@@ -87,7 +87,9 @@ Codex is selected because:
   proved without turning AIH into a runtime.
 
 Linux can follow as a second qualification tuple because provider source assumptions
-may differ by OS. Claude Code is a later host-contract study after Codex qualification.
+may differ by OS. The post-Q9 [Claude Code host-contract study](host-contracts/claude-2.1.183-windows-x64.md)
+is `HOST_CONTRACT_PARTIAL`; it does not authorize ECC/Claude or gstack/Claude
+qualification. A later complete Claude contract remains a separate prerequisite.
 
 ## Provider support levels
 
