@@ -8,6 +8,7 @@ const CheckoutPathSchema = z
 
 export const MethodologyProviderSchema = z.enum(["ecc", "gstack"]);
 export const MethodologyHostSchema = z.enum(["claude-code", "codex", "cursor", "kiro", "opencode"]);
+export const MethodologyCommandSchema = z.enum(["inspect", "project", "status"]);
 export const MethodologyOsSchema = z.enum(["win32", "darwin", "linux"]);
 export const MethodologyArchitectureSchema = z.enum(["x64", "arm64"]);
 export const MethodologyRuntimeSchema = z.enum(["node-26", "bun-1", "none"]);
@@ -164,6 +165,33 @@ export const MethodologyFindingSchema = z
     code: MethodologyFindingCodeSchema,
     disposition: z.enum(["advisory", "blocked", "fail-closed"]),
     detail: z.string(),
+  })
+  .strict();
+
+export const MethodologyBoundarySchema = z
+  .object({
+    providerExecution: z.literal(false),
+    providerFetch: z.literal(false),
+    hostExecution: z.literal(false),
+    writes: z.literal(false),
+  })
+  .strict();
+
+export const MethodologyFailureSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    state: z.enum(["invalid", "fail-closed"]),
+    findings: z.array(MethodologyFindingSchema).min(1),
+  })
+  .strict();
+
+export const MethodologyFailureEnvelopeSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    command: MethodologyCommandSchema,
+    outcome: z.enum(["invalid", "fail-closed"]),
+    failure: MethodologyFailureSchema,
+    boundary: MethodologyBoundarySchema,
   })
   .strict();
 
