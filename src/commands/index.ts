@@ -22,6 +22,7 @@ import { marketplaceBuildCommand } from "../marketplace/build.js";
 import { marketplacePublishCommand } from "../marketplace/publish.js";
 import { marketplaceValidateCommand } from "../marketplace/validate.js";
 import { command as mcp, mcpApproveCommand } from "../mcp/index.js";
+import { methodologyCommandSpecs, registerMethodologyCommands } from "../methodology/command.js";
 import {
   policyProjectCommand,
   policyValidateCommand,
@@ -142,6 +143,7 @@ export const PARENT_GROUPS = [
   "marketplace",
   "policy",
   "evidence",
+  "methodology",
   "truth",
 ] as const;
 
@@ -187,6 +189,7 @@ export const GROUPED_COMMAND_SPECS = {
   marketplace: [marketplaceBuildCommand, marketplaceValidateCommand, marketplacePublishCommand],
   policy: [policyProjectCommand, policyValidateCommand, policyVerifyCommand],
   evidence: [evidenceBuildCommand, vetBaselineCommand],
+  methodology: methodologyCommandSpecs,
   truth: [truthPackCommand, truthVerifyCommand],
 } as const satisfies Record<(typeof PARENT_GROUPS)[number], readonly CommandSpec[]>;
 
@@ -515,6 +518,7 @@ export function registerCommands(
   }
 
   const trust = program.command("trust").description("Trust-gate operations for external sources");
+  registerMethodologyCommands(program);
   const allow = trust
     .command(trustAllowCommand.name)
     .description(trustAllowCommand.summary)

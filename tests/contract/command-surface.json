@@ -1376,6 +1376,91 @@
       ]
     },
     {
+      "name": "methodology",
+      "hasDescription": true,
+      "arguments": [],
+      "options": [],
+      "commands": [
+        {
+          "name": "inspect",
+          "hasDescription": true,
+          "arguments": [
+            {
+              "name": "provider",
+              "required": true
+            }
+          ],
+          "options": [
+            {
+              "flags": "--json"
+            },
+            {
+              "flags": "--source-root <path>"
+            }
+          ],
+          "commands": []
+        },
+        {
+          "name": "plan",
+          "hasDescription": true,
+          "arguments": [
+            {
+              "name": "provider",
+              "required": true
+            }
+          ],
+          "options": [
+            {
+              "flags": "--host <host>"
+            },
+            {
+              "flags": "--json"
+            },
+            {
+              "flags": "--source-root <path>"
+            }
+          ],
+          "commands": []
+        },
+        {
+          "name": "qualify",
+          "hasDescription": true,
+          "arguments": [
+            {
+              "name": "provider",
+              "required": true
+            }
+          ],
+          "options": [
+            {
+              "flags": "--host <host>"
+            },
+            {
+              "flags": "--json"
+            },
+            {
+              "flags": "--source-root <path>"
+            }
+          ],
+          "commands": []
+        },
+        {
+          "name": "status",
+          "hasDescription": true,
+          "arguments": [],
+          "options": [
+            {
+              "flags": "--json"
+            },
+            {
+              "flags": "--root <path>"
+            }
+          ],
+          "commands": []
+        }
+      ]
+    },
+    {
       "name": "pack",
       "hasDescription": true,
       "arguments": [],

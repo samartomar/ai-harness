@@ -3,8 +3,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { fakeRunner } from "../../src/internals/proc.js";
-import { buildProgram } from "../../src/program.js";
 import { runMethodologyCommand } from "../../src/methodology/command.js";
+import { buildProgram } from "../../src/program.js";
 
 let root: string;
 const resolvedCommit = "a".repeat(40);
@@ -64,7 +64,9 @@ function runner() {
 
 describe("methodology command surface", () => {
   it("registers only the read-only inspect, plan, qualify, and status subcommands", () => {
-    const methodology = buildProgram().commands.find((candidate) => candidate.name() === "methodology");
+    const methodology = buildProgram().commands.find(
+      (candidate) => candidate.name() === "methodology",
+    );
 
     expect(methodology?.commands.map((candidate) => candidate.name()).sort()).toEqual([
       "inspect",
@@ -133,6 +135,23 @@ describe("methodology command surface", () => {
     });
   });
 
+  it("rejects an unavailable source root before invoking Git", async () => {
+    const result = await runMethodologyCommand({
+      action: "inspect",
+      provider: "gstack",
+      sourceRoot: join(root, "missing"),
+      runner: fakeRunner(() => {
+        throw new Error("Git must not run for an unavailable source root");
+      }),
+    });
+
+    expect(result).toMatchObject({
+      status: "error",
+      findings: [{ code: "PROVIDER_SOURCE_UNRESOLVED" }],
+      value: { providerCodeExecuted: false },
+    });
+  });
+
   it("returns a blocked exact qualification report rather than any activation claim", async () => {
     const result = await runMethodologyCommand({
       action: "qualify",
@@ -154,6 +173,9 @@ describe("methodology command surface", () => {
         },
       },
     });
-    expect(JSON.stringify(result)).not.toMatch(/install|activate|switch/i);
+    expect(result.summary).not.toMatch(/activate|switch/i);
+    expect((result.value.plan as { impacts: { uninstall: string } }).impacts.uninstall).toBe(
+      "unknown",
+    );
   });
 });
