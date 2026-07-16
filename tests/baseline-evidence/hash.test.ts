@@ -2,7 +2,7 @@ import { linkSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { hashComponentTree } from "../../src/baseline-evidence/hash.js";
+import { hashComponentTree, hashSourceTree } from "../../src/baseline-evidence/hash.js";
 
 let root: string;
 
@@ -58,5 +58,19 @@ describe("hashComponentTree", () => {
     rmSync(join(root, "component", "link.txt"));
     linkSync(join(root, "component", "file.txt"), join(root, "component", "hard.txt"));
     expect(() => hashComponentTree(root, ["component"])).toThrow(/hard.link/i);
+  });
+});
+
+describe("hashSourceTree", () => {
+  it("hashes the complete inert working tree while excluding Git metadata", () => {
+    put("provider/manifest.json", "{}");
+    put(".git/HEAD", "ref: refs/heads/main");
+    const first = hashSourceTree(root);
+
+    put(".git/HEAD", "ref: refs/heads/other");
+    expect(hashSourceTree(root)).toEqual(first);
+
+    put("provider/manifest.json", "{\"changed\":true}");
+    expect(hashSourceTree(root).treeSha256).not.toBe(first.treeSha256);
   });
 });
