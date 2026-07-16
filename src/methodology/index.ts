@@ -132,10 +132,10 @@ function intentFile(root: string, relative: string): string {
         "intent path must not contain symbolic links or reparse points",
       );
     }
-    if (index === segments.length - 1 && !info.isFile()) {
+    if (index === segments.length - 1 && (!info.isFile() || info.nlink !== 1)) {
       throw new MethodologyFailClosedError(
         "METHODOLOGY_INTENT_MALFORMED",
-        "intent must be a regular file",
+        "intent must be an unlinked regular file",
       );
     }
     if (index < segments.length - 1 && !info.isDirectory()) {
