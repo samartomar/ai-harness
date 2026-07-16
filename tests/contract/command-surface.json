@@ -1376,6 +1376,65 @@
       ]
     },
     {
+      "name": "methodology",
+      "hasDescription": true,
+      "arguments": [],
+      "options": [],
+      "commands": [
+        {
+          "name": "inspect",
+          "hasDescription": true,
+          "arguments": [],
+          "options": [
+            {
+              "flags": "--intent <path>"
+            },
+            {
+              "flags": "--json"
+            },
+            {
+              "flags": "--root <dir>"
+            }
+          ],
+          "commands": []
+        },
+        {
+          "name": "project",
+          "hasDescription": true,
+          "arguments": [],
+          "options": [
+            {
+              "flags": "--intent <path>"
+            },
+            {
+              "flags": "--json"
+            },
+            {
+              "flags": "--root <dir>"
+            }
+          ],
+          "commands": []
+        },
+        {
+          "name": "status",
+          "hasDescription": true,
+          "arguments": [],
+          "options": [
+            {
+              "flags": "--intent <path>"
+            },
+            {
+              "flags": "--json"
+            },
+            {
+              "flags": "--root <dir>"
+            }
+          ],
+          "commands": []
+        }
+      ]
+    },
+    {
       "name": "pack",
       "hasDescription": true,
       "arguments": [],

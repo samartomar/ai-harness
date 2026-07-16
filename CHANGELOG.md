@@ -6,6 +6,13 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- `aih methodology inspect`, dry-run `project`, and `status` establish the Phase 1
+  passive-methodology boundary. They parse only a strict, project-relative intent,
+  produce deterministic exact-source identity/status envelopes, and do not fetch,
+  execute, install, activate, or write provider or host state.
+
 ## [2.11.0] - 2026-07-15
 
 ### Added
