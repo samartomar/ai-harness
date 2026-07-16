@@ -45,7 +45,9 @@ The intended product boundary is:
 8. [qualifications/gstack-a3259400a366.md](qualifications/gstack-a3259400a366.md)
    — Q8 real-inert gstack result for the operator-authorized official checkout. It is
    `QUALIFICATION_BLOCKED`; it is not setup, activation, or Phase B evidence.
-9. [qualifications/ecc-4ba9cf058c19.md](qualifications/ecc-4ba9cf058c19.md)
+9. [qualifications/q9-go-no-go.md](qualifications/q9-go-no-go.md) — Q9 command
+   boundary and explicit Phase B no-go decision. It does not authorize an alpha release.
+10. [qualifications/ecc-4ba9cf058c19.md](qualifications/ecc-4ba9cf058c19.md)
    — prior Q7 real-inert result for a noncanonical fork. It remains a separate,
    non-inherited result.
 

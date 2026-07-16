@@ -6,6 +6,14 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- `aih methodology inspect`, `plan`, `qualify`, and `status` add a read-only exact-source
+  qualification surface for the canonical ECC and gstack providers. The commands accept only
+  operator-supplied local Git checkouts, never execute provider code, and fail closed for unknown
+  providers, host contracts, or compatibility tuples. They do not offer setup, installation,
+  activation, switching, or an apply mode.
+
 ## [2.11.0] - 2026-07-15
 
 ### Added

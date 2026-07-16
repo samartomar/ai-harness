@@ -657,6 +657,30 @@ unification.
 Read-only inventory of what the harness has configured. Accepts and validates `--posture <posture>`
 for script consistency, but ignores the value; it remains read-only.
 
+## aih methodology
+
+Read-only Phase A qualification commands for operator-supplied, exact local Git checkouts of the
+canonical `ecc` and `gstack` providers:
+
+```text
+aih methodology inspect <ecc|gstack> --source-root <absolute-path> [--json]
+aih methodology plan <ecc|gstack> --source-root <absolute-path> --host codex-0.144.1-windows-x64-v1 [--json]
+aih methodology qualify <ecc|gstack> --source-root <absolute-path> --host codex-0.144.1-windows-x64-v1 [--json]
+aih methodology status [--root <path>] [--json]
+```
+
+`inspect` and `plan` only read the supplied tree as inert data and derive static topology or a
+pure proposed plan. `qualify` additionally binds the result to the exact source commit, adapter
+implementation hash, named host contract, current OS/Node runtime, and policy version. An unknown
+tuple is reported as blocked; the command never infers compatibility from a related provider,
+commit, adapter, or host.
+
+No methodology command accepts `--apply` or `--force`. It does not fetch a provider, execute a
+provider script, preview, dry-run, setup, installer, updater, daemon, browser, repair, or
+uninstaller; write project methodology authority; or create an activation receipt. `status` reads
+an existing `aih-methodology.json` only to report `unenrolled` or `selected-but-inactive`; Phase A
+does not create that file or persist qualification results.
+
 `aih verify-bundle` and `aih verify-release` also accept and validate `--posture <posture>` for the
 same script-friendly surface, while ignoring the value and preserving their read-only behavior.
 
