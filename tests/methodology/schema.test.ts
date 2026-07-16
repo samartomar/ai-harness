@@ -1,7 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, expectTypeOf, it } from "vitest";
 import {
-  parseMethodologyProposal,
   type MethodologyProposal,
+  parseMethodologyProposal,
 } from "../../src/methodology/schema.js";
 
 function proposal(over: Record<string, unknown> = {}): Record<string, unknown> {
@@ -51,7 +51,8 @@ describe("methodology proposal schema", () => {
         adapter: { implementationHash: "b".repeat(64) },
       },
       host: { coverage: "partial", isolationMode: "profile-home" },
-    } satisfies Partial<MethodologyProposal>);
+    });
+    expectTypeOf(parsed).toEqualTypeOf<MethodologyProposal>();
   });
 
   it.each([
@@ -80,10 +81,14 @@ describe("methodology proposal schema", () => {
 
   it("rejects unknown enum values and empty runtime maps", () => {
     expect(() =>
-      parseMethodologyProposal(proposal({ host: { ...(proposal().host as object), coverage: "best-effort" } })),
+      parseMethodologyProposal(
+        proposal({ host: { ...(proposal().host as object), coverage: "best-effort" } }),
+      ),
     ).toThrow();
     expect(() =>
-      parseMethodologyProposal(proposal({ host: { ...(proposal().host as object), runtimes: {} } })),
+      parseMethodologyProposal(
+        proposal({ host: { ...(proposal().host as object), runtimes: {} } }),
+      ),
     ).toThrow();
   });
 
