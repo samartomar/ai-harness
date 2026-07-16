@@ -35,6 +35,18 @@ meets every prerequisite for a separately authorized disposable Phase B experime
 This state does not authorize provider execution and is not an activation support
 claim.
 
+### Phase A CLI exit codes
+
+| Exit code | Outcome |
+| --- | --- |
+| `0` | `QUALIFICATION_PASS` or a completed read-only inspection, plan, or status command. |
+| `2` | `QUALIFICATION_BLOCKED`. |
+| `3` | `QUALIFICATION_FAIL_CLOSED`. |
+| `1` | Invalid input or command failure. |
+
+The process-level contract must cover every row. A warning envelope alone is not a
+successful qualification outcome.
+
 ## 2. Phase A core invariants
 
 | ID | Acceptance criterion |

@@ -36,6 +36,13 @@ export interface MethodologyCommandResult {
   value: Record<string, unknown>;
 }
 
+const methodologyExitCodes = {
+  inspectionOrPass: 0,
+  invalidInputOrCommandFailure: 1,
+  qualificationBlocked: 2,
+  qualificationFailedClosed: 3,
+} as const;
+
 export interface RunMethodologyCommandInput {
   action: MethodologyAction;
   provider?: string;
@@ -322,6 +329,36 @@ function errorResult(error: unknown): MethodologyCommandResult {
   };
 }
 
+function qualificationClassification(
+  result: MethodologyCommandResult,
+): QualifiedProvider["qualification"]["classification"] | undefined {
+  const qualification = result.value.qualification;
+  if (qualification === null || typeof qualification !== "object") return undefined;
+  const classification = (qualification as { classification?: unknown }).classification;
+  if (
+    classification === "QUALIFICATION_PASS" ||
+    classification === "QUALIFICATION_BLOCKED" ||
+    classification === "QUALIFICATION_FAIL_CLOSED"
+  ) {
+    return classification;
+  }
+  return undefined;
+}
+
+/** Maps the read-only methodology result to its stable process exit contract. */
+export function methodologyExitCode(result: MethodologyCommandResult): number {
+  if (result.status === "error") return methodologyExitCodes.invalidInputOrCommandFailure;
+  switch (qualificationClassification(result)) {
+    case "QUALIFICATION_BLOCKED":
+      return methodologyExitCodes.qualificationBlocked;
+    case "QUALIFICATION_FAIL_CLOSED":
+      return methodologyExitCodes.qualificationFailedClosed;
+    case "QUALIFICATION_PASS":
+    case undefined:
+      return methodologyExitCodes.inspectionOrPass;
+  }
+}
+
 export async function runMethodologyCommand(
   input: RunMethodologyCommandInput,
 ): Promise<MethodologyCommandResult> {
@@ -371,7 +408,9 @@ export async function runMethodologyCommand(
       summary:
         result.qualification.classification === "QUALIFICATION_PASS"
           ? "Exact qualification completed at the Phase A support boundary."
-          : "Exact qualification is blocked at the plannable support level.",
+          : result.qualification.classification === "QUALIFICATION_BLOCKED"
+            ? "Exact qualification is blocked at the plannable support level."
+            : "Exact qualification failed closed at the plannable support level.",
       nextActions: [
         "Review the reported exact tuple before considering any separate research authorization.",
       ],
@@ -412,7 +451,7 @@ function registerSourceCommand(methodology: Command, action: "inspect" | "plan" 
         host: options.host,
       });
       writeResult(result, options.json === true);
-      process.exitCode = result.status === "error" ? 1 : 0;
+      process.exitCode = methodologyExitCode(result);
     },
   );
 }
@@ -432,6 +471,6 @@ export function registerMethodologyCommands(program: Command): void {
     .action(async (options: { root?: string; json?: boolean }) => {
       const result = await runMethodologyCommand({ action: "status", root: options.root });
       writeResult(result, options.json === true);
-      process.exitCode = result.status === "error" ? 1 : 0;
+      process.exitCode = methodologyExitCode(result);
     });
 }

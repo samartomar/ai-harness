@@ -320,6 +320,15 @@ Every result uses a deterministic envelope:
 Error results include a root-cause hint, safe retry instruction, and explicit stop
 condition. Adapters cannot return raw prose as their only protocol.
 
+### Phase A process exit codes
+
+The read-only methodology CLI has one shared process contract. A completed
+non-qualification read (including `inspect`, `plan`, and `status`) and a
+`QUALIFICATION_PASS` exit `0`. `QUALIFICATION_BLOCKED` exits `2` and
+`QUALIFICATION_FAIL_CLOSED` exits `3`. Invalid input and command failures exit
+`1`. A warning status must not collapse a blocked or failed-closed qualification
+to exit `0`.
+
 ## 11. Bounded compatibility key
 
 Every adapter support decision uses this immutable tuple:

@@ -681,6 +681,10 @@ uninstaller; write project methodology authority; or create an activation receip
 an existing `aih-methodology.json` only to report `unenrolled` or `selected-but-inactive`; Phase A
 does not create that file or persist qualification results.
 
+The process exit contract is exact: completed inspection/plan/status and `QUALIFICATION_PASS` use
+`0`; `QUALIFICATION_BLOCKED` uses `2`; `QUALIFICATION_FAIL_CLOSED` uses `3`; invalid input or a
+command failure uses `1`.
+
 `aih verify-bundle` and `aih verify-release` also accept and validate `--posture <posture>` for the
 same script-friendly surface, while ignoring the value and preserving their read-only behavior.
 

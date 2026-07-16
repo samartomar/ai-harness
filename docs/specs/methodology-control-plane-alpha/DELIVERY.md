@@ -430,6 +430,8 @@ CHANGELOG.md
 
 - Add only `inspect`, `plan`, `qualify`, and `status`.
 - Preserve JSON envelope and exit-code contracts.
+- Prove the process exit mapping: completed read/qualification pass `0`, blocked `2`,
+  failed closed `3`, and invalid input/command failure `1`.
 - Regenerate the additive command-surface fixture.
 - Keep all legacy commands and defaults unchanged.
 - Run the complete Phase A acceptance matrix.
