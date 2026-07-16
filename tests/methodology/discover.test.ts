@@ -47,9 +47,7 @@ describe("inert provider discovery", () => {
 
   it("fails closed for malformed manifests and reports no manifest as unknown", () => {
     writeFileSync(join(root, "package.json"), "{not json", "utf8");
-    expect(() => discoverInertProvider({ root, treeSha256: "a".repeat(64) })).toThrow(
-      /manifest/i,
-    );
+    expect(() => discoverInertProvider({ root, treeSha256: "a".repeat(64) })).toThrow(/manifest/i);
 
     rmSync(join(root, "package.json"));
     expect(discoverInertProvider({ root, treeSha256: "a".repeat(64) })).toMatchObject({
@@ -57,6 +55,28 @@ describe("inert provider discovery", () => {
       scripts: {},
       installerEntries: [],
       providerCodeExecuted: false,
+    });
+  });
+
+  it.each([
+    ["non-object manifest", "[]"],
+    ["non-object scripts", JSON.stringify({ scripts: [] })],
+    ["non-string script", JSON.stringify({ scripts: { install: 1 } })],
+  ])("fails closed for %s", (_label, contents) => {
+    writeFileSync(join(root, "package.json"), contents, "utf8");
+    expect(() => discoverInertProvider({ root, treeSha256: "a".repeat(64) })).toThrow(/manifest/i);
+  });
+
+  it("accepts a manifest without scripts as an unknown installer contract", () => {
+    writeFileSync(
+      join(root, "package.json"),
+      JSON.stringify({ name: "synthetic-provider" }),
+      "utf8",
+    );
+    expect(discoverInertProvider({ root, treeSha256: "a".repeat(64) })).toMatchObject({
+      packageName: "synthetic-provider",
+      scripts: {},
+      installerEntries: [],
     });
   });
 });

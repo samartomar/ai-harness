@@ -4,8 +4,8 @@ import { createProposedPlan } from "../../src/methodology/plan.js";
 const discovery = {
   manifestPath: "package.json",
   packageName: "synthetic-provider",
-  scripts: { install: "node scripts/install.js --apply" },
-  installerEntries: ["install"],
+  scripts: { install: "node scripts/install.js --apply", uninstall: "node scripts/uninstall.js" },
+  installerEntries: ["uninstall", "install"],
   installerContractFingerprint: "a".repeat(64),
   providerCodeExecuted: false,
 } as const;
@@ -17,6 +17,7 @@ describe("pure proposed methodology plans", () => {
 
     expect(second).toEqual(first);
     expect(first.providerCodeExecuted).toBe(false);
+    expect(first.installerEntries).toEqual(["install", "uninstall"]);
     expect(first.impacts).toEqual({
       writes: "unknown",
       processes: "unknown",
