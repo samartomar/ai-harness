@@ -27,6 +27,8 @@ describe("methodology evidence joins", () => {
     ["tree", { treeSha256: "d".repeat(64) }],
     ["paths", { paths: ["skills"] }],
   ])("excludes evidence with a mismatched %s", (_label, mismatch) => {
-    expect(joinExactEvidence(source, ["hooks", "skills"], [{ ...evidence, ...mismatch }])).toBeUndefined();
+    expect(
+      joinExactEvidence(source, ["hooks", "skills"], [{ ...evidence, ...mismatch }]),
+    ).toBeUndefined();
   });
 });
