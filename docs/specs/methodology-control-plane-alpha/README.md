@@ -36,6 +36,9 @@ The intended product boundary is:
    dependency order, verification commands, and rollback strategy.
 5. [ACCEPTANCE.md](ACCEPTANCE.md) — acceptable states, fail-closed results, test
    matrix, and alpha/stable release gates.
+6. [host-contracts/codex-0.144.1-windows-x64.md](host-contracts/codex-0.144.1-windows-x64.md)
+   — Q1 evidence and the `HOST_CONTRACT_PARTIAL` decision for the first exact
+   Codex/Windows tuple.
 
 ## Decision summary
 
