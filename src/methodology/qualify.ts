@@ -12,7 +12,7 @@ export function qualifyMethodology(input: {
   compatibility: "supported" | "unknown";
   hostCoverage: HostCoverage;
   isolation: "proven" | "conflict" | "unknown";
-  selfUpdater: boolean;
+  selfUpdater: boolean | "unknown";
 }): QualificationResult {
   if (input.compatibility === "unknown") {
     return {
@@ -29,6 +29,14 @@ export function qualifyMethodology(input: {
       findings: [
         input.hostCoverage === "unknown" ? "HOST_LOAD_SURFACE_UNKNOWN" : "QUALIFICATION_INCOMPLETE",
       ],
+      providerCodeExecuted: false,
+    };
+  }
+  if (input.selfUpdater === "unknown") {
+    return {
+      classification: "QUALIFICATION_BLOCKED",
+      supportLevel: "plannable",
+      findings: ["QUALIFICATION_INCOMPLETE"],
       providerCodeExecuted: false,
     };
   }

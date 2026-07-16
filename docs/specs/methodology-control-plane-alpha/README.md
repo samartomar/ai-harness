@@ -39,6 +39,9 @@ The intended product boundary is:
 6. [host-contracts/codex-0.144.1-windows-x64.md](host-contracts/codex-0.144.1-windows-x64.md)
    — Q1 evidence and the `HOST_CONTRACT_PARTIAL` decision for the first exact
    Codex/Windows tuple.
+7. [qualifications/ecc-4ba9cf058c19.md](qualifications/ecc-4ba9cf058c19.md)
+   — Q7 real-inert ECC result for the operator-authorized local checkout. It is
+   `QUALIFICATION_BLOCKED`; it is not install, activation, or Phase B evidence.
 
 ## Decision summary
 
@@ -73,11 +76,10 @@ plan determinism cannot be bounded, the correct result is a coded stop.
 ## Ownership of truth
 
 This directory is the complete public-safe design and handoff record. Do not use
-session memory, archived chat, or an uncommitted personal note as an additional
-authority. The branch is currently local and uncommitted under an explicit
-no-commit/no-push instruction; therefore it is not yet durable or fetchable from
-another machine. A cloud or Hyper-V implementation session must not begin until a
-maintainer separately authorizes a docs-only commit and transfer/push, or names
-another reviewed transfer mechanism. When implementation changes a decision,
-update these files in the same change and record the reason in the plan-mutation
-ledger in [DELIVERY.md](DELIVERY.md).
+session memory, archived chat, or a personal note as an additional authority. The
+branch is committed and pushed; a new machine may fetch the branch, but it must
+still receive separate authorization before any disposable execution research. The
+Q7 checkout remains an operator-selected local source, not a distributed provider
+artifact or an implicit approval. When implementation changes a decision, update
+these files in the same change and record the reason in the plan-mutation ledger in
+[DELIVERY.md](DELIVERY.md).
