@@ -3,7 +3,11 @@ import { createQualificationReport } from "../../src/methodology/report.js";
 
 const input = {
   createdAt: "2026-07-15T00:00:00.000Z",
-  source: { repository: "garrytan/gstack", resolvedCommit: "a".repeat(40), treeSha256: "b".repeat(64) },
+  source: {
+    repository: "garrytan/gstack",
+    resolvedCommit: "a".repeat(40),
+    treeSha256: "b".repeat(64),
+  },
   compatibilityKey: "exact-tuple-digest",
   hostContract: "codex-0.144.1-windows-x64-v1",
   qualification: {
@@ -23,11 +27,11 @@ describe("qualification reports", () => {
   });
 
   it("rejects secret-like and provider-content fields", () => {
-    expect(() => createQualificationReport({ ...input, note: "token=ghp_abcdefghijklmnop" })).toThrow(
-      /secret|unsafe/i,
-    );
-    expect(() => createQualificationReport({ ...input, providerSourceContent: "echo do-not-report" })).toThrow(
-      /source content/i,
-    );
+    expect(() =>
+      createQualificationReport({ ...input, note: "token=ghp_abcdefghijklmnop" }),
+    ).toThrow(/secret|unsafe/i);
+    expect(() =>
+      createQualificationReport({ ...input, providerSourceContent: "echo do-not-report" }),
+    ).toThrow(/source content/i);
   });
 });
