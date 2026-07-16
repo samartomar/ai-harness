@@ -192,7 +192,16 @@ describe("methodology Phase 1 in-process boundaries", () => {
     const unreadable = runInProcess(root, "inspect", "absent.json", false);
 
     expect(invalid.exitCode).toBe(1);
-    expect(JSON.parse(invalid.stdout).status.findings[0]).toMatchObject({
+    const invalidPayload = JSON.parse(invalid.stdout);
+    expect(invalidPayload).toMatchObject({
+      outcome: "invalid",
+      failure: {
+        state: "invalid",
+        findings: [expect.objectContaining({ code: "METHODOLOGY_INTENT_PATH_INVALID" })],
+      },
+    });
+    expect(invalidPayload).not.toHaveProperty("status");
+    expect(invalidPayload.failure.findings[0]).toMatchObject({
       code: "METHODOLOGY_INTENT_PATH_INVALID",
     });
     expect(unreadable.exitCode).toBe(1);
@@ -213,8 +222,12 @@ describe("methodology Phase 1 in-process boundaries", () => {
 
     for (const result of [invalidJson, linked, directory]) {
       expect(result.exitCode).toBe(3);
-      expect(JSON.parse(result.stdout).status.findings[0]).toMatchObject({
-        code: "METHODOLOGY_INTENT_MALFORMED",
+      expect(JSON.parse(result.stdout)).toMatchObject({
+        outcome: "fail-closed",
+        failure: {
+          state: "fail-closed",
+          findings: [expect.objectContaining({ code: "METHODOLOGY_INTENT_MALFORMED" })],
+        },
       });
     }
     expect(nestedFile.exitCode).toBe(3);
@@ -322,7 +335,7 @@ describe("aih methodology Phase 1 child-process boundary", () => {
     expect(result.status, result.stderr).toBe(3);
     expect(JSON.parse(result.stdout)).toMatchObject({
       outcome: "fail-closed",
-      status: {
+      failure: {
         state: "fail-closed",
         findings: [expect.objectContaining({ code: "METHODOLOGY_INTENT_MALFORMED" })],
       },
@@ -341,7 +354,7 @@ describe("aih methodology Phase 1 child-process boundary", () => {
     expect(result.status, result.stderr).toBe(3);
     expect(JSON.parse(result.stdout)).toMatchObject({
       outcome: "fail-closed",
-      status: {
+      failure: {
         state: "fail-closed",
         findings: [expect.objectContaining({ code: "METHODOLOGY_INTENT_MALFORMED" })],
       },
