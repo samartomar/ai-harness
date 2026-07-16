@@ -53,4 +53,20 @@ describe("synthetic methodology qualification", () => {
       supportLevel: "plannable",
     });
   });
+
+  it("blocks an unproven updater state instead of treating its absence as disabled", () => {
+    expect(
+      qualifyMethodology({
+        compatibility: "supported",
+        hostCoverage: "complete",
+        isolation: "proven",
+        selfUpdater: "unknown",
+      }),
+    ).toMatchObject({
+      classification: "QUALIFICATION_BLOCKED",
+      supportLevel: "plannable",
+      findings: ["QUALIFICATION_INCOMPLETE"],
+      providerCodeExecuted: false,
+    });
+  });
 });
