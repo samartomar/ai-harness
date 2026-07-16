@@ -6,6 +6,7 @@ import {
   canonicalizeMethodologyIntent,
   exactSourceIdentity,
   hostAdapterFor,
+  MethodologyFailureEnvelopeSchema,
   type MethodologyFinding,
   MethodologyIntentSchema,
   type MethodologyStatus,
@@ -225,18 +226,21 @@ function writeFailure(
   deps: MethodologyCommandDeps,
 ): void {
   if (options.json) {
-    const state = exitCode === 3 ? "fail-closed" : "blocked";
-    writeJson(deps, {
-      schemaVersion: 1,
-      command,
-      outcome: exitCode === 3 ? "fail-closed" : "invalid",
-      status: {
+    const state = exitCode === 3 ? "fail-closed" : "invalid";
+    writeJson(
+      deps,
+      MethodologyFailureEnvelopeSchema.parse({
         schemaVersion: 1,
-        state,
-        findings: [finding(code, exitCode === 3 ? "fail-closed" : "blocked", message)],
-      },
-      boundary: METHODOLOGY_PHASE_ONE_BOUNDARY,
-    });
+        command,
+        outcome: state,
+        failure: {
+          schemaVersion: 1,
+          state,
+          findings: [finding(code, exitCode === 3 ? "fail-closed" : "blocked", message)],
+        },
+        boundary: METHODOLOGY_PHASE_ONE_BOUNDARY,
+      }),
+    );
     return;
   }
   deps.writeError(`methodology ${command}: ${code}: ${message}\n`);
