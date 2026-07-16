@@ -1,9 +1,22 @@
 import { z } from "zod";
 
+const MAX_SYNTHETIC_ROOTS = 32;
+const MAX_SYNTHETIC_ARTIFACTS = 64;
+const MAX_SYNTHETIC_DEPENDENCIES = 32;
+const MAX_SYNTHETIC_PATH_LENGTH = 512;
+const MAX_SYNTHETIC_FINDINGS =
+  MAX_SYNTHETIC_ROOTS + MAX_SYNTHETIC_ARTIFACTS * (MAX_SYNTHETIC_DEPENDENCIES + 7);
+
 const ArtifactIdSchema = z.string().regex(/^[a-z][a-z0-9-]{0,63}$/);
 const SyntheticPathSchema = z
   .string()
+  .max(MAX_SYNTHETIC_PATH_LENGTH)
   .regex(/^(?!\/)(?!.*\\\\)(?!.*(?:^|\/)\.{1,2}(?:\/|$))[A-Za-z0-9._/-]+$/);
+const SyntheticDigestSchema = z.string().regex(/^sha256:[a-f0-9]{64}$/);
+const SyntheticSourceLocatorSchema = z
+  .string()
+  .max(256)
+  .regex(/^synthetic:\/\/[a-z][a-z0-9-]{0,63}\/[A-Za-z0-9._/-]+$/);
 
 export const SyntheticArtifactKindSchema = z.enum([
   "regular",
@@ -12,9 +25,29 @@ export const SyntheticArtifactKindSchema = z.enum([
   "hard-link",
   "reparse-point",
 ]);
-export const SyntheticContentSchema = z.enum(["passive", "ambiguous", "executable"]);
+export const SyntheticContentSchema = z
+  .object({
+    classification: z.enum(["passive", "ambiguous", "executable"]),
+    digest: SyntheticDigestSchema,
+  })
+  .strict();
+export const SyntheticSourceIdentitySchema = z
+  .object({
+    locator: SyntheticSourceLocatorSchema,
+    digest: SyntheticDigestSchema,
+  })
+  .strict();
+export const SyntheticEvidenceTargetSchema = z
+  .object({
+    artifact: ArtifactIdSchema,
+    path: SyntheticPathSchema,
+    sourceIdentity: SyntheticSourceIdentitySchema,
+    contentDigest: SyntheticDigestSchema,
+  })
+  .strict();
 export const SyntheticEvidenceSchema = z
   .object({
+    target: SyntheticEvidenceTargetSchema,
     source: z.enum(["exact", "drifted"]),
     trust: z.enum(["admitted", "held"]),
     license: z.enum(["allowed", "unlicensed"]),
@@ -27,8 +60,9 @@ export const SyntheticMethodologyArtifactSchema = z
     path: SyntheticPathSchema,
     kind: SyntheticArtifactKindSchema,
     content: SyntheticContentSchema,
+    sourceIdentity: SyntheticSourceIdentitySchema,
     evidence: SyntheticEvidenceSchema,
-    dependencies: z.array(ArtifactIdSchema).max(32),
+    dependencies: z.array(ArtifactIdSchema).max(MAX_SYNTHETIC_DEPENDENCIES),
   })
   .strict()
   .superRefine((artifact, ctx) => {
@@ -48,8 +82,8 @@ export const SyntheticMethodologyArtifactSchema = z
 export const SyntheticMethodologyInputSchema = z
   .object({
     schemaVersion: z.literal(1),
-    roots: z.array(ArtifactIdSchema).min(1).max(32),
-    artifacts: z.array(SyntheticMethodologyArtifactSchema).min(1).max(64),
+    roots: z.array(ArtifactIdSchema).min(1).max(MAX_SYNTHETIC_ROOTS),
+    artifacts: z.array(SyntheticMethodologyArtifactSchema).min(1).max(MAX_SYNTHETIC_ARTIFACTS),
   })
   .strict()
   .superRefine((input, ctx) => {
@@ -82,11 +116,13 @@ export const SyntheticMethodologyFindingCodeSchema = z.enum([
   "METHODOLOGY_SYNTHETIC_ARTIFACT_MISSING",
   "METHODOLOGY_SYNTHETIC_DEPENDENCY_MISSING",
   "METHODOLOGY_SYNTHETIC_DRIFTED",
+  "METHODOLOGY_SYNTHETIC_EVIDENCE_UNBOUND",
   "METHODOLOGY_SYNTHETIC_EXECUTABLE",
   "METHODOLOGY_SYNTHETIC_HELD",
   "METHODOLOGY_SYNTHETIC_LINKED",
   "METHODOLOGY_SYNTHETIC_NON_REGULAR",
   "METHODOLOGY_SYNTHETIC_OUT_OF_CLOSURE",
+  "METHODOLOGY_SYNTHETIC_PATH_AMBIGUOUS",
   "METHODOLOGY_SYNTHETIC_UNLICENSED",
 ]);
 
@@ -102,18 +138,91 @@ export const SyntheticMethodologyClassificationSchema = z
   .object({
     schemaVersion: z.literal(1),
     disposition: z.enum(["admitted", "excluded"]),
-    admitted: z.array(ArtifactIdSchema),
-    findings: z.array(SyntheticMethodologyFindingSchema),
+    admitted: z.array(ArtifactIdSchema).max(MAX_SYNTHETIC_ROOTS),
+    findings: z.array(SyntheticMethodologyFindingSchema).max(MAX_SYNTHETIC_FINDINGS),
   })
-  .strict();
+  .strict()
+  .superRefine((classification, ctx) => {
+    const admitted = new Set<string>();
+    for (const [index, artifact] of classification.admitted.entries()) {
+      if (admitted.has(artifact)) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["admitted", index],
+          message: "admitted synthetic artifacts must be unique",
+        });
+      }
+      admitted.add(artifact);
+    }
+
+    const findings = new Set<string>();
+    for (const [index, finding] of classification.findings.entries()) {
+      const key = `${finding.artifact}\u0000${finding.code}`;
+      if (findings.has(key)) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["findings", index],
+          message: "synthetic findings must be unique",
+        });
+      }
+      findings.add(key);
+    }
+
+    if (classification.disposition === "admitted") {
+      if (classification.admitted.length === 0) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["admitted"],
+          message: "an admitted synthetic result must contain artifacts",
+        });
+      }
+      if (classification.findings.length > 0) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["findings"],
+          message: "an admitted synthetic result cannot contain findings",
+        });
+      }
+    } else {
+      if (classification.admitted.length > 0) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["admitted"],
+          message: "an excluded synthetic result cannot admit artifacts",
+        });
+      }
+      if (classification.findings.length === 0) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["findings"],
+          message: "an excluded synthetic result must contain findings",
+        });
+      }
+    }
+  });
 
 type SyntheticArtifact = z.infer<typeof SyntheticMethodologyArtifactSchema>;
 type SyntheticFinding = z.infer<typeof SyntheticMethodologyFindingSchema>;
 type SyntheticFindingCode = z.infer<typeof SyntheticMethodologyFindingCodeSchema>;
 type SyntheticMethodologyInput = z.infer<typeof SyntheticMethodologyInputSchema>;
 
+function compareCodeUnits(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
 function sortStrings(values: Iterable<string>): string[] {
-  return [...values].sort((left, right) => left.localeCompare(right));
+  return [...values].sort(compareCodeUnits);
+}
+
+function evidenceIsBound(artifact: SyntheticArtifact): boolean {
+  const { target } = artifact.evidence;
+  return (
+    target.artifact === artifact.id &&
+    target.path === artifact.path &&
+    target.contentDigest === artifact.content.digest &&
+    target.sourceIdentity.locator === artifact.sourceIdentity.locator &&
+    target.sourceIdentity.digest === artifact.sourceIdentity.digest
+  );
 }
 
 function artifactFindings(artifact: SyntheticArtifact): SyntheticFindingCode[] {
@@ -127,8 +236,13 @@ function artifactFindings(artifact: SyntheticArtifact): SyntheticFindingCode[] {
   } else if (artifact.kind !== "regular") {
     findings.push("METHODOLOGY_SYNTHETIC_NON_REGULAR");
   }
-  if (artifact.content === "executable") findings.push("METHODOLOGY_SYNTHETIC_EXECUTABLE");
-  if (artifact.content === "ambiguous") findings.push("METHODOLOGY_SYNTHETIC_AMBIGUOUS");
+  if (!evidenceIsBound(artifact)) findings.push("METHODOLOGY_SYNTHETIC_EVIDENCE_UNBOUND");
+  if (artifact.content.classification === "executable") {
+    findings.push("METHODOLOGY_SYNTHETIC_EXECUTABLE");
+  }
+  if (artifact.content.classification === "ambiguous") {
+    findings.push("METHODOLOGY_SYNTHETIC_AMBIGUOUS");
+  }
   if (artifact.evidence.source === "drifted") findings.push("METHODOLOGY_SYNTHETIC_DRIFTED");
   if (artifact.evidence.trust === "held") findings.push("METHODOLOGY_SYNTHETIC_HELD");
   if (artifact.evidence.license === "unlicensed") findings.push("METHODOLOGY_SYNTHETIC_UNLICENSED");
@@ -138,7 +252,7 @@ function artifactFindings(artifact: SyntheticArtifact): SyntheticFindingCode[] {
 function canonicalFindings(findings: Map<string, SyntheticFinding>): SyntheticFinding[] {
   return [...findings.values()].sort(
     (left, right) =>
-      left.artifact.localeCompare(right.artifact) || left.code.localeCompare(right.code),
+      compareCodeUnits(left.artifact, right.artifact) || compareCodeUnits(left.code, right.code),
   );
 }
 
@@ -149,6 +263,10 @@ function canonicalFindings(findings: Map<string, SyntheticFinding>): SyntheticFi
 export function classifySyntheticMethodology(value: unknown) {
   const input: SyntheticMethodologyInput = SyntheticMethodologyInputSchema.parse(value);
   const artifacts = new Map(input.artifacts.map((artifact) => [artifact.id, artifact]));
+  const paths = new Map<string, number>();
+  for (const artifact of input.artifacts) {
+    paths.set(artifact.path, (paths.get(artifact.path) ?? 0) + 1);
+  }
   const roots = new Set(input.roots);
   const findings = new Map<string, SyntheticFinding>();
   const visited = new Set<string>();
@@ -168,6 +286,9 @@ export function classifySyntheticMethodology(value: unknown) {
       continue;
     }
 
+    if ((paths.get(artifact.path) ?? 0) > 1) {
+      exclude("METHODOLOGY_SYNTHETIC_PATH_AMBIGUOUS", artifact.id);
+    }
     for (const code of artifactFindings(artifact)) exclude(code, artifact.id);
     for (const dependency of sortStrings(artifact.dependencies).reverse()) {
       if (!artifacts.has(dependency)) {
