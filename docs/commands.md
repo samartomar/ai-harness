@@ -418,6 +418,28 @@ policy), and a parse/schema failure is a coded finding (`org-policy.invalid`) â€
 bundle directory containing `files/aih-org-policy.json`; mismatches fail closed as
 `org-policy.drift`.
 
+## aih methodology
+
+Phase 1 is a passive, read-only contract boundary for an operator-authored,
+project-relative intent JSON supplied with `--intent <path>`. `inspect` parses the
+closed intent, compatibility, provider-adapter, and host-adapter records and emits a
+deterministic exact-source identity. It reads the intent file only; the declared provider
+checkout is not opened, fetched, classified, or executed.
+
+`status` reports the same bounded identity with an `advisory` state and explicit false
+claims for installed, active, isolated, switchable, concurrent, and conflict-free
+behavior. `project` is dry-run-only and exits `2` with
+`METHODOLOGY_PHASE_ONE_NO_PROJECTION`: Phase 1 deliberately has neither a projection
+planner nor any write path. `inspect` and `status` complete with exit `0`; invalid CLI
+input or an unreadable intent exits `1`; malformed or linked intent input fails closed
+with exit `3` and `METHODOLOGY_INTENT_MALFORMED`.
+
+These commands have no `--apply`, `clean`, `fetch`, `install`, `activate`, `switch`,
+`repair`, `update`, `preview`, `force`, `approve`, `suppress`, or host-launch behavior.
+Provider and host adapters are declarative records only. The stable `--json` envelope
+also reports that provider execution, provider fetch, host execution, and writes are all
+`false` for this phase.
+
 ## aih evidence
 
 `vet-baseline <source>` runs the shared component vetter over an exact local checkout or quarantined

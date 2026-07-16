@@ -22,6 +22,7 @@ import { marketplaceBuildCommand } from "../marketplace/build.js";
 import { marketplacePublishCommand } from "../marketplace/publish.js";
 import { marketplaceValidateCommand } from "../marketplace/validate.js";
 import { command as mcp, mcpApproveCommand } from "../mcp/index.js";
+import { methodologyCommandSpecs, registerMethodologyCommands } from "../methodology/index.js";
 import {
   policyProjectCommand,
   policyValidateCommand,
@@ -140,6 +141,7 @@ export const PARENT_GROUPS = [
   "skill",
   "pack",
   "marketplace",
+  "methodology",
   "policy",
   "evidence",
   "truth",
@@ -185,6 +187,7 @@ export const GROUPED_COMMAND_SPECS = {
     packInstallCommand,
   ],
   marketplace: [marketplaceBuildCommand, marketplaceValidateCommand, marketplacePublishCommand],
+  methodology: methodologyCommandSpecs,
   policy: [policyProjectCommand, policyValidateCommand, policyVerifyCommand],
   evidence: [evidenceBuildCommand, vetBaselineCommand],
   truth: [truthPackCommand, truthVerifyCommand],
@@ -725,6 +728,11 @@ export function registerCommands(
       process.exitCode = await runCapability(spec, command, { positionalRoot: false });
     });
   }
+
+  const methodology = program
+    .command("methodology")
+    .description("Inspect passive methodology intent and bounded Phase 1 status");
+  registerMethodologyCommands(methodology);
 
   // `evidence` mirrors the same options-only shape: `build` packages the
   // governance artifacts aih already emits into a verifiable, bundle-standard
