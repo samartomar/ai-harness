@@ -39,9 +39,12 @@ The intended product boundary is:
 6. [host-contracts/codex-0.144.1-windows-x64.md](host-contracts/codex-0.144.1-windows-x64.md)
    — Q1 evidence and the `HOST_CONTRACT_PARTIAL` decision for the first exact
    Codex/Windows tuple.
-7. [qualifications/ecc-4ba9cf058c19.md](qualifications/ecc-4ba9cf058c19.md)
-   — Q7 real-inert ECC result for the operator-authorized local checkout. It is
+7. [qualifications/ecc-ed387446052d.md](qualifications/ecc-ed387446052d.md)
+   — Q7 real-inert ECC result for the operator-authorized official checkout. It is
    `QUALIFICATION_BLOCKED`; it is not install, activation, or Phase B evidence.
+8. [qualifications/ecc-4ba9cf058c19.md](qualifications/ecc-4ba9cf058c19.md)
+   — prior Q7 real-inert result for a noncanonical fork. It remains a separate,
+   non-inherited result.
 
 ## Decision summary
 
