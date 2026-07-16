@@ -11,12 +11,14 @@ const ArtifactIdSchema = z.string().regex(/^[a-z][a-z0-9-]{0,63}$/);
 const SyntheticPathSchema = z
   .string()
   .max(MAX_SYNTHETIC_PATH_LENGTH)
-  .regex(/^(?!\/)(?!.*\\\\)(?!.*(?:^|\/)\.{1,2}(?:\/|$))[A-Za-z0-9._/-]+$/);
+  .regex(/^(?!\/)(?!.*\\\\)(?!.*(?:^|\/)\.{1,2}(?:\/|$))[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)*$/);
 const SyntheticDigestSchema = z.string().regex(/^sha256:[a-f0-9]{64}$/);
 const SyntheticSourceLocatorSchema = z
   .string()
   .max(256)
-  .regex(/^synthetic:\/\/[a-z][a-z0-9-]{0,63}\/[A-Za-z0-9._/-]+$/);
+  .regex(
+    /^synthetic:\/\/[a-z][a-z0-9-]{0,63}\/(?!.*(?:^|\/)\.{1,2}(?:\/|$))[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)*$/,
+  );
 
 export const SyntheticArtifactKindSchema = z.enum([
   "regular",

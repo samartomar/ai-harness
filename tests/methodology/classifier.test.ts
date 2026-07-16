@@ -99,7 +99,9 @@ describe("synthetic methodology classifier", () => {
       { content: { classification: "executable", digest: digest("content-review-loop") } },
       "METHODOLOGY_SYNTHETIC_EXECUTABLE",
     ],
-    ["linked", { kind: "symlink" }, "METHODOLOGY_SYNTHETIC_LINKED"],
+    ["symlink", { kind: "symlink" }, "METHODOLOGY_SYNTHETIC_LINKED"],
+    ["hard link", { kind: "hard-link" }, "METHODOLOGY_SYNTHETIC_LINKED"],
+    ["reparse point", { kind: "reparse-point" }, "METHODOLOGY_SYNTHETIC_LINKED"],
     [
       "ambiguous",
       { content: { classification: "ambiguous", digest: digest("content-review-loop") } },
@@ -200,15 +202,31 @@ describe("synthetic methodology classifier", () => {
     });
   });
 
-  it("excludes evidence whose target is not bound to the synthetic artifact", () => {
+  it.each([
+    ["artifact", { artifact: "method-routing" }],
+    ["path", { path: "rules/method-routing.md" }],
+    [
+      "source locator",
+      {
+        sourceIdentity: {
+          locator: "synthetic://fixture/method-routing",
+          digest: digest("source-review-loop"),
+        },
+      },
+    ],
+    [
+      "source digest",
+      {
+        sourceIdentity: {
+          locator: "synthetic://fixture/review-loop",
+          digest: digest("source-method-routing"),
+        },
+      },
+    ],
+    ["content digest", { contentDigest: digest("another-content") }],
+  ])("excludes evidence whose target %s is not bound to the synthetic artifact", (_name, target) => {
     const result = classifySyntheticMethodology(
-      input({
-        artifacts: [
-          artifact("review-loop", {
-            evidence: { target: { contentDigest: digest("another-content") } },
-          }),
-        ],
-      }),
+      input({ artifacts: [artifact("review-loop", { evidence: { target } })] }),
     );
 
     expect(result).toEqual({
@@ -223,6 +241,60 @@ describe("synthetic methodology classifier", () => {
         },
       ],
     });
+  });
+
+  it.each([
+    ["empty synthetic path segment", { path: "rules//shared.md" }],
+    ["trailing synthetic path segment", { path: "rules/shared/" }],
+    ["dot synthetic path segment", { path: "rules/./shared.md" }],
+    ["parent synthetic path segment", { path: "rules/../shared.md" }],
+    [
+      "empty synthetic locator segment",
+      {
+        sourceIdentity: {
+          locator: "synthetic://fixture//shared",
+          digest: digest("source-review-loop"),
+        },
+      },
+    ],
+    [
+      "parent synthetic locator segment",
+      {
+        sourceIdentity: {
+          locator: "synthetic://fixture/rules/../shared.md",
+          digest: digest("source-review-loop"),
+        },
+      },
+    ],
+    [
+      "trailing synthetic locator segment",
+      {
+        sourceIdentity: {
+          locator: "synthetic://fixture/shared/",
+          digest: digest("source-review-loop"),
+        },
+      },
+    ],
+  ])("rejects a %s at the closed schema boundary", (_name, overrides) => {
+    expect(() =>
+      SyntheticMethodologyInputSchema.parse(
+        input({ artifacts: [artifact("review-loop", overrides)] }),
+      ),
+    ).toThrow();
+  });
+
+  it("fails closed instead of admitting noncanonical synthetic path aliases", () => {
+    expect(() =>
+      classifySyntheticMethodology(
+        input({
+          roots: ["review-loop", "method-routing"],
+          artifacts: [
+            artifact("review-loop", { path: "rules/shared.md" }),
+            artifact("method-routing", { path: "rules//shared.md" }),
+          ],
+        }),
+      ),
+    ).toThrow();
   });
 
   it("uses code-unit ordering even if ambient locale comparison changes", () => {
