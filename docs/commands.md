@@ -438,7 +438,9 @@ These commands have no `--apply`, `clean`, `fetch`, `install`, `activate`, `swit
 `repair`, `update`, `preview`, `force`, `approve`, `suppress`, or host-launch behavior.
 Provider and host adapters are declarative records only. The stable `--json` envelope
 also reports that provider execution, provider fetch, host execution, and writes are all
-`false` for this phase.
+`false` for this phase. Successful envelopes carry the complete closed `status` record.
+Invalid or fail-closed envelopes instead carry a separate closed `failure` record, because
+Phase 1 cannot establish identity or compatibility from rejected input.
 
 ## aih evidence
 
