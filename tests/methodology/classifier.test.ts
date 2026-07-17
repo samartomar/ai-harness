@@ -296,6 +296,20 @@ describe("Phase 2 synthetic methodology classifier", () => {
   it("rejects oversized collections before reading forbidden elements", () => {
     const root = artifact("root");
     let forbiddenReads = 0;
+    const accessorDependencies = ["dependency"];
+    Object.defineProperty(accessorDependencies, "0", {
+      configurable: true,
+      enumerable: true,
+      get() {
+        forbiddenReads += 1;
+        throw new Error("dependency accessor was read");
+      },
+    });
+    const extraKeyRequested = ["root"];
+    Object.defineProperty(extraKeyRequested, "hidden", {
+      enumerable: false,
+      value: true,
+    });
     const requested = Array.from({ length: 33 }, (_, index) => `root-${index}`);
     Object.defineProperty(requested, "32", {
       configurable: true,
@@ -327,6 +341,15 @@ describe("Phase 2 synthetic methodology classifier", () => {
     expect(SyntheticClassifierInputSchema.safeParse(input([root], { requested })).success).toBe(
       false,
     );
+    expect(
+      SyntheticClassifierInputSchema.safeParse(
+        input([artifact("root", { dependencies: accessorDependencies })]),
+      ).success,
+    ).toBe(false);
+    expect(
+      SyntheticClassifierInputSchema.safeParse(input([root], { requested: extraKeyRequested }))
+        .success,
+    ).toBe(false);
     expect(
       SyntheticClassifierInputSchema.safeParse(input([artifact("root", { dependencies })])).success,
     ).toBe(false);
