@@ -343,6 +343,7 @@ describe("Phase 3 host-neutral synthetic projection planner", () => {
 
   it("keeps result schemas closed and disallows forged planned records", () => {
     const planned = planSyntheticProjection(input());
+    const manifest = manifestOf(planned);
 
     expect(() => ProjectionPlanResultSchema.parse({ ...planned, unexpected: true })).toThrow();
     expect(() =>
@@ -355,17 +356,32 @@ describe("Phase 3 host-neutral synthetic projection planner", () => {
     expect(() =>
       ProjectionPlanResultSchema.parse({
         ...planned,
-        manifest: { ...manifestOf(planned), digest: digest("f") },
+        manifest: { ...manifest, digest: digest("f") },
       }),
     ).toThrow();
     expect(() =>
       ProjectionPlanResultSchema.parse({
         ...planned,
         manifest: {
-          ...manifestOf(planned),
+          ...manifest,
+          decision: { ...manifest.decision, closure: ["root"] },
+        },
+      }),
+    ).toThrow();
+    expect(() =>
+      ProjectionPlanResultSchema.parse({
+        ...planned,
+        manifest: { ...manifest, entries: [...manifest.entries].reverse() },
+      }),
+    ).toThrow();
+    expect(() =>
+      ProjectionPlanResultSchema.parse({
+        ...planned,
+        manifest: {
+          ...manifest,
           entries: [
-            { ...manifestOf(planned).entries[0], target: "rules/a" },
-            { ...manifestOf(planned).entries[1], target: "rules/a." },
+            { ...manifest.entries[0], target: "rules/a" },
+            { ...manifest.entries[1], target: "rules/a/b" },
           ],
         },
       }),
@@ -374,10 +390,10 @@ describe("Phase 3 host-neutral synthetic projection planner", () => {
       ProjectionPlanResultSchema.parse({
         ...planned,
         manifest: {
-          ...manifestOf(planned),
+          ...manifest,
           entries: [
-            { ...manifestOf(planned).entries[0], artifactId: "root", target: "rules/a" },
-            { ...manifestOf(planned).entries[1], artifactId: "root", target: "rules/b" },
+            { ...manifest.entries[0], artifactId: "root", target: "rules/a" },
+            { ...manifest.entries[1], artifactId: "root", target: "rules/b" },
           ],
         },
       }),
