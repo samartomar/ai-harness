@@ -324,7 +324,7 @@ describe("Phase 2 synthetic methodology classifier", () => {
     } catch (error) {
       escapedError = error;
     } finally {
-      if (original === undefined) delete (Array.prototype as Record<string, unknown>)["-1"];
+      if (original === undefined) Reflect.deleteProperty(Array.prototype, "-1");
       else Object.defineProperty(Array.prototype, "-1", original);
     }
 

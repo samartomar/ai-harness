@@ -901,7 +901,9 @@ function canonicalUnique(values: readonly string[]): string[] {
   const unique: string[] = [];
   for (let index = 0; index < sorted.length; index += 1) {
     const value = sorted[index];
-    if (value !== undefined && value !== unique[unique.length - 1]) appendOwn(unique, value);
+    if (value !== undefined && (unique.length === 0 || value !== unique[unique.length - 1])) {
+      appendOwn(unique, value);
+    }
   }
   return unique;
 }
