@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   ProjectionDecisionSchema,
+  ProjectionMappingSchema,
   ProjectionPlannerInputSchema,
   ProjectionPlanResultSchema,
   planSyntheticProjection,
@@ -638,6 +639,71 @@ describe("Phase 3 host-neutral synthetic projection planner", () => {
       ProjectionPlannerInputSchema.safeParse(input({ mappings: sparseMappings })),
     );
     expect(inheritedReads).toBe(0);
+  });
+
+  it("fails closed for direct mapping proxies, inherited fields, and accessors", () => {
+    const mapping = { artifactId: "root", target: "rules/root.md" };
+    const proxied = new Proxy(mapping, {
+      get() {
+        throw new Error("mapping schema invoked a proxy trap");
+      },
+    });
+    const revocable = Proxy.revocable(mapping, {});
+    revocable.revoke();
+    const inherited = Object.create(mapping) as Record<string, unknown>;
+    const accessor = { target: "rules/root.md" } as Record<string, unknown>;
+    Object.defineProperty(accessor, "artifactId", {
+      enumerable: true,
+      get() {
+        throw new Error("mapping schema invoked an accessor");
+      },
+    });
+
+    for (const candidate of [proxied, revocable.proxy, inherited, accessor]) {
+      expectFailFast(() => ProjectionMappingSchema.safeParse(candidate));
+    }
+  });
+
+  it("rejects polluted prototypes and hidden record properties without reading them", () => {
+    let inheritedReads = 0;
+    const missingMappings = input();
+    delete missingMappings.mappings;
+    const missingDependencies = input();
+    const firstArtifact = (
+      missingDependencies.classifierInput as { artifacts: Array<Record<string, unknown>> }
+    ).artifacts[0];
+    if (firstArtifact === undefined) throw new Error("test fixture lost its root artifact");
+    delete firstArtifact.dependencies;
+
+    Object.defineProperty(Object.prototype, "mappings", {
+      configurable: true,
+      get() {
+        inheritedReads += 1;
+        throw new Error("planner schema invoked Object.prototype.mappings");
+      },
+    });
+    Object.defineProperty(Object.prototype, "dependencies", {
+      configurable: true,
+      get() {
+        inheritedReads += 1;
+        throw new Error("planner schema invoked Object.prototype.dependencies");
+      },
+    });
+    try {
+      expectFailFast(() => ProjectionPlannerInputSchema.safeParse(missingMappings));
+      expectFailFast(() => ProjectionPlannerInputSchema.safeParse(missingDependencies));
+    } finally {
+      delete (Object.prototype as Record<string, unknown>).mappings;
+      delete (Object.prototype as Record<string, unknown>).dependencies;
+    }
+    expect(inheritedReads).toBe(0);
+
+    const withSymbol = input();
+    Object.defineProperty(withSymbol, Symbol("hidden"), { value: true, enumerable: true });
+    const withHidden = input();
+    Object.defineProperty(withHidden, "hidden", { value: true, enumerable: false });
+    expect(ProjectionPlannerInputSchema.safeParse(withSymbol).success).toBe(false);
+    expect(ProjectionPlannerInputSchema.safeParse(withHidden).success).toBe(false);
   });
 
   it("accepts exact resource maxima and rejects the first value beyond each bound", () => {
