@@ -200,6 +200,31 @@ describe("Phase 2 synthetic methodology classifier", () => {
     expect(evidenceReverse).toEqual(evidenceForward);
   });
 
+  it("does not invoke ambient toJSON hooks while ordering synthetic records", () => {
+    const root = artifact("root", { dependencies: ["dependency"] });
+    const dependency = artifact("dependency");
+    let hookCalls = 0;
+
+    for (const prototype of [Object.prototype, Array.prototype]) {
+      Object.defineProperty(prototype, "toJSON", {
+        configurable: true,
+        value() {
+          hookCalls += 1;
+          throw new Error("classifier invoked an ambient toJSON hook");
+        },
+      });
+      try {
+        const forward = classifySyntheticProjection(input([root, dependency]));
+        const reverse = classifySyntheticProjection(input([dependency, root]));
+        expect(reverse).toEqual(forward);
+      } finally {
+        delete (prototype as { toJSON?: unknown }).toJSON;
+      }
+    }
+
+    expect(hookCalls).toBe(0);
+  });
+
   it("keeps input and result schemas closed and result dispositions self-consistent", () => {
     const valid = classifySyntheticProjection(input());
     const root = artifact("root");
