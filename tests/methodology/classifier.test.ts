@@ -395,13 +395,11 @@ describe("Phase 2 synthetic methodology classifier", () => {
       {
         prototype: RegExp.prototype,
         property: "test",
-        value: () => true,
         invalid: invalidPattern,
       },
       {
         prototype: Set.prototype,
         property: "has",
-        value: () => true,
         invalid: invalidEnum,
       },
     ];
@@ -413,9 +411,9 @@ describe("Phase 2 synthetic methodology classifier", () => {
       const original = Object.getOwnPropertyDescriptor(candidate.prototype, candidate.property);
       Object.defineProperty(candidate.prototype, candidate.property, {
         configurable: true,
-        value(...args: unknown[]) {
+        value() {
           hookCalls += 1;
-          return candidate.value(...args);
+          return true;
         },
         writable: true,
       });

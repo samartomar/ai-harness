@@ -1,5 +1,70 @@
 import { isProxy } from "node:util/types";
 
+const INTRINSIC_APPLY = Reflect.apply;
+const MAP_GET = Map.prototype.get;
+const MAP_HAS = Map.prototype.has;
+const MAP_SET = Map.prototype.set;
+const MAP_FOR_EACH = Map.prototype.forEach;
+const SET_ADD = Set.prototype.add;
+const SET_HAS = Set.prototype.has;
+const SET_FOR_EACH = Set.prototype.forEach;
+const WEAK_SET_ADD = WeakSet.prototype.add;
+const WEAK_SET_DELETE = WeakSet.prototype.delete;
+const WEAK_SET_HAS = WeakSet.prototype.has;
+const REGEXP_TEST = RegExp.prototype.test;
+
+function callIntrinsic<T>(
+  intrinsic: CallableFunction,
+  receiver: unknown,
+  argumentsList: readonly unknown[],
+): T {
+  return INTRINSIC_APPLY(intrinsic, receiver, argumentsList) as T;
+}
+
+function mapGet<K, V>(map: Map<K, V>, key: K): V | undefined {
+  return callIntrinsic<V | undefined>(MAP_GET, map, [key]);
+}
+
+function mapHas<K, V>(map: Map<K, V>, key: K): boolean {
+  return callIntrinsic<boolean>(MAP_HAS, map, [key]);
+}
+
+function mapSet<K, V>(map: Map<K, V>, key: K, value: V): void {
+  callIntrinsic<Map<K, V>>(MAP_SET, map, [key, value]);
+}
+
+function mapForEach<K, V>(map: Map<K, V>, callback: (value: V, key: K) => void): void {
+  callIntrinsic<void>(MAP_FOR_EACH, map, [callback]);
+}
+
+function setAdd<T>(set: Set<T>, value: T): void {
+  callIntrinsic<Set<T>>(SET_ADD, set, [value]);
+}
+
+function setHas<T>(set: ReadonlySet<T>, value: T): boolean {
+  return callIntrinsic<boolean>(SET_HAS, set, [value]);
+}
+
+function setForEach<T>(set: Set<T>, callback: (value: T) => void): void {
+  callIntrinsic<void>(SET_FOR_EACH, set, [callback]);
+}
+
+function weakSetAdd<T extends WeakKey>(set: WeakSet<T>, value: T): void {
+  callIntrinsic<WeakSet<T>>(WEAK_SET_ADD, set, [value]);
+}
+
+function weakSetDelete<T extends WeakKey>(set: WeakSet<T>, value: T): void {
+  callIntrinsic<boolean>(WEAK_SET_DELETE, set, [value]);
+}
+
+function weakSetHas<T extends WeakKey>(set: WeakSet<T>, value: T): boolean {
+  return callIntrinsic<boolean>(WEAK_SET_HAS, set, [value]);
+}
+
+function regexpTest(pattern: RegExp, value: string): boolean {
+  return callIntrinsic<boolean>(REGEXP_TEST, pattern, [value]);
+}
+
 const MAX_REQUESTED_COMPONENTS = 32;
 const MAX_ARTIFACTS = 64;
 const MAX_DEPENDENCIES_PER_ARTIFACT = 32;
@@ -132,7 +197,7 @@ function setOf<T>(values: readonly T[]): Set<T> {
   const result = new Set<T>();
   for (let index = 0; index < values.length; index += 1) {
     const value = values[index];
-    if (value !== undefined) result.add(value);
+    if (value !== undefined) setAdd(result, value);
   }
   return result;
 }
@@ -191,9 +256,15 @@ function sortedArrayCopy<T>(values: readonly T[], compare: (left: T, right: T) =
   return sortOwnedValues(copyOwnValues(values), compare);
 }
 
-function sortedIterableCopy<T>(values: Iterable<T>, compare: (left: T, right: T) => number): T[] {
+function sortedMapValuesCopy<K, V>(values: Map<K, V>, compare: (left: V, right: V) => number): V[] {
+  const copy: V[] = [];
+  mapForEach(values, (value) => appendOwn(copy, value));
+  return sortOwnedValues(copy, compare);
+}
+
+function sortedSetValuesCopy<T>(values: Set<T>, compare: (left: T, right: T) => number): T[] {
   const copy: T[] = [];
-  for (const value of values) appendOwn(copy, value);
+  setForEach(values, (value) => appendOwn(copy, value));
   return sortOwnedValues(copy, compare);
 }
 
@@ -248,9 +319,9 @@ function snapshotPlainData(value: unknown, depth: number, state: SnapshotState):
   if (depth >= MAX_SNAPSHOT_DEPTH || state.nodes >= MAX_SNAPSHOT_NODES) {
     return INVALID_SNAPSHOT;
   }
-  if (state.active.has(value)) return INVALID_SNAPSHOT;
+  if (weakSetHas(state.active, value)) return INVALID_SNAPSHOT;
   state.nodes += 1;
-  state.active.add(value);
+  weakSetAdd(state.active, value);
   try {
     if (Array.isArray(surface.value)) {
       const snapshot: unknown[] = [];
@@ -278,7 +349,7 @@ function snapshotPlainData(value: unknown, depth: number, state: SnapshotState):
     }
     return { ok: true, value: snapshot };
   } finally {
-    state.active.delete(value);
+    weakSetDelete(state.active, value);
   }
 }
 
@@ -427,17 +498,17 @@ function validateRecordFields(
   const permitted = new Set<string>();
   for (let index = 0; index < required.length; index += 1) {
     const field = required[index];
-    if (field !== undefined) permitted.add(field);
+    if (field !== undefined) setAdd(permitted, field);
   }
   for (let index = 0; index < optional.length; index += 1) {
     const field = optional[index];
-    if (field !== undefined) permitted.add(field);
+    if (field !== undefined) setAdd(permitted, field);
   }
   const keys = Object.keys(record);
   for (let index = 0; index < keys.length; index += 1) {
     const key = keys[index];
     if (key === undefined) continue;
-    if (!permitted.has(key)) return validationIssue([key], "unknown field is not permitted");
+    if (!setHas(permitted, key)) return validationIssue([key], "unknown field is not permitted");
   }
   for (let index = 0; index < required.length; index += 1) {
     const field = required[index];
@@ -453,7 +524,7 @@ function validateStringPattern(
   path: ValidationPath,
   message: string,
 ): ValidationIssue | undefined {
-  return typeof value === "string" && pattern.test(value)
+  return typeof value === "string" && regexpTest(pattern, value)
     ? undefined
     : validationIssue(path, message);
 }
@@ -464,7 +535,7 @@ function validateEnumValue(
   path: ValidationPath,
   message: string,
 ): ValidationIssue | undefined {
-  return typeof value === "string" && permitted.has(value)
+  return typeof value === "string" && setHas(permitted, value)
     ? undefined
     : validationIssue(path, message);
 }
@@ -508,7 +579,7 @@ function validateSourceLocator(value: unknown): ValidationIssue | undefined {
   if (typeof value !== "string" || value.length === 0 || value.length > MAX_LOCATOR_LENGTH) {
     return validationIssue([], "source locator is outside the closed resource bounds");
   }
-  return SOURCE_LOCATOR_PATTERN.test(value)
+  return regexpTest(SOURCE_LOCATOR_PATTERN, value)
     ? undefined
     : validationIssue([], "source locator must use the synthetic canonical form");
 }
@@ -570,10 +641,10 @@ function validateArtifact(value: unknown): ValidationIssue | undefined {
   const uniqueDependencies = new Set<unknown>();
   for (let index = 0; index < dependencies.length; index += 1) {
     const dependency = dependencies[index];
-    if (uniqueDependencies.has(dependency)) {
+    if (setHas(uniqueDependencies, dependency)) {
       return validationIssue(["dependencies"], "synthetic artifact dependencies must be unique");
     }
-    uniqueDependencies.add(dependency);
+    setAdd(uniqueDependencies, dependency);
   }
   return undefined;
 }
@@ -620,7 +691,7 @@ function validateFinding(value: unknown): ValidationIssue | undefined {
   }
   const code = finding.code as (typeof FINDING_CODES)[number];
   const hasArtifactId = Object.hasOwn(finding, "artifactId");
-  if (GLOBAL_FINDING_CODES.has(code) === hasArtifactId) {
+  if (setHas(GLOBAL_FINDING_CODES, code) === hasArtifactId) {
     return validationIssue(
       ["artifactId"],
       "synthetic finding attribution must match its fixed finding code",
@@ -837,11 +908,11 @@ class Findings {
 
   add(code: SyntheticFindingCode, artifactId?: string): void {
     const finding = artifactId === undefined ? { code } : { code, artifactId };
-    this.values.set(findingKey(finding), finding);
+    mapSet(this.values, findingKey(finding), finding);
   }
 
   sorted(): Finding[] {
-    return sortedIterableCopy(this.values.values(), (left, right) =>
+    return sortedMapValuesCopy(this.values, (left, right) =>
       compareCodeUnits(findingKey(left), findingKey(right)),
     );
   }
@@ -931,15 +1002,15 @@ export function classifySyntheticProjection(value: unknown): SyntheticClassifica
   for (let index = 0; index < artifacts.length; index += 1) {
     const artifact = artifacts[index];
     if (artifact === undefined) continue;
-    if (artifactsById.has(artifact.id)) {
+    if (mapHas(artifactsById, artifact.id)) {
       findings.add("METHODOLOGY_ARTIFACT_DUPLICATE", artifact.id);
       continue;
     }
-    artifactsById.set(artifact.id, artifact);
-    if (artifactByLocator.has(artifact.sourceLocator)) {
+    mapSet(artifactsById, artifact.id, artifact);
+    if (mapHas(artifactByLocator, artifact.sourceLocator)) {
       findings.add("METHODOLOGY_LOCATOR_DUPLICATE", artifact.id);
     } else {
-      artifactByLocator.set(artifact.sourceLocator, artifact);
+      mapSet(artifactByLocator, artifact.sourceLocator, artifact);
     }
   }
 
@@ -960,30 +1031,30 @@ export function classifySyntheticProjection(value: unknown): SyntheticClassifica
     while (stack.length > 0) {
       const frame = popOwn(stack);
       if (frame === undefined) continue;
-      const current = artifactsById.get(frame.id);
+      const current = mapGet(artifactsById, frame.id);
       if (current === undefined) {
         findings.add("METHODOLOGY_DEPENDENCY_MISSING", frame.id);
         continue;
       }
       if (frame.complete) {
-        state.set(frame.id, "complete");
-        closure.add(frame.id);
+        mapSet(state, frame.id, "complete");
+        setAdd(closure, frame.id);
         continue;
       }
-      const currentState = state.get(frame.id);
+      const currentState = mapGet(state, frame.id);
       if (currentState === "complete") continue;
       if (currentState === "visiting") {
         findings.add("METHODOLOGY_DEPENDENCY_CYCLE", frame.id);
         continue;
       }
-      state.set(frame.id, "visiting");
-      closure.add(frame.id);
+      mapSet(state, frame.id, "visiting");
+      setAdd(closure, frame.id);
       appendOwn(stack, { id: frame.id, complete: true });
       const dependencies = sortedArrayCopy(current.dependencies, compareCodeUnits);
       for (let index = dependencies.length - 1; index >= 0; index -= 1) {
         const dependency = dependencies[index];
         if (dependency === undefined) continue;
-        if (state.get(dependency) === "visiting") {
+        if (mapGet(state, dependency) === "visiting") {
           findings.add("METHODOLOGY_DEPENDENCY_CYCLE", dependency);
         } else {
           appendOwn(stack, { id: dependency, complete: false });
@@ -992,7 +1063,7 @@ export function classifySyntheticProjection(value: unknown): SyntheticClassifica
     }
   }
 
-  const canonicalClosure = sortedIterableCopy(closure.values(), compareCodeUnits);
+  const canonicalClosure = sortedSetValuesCopy(closure, compareCodeUnits);
   const declaredClosure = canonicalUnique(input.declaredClosure);
   if (
     declaredClosure.length !== input.declaredClosure.length ||
@@ -1006,21 +1077,21 @@ export function classifySyntheticProjection(value: unknown): SyntheticClassifica
   for (let index = 0; index < evidenceRecords.length; index += 1) {
     const evidence = evidenceRecords[index];
     if (evidence === undefined) continue;
-    if (!artifactsById.has(evidence.artifactId)) {
+    if (!mapHas(artifactsById, evidence.artifactId)) {
       findings.add("METHODOLOGY_EVIDENCE_UNBOUND", evidence.artifactId);
       continue;
     }
-    if (evidenceByArtifact.has(evidence.artifactId)) {
+    if (mapHas(evidenceByArtifact, evidence.artifactId)) {
       findings.add("METHODOLOGY_EVIDENCE_CONFLICT", evidence.artifactId);
       continue;
     }
-    evidenceByArtifact.set(evidence.artifactId, evidence);
+    mapSet(evidenceByArtifact, evidence.artifactId, evidence);
   }
 
   for (let index = 0; index < canonicalClosure.length; index += 1) {
     const id = canonicalClosure[index];
     if (id === undefined) continue;
-    const artifact = artifactsById.get(id);
+    const artifact = mapGet(artifactsById, id);
     if (artifact === undefined) continue;
     if (artifact.contentDisposition === "executable") {
       findings.add("METHODOLOGY_CONTENT_EXECUTABLE", id);
@@ -1034,7 +1105,7 @@ export function classifySyntheticProjection(value: unknown): SyntheticClassifica
     if (artifact.licenseDisposition !== "permissive") {
       findings.add("METHODOLOGY_LICENSE_UNAPPROVED", id);
     }
-    const evidence = evidenceByArtifact.get(id);
+    const evidence = mapGet(evidenceByArtifact, id);
     if (evidence === undefined) {
       findings.add("METHODOLOGY_EVIDENCE_MISSING", id);
     } else if (!exactEvidenceBinding(artifact, evidence)) {
