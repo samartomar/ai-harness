@@ -99,6 +99,12 @@ export const SyntheticFindingSchema = z
   })
   .strict();
 
+const GLOBAL_FINDING_CODES = new Set<z.infer<typeof SyntheticFindingCodeSchema>>([
+  "METHODOLOGY_DEPENDENCY_OUT_OF_CLOSURE",
+  "METHODOLOGY_FINDINGS_LIMIT",
+  "METHODOLOGY_REQUEST_DUPLICATE",
+]);
+
 function compareCodeUnits(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0;
 }
@@ -153,7 +159,9 @@ export const SyntheticClassificationResultSchema = z
     }
     if (
       (result.disposition === "eligible" &&
-        (result.findings.length !== 0 || !sameStrings(result.eligible, result.closure))) ||
+        (result.closure.length === 0 ||
+          result.findings.length !== 0 ||
+          !sameStrings(result.eligible, result.closure))) ||
       (result.disposition === "ineligible" &&
         (result.findings.length === 0 || result.eligible.length !== 0))
     ) {
@@ -162,6 +170,19 @@ export const SyntheticClassificationResultSchema = z
         message:
           "eligibility result must bind its disposition, closure, eligible ids, and findings",
       });
+    }
+    for (const [index, finding] of result.findings.entries()) {
+      const global = GLOBAL_FINDING_CODES.has(finding.code);
+      if (
+        (global && finding.artifactId !== undefined) ||
+        (!global && finding.artifactId === undefined)
+      ) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["findings", index, "artifactId"],
+          message: "synthetic finding attribution must match its fixed finding code",
+        });
+      }
     }
   });
 
@@ -185,21 +206,38 @@ class Findings {
 }
 
 function sortedArtifacts(artifacts: readonly Artifact[]): Artifact[] {
-  return [...artifacts].sort(
-    (left, right) =>
-      compareCodeUnits(left.id, right.id) ||
-      compareCodeUnits(left.sourceLocator, right.sourceLocator) ||
-      compareCodeUnits(left.contentDigest, right.contentDigest),
+  return [...artifacts].sort((left, right) =>
+    compareCodeUnits(canonicalArtifactKey(left), canonicalArtifactKey(right)),
   );
 }
 
 function sortedEvidence(evidence: readonly Evidence[]): Evidence[] {
-  return [...evidence].sort(
-    (left, right) =>
-      compareCodeUnits(left.artifactId, right.artifactId) ||
-      compareCodeUnits(left.sourceLocator, right.sourceLocator) ||
-      compareCodeUnits(left.contentDigest, right.contentDigest),
+  return [...evidence].sort((left, right) =>
+    compareCodeUnits(canonicalEvidenceKey(left), canonicalEvidenceKey(right)),
   );
+}
+
+function canonicalArtifactKey(artifact: Artifact): string {
+  return JSON.stringify({
+    id: artifact.id,
+    sourceLocator: artifact.sourceLocator,
+    contentDigest: artifact.contentDigest,
+    contentDisposition: artifact.contentDisposition,
+    linkDisposition: artifact.linkDisposition,
+    licenseDisposition: artifact.licenseDisposition,
+    evidenceDigest: artifact.evidenceDigest,
+    dependencies: [...artifact.dependencies].sort(compareCodeUnits),
+  });
+}
+
+function canonicalEvidenceKey(evidence: Evidence): string {
+  return JSON.stringify({
+    artifactId: evidence.artifactId,
+    sourceLocator: evidence.sourceLocator,
+    contentDigest: evidence.contentDigest,
+    licenseDisposition: evidence.licenseDisposition,
+    evidenceDigest: evidence.evidenceDigest,
+  });
 }
 
 function canonicalUnique(values: readonly string[]): string[] {
