@@ -16,7 +16,7 @@ function hasWindowsReservedSegment(value: string): boolean {
   return value.split("/").some((segment) => WindowsReservedSegmentSchema.test(segment));
 }
 
-const SyntheticPathSchema = z
+export const SyntheticMethodologyPathSchema = z
   .string()
   .max(MAX_SYNTHETIC_PATH_LENGTH)
   .regex(
@@ -25,8 +25,8 @@ const SyntheticPathSchema = z
   .refine((path) => !hasWindowsReservedSegment(path), {
     message: "synthetic paths cannot contain Windows-reserved device names",
   });
-const SyntheticDigestSchema = z.string().regex(/^sha256:[a-f0-9]{64}$/);
-const SyntheticSourceLocatorSchema = z
+export const SyntheticMethodologyDigestSchema = z.string().regex(/^sha256:[a-f0-9]{64}$/);
+export const SyntheticMethodologySourceLocatorSchema = z
   .string()
   .max(256)
   .regex(
@@ -46,21 +46,21 @@ export const SyntheticArtifactKindSchema = z.enum([
 export const SyntheticContentSchema = z
   .object({
     classification: z.enum(["passive", "ambiguous", "executable"]),
-    digest: SyntheticDigestSchema,
+    digest: SyntheticMethodologyDigestSchema,
   })
   .strict();
 export const SyntheticSourceIdentitySchema = z
   .object({
-    locator: SyntheticSourceLocatorSchema,
-    digest: SyntheticDigestSchema,
+    locator: SyntheticMethodologySourceLocatorSchema,
+    digest: SyntheticMethodologyDigestSchema,
   })
   .strict();
 export const SyntheticEvidenceTargetSchema = z
   .object({
     artifact: ArtifactIdSchema,
-    path: SyntheticPathSchema,
+    path: SyntheticMethodologyPathSchema,
     sourceIdentity: SyntheticSourceIdentitySchema,
-    contentDigest: SyntheticDigestSchema,
+    contentDigest: SyntheticMethodologyDigestSchema,
   })
   .strict();
 export const SyntheticEvidenceSchema = z
@@ -75,7 +75,7 @@ export const SyntheticEvidenceSchema = z
 export const SyntheticMethodologyArtifactSchema = z
   .object({
     id: ArtifactIdSchema,
-    path: SyntheticPathSchema,
+    path: SyntheticMethodologyPathSchema,
     kind: SyntheticArtifactKindSchema,
     content: SyntheticContentSchema,
     sourceIdentity: SyntheticSourceIdentitySchema,
