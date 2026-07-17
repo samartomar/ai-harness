@@ -205,6 +205,7 @@ export const ProjectionPlanResultSchema = z.preprocess(
 
 type ClassifierInput = z.infer<typeof SyntheticClassifierInputSchema>;
 type ClassifierResult = z.infer<typeof SyntheticClassificationResultSchema>;
+type Artifact = ClassifierInput["artifacts"][number];
 type PlannerInput = z.infer<typeof ProjectionPlannerInputSchema>;
 type Decision = z.infer<typeof ProjectionDecisionSchema>;
 type Entry = z.infer<typeof EntrySchema>;
@@ -226,9 +227,12 @@ function recordOf(value: unknown): Record<string, unknown> | undefined {
 }
 
 function recordSurfaceIsStatic(value: unknown): boolean {
+  if (value === null || typeof value !== "object") return true;
   if (isProxy(value)) return false;
-  const record = recordOf(value);
-  if (record === undefined) return true;
+  if (Array.isArray(value)) return Object.getPrototypeOf(value) === Array.prototype;
+  const prototype = Object.getPrototypeOf(value);
+  if (prototype !== Object.prototype && prototype !== null) return false;
+  const record = value as Record<string, unknown>;
   return Object.values(Object.getOwnPropertyDescriptors(record)).every(
     (descriptor) => "value" in descriptor,
   );
@@ -237,22 +241,19 @@ function recordSurfaceIsStatic(value: unknown): boolean {
 function collectionIsBounded(value: unknown, maximum: number): boolean {
   if (isProxy(value)) return false;
   if (!Array.isArray(value)) return true;
+  if (Object.getPrototypeOf(value) !== Array.prototype) return false;
   const length = value.length;
   if (length > maximum) return false;
   for (let index = 0; index < length; index += 1) {
     const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
-    if (descriptor === undefined) continue;
+    if (descriptor === undefined) return false;
     if (!("value" in descriptor) || !recordSurfaceIsStatic(descriptor.value)) return false;
   }
-  return true;
+  return Reflect.ownKeys(value).length === length + 1;
 }
 
 function failClosedPreprocess(value: unknown, predicate: (candidate: unknown) => boolean): unknown {
-  try {
-    return predicate(value) ? value : null;
-  } catch {
-    return null;
-  }
+  return predicate(value) ? value : null;
 }
 
 function classifierCollectionsAreBounded(value: unknown): boolean {
@@ -264,7 +265,8 @@ function classifierCollectionsAreBounded(value: unknown): boolean {
   if (!collectionIsBounded(input.artifacts, MAX_ENTRIES)) return false;
   if (!collectionIsBounded(input.evidence, MAX_ENTRIES)) return false;
   if (Array.isArray(input.artifacts)) {
-    for (const candidate of input.artifacts) {
+    for (let index = 0; index < input.artifacts.length; index += 1) {
+      const candidate = input.artifacts[index];
       const artifact = recordOf(candidate);
       if (
         artifact !== undefined &&
@@ -316,6 +318,7 @@ function resultCollectionsAreBounded(value: unknown): boolean {
   if (result === undefined) return true;
   return (
     collectionIsBounded(result.findings, MAX_BLOCKED_FINDINGS) &&
+    recordSurfaceIsStatic(result.boundary) &&
     manifestCollectionsAreBounded(result.manifest)
   );
 }
@@ -402,12 +405,11 @@ function hasTargetCollision(entries: readonly Entry[]): boolean {
 function deriveEntries(
   classifierInput: ClassifierInput,
   mappings: readonly z.infer<typeof ProjectionMappingSchema>[],
-): Entry[] | undefined {
+): Entry[] {
   const artifacts = new Map(classifierInput.artifacts.map((artifact) => [artifact.id, artifact]));
   const entries: Entry[] = [];
   for (const mapping of mappings) {
-    const artifact = artifacts.get(mapping.artifactId);
-    if (artifact === undefined) return undefined;
+    const artifact = artifacts.get(mapping.artifactId) as Artifact;
     entries.push({
       artifactId: mapping.artifactId,
       target: mapping.target,
@@ -447,7 +449,7 @@ function rebuildCanonicalDecision(decision: Decision): Decision | undefined {
   if (!mappingsCover(classification.eligible, decision.mappings)) return undefined;
   if (decision.mappings.some((mapping) => !targetIsCanonical(mapping.target))) return undefined;
   const entries = deriveEntries(decision.classifierInput, decision.mappings);
-  if (entries === undefined || hasTargetCollision(entries)) return undefined;
+  if (hasTargetCollision(entries)) return undefined;
   return buildCanonicalDecision(
     {
       schemaVersion: 1,
@@ -485,9 +487,6 @@ export function planSyntheticProjection(
     return blocked({ code: "METHODOLOGY_TARGET_INVALID" });
   }
   const entries = deriveEntries(input.classifierInput, input.mappings);
-  if (entries === undefined) {
-    return blocked({ code: "METHODOLOGY_MAPPING_COVERAGE" });
-  }
   if (hasTargetCollision(entries)) {
     return blocked({ code: "METHODOLOGY_TARGET_COLLISION" });
   }

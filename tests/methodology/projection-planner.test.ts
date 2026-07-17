@@ -237,7 +237,7 @@ describe("Phase 3 host-neutral synthetic projection planner", () => {
     );
   });
 
-  it("blocks ineligible classification, noncanonical target, and incomplete mapping coverage", () => {
+  it("blocks ineligible classification, duplicate requests, invalid targets, and incomplete mappings", () => {
     const executable = input();
     (
       (executable.classifierInput as { artifacts: Array<Record<string, unknown>> })
@@ -254,8 +254,15 @@ describe("Phase 3 host-neutral synthetic projection planner", () => {
     const incomplete = planSyntheticProjection(
       input({ mappings: [{ artifactId: "root", target: "rules/root.md" }] }),
     );
+    const duplicateRequest = input();
+    (
+      duplicateRequest.classifierInput as {
+        requested: string[];
+      }
+    ).requested = ["root", "root"];
 
     expect(planSyntheticProjection(executable).state).toBe("blocked");
+    expect(planSyntheticProjection(duplicateRequest).state).toBe("blocked");
     expect(invalidTarget.findings.map((finding) => finding.code)).toContain(
       "METHODOLOGY_TARGET_INVALID",
     );
