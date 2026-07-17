@@ -518,6 +518,37 @@ describe("Phase 2 synthetic methodology classifier", () => {
     }
   });
 
+  it("attributes closed-schema failures to named record fields", () => {
+    const root = artifact("root");
+    const cases = [
+      [SyntheticArtifactSchema, { ...root, id: "ROOT" }, ["id"]],
+      [
+        SyntheticEvidenceSchema,
+        { ...evidence(root), sourceLocator: "not-synthetic" },
+        ["sourceLocator"],
+      ],
+      [SyntheticFindingSchema, { code: "NOT_A_FINDING" }, ["code"]],
+      [SyntheticClassifierInputSchema, input([{ ...root, id: "ROOT" }]), ["artifacts", 0, "id"]],
+      [
+        SyntheticClassificationResultSchema,
+        {
+          schemaVersion: 1,
+          disposition: "admitted",
+          closure: ["root"],
+          eligible: ["root"],
+          findings: [],
+        },
+        ["disposition"],
+      ],
+    ] as const;
+
+    for (const [schema, value, expectedPath] of cases) {
+      const result = schema.safeParse(value);
+      expect(result.success).toBe(false);
+      if (!result.success) expect(result.error.issues[0]?.path).toEqual(expectedPath);
+    }
+  });
+
   it("denies duplicate requested components deterministically", () => {
     const result = classifySyntheticProjection(input(undefined, { requested: ["root", "root"] }));
 
