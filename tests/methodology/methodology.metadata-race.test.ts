@@ -136,4 +136,63 @@ describe("methodology Phase 1 descriptor metadata binding", () => {
       expect(JSON.parse(stdout)).toMatchObject({ outcome: "fail-closed" });
     },
   );
+
+  it.runIf(process.platform === "linux")(
+    "fails closed before reading when descriptor metadata changes after opening",
+    async () => {
+      const root = realFs.mkdtempSync(join(tmpdir(), "aih-methodology-pre-read-change-"));
+      temporaryRoots.push(root);
+      realFs.writeFileSync(
+        join(root, "methodology.intent.json"),
+        validIntent("a".repeat(40)),
+        "utf8",
+      );
+      let fileStats = 0;
+      let reads = 0;
+
+      vi.doMock("node:fs", async () => {
+        const actual = await vi.importActual<typeof import("node:fs")>("node:fs");
+        return {
+          ...actual,
+          fstatSync(descriptor: number, options: { bigint: true }) {
+            const info = actual.fstatSync(descriptor, options);
+            if (!info.isFile()) return info;
+            fileStats += 1;
+            if (fileStats !== 2) return info;
+            const changed = Object.assign(Object.create(Object.getPrototypeOf(info)), info);
+            changed.ctimeNs += 1n;
+            return changed;
+          },
+          readSync(
+            descriptor: number,
+            buffer: NodeJS.ArrayBufferView,
+            offset: number,
+            length: number,
+            position: number | null,
+          ): number {
+            reads += 1;
+            return actual.readSync(descriptor, buffer, offset, length, position);
+          },
+        };
+      });
+
+      const { runMethodologyCommand } = await import("../../src/methodology/index.js");
+      let stdout = "";
+      const exitCode = runMethodologyCommand(
+        "inspect",
+        { root, intent: "methodology.intent.json", json: true },
+        {
+          write: (text) => {
+            stdout += text;
+          },
+          writeError: () => undefined,
+        },
+      );
+
+      expect(fileStats).toBe(2);
+      expect(reads).toBe(0);
+      expect(exitCode).toBe(3);
+      expect(JSON.parse(stdout)).toMatchObject({ outcome: "fail-closed" });
+    },
+  );
 });
