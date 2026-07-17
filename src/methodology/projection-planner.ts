@@ -17,6 +17,7 @@ const MAX_ENTRIES = 64;
 const MAX_REQUESTED_COMPONENTS = 32;
 const MAX_DEPENDENCIES_PER_ARTIFACT = 32;
 const MAX_BLOCKED_FINDINGS = 1;
+const MAX_TARGET_LENGTH = 240;
 const MAX_SNAPSHOT_ARRAY_LENGTH = MAX_ENTRIES;
 const MAX_SNAPSHOT_RECORD_KEYS = 32;
 const MAX_SNAPSHOT_DEPTH = 12;
@@ -25,11 +26,11 @@ const MAX_SNAPSHOT_NODES = 8192;
 const ArtifactIdSchema = z.string().regex(/^[a-z][a-z0-9-]{0,63}$/);
 const DigestSchema = z.string().regex(/^[0-9a-f]{64}$/);
 const LocatorSchema = z.string().regex(/^synthetic:[a-z][a-z0-9-]{0,63}$/);
-const MappingTargetSchema = z.string().min(1).max(240);
+const MappingTargetSchema = z.string().min(1).max(MAX_TARGET_LENGTH);
 const TargetSchema = z
   .string()
   .min(1)
-  .max(240)
+  .max(MAX_TARGET_LENGTH)
   .refine(
     (target) => targetIsCanonical(target),
     "target must be a canonical host-neutral logical path",
@@ -119,7 +120,7 @@ const ProjectionDecisionObjectSchema = z
   .strict()
   .superRefine((decision, ctx) => {
     const expected = rebuildCanonicalDecision(decision);
-    if (expected === undefined || JSON.stringify(decision) !== JSON.stringify(expected)) {
+    if (expected === undefined || canonicalSerialize(decision) !== canonicalSerialize(expected)) {
       ctx.addIssue({
         code: "custom",
         message: "projection decision must be complete, internally consistent, and canonical",
@@ -185,7 +186,7 @@ const ManifestSchema = z
     }
     if (
       manifest.owner !== manifest.decision.owner ||
-      JSON.stringify(manifest.entries) !== JSON.stringify(manifest.decision.entries)
+      canonicalSerialize(manifest.entries) !== canonicalSerialize(manifest.decision.entries)
     ) {
       ctx.addIssue({
         code: "custom",
@@ -525,7 +526,68 @@ function compare(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0;
 }
 
+function quotedString(value: string): string {
+  let result = '"';
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    const character = value[index];
+    if (character === '"' || character === "\\") {
+      result += `\\${character}`;
+    } else if (code === 8) {
+      result += "\\b";
+    } else if (code === 9) {
+      result += "\\t";
+    } else if (code === 10) {
+      result += "\\n";
+    } else if (code === 12) {
+      result += "\\f";
+    } else if (code === 13) {
+      result += "\\r";
+    } else if (code < 32) {
+      result += `\\u${code.toString(16).padStart(4, "0")}`;
+    } else {
+      result += character;
+    }
+  }
+  return `${result}"`;
+}
+
+function canonicalSerialize(value: unknown): string {
+  if (value === null) return "null";
+  if (typeof value === "string") return quotedString(value);
+  if (typeof value === "boolean") return value ? "true" : "false";
+  if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  if (Array.isArray(value)) {
+    let result = "[";
+    for (let index = 0; index < value.length; index += 1) {
+      if (index > 0) result += ",";
+      const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
+      if (descriptor === undefined || !("value" in descriptor)) {
+        throw new Error("canonical arrays must contain only own data elements");
+      }
+      result += canonicalSerialize(descriptor.value);
+    }
+    return `${result}]`;
+  }
+  const record = recordOf(value);
+  if (record === undefined) throw new Error("canonical values must be closed plain data");
+  let result = "{";
+  const keys = Object.keys(record).sort(compare);
+  for (let index = 0; index < keys.length; index += 1) {
+    const key = keys[index];
+    if (key === undefined) continue;
+    const descriptor = Object.getOwnPropertyDescriptor(record, key);
+    if (descriptor === undefined || !("value" in descriptor)) {
+      throw new Error("canonical records must contain only own data properties");
+    }
+    if (index > 0) result += ",";
+    result += `${quotedString(key)}:${canonicalSerialize(descriptor.value)}`;
+  }
+  return `${result}}`;
+}
+
 function targetIsCanonical(target: string): boolean {
+  if (target.length === 0 || target.length > MAX_TARGET_LENGTH) return false;
   if (!/^[a-z0-9][a-z0-9._-]*(?:\/[a-z0-9][a-z0-9._-]*)*$/.test(target)) return false;
   return target
     .split("/")
@@ -551,7 +613,7 @@ function canonicalClassifierInput(input: ClassifierInput): ClassifierInput {
         evidenceDigest: artifact.evidenceDigest,
         dependencies: [...artifact.dependencies].sort(compare),
       }))
-      .sort((left, right) => compare(JSON.stringify(left), JSON.stringify(right))),
+      .sort((left, right) => compare(canonicalSerialize(left), canonicalSerialize(right))),
     evidence: [...input.evidence]
       .map((evidence) => ({
         artifactId: evidence.artifactId,
@@ -560,7 +622,7 @@ function canonicalClassifierInput(input: ClassifierInput): ClassifierInput {
         licenseDisposition: evidence.licenseDisposition,
         evidenceDigest: evidence.evidenceDigest,
       }))
-      .sort((left, right) => compare(JSON.stringify(left), JSON.stringify(right))),
+      .sort((left, right) => compare(canonicalSerialize(left), canonicalSerialize(right))),
   };
 }
 
@@ -665,7 +727,7 @@ function rebuildCanonicalDecision(decision: Decision): Decision | undefined {
 }
 
 function digestDecision(decision: Decision): string {
-  return createHash("sha256").update(JSON.stringify(decision)).digest("hex");
+  return createHash("sha256").update(canonicalSerialize(decision)).digest("hex");
 }
 
 /** Pure Phase 3 object planning; it never reads, writes, launches, or applies a projection. */
