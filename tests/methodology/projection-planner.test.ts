@@ -269,6 +269,28 @@ describe("synthetic methodology projection planner", () => {
         },
       }),
     ).toThrow();
+    expect(() =>
+      SyntheticMethodologyProjectionPlanSchema.parse({
+        schemaVersion: 1,
+        state: "blocked",
+        manifest: null,
+        findings: [
+          {
+            code: "METHODOLOGY_SYNTHETIC_SOURCE_IDENTITY_AMBIGUOUS",
+            disposition: "blocked",
+            target: "methodology/v1/rules/review-loop.md",
+          },
+          finding,
+        ],
+        boundary: {
+          providerExecution: false,
+          hostExecution: false,
+          reads: false,
+          writes: false,
+          cli: false,
+        },
+      }),
+    ).toThrow();
   });
 
   it("rejects unordered, duplicate, overlong, or digest-mismatched manifests", () => {

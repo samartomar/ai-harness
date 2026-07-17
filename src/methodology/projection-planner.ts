@@ -220,6 +220,17 @@ export const SyntheticMethodologyProjectionPlanSchema = z
       }
       findings.add(key);
     }
+    const canonical = [...plan.findings].sort(
+      (left, right) =>
+        compareCodeUnits(left.target, right.target) || compareCodeUnits(left.code, right.code),
+    );
+    if (JSON.stringify(plan.findings) !== JSON.stringify(canonical)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["findings"],
+        message: "synthetic projection findings must use canonical target and code ordering",
+      });
+    }
     if (plan.state === "planned") {
       if (plan.manifest === null) {
         ctx.addIssue({
