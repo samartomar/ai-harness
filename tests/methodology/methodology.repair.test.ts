@@ -149,7 +149,7 @@ describe("methodology Phase 1 repair regressions", () => {
     });
   });
 
-  it("fails closed when a root ancestor is a linked directory or Windows junction", () => {
+  it("fails closed for a linked ancestor (or at the non-Linux input gate)", () => {
     const outside = fresh("aih-methodology-linked-ancestor-outside-");
     const wrapper = fresh("aih-methodology-linked-ancestor-wrapper-");
     const project = join(outside, "project");
@@ -293,6 +293,18 @@ describe("methodology Phase 1 repair regressions", () => {
           },
         });
       }
+    },
+    TEST_PROCESS_TIMEOUT_MS,
+  );
+
+  it(
+    "does not classify a non-methodology positional value as methodology JSON",
+    () => {
+      const result = runCli(["init", "methodology", "--json", "--help"]);
+
+      expect(result.status, result.stderr).toBe(0);
+      expect(result.stdout).toContain("Usage: aih init");
+      expect(() => JSON.parse(result.stdout)).toThrow();
     },
     TEST_PROCESS_TIMEOUT_MS,
   );

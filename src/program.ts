@@ -45,7 +45,7 @@ export function isVersionFastPath(argv: readonly string[]): boolean {
  * arguments.
  */
 export function isMethodologyNoPluginFastPath(argv: readonly string[]): boolean {
-  return argv.slice(2).includes("methodology");
+  return argv[2] === "methodology";
 }
 
 /**

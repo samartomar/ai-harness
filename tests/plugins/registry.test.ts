@@ -270,6 +270,9 @@ describe("methodology no-plugin fast path", () => {
       true,
     );
     expect(isMethodologyNoPluginFastPath(["node", "aih", "doctor"])).toBe(false);
+    expect(isMethodologyNoPluginFastPath(["node", "aih", "init", "methodology", "--json"])).toBe(
+      false,
+    );
   });
 });
 

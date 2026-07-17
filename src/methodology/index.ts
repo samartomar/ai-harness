@@ -440,15 +440,15 @@ export function runMethodologyCommand(
 }
 
 function methodologyCommandFromArgv(argv: readonly string[]): MethodologyCommand | null {
-  const index = argv.indexOf("methodology");
-  const candidate = argv[index + 1];
+  if (argv[2] !== "methodology") return null;
+  const candidate = argv[3];
   return METHODOLOGY_COMMAND_NAMES.includes(candidate as MethodologyCommand)
     ? (candidate as MethodologyCommand)
     : null;
 }
 
 function isMethodologyJsonInvocation(argv: readonly string[]): boolean {
-  return argv.includes("methodology") && argv.includes("--json");
+  return argv[2] === "methodology" && argv.slice(3).includes("--json");
 }
 
 /** Render parser failures before Commander can bypass the closed Phase 1 JSON contract. */
