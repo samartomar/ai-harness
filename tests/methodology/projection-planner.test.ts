@@ -105,6 +105,26 @@ function guardedOversizedArray(length: number, firstForbiddenIndex: number): unk
   });
 }
 
+function statefulOversizedArray(
+  values: unknown[],
+  reportedMaximum: number,
+  allowedLengthReads: number,
+): unknown[] {
+  let lengthReads = 0;
+  return new Proxy(values, {
+    get(target, property, receiver) {
+      if (property === "length") {
+        lengthReads += 1;
+        return lengthReads <= allowedLengthReads ? reportedMaximum : target.length;
+      }
+      if (property === String(reportedMaximum)) {
+        throw new Error(`stateful collection parser visited forbidden index ${reportedMaximum}`);
+      }
+      return Reflect.get(target, property, receiver);
+    },
+  });
+}
+
 function expectFailFast(parse: () => unknown): void {
   let result: unknown;
   expect(() => {
@@ -510,6 +530,68 @@ describe("Phase 3 host-neutral synthetic projection planner", () => {
         findings: guardedOversizedArray(2, 1),
       }),
     );
+  });
+
+  it("rejects state-changing proxy collections and records before schema traversal", () => {
+    const maximal = maximalInput();
+    const maximalPlan = planSyntheticProjection(maximal);
+    const maximalManifest = manifestOf(maximalPlan);
+    const mappings = [...(maximal.mappings as unknown[])];
+    const firstMapping = mappings[0];
+    if (firstMapping === undefined) throw new Error("maximal fixture lost its first mapping");
+    mappings.push(firstMapping);
+    expectFailFast(() =>
+      ProjectionPlannerInputSchema.safeParse({
+        ...maximal,
+        mappings: statefulOversizedArray(mappings, 64, 1),
+      }),
+    );
+
+    const evidence = [...maximalManifest.decision.classifierInput.evidence];
+    const firstEvidence = evidence[0];
+    if (firstEvidence === undefined) throw new Error("maximal fixture lost its first evidence");
+    evidence.push(firstEvidence);
+    expectFailFast(() =>
+      ProjectionDecisionSchema.safeParse({
+        ...maximalManifest.decision,
+        classifierInput: {
+          ...maximalManifest.decision.classifierInput,
+          evidence: statefulOversizedArray(evidence, 64, 1),
+        },
+      }),
+    );
+
+    const entries = [...maximalManifest.entries];
+    const firstEntry = entries[0];
+    if (firstEntry === undefined) throw new Error("maximal fixture lost its first entry");
+    entries.push(firstEntry);
+    expectFailFast(() =>
+      ProjectionPlanResultSchema.safeParse({
+        ...maximalPlan,
+        manifest: {
+          ...maximalManifest,
+          entries: statefulOversizedArray(entries, 64, 1),
+        },
+      }),
+    );
+
+    const nestedDependencyPlan = structuredClone(maximalPlan);
+    const nestedManifest = manifestOf(nestedDependencyPlan);
+    const firstArtifact = nestedManifest.decision.classifierInput.artifacts[0];
+    if (firstArtifact === undefined) throw new Error("maximal fixture lost its first artifact");
+    firstArtifact.dependencies = statefulOversizedArray(
+      Array.from({ length: 33 }, () => "item-01"),
+      32,
+      2,
+    ) as string[];
+    expectFailFast(() => ProjectionPlanResultSchema.safeParse(nestedDependencyPlan));
+
+    const proxiedInput = new Proxy(input(), {
+      get() {
+        throw new Error("planner schema read a proxied root record");
+      },
+    });
+    expectFailFast(() => ProjectionPlannerInputSchema.safeParse(proxiedInput));
   });
 
   it("accepts exact resource maxima and rejects the first value beyond each bound", () => {
