@@ -86,6 +86,7 @@ export const SyntheticFindingCodeSchema = z.enum([
   "METHODOLOGY_EVIDENCE_DRIFT",
   "METHODOLOGY_EVIDENCE_MISSING",
   "METHODOLOGY_EVIDENCE_UNBOUND",
+  "METHODOLOGY_FINDINGS_LIMIT",
   "METHODOLOGY_LICENSE_UNAPPROVED",
   "METHODOLOGY_LOCATOR_DUPLICATE",
   "METHODOLOGY_REQUEST_DUPLICATE",
@@ -332,11 +333,15 @@ export function classifySyntheticProjection(
   }
 
   const sortedFindings = findings.sorted();
+  const resultFindings: Finding[] =
+    sortedFindings.length > MAX_FINDINGS
+      ? [{ code: "METHODOLOGY_FINDINGS_LIMIT" }]
+      : sortedFindings;
   return SyntheticClassificationResultSchema.parse({
     schemaVersion: 1,
-    disposition: sortedFindings.length === 0 ? "eligible" : "ineligible",
+    disposition: resultFindings.length === 0 ? "eligible" : "ineligible",
     closure: canonicalClosure,
-    eligible: sortedFindings.length === 0 ? canonicalClosure : [],
-    findings: sortedFindings,
+    eligible: resultFindings.length === 0 ? canonicalClosure : [],
+    findings: resultFindings,
   });
 }

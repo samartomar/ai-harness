@@ -290,4 +290,32 @@ describe("Phase 2 synthetic methodology classifier", () => {
       }),
     );
   });
+
+  it("fails closed with one fixed finding instead of emitting a partial overflow result", () => {
+    const ids = ["root", ...Array.from({ length: 63 }, (_, index) => `node-${index}`)];
+    const artifacts = ids.map((id, index) =>
+      artifact(id, {
+        dependencies: index + 1 < ids.length ? [ids[index + 1]] : [],
+        contentDisposition: "executable",
+        linkDisposition: "symbolic",
+        licenseDisposition: "unknown",
+      }),
+    );
+    const evidenceRecords = artifacts.map((candidate) => ({
+      ...evidence(candidate),
+      contentDigest: digest("9"),
+    }));
+
+    const result = classifySyntheticProjection(
+      input(artifacts, { declaredClosure: ["root"], evidence: evidenceRecords }),
+    );
+
+    expect(result).toEqual({
+      schemaVersion: 1,
+      disposition: "ineligible",
+      closure: ids.slice().sort(),
+      eligible: [],
+      findings: [{ code: "METHODOLOGY_FINDINGS_LIMIT" }],
+    });
+  });
 });
