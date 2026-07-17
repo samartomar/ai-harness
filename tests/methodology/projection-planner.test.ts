@@ -502,7 +502,7 @@ describe("synthetic methodology projection planner", () => {
     ).toThrow();
   });
 
-  it("rejects unordered, duplicate, overlong, or digest-mismatched manifests", () => {
+  it("rejects unordered, duplicate, overlong, or incompletely-bound manifests", () => {
     const planned = planSyntheticMethodologyProjection(
       projection({
         classification: classifierInput({
@@ -536,6 +536,72 @@ describe("synthetic methodology projection planner", () => {
       SyntheticMethodologyProjectionPlanSchema.parse({
         ...planned,
         manifest: { ...manifest, digest: digest("tampered") },
+      }),
+    ).toThrow();
+    expect(() =>
+      SyntheticMethodologyProjectionPlanSchema.parse({
+        ...planned,
+        manifest: {
+          ...manifest,
+          admission: {
+            ...manifest.admission,
+            closure: {
+              ...manifest.admission.closure,
+              artifacts: manifest.admission.closure.artifacts.map((artifact) =>
+                artifact.id === "method-routing"
+                  ? { ...artifact, dependencies: ["review-loop"] }
+                  : artifact,
+              ),
+            },
+          },
+        },
+      }),
+    ).toThrow();
+    expect(() =>
+      SyntheticMethodologyProjectionPlanSchema.parse({
+        ...planned,
+        manifest: {
+          ...manifest,
+          admission: {
+            ...manifest.admission,
+            closure: {
+              ...manifest.admission.closure,
+              artifacts: manifest.admission.closure.artifacts.map((artifact) =>
+                artifact.id === "method-routing"
+                  ? {
+                      ...artifact,
+                      evidence: { ...artifact.evidence, license: "unlicensed" },
+                    }
+                  : artifact,
+              ),
+            },
+          },
+        },
+      }),
+    ).toThrow();
+    expect(() =>
+      SyntheticMethodologyProjectionPlanSchema.parse({
+        ...planned,
+        manifest: {
+          ...manifest,
+          admission: {
+            ...manifest.admission,
+            policyVersion: "methodology-projection-admission-v1",
+          },
+        },
+      }),
+    ).toThrow();
+    expect(() =>
+      SyntheticMethodologyProjectionPlanSchema.parse({
+        ...planned,
+        manifest: {
+          ...manifest,
+          entries: manifest.entries.map((entry) =>
+            entry.id === "method-routing"
+              ? { ...entry, target: "methodology/v1/rules/tampered.md" }
+              : entry,
+          ),
+        },
       }),
     ).toThrow();
     expect(() =>

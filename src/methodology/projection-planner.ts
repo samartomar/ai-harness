@@ -12,6 +12,10 @@ const MAX_SYNTHETIC_PROJECTION_ENTRIES = 32;
 const COMPONENT_ID_SCHEMA = z.string().regex(/^[a-z][a-z0-9-]{0,63}$/);
 const PROJECTION_OWNER = "aih-methodology-v1";
 const PROJECTION_ROOT = "methodology/v1/";
+const PROJECTION_MANIFEST_SCHEMA_VERSION = 2;
+const PROJECTION_DIGEST_VERSION = "methodology-projection-digest-v2";
+const PROJECTION_ADMISSION_POLICY_VERSION = "methodology-projection-admission-v2";
+const SYNTHETIC_CLASSIFIER_VERSION = "synthetic-methodology-classifier-v2";
 
 interface ManifestEntryObject {
   id: string;
@@ -21,6 +25,16 @@ interface ManifestEntryObject {
     contentDigest: string;
   };
   target: string;
+}
+
+interface ManifestAdmissionObject {
+  policyVersion: typeof PROJECTION_ADMISSION_POLICY_VERSION;
+  classifierVersion: typeof SYNTHETIC_CLASSIFIER_VERSION;
+  closure: z.infer<typeof SyntheticMethodologyInputSchema>;
+  eligibility: {
+    disposition: "eligible";
+    eligible: string[];
+  };
 }
 
 function compareCodeUnits(left: string, right: string): number {
@@ -44,12 +58,68 @@ function canonicalManifestEntries(entries: readonly ManifestEntryObject[]): Mani
     );
 }
 
-function manifestDigest(entries: readonly ManifestEntryObject[]): string {
+function canonicalSyntheticClosure(
+  input: z.infer<typeof SyntheticMethodologyInputSchema>,
+): z.infer<typeof SyntheticMethodologyInputSchema> {
+  return {
+    schemaVersion: input.schemaVersion,
+    roots: [...input.roots].sort(compareCodeUnits),
+    artifacts: input.artifacts
+      .map((artifact) => ({
+        id: artifact.id,
+        path: artifact.path,
+        kind: artifact.kind,
+        content: {
+          classification: artifact.content.classification,
+          digest: artifact.content.digest,
+        },
+        sourceIdentity: {
+          locator: artifact.sourceIdentity.locator,
+          digest: artifact.sourceIdentity.digest,
+        },
+        evidence: {
+          target: {
+            artifact: artifact.evidence.target.artifact,
+            path: artifact.evidence.target.path,
+            sourceIdentity: {
+              locator: artifact.evidence.target.sourceIdentity.locator,
+              digest: artifact.evidence.target.sourceIdentity.digest,
+            },
+            contentDigest: artifact.evidence.target.contentDigest,
+          },
+          source: artifact.evidence.source,
+          trust: artifact.evidence.trust,
+          license: artifact.evidence.license,
+        },
+        dependencies: [...artifact.dependencies].sort(compareCodeUnits),
+      }))
+      .sort((left, right) => compareCodeUnits(left.id, right.id)),
+  };
+}
+
+function canonicalManifestAdmission(admission: ManifestAdmissionObject): ManifestAdmissionObject {
+  return {
+    policyVersion: admission.policyVersion,
+    classifierVersion: admission.classifierVersion,
+    closure: canonicalSyntheticClosure(admission.closure),
+    eligibility: {
+      disposition: "eligible",
+      eligible: [...admission.eligibility.eligible].sort(compareCodeUnits),
+    },
+  };
+}
+
+function manifestDigest(
+  admission: ManifestAdmissionObject,
+  entries: readonly ManifestEntryObject[],
+): string {
   return `sha256:${createHash("sha256")
     .update(
       JSON.stringify({
-        schemaVersion: 1,
+        schemaVersion: PROJECTION_MANIFEST_SCHEMA_VERSION,
+        digestVersion: PROJECTION_DIGEST_VERSION,
         owner: PROJECTION_OWNER,
+        admission: canonicalManifestAdmission(admission),
         entries: canonicalManifestEntries(entries),
       }),
       "utf8",
@@ -104,8 +174,8 @@ export const SyntheticMethodologyProjectionSchema = z
   });
 
 export const SyntheticMethodologyProjectionFindingCodeSchema = z.enum([
-  "METHODOLOGY_SYNTHETIC_ADMISSION_DENIED",
-  "METHODOLOGY_SYNTHETIC_ADMISSION_MAPPING_MISMATCH",
+  "METHODOLOGY_SYNTHETIC_ELIGIBILITY_DENIED",
+  "METHODOLOGY_SYNTHETIC_ELIGIBILITY_MAPPING_MISMATCH",
   "METHODOLOGY_SYNTHETIC_DESTINATION_COLLISION",
   "METHODOLOGY_SYNTHETIC_TARGET_UNOWNED",
 ]);
@@ -123,10 +193,39 @@ const OwnedProjectionPathSchema = SyntheticMethodologyPathSchema.refine(
   { message: "manifest targets must remain under the owned methodology projection root" },
 );
 
+export const SyntheticMethodologyProjectionAdmissionSchema = z
+  .object({
+    policyVersion: z.literal(PROJECTION_ADMISSION_POLICY_VERSION),
+    classifierVersion: z.literal(SYNTHETIC_CLASSIFIER_VERSION),
+    closure: SyntheticMethodologyInputSchema,
+    eligibility: z
+      .object({
+        disposition: z.literal("eligible"),
+        eligible: z.array(COMPONENT_ID_SCHEMA).min(1).max(MAX_SYNTHETIC_PROJECTION_ENTRIES),
+      })
+      .strict()
+      .superRefine((eligibility, ctx) => {
+        const ids = new Set<string>();
+        for (const [index, id] of eligibility.eligible.entries()) {
+          if (ids.has(id)) {
+            ctx.addIssue({
+              code: "custom",
+              path: ["eligible", index],
+              message: "manifest eligibility must contain unique component ids",
+            });
+          }
+          ids.add(id);
+        }
+      }),
+  })
+  .strict();
+
 export const SyntheticMethodologyProjectionManifestSchema = z
   .object({
-    schemaVersion: z.literal(1),
+    schemaVersion: z.literal(PROJECTION_MANIFEST_SCHEMA_VERSION),
+    digestVersion: z.literal(PROJECTION_DIGEST_VERSION),
     owner: z.literal(PROJECTION_OWNER),
+    admission: SyntheticMethodologyProjectionAdmissionSchema,
     entries: z
       .array(
         z
@@ -173,19 +272,39 @@ export const SyntheticMethodologyProjectionManifestSchema = z
       sources.add(entry.source.locator);
     }
 
-    const canonical = canonicalManifestEntries(manifest.entries);
-    if (JSON.stringify(manifest.entries) !== JSON.stringify(canonical)) {
+    const canonicalEntries = canonicalManifestEntries(manifest.entries);
+    if (JSON.stringify(manifest.entries) !== JSON.stringify(canonicalEntries)) {
       ctx.addIssue({
         code: "custom",
         path: ["entries"],
         message: "manifest entries must use canonical target and component ordering",
       });
     }
-    if (manifest.digest !== manifestDigest(canonical)) {
+    const canonicalAdmission = canonicalManifestAdmission(manifest.admission);
+    if (JSON.stringify(manifest.admission) !== JSON.stringify(canonicalAdmission)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["admission"],
+        message: "manifest admission must use canonical closure and eligibility ordering",
+      });
+    }
+    const classification = classifySyntheticMethodology(manifest.admission.closure);
+    if (
+      classification.disposition !== "eligible" ||
+      JSON.stringify(manifest.admission.eligibility.eligible) !==
+        JSON.stringify(classification.eligible)
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["admission", "eligibility"],
+        message: "manifest eligibility must be recomputed from its closed admission closure",
+      });
+    }
+    if (manifest.digest !== manifestDigest(canonicalAdmission, canonicalEntries)) {
       ctx.addIssue({
         code: "custom",
         path: ["digest"],
-        message: "manifest digest must bind its canonical manifest entries",
+        message: "manifest digest must bind its complete versioned admission decision",
       });
     }
   });
@@ -289,8 +408,9 @@ function canonicalFindings(
 }
 
 /**
- * Plan only caller-supplied synthetic objects. This module has no filesystem,
- * process, provider, host, command, or executor capability.
+ * Plan only caller-supplied synthetic objects. It binds an eligible closure to exact
+ * owned destinations before recording an admission manifest. This module has no
+ * filesystem, process, provider, host, command, or executor capability.
  */
 export function planSyntheticMethodologyProjection(value: unknown) {
   const projection: SyntheticMethodologyProjection =
@@ -304,9 +424,9 @@ export function planSyntheticMethodologyProjection(value: unknown) {
     findings.set(`${target}\u0000${code}`, { code, disposition: "blocked", target });
   }
 
-  if (classification.disposition !== "admitted") {
+  if (classification.disposition !== "eligible") {
     for (const mapping of projection.mappings) {
-      block("METHODOLOGY_SYNTHETIC_ADMISSION_DENIED", mapping.target.path);
+      block("METHODOLOGY_SYNTHETIC_ELIGIBILITY_DENIED", mapping.target.path);
     }
     return SyntheticMethodologyProjectionPlanSchema.parse({
       schemaVersion: 1,
@@ -317,16 +437,16 @@ export function planSyntheticMethodologyProjection(value: unknown) {
     });
   }
 
-  const admitted = new Set(classification.admitted);
+  const eligible = new Set(classification.eligible);
   const mapped = new Set(projection.mappings.map((mapping) => mapping.id));
   for (const mapping of projection.mappings) {
-    if (!admitted.has(mapping.id)) {
-      block("METHODOLOGY_SYNTHETIC_ADMISSION_MAPPING_MISMATCH", mapping.target.path);
+    if (!eligible.has(mapping.id)) {
+      block("METHODOLOGY_SYNTHETIC_ELIGIBILITY_MAPPING_MISMATCH", mapping.target.path);
     }
   }
-  for (const id of classification.admitted) {
+  for (const id of classification.eligible) {
     if (!mapped.has(id)) {
-      block("METHODOLOGY_SYNTHETIC_ADMISSION_MAPPING_MISMATCH", PROJECTION_ROOT.slice(0, -1));
+      block("METHODOLOGY_SYNTHETIC_ELIGIBILITY_MAPPING_MISMATCH", PROJECTION_ROOT.slice(0, -1));
     }
   }
 
@@ -365,7 +485,7 @@ export function planSyntheticMethodologyProjection(value: unknown) {
     projection.mappings.map((mapping) => {
       const artifact = artifacts.get(mapping.id);
       if (artifact === undefined) {
-        throw new Error("admitted synthetic artifacts must be present in the closed candidate");
+        throw new Error("eligible synthetic artifacts must be present in the closed candidate");
       }
       return {
         id: mapping.id,
@@ -378,12 +498,23 @@ export function planSyntheticMethodologyProjection(value: unknown) {
       };
     }),
   );
+  const admission: ManifestAdmissionObject = {
+    policyVersion: PROJECTION_ADMISSION_POLICY_VERSION,
+    classifierVersion: SYNTHETIC_CLASSIFIER_VERSION,
+    closure: canonicalSyntheticClosure(projection.classification),
+    eligibility: {
+      disposition: "eligible",
+      eligible: [...classification.eligible].sort(compareCodeUnits),
+    },
+  };
   const manifest = {
-    schemaVersion: 1 as const,
+    schemaVersion: PROJECTION_MANIFEST_SCHEMA_VERSION,
+    digestVersion: PROJECTION_DIGEST_VERSION,
     owner: PROJECTION_OWNER,
+    admission,
     entries,
   };
-  const digest = manifestDigest(entries);
+  const digest = manifestDigest(admission, entries);
 
   return SyntheticMethodologyProjectionPlanSchema.parse({
     schemaVersion: 1,
