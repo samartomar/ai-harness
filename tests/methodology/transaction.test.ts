@@ -305,6 +305,24 @@ describeTransactionFixtures("synthetic methodology projection transactions", () 
     expect(existsSync(join(fixturePath, ".aih"))).toBe(false);
   });
 
+  it("retains the owned lock when hostile topology prevents rollback", () => {
+    const fixtureRoot = root();
+    const fixturePath = syntheticMethodologyTransactionFixturePath(fixtureRoot);
+    const container = join(fixturePath, ".aih");
+    const lock = join(container, ".aih-methodology-transaction.lock");
+
+    expect(() =>
+      applySyntheticMethodologyProjectionTransaction(fixtureRoot, transaction(), {
+        onBoundary(boundary) {
+          if (boundary === "after-lock") writeFileSync(join(container, "sentinel"), "keep", "utf8");
+        },
+        faultAt: "after-lock",
+      }),
+    ).toThrow(/injected/i);
+    expect(existsSync(lock)).toBe(true);
+    expect(readFileSync(join(container, "sentinel"), "utf8")).toBe("keep");
+  });
+
   it("revalidates a staged parent after a test-simulated reparse swap before writing bytes", () => {
     const fixtureRoot = root();
     const fixturePath = syntheticMethodologyTransactionFixturePath(fixtureRoot);
