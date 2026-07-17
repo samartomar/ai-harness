@@ -553,6 +553,53 @@ describe("Phase 2 synthetic methodology classifier", () => {
     }
   });
 
+  it("returns closed invalid results without invoking ambient error hooks", () => {
+    const root = artifact("root");
+    const cases = [
+      [SyntheticArtifactSchema, { ...root, id: "ROOT" }],
+      [SyntheticEvidenceSchema, { ...evidence(root), artifactId: "ROOT" }],
+      [SyntheticFindingSchema, { code: "NOT_A_FINDING" }],
+      [
+        SyntheticClassifierInputSchema,
+        input([{ ...root, id: "ROOT" }], { declaredClosure: ["root"] }),
+      ],
+      [
+        SyntheticClassificationResultSchema,
+        {
+          schemaVersion: 1,
+          disposition: "admitted",
+          closure: ["root"],
+          eligible: ["root"],
+          findings: [],
+        },
+      ],
+    ] as const;
+    let hookCalls = 0;
+
+    for (const property of ["toJSON", "path", "message"] as const) {
+      const original = Object.getOwnPropertyDescriptor(Object.prototype, property);
+      Object.defineProperty(Object.prototype, property, {
+        configurable: true,
+        get() {
+          hookCalls += 1;
+          throw new Error(`schema invoked ambient ${property}`);
+        },
+      });
+      try {
+        for (const [schema, value] of cases) {
+          expect(() => schema.safeParse(value)).not.toThrow();
+          expect(schema.safeParse(value).success).toBe(false);
+        }
+        expect(() => classifySyntheticProjection(cases[3][1])).toThrow();
+      } finally {
+        if (original === undefined) delete (Object.prototype as Record<string, unknown>)[property];
+        else Object.defineProperty(Object.prototype, property, original);
+      }
+    }
+
+    expect(hookCalls).toBe(0);
+  });
+
   it("denies duplicate requested components deterministically", () => {
     const result = classifySyntheticProjection(input(undefined, { requested: ["root", "root"] }));
 
