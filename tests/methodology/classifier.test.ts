@@ -634,6 +634,9 @@ describe("Phase 2 synthetic methodology classifier", () => {
     await expect(SyntheticClassifierInputSchema.safeParseAsync(invalid)).resolves.toMatchObject({
       success: false,
     });
+    await expect(SyntheticClassifierInputSchema.safeDecodeAsync(invalid)).resolves.toMatchObject({
+      success: false,
+    });
     await expect(SyntheticClassifierInputSchema.spa(invalid)).resolves.toMatchObject({
       success: false,
     });
@@ -641,6 +644,9 @@ describe("Phase 2 synthetic methodology classifier", () => {
       schemaVersion: 1,
     });
     await expect(SyntheticClassifierInputSchema.parseAsync(invalid)).rejects.toMatchObject({
+      issues: [{ path: ["schemaVersion"] }],
+    });
+    await expect(SyntheticClassifierInputSchema.decodeAsync(invalid)).rejects.toMatchObject({
       issues: [{ path: ["schemaVersion"] }],
     });
   });
@@ -701,8 +707,13 @@ describe("Phase 2 synthetic methodology classifier", () => {
         for (const [schema, value] of cases) {
           try {
             if (schema.safeParse(value).success) unexpectedSuccesses += 1;
+            if (schema.safeDecode(value).success) unexpectedSuccesses += 1;
+            schema.decode(value);
+            classifierDidNotThrow += 1;
           } catch (error) {
-            escapedError = error;
+            if (!(error instanceof Error) || !Object.hasOwn(error, "issues")) {
+              escapedError = error;
+            }
           }
         }
         for (const [schema, value] of validCases) {
