@@ -113,7 +113,7 @@ describe("synthetic methodology classifier", () => {
   });
 
   it("excludes every member of a multi-node synthetic dependency cycle deterministically", () => {
-    const result = classifySyntheticMethodology(
+    const forward = classifySyntheticMethodology(
       input({
         roots: ["review-loop", "method-routing"],
         artifacts: [
@@ -122,8 +122,17 @@ describe("synthetic methodology classifier", () => {
         ],
       }),
     );
+    const reverse = classifySyntheticMethodology(
+      input({
+        roots: ["method-routing", "review-loop"],
+        artifacts: [
+          artifact("method-routing", { dependencies: ["review-loop"] }),
+          artifact("review-loop", { dependencies: ["method-routing"] }),
+        ],
+      }),
+    );
 
-    expect(result).toEqual({
+    expect(forward).toEqual({
       schemaVersion: 1,
       disposition: "excluded",
       eligible: [],
@@ -140,6 +149,7 @@ describe("synthetic methodology classifier", () => {
         },
       ],
     });
+    expect(reverse).toEqual(forward);
   });
 
   it.each([
@@ -535,6 +545,14 @@ describe("synthetic methodology classifier", () => {
       artifact: "review-loop",
     };
 
+    expect(() =>
+      SyntheticMethodologyClassificationSchema.parse({
+        schemaVersion: 1,
+        disposition: "admitted",
+        admitted: ["review-loop"],
+        findings: [],
+      }),
+    ).toThrow();
     expect(() =>
       SyntheticMethodologyClassificationSchema.parse({
         schemaVersion: 1,

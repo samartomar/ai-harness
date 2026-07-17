@@ -132,6 +132,7 @@ export const SyntheticMethodologyInputSchema = z
 export const SyntheticMethodologyFindingCodeSchema = z.enum([
   "METHODOLOGY_SYNTHETIC_AMBIGUOUS",
   "METHODOLOGY_SYNTHETIC_ARTIFACT_MISSING",
+  "METHODOLOGY_SYNTHETIC_DEPENDENCY_CYCLE",
   "METHODOLOGY_SYNTHETIC_DEPENDENCY_MISSING",
   "METHODOLOGY_SYNTHETIC_DRIFTED",
   "METHODOLOGY_SYNTHETIC_EVIDENCE_UNBOUND",
@@ -156,22 +157,22 @@ export const SyntheticMethodologyFindingSchema = z
 export const SyntheticMethodologyClassificationSchema = z
   .object({
     schemaVersion: z.literal(1),
-    disposition: z.enum(["admitted", "excluded"]),
-    admitted: z.array(ArtifactIdSchema).max(MAX_SYNTHETIC_ROOTS),
+    disposition: z.enum(["eligible", "excluded"]),
+    eligible: z.array(ArtifactIdSchema).max(MAX_SYNTHETIC_ROOTS),
     findings: z.array(SyntheticMethodologyFindingSchema).max(MAX_SYNTHETIC_FINDINGS),
   })
   .strict()
   .superRefine((classification, ctx) => {
-    const admitted = new Set<string>();
-    for (const [index, artifact] of classification.admitted.entries()) {
-      if (admitted.has(artifact)) {
+    const eligible = new Set<string>();
+    for (const [index, artifact] of classification.eligible.entries()) {
+      if (eligible.has(artifact)) {
         ctx.addIssue({
           code: "custom",
-          path: ["admitted", index],
-          message: "admitted synthetic artifacts must be unique",
+          path: ["eligible", index],
+          message: "eligible synthetic artifacts must be unique",
         });
       }
-      admitted.add(artifact);
+      eligible.add(artifact);
     }
 
     const findings = new Set<string>();
@@ -187,27 +188,27 @@ export const SyntheticMethodologyClassificationSchema = z
       findings.add(key);
     }
 
-    if (classification.disposition === "admitted") {
-      if (classification.admitted.length === 0) {
+    if (classification.disposition === "eligible") {
+      if (classification.eligible.length === 0) {
         ctx.addIssue({
           code: "custom",
-          path: ["admitted"],
-          message: "an admitted synthetic result must contain artifacts",
+          path: ["eligible"],
+          message: "an eligible synthetic result must contain artifacts",
         });
       }
       if (classification.findings.length > 0) {
         ctx.addIssue({
           code: "custom",
           path: ["findings"],
-          message: "an admitted synthetic result cannot contain findings",
+          message: "an eligible synthetic result cannot contain findings",
         });
       }
     } else {
-      if (classification.admitted.length > 0) {
+      if (classification.eligible.length > 0) {
         ctx.addIssue({
           code: "custom",
-          path: ["admitted"],
-          message: "an excluded synthetic result cannot admit artifacts",
+          path: ["eligible"],
+          message: "an excluded synthetic result cannot contain eligible artifacts",
         });
       }
       if (classification.findings.length === 0) {
@@ -276,8 +277,9 @@ function canonicalFindings(findings: Map<string, SyntheticFinding>): SyntheticFi
 }
 
 /**
- * Classify only synthetic, caller-supplied records. This module deliberately has no
- * filesystem, process, provider, host, or network capability.
+ * Classify only synthetic, caller-supplied records for eligibility. It cannot admit
+ * a projection because it has no destination binding. This module deliberately has
+ * no filesystem, process, provider, host, or network capability.
  */
 export function classifySyntheticMethodology(value: unknown) {
   const input: SyntheticMethodologyInput = SyntheticMethodologyInputSchema.parse(value);
@@ -293,12 +295,43 @@ export function classifySyntheticMethodology(value: unknown) {
   }
   const roots = new Set(input.roots);
   const findings = new Map<string, SyntheticFinding>();
-  const visited = new Set<string>();
-  const pending = sortStrings(roots).reverse();
 
   function exclude(code: SyntheticFindingCode, artifact: string): void {
     findings.set(`${artifact}\u0000${code}`, { code, disposition: "excluded", artifact });
   }
+
+  const dependencyState = new Map<string, "visiting" | "complete">();
+  const dependencyStack: string[] = [];
+
+  function detectDependencyCycles(id: string): void {
+    const state = dependencyState.get(id);
+    if (state === "complete") return;
+    if (state === "visiting") {
+      const cycleStart = dependencyStack.indexOf(id);
+      for (const member of dependencyStack.slice(cycleStart)) {
+        exclude("METHODOLOGY_SYNTHETIC_DEPENDENCY_CYCLE", member);
+      }
+      return;
+    }
+
+    dependencyState.set(id, "visiting");
+    dependencyStack.push(id);
+    const artifact = artifacts.get(id);
+    if (artifact !== undefined) {
+      for (const dependency of sortStrings(artifact.dependencies)) {
+        if (roots.has(dependency) && artifacts.has(dependency)) {
+          detectDependencyCycles(dependency);
+        }
+      }
+    }
+    dependencyStack.pop();
+    dependencyState.set(id, "complete");
+  }
+
+  for (const root of sortStrings(roots)) detectDependencyCycles(root);
+
+  const visited = new Set<string>();
+  const pending = sortStrings(roots).reverse();
 
   while (pending.length > 0) {
     const id = pending.pop();
@@ -331,8 +364,8 @@ export function classifySyntheticMethodology(value: unknown) {
   const canonical = canonicalFindings(findings);
   return SyntheticMethodologyClassificationSchema.parse({
     schemaVersion: 1,
-    disposition: canonical.length === 0 ? "admitted" : "excluded",
-    admitted: canonical.length === 0 ? sortStrings(roots) : [],
+    disposition: canonical.length === 0 ? "eligible" : "excluded",
+    eligible: canonical.length === 0 ? sortStrings(roots) : [],
     findings: canonical,
   });
 }
