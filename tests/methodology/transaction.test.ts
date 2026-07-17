@@ -3,6 +3,7 @@ import {
   existsSync,
   linkSync,
   mkdirSync,
+  readdirSync,
   readFileSync,
   renameSync,
   symlinkSync,
@@ -23,6 +24,18 @@ import {
 } from "../../src/methodology/transaction.js";
 
 const roots: SyntheticMethodologyTransactionFixtureRoot[] = [];
+const describeTransactionFixtures = process.platform === "win32" ? describe.skip : describe;
+
+function withPlatform<T>(platform: string, callback: () => T): T {
+  const descriptor = Object.getOwnPropertyDescriptor(process, "platform");
+  if (descriptor === undefined) throw new Error("process platform descriptor is unavailable");
+  Object.defineProperty(process, "platform", { ...descriptor, value: platform });
+  try {
+    return callback();
+  } finally {
+    Object.defineProperty(process, "platform", descriptor);
+  }
+}
 
 function digest(bytes: Uint8Array | string): string {
   return `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
@@ -88,7 +101,15 @@ afterEach(() => {
   }
 });
 
-describe("synthetic methodology projection transactions", () => {
+describe("synthetic methodology transaction platform policy", () => {
+  it("fails closed on Windows until the runtime can enforce fixture-root DACL confinement", () => {
+    expect(() => withPlatform("win32", createSyntheticMethodologyTransactionFixtureRoot)).toThrow(
+      /Windows fixture roots are unavailable/i,
+    );
+  });
+});
+
+describeTransactionFixtures("synthetic methodology projection transactions", () => {
   it("applies exact in-memory bytes atomically inside its disposable fixture root and cleans them", () => {
     const fixtureRoot = root();
     const fixturePath = syntheticMethodologyTransactionFixturePath(fixtureRoot);
@@ -267,6 +288,50 @@ describe("synthetic methodology projection transactions", () => {
       ),
     ).toThrow(/injected/i);
     expect(existsSync(join(fixturePath, ".aih"))).toBe(false);
+  });
+
+  it("revalidates a staged parent after a test-simulated reparse swap before writing bytes", () => {
+    const fixtureRoot = root();
+    const fixturePath = syntheticMethodologyTransactionFixturePath(fixtureRoot);
+    const outsideRoot = root();
+    const outsidePath = syntheticMethodologyTransactionFixturePath(outsideRoot);
+
+    expect(() =>
+      applySyntheticMethodologyProjectionTransaction(fixtureRoot, transaction(), {
+        onBoundary(boundary) {
+          if (boundary !== "before-entry-write") return;
+          const stageName = readdirSync(join(fixturePath, ".aih")).find((name) =>
+            name.startsWith(".methodology-stage-"),
+          );
+          if (stageName === undefined) throw new Error("test fixture must create a stage");
+          const rules = join(fixturePath, ".aih", stageName, "rules");
+          renameSync(rules, `${rules}-original`);
+          symlinkSync(outsidePath, rules, "dir");
+        },
+        faultAt: "before-entry-write" as SyntheticMethodologyTransactionTestBoundary,
+      }),
+    ).toThrow(/linked|reparse|unknown/i);
+    expect(existsSync(join(outsidePath, "review-loop.md"))).toBe(false);
+  });
+
+  it("revalidates the output parent after a test-simulated reparse swap before rename", () => {
+    const fixtureRoot = root();
+    const fixturePath = syntheticMethodologyTransactionFixturePath(fixtureRoot);
+    const outsideRoot = root();
+    const outsidePath = syntheticMethodologyTransactionFixturePath(outsideRoot);
+
+    expect(() =>
+      applySyntheticMethodologyProjectionTransaction(fixtureRoot, transaction(), {
+        onBoundary(boundary) {
+          if (boundary !== "before-rename") return;
+          const outputParent = join(fixturePath, ".aih", "methodology");
+          renameSync(outputParent, `${outputParent}-original`);
+          symlinkSync(outsidePath, outputParent, "dir");
+        },
+        faultAt: "before-rename" as SyntheticMethodologyTransactionTestBoundary,
+      }),
+    ).toThrow(/linked|reparse|unowned/i);
+    expect(existsSync(join(outsidePath, "v1"))).toBe(false);
   });
 
   it("retains the owned lock and receipt for recovery after a post-rename failure", () => {
