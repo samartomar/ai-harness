@@ -1,0 +1,181 @@
+import { describe, expect, it } from "vitest";
+import {
+  ProjectionPlanResultSchema,
+  planSyntheticProjection,
+} from "../../src/methodology/projection-planner.js";
+
+function digest(character: string): string {
+  return character.repeat(64);
+}
+
+function artifact(id: string, dependencies: string[] = []): Record<string, unknown> {
+  return {
+    id,
+    sourceLocator: `synthetic:${id}`,
+    contentDigest: digest(id === "root" ? "a" : "b"),
+    contentDisposition: "inert",
+    linkDisposition: "none",
+    licenseDisposition: "permissive",
+    evidenceDigest: digest(id === "root" ? "c" : "d"),
+    dependencies,
+  };
+}
+
+function evidence(candidate: Record<string, unknown>): Record<string, unknown> {
+  return {
+    artifactId: candidate.id,
+    sourceLocator: candidate.sourceLocator,
+    contentDigest: candidate.contentDigest,
+    licenseDisposition: candidate.licenseDisposition,
+    evidenceDigest: candidate.evidenceDigest,
+  };
+}
+
+function input(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  const root = artifact("root", ["dependency"]);
+  const dependency = artifact("dependency");
+  return {
+    schemaVersion: 1,
+    decisionVersion: "phase-3-decision-v1",
+    classifierVersion: "phase-2-classifier-v1",
+    policyVersion: "phase-3-policy-v1",
+    manifestVersion: 1,
+    owner: "aih-methodology",
+    classifierInput: {
+      schemaVersion: 1,
+      requested: ["root"],
+      declaredClosure: ["root", "dependency"],
+      artifacts: [root, dependency],
+      evidence: [evidence(root), evidence(dependency)],
+    },
+    mappings: [
+      { artifactId: "root", target: "rules/root.md" },
+      { artifactId: "dependency", target: "rules/dependency.md" },
+    ],
+    ...overrides,
+  };
+}
+
+function manifestOf(result: ReturnType<typeof planSyntheticProjection>) {
+  if (result.state !== "planned") throw new Error("expected planned synthetic projection");
+  return result.manifest;
+}
+
+describe("Phase 3 host-neutral synthetic projection planner", () => {
+  it("creates a deterministic digest-bound manifest from an eligible Phase 2 decision", () => {
+    const forward = planSyntheticProjection(input());
+    const reversed = planSyntheticProjection(
+      input({
+        classifierInput: {
+          ...(input().classifierInput as Record<string, unknown>),
+          artifacts: [...(input().classifierInput as { artifacts: unknown[] }).artifacts].reverse(),
+          evidence: [...(input().classifierInput as { evidence: unknown[] }).evidence].reverse(),
+        },
+        mappings: [...(input().mappings as unknown[])].reverse(),
+      }),
+    );
+
+    expect(forward).toMatchObject({
+      schemaVersion: 1,
+      state: "planned",
+      manifest: {
+        schemaVersion: 1,
+        digestVersion: 1,
+        owner: "aih-methodology",
+        entries: [
+          { artifactId: "dependency", target: "rules/dependency.md" },
+          { artifactId: "root", target: "rules/root.md" },
+        ],
+      },
+      boundary: { reads: false, writes: false, cli: false, executor: false },
+      findings: [],
+    });
+    expect(reversed).toEqual(forward);
+  });
+
+  it.each([
+    [
+      "exact target",
+      [
+        { artifactId: "root", target: "rules/root.md" },
+        { artifactId: "dependency", target: "rules/root.md" },
+      ],
+    ],
+    [
+      "file/directory prefix",
+      [
+        { artifactId: "root", target: "rules" },
+        { artifactId: "dependency", target: "rules/root.md" },
+      ],
+    ],
+  ])("blocks %s collision", (_label, mappings) => {
+    const result = planSyntheticProjection(input({ mappings }));
+
+    expect(result.state).toBe("blocked");
+    expect("manifest" in result).toBe(false);
+    expect(result.findings.map((finding) => finding.code)).toContain(
+      "METHODOLOGY_TARGET_COLLISION",
+    );
+  });
+
+  it("blocks ineligible classification, noncanonical target, and incomplete mapping coverage", () => {
+    const executable = input();
+    (
+      (executable.classifierInput as { artifacts: Array<Record<string, unknown>> })
+        .artifacts[0] as Record<string, unknown>
+    ).contentDisposition = "executable";
+    const invalidTarget = planSyntheticProjection(
+      input({
+        mappings: [
+          { artifactId: "root", target: "../rules/root.md" },
+          { artifactId: "dependency", target: "rules/dependency.md" },
+        ],
+      }),
+    );
+    const incomplete = planSyntheticProjection(
+      input({ mappings: [{ artifactId: "root", target: "rules/root.md" }] }),
+    );
+
+    expect(planSyntheticProjection(executable).state).toBe("blocked");
+    expect(invalidTarget.findings.map((finding) => finding.code)).toContain(
+      "METHODOLOGY_TARGET_INVALID",
+    );
+    expect(incomplete.findings.map((finding) => finding.code)).toContain(
+      "METHODOLOGY_MAPPING_COVERAGE",
+    );
+  });
+
+  it("binds every decision-critical field into the manifest digest", () => {
+    const baseline = planSyntheticProjection(input());
+    const mutations = [
+      input({ policyVersion: "phase-3-policy-v2" }),
+      input({ classifierVersion: "phase-2-classifier-v2" }),
+      input({ manifestVersion: 2 }),
+      input({ owner: "other-owner" }),
+      input({
+        mappings: [
+          { artifactId: "root", target: "rules/other.md" },
+          { artifactId: "dependency", target: "rules/dependency.md" },
+        ],
+      }),
+    ].map(planSyntheticProjection);
+
+    for (const mutation of mutations) {
+      expect(mutation.state).toBe("planned");
+      expect(manifestOf(mutation).digest).not.toBe(manifestOf(baseline).digest);
+    }
+  });
+
+  it("keeps result schemas closed and disallows forged planned records", () => {
+    const planned = planSyntheticProjection(input());
+
+    expect(() => ProjectionPlanResultSchema.parse({ ...planned, unexpected: true })).toThrow();
+    expect(() =>
+      ProjectionPlanResultSchema.parse({
+        ...planned,
+        state: "planned",
+        findings: [{ code: "METHODOLOGY_TARGET_COLLISION" }],
+      }),
+    ).toThrow();
+  });
+});
