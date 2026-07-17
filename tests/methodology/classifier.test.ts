@@ -267,6 +267,7 @@ describe("Phase 2 synthetic methodology classifier", () => {
   });
 
   it("does not invoke ambient Array prototype collection hooks", () => {
+    const valid = input();
     const properties: PropertyKey[] = [
       "every",
       "find",
@@ -293,7 +294,7 @@ describe("Phase 2 synthetic methodology classifier", () => {
         writable: true,
       });
       try {
-        classifySyntheticProjection(input());
+        classifySyntheticProjection(valid);
       } catch {
         escaped.push(label);
       } finally {
