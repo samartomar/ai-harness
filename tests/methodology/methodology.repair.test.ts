@@ -3,6 +3,10 @@ import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import {
+  MethodologyCommandEnvelopeSchema,
+  MethodologyFailureEnvelopeSchema,
+} from "../../src/methodology/schema.js";
 
 const tmps: string[] = [];
 const TEST_PROCESS_TIMEOUT_MS = 25_000;
@@ -45,6 +49,17 @@ function intent(): unknown {
       },
     },
   };
+}
+
+function oversizedIntent(): unknown {
+  const candidate = intent() as {
+    selection: { components: Array<{ id: string }>; source: { checkout: string } };
+  };
+  candidate.selection.components = Array.from({ length: 33 }, (_, index) => ({
+    id: `component-${index}`,
+  }));
+  candidate.selection.source.checkout = "a".repeat(65_536);
+  return candidate;
 }
 
 function runAih(root: string, extra: string[] = []) {
@@ -127,6 +142,59 @@ describe("methodology Phase 1 repair regressions", () => {
       outcome: "fail-closed",
       failure: {
         state: "fail-closed",
+        findings: [expect.objectContaining({ code: "METHODOLOGY_INTENT_MALFORMED" })],
+      },
+    });
+  });
+
+  it("rejects contradictory failure states and validates a completed JSON envelope", () => {
+    expect(() =>
+      MethodologyFailureEnvelopeSchema.parse({
+        schemaVersion: 1,
+        command: "inspect",
+        outcome: "invalid",
+        failure: {
+          schemaVersion: 1,
+          state: "fail-closed",
+          findings: [
+            {
+              code: "METHODOLOGY_HOST_ADVISORY",
+              disposition: "advisory",
+              detail: "contradictory",
+            },
+          ],
+        },
+        boundary: {
+          providerExecution: false,
+          providerFetch: false,
+          hostExecution: false,
+          writes: false,
+        },
+      }),
+    ).toThrow();
+
+    const root = fresh("aih-methodology-completed-envelope-");
+    write(root, "methodology.intent.json", `${JSON.stringify(intent())}\n`);
+    const result = runAih(root);
+
+    expect(result.status, result.stderr).toBe(0);
+    expect(MethodologyCommandEnvelopeSchema.parse(JSON.parse(result.stdout))).toMatchObject({
+      command: "inspect",
+      outcome: "completed",
+      status: { state: "selected" },
+    });
+  });
+
+  it("fails closed before reading an oversized or over-component intent", () => {
+    const root = fresh("aih-methodology-input-bounds-");
+    write(root, "methodology.intent.json", `${JSON.stringify(oversizedIntent())}\n`);
+
+    const result = runAih(root);
+
+    expect(result.status).toBe(3);
+    expect(JSON.parse(result.stdout)).toMatchObject({
+      outcome: "fail-closed",
+      failure: {
         findings: [expect.objectContaining({ code: "METHODOLOGY_INTENT_MALFORMED" })],
       },
     });
