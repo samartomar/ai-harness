@@ -61,6 +61,34 @@ function manifestOf(result: ReturnType<typeof planSyntheticProjection>) {
   return result.manifest;
 }
 
+function reverseObjectKeys(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(reverseObjectKeys);
+  if (value !== null && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .reverse()
+        .map(([key, entry]) => [key, reverseObjectKeys(entry)]),
+    );
+  }
+  return value;
+}
+
+function maximalInput(): Record<string, unknown> {
+  const ids = Array.from({ length: 64 }, (_, index) => `item-${index.toString().padStart(2, "0")}`);
+  const artifacts = ids.map((id, index) => artifact(id, ids[index + 1] ? [ids[index + 1]] : []));
+  return input({
+    owner: "a".repeat(64),
+    classifierInput: {
+      schemaVersion: 1,
+      requested: [ids[0]],
+      declaredClosure: ids,
+      artifacts,
+      evidence: artifacts.map(evidence),
+    },
+    mappings: ids.map((id) => ({ artifactId: id, target: `rules/${id}.md` })),
+  });
+}
+
 describe("Phase 3 host-neutral synthetic projection planner", () => {
   it("creates a deterministic digest-bound manifest from an eligible Phase 2 decision", () => {
     const forward = planSyntheticProjection(input());
@@ -91,6 +119,53 @@ describe("Phase 3 host-neutral synthetic projection planner", () => {
       findings: [],
     });
     expect(reversed).toEqual(forward);
+  });
+
+  it("is deterministic across object-key and complete decision-set permutations", () => {
+    const candidate = input();
+    const classifierInput = candidate.classifierInput as {
+      artifacts: Array<Record<string, unknown>>;
+      evidence: Array<Record<string, unknown>>;
+      declaredClosure: string[];
+    };
+    const extra = artifact("extra");
+    classifierInput.artifacts = [
+      { ...classifierInput.artifacts[0], dependencies: ["extra", "dependency"] },
+      classifierInput.artifacts[1] as Record<string, unknown>,
+      extra,
+    ];
+    classifierInput.evidence.push(evidence(extra));
+    classifierInput.declaredClosure = ["root", "extra", "dependency"];
+    candidate.mappings = [
+      { artifactId: "root", target: "rules/root.md" },
+      { artifactId: "dependency", target: "rules/dependency.md" },
+      { artifactId: "extra", target: "rules/extra.md" },
+    ];
+    const permuted = structuredClone(candidate);
+    const permutedClassifier = permuted.classifierInput as {
+      artifacts: Array<Record<string, unknown>>;
+      evidence: Array<Record<string, unknown>>;
+      declaredClosure: string[];
+    };
+    permutedClassifier.artifacts.reverse();
+    permutedClassifier.evidence.reverse();
+    permutedClassifier.declaredClosure.reverse();
+    for (const item of permutedClassifier.artifacts) {
+      (item.dependencies as unknown[]).reverse();
+    }
+    (permuted.mappings as unknown[]).reverse();
+
+    expect(planSyntheticProjection(reverseObjectKeys(permuted))).toEqual(
+      planSyntheticProjection(candidate),
+    );
+  });
+
+  it.each([
+    ["classifier", { classifierVersion: "phase-2-classifier-v2" }],
+    ["policy", { policyVersion: "phase-3-policy-v2" }],
+    ["manifest", { manifestVersion: 2 }],
+  ])("rejects an unsupported %s version", (_label, override) => {
+    expect(() => planSyntheticProjection(input(override))).toThrow();
   });
 
   it.each([
@@ -145,8 +220,23 @@ describe("Phase 3 host-neutral synthetic projection planner", () => {
     );
   });
 
-  it("blocks drive-qualified logical targets and interleaved ancestor collisions", () => {
-    for (const target of ["C:/outside/root.md", "rules/item.", "rules/con", "rules/com1.txt"]) {
+  it("blocks every logical-target alias class and interleaved ancestor collisions", () => {
+    for (const target of [
+      "/outside/root.md",
+      "C:/outside/root.md",
+      "C:\\outside\\root.md",
+      "Rules/root.md",
+      "rules\\root.md",
+      "rules//root.md",
+      "rules/./root.md",
+      "rules/../root.md",
+      "rules/item.",
+      "rules/item ",
+      "rules/con",
+      "rules/nul.txt",
+      "rules/com1.txt",
+      "rules/lpt9.md",
+    ]) {
       const result = planSyntheticProjection(
         input({
           mappings: [
@@ -191,9 +281,6 @@ describe("Phase 3 host-neutral synthetic projection planner", () => {
   it("binds every decision-critical field into the manifest digest", () => {
     const baseline = planSyntheticProjection(input());
     const mutations = [
-      input({ policyVersion: "phase-3-policy-v2" }),
-      input({ classifierVersion: "phase-2-classifier-v2" }),
-      input({ manifestVersion: 2 }),
       input({ owner: "other-owner" }),
       input({
         mappings: [
@@ -265,6 +352,12 @@ describe("Phase 3 host-neutral synthetic projection planner", () => {
     expect(() =>
       ProjectionPlanResultSchema.parse({
         ...planned,
+        manifest: { ...manifestOf(planned), digest: digest("f") },
+      }),
+    ).toThrow();
+    expect(() =>
+      ProjectionPlanResultSchema.parse({
+        ...planned,
         manifest: {
           ...manifestOf(planned),
           entries: [
@@ -286,5 +379,42 @@ describe("Phase 3 host-neutral synthetic projection planner", () => {
         },
       }),
     ).toThrow();
+  });
+
+  it("accepts exact resource maxima and rejects the first value beyond each bound", () => {
+    const maximal = maximalInput();
+    const maximalResult = planSyntheticProjection(maximal);
+    const exactTarget = planSyntheticProjection(
+      input({
+        mappings: [
+          { artifactId: "root", target: "a".repeat(240) },
+          { artifactId: "dependency", target: "rules/dependency.md" },
+        ],
+      }),
+    );
+
+    expect(maximalResult.state).toBe("planned");
+    expect(manifestOf(maximalResult).entries).toHaveLength(64);
+    expect(exactTarget.state).toBe("planned");
+    expect(() =>
+      planSyntheticProjection({
+        ...maximal,
+        mappings: [
+          ...(maximal.mappings as unknown[]),
+          { artifactId: "overflow", target: "rules/overflow.md" },
+        ],
+      }),
+    ).toThrow();
+    expect(() =>
+      planSyntheticProjection(
+        input({
+          mappings: [
+            { artifactId: "root", target: "a".repeat(241) },
+            { artifactId: "dependency", target: "rules/dependency.md" },
+          ],
+        }),
+      ),
+    ).toThrow();
+    expect(() => planSyntheticProjection(input({ owner: "a".repeat(65) }))).toThrow();
   });
 });
