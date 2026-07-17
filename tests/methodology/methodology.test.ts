@@ -21,6 +21,7 @@ import {
 import {
   canonicalizeMethodologyIntent,
   exactSourceIdentity,
+  hostAdapterFor,
   MethodologyCommandEnvelopeSchema,
   MethodologyIntentSchema,
   MethodologyStatusSchema,
@@ -29,6 +30,7 @@ import {
 
 const tmps: string[] = [];
 const TEST_PROCESS_TIMEOUT_MS = 25_000;
+const SUPPORTS_VERIFIED_INTENT_READS = process.platform === "linux";
 
 function fresh(prefix: string): string {
   const root = mkdtempSync(join(tmpdir(), prefix));
@@ -68,6 +70,47 @@ function intent(componentIds = ["method-routing", "review-loop"]): unknown {
       },
     },
   };
+}
+
+function statusFixture(state: "selected" | "advisory" | "blocked" = "selected") {
+  const parsed = MethodologyIntentSchema.parse(intent());
+  const findings =
+    state === "advisory"
+      ? [
+          {
+            code: "METHODOLOGY_HOST_ADVISORY",
+            disposition: "advisory",
+            detail: "Phase 1 has no host proof",
+          },
+        ]
+      : state === "blocked"
+        ? [
+            {
+              code: "METHODOLOGY_PHASE_ONE_NO_PROJECTION",
+              disposition: "blocked",
+              detail: "Phase 1 provides no projection planner",
+            },
+          ]
+        : [];
+  return MethodologyStatusSchema.parse({
+    schemaVersion: 1,
+    state,
+    identity: exactSourceIdentity(parsed),
+    compatibility: parsed.selection.compatibility,
+    adapters: {
+      provider: providerAdapterFor(parsed),
+      host: hostAdapterFor(parsed),
+    },
+    claims: {
+      installed: false,
+      active: false,
+      isolated: false,
+      switchable: false,
+      concurrent: false,
+      conflictFree: false,
+    },
+    findings,
+  });
 }
 
 function writeIntent(root: string, relative: string, value: unknown): void {
@@ -170,9 +213,7 @@ describe("methodology Phase 1 schemas", () => {
   });
 
   it("rejects unknown nested adapter fields in a closed status record", () => {
-    const root = fresh("aih-methodology-closed-status-");
-    writeIntent(root, "methodology.intent.json", intent());
-    const status = JSON.parse(runInProcess(root, "inspect").stdout).status;
+    const status = statusFixture();
 
     expect(() =>
       MethodologyStatusSchema.parse({
@@ -210,10 +251,20 @@ describe("methodology Phase 1 schemas", () => {
   });
 
   it("rejects contradictory status findings and command/status combinations", () => {
-    const root = fresh("aih-methodology-status-contract-");
-    writeIntent(root, "methodology.intent.json", intent());
-    const inspected = JSON.parse(runInProcess(root, "inspect").stdout);
-    const projected = JSON.parse(runInProcess(root, "project").stdout);
+    const inspected = {
+      schemaVersion: 1,
+      command: "inspect" as const,
+      outcome: "completed" as const,
+      status: statusFixture(),
+      boundary: METHODOLOGY_PHASE_ONE_BOUNDARY,
+    };
+    const projected = {
+      schemaVersion: 1,
+      command: "project" as const,
+      outcome: "blocked" as const,
+      status: statusFixture("blocked"),
+      boundary: METHODOLOGY_PHASE_ONE_BOUNDARY,
+    };
     const advisoryFinding = {
       code: "METHODOLOGY_HOST_ADVISORY",
       disposition: "advisory",
@@ -250,26 +301,51 @@ describe("methodology Phase 1 schemas", () => {
 });
 
 describe("methodology Phase 1 in-process boundaries", () => {
-  it("returns bounded statuses and exits for all three commands", () => {
-    const root = fresh("aih-methodology-in-process-success-");
-    writeIntent(root, "methodology.intent.json", intent());
+  it.runIf(SUPPORTS_VERIFIED_INTENT_READS)(
+    "returns bounded statuses and exits for all three commands",
+    () => {
+      const root = fresh("aih-methodology-in-process-success-");
+      writeIntent(root, "methodology.intent.json", intent());
 
-    for (const [command, exitCode, state] of [
-      ["inspect", 0, "selected"],
-      ["project", 2, "blocked"],
-      ["status", 0, "advisory"],
-    ] as const) {
-      const result = runInProcess(root, command);
+      for (const [command, exitCode, state] of [
+        ["inspect", 0, "selected"],
+        ["project", 2, "blocked"],
+        ["status", 0, "advisory"],
+      ] as const) {
+        const result = runInProcess(root, command);
 
-      expect(result.exitCode).toBe(exitCode);
-      expect(JSON.parse(result.stdout)).toMatchObject({
-        command,
-        status: { state },
-        boundary: METHODOLOGY_PHASE_ONE_BOUNDARY,
-      });
-    }
-    expect(existsSync(join(root, ".aih"))).toBe(false);
-  });
+        expect(result.exitCode).toBe(exitCode);
+        expect(JSON.parse(result.stdout)).toMatchObject({
+          command,
+          status: { state },
+          boundary: METHODOLOGY_PHASE_ONE_BOUNDARY,
+        });
+      }
+      expect(existsSync(join(root, ".aih"))).toBe(false);
+    },
+  );
+
+  it.skipIf(SUPPORTS_VERIFIED_INTENT_READS)(
+    "fails closed for every filesystem intent read without Linux descriptor traversal",
+    () => {
+      const root = fresh("aih-methodology-in-process-platform-gate-");
+      writeIntent(root, "methodology.intent.json", intent());
+
+      for (const command of ["inspect", "project", "status"] as const) {
+        const result = runInProcess(root, command);
+        expect(result.exitCode).toBe(3);
+        expect(JSON.parse(result.stdout)).toMatchObject({
+          command,
+          outcome: "fail-closed",
+          failure: {
+            state: "fail-closed",
+            findings: [expect.objectContaining({ code: "METHODOLOGY_INTENT_MALFORMED" })],
+          },
+        });
+      }
+      expect(existsSync(join(root, ".aih"))).toBe(false);
+    },
+  );
 
   it("returns exit 1 for invalid and unreadable intent paths", () => {
     const root = fresh("aih-methodology-in-process-invalid-");
@@ -364,16 +440,19 @@ describe("methodology Phase 1 in-process boundaries", () => {
     });
   });
 
-  it("reports a successful non-JSON inspection without a JSON envelope", () => {
-    const root = fresh("aih-methodology-in-process-text-success-");
-    writeIntent(root, "methodology.intent.json", intent());
+  it.runIf(SUPPORTS_VERIFIED_INTENT_READS)(
+    "reports a successful non-JSON inspection without a JSON envelope",
+    () => {
+      const root = fresh("aih-methodology-in-process-text-success-");
+      writeIntent(root, "methodology.intent.json", intent());
 
-    const result = runInProcess(root, "inspect", "methodology.intent.json", false);
+      const result = runInProcess(root, "inspect", "methodology.intent.json", false);
 
-    expect(result.exitCode).toBe(0);
-    expect(result.stdout).toBe("methodology inspect: selected\n");
-    expect(result.stderr).toBe("");
-  });
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toBe("methodology inspect: selected\n");
+      expect(result.stderr).toBe("");
+    },
+  );
 
   it("writes a closed parser envelope only for JSON methodology arguments", () => {
     let stdout = "";
@@ -427,69 +506,79 @@ describe("methodology Phase 1 in-process boundaries", () => {
 });
 
 describe("aih methodology Phase 1 child-process boundary", () => {
-  it("exits 0 for read-only inspect and reports declarative no-execution boundaries", () => {
-    const root = fresh("aih-methodology-inspect-");
-    writeIntent(root, "methodology.intent.json", intent());
-    write(
-      root,
-      "provider-source/package.json",
-      JSON.stringify({ scripts: { postinstall: "touch provider-ran" } }),
-    );
-    write(root, "host-launch-canary.sh", "touch host-ran\n");
+  it.runIf(SUPPORTS_VERIFIED_INTENT_READS)(
+    "exits 0 for read-only inspect and reports declarative no-execution boundaries",
+    () => {
+      const root = fresh("aih-methodology-inspect-");
+      writeIntent(root, "methodology.intent.json", intent());
+      write(
+        root,
+        "provider-source/package.json",
+        JSON.stringify({ scripts: { postinstall: "touch provider-ran" } }),
+      );
+      write(root, "host-launch-canary.sh", "touch host-ran\n");
 
-    const result = runAih(root, "inspect");
+      const result = runAih(root, "inspect");
 
-    expect(result.status, result.stderr).toBe(0);
-    const payload = JSON.parse(result.stdout);
-    expect(payload).toMatchObject({
-      schemaVersion: 1,
-      command: "inspect",
-      outcome: "completed",
-      status: { state: "selected" },
-      boundary: {
-        providerExecution: false,
-        providerFetch: false,
-        hostExecution: false,
-        writes: false,
-      },
-    });
-    expect(existsSync(join(root, "provider-source", "provider-ran"))).toBe(false);
-    expect(existsSync(join(root, "host-ran"))).toBe(false);
-    expect(existsSync(join(root, ".aih"))).toBe(false);
-  });
+      expect(result.status, result.stderr).toBe(0);
+      const payload = JSON.parse(result.stdout);
+      expect(payload).toMatchObject({
+        schemaVersion: 1,
+        command: "inspect",
+        outcome: "completed",
+        status: { state: "selected" },
+        boundary: {
+          providerExecution: false,
+          providerFetch: false,
+          hostExecution: false,
+          writes: false,
+        },
+      });
+      expect(existsSync(join(root, "provider-source", "provider-ran"))).toBe(false);
+      expect(existsSync(join(root, "host-ran"))).toBe(false);
+      expect(existsSync(join(root, ".aih"))).toBe(false);
+    },
+  );
 
-  it("exits 0 with identical identity for equivalent component orderings", () => {
-    const root = fresh("aih-methodology-canonical-");
-    writeIntent(root, "forward.json", intent());
-    writeIntent(root, "reverse.json", intent(["review-loop", "method-routing"]));
+  it.runIf(SUPPORTS_VERIFIED_INTENT_READS)(
+    "exits 0 with identical identity for equivalent component orderings",
+    () => {
+      const root = fresh("aih-methodology-canonical-");
+      writeIntent(root, "forward.json", intent());
+      writeIntent(root, "reverse.json", intent(["review-loop", "method-routing"]));
 
-    const forward = runAih(root, "inspect", "forward.json");
-    const reverse = runAih(root, "inspect", "reverse.json");
+      const forward = runAih(root, "inspect", "forward.json");
+      const reverse = runAih(root, "inspect", "reverse.json");
 
-    expect(forward.status, forward.stderr).toBe(0);
-    expect(reverse.status, reverse.stderr).toBe(0);
-    expect(JSON.parse(forward.stdout).status.identity).toEqual(
-      JSON.parse(reverse.stdout).status.identity,
-    );
-  }, 30_000);
+      expect(forward.status, forward.stderr).toBe(0);
+      expect(reverse.status, reverse.stderr).toBe(0);
+      expect(JSON.parse(forward.stdout).status.identity).toEqual(
+        JSON.parse(reverse.stdout).status.identity,
+      );
+    },
+    30_000,
+  );
 
-  it("exits 2 because Phase 1 project is permanently dry-run and has no write path", () => {
-    const root = fresh("aih-methodology-project-");
-    writeIntent(root, "methodology.intent.json", intent());
+  it.runIf(SUPPORTS_VERIFIED_INTENT_READS)(
+    "exits 2 because Phase 1 project is permanently dry-run and has no write path",
+    () => {
+      const root = fresh("aih-methodology-project-");
+      writeIntent(root, "methodology.intent.json", intent());
 
-    const result = runAih(root, "project");
+      const result = runAih(root, "project");
 
-    expect(result.status, result.stderr).toBe(2);
-    expect(JSON.parse(result.stdout)).toMatchObject({
-      command: "project",
-      outcome: "blocked",
-      status: {
-        state: "blocked",
-        findings: [expect.objectContaining({ code: "METHODOLOGY_PHASE_ONE_NO_PROJECTION" })],
-      },
-    });
-    expect(existsSync(join(root, ".aih"))).toBe(false);
-  });
+      expect(result.status, result.stderr).toBe(2);
+      expect(JSON.parse(result.stdout)).toMatchObject({
+        command: "project",
+        outcome: "blocked",
+        status: {
+          state: "blocked",
+          findings: [expect.objectContaining({ code: "METHODOLOGY_PHASE_ONE_NO_PROJECTION" })],
+        },
+      });
+      expect(existsSync(join(root, ".aih"))).toBe(false);
+    },
+  );
 
   it("exits 3 fail-closed for malformed identity without creating a projection", () => {
     const root = fresh("aih-methodology-malformed-");
@@ -565,27 +654,51 @@ describe("aih methodology Phase 1 child-process boundary", () => {
     expect(existsSync(join(root, ".aih"))).toBe(false);
   }, 30_000);
 
-  it("exits 0 for bounded advisory status without claiming runtime activation", () => {
-    const root = fresh("aih-methodology-status-");
-    writeIntent(root, "methodology.intent.json", intent());
+  it.runIf(SUPPORTS_VERIFIED_INTENT_READS)(
+    "exits 0 for bounded advisory status without claiming runtime activation",
+    () => {
+      const root = fresh("aih-methodology-status-");
+      writeIntent(root, "methodology.intent.json", intent());
 
-    const result = runAih(root, "status");
+      const result = runAih(root, "status");
 
-    expect(result.status, result.stderr).toBe(0);
-    expect(JSON.parse(result.stdout)).toMatchObject({
-      command: "status",
-      outcome: "completed",
-      status: {
-        state: "advisory",
-        claims: {
-          installed: false,
-          active: false,
-          isolated: false,
-          switchable: false,
-          concurrent: false,
-          conflictFree: false,
+      expect(result.status, result.stderr).toBe(0);
+      expect(JSON.parse(result.stdout)).toMatchObject({
+        command: "status",
+        outcome: "completed",
+        status: {
+          state: "advisory",
+          claims: {
+            installed: false,
+            active: false,
+            isolated: false,
+            switchable: false,
+            concurrent: false,
+            conflictFree: false,
+          },
         },
-      },
-    });
-  });
+      });
+    },
+  );
+
+  it.skipIf(SUPPORTS_VERIFIED_INTENT_READS)(
+    "exits 3 in a child process when verified filesystem traversal is unavailable",
+    () => {
+      const root = fresh("aih-methodology-platform-gated-child-");
+      writeIntent(root, "methodology.intent.json", intent());
+
+      const result = runAih(root, "inspect");
+
+      expect(result.status, result.stderr).toBe(3);
+      expect(MethodologyCommandEnvelopeSchema.parse(JSON.parse(result.stdout))).toMatchObject({
+        command: "inspect",
+        outcome: "fail-closed",
+        failure: {
+          state: "fail-closed",
+          findings: [expect.objectContaining({ code: "METHODOLOGY_INTENT_MALFORMED" })],
+        },
+      });
+      expect(existsSync(join(root, ".aih"))).toBe(false);
+    },
+  );
 });

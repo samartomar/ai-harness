@@ -10,6 +10,7 @@ import {
 
 const tmps: string[] = [];
 const TEST_PROCESS_TIMEOUT_MS = 25_000;
+const SUPPORTS_VERIFIED_INTENT_READS = process.platform === "linux";
 
 interface IntentFixture {
   schemaVersion: number;
@@ -173,61 +174,64 @@ describe("methodology Phase 1 repair regressions", () => {
     });
   });
 
-  it("rejects contradictory failure states and validates a completed JSON envelope", () => {
-    expect(() =>
-      MethodologyFailureEnvelopeSchema.parse({
-        schemaVersion: 1,
-        command: "inspect",
-        outcome: "invalid",
-        failure: {
+  it.runIf(SUPPORTS_VERIFIED_INTENT_READS)(
+    "rejects contradictory failure states and validates a completed JSON envelope",
+    () => {
+      expect(() =>
+        MethodologyFailureEnvelopeSchema.parse({
           schemaVersion: 1,
-          state: "fail-closed",
-          findings: [
-            {
-              code: "METHODOLOGY_HOST_ADVISORY",
-              disposition: "advisory",
-              detail: "contradictory",
-            },
-          ],
-        },
-        boundary: {
-          providerExecution: false,
-          providerFetch: false,
-          hostExecution: false,
-          writes: false,
-        },
-      }),
-    ).toThrow();
+          command: "inspect",
+          outcome: "invalid",
+          failure: {
+            schemaVersion: 1,
+            state: "fail-closed",
+            findings: [
+              {
+                code: "METHODOLOGY_HOST_ADVISORY",
+                disposition: "advisory",
+                detail: "contradictory",
+              },
+            ],
+          },
+          boundary: {
+            providerExecution: false,
+            providerFetch: false,
+            hostExecution: false,
+            writes: false,
+          },
+        }),
+      ).toThrow();
 
-    const root = fresh("aih-methodology-completed-envelope-");
-    write(root, "methodology.intent.json", `${JSON.stringify(intent())}\n`);
-    const result = runAih(root);
+      const root = fresh("aih-methodology-completed-envelope-");
+      write(root, "methodology.intent.json", `${JSON.stringify(intent())}\n`);
+      const result = runAih(root);
 
-    expect(result.status, result.stderr).toBe(0);
-    expect(MethodologyCommandEnvelopeSchema.parse(JSON.parse(result.stdout))).toMatchObject({
-      command: "inspect",
-      outcome: "completed",
-      status: { state: "selected" },
-    });
-    const completed = JSON.parse(result.stdout) as {
-      status: { findings: unknown[] };
-    };
-    expect(() =>
-      MethodologyCommandEnvelopeSchema.parse({
-        ...completed,
-        status: {
-          ...completed.status,
-          findings: [
-            {
-              code: "METHODOLOGY_HOST_ADVISORY",
-              disposition: "advisory",
-              detail: "contradictory completed status",
-            },
-          ],
-        },
-      }),
-    ).toThrow();
-  });
+      expect(result.status, result.stderr).toBe(0);
+      expect(MethodologyCommandEnvelopeSchema.parse(JSON.parse(result.stdout))).toMatchObject({
+        command: "inspect",
+        outcome: "completed",
+        status: { state: "selected" },
+      });
+      const completed = JSON.parse(result.stdout) as {
+        status: { findings: unknown[] };
+      };
+      expect(() =>
+        MethodologyCommandEnvelopeSchema.parse({
+          ...completed,
+          status: {
+            ...completed.status,
+            findings: [
+              {
+                code: "METHODOLOGY_HOST_ADVISORY",
+                disposition: "advisory",
+                detail: "contradictory completed status",
+              },
+            ],
+          },
+        }),
+      ).toThrow();
+    },
+  );
 
   it("fails closed before reading an oversized or over-component intent", () => {
     const root = fresh("aih-methodology-input-bounds-");
