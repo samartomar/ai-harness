@@ -195,4 +195,43 @@ describe("methodology Phase 1 descriptor metadata binding", () => {
       expect(JSON.parse(stdout)).toMatchObject({ outcome: "fail-closed" });
     },
   );
+
+  it.runIf(process.platform === "linux")(
+    "fails closed when the verified descriptor read raises an unexpected error",
+    async () => {
+      const root = realFs.mkdtempSync(join(tmpdir(), "aih-methodology-read-error-"));
+      temporaryRoots.push(root);
+      realFs.writeFileSync(
+        join(root, "methodology.intent.json"),
+        validIntent("a".repeat(40)),
+        "utf8",
+      );
+
+      vi.doMock("node:fs", async () => {
+        const actual = await vi.importActual<typeof import("node:fs")>("node:fs");
+        return {
+          ...actual,
+          readSync(): never {
+            throw new Error("synthetic descriptor read failure");
+          },
+        };
+      });
+
+      const { runMethodologyCommand } = await import("../../src/methodology/index.js");
+      let stdout = "";
+      const exitCode = runMethodologyCommand(
+        "inspect",
+        { root, intent: "methodology.intent.json", json: true },
+        {
+          write: (text) => {
+            stdout += text;
+          },
+          writeError: () => undefined,
+        },
+      );
+
+      expect(exitCode).toBe(3);
+      expect(JSON.parse(stdout)).toMatchObject({ outcome: "fail-closed" });
+    },
+  );
 });
