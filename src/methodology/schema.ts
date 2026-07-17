@@ -321,10 +321,12 @@ export const MethodologyStatusSchema = z
       }
       return;
     }
+    const actualFinding = status.findings[0];
     if (
+      actualFinding === undefined ||
       status.findings.length !== 1 ||
-      status.findings[0].code !== expectedFinding.code ||
-      status.findings[0].disposition !== expectedFinding.disposition
+      actualFinding.code !== expectedFinding.code ||
+      actualFinding.disposition !== expectedFinding.disposition
     ) {
       ctx.addIssue({
         code: "custom",
