@@ -15,7 +15,7 @@ export const MethodologyRuntimeSchema = z.enum(["node-26", "bun-1", "none"]);
 export const MethodologyPolicyContextSchema = z.enum(["unmanaged", "managed", "disposable"]);
 
 const ProviderAdapterIdSchema = z.enum(["ecc-static-v1", "gstack-static-v1"]);
-const HostAdapterIdSchema = z.enum([
+export const MethodologyHostAdapterIdSchema = z.enum([
   "claude-code-static-v1",
   "codex-static-v1",
   "cursor-static-v1",
@@ -51,7 +51,7 @@ const MethodologySelectionSchema = z
     source: MethodologySourceSchema,
     components: z.array(z.object({ id: ComponentIdSchema }).strict()).min(1),
     providerAdapter: ProviderAdapterIdSchema,
-    hostAdapter: HostAdapterIdSchema,
+    hostAdapter: MethodologyHostAdapterIdSchema,
     compatibility: MethodologyCompatibilitySchema,
   })
   .strict()
@@ -115,7 +115,7 @@ export interface ProviderAdapter {
 
 export interface HostAdapter {
   readonly schemaVersion: 1;
-  readonly id: z.infer<typeof HostAdapterIdSchema>;
+  readonly id: z.infer<typeof MethodologyHostAdapterIdSchema>;
   readonly host: z.infer<typeof MethodologyHostSchema>;
   readonly discovery: "unproven";
   readonly isolation: "unproven";
@@ -144,7 +144,7 @@ export const PROVIDER_ADAPTERS: readonly ProviderAdapter[] = Object.freeze([
 export const HOST_ADAPTERS: readonly HostAdapter[] = Object.freeze(
   ["claude-code", "codex", "cursor", "kiro", "opencode"].map((host) => ({
     schemaVersion: 1 as const,
-    id: `${host}-static-v1` as z.infer<typeof HostAdapterIdSchema>,
+    id: `${host}-static-v1` as z.infer<typeof MethodologyHostAdapterIdSchema>,
     host: host as z.infer<typeof MethodologyHostSchema>,
     discovery: "unproven" as const,
     isolation: "unproven" as const,
@@ -238,7 +238,7 @@ export const MethodologyStatusSchema = z
         host: z
           .object({
             schemaVersion: z.literal(1),
-            id: HostAdapterIdSchema,
+            id: MethodologyHostAdapterIdSchema,
             host: MethodologyHostSchema,
             discovery: z.literal("unproven"),
             isolation: z.literal("unproven"),
