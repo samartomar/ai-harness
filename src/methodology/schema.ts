@@ -301,7 +301,38 @@ export const MethodologyStatusSchema = z
     claims: MethodologyClaimsSchema,
     findings: z.array(MethodologyFindingSchema).max(3),
   })
-  .strict();
+  .strict()
+  .superRefine((status, ctx) => {
+    const expectedFinding =
+      status.state === "advisory"
+        ? { code: "METHODOLOGY_HOST_ADVISORY", disposition: "advisory" }
+        : status.state === "blocked"
+          ? { code: "METHODOLOGY_PHASE_ONE_NO_PROJECTION", disposition: "blocked" }
+          : status.state === "fail-closed"
+            ? { code: "METHODOLOGY_INTENT_MALFORMED", disposition: "fail-closed" }
+            : undefined;
+    if (expectedFinding === undefined) {
+      if (status.findings.length !== 0) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["findings"],
+          message: "a selected methodology status may not contain findings",
+        });
+      }
+      return;
+    }
+    if (
+      status.findings.length !== 1 ||
+      status.findings[0].code !== expectedFinding.code ||
+      status.findings[0].disposition !== expectedFinding.disposition
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["findings"],
+        message: "methodology status findings must match their fixed state and disposition",
+      });
+    }
+  });
 
 const MethodologyCompletedEnvelopeSchema = z
   .object({
