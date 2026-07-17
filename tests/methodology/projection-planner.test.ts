@@ -274,5 +274,17 @@ describe("Phase 3 host-neutral synthetic projection planner", () => {
         },
       }),
     ).toThrow();
+    expect(() =>
+      ProjectionPlanResultSchema.parse({
+        ...planned,
+        manifest: {
+          ...manifestOf(planned),
+          entries: [
+            { ...manifestOf(planned).entries[0], artifactId: "root", target: "rules/a" },
+            { ...manifestOf(planned).entries[1], artifactId: "root", target: "rules/b" },
+          ],
+        },
+      }),
+    ).toThrow();
   });
 });

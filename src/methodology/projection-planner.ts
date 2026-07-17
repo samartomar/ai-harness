@@ -75,6 +75,13 @@ const ManifestSchema = z
   .strict()
   .superRefine((manifest, ctx) => {
     const entries = manifest.entries;
+    if (new Set(entries.map((entry) => entry.artifactId)).size !== entries.length) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["entries"],
+        message: "manifest artifact entries must be unique",
+      });
+    }
     if (
       entries.some((entry, index) => {
         const previous = entries[index - 1];
