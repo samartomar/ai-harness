@@ -3,7 +3,8 @@ import { isProxy } from "node:util/types";
 import { z } from "zod";
 import {
   classifySyntheticProjection,
-  type SyntheticClassificationResultSchema,
+  type SyntheticClassificationResult,
+  type SyntheticClassifierInput,
   SyntheticClassifierInputSchema,
 } from "./classifier.js";
 
@@ -38,6 +39,16 @@ const ProjectionMappingObjectSchema = z
   .object({ artifactId: ArtifactIdSchema, target: MappingTargetSchema })
   .strict();
 
+const ClassifierInputSchema = z.unknown().transform((value, ctx): SyntheticClassifierInput => {
+  const result = SyntheticClassifierInputSchema.safeParse(value);
+  if (result.success) return result.data;
+  ctx.addIssue({
+    code: "custom",
+    message: "classifier input must satisfy the closed Phase 2 contract",
+  });
+  return z.NEVER;
+});
+
 export const ProjectionMappingSchema = z.preprocess(
   (value) =>
     failClosedPreprocess(value, (candidate) =>
@@ -54,7 +65,7 @@ const ProjectionPlannerInputObjectSchema = z
     policyVersion: z.literal(POLICY_VERSION),
     manifestVersion: z.literal(MANIFEST_VERSION),
     owner: z.string().regex(/^[a-z][a-z0-9-]{0,63}$/),
-    classifierInput: SyntheticClassifierInputSchema,
+    classifierInput: ClassifierInputSchema,
     mappings: z.array(ProjectionMappingSchema).min(1).max(MAX_ENTRIES),
   })
   .strict();
@@ -99,7 +110,7 @@ const ProjectionDecisionObjectSchema = z
     policyVersion: z.literal(POLICY_VERSION),
     manifestVersion: z.literal(MANIFEST_VERSION),
     owner: z.string().regex(/^[a-z][a-z0-9-]{0,63}$/),
-    classifierInput: SyntheticClassifierInputSchema,
+    classifierInput: ClassifierInputSchema,
     closure: z.array(ArtifactIdSchema).min(1).max(MAX_ENTRIES),
     eligible: z.array(ArtifactIdSchema).min(1).max(MAX_ENTRIES),
     mappings: z.array(ProjectionMappingSchema).min(1).max(MAX_ENTRIES),
@@ -215,8 +226,8 @@ export const ProjectionPlanResultSchema = z.preprocess(
   ProjectionPlanResultUnionSchema,
 );
 
-type ClassifierInput = z.infer<typeof SyntheticClassifierInputSchema>;
-type ClassifierResult = z.infer<typeof SyntheticClassificationResultSchema>;
+type ClassifierInput = SyntheticClassifierInput;
+type ClassifierResult = SyntheticClassificationResult;
 type Artifact = ClassifierInput["artifacts"][number];
 type PlannerInput = z.infer<typeof ProjectionPlannerInputSchema>;
 type Decision = z.infer<typeof ProjectionDecisionSchema>;
