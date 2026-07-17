@@ -235,6 +235,18 @@ describe("Phase 2 synthetic methodology classifier", () => {
         disposition: "ineligible",
         closure: ["root"],
         eligible: [],
+        findings: [
+          { code: "METHODOLOGY_CONTENT_EXECUTABLE", artifactId: "root" },
+          { code: "METHODOLOGY_FINDINGS_LIMIT" },
+        ],
+      }),
+    ).toThrow();
+    expect(() =>
+      SyntheticClassificationResultSchema.parse({
+        schemaVersion: 1,
+        disposition: "ineligible",
+        closure: ["root"],
+        eligible: [],
         findings: [{ code: "METHODOLOGY_CONTENT_EXECUTABLE" }],
       }),
     ).toThrow();
