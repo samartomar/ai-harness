@@ -146,14 +146,19 @@ describe("Phase 3 host-neutral synthetic projection planner", () => {
   });
 
   it("blocks drive-qualified logical targets and interleaved ancestor collisions", () => {
-    const driveQualified = planSyntheticProjection(
-      input({
-        mappings: [
-          { artifactId: "root", target: "C:/outside/root.md" },
-          { artifactId: "dependency", target: "rules/dependency.md" },
-        ],
-      }),
-    );
+    for (const target of ["C:/outside/root.md", "rules/item.", "rules/con", "rules/com1.txt"]) {
+      const result = planSyntheticProjection(
+        input({
+          mappings: [
+            { artifactId: "root", target },
+            { artifactId: "dependency", target: "rules/dependency.md" },
+          ],
+        }),
+      );
+      expect(result.findings.map((finding) => finding.code)).toContain(
+        "METHODOLOGY_TARGET_INVALID",
+      );
+    }
     const candidate = input();
     const classifierInput = candidate.classifierInput as {
       artifacts: Array<Record<string, unknown>>;
@@ -178,9 +183,6 @@ describe("Phase 3 host-neutral synthetic projection planner", () => {
 
     const interleaved = planSyntheticProjection(candidate);
 
-    expect(driveQualified.findings.map((finding) => finding.code)).toContain(
-      "METHODOLOGY_TARGET_INVALID",
-    );
     expect(interleaved.findings.map((finding) => finding.code)).toContain(
       "METHODOLOGY_TARGET_COLLISION",
     );

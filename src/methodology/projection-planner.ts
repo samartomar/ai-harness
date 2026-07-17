@@ -105,7 +105,13 @@ function compare(left: string, right: string): number {
 }
 
 function targetIsCanonical(target: string): boolean {
-  return /^[a-z0-9][a-z0-9._-]*(?:\/[a-z0-9][a-z0-9._-]*)*$/.test(target);
+  if (!/^[a-z0-9][a-z0-9._-]*(?:\/[a-z0-9][a-z0-9._-]*)*$/.test(target)) return false;
+  return target
+    .split("/")
+    .every(
+      (segment) =>
+        !segment.endsWith(".") && !/^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$/.test(segment),
+    );
 }
 
 function canonicalClassifierInput(input: ClassifierInput): unknown {
