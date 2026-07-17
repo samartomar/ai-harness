@@ -148,12 +148,16 @@ describe("methodology Phase 1 repair regressions", () => {
     });
   });
 
-  it("fails closed when a root ancestor is a linked directory", () => {
+  it("fails closed when a root ancestor is a linked directory or Windows junction", () => {
     const outside = fresh("aih-methodology-linked-ancestor-outside-");
     const wrapper = fresh("aih-methodology-linked-ancestor-wrapper-");
     const project = join(outside, "project");
     write(project, "methodology.intent.json", `${JSON.stringify(intent())}\n`);
-    symlinkSync(outside, join(wrapper, "linked-ancestor"), "dir");
+    symlinkSync(
+      outside,
+      join(wrapper, "linked-ancestor"),
+      process.platform === "win32" ? "junction" : "dir",
+    );
 
     const result = runAih(join(wrapper, "linked-ancestor", "project"));
 
@@ -262,28 +266,32 @@ describe("methodology Phase 1 repair regressions", () => {
     expect(JSON.parse(unknownSubcommand.stdout).command).toBeNull();
   });
 
-  it("keeps help successful and prevents JSON help or version output from contaminating envelopes", () => {
-    const plainHelp = runCli(["methodology", "inspect", "--help"]);
-    const jsonHelp = runCli(["methodology", "inspect", "--help", "--json"]);
-    const jsonVersion = runCli(["methodology", "inspect", "--version", "--json"]);
+  it(
+    "keeps help successful and prevents JSON help or version output from contaminating envelopes",
+    () => {
+      const plainHelp = runCli(["methodology", "inspect", "--help"]);
+      const jsonHelp = runCli(["methodology", "inspect", "--help", "--json"]);
+      const jsonVersion = runCli(["methodology", "inspect", "--version", "--json"]);
 
-    expect(plainHelp.status).toBe(0);
-    expect(plainHelp.stderr).toBe("");
-    expect(plainHelp.stdout).toContain("Usage: aih methodology inspect");
-    for (const result of [jsonHelp, jsonVersion]) {
-      expect(result.status).toBe(1);
-      expect(result.stderr).toBe("");
-      expect(result.stdout).not.toContain("Usage:");
-      expect(result.stdout).not.toContain("2.11.0");
-      expect(MethodologyCommandEnvelopeSchema.parse(JSON.parse(result.stdout))).toMatchObject({
-        command: "inspect",
-        outcome: "invalid",
-        failure: {
-          findings: [expect.objectContaining({ code: "METHODOLOGY_COMMAND_INVALID" })],
-        },
-      });
-    }
-  }, TEST_PROCESS_TIMEOUT_MS);
+      expect(plainHelp.status).toBe(0);
+      expect(plainHelp.stderr).toBe("");
+      expect(plainHelp.stdout).toContain("Usage: aih methodology inspect");
+      for (const result of [jsonHelp, jsonVersion]) {
+        expect(result.status).toBe(1);
+        expect(result.stderr).toBe("");
+        expect(result.stdout).not.toContain("Usage:");
+        expect(result.stdout).not.toContain("2.11.0");
+        expect(MethodologyCommandEnvelopeSchema.parse(JSON.parse(result.stdout))).toMatchObject({
+          command: "inspect",
+          outcome: "invalid",
+          failure: {
+            findings: [expect.objectContaining({ code: "METHODOLOGY_COMMAND_INVALID" })],
+          },
+        });
+      }
+    },
+    TEST_PROCESS_TIMEOUT_MS,
+  );
 
   it("rejects multiple fixed findings in a failure envelope", () => {
     expect(() =>

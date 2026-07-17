@@ -266,9 +266,9 @@ describe("isVersionFastPath — the --version sync route", () => {
 describe("methodology no-plugin fast path", () => {
   it("selects the local-only builder before methodology parsing, including invalid argv", () => {
     expect(isMethodologyNoPluginFastPath(["node", "aih", "methodology", "inspect"])).toBe(true);
-    expect(
-      isMethodologyNoPluginFastPath(["node", "aih", "methodology", "unknown", "--json"]),
-    ).toBe(true);
+    expect(isMethodologyNoPluginFastPath(["node", "aih", "methodology", "unknown", "--json"])).toBe(
+      true,
+    );
     expect(isMethodologyNoPluginFastPath(["node", "aih", "doctor"])).toBe(false);
   });
 });

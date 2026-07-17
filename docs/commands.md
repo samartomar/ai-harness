@@ -438,8 +438,9 @@ In `--json` mode every completion, blocked result, invalid input, fail-closed in
 and methodology parser error is a closed schema-validated envelope on stdout. Unsupported
 methodology options therefore return exit `1` with an invalid envelope rather than an
 unstructured Commander error. Intent input is bounded before parsing and is read only
-through a verified regular-file handle after every root and intent-path ancestor is checked
-for links or reparse points.
+through a Linux descriptor-anchored, no-follow regular-file handle. This prevents an
+ancestor pathname swap between validation and read. On other platforms, Phase 1 refuses
+filesystem intent input with exit `3` rather than claiming equivalent containment.
 
 These commands have no `--apply`, `clean`, `fetch`, `install`, `activate`, `switch`,
 `repair`, `update`, `preview`, `force`, `approve`, `suppress`, or host-launch behavior.

@@ -330,7 +330,11 @@ describe("methodology Phase 1 in-process boundaries", () => {
     const wrapper = fresh("aih-methodology-in-process-linked-wrapper-");
     const project = join(outside, "project");
     writeIntent(project, "methodology.intent.json", intent());
-    symlinkSync(outside, join(wrapper, "linked-ancestor"), "dir");
+    symlinkSync(
+      outside,
+      join(wrapper, "linked-ancestor"),
+      process.platform === "win32" ? "junction" : "dir",
+    );
     const oversized = fresh("aih-methodology-in-process-oversized-");
     write(oversized, "oversized.json", " ".repeat(64 * 1024 + 1));
 

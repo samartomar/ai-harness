@@ -369,10 +369,7 @@ export const MethodologyStatusSchema = z
         message: "methodology identity and provider adapter must name the same provider",
       });
     }
-    if (
-      status.compatibility.host !== host.host ||
-      host.id !== `${host.host}-static-v1`
-    ) {
+    if (status.compatibility.host !== host.host || host.id !== `${host.host}-static-v1`) {
       ctx.addIssue({
         code: "custom",
         path: ["adapters", "host"],

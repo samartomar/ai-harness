@@ -1,13 +1,5 @@
-import {
-  closeSync,
-  constants,
-  fstatSync,
-  lstatSync,
-  openSync,
-  readSync,
-  type Stats,
-} from "node:fs";
-import { join, parse, relative, resolve, sep } from "node:path";
+import { closeSync, constants, fstatSync, openSync, readSync, type Stats } from "node:fs";
+import { parse, relative, resolve, sep } from "node:path";
 import type { Command } from "commander";
 import { type CommandSpec, plan } from "../internals/plan.js";
 import {
@@ -105,89 +97,84 @@ function isSafeRelativePath(value: string): boolean {
   );
 }
 
-interface PathIdentity {
-  path: string;
+interface FileIdentity {
   dev: number;
   ino: number;
   mode: number;
-}
-
-interface FileIdentity extends PathIdentity {
   nlink: number;
   size: number;
 }
 
 interface VerifiedIntentFile {
-  path: string;
-  directories: readonly PathIdentity[];
+  descriptor: number;
   file: FileIdentity;
 }
 
-function samePathIdentity(left: PathIdentity, right: PathIdentity): boolean {
+function sameFileIdentity(left: FileIdentity, right: FileIdentity): boolean {
   return (
-    left.path === right.path &&
     left.dev === right.dev &&
     left.ino === right.ino &&
-    left.mode === right.mode
+    left.mode === right.mode &&
+    left.nlink === right.nlink &&
+    left.size === right.size
   );
 }
 
-function sameFileIdentity(left: FileIdentity, right: FileIdentity): boolean {
-  return samePathIdentity(left, right) && left.nlink === right.nlink && left.size === right.size;
+function fileIdentity(info: Stats): FileIdentity {
+  return { dev: info.dev, ino: info.ino, mode: info.mode, nlink: info.nlink, size: info.size };
 }
 
-function pathIdentity(path: string, info: Stats): PathIdentity {
-  return { path, dev: info.dev, ino: info.ino, mode: info.mode };
-}
-
-function fileIdentity(path: string, info: Stats): FileIdentity {
-  return { ...pathIdentity(path, info), nlink: info.nlink, size: info.size };
-}
-
-function lstatIntentPath(path: string, unreadableMessage: string): Stats {
+function closeQuietly(descriptor: number | undefined): void {
+  if (descriptor === undefined) return;
   try {
-    return lstatSync(path);
+    closeSync(descriptor);
   } catch {
-    throw new MethodologyInputError("METHODOLOGY_INTENT_UNREADABLE", unreadableMessage);
+    // A descriptor that cannot be closed is never reused as authority.
   }
 }
 
-function assertRegularDirectory(path: string, info: Stats): PathIdentity {
-  if (!info.isDirectory() || info.isSymbolicLink()) {
+function assertRegularDirectory(info: Stats): void {
+  if (!info.isDirectory()) {
     throw new MethodologyFailClosedError(
       "METHODOLOGY_INTENT_MALFORMED",
       "intent root and ancestors must be regular directories without links or reparse points",
     );
   }
-  return pathIdentity(path, info);
 }
 
-/** Snapshot each absolute root ancestor before opening any descendant. */
-function snapshotRootChain(rootPath: string): PathIdentity[] {
-  const parsed = parse(rootPath);
-  const relativeRoot = relative(parsed.root, rootPath);
-  if (relativeRoot.startsWith("..") || relativeRoot.length > MAX_ROOT_PATH_LENGTH) {
-    throw new MethodologyInputError("METHODOLOGY_INTENT_PATH_INVALID", "target root is invalid");
+function openError(error: unknown): never {
+  const code =
+    typeof error === "object" && error !== null && "code" in error && typeof error.code === "string"
+      ? error.code
+      : undefined;
+  if (code === "ENOENT" || code === "EACCES") {
+    throw new MethodologyInputError("METHODOLOGY_INTENT_UNREADABLE", "intent file is not readable");
   }
-
-  const directories = [
-    assertRegularDirectory(
-      parsed.root,
-      lstatIntentPath(parsed.root, "target root is not readable"),
-    ),
-  ];
-  let current = parsed.root;
-  for (const segment of relativeRoot.split(sep).filter(Boolean)) {
-    current = join(current, segment);
-    directories.push(
-      assertRegularDirectory(current, lstatIntentPath(current, "target root is not readable")),
-    );
-  }
-  return directories;
+  throw new MethodologyFailClosedError(
+    "METHODOLOGY_INTENT_MALFORMED",
+    "intent cannot be opened without following a link or reparse point",
+  );
 }
 
-/** Verify a contained regular intent file without following an alias at the leaf. */
-function intentFile(root: string, relativeIntent: string): VerifiedIntentFile {
+function openDescriptor(path: string, flags: number): number {
+  try {
+    return openSync(path, flags);
+  } catch (error) {
+    return openError(error);
+  }
+}
+
+function descriptorPath(descriptor: number, segment: string): string {
+  return `/proc/self/fd/${descriptor}/${segment}`;
+}
+
+/**
+ * Linux descriptor-relative traversal keeps each subsequent lookup beneath an
+ * already-open parent. Node does not expose an equivalent atomic primitive for
+ * other platforms, so Phase 1 refuses their filesystem input rather than race
+ * a pathname check and read.
+ */
+function openVerifiedIntentFile(root: string, relativeIntent: string): VerifiedIntentFile {
   if (!isSafeRelativePath(relativeIntent)) {
     throw new MethodologyInputError(
       "METHODOLOGY_INTENT_PATH_INVALID",
@@ -197,90 +184,96 @@ function intentFile(root: string, relativeIntent: string): VerifiedIntentFile {
   if (root.length === 0 || root.length > MAX_ROOT_PATH_LENGTH) {
     throw new MethodologyInputError("METHODOLOGY_INTENT_PATH_INVALID", "target root is invalid");
   }
+  if (process.platform !== "linux") {
+    throw new MethodologyFailClosedError(
+      "METHODOLOGY_INTENT_MALFORMED",
+      "Phase 1 intent reads require Linux descriptor-relative no-follow semantics",
+    );
+  }
   const rootPath = resolve(root);
-  const directories = snapshotRootChain(rootPath);
-  let current = rootPath;
-  const segments = relativeIntent.split("/");
-  for (const [index, segment] of segments.entries()) {
-    current = join(current, segment);
-    const info = lstatIntentPath(current, "intent file is not readable");
-    if (
-      index === segments.length - 1 &&
-      (!info.isFile() || info.isSymbolicLink() || info.nlink !== 1)
-    ) {
+  const parsed = parse(rootPath);
+  const rootSegments = relative(parsed.root, rootPath).split(sep).filter(Boolean);
+  if (rootSegments.some((segment) => segment === "..")) {
+    throw new MethodologyInputError("METHODOLOGY_INTENT_PATH_INVALID", "target root is invalid");
+  }
+  const directoryFlags = constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW;
+  let parent: number | undefined;
+  let descriptor: number | undefined;
+  try {
+    parent = openDescriptor(parsed.root, directoryFlags);
+    assertRegularDirectory(fstatSync(parent));
+    for (const segment of [...rootSegments, ...relativeIntent.split("/").slice(0, -1)]) {
+      const next = openDescriptor(descriptorPath(parent, segment), directoryFlags);
+      try {
+        assertRegularDirectory(fstatSync(next));
+      } catch (error) {
+        closeQuietly(next);
+        throw error;
+      }
+      closeQuietly(parent);
+      parent = next;
+    }
+    const leaf = relativeIntent.split("/").at(-1);
+    if (leaf === undefined) {
+      throw new MethodologyFailClosedError("METHODOLOGY_INTENT_MALFORMED", "intent is invalid");
+    }
+    descriptor = openDescriptor(
+      descriptorPath(parent, leaf),
+      constants.O_RDONLY | constants.O_NOFOLLOW,
+    );
+    const info = fstatSync(descriptor);
+    if (!info.isFile() || info.nlink !== 1) {
+      closeQuietly(descriptor);
+      descriptor = undefined;
       throw new MethodologyFailClosedError(
         "METHODOLOGY_INTENT_MALFORMED",
         "intent must be an unlinked regular file",
       );
     }
-    if (index < segments.length - 1) {
-      directories.push(assertRegularDirectory(current, info));
-    } else if (info.size > MAX_INTENT_INPUT_BYTES) {
+    if (info.size > MAX_INTENT_INPUT_BYTES) {
+      closeQuietly(descriptor);
+      descriptor = undefined;
       throw new MethodologyFailClosedError(
         "METHODOLOGY_INTENT_MALFORMED",
         "intent exceeds the Phase 1 byte limit",
       );
-    } else {
-      return { path: current, directories, file: fileIdentity(current, info) };
     }
-  }
-  throw new MethodologyFailClosedError("METHODOLOGY_INTENT_MALFORMED", "intent is invalid");
-}
-
-function assertUnchangedDirectories(directories: readonly PathIdentity[]): void {
-  for (const expected of directories) {
-    const actual = assertRegularDirectory(
-      expected.path,
-      lstatIntentPath(expected.path, "intent root is no longer readable"),
-    );
-    if (!samePathIdentity(expected, actual)) {
-      throw new MethodologyFailClosedError(
-        "METHODOLOGY_INTENT_MALFORMED",
-        "intent root identity changed while reading",
-      );
+    const verified = { descriptor, file: fileIdentity(info) };
+    descriptor = undefined;
+    return verified;
+  } catch (error) {
+    if (error instanceof MethodologyInputError || error instanceof MethodologyFailClosedError) {
+      throw error;
     }
+    throw new MethodologyFailClosedError("METHODOLOGY_INTENT_MALFORMED", "intent is not readable");
+  } finally {
+    closeQuietly(parent);
+    closeQuietly(descriptor);
   }
 }
 
-/** Read exact bounded bytes through the verified descriptor, then revalidate every path identity. */
+/** Read exact bounded bytes through the verified descriptor, then revalidate its identity. */
 function readVerifiedIntentFile(verified: VerifiedIntentFile): string {
-  let descriptor: number;
   try {
-    descriptor = openSync(verified.path, constants.O_RDONLY | constants.O_NOFOLLOW);
-  } catch {
-    throw new MethodologyFailClosedError(
-      "METHODOLOGY_INTENT_MALFORMED",
-      "intent could not be opened without following a link",
-    );
-  }
-  try {
-    const before = fstatSync(descriptor);
-    if (!before.isFile() || !sameFileIdentity(verified.file, fileIdentity(verified.path, before))) {
+    const before = fstatSync(verified.descriptor);
+    if (!before.isFile() || !sameFileIdentity(verified.file, fileIdentity(before))) {
       throw new MethodologyFailClosedError(
         "METHODOLOGY_INTENT_MALFORMED",
         "intent identity changed before reading",
       );
     }
     const bytes = Buffer.alloc(verified.file.size);
-    if (readSync(descriptor, bytes, 0, bytes.length, null) !== bytes.length) {
+    if (readSync(verified.descriptor, bytes, 0, bytes.length, null) !== bytes.length) {
       throw new MethodologyFailClosedError(
         "METHODOLOGY_INTENT_MALFORMED",
         "intent changed while reading",
       );
     }
-    const after = fstatSync(descriptor);
-    if (!after.isFile() || !sameFileIdentity(verified.file, fileIdentity(verified.path, after))) {
+    const after = fstatSync(verified.descriptor);
+    if (!after.isFile() || !sameFileIdentity(verified.file, fileIdentity(after))) {
       throw new MethodologyFailClosedError(
         "METHODOLOGY_INTENT_MALFORMED",
         "intent identity changed while reading",
-      );
-    }
-    assertUnchangedDirectories(verified.directories);
-    const pathInfo = lstatIntentPath(verified.path, "intent file is no longer readable");
-    if (!sameFileIdentity(verified.file, fileIdentity(verified.path, pathInfo))) {
-      throw new MethodologyFailClosedError(
-        "METHODOLOGY_INTENT_MALFORMED",
-        "intent path identity changed while reading",
       );
     }
     return bytes.toString("utf8");
@@ -290,16 +283,19 @@ function readVerifiedIntentFile(verified: VerifiedIntentFile): string {
     }
     throw new MethodologyFailClosedError("METHODOLOGY_INTENT_MALFORMED", "intent is not readable");
   } finally {
-    closeSync(descriptor);
+    closeQuietly(verified.descriptor);
   }
 }
 
 function loadIntent(root: string, relativeIntent: string) {
-  const verified = intentFile(root, relativeIntent);
+  const verified = openVerifiedIntentFile(root, relativeIntent);
   let value: unknown;
   try {
     value = JSON.parse(readVerifiedIntentFile(verified));
-  } catch {
+  } catch (error) {
+    if (error instanceof MethodologyInputError || error instanceof MethodologyFailClosedError) {
+      throw error;
+    }
     throw new MethodologyFailClosedError(
       "METHODOLOGY_INTENT_MALFORMED",
       "intent must contain valid JSON",

@@ -12,8 +12,9 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   passive-methodology boundary. They parse only a strict, project-relative intent,
   produce deterministic exact-source identity/status envelopes, and do not fetch,
   execute, install, activate, or write provider or host state. Their JSON parser
-  failures are closed envelopes, and bounded intent reads fail closed on linked
-  ancestors or identity changes.
+  failures are closed envelopes, and bounded Linux descriptor-anchored intent reads fail
+  closed on linked ancestors or identity changes. Other platforms fail closed for intent
+  input until equivalent atomic no-follow traversal is available.
 
 ## [2.11.0] - 2026-07-15
 
