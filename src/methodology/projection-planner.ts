@@ -9,10 +9,18 @@ import {
 const ArtifactIdSchema = z.string().regex(/^[a-z][a-z0-9-]{0,63}$/);
 const DigestSchema = z.string().regex(/^[0-9a-f]{64}$/);
 const LocatorSchema = z.string().regex(/^synthetic:[a-z][a-z0-9-]{0,63}$/);
-const TargetSchema = z.string().min(1).max(240);
+const MappingTargetSchema = z.string().min(1).max(240);
+const TargetSchema = z
+  .string()
+  .min(1)
+  .max(240)
+  .refine(
+    (target) => targetIsCanonical(target),
+    "target must be a canonical host-neutral logical path",
+  );
 
 export const ProjectionMappingSchema = z
-  .object({ artifactId: ArtifactIdSchema, target: TargetSchema })
+  .object({ artifactId: ArtifactIdSchema, target: MappingTargetSchema })
   .strict();
 
 export const ProjectionPlannerInputSchema = z
@@ -64,7 +72,42 @@ const ManifestSchema = z
     owner: z.string().regex(/^[a-z][a-z0-9-]{0,63}$/),
     entries: z.array(EntrySchema).min(1).max(64),
   })
-  .strict();
+  .strict()
+  .superRefine((manifest, ctx) => {
+    const entries = manifest.entries;
+    if (
+      entries.some((entry, index) => {
+        const previous = entries[index - 1];
+        return (
+          previous !== undefined &&
+          (compare(previous.target, entry.target) > 0 ||
+            (previous.target === entry.target &&
+              compare(previous.artifactId, entry.artifactId) >= 0))
+        );
+      })
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["entries"],
+        message: "manifest entries must be canonicalized",
+      });
+    }
+    if (
+      entries.some((entry, index) =>
+        entries.some(
+          (other, otherIndex) =>
+            index !== otherIndex &&
+            (entry.target === other.target || other.target.startsWith(`${entry.target}/`)),
+        ),
+      )
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["entries"],
+        message: "manifest targets may not collide",
+      });
+    }
+  });
 
 export const ProjectionPlanResultSchema = z.union([
   z

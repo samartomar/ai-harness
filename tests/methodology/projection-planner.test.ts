@@ -262,5 +262,17 @@ describe("Phase 3 host-neutral synthetic projection planner", () => {
         findings: [{ code: "METHODOLOGY_TARGET_COLLISION" }],
       }),
     ).toThrow();
+    expect(() =>
+      ProjectionPlanResultSchema.parse({
+        ...planned,
+        manifest: {
+          ...manifestOf(planned),
+          entries: [
+            { ...manifestOf(planned).entries[0], target: "rules/a" },
+            { ...manifestOf(planned).entries[1], target: "rules/a." },
+          ],
+        },
+      }),
+    ).toThrow();
   });
 });
