@@ -206,6 +206,7 @@ describe("Phase 3 host-neutral synthetic projection planner", () => {
   });
 
   it.each([
+    ["decision", { decisionVersion: "phase-3-decision-v2" }],
     ["classifier", { classifierVersion: "phase-2-classifier-v2" }],
     ["policy", { policyVersion: "phase-3-policy-v2" }],
     ["manifest", { manifestVersion: 2 }],
@@ -236,6 +237,19 @@ describe("Phase 3 host-neutral synthetic projection planner", () => {
     expect(result.findings.map((finding) => finding.code)).toContain(
       "METHODOLOGY_TARGET_COLLISION",
     );
+  });
+
+  it("does not treat lexically similar sibling targets as a collision", () => {
+    const result = planSyntheticProjection(
+      input({
+        mappings: [
+          { artifactId: "root", target: "rules" },
+          { artifactId: "dependency", target: "rules-a" },
+        ],
+      }),
+    );
+
+    expect(result.state).toBe("planned");
   });
 
   it("blocks ineligible classification, duplicate requests, invalid targets, and incomplete mappings", () => {
@@ -744,6 +758,55 @@ describe("Phase 3 host-neutral synthetic projection planner", () => {
     }
 
     expect(hookCalls).toBe(0);
+  });
+
+  it("does not execute post-initialization ambient collection and path hooks", () => {
+    const candidate = input();
+    const hooks: Array<{ prototype: object; property: PropertyKey }> = [
+      { prototype: Array.prototype, property: "sort" },
+      { prototype: Array.prototype, property: "map" },
+      { prototype: Array.prototype, property: "some" },
+      { prototype: Array.prototype, property: "every" },
+      { prototype: Array.prototype, property: "includes" },
+      { prototype: Array.prototype, property: Symbol.iterator },
+      { prototype: Map.prototype, property: "get" },
+      { prototype: Set.prototype, property: "has" },
+      { prototype: WeakSet.prototype, property: "has" },
+      { prototype: WeakSet.prototype, property: "add" },
+      { prototype: WeakSet.prototype, property: "delete" },
+      { prototype: RegExp.prototype, property: "test" },
+      { prototype: String.prototype, property: "split" },
+      { prototype: String.prototype, property: "startsWith" },
+      { prototype: String.prototype, property: "endsWith" },
+    ];
+    let hookCalls = 0;
+    let escapedError: unknown;
+    let planned = 0;
+
+    for (let index = 0; index < hooks.length; index += 1) {
+      const hook = hooks[index];
+      if (hook === undefined) continue;
+      const original = Object.getOwnPropertyDescriptor(hook.prototype, hook.property);
+      Object.defineProperty(hook.prototype, hook.property, {
+        configurable: true,
+        value() {
+          hookCalls += 1;
+          throw new Error(`planner invoked ambient ${String(hook.property)}`);
+        },
+      });
+      try {
+        if (planSyntheticProjection(candidate).state === "planned") planned += 1;
+      } catch (error) {
+        escapedError = error;
+      } finally {
+        if (original === undefined) delete (hook.prototype as Record<PropertyKey, unknown>)[hook.property];
+        else Object.defineProperty(hook.prototype, hook.property, original);
+      }
+    }
+
+    expect(escapedError).toBeUndefined();
+    expect(hookCalls).toBe(0);
+    expect(planned).toBe(hooks.length);
   });
 
   it("exports frozen parse-only planner schema boundaries", () => {
