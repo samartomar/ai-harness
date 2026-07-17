@@ -799,7 +799,8 @@ describe("Phase 3 host-neutral synthetic projection planner", () => {
       } catch (error) {
         escapedError = error;
       } finally {
-        if (original === undefined) delete (hook.prototype as Record<PropertyKey, unknown>)[hook.property];
+        if (original === undefined)
+          delete (hook.prototype as Record<PropertyKey, unknown>)[hook.property];
         else Object.defineProperty(hook.prototype, hook.property, original);
       }
     }

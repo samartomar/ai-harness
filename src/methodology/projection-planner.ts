@@ -10,6 +10,71 @@ import {
   SyntheticClassifierInputSchema,
 } from "./classifier.js";
 
+const INTRINSIC_APPLY = Reflect.apply;
+const MAP_GET = Map.prototype.get;
+const MAP_SET = Map.prototype.set;
+const SET_ADD = Set.prototype.add;
+const SET_HAS = Set.prototype.has;
+const WEAK_SET_ADD = WeakSet.prototype.add;
+const WEAK_SET_DELETE = WeakSet.prototype.delete;
+const WEAK_SET_HAS = WeakSet.prototype.has;
+const REGEXP_TEST = RegExp.prototype.test;
+const STRING_ENDS_WITH = String.prototype.endsWith;
+const STRING_SPLIT = String.prototype.split;
+const STRING_STARTS_WITH = String.prototype.startsWith;
+
+function callIntrinsic<T>(
+  intrinsic: CallableFunction,
+  receiver: unknown,
+  argumentsList: readonly unknown[],
+): T {
+  return INTRINSIC_APPLY(intrinsic, receiver, argumentsList) as T;
+}
+
+function mapGet<K, V>(map: Map<K, V>, key: K): V | undefined {
+  return callIntrinsic<V | undefined>(MAP_GET, map, [key]);
+}
+
+function mapSet<K, V>(map: Map<K, V>, key: K, value: V): void {
+  callIntrinsic<Map<K, V>>(MAP_SET, map, [key, value]);
+}
+
+function setAdd<T>(set: Set<T>, value: T): void {
+  callIntrinsic<Set<T>>(SET_ADD, set, [value]);
+}
+
+function setHas<T>(set: ReadonlySet<T>, value: T): boolean {
+  return callIntrinsic<boolean>(SET_HAS, set, [value]);
+}
+
+function weakSetAdd<T extends WeakKey>(set: WeakSet<T>, value: T): void {
+  callIntrinsic<WeakSet<T>>(WEAK_SET_ADD, set, [value]);
+}
+
+function weakSetDelete<T extends WeakKey>(set: WeakSet<T>, value: T): void {
+  callIntrinsic<boolean>(WEAK_SET_DELETE, set, [value]);
+}
+
+function weakSetHas<T extends WeakKey>(set: WeakSet<T>, value: T): boolean {
+  return callIntrinsic<boolean>(WEAK_SET_HAS, set, [value]);
+}
+
+function regexpTest(pattern: RegExp, value: string): boolean {
+  return callIntrinsic<boolean>(REGEXP_TEST, pattern, [value]);
+}
+
+function stringEndsWith(value: string, suffix: string): boolean {
+  return callIntrinsic<boolean>(STRING_ENDS_WITH, value, [suffix]);
+}
+
+function stringSplit(value: string, separator: string): string[] {
+  return callIntrinsic<string[]>(STRING_SPLIT, value, [separator]);
+}
+
+function stringStartsWith(value: string, prefix: string): boolean {
+  return callIntrinsic<boolean>(STRING_STARTS_WITH, value, [prefix]);
+}
+
 const DECISION_VERSION = "phase-3-decision-v1";
 const CLASSIFIER_VERSION = "phase-2-classifier-v1";
 const POLICY_VERSION = "phase-3-policy-v1";
@@ -129,13 +194,73 @@ function appendOwn<T>(values: T[], value: T): void {
   });
 }
 
+function copyOwnValues<T>(values: readonly T[]): T[] {
+  const copy: T[] = [];
+  for (let index = 0; index < values.length; index += 1) {
+    const value = values[index];
+    if (value !== undefined) appendOwn(copy, value);
+  }
+  return copy;
+}
+
+function concatOwnValues<T>(left: readonly T[], right: readonly T[]): T[] {
+  const combined = copyOwnValues(left);
+  for (let index = 0; index < right.length; index += 1) {
+    const value = right[index];
+    if (value !== undefined) appendOwn(combined, value);
+  }
+  return combined;
+}
+
+function sortOwnedValues<T>(values: T[], compareValues: (left: T, right: T) => number): T[] {
+  for (let index = 1; index < values.length; index += 1) {
+    const candidate = values[index];
+    if (candidate === undefined) continue;
+    let target = index;
+    while (target > 0) {
+      const previous = values[target - 1];
+      if (previous === undefined || compareValues(previous, candidate) <= 0) break;
+      values[target] = previous;
+      target -= 1;
+    }
+    values[target] = candidate;
+  }
+  return values;
+}
+
+function sortedArrayCopy<T>(
+  values: readonly T[],
+  compareValues: (left: T, right: T) => number,
+): T[] {
+  return sortOwnedValues(copyOwnValues(values), compareValues);
+}
+
+function ownKeysAreStrings(keys: readonly PropertyKey[]): keys is string[] {
+  for (let index = 0; index < keys.length; index += 1) {
+    if (typeof keys[index] !== "string") return false;
+  }
+  return true;
+}
+
+function arrayContains<T>(values: readonly T[], candidate: T): boolean {
+  for (let index = 0; index < values.length; index += 1) {
+    if (values[index] === candidate) return true;
+  }
+  return false;
+}
+
 function closedRecord<T extends Record<string, unknown>>(value: T): T {
   const record = Object.create(null) as T;
-  for (const [key, entry] of Object.entries(value)) {
+  const keys = Object.keys(value);
+  for (let index = 0; index < keys.length; index += 1) {
+    const key = keys[index];
+    if (key === undefined) continue;
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    if (descriptor === undefined || !("value" in descriptor)) continue;
     Object.defineProperty(record, key, {
       configurable: true,
       enumerable: true,
-      value: entry,
+      value: descriptor.value,
       writable: true,
     });
   }
@@ -150,7 +275,7 @@ function snapshotSurface(value: unknown): SnapshotResult {
     const length = value.length;
     if (length > MAX_SNAPSHOT_ARRAY_LENGTH) return INVALID_SNAPSHOT;
     const keys = Reflect.ownKeys(value);
-    if (keys.length !== length + 1 || keys.some((key) => typeof key !== "string")) {
+    if (keys.length !== length + 1 || !ownKeysAreStrings(keys)) {
       return INVALID_SNAPSHOT;
     }
     for (let index = 0; index < length; index += 1) {
@@ -164,11 +289,13 @@ function snapshotSurface(value: unknown): SnapshotResult {
   const prototype = Object.getPrototypeOf(value);
   if (prototype !== Object.prototype && prototype !== null) return INVALID_SNAPSHOT;
   const keys = Reflect.ownKeys(value);
-  if (keys.length > MAX_SNAPSHOT_RECORD_KEYS || keys.some((key) => typeof key !== "string")) {
+  if (keys.length > MAX_SNAPSHOT_RECORD_KEYS || !ownKeysAreStrings(keys)) {
     return INVALID_SNAPSHOT;
   }
   const snapshot = Object.create(null) as Record<string, unknown>;
-  for (const key of keys as string[]) {
+  for (let index = 0; index < keys.length; index += 1) {
+    const key = keys[index];
+    if (key === undefined) return INVALID_SNAPSHOT;
     const descriptor = Object.getOwnPropertyDescriptor(value, key);
     if (descriptor === undefined || !("value" in descriptor) || !descriptor.enumerable) {
       return INVALID_SNAPSHOT;
@@ -185,53 +312,62 @@ function snapshotPlainData(value: unknown, state: SnapshotState): SnapshotResult
   if (state.depth >= MAX_SNAPSHOT_DEPTH || state.nodes >= MAX_SNAPSHOT_NODES) {
     return INVALID_SNAPSHOT;
   }
-  if (state.active.has(value)) return INVALID_SNAPSHOT;
-  state.active.add(value);
+  if (weakSetHas(state.active, value)) return INVALID_SNAPSHOT;
+  weakSetAdd(state.active, value);
   const nextState = { ...state, depth: state.depth + 1, nodes: state.nodes + 1 };
-  if (Array.isArray(surface.value)) {
-    const snapshot: unknown[] = [];
-    for (let index = 0; index < surface.value.length; index += 1) {
-      const child = snapshotPlainData(surface.value[index], nextState);
+  try {
+    if (Array.isArray(surface.value)) {
+      const snapshot: unknown[] = [];
+      for (let index = 0; index < surface.value.length; index += 1) {
+        const descriptor = Object.getOwnPropertyDescriptor(surface.value, String(index));
+        if (descriptor === undefined || !("value" in descriptor)) return INVALID_SNAPSHOT;
+        const child = snapshotPlainData(descriptor.value, nextState);
+        if (!child.ok) return INVALID_SNAPSHOT;
+        appendOwn(snapshot, child.value);
+      }
+      state.nodes = nextState.nodes;
+      return { ok: true, value: snapshot };
+    }
+    const record = recordOf(surface.value);
+    if (record === undefined) return INVALID_SNAPSHOT;
+    const snapshot = Object.create(null) as Record<string, unknown>;
+    const keys = Object.keys(record);
+    for (let index = 0; index < keys.length; index += 1) {
+      const key = keys[index];
+      if (key === undefined) return INVALID_SNAPSHOT;
+      const descriptor = Object.getOwnPropertyDescriptor(record, key);
+      if (descriptor === undefined || !("value" in descriptor)) return INVALID_SNAPSHOT;
+      const child = snapshotPlainData(descriptor.value, nextState);
       if (!child.ok) return INVALID_SNAPSHOT;
-      appendOwn(snapshot, child.value);
+      snapshot[key] = child.value;
     }
     state.nodes = nextState.nodes;
-    state.active.delete(value);
     return { ok: true, value: snapshot };
+  } finally {
+    weakSetDelete(state.active, value);
   }
-  const record = recordOf(surface.value);
-  if (record === undefined) return INVALID_SNAPSHOT;
-  const snapshot = Object.create(null) as Record<string, unknown>;
-  for (const [key, entry] of Object.entries(record)) {
-    const child = snapshotPlainData(entry, nextState);
-    if (!child.ok) return INVALID_SNAPSHOT;
-    snapshot[key] = child.value;
-  }
-  state.nodes = nextState.nodes;
-  state.active.delete(value);
-  return { ok: true, value: snapshot };
 }
 
 const OWNER_PATTERN = /^[a-z][a-z0-9-]{0,63}$/;
 const ARTIFACT_ID_PATTERN = /^[a-z][a-z0-9-]{0,63}$/;
 const DIGEST_PATTERN = /^[0-9a-f]{64}$/;
 const LOCATOR_PATTERN = /^synthetic:[a-z][a-z0-9-]{0,63}$/;
-const FINDING_CODES = new Set([
+const FINDING_CODES = [
   "METHODOLOGY_CLASSIFICATION_INELIGIBLE",
   "METHODOLOGY_MAPPING_COVERAGE",
   "METHODOLOGY_TARGET_COLLISION",
   "METHODOLOGY_TARGET_INVALID",
-]);
+] as const;
 
 function plannerIssue(path: readonly (string | number)[], message: string): ClosedSchemaIssue {
-  return closedRecord({ code: "custom" as const, path: [...path], message });
+  return closedRecord({ code: "custom" as const, path: copyOwnValues(path), message });
 }
 
 function prefixedPlannerIssue(
   prefix: readonly (string | number)[],
   issue: ClosedSchemaIssue,
 ): ClosedSchemaIssue {
-  return plannerIssue([...prefix, ...issue.path], issue.message);
+  return plannerIssue(concatOwnValues(prefix, issue.path), issue.message);
 }
 
 function validationSnapshot(value: unknown): SnapshotResult {
@@ -249,11 +385,15 @@ function exactRecord(
   const record = recordOf(value);
   if (record === undefined) return { issue: plannerIssue([], "value must be a closed record") };
   const keys = Object.keys(record);
-  for (const key of keys) {
-    if (!fields.includes(key))
+  for (let index = 0; index < keys.length; index += 1) {
+    const key = keys[index];
+    if (key === undefined) continue;
+    if (!arrayContains(fields, key))
       return { issue: plannerIssue([key], "unknown field is not allowed") };
   }
-  for (const field of fields) {
+  for (let index = 0; index < fields.length; index += 1) {
+    const field = fields[index];
+    if (field === undefined) continue;
     if (!Object.hasOwn(record, field)) {
       return { issue: plannerIssue([field], "required field is missing") };
     }
@@ -266,7 +406,7 @@ function stringIssue(
   pattern: RegExp,
   path: readonly (string | number)[],
 ): ClosedSchemaIssue | undefined {
-  return typeof value === "string" && pattern.test(value)
+  return typeof value === "string" && regexpTest(pattern, value)
     ? undefined
     : plannerIssue(path, "string does not match the closed canonical form");
 }
@@ -283,7 +423,11 @@ function arrayIssue(
   }
   for (let index = 0; index < value.length; index += 1) {
     const issue = validate(value[index]);
-    if (issue !== undefined) return prefixedPlannerIssue([...path, index], issue);
+    if (issue !== undefined) {
+      const childPath = copyOwnValues(path);
+      appendOwn(childPath, index);
+      return prefixedPlannerIssue(childPath, issue);
+    }
   }
   return undefined;
 }
@@ -414,15 +558,28 @@ function validateBoundary(value: unknown): ClosedSchemaIssue | undefined {
     "hostExecution",
   ]);
   if (shape.issue !== undefined || shape.record === undefined) return shape.issue;
-  return Object.values(shape.record).every((entry) => entry === false)
-    ? undefined
-    : plannerIssue([], "all execution and mutation boundary values must be false");
+  const fields = [
+    "reads",
+    "writes",
+    "cli",
+    "executor",
+    "providerExecution",
+    "hostExecution",
+  ] as const;
+  for (let index = 0; index < fields.length; index += 1) {
+    const field = fields[index];
+    if (field !== undefined && shape.record[field] !== false) {
+      return plannerIssue([], "all execution and mutation boundary values must be false");
+    }
+  }
+  return undefined;
 }
 
 function validateFinding(value: unknown): ClosedSchemaIssue | undefined {
   const shape = exactRecord(value, ["code"]);
   if (shape.issue !== undefined || shape.record === undefined) return shape.issue;
-  return typeof shape.record.code === "string" && FINDING_CODES.has(shape.record.code)
+  return typeof shape.record.code === "string" &&
+    arrayContains<string>(FINDING_CODES, shape.record.code)
     ? undefined
     : plannerIssue(["code"], "finding code is not supported");
 }
@@ -454,7 +611,7 @@ function validateManifest(value: unknown): ClosedSchemaIssue | undefined {
     decision: Decision;
   };
   if (
-    new Set(typed.entries.map((entry) => entry.artifactId)).size !== typed.entries.length ||
+    hasDuplicateArtifactIds(typed.entries) ||
     hasTargetCollision(typed.entries) ||
     canonicalSerialize(typed.entries) !== canonicalSerialize(typed.decision.entries) ||
     typed.owner !== typed.decision.owner ||
@@ -564,6 +721,7 @@ function compare(left: string, right: string): number {
 }
 
 function quotedString(value: string): string {
+  const hex = "0123456789abcdef";
   let result = '"';
   for (let index = 0; index < value.length; index += 1) {
     const code = value.charCodeAt(index);
@@ -581,7 +739,7 @@ function quotedString(value: string): string {
     } else if (code === 13) {
       result += "\\r";
     } else if (code < 32) {
-      result += `\\u${code.toString(16).padStart(4, "0")}`;
+      result += `\\u00${hex[(code >> 4) & 15]}${hex[code & 15]}`;
     } else {
       result += character;
     }
@@ -609,7 +767,7 @@ function canonicalSerialize(value: unknown): string {
   const record = recordOf(value);
   if (record === undefined) throw new Error("canonical values must be closed plain data");
   let result = "{";
-  const keys = Object.keys(record).sort(compare);
+  const keys = sortOwnedValues(Object.keys(record), compare);
   for (let index = 0; index < keys.length; index += 1) {
     const key = keys[index];
     if (key === undefined) continue;
@@ -625,46 +783,69 @@ function canonicalSerialize(value: unknown): string {
 
 function targetIsCanonical(target: string): boolean {
   if (target.length === 0 || target.length > MAX_TARGET_LENGTH) return false;
-  if (!/^[a-z0-9][a-z0-9._-]*(?:\/[a-z0-9][a-z0-9._-]*)*$/.test(target)) return false;
-  return target
-    .split("/")
-    .every(
-      (segment) =>
-        !segment.endsWith(".") && !/^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$/.test(segment),
-    );
+  if (!regexpTest(/^[a-z0-9][a-z0-9._-]*(?:\/[a-z0-9][a-z0-9._-]*)*$/, target)) {
+    return false;
+  }
+  const segments = stringSplit(target, "/");
+  for (let index = 0; index < segments.length; index += 1) {
+    const segment = segments[index];
+    if (
+      segment === undefined ||
+      stringEndsWith(segment, ".") ||
+      regexpTest(/^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$/, segment)
+    ) {
+      return false;
+    }
+  }
+  return true;
 }
 
 function canonicalClassifierInput(input: ClassifierInput): ClassifierInput {
+  const artifacts: ClassifierInput["artifacts"] = [];
+  for (let index = 0; index < input.artifacts.length; index += 1) {
+    const artifact = input.artifacts[index];
+    if (artifact === undefined) continue;
+    appendOwn(artifacts, {
+      id: artifact.id,
+      sourceLocator: artifact.sourceLocator,
+      contentDigest: artifact.contentDigest,
+      contentDisposition: artifact.contentDisposition,
+      linkDisposition: artifact.linkDisposition,
+      licenseDisposition: artifact.licenseDisposition,
+      evidenceDigest: artifact.evidenceDigest,
+      dependencies: sortedArrayCopy(artifact.dependencies, compare),
+    });
+  }
+  sortOwnedValues(artifacts, (left, right) =>
+    compare(canonicalSerialize(left), canonicalSerialize(right)),
+  );
+  const evidenceRecords: ClassifierInput["evidence"] = [];
+  for (let index = 0; index < input.evidence.length; index += 1) {
+    const evidence = input.evidence[index];
+    if (evidence === undefined) continue;
+    appendOwn(evidenceRecords, {
+      artifactId: evidence.artifactId,
+      sourceLocator: evidence.sourceLocator,
+      contentDigest: evidence.contentDigest,
+      licenseDisposition: evidence.licenseDisposition,
+      evidenceDigest: evidence.evidenceDigest,
+    });
+  }
+  sortOwnedValues(evidenceRecords, (left, right) =>
+    compare(canonicalSerialize(left), canonicalSerialize(right)),
+  );
   return {
     schemaVersion: input.schemaVersion,
-    requested: [...input.requested].sort(compare),
-    declaredClosure: [...input.declaredClosure].sort(compare),
-    artifacts: [...input.artifacts]
-      .map((artifact) => ({
-        id: artifact.id,
-        sourceLocator: artifact.sourceLocator,
-        contentDigest: artifact.contentDigest,
-        contentDisposition: artifact.contentDisposition,
-        linkDisposition: artifact.linkDisposition,
-        licenseDisposition: artifact.licenseDisposition,
-        evidenceDigest: artifact.evidenceDigest,
-        dependencies: [...artifact.dependencies].sort(compare),
-      }))
-      .sort((left, right) => compare(canonicalSerialize(left), canonicalSerialize(right))),
-    evidence: [...input.evidence]
-      .map((evidence) => ({
-        artifactId: evidence.artifactId,
-        sourceLocator: evidence.sourceLocator,
-        contentDigest: evidence.contentDigest,
-        licenseDisposition: evidence.licenseDisposition,
-        evidenceDigest: evidence.evidenceDigest,
-      }))
-      .sort((left, right) => compare(canonicalSerialize(left), canonicalSerialize(right))),
+    requested: sortedArrayCopy(input.requested, compare),
+    declaredClosure: sortedArrayCopy(input.declaredClosure, compare),
+    artifacts,
+    evidence: evidenceRecords,
   };
 }
 
 function canonicalMappings(mappings: readonly ProjectionMapping[]): ProjectionMapping[] {
-  return [...mappings].sort(
+  return sortedArrayCopy(
+    mappings,
     (left, right) =>
       compare(left.artifactId, right.artifactId) || compare(left.target, right.target),
   );
@@ -683,28 +864,62 @@ function mappingsCover(
   expected: readonly string[],
   mappings: readonly ProjectionMapping[],
 ): boolean {
-  const ids = mappings.map((mapping) => mapping.artifactId).sort(compare);
-  return ids.length === expected.length && ids.every((id, index) => id === expected[index]);
+  const ids: string[] = [];
+  for (let index = 0; index < mappings.length; index += 1) {
+    const mapping = mappings[index];
+    if (mapping !== undefined) appendOwn(ids, mapping.artifactId);
+  }
+  sortOwnedValues(ids, compare);
+  if (ids.length !== expected.length) return false;
+  for (let index = 0; index < ids.length; index += 1) {
+    if (ids[index] !== expected[index]) return false;
+  }
+  return true;
 }
 
 function hasTargetCollision(entries: readonly Entry[]): boolean {
-  return entries.some((entry, index) =>
-    entries.some(
-      (other, otherIndex) =>
+  for (let index = 0; index < entries.length; index += 1) {
+    const entry = entries[index];
+    if (entry === undefined) continue;
+    for (let otherIndex = 0; otherIndex < entries.length; otherIndex += 1) {
+      const other = entries[otherIndex];
+      if (
+        other !== undefined &&
         index !== otherIndex &&
-        (entry.target === other.target || other.target.startsWith(`${entry.target}/`)),
-    ),
-  );
+        (entry.target === other.target || stringStartsWith(other.target, `${entry.target}/`))
+      ) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+function hasDuplicateArtifactIds(entries: readonly Entry[]): boolean {
+  const ids = new Set<string>();
+  for (let index = 0; index < entries.length; index += 1) {
+    const entry = entries[index];
+    if (entry === undefined) continue;
+    if (setHas(ids, entry.artifactId)) return true;
+    setAdd(ids, entry.artifactId);
+  }
+  return false;
 }
 
 function deriveEntries(
   classifierInput: ClassifierInput,
   mappings: readonly ProjectionMapping[],
 ): Entry[] {
-  const artifacts = new Map(classifierInput.artifacts.map((artifact) => [artifact.id, artifact]));
+  const artifacts = new Map<string, Artifact>();
+  for (let index = 0; index < classifierInput.artifacts.length; index += 1) {
+    const artifact = classifierInput.artifacts[index];
+    if (artifact !== undefined) mapSet(artifacts, artifact.id, artifact);
+  }
   const entries: Entry[] = [];
-  for (const mapping of mappings) {
-    const artifact = artifacts.get(mapping.artifactId) as Artifact;
+  for (let index = 0; index < mappings.length; index += 1) {
+    const mapping = mappings[index];
+    if (mapping === undefined) continue;
+    const artifact = mapGet(artifacts, mapping.artifactId) as Artifact;
     appendOwn(entries, {
       artifactId: mapping.artifactId,
       target: mapping.target,
@@ -712,7 +927,8 @@ function deriveEntries(
       contentDigest: artifact.contentDigest,
     });
   }
-  return entries.sort(
+  return sortOwnedValues(
+    entries,
     (left, right) =>
       compare(left.target, right.target) || compare(left.artifactId, right.artifactId),
   );
@@ -731,8 +947,8 @@ function buildCanonicalDecision(
     manifestVersion: input.manifestVersion,
     owner: input.owner,
     classifierInput: canonicalClassifierInput(input.classifierInput),
-    closure: [...classification.closure],
-    eligible: [...classification.eligible],
+    closure: copyOwnValues(classification.closure),
+    eligible: copyOwnValues(classification.eligible),
     mappings: canonicalMappings(input.mappings),
     entries,
   };
@@ -742,7 +958,10 @@ function rebuildCanonicalDecision(decision: Decision): Decision | undefined {
   const classification = classifySyntheticProjection(decision.classifierInput);
   if (classification.disposition !== "eligible") return undefined;
   if (!mappingsCover(classification.eligible, decision.mappings)) return undefined;
-  if (decision.mappings.some((mapping) => !targetIsCanonical(mapping.target))) return undefined;
+  for (let index = 0; index < decision.mappings.length; index += 1) {
+    const mapping = decision.mappings[index];
+    if (mapping !== undefined && !targetIsCanonical(mapping.target)) return undefined;
+  }
   const entries = deriveEntries(decision.classifierInput, decision.mappings);
   if (hasTargetCollision(entries)) return undefined;
   return buildCanonicalDecision(
@@ -776,8 +995,11 @@ export function planSyntheticProjection(value: unknown): ProjectionPlanResult {
   if (!mappingsCover(eligible, input.mappings)) {
     return blocked({ code: "METHODOLOGY_MAPPING_COVERAGE" });
   }
-  if (input.mappings.some((mapping) => !targetIsCanonical(mapping.target))) {
-    return blocked({ code: "METHODOLOGY_TARGET_INVALID" });
+  for (let index = 0; index < input.mappings.length; index += 1) {
+    const mapping = input.mappings[index];
+    if (mapping !== undefined && !targetIsCanonical(mapping.target)) {
+      return blocked({ code: "METHODOLOGY_TARGET_INVALID" });
+    }
   }
   const entries = deriveEntries(input.classifierInput, input.mappings);
   if (hasTargetCollision(entries)) {
