@@ -592,6 +592,15 @@ describe("Phase 3 host-neutral synthetic projection planner", () => {
       },
     });
     expectFailFast(() => ProjectionPlannerInputSchema.safeParse(proxiedInput));
+
+    const accessorInput = input();
+    Object.defineProperty(accessorInput, "mappings", {
+      enumerable: true,
+      get() {
+        throw new Error("planner schema invoked an accessor-backed field");
+      },
+    });
+    expectFailFast(() => ProjectionPlannerInputSchema.safeParse(accessorInput));
   });
 
   it("accepts exact resource maxima and rejects the first value beyond each bound", () => {

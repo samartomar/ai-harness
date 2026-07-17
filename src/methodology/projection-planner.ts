@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { isProxy } from "node:util/types";
 import { z } from "zod";
 import {
   classifySyntheticProjection,
@@ -47,7 +48,7 @@ const ProjectionPlannerInputObjectSchema = z
   .strict();
 
 export const ProjectionPlannerInputSchema = z.preprocess(
-  (value) => (plannerInputCollectionsAreBounded(value) ? value : null),
+  (value) => failClosedPreprocess(value, plannerInputCollectionsAreBounded),
   ProjectionPlannerInputObjectSchema,
 );
 
@@ -104,7 +105,7 @@ const ProjectionDecisionObjectSchema = z
   });
 
 export const ProjectionDecisionSchema = z.preprocess(
-  (value) => (decisionCollectionsAreBounded(value) ? value : null),
+  (value) => failClosedPreprocess(value, decisionCollectionsAreBounded),
   ProjectionDecisionObjectSchema,
 );
 
@@ -198,7 +199,7 @@ const ProjectionPlanResultUnionSchema = z.union([
 ]);
 
 export const ProjectionPlanResultSchema = z.preprocess(
-  (value) => (resultCollectionsAreBounded(value) ? value : null),
+  (value) => failClosedPreprocess(value, resultCollectionsAreBounded),
   ProjectionPlanResultUnionSchema,
 );
 
@@ -224,11 +225,38 @@ function recordOf(value: unknown): Record<string, unknown> | undefined {
     : undefined;
 }
 
+function recordSurfaceIsStatic(value: unknown): boolean {
+  if (isProxy(value)) return false;
+  const record = recordOf(value);
+  if (record === undefined) return true;
+  return Object.values(Object.getOwnPropertyDescriptors(record)).every(
+    (descriptor) => "value" in descriptor,
+  );
+}
+
 function collectionIsBounded(value: unknown, maximum: number): boolean {
-  return !Array.isArray(value) || value.length <= maximum;
+  if (isProxy(value)) return false;
+  if (!Array.isArray(value)) return true;
+  const length = value.length;
+  if (length > maximum) return false;
+  for (let index = 0; index < length; index += 1) {
+    const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
+    if (descriptor === undefined) continue;
+    if (!("value" in descriptor) || !recordSurfaceIsStatic(descriptor.value)) return false;
+  }
+  return true;
+}
+
+function failClosedPreprocess(value: unknown, predicate: (candidate: unknown) => boolean): unknown {
+  try {
+    return predicate(value) ? value : null;
+  } catch {
+    return null;
+  }
 }
 
 function classifierCollectionsAreBounded(value: unknown): boolean {
+  if (!recordSurfaceIsStatic(value)) return false;
   const input = recordOf(value);
   if (input === undefined) return true;
   if (!collectionIsBounded(input.requested, MAX_REQUESTED_COMPONENTS)) return false;
@@ -250,6 +278,7 @@ function classifierCollectionsAreBounded(value: unknown): boolean {
 }
 
 function plannerInputCollectionsAreBounded(value: unknown): boolean {
+  if (!recordSurfaceIsStatic(value)) return false;
   const input = recordOf(value);
   if (input === undefined) return true;
   return (
@@ -259,6 +288,7 @@ function plannerInputCollectionsAreBounded(value: unknown): boolean {
 }
 
 function decisionCollectionsAreBounded(value: unknown): boolean {
+  if (!recordSurfaceIsStatic(value)) return false;
   const decision = recordOf(value);
   if (decision === undefined) return true;
   return (
@@ -271,6 +301,7 @@ function decisionCollectionsAreBounded(value: unknown): boolean {
 }
 
 function manifestCollectionsAreBounded(value: unknown): boolean {
+  if (!recordSurfaceIsStatic(value)) return false;
   const manifest = recordOf(value);
   if (manifest === undefined) return true;
   return (
@@ -280,6 +311,7 @@ function manifestCollectionsAreBounded(value: unknown): boolean {
 }
 
 function resultCollectionsAreBounded(value: unknown): boolean {
+  if (!recordSurfaceIsStatic(value)) return false;
   const result = recordOf(value);
   if (result === undefined) return true;
   return (
