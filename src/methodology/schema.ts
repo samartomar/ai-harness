@@ -194,7 +194,7 @@ export const MethodologyFailureSchema = z
   .object({
     schemaVersion: z.literal(1),
     state: z.enum(["invalid", "fail-closed"]),
-    findings: z.array(MethodologyFindingSchema).min(1),
+    findings: z.array(MethodologyFindingSchema).length(1),
   })
   .strict()
   .superRefine((failure, ctx) => {
@@ -246,6 +246,28 @@ export const MethodologyFailureEnvelopeSchema = z
     }
   });
 
+interface MethodologyIdentityPreimage {
+  readonly schemaVersion: 1;
+  readonly provider: z.infer<typeof MethodologyProviderSchema>;
+  readonly repository: string;
+  readonly commit: string;
+  readonly components: readonly string[];
+}
+
+function methodologyIdentityDigest(identity: MethodologyIdentityPreimage): string {
+  return createHash("sha256")
+    .update(
+      JSON.stringify({
+        schemaVersion: 1,
+        provider: identity.provider,
+        repository: identity.repository,
+        commit: identity.commit,
+        components: identity.components,
+      }),
+    )
+    .digest("hex");
+}
+
 export const MethodologyIdentitySchema = z
   .object({
     schemaVersion: z.literal(1),
@@ -255,7 +277,39 @@ export const MethodologyIdentitySchema = z
     components: z.array(ComponentIdSchema).min(1).max(MAX_METHODOLOGY_COMPONENTS),
     sha256: z.string().regex(/^[0-9a-f]{64}$/),
   })
-  .strict();
+  .strict()
+  .superRefine((identity, ctx) => {
+    const expectedRepository =
+      identity.provider === "ecc" ? "github.com/affaan-m/ECC" : "github.com/garrytan/gstack";
+    if (identity.repository !== expectedRepository) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["repository"],
+        message: "methodology identity repository must match its declared provider",
+      });
+    }
+    const canonicalComponents = [...identity.components].sort((left, right) =>
+      left < right ? -1 : left > right ? 1 : 0,
+    );
+    if (
+      canonicalComponents.length !== identity.components.length ||
+      canonicalComponents.some((component, index) => component !== identity.components[index]) ||
+      new Set(identity.components).size !== identity.components.length
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["components"],
+        message: "methodology identity components must be unique and canonicalized",
+      });
+    }
+    if (identity.sha256 !== methodologyIdentityDigest(identity)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["sha256"],
+        message: "methodology identity sha256 must bind its exact canonical fields",
+      });
+    }
+  });
 
 export const MethodologyClaimsSchema = z
   .object({
@@ -303,6 +357,28 @@ export const MethodologyStatusSchema = z
   })
   .strict()
   .superRefine((status, ctx) => {
+    const provider = status.adapters.provider;
+    const host = status.adapters.host;
+    if (
+      status.identity.provider !== provider.provider ||
+      provider.id !== `${provider.provider}-static-v1`
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["adapters", "provider"],
+        message: "methodology identity and provider adapter must name the same provider",
+      });
+    }
+    if (
+      status.compatibility.host !== host.host ||
+      host.id !== `${host.host}-static-v1`
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["adapters", "host"],
+        message: "methodology compatibility and host adapter must name the same host",
+      });
+    }
     const expectedFinding =
       status.state === "advisory"
         ? { code: "METHODOLOGY_HOST_ADVISORY", disposition: "advisory" }
@@ -410,10 +486,7 @@ export function exactSourceIdentity(intent: MethodologyIntent): MethodologyIdent
     commit: source.commit,
     components: components.map((component) => component.id),
   };
-  return {
-    ...identity,
-    sha256: createHash("sha256").update(JSON.stringify(identity)).digest("hex"),
-  };
+  return { ...identity, sha256: methodologyIdentityDigest(identity) };
 }
 
 export function providerAdapterFor(intent: MethodologyIntent): ProviderAdapter {

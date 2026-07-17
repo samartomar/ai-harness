@@ -40,6 +40,15 @@ export function isVersionFastPath(argv: readonly string[]): boolean {
 }
 
 /**
+ * Methodology argv never reaches the optional-plugin builder. Phase 1 must not
+ * import plugin code, including while Commander reports malformed methodology
+ * arguments.
+ */
+export function isMethodologyNoPluginFastPath(argv: readonly string[]): boolean {
+  return argv.slice(2).includes("methodology");
+}
+
+/**
  * The CLI entry's builder: probe for the optional `@aihq/enterprise` peer
  * (fail-open to local — see src/plugins/registry.ts) and build with whatever
  * validly loaded. `warnings` (probe + registration containment, in that order)

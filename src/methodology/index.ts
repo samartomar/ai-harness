@@ -490,6 +490,9 @@ export function writeMethodologyParserFailure(
 export function registerMethodologyCommands(parent: Command): void {
   parent.exitOverride();
   parent.configureOutput({
+    writeOut: (text) => {
+      if (!isMethodologyJsonInvocation(process.argv)) process.stdout.write(text);
+    },
     writeErr: (text) => {
       if (!isMethodologyJsonInvocation(process.argv)) process.stderr.write(text);
     },
@@ -504,6 +507,9 @@ export function registerMethodologyCommands(parent: Command): void {
       .option("--json", "emit the stable Phase 1 methodology envelope");
     command.exitOverride();
     command.configureOutput({
+      writeOut: (text) => {
+        if (!isMethodologyJsonInvocation(process.argv)) process.stdout.write(text);
+      },
       writeErr: (text) => {
         if (!isMethodologyJsonInvocation(process.argv)) process.stderr.write(text);
       },
