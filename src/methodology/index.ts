@@ -1,4 +1,4 @@
-import { closeSync, constants, fstatSync, openSync, readSync, type Stats } from "node:fs";
+import { type BigIntStats, closeSync, constants, fstatSync, openSync, readSync } from "node:fs";
 import { parse, relative, resolve, sep } from "node:path";
 import type { Command } from "commander";
 import { type CommandSpec, plan } from "../internals/plan.js";
@@ -98,11 +98,13 @@ function isSafeRelativePath(value: string): boolean {
 }
 
 interface FileIdentity {
-  dev: number;
-  ino: number;
-  mode: number;
-  nlink: number;
-  size: number;
+  dev: bigint;
+  ino: bigint;
+  mode: bigint;
+  nlink: bigint;
+  size: bigint;
+  mtimeNs: bigint;
+  ctimeNs: bigint;
 }
 
 interface VerifiedIntentFile {
@@ -116,12 +118,22 @@ function sameFileIdentity(left: FileIdentity, right: FileIdentity): boolean {
     left.ino === right.ino &&
     left.mode === right.mode &&
     left.nlink === right.nlink &&
-    left.size === right.size
+    left.size === right.size &&
+    left.mtimeNs === right.mtimeNs &&
+    left.ctimeNs === right.ctimeNs
   );
 }
 
-function fileIdentity(info: Stats): FileIdentity {
-  return { dev: info.dev, ino: info.ino, mode: info.mode, nlink: info.nlink, size: info.size };
+function fileIdentity(info: BigIntStats): FileIdentity {
+  return {
+    dev: info.dev,
+    ino: info.ino,
+    mode: info.mode,
+    nlink: info.nlink,
+    size: info.size,
+    mtimeNs: info.mtimeNs,
+    ctimeNs: info.ctimeNs,
+  };
 }
 
 function closeQuietly(descriptor: number | undefined): void {
@@ -133,7 +145,7 @@ function closeQuietly(descriptor: number | undefined): void {
   }
 }
 
-function assertRegularDirectory(info: Stats): void {
+function assertRegularDirectory(info: BigIntStats): void {
   if (!info.isDirectory()) {
     throw new MethodologyFailClosedError(
       "METHODOLOGY_INTENT_MALFORMED",
@@ -201,11 +213,11 @@ function openVerifiedIntentFile(root: string, relativeIntent: string): VerifiedI
   let descriptor: number | undefined;
   try {
     parent = openDescriptor(parsed.root, directoryFlags);
-    assertRegularDirectory(fstatSync(parent));
+    assertRegularDirectory(fstatSync(parent, { bigint: true }));
     for (const segment of [...rootSegments, ...relativeIntent.split("/").slice(0, -1)]) {
       const next = openDescriptor(descriptorPath(parent, segment), directoryFlags);
       try {
-        assertRegularDirectory(fstatSync(next));
+        assertRegularDirectory(fstatSync(next, { bigint: true }));
       } catch (error) {
         closeQuietly(next);
         throw error;
@@ -221,8 +233,8 @@ function openVerifiedIntentFile(root: string, relativeIntent: string): VerifiedI
       descriptorPath(parent, leaf),
       constants.O_RDONLY | constants.O_NOFOLLOW,
     );
-    const info = fstatSync(descriptor);
-    if (!info.isFile() || info.nlink !== 1) {
+    const info = fstatSync(descriptor, { bigint: true });
+    if (!info.isFile() || info.nlink !== 1n) {
       closeQuietly(descriptor);
       descriptor = undefined;
       throw new MethodologyFailClosedError(
@@ -230,7 +242,7 @@ function openVerifiedIntentFile(root: string, relativeIntent: string): VerifiedI
         "intent must be an unlinked regular file",
       );
     }
-    if (info.size > MAX_INTENT_INPUT_BYTES) {
+    if (info.size > BigInt(MAX_INTENT_INPUT_BYTES)) {
       closeQuietly(descriptor);
       descriptor = undefined;
       throw new MethodologyFailClosedError(
@@ -255,21 +267,21 @@ function openVerifiedIntentFile(root: string, relativeIntent: string): VerifiedI
 /** Read exact bounded bytes through the verified descriptor, then revalidate its identity. */
 function readVerifiedIntentFile(verified: VerifiedIntentFile): string {
   try {
-    const before = fstatSync(verified.descriptor);
+    const before = fstatSync(verified.descriptor, { bigint: true });
     if (!before.isFile() || !sameFileIdentity(verified.file, fileIdentity(before))) {
       throw new MethodologyFailClosedError(
         "METHODOLOGY_INTENT_MALFORMED",
         "intent identity changed before reading",
       );
     }
-    const bytes = Buffer.alloc(verified.file.size);
+    const bytes = Buffer.alloc(Number(verified.file.size));
     if (readSync(verified.descriptor, bytes, 0, bytes.length, null) !== bytes.length) {
       throw new MethodologyFailClosedError(
         "METHODOLOGY_INTENT_MALFORMED",
         "intent changed while reading",
       );
     }
-    const after = fstatSync(verified.descriptor);
+    const after = fstatSync(verified.descriptor, { bigint: true });
     if (!after.isFile() || !sameFileIdentity(verified.file, fileIdentity(after))) {
       throw new MethodologyFailClosedError(
         "METHODOLOGY_INTENT_MALFORMED",
