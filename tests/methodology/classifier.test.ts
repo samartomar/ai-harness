@@ -172,6 +172,34 @@ describe("Phase 2 synthetic methodology classifier", () => {
     );
   });
 
+  it("uses a total canonical ordering for duplicate artifacts and evidence", () => {
+    const dependency = artifact("dependency");
+    const rootWithoutDependency = artifact("root");
+    const rootWithDependency = artifact("root", { dependencies: ["dependency"] });
+    const artifactForward = classifySyntheticProjection(
+      input([rootWithoutDependency, rootWithDependency, dependency], {
+        declaredClosure: ["root", "dependency"],
+      }),
+    );
+    const artifactReverse = classifySyntheticProjection(
+      input([dependency, rootWithDependency, rootWithoutDependency], {
+        declaredClosure: ["root", "dependency"],
+      }),
+    );
+    const root = artifact("root");
+    const exactEvidence = evidence(root);
+    const driftedEvidence = { ...exactEvidence, evidenceDigest: digest("9") };
+    const evidenceForward = classifySyntheticProjection(
+      input([root], { evidence: [exactEvidence, driftedEvidence] }),
+    );
+    const evidenceReverse = classifySyntheticProjection(
+      input([root], { evidence: [driftedEvidence, exactEvidence] }),
+    );
+
+    expect(artifactReverse).toEqual(artifactForward);
+    expect(evidenceReverse).toEqual(evidenceForward);
+  });
+
   it("keeps input and result schemas closed and result dispositions self-consistent", () => {
     const valid = classifySyntheticProjection(input());
     const root = artifact("root");
@@ -190,6 +218,24 @@ describe("Phase 2 synthetic methodology classifier", () => {
         ...valid,
         disposition: "eligible",
         findings: [{ code: "METHODOLOGY_CONTENT_EXECUTABLE", artifactId: "root" }],
+      }),
+    ).toThrow();
+    expect(() =>
+      SyntheticClassificationResultSchema.parse({
+        schemaVersion: 1,
+        disposition: "eligible",
+        closure: [],
+        eligible: [],
+        findings: [],
+      }),
+    ).toThrow();
+    expect(() =>
+      SyntheticClassificationResultSchema.parse({
+        schemaVersion: 1,
+        disposition: "ineligible",
+        closure: ["root"],
+        eligible: [],
+        findings: [{ code: "METHODOLOGY_CONTENT_EXECUTABLE" }],
       }),
     ).toThrow();
     expect(() =>
