@@ -227,27 +227,33 @@ function sortedEvidence(evidence: readonly Evidence[]): Evidence[] {
   );
 }
 
+function canonicalKey(parts: readonly string[]): string {
+  let key = "";
+  for (const part of parts) key += `${part.length}:${part};`;
+  return key;
+}
+
 function canonicalArtifactKey(artifact: Artifact): string {
-  return JSON.stringify({
-    id: artifact.id,
-    sourceLocator: artifact.sourceLocator,
-    contentDigest: artifact.contentDigest,
-    contentDisposition: artifact.contentDisposition,
-    linkDisposition: artifact.linkDisposition,
-    licenseDisposition: artifact.licenseDisposition,
-    evidenceDigest: artifact.evidenceDigest,
-    dependencies: [...artifact.dependencies].sort(compareCodeUnits),
-  });
+  return canonicalKey([
+    artifact.id,
+    artifact.sourceLocator,
+    artifact.contentDigest,
+    artifact.contentDisposition,
+    artifact.linkDisposition,
+    artifact.licenseDisposition,
+    artifact.evidenceDigest,
+    ...[...artifact.dependencies].sort(compareCodeUnits),
+  ]);
 }
 
 function canonicalEvidenceKey(evidence: Evidence): string {
-  return JSON.stringify({
-    artifactId: evidence.artifactId,
-    sourceLocator: evidence.sourceLocator,
-    contentDigest: evidence.contentDigest,
-    licenseDisposition: evidence.licenseDisposition,
-    evidenceDigest: evidence.evidenceDigest,
-  });
+  return canonicalKey([
+    evidence.artifactId,
+    evidence.sourceLocator,
+    evidence.contentDigest,
+    evidence.licenseDisposition,
+    evidence.evidenceDigest,
+  ]);
 }
 
 function canonicalUnique(values: readonly string[]): string[] {
