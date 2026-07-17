@@ -298,6 +298,36 @@ describe("Phase 2 synthetic methodology classifier", () => {
     expect(() =>
       SyntheticClassificationResultSchema.parse({ ...valid, disposition: "admitted" }),
     ).toThrow();
+    expect(() =>
+      SyntheticClassificationResultSchema.parse({
+        ...valid,
+        closure: ["root", "root"],
+      }),
+    ).toThrow();
+    expect(() =>
+      SyntheticClassificationResultSchema.parse({
+        ...valid,
+        eligible: ["root", "root"],
+      }),
+    ).toThrow();
+    expect(() =>
+      SyntheticClassificationResultSchema.parse({
+        schemaVersion: 1,
+        disposition: "ineligible",
+        closure: ["root"],
+        eligible: [],
+        findings: [
+          { code: "METHODOLOGY_CONTENT_EXECUTABLE", artifactId: "root" },
+          { code: "METHODOLOGY_CONTENT_EXECUTABLE", artifactId: "root" },
+        ],
+      }),
+    ).toThrow();
+  });
+
+  it("denies duplicate requested components deterministically", () => {
+    const result = classifySyntheticProjection(input(undefined, { requested: ["root", "root"] }));
+
+    expect(codes(result)).toContain("METHODOLOGY_REQUEST_DUPLICATE");
   });
 
   it("rejects resource overflow before graph traversal", () => {
