@@ -5,7 +5,6 @@ import {
   mkdirSync,
   readFileSync,
   renameSync,
-  rmSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
@@ -109,7 +108,9 @@ describe("synthetic methodology projection transactions", () => {
     const fixtureRoot = root();
     const fixturePath = syntheticMethodologyTransactionFixturePath(fixtureRoot);
     const input = transaction();
-    input.contents[0].bytes = Buffer.from("tampered", "utf8");
+    const content = input.contents[0];
+    if (content === undefined) throw new Error("test fixture must contain bytes");
+    content.bytes = Buffer.from("tampered", "utf8");
 
     expect(() => applySyntheticMethodologyProjectionTransaction(fixtureRoot, input)).toThrow(
       /content digest/i,
