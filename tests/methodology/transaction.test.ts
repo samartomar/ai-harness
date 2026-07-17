@@ -170,6 +170,18 @@ describe("synthetic methodology projection transactions", () => {
     );
   });
 
+  it("refuses an unknown owned-container sibling without partially cleaning the projection", () => {
+    const fixtureRoot = root();
+    const fixturePath = syntheticMethodologyTransactionFixturePath(fixtureRoot);
+    const file = join(fixturePath, ".aih/methodology/v1/rules/review-loop.md");
+    applySyntheticMethodologyProjectionTransaction(fixtureRoot, transaction());
+    writeFileSync(join(fixturePath, ".aih/sentinel"), "must remain", "utf8");
+
+    expect(() => cleanSyntheticMethodologyProjectionTransaction(fixtureRoot)).toThrow(/unknown/i);
+    expect(readFileSync(file, "utf8")).toBe("# review\n");
+    expect(readFileSync(join(fixturePath, ".aih/sentinel"), "utf8")).toBe("must remain");
+  });
+
   it("revalidates containment after a test-simulated TOCTOU swap before commit", () => {
     const fixtureRoot = root();
     const fixturePath = syntheticMethodologyTransactionFixturePath(fixtureRoot);

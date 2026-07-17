@@ -367,6 +367,18 @@ function readReceipt(base: string): z.infer<typeof ReceiptSchema> {
   return ReceiptSchema.parse(JSON.parse(readFileSync(path, "utf8")));
 }
 
+function assertExactChildren(path: string, expected: readonly string[], label: string): void {
+  identity(path, label);
+  const actual = readdirSync(path).sort();
+  const canonicalExpected = [...expected].sort();
+  if (
+    actual.length !== canonicalExpected.length ||
+    actual.some((name, index) => name !== canonicalExpected[index])
+  ) {
+    throw transactionError(`${label} contains an unknown or missing entry`);
+  }
+}
+
 function verifyTree(
   base: string,
   manifest: Manifest,
@@ -581,6 +593,13 @@ export function cleanSyntheticMethodologyProjectionTransaction(
   if (!existsSync(output))
     throw transactionError("owned output parent contains no verified projection");
   const receipt = readReceipt(output);
+  verifyTree(output, receipt.manifest, true);
+  assertExactChildren(
+    join(containerPath(state), "methodology"),
+    ["v1"],
+    "owned methodology parent",
+  );
+  assertExactChildren(containerPath(state), [OWNER_FILE, "methodology"], "owned output parent");
   removeVerifiedTree(output, receipt.manifest, true);
   rmdirSync(join(containerPath(state), "methodology"));
   unlinkSync(ownerPath(state));
