@@ -5,6 +5,7 @@ import {
   SyntheticClassificationResultSchema,
   SyntheticClassifierInputSchema,
   SyntheticEvidenceSchema,
+  SyntheticFindingCodeSchema,
   SyntheticFindingSchema,
 } from "../../src/methodology/classifier.js";
 
@@ -553,11 +554,69 @@ describe("Phase 2 synthetic methodology classifier", () => {
     }
   });
 
+  it("attributes structural and first-over-limit failures to exact named fields", () => {
+    const root = artifact("root");
+    const withoutId = { ...root };
+    delete withoutId.id;
+    const withUnknown = { ...root, unexpected: true };
+    const evidenceWithoutDigest = { ...evidence(root) };
+    delete evidenceWithoutDigest.contentDigest;
+    const resultWithoutFindings: Record<string, unknown> = {
+      schemaVersion: 1,
+      disposition: "eligible",
+      closure: ["root"],
+      eligible: ["root"],
+    };
+    const tooManyFindings = Array.from({ length: 257 }, () => ({
+      code: "METHODOLOGY_FINDINGS_LIMIT",
+    }));
+    const cases = [
+      [SyntheticArtifactSchema, withoutId, ["id"]],
+      [SyntheticArtifactSchema, withUnknown, ["unexpected"]],
+      [SyntheticEvidenceSchema, evidenceWithoutDigest, ["contentDigest"]],
+      [
+        SyntheticClassifierInputSchema,
+        input([withoutId], { declaredClosure: ["root"] }),
+        ["artifacts", 0, "id"],
+      ],
+      [SyntheticClassifierInputSchema, input([withUnknown]), ["artifacts", 0, "unexpected"]],
+      [
+        SyntheticClassifierInputSchema,
+        input([artifact("root", { dependencies: Array.from({ length: 33 }, () => "root") })]),
+        ["artifacts", 0, "dependencies"],
+      ],
+      [
+        SyntheticClassifierInputSchema,
+        input(undefined, { requested: Array.from({ length: 33 }, () => "root") }),
+        ["requested"],
+      ],
+      [SyntheticClassificationResultSchema, resultWithoutFindings, ["findings"]],
+      [
+        SyntheticClassificationResultSchema,
+        {
+          schemaVersion: 1,
+          disposition: "ineligible",
+          closure: ["root"],
+          eligible: [],
+          findings: tooManyFindings,
+        },
+        ["findings"],
+      ],
+    ] as const;
+
+    for (const [schema, value, expectedPath] of cases) {
+      const result = schema.safeParse(value);
+      expect(result.success).toBe(false);
+      if (!result.success) expect(result.error.issues[0]?.path).toEqual(expectedPath);
+    }
+  });
+
   it("returns closed invalid results without invoking ambient error hooks", () => {
     const root = artifact("root");
     const cases = [
       [SyntheticArtifactSchema, { ...root, id: "ROOT" }],
       [SyntheticEvidenceSchema, { ...evidence(root), artifactId: "ROOT" }],
+      [SyntheticFindingCodeSchema, "NOT_A_FINDING"],
       [SyntheticFindingSchema, { code: "NOT_A_FINDING" }],
       [
         SyntheticClassifierInputSchema,
@@ -574,7 +633,26 @@ describe("Phase 2 synthetic methodology classifier", () => {
         },
       ],
     ] as const;
+    const validResult = {
+      schemaVersion: 1,
+      disposition: "eligible",
+      closure: ["root"],
+      eligible: ["root"],
+      findings: [],
+    } as const;
+    const validCases = [
+      [SyntheticArtifactSchema, root],
+      [SyntheticEvidenceSchema, evidence(root)],
+      [SyntheticFindingCodeSchema, "METHODOLOGY_EVIDENCE_MISSING"],
+      [SyntheticFindingSchema, { code: "METHODOLOGY_EVIDENCE_MISSING", artifactId: "root" }],
+      [SyntheticClassifierInputSchema, input()],
+      [SyntheticClassificationResultSchema, validResult],
+    ] as const;
     let hookCalls = 0;
+    let escapedError: unknown;
+    let unexpectedSuccesses = 0;
+    let unexpectedFailures = 0;
+    let classifierDidNotThrow = 0;
 
     for (const property of ["toJSON", "path", "message"] as const) {
       const original = Object.getOwnPropertyDescriptor(Object.prototype, property);
@@ -587,16 +665,35 @@ describe("Phase 2 synthetic methodology classifier", () => {
       });
       try {
         for (const [schema, value] of cases) {
-          expect(() => schema.safeParse(value)).not.toThrow();
-          expect(schema.safeParse(value).success).toBe(false);
+          try {
+            if (schema.safeParse(value).success) unexpectedSuccesses += 1;
+          } catch (error) {
+            escapedError = error;
+          }
         }
-        expect(() => classifySyntheticProjection(cases[3][1])).toThrow();
+        for (const [schema, value] of validCases) {
+          try {
+            if (!schema.safeParse(value).success) unexpectedFailures += 1;
+          } catch (error) {
+            escapedError = error;
+          }
+        }
+        try {
+          classifySyntheticProjection(cases[4][1]);
+          classifierDidNotThrow += 1;
+        } catch {
+          // Invalid classifier input must throw without consulting ambient hooks.
+        }
       } finally {
         if (original === undefined) delete (Object.prototype as Record<string, unknown>)[property];
         else Object.defineProperty(Object.prototype, property, original);
       }
     }
 
+    expect(escapedError).toBeUndefined();
+    expect(unexpectedSuccesses).toBe(0);
+    expect(unexpectedFailures).toBe(0);
+    expect(classifierDidNotThrow).toBe(0);
     expect(hookCalls).toBe(0);
   });
 
