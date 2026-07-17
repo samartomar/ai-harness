@@ -105,11 +105,7 @@ function compare(left: string, right: string): number {
 }
 
 function targetIsCanonical(target: string): boolean {
-  return (
-    !target.startsWith("/") &&
-    !target.includes("\\") &&
-    target.split("/").every((segment) => segment.length > 0 && segment !== "." && segment !== "..")
-  );
+  return /^[a-z0-9][a-z0-9._-]*(?:\/[a-z0-9][a-z0-9._-]*)*$/.test(target);
 }
 
 function canonicalClassifierInput(input: ClassifierInput): unknown {
@@ -153,11 +149,13 @@ function mappingsCover(
 }
 
 function hasTargetCollision(entries: readonly Entry[]): boolean {
-  const targets = entries.map((entry) => entry.target).sort(compare);
-  return targets.some((target, index) => {
-    const previous = targets[index - 1];
-    return previous !== undefined && (target === previous || target.startsWith(`${previous}/`));
-  });
+  return entries.some((entry, index) =>
+    entries.some(
+      (other, otherIndex) =>
+        index !== otherIndex &&
+        (entry.target === other.target || other.target.startsWith(`${entry.target}/`)),
+    ),
+  );
 }
 
 /** Pure Phase 3 object planning; it never reads, writes, launches, or applies a projection. */

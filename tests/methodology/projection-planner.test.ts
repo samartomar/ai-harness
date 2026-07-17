@@ -145,6 +145,47 @@ describe("Phase 3 host-neutral synthetic projection planner", () => {
     );
   });
 
+  it("blocks drive-qualified logical targets and interleaved ancestor collisions", () => {
+    const driveQualified = planSyntheticProjection(
+      input({
+        mappings: [
+          { artifactId: "root", target: "C:/outside/root.md" },
+          { artifactId: "dependency", target: "rules/dependency.md" },
+        ],
+      }),
+    );
+    const candidate = input();
+    const classifierInput = candidate.classifierInput as {
+      artifacts: Array<Record<string, unknown>>;
+      evidence: Array<Record<string, unknown>>;
+      declaredClosure: string[];
+    };
+    const extra = artifact("extra");
+    const dependency = classifierInput.artifacts[1];
+    if (dependency === undefined) throw new Error("test fixture lost its dependency artifact");
+    classifierInput.artifacts = [
+      { ...classifierInput.artifacts[0], dependencies: ["dependency", "extra"] },
+      dependency,
+      extra,
+    ];
+    classifierInput.evidence.push(evidence(extra));
+    classifierInput.declaredClosure = ["root", "dependency", "extra"];
+    candidate.mappings = [
+      { artifactId: "root", target: "rules" },
+      { artifactId: "dependency", target: "rules-a" },
+      { artifactId: "extra", target: "rules/root.md" },
+    ];
+
+    const interleaved = planSyntheticProjection(candidate);
+
+    expect(driveQualified.findings.map((finding) => finding.code)).toContain(
+      "METHODOLOGY_TARGET_INVALID",
+    );
+    expect(interleaved.findings.map((finding) => finding.code)).toContain(
+      "METHODOLOGY_TARGET_COLLISION",
+    );
+  });
+
   it("binds every decision-critical field into the manifest digest", () => {
     const baseline = planSyntheticProjection(input());
     const mutations = [
