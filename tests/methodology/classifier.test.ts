@@ -228,6 +228,44 @@ describe("Phase 2 synthetic methodology classifier", () => {
     expect(hookCalls).toBe(0);
   });
 
+  it("does not read optional finding fields through ambient prototypes", () => {
+    const original = Object.getOwnPropertyDescriptor(Object.prototype, "artifactId");
+    let hookCalls = 0;
+    Object.defineProperty(Object.prototype, "artifactId", {
+      configurable: true,
+      get() {
+        hookCalls += 1;
+        throw new Error("classifier read an optional finding field from Object.prototype");
+      },
+    });
+
+    try {
+      expect(
+        classifySyntheticProjection(input(undefined, { requested: ["root", "root"] })).findings,
+      ).toEqual([{ code: "METHODOLOGY_REQUEST_DUPLICATE" }]);
+      for (const code of [
+        "METHODOLOGY_DEPENDENCY_OUT_OF_CLOSURE",
+        "METHODOLOGY_FINDINGS_LIMIT",
+        "METHODOLOGY_REQUEST_DUPLICATE",
+      ] as const) {
+        expect(
+          SyntheticClassificationResultSchema.safeParse({
+            schemaVersion: 1,
+            disposition: "ineligible",
+            closure: ["root"],
+            eligible: [],
+            findings: [{ code }],
+          }).success,
+        ).toBe(true);
+      }
+    } finally {
+      if (original === undefined) delete (Object.prototype as { artifactId?: unknown }).artifactId;
+      else Object.defineProperty(Object.prototype, "artifactId", original);
+    }
+
+    expect(hookCalls).toBe(0);
+  });
+
   it("fails closed before hostile object surfaces can execute across exported schemas", () => {
     const root = artifact("root");
     const validInput = input([root]);
