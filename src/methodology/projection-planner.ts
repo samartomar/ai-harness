@@ -300,6 +300,34 @@ export const SyntheticMethodologyProjectionManifestSchema = z
         message: "manifest eligibility must be recomputed from its closed admission closure",
       });
     }
+    const closureArtifacts = new Map(
+      manifest.admission.closure.artifacts.map((artifact) => [artifact.id, artifact]),
+    );
+    const eligible = new Set(classification.eligible);
+    for (const [index, entry] of manifest.entries.entries()) {
+      const artifact = closureArtifacts.get(entry.id);
+      if (
+        artifact === undefined ||
+        !eligible.has(entry.id) ||
+        entry.source.locator !== artifact.sourceIdentity.locator ||
+        entry.source.sourceDigest !== artifact.sourceIdentity.digest ||
+        entry.source.contentDigest !== artifact.content.digest
+      ) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["entries", index],
+          message:
+            "manifest entries must exactly bind eligible closure source identities and digests",
+        });
+      }
+    }
+    if (manifest.entries.length !== classification.eligible.length) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["entries"],
+        message: "manifest entries must exactly cover eligible closure component ids",
+      });
+    }
     if (manifest.digest !== manifestDigest(canonicalAdmission, canonicalEntries)) {
       ctx.addIssue({
         code: "custom",

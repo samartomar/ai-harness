@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import {
   planSyntheticMethodologyProjection,
@@ -88,6 +89,21 @@ function projection(overrides: Record<string, unknown> = {}) {
     mappings: [mapping("review-loop")],
     ...overrides,
   };
+}
+
+function recomputeManifestDigest(manifest: { admission: unknown; entries: unknown }): string {
+  return `sha256:${createHash("sha256")
+    .update(
+      JSON.stringify({
+        schemaVersion: 2,
+        digestVersion: "methodology-projection-digest-v2",
+        owner: "aih-methodology-v1",
+        admission: manifest.admission,
+        entries: manifest.entries,
+      }),
+      "utf8",
+    )
+    .digest("hex")}`;
 }
 
 describe("synthetic methodology projection planner", () => {
@@ -536,6 +552,24 @@ describe("synthetic methodology projection planner", () => {
       SyntheticMethodologyProjectionPlanSchema.parse({
         ...planned,
         manifest: { ...manifest, digest: digest("tampered") },
+      }),
+    ).toThrow();
+    const forgedSourceEntries = manifest.entries.map((entry) =>
+      entry.id === "method-routing"
+        ? {
+            ...entry,
+            source: { ...entry.source, sourceDigest: digest("forged-source") },
+          }
+        : entry,
+    );
+    expect(() =>
+      SyntheticMethodologyProjectionManifestSchema.parse({
+        ...manifest,
+        entries: forgedSourceEntries,
+        digest: recomputeManifestDigest({
+          admission: manifest.admission,
+          entries: forgedSourceEntries,
+        }),
       }),
     ).toThrow();
     expect(() =>
