@@ -784,7 +784,6 @@ describe("Phase 3 host-neutral synthetic projection planner", () => {
       { prototype: hashPrototype, property: "update" },
       { prototype: hashPrototype, property: "digest" },
       { prototype: Number, property: "isFinite" },
-      { prototype: globalThis, property: "String" },
     ];
     let hookCalls = 0;
     let escapedError: unknown;

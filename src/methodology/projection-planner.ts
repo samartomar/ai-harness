@@ -11,6 +11,12 @@ import {
 } from "./classifier.js";
 
 const INTRINSIC_APPLY = Reflect.apply;
+const HASH_PROTOTYPE = Object.getPrototypeOf(createHash("sha256")) as {
+  digest: CallableFunction;
+  update: CallableFunction;
+};
+const HASH_DIGEST = HASH_PROTOTYPE.digest;
+const HASH_UPDATE = HASH_PROTOTYPE.update;
 const MAP_GET = Map.prototype.get;
 const MAP_SET = Map.prototype.set;
 const SET_ADD = Set.prototype.add;
@@ -19,6 +25,9 @@ const WEAK_SET_ADD = WeakSet.prototype.add;
 const WEAK_SET_DELETE = WeakSet.prototype.delete;
 const WEAK_SET_HAS = WeakSet.prototype.has;
 const REGEXP_TEST = RegExp.prototype.test;
+const NUMBER_IS_FINITE = Number.isFinite;
+const STRING_CONVERT = String;
+const STRING_CHAR_CODE_AT = String.prototype.charCodeAt;
 const STRING_ENDS_WITH = String.prototype.endsWith;
 const STRING_SPLIT = String.prototype.split;
 const STRING_STARTS_WITH = String.prototype.startsWith;
@@ -33,6 +42,14 @@ function callIntrinsic<T>(
 
 function mapGet<K, V>(map: Map<K, V>, key: K): V | undefined {
   return callIntrinsic<V | undefined>(MAP_GET, map, [key]);
+}
+
+function hashDigest(hash: ReturnType<typeof createHash>, encoding: "hex"): string {
+  return callIntrinsic<string>(HASH_DIGEST, hash, [encoding]);
+}
+
+function hashUpdate(hash: ReturnType<typeof createHash>, value: string): void {
+  callIntrinsic<ReturnType<typeof createHash>>(HASH_UPDATE, hash, [value]);
 }
 
 function mapSet<K, V>(map: Map<K, V>, key: K, value: V): void {
@@ -61,6 +78,18 @@ function weakSetHas<T extends WeakKey>(set: WeakSet<T>, value: T): boolean {
 
 function regexpTest(pattern: RegExp, value: string): boolean {
   return callIntrinsic<boolean>(REGEXP_TEST, pattern, [value]);
+}
+
+function numberIsFinite(value: number): boolean {
+  return NUMBER_IS_FINITE(value);
+}
+
+function stringConvert(value: unknown): string {
+  return callIntrinsic<string>(STRING_CONVERT, undefined, [value]);
+}
+
+function stringCharCodeAt(value: string, index: number): number {
+  return callIntrinsic<number>(STRING_CHAR_CODE_AT, value, [index]);
 }
 
 function stringEndsWith(value: string, suffix: string): boolean {
@@ -186,7 +215,7 @@ type SnapshotResult = { ok: true; value: unknown } | { ok: false };
 const INVALID_SNAPSHOT = Object.freeze({ ok: false as const });
 
 function appendOwn<T>(values: T[], value: T): void {
-  Object.defineProperty(values, String(values.length), {
+  Object.defineProperty(values, stringConvert(values.length), {
     configurable: true,
     enumerable: true,
     value,
@@ -279,7 +308,7 @@ function snapshotSurface(value: unknown): SnapshotResult {
       return INVALID_SNAPSHOT;
     }
     for (let index = 0; index < length; index += 1) {
-      const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
+      const descriptor = Object.getOwnPropertyDescriptor(value, stringConvert(index));
       if (descriptor === undefined || !("value" in descriptor) || !descriptor.enumerable) {
         return INVALID_SNAPSHOT;
       }
@@ -319,7 +348,7 @@ function snapshotPlainData(value: unknown, state: SnapshotState): SnapshotResult
     if (Array.isArray(surface.value)) {
       const snapshot: unknown[] = [];
       for (let index = 0; index < surface.value.length; index += 1) {
-        const descriptor = Object.getOwnPropertyDescriptor(surface.value, String(index));
+        const descriptor = Object.getOwnPropertyDescriptor(surface.value, stringConvert(index));
         if (descriptor === undefined || !("value" in descriptor)) return INVALID_SNAPSHOT;
         const child = snapshotPlainData(descriptor.value, nextState);
         if (!child.ok) return INVALID_SNAPSHOT;
@@ -724,7 +753,7 @@ function quotedString(value: string): string {
   const hex = "0123456789abcdef";
   let result = '"';
   for (let index = 0; index < value.length; index += 1) {
-    const code = value.charCodeAt(index);
+    const code = stringCharCodeAt(value, index);
     const character = value[index];
     if (character === '"' || character === "\\") {
       result += `\\${character}`;
@@ -751,12 +780,12 @@ function canonicalSerialize(value: unknown): string {
   if (value === null) return "null";
   if (typeof value === "string") return quotedString(value);
   if (typeof value === "boolean") return value ? "true" : "false";
-  if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  if (typeof value === "number" && numberIsFinite(value)) return stringConvert(value);
   if (Array.isArray(value)) {
     let result = "[";
     for (let index = 0; index < value.length; index += 1) {
       if (index > 0) result += ",";
-      const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
+      const descriptor = Object.getOwnPropertyDescriptor(value, stringConvert(index));
       if (descriptor === undefined || !("value" in descriptor)) {
         throw new Error("canonical arrays must contain only own data elements");
       }
@@ -981,7 +1010,9 @@ function rebuildCanonicalDecision(decision: Decision): Decision | undefined {
 }
 
 function digestDecision(decision: Decision): string {
-  return createHash("sha256").update(canonicalSerialize(decision)).digest("hex");
+  const hash = createHash("sha256");
+  hashUpdate(hash, canonicalSerialize(decision));
+  return hashDigest(hash, "hex");
 }
 
 /** Pure Phase 3 object planning; it never reads, writes, launches, or applies a projection. */
