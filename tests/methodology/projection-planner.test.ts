@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import {
   ProjectionDecisionSchema,
@@ -762,6 +763,7 @@ describe("Phase 3 host-neutral synthetic projection planner", () => {
 
   it("does not execute post-initialization ambient collection and path hooks", () => {
     const candidate = input();
+    const hashPrototype = Object.getPrototypeOf(createHash("sha256")) as object;
     const hooks: Array<{ prototype: object; property: PropertyKey }> = [
       { prototype: Array.prototype, property: "sort" },
       { prototype: Array.prototype, property: "map" },
@@ -778,6 +780,11 @@ describe("Phase 3 host-neutral synthetic projection planner", () => {
       { prototype: String.prototype, property: "split" },
       { prototype: String.prototype, property: "startsWith" },
       { prototype: String.prototype, property: "endsWith" },
+      { prototype: String.prototype, property: "charCodeAt" },
+      { prototype: hashPrototype, property: "update" },
+      { prototype: hashPrototype, property: "digest" },
+      { prototype: Number, property: "isFinite" },
+      { prototype: globalThis, property: "String" },
     ];
     let hookCalls = 0;
     let escapedError: unknown;
@@ -791,7 +798,7 @@ describe("Phase 3 host-neutral synthetic projection planner", () => {
         configurable: true,
         value() {
           hookCalls += 1;
-          throw new Error(`planner invoked ambient ${String(hook.property)}`);
+          throw new Error("planner invoked an ambient hook");
         },
       });
       try {
