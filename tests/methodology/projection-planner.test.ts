@@ -762,7 +762,7 @@ describe("Phase 3 host-neutral synthetic projection planner", () => {
         splitCalls += 1;
         throw new Error("oversized target reached canonical path splitting");
       }
-      return original.call(this.toString(), separator, limit);
+      return Reflect.apply(original, this.toString(), [separator, limit]) as string[];
     };
     try {
       expect(ProjectionDecisionSchema.safeParse(decision).success).toBe(false);
