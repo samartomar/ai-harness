@@ -528,7 +528,11 @@ describe("Phase 2 synthetic methodology classifier", () => {
         ["sourceLocator"],
       ],
       [SyntheticFindingSchema, { code: "NOT_A_FINDING" }, ["code"]],
-      [SyntheticClassifierInputSchema, input([{ ...root, id: "ROOT" }]), ["artifacts", 0, "id"]],
+      [
+        SyntheticClassifierInputSchema,
+        input([{ ...root, id: "ROOT" }], { declaredClosure: ["root"] }),
+        ["artifacts", 0, "id"],
+      ],
       [
         SyntheticClassificationResultSchema,
         {
