@@ -94,7 +94,7 @@ const SyntheticArtifactTupleSchema = z
 
 export const SyntheticArtifactSchema = z.preprocess(
   (value) => recordTuple(value, artifactCollectionsAreBounded, ARTIFACT_FIELDS),
-  SyntheticArtifactTupleSchema,
+  namedTupleSchema(SyntheticArtifactTupleSchema, ARTIFACT_FIELDS),
 );
 
 const SyntheticEvidenceTupleSchema = z
@@ -117,7 +117,7 @@ const SyntheticEvidenceTupleSchema = z
 
 export const SyntheticEvidenceSchema = z.preprocess(
   (value) => recordTuple(value, evidenceRecordIsClosed, EVIDENCE_FIELDS),
-  SyntheticEvidenceTupleSchema,
+  namedTupleSchema(SyntheticEvidenceTupleSchema, EVIDENCE_FIELDS),
 );
 
 const SyntheticClassifierInputTupleSchema = z
@@ -134,7 +134,7 @@ const SyntheticClassifierInputTupleSchema = z
 
 export const SyntheticClassifierInputSchema = z.preprocess(
   (value) => recordTuple(value, classifierCollectionsAreBounded, INPUT_FIELDS),
-  SyntheticClassifierInputTupleSchema,
+  namedTupleSchema(SyntheticClassifierInputTupleSchema, INPUT_FIELDS),
 );
 
 export const SyntheticFindingCodeSchema = z.enum([
@@ -186,7 +186,7 @@ const SyntheticFindingTupleSchema = z
 
 export const SyntheticFindingSchema = z.preprocess(
   (value) => findingTuple(value),
-  SyntheticFindingTupleSchema,
+  namedTupleSchema(SyntheticFindingTupleSchema, FINDING_FIELDS),
 );
 
 type SnapshotResult = { ok: true; value: unknown } | { ok: false };
@@ -357,6 +357,25 @@ function recordTuple(
   return tuple;
 }
 
+function namedTupleSchema<T extends z.ZodType>(
+  schema: T,
+  fields: readonly string[],
+): z.ZodType<z.output<T>> {
+  return z.unknown().transform((value, ctx): z.output<T> => {
+    const result = schema.safeParse(value);
+    if (result.success) return result.data;
+    for (const issue of result.error.issues) {
+      const [head, ...tail] = issue.path;
+      const path =
+        typeof head === "number" && fields[head] !== undefined
+          ? [fields[head], ...tail]
+          : issue.path;
+      ctx.addIssue({ ...issue, path });
+    }
+    return z.NEVER;
+  });
+}
+
 function findingTuple(value: unknown): unknown {
   const snapshot = failClosedPreprocess(value, findingRecordIsClosed);
   const record = recordOf(snapshot);
@@ -505,7 +524,7 @@ const SyntheticClassificationResultTupleSchema = z
 
 export const SyntheticClassificationResultSchema = z.preprocess(
   (value) => recordTuple(value, resultCollectionsAreBounded, RESULT_FIELDS),
-  SyntheticClassificationResultTupleSchema,
+  namedTupleSchema(SyntheticClassificationResultTupleSchema, RESULT_FIELDS),
 );
 
 type Artifact = z.infer<typeof SyntheticArtifactSchema>;
