@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-import { buildProgram, buildProgramWithPlugins, isVersionFastPath } from "./program.js";
 import { writeMethodologyParserFailure } from "./methodology/index.js";
+import { buildProgram, buildProgramWithPlugins, isVersionFastPath } from "./program.js";
 
 // This module is the executable bin entry only — it is never imported elsewhere,
 // so parsing argv at top level is safe (tests import the builders from program.ts).

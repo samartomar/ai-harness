@@ -171,7 +171,10 @@ function snapshotRootChain(rootPath: string): PathIdentity[] {
   }
 
   const directories = [
-    assertRegularDirectory(parsed.root, lstatIntentPath(parsed.root, "target root is not readable")),
+    assertRegularDirectory(
+      parsed.root,
+      lstatIntentPath(parsed.root, "target root is not readable"),
+    ),
   ];
   let current = parsed.root;
   for (const segment of relativeRoot.split(sep).filter(Boolean)) {
@@ -201,7 +204,10 @@ function intentFile(root: string, relativeIntent: string): VerifiedIntentFile {
   for (const [index, segment] of segments.entries()) {
     current = join(current, segment);
     const info = lstatIntentPath(current, "intent file is not readable");
-    if (index === segments.length - 1 && (!info.isFile() || info.isSymbolicLink() || info.nlink !== 1)) {
+    if (
+      index === segments.length - 1 &&
+      (!info.isFile() || info.isSymbolicLink() || info.nlink !== 1)
+    ) {
       throw new MethodologyFailClosedError(
         "METHODOLOGY_INTENT_MALFORMED",
         "intent must be an unlinked regular file",

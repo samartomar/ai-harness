@@ -434,6 +434,13 @@ planner nor any write path. `inspect` and `status` complete with exit `0`; inval
 input or an unreadable intent exits `1`; malformed or linked intent input fails closed
 with exit `3` and `METHODOLOGY_INTENT_MALFORMED`.
 
+In `--json` mode every completion, blocked result, invalid input, fail-closed input,
+and methodology parser error is a closed schema-validated envelope on stdout. Unsupported
+methodology options therefore return exit `1` with an invalid envelope rather than an
+unstructured Commander error. Intent input is bounded before parsing and is read only
+through a verified regular-file handle after every root and intent-path ancestor is checked
+for links or reparse points.
+
 These commands have no `--apply`, `clean`, `fetch`, `install`, `activate`, `switch`,
 `repair`, `update`, `preview`, `force`, `approve`, `suppress`, or host-launch behavior.
 Provider and host adapters are declarative records only. The stable `--json` envelope

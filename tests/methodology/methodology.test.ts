@@ -20,6 +20,7 @@ import {
 import {
   canonicalizeMethodologyIntent,
   exactSourceIdentity,
+  MethodologyCommandEnvelopeSchema,
   MethodologyIntentSchema,
   MethodologyStatusSchema,
 } from "../../src/methodology/schema.js";
@@ -385,7 +386,15 @@ describe("aih methodology Phase 1 child-process boundary", () => {
       const result = runAih(root, "project", "methodology.intent.json", [flag]);
 
       expect(result.status).toBe(1);
-      expect(result.stderr).toContain(`unknown option '${flag}'`);
+      expect(result.stderr).toBe("");
+      expect(MethodologyCommandEnvelopeSchema.parse(JSON.parse(result.stdout))).toMatchObject({
+        command: "project",
+        outcome: "invalid",
+        failure: {
+          state: "invalid",
+          findings: [expect.objectContaining({ code: "METHODOLOGY_COMMAND_INVALID" })],
+        },
+      });
     }
     expect(existsSync(join(root, ".aih"))).toBe(false);
   }, 30_000);
