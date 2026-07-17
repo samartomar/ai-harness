@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { z } from "zod";
 import {
   classifySyntheticMethodology,
+  SYNTHETIC_METHODOLOGY_CLASSIFIER_VERSION,
   SyntheticMethodologyDigestSchema,
   SyntheticMethodologyInputSchema,
   SyntheticMethodologyPathSchema,
@@ -15,7 +16,6 @@ const PROJECTION_ROOT = "methodology/v1/";
 const PROJECTION_MANIFEST_SCHEMA_VERSION = 2;
 const PROJECTION_DIGEST_VERSION = "methodology-projection-digest-v2";
 const PROJECTION_ADMISSION_POLICY_VERSION = "methodology-projection-admission-v2";
-const SYNTHETIC_CLASSIFIER_VERSION = "synthetic-methodology-classifier-v2";
 
 interface ManifestEntryObject {
   id: string;
@@ -29,7 +29,7 @@ interface ManifestEntryObject {
 
 interface ManifestAdmissionObject {
   policyVersion: typeof PROJECTION_ADMISSION_POLICY_VERSION;
-  classifierVersion: typeof SYNTHETIC_CLASSIFIER_VERSION;
+  classifierVersion: typeof SYNTHETIC_METHODOLOGY_CLASSIFIER_VERSION;
   closure: z.infer<typeof SyntheticMethodologyInputSchema>;
   eligibility: {
     disposition: "eligible";
@@ -196,7 +196,7 @@ const OwnedProjectionPathSchema = SyntheticMethodologyPathSchema.refine(
 export const SyntheticMethodologyProjectionAdmissionSchema = z
   .object({
     policyVersion: z.literal(PROJECTION_ADMISSION_POLICY_VERSION),
-    classifierVersion: z.literal(SYNTHETIC_CLASSIFIER_VERSION),
+    classifierVersion: z.literal(SYNTHETIC_METHODOLOGY_CLASSIFIER_VERSION),
     closure: SyntheticMethodologyInputSchema,
     eligibility: z
       .object({
@@ -528,7 +528,7 @@ export function planSyntheticMethodologyProjection(value: unknown) {
   );
   const admission: ManifestAdmissionObject = {
     policyVersion: PROJECTION_ADMISSION_POLICY_VERSION,
-    classifierVersion: SYNTHETIC_CLASSIFIER_VERSION,
+    classifierVersion: SYNTHETIC_METHODOLOGY_CLASSIFIER_VERSION,
     closure: canonicalSyntheticClosure(projection.classification),
     eligibility: {
       disposition: "eligible",

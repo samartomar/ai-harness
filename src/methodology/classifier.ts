@@ -5,6 +5,7 @@ const MAX_SYNTHETIC_ARTIFACTS = 64;
 const MAX_SYNTHETIC_DEPENDENCIES = 32;
 const MAX_SYNTHETIC_PATH_LENGTH = 512;
 const MAX_SYNTHETIC_ARTIFACT_FINDINGS = 8;
+export const SYNTHETIC_METHODOLOGY_CLASSIFIER_VERSION = "synthetic-methodology-classifier-v2";
 // Only declared roots are traversed; every non-root dependency is excluded, not visited.
 const MAX_SYNTHETIC_FINDINGS =
   MAX_SYNTHETIC_ROOTS * (MAX_SYNTHETIC_DEPENDENCIES + MAX_SYNTHETIC_ARTIFACT_FINDINGS);
