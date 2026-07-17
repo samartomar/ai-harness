@@ -6,16 +6,16 @@ import {
   mkdirSync,
   mkdtempSync,
   openSync,
-  readFileSync,
   readdirSync,
+  readFileSync,
   renameSync,
   rmdirSync,
   rmSync,
   unlinkSync,
   writeFileSync,
 } from "node:fs";
-import { dirname, join, relative, resolve } from "node:path";
 import { tmpdir } from "node:os";
+import { dirname, join, relative, resolve } from "node:path";
 import { z } from "zod";
 import {
   SyntheticMethodologyProjectionManifestSchema,
@@ -314,7 +314,8 @@ function checkpoint(
   options?.onBoundary?.(boundary);
   assertIdentity(state.root, state.rootIdentity, "fixture root");
   if (state.containerIdentity !== undefined) assertOwner(state);
-  if (state.stage !== undefined) assertIdentity(state.stage.path, state.stage.identity, "transaction stage");
+  if (state.stage !== undefined)
+    assertIdentity(state.stage.path, state.stage.identity, "transaction stage");
   if (options?.faultAt === boundary) throw new Error(`injected transaction failure at ${boundary}`);
 }
 
@@ -333,7 +334,9 @@ function assertStage(state: FixtureState): string {
 }
 
 function expectedFiles(manifest: Manifest): Map<string, string> {
-  return new Map(manifest.entries.map((entry) => [outputRelative(entry.target), entry.source.contentDigest]));
+  return new Map(
+    manifest.entries.map((entry) => [outputRelative(entry.target), entry.source.contentDigest]),
+  );
 }
 
 function receiptText(manifest: Manifest): string {
@@ -364,7 +367,8 @@ function verifyTree(
       const child = relativePath === "" ? entry.name : `${relativePath}/${entry.name}`;
       const full = safeJoin(base, child);
       if (entry.isDirectory()) {
-        if (!directories.has(child)) throw transactionError("projection contains an unknown directory");
+        if (!directories.has(child))
+          throw transactionError("projection contains an unknown directory");
         actualDirectories.push(child);
         visit(child);
       } else {
@@ -386,7 +390,8 @@ function verifyTree(
   visit("");
   if (requireComplete) {
     for (const path of files.keys()) {
-      if (!actualFiles.includes(path)) throw transactionError("projection is missing an expected file");
+      if (!actualFiles.includes(path))
+        throw transactionError("projection is missing an expected file");
     }
   }
   return { files: actualFiles, directories: actualDirectories };
@@ -544,9 +549,11 @@ export function cleanSyntheticMethodologyProjectionTransaction(
   const state = stateFor(root);
   if (!existsSync(containerPath(state))) return { state: "absent" };
   assertOwner(state);
-  if (existsSync(lockPath(state))) throw transactionError("transaction lock exists; recover before clean");
+  if (existsSync(lockPath(state)))
+    throw transactionError("transaction lock exists; recover before clean");
   const output = outputPath(state);
-  if (!existsSync(output)) throw transactionError("owned output parent contains no verified projection");
+  if (!existsSync(output))
+    throw transactionError("owned output parent contains no verified projection");
   const receipt = ReceiptSchema.parse(JSON.parse(readFileSync(join(output, RECEIPT_FILE), "utf8")));
   removeVerifiedTree(output, receipt.manifest, true);
   rmdirSync(join(containerPath(state), "methodology"));
