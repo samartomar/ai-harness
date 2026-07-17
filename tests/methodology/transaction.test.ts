@@ -158,6 +158,18 @@ describe("synthetic methodology projection transactions", () => {
     expect(readFileSync(file, "utf8")).toBe("# review\n");
   });
 
+  it("refuses to clean a projection tree with an unknown file", () => {
+    const fixtureRoot = root();
+    const fixturePath = syntheticMethodologyTransactionFixturePath(fixtureRoot);
+    applySyntheticMethodologyProjectionTransaction(fixtureRoot, transaction());
+    writeFileSync(join(fixturePath, ".aih/methodology/v1/unowned.txt"), "must remain", "utf8");
+
+    expect(() => cleanSyntheticMethodologyProjectionTransaction(fixtureRoot)).toThrow(/unknown/i);
+    expect(readFileSync(join(fixturePath, ".aih/methodology/v1/unowned.txt"), "utf8")).toBe(
+      "must remain",
+    );
+  });
+
   it("revalidates containment after a test-simulated TOCTOU swap before commit", () => {
     const fixtureRoot = root();
     const fixturePath = syntheticMethodologyTransactionFixturePath(fixtureRoot);
@@ -182,6 +194,7 @@ describe("synthetic methodology projection transactions", () => {
     "after-stage",
     "after-entry",
     "after-receipt",
+    "before-commit",
     "after-commit",
   ] satisfies SyntheticMethodologyTransactionTestBoundary[])("recovers deterministically after injected failure at %s", (faultAt) => {
     const fixtureRoot = root();
