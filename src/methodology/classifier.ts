@@ -24,48 +24,114 @@ const ContentDispositionSchema = z.enum(["inert", "executable", "ambiguous"]);
 const LinkDispositionSchema = z.enum(["none", "symbolic", "hard", "reparse"]);
 const LicenseDispositionSchema = z.enum(["permissive", "unknown", "restricted"]);
 
-const SyntheticArtifactObjectSchema = z
-  .object({
-    id: ArtifactIdSchema,
-    sourceLocator: SourceLocatorSchema,
-    contentDigest: DigestSchema,
-    contentDisposition: ContentDispositionSchema,
-    linkDisposition: LinkDispositionSchema,
-    licenseDisposition: LicenseDispositionSchema,
-    evidenceDigest: DigestSchema,
-    dependencies: z.array(ArtifactIdSchema).max(MAX_DEPENDENCIES_PER_ARTIFACT),
-  })
-  .strict();
+const ARTIFACT_FIELDS = [
+  "id",
+  "sourceLocator",
+  "contentDigest",
+  "contentDisposition",
+  "linkDisposition",
+  "licenseDisposition",
+  "evidenceDigest",
+  "dependencies",
+] as const;
+const EVIDENCE_FIELDS = [
+  "artifactId",
+  "sourceLocator",
+  "contentDigest",
+  "licenseDisposition",
+  "evidenceDigest",
+] as const;
+const INPUT_FIELDS = [
+  "schemaVersion",
+  "requested",
+  "declaredClosure",
+  "artifacts",
+  "evidence",
+] as const;
+const RESULT_FIELDS = ["schemaVersion", "disposition", "closure", "eligible", "findings"] as const;
+
+const SyntheticArtifactTupleSchema = z
+  .tuple([
+    ArtifactIdSchema,
+    SourceLocatorSchema,
+    DigestSchema,
+    ContentDispositionSchema,
+    LinkDispositionSchema,
+    LicenseDispositionSchema,
+    DigestSchema,
+    z.array(ArtifactIdSchema).max(MAX_DEPENDENCIES_PER_ARTIFACT),
+  ])
+  .transform(
+    ([
+      id,
+      sourceLocator,
+      contentDigest,
+      contentDisposition,
+      linkDisposition,
+      licenseDisposition,
+      evidenceDigest,
+      dependencies,
+    ]) =>
+      closedRecord({
+        id,
+        sourceLocator,
+        contentDigest,
+        contentDisposition,
+        linkDisposition,
+        licenseDisposition,
+        evidenceDigest,
+        dependencies,
+      }),
+  )
+  .superRefine((artifact, ctx) => {
+    if (new Set(artifact.dependencies).size !== artifact.dependencies.length) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["dependencies"],
+        message: "synthetic artifact dependencies must be unique",
+      });
+    }
+  });
 
 export const SyntheticArtifactSchema = z.preprocess(
-  (value) => failClosedPreprocess(value, artifactCollectionsAreBounded),
-  SyntheticArtifactObjectSchema,
+  (value) => recordTuple(value, artifactCollectionsAreBounded, ARTIFACT_FIELDS),
+  SyntheticArtifactTupleSchema,
 );
 
-const SyntheticEvidenceObjectSchema = z
-  .object({
-    artifactId: ArtifactIdSchema,
-    sourceLocator: SourceLocatorSchema,
-    contentDigest: DigestSchema,
-    licenseDisposition: LicenseDispositionSchema,
-    evidenceDigest: DigestSchema,
-  })
-  .strict();
+const SyntheticEvidenceTupleSchema = z
+  .tuple([
+    ArtifactIdSchema,
+    SourceLocatorSchema,
+    DigestSchema,
+    LicenseDispositionSchema,
+    DigestSchema,
+  ])
+  .transform(([artifactId, sourceLocator, contentDigest, licenseDisposition, evidenceDigest]) =>
+    closedRecord({
+      artifactId,
+      sourceLocator,
+      contentDigest,
+      licenseDisposition,
+      evidenceDigest,
+    }),
+  );
 
 export const SyntheticEvidenceSchema = z.preprocess(
-  (value) => failClosedPreprocess(value, evidenceRecordIsClosed),
-  SyntheticEvidenceObjectSchema,
+  (value) => recordTuple(value, evidenceRecordIsClosed, EVIDENCE_FIELDS),
+  SyntheticEvidenceTupleSchema,
 );
 
-const SyntheticClassifierInputObjectSchema = z
-  .object({
-    schemaVersion: z.literal(1),
-    requested: z.array(ArtifactIdSchema).min(1).max(MAX_REQUESTED_COMPONENTS),
-    declaredClosure: z.array(ArtifactIdSchema).min(1).max(MAX_ARTIFACTS),
-    artifacts: z.array(SyntheticArtifactSchema).min(1).max(MAX_ARTIFACTS),
-    evidence: z.array(SyntheticEvidenceSchema).max(MAX_ARTIFACTS),
-  })
-  .strict()
+const SyntheticClassifierInputTupleSchema = z
+  .tuple([
+    z.literal(1),
+    z.array(ArtifactIdSchema).min(1).max(MAX_REQUESTED_COMPONENTS),
+    z.array(ArtifactIdSchema).min(1).max(MAX_ARTIFACTS),
+    z.array(SyntheticArtifactSchema).min(1).max(MAX_ARTIFACTS),
+    z.array(SyntheticEvidenceSchema).max(MAX_ARTIFACTS),
+  ])
+  .transform(([schemaVersion, requested, declaredClosure, artifacts, evidence]) =>
+    closedRecord({ schemaVersion, requested, declaredClosure, artifacts, evidence }),
+  )
   .superRefine((input, ctx) => {
     const edgeCount = input.artifacts.reduce(
       (total, artifact) => total + artifact.dependencies.length,
@@ -78,20 +144,11 @@ const SyntheticClassifierInputObjectSchema = z
         message: "synthetic dependency graph exceeds the Phase 2 edge limit",
       });
     }
-    for (const [index, artifact] of input.artifacts.entries()) {
-      if (new Set(artifact.dependencies).size !== artifact.dependencies.length) {
-        ctx.addIssue({
-          code: "custom",
-          path: ["artifacts", index, "dependencies"],
-          message: "synthetic artifact dependencies must be unique",
-        });
-      }
-    }
   });
 
 export const SyntheticClassifierInputSchema = z.preprocess(
-  (value) => failClosedPreprocess(value, classifierCollectionsAreBounded),
-  SyntheticClassifierInputObjectSchema,
+  (value) => recordTuple(value, classifierCollectionsAreBounded, INPUT_FIELDS),
+  SyntheticClassifierInputTupleSchema,
 );
 
 export const SyntheticFindingCodeSchema = z.enum([
@@ -112,23 +169,39 @@ export const SyntheticFindingCodeSchema = z.enum([
   "METHODOLOGY_REQUEST_DUPLICATE",
 ]);
 
-const SyntheticFindingObjectSchema = z
-  .object({
-    code: SyntheticFindingCodeSchema,
-    artifactId: ArtifactIdSchema.optional(),
-  })
-  .strict();
-
-export const SyntheticFindingSchema = z.preprocess(
-  (value) => failClosedPreprocess(value, findingRecordIsClosed),
-  SyntheticFindingObjectSchema,
-);
-
 const GLOBAL_FINDING_CODES = new Set<z.infer<typeof SyntheticFindingCodeSchema>>([
   "METHODOLOGY_DEPENDENCY_OUT_OF_CLOSURE",
   "METHODOLOGY_FINDINGS_LIMIT",
   "METHODOLOGY_REQUEST_DUPLICATE",
 ]);
+const FINDING_REQUIRED_FIELDS = ["code"] as const;
+const FINDING_FIELDS = ["code", "artifactId"] as const;
+type SyntheticFindingRecord = {
+  code: z.infer<typeof SyntheticFindingCodeSchema>;
+  artifactId?: string;
+};
+
+const SyntheticFindingTupleSchema = z
+  .tuple([SyntheticFindingCodeSchema, ArtifactIdSchema.optional()])
+  .transform(([code, artifactId]): SyntheticFindingRecord => {
+    return artifactId === undefined ? closedRecord({ code }) : closedRecord({ code, artifactId });
+  })
+  .superRefine((finding, ctx) => {
+    const artifactId = findingArtifactId(finding);
+    const global = GLOBAL_FINDING_CODES.has(finding.code);
+    if ((global && artifactId !== undefined) || (!global && artifactId === undefined)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["artifactId"],
+        message: "synthetic finding attribution must match its fixed finding code",
+      });
+    }
+  });
+
+export const SyntheticFindingSchema = z.preprocess(
+  (value) => findingTuple(value),
+  SyntheticFindingTupleSchema,
+);
 
 type SnapshotResult = { ok: true; value: unknown } | { ok: false };
 type SnapshotState = { nodes: number; active: WeakSet<object> };
@@ -220,9 +293,11 @@ function staticRecordOf(value: unknown): Record<string, unknown> | undefined {
   return surface.ok ? recordOf(surface.value) : undefined;
 }
 
-function recordFieldsAreOwn(value: unknown, fields: readonly string[]): boolean {
+function recordFieldsAreExact(value: unknown, fields: readonly string[]): boolean {
   const record = staticRecordOf(value);
-  return record === undefined || fields.every((field) => Object.hasOwn(record, field));
+  if (record === undefined) return false;
+  const keys = Object.keys(record);
+  return keys.length === fields.length && fields.every((field) => Object.hasOwn(record, field));
 }
 
 function collectionIsBounded(value: unknown, maximum: number): boolean {
@@ -266,48 +341,74 @@ function failClosedPreprocess(value: unknown, predicate: (candidate: unknown) =>
   return snapshot.ok ? snapshot.value : null;
 }
 
+function closedRecord<T extends Record<string, unknown>>(value: T): T {
+  const record = Object.create(null) as T;
+  for (const [key, entry] of Object.entries(value)) {
+    Object.defineProperty(record, key, {
+      configurable: true,
+      enumerable: true,
+      value: entry,
+      writable: true,
+    });
+  }
+  return record;
+}
+
+function recordTuple(
+  value: unknown,
+  predicate: (candidate: unknown) => boolean,
+  fields: readonly string[],
+): unknown {
+  const snapshot = failClosedPreprocess(value, predicate);
+  const record = recordOf(snapshot);
+  if (record === undefined) return null;
+  const tuple: unknown[] = [];
+  for (const field of fields) {
+    const descriptor = Object.getOwnPropertyDescriptor(record, field);
+    if (descriptor === undefined || !("value" in descriptor)) return null;
+    tuple.push(descriptor.value);
+  }
+  return tuple;
+}
+
+function findingTuple(value: unknown): unknown {
+  const snapshot = failClosedPreprocess(value, findingRecordIsClosed);
+  const record = recordOf(snapshot);
+  if (record === undefined) return null;
+  const code = Object.getOwnPropertyDescriptor(record, "code");
+  const artifactId = Object.getOwnPropertyDescriptor(record, "artifactId");
+  if (code === undefined || !("value" in code)) return null;
+  return [
+    code.value,
+    artifactId !== undefined && "value" in artifactId ? artifactId.value : undefined,
+  ];
+}
+
 function artifactCollectionsAreBounded(value: unknown): boolean {
   const artifact = staticRecordOf(value);
   if (artifact === undefined) return true;
   return (
-    recordFieldsAreOwn(artifact, [
-      "id",
-      "sourceLocator",
-      "contentDigest",
-      "contentDisposition",
-      "linkDisposition",
-      "licenseDisposition",
-      "evidenceDigest",
-      "dependencies",
-    ]) && collectionIsBounded(artifact.dependencies, MAX_DEPENDENCIES_PER_ARTIFACT)
+    recordFieldsAreExact(artifact, ARTIFACT_FIELDS) &&
+    collectionIsBounded(artifact.dependencies, MAX_DEPENDENCIES_PER_ARTIFACT)
   );
 }
 
 function evidenceRecordIsClosed(value: unknown): boolean {
-  return recordFieldsAreOwn(value, [
-    "artifactId",
-    "sourceLocator",
-    "contentDigest",
-    "licenseDisposition",
-    "evidenceDigest",
-  ]);
+  return recordFieldsAreExact(value, EVIDENCE_FIELDS);
 }
 
 function findingRecordIsClosed(value: unknown): boolean {
-  return recordFieldsAreOwn(value, ["code"]);
+  const record = staticRecordOf(value);
+  if (record === undefined) return false;
+  const fields = Object.hasOwn(record, "artifactId") ? FINDING_FIELDS : FINDING_REQUIRED_FIELDS;
+  return recordFieldsAreExact(record, fields);
 }
 
 function classifierCollectionsAreBounded(value: unknown): boolean {
   const input = staticRecordOf(value);
   if (input === undefined) return true;
   return (
-    recordFieldsAreOwn(input, [
-      "schemaVersion",
-      "requested",
-      "declaredClosure",
-      "artifacts",
-      "evidence",
-    ]) &&
+    recordFieldsAreExact(input, INPUT_FIELDS) &&
     collectionIsBounded(input.requested, MAX_REQUESTED_COMPONENTS) &&
     collectionIsBounded(input.declaredClosure, MAX_ARTIFACTS) &&
     collectionIsBounded(input.artifacts, MAX_ARTIFACTS) &&
@@ -321,13 +422,7 @@ function resultCollectionsAreBounded(value: unknown): boolean {
   const result = staticRecordOf(value);
   if (result === undefined) return true;
   return (
-    recordFieldsAreOwn(result, [
-      "schemaVersion",
-      "disposition",
-      "closure",
-      "eligible",
-      "findings",
-    ]) &&
+    recordFieldsAreExact(result, RESULT_FIELDS) &&
     collectionIsBounded(result.closure, MAX_ARTIFACTS) &&
     collectionIsBounded(result.eligible, MAX_ARTIFACTS) &&
     collectionIsBounded(result.findings, MAX_FINDINGS) &&
@@ -351,19 +446,28 @@ function sameStrings(left: readonly string[], right: readonly string[]): boolean
   return left.length === right.length && left.every((value, index) => value === right[index]);
 }
 
-function findingKey(finding: z.infer<typeof SyntheticFindingSchema>): string {
-  return `${finding.code}\u0000${finding.artifactId ?? ""}`;
+function findingArtifactId(finding: z.infer<typeof SyntheticFindingSchema>): string | undefined {
+  const descriptor = Object.getOwnPropertyDescriptor(finding, "artifactId");
+  return descriptor !== undefined && "value" in descriptor
+    ? (descriptor.value as string | undefined)
+    : undefined;
 }
 
-const SyntheticClassificationResultObjectSchema = z
-  .object({
-    schemaVersion: z.literal(1),
-    disposition: z.enum(["eligible", "ineligible"]),
-    closure: z.array(ArtifactIdSchema).max(MAX_ARTIFACTS),
-    eligible: z.array(ArtifactIdSchema).max(MAX_ARTIFACTS),
-    findings: z.array(SyntheticFindingSchema).max(MAX_FINDINGS),
-  })
-  .strict()
+function findingKey(finding: z.infer<typeof SyntheticFindingSchema>): string {
+  return `${finding.code}\u0000${findingArtifactId(finding) ?? ""}`;
+}
+
+const SyntheticClassificationResultTupleSchema = z
+  .tuple([
+    z.literal(1),
+    z.enum(["eligible", "ineligible"]),
+    z.array(ArtifactIdSchema).max(MAX_ARTIFACTS),
+    z.array(ArtifactIdSchema).max(MAX_ARTIFACTS),
+    z.array(SyntheticFindingSchema).max(MAX_FINDINGS),
+  ])
+  .transform(([schemaVersion, disposition, closure, eligible, findings]) =>
+    closedRecord({ schemaVersion, disposition, closure, eligible, findings }),
+  )
   .superRefine((result, ctx) => {
     if (!isCanonicalUnique(result.closure)) {
       ctx.addIssue({
@@ -411,24 +515,11 @@ const SyntheticClassificationResultObjectSchema = z
           "eligibility result must bind its disposition, closure, eligible ids, and findings",
       });
     }
-    for (const [index, finding] of result.findings.entries()) {
-      const global = GLOBAL_FINDING_CODES.has(finding.code);
-      if (
-        (global && finding.artifactId !== undefined) ||
-        (!global && finding.artifactId === undefined)
-      ) {
-        ctx.addIssue({
-          code: "custom",
-          path: ["findings", index, "artifactId"],
-          message: "synthetic finding attribution must match its fixed finding code",
-        });
-      }
-    }
   });
 
 export const SyntheticClassificationResultSchema = z.preprocess(
-  (value) => failClosedPreprocess(value, resultCollectionsAreBounded),
-  SyntheticClassificationResultObjectSchema,
+  (value) => recordTuple(value, resultCollectionsAreBounded, RESULT_FIELDS),
+  SyntheticClassificationResultTupleSchema,
 );
 
 type Artifact = z.infer<typeof SyntheticArtifactSchema>;
