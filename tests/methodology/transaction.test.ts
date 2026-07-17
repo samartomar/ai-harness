@@ -17,9 +17,9 @@ import {
   createSyntheticMethodologyTransactionFixtureRoot,
   disposeSyntheticMethodologyTransactionFixtureRoot,
   recoverSyntheticMethodologyProjectionTransaction,
-  syntheticMethodologyTransactionFixturePath,
   type SyntheticMethodologyTransactionFixtureRoot,
   type SyntheticMethodologyTransactionTestBoundary,
+  syntheticMethodologyTransactionFixturePath,
 } from "../../src/methodology/transaction.js";
 
 const roots: SyntheticMethodologyTransactionFixtureRoot[] = [];
