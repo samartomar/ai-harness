@@ -502,6 +502,22 @@ describe("Phase 2 synthetic methodology classifier", () => {
     ).toThrow();
   });
 
+  it("enforces dependency uniqueness and fixed attribution in exported leaf schemas", () => {
+    expect(
+      SyntheticArtifactSchema.safeParse(
+        artifact("root", { dependencies: ["dependency", "dependency"] }),
+      ).success,
+    ).toBe(false);
+    for (const finding of [
+      { code: "METHODOLOGY_CONTENT_EXECUTABLE" },
+      { code: "METHODOLOGY_DEPENDENCY_MISSING" },
+      { code: "METHODOLOGY_FINDINGS_LIMIT", artifactId: "root" },
+      { code: "METHODOLOGY_REQUEST_DUPLICATE", artifactId: "root" },
+    ]) {
+      expect(SyntheticFindingSchema.safeParse(finding).success).toBe(false);
+    }
+  });
+
   it("denies duplicate requested components deterministically", () => {
     const result = classifySyntheticProjection(input(undefined, { requested: ["root", "root"] }));
 
