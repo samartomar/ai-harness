@@ -433,8 +433,9 @@ behavior. `project` is dry-run-only and exits `2` with
 planner nor any write path. On Linux, `inspect` and `status` complete with exit `0` and
 `project` exits `2`; invalid CLI input or an unreadable intent exits `1`; malformed or
 linked intent input fails closed with exit `3` and `METHODOLOGY_INTENT_MALFORMED`. On
-other platforms, all filesystem intent reads fail closed with exit `3` until an equivalent
-descriptor-anchored, no-follow traversal is independently implemented and reviewed.
+other platforms, all filesystem intent reads, including otherwise-unreadable paths, fail
+closed with exit `3` until an equivalent descriptor-anchored, no-follow traversal is
+independently implemented and reviewed.
 
 In `--json` mode every completion, blocked result, invalid input, fail-closed input,
 and methodology parser error is a closed schema-validated envelope on stdout. Unsupported

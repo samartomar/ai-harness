@@ -347,7 +347,7 @@ describe("methodology Phase 1 in-process boundaries", () => {
     },
   );
 
-  it("returns exit 1 for invalid and unreadable intent paths", () => {
+  it("returns exit 1 for invalid paths and platform-appropriate handling of unreadable inputs", () => {
     const root = fresh("aih-methodology-in-process-invalid-");
     writeIntent(root, "methodology.intent.json", intent());
 
@@ -367,8 +367,13 @@ describe("methodology Phase 1 in-process boundaries", () => {
     expect(invalidPayload.failure.findings[0]).toMatchObject({
       code: "METHODOLOGY_INTENT_PATH_INVALID",
     });
-    expect(unreadable.exitCode).toBe(1);
-    expect(unreadable.stderr).toContain("METHODOLOGY_INTENT_UNREADABLE");
+    if (SUPPORTS_VERIFIED_INTENT_READS) {
+      expect(unreadable.exitCode).toBe(1);
+      expect(unreadable.stderr).toContain("METHODOLOGY_INTENT_UNREADABLE");
+    } else {
+      expect(unreadable.exitCode).toBe(3);
+      expect(unreadable.stderr).toContain("METHODOLOGY_INTENT_MALFORMED");
+    }
   });
 
   it("fails closed for malformed JSON, symbolic links, and non-regular intent paths", () => {
