@@ -332,6 +332,105 @@ describe("Phase 2 synthetic methodology classifier", () => {
     expect(hookCalls).toBe(0);
   });
 
+  it("does not invoke ambient Map, Set, or WeakSet prototype hooks", () => {
+    const valid = input();
+    const mapIteratorPrototype = Object.getPrototypeOf(new Map().values()) as object;
+    const setIteratorPrototype = Object.getPrototypeOf(new Set().values()) as object;
+    const cases: Array<{ prototype: object; property: PropertyKey; label: string }> = [
+      { prototype: Map.prototype, property: "get", label: "Map.get" },
+      { prototype: Map.prototype, property: "has", label: "Map.has" },
+      { prototype: Map.prototype, property: "set", label: "Map.set" },
+      { prototype: Map.prototype, property: "values", label: "Map.values" },
+      { prototype: Set.prototype, property: "add", label: "Set.add" },
+      { prototype: Set.prototype, property: "has", label: "Set.has" },
+      { prototype: Set.prototype, property: "values", label: "Set.values" },
+      { prototype: WeakSet.prototype, property: "add", label: "WeakSet.add" },
+      { prototype: WeakSet.prototype, property: "delete", label: "WeakSet.delete" },
+      { prototype: WeakSet.prototype, property: "has", label: "WeakSet.has" },
+      { prototype: RegExp.prototype, property: "test", label: "RegExp.test" },
+      {
+        prototype: mapIteratorPrototype,
+        property: Symbol.iterator,
+        label: "MapIterator.Symbol.iterator",
+      },
+      {
+        prototype: setIteratorPrototype,
+        property: Symbol.iterator,
+        label: "SetIterator.Symbol.iterator",
+      },
+    ];
+    const invoked: string[] = [];
+    const escaped: string[] = [];
+
+    for (let index = 0; index < cases.length; index += 1) {
+      const candidate = cases[index];
+      if (candidate === undefined) continue;
+      const original = Object.getOwnPropertyDescriptor(candidate.prototype, candidate.property);
+      Object.defineProperty(candidate.prototype, candidate.property, {
+        configurable: true,
+        value() {
+          invoked.push(candidate.label);
+          throw new Error(`classifier invoked ambient ${candidate.label}`);
+        },
+        writable: true,
+      });
+      try {
+        classifySyntheticProjection(valid);
+      } catch {
+        escaped.push(candidate.label);
+      } finally {
+        if (original === undefined) Reflect.deleteProperty(candidate.prototype, candidate.property);
+        else Object.defineProperty(candidate.prototype, candidate.property, original);
+      }
+    }
+
+    expect(escaped).toEqual([]);
+    expect(invoked).toEqual([]);
+  });
+
+  it("does not let ambient RegExp or Set hooks approve invalid schema values", () => {
+    const invalidPattern = input([artifact("ROOT")]);
+    const invalidEnum = input([artifact("root", { contentDisposition: "unknown" })]);
+    const cases = [
+      {
+        prototype: RegExp.prototype,
+        property: "test",
+        value: () => true,
+        invalid: invalidPattern,
+      },
+      {
+        prototype: Set.prototype,
+        property: "has",
+        value: () => true,
+        invalid: invalidEnum,
+      },
+    ];
+    let hookCalls = 0;
+
+    for (let index = 0; index < cases.length; index += 1) {
+      const candidate = cases[index];
+      if (candidate === undefined) continue;
+      const original = Object.getOwnPropertyDescriptor(candidate.prototype, candidate.property);
+      Object.defineProperty(candidate.prototype, candidate.property, {
+        configurable: true,
+        value(...args: unknown[]) {
+          hookCalls += 1;
+          return candidate.value(...args);
+        },
+        writable: true,
+      });
+      try {
+        expect(SyntheticClassifierInputSchema.safeParse(candidate.invalid).success).toBe(false);
+      } finally {
+        if (original !== undefined) {
+          Object.defineProperty(candidate.prototype, candidate.property, original);
+        }
+      }
+    }
+
+    expect(hookCalls).toBe(0);
+  });
+
   it("does not read optional finding fields through ambient prototypes", () => {
     const original = Object.getOwnPropertyDescriptor(Object.prototype, "artifactId");
     let hookCalls = 0;
