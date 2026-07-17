@@ -235,10 +235,7 @@ describe("Phase 2 synthetic methodology classifier", () => {
     const cases = [
       [SyntheticArtifactSchema, root],
       [SyntheticEvidenceSchema, evidence(root)],
-      [
-        SyntheticFindingSchema,
-        { code: "METHODOLOGY_CONTENT_EXECUTABLE", artifactId: "root" },
-      ],
+      [SyntheticFindingSchema, { code: "METHODOLOGY_CONTENT_EXECUTABLE", artifactId: "root" }],
       [SyntheticClassifierInputSchema, validInput],
       [SyntheticClassificationResultSchema, validResult],
     ] as const;
@@ -252,10 +249,16 @@ describe("Phase 2 synthetic methodology classifier", () => {
         },
       });
       const inherited = Object.create(value) as unknown;
+      const hidden = { ...value } as Record<string, unknown>;
+      Object.defineProperty(hidden, "hidden", { enumerable: false, value: true });
+      const symbolKeyed = { ...value } as Record<PropertyKey, unknown>;
+      symbolKeyed[Symbol("hidden")] = true;
 
       expect(() => schema.safeParse(hostile)).not.toThrow();
       expect(schema.safeParse(hostile).success).toBe(false);
       expect(schema.safeParse(inherited).success).toBe(false);
+      expect(schema.safeParse(hidden).success).toBe(false);
+      expect(schema.safeParse(symbolKeyed).success).toBe(false);
     }
 
     const hostileInput = new Proxy(validInput, {
@@ -264,17 +267,29 @@ describe("Phase 2 synthetic methodology classifier", () => {
         throw new Error("classifier invoked a hostile proxy trap");
       },
     });
-    const nestedHostileInput = input([
-      new Proxy(root, {
-        get() {
-          trapCalls += 1;
-          throw new Error("classifier invoked a nested hostile proxy trap");
-        },
-      }),
-    ]);
+    const nestedHostileInput = {
+      ...validInput,
+      artifacts: [
+        new Proxy(root, {
+          get() {
+            trapCalls += 1;
+            throw new Error("classifier invoked a nested hostile proxy trap");
+          },
+        }),
+      ],
+    };
+    const accessorInput = { ...validInput };
+    Object.defineProperty(accessorInput, "requested", {
+      enumerable: true,
+      get() {
+        trapCalls += 1;
+        throw new Error("classifier invoked an input accessor");
+      },
+    });
 
     expect(() => classifySyntheticProjection(hostileInput)).toThrow();
     expect(() => classifySyntheticProjection(nestedHostileInput)).toThrow();
+    expect(SyntheticClassifierInputSchema.safeParse(accessorInput).success).toBe(false);
     expect(trapCalls).toBe(0);
   });
 
@@ -309,23 +324,21 @@ describe("Phase 2 synthetic methodology classifier", () => {
       },
     });
 
-    expect(() =>
-      SyntheticClassifierInputSchema.safeParse(input([root], { requested })),
-    ).not.toThrow();
+    expect(SyntheticClassifierInputSchema.safeParse(input([root], { requested })).success).toBe(
+      false,
+    );
     expect(
-      SyntheticClassifierInputSchema.safeParse(
-        input([artifact("root", { dependencies })]),
-      ).success,
+      SyntheticClassifierInputSchema.safeParse(input([artifact("root", { dependencies })])).success,
     ).toBe(false);
-    expect(() =>
+    expect(
       SyntheticClassificationResultSchema.safeParse({
         schemaVersion: 1,
         disposition: "eligible",
         closure,
         eligible: ["root"],
         findings: [],
-      }),
-    ).not.toThrow();
+      }).success,
+    ).toBe(false);
     expect(forbiddenReads).toBe(0);
   });
 

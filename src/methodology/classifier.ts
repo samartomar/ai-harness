@@ -1,3 +1,4 @@
+import { isProxy } from "node:util/types";
 import { z } from "zod";
 
 const MAX_REQUESTED_COMPONENTS = 32;
@@ -6,6 +7,10 @@ const MAX_DEPENDENCIES_PER_ARTIFACT = 32;
 const MAX_GRAPH_EDGES = 2_048;
 const MAX_LOCATOR_LENGTH = 512;
 const MAX_FINDINGS = 256;
+const MAX_SNAPSHOT_ARRAY_LENGTH = MAX_FINDINGS;
+const MAX_SNAPSHOT_RECORD_KEYS = 16;
+const MAX_SNAPSHOT_DEPTH = 8;
+const MAX_SNAPSHOT_NODES = 512;
 
 const ArtifactIdSchema = z.string().regex(/^[a-z][a-z0-9-]{0,63}$/);
 const DigestSchema = z.string().regex(/^[0-9a-f]{64}$/);
@@ -19,7 +24,7 @@ const ContentDispositionSchema = z.enum(["inert", "executable", "ambiguous"]);
 const LinkDispositionSchema = z.enum(["none", "symbolic", "hard", "reparse"]);
 const LicenseDispositionSchema = z.enum(["permissive", "unknown", "restricted"]);
 
-export const SyntheticArtifactSchema = z
+const SyntheticArtifactObjectSchema = z
   .object({
     id: ArtifactIdSchema,
     sourceLocator: SourceLocatorSchema,
@@ -32,7 +37,12 @@ export const SyntheticArtifactSchema = z
   })
   .strict();
 
-export const SyntheticEvidenceSchema = z
+export const SyntheticArtifactSchema = z.preprocess(
+  (value) => failClosedPreprocess(value, artifactCollectionsAreBounded),
+  SyntheticArtifactObjectSchema,
+);
+
+const SyntheticEvidenceObjectSchema = z
   .object({
     artifactId: ArtifactIdSchema,
     sourceLocator: SourceLocatorSchema,
@@ -42,7 +52,12 @@ export const SyntheticEvidenceSchema = z
   })
   .strict();
 
-export const SyntheticClassifierInputSchema = z
+export const SyntheticEvidenceSchema = z.preprocess(
+  (value) => failClosedPreprocess(value, evidenceRecordIsClosed),
+  SyntheticEvidenceObjectSchema,
+);
+
+const SyntheticClassifierInputObjectSchema = z
   .object({
     schemaVersion: z.literal(1),
     requested: z.array(ArtifactIdSchema).min(1).max(MAX_REQUESTED_COMPONENTS),
@@ -74,6 +89,11 @@ export const SyntheticClassifierInputSchema = z
     }
   });
 
+export const SyntheticClassifierInputSchema = z.preprocess(
+  (value) => failClosedPreprocess(value, classifierCollectionsAreBounded),
+  SyntheticClassifierInputObjectSchema,
+);
+
 export const SyntheticFindingCodeSchema = z.enum([
   "METHODOLOGY_ARTIFACT_DUPLICATE",
   "METHODOLOGY_CONTENT_AMBIGUOUS",
@@ -92,18 +112,228 @@ export const SyntheticFindingCodeSchema = z.enum([
   "METHODOLOGY_REQUEST_DUPLICATE",
 ]);
 
-export const SyntheticFindingSchema = z
+const SyntheticFindingObjectSchema = z
   .object({
     code: SyntheticFindingCodeSchema,
     artifactId: ArtifactIdSchema.optional(),
   })
   .strict();
 
+export const SyntheticFindingSchema = z.preprocess(
+  (value) => failClosedPreprocess(value, findingRecordIsClosed),
+  SyntheticFindingObjectSchema,
+);
+
 const GLOBAL_FINDING_CODES = new Set<z.infer<typeof SyntheticFindingCodeSchema>>([
   "METHODOLOGY_DEPENDENCY_OUT_OF_CLOSURE",
   "METHODOLOGY_FINDINGS_LIMIT",
   "METHODOLOGY_REQUEST_DUPLICATE",
 ]);
+
+type SnapshotResult = { ok: true; value: unknown } | { ok: false };
+type SnapshotState = { nodes: number; active: WeakSet<object> };
+
+const INVALID_SNAPSHOT = Object.freeze({ ok: false as const });
+
+function recordOf(value: unknown): Record<string, unknown> | undefined {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+function snapshotSurface(value: unknown): SnapshotResult {
+  if (value === null || typeof value !== "object") return { ok: true, value };
+  if (isProxy(value)) return INVALID_SNAPSHOT;
+  if (Array.isArray(value)) {
+    if (Object.getPrototypeOf(value) !== Array.prototype) return INVALID_SNAPSHOT;
+    const length = value.length;
+    if (length > MAX_SNAPSHOT_ARRAY_LENGTH) return INVALID_SNAPSHOT;
+    const keys = Reflect.ownKeys(value);
+    if (keys.length !== length + 1 || keys.some((key) => typeof key !== "string")) {
+      return INVALID_SNAPSHOT;
+    }
+    for (let index = 0; index < length; index += 1) {
+      const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
+      if (descriptor === undefined || !("value" in descriptor) || !descriptor.enumerable) {
+        return INVALID_SNAPSHOT;
+      }
+    }
+    return { ok: true, value };
+  }
+  const prototype = Object.getPrototypeOf(value);
+  if (prototype !== Object.prototype && prototype !== null) return INVALID_SNAPSHOT;
+  const keys = Reflect.ownKeys(value);
+  if (keys.length > MAX_SNAPSHOT_RECORD_KEYS || keys.some((key) => typeof key !== "string")) {
+    return INVALID_SNAPSHOT;
+  }
+  const snapshot = Object.create(null) as Record<string, unknown>;
+  for (const key of keys as string[]) {
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    if (descriptor === undefined || !("value" in descriptor) || !descriptor.enumerable) {
+      return INVALID_SNAPSHOT;
+    }
+    snapshot[key] = descriptor.value;
+  }
+  return { ok: true, value: snapshot };
+}
+
+function snapshotPlainData(value: unknown, depth: number, state: SnapshotState): SnapshotResult {
+  const surface = snapshotSurface(value);
+  if (!surface.ok) return INVALID_SNAPSHOT;
+  if (value === null || typeof value !== "object") return surface;
+  if (depth >= MAX_SNAPSHOT_DEPTH || state.nodes >= MAX_SNAPSHOT_NODES) {
+    return INVALID_SNAPSHOT;
+  }
+  if (state.active.has(value)) return INVALID_SNAPSHOT;
+  state.nodes += 1;
+  state.active.add(value);
+  try {
+    if (Array.isArray(surface.value)) {
+      const snapshot: unknown[] = [];
+      for (let index = 0; index < surface.value.length; index += 1) {
+        const descriptor = Object.getOwnPropertyDescriptor(surface.value, String(index));
+        if (descriptor === undefined || !("value" in descriptor)) return INVALID_SNAPSHOT;
+        const child = snapshotPlainData(descriptor.value, depth + 1, state);
+        if (!child.ok) return INVALID_SNAPSHOT;
+        snapshot.push(child.value);
+      }
+      return { ok: true, value: snapshot };
+    }
+    const record = recordOf(surface.value);
+    if (record === undefined) return INVALID_SNAPSHOT;
+    const snapshot = Object.create(null) as Record<string, unknown>;
+    for (const key of Object.keys(record)) {
+      const descriptor = Object.getOwnPropertyDescriptor(record, key);
+      if (descriptor === undefined || !("value" in descriptor)) return INVALID_SNAPSHOT;
+      const child = snapshotPlainData(descriptor.value, depth + 1, state);
+      if (!child.ok) return INVALID_SNAPSHOT;
+      snapshot[key] = child.value;
+    }
+    return { ok: true, value: snapshot };
+  } finally {
+    state.active.delete(value);
+  }
+}
+
+function staticRecordOf(value: unknown): Record<string, unknown> | undefined {
+  const surface = snapshotSurface(value);
+  return surface.ok ? recordOf(surface.value) : undefined;
+}
+
+function recordFieldsAreOwn(value: unknown, fields: readonly string[]): boolean {
+  const record = staticRecordOf(value);
+  return record === undefined || fields.every((field) => Object.hasOwn(record, field));
+}
+
+function collectionIsBounded(value: unknown, maximum: number): boolean {
+  if (isProxy(value)) return false;
+  if (!Array.isArray(value)) return true;
+  if (Object.getPrototypeOf(value) !== Array.prototype || value.length > maximum) return false;
+  const keys = Reflect.ownKeys(value);
+  if (keys.length !== value.length + 1 || keys.some((key) => typeof key !== "string")) {
+    return false;
+  }
+  for (let index = 0; index < value.length; index += 1) {
+    const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
+    if (descriptor === undefined || !("value" in descriptor) || !descriptor.enumerable) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function collectionRecordsSatisfy(
+  value: unknown,
+  predicate: (candidate: unknown) => boolean,
+): boolean {
+  if (!Array.isArray(value)) return true;
+  for (let index = 0; index < value.length; index += 1) {
+    const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
+    if (descriptor === undefined || !("value" in descriptor) || !predicate(descriptor.value)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function failClosedPreprocess(value: unknown, predicate: (candidate: unknown) => boolean): unknown {
+  const surface = snapshotSurface(value);
+  if (!surface.ok || !predicate(surface.value)) return null;
+  const snapshot = snapshotPlainData(surface.value, 0, {
+    nodes: 0,
+    active: new WeakSet<object>(),
+  });
+  return snapshot.ok ? snapshot.value : null;
+}
+
+function artifactCollectionsAreBounded(value: unknown): boolean {
+  const artifact = staticRecordOf(value);
+  if (artifact === undefined) return true;
+  return (
+    recordFieldsAreOwn(artifact, [
+      "id",
+      "sourceLocator",
+      "contentDigest",
+      "contentDisposition",
+      "linkDisposition",
+      "licenseDisposition",
+      "evidenceDigest",
+      "dependencies",
+    ]) && collectionIsBounded(artifact.dependencies, MAX_DEPENDENCIES_PER_ARTIFACT)
+  );
+}
+
+function evidenceRecordIsClosed(value: unknown): boolean {
+  return recordFieldsAreOwn(value, [
+    "artifactId",
+    "sourceLocator",
+    "contentDigest",
+    "licenseDisposition",
+    "evidenceDigest",
+  ]);
+}
+
+function findingRecordIsClosed(value: unknown): boolean {
+  return recordFieldsAreOwn(value, ["code"]);
+}
+
+function classifierCollectionsAreBounded(value: unknown): boolean {
+  const input = staticRecordOf(value);
+  if (input === undefined) return true;
+  return (
+    recordFieldsAreOwn(input, [
+      "schemaVersion",
+      "requested",
+      "declaredClosure",
+      "artifacts",
+      "evidence",
+    ]) &&
+    collectionIsBounded(input.requested, MAX_REQUESTED_COMPONENTS) &&
+    collectionIsBounded(input.declaredClosure, MAX_ARTIFACTS) &&
+    collectionIsBounded(input.artifacts, MAX_ARTIFACTS) &&
+    collectionIsBounded(input.evidence, MAX_ARTIFACTS) &&
+    collectionRecordsSatisfy(input.artifacts, artifactCollectionsAreBounded) &&
+    collectionRecordsSatisfy(input.evidence, evidenceRecordIsClosed)
+  );
+}
+
+function resultCollectionsAreBounded(value: unknown): boolean {
+  const result = staticRecordOf(value);
+  if (result === undefined) return true;
+  return (
+    recordFieldsAreOwn(result, [
+      "schemaVersion",
+      "disposition",
+      "closure",
+      "eligible",
+      "findings",
+    ]) &&
+    collectionIsBounded(result.closure, MAX_ARTIFACTS) &&
+    collectionIsBounded(result.eligible, MAX_ARTIFACTS) &&
+    collectionIsBounded(result.findings, MAX_FINDINGS) &&
+    collectionRecordsSatisfy(result.findings, findingRecordIsClosed)
+  );
+}
 
 function compareCodeUnits(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0;
@@ -125,7 +355,7 @@ function findingKey(finding: z.infer<typeof SyntheticFindingSchema>): string {
   return `${finding.code}\u0000${finding.artifactId ?? ""}`;
 }
 
-export const SyntheticClassificationResultSchema = z
+const SyntheticClassificationResultObjectSchema = z
   .object({
     schemaVersion: z.literal(1),
     disposition: z.enum(["eligible", "ineligible"]),
@@ -195,6 +425,11 @@ export const SyntheticClassificationResultSchema = z
       }
     }
   });
+
+export const SyntheticClassificationResultSchema = z.preprocess(
+  (value) => failClosedPreprocess(value, resultCollectionsAreBounded),
+  SyntheticClassificationResultObjectSchema,
+);
 
 type Artifact = z.infer<typeof SyntheticArtifactSchema>;
 type Evidence = z.infer<typeof SyntheticEvidenceSchema>;
