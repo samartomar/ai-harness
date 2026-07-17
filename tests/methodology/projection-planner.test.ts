@@ -75,7 +75,10 @@ function reverseObjectKeys(value: unknown): unknown {
 
 function maximalInput(): Record<string, unknown> {
   const ids = Array.from({ length: 64 }, (_, index) => `item-${index.toString().padStart(2, "0")}`);
-  const artifacts = ids.map((id, index) => artifact(id, ids[index + 1] ? [ids[index + 1]] : []));
+  const artifacts = ids.map((id, index) => {
+    const dependency = ids[index + 1];
+    return artifact(id, dependency === undefined ? [] : [dependency]);
+  });
   return input({
     owner: "a".repeat(64),
     classifierInput: {

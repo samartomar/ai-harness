@@ -6,6 +6,13 @@ import {
   SyntheticClassifierInputSchema,
 } from "./classifier.js";
 
+const DECISION_VERSION = "phase-3-decision-v1";
+const CLASSIFIER_VERSION = "phase-2-classifier-v1";
+const POLICY_VERSION = "phase-3-policy-v1";
+const MANIFEST_VERSION = 1;
+const DIGEST_VERSION = 1;
+const MAX_ENTRIES = 64;
+
 const ArtifactIdSchema = z.string().regex(/^[a-z][a-z0-9-]{0,63}$/);
 const DigestSchema = z.string().regex(/^[0-9a-f]{64}$/);
 const LocatorSchema = z.string().regex(/^synthetic:[a-z][a-z0-9-]{0,63}$/);
@@ -26,13 +33,13 @@ export const ProjectionMappingSchema = z
 export const ProjectionPlannerInputSchema = z
   .object({
     schemaVersion: z.literal(1),
-    decisionVersion: z.literal("phase-3-decision-v1"),
-    classifierVersion: z.string().regex(/^phase-2-classifier-v\d+$/),
-    policyVersion: z.string().regex(/^phase-3-policy-v\d+$/),
-    manifestVersion: z.number().int().min(1).max(16),
+    decisionVersion: z.literal(DECISION_VERSION),
+    classifierVersion: z.literal(CLASSIFIER_VERSION),
+    policyVersion: z.literal(POLICY_VERSION),
+    manifestVersion: z.literal(MANIFEST_VERSION),
     owner: z.string().regex(/^[a-z][a-z0-9-]{0,63}$/),
     classifierInput: SyntheticClassifierInputSchema,
-    mappings: z.array(ProjectionMappingSchema).min(1).max(64),
+    mappings: z.array(ProjectionMappingSchema).min(1).max(MAX_ENTRIES),
   })
   .strict();
 
@@ -64,13 +71,40 @@ const EntrySchema = z
     contentDigest: DigestSchema,
   })
   .strict();
+
+export const ProjectionDecisionSchema = z
+  .object({
+    decisionVersion: z.literal(DECISION_VERSION),
+    digestVersion: z.literal(DIGEST_VERSION),
+    classifierVersion: z.literal(CLASSIFIER_VERSION),
+    policyVersion: z.literal(POLICY_VERSION),
+    manifestVersion: z.literal(MANIFEST_VERSION),
+    owner: z.string().regex(/^[a-z][a-z0-9-]{0,63}$/),
+    classifierInput: SyntheticClassifierInputSchema,
+    closure: z.array(ArtifactIdSchema).min(1).max(MAX_ENTRIES),
+    eligible: z.array(ArtifactIdSchema).min(1).max(MAX_ENTRIES),
+    mappings: z.array(ProjectionMappingSchema).min(1).max(MAX_ENTRIES),
+    entries: z.array(EntrySchema).min(1).max(MAX_ENTRIES),
+  })
+  .strict()
+  .superRefine((decision, ctx) => {
+    const expected = rebuildCanonicalDecision(decision);
+    if (expected === undefined || JSON.stringify(decision) !== JSON.stringify(expected)) {
+      ctx.addIssue({
+        code: "custom",
+        message: "projection decision must be complete, internally consistent, and canonical",
+      });
+    }
+  });
+
 const ManifestSchema = z
   .object({
     schemaVersion: z.literal(1),
-    digestVersion: z.literal(1),
+    digestVersion: z.literal(DIGEST_VERSION),
     digest: DigestSchema,
     owner: z.string().regex(/^[a-z][a-z0-9-]{0,63}$/),
-    entries: z.array(EntrySchema).min(1).max(64),
+    entries: z.array(EntrySchema).min(1).max(MAX_ENTRIES),
+    decision: ProjectionDecisionSchema,
   })
   .strict()
   .superRefine((manifest, ctx) => {
@@ -114,6 +148,22 @@ const ManifestSchema = z
         message: "manifest targets may not collide",
       });
     }
+    if (
+      manifest.owner !== manifest.decision.owner ||
+      JSON.stringify(manifest.entries) !== JSON.stringify(manifest.decision.entries)
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        message: "manifest owner and entries must match its canonical decision",
+      });
+    }
+    if (manifest.digest !== digestDecision(manifest.decision)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["digest"],
+        message: "manifest digest must match its canonical decision",
+      });
+    }
   });
 
 export const ProjectionPlanResultSchema = z.union([
@@ -138,6 +188,8 @@ export const ProjectionPlanResultSchema = z.union([
 
 type ClassifierInput = z.infer<typeof SyntheticClassifierInputSchema>;
 type ClassifierResult = z.infer<typeof SyntheticClassificationResultSchema>;
+type PlannerInput = z.infer<typeof ProjectionPlannerInputSchema>;
+type Decision = z.infer<typeof ProjectionDecisionSchema>;
 type Entry = z.infer<typeof EntrySchema>;
 type Finding = z.infer<typeof FindingSchema>;
 
@@ -164,18 +216,42 @@ function targetIsCanonical(target: string): boolean {
     );
 }
 
-function canonicalClassifierInput(input: ClassifierInput): unknown {
+function canonicalClassifierInput(input: ClassifierInput): ClassifierInput {
   return {
     schemaVersion: input.schemaVersion,
     requested: [...input.requested].sort(compare),
     declaredClosure: [...input.declaredClosure].sort(compare),
     artifacts: [...input.artifacts]
-      .map((artifact) => ({ ...artifact, dependencies: [...artifact.dependencies].sort(compare) }))
+      .map((artifact) => ({
+        id: artifact.id,
+        sourceLocator: artifact.sourceLocator,
+        contentDigest: artifact.contentDigest,
+        contentDisposition: artifact.contentDisposition,
+        linkDisposition: artifact.linkDisposition,
+        licenseDisposition: artifact.licenseDisposition,
+        evidenceDigest: artifact.evidenceDigest,
+        dependencies: [...artifact.dependencies].sort(compare),
+      }))
       .sort((left, right) => compare(JSON.stringify(left), JSON.stringify(right))),
-    evidence: [...input.evidence].sort((left, right) =>
-      compare(JSON.stringify(left), JSON.stringify(right)),
-    ),
+    evidence: [...input.evidence]
+      .map((evidence) => ({
+        artifactId: evidence.artifactId,
+        sourceLocator: evidence.sourceLocator,
+        contentDigest: evidence.contentDigest,
+        licenseDisposition: evidence.licenseDisposition,
+        evidenceDigest: evidence.evidenceDigest,
+      }))
+      .sort((left, right) => compare(JSON.stringify(left), JSON.stringify(right))),
   };
+}
+
+function canonicalMappings(
+  mappings: readonly z.infer<typeof ProjectionMappingSchema>[],
+): z.infer<typeof ProjectionMappingSchema>[] {
+  return [...mappings].sort(
+    (left, right) =>
+      compare(left.artifactId, right.artifactId) || compare(left.target, right.target),
+  );
 }
 
 function findings(...values: Finding[]): Finding[] {
@@ -214,6 +290,75 @@ function hasTargetCollision(entries: readonly Entry[]): boolean {
   );
 }
 
+function deriveEntries(
+  classifierInput: ClassifierInput,
+  mappings: readonly z.infer<typeof ProjectionMappingSchema>[],
+): Entry[] | undefined {
+  const artifacts = new Map(classifierInput.artifacts.map((artifact) => [artifact.id, artifact]));
+  const entries: Entry[] = [];
+  for (const mapping of mappings) {
+    const artifact = artifacts.get(mapping.artifactId);
+    if (artifact === undefined) return undefined;
+    entries.push({
+      artifactId: mapping.artifactId,
+      target: mapping.target,
+      sourceLocator: artifact.sourceLocator,
+      contentDigest: artifact.contentDigest,
+    });
+  }
+  return entries.sort(
+    (left, right) =>
+      compare(left.target, right.target) || compare(left.artifactId, right.artifactId),
+  );
+}
+
+function buildCanonicalDecision(
+  input: PlannerInput,
+  classification: ClassifierResult,
+  entries: Entry[],
+): Decision {
+  return {
+    decisionVersion: input.decisionVersion,
+    digestVersion: DIGEST_VERSION,
+    classifierVersion: input.classifierVersion,
+    policyVersion: input.policyVersion,
+    manifestVersion: input.manifestVersion,
+    owner: input.owner,
+    classifierInput: canonicalClassifierInput(input.classifierInput),
+    closure: [...classification.closure],
+    eligible: [...classification.eligible],
+    mappings: canonicalMappings(input.mappings),
+    entries,
+  };
+}
+
+function rebuildCanonicalDecision(decision: Decision): Decision | undefined {
+  const classification = classifySyntheticProjection(decision.classifierInput);
+  if (classification.disposition !== "eligible") return undefined;
+  if (!mappingsCover(classification.eligible, decision.mappings)) return undefined;
+  if (decision.mappings.some((mapping) => !targetIsCanonical(mapping.target))) return undefined;
+  const entries = deriveEntries(decision.classifierInput, decision.mappings);
+  if (entries === undefined || hasTargetCollision(entries)) return undefined;
+  return buildCanonicalDecision(
+    {
+      schemaVersion: 1,
+      decisionVersion: decision.decisionVersion,
+      classifierVersion: decision.classifierVersion,
+      policyVersion: decision.policyVersion,
+      manifestVersion: decision.manifestVersion,
+      owner: decision.owner,
+      classifierInput: decision.classifierInput,
+      mappings: decision.mappings,
+    },
+    classification,
+    entries,
+  );
+}
+
+function digestDecision(decision: Decision): string {
+  return createHash("sha256").update(JSON.stringify(decision)).digest("hex");
+}
+
 /** Pure Phase 3 object planning; it never reads, writes, launches, or applies a projection. */
 export function planSyntheticProjection(
   value: unknown,
@@ -230,45 +375,26 @@ export function planSyntheticProjection(
   if (input.mappings.some((mapping) => !targetIsCanonical(mapping.target))) {
     return blocked({ code: "METHODOLOGY_TARGET_INVALID" });
   }
-  const artifacts = new Map(
-    input.classifierInput.artifacts.map((artifact) => [artifact.id, artifact]),
-  );
-  const entries = input.mappings
-    .map((mapping) => {
-      const artifact = artifacts.get(mapping.artifactId);
-      if (artifact === undefined) throw new Error("validated mapping did not identify an artifact");
-      return {
-        artifactId: mapping.artifactId,
-        target: mapping.target,
-        sourceLocator: artifact.sourceLocator,
-        contentDigest: artifact.contentDigest,
-      };
-    })
-    .sort(
-      (left, right) =>
-        compare(left.target, right.target) || compare(left.artifactId, right.artifactId),
-    );
+  const entries = deriveEntries(input.classifierInput, input.mappings);
+  if (entries === undefined) {
+    return blocked({ code: "METHODOLOGY_MAPPING_COVERAGE" });
+  }
   if (hasTargetCollision(entries)) {
     return blocked({ code: "METHODOLOGY_TARGET_COLLISION" });
   }
-  const decision = {
-    decisionVersion: input.decisionVersion,
-    digestVersion: 1,
-    classifierVersion: input.classifierVersion,
-    policyVersion: input.policyVersion,
-    manifestVersion: input.manifestVersion,
-    owner: input.owner,
-    classifierInput: canonicalClassifierInput(input.classifierInput),
-    closure: classification.closure,
-    eligible,
-    mappings: [...input.mappings].sort((left, right) => compare(left.artifactId, right.artifactId)),
-    entries,
-  };
-  const digest = createHash("sha256").update(JSON.stringify(decision)).digest("hex");
+  const decision = buildCanonicalDecision(input, classification, entries);
+  const digest = digestDecision(decision);
   return ProjectionPlanResultSchema.parse({
     schemaVersion: 1,
     state: "planned",
-    manifest: { schemaVersion: 1, digestVersion: 1, digest, owner: input.owner, entries },
+    manifest: {
+      schemaVersion: MANIFEST_VERSION,
+      digestVersion: DIGEST_VERSION,
+      digest,
+      owner: input.owner,
+      entries,
+      decision,
+    },
     boundary: BOUNDARY,
     findings: [],
   });
