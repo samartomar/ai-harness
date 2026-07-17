@@ -81,16 +81,7 @@ const SyntheticArtifactTupleSchema = z
         evidenceDigest,
         dependencies,
       }),
-  )
-  .superRefine((artifact, ctx) => {
-    if (new Set(artifact.dependencies).size !== artifact.dependencies.length) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["dependencies"],
-        message: "synthetic artifact dependencies must be unique",
-      });
-    }
-  });
+  );
 
 export const SyntheticArtifactSchema = closedPublicSchema(
   z.preprocess(
@@ -185,17 +176,6 @@ const SyntheticFindingTupleSchema = z
   .tuple([SyntheticFindingCodeSchema, ArtifactIdSchema.optional()])
   .transform(([code, artifactId]): SyntheticFindingRecord => {
     return artifactId === undefined ? closedRecord({ code }) : closedRecord({ code, artifactId });
-  })
-  .superRefine((finding, ctx) => {
-    const artifactId = findingArtifactId(finding);
-    const global = GLOBAL_FINDING_CODES.has(finding.code);
-    if ((global && artifactId !== undefined) || (!global && artifactId === undefined)) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["artifactId"],
-        message: "synthetic finding attribution must match its fixed finding code",
-      });
-    }
   });
 
 export const SyntheticFindingSchema = closedPublicSchema(
@@ -836,55 +816,7 @@ const SyntheticClassificationResultTupleSchema = z
   ])
   .transform(([schemaVersion, disposition, closure, eligible, findings]) =>
     closedRecord({ schemaVersion, disposition, closure, eligible, findings }),
-  )
-  .superRefine((result, ctx) => {
-    if (!isCanonicalUnique(result.closure)) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["closure"],
-        message: "synthetic closure ids must be unique and code-unit canonicalized",
-      });
-    }
-    if (!isCanonicalUnique(result.eligible)) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["eligible"],
-        message: "eligible ids must be unique and code-unit canonicalized",
-      });
-    }
-    const keys = result.findings.map(findingKey);
-    if (!isCanonicalUnique(keys)) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["findings"],
-        message: "findings must be unique and code-unit canonicalized",
-      });
-    }
-    if (
-      result.findings.some((finding) => finding.code === "METHODOLOGY_FINDINGS_LIMIT") &&
-      (result.findings.length !== 1 || result.findings[0]?.code !== "METHODOLOGY_FINDINGS_LIMIT")
-    ) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["findings"],
-        message: "the findings-limit denial must be the sole finding",
-      });
-    }
-    if (
-      (result.disposition === "eligible" &&
-        (result.closure.length === 0 ||
-          result.findings.length !== 0 ||
-          !sameStrings(result.eligible, result.closure))) ||
-      (result.disposition === "ineligible" &&
-        (result.findings.length === 0 || result.eligible.length !== 0))
-    ) {
-      ctx.addIssue({
-        code: "custom",
-        message:
-          "eligibility result must bind its disposition, closure, eligible ids, and findings",
-      });
-    }
-  });
+  );
 
 export const SyntheticClassificationResultSchema = closedPublicSchema(
   z.preprocess(

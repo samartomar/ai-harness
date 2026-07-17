@@ -573,7 +573,9 @@ describe("Phase 2 synthetic methodology classifier", () => {
     const cases = [
       [SyntheticArtifactSchema, withoutId, ["id"]],
       [SyntheticArtifactSchema, withUnknown, ["unexpected"]],
+      [SyntheticArtifactSchema, { ...root, sourceLocator: "" }, ["sourceLocator"]],
       [SyntheticEvidenceSchema, evidenceWithoutDigest, ["contentDigest"]],
+      [SyntheticClassifierInputSchema, { ...input(), schemaVersion: 2 }, ["schemaVersion"]],
       [
         SyntheticClassifierInputSchema,
         input([withoutId], { declaredClosure: ["root"] }),
@@ -594,6 +596,17 @@ describe("Phase 2 synthetic methodology classifier", () => {
       [
         SyntheticClassificationResultSchema,
         {
+          schemaVersion: 2,
+          disposition: "eligible",
+          closure: ["root"],
+          eligible: ["root"],
+          findings: [],
+        },
+        ["schemaVersion"],
+      ],
+      [
+        SyntheticClassificationResultSchema,
+        {
           schemaVersion: 1,
           disposition: "ineligible",
           closure: ["root"],
@@ -609,6 +622,27 @@ describe("Phase 2 synthetic methodology classifier", () => {
       expect(result.success).toBe(false);
       if (!result.success) expect(result.error.issues[0]?.path).toEqual(expectedPath);
     }
+  });
+
+  it("keeps asynchronous schema entry points closed", async () => {
+    const valid = input();
+    const invalid = { ...valid, schemaVersion: 2 };
+
+    await expect(SyntheticClassifierInputSchema.safeParseAsync(valid)).resolves.toMatchObject({
+      success: true,
+    });
+    await expect(SyntheticClassifierInputSchema.safeParseAsync(invalid)).resolves.toMatchObject({
+      success: false,
+    });
+    await expect(SyntheticClassifierInputSchema.spa(invalid)).resolves.toMatchObject({
+      success: false,
+    });
+    await expect(SyntheticClassifierInputSchema.parseAsync(valid)).resolves.toMatchObject({
+      schemaVersion: 1,
+    });
+    await expect(SyntheticClassifierInputSchema.parseAsync(invalid)).rejects.toMatchObject({
+      issues: [{ path: ["schemaVersion"] }],
+    });
   });
 
   it("returns closed invalid results without invoking ambient error hooks", () => {
