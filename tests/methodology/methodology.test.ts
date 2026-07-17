@@ -122,6 +122,7 @@ function runAih(
   command: string,
   intentPath = "methodology.intent.json",
   extra: string[] = [],
+  timeout = TEST_PROCESS_TIMEOUT_MS,
 ) {
   const tsx = join(process.cwd(), "node_modules", "tsx", "dist", "cli.mjs");
   return spawnSync(
@@ -141,7 +142,7 @@ function runAih(
     {
       cwd: process.cwd(),
       encoding: "utf8",
-      timeout: TEST_PROCESS_TIMEOUT_MS,
+      timeout,
     },
   );
 }
@@ -622,6 +623,30 @@ describe("aih methodology Phase 1 child-process boundary", () => {
     });
     expect(existsSync(join(root, ".aih"))).toBe(false);
   });
+
+  it.runIf(SUPPORTS_VERIFIED_INTENT_READS)(
+    "exits 3 promptly for a FIFO intent leaf",
+    () => {
+      const root = fresh("aih-methodology-fifo-root-");
+      const fifo = join(root, "methodology.intent.json");
+      const created = spawnSync("mkfifo", [fifo], { encoding: "utf8" });
+      expect(created.status, created.stderr).toBe(0);
+
+      const result = runAih(root, "inspect", "methodology.intent.json", [], 2_000);
+
+      expect(result.error).toBeUndefined();
+      expect(result.status, result.stderr).toBe(3);
+      expect(JSON.parse(result.stdout)).toMatchObject({
+        outcome: "fail-closed",
+        failure: {
+          state: "fail-closed",
+          findings: [expect.objectContaining({ code: "METHODOLOGY_INTENT_MALFORMED" })],
+        },
+      });
+      expect(existsSync(join(root, ".aih"))).toBe(false);
+    },
+    5_000,
+  );
 
   it("exits 1 and rejects forbidden mutation and execution flags", () => {
     const root = fresh("aih-methodology-forbidden-");
