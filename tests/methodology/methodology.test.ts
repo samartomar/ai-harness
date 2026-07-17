@@ -16,6 +16,7 @@ import {
   METHODOLOGY_PHASE_ONE_BOUNDARY,
   registerMethodologyCommands,
   runMethodologyCommand,
+  writeMethodologyParserFailure,
 } from "../../src/methodology/index.js";
 import {
   canonicalizeMethodologyIntent,
@@ -233,6 +234,70 @@ describe("methodology Phase 1 in-process boundaries", () => {
     }
     expect(nestedFile.exitCode).toBe(3);
     expect(nestedFile.stderr).toContain("METHODOLOGY_INTENT_MALFORMED");
+  });
+
+  it("fails closed for linked ancestors and oversized intent bytes before parsing", () => {
+    const outside = fresh("aih-methodology-in-process-linked-outside-");
+    const wrapper = fresh("aih-methodology-in-process-linked-wrapper-");
+    const project = join(outside, "project");
+    writeIntent(project, "methodology.intent.json", intent());
+    symlinkSync(outside, join(wrapper, "linked-ancestor"), "dir");
+    const oversized = fresh("aih-methodology-in-process-oversized-");
+    write(oversized, "oversized.json", " ".repeat(64 * 1024 + 1));
+
+    const linkedAncestor = runInProcess(
+      join(wrapper, "linked-ancestor", "project"),
+      "inspect",
+    );
+    const byteLimit = runInProcess(oversized, "inspect", "oversized.json");
+
+    for (const result of [linkedAncestor, byteLimit]) {
+      expect(result.exitCode).toBe(3);
+      expect(JSON.parse(result.stdout)).toMatchObject({
+        outcome: "fail-closed",
+        failure: {
+          findings: [expect.objectContaining({ code: "METHODOLOGY_INTENT_MALFORMED" })],
+        },
+      });
+    }
+  });
+
+  it("bounds the root input before attempting a filesystem read", () => {
+    const result = runInProcess("x".repeat(4097), "inspect");
+
+    expect(result.exitCode).toBe(1);
+    expect(JSON.parse(result.stdout)).toMatchObject({
+      outcome: "invalid",
+      failure: {
+        findings: [expect.objectContaining({ code: "METHODOLOGY_INTENT_PATH_INVALID" })],
+      },
+    });
+  });
+
+  it("writes a closed parser envelope only for JSON methodology arguments", () => {
+    let stdout = "";
+    let stderr = "";
+    const deps = {
+      write: (text: string) => {
+        stdout += text;
+      },
+      writeError: (text: string) => {
+        stderr += text;
+      },
+    };
+
+    expect(
+      writeMethodologyParserFailure(
+        ["node", "aih", "methodology", "inspect", "--json", "--apply"],
+        deps,
+      ),
+    ).toBe(true);
+    expect(stderr).toBe("");
+    expect(MethodologyCommandEnvelopeSchema.parse(JSON.parse(stdout))).toMatchObject({
+      command: "inspect",
+      outcome: "invalid",
+    });
+    expect(writeMethodologyParserFailure(["node", "aih", "status"], deps)).toBe(false);
   });
 
   it("registers only the three declarative Phase 1 subcommands", () => {
