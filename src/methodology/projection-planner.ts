@@ -1,7 +1,9 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import {
+  classifySyntheticMethodology,
   SyntheticMethodologyDigestSchema,
+  SyntheticMethodologyInputSchema,
   SyntheticMethodologyPathSchema,
   SyntheticMethodologySourceLocatorSchema,
 } from "./classifier.js";
@@ -70,11 +72,9 @@ export const SyntheticMethodologyProjectionTargetSchema = z
   })
   .strict();
 
-export const SyntheticMethodologyProjectionEntrySchema = z
+export const SyntheticMethodologyProjectionMappingSchema = z
   .object({
     id: COMPONENT_ID_SCHEMA,
-    admission: z.literal("admitted"),
-    source: SyntheticMethodologyProjectionSourceSchema,
     target: SyntheticMethodologyProjectionTargetSchema,
   })
   .strict();
@@ -82,29 +82,31 @@ export const SyntheticMethodologyProjectionEntrySchema = z
 export const SyntheticMethodologyProjectionSchema = z
   .object({
     schemaVersion: z.literal(1),
-    entries: z
-      .array(SyntheticMethodologyProjectionEntrySchema)
+    classification: SyntheticMethodologyInputSchema,
+    mappings: z
+      .array(SyntheticMethodologyProjectionMappingSchema)
       .min(1)
       .max(MAX_SYNTHETIC_PROJECTION_ENTRIES),
   })
   .strict()
   .superRefine((projection, ctx) => {
     const ids = new Set<string>();
-    for (const [index, entry] of projection.entries.entries()) {
-      if (ids.has(entry.id)) {
+    for (const [index, mapping] of projection.mappings.entries()) {
+      if (ids.has(mapping.id)) {
         ctx.addIssue({
           code: "custom",
-          path: ["entries", index, "id"],
-          message: "synthetic projection entries must have unique component ids",
+          path: ["mappings", index, "id"],
+          message: "synthetic projection mappings must have unique component ids",
         });
       }
-      ids.add(entry.id);
+      ids.add(mapping.id);
     }
   });
 
 export const SyntheticMethodologyProjectionFindingCodeSchema = z.enum([
+  "METHODOLOGY_SYNTHETIC_ADMISSION_DENIED",
+  "METHODOLOGY_SYNTHETIC_ADMISSION_MAPPING_MISMATCH",
   "METHODOLOGY_SYNTHETIC_DESTINATION_COLLISION",
-  "METHODOLOGY_SYNTHETIC_SOURCE_IDENTITY_AMBIGUOUS",
   "METHODOLOGY_SYNTHETIC_TARGET_UNOWNED",
 ]);
 
@@ -293,13 +295,7 @@ function canonicalFindings(
 export function planSyntheticMethodologyProjection(value: unknown) {
   const projection: SyntheticMethodologyProjection =
     SyntheticMethodologyProjectionSchema.parse(value);
-  const targets = new Map<string, number>();
-  const sources = new Map<string, number>();
-  for (const entry of projection.entries) {
-    targets.set(entry.target.path, (targets.get(entry.target.path) ?? 0) + 1);
-    sources.set(entry.source.locator, (sources.get(entry.source.locator) ?? 0) + 1);
-  }
-
+  const classification = classifySyntheticMethodology(projection.classification);
   const findings = new Map<string, SyntheticMethodologyProjectionFinding>();
   function block(
     code: z.infer<typeof SyntheticMethodologyProjectionFindingCodeSchema>,
@@ -308,15 +304,46 @@ export function planSyntheticMethodologyProjection(value: unknown) {
     findings.set(`${target}\u0000${code}`, { code, disposition: "blocked", target });
   }
 
-  for (const entry of projection.entries) {
-    if (entry.target.owner !== PROJECTION_OWNER || !entry.target.path.startsWith(PROJECTION_ROOT)) {
-      block("METHODOLOGY_SYNTHETIC_TARGET_UNOWNED", entry.target.path);
+  if (classification.disposition !== "admitted") {
+    for (const mapping of projection.mappings) {
+      block("METHODOLOGY_SYNTHETIC_ADMISSION_DENIED", mapping.target.path);
     }
-    if ((targets.get(entry.target.path) ?? 0) > 1) {
-      block("METHODOLOGY_SYNTHETIC_DESTINATION_COLLISION", entry.target.path);
+    return SyntheticMethodologyProjectionPlanSchema.parse({
+      schemaVersion: 1,
+      state: "blocked",
+      manifest: null,
+      findings: canonicalFindings(findings),
+      boundary: SYNTHETIC_METHODOLOGY_PROJECTION_BOUNDARY,
+    });
+  }
+
+  const admitted = new Set(classification.admitted);
+  const mapped = new Set(projection.mappings.map((mapping) => mapping.id));
+  for (const mapping of projection.mappings) {
+    if (!admitted.has(mapping.id)) {
+      block("METHODOLOGY_SYNTHETIC_ADMISSION_MAPPING_MISMATCH", mapping.target.path);
     }
-    if ((sources.get(entry.source.locator) ?? 0) > 1) {
-      block("METHODOLOGY_SYNTHETIC_SOURCE_IDENTITY_AMBIGUOUS", entry.target.path);
+  }
+  for (const id of classification.admitted) {
+    if (!mapped.has(id)) {
+      block("METHODOLOGY_SYNTHETIC_ADMISSION_MAPPING_MISMATCH", PROJECTION_ROOT.slice(0, -1));
+    }
+  }
+
+  const targets = new Map<string, number>();
+  for (const mapping of projection.mappings) {
+    targets.set(mapping.target.path, (targets.get(mapping.target.path) ?? 0) + 1);
+  }
+
+  for (const mapping of projection.mappings) {
+    if (
+      mapping.target.owner !== PROJECTION_OWNER ||
+      !mapping.target.path.startsWith(PROJECTION_ROOT)
+    ) {
+      block("METHODOLOGY_SYNTHETIC_TARGET_UNOWNED", mapping.target.path);
+    }
+    if ((targets.get(mapping.target.path) ?? 0) > 1) {
+      block("METHODOLOGY_SYNTHETIC_DESTINATION_COLLISION", mapping.target.path);
     }
   }
 
@@ -331,12 +358,25 @@ export function planSyntheticMethodologyProjection(value: unknown) {
     });
   }
 
+  const artifacts = new Map(
+    projection.classification.artifacts.map((artifact) => [artifact.id, artifact]),
+  );
   const entries = canonicalManifestEntries(
-    projection.entries.map((entry) => ({
-      id: entry.id,
-      source: entry.source,
-      target: entry.target.path,
-    })),
+    projection.mappings.map((mapping) => {
+      const artifact = artifacts.get(mapping.id);
+      if (artifact === undefined) {
+        throw new Error("admitted synthetic artifacts must be present in the closed candidate");
+      }
+      return {
+        id: mapping.id,
+        source: {
+          locator: artifact.sourceIdentity.locator,
+          sourceDigest: artifact.sourceIdentity.digest,
+          contentDigest: artifact.content.digest,
+        },
+        target: mapping.target.path,
+      };
+    }),
   );
   const manifest = {
     schemaVersion: 1 as const,
