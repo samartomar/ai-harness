@@ -1,5 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 import {
+  chmodSync,
   closeSync,
   existsSync,
   lstatSync,
@@ -443,6 +444,7 @@ function commit(state: FixtureState, manifest: Manifest): void {
  */
 export function createSyntheticMethodologyTransactionFixtureRoot(): SyntheticMethodologyTransactionFixtureRoot {
   const root = mkdtempSync(join(tmpdir(), "aih-methodology-transaction-"));
+  chmodSync(root, 0o700);
   const capability = {} as SyntheticMethodologyTransactionFixtureRoot;
   fixtureRoots.set(capability, {
     root,
