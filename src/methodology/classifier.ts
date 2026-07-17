@@ -158,6 +158,16 @@ export const SyntheticClassificationResultSchema = z
       });
     }
     if (
+      result.findings.some((finding) => finding.code === "METHODOLOGY_FINDINGS_LIMIT") &&
+      (result.findings.length !== 1 || result.findings[0]?.code !== "METHODOLOGY_FINDINGS_LIMIT")
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["findings"],
+        message: "the findings-limit denial must be the sole finding",
+      });
+    }
+    if (
       (result.disposition === "eligible" &&
         (result.closure.length === 0 ||
           result.findings.length !== 0 ||
