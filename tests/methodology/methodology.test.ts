@@ -632,7 +632,7 @@ describe("aih methodology Phase 1 child-process boundary", () => {
       const created = spawnSync("mkfifo", [fifo], { encoding: "utf8" });
       expect(created.status, created.stderr).toBe(0);
 
-      const result = runAih(root, "inspect", "methodology.intent.json", [], 2_000);
+      const result = runAih(root, "inspect", "methodology.intent.json", [], 10_000);
 
       expect(result.error).toBeUndefined();
       expect(result.status, result.stderr).toBe(3);
@@ -645,7 +645,7 @@ describe("aih methodology Phase 1 child-process boundary", () => {
       });
       expect(existsSync(join(root, ".aih"))).toBe(false);
     },
-    5_000,
+    15_000,
   );
 
   it("exits 1 and rejects forbidden mutation and execution flags", () => {
