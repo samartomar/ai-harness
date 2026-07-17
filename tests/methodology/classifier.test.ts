@@ -707,8 +707,12 @@ describe("Phase 2 synthetic methodology classifier", () => {
         for (const [schema, value] of cases) {
           try {
             if (schema.safeParse(value).success) unexpectedSuccesses += 1;
-            if (schema.safeDecode(value).success) unexpectedSuccesses += 1;
-            schema.decode(value);
+            const decodeBoundary = schema as unknown as {
+              decode(candidate: unknown): unknown;
+              safeDecode(candidate: unknown): { success: boolean };
+            };
+            if (decodeBoundary.safeDecode(value).success) unexpectedSuccesses += 1;
+            decodeBoundary.decode(value);
             classifierDidNotThrow += 1;
           } catch (error) {
             if (!(error instanceof Error) || !Object.hasOwn(error, "issues")) {

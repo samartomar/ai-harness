@@ -770,8 +770,12 @@ function closedPublicSchema<T extends z.ZodType>(
     >;
   };
   Object.defineProperties(schema, {
+    decode: { configurable: true, value: guardedParse },
+    decodeAsync: { configurable: true, value: guardedParseAsync },
     parse: { configurable: true, value: guardedParse },
     parseAsync: { configurable: true, value: guardedParseAsync },
+    safeDecode: { configurable: true, value: guardedSafeParse },
+    safeDecodeAsync: { configurable: true, value: guardedSafeParseAsync },
     safeParse: { configurable: true, value: guardedSafeParse },
     safeParseAsync: { configurable: true, value: guardedSafeParseAsync },
     spa: { configurable: true, value: guardedSafeParseAsync },
