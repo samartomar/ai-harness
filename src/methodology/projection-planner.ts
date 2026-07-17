@@ -1,6 +1,5 @@
 import { createHash } from "node:crypto";
 import { isProxy } from "node:util/types";
-import { z } from "zod";
 import {
   type ClosedSchema,
   ClosedSchemaError,
@@ -17,238 +16,89 @@ const POLICY_VERSION = "phase-3-policy-v1";
 const MANIFEST_VERSION = 1;
 const DIGEST_VERSION = 1;
 const MAX_ENTRIES = 64;
-const MAX_REQUESTED_COMPONENTS = 32;
-const MAX_DEPENDENCIES_PER_ARTIFACT = 32;
-const MAX_BLOCKED_FINDINGS = 1;
 const MAX_TARGET_LENGTH = 240;
 const MAX_SNAPSHOT_ARRAY_LENGTH = MAX_ENTRIES;
 const MAX_SNAPSHOT_RECORD_KEYS = 32;
 const MAX_SNAPSHOT_DEPTH = 12;
 const MAX_SNAPSHOT_NODES = 8192;
 
-const ArtifactIdSchema = z.string().regex(/^[a-z][a-z0-9-]{0,63}$/);
-const DigestSchema = z.string().regex(/^[0-9a-f]{64}$/);
-const LocatorSchema = z.string().regex(/^synthetic:[a-z][a-z0-9-]{0,63}$/);
-const MappingTargetSchema = z.string().min(1).max(MAX_TARGET_LENGTH);
-const TargetSchema = z
-  .string()
-  .min(1)
-  .max(MAX_TARGET_LENGTH)
-  .refine(
-    (target) => targetIsCanonical(target),
-    "target must be a canonical host-neutral logical path",
-  );
-
-const ProjectionMappingObjectSchema = z
-  .object({ artifactId: ArtifactIdSchema, target: MappingTargetSchema })
-  .strict();
-
-const ClassifierInputSchema = z.unknown().transform((value, ctx): SyntheticClassifierInput => {
-  const result = SyntheticClassifierInputSchema.safeParse(value);
-  if (result.success) return result.data;
-  ctx.addIssue({
-    code: "custom",
-    message: "classifier input must satisfy the closed Phase 2 contract",
-  });
-  return z.NEVER;
-});
-
-const ProjectionMappingInternalSchema = z.preprocess(
-  (value) =>
-    failClosedPreprocess(value, (candidate) =>
-      recordFieldsAreOwn(candidate, ["artifactId", "target"]),
-    ),
-  ProjectionMappingObjectSchema,
-);
-
-export const ProjectionMappingSchema =
-  closedPlannerSchema<ProjectionMapping>(validateProjectionMapping);
-
-const ProjectionPlannerInputObjectSchema = z
-  .object({
-    schemaVersion: z.literal(1),
-    decisionVersion: z.literal(DECISION_VERSION),
-    classifierVersion: z.literal(CLASSIFIER_VERSION),
-    policyVersion: z.literal(POLICY_VERSION),
-    manifestVersion: z.literal(MANIFEST_VERSION),
-    owner: z.string().regex(/^[a-z][a-z0-9-]{0,63}$/),
-    classifierInput: ClassifierInputSchema,
-    mappings: z.array(ProjectionMappingInternalSchema).min(1).max(MAX_ENTRIES),
-  })
-  .strict();
-
-const ProjectionPlannerInputInternalSchema = z.preprocess(
-  (value) => failClosedPreprocess(value, plannerInputCollectionsAreBounded),
-  ProjectionPlannerInputObjectSchema,
-);
-
-export const ProjectionPlannerInputSchema = closedPlannerSchema<PlannerInput>(validatePlannerInput);
-
-const FindingCodeSchema = z.enum([
-  "METHODOLOGY_CLASSIFICATION_INELIGIBLE",
-  "METHODOLOGY_MAPPING_COVERAGE",
-  "METHODOLOGY_TARGET_COLLISION",
-  "METHODOLOGY_TARGET_INVALID",
-]);
-
-const FindingSchema = z.object({ code: FindingCodeSchema }).strict();
-const BoundarySchema = z
-  .object({
-    reads: z.literal(false),
-    writes: z.literal(false),
-    cli: z.literal(false),
-    executor: z.literal(false),
-    providerExecution: z.literal(false),
-    hostExecution: z.literal(false),
-  })
-  .strict();
-const EntrySchema = z
-  .object({
-    artifactId: ArtifactIdSchema,
-    target: TargetSchema,
-    sourceLocator: LocatorSchema,
-    contentDigest: DigestSchema,
-  })
-  .strict();
-
-const ProjectionDecisionObjectSchema = z
-  .object({
-    decisionVersion: z.literal(DECISION_VERSION),
-    digestVersion: z.literal(DIGEST_VERSION),
-    classifierVersion: z.literal(CLASSIFIER_VERSION),
-    policyVersion: z.literal(POLICY_VERSION),
-    manifestVersion: z.literal(MANIFEST_VERSION),
-    owner: z.string().regex(/^[a-z][a-z0-9-]{0,63}$/),
-    classifierInput: ClassifierInputSchema,
-    closure: z.array(ArtifactIdSchema).min(1).max(MAX_ENTRIES),
-    eligible: z.array(ArtifactIdSchema).min(1).max(MAX_ENTRIES),
-    mappings: z.array(ProjectionMappingInternalSchema).min(1).max(MAX_ENTRIES),
-    entries: z.array(EntrySchema).min(1).max(MAX_ENTRIES),
-  })
-  .strict()
-  .superRefine((decision, ctx) => {
-    const expected = rebuildCanonicalDecision(decision);
-    if (expected === undefined || canonicalSerialize(decision) !== canonicalSerialize(expected)) {
-      ctx.addIssue({
-        code: "custom",
-        message: "projection decision must be complete, internally consistent, and canonical",
-      });
-    }
-  });
-
-const ProjectionDecisionInternalSchema = z.preprocess(
-  (value) => failClosedPreprocess(value, decisionCollectionsAreBounded),
-  ProjectionDecisionObjectSchema,
-);
-
-export const ProjectionDecisionSchema = closedPlannerSchema<Decision>(validateDecision);
-
-const ManifestSchema = z
-  .object({
-    schemaVersion: z.literal(1),
-    digestVersion: z.literal(DIGEST_VERSION),
-    digest: DigestSchema,
-    owner: z.string().regex(/^[a-z][a-z0-9-]{0,63}$/),
-    entries: z.array(EntrySchema).min(1).max(MAX_ENTRIES),
-    decision: ProjectionDecisionInternalSchema,
-  })
-  .strict()
-  .superRefine((manifest, ctx) => {
-    const entries = manifest.entries;
-    if (new Set(entries.map((entry) => entry.artifactId)).size !== entries.length) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["entries"],
-        message: "manifest artifact entries must be unique",
-      });
-    }
-    if (
-      entries.some((entry, index) => {
-        const previous = entries[index - 1];
-        return (
-          previous !== undefined &&
-          (compare(previous.target, entry.target) > 0 ||
-            (previous.target === entry.target &&
-              compare(previous.artifactId, entry.artifactId) >= 0))
-        );
-      })
-    ) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["entries"],
-        message: "manifest entries must be canonicalized",
-      });
-    }
-    if (
-      entries.some((entry, index) =>
-        entries.some(
-          (other, otherIndex) =>
-            index !== otherIndex &&
-            (entry.target === other.target || other.target.startsWith(`${entry.target}/`)),
-        ),
-      )
-    ) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["entries"],
-        message: "manifest targets may not collide",
-      });
-    }
-    if (
-      manifest.owner !== manifest.decision.owner ||
-      canonicalSerialize(manifest.entries) !== canonicalSerialize(manifest.decision.entries)
-    ) {
-      ctx.addIssue({
-        code: "custom",
-        message: "manifest owner and entries must match its canonical decision",
-      });
-    }
-    if (manifest.digest !== digestDecision(manifest.decision)) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["digest"],
-        message: "manifest digest must match its canonical decision",
-      });
-    }
-  });
-
-const ProjectionPlanResultUnionSchema = z.union([
-  z
-    .object({
-      schemaVersion: z.literal(1),
-      state: z.literal("planned"),
-      manifest: ManifestSchema,
-      boundary: BoundarySchema,
-      findings: z.array(FindingSchema).length(0),
-    })
-    .strict(),
-  z
-    .object({
-      schemaVersion: z.literal(1),
-      state: z.literal("blocked"),
-      boundary: BoundarySchema,
-      findings: z.array(FindingSchema).length(MAX_BLOCKED_FINDINGS),
-    })
-    .strict(),
-]);
-
-const ProjectionPlanResultInternalSchema = z.preprocess(
-  (value) => failClosedPreprocess(value, resultCollectionsAreBounded),
-  ProjectionPlanResultUnionSchema,
-);
-
-export const ProjectionPlanResultSchema =
-  closedPlannerSchema<ProjectionPlanResult>(validatePlanResult);
-
 type ClassifierInput = SyntheticClassifierInput;
 type ClassifierResult = SyntheticClassificationResult;
 type Artifact = ClassifierInput["artifacts"][number];
-type ProjectionMapping = z.infer<typeof ProjectionMappingInternalSchema>;
-type PlannerInput = z.infer<typeof ProjectionPlannerInputInternalSchema>;
-type Decision = z.infer<typeof ProjectionDecisionInternalSchema>;
-type Entry = z.infer<typeof EntrySchema>;
-type Finding = z.infer<typeof FindingSchema>;
-type ProjectionPlanResult = z.infer<typeof ProjectionPlanResultInternalSchema>;
+type ProjectionMapping = { artifactId: string; target: string };
+type PlannerInput = {
+  schemaVersion: 1;
+  decisionVersion: typeof DECISION_VERSION;
+  classifierVersion: typeof CLASSIFIER_VERSION;
+  policyVersion: typeof POLICY_VERSION;
+  manifestVersion: typeof MANIFEST_VERSION;
+  owner: string;
+  classifierInput: ClassifierInput;
+  mappings: ProjectionMapping[];
+};
+type Entry = {
+  artifactId: string;
+  target: string;
+  sourceLocator: string;
+  contentDigest: string;
+};
+type Finding = {
+  code:
+    | "METHODOLOGY_CLASSIFICATION_INELIGIBLE"
+    | "METHODOLOGY_MAPPING_COVERAGE"
+    | "METHODOLOGY_TARGET_COLLISION"
+    | "METHODOLOGY_TARGET_INVALID";
+};
+type Decision = {
+  decisionVersion: typeof DECISION_VERSION;
+  digestVersion: typeof DIGEST_VERSION;
+  classifierVersion: typeof CLASSIFIER_VERSION;
+  policyVersion: typeof POLICY_VERSION;
+  manifestVersion: typeof MANIFEST_VERSION;
+  owner: string;
+  classifierInput: ClassifierInput;
+  closure: string[];
+  eligible: string[];
+  mappings: ProjectionMapping[];
+  entries: Entry[];
+};
+type Boundary = {
+  reads: false;
+  writes: false;
+  cli: false;
+  executor: false;
+  providerExecution: false;
+  hostExecution: false;
+};
+type Manifest = {
+  schemaVersion: 1;
+  digestVersion: typeof DIGEST_VERSION;
+  digest: string;
+  owner: string;
+  entries: Entry[];
+  decision: Decision;
+};
+type ProjectionPlanResult =
+  | {
+      schemaVersion: 1;
+      state: "planned";
+      manifest: Manifest;
+      boundary: Boundary;
+      findings: [];
+    }
+  | {
+      schemaVersion: 1;
+      state: "blocked";
+      boundary: Boundary;
+      findings: [Finding];
+    };
+
+export const ProjectionMappingSchema =
+  closedPlannerSchema<ProjectionMapping>(validateProjectionMapping);
+export const ProjectionPlannerInputSchema = closedPlannerSchema<PlannerInput>(validatePlannerInput);
+export const ProjectionDecisionSchema = closedPlannerSchema<Decision>(validateDecision);
+export const ProjectionPlanResultSchema =
+  closedPlannerSchema<ProjectionPlanResult>(validatePlanResult);
 
 const BOUNDARY = Object.freeze({
   reads: false,
@@ -360,203 +210,6 @@ function snapshotPlainData(value: unknown, state: SnapshotState): SnapshotResult
   state.nodes = nextState.nodes;
   state.active.delete(value);
   return { ok: true, value: snapshot };
-}
-
-function staticRecordOf(value: unknown): Record<string, unknown> | undefined {
-  const surface = snapshotSurface(value);
-  return surface.ok ? recordOf(surface.value) : undefined;
-}
-
-function recordFieldsAreOwn(value: unknown, fields: readonly string[]): boolean {
-  const record = staticRecordOf(value);
-  return record === undefined || fields.every((field) => Object.hasOwn(record, field));
-}
-
-function collectionRecordFieldsAreOwn(value: unknown, fields: readonly string[]): boolean {
-  if (!Array.isArray(value)) return true;
-  for (let index = 0; index < value.length; index += 1) {
-    const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
-    if (descriptor !== undefined && !recordFieldsAreOwn(descriptor.value, fields)) return false;
-  }
-  return true;
-}
-
-function recordSurfaceIsStatic(value: unknown): boolean {
-  return snapshotSurface(value).ok;
-}
-
-function collectionIsBounded(value: unknown, maximum: number): boolean {
-  if (isProxy(value)) return false;
-  if (!Array.isArray(value)) return true;
-  if (Object.getPrototypeOf(value) !== Array.prototype) return false;
-  const length = value.length;
-  if (length > maximum) return false;
-  for (let index = 0; index < length; index += 1) {
-    const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
-    if (descriptor === undefined) return false;
-    if (!("value" in descriptor) || !recordSurfaceIsStatic(descriptor.value)) return false;
-  }
-  return Reflect.ownKeys(value).length === length + 1;
-}
-
-function failClosedPreprocess(value: unknown, predicate: (candidate: unknown) => boolean): unknown {
-  const surface = snapshotSurface(value);
-  if (!surface.ok || !predicate(surface.value)) return null;
-  const snapshot = snapshotPlainData(surface.value, {
-    depth: 0,
-    nodes: 0,
-    active: new WeakSet<object>(),
-  });
-  return snapshot.ok ? snapshot.value : null;
-}
-
-function classifierCollectionsAreBounded(value: unknown): boolean {
-  const input = staticRecordOf(value);
-  if (input === undefined) return true;
-  if (
-    !recordFieldsAreOwn(input, [
-      "schemaVersion",
-      "requested",
-      "declaredClosure",
-      "artifacts",
-      "evidence",
-    ])
-  ) {
-    return false;
-  }
-  if (!collectionIsBounded(input.requested, MAX_REQUESTED_COMPONENTS)) return false;
-  if (!collectionIsBounded(input.declaredClosure, MAX_ENTRIES)) return false;
-  if (!collectionIsBounded(input.artifacts, MAX_ENTRIES)) return false;
-  if (!collectionIsBounded(input.evidence, MAX_ENTRIES)) return false;
-  if (
-    !collectionRecordFieldsAreOwn(input.artifacts, [
-      "id",
-      "sourceLocator",
-      "contentDigest",
-      "contentDisposition",
-      "linkDisposition",
-      "licenseDisposition",
-      "evidenceDigest",
-      "dependencies",
-    ]) ||
-    !collectionRecordFieldsAreOwn(input.evidence, [
-      "artifactId",
-      "sourceLocator",
-      "contentDigest",
-      "licenseDisposition",
-      "evidenceDigest",
-    ])
-  ) {
-    return false;
-  }
-  if (Array.isArray(input.artifacts)) {
-    for (let index = 0; index < input.artifacts.length; index += 1) {
-      const candidate = input.artifacts[index];
-      const artifact = staticRecordOf(candidate);
-      if (
-        artifact !== undefined &&
-        !collectionIsBounded(artifact.dependencies, MAX_DEPENDENCIES_PER_ARTIFACT)
-      ) {
-        return false;
-      }
-    }
-  }
-  return true;
-}
-
-function plannerInputCollectionsAreBounded(value: unknown): boolean {
-  const input = staticRecordOf(value);
-  if (input === undefined) return true;
-  return (
-    recordFieldsAreOwn(input, [
-      "schemaVersion",
-      "decisionVersion",
-      "classifierVersion",
-      "policyVersion",
-      "manifestVersion",
-      "owner",
-      "classifierInput",
-      "mappings",
-    ]) &&
-    collectionIsBounded(input.mappings, MAX_ENTRIES) &&
-    collectionRecordFieldsAreOwn(input.mappings, ["artifactId", "target"]) &&
-    classifierCollectionsAreBounded(input.classifierInput)
-  );
-}
-
-function decisionCollectionsAreBounded(value: unknown): boolean {
-  const decision = staticRecordOf(value);
-  if (decision === undefined) return true;
-  return (
-    recordFieldsAreOwn(decision, [
-      "decisionVersion",
-      "digestVersion",
-      "classifierVersion",
-      "policyVersion",
-      "manifestVersion",
-      "owner",
-      "classifierInput",
-      "closure",
-      "eligible",
-      "mappings",
-      "entries",
-    ]) &&
-    collectionIsBounded(decision.closure, MAX_ENTRIES) &&
-    collectionIsBounded(decision.eligible, MAX_ENTRIES) &&
-    collectionIsBounded(decision.mappings, MAX_ENTRIES) &&
-    collectionIsBounded(decision.entries, MAX_ENTRIES) &&
-    collectionRecordFieldsAreOwn(decision.mappings, ["artifactId", "target"]) &&
-    collectionRecordFieldsAreOwn(decision.entries, [
-      "artifactId",
-      "target",
-      "sourceLocator",
-      "contentDigest",
-    ]) &&
-    classifierCollectionsAreBounded(decision.classifierInput)
-  );
-}
-
-function manifestCollectionsAreBounded(value: unknown): boolean {
-  const manifest = staticRecordOf(value);
-  if (manifest === undefined) return true;
-  return (
-    recordFieldsAreOwn(manifest, [
-      "schemaVersion",
-      "digestVersion",
-      "digest",
-      "owner",
-      "entries",
-      "decision",
-    ]) &&
-    collectionIsBounded(manifest.entries, MAX_ENTRIES) &&
-    collectionRecordFieldsAreOwn(manifest.entries, [
-      "artifactId",
-      "target",
-      "sourceLocator",
-      "contentDigest",
-    ]) &&
-    decisionCollectionsAreBounded(manifest.decision)
-  );
-}
-
-function resultCollectionsAreBounded(value: unknown): boolean {
-  const result = staticRecordOf(value);
-  if (result === undefined) return true;
-  return (
-    recordFieldsAreOwn(result, ["schemaVersion", "state", "boundary", "findings"]) &&
-    (result.state !== "planned" || Object.hasOwn(result, "manifest")) &&
-    collectionIsBounded(result.findings, MAX_BLOCKED_FINDINGS) &&
-    collectionRecordFieldsAreOwn(result.findings, ["code"]) &&
-    recordFieldsAreOwn(result.boundary, [
-      "reads",
-      "writes",
-      "cli",
-      "executor",
-      "providerExecution",
-      "hostExecution",
-    ]) &&
-    manifestCollectionsAreBounded(result.manifest)
-  );
 }
 
 const OWNER_PATTERN = /^[a-z][a-z0-9-]{0,63}$/;
