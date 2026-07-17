@@ -93,14 +93,31 @@ describe("synthetic methodology projection transactions", () => {
     const fixtureRoot = root();
     const fixturePath = syntheticMethodologyTransactionFixturePath(fixtureRoot);
 
-    expect(applySyntheticMethodologyProjectionTransaction(fixtureRoot, transaction())).toEqual({
+    const input = transaction();
+    const manifest = input.plan.manifest;
+    if (manifest === null) throw new Error("test fixture must produce a v2 manifest");
+
+    expect(manifest.schemaVersion).toBe(2);
+    expect(applySyntheticMethodologyProjectionTransaction(fixtureRoot, input)).toEqual({
       state: "projected",
-      manifestDigest: transaction().plan.manifest?.digest,
+      manifestDigest: manifest.digest,
     });
-    expect(readFileSync(join(fixturePath, ".aih/methodology/v1/rules/review-loop.md"), "utf8")).toBe(
-      "# review\n",
-    );
-    expect(cleanSyntheticMethodologyProjectionTransaction(fixtureRoot)).toEqual({ state: "cleaned" });
+    expect(
+      JSON.parse(
+        readFileSync(
+          join(fixturePath, ".aih/methodology/v1/.aih-methodology-transaction.json"),
+          "utf8",
+        ),
+      ),
+    ).toMatchObject({
+      manifest: { schemaVersion: 2, digest: manifest.digest, admission: manifest.admission },
+    });
+    expect(
+      readFileSync(join(fixturePath, ".aih/methodology/v1/rules/review-loop.md"), "utf8"),
+    ).toBe("# review\n");
+    expect(cleanSyntheticMethodologyProjectionTransaction(fixtureRoot)).toEqual({
+      state: "cleaned",
+    });
     expect(existsSync(join(fixturePath, ".aih"))).toBe(false);
   });
 
@@ -124,9 +141,9 @@ describe("synthetic methodology projection transactions", () => {
     mkdirSync(join(fixturePath, ".aih"));
     writeFileSync(join(fixturePath, ".aih/sentinel"), "keep", "utf8");
 
-    expect(() => applySyntheticMethodologyProjectionTransaction(fixtureRoot, transaction())).toThrow(
-      /unowned/i,
-    );
+    expect(() =>
+      applySyntheticMethodologyProjectionTransaction(fixtureRoot, transaction()),
+    ).toThrow(/unowned/i);
     expect(readFileSync(join(fixturePath, ".aih/sentinel"), "utf8")).toBe("keep");
   });
 
@@ -137,9 +154,9 @@ describe("synthetic methodology projection transactions", () => {
     mkdirSync(outside);
     symlinkSync(outside, join(fixturePath, ".aih"), "dir");
 
-    expect(() => applySyntheticMethodologyProjectionTransaction(fixtureRoot, transaction())).toThrow(
-      /linked|reparse|unowned/i,
-    );
+    expect(() =>
+      applySyntheticMethodologyProjectionTransaction(fixtureRoot, transaction()),
+    ).toThrow(/linked|reparse|unowned/i);
     expect(existsSync(join(outside, "methodology"))).toBe(false);
   });
 
@@ -260,27 +277,27 @@ describe("synthetic methodology projection transactions", () => {
     "after-receipt",
     "before-commit",
     "after-commit",
-  ] satisfies SyntheticMethodologyTransactionTestBoundary[])(
-    "recovers deterministically after injected failure at %s",
-    (faultAt) => {
-      const fixtureRoot = root();
-      const fixturePath = syntheticMethodologyTransactionFixturePath(fixtureRoot);
+  ] satisfies SyntheticMethodologyTransactionTestBoundary[])("recovers deterministically after injected failure at %s", (faultAt) => {
+    const fixtureRoot = root();
+    const fixturePath = syntheticMethodologyTransactionFixturePath(fixtureRoot);
 
-      expect(() =>
-        applySyntheticMethodologyProjectionTransaction(fixtureRoot, transaction(), { faultAt }),
-      ).toThrow(/injected/i);
-      const recovered = recoverSyntheticMethodologyProjectionTransaction(fixtureRoot);
-      expect(["absent", "recovered"]).toContain(recovered.state);
-      expect(cleanSyntheticMethodologyProjectionTransaction(fixtureRoot)).toEqual({
-        state: recovered.state === "recovered" ? "cleaned" : "absent",
-      });
-      expect(existsSync(join(fixturePath, ".aih"))).toBe(false);
-    },
-  );
+    expect(() =>
+      applySyntheticMethodologyProjectionTransaction(fixtureRoot, transaction(), { faultAt }),
+    ).toThrow(/injected/i);
+    const recovered = recoverSyntheticMethodologyProjectionTransaction(fixtureRoot);
+    expect(["absent", "recovered"]).toContain(recovered.state);
+    expect(cleanSyntheticMethodologyProjectionTransaction(fixtureRoot)).toEqual({
+      state: recovered.state === "recovered" ? "cleaned" : "absent",
+    });
+    expect(existsSync(join(fixturePath, ".aih"))).toBe(false);
+  });
 
   it("does not permit arbitrary objects to act as fixture-root capabilities", () => {
     expect(() =>
-      applySyntheticMethodologyProjectionTransaction({} as SyntheticMethodologyTransactionFixtureRoot, transaction()),
+      applySyntheticMethodologyProjectionTransaction(
+        {} as SyntheticMethodologyTransactionFixtureRoot,
+        transaction(),
+      ),
     ).toThrow(/fixture root/i);
   });
 
