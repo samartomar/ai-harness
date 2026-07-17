@@ -254,21 +254,12 @@ function canonicalMappings(
   );
 }
 
-function findings(...values: Finding[]): Finding[] {
-  return values.sort((left, right) =>
-    compare(
-      `${left.code}\u0000${left.artifactId ?? ""}`,
-      `${right.code}\u0000${right.artifactId ?? ""}`,
-    ),
-  );
-}
-
-function blocked(...values: Finding[]): z.infer<typeof ProjectionPlanResultSchema> {
+function blocked(value: Finding): z.infer<typeof ProjectionPlanResultSchema> {
   return ProjectionPlanResultSchema.parse({
     schemaVersion: 1,
     state: "blocked",
     boundary: BOUNDARY,
-    findings: findings(...values),
+    findings: [value],
   });
 }
 
