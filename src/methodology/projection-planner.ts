@@ -2,6 +2,9 @@ import { createHash } from "node:crypto";
 import { isProxy } from "node:util/types";
 import { z } from "zod";
 import {
+  type ClosedSchema,
+  ClosedSchemaError,
+  type ClosedSchemaIssue,
   classifySyntheticProjection,
   type SyntheticClassificationResult,
   type SyntheticClassifierInput,
@@ -50,13 +53,16 @@ const ClassifierInputSchema = z.unknown().transform((value, ctx): SyntheticClass
   return z.NEVER;
 });
 
-export const ProjectionMappingSchema = z.preprocess(
+const ProjectionMappingInternalSchema = z.preprocess(
   (value) =>
     failClosedPreprocess(value, (candidate) =>
       recordFieldsAreOwn(candidate, ["artifactId", "target"]),
     ),
   ProjectionMappingObjectSchema,
 );
+
+export const ProjectionMappingSchema =
+  closedPlannerSchema<ProjectionMapping>(validateProjectionMapping);
 
 const ProjectionPlannerInputObjectSchema = z
   .object({
@@ -67,14 +73,16 @@ const ProjectionPlannerInputObjectSchema = z
     manifestVersion: z.literal(MANIFEST_VERSION),
     owner: z.string().regex(/^[a-z][a-z0-9-]{0,63}$/),
     classifierInput: ClassifierInputSchema,
-    mappings: z.array(ProjectionMappingSchema).min(1).max(MAX_ENTRIES),
+    mappings: z.array(ProjectionMappingInternalSchema).min(1).max(MAX_ENTRIES),
   })
   .strict();
 
-export const ProjectionPlannerInputSchema = z.preprocess(
+const ProjectionPlannerInputInternalSchema = z.preprocess(
   (value) => failClosedPreprocess(value, plannerInputCollectionsAreBounded),
   ProjectionPlannerInputObjectSchema,
 );
+
+export const ProjectionPlannerInputSchema = closedPlannerSchema<PlannerInput>(validatePlannerInput);
 
 const FindingCodeSchema = z.enum([
   "METHODOLOGY_CLASSIFICATION_INELIGIBLE",
@@ -114,7 +122,7 @@ const ProjectionDecisionObjectSchema = z
     classifierInput: ClassifierInputSchema,
     closure: z.array(ArtifactIdSchema).min(1).max(MAX_ENTRIES),
     eligible: z.array(ArtifactIdSchema).min(1).max(MAX_ENTRIES),
-    mappings: z.array(ProjectionMappingSchema).min(1).max(MAX_ENTRIES),
+    mappings: z.array(ProjectionMappingInternalSchema).min(1).max(MAX_ENTRIES),
     entries: z.array(EntrySchema).min(1).max(MAX_ENTRIES),
   })
   .strict()
@@ -128,10 +136,12 @@ const ProjectionDecisionObjectSchema = z
     }
   });
 
-export const ProjectionDecisionSchema = z.preprocess(
+const ProjectionDecisionInternalSchema = z.preprocess(
   (value) => failClosedPreprocess(value, decisionCollectionsAreBounded),
   ProjectionDecisionObjectSchema,
 );
+
+export const ProjectionDecisionSchema = closedPlannerSchema<Decision>(validateDecision);
 
 const ManifestSchema = z
   .object({
@@ -140,7 +150,7 @@ const ManifestSchema = z
     digest: DigestSchema,
     owner: z.string().regex(/^[a-z][a-z0-9-]{0,63}$/),
     entries: z.array(EntrySchema).min(1).max(MAX_ENTRIES),
-    decision: ProjectionDecisionSchema,
+    decision: ProjectionDecisionInternalSchema,
   })
   .strict()
   .superRefine((manifest, ctx) => {
@@ -222,18 +232,23 @@ const ProjectionPlanResultUnionSchema = z.union([
     .strict(),
 ]);
 
-export const ProjectionPlanResultSchema = z.preprocess(
+const ProjectionPlanResultInternalSchema = z.preprocess(
   (value) => failClosedPreprocess(value, resultCollectionsAreBounded),
   ProjectionPlanResultUnionSchema,
 );
 
+export const ProjectionPlanResultSchema =
+  closedPlannerSchema<ProjectionPlanResult>(validatePlanResult);
+
 type ClassifierInput = SyntheticClassifierInput;
 type ClassifierResult = SyntheticClassificationResult;
 type Artifact = ClassifierInput["artifacts"][number];
-type PlannerInput = z.infer<typeof ProjectionPlannerInputSchema>;
-type Decision = z.infer<typeof ProjectionDecisionSchema>;
+type ProjectionMapping = z.infer<typeof ProjectionMappingInternalSchema>;
+type PlannerInput = z.infer<typeof ProjectionPlannerInputInternalSchema>;
+type Decision = z.infer<typeof ProjectionDecisionInternalSchema>;
 type Entry = z.infer<typeof EntrySchema>;
 type Finding = z.infer<typeof FindingSchema>;
+type ProjectionPlanResult = z.infer<typeof ProjectionPlanResultInternalSchema>;
 
 const BOUNDARY = Object.freeze({
   reads: false,
@@ -254,6 +269,28 @@ type SnapshotState = { depth: number; nodes: number; active: WeakSet<object> };
 type SnapshotResult = { ok: true; value: unknown } | { ok: false };
 
 const INVALID_SNAPSHOT = Object.freeze({ ok: false as const });
+
+function appendOwn<T>(values: T[], value: T): void {
+  Object.defineProperty(values, String(values.length), {
+    configurable: true,
+    enumerable: true,
+    value,
+    writable: true,
+  });
+}
+
+function closedRecord<T extends Record<string, unknown>>(value: T): T {
+  const record = Object.create(null) as T;
+  for (const [key, entry] of Object.entries(value)) {
+    Object.defineProperty(record, key, {
+      configurable: true,
+      enumerable: true,
+      value: entry,
+      writable: true,
+    });
+  }
+  return record;
+}
 
 function snapshotSurface(value: unknown): SnapshotResult {
   if (value === null || typeof value !== "object") return { ok: true, value };
@@ -306,7 +343,7 @@ function snapshotPlainData(value: unknown, state: SnapshotState): SnapshotResult
     for (let index = 0; index < surface.value.length; index += 1) {
       const child = snapshotPlainData(surface.value[index], nextState);
       if (!child.ok) return INVALID_SNAPSHOT;
-      snapshot.push(child.value);
+      appendOwn(snapshot, child.value);
     }
     state.nodes = nextState.nodes;
     state.active.delete(value);
@@ -522,6 +559,353 @@ function resultCollectionsAreBounded(value: unknown): boolean {
   );
 }
 
+const OWNER_PATTERN = /^[a-z][a-z0-9-]{0,63}$/;
+const ARTIFACT_ID_PATTERN = /^[a-z][a-z0-9-]{0,63}$/;
+const DIGEST_PATTERN = /^[0-9a-f]{64}$/;
+const LOCATOR_PATTERN = /^synthetic:[a-z][a-z0-9-]{0,63}$/;
+const FINDING_CODES = new Set([
+  "METHODOLOGY_CLASSIFICATION_INELIGIBLE",
+  "METHODOLOGY_MAPPING_COVERAGE",
+  "METHODOLOGY_TARGET_COLLISION",
+  "METHODOLOGY_TARGET_INVALID",
+]);
+
+function plannerIssue(path: readonly (string | number)[], message: string): ClosedSchemaIssue {
+  return closedRecord({ code: "custom" as const, path: [...path], message });
+}
+
+function prefixedPlannerIssue(
+  prefix: readonly (string | number)[],
+  issue: ClosedSchemaIssue,
+): ClosedSchemaIssue {
+  return plannerIssue([...prefix, ...issue.path], issue.message);
+}
+
+function validationSnapshot(value: unknown): SnapshotResult {
+  return snapshotPlainData(value, {
+    depth: 0,
+    nodes: 0,
+    active: new WeakSet<object>(),
+  });
+}
+
+function exactRecord(
+  value: unknown,
+  fields: readonly string[],
+): { record?: Record<string, unknown>; issue?: ClosedSchemaIssue } {
+  const record = recordOf(value);
+  if (record === undefined) return { issue: plannerIssue([], "value must be a closed record") };
+  const keys = Object.keys(record);
+  for (const key of keys) {
+    if (!fields.includes(key))
+      return { issue: plannerIssue([key], "unknown field is not allowed") };
+  }
+  for (const field of fields) {
+    if (!Object.hasOwn(record, field)) {
+      return { issue: plannerIssue([field], "required field is missing") };
+    }
+  }
+  return { record };
+}
+
+function stringIssue(
+  value: unknown,
+  pattern: RegExp,
+  path: readonly (string | number)[],
+): ClosedSchemaIssue | undefined {
+  return typeof value === "string" && pattern.test(value)
+    ? undefined
+    : plannerIssue(path, "string does not match the closed canonical form");
+}
+
+function arrayIssue(
+  value: unknown,
+  minimum: number,
+  maximum: number,
+  path: readonly (string | number)[],
+  validate: (candidate: unknown) => ClosedSchemaIssue | undefined,
+): ClosedSchemaIssue | undefined {
+  if (!Array.isArray(value) || value.length < minimum || value.length > maximum) {
+    return plannerIssue(path, "array is outside the closed resource bounds");
+  }
+  for (let index = 0; index < value.length; index += 1) {
+    const issue = validate(value[index]);
+    if (issue !== undefined) return prefixedPlannerIssue([...path, index], issue);
+  }
+  return undefined;
+}
+
+function validateProjectionMapping(value: unknown): ClosedSchemaIssue | undefined {
+  const snapshot = validationSnapshot(value);
+  if (!snapshot.ok) return plannerIssue([], "mapping must contain only closed plain data");
+  const shape = exactRecord(snapshot.value, ["artifactId", "target"]);
+  if (shape.issue !== undefined || shape.record === undefined) return shape.issue;
+  const idIssue = stringIssue(shape.record.artifactId, ARTIFACT_ID_PATTERN, ["artifactId"]);
+  if (idIssue !== undefined) return idIssue;
+  return typeof shape.record.target === "string" &&
+    shape.record.target.length > 0 &&
+    shape.record.target.length <= MAX_TARGET_LENGTH
+    ? undefined
+    : plannerIssue(["target"], "mapping target is outside the closed resource bounds");
+}
+
+function validatePlannerInput(value: unknown): ClosedSchemaIssue | undefined {
+  const snapshot = validationSnapshot(value);
+  if (!snapshot.ok) return plannerIssue([], "planner input must contain only closed plain data");
+  const shape = exactRecord(snapshot.value, [
+    "schemaVersion",
+    "decisionVersion",
+    "classifierVersion",
+    "policyVersion",
+    "manifestVersion",
+    "owner",
+    "classifierInput",
+    "mappings",
+  ]);
+  if (shape.issue !== undefined || shape.record === undefined) return shape.issue;
+  const input = shape.record;
+  if (input.schemaVersion !== 1) return plannerIssue(["schemaVersion"], "unsupported version");
+  if (input.decisionVersion !== DECISION_VERSION) {
+    return plannerIssue(["decisionVersion"], "unsupported version");
+  }
+  if (input.classifierVersion !== CLASSIFIER_VERSION) {
+    return plannerIssue(["classifierVersion"], "unsupported version");
+  }
+  if (input.policyVersion !== POLICY_VERSION) {
+    return plannerIssue(["policyVersion"], "unsupported version");
+  }
+  if (input.manifestVersion !== MANIFEST_VERSION) {
+    return plannerIssue(["manifestVersion"], "unsupported version");
+  }
+  const ownerIssue = stringIssue(input.owner, OWNER_PATTERN, ["owner"]);
+  if (ownerIssue !== undefined) return ownerIssue;
+  const classifier = SyntheticClassifierInputSchema.safeParse(input.classifierInput);
+  if (!classifier.success) {
+    return prefixedPlannerIssue(
+      ["classifierInput"],
+      classifier.error.issues[0] ?? plannerIssue([], "invalid classifier input"),
+    );
+  }
+  return arrayIssue(input.mappings, 1, MAX_ENTRIES, ["mappings"], validateProjectionMapping);
+}
+
+function validateId(value: unknown): ClosedSchemaIssue | undefined {
+  return stringIssue(value, ARTIFACT_ID_PATTERN, []);
+}
+
+function validateEntry(value: unknown): ClosedSchemaIssue | undefined {
+  const shape = exactRecord(value, ["artifactId", "target", "sourceLocator", "contentDigest"]);
+  if (shape.issue !== undefined || shape.record === undefined) return shape.issue;
+  const entry = shape.record;
+  return (
+    stringIssue(entry.artifactId, ARTIFACT_ID_PATTERN, ["artifactId"]) ??
+    (typeof entry.target === "string" && targetIsCanonical(entry.target)
+      ? undefined
+      : plannerIssue(["target"], "target is not canonical")) ??
+    stringIssue(entry.sourceLocator, LOCATOR_PATTERN, ["sourceLocator"]) ??
+    stringIssue(entry.contentDigest, DIGEST_PATTERN, ["contentDigest"])
+  );
+}
+
+function validateDecision(value: unknown): ClosedSchemaIssue | undefined {
+  const snapshot = validationSnapshot(value);
+  if (!snapshot.ok) return plannerIssue([], "decision must contain only closed plain data");
+  const shape = exactRecord(snapshot.value, [
+    "decisionVersion",
+    "digestVersion",
+    "classifierVersion",
+    "policyVersion",
+    "manifestVersion",
+    "owner",
+    "classifierInput",
+    "closure",
+    "eligible",
+    "mappings",
+    "entries",
+  ]);
+  if (shape.issue !== undefined || shape.record === undefined) return shape.issue;
+  const decision = shape.record;
+  if (
+    decision.decisionVersion !== DECISION_VERSION ||
+    decision.digestVersion !== DIGEST_VERSION ||
+    decision.classifierVersion !== CLASSIFIER_VERSION ||
+    decision.policyVersion !== POLICY_VERSION ||
+    decision.manifestVersion !== MANIFEST_VERSION
+  ) {
+    return plannerIssue([], "decision contains an unsupported version");
+  }
+  const ownerIssue = stringIssue(decision.owner, OWNER_PATTERN, ["owner"]);
+  if (ownerIssue !== undefined) return ownerIssue;
+  const classifier = SyntheticClassifierInputSchema.safeParse(decision.classifierInput);
+  if (!classifier.success) return plannerIssue(["classifierInput"], "invalid classifier input");
+  const collectionIssue =
+    arrayIssue(decision.closure, 1, MAX_ENTRIES, ["closure"], validateId) ??
+    arrayIssue(decision.eligible, 1, MAX_ENTRIES, ["eligible"], validateId) ??
+    arrayIssue(decision.mappings, 1, MAX_ENTRIES, ["mappings"], validateProjectionMapping) ??
+    arrayIssue(decision.entries, 1, MAX_ENTRIES, ["entries"], validateEntry);
+  if (collectionIssue !== undefined) return collectionIssue;
+  const typed = snapshot.value as Decision;
+  const expected = rebuildCanonicalDecision(typed);
+  return expected !== undefined && canonicalSerialize(typed) === canonicalSerialize(expected)
+    ? undefined
+    : plannerIssue([], "decision is not complete, consistent, and canonical");
+}
+
+function validateBoundary(value: unknown): ClosedSchemaIssue | undefined {
+  const shape = exactRecord(value, [
+    "reads",
+    "writes",
+    "cli",
+    "executor",
+    "providerExecution",
+    "hostExecution",
+  ]);
+  if (shape.issue !== undefined || shape.record === undefined) return shape.issue;
+  return Object.values(shape.record).every((entry) => entry === false)
+    ? undefined
+    : plannerIssue([], "all execution and mutation boundary values must be false");
+}
+
+function validateFinding(value: unknown): ClosedSchemaIssue | undefined {
+  const shape = exactRecord(value, ["code"]);
+  if (shape.issue !== undefined || shape.record === undefined) return shape.issue;
+  return typeof shape.record.code === "string" && FINDING_CODES.has(shape.record.code)
+    ? undefined
+    : plannerIssue(["code"], "finding code is not supported");
+}
+
+function validateManifest(value: unknown): ClosedSchemaIssue | undefined {
+  const shape = exactRecord(value, [
+    "schemaVersion",
+    "digestVersion",
+    "digest",
+    "owner",
+    "entries",
+    "decision",
+  ]);
+  if (shape.issue !== undefined || shape.record === undefined) return shape.issue;
+  const manifest = shape.record;
+  if (manifest.schemaVersion !== MANIFEST_VERSION || manifest.digestVersion !== DIGEST_VERSION) {
+    return plannerIssue([], "manifest contains an unsupported version");
+  }
+  const fieldIssue =
+    stringIssue(manifest.digest, DIGEST_PATTERN, ["digest"]) ??
+    stringIssue(manifest.owner, OWNER_PATTERN, ["owner"]) ??
+    arrayIssue(manifest.entries, 1, MAX_ENTRIES, ["entries"], validateEntry) ??
+    validateDecision(manifest.decision);
+  if (fieldIssue !== undefined) return fieldIssue;
+  const typed = manifest as unknown as {
+    digest: string;
+    owner: string;
+    entries: Entry[];
+    decision: Decision;
+  };
+  if (
+    new Set(typed.entries.map((entry) => entry.artifactId)).size !== typed.entries.length ||
+    hasTargetCollision(typed.entries) ||
+    canonicalSerialize(typed.entries) !== canonicalSerialize(typed.decision.entries) ||
+    typed.owner !== typed.decision.owner ||
+    typed.digest !== digestDecision(typed.decision)
+  ) {
+    return plannerIssue([], "manifest is not bound to its canonical decision");
+  }
+  for (let index = 1; index < typed.entries.length; index += 1) {
+    const previous = typed.entries[index - 1];
+    const current = typed.entries[index];
+    if (
+      previous === undefined ||
+      current === undefined ||
+      compare(previous.target, current.target) > 0 ||
+      (previous.target === current.target && compare(previous.artifactId, current.artifactId) >= 0)
+    ) {
+      return plannerIssue(["entries"], "manifest entries are not canonical");
+    }
+  }
+  return undefined;
+}
+
+function validatePlanResult(value: unknown): ClosedSchemaIssue | undefined {
+  const snapshot = validationSnapshot(value);
+  if (!snapshot.ok) return plannerIssue([], "plan result must contain only closed plain data");
+  const result = recordOf(snapshot.value);
+  if (result === undefined) return plannerIssue([], "plan result must be a closed record");
+  if (result.state === "planned") {
+    const shape = exactRecord(result, [
+      "schemaVersion",
+      "state",
+      "manifest",
+      "boundary",
+      "findings",
+    ]);
+    if (shape.issue !== undefined) return shape.issue;
+    if (result.schemaVersion !== 1) return plannerIssue(["schemaVersion"], "unsupported version");
+    const boundaryIssue = validateBoundary(result.boundary);
+    if (boundaryIssue !== undefined) return prefixedPlannerIssue(["boundary"], boundaryIssue);
+    const findingsIssue = arrayIssue(result.findings, 0, 0, ["findings"], validateFinding);
+    if (findingsIssue !== undefined) return findingsIssue;
+    const manifestIssue = validateManifest(result.manifest);
+    return manifestIssue === undefined
+      ? undefined
+      : prefixedPlannerIssue(["manifest"], manifestIssue);
+  }
+  if (result.state === "blocked") {
+    const shape = exactRecord(result, ["schemaVersion", "state", "boundary", "findings"]);
+    if (shape.issue !== undefined) return shape.issue;
+    if (result.schemaVersion !== 1) return plannerIssue(["schemaVersion"], "unsupported version");
+    const boundaryIssue = validateBoundary(result.boundary);
+    if (boundaryIssue !== undefined) return prefixedPlannerIssue(["boundary"], boundaryIssue);
+    return arrayIssue(result.findings, 1, 1, ["findings"], validateFinding);
+  }
+  return plannerIssue(["state"], "plan result state is not supported");
+}
+
+function closedPlannerSchema<T>(
+  validate: (value: unknown) => ClosedSchemaIssue | undefined,
+): ClosedSchema<T> {
+  const safeParse = (value: unknown) => {
+    const issue = validate(value);
+    if (issue !== undefined) {
+      return closedRecord({ success: false as const, error: new ClosedSchemaError(issue) });
+    }
+    const snapshot = validationSnapshot(value);
+    if (!snapshot.ok) {
+      return closedRecord({
+        success: false as const,
+        error: new ClosedSchemaError(
+          plannerIssue([], "validated planner value could not be projected"),
+        ),
+      });
+    }
+    return closedRecord({ success: true as const, data: snapshot.value as T });
+  };
+  const parse = (value: unknown): T => {
+    const result = safeParse(value);
+    if (!result.success) throw result.error;
+    return result.data;
+  };
+  const safeParseAsync = (value: unknown) => Promise.resolve(safeParse(value));
+  const parseAsync = (value: unknown): Promise<T> => {
+    try {
+      return Promise.resolve(parse(value));
+    } catch (error) {
+      return Promise.reject(error);
+    }
+  };
+  return Object.freeze(
+    closedRecord({
+      decode: parse,
+      decodeAsync: parseAsync,
+      parse,
+      parseAsync,
+      safeDecode: safeParse,
+      safeDecodeAsync: safeParseAsync,
+      safeParse,
+      safeParseAsync,
+      spa: safeParseAsync,
+    }),
+  );
+}
+
 function compare(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0;
 }
@@ -626,16 +1010,14 @@ function canonicalClassifierInput(input: ClassifierInput): ClassifierInput {
   };
 }
 
-function canonicalMappings(
-  mappings: readonly z.infer<typeof ProjectionMappingSchema>[],
-): z.infer<typeof ProjectionMappingSchema>[] {
+function canonicalMappings(mappings: readonly ProjectionMapping[]): ProjectionMapping[] {
   return [...mappings].sort(
     (left, right) =>
       compare(left.artifactId, right.artifactId) || compare(left.target, right.target),
   );
 }
 
-function blocked(value: Finding): z.infer<typeof ProjectionPlanResultSchema> {
+function blocked(value: Finding): ProjectionPlanResult {
   return ProjectionPlanResultSchema.parse({
     schemaVersion: 1,
     state: "blocked",
@@ -646,7 +1028,7 @@ function blocked(value: Finding): z.infer<typeof ProjectionPlanResultSchema> {
 
 function mappingsCover(
   expected: readonly string[],
-  mappings: readonly z.infer<typeof ProjectionMappingSchema>[],
+  mappings: readonly ProjectionMapping[],
 ): boolean {
   const ids = mappings.map((mapping) => mapping.artifactId).sort(compare);
   return ids.length === expected.length && ids.every((id, index) => id === expected[index]);
@@ -664,13 +1046,13 @@ function hasTargetCollision(entries: readonly Entry[]): boolean {
 
 function deriveEntries(
   classifierInput: ClassifierInput,
-  mappings: readonly z.infer<typeof ProjectionMappingSchema>[],
+  mappings: readonly ProjectionMapping[],
 ): Entry[] {
   const artifacts = new Map(classifierInput.artifacts.map((artifact) => [artifact.id, artifact]));
   const entries: Entry[] = [];
   for (const mapping of mappings) {
     const artifact = artifacts.get(mapping.artifactId) as Artifact;
-    entries.push({
+    appendOwn(entries, {
       artifactId: mapping.artifactId,
       target: mapping.target,
       sourceLocator: artifact.sourceLocator,
@@ -731,9 +1113,7 @@ function digestDecision(decision: Decision): string {
 }
 
 /** Pure Phase 3 object planning; it never reads, writes, launches, or applies a projection. */
-export function planSyntheticProjection(
-  value: unknown,
-): z.infer<typeof ProjectionPlanResultSchema> {
+export function planSyntheticProjection(value: unknown): ProjectionPlanResult {
   const input = ProjectionPlannerInputSchema.parse(value);
   const classification: ClassifierResult = classifySyntheticProjection(input.classifierInput);
   if (classification.disposition !== "eligible") {
