@@ -1,7 +1,7 @@
-import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import {
   planSyntheticMethodologyProjection,
+  SyntheticMethodologyProjectionManifestSchema,
   SyntheticMethodologyProjectionPlanSchema,
   SyntheticMethodologyProjectionSchema,
 } from "../../src/methodology/projection-planner.js";
@@ -91,7 +91,7 @@ function projection(overrides: Record<string, unknown> = {}) {
 }
 
 describe("synthetic methodology projection planner", () => {
-  it("creates a deterministic host-neutral manifest from admitted synthetic entries", () => {
+  it("creates a deterministic host-neutral manifest from eligible synthetic entries", () => {
     const forward = planSyntheticMethodologyProjection(
       projection({
         classification: classifierInput({
@@ -131,29 +131,74 @@ describe("synthetic methodology projection planner", () => {
         target: "methodology/v1/rules/review-loop.md",
       },
     ];
-    const manifest = {
-      schemaVersion: 1,
-      owner: "aih-methodology-v1",
-      entries,
-    };
-    const manifestDigest = `sha256:${createHash("sha256")
-      .update(JSON.stringify(manifest), "utf8")
-      .digest("hex")}`;
-
-    expect(forward).toEqual({
+    expect(forward).toMatchObject({
       schemaVersion: 1,
       state: "planned",
-      manifest: { ...manifest, digest: manifestDigest },
-      findings: [],
-      boundary: {
-        providerExecution: false,
-        hostExecution: false,
-        reads: false,
-        writes: false,
-        cli: false,
+      manifest: {
+        schemaVersion: 2,
+        digestVersion: "methodology-projection-digest-v2",
+        owner: "aih-methodology-v1",
+        admission: {
+          policyVersion: "methodology-projection-admission-v2",
+          classifierVersion: "synthetic-methodology-classifier-v2",
+          closure: {
+            schemaVersion: 1,
+            roots: ["method-routing", "review-loop"],
+            artifacts: [classifierArtifact("method-routing"), classifierArtifact("review-loop")],
+          },
+          eligibility: {
+            disposition: "eligible",
+            eligible: ["method-routing", "review-loop"],
+          },
+        },
+        entries,
       },
+      findings: [],
     });
+    if (forward.state !== "planned" || forward.manifest === null) {
+      throw new Error("test fixture must plan");
+    }
+    expect(forward.manifest.digest).toMatch(/^sha256:[a-f0-9]{64}$/);
+    expect(SyntheticMethodologyProjectionManifestSchema.parse(forward.manifest)).toEqual(
+      forward.manifest,
+    );
     expect(reverse).toEqual(forward);
+  });
+
+  it("changes the versioned manifest digest when only a dependency edge changes", () => {
+    const unchanged = planSyntheticMethodologyProjection(
+      projection({
+        classification: classifierInput({
+          roots: ["review-loop", "method-routing"],
+          artifacts: [classifierArtifact("review-loop"), classifierArtifact("method-routing")],
+        }),
+        mappings: [mapping("review-loop"), mapping("method-routing")],
+      }),
+    );
+    const changed = planSyntheticMethodologyProjection(
+      projection({
+        classification: classifierInput({
+          roots: ["review-loop", "method-routing"],
+          artifacts: [
+            classifierArtifact("review-loop", { dependencies: ["method-routing"] }),
+            classifierArtifact("method-routing"),
+          ],
+        }),
+        mappings: [mapping("review-loop"), mapping("method-routing")],
+      }),
+    );
+
+    if (
+      unchanged.state !== "planned" ||
+      unchanged.manifest === null ||
+      changed.state !== "planned" ||
+      changed.manifest === null
+    ) {
+      throw new Error("test fixtures must plan");
+    }
+    expect(changed.manifest.entries).toEqual(unchanged.manifest.entries);
+    expect(changed.manifest.admission.closure).not.toEqual(unchanged.manifest.admission.closure);
+    expect(changed.manifest.digest).not.toBe(unchanged.manifest.digest);
   });
 
   it("blocks colliding owned projection targets with a fixed finding", () => {
@@ -273,12 +318,12 @@ describe("synthetic methodology projection planner", () => {
       manifest: null,
       findings: [
         {
-          code: "METHODOLOGY_SYNTHETIC_ADMISSION_DENIED",
+          code: "METHODOLOGY_SYNTHETIC_ELIGIBILITY_DENIED",
           disposition: "blocked",
           target: "methodology/v1/rules/method-routing.md",
         },
         {
-          code: "METHODOLOGY_SYNTHETIC_ADMISSION_DENIED",
+          code: "METHODOLOGY_SYNTHETIC_ELIGIBILITY_DENIED",
           disposition: "blocked",
           target: "methodology/v1/rules/review-loop.md",
         },
@@ -312,7 +357,7 @@ describe("synthetic methodology projection planner", () => {
       manifest: null,
       findings: [
         {
-          code: "METHODOLOGY_SYNTHETIC_ADMISSION_DENIED",
+          code: "METHODOLOGY_SYNTHETIC_ELIGIBILITY_DENIED",
           disposition: "blocked",
           target: "methodology/v1/rules/review-loop.md",
         },
@@ -327,7 +372,7 @@ describe("synthetic methodology projection planner", () => {
     });
   });
 
-  it("blocks mappings that do not exactly bind the classifier admission", () => {
+  it("blocks mappings that do not exactly bind classifier eligibility", () => {
     const result = planSyntheticMethodologyProjection(
       projection({
         classification: classifierInput({
@@ -344,7 +389,7 @@ describe("synthetic methodology projection planner", () => {
       manifest: null,
       findings: [
         {
-          code: "METHODOLOGY_SYNTHETIC_ADMISSION_MAPPING_MISMATCH",
+          code: "METHODOLOGY_SYNTHETIC_ELIGIBILITY_MAPPING_MISMATCH",
           disposition: "blocked",
           target: "methodology/v1",
         },
@@ -365,7 +410,7 @@ describe("synthetic methodology projection planner", () => {
     ).toThrow();
     expect(() =>
       SyntheticMethodologyProjectionSchema.parse(
-        projection({ mappings: [{ ...mapping("review-loop"), admission: "admitted" }] }),
+        projection({ mappings: [{ ...mapping("review-loop"), eligibility: "eligible" }] }),
       ),
     ).toThrow();
     expect(() =>
@@ -440,7 +485,7 @@ describe("synthetic methodology projection planner", () => {
         manifest: null,
         findings: [
           {
-            code: "METHODOLOGY_SYNTHETIC_ADMISSION_DENIED",
+            code: "METHODOLOGY_SYNTHETIC_ELIGIBILITY_DENIED",
             disposition: "blocked",
             target: "methodology/v1/rules/review-loop.md",
           },
