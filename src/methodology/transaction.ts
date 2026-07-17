@@ -9,14 +9,14 @@ import {
   openSync,
   readFileSync,
   readdirSync,
+  realpathSync,
   renameSync,
   rmdirSync,
   rmSync,
   unlinkSync,
   writeFileSync,
 } from "node:fs";
-import { dirname, join, relative, resolve } from "node:path";
-import { tmpdir } from "node:os";
+import { dirname, isAbsolute, join, parse, relative, resolve } from "node:path";
 import { z } from "zod";
 import {
   SyntheticMethodologyProjectionManifestSchema,
@@ -171,6 +171,22 @@ function digest(bytes: Uint8Array | string): string {
 
 function transactionError(message: string): Error {
   return new Error(`synthetic methodology transaction refused: ${message}`);
+}
+
+function trustedFixtureParent(): string {
+  const candidate =
+    process.platform === "win32" ? join(parse(process.execPath).root, "Windows", "Temp") : "/tmp";
+  if (!isAbsolute(candidate)) throw transactionError("trusted fixture parent is unavailable");
+  const parent = realpathSync(candidate);
+  const cwd = realpathSync(process.cwd());
+  const checkoutWithinParent = relative(parent, cwd);
+  if (
+    checkoutWithinParent === "" ||
+    (!checkoutWithinParent.startsWith("..") && !isAbsolute(checkoutWithinParent))
+  ) {
+    throw transactionError("trusted fixture parent overlaps the checkout");
+  }
+  return parent;
 }
 
 function identity(path: string, label: string): FileIdentity {
@@ -341,6 +357,13 @@ function receiptText(manifest: Manifest): string {
   return `${JSON.stringify({ schemaVersion: 1, owner: "aih-methodology-v1", manifest })}\n`;
 }
 
+function readReceipt(base: string): z.infer<typeof ReceiptSchema> {
+  identity(base, "projection root");
+  const path = join(base, RECEIPT_FILE);
+  assertRegularFile(path, "projection receipt");
+  return ReceiptSchema.parse(JSON.parse(readFileSync(path, "utf8")));
+}
+
 function verifyTree(
   base: string,
   manifest: Manifest,
@@ -438,7 +461,7 @@ function commit(state: FixtureState, manifest: Manifest): void {
  * It is an opaque, process-local object backed by a newly-created OS temporary root.
  */
 export function createSyntheticMethodologyTransactionFixtureRoot(): SyntheticMethodologyTransactionFixtureRoot {
-  const root = mkdtempSync(join(tmpdir(), "aih-methodology-transaction-"));
+  const root = mkdtempSync(join(trustedFixtureParent(), "aih-methodology-transaction-"));
   chmodSync(root, 0o700);
   const capability = {} as SyntheticMethodologyTransactionFixtureRoot;
   fixtureRoots.set(capability, {
@@ -514,6 +537,7 @@ export function applySyntheticMethodologyProjectionTransaction(
     commit(state, manifest);
     committed = true;
     checkpoint(state, options, "after-commit");
+    verifyTree(outputPath(state), manifest, true);
     removeLock(state);
     return { state: "projected", manifestDigest: manifest.digest };
   } catch (error) {
@@ -531,7 +555,7 @@ export function recoverSyntheticMethodologyProjectionTransaction(
   assertOwner(state);
   const output = outputPath(state);
   if (!existsSync(output)) throw transactionError("owned transaction recovery found no projection");
-  const receipt = ReceiptSchema.parse(JSON.parse(readFileSync(join(output, RECEIPT_FILE), "utf8")));
+  const receipt = readReceipt(output);
   verifyTree(output, receipt.manifest, true);
   if (!existsSync(lockPath(state))) return { state: "present" };
   assertLock(state);
@@ -549,7 +573,7 @@ export function cleanSyntheticMethodologyProjectionTransaction(
   if (existsSync(lockPath(state))) throw transactionError("transaction lock exists; recover before clean");
   const output = outputPath(state);
   if (!existsSync(output)) throw transactionError("owned output parent contains no verified projection");
-  const receipt = ReceiptSchema.parse(JSON.parse(readFileSync(join(output, RECEIPT_FILE), "utf8")));
+  const receipt = readReceipt(output);
   removeVerifiedTree(output, receipt.manifest, true);
   rmdirSync(join(containerPath(state), "methodology"));
   unlinkSync(ownerPath(state));
