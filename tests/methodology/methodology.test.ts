@@ -252,16 +252,20 @@ describe("methodology Phase 1 in-process boundaries", () => {
   it("fails closed for malformed JSON, symbolic links, and non-regular intent paths", () => {
     const root = fresh("aih-methodology-in-process-fail-closed-");
     write(root, "invalid.json", "not JSON\n");
+    const invalidIdentity = intent() as { selection: { source: { commit: string } } };
+    invalidIdentity.selection.source.commit = "not-a-commit";
+    writeIntent(root, "invalid-identity.json", invalidIdentity);
     write(root, "directory", "");
     mkdirSync(join(root, "intent-directory"));
     symlinkSync(join(root, "invalid.json"), join(root, "linked.json"));
 
     const invalidJson = runInProcess(root, "inspect", "invalid.json");
+    const invalidExactIdentity = runInProcess(root, "inspect", "invalid-identity.json");
     const linked = runInProcess(root, "inspect", "linked.json");
     const directory = runInProcess(root, "inspect", "intent-directory");
     const nestedFile = runInProcess(root, "inspect", "directory/intent.json", false);
 
-    for (const result of [invalidJson, linked, directory]) {
+    for (const result of [invalidJson, invalidExactIdentity, linked, directory]) {
       expect(result.exitCode).toBe(3);
       expect(JSON.parse(result.stdout)).toMatchObject({
         outcome: "fail-closed",
