@@ -373,6 +373,7 @@ describe("synthetic methodology host profiles", () => {
   });
 
   it("keeps profile and result records closed, complete, and internally consistent", () => {
+    const oversizedVersion = `${"9".repeat(17)}.1`;
     expect(() =>
       SyntheticMethodologyHostProfileSchema.parse({ ...profile(), surfaces: surfaces.slice(1) }),
     ).toThrow();
@@ -384,6 +385,24 @@ describe("synthetic methodology host profiles", () => {
     ).toThrow();
     expect(() =>
       SyntheticMethodologyHostProfileSchema.parse({ ...profile(), injected: true }),
+    ).toThrow();
+    expect(() =>
+      evaluateSyntheticMethodologyHostMappings(
+        input({
+          profile: profile({ compatibility: { ...compatibility, hostVersion: oversizedVersion } }),
+        }),
+      ),
+    ).toThrow();
+    expect(() =>
+      evaluateSyntheticMethodologyHostMappings(
+        input({
+          mappings: [
+            mapping("review-loop", {
+              compatibility: { ...compatibility, hostVersion: oversizedVersion },
+            }),
+          ],
+        }),
+      ),
     ).toThrow();
     const advisory = evaluateSyntheticMethodologyHostMappings(input());
     expect(() =>

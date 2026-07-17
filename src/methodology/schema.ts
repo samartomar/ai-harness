@@ -5,6 +5,11 @@ const ComponentIdSchema = z.string().regex(/^[a-z][a-z0-9-]{0,63}$/);
 const CheckoutPathSchema = z
   .string()
   .regex(/^(?!\/)(?!.*\\\\)(?!.*(?:^|\/)\.{1,2}(?:\/|$))[A-Za-z0-9._/-]+$/);
+// Four numeric segments of at most 16 digits bound compatibility-record input size.
+const MethodologyHostVersionSchema = z
+  .string()
+  .max(67)
+  .regex(/^\d{1,16}(?:\.\d{1,16}){1,3}$/);
 
 export const MethodologyProviderSchema = z.enum(["ecc", "gstack"]);
 export const MethodologyHostSchema = z.enum(["claude-code", "codex", "cursor", "kiro", "opencode"]);
@@ -36,7 +41,7 @@ export const MethodologySourceSchema = z
 export const MethodologyCompatibilitySchema = z
   .object({
     host: MethodologyHostSchema,
-    hostVersion: z.string().regex(/^\d+(?:\.\d+){1,3}$/),
+    hostVersion: MethodologyHostVersionSchema,
     executableSha256: z.string().regex(/^[0-9a-f]{64}$/),
     os: MethodologyOsSchema,
     architecture: MethodologyArchitectureSchema,
