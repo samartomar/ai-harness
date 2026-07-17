@@ -4,7 +4,6 @@ import { z } from "zod";
 const MAX_REQUESTED_COMPONENTS = 32;
 const MAX_ARTIFACTS = 64;
 const MAX_DEPENDENCIES_PER_ARTIFACT = 32;
-const MAX_GRAPH_EDGES = 2_048;
 const MAX_LOCATOR_LENGTH = 512;
 const MAX_FINDINGS = 256;
 const MAX_SNAPSHOT_ARRAY_LENGTH = MAX_FINDINGS;
@@ -131,20 +130,7 @@ const SyntheticClassifierInputTupleSchema = z
   ])
   .transform(([schemaVersion, requested, declaredClosure, artifacts, evidence]) =>
     closedRecord({ schemaVersion, requested, declaredClosure, artifacts, evidence }),
-  )
-  .superRefine((input, ctx) => {
-    const edgeCount = input.artifacts.reduce(
-      (total, artifact) => total + artifact.dependencies.length,
-      0,
-    );
-    if (edgeCount > MAX_GRAPH_EDGES) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["artifacts"],
-        message: "synthetic dependency graph exceeds the Phase 2 edge limit",
-      });
-    }
-  });
+  );
 
 export const SyntheticClassifierInputSchema = z.preprocess(
   (value) => recordTuple(value, classifierCollectionsAreBounded, INPUT_FIELDS),
