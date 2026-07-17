@@ -12,6 +12,9 @@ const POLICY_VERSION = "phase-3-policy-v1";
 const MANIFEST_VERSION = 1;
 const DIGEST_VERSION = 1;
 const MAX_ENTRIES = 64;
+const MAX_REQUESTED_COMPONENTS = 32;
+const MAX_DEPENDENCIES_PER_ARTIFACT = 32;
+const MAX_BLOCKED_FINDINGS = 1;
 
 const ArtifactIdSchema = z.string().regex(/^[a-z][a-z0-9-]{0,63}$/);
 const DigestSchema = z.string().regex(/^[0-9a-f]{64}$/);
@@ -30,7 +33,7 @@ export const ProjectionMappingSchema = z
   .object({ artifactId: ArtifactIdSchema, target: MappingTargetSchema })
   .strict();
 
-export const ProjectionPlannerInputSchema = z
+const ProjectionPlannerInputObjectSchema = z
   .object({
     schemaVersion: z.literal(1),
     decisionVersion: z.literal(DECISION_VERSION),
@@ -43,6 +46,11 @@ export const ProjectionPlannerInputSchema = z
   })
   .strict();
 
+export const ProjectionPlannerInputSchema = z.preprocess(
+  (value) => (plannerInputCollectionsAreBounded(value) ? value : null),
+  ProjectionPlannerInputObjectSchema,
+);
+
 const FindingCodeSchema = z.enum([
   "METHODOLOGY_CLASSIFICATION_INELIGIBLE",
   "METHODOLOGY_MAPPING_COVERAGE",
@@ -50,9 +58,7 @@ const FindingCodeSchema = z.enum([
   "METHODOLOGY_TARGET_INVALID",
 ]);
 
-const FindingSchema = z
-  .object({ code: FindingCodeSchema, artifactId: ArtifactIdSchema.optional() })
-  .strict();
+const FindingSchema = z.object({ code: FindingCodeSchema }).strict();
 const BoundarySchema = z
   .object({
     reads: z.literal(false),
@@ -72,7 +78,7 @@ const EntrySchema = z
   })
   .strict();
 
-export const ProjectionDecisionSchema = z
+const ProjectionDecisionObjectSchema = z
   .object({
     decisionVersion: z.literal(DECISION_VERSION),
     digestVersion: z.literal(DIGEST_VERSION),
@@ -96,6 +102,11 @@ export const ProjectionDecisionSchema = z
       });
     }
   });
+
+export const ProjectionDecisionSchema = z.preprocess(
+  (value) => (decisionCollectionsAreBounded(value) ? value : null),
+  ProjectionDecisionObjectSchema,
+);
 
 const ManifestSchema = z
   .object({
@@ -166,7 +177,7 @@ const ManifestSchema = z
     }
   });
 
-export const ProjectionPlanResultSchema = z.union([
+const ProjectionPlanResultUnionSchema = z.union([
   z
     .object({
       schemaVersion: z.literal(1),
@@ -181,10 +192,15 @@ export const ProjectionPlanResultSchema = z.union([
       schemaVersion: z.literal(1),
       state: z.literal("blocked"),
       boundary: BoundarySchema,
-      findings: z.array(FindingSchema).min(1).max(128),
+      findings: z.array(FindingSchema).length(MAX_BLOCKED_FINDINGS),
     })
     .strict(),
 ]);
+
+export const ProjectionPlanResultSchema = z.preprocess(
+  (value) => (resultCollectionsAreBounded(value) ? value : null),
+  ProjectionPlanResultUnionSchema,
+);
 
 type ClassifierInput = z.infer<typeof SyntheticClassifierInputSchema>;
 type ClassifierResult = z.infer<typeof SyntheticClassificationResultSchema>;
@@ -201,6 +217,76 @@ const BOUNDARY = Object.freeze({
   providerExecution: false,
   hostExecution: false,
 });
+
+function recordOf(value: unknown): Record<string, unknown> | undefined {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+function collectionIsBounded(value: unknown, maximum: number): boolean {
+  return !Array.isArray(value) || value.length <= maximum;
+}
+
+function classifierCollectionsAreBounded(value: unknown): boolean {
+  const input = recordOf(value);
+  if (input === undefined) return true;
+  if (!collectionIsBounded(input.requested, MAX_REQUESTED_COMPONENTS)) return false;
+  if (!collectionIsBounded(input.declaredClosure, MAX_ENTRIES)) return false;
+  if (!collectionIsBounded(input.artifacts, MAX_ENTRIES)) return false;
+  if (!collectionIsBounded(input.evidence, MAX_ENTRIES)) return false;
+  if (Array.isArray(input.artifacts)) {
+    for (const candidate of input.artifacts) {
+      const artifact = recordOf(candidate);
+      if (
+        artifact !== undefined &&
+        !collectionIsBounded(artifact.dependencies, MAX_DEPENDENCIES_PER_ARTIFACT)
+      ) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+function plannerInputCollectionsAreBounded(value: unknown): boolean {
+  const input = recordOf(value);
+  if (input === undefined) return true;
+  return (
+    collectionIsBounded(input.mappings, MAX_ENTRIES) &&
+    classifierCollectionsAreBounded(input.classifierInput)
+  );
+}
+
+function decisionCollectionsAreBounded(value: unknown): boolean {
+  const decision = recordOf(value);
+  if (decision === undefined) return true;
+  return (
+    collectionIsBounded(decision.closure, MAX_ENTRIES) &&
+    collectionIsBounded(decision.eligible, MAX_ENTRIES) &&
+    collectionIsBounded(decision.mappings, MAX_ENTRIES) &&
+    collectionIsBounded(decision.entries, MAX_ENTRIES) &&
+    classifierCollectionsAreBounded(decision.classifierInput)
+  );
+}
+
+function manifestCollectionsAreBounded(value: unknown): boolean {
+  const manifest = recordOf(value);
+  if (manifest === undefined) return true;
+  return (
+    collectionIsBounded(manifest.entries, MAX_ENTRIES) &&
+    decisionCollectionsAreBounded(manifest.decision)
+  );
+}
+
+function resultCollectionsAreBounded(value: unknown): boolean {
+  const result = recordOf(value);
+  if (result === undefined) return true;
+  return (
+    collectionIsBounded(result.findings, MAX_BLOCKED_FINDINGS) &&
+    manifestCollectionsAreBounded(result.manifest)
+  );
+}
 
 function compare(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0;
