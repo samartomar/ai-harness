@@ -11,6 +11,13 @@ const MAX_MAPPINGS = 32;
 const ComponentIdSchema = z.string().regex(/^[a-z][a-z0-9-]{0,63}$/);
 const SyntheticProfileIdSchema = z.string().regex(/^[a-z][a-z0-9-]{0,63}$/);
 const SyntheticProjectIdSchema = z.string().regex(/^[a-z][a-z0-9-]{0,63}$/);
+// Phase 5 bounds only its synthetic in-memory tuple records; Phase 1 command input is unchanged.
+const SyntheticMethodologyCompatibilitySchema = MethodologyCompatibilitySchema.extend({
+  hostVersion: z
+    .string()
+    .max(67)
+    .regex(/^\d{1,16}(?:\.\d{1,16}){1,3}$/),
+}).strict();
 
 export const SyntheticMethodologyHostSurfaceSchema = z.enum([
   "project-projection",
@@ -36,7 +43,7 @@ export const SyntheticMethodologyHostProfileSchema = z
     id: SyntheticProfileIdSchema,
     project: SyntheticProjectIdSchema,
     hostAdapter: MethodologyHostAdapterIdSchema,
-    compatibility: MethodologyCompatibilitySchema,
+    compatibility: SyntheticMethodologyCompatibilitySchema,
     posture: z.enum(["advisory", "unsupported"]),
     surfaces: z
       .array(
@@ -88,7 +95,7 @@ export const SyntheticMethodologyHostMappingSchema = z
     profile: SyntheticProfileIdSchema,
     project: SyntheticProjectIdSchema,
     hostAdapter: MethodologyHostAdapterIdSchema,
-    compatibility: MethodologyCompatibilitySchema,
+    compatibility: SyntheticMethodologyCompatibilitySchema,
     destination: z.literal("project-projection"),
   })
   .strict();
@@ -184,7 +191,7 @@ const SubjectSchema = z
     profile: SyntheticProfileIdSchema,
     project: SyntheticProjectIdSchema,
     hostAdapter: MethodologyHostAdapterIdSchema,
-    compatibility: MethodologyCompatibilitySchema,
+    compatibility: SyntheticMethodologyCompatibilitySchema,
   })
   .strict()
   .superRefine((subject, ctx) => {
@@ -215,8 +222,8 @@ function compareCodeUnits(left: string, right: string): number {
 }
 
 function compatibilityEquals(
-  left: z.infer<typeof MethodologyCompatibilitySchema>,
-  right: z.infer<typeof MethodologyCompatibilitySchema>,
+  left: z.infer<typeof SyntheticMethodologyCompatibilitySchema>,
+  right: z.infer<typeof SyntheticMethodologyCompatibilitySchema>,
 ): boolean {
   return (
     left.host === right.host &&
