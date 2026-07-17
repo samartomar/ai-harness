@@ -266,6 +266,45 @@ describe("Phase 2 synthetic methodology classifier", () => {
     expect(result).toMatchObject({ disposition: "eligible", closure: ["root"] });
   });
 
+  it("does not invoke ambient Array prototype collection hooks", () => {
+    const properties: PropertyKey[] = [
+      "every",
+      "find",
+      "map",
+      "pop",
+      "reverse",
+      "some",
+      Symbol.iterator,
+    ];
+    const invoked: string[] = [];
+    const escaped: string[] = [];
+
+    for (let index = 0; index < properties.length; index += 1) {
+      const property = properties[index];
+      if (property === undefined) continue;
+      const label = typeof property === "symbol" ? "Symbol.iterator" : property;
+      const original = Object.getOwnPropertyDescriptor(Array.prototype, property);
+      Object.defineProperty(Array.prototype, property, {
+        configurable: true,
+        value() {
+          invoked.push(label);
+          throw new Error(`classifier invoked ambient Array.prototype.${label}`);
+        },
+        writable: true,
+      });
+      try {
+        classifySyntheticProjection(input());
+      } catch {
+        escaped.push(label);
+      } finally {
+        if (original !== undefined) Object.defineProperty(Array.prototype, property, original);
+      }
+    }
+
+    expect(escaped).toEqual([]);
+    expect(invoked).toEqual([]);
+  });
+
   it("does not read optional finding fields through ambient prototypes", () => {
     const original = Object.getOwnPropertyDescriptor(Object.prototype, "artifactId");
     let hookCalls = 0;
