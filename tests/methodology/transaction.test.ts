@@ -269,6 +269,24 @@ describe("synthetic methodology projection transactions", () => {
     expect(existsSync(join(fixturePath, ".aih"))).toBe(false);
   });
 
+  it("retains the owned lock and receipt for recovery after a post-rename failure", () => {
+    const fixtureRoot = root();
+    const fixturePath = syntheticMethodologyTransactionFixturePath(fixtureRoot);
+
+    expect(() =>
+      applySyntheticMethodologyProjectionTransaction(fixtureRoot, transaction(), {
+        faultAt: "after-rename" as SyntheticMethodologyTransactionTestBoundary,
+      }),
+    ).toThrow(/injected/i);
+    expect(recoverSyntheticMethodologyProjectionTransaction(fixtureRoot)).toEqual({
+      state: "recovered",
+    });
+    expect(cleanSyntheticMethodologyProjectionTransaction(fixtureRoot)).toEqual({
+      state: "cleaned",
+    });
+    expect(existsSync(join(fixturePath, ".aih"))).toBe(false);
+  });
+
   it.each([
     "after-container",
     "after-lock",
