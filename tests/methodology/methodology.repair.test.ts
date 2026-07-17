@@ -293,5 +293,5 @@ describe("methodology Phase 1 repair regressions", () => {
         outcome: "fail-closed",
       });
     }
-  });
+  }, TEST_PROCESS_TIMEOUT_MS);
 });
