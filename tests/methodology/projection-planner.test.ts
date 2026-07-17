@@ -721,6 +721,57 @@ describe("Phase 3 host-neutral synthetic projection planner", () => {
     expect(ProjectionPlannerInputSchema.safeParse(withHidden).success).toBe(false);
   });
 
+  it("does not invoke ambient toJSON hooks while canonicalizing or hashing", () => {
+    const baseline = planSyntheticProjection(input());
+    const manifest = manifestOf(baseline);
+    let hookCalls = 0;
+
+    for (const prototype of [Object.prototype, Array.prototype]) {
+      Object.defineProperty(prototype, "toJSON", {
+        configurable: true,
+        value() {
+          hookCalls += 1;
+          throw new Error("planner invoked an ambient toJSON hook");
+        },
+      });
+      try {
+        expect(planSyntheticProjection(input()).state).toBe("planned");
+        expect(ProjectionDecisionSchema.safeParse(manifest.decision).success).toBe(true);
+        expect(ProjectionPlanResultSchema.safeParse(baseline).success).toBe(true);
+      } finally {
+        delete (prototype as { toJSON?: unknown }).toJSON;
+      }
+    }
+
+    expect(hookCalls).toBe(0);
+  });
+
+  it("rejects oversized targets before canonical path operations", () => {
+    const baseline = manifestOf(planSyntheticProjection(input()));
+    const first = baseline.decision.entries[0];
+    if (first === undefined) throw new Error("test fixture lost its first decision entry");
+    const oversized = "a".repeat(241);
+    const decision = {
+      ...baseline.decision,
+      entries: [{ ...first, target: oversized }, ...baseline.decision.entries.slice(1)],
+    };
+    let splitCalls = 0;
+    const original = String.prototype.split;
+    String.prototype.split = function guardedSplit(separator, limit) {
+      if (this.toString() === oversized) {
+        splitCalls += 1;
+        throw new Error("oversized target reached canonical path splitting");
+      }
+      return original.call(this.toString(), separator, limit);
+    };
+    try {
+      expect(ProjectionDecisionSchema.safeParse(decision).success).toBe(false);
+    } finally {
+      String.prototype.split = original;
+    }
+    expect(splitCalls).toBe(0);
+  });
+
   it("accepts exact resource maxima and rejects the first value beyond each bound", () => {
     const maximal = maximalInput();
     const maximalResult = planSyntheticProjection(maximal);
