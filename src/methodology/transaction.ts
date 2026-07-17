@@ -498,8 +498,9 @@ function rollback(state: FixtureState, manifest: Manifest): void {
       assertExactChildren(outputParent, [], "owned methodology parent");
       rmdirSync(outputParent);
     }
-    removeLock(state);
-    assertExactChildren(containerPath(state), [OWNER_FILE], "owned output parent");
+    const expected = existsSync(lockPath(state)) ? [LOCK_FILE, OWNER_FILE] : [OWNER_FILE];
+    assertExactChildren(containerPath(state), expected, "owned output parent");
+    if (expected.length === 2) removeLock(state);
     unlinkSync(ownerPath(state));
     rmdirSync(containerPath(state));
     state.containerIdentity = undefined;
