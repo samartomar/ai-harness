@@ -172,11 +172,41 @@ describe("methodology Phase 1 schemas", () => {
   it("rejects unknown nested adapter fields in a closed status record", () => {
     const root = fresh("aih-methodology-closed-status-");
     writeIntent(root, "methodology.intent.json", intent());
-    const result = runInProcess(root, "inspect");
-    const status = JSON.parse(result.stdout).status;
-    status.adapters.provider.unexpected = true;
+    const status = JSON.parse(runInProcess(root, "inspect").stdout).status;
 
-    expect(() => MethodologyStatusSchema.parse(status)).toThrow();
+    expect(() =>
+      MethodologyStatusSchema.parse({
+        ...status,
+        adapters: {
+          ...status.adapters,
+          provider: { ...status.adapters.provider, unexpected: true },
+        },
+      }),
+    ).toThrow();
+    expect(() =>
+      MethodologyStatusSchema.parse({
+        ...status,
+        identity: { ...status.identity, sha256: "0".repeat(64) },
+      }),
+    ).toThrow();
+    expect(() =>
+      MethodologyStatusSchema.parse({
+        ...status,
+        adapters: {
+          ...status.adapters,
+          provider: { ...status.adapters.provider, provider: "gstack" },
+        },
+      }),
+    ).toThrow();
+    expect(() =>
+      MethodologyStatusSchema.parse({
+        ...status,
+        adapters: {
+          ...status.adapters,
+          host: { ...status.adapters.host, host: "codex" },
+        },
+      }),
+    ).toThrow();
   });
 
   it("rejects contradictory status findings and command/status combinations", () => {

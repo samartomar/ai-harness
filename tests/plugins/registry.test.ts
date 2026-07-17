@@ -12,7 +12,12 @@ import {
   type PluginLoadResult,
   SHARED_FLAG_TOKENS,
 } from "../../src/plugins/registry.js";
-import { buildProgram, buildProgramWithPlugins, isVersionFastPath } from "../../src/program.js";
+import {
+  buildProgram,
+  buildProgramWithPlugins,
+  isMethodologyNoPluginFastPath,
+  isVersionFastPath,
+} from "../../src/program.js";
 
 const builtins = builtinCommandNames();
 
@@ -255,6 +260,16 @@ describe("isVersionFastPath — the --version sync route", () => {
     expect(isVersionFastPath(["node", "aih", "--help"])).toBe(false);
     expect(isVersionFastPath(["node", "aih", "doctor"])).toBe(false);
     expect(isVersionFastPath(["node", "aih", "doctor", "--version"])).toBe(false);
+  });
+});
+
+describe("methodology no-plugin fast path", () => {
+  it("selects the local-only builder before methodology parsing, including invalid argv", () => {
+    expect(isMethodologyNoPluginFastPath(["node", "aih", "methodology", "inspect"])).toBe(true);
+    expect(
+      isMethodologyNoPluginFastPath(["node", "aih", "methodology", "unknown", "--json"]),
+    ).toBe(true);
+    expect(isMethodologyNoPluginFastPath(["node", "aih", "doctor"])).toBe(false);
   });
 });
 
