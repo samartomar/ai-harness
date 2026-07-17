@@ -13,15 +13,66 @@ function digest(seed: string): string {
   return `sha256:${encoded.slice(0, 64).padEnd(64, "0")}`;
 }
 
-function entry(id: string, overrides: Record<string, unknown> = {}) {
+function classifierArtifact(id: string, overrides: Record<string, unknown> = {}) {
+  const { evidence: evidenceOverrides, ...artifactOverrides } = overrides;
+  const path = `rules/${id}.md`;
+  const sourceIdentity = {
+    locator: `synthetic://fixture/${id}`,
+    digest: digest(`source-${id}`),
+  };
+  const content = {
+    classification: "passive",
+    digest: digest(`content-${id}`),
+  };
+  const artifact = {
+    id,
+    path,
+    kind: "regular",
+    content,
+    sourceIdentity,
+    dependencies: [],
+    ...artifactOverrides,
+  };
+  const evidence = evidenceOverrides as
+    | {
+        target?: Record<string, unknown>;
+        source?: "exact" | "drifted";
+        trust?: "admitted" | "held";
+        license?: "allowed" | "unlicensed";
+      }
+    | undefined;
+  const { target: targetOverrides, ...evidenceFields } = evidence ?? {};
+
+  return {
+    ...artifact,
+    evidence: {
+      target: {
+        artifact: artifact.id,
+        path: artifact.path,
+        sourceIdentity: artifact.sourceIdentity,
+        contentDigest: artifact.content.digest,
+        ...targetOverrides,
+      },
+      source: "exact",
+      trust: "admitted",
+      license: "allowed",
+      ...evidenceFields,
+    },
+  };
+}
+
+function classifierInput(overrides: Record<string, unknown> = {}) {
+  return {
+    schemaVersion: 1,
+    roots: ["review-loop"],
+    artifacts: [classifierArtifact("review-loop")],
+    ...overrides,
+  };
+}
+
+function mapping(id: string, overrides: Record<string, unknown> = {}) {
   return {
     id,
-    admission: "admitted",
-    source: {
-      locator: `synthetic://fixture/${id}`,
-      sourceDigest: digest(`source-${id}`),
-      contentDigest: digest(`content-${id}`),
-    },
     target: {
       path: `methodology/v1/rules/${id}.md`,
       owner: "aih-methodology-v1",
@@ -33,7 +84,8 @@ function entry(id: string, overrides: Record<string, unknown> = {}) {
 function projection(overrides: Record<string, unknown> = {}) {
   return {
     schemaVersion: 1,
-    entries: [entry("review-loop")],
+    classification: classifierInput(),
+    mappings: [mapping("review-loop")],
     ...overrides,
   };
 }
@@ -42,12 +94,20 @@ describe("synthetic methodology projection planner", () => {
   it("creates a deterministic host-neutral manifest from admitted synthetic entries", () => {
     const forward = planSyntheticMethodologyProjection(
       projection({
-        entries: [entry("review-loop"), entry("method-routing")],
+        classification: classifierInput({
+          roots: ["review-loop", "method-routing"],
+          artifacts: [classifierArtifact("review-loop"), classifierArtifact("method-routing")],
+        }),
+        mappings: [mapping("review-loop"), mapping("method-routing")],
       }),
     );
     const reverse = planSyntheticMethodologyProjection(
       projection({
-        entries: [entry("method-routing"), entry("review-loop")],
+        classification: classifierInput({
+          roots: ["method-routing", "review-loop"],
+          artifacts: [classifierArtifact("method-routing"), classifierArtifact("review-loop")],
+        }),
+        mappings: [mapping("method-routing"), mapping("review-loop")],
       }),
     );
 
@@ -99,11 +159,15 @@ describe("synthetic methodology projection planner", () => {
   it("blocks colliding owned projection targets with a fixed finding", () => {
     const result = planSyntheticMethodologyProjection(
       projection({
-        entries: [
-          entry("review-loop", {
+        classification: classifierInput({
+          roots: ["review-loop", "method-routing"],
+          artifacts: [classifierArtifact("review-loop"), classifierArtifact("method-routing")],
+        }),
+        mappings: [
+          mapping("review-loop", {
             target: { path: "methodology/v1/rules/shared.md", owner: "aih-methodology-v1" },
           }),
-          entry("method-routing", {
+          mapping("method-routing", {
             target: { path: "methodology/v1/rules/shared.md", owner: "aih-methodology-v1" },
           }),
         ],
@@ -139,7 +203,7 @@ describe("synthetic methodology projection planner", () => {
     ],
   ])("blocks %s", (_name, target) => {
     const result = planSyntheticMethodologyProjection(
-      projection({ entries: [entry("review-loop", { target })] }),
+      projection({ mappings: [mapping("review-loop", { target })] }),
     );
 
     expect(result).toEqual({
@@ -163,25 +227,43 @@ describe("synthetic methodology projection planner", () => {
     });
   });
 
-  it("blocks duplicate source locators without selecting an arbitrary source", () => {
+  it("blocks classifier-denied source ambiguity without selecting an arbitrary source", () => {
     const result = planSyntheticMethodologyProjection(
       projection({
-        entries: [
-          entry("review-loop", {
-            source: {
-              locator: "synthetic://fixture/shared-source",
-              sourceDigest: digest("source-shared"),
-              contentDigest: digest("content-review-loop"),
-            },
-          }),
-          entry("method-routing", {
-            source: {
-              locator: "synthetic://fixture/shared-source",
-              sourceDigest: digest("source-shared"),
-              contentDigest: digest("content-method-routing"),
-            },
-          }),
-        ],
+        classification: classifierInput({
+          roots: ["review-loop", "method-routing"],
+          artifacts: [
+            classifierArtifact("review-loop", {
+              sourceIdentity: {
+                locator: "synthetic://fixture/shared-source",
+                digest: digest("source-shared"),
+              },
+              evidence: {
+                target: {
+                  sourceIdentity: {
+                    locator: "synthetic://fixture/shared-source",
+                    digest: digest("source-shared"),
+                  },
+                },
+              },
+            }),
+            classifierArtifact("method-routing", {
+              sourceIdentity: {
+                locator: "synthetic://fixture/shared-source",
+                digest: digest("source-shared"),
+              },
+              evidence: {
+                target: {
+                  sourceIdentity: {
+                    locator: "synthetic://fixture/shared-source",
+                    digest: digest("source-shared"),
+                  },
+                },
+              },
+            }),
+          ],
+        }),
+        mappings: [mapping("review-loop"), mapping("method-routing")],
       }),
     );
 
@@ -191,12 +273,12 @@ describe("synthetic methodology projection planner", () => {
       manifest: null,
       findings: [
         {
-          code: "METHODOLOGY_SYNTHETIC_SOURCE_IDENTITY_AMBIGUOUS",
+          code: "METHODOLOGY_SYNTHETIC_ADMISSION_DENIED",
           disposition: "blocked",
           target: "methodology/v1/rules/method-routing.md",
         },
         {
-          code: "METHODOLOGY_SYNTHETIC_SOURCE_IDENTITY_AMBIGUOUS",
+          code: "METHODOLOGY_SYNTHETIC_ADMISSION_DENIED",
           disposition: "blocked",
           target: "methodology/v1/rules/review-loop.md",
         },
@@ -211,22 +293,104 @@ describe("synthetic methodology projection planner", () => {
     });
   });
 
-  it("keeps projection records closed, admitted, and canonical at their boundary", () => {
+  it("blocks executable classifier candidates before creating a manifest", () => {
+    const result = planSyntheticMethodologyProjection(
+      projection({
+        classification: classifierInput({
+          artifacts: [
+            classifierArtifact("review-loop", {
+              content: { classification: "executable", digest: digest("content-review-loop") },
+            }),
+          ],
+        }),
+      }),
+    );
+
+    expect(result).toEqual({
+      schemaVersion: 1,
+      state: "blocked",
+      manifest: null,
+      findings: [
+        {
+          code: "METHODOLOGY_SYNTHETIC_ADMISSION_DENIED",
+          disposition: "blocked",
+          target: "methodology/v1/rules/review-loop.md",
+        },
+      ],
+      boundary: {
+        providerExecution: false,
+        hostExecution: false,
+        reads: false,
+        writes: false,
+        cli: false,
+      },
+    });
+  });
+
+  it("blocks mappings that do not exactly bind the classifier admission", () => {
+    const result = planSyntheticMethodologyProjection(
+      projection({
+        classification: classifierInput({
+          roots: ["review-loop", "method-routing"],
+          artifacts: [classifierArtifact("review-loop"), classifierArtifact("method-routing")],
+        }),
+        mappings: [mapping("review-loop")],
+      }),
+    );
+
+    expect(result).toEqual({
+      schemaVersion: 1,
+      state: "blocked",
+      manifest: null,
+      findings: [
+        {
+          code: "METHODOLOGY_SYNTHETIC_ADMISSION_MAPPING_MISMATCH",
+          disposition: "blocked",
+          target: "methodology/v1",
+        },
+      ],
+      boundary: {
+        providerExecution: false,
+        hostExecution: false,
+        reads: false,
+        writes: false,
+        cli: false,
+      },
+    });
+  });
+
+  it("keeps projection records closed, classifier-bound, and canonical at their boundary", () => {
     expect(() =>
       SyntheticMethodologyProjectionSchema.parse({ ...projection(), unknown: true }),
     ).toThrow();
     expect(() =>
       SyntheticMethodologyProjectionSchema.parse(
-        projection({ entries: [entry("review-loop", { admission: "excluded" })] }),
+        projection({ mappings: [{ ...mapping("review-loop"), admission: "admitted" }] }),
       ),
     ).toThrow();
     expect(() =>
       SyntheticMethodologyProjectionSchema.parse(
         projection({
-          entries: [
-            entry("review-loop", {
+          mappings: [
+            mapping("review-loop", {
               target: { path: "methodology/v1/rules/Review-loop.md", owner: "aih-methodology-v1" },
             }),
+          ],
+        }),
+      ),
+    ).toThrow();
+    expect(() =>
+      SyntheticMethodologyProjectionSchema.parse(
+        projection({
+          mappings: [
+            {
+              ...mapping("review-loop"),
+              source: {
+                locator: "synthetic://fixture/injected",
+                sourceDigest: digest("injected-source"),
+                contentDigest: digest("injected-content"),
+              },
+            },
           ],
         }),
       ),
@@ -276,7 +440,7 @@ describe("synthetic methodology projection planner", () => {
         manifest: null,
         findings: [
           {
-            code: "METHODOLOGY_SYNTHETIC_SOURCE_IDENTITY_AMBIGUOUS",
+            code: "METHODOLOGY_SYNTHETIC_ADMISSION_DENIED",
             disposition: "blocked",
             target: "methodology/v1/rules/review-loop.md",
           },
@@ -295,7 +459,13 @@ describe("synthetic methodology projection planner", () => {
 
   it("rejects unordered, duplicate, overlong, or digest-mismatched manifests", () => {
     const planned = planSyntheticMethodologyProjection(
-      projection({ entries: [entry("review-loop"), entry("method-routing")] }),
+      projection({
+        classification: classifierInput({
+          roots: ["review-loop", "method-routing"],
+          artifacts: [classifierArtifact("review-loop"), classifierArtifact("method-routing")],
+        }),
+        mappings: [mapping("review-loop"), mapping("method-routing")],
+      }),
     );
     const manifest = planned.manifest;
     if (planned.state !== "planned" || manifest === null) {
