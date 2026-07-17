@@ -306,6 +306,32 @@ describe("Phase 2 synthetic methodology classifier", () => {
     expect(invoked).toEqual([]);
   });
 
+  it("does not read an inherited negative Array index while deduplicating", () => {
+    const valid = input();
+    const original = Object.getOwnPropertyDescriptor(Array.prototype, "-1");
+    let hookCalls = 0;
+    let escapedError: unknown;
+    Object.defineProperty(Array.prototype, "-1", {
+      configurable: true,
+      get() {
+        hookCalls += 1;
+        throw new Error("classifier invoked ambient Array.prototype[-1]");
+      },
+    });
+
+    try {
+      classifySyntheticProjection(valid);
+    } catch (error) {
+      escapedError = error;
+    } finally {
+      if (original === undefined) delete (Array.prototype as Record<string, unknown>)["-1"];
+      else Object.defineProperty(Array.prototype, "-1", original);
+    }
+
+    expect(escapedError).toBeUndefined();
+    expect(hookCalls).toBe(0);
+  });
+
   it("does not read optional finding fields through ambient prototypes", () => {
     const original = Object.getOwnPropertyDescriptor(Object.prototype, "artifactId");
     let hookCalls = 0;
