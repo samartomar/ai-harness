@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { SyntheticMethodologyPathSchema } from "./classifier.js";
+import { SyntheticMethodologyDigestSchema, SyntheticMethodologyPathSchema } from "./classifier.js";
 import { SyntheticMethodologyProjectionManifestSchema } from "./projection-planner.js";
 import {
   MethodologyClaimsSchema,
@@ -26,6 +26,9 @@ export const SyntheticMethodologyHostSurfaceSchema = z.enum([
 ]);
 
 const REQUIRED_SURFACES = new Set(SyntheticMethodologyHostSurfaceSchema.options);
+// One tuple denial, each non-projection surface, six findings per supplied mapping,
+// and one missing-manifest mapping finding per bounded manifest entry.
+const MAX_HOST_FINDINGS = 1 + (REQUIRED_SURFACES.size - 1) + MAX_MAPPINGS * 7;
 
 export const SyntheticMethodologyHostProfileSchema = z
   .object({
@@ -81,6 +84,7 @@ export const SyntheticMethodologyHostProfileSchema = z
 export const SyntheticMethodologyHostMappingSchema = z
   .object({
     id: ComponentIdSchema,
+    manifestDigest: SyntheticMethodologyDigestSchema,
     profile: SyntheticProfileIdSchema,
     project: SyntheticProjectIdSchema,
     hostAdapter: MethodologyHostAdapterIdSchema,
@@ -113,6 +117,7 @@ export const SyntheticMethodologyHostMappingInputSchema = z
 
 export const SyntheticMethodologyHostFindingCodeSchema = z.enum([
   "METHODOLOGY_SYNTHETIC_HOST_DESTINATION_UNAVAILABLE",
+  "METHODOLOGY_SYNTHETIC_HOST_MANIFEST_DIGEST_MISMATCH",
   "METHODOLOGY_SYNTHETIC_HOST_MANIFEST_MAPPING_MISMATCH",
   "METHODOLOGY_SYNTHETIC_HOST_MAPPING_ADAPTER_MISMATCH",
   "METHODOLOGY_SYNTHETIC_HOST_MAPPING_COMPATIBILITY_MISMATCH",
@@ -133,6 +138,7 @@ export const SyntheticMethodologyHostFindingSchema = z
   .strict()
   .superRefine((finding, ctx) => {
     const expectsComponent =
+      finding.code === "METHODOLOGY_SYNTHETIC_HOST_MANIFEST_DIGEST_MISMATCH" ||
       finding.code === "METHODOLOGY_SYNTHETIC_HOST_MANIFEST_MAPPING_MISMATCH" ||
       finding.code === "METHODOLOGY_SYNTHETIC_HOST_MAPPING_ADAPTER_MISMATCH" ||
       finding.code === "METHODOLOGY_SYNTHETIC_HOST_MAPPING_COMPATIBILITY_MISMATCH" ||
@@ -222,9 +228,10 @@ export const SyntheticMethodologyHostAssessmentSchema = z
   .object({
     schemaVersion: z.literal(1),
     state: z.enum(["advisory", "blocked"]),
+    manifestDigest: SyntheticMethodologyDigestSchema,
     subject: SubjectSchema,
     mappings: z.array(ResultMappingSchema).max(MAX_MAPPINGS),
-    findings: z.array(SyntheticMethodologyHostFindingSchema).max(96),
+    findings: z.array(SyntheticMethodologyHostFindingSchema).max(MAX_HOST_FINDINGS),
     claims: MethodologyClaimsSchema,
     boundary: SyntheticMethodologyHostBoundarySchema,
   })
@@ -363,6 +370,9 @@ export function evaluateSyntheticMethodologyHostMappings(value: unknown) {
     if (mapping.hostAdapter !== profile.hostAdapter) {
       block("METHODOLOGY_SYNTHETIC_HOST_MAPPING_ADAPTER_MISMATCH", { component: mapping.id });
     }
+    if (mapping.manifestDigest !== input.manifest.digest) {
+      block("METHODOLOGY_SYNTHETIC_HOST_MANIFEST_DIGEST_MISMATCH", { component: mapping.id });
+    }
     if (JSON.stringify(mapping.compatibility) !== JSON.stringify(profile.compatibility)) {
       block("METHODOLOGY_SYNTHETIC_HOST_MAPPING_COMPATIBILITY_MISMATCH", {
         component: mapping.id,
@@ -389,6 +399,7 @@ export function evaluateSyntheticMethodologyHostMappings(value: unknown) {
     return SyntheticMethodologyHostAssessmentSchema.parse({
       schemaVersion: 1,
       state: "blocked",
+      manifestDigest: input.manifest.digest,
       subject,
       mappings: [],
       findings: canonical,
@@ -407,6 +418,7 @@ export function evaluateSyntheticMethodologyHostMappings(value: unknown) {
   return SyntheticMethodologyHostAssessmentSchema.parse({
     schemaVersion: 1,
     state: "advisory",
+    manifestDigest: input.manifest.digest,
     subject,
     mappings,
     findings: [],

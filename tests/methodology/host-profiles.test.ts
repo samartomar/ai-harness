@@ -24,9 +24,12 @@ function digest(value: string): string {
   return `sha256:${createHash("sha256").update(value, "utf8").digest("hex")}`;
 }
 
-function artifact(id: string) {
-  const contentDigest = digest(`content-${id}`);
-  const sourceIdentity = { locator: `synthetic://fixture/${id}`, digest: digest(`source-${id}`) };
+function artifact(id: string, variation = "") {
+  const contentDigest = digest(`content-${id}-${variation}`);
+  const sourceIdentity = {
+    locator: `synthetic://fixture/${id}`,
+    digest: digest(`source-${id}-${variation}`),
+  };
   return {
     id,
     path: `rules/${id}.md`,
@@ -43,8 +46,8 @@ function artifact(id: string) {
   };
 }
 
-function manifest(ids: string[] = ["review-loop"]) {
-  const artifacts = ids.map(artifact);
+function manifest(ids: string[] = ["review-loop"], variation = "") {
+  const artifacts = ids.map((id) => artifact(id, variation));
   const plan = planSyntheticMethodologyProjection({
     schemaVersion: 1,
     classification: { schemaVersion: 1, roots: ids, artifacts },
@@ -93,28 +96,38 @@ function mapping(id: string, overrides: Record<string, unknown> = {}) {
     project: "project-alpha",
     hostAdapter: "claude-code-static-v1",
     compatibility,
+    manifestDigest: undefined as string | undefined,
     destination: "project-projection",
     ...overrides,
   };
 }
 
 function input(overrides: Record<string, unknown> = {}) {
-  return {
+  const candidate = {
     schemaVersion: 1,
     profile: profile(),
     manifest: manifest(),
     mappings: [mapping("review-loop")],
     ...overrides,
   };
+  return {
+    ...candidate,
+    mappings: candidate.mappings.map((candidateMapping) => ({
+      ...candidateMapping,
+      manifestDigest: candidateMapping.manifestDigest ?? candidate.manifest.digest,
+    })),
+  };
 }
 
 describe("synthetic methodology host profiles", () => {
   it("returns only a tuple-bound advisory mapping with false runtime claims", () => {
-    const result = evaluateSyntheticMethodologyHostMappings(input());
+    const candidate = input();
+    const result = evaluateSyntheticMethodologyHostMappings(candidate);
 
     expect(result).toEqual({
       schemaVersion: 1,
       state: "advisory",
+      manifestDigest: candidate.manifest.digest,
       subject: {
         profile: "host-profile-alpha",
         project: "project-alpha",
@@ -153,17 +166,19 @@ describe("synthetic methodology host profiles", () => {
   });
 
   it("is deterministic when caller ordering changes", () => {
-    const first = evaluateSyntheticMethodologyHostMappings({
-      ...input({ manifest: manifest(["review-loop", "method-routing"]) }),
-      mappings: [mapping("review-loop"), mapping("method-routing")],
-    });
-    const second = evaluateSyntheticMethodologyHostMappings({
-      ...input({
+    const first = evaluateSyntheticMethodologyHostMappings(
+      input({
+        manifest: manifest(["review-loop", "method-routing"]),
+        mappings: [mapping("review-loop"), mapping("method-routing")],
+      }),
+    );
+    const second = evaluateSyntheticMethodologyHostMappings(
+      input({
         profile: profile({ surfaces: [...profile().surfaces].reverse() }),
         manifest: manifest(["method-routing", "review-loop"]),
+        mappings: [mapping("method-routing"), mapping("review-loop")],
       }),
-      mappings: [mapping("method-routing"), mapping("review-loop")],
-    });
+    );
 
     expect(second).toEqual(first);
   });
@@ -229,6 +244,65 @@ describe("synthetic methodology host profiles", () => {
         {
           code: "METHODOLOGY_SYNTHETIC_HOST_MANIFEST_MAPPING_MISMATCH",
           component: "not-in-manifest",
+        },
+      ],
+    });
+  });
+
+  it("returns a bounded blocked assessment for the maximal hostile mapping set", () => {
+    const manifestIds = Array.from({ length: 32 }, (_, index) => `manifest-${index}`);
+    const mappingIds = Array.from({ length: 32 }, (_, index) => `mapping-${index}`);
+    const result = evaluateSyntheticMethodologyHostMappings(
+      input({
+        profile: profile({
+          posture: "unsupported",
+          surfaces: profile().surfaces.map((surface) =>
+            surface.id === "project-projection"
+              ? { ...surface, precedence: 1 }
+              : { ...surface, presence: "present", precedence: 0 },
+          ),
+        }),
+        manifest: manifest(manifestIds),
+        mappings: mappingIds.map((id) =>
+          mapping(id, {
+            profile: "host-profile-beta",
+            project: "project-beta",
+            hostAdapter: "codex-static-v1",
+            compatibility: { ...compatibility, hostVersion: "2.1.184" },
+            manifestDigest: digest(`replayed-${id}`),
+          }),
+        ),
+      }),
+    );
+
+    expect(result.state).toBe("blocked");
+    expect(result.mappings).toEqual([]);
+    expect(result.findings).toHaveLength(234);
+    expect(SyntheticMethodologyHostAssessmentSchema.parse(result)).toEqual(result);
+  });
+
+  it("binds every mapping and assessment to the exact Phase 3 manifest digest", () => {
+    const firstInput = input();
+    const first = evaluateSyntheticMethodologyHostMappings(firstInput);
+    const changedInput = input({ manifest: manifest(["review-loop"], "changed") });
+    const changed = evaluateSyntheticMethodologyHostMappings(changedInput);
+    const replay = evaluateSyntheticMethodologyHostMappings(
+      input({
+        manifest: changedInput.manifest,
+        mappings: [mapping("review-loop", { manifestDigest: firstInput.manifest.digest })],
+      }),
+    );
+
+    expect(first.state).toBe("advisory");
+    expect(changed.state).toBe("advisory");
+    expect(first.manifestDigest).not.toBe(changed.manifestDigest);
+    expect(replay).toMatchObject({
+      state: "blocked",
+      findings: [
+        {
+          code: "METHODOLOGY_SYNTHETIC_HOST_MANIFEST_DIGEST_MISMATCH",
+          component: "review-loop",
+          disposition: "blocked",
         },
       ],
     });
