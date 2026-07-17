@@ -239,6 +239,33 @@ describe("Phase 2 synthetic methodology classifier", () => {
     expect(hookCalls).toBe(0);
   });
 
+  it("does not invoke an ambient Array.prototype.sort hook", () => {
+    const original = Object.getOwnPropertyDescriptor(Array.prototype, "sort");
+    let hookCalls = 0;
+    let escapedError: unknown;
+    let result: ReturnType<typeof classifySyntheticProjection> | undefined;
+    Object.defineProperty(Array.prototype, "sort", {
+      configurable: true,
+      value() {
+        hookCalls += 1;
+        throw new Error("classifier invoked ambient Array.prototype.sort");
+      },
+      writable: true,
+    });
+
+    try {
+      result = classifySyntheticProjection(input());
+    } catch (error) {
+      escapedError = error;
+    } finally {
+      if (original !== undefined) Object.defineProperty(Array.prototype, "sort", original);
+    }
+
+    expect(escapedError).toBeUndefined();
+    expect(hookCalls).toBe(0);
+    expect(result).toMatchObject({ disposition: "eligible", closure: ["root"] });
+  });
+
   it("does not read optional finding fields through ambient prototypes", () => {
     const original = Object.getOwnPropertyDescriptor(Object.prototype, "artifactId");
     let hookCalls = 0;
