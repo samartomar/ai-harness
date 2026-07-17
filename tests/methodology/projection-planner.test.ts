@@ -463,11 +463,11 @@ describe("Phase 3 host-neutral synthetic projection planner", () => {
     }
 
     const dependencies = input();
-    (
-      (dependencies.classifierInput as { artifacts: Array<Record<string, unknown>> }).artifacts[0] as
-        | Record<string, unknown>
-        | undefined
-    )!.dependencies = guardedOversizedArray(33, 32);
+    const firstArtifact = (
+      dependencies.classifierInput as { artifacts: Array<Record<string, unknown>> }
+    ).artifacts[0];
+    if (firstArtifact === undefined) throw new Error("test fixture lost its root artifact");
+    firstArtifact.dependencies = guardedOversizedArray(33, 32);
     expectFailFast(() => ProjectionPlannerInputSchema.safeParse(dependencies));
 
     const mappings = input({ mappings: guardedOversizedArray(65, 64) });
