@@ -202,6 +202,80 @@ describe("synthetic methodology classifier", () => {
     });
   });
 
+  it("excludes duplicate exact synthetic source identities as ambiguous", () => {
+    const sharedSourceIdentity = {
+      locator: "synthetic://fixture/shared-source",
+      digest: digest("source-shared"),
+    };
+    const result = classifySyntheticMethodology(
+      input({
+        roots: ["review-loop", "method-routing"],
+        artifacts: [
+          artifact("review-loop", { sourceIdentity: sharedSourceIdentity }),
+          artifact("method-routing", { sourceIdentity: sharedSourceIdentity }),
+        ],
+      }),
+    );
+
+    expect(result).toEqual({
+      schemaVersion: 1,
+      disposition: "excluded",
+      admitted: [],
+      findings: [
+        {
+          code: "METHODOLOGY_SYNTHETIC_SOURCE_IDENTITY_AMBIGUOUS",
+          disposition: "excluded",
+          artifact: "method-routing",
+        },
+        {
+          code: "METHODOLOGY_SYNTHETIC_SOURCE_IDENTITY_AMBIGUOUS",
+          disposition: "excluded",
+          artifact: "review-loop",
+        },
+      ],
+    });
+  });
+
+  it("excludes a synthetic source locator with conflicting declared digests", () => {
+    const result = classifySyntheticMethodology(
+      input({
+        roots: ["review-loop", "method-routing"],
+        artifacts: [
+          artifact("review-loop", {
+            sourceIdentity: {
+              locator: "synthetic://fixture/shared-source",
+              digest: digest("source-one"),
+            },
+          }),
+          artifact("method-routing", {
+            sourceIdentity: {
+              locator: "synthetic://fixture/shared-source",
+              digest: digest("source-two"),
+            },
+          }),
+        ],
+      }),
+    );
+
+    expect(result).toEqual({
+      schemaVersion: 1,
+      disposition: "excluded",
+      admitted: [],
+      findings: [
+        {
+          code: "METHODOLOGY_SYNTHETIC_SOURCE_IDENTITY_AMBIGUOUS",
+          disposition: "excluded",
+          artifact: "method-routing",
+        },
+        {
+          code: "METHODOLOGY_SYNTHETIC_SOURCE_IDENTITY_AMBIGUOUS",
+          disposition: "excluded",
+          artifact: "review-loop",
+        },
+      ],
+    });
+  });
+
   it.each([
     ["artifact", { artifact: "method-routing" }],
     ["path", { path: "rules/method-routing.md" }],
@@ -248,11 +322,22 @@ describe("synthetic methodology classifier", () => {
     ["trailing synthetic path segment", { path: "rules/shared/" }],
     ["dot synthetic path segment", { path: "rules/./shared.md" }],
     ["parent synthetic path segment", { path: "rules/../shared.md" }],
+    ["mixed-case synthetic path segment", { path: "rules/Shared.md" }],
+    ["trailing-period synthetic path segment", { path: "rules/shared." }],
     [
       "empty synthetic locator segment",
       {
         sourceIdentity: {
           locator: "synthetic://fixture//shared",
+          digest: digest("source-review-loop"),
+        },
+      },
+    ],
+    [
+      "mixed-case synthetic locator segment",
+      {
+        sourceIdentity: {
+          locator: "synthetic://fixture/Shared",
           digest: digest("source-review-loop"),
         },
       },
@@ -291,6 +376,20 @@ describe("synthetic methodology classifier", () => {
           artifacts: [
             artifact("review-loop", { path: "rules/shared.md" }),
             artifact("method-routing", { path: "rules//shared.md" }),
+          ],
+        }),
+      ),
+    ).toThrow();
+  });
+
+  it("fails closed instead of admitting case-alias synthetic paths", () => {
+    expect(() =>
+      classifySyntheticMethodology(
+        input({
+          roots: ["review-loop", "method-routing"],
+          artifacts: [
+            artifact("review-loop", { path: "rules/shared.md" }),
+            artifact("method-routing", { path: "rules/Shared.md" }),
           ],
         }),
       ),
