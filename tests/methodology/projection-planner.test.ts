@@ -746,6 +746,139 @@ describe("Phase 3 host-neutral synthetic projection planner", () => {
     expect(hookCalls).toBe(0);
   });
 
+  it("exports frozen parse-only planner schema boundaries", () => {
+    const schemas = [
+      ProjectionMappingSchema,
+      ProjectionPlannerInputSchema,
+      ProjectionDecisionSchema,
+      ProjectionPlanResultSchema,
+    ];
+    const methods = [
+      "decode",
+      "decodeAsync",
+      "parse",
+      "parseAsync",
+      "safeDecode",
+      "safeDecodeAsync",
+      "safeParse",
+      "safeParseAsync",
+      "spa",
+    ];
+
+    for (const schema of schemas) {
+      expect(Object.getPrototypeOf(schema)).toBeNull();
+      expect(Object.isFrozen(schema)).toBe(true);
+      expect(Object.keys(schema).sort()).toEqual(methods);
+      expect("clone" in schema).toBe(false);
+      expect("optional" in schema).toBe(false);
+      expect("encode" in schema).toBe(false);
+    }
+  });
+
+  it("does not invoke ambient Object prototype error hooks or numeric setters", () => {
+    const planned = planSyntheticProjection(input());
+    const manifest = manifestOf(planned);
+    const validCases = [
+      [ProjectionMappingSchema, { artifactId: "root", target: "rules/root.md" }],
+      [ProjectionPlannerInputSchema, input()],
+      [ProjectionDecisionSchema, manifest.decision],
+      [ProjectionPlanResultSchema, planned],
+    ] as const;
+    const invalidCases = [
+      [ProjectionMappingSchema, { artifactId: "root", target: "" }],
+      [ProjectionPlannerInputSchema, { ...input(), classifierVersion: "future" }],
+      [ProjectionDecisionSchema, { ...manifest.decision, digestVersion: 2 }],
+      [ProjectionPlanResultSchema, { ...planned, unexpected: true }],
+    ] as const;
+    let escapedError: unknown;
+    let failures = 0;
+    let hookCalls = 0;
+
+    for (const property of ["toJSON", "path", "message", "0", "1"] as const) {
+      const original = Object.getOwnPropertyDescriptor(Object.prototype, property);
+      const descriptor: PropertyDescriptor =
+        property === "0" || property === "1"
+          ? {
+              configurable: true,
+              set() {
+                hookCalls += 1;
+                throw new Error(`planner invoked ambient ${property}`);
+              },
+            }
+          : {
+              configurable: true,
+              get() {
+                hookCalls += 1;
+                throw new Error(`planner invoked ambient ${property}`);
+              },
+            };
+      Object.defineProperty(Object.prototype, property, descriptor);
+      try {
+        for (const [schema, value] of validCases) {
+          try {
+            if (!schema.safeParse(value).success) failures += 1;
+          } catch (error) {
+            escapedError = error;
+          }
+        }
+        for (const [schema, value] of invalidCases) {
+          try {
+            if (schema.safeParse(value).success) failures += 1;
+          } catch (error) {
+            escapedError = error;
+          }
+        }
+        try {
+          if (planSyntheticProjection(input()).state !== "planned") failures += 1;
+        } catch (error) {
+          escapedError = error;
+        }
+      } finally {
+        if (original === undefined) delete (Object.prototype as Record<string, unknown>)[property];
+        else Object.defineProperty(Object.prototype, property, original);
+      }
+    }
+
+    expect(escapedError).toBeUndefined();
+    expect(failures).toBe(0);
+    expect(hookCalls).toBe(0);
+  });
+
+  it("does not assimilate ambient then hooks through planner async schema methods", async () => {
+    const valid = input();
+    const invalid = { ...valid, classifierVersion: "future" };
+    let hookCalls = 0;
+    let escapedError: unknown;
+    let failures = 0;
+    const original = Object.getOwnPropertyDescriptor(Object.prototype, "then");
+    // biome-ignore lint/suspicious/noThenProperty: this hostile ambient hook is the boundary under test
+    Object.defineProperty(Object.prototype, "then", {
+      configurable: true,
+      get() {
+        hookCalls += 1;
+        throw new Error("planner invoked ambient then");
+      },
+    });
+    try {
+      try {
+        if (!(await ProjectionPlannerInputSchema.safeParseAsync(valid)).success) failures += 1;
+        if ((await ProjectionPlannerInputSchema.safeDecodeAsync(invalid)).success) failures += 1;
+        if ((await ProjectionPlannerInputSchema.spa(invalid)).success) failures += 1;
+        await ProjectionPlannerInputSchema.parseAsync(valid);
+      } catch (error) {
+        escapedError = error;
+      }
+    } finally {
+      if (original === undefined) delete (Object.prototype as Record<string, unknown>).then;
+      // biome-ignore lint/suspicious/noThenProperty: restore the exact ambient descriptor after the test
+      else Object.defineProperty(Object.prototype, "then", original);
+    }
+
+    expect(escapedError).toBeUndefined();
+    expect(failures).toBe(0);
+    expect(hookCalls).toBe(0);
+  });
+
   it("rejects oversized targets before canonical path operations", () => {
     const baseline = manifestOf(planSyntheticProjection(input()));
     const first = baseline.decision.entries[0];
