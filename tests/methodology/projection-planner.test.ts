@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  ProjectionDecisionSchema,
+  ProjectionPlannerInputSchema,
   ProjectionPlanResultSchema,
   planSyntheticProjection,
 } from "../../src/methodology/projection-planner.js";
@@ -90,6 +92,25 @@ function maximalInput(): Record<string, unknown> {
     },
     mappings: ids.map((id) => ({ artifactId: id, target: `rules/${id}.md` })),
   });
+}
+
+function guardedOversizedArray(length: number, firstForbiddenIndex: number): unknown[] {
+  return new Proxy(new Array(length), {
+    get(target, property, receiver) {
+      if (property === String(firstForbiddenIndex)) {
+        throw new Error(`collection parser visited forbidden index ${firstForbiddenIndex}`);
+      }
+      return Reflect.get(target, property, receiver);
+    },
+  });
+}
+
+function expectFailFast(parse: () => unknown): void {
+  let result: unknown;
+  expect(() => {
+    result = parse();
+  }).not.toThrow();
+  expect(result).toMatchObject({ success: false });
 }
 
 describe("Phase 3 host-neutral synthetic projection planner", () => {
@@ -398,6 +419,97 @@ describe("Phase 3 host-neutral synthetic projection planner", () => {
         },
       }),
     ).toThrow();
+  });
+
+  it("rejects forged blocked findings with fixed cardinality and no attribution", () => {
+    const blocked = planSyntheticProjection(
+      input({
+        mappings: [
+          { artifactId: "root", target: "../rules/root.md" },
+          { artifactId: "dependency", target: "rules/dependency.md" },
+        ],
+      }),
+    );
+    if (blocked.state !== "blocked") throw new Error("expected blocked synthetic projection");
+
+    expect(() =>
+      ProjectionPlanResultSchema.parse({
+        ...blocked,
+        findings: [blocked.findings[0], blocked.findings[0]],
+      }),
+    ).toThrow();
+    expect(() =>
+      ProjectionPlanResultSchema.parse({
+        ...blocked,
+        findings: [{ ...blocked.findings[0], artifactId: "root" }],
+      }),
+    ).toThrow();
+  });
+
+  it("rejects oversized planner and nested classifier collections before traversal", () => {
+    const plannerCases: Array<[string, number, number]> = [
+      ["requested", 33, 32],
+      ["declaredClosure", 65, 64],
+      ["artifacts", 65, 64],
+      ["evidence", 65, 64],
+    ];
+    for (const [field, length, forbidden] of plannerCases) {
+      const candidate = input();
+      (candidate.classifierInput as Record<string, unknown>)[field] = guardedOversizedArray(
+        length,
+        forbidden,
+      );
+      expectFailFast(() => ProjectionPlannerInputSchema.safeParse(candidate));
+    }
+
+    const dependencies = input();
+    (
+      (dependencies.classifierInput as { artifacts: Array<Record<string, unknown>> }).artifacts[0] as
+        | Record<string, unknown>
+        | undefined
+    )!.dependencies = guardedOversizedArray(33, 32);
+    expectFailFast(() => ProjectionPlannerInputSchema.safeParse(dependencies));
+
+    const mappings = input({ mappings: guardedOversizedArray(65, 64) });
+    expectFailFast(() => ProjectionPlannerInputSchema.safeParse(mappings));
+  });
+
+  it("rejects oversized decision and result collections before traversal", () => {
+    const planned = planSyntheticProjection(input());
+    const manifest = manifestOf(planned);
+    for (const field of ["closure", "eligible", "mappings", "entries"] as const) {
+      expectFailFast(() =>
+        ProjectionDecisionSchema.safeParse({
+          ...manifest.decision,
+          [field]: guardedOversizedArray(65, 64),
+        }),
+      );
+    }
+    expectFailFast(() =>
+      ProjectionDecisionSchema.safeParse({
+        ...manifest.decision,
+        classifierInput: {
+          ...manifest.decision.classifierInput,
+          artifacts: guardedOversizedArray(65, 64),
+        },
+      }),
+    );
+    expectFailFast(() =>
+      ProjectionPlanResultSchema.safeParse({
+        ...planned,
+        manifest: { ...manifest, entries: guardedOversizedArray(65, 64) },
+      }),
+    );
+
+    const blocked = planSyntheticProjection(
+      input({ mappings: [{ artifactId: "root", target: "rules/root.md" }] }),
+    );
+    expectFailFast(() =>
+      ProjectionPlanResultSchema.safeParse({
+        ...blocked,
+        findings: guardedOversizedArray(2, 1),
+      }),
+    );
   });
 
   it("accepts exact resource maxima and rejects the first value beyond each bound", () => {
