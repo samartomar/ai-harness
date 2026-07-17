@@ -166,13 +166,22 @@ describe("Phase 2 synthetic methodology classifier", () => {
   it("denies duplicate synthetic identities and locators", () => {
     const root = artifact("root");
     const duplicateId = { ...artifact("dependency"), id: "root" };
-    const duplicateLocator = { ...artifact("dependency"), sourceLocator: "synthetic:root" };
+    const sharedRoot = { ...root, sourceLocator: "synthetic:shared" };
+    const duplicateLocator = {
+      ...artifact("dependency"),
+      sourceLocator: "synthetic:shared",
+    };
 
     expect(codes(classifySyntheticProjection(input([root, duplicateId])))).toContain(
       "METHODOLOGY_ARTIFACT_DUPLICATE",
     );
-    expect(codes(classifySyntheticProjection(input([root, duplicateLocator])))).toContain(
-      "METHODOLOGY_LOCATOR_DUPLICATE",
+    const locatorResult = classifySyntheticProjection(input([sharedRoot, duplicateLocator]));
+    expect(locatorResult.findings).toContainEqual({
+      code: "METHODOLOGY_LOCATOR_DUPLICATE",
+      artifactId: "root",
+    });
+    expect(locatorResult.findings).not.toContainEqual(
+      expect.objectContaining({ artifactId: "shared" }),
     );
   });
 
@@ -570,6 +579,9 @@ describe("Phase 2 synthetic methodology classifier", () => {
     const tooManyFindings = Array.from({ length: 257 }, () => ({
       code: "METHODOLOGY_FINDINGS_LIMIT",
     }));
+    const farTooManyFindings = Array.from({ length: 258 }, () => ({
+      code: "METHODOLOGY_FINDINGS_LIMIT",
+    }));
     const cases = [
       [SyntheticArtifactSchema, withoutId, ["id"]],
       [SyntheticArtifactSchema, withUnknown, ["unexpected"]],
@@ -592,6 +604,16 @@ describe("Phase 2 synthetic methodology classifier", () => {
         input(undefined, { requested: Array.from({ length: 33 }, () => "root") }),
         ["requested"],
       ],
+      [
+        SyntheticClassifierInputSchema,
+        input(undefined, { requested: Array.from({ length: 258 }, () => "root") }),
+        ["requested"],
+      ],
+      [
+        SyntheticClassifierInputSchema,
+        input([artifact("root", { dependencies: Array.from({ length: 258 }, () => "root") })]),
+        ["artifacts", 0, "dependencies"],
+      ],
       [SyntheticClassificationResultSchema, resultWithoutFindings, ["findings"]],
       [
         SyntheticClassificationResultSchema,
@@ -612,6 +634,17 @@ describe("Phase 2 synthetic methodology classifier", () => {
           closure: ["root"],
           eligible: [],
           findings: tooManyFindings,
+        },
+        ["findings"],
+      ],
+      [
+        SyntheticClassificationResultSchema,
+        {
+          schemaVersion: 1,
+          disposition: "ineligible",
+          closure: ["root"],
+          eligible: [],
+          findings: farTooManyFindings,
         },
         ["findings"],
       ],
