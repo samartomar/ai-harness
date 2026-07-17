@@ -283,7 +283,7 @@ describe("Phase 2 synthetic methodology classifier", () => {
     for (let index = 0; index < properties.length; index += 1) {
       const property = properties[index];
       if (property === undefined) continue;
-      const label = typeof property === "symbol" ? "Symbol.iterator" : property;
+      const label = typeof property === "symbol" ? "Symbol.iterator" : String(property);
       const original = Object.getOwnPropertyDescriptor(Array.prototype, property);
       Object.defineProperty(Array.prototype, property, {
         configurable: true,

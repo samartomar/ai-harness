@@ -56,7 +56,7 @@ const FINDING_CODES = [
 
 export type SyntheticFindingCode = (typeof FINDING_CODES)[number];
 
-const GLOBAL_FINDING_CODES = new Set<SyntheticFindingCode>([
+const GLOBAL_FINDING_CODES = setOf<SyntheticFindingCode>([
   "METHODOLOGY_DEPENDENCY_OUT_OF_CLOSURE",
   "METHODOLOGY_FINDINGS_LIMIT",
   "METHODOLOGY_REQUEST_DUPLICATE",
@@ -128,6 +128,49 @@ function appendOwn<T>(values: T[], value: T): void {
   });
 }
 
+function setOf<T>(values: readonly T[]): Set<T> {
+  const result = new Set<T>();
+  for (let index = 0; index < values.length; index += 1) {
+    const value = values[index];
+    if (value !== undefined) result.add(value);
+  }
+  return result;
+}
+
+function copyOwnValues<T>(values: readonly T[]): T[] {
+  const copy: T[] = [];
+  for (let index = 0; index < values.length; index += 1) {
+    const value = values[index];
+    if (value !== undefined) appendOwn(copy, value);
+  }
+  return copy;
+}
+
+function concatOwnValues<T>(left: readonly T[], right: readonly T[]): T[] {
+  const combined = copyOwnValues(left);
+  for (let index = 0; index < right.length; index += 1) {
+    const value = right[index];
+    if (value !== undefined) appendOwn(combined, value);
+  }
+  return combined;
+}
+
+function ownKeysAreStrings(keys: readonly PropertyKey[]): keys is string[] {
+  for (let index = 0; index < keys.length; index += 1) {
+    if (typeof keys[index] !== "string") return false;
+  }
+  return true;
+}
+
+function popOwn<T>(values: T[]): T | undefined {
+  if (values.length === 0) return undefined;
+  const index = values.length - 1;
+  const value = values[index];
+  delete values[index];
+  values.length = index;
+  return value;
+}
+
 function sortOwnedValues<T>(values: T[], compare: (left: T, right: T) => number): T[] {
   for (let index = 1; index < values.length; index += 1) {
     const candidate = values[index];
@@ -144,22 +187,11 @@ function sortOwnedValues<T>(values: T[], compare: (left: T, right: T) => number)
   return values;
 }
 
-function sortedArrayCopy<T>(
-  values: readonly T[],
-  compare: (left: T, right: T) => number,
-): T[] {
-  const copy: T[] = [];
-  for (let index = 0; index < values.length; index += 1) {
-    const value = values[index];
-    if (value !== undefined) appendOwn(copy, value);
-  }
-  return sortOwnedValues(copy, compare);
+function sortedArrayCopy<T>(values: readonly T[], compare: (left: T, right: T) => number): T[] {
+  return sortOwnedValues(copyOwnValues(values), compare);
 }
 
-function sortedIterableCopy<T>(
-  values: Iterable<T>,
-  compare: (left: T, right: T) => number,
-): T[] {
+function sortedIterableCopy<T>(values: Iterable<T>, compare: (left: T, right: T) => number): T[] {
   const copy: T[] = [];
   for (const value of values) appendOwn(copy, value);
   return sortOwnedValues(copy, compare);
@@ -179,7 +211,7 @@ function snapshotSurface(value: unknown): SnapshotResult {
     const length = value.length;
     if (length > MAX_SNAPSHOT_ARRAY_LENGTH) return INVALID_SNAPSHOT;
     const keys = Reflect.ownKeys(value);
-    if (keys.length !== length + 1 || keys.some((key) => typeof key !== "string")) {
+    if (keys.length !== length + 1 || !ownKeysAreStrings(keys)) {
       return INVALID_SNAPSHOT;
     }
     for (let index = 0; index < length; index += 1) {
@@ -193,11 +225,13 @@ function snapshotSurface(value: unknown): SnapshotResult {
   const prototype = Object.getPrototypeOf(value);
   if (prototype !== Object.prototype && prototype !== null) return INVALID_SNAPSHOT;
   const keys = Reflect.ownKeys(value);
-  if (keys.length > MAX_SNAPSHOT_RECORD_KEYS || keys.some((key) => typeof key !== "string")) {
+  if (keys.length > MAX_SNAPSHOT_RECORD_KEYS || !ownKeysAreStrings(keys)) {
     return INVALID_SNAPSHOT;
   }
   const snapshot = Object.create(null) as Record<string, unknown>;
-  for (const key of keys as string[]) {
+  for (let index = 0; index < keys.length; index += 1) {
+    const key = keys[index];
+    if (key === undefined) return INVALID_SNAPSHOT;
     const descriptor = Object.getOwnPropertyDescriptor(value, key);
     if (descriptor === undefined || !("value" in descriptor) || !descriptor.enumerable) {
       return INVALID_SNAPSHOT;
@@ -232,7 +266,10 @@ function snapshotPlainData(value: unknown, depth: number, state: SnapshotState):
     const record = recordOf(surface.value);
     if (record === undefined) return INVALID_SNAPSHOT;
     const snapshot = Object.create(null) as Record<string, unknown>;
-    for (const key of Object.keys(record)) {
+    const keys = Object.keys(record);
+    for (let index = 0; index < keys.length; index += 1) {
+      const key = keys[index];
+      if (key === undefined) return INVALID_SNAPSHOT;
       const descriptor = Object.getOwnPropertyDescriptor(record, key);
       if (descriptor === undefined || !("value" in descriptor)) return INVALID_SNAPSHOT;
       const child = snapshotPlainData(descriptor.value, depth + 1, state);
@@ -252,11 +289,16 @@ function staticRecordOf(value: unknown): Record<string, unknown> | undefined {
 
 function closedRecord<T extends Record<string, unknown>>(value: T): T {
   const record = Object.create(null) as T;
-  for (const [key, entry] of Object.entries(value)) {
+  const keys = Object.keys(value);
+  for (let index = 0; index < keys.length; index += 1) {
+    const key = keys[index];
+    if (key === undefined) continue;
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    if (descriptor === undefined || !("value" in descriptor)) continue;
     Object.defineProperty(record, key, {
       configurable: true,
       enumerable: true,
-      value: entry,
+      value: descriptor.value,
       writable: true,
     });
   }
@@ -291,18 +333,18 @@ export interface ClosedSchema<T> {
 const ARTIFACT_ID_PATTERN = /^[a-z][a-z0-9-]{0,63}$/;
 const DIGEST_PATTERN = /^[0-9a-f]{64}$/;
 const SOURCE_LOCATOR_PATTERN = /^synthetic:[a-z][a-z0-9-]{0,63}$/;
-const CONTENT_DISPOSITIONS = new Set(["inert", "executable", "ambiguous"]);
-const LINK_DISPOSITIONS = new Set(["none", "symbolic", "hard", "reparse"]);
-const LICENSE_DISPOSITIONS = new Set(["permissive", "unknown", "restricted"]);
-const RESULT_DISPOSITIONS = new Set(["eligible", "ineligible"]);
-const FINDING_CODE_SET = new Set<string>(FINDING_CODES);
+const CONTENT_DISPOSITIONS = setOf(["inert", "executable", "ambiguous"]);
+const LINK_DISPOSITIONS = setOf(["none", "symbolic", "hard", "reparse"]);
+const LICENSE_DISPOSITIONS = setOf(["permissive", "unknown", "restricted"]);
+const RESULT_DISPOSITIONS = setOf(["eligible", "ineligible"]);
+const FINDING_CODE_SET = setOf<string>(FINDING_CODES);
 
 function validationIssue(path: ValidationPath, message: string): ValidationIssue {
-  return closedRecord({ code: "custom" as const, path: [...path], message });
+  return closedRecord({ code: "custom" as const, path: copyOwnValues(path), message });
 }
 
 function prefixedIssue(prefix: ValidationPath, issue: ValidationIssue): ValidationIssue {
-  return validationIssue([...prefix, ...issue.path], issue.message);
+  return validationIssue(concatOwnValues(prefix, issue.path), issue.message);
 }
 
 type CollectionBound = {
@@ -318,7 +360,9 @@ function preflightRecordCollections(
   if (!surface.ok) return undefined;
   const record = recordOf(surface.value);
   if (record === undefined) return undefined;
-  for (const bound of bounds) {
+  for (let index = 0; index < bounds.length; index += 1) {
+    const bound = bounds[index];
+    if (bound === undefined) continue;
     const descriptor = Object.getOwnPropertyDescriptor(record, bound.field);
     if (descriptor === undefined || !("value" in descriptor)) continue;
     const collection = descriptor.value;
@@ -380,11 +424,24 @@ function validateRecordFields(
   required: readonly string[],
   optional: readonly string[] = [],
 ): ValidationIssue | undefined {
-  const permitted = new Set([...required, ...optional]);
-  for (const key of Object.keys(record)) {
+  const permitted = new Set<string>();
+  for (let index = 0; index < required.length; index += 1) {
+    const field = required[index];
+    if (field !== undefined) permitted.add(field);
+  }
+  for (let index = 0; index < optional.length; index += 1) {
+    const field = optional[index];
+    if (field !== undefined) permitted.add(field);
+  }
+  const keys = Object.keys(record);
+  for (let index = 0; index < keys.length; index += 1) {
+    const key = keys[index];
+    if (key === undefined) continue;
     if (!permitted.has(key)) return validationIssue([key], "unknown field is not permitted");
   }
-  for (const field of required) {
+  for (let index = 0; index < required.length; index += 1) {
+    const field = required[index];
+    if (field === undefined) continue;
     if (!Object.hasOwn(record, field)) return validationIssue([field], "required field is missing");
   }
   return undefined;
@@ -425,7 +482,11 @@ function validateArray(
   }
   for (let index = 0; index < value.length; index += 1) {
     const childIssue = itemValidator(value[index]);
-    if (childIssue !== undefined) return prefixedIssue([...path, index], childIssue);
+    if (childIssue !== undefined) {
+      const childPath = copyOwnValues(path);
+      appendOwn(childPath, index);
+      return prefixedIssue(childPath, childIssue);
+    }
   }
   return undefined;
 }
@@ -492,7 +553,10 @@ function validateArtifact(value: unknown): ValidationIssue | undefined {
     ),
     prefixedOptional(["evidenceDigest"], validateDigest(artifact.evidenceDigest)),
   ];
-  for (const issue of fieldIssues) if (issue !== undefined) return issue;
+  for (let index = 0; index < fieldIssues.length; index += 1) {
+    const issue = fieldIssues[index];
+    if (issue !== undefined) return issue;
+  }
 
   const dependenciesIssue = validateArray(
     artifact.dependencies,
@@ -503,8 +567,13 @@ function validateArtifact(value: unknown): ValidationIssue | undefined {
   );
   if (dependenciesIssue !== undefined) return dependenciesIssue;
   const dependencies = artifact.dependencies as unknown[];
-  if (new Set(dependencies).size !== dependencies.length) {
-    return validationIssue(["dependencies"], "synthetic artifact dependencies must be unique");
+  const uniqueDependencies = new Set<unknown>();
+  for (let index = 0; index < dependencies.length; index += 1) {
+    const dependency = dependencies[index];
+    if (uniqueDependencies.has(dependency)) {
+      return validationIssue(["dependencies"], "synthetic artifact dependencies must be unique");
+    }
+    uniqueDependencies.add(dependency);
   }
   return undefined;
 }
@@ -529,7 +598,11 @@ function validateEvidence(value: unknown): ValidationIssue | undefined {
     ),
     prefixedOptional(["evidenceDigest"], validateDigest(evidence.evidenceDigest)),
   ];
-  return issues.find((issue) => issue !== undefined);
+  for (let index = 0; index < issues.length; index += 1) {
+    const issue = issues[index];
+    if (issue !== undefined) return issue;
+  }
+  return undefined;
 }
 
 function validateFinding(value: unknown): ValidationIssue | undefined {
@@ -627,13 +700,17 @@ function validateClassificationResult(value: unknown): ValidationIssue | undefin
   if (!isCanonicalUnique(eligible)) {
     return validationIssue(["eligible"], "eligible ids must be canonical and unique");
   }
-  const findingKeys = findings.map((finding) => `${finding.code}\u0000${finding.artifactId ?? ""}`);
+  const findingKeys: string[] = [];
+  let hasFindingsLimit = false;
+  for (let index = 0; index < findings.length; index += 1) {
+    const finding = findings[index];
+    if (finding === undefined) continue;
+    appendOwn(findingKeys, `${finding.code}\u0000${finding.artifactId ?? ""}`);
+    if (finding.code === "METHODOLOGY_FINDINGS_LIMIT") hasFindingsLimit = true;
+  }
   if (!isCanonicalUnique(findingKeys)) {
     return validationIssue(["findings"], "findings must be canonical and unique");
   }
-  const hasFindingsLimit = findings.some(
-    (finding) => finding.code === "METHODOLOGY_FINDINGS_LIMIT",
-  );
   if (
     hasFindingsLimit &&
     (findings.length !== 1 || findings[0]?.code !== "METHODOLOGY_FINDINGS_LIMIT")
@@ -724,15 +801,20 @@ function compareCodeUnits(left: string, right: string): number {
 }
 
 function isCanonicalUnique(values: readonly string[]): boolean {
-  return values.every((value, index) => {
-    if (index === 0) return true;
+  for (let index = 1; index < values.length; index += 1) {
+    const value = values[index];
     const previous = values[index - 1];
-    return previous !== undefined && previous < value;
-  });
+    if (value === undefined || previous === undefined || previous >= value) return false;
+  }
+  return true;
 }
 
 function sameStrings(left: readonly string[], right: readonly string[]): boolean {
-  return left.length === right.length && left.every((value, index) => value === right[index]);
+  if (left.length !== right.length) return false;
+  for (let index = 0; index < left.length; index += 1) {
+    if (left[index] !== right[index]) return false;
+  }
+  return true;
 }
 
 function findingArtifactId(finding: SyntheticFindingRecord): string | undefined {
@@ -779,12 +861,15 @@ function sortedEvidence(evidence: readonly Evidence[]): Evidence[] {
 
 function canonicalKey(parts: readonly string[]): string {
   let key = "";
-  for (const part of parts) key += `${part.length}:${part};`;
+  for (let index = 0; index < parts.length; index += 1) {
+    const part = parts[index];
+    if (part !== undefined) key += `${part.length}:${part};`;
+  }
   return key;
 }
 
 function canonicalArtifactKey(artifact: Artifact): string {
-  return canonicalKey([
+  const parts = [
     artifact.id,
     artifact.sourceLocator,
     artifact.contentDigest,
@@ -792,8 +877,13 @@ function canonicalArtifactKey(artifact: Artifact): string {
     artifact.linkDisposition,
     artifact.licenseDisposition,
     artifact.evidenceDigest,
-    ...sortedArrayCopy(artifact.dependencies, compareCodeUnits),
-  ]);
+  ];
+  const dependencies = sortedArrayCopy(artifact.dependencies, compareCodeUnits);
+  for (let index = 0; index < dependencies.length; index += 1) {
+    const dependency = dependencies[index];
+    if (dependency !== undefined) appendOwn(parts, dependency);
+  }
+  return canonicalKey(parts);
 }
 
 function canonicalEvidenceKey(evidence: Evidence): string {
@@ -835,7 +925,10 @@ export function classifySyntheticProjection(value: unknown): SyntheticClassifica
   const artifactsById = new Map<string, Artifact>();
   const artifactByLocator = new Map<string, Artifact>();
 
-  for (const artifact of sortedArtifacts(input.artifacts)) {
+  const artifacts = sortedArtifacts(input.artifacts);
+  for (let index = 0; index < artifacts.length; index += 1) {
+    const artifact = artifacts[index];
+    if (artifact === undefined) continue;
     if (artifactsById.has(artifact.id)) {
       findings.add("METHODOLOGY_ARTIFACT_DUPLICATE", artifact.id);
       continue;
@@ -858,10 +951,12 @@ export function classifySyntheticProjection(value: unknown): SyntheticClassifica
   type Frame = { id: string; complete: boolean };
   const stack: Frame[] = [];
 
-  for (const root of requested) {
+  for (let rootIndex = 0; rootIndex < requested.length; rootIndex += 1) {
+    const root = requested[rootIndex];
+    if (root === undefined) continue;
     appendOwn(stack, { id: root, complete: false });
     while (stack.length > 0) {
-      const frame = stack.pop();
+      const frame = popOwn(stack);
       if (frame === undefined) continue;
       const current = artifactsById.get(frame.id);
       if (current === undefined) {
@@ -905,7 +1000,10 @@ export function classifySyntheticProjection(value: unknown): SyntheticClassifica
   }
 
   const evidenceByArtifact = new Map<string, Evidence>();
-  for (const evidence of sortedEvidence(input.evidence)) {
+  const evidenceRecords = sortedEvidence(input.evidence);
+  for (let index = 0; index < evidenceRecords.length; index += 1) {
+    const evidence = evidenceRecords[index];
+    if (evidence === undefined) continue;
     if (!artifactsById.has(evidence.artifactId)) {
       findings.add("METHODOLOGY_EVIDENCE_UNBOUND", evidence.artifactId);
       continue;
@@ -917,7 +1015,9 @@ export function classifySyntheticProjection(value: unknown): SyntheticClassifica
     evidenceByArtifact.set(evidence.artifactId, evidence);
   }
 
-  for (const id of canonicalClosure) {
+  for (let index = 0; index < canonicalClosure.length; index += 1) {
+    const id = canonicalClosure[index];
+    if (id === undefined) continue;
     const artifact = artifactsById.get(id);
     if (artifact === undefined) continue;
     if (artifact.contentDisposition === "executable") {
