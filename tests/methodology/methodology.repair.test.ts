@@ -262,36 +262,40 @@ describe("methodology Phase 1 repair regressions", () => {
     expect(JSON.parse(unknownSubcommand.stdout).command).toBeNull();
   });
 
-  it("enforces each bounded Phase 1 input dimension independently", () => {
-    const tooManyComponents = fresh("aih-methodology-component-limit-");
-    const tooLarge = fresh("aih-methodology-byte-limit-");
-    const oversizedCheckout = fresh("aih-methodology-checkout-limit-");
-    const oversizedVersion = fresh("aih-methodology-version-limit-");
-    const componentLimit = intent();
-    componentLimit.selection.components = Array.from({ length: 33 }, (_, index) => ({
-      id: `component-${index}`,
-    }));
-    const byteLimit = intent();
-    byteLimit.selection.source.checkout = "a".repeat(65_536);
-    const checkoutLimit = intent();
-    checkoutLimit.selection.source.checkout = "a".repeat(241);
-    const versionLimit = intent();
-    versionLimit.selection.compatibility.hostVersion = `${"9".repeat(17)}.1`;
-    const candidates: Array<[string, IntentFixture]> = [
-      [tooManyComponents, componentLimit],
-      [tooLarge, byteLimit],
-      [oversizedCheckout, checkoutLimit],
-      [oversizedVersion, versionLimit],
-    ];
+  it(
+    "enforces each bounded Phase 1 input dimension independently",
+    () => {
+      const tooManyComponents = fresh("aih-methodology-component-limit-");
+      const tooLarge = fresh("aih-methodology-byte-limit-");
+      const oversizedCheckout = fresh("aih-methodology-checkout-limit-");
+      const oversizedVersion = fresh("aih-methodology-version-limit-");
+      const componentLimit = intent();
+      componentLimit.selection.components = Array.from({ length: 33 }, (_, index) => ({
+        id: `component-${index}`,
+      }));
+      const byteLimit = intent();
+      byteLimit.selection.source.checkout = "a".repeat(65_536);
+      const checkoutLimit = intent();
+      checkoutLimit.selection.source.checkout = "a".repeat(241);
+      const versionLimit = intent();
+      versionLimit.selection.compatibility.hostVersion = `${"9".repeat(17)}.1`;
+      const candidates: Array<[string, IntentFixture]> = [
+        [tooManyComponents, componentLimit],
+        [tooLarge, byteLimit],
+        [oversizedCheckout, checkoutLimit],
+        [oversizedVersion, versionLimit],
+      ];
 
-    for (const [root, candidate] of candidates) {
-      write(root, "methodology.intent.json", `${JSON.stringify(candidate)}\n`);
-      const result = runAih(root);
+      for (const [root, candidate] of candidates) {
+        write(root, "methodology.intent.json", `${JSON.stringify(candidate)}\n`);
+        const result = runAih(root);
 
-      expect(result.status).toBe(3);
-      expect(MethodologyCommandEnvelopeSchema.parse(JSON.parse(result.stdout))).toMatchObject({
-        outcome: "fail-closed",
-      });
-    }
-  }, TEST_PROCESS_TIMEOUT_MS);
+        expect(result.status).toBe(3);
+        expect(MethodologyCommandEnvelopeSchema.parse(JSON.parse(result.stdout))).toMatchObject({
+          outcome: "fail-closed",
+        });
+      }
+    },
+    TEST_PROCESS_TIMEOUT_MS,
+  );
 });

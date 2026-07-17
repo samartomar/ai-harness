@@ -21,10 +21,10 @@ import {
 import {
   canonicalizeMethodologyIntent,
   exactSourceIdentity,
-  providerAdapterFor,
   MethodologyCommandEnvelopeSchema,
   MethodologyIntentSchema,
   MethodologyStatusSchema,
+  providerAdapterFor,
 } from "../../src/methodology/schema.js";
 
 const tmps: string[] = [];
@@ -304,10 +304,7 @@ describe("methodology Phase 1 in-process boundaries", () => {
     const oversized = fresh("aih-methodology-in-process-oversized-");
     write(oversized, "oversized.json", " ".repeat(64 * 1024 + 1));
 
-    const linkedAncestor = runInProcess(
-      join(wrapper, "linked-ancestor", "project"),
-      "inspect",
-    );
+    const linkedAncestor = runInProcess(join(wrapper, "linked-ancestor", "project"), "inspect");
     const byteLimit = runInProcess(oversized, "inspect", "oversized.json");
 
     for (const result of [linkedAncestor, byteLimit]) {
