@@ -1,9 +1,15 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
 
+const MAX_METHODOLOGY_COMPONENTS = 32;
+const MAX_METHODOLOGY_CHECKOUT_PATH_LENGTH = 240;
+const MAX_METHODOLOGY_HOST_VERSION_LENGTH = 67;
+const MAX_METHODOLOGY_FINDING_DETAIL_LENGTH = 512;
+
 const ComponentIdSchema = z.string().regex(/^[a-z][a-z0-9-]{0,63}$/);
 const CheckoutPathSchema = z
   .string()
+  .max(MAX_METHODOLOGY_CHECKOUT_PATH_LENGTH)
   .regex(/^(?!\/)(?!.*\\\\)(?!.*(?:^|\/)\.{1,2}(?:\/|$))[A-Za-z0-9._/-]+$/);
 
 export const MethodologyProviderSchema = z.enum(["ecc", "gstack"]);
@@ -36,7 +42,10 @@ export const MethodologySourceSchema = z
 export const MethodologyCompatibilitySchema = z
   .object({
     host: MethodologyHostSchema,
-    hostVersion: z.string().regex(/^\d+(?:\.\d+){1,3}$/),
+    hostVersion: z
+      .string()
+      .max(MAX_METHODOLOGY_HOST_VERSION_LENGTH)
+      .regex(/^\d{1,16}(?:\.\d{1,16}){1,3}$/),
     executableSha256: z.string().regex(/^[0-9a-f]{64}$/),
     os: MethodologyOsSchema,
     architecture: MethodologyArchitectureSchema,
@@ -49,7 +58,10 @@ const MethodologySelectionSchema = z
   .object({
     provider: MethodologyProviderSchema,
     source: MethodologySourceSchema,
-    components: z.array(z.object({ id: ComponentIdSchema }).strict()).min(1),
+    components: z
+      .array(z.object({ id: ComponentIdSchema }).strict())
+      .min(1)
+      .max(MAX_METHODOLOGY_COMPONENTS),
     providerAdapter: ProviderAdapterIdSchema,
     hostAdapter: HostAdapterIdSchema,
     compatibility: MethodologyCompatibilitySchema,
@@ -153,6 +165,7 @@ export const HOST_ADAPTERS: readonly HostAdapter[] = Object.freeze(
 );
 
 export const MethodologyFindingCodeSchema = z.enum([
+  "METHODOLOGY_COMMAND_INVALID",
   "METHODOLOGY_HOST_ADVISORY",
   "METHODOLOGY_INTENT_MALFORMED",
   "METHODOLOGY_INTENT_PATH_INVALID",
@@ -164,7 +177,7 @@ export const MethodologyFindingSchema = z
   .object({
     code: MethodologyFindingCodeSchema,
     disposition: z.enum(["advisory", "blocked", "fail-closed"]),
-    detail: z.string(),
+    detail: z.string().min(1).max(MAX_METHODOLOGY_FINDING_DETAIL_LENGTH),
   })
   .strict();
 
@@ -183,25 +196,63 @@ export const MethodologyFailureSchema = z
     state: z.enum(["invalid", "fail-closed"]),
     findings: z.array(MethodologyFindingSchema).min(1),
   })
-  .strict();
+  .strict()
+  .superRefine((failure, ctx) => {
+    for (const [index, item] of failure.findings.entries()) {
+      const invalid =
+        item.code === "METHODOLOGY_COMMAND_INVALID" ||
+        item.code === "METHODOLOGY_INTENT_PATH_INVALID" ||
+        item.code === "METHODOLOGY_INTENT_UNREADABLE";
+      const failClosed = item.code === "METHODOLOGY_INTENT_MALFORMED";
+      if (
+        (failure.state === "invalid" && (!invalid || item.disposition !== "blocked")) ||
+        (failure.state === "fail-closed" && (!failClosed || item.disposition !== "fail-closed"))
+      ) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["findings", index],
+          message: "methodology failure findings must match their fixed state and disposition",
+        });
+      }
+    }
+  });
 
 export const MethodologyFailureEnvelopeSchema = z
   .object({
     schemaVersion: z.literal(1),
-    command: MethodologyCommandSchema,
+    command: MethodologyCommandSchema.nullable(),
     outcome: z.enum(["invalid", "fail-closed"]),
     failure: MethodologyFailureSchema,
     boundary: MethodologyBoundarySchema,
   })
-  .strict();
+  .strict()
+  .superRefine((envelope, ctx) => {
+    if (envelope.outcome !== envelope.failure.state) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["failure", "state"],
+        message: "methodology failure outcome and state must agree",
+      });
+    }
+    if (
+      envelope.command === null &&
+      envelope.failure.findings.some((item) => item.code !== "METHODOLOGY_COMMAND_INVALID")
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["command"],
+        message: "an unselected methodology command may report only a command-invalid finding",
+      });
+    }
+  });
 
 export const MethodologyIdentitySchema = z
   .object({
     schemaVersion: z.literal(1),
     provider: MethodologyProviderSchema,
-    repository: z.string(),
+    repository: z.string().min(1).max(160),
     commit: z.string().regex(/^[0-9a-f]{40}$/),
-    components: z.array(ComponentIdSchema),
+    components: z.array(ComponentIdSchema).min(1).max(MAX_METHODOLOGY_COMPONENTS),
     sha256: z.string().regex(/^[0-9a-f]{64}$/),
   })
   .strict();
@@ -248,9 +299,54 @@ export const MethodologyStatusSchema = z
       })
       .strict(),
     claims: MethodologyClaimsSchema,
-    findings: z.array(MethodologyFindingSchema),
+    findings: z.array(MethodologyFindingSchema).max(3),
   })
   .strict();
+
+const MethodologyCompletedEnvelopeSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    command: z.enum(["inspect", "status"]),
+    outcome: z.literal("completed"),
+    status: MethodologyStatusSchema,
+    boundary: MethodologyBoundarySchema,
+  })
+  .strict()
+  .superRefine((envelope, ctx) => {
+    const expectedState = envelope.command === "inspect" ? "selected" : "advisory";
+    if (envelope.status.state !== expectedState) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["status", "state"],
+        message: "completed methodology envelopes must match their command state",
+      });
+    }
+  });
+
+const MethodologyBlockedEnvelopeSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    command: z.literal("project"),
+    outcome: z.literal("blocked"),
+    status: MethodologyStatusSchema,
+    boundary: MethodologyBoundarySchema,
+  })
+  .strict()
+  .superRefine((envelope, ctx) => {
+    if (envelope.status.state !== "blocked") {
+      ctx.addIssue({
+        code: "custom",
+        path: ["status", "state"],
+        message: "blocked methodology envelopes must carry a blocked status",
+      });
+    }
+  });
+
+export const MethodologyCommandEnvelopeSchema = z.union([
+  MethodologyCompletedEnvelopeSchema,
+  MethodologyBlockedEnvelopeSchema,
+  MethodologyFailureEnvelopeSchema,
+]);
 
 export type MethodologyIntent = z.infer<typeof MethodologyIntentSchema>;
 export type MethodologyFinding = z.infer<typeof MethodologyFindingSchema>;

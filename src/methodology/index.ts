@@ -1,11 +1,20 @@
-import { lstatSync, readFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import {
+  closeSync,
+  constants,
+  fstatSync,
+  lstatSync,
+  openSync,
+  readSync,
+  type Stats,
+} from "node:fs";
+import { join, parse, relative, resolve, sep } from "node:path";
 import type { Command } from "commander";
 import { type CommandSpec, plan } from "../internals/plan.js";
 import {
   canonicalizeMethodologyIntent,
   exactSourceIdentity,
   hostAdapterFor,
+  MethodologyCommandEnvelopeSchema,
   MethodologyFailureEnvelopeSchema,
   type MethodologyFinding,
   MethodologyIntentSchema,
@@ -14,7 +23,7 @@ import {
   providerAdapterFor,
 } from "./schema.js";
 
-type MethodologyCommand = "inspect" | "project" | "status";
+export type MethodologyCommand = "inspect" | "project" | "status";
 
 const METHODOLOGY_SUMMARIES: Record<MethodologyCommand, string> = {
   inspect: "Inspect a committed passive-methodology intent without reading provider content",
@@ -23,6 +32,9 @@ const METHODOLOGY_SUMMARIES: Record<MethodologyCommand, string> = {
 };
 
 const METHODOLOGY_COMMAND_NAMES = ["inspect", "project", "status"] as const;
+const MAX_INTENT_INPUT_BYTES = 64 * 1024;
+const MAX_INTENT_RELATIVE_PATH_LENGTH = 240;
+const MAX_ROOT_PATH_LENGTH = 4096;
 
 /**
  * Canonical CLI registry entries. Dispatch deliberately bypasses `runCapability`
@@ -86,74 +98,201 @@ const NO_RUNTIME_CLAIMS = Object.freeze({
 function isSafeRelativePath(value: string): boolean {
   return (
     value.length > 0 &&
+    value.length <= MAX_INTENT_RELATIVE_PATH_LENGTH &&
     !value.startsWith("/") &&
     !value.includes("\\") &&
     value.split("/").every((segment) => segment.length > 0 && segment !== "." && segment !== "..")
   );
 }
 
-/** Read only a contained regular intent file; symbolic links fail closed. */
-function intentFile(root: string, relative: string): string {
-  if (!isSafeRelativePath(relative)) {
+interface PathIdentity {
+  path: string;
+  dev: number;
+  ino: number;
+  mode: number;
+}
+
+interface FileIdentity extends PathIdentity {
+  nlink: number;
+  size: number;
+}
+
+interface VerifiedIntentFile {
+  path: string;
+  directories: readonly PathIdentity[];
+  file: FileIdentity;
+}
+
+function samePathIdentity(left: PathIdentity, right: PathIdentity): boolean {
+  return (
+    left.path === right.path &&
+    left.dev === right.dev &&
+    left.ino === right.ino &&
+    left.mode === right.mode
+  );
+}
+
+function sameFileIdentity(left: FileIdentity, right: FileIdentity): boolean {
+  return samePathIdentity(left, right) && left.nlink === right.nlink && left.size === right.size;
+}
+
+function pathIdentity(path: string, info: Stats): PathIdentity {
+  return { path, dev: info.dev, ino: info.ino, mode: info.mode };
+}
+
+function fileIdentity(path: string, info: Stats): FileIdentity {
+  return { ...pathIdentity(path, info), nlink: info.nlink, size: info.size };
+}
+
+function lstatIntentPath(path: string, unreadableMessage: string): Stats {
+  try {
+    return lstatSync(path);
+  } catch {
+    throw new MethodologyInputError("METHODOLOGY_INTENT_UNREADABLE", unreadableMessage);
+  }
+}
+
+function assertRegularDirectory(path: string, info: Stats): PathIdentity {
+  if (!info.isDirectory() || info.isSymbolicLink()) {
+    throw new MethodologyFailClosedError(
+      "METHODOLOGY_INTENT_MALFORMED",
+      "intent root and ancestors must be regular directories without links or reparse points",
+    );
+  }
+  return pathIdentity(path, info);
+}
+
+/** Snapshot each absolute root ancestor before opening any descendant. */
+function snapshotRootChain(rootPath: string): PathIdentity[] {
+  const parsed = parse(rootPath);
+  const relativeRoot = relative(parsed.root, rootPath);
+  if (relativeRoot.startsWith("..") || relativeRoot.length > MAX_ROOT_PATH_LENGTH) {
+    throw new MethodologyInputError("METHODOLOGY_INTENT_PATH_INVALID", "target root is invalid");
+  }
+
+  const directories = [
+    assertRegularDirectory(parsed.root, lstatIntentPath(parsed.root, "target root is not readable")),
+  ];
+  let current = parsed.root;
+  for (const segment of relativeRoot.split(sep).filter(Boolean)) {
+    current = join(current, segment);
+    directories.push(
+      assertRegularDirectory(current, lstatIntentPath(current, "target root is not readable")),
+    );
+  }
+  return directories;
+}
+
+/** Verify a contained regular intent file without following an alias at the leaf. */
+function intentFile(root: string, relativeIntent: string): VerifiedIntentFile {
+  if (!isSafeRelativePath(relativeIntent)) {
     throw new MethodologyInputError(
       "METHODOLOGY_INTENT_PATH_INVALID",
       "intent must be a non-empty project-relative slash path",
     );
   }
+  if (root.length === 0 || root.length > MAX_ROOT_PATH_LENGTH) {
+    throw new MethodologyInputError("METHODOLOGY_INTENT_PATH_INVALID", "target root is invalid");
+  }
   const rootPath = resolve(root);
-  let rootInfo: ReturnType<typeof lstatSync>;
-  try {
-    rootInfo = lstatSync(rootPath);
-  } catch {
-    throw new MethodologyInputError("METHODOLOGY_INTENT_UNREADABLE", "target root is not readable");
-  }
-  if (!rootInfo.isDirectory() || rootInfo.isSymbolicLink()) {
-    throw new MethodologyFailClosedError(
-      "METHODOLOGY_INTENT_MALFORMED",
-      "target root must be a regular directory",
-    );
-  }
-
+  const directories = snapshotRootChain(rootPath);
   let current = rootPath;
-  const segments = relative.split("/");
+  const segments = relativeIntent.split("/");
   for (const [index, segment] of segments.entries()) {
     current = join(current, segment);
-    let info: ReturnType<typeof lstatSync>;
-    try {
-      info = lstatSync(current);
-    } catch {
-      throw new MethodologyInputError(
-        "METHODOLOGY_INTENT_UNREADABLE",
-        "intent file is not readable",
-      );
-    }
-    if (info.isSymbolicLink()) {
-      throw new MethodologyFailClosedError(
-        "METHODOLOGY_INTENT_MALFORMED",
-        "intent path must not contain symbolic links or reparse points",
-      );
-    }
-    if (index === segments.length - 1 && (!info.isFile() || info.nlink !== 1)) {
+    const info = lstatIntentPath(current, "intent file is not readable");
+    if (index === segments.length - 1 && (!info.isFile() || info.isSymbolicLink() || info.nlink !== 1)) {
       throw new MethodologyFailClosedError(
         "METHODOLOGY_INTENT_MALFORMED",
         "intent must be an unlinked regular file",
       );
     }
-    if (index < segments.length - 1 && !info.isDirectory()) {
+    if (index < segments.length - 1) {
+      directories.push(assertRegularDirectory(current, info));
+    } else if (info.size > MAX_INTENT_INPUT_BYTES) {
       throw new MethodologyFailClosedError(
         "METHODOLOGY_INTENT_MALFORMED",
-        "intent path must stay beneath regular directories",
+        "intent exceeds the Phase 1 byte limit",
+      );
+    } else {
+      return { path: current, directories, file: fileIdentity(current, info) };
+    }
+  }
+  throw new MethodologyFailClosedError("METHODOLOGY_INTENT_MALFORMED", "intent is invalid");
+}
+
+function assertUnchangedDirectories(directories: readonly PathIdentity[]): void {
+  for (const expected of directories) {
+    const actual = assertRegularDirectory(
+      expected.path,
+      lstatIntentPath(expected.path, "intent root is no longer readable"),
+    );
+    if (!samePathIdentity(expected, actual)) {
+      throw new MethodologyFailClosedError(
+        "METHODOLOGY_INTENT_MALFORMED",
+        "intent root identity changed while reading",
       );
     }
   }
-  return current;
 }
 
-function loadIntent(root: string, relative: string) {
-  const path = intentFile(root, relative);
+/** Read exact bounded bytes through the verified descriptor, then revalidate every path identity. */
+function readVerifiedIntentFile(verified: VerifiedIntentFile): string {
+  let descriptor: number;
+  try {
+    descriptor = openSync(verified.path, constants.O_RDONLY | constants.O_NOFOLLOW);
+  } catch {
+    throw new MethodologyFailClosedError(
+      "METHODOLOGY_INTENT_MALFORMED",
+      "intent could not be opened without following a link",
+    );
+  }
+  try {
+    const before = fstatSync(descriptor);
+    if (!before.isFile() || !sameFileIdentity(verified.file, fileIdentity(verified.path, before))) {
+      throw new MethodologyFailClosedError(
+        "METHODOLOGY_INTENT_MALFORMED",
+        "intent identity changed before reading",
+      );
+    }
+    const bytes = Buffer.alloc(verified.file.size);
+    if (readSync(descriptor, bytes, 0, bytes.length, null) !== bytes.length) {
+      throw new MethodologyFailClosedError(
+        "METHODOLOGY_INTENT_MALFORMED",
+        "intent changed while reading",
+      );
+    }
+    const after = fstatSync(descriptor);
+    if (!after.isFile() || !sameFileIdentity(verified.file, fileIdentity(verified.path, after))) {
+      throw new MethodologyFailClosedError(
+        "METHODOLOGY_INTENT_MALFORMED",
+        "intent identity changed while reading",
+      );
+    }
+    assertUnchangedDirectories(verified.directories);
+    const pathInfo = lstatIntentPath(verified.path, "intent file is no longer readable");
+    if (!sameFileIdentity(verified.file, fileIdentity(verified.path, pathInfo))) {
+      throw new MethodologyFailClosedError(
+        "METHODOLOGY_INTENT_MALFORMED",
+        "intent path identity changed while reading",
+      );
+    }
+    return bytes.toString("utf8");
+  } catch (error) {
+    if (error instanceof MethodologyInputError || error instanceof MethodologyFailClosedError) {
+      throw error;
+    }
+    throw new MethodologyFailClosedError("METHODOLOGY_INTENT_MALFORMED", "intent is not readable");
+  } finally {
+    closeSync(descriptor);
+  }
+}
+
+function loadIntent(root: string, relativeIntent: string) {
+  const verified = intentFile(root, relativeIntent);
   let value: unknown;
   try {
-    value = JSON.parse(readFileSync(path, "utf8"));
+    value = JSON.parse(readVerifiedIntentFile(verified));
   } catch {
     throw new MethodologyFailClosedError(
       "METHODOLOGY_INTENT_MALFORMED",
@@ -218,9 +357,12 @@ function writeJson(deps: MethodologyCommandDeps, value: unknown): void {
 }
 
 function writeFailure(
-  command: MethodologyCommand,
+  command: MethodologyCommand | null,
   exitCode: 1 | 3,
-  code: MethodologyInputError["code"] | MethodologyFailClosedError["code"],
+  code:
+    | MethodologyInputError["code"]
+    | MethodologyFailClosedError["code"]
+    | "METHODOLOGY_COMMAND_INVALID",
   message: string,
   options: MethodologyCommandOptions,
   deps: MethodologyCommandDeps,
@@ -260,13 +402,16 @@ export function runMethodologyCommand(
     const exitCode = command === "project" ? 2 : 0;
     const outcome = command === "project" ? "blocked" : "completed";
     if (options.json) {
-      writeJson(deps, {
-        schemaVersion: 1,
-        command,
-        outcome,
-        status,
-        boundary: METHODOLOGY_PHASE_ONE_BOUNDARY,
-      });
+      writeJson(
+        deps,
+        MethodologyCommandEnvelopeSchema.parse({
+          schemaVersion: 1,
+          command,
+          outcome,
+          status,
+          boundary: METHODOLOGY_PHASE_ONE_BOUNDARY,
+        }),
+      );
     } else {
       deps.write(`methodology ${command}: ${status.state}\n`);
     }
@@ -292,7 +437,57 @@ export function runMethodologyCommand(
   }
 }
 
+function methodologyCommandFromArgv(argv: readonly string[]): MethodologyCommand | null {
+  const index = argv.indexOf("methodology");
+  const candidate = argv[index + 1];
+  return METHODOLOGY_COMMAND_NAMES.includes(candidate as MethodologyCommand)
+    ? (candidate as MethodologyCommand)
+    : null;
+}
+
+function isMethodologyJsonInvocation(argv: readonly string[]): boolean {
+  return argv.includes("methodology") && argv.includes("--json");
+}
+
+/** Render parser failures before Commander can bypass the closed Phase 1 JSON contract. */
+export function writeMethodologyParserFailure(
+  argv: readonly string[],
+  deps: MethodologyCommandDeps = {
+    write: (text) => process.stdout.write(text),
+    writeError: (text) => process.stderr.write(text),
+  },
+): boolean {
+  if (!isMethodologyJsonInvocation(argv)) return false;
+  writeJson(
+    deps,
+    MethodologyFailureEnvelopeSchema.parse({
+      schemaVersion: 1,
+      command: methodologyCommandFromArgv(argv),
+      outcome: "invalid",
+      failure: {
+        schemaVersion: 1,
+        state: "invalid",
+        findings: [
+          finding(
+            "METHODOLOGY_COMMAND_INVALID",
+            "blocked",
+            "methodology command arguments are invalid",
+          ),
+        ],
+      },
+      boundary: METHODOLOGY_PHASE_ONE_BOUNDARY,
+    }),
+  );
+  return true;
+}
+
 export function registerMethodologyCommands(parent: Command): void {
+  parent.exitOverride();
+  parent.configureOutput({
+    writeErr: (text) => {
+      if (!isMethodologyJsonInvocation(process.argv)) process.stderr.write(text);
+    },
+  });
   for (const spec of methodologyCommandSpecs) {
     const name = spec.name as MethodologyCommand;
     const command = parent
@@ -301,6 +496,12 @@ export function registerMethodologyCommands(parent: Command): void {
       .requiredOption("--intent <path>", "project-relative passive-methodology intent JSON")
       .option("--root <dir>", "target project root (defaults to cwd)")
       .option("--json", "emit the stable Phase 1 methodology envelope");
+    command.exitOverride();
+    command.configureOutput({
+      writeErr: (text) => {
+        if (!isMethodologyJsonInvocation(process.argv)) process.stderr.write(text);
+      },
+    });
     command.action((options: MethodologyCommandOptions) => {
       process.exitCode = runMethodologyCommand(name, options);
     });

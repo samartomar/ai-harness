@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { buildProgram, buildProgramWithPlugins, isVersionFastPath } from "./program.js";
+import { writeMethodologyParserFailure } from "./methodology/index.js";
 
 // This module is the executable bin entry only — it is never imported elsewhere,
 // so parsing argv at top level is safe (tests import the builders from program.ts).
@@ -18,6 +19,10 @@ if (isVersionFastPath(process.argv)) {
       return program.parseAsync(process.argv);
     })
     .catch((err: unknown) => {
+      if (writeMethodologyParserFailure(process.argv)) {
+        process.exitCode = 1;
+        return;
+      }
       process.stderr.write(`fatal: ${err instanceof Error ? err.message : String(err)}\n`);
       process.exitCode = 1;
     });
