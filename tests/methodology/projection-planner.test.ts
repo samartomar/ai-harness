@@ -603,6 +603,36 @@ describe("Phase 3 host-neutral synthetic projection planner", () => {
     expectFailFast(() => ProjectionPlannerInputSchema.safeParse(accessorInput));
   });
 
+  it("rejects sparse or inherited-accessor inputs without invoking inherited code", () => {
+    let inheritedReads = 0;
+    const inheritedMappings = Object.create({
+      get mappings() {
+        inheritedReads += 1;
+        throw new Error("planner schema invoked an inherited record accessor");
+      },
+    }) as Record<string, unknown>;
+    const { mappings: _mappings, ...mappinglessInput } = input();
+    Object.assign(inheritedMappings, mappinglessInput);
+
+    const inheritedIndexPrototype = Object.create(Array.prototype) as unknown[];
+    Object.defineProperty(inheritedIndexPrototype, "1", {
+      configurable: true,
+      get() {
+        inheritedReads += 1;
+        throw new Error("planner schema invoked an inherited array accessor");
+      },
+    });
+    const sparseMappings = new Array(2) as unknown[];
+    sparseMappings[0] = { artifactId: "root", target: "rules/root.md" };
+    Object.setPrototypeOf(sparseMappings, inheritedIndexPrototype);
+
+    expectFailFast(() => ProjectionPlannerInputSchema.safeParse(inheritedMappings));
+    expectFailFast(() =>
+      ProjectionPlannerInputSchema.safeParse(input({ mappings: sparseMappings })),
+    );
+    expect(inheritedReads).toBe(0);
+  });
+
   it("accepts exact resource maxima and rejects the first value beyond each bound", () => {
     const maximal = maximalInput();
     const maximalResult = planSyntheticProjection(maximal);
