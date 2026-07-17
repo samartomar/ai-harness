@@ -16,7 +16,7 @@ import {
   unlinkSync,
   writeFileSync,
 } from "node:fs";
-import { dirname, isAbsolute, join, parse, relative, resolve } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { z } from "zod";
 import {
   SyntheticMethodologyProjectionManifestSchema,
@@ -156,6 +156,8 @@ export type SyntheticMethodologyTransactionTestBoundary =
   | "after-entry"
   | "after-receipt"
   | "before-commit"
+  | "before-entry-write"
+  | "before-rename"
   | "after-rename"
   | "after-commit";
 
@@ -175,10 +177,26 @@ function transactionError(message: string): Error {
 }
 
 function trustedFixtureParent(): string {
-  const candidate =
-    process.platform === "win32" ? join(parse(process.execPath).root, "Windows", "Temp") : "/tmp";
+  if (process.platform === "win32") {
+    throw transactionError(
+      "Windows fixture roots are unavailable without enforceable DACL confinement",
+    );
+  }
+  const candidate = "/tmp";
   if (!isAbsolute(candidate)) throw transactionError("trusted fixture parent is unavailable");
   const parent = realpathSync(candidate);
+  const parentInfo = lstatSync(parent);
+  const parentIsPrivateToCurrentUser =
+    typeof process.getuid === "function" &&
+    parentInfo.uid === process.getuid() &&
+    (parentInfo.mode & 0o077) === 0;
+  if (
+    !parentInfo.isDirectory() ||
+    parentInfo.isSymbolicLink() ||
+    (!parentIsPrivateToCurrentUser && (parentInfo.mode & 0o1000) === 0)
+  ) {
+    throw transactionError("trusted fixture parent is not an isolated temporary directory");
+  }
   const cwd = realpathSync(process.cwd());
   const checkoutWithinParent = relative(parent, cwd);
   if (
@@ -198,6 +216,20 @@ function identity(path: string, label: string): FileIdentity {
   return { dev: info.dev, ino: info.ino };
 }
 
+function privateFixtureRootIdentity(path: string, label: string): FileIdentity {
+  const info = lstatSync(path);
+  if (
+    !info.isDirectory() ||
+    info.isSymbolicLink() ||
+    typeof process.getuid !== "function" ||
+    info.uid !== process.getuid() ||
+    (info.mode & 0o077) !== 0
+  ) {
+    throw transactionError(`${label} is not private to the current POSIX user`);
+  }
+  return { dev: info.dev, ino: info.ino };
+}
+
 function sameIdentity(left: FileIdentity, right: FileIdentity): boolean {
   return left.dev === right.dev && left.ino === right.ino;
 }
@@ -206,6 +238,13 @@ function assertIdentity(path: string, expected: FileIdentity, label: string): vo
   const actual = identity(path, label);
   if (!sameIdentity(actual, expected)) {
     throw transactionError(`${label} containment identity changed`);
+  }
+}
+
+function assertPrivateFixtureRoot(path: string, expected: FileIdentity): void {
+  const actual = privateFixtureRootIdentity(path, "fixture root");
+  if (!sameIdentity(actual, expected)) {
+    throw transactionError("fixture root containment identity changed");
   }
 }
 
@@ -222,7 +261,7 @@ function stateFor(root: unknown): FixtureState {
   }
   const state = fixtureRoots.get(root);
   if (state === undefined) throw transactionError("fixture root capability is unknown");
-  assertIdentity(state.root, state.rootIdentity, "fixture root");
+  assertPrivateFixtureRoot(state.root, state.rootIdentity);
   return state;
 }
 
@@ -330,7 +369,7 @@ function checkpoint(
   boundary: SyntheticMethodologyTransactionTestBoundary,
 ): void {
   options?.onBoundary?.(boundary);
-  assertIdentity(state.root, state.rootIdentity, "fixture root");
+  assertPrivateFixtureRoot(state.root, state.rootIdentity);
   if (state.containerIdentity !== undefined) assertOwner(state);
   if (state.stage !== undefined)
     assertIdentity(state.stage.path, state.stage.identity, "transaction stage");
@@ -454,7 +493,13 @@ function rollback(state: FixtureState, manifest: Manifest): void {
   }
   if (state.containerIdentity !== undefined && existsSync(containerPath(state))) {
     assertOwner(state);
+    const outputParent = join(containerPath(state), "methodology");
+    if (existsSync(outputParent)) {
+      assertExactChildren(outputParent, [], "owned methodology parent");
+      rmdirSync(outputParent);
+    }
     removeLock(state);
+    assertExactChildren(containerPath(state), [OWNER_FILE], "owned output parent");
     unlinkSync(ownerPath(state));
     rmdirSync(containerPath(state));
     state.containerIdentity = undefined;
@@ -474,6 +519,8 @@ function commit(
   identity(outputParent, "output parent");
   const destination = join(outputParent, "v1");
   if (existsSync(destination)) throw transactionError("projection destination already exists");
+  checkpoint(state, options, "before-rename");
+  identity(outputParent, "output parent");
   renameSync(stage, destination);
   state.stage = undefined;
   markCommitted();
@@ -491,7 +538,7 @@ export function createSyntheticMethodologyTransactionFixtureRoot(): SyntheticMet
   const capability = {} as SyntheticMethodologyTransactionFixtureRoot;
   fixtureRoots.set(capability, {
     root,
-    rootIdentity: identity(root, "fixture root"),
+    rootIdentity: privateFixtureRootIdentity(root, "fixture root"),
     token: randomBytes(16).toString("hex"),
   });
   return capability;
@@ -544,6 +591,8 @@ export function applySyntheticMethodologyProjectionTransaction(
       const bytes = contents.get(entry.id);
       if (bytes === undefined) throw transactionError("transaction content is missing");
       const destination = safeJoin(stage, path);
+      checkpoint(state, options, "before-entry-write");
+      identity(dirname(destination), "transaction staging directory");
       writeFileSync(destination, bytes, { flag: "wx", mode: 0o600 });
       assertRegularFile(destination, "staged projection file");
       if (digest(readFileSync(destination)) !== entry.source.contentDigest) {
@@ -567,7 +616,13 @@ export function applySyntheticMethodologyProjectionTransaction(
     removeLock(state);
     return { state: "projected", manifestDigest: manifest.digest };
   } catch (error) {
-    if (!committed) rollback(state, manifest);
+    if (!committed) {
+      try {
+        rollback(state, manifest);
+      } catch {
+        // Preserve the owned marker and lock when hostile topology prevents a safe rollback.
+      }
+    }
     throw error;
   }
 }

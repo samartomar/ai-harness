@@ -206,6 +206,21 @@ describeTransactionFixtures("synthetic methodology projection transactions", () 
     );
   });
 
+  it("refuses a receipt whose v2 admission closure has been tampered without deleting output", () => {
+    const fixtureRoot = root();
+    const fixturePath = syntheticMethodologyTransactionFixturePath(fixtureRoot);
+    const file = join(fixturePath, ".aih/methodology/v1/rules/review-loop.md");
+    const receiptPath = join(fixturePath, ".aih/methodology/v1/.aih-methodology-transaction.json");
+    applySyntheticMethodologyProjectionTransaction(fixtureRoot, transaction());
+    const receipt = JSON.parse(readFileSync(receiptPath, "utf8"));
+    receipt.manifest.admission.closure.artifacts[0].evidence.license = "unlicensed";
+    writeFileSync(receiptPath, `${JSON.stringify(receipt)}\n`, "utf8");
+
+    expect(() => recoverSyntheticMethodologyProjectionTransaction(fixtureRoot)).toThrow();
+    expect(() => cleanSyntheticMethodologyProjectionTransaction(fixtureRoot)).toThrow();
+    expect(readFileSync(file, "utf8")).toBe("# review\n");
+  });
+
   it("refuses an unknown owned-container sibling without partially cleaning the projection", () => {
     const fixtureRoot = root();
     const fixturePath = syntheticMethodologyTransactionFixturePath(fixtureRoot);
@@ -308,7 +323,6 @@ describeTransactionFixtures("synthetic methodology projection transactions", () 
           renameSync(rules, `${rules}-original`);
           symlinkSync(outsidePath, rules, "dir");
         },
-        faultAt: "before-entry-write" as SyntheticMethodologyTransactionTestBoundary,
       }),
     ).toThrow(/linked|reparse|unknown/i);
     expect(existsSync(join(outsidePath, "review-loop.md"))).toBe(false);
@@ -328,7 +342,6 @@ describeTransactionFixtures("synthetic methodology projection transactions", () 
           renameSync(outputParent, `${outputParent}-original`);
           symlinkSync(outsidePath, outputParent, "dir");
         },
-        faultAt: "before-rename" as SyntheticMethodologyTransactionTestBoundary,
       }),
     ).toThrow(/linked|reparse|unowned/i);
     expect(existsSync(join(outsidePath, "v1"))).toBe(false);
@@ -359,6 +372,8 @@ describeTransactionFixtures("synthetic methodology projection transactions", () 
     "after-entry",
     "after-receipt",
     "before-commit",
+    "before-entry-write",
+    "before-rename",
     "after-commit",
   ] satisfies SyntheticMethodologyTransactionTestBoundary[])("recovers deterministically after injected failure at %s", (faultAt) => {
     const fixtureRoot = root();
