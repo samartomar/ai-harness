@@ -6,7 +6,7 @@ const MAX_ARTIFACTS = 64;
 const MAX_DEPENDENCIES_PER_ARTIFACT = 32;
 const MAX_LOCATOR_LENGTH = 512;
 const MAX_FINDINGS = 256;
-const MAX_SNAPSHOT_ARRAY_LENGTH = MAX_FINDINGS;
+const MAX_SNAPSHOT_ARRAY_LENGTH = MAX_FINDINGS + 1;
 const MAX_SNAPSHOT_RECORD_KEYS = 16;
 const MAX_SNAPSHOT_DEPTH = 8;
 const MAX_SNAPSHOT_NODES = 512;
@@ -92,9 +92,12 @@ const SyntheticArtifactTupleSchema = z
     }
   });
 
-export const SyntheticArtifactSchema = z.preprocess(
-  (value) => recordTuple(value, artifactCollectionsAreBounded, ARTIFACT_FIELDS),
-  namedTupleSchema(SyntheticArtifactTupleSchema, ARTIFACT_FIELDS),
+export const SyntheticArtifactSchema = closedPublicSchema(
+  z.preprocess(
+    (value) => recordTuple(value, artifactCollectionsAreBounded, ARTIFACT_FIELDS),
+    SyntheticArtifactTupleSchema,
+  ),
+  validateArtifact,
 );
 
 const SyntheticEvidenceTupleSchema = z
@@ -115,9 +118,12 @@ const SyntheticEvidenceTupleSchema = z
     }),
   );
 
-export const SyntheticEvidenceSchema = z.preprocess(
-  (value) => recordTuple(value, evidenceRecordIsClosed, EVIDENCE_FIELDS),
-  namedTupleSchema(SyntheticEvidenceTupleSchema, EVIDENCE_FIELDS),
+export const SyntheticEvidenceSchema = closedPublicSchema(
+  z.preprocess(
+    (value) => recordTuple(value, evidenceRecordIsClosed, EVIDENCE_FIELDS),
+    SyntheticEvidenceTupleSchema,
+  ),
+  validateEvidence,
 );
 
 const SyntheticClassifierInputTupleSchema = z
@@ -132,12 +138,15 @@ const SyntheticClassifierInputTupleSchema = z
     closedRecord({ schemaVersion, requested, declaredClosure, artifacts, evidence }),
   );
 
-export const SyntheticClassifierInputSchema = z.preprocess(
-  (value) => recordTuple(value, classifierCollectionsAreBounded, INPUT_FIELDS),
-  namedTupleSchema(SyntheticClassifierInputTupleSchema, INPUT_FIELDS),
+export const SyntheticClassifierInputSchema = closedPublicSchema(
+  z.preprocess(
+    (value) => recordTuple(value, classifierCollectionsAreBounded, INPUT_FIELDS),
+    SyntheticClassifierInputTupleSchema,
+  ),
+  validateClassifierInput,
 );
 
-export const SyntheticFindingCodeSchema = z.enum([
+const FINDING_CODES = [
   "METHODOLOGY_ARTIFACT_DUPLICATE",
   "METHODOLOGY_CONTENT_AMBIGUOUS",
   "METHODOLOGY_CONTENT_EXECUTABLE",
@@ -153,7 +162,12 @@ export const SyntheticFindingCodeSchema = z.enum([
   "METHODOLOGY_LICENSE_UNAPPROVED",
   "METHODOLOGY_LOCATOR_DUPLICATE",
   "METHODOLOGY_REQUEST_DUPLICATE",
-]);
+] as const;
+
+export const SyntheticFindingCodeSchema = closedPublicSchema(
+  z.enum(FINDING_CODES),
+  validateFindingCode,
+);
 
 const GLOBAL_FINDING_CODES = new Set<z.infer<typeof SyntheticFindingCodeSchema>>([
   "METHODOLOGY_DEPENDENCY_OUT_OF_CLOSURE",
@@ -184,9 +198,9 @@ const SyntheticFindingTupleSchema = z
     }
   });
 
-export const SyntheticFindingSchema = z.preprocess(
-  (value) => findingTuple(value),
-  namedTupleSchema(SyntheticFindingTupleSchema, FINDING_FIELDS),
+export const SyntheticFindingSchema = closedPublicSchema(
+  z.preprocess((value) => findingTuple(value), SyntheticFindingTupleSchema),
+  validateFinding,
 );
 
 type SnapshotResult = { ok: true; value: unknown } | { ok: false };
@@ -357,25 +371,6 @@ function recordTuple(
   return tuple;
 }
 
-function namedTupleSchema<T extends z.ZodType>(
-  schema: T,
-  fields: readonly string[],
-): z.ZodType<z.output<T>> {
-  return z.unknown().transform((value, ctx): z.output<T> => {
-    const result = schema.safeParse(value);
-    if (result.success) return result.data;
-    for (const issue of result.error.issues) {
-      const [head, ...tail] = issue.path;
-      const path =
-        typeof head === "number" && fields[head] !== undefined
-          ? [fields[head], ...tail]
-          : issue.path;
-      ctx.addIssue({ ...issue, path });
-    }
-    return z.NEVER;
-  });
-}
-
 function findingTuple(value: unknown): unknown {
   const snapshot = failClosedPreprocess(value, findingRecordIsClosed);
   const record = recordOf(snapshot);
@@ -433,6 +428,375 @@ function resultCollectionsAreBounded(value: unknown): boolean {
     collectionIsBounded(result.findings, MAX_FINDINGS) &&
     collectionRecordsSatisfy(result.findings, findingRecordIsClosed)
   );
+}
+
+type ValidationPath = readonly (string | number)[];
+type ValidationIssue = {
+  readonly code: "custom";
+  readonly path: ValidationPath;
+  readonly message: string;
+};
+
+const ARTIFACT_ID_PATTERN = /^[a-z][a-z0-9-]{0,63}$/;
+const DIGEST_PATTERN = /^[0-9a-f]{64}$/;
+const SOURCE_LOCATOR_PATTERN = /^synthetic:[a-z][a-z0-9-]{0,63}$/;
+const CONTENT_DISPOSITIONS = new Set(["inert", "executable", "ambiguous"]);
+const LINK_DISPOSITIONS = new Set(["none", "symbolic", "hard", "reparse"]);
+const LICENSE_DISPOSITIONS = new Set(["permissive", "unknown", "restricted"]);
+const RESULT_DISPOSITIONS = new Set(["eligible", "ineligible"]);
+const FINDING_CODE_SET = new Set<string>(FINDING_CODES);
+
+function validationIssue(path: ValidationPath, message: string): ValidationIssue {
+  return closedRecord({ code: "custom" as const, path: [...path], message });
+}
+
+function prefixedIssue(prefix: ValidationPath, issue: ValidationIssue): ValidationIssue {
+  return validationIssue([...prefix, ...issue.path], issue.message);
+}
+
+function validationSnapshot(value: unknown): SnapshotResult {
+  return snapshotPlainData(value, 0, {
+    nodes: 0,
+    active: new WeakSet<object>(),
+  });
+}
+
+function validateRecordFields(
+  record: Record<string, unknown>,
+  required: readonly string[],
+  optional: readonly string[] = [],
+): ValidationIssue | undefined {
+  const permitted = new Set([...required, ...optional]);
+  for (const key of Object.keys(record)) {
+    if (!permitted.has(key)) return validationIssue([key], "unknown field is not permitted");
+  }
+  for (const field of required) {
+    if (!Object.hasOwn(record, field)) return validationIssue([field], "required field is missing");
+  }
+  return undefined;
+}
+
+function validateStringPattern(
+  value: unknown,
+  pattern: RegExp,
+  path: ValidationPath,
+  message: string,
+): ValidationIssue | undefined {
+  return typeof value === "string" && pattern.test(value)
+    ? undefined
+    : validationIssue(path, message);
+}
+
+function validateEnumValue(
+  value: unknown,
+  permitted: ReadonlySet<string>,
+  path: ValidationPath,
+  message: string,
+): ValidationIssue | undefined {
+  return typeof value === "string" && permitted.has(value)
+    ? undefined
+    : validationIssue(path, message);
+}
+
+function validateArray(
+  value: unknown,
+  minimum: number,
+  maximum: number,
+  path: ValidationPath,
+  itemValidator: (item: unknown) => ValidationIssue | undefined,
+): ValidationIssue | undefined {
+  if (!Array.isArray(value)) return validationIssue(path, "value must be a closed array");
+  if (value.length < minimum || value.length > maximum) {
+    return validationIssue(path, "array length is outside the closed resource bounds");
+  }
+  for (let index = 0; index < value.length; index += 1) {
+    const childIssue = itemValidator(value[index]);
+    if (childIssue !== undefined) return prefixedIssue([...path, index], childIssue);
+  }
+  return undefined;
+}
+
+function validateArtifactId(value: unknown): ValidationIssue | undefined {
+  return validateStringPattern(
+    value,
+    ARTIFACT_ID_PATTERN,
+    [],
+    "artifact id must use the closed canonical form",
+  );
+}
+
+function validateDigest(value: unknown): ValidationIssue | undefined {
+  return validateStringPattern(value, DIGEST_PATTERN, [], "digest must be 64 lowercase hex bytes");
+}
+
+function validateSourceLocator(value: unknown): ValidationIssue | undefined {
+  if (typeof value !== "string" || value.length === 0 || value.length > MAX_LOCATOR_LENGTH) {
+    return validationIssue([], "source locator is outside the closed resource bounds");
+  }
+  return SOURCE_LOCATOR_PATTERN.test(value)
+    ? undefined
+    : validationIssue([], "source locator must use the synthetic canonical form");
+}
+
+function validateFindingCode(value: unknown): ValidationIssue | undefined {
+  return validateEnumValue(value, FINDING_CODE_SET, [], "finding code is not supported");
+}
+
+function validateArtifact(value: unknown): ValidationIssue | undefined {
+  const snapshot = validationSnapshot(value);
+  if (!snapshot.ok) return validationIssue([], "artifact must contain only closed plain data");
+  const artifact = recordOf(snapshot.value);
+  if (artifact === undefined) return validationIssue([], "artifact must be a closed record");
+  const shapeIssue = validateRecordFields(artifact, ARTIFACT_FIELDS);
+  if (shapeIssue !== undefined) return shapeIssue;
+
+  const fieldIssues: readonly (ValidationIssue | undefined)[] = [
+    prefixedOptional(["id"], validateArtifactId(artifact.id)),
+    prefixedOptional(["sourceLocator"], validateSourceLocator(artifact.sourceLocator)),
+    prefixedOptional(["contentDigest"], validateDigest(artifact.contentDigest)),
+    validateEnumValue(
+      artifact.contentDisposition,
+      CONTENT_DISPOSITIONS,
+      ["contentDisposition"],
+      "content disposition is not supported",
+    ),
+    validateEnumValue(
+      artifact.linkDisposition,
+      LINK_DISPOSITIONS,
+      ["linkDisposition"],
+      "link disposition is not supported",
+    ),
+    validateEnumValue(
+      artifact.licenseDisposition,
+      LICENSE_DISPOSITIONS,
+      ["licenseDisposition"],
+      "license disposition is not supported",
+    ),
+    prefixedOptional(["evidenceDigest"], validateDigest(artifact.evidenceDigest)),
+  ];
+  for (const issue of fieldIssues) if (issue !== undefined) return issue;
+
+  const dependenciesIssue = validateArray(
+    artifact.dependencies,
+    0,
+    MAX_DEPENDENCIES_PER_ARTIFACT,
+    ["dependencies"],
+    validateArtifactId,
+  );
+  if (dependenciesIssue !== undefined) return dependenciesIssue;
+  const dependencies = artifact.dependencies as unknown[];
+  if (new Set(dependencies).size !== dependencies.length) {
+    return validationIssue(["dependencies"], "synthetic artifact dependencies must be unique");
+  }
+  return undefined;
+}
+
+function validateEvidence(value: unknown): ValidationIssue | undefined {
+  const snapshot = validationSnapshot(value);
+  if (!snapshot.ok) return validationIssue([], "evidence must contain only closed plain data");
+  const evidence = recordOf(snapshot.value);
+  if (evidence === undefined) return validationIssue([], "evidence must be a closed record");
+  const shapeIssue = validateRecordFields(evidence, EVIDENCE_FIELDS);
+  if (shapeIssue !== undefined) return shapeIssue;
+
+  const issues: readonly (ValidationIssue | undefined)[] = [
+    prefixedOptional(["artifactId"], validateArtifactId(evidence.artifactId)),
+    prefixedOptional(["sourceLocator"], validateSourceLocator(evidence.sourceLocator)),
+    prefixedOptional(["contentDigest"], validateDigest(evidence.contentDigest)),
+    validateEnumValue(
+      evidence.licenseDisposition,
+      LICENSE_DISPOSITIONS,
+      ["licenseDisposition"],
+      "license disposition is not supported",
+    ),
+    prefixedOptional(["evidenceDigest"], validateDigest(evidence.evidenceDigest)),
+  ];
+  return issues.find((issue) => issue !== undefined);
+}
+
+function validateFinding(value: unknown): ValidationIssue | undefined {
+  const snapshot = validationSnapshot(value);
+  if (!snapshot.ok) return validationIssue([], "finding must contain only closed plain data");
+  const finding = recordOf(snapshot.value);
+  if (finding === undefined) return validationIssue([], "finding must be a closed record");
+  const shapeIssue = validateRecordFields(finding, FINDING_REQUIRED_FIELDS, ["artifactId"]);
+  if (shapeIssue !== undefined) return shapeIssue;
+  const codeIssue = prefixedOptional(["code"], validateFindingCode(finding.code));
+  if (codeIssue !== undefined) return codeIssue;
+  if (Object.hasOwn(finding, "artifactId")) {
+    const artifactIssue = prefixedOptional(["artifactId"], validateArtifactId(finding.artifactId));
+    if (artifactIssue !== undefined) return artifactIssue;
+  }
+  const code = finding.code as (typeof FINDING_CODES)[number];
+  const hasArtifactId = Object.hasOwn(finding, "artifactId");
+  if (GLOBAL_FINDING_CODES.has(code) === hasArtifactId) {
+    return validationIssue(
+      ["artifactId"],
+      "synthetic finding attribution must match its fixed finding code",
+    );
+  }
+  return undefined;
+}
+
+function validateClassifierInput(value: unknown): ValidationIssue | undefined {
+  const snapshot = validationSnapshot(value);
+  if (!snapshot.ok)
+    return validationIssue([], "classifier input must contain only closed plain data");
+  const input = recordOf(snapshot.value);
+  if (input === undefined) return validationIssue([], "classifier input must be a closed record");
+  const shapeIssue = validateRecordFields(input, INPUT_FIELDS);
+  if (shapeIssue !== undefined) return shapeIssue;
+  if (input.schemaVersion !== 1) {
+    return validationIssue(["schemaVersion"], "classifier schema version is not supported");
+  }
+  return (
+    validateArray(
+      input.requested,
+      1,
+      MAX_REQUESTED_COMPONENTS,
+      ["requested"],
+      validateArtifactId,
+    ) ??
+    validateArray(
+      input.declaredClosure,
+      1,
+      MAX_ARTIFACTS,
+      ["declaredClosure"],
+      validateArtifactId,
+    ) ??
+    validateArray(input.artifacts, 1, MAX_ARTIFACTS, ["artifacts"], validateArtifact) ??
+    validateArray(input.evidence, 0, MAX_ARTIFACTS, ["evidence"], validateEvidence)
+  );
+}
+
+function validateClassificationResult(value: unknown): ValidationIssue | undefined {
+  const snapshot = validationSnapshot(value);
+  if (!snapshot.ok) return validationIssue([], "result must contain only closed plain data");
+  const result = recordOf(snapshot.value);
+  if (result === undefined) return validationIssue([], "result must be a closed record");
+  const shapeIssue = validateRecordFields(result, RESULT_FIELDS);
+  if (shapeIssue !== undefined) return shapeIssue;
+  if (result.schemaVersion !== 1) {
+    return validationIssue(["schemaVersion"], "result schema version is not supported");
+  }
+  const dispositionIssue = validateEnumValue(
+    result.disposition,
+    RESULT_DISPOSITIONS,
+    ["disposition"],
+    "result disposition is not supported",
+  );
+  if (dispositionIssue !== undefined) return dispositionIssue;
+  const collectionIssue =
+    validateArray(result.closure, 0, MAX_ARTIFACTS, ["closure"], validateArtifactId) ??
+    validateArray(result.eligible, 0, MAX_ARTIFACTS, ["eligible"], validateArtifactId) ??
+    validateArray(result.findings, 0, MAX_FINDINGS, ["findings"], validateFinding);
+  if (collectionIssue !== undefined) return collectionIssue;
+
+  const closure = result.closure as string[];
+  const eligible = result.eligible as string[];
+  const findings = result.findings as SyntheticFindingRecord[];
+  if (!isCanonicalUnique(closure)) {
+    return validationIssue(["closure"], "synthetic closure ids must be canonical and unique");
+  }
+  if (!isCanonicalUnique(eligible)) {
+    return validationIssue(["eligible"], "eligible ids must be canonical and unique");
+  }
+  const findingKeys = findings.map((finding) => `${finding.code}\u0000${finding.artifactId ?? ""}`);
+  if (!isCanonicalUnique(findingKeys)) {
+    return validationIssue(["findings"], "findings must be canonical and unique");
+  }
+  const hasFindingsLimit = findings.some(
+    (finding) => finding.code === "METHODOLOGY_FINDINGS_LIMIT",
+  );
+  if (
+    hasFindingsLimit &&
+    (findings.length !== 1 || findings[0]?.code !== "METHODOLOGY_FINDINGS_LIMIT")
+  ) {
+    return validationIssue(["findings"], "the findings-limit denial must be the sole finding");
+  }
+  if (
+    (result.disposition === "eligible" &&
+      (closure.length === 0 || findings.length !== 0 || !sameStrings(eligible, closure))) ||
+    (result.disposition === "ineligible" && (findings.length === 0 || eligible.length !== 0))
+  ) {
+    return validationIssue(
+      ["disposition"],
+      "eligibility result must bind disposition, closure, eligible ids, and findings",
+    );
+  }
+  return undefined;
+}
+
+function prefixedOptional(
+  prefix: ValidationPath,
+  issue: ValidationIssue | undefined,
+): ValidationIssue | undefined {
+  return issue === undefined ? undefined : prefixedIssue(prefix, issue);
+}
+
+class ClosedSchemaError extends Error {
+  declare readonly issues: readonly ValidationIssue[];
+
+  constructor(issue: ValidationIssue) {
+    super(issue.message);
+    Object.defineProperty(this, "name", { value: "ClosedSchemaError" });
+    Object.defineProperty(this, "issues", { enumerable: true, value: Object.freeze([issue]) });
+  }
+}
+
+function closedPublicSchema<T extends z.ZodType>(
+  schema: T,
+  validate: (value: unknown) => ValidationIssue | undefined,
+): T {
+  const originalSafeParse = schema.safeParse.bind(schema);
+  const originalSafeParseAsync = schema.safeParseAsync.bind(schema);
+  const originalParse = schema.parse.bind(schema);
+  const originalParseAsync = schema.parseAsync.bind(schema);
+  const guardedSafeParse = (
+    ...parameters: Parameters<T["safeParse"]>
+  ): ReturnType<T["safeParse"]> => {
+    const issue = validate(parameters[0]);
+    return issue === undefined
+      ? (Reflect.apply(originalSafeParse, schema, parameters) as ReturnType<T["safeParse"]>)
+      : (closedRecord({
+          success: false as const,
+          error: new ClosedSchemaError(issue),
+        }) as ReturnType<T["safeParse"]>);
+  };
+  const guardedParse = (...parameters: Parameters<T["parse"]>): ReturnType<T["parse"]> => {
+    const issue = validate(parameters[0]);
+    if (issue !== undefined) throw new ClosedSchemaError(issue);
+    return Reflect.apply(originalParse, schema, parameters) as ReturnType<T["parse"]>;
+  };
+  const guardedSafeParseAsync = async (
+    ...parameters: Parameters<T["safeParseAsync"]>
+  ): Promise<Awaited<ReturnType<T["safeParseAsync"]>>> => {
+    const issue = validate(parameters[0]);
+    return issue === undefined
+      ? (Reflect.apply(originalSafeParseAsync, schema, parameters) as Awaited<
+          ReturnType<T["safeParseAsync"]>
+        >)
+      : (closedRecord({ success: false as const, error: new ClosedSchemaError(issue) }) as Awaited<
+          ReturnType<T["safeParseAsync"]>
+        >);
+  };
+  const guardedParseAsync = async (
+    ...parameters: Parameters<T["parseAsync"]>
+  ): Promise<Awaited<ReturnType<T["parseAsync"]>>> => {
+    const issue = validate(parameters[0]);
+    if (issue !== undefined) throw new ClosedSchemaError(issue);
+    return Reflect.apply(originalParseAsync, schema, parameters) as Awaited<
+      ReturnType<T["parseAsync"]>
+    >;
+  };
+  Object.defineProperties(schema, {
+    parse: { configurable: true, value: guardedParse },
+    parseAsync: { configurable: true, value: guardedParseAsync },
+    safeParse: { configurable: true, value: guardedSafeParse },
+    safeParseAsync: { configurable: true, value: guardedSafeParseAsync },
+    spa: { configurable: true, value: guardedSafeParseAsync },
+  });
+  return schema;
 }
 
 function compareCodeUnits(left: string, right: string): number {
@@ -522,9 +886,12 @@ const SyntheticClassificationResultTupleSchema = z
     }
   });
 
-export const SyntheticClassificationResultSchema = z.preprocess(
-  (value) => recordTuple(value, resultCollectionsAreBounded, RESULT_FIELDS),
-  namedTupleSchema(SyntheticClassificationResultTupleSchema, RESULT_FIELDS),
+export const SyntheticClassificationResultSchema = closedPublicSchema(
+  z.preprocess(
+    (value) => recordTuple(value, resultCollectionsAreBounded, RESULT_FIELDS),
+    SyntheticClassificationResultTupleSchema,
+  ),
+  validateClassificationResult,
 );
 
 type Artifact = z.infer<typeof SyntheticArtifactSchema>;
