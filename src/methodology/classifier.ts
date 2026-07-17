@@ -11,13 +11,15 @@ const ArtifactIdSchema = z.string().regex(/^[a-z][a-z0-9-]{0,63}$/);
 const SyntheticPathSchema = z
   .string()
   .max(MAX_SYNTHETIC_PATH_LENGTH)
-  .regex(/^(?!\/)(?!.*\\\\)(?!.*(?:^|\/)\.{1,2}(?:\/|$))[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)*$/);
+  .regex(
+    /^(?!\/)(?!.*\\\\)(?!.*(?:^|\/)\.{1,2}(?:\/|$))[a-z0-9_-](?:[a-z0-9._-]*[a-z0-9_-])?(?:\/[a-z0-9_-](?:[a-z0-9._-]*[a-z0-9_-])?)*$/,
+  );
 const SyntheticDigestSchema = z.string().regex(/^sha256:[a-f0-9]{64}$/);
 const SyntheticSourceLocatorSchema = z
   .string()
   .max(256)
   .regex(
-    /^synthetic:\/\/[a-z][a-z0-9-]{0,63}\/(?!.*(?:^|\/)\.{1,2}(?:\/|$))[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)*$/,
+    /^synthetic:\/\/[a-z][a-z0-9-]{0,63}\/(?!.*(?:^|\/)\.{1,2}(?:\/|$))[a-z0-9_-](?:[a-z0-9._-]*[a-z0-9_-])?(?:\/[a-z0-9_-](?:[a-z0-9._-]*[a-z0-9_-])?)*$/,
   );
 
 export const SyntheticArtifactKindSchema = z.enum([
@@ -125,6 +127,7 @@ export const SyntheticMethodologyFindingCodeSchema = z.enum([
   "METHODOLOGY_SYNTHETIC_NON_REGULAR",
   "METHODOLOGY_SYNTHETIC_OUT_OF_CLOSURE",
   "METHODOLOGY_SYNTHETIC_PATH_AMBIGUOUS",
+  "METHODOLOGY_SYNTHETIC_SOURCE_IDENTITY_AMBIGUOUS",
   "METHODOLOGY_SYNTHETIC_UNLICENSED",
 ]);
 
@@ -266,8 +269,13 @@ export function classifySyntheticMethodology(value: unknown) {
   const input: SyntheticMethodologyInput = SyntheticMethodologyInputSchema.parse(value);
   const artifacts = new Map(input.artifacts.map((artifact) => [artifact.id, artifact]));
   const paths = new Map<string, number>();
+  const sourceLocators = new Map<string, number>();
   for (const artifact of input.artifacts) {
     paths.set(artifact.path, (paths.get(artifact.path) ?? 0) + 1);
+    sourceLocators.set(
+      artifact.sourceIdentity.locator,
+      (sourceLocators.get(artifact.sourceIdentity.locator) ?? 0) + 1,
+    );
   }
   const roots = new Set(input.roots);
   const findings = new Map<string, SyntheticFinding>();
@@ -290,6 +298,9 @@ export function classifySyntheticMethodology(value: unknown) {
 
     if ((paths.get(artifact.path) ?? 0) > 1) {
       exclude("METHODOLOGY_SYNTHETIC_PATH_AMBIGUOUS", artifact.id);
+    }
+    if ((sourceLocators.get(artifact.sourceIdentity.locator) ?? 0) > 1) {
+      exclude("METHODOLOGY_SYNTHETIC_SOURCE_IDENTITY_AMBIGUOUS", artifact.id);
     }
     for (const code of artifactFindings(artifact)) exclude(code, artifact.id);
     for (const dependency of sortStrings(artifact.dependencies).reverse()) {
