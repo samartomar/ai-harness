@@ -162,6 +162,45 @@ describe("methodology Phase 1 schemas", () => {
 
     expect(() => MethodologyStatusSchema.parse(status)).toThrow();
   });
+
+  it("rejects contradictory status findings and command/status combinations", () => {
+    const root = fresh("aih-methodology-status-contract-");
+    writeIntent(root, "methodology.intent.json", intent());
+    const inspected = JSON.parse(runInProcess(root, "inspect").stdout);
+    const projected = JSON.parse(runInProcess(root, "project").stdout);
+    const advisoryFinding = {
+      code: "METHODOLOGY_HOST_ADVISORY",
+      disposition: "advisory",
+      detail: "Phase 1 has no host proof",
+    };
+
+    expect(() =>
+      MethodologyStatusSchema.parse({
+        ...inspected.status,
+        findings: [advisoryFinding],
+      }),
+    ).toThrow();
+    expect(() =>
+      MethodologyCommandEnvelopeSchema.parse({
+        ...inspected,
+        status: {
+          ...inspected.status,
+          state: "advisory",
+          findings: [advisoryFinding],
+        },
+      }),
+    ).toThrow();
+    expect(() =>
+      MethodologyCommandEnvelopeSchema.parse({
+        ...projected,
+        status: {
+          ...projected.status,
+          state: "advisory",
+          findings: [advisoryFinding],
+        },
+      }),
+    ).toThrow();
+  });
 });
 
 describe("methodology Phase 1 in-process boundaries", () => {
@@ -272,6 +311,17 @@ describe("methodology Phase 1 in-process boundaries", () => {
         findings: [expect.objectContaining({ code: "METHODOLOGY_INTENT_PATH_INVALID" })],
       },
     });
+  });
+
+  it("reports a successful non-JSON inspection without a JSON envelope", () => {
+    const root = fresh("aih-methodology-in-process-text-success-");
+    writeIntent(root, "methodology.intent.json", intent());
+
+    const result = runInProcess(root, "inspect", "methodology.intent.json", false);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toBe("methodology inspect: selected\n");
+    expect(result.stderr).toBe("");
   });
 
   it("writes a closed parser envelope only for JSON methodology arguments", () => {
