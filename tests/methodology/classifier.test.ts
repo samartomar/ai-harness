@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  ClosedSchemaError,
   classifySyntheticProjection,
   SyntheticArtifactSchema,
   SyntheticClassificationResultSchema,
@@ -682,6 +683,155 @@ describe("Phase 2 synthetic methodology classifier", () => {
     await expect(SyntheticClassifierInputSchema.decodeAsync(invalid)).rejects.toMatchObject({
       issues: [{ path: ["schemaVersion"] }],
     });
+  });
+
+  it("exports a frozen parse-only schema surface with an explicit closed error contract", () => {
+    const schemas = [
+      SyntheticArtifactSchema,
+      SyntheticEvidenceSchema,
+      SyntheticFindingCodeSchema,
+      SyntheticFindingSchema,
+      SyntheticClassifierInputSchema,
+      SyntheticClassificationResultSchema,
+    ];
+    const methods = [
+      "decode",
+      "decodeAsync",
+      "parse",
+      "parseAsync",
+      "safeDecode",
+      "safeDecodeAsync",
+      "safeParse",
+      "safeParseAsync",
+      "spa",
+    ];
+
+    for (const schema of schemas) {
+      expect(Object.getPrototypeOf(schema)).toBeNull();
+      expect(Object.isFrozen(schema)).toBe(true);
+      expect(Object.keys(schema).sort()).toEqual(methods);
+      expect("clone" in schema).toBe(false);
+      expect("optional" in schema).toBe(false);
+      expect("encode" in schema).toBe(false);
+      const invalid = schema.safeParse(null);
+      expect(invalid.success).toBe(false);
+      if (!invalid.success) expect(invalid.error).toBeInstanceOf(ClosedSchemaError);
+    }
+  });
+
+  it("applies every closed invariant through decode aliases", () => {
+    const duplicateDependencies = artifact("root", { dependencies: ["dependency", "dependency"] });
+    const misattributedFinding = {
+      code: "METHODOLOGY_FINDINGS_LIMIT",
+      artifactId: "root",
+    };
+    const inconsistentResult = {
+      schemaVersion: 1,
+      disposition: "eligible",
+      closure: ["root"],
+      eligible: [],
+      findings: [],
+    };
+
+    expect(SyntheticArtifactSchema.safeDecode(duplicateDependencies).success).toBe(false);
+    expect(SyntheticFindingSchema.safeDecode(misattributedFinding).success).toBe(false);
+    expect(SyntheticClassificationResultSchema.safeDecode(inconsistentResult).success).toBe(false);
+  });
+
+  it("does not invoke ambient numeric prototype setters", () => {
+    const root = artifact("root");
+    const validCases = [
+      [SyntheticArtifactSchema, root],
+      [SyntheticEvidenceSchema, evidence(root)],
+      [SyntheticFindingCodeSchema, "METHODOLOGY_EVIDENCE_MISSING"],
+      [SyntheticFindingSchema, { code: "METHODOLOGY_EVIDENCE_MISSING", artifactId: "root" }],
+      [SyntheticClassifierInputSchema, input()],
+      [
+        SyntheticClassificationResultSchema,
+        {
+          schemaVersion: 1,
+          disposition: "eligible",
+          closure: ["root"],
+          eligible: ["root"],
+          findings: [],
+        },
+      ],
+    ] as const;
+    let hookCalls = 0;
+    let escapedError: unknown;
+    let failures = 0;
+
+    for (const property of ["0", "1"] as const) {
+      const original = Object.getOwnPropertyDescriptor(Object.prototype, property);
+      Object.defineProperty(Object.prototype, property, {
+        configurable: true,
+        set() {
+          hookCalls += 1;
+          throw new Error(`schema invoked ambient numeric setter ${property}`);
+        },
+      });
+      try {
+        for (const [schema, value] of validCases) {
+          try {
+            if (!schema.safeParse(value).success) failures += 1;
+          } catch (error) {
+            escapedError = error;
+          }
+        }
+        try {
+          classifySyntheticProjection(input());
+        } catch (error) {
+          escapedError = error;
+        }
+      } finally {
+        if (original === undefined) delete (Object.prototype as Record<string, unknown>)[property];
+        else Object.defineProperty(Object.prototype, property, original);
+      }
+    }
+
+    expect(escapedError).toBeUndefined();
+    expect(failures).toBe(0);
+    expect(hookCalls).toBe(0);
+  });
+
+  it("does not assimilate ambient then hooks in asynchronous schema methods", async () => {
+    const valid = input();
+    const invalid = { ...valid, schemaVersion: 2 };
+    let hookCalls = 0;
+    let escapedError: unknown;
+    let failures = 0;
+    let expectedRejections = 0;
+    const original = Object.getOwnPropertyDescriptor(Object.prototype, "then");
+    // biome-ignore lint/suspicious/noThenProperty: this hostile ambient hook is the boundary under test
+    Object.defineProperty(Object.prototype, "then", {
+      configurable: true,
+      get() {
+        hookCalls += 1;
+        throw new Error("schema invoked ambient then");
+      },
+    });
+    try {
+      try {
+        if (!(await SyntheticClassifierInputSchema.safeParseAsync(valid)).success) failures += 1;
+        if ((await SyntheticClassifierInputSchema.safeParseAsync(invalid)).success) failures += 1;
+        if ((await SyntheticClassifierInputSchema.safeDecodeAsync(invalid)).success) failures += 1;
+        if ((await SyntheticClassifierInputSchema.spa(invalid)).success) failures += 1;
+        await SyntheticClassifierInputSchema.parseAsync(valid);
+        await SyntheticClassifierInputSchema.decodeAsync(invalid);
+      } catch (error) {
+        if (error instanceof ClosedSchemaError) expectedRejections += 1;
+        else escapedError = error;
+      }
+    } finally {
+      if (original === undefined) delete (Object.prototype as Record<string, unknown>).then;
+      // biome-ignore lint/suspicious/noThenProperty: restore the exact ambient descriptor after the test
+      else Object.defineProperty(Object.prototype, "then", original);
+    }
+
+    expect(escapedError).toBeUndefined();
+    expect(expectedRejections).toBe(1);
+    expect(failures).toBe(0);
+    expect(hookCalls).toBe(0);
   });
 
   it("returns closed invalid results without invoking ambient error hooks", () => {
