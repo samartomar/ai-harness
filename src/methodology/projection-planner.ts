@@ -16,6 +16,10 @@ const MAX_ENTRIES = 64;
 const MAX_REQUESTED_COMPONENTS = 32;
 const MAX_DEPENDENCIES_PER_ARTIFACT = 32;
 const MAX_BLOCKED_FINDINGS = 1;
+const MAX_SNAPSHOT_ARRAY_LENGTH = MAX_ENTRIES;
+const MAX_SNAPSHOT_RECORD_KEYS = 32;
+const MAX_SNAPSHOT_DEPTH = 12;
+const MAX_SNAPSHOT_NODES = 8192;
 
 const ArtifactIdSchema = z.string().regex(/^[a-z][a-z0-9-]{0,63}$/);
 const DigestSchema = z.string().regex(/^[0-9a-f]{64}$/);
@@ -30,9 +34,17 @@ const TargetSchema = z
     "target must be a canonical host-neutral logical path",
   );
 
-export const ProjectionMappingSchema = z
+const ProjectionMappingObjectSchema = z
   .object({ artifactId: ArtifactIdSchema, target: MappingTargetSchema })
   .strict();
+
+export const ProjectionMappingSchema = z.preprocess(
+  (value) =>
+    failClosedPreprocess(value, (candidate) =>
+      recordFieldsAreOwn(candidate, ["artifactId", "target"]),
+    ),
+  ProjectionMappingObjectSchema,
+);
 
 const ProjectionPlannerInputObjectSchema = z
   .object({
@@ -226,16 +238,102 @@ function recordOf(value: unknown): Record<string, unknown> | undefined {
     : undefined;
 }
 
-function recordSurfaceIsStatic(value: unknown): boolean {
-  if (value === null || typeof value !== "object") return true;
-  if (isProxy(value)) return false;
-  if (Array.isArray(value)) return Object.getPrototypeOf(value) === Array.prototype;
+type SnapshotState = { depth: number; nodes: number; active: WeakSet<object> };
+type SnapshotResult = { ok: true; value: unknown } | { ok: false };
+
+const INVALID_SNAPSHOT = Object.freeze({ ok: false as const });
+
+function snapshotSurface(value: unknown): SnapshotResult {
+  if (value === null || typeof value !== "object") return { ok: true, value };
+  if (isProxy(value)) return INVALID_SNAPSHOT;
+  if (Array.isArray(value)) {
+    if (Object.getPrototypeOf(value) !== Array.prototype) return INVALID_SNAPSHOT;
+    const length = value.length;
+    if (length > MAX_SNAPSHOT_ARRAY_LENGTH) return INVALID_SNAPSHOT;
+    const keys = Reflect.ownKeys(value);
+    if (keys.length !== length + 1 || keys.some((key) => typeof key !== "string")) {
+      return INVALID_SNAPSHOT;
+    }
+    for (let index = 0; index < length; index += 1) {
+      const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
+      if (descriptor === undefined || !("value" in descriptor) || !descriptor.enumerable) {
+        return INVALID_SNAPSHOT;
+      }
+    }
+    return { ok: true, value };
+  }
   const prototype = Object.getPrototypeOf(value);
-  if (prototype !== Object.prototype && prototype !== null) return false;
-  const record = value as Record<string, unknown>;
-  return Object.values(Object.getOwnPropertyDescriptors(record)).every(
-    (descriptor) => "value" in descriptor,
-  );
+  if (prototype !== Object.prototype && prototype !== null) return INVALID_SNAPSHOT;
+  const keys = Reflect.ownKeys(value);
+  if (keys.length > MAX_SNAPSHOT_RECORD_KEYS || keys.some((key) => typeof key !== "string")) {
+    return INVALID_SNAPSHOT;
+  }
+  const snapshot = Object.create(null) as Record<string, unknown>;
+  for (const key of keys as string[]) {
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    if (descriptor === undefined || !("value" in descriptor) || !descriptor.enumerable) {
+      return INVALID_SNAPSHOT;
+    }
+    snapshot[key] = descriptor.value;
+  }
+  return { ok: true, value: snapshot };
+}
+
+function snapshotPlainData(value: unknown, state: SnapshotState): SnapshotResult {
+  const surface = snapshotSurface(value);
+  if (!surface.ok) return INVALID_SNAPSHOT;
+  if (value === null || typeof value !== "object") return surface;
+  if (state.depth >= MAX_SNAPSHOT_DEPTH || state.nodes >= MAX_SNAPSHOT_NODES) {
+    return INVALID_SNAPSHOT;
+  }
+  if (state.active.has(value)) return INVALID_SNAPSHOT;
+  state.active.add(value);
+  const nextState = { ...state, depth: state.depth + 1, nodes: state.nodes + 1 };
+  if (Array.isArray(surface.value)) {
+    const snapshot: unknown[] = [];
+    for (let index = 0; index < surface.value.length; index += 1) {
+      const child = snapshotPlainData(surface.value[index], nextState);
+      if (!child.ok) return INVALID_SNAPSHOT;
+      snapshot.push(child.value);
+    }
+    state.nodes = nextState.nodes;
+    state.active.delete(value);
+    return { ok: true, value: snapshot };
+  }
+  const record = recordOf(surface.value);
+  if (record === undefined) return INVALID_SNAPSHOT;
+  const snapshot = Object.create(null) as Record<string, unknown>;
+  for (const [key, entry] of Object.entries(record)) {
+    const child = snapshotPlainData(entry, nextState);
+    if (!child.ok) return INVALID_SNAPSHOT;
+    snapshot[key] = child.value;
+  }
+  state.nodes = nextState.nodes;
+  state.active.delete(value);
+  return { ok: true, value: snapshot };
+}
+
+function staticRecordOf(value: unknown): Record<string, unknown> | undefined {
+  const surface = snapshotSurface(value);
+  return surface.ok ? recordOf(surface.value) : undefined;
+}
+
+function recordFieldsAreOwn(value: unknown, fields: readonly string[]): boolean {
+  const record = staticRecordOf(value);
+  return record === undefined || fields.every((field) => Object.hasOwn(record, field));
+}
+
+function collectionRecordFieldsAreOwn(value: unknown, fields: readonly string[]): boolean {
+  if (!Array.isArray(value)) return true;
+  for (let index = 0; index < value.length; index += 1) {
+    const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
+    if (descriptor !== undefined && !recordFieldsAreOwn(descriptor.value, fields)) return false;
+  }
+  return true;
+}
+
+function recordSurfaceIsStatic(value: unknown): boolean {
+  return snapshotSurface(value).ok;
 }
 
 function collectionIsBounded(value: unknown, maximum: number): boolean {
@@ -253,21 +351,59 @@ function collectionIsBounded(value: unknown, maximum: number): boolean {
 }
 
 function failClosedPreprocess(value: unknown, predicate: (candidate: unknown) => boolean): unknown {
-  return predicate(value) ? value : null;
+  const surface = snapshotSurface(value);
+  if (!surface.ok || !predicate(surface.value)) return null;
+  const snapshot = snapshotPlainData(surface.value, {
+    depth: 0,
+    nodes: 0,
+    active: new WeakSet<object>(),
+  });
+  return snapshot.ok ? snapshot.value : null;
 }
 
 function classifierCollectionsAreBounded(value: unknown): boolean {
-  if (!recordSurfaceIsStatic(value)) return false;
-  const input = recordOf(value);
+  const input = staticRecordOf(value);
   if (input === undefined) return true;
+  if (
+    !recordFieldsAreOwn(input, [
+      "schemaVersion",
+      "requested",
+      "declaredClosure",
+      "artifacts",
+      "evidence",
+    ])
+  ) {
+    return false;
+  }
   if (!collectionIsBounded(input.requested, MAX_REQUESTED_COMPONENTS)) return false;
   if (!collectionIsBounded(input.declaredClosure, MAX_ENTRIES)) return false;
   if (!collectionIsBounded(input.artifacts, MAX_ENTRIES)) return false;
   if (!collectionIsBounded(input.evidence, MAX_ENTRIES)) return false;
+  if (
+    !collectionRecordFieldsAreOwn(input.artifacts, [
+      "id",
+      "sourceLocator",
+      "contentDigest",
+      "contentDisposition",
+      "linkDisposition",
+      "licenseDisposition",
+      "evidenceDigest",
+      "dependencies",
+    ]) ||
+    !collectionRecordFieldsAreOwn(input.evidence, [
+      "artifactId",
+      "sourceLocator",
+      "contentDigest",
+      "licenseDisposition",
+      "evidenceDigest",
+    ])
+  ) {
+    return false;
+  }
   if (Array.isArray(input.artifacts)) {
     for (let index = 0; index < input.artifacts.length; index += 1) {
       const candidate = input.artifacts[index];
-      const artifact = recordOf(candidate);
+      const artifact = staticRecordOf(candidate);
       if (
         artifact !== undefined &&
         !collectionIsBounded(artifact.dependencies, MAX_DEPENDENCIES_PER_ARTIFACT)
@@ -280,45 +416,96 @@ function classifierCollectionsAreBounded(value: unknown): boolean {
 }
 
 function plannerInputCollectionsAreBounded(value: unknown): boolean {
-  if (!recordSurfaceIsStatic(value)) return false;
-  const input = recordOf(value);
+  const input = staticRecordOf(value);
   if (input === undefined) return true;
   return (
+    recordFieldsAreOwn(input, [
+      "schemaVersion",
+      "decisionVersion",
+      "classifierVersion",
+      "policyVersion",
+      "manifestVersion",
+      "owner",
+      "classifierInput",
+      "mappings",
+    ]) &&
     collectionIsBounded(input.mappings, MAX_ENTRIES) &&
+    collectionRecordFieldsAreOwn(input.mappings, ["artifactId", "target"]) &&
     classifierCollectionsAreBounded(input.classifierInput)
   );
 }
 
 function decisionCollectionsAreBounded(value: unknown): boolean {
-  if (!recordSurfaceIsStatic(value)) return false;
-  const decision = recordOf(value);
+  const decision = staticRecordOf(value);
   if (decision === undefined) return true;
   return (
+    recordFieldsAreOwn(decision, [
+      "decisionVersion",
+      "digestVersion",
+      "classifierVersion",
+      "policyVersion",
+      "manifestVersion",
+      "owner",
+      "classifierInput",
+      "closure",
+      "eligible",
+      "mappings",
+      "entries",
+    ]) &&
     collectionIsBounded(decision.closure, MAX_ENTRIES) &&
     collectionIsBounded(decision.eligible, MAX_ENTRIES) &&
     collectionIsBounded(decision.mappings, MAX_ENTRIES) &&
     collectionIsBounded(decision.entries, MAX_ENTRIES) &&
+    collectionRecordFieldsAreOwn(decision.mappings, ["artifactId", "target"]) &&
+    collectionRecordFieldsAreOwn(decision.entries, [
+      "artifactId",
+      "target",
+      "sourceLocator",
+      "contentDigest",
+    ]) &&
     classifierCollectionsAreBounded(decision.classifierInput)
   );
 }
 
 function manifestCollectionsAreBounded(value: unknown): boolean {
-  if (!recordSurfaceIsStatic(value)) return false;
-  const manifest = recordOf(value);
+  const manifest = staticRecordOf(value);
   if (manifest === undefined) return true;
   return (
+    recordFieldsAreOwn(manifest, [
+      "schemaVersion",
+      "digestVersion",
+      "digest",
+      "owner",
+      "entries",
+      "decision",
+    ]) &&
     collectionIsBounded(manifest.entries, MAX_ENTRIES) &&
+    collectionRecordFieldsAreOwn(manifest.entries, [
+      "artifactId",
+      "target",
+      "sourceLocator",
+      "contentDigest",
+    ]) &&
     decisionCollectionsAreBounded(manifest.decision)
   );
 }
 
 function resultCollectionsAreBounded(value: unknown): boolean {
-  if (!recordSurfaceIsStatic(value)) return false;
-  const result = recordOf(value);
+  const result = staticRecordOf(value);
   if (result === undefined) return true;
   return (
+    recordFieldsAreOwn(result, ["schemaVersion", "state", "boundary", "findings"]) &&
+    (result.state !== "planned" || Object.hasOwn(result, "manifest")) &&
     collectionIsBounded(result.findings, MAX_BLOCKED_FINDINGS) &&
-    recordSurfaceIsStatic(result.boundary) &&
+    collectionRecordFieldsAreOwn(result.findings, ["code"]) &&
+    recordFieldsAreOwn(result.boundary, [
+      "reads",
+      "writes",
+      "cli",
+      "executor",
+      "providerExecution",
+      "hostExecution",
+    ]) &&
     manifestCollectionsAreBounded(result.manifest)
   );
 }

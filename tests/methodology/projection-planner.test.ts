@@ -658,8 +658,23 @@ describe("Phase 3 host-neutral synthetic projection planner", () => {
         throw new Error("mapping schema invoked an accessor");
       },
     });
+    const sparseArray = new Array(1);
+    const accessorArray: unknown[] = [];
+    Object.defineProperty(accessorArray, "0", {
+      enumerable: true,
+      get() {
+        throw new Error("mapping schema invoked an array accessor");
+      },
+    });
 
-    for (const candidate of [proxied, revocable.proxy, inherited, accessor]) {
+    for (const candidate of [
+      proxied,
+      revocable.proxy,
+      inherited,
+      accessor,
+      sparseArray,
+      accessorArray,
+    ]) {
       expectFailFast(() => ProjectionMappingSchema.safeParse(candidate));
     }
   });
