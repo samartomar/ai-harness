@@ -188,6 +188,60 @@ describe("synthetic methodology projection transactions", () => {
     expect(existsSync(join(outside, "methodology"))).toBe(false);
   });
 
+  it("fails closed if exact bytes change after the atomic commit boundary", () => {
+    const fixtureRoot = root();
+    const fixturePath = syntheticMethodologyTransactionFixturePath(fixtureRoot);
+
+    expect(() =>
+      applySyntheticMethodologyProjectionTransaction(fixtureRoot, transaction(), {
+        onBoundary(boundary) {
+          if (boundary !== "after-commit") return;
+          writeFileSync(
+            join(fixturePath, ".aih/methodology/v1/rules/review-loop.md"),
+            "tampered",
+            "utf8",
+          );
+        },
+      }),
+    ).toThrow(/digest/i);
+  });
+
+  it("rejects a linked projection root before recovery or clean reads its receipt", () => {
+    const fixtureRoot = root();
+    const fixturePath = syntheticMethodologyTransactionFixturePath(fixtureRoot);
+    const output = join(fixturePath, ".aih/methodology/v1");
+    const outside = join(fixturePath, "outside");
+    applySyntheticMethodologyProjectionTransaction(fixtureRoot, transaction());
+    mkdirSync(outside);
+    writeFileSync(join(outside, ".aih-methodology-transaction.json"), "not json", "utf8");
+    renameSync(output, join(fixturePath, ".aih/methodology/v1-original"));
+    symlinkSync(outside, output, "dir");
+
+    expect(() => recoverSyntheticMethodologyProjectionTransaction(fixtureRoot)).toThrow(
+      /linked|reparse/i,
+    );
+    expect(() => cleanSyntheticMethodologyProjectionTransaction(fixtureRoot)).toThrow(
+      /linked|reparse/i,
+    );
+  });
+
+  it("rolls back a partial multi-entry stage after the first entry failure", () => {
+    const fixtureRoot = root();
+    const fixturePath = syntheticMethodologyTransactionFixturePath(fixtureRoot);
+
+    expect(() =>
+      applySyntheticMethodologyProjectionTransaction(
+        fixtureRoot,
+        transaction([
+          ["review-loop", "# review\n"],
+          ["method-routing", "# routing\n"],
+        ]),
+        { faultAt: "after-entry" },
+      ),
+    ).toThrow(/injected/i);
+    expect(existsSync(join(fixturePath, ".aih"))).toBe(false);
+  });
+
   it.each([
     "after-container",
     "after-lock",
@@ -218,5 +272,18 @@ describe("synthetic methodology projection transactions", () => {
         transaction(),
       ),
     ).toThrow(/fixture root/i);
+  });
+
+  it("does not let TMPDIR redirect a fixture root into the checkout", () => {
+    const previous = process.env.TMPDIR;
+    process.env.TMPDIR = ".";
+    try {
+      const fixtureRoot = root();
+      const fixturePath = syntheticMethodologyTransactionFixturePath(fixtureRoot);
+      expect(fixturePath.startsWith(`${process.cwd()}/`)).toBe(false);
+    } finally {
+      if (previous === undefined) delete process.env.TMPDIR;
+      else process.env.TMPDIR = previous;
+    }
   });
 });
