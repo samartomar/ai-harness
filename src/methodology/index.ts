@@ -231,7 +231,7 @@ function openVerifiedIntentFile(root: string, relativeIntent: string): VerifiedI
     }
     descriptor = openDescriptor(
       descriptorPath(parent, leaf),
-      constants.O_RDONLY | constants.O_NOFOLLOW,
+      constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
     );
     const info = fstatSync(descriptor, { bigint: true });
     if (!info.isFile() || info.nlink !== 1n) {
