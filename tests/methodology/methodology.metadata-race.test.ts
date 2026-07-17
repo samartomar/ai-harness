@@ -91,4 +91,49 @@ describe("methodology Phase 1 descriptor metadata binding", () => {
       expect(JSON.parse(stdout)).toMatchObject({ outcome: "fail-closed" });
     },
   );
+
+  it.runIf(process.platform === "linux")(
+    "fails closed when the verified descriptor returns a short read",
+    async () => {
+      const root = realFs.mkdtempSync(join(tmpdir(), "aih-methodology-short-read-"));
+      temporaryRoots.push(root);
+      realFs.writeFileSync(
+        join(root, "methodology.intent.json"),
+        validIntent("a".repeat(40)),
+        "utf8",
+      );
+
+      vi.doMock("node:fs", async () => {
+        const actual = await vi.importActual<typeof import("node:fs")>("node:fs");
+        return {
+          ...actual,
+          readSync(
+            _descriptor: number,
+            _buffer: NodeJS.ArrayBufferView,
+            _offset: number,
+            length: number,
+            _position: number | null,
+          ): number {
+            return length - 1;
+          },
+        };
+      });
+
+      const { runMethodologyCommand } = await import("../../src/methodology/index.js");
+      let stdout = "";
+      const exitCode = runMethodologyCommand(
+        "inspect",
+        { root, intent: "methodology.intent.json", json: true },
+        {
+          write: (text) => {
+            stdout += text;
+          },
+          writeError: () => undefined,
+        },
+      );
+
+      expect(exitCode).toBe(3);
+      expect(JSON.parse(stdout)).toMatchObject({ outcome: "fail-closed" });
+    },
+  );
 });
