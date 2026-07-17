@@ -156,6 +156,7 @@ export type SyntheticMethodologyTransactionTestBoundary =
   | "after-entry"
   | "after-receipt"
   | "before-commit"
+  | "after-rename"
   | "after-commit";
 
 export interface SyntheticMethodologyTransactionTestOptions {
@@ -460,7 +461,12 @@ function rollback(state: FixtureState, manifest: Manifest): void {
   }
 }
 
-function commit(state: FixtureState, manifest: Manifest): void {
+function commit(
+  state: FixtureState,
+  manifest: Manifest,
+  options: SyntheticMethodologyTransactionTestOptions | undefined,
+  markCommitted: () => void,
+): void {
   const stage = assertStage(state);
   verifyTree(stage, manifest, true);
   const outputParent = join(containerPath(state), "methodology");
@@ -470,6 +476,8 @@ function commit(state: FixtureState, manifest: Manifest): void {
   if (existsSync(destination)) throw transactionError("projection destination already exists");
   renameSync(stage, destination);
   state.stage = undefined;
+  markCommitted();
+  checkpoint(state, options, "after-rename");
   verifyTree(destination, manifest, true);
 }
 
@@ -551,8 +559,9 @@ export function applySyntheticMethodologyProjectionTransaction(
     assertRegularFile(join(stage, RECEIPT_FILE), "staged projection receipt");
     checkpoint(state, options, "after-receipt");
     checkpoint(state, options, "before-commit");
-    commit(state, manifest);
-    committed = true;
+    commit(state, manifest, options, () => {
+      committed = true;
+    });
     checkpoint(state, options, "after-commit");
     verifyTree(outputPath(state), manifest, true);
     removeLock(state);
