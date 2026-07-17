@@ -128,6 +128,43 @@ function appendOwn<T>(values: T[], value: T): void {
   });
 }
 
+function sortOwnedValues<T>(values: T[], compare: (left: T, right: T) => number): T[] {
+  for (let index = 1; index < values.length; index += 1) {
+    const candidate = values[index];
+    if (candidate === undefined) continue;
+    let target = index;
+    while (target > 0) {
+      const previous = values[target - 1];
+      if (previous === undefined || compare(previous, candidate) <= 0) break;
+      values[target] = previous;
+      target -= 1;
+    }
+    values[target] = candidate;
+  }
+  return values;
+}
+
+function sortedArrayCopy<T>(
+  values: readonly T[],
+  compare: (left: T, right: T) => number,
+): T[] {
+  const copy: T[] = [];
+  for (let index = 0; index < values.length; index += 1) {
+    const value = values[index];
+    if (value !== undefined) appendOwn(copy, value);
+  }
+  return sortOwnedValues(copy, compare);
+}
+
+function sortedIterableCopy<T>(
+  values: Iterable<T>,
+  compare: (left: T, right: T) => number,
+): T[] {
+  const copy: T[] = [];
+  for (const value of values) appendOwn(copy, value);
+  return sortOwnedValues(copy, compare);
+}
+
 function recordOf(value: unknown): Record<string, unknown> | undefined {
   return value !== null && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -722,20 +759,20 @@ class Findings {
   }
 
   sorted(): Finding[] {
-    return [...this.values.values()].sort((left, right) =>
+    return sortedIterableCopy(this.values.values(), (left, right) =>
       compareCodeUnits(findingKey(left), findingKey(right)),
     );
   }
 }
 
 function sortedArtifacts(artifacts: readonly Artifact[]): Artifact[] {
-  return [...artifacts].sort((left, right) =>
+  return sortedArrayCopy(artifacts, (left, right) =>
     compareCodeUnits(canonicalArtifactKey(left), canonicalArtifactKey(right)),
   );
 }
 
 function sortedEvidence(evidence: readonly Evidence[]): Evidence[] {
-  return [...evidence].sort((left, right) =>
+  return sortedArrayCopy(evidence, (left, right) =>
     compareCodeUnits(canonicalEvidenceKey(left), canonicalEvidenceKey(right)),
   );
 }
@@ -755,7 +792,7 @@ function canonicalArtifactKey(artifact: Artifact): string {
     artifact.linkDisposition,
     artifact.licenseDisposition,
     artifact.evidenceDigest,
-    ...[...artifact.dependencies].sort(compareCodeUnits),
+    ...sortedArrayCopy(artifact.dependencies, compareCodeUnits),
   ]);
 }
 
@@ -770,7 +807,13 @@ function canonicalEvidenceKey(evidence: Evidence): string {
 }
 
 function canonicalUnique(values: readonly string[]): string[] {
-  return [...new Set(values)].sort(compareCodeUnits);
+  const sorted = sortedArrayCopy(values, compareCodeUnits);
+  const unique: string[] = [];
+  for (let index = 0; index < sorted.length; index += 1) {
+    const value = sorted[index];
+    if (value !== undefined && value !== unique[unique.length - 1]) appendOwn(unique, value);
+  }
+  return unique;
 }
 
 function exactEvidenceBinding(artifact: Artifact, evidence: Evidence): boolean {
@@ -839,7 +882,10 @@ export function classifySyntheticProjection(value: unknown): SyntheticClassifica
       state.set(frame.id, "visiting");
       closure.add(frame.id);
       appendOwn(stack, { id: frame.id, complete: true });
-      for (const dependency of [...current.dependencies].sort(compareCodeUnits).reverse()) {
+      const dependencies = sortedArrayCopy(current.dependencies, compareCodeUnits);
+      for (let index = dependencies.length - 1; index >= 0; index -= 1) {
+        const dependency = dependencies[index];
+        if (dependency === undefined) continue;
         if (state.get(dependency) === "visiting") {
           findings.add("METHODOLOGY_DEPENDENCY_CYCLE", dependency);
         } else {
@@ -849,7 +895,7 @@ export function classifySyntheticProjection(value: unknown): SyntheticClassifica
     }
   }
 
-  const canonicalClosure = [...closure].sort(compareCodeUnits);
+  const canonicalClosure = sortedIterableCopy(closure.values(), compareCodeUnits);
   const declaredClosure = canonicalUnique(input.declaredClosure);
   if (
     declaredClosure.length !== input.declaredClosure.length ||
