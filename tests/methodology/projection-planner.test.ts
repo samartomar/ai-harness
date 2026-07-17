@@ -166,6 +166,48 @@ describe("Phase 3 host-neutral synthetic projection planner", () => {
     }
   });
 
+  it("changes the digest when evidence or an otherwise-equivalent closure edge changes", () => {
+    const evidenceChanged = input();
+    const evidenceInput = evidenceChanged.classifierInput as {
+      artifacts: Array<Record<string, unknown>>;
+      evidence: Array<Record<string, unknown>>;
+    };
+    evidenceInput.artifacts[0] = { ...evidenceInput.artifacts[0], contentDigest: digest("e") };
+    evidenceInput.evidence[0] = { ...evidenceInput.evidence[0], contentDigest: digest("e") };
+
+    const edgeInput = input();
+    const classifierInput = edgeInput.classifierInput as {
+      artifacts: Array<Record<string, unknown>>;
+      evidence: Array<Record<string, unknown>>;
+      declaredClosure: string[];
+    };
+    const extra = artifact("extra");
+    classifierInput.artifacts = [
+      { ...classifierInput.artifacts[0], dependencies: ["dependency", "extra"] },
+      { ...classifierInput.artifacts[1], dependencies: ["extra"] },
+      extra,
+    ];
+    classifierInput.evidence.push(evidence(extra));
+    classifierInput.declaredClosure = ["root", "dependency", "extra"];
+    edgeInput.mappings = [
+      ...(edgeInput.mappings as unknown[]),
+      { artifactId: "extra", target: "rules/extra.md" },
+    ];
+    const withoutRedundantEdge = structuredClone(edgeInput);
+    (
+      (withoutRedundantEdge.classifierInput as { artifacts: Array<Record<string, unknown>> })
+        .artifacts[1] as Record<string, unknown>
+    ).dependencies = [];
+
+    const baseline = planSyntheticProjection(input());
+    const evidencePlan = planSyntheticProjection(evidenceChanged);
+    const edgePlan = planSyntheticProjection(edgeInput);
+    const edgeMutationPlan = planSyntheticProjection(withoutRedundantEdge);
+
+    expect(manifestOf(evidencePlan).digest).not.toBe(manifestOf(baseline).digest);
+    expect(manifestOf(edgePlan).digest).not.toBe(manifestOf(edgeMutationPlan).digest);
+  });
+
   it("keeps result schemas closed and disallows forged planned records", () => {
     const planned = planSyntheticProjection(input());
 
