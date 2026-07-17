@@ -21,6 +21,7 @@ import {
 import {
   canonicalizeMethodologyIntent,
   exactSourceIdentity,
+  providerAdapterFor,
   MethodologyCommandEnvelopeSchema,
   MethodologyIntentSchema,
   MethodologyStatusSchema,
@@ -151,6 +152,21 @@ describe("methodology Phase 1 schemas", () => {
       "review-loop",
     ]);
     expect(exactSourceIdentity(forward)).toEqual(exactSourceIdentity(reverse));
+  });
+
+  it("rejects an adapter that does not match the selected provider", () => {
+    const parsed = MethodologyIntentSchema.parse(intent());
+    const mismatchedAdapter = {
+      ...parsed,
+      selection: {
+        ...parsed.selection,
+        providerAdapter: "gstack-static-v1",
+      },
+    } as typeof parsed;
+
+    expect(() => providerAdapterFor(mismatchedAdapter)).toThrow(
+      "validated intent named an unavailable provider adapter",
+    );
   });
 
   it("rejects unknown nested adapter fields in a closed status record", () => {
