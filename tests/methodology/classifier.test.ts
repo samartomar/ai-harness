@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   classifySyntheticProjection,
+  SyntheticArtifactSchema,
   SyntheticClassificationResultSchema,
   SyntheticClassifierInputSchema,
+  SyntheticEvidenceSchema,
+  SyntheticFindingSchema,
 } from "../../src/methodology/classifier.js";
 
 type ArtifactOverrides = Record<string, unknown>;
@@ -223,6 +226,107 @@ describe("Phase 2 synthetic methodology classifier", () => {
     }
 
     expect(hookCalls).toBe(0);
+  });
+
+  it("fails closed before hostile object surfaces can execute across exported schemas", () => {
+    const root = artifact("root");
+    const validInput = input([root]);
+    const validResult = classifySyntheticProjection(validInput);
+    const cases = [
+      [SyntheticArtifactSchema, root],
+      [SyntheticEvidenceSchema, evidence(root)],
+      [
+        SyntheticFindingSchema,
+        { code: "METHODOLOGY_CONTENT_EXECUTABLE", artifactId: "root" },
+      ],
+      [SyntheticClassifierInputSchema, validInput],
+      [SyntheticClassificationResultSchema, validResult],
+    ] as const;
+    let trapCalls = 0;
+
+    for (const [schema, value] of cases) {
+      const hostile = new Proxy(value, {
+        get() {
+          trapCalls += 1;
+          throw new Error("schema invoked a hostile proxy trap");
+        },
+      });
+      const inherited = Object.create(value) as unknown;
+
+      expect(() => schema.safeParse(hostile)).not.toThrow();
+      expect(schema.safeParse(hostile).success).toBe(false);
+      expect(schema.safeParse(inherited).success).toBe(false);
+    }
+
+    const hostileInput = new Proxy(validInput, {
+      get() {
+        trapCalls += 1;
+        throw new Error("classifier invoked a hostile proxy trap");
+      },
+    });
+    const nestedHostileInput = input([
+      new Proxy(root, {
+        get() {
+          trapCalls += 1;
+          throw new Error("classifier invoked a nested hostile proxy trap");
+        },
+      }),
+    ]);
+
+    expect(() => classifySyntheticProjection(hostileInput)).toThrow();
+    expect(() => classifySyntheticProjection(nestedHostileInput)).toThrow();
+    expect(trapCalls).toBe(0);
+  });
+
+  it("rejects oversized collections before reading forbidden elements", () => {
+    const root = artifact("root");
+    let forbiddenReads = 0;
+    const requested = Array.from({ length: 33 }, (_, index) => `root-${index}`);
+    Object.defineProperty(requested, "32", {
+      configurable: true,
+      enumerable: true,
+      get() {
+        forbiddenReads += 1;
+        throw new Error("requested overflow element was read");
+      },
+    });
+    const dependencies = Array.from({ length: 33 }, () => "dependency");
+    Object.defineProperty(dependencies, "32", {
+      configurable: true,
+      enumerable: true,
+      get() {
+        forbiddenReads += 1;
+        throw new Error("dependency overflow element was read");
+      },
+    });
+    const closure = Array.from({ length: 65 }, (_, index) => `node-${index}`);
+    Object.defineProperty(closure, "64", {
+      configurable: true,
+      enumerable: true,
+      get() {
+        forbiddenReads += 1;
+        throw new Error("result overflow element was read");
+      },
+    });
+
+    expect(() =>
+      SyntheticClassifierInputSchema.safeParse(input([root], { requested })),
+    ).not.toThrow();
+    expect(
+      SyntheticClassifierInputSchema.safeParse(
+        input([artifact("root", { dependencies })]),
+      ).success,
+    ).toBe(false);
+    expect(() =>
+      SyntheticClassificationResultSchema.safeParse({
+        schemaVersion: 1,
+        disposition: "eligible",
+        closure,
+        eligible: ["root"],
+        findings: [],
+      }),
+    ).not.toThrow();
+    expect(forbiddenReads).toBe(0);
   });
 
   it("keeps input and result schemas closed and result dispositions self-consistent", () => {
