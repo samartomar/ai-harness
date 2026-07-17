@@ -70,7 +70,7 @@ function input(overrides: Record<string, unknown> = {}) {
 }
 
 describe("synthetic methodology classifier", () => {
-  it("admits a complete, exact, passive synthetic closure deterministically", () => {
+  it("classifies a complete, exact, passive synthetic closure as eligible deterministically", () => {
     const forward = classifySyntheticMethodology(
       input({
         roots: ["review-loop", "method-routing"],
@@ -86,11 +86,60 @@ describe("synthetic methodology classifier", () => {
 
     expect(forward).toEqual({
       schemaVersion: 1,
-      disposition: "admitted",
-      admitted: ["method-routing", "review-loop"],
+      disposition: "eligible",
+      eligible: ["method-routing", "review-loop"],
       findings: [],
     });
     expect(reverse).toEqual(forward);
+  });
+
+  it("excludes a self-referential synthetic dependency with a fixed cycle finding", () => {
+    const result = classifySyntheticMethodology(
+      input({ artifacts: [artifact("review-loop", { dependencies: ["review-loop"] })] }),
+    );
+
+    expect(result).toEqual({
+      schemaVersion: 1,
+      disposition: "excluded",
+      eligible: [],
+      findings: [
+        {
+          code: "METHODOLOGY_SYNTHETIC_DEPENDENCY_CYCLE",
+          disposition: "excluded",
+          artifact: "review-loop",
+        },
+      ],
+    });
+  });
+
+  it("excludes every member of a multi-node synthetic dependency cycle deterministically", () => {
+    const result = classifySyntheticMethodology(
+      input({
+        roots: ["review-loop", "method-routing"],
+        artifacts: [
+          artifact("review-loop", { dependencies: ["method-routing"] }),
+          artifact("method-routing", { dependencies: ["review-loop"] }),
+        ],
+      }),
+    );
+
+    expect(result).toEqual({
+      schemaVersion: 1,
+      disposition: "excluded",
+      eligible: [],
+      findings: [
+        {
+          code: "METHODOLOGY_SYNTHETIC_DEPENDENCY_CYCLE",
+          disposition: "excluded",
+          artifact: "method-routing",
+        },
+        {
+          code: "METHODOLOGY_SYNTHETIC_DEPENDENCY_CYCLE",
+          disposition: "excluded",
+          artifact: "review-loop",
+        },
+      ],
+    });
   });
 
   it.each([
@@ -118,7 +167,7 @@ describe("synthetic methodology classifier", () => {
     expect(result).toEqual({
       schemaVersion: 1,
       disposition: "excluded",
-      admitted: [],
+      eligible: [],
       findings: [
         {
           code,
@@ -142,7 +191,7 @@ describe("synthetic methodology classifier", () => {
     expect(result).toEqual({
       schemaVersion: 1,
       disposition: "excluded",
-      admitted: [],
+      eligible: [],
       findings: [
         {
           code: "METHODOLOGY_SYNTHETIC_OUT_OF_CLOSURE",
@@ -161,7 +210,7 @@ describe("synthetic methodology classifier", () => {
     expect(result).toEqual({
       schemaVersion: 1,
       disposition: "excluded",
-      admitted: [],
+      eligible: [],
       findings: [
         {
           code: "METHODOLOGY_SYNTHETIC_DEPENDENCY_MISSING",
@@ -186,7 +235,7 @@ describe("synthetic methodology classifier", () => {
     expect(result).toEqual({
       schemaVersion: 1,
       disposition: "excluded",
-      admitted: [],
+      eligible: [],
       findings: [
         {
           code: "METHODOLOGY_SYNTHETIC_PATH_AMBIGUOUS",
@@ -220,7 +269,7 @@ describe("synthetic methodology classifier", () => {
     expect(result).toEqual({
       schemaVersion: 1,
       disposition: "excluded",
-      admitted: [],
+      eligible: [],
       findings: [
         {
           code: "METHODOLOGY_SYNTHETIC_SOURCE_IDENTITY_AMBIGUOUS",
@@ -260,7 +309,7 @@ describe("synthetic methodology classifier", () => {
     expect(result).toEqual({
       schemaVersion: 1,
       disposition: "excluded",
-      admitted: [],
+      eligible: [],
       findings: [
         {
           code: "METHODOLOGY_SYNTHETIC_SOURCE_IDENTITY_AMBIGUOUS",
@@ -306,7 +355,7 @@ describe("synthetic methodology classifier", () => {
     expect(result).toEqual({
       schemaVersion: 1,
       disposition: "excluded",
-      admitted: [],
+      eligible: [],
       findings: [
         {
           code: "METHODOLOGY_SYNTHETIC_EVIDENCE_UNBOUND",
@@ -379,7 +428,7 @@ describe("synthetic methodology classifier", () => {
     ).toThrow();
   });
 
-  it("fails closed instead of admitting noncanonical synthetic path aliases", () => {
+  it("fails closed instead of classifying noncanonical synthetic path aliases as eligible", () => {
     expect(() =>
       classifySyntheticMethodology(
         input({
@@ -393,7 +442,7 @@ describe("synthetic methodology classifier", () => {
     ).toThrow();
   });
 
-  it("fails closed instead of admitting case-alias synthetic paths", () => {
+  it("fails closed instead of classifying case-alias synthetic paths as eligible", () => {
     expect(() =>
       classifySyntheticMethodology(
         input({
@@ -407,7 +456,7 @@ describe("synthetic methodology classifier", () => {
     ).toThrow();
   });
 
-  it("fails closed instead of admitting a Windows device-name synthetic path", () => {
+  it("fails closed instead of classifying a Windows device-name synthetic path as eligible", () => {
     expect(() =>
       classifySyntheticMethodology(
         input({ artifacts: [artifact("review-loop", { path: "rules/nul" })] }),
@@ -432,8 +481,8 @@ describe("synthetic methodology classifier", () => {
         ),
       ).toEqual({
         schemaVersion: 1,
-        disposition: "admitted",
-        admitted: ["a-", "a0", "ab"],
+        disposition: "eligible",
+        eligible: ["a-", "a0", "ab"],
         findings: [],
       });
     } finally {
@@ -479,7 +528,7 @@ describe("synthetic methodology classifier", () => {
     ).toThrow();
   });
 
-  it("rejects contradictory, duplicate, and overlong classification records", () => {
+  it("rejects contradictory, duplicate, obsolete, and overlong classification records", () => {
     const finding = {
       code: "METHODOLOGY_SYNTHETIC_AMBIGUOUS",
       disposition: "excluded" as const,
@@ -489,8 +538,8 @@ describe("synthetic methodology classifier", () => {
     expect(() =>
       SyntheticMethodologyClassificationSchema.parse({
         schemaVersion: 1,
-        disposition: "admitted",
-        admitted: ["review-loop"],
+        disposition: "eligible",
+        eligible: ["review-loop"],
         findings: [finding],
       }),
     ).toThrow();
@@ -498,7 +547,7 @@ describe("synthetic methodology classifier", () => {
       SyntheticMethodologyClassificationSchema.parse({
         schemaVersion: 1,
         disposition: "excluded",
-        admitted: ["review-loop"],
+        eligible: ["review-loop"],
         findings: [finding],
       }),
     ).toThrow();
@@ -506,15 +555,15 @@ describe("synthetic methodology classifier", () => {
       SyntheticMethodologyClassificationSchema.parse({
         schemaVersion: 1,
         disposition: "excluded",
-        admitted: [],
+        eligible: [],
         findings: [finding, finding],
       }),
     ).toThrow();
     expect(() =>
       SyntheticMethodologyClassificationSchema.parse({
         schemaVersion: 1,
-        disposition: "admitted",
-        admitted: Array.from({ length: 33 }, (_, index) => `component-${index}`),
+        disposition: "eligible",
+        eligible: Array.from({ length: 33 }, (_, index) => `component-${index}`),
         findings: [],
       }),
     ).toThrow();
@@ -522,7 +571,7 @@ describe("synthetic methodology classifier", () => {
       SyntheticMethodologyClassificationSchema.parse({
         schemaVersion: 1,
         disposition: "excluded",
-        admitted: [],
+        eligible: [],
         findings: Array.from({ length: 1281 }, (_, index) => ({
           ...finding,
           artifact: `component-${index}`,
@@ -562,7 +611,7 @@ describe("synthetic methodology classifier", () => {
     );
 
     expect(result.disposition).toBe("excluded");
-    expect(result.admitted).toEqual([]);
+    expect(result.eligible).toEqual([]);
     expect(result.findings).toHaveLength(1280);
   });
 });
