@@ -324,6 +324,8 @@ describe("synthetic methodology classifier", () => {
     ["parent synthetic path segment", { path: "rules/../shared.md" }],
     ["mixed-case synthetic path segment", { path: "rules/Shared.md" }],
     ["trailing-period synthetic path segment", { path: "rules/shared." }],
+    ["Windows device-name synthetic path segment", { path: "rules/con.md" }],
+    ["Windows numbered device-name synthetic path segment", { path: "rules/com1.txt" }],
     [
       "empty synthetic locator segment",
       {
@@ -338,6 +340,15 @@ describe("synthetic methodology classifier", () => {
       {
         sourceIdentity: {
           locator: "synthetic://fixture/Shared",
+          digest: digest("source-review-loop"),
+        },
+      },
+    ],
+    [
+      "Windows device-name synthetic locator segment",
+      {
+        sourceIdentity: {
+          locator: "synthetic://fixture/aux",
           digest: digest("source-review-loop"),
         },
       },
@@ -392,6 +403,14 @@ describe("synthetic methodology classifier", () => {
             artifact("method-routing", { path: "rules/Shared.md" }),
           ],
         }),
+      ),
+    ).toThrow();
+  });
+
+  it("fails closed instead of admitting a Windows device-name synthetic path", () => {
+    expect(() =>
+      classifySyntheticMethodology(
+        input({ artifacts: [artifact("review-loop", { path: "rules/nul" })] }),
       ),
     ).toThrow();
   });
@@ -504,11 +523,46 @@ describe("synthetic methodology classifier", () => {
         schemaVersion: 1,
         disposition: "excluded",
         admitted: [],
-        findings: Array.from({ length: 2529 }, (_, index) => ({
+        findings: Array.from({ length: 1281 }, (_, index) => ({
           ...finding,
           artifact: `component-${index}`,
         })),
       }),
     ).toThrow();
+  });
+
+  it("classifies the maximal synthetic closure without exceeding its result bound", () => {
+    const roots = Array.from({ length: 32 }, (_, index) => `component-${index}`);
+    const sharedSourceIdentity = {
+      locator: "synthetic://fixture/shared-source",
+      digest: digest("source-shared"),
+    };
+    const result = classifySyntheticMethodology(
+      input({
+        roots,
+        artifacts: roots.map((id, artifactIndex) =>
+          artifact(id, {
+            path: "rules/shared.md",
+            kind: "hard-link",
+            content: { classification: "executable", digest: digest(`content-${id}`) },
+            sourceIdentity: sharedSourceIdentity,
+            evidence: {
+              target: { contentDigest: digest(`unbound-${id}`) },
+              source: "drifted",
+              trust: "held",
+              license: "unlicensed",
+            },
+            dependencies: Array.from(
+              { length: 32 },
+              (_, dependencyIndex) => `missing-${artifactIndex}-${dependencyIndex}`,
+            ),
+          }),
+        ),
+      }),
+    );
+
+    expect(result.disposition).toBe("excluded");
+    expect(result.admitted).toEqual([]);
+    expect(result.findings).toHaveLength(1280);
   });
 });

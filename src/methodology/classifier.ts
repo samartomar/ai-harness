@@ -4,23 +4,37 @@ const MAX_SYNTHETIC_ROOTS = 32;
 const MAX_SYNTHETIC_ARTIFACTS = 64;
 const MAX_SYNTHETIC_DEPENDENCIES = 32;
 const MAX_SYNTHETIC_PATH_LENGTH = 512;
+const MAX_SYNTHETIC_ARTIFACT_FINDINGS = 8;
+// Only declared roots are traversed; every non-root dependency is excluded, not visited.
 const MAX_SYNTHETIC_FINDINGS =
-  MAX_SYNTHETIC_ROOTS + MAX_SYNTHETIC_ARTIFACTS * (MAX_SYNTHETIC_DEPENDENCIES + 7);
+  MAX_SYNTHETIC_ROOTS * (MAX_SYNTHETIC_DEPENDENCIES + MAX_SYNTHETIC_ARTIFACT_FINDINGS);
 
 const ArtifactIdSchema = z.string().regex(/^[a-z][a-z0-9-]{0,63}$/);
+const WindowsReservedSegmentSchema = /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$/;
+
+function hasWindowsReservedSegment(value: string): boolean {
+  return value.split("/").some((segment) => WindowsReservedSegmentSchema.test(segment));
+}
+
 const SyntheticPathSchema = z
   .string()
   .max(MAX_SYNTHETIC_PATH_LENGTH)
   .regex(
     /^(?!\/)(?!.*\\\\)(?!.*(?:^|\/)\.{1,2}(?:\/|$))[a-z0-9_-](?:[a-z0-9._-]*[a-z0-9_-])?(?:\/[a-z0-9_-](?:[a-z0-9._-]*[a-z0-9_-])?)*$/,
-  );
+  )
+  .refine((path) => !hasWindowsReservedSegment(path), {
+    message: "synthetic paths cannot contain Windows-reserved device names",
+  });
 const SyntheticDigestSchema = z.string().regex(/^sha256:[a-f0-9]{64}$/);
 const SyntheticSourceLocatorSchema = z
   .string()
   .max(256)
   .regex(
     /^synthetic:\/\/[a-z][a-z0-9-]{0,63}\/(?!.*(?:^|\/)\.{1,2}(?:\/|$))[a-z0-9_-](?:[a-z0-9._-]*[a-z0-9_-])?(?:\/[a-z0-9_-](?:[a-z0-9._-]*[a-z0-9_-])?)*$/,
-  );
+  )
+  .refine((locator) => !hasWindowsReservedSegment(locator), {
+    message: "synthetic source locators cannot contain Windows-reserved device names",
+  });
 
 export const SyntheticArtifactKindSchema = z.enum([
   "regular",
