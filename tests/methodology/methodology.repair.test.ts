@@ -11,6 +11,32 @@ import {
 const tmps: string[] = [];
 const TEST_PROCESS_TIMEOUT_MS = 25_000;
 
+interface IntentFixture {
+  schemaVersion: number;
+  selection: {
+    provider: string;
+    source: {
+      host: string;
+      owner: string;
+      repo: string;
+      commit: string;
+      checkout: string;
+    };
+    components: Array<{ id: string }>;
+    providerAdapter: string;
+    hostAdapter: string;
+    compatibility: {
+      host: string;
+      hostVersion: string;
+      executableSha256: string;
+      os: string;
+      architecture: string;
+      runtime: string;
+      policyContext: string;
+    };
+  };
+}
+
 function fresh(prefix: string): string {
   const root = mkdtempSync(join(tmpdir(), prefix));
   tmps.push(root);
@@ -23,7 +49,7 @@ function write(root: string, relative: string, content: string): void {
   writeFileSync(path, content, "utf8");
 }
 
-function intent(): unknown {
+function intent(): IntentFixture {
   return {
     schemaVersion: 1,
     selection: {
@@ -52,9 +78,7 @@ function intent(): unknown {
 }
 
 function oversizedIntent(): unknown {
-  const candidate = intent() as {
-    selection: { components: Array<{ id: string }>; source: { checkout: string } };
-  };
+  const candidate = intent();
   candidate.selection.components = Array.from({ length: 33 }, (_, index) => ({
     id: `component-${index}`,
   }));
@@ -62,28 +86,26 @@ function oversizedIntent(): unknown {
   return candidate;
 }
 
-function runAih(root: string, extra: string[] = []) {
+function runCli(args: string[]) {
   const tsx = join(process.cwd(), "node_modules", "tsx", "dist", "cli.mjs");
-  return spawnSync(
-    process.execPath,
-    [
-      tsx,
-      "src/cli.ts",
-      "methodology",
-      "inspect",
-      "--root",
-      root,
-      "--intent",
-      "methodology.intent.json",
-      "--json",
-      ...extra,
-    ],
-    {
-      cwd: process.cwd(),
-      encoding: "utf8",
-      timeout: TEST_PROCESS_TIMEOUT_MS,
-    },
-  );
+  return spawnSync(process.execPath, [tsx, "src/cli.ts", ...args], {
+    cwd: process.cwd(),
+    encoding: "utf8",
+    timeout: TEST_PROCESS_TIMEOUT_MS,
+  });
+}
+
+function runAih(root: string, extra: string[] = []) {
+  return runCli([
+    "methodology",
+    "inspect",
+    "--root",
+    root,
+    "--intent",
+    "methodology.intent.json",
+    "--json",
+    ...extra,
+  ]);
 }
 
 afterEach(() => {
@@ -183,6 +205,24 @@ describe("methodology Phase 1 repair regressions", () => {
       outcome: "completed",
       status: { state: "selected" },
     });
+    const completed = JSON.parse(result.stdout) as {
+      status: { findings: unknown[] };
+    };
+    expect(() =>
+      MethodologyCommandEnvelopeSchema.parse({
+        ...completed,
+        status: {
+          ...completed.status,
+          findings: [
+            {
+              code: "METHODOLOGY_HOST_ADVISORY",
+              disposition: "advisory",
+              detail: "contradictory completed status",
+            },
+          ],
+        },
+      }),
+    ).toThrow();
   });
 
   it("fails closed before reading an oversized or over-component intent", () => {
@@ -198,5 +238,60 @@ describe("methodology Phase 1 repair regressions", () => {
         findings: [expect.objectContaining({ code: "METHODOLOGY_INTENT_MALFORMED" })],
       },
     });
+  });
+
+  it("schema-validates every JSON-mode parser outcome before a command action runs", () => {
+    const root = fresh("aih-methodology-parser-outcomes-");
+    write(root, "methodology.intent.json", `${JSON.stringify(intent())}\n`);
+
+    const missingIntent = runCli(["methodology", "inspect", "--root", root, "--json"]);
+    const unknownSubcommand = runCli(["methodology", "unknown", "--json"]);
+
+    for (const result of [missingIntent, unknownSubcommand]) {
+      expect(result.status).toBe(1);
+      expect(result.stderr).toBe("");
+      expect(MethodologyCommandEnvelopeSchema.parse(JSON.parse(result.stdout))).toMatchObject({
+        outcome: "invalid",
+        failure: {
+          state: "invalid",
+          findings: [expect.objectContaining({ code: "METHODOLOGY_COMMAND_INVALID" })],
+        },
+      });
+    }
+    expect(JSON.parse(missingIntent.stdout).command).toBe("inspect");
+    expect(JSON.parse(unknownSubcommand.stdout).command).toBeNull();
+  });
+
+  it("enforces each bounded Phase 1 input dimension independently", () => {
+    const tooManyComponents = fresh("aih-methodology-component-limit-");
+    const tooLarge = fresh("aih-methodology-byte-limit-");
+    const oversizedCheckout = fresh("aih-methodology-checkout-limit-");
+    const oversizedVersion = fresh("aih-methodology-version-limit-");
+    const componentLimit = intent();
+    componentLimit.selection.components = Array.from({ length: 33 }, (_, index) => ({
+      id: `component-${index}`,
+    }));
+    const byteLimit = intent();
+    byteLimit.selection.source.checkout = "a".repeat(65_536);
+    const checkoutLimit = intent();
+    checkoutLimit.selection.source.checkout = "a".repeat(241);
+    const versionLimit = intent();
+    versionLimit.selection.compatibility.hostVersion = `${"9".repeat(17)}.1`;
+    const candidates: Array<[string, IntentFixture]> = [
+      [tooManyComponents, componentLimit],
+      [tooLarge, byteLimit],
+      [oversizedCheckout, checkoutLimit],
+      [oversizedVersion, versionLimit],
+    ];
+
+    for (const [root, candidate] of candidates) {
+      write(root, "methodology.intent.json", `${JSON.stringify(candidate)}\n`);
+      const result = runAih(root);
+
+      expect(result.status).toBe(3);
+      expect(MethodologyCommandEnvelopeSchema.parse(JSON.parse(result.stdout))).toMatchObject({
+        outcome: "fail-closed",
+      });
+    }
   });
 });
