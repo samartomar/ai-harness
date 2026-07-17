@@ -83,11 +83,13 @@ const SyntheticArtifactTupleSchema = z
       }),
   );
 
+const SyntheticArtifactInternalSchema = z.preprocess(
+  (value) => recordTuple(value, artifactCollectionsAreBounded, ARTIFACT_FIELDS),
+  SyntheticArtifactTupleSchema,
+);
+
 export const SyntheticArtifactSchema = closedPublicSchema(
-  z.preprocess(
-    (value) => recordTuple(value, artifactCollectionsAreBounded, ARTIFACT_FIELDS),
-    SyntheticArtifactTupleSchema,
-  ),
+  SyntheticArtifactInternalSchema,
   validateArtifact,
 );
 
@@ -109,11 +111,13 @@ const SyntheticEvidenceTupleSchema = z
     }),
   );
 
+const SyntheticEvidenceInternalSchema = z.preprocess(
+  (value) => recordTuple(value, evidenceRecordIsClosed, EVIDENCE_FIELDS),
+  SyntheticEvidenceTupleSchema,
+);
+
 export const SyntheticEvidenceSchema = closedPublicSchema(
-  z.preprocess(
-    (value) => recordTuple(value, evidenceRecordIsClosed, EVIDENCE_FIELDS),
-    SyntheticEvidenceTupleSchema,
-  ),
+  SyntheticEvidenceInternalSchema,
   validateEvidence,
 );
 
@@ -122,18 +126,20 @@ const SyntheticClassifierInputTupleSchema = z
     z.literal(1),
     z.array(ArtifactIdSchema).min(1).max(MAX_REQUESTED_COMPONENTS),
     z.array(ArtifactIdSchema).min(1).max(MAX_ARTIFACTS),
-    z.array(SyntheticArtifactSchema).min(1).max(MAX_ARTIFACTS),
-    z.array(SyntheticEvidenceSchema).max(MAX_ARTIFACTS),
+    z.array(SyntheticArtifactInternalSchema).min(1).max(MAX_ARTIFACTS),
+    z.array(SyntheticEvidenceInternalSchema).max(MAX_ARTIFACTS),
   ])
   .transform(([schemaVersion, requested, declaredClosure, artifacts, evidence]) =>
     closedRecord({ schemaVersion, requested, declaredClosure, artifacts, evidence }),
   );
 
+const SyntheticClassifierInputInternalSchema = z.preprocess(
+  (value) => recordTuple(value, classifierCollectionsAreBounded, INPUT_FIELDS),
+  SyntheticClassifierInputTupleSchema,
+);
+
 export const SyntheticClassifierInputSchema = closedPublicSchema(
-  z.preprocess(
-    (value) => recordTuple(value, classifierCollectionsAreBounded, INPUT_FIELDS),
-    SyntheticClassifierInputTupleSchema,
-  ),
+  SyntheticClassifierInputInternalSchema,
   validateClassifierInput,
 );
 
@@ -155,12 +161,16 @@ const FINDING_CODES = [
   "METHODOLOGY_REQUEST_DUPLICATE",
 ] as const;
 
+const SyntheticFindingCodeInternalSchema = z.enum(FINDING_CODES);
+
 export const SyntheticFindingCodeSchema = closedPublicSchema(
-  z.enum(FINDING_CODES),
+  SyntheticFindingCodeInternalSchema,
   validateFindingCode,
 );
 
-const GLOBAL_FINDING_CODES = new Set<z.infer<typeof SyntheticFindingCodeSchema>>([
+type SyntheticFindingCode = (typeof FINDING_CODES)[number];
+
+const GLOBAL_FINDING_CODES = new Set<SyntheticFindingCode>([
   "METHODOLOGY_DEPENDENCY_OUT_OF_CLOSURE",
   "METHODOLOGY_FINDINGS_LIMIT",
   "METHODOLOGY_REQUEST_DUPLICATE",
@@ -168,18 +178,23 @@ const GLOBAL_FINDING_CODES = new Set<z.infer<typeof SyntheticFindingCodeSchema>>
 const FINDING_REQUIRED_FIELDS = ["code"] as const;
 const FINDING_FIELDS = ["code", "artifactId"] as const;
 type SyntheticFindingRecord = {
-  code: z.infer<typeof SyntheticFindingCodeSchema>;
+  code: SyntheticFindingCode;
   artifactId?: string;
 };
 
 const SyntheticFindingTupleSchema = z
-  .tuple([SyntheticFindingCodeSchema, ArtifactIdSchema.optional()])
+  .tuple([SyntheticFindingCodeInternalSchema, ArtifactIdSchema.optional()])
   .transform(([code, artifactId]): SyntheticFindingRecord => {
     return artifactId === undefined ? closedRecord({ code }) : closedRecord({ code, artifactId });
   });
 
+const SyntheticFindingInternalSchema = z.preprocess(
+  (value) => findingTuple(value),
+  SyntheticFindingTupleSchema,
+);
+
 export const SyntheticFindingSchema = closedPublicSchema(
-  z.preprocess((value) => findingTuple(value), SyntheticFindingTupleSchema),
+  SyntheticFindingInternalSchema,
   validateFinding,
 );
 
@@ -187,6 +202,15 @@ type SnapshotResult = { ok: true; value: unknown } | { ok: false };
 type SnapshotState = { nodes: number; active: WeakSet<object> };
 
 const INVALID_SNAPSHOT = Object.freeze({ ok: false as const });
+
+function appendOwn<T>(values: T[], value: T): void {
+  Object.defineProperty(values, String(values.length), {
+    configurable: true,
+    enumerable: true,
+    value,
+    writable: true,
+  });
+}
 
 function recordOf(value: unknown): Record<string, unknown> | undefined {
   return value !== null && typeof value === "object" && !Array.isArray(value)
@@ -248,7 +272,7 @@ function snapshotPlainData(value: unknown, depth: number, state: SnapshotState):
         if (descriptor === undefined || !("value" in descriptor)) return INVALID_SNAPSHOT;
         const child = snapshotPlainData(descriptor.value, depth + 1, state);
         if (!child.ok) return INVALID_SNAPSHOT;
-        snapshot.push(child.value);
+        appendOwn(snapshot, child.value);
       }
       return { ok: true, value: snapshot };
     }
@@ -346,7 +370,7 @@ function recordTuple(
   for (const field of fields) {
     const descriptor = Object.getOwnPropertyDescriptor(record, field);
     if (descriptor === undefined || !("value" in descriptor)) return null;
-    tuple.push(descriptor.value);
+    appendOwn(tuple, descriptor.value);
   }
   return tuple;
 }
@@ -417,6 +441,24 @@ type ValidationIssue = {
   readonly message: string;
 };
 
+export type ClosedSchemaIssue = ValidationIssue;
+
+export type ClosedSchemaResult<T> =
+  | { readonly success: true; readonly data: T }
+  | { readonly success: false; readonly error: ClosedSchemaError };
+
+export interface ClosedSchema<T> {
+  decode(value: unknown): T;
+  decodeAsync(value: unknown): Promise<T>;
+  parse(value: unknown): T;
+  parseAsync(value: unknown): Promise<T>;
+  safeDecode(value: unknown): ClosedSchemaResult<T>;
+  safeDecodeAsync(value: unknown): Promise<ClosedSchemaResult<T>>;
+  safeParse(value: unknown): ClosedSchemaResult<T>;
+  safeParseAsync(value: unknown): Promise<ClosedSchemaResult<T>>;
+  spa(value: unknown): Promise<ClosedSchemaResult<T>>;
+}
+
 const ARTIFACT_ID_PATTERN = /^[a-z][a-z0-9-]{0,63}$/;
 const DIGEST_PATTERN = /^[0-9a-f]{64}$/;
 const SOURCE_LOCATOR_PATTERN = /^synthetic:[a-z][a-z0-9-]{0,63}$/;
@@ -432,6 +474,69 @@ function validationIssue(path: ValidationPath, message: string): ValidationIssue
 
 function prefixedIssue(prefix: ValidationPath, issue: ValidationIssue): ValidationIssue {
   return validationIssue([...prefix, ...issue.path], issue.message);
+}
+
+type CollectionBound = {
+  readonly field: string;
+  readonly maximum: number;
+};
+
+function preflightRecordCollections(
+  value: unknown,
+  bounds: readonly CollectionBound[],
+): ValidationIssue | undefined {
+  const surface = snapshotSurface(value);
+  if (!surface.ok) return undefined;
+  const record = recordOf(surface.value);
+  if (record === undefined) return undefined;
+  for (const bound of bounds) {
+    const descriptor = Object.getOwnPropertyDescriptor(record, bound.field);
+    if (descriptor === undefined || !("value" in descriptor)) continue;
+    const collection = descriptor.value;
+    if (isProxy(collection)) {
+      return validationIssue([bound.field], "collection must not be a proxy");
+    }
+    if (!Array.isArray(collection)) continue;
+    if (
+      Object.getPrototypeOf(collection) !== Array.prototype ||
+      collection.length > bound.maximum
+    ) {
+      return validationIssue([bound.field], "array is outside the closed resource bounds");
+    }
+  }
+  return undefined;
+}
+
+function preflightClassifierCollections(value: unknown): ValidationIssue | undefined {
+  const rootIssue = preflightRecordCollections(value, [
+    { field: "requested", maximum: MAX_REQUESTED_COMPONENTS },
+    { field: "declaredClosure", maximum: MAX_ARTIFACTS },
+    { field: "artifacts", maximum: MAX_ARTIFACTS },
+    { field: "evidence", maximum: MAX_ARTIFACTS },
+  ]);
+  if (rootIssue !== undefined) return rootIssue;
+  const input = staticRecordOf(value);
+  const descriptor =
+    input === undefined ? undefined : Object.getOwnPropertyDescriptor(input, "artifacts");
+  if (descriptor === undefined || !("value" in descriptor)) return undefined;
+  const artifacts = descriptor.value;
+  if (
+    isProxy(artifacts) ||
+    !Array.isArray(artifacts) ||
+    Object.getPrototypeOf(artifacts) !== Array.prototype ||
+    artifacts.length > MAX_ARTIFACTS
+  ) {
+    return undefined;
+  }
+  for (let index = 0; index < artifacts.length; index += 1) {
+    const artifact = Object.getOwnPropertyDescriptor(artifacts, String(index));
+    if (artifact === undefined || !("value" in artifact)) continue;
+    const artifactIssue = preflightRecordCollections(artifact.value, [
+      { field: "dependencies", maximum: MAX_DEPENDENCIES_PER_ARTIFACT },
+    ]);
+    if (artifactIssue !== undefined) return prefixedIssue(["artifacts", index], artifactIssue);
+  }
+  return undefined;
 }
 
 function validationSnapshot(value: unknown): SnapshotResult {
@@ -523,6 +628,10 @@ function validateFindingCode(value: unknown): ValidationIssue | undefined {
 }
 
 function validateArtifact(value: unknown): ValidationIssue | undefined {
+  const preflightIssue = preflightRecordCollections(value, [
+    { field: "dependencies", maximum: MAX_DEPENDENCIES_PER_ARTIFACT },
+  ]);
+  if (preflightIssue !== undefined) return preflightIssue;
   const snapshot = validationSnapshot(value);
   if (!snapshot.ok) return validationIssue([], "artifact must contain only closed plain data");
   const artifact = recordOf(snapshot.value);
@@ -619,6 +728,8 @@ function validateFinding(value: unknown): ValidationIssue | undefined {
 }
 
 function validateClassifierInput(value: unknown): ValidationIssue | undefined {
+  const preflightIssue = preflightClassifierCollections(value);
+  if (preflightIssue !== undefined) return preflightIssue;
   const snapshot = validationSnapshot(value);
   if (!snapshot.ok)
     return validationIssue([], "classifier input must contain only closed plain data");
@@ -650,6 +761,12 @@ function validateClassifierInput(value: unknown): ValidationIssue | undefined {
 }
 
 function validateClassificationResult(value: unknown): ValidationIssue | undefined {
+  const preflightIssue = preflightRecordCollections(value, [
+    { field: "closure", maximum: MAX_ARTIFACTS },
+    { field: "eligible", maximum: MAX_ARTIFACTS },
+    { field: "findings", maximum: MAX_FINDINGS },
+  ]);
+  if (preflightIssue !== undefined) return preflightIssue;
   const snapshot = validationSnapshot(value);
   if (!snapshot.ok) return validationIssue([], "result must contain only closed plain data");
   const result = recordOf(snapshot.value);
@@ -714,7 +831,7 @@ function prefixedOptional(
   return issue === undefined ? undefined : prefixedIssue(prefix, issue);
 }
 
-class ClosedSchemaError extends Error {
+export class ClosedSchemaError extends Error {
   declare readonly issues: readonly ValidationIssue[];
 
   constructor(issue: ValidationIssue) {
@@ -727,60 +844,52 @@ class ClosedSchemaError extends Error {
 function closedPublicSchema<T extends z.ZodType>(
   schema: T,
   validate: (value: unknown) => ValidationIssue | undefined,
-): T {
-  const originalSafeParse = schema.safeParse.bind(schema);
-  const originalSafeParseAsync = schema.safeParseAsync.bind(schema);
-  const originalParse = schema.parse.bind(schema);
-  const originalParseAsync = schema.parseAsync.bind(schema);
-  const guardedSafeParse = (
-    ...parameters: Parameters<T["safeParse"]>
-  ): ReturnType<T["safeParse"]> => {
-    const issue = validate(parameters[0]);
-    return issue === undefined
-      ? (Reflect.apply(originalSafeParse, schema, parameters) as ReturnType<T["safeParse"]>)
-      : (closedRecord({
-          success: false as const,
-          error: new ClosedSchemaError(issue),
-        }) as ReturnType<T["safeParse"]>);
+): ClosedSchema<z.output<T>> {
+  void schema;
+  const guardedSafeParse = (value: unknown): ClosedSchemaResult<z.output<T>> => {
+    const issue = validate(value);
+    if (issue !== undefined) {
+      return closedRecord({ success: false as const, error: new ClosedSchemaError(issue) });
+    }
+    const snapshot = validationSnapshot(value);
+    if (!snapshot.ok) {
+      return closedRecord({
+        success: false as const,
+        error: new ClosedSchemaError(
+          validationIssue([], "closed schema could not project manually validated input"),
+        ),
+      });
+    }
+    return closedRecord({ success: true as const, data: snapshot.value as z.output<T> });
   };
-  const guardedParse = (...parameters: Parameters<T["parse"]>): ReturnType<T["parse"]> => {
-    const issue = validate(parameters[0]);
-    if (issue !== undefined) throw new ClosedSchemaError(issue);
-    return Reflect.apply(originalParse, schema, parameters) as ReturnType<T["parse"]>;
+  const guardedParse = (value: unknown): z.output<T> => {
+    const result = guardedSafeParse(value);
+    if (!result.success) throw result.error;
+    return result.data;
   };
-  const guardedSafeParseAsync = async (
-    ...parameters: Parameters<T["safeParseAsync"]>
-  ): Promise<Awaited<ReturnType<T["safeParseAsync"]>>> => {
-    const issue = validate(parameters[0]);
-    return issue === undefined
-      ? (Reflect.apply(originalSafeParseAsync, schema, parameters) as Awaited<
-          ReturnType<T["safeParseAsync"]>
-        >)
-      : (closedRecord({ success: false as const, error: new ClosedSchemaError(issue) }) as Awaited<
-          ReturnType<T["safeParseAsync"]>
-        >);
+  const guardedSafeParseAsync = (value: unknown): Promise<ClosedSchemaResult<z.output<T>>> => {
+    return Promise.resolve(guardedSafeParse(value));
   };
-  const guardedParseAsync = async (
-    ...parameters: Parameters<T["parseAsync"]>
-  ): Promise<Awaited<ReturnType<T["parseAsync"]>>> => {
-    const issue = validate(parameters[0]);
-    if (issue !== undefined) throw new ClosedSchemaError(issue);
-    return Reflect.apply(originalParseAsync, schema, parameters) as Awaited<
-      ReturnType<T["parseAsync"]>
-    >;
+  const guardedParseAsync = (value: unknown): Promise<z.output<T>> => {
+    try {
+      return Promise.resolve(guardedParse(value));
+    } catch (error) {
+      return Promise.reject(error);
+    }
   };
-  Object.defineProperties(schema, {
-    decode: { configurable: true, value: guardedParse },
-    decodeAsync: { configurable: true, value: guardedParseAsync },
-    parse: { configurable: true, value: guardedParse },
-    parseAsync: { configurable: true, value: guardedParseAsync },
-    safeDecode: { configurable: true, value: guardedSafeParse },
-    safeDecodeAsync: { configurable: true, value: guardedSafeParseAsync },
-    safeParse: { configurable: true, value: guardedSafeParse },
-    safeParseAsync: { configurable: true, value: guardedSafeParseAsync },
-    spa: { configurable: true, value: guardedSafeParseAsync },
-  });
-  return schema;
+  return Object.freeze(
+    closedRecord({
+      decode: guardedParse,
+      decodeAsync: guardedParseAsync,
+      parse: guardedParse,
+      parseAsync: guardedParseAsync,
+      safeDecode: guardedSafeParse,
+      safeDecodeAsync: guardedSafeParseAsync,
+      safeParse: guardedSafeParse,
+      safeParseAsync: guardedSafeParseAsync,
+      spa: guardedSafeParseAsync,
+    }),
+  );
 }
 
 function compareCodeUnits(left: string, right: string): number {
@@ -799,14 +908,14 @@ function sameStrings(left: readonly string[], right: readonly string[]): boolean
   return left.length === right.length && left.every((value, index) => value === right[index]);
 }
 
-function findingArtifactId(finding: z.infer<typeof SyntheticFindingSchema>): string | undefined {
+function findingArtifactId(finding: SyntheticFindingRecord): string | undefined {
   const descriptor = Object.getOwnPropertyDescriptor(finding, "artifactId");
   return descriptor !== undefined && "value" in descriptor
     ? (descriptor.value as string | undefined)
     : undefined;
 }
 
-function findingKey(finding: z.infer<typeof SyntheticFindingSchema>): string {
+function findingKey(finding: SyntheticFindingRecord): string {
   return `${finding.code}\u0000${findingArtifactId(finding) ?? ""}`;
 }
 
@@ -816,28 +925,38 @@ const SyntheticClassificationResultTupleSchema = z
     z.enum(["eligible", "ineligible"]),
     z.array(ArtifactIdSchema).max(MAX_ARTIFACTS),
     z.array(ArtifactIdSchema).max(MAX_ARTIFACTS),
-    z.array(SyntheticFindingSchema).max(MAX_FINDINGS),
+    z.array(SyntheticFindingInternalSchema).max(MAX_FINDINGS),
   ])
   .transform(([schemaVersion, disposition, closure, eligible, findings]) =>
     closedRecord({ schemaVersion, disposition, closure, eligible, findings }),
   );
 
+const SyntheticClassificationResultInternalSchema = z.preprocess(
+  (value) => recordTuple(value, resultCollectionsAreBounded, RESULT_FIELDS),
+  SyntheticClassificationResultTupleSchema,
+);
+
 export const SyntheticClassificationResultSchema = closedPublicSchema(
-  z.preprocess(
-    (value) => recordTuple(value, resultCollectionsAreBounded, RESULT_FIELDS),
-    SyntheticClassificationResultTupleSchema,
-  ),
+  SyntheticClassificationResultInternalSchema,
   validateClassificationResult,
 );
 
-type Artifact = z.infer<typeof SyntheticArtifactSchema>;
-type Evidence = z.infer<typeof SyntheticEvidenceSchema>;
-type Finding = z.infer<typeof SyntheticFindingSchema>;
+export type SyntheticArtifact = z.infer<typeof SyntheticArtifactInternalSchema>;
+export type SyntheticEvidence = z.infer<typeof SyntheticEvidenceInternalSchema>;
+export type SyntheticClassifierInput = z.infer<typeof SyntheticClassifierInputInternalSchema>;
+export type SyntheticFinding = z.infer<typeof SyntheticFindingInternalSchema>;
+export type SyntheticClassificationResult = z.infer<
+  typeof SyntheticClassificationResultInternalSchema
+>;
+
+type Artifact = SyntheticArtifact;
+type Evidence = SyntheticEvidence;
+type Finding = SyntheticFinding;
 
 class Findings {
   private readonly values = new Map<string, Finding>();
 
-  add(code: z.infer<typeof SyntheticFindingCodeSchema>, artifactId?: string): void {
+  add(code: SyntheticFindingCode, artifactId?: string): void {
     const finding = artifactId === undefined ? { code } : { code, artifactId };
     this.values.set(findingKey(finding), finding);
   }
@@ -907,9 +1026,7 @@ function exactEvidenceBinding(artifact: Artifact, evidence: Evidence): boolean {
  * Classifies caller-supplied synthetic records only. This is deliberately pure
  * in-memory Phase 2 code: it does not read a provider checkout or invoke a host.
  */
-export function classifySyntheticProjection(
-  value: unknown,
-): z.infer<typeof SyntheticClassificationResultSchema> {
+export function classifySyntheticProjection(value: unknown): SyntheticClassificationResult {
   const input = SyntheticClassifierInputSchema.parse(value);
   const findings = new Findings();
   const artifactsById = new Map<string, Artifact>();
@@ -922,10 +1039,7 @@ export function classifySyntheticProjection(
     }
     artifactsById.set(artifact.id, artifact);
     if (artifactByLocator.has(artifact.sourceLocator)) {
-      findings.add(
-        "METHODOLOGY_LOCATOR_DUPLICATE",
-        artifact.sourceLocator.replace("synthetic:", ""),
-      );
+      findings.add("METHODOLOGY_LOCATOR_DUPLICATE", artifact.id);
     } else {
       artifactByLocator.set(artifact.sourceLocator, artifact);
     }
@@ -942,7 +1056,7 @@ export function classifySyntheticProjection(
   const stack: Frame[] = [];
 
   for (const root of requested) {
-    stack.push({ id: root, complete: false });
+    appendOwn(stack, { id: root, complete: false });
     while (stack.length > 0) {
       const frame = stack.pop();
       if (frame === undefined) continue;
@@ -964,12 +1078,12 @@ export function classifySyntheticProjection(
       }
       state.set(frame.id, "visiting");
       closure.add(frame.id);
-      stack.push({ id: frame.id, complete: true });
+      appendOwn(stack, { id: frame.id, complete: true });
       for (const dependency of [...current.dependencies].sort(compareCodeUnits).reverse()) {
         if (state.get(dependency) === "visiting") {
           findings.add("METHODOLOGY_DEPENDENCY_CYCLE", dependency);
         } else {
-          stack.push({ id: dependency, complete: false });
+          appendOwn(stack, { id: dependency, complete: false });
         }
       }
     }
