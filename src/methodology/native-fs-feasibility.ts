@@ -817,9 +817,12 @@ function disposeCapability(capability: object, metadata: CapabilityMetadata): vo
   }
   const authentic = descriptorIdentity(metadata.rootDescriptor);
   const pathGone = statRootIdentity(metadata.root) === undefined;
+  const hostPlatform = platform();
   const descriptorConfirmsRemoval =
     sameRootIdentity(metadata.identity, authentic) &&
-    (platform() === "win32" || fstatSync(metadata.rootDescriptor, { bigint: true }).nlink === 0n);
+    (hostPlatform === "win32" ||
+      hostPlatform === "darwin" ||
+      fstatSync(metadata.rootDescriptor, { bigint: true }).nlink === 0n);
   if (!pathGone || !descriptorConfirmsRemoval) return;
   closeSync(metadata.rootDescriptor);
   weakSetDelete(CAPABILITIES, capability);

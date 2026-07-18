@@ -125,9 +125,10 @@ function validateWorkflow(source: string): readonly string[] {
   const checkout = steps.find((step) => step.uses === checkoutPin);
   if (
     checkout?.with?.["persist-credentials"] !== false ||
-    Object.keys(checkout.with).length !== 1
+    checkout.with["fetch-depth"] !== 0 ||
+    Object.keys(checkout.with).length !== 2
   ) {
-    errors.push("checkout-credentials-not-disabled");
+    errors.push("checkout-history-or-credentials-invalid");
   }
   const setupNode = steps.find((step) => step.uses === setupNodePin);
   if (setupNode?.with?.["node-version"] !== "22" || Object.keys(setupNode.with).length !== 1) {
@@ -162,6 +163,7 @@ describe("Phase 4A native filesystem evidence workflow", () => {
     const weakened = [
       source.replace("      - macos-latest\n", ""),
       source.replace(checkoutPin, "actions/checkout@v7"),
+      source.replace("          fetch-depth: 0\n", ""),
       source.replace("npm ci --ignore-scripts", "npm ci"),
       source.replace(`      - uses: ${setupNodePin}`, "      - uses: actions/upload-artifact@v7"),
       source.replace('          node-version: "22"', '          node-version: "20"'),

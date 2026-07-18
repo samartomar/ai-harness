@@ -51,6 +51,7 @@ const addonBuildAncestor = fileURLToPath(
   new URL("../../native/methodology-fs/build", import.meta.url),
 );
 const moduleUrl = new URL("../../src/methodology/native-fs-feasibility.ts", import.meta.url);
+const tsxImportUrl = pathToFileURL(require.resolve("tsx")).href;
 const primitiveOrder = [
   "identity-bound-file-publication",
   "no-replace-directory-publication",
@@ -171,6 +172,48 @@ function rawReasons(raw: string): string[] {
   return parsed.observations.map(({ disposition, reason }) => `${disposition}/${reason}`);
 }
 
+function syntheticBlockedRecord(os: "darwin" | "win32", scope: "filesystem" | "volume") {
+  return NativeFsCapabilityRecordSchema.parse({
+    schemaVersion: 1,
+    probeVersion: "phase-4a-native-fs-v1",
+    state: "blocked",
+    platform: {
+      os,
+      architecture: process.arch,
+      runtime: "node",
+      runtimeVersion: process.versions.node,
+      nodeApiVersion: process.versions.napi,
+    },
+    nativeComponentVersion: "phase-4a-native-fs-native-v1",
+    nativeLoader: {
+      identityBound: false,
+      disposition: "blocked",
+      reason: "native-loader-not-identity-bound",
+    },
+    nativeRootAuthority: {
+      authenticated: false,
+      disposition: "blocked",
+      reason: "root-capability-unproven",
+    },
+    rootIdentity: { device: "1", file: "1" },
+    filesystemIdentity: { scope, device: "1", type: "1" },
+    observations: primitiveOrder.map((primitive) => ({
+      primitive,
+      primitiveVersion: "phase-4a-primitive-v1",
+      disposition: "blocked",
+      reason: "root-capability-unproven",
+    })),
+    boundary: {
+      cli: false,
+      executor: false,
+      providerExecution: false,
+      hostExecution: false,
+      network: false,
+      nonTemporaryWrites: false,
+    },
+  });
+}
+
 describe.sequential("native methodology filesystem feasibility", () => {
   it.runIf(process.platform === "linux")(
     "blocks unauthenticated Linux roots deterministically and leaves them empty",
@@ -180,14 +223,18 @@ describe.sequential("native methodology filesystem feasibility", () => {
         ([disposition, reason]) => `${disposition}/${reason}`,
       );
 
-      withCapability((root) => {
-        const first = addon.probe(root);
-        expect(readdirSync(root)).toEqual([]);
-        const second = addon.probe(root);
-        expect(readdirSync(root)).toEqual([]);
-        expect(rawReasons(first)).toEqual(expected);
-        expect(second).toBe(first);
-      });
+      try {
+        withCapability((root) => {
+          const first = addon.probe(root);
+          expect(readdirSync(root)).toEqual([]);
+          const second = addon.probe(root);
+          expect(readdirSync(root)).toEqual([]);
+          expect(rawReasons(first)).toEqual(expected);
+          expect(second).toBe(first);
+        });
+      } finally {
+        delete require.cache[addonPath];
+      }
     },
   );
 
@@ -225,6 +272,7 @@ describe.sequential("native methodology filesystem feasibility", () => {
           changed: before.ctimeNs,
         });
       } finally {
+        delete require.cache[addonPath];
         rmSync(root, { recursive: true, force: true });
         rmSync(capture, { recursive: true, force: true });
       }
@@ -250,6 +298,7 @@ describe.sequential("native methodology filesystem feasibility", () => {
       } finally {
         watcher.close();
         capability.dispose();
+        delete require.cache[addonPath];
       }
       expect([...observed]).toEqual([]);
     },
@@ -297,6 +346,7 @@ describe.sequential("native methodology filesystem feasibility", () => {
         );
         expect(readdirSync(linkedTarget)).toEqual([]);
       } finally {
+        delete require.cache[addonPath];
         rmSync(linkedRoot, { force: true });
         rmdirSync(linkedTarget);
       }
@@ -329,18 +379,7 @@ describe.sequential("native methodology filesystem feasibility", () => {
       /\b(?:CreateFileW|SetFileInformationByHandle|WriteFile|FlushFileBuffers|MoveFileW|MoveFileExW|ReplaceFileW|DeleteFileW|RemoveDirectoryW|CreateDirectoryW|CreateHardLinkW|DeviceIoControl|CreateProcessW|WinExec|ShellExecuteW|LoadLibraryW|GetProcAddress|WinHttpOpen|InternetOpenW|WSAStartup)\s*\(|\b(?:system|popen|exec[lvpe]*|spawn[lvpe]*|fopen|freopen|open|rename|remove|unlink|mkdir|rmdir|write|fsync)\s*\(/,
     );
 
-    const record = withCapability((_root, capability) => probeNativeFilesystem(capability));
-    const windowsRecord = NativeFsCapabilityRecordSchema.parse({
-      ...record,
-      platform: { ...record.platform, os: "win32" },
-      filesystemIdentity: { ...record.filesystemIdentity, scope: "volume" },
-      observations: primitiveOrder.map((primitive) => ({
-        primitive,
-        primitiveVersion: "phase-4a-primitive-v1",
-        disposition: "blocked",
-        reason: "root-capability-unproven",
-      })),
-    });
+    const windowsRecord = syntheticBlockedRecord("win32", "volume");
     expect(windowsRecord.nativeRootAuthority).toEqual({
       authenticated: false,
       disposition: "blocked",
@@ -412,6 +451,7 @@ describe.sequential("native methodology filesystem feasibility", () => {
         expect(readdirSync(manualRoot)).toEqual([]);
       } finally {
         capability.dispose();
+        delete require.cache[addonPath];
         rmdirSync(manualRoot);
       }
     },
@@ -430,17 +470,7 @@ describe.sequential("native methodology filesystem feasibility", () => {
       /\b(?:fclonefileat|clonefile|renameatx_np|renamex_np|open|openat|creat|fopen|freopen|write|pwrite|fsync|fcntl|stat|lstat|fstat|statfs|fstatfs|getattrlist|setattrlist|unlink|unlinkat|remove|rename|renameat|mkdir|mkdirat|rmdir|link|linkat|symlink|symlinkat|mount|unmount|system|popen|exec[lvpe]*|posix_spawn|dlopen|dlsym|CFBundleLoadExecutable|NSURLSession|socket|connect)\s*\(/,
     );
 
-    const record = withCapability((_root, capability) => probeNativeFilesystem(capability));
-    const darwinRecord = NativeFsCapabilityRecordSchema.parse({
-      ...record,
-      platform: { ...record.platform, os: "darwin" },
-      observations: primitiveOrder.map((primitive) => ({
-        primitive,
-        primitiveVersion: "phase-4a-primitive-v1",
-        disposition: "blocked",
-        reason: "root-capability-unproven",
-      })),
-    });
+    const darwinRecord = syntheticBlockedRecord("darwin", "filesystem");
     expect(darwinRecord.nativeRootAuthority).toEqual({
       authenticated: false,
       disposition: "blocked",
@@ -510,52 +540,99 @@ describe.sequential("native methodology filesystem feasibility", () => {
         ).toEqual(hostBefore);
         expect(readdirSync(capability.root)).toEqual([]);
         expect(readdirSync(manualRoot)).toEqual([]);
-        expect(probeNativeFilesystem(capability).nativeRootAuthority).toEqual({
+        expect(syntheticBlockedRecord("darwin", "filesystem").nativeRootAuthority).toEqual({
           authenticated: false,
           disposition: "blocked",
           reason: "root-capability-unproven",
         });
       } finally {
         capability.dispose();
+        delete require.cache[addonPath];
         rmdirSync(manualRoot);
       }
     },
   );
 
   it("rejects a preloaded unowned native addon cache entry", () => {
-    const addon = require(addonPath) as { probe?: unknown };
-    try {
-      const record = withCapability((_root, capability) => probeNativeFilesystem(capability));
-      expect(record.state).toBe("blocked");
-      expect(allBlockedReasons(record)).toEqual(
-        primitiveOrder.map(() => "native-addon-abi-mismatch"),
-      );
-    } finally {
-      delete require.cache[addonPath];
-    }
-    expect(Object.keys(addon)).toEqual(["probe"]);
-    expect(typeof addon.probe).toBe("function");
-    if (typeof addon.probe !== "function") {
-      throw new TypeError("expected native probe export");
-    }
-    const probe = addon.probe;
-
-    expect(withCapability((root) => probe(root))).toBe(expectedPlatformRawReport);
-    expect(Object.getOwnPropertyDescriptor(addon, "probe")).toMatchObject({
-      configurable: false,
-      enumerable: true,
-      writable: false,
-    });
-    expect(() => probe()).toThrow(TypeError);
-    expect(() => probe(42)).toThrow(TypeError);
-    expect(() => probe("contains\0nul")).toThrow(TypeError);
-    for (const malformed of ["\uD800", "\uDC00", "\uDC00\uD800", "\uD800x"]) {
-      expect(() => probe(malformed)).toThrow(TypeError);
-    }
-    expect(() => probe("x".repeat(4_097))).toThrow(RangeError);
-    expect(() => probe("\u{1F600}".repeat(1_025))).toThrow(RangeError);
-    expect(() => probe("root", "unexpected")).toThrow(TypeError);
-    expect(probe("root-\u{1F600}")).toBe(
+    const script = `
+      const { createRequire } = await import("node:module");
+      const require = createRequire(import.meta.url);
+      const addon = require(${JSON.stringify(addonPath)});
+      const module = await import(${JSON.stringify(moduleUrl.href)});
+      const capability = module.createNativeFsProbeCapability();
+      const errorName = (run) => {
+        try { run(); return null; } catch (error) { return error?.name; }
+      };
+      try {
+        const record = module.probeNativeFilesystem(capability);
+        const descriptor = Object.getOwnPropertyDescriptor(addon, "probe");
+        process.stdout.write(JSON.stringify({
+          state: record.state,
+          reasons: record.observations.map((item) => item.reason),
+          keys: Object.keys(addon),
+          probeType: typeof addon.probe,
+          first: addon.probe(capability.root),
+          second: addon.probe(capability.root),
+          descriptor: {
+            configurable: descriptor?.configurable,
+            enumerable: descriptor?.enumerable,
+            writable: descriptor?.writable,
+          },
+          errors: [
+            errorName(() => addon.probe()),
+            errorName(() => addon.probe(42)),
+            errorName(() => addon.probe("contains\\0nul")),
+            errorName(() => addon.probe("\\uD800")),
+            errorName(() => addon.probe("\\uDC00")),
+            errorName(() => addon.probe("\\uDC00\\uD800")),
+            errorName(() => addon.probe("\\uD800x")),
+            errorName(() => addon.probe("x".repeat(4_097))),
+            errorName(() => addon.probe("\\u{1F600}".repeat(1_025))),
+            errorName(() => addon.probe("root", "unexpected")),
+          ],
+          unicode: addon.probe("root-\\u{1F600}"),
+        }));
+      } finally {
+        capability.dispose();
+      }
+    `;
+    const child = spawnSync(
+      process.execPath,
+      ["--import", tsxImportUrl, "--input-type=module", "-e", script],
+      { encoding: "utf8" },
+    );
+    expect(child.status, child.stderr).toBe(0);
+    const result = JSON.parse(child.stdout) as {
+      state: string;
+      reasons: string[];
+      keys: string[];
+      probeType: string;
+      first: string;
+      second: string;
+      descriptor: { configurable: boolean; enumerable: boolean; writable: boolean };
+      errors: Array<string | null>;
+      unicode: string;
+    };
+    expect(result.state).toBe("blocked");
+    expect(result.reasons).toEqual(primitiveOrder.map(() => "native-addon-abi-mismatch"));
+    expect(result.keys).toEqual(["probe"]);
+    expect(result.probeType).toBe("function");
+    expect(result.first).toBe(expectedPlatformRawReport);
+    expect(result.second).toBe(result.first);
+    expect(result.descriptor).toEqual({ configurable: false, enumerable: true, writable: false });
+    expect(result.errors).toEqual([
+      "TypeError",
+      "TypeError",
+      "TypeError",
+      "TypeError",
+      "TypeError",
+      "TypeError",
+      "TypeError",
+      "RangeError",
+      "RangeError",
+      "TypeError",
+    ]);
+    expect(result.unicode).toBe(
       process.platform === "linux"
         ? rawOutsideRootReport
         : process.platform === "win32"
@@ -564,7 +641,6 @@ describe.sequential("native methodology filesystem feasibility", () => {
             ? rawDarwinReport
             : rawBlockedReport,
     );
-    expect(withCapability((root) => probe(root))).toBe(expectedPlatformRawReport);
   });
 
   it("selects exactly one planned platform backend at build time", () => {
@@ -940,7 +1016,7 @@ describe.sequential("native methodology filesystem feasibility", () => {
     try {
       const child = spawnSync(
         process.execPath,
-        ["--import", require.resolve("tsx"), "--input-type=module", "-e", script],
+        ["--import", tsxImportUrl, "--input-type=module", "-e", script],
         {
           cwd: attackerRoot,
           encoding: "utf8",
@@ -954,35 +1030,50 @@ describe.sequential("native methodology filesystem feasibility", () => {
   });
 
   it("fails closed when the owned module cache or exports identity is replaced", () => {
-    const first = withCapability((_root, capability) => probeNativeFilesystem(capability));
-    expect(allBlockedReasons(first)).toEqual(expectedPlatformReasons);
-    const ownedModule = require.cache[addonPath];
-    if (ownedModule === undefined) throw new Error("owned addon cache entry is missing");
-    const originalExports = ownedModule.exports;
-    ownedModule.exports = {
-      probe() {
-        return "forged supported report";
-      },
+    const script = `
+      const { createRequire } = await import("node:module");
+      const require = createRequire(import.meta.url);
+      const module = await import(${JSON.stringify(moduleUrl.href)});
+      const capability = module.createNativeFsProbeCapability();
+      let ownedModule;
+      let originalExports;
+      try {
+        const first = module.probeNativeFilesystem(capability);
+        ownedModule = require.cache[${JSON.stringify(addonPath)}];
+        if (ownedModule === undefined) throw new Error("owned addon cache entry is missing");
+        originalExports = ownedModule.exports;
+        ownedModule.exports = { probe() { return "forged supported report"; } };
+        const exportsMutation = module.probeNativeFilesystem(capability);
+        ownedModule.exports = originalExports;
+        require.cache[${JSON.stringify(addonPath)}] = { ...ownedModule, exports: originalExports };
+        const cacheMutation = module.probeNativeFilesystem(capability);
+        process.stdout.write(JSON.stringify({
+          first: first.observations.map((item) => item.reason),
+          exportsMutation: exportsMutation.observations.map((item) => item.reason),
+          cacheMutation: cacheMutation.observations.map((item) => item.reason),
+        }));
+      } finally {
+        if (ownedModule !== undefined && originalExports !== undefined) {
+          ownedModule.exports = originalExports;
+          require.cache[${JSON.stringify(addonPath)}] = ownedModule;
+        }
+        capability.dispose();
+      }
+    `;
+    const child = spawnSync(
+      process.execPath,
+      ["--import", tsxImportUrl, "--input-type=module", "-e", script],
+      { encoding: "utf8" },
+    );
+    expect(child.status, child.stderr).toBe(0);
+    const result = JSON.parse(child.stdout) as {
+      first: string[];
+      exportsMutation: string[];
+      cacheMutation: string[];
     };
-    try {
-      const blocked = withCapability((_root, capability) => probeNativeFilesystem(capability));
-      expect(allBlockedReasons(blocked)).toEqual(
-        primitiveOrder.map(() => "native-addon-abi-mismatch"),
-      );
-    } finally {
-      ownedModule.exports = originalExports;
-    }
-
-    const forgedModule = { ...ownedModule, exports: originalExports } as NodeModule;
-    require.cache[addonPath] = forgedModule;
-    try {
-      const blocked = withCapability((_root, capability) => probeNativeFilesystem(capability));
-      expect(allBlockedReasons(blocked)).toEqual(
-        primitiveOrder.map(() => "native-addon-abi-mismatch"),
-      );
-    } finally {
-      require.cache[addonPath] = ownedModule;
-    }
+    expect(result.first).toEqual(expectedPlatformReasons);
+    expect(result.exportsMutation).toEqual(primitiveOrder.map(() => "native-addon-abi-mismatch"));
+    expect(result.cacheMutation).toEqual(primitiveOrder.map(() => "native-addon-abi-mismatch"));
   });
 
   it("fails closed for malformed native reports and accepts only a fully bound report", async () => {
@@ -1386,6 +1477,32 @@ describe.sequential("native methodology filesystem feasibility", () => {
     capability.dispose();
     expect(existsSync(capability.root)).toBe(false);
     expect(() => probeNativeFilesystem(capability)).toThrow(/capability/i);
+  });
+
+  it("retires an authentically removed Darwin root without relying on directory link count", async () => {
+    const actualFs = await vi.importActual<typeof import("node:fs")>("node:fs");
+    const actualOs = await vi.importActual<typeof import("node:os")>("node:os");
+    vi.doMock("node:fs", () => ({
+      ...actualFs,
+      fstatSync(descriptor: number, options?: unknown) {
+        const stat = actualFs.fstatSync(descriptor, options as never);
+        return typeof stat.nlink === "bigint" ? { ...stat, nlink: 2n } : stat;
+      },
+    }));
+    vi.doMock("node:os", () => ({ ...actualOs, platform: () => "darwin" }));
+    vi.resetModules();
+    try {
+      const isolated = await import("../../src/methodology/native-fs-feasibility.js");
+      const capability = isolated.createNativeFsProbeCapability();
+      const root = capability.root;
+      capability.dispose();
+      expect(existsSync(root)).toBe(false);
+      expect(() => isolated.probeNativeFilesystem(capability)).toThrow(/capability/i);
+    } finally {
+      vi.doUnmock("node:fs");
+      vi.doUnmock("node:os");
+      vi.resetModules();
+    }
   });
 
   it("keeps a non-empty authentic root live until empty-root removal succeeds", () => {
