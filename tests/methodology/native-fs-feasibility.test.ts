@@ -5,6 +5,7 @@ import {
   lstatSync,
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   realpathSync,
   renameSync,
   rmdirSync,
@@ -30,6 +31,9 @@ import {
 const require = createRequire(import.meta.url);
 const addonPath = fileURLToPath(
   new URL("../../native/methodology-fs/build/Release/methodology_fs.node", import.meta.url),
+);
+const bindingGypPath = fileURLToPath(
+  new URL("../../native/methodology-fs/binding.gyp", import.meta.url),
 );
 const addonBuildAncestor = fileURLToPath(
   new URL("../../native/methodology-fs/build", import.meta.url),
@@ -97,9 +101,54 @@ describe.sequential("native methodology filesystem feasibility", () => {
     expect(() => probe()).toThrow(TypeError);
     expect(() => probe(42)).toThrow(TypeError);
     expect(() => probe("contains\0nul")).toThrow(TypeError);
+    for (const malformed of ["\uD800", "\uDC00", "\uDC00\uD800", "\uD800x"]) {
+      expect(() => probe(malformed)).toThrow(TypeError);
+    }
     expect(() => probe("x".repeat(4_097))).toThrow(RangeError);
+    expect(() => probe("\u{1F600}".repeat(1_025))).toThrow(RangeError);
     expect(() => probe("root", "unexpected")).toThrow(TypeError);
+    expect(probe("root-\u{1F600}")).toBe(rawBlockedReport);
     expect(withCapability((root) => probe(root))).toBe(rawBlockedReport);
+  });
+
+  it("selects exactly one planned platform backend at build time", () => {
+    const binding = JSON.parse(readFileSync(bindingGypPath, "utf8")) as {
+      targets?: Array<{
+        conditions?: Array<
+          [string, { defines?: string[]; sources?: string[]; xcode_settings?: unknown }]
+        >;
+      }>;
+    };
+    const selections = (binding.targets?.[0]?.conditions ?? [])
+      .filter(([condition]) => ["OS=='linux'", "OS=='win'", "OS=='mac'"].includes(condition))
+      .map(([condition, configuration]) => ({
+        condition,
+        defines: configuration.defines,
+        sources: configuration.sources,
+      }));
+
+    expect(selections).toEqual([
+      {
+        condition: "OS=='linux'",
+        defines: ["AIH_NATIVE_FS_BACKEND_LINUX=1"],
+        sources: ["src/backend_linux.c"],
+      },
+      {
+        condition: "OS=='win'",
+        defines: ["AIH_NATIVE_FS_BACKEND_WINDOWS=1"],
+        sources: ["src/backend_windows.c"],
+      },
+      {
+        condition: "OS=='mac'",
+        defines: ["AIH_NATIVE_FS_BACKEND_DARWIN=1"],
+        sources: ["src/backend_darwin.c"],
+      },
+    ]);
+    const selectedSources = selections.flatMap(({ sources }) => sources ?? []);
+    expect(new Set(selectedSources).size).toBe(3);
+    for (const source of selectedSources) {
+      expect(existsSync(resolve(bindingGypPath, "..", source))).toBe(true);
+    }
   });
 
   it("fails closed for a mocked missing addon without mutating the checkout", async () => {

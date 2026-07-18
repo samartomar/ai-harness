@@ -6,6 +6,7 @@
 #include "backend.h"
 
 #define AIH_MAX_ROOT_BYTES 4096
+#define AIH_MAX_ROOT_UTF16_UNITS 4096
 #define AIH_MAX_REPORT_BYTES 8192
 
 static const char *const kPrimitiveNames[AIH_NATIVE_FS_OBSERVATION_COUNT] = {
@@ -76,6 +77,26 @@ static int AppendLiteral(char *output, size_t capacity, size_t *length,
   memcpy(output + *length, literal, literal_length);
   *length += literal_length;
   return 0;
+}
+
+static int Utf16RootIsValid(const char16_t *root, size_t length) {
+  size_t index;
+  for (index = 0; index < length; index += 1) {
+    const char16_t unit = root[index];
+    if (unit == 0) {
+      return 0;
+    }
+    if (unit >= 0xD800 && unit <= 0xDBFF) {
+      if (index + 1 >= length || root[index + 1] < 0xDC00 ||
+          root[index + 1] > 0xDFFF) {
+        return 0;
+      }
+      index += 1;
+    } else if (unit >= 0xDC00 && unit <= 0xDFFF) {
+      return 0;
+    }
+  }
+  return 1;
 }
 
 static const char *CanonicalBlockedReason(const char *reason) {
@@ -174,8 +195,11 @@ static napi_value Probe(napi_env env, napi_callback_info info) {
   size_t argument_count = 2;
   napi_value arguments[2];
   napi_valuetype argument_type;
+  size_t root_utf16_length = 0;
+  size_t copied_utf16_length = 0;
   size_t root_length = 0;
   size_t copied_length = 0;
+  char16_t root_utf16[AIH_MAX_ROOT_UTF16_UNITS + 1];
   char root[AIH_MAX_ROOT_BYTES + 1];
   struct aih_native_fs_report report;
   char output[AIH_MAX_REPORT_BYTES];
@@ -194,12 +218,26 @@ static napi_value Probe(napi_env env, napi_callback_info info) {
       argument_type != napi_string) {
     return ThrowTypeError(env, "native filesystem probe root must be a string");
   }
+  if (napi_get_value_string_utf16(env, arguments[0], NULL, 0,
+                                  &root_utf16_length) != napi_ok) {
+    return ThrowTypeError(env, "native filesystem probe root is invalid");
+  }
+  if (root_utf16_length == 0) {
+    return ThrowTypeError(env, "native filesystem probe root must not be empty");
+  }
+  if (root_utf16_length > AIH_MAX_ROOT_UTF16_UNITS) {
+    return ThrowRangeError(env, "native filesystem probe root is oversized");
+  }
+  if (napi_get_value_string_utf16(env, arguments[0], root_utf16,
+                                  AIH_MAX_ROOT_UTF16_UNITS + 1,
+                                  &copied_utf16_length) != napi_ok ||
+      copied_utf16_length != root_utf16_length ||
+      !Utf16RootIsValid(root_utf16, copied_utf16_length)) {
+    return ThrowTypeError(env, "native filesystem probe root is invalid");
+  }
   if (napi_get_value_string_utf8(env, arguments[0], NULL, 0, &root_length) !=
       napi_ok) {
     return ThrowTypeError(env, "native filesystem probe root is invalid");
-  }
-  if (root_length == 0) {
-    return ThrowTypeError(env, "native filesystem probe root must not be empty");
   }
   if (root_length > AIH_MAX_ROOT_BYTES) {
     return ThrowRangeError(env, "native filesystem probe root is oversized");

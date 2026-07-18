@@ -3,6 +3,12 @@
 
 #define AIH_NATIVE_FS_OBSERVATION_COUNT 7
 
+#if (defined(AIH_NATIVE_FS_BACKEND_LINUX) +                              \
+     defined(AIH_NATIVE_FS_BACKEND_WINDOWS) +                            \
+     defined(AIH_NATIVE_FS_BACKEND_DARWIN)) > 1
+#error "exactly one native filesystem backend may be selected"
+#endif
+
 enum aih_native_fs_disposition {
   AIH_SUPPORTED = 0,
   AIH_UNSUPPORTED = 1,
@@ -30,5 +36,7 @@ struct aih_native_fs_report {
 };
 
 int aih_probe_native_fs(const char *root, struct aih_native_fs_report *report);
+int aih_backend_probe_native_fs(const char *root,
+                                struct aih_native_fs_report *report);
 
 #endif
