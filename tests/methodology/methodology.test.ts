@@ -11,9 +11,10 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { Command } from "commander";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   METHODOLOGY_PHASE_ONE_BOUNDARY,
+  methodologyCommandSpecs,
   registerMethodologyCommands,
   runMethodologyCommand,
   writeMethodologyParserFailure,
@@ -23,6 +24,7 @@ import {
   exactSourceIdentity,
   hostAdapterFor,
   MethodologyCommandEnvelopeSchema,
+  MethodologyFailureEnvelopeSchema,
   MethodologyIntentSchema,
   MethodologyStatusSchema,
   providerAdapterFor,
@@ -213,6 +215,82 @@ describe("methodology Phase 1 schemas", () => {
     );
   });
 
+  it("enforces every closed selection binding and unique component identity", () => {
+    const base = intent() as { selection: Record<string, unknown> };
+    const selection = base.selection as {
+      source: Record<string, unknown>;
+      compatibility: Record<string, unknown>;
+      components: Array<{ id: string }>;
+    };
+    const invalidSelections = [
+      { ...selection, source: { ...selection.source, owner: "other" } },
+      { ...selection, providerAdapter: "gstack-static-v1" },
+      { ...selection, hostAdapter: "codex-static-v1" },
+      { ...selection, components: [selection.components[0], selection.components[0]] },
+    ];
+
+    for (const invalidSelection of invalidSelections) {
+      expect(
+        MethodologyIntentSchema.safeParse({ ...base, selection: invalidSelection }).success,
+      ).toBe(false);
+    }
+  });
+
+  it("binds failure outcome, command selection, state, and finding disposition", () => {
+    const boundary = METHODOLOGY_PHASE_ONE_BOUNDARY;
+    const malformed = {
+      code: "METHODOLOGY_INTENT_MALFORMED",
+      disposition: "fail-closed",
+      detail: "invalid intent",
+    };
+    const invalid = {
+      code: "METHODOLOGY_INTENT_PATH_INVALID",
+      disposition: "blocked",
+      detail: "invalid path",
+    };
+
+    for (const candidate of [
+      {
+        schemaVersion: 1,
+        command: "inspect",
+        outcome: "invalid",
+        failure: { schemaVersion: 1, state: "invalid", findings: [malformed] },
+        boundary,
+      },
+      {
+        schemaVersion: 1,
+        command: "inspect",
+        outcome: "invalid",
+        failure: { schemaVersion: 1, state: "fail-closed", findings: [malformed] },
+        boundary,
+      },
+      {
+        schemaVersion: 1,
+        command: null,
+        outcome: "invalid",
+        failure: { schemaVersion: 1, state: "invalid", findings: [invalid] },
+        boundary,
+      },
+    ]) {
+      expect(MethodologyFailureEnvelopeSchema.safeParse(candidate).success).toBe(false);
+    }
+  });
+
+  it("rejects a host adapter lookup that contradicts the validated compatibility host", () => {
+    const parsed = MethodologyIntentSchema.parse(intent());
+    const mismatchedAdapter = {
+      ...parsed,
+      selection: {
+        ...parsed.selection,
+        hostAdapter: "codex-static-v1",
+      },
+    } as typeof parsed;
+
+    expect(() => hostAdapterFor(mismatchedAdapter)).toThrow(
+      "validated intent named an unavailable host adapter",
+    );
+  });
+
   it("rejects unknown nested adapter fields in a closed status record", () => {
     const status = statusFixture();
 
@@ -249,6 +327,23 @@ describe("methodology Phase 1 schemas", () => {
         },
       }),
     ).toThrow();
+  });
+
+  it("rejects identity repository/order drift and missing fixed-state findings", () => {
+    const status = statusFixture("blocked");
+    expect(
+      MethodologyStatusSchema.safeParse({
+        ...status,
+        identity: { ...status.identity, repository: "github.com/other/repository" },
+      }).success,
+    ).toBe(false);
+    expect(
+      MethodologyStatusSchema.safeParse({
+        ...status,
+        identity: { ...status.identity, components: [...status.identity.components].reverse() },
+      }).success,
+    ).toBe(false);
+    expect(MethodologyStatusSchema.safeParse({ ...status, findings: [] }).success).toBe(false);
   });
 
   it("rejects contradictory status findings and command/status combinations", () => {
@@ -302,6 +397,80 @@ describe("methodology Phase 1 schemas", () => {
 });
 
 describe("methodology Phase 1 in-process boundaries", () => {
+  it("keeps declarative command plans read-only and action-free", () => {
+    for (const spec of methodologyCommandSpecs) {
+      expect(spec.plan({} as never)).toMatchObject({
+        capability: `methodology ${spec.name}`,
+        actions: [],
+      });
+    }
+  });
+
+  it("fails closed before filesystem access when descriptor traversal is unavailable", () => {
+    const descriptor = Object.getOwnPropertyDescriptor(process, "platform");
+    Object.defineProperty(process, "platform", { configurable: true, value: "darwin" });
+    try {
+      const result = runInProcess("unused", "inspect");
+      expect(result.exitCode).toBe(3);
+      expect(JSON.parse(result.stdout)).toMatchObject({
+        outcome: "fail-closed",
+        failure: { findings: [expect.objectContaining({ code: "METHODOLOGY_INTENT_MALFORMED" })] },
+      });
+    } finally {
+      if (descriptor !== undefined) Object.defineProperty(process, "platform", descriptor);
+    }
+  });
+
+  it("uses the default process writers without escaping the closed failure envelopes", () => {
+    const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    try {
+      expect(
+        runMethodologyCommand("inspect", { root: "unused", intent: "../intent.json", json: true }),
+      ).toBe(1);
+      expect(
+        runMethodologyCommand("inspect", { root: "unused", intent: "../intent.json", json: false }),
+      ).toBe(1);
+      expect(
+        writeMethodologyParserFailure([
+          "node",
+          "aih",
+          "methodology",
+          "inspect",
+          "--json",
+          "--apply",
+        ]),
+      ).toBe(true);
+      expect(stdout).toHaveBeenCalled();
+      expect(stderr).toHaveBeenCalled();
+    } finally {
+      stdout.mockRestore();
+      stderr.mockRestore();
+    }
+  });
+
+  it("fails closed when command option evaluation throws unexpectedly", () => {
+    let stderr = "";
+    const options = {
+      get root(): string {
+        throw new Error("hostile root getter");
+      },
+      intent: "methodology.intent.json",
+      json: false,
+    };
+
+    expect(
+      runMethodologyCommand("inspect", options, {
+        write() {},
+        writeError(text) {
+          stderr += text;
+        },
+      }),
+    ).toBe(3);
+    expect(stderr).toContain("METHODOLOGY_INTENT_MALFORMED");
+    expect(stderr).not.toContain("hostile root getter");
+  });
+
   it.runIf(SUPPORTS_VERIFIED_INTENT_READS)(
     "returns bounded statuses and exits for all three commands",
     () => {
@@ -508,6 +677,22 @@ describe("methodology Phase 1 in-process boundaries", () => {
       "--root",
       "--json",
     ]);
+
+    const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    try {
+      parent.configureOutput().writeOut?.("parent output");
+      parent.configureOutput().writeErr?.("parent error");
+      for (const command of parent.commands) {
+        command.configureOutput().writeOut?.("command output");
+        command.configureOutput().writeErr?.("command error");
+      }
+      expect(stdout).toHaveBeenCalledTimes(4);
+      expect(stderr).toHaveBeenCalledTimes(4);
+    } finally {
+      stdout.mockRestore();
+      stderr.mockRestore();
+    }
   });
 });
 

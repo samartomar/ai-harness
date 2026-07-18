@@ -845,6 +845,110 @@ describe("Phase 3 host-neutral synthetic projection planner", () => {
     }
   });
 
+  it("rejects malformed mapping, planner, decision, manifest, boundary, and result states", async () => {
+    const planned = planSyntheticProjection(input());
+    const manifest = manifestOf(planned);
+    const invalidMappings = [null, { artifactId: "Not-Canonical", target: "rules/root.md" }];
+    for (const candidate of invalidMappings) {
+      expect(ProjectionMappingSchema.safeParse(candidate).success).toBe(false);
+    }
+
+    for (const candidate of [
+      null,
+      { ...input(), schemaVersion: 2 },
+      { ...input(), owner: "Not-Canonical" },
+      { ...input(), classifierInput: null },
+    ]) {
+      expect(ProjectionPlannerInputSchema.safeParse(candidate).success).toBe(false);
+    }
+
+    for (const candidate of [
+      null,
+      { ...manifest.decision, owner: "Not-Canonical" },
+      { ...manifest.decision, classifierInput: null },
+      { ...manifest.decision, closure: ["Not-Canonical"] },
+    ]) {
+      expect(ProjectionDecisionSchema.safeParse(candidate).success).toBe(false);
+    }
+
+    for (const candidate of [
+      null,
+      { ...planned, unexpected: true },
+      { ...planned, schemaVersion: 2 },
+      { ...planned, boundary: { ...planned.boundary, writes: true } },
+      { ...planned, manifest: { ...manifest, schemaVersion: 2 } },
+      { schemaVersion: 1, state: "blocked", boundary: planned.boundary },
+      {
+        schemaVersion: 2,
+        state: "blocked",
+        boundary: planned.boundary,
+        findings: [{ code: "METHODOLOGY_TARGET_INVALID" }],
+      },
+      {
+        schemaVersion: 1,
+        state: "blocked",
+        boundary: { ...planned.boundary, executor: true },
+        findings: [{ code: "METHODOLOGY_TARGET_INVALID" }],
+      },
+      { schemaVersion: 1, state: "unknown", boundary: planned.boundary, findings: [] },
+    ]) {
+      expect(ProjectionPlanResultSchema.safeParse(candidate).success).toBe(false);
+    }
+    await expect(ProjectionPlanResultSchema.parseAsync(null)).rejects.toBeDefined();
+  });
+
+  it("rejects decisions whose classifier, mapping coverage, targets, or collisions cannot rebuild", () => {
+    const manifest = manifestOf(planSyntheticProjection(input()));
+    const executableClassifier = structuredClone(manifest.decision.classifierInput);
+    const firstArtifact = executableClassifier.artifacts[0];
+    if (firstArtifact === undefined) throw new Error("test fixture lost its first artifact");
+    firstArtifact.contentDisposition = "executable";
+    const invalidDecisions = [
+      { ...manifest.decision, classifierInput: executableClassifier },
+      { ...manifest.decision, mappings: manifest.decision.mappings.slice(0, 1) },
+      {
+        ...manifest.decision,
+        mappings: manifest.decision.mappings.map((mapping, index) =>
+          index === 0 ? { ...mapping, target: "../escape" } : mapping,
+        ),
+      },
+      {
+        ...manifest.decision,
+        mappings: manifest.decision.mappings.map((mapping) => ({
+          ...mapping,
+          target: "rules/collision.md",
+        })),
+      },
+    ];
+
+    for (const candidate of invalidDecisions) {
+      expect(ProjectionDecisionSchema.safeParse(candidate).success).toBe(false);
+    }
+  });
+
+  it("rejects cyclic, exotic, symbolic, and non-data planner snapshots", () => {
+    const cyclic = input() as Record<string, unknown>;
+    cyclic.self = cyclic;
+    const exotic = Object.create({ inherited: true }) as Record<string, unknown>;
+    Object.assign(exotic, input());
+    const symbolic = input() as Record<PropertyKey, unknown>;
+    symbolic[Symbol("hidden")] = true;
+    const keyedMappings = [...(input().mappings as unknown[])] as unknown[] & { extra?: boolean };
+    keyedMappings.extra = true;
+    const nestedCycle = { artifactId: "root", target: "rules/root.md" } as Record<string, unknown>;
+    nestedCycle.self = nestedCycle;
+
+    for (const candidate of [
+      cyclic,
+      exotic,
+      symbolic,
+      { ...input(), mappings: keyedMappings },
+      { ...input(), mappings: [nestedCycle] },
+    ]) {
+      expect(ProjectionPlannerInputSchema.safeParse(candidate).success).toBe(false);
+    }
+  });
+
   it("does not invoke ambient Object prototype error hooks or numeric setters", () => {
     const planned = planSyntheticProjection(input());
     const manifest = manifestOf(planned);
