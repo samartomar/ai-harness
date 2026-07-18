@@ -46,6 +46,7 @@ static const char *const kBlockedReasons[] = {
     "root-identity-drift",
     "root-not-private",
     "root-linked",
+    "root-capability-unproven",
     "root-outside-temporary-directory",
     "filesystem-identity-unavailable",
     "filesystem-identity-drift",

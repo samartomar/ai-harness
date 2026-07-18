@@ -2,6 +2,7 @@ import { spawnSync } from "node:child_process";
 import {
   chmodSync,
   existsSync,
+  linkSync,
   lstatSync,
   mkdirSync,
   mkdtempSync,
@@ -12,6 +13,7 @@ import {
   rmdirSync,
   rmSync,
   symlinkSync,
+  watch,
   writeFileSync,
 } from "node:fs";
 import { createRequire } from "node:module";
@@ -62,13 +64,13 @@ const rawBlockedReport = JSON.stringify({
   })),
 });
 const linuxDispositionReasons = [
-  ["supported", "primitive-qualified"],
-  ["supported", "primitive-qualified"],
-  ["unsupported", "identity-bound-file-detachment-unavailable"],
-  ["unsupported", "identity-bound-directory-detachment-unavailable"],
-  ["supported", "primitive-qualified"],
-  ["supported", "primitive-qualified"],
-  ["unsupported", "substitution-resistance-unavailable"],
+  ["blocked", "root-capability-unproven"],
+  ["blocked", "root-capability-unproven"],
+  ["blocked", "root-capability-unproven"],
+  ["blocked", "root-capability-unproven"],
+  ["blocked", "root-capability-unproven"],
+  ["blocked", "root-capability-unproven"],
+  ["blocked", "root-capability-unproven"],
 ] as const;
 const rawLinuxReport = JSON.stringify({
   schemaVersion: 1,
@@ -118,7 +120,7 @@ function rawReasons(raw: string): string[] {
 
 describe.sequential("native methodology filesystem feasibility", () => {
   it.runIf(process.platform === "linux")(
-    "probes Linux primitives deterministically and leaves the qualified root empty",
+    "blocks unauthenticated Linux roots deterministically and leaves them empty",
     () => {
       const addon = require(addonPath) as { probe(root: string): string };
       const expected = linuxDispositionReasons.map(
@@ -137,6 +139,70 @@ describe.sequential("native methodology filesystem feasibility", () => {
   );
 
   it.runIf(process.platform === "linux")(
+    "leaves a manually minted matching root and hard-linked canary byte-identical",
+    () => {
+      const addon = require(addonPath) as { probe(root: string): string };
+      const root = mkdtempSync(join(realpathSync(tmpdir()), "aih-methodology-native-fs-"));
+      const capture = mkdtempSync(join(realpathSync(tmpdir()), "aih-linux-hardlink-capture-"));
+      const canary = join(root, "must-survive.txt");
+      const escaped = join(capture, "must-survive.txt");
+      writeFileSync(canary, "must-survive-byte-for-byte", { mode: 0o600 });
+      linkSync(canary, escaped);
+      const before = lstatSync(canary, { bigint: true });
+      try {
+        expect(rawReasons(addon.probe(root))).toEqual(
+          primitiveOrder.map(() => "blocked/root-capability-unproven"),
+        );
+        const after = lstatSync(canary, { bigint: true });
+        expect(readFileSync(canary, "utf8")).toBe("must-survive-byte-for-byte");
+        expect(readFileSync(escaped, "utf8")).toBe("must-survive-byte-for-byte");
+        expect({
+          device: after.dev,
+          file: after.ino,
+          links: after.nlink,
+          size: after.size,
+          modified: after.mtimeNs,
+          changed: after.ctimeNs,
+        }).toEqual({
+          device: before.dev,
+          file: before.ino,
+          links: before.nlink,
+          size: before.size,
+          modified: before.mtimeNs,
+          changed: before.ctimeNs,
+        });
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+        rmSync(capture, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it.runIf(process.platform === "linux")(
+    "exposes no transient probe entry to a concurrent directory watcher",
+    async () => {
+      const addon = require(addonPath) as { probe(root: string): string };
+      const capability = createNativeFsProbeCapability();
+      const observed = new Set<string>();
+      const watcher = watch(capability.root, (_event, filename) => {
+        if (filename !== null) observed.add(filename);
+      });
+      try {
+        for (let index = 0; index < 16; index += 1) {
+          expect(rawReasons(addon.probe(capability.root))).toEqual(
+            primitiveOrder.map(() => "blocked/root-capability-unproven"),
+          );
+        }
+        await new Promise((resolvePromise) => setTimeout(resolvePromise, 50));
+      } finally {
+        watcher.close();
+        capability.dispose();
+      }
+      expect([...observed]).toEqual([]);
+    },
+  );
+
+  it.runIf(process.platform === "linux")(
     "blocks direct outside-temp and linked roots before making any change",
     () => {
       const addon = require(addonPath) as { probe(root: string): string };
@@ -147,9 +213,31 @@ describe.sequential("native methodology filesystem feasibility", () => {
         rmdirSync(linkedRoot);
         symlinkSync(linkedTarget, linkedRoot, "dir");
         for (const candidate of outside) {
+          const before =
+            candidate === "relative-root" ? undefined : lstatSync(candidate, { bigint: true });
           expect(rawReasons(addon.probe(candidate))).toEqual(
             primitiveOrder.map(() => "blocked/root-outside-temporary-directory"),
           );
+          if (before !== undefined) {
+            const after = lstatSync(candidate, { bigint: true });
+            expect({
+              device: after.dev,
+              file: after.ino,
+              links: after.nlink,
+              mode: after.mode,
+              size: after.size,
+              modified: after.mtimeNs,
+              changed: after.ctimeNs,
+            }).toEqual({
+              device: before.dev,
+              file: before.ino,
+              links: before.nlink,
+              mode: before.mode,
+              size: before.size,
+              modified: before.mtimeNs,
+              changed: before.ctimeNs,
+            });
+          }
         }
         expect(rawReasons(addon.probe(linkedRoot))).toEqual(
           primitiveOrder.map(() => "blocked/root-linked"),
@@ -163,23 +251,14 @@ describe.sequential("native methodology filesystem feasibility", () => {
   );
 
   it.runIf(process.platform === "linux")(
-    "keeps the Linux backend bounded and maps missing primitives without a fallback",
+    "keeps the Linux backend read-only behind an unauthenticated root boundary",
     () => {
       const source = readFileSync(linuxBackendPath, "utf8");
-      expect(source).toContain("SYS_openat2");
-      expect(source).toContain("RESOLVE_BENEATH");
-      expect(source).toContain("RESOLVE_NO_SYMLINKS");
-      expect(source).toContain("RESOLVE_NO_MAGICLINKS");
-      expect(source).toContain("AT_EMPTY_PATH");
-      expect(source).toContain("O_TMPFILE");
-      expect(source).toContain("SYS_renameat2");
-      expect(source).toContain("RENAME_NOREPLACE");
-      expect(source).toContain("SYS_statx");
-      expect(source).toContain("STATX_MNT_ID");
-      expect(source).toMatch(/ENOSYS[\s\S]+AIH_UNSUPPORTED/);
-      expect(source).toMatch(/EOPNOTSUPP|ENOTSUP/);
+      expect(source).toContain("root-capability-unproven");
+      expect(source).not.toContain("AIH_SUPPORTED");
+      expect(source).not.toContain("AIH_UNSUPPORTED");
       expect(source).not.toMatch(
-        /\/proc|\bsystem\s*\(|\bpopen\s*\(|\bexec[lvpe]*\s*\(|getenv\s*\(/,
+        /\/proc|\bsystem\s*\(|\bpopen\s*\(|\bexec[lvpe]*\s*\(|getenv\s*\(|\blinkat\s*\(|\brenameat2\s*\(|SYS_renameat2|\bunlinkat\s*\(|\bmkdirat\s*\(|\bsymlinkat\s*\(|O_TMPFILE|O_CREAT|O_EXCL|AT_REMOVEDIR|\bwrite\s*\(|\bfsync\s*\(/,
       );
     },
   );
@@ -529,6 +608,11 @@ describe.sequential("native methodology filesystem feasibility", () => {
       disposition: "blocked",
       reason: "native-loader-not-identity-bound",
     });
+    expect(first.nativeRootAuthority).toEqual({
+      authenticated: false,
+      disposition: "blocked",
+      reason: "root-capability-unproven",
+    });
     expect(first.platform).toEqual({
       os: process.platform,
       architecture: process.arch,
@@ -538,6 +622,11 @@ describe.sequential("native methodology filesystem feasibility", () => {
     });
     expect(first.observations.map(({ primitive }) => primitive)).toEqual(primitiveOrder);
     expect(allBlockedReasons(first)).toEqual(expectedPlatformReasons);
+    if (process.platform === "linux") {
+      expect(first.observations.map(({ disposition }) => disposition)).toEqual(
+        primitiveOrder.map(() => "blocked"),
+      );
+    }
     expect(first.boundary).toEqual({
       cli: false,
       executor: false,
@@ -741,6 +830,7 @@ describe.sequential("native methodology filesystem feasibility", () => {
     expect(NativeFsDispositionSchema.safeParse("blocked").success).toBe(true);
     expect(NativeFsDispositionSchema.safeParse("active").success).toBe(false);
     expect(NativeFsReasonCodeSchema.safeParse("native-backend-unimplemented").success).toBe(true);
+    expect(NativeFsReasonCodeSchema.safeParse("root-capability-unproven").success).toBe(true);
     expect(NativeFsReasonCodeSchema.safeParse("unknown-reason").success).toBe(false);
     expect(
       NativeFsObservationSchema.safeParse({
@@ -930,10 +1020,25 @@ describe.sequential("native methodology filesystem feasibility", () => {
       disposition: "blocked",
       reason: "native-loader-not-identity-bound",
     });
+    expect(blocked.nativeRootAuthority).toEqual({
+      authenticated: false,
+      disposition: "blocked",
+      reason: "root-capability-unproven",
+    });
     expect(
       NativeFsCapabilityRecordSchema.safeParse({
         ...blocked,
         state: "supported",
+      }).success,
+    ).toBe(false);
+    expect(
+      NativeFsCapabilityRecordSchema.safeParse({
+        ...blocked,
+        nativeRootAuthority: {
+          authenticated: true,
+          disposition: "supported",
+          reason: "primitive-qualified",
+        },
       }).success,
     ).toBe(false);
     expect(

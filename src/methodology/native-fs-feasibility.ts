@@ -128,6 +128,7 @@ const BLOCKED_REASONS = Object.freeze([
   "root-identity-drift",
   "root-not-private",
   "root-linked",
+  "root-capability-unproven",
   "root-outside-temporary-directory",
   "filesystem-identity-unavailable",
   "filesystem-identity-drift",
@@ -200,6 +201,11 @@ export type NativeFsCapabilityRecord = {
     identityBound: false;
     disposition: "blocked";
     reason: "native-loader-not-identity-bound";
+  };
+  nativeRootAuthority: {
+    authenticated: false;
+    disposition: "blocked";
+    reason: "root-capability-unproven";
   };
   rootIdentity: { device: string; file: string };
   filesystemIdentity: { scope: "filesystem" | "volume"; device: string; type: string };
@@ -533,6 +539,11 @@ const NativeLoaderZodSchema = z.strictObject({
   disposition: z.literal("blocked"),
   reason: z.literal("native-loader-not-identity-bound"),
 });
+const NativeRootAuthorityZodSchema = z.strictObject({
+  authenticated: z.literal(false),
+  disposition: z.literal("blocked"),
+  reason: z.literal("root-capability-unproven"),
+});
 const NativeFsCapabilityRecordZodSchema = z
   .strictObject({
     schemaVersion: z.literal(SCHEMA_VERSION),
@@ -541,6 +552,7 @@ const NativeFsCapabilityRecordZodSchema = z
     platform: PlatformZodSchema,
     nativeComponentVersion: z.literal(NATIVE_COMPONENT_VERSION),
     nativeLoader: NativeLoaderZodSchema,
+    nativeRootAuthority: NativeRootAuthorityZodSchema,
     rootIdentity: RootIdentityZodSchema,
     filesystemIdentity: FilesystemIdentityZodSchema,
     observations: z.array(NativeFsObservationZodSchema).length(NATIVE_FS_PRIMITIVES.length),
@@ -613,6 +625,11 @@ function canonicalRecord(record: NativeFsCapabilityRecord): NativeFsCapabilityRe
       identityBound: false,
       disposition: "blocked",
       reason: "native-loader-not-identity-bound",
+    },
+    nativeRootAuthority: {
+      authenticated: false,
+      disposition: "blocked",
+      reason: "root-capability-unproven",
     },
     rootIdentity: { device: record.rootIdentity.device, file: record.rootIdentity.file },
     filesystemIdentity: {
@@ -1183,6 +1200,11 @@ function recordFor(
       identityBound: false,
       disposition: "blocked",
       reason: "native-loader-not-identity-bound",
+    },
+    nativeRootAuthority: {
+      authenticated: false,
+      disposition: "blocked",
+      reason: "root-capability-unproven",
     },
     rootIdentity: {
       device: bigintString(metadata.identity.device),
