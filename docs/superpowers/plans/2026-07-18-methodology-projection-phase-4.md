@@ -30,6 +30,29 @@ tests. Passing would require weakening the locked trust rules, so no such fallba
 The experiment establishes that ordinary Node pathname APIs do not make the Phase 4A native
 authority problem unnecessary. Phase 5 and Phase 6 remain blocked.
 
+### Closeout evidence
+
+| Field | Evidence |
+|---|---|
+| Reviewed base | `232cfd7ade01713461152e5303ceb919af54ecf7` |
+| Rejected pure-Node candidate | `d894deb68119ea5b495c234671aecf21a95099e1` |
+| Candidate disposition | Preserved in branch history for cross-PC reproduction; removed from the final branch tree so the unsafe mutation API is not a deliverable. |
+| Focused transaction suite | `45` passed, `1` Linux platform skip. |
+| Methodology suite | `228` passed, `5` platform skips. |
+| Full repository verification | Exit `0`; `228` files passed, `3,715` tests passed, `5` skipped; coverage thresholds passed. |
+| Static gates | Typecheck, lint, documentation lint, tracked-artifact check, build, package checks, and `git diff --check` passed. |
+| Correctness review | `PHASE_4_CORRECTNESS_FAIL_CLOSED`; reproduced out-of-root apply, false clean success, inexact replay, missing atomic staging, mismatched fault points, and an unbounded pre-limit scan. |
+| Security review | `PHASE_4_SECURITY_FAIL_CLOSED`; the Phase 4A gate remains controlling, pathname TOCTOU and device/volume gaps remain, and ambient/environment-controlled authority was found. |
+| Filesystem/platform review | `PHASE_4_TRANSACTION_SPECIALIST_FAIL_CLOSED` on Linux, Windows, and macOS; ordinary Node path operations cannot bind ancestor identity, no-replace publication, deletion authority, or parent durability. |
+| Documentation review | `PHASE_4_DOCUMENTATION_CLAIMS_FAIL_CLOSED`; `temporaryRootOnly`, `applied`, `cleaned`, durability, and recovery wording were unsupported by hostile substitution evidence. |
+| Three-OS candidate workflow | Run `29652199636` at the rejected candidate SHA failed. Ubuntu passed every step. macOS and Windows passed focused transaction tests, native build, methodology, typecheck, lint, and documentation lint, then failed unchanged 91% statement coverage at `90.80%` and `90.84%`; each had `227` test files pass and one platform-skipped file. |
+| Final safe-tree verification | After removing the unsafe module, tests, and candidate workflow, `npm run verify` passed: `227` files, `3,670` tests passed, `4` skipped; coverage `91.33/81.95/95.98/93.59`. |
+
+The exact candidate review found no provider/host source access or execution, CLI wiring,
+network/process capability, package-manager launch from production transaction code, or
+native transaction dependency. Review probes wrote only within disposable OS-temporary roots,
+including sibling roots used as containment canaries. No Phase 5 or Phase 6 work began.
+
 ## Required Constraints
 
 The following are the unchanged qualification constraints used to evaluate the candidate. The
