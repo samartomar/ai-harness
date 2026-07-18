@@ -41,6 +41,9 @@ const bindingGypPath = fileURLToPath(
 const linuxBackendPath = fileURLToPath(
   new URL("../../native/methodology-fs/src/backend_linux.c", import.meta.url),
 );
+const windowsBackendPath = fileURLToPath(
+  new URL("../../native/methodology-fs/src/backend_windows.c", import.meta.url),
+);
 const addonBuildAncestor = fileURLToPath(
   new URL("../../native/methodology-fs/build", import.meta.url),
 );
@@ -81,6 +84,24 @@ const rawLinuxReport = JSON.stringify({
     reason: linuxDispositionReasons[index]?.[1],
   })),
 });
+const windowsDispositionReasons = [
+  ["blocked", "root-capability-unproven"],
+  ["blocked", "root-capability-unproven"],
+  ["blocked", "root-capability-unproven"],
+  ["blocked", "root-capability-unproven"],
+  ["blocked", "root-capability-unproven"],
+  ["blocked", "root-capability-unproven"],
+  ["blocked", "root-capability-unproven"],
+] as const;
+const rawWindowsReport = JSON.stringify({
+  schemaVersion: 1,
+  nativeProtocolVersion: "phase-4a-native-observations-v1",
+  observations: primitiveOrder.map((primitive, index) => ({
+    primitive,
+    disposition: windowsDispositionReasons[index]?.[0],
+    reason: windowsDispositionReasons[index]?.[1],
+  })),
+});
 const rawOutsideRootReport = JSON.stringify({
   schemaVersion: 1,
   nativeProtocolVersion: "phase-4a-native-observations-v1",
@@ -90,11 +111,18 @@ const rawOutsideRootReport = JSON.stringify({
     reason: "root-outside-temporary-directory",
   })),
 });
-const expectedPlatformRawReport = process.platform === "linux" ? rawLinuxReport : rawBlockedReport;
+const expectedPlatformRawReport =
+  process.platform === "linux"
+    ? rawLinuxReport
+    : process.platform === "win32"
+      ? rawWindowsReport
+      : rawBlockedReport;
 const expectedPlatformReasons =
   process.platform === "linux"
     ? linuxDispositionReasons.map(([, reason]) => reason)
-    : primitiveOrder.map(() => "native-backend-unimplemented");
+    : process.platform === "win32"
+      ? windowsDispositionReasons.map(([, reason]) => reason)
+      : primitiveOrder.map(() => "native-backend-unimplemented");
 
 function withCapability<T>(
   run: (root: string, capability: ReturnType<typeof createNativeFsProbeCapability>) => T,
@@ -263,6 +291,107 @@ describe.sequential("native methodology filesystem feasibility", () => {
     },
   );
 
+  it("keeps the Windows backend mutation-free behind a fixed unauthenticated root boundary", () => {
+    const source = readFileSync(windowsBackendPath, "utf8");
+    expect(source).toContain("AIH_NATIVE_FS_OBSERVATION_COUNT");
+    expect(source).toContain("(enum aih_native_fs_primitive)index");
+    expect(source).toContain("AIH_BLOCKED");
+    expect(source).toContain("root-capability-unproven");
+    expect(source).not.toContain("native-backend-unimplemented");
+    expect(source).not.toContain("AIH_SUPPORTED");
+    expect(source).not.toContain("AIH_UNSUPPORTED");
+    expect(source).not.toMatch(
+      /\b(?:CreateFileW|SetFileInformationByHandle|WriteFile|FlushFileBuffers|MoveFileW|MoveFileExW|ReplaceFileW|DeleteFileW|RemoveDirectoryW|CreateDirectoryW|CreateHardLinkW|DeviceIoControl|CreateProcessW|WinExec|ShellExecuteW|LoadLibraryW|GetProcAddress|WinHttpOpen|InternetOpenW|WSAStartup)\s*\(|\b(?:system|popen|exec[lvpe]*|spawn[lvpe]*|fopen|freopen|open|rename|remove|unlink|mkdir|rmdir|write|fsync)\s*\(/,
+    );
+
+    const record = withCapability((_root, capability) => probeNativeFilesystem(capability));
+    const windowsRecord = NativeFsCapabilityRecordSchema.parse({
+      ...record,
+      platform: { ...record.platform, os: "win32" },
+      filesystemIdentity: { ...record.filesystemIdentity, scope: "volume" },
+      observations: primitiveOrder.map((primitive) => ({
+        primitive,
+        primitiveVersion: "phase-4a-primitive-v1",
+        disposition: "blocked",
+        reason: "root-capability-unproven",
+      })),
+    });
+    expect(windowsRecord.nativeRootAuthority).toEqual({
+      authenticated: false,
+      disposition: "blocked",
+      reason: "root-capability-unproven",
+    });
+    expect(
+      NativeFsCapabilityRecordSchema.safeParse({
+        ...windowsRecord,
+        nativeRootAuthority: {
+          authenticated: true,
+          disposition: "supported",
+          reason: "primitive-qualified",
+        },
+      }).success,
+    ).toBe(false);
+  });
+
+  it.runIf(process.platform === "win32")(
+    "blocks plausible Windows roots without changing fixture or host paths",
+    () => {
+      const addon = require(addonPath) as { probe(root: string): string };
+      const capability = createNativeFsProbeCapability();
+      const manualRoot = mkdtempSync(join(realpathSync(tmpdir()), "aih-methodology-native-fs-"));
+      const fixtureRoots = [capability.root, manualRoot];
+      const hostPaths = [process.cwd(), homedir()];
+      const candidates = [...fixtureRoots, ...hostPaths];
+      const fixtureBefore = fixtureRoots.map((candidate) => lstatSync(candidate, { bigint: true }));
+      const hostBefore = hostPaths.map((candidate) => {
+        const stat = lstatSync(candidate, { bigint: true });
+        return { device: stat.dev, file: stat.ino, mode: stat.mode };
+      });
+      try {
+        for (const candidate of candidates) {
+          expect(rawReasons(addon.probe(candidate))).toEqual(
+            primitiveOrder.map(() => "blocked/root-capability-unproven"),
+          );
+        }
+        const fixtureAfter = fixtureRoots.map((candidate) =>
+          lstatSync(candidate, { bigint: true }),
+        );
+        expect(
+          fixtureAfter.map((stat) => ({
+            device: stat.dev,
+            file: stat.ino,
+            links: stat.nlink,
+            mode: stat.mode,
+            size: stat.size,
+            modified: stat.mtimeNs,
+            changed: stat.ctimeNs,
+          })),
+        ).toEqual(
+          fixtureBefore.map((stat) => ({
+            device: stat.dev,
+            file: stat.ino,
+            links: stat.nlink,
+            mode: stat.mode,
+            size: stat.size,
+            modified: stat.mtimeNs,
+            changed: stat.ctimeNs,
+          })),
+        );
+        expect(
+          hostPaths.map((candidate) => {
+            const stat = lstatSync(candidate, { bigint: true });
+            return { device: stat.dev, file: stat.ino, mode: stat.mode };
+          }),
+        ).toEqual(hostBefore);
+        expect(readdirSync(capability.root)).toEqual([]);
+        expect(readdirSync(manualRoot)).toEqual([]);
+      } finally {
+        capability.dispose();
+        rmdirSync(manualRoot);
+      }
+    },
+  );
+
   it("rejects a preloaded unowned native addon cache entry", () => {
     const addon = require(addonPath) as { probe?: unknown };
     try {
@@ -296,7 +425,13 @@ describe.sequential("native methodology filesystem feasibility", () => {
     expect(() => probe("x".repeat(4_097))).toThrow(RangeError);
     expect(() => probe("\u{1F600}".repeat(1_025))).toThrow(RangeError);
     expect(() => probe("root", "unexpected")).toThrow(TypeError);
-    expect(probe("root-\u{1F600}")).toBe(rawOutsideRootReport);
+    expect(probe("root-\u{1F600}")).toBe(
+      process.platform === "linux"
+        ? rawOutsideRootReport
+        : process.platform === "win32"
+          ? rawWindowsReport
+          : rawBlockedReport,
+    );
     expect(withCapability((root) => probe(root))).toBe(expectedPlatformRawReport);
   });
 
