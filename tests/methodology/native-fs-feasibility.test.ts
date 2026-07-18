@@ -7,6 +7,7 @@ import {
   mkdtempSync,
   realpathSync,
   renameSync,
+  rmdirSync,
   rmSync,
   statfsSync,
   symlinkSync,
@@ -30,6 +31,9 @@ import {
 const require = createRequire(import.meta.url);
 const addonPath = fileURLToPath(
   new URL("../../native/methodology-fs/build/Release/methodology_fs.node", import.meta.url),
+);
+const addonBuildAncestor = fileURLToPath(
+  new URL("../../native/methodology-fs/build", import.meta.url),
 );
 const moduleUrl = new URL("../../src/methodology/native-fs-feasibility.ts", import.meta.url);
 const primitiveOrder = [
@@ -173,6 +177,146 @@ describe.sequential("native methodology filesystem feasibility", () => {
     }
   });
 
+  it("rejects an external ancestor symlink before native loading or cache insertion", async () => {
+    const actualFs = await vi.importActual<typeof import("node:fs")>("node:fs");
+    const actualModule = await vi.importActual<typeof import("node:module")>("node:module");
+    const externalRoot = mkdtempSync(join(realpathSync(tmpdir()), "aih-native-ancestor-"));
+    const externalTarget = join(externalRoot, "external-target");
+    const externalLink = join(externalRoot, "ancestor-link");
+    mkdirSync(externalTarget, { mode: 0o700 });
+    writeFileSync(join(externalTarget, "methodology_fs.node"), "must not load", { mode: 0o600 });
+    symlinkSync(externalTarget, externalLink, process.platform === "win32" ? "junction" : "dir");
+    let nativeLoads = 0;
+    const cache = Object.create(null) as NodeJS.Dict<NodeModule>;
+    vi.doMock("node:fs", () => ({
+      ...actualFs,
+      lstatSync(path: Parameters<typeof actualFs.lstatSync>[0], options?: unknown) {
+        return actualFs.lstatSync(
+          path === addonBuildAncestor ? externalLink : path,
+          options as never,
+        );
+      },
+    }));
+    vi.doMock("node:module", () => ({
+      ...actualModule,
+      createRequire() {
+        const fakeRequire = (() => {
+          nativeLoads += 1;
+          throw new Error("native loader must not run");
+        }) as unknown as NodeRequire;
+        fakeRequire.cache = cache;
+        return fakeRequire;
+      },
+    }));
+    vi.resetModules();
+    try {
+      const isolated = await import("../../src/methodology/native-fs-feasibility.js");
+      const capability = isolated.createNativeFsProbeCapability();
+      try {
+        const record = isolated.probeNativeFilesystem(capability);
+        expect(allBlockedReasons(record)).toEqual(
+          primitiveOrder.map(() => "native-addon-ancestor-invalid"),
+        );
+        expect(record.nativeLoader).toEqual({
+          identityBound: false,
+          disposition: "blocked",
+          reason: "native-loader-not-identity-bound",
+        });
+      } finally {
+        capability.dispose();
+      }
+      expect(nativeLoads).toBe(0);
+      expect(Object.keys(cache)).toEqual([]);
+    } finally {
+      vi.doUnmock("node:fs");
+      vi.doUnmock("node:module");
+      vi.resetModules();
+      rmSync(externalRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("blocks an oversized addon before reading bytes or invoking the native loader", async () => {
+    const actualFs = await vi.importActual<typeof import("node:fs")>("node:fs");
+    const actualModule = await vi.importActual<typeof import("node:module")>("node:module");
+    let reads = 0;
+    let nativeLoads = 0;
+    vi.doMock("node:fs", () => ({
+      ...actualFs,
+      lstatSync(path: Parameters<typeof actualFs.lstatSync>[0], options?: unknown) {
+        const stat = actualFs.lstatSync(path, options as never);
+        return path === addonPath ? { ...stat, size: 1_000_000_000n } : stat;
+      },
+      readFileSync(...args: Parameters<typeof actualFs.readFileSync>) {
+        reads += 1;
+        return actualFs.readFileSync(...args);
+      },
+    }));
+    vi.doMock("node:module", () => ({
+      ...actualModule,
+      createRequire() {
+        const fakeRequire = (() => {
+          nativeLoads += 1;
+          throw new Error("oversized addon must not load");
+        }) as unknown as NodeRequire;
+        fakeRequire.cache = Object.create(null) as NodeJS.Dict<NodeModule>;
+        return fakeRequire;
+      },
+    }));
+    vi.resetModules();
+    try {
+      const isolated = await import("../../src/methodology/native-fs-feasibility.js");
+      const capability = isolated.createNativeFsProbeCapability();
+      try {
+        const record = isolated.probeNativeFilesystem(capability);
+        expect(allBlockedReasons(record)).toEqual(
+          primitiveOrder.map(() => "native-addon-oversized"),
+        );
+      } finally {
+        capability.dispose();
+      }
+      expect(reads).toBe(0);
+      expect(nativeLoads).toBe(0);
+    } finally {
+      vi.doUnmock("node:fs");
+      vi.doUnmock("node:module");
+      vi.resetModules();
+    }
+  });
+
+  it("keeps a descriptor-less capability live without pathname removal or revocation", async () => {
+    const actualFs = await vi.importActual<typeof import("node:fs")>("node:fs");
+    vi.doMock("node:fs", () => ({
+      ...actualFs,
+      openSync() {
+        throw new Error("descriptor unavailable");
+      },
+    }));
+    vi.resetModules();
+    try {
+      const isolated = await import("../../src/methodology/native-fs-feasibility.js");
+      const capability = isolated.createNativeFsProbeCapability();
+      const authenticRoot = `${capability.root}.authentic`;
+      renameSync(capability.root, authenticRoot);
+      mkdirSync(capability.root, { mode: 0o700 });
+      capability.dispose();
+      expect(existsSync(capability.root)).toBe(true);
+      expect(existsSync(authenticRoot)).toBe(true);
+      expect(allBlockedReasons(isolated.probeNativeFilesystem(capability))).toEqual(
+        primitiveOrder.map(() => "root-identity-drift"),
+      );
+      rmdirSync(capability.root);
+      renameSync(authenticRoot, capability.root);
+      capability.dispose();
+      expect(existsSync(capability.root)).toBe(true);
+      expect(() => isolated.probeNativeFilesystem(capability)).not.toThrow();
+      rmdirSync(capability.root);
+      delete require.cache[addonPath];
+    } finally {
+      vi.doUnmock("node:fs");
+      vi.resetModules();
+    }
+  });
+
   it("mints an opaque private capability under the actual operating-system temporary root", () => {
     const capability = createNativeFsProbeCapability();
     const root = capability.root;
@@ -203,6 +347,11 @@ describe.sequential("native methodology filesystem feasibility", () => {
     expect(first.schemaVersion).toBe(1);
     expect(first.probeVersion).toBe("phase-4a-native-fs-v1");
     expect(first.state).toBe("blocked");
+    expect(first.nativeLoader).toEqual({
+      identityBound: false,
+      disposition: "blocked",
+      reason: "native-loader-not-identity-bound",
+    });
     expect(first.platform).toEqual({
       os: process.platform,
       architecture: process.arch,
@@ -327,6 +476,11 @@ describe.sequential("native methodology filesystem feasibility", () => {
           nodeApiVersion: process.versions.napi,
         },
         nativeComponentVersion: "phase-4a-native-fs-native-v1",
+        nativeLoader: {
+          identityBound: false,
+          disposition: "blocked",
+          reason: "native-loader-not-identity-bound",
+        },
         rootIdentity: { device: stat.dev.toString(), file: stat.ino.toString() },
         filesystemIdentity: {
           scope: process.platform === "win32" ? "volume" : "filesystem",
@@ -518,7 +672,7 @@ describe.sequential("native methodology filesystem feasibility", () => {
     ).toBe(false);
   });
 
-  it("validates unsupported state and rejects state and platform-scope mismatches", () => {
+  it("preserves unsupported observations while blocking state and rejects mismatches", () => {
     const record = withCapability((_root, capability) => probeNativeFilesystem(capability));
     const unsupportedReasons = [
       "identity-bound-file-publication-unavailable",
@@ -531,7 +685,7 @@ describe.sequential("native methodology filesystem feasibility", () => {
     ] as const;
     const unsupported = {
       ...record,
-      state: "unsupported",
+      state: "blocked",
       observations: record.observations.map((observation, index) => ({
         ...observation,
         disposition: "unsupported",
@@ -540,7 +694,7 @@ describe.sequential("native methodology filesystem feasibility", () => {
     };
     expect(NativeFsCapabilityRecordSchema.safeParse(unsupported).success).toBe(true);
     expect(
-      NativeFsCapabilityRecordSchema.safeParse({ ...record, state: "unsupported" }).success,
+      NativeFsCapabilityRecordSchema.safeParse({ ...unsupported, state: "unsupported" }).success,
     ).toBe(false);
     expect(
       NativeFsCapabilityRecordSchema.safeParse({
@@ -567,6 +721,46 @@ describe.sequential("native methodology filesystem feasibility", () => {
       })),
     };
     expect(NativeFsCapabilityRecordSchema.safeParse(forgedSupported).success).toBe(false);
+  });
+
+  it("keeps all backend observations visible but blocks state while the loader is unbound", () => {
+    const record = withCapability((_root, capability) => probeNativeFilesystem(capability));
+    const observations = primitiveOrder.map((primitive) => ({
+      primitive,
+      primitiveVersion: "phase-4a-primitive-v1",
+      disposition: "supported",
+      reason: "primitive-qualified",
+    }));
+    const blocked = NativeFsCapabilityRecordSchema.parse({
+      ...record,
+      state: "blocked",
+      observations,
+    });
+    expect(blocked.state).toBe("blocked");
+    expect(blocked.observations.map((observation) => observation.disposition)).toEqual(
+      primitiveOrder.map(() => "supported"),
+    );
+    expect(blocked.nativeLoader).toEqual({
+      identityBound: false,
+      disposition: "blocked",
+      reason: "native-loader-not-identity-bound",
+    });
+    expect(
+      NativeFsCapabilityRecordSchema.safeParse({
+        ...blocked,
+        state: "supported",
+      }).success,
+    ).toBe(false);
+    expect(
+      NativeFsCapabilityRecordSchema.safeParse({
+        ...blocked,
+        nativeLoader: {
+          identityBound: true,
+          disposition: "supported",
+          reason: "primitive-qualified",
+        },
+      }).success,
+    ).toBe(false);
   });
 
   it("rejects proxies and accessors without invoking user code", () => {

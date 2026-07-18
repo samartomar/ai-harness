@@ -14,7 +14,7 @@ import {
 } from "node:fs";
 import { createRequire } from "node:module";
 import { arch, platform, tmpdir } from "node:os";
-import { join, relative } from "node:path";
+import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { isProxy } from "node:util/types";
 import { z } from "zod";
@@ -64,6 +64,7 @@ const PROBE_VERSION = "phase-4a-native-fs-v1" as const;
 const NATIVE_COMPONENT_VERSION = "phase-4a-native-fs-native-v1" as const;
 const PRIMITIVE_VERSION = "phase-4a-primitive-v1" as const;
 const MAX_NATIVE_REPORT_BYTES = 65_536;
+const MAX_NATIVE_ADDON_BYTES = 32 * 1024 * 1024;
 const MAX_SNAPSHOT_ARRAY_LENGTH = 16;
 const MAX_SNAPSHOT_RECORD_KEYS = 16;
 const MAX_SNAPSHOT_DEPTH = 8;
@@ -71,6 +72,8 @@ const MAX_SNAPSHOT_NODES = 128;
 const CAPABILITY_PREFIX = "aih-methodology-native-fs-";
 const require = createRequire(import.meta.url);
 const OWNED_REQUIRE_CACHE = require.cache;
+const REPOSITORY_ROOT = resolve(fileURLToPath(new URL("../../", import.meta.url)));
+const REPOSITORY_NATIVE_ROOT = resolve(fileURLToPath(new URL("../../native/", import.meta.url)));
 const EXPECTED_ADDON_PATH = fileURLToPath(
   new URL("../../native/methodology-fs/build/Release/methodology_fs.node", import.meta.url),
 );
@@ -80,6 +83,13 @@ const EXPECTED_ADDON_BUILD_LINK = fileURLToPath(
     import.meta.url,
   ),
 );
+const EXPECTED_ADDON_ANCESTORS = Object.freeze([
+  REPOSITORY_ROOT,
+  REPOSITORY_NATIVE_ROOT,
+  join(REPOSITORY_NATIVE_ROOT, "methodology-fs"),
+  join(REPOSITORY_NATIVE_ROOT, "methodology-fs", "build"),
+  join(REPOSITORY_NATIVE_ROOT, "methodology-fs", "build", "Release"),
+] as const);
 
 export const NATIVE_FS_PRIMITIVES = Object.freeze([
   "identity-bound-file-publication",
@@ -106,6 +116,9 @@ const BLOCKED_REASONS = Object.freeze([
   "native-addon-unavailable",
   "native-addon-load-failed",
   "native-addon-abi-mismatch",
+  "native-addon-ancestor-invalid",
+  "native-addon-oversized",
+  "native-loader-not-identity-bound",
   "native-report-invalid",
   "native-report-oversized",
   "native-operation-failed",
@@ -173,7 +186,7 @@ export type NativeFsObservation = {
 export type NativeFsCapabilityRecord = {
   schemaVersion: typeof SCHEMA_VERSION;
   probeVersion: typeof PROBE_VERSION;
-  state: NativeFsDisposition;
+  state: "blocked";
   platform: {
     os: NodeJS.Platform;
     architecture: string;
@@ -182,6 +195,11 @@ export type NativeFsCapabilityRecord = {
     nodeApiVersion: string;
   };
   nativeComponentVersion: typeof NATIVE_COMPONENT_VERSION;
+  nativeLoader: {
+    identityBound: false;
+    disposition: "blocked";
+    reason: "native-loader-not-identity-bound";
+  };
   rootIdentity: { device: string; file: string };
   filesystemIdentity: { scope: "filesystem" | "volume"; device: string; type: string };
   observations: NativeFsObservation[];
@@ -217,11 +235,21 @@ type ArtifactIdentity = {
   readonly changed: bigint;
   readonly digest: string;
 };
+type ArtifactCapture =
+  | { readonly state: "ready"; readonly identity: ArtifactIdentity }
+  | { readonly state: "unavailable" | "invalid" | "oversized" };
+type AncestorIdentity = {
+  readonly path: string;
+  readonly device: bigint;
+  readonly file: bigint;
+  readonly mode: bigint;
+};
 type OwnedAddon = {
   readonly module: NodeModule;
   readonly exports: object;
   readonly probe: CallableFunction;
   readonly artifact: ArtifactIdentity;
+  readonly ancestors: readonly AncestorIdentity[];
 };
 type SnapshotState = { depth: number; nodes: number; active: WeakSet<object> };
 type SnapshotResult = { ok: true; value: unknown } | { ok: false };
@@ -473,20 +501,25 @@ const BoundaryZodSchema = z.strictObject({
   network: z.literal(false),
   nonTemporaryWrites: z.literal(false),
 });
+const NativeLoaderZodSchema = z.strictObject({
+  identityBound: z.literal(false),
+  disposition: z.literal("blocked"),
+  reason: z.literal("native-loader-not-identity-bound"),
+});
 const NativeFsCapabilityRecordZodSchema = z
   .strictObject({
     schemaVersion: z.literal(SCHEMA_VERSION),
     probeVersion: z.literal(PROBE_VERSION),
-    state: NativeFsDispositionZodSchema,
+    state: z.literal("blocked"),
     platform: PlatformZodSchema,
     nativeComponentVersion: z.literal(NATIVE_COMPONENT_VERSION),
+    nativeLoader: NativeLoaderZodSchema,
     rootIdentity: RootIdentityZodSchema,
     filesystemIdentity: FilesystemIdentityZodSchema,
     observations: z.array(NativeFsObservationZodSchema).length(NATIVE_FS_PRIMITIVES.length),
     boundary: BoundaryZodSchema,
   })
   .superRefine((record, context) => {
-    let expectedState: NativeFsDisposition = "supported";
     for (let index = 0; index < record.observations.length; index += 1) {
       const observation = record.observations[index];
       if (observation?.primitive !== NATIVE_FS_PRIMITIVES[index]) {
@@ -496,13 +529,6 @@ const NativeFsCapabilityRecordZodSchema = z
           message: "primitive order is fixed",
         });
       }
-      if (observation?.disposition === "blocked") expectedState = "blocked";
-      else if (observation?.disposition === "unsupported" && expectedState === "supported") {
-        expectedState = "unsupported";
-      }
-    }
-    if (record.state !== expectedState) {
-      context.addIssue({ code: "custom", path: ["state"], message: "state does not match" });
     }
     if (
       record.filesystemIdentity.type === "unavailable" &&
@@ -556,6 +582,11 @@ function canonicalRecord(record: NativeFsCapabilityRecord): NativeFsCapabilityRe
       nodeApiVersion: record.platform.nodeApiVersion,
     },
     nativeComponentVersion: NATIVE_COMPONENT_VERSION,
+    nativeLoader: {
+      identityBound: false,
+      disposition: "blocked",
+      reason: "native-loader-not-identity-bound",
+    },
     rootIdentity: { device: record.rootIdentity.device, file: record.rootIdentity.file },
     filesystemIdentity: {
       scope: record.filesystemIdentity.scope,
@@ -734,6 +765,7 @@ function openRootDescriptor(root: string): number | undefined {
 
 function disposeCapability(capability: object, metadata: CapabilityMetadata): void {
   if (rootFailureReason(metadata) !== undefined) return;
+  if (metadata.rootDescriptor === undefined) return;
   try {
     rmdirSync(metadata.root);
   } catch {
@@ -742,12 +774,10 @@ function disposeCapability(capability: object, metadata: CapabilityMetadata): vo
   const authentic = descriptorIdentity(metadata.rootDescriptor);
   const pathGone = statRootIdentity(metadata.root) === undefined;
   const descriptorConfirmsRemoval =
-    metadata.rootDescriptor === undefined ||
-    (sameRootIdentity(metadata.identity, authentic) &&
-      (platform() === "win32" ||
-        fstatSync(metadata.rootDescriptor, { bigint: true }).nlink === 0n));
+    sameRootIdentity(metadata.identity, authentic) &&
+    (platform() === "win32" || fstatSync(metadata.rootDescriptor, { bigint: true }).nlink === 0n);
   if (!pathGone || !descriptorConfirmsRemoval) return;
-  if (metadata.rootDescriptor !== undefined) closeSync(metadata.rootDescriptor);
+  closeSync(metadata.rootDescriptor);
   weakSetDelete(CAPABILITIES, capability);
 }
 
@@ -830,9 +860,8 @@ function hashBytes(bytes: Buffer): string {
   return callIntrinsic<string>(HASH_DIGEST, hash, ["hex"]);
 }
 
-function sameArtifact(left: ArtifactIdentity, right: ArtifactIdentity | undefined): boolean {
+function sameArtifact(left: ArtifactIdentity, right: ArtifactIdentity): boolean {
   return (
-    right !== undefined &&
     left.device === right.device &&
     left.file === right.file &&
     left.size === right.size &&
@@ -843,11 +872,16 @@ function sameArtifact(left: ArtifactIdentity, right: ArtifactIdentity | undefine
   );
 }
 
-function captureArtifact(path: string): ArtifactIdentity | undefined {
+function captureArtifact(path: string): ArtifactCapture {
+  let before: ReturnType<typeof lstatSync>;
   try {
-    const before = lstatSync(path, { bigint: true });
+    before = lstatSync(path, { bigint: true });
+  } catch {
+    return { state: "unavailable" };
+  }
+  try {
     if ((before.mode & 0o170000n) !== 0o100000n || before.nlink < 1n || before.nlink > 2n) {
-      return undefined;
+      return { state: "invalid" };
     }
     if (before.nlink === 2n) {
       const buildLink = lstatSync(EXPECTED_ADDON_BUILD_LINK, { bigint: true });
@@ -856,9 +890,10 @@ function captureArtifact(path: string): ArtifactIdentity | undefined {
         buildLink.dev !== before.dev ||
         buildLink.ino !== before.ino
       ) {
-        return undefined;
+        return { state: "invalid" };
       }
     }
+    if (before.size > BigInt(MAX_NATIVE_ADDON_BYTES)) return { state: "oversized" };
     const digest = hashBytes(readFileSync(path));
     const after = lstatSync(path, { bigint: true });
     const identity = {
@@ -879,10 +914,76 @@ function captureArtifact(path: string): ArtifactIdentity | undefined {
       changed: after.ctimeNs,
       digest,
     };
-    return sameArtifact(identity, afterIdentity) ? identity : undefined;
+    return sameArtifact(identity, afterIdentity)
+      ? { state: "ready", identity }
+      : { state: "invalid" };
+  } catch {
+    return { state: "invalid" };
+  }
+}
+
+function addonPathIsContained(): boolean {
+  const expected = join(
+    REPOSITORY_NATIVE_ROOT,
+    "methodology-fs",
+    "build",
+    "Release",
+    "methodology_fs.node",
+  );
+  const child = relative(REPOSITORY_NATIVE_ROOT, EXPECTED_ADDON_PATH);
+  return (
+    EXPECTED_ADDON_PATH === expected &&
+    child.length > 0 &&
+    child !== ".." &&
+    !stringStartsWith(child, `..${sep}`) &&
+    !isAbsolute(child)
+  );
+}
+
+function captureAncestorChain(): readonly AncestorIdentity[] | undefined {
+  if (!addonPathIsContained()) return undefined;
+  const ancestors: AncestorIdentity[] = [];
+  try {
+    for (let index = 0; index < EXPECTED_ADDON_ANCESTORS.length; index += 1) {
+      const path = EXPECTED_ADDON_ANCESTORS[index];
+      if (path === undefined) return undefined;
+      const identity = lstatSync(path, { bigint: true });
+      if ((identity.mode & 0o170000n) !== 0o040000n || resolve(realpathSync(path)) !== path) {
+        return undefined;
+      }
+      appendOwn(ancestors, {
+        path,
+        device: identity.dev,
+        file: identity.ino,
+        mode: identity.mode,
+      });
+    }
   } catch {
     return undefined;
   }
+  return ancestors;
+}
+
+function sameAncestorChain(
+  left: readonly AncestorIdentity[],
+  right: readonly AncestorIdentity[] | undefined,
+): boolean {
+  if (right === undefined || left.length !== right.length) return false;
+  for (let index = 0; index < left.length; index += 1) {
+    const leftIdentity = left[index];
+    const rightIdentity = right[index];
+    if (
+      leftIdentity === undefined ||
+      rightIdentity === undefined ||
+      leftIdentity.path !== rightIdentity.path ||
+      leftIdentity.device !== rightIdentity.device ||
+      leftIdentity.file !== rightIdentity.file ||
+      leftIdentity.mode !== rightIdentity.mode
+    ) {
+      return false;
+    }
+  }
+  return true;
 }
 
 function cacheIsOwned(): boolean {
@@ -924,18 +1025,25 @@ function exportsProbe(exportsValue: unknown): CallableFunction | undefined {
     : undefined;
 }
 
-function loadOwnedAddon(): "ready" | "unavailable" | "load-failed" | "abi-mismatch" {
-  if (ownedAddon !== undefined) return validateOwnedAddon() ? "ready" : "abi-mismatch";
-  if (!cacheIsOwned()) return "abi-mismatch";
-  const artifactBefore = captureArtifact(EXPECTED_ADDON_PATH);
-  if (artifactBefore === undefined) {
-    try {
-      lstatSync(EXPECTED_ADDON_PATH);
-      return "load-failed";
-    } catch {
-      return "unavailable";
-    }
+function loadOwnedAddon():
+  | "ready"
+  | "unavailable"
+  | "load-failed"
+  | "abi-mismatch"
+  | "ancestor-invalid"
+  | "oversized" {
+  if (ownedAddon !== undefined) {
+    const currentAncestors = captureAncestorChain();
+    if (!sameAncestorChain(ownedAddon.ancestors, currentAncestors)) return "ancestor-invalid";
+    return validateOwnedAddon() ? "ready" : "abi-mismatch";
   }
+  if (!cacheIsOwned()) return "abi-mismatch";
+  const ancestorsBefore = captureAncestorChain();
+  if (ancestorsBefore === undefined) return "ancestor-invalid";
+  const artifactBefore = captureArtifact(EXPECTED_ADDON_PATH);
+  if (artifactBefore.state === "unavailable") return "unavailable";
+  if (artifactBefore.state === "oversized") return "oversized";
+  if (artifactBefore.state !== "ready") return "load-failed";
   if (cacheDescriptor() !== undefined) return "abi-mismatch";
   let exportsValue: unknown;
   try {
@@ -943,11 +1051,16 @@ function loadOwnedAddon(): "ready" | "unavailable" | "load-failed" | "abi-mismat
   } catch {
     return "load-failed";
   }
+  const ancestorsAfter = captureAncestorChain();
   const artifactAfter = captureArtifact(EXPECTED_ADDON_PATH);
   const loadedModule = cacheEntry();
   const probe = exportsProbe(exportsValue);
+  if (!sameAncestorChain(ancestorsBefore, ancestorsAfter)) {
+    return "ancestor-invalid";
+  }
   if (
-    !sameArtifact(artifactBefore, artifactAfter) ||
+    artifactAfter.state !== "ready" ||
+    !sameArtifact(artifactBefore.identity, artifactAfter.identity) ||
     loadedModule === undefined ||
     probe === undefined
   ) {
@@ -970,16 +1083,20 @@ function loadOwnedAddon(): "ready" | "unavailable" | "load-failed" | "abi-mismat
     module: loadedModule,
     exports: exportsValue as object,
     probe,
-    artifact: artifactBefore,
+    artifact: artifactBefore.identity,
+    ancestors: ancestorsBefore,
   };
   return validateOwnedAddon() ? "ready" : "abi-mismatch";
 }
 
 function validateOwnedAddon(): boolean {
+  const artifact = captureArtifact(EXPECTED_ADDON_PATH);
   if (
     ownedAddon === undefined ||
     !cacheIsOwned() ||
-    !sameArtifact(ownedAddon.artifact, captureArtifact(EXPECTED_ADDON_PATH))
+    artifact.state !== "ready" ||
+    !sameArtifact(ownedAddon.artifact, artifact.identity) ||
+    !sameAncestorChain(ownedAddon.ancestors, captureAncestorChain())
   ) {
     return false;
   }
@@ -1025,15 +1142,6 @@ function blockedObservations(reason: NativeFsReasonCode): NativeFsObservation[] 
   return observations;
 }
 
-function dispositionFor(observations: readonly NativeFsObservation[]): NativeFsDisposition {
-  let disposition: NativeFsDisposition = "supported";
-  for (let index = 0; index < observations.length; index += 1) {
-    if (observations[index]?.disposition === "blocked") return "blocked";
-    if (observations[index]?.disposition === "unsupported") disposition = "unsupported";
-  }
-  return disposition;
-}
-
 function recordFor(
   metadata: CapabilityMetadata,
   observations: NativeFsObservation[],
@@ -1041,9 +1149,14 @@ function recordFor(
   return {
     schemaVersion: SCHEMA_VERSION,
     probeVersion: PROBE_VERSION,
-    state: dispositionFor(observations),
+    state: "blocked",
     platform: currentPlatform(),
     nativeComponentVersion: NATIVE_COMPONENT_VERSION,
+    nativeLoader: {
+      identityBound: false,
+      disposition: "blocked",
+      reason: "native-loader-not-identity-bound",
+    },
     rootIdentity: {
       device: bigintString(metadata.identity.device),
       file: bigintString(metadata.identity.file),
@@ -1127,6 +1240,10 @@ export function probeNativeFilesystem(
   const loadState = loadOwnedAddon();
   if (loadState === "unavailable") return blockedRecord(metadata, "native-addon-unavailable");
   if (loadState === "load-failed") return blockedRecord(metadata, "native-addon-load-failed");
+  if (loadState === "ancestor-invalid") {
+    return blockedRecord(metadata, "native-addon-ancestor-invalid");
+  }
+  if (loadState === "oversized") return blockedRecord(metadata, "native-addon-oversized");
   if (loadState !== "ready" || ownedAddon === undefined) {
     return blockedRecord(metadata, "native-addon-abi-mismatch");
   }
