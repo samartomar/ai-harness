@@ -763,17 +763,16 @@ describe("Phase 2 synthetic methodology classifier", () => {
     ).toBe(false);
   });
 
-  it("rejects deeply nested unknown data before schema traversal", () => {
-    const candidate = input() as Record<string, unknown>;
-    let nested: Record<string, unknown> = {};
-    candidate.unexpected = nested;
-    for (let depth = 0; depth < 16; depth += 1) {
-      const child: Record<string, unknown> = {};
-      nested.child = child;
-      nested = child;
-    }
+  it("accepts the requested-component bound and rejects its first over-bound value", () => {
+    const boundary = input(undefined, {
+      requested: Array.from({ length: 32 }, (_, index) => `root-${index}`),
+    });
+    const overBound = input(undefined, {
+      requested: Array.from({ length: 33 }, (_, index) => `root-${index}`),
+    });
 
-    expect(SyntheticClassifierInputSchema.safeParse(candidate).success).toBe(false);
+    expect(SyntheticClassifierInputSchema.safeParse(boundary).success).toBe(true);
+    expect(SyntheticClassifierInputSchema.safeParse(overBound).success).toBe(false);
   });
 
   it("rejects a non-array dependency closure at the artifact boundary", () => {
