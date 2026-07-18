@@ -725,7 +725,10 @@ describe.sequential("native methodology filesystem feasibility", () => {
             string,
             {
               msvs_settings?: {
-                VCCLCompilerTool?: { LanguageStandard_C?: unknown };
+                VCCLCompilerTool?: {
+                  "AdditionalOptions!"?: unknown;
+                  LanguageStandard_C?: unknown;
+                };
               };
             },
           ]
@@ -738,6 +741,9 @@ describe.sequential("native methodology filesystem feasibility", () => {
 
     expect(binding.targets?.[0]?.win_delay_load_hook).toBe("false");
     expect(windows?.msvs_settings?.VCCLCompilerTool?.LanguageStandard_C).toBe("stdc17");
+    expect(windows?.msvs_settings?.VCCLCompilerTool?.["AdditionalOptions!"]).toEqual([
+      "-std:c++20",
+    ]);
   });
 
   it("contains no Zod, production chmod, or pathname deletion capability", () => {

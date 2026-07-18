@@ -15,6 +15,7 @@
           "sources": ["src/backend_windows.c"],
           "msvs_settings": {
             "VCCLCompilerTool": {
+              "AdditionalOptions!": ["-std:c++20"],
               "LanguageStandard_C": "stdc17",
               "WarningLevel": 4,
               "WarnAsError": "true"
