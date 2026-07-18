@@ -560,7 +560,9 @@ describe.sequential("native methodology filesystem feasibility", () => {
         ? rawOutsideRootReport
         : process.platform === "win32"
           ? rawWindowsReport
-          : rawBlockedReport,
+          : process.platform === "darwin"
+            ? rawDarwinReport
+            : rawBlockedReport,
     );
     expect(withCapability((root) => probe(root))).toBe(expectedPlatformRawReport);
   });
