@@ -1,0 +1,56 @@
+name: methodology-phase-4-transactions
+
+on:
+  push:
+    branches:
+      - feature/methodology-projection-phase-4-final
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  transaction:
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - windows-latest
+          - macos-latest
+    runs-on: ${{ matrix.os }}
+    env:
+      # Disposable fixture repositories must never depend on a runner signing keyring.
+      GIT_CONFIG_COUNT: "1"
+      GIT_CONFIG_KEY_0: commit.gpgsign
+      GIT_CONFIG_VALUE_0: "false"
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: "22"
+      - name: Install dependencies without lifecycle scripts
+        run: npm ci --ignore-scripts
+      - name: Focused Phase 4 transaction tests without native build
+        run: npm test -- tests/methodology/transaction.test.ts
+      - name: Build inherited Phase 4A feasibility probe for repository gates
+        run: npm run build:native-methodology
+      - name: Full methodology suite
+        run: npm test -- tests/methodology
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Lint
+        run: npm run lint:ci
+      - name: Documentation lint
+        run: npm run docs:lint
+      - name: Full repository verification
+        run: npm run verify
+      - name: Build package
+        run: npm run build
+      - name: Tracked artifact guard
+        run: npm run check:artifacts
+      - name: Diff whitespace check
+        run: git diff --check
