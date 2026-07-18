@@ -18,17 +18,7 @@ static const char *const kPrimitiveNames[AIH_NATIVE_FS_OBSERVATION_COUNT] = {
     "link-and-volume-containment",
     "substitution-resistance"};
 
-static const char *const kDispositionNames[] = {"supported", "unsupported",
-                                                "blocked"};
-
-static const char *const kUnsupportedReasons[AIH_NATIVE_FS_OBSERVATION_COUNT] = {
-    "identity-bound-file-publication-unavailable",
-    "no-replace-directory-publication-unavailable",
-    "identity-bound-file-detachment-unavailable",
-    "identity-bound-directory-detachment-unavailable",
-    "parent-directory-durability-unavailable",
-    "link-and-volume-containment-unavailable",
-    "substitution-resistance-unavailable"};
+static const char *const kDispositionNames[] = {"blocked"};
 
 static const char *const kBlockedReasons[] = {
     "native-backend-unimplemented",
@@ -115,24 +105,11 @@ static const char *CanonicalBlockedReason(const char *reason) {
 }
 
 static const char *CanonicalReason(
-    size_t index, const struct aih_native_fs_observation *observation) {
-  if (observation->reason == NULL) {
+    const struct aih_native_fs_observation *observation) {
+  if (observation->disposition != AIH_BLOCKED) {
     return NULL;
   }
-  if (observation->disposition == AIH_SUPPORTED) {
-    return strcmp(observation->reason, "primitive-qualified") == 0
-               ? "primitive-qualified"
-               : NULL;
-  }
-  if (observation->disposition == AIH_UNSUPPORTED) {
-    return strcmp(observation->reason, kUnsupportedReasons[index]) == 0
-               ? kUnsupportedReasons[index]
-               : NULL;
-  }
-  if (observation->disposition == AIH_BLOCKED) {
-    return CanonicalBlockedReason(observation->reason);
-  }
-  return NULL;
+  return CanonicalBlockedReason(observation->reason);
 }
 
 static int ReportIsCanonical(const struct aih_native_fs_report *report) {
@@ -141,9 +118,8 @@ static int ReportIsCanonical(const struct aih_native_fs_report *report) {
     const struct aih_native_fs_observation *observation =
         &report->observations[index];
     if (observation->primitive != (enum aih_native_fs_primitive)index ||
-        observation->disposition < AIH_SUPPORTED ||
-        observation->disposition > AIH_BLOCKED ||
-        CanonicalReason(index, observation) == NULL) {
+        observation->disposition != AIH_BLOCKED ||
+        CanonicalReason(observation) == NULL) {
       return 0;
     }
   }
@@ -174,7 +150,7 @@ static int SerializeReport(const struct aih_native_fs_report *report,
   for (index = 0; index < AIH_NATIVE_FS_OBSERVATION_COUNT; index += 1) {
     const struct aih_native_fs_observation *observation =
         &report->observations[index];
-    const char *reason = CanonicalReason(index, observation);
+    const char *reason = CanonicalReason(observation);
     if (reason == NULL ||
         (index != 0 && AppendLiteral(output, capacity, length, ",") != 0) ||
         AppendLiteral(output, capacity, length, "{\"primitive\":\"") != 0 ||

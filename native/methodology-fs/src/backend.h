@@ -10,9 +10,7 @@
 #endif
 
 enum aih_native_fs_disposition {
-  AIH_SUPPORTED = 0,
-  AIH_UNSUPPORTED = 1,
-  AIH_BLOCKED = 2
+  AIH_BLOCKED = 0
 };
 
 enum aih_native_fs_primitive {

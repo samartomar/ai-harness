@@ -13,6 +13,7 @@ describe("tracked artifact guard", () => {
       "coverage/lcov.info",
       "tsconfig.tsbuildinfo",
       "packages/app/tsconfig.tsbuildinfo",
+      "native/methodology-fs/build/Release/methodology_fs.node",
     ]);
 
     expect(violations.map((v) => v.path)).toEqual([
@@ -21,6 +22,7 @@ describe("tracked artifact guard", () => {
       "coverage/lcov.info",
       "tsconfig.tsbuildinfo",
       "packages/app/tsconfig.tsbuildinfo",
+      "native/methodology-fs/build/Release/methodology_fs.node",
     ]);
   });
 
@@ -42,11 +44,13 @@ describe("tracked artifact guard", () => {
       "node_modules\\typescript\\package.json",
       ".aih\\usage-record.mjs",
       ".aih\\scratch\\report.html",
+      "native\\methodology-fs\\build\\Release\\methodology_fs.node",
     ]);
 
     expect(violations.map((v) => v.path)).toEqual([
       "node_modules/typescript/package.json",
       ".aih/scratch/report.html",
+      "native/methodology-fs/build/Release/methodology_fs.node",
     ]);
   });
 

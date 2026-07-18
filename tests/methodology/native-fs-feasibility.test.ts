@@ -58,6 +58,7 @@ const addonBuildLinkPath = fileURLToPath(
 );
 const moduleUrl = new URL("../../src/methodology/native-fs-feasibility.ts", import.meta.url);
 const tsxImportUrl = pathToFileURL(require.resolve("tsx")).href;
+const NATIVE_CHILD_PROCESS_TIMEOUT_MS = 25_000;
 const primitiveOrder = [
   "identity-bound-file-publication",
   "no-replace-directory-publication",
@@ -184,6 +185,18 @@ function rawReasons(raw: string): string[] {
   return parsed.observations.map(({ disposition, reason }) => `${disposition}/${reason}`);
 }
 
+function spawnNativeProbe(
+  script: string,
+  options?: Readonly<{ cwd?: string }>,
+  timeout = NATIVE_CHILD_PROCESS_TIMEOUT_MS,
+) {
+  return spawnSync(
+    process.execPath,
+    ["--import", tsxImportUrl, "--input-type=module", "-e", script],
+    { cwd: options?.cwd, encoding: "utf8", timeout },
+  );
+}
+
 function syntheticBlockedRecord(os: "darwin" | "win32", scope: "filesystem" | "volume") {
   return NativeFsCapabilityRecordSchema.parse({
     schemaVersion: 1,
@@ -227,6 +240,16 @@ function syntheticBlockedRecord(os: "darwin" | "win32", scope: "filesystem" | "v
 }
 
 describe.sequential("native methodology filesystem feasibility", () => {
+  it("bounds every native child-process probe", () => {
+    const child = spawnNativeProbe(
+      "Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10_000);",
+      undefined,
+      1_000,
+    );
+
+    expect((child.error as NodeJS.ErrnoException | undefined)?.code).toBe("ETIMEDOUT");
+  });
+
   it.runIf(process.platform === "linux")(
     "blocks unauthenticated Linux roots deterministically and leaves them empty",
     () => {
@@ -610,11 +633,7 @@ describe.sequential("native methodology filesystem feasibility", () => {
         fs.rmSync(capability.root, { recursive: true, force: true });
       }
     `;
-    const child = spawnSync(
-      process.execPath,
-      ["--import", tsxImportUrl, "--input-type=module", "-e", script],
-      { encoding: "utf8" },
-    );
+    const child = spawnNativeProbe(script);
     expect(child.status, child.stderr).toBe(0);
     const result = JSON.parse(child.stdout) as {
       state: string;
@@ -700,6 +719,7 @@ describe.sequential("native methodology filesystem feasibility", () => {
   it("requires the C17 language standard in the Windows compiler configuration", () => {
     const binding = JSON.parse(readFileSync(bindingGypPath, "utf8")) as {
       targets?: Array<{
+        win_delay_load_hook?: unknown;
         conditions?: Array<
           [
             string,
@@ -716,6 +736,7 @@ describe.sequential("native methodology filesystem feasibility", () => {
       ([condition]) => condition === "OS=='win'",
     )?.[1];
 
+    expect(binding.targets?.[0]?.win_delay_load_hook).toBe("false");
     expect(windows?.msvs_settings?.VCCLCompilerTool?.LanguageStandard_C).toBe("stdc17");
   });
 
@@ -1089,14 +1110,7 @@ describe.sequential("native methodology filesystem feasibility", () => {
       }
     `;
     try {
-      const child = spawnSync(
-        process.execPath,
-        ["--import", tsxImportUrl, "--input-type=module", "-e", script],
-        {
-          cwd: attackerRoot,
-          encoding: "utf8",
-        },
-      );
+      const child = spawnNativeProbe(script, { cwd: attackerRoot });
       expect(child.status, child.stderr).toBe(0);
       expect(JSON.parse(child.stdout)).toEqual(expectedPlatformReasons);
     } finally {
@@ -1137,11 +1151,7 @@ describe.sequential("native methodology filesystem feasibility", () => {
         fs.rmSync(capability.root, { recursive: true, force: true });
       }
     `;
-    const child = spawnSync(
-      process.execPath,
-      ["--import", tsxImportUrl, "--input-type=module", "-e", script],
-      { encoding: "utf8" },
-    );
+    const child = spawnNativeProbe(script);
     expect(child.status, child.stderr).toBe(0);
     const result = JSON.parse(child.stdout) as {
       first: string[];
@@ -1278,9 +1288,12 @@ describe.sequential("native methodology filesystem feasibility", () => {
     expect(NativeFsPrimitiveSchema.safeParse(primitiveOrder[0]).success).toBe(true);
     expect(NativeFsPrimitiveSchema.safeParse("other").success).toBe(false);
     expect(NativeFsDispositionSchema.safeParse("blocked").success).toBe(true);
+    expect(NativeFsDispositionSchema.safeParse("supported").success).toBe(false);
+    expect(NativeFsDispositionSchema.safeParse("unsupported").success).toBe(false);
     expect(NativeFsDispositionSchema.safeParse("active").success).toBe(false);
     expect(NativeFsReasonCodeSchema.safeParse("native-backend-unimplemented").success).toBe(true);
     expect(NativeFsReasonCodeSchema.safeParse("root-capability-unproven").success).toBe(true);
+    expect(NativeFsReasonCodeSchema.safeParse("primitive-qualified").success).toBe(false);
     expect(NativeFsReasonCodeSchema.safeParse("unknown-reason").success).toBe(false);
     expect(
       NativeFsObservationSchema.safeParse({
@@ -1317,26 +1330,16 @@ describe.sequential("native methodology filesystem feasibility", () => {
     ).toBe(false);
   });
 
-  it("binds each unsupported reason to exactly one primitive", () => {
-    const unsupportedReasons = [
-      "identity-bound-file-publication-unavailable",
-      "no-replace-directory-publication-unavailable",
-      "identity-bound-file-detachment-unavailable",
-      "identity-bound-directory-detachment-unavailable",
-      "parent-directory-durability-unavailable",
-      "link-and-volume-containment-unavailable",
-      "substitution-resistance-unavailable",
-    ] as const;
-    for (let primitiveIndex = 0; primitiveIndex < primitiveOrder.length; primitiveIndex += 1) {
-      for (let reasonIndex = 0; reasonIndex < unsupportedReasons.length; reasonIndex += 1) {
-        const parsed = NativeFsObservationSchema.safeParse({
-          primitive: primitiveOrder[primitiveIndex],
+  it("rejects unsupported primitive vocabulary at the Phase 4A boundary", () => {
+    for (const primitive of primitiveOrder) {
+      expect(
+        NativeFsObservationSchema.safeParse({
+          primitive,
           primitiveVersion: "phase-4a-primitive-v1",
           disposition: "unsupported",
-          reason: unsupportedReasons[reasonIndex],
-        });
-        expect(parsed.success).toBe(primitiveIndex === reasonIndex);
-      }
+          reason: "identity-bound-file-publication-unavailable",
+        }).success,
+      ).toBe(false);
     }
   });
 
@@ -1397,6 +1400,40 @@ describe.sequential("native methodology filesystem feasibility", () => {
     ).toBe(false);
   });
 
+  it("does not assimilate an inherited then property from async schema output", () => {
+    const script = `
+      const fs = await import("node:fs");
+      const module = await import(${JSON.stringify(moduleUrl.href)});
+      const capability = module.createNativeFsProbeCapability();
+      const record = module.probeNativeFilesystem(capability);
+      const original = Object.getOwnPropertyDescriptor(Object.prototype, "then");
+      let calls = 0;
+      let rejected = false;
+      Object.defineProperty(Object.prototype, "then", {
+        configurable: true,
+        get() {
+          calls += 1;
+          throw new Error("ambient then invoked");
+        },
+      });
+      try {
+        await module.NativeFsCapabilityRecordSchema.parseAsync(record);
+      } catch {
+        rejected = true;
+      } finally {
+        if (original === undefined) delete Object.prototype.then;
+        else Object.defineProperty(Object.prototype, "then", original);
+        capability.dispose();
+        fs.rmSync(capability.root, { recursive: true, force: true });
+      }
+      process.stdout.write(JSON.stringify({ calls, rejected }));
+    `;
+    const child = spawnNativeProbe(script);
+
+    expect(child.status, child.stderr).toBe(0);
+    expect(JSON.parse(child.stdout)).toEqual({ calls: 0, rejected: false });
+  });
+
   it("returns one fixed deterministic closed-schema error", () => {
     const record = withCapability((_root, capability) => probeNativeFilesystem(capability));
     const first = NativeFsCapabilityRecordSchema.safeParse(null);
@@ -1416,27 +1453,21 @@ describe.sequential("native methodology filesystem feasibility", () => {
     }
   });
 
-  it("preserves unsupported observations while blocking state and rejects mismatches", () => {
+  it("rejects unavailable primitive dispositions while blocking state", () => {
     const record = withCapability((_root, capability) => probeNativeFilesystem(capability));
-    const unsupportedReasons = [
-      "identity-bound-file-publication-unavailable",
-      "no-replace-directory-publication-unavailable",
-      "identity-bound-file-detachment-unavailable",
-      "identity-bound-directory-detachment-unavailable",
-      "parent-directory-durability-unavailable",
-      "link-and-volume-containment-unavailable",
-      "substitution-resistance-unavailable",
-    ] as const;
     const unsupported = {
       ...record,
       state: "blocked",
       observations: record.observations.map((observation, index) => ({
         ...observation,
         disposition: "unsupported",
-        reason: unsupportedReasons[index],
+        reason:
+          index === 0
+            ? "identity-bound-file-publication-unavailable"
+            : "native-backend-unimplemented",
       })),
     };
-    expect(NativeFsCapabilityRecordSchema.safeParse(unsupported).success).toBe(true);
+    expect(NativeFsCapabilityRecordSchema.safeParse(unsupported).success).toBe(false);
     expect(
       NativeFsCapabilityRecordSchema.safeParse({ ...unsupported, state: "unsupported" }).success,
     ).toBe(false);
@@ -1467,7 +1498,7 @@ describe.sequential("native methodology filesystem feasibility", () => {
     expect(NativeFsCapabilityRecordSchema.safeParse(forgedSupported).success).toBe(false);
   });
 
-  it("keeps all backend observations visible but blocks state while the loader is unbound", () => {
+  it("rejects every non-blocked primitive observation while authority is unproven", () => {
     const record = withCapability((_root, capability) => probeNativeFilesystem(capability));
     const observations = primitiveOrder.map((primitive) => ({
       primitive,
@@ -1475,34 +1506,23 @@ describe.sequential("native methodology filesystem feasibility", () => {
       disposition: "supported",
       reason: "primitive-qualified",
     }));
-    const blocked = NativeFsCapabilityRecordSchema.parse({
-      ...record,
-      state: "blocked",
-      observations,
-    });
-    expect(blocked.state).toBe("blocked");
-    expect(blocked.observations.map((observation) => observation.disposition)).toEqual(
-      primitiveOrder.map(() => "supported"),
-    );
-    expect(blocked.nativeLoader).toEqual({
-      identityBound: false,
-      disposition: "blocked",
-      reason: "native-loader-not-identity-bound",
-    });
-    expect(blocked.nativeRootAuthority).toEqual({
-      authenticated: false,
-      disposition: "blocked",
-      reason: "root-capability-unproven",
-    });
+    expect(NativeFsObservationSchema.safeParse(observations[0]).success).toBe(false);
     expect(
       NativeFsCapabilityRecordSchema.safeParse({
-        ...blocked,
+        ...record,
+        state: "blocked",
+        observations,
+      }).success,
+    ).toBe(false);
+    expect(
+      NativeFsCapabilityRecordSchema.safeParse({
+        ...record,
         state: "supported",
       }).success,
     ).toBe(false);
     expect(
       NativeFsCapabilityRecordSchema.safeParse({
-        ...blocked,
+        ...record,
         nativeRootAuthority: {
           authenticated: true,
           disposition: "supported",
@@ -1512,7 +1532,7 @@ describe.sequential("native methodology filesystem feasibility", () => {
     ).toBe(false);
     expect(
       NativeFsCapabilityRecordSchema.safeParse({
-        ...blocked,
+        ...record,
         nativeLoader: {
           identityBound: true,
           disposition: "supported",
@@ -2252,11 +2272,7 @@ describe.sequential("native methodology filesystem feasibility", () => {
       fs.rmSync(root, { recursive: true, force: true });
       process.stdout.write(JSON.stringify({ calls, failure, results }));
     `;
-    const child = spawnSync(
-      process.execPath,
-      ["--import", tsxImportUrl, "--input-type=module", "-e", script],
-      { encoding: "utf8" },
-    );
+    const child = spawnNativeProbe(script);
 
     expect(child.status, child.stderr).toBe(0);
     expect(JSON.parse(child.stdout)).toEqual({
@@ -2360,11 +2376,7 @@ describe.sequential("native methodology filesystem feasibility", () => {
         originalJsonStringify({ calls, failure, valid, primitive, asyncPrimitive, invalid }),
       );
     `;
-    const child = spawnSync(
-      process.execPath,
-      ["--import", tsxImportUrl, "--input-type=module", "-e", script],
-      { encoding: "utf8" },
-    );
+    const child = spawnNativeProbe(script);
 
     expect(child.status, child.stderr).toBe(0);
     expect(JSON.parse(child.stdout)).toEqual({

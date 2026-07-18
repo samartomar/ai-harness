@@ -19,6 +19,9 @@ function forbiddenReason(path: string): string | undefined {
   if (path === "coverage" || path.startsWith("coverage/")) {
     return "coverage output";
   }
+  if (path === "native/methodology-fs/build" || path.startsWith("native/methodology-fs/build/")) {
+    return "native methodology source-build output";
+  }
   if (path.endsWith(".tsbuildinfo")) {
     return "TypeScript incremental cache";
   }

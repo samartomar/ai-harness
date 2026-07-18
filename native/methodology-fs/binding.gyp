@@ -2,6 +2,7 @@
   "targets": [
     {
       "target_name": "methodology_fs",
+      "win_delay_load_hook": "false",
       "sources": ["src/addon.c", "src/common.c"],
       "conditions": [
         ["OS=='linux'", {

@@ -105,16 +105,7 @@ export const NATIVE_FS_PRIMITIVES = Object.freeze([
   "substitution-resistance",
 ] as const);
 
-const NATIVE_FS_DISPOSITIONS = Object.freeze(["supported", "unsupported", "blocked"] as const);
-const UNSUPPORTED_REASONS = Object.freeze([
-  "identity-bound-file-publication-unavailable",
-  "no-replace-directory-publication-unavailable",
-  "identity-bound-file-detachment-unavailable",
-  "identity-bound-directory-detachment-unavailable",
-  "parent-directory-durability-unavailable",
-  "link-and-volume-containment-unavailable",
-  "substitution-resistance-unavailable",
-] as const);
+const NATIVE_FS_DISPOSITIONS = Object.freeze(["blocked"] as const);
 const BLOCKED_REASONS = Object.freeze([
   "native-backend-unimplemented",
   "native-addon-unavailable",
@@ -144,11 +135,7 @@ const BLOCKED_REASONS = Object.freeze([
   "hard-link-detected",
   "reparse-point-detected",
 ] as const);
-const NATIVE_FS_REASON_CODES = Object.freeze([
-  "primitive-qualified",
-  ...UNSUPPORTED_REASONS,
-  ...BLOCKED_REASONS,
-] as const);
+const NATIVE_FS_REASON_CODES = BLOCKED_REASONS;
 const NODE_PLATFORMS = Object.freeze([
   "aix",
   "android",
@@ -324,6 +311,21 @@ function appendOwn<T>(values: T[], value: T): void {
   );
 }
 
+function closedRecord<T>(entries: readonly (readonly [string, unknown])[]): T {
+  const result = callIntrinsic<Record<string, unknown>>(OBJECT_CREATE, Object, [null]);
+  for (let index = 0; index < entries.length; index += 1) {
+    const entry = entries[index];
+    if (entry === undefined) continue;
+    OBJECT_DEFINE_PROPERTY(result, entry[0], {
+      configurable: true,
+      enumerable: true,
+      value: entry[1],
+      writable: true,
+    });
+  }
+  return result as T;
+}
+
 function weakSetAdd<T extends WeakKey>(set: WeakSet<T>, value: T): void {
   callIntrinsic<WeakSet<T>>(WEAK_SET_ADD, set, [value]);
 }
@@ -438,33 +440,6 @@ function validationSnapshot(value: unknown): SnapshotResult {
     nodes: 0,
     active: new WEAK_SET_CONSTRUCTOR<object>(),
   });
-}
-
-function unsupportedReason(primitive: NativeFsPrimitive): NativeFsReasonCode {
-  for (let index = 0; index < NATIVE_FS_PRIMITIVES.length; index += 1) {
-    if (NATIVE_FS_PRIMITIVES[index] === primitive) {
-      const reason = UNSUPPORTED_REASONS[index];
-      if (reason !== undefined) return reason;
-    }
-  }
-  return "native-report-invalid";
-}
-
-function isUnsupportedReason(reason: NativeFsReasonCode): boolean {
-  for (let index = 0; index < UNSUPPORTED_REASONS.length; index += 1) {
-    if (UNSUPPORTED_REASONS[index] === reason) return true;
-  }
-  return false;
-}
-
-function reasonIsBound(
-  primitive: NativeFsPrimitive,
-  disposition: NativeFsDisposition,
-  reason: NativeFsReasonCode,
-): boolean {
-  if (disposition === "supported") return reason === "primitive-qualified";
-  if (disposition === "unsupported") return reason === unsupportedReason(primitive);
-  return reason !== "primitive-qualified" && !isUnsupportedReason(reason);
 }
 
 const OBSERVATION_FIELDS = OBJECT_FREEZE([
@@ -620,7 +595,7 @@ function validateObservation(value: unknown, raw: boolean): boolean {
   ) {
     return false;
   }
-  return reasonIsBound(primitive, disposition, reason);
+  return disposition === "blocked";
 }
 
 function validateRawReport(value: unknown): value is NativeRawReport {
@@ -756,12 +731,12 @@ function validateCapabilityRecord(value: unknown): value is NativeFsCapabilityRe
 }
 
 function canonicalObservation(observation: NativeFsObservation): NativeFsObservation {
-  return {
-    primitive: observation.primitive,
-    primitiveVersion: PRIMITIVE_VERSION,
-    disposition: observation.disposition,
-    reason: observation.reason,
-  };
+  return closedRecord<NativeFsObservation>([
+    ["primitive", observation.primitive],
+    ["primitiveVersion", PRIMITIVE_VERSION],
+    ["disposition", observation.disposition],
+    ["reason", observation.reason],
+  ]);
 }
 
 function canonicalRecord(record: NativeFsCapabilityRecord): NativeFsCapabilityRecord {
@@ -770,44 +745,65 @@ function canonicalRecord(record: NativeFsCapabilityRecord): NativeFsCapabilityRe
     const observation = record.observations[index];
     if (observation !== undefined) appendOwn(observations, canonicalObservation(observation));
   }
-  return {
-    schemaVersion: SCHEMA_VERSION,
-    probeVersion: PROBE_VERSION,
-    state: record.state,
-    platform: {
-      os: record.platform.os,
-      architecture: record.platform.architecture,
-      runtime: "node",
-      runtimeVersion: record.platform.runtimeVersion,
-      nodeApiVersion: record.platform.nodeApiVersion,
-    },
-    nativeComponentVersion: NATIVE_COMPONENT_VERSION,
-    nativeLoader: {
-      identityBound: false,
-      disposition: "blocked",
-      reason: "native-loader-not-identity-bound",
-    },
-    nativeRootAuthority: {
-      authenticated: false,
-      disposition: "blocked",
-      reason: "root-capability-unproven",
-    },
-    rootIdentity: { device: record.rootIdentity.device, file: record.rootIdentity.file },
-    filesystemIdentity: {
-      scope: record.filesystemIdentity.scope,
-      device: record.filesystemIdentity.device,
-      type: record.filesystemIdentity.type,
-    },
-    observations,
-    boundary: {
-      cli: false,
-      executor: false,
-      providerExecution: false,
-      hostExecution: false,
-      network: false,
-      nonTemporaryWrites: false,
-    },
-  };
+  return closedRecord<NativeFsCapabilityRecord>([
+    ["schemaVersion", SCHEMA_VERSION],
+    ["probeVersion", PROBE_VERSION],
+    ["state", record.state],
+    [
+      "platform",
+      closedRecord<NativeFsCapabilityRecord["platform"]>([
+        ["os", record.platform.os],
+        ["architecture", record.platform.architecture],
+        ["runtime", "node"],
+        ["runtimeVersion", record.platform.runtimeVersion],
+        ["nodeApiVersion", record.platform.nodeApiVersion],
+      ]),
+    ],
+    ["nativeComponentVersion", NATIVE_COMPONENT_VERSION],
+    [
+      "nativeLoader",
+      closedRecord<NativeFsCapabilityRecord["nativeLoader"]>([
+        ["identityBound", false],
+        ["disposition", "blocked"],
+        ["reason", "native-loader-not-identity-bound"],
+      ]),
+    ],
+    [
+      "nativeRootAuthority",
+      closedRecord<NativeFsCapabilityRecord["nativeRootAuthority"]>([
+        ["authenticated", false],
+        ["disposition", "blocked"],
+        ["reason", "root-capability-unproven"],
+      ]),
+    ],
+    [
+      "rootIdentity",
+      closedRecord<NativeFsCapabilityRecord["rootIdentity"]>([
+        ["device", record.rootIdentity.device],
+        ["file", record.rootIdentity.file],
+      ]),
+    ],
+    [
+      "filesystemIdentity",
+      closedRecord<NativeFsCapabilityRecord["filesystemIdentity"]>([
+        ["scope", record.filesystemIdentity.scope],
+        ["device", record.filesystemIdentity.device],
+        ["type", record.filesystemIdentity.type],
+      ]),
+    ],
+    ["observations", observations],
+    [
+      "boundary",
+      closedRecord<NativeFsCapabilityRecord["boundary"]>([
+        ["cli", false],
+        ["executor", false],
+        ["providerExecution", false],
+        ["hostExecution", false],
+        ["network", false],
+        ["nonTemporaryWrites", false],
+      ]),
+    ],
+  ]);
 }
 
 class NativeFsClosedSchemaError extends Error {
@@ -1025,7 +1021,12 @@ export function createNativeFsProbeCapability(): NativeFsProbeCapability {
       disposeCapability(capability as object, metadata);
     }
   };
-  capability = OBJECT_FREEZE({ root, dispose });
+  capability = OBJECT_FREEZE(
+    closedRecord<NativeFsProbeCapability>([
+      ["root", root],
+      ["dispose", dispose],
+    ]),
+  );
   const metadata = {
     root,
     tempRoot,
@@ -1340,13 +1341,13 @@ function validateOwnedAddon(): boolean {
 }
 
 function currentPlatform(): NativeFsCapabilityRecord["platform"] {
-  return {
-    os: platform(),
-    architecture: arch(),
-    runtime: "node",
-    runtimeVersion: process.versions.node,
-    nodeApiVersion: process.versions.napi ?? "unavailable",
-  };
+  return closedRecord<NativeFsCapabilityRecord["platform"]>([
+    ["os", platform()],
+    ["architecture", arch()],
+    ["runtime", "node"],
+    ["runtimeVersion", process.versions.node],
+    ["nodeApiVersion", process.versions.napi ?? "unavailable"],
+  ]);
 }
 
 function blockedObservations(reason: NativeFsReasonCode): NativeFsObservation[] {
@@ -1354,12 +1355,15 @@ function blockedObservations(reason: NativeFsReasonCode): NativeFsObservation[] 
   for (let index = 0; index < NATIVE_FS_PRIMITIVES.length; index += 1) {
     const primitive = NATIVE_FS_PRIMITIVES[index];
     if (primitive !== undefined) {
-      appendOwn(observations, {
-        primitive,
-        primitiveVersion: PRIMITIVE_VERSION,
-        disposition: "blocked",
-        reason,
-      });
+      appendOwn(
+        observations,
+        canonicalObservation({
+          primitive,
+          primitiveVersion: PRIMITIVE_VERSION,
+          disposition: "blocked",
+          reason,
+        }),
+      );
     }
   }
   return observations;
@@ -1369,41 +1373,56 @@ function recordFor(
   metadata: CapabilityMetadata,
   observations: NativeFsObservation[],
 ): NativeFsCapabilityRecord {
-  return {
-    schemaVersion: SCHEMA_VERSION,
-    probeVersion: PROBE_VERSION,
-    state: "blocked",
-    platform: currentPlatform(),
-    nativeComponentVersion: NATIVE_COMPONENT_VERSION,
-    nativeLoader: {
-      identityBound: false,
-      disposition: "blocked",
-      reason: "native-loader-not-identity-bound",
-    },
-    nativeRootAuthority: {
-      authenticated: false,
-      disposition: "blocked",
-      reason: "root-capability-unproven",
-    },
-    rootIdentity: {
-      device: bigintString(metadata.identity.device),
-      file: bigintString(metadata.identity.file),
-    },
-    filesystemIdentity: {
-      scope: metadata.filesystemIdentity.scope,
-      device: metadata.filesystemIdentity.device,
-      type: metadata.filesystemIdentity.type,
-    },
-    observations,
-    boundary: {
-      cli: false,
-      executor: false,
-      providerExecution: false,
-      hostExecution: false,
-      network: false,
-      nonTemporaryWrites: false,
-    },
-  };
+  return closedRecord<NativeFsCapabilityRecord>([
+    ["schemaVersion", SCHEMA_VERSION],
+    ["probeVersion", PROBE_VERSION],
+    ["state", "blocked"],
+    ["platform", currentPlatform()],
+    ["nativeComponentVersion", NATIVE_COMPONENT_VERSION],
+    [
+      "nativeLoader",
+      closedRecord<NativeFsCapabilityRecord["nativeLoader"]>([
+        ["identityBound", false],
+        ["disposition", "blocked"],
+        ["reason", "native-loader-not-identity-bound"],
+      ]),
+    ],
+    [
+      "nativeRootAuthority",
+      closedRecord<NativeFsCapabilityRecord["nativeRootAuthority"]>([
+        ["authenticated", false],
+        ["disposition", "blocked"],
+        ["reason", "root-capability-unproven"],
+      ]),
+    ],
+    [
+      "rootIdentity",
+      closedRecord<NativeFsCapabilityRecord["rootIdentity"]>([
+        ["device", bigintString(metadata.identity.device)],
+        ["file", bigintString(metadata.identity.file)],
+      ]),
+    ],
+    [
+      "filesystemIdentity",
+      closedRecord<NativeFsCapabilityRecord["filesystemIdentity"]>([
+        ["scope", metadata.filesystemIdentity.scope],
+        ["device", metadata.filesystemIdentity.device],
+        ["type", metadata.filesystemIdentity.type],
+      ]),
+    ],
+    ["observations", observations],
+    [
+      "boundary",
+      closedRecord<NativeFsCapabilityRecord["boundary"]>([
+        ["cli", false],
+        ["executor", false],
+        ["providerExecution", false],
+        ["hostExecution", false],
+        ["network", false],
+        ["nonTemporaryWrites", false],
+      ]),
+    ],
+  ]);
 }
 
 function blockedRecord(
@@ -1432,12 +1451,15 @@ function parseNativeReport(raw: unknown, metadata: CapabilityMetadata): NativeFs
   for (let index = 0; index < result.observations.length; index += 1) {
     const observation = arrayValue(result.observations, index) as NativeRawObservation | undefined;
     if (observation !== undefined) {
-      appendOwn(observations, {
-        primitive: observation.primitive,
-        primitiveVersion: PRIMITIVE_VERSION,
-        disposition: observation.disposition,
-        reason: observation.reason,
-      });
+      appendOwn(
+        observations,
+        canonicalObservation({
+          primitive: observation.primitive,
+          primitiveVersion: PRIMITIVE_VERSION,
+          disposition: observation.disposition,
+          reason: observation.reason,
+        }),
+      );
     }
   }
   return recordFor(metadata, observations);
