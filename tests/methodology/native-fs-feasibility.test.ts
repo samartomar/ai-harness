@@ -1479,31 +1479,34 @@ describe.sequential("native methodology filesystem feasibility", () => {
     expect(() => probeNativeFilesystem(capability)).toThrow(/capability/i);
   });
 
-  it("retires an authentically removed Darwin root without relying on directory link count", async () => {
-    const actualFs = await vi.importActual<typeof import("node:fs")>("node:fs");
-    const actualOs = await vi.importActual<typeof import("node:os")>("node:os");
-    vi.doMock("node:fs", () => ({
-      ...actualFs,
-      fstatSync(descriptor: number, options?: unknown) {
-        const stat = actualFs.fstatSync(descriptor, options as never);
-        return typeof stat.nlink === "bigint" ? { ...stat, nlink: 2n } : stat;
-      },
-    }));
-    vi.doMock("node:os", () => ({ ...actualOs, platform: () => "darwin" }));
-    vi.resetModules();
-    try {
-      const isolated = await import("../../src/methodology/native-fs-feasibility.js");
-      const capability = isolated.createNativeFsProbeCapability();
-      const root = capability.root;
-      capability.dispose();
-      expect(existsSync(root)).toBe(false);
-      expect(() => isolated.probeNativeFilesystem(capability)).toThrow(/capability/i);
-    } finally {
-      vi.doUnmock("node:fs");
-      vi.doUnmock("node:os");
+  it.runIf(process.platform !== "win32")(
+    "retires an authentically removed Darwin root without relying on directory link count",
+    async () => {
+      const actualFs = await vi.importActual<typeof import("node:fs")>("node:fs");
+      const actualOs = await vi.importActual<typeof import("node:os")>("node:os");
+      vi.doMock("node:fs", () => ({
+        ...actualFs,
+        fstatSync(descriptor: number, options?: unknown) {
+          const stat = actualFs.fstatSync(descriptor, options as never);
+          return typeof stat.nlink === "bigint" ? { ...stat, nlink: 2n } : stat;
+        },
+      }));
+      vi.doMock("node:os", () => ({ ...actualOs, platform: () => "darwin" }));
       vi.resetModules();
-    }
-  });
+      try {
+        const isolated = await import("../../src/methodology/native-fs-feasibility.js");
+        const capability = isolated.createNativeFsProbeCapability();
+        const root = capability.root;
+        capability.dispose();
+        expect(existsSync(root)).toBe(false);
+        expect(() => isolated.probeNativeFilesystem(capability)).toThrow(/capability/i);
+      } finally {
+        vi.doUnmock("node:fs");
+        vi.doUnmock("node:os");
+        vi.resetModules();
+      }
+    },
+  );
 
   it("keeps a non-empty authentic root live until empty-root removal succeeds", () => {
     const capability = createNativeFsProbeCapability();
