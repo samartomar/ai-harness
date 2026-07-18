@@ -1,0 +1,55 @@
+name: methodology-native-fs-feasibility
+
+on:
+  push:
+    branches:
+      - feature/methodology-projection-phase-4a-native-fs-feasibility
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  feasibility:
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - windows-latest
+          - macos-latest
+    runs-on: ${{ matrix.os }}
+    env:
+      # Fixture repositories create unsigned commits; never depend on a runner keyring.
+      GIT_CONFIG_COUNT: "1"
+      GIT_CONFIG_KEY_0: commit.gpgsign
+      GIT_CONFIG_VALUE_0: "false"
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: "22"
+      - name: Install dependencies without lifecycle scripts
+        run: npm ci --ignore-scripts
+      - name: Build native methodology probe explicitly
+        run: npm run build:native-methodology
+      - name: Focused native methodology tests
+        run: npm run test:native-methodology
+      - name: Full methodology suite
+        run: npm test -- tests/methodology
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Lint
+        run: npm run lint:ci
+      - name: Docs lint
+        run: npm run docs:lint
+      - name: Full repository verification
+        run: npm run verify
+      - name: Build package
+        run: npm run build
+      - name: Tracked artifact guard
+        run: npm run check:artifacts
+      - name: Diff whitespace check
+        run: git diff --check

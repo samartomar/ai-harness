@@ -46,6 +46,7 @@
     "clean:native-methodology": "node-gyp clean --directory native/methodology-fs",
     "dev": "tsx src/cli.ts",
     "test": "vitest run",
+    "test:native-methodology": "vitest run tests/methodology/native-fs-feasibility.test.ts tests/methodology/native-fs-workflow.test.ts",
     "test:watch": "vitest",
     "test:cov": "vitest run --coverage",
     "check:artifacts": "tsx src/internals/check-tracked-artifacts.ts",
