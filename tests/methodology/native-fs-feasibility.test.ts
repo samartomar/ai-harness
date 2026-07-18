@@ -5,6 +5,7 @@ import {
   lstatSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   realpathSync,
   renameSync,
@@ -14,7 +15,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { createRequire } from "node:module";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { describe, expect, it, vi } from "vitest";
@@ -34,6 +35,9 @@ const addonPath = fileURLToPath(
 );
 const bindingGypPath = fileURLToPath(
   new URL("../../native/methodology-fs/binding.gyp", import.meta.url),
+);
+const linuxBackendPath = fileURLToPath(
+  new URL("../../native/methodology-fs/src/backend_linux.c", import.meta.url),
 );
 const addonBuildAncestor = fileURLToPath(
   new URL("../../native/methodology-fs/build", import.meta.url),
@@ -57,6 +61,38 @@ const rawBlockedReport = JSON.stringify({
     reason: "native-backend-unimplemented",
   })),
 });
+const linuxDispositionReasons = [
+  ["supported", "primitive-qualified"],
+  ["supported", "primitive-qualified"],
+  ["unsupported", "identity-bound-file-detachment-unavailable"],
+  ["unsupported", "identity-bound-directory-detachment-unavailable"],
+  ["supported", "primitive-qualified"],
+  ["supported", "primitive-qualified"],
+  ["unsupported", "substitution-resistance-unavailable"],
+] as const;
+const rawLinuxReport = JSON.stringify({
+  schemaVersion: 1,
+  nativeProtocolVersion: "phase-4a-native-observations-v1",
+  observations: primitiveOrder.map((primitive, index) => ({
+    primitive,
+    disposition: linuxDispositionReasons[index]?.[0],
+    reason: linuxDispositionReasons[index]?.[1],
+  })),
+});
+const rawOutsideRootReport = JSON.stringify({
+  schemaVersion: 1,
+  nativeProtocolVersion: "phase-4a-native-observations-v1",
+  observations: primitiveOrder.map((primitive) => ({
+    primitive,
+    disposition: "blocked",
+    reason: "root-outside-temporary-directory",
+  })),
+});
+const expectedPlatformRawReport = process.platform === "linux" ? rawLinuxReport : rawBlockedReport;
+const expectedPlatformReasons =
+  process.platform === "linux"
+    ? linuxDispositionReasons.map(([, reason]) => reason)
+    : primitiveOrder.map(() => "native-backend-unimplemented");
 
 function withCapability<T>(
   run: (root: string, capability: ReturnType<typeof createNativeFsProbeCapability>) => T,
@@ -73,7 +109,81 @@ function allBlockedReasons(record: ReturnType<typeof probeNativeFilesystem>): st
   return record.observations.map((observation) => observation.reason);
 }
 
+function rawReasons(raw: string): string[] {
+  const parsed = JSON.parse(raw) as {
+    observations: Array<{ disposition: string; reason: string }>;
+  };
+  return parsed.observations.map(({ disposition, reason }) => `${disposition}/${reason}`);
+}
+
 describe.sequential("native methodology filesystem feasibility", () => {
+  it.runIf(process.platform === "linux")(
+    "probes Linux primitives deterministically and leaves the qualified root empty",
+    () => {
+      const addon = require(addonPath) as { probe(root: string): string };
+      const expected = linuxDispositionReasons.map(
+        ([disposition, reason]) => `${disposition}/${reason}`,
+      );
+
+      withCapability((root) => {
+        const first = addon.probe(root);
+        expect(readdirSync(root)).toEqual([]);
+        const second = addon.probe(root);
+        expect(readdirSync(root)).toEqual([]);
+        expect(rawReasons(first)).toEqual(expected);
+        expect(second).toBe(first);
+      });
+    },
+  );
+
+  it.runIf(process.platform === "linux")(
+    "blocks direct outside-temp and linked roots before making any change",
+    () => {
+      const addon = require(addonPath) as { probe(root: string): string };
+      const linkedTarget = mkdtempSync(join(realpathSync(tmpdir()), "aih-linux-linked-target-"));
+      const linkedRoot = mkdtempSync(join(realpathSync(tmpdir()), "aih-methodology-native-fs-"));
+      const outside = [process.cwd(), homedir(), "/", "relative-root"];
+      try {
+        rmdirSync(linkedRoot);
+        symlinkSync(linkedTarget, linkedRoot, "dir");
+        for (const candidate of outside) {
+          expect(rawReasons(addon.probe(candidate))).toEqual(
+            primitiveOrder.map(() => "blocked/root-outside-temporary-directory"),
+          );
+        }
+        expect(rawReasons(addon.probe(linkedRoot))).toEqual(
+          primitiveOrder.map(() => "blocked/root-linked"),
+        );
+        expect(readdirSync(linkedTarget)).toEqual([]);
+      } finally {
+        rmSync(linkedRoot, { force: true });
+        rmdirSync(linkedTarget);
+      }
+    },
+  );
+
+  it.runIf(process.platform === "linux")(
+    "keeps the Linux backend bounded and maps missing primitives without a fallback",
+    () => {
+      const source = readFileSync(linuxBackendPath, "utf8");
+      expect(source).toContain("SYS_openat2");
+      expect(source).toContain("RESOLVE_BENEATH");
+      expect(source).toContain("RESOLVE_NO_SYMLINKS");
+      expect(source).toContain("RESOLVE_NO_MAGICLINKS");
+      expect(source).toContain("AT_EMPTY_PATH");
+      expect(source).toContain("O_TMPFILE");
+      expect(source).toContain("SYS_renameat2");
+      expect(source).toContain("RENAME_NOREPLACE");
+      expect(source).toContain("SYS_statx");
+      expect(source).toContain("STATX_MNT_ID");
+      expect(source).toMatch(/ENOSYS[\s\S]+AIH_UNSUPPORTED/);
+      expect(source).toMatch(/EOPNOTSUPP|ENOTSUP/);
+      expect(source).not.toMatch(
+        /\/proc|\bsystem\s*\(|\bpopen\s*\(|\bexec[lvpe]*\s*\(|getenv\s*\(/,
+      );
+    },
+  );
+
   it("rejects a preloaded unowned native addon cache entry", () => {
     const addon = require(addonPath) as { probe?: unknown };
     try {
@@ -92,7 +202,7 @@ describe.sequential("native methodology filesystem feasibility", () => {
     }
     const probe = addon.probe;
 
-    expect(withCapability((root) => probe(root))).toBe(rawBlockedReport);
+    expect(withCapability((root) => probe(root))).toBe(expectedPlatformRawReport);
     expect(Object.getOwnPropertyDescriptor(addon, "probe")).toMatchObject({
       configurable: false,
       enumerable: true,
@@ -107,8 +217,8 @@ describe.sequential("native methodology filesystem feasibility", () => {
     expect(() => probe("x".repeat(4_097))).toThrow(RangeError);
     expect(() => probe("\u{1F600}".repeat(1_025))).toThrow(RangeError);
     expect(() => probe("root", "unexpected")).toThrow(TypeError);
-    expect(probe("root-\u{1F600}")).toBe(rawBlockedReport);
-    expect(withCapability((root) => probe(root))).toBe(rawBlockedReport);
+    expect(probe("root-\u{1F600}")).toBe(rawOutsideRootReport);
+    expect(withCapability((root) => probe(root))).toBe(expectedPlatformRawReport);
   });
 
   it("selects exactly one planned platform backend at build time", () => {
@@ -405,7 +515,7 @@ describe.sequential("native methodology filesystem feasibility", () => {
     expect(existsSync(root)).toBe(false);
   });
 
-  it("turns the placeholder backend into a complete ordered blocked record", () => {
+  it("turns the platform backend into a complete ordered blocked aggregate record", () => {
     const { first, second } = withCapability((_root, capability) => ({
       first: probeNativeFilesystem(capability),
       second: probeNativeFilesystem(capability, { addonPath }),
@@ -427,9 +537,7 @@ describe.sequential("native methodology filesystem feasibility", () => {
       nodeApiVersion: process.versions.napi,
     });
     expect(first.observations.map(({ primitive }) => primitive)).toEqual(primitiveOrder);
-    expect(allBlockedReasons(first)).toEqual(
-      primitiveOrder.map(() => "native-backend-unimplemented"),
-    );
+    expect(allBlockedReasons(first)).toEqual(expectedPlatformReasons);
     expect(first.boundary).toEqual({
       cli: false,
       executor: false,
@@ -483,9 +591,7 @@ describe.sequential("native methodology filesystem feasibility", () => {
         },
       );
       expect(child.status, child.stderr).toBe(0);
-      expect(JSON.parse(child.stdout)).toEqual(
-        primitiveOrder.map(() => "native-backend-unimplemented"),
-      );
+      expect(JSON.parse(child.stdout)).toEqual(expectedPlatformReasons);
     } finally {
       rmSync(attackerRoot, { recursive: true, force: true });
     }
@@ -493,9 +599,7 @@ describe.sequential("native methodology filesystem feasibility", () => {
 
   it("fails closed when the owned module cache or exports identity is replaced", () => {
     const first = withCapability((_root, capability) => probeNativeFilesystem(capability));
-    expect(allBlockedReasons(first)).toEqual(
-      primitiveOrder.map(() => "native-backend-unimplemented"),
-    );
+    expect(allBlockedReasons(first)).toEqual(expectedPlatformReasons);
     const ownedModule = require.cache[addonPath];
     if (ownedModule === undefined) throw new Error("owned addon cache entry is missing");
     const originalExports = ownedModule.exports;
