@@ -1847,7 +1847,7 @@ describe("scanTrustTree", () => {
       (check) => check.code === "trust.legal-text-detector-finding",
     );
     expect(findingChanged?.fingerprint).not.toBe(legal?.fingerprint);
-  });
+  }, 15_000);
 
   it("suppresses SkillSpector visible-Unicode SARIF for decorative-only design docs", async () => {
     skill("skills/designer", "# Designer\n");

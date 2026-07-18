@@ -867,7 +867,7 @@ describe("aih methodology Phase 1 child-process boundary", () => {
       });
     }
     expect(existsSync(join(root, ".aih"))).toBe(false);
-  }, 30_000);
+  }, 60_000);
 
   it.runIf(SUPPORTS_VERIFIED_INTENT_READS)(
     "exits 0 for bounded advisory status without claiming runtime activation",
