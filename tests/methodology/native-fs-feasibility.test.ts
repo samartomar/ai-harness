@@ -1,19 +1,22 @@
+import { spawnSync } from "node:child_process";
 import {
   chmodSync,
   existsSync,
   lstatSync,
   mkdirSync,
-  readFileSync,
+  mkdtempSync,
   realpathSync,
   renameSync,
   rmSync,
+  statfsSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join, relative, resolve } from "node:path";
-import { describe, expect, it } from "vitest";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { describe, expect, it, vi } from "vitest";
 import {
   createNativeFsProbeCapability,
   NativeFsCapabilityRecordSchema,
@@ -25,14 +28,10 @@ import {
 } from "../../src/methodology/native-fs-feasibility.js";
 
 const require = createRequire(import.meta.url);
-const addonPath = join(
-  process.cwd(),
-  "native",
-  "methodology-fs",
-  "build",
-  "Release",
-  "methodology_fs.node",
+const addonPath = fileURLToPath(
+  new URL("../../native/methodology-fs/build/Release/methodology_fs.node", import.meta.url),
 );
+const moduleUrl = new URL("../../src/methodology/native-fs-feasibility.ts", import.meta.url);
 const primitiveOrder = [
   "identity-bound-file-publication",
   "no-replace-directory-publication",
@@ -59,41 +58,17 @@ function allBlockedReasons(record: ReturnType<typeof probeNativeFilesystem>): st
 }
 
 describe.sequential("native methodology filesystem feasibility", () => {
-  it("fails closed when the exact expected addon is missing", () => {
-    const heldPath = `${addonPath}.task-2-held`;
-    renameSync(addonPath, heldPath);
-    try {
-      const record = withCapability((_root, capability) => probeNativeFilesystem(capability));
-      expect(record.state).toBe("blocked");
-      expect(allBlockedReasons(record)).toEqual(
-        primitiveOrder.map(() => "native-addon-unavailable"),
-      );
-    } finally {
-      renameSync(heldPath, addonPath);
-    }
-  });
-
-  it("fails closed when the exact expected addon cannot be loaded", () => {
-    const heldPath = `${addonPath}.task-2-held`;
-    const original = readFileSync(addonPath);
-    renameSync(addonPath, heldPath);
-    try {
-      writeFileSync(addonPath, "not a native addon", { mode: 0o600 });
-      const record = withCapability((_root, capability) => probeNativeFilesystem(capability));
-      expect(record.state).toBe("blocked");
-      expect(allBlockedReasons(record)).toEqual(
-        primitiveOrder.map(() => "native-addon-load-failed"),
-      );
-    } finally {
-      rmSync(addonPath, { force: true });
-      renameSync(heldPath, addonPath);
-      expect(readFileSync(addonPath)).toEqual(original);
-    }
-  });
-
-  it("loads the local addon with one synchronous probe export", () => {
+  it("rejects a preloaded unowned native addon cache entry", () => {
     const addon = require(addonPath) as { probe?: unknown };
-
+    try {
+      const record = withCapability((_root, capability) => probeNativeFilesystem(capability));
+      expect(record.state).toBe("blocked");
+      expect(allBlockedReasons(record)).toEqual(
+        primitiveOrder.map(() => "native-addon-abi-mismatch"),
+      );
+    } finally {
+      delete require.cache[addonPath];
+    }
     expect(Object.keys(addon)).toEqual(["probe"]);
     expect(typeof addon.probe).toBe("function");
     if (typeof addon.probe !== "function") {
@@ -103,6 +78,99 @@ describe.sequential("native methodology filesystem feasibility", () => {
     expect(addon.probe()).toBe(
       '{"schemaVersion":1,"probeVersion":"phase-4a-native-fs-v1","state":"blocked","reason":"native-backend-unimplemented"}',
     );
+  });
+
+  it("fails closed for a mocked missing addon without mutating the checkout", async () => {
+    const actualFs = await vi.importActual<typeof import("node:fs")>("node:fs");
+    vi.doMock("node:fs", () => ({
+      ...actualFs,
+      lstatSync(path: Parameters<typeof actualFs.lstatSync>[0], options?: unknown) {
+        if (path === addonPath) throw Object.assign(new Error("missing"), { code: "ENOENT" });
+        return actualFs.lstatSync(path, options as never);
+      },
+    }));
+    vi.resetModules();
+    try {
+      const isolated = await import("../../src/methodology/native-fs-feasibility.js");
+      const capability = isolated.createNativeFsProbeCapability();
+      try {
+        const record = isolated.probeNativeFilesystem(capability);
+        expect(allBlockedReasons(record)).toEqual(
+          primitiveOrder.map(() => "native-addon-unavailable"),
+        );
+      } finally {
+        capability.dispose();
+      }
+    } finally {
+      vi.doUnmock("node:fs");
+      vi.resetModules();
+    }
+  });
+
+  it("fails closed for a mocked native load failure without mutating the checkout", async () => {
+    const actualModule = await vi.importActual<typeof import("node:module")>("node:module");
+    vi.doMock("node:module", () => ({
+      ...actualModule,
+      createRequire() {
+        const failingRequire = (() => {
+          throw new Error("mocked native load failure");
+        }) as unknown as NodeRequire;
+        failingRequire.cache = Object.create(null) as NodeJS.Dict<NodeModule>;
+        return failingRequire;
+      },
+    }));
+    vi.resetModules();
+    try {
+      const isolated = await import("../../src/methodology/native-fs-feasibility.js");
+      const capability = isolated.createNativeFsProbeCapability();
+      try {
+        const record = isolated.probeNativeFilesystem(capability);
+        expect(allBlockedReasons(record)).toEqual(
+          primitiveOrder.map(() => "native-addon-load-failed"),
+        );
+      } finally {
+        capability.dispose();
+      }
+    } finally {
+      vi.doUnmock("node:module");
+      vi.resetModules();
+    }
+  });
+
+  it("fails closed when mocked addon identity changes across native loading", async () => {
+    const actualFs = await vi.importActual<typeof import("node:fs")>("node:fs");
+    let addonStats = 0;
+    vi.doMock("node:fs", () => ({
+      ...actualFs,
+      lstatSync(path: Parameters<typeof actualFs.lstatSync>[0], options?: unknown) {
+        const stat = actualFs.lstatSync(path, options as never);
+        if (path !== addonPath) return stat;
+        addonStats += 1;
+        return addonStats >= 3
+          ? {
+              ...stat,
+              ino: (stat as unknown as import("node:fs").BigIntStats).ino + 1n,
+            }
+          : stat;
+      },
+    }));
+    vi.resetModules();
+    try {
+      const isolated = await import("../../src/methodology/native-fs-feasibility.js");
+      const capability = isolated.createNativeFsProbeCapability();
+      try {
+        const record = isolated.probeNativeFilesystem(capability);
+        expect(allBlockedReasons(record)).toEqual(
+          primitiveOrder.map(() => "native-addon-abi-mismatch"),
+        );
+      } finally {
+        capability.dispose();
+      }
+    } finally {
+      delete require.cache[addonPath];
+      vi.doUnmock("node:fs");
+      vi.resetModules();
+    }
   });
 
   it("mints an opaque private capability under the actual operating-system temporary root", () => {
@@ -156,6 +224,176 @@ describe.sequential("native methodology filesystem feasibility", () => {
     });
     expect(NativeFsCapabilityRecordSchema.safeParse(first).success).toBe(true);
     expect(JSON.stringify(second)).toBe(JSON.stringify(first));
+    const addon = require(addonPath) as { probe?: unknown };
+    expect(Object.isFrozen(addon)).toBe(true);
+    expect(() =>
+      Object.defineProperty(addon, "probe", {
+        value() {
+          return "forged";
+        },
+      }),
+    ).toThrow();
+  });
+
+  it("does not resolve the native addon from an attacker-controlled working directory", () => {
+    const attackerRoot = mkdtempSync(join(realpathSync(tmpdir()), "aih-native-cwd-attacker-"));
+    const attackerAddon = join(
+      attackerRoot,
+      "native",
+      "methodology-fs",
+      "build",
+      "Release",
+      "methodology_fs.node",
+    );
+    mkdirSync(resolve(attackerAddon, ".."), { recursive: true, mode: 0o700 });
+    writeFileSync(attackerAddon, "attacker-controlled native bytes", { mode: 0o600 });
+    const script = `
+      const module = await import(${JSON.stringify(pathToFileURL(fileURLToPath(moduleUrl)).href)});
+      const capability = module.createNativeFsProbeCapability();
+      try {
+        const record = module.probeNativeFilesystem(capability);
+        process.stdout.write(JSON.stringify(record.observations.map((item) => item.reason)));
+      } finally {
+        capability.dispose();
+      }
+    `;
+    try {
+      const child = spawnSync(
+        process.execPath,
+        ["--import", require.resolve("tsx"), "--input-type=module", "-e", script],
+        {
+          cwd: attackerRoot,
+          encoding: "utf8",
+        },
+      );
+      expect(child.status, child.stderr).toBe(0);
+      expect(JSON.parse(child.stdout)).toEqual(
+        primitiveOrder.map(() => "native-backend-unimplemented"),
+      );
+    } finally {
+      rmSync(attackerRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("fails closed when the owned module cache or exports identity is replaced", () => {
+    const first = withCapability((_root, capability) => probeNativeFilesystem(capability));
+    expect(allBlockedReasons(first)).toEqual(
+      primitiveOrder.map(() => "native-backend-unimplemented"),
+    );
+    const ownedModule = require.cache[addonPath];
+    if (ownedModule === undefined) throw new Error("owned addon cache entry is missing");
+    const originalExports = ownedModule.exports;
+    ownedModule.exports = {
+      probe() {
+        return "forged supported report";
+      },
+    };
+    try {
+      const blocked = withCapability((_root, capability) => probeNativeFilesystem(capability));
+      expect(allBlockedReasons(blocked)).toEqual(
+        primitiveOrder.map(() => "native-addon-abi-mismatch"),
+      );
+    } finally {
+      ownedModule.exports = originalExports;
+    }
+
+    const forgedModule = { ...ownedModule, exports: originalExports } as NodeModule;
+    require.cache[addonPath] = forgedModule;
+    try {
+      const blocked = withCapability((_root, capability) => probeNativeFilesystem(capability));
+      expect(allBlockedReasons(blocked)).toEqual(
+        primitiveOrder.map(() => "native-addon-abi-mismatch"),
+      );
+    } finally {
+      require.cache[addonPath] = ownedModule;
+    }
+  });
+
+  it("fails closed for malformed native reports and accepts only a fully bound report", async () => {
+    const actualModule = await vi.importActual<typeof import("node:module")>("node:module");
+    let call = 0;
+    const fullReport = (root: string, runtimeVersion = process.versions.node) => {
+      const stat = lstatSync(root, { bigint: true });
+      const filesystem = statfsSync(root, { bigint: true });
+      return {
+        schemaVersion: 1,
+        probeVersion: "phase-4a-native-fs-v1",
+        state: "blocked",
+        platform: {
+          os: process.platform,
+          architecture: process.arch,
+          runtime: "node",
+          runtimeVersion,
+          nodeApiVersion: process.versions.napi,
+        },
+        nativeComponentVersion: "phase-4a-native-fs-native-v1",
+        rootIdentity: { device: stat.dev.toString(), file: stat.ino.toString() },
+        filesystemIdentity: {
+          scope: process.platform === "win32" ? "volume" : "filesystem",
+          device: stat.dev.toString(),
+          type: filesystem.type.toString(),
+        },
+        observations: primitiveOrder.map((primitive) => ({
+          primitive,
+          primitiveVersion: "phase-4a-primitive-v1",
+          disposition: "blocked",
+          reason: "native-backend-unimplemented",
+        })),
+        boundary: {
+          cli: false,
+          executor: false,
+          providerExecution: false,
+          hostExecution: false,
+          network: false,
+          nonTemporaryWrites: false,
+        },
+      };
+    };
+    vi.doMock("node:module", () => ({
+      ...actualModule,
+      createRequire() {
+        const cache = Object.create(null) as NodeJS.Dict<NodeModule>;
+        const fakeRequire = ((path: string) => {
+          const exports = {
+            probe(root: string): unknown {
+              call += 1;
+              if (call === 1) return 7;
+              if (call === 2) return "x".repeat(65_537);
+              if (call === 3) return "{";
+              if (call === 4) return JSON.stringify(fullReport(root, "0.0.0"));
+              return JSON.stringify(fullReport(root));
+            },
+          };
+          cache[path] = { exports } as NodeModule;
+          return exports;
+        }) as unknown as NodeRequire;
+        fakeRequire.cache = cache;
+        return fakeRequire;
+      },
+    }));
+    vi.resetModules();
+    try {
+      const isolated = await import("../../src/methodology/native-fs-feasibility.js");
+      const reasons: string[] = [];
+      for (let index = 0; index < 5; index += 1) {
+        const capability = isolated.createNativeFsProbeCapability();
+        try {
+          reasons.push(isolated.probeNativeFilesystem(capability).observations[0]?.reason ?? "");
+        } finally {
+          capability.dispose();
+        }
+      }
+      expect(reasons).toEqual([
+        "native-report-invalid",
+        "native-report-oversized",
+        "native-report-invalid",
+        "native-report-invalid",
+        "native-backend-unimplemented",
+      ]);
+    } finally {
+      vi.doUnmock("node:module");
+      vi.resetModules();
+    }
   });
 
   it("exports closed scalar and observation schemas", () => {
@@ -200,6 +438,29 @@ describe.sequential("native methodology filesystem feasibility", () => {
     ).toBe(false);
   });
 
+  it("binds each unsupported reason to exactly one primitive", () => {
+    const unsupportedReasons = [
+      "identity-bound-file-publication-unavailable",
+      "no-replace-directory-publication-unavailable",
+      "identity-bound-file-detachment-unavailable",
+      "identity-bound-directory-detachment-unavailable",
+      "parent-directory-durability-unavailable",
+      "link-and-volume-containment-unavailable",
+      "substitution-resistance-unavailable",
+    ] as const;
+    for (let primitiveIndex = 0; primitiveIndex < primitiveOrder.length; primitiveIndex += 1) {
+      for (let reasonIndex = 0; reasonIndex < unsupportedReasons.length; reasonIndex += 1) {
+        const parsed = NativeFsObservationSchema.safeParse({
+          primitive: primitiveOrder[primitiveIndex],
+          primitiveVersion: "phase-4a-primitive-v1",
+          disposition: "unsupported",
+          reason: unsupportedReasons[reasonIndex],
+        });
+        expect(parsed.success).toBe(primitiveIndex === reasonIndex);
+      }
+    }
+  });
+
   it("rejects duplicate, missing, reordered, unknown, and oversized records", () => {
     const record = withCapability((_root, capability) => probeNativeFilesystem(capability));
     const invalid = [
@@ -219,6 +480,93 @@ describe.sequential("native methodology filesystem feasibility", () => {
     for (const candidate of invalid) {
       expect(NativeFsCapabilityRecordSchema.safeParse(candidate).success).toBe(false);
     }
+  });
+
+  it("canonicalizes reverse key insertion order to byte-identical schema output", () => {
+    const record = withCapability((_root, capability) => probeNativeFilesystem(capability));
+    const reversed = Object.fromEntries(Object.entries(record).reverse());
+    const parsed = NativeFsCapabilityRecordSchema.parse(reversed);
+
+    expect(JSON.stringify(parsed)).toBe(JSON.stringify(record));
+  });
+
+  it("supports the complete safe Zod facade and rejects hostile array surfaces", async () => {
+    const record = withCapability((_root, capability) => probeNativeFilesystem(capability));
+    expect((await NativeFsCapabilityRecordSchema.parseAsync(record)).schemaVersion).toBe(1);
+    expect((await NativeFsCapabilityRecordSchema.decodeAsync(record)).schemaVersion).toBe(1);
+    expect((await NativeFsCapabilityRecordSchema.safeParseAsync(record)).success).toBe(true);
+    expect((await NativeFsCapabilityRecordSchema.safeDecodeAsync(record)).success).toBe(true);
+    expect((await NativeFsCapabilityRecordSchema.spa(record)).success).toBe(true);
+    await expect(NativeFsCapabilityRecordSchema.parseAsync(null)).rejects.toBeDefined();
+
+    const oversized = new Array(17).fill(record.observations[0]);
+    expect(
+      NativeFsCapabilityRecordSchema.safeParse({ ...record, observations: oversized }).success,
+    ).toBe(false);
+    const accessorObservations = [...record.observations];
+    Object.defineProperty(accessorObservations, "0", {
+      enumerable: true,
+      get() {
+        throw new Error("array accessor must not run");
+      },
+    });
+    expect(
+      NativeFsCapabilityRecordSchema.safeParse({
+        ...record,
+        observations: accessorObservations,
+      }).success,
+    ).toBe(false);
+  });
+
+  it("validates unsupported state and rejects state and platform-scope mismatches", () => {
+    const record = withCapability((_root, capability) => probeNativeFilesystem(capability));
+    const unsupportedReasons = [
+      "identity-bound-file-publication-unavailable",
+      "no-replace-directory-publication-unavailable",
+      "identity-bound-file-detachment-unavailable",
+      "identity-bound-directory-detachment-unavailable",
+      "parent-directory-durability-unavailable",
+      "link-and-volume-containment-unavailable",
+      "substitution-resistance-unavailable",
+    ] as const;
+    const unsupported = {
+      ...record,
+      state: "unsupported",
+      observations: record.observations.map((observation, index) => ({
+        ...observation,
+        disposition: "unsupported",
+        reason: unsupportedReasons[index],
+      })),
+    };
+    expect(NativeFsCapabilityRecordSchema.safeParse(unsupported).success).toBe(true);
+    expect(
+      NativeFsCapabilityRecordSchema.safeParse({ ...record, state: "unsupported" }).success,
+    ).toBe(false);
+    expect(
+      NativeFsCapabilityRecordSchema.safeParse({
+        ...record,
+        filesystemIdentity: {
+          ...record.filesystemIdentity,
+          scope: record.filesystemIdentity.scope === "volume" ? "filesystem" : "volume",
+        },
+      }).success,
+    ).toBe(false);
+  });
+
+  it("blocks every primitive when filesystem identity is unavailable", () => {
+    const record = withCapability((_root, capability) => probeNativeFilesystem(capability));
+    const forgedSupported = {
+      ...record,
+      state: "supported",
+      filesystemIdentity: { ...record.filesystemIdentity, type: "unavailable" },
+      observations: primitiveOrder.map((primitive) => ({
+        primitive,
+        primitiveVersion: "phase-4a-primitive-v1",
+        disposition: "supported",
+        reason: "primitive-qualified",
+      })),
+    };
+    expect(NativeFsCapabilityRecordSchema.safeParse(forgedSupported).success).toBe(false);
   });
 
   it("rejects proxies and accessors without invoking user code", () => {
@@ -266,6 +614,39 @@ describe.sequential("native methodology filesystem feasibility", () => {
       renameSync(originalRoot, capability.root);
       capability.dispose();
     }
+  });
+
+  it("keeps disposal live after substitution and never recursively removes substitute content", () => {
+    const capability = createNativeFsProbeCapability();
+    const authenticRoot = `${capability.root}.authentic`;
+    const substituteFile = join(capability.root, "must-survive.txt");
+    renameSync(capability.root, authenticRoot);
+    mkdirSync(capability.root, { mode: 0o700 });
+    writeFileSync(substituteFile, "must survive", { mode: 0o600 });
+
+    capability.dispose();
+    expect(existsSync(authenticRoot)).toBe(true);
+    expect(existsSync(substituteFile)).toBe(true);
+    const stillLive = probeNativeFilesystem(capability);
+    expect(allBlockedReasons(stillLive)).toEqual(primitiveOrder.map(() => "root-identity-drift"));
+
+    rmSync(capability.root, { recursive: true, force: true });
+    renameSync(authenticRoot, capability.root);
+    capability.dispose();
+    expect(existsSync(capability.root)).toBe(false);
+    expect(() => probeNativeFilesystem(capability)).toThrow(/capability/i);
+  });
+
+  it("keeps a non-empty authentic root live until empty-root removal succeeds", () => {
+    const capability = createNativeFsProbeCapability();
+    const child = join(capability.root, "owned.txt");
+    writeFileSync(child, "owned", { mode: 0o600 });
+    capability.dispose();
+    expect(existsSync(child)).toBe(true);
+    expect(() => probeNativeFilesystem(capability)).not.toThrow();
+    rmSync(child);
+    capability.dispose();
+    expect(existsSync(capability.root)).toBe(false);
   });
 
   it.runIf(process.platform !== "win32")(
@@ -316,6 +697,19 @@ describe.sequential("native methodology filesystem feasibility", () => {
         ),
       ).toThrow(/addon path/i);
     }
+    expect(() =>
+      withCapability((_root, capability) =>
+        probeNativeFilesystem(
+          capability,
+          Object.create({ addonPath }) as Readonly<{ addonPath?: string }>,
+        ),
+      ),
+    ).toThrow(/options/i);
+    expect(() =>
+      withCapability((_root, capability) =>
+        probeNativeFilesystem(capability, { unexpected: addonPath } as never),
+      ),
+    ).toThrow(/options/i);
   });
 
   it("rejects accessor and proxy options without invoking hooks", () => {
@@ -352,6 +746,8 @@ describe.sequential("native methodology filesystem feasibility", () => {
     const originalMap = Array.prototype.map;
     let calls = 0;
     let record: ReturnType<typeof probeNativeFilesystem> | undefined;
+    let schemaSuccess: boolean | undefined;
+    const baseline = withCapability((_root, capability) => probeNativeFilesystem(capability));
     Array.prototype.sort = function poisonedSort(): never {
       calls += 1;
       throw new Error("ambient sort invoked");
@@ -362,11 +758,13 @@ describe.sequential("native methodology filesystem feasibility", () => {
     };
     try {
       record = withCapability((_root, capability) => probeNativeFilesystem(capability));
+      schemaSuccess = NativeFsCapabilityRecordSchema.safeParse(baseline).success;
     } finally {
       Array.prototype.sort = originalSort;
       Array.prototype.map = originalMap;
     }
     expect(record?.state).toBe("blocked");
+    expect(schemaSuccess).toBe(false);
     expect(calls).toBe(0);
   });
 });
