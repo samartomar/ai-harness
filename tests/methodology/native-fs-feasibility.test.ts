@@ -9,7 +9,6 @@ import {
   renameSync,
   rmdirSync,
   rmSync,
-  statfsSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
@@ -45,6 +44,15 @@ const primitiveOrder = [
   "link-and-volume-containment",
   "substitution-resistance",
 ] as const;
+const rawBlockedReport = JSON.stringify({
+  schemaVersion: 1,
+  nativeProtocolVersion: "phase-4a-native-observations-v1",
+  observations: primitiveOrder.map((primitive) => ({
+    primitive,
+    disposition: "blocked",
+    reason: "native-backend-unimplemented",
+  })),
+});
 
 function withCapability<T>(
   run: (root: string, capability: ReturnType<typeof createNativeFsProbeCapability>) => T,
@@ -78,10 +86,20 @@ describe.sequential("native methodology filesystem feasibility", () => {
     if (typeof addon.probe !== "function") {
       throw new TypeError("expected native probe export");
     }
+    const probe = addon.probe;
 
-    expect(addon.probe()).toBe(
-      '{"schemaVersion":1,"probeVersion":"phase-4a-native-fs-v1","state":"blocked","reason":"native-backend-unimplemented"}',
-    );
+    expect(withCapability((root) => probe(root))).toBe(rawBlockedReport);
+    expect(Object.getOwnPropertyDescriptor(addon, "probe")).toMatchObject({
+      configurable: false,
+      enumerable: true,
+      writable: false,
+    });
+    expect(() => probe()).toThrow(TypeError);
+    expect(() => probe(42)).toThrow(TypeError);
+    expect(() => probe("contains\0nul")).toThrow(TypeError);
+    expect(() => probe("x".repeat(4_097))).toThrow(RangeError);
+    expect(() => probe("root", "unexpected")).toThrow(TypeError);
+    expect(withCapability((root) => probe(root))).toBe(rawBlockedReport);
   });
 
   it("fails closed for a mocked missing addon without mutating the checkout", async () => {
@@ -461,61 +479,69 @@ describe.sequential("native methodology filesystem feasibility", () => {
   it("fails closed for malformed native reports and accepts only a fully bound report", async () => {
     const actualModule = await vi.importActual<typeof import("node:module")>("node:module");
     let call = 0;
-    const fullReport = (root: string, runtimeVersion = process.versions.node) => {
-      const stat = lstatSync(root, { bigint: true });
-      const filesystem = statfsSync(root, { bigint: true });
-      return {
-        schemaVersion: 1,
-        probeVersion: "phase-4a-native-fs-v1",
-        state: "blocked",
-        platform: {
-          os: process.platform,
-          architecture: process.arch,
-          runtime: "node",
-          runtimeVersion,
-          nodeApiVersion: process.versions.napi,
-        },
-        nativeComponentVersion: "phase-4a-native-fs-native-v1",
-        nativeLoader: {
-          identityBound: false,
-          disposition: "blocked",
-          reason: "native-loader-not-identity-bound",
-        },
-        rootIdentity: { device: stat.dev.toString(), file: stat.ino.toString() },
-        filesystemIdentity: {
-          scope: process.platform === "win32" ? "volume" : "filesystem",
-          device: stat.dev.toString(),
-          type: filesystem.type.toString(),
-        },
-        observations: primitiveOrder.map((primitive) => ({
-          primitive,
-          primitiveVersion: "phase-4a-primitive-v1",
-          disposition: "blocked",
-          reason: "native-backend-unimplemented",
-        })),
-        boundary: {
-          cli: false,
-          executor: false,
-          providerExecution: false,
-          hostExecution: false,
-          network: false,
-          nonTemporaryWrites: false,
-        },
-      };
-    };
+    const rawReport = () => ({
+      schemaVersion: 1,
+      nativeProtocolVersion: "phase-4a-native-observations-v1",
+      observations: primitiveOrder.map((primitive) => ({
+        primitive,
+        disposition: "blocked",
+        reason: "native-backend-unimplemented",
+      })),
+    });
     vi.doMock("node:module", () => ({
       ...actualModule,
       createRequire() {
         const cache = Object.create(null) as NodeJS.Dict<NodeModule>;
         const fakeRequire = ((path: string) => {
           const exports = {
-            probe(root: string): unknown {
+            probe(_root: string): unknown {
               call += 1;
               if (call === 1) return 7;
               if (call === 2) return "x".repeat(65_537);
               if (call === 3) return "{";
-              if (call === 4) return JSON.stringify(fullReport(root, "0.0.0"));
-              return JSON.stringify(fullReport(root));
+              if (call === 4) {
+                return JSON.stringify({
+                  ...rawReport(),
+                  observations: rawReport().observations.slice(0, 6),
+                });
+              }
+              if (call === 5) {
+                const report = rawReport();
+                return JSON.stringify({
+                  ...report,
+                  observations: [...report.observations.slice(0, 6), report.observations[0]],
+                });
+              }
+              if (call === 6) {
+                const report = rawReport();
+                return JSON.stringify({
+                  ...report,
+                  observations: [...report.observations].reverse(),
+                });
+              }
+              if (call === 7) {
+                const report = rawReport();
+                return JSON.stringify({
+                  ...report,
+                  observations: [
+                    { ...report.observations[0], reason: "unknown-reason" },
+                    ...report.observations.slice(1),
+                  ],
+                });
+              }
+              if (call === 8) {
+                const report = rawReport();
+                return JSON.stringify({
+                  ...report,
+                  observations: [
+                    { ...report.observations[0], primitive: "unknown-primitive" },
+                    ...report.observations.slice(1),
+                  ],
+                });
+              }
+              if (call === 9) return JSON.stringify({ ...rawReport(), extra: true });
+              if (call === 10) throw new Error("native probe failure");
+              return JSON.stringify(rawReport());
             },
           };
           cache[path] = { exports } as NodeModule;
@@ -529,7 +555,7 @@ describe.sequential("native methodology filesystem feasibility", () => {
     try {
       const isolated = await import("../../src/methodology/native-fs-feasibility.js");
       const reasons: string[] = [];
-      for (let index = 0; index < 5; index += 1) {
+      for (let index = 0; index < 11; index += 1) {
         const capability = isolated.createNativeFsProbeCapability();
         try {
           reasons.push(isolated.probeNativeFilesystem(capability).observations[0]?.reason ?? "");
@@ -542,6 +568,12 @@ describe.sequential("native methodology filesystem feasibility", () => {
         "native-report-oversized",
         "native-report-invalid",
         "native-report-invalid",
+        "native-report-invalid",
+        "native-report-invalid",
+        "native-report-invalid",
+        "native-report-invalid",
+        "native-report-invalid",
+        "native-operation-failed",
         "native-backend-unimplemented",
       ]);
     } finally {

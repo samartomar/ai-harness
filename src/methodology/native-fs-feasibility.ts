@@ -62,6 +62,7 @@ const GUARDED_ARRAY_INTRINSICS = Object.freeze([
 const SCHEMA_VERSION = 1 as const;
 const PROBE_VERSION = "phase-4a-native-fs-v1" as const;
 const NATIVE_COMPONENT_VERSION = "phase-4a-native-fs-native-v1" as const;
+const NATIVE_PROTOCOL_VERSION = "phase-4a-native-observations-v1" as const;
 const PRIMITIVE_VERSION = "phase-4a-primitive-v1" as const;
 const MAX_NATIVE_REPORT_BYTES = 65_536;
 const MAX_NATIVE_ADDON_BYTES = 32 * 1024 * 1024;
@@ -253,6 +254,16 @@ type OwnedAddon = {
 };
 type SnapshotState = { depth: number; nodes: number; active: WeakSet<object> };
 type SnapshotResult = { ok: true; value: unknown } | { ok: false };
+type NativeRawObservation = {
+  primitive: NativeFsPrimitive;
+  disposition: NativeFsDisposition;
+  reason: NativeFsReasonCode;
+};
+type NativeRawReport = {
+  schemaVersion: typeof SCHEMA_VERSION;
+  nativeProtocolVersion: typeof NATIVE_PROTOCOL_VERSION;
+  observations: NativeRawObservation[];
+};
 type ClosedZodResult<T> =
   | { readonly success: true; readonly data: T }
   | { readonly success: false; readonly error: z.ZodError };
@@ -302,18 +313,6 @@ function appendOwn<T>(values: T[], value: T): void {
     callIntrinsic<string>(STRING_CONVERT, undefined, [values.length]),
     { configurable: true, enumerable: true, value, writable: true },
   );
-}
-
-function copyOwnValues<T>(values: readonly T[]): T[] {
-  const copy: T[] = [];
-  for (let index = 0; index < values.length; index += 1) {
-    const descriptor = ownDescriptor(
-      values,
-      callIntrinsic<string>(STRING_CONVERT, undefined, [index]),
-    );
-    if (descriptor !== undefined && "value" in descriptor) appendOwn(copy, descriptor.value);
-  }
-  return copy;
 }
 
 function weakSetAdd<T extends WeakKey>(set: WeakSet<T>, value: T): void {
@@ -437,6 +436,16 @@ function isUnsupportedReason(reason: NativeFsReasonCode): boolean {
   return false;
 }
 
+function reasonIsBound(
+  primitive: NativeFsPrimitive,
+  disposition: NativeFsDisposition,
+  reason: NativeFsReasonCode,
+): boolean {
+  if (disposition === "supported") return reason === "primitive-qualified";
+  if (disposition === "unsupported") return reason === unsupportedReason(primitive);
+  return reason !== "primitive-qualified" && !isUnsupportedReason(reason);
+}
+
 const NativeFsPrimitiveZodSchema = z.enum(NATIVE_FS_PRIMITIVES);
 const NativeFsDispositionZodSchema = z.enum(NATIVE_FS_DISPOSITIONS);
 const NativeFsReasonCodeZodSchema = z.enum(NATIVE_FS_REASON_CODES);
@@ -448,18 +457,36 @@ const NativeFsObservationZodSchema = z
     reason: NativeFsReasonCodeZodSchema,
   })
   .superRefine((observation, context) => {
-    const expected =
-      observation.disposition === "supported"
-        ? "primitive-qualified"
-        : observation.disposition === "unsupported"
-          ? unsupportedReason(observation.primitive)
-          : undefined;
-    if (
-      (expected !== undefined && observation.reason !== expected) ||
-      (observation.disposition === "blocked" &&
-        (observation.reason === "primitive-qualified" || isUnsupportedReason(observation.reason)))
-    ) {
+    if (!reasonIsBound(observation.primitive, observation.disposition, observation.reason)) {
       context.addIssue({ code: "custom", path: ["reason"], message: "reason is not bound" });
+    }
+  });
+const NativeRawObservationZodSchema = z
+  .strictObject({
+    primitive: NativeFsPrimitiveZodSchema,
+    disposition: NativeFsDispositionZodSchema,
+    reason: NativeFsReasonCodeZodSchema,
+  })
+  .superRefine((observation, context) => {
+    if (!reasonIsBound(observation.primitive, observation.disposition, observation.reason)) {
+      context.addIssue({ code: "custom", path: ["reason"], message: "reason is not bound" });
+    }
+  });
+const NativeRawReportZodSchema: z.ZodType<NativeRawReport> = z
+  .strictObject({
+    schemaVersion: z.literal(SCHEMA_VERSION),
+    nativeProtocolVersion: z.literal(NATIVE_PROTOCOL_VERSION),
+    observations: z.array(NativeRawObservationZodSchema).length(NATIVE_FS_PRIMITIVES.length),
+  })
+  .superRefine((report, context) => {
+    for (let index = 0; index < report.observations.length; index += 1) {
+      if (report.observations[index]?.primitive !== NATIVE_FS_PRIMITIVES[index]) {
+        context.addIssue({
+          code: "custom",
+          path: ["observations", index, "primitive"],
+          message: "primitive order is fixed",
+        });
+      }
     }
   });
 const PlatformZodSchema = z.strictObject({
@@ -1190,36 +1217,29 @@ function parseNativeReport(raw: unknown, metadata: CapabilityMetadata): NativeFs
   if (callIntrinsic<number>(BUFFER_BYTE_LENGTH, Buffer, [raw, "utf8"]) > MAX_NATIVE_REPORT_BYTES) {
     return blockedRecord(metadata, "native-report-oversized");
   }
-  if (
-    raw ===
-    '{"schemaVersion":1,"probeVersion":"phase-4a-native-fs-v1","state":"blocked","reason":"native-backend-unimplemented"}'
-  ) {
-    return blockedRecord(metadata, "native-backend-unimplemented");
-  }
   let parsed: unknown;
   try {
     parsed = callIntrinsic<unknown>(JSON_PARSE, JSON, [raw]);
   } catch {
     return blockedRecord(metadata, "native-report-invalid");
   }
-  const result = NativeFsCapabilityRecordSchema.safeParse(parsed);
+  const snapshot = validationSnapshot(parsed);
+  if (!snapshot.ok) return blockedRecord(metadata, "native-report-invalid");
+  const result = NativeRawReportZodSchema.safeParse(snapshot.value);
   if (!result.success) return blockedRecord(metadata, "native-report-invalid");
-  const record = result.data;
-  const expectedPlatform = currentPlatform();
-  if (
-    record.platform.os !== expectedPlatform.os ||
-    record.platform.architecture !== expectedPlatform.architecture ||
-    record.platform.runtimeVersion !== expectedPlatform.runtimeVersion ||
-    record.platform.nodeApiVersion !== expectedPlatform.nodeApiVersion ||
-    record.rootIdentity.device !== bigintString(metadata.identity.device) ||
-    record.rootIdentity.file !== bigintString(metadata.identity.file) ||
-    record.filesystemIdentity.device !== metadata.filesystemIdentity.device ||
-    record.filesystemIdentity.type !== metadata.filesystemIdentity.type ||
-    record.filesystemIdentity.scope !== metadata.filesystemIdentity.scope
-  ) {
-    return blockedRecord(metadata, "native-report-invalid");
+  const observations: NativeFsObservation[] = [];
+  for (let index = 0; index < result.data.observations.length; index += 1) {
+    const observation = result.data.observations[index];
+    if (observation !== undefined) {
+      appendOwn(observations, {
+        primitive: observation.primitive,
+        primitiveVersion: PRIMITIVE_VERSION,
+        disposition: observation.disposition,
+        reason: observation.reason,
+      });
+    }
   }
-  return recordFor(metadata, copyOwnValues(record.observations));
+  return recordFor(metadata, observations);
 }
 
 export function probeNativeFilesystem(
