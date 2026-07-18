@@ -24,6 +24,8 @@ jobs:
           node-version: "22"
           cache: npm
       - run: npm ci
+      - name: Build native methodology probe
+        run: npm run build:native-methodology
       - name: Tracked artifact guard
         run: npm run check:artifacts
       - name: ECC installer package check

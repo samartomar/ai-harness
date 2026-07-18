@@ -703,6 +703,84 @@ describe("Phase 2 synthetic methodology classifier", () => {
     ).toThrow();
   });
 
+  it("rejects cyclic, exotic, symbolic, sparse, and misbounded classifier surfaces", () => {
+    const cyclic = input() as Record<string, unknown>;
+    cyclic.self = cyclic;
+    const exotic = Object.create({ inherited: true }) as Record<string, unknown>;
+    Object.assign(exotic, input());
+    const symbolic = input() as Record<PropertyKey, unknown>;
+    symbolic[Symbol("hidden")] = true;
+    const customPrototype = ["root"];
+    Object.setPrototypeOf(customPrototype, Object.create(Array.prototype));
+    const keyed = ["root"] as string[] & { extra?: boolean };
+    keyed.extra = true;
+    const sparse = new Array(1);
+
+    for (const candidate of [
+      cyclic,
+      exotic,
+      symbolic,
+      { ...input(), requested: customPrototype },
+      { ...input(), requested: keyed },
+      { ...input(), requested: sparse },
+      { ...input(), requested: "root" },
+      { ...input(), requested: [] },
+      { ...input(), artifacts: null },
+    ]) {
+      expect(SyntheticClassifierInputSchema.safeParse(candidate).success).toBe(false);
+    }
+  });
+
+  it("rejects proxied root and dependency collections before traversing them", () => {
+    const requested = new Proxy(["root"], {
+      get(target, property, receiver) {
+        if (property === "0") throw new Error("proxied request must not be traversed");
+        return Reflect.get(target, property, receiver);
+      },
+    });
+    const root = artifact("root", {
+      dependencies: new Proxy(["dependency"], {
+        get(target, property, receiver) {
+          if (property === "0") throw new Error("proxied dependency must not be traversed");
+          return Reflect.get(target, property, receiver);
+        },
+      }),
+    });
+
+    expect(SyntheticClassifierInputSchema.safeParse({ ...input(), requested }).success).toBe(false);
+    expect(SyntheticArtifactSchema.safeParse(root).success).toBe(false);
+  });
+
+  it("rejects canonically ordered but unequal eligible and closure identities", () => {
+    expect(
+      SyntheticClassificationResultSchema.safeParse({
+        schemaVersion: 1,
+        disposition: "eligible",
+        closure: ["dependency", "root"],
+        eligible: ["dependency", "third"],
+        findings: [],
+      }).success,
+    ).toBe(false);
+  });
+
+  it("accepts the requested-component bound and rejects its first over-bound value", () => {
+    const boundary = input(undefined, {
+      requested: Array.from({ length: 32 }, (_, index) => `root-${index}`),
+    });
+    const overBound = input(undefined, {
+      requested: Array.from({ length: 33 }, (_, index) => `root-${index}`),
+    });
+
+    expect(SyntheticClassifierInputSchema.safeParse(boundary).success).toBe(true);
+    expect(SyntheticClassifierInputSchema.safeParse(overBound).success).toBe(false);
+  });
+
+  it("rejects a non-array dependency closure at the artifact boundary", () => {
+    expect(
+      SyntheticArtifactSchema.safeParse(artifact("root", { dependencies: "dependency" })).success,
+    ).toBe(false);
+  });
+
   it("enforces dependency uniqueness and fixed attribution in exported leaf schemas", () => {
     expect(
       SyntheticArtifactSchema.safeParse(
