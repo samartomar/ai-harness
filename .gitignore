@@ -1,6 +1,7 @@
 node_modules/
 dist/
 coverage/
+native/methodology-fs/build/
 *.tsbuildinfo
 __pycache__/
 *.py[cod]
