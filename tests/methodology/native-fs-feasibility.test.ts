@@ -44,6 +44,9 @@ const linuxBackendPath = fileURLToPath(
 const windowsBackendPath = fileURLToPath(
   new URL("../../native/methodology-fs/src/backend_windows.c", import.meta.url),
 );
+const darwinBackendPath = fileURLToPath(
+  new URL("../../native/methodology-fs/src/backend_darwin.c", import.meta.url),
+);
 const addonBuildAncestor = fileURLToPath(
   new URL("../../native/methodology-fs/build", import.meta.url),
 );
@@ -102,6 +105,24 @@ const rawWindowsReport = JSON.stringify({
     reason: windowsDispositionReasons[index]?.[1],
   })),
 });
+const darwinDispositionReasons = [
+  ["blocked", "root-capability-unproven"],
+  ["blocked", "root-capability-unproven"],
+  ["blocked", "root-capability-unproven"],
+  ["blocked", "root-capability-unproven"],
+  ["blocked", "root-capability-unproven"],
+  ["blocked", "root-capability-unproven"],
+  ["blocked", "root-capability-unproven"],
+] as const;
+const rawDarwinReport = JSON.stringify({
+  schemaVersion: 1,
+  nativeProtocolVersion: "phase-4a-native-observations-v1",
+  observations: primitiveOrder.map((primitive, index) => ({
+    primitive,
+    disposition: darwinDispositionReasons[index]?.[0],
+    reason: darwinDispositionReasons[index]?.[1],
+  })),
+});
 const rawOutsideRootReport = JSON.stringify({
   schemaVersion: 1,
   nativeProtocolVersion: "phase-4a-native-observations-v1",
@@ -116,13 +137,17 @@ const expectedPlatformRawReport =
     ? rawLinuxReport
     : process.platform === "win32"
       ? rawWindowsReport
-      : rawBlockedReport;
+      : process.platform === "darwin"
+        ? rawDarwinReport
+        : rawBlockedReport;
 const expectedPlatformReasons =
   process.platform === "linux"
     ? linuxDispositionReasons.map(([, reason]) => reason)
     : process.platform === "win32"
       ? windowsDispositionReasons.map(([, reason]) => reason)
-      : primitiveOrder.map(() => "native-backend-unimplemented");
+      : process.platform === "darwin"
+        ? darwinDispositionReasons.map(([, reason]) => reason)
+        : primitiveOrder.map(() => "native-backend-unimplemented");
 
 function withCapability<T>(
   run: (root: string, capability: ReturnType<typeof createNativeFsProbeCapability>) => T,
@@ -385,6 +410,111 @@ describe.sequential("native methodology filesystem feasibility", () => {
         ).toEqual(hostBefore);
         expect(readdirSync(capability.root)).toEqual([]);
         expect(readdirSync(manualRoot)).toEqual([]);
+      } finally {
+        capability.dispose();
+        rmdirSync(manualRoot);
+      }
+    },
+  );
+
+  it("keeps the Darwin backend mutation-free behind a fixed unauthenticated root boundary", () => {
+    const source = readFileSync(darwinBackendPath, "utf8");
+    expect(source).toContain("AIH_NATIVE_FS_OBSERVATION_COUNT");
+    expect(source).toContain("(enum aih_native_fs_primitive)index");
+    expect(source).toContain("AIH_BLOCKED");
+    expect(source).toContain("root-capability-unproven");
+    expect(source).not.toContain("native-backend-unimplemented");
+    expect(source).not.toContain("AIH_SUPPORTED");
+    expect(source).not.toContain("AIH_UNSUPPORTED");
+    expect(source).not.toMatch(
+      /\b(?:fclonefileat|clonefile|renameatx_np|renamex_np|open|openat|creat|fopen|freopen|write|pwrite|fsync|fcntl|stat|lstat|fstat|statfs|fstatfs|getattrlist|setattrlist|unlink|unlinkat|remove|rename|renameat|mkdir|mkdirat|rmdir|link|linkat|symlink|symlinkat|mount|unmount|system|popen|exec[lvpe]*|posix_spawn|dlopen|dlsym|CFBundleLoadExecutable|NSURLSession|socket|connect)\s*\(/,
+    );
+
+    const record = withCapability((_root, capability) => probeNativeFilesystem(capability));
+    const darwinRecord = NativeFsCapabilityRecordSchema.parse({
+      ...record,
+      platform: { ...record.platform, os: "darwin" },
+      observations: primitiveOrder.map((primitive) => ({
+        primitive,
+        primitiveVersion: "phase-4a-primitive-v1",
+        disposition: "blocked",
+        reason: "root-capability-unproven",
+      })),
+    });
+    expect(darwinRecord.nativeRootAuthority).toEqual({
+      authenticated: false,
+      disposition: "blocked",
+      reason: "root-capability-unproven",
+    });
+    expect(
+      NativeFsCapabilityRecordSchema.safeParse({
+        ...darwinRecord,
+        nativeRootAuthority: {
+          authenticated: true,
+          disposition: "supported",
+          reason: "primitive-qualified",
+        },
+      }).success,
+    ).toBe(false);
+  });
+
+  it.runIf(process.platform === "darwin")(
+    "blocks plausible Darwin roots without changing fixture or host paths",
+    () => {
+      const addon = require(addonPath) as { probe(root: string): string };
+      const capability = createNativeFsProbeCapability();
+      const manualRoot = mkdtempSync(join(realpathSync(tmpdir()), "aih-methodology-native-fs-"));
+      const fixtureRoots = [capability.root, manualRoot];
+      const hostPaths = [process.cwd(), homedir()];
+      const candidates = [...fixtureRoots, ...hostPaths];
+      const fixtureBefore = fixtureRoots.map((candidate) => lstatSync(candidate, { bigint: true }));
+      const hostBefore = hostPaths.map((candidate) => {
+        const stat = lstatSync(candidate, { bigint: true });
+        return { device: stat.dev, file: stat.ino, mode: stat.mode };
+      });
+      try {
+        for (const candidate of candidates) {
+          expect(rawReasons(addon.probe(candidate))).toEqual(
+            primitiveOrder.map(() => "blocked/root-capability-unproven"),
+          );
+        }
+        const fixtureAfter = fixtureRoots.map((candidate) =>
+          lstatSync(candidate, { bigint: true }),
+        );
+        expect(
+          fixtureAfter.map((stat) => ({
+            device: stat.dev,
+            file: stat.ino,
+            links: stat.nlink,
+            mode: stat.mode,
+            size: stat.size,
+            modified: stat.mtimeNs,
+            changed: stat.ctimeNs,
+          })),
+        ).toEqual(
+          fixtureBefore.map((stat) => ({
+            device: stat.dev,
+            file: stat.ino,
+            links: stat.nlink,
+            mode: stat.mode,
+            size: stat.size,
+            modified: stat.mtimeNs,
+            changed: stat.ctimeNs,
+          })),
+        );
+        expect(
+          hostPaths.map((candidate) => {
+            const stat = lstatSync(candidate, { bigint: true });
+            return { device: stat.dev, file: stat.ino, mode: stat.mode };
+          }),
+        ).toEqual(hostBefore);
+        expect(readdirSync(capability.root)).toEqual([]);
+        expect(readdirSync(manualRoot)).toEqual([]);
+        expect(probeNativeFilesystem(capability).nativeRootAuthority).toEqual({
+          authenticated: false,
+          disposition: "blocked",
+          reason: "root-capability-unproven",
+        });
       } finally {
         capability.dispose();
         rmdirSync(manualRoot);

@@ -10,7 +10,7 @@ int aih_backend_probe_native_fs(const char *root,
   for (index = 0; index < AIH_NATIVE_FS_OBSERVATION_COUNT; index += 1) {
     report->observations[index].primitive = (enum aih_native_fs_primitive)index;
     report->observations[index].disposition = AIH_BLOCKED;
-    report->observations[index].reason = "native-backend-unimplemented";
+    report->observations[index].reason = "root-capability-unproven";
   }
   return 0;
 }
