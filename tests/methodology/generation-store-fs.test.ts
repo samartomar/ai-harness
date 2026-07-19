@@ -37,6 +37,7 @@ import {
   verifyExpectedTree,
   verifyPartialOwnedContainer,
   verifyPartialOwnedTree,
+  verifyPartialSourceContainer,
   writeAtomicRecord,
   writeExclusiveRegularFile,
 } from "../../src/methodology/generation-store-fs.js";
@@ -802,6 +803,117 @@ describe("Phase 4 bounded generation-store filesystem", () => {
       verifyExpectedContainer(deepStore, deepGeneration, "receipt", deepReceipt, maximumDepth)
         .missing,
     ).toEqual([]);
+  });
+
+  it("quarantines exact and partial transaction-bound incomplete and staging remnants", () => {
+    const exactRoot = temporaryProject();
+    const exactStore = createOrOpenOwnedStore(realpathSync(exactRoot.projectRoot));
+    mkdirSync(exactStore.layout.generations);
+    mkdirSync(exactStore.layout.trash);
+    const entries = expectedReceiptEntries();
+    const exactGeneration = join(exactStore.layout.generations, plannedDigest());
+    mkdirSync(join(exactGeneration, "content"), { recursive: true });
+    materializeExpectedTree(join(exactGeneration, "content"), entries);
+    const exactIncomplete = {
+      schemaVersion: 1 as const,
+      rootId: exactStore.rootRecord.rootId,
+      transactionId: TRANSACTION_ID,
+      manifestDigest: plannedDigest(),
+    };
+    writeExclusiveRegularFile(
+      exactStore,
+      join(exactGeneration, "incomplete.json"),
+      canonicalRecordBytes("incomplete", exactIncomplete),
+    );
+    const exactVerified = verifyExpectedContainer(
+      exactStore,
+      exactGeneration,
+      "incomplete",
+      exactIncomplete,
+      entries,
+    );
+    const exactTrash = quarantineExactDirectory(exactStore, exactVerified, TRANSACTION_ID);
+    removeVerifiedTree(exactStore, exactTrash);
+    expect(existsSync(join(exactStore.layout.trash, TRANSACTION_ID))).toBe(false);
+
+    const partialRoot = temporaryProject();
+    const partialStore = createOrOpenOwnedStore(realpathSync(partialRoot.projectRoot));
+    mkdirSync(partialStore.layout.generations);
+    mkdirSync(partialStore.layout.trash);
+    const partialGeneration = join(partialStore.layout.generations, plannedDigest());
+    mkdirSync(join(partialGeneration, "content", "rules"), { recursive: true });
+    writeFileSync(join(partialGeneration, "content", "rules", "root.md"), ROOT_BYTES);
+    const partialIncomplete = {
+      schemaVersion: 1 as const,
+      rootId: partialStore.rootRecord.rootId,
+      transactionId: TRANSACTION_ID,
+      manifestDigest: plannedDigest(),
+    };
+    writeExclusiveRegularFile(
+      partialStore,
+      join(partialGeneration, "incomplete.json"),
+      canonicalRecordBytes("incomplete", partialIncomplete),
+    );
+    const partialVerified = verifyPartialSourceContainer(
+      partialStore,
+      partialGeneration,
+      "incomplete",
+      partialIncomplete,
+      entries,
+    );
+    expect(partialVerified.missing).toEqual(["content/rules/dependency.md"]);
+    expect(() => quarantineExactDirectory(partialStore, partialVerified, OTHER_DIGEST)).toThrow();
+    expect(existsSync(partialGeneration)).toBe(true);
+    quarantineExactDirectory(partialStore, partialVerified, TRANSACTION_ID);
+    const partialTrash = join(partialStore.layout.trash, TRANSACTION_ID);
+    const recoveredPartial = verifyPartialOwnedContainer(
+      partialStore,
+      partialTrash,
+      "incomplete",
+      partialIncomplete,
+      entries,
+    );
+    removeVerifiedTree(partialStore, recoveredPartial);
+    expect(existsSync(partialTrash)).toBe(false);
+
+    const stagingRoot = temporaryProject();
+    const stagingStore = createOrOpenOwnedStore(realpathSync(stagingRoot.projectRoot));
+    mkdirSync(stagingStore.layout.staging);
+    mkdirSync(stagingStore.layout.trash);
+    const staging = join(stagingStore.layout.staging, TRANSACTION_ID);
+    mkdirSync(join(staging, "content", "rules"), { recursive: true });
+    writeFileSync(join(staging, "content", "rules", "root.md"), ROOT_BYTES);
+    const stagingRecord = {
+      schemaVersion: 1 as const,
+      rootId: stagingStore.rootRecord.rootId,
+      transactionId: TRANSACTION_ID,
+      manifestDigest: plannedDigest(),
+    };
+    writeExclusiveRegularFile(
+      stagingStore,
+      join(staging, "staging.json"),
+      canonicalRecordBytes("staging", stagingRecord),
+    );
+    const stagingVerified = verifyPartialSourceContainer(
+      stagingStore,
+      staging,
+      "staging",
+      stagingRecord,
+      entries,
+    );
+    expect(() => quarantineExactDirectory(stagingStore, stagingVerified, OTHER_DIGEST)).toThrow();
+    expect(existsSync(staging)).toBe(true);
+    quarantineExactDirectory(stagingStore, stagingVerified, TRANSACTION_ID);
+    const stagingTrash = join(stagingStore.layout.trash, TRANSACTION_ID);
+    const recoveredStaging = verifyPartialOwnedContainer(
+      stagingStore,
+      stagingTrash,
+      "staging",
+      stagingRecord,
+      entries,
+    );
+    removeVerifiedTree(stagingStore, recoveredStaging);
+    expect(existsSync(stagingTrash)).toBe(false);
   });
 
   it("quarantines an exact verified directory and removes only its revalidated tree", () => {

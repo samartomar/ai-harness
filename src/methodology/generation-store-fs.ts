@@ -114,6 +114,7 @@ export type VerifiedContainer = Readonly<{
   metadataCanonical: string;
   rootId: string;
   sourceName: string;
+  transactionId: string | null;
 }>;
 
 export type VerifiedTree = Readonly<{
@@ -1131,6 +1132,7 @@ function containerDescriptor(
   }
   let rootId: string;
   let sourceName: string;
+  let transactionId: string | null;
   switch (kind) {
     case "receipt": {
       const receipt = GenerationReceiptSchema.parse(parsed);
@@ -1143,18 +1145,21 @@ function containerDescriptor(
       }
       rootId = receipt.rootId;
       sourceName = receipt.manifestDigest;
+      transactionId = null;
       break;
     }
     case "staging": {
       const staging = StagingRecordSchema.parse(parsed);
       rootId = staging.rootId;
       sourceName = staging.transactionId;
+      transactionId = staging.transactionId;
       break;
     }
     case "incomplete": {
       const incomplete = IncompleteRecordSchema.parse(parsed);
       rootId = incomplete.rootId;
-      sourceName = incomplete.transactionId;
+      sourceName = incomplete.manifestDigest;
+      transactionId = incomplete.transactionId;
       break;
     }
   }
@@ -1168,6 +1173,7 @@ function containerDescriptor(
       metadataCanonical: metadataBytes.toString("utf8"),
       rootId,
       sourceName,
+      transactionId,
     }),
     entries: normalizedEntries,
   });
@@ -1199,7 +1205,8 @@ function verifyContainerAt(
     claimedContainer.metadataName !== container.metadataName ||
     claimedContainer.metadataCanonical !== container.metadataCanonical ||
     claimedContainer.rootId !== container.rootId ||
-    claimedContainer.sourceName !== container.sourceName
+    claimedContainer.sourceName !== container.sourceName ||
+    claimedContainer.transactionId !== container.transactionId
   ) {
     fail("verified container descriptor is not semantically bound");
   }
@@ -1324,6 +1331,22 @@ export function verifyExpectedContainer(
   return verifyContainerAt(store, treeRoot, expected.entries, expected.container, false);
 }
 
+export function verifyPartialSourceContainer(
+  store: OwnedStore,
+  treeRoot: string,
+  kind: Exclude<VerifiedContainerKind, "receipt">,
+  metadataRecord: unknown,
+  entries: readonly ReceiptEntry[],
+): VerifiedTree {
+  const expected = containerDescriptor(store, kind, metadataRecord, entries);
+  const metadataPath = join(treeRoot, expected.container.metadataName);
+  const stored = readStoreRecord(store, metadataPath, schemaForKind(kind), kind);
+  if (stored.bytes.toString("utf8") !== expected.container.metadataCanonical) {
+    fail("stored partial-container metadata is not the expected canonical record");
+  }
+  return verifyContainerAt(store, treeRoot, expected.entries, expected.container, true);
+}
+
 export function verifyPartialOwnedContainer(
   store: OwnedStore,
   treeRoot: string,
@@ -1362,7 +1385,8 @@ function requireSameContainerDescriptor(previous: VerifiedTree, current: Verifie
     previous.container.metadataName !== current.container.metadataName ||
     previous.container.metadataCanonical !== current.container.metadataCanonical ||
     previous.container.rootId !== current.container.rootId ||
-    previous.container.sourceName !== current.container.sourceName
+    previous.container.sourceName !== current.container.sourceName ||
+    previous.container.transactionId !== current.container.transactionId
   ) {
     fail("verified container description changed", "METHODOLOGY_STORE_GENERATION_DRIFT");
   }
@@ -1370,7 +1394,12 @@ function requireSameContainerDescriptor(previous: VerifiedTree, current: Verifie
 
 function requireSameVerifiedTree(previous: VerifiedTree, current: VerifiedTree): void {
   requireSameContainerDescriptor(previous, current);
-  if (current.missing.length !== 0 || previous.files.length !== current.files.length) {
+  if (
+    previous.files.length !== current.files.length ||
+    previous.directories.length !== current.directories.length ||
+    previous.missing.length !== current.missing.length ||
+    previous.missing.some((entry, index) => current.missing[index] !== entry)
+  ) {
     fail("verified tree changed before mutation", "METHODOLOGY_STORE_GENERATION_DRIFT");
   }
   const previousFiles = identityByRelative(previous.files);
@@ -1437,12 +1466,15 @@ function quarantineSourceBoundToTransaction(
   return (
     (pathsEqual(sourceParent, store.layout.generations) &&
       DIGEST_PATTERN.test(sourceName) &&
-      verified.container.metadataKind === "receipt" &&
-      verified.container.sourceName === sourceName) ||
+      verified.container.sourceName === sourceName &&
+      (verified.container.metadataKind === "receipt" ||
+        (verified.container.metadataKind === "incomplete" &&
+          verified.container.transactionId === transactionId))) ||
     (pathsEqual(sourceParent, store.layout.staging) &&
       sourceName === transactionId &&
       verified.container.metadataKind === "staging" &&
-      verified.container.sourceName === sourceName)
+      verified.container.sourceName === sourceName &&
+      verified.container.transactionId === transactionId)
   );
 }
 
@@ -1452,27 +1484,30 @@ export function quarantineExactDirectory(
   transactionId: string,
 ): VerifiedTree {
   assertOwnedStorePhase(store);
+  const container = verified.container;
   if (
     !STORE_ID_PATTERN.test(transactionId) ||
-    verified.missing.length !== 0 ||
-    verified.container === null ||
+    container === null ||
+    verified.missing.includes(container.metadataName) ||
+    (container.metadataKind === "receipt" && verified.missing.length !== 0) ||
     !quarantineSourceBoundToTransaction(store, verified, transactionId)
   ) {
     fail("quarantine source is not transaction-bound");
   }
+  const allowMissing = container.metadataKind !== "receipt";
   const current = verifyContainerAt(
     store,
     verified.root,
     verified.entries,
-    verified.container,
-    false,
+    container,
+    allowMissing,
   );
   requireSameVerifiedTree(verified, current);
   const destination = join(store.layout.trash, transactionId);
   assertOwnedAncestors(store, destination);
   destinationAbsent(destination);
   retryTransient(() => renameSync(verified.root, destination));
-  const moved = verifyContainerAt(store, destination, verified.entries, verified.container, false);
+  const moved = verifyContainerAt(store, destination, verified.entries, container, allowMissing);
   const expectedRoot = verified.directories.find(({ relativePath }) => relativePath === "");
   const movedRoot = moved.directories.find(({ relativePath }) => relativePath === "");
   if (
