@@ -57,8 +57,9 @@ changed device or identity, or a non-single-link file; they do not claim to
 enumerate every reparse form. The store uses a fixed AIH-owned project root,
 private staging, content-addressed generations that the library never edits in
 place, bounded inventories and tree walks, canonical targets, one-link regular
-files, a cooperative lock, a durable journal, and a complete old/new
-generation-selection record.
+files, a cooperative lock, fsynced transaction records with parent-directory
+sync where supported, and a complete old/new generation-selection record. The
+claim covers process-termination recovery, not reboot or power-loss durability.
 
 Apply never edits an existing generation in place, so prior generation bytes
 remain intact on failure. An interruption around atomic selection replacement
@@ -99,7 +100,7 @@ switching behavior.
 | Tampering with local audit logs | Logs are local diagnostics; `aih evidence build` packages checksummed evidence for sharing. |
 | Policy source drift or override tampering | `aih doctor`/`aih report` surface active policy source and HEAD drift; `aih policy verify --against <sha256|bundle>` pins the trusted channel. |
 | Missing evidence or fleet-bundle signature in gated environments | `aih evidence build --require-signature` and `aih verify-bundle --require-signature` fail with coded `bundle.signature` findings instead of skipping. |
-| Methodology transaction interruption or cooperating writer contention | Private staging, a durable journal, a cooperative lock, complete old/new selection, and idempotent recovery avoid editing already-published generation bytes in place. |
+| Methodology transaction interruption or cooperating writer contention | Private staging, fsynced transaction records, parent-directory sync where supported, a cooperative lock, complete old/new selection, and idempotent process-termination recovery avoid editing already-published generation bytes in place. |
 | Hostile methodology paths or bytes | Canonical targets, exact in-memory digests, bounded inventories and walks, and Node-observable realpath, descriptor, device/identity, and link-count checks reject detected escape or link conditions and treat bytes as inert data. |
 | Uncertain methodology clean | Exact inactive-generation verification retains the object and reports a fixed finding instead of deleting unknown or changed content. |
 

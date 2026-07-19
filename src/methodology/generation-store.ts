@@ -2599,15 +2599,16 @@ function verifyCleanGenerations(
   journal: CleanTransactionRecord,
   receipt: GenerationReceipt,
   activationRead: StoredRecordRead<ActivationRecord> | undefined,
+  persistentBudget: StoreWalkBudget,
+  targetAlreadyVerified: boolean,
 ): void {
   const activeDigest = activationRead?.record.manifestDigest;
-  const retainedPersistentBudget = createStoreWalkBudget();
   if (activationRead !== undefined) {
     const active = inspectOwnedGeneration(
       store,
       activationRead.record,
       inventory,
-      retainedPersistentBudget,
+      persistentBudget,
     );
     if (active.state !== "verified") throwInspectionFailure(active);
   }
@@ -2619,7 +2620,9 @@ function verifyCleanGenerations(
           "METHODOLOGY_STORE_TRANSACTION_INVALID",
         );
       }
-      verifyExpectedGeneration(store, generation, receipt, createStoreWalkBudget());
+      if (!targetAlreadyVerified) {
+        verifyExpectedGeneration(store, generation, receipt, persistentBudget);
+      }
       continue;
     }
     if (!completedGeneration(generation)) {
@@ -2629,7 +2632,7 @@ function verifyCleanGenerations(
       );
     }
     if (generation.manifestDigest === activeDigest) continue;
-    const observed = inspectGeneration(store, generation, null, retainedPersistentBudget);
+    const observed = inspectGeneration(store, generation, null, persistentBudget);
     if (observed.state !== "verified") throwInspectionFailure(observed);
   }
 }
@@ -2741,6 +2744,7 @@ function classifyCleanRecovery(
   }
 
   const activationRead = readCleanJournalActivation(store, initialInventory, journal);
+  const persistentBudget = createStoreWalkBudget();
   const candidate = generationByDigest(initialInventory, journal.generationDigest);
   let source: VerifiedTree | undefined;
   if (candidate !== undefined) {
@@ -2750,7 +2754,7 @@ function classifyCleanRecovery(
         "METHODOLOGY_STORE_TRANSACTION_INVALID",
       );
     }
-    source = exactCleanSource(store, journal, receipt, createStoreWalkBudget());
+    source = exactCleanSource(store, journal, receipt, persistentBudget);
   }
 
   let trash: VerifiedTree | undefined;
@@ -2760,7 +2764,7 @@ function classifyCleanRecovery(
       journal,
       receipt,
       journal.phase === "deleting",
-      createStoreWalkBudget(),
+      persistentBudget,
     );
   }
   const validShape =
@@ -2777,7 +2781,15 @@ function classifyCleanRecovery(
     );
   }
 
-  verifyCleanGenerations(store, initialInventory, journal, receipt, activationRead);
+  verifyCleanGenerations(
+    store,
+    initialInventory,
+    journal,
+    receipt,
+    activationRead,
+    persistentBudget,
+    source !== undefined || trash !== undefined,
+  );
   assertMutationAuthority(store, held);
   const finalInventory = inspectRecoveryStoreLayout(store);
   if (!sameRecoveryInventory(initialInventory, finalInventory)) {
@@ -2892,6 +2904,8 @@ function verifyCleanRecoveryTerminal(
     journal,
     exactCleanReceipt(store, journal),
     activationRead,
+    createStoreWalkBudget(),
+    false,
   );
   assertMutationAuthority(store, held);
   const finalInventory = inspectRecoveryStoreLayout(store);
@@ -3271,7 +3285,6 @@ const CLEAN_RETAINED_FINDINGS = new Set<StoreFindingCode>([
   "METHODOLOGY_STORE_GENERATION_INCOMPLETE",
   "METHODOLOGY_STORE_GENERATION_DRIFT",
   "METHODOLOGY_STORE_CLEAN_RETAINED",
-  "METHODOLOGY_STORE_FILESYSTEM_FAILURE",
 ]);
 
 function cleanFailure(error: unknown, generationDigest: string | null): CleanProjectionResult {
@@ -3367,10 +3380,16 @@ function verifyOtherCleanGenerations(
   store: OwnedStore,
   inventory: FixedStoreLayoutInventory,
   excludedDigest: string,
+  activeDigest: string | undefined,
   budget: StoreWalkBudget,
 ): void {
   for (const generation of inventory.generations) {
-    if (generation.manifestDigest === excludedDigest) continue;
+    if (
+      generation.manifestDigest === excludedDigest ||
+      generation.manifestDigest === activeDigest
+    ) {
+      continue;
+    }
     if (!completedGeneration(generation)) {
       throw new GenerationStoreFsError(
         "clean found an unrelated incomplete generation",
@@ -3427,13 +3446,13 @@ function verifiedPreCleanState(
       "METHODOLOGY_STORE_CLEAN_ACTIVE",
     );
   }
-  const retainedPersistentBudget = createStoreWalkBudget();
+  const persistentBudget = createStoreWalkBudget();
   if (activationRead !== undefined) {
     const active = inspectOwnedGeneration(
       store,
       activationRead.record,
       inventory,
-      retainedPersistentBudget,
+      persistentBudget,
     );
     if (active.state !== "verified") throwInspectionFailure(active);
   }
@@ -3447,8 +3466,14 @@ function verifiedPreCleanState(
       "METHODOLOGY_STORE_GENERATION_INCOMPLETE",
     );
   }
-  const exact = readExactCleanTarget(store, generationDigest, createStoreWalkBudget());
-  verifyOtherCleanGenerations(store, inventory, generationDigest, retainedPersistentBudget);
+  const exact = readExactCleanTarget(store, generationDigest, persistentBudget);
+  verifyOtherCleanGenerations(
+    store,
+    inventory,
+    generationDigest,
+    activationRead?.record.manifestDigest,
+    persistentBudget,
+  );
   assertMutationAuthority(store, held);
   const finalInventory = inspectFixedStoreLayout(store);
   if (!sameInventory(inventory, finalInventory)) {
@@ -3542,30 +3567,30 @@ function verifyPreparedCleanState(
       "METHODOLOGY_STORE_TRANSACTION_INVALID",
     );
   }
-  readCleanJournalActivation(store, inventory, journal);
+  const activationRead = readCleanJournalActivation(store, inventory, journal);
+  const persistentBudget = createStoreWalkBudget();
   let source: VerifiedTree;
   try {
-    source = exactCleanSource(
-      store,
-      journal,
-      exactCleanReceipt(store, journal),
-      createStoreWalkBudget(),
-    );
+    source = exactCleanSource(store, journal, exactCleanReceipt(store, journal), persistentBudget);
   } catch (error) {
     return throwCleanTargetFailure(error);
   }
-  const activationRead = readCleanJournalActivation(store, inventory, journal);
-  const retainedPersistentBudget = createStoreWalkBudget();
   if (activationRead !== undefined) {
     const active = inspectOwnedGeneration(
       store,
       activationRead.record,
       inventory,
-      retainedPersistentBudget,
+      persistentBudget,
     );
     if (active.state !== "verified") throwInspectionFailure(active);
   }
-  verifyOtherCleanGenerations(store, inventory, journal.generationDigest, retainedPersistentBudget);
+  verifyOtherCleanGenerations(
+    store,
+    inventory,
+    journal.generationDigest,
+    activationRead?.record.manifestDigest,
+    persistentBudget,
+  );
   return source;
 }
 
@@ -3627,7 +3652,12 @@ function cleanProjectionInternal(
   value: unknown,
   runtime: CleanGenerationStoreRuntime | undefined,
 ): CleanProjectionResult {
-  const parsed = CleanProjectionInputSchema.safeParse(value);
+  let parsed: ReturnType<typeof CleanProjectionInputSchema.safeParse>;
+  try {
+    parsed = CleanProjectionInputSchema.safeParse(value);
+  } catch {
+    return cleanResult("blocked", null, [{ code: "METHODOLOGY_STORE_INPUT_INVALID" }]);
+  }
   if (!parsed.success) {
     return cleanResult("blocked", null, [{ code: "METHODOLOGY_STORE_INPUT_INVALID" }]);
   }

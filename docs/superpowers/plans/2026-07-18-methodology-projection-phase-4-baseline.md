@@ -33,7 +33,7 @@ Create these focused production files:
 
 - src/methodology/generation-store-contract.ts — closed input/stored-record/result types, exact finding vocabulary, canonical JSON, payload validation, and resource constants.
 - src/methodology/generation-store-fs.ts — bounded AIH-root layout, safe regular-file I/O, exact-tree walking, Node-observable link/containment checks, atomic-create and replacement records, verified scratch-directory publication, quarantine, syncing, and bounded deletion.
-- src/methodology/generation-store-lock.ts — cooperative PID-bound pending-candidate construction, complete candidate publication, stale-owner classification, exact-token release, and lock quarantine.
+- src/methodology/generation-store-lock.ts — cooperative PID-bound pending-candidate construction, complete candidate publication, stale-owner classification, recoverable exact-claim release, and lock quarantine.
 - src/methodology/generation-store.ts — read-only inspection plus explicit apply, recovery, and exact-generation clean state machines.
 
 Create these test files:
@@ -286,7 +286,7 @@ Stored values and their path bindings are closed, not merely typed:
 - rootId, transactionId, lock token, manifest digest, content digest, and receipt digest are lowercase 64-character hexadecimal strings;
 - rootDevice is the canonical unsigned decimal string from bigint stat.dev and matches /^(0|[1-9][0-9]{0,19})$/;
 - PID is a safe positive integer no greater than 4,294,967,295;
-- transaction filenames are exactly <transactionId>.json, staging/trash directories are exactly <transactionId>, generation directories are exactly <manifestDigest>, and authoritative lock candidate names are exactly <token> or <token>.stale; candidate construction uses only non-authoritative <token>.pending.<pid> directories that are atomically published or conservatively retained/reaped by PID liveness;
+- transaction filenames are exactly <transactionId>.json, staging/trash directories are exactly <transactionId>, generation directories are exactly <manifestDigest>, and authoritative lock candidate names are exactly <token> or <token>.stale; candidate construction uses non-authoritative <token>.pending.<pid> directories, while exact destructive cleanup uses non-authoritative <token>.deleting.<pid> directories; both transient states are conservatively retained or reaped by PID liveness;
 - ActivationRecord.generation is exactly generations/<manifestDigest>/content with forward slashes and is derived, never trusted as a free path;
 - every finding subject is own-data UTF-8 of at most MAX_FINDING_SUBJECT_BYTES and is never used as a path.
 
@@ -297,7 +297,7 @@ The state/finding mapping is normative:
 - inspection returns empty or verified only for fully classified state, drifted only for an owned generation whose expected tree is observably changed, and failed-closed for malformed ownership, unsafe paths/links, exceeded bounds, inaccessible state, invalid activation, or uncertain identity;
 - apply returns blocked for invalid input, resource/payload/coverage/digest refusal, deterministic destination collision, live cooperative lock, or stale expected activation before mutation; it returns failed-closed for malformed/unsafe owned state, existing drift, invalid transaction state, or a filesystem failure that makes mutation state uncertain;
 - recovery returns blocked only when a valid live cooperative lock prevents entry; it returns failed-closed for malformed, unbound, over-limit, or ambiguous pending state and never starts separate work;
-- clean returns blocked for invalid input, a valid live lock, or an active requested digest; it returns retained for an exact requested inactive generation that is missing, incomplete, drifted, linked, unexpectedly populated, or cannot be deleted with certainty; it returns failed-closed for malformed root/activation/transaction ownership or unsafe containment.
+- clean returns blocked for invalid input, a valid live lock, or an active requested digest; it returns retained only when absence, incompleteness, drift, a link, or unexpected content is positively observed and left in place; it returns failed-closed for malformed root/activation/transaction ownership, unsafe containment, resource exhaustion, or filesystem uncertainty before, during, or after deletion.
 
 Every non-success result carries at least one fixed finding, and success states carry no contradictory refusal finding.
 
@@ -585,7 +585,7 @@ git -c commit.gpgsign=false commit -s -m "feat(methodology): add bounded generat
 
 - [ ] **Step 1: Write failing lock tests**
 
-Test PID-bound pending-candidate construction before a complete claim, two sequential contenders, exact-token release, wrong-token refusal, live PID block, EPERM/indeterminate PID block, dead PID quarantine and reacquire, PID-reuse conservative block, malformed owner retention, linked owner retention, empty lock retention, token/filename mismatch, invalid identifier alphabets and lengths, a 129th candidate fail-closed, dead pending-candidate cleanup, live/indeterminate pending retention, and unsafe pending retention.
+Test PID-bound pending-candidate construction before a complete claim, two sequential contenders, exact-token release, interrupted release retry, dead PID-bound deleting-state cleanup, wrong-token refusal, live PID block, EPERM/indeterminate PID block, dead PID quarantine and reacquire, PID-reuse conservative block, malformed owner retention, linked owner retention, empty lock retention, token/filename mismatch, invalid identifier alphabets and lengths, a 129th candidate fail-closed, dead pending-candidate cleanup, live/indeterminate transient retention, and unsafe pending retention.
 
 The runtime seam is data-only except for the internal liveness function:
 
@@ -617,7 +617,7 @@ Lexically inventory lock-candidates before mutation and fail closed upon observi
 
 A pending candidate never proves a claim. Reap it only when its PID is definitively absent and it remains a private bounded ordinary directory containing zero or one bounded private single-link ordinary file. Do not parse or adopt that file. Retain live/indeterminate pending candidates; retain and fail closed on unsafe or identity-uncertain pending state.
 
-For a strictly parsed owner with an absent PID, rename lock to the deterministic quarantine lock-candidates/<token>.stale only when that path is absent. PID reuse yields alive and therefore blocks. After a contender owns the new lock, it may remove that stale directory only after re-reading the exact owner and confirming rootId/token/PID/transactionId binding and absent PID; every other candidate/quarantine remains. Release re-reads owner.json and removes only when rootId, token, PID, and transactionId all equal the held claim.
+For a strictly parsed owner with an absent PID, rename lock to the deterministic quarantine lock-candidates/<token>.stale only when that path is absent. PID reuse yields alive and therefore blocks. After a contender owns the new lock, it may remove that stale directory only after re-reading the exact owner and confirming rootId/token/PID/transactionId binding and absent PID; every other candidate/quarantine remains. Release re-reads the exact claim, renames it to lock-candidates/<token>.deleting.<pid>, and removes owner.json followed by the empty directory. The exact holder may retry interrupted cleanup; another process removes a bounded exact or empty deleting state only after its PID is definitively absent.
 
 - [ ] **Step 4: Run lock tests and focused methodology tests**
 

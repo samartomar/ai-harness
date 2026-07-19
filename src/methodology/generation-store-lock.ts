@@ -13,7 +13,7 @@ import {
   rmdirSync,
   unlinkSync,
 } from "node:fs";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { containedPath } from "../internals/contained-path.js";
 import { retryTransient } from "../internals/fsxn.js";
 import {
@@ -35,6 +35,7 @@ import {
 
 const CANDIDATE_NAME_PATTERN = /^([0-9a-f]{64})(\.stale)?$/;
 const PENDING_CANDIDATE_NAME_PATTERN = /^([0-9a-f]{64})\.pending\.([1-9][0-9]{0,9})$/;
+const DELETING_CANDIDATE_NAME_PATTERN = /^([0-9a-f]{64})\.deleting\.([1-9][0-9]{0,9})$/;
 const DIRECTORY_SYNC_UNSUPPORTED = new Set(["EBADF", "EINVAL", "EISDIR", "ENOTSUP", "EPERM"]);
 
 export type PidState = "alive" | "absent" | "indeterminate";
@@ -201,12 +202,17 @@ function inventoryCandidateNames(store: OwnedStore, requireCapacity: boolean): r
       names.push(entry.name);
       const match = CANDIDATE_NAME_PATTERN.exec(entry.name);
       const pending = PENDING_CANDIDATE_NAME_PATTERN.exec(entry.name);
+      const deleting = DELETING_CANDIDATE_NAME_PATTERN.exec(entry.name);
       const pendingPid = pending?.[2] === undefined ? undefined : Number(pending[2]);
+      const deletingPid = deleting?.[2] === undefined ? undefined : Number(deleting[2]);
       if (
         (match === null &&
           (pending === null ||
             !Number.isSafeInteger(pendingPid) ||
-            (pendingPid as number) > MAX_PID)) ||
+            (pendingPid as number) > MAX_PID) &&
+          (deleting === null ||
+            !Number.isSafeInteger(deletingPid) ||
+            (deletingPid as number) > MAX_PID)) ||
         entry.isSymbolicLink() ||
         !entry.isDirectory()
       ) {
@@ -330,17 +336,18 @@ function removeExactClaimDirectory(
   const current = readExactClaimDirectory(store, directoryPath);
   if (
     !sameClaim(current.claim, expectedClaim) ||
-    !sameDirectoryIdentity(current.identity, expectedIdentity)
+    !sameDirectoryIdentity(current.identity, expectedIdentity) ||
+    !privateDirectoryIdentity(current.identity)
   ) {
     fail("claim changed before exact removal");
   }
-  try {
-    unlinkSync(join(directoryPath, "owner.json"));
-    rmdirSync(directoryPath);
-  } catch {
-    fail("exact claim removal failed", "METHODOLOGY_STORE_FILESYSTEM_FAILURE");
-  }
-  syncDirectory(dirname(directoryPath));
+  const deletingPath = join(
+    store.layout.lockCandidates,
+    `${expectedClaim.token}.deleting.${expectedClaim.pid.toString(10)}`,
+  );
+  if (!pathAbsent(deletingPath)) fail("exact claim cleanup state already exists");
+  renameAndVerifyClaim(store, directoryPath, deletingPath, expectedClaim, expectedIdentity);
+  removeDeletingCandidate(store, deletingPath, expectedClaim);
 }
 
 function cleanupOwnCandidate(
@@ -363,6 +370,63 @@ function sameFileIdentity(left: BigIntStats, right: BigIntStats): boolean {
     left.mtimeNs === right.mtimeNs &&
     left.ctimeNs === right.ctimeNs
   );
+}
+
+function removeDeletingCandidate(
+  store: OwnedStore,
+  deletingPath: string,
+  expectedClaim?: HeldStoreLock,
+): void {
+  const name = basename(deletingPath);
+  const match = DELETING_CANDIDATE_NAME_PATTERN.exec(name);
+  const token = match?.[1];
+  const pid = match?.[2] === undefined ? undefined : Number(match[2]);
+  if (
+    token === undefined ||
+    pid === undefined ||
+    !Number.isSafeInteger(pid) ||
+    pid > MAX_PID ||
+    (expectedClaim !== undefined && (expectedClaim.token !== token || expectedClaim.pid !== pid))
+  ) {
+    fail("deleting lock candidate identity is invalid");
+  }
+  const identity = requireOwnedDirectory(store, deletingPath);
+  if (!privateDirectoryIdentity(identity)) {
+    fail("deleting lock candidate permissions are not private");
+  }
+  const names = boundedNames(deletingPath, 1);
+  if (names.length === 1) {
+    if (names[0] !== "owner.json") fail("deleting lock candidate has an unexpected entry");
+    const exact = readExactClaimDirectory(store, deletingPath);
+    if (
+      exact.claim.rootId !== store.rootRecord.rootId ||
+      exact.claim.token !== token ||
+      exact.claim.pid !== pid ||
+      (expectedClaim !== undefined && !sameClaim(exact.claim, expectedClaim)) ||
+      !sameDirectoryIdentity(identity, exact.identity)
+    ) {
+      fail("deleting lock candidate changed before removal");
+    }
+    try {
+      unlinkSync(join(deletingPath, "owner.json"));
+    } catch {
+      fail("deleting lock owner removal failed", "METHODOLOGY_STORE_FILESYSTEM_FAILURE");
+    }
+  }
+  const currentIdentity = requireOwnedDirectory(store, deletingPath);
+  if (
+    !privateDirectoryIdentity(currentIdentity) ||
+    !sameDirectoryIdentity(identity, currentIdentity) ||
+    boundedNames(deletingPath, 1).length !== 0
+  ) {
+    fail("deleting lock candidate changed before directory removal");
+  }
+  try {
+    rmdirSync(deletingPath);
+  } catch {
+    fail("deleting lock candidate removal failed", "METHODOLOGY_STORE_FILESYSTEM_FAILURE");
+  }
+  syncDirectory(dirname(deletingPath));
 }
 
 function removePendingCandidate(store: OwnedStore, pendingPath: string): void {
@@ -417,6 +481,14 @@ function removePendingCandidate(store: OwnedStore, pendingPath: string): void {
 function prepareCandidateInventory(store: OwnedStore, runtime: LockRuntime): readonly string[] {
   const initial = inventoryCandidateNames(store, false);
   for (const name of initial) {
+    const deleting = DELETING_CANDIDATE_NAME_PATTERN.exec(name);
+    if (deleting?.[2] !== undefined) {
+      const pid = Number(deleting[2]);
+      if (Number.isSafeInteger(pid) && pid <= MAX_PID && safePidState(runtime, pid) === "absent") {
+        removeDeletingCandidate(store, join(store.layout.lockCandidates, name));
+      }
+      continue;
+    }
     const pending = PENDING_CANDIDATE_NAME_PATTERN.exec(name);
     if (pending?.[2] !== undefined) {
       const pid = Number(pending[2]);
@@ -592,6 +664,28 @@ function quarantineDeadLock(
   renameAndVerifyClaim(store, store.layout.lock, stalePath, dead.claim, dead.identity);
 }
 
+function reapQuiescentStaleFences(store: OwnedStore, runtime: LockRuntime): void {
+  try {
+    const candidates = inventoryCandidateNames(store, false);
+    if (candidates.some((name) => !name.endsWith(".stale"))) return;
+    for (const name of candidates) {
+      const match = CANDIDATE_NAME_PATTERN.exec(name);
+      if (match?.[1] === undefined || match[2] === undefined) continue;
+      const stalePath = join(store.layout.lockCandidates, name);
+      const stale = readExactClaimDirectory(store, stalePath);
+      if (
+        name === `${stale.claim.token}.stale` &&
+        privateDirectoryIdentity(stale.identity) &&
+        safePidState(runtime, stale.claim.pid) === "absent"
+      ) {
+        removeExactClaimDirectory(store, stalePath, stale.claim, stale.identity);
+      }
+    }
+  } catch {
+    // Retain every uncertain ABA fence; later store preflight remains fail-closed.
+  }
+}
+
 function claimCandidate(
   store: OwnedStore,
   candidate: Readonly<{ path: string; identity: DirectoryIdentity }>,
@@ -610,13 +704,9 @@ function claimCandidate(
     fail("generation store lock is held", "METHODOLOGY_STORE_LOCK_HELD");
   }
 
-  let recoveredStalePath: string | undefined;
-  let recoveredStale: Extract<LiveLockState, { state: "dead" }> | undefined;
   if (before.state === "dead") {
-    recoveredStale = before;
     try {
       quarantineDeadLock(store, before);
-      recoveredStalePath = join(store.layout.lockCandidates, `${before.claim.token}.stale`);
     } catch (error) {
       cleanupOwnCandidate(store, candidate.path, claim, candidate.identity);
       throw error;
@@ -658,24 +748,7 @@ function claimCandidate(
     fail("lock claim rename failed", "METHODOLOGY_STORE_FILESYSTEM_FAILURE");
   }
 
-  if (recoveredStalePath !== undefined && recoveredStale !== undefined) {
-    try {
-      const candidates = inventoryCandidateNames(store, false);
-      const contenderMayHoldOldObservation = candidates.some((name) => !name.endsWith(".stale"));
-      if (!contenderMayHoldOldObservation) {
-        const stale = readExactClaimDirectory(store, recoveredStalePath);
-        if (
-          sameClaim(stale.claim, recoveredStale.claim) &&
-          sameDirectoryIdentity(stale.identity, recoveredStale.identity) &&
-          safePidState(runtime, stale.claim.pid) === "absent"
-        ) {
-          removeExactClaimDirectory(store, recoveredStalePath, stale.claim, stale.identity);
-        }
-      }
-    } catch {
-      // Retain the exact ABA fence whenever quiescence or cleanup is uncertain.
-    }
-  }
+  reapQuiescentStaleFences(store, runtime);
 }
 
 export function acquireStoreLockInternal(
@@ -744,11 +817,19 @@ export function releaseStoreLock(store: OwnedStore, rawClaim: HeldStoreLock): vo
   assertOwnedStorePhase(store);
   ensureCandidateDirectory(store);
   const candidatePath = join(store.layout.lockCandidates, claim.token);
+  const deletingPath = join(
+    store.layout.lockCandidates,
+    `${claim.token}.deleting.${claim.pid.toString(10)}`,
+  );
 
   if (pathAbsent(store.layout.lock)) {
     inventoryCandidateNames(store, false);
     if (pathAbsent(candidatePath)) {
-      fail("live lock and release candidate are both absent");
+      if (pathAbsent(deletingPath)) {
+        fail("live lock and release candidate are both absent");
+      }
+      removeDeletingCandidate(store, deletingPath, claim);
+      return;
     }
     const interrupted = readExactClaimDirectory(store, candidatePath);
     if (!sameClaim(interrupted.claim, claim)) {
@@ -773,6 +854,7 @@ export const GENERATION_STORE_LOCK_BOUNDARY = Object.freeze({
   candidateInventoryScanLimit: MAX_RECOVERY_RECORDS,
   concurrentCandidateHardCap: false,
   ambiguousCandidateAutoRepair: false,
+  destructiveCleanupRecoverable: true,
   staleFenceRequiresQuiescence: true,
   providerRead: false,
   providerExecution: false,

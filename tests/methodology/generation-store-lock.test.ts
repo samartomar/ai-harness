@@ -151,7 +151,7 @@ function lockError(action: () => unknown, findingCode: StoreFindingCode): Genera
   } catch (error) {
     expect(error).toBeInstanceOf(GenerationStoreFsError);
     const storeError = error as GenerationStoreFsError;
-    expect(storeError.findingCode).toBe(findingCode);
+    expect(storeError.findingCode, storeError.message).toBe(findingCode);
     return storeError;
   }
   throw new Error("expected lock operation to fail");
@@ -340,6 +340,7 @@ describe("Phase 4 cooperative generation-store lock", () => {
       candidateInventoryScanLimit: 128,
       concurrentCandidateHardCap: false,
       ambiguousCandidateAutoRepair: false,
+      destructiveCleanupRecoverable: true,
       staleFenceRequiresQuiescence: true,
       providerRead: false,
       providerExecution: false,
@@ -495,7 +496,7 @@ describe("Phase 4 cooperative generation-store lock", () => {
     expect(existsSync(join(malformed.store.layout.lockCandidates, TOKEN_A))).toBe(false);
   });
 
-  it("retains every unrelated pre-existing stale candidate", () => {
+  it("reaps only exact dead unrelated stale candidates after a quiescent claim", () => {
     const { store } = temporaryStore();
     mkdirSync(store.layout.lockCandidates, { mode: 0o700 });
     const dead = owner(store, TOKEN_C, 1201);
@@ -523,7 +524,7 @@ describe("Phase 4 cooperative generation-store lock", () => {
         ]),
       ),
     );
-    expect(existsSync(join(store.layout.lockCandidates, `${TOKEN_C}.stale`))).toBe(true);
+    expect(existsSync(join(store.layout.lockCandidates, `${TOKEN_C}.stale`))).toBe(false);
     expect(existsSync(join(store.layout.lockCandidates, `${TOKEN_D}.stale`))).toBe(true);
     expect(existsSync(mismatchedPath)).toBe(true);
     releaseStoreLock(store, held);
@@ -657,6 +658,66 @@ describe("Phase 4 cooperative generation-store lock", () => {
     releaseStoreLock(store, held);
     expect(existsSync(store.layout.lock)).toBe(false);
     expect(existsSync(interrupted)).toBe(false);
+  });
+
+  it("retries an exact release interrupted after destructive cleanup begins", () => {
+    const { store } = temporaryStore();
+    const held = acquireStoreLockInternal(store, TRANSACTION_A, runtime(1507, TOKEN_A));
+    let injected = false;
+    injectFsFault({
+      rmdirSync: ((...args: unknown[]) => {
+        const candidate = String(args[0]);
+        if (
+          !injected &&
+          candidate !== store.layout.lockCandidates &&
+          candidate.startsWith(store.layout.lockCandidates)
+        ) {
+          injected = true;
+          throw syntheticFsError("EIO");
+        }
+        return Reflect.apply(originalFs.rmdirSync, mutableFs, args);
+      }) as typeof originalFs.rmdirSync,
+    });
+
+    lockError(() => releaseStoreLock(store, held), "METHODOLOGY_STORE_FILESYSTEM_FAILURE");
+    expect(injected).toBe(true);
+
+    restoreFs();
+    releaseStoreLock(store, held);
+    expect(existsSync(store.layout.lock)).toBe(false);
+    expect(readdirSync(store.layout.lockCandidates)).toEqual([]);
+  });
+
+  it("reaps an exact interrupted release cleanup after its owner process is absent", () => {
+    const { store } = temporaryStore();
+    const held = acquireStoreLockInternal(store, TRANSACTION_A, runtime(1508, TOKEN_A));
+    let injected = false;
+    injectFsFault({
+      rmdirSync: ((...args: unknown[]) => {
+        const candidate = String(args[0]);
+        if (
+          !injected &&
+          candidate !== store.layout.lockCandidates &&
+          candidate.startsWith(store.layout.lockCandidates)
+        ) {
+          injected = true;
+          throw syntheticFsError("EIO");
+        }
+        return Reflect.apply(originalFs.rmdirSync, mutableFs, args);
+      }) as typeof originalFs.rmdirSync,
+    });
+
+    lockError(() => releaseStoreLock(store, held), "METHODOLOGY_STORE_FILESYSTEM_FAILURE");
+    expect(injected).toBe(true);
+
+    restoreFs();
+    const next = acquireStoreLockInternal(
+      store,
+      TRANSACTION_B,
+      runtime(1509, TOKEN_B, new Map([[held.pid, "absent"]])),
+    );
+    expect(readdirSync(store.layout.lockCandidates)).toEqual([]);
+    releaseStoreLock(store, next);
   });
 
   it("completes an exact interrupted release at the 128-candidate boundary", () => {
@@ -855,6 +916,32 @@ describe("Phase 4 cooperative generation-store lock", () => {
     expect(readLiveOwner(store)).toEqual(held);
     expect(oldPidChecks).toBe(2);
     expect(existsSync(join(store.layout.lockCandidates, `${TOKEN_A}.stale`))).toBe(true);
+    releaseStoreLock(store, held);
+  });
+
+  it("reaps accumulated exact dead ABA fences only after a quiescent claim wins", () => {
+    const { store } = temporaryStore();
+    const oldFence = join(store.layout.lockCandidates, `${TOKEN_A}.stale`);
+    const newlyDead = owner(store, TOKEN_B, 1702, TRANSACTION_B);
+    writeOwner(store, oldFence, owner(store, TOKEN_A, 1701));
+    writeOwner(store, store.layout.lock, newlyDead);
+
+    const held = acquireStoreLockInternal(
+      store,
+      TRANSACTION_A,
+      runtime(
+        1703,
+        TOKEN_C,
+        new Map([
+          [1701, "absent"],
+          [1702, "absent"],
+        ]),
+      ),
+    );
+
+    expect(held).toEqual(owner(store, TOKEN_C, 1703));
+    expect(readLiveOwner(store)).toEqual(held);
+    expect(readdirSync(store.layout.lockCandidates)).toEqual([]);
     releaseStoreLock(store, held);
   });
 
@@ -1607,14 +1694,15 @@ describe("Phase 4 cooperative generation-store lock", () => {
     expect(existsSync(store.layout.lock)).toBe(false);
   });
 
-  it("retains its complete contender when exact cleanup fails", () => {
+  it("retains and later reaps a PID-bound deleting contender when exact cleanup fails", () => {
     const { store } = temporaryStore();
     const held = acquireStoreLockInternal(store, TRANSACTION_A, runtime(2306, TOKEN_A));
     const contender = join(store.layout.lockCandidates, TOKEN_B);
-    const contenderOwner = join(contender, "owner.json");
+    const deleting = join(store.layout.lockCandidates, `${TOKEN_B}.deleting.2307`);
+    const deletingOwner = join(deleting, "owner.json");
     injectFsFault({
       unlinkSync: ((...args: unknown[]) => {
-        if (String(args[0]) === contenderOwner) throw syntheticFsError("EACCES");
+        if (String(args[0]) === deletingOwner) throw syntheticFsError("EACCES");
         return Reflect.apply(originalFs.unlinkSync, mutableFs, args);
       }) as typeof originalFs.unlinkSync,
     });
@@ -1628,12 +1716,20 @@ describe("Phase 4 cooperative generation-store lock", () => {
         ),
       "METHODOLOGY_STORE_FILESYSTEM_FAILURE",
     );
-    expect(readFileSync(contenderOwner)).toEqual(
+    expect(existsSync(contender)).toBe(false);
+    expect(readFileSync(deletingOwner)).toEqual(
       canonicalRecordBytes("lock-owner", owner(store, TOKEN_B, 2307, TRANSACTION_B)),
     );
 
     restoreFs();
     expect(readLiveOwner(store)).toEqual(held);
     releaseStoreLock(store, held);
+    const next = acquireStoreLockInternal(
+      store,
+      TRANSACTION_A,
+      runtime(2308, TOKEN_C, new Map([[2307, "absent"]])),
+    );
+    expect(existsSync(deleting)).toBe(false);
+    releaseStoreLock(store, next);
   });
 });

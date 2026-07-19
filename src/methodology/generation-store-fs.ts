@@ -57,6 +57,7 @@ const TRANSACTION_TEMP_PATTERN = /^\.([0-9a-f]{64})\.([a-z][a-z-]{0,63})\.tmp$/;
 const ACTIVE_TEMP_PATTERN = /^\.active\.([0-9a-f]{64})\.tmp$/;
 const LOCK_CANDIDATE_PATTERN = /^[0-9a-f]{64}(?:\.stale)?$/;
 const LOCK_PENDING_CANDIDATE_PATTERN = /^[0-9a-f]{64}\.pending\.([1-9][0-9]{0,9})$/;
+const LOCK_DELETING_CANDIDATE_PATTERN = /^[0-9a-f]{64}\.deleting\.([1-9][0-9]{0,9})$/;
 const FIXED_ROOT_ENTRIES = new Set([
   "root.json",
   "active.json",
@@ -231,9 +232,10 @@ function compareStrings(left: string, right: string): number {
 
 function isLockCandidateLayoutName(name: string): boolean {
   if (LOCK_CANDIDATE_PATTERN.test(name)) return true;
-  const pending = LOCK_PENDING_CANDIDATE_PATTERN.exec(name);
-  if (pending?.[1] === undefined) return false;
-  const pid = Number(pending[1]);
+  const transient =
+    LOCK_PENDING_CANDIDATE_PATTERN.exec(name) ?? LOCK_DELETING_CANDIDATE_PATTERN.exec(name);
+  if (transient?.[1] === undefined) return false;
+  const pid = Number(transient[1]);
   return Number.isSafeInteger(pid) && pid <= MAX_PID;
 }
 
@@ -1285,10 +1287,15 @@ function assertRecordPathBinding(
     case "lock-owner": {
       const parsed = LockOwnerRecordSchema.parse(record);
       const ownerDirectory = dirname(absPath);
+      const ownerDirectoryName = basename(ownerDirectory);
+      const deleting = LOCK_DELETING_CANDIDATE_PATTERN.exec(ownerDirectoryName);
       const validLivePath = pathsEqual(absPath, join(store.layout.lock, "owner.json"));
       const validCandidatePath =
-        (isLockCandidateName(basename(ownerDirectory), parsed.token, false) ||
-          isLockCandidateName(basename(ownerDirectory), parsed.token, true)) &&
+        (isLockCandidateName(ownerDirectoryName, parsed.token, false) ||
+          isLockCandidateName(ownerDirectoryName, parsed.token, true) ||
+          (deleting?.[1] !== undefined &&
+            ownerDirectoryName.startsWith(`${parsed.token}.deleting.`) &&
+            Number(deleting[1]) === parsed.pid)) &&
         pathsEqual(dirname(ownerDirectory), store.layout.lockCandidates);
       if (
         basename(absPath) !== "owner.json" ||

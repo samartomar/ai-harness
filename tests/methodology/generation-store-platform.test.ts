@@ -229,6 +229,24 @@ afterEach(() => {
 });
 
 describe("generation store fail-closed clean", () => {
+  it("returns a closed result when clean input reflection throws", () => {
+    const hostile = new Proxy(
+      {},
+      {
+        ownKeys(): never {
+          throw new Error("hostile clean input trap");
+        },
+      },
+    );
+
+    expect(() => cleanProjectionGeneration(hostile)).not.toThrow();
+    expect(cleanProjectionGeneration(hostile)).toMatchObject({
+      state: "blocked",
+      generationDigest: null,
+      findings: [{ code: "METHODOLOGY_STORE_INPUT_INVALID" }],
+    });
+  });
+
   it("does not construct storage for invalid, empty, or unsafe public recovery and clean inputs", () => {
     const root = temporaryProject();
     const storeAncestor = join(root.projectRoot, ".aih");
@@ -361,7 +379,7 @@ describe("generation store fail-closed clean", () => {
       findings: [{ code: "METHODOLOGY_STORE_FILESYSTEM_FAILURE" }],
     });
     expect(clean).toMatchObject({
-      state: "retained",
+      state: "failed-closed",
       findings: [{ code: "METHODOLOGY_STORE_FILESYSTEM_FAILURE" }],
     });
     expect(identityTreeSnapshot(fixture.oldGenerationRoot)).toEqual(oldBefore);
@@ -398,7 +416,7 @@ describe("generation store fail-closed clean", () => {
 
     expect(wasInjected()).toBe(true);
     expect(result.findings).toEqual([{ code: "METHODOLOGY_STORE_FILESYSTEM_FAILURE" }]);
-    expect(result.state).toBe(operation === "clean" ? "retained" : "failed-closed");
+    expect(result.state).toBe("failed-closed");
     expect(identityTreeSnapshot(fixture.newGenerationRoot)).toEqual(activeBefore);
     expect(existsSync(fixture.oldGenerationRoot)).toBe(operation !== "clean");
     expect(inspectFixedStoreLayout(store)).toMatchObject({

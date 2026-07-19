@@ -92,6 +92,8 @@ The store is rooted only at `<project>/.aih/methodology/v1`:
                                       # possibly empty/torn, never authoritative
   lock-candidates/<token>/owner.json  # complete candidate before lock publication
   lock-candidates/<token>.stale/owner.json
+  lock-candidates/<token>.deleting.<pid>/[owner.json]
+                                      # recoverable exact-claim cleanup state
   transactions/<transaction-id>.json
   transactions/.<transaction-id>.<phase>.tmp
                                       # bounded non-authoritative write temporary
@@ -227,9 +229,13 @@ definitively absent may be renamed to a unique stale-lock quarantine and recover
 PID reuse can delay recovery but cannot authorize concurrent mutation. Malformed,
 linked, or uncertain lock state fails closed and is left in place.
 
-Release verifies that `lock/owner.json` still contains the caller's exact token before
-removing it. Locking coordinates AIH processes only; it is not represented as an OS
-security boundary against arbitrary same-user writers.
+Release verifies that `lock/owner.json` still contains the caller's exact claim, moves
+the complete claim to the PID-bound `.deleting.<pid>` state, and only then removes its
+owner and directory. An exact caller can retry that cleanup; another cooperating AIH
+process reaps it only when the recorded PID is definitively absent. Empty, interrupted
+cleanup state is therefore recoverable without treating an ambiguous complete
+candidate as authority. Locking coordinates AIH processes only; it is not represented
+as an OS security boundary against arbitrary same-user writers.
 
 ## Apply transaction
 
@@ -272,9 +278,10 @@ complete classified states.
 Phase 4's crash guarantee covers process termination, interruption, and surfaced
 filesystem errors. Files and activation temporaries are synced before publication;
 parent directories are synced where the operating system supports it. Unsupported
-directory syncing is recorded in platform evidence rather than silently claimed. The
-phase does not claim survival from storage hardware that acknowledges and later loses
-durable writes.
+directory syncing is accepted only for the enumerated platform unsupported errors and
+does not establish a persistence claim for that platform. The platform gates prove
+process-termination recovery, not reboot or power-loss durability. The phase does not
+claim survival from storage hardware that acknowledges and later loses synced writes.
 
 Applying the already active exact generation is an idempotent read/verify result and
 performs no content rewrite.

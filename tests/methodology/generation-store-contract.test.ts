@@ -605,12 +605,12 @@ describe("Phase 4 generation-store contract", () => {
     );
   });
 
-  it("maps clean filesystem failures to retained only", () => {
+  it("maps clean filesystem uncertainty to failed-closed only", () => {
     expect(
-      cleanResult("retained", DIGEST, [{ code: "METHODOLOGY_STORE_FILESYSTEM_FAILURE" }]),
-    ).toMatchObject({ state: "retained", generationDigest: DIGEST });
+      cleanResult("failed-closed", DIGEST, [{ code: "METHODOLOGY_STORE_FILESYSTEM_FAILURE" }]),
+    ).toMatchObject({ state: "failed-closed", generationDigest: DIGEST });
     expect(() =>
-      cleanResult("failed-closed", null, [{ code: "METHODOLOGY_STORE_FILESYSTEM_FAILURE" }]),
+      cleanResult("retained", DIGEST, [{ code: "METHODOLOGY_STORE_FILESYSTEM_FAILURE" }]),
     ).toThrow();
   });
 

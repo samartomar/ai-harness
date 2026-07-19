@@ -910,6 +910,36 @@ describe("generation store deterministic recovery", () => {
     expect(readFileSync(outside.canary, "utf8")).toBe("outside-canary\n");
   }, 60_000);
 
+  it("shares one persistent-history budget across a pending clean target and retained generations", () => {
+    const fixture = materializeOverCapacityStore();
+    const outside = makeSiblingCanary(fixture.root);
+    const targetPlan = requirePlanned(plannedFixture());
+    const target = expectedGenerationRecords(fixture.store, targetPlan, payloadFixture());
+    const journal: Extract<TransactionRecord, { operation: "clean" }> = {
+      schemaVersion: 1,
+      operation: "clean",
+      rootId: fixture.store.rootRecord.rootId,
+      transactionId: TRANSACTION_ID,
+      phase: "prepared",
+      generationDigest: targetPlan.manifest.digest,
+      oldActivation: fixture.activation,
+      entries: target.receipt.entries,
+    };
+    writeTransaction(fixture, TRANSACTION_ID, journal);
+    const before = fixedStoreSnapshot(fixture);
+
+    const result = recoverProjectionStore({ projectRoot: fixture.root.projectRoot });
+
+    expectRecovery(
+      result,
+      "failed-closed",
+      fixture.manifestDigest,
+      "METHODOLOGY_STORE_RESOURCE_LIMIT",
+    );
+    expect(fixedStoreSnapshot(fixture)).toEqual(before);
+    expect(readFileSync(outside.canary, "utf8")).toBe("outside-canary\n");
+  }, 60_000);
+
   it.each(
     APPLY_FAULT_POINTS,
   )("recovers a first-apply interruption at %s without inventing an activation", (point) => {
