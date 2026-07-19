@@ -1,4 +1,7 @@
 import { createHash } from "node:crypto";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { ProjectionPayload } from "../../src/methodology/generation-store-contract.js";
 import { planSyntheticProjection } from "../../src/methodology/projection-planner.js";
 
@@ -99,5 +102,32 @@ export function aggregateOverflowPayloadFixture(): ProjectionPayload[] {
   return Array.from({ length: 9 }, (_, index) => ({
     artifactId: `overflow-${index}`,
     bytes: Buffer.alloc(8 * 1024 * 1024),
+  }));
+}
+
+export type TemporaryProject = Readonly<{
+  sandboxRoot: string;
+  projectRoot: string;
+}>;
+
+export function makeTemporaryProject(): TemporaryProject {
+  const sandboxRoot = mkdtempSync(join(tmpdir(), "aih-methodology-store-"));
+  const projectRoot = join(sandboxRoot, "project");
+  mkdirSync(projectRoot, { mode: 0o700 });
+  return Object.freeze({ sandboxRoot, projectRoot });
+}
+
+export function makeSiblingCanary(root: TemporaryProject): Readonly<{ canary: string }> {
+  const canary = join(root.sandboxRoot, "outside-canary.txt");
+  writeFileSync(canary, "outside-canary\n", { mode: 0o600 });
+  return Object.freeze({ canary });
+}
+
+export function expectedReceiptEntries() {
+  const result = plannedFixture();
+  if (result.state !== "planned") throw new Error("fixture must plan");
+  return result.manifest.entries.map((entry) => ({
+    ...entry,
+    bytes: entry.artifactId === "root" ? ROOT_BYTES.length : DEPENDENCY_BYTES.length,
   }));
 }
