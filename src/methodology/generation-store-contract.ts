@@ -701,16 +701,19 @@ function compareStrings(left: string, right: string): number {
 }
 
 function hasTargetCollision(targets: readonly string[]): boolean {
-  const ordered = [...targets].sort(compareStrings);
-  for (let index = 1; index < ordered.length; index += 1) {
-    const previous = ordered[index - 1];
-    const current = ordered[index];
-    if (
-      previous === undefined ||
-      current === undefined ||
-      current === previous ||
-      current.startsWith(`${previous}/`)
-    ) {
+  const targetSet = new Set(targets);
+  if (targetSet.size !== targets.length) {
+    return true;
+  }
+  for (const target of targets) {
+    let separator = target.indexOf("/");
+    while (separator !== -1) {
+      if (targetSet.has(target.slice(0, separator))) {
+        return true;
+      }
+      separator = target.indexOf("/", separator + 1);
+    }
+    if (target.length === 0) {
       return true;
     }
   }

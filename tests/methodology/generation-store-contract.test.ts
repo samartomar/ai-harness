@@ -327,6 +327,12 @@ describe("Phase 4 generation-store contract", () => {
         ...receipt(),
         entries: [
           { ...first, target: "rules" },
+          {
+            ...first,
+            artifactId: "interleaved",
+            sourceLocator: "synthetic:interleaved",
+            target: "rules-x",
+          },
           { ...second, target: "rules/root.md" },
         ],
       }).success,
@@ -354,6 +360,12 @@ describe("Phase 4 generation-store contract", () => {
       TransactionRecordSchema.safeParse(
         applyTransaction([
           { ...first, target: "rules" },
+          {
+            ...first,
+            artifactId: "interleaved",
+            sourceLocator: "synthetic:interleaved",
+            target: "rules-x",
+          },
           { ...second, target: "rules/root.md" },
         ]),
       ).success,
