@@ -31,8 +31,11 @@ import {
 } from "../../src/methodology/generation-store-contract.js";
 import {
   assertOwnedStorePhase,
+  copyVerifiedFileToExclusivePath,
+  createExclusiveOwnedDirectory,
   createOrOpenOwnedStore,
   createStoreWalkBudget,
+  ensureOwnedDirectory,
   GenerationStoreFsError,
   inspectFixedStoreLayout,
   isGenerationDigest,
@@ -40,6 +43,7 @@ import {
   openStoreForInspection,
   quarantineExactDirectory,
   readStoreRecord,
+  removeExactStoreRecord,
   removeVerifiedTree,
   verifyBoundedOwnedTreeSafety,
   verifyExpectedContainer,
@@ -257,6 +261,204 @@ afterEach(() => {
 });
 
 describe("Phase 4 bounded generation-store filesystem", () => {
+  it("creates owned directories idempotently and exclusive directories exactly once", () => {
+    const root = temporaryProject();
+    const outside = makeSiblingCanary(root);
+    const store = createOrOpenOwnedStore(realpathSync(root.projectRoot));
+
+    expect(ensureOwnedDirectory(store, store.layout.staging)).toBe(true);
+    expect(ensureOwnedDirectory(store, store.layout.staging)).toBe(false);
+    if (process.platform !== "win32") {
+      expect(lstatSync(store.layout.staging).mode & 0o777).toBe(0o700);
+    }
+
+    const transactionDirectory = join(store.layout.staging, TRANSACTION_ID);
+    createExclusiveOwnedDirectory(store, transactionDirectory);
+    expect(lstatSync(transactionDirectory).isDirectory()).toBe(true);
+    if (process.platform !== "win32") {
+      expect(lstatSync(transactionDirectory).mode & 0o777).toBe(0o700);
+    }
+    expectFsFinding(
+      () => createExclusiveOwnedDirectory(store, transactionDirectory),
+      "METHODOLOGY_STORE_TRANSACTION_INVALID",
+    );
+    expect(readFileSync(outside.canary, "utf8")).toBe("outside-canary\n");
+  });
+
+  it("fails closed on unsafe owned-directory paths and collisions", () => {
+    const root = temporaryProject();
+    const store = createOrOpenOwnedStore(realpathSync(root.projectRoot));
+    const outsidePath = join(root.sandboxRoot, "outside-owned-directory");
+
+    expectFsFinding(
+      () => ensureOwnedDirectory(store, outsidePath),
+      "METHODOLOGY_STORE_PATH_UNSAFE",
+    );
+    expect(existsSync(outsidePath)).toBe(false);
+
+    writeFileSync(store.layout.staging, "collision\n");
+    expectFsFinding(
+      () => ensureOwnedDirectory(store, store.layout.staging),
+      "METHODOLOGY_STORE_PATH_UNSAFE",
+    );
+    expect(readFileSync(store.layout.staging, "utf8")).toBe("collision\n");
+
+    rmSync(store.layout.staging);
+    mkdirSync(store.layout.staging);
+    const outsideDirectory = join(root.sandboxRoot, "outside-directory");
+    mkdirSync(outsideDirectory);
+    const linkedDirectory = join(store.layout.staging, "linked");
+    if (makeDirectoryLink(outsideDirectory, linkedDirectory)) {
+      expectFsFinding(
+        () => ensureOwnedDirectory(store, linkedDirectory),
+        "METHODOLOGY_STORE_PATH_UNSAFE",
+      );
+      expect(readdirSync(outsideDirectory)).toEqual([]);
+    }
+  });
+
+  it("removes only exact canonical transaction and incomplete records", () => {
+    const root = temporaryProject();
+    const store = createOrOpenOwnedStore(realpathSync(root.projectRoot));
+    mkdirSync(store.layout.transactions);
+    const transaction = {
+      schemaVersion: 1 as const,
+      operation: "apply" as const,
+      rootId: store.rootRecord.rootId,
+      transactionId: TRANSACTION_ID,
+      phase: "prepared" as const,
+      manifestDigest: plannedDigest(),
+      oldActivation: null,
+      newActivation: activation(),
+      entries: expectedReceiptEntries(),
+    };
+    const transactionPath = join(store.layout.transactions, `${TRANSACTION_ID}.json`);
+    const transactionBytes = canonicalRecordBytes("transaction", transaction);
+    writeExclusiveRegularFile(store, transactionPath, transactionBytes);
+
+    expectFsFinding(
+      () =>
+        removeExactStoreRecord(store, transactionPath, "transaction", {
+          ...transaction,
+          phase: "staged" as const,
+        }),
+      "METHODOLOGY_STORE_TRANSACTION_INVALID",
+    );
+    expect(readFileSync(transactionPath)).toEqual(transactionBytes);
+
+    const hardLink = join(root.sandboxRoot, "transaction-hard-link.json");
+    let hardLinkCreated = false;
+    try {
+      linkSync(transactionPath, hardLink);
+      hardLinkCreated = true;
+    } catch {
+      // Hard-link creation is not available on every test filesystem.
+    }
+    if (hardLinkCreated) {
+      expectFsFinding(
+        () => removeExactStoreRecord(store, transactionPath, "transaction", transaction),
+        "METHODOLOGY_STORE_PATH_UNSAFE",
+      );
+      expect(readFileSync(hardLink)).toEqual(transactionBytes);
+      rmSync(hardLink);
+    }
+    removeExactStoreRecord(store, transactionPath, "transaction", transaction);
+    expect(existsSync(transactionPath)).toBe(false);
+
+    mkdirSync(store.layout.generations);
+    const generation = join(store.layout.generations, plannedDigest());
+    mkdirSync(generation);
+    const incomplete = {
+      schemaVersion: 1 as const,
+      rootId: store.rootRecord.rootId,
+      transactionId: TRANSACTION_ID,
+      manifestDigest: plannedDigest(),
+    };
+    const incompletePath = join(generation, "incomplete.json");
+    writeExclusiveRegularFile(
+      store,
+      incompletePath,
+      canonicalRecordBytes("incomplete", incomplete),
+    );
+    removeExactStoreRecord(store, incompletePath, "incomplete", incomplete);
+    expect(existsSync(incompletePath)).toBe(false);
+  });
+
+  it("copies revalidated exact bytes exclusively and preserves collisions", () => {
+    const root = temporaryProject();
+    const outside = makeSiblingCanary(root);
+    const store = createOrOpenOwnedStore(realpathSync(root.projectRoot));
+    const sourceRoot = join(store.layout.root, "verified-source");
+    mkdirSync(sourceRoot);
+    materializeExpectedTree(sourceRoot);
+    const verified = verifyExpectedTree(store, sourceRoot, expectedReceiptEntries());
+
+    mkdirSync(join(store.layout.staging, TRANSACTION_ID, "content", "rules"), {
+      recursive: true,
+    });
+    const destinationRoot = join(store.layout.staging, TRANSACTION_ID, "content");
+    const result = copyVerifiedFileToExclusivePath(
+      store,
+      verified,
+      "rules/root.md",
+      destinationRoot,
+    );
+    const destination = join(destinationRoot, "rules", "root.md");
+    expect(result).toMatchObject({
+      bytes: ROOT_BYTES.byteLength,
+      digest: sha256Bytes(ROOT_BYTES),
+    });
+    expect(readFileSync(destination)).toEqual(ROOT_BYTES);
+    if (process.platform !== "win32") {
+      expect(lstatSync(destination).mode & 0o777).toBe(0o600);
+    }
+
+    expect(() =>
+      copyVerifiedFileToExclusivePath(store, verified, "rules/root.md", destinationRoot),
+    ).toThrow();
+    expect(readFileSync(destination)).toEqual(ROOT_BYTES);
+    expect(readFileSync(outside.canary, "utf8")).toBe("outside-canary\n");
+  });
+
+  it("refuses verified-copy drift, absent entries, aliases, and outside destinations", () => {
+    const root = temporaryProject();
+    const outside = makeSiblingCanary(root);
+    const store = createOrOpenOwnedStore(realpathSync(root.projectRoot));
+    const sourceRoot = join(store.layout.root, "verified-source");
+    mkdirSync(sourceRoot);
+    materializeExpectedTree(sourceRoot);
+    const verified = verifyExpectedTree(store, sourceRoot, expectedReceiptEntries());
+    const destinationRoot = join(store.layout.staging, TRANSACTION_ID, "content");
+    mkdirSync(join(destinationRoot, "rules"), { recursive: true });
+
+    expectFsFinding(
+      () => copyVerifiedFileToExclusivePath(store, verified, "rules/missing.md", destinationRoot),
+      "METHODOLOGY_STORE_GENERATION_INCOMPLETE",
+    );
+    expectFsFinding(
+      () => copyVerifiedFileToExclusivePath(store, verified, "../outside.md", destinationRoot),
+      "METHODOLOGY_STORE_PATH_UNSAFE",
+    );
+
+    const outsideDestination = join(root.sandboxRoot, "outside-destination");
+    mkdirSync(join(outsideDestination, "rules"), { recursive: true });
+    expectFsFinding(
+      () => copyVerifiedFileToExclusivePath(store, verified, "rules/root.md", outsideDestination),
+      "METHODOLOGY_STORE_PATH_UNSAFE",
+    );
+    expect(readdirSync(join(outsideDestination, "rules"))).toEqual([]);
+
+    const source = join(sourceRoot, "rules", "root.md");
+    rmSync(source);
+    writeFileSync(source, ROOT_BYTES, { mode: 0o600 });
+    expectFsFinding(
+      () => copyVerifiedFileToExclusivePath(store, verified, "rules/root.md", destinationRoot),
+      "METHODOLOGY_STORE_GENERATION_DRIFT",
+    );
+    expect(existsSync(join(destinationRoot, "rules", "root.md"))).toBe(false);
+    expect(readFileSync(outside.canary, "utf8")).toBe("outside-canary\n");
+  });
+
   it("performs zero writes when inspection finds no store", () => {
     const root = temporaryProject();
     const before = readdirSync(root.projectRoot);

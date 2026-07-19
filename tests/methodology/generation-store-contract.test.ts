@@ -9,6 +9,7 @@ import {
   GENERATION_STORE_MUTATION_BOUNDARY,
   GENERATION_STORE_READ_BOUNDARY,
   GenerationReceiptSchema,
+  GenerationStoreContractError,
   IncompleteRecordSchema,
   InspectProjectionInputSchema,
   inspectionResult,
@@ -33,6 +34,7 @@ import {
 } from "../../src/methodology/generation-store-contract.js";
 import {
   aggregateOverflowPayloadFixture,
+  collisionBlockedFixture,
   DEPENDENCY_BYTES,
   payloadFixture,
   plannedFixture,
@@ -159,6 +161,52 @@ describe("Phase 4 generation-store contract", () => {
         expectedActiveDigest: null,
       }),
     ).toThrow();
+  });
+
+  it.each([
+    ["missing payload", payloadFixture().slice(1), "METHODOLOGY_STORE_PAYLOAD_COVERAGE"],
+    [
+      "digest mismatch",
+      [{ artifactId: "root", bytes: Buffer.from("wrong") }, payloadFixture()[1]],
+      "METHODOLOGY_STORE_PAYLOAD_DIGEST",
+    ],
+    [
+      "resource overflow",
+      [{ artifactId: "root", bytes: Buffer.alloc(MAX_PAYLOAD_BYTES + 1) }, payloadFixture()[1]],
+      "METHODOLOGY_STORE_RESOURCE_LIMIT",
+    ],
+  ] as const)("returns a fixed refusal code for %s", (_label, payloads, expectedCode) => {
+    try {
+      parseApplyProjectionInput({
+        mode: "apply",
+        projectRoot: "/work/project",
+        plan: planned(),
+        payloads,
+        expectedActiveDigest: null,
+      });
+      throw new Error("expected apply input refusal");
+    } catch (error) {
+      expect(error).toBeInstanceOf(GenerationStoreContractError);
+      expect((error as GenerationStoreContractError).findingCode).toBe(expectedCode);
+    }
+  });
+
+  it("maps an exact Phase 3 target collision to the fixed Phase 4 refusal", () => {
+    try {
+      parseApplyProjectionInput({
+        mode: "apply",
+        projectRoot: "/work/project",
+        plan: collisionBlockedFixture(),
+        payloads: payloadFixture(),
+        expectedActiveDigest: null,
+      });
+      throw new Error("expected destination collision refusal");
+    } catch (error) {
+      expect(error).toBeInstanceOf(GenerationStoreContractError);
+      expect((error as GenerationStoreContractError).findingCode).toBe(
+        "METHODOLOGY_STORE_DESTINATION_COLLISION",
+      );
+    }
   });
 
   it("rejects accessor-backed payload fields before evaluating them", () => {

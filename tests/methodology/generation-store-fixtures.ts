@@ -7,6 +7,10 @@ import { planSyntheticProjection } from "../../src/methodology/projection-planne
 
 export const ROOT_BYTES = Buffer.from("# root\n", "utf8");
 export const DEPENDENCY_BYTES = Buffer.from("# dependency\n", "utf8");
+export const BINARY_ROOT_BYTES = Buffer.from([0x00, 0xff, 0x80, 0x0a, 0x41]);
+export const BINARY_DEPENDENCY_BYTES = Buffer.from([0xfe, 0x00, 0x7f, 0x0d, 0x0a]);
+export const ALTERNATE_ROOT_BYTES = Buffer.from([0x00, 0xff, 0x81, 0x0a, 0x42]);
+export const ALTERNATE_DEPENDENCY_BYTES = Buffer.from([0xfd, 0x00, 0x7e, 0x0d, 0x0a]);
 
 function digest(bytes: Uint8Array): string {
   return createHash("sha256").update(bytes).digest("hex");
@@ -64,6 +68,31 @@ export function blockedFixture() {
   return plannedFixture("../root.md");
 }
 
+export function collisionBlockedFixture() {
+  return planSyntheticProjection({
+    schemaVersion: 1,
+    decisionVersion: "phase-3-decision-v1",
+    classifierVersion: "phase-2-classifier-v1",
+    policyVersion: "phase-3-policy-v1",
+    manifestVersion: 1,
+    owner: "aih-methodology",
+    classifierInput: {
+      schemaVersion: 1,
+      requested: ["root"],
+      declaredClosure: ["root", "dependency"],
+      artifacts: [
+        inertArtifact("root", ROOT_BYTES, ["dependency"]),
+        inertArtifact("dependency", DEPENDENCY_BYTES, []),
+      ],
+      evidence: [inertEvidence("root", ROOT_BYTES), inertEvidence("dependency", DEPENDENCY_BYTES)],
+    },
+    mappings: [
+      { artifactId: "root", target: "rules" },
+      { artifactId: "dependency", target: "rules/dependency.md" },
+    ],
+  });
+}
+
 export function plannedPayloadSet(payloads: readonly ProjectionPayload[]) {
   const first = payloads[0];
   if (!first) throw new Error("payload set must not be empty");
@@ -96,6 +125,28 @@ export function payloadFixture(): ProjectionPayload[] {
     { artifactId: "root", bytes: Buffer.from(ROOT_BYTES) },
     { artifactId: "dependency", bytes: Buffer.from(DEPENDENCY_BYTES) },
   ];
+}
+
+export function binaryPayloadFixture(): ProjectionPayload[] {
+  return [
+    { artifactId: "binary-root", bytes: Buffer.from(BINARY_ROOT_BYTES) },
+    { artifactId: "binary-dependency", bytes: Buffer.from(BINARY_DEPENDENCY_BYTES) },
+  ];
+}
+
+export function alternatePayloadFixture(): ProjectionPayload[] {
+  return [
+    { artifactId: "binary-root", bytes: Buffer.from(ALTERNATE_ROOT_BYTES) },
+    { artifactId: "binary-dependency", bytes: Buffer.from(ALTERNATE_DEPENDENCY_BYTES) },
+  ];
+}
+
+export function binaryPlannedFixture() {
+  return plannedPayloadSet(binaryPayloadFixture());
+}
+
+export function alternatePlannedFixture() {
+  return plannedPayloadSet(alternatePayloadFixture());
 }
 
 export function aggregateOverflowPayloadFixture(): ProjectionPayload[] {

@@ -623,9 +623,22 @@ export type CleanProjectionResult = Readonly<{
 }>;
 
 export class GenerationStoreContractError extends Error {
-  constructor(message: string) {
+  readonly findingCode: Extract<
+    StoreFindingCode,
+    | "METHODOLOGY_STORE_INPUT_INVALID"
+    | "METHODOLOGY_STORE_RESOURCE_LIMIT"
+    | "METHODOLOGY_STORE_PAYLOAD_COVERAGE"
+    | "METHODOLOGY_STORE_PAYLOAD_DIGEST"
+    | "METHODOLOGY_STORE_DESTINATION_COLLISION"
+  >;
+
+  constructor(
+    message: string,
+    findingCode: GenerationStoreContractError["findingCode"] = "METHODOLOGY_STORE_INPUT_INVALID",
+  ) {
     super(message);
     this.name = "GenerationStoreContractError";
+    this.findingCode = findingCode;
   }
 }
 
@@ -638,8 +651,11 @@ export type ContractSchema<T> = Readonly<{
   safeParse: (value: unknown) => ContractParseResult<T>;
 }>;
 
-function contractFailure(message: string): never {
-  throw new GenerationStoreContractError(message);
+function contractFailure(
+  message: string,
+  findingCode: GenerationStoreContractError["findingCode"] = "METHODOLOGY_STORE_INPUT_INVALID",
+): never {
+  throw new GenerationStoreContractError(message, findingCode);
 }
 
 function requireClosedRecord(
@@ -684,7 +700,10 @@ function parsePayloadArray(value: unknown): readonly Record<string, unknown>[] {
     return contractFailure("payloads must be a closed array");
   }
   if (value.length > MAX_MANIFEST_ENTRIES) {
-    return contractFailure("payload count exceeds the manifest limit");
+    return contractFailure(
+      "payload count exceeds the manifest limit",
+      "METHODOLOGY_STORE_RESOURCE_LIMIT",
+    );
   }
   const result: Record<string, unknown>[] = [];
   for (let index = 0; index < value.length; index += 1) {
@@ -741,7 +760,10 @@ function hasTooManyGeneratedDirectories(targets: readonly string[]): boolean {
 
 function validateGeneratedDirectories(targets: readonly string[]): void {
   if (hasTooManyGeneratedDirectories(targets)) {
-    contractFailure("generated directory count exceeds its limit");
+    contractFailure(
+      "generated directory count exceeds its limit",
+      "METHODOLOGY_STORE_RESOURCE_LIMIT",
+    );
   }
 }
 
@@ -757,10 +779,24 @@ export function parseApplyProjectionInput(value: unknown): ValidatedApplyProject
   const projectRoot = ProjectRootSchema.parse(ownData(input, "projectRoot", "apply input"));
   const parsedPlan = ProjectionPlanResultSchema.parse(ownData(input, "plan", "apply input"));
   if (parsedPlan.state !== "planned") {
+    const firstFinding = Object.getOwnPropertyDescriptor(parsedPlan.findings, "0");
+    if (
+      firstFinding !== undefined &&
+      "value" in firstFinding &&
+      firstFinding.value.code === "METHODOLOGY_TARGET_COLLISION"
+    ) {
+      return contractFailure(
+        "Phase 3 reported a destination collision",
+        "METHODOLOGY_STORE_DESTINATION_COLLISION",
+      );
+    }
     return contractFailure("Phase 4 requires a planned Phase 3 result");
   }
   if (parsedPlan.manifest.entries.length > MAX_MANIFEST_ENTRIES) {
-    return contractFailure("manifest entry count exceeds its limit");
+    return contractFailure(
+      "manifest entry count exceeds its limit",
+      "METHODOLOGY_STORE_RESOURCE_LIMIT",
+    );
   }
 
   const targets: string[] = [];
@@ -776,13 +812,19 @@ export function parseApplyProjectionInput(value: unknown): ValidatedApplyProject
     expectedByArtifact.set(entry.artifactId, entry);
   }
   if (hasTargetCollision(targets)) {
-    return contractFailure("manifest contains a destination collision");
+    return contractFailure(
+      "manifest contains a destination collision",
+      "METHODOLOGY_STORE_DESTINATION_COLLISION",
+    );
   }
   validateGeneratedDirectories(targets);
 
   const rawPayloads = parsePayloadArray(ownData(input, "payloads", "apply input"));
   if (rawPayloads.length !== parsedPlan.manifest.entries.length) {
-    return contractFailure("payload coverage does not match the manifest");
+    return contractFailure(
+      "payload coverage does not match the manifest",
+      "METHODOLOGY_STORE_PAYLOAD_COVERAGE",
+    );
   }
   let totalBytes = 0;
   const seen = new Set<string>();
@@ -790,7 +832,10 @@ export function parseApplyProjectionInput(value: unknown): ValidatedApplyProject
   for (const rawPayload of rawPayloads) {
     const artifactId = ArtifactIdSchema.parse(ownData(rawPayload, "artifactId", "payload"));
     if (seen.has(artifactId)) {
-      return contractFailure("payload artifact ids must be unique");
+      return contractFailure(
+        "payload artifact ids must be unique",
+        "METHODOLOGY_STORE_PAYLOAD_COVERAGE",
+      );
     }
     seen.add(artifactId);
     const rawBytes = ownData(rawPayload, "bytes", "payload");
@@ -803,25 +848,40 @@ export function parseApplyProjectionInput(value: unknown): ValidatedApplyProject
       return contractFailure("payload bytes must be a Uint8Array");
     }
     if (rawBytes.byteLength > MAX_PAYLOAD_BYTES) {
-      return contractFailure("payload exceeds its individual byte limit");
+      return contractFailure(
+        "payload exceeds its individual byte limit",
+        "METHODOLOGY_STORE_RESOURCE_LIMIT",
+      );
     }
     totalBytes += rawBytes.byteLength;
     if (totalBytes > MAX_TOTAL_PAYLOAD_BYTES) {
-      return contractFailure("payloads exceed the total byte limit");
+      return contractFailure(
+        "payloads exceed the total byte limit",
+        "METHODOLOGY_STORE_RESOURCE_LIMIT",
+      );
     }
     const bytes = Buffer.from(rawBytes);
     const expected = expectedByArtifact.get(artifactId);
     if (expected === undefined) {
-      return contractFailure("payload artifact is not in the manifest");
+      return contractFailure(
+        "payload artifact is not in the manifest",
+        "METHODOLOGY_STORE_PAYLOAD_COVERAGE",
+      );
     }
     if (sha256Bytes(bytes) !== expected.contentDigest) {
-      return contractFailure("payload digest does not match the manifest");
+      return contractFailure(
+        "payload digest does not match the manifest",
+        "METHODOLOGY_STORE_PAYLOAD_DIGEST",
+      );
     }
     payloads.push(Object.freeze({ artifactId, bytes }));
   }
   for (const artifactId of expectedByArtifact.keys()) {
     if (!seen.has(artifactId)) {
-      return contractFailure("manifest artifact has no payload");
+      return contractFailure(
+        "manifest artifact has no payload",
+        "METHODOLOGY_STORE_PAYLOAD_COVERAGE",
+      );
     }
   }
   payloads.sort((left, right) => compareStrings(left.artifactId, right.artifactId));

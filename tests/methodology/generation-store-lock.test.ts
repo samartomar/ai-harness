@@ -29,6 +29,7 @@ import {
 import {
   acquireStoreLock,
   acquireStoreLockInternal,
+  assertHeldStoreLock,
   GENERATION_STORE_LOCK_BOUNDARY,
   type HeldStoreLock,
   type LockRuntime,
@@ -120,6 +121,49 @@ afterEach(() => {
 });
 
 describe("Phase 4 cooperative generation-store lock", () => {
+  it("revalidates only the exact live held-lock claim", () => {
+    const { store } = temporaryStore();
+    const held = acquireStoreLockInternal(store, TRANSACTION_A, runtime(100, TOKEN_A));
+
+    const asserted = assertHeldStoreLock(store, held);
+    expect(asserted).toEqual(held);
+    expect(Object.isFrozen(asserted)).toBe(true);
+
+    const mismatched = Object.freeze({
+      ...held,
+      transactionId: TRANSACTION_B,
+    });
+    lockError(() => assertHeldStoreLock(store, mismatched), "METHODOLOGY_STORE_LOCK_INVALID");
+    expect(readLiveOwner(store)).toEqual(held);
+
+    const malformed = Object.freeze({ ...held, pid: 0 }) as HeldStoreLock;
+    lockError(() => assertHeldStoreLock(store, malformed), "METHODOLOGY_STORE_LOCK_INVALID");
+    expect(readLiveOwner(store)).toEqual(held);
+
+    releaseStoreLock(store, held);
+    lockError(() => assertHeldStoreLock(store, held), "METHODOLOGY_STORE_LOCK_INVALID");
+  });
+
+  it("rejects another store claim and a hard-linked live owner without mutation", () => {
+    const { root, store } = temporaryStore();
+    const other = temporaryStore();
+    const held = acquireStoreLockInternal(store, TRANSACTION_A, runtime(101, TOKEN_A));
+    const foreignClaim = Object.freeze({
+      ...held,
+      rootId: other.store.rootRecord.rootId,
+    });
+
+    lockError(() => assertHeldStoreLock(store, foreignClaim), "METHODOLOGY_STORE_LOCK_INVALID");
+    expect(readLiveOwner(store)).toEqual(held);
+
+    const ownerPath = join(store.layout.lock, "owner.json");
+    const hardLink = join(root.sandboxRoot, "held-owner-hard-link.json");
+    linkSync(ownerPath, hardLink);
+    lockError(() => assertHeldStoreLock(store, held), "METHODOLOGY_STORE_LOCK_INVALID");
+    expect(readFileSync(ownerPath)).toEqual(canonicalRecordBytes("lock-owner", held));
+    expect(readFileSync(hardLink)).toEqual(canonicalRecordBytes("lock-owner", held));
+  });
+
   it("publishes a complete claim, serializes contenders, and releases only the exact claim", () => {
     const { store } = temporaryStore();
     const first = acquireStoreLockInternal(store, TRANSACTION_A, runtime(101, TOKEN_A));

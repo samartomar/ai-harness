@@ -586,6 +586,27 @@ export function acquireStoreLock(store: OwnedStore, transactionId: string): Held
   return acquireStoreLockInternal(store, transactionId, PRODUCTION_RUNTIME);
 }
 
+export function assertHeldStoreLock(store: OwnedStore, rawClaim: HeldStoreLock): HeldStoreLock {
+  let claim: HeldStoreLock;
+  try {
+    claim = Object.freeze(LockOwnerRecordSchema.parse(rawClaim));
+  } catch {
+    fail("held lock claim is invalid");
+  }
+  if (claim.rootId !== store.rootRecord.rootId) {
+    fail("held lock claim belongs to another store");
+  }
+  assertOwnedStorePhase(store);
+  if (pathAbsent(store.layout.lock)) {
+    fail("held lock disappeared");
+  }
+  const live = readExactClaimDirectory(store, store.layout.lock);
+  if (!sameClaim(live.claim, claim)) {
+    fail("live lock does not match the held claim");
+  }
+  return claim;
+}
+
 export function releaseStoreLock(store: OwnedStore, rawClaim: HeldStoreLock): void {
   let claim: HeldStoreLock;
   try {

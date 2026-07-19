@@ -906,6 +906,50 @@ export function writeExclusiveRegularFile(
   });
 }
 
+export function ensureOwnedDirectory(store: OwnedStore, absPath: string): boolean {
+  assertOwnedStorePhase(store);
+  assertLexicallyOwned(store, absPath);
+  assertOwnedAncestors(store, absPath);
+  let created = false;
+  try {
+    mkdirSync(absPath, { mode: 0o700 });
+    created = true;
+  } catch (error) {
+    if (errnoCode(error) !== "EEXIST") {
+      fail("owned directory creation failed", "METHODOLOGY_STORE_FILESYSTEM_FAILURE");
+    }
+  }
+  validateOrdinaryDirectory(
+    store.layout.root,
+    store.layout.projectDevice,
+    absPath,
+    "owned directory",
+  );
+  if (created) syncDirectory(dirname(absPath));
+  return created;
+}
+
+export function createExclusiveOwnedDirectory(store: OwnedStore, absPath: string): void {
+  assertOwnedStorePhase(store);
+  assertLexicallyOwned(store, absPath);
+  assertOwnedAncestors(store, absPath);
+  try {
+    mkdirSync(absPath, { mode: 0o700 });
+  } catch (error) {
+    if (errnoCode(error) === "EEXIST") {
+      fail("exclusive owned directory already exists", "METHODOLOGY_STORE_TRANSACTION_INVALID");
+    }
+    fail("exclusive owned directory creation failed", "METHODOLOGY_STORE_FILESYSTEM_FAILURE");
+  }
+  validateOrdinaryDirectory(
+    store.layout.root,
+    store.layout.projectDevice,
+    absPath,
+    "owned directory",
+  );
+  syncDirectory(dirname(absPath));
+}
+
 function inferRecordKind(absPath: string): StoreRecordKind {
   const name = basename(absPath);
   if (name === "root.json") return "root";
@@ -935,6 +979,36 @@ export function readStoreRecord<T>(
   );
   assertRecordPathBinding(store, absPath, kind, read.record);
   return read;
+}
+
+export function removeExactStoreRecord(
+  store: OwnedStore,
+  absPath: string,
+  kind: Extract<StoreRecordKind, "incomplete" | "transaction">,
+  expectedRecord: unknown,
+): void {
+  assertOwnedStorePhase(store);
+  let parsed: unknown;
+  try {
+    parsed = schemaForKind(kind).parse(expectedRecord);
+  } catch {
+    fail("exact record expectation is invalid", invalidRecordFinding(kind));
+  }
+  const expectedBytes = canonicalRecordBytes(kind, parsed);
+  const current = readStoreRecord(store, absPath, schemaForKind(kind), kind);
+  if (!current.bytes.equals(expectedBytes)) {
+    fail("exact record changed before removal", invalidRecordFinding(kind));
+  }
+  const finalIdentity = identity(lstatBigInt(absPath, "exact record"));
+  if (!sameIdentity(current.identity, finalIdentity)) {
+    fail("exact record identity changed before removal", invalidRecordFinding(kind));
+  }
+  try {
+    unlinkSync(absPath);
+  } catch {
+    fail("exact record removal failed", "METHODOLOGY_STORE_FILESYSTEM_FAILURE");
+  }
+  syncDirectory(dirname(absPath));
 }
 
 function schemaForKind(kind: StoreRecordKind): RecordSchema<unknown> {
@@ -1965,7 +2039,7 @@ export function quarantineExactDirectory(
   return moved;
 }
 
-function revalidateFileForRemoval(store: OwnedStore, root: string, file: VerifiedFile): void {
+function revalidateFileForRemoval(store: OwnedStore, root: string, file: VerifiedFile): Buffer {
   const absPath = join(root, ...file.relativePath.split("/"));
   const current = readOwnedRegularFile(store, absPath, MAX_PAYLOAD_BYTES);
   if (
@@ -1975,6 +2049,25 @@ function revalidateFileForRemoval(store: OwnedStore, root: string, file: Verifie
   ) {
     fail("verified file changed before deletion", "METHODOLOGY_STORE_GENERATION_DRIFT");
   }
+  return current.contents;
+}
+
+export function copyVerifiedFileToExclusivePath(
+  store: OwnedStore,
+  verified: VerifiedTree,
+  relativePath: string,
+  destinationRoot: string,
+): ExclusiveWriteResult {
+  if (!isCanonicalProjectionTarget(relativePath)) {
+    fail("verified copy path is not canonical");
+  }
+  const file = verified.files.find((candidate) => candidate.relativePath === relativePath);
+  if (file === undefined) {
+    fail("verified copy source is absent", "METHODOLOGY_STORE_GENERATION_INCOMPLETE");
+  }
+  const bytes = revalidateFileForRemoval(store, verified.root, file);
+  const destination = join(destinationRoot, ...relativePath.split("/"));
+  return writeExclusiveRegularFile(store, destination, bytes);
 }
 
 function revalidateDirectoryForRemoval(
