@@ -1798,10 +1798,7 @@ function applyProjectionInternal(
     if (input.expectedActiveDigest === null) {
       store = createOrOpenOwnedStore(input.projectRoot);
     } else {
-      let existingStore = openStoreForInspection(input.projectRoot);
-      if (existingStore === undefined) {
-        existingStore = openStoreForInspection(input.projectRoot);
-      }
+      const existingStore = openStoreForInspection(input.projectRoot);
       if (existingStore === undefined) {
         return applyResult("blocked", null, null, [{ code: "METHODOLOGY_STORE_PLAN_STALE" }]);
       }
