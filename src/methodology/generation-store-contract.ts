@@ -112,32 +112,28 @@ export const ReceiptEntrySchema = z
   })
   .strict();
 
-export const GenerationReceiptSchema = z
-  .object({
-    schemaVersion: z.literal(STORE_SCHEMA_VERSION),
-    rootId: StoreIdSchema,
-    manifestDigest: DigestSchema,
-    entries: z.array(ReceiptEntrySchema).min(1).max(MAX_MANIFEST_ENTRIES),
-  })
-  .strict()
-  .superRefine((value, context) => {
+const ReceiptEntriesSchema = z
+  .array(ReceiptEntrySchema)
+  .min(1)
+  .max(MAX_MANIFEST_ENTRIES)
+  .superRefine((entries, context) => {
     const artifactIds = new Set<string>();
     const targets = new Set<string>();
     const targetList: string[] = [];
     let totalBytes = 0;
-    for (const [index, entry] of value.entries.entries()) {
+    for (const [index, entry] of entries.entries()) {
       if (artifactIds.has(entry.artifactId)) {
         context.addIssue({
           code: "custom",
-          path: ["entries", index, "artifactId"],
-          message: "receipt artifact ids must be unique",
+          path: [index, "artifactId"],
+          message: "entry artifact ids must be unique",
         });
       }
       if (targets.has(entry.target)) {
         context.addIssue({
           code: "custom",
-          path: ["entries", index, "target"],
-          message: "receipt targets must be unique",
+          path: [index, "target"],
+          message: "entry targets must be unique",
         });
       }
       artifactIds.add(entry.artifactId);
@@ -148,18 +144,31 @@ export const GenerationReceiptSchema = z
     if (totalBytes > MAX_TOTAL_PAYLOAD_BYTES) {
       context.addIssue({
         code: "custom",
-        path: ["entries"],
-        message: "receipt entries exceed the aggregate byte limit",
+        message: "entries exceed the aggregate byte limit",
       });
     }
     if (hasTargetCollision(targetList)) {
       context.addIssue({
         code: "custom",
-        path: ["entries"],
-        message: "receipt entries contain a destination collision",
+        message: "entries contain a destination collision",
+      });
+    }
+    if (hasTooManyGeneratedDirectories(targetList)) {
+      context.addIssue({
+        code: "custom",
+        message: "entries exceed the generated directory limit",
       });
     }
   });
+
+export const GenerationReceiptSchema = z
+  .object({
+    schemaVersion: z.literal(STORE_SCHEMA_VERSION),
+    rootId: StoreIdSchema,
+    manifestDigest: DigestSchema,
+    entries: ReceiptEntriesSchema,
+  })
+  .strict();
 
 export const ActivationRecordSchema = z
   .object({
@@ -226,7 +235,7 @@ const ApplyTransactionRecordSchema = z
     manifestDigest: DigestSchema,
     oldActivation: ActivationRecordSchema.nullable(),
     newActivation: ActivationRecordSchema,
-    entries: z.array(ReceiptEntrySchema).min(1).max(MAX_MANIFEST_ENTRIES),
+    entries: ReceiptEntriesSchema,
   })
   .strict();
 
@@ -239,14 +248,24 @@ const CleanTransactionRecordSchema = z
     phase: CleanTransactionPhaseSchema,
     generationDigest: DigestSchema,
     oldActivation: ActivationRecordSchema.nullable(),
-    entries: z.array(ReceiptEntrySchema).min(1).max(MAX_MANIFEST_ENTRIES),
+    entries: ReceiptEntriesSchema,
   })
   .strict();
 
-export const TransactionRecordSchema = z.discriminatedUnion("operation", [
-  ApplyTransactionRecordSchema,
-  CleanTransactionRecordSchema,
-]);
+export const TransactionRecordSchema = z
+  .discriminatedUnion("operation", [ApplyTransactionRecordSchema, CleanTransactionRecordSchema])
+  .superRefine((value, context) => {
+    if (
+      value.operation === "apply" &&
+      value.manifestDigest !== value.newActivation.manifestDigest
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["manifestDigest"],
+        message: "apply transaction manifest digest must match its new activation",
+      });
+    }
+  });
 
 const GenerationStoreCommonBoundarySchema = {
   providerRead: z.literal(false),
@@ -354,7 +373,6 @@ const CLEAN_FAILED_CLOSED_CODES = new Set<StoreFindingCode>([
   "METHODOLOGY_STORE_LOCK_INVALID",
   "METHODOLOGY_STORE_ACTIVATION_INVALID",
   "METHODOLOGY_STORE_TRANSACTION_INVALID",
-  "METHODOLOGY_STORE_FILESYSTEM_FAILURE",
 ]);
 
 type FindingConstraints = Readonly<Record<string, ReadonlySet<StoreFindingCode>>>;
@@ -699,7 +717,7 @@ function hasTargetCollision(targets: readonly string[]): boolean {
   return false;
 }
 
-function validateGeneratedDirectories(targets: readonly string[]): void {
+function hasTooManyGeneratedDirectories(targets: readonly string[]): boolean {
   const directories = new Set<string>();
   for (const target of targets) {
     const segments = target.split("/");
@@ -710,9 +728,16 @@ function validateGeneratedDirectories(targets: readonly string[]): void {
       current = current.length === 0 ? segment : `${current}/${segment}`;
       directories.add(current);
       if (directories.size > MAX_GENERATED_DIRECTORIES) {
-        contractFailure("generated directory count exceeds its limit");
+        return true;
       }
     }
+  }
+  return false;
+}
+
+function validateGeneratedDirectories(targets: readonly string[]): void {
+  if (hasTooManyGeneratedDirectories(targets)) {
+    contractFailure("generated directory count exceeds its limit");
   }
 }
 

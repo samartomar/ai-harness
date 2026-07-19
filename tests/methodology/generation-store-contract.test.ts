@@ -72,6 +72,33 @@ function activation() {
   };
 }
 
+function applyTransaction(entries = receipt().entries) {
+  return {
+    schemaVersion: 1,
+    operation: "apply" as const,
+    rootId: ROOT_ID,
+    transactionId: TRANSACTION_ID,
+    phase: "prepared" as const,
+    manifestDigest: planned().manifest.digest,
+    oldActivation: null,
+    newActivation: activation(),
+    entries,
+  };
+}
+
+function cleanTransaction(entries = receipt().entries) {
+  return {
+    schemaVersion: 1,
+    operation: "clean" as const,
+    rootId: ROOT_ID,
+    transactionId: TRANSACTION_ID,
+    phase: "prepared" as const,
+    generationDigest: planned().manifest.digest,
+    oldActivation: activation(),
+    entries,
+  };
+}
+
 describe("Phase 4 generation-store contract", () => {
   it("accepts exactly one complete, digest-bound Phase 3 payload set and copies its bytes", () => {
     const source = payloadFixture();
@@ -154,9 +181,22 @@ describe("Phase 4 generation-store contract", () => {
     ).toThrow();
   });
 
-  it("rejects target depth independently of the Phase 3 parser", () => {
+  it("rejects non-canonical targets independently of the Phase 3 parser", () => {
     const tooDeep = Array.from({ length: 33 }, () => "x").join("/");
-    expect(isCanonicalProjectionTarget(tooDeep)).toBe(false);
+    for (const target of [
+      tooDeep,
+      "rules\\root.md",
+      "/rules/root.md",
+      "rules//root.md",
+      ".",
+      "..",
+      "rules/./root.md",
+      "rules/../root.md",
+      "rules/root.md.",
+      "rules/con",
+    ]) {
+      expect(isCanonicalProjectionTarget(target)).toBe(false);
+    }
     expect(isCanonicalProjectionTarget("rules/root.md")).toBe(true);
   });
 
@@ -293,6 +333,51 @@ describe("Phase 4 generation-store contract", () => {
     ).toBe(false);
   });
 
+  it("rejects transaction resource, collision, directory, and digest inconsistencies", () => {
+    const overflowEntries = Array.from({ length: 9 }, (_, index) => ({
+      artifactId: `overflow-${index}`,
+      target: `rules/overflow-${index}.md`,
+      sourceLocator: `synthetic:overflow-${index}`,
+      contentDigest: DIGEST,
+      bytes: MAX_PAYLOAD_BYTES,
+    }));
+    expect(TransactionRecordSchema.safeParse(applyTransaction(overflowEntries)).success).toBe(
+      false,
+    );
+
+    const first = receipt().entries[0];
+    const second = receipt().entries[1];
+    if (first === undefined || second === undefined) {
+      throw new Error("fixture must contain two receipt entries");
+    }
+    expect(
+      TransactionRecordSchema.safeParse(
+        applyTransaction([
+          { ...first, target: "rules" },
+          { ...second, target: "rules/root.md" },
+        ]),
+      ).success,
+    ).toBe(false);
+
+    const directoryHeavyEntries = Array.from({ length: 64 }, (_, index) => ({
+      artifactId: `entry-${index}`,
+      target: `root-${index}/${Array.from({ length: 9 }, (_unused, part) => `d${part}`).join("/")}/file.md`,
+      sourceLocator: `synthetic:entry-${index}`,
+      contentDigest: DIGEST,
+      bytes: 0,
+    }));
+    expect(TransactionRecordSchema.safeParse(cleanTransaction(directoryHeavyEntries)).success).toBe(
+      false,
+    );
+
+    expect(
+      TransactionRecordSchema.safeParse({
+        ...applyTransaction(),
+        manifestDigest: OTHER_DIGEST,
+      }).success,
+    ).toBe(false);
+  });
+
   it("rejects unsafe identifiers and verifies exact record/path-name bindings", () => {
     for (const value of ["a/b", "a\\b", ".", "..", "CON", "a".repeat(65), "A".repeat(64)]) {
       expect(
@@ -342,17 +427,7 @@ describe("Phase 4 generation-store contract", () => {
   });
 
   it("strictly serializes transaction variants and rejects malformed fields", () => {
-    const transaction = {
-      schemaVersion: 1,
-      operation: "apply" as const,
-      rootId: ROOT_ID,
-      transactionId: TRANSACTION_ID,
-      phase: "prepared" as const,
-      manifestDigest: planned().manifest.digest,
-      oldActivation: null,
-      newActivation: activation(),
-      entries: receipt().entries,
-    };
+    const transaction = applyTransaction();
     expect(TransactionRecordSchema.safeParse(transaction).success).toBe(true);
     expect(TransactionRecordSchema.safeParse({ ...transaction, phase: "unknown" }).success).toBe(
       false,
@@ -360,5 +435,19 @@ describe("Phase 4 generation-store contract", () => {
     expect(canonicalRecordBytes("transaction", transaction)).toEqual(
       canonicalRecordBytes("transaction", structuredClone(transaction)),
     );
+    const clean = cleanTransaction();
+    expect(TransactionRecordSchema.safeParse(clean).success).toBe(true);
+    expect(canonicalRecordBytes("transaction", clean)).toEqual(
+      canonicalRecordBytes("transaction", structuredClone(clean)),
+    );
+  });
+
+  it("maps clean filesystem failures to retained only", () => {
+    expect(
+      cleanResult("retained", DIGEST, [{ code: "METHODOLOGY_STORE_FILESYSTEM_FAILURE" }]),
+    ).toMatchObject({ state: "retained", generationDigest: DIGEST });
+    expect(() =>
+      cleanResult("failed-closed", null, [{ code: "METHODOLOGY_STORE_FILESYSTEM_FAILURE" }]),
+    ).toThrow();
   });
 });
