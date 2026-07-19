@@ -43,19 +43,12 @@ The contract is not prose — every covered surface is pinned by a committed tes
   replace that store only after its hash-bound, ownership-proven target mutations and state rewrites
   succeed; failure rolls the transaction back and leaves the prior ledger authoritative. The
   structured families carry `schemaVersion: 1` — changing one incompatibly means bumping that
-  version, which is a major. The internal methodology generation store is fixed at
-  `<project>/.aih/methodology/v1` with `root.json`, `active.json`,
-  `generations/`, `transactions/`, `staging/`, `trash/`, `lock/`, and
-  `lock-candidates/`; its closed metadata records also use `schemaVersion: 1`.
-  An incompatible stored-record or fixed-layout change requires the corresponding
-  schema/layout version change.
+  version, which is a major.
 
-`active.json` selects one complete AIH-owned generation that Phase 4 does not
-edit in place. It is not evidence that a provider is installed, that a host is
-active, or that harness switching is shipped. Atomic publication exposes
-complete old-or-new selection bytes; after interruption either selection may be
-present, and activation does not edit either generation tree in place. Phase 4
-adds no CLI surface.
+The internal, unwired methodology generation store is not yet part of the public
+compatibility surface. Its closed records and fixed project-local layout remain
+subject to change until a later phase deliberately exports and pins them in
+`tests/contract/`; Phase 4 adds no CLI or package entry point.
 
 Not covered: human-oriented text — summaries, help prose, warning wording, the
 report dashboard HTML. Parse `--json`, not text.

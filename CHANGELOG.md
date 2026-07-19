@@ -19,10 +19,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   reviewed Phase 3 plan plus exact in-memory bytes, verifies content-addressed
   generations below `.aih/methodology/v1`, and atomically publishes complete
   old-or-new regular-file generation-selection bytes. Activation never changes
-  existing generation bytes in place, so an interruption leaves the prior
+  existing generation bytes in place, so an ordinary process interruption leaves the prior
   generation bytes intact even when the complete next selection was published.
   It recovers cooperative transactions, detects drift, and conservatively cleans
-  one exact inactive generation. It adds no apply/clean CLI, provider reader or
+  one exact inactive generation. It does not claim reboot, power-loss, or
+  storage-hardware durability. It adds no apply/clean CLI, provider reader or
   execution, host mapping or launch, installation, or shipped harness-switching
   claim.
 

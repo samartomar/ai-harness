@@ -463,7 +463,8 @@ Within the internal store, an activation record means only that one complete,
 verified AIH-owned generation is selected. It does not mean a provider is
 installed, a host is active, or a harness is switchable. Generation bytes are
 not edited in place; an interrupted atomic activation may leave complete old or
-complete new selection bytes. No host consumption is established; any later
+complete new selection bytes after ordinary process interruption. Reboot,
+power-loss, and storage-hardware durability are not claimed. No host consumption is established; any later
 fresh-session integration requires separate provider and host gates.
 
 ## aih evidence

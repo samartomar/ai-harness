@@ -56,8 +56,8 @@ Its threat model is built into the seven action kinds: `write`, `doc`, `probe`,
 
 ## Methodology projection baseline boundary
 
-The internal Phase 4 generation store handles crashes and interruption, multiple
-cooperating AIH processes, stale plans or changed admitted bytes, accidental
+The internal Phase 4 generation store handles ordinary process termination and
+interruption, multiple cooperating AIH processes, stale plans or changed admitted bytes, accidental
 external edits it detects, path escape, destination collision, incomplete
 generations, corrupt ownership records, and hostile bytes handled as inert data.
 For filesystem aliases, it fails closed on conditions observable through its
@@ -66,12 +66,13 @@ checks. This includes symbolic links, hard links, and junction/reparse aliases
 when those APIs report a link, changed realpath, changed device or identity, or a
 non-single-link file; it is not a claim to enumerate every reparse form.
 
-Apply uses private staging, verifies the exact content-addressed generation
+Within that process-termination boundary, apply uses private staging, verifies the exact content-addressed generation
 before publication, and atomically publishes only complete old-or-new
 regular-file generation-selection bytes. During apply, the previously selected
-generation bytes are not changed in place and remain intact on failure; the
+generation bytes are not changed in place and remain intact across handled process failure; the
 prior selection is not promised to remain selected when the complete next record
-was already published. Clean retains rather than deletes active, unknown,
+was already published. Reboot, power-loss, and storage-hardware durability are
+not claimed. Clean retains rather than deletes active, unknown,
 drifted, linked, incomplete, or otherwise uncertain objects.
 
 On POSIX systems AIH creates store directories and files with modes `0700` and
@@ -91,8 +92,8 @@ native addon loaded into the same ordinary AIH process does not create that
 authority separation.
 
 This is an internal library boundary only. It adds no apply/clean CLI, provider
-reader or execution, host mapping or launch, installation, activation, or
-shipped switching behavior.
+reader or execution, host mapping or launch, provider installation, host
+activation, or shipped switching behavior.
 
 If you find a way for an `aih` command to mutate a remote system, run an unexpected
 command, or exfiltrate data, that is a security bug — please report it.

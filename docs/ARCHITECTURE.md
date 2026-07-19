@@ -4,9 +4,10 @@
 > separate design docs and must not be read as shipped behavior.
 
 `aih` is a local TypeScript CLI that turns repo/workstation setup into reviewed,
-repeatable plans. The implementation is intentionally boring: each capability
-exports a command spec, the command registry applies shared flags and posture,
-and the executor is the only layer that performs filesystem or process effects.
+repeatable plans. Each registered CLI capability exports a command spec, the
+command registry applies shared flags and posture, and its effects route through
+the executor. Narrow internal state stores may encapsulate their own bounded
+filesystem-only transaction protocol; they are not command or process executors.
 
 ## Component Map
 
@@ -74,11 +75,13 @@ does not route through the current CLI or executor, does not read provider
 source, and does not map or launch a host. It never modifies the selected
 generation in place: exact bytes are staged and verified under a new
 content-addressed generation before a complete old/new selection record is
-atomically replaced. During apply, the previously selected generation bytes
-therefore remain intact on failure, but an interruption at record replacement
-may leave either the complete old or complete new selection. Recovery verifies
+atomically replaced. Within the ordinary process-termination boundary, the
+previously selected generation bytes therefore remain intact across handled
+failure, but an interruption at record replacement may leave either the complete
+old or complete new selection. Recovery verifies
 the observed selection and retains uncertain content; it does not promise that
-every failure preserves the old selection.
+every process failure preserves the old selection. Reboot, power-loss, and
+storage-hardware durability are not claimed.
 
 The baseline assumes cooperating processes using the AIH lock. A malicious
 process already running under the same OS identity with write authority over the

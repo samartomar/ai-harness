@@ -46,7 +46,7 @@
 
 ## Baseline methodology projection boundary
 
-The internal Phase 4 store is designed for crashes and interruption, multiple
+The internal Phase 4 store is designed for ordinary process termination and interruption, multiple
 cooperating AIH processes, stale plans, exact-byte drift, accidental external
 edits it detects, path escape, destination collision, incomplete generations,
 malformed ownership, hostile payload bytes treated as inert data, and path or
@@ -62,7 +62,7 @@ sync where supported, and a complete old/new generation-selection record. The
 claim covers process-termination recovery, not reboot or power-loss durability.
 
 Apply never edits an existing generation in place, so prior generation bytes
-remain intact on failure. An interruption around atomic selection replacement
+remain intact across handled process failure. An interruption around atomic selection replacement
 may leave either complete old selection bytes or complete new selection bytes;
 recovery verifies whichever selection is present and does not promise that the
 old selection remains selected on every failure. Inspection detects
