@@ -8,9 +8,10 @@
 ## Decision
 
 Implement the baseline methodology projector as a project-scoped transactional
-generation store for fresh host sessions. It provides deterministic materialization,
-atomic activation, recovery, drift detection, and conservative cleanup within an
-AIH-owned root.
+generation store. It provides deterministic materialization, atomic activation,
+recovery, drift detection, and conservative cleanup within an AIH-owned root. Phase 4
+does not integrate with or make a runtime claim about any host; a later gate may consume
+the store for fresh-session integration.
 
 The rejected Phase 4 and Phase 4A lineages are audit history only. This design is a
 new implementation from the reviewed Phase 3 base; it does not repair, import, or
@@ -24,7 +25,8 @@ The baseline projector protects against:
 - multiple cooperating AIH processes;
 - stale plans and changed admitted bytes;
 - accidental external edits;
-- static symbolic links, hard links, junctions, reparse points, and path escape;
+- path escape and static link/alias conditions observable through bounded Node
+  `lstat`, `realpath`, descriptor, device/identity, and link-count checks;
 - destination collisions, incomplete generations, and corrupt ownership records;
 - malformed manifests and hostile provider bytes passed as inert data; and
 - deletion of unknown, active, drifted, linked, or otherwise uncertain content.
@@ -32,9 +34,10 @@ The baseline projector protects against:
 The baseline projector does not protect against a malicious process already running
 with the same OS identity and write authority over the projection root. Such a process
 has the same filesystem authority as AIH and can race ordinary pathname operations or
-modify descendants. The baseline is therefore transactionally contained and
-tamper-evident within its documented boundary; it is not tamper-proof against a
-compromised developer account.
+modify descendants. The baseline therefore provides transactional integrity,
+containment, deterministic verification, and detection of changes observable through
+its checks within the documented cooperative boundary. It is not tamper-proof against
+a compromised developer account.
 
 The stronger guarantee belongs to a separately designed enterprise hardened
 projector backed by a broker, protected mount, sandbox, dedicated service identity,
@@ -60,10 +63,10 @@ process does not establish that separation and is not part of this phase.
 
 ## Chosen architecture
 
-Use immutable content-addressed generations plus a small atomic activation record.
-The active generation is never modified in place. Applying a new plan constructs and
-verifies a new generation, then atomically replaces only the activation record. A
-fresh host session can later resolve that record to one exact immutable generation.
+Use content-addressed generations that the library never edits in place plus a small
+atomic activation record. Applying a new plan constructs and verifies a new generation
+privately, publishes the complete generation with one directory rename, then atomically
+replaces only the activation record. Phase 4 establishes no host consumption.
 
 The alternatives are rejected:
 
@@ -83,23 +86,30 @@ The store is rooted only at `<project>/.aih/methodology/v1`:
 .aih/methodology/v1/
   root.json
   active.json                         # absent before the first activation
+  .active.<transaction-id>.tmp        # bounded non-authoritative write temporary
   lock/                               # one fully formed cooperative lock claim
-  lock-candidates/<token>/owner.json
+  lock-candidates/<token>.pending.<pid>/[owner.json]
+                                      # possibly empty/torn, never authoritative
+  lock-candidates/<token>/owner.json  # complete candidate before lock publication
+  lock-candidates/<token>.stale/owner.json
   transactions/<transaction-id>.json
+  transactions/.<transaction-id>.<phase>.tmp
+                                      # bounded non-authoritative write temporary
   staging/<transaction-id>/
     staging.json
     content/<canonical targets>
   generations/<manifest-digest>/
-    incomplete.json                  # present only while materializing
-    receipt.json                     # written only after exact verification
+    receipt.json
     content/<canonical targets>
-  trash/<transaction-id>/            # interrupted cleanup quarantine
+  trash/<transaction-id>/            # private unpublished scratch or clean quarantine
 ```
 
 `root.json` is created exclusively and binds a random root identifier to schema
 version 1. Existing roots are accepted only when the marker is valid and every
 ancestor from the canonical project root to the store is an ordinary directory.
-AIH never adopts an unmarked directory or repairs a malformed marker.
+AIH never adopts an unmarked directory or repairs a malformed marker. An interruption
+that leaves an existing `v1` directory without a valid marker therefore remains
+fail-closed; Phase 4 does not provide bootstrap repair or automatic deletion for it.
 
 Generation names are the lowercase Phase 3 manifest digest. `content/` contains only
 the exact regular-file targets named by that manifest. `receipt.json` is deterministic
@@ -139,9 +149,10 @@ The implementation has three focused internal units:
    expected activation, and typed outcomes. It exports read-only inspection plus
    explicit apply, recovery, and exact-generation clean functions for later AIH
    integration; it is not added to the CLI in this phase.
-2. A filesystem boundary owns canonical project/store path construction, link-safe
-   walking, exclusive creation, syncing, atomic same-directory replacement, exact-tree
-   verification, and bounded deletion. It accepts no provider-defined absolute path.
+2. A filesystem boundary owns canonical project/store path construction, bounded
+   Node-observable link and identity checks, exclusive creation, syncing, atomic
+   same-directory replacement, exact-tree verification, and bounded deletion. It
+   accepts no provider-defined absolute path.
 3. A transaction engine implements the lock, journal, staging, generation, activation,
    recovery, and quarantine state machines. Its production wrapper uses the real Node
    filesystem boundary; focused tests may inject failures through an internal dependency
@@ -162,13 +173,18 @@ target. It additionally enforces:
 
 - at most 8 MiB for one payload and 64 MiB for all payloads;
 - at most 32 target segments and 512 distinct generated directories;
-- at most 1,024 filesystem entries and 64 MiB of regular-file content in any one
-  verification walk;
+- at most 1,024 filesystem entries, 512 directories, and 64 MiB of regular-file
+  content in an individual scratch/tree walk;
+- the same entry, directory, and byte maxima as one aggregate persistent-history
+  budget shared across the active generation and every completed inactive generation
+  during apply preflight and recovery; a new candidate must fit the remaining budget;
 - at most 128 transaction or quarantine records considered in one recovery call; and
 - at most 1 MiB for any root, lock, journal, receipt, or activation record.
 
 Limits are checked while walking and hashing rather than after unbounded collection.
-Crossing a limit fails closed and does not trigger cleanup of the uncertain object.
+Recovery does not reset the persistent-history budget for each generation. Crossing a
+limit fails closed before pending cleanup and does not trigger cleanup of the uncertain
+object.
 
 ## Containment and ownership
 
@@ -192,10 +208,18 @@ baseline threat model.
 
 ## Cooperative lock
 
-Every mutating operation first creates a private candidate directory and a complete
-`owner.json`, then renames that non-empty directory to `lock/`. Because cooperating AIH
-processes use the same protocol, exactly one claim succeeds; contenders return a typed
-blocked result without mutation.
+Every mutating operation first creates a private, PID-bound, non-authoritative
+`lock-candidates/<token>.pending.<pid>` directory. It writes a complete `owner.json`,
+verifies the directory, atomically renames the whole directory to the authoritative
+`lock-candidates/<token>`, and then renames that complete candidate to `lock/`. Because
+cooperating AIH processes use the same protocol, exactly one claim succeeds;
+contenders return a typed blocked result without transaction mutation.
+
+An interrupted pending candidate is never a lock claim. A pending directory is reaped
+only when its PID is definitively absent and it is a private bounded directory with at
+most one bounded ordinary file; its bytes are never parsed or adopted as authority.
+Live or indeterminate PID-bound pending candidates remain. Unsafe or ambiguous pending
+state fails closed and remains visible.
 
 The owner record contains a schema version, random token, PID, and transaction ID. A
 lock with a live or indeterminate PID remains held. A well-formed lock whose PID is
@@ -213,29 +237,37 @@ Under the cooperative lock, apply performs these ordered steps:
 
 1. Re-read and verify the root marker, current activation, manifest, expected active
    digest, and every payload digest. Any mismatch is a stale-plan block before writes.
-2. Write and sync a transaction journal in state `prepared`.
-3. Create a private staging directory with restrictive permissions, materialize exact
-   bytes using exclusive regular-file creation, and sync written files.
-4. Walk staging without following links and prove the exact manifest tree, byte
-   digests, sizes, file types, link counts, and absence of extra descendants.
-5. Reserve `generations/<manifest-digest>` with exclusive directory creation. If it
-   already exists, reuse it only when its deterministic receipt and complete tree
-   verify exactly; otherwise report a collision and leave it untouched.
-6. For a new generation, write `incomplete.json`, copy exact staged bytes into a
-   newly created `content/`, verify the complete generation, write and sync the
-   deterministic receipt, remove the incomplete marker, and verify again.
-7. Write the deterministic next activation to a unique sibling temporary file, sync
+2. Verify the active generation plus all completed history through one shared
+   persistent budget and prove that a new candidate fits the remaining aggregate
+   entry/directory/byte capacity.
+3. Atomically create the `prepared` journal by writing a bounded deterministic sibling
+   temporary, syncing it, and renaming it only while the final journal path is absent.
+   The temporary is non-authoritative and is never parsed or adopted by recovery.
+4. Create `trash/<transaction-id>` as private unpublished scratch, materialize
+   `staging.json` plus exact content with exclusive regular-file creation, verify the
+   complete staging container, and atomically rename the whole verified directory to
+   `staging/<transaction-id>`.
+5. If `generations/<manifest-digest>` exists, reuse it only when its deterministic
+   receipt and complete tree verify exactly. Otherwise create a fresh private
+   `trash/<transaction-id>` scratch directory, copy the verified staging bytes, write
+   the deterministic receipt, verify the complete generation container, and atomically
+   rename the whole directory to the absent generation destination. Normal apply never
+   creates `incomplete.json` and never constructs content directly under the final
+   generation path.
+6. Write the deterministic next activation to a unique sibling temporary file, sync
    it, and atomically rename it over `active.json` within the same directory. A platform
    enters the supported Phase 4 matrix only after its local filesystem lane proves that
    readers observe the complete old or complete new regular-file record, never partial
    bytes.
-8. Re-read the activation and referenced generation. Mark the journal committed only
+7. Re-read the activation and referenced generation. Mark the journal committed only
    when both verify, then remove owned staging/journal remnants and release the lock.
 
 No apply step edits or removes the previously active generation. A failure before the
 activation rename leaves the old activation byte-for-byte unchanged. A process crash
-at the rename boundary leaves either the complete old record or the complete new
-record; recovery accepts only those two states.
+at or after the rename boundary may leave either the complete old record or the
+complete new record; the prior generation bytes remain intact, but the design does not
+promise that every failure keeps the prior record selected. Recovery accepts only
+complete classified states.
 
 Phase 4's crash guarantee covers process termination, interruption, and surfaced
 filesystem errors. Files and activation temporaries are synced before publication;
@@ -250,11 +282,13 @@ performs no content rewrite.
 ## Recovery
 
 Recovery runs only under the cooperative lock. It validates every journal and owned
-marker before acting and handles one transaction independently:
+marker before acting and handles one transaction independently. Before cleanup it
+verifies all completed persistent generations through one shared recovery budget; an
+over-budget history fails closed without removing pending state.
 
 - If `active.json` is still the recorded old activation, the transaction did not
-  commit. Exact owned staging or incomplete generation objects may be quarantined and
-  removed; anything drifted or uncertain remains with a finding.
+  commit. Exact owned staging and journal-bound unpublished scratch may be removed;
+  anything drifted or uncertain remains with a finding.
 - If `active.json` is the exact recorded new activation and the referenced generation
   verifies, the activation committed. Recovery completes bookkeeping and removes only
   exact owned remnants.
@@ -262,7 +296,18 @@ marker before acting and handles one transaction independently:
   the recorded old nor new value, recovery fails closed without selecting a fallback.
 
 There is no fallback to an older generation, provider source, or partially built
-generation. Recovery is deterministic and idempotent.
+generation. A recognized activation or journal temporary is bounded, checked only as
+non-authoritative initial-prepared or immediate-next residue, and removed when its
+deterministic path/phase/transaction binding, private permissions, single-link
+regular-file type,
+bounded size, stable identity, and containment make that safe. Linked, hard-linked,
+non-regular, permission-drifted, identity-uncertain, unexpected, or unbound
+temporaries remain and fail closed. Recovery never parses temporary contents and never
+uses a temporary as a journal, activation, or generation source. Ordinary bounded
+transaction-bound unpublished scratch can be removed after stable verification;
+linked, unexpectedly populated, or uncertain scratch remains. A pre-existing
+`incomplete.json` is classified as unexpected recognition-only residue; the reset
+apply path never creates or adopts it. Recovery is deterministic and idempotent.
 
 ## Inspection and drift detection
 
@@ -272,8 +317,8 @@ ownership, incomplete transactions, missing or extra content, digest drift, link
 containment failure, and orphan generations. It does not repair or recover.
 
 An invalid active generation is `drifted` or fail-closed; it is never reported active,
-installed, isolated, switchable, concurrent, or conflict-free. Later host work may use
-only a generation that passes this inspection immediately before a fresh session.
+installed, isolated, switchable, concurrent, or conflict-free. Phase 4 establishes no
+host or runtime use of a verified generation.
 
 ## Fail-closed clean
 
@@ -282,11 +327,13 @@ everything" and never removes the generation named by the current activation rec
 
 Under the lock, clean verifies the root, activation, requested generation name,
 deterministic receipt, complete descendant set, bytes, file types, link counts, and
-containment. Missing ownership, drift, an unexpected descendant, a link/reparse object,
-an incomplete marker, or any uncertainty returns `retained` without touching the
-generation.
+containment. Missing ownership, drift, an unexpected descendant, a linked/alias object
+observable through the bounded Node checks, an incomplete marker, or any uncertainty
+returns `retained` without touching the generation.
 
-An exact inactive generation is atomically renamed to a unique owned `trash/`
+The initial clean journal uses the same atomic-create protocol and non-authoritative
+bounded temporary as apply; recovery never parses or adopts that temporary. An exact
+inactive generation is atomically renamed to a unique owned `trash/`
 quarantine before bounded bottom-up deletion. A crash or deletion error leaves the
 quarantined remainder for deterministic recovery; clean never broadens its target or
 uses pathname fallback. Recovery removes a trash remainder only while its marker and
@@ -317,16 +364,23 @@ Focused tests cover:
   limits, target aliases, and deterministic generation/activation bytes;
 - initial apply, replacement apply, exact replay, idempotency, and stale active-plan
   rejection;
-- two cooperating child processes contending for the lock, stale-lock recovery, PID
-  reuse fail-closed behavior, and malformed lock retention;
+- atomic-create prepared journals, non-authoritative torn temporary removal without
+  parsing/adoption, private staging/generation scratch verification, and whole-directory
+  publication without a reset-path incomplete marker;
+- aggregate persistent-history preflight and recovery at the exact shared resource
+  maxima and one unit beyond;
+- two cooperating child processes contending for the lock, PID-bound pending-candidate
+  crash residue, stale-lock recovery, PID reuse fail-closed behavior, and malformed
+  lock retention;
 - injected failure before and after every journal, staging, verification, generation,
   receipt, activation, and cleanup boundary;
 - child-process termination at every externally visible transaction state followed by
   deterministic recovery;
-- existing destination collisions, incomplete generations, corrupt journals, and
-  invalid activation records;
-- static symlink, hard-link, Windows junction/reparse, non-regular-file, realpath,
-  and outside-root attacks without following or deleting the hostile object;
+- existing destination collisions, unexpected/legacy incomplete-generation residue,
+  corrupt journals, and invalid activation records;
+- static symlink, hard-link, Windows junction/reparse aliases observable through Node,
+  non-regular-file, realpath, and outside-root fixtures without following or deleting
+  the hostile object;
 - accidental mutation, deletion, and extra content after apply, with inspection
   reporting drift and clean retaining the generation;
 - exact inactive clean, interrupted clean quarantine, active-generation refusal, and

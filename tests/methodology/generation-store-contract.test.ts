@@ -20,8 +20,11 @@ import {
   isTransactionFilename,
   LockOwnerRecordSchema,
   MAX_FINDING_SUBJECT_BYTES,
+  MAX_GENERATED_DIRECTORIES,
   MAX_PAYLOAD_BYTES,
   MAX_PID,
+  MAX_TARGET_BYTES,
+  MAX_TOTAL_PAYLOAD_BYTES,
   ProjectionInspectionResultSchema,
   parseApplyProjectionInput,
   RecoverProjectionInputSchema,
@@ -96,7 +99,7 @@ function cleanTransaction(entries = receipt().entries) {
     transactionId: TRANSACTION_ID,
     phase: "prepared" as const,
     generationDigest: planned().manifest.digest,
-    oldActivation: activation(),
+    oldActivation: null,
     entries,
   };
 }
@@ -161,6 +164,97 @@ describe("Phase 4 generation-store contract", () => {
         expectedActiveDigest: null,
       }),
     ).toThrow();
+  });
+
+  it("accepts exact payload and aggregate byte limits and rejects the next byte", () => {
+    const exactPayloadBytes = Buffer.alloc(MAX_PAYLOAD_BYTES);
+    const exactPayloadPlan = plannedPayloadSet([
+      { artifactId: "exact-payload", bytes: exactPayloadBytes },
+    ]);
+    const exactPayload = parseApplyProjectionInput({
+      mode: "apply",
+      projectRoot: "/work/project",
+      plan: exactPayloadPlan,
+      payloads: [{ artifactId: "exact-payload", bytes: exactPayloadBytes }],
+      expectedActiveDigest: null,
+    });
+    expect(exactPayload.payloads[0]?.bytes.byteLength).toBe(MAX_PAYLOAD_BYTES);
+
+    const aggregateChunk = Buffer.alloc(MAX_PAYLOAD_BYTES);
+    const exactAggregatePayloads = Array.from({ length: 8 }, (_, index) => ({
+      artifactId: `aggregate-${index}`,
+      bytes: aggregateChunk,
+    }));
+    const exactAggregatePlan = plannedPayloadSet(exactAggregatePayloads);
+    const exactAggregate = parseApplyProjectionInput({
+      mode: "apply",
+      projectRoot: "/work/project",
+      plan: exactAggregatePlan,
+      payloads: exactAggregatePayloads,
+      expectedActiveDigest: null,
+    });
+    expect(
+      exactAggregate.payloads.reduce((total, payload) => total + payload.bytes.byteLength, 0),
+    ).toBe(MAX_TOTAL_PAYLOAD_BYTES);
+
+    const plusOnePayloads = [
+      ...exactAggregatePayloads,
+      { artifactId: "aggregate-plus-one", bytes: Buffer.alloc(1) },
+    ];
+    const plusOnePlan = plannedPayloadSet(plusOnePayloads);
+    expect(() =>
+      parseApplyProjectionInput({
+        mode: "apply",
+        projectRoot: "/work/project",
+        plan: plusOnePlan,
+        payloads: plusOnePayloads,
+        expectedActiveDigest: null,
+      }),
+    ).toThrowError(expect.objectContaining({ findingCode: "METHODOLOGY_STORE_RESOURCE_LIMIT" }));
+  }, 30_000);
+
+  it("accepts exact target and generated-directory limits and rejects the next unit", () => {
+    expect(isCanonicalProjectionTarget("a".repeat(MAX_TARGET_BYTES))).toBe(true);
+    expect(isCanonicalProjectionTarget("a".repeat(MAX_TARGET_BYTES + 1))).toBe(false);
+
+    const payloads = Array.from({ length: 64 }, (_, index) => ({
+      artifactId: `directory-${index}`,
+      bytes: Buffer.from([index]),
+    }));
+    const exactPlan = plannedPayloadSet(
+      payloads,
+      (artifactId) => `${artifactId}/d0/d1/d2/d3/d4/d5/d6/file.md`,
+    );
+    const exact = parseApplyProjectionInput({
+      mode: "apply",
+      projectRoot: "/work/project",
+      plan: exactPlan,
+      payloads,
+      expectedActiveDigest: null,
+    });
+    const generated = new Set<string>();
+    for (const entry of exact.plan.manifest.entries) {
+      const segments = entry.target.split("/");
+      for (let index = 1; index < segments.length; index += 1) {
+        generated.add(segments.slice(0, index).join("/"));
+      }
+    }
+    expect(generated.size).toBe(MAX_GENERATED_DIRECTORIES);
+
+    const plusOnePlan = plannedPayloadSet(payloads, (artifactId, index) =>
+      index === 0
+        ? `${artifactId}/d0/d1/d2/d3/d4/d5/d6/d7/file.md`
+        : `${artifactId}/d0/d1/d2/d3/d4/d5/d6/file.md`,
+    );
+    expect(() =>
+      parseApplyProjectionInput({
+        mode: "apply",
+        projectRoot: "/work/project",
+        plan: plusOnePlan,
+        payloads,
+        expectedActiveDigest: null,
+      }),
+    ).toThrowError(expect.objectContaining({ findingCode: "METHODOLOGY_STORE_RESOURCE_LIMIT" }));
   });
 
   it.each([
@@ -331,6 +425,9 @@ describe("Phase 4 generation-store contract", () => {
       boundary: GENERATION_STORE_MUTATION_BOUNDARY,
     });
     expect(
+      recoveryResult("failed-closed", null, [{ code: "METHODOLOGY_STORE_INPUT_INVALID" }]),
+    ).toMatchObject({ boundary: GENERATION_STORE_MUTATION_BOUNDARY });
+    expect(
       CleanProjectionInputSchema.safeParse({
         projectRoot: "/work/project",
         generationDigest: DIGEST,
@@ -500,6 +597,9 @@ describe("Phase 4 generation-store contract", () => {
     );
     const clean = cleanTransaction();
     expect(TransactionRecordSchema.safeParse(clean).success).toBe(true);
+    expect(
+      TransactionRecordSchema.safeParse({ ...clean, oldActivation: activation() }).success,
+    ).toBe(false);
     expect(canonicalRecordBytes("transaction", clean)).toEqual(
       canonicalRecordBytes("transaction", structuredClone(clean)),
     );
@@ -511,6 +611,94 @@ describe("Phase 4 generation-store contract", () => {
     ).toMatchObject({ state: "retained", generationDigest: DIGEST });
     expect(() =>
       cleanResult("failed-closed", null, [{ code: "METHODOLOGY_STORE_FILESYSTEM_FAILURE" }]),
+    ).toThrow();
+  });
+
+  it("rejects every reachable closed-input shape before reading caller authority", () => {
+    const valid = {
+      mode: "apply",
+      projectRoot: "/work/project",
+      plan: planned(),
+      payloads: payloadFixture(),
+      expectedActiveDigest: null,
+    };
+
+    expect(() => parseApplyProjectionInput(null)).toThrow(GenerationStoreContractError);
+    expect(() => parseApplyProjectionInput(Object.assign(Object.create({}), valid))).toThrow(
+      GenerationStoreContractError,
+    );
+    expect(() =>
+      parseApplyProjectionInput({
+        projectRoot: valid.projectRoot,
+        plan: valid.plan,
+        payloads: valid.payloads,
+        expectedActiveDigest: null,
+        unexpected: true,
+      }),
+    ).toThrow(GenerationStoreContractError);
+    expect(() => parseApplyProjectionInput({ ...valid, mode: "inspect" })).toThrow(
+      GenerationStoreContractError,
+    );
+    expect(() => parseApplyProjectionInput({ ...valid, payloads: null })).toThrow(
+      GenerationStoreContractError,
+    );
+    expect(() =>
+      parseApplyProjectionInput({
+        ...valid,
+        payloads: Array.from({ length: 65 }, (_, index) => ({
+          artifactId: `overflow-${index}`,
+          bytes: Buffer.alloc(0),
+        })),
+      }),
+    ).toThrow(GenerationStoreContractError);
+
+    const sparsePayloads = new Array(2);
+    sparsePayloads[0] = payloadFixture()[0];
+    expect(() => parseApplyProjectionInput({ ...valid, payloads: sparsePayloads })).toThrow(
+      GenerationStoreContractError,
+    );
+    expect(() =>
+      parseApplyProjectionInput({
+        ...valid,
+        payloads: [payloadFixture()[0], payloadFixture()[0]],
+      }),
+    ).toThrowError(expect.objectContaining({ findingCode: "METHODOLOGY_STORE_PAYLOAD_COVERAGE" }));
+    expect(() =>
+      parseApplyProjectionInput({
+        ...valid,
+        payloads: [{ artifactId: "root", bytes: "not-bytes" }, payloadFixture()[1]],
+      }),
+    ).toThrow(GenerationStoreContractError);
+    expect(() =>
+      parseApplyProjectionInput({
+        ...valid,
+        payloads: [payloadFixture()[0], { artifactId: "extra", bytes: Buffer.from("x") }],
+      }),
+    ).toThrowError(expect.objectContaining({ findingCode: "METHODOLOGY_STORE_PAYLOAD_COVERAGE" }));
+  });
+
+  it("rejects duplicate receipt identity and contradictory result digests", () => {
+    const [first, second] = receipt().entries;
+    if (first === undefined || second === undefined) {
+      throw new Error("fixture must contain two receipt entries");
+    }
+    expect(
+      GenerationReceiptSchema.safeParse({
+        ...receipt(),
+        entries: [first, { ...second, artifactId: first.artifactId }],
+      }).success,
+    ).toBe(false);
+    expect(
+      GenerationReceiptSchema.safeParse({
+        ...receipt(),
+        entries: [first, { ...second, target: first.target }],
+      }).success,
+    ).toBe(false);
+    expect(() => inspectionResult("verified", null, [])).toThrow();
+    expect(() => applyResult("applied", null, null, [])).toThrow();
+    expect(() => applyResult("already-active", DIGEST, OTHER_DIGEST, [])).toThrow();
+    expect(() =>
+      recoveryResult("blocked", null, [{ code: "METHODOLOGY_STORE_CLEAN_ACTIVE" }]),
     ).toThrow();
   });
 });

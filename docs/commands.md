@@ -453,6 +453,19 @@ also reports that provider execution, provider fetch, host execution, and writes
 Invalid or fail-closed envelopes instead carry a separate closed `failure` record, because
 Phase 1 cannot establish identity or compatibility from rejected input.
 
+Phase 4 adds zero commands and zero flags. `aih methodology project` remains
+dry-run-only/blocked, while `inspect` and `status` remain read-only. The
+internal apply, recovery, inspection, and exact-generation clean functions are
+not CLI or package entry points; they read no provider source and perform no
+host mapping, host launch, or host-native write.
+
+Within the internal store, an activation record means only that one complete,
+verified AIH-owned generation is selected. It does not mean a provider is
+installed, a host is active, or a harness is switchable. Generation bytes are
+not edited in place; an interrupted atomic activation may leave complete old or
+complete new selection bytes. No host consumption is established; any later
+fresh-session integration requires separate provider and host gates.
+
 ## aih evidence
 
 `vet-baseline <source>` runs the shared component vetter over an exact local checkout or quarantined

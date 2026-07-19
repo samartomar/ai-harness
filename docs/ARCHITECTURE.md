@@ -15,6 +15,10 @@ and the executor is the only layer that performs filesystem or process effects.
 - **Planner/executor** (`src/internals/`) turns capability plans into typed
   actions (`write`, `remove`, `exec`, `envblock`, `probe`, `digest`, `doc`) and
   applies them transactionally.
+- **Methodology pipeline/store** (`src/methodology/`) contains an internal,
+  unwired path from a reviewed Phase 3 plan plus exact in-memory bytes to a
+  bounded generation store. It performs no provider or host I/O and is not
+  registered with the command executor.
 - **Repo canon** (`src/bootstrap-ai/`, `src/contract/`, `src/profile/`) detects
   the stack, writes tool bootloaders, and emits `ai-coding/project.json`.
 - **Project truth** (`src/truth/`) owns the opt-in external sidecar, token-bounded
@@ -37,6 +41,15 @@ and the executor is the only layer that performs filesystem or process effects.
 - `.aih/` is local diagnostics and generated output. The run ledger under
   `.aih/runs/YYYY-MM.jsonl` is gitignored and should be shared through
   `aih evidence build` when tamper evidence is needed.
+- The internal methodology store is fixed at
+  `<project>/.aih/methodology/v1`. Private staging, deterministic receipts,
+  content-addressed generations that the library never edits in place, a
+  transaction journal, and a cooperative lock precede replacement of the
+  regular-file generation-selection record. No function accepts an arbitrary
+  output root.
+  Unknown, active, drifted, uncertain, or linked generation content identified
+  by the store's bounded Node filesystem checks is retained rather than
+  recursively removed.
 - Optional project-truth sidecars live outside the repository by default
   (sibling `<repo>-ai`). The repo carries only the sidecar pointer and code
   binding; staged truth packs stay outside committed source until a human
@@ -55,6 +68,27 @@ Dry runs are the default for managed project changes. Under `--apply`, the
 executor can write local files, remove local files through guarded actions, run
 local commands, emit shell environment blocks, compute digests, run read-only
 probes, and print operator-run docs.
+
+Phase 4's methodology mutation exists only at its internal library boundary. It
+does not route through the current CLI or executor, does not read provider
+source, and does not map or launch a host. It never modifies the selected
+generation in place: exact bytes are staged and verified under a new
+content-addressed generation before a complete old/new selection record is
+atomically replaced. During apply, the previously selected generation bytes
+therefore remain intact on failure, but an interruption at record replacement
+may leave either the complete old or complete new selection. Recovery verifies
+the observed selection and retains uncertain content; it does not promise that
+every failure preserves the old selection.
+
+The baseline assumes cooperating processes using the AIH lock. A malicious
+process already running under the same OS identity with write authority over the
+store is outside this boundary; resisting it requires a separately authorized
+broker, protected mount, sandbox, or OS authority.
+
+Phase 4 establishes no host consumption. Any later fresh-session integration
+requires separate provider and host gates. This phase makes no live-session,
+installed, host-active, isolated, switchable, concurrent, or conflict-free
+product claim.
 
 Remote mutation is outside the normal action model. The only explicit exceptions
 are provenance paths: GitHub attestations can write to GitHub's attestation

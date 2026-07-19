@@ -15,6 +15,16 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   failures are closed envelopes, and bounded Linux descriptor-anchored intent reads fail
   closed on linked ancestors or detected descriptor metadata mismatches. Other platforms
   fail closed for intent input until equivalent atomic no-follow traversal is available.
+- An internal, unwired Phase 4 methodology generation-store library accepts only a
+  reviewed Phase 3 plan plus exact in-memory bytes, verifies content-addressed
+  generations below `.aih/methodology/v1`, and atomically publishes complete
+  old-or-new regular-file generation-selection bytes. Activation never changes
+  existing generation bytes in place, so an interruption leaves the prior
+  generation bytes intact even when the complete next selection was published.
+  It recovers cooperative transactions, detects drift, and conservatively cleans
+  one exact inactive generation. It adds no apply/clean CLI, provider reader or
+  execution, host mapping or launch, installation, or shipped harness-switching
+  claim.
 
 ## [2.11.0] - 2026-07-15
 

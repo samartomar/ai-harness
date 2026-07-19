@@ -32,6 +32,7 @@ import {
   LockOwnerRecordSchema,
   MAX_GENERATED_DIRECTORIES,
   MAX_PAYLOAD_BYTES,
+  MAX_PID,
   MAX_RECORD_BYTES,
   MAX_RECOVERY_RECORDS,
   MAX_TARGET_SEGMENTS,
@@ -55,6 +56,7 @@ const TRANSACTION_FILENAME_PATTERN = /^([0-9a-f]{64})\.json$/;
 const TRANSACTION_TEMP_PATTERN = /^\.([0-9a-f]{64})\.([a-z][a-z-]{0,63})\.tmp$/;
 const ACTIVE_TEMP_PATTERN = /^\.active\.([0-9a-f]{64})\.tmp$/;
 const LOCK_CANDIDATE_PATTERN = /^[0-9a-f]{64}(?:\.stale)?$/;
+const LOCK_PENDING_CANDIDATE_PATTERN = /^[0-9a-f]{64}\.pending\.([1-9][0-9]{0,9})$/;
 const FIXED_ROOT_ENTRIES = new Set([
   "root.json",
   "active.json",
@@ -111,6 +113,17 @@ export type FixedStoreLayoutInventory = Readonly<{
   generations: readonly FixedGenerationLayout[];
   trash: readonly string[];
 }>;
+
+export type RecoveryTransactionTemporary = Readonly<{
+  transactionId: string;
+  phase: string;
+}>;
+
+export type RecoveryStoreLayoutInventory = FixedStoreLayoutInventory &
+  Readonly<{
+    activationTemporaries: readonly string[];
+    transactionTemporaries: readonly RecoveryTransactionTemporary[];
+  }>;
 
 export type StoreObjectIdentity = Readonly<{
   dev: string;
@@ -184,6 +197,7 @@ export type AtomicRecordWrite = Readonly<{
   targetPath: string;
   temporaryPath: string;
   record: unknown;
+  mode?: "replace" | "create";
 }>;
 
 export class GenerationStoreFsError extends Error {
@@ -213,6 +227,14 @@ function missing(error: unknown): boolean {
 
 function compareStrings(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0;
+}
+
+function isLockCandidateLayoutName(name: string): boolean {
+  if (LOCK_CANDIDATE_PATTERN.test(name)) return true;
+  const pending = LOCK_PENDING_CANDIDATE_PATTERN.exec(name);
+  if (pending?.[1] === undefined) return false;
+  const pid = Number(pending[1]);
+  return Number.isSafeInteger(pid) && pid <= MAX_PID;
 }
 
 function comparablePath(value: string): string {
@@ -318,10 +340,18 @@ function validateOrdinaryDirectory(
   projectDevice: string,
   absPath: string,
   label: string,
+  permissionPolicy: "private" | "shared" = "private",
 ): StoreObjectIdentity {
   const stats = lstatBigInt(absPath, label);
   if (stats.isSymbolicLink() || !stats.isDirectory()) {
     fail(`${label} must be an ordinary directory`);
+  }
+  if (process.platform !== "win32") {
+    const directoryMode = stats.mode & 0o777n;
+    const unsafePermissions =
+      (permissionPolicy === "private" && directoryMode !== 0o700n) ||
+      (permissionPolicy === "shared" && (directoryMode & 0o022n) !== 0n);
+    if (unsafePermissions) fail(`${label} has unsafe directory permissions`);
   }
   if (stats.dev.toString(10) !== projectDevice) {
     fail(`${label} changed device`);
@@ -351,6 +381,7 @@ function createOrValidateDirectory(
   projectRoot: string,
   projectDevice: string,
   absPath: string,
+  permissionPolicy: "private" | "shared",
 ): boolean {
   let created = false;
   if (lstatIfPresent(absPath) === undefined) {
@@ -361,7 +392,13 @@ function createOrValidateDirectory(
       if (errnoCode(error) !== "EEXIST") throw error;
     }
   }
-  validateOrdinaryDirectory(projectRoot, projectDevice, absPath, "store ancestor");
+  validateOrdinaryDirectory(
+    projectRoot,
+    projectDevice,
+    absPath,
+    "store ancestor",
+    permissionPolicy,
+  );
   return created;
 }
 
@@ -389,7 +426,12 @@ function rawExclusiveWrite(absPath: string, bytes: Uint8Array): void {
       0o600,
     );
     const opened = fstatSync(descriptor, { bigint: true });
-    if (!opened.isFile() || opened.isSymbolicLink() || opened.nlink !== 1n) {
+    if (
+      !opened.isFile() ||
+      opened.isSymbolicLink() ||
+      opened.nlink !== 1n ||
+      (process.platform !== "win32" && (opened.mode & 0o777n) !== 0o600n)
+    ) {
       fail("exclusive write did not open a single-link regular file");
     }
     writeFileSync(descriptor, Buffer.from(bytes));
@@ -428,6 +470,7 @@ function parseCanonicalRecord<T>(
     beforeStats.isSymbolicLink() ||
     !beforeStats.isFile() ||
     beforeStats.nlink !== 1n ||
+    (process.platform !== "win32" && (beforeStats.mode & 0o777n) !== 0o600n) ||
     beforeStats.dev.toString(10) !== projectDevice ||
     beforeStats.size > BigInt(MAX_RECORD_BYTES)
   ) {
@@ -446,6 +489,7 @@ function parseCanonicalRecord<T>(
   if (
     opened === undefined ||
     opened.stats.nlink !== 1 ||
+    (process.platform !== "win32" && (opened.stats.mode & 0o777) !== 0o600) ||
     opened.stats.dev.toString(10) !== projectDevice ||
     opened.contents.byteLength !== opened.stats.size
   ) {
@@ -506,7 +550,13 @@ export function openStoreForInspection(projectRoot: string): OwnedStore | undefi
   const layout = layoutForCanonicalProject(project.canonicalRoot, project.projectDevice);
   for (const ancestor of fixedAncestors(layout)) {
     if (lstatIfPresent(ancestor) === undefined) return undefined;
-    validateOrdinaryDirectory(layout.projectRoot, layout.projectDevice, ancestor, "store ancestor");
+    validateOrdinaryDirectory(
+      layout.projectRoot,
+      layout.projectDevice,
+      ancestor,
+      "store ancestor",
+      pathsEqual(ancestor, layout.root) ? "private" : "shared",
+    );
   }
   if (lstatIfPresent(layout.rootRecord) === undefined) {
     fail("owned store is missing its root marker", "METHODOLOGY_STORE_ROOT_UNOWNED");
@@ -518,12 +568,23 @@ export function createOrOpenOwnedStore(projectRoot: string): OwnedStore {
   const project = requireCanonicalProject(projectRoot);
   const layout = layoutForCanonicalProject(project.canonicalRoot, project.projectDevice);
   const ancestors = fixedAncestors(layout);
-  createOrValidateDirectory(layout.projectRoot, layout.projectDevice, ancestors[0] as string);
-  createOrValidateDirectory(layout.projectRoot, layout.projectDevice, ancestors[1] as string);
+  createOrValidateDirectory(
+    layout.projectRoot,
+    layout.projectDevice,
+    ancestors[0] as string,
+    "shared",
+  );
+  createOrValidateDirectory(
+    layout.projectRoot,
+    layout.projectDevice,
+    ancestors[1] as string,
+    "shared",
+  );
   const createdRoot = createOrValidateDirectory(
     layout.projectRoot,
     layout.projectDevice,
     layout.root,
+    "private",
   );
   if (createdRoot) {
     const record: RootRecord = {
@@ -568,6 +629,7 @@ export function assertOwnedStorePhase(store: OwnedStore): void {
       store.layout.projectDevice,
       ancestor,
       "store ancestor",
+      pathsEqual(ancestor, store.layout.root) ? "private" : "shared",
     );
   }
   const record = readRootRecord(store.layout);
@@ -629,6 +691,7 @@ function validateInventoryRegularFile(
     (dirent !== undefined && !dirent.isFile()) ||
     !stats.isFile() ||
     stats.nlink !== 1n ||
+    (process.platform !== "win32" && (stats.mode & 0o777n) !== 0o600n) ||
     stats.dev.toString(10) !== store.layout.projectDevice ||
     stats.size > BigInt(MAX_RECORD_BYTES)
   ) {
@@ -667,15 +730,32 @@ function countInventory(total: number, count: number): number {
   return next;
 }
 
-/** Reads only fixed store paths. It never creates state, locks, or follows a caller path. */
-export function inspectFixedStoreLayout(store: OwnedStore): FixedStoreLayoutInventory {
+function inspectStoreLayout(
+  store: OwnedStore,
+  allowRecoveryTemporaries: boolean,
+): RecoveryStoreLayoutInventory {
   assertOwnedStorePhase(store);
-  const rootEntries = inventoryDirectory(store, store.layout.root, "store root");
+  const rootEntries = inventoryDirectory(
+    store,
+    store.layout.root,
+    "store root",
+    MAX_RECOVERY_RECORDS + FIXED_ROOT_ENTRIES.size,
+  );
   if (rootEntries === undefined) {
     fail("owned store root disappeared", "METHODOLOGY_STORE_ROOT_UNOWNED");
   }
+  const activationTemporaries: string[] = [];
   for (const entry of rootEntries) {
-    if (!FIXED_ROOT_ENTRIES.has(entry.name)) fail("store root contains an unexpected entry");
+    if (FIXED_ROOT_ENTRIES.has(entry.name)) continue;
+    const temporary = allowRecoveryTemporaries ? ACTIVE_TEMP_PATTERN.exec(entry.name) : null;
+    if (temporary?.[1] === undefined) fail("store root contains an unexpected entry");
+    validateInventoryRegularFile(
+      store,
+      join(store.layout.root, entry.name),
+      entry,
+      "activation temporary",
+    );
+    activationTemporaries.push(temporary[1]);
   }
 
   const activePresent = lstatIfPresent(store.layout.active) !== undefined;
@@ -686,7 +766,6 @@ export function inspectFixedStoreLayout(store: OwnedStore): FixedStoreLayoutInve
   let inventoryCount = 0;
   const lockEntries = inventoryDirectory(store, store.layout.lock, "cooperative lock");
   if (lockEntries !== undefined) {
-    inventoryCount = countInventory(inventoryCount, 1);
     for (const entry of lockEntries) {
       if (entry.name !== "owner.json") fail("cooperative lock contains an unexpected entry");
       validateInventoryRegularFile(
@@ -705,7 +784,7 @@ export function inspectFixedStoreLayout(store: OwnedStore): FixedStoreLayoutInve
   );
   const lockCandidates: string[] = [];
   for (const entry of candidateEntries ?? []) {
-    if (!LOCK_CANDIDATE_PATTERN.test(entry.name)) fail("lock candidate name is unsafe");
+    if (!isLockCandidateLayoutName(entry.name)) fail("lock candidate name is unsafe");
     const candidateRoot = validateInventoryDirectory(
       store,
       store.layout.lockCandidates,
@@ -728,18 +807,31 @@ export function inspectFixedStoreLayout(store: OwnedStore): FixedStoreLayoutInve
 
   const transactionEntries = inventoryDirectory(store, store.layout.transactions, "transactions");
   const transactions: string[] = [];
+  const transactionTemporaries: RecoveryTransactionTemporary[] = [];
   for (const entry of transactionEntries ?? []) {
     const match = TRANSACTION_FILENAME_PATTERN.exec(entry.name);
-    if (match?.[1] === undefined) fail("transaction filename is unsafe");
+    const temporary = allowRecoveryTemporaries ? TRANSACTION_TEMP_PATTERN.exec(entry.name) : null;
+    if (match?.[1] === undefined && (temporary?.[1] === undefined || temporary[2] === undefined)) {
+      fail("transaction filename is unsafe");
+    }
     validateInventoryRegularFile(
       store,
       join(store.layout.transactions, entry.name),
       entry,
       "transaction record",
     );
-    transactions.push(match[1]);
+    if (match?.[1] !== undefined) {
+      transactions.push(match[1]);
+    } else if (temporary?.[1] !== undefined && temporary[2] !== undefined) {
+      transactionTemporaries.push(
+        Object.freeze({ transactionId: temporary[1], phase: temporary[2] }),
+      );
+    }
   }
-  inventoryCount = countInventory(inventoryCount, transactions.length);
+  inventoryCount = countInventory(
+    inventoryCount,
+    transactions.length + transactionTemporaries.length + activationTemporaries.length,
+  );
 
   const directoryIds = (absPath: string, label: string): readonly string[] => {
     const entries = inventoryDirectory(store, absPath, label);
@@ -801,7 +893,28 @@ export function inspectFixedStoreLayout(store: OwnedStore): FixedStoreLayoutInve
     staging,
     generations: Object.freeze(generations),
     trash,
+    activationTemporaries: Object.freeze(activationTemporaries),
+    transactionTemporaries: Object.freeze(transactionTemporaries),
   });
+}
+
+/** Reads only fixed store paths. It never creates state, locks, or follows a caller path. */
+export function inspectFixedStoreLayout(store: OwnedStore): FixedStoreLayoutInventory {
+  const inventory = inspectStoreLayout(store, false);
+  return Object.freeze({
+    activePresent: inventory.activePresent,
+    lockPresent: inventory.lockPresent,
+    lockCandidates: inventory.lockCandidates,
+    transactions: inventory.transactions,
+    staging: inventory.staging,
+    generations: inventory.generations,
+    trash: inventory.trash,
+  });
+}
+
+/** Recovery-only inventory that recognizes, but does not trust, deterministic record temporaries. */
+export function inspectRecoveryStoreLayout(store: OwnedStore): RecoveryStoreLayoutInventory {
+  return inspectStoreLayout(store, true);
 }
 
 function assertLexicallyOwned(store: OwnedStore, absPath: string, allowRoot = false): void {
@@ -848,6 +961,7 @@ function readOwnedRegularFile(
     before.isSymbolicLink() ||
     !before.isFile() ||
     before.nlink !== 1n ||
+    (process.platform !== "win32" && (before.mode & 0o777n) !== 0o600n) ||
     before.dev.toString(10) !== store.layout.projectDevice ||
     before.size > BigInt(maxBytes)
   ) {
@@ -866,6 +980,7 @@ function readOwnedRegularFile(
   if (
     opened === undefined ||
     opened.stats.nlink !== 1 ||
+    (process.platform !== "win32" && (opened.stats.mode & 0o777) !== 0o600) ||
     opened.stats.dev.toString(10) !== store.layout.projectDevice ||
     opened.contents.byteLength !== opened.stats.size
   ) {
@@ -981,10 +1096,83 @@ export function readStoreRecord<T>(
   return read;
 }
 
+export function readRecoveryTemporaryRecord<T>(
+  store: OwnedStore,
+  absPath: string,
+  schema: RecordSchema<T>,
+  kind: "activation" | "transaction",
+): StoredRecordRead<T> {
+  assertOwnedStorePhase(store);
+  assertOwnedAncestors(store, absPath);
+  const name = basename(absPath);
+  const activation = kind === "activation" ? ACTIVE_TEMP_PATTERN.exec(name) : null;
+  const transaction = kind === "transaction" ? TRANSACTION_TEMP_PATTERN.exec(name) : null;
+  if (
+    (kind === "activation" &&
+      (activation?.[1] === undefined || !pathsEqual(dirname(absPath), store.layout.root))) ||
+    (kind === "transaction" &&
+      (transaction?.[1] === undefined ||
+        transaction[2] === undefined ||
+        !pathsEqual(dirname(absPath), store.layout.transactions)))
+  ) {
+    fail("recovery temporary path is not canonical");
+  }
+  const read = parseCanonicalRecord(
+    absPath,
+    store.layout.projectRoot,
+    store.layout.projectDevice,
+    schema,
+    kind,
+  );
+  if (kind === "transaction") {
+    const parsed = TransactionRecordSchema.parse(read.record);
+    if (
+      transaction?.[1] !== parsed.transactionId ||
+      transaction[2] !== parsed.phase ||
+      parsed.rootId !== store.rootRecord.rootId
+    ) {
+      fail("recovery transaction temporary is not record-bound");
+    }
+  }
+  return read;
+}
+
+export function removeExactRecoveryTemporary(
+  store: OwnedStore,
+  absPath: string,
+  kind: "activation" | "transaction",
+  expectedRecord: unknown,
+): void {
+  assertOwnedStorePhase(store);
+  const schema: RecordSchema<unknown> =
+    kind === "activation" ? ActivationRecordSchema : TransactionRecordSchema;
+  let parsed: unknown;
+  try {
+    parsed = schema.parse(expectedRecord);
+  } catch {
+    fail("recovery temporary expectation is invalid", invalidRecordFinding(kind));
+  }
+  const expectedBytes = canonicalRecordBytes(kind, parsed);
+  const current = readRecoveryTemporaryRecord(store, absPath, schema, kind);
+  if (!current.bytes.equals(expectedBytes)) {
+    fail("recovery temporary changed before removal", invalidRecordFinding(kind));
+  }
+  const finalIdentity = identity(lstatBigInt(absPath, "recovery temporary"));
+  if (!sameIdentity(current.identity, finalIdentity)) {
+    fail("recovery temporary identity changed before removal", invalidRecordFinding(kind));
+  }
+  try {
+    unlinkSync(absPath);
+  } catch {
+    fail("recovery temporary removal failed", "METHODOLOGY_STORE_FILESYSTEM_FAILURE");
+  }
+  syncDirectory(dirname(absPath));
+}
+
 export function removeExactStoreRecord(
   store: OwnedStore,
   absPath: string,
-  kind: Extract<StoreRecordKind, "incomplete" | "transaction">,
+  kind: Extract<StoreRecordKind, "incomplete" | "receipt" | "transaction">,
   expectedRecord: unknown,
 ): void {
   assertOwnedStorePhase(store);
@@ -1198,6 +1386,12 @@ function validateAtomicTransaction(
   ) {
     fail("transaction temporary is not bound to its journal and next phase");
   }
+  if (write.mode === "create") {
+    if (next.phase !== "prepared" || lstatIfPresent(write.targetPath) !== undefined) {
+      fail("initial transaction publication must create an absent prepared journal");
+    }
+    return;
+  }
   const current = readStoreRecord(
     store,
     write.targetPath,
@@ -1263,6 +1457,9 @@ export function writeAtomicRecord(
     fail("atomic record exceeds its byte limit", "METHODOLOGY_STORE_RESOURCE_LIMIT");
   }
   rawExclusiveWrite(write.temporaryPath, bytes);
+  if (write.mode === "create" && lstatIfPresent(write.targetPath) !== undefined) {
+    fail("atomic create target appeared before publication");
+  }
   retryTransient(() => renameSync(write.temporaryPath, write.targetPath));
   const opened = readOwnedRegularFile(store, write.targetPath, MAX_RECORD_BYTES);
   if (!opened.contents.equals(bytes)) {
@@ -1935,6 +2132,66 @@ function requireSameVerifiedTree(previous: VerifiedTree, current: VerifiedTree):
   }
 }
 
+function requireSamePublishedTree(previous: VerifiedTree, current: VerifiedTree): void {
+  requireSameContainerDescriptor(previous, current);
+  if (
+    previous.files.length !== current.files.length ||
+    previous.directories.length !== current.directories.length ||
+    previous.missing.length !== current.missing.length
+  ) {
+    fail("published tree shape changed");
+  }
+  const previousFiles = identityByRelative(previous.files);
+  const previousDirectories = identityByRelative(previous.directories);
+  for (const file of current.files) {
+    const expected = previousFiles.get(file.relativePath);
+    if (expected === undefined || !sameIdentity(expected, file.identity)) {
+      fail("published file identity changed");
+    }
+  }
+  for (const directory of current.directories) {
+    const expected = previousDirectories.get(directory.relativePath);
+    if (
+      expected === undefined ||
+      (directory.relativePath === ""
+        ? !sameDirectoryObject(expected, directory.identity)
+        : !sameIdentity(expected, directory.identity))
+    ) {
+      fail("published directory identity changed");
+    }
+  }
+}
+
+function requireSameUnclaimedTree(previous: VerifiedTree, current: VerifiedTree): void {
+  if (
+    previous.container !== null ||
+    current.container !== null ||
+    previous.files.length !== current.files.length ||
+    previous.directories.length !== current.directories.length
+  ) {
+    fail("unpublished scratch tree changed before mutation");
+  }
+  const previousFiles = new Map(previous.files.map((file) => [file.relativePath, file]));
+  const previousDirectories = identityByRelative(previous.directories);
+  for (const file of current.files) {
+    const expected = previousFiles.get(file.relativePath);
+    if (
+      expected === undefined ||
+      expected.digest !== file.digest ||
+      expected.bytes !== file.bytes ||
+      !sameIdentity(expected.identity, file.identity)
+    ) {
+      fail("unpublished scratch file changed before mutation");
+    }
+  }
+  for (const directory of current.directories) {
+    const expected = previousDirectories.get(directory.relativePath);
+    if (expected === undefined || !sameIdentity(expected, directory.identity)) {
+      fail("unpublished scratch directory changed before mutation");
+    }
+  }
+}
+
 function requireSameVerifiedSubset(previous: VerifiedTree, current: VerifiedTree): void {
   requireSameContainerDescriptor(previous, current);
   const previousFiles = identityByRelative(previous.files);
@@ -2039,6 +2296,100 @@ export function quarantineExactDirectory(
   return moved;
 }
 
+export function publishVerifiedScratchDirectory(
+  store: OwnedStore,
+  verified: VerifiedTree,
+  transactionId: string,
+  destination: string,
+): VerifiedTree {
+  assertOwnedStorePhase(store);
+  assertBoundTrashRoot(store, verified.root);
+  const container = verified.container;
+  if (
+    !STORE_ID_PATTERN.test(transactionId) ||
+    basename(verified.root) !== transactionId ||
+    container === null ||
+    verified.missing.length !== 0 ||
+    (container.metadataKind !== "staging" && container.metadataKind !== "receipt")
+  ) {
+    fail("scratch publication is not transaction-bound and complete");
+  }
+  const expectedDestination =
+    container.metadataKind === "staging"
+      ? join(store.layout.staging, transactionId)
+      : join(store.layout.generations, container.sourceName);
+  if (!pathsEqual(destination, expectedDestination)) {
+    fail("scratch publication destination is not container-bound");
+  }
+  const current = verifyContainerAt(store, verified.root, verified.entries, container, false);
+  requireSameVerifiedTree(verified, current);
+  assertOwnedAncestors(store, destination);
+  destinationAbsent(destination);
+  retryTransient(() => renameSync(verified.root, destination));
+  const moved = verifyContainerAt(store, destination, verified.entries, container, false);
+  requireSamePublishedTree(current, moved);
+  syncDirectory(dirname(verified.root));
+  syncDirectory(dirname(destination));
+  return moved;
+}
+
+export function removeVerifiedScratchTree(
+  store: OwnedStore,
+  verified: VerifiedTree,
+  transactionId: string,
+): void {
+  assertOwnedStorePhase(store);
+  assertBoundTrashRoot(store, verified.root);
+  if (
+    !STORE_ID_PATTERN.test(transactionId) ||
+    basename(verified.root) !== transactionId ||
+    verified.container !== null
+  ) {
+    fail("scratch removal is not transaction-bound");
+  }
+  const current = verifyBoundedOwnedTreeSafety(store, verified.root);
+  requireSameUnclaimedTree(verified, current);
+  const files = [...current.files].sort((left, right) =>
+    compareStrings(right.relativePath, left.relativePath),
+  );
+  for (const file of files) {
+    revalidateFileForRemoval(store, current.root, file);
+    unlinkSync(join(current.root, ...file.relativePath.split("/")));
+  }
+  const directories = [...current.directories].sort((left, right) => {
+    const depthDifference =
+      right.relativePath.split("/").length - left.relativePath.split("/").length;
+    return depthDifference === 0
+      ? compareStrings(right.relativePath, left.relativePath)
+      : depthDifference;
+  });
+  for (const directory of directories) {
+    rmdirSync(revalidateDirectoryForRemoval(store, current.root, directory));
+  }
+  syncDirectory(dirname(current.root));
+}
+
+export function removeBoundedRecoveryTemporary(store: OwnedStore, absPath: string): void {
+  assertOwnedStorePhase(store);
+  const name = basename(absPath);
+  const allowed =
+    (pathsEqual(dirname(absPath), store.layout.root) && ACTIVE_TEMP_PATTERN.test(name)) ||
+    (pathsEqual(dirname(absPath), store.layout.transactions) &&
+      TRANSACTION_TEMP_PATTERN.test(name));
+  if (!allowed) fail("recovery temporary path is not recognized");
+  assertOwnedAncestors(store, absPath);
+  const before = readOwnedRegularFile(store, absPath, MAX_RECORD_BYTES);
+  const current = readOwnedRegularFile(store, absPath, MAX_RECORD_BYTES);
+  if (
+    !sameIdentity(before.identity, current.identity) ||
+    !before.contents.equals(current.contents)
+  ) {
+    fail("recovery temporary changed before removal");
+  }
+  unlinkSync(absPath);
+  syncDirectory(dirname(absPath));
+}
+
 function revalidateFileForRemoval(store: OwnedStore, root: string, file: VerifiedFile): Buffer {
   const absPath = join(root, ...file.relativePath.split("/"));
   const current = readOwnedRegularFile(store, absPath, MAX_PAYLOAD_BYTES);
@@ -2098,7 +2449,11 @@ function revalidateDirectoryForRemoval(
   return absPath;
 }
 
-export function removeVerifiedTree(store: OwnedStore, verified: VerifiedTree): void {
+export function removeVerifiedTree(
+  store: OwnedStore,
+  verified: VerifiedTree,
+  afterFileRemoved?: (relativePath: string) => void,
+): void {
   assertOwnedStorePhase(store);
   assertBoundTrashRoot(store, verified.root);
   if (verified.container === null) {
@@ -2112,12 +2467,19 @@ export function removeVerifiedTree(store: OwnedStore, verified: VerifiedTree): v
     true,
   );
   requireSameVerifiedSubset(verified, current);
-  const files = [...current.files].sort((left, right) =>
-    compareStrings(right.relativePath, left.relativePath),
-  );
+  const metadataName = verified.container.metadataName;
+  const files = [...current.files].sort((left, right) => {
+    const leftIsMetadata = left.relativePath === metadataName;
+    const rightIsMetadata = right.relativePath === metadataName;
+    if (leftIsMetadata !== rightIsMetadata) {
+      return leftIsMetadata ? 1 : -1;
+    }
+    return compareStrings(right.relativePath, left.relativePath);
+  });
   for (const file of files) {
     revalidateFileForRemoval(store, current.root, file);
     unlinkSync(join(current.root, ...file.relativePath.split("/")));
+    afterFileRemoved?.(file.relativePath);
   }
   const directories = [...current.directories].sort((left, right) => {
     const depthDifference =

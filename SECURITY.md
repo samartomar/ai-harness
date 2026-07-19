@@ -54,5 +54,45 @@ Its threat model is built into the seven action kinds: `write`, `doc`, `probe`,
   keyless cosign bundle for `SHA256SUMS.txt`; the scoped assessment and Build L3
   gap are documented in [docs/security/release-slsa.md](docs/security/release-slsa.md).
 
+## Methodology projection baseline boundary
+
+The internal Phase 4 generation store handles crashes and interruption, multiple
+cooperating AIH processes, stale plans or changed admitted bytes, accidental
+external edits it detects, path escape, destination collision, incomplete
+generations, corrupt ownership records, and hostile bytes handled as inert data.
+For filesystem aliases, it fails closed on conditions observable through its
+bounded Node `lstat`, `realpath`, descriptor-metadata, same-device, and link-count
+checks. This includes symbolic links, hard links, and junction/reparse aliases
+when those APIs report a link, changed realpath, changed device or identity, or a
+non-single-link file; it is not a claim to enumerate every reparse form.
+
+Apply uses private staging, verifies the exact content-addressed generation
+before publication, and atomically publishes only complete old-or-new
+regular-file generation-selection bytes. During apply, the previously selected
+generation bytes are not changed in place and remain intact on failure; the
+prior selection is not promised to remain selected when the complete next record
+was already published. Clean retains rather than deletes active, unknown,
+drifted, linked, incomplete, or otherwise uncertain objects.
+
+On POSIX systems AIH creates store directories and files with modes `0700` and
+`0600`; reopen rejects group/other-writable directories and
+group/other-writable or executable files. On Windows, containment relies on the
+ordinary-path and alias conditions visible through the Node checks above plus
+exact-byte verification. This phase makes no Windows ACL assurance and no
+general reparse-point guarantee.
+
+The baseline explicitly excludes a malicious process already executing with the
+same OS identity and write authority over the projection root. It provides
+transactional integrity, containment, deterministic verification, and detection
+of changes observable through the checks above within that cooperative boundary;
+it is not tamper-proof against a compromised user account. A stronger enterprise
+claim requires a broker, protected mount, sandbox, or dedicated OS identity. A
+native addon loaded into the same ordinary AIH process does not create that
+authority separation.
+
+This is an internal library boundary only. It adds no apply/clean CLI, provider
+reader or execution, host mapping or launch, installation, activation, or
+shipped switching behavior.
+
 If you find a way for an `aih` command to mutate a remote system, run an unexpected
 command, or exfiltrate data, that is a security bug — please report it.

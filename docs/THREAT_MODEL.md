@@ -10,6 +10,8 @@
 - Skill approval evidence and marketplace artifacts.
 - Baseline component catalogs, vendor locks, and org-signed override bundles.
 - Local run ledgers and support bundles.
+- AIH-owned methodology generation bytes, receipts, transaction journals, and
+  the complete generation-selection record under the fixed project store.
 - Release artifacts and checksums.
 - Secrets, tokens, private keys, and sensitive environment files.
 
@@ -42,6 +44,44 @@
   release verification, source acquisition/trust flows, signing/attestation,
   explicit TLS probes, and generated telemetry assets that the operator runs.
 
+## Baseline methodology projection boundary
+
+The internal Phase 4 store is designed for crashes and interruption, multiple
+cooperating AIH processes, stale plans, exact-byte drift, accidental external
+edits it detects, path escape, destination collision, incomplete generations,
+malformed ownership, hostile payload bytes treated as inert data, and path or
+link anomalies observable through bounded Node `lstat`, `realpath`, descriptor,
+device/identity, and link-count checks. Those checks reject symbolic links, hard
+links, and junction/reparse aliases when Node reports a link, changed realpath,
+changed device or identity, or a non-single-link file; they do not claim to
+enumerate every reparse form. The store uses a fixed AIH-owned project root,
+private staging, content-addressed generations that the library never edits in
+place, bounded inventories and tree walks, canonical targets, one-link regular
+files, a cooperative lock, a durable journal, and a complete old/new
+generation-selection record.
+
+Apply never edits an existing generation in place, so prior generation bytes
+remain intact on failure. An interruption around atomic selection replacement
+may leave either complete old selection bytes or complete new selection bytes;
+recovery verifies whichever selection is present and does not promise that the
+old selection remains selected on every failure. Inspection detects
+unclassified or changed owned state. Clean accepts only one exact inactive
+digest and retains unknown, active, drifted, linked, incomplete, or uncertain
+objects rather than deleting them. POSIX reopen also rejects group/other-writable
+directories and group/other-writable or executable files.
+
+The baseline does not protect against a malicious process already running with
+the same OS identity and write authority over the store. It provides
+transactional integrity, containment, deterministic verification, and detection
+of changes observable through the checks above within that cooperative boundary;
+it is not tamper-proof against a compromised user account. A stronger enterprise
+projector needs a broker, protected mount, sandbox, or dedicated OS identity; a
+same-process native addon does not create that authority separation.
+
+This boundary is an unwired library only. It adds no provider or host read or
+execution, host-native projection, apply/clean CLI, installation, or shipped
+switching behavior.
+
 ## Primary Threats and Controls
 
 | Threat | Control |
@@ -59,6 +99,9 @@
 | Tampering with local audit logs | Logs are local diagnostics; `aih evidence build` packages checksummed evidence for sharing. |
 | Policy source drift or override tampering | `aih doctor`/`aih report` surface active policy source and HEAD drift; `aih policy verify --against <sha256|bundle>` pins the trusted channel. |
 | Missing evidence or fleet-bundle signature in gated environments | `aih evidence build --require-signature` and `aih verify-bundle --require-signature` fail with coded `bundle.signature` findings instead of skipping. |
+| Methodology transaction interruption or cooperating writer contention | Private staging, a durable journal, a cooperative lock, complete old/new selection, and idempotent recovery avoid editing already-published generation bytes in place. |
+| Hostile methodology paths or bytes | Canonical targets, exact in-memory digests, bounded inventories and walks, and Node-observable realpath, descriptor, device/identity, and link-count checks reject detected escape or link conditions and treat bytes as inert data. |
+| Uncertain methodology clean | Exact inactive-generation verification retains the object and reports a fixed finding instead of deleting unknown or changed content. |
 
 ## Security Bugs
 
@@ -70,4 +113,11 @@ Report privately if an `aih` command can:
 - approve or install an unpinned/unapproved external source at team or enterprise posture;
 - execute ECC/Superpowers bytes that do not match exact component evidence, or accept an
   unattributed org baseline override;
-- accept a path traversal, symlink escape, malformed policy, or malformed bundle.
+- accept a path traversal, symlink escape, malformed policy, or malformed bundle;
+- let the internal methodology store write outside its fixed project root;
+- publish a partial or corrupt methodology generation-selection record; or
+- delete a methodology object that its bounded checks classified as unknown,
+  active, drifted, linked, or uncertain.
+
+A malicious same-user writer is outside the baseline methodology boundary and is
+not listed here as a property this library claims to defeat.

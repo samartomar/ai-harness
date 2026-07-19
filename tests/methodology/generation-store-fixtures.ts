@@ -93,7 +93,11 @@ export function collisionBlockedFixture() {
   });
 }
 
-export function plannedPayloadSet(payloads: readonly ProjectionPayload[]) {
+export function plannedPayloadSet(
+  payloads: readonly ProjectionPayload[],
+  targetForArtifact: (artifactId: string, index: number) => string = (artifactId) =>
+    `rules/${artifactId}.md`,
+) {
   const first = payloads[0];
   if (!first) throw new Error("payload set must not be empty");
   return planSyntheticProjection({
@@ -113,9 +117,9 @@ export function plannedPayloadSet(payloads: readonly ProjectionPayload[]) {
       }),
       evidence: payloads.map(({ artifactId, bytes }) => inertEvidence(artifactId, bytes)),
     },
-    mappings: payloads.map(({ artifactId }) => ({
+    mappings: payloads.map(({ artifactId }, index) => ({
       artifactId,
-      target: `rules/${artifactId}.md`,
+      target: targetForArtifact(artifactId, index),
     })),
   });
 }

@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import {
+  chmodSync,
   existsSync,
   linkSync,
   lstatSync,
@@ -13,7 +14,7 @@ import {
 } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { pathToFileURL } from "node:url";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import {
   ActivationRecordSchema,
   canonicalRecordBytes,
@@ -23,6 +24,7 @@ import {
   MAX_MANIFEST_ENTRIES,
   MAX_PAYLOAD_BYTES,
   MAX_RECORD_BYTES,
+  MAX_WALK_BYTES,
   MAX_WALK_ENTRIES,
   RootRecordSchema,
   StagingRecordSchema,
@@ -38,12 +40,18 @@ import {
   ensureOwnedDirectory,
   GenerationStoreFsError,
   inspectFixedStoreLayout,
+  inspectRecoveryStoreLayout,
   isGenerationDigest,
   isStoreObjectId,
   openStoreForInspection,
+  publishVerifiedScratchDirectory,
   quarantineExactDirectory,
+  readRecoveryTemporaryRecord,
   readStoreRecord,
+  removeBoundedRecoveryTemporary,
+  removeExactRecoveryTemporary,
   removeExactStoreRecord,
+  removeVerifiedScratchTree,
   removeVerifiedTree,
   verifyBoundedOwnedTreeSafety,
   verifyExpectedContainer,
@@ -68,6 +76,15 @@ import {
 const TRANSACTION_ID = "d".repeat(64);
 const OTHER_DIGEST = "b".repeat(64);
 const roots: TemporaryProject[] = [];
+const ORIGINAL_UMASK = process.platform === "win32" ? undefined : process.umask();
+
+beforeAll(() => {
+  if (ORIGINAL_UMASK !== undefined) process.umask(0o077);
+});
+
+afterAll(() => {
+  if (ORIGINAL_UMASK !== undefined) process.umask(ORIGINAL_UMASK);
+});
 
 function temporaryProject(): TemporaryProject {
   const root = makeTemporaryProject();
@@ -149,6 +166,29 @@ function generationReceipt(
     rootId: store.rootRecord.rootId,
     manifestDigest: plannedDigest(),
     entries,
+  };
+}
+
+function applyTransaction(
+  store: ReturnType<typeof createOrOpenOwnedStore>,
+  phase:
+    | "prepared"
+    | "staged"
+    | "generation-reserved"
+    | "generation-verified"
+    | "activation-committed"
+    | "committed" = "prepared",
+) {
+  return {
+    schemaVersion: 1 as const,
+    operation: "apply" as const,
+    rootId: store.rootRecord.rootId,
+    transactionId: TRANSACTION_ID,
+    phase,
+    manifestDigest: plannedDigest(),
+    oldActivation: null,
+    newActivation: activation(),
+    entries: expectedReceiptEntries(),
   };
 }
 
@@ -505,6 +545,132 @@ describe("Phase 4 bounded generation-store filesystem", () => {
     expect(existsSync(store.layout.lockCandidates)).toBe(true);
   });
 
+  it("inventories and removes only exact recovery temporaries", () => {
+    const root = temporaryProject();
+    const store = createOrOpenOwnedStore(realpathSync(root.projectRoot));
+    mkdirSync(store.layout.transactions);
+    mkdirSync(store.layout.lockCandidates);
+    const pendingCandidate = `${OTHER_DIGEST}.pending.1`;
+    mkdirSync(join(store.layout.lockCandidates, pendingCandidate));
+
+    const targetPath = join(store.layout.transactions, `${TRANSACTION_ID}.json`);
+    writeAtomicRecord(store, {
+      kind: "transaction",
+      targetPath,
+      temporaryPath: join(store.layout.transactions, `.${TRANSACTION_ID}.prepared.tmp`),
+      record: applyTransaction(store),
+      mode: "create",
+    });
+    writeAtomicRecord(store, {
+      kind: "transaction",
+      targetPath,
+      temporaryPath: join(store.layout.transactions, `.${TRANSACTION_ID}.staged.tmp`),
+      record: applyTransaction(store, "staged"),
+    });
+    expect(() =>
+      writeAtomicRecord(store, {
+        kind: "transaction",
+        targetPath,
+        temporaryPath: join(store.layout.transactions, `.${TRANSACTION_ID}.prepared.tmp`),
+        record: applyTransaction(store),
+        mode: "create",
+      }),
+    ).toThrow();
+
+    const transactionTemporary = join(
+      store.layout.transactions,
+      `.${TRANSACTION_ID}.generation-reserved.tmp`,
+    );
+    const nextTransaction = applyTransaction(store, "generation-reserved");
+    writeExclusiveRegularFile(
+      store,
+      transactionTemporary,
+      canonicalRecordBytes("transaction", nextTransaction),
+    );
+    const activationTemporary = join(store.layout.root, `.active.${TRANSACTION_ID}.tmp`);
+    const nextActivation = activation();
+    writeExclusiveRegularFile(
+      store,
+      activationTemporary,
+      canonicalRecordBytes("activation", nextActivation),
+    );
+
+    expect(() => inspectFixedStoreLayout(store)).toThrow();
+    expect(inspectRecoveryStoreLayout(store)).toMatchObject({
+      lockCandidates: [pendingCandidate],
+      transactions: [TRANSACTION_ID],
+      activationTemporaries: [TRANSACTION_ID],
+      transactionTemporaries: [{ transactionId: TRANSACTION_ID, phase: "generation-reserved" }],
+    });
+    expect(
+      readRecoveryTemporaryRecord(store, activationTemporary, ActivationRecordSchema, "activation")
+        .record,
+    ).toEqual(nextActivation);
+    expect(
+      readRecoveryTemporaryRecord(
+        store,
+        transactionTemporary,
+        TransactionRecordSchema,
+        "transaction",
+      ).record,
+    ).toEqual(nextTransaction);
+    expectFsFinding(
+      () =>
+        readRecoveryTemporaryRecord(
+          store,
+          transactionTemporary,
+          ActivationRecordSchema,
+          "activation",
+        ),
+      "METHODOLOGY_STORE_PATH_UNSAFE",
+    );
+    expectFsFinding(
+      () => removeExactRecoveryTemporary(store, transactionTemporary, "transaction", {}),
+      "METHODOLOGY_STORE_TRANSACTION_INVALID",
+    );
+    expectFsFinding(
+      () =>
+        removeExactRecoveryTemporary(
+          store,
+          transactionTemporary,
+          "transaction",
+          applyTransaction(store, "staged"),
+        ),
+      "METHODOLOGY_STORE_TRANSACTION_INVALID",
+    );
+
+    removeExactRecoveryTemporary(store, transactionTemporary, "transaction", nextTransaction);
+    removeExactRecoveryTemporary(store, activationTemporary, "activation", nextActivation);
+    expect(inspectRecoveryStoreLayout(store)).toMatchObject({
+      activationTemporaries: [],
+      transactionTemporaries: [],
+    });
+    expect(existsSync(targetPath)).toBe(true);
+  });
+
+  it("removes bounded torn recovery bytes without adopting them as records", () => {
+    const root = temporaryProject();
+    const store = createOrOpenOwnedStore(realpathSync(root.projectRoot));
+    mkdirSync(store.layout.transactions);
+    const transactionTemporary = join(store.layout.transactions, `.${TRANSACTION_ID}.prepared.tmp`);
+    const activationTemporary = join(store.layout.root, `.active.${TRANSACTION_ID}.tmp`);
+    writeExclusiveRegularFile(store, transactionTemporary, Buffer.from("{torn"));
+    writeExclusiveRegularFile(store, activationTemporary, Buffer.from("not-json"));
+
+    removeBoundedRecoveryTemporary(store, transactionTemporary);
+    removeBoundedRecoveryTemporary(store, activationTemporary);
+    expect(existsSync(transactionTemporary)).toBe(false);
+    expect(existsSync(activationTemporary)).toBe(false);
+    expectFsFinding(
+      () =>
+        removeBoundedRecoveryTemporary(
+          store,
+          join(store.layout.transactions, `${TRANSACTION_ID}.json`),
+        ),
+      "METHODOLOGY_STORE_PATH_UNSAFE",
+    );
+  });
+
   it("does not count completed histories as pending recovery state", () => {
     const root = temporaryProject();
     const store = createOrOpenOwnedStore(realpathSync(root.projectRoot));
@@ -669,6 +835,40 @@ describe("Phase 4 bounded generation-store filesystem", () => {
     expect(second.rootRecord).toEqual(first.rootRecord);
     expect(readFileSync(outside.canary, "utf8")).toBe("outside-canary\n");
   });
+
+  it.skipIf(process.platform === "win32")(
+    "accepts non-writable shared ancestors while keeping the private store exact",
+    () => {
+      const root = temporaryProject();
+      const sharedMethodology = join(root.projectRoot, ".aih", "methodology");
+      mkdirSync(sharedMethodology, { recursive: true, mode: 0o700 });
+      chmodSync(join(root.projectRoot, ".aih"), 0o755);
+      chmodSync(sharedMethodology, 0o755);
+
+      const store = createOrOpenOwnedStore(realpathSync(root.projectRoot));
+
+      expect(lstatSync(join(root.projectRoot, ".aih")).mode & 0o777).toBe(0o755);
+      expect(lstatSync(sharedMethodology).mode & 0o777).toBe(0o755);
+      expect(lstatSync(store.layout.root).mode & 0o777).toBe(0o700);
+    },
+  );
+
+  it.skipIf(process.platform === "win32").each([".aih", ".aih/methodology"])(
+    "rejects group-writable shared ancestor %s",
+    (relativeAncestor) => {
+      const root = temporaryProject();
+      const sharedMethodology = join(root.projectRoot, ".aih", "methodology");
+      mkdirSync(sharedMethodology, { recursive: true, mode: 0o700 });
+      chmodSync(join(root.projectRoot, ".aih"), 0o755);
+      chmodSync(sharedMethodology, 0o755);
+      chmodSync(join(root.projectRoot, ...relativeAncestor.split("/")), 0o775);
+
+      expectFsFinding(
+        () => createOrOpenOwnedStore(realpathSync(root.projectRoot)),
+        "METHODOLOGY_STORE_PATH_UNSAFE",
+      );
+    },
+  );
 
   it("allows two cooperating first-open processes to converge or block cleanly", async () => {
     const root = temporaryProject();
@@ -1738,6 +1938,40 @@ describe("Phase 4 bounded generation-store filesystem", () => {
     expect(budget.entries).toBe(MAX_WALK_ENTRIES);
   });
 
+  it("accepts exact walk entry and byte ceilings and rejects the next unit", () => {
+    const entryRoot = temporaryProject();
+    const entryStore = createOrOpenOwnedStore(realpathSync(entryRoot.projectRoot));
+    const entryTree = join(entryStore.layout.root, "exact-entry-tree");
+    mkdirSync(entryTree);
+    for (let index = 0; index < MAX_WALK_ENTRIES; index += 1) {
+      writeFileSync(join(entryTree, `entry-${index.toString().padStart(4, "0")}.bin`), "");
+    }
+    expect(verifyBoundedOwnedTreeSafety(entryStore, entryTree).files).toHaveLength(
+      MAX_WALK_ENTRIES,
+    );
+    writeFileSync(join(entryTree, "overflow.bin"), "");
+    expectFsFinding(
+      () => verifyBoundedOwnedTreeSafety(entryStore, entryTree),
+      "METHODOLOGY_STORE_RESOURCE_LIMIT",
+    );
+
+    const byteRoot = temporaryProject();
+    const byteStore = createOrOpenOwnedStore(realpathSync(byteRoot.projectRoot));
+    const byteTree = join(byteStore.layout.root, "exact-byte-tree");
+    mkdirSync(byteTree);
+    const chunk = Buffer.alloc(MAX_PAYLOAD_BYTES);
+    for (let index = 0; index < MAX_WALK_BYTES / MAX_PAYLOAD_BYTES; index += 1) {
+      writeFileSync(join(byteTree, `chunk-${index}.bin`), chunk);
+    }
+    const exact = verifyBoundedOwnedTreeSafety(byteStore, byteTree);
+    expect(exact.files.reduce((total, file) => total + file.bytes, 0)).toBe(MAX_WALK_BYTES);
+    writeFileSync(join(byteTree, "overflow.bin"), Buffer.alloc(1));
+    expectFsFinding(
+      () => verifyBoundedOwnedTreeSafety(byteStore, byteTree),
+      "METHODOLOGY_STORE_RESOURCE_LIMIT",
+    );
+  }, 60_000);
+
   it("plumbs one shared budget through separate exact container checks", () => {
     const root = temporaryProject();
     const store = createOrOpenOwnedStore(realpathSync(root.projectRoot));
@@ -2017,6 +2251,117 @@ describe("Phase 4 bounded generation-store filesystem", () => {
       verifyExpectedContainer(deepStore, deepGeneration, "receipt", deepReceipt, maximumDepth)
         .missing,
     ).toEqual([]);
+  });
+
+  it("publishes complete verified staging and generation scratch directories atomically", () => {
+    const root = temporaryProject();
+    const store = createOrOpenOwnedStore(realpathSync(root.projectRoot));
+    mkdirSync(store.layout.staging);
+    mkdirSync(store.layout.generations);
+    mkdirSync(store.layout.trash);
+    const entries = expectedReceiptEntries();
+
+    const stagingScratch = join(store.layout.trash, TRANSACTION_ID);
+    mkdirSync(join(stagingScratch, "content"), { recursive: true });
+    materializeExpectedTree(join(stagingScratch, "content"), entries);
+    const stagingRecord = {
+      schemaVersion: 1 as const,
+      rootId: store.rootRecord.rootId,
+      transactionId: TRANSACTION_ID,
+      manifestDigest: plannedDigest(),
+    };
+    writeExclusiveRegularFile(
+      store,
+      join(stagingScratch, "staging.json"),
+      canonicalRecordBytes("staging", stagingRecord),
+    );
+    const verifiedStaging = verifyPartialOwnedContainer(
+      store,
+      stagingScratch,
+      "staging",
+      stagingRecord,
+      entries,
+    );
+    expect(() =>
+      publishVerifiedScratchDirectory(
+        store,
+        verifiedStaging,
+        TRANSACTION_ID,
+        join(store.layout.generations, plannedDigest()),
+      ),
+    ).toThrow();
+    const publishedStaging = publishVerifiedScratchDirectory(
+      store,
+      verifiedStaging,
+      TRANSACTION_ID,
+      join(store.layout.staging, TRANSACTION_ID),
+    );
+    expect(publishedStaging.root).toBe(join(store.layout.staging, TRANSACTION_ID));
+    expect(existsSync(stagingScratch)).toBe(false);
+    const quarantinedStaging = quarantineExactDirectory(store, publishedStaging, TRANSACTION_ID);
+    removeVerifiedTree(store, quarantinedStaging);
+
+    const generationScratch = join(store.layout.trash, OTHER_DIGEST);
+    mkdirSync(join(generationScratch, "content"), { recursive: true });
+    materializeExpectedTree(join(generationScratch, "content"), entries);
+    const receipt = generationReceipt(store, entries);
+    writeExclusiveRegularFile(
+      store,
+      join(generationScratch, "receipt.json"),
+      canonicalRecordBytes("receipt", receipt),
+    );
+    const verifiedGeneration = verifyPartialOwnedContainer(
+      store,
+      generationScratch,
+      "receipt",
+      receipt,
+      entries,
+    );
+    const generationDestination = join(store.layout.generations, plannedDigest());
+    const publishedGeneration = publishVerifiedScratchDirectory(
+      store,
+      verifiedGeneration,
+      OTHER_DIGEST,
+      generationDestination,
+    );
+    expect(publishedGeneration.root).toBe(generationDestination);
+    expect(existsSync(generationScratch)).toBe(false);
+    const quarantinedGeneration = quarantineExactDirectory(
+      store,
+      publishedGeneration,
+      OTHER_DIGEST,
+    );
+    removeVerifiedTree(store, quarantinedGeneration);
+  });
+
+  it("removes only an unchanged unclaimed transaction scratch tree", () => {
+    const root = temporaryProject();
+    const store = createOrOpenOwnedStore(realpathSync(root.projectRoot));
+    const scratch = join(store.layout.trash, TRANSACTION_ID);
+    const nestedFile = join(scratch, "nested", "payload.bin");
+    mkdirSync(dirname(nestedFile), { recursive: true });
+    writeFileSync(nestedFile, "scratch", { mode: 0o600 });
+    const verified = verifyBoundedOwnedTreeSafety(store, scratch);
+
+    expect(() =>
+      publishVerifiedScratchDirectory(
+        store,
+        verified,
+        TRANSACTION_ID,
+        join(store.layout.staging, TRANSACTION_ID),
+      ),
+    ).toThrow();
+    expect(() => removeVerifiedScratchTree(store, verified, OTHER_DIGEST)).toThrow();
+    expect(existsSync(scratch)).toBe(true);
+    removeVerifiedScratchTree(store, verified, TRANSACTION_ID);
+    expect(existsSync(scratch)).toBe(false);
+
+    mkdirSync(dirname(nestedFile), { recursive: true });
+    writeFileSync(nestedFile, "scratch", { mode: 0o600 });
+    const drifted = verifyBoundedOwnedTreeSafety(store, scratch);
+    writeFileSync(nestedFile, "changed", { mode: 0o600 });
+    expect(() => removeVerifiedScratchTree(store, drifted, TRANSACTION_ID)).toThrow();
+    expect(readFileSync(nestedFile, "utf8")).toBe("changed");
   });
 
   it("quarantines exact and partial transaction-bound incomplete and staging remnants", () => {

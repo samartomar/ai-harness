@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (- [ ]) syntax for tracking.
 
-**Goal:** Build a project-scoped transactional methodology generation store that materializes exact admitted bytes, atomically activates verified immutable generations, recovers from interruption, detects drift, and conservatively cleans exact inactive generations.
+**Goal:** Build a project-scoped transactional methodology generation store that materializes exact admitted bytes, atomically activates verified content-addressed generations that the library never edits in place, recovers from interruption, detects drift, and conservatively cleans exact inactive generations.
 
-**Architecture:** Phase 4 consumes the reviewed Phase 3 planned result plus exact in-memory payload bytes. A cooperative lock serializes AIH writers; private staging and a journal build a content-addressed immutable generation, and a same-directory regular-file rename atomically changes the activation record. Inspection and clean verify the complete owned tree without following links; uncertainty retains bytes and fails closed.
+**Architecture:** Phase 4 consumes the reviewed Phase 3 planned result plus exact in-memory payload bytes. A cooperative lock serializes AIH writers. Prepared journals are atomically created through bounded non-authoritative sibling temporaries. Staging and generation containers are built privately under `trash/<transaction-id>`, fully verified, and published by whole-directory rename; a same-directory regular-file rename leaves activation as complete old-or-new bytes. Inspection and clean use bounded Node-observable path/link/identity checks; uncertainty retains bytes and fails closed.
 
 **Tech Stack:** TypeScript 7, Node.js 20+ synchronous filesystem APIs, existing SHA-256 and containment helpers, Zod 4 strict stored-record schemas, Vitest 4, and the existing Linux/Windows/macOS CI matrix.
 
@@ -18,7 +18,7 @@
 - Do not add provider-source readers, provider/host execution, network access, package-manager execution, host mapping, host launch, or a production apply/clean CLI.
 - All mutation tests use disposable operating-system temporary project roots. Never target the AIH checkout, user home, provider source, or host-native paths.
 - The store root is exactly <project>/.aih/methodology/v1. No public function accepts an arbitrary output root.
-- Retain Phase 3 maxima of 64 manifest entries and 240 target bytes. Phase 4 maxima are 8 MiB per payload, 64 MiB total payload bytes, 32 target segments, 512 generated directories, 1,024 walked entries, 64 MiB walked regular-file bytes, 128 recovery records, and 1 MiB per metadata record.
+- Retain Phase 3 maxima of 64 manifest entries and 240 target bytes. Phase 4 maxima are 8 MiB per payload, 64 MiB total payload bytes, 32 target segments, 512 generated directories, 1,024 walked entries, 64 MiB walked regular-file bytes, 128 recovery records, and 1 MiB per metadata record. Apply preflight and recovery share one aggregate entry/directory/byte budget across the active generation and all completed history; a new generation must fit the remaining capacity before writes begin.
 - Mutation is explicit at the library boundary. The existing methodology CLI stays read-only/dry-run.
 - Clean accepts one exact inactive generation digest. It never means recursive clean-all.
 - Signing does not determine the filesystem gate. Use DCO sign-off and process-local commit.gpgsign=false for local commits.
@@ -32,8 +32,8 @@
 Create these focused production files:
 
 - src/methodology/generation-store-contract.ts — closed input/stored-record/result types, exact finding vocabulary, canonical JSON, payload validation, and resource constants.
-- src/methodology/generation-store-fs.ts — bounded AIH-root layout, safe regular-file I/O, exact-tree walking, link/containment checks, syncing, atomic regular-file replacement, quarantine, and bounded deletion.
-- src/methodology/generation-store-lock.ts — cooperative candidate-lock acquisition, stale-owner classification, exact-token release, and lock quarantine.
+- src/methodology/generation-store-fs.ts — bounded AIH-root layout, safe regular-file I/O, exact-tree walking, Node-observable link/containment checks, atomic-create and replacement records, verified scratch-directory publication, quarantine, syncing, and bounded deletion.
+- src/methodology/generation-store-lock.ts — cooperative PID-bound pending-candidate construction, complete candidate publication, stale-owner classification, exact-token release, and lock quarantine.
 - src/methodology/generation-store.ts — read-only inspection plus explicit apply, recovery, and exact-generation clean state machines.
 
 Create these test files:
@@ -274,12 +274,19 @@ export type CleanProjectionResult = StoreResultBase &
   }>;
 ~~~
 
+`IncompleteRecord` remains a closed recognition type for unexpected existing residue.
+The reset apply path never emits `incomplete.json`, never uses it as
+publication authority, and never constructs a generation directly under its final
+path. The `generation-reserved` phase name is retained in the implemented stored
+journal schema as a state label; it does not mean the final generation directory has
+been created.
+
 Stored values and their path bindings are closed, not merely typed:
 
 - rootId, transactionId, lock token, manifest digest, content digest, and receipt digest are lowercase 64-character hexadecimal strings;
 - rootDevice is the canonical unsigned decimal string from bigint stat.dev and matches /^(0|[1-9][0-9]{0,19})$/;
 - PID is a safe positive integer no greater than 4,294,967,295;
-- transaction filenames are exactly <transactionId>.json, staging/trash directories are exactly <transactionId>, generation directories are exactly <manifestDigest>, and lock candidate names are exactly <token> or <token>.stale;
+- transaction filenames are exactly <transactionId>.json, staging/trash directories are exactly <transactionId>, generation directories are exactly <manifestDigest>, and authoritative lock candidate names are exactly <token> or <token>.stale; candidate construction uses only non-authoritative <token>.pending.<pid> directories that are atomically published or conservatively retained/reaped by PID liveness;
 - ActivationRecord.generation is exactly generations/<manifestDigest>/content with forward slashes and is derived, never trusted as a free path;
 - every finding subject is own-data UTF-8 of at most MAX_FINDING_SUBJECT_BYTES and is never used as a path.
 
@@ -303,7 +310,7 @@ Every non-success result carries at least one fixed finding, and success states 
 
 **Interfaces:**
 - Consumes: ProjectionPlanResultSchema and planSyntheticProjection from src/methodology/projection-planner.ts.
-- Produces: the shared interfaces above; validated apply/inspect/recover/clean inputs; RootRecord, ActivationRecord, GenerationReceipt, IncompleteRecord, StagingRecord, LockOwnerRecord, TransactionRecord; canonicalRecordBytes; sha256Bytes; result builders.
+- Produces: the shared interfaces above; validated apply/inspect/recover/clean inputs; RootRecord, ActivationRecord, GenerationReceipt, recognition-only IncompleteRecord, StagingRecord, LockOwnerRecord, TransactionRecord; canonicalRecordBytes; sha256Bytes; result builders.
 
 - [ ] **Step 1: Write failing fixture and contract tests**
 
@@ -412,6 +419,11 @@ The implementation parses by kind and reconstructs a fresh object with fields in
 
 RootRecord includes schemaVersion, rootId, and rootDevice. GenerationReceipt includes schemaVersion, rootId, manifestDigest, and canonical entries with artifactId, target, sourceLocator, contentDigest, and bytes. The full Phase 3 decision remains bound by manifestDigest; the receipt redundantly binds the exact materialization subset. ActivationRecord includes schemaVersion, manifestDigest, receiptDigest, and the canonical relative generation content path. TransactionRecord is a strict discriminated union for apply and clean phases; it records exact old/new activation records and canonical expected entries so recovery never consults provider source.
 
+IncompleteRecord is parsed only to classify existing unexpected residue. New
+apply code does not serialize it. All activation and transaction write temporaries are
+non-authoritative filesystem residue: recovery may validate their bounded ordinary-file
+shape and phase-bound filename, but never parses or adopts their contents.
+
 - [ ] **Step 4: Run contract tests, typecheck, and lint**
 
 Run:
@@ -444,7 +456,7 @@ Expected: one DCO-signed-off local commit containing only the three named files.
 
 **Interfaces:**
 - Consumes: stored-record parsers, canonicalRecordBytes, and resource constants from Task 1; containedPath from src/internals/contained-path.ts; readRegularFileWithStats and retryTransient from src/internals/fsxn.ts.
-- Produces: StoreLayout, openStoreForInspection, createOrOpenOwnedStore, writeExclusiveRegularFile, writeAtomicRecord, readStoreRecord, verifyExpectedTree, verifyPartialOwnedTree, quarantineExactDirectory, and removeVerifiedTree.
+- Produces: StoreLayout, openStoreForInspection, createOrOpenOwnedStore, writeExclusiveRegularFile, writeAtomicRecord, readStoreRecord, verifyExpectedTree, verifyPartialOwnedTree, publishVerifiedScratchDirectory, removeVerifiedScratchTree, removeBoundedRecoveryTemporary, quarantineExactDirectory, and removeVerifiedTree.
 
 - [ ] **Step 1: Write failing root, I/O, and walk tests**
 
@@ -459,6 +471,9 @@ Create a disposable project root and sibling outside canary. Test:
 - record reads reject links, non-regular files, nlink greater than one, and records over 1 MiB;
 - exact walk rejects missing, extra, linked, hard-linked, oversized, over-deep, over-entry, and outside-root content;
 - partial owned walk accepts only missing expected leaves and rejects every unexpected descendant;
+- atomic-create journal temporaries and phase-update/activation temporaries are recognized only by deterministic path/transaction/phase binding and stable private single-link ordinary-file identity, then discarded without parsing or adoption;
+- linked, hard-linked, non-regular, permission-drifted, or identity-uncertain temporaries fail closed and remain;
+- ordinary bounded transaction-bound unpublished scratch can be removed only after stable verification, while linked or uncertain scratch is retained; and
 - same-directory activation replacement is observed as complete old or complete new JSON.
 
 Use this fixture shape:
@@ -521,13 +536,17 @@ export function layoutForCanonicalProject(
 }
 ~~~
 
-Before layout construction, require an absolute normalized projectRoot that already exists, lstat it as an ordinary non-linked directory, capture bigint stat.dev as the canonical decimal projectDevice, resolve realpath, and require realpath to equal the normalized input under the platform path comparison policy. Use only that captured canonical path thereafter. Create .aih, methodology, and v1 one segment at a time. After every create or reuse, lstat the segment, reject links/non-directories, realpath it, require containment beneath canonical projectRoot, and require the captured project device. Create root.json with flag wx and mode 0600. Never adopt an existing unmarked v1 directory.
+Before layout construction, require an absolute normalized projectRoot that already exists, lstat it as an ordinary non-linked directory, capture bigint stat.dev as the canonical decimal projectDevice, resolve realpath, and require realpath to equal the normalized input under the platform path comparison policy. Use only that captured canonical path thereafter. Create .aih, methodology, and v1 one segment at a time. After every create or reuse, lstat the segment, reject links/non-directories, realpath it, require containment beneath canonical projectRoot, and require the captured project device. Create root.json with flag wx and mode 0600. Never adopt an existing unmarked v1 directory or repair a missing/malformed root marker. If bootstrap is interrupted after v1 exists but before a valid marker is durable, every later Phase 4 open remains fail-closed; this plan authorizes no automatic removal or bootstrap-repair path.
 
 - [ ] **Step 4: Implement bounded exact I/O and walking**
 
 Use descriptor-based readRegularFileWithStats for discovered files. Require stats.isFile(), stats.nlink === 1, bounded size, and matching expected digest. Directory enumeration uses readdirSync with Dirent, sorts names lexically, never calls stat on a symlink, and increments entry/byte/directory counters before descent.
 
-writeExclusiveRegularFile opens with O_CREAT | O_EXCL | O_WRONLY plus O_NOFOLLOW where available, writes the exact Buffer, fsyncs, closes, and reopens through the safe reader to verify digest and size. writeAtomicRecord requires a deterministic transaction-bound temporary path supplied by its caller: .active.<transactionId>.tmp beside active.json, or .<transactionId>.<nextPhase>.tmp beside a journal. It creates that exact sibling exclusively, fsyncs it, calls retryTransient around same-directory renameSync, re-reads the target, and syncs the parent directory when supported. Initial journals use exclusive direct creation, so no temporary file can predate ownership. Recovery accepts a temporary only when its filename, strict contents, transaction identity, and allowed next phase bind to the existing journal; unexpected or unbound temporaries fail closed and remain.
+writeExclusiveRegularFile opens with O_CREAT | O_EXCL | O_WRONLY plus O_NOFOLLOW where available, writes the exact Buffer, fsyncs, closes, and reopens through the safe reader to verify digest and size. writeAtomicRecord requires a deterministic transaction-bound temporary path supplied by its caller: .active.<transactionId>.tmp beside active.json, or .<transactionId>.<nextPhase>.tmp beside a journal. It creates that exact sibling exclusively, fsyncs it, calls retryTransient around same-directory renameSync, re-reads the target, and syncs the parent directory when supported. Initial apply and clean journals use mode create: the prepared record is written to .<transactionId>.prepared.tmp and renamed only while the final journal path remains absent.
+
+Every temporary is non-authoritative. Recovery never parses its bytes, derives state from it, or adopts it as an activation/journal fallback. A temporary is discardable only when its deterministic location, transaction/phase relationship, private permissions, single-link regular-file type, bounded size, stable identity, and containment are proven. Linked, hard-linked, non-regular, permission-drifted, identity-uncertain, unexpected, or unbound temporaries fail closed and remain. The same distinction applies to unpublished trash/<transactionId> scratch: an ordinary bounded transaction-bound tree can be verified and removed without becoming authority, while linked, unexpectedly populated, or uncertain scratch is retained.
+
+publishVerifiedScratchDirectory revalidates a complete staging or receipt container under trash/<transactionId>, requires the destination to be the container-bound absent staging/generation path, renames the whole verified directory, and verifies the moved identity and bytes. Normal construction never creates children directly under generations/<manifestDigest>.
 
 removeVerifiedTree accepts only a precomputed verified relative entry list. Immediately before each leaf unlink it revalidates bounded size, digest, regular-file type, link count, device, and captured identity; before each directory removal it requires exact emptiness and ordinary-directory identity. It removes bottom-up, retains the remainder on uncertainty, and never uses rmSync with recursive true.
 
@@ -566,7 +585,7 @@ git -c commit.gpgsign=false commit -s -m "feat(methodology): add bounded generat
 
 - [ ] **Step 1: Write failing lock tests**
 
-Test candidate-before-claim construction, two sequential contenders, exact-token release, wrong-token refusal, live PID block, EPERM/indeterminate PID block, dead PID quarantine and reacquire, PID-reuse conservative block, malformed owner retention, linked owner retention, empty lock retention, token/filename mismatch, invalid identifier alphabets and lengths, a 129th candidate fail-closed, and stale candidate cleanup only when its strictly bound PID is dead.
+Test PID-bound pending-candidate construction before a complete claim, two sequential contenders, exact-token release, wrong-token refusal, live PID block, EPERM/indeterminate PID block, dead PID quarantine and reacquire, PID-reuse conservative block, malformed owner retention, linked owner retention, empty lock retention, token/filename mismatch, invalid identifier alphabets and lengths, a 129th candidate fail-closed, dead pending-candidate cleanup, live/indeterminate pending retention, and unsafe pending retention.
 
 The runtime seam is data-only except for the internal liveness function:
 
@@ -594,7 +613,9 @@ Expected: nonzero exit with Cannot find module ../../src/methodology/generation-
 
 - [ ] **Step 3: Implement the candidate-lock protocol**
 
-Lexically inventory lock-candidates before mutation and fail closed upon observing the 129th entry. Create lock-candidates/<token>, require the basename to equal the strict owner token, write and sync owner.json completely, then rename the non-empty candidate directory to lock. Treat EEXIST, ENOTEMPTY, and EACCES from an already valid live lock as METHODOLOGY_STORE_LOCK_HELD. Do not delete or replace a live, indeterminate, malformed, linked, over-limit, or uncertain lock.
+Lexically inventory lock-candidates before mutation and fail closed upon observing the 129th entry. Create the non-authoritative private lock-candidates/<token>.pending.<pid>, write and sync owner.json completely, verify its identity, then atomically rename the whole directory to authoritative lock-candidates/<token>. Only that complete candidate may be renamed to lock. Treat EEXIST, ENOTEMPTY, and EACCES from an already valid live lock as METHODOLOGY_STORE_LOCK_HELD. Do not delete or replace a live, indeterminate, malformed, linked, over-limit, or uncertain lock.
+
+A pending candidate never proves a claim. Reap it only when its PID is definitively absent and it remains a private bounded ordinary directory containing zero or one bounded private single-link ordinary file. Do not parse or adopt that file. Retain live/indeterminate pending candidates; retain and fail closed on unsafe or identity-uncertain pending state.
 
 For a strictly parsed owner with an absent PID, rename lock to the deterministic quarantine lock-candidates/<token>.stale only when that path is absent. PID reuse yields alive and therefore blocks. After a contender owns the new lock, it may remove that stale directory only after re-reading the exact owner and confirming rootId/token/PID/transactionId binding and absent PID; every other candidate/quarantine remains. Release re-reads owner.json and removes only when rootId, token, PID, and transactionId all equal the held claim.
 
@@ -693,8 +714,9 @@ Add tests for:
 - staging and generated content use private/non-executable permissions where POSIX exposes modes;
 - receipt, generation path, and activation are byte-identical across two stores with a fixed rootId fixture and across input payload order;
 - exact reapply returns already-active and performs no content rewrite;
-- a second plan creates a second immutable generation and changes only active.json;
+- a second plan creates a second content-addressed generation without editing the first and changes only active.json;
 - the old generation remains exact after activation;
+- the active plus all completed inactive generations consume one shared persistent-history budget, a candidate fitting the exact remaining capacity passes, and one entry/directory/byte beyond it blocks before journal or scratch creation;
 - stale expectedActiveDigest blocks before staging;
 - blocked Phase 3 result, digest drift, payload coverage failure, resource overflow, destination collision, incomplete existing generation, malformed existing root, and active drift all fail before activation;
 - no write reaches the outside canary;
@@ -735,13 +757,13 @@ type GenerationStoreRuntime = Readonly<{
 
 Production uses a frozen no-op onFaultPoint. Tests import the internal function directly; src/index.ts does not export it.
 
-Apply validates all input before opening apply mode, acquires the lock, and invokes recoverPendingTransactionsUnderLock. Recovery must classify and finish every exact pending apply/clean record and its bound remnants; any blocked, failed-closed, over-limit, unjournaled, or residual state returns without starting a new transaction. Only a clean inventory permits re-reading expected activation, exclusively writing a prepared journal, materializing private staging, and verifying the exact tree.
+Apply validates all input before opening apply mode, acquires the lock, and invokes recoverPendingTransactionsUnderLock. Recovery must classify and finish every exact pending apply/clean record and its bound remnants; any blocked, failed-closed, over-limit, unjournaled, or residual state returns without starting a new transaction. Only a clean inventory permits re-reading expected activation, verifying active plus complete history through one shared persistent budget, proving the candidate fits the remaining capacity, atomically creating the prepared journal through its bounded non-authoritative sibling temporary, and materializing private scratch.
 
 - [ ] **Step 4: Implement content-addressed materialization and activation**
 
-Reserve generations/<manifestDigest> with non-recursive exclusive mkdir. If it exists, reuse only an exact complete owned generation. For a new generation, write incomplete.json first, create content directories and files exclusively from staged bytes, verify, write and sync deterministic receipt.json, remove incomplete.json, and verify again.
+Build staging first under private trash/<transactionId> scratch: write staging.json and exact content exclusively, verify the whole container, then atomically rename the complete directory to staging/<transactionId>. If generations/<manifestDigest> already exists, reuse only an exact complete owned generation. Otherwise recreate private trash/<transactionId> scratch, copy only revalidated staged bytes, write receipt.json, verify the whole generation container, and atomically rename the complete directory to the absent generations/<manifestDigest>. Never create incomplete.json in the reset flow and never create content or receipt children directly under the final generation directory. The retained journal phase name generation-reserved is a state-machine label only.
 
-Construct active.json from the manifest digest, deterministic receipt digest, and generations/<digest>/content. Write it only through the bound .active.<transactionId>.tmp path and call writeAtomicRecord. Journal phase updates similarly use the exact derived next-phase temporary; recovery either verifies/removes the prior-phase temporary and resumes, recognizes the already-renamed complete record, or fails closed. Re-read activation and generation before marking the journal committed. Do not edit or remove the prior active generation.
+Construct active.json from the manifest digest, deterministic receipt digest, and generations/<digest>/content. Write it only through the bound .active.<transactionId>.tmp path and call writeAtomicRecord. Journal phase updates similarly use the exact derived next-phase temporary. These temporaries are non-authoritative and recovery never parses or adopts their contents: it may discard only a deterministically path/phase/transaction-bound, stable private single-link ordinary temporary, recognize the authoritative already-renamed final record, or fail closed and retain uncertainty. Re-read activation and generation before marking the journal committed. Do not edit or remove the prior active generation. Before the activation rename the old selection is unchanged; at or after it, readers may observe complete old or complete new selection bytes while the prior generation bytes remain intact.
 
 - [ ] **Step 5: Run apply tests and existing methodology tests**
 
@@ -784,11 +806,12 @@ For every ApplyFaultPoint, throw a fixed injected error. Assert:
 - before activation rename, the old activation and old generation remain exact;
 - after activation rename, active.json is complete old or complete new, never malformed;
 - uncertain/malformed remnants remain and produce fixed findings;
-- exact owned staging and incomplete generation remnants are removed only through recovery;
+- exact owned staging and ordinary bounded transaction-bound unpublished scratch remnants are removed only through recovery;
 - recovery is idempotent and never reads provider bytes;
+- aggregate persistent history at the exact shared budget recovers, while one entry/directory/byte beyond it fails closed before any pending cleanup;
 - no fallback generation is selected;
 - a lexically earlier 129th pending/quarantine entry fails closed before any cleanup; and
-- unjournaled staging, trash, incomplete generations, temporary records, or filename/record mismatches remain untouched and fail closed.
+- unjournaled staging/trash, unsafe or uncertain scratch, unexpected recognition-only incomplete-generation residue, linked/hard-linked/type/permission/identity-uncertain temporaries, or filename/record mismatches remain untouched and fail closed.
 
 - [ ] **Step 2: Write failing child-process interruption tests**
 
@@ -822,17 +845,19 @@ Expected: nonzero exit because recoverProjectionStore and child actions are inco
 
 - [ ] **Step 4: Implement deterministic recovery**
 
-Under the lock, lexically stream one combined pending-state inventory across transaction records, staging directories, trash directories, lock candidates/stale quarantines, generation incomplete markers, and transaction-bound temporary records. Increment before collection and stop at the 129th item with failed-closed before mutation. Parse strict names first, then bind every object to its rootId, transactionId/token/manifestDigest, exact filename, operation, and journal. An unjournaled or mismatched staging/trash/incomplete/temporary object is uncertain: retain it and fail closed. A lock candidate is handled only by the separate strict owner/PID protocol.
+Under the lock, lexically stream one combined pending-state inventory across transaction records, staging directories, trash directories, lock candidates/stale quarantines, unexpected recognition-only generation incomplete markers, and transaction-bound temporary records. Increment before collection and stop at the 129th item with failed-closed before mutation. Parse strict authoritative names and records, but never parse temporary contents. Bind authoritative objects to rootId, transactionId/token/manifestDigest, exact filename, operation, and journal. An unjournaled or mismatched staging/trash/incomplete object is uncertain: retain it and fail closed. A lock candidate is handled only by the separate strict owner/PID protocol.
+
+Before removing any pending state, inspect the active and every completed inactive generation using one shared StoreWalkBudget. Do not reset the budget per generation. Over-limit persistent history fails closed without mutation.
 
 For apply records:
 
-- old activation exact means uncommitted; remove only exact owned staging/incomplete subsets;
+- old activation exact means uncommitted; remove only exact owned staging and ordinary bounded journal-bound unpublished scratch. Recognition-only incomplete residue may be removed only when the existing journal and strict record bind it exactly; it is never adopted or published;
 - new activation exact plus verified referenced generation means committed; complete bookkeeping;
 - any other activation or invalid generation fails closed and leaves all uncertain objects.
 
-For clean records, bind trash/<transactionId> and its expected receipt entries before resuming exact subset deletion; active or ambiguous identity retains everything. Deterministic .active.<transactionId>.tmp and journal next-phase temporaries are accepted only in phases where their exact bytes can be derived from the existing journal. Recovery removes an exact prior-phase temp and resumes, or recognizes the fully renamed target; it never chooses a temp as a fallback source of truth.
+For clean records, bind trash/<transactionId> and its expected receipt entries before resuming exact subset deletion; active or ambiguous identity retains everything. Deterministic .active.<transactionId>.tmp and journal next-phase temporaries are non-authoritative debris. Recovery uses only their deterministic path/phase/transaction relationship plus stable private single-link ordinary-file identity to decide whether they are discardable; it never parses them, derives state from their bytes, or chooses a temporary as a fallback source of truth. Linked, hard-linked, non-regular, permission-drifted, identity-uncertain, unexpected, or unbound temporaries remain and fail closed.
 
-For partial cleanup verification, missing expected leaves are allowed, but every remaining descendant must be an expected regular file/directory with matching digest, size, device, identity, type, link count, and no extras. Remove exact journal, staging, trash, incomplete, or temporary remnants only after their state is classified. Re-run the inventory after recovery; any residual pending object blocks starting later work.
+For partial cleanup verification, missing expected leaves are allowed, but every remaining descendant must be an expected regular file/directory with matching digest, size, device, identity, type, link count, and no extras. Remove exact journals, staging, transaction-bound scratch/trash, recognition-only incomplete residue, or bounded non-authoritative temporaries only after their state is classified under the rules above. Re-run the inventory after recovery; any residual pending object blocks starting later work.
 
 - [ ] **Step 5: Run recovery, methodology, typecheck, and lint**
 
@@ -897,7 +922,7 @@ Expected: failing assertions because cleanProjectionGeneration has no cleaned pa
 
 Acquire the lock, invoke recoverPendingTransactionsUnderLock, require an empty post-recovery inventory, and then verify the requested digest, current activation, root ownership, deterministic receipt, and complete generation tree. If pending work, drift, or any uncertainty exists, return retained or failed-closed according to the normative mapping without renaming or deleting the generation.
 
-For an exact inactive generation, write a clean journal, rename it to trash/<transactionId>, update the journal, then delete only the verified relative entries bottom-up. If deletion fails, retain the trash remainder and journal. Recovery continues only when every remaining descendant is an expected subset with matching identity and bytes; otherwise it leaves the remainder.
+For an exact inactive generation, atomically create the prepared clean journal through .<transactionId>.prepared.tmp in create mode; the bounded temporary remains non-authoritative and is never parsed or adopted. Rename the generation to trash/<transactionId>, update the journal, then delete only the verified relative entries bottom-up. If deletion fails, retain the trash remainder and journal. Recovery continues only when every remaining descendant is an expected subset with matching identity and bytes; otherwise it leaves the remainder.
 
 - [ ] **Step 4: Add static platform attack fixtures**
 
@@ -952,7 +977,7 @@ git -c commit.gpgsign=false commit -s -m "feat(methodology): clean exact inactiv
 
 Add one Unreleased changelog entry that calls the generation store internal/unwired and does not claim shipped provider or host switching.
 
-Add an architecture component/data-boundary paragraph for .aih/methodology/v1 immutable generations and activation. Add the owned layout to STABILITY.md with schemaVersion 1.
+Add an architecture component/data-boundary paragraph for .aih/methodology/v1 content-addressed generations that the library never edits in place, whole-directory publication, and old/new activation. Add the owned layout to STABILITY.md with schemaVersion 1.
 
 Add the baseline threat inclusion/exclusion verbatim to SECURITY.md and docs/THREAT_MODEL.md. State that same-user malicious writers require a separate authority-bound enterprise projector and that a same-process native addon is insufficient.
 
@@ -996,7 +1021,7 @@ git -c commit.gpgsign=false commit -s -m "docs(methodology): define baseline pro
 
 **Interfaces:**
 - Consumes: all prior tasks.
-- Produces: one immutable reviewed Phase 4 candidate and PHASE_4_GATE_PASS, or an honest fail-closed/platform-limited verdict.
+- Produces: one exact reviewed Phase 4 candidate and PHASE_4_GATE_PASS, or an honest fail-closed/platform-limited verdict.
 
 - [ ] **Step 1: Run focused and repository gates**
 
@@ -1037,9 +1062,9 @@ A push or pull request is an external action and is not authorized by this plan 
 
 Run separate correctness, security/trust-boundary, filesystem/transaction specialist, and documentation/unsupported-claim reviews against the exact candidate SHA.
 
-The security review must explicitly verify the documented exclusion and must not reintroduce malicious same-user race resistance as a baseline pass condition. It must still review static link/reparse handling, path escape, stale plans, collision behavior, outside-root writes, and hostile bytes.
+The security review must explicitly verify the documented exclusion and must not reintroduce malicious same-user race resistance as a baseline pass condition. It must still review path/link/reparse aliases observable through the bounded Node checks, path escape, stale plans, collision behavior, outside-root writes, and hostile bytes.
 
-The filesystem specialist must review old/new activation atomicity, lock cooperation, crash states, journal authentication, incomplete generation handling, exact-tree drift, clean quarantine, resource bounds, and all three OS results.
+The filesystem specialist must review old/new activation atomicity, PID-bound non-authoritative pending candidates, lock cooperation, crash states, atomic-create journals, non-authoritative temporary discard rules, verified scratch-directory publication, recognition-only incomplete residue, shared persistent-history/recovery budgets, exact-tree drift, clean quarantine, bootstrap fail-closed behavior, and all three OS results.
 
 The documentation reviewer must reject tamper-proof, installed, host-active, isolated, switchable, concurrent, conflict-free, live-session, provider-qualified, or host-qualified claims.
 
@@ -1061,4 +1086,4 @@ Skip this commit only when no review correction exists.
 
 Issue PHASE_4_GATE_PASS only when all local gates, same-SHA three-OS CI, four independent reviews, and public documentation pass with no unresolved actionable finding.
 
-If an operating system cannot provide complete old/new activation or bounded baseline semantics under the approved cooperative threat model, return a precise platform-limited decision. If the baseline cannot preserve containment or prior activation without reintroducing the rejected stronger contract, return fail-closed and stop before Phase 5.
+If an operating system cannot provide complete old/new activation or bounded baseline semantics under the approved cooperative threat model, return a precise platform-limited decision. If the baseline cannot preserve containment, intact previously selected generation bytes during apply failure, and complete old-or-new activation without reintroducing the rejected stronger contract, return fail-closed and stop before Phase 5.

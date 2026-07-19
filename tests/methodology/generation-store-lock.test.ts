@@ -12,6 +12,7 @@ import {
   symlinkSync,
   writeFileSync,
 } from "node:fs";
+import { createRequire, syncBuiltinESMExports } from "node:module";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
@@ -50,6 +51,57 @@ const TOKEN_D = "4".repeat(64);
 const TOKEN_E = "5".repeat(64);
 const TOKEN_F = "6".repeat(64);
 const roots: TemporaryProject[] = [];
+
+const mutableFs = createRequire(import.meta.url)("node:fs") as typeof import("node:fs");
+const originalFs = Object.freeze({
+  closeSync: mutableFs.closeSync,
+  fsyncSync: mutableFs.fsyncSync,
+  lstatSync: mutableFs.lstatSync,
+  mkdirSync: mutableFs.mkdirSync,
+  openSync: mutableFs.openSync,
+  opendirSync: mutableFs.opendirSync,
+  realpathSync: mutableFs.realpathSync,
+  renameSync: mutableFs.renameSync,
+  rmdirSync: mutableFs.rmdirSync,
+  unlinkSync: mutableFs.unlinkSync,
+});
+
+type FaultableFs = typeof originalFs;
+
+function injectFsFault(overrides: Partial<FaultableFs>): void {
+  Object.assign(mutableFs, overrides);
+  syncBuiltinESMExports();
+}
+
+function restoreFs(): void {
+  Object.assign(mutableFs, originalFs);
+  syncBuiltinESMExports();
+}
+
+function syntheticFsError(code: string): NodeJS.ErrnoException {
+  return Object.assign(new Error(`synthetic ${code} filesystem failure`), { code });
+}
+
+function injectDirectoryStreamFault(absPath: string, operation: "readSync" | "closeSync"): void {
+  injectFsFault({
+    opendirSync: ((...args: unknown[]) => {
+      const directory = Reflect.apply(originalFs.opendirSync, mutableFs, args);
+      if (String(args[0]) !== absPath) return directory;
+      return new Proxy(directory, {
+        get(target, property) {
+          if (property === operation) {
+            return () => {
+              if (operation === "closeSync") target.closeSync();
+              throw syntheticFsError("EIO");
+            };
+          }
+          const value = Reflect.get(target, property, target);
+          return typeof value === "function" ? value.bind(target) : value;
+        },
+      });
+    }) as typeof originalFs.opendirSync,
+  });
+}
 
 type Store = ReturnType<typeof createOrOpenOwnedStore>;
 
@@ -115,6 +167,7 @@ function readLiveOwner(store: Store) {
 }
 
 afterEach(() => {
+  restoreFs();
   for (const root of roots.splice(0)) {
     rmSync(root.sandboxRoot, { recursive: true, force: true });
   }
@@ -193,6 +246,82 @@ describe("Phase 4 cooperative generation-store lock", () => {
     const second = acquireStoreLockInternal(store, TRANSACTION_B, runtime(202, TOKEN_B));
     expect(readLiveOwner(store)).toEqual(second);
     releaseStoreLock(store, second);
+  });
+
+  it("reaps only dead PID-bound pending candidates before publishing a claim", () => {
+    const { store } = temporaryStore();
+    mkdirSync(store.layout.lockCandidates, { mode: 0o700 });
+    const emptyPending = join(store.layout.lockCandidates, `${TOKEN_A}.pending.3001`);
+    const tornPending = join(store.layout.lockCandidates, `${TOKEN_B}.pending.3002`);
+    mkdirSync(emptyPending, { mode: 0o700 });
+    mkdirSync(tornPending, { mode: 0o700 });
+    writeFileSync(join(tornPending, "owner.json"), "{", { mode: 0o600 });
+
+    const held = acquireStoreLockInternal(
+      store,
+      TRANSACTION_B,
+      runtime(
+        3003,
+        TOKEN_C,
+        new Map([
+          [3001, "absent"],
+          [3002, "absent"],
+        ]),
+      ),
+    );
+
+    expect(existsSync(emptyPending)).toBe(false);
+    expect(existsSync(tornPending)).toBe(false);
+    expect(readLiveOwner(store)).toEqual(held);
+    releaseStoreLock(store, held);
+    expect(readdirSync(store.layout.lockCandidates)).toEqual([]);
+  });
+
+  it("reaps an exact dead candidate but retains a live pending contender", () => {
+    const { store } = temporaryStore();
+    mkdirSync(store.layout.lockCandidates, { mode: 0o700 });
+    const deadCandidate = join(store.layout.lockCandidates, TOKEN_A);
+    const livePending = join(store.layout.lockCandidates, `${TOKEN_B}.pending.3012`);
+    writeOwner(store, deadCandidate, owner(store, TOKEN_A, 3011));
+    mkdirSync(livePending, { mode: 0o700 });
+
+    const held = acquireStoreLockInternal(
+      store,
+      TRANSACTION_B,
+      runtime(
+        3013,
+        TOKEN_C,
+        new Map([
+          [3011, "absent"],
+          [3012, "alive"],
+        ]),
+      ),
+    );
+
+    expect(existsSync(deadCandidate)).toBe(false);
+    expect(existsSync(livePending)).toBe(true);
+    releaseStoreLock(store, held);
+    expect(existsSync(livePending)).toBe(true);
+  });
+
+  it("retains and fails closed on an unsafe dead pending candidate", () => {
+    const { store } = temporaryStore();
+    mkdirSync(store.layout.lockCandidates, { mode: 0o700 });
+    const pending = join(store.layout.lockCandidates, `${TOKEN_A}.pending.3021`);
+    mkdirSync(pending, { mode: 0o700 });
+    writeFileSync(join(pending, "unexpected"), "retained", { mode: 0o600 });
+
+    lockError(
+      () =>
+        acquireStoreLockInternal(
+          store,
+          TRANSACTION_B,
+          runtime(3022, TOKEN_B, new Map([[3021, "absent"]])),
+        ),
+      "METHODOLOGY_STORE_LOCK_INVALID",
+    );
+    expect(readFileSync(join(pending, "unexpected"), "utf8")).toBe("retained");
+    expect(existsSync(store.layout.lock)).toBe(false);
   });
 
   it("constructs production claims internally and never accepts a runtime through public input", () => {
@@ -368,14 +497,14 @@ describe("Phase 4 cooperative generation-store lock", () => {
 
   it("retains every unrelated pre-existing stale candidate", () => {
     const { store } = temporaryStore();
-    mkdirSync(store.layout.lockCandidates);
+    mkdirSync(store.layout.lockCandidates, { mode: 0o700 });
     const dead = owner(store, TOKEN_C, 1201);
     const live = owner(store, TOKEN_D, 1202);
     writeOwner(store, join(store.layout.lockCandidates, `${TOKEN_C}.stale`), dead);
     writeOwner(store, join(store.layout.lockCandidates, `${TOKEN_D}.stale`), live);
 
     const mismatchedPath = join(store.layout.lockCandidates, `${TOKEN_E}.stale`);
-    mkdirSync(mismatchedPath);
+    mkdirSync(mismatchedPath, { mode: 0o700 });
     writeFileSync(
       join(mismatchedPath, "owner.json"),
       canonicalRecordBytes("lock-owner", owner(store, TOKEN_F, 1203)),
@@ -812,7 +941,7 @@ describe("Phase 4 cooperative generation-store lock", () => {
   });
 
   it.runIf(process.platform !== "win32")(
-    "retains an exact interrupted release after removal denial and completes on retry",
+    "retains an exact interrupted release after permission drift and completes on retry",
     () => {
       const { store } = temporaryStore();
       const held = acquireStoreLockInternal(store, TRANSACTION_A, runtime(1811, TOKEN_A));
@@ -820,11 +949,7 @@ describe("Phase 4 cooperative generation-store lock", () => {
       renameSync(store.layout.lock, interrupted);
       chmodSync(interrupted, 0o500);
       try {
-        const denied = lockError(
-          () => releaseStoreLock(store, held),
-          "METHODOLOGY_STORE_FILESYSTEM_FAILURE",
-        );
-        expect(denied.message).toBe("exact claim removal failed");
+        lockError(() => releaseStoreLock(store, held), "METHODOLOGY_STORE_LOCK_INVALID");
         expect(existsSync(store.layout.lock)).toBe(false);
         expect(existsSync(interrupted)).toBe(true);
         expect(readFileSync(join(interrupted, "owner.json"))).toEqual(
@@ -876,7 +1001,7 @@ describe("Phase 4 cooperative generation-store lock", () => {
   });
 
   it.runIf(process.platform !== "win32")(
-    "rolls back its exact publication when post-rename durability fails",
+    "fails before publication when root permissions drift",
     () => {
       const { store } = temporaryStore();
       mkdirSync(store.layout.lockCandidates, { mode: 0o700 });
@@ -893,7 +1018,7 @@ describe("Phase 4 cooperative generation-store lock", () => {
       try {
         lockError(
           () => acquireStoreLockInternal(store, TRANSACTION_A, durabilityFailureRuntime),
-          "METHODOLOGY_STORE_FILESYSTEM_FAILURE",
+          "METHODOLOGY_STORE_PATH_UNSAFE",
         );
       } finally {
         if (restricted) chmodSync(store.layout.root, 0o700);
@@ -938,9 +1063,9 @@ describe("Phase 4 cooperative generation-store lock", () => {
 
   it("retains an ambiguous empty candidate while a different token acquires", () => {
     const { store } = temporaryStore();
-    mkdirSync(store.layout.lockCandidates);
+    mkdirSync(store.layout.lockCandidates, { mode: 0o700 });
     const emptyCandidate = join(store.layout.lockCandidates, TOKEN_A);
-    mkdirSync(emptyCandidate);
+    mkdirSync(emptyCandidate, { mode: 0o700 });
 
     const held = acquireStoreLockInternal(store, TRANSACTION_B, runtime(2001, TOKEN_B));
     expect(readLiveOwner(store)).toEqual(held);
@@ -988,7 +1113,7 @@ describe("Phase 4 cooperative generation-store lock", () => {
 
     const child = spawnSync(process.execPath, ["-e", "process.exit(0)"], {
       encoding: "utf8",
-      timeout: 5_000,
+      timeout: 30_000,
     });
     expect(child.status).toBe(0);
     expect(child.pid).toBeTypeOf("number");
@@ -1045,14 +1170,14 @@ describe("Phase 4 cooperative generation-store lock", () => {
   });
 
   it.runIf(process.platform !== "win32")(
-    "classifies lock-candidate container creation denial as a filesystem failure",
+    "classifies unsafe root permissions before lock-candidate creation",
     () => {
       const { store } = temporaryStore();
       chmodSync(store.layout.root, 0o500);
       try {
         lockError(
           () => acquireStoreLockInternal(store, TRANSACTION_A, runtime(2105, TOKEN_A)),
-          "METHODOLOGY_STORE_FILESYSTEM_FAILURE",
+          "METHODOLOGY_STORE_PATH_UNSAFE",
         );
         expect(existsSync(store.layout.lockCandidates)).toBe(false);
         expect(existsSync(store.layout.lock)).toBe(false);
@@ -1061,4 +1186,454 @@ describe("Phase 4 cooperative generation-store lock", () => {
       }
     },
   );
+
+  it.each([
+    ["inaccessible identity", "lstat"],
+    ["inaccessible realpath", "realpath"],
+    ["an outside realpath", "outside"],
+  ] as const)("fails closed on a pending candidate with %s", (_label, fault) => {
+    const { root, store } = temporaryStore();
+    mkdirSync(store.layout.lockCandidates, { mode: 0o700 });
+    const pending = join(store.layout.lockCandidates, `${TOKEN_A}.pending.2201`);
+
+    if (fault === "lstat") {
+      injectFsFault({
+        lstatSync: ((...args: unknown[]) => {
+          if (String(args[0]) === pending) throw syntheticFsError("EACCES");
+          return Reflect.apply(originalFs.lstatSync, mutableFs, args);
+        }) as typeof originalFs.lstatSync,
+      });
+    } else {
+      injectFsFault({
+        realpathSync: ((...args: unknown[]) => {
+          if (String(args[0]) === pending) {
+            if (fault === "realpath") throw syntheticFsError("EACCES");
+            return join(root.sandboxRoot, "outside-pending");
+          }
+          return Reflect.apply(originalFs.realpathSync, mutableFs, args);
+        }) as typeof originalFs.realpathSync,
+      });
+    }
+
+    lockError(
+      () => acquireStoreLockInternal(store, TRANSACTION_A, runtime(2201, TOKEN_A)),
+      fault === "outside"
+        ? "METHODOLOGY_STORE_LOCK_INVALID"
+        : "METHODOLOGY_STORE_FILESYSTEM_FAILURE",
+    );
+    expect(existsSync(store.layout.lock)).toBe(false);
+    expect(existsSync(pending)).toBe(true);
+  });
+
+  it("reports lock-directory sync and close failures without publishing", () => {
+    const syncFailure = temporaryStore();
+    mkdirSync(syncFailure.store.layout.lockCandidates, { mode: 0o700 });
+    let candidateDirectoryDescriptor: number | undefined;
+    let injectedSyncFailure = false;
+    injectFsFault({
+      openSync: ((...args: unknown[]) => {
+        const descriptor = Reflect.apply(originalFs.openSync, mutableFs, args) as number;
+        if (String(args[0]) === syncFailure.store.layout.lockCandidates) {
+          candidateDirectoryDescriptor = descriptor;
+        }
+        return descriptor;
+      }) as typeof originalFs.openSync,
+      fsyncSync: ((descriptor: number) => {
+        if (descriptor === candidateDirectoryDescriptor && !injectedSyncFailure) {
+          injectedSyncFailure = true;
+          throw syntheticFsError("EIO");
+        }
+        return originalFs.fsyncSync(descriptor);
+      }) as typeof originalFs.fsyncSync,
+    });
+
+    lockError(
+      () => acquireStoreLockInternal(syncFailure.store, TRANSACTION_A, runtime(2202, TOKEN_A)),
+      "METHODOLOGY_STORE_FILESYSTEM_FAILURE",
+    );
+    expect(injectedSyncFailure).toBe(true);
+    expect(existsSync(syncFailure.store.layout.lock)).toBe(false);
+    expect(readdirSync(syncFailure.store.layout.lockCandidates)).toEqual([]);
+
+    restoreFs();
+    const closeFailure = temporaryStore();
+    let rootDescriptor: number | undefined;
+    let injectedCloseFailure = false;
+    injectFsFault({
+      openSync: ((...args: unknown[]) => {
+        const descriptor = Reflect.apply(originalFs.openSync, mutableFs, args) as number;
+        if (String(args[0]) === closeFailure.store.layout.root) rootDescriptor = descriptor;
+        return descriptor;
+      }) as typeof originalFs.openSync,
+      closeSync: ((descriptor: number) => {
+        if (descriptor === rootDescriptor && !injectedCloseFailure) {
+          injectedCloseFailure = true;
+          originalFs.closeSync(descriptor);
+          throw syntheticFsError("EIO");
+        }
+        return originalFs.closeSync(descriptor);
+      }) as typeof originalFs.closeSync,
+    });
+
+    lockError(
+      () => acquireStoreLockInternal(closeFailure.store, TRANSACTION_A, runtime(2203, TOKEN_B)),
+      "METHODOLOGY_STORE_FILESYSTEM_FAILURE",
+    );
+    expect(injectedCloseFailure).toBe(true);
+    expect(existsSync(closeFailure.store.layout.lock)).toBe(false);
+  });
+
+  it.each([
+    ["read", "readSync"],
+    ["close", "closeSync"],
+  ] as const)("classifies candidate-inventory %s failure", (_label, operation) => {
+    const { store } = temporaryStore();
+    mkdirSync(store.layout.lockCandidates, { mode: 0o700 });
+    injectDirectoryStreamFault(store.layout.lockCandidates, operation);
+
+    lockError(
+      () => acquireStoreLockInternal(store, TRANSACTION_A, runtime(2204, TOKEN_A)),
+      "METHODOLOGY_STORE_FILESYSTEM_FAILURE",
+    );
+    expect(existsSync(store.layout.lock)).toBe(false);
+  });
+
+  it.each([
+    ["read", "readSync"],
+    ["close", "closeSync"],
+  ] as const)("classifies live-claim inventory %s failure and cleans its contender", (_label, operation) => {
+    const { store } = temporaryStore();
+    const held = acquireStoreLockInternal(store, TRANSACTION_A, runtime(2205, TOKEN_A));
+    injectDirectoryStreamFault(store.layout.lock, operation);
+
+    lockError(
+      () => acquireStoreLockInternal(store, TRANSACTION_B, runtime(2206, TOKEN_B)),
+      "METHODOLOGY_STORE_FILESYSTEM_FAILURE",
+    );
+    expect(existsSync(join(store.layout.lockCandidates, TOKEN_B))).toBe(false);
+    restoreFs();
+    expect(readLiveOwner(store)).toEqual(held);
+    releaseStoreLock(store, held);
+  });
+
+  it("rejects non-private and non-regular dead pending candidates without deleting them", () => {
+    const nonPrivate = temporaryStore();
+    mkdirSync(nonPrivate.store.layout.lockCandidates, { mode: 0o700 });
+    const nonPrivatePending = join(
+      nonPrivate.store.layout.lockCandidates,
+      `${TOKEN_A}.pending.2207`,
+    );
+    mkdirSync(nonPrivatePending, { mode: 0o755 });
+    if (process.platform !== "win32") chmodSync(nonPrivatePending, 0o755);
+
+    if (process.platform !== "win32") {
+      lockError(
+        () =>
+          acquireStoreLockInternal(
+            nonPrivate.store,
+            TRANSACTION_A,
+            runtime(2208, TOKEN_B, new Map([[2207, "absent"]])),
+          ),
+        "METHODOLOGY_STORE_LOCK_INVALID",
+      );
+      expect(existsSync(nonPrivatePending)).toBe(true);
+    }
+
+    const linkedOwner = temporaryStore();
+    mkdirSync(linkedOwner.store.layout.lockCandidates, { mode: 0o700 });
+    const linkedPending = join(linkedOwner.store.layout.lockCandidates, `${TOKEN_C}.pending.2209`);
+    mkdirSync(linkedPending, { mode: 0o700 });
+    const outside = makeSiblingCanary(linkedOwner.root);
+    linkSync(outside.canary, join(linkedPending, "owner.json"));
+
+    lockError(
+      () =>
+        acquireStoreLockInternal(
+          linkedOwner.store,
+          TRANSACTION_A,
+          runtime(2210, TOKEN_D, new Map([[2209, "absent"]])),
+        ),
+      "METHODOLOGY_STORE_LOCK_INVALID",
+    );
+    expect(readFileSync(outside.canary, "utf8")).toBe("outside-canary\n");
+    expect(existsSync(linkedPending)).toBe(true);
+  });
+
+  it.each([
+    "unlink",
+    "rmdir",
+  ] as const)("retains a dead pending candidate when exact %s fails", (operation) => {
+    const { store } = temporaryStore();
+    mkdirSync(store.layout.lockCandidates, { mode: 0o700 });
+    const pending = join(store.layout.lockCandidates, `${TOKEN_A}.pending.2211`);
+    mkdirSync(pending, { mode: 0o700 });
+    const ownerPath = join(pending, "owner.json");
+    if (operation === "unlink") writeFileSync(ownerPath, "torn", { mode: 0o600 });
+
+    injectFsFault(
+      operation === "unlink"
+        ? {
+            unlinkSync: ((...args: unknown[]) => {
+              if (String(args[0]) === ownerPath) throw syntheticFsError("EACCES");
+              return Reflect.apply(originalFs.unlinkSync, mutableFs, args);
+            }) as typeof originalFs.unlinkSync,
+          }
+        : {
+            rmdirSync: ((...args: unknown[]) => {
+              if (String(args[0]) === pending) throw syntheticFsError("EACCES");
+              return Reflect.apply(originalFs.rmdirSync, mutableFs, args);
+            }) as typeof originalFs.rmdirSync,
+          },
+    );
+
+    lockError(
+      () =>
+        acquireStoreLockInternal(
+          store,
+          TRANSACTION_A,
+          runtime(2212, TOKEN_B, new Map([[2211, "absent"]])),
+        ),
+      "METHODOLOGY_STORE_FILESYSTEM_FAILURE",
+    );
+    expect(existsSync(pending)).toBe(true);
+  });
+
+  it("detects a pending-candidate identity change before removal", () => {
+    const { store } = temporaryStore();
+    mkdirSync(store.layout.lockCandidates, { mode: 0o700 });
+    const pending = join(store.layout.lockCandidates, `${TOKEN_A}.pending.2213`);
+    mkdirSync(pending, { mode: 0o700 });
+    let pendingStats = 0;
+    injectFsFault({
+      lstatSync: ((...args: unknown[]) => {
+        const stats = Reflect.apply(originalFs.lstatSync, mutableFs, args);
+        if (String(args[0]) !== pending) return stats;
+        pendingStats += 1;
+        if (pendingStats !== 3) return stats;
+        return new Proxy(stats, {
+          get(target, property) {
+            if (property === "ino") return target.ino + 1n;
+            const value = Reflect.get(target, property, target);
+            return typeof value === "function" ? value.bind(target) : value;
+          },
+        });
+      }) as typeof originalFs.lstatSync,
+    });
+
+    lockError(
+      () =>
+        acquireStoreLockInternal(
+          store,
+          TRANSACTION_A,
+          runtime(2214, TOKEN_B, new Map([[2213, "absent"]])),
+        ),
+      "METHODOLOGY_STORE_LOCK_INVALID",
+    );
+    expect(pendingStats).toBe(3);
+    expect(existsSync(pending)).toBe(true);
+  });
+
+  it("propagates a filesystem failure from an ambiguous complete candidate", () => {
+    const { store } = temporaryStore();
+    mkdirSync(store.layout.lockCandidates, { mode: 0o700 });
+    const candidate = join(store.layout.lockCandidates, TOKEN_A);
+    mkdirSync(candidate, { mode: 0o700 });
+    injectFsFault({
+      opendirSync: ((...args: unknown[]) => {
+        if (String(args[0]) === candidate) throw syntheticFsError("EACCES");
+        return Reflect.apply(originalFs.opendirSync, mutableFs, args);
+      }) as typeof originalFs.opendirSync,
+    });
+
+    lockError(
+      () => acquireStoreLockInternal(store, TRANSACTION_A, runtime(2215, TOKEN_B)),
+      "METHODOLOGY_STORE_FILESYSTEM_FAILURE",
+    );
+    expect(existsSync(candidate)).toBe(true);
+  });
+
+  it("retains a live PID-bound pending candidate and rejects its exact-name collision", () => {
+    const { store } = temporaryStore();
+    mkdirSync(store.layout.lockCandidates, { mode: 0o700 });
+    const pending = join(store.layout.lockCandidates, `${TOKEN_A}.pending.2216`);
+    mkdirSync(pending, { mode: 0o700 });
+
+    lockError(
+      () =>
+        acquireStoreLockInternal(
+          store,
+          TRANSACTION_A,
+          runtime(2216, TOKEN_A, new Map([[2216, "alive"]])),
+        ),
+      "METHODOLOGY_STORE_LOCK_INVALID",
+    );
+    expect(existsSync(pending)).toBe(true);
+    expect(existsSync(store.layout.lock)).toBe(false);
+  });
+
+  it("removes a bounded pending candidate after an unexpected owner-write failure", () => {
+    const { store } = temporaryStore();
+    mkdirSync(store.layout.lockCandidates, { mode: 0o700 });
+    const pending = join(store.layout.lockCandidates, `${TOKEN_A}.pending.2217`);
+    const ownerPath = join(pending, "owner.json");
+    injectFsFault({
+      openSync: ((...args: unknown[]) => {
+        if (String(args[0]) === ownerPath) throw new Error("synthetic owner-write failure");
+        return Reflect.apply(originalFs.openSync, mutableFs, args);
+      }) as typeof originalFs.openSync,
+    });
+
+    lockError(
+      () => acquireStoreLockInternal(store, TRANSACTION_A, runtime(2217, TOKEN_A)),
+      "METHODOLOGY_STORE_FILESYSTEM_FAILURE",
+    );
+    expect(existsSync(pending)).toBe(false);
+    expect(existsSync(store.layout.lock)).toBe(false);
+  });
+
+  it("rolls back an exact publication when rename completion is reported as uncertain", () => {
+    const { store } = temporaryStore();
+    const candidate = join(store.layout.lockCandidates, TOKEN_A);
+    let injected = false;
+    injectFsFault({
+      renameSync: ((...args: unknown[]) => {
+        if (!injected && String(args[0]) === candidate && String(args[1]) === store.layout.lock) {
+          Reflect.apply(originalFs.renameSync, mutableFs, args);
+          injected = true;
+          throw new Error("synthetic post-rename uncertainty");
+        }
+        return Reflect.apply(originalFs.renameSync, mutableFs, args);
+      }) as typeof originalFs.renameSync,
+    });
+
+    lockError(
+      () => acquireStoreLockInternal(store, TRANSACTION_A, runtime(2301, TOKEN_A)),
+      "METHODOLOGY_STORE_FILESYSTEM_FAILURE",
+    );
+    expect(injected).toBe(true);
+    expect(existsSync(store.layout.lock)).toBe(false);
+    expect(existsSync(candidate)).toBe(false);
+  });
+
+  it("cleans its candidate when the claim destination becomes malformed", () => {
+    const { store } = temporaryStore();
+    const candidate = join(store.layout.lockCandidates, TOKEN_A);
+    let injected = false;
+    injectFsFault({
+      renameSync: ((...args: unknown[]) => {
+        if (!injected && String(args[0]) === candidate && String(args[1]) === store.layout.lock) {
+          mkdirSync(store.layout.lock, { mode: 0o700 });
+          injected = true;
+          throw syntheticFsError("EEXIST");
+        }
+        return Reflect.apply(originalFs.renameSync, mutableFs, args);
+      }) as typeof originalFs.renameSync,
+    });
+
+    lockError(
+      () => acquireStoreLockInternal(store, TRANSACTION_A, runtime(2302, TOKEN_A)),
+      "METHODOLOGY_STORE_LOCK_INVALID",
+    );
+    expect(injected).toBe(true);
+    expect(readdirSync(store.layout.lock)).toEqual([]);
+    expect(existsSync(candidate)).toBe(false);
+  });
+
+  it.each([
+    ["held", "alive"],
+    ["dead", "absent"],
+  ] as const)("does not displace a different %s claim that wins publication", (_label, state) => {
+    const { store } = temporaryStore();
+    const candidate = join(store.layout.lockCandidates, TOKEN_A);
+    const winner = Object.freeze(owner(store, TOKEN_C, 2304, TRANSACTION_B));
+    let injected = false;
+    injectFsFault({
+      renameSync: ((...args: unknown[]) => {
+        if (!injected && String(args[0]) === candidate && String(args[1]) === store.layout.lock) {
+          writeOwner(store, store.layout.lock, winner);
+          injected = true;
+          throw syntheticFsError("EEXIST");
+        }
+        return Reflect.apply(originalFs.renameSync, mutableFs, args);
+      }) as typeof originalFs.renameSync,
+    });
+
+    lockError(
+      () =>
+        acquireStoreLockInternal(
+          store,
+          TRANSACTION_A,
+          runtime(2303, TOKEN_A, new Map([[winner.pid, state]])),
+        ),
+      state === "alive" ? "METHODOLOGY_STORE_LOCK_HELD" : "METHODOLOGY_STORE_LOCK_INVALID",
+    );
+    expect(injected).toBe(true);
+    expect(readLiveOwner(store)).toEqual(winner);
+    expect(existsSync(candidate)).toBe(false);
+
+    restoreFs();
+    releaseStoreLock(store, winner);
+  });
+
+  it("retains both exact objects when a moved candidate changes identity", () => {
+    const { store } = temporaryStore();
+    const pending = join(store.layout.lockCandidates, `${TOKEN_A}.pending.2305`);
+    const candidate = join(store.layout.lockCandidates, TOKEN_A);
+    const parked = join(store.layout.trash, TOKEN_F);
+    const expected = Object.freeze(owner(store, TOKEN_A, 2305));
+    mkdirSync(store.layout.trash, { recursive: true, mode: 0o700 });
+    let injected = false;
+    injectFsFault({
+      renameSync: ((...args: unknown[]) => {
+        if (!injected && String(args[0]) === pending && String(args[1]) === candidate) {
+          Reflect.apply(originalFs.renameSync, mutableFs, args);
+          originalFs.renameSync(candidate, parked);
+          writeOwner(store, candidate, expected);
+          injected = true;
+          return;
+        }
+        return Reflect.apply(originalFs.renameSync, mutableFs, args);
+      }) as typeof originalFs.renameSync,
+    });
+
+    const failure = lockError(
+      () => acquireStoreLockInternal(store, TRANSACTION_A, runtime(2305, TOKEN_A)),
+      "METHODOLOGY_STORE_LOCK_INVALID",
+    );
+    expect(failure.message).toBe("renamed claim changed identity");
+    expect(injected).toBe(true);
+    expect(existsSync(candidate)).toBe(true);
+    expect(existsSync(parked)).toBe(true);
+    expect(existsSync(store.layout.lock)).toBe(false);
+  });
+
+  it("retains its complete contender when exact cleanup fails", () => {
+    const { store } = temporaryStore();
+    const held = acquireStoreLockInternal(store, TRANSACTION_A, runtime(2306, TOKEN_A));
+    const contender = join(store.layout.lockCandidates, TOKEN_B);
+    const contenderOwner = join(contender, "owner.json");
+    injectFsFault({
+      unlinkSync: ((...args: unknown[]) => {
+        if (String(args[0]) === contenderOwner) throw syntheticFsError("EACCES");
+        return Reflect.apply(originalFs.unlinkSync, mutableFs, args);
+      }) as typeof originalFs.unlinkSync,
+    });
+
+    lockError(
+      () =>
+        acquireStoreLockInternal(
+          store,
+          TRANSACTION_B,
+          runtime(2307, TOKEN_B, new Map([[held.pid, "alive"]])),
+        ),
+      "METHODOLOGY_STORE_FILESYSTEM_FAILURE",
+    );
+    expect(readFileSync(contenderOwner)).toEqual(
+      canonicalRecordBytes("lock-owner", owner(store, TOKEN_B, 2307, TRANSACTION_B)),
+    );
+
+    restoreFs();
+    expect(readLiveOwner(store)).toEqual(held);
+    releaseStoreLock(store, held);
+  });
 });

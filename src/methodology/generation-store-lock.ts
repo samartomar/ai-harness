@@ -21,6 +21,7 @@ import {
   type LockOwnerRecord,
   LockOwnerRecordSchema,
   MAX_PID,
+  MAX_RECORD_BYTES,
   MAX_RECOVERY_RECORDS,
   STORE_ID_PATTERN,
 } from "./generation-store-contract.js";
@@ -33,6 +34,7 @@ import {
 } from "./generation-store-fs.js";
 
 const CANDIDATE_NAME_PATTERN = /^([0-9a-f]{64})(\.stale)?$/;
+const PENDING_CANDIDATE_NAME_PATTERN = /^([0-9a-f]{64})\.pending\.([1-9][0-9]{0,9})$/;
 const DIRECTORY_SYNC_UNSUPPORTED = new Set(["EBADF", "EINVAL", "EISDIR", "ENOTSUP", "EPERM"]);
 
 export type PidState = "alive" | "absent" | "indeterminate";
@@ -107,6 +109,10 @@ function identityForDirectory(absPath: string): DirectoryIdentity {
 
 function sameDirectoryIdentity(left: DirectoryIdentity, right: DirectoryIdentity): boolean {
   return left.dev === right.dev && left.ino === right.ino && left.mode === right.mode;
+}
+
+function privateDirectoryIdentity(value: DirectoryIdentity): boolean {
+  return process.platform === "win32" || (BigInt(value.mode) & 0o777n) === 0o700n;
 }
 
 function requireOwnedDirectory(store: OwnedStore, absPath: string): DirectoryIdentity {
@@ -194,7 +200,16 @@ function inventoryCandidateNames(store: OwnedStore, requireCapacity: boolean): r
       }
       names.push(entry.name);
       const match = CANDIDATE_NAME_PATTERN.exec(entry.name);
-      if (match === null || entry.isSymbolicLink() || !entry.isDirectory()) {
+      const pending = PENDING_CANDIDATE_NAME_PATTERN.exec(entry.name);
+      const pendingPid = pending?.[2] === undefined ? undefined : Number(pending[2]);
+      if (
+        (match === null &&
+          (pending === null ||
+            !Number.isSafeInteger(pendingPid) ||
+            (pendingPid as number) > MAX_PID)) ||
+        entry.isSymbolicLink() ||
+        !entry.isDirectory()
+      ) {
         fail("lock-candidates inventory contains an invalid entry");
       }
       requireOwnedDirectory(store, join(store.layout.lockCandidates, entry.name));
@@ -338,6 +353,102 @@ function cleanupOwnCandidate(
   removeExactClaimDirectory(store, candidatePath, claim, identity);
 }
 
+function sameFileIdentity(left: BigIntStats, right: BigIntStats): boolean {
+  return (
+    left.dev === right.dev &&
+    left.ino === right.ino &&
+    left.mode === right.mode &&
+    left.nlink === right.nlink &&
+    left.size === right.size &&
+    left.mtimeNs === right.mtimeNs &&
+    left.ctimeNs === right.ctimeNs
+  );
+}
+
+function removePendingCandidate(store: OwnedStore, pendingPath: string): void {
+  const directoryIdentity = requireOwnedDirectory(store, pendingPath);
+  if (!privateDirectoryIdentity(directoryIdentity)) {
+    fail("pending lock candidate permissions are not private");
+  }
+  const names = boundedNames(pendingPath, 1);
+  if (names.length === 1) {
+    if (names[0] !== "owner.json") fail("pending lock candidate has an unexpected entry");
+    const ownerPath = join(pendingPath, "owner.json");
+    let before: BigIntStats;
+    let after: BigIntStats;
+    try {
+      before = lstatSync(ownerPath, { bigint: true });
+      const resolved = realpathSync(ownerPath);
+      after = lstatSync(ownerPath, { bigint: true });
+      if (
+        before.isSymbolicLink() ||
+        !before.isFile() ||
+        before.nlink !== 1n ||
+        before.dev.toString(10) !== store.layout.projectDevice ||
+        before.size > BigInt(MAX_RECORD_BYTES) ||
+        (process.platform !== "win32" && (before.mode & 0o777n) !== 0o600n) ||
+        !pathsEqual(resolved, ownerPath) ||
+        !containedPath(store.layout.root, resolved) ||
+        !sameFileIdentity(before, after)
+      ) {
+        fail("pending lock owner is not a bounded private regular file");
+      }
+      unlinkSync(ownerPath);
+    } catch (error) {
+      if (error instanceof GenerationStoreFsError) throw error;
+      fail("pending lock owner removal failed", "METHODOLOGY_STORE_FILESYSTEM_FAILURE");
+    }
+  }
+  const currentIdentity = requireOwnedDirectory(store, pendingPath);
+  if (
+    !privateDirectoryIdentity(currentIdentity) ||
+    !sameDirectoryIdentity(directoryIdentity, currentIdentity)
+  ) {
+    fail("pending lock candidate changed before removal");
+  }
+  try {
+    rmdirSync(pendingPath);
+  } catch {
+    fail("pending lock candidate removal failed", "METHODOLOGY_STORE_FILESYSTEM_FAILURE");
+  }
+  syncDirectory(dirname(pendingPath));
+}
+
+function prepareCandidateInventory(store: OwnedStore, runtime: LockRuntime): readonly string[] {
+  const initial = inventoryCandidateNames(store, false);
+  for (const name of initial) {
+    const pending = PENDING_CANDIDATE_NAME_PATTERN.exec(name);
+    if (pending?.[2] !== undefined) {
+      const pid = Number(pending[2]);
+      if (Number.isSafeInteger(pid) && pid <= MAX_PID && safePidState(runtime, pid) === "absent") {
+        removePendingCandidate(store, join(store.layout.lockCandidates, name));
+      }
+      continue;
+    }
+    const complete = CANDIDATE_NAME_PATTERN.exec(name);
+    if (complete?.[1] === undefined || complete[2] !== undefined) continue;
+    try {
+      const candidatePath = join(store.layout.lockCandidates, name);
+      const exact = readExactClaimDirectory(store, candidatePath);
+      if (
+        privateDirectoryIdentity(exact.identity) &&
+        safePidState(runtime, exact.claim.pid) === "absent"
+      ) {
+        removeExactClaimDirectory(store, candidatePath, exact.claim, exact.identity);
+      }
+    } catch (error) {
+      if (
+        error instanceof GenerationStoreFsError &&
+        error.findingCode === "METHODOLOGY_STORE_FILESYSTEM_FAILURE"
+      ) {
+        throw error;
+      }
+      // Ambiguous candidates remain visible and fail later preflight checks.
+    }
+  }
+  return inventoryCandidateNames(store, true);
+}
+
 function validateRuntimeIdentity(
   store: OwnedStore,
   transactionId: string,
@@ -372,41 +483,54 @@ function validateRuntimeIdentity(
 function createCandidate(
   store: OwnedStore,
   claim: HeldStoreLock,
+  runtime: LockRuntime,
 ): Readonly<{ path: string; identity: DirectoryIdentity }> {
-  const inventory = inventoryCandidateNames(store, true);
+  const inventory = prepareCandidateInventory(store, runtime);
   if (inventory.includes(`${claim.token}.stale`)) {
     fail("lock token has an existing stale fence");
   }
   const candidatePath = join(store.layout.lockCandidates, claim.token);
+  if (!pathAbsent(candidatePath)) {
+    fail("lock candidate already exists");
+  }
+  const pendingPath = join(
+    store.layout.lockCandidates,
+    `${claim.token}.pending.${claim.pid.toString(10)}`,
+  );
+  let identity: DirectoryIdentity | undefined;
   try {
-    mkdirSync(candidatePath, { mode: 0o700 });
+    mkdirSync(pendingPath, { mode: 0o700 });
   } catch (error) {
     if (errnoCode(error) === "EEXIST") {
       fail("lock candidate already exists");
     }
     fail("lock candidate could not be created", "METHODOLOGY_STORE_FILESYSTEM_FAILURE");
   }
-  const identity = requireOwnedDirectory(store, candidatePath);
   try {
+    identity = requireOwnedDirectory(store, pendingPath);
     writeExclusiveRegularFile(
       store,
-      join(candidatePath, "owner.json"),
+      join(pendingPath, "owner.json"),
       canonicalRecordBytes("lock-owner", claim),
     );
+    const exact = renameAndVerifyClaim(store, pendingPath, candidatePath, claim, identity);
+    return Object.freeze({ path: candidatePath, identity: exact.identity });
   } catch (error) {
     try {
-      if (boundedNames(candidatePath, 1).length === 0) rmdirSync(candidatePath);
+      if (identity !== undefined && !pathAbsent(candidatePath)) {
+        cleanupOwnCandidate(store, candidatePath, claim, identity);
+      }
     } catch {
       // Retain uncertain candidate state.
+    }
+    try {
+      if (!pathAbsent(pendingPath)) removePendingCandidate(store, pendingPath);
+    } catch {
+      // Retain uncertain pending state while preserving the original failure.
     }
     if (error instanceof GenerationStoreFsError) throw error;
     fail("lock candidate owner could not be written", "METHODOLOGY_STORE_FILESYSTEM_FAILURE");
   }
-  const exact = readExactClaimDirectory(store, candidatePath);
-  if (!sameClaim(exact.claim, claim) || !sameDirectoryIdentity(exact.identity, identity)) {
-    fail("lock candidate verification failed");
-  }
-  return Object.freeze({ path: candidatePath, identity });
 }
 
 function renameAndVerifyClaim(
@@ -561,7 +685,7 @@ export function acquireStoreLockInternal(
 ): HeldStoreLock {
   const claim = validateRuntimeIdentity(store, transactionId, runtime);
   assertOwnedStorePhase(store);
-  const candidate = createCandidate(store, claim);
+  const candidate = createCandidate(store, claim, runtime);
   claimCandidate(store, candidate, claim, runtime);
   return claim;
 }

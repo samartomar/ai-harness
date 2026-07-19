@@ -11,7 +11,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { dirname, join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import * as generationStoreModule from "../../src/methodology/generation-store.js";
 import {
   type ActivationRecord,
@@ -60,6 +60,15 @@ const TRANSACTION_ID = "d".repeat(64);
 const LOCK_TOKEN = "a".repeat(64);
 const FIXED_ROOT_ID = "f".repeat(64);
 const roots: TemporaryProject[] = [];
+const ORIGINAL_UMASK = process.platform === "win32" ? undefined : process.umask();
+
+beforeAll(() => {
+  if (ORIGINAL_UMASK !== undefined) process.umask(0o077);
+});
+
+afterAll(() => {
+  if (ORIGINAL_UMASK !== undefined) process.umask(ORIGINAL_UMASK);
+});
 
 type ApplyProjectionFunction = (value: unknown) => ApplyProjectionResult;
 type ApplyFaultPoint =
@@ -1012,7 +1021,7 @@ describe("generation store apply", () => {
     expect(readFileSync(outside.canary, "utf8")).toBe("outside-canary\n");
   });
 
-  it("apply creates private staging before any generated publication", () => {
+  it("apply creates private transaction scratch before any generated publication", () => {
     const root = temporaryProject();
     const outside = makeSiblingCanary(root);
     const plan = requirePlanned(binaryPlannedFixture());
@@ -1024,13 +1033,13 @@ describe("generation store apply", () => {
       ),
     ).toThrow("injected:after-stage-created");
 
-    const stagingRoot = join(root.projectRoot, ".aih", "methodology", "v1", "staging");
-    const stagedTransactions = namesIfPresent(stagingRoot);
+    const scratchRoot = join(root.projectRoot, ".aih", "methodology", "v1", "trash");
+    const stagedTransactions = namesIfPresent(scratchRoot);
     expect(stagedTransactions).toHaveLength(1);
     if (process.platform !== "win32") {
       expect(
         Number(
-          lstatSync(join(stagingRoot, stagedTransactions[0] as string), { bigint: true }).mode &
+          lstatSync(join(scratchRoot, stagedTransactions[0] as string), { bigint: true }).mode &
             0o777n,
         ),
       ).toBe(0o700);
@@ -1344,6 +1353,49 @@ describe("generation store apply refusals and pending-state contract", () => {
     expectApply(result, "blocked", activeDigest, activeDigest, "METHODOLOGY_STORE_RESOURCE_LIMIT");
     expect(readFileSync(outside.canary, "utf8")).toBe("outside-canary\n");
   }, 30_000);
+
+  it("blocks prospective aggregate directory overflow before creating transaction state", () => {
+    const root = temporaryProject();
+    const outside = makeSiblingCanary(root);
+    const payloads = Array.from({ length: 64 }, (_, index) => ({
+      artifactId: `capacity-${index}`,
+      bytes: Buffer.from([index]),
+    }));
+    const plan = requirePlanned(
+      plannedPayloadSet(payloads, (artifactId) => `${artifactId}/d0/d1/d2/d3/d4/d5/d6/file.md`),
+    );
+    const first = applyProjection(applyInput(root.projectRoot, plan, payloads, null));
+    expectApply(first, "applied", null, plan.manifest.digest);
+
+    const store = createOrOpenOwnedStore(root.projectRoot);
+    const activeBefore = readFileSync(store.layout.active);
+    const generationBefore = identityTreeSnapshot(
+      join(store.layout.generations, plan.manifest.digest),
+    );
+    const candidatePlan = requirePlanned(plannedFixture());
+    expect(candidatePlan.manifest.digest).not.toBe(plan.manifest.digest);
+
+    const result = applyProjection(
+      applyInput(root.projectRoot, candidatePlan, payloadFixture(), plan.manifest.digest),
+    );
+
+    expectApply(
+      result,
+      "blocked",
+      plan.manifest.digest,
+      plan.manifest.digest,
+      "METHODOLOGY_STORE_RESOURCE_LIMIT",
+    );
+    expect(readFileSync(store.layout.active)).toEqual(activeBefore);
+    expect(identityTreeSnapshot(join(store.layout.generations, plan.manifest.digest))).toEqual(
+      generationBefore,
+    );
+    expect(namesIfPresent(store.layout.generations)).toEqual([plan.manifest.digest]);
+    expect(namesIfPresent(store.layout.transactions)).toEqual([]);
+    expect(namesIfPresent(store.layout.staging)).toEqual([]);
+    expect(namesIfPresent(store.layout.trash)).toEqual([]);
+    expect(readFileSync(outside.canary, "utf8")).toBe("outside-canary\n");
+  }, 60_000);
 
   it("apply reports a deterministic Phase 3 destination collision without mutation", () => {
     const root = temporaryProject();

@@ -265,6 +265,16 @@ export const TransactionRecordSchema = z
         message: "apply transaction manifest digest must match its new activation",
       });
     }
+    if (
+      value.operation === "clean" &&
+      value.oldActivation?.manifestDigest === value.generationDigest
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["generationDigest"],
+        message: "clean transaction target must be inactive",
+      });
+    }
   });
 
 const GenerationStoreCommonBoundarySchema = {
@@ -346,6 +356,7 @@ const INSPECTION_FAILED_CLOSED_CODES = new Set<StoreFindingCode>([
 ]);
 const RECOVERY_BLOCKED_CODES = new Set<StoreFindingCode>(["METHODOLOGY_STORE_LOCK_HELD"]);
 const RECOVERY_FAILED_CLOSED_CODES = new Set<StoreFindingCode>([
+  "METHODOLOGY_STORE_INPUT_INVALID",
   "METHODOLOGY_STORE_RESOURCE_LIMIT",
   "METHODOLOGY_STORE_ROOT_UNOWNED",
   "METHODOLOGY_STORE_PATH_UNSAFE",
