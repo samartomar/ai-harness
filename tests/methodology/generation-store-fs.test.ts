@@ -17,11 +17,14 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   ActivationRecordSchema,
   canonicalRecordBytes,
+  GenerationReceiptSchema,
+  IncompleteRecordSchema,
   LockOwnerRecordSchema,
   MAX_MANIFEST_ENTRIES,
   MAX_PAYLOAD_BYTES,
   MAX_RECORD_BYTES,
   RootRecordSchema,
+  StagingRecordSchema,
   sha256Bytes,
   TransactionRecordSchema,
 } from "../../src/methodology/generation-store-contract.js";
@@ -29,6 +32,8 @@ import {
   assertOwnedStorePhase,
   createOrOpenOwnedStore,
   GenerationStoreFsError,
+  isGenerationDigest,
+  isStoreObjectId,
   openStoreForInspection,
   quarantineExactDirectory,
   readStoreRecord,
@@ -60,6 +65,16 @@ function temporaryProject(): TemporaryProject {
   const root = makeTemporaryProject();
   roots.push(root);
   return root;
+}
+
+function expectFsFinding(operation: () => unknown, findingCode: string): void {
+  try {
+    operation();
+    throw new Error("expected generation-store filesystem refusal");
+  } catch (error) {
+    expect(error).toBeInstanceOf(GenerationStoreFsError);
+    expect((error as GenerationStoreFsError).findingCode).toBe(findingCode);
+  }
 }
 
 function activation(manifestDigest = plannedDigest()) {
@@ -425,6 +440,601 @@ describe("Phase 4 bounded generation-store filesystem", () => {
     const oversizedStore = createOrOpenOwnedStore(realpathSync(oversizedRoot.projectRoot));
     writeFileSync(oversizedStore.layout.rootRecord, Buffer.alloc(MAX_RECORD_BYTES + 1));
     expect(() => openStoreForInspection(realpathSync(oversizedRoot.projectRoot))).toThrow();
+  });
+
+  it("infers every record kind and reports its fixed malformed-record finding", () => {
+    const root = temporaryProject();
+    const store = createOrOpenOwnedStore(realpathSync(root.projectRoot));
+    const generation = join(store.layout.generations, plannedDigest());
+    const staging = join(store.layout.staging, TRANSACTION_ID);
+    mkdirSync(generation, { recursive: true });
+    mkdirSync(staging, { recursive: true });
+    mkdirSync(store.layout.lock);
+    mkdirSync(store.layout.transactions);
+
+    const cases: ReadonlyArray<
+      Readonly<{
+        path: string;
+        schema: Readonly<{ parse: (value: unknown) => unknown }>;
+        findingCode: string;
+      }>
+    > = [
+      {
+        path: store.layout.active,
+        schema: ActivationRecordSchema,
+        findingCode: "METHODOLOGY_STORE_ACTIVATION_INVALID",
+      },
+      {
+        path: join(generation, "receipt.json"),
+        schema: GenerationReceiptSchema,
+        findingCode: "METHODOLOGY_STORE_GENERATION_INCOMPLETE",
+      },
+      {
+        path: join(generation, "incomplete.json"),
+        schema: IncompleteRecordSchema,
+        findingCode: "METHODOLOGY_STORE_GENERATION_INCOMPLETE",
+      },
+      {
+        path: join(staging, "staging.json"),
+        schema: StagingRecordSchema,
+        findingCode: "METHODOLOGY_STORE_TRANSACTION_INVALID",
+      },
+      {
+        path: join(store.layout.lock, "owner.json"),
+        schema: LockOwnerRecordSchema,
+        findingCode: "METHODOLOGY_STORE_LOCK_INVALID",
+      },
+      {
+        path: join(store.layout.transactions, `${TRANSACTION_ID}.json`),
+        schema: TransactionRecordSchema,
+        findingCode: "METHODOLOGY_STORE_TRANSACTION_INVALID",
+      },
+    ];
+    for (const testCase of cases) {
+      writeExclusiveRegularFile(store, testCase.path, Buffer.from("{\n"));
+      expectFsFinding(
+        () => readStoreRecord(store, testCase.path, testCase.schema),
+        testCase.findingCode,
+      );
+    }
+
+    const unknown = join(store.layout.root, "unknown-record.json");
+    writeExclusiveRegularFile(store, unknown, Buffer.from("{}\n"));
+    expectFsFinding(
+      () => readStoreRecord(store, unknown, RootRecordSchema),
+      "METHODOLOGY_STORE_PATH_UNSAFE",
+    );
+  });
+
+  it("rejects valid records whose paths do not bind their identities", () => {
+    const root = temporaryProject();
+    const store = createOrOpenOwnedStore(realpathSync(root.projectRoot));
+    const holder = join(store.layout.root, "holder");
+    const wrongGeneration = join(store.layout.generations, OTHER_DIGEST);
+    const wrongStaging = join(store.layout.staging, OTHER_DIGEST);
+    const wrongCandidate = join(store.layout.lockCandidates, OTHER_DIGEST);
+    mkdirSync(holder);
+    mkdirSync(wrongGeneration, { recursive: true });
+    mkdirSync(wrongStaging, { recursive: true });
+    mkdirSync(wrongCandidate, { recursive: true });
+
+    const wrongRootPath = join(holder, "root.json");
+    writeExclusiveRegularFile(store, wrongRootPath, canonicalRecordBytes("root", store.rootRecord));
+    expect(() => readStoreRecord(store, wrongRootPath, RootRecordSchema)).toThrow();
+
+    const wrongActivationPath = join(holder, "active.json");
+    writeExclusiveRegularFile(
+      store,
+      wrongActivationPath,
+      canonicalRecordBytes("activation", activation()),
+    );
+    expect(() => readStoreRecord(store, wrongActivationPath, ActivationRecordSchema)).toThrow();
+
+    const receipt = generationReceipt(store);
+    const wrongReceiptPath = join(wrongGeneration, "receipt.json");
+    writeExclusiveRegularFile(store, wrongReceiptPath, canonicalRecordBytes("receipt", receipt));
+    expect(() => readStoreRecord(store, wrongReceiptPath, GenerationReceiptSchema)).toThrow();
+
+    const incomplete = {
+      schemaVersion: 1 as const,
+      rootId: store.rootRecord.rootId,
+      transactionId: TRANSACTION_ID,
+      manifestDigest: plannedDigest(),
+    };
+    const wrongIncompletePath = join(wrongGeneration, "incomplete.json");
+    writeExclusiveRegularFile(
+      store,
+      wrongIncompletePath,
+      canonicalRecordBytes("incomplete", incomplete),
+    );
+    expect(() => readStoreRecord(store, wrongIncompletePath, IncompleteRecordSchema)).toThrow();
+
+    const staging = {
+      schemaVersion: 1 as const,
+      rootId: store.rootRecord.rootId,
+      transactionId: TRANSACTION_ID,
+      manifestDigest: plannedDigest(),
+    };
+    const wrongStagingPath = join(wrongStaging, "staging.json");
+    writeExclusiveRegularFile(store, wrongStagingPath, canonicalRecordBytes("staging", staging));
+    expect(() => readStoreRecord(store, wrongStagingPath, StagingRecordSchema)).toThrow();
+
+    const owner = {
+      schemaVersion: 1 as const,
+      rootId: store.rootRecord.rootId,
+      token: TRANSACTION_ID,
+      pid: 1,
+      transactionId: TRANSACTION_ID,
+    };
+    const wrongOwnerPath = join(wrongCandidate, "owner.json");
+    writeExclusiveRegularFile(store, wrongOwnerPath, canonicalRecordBytes("lock-owner", owner));
+    expect(() => readStoreRecord(store, wrongOwnerPath, LockOwnerRecordSchema)).toThrow();
+
+    const transaction = {
+      schemaVersion: 1 as const,
+      operation: "apply" as const,
+      rootId: store.rootRecord.rootId,
+      transactionId: TRANSACTION_ID,
+      phase: "prepared" as const,
+      manifestDigest: plannedDigest(),
+      oldActivation: null,
+      newActivation: activation(),
+      entries: expectedReceiptEntries(),
+    };
+    const wrongTransactionPath = join(holder, `${TRANSACTION_ID}.json`);
+    writeExclusiveRegularFile(
+      store,
+      wrongTransactionPath,
+      canonicalRecordBytes("transaction", transaction),
+    );
+    expect(() => readStoreRecord(store, wrongTransactionPath, TransactionRecordSchema)).toThrow();
+  });
+
+  it("rejects unsupported and unbound atomic replacement shapes before writing", () => {
+    const root = temporaryProject();
+    const store = createOrOpenOwnedStore(realpathSync(root.projectRoot));
+    mkdirSync(store.layout.transactions);
+    mkdirSync(store.layout.lock);
+    const generation = join(store.layout.generations, plannedDigest());
+    mkdirSync(generation, { recursive: true });
+
+    expectFsFinding(
+      () =>
+        writeAtomicRecord(store, {
+          kind: "activation",
+          targetPath: store.layout.active,
+          temporaryPath: join(store.layout.root, `.active.${TRANSACTION_ID}.tmp`),
+          record: {},
+        }),
+      "METHODOLOGY_STORE_ACTIVATION_INVALID",
+    );
+
+    expect(() =>
+      writeAtomicRecord(store, {
+        kind: "activation",
+        targetPath: store.layout.active,
+        temporaryPath: join(store.layout.transactions, `.active.${TRANSACTION_ID}.tmp`),
+        record: activation(),
+      }),
+    ).toThrow();
+    expect(() =>
+      writeAtomicRecord(store, {
+        kind: "activation",
+        targetPath: store.layout.active,
+        temporaryPath: join(store.layout.root, ".active.not-bound.tmp"),
+        record: activation(),
+      }),
+    ).toThrow();
+
+    const receipt = generationReceipt(store);
+    expect(() =>
+      writeAtomicRecord(store, {
+        kind: "receipt",
+        targetPath: join(generation, "receipt.json"),
+        temporaryPath: join(generation, ".receipt.tmp"),
+        record: receipt,
+      }),
+    ).toThrow();
+    expect(() =>
+      writeAtomicRecord(store, {
+        kind: "root",
+        targetPath: store.layout.rootRecord,
+        temporaryPath: join(store.layout.root, ".root.tmp"),
+        record: store.rootRecord,
+      }),
+    ).toThrow();
+    const owner = {
+      schemaVersion: 1 as const,
+      rootId: store.rootRecord.rootId,
+      token: TRANSACTION_ID,
+      pid: 1,
+      transactionId: TRANSACTION_ID,
+    };
+    expect(() =>
+      writeAtomicRecord(store, {
+        kind: "lock-owner",
+        targetPath: join(store.layout.lock, "owner.json"),
+        temporaryPath: join(store.layout.lock, ".owner.tmp"),
+        record: owner,
+      }),
+    ).toThrow();
+
+    const transaction = {
+      schemaVersion: 1 as const,
+      operation: "apply" as const,
+      rootId: store.rootRecord.rootId,
+      transactionId: TRANSACTION_ID,
+      phase: "staged" as const,
+      manifestDigest: plannedDigest(),
+      oldActivation: null,
+      newActivation: activation(),
+      entries: expectedReceiptEntries(),
+    };
+    expect(() =>
+      writeAtomicRecord(store, {
+        kind: "transaction",
+        targetPath: join(store.layout.transactions, `${TRANSACTION_ID}.json`),
+        temporaryPath: join(store.layout.transactions, ".not-bound.tmp"),
+        record: transaction,
+      }),
+    ).toThrow();
+  });
+
+  it("binds first activation publication to an explicitly empty prior state", () => {
+    const successfulRoot = temporaryProject();
+    const successfulStore = createOrOpenOwnedStore(realpathSync(successfulRoot.projectRoot));
+    const next = activation();
+    writeActivationJournal(successfulStore, TRANSACTION_ID, next);
+    writeAtomicRecord(successfulStore, {
+      kind: "activation",
+      targetPath: successfulStore.layout.active,
+      temporaryPath: join(successfulStore.layout.root, `.active.${TRANSACTION_ID}.tmp`),
+      record: next,
+    });
+    expect(
+      readStoreRecord(successfulStore, successfulStore.layout.active, ActivationRecordSchema)
+        .record,
+    ).toEqual(next);
+
+    const priorRoot = temporaryProject();
+    const priorStore = createOrOpenOwnedStore(realpathSync(priorRoot.projectRoot));
+    writeActivationJournal(priorStore, TRANSACTION_ID, next, activation(OTHER_DIGEST));
+    expect(() =>
+      writeAtomicRecord(priorStore, {
+        kind: "activation",
+        targetPath: priorStore.layout.active,
+        temporaryPath: join(priorStore.layout.root, `.active.${TRANSACTION_ID}.tmp`),
+        record: next,
+      }),
+    ).toThrow();
+    expect(existsSync(priorStore.layout.active)).toBe(false);
+
+    const mismatchedRoot = temporaryProject();
+    const mismatchedStore = createOrOpenOwnedStore(realpathSync(mismatchedRoot.projectRoot));
+    writeActivationJournal(mismatchedStore, TRANSACTION_ID, next);
+    expect(() =>
+      writeAtomicRecord(mismatchedStore, {
+        kind: "activation",
+        targetPath: mismatchedStore.layout.active,
+        temporaryPath: join(mismatchedStore.layout.root, `.active.${TRANSACTION_ID}.tmp`),
+        record: activation(OTHER_DIGEST),
+      }),
+    ).toThrow();
+    expect(existsSync(mismatchedStore.layout.active)).toBe(false);
+  });
+
+  it("rejects a correctly named transaction temporary that skips a phase", () => {
+    const root = temporaryProject();
+    const store = createOrOpenOwnedStore(realpathSync(root.projectRoot));
+    mkdirSync(store.layout.transactions);
+    const prepared = {
+      schemaVersion: 1 as const,
+      operation: "apply" as const,
+      rootId: store.rootRecord.rootId,
+      transactionId: TRANSACTION_ID,
+      phase: "prepared" as const,
+      manifestDigest: plannedDigest(),
+      oldActivation: null,
+      newActivation: activation(),
+      entries: expectedReceiptEntries(),
+    };
+    const targetPath = join(store.layout.transactions, `${TRANSACTION_ID}.json`);
+    writeExclusiveRegularFile(store, targetPath, canonicalRecordBytes("transaction", prepared));
+    expect(() =>
+      writeAtomicRecord(store, {
+        kind: "transaction",
+        targetPath,
+        temporaryPath: join(
+          store.layout.transactions,
+          `.${TRANSACTION_ID}.generation-verified.tmp`,
+        ),
+        record: { ...prepared, phase: "generation-verified" as const },
+      }),
+    ).toThrow();
+    expect(
+      readStoreRecord(store, targetPath, TransactionRecordSchema, "transaction").record,
+    ).toEqual(prepared);
+  });
+
+  it("recognizes only closed digest and store-object identities", () => {
+    expect(isGenerationDigest(plannedDigest())).toBe(true);
+    expect(isGenerationDigest("not-a-digest")).toBe(false);
+    expect(isStoreObjectId(TRANSACTION_ID)).toBe(true);
+    expect(isStoreObjectId("not-an-object-id")).toBe(false);
+  });
+
+  it("reports every expected absence in an empty transaction-bound trash container", () => {
+    const root = temporaryProject();
+    const store = createOrOpenOwnedStore(realpathSync(root.projectRoot));
+    const trash = join(store.layout.trash, TRANSACTION_ID);
+    mkdirSync(trash, { recursive: true });
+    const incomplete = {
+      schemaVersion: 1 as const,
+      rootId: store.rootRecord.rootId,
+      transactionId: TRANSACTION_ID,
+      manifestDigest: plannedDigest(),
+    };
+    const verified = verifyPartialOwnedContainer(
+      store,
+      trash,
+      "incomplete",
+      incomplete,
+      expectedReceiptEntries(),
+    );
+    expect(verified.missing).toEqual([
+      "content/rules/dependency.md",
+      "content/rules/root.md",
+      "incomplete.json",
+    ]);
+  });
+
+  it("rejects malformed, unbound, drifted, and incomplete container shapes", () => {
+    const newStore = () => {
+      const root = temporaryProject();
+      return createOrOpenOwnedStore(realpathSync(root.projectRoot));
+    };
+    const incompleteFor = (
+      store: ReturnType<typeof createOrOpenOwnedStore>,
+      rootId = store.rootRecord.rootId,
+      manifestDigest = plannedDigest(),
+    ) => ({
+      schemaVersion: 1 as const,
+      rootId,
+      transactionId: TRANSACTION_ID,
+      manifestDigest,
+    });
+    const makeTrash = (store: ReturnType<typeof createOrOpenOwnedStore>) => {
+      const trash = join(store.layout.trash, TRANSACTION_ID);
+      mkdirSync(trash, { recursive: true });
+      return trash;
+    };
+    const entries = expectedReceiptEntries();
+
+    {
+      const store = newStore();
+      const trash = makeTrash(store);
+      expectFsFinding(
+        () => verifyPartialOwnedContainer(store, trash, "incomplete", {}, entries),
+        "METHODOLOGY_STORE_GENERATION_INCOMPLETE",
+      );
+    }
+
+    {
+      const store = newStore();
+      const receipt = generationReceipt(store);
+      expect(() =>
+        verifyExpectedContainer(
+          store,
+          join(store.layout.generations, plannedDigest()),
+          "receipt",
+          receipt,
+          uniformEntries(1, 0),
+        ),
+      ).toThrow();
+    }
+
+    {
+      const store = newStore();
+      const trash = makeTrash(store);
+      expect(() =>
+        verifyPartialOwnedContainer(
+          store,
+          trash,
+          "incomplete",
+          incompleteFor(store, OTHER_DIGEST),
+          entries,
+        ),
+      ).toThrow();
+    }
+
+    {
+      const store = newStore();
+      const trash = makeTrash(store);
+      writeFileSync(join(trash, "unexpected"), "unexpected");
+      expect(() =>
+        verifyPartialOwnedContainer(store, trash, "incomplete", incompleteFor(store), entries),
+      ).toThrow();
+    }
+
+    {
+      const store = newStore();
+      const trash = makeTrash(store);
+      mkdirSync(join(trash, "incomplete.json"));
+      expect(() =>
+        verifyPartialOwnedContainer(store, trash, "incomplete", incompleteFor(store), entries),
+      ).toThrow();
+    }
+
+    {
+      const store = newStore();
+      const trash = makeTrash(store);
+      writeExclusiveRegularFile(
+        store,
+        join(trash, "incomplete.json"),
+        canonicalRecordBytes("incomplete", incompleteFor(store, undefined, OTHER_DIGEST)),
+      );
+      expectFsFinding(
+        () =>
+          verifyPartialOwnedContainer(store, trash, "incomplete", incompleteFor(store), entries),
+        "METHODOLOGY_STORE_GENERATION_DRIFT",
+      );
+    }
+
+    {
+      const store = newStore();
+      const trash = makeTrash(store);
+      writeFileSync(join(trash, "content"), "not-a-directory");
+      expect(() =>
+        verifyPartialOwnedContainer(store, trash, "incomplete", incompleteFor(store), entries),
+      ).toThrow();
+    }
+
+    {
+      const store = newStore();
+      const generation = join(store.layout.generations, plannedDigest());
+      mkdirSync(generation, { recursive: true });
+      const receipt = generationReceipt(store);
+      writeExclusiveRegularFile(
+        store,
+        join(generation, "receipt.json"),
+        canonicalRecordBytes("receipt", receipt),
+      );
+      expectFsFinding(
+        () => verifyExpectedContainer(store, generation, "receipt", receipt, entries),
+        "METHODOLOGY_STORE_GENERATION_INCOMPLETE",
+      );
+    }
+  });
+
+  it("refuses a missing or replaced owned-root marker", () => {
+    const missingRoot = temporaryProject();
+    mkdirSync(join(missingRoot.projectRoot, ".aih", "methodology", "v1"), { recursive: true });
+    expectFsFinding(
+      () => openStoreForInspection(realpathSync(missingRoot.projectRoot)),
+      "METHODOLOGY_STORE_ROOT_UNOWNED",
+    );
+
+    const changedRoot = temporaryProject();
+    const changedStore = createOrOpenOwnedStore(realpathSync(changedRoot.projectRoot));
+    writeFileSync(
+      changedStore.layout.rootRecord,
+      canonicalRecordBytes("root", {
+        ...changedStore.rootRecord,
+        rootId: OTHER_DIGEST,
+      }),
+    );
+    expectFsFinding(() => assertOwnedStorePhase(changedStore), "METHODOLOGY_STORE_ROOT_UNOWNED");
+  });
+
+  it("refuses canonical stored metadata that differs from the expected record", () => {
+    const receiptRoot = temporaryProject();
+    const receiptStore = createOrOpenOwnedStore(realpathSync(receiptRoot.projectRoot));
+    const generation = join(receiptStore.layout.generations, plannedDigest());
+    mkdirSync(generation, { recursive: true });
+    const storedReceipt = generationReceipt(receiptStore, uniformEntries(1, 0));
+    writeExclusiveRegularFile(
+      receiptStore,
+      join(generation, "receipt.json"),
+      canonicalRecordBytes("receipt", storedReceipt),
+    );
+    const expectedReceipt = generationReceipt(receiptStore);
+    expect(() =>
+      verifyExpectedContainer(
+        receiptStore,
+        generation,
+        "receipt",
+        expectedReceipt,
+        expectedReceipt.entries,
+      ),
+    ).toThrow();
+
+    const stagingRoot = temporaryProject();
+    const stagingStore = createOrOpenOwnedStore(realpathSync(stagingRoot.projectRoot));
+    const stagingDirectory = join(stagingStore.layout.staging, TRANSACTION_ID);
+    mkdirSync(stagingDirectory, { recursive: true });
+    const storedStaging = {
+      schemaVersion: 1 as const,
+      rootId: stagingStore.rootRecord.rootId,
+      transactionId: TRANSACTION_ID,
+      manifestDigest: plannedDigest(),
+    };
+    writeExclusiveRegularFile(
+      stagingStore,
+      join(stagingDirectory, "staging.json"),
+      canonicalRecordBytes("staging", storedStaging),
+    );
+    expect(() =>
+      verifyPartialSourceContainer(
+        stagingStore,
+        stagingDirectory,
+        "staging",
+        { ...storedStaging, manifestDigest: OTHER_DIGEST },
+        expectedReceiptEntries(),
+      ),
+    ).toThrow();
+  });
+
+  it("binds trash metadata to its transaction and refuses containerless deletion", () => {
+    const root = temporaryProject();
+    const store = createOrOpenOwnedStore(realpathSync(root.projectRoot));
+    const wrongTrash = join(store.layout.trash, OTHER_DIGEST);
+    mkdirSync(wrongTrash, { recursive: true });
+    const workRecord = {
+      schemaVersion: 1 as const,
+      rootId: store.rootRecord.rootId,
+      transactionId: TRANSACTION_ID,
+      manifestDigest: plannedDigest(),
+    };
+    expect(() =>
+      verifyPartialOwnedContainer(
+        store,
+        wrongTrash,
+        "staging",
+        workRecord,
+        expectedReceiptEntries(),
+      ),
+    ).toThrow();
+    expect(() =>
+      verifyPartialOwnedContainer(
+        store,
+        wrongTrash,
+        "incomplete",
+        workRecord,
+        expectedReceiptEntries(),
+      ),
+    ).toThrow();
+
+    const emptyTrash = join(store.layout.trash, TRANSACTION_ID);
+    mkdirSync(emptyTrash);
+    const containerless = verifyPartialOwnedTree(store, emptyTrash, expectedReceiptEntries());
+    expect(() => removeVerifiedTree(store, containerless)).toThrow();
+    expect(existsSync(emptyTrash)).toBe(true);
+  });
+
+  it("refuses a verified container whose retained descriptor is no longer JSON", () => {
+    const root = temporaryProject();
+    const store = createOrOpenOwnedStore(realpathSync(root.projectRoot));
+    const generation = join(store.layout.generations, plannedDigest());
+    mkdirSync(store.layout.trash, { recursive: true });
+    mkdirSync(generation, { recursive: true });
+    const receipt = materializeGeneration(store, generation);
+    const verified = verifyExpectedContainer(
+      store,
+      generation,
+      "receipt",
+      receipt,
+      receipt.entries,
+    );
+    if (verified.container === null) throw new Error("container fixture is missing");
+    const forged = {
+      ...verified,
+      container: {
+        ...verified.container,
+        metadataCanonical: "{",
+      },
+    };
+    expect(() => quarantineExactDirectory(store, forged, TRANSACTION_ID)).toThrow();
+    expect(existsSync(generation)).toBe(true);
   });
 
   it("binds transaction filenames to the strict transaction identity", () => {
