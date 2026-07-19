@@ -273,6 +273,9 @@ describe("Phase 4 generation-store contract", () => {
     expect(() =>
       inspectionResult("failed-closed", null, [{ code: "METHODOLOGY_STORE_CLEAN_ACTIVE" }]),
     ).toThrow();
+    expect(
+      inspectionResult("failed-closed", null, [{ code: "METHODOLOGY_STORE_INPUT_INVALID" }]),
+    ).toMatchObject({ boundary: GENERATION_STORE_READ_BOUNDARY });
     expect(() =>
       applyResult("failed-closed", null, null, [{ code: "METHODOLOGY_STORE_CLEAN_ACTIVE" }]),
     ).toThrow();

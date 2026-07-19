@@ -23,6 +23,7 @@ import {
   MAX_MANIFEST_ENTRIES,
   MAX_PAYLOAD_BYTES,
   MAX_RECORD_BYTES,
+  MAX_WALK_ENTRIES,
   RootRecordSchema,
   StagingRecordSchema,
   sha256Bytes,
@@ -31,13 +32,16 @@ import {
 import {
   assertOwnedStorePhase,
   createOrOpenOwnedStore,
+  createStoreWalkBudget,
   GenerationStoreFsError,
+  inspectFixedStoreLayout,
   isGenerationDigest,
   isStoreObjectId,
   openStoreForInspection,
   quarantineExactDirectory,
   readStoreRecord,
   removeVerifiedTree,
+  verifyBoundedOwnedTreeSafety,
   verifyExpectedContainer,
   verifyExpectedTree,
   verifyPartialOwnedContainer,
@@ -258,6 +262,195 @@ describe("Phase 4 bounded generation-store filesystem", () => {
     const before = readdirSync(root.projectRoot);
     expect(openStoreForInspection(realpathSync(root.projectRoot))).toBeUndefined();
     expect(readdirSync(root.projectRoot)).toEqual(before);
+  });
+
+  it("inventories the fixed owned layout read-only with bounded sorted names", () => {
+    const root = temporaryProject();
+    const store = createOrOpenOwnedStore(realpathSync(root.projectRoot));
+    const first = "a".repeat(64);
+    const second = "b".repeat(64);
+    mkdirSync(store.layout.generations);
+    for (const digest of [second, first]) {
+      const generation = join(store.layout.generations, digest);
+      mkdirSync(join(generation, "content"), { recursive: true });
+      writeFileSync(join(generation, "receipt.json"), "{}\n");
+    }
+    mkdirSync(store.layout.transactions);
+    writeFileSync(join(store.layout.transactions, `${second}.json`), "{}\n");
+    writeFileSync(join(store.layout.transactions, `${first}.json`), "{}\n");
+    mkdirSync(join(store.layout.staging, second), { recursive: true });
+    mkdirSync(join(store.layout.trash, first), { recursive: true });
+    mkdirSync(store.layout.lock);
+    writeFileSync(join(store.layout.lock, "owner.json"), "{}\n");
+    mkdirSync(join(store.layout.lockCandidates, second), { recursive: true });
+    mkdirSync(join(store.layout.lockCandidates, `${first}.stale`), { recursive: true });
+    const beforeMtime = lstatSync(store.layout.root, { bigint: true }).mtimeNs;
+
+    expect(inspectFixedStoreLayout(store)).toEqual({
+      activePresent: false,
+      lockPresent: true,
+      lockCandidates: [`${first}.stale`, second],
+      transactions: [first, second],
+      staging: [second],
+      generations: [
+        { manifestDigest: first, entries: ["content", "receipt.json"] },
+        { manifestDigest: second, entries: ["content", "receipt.json"] },
+      ],
+      trash: [first],
+    });
+    expect(lstatSync(store.layout.root, { bigint: true }).mtimeNs).toBe(beforeMtime);
+    expect(existsSync(store.layout.lock)).toBe(true);
+    expect(existsSync(store.layout.lockCandidates)).toBe(true);
+  });
+
+  it("does not count completed histories as pending recovery state", () => {
+    const root = temporaryProject();
+    const store = createOrOpenOwnedStore(realpathSync(root.projectRoot));
+    mkdirSync(store.layout.generations);
+    for (let index = 0; index < 129; index += 1) {
+      const generation = join(store.layout.generations, index.toString(16).padStart(64, "0"));
+      mkdirSync(join(generation, "content"), { recursive: true });
+      writeFileSync(join(generation, "receipt.json"), "{}\n");
+    }
+
+    expect(inspectFixedStoreLayout(store).generations).toHaveLength(129);
+  });
+
+  it("fails closed before retaining the 1025th generation inventory entry", () => {
+    const root = temporaryProject();
+    const store = createOrOpenOwnedStore(realpathSync(root.projectRoot));
+    mkdirSync(store.layout.generations);
+    for (let index = 0; index < MAX_WALK_ENTRIES + 1; index += 1) {
+      mkdirSync(join(store.layout.generations, index.toString(16).padStart(64, "0")));
+    }
+
+    expectFsFinding(() => inspectFixedStoreLayout(store), "METHODOLOGY_STORE_RESOURCE_LIMIT");
+  });
+
+  it("rejects unsafe fixed-layout names, links, hard links, and non-directories", () => {
+    {
+      const root = temporaryProject();
+      const store = createOrOpenOwnedStore(realpathSync(root.projectRoot));
+      writeFileSync(join(store.layout.root, "unexpected.txt"), "unexpected\n");
+      expectFsFinding(() => inspectFixedStoreLayout(store), "METHODOLOGY_STORE_PATH_UNSAFE");
+    }
+
+    {
+      const root = temporaryProject();
+      const store = createOrOpenOwnedStore(realpathSync(root.projectRoot));
+      mkdirSync(join(store.layout.generations, "not-a-digest"), { recursive: true });
+      expectFsFinding(() => inspectFixedStoreLayout(store), "METHODOLOGY_STORE_PATH_UNSAFE");
+    }
+
+    {
+      const root = temporaryProject();
+      const outside = join(root.sandboxRoot, "outside-generation");
+      mkdirSync(outside);
+      const store = createOrOpenOwnedStore(realpathSync(root.projectRoot));
+      mkdirSync(store.layout.generations);
+      symlinkSync(
+        outside,
+        join(store.layout.generations, "a".repeat(64)),
+        process.platform === "win32" ? "junction" : "dir",
+      );
+      expectFsFinding(() => inspectFixedStoreLayout(store), "METHODOLOGY_STORE_PATH_UNSAFE");
+    }
+
+    {
+      const root = temporaryProject();
+      const outside = makeSiblingCanary(root);
+      const store = createOrOpenOwnedStore(realpathSync(root.projectRoot));
+      mkdirSync(store.layout.transactions);
+      linkSync(outside.canary, join(store.layout.transactions, `${TRANSACTION_ID}.json`));
+      expectFsFinding(() => inspectFixedStoreLayout(store), "METHODOLOGY_STORE_PATH_UNSAFE");
+    }
+
+    {
+      const root = temporaryProject();
+      const store = createOrOpenOwnedStore(realpathSync(root.projectRoot));
+      mkdirSync(join(store.layout.lockCandidates, "not-a-token"), { recursive: true });
+      expectFsFinding(() => inspectFixedStoreLayout(store), "METHODOLOGY_STORE_PATH_UNSAFE");
+    }
+
+    {
+      const root = temporaryProject();
+      const outside = join(root.sandboxRoot, "outside-candidate");
+      mkdirSync(outside);
+      const store = createOrOpenOwnedStore(realpathSync(root.projectRoot));
+      mkdirSync(store.layout.lockCandidates);
+      symlinkSync(
+        outside,
+        join(store.layout.lockCandidates, "a".repeat(64)),
+        process.platform === "win32" ? "junction" : "dir",
+      );
+      expectFsFinding(() => inspectFixedStoreLayout(store), "METHODOLOGY_STORE_PATH_UNSAFE");
+    }
+
+    {
+      const root = temporaryProject();
+      const store = createOrOpenOwnedStore(realpathSync(root.projectRoot));
+      writeFileSync(store.layout.staging, "not-a-directory\n");
+      expectFsFinding(() => inspectFixedStoreLayout(store), "METHODOLOGY_STORE_PATH_UNSAFE");
+    }
+  });
+
+  it("rejects malformed fixed-layout children and aggregate inventory overflow", () => {
+    {
+      const root = temporaryProject();
+      const store = createOrOpenOwnedStore(realpathSync(root.projectRoot));
+      mkdirSync(store.layout.lock);
+      writeFileSync(join(store.layout.lock, "unexpected.json"), "{}\n");
+      expectFsFinding(() => inspectFixedStoreLayout(store), "METHODOLOGY_STORE_PATH_UNSAFE");
+    }
+
+    {
+      const root = temporaryProject();
+      const store = createOrOpenOwnedStore(realpathSync(root.projectRoot));
+      const candidate = join(store.layout.lockCandidates, "a".repeat(64));
+      mkdirSync(candidate, { recursive: true });
+      writeFileSync(join(candidate, "unexpected.json"), "{}\n");
+      expectFsFinding(() => inspectFixedStoreLayout(store), "METHODOLOGY_STORE_PATH_UNSAFE");
+    }
+
+    {
+      const root = temporaryProject();
+      const store = createOrOpenOwnedStore(realpathSync(root.projectRoot));
+      mkdirSync(store.layout.transactions);
+      writeFileSync(join(store.layout.transactions, "unsafe.json"), "{}\n");
+      expectFsFinding(() => inspectFixedStoreLayout(store), "METHODOLOGY_STORE_PATH_UNSAFE");
+    }
+
+    {
+      const root = temporaryProject();
+      const store = createOrOpenOwnedStore(realpathSync(root.projectRoot));
+      mkdirSync(join(store.layout.staging, "unsafe"), { recursive: true });
+      expectFsFinding(() => inspectFixedStoreLayout(store), "METHODOLOGY_STORE_PATH_UNSAFE");
+    }
+
+    {
+      const root = temporaryProject();
+      const store = createOrOpenOwnedStore(realpathSync(root.projectRoot));
+      const generation = join(store.layout.generations, "a".repeat(64));
+      mkdirSync(generation, { recursive: true });
+      writeFileSync(join(generation, "unexpected.json"), "{}\n");
+      expectFsFinding(() => inspectFixedStoreLayout(store), "METHODOLOGY_STORE_PATH_UNSAFE");
+    }
+
+    {
+      const root = temporaryProject();
+      const store = createOrOpenOwnedStore(realpathSync(root.projectRoot));
+      for (let index = 0; index < 64; index += 1) {
+        mkdirSync(join(store.layout.staging, index.toString(16).padStart(64, "0")), {
+          recursive: true,
+        });
+      }
+      for (let index = 64; index < 129; index += 1) {
+        mkdirSync(join(store.layout.trash, index.toString(16).padStart(64, "0")), {
+          recursive: true,
+        });
+      }
+      expectFsFinding(() => inspectFixedStoreLayout(store), "METHODOLOGY_STORE_RESOURCE_LIMIT");
+    }
   });
 
   it("creates only the fixed owned root and reopens the same identity", () => {
@@ -1138,13 +1331,80 @@ describe("Phase 4 bounded generation-store filesystem", () => {
 
     const rootFile = join(content, "rules", "root.md");
     rmSync(rootFile);
-    expect(() => verifyExpectedTree(store, content, expectedReceiptEntries())).toThrow();
+    expectFsFinding(
+      () => verifyExpectedTree(store, content, expectedReceiptEntries()),
+      "METHODOLOGY_STORE_GENERATION_INCOMPLETE",
+    );
     writeFileSync(rootFile, ROOT_BYTES);
 
     const extra = join(content, "rules", "extra.md");
     writeFileSync(extra, "extra");
-    expect(() => verifyExpectedTree(store, content, expectedReceiptEntries())).toThrow();
+    expectFsFinding(
+      () => verifyExpectedTree(store, content, expectedReceiptEntries()),
+      "METHODOLOGY_STORE_GENERATION_DRIFT",
+    );
     rmSync(extra);
+
+    const nonCanonicalExtra = join(content, "rules", "not canonical.md");
+    writeFileSync(nonCanonicalExtra, "ordinary but non-canonical");
+    expectFsFinding(
+      () => verifyExpectedTree(store, content, expectedReceiptEntries()),
+      "METHODOLOGY_STORE_PATH_UNSAFE",
+    );
+    rmSync(nonCanonicalExtra);
+
+    const unexpectedDirectory = join(content, "rules", "unexpected-directory");
+    mkdirSync(unexpectedDirectory);
+    writeFileSync(join(unexpectedDirectory, "ordinary.md"), "ordinary");
+    expectFsFinding(
+      () => verifyExpectedTree(store, content, expectedReceiptEntries()),
+      "METHODOLOGY_STORE_GENERATION_DRIFT",
+    );
+    rmSync(unexpectedDirectory, { recursive: true });
+
+    mkdirSync(unexpectedDirectory);
+    const nestedUnsafe = join(unexpectedDirectory, "nested-link.md");
+    let nestedUnsafeCreated = false;
+    try {
+      symlinkSync(outside.canary, nestedUnsafe, "file");
+      nestedUnsafeCreated = true;
+    } catch {
+      // Symlink creation may require extra privilege on Windows.
+    }
+    if (nestedUnsafeCreated) {
+      expectFsFinding(
+        () => verifyExpectedTree(store, content, expectedReceiptEntries()),
+        "METHODOLOGY_STORE_PATH_UNSAFE",
+      );
+    }
+    rmSync(unexpectedDirectory, { recursive: true });
+
+    const unsafeExtra = join(content, "rules", "unsafe-extra.md");
+    let unsafeExtraCreated = false;
+    try {
+      linkSync(outside.canary, unsafeExtra);
+      unsafeExtraCreated = true;
+    } catch {
+      // Hard-link creation is not available on every test filesystem.
+    }
+    if (unsafeExtraCreated) {
+      expectFsFinding(
+        () => verifyExpectedTree(store, content, expectedReceiptEntries()),
+        "METHODOLOGY_STORE_PATH_UNSAFE",
+      );
+      rmSync(unsafeExtra);
+    }
+
+    const outsideDirectory = join(root.sandboxRoot, "outside-extra-directory");
+    mkdirSync(outsideDirectory);
+    const linkedExtraDirectory = join(content, "rules", "linked-extra-directory");
+    if (makeDirectoryLink(outsideDirectory, linkedExtraDirectory)) {
+      expectFsFinding(
+        () => verifyExpectedTree(store, content, expectedReceiptEntries()),
+        "METHODOLOGY_STORE_PATH_UNSAFE",
+      );
+      rmSync(linkedExtraDirectory, { recursive: true });
+    }
 
     const outsideFile = join(root.sandboxRoot, "outside-bytes.md");
     writeFileSync(outsideFile, "outside");
@@ -1157,7 +1417,10 @@ describe("Phase 4 bounded generation-store filesystem", () => {
       // Symlink creation may require extra privilege on Windows.
     }
     if (symlinkCreated) {
-      expect(() => verifyExpectedTree(store, content, expectedReceiptEntries())).toThrow();
+      expectFsFinding(
+        () => verifyExpectedTree(store, content, expectedReceiptEntries()),
+        "METHODOLOGY_STORE_PATH_UNSAFE",
+      );
       rmSync(rootFile);
     }
     writeFileSync(rootFile, ROOT_BYTES);
@@ -1171,7 +1434,10 @@ describe("Phase 4 bounded generation-store filesystem", () => {
       // Hard-link creation is not available on every test filesystem.
     }
     if (hardlinkCreated) {
-      expect(() => verifyExpectedTree(store, content, expectedReceiptEntries())).toThrow();
+      expectFsFinding(
+        () => verifyExpectedTree(store, content, expectedReceiptEntries()),
+        "METHODOLOGY_STORE_PATH_UNSAFE",
+      );
       rmSync(outsideHardlink);
     }
     expect(readFileSync(outside.canary, "utf8")).toBe("outside-canary\n");
@@ -1184,14 +1450,34 @@ describe("Phase 4 bounded generation-store filesystem", () => {
     mkdirSync(content);
     const deep = join(content, ...Array.from({ length: 34 }, () => "d"));
     mkdirSync(deep, { recursive: true });
-    expect(() => verifyExpectedTree(store, content, expectedReceiptEntries())).toThrow();
+    expectFsFinding(
+      () => verifyExpectedTree(store, content, expectedReceiptEntries()),
+      "METHODOLOGY_STORE_RESOURCE_LIMIT",
+    );
+    rmSync(content, { recursive: true });
+
+    mkdirSync(join(content, "rules"), { recursive: true });
+    const nestedUnexpected = join(
+      content,
+      "rules",
+      "unexpected",
+      ...Array.from({ length: 31 }, () => "d"),
+    );
+    mkdirSync(nestedUnexpected, { recursive: true });
+    expectFsFinding(
+      () => verifyExpectedTree(store, content, expectedReceiptEntries()),
+      "METHODOLOGY_STORE_RESOURCE_LIMIT",
+    );
     rmSync(content, { recursive: true });
 
     mkdirSync(content);
     for (let index = 0; index < 1_025; index += 1) {
       writeFileSync(join(content, `extra-${index}`), "");
     }
-    expect(() => verifyExpectedTree(store, content, expectedReceiptEntries())).toThrow();
+    expectFsFinding(
+      () => verifyExpectedTree(store, content, expectedReceiptEntries()),
+      "METHODOLOGY_STORE_RESOURCE_LIMIT",
+    );
     rmSync(content, { recursive: true });
 
     mkdirSync(join(content, "rules"), { recursive: true });
@@ -1222,6 +1508,122 @@ describe("Phase 4 bounded generation-store filesystem", () => {
 
     writeFileSync(join(content, "rules", "unexpected.md"), "unexpected");
     expect(() => verifyPartialOwnedTree(store, content, expectedReceiptEntries())).toThrow();
+  });
+
+  it("shares an aggregate bounded walk budget while default walks remain independent", () => {
+    const root = temporaryProject();
+    const store = createOrOpenOwnedStore(realpathSync(root.projectRoot));
+    const first = join(store.layout.root, "first-safe-tree");
+    const second = join(store.layout.root, "second-safe-tree");
+    mkdirSync(first);
+    mkdirSync(second);
+    for (let index = 0; index < 513; index += 1) {
+      writeFileSync(join(first, `first-${index}.bin`), "");
+    }
+    for (let index = 0; index < 512; index += 1) {
+      writeFileSync(join(second, `second-${index}.bin`), "");
+    }
+
+    expect(verifyBoundedOwnedTreeSafety(store, first).files).toHaveLength(513);
+    expect(verifyBoundedOwnedTreeSafety(store, second).files).toHaveLength(512);
+
+    const budget = createStoreWalkBudget();
+    expect(verifyBoundedOwnedTreeSafety(store, first, budget).files).toHaveLength(513);
+    expectFsFinding(
+      () => verifyBoundedOwnedTreeSafety(store, second, budget),
+      "METHODOLOGY_STORE_RESOURCE_LIMIT",
+    );
+    expect(budget.entries).toBe(MAX_WALK_ENTRIES);
+  });
+
+  it("plumbs one shared budget through separate exact container checks", () => {
+    const root = temporaryProject();
+    const store = createOrOpenOwnedStore(realpathSync(root.projectRoot));
+    const entries = expectedReceiptEntries();
+    const firstGeneration = join(store.layout.generations, plannedDigest());
+    const secondGeneration = join(store.layout.generations, OTHER_DIGEST);
+    const firstReceipt = materializeGeneration(store, firstGeneration, entries);
+    mkdirSync(join(secondGeneration, "content"), { recursive: true });
+    materializeExpectedTree(join(secondGeneration, "content"), entries);
+    const secondReceipt = { ...firstReceipt, manifestDigest: OTHER_DIGEST };
+    writeExclusiveRegularFile(
+      store,
+      join(secondGeneration, "receipt.json"),
+      canonicalRecordBytes("receipt", secondReceipt),
+    );
+
+    const budget = createStoreWalkBudget();
+    verifyExpectedContainer(store, firstGeneration, "receipt", firstReceipt, entries, budget);
+    verifyExpectedContainer(store, secondGeneration, "receipt", secondReceipt, entries, budget);
+    expect(budget).toEqual({
+      entries: 6,
+      bytes: 2 * (ROOT_BYTES.byteLength + DEPENDENCY_BYTES.byteLength),
+      directories: 2,
+    });
+  });
+
+  it("safety-walks unknown ordinary content but rejects linked and hard-linked leaves", () => {
+    const root = temporaryProject();
+    const outside = makeSiblingCanary(root);
+    const store = createOrOpenOwnedStore(realpathSync(root.projectRoot));
+    const content = join(store.layout.root, "unknown-safe-tree");
+    mkdirSync(join(content, "ordinary-directory"), { recursive: true });
+    writeFileSync(join(content, "ordinary-directory", "unknown-bytes.bin"), "unknown\n");
+
+    const verified = verifyBoundedOwnedTreeSafety(store, content);
+    expect(verified.entries).toEqual([]);
+    expect(verified.files.map(({ relativePath }) => relativePath)).toEqual([
+      "ordinary-directory/unknown-bytes.bin",
+    ]);
+
+    const nonCanonical = join(content, "Root.md");
+    writeFileSync(nonCanonical, "ordinary but path-ambiguous\n");
+    expectFsFinding(
+      () => verifyBoundedOwnedTreeSafety(store, content),
+      "METHODOLOGY_STORE_PATH_UNSAFE",
+    );
+    rmSync(nonCanonical);
+
+    const linked = join(content, "linked.bin");
+    let linkedCreated = false;
+    try {
+      symlinkSync(outside.canary, linked, "file");
+      linkedCreated = true;
+    } catch {
+      // Symlink creation may require extra privilege on Windows.
+    }
+    if (linkedCreated) {
+      expectFsFinding(
+        () => verifyBoundedOwnedTreeSafety(store, content),
+        "METHODOLOGY_STORE_PATH_UNSAFE",
+      );
+      rmSync(linked);
+    }
+
+    const hardLinked = join(content, "hard-linked.bin");
+    let hardLinkCreated = false;
+    try {
+      linkSync(outside.canary, hardLinked);
+      hardLinkCreated = true;
+    } catch {
+      // Hard-link creation is not available on every test filesystem.
+    }
+    if (hardLinkCreated) {
+      expectFsFinding(
+        () => verifyBoundedOwnedTreeSafety(store, content),
+        "METHODOLOGY_STORE_PATH_UNSAFE",
+      );
+      rmSync(hardLinked);
+    }
+
+    const oversized = join(content, "oversized.bin");
+    writeFileSync(oversized, Buffer.alloc(MAX_PAYLOAD_BYTES + 1));
+    expectFsFinding(
+      () => verifyBoundedOwnedTreeSafety(store, content),
+      "METHODOLOGY_STORE_PATH_UNSAFE",
+    );
+    rmSync(oversized);
+    expect(readFileSync(outside.canary, "utf8")).toBe("outside-canary\n");
   });
 
   it("atomically replaces a record through one exact transaction-bound sibling", () => {

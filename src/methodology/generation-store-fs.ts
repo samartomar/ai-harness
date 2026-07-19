@@ -8,6 +8,7 @@ import {
   fsyncSync,
   lstatSync,
   mkdirSync,
+  opendirSync,
   openSync,
   readdirSync,
   realpathSync,
@@ -32,6 +33,7 @@ import {
   MAX_GENERATED_DIRECTORIES,
   MAX_PAYLOAD_BYTES,
   MAX_RECORD_BYTES,
+  MAX_RECOVERY_RECORDS,
   MAX_TARGET_SEGMENTS,
   MAX_WALK_BYTES,
   MAX_WALK_ENTRIES,
@@ -52,6 +54,17 @@ const DIRECTORY_SYNC_UNSUPPORTED = new Set(["EBADF", "EINVAL", "EISDIR", "ENOTSU
 const TRANSACTION_FILENAME_PATTERN = /^([0-9a-f]{64})\.json$/;
 const TRANSACTION_TEMP_PATTERN = /^\.([0-9a-f]{64})\.([a-z][a-z-]{0,63})\.tmp$/;
 const ACTIVE_TEMP_PATTERN = /^\.active\.([0-9a-f]{64})\.tmp$/;
+const LOCK_CANDIDATE_PATTERN = /^[0-9a-f]{64}(?:\.stale)?$/;
+const FIXED_ROOT_ENTRIES = new Set([
+  "root.json",
+  "active.json",
+  "lock",
+  "lock-candidates",
+  "transactions",
+  "staging",
+  "generations",
+  "trash",
+]);
 const APPLY_NEXT_PHASE: Readonly<Record<string, string | undefined>> = Object.freeze({
   prepared: "staged",
   staged: "generation-reserved",
@@ -82,6 +95,21 @@ export type StoreLayout = Readonly<{
 export type OwnedStore = Readonly<{
   layout: StoreLayout;
   rootRecord: RootRecord;
+}>;
+
+export type FixedGenerationLayout = Readonly<{
+  manifestDigest: string;
+  entries: readonly string[];
+}>;
+
+export type FixedStoreLayoutInventory = Readonly<{
+  activePresent: boolean;
+  lockPresent: boolean;
+  lockCandidates: readonly string[];
+  transactions: readonly string[];
+  staging: readonly string[];
+  generations: readonly FixedGenerationLayout[];
+  trash: readonly string[];
 }>;
 
 export type StoreObjectIdentity = Readonly<{
@@ -125,6 +153,17 @@ export type VerifiedTree = Readonly<{
   missing: readonly string[];
   container: VerifiedContainer | null;
 }>;
+
+/** Mutable aggregate limits shared explicitly across one bounded inspection. */
+export type StoreWalkBudget = {
+  entries: number;
+  bytes: number;
+  directories: number;
+};
+
+export function createStoreWalkBudget(): StoreWalkBudget {
+  return { entries: 0, bytes: 0, directories: 0 };
+}
 
 export type ExclusiveWriteResult = Readonly<{
   digest: string;
@@ -540,6 +579,231 @@ export function assertOwnedStorePhase(store: OwnedStore): void {
   }
 }
 
+function inventoryDirectory(
+  store: OwnedStore,
+  absPath: string,
+  label: string,
+  limit = MAX_RECOVERY_RECORDS,
+): readonly Dirent[] | undefined {
+  if (lstatIfPresent(absPath) === undefined) return undefined;
+  validateOrdinaryDirectory(store.layout.root, store.layout.projectDevice, absPath, label);
+  let directory: ReturnType<typeof opendirSync>;
+  try {
+    directory = opendirSync(absPath);
+  } catch {
+    fail(`${label} is inaccessible`, "METHODOLOGY_STORE_FILESYSTEM_FAILURE");
+  }
+  const entries: Dirent[] = [];
+  try {
+    for (;;) {
+      const entry = directory.readSync();
+      if (entry === null) break;
+      if (entries.length >= limit) {
+        fail(`${label} exceeds its inventory limit`, "METHODOLOGY_STORE_RESOURCE_LIMIT");
+      }
+      entries.push(entry);
+    }
+  } catch (error) {
+    if (error instanceof GenerationStoreFsError) throw error;
+    fail(`${label} inventory failed`, "METHODOLOGY_STORE_FILESYSTEM_FAILURE");
+  } finally {
+    try {
+      directory.closeSync();
+    } catch {
+      fail(`${label} inventory close failed`, "METHODOLOGY_STORE_FILESYSTEM_FAILURE");
+    }
+  }
+  return Object.freeze([...entries].sort((left, right) => compareStrings(left.name, right.name)));
+}
+
+function validateInventoryRegularFile(
+  store: OwnedStore,
+  absPath: string,
+  dirent: Dirent | undefined,
+  label: string,
+): void {
+  const stats = lstatBigInt(absPath, label);
+  if (
+    dirent?.isSymbolicLink() === true ||
+    stats.isSymbolicLink() ||
+    (dirent !== undefined && !dirent.isFile()) ||
+    !stats.isFile() ||
+    stats.nlink !== 1n ||
+    stats.dev.toString(10) !== store.layout.projectDevice ||
+    stats.size > BigInt(MAX_RECORD_BYTES)
+  ) {
+    fail(`${label} must be a bounded single-link regular file`);
+  }
+  let resolved: string;
+  try {
+    resolved = realpathSync(absPath);
+  } catch {
+    fail(`${label} realpath is inaccessible`);
+  }
+  if (!pathsEqual(resolved, absPath) || !containedPath(store.layout.root, resolved)) {
+    fail(`${label} escaped or changed realpath`);
+  }
+}
+
+function validateInventoryDirectory(
+  store: OwnedStore,
+  parent: string,
+  entry: Dirent,
+  label: string,
+): string {
+  const absPath = join(parent, entry.name);
+  if (entry.isSymbolicLink() || !entry.isDirectory()) {
+    fail(`${label} must be an ordinary directory`);
+  }
+  validateOrdinaryDirectory(store.layout.root, store.layout.projectDevice, absPath, label);
+  return absPath;
+}
+
+function countInventory(total: number, count: number): number {
+  const next = total + count;
+  if (next > MAX_RECOVERY_RECORDS) {
+    fail("fixed layout exceeds its inventory limit", "METHODOLOGY_STORE_RESOURCE_LIMIT");
+  }
+  return next;
+}
+
+/** Reads only fixed store paths. It never creates state, locks, or follows a caller path. */
+export function inspectFixedStoreLayout(store: OwnedStore): FixedStoreLayoutInventory {
+  assertOwnedStorePhase(store);
+  const rootEntries = inventoryDirectory(store, store.layout.root, "store root");
+  if (rootEntries === undefined) {
+    fail("owned store root disappeared", "METHODOLOGY_STORE_ROOT_UNOWNED");
+  }
+  for (const entry of rootEntries) {
+    if (!FIXED_ROOT_ENTRIES.has(entry.name)) fail("store root contains an unexpected entry");
+  }
+
+  const activePresent = lstatIfPresent(store.layout.active) !== undefined;
+  if (activePresent) {
+    validateInventoryRegularFile(store, store.layout.active, undefined, "activation record");
+  }
+
+  let inventoryCount = 0;
+  const lockEntries = inventoryDirectory(store, store.layout.lock, "cooperative lock");
+  if (lockEntries !== undefined) {
+    inventoryCount = countInventory(inventoryCount, 1);
+    for (const entry of lockEntries) {
+      if (entry.name !== "owner.json") fail("cooperative lock contains an unexpected entry");
+      validateInventoryRegularFile(
+        store,
+        join(store.layout.lock, entry.name),
+        entry,
+        "cooperative lock owner",
+      );
+    }
+  }
+
+  const candidateEntries = inventoryDirectory(
+    store,
+    store.layout.lockCandidates,
+    "lock candidates",
+  );
+  const lockCandidates: string[] = [];
+  for (const entry of candidateEntries ?? []) {
+    if (!LOCK_CANDIDATE_PATTERN.test(entry.name)) fail("lock candidate name is unsafe");
+    const candidateRoot = validateInventoryDirectory(
+      store,
+      store.layout.lockCandidates,
+      entry,
+      "lock candidate",
+    );
+    const children = inventoryDirectory(store, candidateRoot, "lock candidate");
+    for (const child of children ?? []) {
+      if (child.name !== "owner.json") fail("lock candidate contains an unexpected entry");
+      validateInventoryRegularFile(
+        store,
+        join(candidateRoot, child.name),
+        child,
+        "lock candidate owner",
+      );
+    }
+    lockCandidates.push(entry.name);
+  }
+  inventoryCount = countInventory(inventoryCount, lockCandidates.length);
+
+  const transactionEntries = inventoryDirectory(store, store.layout.transactions, "transactions");
+  const transactions: string[] = [];
+  for (const entry of transactionEntries ?? []) {
+    const match = TRANSACTION_FILENAME_PATTERN.exec(entry.name);
+    if (match?.[1] === undefined) fail("transaction filename is unsafe");
+    validateInventoryRegularFile(
+      store,
+      join(store.layout.transactions, entry.name),
+      entry,
+      "transaction record",
+    );
+    transactions.push(match[1]);
+  }
+  inventoryCount = countInventory(inventoryCount, transactions.length);
+
+  const directoryIds = (absPath: string, label: string): readonly string[] => {
+    const entries = inventoryDirectory(store, absPath, label);
+    const ids: string[] = [];
+    for (const entry of entries ?? []) {
+      if (!STORE_ID_PATTERN.test(entry.name)) fail(`${label} name is unsafe`);
+      validateInventoryDirectory(store, absPath, entry, label);
+      ids.push(entry.name);
+    }
+    inventoryCount = countInventory(inventoryCount, ids.length);
+    return Object.freeze(ids);
+  };
+
+  const staging = directoryIds(store.layout.staging, "staging");
+  const generationEntries = inventoryDirectory(
+    store,
+    store.layout.generations,
+    "generations",
+    MAX_WALK_ENTRIES,
+  );
+  const generations: FixedGenerationLayout[] = [];
+  for (const entry of generationEntries ?? []) {
+    if (!DIGEST_PATTERN.test(entry.name)) fail("generation name is unsafe");
+    const generationRoot = validateInventoryDirectory(
+      store,
+      store.layout.generations,
+      entry,
+      "generation",
+    );
+    const children = inventoryDirectory(store, generationRoot, "generation");
+    const names: string[] = [];
+    for (const child of children ?? []) {
+      if (child.name === "content") {
+        validateInventoryDirectory(store, generationRoot, child, "generation content");
+      } else if (child.name === "receipt.json" || child.name === "incomplete.json") {
+        validateInventoryRegularFile(
+          store,
+          join(generationRoot, child.name),
+          child,
+          "generation metadata",
+        );
+      } else {
+        fail("generation contains an unexpected entry");
+      }
+      names.push(child.name);
+    }
+    generations.push(Object.freeze({ manifestDigest: entry.name, entries: Object.freeze(names) }));
+    const completed = names.length === 2 && names[0] === "content" && names[1] === "receipt.json";
+    if (!completed) inventoryCount = countInventory(inventoryCount, 1);
+  }
+  const trash = directoryIds(store.layout.trash, "trash");
+  void inventoryCount;
+
+  return Object.freeze({
+    activePresent,
+    lockPresent: lockEntries !== undefined,
+    lockCandidates: Object.freeze(lockCandidates),
+    transactions: Object.freeze(transactions),
+    staging,
+    generations: Object.freeze(generations),
+    trash,
+  });
+}
+
 function assertLexicallyOwned(store: OwnedStore, absPath: string, allowRoot = false): void {
   if (!isAbsolute(absPath) || !pathsEqual(absPath, normalize(absPath))) {
     fail("owned path must be absolute and normalized");
@@ -721,10 +985,12 @@ function assertRecordPathBinding(
       if (
         basename(absPath) !== "receipt.json" ||
         basename(generationDirectory) !== parsed.manifestDigest ||
-        !pathsEqual(dirname(generationDirectory), store.layout.generations) ||
-        parsed.rootId !== store.rootRecord.rootId
+        !pathsEqual(dirname(generationDirectory), store.layout.generations)
       ) {
         fail("receipt path is not bound to its generation");
+      }
+      if (parsed.rootId !== store.rootRecord.rootId) {
+        fail("receipt is not owned by this store", "METHODOLOGY_STORE_ROOT_UNOWNED");
       }
       return;
     }
@@ -975,13 +1241,119 @@ function validateTreeRoot(store: OwnedStore, treeRoot: string): StoreObjectIdent
   );
 }
 
+function assertWalkBudget(budget: StoreWalkBudget): void {
+  const values: ReadonlyArray<readonly [number, number]> = [
+    [budget.entries, MAX_WALK_ENTRIES],
+    [budget.bytes, MAX_WALK_BYTES],
+    [budget.directories, MAX_GENERATED_DIRECTORIES],
+  ];
+  if (
+    values.some(([value, maximum]) => !Number.isSafeInteger(value) || value < 0 || value > maximum)
+  ) {
+    fail("tree walk budget is invalid", "METHODOLOGY_STORE_RESOURCE_LIMIT");
+  }
+}
+
+function consumeWalkEntry(budget: StoreWalkBudget): void {
+  assertWalkBudget(budget);
+  if (budget.entries >= MAX_WALK_ENTRIES) {
+    fail("tree entry count exceeds its limit", "METHODOLOGY_STORE_RESOURCE_LIMIT");
+  }
+  budget.entries += 1;
+}
+
+function consumeWalkDirectory(budget: StoreWalkBudget): void {
+  assertWalkBudget(budget);
+  if (budget.directories >= MAX_GENERATED_DIRECTORIES) {
+    fail("tree directory count exceeds its limit", "METHODOLOGY_STORE_RESOURCE_LIMIT");
+  }
+  budget.directories += 1;
+}
+
+function consumeWalkBytes(budget: StoreWalkBudget, bytes: number): void {
+  assertWalkBudget(budget);
+  if (!Number.isSafeInteger(bytes) || bytes < 0 || bytes > MAX_WALK_BYTES - budget.bytes) {
+    fail("tree byte count exceeds its limit", "METHODOLOGY_STORE_RESOURCE_LIMIT");
+  }
+  budget.bytes += bytes;
+}
+
+function readBoundedWalkChildren(absDirectory: string, budget: StoreWalkBudget): readonly Dirent[] {
+  let directory: ReturnType<typeof opendirSync>;
+  try {
+    directory = opendirSync(absDirectory);
+  } catch {
+    fail("tree directory is inaccessible");
+  }
+  const children: Dirent[] = [];
+  try {
+    for (;;) {
+      const child = directory.readSync();
+      if (child === null) break;
+      consumeWalkEntry(budget);
+      children.push(child);
+    }
+  } catch (error) {
+    if (error instanceof GenerationStoreFsError) throw error;
+    fail("tree directory inventory failed", "METHODOLOGY_STORE_FILESYSTEM_FAILURE");
+  } finally {
+    try {
+      directory.closeSync();
+    } catch {
+      fail("tree directory inventory close failed", "METHODOLOGY_STORE_FILESYSTEM_FAILURE");
+    }
+  }
+  children.sort((left, right) => compareStrings(left.name, right.name));
+  return children;
+}
+
+function readFixedContainerChildren(absDirectory: string): readonly Dirent[] {
+  let directory: ReturnType<typeof opendirSync>;
+  try {
+    directory = opendirSync(absDirectory);
+  } catch {
+    fail("container directory is inaccessible");
+  }
+  const children: Dirent[] = [];
+  try {
+    for (;;) {
+      const child = directory.readSync();
+      if (child === null) break;
+      if (children.length >= 2) fail("container contains an unexpected entry");
+      children.push(child);
+    }
+  } catch (error) {
+    if (error instanceof GenerationStoreFsError) throw error;
+    fail("container directory inventory failed", "METHODOLOGY_STORE_FILESYSTEM_FAILURE");
+  } finally {
+    try {
+      directory.closeSync();
+    } catch {
+      fail("container directory inventory close failed", "METHODOLOGY_STORE_FILESYSTEM_FAILURE");
+    }
+  }
+  children.sort((left, right) => compareStrings(left.name, right.name));
+  return children;
+}
+
+function assertCanonicalWalkRelativePath(relativePath: string): void {
+  if (relativePath.split("/").length > MAX_TARGET_SEGMENTS) {
+    fail("tree depth exceeds its limit", "METHODOLOGY_STORE_RESOURCE_LIMIT");
+  }
+  if (!isCanonicalProjectionTarget(relativePath)) {
+    fail("tree contains a non-canonical path");
+  }
+}
+
 function verifyTree(
   store: OwnedStore,
   treeRoot: string,
   rawEntries: readonly ReceiptEntry[],
   allowMissing: boolean,
+  budget: StoreWalkBudget,
 ): VerifiedTree {
   assertOwnedStorePhase(store);
+  assertWalkBudget(budget);
   const entries = validatedEntries(store, rawEntries);
   const expectedFiles = new Map(entries.map((entry) => [entry.target, entry]));
   const allowedDirectories = expectedDirectories(entries);
@@ -990,27 +1362,12 @@ function verifyTree(
   const directories: VerifiedDirectory[] = [
     Object.freeze({ relativePath: "", identity: validateTreeRoot(store, treeRoot) }),
   ];
-  let walkedEntries = 0;
-  let walkedBytes = 0;
-  let walkedDirectories = 0;
-
   const visit = (absDirectory: string, relativeDirectory: string, depth: number): void => {
     if (depth > MAX_TARGET_SEGMENTS) {
       fail("tree depth exceeds its limit", "METHODOLOGY_STORE_RESOURCE_LIMIT");
     }
-    let children: Dirent[];
-    try {
-      children = readdirSync(absDirectory, { withFileTypes: true }).sort((left, right) =>
-        compareStrings(left.name, right.name),
-      );
-    } catch {
-      fail("tree directory is inaccessible");
-    }
+    const children = readBoundedWalkChildren(absDirectory, budget);
     for (const child of children) {
-      walkedEntries += 1;
-      if (walkedEntries > MAX_WALK_ENTRIES) {
-        fail("tree entry count exceeds its limit", "METHODOLOGY_STORE_RESOURCE_LIMIT");
-      }
       const relativePath =
         relativeDirectory === "" ? child.name : `${relativeDirectory}/${child.name}`;
       const absPath = join(absDirectory, child.name);
@@ -1022,19 +1379,19 @@ function verifyTree(
         fail("tree entry changed device");
       }
       if (child.isDirectory() && childStats.isDirectory()) {
-        if (!allowedDirectories.has(relativePath)) {
-          fail("tree contains an unexpected directory");
-        }
-        walkedDirectories += 1;
-        if (walkedDirectories > MAX_GENERATED_DIRECTORIES) {
-          fail("tree directory count exceeds its limit", "METHODOLOGY_STORE_RESOURCE_LIMIT");
-        }
         const directoryIdentity = validateOrdinaryDirectory(
           store.layout.root,
           store.layout.projectDevice,
           absPath,
           "tree directory",
         );
+        assertCanonicalWalkRelativePath(relativePath);
+        if (!allowedDirectories.has(relativePath)) {
+          consumeWalkDirectory(budget);
+          verifyBoundedOwnedTreeSafetyAt(store, absPath, budget, relativePath, depth + 1);
+          fail("tree contains an unexpected directory", "METHODOLOGY_STORE_GENERATION_DRIFT");
+        }
+        consumeWalkDirectory(budget);
         directories.push(Object.freeze({ relativePath, identity: directoryIdentity }));
         visit(absPath, relativePath, depth + 1);
         continue;
@@ -1042,14 +1399,12 @@ function verifyTree(
       if (!child.isFile() || !childStats.isFile()) {
         fail("tree contains a non-regular entry");
       }
-      const expected = expectedFiles.get(relativePath);
-      if (expected === undefined || !isCanonicalProjectionTarget(relativePath)) {
-        fail("tree contains an unexpected file");
-      }
       const opened = readOwnedRegularFile(store, absPath, MAX_PAYLOAD_BYTES);
-      walkedBytes += opened.contents.byteLength;
-      if (walkedBytes > MAX_WALK_BYTES) {
-        fail("tree byte count exceeds its limit", "METHODOLOGY_STORE_RESOURCE_LIMIT");
+      consumeWalkBytes(budget, opened.contents.byteLength);
+      assertCanonicalWalkRelativePath(relativePath);
+      const expected = expectedFiles.get(relativePath);
+      if (expected === undefined) {
+        fail("tree contains an unexpected file", "METHODOLOGY_STORE_GENERATION_DRIFT");
       }
       const digest = sha256Bytes(opened.contents);
       if (opened.contents.byteLength !== expected.bytes || digest !== expected.contentDigest) {
@@ -1090,16 +1445,106 @@ export function verifyExpectedTree(
   store: OwnedStore,
   treeRoot: string,
   entries: readonly ReceiptEntry[],
+  budget: StoreWalkBudget = createStoreWalkBudget(),
 ): VerifiedTree {
-  return verifyTree(store, treeRoot, entries, false);
+  return verifyTree(store, treeRoot, entries, false, budget);
 }
 
 export function verifyPartialOwnedTree(
   store: OwnedStore,
   treeRoot: string,
   entries: readonly ReceiptEntry[],
+  budget: StoreWalkBudget = createStoreWalkBudget(),
 ): VerifiedTree {
-  return verifyTree(store, treeRoot, entries, true);
+  return verifyTree(store, treeRoot, entries, true, budget);
+}
+
+/**
+ * Establishes only bounded filesystem safety when no trustworthy expected-entry
+ * set exists. Ordinary unknown content is observed; links and aliases fail closed.
+ */
+function verifyBoundedOwnedTreeSafetyAt(
+  store: OwnedStore,
+  treeRoot: string,
+  budget: StoreWalkBudget,
+  relativePrefix: string,
+  baseDepth: number,
+): VerifiedTree {
+  assertOwnedStorePhase(store);
+  assertWalkBudget(budget);
+  if (!Number.isSafeInteger(baseDepth) || baseDepth < 0 || baseDepth > MAX_TARGET_SEGMENTS) {
+    fail("tree depth exceeds its limit", "METHODOLOGY_STORE_RESOURCE_LIMIT");
+  }
+  if (relativePrefix !== "") assertCanonicalWalkRelativePath(relativePrefix);
+  const files: VerifiedFile[] = [];
+  const directories: VerifiedDirectory[] = [
+    Object.freeze({ relativePath: relativePrefix, identity: validateTreeRoot(store, treeRoot) }),
+  ];
+
+  const visit = (absDirectory: string, relativeDirectory: string, depth: number): void => {
+    if (depth > MAX_TARGET_SEGMENTS) {
+      fail("tree depth exceeds its limit", "METHODOLOGY_STORE_RESOURCE_LIMIT");
+    }
+    for (const child of readBoundedWalkChildren(absDirectory, budget)) {
+      const relativePath =
+        relativeDirectory === "" ? child.name : `${relativeDirectory}/${child.name}`;
+      const absPath = join(absDirectory, child.name);
+      const childStats = lstatBigInt(absPath, "tree entry");
+      if (child.isSymbolicLink() || childStats.isSymbolicLink()) {
+        fail("tree contains a linked entry");
+      }
+      if (childStats.dev.toString(10) !== store.layout.projectDevice) {
+        fail("tree entry changed device");
+      }
+      if (child.isDirectory() && childStats.isDirectory()) {
+        const directoryIdentity = validateOrdinaryDirectory(
+          store.layout.root,
+          store.layout.projectDevice,
+          absPath,
+          "tree directory",
+        );
+        assertCanonicalWalkRelativePath(relativePath);
+        consumeWalkDirectory(budget);
+        directories.push(Object.freeze({ relativePath, identity: directoryIdentity }));
+        visit(absPath, relativePath, depth + 1);
+        continue;
+      }
+      if (!child.isFile() || !childStats.isFile()) {
+        fail("tree contains a non-regular entry");
+      }
+      const opened = readOwnedRegularFile(store, absPath, MAX_PAYLOAD_BYTES);
+      consumeWalkBytes(budget, opened.contents.byteLength);
+      assertCanonicalWalkRelativePath(relativePath);
+      files.push(
+        Object.freeze({
+          relativePath,
+          digest: sha256Bytes(opened.contents),
+          bytes: opened.contents.byteLength,
+          identity: opened.identity,
+        }),
+      );
+    }
+  };
+  visit(treeRoot, relativePrefix, baseDepth);
+
+  files.sort((left, right) => compareStrings(left.relativePath, right.relativePath));
+  directories.sort((left, right) => compareStrings(left.relativePath, right.relativePath));
+  return Object.freeze({
+    root: treeRoot,
+    entries: Object.freeze([]),
+    files: Object.freeze(files),
+    directories: Object.freeze(directories),
+    missing: Object.freeze([]),
+    container: null,
+  });
+}
+
+export function verifyBoundedOwnedTreeSafety(
+  store: OwnedStore,
+  treeRoot: string,
+  budget: StoreWalkBudget = createStoreWalkBudget(),
+): VerifiedTree {
+  return verifyBoundedOwnedTreeSafetyAt(store, treeRoot, budget, "", 0);
 }
 
 function containerMetadataName(kind: VerifiedContainerKind): VerifiedContainer["metadataName"] {
@@ -1185,8 +1630,10 @@ function verifyContainerAt(
   entries: readonly ReceiptEntry[],
   claimedContainer: VerifiedContainer,
   allowMissing: boolean,
+  budget: StoreWalkBudget = createStoreWalkBudget(),
 ): VerifiedTree {
   assertOwnedStorePhase(store);
+  assertWalkBudget(budget);
   let metadataRecord: unknown;
   try {
     metadataRecord = JSON.parse(claimedContainer.metadataCanonical);
@@ -1212,14 +1659,7 @@ function verifyContainerAt(
   }
   const normalizedEntries = rebound.entries;
   const rootIdentity = validateTreeRoot(store, treeRoot);
-  let children: Dirent[];
-  try {
-    children = readdirSync(treeRoot, { withFileTypes: true }).sort((left, right) =>
-      compareStrings(left.name, right.name),
-    );
-  } catch {
-    fail("container directory is inaccessible");
-  }
+  const children = readFixedContainerChildren(treeRoot);
   for (const child of children) {
     if (child.name !== "content" && child.name !== container.metadataName) {
       fail("container contains an unexpected entry");
@@ -1276,7 +1716,7 @@ function verifyContainerAt(
     ) {
       fail("container content is not an ordinary directory");
     }
-    const content = verifyTree(store, contentPath, normalizedEntries, allowMissing);
+    const content = verifyTree(store, contentPath, normalizedEntries, allowMissing, budget);
     for (const file of content.files) {
       files.push(
         Object.freeze({
@@ -1321,6 +1761,7 @@ export function verifyExpectedContainer(
   kind: VerifiedContainerKind,
   metadataRecord: unknown,
   entries: readonly ReceiptEntry[],
+  budget: StoreWalkBudget = createStoreWalkBudget(),
 ): VerifiedTree {
   const expected = containerDescriptor(store, kind, metadataRecord, entries);
   const metadataPath = join(treeRoot, expected.container.metadataName);
@@ -1328,7 +1769,7 @@ export function verifyExpectedContainer(
   if (stored.bytes.toString("utf8") !== expected.container.metadataCanonical) {
     fail("stored container metadata is not the expected canonical record");
   }
-  return verifyContainerAt(store, treeRoot, expected.entries, expected.container, false);
+  return verifyContainerAt(store, treeRoot, expected.entries, expected.container, false, budget);
 }
 
 export function verifyPartialSourceContainer(
@@ -1337,6 +1778,7 @@ export function verifyPartialSourceContainer(
   kind: Exclude<VerifiedContainerKind, "receipt">,
   metadataRecord: unknown,
   entries: readonly ReceiptEntry[],
+  budget: StoreWalkBudget = createStoreWalkBudget(),
 ): VerifiedTree {
   const expected = containerDescriptor(store, kind, metadataRecord, entries);
   const metadataPath = join(treeRoot, expected.container.metadataName);
@@ -1344,7 +1786,7 @@ export function verifyPartialSourceContainer(
   if (stored.bytes.toString("utf8") !== expected.container.metadataCanonical) {
     fail("stored partial-container metadata is not the expected canonical record");
   }
-  return verifyContainerAt(store, treeRoot, expected.entries, expected.container, true);
+  return verifyContainerAt(store, treeRoot, expected.entries, expected.container, true, budget);
 }
 
 export function verifyPartialOwnedContainer(
@@ -1353,6 +1795,7 @@ export function verifyPartialOwnedContainer(
   kind: VerifiedContainerKind,
   metadataRecord: unknown,
   entries: readonly ReceiptEntry[],
+  budget: StoreWalkBudget = createStoreWalkBudget(),
 ): VerifiedTree {
   assertBoundTrashRoot(store, treeRoot);
   const expected = containerDescriptor(store, kind, metadataRecord, entries);
@@ -1368,7 +1811,7 @@ export function verifyPartialOwnedContainer(
   ) {
     fail("incomplete trash identity is not transaction-bound");
   }
-  return verifyContainerAt(store, treeRoot, expected.entries, expected.container, true);
+  return verifyContainerAt(store, treeRoot, expected.entries, expected.container, true, budget);
 }
 
 function identityByRelative<T extends { relativePath: string; identity: StoreObjectIdentity }>(
