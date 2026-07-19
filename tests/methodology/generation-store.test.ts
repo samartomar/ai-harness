@@ -10,6 +10,7 @@ import {
   unlinkSync,
   writeFileSync,
 } from "node:fs";
+import { createRequire, syncBuiltinESMExports } from "node:module";
 import { dirname, join } from "node:path";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import * as generationStoreModule from "../../src/methodology/generation-store.js";
@@ -59,6 +60,7 @@ const OTHER_DIGEST = "b".repeat(64);
 const TRANSACTION_ID = "d".repeat(64);
 const LOCK_TOKEN = "a".repeat(64);
 const FIXED_ROOT_ID = "f".repeat(64);
+const mutableFs = createRequire(import.meta.url)("node:fs") as typeof import("node:fs");
 const roots: TemporaryProject[] = [];
 const ORIGINAL_UMASK = process.platform === "win32" ? undefined : process.umask();
 
@@ -1233,6 +1235,54 @@ describe("generation store apply", { timeout: 30_000 }, () => {
     expectApply(result, "blocked", null, null, "METHODOLOGY_STORE_PLAN_STALE");
     expect(existsSync(storeRoot)).toBe(false);
     expect(deterministicTreeSnapshot(root.projectRoot)).toEqual(projectBefore);
+    expect(readFileSync(outside.canary, "utf8")).toBe("outside-canary\n");
+  });
+
+  it("does not adopt a store that appears during an absent preflight observation", () => {
+    const root = temporaryProject();
+    const outside = makeSiblingCanary(root);
+    const plan = requirePlanned(binaryPlannedFixture());
+    const aihRoot = join(root.projectRoot, ".aih");
+    const originalLstatSync = mutableFs.lstatSync;
+    let injected = false;
+    let appearedStore: ReturnType<typeof createOrOpenOwnedStore> | undefined;
+    let appearedBefore: Readonly<Record<string, string>> | undefined;
+    const injectedLstatSync = ((...args: unknown[]) => {
+      if (!injected && args[0] === aihRoot) {
+        injected = true;
+        mutableFs.lstatSync = originalLstatSync;
+        syncBuiltinESMExports();
+        try {
+          appearedStore = createOrOpenOwnedStore(root.projectRoot);
+          appearedBefore = identityTreeSnapshot(root.projectRoot);
+        } finally {
+          mutableFs.lstatSync = injectedLstatSync;
+          syncBuiltinESMExports();
+        }
+        throw Object.assign(new Error("synthetic absent store observation"), { code: "ENOENT" });
+      }
+      return Reflect.apply(originalLstatSync, mutableFs, args);
+    }) as typeof originalLstatSync;
+    mutableFs.lstatSync = injectedLstatSync;
+    syncBuiltinESMExports();
+
+    let result: ApplyProjectionResult;
+    try {
+      result = applyProjection(
+        applyInput(root.projectRoot, plan, binaryPayloadFixture(), OTHER_DIGEST),
+      );
+    } finally {
+      mutableFs.lstatSync = originalLstatSync;
+      syncBuiltinESMExports();
+    }
+
+    expect(injected).toBe(true);
+    if (appearedStore === undefined || appearedBefore === undefined) {
+      throw new Error("store appearance was not injected");
+    }
+    expectApply(result, "blocked", null, null, "METHODOLOGY_STORE_PLAN_STALE");
+    expect(identityTreeSnapshot(root.projectRoot)).toEqual(appearedBefore);
+    expect(existsSync(appearedStore.layout.lockCandidates)).toBe(false);
     expect(readFileSync(outside.canary, "utf8")).toBe("outside-canary\n");
   });
 
