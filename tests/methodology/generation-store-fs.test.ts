@@ -18,6 +18,7 @@ import {
   ActivationRecordSchema,
   canonicalRecordBytes,
   LockOwnerRecordSchema,
+  MAX_MANIFEST_ENTRIES,
   MAX_PAYLOAD_BYTES,
   MAX_RECORD_BYTES,
   RootRecordSchema,
@@ -32,7 +33,9 @@ import {
   quarantineExactDirectory,
   readStoreRecord,
   removeVerifiedTree,
+  verifyExpectedContainer,
   verifyExpectedTree,
+  verifyPartialOwnedContainer,
   verifyPartialOwnedTree,
   writeAtomicRecord,
   writeExclusiveRegularFile,
@@ -50,7 +53,6 @@ import {
 
 const TRANSACTION_ID = "d".repeat(64);
 const OTHER_DIGEST = "b".repeat(64);
-const RECEIPT_BYTES = Buffer.from('{"synthetic":"receipt"}\n');
 const roots: TemporaryProject[] = [];
 
 function temporaryProject(): TemporaryProject {
@@ -101,30 +103,71 @@ function writeActivationJournal(
   );
 }
 
-function generationEntries() {
-  return [
-    ...expectedReceiptEntries().map((entry) => ({
-      ...entry,
-      target: `content/${entry.target}`,
-    })),
-    {
-      artifactId: "receipt-metadata",
-      target: "receipt.json",
-      sourceLocator: "synthetic:receipt-metadata",
-      contentDigest: sha256Bytes(RECEIPT_BYTES),
-      bytes: RECEIPT_BYTES.length,
-    },
-  ];
-}
-
 function materializeExpectedTree(contentRoot: string, entries = expectedReceiptEntries()): void {
   const payloadById = new Map(
     payloadFixture().map((payload) => [payload.artifactId, payload.bytes]),
   );
-  payloadById.set("receipt-metadata", RECEIPT_BYTES);
   for (const entry of entries) {
     const bytes = payloadById.get(entry.artifactId);
     if (bytes === undefined) throw new Error("fixture payload is missing");
+    const target = join(contentRoot, ...entry.target.split("/"));
+    mkdirSync(dirname(target), { recursive: true });
+    writeFileSync(target, bytes, { mode: 0o600 });
+  }
+}
+
+function generationReceipt(
+  store: ReturnType<typeof createOrOpenOwnedStore>,
+  entries = expectedReceiptEntries(),
+) {
+  return {
+    schemaVersion: 1 as const,
+    rootId: store.rootRecord.rootId,
+    manifestDigest: plannedDigest(),
+    entries,
+  };
+}
+
+function materializeGeneration(
+  store: ReturnType<typeof createOrOpenOwnedStore>,
+  generation: string,
+  entries = expectedReceiptEntries(),
+): ReturnType<typeof generationReceipt> {
+  mkdirSync(join(generation, "content"), { recursive: true });
+  materializeExpectedTree(join(generation, "content"), entries);
+  const receipt = generationReceipt(store, entries);
+  writeExclusiveRegularFile(
+    store,
+    join(generation, "receipt.json"),
+    canonicalRecordBytes("receipt", receipt),
+  );
+  return receipt;
+}
+
+function uniformEntries(count: number, directoriesPerEntry: number) {
+  const bytes = Buffer.from("x");
+  return Array.from({ length: count }, (_unused, index) => {
+    const suffix = index.toString(36).padStart(2, "0");
+    const directories = Array.from(
+      { length: directoriesPerEntry },
+      (_unusedDirectory, depth) => `e${suffix}-d${String(depth)}`,
+    );
+    return {
+      artifactId: `artifact-${suffix}`,
+      target: [...directories, `file-${suffix}.md`].join("/"),
+      sourceLocator: `synthetic:artifact-${suffix}`,
+      contentDigest: sha256Bytes(bytes),
+      bytes: bytes.length,
+    };
+  });
+}
+
+function materializeUniformTree(
+  contentRoot: string,
+  entries: ReturnType<typeof uniformEntries>,
+): void {
+  const bytes = Buffer.from("x");
+  for (const entry of entries) {
     const target = join(contentRoot, ...entry.target.split("/"));
     mkdirSync(dirname(target), { recursive: true });
     writeFileSync(target, bytes, { mode: 0o600 });
@@ -718,25 +761,79 @@ describe("Phase 4 bounded generation-store filesystem", () => {
     });
   }, 60_000);
 
+  it("keeps fixed container overhead outside entry, directory, and depth maxima", () => {
+    const root = temporaryProject();
+    const store = createOrOpenOwnedStore(realpathSync(root.projectRoot));
+    const generation = join(store.layout.generations, plannedDigest());
+    mkdirSync(join(generation, "content"), { recursive: true });
+    const maximumEntries = uniformEntries(MAX_MANIFEST_ENTRIES, 8);
+    materializeUniformTree(join(generation, "content"), maximumEntries);
+    const receipt = generationReceipt(store, maximumEntries);
+    writeExclusiveRegularFile(
+      store,
+      join(generation, "receipt.json"),
+      canonicalRecordBytes("receipt", receipt),
+    );
+    const verified = verifyExpectedContainer(store, generation, "receipt", receipt, maximumEntries);
+    expect(verified.files).toHaveLength(MAX_MANIFEST_ENTRIES + 1);
+    expect(verified.directories).toHaveLength(514);
+
+    const deepRoot = temporaryProject();
+    const deepStore = createOrOpenOwnedStore(realpathSync(deepRoot.projectRoot));
+    const deepGeneration = join(deepStore.layout.generations, plannedDigest());
+    mkdirSync(join(deepGeneration, "content"), { recursive: true });
+    const shallowEntry = uniformEntries(1, 0)[0];
+    if (shallowEntry === undefined) throw new Error("maximum-depth fixture is missing");
+    const maximumDepth = [
+      {
+        ...shallowEntry,
+        target: [...Array.from({ length: 31 }, () => "d"), "f"].join("/"),
+      },
+    ];
+    expect(maximumDepth[0]?.target.split("/")).toHaveLength(32);
+    materializeUniformTree(join(deepGeneration, "content"), maximumDepth);
+    const deepReceipt = generationReceipt(deepStore, maximumDepth);
+    writeExclusiveRegularFile(
+      deepStore,
+      join(deepGeneration, "receipt.json"),
+      canonicalRecordBytes("receipt", deepReceipt),
+    );
+    expect(
+      verifyExpectedContainer(deepStore, deepGeneration, "receipt", deepReceipt, maximumDepth)
+        .missing,
+    ).toEqual([]);
+  });
+
   it("quarantines an exact verified directory and removes only its revalidated tree", () => {
     const root = temporaryProject();
     const outside = makeSiblingCanary(root);
     const store = createOrOpenOwnedStore(realpathSync(root.projectRoot));
     mkdirSync(store.layout.generations);
     mkdirSync(store.layout.trash);
-    const entries = generationEntries();
+    const entries = expectedReceiptEntries();
     const generation = join(store.layout.generations, plannedDigest());
     mkdirSync(generation);
-    materializeExpectedTree(generation, entries);
-    const verified = verifyExpectedTree(store, generation, entries);
+    const receipt = materializeGeneration(store, generation, entries);
+    const verified = verifyExpectedContainer(store, generation, "receipt", receipt, entries);
     expect(() => quarantineExactDirectory(store, verified, "not-a-transaction-id")).toThrow();
+    expect(existsSync(generation)).toBe(true);
+    if (verified.container === null) throw new Error("container fixture is missing");
+    const forged = {
+      ...verified,
+      container: {
+        ...verified.container,
+        rootId: OTHER_DIGEST,
+      },
+    };
+    expect(() => quarantineExactDirectory(store, forged, TRANSACTION_ID)).toThrow();
     expect(existsSync(generation)).toBe(true);
 
     const quarantined = quarantineExactDirectory(store, verified, TRANSACTION_ID);
     const trash = join(store.layout.trash, TRANSACTION_ID);
+    const receiptBytes = canonicalRecordBytes("receipt", receipt);
     expect(existsSync(generation)).toBe(false);
     expect(existsSync(trash)).toBe(true);
-    expect(readFileSync(join(trash, "receipt.json"))).toEqual(RECEIPT_BYTES);
+    expect(readFileSync(join(trash, "receipt.json"))).toEqual(receiptBytes);
     removeVerifiedTree(store, quarantined);
     expect(existsSync(trash)).toBe(false);
     expect(readFileSync(outside.canary, "utf8")).toBe("outside-canary\n");
@@ -745,14 +842,17 @@ describe("Phase 4 bounded generation-store filesystem", () => {
   it("resumes deletion from an exact verified expected subset after interruption", () => {
     const root = temporaryProject();
     const store = createOrOpenOwnedStore(realpathSync(root.projectRoot));
+    mkdirSync(store.layout.generations);
     mkdirSync(store.layout.trash);
-    const entries = generationEntries();
+    const entries = expectedReceiptEntries();
+    const generation = join(store.layout.generations, plannedDigest());
+    mkdirSync(generation);
+    const receipt = materializeGeneration(store, generation, entries);
+    const verified = verifyExpectedContainer(store, generation, "receipt", receipt, entries);
+    quarantineExactDirectory(store, verified, TRANSACTION_ID);
     const trash = join(store.layout.trash, TRANSACTION_ID);
-    mkdirSync(trash);
-    materializeExpectedTree(trash, entries);
-    verifyExpectedTree(store, trash, entries);
     rmSync(join(trash, "content", "rules", "root.md"));
-    const partial = verifyPartialOwnedTree(store, trash, entries);
+    const partial = verifyPartialOwnedContainer(store, trash, "receipt", receipt, entries);
     expect(partial.missing).toEqual(["content/rules/root.md"]);
     removeVerifiedTree(store, partial);
     expect(existsSync(trash)).toBe(false);
@@ -761,14 +861,17 @@ describe("Phase 4 bounded generation-store filesystem", () => {
   it("retains a verified tree when bytes drift before removal", () => {
     const root = temporaryProject();
     const store = createOrOpenOwnedStore(realpathSync(root.projectRoot));
+    mkdirSync(store.layout.generations);
     mkdirSync(store.layout.trash);
-    const entries = generationEntries();
+    const entries = expectedReceiptEntries();
+    const generation = join(store.layout.generations, plannedDigest());
+    mkdirSync(generation);
+    const receipt = materializeGeneration(store, generation, entries);
+    const verified = verifyExpectedContainer(store, generation, "receipt", receipt, entries);
+    const quarantined = quarantineExactDirectory(store, verified, TRANSACTION_ID);
     const trash = join(store.layout.trash, TRANSACTION_ID);
-    mkdirSync(trash);
-    materializeExpectedTree(trash, entries);
-    const verified = verifyExpectedTree(store, trash, entries);
     writeFileSync(join(trash, "content", "rules", "root.md"), "changed");
-    expect(() => removeVerifiedTree(store, verified)).toThrow();
+    expect(() => removeVerifiedTree(store, quarantined)).toThrow();
     expect(existsSync(trash)).toBe(true);
   });
 });

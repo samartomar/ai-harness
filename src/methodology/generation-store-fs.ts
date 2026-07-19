@@ -106,12 +106,23 @@ export type VerifiedDirectory = Readonly<{
   identity: StoreObjectIdentity;
 }>;
 
+export type VerifiedContainerKind = "receipt" | "staging" | "incomplete";
+
+export type VerifiedContainer = Readonly<{
+  metadataKind: VerifiedContainerKind;
+  metadataName: "receipt.json" | "staging.json" | "incomplete.json";
+  metadataCanonical: string;
+  rootId: string;
+  sourceName: string;
+}>;
+
 export type VerifiedTree = Readonly<{
   root: string;
   entries: readonly ReceiptEntry[];
   files: readonly VerifiedFile[];
   directories: readonly VerifiedDirectory[];
   missing: readonly string[];
+  container: VerifiedContainer | null;
 }>;
 
 export type ExclusiveWriteResult = Readonly<{
@@ -1070,6 +1081,7 @@ function verifyTree(
     files: Object.freeze(files),
     directories: Object.freeze(directories),
     missing: Object.freeze(missingFiles),
+    container: null,
   });
 }
 
@@ -1089,13 +1101,275 @@ export function verifyPartialOwnedTree(
   return verifyTree(store, treeRoot, entries, true);
 }
 
+function containerMetadataName(kind: VerifiedContainerKind): VerifiedContainer["metadataName"] {
+  switch (kind) {
+    case "receipt":
+      return "receipt.json";
+    case "staging":
+      return "staging.json";
+    case "incomplete":
+      return "incomplete.json";
+  }
+}
+
+function containerDescriptor(
+  store: OwnedStore,
+  kind: VerifiedContainerKind,
+  metadataRecord: unknown,
+  entries: readonly ReceiptEntry[],
+): Readonly<{ container: VerifiedContainer; entries: readonly ReceiptEntry[] }> {
+  const normalizedEntries = validatedEntries(store, entries);
+  let parsed: unknown;
+  try {
+    parsed = schemaForKind(kind).parse(metadataRecord);
+  } catch {
+    fail("container metadata schema is invalid", invalidRecordFinding(kind));
+  }
+  const metadataBytes = canonicalRecordBytes(kind, parsed);
+  if (metadataBytes.byteLength > MAX_RECORD_BYTES) {
+    fail("container metadata exceeds its byte limit", "METHODOLOGY_STORE_RESOURCE_LIMIT");
+  }
+  let rootId: string;
+  let sourceName: string;
+  switch (kind) {
+    case "receipt": {
+      const receipt = GenerationReceiptSchema.parse(parsed);
+      const expected = canonicalRecordBytes("receipt", {
+        ...receipt,
+        entries: normalizedEntries,
+      });
+      if (!expected.equals(metadataBytes)) {
+        fail("container receipt does not bind the expected content");
+      }
+      rootId = receipt.rootId;
+      sourceName = receipt.manifestDigest;
+      break;
+    }
+    case "staging": {
+      const staging = StagingRecordSchema.parse(parsed);
+      rootId = staging.rootId;
+      sourceName = staging.transactionId;
+      break;
+    }
+    case "incomplete": {
+      const incomplete = IncompleteRecordSchema.parse(parsed);
+      rootId = incomplete.rootId;
+      sourceName = incomplete.transactionId;
+      break;
+    }
+  }
+  if (rootId !== store.rootRecord.rootId) {
+    fail("container metadata is not owned by this store");
+  }
+  return Object.freeze({
+    container: Object.freeze({
+      metadataKind: kind,
+      metadataName: containerMetadataName(kind),
+      metadataCanonical: metadataBytes.toString("utf8"),
+      rootId,
+      sourceName,
+    }),
+    entries: normalizedEntries,
+  });
+}
+
+function verifyContainerAt(
+  store: OwnedStore,
+  treeRoot: string,
+  entries: readonly ReceiptEntry[],
+  claimedContainer: VerifiedContainer,
+  allowMissing: boolean,
+): VerifiedTree {
+  assertOwnedStorePhase(store);
+  let metadataRecord: unknown;
+  try {
+    metadataRecord = JSON.parse(claimedContainer.metadataCanonical);
+  } catch {
+    fail("verified container metadata is not canonical JSON");
+  }
+  const rebound = containerDescriptor(
+    store,
+    claimedContainer.metadataKind,
+    metadataRecord,
+    entries,
+  );
+  const container = rebound.container;
+  if (
+    claimedContainer.metadataKind !== container.metadataKind ||
+    claimedContainer.metadataName !== container.metadataName ||
+    claimedContainer.metadataCanonical !== container.metadataCanonical ||
+    claimedContainer.rootId !== container.rootId ||
+    claimedContainer.sourceName !== container.sourceName
+  ) {
+    fail("verified container descriptor is not semantically bound");
+  }
+  const normalizedEntries = rebound.entries;
+  const rootIdentity = validateTreeRoot(store, treeRoot);
+  let children: Dirent[];
+  try {
+    children = readdirSync(treeRoot, { withFileTypes: true }).sort((left, right) =>
+      compareStrings(left.name, right.name),
+    );
+  } catch {
+    fail("container directory is inaccessible");
+  }
+  for (const child of children) {
+    if (child.name !== "content" && child.name !== container.metadataName) {
+      fail("container contains an unexpected entry");
+    }
+  }
+
+  const files: VerifiedFile[] = [];
+  const directories: VerifiedDirectory[] = [
+    Object.freeze({ relativePath: "", identity: rootIdentity }),
+  ];
+  const missingEntries: string[] = [];
+  const metadataChild = children.find(({ name }) => name === container.metadataName);
+  if (metadataChild === undefined) {
+    missingEntries.push(container.metadataName);
+  } else {
+    const metadataPath = join(treeRoot, container.metadataName);
+    const metadataStats = lstatBigInt(metadataPath, "container metadata");
+    if (
+      metadataChild.isSymbolicLink() ||
+      metadataStats.isSymbolicLink() ||
+      !metadataChild.isFile() ||
+      !metadataStats.isFile()
+    ) {
+      fail("container metadata is not an ordinary regular file");
+    }
+    const opened = readOwnedRegularFile(store, metadataPath, MAX_RECORD_BYTES);
+    const expectedBytes = Buffer.from(container.metadataCanonical, "utf8");
+    if (!opened.contents.equals(expectedBytes)) {
+      fail("container metadata drifted", "METHODOLOGY_STORE_GENERATION_DRIFT");
+    }
+    files.push(
+      Object.freeze({
+        relativePath: container.metadataName,
+        digest: sha256Bytes(opened.contents),
+        bytes: opened.contents.byteLength,
+        identity: opened.identity,
+      }),
+    );
+  }
+
+  const contentChild = children.find(({ name }) => name === "content");
+  if (contentChild === undefined) {
+    for (const entry of normalizedEntries) {
+      missingEntries.push(`content/${entry.target}`);
+    }
+  } else {
+    const contentPath = join(treeRoot, "content");
+    const contentStats = lstatBigInt(contentPath, "container content");
+    if (
+      contentChild.isSymbolicLink() ||
+      contentStats.isSymbolicLink() ||
+      !contentChild.isDirectory() ||
+      !contentStats.isDirectory()
+    ) {
+      fail("container content is not an ordinary directory");
+    }
+    const content = verifyTree(store, contentPath, normalizedEntries, allowMissing);
+    for (const file of content.files) {
+      files.push(
+        Object.freeze({
+          ...file,
+          relativePath: `content/${file.relativePath}`,
+        }),
+      );
+    }
+    for (const directory of content.directories) {
+      directories.push(
+        Object.freeze({
+          ...directory,
+          relativePath:
+            directory.relativePath === "" ? "content" : `content/${directory.relativePath}`,
+        }),
+      );
+    }
+    for (const missingEntry of content.missing) {
+      missingEntries.push(`content/${missingEntry}`);
+    }
+  }
+
+  if (!allowMissing && missingEntries.length > 0) {
+    fail("container is missing an expected entry", "METHODOLOGY_STORE_GENERATION_INCOMPLETE");
+  }
+  files.sort((left, right) => compareStrings(left.relativePath, right.relativePath));
+  directories.sort((left, right) => compareStrings(left.relativePath, right.relativePath));
+  missingEntries.sort(compareStrings);
+  return Object.freeze({
+    root: treeRoot,
+    entries: Object.freeze(normalizedEntries.map((entry) => Object.freeze({ ...entry }))),
+    files: Object.freeze(files),
+    directories: Object.freeze(directories),
+    missing: Object.freeze(missingEntries),
+    container,
+  });
+}
+
+export function verifyExpectedContainer(
+  store: OwnedStore,
+  treeRoot: string,
+  kind: VerifiedContainerKind,
+  metadataRecord: unknown,
+  entries: readonly ReceiptEntry[],
+): VerifiedTree {
+  const expected = containerDescriptor(store, kind, metadataRecord, entries);
+  const metadataPath = join(treeRoot, expected.container.metadataName);
+  const stored = readStoreRecord(store, metadataPath, schemaForKind(kind), kind);
+  if (stored.bytes.toString("utf8") !== expected.container.metadataCanonical) {
+    fail("stored container metadata is not the expected canonical record");
+  }
+  return verifyContainerAt(store, treeRoot, expected.entries, expected.container, false);
+}
+
+export function verifyPartialOwnedContainer(
+  store: OwnedStore,
+  treeRoot: string,
+  kind: VerifiedContainerKind,
+  metadataRecord: unknown,
+  entries: readonly ReceiptEntry[],
+): VerifiedTree {
+  assertBoundTrashRoot(store, treeRoot);
+  const expected = containerDescriptor(store, kind, metadataRecord, entries);
+  if (
+    kind === "staging" &&
+    StagingRecordSchema.parse(metadataRecord).transactionId !== basename(treeRoot)
+  ) {
+    fail("staging trash identity is not transaction-bound");
+  }
+  if (
+    kind === "incomplete" &&
+    IncompleteRecordSchema.parse(metadataRecord).transactionId !== basename(treeRoot)
+  ) {
+    fail("incomplete trash identity is not transaction-bound");
+  }
+  return verifyContainerAt(store, treeRoot, expected.entries, expected.container, true);
+}
+
 function identityByRelative<T extends { relativePath: string; identity: StoreObjectIdentity }>(
   values: readonly T[],
 ): Map<string, StoreObjectIdentity> {
   return new Map(values.map((value) => [value.relativePath, value.identity]));
 }
 
+function requireSameContainerDescriptor(previous: VerifiedTree, current: VerifiedTree): void {
+  if (
+    previous.container === null ||
+    current.container === null ||
+    previous.container.metadataKind !== current.container.metadataKind ||
+    previous.container.metadataName !== current.container.metadataName ||
+    previous.container.metadataCanonical !== current.container.metadataCanonical ||
+    previous.container.rootId !== current.container.rootId ||
+    previous.container.sourceName !== current.container.sourceName
+  ) {
+    fail("verified container description changed", "METHODOLOGY_STORE_GENERATION_DRIFT");
+  }
+}
+
 function requireSameVerifiedTree(previous: VerifiedTree, current: VerifiedTree): void {
+  requireSameContainerDescriptor(previous, current);
   if (current.missing.length !== 0 || previous.files.length !== current.files.length) {
     fail("verified tree changed before mutation", "METHODOLOGY_STORE_GENERATION_DRIFT");
   }
@@ -1116,6 +1390,7 @@ function requireSameVerifiedTree(previous: VerifiedTree, current: VerifiedTree):
 }
 
 function requireSameVerifiedSubset(previous: VerifiedTree, current: VerifiedTree): void {
+  requireSameContainerDescriptor(previous, current);
   const previousFiles = identityByRelative(previous.files);
   const previousDirectories = identityByRelative(previous.directories);
   for (const file of current.files) {
@@ -1153,14 +1428,21 @@ function destinationAbsent(absPath: string): void {
 
 function quarantineSourceBoundToTransaction(
   store: OwnedStore,
-  source: string,
+  verified: VerifiedTree,
   transactionId: string,
 ): boolean {
-  const sourceParent = dirname(source);
-  const sourceName = basename(source);
+  if (verified.container === null) return false;
+  const sourceParent = dirname(verified.root);
+  const sourceName = basename(verified.root);
   return (
-    (pathsEqual(sourceParent, store.layout.generations) && DIGEST_PATTERN.test(sourceName)) ||
-    (pathsEqual(sourceParent, store.layout.staging) && sourceName === transactionId)
+    (pathsEqual(sourceParent, store.layout.generations) &&
+      DIGEST_PATTERN.test(sourceName) &&
+      verified.container.metadataKind === "receipt" &&
+      verified.container.sourceName === sourceName) ||
+    (pathsEqual(sourceParent, store.layout.staging) &&
+      sourceName === transactionId &&
+      verified.container.metadataKind === "staging" &&
+      verified.container.sourceName === sourceName)
   );
 }
 
@@ -1173,17 +1455,24 @@ export function quarantineExactDirectory(
   if (
     !STORE_ID_PATTERN.test(transactionId) ||
     verified.missing.length !== 0 ||
-    !quarantineSourceBoundToTransaction(store, verified.root, transactionId)
+    verified.container === null ||
+    !quarantineSourceBoundToTransaction(store, verified, transactionId)
   ) {
     fail("quarantine source is not transaction-bound");
   }
-  const current = verifyExpectedTree(store, verified.root, verified.entries);
+  const current = verifyContainerAt(
+    store,
+    verified.root,
+    verified.entries,
+    verified.container,
+    false,
+  );
   requireSameVerifiedTree(verified, current);
   const destination = join(store.layout.trash, transactionId);
   assertOwnedAncestors(store, destination);
   destinationAbsent(destination);
   retryTransient(() => renameSync(verified.root, destination));
-  const moved = verifyExpectedTree(store, destination, verified.entries);
+  const moved = verifyContainerAt(store, destination, verified.entries, verified.container, false);
   const expectedRoot = verified.directories.find(({ relativePath }) => relativePath === "");
   const movedRoot = moved.directories.find(({ relativePath }) => relativePath === "");
   if (
@@ -1241,7 +1530,16 @@ function revalidateDirectoryForRemoval(
 export function removeVerifiedTree(store: OwnedStore, verified: VerifiedTree): void {
   assertOwnedStorePhase(store);
   assertBoundTrashRoot(store, verified.root);
-  const current = verifyPartialOwnedTree(store, verified.root, verified.entries);
+  if (verified.container === null) {
+    fail("deletion requires a verified owned container");
+  }
+  const current = verifyContainerAt(
+    store,
+    verified.root,
+    verified.entries,
+    verified.container,
+    true,
+  );
   requireSameVerifiedSubset(verified, current);
   const files = [...current.files].sort((left, right) =>
     compareStrings(right.relativePath, left.relativePath),
