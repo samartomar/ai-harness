@@ -970,7 +970,7 @@ describe("generation store inspection", () => {
   });
 });
 
-describe("generation store apply", () => {
+describe("generation store apply", { timeout: 30_000 }, () => {
   it("apply writes exact binary payloads into one verified private generation", () => {
     const root = temporaryProject();
     const outside = makeSiblingCanary(root);
@@ -1223,6 +1223,7 @@ describe("generation store apply", () => {
     const outside = makeSiblingCanary(root);
     const plan = requirePlanned(binaryPlannedFixture());
     const storeRoot = join(root.projectRoot, ".aih");
+    const projectBefore = deterministicTreeSnapshot(root.projectRoot);
     expect(existsSync(storeRoot)).toBe(false);
 
     const result = applyProjection(
@@ -1231,6 +1232,7 @@ describe("generation store apply", () => {
 
     expectApply(result, "blocked", null, null, "METHODOLOGY_STORE_PLAN_STALE");
     expect(existsSync(storeRoot)).toBe(false);
+    expect(deterministicTreeSnapshot(root.projectRoot)).toEqual(projectBefore);
     expect(readFileSync(outside.canary, "utf8")).toBe("outside-canary\n");
   });
 

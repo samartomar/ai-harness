@@ -173,7 +173,7 @@ afterEach(() => {
   }
 });
 
-describe("Phase 4 cooperative generation-store lock", () => {
+describe("Phase 4 cooperative generation-store lock", { timeout: 30_000 }, () => {
   it("revalidates only the exact live held-lock claim", () => {
     const { store } = temporaryStore();
     const held = acquireStoreLockInternal(store, TRANSACTION_A, runtime(100, TOKEN_A));

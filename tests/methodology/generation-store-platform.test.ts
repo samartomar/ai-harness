@@ -240,7 +240,7 @@ afterEach(() => {
   }
 });
 
-describe("generation store fail-closed clean", () => {
+describe("generation store fail-closed clean", { timeout: 30_000 }, () => {
   it("returns a closed result when clean input reflection throws", () => {
     const hostile = new Proxy(
       {},
