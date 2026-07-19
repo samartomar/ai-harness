@@ -27,6 +27,7 @@ import {
   GenerationReceiptSchema,
   IncompleteRecordSchema,
   isCanonicalProjectionTarget,
+  isLockCandidateName,
   LockOwnerRecordSchema,
   MAX_GENERATED_DIRECTORIES,
   MAX_PAYLOAD_BYTES,
@@ -51,6 +52,18 @@ const DIRECTORY_SYNC_UNSUPPORTED = new Set(["EBADF", "EINVAL", "EISDIR", "ENOTSU
 const TRANSACTION_FILENAME_PATTERN = /^([0-9a-f]{64})\.json$/;
 const TRANSACTION_TEMP_PATTERN = /^\.([0-9a-f]{64})\.([a-z][a-z-]{0,63})\.tmp$/;
 const ACTIVE_TEMP_PATTERN = /^\.active\.([0-9a-f]{64})\.tmp$/;
+const APPLY_NEXT_PHASE: Readonly<Record<string, string | undefined>> = Object.freeze({
+  prepared: "staged",
+  staged: "generation-reserved",
+  "generation-reserved": "generation-verified",
+  "generation-verified": "activation-committed",
+  "activation-committed": "committed",
+});
+const CLEAN_NEXT_PHASE: Readonly<Record<string, string | undefined>> = Object.freeze({
+  prepared: "quarantined",
+  quarantined: "deleting",
+  deleting: "committed",
+});
 
 export type StoreLayout = Readonly<{
   projectRoot: string;
@@ -734,7 +747,8 @@ function assertRecordPathBinding(
       const ownerDirectory = dirname(absPath);
       const validLivePath = pathsEqual(absPath, join(store.layout.lock, "owner.json"));
       const validCandidatePath =
-        basename(ownerDirectory) === parsed.token &&
+        (isLockCandidateName(basename(ownerDirectory), parsed.token, false) ||
+          isLockCandidateName(basename(ownerDirectory), parsed.token, true)) &&
         pathsEqual(dirname(ownerDirectory), store.layout.lockCandidates);
       if (
         basename(absPath) !== "owner.json" ||
@@ -760,19 +774,110 @@ function assertRecordPathBinding(
   }
 }
 
-function validateAtomicPaths(store: OwnedStore, write: AtomicRecordWrite): void {
+function transactionInvariantBytes(record: unknown): Buffer {
+  const parsed = TransactionRecordSchema.parse(record);
+  return canonicalRecordBytes("transaction", { ...parsed, phase: "prepared" });
+}
+
+function validateAtomicActivation(
+  store: OwnedStore,
+  write: AtomicRecordWrite,
+  parsedRecord: unknown,
+  temporary: RegExpExecArray,
+): void {
+  const transactionId = temporary[1];
+  if (transactionId === undefined) {
+    fail("activation temporary has no transaction identity");
+  }
+  const activation = ActivationRecordSchema.parse(parsedRecord);
+  const journalPath = join(store.layout.transactions, `${transactionId}.json`);
+  const journal = readStoreRecord(
+    store,
+    journalPath,
+    TransactionRecordSchema,
+    "transaction",
+  ).record;
+  if (
+    journal.operation !== "apply" ||
+    journal.phase !== "generation-verified" ||
+    journal.transactionId !== transactionId ||
+    journal.newActivation === null ||
+    !canonicalRecordBytes("activation", journal.newActivation).equals(
+      canonicalRecordBytes("activation", activation),
+    )
+  ) {
+    fail("activation is not bound to a generation-verified apply journal");
+  }
+  const targetIdentity = lstatIfPresent(write.targetPath);
+  if (targetIdentity === undefined) {
+    if (journal.oldActivation !== null) {
+      fail("activation target is absent for a non-empty prior activation");
+    }
+    return;
+  }
+  const current = readStoreRecord(
+    store,
+    write.targetPath,
+    ActivationRecordSchema,
+    "activation",
+  ).record;
+  if (
+    journal.oldActivation === null ||
+    !canonicalRecordBytes("activation", journal.oldActivation).equals(
+      canonicalRecordBytes("activation", current),
+    )
+  ) {
+    fail("activation target does not match the journal's prior activation");
+  }
+}
+
+function validateAtomicTransaction(
+  store: OwnedStore,
+  write: AtomicRecordWrite,
+  parsedRecord: unknown,
+  target: RegExpExecArray,
+  temporary: RegExpExecArray,
+): void {
+  const next = TransactionRecordSchema.parse(parsedRecord);
+  if (
+    target[1] !== temporary[1] ||
+    target[1] !== next.transactionId ||
+    temporary[2] !== next.phase
+  ) {
+    fail("transaction temporary is not bound to its journal and next phase");
+  }
+  const current = readStoreRecord(
+    store,
+    write.targetPath,
+    TransactionRecordSchema,
+    "transaction",
+  ).record;
+  const transitions = current.operation === "apply" ? APPLY_NEXT_PHASE : CLEAN_NEXT_PHASE;
+  if (
+    current.operation !== next.operation ||
+    transitions[current.phase] !== next.phase ||
+    !transactionInvariantBytes(current).equals(transactionInvariantBytes(next))
+  ) {
+    fail("transaction record is not an allowed exact phase transition");
+  }
+}
+
+function validateAtomicPaths(
+  store: OwnedStore,
+  write: AtomicRecordWrite,
+  parsedRecord: unknown,
+): void {
   assertLexicallyOwned(store, write.targetPath);
   assertLexicallyOwned(store, write.temporaryPath);
   if (!pathsEqual(dirname(write.targetPath), dirname(write.temporaryPath))) {
     fail("atomic record temporary must be a sibling");
   }
   if (write.kind === "activation") {
-    if (
-      !pathsEqual(write.targetPath, store.layout.active) ||
-      ACTIVE_TEMP_PATTERN.exec(basename(write.temporaryPath)) === null
-    ) {
+    const temporary = ACTIVE_TEMP_PATTERN.exec(basename(write.temporaryPath));
+    if (!pathsEqual(write.targetPath, store.layout.active) || temporary === null) {
       fail("activation temporary is not transaction-bound");
     }
+    validateAtomicActivation(store, write, parsedRecord, temporary);
     return;
   }
   if (write.kind !== "transaction") {
@@ -780,9 +885,10 @@ function validateAtomicPaths(store: OwnedStore, write: AtomicRecordWrite): void 
   }
   const target = TRANSACTION_FILENAME_PATTERN.exec(basename(write.targetPath));
   const temporary = TRANSACTION_TEMP_PATTERN.exec(basename(write.temporaryPath));
-  if (target === null || temporary === null || target[1] !== temporary[1]) {
+  if (target === null || temporary === null) {
     fail("transaction temporary is not bound to its journal");
   }
+  validateAtomicTransaction(store, write, parsedRecord, target, temporary);
 }
 
 export function writeAtomicRecord(
@@ -790,11 +896,16 @@ export function writeAtomicRecord(
   write: AtomicRecordWrite,
 ): ExclusiveWriteResult {
   assertOwnedStorePhase(store);
-  validateAtomicPaths(store, write);
   assertOwnedAncestors(store, write.targetPath);
   assertOwnedAncestors(store, write.temporaryPath);
-  const parsed = schemaForKind(write.kind).parse(write.record);
+  let parsed: unknown;
+  try {
+    parsed = schemaForKind(write.kind).parse(write.record);
+  } catch {
+    fail("atomic record schema is invalid", invalidRecordFinding(write.kind));
+  }
   assertRecordPathBinding(store, write.targetPath, write.kind, parsed);
+  validateAtomicPaths(store, write, parsed);
   const bytes = canonicalRecordBytes(write.kind, parsed);
   if (bytes.byteLength > MAX_RECORD_BYTES) {
     fail("atomic record exceeds its byte limit", "METHODOLOGY_STORE_RESOURCE_LIMIT");
@@ -1004,6 +1115,32 @@ function requireSameVerifiedTree(previous: VerifiedTree, current: VerifiedTree):
   }
 }
 
+function requireSameVerifiedSubset(previous: VerifiedTree, current: VerifiedTree): void {
+  const previousFiles = identityByRelative(previous.files);
+  const previousDirectories = identityByRelative(previous.directories);
+  for (const file of current.files) {
+    const expected = previousFiles.get(file.relativePath);
+    if (expected === undefined || !sameIdentity(expected, file.identity)) {
+      fail("verified file identity changed", "METHODOLOGY_STORE_GENERATION_DRIFT");
+    }
+  }
+  for (const directory of current.directories) {
+    const expected = previousDirectories.get(directory.relativePath);
+    if (expected === undefined || !sameIdentity(expected, directory.identity)) {
+      fail("verified directory identity changed", "METHODOLOGY_STORE_GENERATION_DRIFT");
+    }
+  }
+}
+
+function assertBoundTrashRoot(store: OwnedStore, treeRoot: string): void {
+  if (
+    !pathsEqual(dirname(treeRoot), store.layout.trash) ||
+    !STORE_ID_PATTERN.test(basename(treeRoot))
+  ) {
+    fail("deletion root is not a transaction-bound trash directory");
+  }
+}
+
 function destinationAbsent(absPath: string): void {
   try {
     lstatSync(absPath);
@@ -1014,14 +1151,35 @@ function destinationAbsent(absPath: string): void {
   fail("quarantine destination already exists");
 }
 
+function quarantineSourceBoundToTransaction(
+  store: OwnedStore,
+  source: string,
+  transactionId: string,
+): boolean {
+  const sourceParent = dirname(source);
+  const sourceName = basename(source);
+  return (
+    (pathsEqual(sourceParent, store.layout.generations) && DIGEST_PATTERN.test(sourceName)) ||
+    (pathsEqual(sourceParent, store.layout.staging) && sourceName === transactionId)
+  );
+}
+
 export function quarantineExactDirectory(
   store: OwnedStore,
   verified: VerifiedTree,
-  destination: string,
+  transactionId: string,
 ): VerifiedTree {
   assertOwnedStorePhase(store);
+  if (
+    !STORE_ID_PATTERN.test(transactionId) ||
+    verified.missing.length !== 0 ||
+    !quarantineSourceBoundToTransaction(store, verified.root, transactionId)
+  ) {
+    fail("quarantine source is not transaction-bound");
+  }
   const current = verifyExpectedTree(store, verified.root, verified.entries);
   requireSameVerifiedTree(verified, current);
+  const destination = join(store.layout.trash, transactionId);
   assertOwnedAncestors(store, destination);
   destinationAbsent(destination);
   retryTransient(() => renameSync(verified.root, destination));
@@ -1035,6 +1193,7 @@ export function quarantineExactDirectory(
   ) {
     fail("quarantined directory identity changed");
   }
+  syncDirectory(dirname(verified.root));
   syncDirectory(dirname(destination));
   return moved;
 }
@@ -1081,16 +1240,17 @@ function revalidateDirectoryForRemoval(
 
 export function removeVerifiedTree(store: OwnedStore, verified: VerifiedTree): void {
   assertOwnedStorePhase(store);
-  const current = verifyExpectedTree(store, verified.root, verified.entries);
-  requireSameVerifiedTree(verified, current);
-  const files = [...verified.files].sort((left, right) =>
+  assertBoundTrashRoot(store, verified.root);
+  const current = verifyPartialOwnedTree(store, verified.root, verified.entries);
+  requireSameVerifiedSubset(verified, current);
+  const files = [...current.files].sort((left, right) =>
     compareStrings(right.relativePath, left.relativePath),
   );
   for (const file of files) {
-    revalidateFileForRemoval(store, verified.root, file);
-    unlinkSync(join(verified.root, ...file.relativePath.split("/")));
+    revalidateFileForRemoval(store, current.root, file);
+    unlinkSync(join(current.root, ...file.relativePath.split("/")));
   }
-  const directories = [...verified.directories].sort((left, right) => {
+  const directories = [...current.directories].sort((left, right) => {
     const depthDifference =
       right.relativePath.split("/").length - left.relativePath.split("/").length;
     return depthDifference === 0
@@ -1098,10 +1258,10 @@ export function removeVerifiedTree(store: OwnedStore, verified: VerifiedTree): v
       : depthDifference;
   });
   for (const directory of directories) {
-    const absPath = revalidateDirectoryForRemoval(store, verified.root, directory);
+    const absPath = revalidateDirectoryForRemoval(store, current.root, directory);
     rmdirSync(absPath);
   }
-  syncDirectory(dirname(verified.root));
+  syncDirectory(dirname(current.root));
 }
 
 export const GENERATION_STORE_RECORD_SCHEMAS = Object.freeze({

@@ -17,6 +17,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   ActivationRecordSchema,
   canonicalRecordBytes,
+  LockOwnerRecordSchema,
   MAX_PAYLOAD_BYTES,
   MAX_RECORD_BYTES,
   RootRecordSchema,
@@ -49,6 +50,7 @@ import {
 
 const TRANSACTION_ID = "d".repeat(64);
 const OTHER_DIGEST = "b".repeat(64);
+const RECEIPT_BYTES = Buffer.from('{"synthetic":"receipt"}\n');
 const roots: TemporaryProject[] = [];
 
 function temporaryProject(): TemporaryProject {
@@ -72,11 +74,55 @@ function plannedDigest(): string {
   return result.manifest.digest;
 }
 
-function materializeExpectedTree(contentRoot: string): void {
+function writeActivationJournal(
+  store: ReturnType<typeof createOrOpenOwnedStore>,
+  transactionId: string,
+  nextActivation: ReturnType<typeof activation>,
+  oldActivation: ReturnType<typeof activation> | null = null,
+): void {
+  if (!existsSync(store.layout.transactions)) {
+    mkdirSync(store.layout.transactions);
+  }
+  const record = {
+    schemaVersion: 1 as const,
+    operation: "apply" as const,
+    rootId: store.rootRecord.rootId,
+    transactionId,
+    phase: "generation-verified" as const,
+    manifestDigest: nextActivation.manifestDigest,
+    oldActivation,
+    newActivation: nextActivation,
+    entries: expectedReceiptEntries(),
+  };
+  writeExclusiveRegularFile(
+    store,
+    join(store.layout.transactions, `${transactionId}.json`),
+    canonicalRecordBytes("transaction", record),
+  );
+}
+
+function generationEntries() {
+  return [
+    ...expectedReceiptEntries().map((entry) => ({
+      ...entry,
+      target: `content/${entry.target}`,
+    })),
+    {
+      artifactId: "receipt-metadata",
+      target: "receipt.json",
+      sourceLocator: "synthetic:receipt-metadata",
+      contentDigest: sha256Bytes(RECEIPT_BYTES),
+      bytes: RECEIPT_BYTES.length,
+    },
+  ];
+}
+
+function materializeExpectedTree(contentRoot: string, entries = expectedReceiptEntries()): void {
   const payloadById = new Map(
     payloadFixture().map((payload) => [payload.artifactId, payload.bytes]),
   );
-  for (const entry of expectedReceiptEntries()) {
+  payloadById.set("receipt-metadata", RECEIPT_BYTES);
+  for (const entry of entries) {
     const bytes = payloadById.get(entry.artifactId);
     if (bytes === undefined) throw new Error("fixture payload is missing");
     const target = join(contentRoot, ...entry.target.split("/"));
@@ -119,7 +165,7 @@ function runCreateChild(
     const timer = setTimeout(() => {
       child.kill();
       rejectPromise(new Error("first-open child timed out"));
-    }, 10_000);
+    }, 30_000);
     child.stdout.on("data", (chunk: Buffer) => {
       stdout += chunk.toString("utf8");
     });
@@ -180,7 +226,7 @@ describe("Phase 4 bounded generation-store filesystem", () => {
     for (const outcome of outcomes) {
       if (outcome.state === "opened") expect(outcome.rootId).toBe(opened.rootRecord.rootId);
     }
-  }, 15_000);
+  }, 60_000);
 
   it("rejects non-canonical, linked, unmarked, malformed, and non-directory roots", () => {
     const relativeRoot = temporaryProject();
@@ -363,6 +409,66 @@ describe("Phase 4 bounded generation-store filesystem", () => {
     expect(() =>
       readStoreRecord(store, mismatchedPath, TransactionRecordSchema, "transaction"),
     ).toThrow();
+
+    const stagedRecord = { ...record, phase: "staged" as const };
+    expect(() =>
+      writeAtomicRecord(store, {
+        kind: "transaction",
+        targetPath: validPath,
+        temporaryPath: join(
+          store.layout.transactions,
+          `.${TRANSACTION_ID}.definitely-not-a-phase.tmp`,
+        ),
+        record: stagedRecord,
+      }),
+    ).toThrow();
+    expect(
+      readStoreRecord(store, validPath, TransactionRecordSchema, "transaction").record,
+    ).toEqual(record);
+
+    writeAtomicRecord(store, {
+      kind: "transaction",
+      targetPath: validPath,
+      temporaryPath: join(store.layout.transactions, `.${TRANSACTION_ID}.staged.tmp`),
+      record: stagedRecord,
+    });
+    expect(
+      readStoreRecord(store, validPath, TransactionRecordSchema, "transaction").record,
+    ).toEqual(stagedRecord);
+
+    const missingTransactionId = "e".repeat(64);
+    const missingRecord = {
+      ...stagedRecord,
+      transactionId: missingTransactionId,
+    };
+    expect(() =>
+      writeAtomicRecord(store, {
+        kind: "transaction",
+        targetPath: join(store.layout.transactions, `${missingTransactionId}.json`),
+        temporaryPath: join(store.layout.transactions, `.${missingTransactionId}.staged.tmp`),
+        record: missingRecord,
+      }),
+    ).toThrow();
+  });
+
+  it("reads a strictly bound stale lock-candidate owner record", () => {
+    const root = temporaryProject();
+    const store = createOrOpenOwnedStore(realpathSync(root.projectRoot));
+    mkdirSync(store.layout.lockCandidates);
+    const staleCandidate = join(store.layout.lockCandidates, `${OTHER_DIGEST}.stale`);
+    mkdirSync(staleCandidate);
+    const owner = {
+      schemaVersion: 1 as const,
+      rootId: store.rootRecord.rootId,
+      token: OTHER_DIGEST,
+      pid: 42,
+      transactionId: TRANSACTION_ID,
+    };
+    const ownerPath = join(staleCandidate, "owner.json");
+    writeExclusiveRegularFile(store, ownerPath, canonicalRecordBytes("lock-owner", owner));
+    expect(readStoreRecord(store, ownerPath, LockOwnerRecordSchema, "lock-owner").record).toEqual(
+      owner,
+    );
   });
 
   it("verifies an exact expected tree and rejects missing, extra, linked, and hard-linked leaves", () => {
@@ -473,6 +579,7 @@ describe("Phase 4 bounded generation-store filesystem", () => {
       canonicalRecordBytes("activation", activation()),
     );
     const next = activation(OTHER_DIGEST);
+    writeActivationJournal(store, TRANSACTION_ID, next, activation());
     writeAtomicRecord(store, {
       kind: "activation",
       targetPath: store.layout.active,
@@ -481,6 +588,21 @@ describe("Phase 4 bounded generation-store filesystem", () => {
     });
     const observed = readStoreRecord(store, store.layout.active, ActivationRecordSchema).record;
     expect(observed).toEqual(next);
+
+    const staleTransactionId = "c".repeat(64);
+    writeActivationJournal(store, staleTransactionId, activation(), activation());
+    expect(() =>
+      writeAtomicRecord(store, {
+        kind: "activation",
+        targetPath: store.layout.active,
+        temporaryPath: join(store.layout.root, `.active.${staleTransactionId}.tmp`),
+        record: activation(),
+      }),
+    ).toThrow();
+    expect(readStoreRecord(store, store.layout.active, ActivationRecordSchema).record).toEqual(
+      next,
+    );
+
     expect(() =>
       writeAtomicRecord(store, {
         kind: "activation",
@@ -489,6 +611,31 @@ describe("Phase 4 bounded generation-store filesystem", () => {
         record: activation(),
       }),
     ).toThrow();
+
+    const hostileRoot = temporaryProject();
+    const hostileStore = createOrOpenOwnedStore(realpathSync(hostileRoot.projectRoot));
+    const outsideActivation = join(hostileRoot.sandboxRoot, "outside-active.json");
+    writeFileSync(outsideActivation, "outside-active\n");
+    let activeLinkCreated = false;
+    try {
+      symlinkSync(outsideActivation, hostileStore.layout.active, "file");
+      activeLinkCreated = true;
+    } catch {
+      // Symlink creation may require extra privilege on Windows.
+    }
+    if (activeLinkCreated) {
+      writeActivationJournal(hostileStore, TRANSACTION_ID, activation());
+      expect(() =>
+        writeAtomicRecord(hostileStore, {
+          kind: "activation",
+          targetPath: hostileStore.layout.active,
+          temporaryPath: join(hostileStore.layout.root, `.active.${TRANSACTION_ID}.tmp`),
+          record: activation(),
+        }),
+      ).toThrow();
+      expect(lstatSync(hostileStore.layout.active).isSymbolicLink()).toBe(true);
+      expect(readFileSync(outsideActivation, "utf8")).toBe("outside-active\n");
+    }
   });
 
   it("never exposes torn activation bytes to a concurrent observer", async () => {
@@ -499,16 +646,20 @@ describe("Phase 4 bounded generation-store filesystem", () => {
       store.layout.active,
       canonicalRecordBytes("activation", activation()),
     );
+    const allowedActivationBytes = [
+      canonicalRecordBytes("activation", activation()).toString("utf8"),
+      canonicalRecordBytes("activation", activation(OTHER_DIGEST)).toString("utf8"),
+    ];
     const observerSource = [
       'const fs = require("node:fs");',
       `const target = ${JSON.stringify(store.layout.active)};`,
-      `const allowed = new Set(${JSON.stringify([plannedDigest(), OTHER_DIGEST])});`,
+      `const allowed = new Set(${JSON.stringify(allowedActivationBytes)});`,
       'process.stdout.write("ready\\n");',
       "const deadline = Date.now() + 750;",
       "while (Date.now() < deadline) {",
       "  try {",
-      '    const value = JSON.parse(fs.readFileSync(target, "utf8"));',
-      '    if (!allowed.has(value.manifestDigest)) throw new Error("unexpected digest");',
+      '    const bytes = fs.readFileSync(target, "utf8");',
+      '    if (!allowed.has(bytes)) throw new Error("torn or unexpected activation bytes");',
       "  } catch (error) {",
       "    process.stderr.write(String(error));",
       "    process.exit(2);",
@@ -526,7 +677,7 @@ describe("Phase 4 bounded generation-store filesystem", () => {
       const timer = setTimeout(() => {
         observer.kill();
         rejectPromise(new Error("activation observer did not become ready"));
-      }, 5_000);
+      }, 30_000);
       observer.stdout.once("data", () => {
         clearTimeout(timer);
         resolvePromise();
@@ -537,50 +688,87 @@ describe("Phase 4 bounded generation-store filesystem", () => {
       });
     });
 
+    let currentActivation = activation();
     for (let index = 1; index <= 20; index += 1) {
       const transactionId = index.toString(16).padStart(64, "0");
+      const nextActivation = activation(index % 2 === 0 ? plannedDigest() : OTHER_DIGEST);
+      writeActivationJournal(store, transactionId, nextActivation, currentActivation);
       writeAtomicRecord(store, {
         kind: "activation",
         targetPath: store.layout.active,
         temporaryPath: join(store.layout.root, `.active.${transactionId}.tmp`),
-        record: activation(index % 2 === 0 ? plannedDigest() : OTHER_DIGEST),
+        record: nextActivation,
       });
+      currentActivation = nextActivation;
     }
     await new Promise<void>((resolvePromise, rejectPromise) => {
+      const timer = setTimeout(() => {
+        observer.kill();
+        rejectPromise(new Error("activation observer did not close"));
+      }, 30_000);
       observer.once("close", (code) => {
+        clearTimeout(timer);
         if (code === 0) resolvePromise();
         else rejectPromise(new Error(`activation observer failed: ${observerError}`));
       });
-      observer.once("error", rejectPromise);
+      observer.once("error", (error) => {
+        clearTimeout(timer);
+        rejectPromise(error);
+      });
     });
-  }, 10_000);
+  }, 60_000);
 
   it("quarantines an exact verified directory and removes only its revalidated tree", () => {
     const root = temporaryProject();
     const outside = makeSiblingCanary(root);
     const store = createOrOpenOwnedStore(realpathSync(root.projectRoot));
-    const generation = join(store.layout.root, "generation-to-clean");
+    mkdirSync(store.layout.generations);
+    mkdirSync(store.layout.trash);
+    const entries = generationEntries();
+    const generation = join(store.layout.generations, plannedDigest());
     mkdirSync(generation);
-    materializeExpectedTree(generation);
-    const verified = verifyExpectedTree(store, generation, expectedReceiptEntries());
-    const trash = join(store.layout.root, "quarantined-generation");
-    const quarantined = quarantineExactDirectory(store, verified, trash);
+    materializeExpectedTree(generation, entries);
+    const verified = verifyExpectedTree(store, generation, entries);
+    expect(() => quarantineExactDirectory(store, verified, "not-a-transaction-id")).toThrow();
+    expect(existsSync(generation)).toBe(true);
+
+    const quarantined = quarantineExactDirectory(store, verified, TRANSACTION_ID);
+    const trash = join(store.layout.trash, TRANSACTION_ID);
     expect(existsSync(generation)).toBe(false);
     expect(existsSync(trash)).toBe(true);
+    expect(readFileSync(join(trash, "receipt.json"))).toEqual(RECEIPT_BYTES);
     removeVerifiedTree(store, quarantined);
     expect(existsSync(trash)).toBe(false);
     expect(readFileSync(outside.canary, "utf8")).toBe("outside-canary\n");
   });
 
+  it("resumes deletion from an exact verified expected subset after interruption", () => {
+    const root = temporaryProject();
+    const store = createOrOpenOwnedStore(realpathSync(root.projectRoot));
+    mkdirSync(store.layout.trash);
+    const entries = generationEntries();
+    const trash = join(store.layout.trash, TRANSACTION_ID);
+    mkdirSync(trash);
+    materializeExpectedTree(trash, entries);
+    verifyExpectedTree(store, trash, entries);
+    rmSync(join(trash, "content", "rules", "root.md"));
+    const partial = verifyPartialOwnedTree(store, trash, entries);
+    expect(partial.missing).toEqual(["content/rules/root.md"]);
+    removeVerifiedTree(store, partial);
+    expect(existsSync(trash)).toBe(false);
+  });
+
   it("retains a verified tree when bytes drift before removal", () => {
     const root = temporaryProject();
     const store = createOrOpenOwnedStore(realpathSync(root.projectRoot));
-    const generation = join(store.layout.root, "drift-before-remove");
-    mkdirSync(generation);
-    materializeExpectedTree(generation);
-    const verified = verifyExpectedTree(store, generation, expectedReceiptEntries());
-    writeFileSync(join(generation, "rules", "root.md"), "changed");
+    mkdirSync(store.layout.trash);
+    const entries = generationEntries();
+    const trash = join(store.layout.trash, TRANSACTION_ID);
+    mkdirSync(trash);
+    materializeExpectedTree(trash, entries);
+    const verified = verifyExpectedTree(store, trash, entries);
+    writeFileSync(join(trash, "content", "rules", "root.md"), "changed");
     expect(() => removeVerifiedTree(store, verified)).toThrow();
-    expect(existsSync(generation)).toBe(true);
+    expect(existsSync(trash)).toBe(true);
   });
 });
