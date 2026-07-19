@@ -518,6 +518,12 @@ function prepareCandidateInventory(store: OwnedStore, runtime: LockRuntime): rea
       // Ambiguous candidates remain visible and fail later preflight checks.
     }
   }
+  // A takeover needs one candidate slot and, while quarantining a dead lock,
+  // one stale-fence slot. Reap exact absent-owner fences only at that threshold
+  // and only if the inventory is otherwise quiescent.
+  if (initial.length >= MAX_RECOVERY_RECORDS - 1) {
+    reapQuiescentStaleFences(store, runtime);
+  }
   return inventoryCandidateNames(store, true);
 }
 

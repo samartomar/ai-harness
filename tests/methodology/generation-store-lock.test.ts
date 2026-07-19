@@ -919,7 +919,7 @@ describe("Phase 4 cooperative generation-store lock", () => {
     releaseStoreLock(store, held);
   });
 
-  it("reaps accumulated exact dead ABA fences only after a quiescent claim wins", () => {
+  it("reaps accumulated exact dead ABA fences across a quiescent takeover", () => {
     const { store } = temporaryStore();
     const oldFence = join(store.layout.lockCandidates, `${TOKEN_A}.stale`);
     const newlyDead = owner(store, TOKEN_B, 1702, TRANSACTION_B);
@@ -940,6 +940,35 @@ describe("Phase 4 cooperative generation-store lock", () => {
     );
 
     expect(held).toEqual(owner(store, TOKEN_C, 1703));
+    expect(readLiveOwner(store)).toEqual(held);
+    expect(readdirSync(store.layout.lockCandidates)).toEqual([]);
+    releaseStoreLock(store, held);
+  });
+
+  it("reaps 127 exact dead fences before reserving a dead-lock takeover", () => {
+    const { store } = temporaryStore();
+    for (let index = 0; index < 127; index += 1) {
+      const token = (index + 16).toString(16).padStart(64, "0");
+      const pid = 3000 + index;
+      writeOwner(
+        store,
+        join(store.layout.lockCandidates, `${token}.stale`),
+        owner(store, token, pid),
+      );
+    }
+    writeOwner(store, store.layout.lock, owner(store, TOKEN_A, 2900));
+
+    const held = acquireStoreLockInternal(
+      store,
+      TRANSACTION_B,
+      Object.freeze({
+        pid: 2901,
+        randomToken: () => TOKEN_B,
+        pidState: () => "absent" as const,
+      }),
+    );
+
+    expect(held).toEqual(owner(store, TOKEN_B, 2901, TRANSACTION_B));
     expect(readLiveOwner(store)).toEqual(held);
     expect(readdirSync(store.layout.lockCandidates)).toEqual([]);
     releaseStoreLock(store, held);

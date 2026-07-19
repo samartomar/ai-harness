@@ -3329,6 +3329,7 @@ function throwCleanTargetFailure(error: unknown): never {
     if (
       error.findingCode === "METHODOLOGY_STORE_RESOURCE_LIMIT" ||
       error.findingCode === "METHODOLOGY_STORE_ROOT_UNOWNED" ||
+      error.findingCode === "METHODOLOGY_STORE_FILESYSTEM_FAILURE" ||
       CLEAN_RETAINED_FINDINGS.has(error.findingCode)
     ) {
       throw error;

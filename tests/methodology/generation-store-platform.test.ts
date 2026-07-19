@@ -68,10 +68,12 @@ const LOCK_TOKEN = "a".repeat(64);
 const roots: TemporaryProject[] = [];
 const mutableFs = createRequire(import.meta.url)("node:fs") as typeof import("node:fs");
 const mutableCrypto = createRequire(import.meta.url)("node:crypto") as typeof import("node:crypto");
+const originalOpenSync = mutableFs.openSync;
 const originalUnlinkSync = mutableFs.unlinkSync;
 const originalRandomBytes = mutableCrypto.randomBytes;
 
 function restoreBuiltins(): void {
+  mutableFs.openSync = originalOpenSync;
   mutableFs.unlinkSync = originalUnlinkSync;
   mutableCrypto.randomBytes = originalRandomBytes;
   syncBuiltinESMExports();
@@ -421,6 +423,57 @@ describe("generation store fail-closed clean", () => {
     expect(existsSync(fixture.oldGenerationRoot)).toBe(operation !== "clean");
     expect(inspectFixedStoreLayout(store)).toMatchObject({
       transactions: [],
+      staging: [],
+      trash: [],
+      lockPresent: false,
+    });
+  });
+
+  it("fails closed when clean target verification is inaccessible", () => {
+    const fixture = materializeTwoGenerations();
+    const store = createOrOpenOwnedStore(fixture.root.projectRoot);
+    const receiptPath = join(fixture.oldGenerationRoot, "receipt.json");
+    const oldBefore = identityTreeSnapshot(fixture.oldGenerationRoot);
+    const activeBefore = identityTreeSnapshot(fixture.newGenerationRoot);
+    let injected = false;
+    const result = cleanProjectionGenerationWithRuntime(
+      {
+        projectRoot: fixture.root.projectRoot,
+        generationDigest: fixture.oldPlan.manifest.digest,
+      },
+      Object.freeze({
+        onFaultPoint(point: CleanFaultPoint): void {
+          if (point !== "after-clean-journal-prepared") return;
+          injected = true;
+          mutableFs.openSync = ((...args: unknown[]) => {
+            if (String(args[0]) !== receiptPath) {
+              return Reflect.apply(originalOpenSync, mutableFs, args);
+            }
+            throw Object.assign(new Error("synthetic clean target access failure"), {
+              code: "EACCES",
+            });
+          }) as typeof originalOpenSync;
+          syncBuiltinESMExports();
+        },
+        lockRuntime: Object.freeze({
+          pid: process.pid,
+          randomToken: () => LOCK_TOKEN,
+          pidState: (pid: number) => (pid === process.pid ? "alive" : "absent"),
+        }),
+      }),
+    );
+    restoreBuiltins();
+
+    expect(result).toMatchObject({
+      state: "failed-closed",
+      generationDigest: fixture.oldPlan.manifest.digest,
+      findings: [{ code: "METHODOLOGY_STORE_FILESYSTEM_FAILURE" }],
+    });
+    expect(injected).toBe(true);
+    expect(identityTreeSnapshot(fixture.oldGenerationRoot)).toEqual(oldBefore);
+    expect(identityTreeSnapshot(fixture.newGenerationRoot)).toEqual(activeBefore);
+    expect(inspectFixedStoreLayout(store)).toMatchObject({
+      transactions: [expect.any(String)],
       staging: [],
       trash: [],
       lockPresent: false,

@@ -487,9 +487,16 @@ function parseCanonicalRecord<T>(
   if (!pathsEqual(resolved, absPath) || !containedPath(projectRoot, resolved)) {
     fail("record escaped or changed realpath");
   }
-  const opened = readRegularFileWithStats(absPath, { maxBytes: MAX_RECORD_BYTES });
+  let opened: ReturnType<typeof readRegularFileWithStats>;
+  try {
+    opened = readRegularFileWithStats(absPath, { maxBytes: MAX_RECORD_BYTES });
+  } catch {
+    fail("record descriptor read failed", "METHODOLOGY_STORE_FILESYSTEM_FAILURE");
+  }
+  if (opened === undefined) {
+    fail("record descriptor could not be opened", "METHODOLOGY_STORE_FILESYSTEM_FAILURE");
+  }
   if (
-    opened === undefined ||
     opened.stats.nlink !== 1 ||
     (process.platform !== "win32" && (opened.stats.mode & 0o777) !== 0o600) ||
     opened.stats.dev.toString(10) !== projectDevice ||
