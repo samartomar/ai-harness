@@ -1218,6 +1218,22 @@ describe("generation store apply", () => {
     expect(identityTreeSnapshot(inactiveRoot)).toEqual(inactiveBefore);
   });
 
+  it("blocks a stale expected activation without creating an absent store", () => {
+    const root = temporaryProject();
+    const outside = makeSiblingCanary(root);
+    const plan = requirePlanned(binaryPlannedFixture());
+    const storeRoot = join(root.projectRoot, ".aih");
+    expect(existsSync(storeRoot)).toBe(false);
+
+    const result = applyProjection(
+      applyInput(root.projectRoot, plan, binaryPayloadFixture(), OTHER_DIGEST),
+    );
+
+    expectApply(result, "blocked", null, null, "METHODOLOGY_STORE_PLAN_STALE");
+    expect(existsSync(storeRoot)).toBe(false);
+    expect(readFileSync(outside.canary, "utf8")).toBe("outside-canary\n");
+  });
+
   it("apply blocks a stale expected activation before staging or generation creation", () => {
     const fixture = materializeActiveStore();
     const outside = makeSiblingCanary(fixture.root);
