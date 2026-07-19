@@ -226,6 +226,18 @@ function missing(error: unknown): boolean {
   return errnoCode(error) === "ENOENT";
 }
 
+const PATH_STATE_ERRNOS = new Set(["ENOENT", "ENOTDIR", "ELOOP"]);
+
+function failInaccessible(message: string, error: unknown): never {
+  const code = errnoCode(error);
+  fail(
+    message,
+    code !== undefined && PATH_STATE_ERRNOS.has(code)
+      ? "METHODOLOGY_STORE_PATH_UNSAFE"
+      : "METHODOLOGY_STORE_FILESYSTEM_FAILURE",
+  );
+}
+
 function compareStrings(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0;
 }
@@ -278,8 +290,8 @@ function sameDirectoryObject(left: StoreObjectIdentity, right: StoreObjectIdenti
 function lstatBigInt(absPath: string, label: string): BigIntStats {
   try {
     return lstatSync(absPath, { bigint: true });
-  } catch {
-    fail(`${label} is inaccessible`);
+  } catch (error) {
+    failInaccessible(`${label} is inaccessible`, error);
   }
 }
 
@@ -297,8 +309,8 @@ function requireCanonicalProject(projectRoot: string): Readonly<{
   let canonicalRoot: string;
   try {
     canonicalRoot = realpathSync(projectRoot);
-  } catch {
-    fail("project root realpath is inaccessible");
+  } catch (error) {
+    failInaccessible("project root realpath is inaccessible", error);
   }
   if (!pathsEqual(canonicalRoot, projectRoot)) {
     fail("project root must already be its canonical realpath");
@@ -361,8 +373,8 @@ function validateOrdinaryDirectory(
   let resolved: string;
   try {
     resolved = realpathSync(absPath);
-  } catch {
-    fail(`${label} realpath is inaccessible`);
+  } catch (error) {
+    failInaccessible(`${label} realpath is inaccessible`, error);
   }
   if (!pathsEqual(resolved, absPath) || !containedPath(projectRoot, resolved)) {
     fail(`${label} escaped or changed realpath`);
@@ -375,7 +387,7 @@ function lstatIfPresent(absPath: string): BigIntStats | undefined {
     return lstatSync(absPath, { bigint: true });
   } catch (error) {
     if (missing(error)) return undefined;
-    fail("filesystem object is inaccessible");
+    failInaccessible("filesystem object is inaccessible", error);
   }
 }
 
@@ -481,8 +493,8 @@ function parseCanonicalRecord<T>(
   let resolved: string;
   try {
     resolved = realpathSync(absPath);
-  } catch {
-    fail("record realpath is inaccessible");
+  } catch (error) {
+    failInaccessible("record realpath is inaccessible", error);
   }
   if (!pathsEqual(resolved, absPath) || !containedPath(projectRoot, resolved)) {
     fail("record escaped or changed realpath");
@@ -709,8 +721,8 @@ function validateInventoryRegularFile(
   let resolved: string;
   try {
     resolved = realpathSync(absPath);
-  } catch {
-    fail(`${label} realpath is inaccessible`);
+  } catch (error) {
+    failInaccessible(`${label} realpath is inaccessible`, error);
   }
   if (!pathsEqual(resolved, absPath) || !containedPath(store.layout.root, resolved)) {
     fail(`${label} escaped or changed realpath`);
@@ -979,8 +991,8 @@ function readOwnedRegularFile(
   let resolved: string;
   try {
     resolved = realpathSync(absPath);
-  } catch {
-    fail("owned file realpath is inaccessible");
+  } catch (error) {
+    failInaccessible("owned file realpath is inaccessible", error);
   }
   if (!pathsEqual(resolved, absPath) || !containedPath(store.layout.root, resolved)) {
     fail("owned file escaped or changed realpath");
@@ -1567,8 +1579,8 @@ function readBoundedWalkChildren(absDirectory: string, budget: StoreWalkBudget):
   let directory: ReturnType<typeof opendirSync>;
   try {
     directory = opendirSync(absDirectory);
-  } catch {
-    fail("tree directory is inaccessible");
+  } catch (error) {
+    failInaccessible("tree directory is inaccessible", error);
   }
   const children: Dirent[] = [];
   try {
@@ -1596,8 +1608,8 @@ function readFixedContainerChildren(absDirectory: string): readonly Dirent[] {
   let directory: ReturnType<typeof opendirSync>;
   try {
     directory = opendirSync(absDirectory);
-  } catch {
-    fail("container directory is inaccessible");
+  } catch (error) {
+    failInaccessible("container directory is inaccessible", error);
   }
   const children: Dirent[] = [];
   try {
@@ -2238,7 +2250,7 @@ function destinationAbsent(absPath: string): void {
     lstatSync(absPath);
   } catch (error) {
     if (missing(error)) return;
-    fail("quarantine destination is inaccessible");
+    failInaccessible("quarantine destination is inaccessible", error);
   }
   fail("quarantine destination already exists");
 }
@@ -2454,8 +2466,8 @@ function revalidateDirectoryForRemoval(
   let remaining: string[];
   try {
     remaining = readdirSync(absPath);
-  } catch {
-    fail("verified directory is inaccessible before deletion");
+  } catch (error) {
+    failInaccessible("verified directory is inaccessible before deletion", error);
   }
   if (remaining.length !== 0) {
     fail("verified directory is not empty before deletion");

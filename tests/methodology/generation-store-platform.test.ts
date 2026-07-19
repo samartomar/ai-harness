@@ -68,12 +68,18 @@ const LOCK_TOKEN = "a".repeat(64);
 const roots: TemporaryProject[] = [];
 const mutableFs = createRequire(import.meta.url)("node:fs") as typeof import("node:fs");
 const mutableCrypto = createRequire(import.meta.url)("node:crypto") as typeof import("node:crypto");
+const originalLstatSync = mutableFs.lstatSync;
 const originalOpenSync = mutableFs.openSync;
+const originalOpendirSync = mutableFs.opendirSync;
+const originalRealpathSync = mutableFs.realpathSync;
 const originalUnlinkSync = mutableFs.unlinkSync;
 const originalRandomBytes = mutableCrypto.randomBytes;
 
 function restoreBuiltins(): void {
+  mutableFs.lstatSync = originalLstatSync;
   mutableFs.openSync = originalOpenSync;
+  mutableFs.opendirSync = originalOpendirSync;
+  mutableFs.realpathSync = originalRealpathSync;
   mutableFs.unlinkSync = originalUnlinkSync;
   mutableCrypto.randomBytes = originalRandomBytes;
   syncBuiltinESMExports();
@@ -429,7 +435,12 @@ describe("generation store fail-closed clean", () => {
     });
   });
 
-  it("fails closed when clean target verification is inaccessible", () => {
+  it.each([
+    "lstat",
+    "realpath",
+    "open",
+    "opendir",
+  ] as const)("fails closed when post-journal clean target %s verification is inaccessible", (operation) => {
     const fixture = materializeTwoGenerations();
     const store = createOrOpenOwnedStore(fixture.root.projectRoot);
     const receiptPath = join(fixture.oldGenerationRoot, "receipt.json");
@@ -445,14 +456,40 @@ describe("generation store fail-closed clean", () => {
         onFaultPoint(point: CleanFaultPoint): void {
           if (point !== "after-clean-journal-prepared") return;
           injected = true;
-          mutableFs.openSync = ((...args: unknown[]) => {
-            if (String(args[0]) !== receiptPath) {
-              return Reflect.apply(originalOpenSync, mutableFs, args);
-            }
+          const inaccessible = (): never => {
             throw Object.assign(new Error("synthetic clean target access failure"), {
               code: "EACCES",
             });
-          }) as typeof originalOpenSync;
+          };
+          if (operation === "lstat") {
+            mutableFs.lstatSync = ((...args: unknown[]) =>
+              String(args[0]) === receiptPath
+                ? inaccessible()
+                : Reflect.apply(originalLstatSync, mutableFs, args)) as typeof originalLstatSync;
+          } else if (operation === "realpath") {
+            mutableFs.realpathSync = ((...args: unknown[]) =>
+              String(args[0]) === receiptPath
+                ? inaccessible()
+                : Reflect.apply(
+                    originalRealpathSync,
+                    mutableFs,
+                    args,
+                  )) as typeof originalRealpathSync;
+          } else if (operation === "open") {
+            mutableFs.openSync = ((...args: unknown[]) =>
+              String(args[0]) === receiptPath
+                ? inaccessible()
+                : Reflect.apply(originalOpenSync, mutableFs, args)) as typeof originalOpenSync;
+          } else {
+            mutableFs.opendirSync = ((...args: unknown[]) =>
+              String(args[0]) === fixture.oldGenerationRoot
+                ? inaccessible()
+                : Reflect.apply(
+                    originalOpendirSync,
+                    mutableFs,
+                    args,
+                  )) as typeof originalOpendirSync;
+          }
           syncBuiltinESMExports();
         },
         lockRuntime: Object.freeze({
