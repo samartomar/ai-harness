@@ -68,17 +68,21 @@ const LOCK_TOKEN = "a".repeat(64);
 const roots: TemporaryProject[] = [];
 const mutableFs = createRequire(import.meta.url)("node:fs") as typeof import("node:fs");
 const mutableCrypto = createRequire(import.meta.url)("node:crypto") as typeof import("node:crypto");
+const originalCloseSync = mutableFs.closeSync;
 const originalLstatSync = mutableFs.lstatSync;
 const originalOpenSync = mutableFs.openSync;
 const originalOpendirSync = mutableFs.opendirSync;
+const originalReadFileSync = mutableFs.readFileSync;
 const originalRealpathSync = mutableFs.realpathSync;
 const originalUnlinkSync = mutableFs.unlinkSync;
 const originalRandomBytes = mutableCrypto.randomBytes;
 
 function restoreBuiltins(): void {
+  mutableFs.closeSync = originalCloseSync;
   mutableFs.lstatSync = originalLstatSync;
   mutableFs.openSync = originalOpenSync;
   mutableFs.opendirSync = originalOpendirSync;
+  mutableFs.readFileSync = originalReadFileSync;
   mutableFs.realpathSync = originalRealpathSync;
   mutableFs.unlinkSync = originalUnlinkSync;
   mutableCrypto.randomBytes = originalRandomBytes;
@@ -438,12 +442,18 @@ describe("generation store fail-closed clean", () => {
   it.each([
     "lstat",
     "realpath",
-    "open",
+    "receipt-open",
     "opendir",
+    "payload-open",
+    "payload-read",
+    "payload-close",
   ] as const)("fails closed when post-journal clean target %s verification is inaccessible", (operation) => {
     const fixture = materializeTwoGenerations();
     const store = createOrOpenOwnedStore(fixture.root.projectRoot);
     const receiptPath = join(fixture.oldGenerationRoot, "receipt.json");
+    const payloadTarget = fixture.oldPlan.manifest.entries[0]?.target;
+    if (payloadTarget === undefined) throw new Error("fixture payload target is absent");
+    const payloadPath = join(fixture.oldGenerationRoot, "content", ...payloadTarget.split("/"));
     const oldBefore = identityTreeSnapshot(fixture.oldGenerationRoot);
     const activeBefore = identityTreeSnapshot(fixture.newGenerationRoot);
     let injected = false;
@@ -456,9 +466,9 @@ describe("generation store fail-closed clean", () => {
         onFaultPoint(point: CleanFaultPoint): void {
           if (point !== "after-clean-journal-prepared") return;
           injected = true;
-          const inaccessible = (): never => {
+          const inaccessible = (code = "EACCES"): never => {
             throw Object.assign(new Error("synthetic clean target access failure"), {
-              code: "EACCES",
+              code,
             });
           };
           if (operation === "lstat") {
@@ -475,12 +485,12 @@ describe("generation store fail-closed clean", () => {
                     mutableFs,
                     args,
                   )) as typeof originalRealpathSync;
-          } else if (operation === "open") {
+          } else if (operation === "receipt-open") {
             mutableFs.openSync = ((...args: unknown[]) =>
               String(args[0]) === receiptPath
                 ? inaccessible()
                 : Reflect.apply(originalOpenSync, mutableFs, args)) as typeof originalOpenSync;
-          } else {
+          } else if (operation === "opendir") {
             mutableFs.opendirSync = ((...args: unknown[]) =>
               String(args[0]) === fixture.oldGenerationRoot
                 ? inaccessible()
@@ -489,6 +499,36 @@ describe("generation store fail-closed clean", () => {
                     mutableFs,
                     args,
                   )) as typeof originalOpendirSync;
+          } else if (operation === "payload-open") {
+            mutableFs.openSync = ((...args: unknown[]) =>
+              String(args[0]) === payloadPath
+                ? inaccessible()
+                : Reflect.apply(originalOpenSync, mutableFs, args)) as typeof originalOpenSync;
+          } else {
+            let payloadDescriptor: number | undefined;
+            mutableFs.openSync = ((...args: unknown[]) => {
+              const descriptor = Reflect.apply(originalOpenSync, mutableFs, args) as number;
+              if (String(args[0]) === payloadPath) payloadDescriptor = descriptor;
+              return descriptor;
+            }) as typeof originalOpenSync;
+            if (operation === "payload-read") {
+              mutableFs.readFileSync = ((...args: unknown[]) => {
+                if (args[0] !== payloadDescriptor) {
+                  return Reflect.apply(originalReadFileSync, mutableFs, args);
+                }
+                payloadDescriptor = undefined;
+                return inaccessible("EIO");
+              }) as typeof originalReadFileSync;
+            } else {
+              mutableFs.closeSync = ((descriptor: number) => {
+                if (descriptor !== payloadDescriptor) {
+                  return originalCloseSync(descriptor);
+                }
+                originalCloseSync(descriptor);
+                payloadDescriptor = undefined;
+                return inaccessible("EIO");
+              }) as typeof originalCloseSync;
+            }
           }
           syncBuiltinESMExports();
         },
