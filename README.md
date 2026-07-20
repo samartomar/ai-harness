@@ -103,6 +103,7 @@ Keep this table as a navigation index: do not add flag-level behavior or workflo
 | Command | What it does |
 | --- | --- |
 | [`aih certs`](docs/commands.md#aih-certs) | Extract the corporate root CA from the OS trust store and propagate trust to npm/pip/cargo/conda. |
+| [`aih cleanup`](docs/commands.md#aih-cleanup) | Preview and remove framework-contaminated Claude user-scope surfaces with backup and rollback. |
 | [`aih heal`](docs/commands.md#aih-heal) | Diagnose and repair the broken runtime behind any TLS-intercepting proxy — corporate trust, npm, PATH, MCP pre-flight. |
 | [`aih tools`](docs/commands.md#aih-tools) | Install the agent shell tools the harness leans on (`rg`/`fd`/`jq`, `ast-grep`, `gh`, …) through the platform package manager. |
 | [`aih ready`](docs/commands.md#aih-ready) | Grade a blocker-aware readiness verdict: can a developer start work with an AI agent here, now? |
