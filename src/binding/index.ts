@@ -29,6 +29,35 @@ export {
 } from "./adapter.js";
 // W3f — plan-time feature-key validation shared by every W4+ adapter.
 export { assertKnownFeatureKeys, BindingFeatureKeyError } from "./features.js";
+// W4b — the ECC Lean adapter (upstream-local-installer). Composes the shipped,
+// pin-bound ECC install-preview + an injected selective-install seam; adds no ECC
+// install machinery of its own (D9). W4c adds the Full variant to the same file.
+export {
+  componentInstallRoot,
+  computeEccLeanPreviewDiff,
+  createEccAdapter,
+  ECC_HOST_TARGET,
+  ECC_LEAN_ALLOWLIST,
+  ECC_LEAN_EXCLUDED,
+  ECC_PIN_COMMIT,
+  ECC_REPOSITORY,
+  EccBindingError,
+  type EccLeanAdapterDeps,
+  EccLeanAllowlistError,
+  type EccLeanInstalledFile,
+  type EccLeanInstaller,
+  EccLeanInstallerUnavailableError,
+  type EccLeanInstallInput,
+  type EccLeanInstallResult,
+  type EccLeanManifest,
+  type EccLeanPreviewDiff,
+  type EccLeanRemoveResult,
+  EccModeNotImplementedError,
+  eccLeanManifest,
+  eccRuntimeSurfaceHit,
+  type NormalizedEccOp,
+  normalizeEccOperations,
+} from "./frameworks/ecc.js";
 // W4a — the first real D6 adapter (Superpowers, host-plugin) + its registry
 // assembly point. Composes the W3 Claude host services above; adds no new
 // host mechanism of its own.
